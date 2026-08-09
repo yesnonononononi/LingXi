@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+/* 全局自定义滚动条 */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #1f2937; /* gray-800 */
+  border-radius: 2px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: #374151; /* gray-700 */
+}
+
+/* 隐藏默认滚动条但保留滚动能力（对聊天主区域有用） */
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(3, 7, 18, 0.2);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(31, 41, 55, 0.4);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(79, 70, 229, 0.3);
+}
+
+/* 输入框 focus ring 移除与美化 */
+textarea:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+/* 基础重置 */
+body {
+  background-color: #030712;
+  color: #e5e7eb;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  overflow: hidden;
+}
+
+/* 极简流光边框动画 (用于 Logo 等) */
+@keyframes flow-border {
+  0% {
+    border-color: #4f46e5;
+  }
+  50% {
+    border-color: #a855f7;
+  }
+  100% {
+    border-color: #4f46e5;
+  }
+}
+
+.animate-flow-border {
+  animation: flow-border 3s infinite ease-in-out;
+}

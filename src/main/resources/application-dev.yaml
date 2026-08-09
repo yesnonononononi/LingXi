@@ -1,0 +1,12 @@
+dp:
+  datasource:
+    database:
+      url: jdbc:mysql://${MYSQL_HOST:localhost}:3306/dp?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      username: summit@2152938389@qq.com
+      password: summit
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+  feign:
+    host: localhost
+    port: 8000
