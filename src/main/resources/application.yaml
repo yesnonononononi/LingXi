@@ -4,11 +4,14 @@ spring:
   profiles:
     active: dev
   application:
-    name: DevSquad-Project
+    name: LingXi
+  config:
+    import:
+      - optional:file:.env[.properties]
   datasource:
-    url: ${dp.datasource.database.url}
-    username: ${dp.datasource.database.username}
-    password: ${dp.datasource.database.password}
+    url: ${LingXi.datasource.database.url}
+    username: ${LingXi.datasource.database.username}
+    password: ${LingXi.datasource.database.password}
     driver-class-name: com.mysql.cj.jdbc.Driver
     druid:
       # 初始化连接数
@@ -36,11 +39,9 @@ spring:
       min-evictable-idle-time-millis: 300000
   data:
     redis:
-      host: ${dp.datasource.redis.host}
-      port: ${dp.datasource.redis.port}
-      password: ${dp.datasource.redis.password}
-      timeout: ${dp.datasource.redis.timeout:10000}
-      database: ${dp.datasource.redis.database:0}
-  feign:
-    baseUrl: http://${dp.feign.host:localhost}:${dp.feign.port:8000}
+      host: ${LingXi.datasource.redis.host}
+      port: ${LingXi.datasource.redis.port}
+      password: ${LingXi.datasource.redis.password}
+      timeout: ${LingXi.datasource.redis.timeout:10000}
+      database: ${LingXi.datasource.redis.database:0}
 

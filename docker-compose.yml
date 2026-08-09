@@ -2,7 +2,7 @@
 services:
   mysql:
     image: mysql:8.0.30   #镜像版本
-    container_name: dp-mysql #容器名称
+    container_name: LingXi-mysql #容器名称
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
@@ -11,57 +11,63 @@ services:
     ports:   #端口映射 主机 : 容器
       - "3306:3306"
       - "33060:33060"
+    networks:
+      - LingXi
     volumes:
       - mysql-data:/var/lib/mysql   #数据持久化
     command: --default-authentication-plugin=mysql_native_password  #解决8.0兼容问题
     restart: always  #启动时自动重启
   redis:
     image: redis:8
-    container_name: dp-redis
+    container_name: LingXi-redis
     ports:
         - "6379:6379"
     volumes:
       - redis-data:/data
     restart: always
-  milvus:
-    image: milvusdb/milvus:v2.4.6
-    container_name: dp-milvus
-    ports:
-      - "19530:19530"
-      - "9091:9091"
-    restart: always
-    command: ["milvus", "run", "standalone"]
-    volumes:
-      - milvus-data:/var/lib/milvus
-  etcd:
-    container_name: dp-etcd
-    image: quay.io/coreos/etcd:v3.5.5
-    environment:
-      - ETCD_AUTO_COMPACTION_MODE=revision
-      - ETCD_AUTO_COMPACTION_RETENTION=1000
-      - ETCD_QUOTA_BACKEND_BYTES=4294967296
-      - ETCD_SNAPSHOT_COUNT=50000
-    volumes:
-      - etcd-data:/etcd
-    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd  #-advertise-client-urls: 配置etcd的访问地址 -listen-client-urls: 监听所有网卡
-    restart: always
+    networks:
+      - LingXi
+#  milvus:
+#    image: milvusdb/milvus:v2.4.6
+#    container_name: LingXi-milvus
+#    ports:
+#      - "19530:19530"
+#      - "9091:9091"
+#    restart: always
+#    command: ["milvus", "run", "standalone"]
+#    volumes:
+#      - milvus-data:/var/lib/milvus
+#  etcd:
+#    container_name: LingXi-etcd
+#    image: quay.io/coreos/etcd:v3.5.5
+#    environment:
+#      - ETCD_AUTO_COMPACTION_MODE=revision
+#      - ETCD_AUTO_COMPACTION_RETENTION=1000
+#      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+#      - ETCD_SNAPSHOT_COUNT=50000
+#    volumes:
+#      - etcd-data:/etcd
+#    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd  #-advertise-client-urls: 配置etcd的访问地址 -listen-client-urls: 监听所有网卡
+ #   restart: always
 
-  minio:
-    container_name: dp-minio
-    image: minio/minio:latest
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    volumes:
-      - minio-data:/minio_data
-    command: minio server /minio_data --console-address ":9090"
-    ports:
-      - "9000:9000"
-      - "9090:9090"
-    restart: always
+#  minio:
+#    container_name: LingXi-minio
+#    image: minio/minio:latest
+#    environment:
+#      MINIO_ROOT_USER: minioadmin
+#      MINIO_ROOT_PASSWORD: minioadmin
+#    volumes:
+#      - minio-data:/minio_data
+#    command: minio server /minio_data --console-address ":9090"
+#    ports:
+#      - "9000:9000"
+#      - "9090:9090"
+#    restart: always
+#    networks:
+#      - LingXi
 # app:
 #   build: . #构建镜像，当前目录
-#   container_name: dp-app #容器名称
+#   container_name: LingXi-app #容器名称
 #   environment:
 #     MYSQL_HOST: mysql
 #     REDIS_HOST: redis
@@ -77,17 +83,19 @@ services:
 
 # agent-service:
 #   build: ./agent-service
-#   container_name: dp-agent-service
+#   container_name: LingXi-agent-service
 #   ports:
 #     - "8000:8000"
 #   restart: always
 #   volumes:
 #     - ./agent-service/logs:/app/logs
 
-
+networks:
+  LingXi:
+    driver: bridge
 volumes:
   mysql-data:
   redis-data:
-  milvus-data:
-  etcd-data:
+ # milvus-data:
+ # etcd-data:
   minio-data:

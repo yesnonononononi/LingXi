@@ -11,8 +11,8 @@
     <groupId>com.summit</groupId>
     <artifactId>dp</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>DevSquad-Project</name>
-    <description>DevSquad-Project</description>
+    <name>LingXi</name>
+    <description>LingXi</description>
     <url/>
     <licenses>
         <license/>
@@ -86,6 +86,30 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.springfox</groupId>
+            <artifactId>springfox-swagger2</artifactId>
+            <version>3.0.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.13.0</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.13.0</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.13.0</version>
+            <scope>runtime</scope>
         </dependency>
     </dependencies>
 
