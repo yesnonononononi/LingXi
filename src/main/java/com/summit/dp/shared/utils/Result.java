@@ -1,19 +1,31 @@
 package com.summit.dp.shared.utils;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 
 import java.time.Instant;
 import java.util.Objects;
 
+@Schema(description = "统一响应结果封装")
 @AllArgsConstructor
 @RequiredArgsConstructor
 @Data
 @EqualsAndHashCode
 public class Result<T> {
+
+    @Schema(description = "响应状态码(200成功, 0失败)", example = "200")
     final private int code;
+
+    @Schema(description = "响应业务数据")
     final private T data;
+
+    @Schema(description = "响应时间戳")
     final private Instant timestamp;
+
     private String errMsg;
+
+    @Schema(description = "响应签名字符串")
     private String signStr;
 
 

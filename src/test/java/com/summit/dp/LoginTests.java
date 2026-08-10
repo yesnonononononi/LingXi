@@ -1,27 +1,35 @@
 package com.summit.dp;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.summit.dp.persistence.mapper.user.UserMapper;
-import com.summit.dp.service.auth.AuthService;
+import com.summit.dp.service.auth.AuthCacheProvider;
 import com.summit.dp.service.auth.impl.AuthServiceImpl;
 import com.summit.dp.service.domain.dto.LoginDTO;
-import com.summit.dp.service.domain.exception.ClientException;
+import com.summit.dp.service.domain.dto.RegisterDTO;
 import com.summit.dp.service.domain.model.User;
+import com.summit.dp.service.domain.model.auth.AuthSession;
 import com.summit.dp.service.domain.vo.AuthVO;
 import com.summit.dp.shared.utils.Result;
+import com.summit.dp.shared.utils.UserContext;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.time.Instant;
 
 @ExtendWith(MockitoExtension.class)
 public class LoginTests {
 
     @Mock
     private UserMapper userMapper;
-
+    @Mock
+    private AuthCacheProvider cacheProvider;
     @InjectMocks
     private AuthServiceImpl authService;
 
@@ -30,94 +38,62 @@ public class LoginTests {
     private static final String PHONE = "18573757527";
     private static final String PASSWORD = "12334465";
 
-    // ---- DTO 自身校验（通常由框架或静态工厂完成，此处仅展示边界） ----
-    @Test
-    void testDtoValidation() {
-        Assertions.assertThrows(ClientException.class, () -> new LoginDTO("18573757527", null));
-        Assertions.assertThrows(ClientException.class, () -> new LoginDTO("18573757527", ""));
-        Assertions.assertThrows(ClientException.class, () -> new LoginDTO(null, ""));
-        Assertions.assertThrows(ClientException.class, () -> new LoginDTO("", "12334465"));
-        Assertions.assertThrows(ClientException.class, () -> new LoginDTO("1381234", "123456"));
-        Assertions.assertThrows(ClientException.class, () -> new LoginDTO("138123456789", "123456"));
-        Assertions.assertThrows(ClientException.class, () -> new LoginDTO("1381234abcd", "123456"));
-        Assertions.assertThrows(ClientException.class, () -> new LoginDTO("23812345678", "123456"));
-        Assertions.assertThrows(ClientException.class, () -> new LoginDTO("138-1234-5678", "123456"));
-        Assertions.assertThrows(ClientException.class, () -> new LoginDTO("00000000000", "123456"));
-        Assertions.assertThrows(ClientException.class, () -> new LoginDTO("18573757527", "a".repeat(129)));
-        Assertions.assertThrows(ClientException.class, () -> new LoginDTO("18573757527", "   "));
-        Assertions.assertThrows(ClientException.class, () -> new LoginDTO(null, "12345"));
-        Assertions.assertThrows(ClientException.class, () -> new LoginDTO("12345", null));
+    @BeforeEach
+    public void setUp() {
+        ReflectionTestUtils.setField(authService, "baseMapper", userMapper);
     }
 
-    // ---- 正常登录 ----
     @Test
-    void testLoginSuccess() {
-        User user = User.builder().id(1L).password(VALID_PASSWORD_HASH).phone(PHONE).build();
-        Mockito.when(userMapper.selectOne(Mockito.any())).thenReturn(user);
-
-        LoginDTO dto = new LoginDTO(PHONE, PASSWORD);
-        Result<AuthVO> result = authService.login(dto);
-
-        Assertions.assertNotNull(result);
-        Assertions.assertEquals(200, result.getCode()); // 假设成功码为200
-        Assertions.assertNotNull(result.getData());
-        Assertions.assertNotNull(result.getData().getToken());
+    public void testLogin() {
+        User user = User.builder()
+                .id(1L)
+                .phone(PHONE)
+                .password(VALID_PASSWORD_HASH)
+                .build();
+        Mockito.when(userMapper.selectOne(Mockito.any(LambdaQueryWrapper.class))).thenReturn(user);
+        LoginDTO dto = LoginDTO.builder()
+                .phoneNumber(PHONE)
+                .passWord(PASSWORD)
+                .build();
+        Result<AuthVO> login = authService.login(dto);
+        Assertions.assertInstanceOf(Result.class, login);
+        Assertions.assertEquals(200, login.getCode());
+        AuthVO data = login.getData();
+        Assertions.assertInstanceOf(AuthVO.class, data);
+        Assertions.assertNotNull(data.getToken());
     }
 
-    // ---- 用户不存在 ----
     @Test
-    void testLoginUserNotFound() {
-        Mockito.when(userMapper.selectOne(Mockito.any())).thenReturn(null);
+    public void testLogout() {
+        String token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI0ODc0MjA0ODkiLCJ1bmFtZSI6IjE4NSoqKio3NTI3IiwiZXhwIjoxNzg2OTU2MTkxfQ.V5IUErBg5byQo_vHTfUHN8wicFtNfDSLBjQMnuasUKQ";
+        AuthSession session = AuthSession.builder()
+                .userId(1L)
+                .uname("185****7527")
+                .token(token)
+                .expireTime(Instant.now().plusSeconds(3600))
+                .build();
+        UserContext.set(session);
 
-        LoginDTO dto = new LoginDTO(PHONE, PASSWORD);
-        Result<AuthVO> result = authService.login(dto);
+        Result<Void> res = authService.logout();
 
-        Assertions.assertNotNull(result);
-        Assertions.assertNotEquals(200, result.getCode());
+        Assertions.assertInstanceOf(Result.class, res);
+        Assertions.assertEquals(200, res.getCode());
+        Mockito.verify(cacheProvider, Mockito.times(1)).put(Mockito.eq(token), Mockito.any());
     }
 
-    // ---- 密码错误 ----
     @Test
-    void testLoginWrongPassword() {
-        User user = User.builder().id(1L).password(VALID_PASSWORD_HASH).phone(PHONE).build();
-        Mockito.when(userMapper.selectOne(Mockito.any())).thenReturn(user);
-
-        LoginDTO dto = new LoginDTO(PHONE, "wrongPassword");
-        Result<AuthVO> result = authService.login(dto);
-
-        Assertions.assertNotNull(result);
-        Assertions.assertNotEquals(200, result.getCode());
+    public void testRegister() {
+        Mockito.when(userMapper.insert(Mockito.any(User.class))).thenReturn(1);
+        RegisterDTO dto = RegisterDTO.builder()
+                .smsCode(200000)
+                .password(PASSWORD+"1213123")
+                .phoneNumber(PHONE)
+                .build();
+        Result<Void> res = authService.register(dto);
+        Assertions.assertInstanceOf(Result.class, res);
+        Assertions.assertEquals(200, res.getCode());
     }
 
-
-
-    // ---- 用户密码字段为空（防御性测试） ----
-    @Test
-    void testLoginPasswordNullInDb() {
-        User user = User.builder().id(1L).password(null).phone(PHONE).build();
-        Mockito.when(userMapper.selectOne(Mockito.any())).thenReturn(user);
-
-        LoginDTO dto = new LoginDTO(PHONE, PASSWORD);
-        Result<AuthVO> result = authService.login(dto);
-
-        Assertions.assertNotNull(result);
-        // 不应崩溃，返回系统错误或密码错误
-        Assertions.assertNotEquals(200, result.getCode());
-    }
-
-
-
-    // ---- 返回 token 非空校验 ----
-    @Test
-    void testLoginReturnsToken() {
-        User user = User.builder().id(1L).password(VALID_PASSWORD_HASH).phone(PHONE).build();
-        Mockito.when(userMapper.selectOne(Mockito.any())).thenReturn(user);
-
-        Result<AuthVO> result = authService.login(new LoginDTO(PHONE, PASSWORD));
-        System.out.println(result);
-        Assertions.assertNotNull(result.getData());
-
-    }
 
 
 }

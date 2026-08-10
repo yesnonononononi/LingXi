@@ -1,5 +1,6 @@
 package com.summit.dp.shared.utils;
 
+import cn.hutool.core.util.StrUtil;
 import com.summit.dp.service.domain.model.auth.AuthSession;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -21,6 +22,7 @@ public class JwtUtils {
     }
 
     public static String generateToken(Long userId, String uname, String secretKey, int ttlDays) {
+        if(StrUtil.isBlank(uname) || userId == null)throw new RuntimeException("需要用户id和用户名作为载体");
         return Jwts.builder()
                 .subject(userId.toString())
                 .claim("uname", uname)

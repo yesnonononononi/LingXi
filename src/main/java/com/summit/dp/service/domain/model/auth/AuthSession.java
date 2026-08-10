@@ -12,5 +12,6 @@ public class AuthSession implements Serializable {
     private String uname;
     private Long userId;
     private Instant expireTime;
+    private String token;
 
 }

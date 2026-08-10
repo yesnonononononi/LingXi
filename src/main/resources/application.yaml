@@ -5,6 +5,8 @@ spring:
     active: dev
   application:
     name: LingXi
+  feign:
+    baseUrl: ${HTTP}://${HOST}:${AGENT_PORT}
   config:
     import:
       - optional:file:.env[.properties]
