@@ -1,8 +1,8 @@
 package com.summit.dp.shared.config.interceptor;
 
 import cn.hutool.core.util.StrUtil;
-import com.summit.dp.service.auth.AuthCacheProvider;
-import com.summit.dp.service.domain.model.auth.AuthSession;
+import com.summit.dp.auth.application.service.AuthCacheProvider;
+import com.summit.dp.auth.domain.model.AuthSession;
 import com.summit.dp.shared.utils.JwtUtils;
 import com.summit.dp.shared.utils.UserContext;
 import jakarta.servlet.http.HttpServletRequest;

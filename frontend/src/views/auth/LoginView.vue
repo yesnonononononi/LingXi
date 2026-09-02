@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { AuthAPI } from '../../services/api';
 
+const router = useRouter();
 const emit = defineEmits(['loginSuccess', 'toggleTheme']);
 defineProps<{ isDark?: boolean }>();
 
@@ -27,7 +29,7 @@ const handleSubmit = async () => {
         password: password.value,
         smsCode: Number(smsCode.value) || 123456
       });
-      if (res.code === 200) {
+      if (res.code === 1 || res.code === 200) {
         isRegisterMode.value = false;
         errorMsg.value = '注册成功，请登录';
       } else {
@@ -38,8 +40,13 @@ const handleSubmit = async () => {
         phoneNumber: phone.value,
         passWord: password.value
       });
-      if (res.code === 200) {
+      if (res.code === 1 || res.code === 200) {
+        const token = res.data?.token || (typeof res.data === 'string' ? res.data : '');
+        if (token) {
+          localStorage.setItem('token', token);
+        }
         emit('loginSuccess');
+        router.push('/');
       } else {
         errorMsg.value = res.errMsg || '登录失败';
       }

@@ -65,7 +65,7 @@ export interface ChatSession {
   title: string;
   createdAt: number;
   updatedAt: number;
-  modelId: string;                   // 绑定的模型配置
+  modelId: string | number;          // 绑定的模型配置
   knowledgeBaseId?: string;          // 绑定的知识库ID
   activeTools: string[];             // 开启的工具列表
   messages: ChatMessage[];
@@ -92,11 +92,45 @@ export interface AgentTool {
 }
 
 /**
- * 模型配置接口 (体现后端智能路由亮点)
+ * 模型配置接口 (体现后端智能路由与配置)
  */
 export interface ModelConfig {
-  id: string;
+  id: string | number;
   name: string;
-  description: string;
-  category: 'speed' | 'intelligence' | 'specialized'; // 对应快速模式、专家模式、专有模式
+  modelName?: string;
+  description?: string;
+  category?: 'speed' | 'intelligence' | 'specialized';
+  baseUrl?: string;
+  apiKey?: string;
+}
+
+/**
+ * 后端 ModelConfigVO 领域实体
+ */
+export interface ModelConfigVO {
+  id?: number | string;
+  modelName?: string;
+  baseUrl?: string;
+  apiKey?: string;
+}
+
+/**
+ * 后端会话消息 VO（对应 SessionMessageVO）
+ */
+export interface SessionMessageVO {
+  role: string;
+  text: string;
+}
+
+/**
+ * 后端会话 VO（对应 SessionVO）
+ */
+export interface SessionVO {
+  id?: number | string;
+  name?: string;
+  messages?: SessionMessageVO[];
+  totalTokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  systemMessage?: string;
 }

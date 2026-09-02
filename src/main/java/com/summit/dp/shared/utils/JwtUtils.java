@@ -1,7 +1,7 @@
 package com.summit.dp.shared.utils;
 
 import cn.hutool.core.util.StrUtil;
-import com.summit.dp.service.domain.model.auth.AuthSession;
+import com.summit.dp.auth.domain.model.AuthSession;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -41,12 +41,7 @@ public class JwtUtils {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
-
-        return AuthSession.builder()
-                .uname(body.get("uname").toString())
-                .expireTime(body.getExpiration().toInstant())
-                .userId(Long.valueOf(body.getSubject()))
-                .build();
+        return new AuthSession(body.get("uname").toString(), Long.valueOf(body.getSubject()), body.getExpiration().toInstant(),token);
     }
 
     private static SecretKey parseKey(String key) {

@@ -5,8 +5,6 @@ spring:
     active: dev
   application:
     name: LingXi
-  feign:
-    baseUrl: ${HTTP}://${HOST}:${AGENT_PORT}
   config:
     import:
       - optional:file:.env[.properties]
@@ -46,4 +44,50 @@ spring:
       password: ${LingXi.datasource.redis.password}
       timeout: ${LingXi.datasource.redis.timeout:10000}
       database: ${LingXi.datasource.redis.database:0}
+lingxi:
+  agent:
+    workspace: docker
+    runtime:
+      tool:
+        common:
+          max-output: 500
+        read-file:
+          enabled: true
+          max-output: 3000
+        edit-file:
+          enabled: true
+          max-output: 200
+        terminal:
+          enabled: true
+          timeout: 30
+          max-output: 2000
+        web-search:
+          enabled: true
+          baseUrl: https://api.tavily.com/search
+          apiKey: ${TAVILY_APIKEY}
+          timeout: 30
+          max-output: 3000
+          max-result: 3
+        context-compact:
+          enabled: true
+
+    model:
+      conf:
+        chat:
+          base-url: https://api.deepseek.com                        #https://openrouter.ai/api/v1/chat/completions     http://localhost:1234/v1 https://globalai.vip/v1
+          api-key:  ${DEEPSEEK_APIKEY}              #  #OPENROUTER_APIKEY   GLOBALAI_APIKEY
+          model-name: "deepseek-v4-flash"                            #"google/gemma-4-12b-qat" "deepseek-v4-flash" "stealth/ox-alpha"
+          timeout: 120s
+          max-iterations: 50
+          max-tokens: 393200
+          reasoning-effort: medium
+        compact:
+          base-url: https://globalai.vip/v1                         #https://openrouter.ai/api/v1/chat/completions  https://api.deepseek.com   http://localhost:1234/v1
+          api-key: ${GLOBALAI_APIKEY}
+          model-name: "deepseek-v4-flash"
+          timeout: 120s
+          maxTokens: 32768
+          reasoning-effort: "none"
+          send-thinking: false
+          return-thinking: false
 

@@ -1,7 +1,7 @@
 package com.summit.dp.shared.utils;
 
-import com.summit.dp.service.domain.exception.ClientException;
-import com.summit.dp.service.domain.model.auth.AuthSession;
+import com.summit.dp.auth.domain.model.AuthSession;
+import com.summit.dp.shared.exception.ClientException;
 import lombok.Data;
 import org.springframework.lang.NonNull;
 
