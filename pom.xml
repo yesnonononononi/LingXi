@@ -28,13 +28,16 @@
     </scm>
     <properties>
         <java.version>21</java.version>
+        <mybatis-plus>3.5.9</mybatis-plus>
+        <lingxi-starter>1.1.0</lingxi-starter>
+        <ddd-starter>1.0.4</ddd-starter>
     </properties>
     <dependencies>
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-redis</artifactId>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
         </dependency>
-
         <dependency>
             <groupId>com.mysql</groupId>
             <artifactId>mysql-connector-j</artifactId>
@@ -53,12 +56,13 @@
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
-            <version>3.5.9</version>
+            <version>${mybatis-plus}</version>
         </dependency>
+        <!-- MP 3.5.9 起分页插件拆分至此伴生包（PaginationInnerInterceptor 依赖 jsqlparser） -->
         <dependency>
-            <groupId>com.github.ben-manes.caffeine</groupId>
-            <artifactId>caffeine</artifactId>
-            <version>3.2.4</version>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-jsqlparser</artifactId>
+            <version>${mybatis-plus}</version>
         </dependency>
         <dependency>
             <groupId>cn.hutool</groupId>
@@ -87,37 +91,23 @@
         <dependency>
             <groupId>io.github.yesnonononononi</groupId>
             <artifactId>lingxi-harness-spring-boot-starter</artifactId>
-            <version>1.0.2</version>
-        </dependency>
-
-
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-api</artifactId>
-            <version>0.13.0</version>
-        </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-impl</artifactId>
-            <version>0.13.0</version>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-jackson</artifactId>
-            <version>0.13.0</version>
-            <scope>runtime</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-core</artifactId>
-            <version>1.9.1</version>
+            <version>${lingxi-starter}</version>
         </dependency>
         <dependency>
             <groupId>io.github.yesnonononononi</groupId>
-            <artifactId>dev-framework-ddd-starter</artifactId>
-            <version>1.0.4</version>
+            <artifactId>harness-sandbox-docker</artifactId>
+            <version>${lingxi-starter}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.yesnonononononi</groupId>
+            <artifactId>dev-framework-ddd-helper</artifactId>
+            <version>${ddd-starter}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>io.github.java-diff-utils</groupId>
+            <artifactId>java-diff-utils</artifactId>
+            <version>4.15</version>
         </dependency>
     </dependencies>
 
@@ -126,19 +116,6 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <annotationProcessorPaths>
-                        <path>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                            <version>${lombok.version}</version>
-                        </path>
-                    </annotationProcessorPaths>
-                </configuration>
             </plugin>
         </plugins>
     </build>

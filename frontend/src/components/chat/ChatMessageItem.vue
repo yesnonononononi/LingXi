@@ -1,38 +1,463 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
-import type { ChatMessage } from '../../types/chat';
+import { ref, computed, watch } from 'vue';
+import type { ChatMessage, ThoughtStep, ToolCallTrace, PlanTaskItem, SubSessionVO, ProcessTimelineItem, PromptCardData } from '../../types/chat';
+import { extractErrorMessage } from '../../utils/error';
+import {
+  isEditFileTool,
+  isPlanDocumentTool,
+  isSubAgentTool,
+  normalizeToolName,
+  resolveToolMeta,
+  TOOL_CATEGORY
+} from '../../utils/toolMeta';
+import { pickField, toObject } from '../../utils/json';
+import { formatDuration } from '../../utils/format';
+import { parseToolDiff } from '../../utils/toolDiff';
+import { useCopyFeedback } from '../../composables/useCopyFeedback';
+import GradientText from '../common/GradientText.vue';
+import PromptCard from './PromptCard.vue';
+import TaskProgressCard from './TaskProgressCard.vue';
+import MarkdownRenderer from './MarkdownRenderer.vue';
 
 const props = defineProps<{
   message: ChatMessage;
+  subSessions?: SubSessionVO[];
   isDark?: boolean;
+  /** 消息所属会话 id：互动卡片的决策接口据此定位 */
+  sessionId?: string | number;
+  sessionTokenInfo?: {
+    totalTokens?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+  };
+  isLastAssistant?: boolean;
+  isSending?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'switchBranch', messageId: string, index: number): void;
   (e: 'editMessage', messageId: string, newText: string): void;
+  (e: 'selectSubSession', id: string | number): void;
+  (e: 'humanResponse', message: string): void;
+  (e: 'resendMessage', message: ChatMessage): void;
 }>();
 
-const isThoughtExpanded = ref(true);
+// 过程折叠状态：已结束会话/消息默认全部折叠；仅未完成的消息在生成时展开以提供实时反馈
+const isProcessExpanded = ref(props.message.isComplete === false);
 const isEditing = ref(false);
 const editText = ref(props.message.content);
-const copied = ref(false);
+// 复制反馈（消息正文按布尔键控；见 composables/useCopyFeedback.ts）
+const { isCopied: copied, copy: copyContentRaw } = useCopyFeedback();
+const feedbackState = ref<'like' | 'dislike' | null>(null);
+const formattedExecutionError = computed(() => extractErrorMessage(props.message.executionError));
+const formattedSendError = computed(() => extractErrorMessage(props.message.sendError));
+const isHoveringError = ref(false);
+const isHoveringAssistantError = ref(false);
+
+// 工具调用展开与复制状态
+const expandedToolIds = ref<Record<string, boolean>>({});
+// 复制反馈（工具卡片按 toolCall.id 键控；见 composables/useCopyFeedback.ts）
+const { copiedKey: toolCopiedId, copy: copyToolContentRaw } = useCopyFeedback();
+
+// 思考步骤 (Thought for) 独立展开/折叠状态
+const expandedThoughtStepIds = ref<Record<string, boolean>>({});
+
+const isThoughtStepExpanded = (step: ThoughtStep) => {
+  if (expandedThoughtStepIds.value[step.id] !== undefined) {
+    return expandedThoughtStepIds.value[step.id];
+  }
+  // 如果步骤正在运行且消息未完成，默认展开显示流式思考；否则（如已完成消息）默认折叠
+  return step.status === 'running' && props.message.isComplete === false;
+};
+
+const toggleThoughtStep = (stepId: string, step: ThoughtStep) => {
+  expandedThoughtStepIds.value[stepId] = !isThoughtStepExpanded(step);
+};
+
+// 监听到 request 结束事件（或 isComplete 转为 true）后，将最后一条 aimessage 的文本展示，其余所有工具 call、thinking 都折叠
+watch(
+  () => props.message.isComplete,
+  (isDone) => {
+    if (isDone) {
+      isProcessExpanded.value = false;
+      expandedToolIds.value = {};
+      expandedThoughtStepIds.value = {};
+    }
+  },
+  { immediate: true }
+);
+
+// 中间轮次的 aimessage（除了最后一条作为正文展示外，其余中间过程文本归入折叠块）
+const intermediateAiMessages = computed(() => {
+  if (!props.message.aiMessages || props.message.aiMessages.length <= 1) {
+    return [];
+  }
+  return props.message.aiMessages.slice(0, -1).filter(m => m.text && m.text.trim());
+});
+
+// 是否存在需要展示折叠的过程内容（思考步骤、思考中状态、工具调用、或中间过程文本）
+const hasProcessContent = computed(() => {
+  return !!(
+    props.message.thoughtSteps?.length ||
+    props.message.isThinking ||
+    props.message.toolCalls?.length ||
+    intermediateAiMessages.value.length > 0
+  );
+});
+
+// 折叠栏头部标题文案
+const processTitle = computed(() => {
+  if (props.message.isThinking) {
+    return '思考中...';
+  }
+  const toolCount = props.message.toolCalls?.length || 0;
+  const hasThoughts = !!(props.message.thoughtSteps?.length);
+
+  if (hasThoughts && toolCount > 0) {
+    return `已思考并调用 ${toolCount} 个工具`;
+  }
+  if (toolCount > 0) {
+    return `已调用 ${toolCount} 个工具`;
+  }
+  if (hasThoughts) {
+    return '已思考';
+  }
+  return '执行过程';
+});
+
+const toggleToolCall = (id: string) => {
+  expandedToolIds.value[id] = !expandedToolIds.value[id];
+};
+
+const copyToolContent = (text: string, id: string) => {
+  void copyToolContentRaw(text, id);
+};
+
+const promptCardsList = computed<PromptCardData[]>(() => {
+  if (props.message.promptCards && props.message.promptCards.length > 0) {
+    return props.message.promptCards;
+  }
+  if (props.message.promptCard) {
+    return [props.message.promptCard];
+  }
+  return [];
+});
+
+/** 计划书是否已批准（决定是否展示任务清单进度卡） */
+const isPlanApproved = computed(() =>
+  props.message.promptCards?.some(c => c.kind === 'PLAN' && c.outcome === 'APPROVED') ||
+  (props.message.promptCard?.kind === 'PLAN' && props.message.promptCard?.outcome === 'APPROVED')
+);
+
+const isPlanDocumentToolCall = (toolName?: string): boolean => isPlanDocumentTool(toolName);
+const isSubAgentToolCall = (tc?: ToolCallTrace): boolean => isSubAgentTool(tc?.toolName, tc?.category);
+const isEditFileToolCall = (toolName?: string): boolean => isEditFileTool(toolName);
+
+/**
+ * 展示文案字段映射（契约 §4）：按工具名映射到各自规范字段。
+ * 命令 → `intention`，子代理 → `task`，计划 → `title`，提问 → `question`；未列出的工具不展示文案。
+ */
+const TOOL_DESCRIPTION_FIELD: Record<string, string> = {
+  execute_command: 'intention',
+  call_sub_agent: 'task',
+  create_plan: 'title',
+  require_choice: 'question',
+};
+
+
+
+
+const subAgentToolCalls = computed<ToolCallTrace[]>(() => {
+  return props.message.toolCalls?.filter(tc => isSubAgentToolCall(tc)) || [];
+});
+
+const regularToolCalls = computed<ToolCallTrace[]>(() => {
+  return props.message.toolCalls?.filter(tc => !isSubAgentToolCall(tc)) || [];
+});
+
+/** 从工具调用的多个可能来源中取出任务清单（唯一解析点） */
+const extractTasks = (source: unknown, nestedKey?: string): PlanTaskItem[] => {
+  const obj = toObject(source, {});
+  if (Array.isArray(obj.tasks) && obj.tasks.length > 0) return obj.tasks;
+  if (nestedKey) {
+    const nested = obj[nestedKey];
+    if (nested && typeof nested === 'object' && Array.isArray(nested.tasks) && nested.tasks.length > 0) {
+      return nested.tasks;
+    }
+  }
+  return [];
+};
+
+const getPlanTasks = (tc?: ToolCallTrace): PlanTaskItem[] => {
+  // 只有计划书已批准才展示任务清单。
+  // 原先还接受 isTaskExecutionToolCall(...) 作为第二个入口，但 create_task_manifest /
+  // update_task / complete_task 从未在后端注册，该分支恒不成立，已删除以免掩盖真实来源。
+  if (!isPlanApproved.value) {
+    return [];
+  }
+
+  if (props.message.promptCards) {
+    const planCard = props.message.promptCards.find(c => c.kind === 'PLAN' && c.tasks?.length);
+    if (planCard?.tasks?.length) return planCard.tasks;
+  }
+  if (props.message.promptCard?.tasks?.length) {
+    return props.message.promptCard.tasks;
+  }
+  if (tc) {
+    // 来源顺序：args → result(含 tasks 字段) → query
+    const fromArgs = extractTasks(tc.args);
+    if (fromArgs.length > 0) return fromArgs;
+
+    const fromResult = extractTasks(tc.result, 'plan');
+    if (fromResult.length > 0) return fromResult;
+
+    const fromQuery = extractTasks(tc.query);
+    if (fromQuery.length > 0) return fromQuery;
+  }
+  return [];
+};
+
+
+/** 任务清单进度卡只在首个工具调用处渲染一次，避免同一份清单重复铺开 */
+const isFirstToolCall = (tc: ToolCallTrace): boolean => {
+  return props.message.toolCalls?.[0]?.id === tc.id;
+};
+
+// 统一执行过程时间线：按真实时序交替排列思维链思考 (Thought for)、中间轮次文本、子代理协同与工具调用
+const processTimeline = computed<ProcessTimelineItem[]>(() => {
+  const items: ProcessTimelineItem[] = [];
+
+  // 1. 思维链思考步骤
+  if (props.message.thoughtSteps?.length) {
+    props.message.thoughtSteps.forEach((step, idx) => {
+      items.push({
+        id: step.id || `step-${idx}`,
+        type: 'thought',
+        order: step.order ?? (idx * 10),
+        step
+      });
+    });
+  }
+
+  // 2. 中间轮次 aimessage 文本（多轮执行时产生的中间说明，非最终结论）
+  if (intermediateAiMessages.value.length) {
+    intermediateAiMessages.value.forEach((im, idx) => {
+      items.push({
+        id: im.id || `im-${idx}`,
+        type: 'intermediate_ai',
+        order: im.order ?? (idx * 10 + 1),
+        message: im
+      });
+    });
+  }
+
+  // 3. SubAgent 协同条（按首个子会话时间线位置插入）
+  if (subAgentToolCalls.value.length > 0) {
+    const firstSubOrder = subAgentToolCalls.value.reduce(
+      (min, tc) => Math.min(min, tc.order ?? 9999),
+      subAgentToolCalls.value[0]?.order ?? 5
+    );
+    items.push({
+      id: 'sub-agents-banner',
+      type: 'sub_agent',
+      order: firstSubOrder,
+      subAgents: subAgentToolCalls.value
+    });
+  }
+
+  // 4. 普通 Agent 工具调用
+  if (regularToolCalls.value.length > 0) {
+    regularToolCalls.value.forEach((tc, idx) => {
+      items.push({
+        id: tc.id || `tool-${idx}`,
+        type: 'tool',
+        order: tc.order ?? (idx * 10 + 2),
+        tool: tc
+      });
+    });
+  }
+
+  // 按 order 升序排列，形成真实的时序执行轨迹（新 thinking 步骤在列表底部动态追加）
+  return items.sort((a, b) => a.order - b.order);
+});
+
+const getToolCategory = (tc: ToolCallTrace): string => {
+  if (tc.category) return tc.category;
+  const name = tc.toolName || '';
+  if (isPlanDocumentToolCall(name)) return TOOL_CATEGORY.PLAN;
+  // 计划之外的分类统一走 toolMeta，不再按工具名子串猜测
+  return resolveToolMeta({ toolName: name, query: tc.query }).category;
+};
+
+/**
+ * 工具执行状态 → 指示灯样式。
+ * 契约 §2.3：`pending`（挂起待人工决策）与 `unknown`（状态未知）**不得**显示为成功或失败。
+ */
+const toolStatusDotClass = (status?: string): string => {
+  switch (status) {
+    case 'calling':
+    case 'pending':
+      return 'bg-amber-400 animate-pulse';
+    case 'failed':
+      return 'bg-red-500';
+    case 'unknown':
+      return 'bg-gray-400';
+    default:
+      return 'bg-emerald-500';
+  }
+};
+
+/** 是否处于「进行中」（已请求 / 挂起待决断）——用于展示执行中占位 */
+const isToolInProgress = (status?: string): boolean => status === 'calling' || status === 'pending';
+
+/**
+ * 读取规范字段名；缺失时告警契约漂移，绝不静默取空。
+ * 契约 §4：后端参数类字段名规范且唯一，不存在 CommandLine/cmd/AbsolutePath/TargetFile/filename 等别名。
+ */
+const pickCanonicalField = (source: Record<string, any>, key: string, context: string): string => {
+  const value = pickField(source, [key]);
+  if (!value) {
+    console.warn(`[契约漂移] ${context}: 缺少规范字段 "${key}"`);
+  }
+  return value;
+};
+
+const getToolTarget = (tc: ToolCallTrace): string => {
+  if (tc.target) return tc.target;
+  // 契约 §4：读/编辑文件的目标路径规范字段名唯一为 path。
+  return pickCanonicalField(toObject(tc.query, {}), 'path', `toolCall ${tc.id} target`);
+};
+
+const getToolDescription = (tc: ToolCallTrace): string => {
+  // 契约 §4：后端不存在通用 description 字段，展示文案按工具名映射到各自规范字段
+  // （命令 → intention，子代理 → task，计划 → title，提问 → question）。
+  const key = TOOL_DESCRIPTION_FIELD[normalizeToolName(tc.toolName)];
+  const args = toObject(tc.query, {});
+  if (key && Object.keys(args).length > 0) {
+    const value = pickCanonicalField(args, key, `toolCall ${tc.id} description(${tc.toolName})`);
+    if (value) return value;
+  }
+  // 该工具没有对应规范字段（或调用参数缺失）：回退到已解析的描述/命令，不造兜底串。
+  return tc.description || tc.command || '';
+};
+
+const getToolCommand = (tc: ToolCallTrace): string => {
+  if (tc.command) return tc.command;
+  // 契约 §4：命令参数规范字段名唯一为 command。
+  return pickCanonicalField(toObject(tc.query, {}), 'command', `toolCall ${tc.id} command`);
+};
+
+/**
+ * 工具 diff 统计：统一走 utils/toolDiff.ts 的 parseToolDiff（收敛原因见该模块头注释）。
+ * 这里仅把「未知(null)」适配成模板约定的 undefined 形态，保持 UI 输出不变。
+ * 原实现在此处用 `catch {}` 静默吞掉 result 的 JSON 解析异常，现由 parseToolDiff 统一告警。
+ */
+const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: number } | null => {
+  const stat = parseToolDiff({
+    toolName: tc.toolName,
+    category: tc.category,
+    plusLines: tc.plusLines,
+    minusLines: tc.minusLines,
+    result: tc.result,
+    description: tc.description,
+    target: getToolTarget(tc),
+    fileEdits: props.message.fileEdits,
+    context: `toolCall ${tc.id}`
+  });
+  if (!stat) return null;
+  return {
+    plusLines: stat.plusLines ?? undefined,
+    minusLines: stat.minusLines ?? undefined
+  };
+};
+
+const cleanDisplayPath = (val?: string): string => {
+  if (!val) return '';
+  return val.replace(/\s*\(\+\d+\s+-\d+\)$/, '').trim();
+};
+
+const getEditFileDiffChunks = (tc: ToolCallTrace) => {
+  const args = toObject(tc.args || tc.query, {});
+  const oldText = typeof args.oldText === 'string' ? args.oldText : '';
+  const newText = typeof args.newText === 'string' ? args.newText : '';
+  if (!oldText && !newText) return null;
+  return { oldText, newText };
+};
 
 const activeBranchIdx = computed(() => props.message.activeBranchIndex ?? 0);
 const totalBranches = computed(() => props.message.branches?.length ?? 1);
 
+/** 该助手回答是否已完成会话生成（会话/响应结束时才展示底栏工具栏与状态） */
+const isMessageCompleted = computed(() => {
+  // 1. 如果正在思考或探索中，尚未结束
+  if (props.message.isThinking || props.message.isExploring) {
+    return false;
+  }
+  // 2. 如果消息本身显式标记未完成 (流式接收中)
+  if (props.message.isComplete === false) {
+    return false;
+  }
+  // 3. 如果全局仍处于生成发送中且本条是最新助手消息（会话响应尚未结束）
+  if (props.isSending && props.isLastAssistant) {
+    return false;
+  }
+  // 4. 必须有回复内容、工具调用或报错信息之一
+  return !!(props.message.content || props.message.toolCalls?.length || props.message.executionError);
+});
+
 const calculatedThoughtDuration = computed(() => {
+  if (props.message.durationMs && props.message.durationMs > 0) {
+    return props.message.durationMs;
+  }
   if (!props.message.thoughtSteps?.length) return 0;
   return props.message.thoughtSteps.reduce((acc, step) => acc + (step.durationMs || 0), 0);
 });
 
-const copyContent = async () => {
-  try {
-    await navigator.clipboard.writeText(props.message.content);
-    copied.value = true;
-    setTimeout(() => (copied.value = false), 2000);
-  } catch (e) {
-    console.error('复制失败:', e);
+// formatDuration 已收敛到 utils/format.ts（原第 381-388 行）
+
+const displayDuration = computed(() => {
+  const ms = calculatedThoughtDuration.value;
+  return formatDuration(ms || 1200);
+});
+
+const displayTokens = computed(() => {
+  let count = props.message.tokens ?? props.message.tokenInfo?.totalTokenCount;
+  if ((count === undefined || count === null || count === 0) && props.isLastAssistant && props.sessionTokenInfo?.totalTokens) {
+    count = props.sessionTokenInfo.totalTokens;
   }
+  if (count !== undefined && count !== null && count > 0) {
+    return count >= 1000 ? `${(count / 1000).toFixed(1)}K tok` : `${count} tok`;
+  }
+  return '0 tok';
+});
+
+const tokenTooltip = computed(() => {
+  let info = props.message.tokenInfo;
+  if (!info && props.isLastAssistant && props.sessionTokenInfo && (props.sessionTokenInfo.totalTokens || props.sessionTokenInfo.inputTokens || props.sessionTokenInfo.outputTokens)) {
+    info = {
+      inputTokenCount: props.sessionTokenInfo.inputTokens,
+      outputTokenCount: props.sessionTokenInfo.outputTokens,
+      totalTokenCount: props.sessionTokenInfo.totalTokens
+    };
+  }
+  if (!info) {
+    const t = props.message.tokens ?? (props.isLastAssistant ? props.sessionTokenInfo?.totalTokens : undefined);
+    return t ? `总用量: ${t} tokens` : 'Token 消耗统计中...';
+  }
+  return `输入: ${info.inputTokenCount ?? 0} tok | 输出: ${info.outputTokenCount ?? 0} tok | 总计: ${info.totalTokenCount ?? 0} tok`;
+});
+
+const displayTime = computed(() => {
+  return new Date(props.message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+});
+
+
+const copyContent = () => {
+  void copyContentRaw(props.message.content);
+};
+
+const toggleFeedback = (type: 'like' | 'dislike') => {
+  feedbackState.value = feedbackState.value === type ? null : type;
 };
 
 const handleSaveEdit = () => {
@@ -41,145 +466,700 @@ const handleSaveEdit = () => {
   }
   isEditing.value = false;
 };
+
+const handleImageClick = (url?: string) => {
+  if (url) {
+    window.open(url, '_blank');
+  }
+};
 </script>
 
 <template>
-  <div :class="['w-full py-4 px-2 sm:px-4 transition-colors', props.message.role === 'user' ? 'flex justify-end' : 'flex justify-start']">
-    <div :class="['max-w-3xl w-full flex gap-3', props.message.role === 'user' ? 'flex-row-reverse' : 'flex-row']">
-      
-      <!-- Avatar -->
-      <div
-        :class="[
-          'w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 shadow-sm',
-          props.message.role === 'user'
-            ? 'bg-gradient-to-tr from-blue-600 to-indigo-600 text-white'
-            : 'bg-gradient-to-tr from-[#4d6bfe] to-purple-600 text-white'
-        ]"
-      >
-        {{ props.message.role === 'user' ? '你' : 'DeepSeek' }}
-      </div>
-
-      <!-- Main Message Body -->
-      <div class="flex-1 overflow-hidden space-y-2.5">
-        <!-- Message Meta / Model Name -->
-        <div class="flex items-center gap-2 text-xs opacity-60">
-          <span class="font-semibold">{{ props.message.role === 'user' ? '发送的消息' : (props.message.model || 'DeepSeek-R1') }}</span>
-          <span>·</span>
-          <span>{{ new Date(props.message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
-        </div>
-
-        <!-- User Message Card -->
-        <div v-if="props.message.role === 'user'" class="group relative">
-          <div v-if="!isEditing" :class="['p-3.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap shadow-sm', isDark ? 'bg-[#1e2638] text-gray-100 border border-[#2d3a54]' : 'bg-blue-600 text-white']">
-            {{ props.message.content }}
-          </div>
-          <!-- Edit Input for User Message -->
-          <div v-else class="space-y-2">
-            <textarea
-              v-model="editText"
-              rows="3"
-              :class="['w-full p-3 rounded-xl text-sm border outline-none resize-none', isDark ? 'bg-[#161b26] border-[#273043] text-white' : 'bg-white border-gray-300 text-gray-900']"
-            ></textarea>
-            <div class="flex justify-end gap-2 text-xs">
-              <button @click="isEditing = false" class="px-3 py-1.5 rounded-lg border hover:bg-gray-500/10">取消</button>
-              <button @click="handleSaveEdit" class="px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-500 font-medium">发送并更新</button>
-            </div>
-          </div>
-
-          <!-- Edit trigger button -->
-          <button v-if="!isEditing" @click="isEditing = true" class="absolute -left-8 top-2 opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-blue-400 transition" title="编辑消息">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+  <div :class="['w-full py-3 px-2 sm:px-4 transition-colors', props.message.role === 'user' ? 'flex justify-end' : 'flex justify-start']">
+    
+    <!-- 1. 用户消息展示样式 (匹配左图：无头像，柔和浅蓝背景圆角气泡，下方展示时间与复制图标) -->
+    <div v-if="props.message.role === 'user'" class="flex flex-col items-end max-w-2xl group">
+      <!-- 气泡内容 -->
+      <div v-if="!isEditing" class="relative flex items-center gap-2">
+        <!-- 报错标识: 白色感叹号圆形红色背景的标识 -->
+        <div
+          v-if="props.message.sendError"
+          class="relative inline-flex items-center shrink-0 select-none"
+          @mouseenter="isHoveringError = true"
+          @mouseleave="isHoveringError = false"
+        >
+          <button
+            type="button"
+            @click.stop="emit('resendMessage', props.message)"
+            class="w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 active:scale-95 text-white flex items-center justify-center shadow-sm cursor-pointer transition shrink-0"
+            title="点击重新发送该消息"
+          >
+            <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="7" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
             </svg>
           </button>
-        </div>
 
-        <!-- Assistant Message Card -->
-        <div v-else class="space-y-3">
-          
-          <!-- 1. DeepThink 思考过程折叠卡片 (CoT Chain) -->
-          <div v-if="props.message.thoughtSteps?.length" :class="['rounded-2xl border overflow-hidden transition-all', isDark ? 'border-[#273043] bg-[#161b26]/70' : 'border-gray-200 bg-gray-50/80']">
-            <!-- Header Toggle -->
-            <button
-              @click="isThoughtExpanded = !isThoughtExpanded"
-              class="w-full px-3.5 py-2.5 flex items-center justify-between text-xs text-gray-400 hover:text-gray-200 transition select-none"
-            >
-              <div class="flex items-center gap-2 font-medium">
-                <span class="text-sm">🧠</span>
-                <span v-if="props.message.isThinking" class="text-blue-400 animate-pulse">深度思考中...</span>
-                <span v-else class="text-gray-400">已深度思考 (用时 {{ (calculatedThoughtDuration / 1000).toFixed(1) }} 秒)</span>
-              </div>
-              <svg :class="['w-4 h-4 transition-transform duration-200', isThoughtExpanded ? 'rotate-180' : '']" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          <!-- hover 时展示具体 errmsg -->
+          <div
+            v-show="isHoveringError"
+            class="pointer-events-none absolute right-full mr-2.5 top-1/2 -translate-y-1/2 z-50 min-w-[200px] max-w-xs sm:max-w-sm p-2.5 rounded-xl bg-gray-900/95 dark:bg-gray-800/95 text-white text-xs shadow-xl backdrop-blur-md border border-red-500/30 transition-all duration-200"
+          >
+            <div class="flex items-center gap-1.5 text-red-400 font-medium mb-1">
+              <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
-            </button>
-
-            <!-- Expanded Steps Content -->
-            <div v-if="isThoughtExpanded" class="px-4 pb-3.5 pt-1 space-y-2 border-t border-dashed border-gray-500/20 text-xs deepthink-striped-bg">
-              <div
-                v-for="step in props.message.thoughtSteps"
-                :key="step.id"
-                class="pl-3 border-l-2 border-blue-500/50 space-y-0.5"
-              >
-                <div class="flex items-center gap-2 font-semibold text-gray-300">
-                  <span>{{ step.title }}</span>
-                  <span v-if="step.durationMs" class="text-[10px] text-gray-500 font-normal">({{ step.durationMs }}ms)</span>
-                </div>
-                <div class="text-gray-400 opacity-90 leading-relaxed font-mono text-[11px]">{{ step.content }}</div>
-              </div>
+              <span>发送失败（点击重新发送）</span>
+            </div>
+            <div class="text-gray-200 dark:text-gray-300 font-mono text-[11px] break-all whitespace-pre-wrap leading-relaxed">
+              {{ formattedSendError }}
             </div>
           </div>
-
-          <!-- 2. RAG Citations 知识库/检索引用卡片 -->
-          <div v-if="props.message.citations?.length" class="flex flex-wrap gap-2 text-[11px]">
-            <div
-              v-for="cit in props.message.citations"
-              :key="cit.id"
-              :class="['px-2.5 py-1 rounded-lg border flex items-center gap-1.5', isDark ? 'bg-[#1a202c] border-[#2d3a54] text-blue-300' : 'bg-blue-50 border-blue-200 text-blue-700']"
-            >
-              <span>📄</span>
-              <span class="font-medium truncate max-w-[150px]">{{ cit.sourceName }}</span>
-              <span class="opacity-60 text-[10px]">(匹配度 {{ (cit.score * 100).toFixed(0) }}%)</span>
-            </div>
-          </div>
-
-          <!-- 3. Assistant Output Text Body -->
-          <div :class="['text-sm leading-relaxed space-y-2 font-normal', isDark ? 'text-gray-200' : 'text-gray-800', props.message.isThinking ? 'typing-cursor' : '']">
-            <div class="whitespace-pre-wrap">{{ props.message.content }}</div>
-          </div>
-
-          <!-- 4. Assistant Action Footer (Copy, Branch Switcher) -->
-          <div v-if="!props.message.isThinking && props.message.content" class="flex items-center justify-between pt-1 text-xs opacity-70">
-            <!-- Branch Switcher (< 1/3 >) -->
-            <div v-if="totalBranches > 1" class="flex items-center gap-1 bg-gray-500/10 px-2 py-0.5 rounded-lg">
-              <button
-                :disabled="activeBranchIdx === 0"
-                @click="emit('switchBranch', props.message.id, activeBranchIdx - 1)"
-                class="disabled:opacity-30 hover:text-blue-400"
-              >&lt;</button>
-              <span>{{ activeBranchIdx + 1 }} / {{ totalBranches }}</span>
-              <button
-                :disabled="activeBranchIdx === totalBranches - 1"
-                @click="emit('switchBranch', props.message.id, activeBranchIdx + 1)"
-                class="disabled:opacity-30 hover:text-blue-400"
-              >&gt;</button>
-            </div>
-            <div v-else></div>
-
-            <!-- Actions: Copy & Feedback -->
-            <div class="flex items-center gap-2">
-              <button @click="copyContent" class="flex items-center gap-1 hover:text-blue-400 transition" title="复制回答">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-                <span>{{ copied ? '已复制' : '复制' }}</span>
-              </button>
-            </div>
-          </div>
-
         </div>
 
+        <div
+          :class="[
+            'rounded-[18px] text-sm leading-relaxed whitespace-pre-wrap transition-colors break-words overflow-hidden',
+            props.message.imageUrl ? 'p-2' : 'px-4 py-2.5',
+            isDark ? 'bg-[#1e2738] text-gray-100 border border-[#2c3850]' : 'bg-[#edf3fc] text-gray-800',
+            props.message.sendError ? 'border border-red-500/40 ring-1 ring-red-500/30' : ''
+          ]"
+        >
+          <div v-if="props.message.imageUrl" class="mb-2 max-w-sm rounded-xl overflow-hidden border border-black/10 dark:border-white/10">
+            <img
+              :src="props.message.imageUrl"
+              alt="用户上传图片"
+              class="max-h-64 w-auto object-contain rounded-xl cursor-pointer hover:opacity-95 transition"
+              @click="handleImageClick(props.message.imageUrl)"
+            />
+          </div>
+          <div :class="props.message.imageUrl ? 'px-2 pb-1' : ''">
+            {{ props.message.content }}
+          </div>
+        </div>
+        <!-- 悬停编辑按钮 -->
+        <button
+          @click="isEditing = true"
+          class="absolute -left-7 top-2.5 opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-blue-400 transition"
+          title="编辑消息"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- 编辑输入框 -->
+      <div v-else class="w-full min-w-[280px] space-y-2">
+        <textarea
+          v-model="editText"
+          rows="3"
+          :class="['w-full p-3 rounded-xl text-sm border outline-none resize-none', isDark ? 'bg-[#161b26] border-[#273043] text-white' : 'bg-white border-gray-300 text-gray-900']"
+        ></textarea>
+        <div class="flex justify-end gap-2 text-xs">
+          <button @click="isEditing = false" class="px-3 py-1.5 rounded-lg border hover:bg-gray-500/10">取消</button>
+          <button @click="handleSaveEdit" class="px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-500 font-medium">发送并更新</button>
+        </div>
+      </div>
+
+      <!-- 气泡下方时间与复制图标 (完全匹配左图) -->
+      <div v-if="!isEditing" class="flex items-center gap-2 mt-1.5 text-xs text-gray-400 pr-1 select-none">
+        <span>{{ displayTime }}</span>
+        <button
+          @click="copyContent"
+          class="hover:text-gray-600 dark:hover:text-gray-200 transition p-0.5"
+          :title="copied ? '已复制' : '复制内容'"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+        </button>
       </div>
     </div>
+
+    <!-- 2. Agent 回复展示样式 (匹配右图：无头像，顶部折叠"已思考 >"及分割线，正文高亮，底部丰富状态操作栏) -->
+    <div v-else class="flex flex-col items-start w-full max-w-3xl space-y-2.5">
+      
+      <!-- 顶部：思考过程与工具调用统一折叠区 (样式复用当前系统固有风格，不硬搬外部样式) -->
+      <div v-if="hasProcessContent" class="w-full">
+        <button
+          type="button"
+          @click="isProcessExpanded = !isProcessExpanded"
+          class="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 select-none py-0.5 group transition cursor-pointer"
+        >
+          <span v-if="props.message.isThinking" class="text-blue-500 animate-pulse font-medium">思考中...</span>
+          <span v-else class="text-gray-400 dark:text-gray-400 font-normal">{{ processTitle }}</span>
+          <svg
+            :class="['w-3.5 h-3.5 text-gray-400 transition-transform duration-200', isProcessExpanded ? 'rotate-90' : '']"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+
+        <!-- 展开后展示：思维链轨迹、中间推理过程、以及所有工具调用 -->
+        <div v-if="isProcessExpanded" class="mt-2 pl-3 border-l-2 border-gray-200 dark:border-gray-700 space-y-2.5">
+          <!-- 探索中渐变动画 (用户发送消息到第一个工具调用事件接收前展示) -->
+          <div v-if="props.message.isExploring" class="py-1 flex items-center justify-start select-none">
+            <GradientText
+              :colors="['#3b82f6', '#6366f1', '#a855f7', '#38bdf8', '#3b82f6']"
+              :animation-speed="2.5"
+              :show-border="false"
+              class="text-sm font-medium tracking-wide !mx-0 !ml-0"
+            >
+              正在探索中...
+            </GradientText>
+          </div>
+
+          <!-- 统一时序时间线：按执行先后顺序交替展示思维链 (Thought for)、中间文本与工具调用 -->
+          <template v-for="item in processTimeline" :key="item.id">
+            <!-- 1. 思维链思考内容 (Thought for 可折叠) -->
+            <div v-if="item.type === 'thought' && item.step" class="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+              <button
+                type="button"
+                @click="toggleThoughtStep(item.step.id, item.step)"
+                class="font-medium text-gray-600 dark:text-gray-300 flex items-center gap-1.5 cursor-pointer hover:text-gray-900 dark:hover:text-gray-100 transition select-none py-0.5 text-left"
+              >
+                <svg
+                  :class="['w-3 h-3 text-gray-400 transition-transform duration-200 shrink-0', isThoughtStepExpanded(item.step) ? 'rotate-90' : '']"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                </svg>
+                <span>{{ (item.step.title && item.step.title !== '思考过程') ? item.step.title : 'Thought for' }}</span>
+                <span v-if="item.step.durationMs" class="text-[10px] text-gray-400 font-normal">({{ item.step.durationMs }}ms)</span>
+                <span v-if="item.step.status === 'running'" class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+              </button>
+
+              <div
+                v-if="isThoughtStepExpanded(item.step) && item.step.content"
+                class="font-mono text-[11px] whitespace-pre-wrap opacity-90 leading-relaxed pl-4.5 text-gray-500 dark:text-gray-400 select-text"
+              >
+                {{ item.step.content }}
+              </div>
+            </div>
+
+            <!-- 2. 中间轮次 aimessage 文本（多轮执行时产生的中间说明，非最终结论） -->
+            <div
+              v-else-if="item.type === 'intermediate_ai' && item.message"
+              class="text-xs text-gray-600 dark:text-gray-300 bg-gray-50/80 dark:bg-gray-800/40 p-2.5 rounded-xl border border-gray-200/60 dark:border-gray-700/60 leading-relaxed whitespace-pre-wrap font-sans"
+            >
+              {{ item.message.text }}
+            </div>
+
+            <!-- 3. SubAgent 子代理多会话协同指示条 -->
+            <div
+              v-else-if="item.type === 'sub_agent' && item.subAgents?.length"
+              :class="[
+                'w-full px-3.5 py-2.5 rounded-2xl border flex items-center justify-between gap-3 text-xs select-none transition-colors',
+                props.isDark ? 'bg-[#141b29]/70 border-[#222d42] text-gray-200' : 'bg-blue-50/70 border-blue-200/80 text-blue-900'
+              ]"
+            >
+              <div class="flex items-center gap-2.5 min-w-0">
+                <div class="w-6 h-6 rounded-lg bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white shrink-0 shadow-2xs">
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                </div>
+                <div class="min-w-0">
+                  <div class="flex items-center gap-1.5">
+                    <span class="font-medium">子代理协同执行</span>
+                    <span :class="['px-1.5 py-0.2 rounded-full text-[10px] font-mono', props.isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-700']">
+                      {{ item.subAgents.length }} 个子会话
+                    </span>
+                  </div>
+                  <p class="text-[11px] text-gray-400 truncate">轨迹与标签已在右侧图示面板铺开</p>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-1.5 shrink-0 overflow-x-auto">
+                <button
+                  v-for="(tc, idx) in item.subAgents"
+                  :key="tc.id || idx"
+                  @click="emit('selectSubSession', tc.subSessionId || tc.id)"
+                  :class="[
+                    'px-2.5 py-1 rounded-xl text-xs font-medium border flex items-center gap-1.5 transition cursor-pointer',
+                    props.isDark ? 'border-blue-500/30 bg-blue-600/15 hover:bg-blue-600/25 text-blue-300' : 'border-blue-200 bg-white hover:bg-blue-100 text-blue-700'
+                  ]"
+                  :title="`切换查看 ${tc.subAgentName || `Agent #${idx + 1}`} 的独立会话轨迹`"
+                >
+                  <span class="w-1.5 h-1.5 rounded-full" :class="toolStatusDotClass(tc.status)"></span>
+                  <span class="truncate max-w-[110px]">{{ tc.subAgentName || `Agent #${idx + 1}` }}</span>
+                  <span class="text-[10px] opacity-60">#{{ idx + 1 }}</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 4. 普通 Agent 工具调用展示 -->
+            <div v-else-if="item.type === 'tool' && item.tool" class="w-full my-0.5">
+              <!-- 任务清单进度卡：计划已批准时在首个工具调用处展示一次 -->
+              <TaskProgressCard
+                v-if="isFirstToolCall(item.tool) && getPlanTasks(item.tool).length > 0"
+                :tasks="getPlanTasks(item.tool)"
+                :is-dark="props.isDark"
+              />
+
+              <!-- 普通工具调用 -->
+              <div v-else class="w-full">
+                <!-- 展开状态卡片 -->
+                <div v-if="expandedToolIds[item.tool.id]" class="w-full">
+                  <button
+                    type="button"
+                    @click="toggleToolCall(item.tool.id)"
+                    class="flex items-center gap-1.5 text-[13px] text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition select-none cursor-pointer py-0.5 group w-full max-w-full min-w-0 overflow-hidden text-left"
+                    :title="cleanDisplayPath(getToolDescription(item.tool) || getToolTarget(item.tool))"
+                  >
+                    <svg class="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 transition-transform flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                    <span class="font-normal shrink-0">{{ getToolCategory(item.tool) }}</span>
+                    <span class="text-gray-400 shrink-0">·</span>
+                    <span class="text-gray-600 dark:text-gray-300 truncate min-w-0">{{ cleanDisplayPath(getToolTarget(item.tool) || getToolDescription(item.tool)) }}</span>
+
+                    <!-- edit_file 差异行指示（完全还原图片风格：绿+N 红-M） -->
+                    <span
+                      v-if="getToolDiffStat(item.tool)"
+                      class="inline-flex items-center gap-1 font-mono text-[12px] font-medium leading-none shrink-0 select-none ml-1"
+                    >
+                      <span
+                        v-if="getToolDiffStat(item.tool)!.plusLines !== undefined && (getToolDiffStat(item.tool)!.plusLines! > 0 || (getToolDiffStat(item.tool)!.plusLines === 0 && getToolDiffStat(item.tool)!.minusLines === 0))"
+                        class="text-[#088f50] dark:text-emerald-400"
+                      >+{{ getToolDiffStat(item.tool)!.plusLines }}</span>
+                      <span
+                        v-if="getToolDiffStat(item.tool)!.minusLines !== undefined && (getToolDiffStat(item.tool)!.minusLines! > 0 || (getToolDiffStat(item.tool)!.plusLines === 0 && getToolDiffStat(item.tool)!.minusLines === 0))"
+                        class="text-[#b42c3f] dark:text-rose-400"
+                      >-{{ getToolDiffStat(item.tool)!.minusLines }}</span>
+                    </span>
+                  </button>
+
+                  <div :class="['w-full rounded-2xl border overflow-hidden mt-1.5 shadow-xs transition-colors', isDark ? 'border-[#273043] bg-[#12161f]' : 'border-gray-200/90 bg-white']">
+                    <div :class="['px-4 py-2.5 flex items-center justify-between gap-3 text-xs border-b', isDark ? 'border-gray-800/80' : 'border-gray-100']">
+                      <div class="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
+                        <span
+                          :class="[
+                            'w-2 h-2 rounded-full flex-shrink-0',
+                            toolStatusDotClass(item.tool.status)
+                          ]"
+                        ></span>
+                        <span class="text-gray-400 dark:text-gray-500 font-mono text-xs flex-shrink-0 select-none">
+                          {{ item.tool.workDir }}
+                        </span>
+                        <span class="font-mono text-xs text-gray-800 dark:text-gray-200 truncate select-text">
+                          {{ cleanDisplayPath(getToolCommand(item.tool) || getToolTarget(item.tool) || getToolDescription(item.tool) || item.tool.query) }}
+                        </span>
+                        <!-- 卡片栏中的 diff 状态指示 -->
+                        <span
+                          v-if="getToolDiffStat(item.tool)"
+                          class="inline-flex items-center gap-1 font-mono text-[12px] font-medium leading-none shrink-0 select-none ml-1"
+                        >
+                          <span
+                            v-if="getToolDiffStat(item.tool)!.plusLines !== undefined && (getToolDiffStat(item.tool)!.plusLines! > 0 || (getToolDiffStat(item.tool)!.plusLines === 0 && getToolDiffStat(item.tool)!.minusLines === 0))"
+                            class="text-[#088f50] dark:text-emerald-400"
+                          >+{{ getToolDiffStat(item.tool)!.plusLines }}</span>
+                          <span
+                            v-if="getToolDiffStat(item.tool)!.minusLines !== undefined && (getToolDiffStat(item.tool)!.minusLines! > 0 || (getToolDiffStat(item.tool)!.plusLines === 0 && getToolDiffStat(item.tool)!.minusLines === 0))"
+                            class="text-[#b42c3f] dark:text-rose-400"
+                          >-{{ getToolDiffStat(item.tool)!.minusLines }}</span>
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        @click.stop="copyToolContent(item.tool.result || getToolCommand(item.tool) || item.tool.query || '', item.tool.id)"
+                        class="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition px-1 py-0.5 select-none flex-shrink-0 cursor-pointer"
+                      >
+                        {{ toolCopiedId === item.tool.id ? '已复制' : '复制' }}
+                      </button>
+                    </div>
+
+                    <div class="p-4">
+                      <!-- edit_file 工具展示增删对比块 -->
+                      <div v-if="isEditFileToolCall(item.tool.toolName) && getEditFileDiffChunks(item.tool)" class="space-y-2.5 font-mono text-xs select-text">
+                        <div v-if="getEditFileDiffChunks(item.tool)!.oldText" class="rounded-xl bg-red-500/10 border border-red-500/20 p-3 text-[#b42c3f] dark:text-rose-300 whitespace-pre-wrap overflow-x-auto max-h-48 scrollbar-thin">
+                          <div class="text-[11px] font-sans font-medium text-red-500/80 dark:text-red-400/80 mb-1.5 select-none flex items-center gap-1.5">
+                            <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                            <span>- 变更前 (oldText)</span>
+                          </div>
+                          {{ getEditFileDiffChunks(item.tool)!.oldText }}
+                        </div>
+                        <div v-if="getEditFileDiffChunks(item.tool)!.newText" class="rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-3 text-[#088f50] dark:text-emerald-300 whitespace-pre-wrap overflow-x-auto max-h-48 scrollbar-thin">
+                          <div class="text-[11px] font-sans font-medium text-emerald-600/80 dark:text-emerald-400/80 mb-1.5 select-none flex items-center gap-1.5">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            <span>+ 变更后 (newText)</span>
+                          </div>
+                          {{ getEditFileDiffChunks(item.tool)!.newText }}
+                        </div>
+                      </div>
+                      <pre
+                        v-else-if="item.tool.result"
+                        :class="['font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto max-h-[380px] scrollbar-thin select-text', isDark ? 'text-gray-200' : 'text-gray-800']"
+                      >{{ item.tool.result }}</pre>
+                      <div v-else-if="isToolInProgress(item.tool.status)" class="font-mono text-xs text-amber-500/80 animate-pulse flex items-center gap-2">
+                        <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+                        <span>正在执行中...</span>
+                      </div>
+                      <pre
+                        v-else-if="item.tool.query"
+                        :class="['font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto select-text', isDark ? 'text-gray-400' : 'text-gray-600']"
+                      >{{ item.tool.query }}</pre>
+                      <div v-else class="text-xs text-gray-400 font-mono">
+                        (暂无输出)
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 收起状态单行 -->
+                <div
+                  v-else
+                  @click="toggleToolCall(item.tool.id)"
+                  class="flex items-center gap-2 text-[13px] text-gray-600 dark:text-gray-300 py-0.5 cursor-pointer hover:text-gray-900 dark:hover:text-gray-100 transition group select-none w-full max-w-full min-w-0 overflow-hidden"
+                  :title="cleanDisplayPath(getToolTarget(item.tool) || getToolDescription(item.tool))"
+                >
+                  <div class="flex-shrink-0 flex items-center">
+                    <svg v-if="getToolCategory(item.tool) === '读取' || getToolCategory(item.tool) === '写入'" class="w-4 h-4 text-gray-500 dark:text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                      <rect x="4" y="3" width="16" height="18" rx="2" />
+                      <path stroke-linecap="round" d="M8 8h8M8 12h8M8 16h4" />
+                    </svg>
+                    <svg v-else-if="getToolCategory(item.tool) === 'Pwsh'" class="w-4 h-4 text-gray-500 dark:text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                      <rect x="3" y="4" width="18" height="16" rx="3" />
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M7 9l3 3-3 3M13 15h4" />
+                    </svg>
+                    <svg v-else-if="getToolCategory(item.tool) === '思考'" class="w-4 h-4 text-gray-500 dark:text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                      <circle cx="9" cy="9" r="3.5" />
+                      <circle cx="15" cy="9" r="3.5" />
+                      <circle cx="9" cy="15" r="3.5" />
+                      <circle cx="15" cy="15" r="3.5" />
+                    </svg>
+                    <svg v-else class="w-4 h-4 text-gray-500 dark:text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </div>
+                  <span class="font-normal shrink-0">{{ getToolCategory(item.tool) }}</span>
+                  <span class="text-gray-400 shrink-0">·</span>
+                  <span
+                    v-if="getToolTarget(item.tool)"
+                    class="border-b border-dotted border-gray-400 dark:border-gray-500 group-hover:border-gray-600 dark:group-hover:border-gray-300 font-mono text-[12.5px] pb-px transition-colors truncate min-w-0"
+                  >
+                    {{ cleanDisplayPath(getToolTarget(item.tool)) }}
+                  </span>
+                  <span
+                    v-else
+                    class="text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-200 transition-colors text-[13px] truncate min-w-0"
+                  >
+                    {{ cleanDisplayPath(getToolDescription(item.tool)) }}
+                  </span>
+
+                  <!-- edit_file 差异行指示（完全还原图片风格：绿+N 红-M） -->
+                  <span
+                    v-if="getToolDiffStat(item.tool)"
+                    class="inline-flex items-center gap-1 font-mono text-[12px] font-medium leading-none shrink-0 select-none ml-1"
+                  >
+                    <span
+                      v-if="getToolDiffStat(item.tool)!.plusLines !== undefined && (getToolDiffStat(item.tool)!.plusLines! > 0 || (getToolDiffStat(item.tool)!.plusLines === 0 && getToolDiffStat(item.tool)!.minusLines === 0))"
+                      class="text-[#088f50] dark:text-emerald-400"
+                    >+{{ getToolDiffStat(item.tool)!.plusLines }}</span>
+                    <span
+                      v-if="getToolDiffStat(item.tool)!.minusLines !== undefined && (getToolDiffStat(item.tool)!.minusLines! > 0 || (getToolDiffStat(item.tool)!.plusLines === 0 && getToolDiffStat(item.tool)!.minusLines === 0))"
+                      class="text-[#b42c3f] dark:text-rose-400"
+                    >-{{ getToolDiffStat(item.tool)!.minusLines }}</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- 细横线分割条 (右图风格) -->
+        <div class="border-b border-gray-200/70 dark:border-gray-800/80 w-full mt-2 mb-2.5"></div>
+      </div>
+
+      <!-- 计划已批准且存在任务清单：展示任务进度卡（批准后由 promptCard.tasks 驱动） -->
+      <TaskProgressCard
+        v-if="isPlanApproved && getPlanTasks().length"
+        :tasks="getPlanTasks()"
+        :is-dark="props.isDark"
+      />
+
+      <!-- 统一互动卡片：按 promptCard.kind 分派到计划 / 澄清 / 命令审批卡片（历史与实时同形状） -->
+      <template v-for="card in promptCardsList" :key="card.toolCallId || card.kind">
+        <PromptCard
+          :prompt-card="card"
+          :session-id="props.sessionId"
+          :is-dark="props.isDark"
+        />
+      </template>
+
+      <!-- 上下文压缩中扫光提示条 (对应 ContextUpdateEvent SQUEEZE_STARTED，收到 SQUEEZE_COMPLETED 自动消失) -->
+      <transition name="context-compact-fade">
+        <div
+          v-if="props.message.isCompressingContext"
+          class="w-full my-3 py-1 flex items-center gap-3 select-none relative overflow-hidden context-compact-bar"
+          :title="props.message.contextUsage?.tokenCount ? `当前上下文：${props.message.contextUsage.tokenCount} / ${props.message.contextUsage.maxTokens || 0} tokens` : '正在压缩上下文'"
+        >
+          <!-- 左侧水平细线 (自动撑满左侧) -->
+          <div class="flex-1 h-[1px] bg-gray-200 dark:bg-gray-700/60"></div>
+
+          <!-- 中间指示内容：带折角便签图标 + 正在压缩上下文 -->
+          <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-normal shrink-0">
+            <!-- 小图标：对齐用户截图便签本文档折角图标 -->
+            <svg class="w-3.5 h-3.5 opacity-80 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+            <span class="context-compact-shimmer-text">正在压缩上下文</span>
+          </div>
+
+          <!-- 右侧水平细线 (左长右短精确对齐截图) -->
+          <div class="w-16 sm:w-28 h-[1px] bg-gray-200 dark:bg-gray-700/60"></div>
+
+          <!-- 从左到右扫光光斑层 (Light beam sweep) -->
+          <div class="pointer-events-none absolute inset-0 overflow-hidden">
+            <div class="context-compact-beam"></div>
+          </div>
+        </div>
+      </transition>
+
+      <!-- 执行异常报错提示 (白色感叹号圆形红色背景的标识，hover 展示 errmsg，点击重新发送) -->
+      <div v-if="props.message.executionError" class="flex items-center gap-2.5 my-1.5 select-none">
+        <div
+          class="relative inline-flex items-center shrink-0"
+          @mouseenter="isHoveringAssistantError = true"
+          @mouseleave="isHoveringAssistantError = false"
+        >
+          <button
+            type="button"
+            @click.stop="emit('resendMessage', props.message)"
+            class="w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 active:scale-95 text-white flex items-center justify-center shadow-sm cursor-pointer transition shrink-0"
+            title="点击重新发送该消息"
+          >
+            <svg class="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="7" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+          </button>
+
+          <!-- hover 时展示具体 errmsg -->
+          <div
+            v-show="isHoveringAssistantError"
+            class="pointer-events-none absolute left-full ml-2.5 top-1/2 -translate-y-1/2 z-50 min-w-[200px] max-w-xs sm:max-w-md p-2.5 rounded-xl bg-gray-900/95 dark:bg-gray-800/95 text-white text-xs shadow-xl backdrop-blur-md border border-red-500/30 transition-all duration-200"
+          >
+            <div class="flex items-center gap-1.5 text-red-400 font-medium mb-1">
+              <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span>执行异常（点击重新发送）</span>
+            </div>
+            <div class="text-gray-200 dark:text-gray-300 font-mono text-[11px] break-all whitespace-pre-wrap leading-relaxed">
+              {{ formattedExecutionError }}
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          @click.stop="emit('resendMessage', props.message)"
+          class="text-xs text-red-500 hover:text-red-400 transition cursor-pointer font-medium"
+        >
+          执行出错，点击重新发送
+        </button>
+      </div>
+
+      <!-- 回复正文 (使用 Markdown 渲染，包含代码高亮、代码块复制、表格与列表) -->
+      <div
+        v-if="props.message.content || (props.message.isThinking && !props.message.isExploring)"
+        class="w-full text-sm font-normal my-1"
+      >
+        <MarkdownRenderer
+          :content="props.message.content"
+          :is-dark="props.isDark"
+          :is-thinking="props.message.isThinking && !props.message.isExploring"
+        />
+      </div>
+
+      <!-- 底部工具与状态栏 (对应右图：复制、赞、踩、重试、用量、耗时、时间) - 仅在会话生成结束时展示 -->
+      <div v-if="isMessageCompleted" class="flex flex-wrap items-center gap-4 pt-1 text-xs text-gray-400 select-none">
+        <!-- 复制图标 -->
+        <button
+          @click="copyContent"
+          class="hover:text-gray-600 dark:hover:text-gray-200 transition p-0.5"
+          :title="copied ? '已复制' : '复制回答'"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+        </button>
+
+        <!-- 点赞图标 -->
+        <button
+          @click="toggleFeedback('like')"
+          :class="['transition p-0.5', feedbackState === 'like' ? 'text-blue-500' : 'hover:text-gray-600 dark:hover:text-gray-200']"
+          title="好评"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2" />
+          </svg>
+        </button>
+
+        <!-- 点踩图标 -->
+        <button
+          @click="toggleFeedback('dislike')"
+          :class="['transition p-0.5', feedbackState === 'dislike' ? 'text-red-500' : 'hover:text-gray-600 dark:hover:text-gray-200']"
+          title="差评"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018a2 2 0 01.485.06L17 4m-7 10v5a2 2 0 002 2h.095c.5 0 .905-.405.905-.905 0-.714.211-1.412.608-2.006L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2" />
+          </svg>
+        </button>
+
+        <!-- 重新生成 / 切换分支 -->
+        <button
+          @click="emit('switchBranch', props.message.id, activeBranchIdx)"
+          class="hover:text-gray-600 dark:hover:text-gray-200 transition p-0.5"
+          title="重新生成"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </button>
+
+        <!-- 用量统计 -->
+        <div class="flex items-center gap-1 cursor-help" :title="tokenTooltip">
+          <svg class="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+          </svg>
+          <span>用量 {{ displayTokens }}</span>
+        </div>
+
+        <!-- 耗时统计 -->
+        <div class="flex items-center gap-1">
+          <svg class="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>用时 {{ displayDuration }}</span>
+        </div>
+
+        <!-- 时间戳 -->
+        <span>{{ displayTime }}</span>
+
+        <!-- 多分支切换器 (当有分支时) -->
+        <div v-if="totalBranches > 1" class="flex items-center gap-1 bg-gray-500/10 px-2 py-0.5 rounded-lg ml-auto text-[11px]">
+          <button
+            :disabled="activeBranchIdx === 0"
+            @click="emit('switchBranch', props.message.id, activeBranchIdx - 1)"
+            class="disabled:opacity-30 hover:text-blue-400"
+          >&lt;</button>
+          <span>{{ activeBranchIdx + 1 }} / {{ totalBranches }}</span>
+          <button
+            :disabled="activeBranchIdx === totalBranches - 1"
+            @click="emit('switchBranch', props.message.id, activeBranchIdx + 1)"
+            class="disabled:opacity-30 hover:text-blue-400"
+          >&gt;</button>
+        </div>
+      </div>
+    </div>
+
+
   </div>
 </template>
+
+<style scoped>
+/* 淡入淡出过渡 */
+.context-compact-fade-enter-active,
+.context-compact-fade-leave-active {
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+.context-compact-fade-enter-from,
+.context-compact-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+/* 文字从左到右扫光效果 */
+.context-compact-shimmer-text {
+  background: linear-gradient(
+    90deg,
+    #6b7280 0%,
+    #6b7280 25%,
+    #111827 50%,
+    #6b7280 75%,
+    #6b7280 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: context-shimmer-text 2s linear infinite;
+}
+
+:deep(.dark) .context-compact-shimmer-text,
+.dark .context-compact-shimmer-text {
+  background: linear-gradient(
+    90deg,
+    #9ca3af 0%,
+    #9ca3af 25%,
+    #ffffff 50%,
+    #9ca3af 75%,
+    #9ca3af 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: context-shimmer-text 2s linear infinite;
+}
+
+@keyframes context-shimmer-text {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+/* 贯穿全宽的从左到右扫光束 (Light beam sweep) */
+.context-compact-beam {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 35%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0) 10%,
+    rgba(255, 255, 255, 0.8) 50%,
+    rgba(255, 255, 255, 0) 90%,
+    transparent 100%
+  );
+  mix-blend-mode: overlay;
+  animation: context-beam-sweep 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+:deep(.dark) .context-compact-beam,
+.dark .context-compact-beam {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0) 10%,
+    rgba(255, 255, 255, 0.4) 50%,
+    rgba(255, 255, 255, 0) 90%,
+    transparent 100%
+  );
+  mix-blend-mode: screen;
+}
+
+@keyframes context-beam-sweep {
+  0% {
+    transform: translateX(-150%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}
+</style>

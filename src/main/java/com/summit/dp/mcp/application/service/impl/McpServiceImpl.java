@@ -1,0 +1,224 @@
+package com.summit.dp.mcp.application.service.impl;
+
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.summit.core.conf.McpConfig;
+import com.summit.ddd.application.vo.PageResult;
+import com.summit.ddd.application.vo.Result;
+import com.summit.dp.mcp.application.command.McpCommand;
+import com.summit.dp.mcp.application.service.McpService;
+import com.summit.dp.mcp.application.vo.McpVO;
+import com.summit.dp.mcp.domain.model.Mcp;
+import com.summit.dp.mcp.domain.repository.McpRepository;
+import com.summit.dp.shared.exception.ClientException;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Mcp 应用层服务实现。
+ *
+ * <p><b>凭据处理：</b>请求头里的值常是令牌。查询出口一律脱敏（见 {@link #toVO}），
+ * 更新入口识别到脱敏值则保留库中原值（见 {@link #mergeHeaders}）——这样前端把表单原样提交
+ * 也不会把令牌覆盖成掩码串。</p>
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class McpServiceImpl implements McpService {
+
+    private final McpRepository repository;
+    private final McpValidator validator;
+
+    @Override
+    public Result<McpVO> findById(Long id) {
+        if (id == null)
+            throw new ClientException("id is null");
+        Mcp model = repository.findById(id)
+                .orElseThrow(() -> new ClientException("id 对应数据不存在: " + id));
+        return Result.success(toVO(model));
+    }
+
+    @Override
+    public Result<PageResult<McpVO>> findPage(Integer page, Integer pageSize) {
+        int current = page == null ? 1 : Math.max(page, 1);
+        int size = pageSize == null ? 10 : Math.max(pageSize, 1);
+        IPage<Mcp> pageResult = repository.queryByPage(current, size);
+        PageResult<McpVO> result = new PageResult<>(pageResult.getCurrent(), pageResult.getSize(),
+                pageResult.getTotal(), pageResult.getRecords().stream().map(this::toVO).toList());
+        return Result.success(result);
+    }
+
+    @Override
+    public Result<Void> add(McpCommand command) {
+        String error = validator.validateForCreate(command);
+        if (error != null) throw new ClientException(error);
+
+        try {
+            repository.save(toModel(command, Instant.now()));
+        } catch (IllegalArgumentException e) {
+            // 领域方法的护栏（长度/正数等）；校验器已覆盖常规路径，这里兜住直接构造的非法值
+            log.warn("MCP 新增被领域规则拒绝: {}", e.getMessage());
+            throw new ClientException(e.getMessage());
+        }
+        return Result.success();
+    }
+
+    @Override
+    public Result<Void> update(McpCommand command) {
+        String error = validator.validateForUpdate(command);
+        if (error != null) throw new ClientException(error);
+
+        Mcp model = repository.findById(command.getId())
+                .orElseThrow(() -> new ClientException("id 对应数据不存在: " + command.getId()));
+
+        try {
+            applyChanges(command, model);
+        } catch (IllegalArgumentException e) {
+            log.warn("MCP 更新被领域规则拒绝: {}", e.getMessage());
+            throw new ClientException(e.getMessage());
+        }
+
+        repository.updateById(model);
+        return Result.success();
+    }
+
+    @Override
+    public Result<Void> delById(Long id) {
+        if (id == null)
+            throw new ClientException("id is null");
+        repository.findById(id).ifPresent(repository::delete);
+        return Result.success();
+    }
+
+    @Override
+    public Result<List<McpVO>> queryIn(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty())
+            return Result.success(List.of());
+        return Result.success(repository.findList(ids).stream().map(this::toVO).toList());
+    }
+
+    /**
+     * 组装框架侧配置：仅启用项参与，按库中顺序稳定输出。
+     *
+     * <p>这里<b>不解密也不脱敏</b>——请求头必须带着真实令牌才能连上服务，
+     * 该对象随执行下行、不经过接口层，因此不构成泄漏面。</p>
+     */
+    @Override
+    public McpConfig currentConfig() {
+        List<Mcp> enabled = repository.findEnabled();
+        if (enabled.isEmpty()) return null;
+
+        McpConfig config = new McpConfig();
+        config.setMcp(enabled.stream().map(this::toMCP).toList());
+        return config;
+    }
+
+    private McpConfig.MCP toMCP(Mcp model) {
+        return new McpConfig.MCP(
+                model.getName(),
+                model.getTransport(),
+                model.getUrl(),
+                model.getHeaders() == null ? Map.of() : model.getHeaders(),
+                model.getToolNamePrefix(),
+                model.getInitializationTimeout(),
+                model.getExecutionTimeout(),
+                model.getMaxOutput()
+        );
+    }
+
+    /** 逐字段条件变更：只动显式传入的字段，缺省字段保持原值 */
+    private void applyChanges(McpCommand command, Mcp model) {
+        if (command.getName() != null) model.changeName(command.getName().trim());
+        if (command.getTransport() != null) model.changeTransport(command.getTransport().trim().toLowerCase());
+        if (command.getUrl() != null) model.changeUrl(command.getUrl().trim());
+        if (command.getHeaders() != null) model.changeHeaders(mergeHeaders(command.getHeaders(), model.getHeaders()));
+        if (command.getToolNamePrefix() != null) model.changeToolNamePrefix(command.getToolNamePrefix().trim());
+        if (command.getInitializationTimeout() != null)
+            model.changeInitializationTimeout(Duration.ofMillis(command.getInitializationTimeout()));
+        if (command.getExecutionTimeout() != null)
+            model.changeExecutionTimeout(Duration.ofMillis(command.getExecutionTimeout()));
+        if (command.getMaxOutput() != null) model.changeMaxOutput(command.getMaxOutput());
+        if (command.getStatus() != null) model.changeEnabled(command.getStatus() == Mcp.STATUS_ENABLED);
+    }
+
+    /**
+     * 合并请求头：值为脱敏掩码的条目保留库中原值。
+     *
+     * <p>否则前端「查出来—直接提交」的常规操作会把真实令牌写成掩码串，服务随即连不上，
+     * 而错误现象（401）与真实原因（值被覆盖）相距很远，排查成本极高。</p>
+     */
+    private Map<String, String> mergeHeaders(Map<String, String> incoming, Map<String, String> existing) {
+        if (incoming.isEmpty()) return Map.of();
+        Map<String, String> current = existing == null ? Map.of() : existing;
+
+        Map<String, String> merged = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : incoming.entrySet()) {
+            String key = entry.getKey() == null ? null : entry.getKey().trim();
+            if (key == null || key.isEmpty()) continue;
+            String value = entry.getValue();
+            if (McpVO.MASKED_VALUE.equals(value)) {
+                String original = current.get(key);
+                // 掩码值但库中并无该头：说明是前端凭空造出的，丢掉而不是写入掩码串
+                if (original != null) merged.put(key, original);
+                continue;
+            }
+            merged.put(key, value);
+        }
+        return merged;
+    }
+
+    private McpVO toVO(Mcp model) {
+        return McpVO.builder()
+                .id(model.getId())
+                .name(model.getName())
+                .transport(model.getTransport())
+                .url(model.getUrl())
+                .headers(maskHeaders(model.getHeaders()))
+                .toolNamePrefix(model.getToolNamePrefix())
+                .initializationTimeout(model.getInitializationTimeout() == null
+                        ? null : model.getInitializationTimeout().toMillis())
+                .executionTimeout(model.getExecutionTimeout() == null
+                        ? null : model.getExecutionTimeout().toMillis())
+                .maxOutput(model.getMaxOutput())
+                .status(model.getStatus())
+                .build();
+    }
+
+    /** 只保留头的<b>名字</b>，值统一替换为掩码；前端据此渲染「已配置」 */
+    private Map<String, String> maskHeaders(Map<String, String> headers) {
+        if (headers == null || headers.isEmpty()) return Map.of();
+        Map<String, String> masked = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            masked.put(entry.getKey(), McpVO.MASKED_VALUE);
+        }
+        return masked;
+    }
+
+    private Mcp toModel(McpCommand command, Instant now) {
+        Mcp model = Mcp.builder()
+                .id(command.getId())
+                .name(command.getName().trim())
+                .transport(command.getTransport() == null
+                        ? Mcp.TRANSPORT_STREAMABLE_HTTP : command.getTransport().trim().toLowerCase())
+                .url(command.getUrl().trim())
+                .headers(command.getHeaders() == null ? Map.of() : command.getHeaders())
+                .toolNamePrefix(command.getToolNamePrefix() == null ? null : command.getToolNamePrefix().trim())
+                .initializationTimeout(command.getInitializationTimeout() == null
+                        ? Mcp.DEFAULT_INITIALIZATION_TIMEOUT : Duration.ofMillis(command.getInitializationTimeout()))
+                .executionTimeout(command.getExecutionTimeout() == null
+                        ? Mcp.DEFAULT_EXECUTION_TIMEOUT : Duration.ofMillis(command.getExecutionTimeout()))
+                .maxOutput(command.getMaxOutput() == null ? Mcp.DEFAULT_MAX_OUTPUT : command.getMaxOutput())
+                .status(command.getStatus() == null ? Mcp.STATUS_ENABLED : command.getStatus())
+                .createAt(now)
+                .updateAt(now)
+                .build();
+        return model;
+    }
+}

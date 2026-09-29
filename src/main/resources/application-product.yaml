@@ -4,7 +4,3 @@ LingXi:
       url: jdbc:mysql://mysql:3306/dp?useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&transformedBitIsBoolean=true&allowMultiQueries=true&useSSL=false&allowPublicKeyRetrieval=true&useJDBCCompliantTimezoneShift=true&useLegacyDatetimeCode=false&serverTimezone=Asia/Shanghai
       username: ${MYSQL_USER}
       password: ${MYSQL_PASSWORD}
-    redis:
-      host: redis
-      port: 6379
-      database: 0

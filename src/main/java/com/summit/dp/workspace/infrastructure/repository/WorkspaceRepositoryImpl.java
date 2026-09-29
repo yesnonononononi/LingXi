@@ -5,7 +5,6 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.summit.ddd.infrastructure.repository.AbstractRepository;
 import com.summit.dp.workspace.domain.model.Workspace;
-import com.summit.dp.workspace.domain.model.WorkspaceType;
 import com.summit.dp.workspace.domain.repository.WorkspaceRepository;
 import com.summit.dp.workspace.infrastructure.persistence.mapper.WorkspaceMapper;
 import com.summit.dp.workspace.infrastructure.persistence.po.WorkspacePO;
@@ -15,10 +14,9 @@ import org.springframework.stereotype.Repository;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
-/**
- * 工作空间仓储实现：业务实体（枚举判别）与 PO（字符串落库）的双向映射 + MyBatis-Plus 读写。
- */
+/** 工作空间仓储实现：业务实体（枚举判别）与 PO（字符串落库）的双向映射 + MyBatis-Plus 读写。 */
 @Repository
 public class WorkspaceRepositoryImpl extends AbstractRepository<Workspace, WorkspacePO, Long>
         implements WorkspaceRepository {
@@ -47,6 +45,19 @@ public class WorkspaceRepositoryImpl extends AbstractRepository<Workspace, Works
     }
 
     @Override
+    public Workspace findByHostDir(String hostDir) {
+        List<WorkspacePO> list = mapper.selectList(new QueryWrapper<WorkspacePO>()
+                .eq("host_dir", hostDir)
+                .orderByDesc("id"));
+        return list.isEmpty() ? null : toModel(list.get(0));
+    }
+
+    @Override
+    public List<Workspace> findAll() {
+        return mapper.selectList(new QueryWrapper<>()).stream().map(this::toModel).toList();
+    }
+
+    @Override
     public IPage<Workspace> queryByPage(int current, int size) {
         return queryByPage(current, size, new QueryWrapper<WorkspacePO>().orderByDesc("id"));
     }
@@ -56,9 +67,7 @@ public class WorkspaceRepositoryImpl extends AbstractRepository<Workspace, Works
         return new Workspace(
                 po.getId(),
                 po.getName(),
-                WorkspaceType.fromCode(po.getType()),
-                po.getWorkDir(),
-                po.getContainerId());
+                po.getHostDir());
     }
 
     @Override
@@ -66,9 +75,7 @@ public class WorkspaceRepositoryImpl extends AbstractRepository<Workspace, Works
         return WorkspacePO.builder()
                 .id(model.getId())
                 .name(model.getName())
-                .type(model.getType() == null ? null : model.getType().code())
-                .workDir(model.getWorkDir())
-                .containerId(model.getContainerId())
+                .hostDir(model.getHostDir())
                 .build();
     }
 }

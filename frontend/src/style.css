@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./styles/markdown.css";
 
 /* DeepSeek 亮/暗模式 CSS 变量与主题拓展 */
 :root {
@@ -83,4 +84,182 @@ body {
 .animate-flow-border {
   animation: flow-border 3s infinite ease-in-out;
 }
+
+/* ================= 登录页动效 ================= */
+
+/* 1. 错误抖动 */
+@keyframes auth-shake {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-8px); }
+  30% { transform: translateX(7px); }
+  45% { transform: translateX(-6px); }
+  60% { transform: translateX(4px); }
+  80% { transform: translateX(-2px); }
+}
+.animate-shake {
+  animation: auth-shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+/* 2. 卡片 / 内容上浮淡入 */
+@keyframes auth-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-rise {
+  animation: auth-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* 3. 模式切换（横向滑动淡入） */
+@keyframes auth-slide-in {
+  from { opacity: 0; transform: translateX(18px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-slide-in {
+  animation: auth-slide-in 0.35s ease-out both;
+}
+
+/* 4. 按钮内联加载环 */
+@keyframes auth-spin {
+  to { transform: rotate(360deg); }
+}
+.auth-spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+  border-radius: 9999px;
+  animation: auth-spin 0.7s linear infinite;
+}
+
+/* 5. 流光描边（登录卡片） */
+@keyframes auth-beam {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+.auth-beam-border {
+  background: linear-gradient(
+    110deg,
+    rgba(77, 107, 254, 0.55),
+    rgba(139, 92, 246, 0.65),
+    rgba(56, 189, 248, 0.55),
+    rgba(77, 107, 254, 0.55)
+  );
+  background-size: 200% 100%;
+  animation: auth-beam 6s linear infinite;
+}
+
+/* 6. 品牌标题渐移动画 */
+@keyframes auth-gradient-x {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+.animate-gradient-x {
+  background-size: 200% 200%;
+  animation: auth-gradient-x 6s ease infinite;
+}
+
+/* 7. 缓慢漂浮光斑 */
+@keyframes auth-float {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-18px) scale(1.06); }
+}
+.animate-float-slow {
+  animation: auth-float 9s ease-in-out infinite;
+}
+
+/* 输入框自动填充样式（避免白底突兀） */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #e5e7eb;
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+/* 亮色模式下自动填充文字改为深色，避免与浅色输入框重合 */
+html.light input:-webkit-autofill,
+html.light input:-webkit-autofill:hover,
+html.light input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #1f2937;
+  box-shadow: 0 0 0 1000px #ffffff inset;
+}
+
+/* 主题切换平滑过渡：底色/描边/文字/阴影渐变，避免生硬跳变 */
+.theme-ease {
+  transition: background-color 420ms ease, border-color 420ms ease, color 420ms ease,
+    box-shadow 420ms ease, fill 420ms ease, stroke 420ms ease;
+}
+
+/* 下拉菜单通用向下展开动画 */
+.dropdown-down-enter-active {
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top right;
+}
+.dropdown-down-leave-active {
+  transition: opacity 0.15s ease-in, transform 0.15s ease-in;
+  transform-origin: top right;
+}
+.dropdown-down-enter-from {
+  opacity: 0;
+  transform: translateY(-8px) scaleY(0.85);
+}
+.dropdown-down-enter-to {
+  opacity: 1;
+  transform: translateY(0) scaleY(1);
+}
+.dropdown-down-leave-from {
+  opacity: 1;
+  transform: translateY(0) scaleY(1);
+}
+.dropdown-down-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scaleY(0.9);
+}
+
+.dropdown-down-center-enter-active {
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top center;
+}
+.dropdown-down-center-leave-active {
+  transition: opacity 0.15s ease-in, transform 0.15s ease-in;
+  transform-origin: top center;
+}
+.dropdown-down-center-enter-from {
+  opacity: 0;
+  transform: translateY(-8px) scaleY(0.85);
+}
+.dropdown-down-center-enter-to {
+  opacity: 1;
+  transform: translateY(0) scaleY(1);
+}
+.dropdown-down-center-leave-from {
+  opacity: 1;
+  transform: translateY(0) scaleY(1);
+}
+.dropdown-down-center-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scaleY(0.9);
+}
+
+/* 无障碍：用户偏好减少动效时，关闭装饰性动画 */
+@media (prefers-reduced-motion: reduce) {
+  .animate-shake,
+  .animate-rise,
+  .animate-slide-in,
+  .animate-flow-border,
+  .animate-gradient-x,
+  .animate-float-slow,
+  .auth-beam-border,
+  .auth-spinner {
+    animation: none !important;
+  }
+
+  .theme-ease,
+  .dropdown-down-enter-active,
+  .dropdown-down-leave-active,
+  .dropdown-down-center-enter-active,
+  .dropdown-down-center-leave-active {
+    transition: none !important;
+  }
+}
+
 

@@ -1,6 +1,8 @@
 package com.summit.dp.model.domain;
 
-public class ModelNoFoundException extends RuntimeException {
+import com.summit.dp.shared.exception.ClientException;
+
+public class ModelNoFoundException extends ClientException {
     public ModelNoFoundException(String message) {
         super(message);
     }

@@ -4,6 +4,7 @@ public record ModelConfigRequest(
         Long id,
         String modelName,
         String baseUrl,
-        String apiKey
+        String apiKey,
+        String provider
 ) {
 }

@@ -1,37 +1,63 @@
 package com.summit.dp.agent.api.controller;
 
+import com.summit.ddd.DddCodeGenerator;
+import com.summit.ddd.application.vo.PageResult;
 import com.summit.ddd.application.vo.Result;
-import com.summit.dp.agent.api.dto.ChatRequest;
-import com.summit.dp.agent.application.command.ChatCommand;
+import com.summit.dp.agent.application.command.AgentCommand;
+import com.summit.dp.agent.api.request.AgentRequest;
 import com.summit.dp.agent.application.service.AgentService;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import com.summit.dp.agent.application.vo.AgentVO;
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.BeanUtils;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
+import java.io.IOException;
+import java.nio.file.Path;
+
+/** Agent 接口层（生成骨架） */
 @RestController
-@RequestMapping("/a")
-@Tag(name = "agent接口",description = "项目agent入口")
+@RequestMapping("/agent")
+@RequiredArgsConstructor
 public class AgentController {
-    private final AgentService agentService;
+    private final AgentService service;
 
-    public AgentController(AgentService agentService) {
-        this.agentService = agentService;
+    @GetMapping("/find/{id}")
+    public Result<AgentVO> findById(@PathVariable Long id) {
+        return service.findById(id);
     }
 
-    @Operation(summary = "文本交流")
-    @PostMapping("/chat")
-    public Result<String> chat(
-            @RequestBody ChatRequest chatRequest
-            ){
-        return agentService.chat(new ChatCommand(chatRequest.input(), chatRequest.sessionId(), chatRequest.workDir(), chatRequest.workspaceId()));
+    @GetMapping("/list")
+    public Result<PageResult<AgentVO>> listPage(
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "10") Integer pageSize) {
+        return service.findPage(page, pageSize);
     }
 
-    @Operation(summary = "流式交流(SSE)")
-    @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter chatStream( @RequestBody ChatRequest chatRequest
-    ) {
-        return agentService.chatStream(new ChatCommand(chatRequest.input(), chatRequest.sessionId(), chatRequest.workDir(), chatRequest.workspaceId()));
+    @PostMapping("/add")
+    public Result<Void> add(@RequestBody AgentRequest request) {
+        return service.add(toCommand(request));
     }
+
+    @PostMapping("/update")
+    public Result<Void> update(@RequestBody AgentRequest request) {
+        return service.update(toCommand(request));
+    }
+
+    @GetMapping("/del/{id}")
+    public Result<Void> delById(@PathVariable Long id) {
+        return service.delById(id);
+    }
+
+    private AgentCommand toCommand(AgentRequest request) {
+        AgentCommand command = new AgentCommand();
+        BeanUtils.copyProperties(request, command);
+        return command;
+    }
+
 }

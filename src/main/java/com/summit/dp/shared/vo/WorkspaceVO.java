@@ -1,20 +1,22 @@
 package com.summit.dp.shared.vo;
 
 import lombok.Builder;
-import lombok.Data;
 
 /**
  * 工作空间视图对象。
+ *
+ * <p>不含 type / port / image：这三项描述的是「怎么跑」而非「工作空间是什么」，
+ * 运行类型统一由实例设置的 {@code user_configs.workspace_type} 决定，见
+ * {@code WorkspaceConverter#resolveType}。本地单实例（HC-1）无归属字段。</p>
  */
-@Data
 @Builder
-public class WorkspaceVO {
-    private Long id;
-    private String name;
-    /** docker/local */
-    private String type;
-    /** docker 为容器内绝对路径；local 为主机目录 */
-    private String workDir;
-    /** 仅 docker 类型非空 */
-    private String containerId;
+public record WorkspaceVO(
+        Long id,
+        String name,
+
+        String workDir,
+
+        String hostDir
+) {
+
 }

@@ -1,45 +1,27 @@
 package com.summit.dp.workspace.domain.model;
 
-import com.summit.ddd.domain.model.AggregateRoot;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
 /**
- * 工作空间领域实体（业务自建，独立于框架 {@code com.summit.core.runtime.Workspace}）。
- * <p>聚合承载一个可复用的运行环境（一个项目目录一般对应一个运行环境，可被多个会话共享）。
- * 表列、类型判别与校验规则完全由业务掌控；持久化时通过装配器与框架运行时实例互转。</p>
+ * 工作空间领域实体：只登记期望状态（名称、宿主目录），不可变，换目录需重新登记。
+ *
+ * <p><b>为什么没有 type：</b>sandbox / local 决定的是「这个目录怎么被执行」，
+ * 而不是「工作空间是什么」。该判定的唯一来源是用户通用配置
+ * {@code user_configs.workspace_type}，随用户切换运行模式而变。
+ * 把它复制一份落到 workspace 行上会产生第二份事实来源，两者不一致时无从裁决；
+ * 因此这里只在需要构建运行时规格时才去读取用户配置。</p>
  */
 @Getter
 @AllArgsConstructor
-public class Workspace extends AggregateRoot {
+public class Workspace {
     private Long id;
     private String name;
-    private WorkspaceType type;
-    /** docker 为容器内绝对路径；local 为主机目录 */
-    private String workDir;
-    /** 仅 docker 类型允许非空，容器首次运行后回填 */
-    private String containerId;
+    /** 项目宿主机/本地绝对路径; sandbox类型作为容器挂载源, local类型直接作为运行工作目录 */
+    private String hostDir;
 
-    public void rename(String name) {
-        this.name = name;
-    }
-
-    public void changeWorkDir(String workDir) {
-        this.workDir = workDir;
-    }
-
-    /**
-     * 绑定/更新 docker 容器 ID。
-     *
-     * @throws IllegalArgumentException local 类型不可绑定，或容器 ID 为空
-     */
-    public void bindContainer(String containerId) {
-        if (type != WorkspaceType.DOCKER) {
-            throw new IllegalArgumentException("仅 docker 类型工作空间可绑定容器ID");
-        }
-        if (containerId == null || containerId.isBlank()) {
-            throw new IllegalArgumentException("容器ID不能为空");
-        }
-        this.containerId = containerId;
+    /** 由仓储回填自增主键；仅在新增持久化后立即调用一次。 */
+    public void assignId(Long id) {
+        this.id = id;
     }
 }
