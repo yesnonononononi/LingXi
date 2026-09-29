@@ -1,0 +1,232 @@
+@import "highlight.js/styles/atom-one-dark.css";
+
+/* Markdown Body Base */
+.markdown-body {
+  font-size: 0.875rem;
+  line-height: 1.65;
+  word-break: break-word;
+}
+
+/* Headings */
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.markdown-body h1 {
+  font-size: 1.3rem;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+  padding-bottom: 0.3rem;
+}
+.markdown-body h2 {
+  font-size: 1.15rem;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+  padding-bottom: 0.25rem;
+}
+.markdown-body h3 {
+  font-size: 1.05rem;
+}
+.markdown-body h4 {
+  font-size: 0.95rem;
+}
+
+/* Paragraphs */
+.markdown-body p {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.markdown-body p:first-child {
+  margin-top: 0;
+}
+.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+
+/* Lists */
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 1.4rem;
+  margin-top: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+.markdown-body ul {
+  list-style-type: disc;
+}
+.markdown-body ol {
+  list-style-type: decimal;
+}
+.markdown-body li {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+.markdown-body li > ul,
+.markdown-body li > ol {
+  margin-top: 0.15rem;
+  margin-bottom: 0.15rem;
+}
+
+/* Blockquotes */
+.markdown-body blockquote {
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.85rem;
+  border-left: 3.5px solid #4d6bfe;
+  background-color: rgba(77, 107, 254, 0.08);
+  border-radius: 0 8px 8px 0;
+  color: inherit;
+}
+html.light .markdown-body blockquote {
+  border-left-color: #3b82f6;
+  background-color: #eff6ff;
+  color: #334155;
+}
+
+/* Inline Code (matches LingXi pills) */
+.markdown-body :not(pre) > code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.825em;
+  padding: 0.15rem 0.4rem;
+  margin: 0 0.2rem;
+  border-radius: 0.35rem;
+  white-space: break-spaces;
+  background-color: #1a2333;
+  border: 1px solid #2d3a54;
+  color: #e5e7eb;
+}
+html.light .markdown-body :not(pre) > code {
+  background-color: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #1e293b;
+}
+
+/* Tables */
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.85rem 0;
+  overflow-x: auto;
+  display: block;
+  font-size: 0.825rem;
+}
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid #273043;
+  padding: 0.45rem 0.75rem;
+  text-align: left;
+}
+.markdown-body th {
+  font-weight: 600;
+  background-color: #161b26;
+  color: #94a3b8;
+}
+.markdown-body tr:nth-child(even) {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+html.light .markdown-body th,
+html.light .markdown-body td {
+  border-color: #e2e8f0;
+}
+html.light .markdown-body th {
+  background-color: #f8fafc;
+  color: #475569;
+}
+html.light .markdown-body tr:nth-child(even) {
+  background-color: #f8fafc;
+}
+
+/* Horizontal Rule */
+.markdown-body hr {
+  height: 1px;
+  border: none;
+  background-color: #273043;
+  margin: 1rem 0;
+}
+html.light .markdown-body hr {
+  background-color: #e2e8f0;
+}
+
+/* Links */
+.markdown-body a {
+  color: #3b82f6;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.15s ease;
+}
+.markdown-body a:hover {
+  color: #60a5fa;
+}
+
+/* Code Blocks Container */
+.markdown-body .code-block-wrapper {
+  margin: 0.75rem 0;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  border: 1px solid #273043;
+  background-color: #131722;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+html.light .markdown-body .code-block-wrapper {
+  border: 1px solid #e2e8f0;
+  background-color: #181d28;
+}
+
+/* Header bar above code block */
+.markdown-body .code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.35rem 0.85rem;
+  background-color: #0e121a;
+  border-bottom: 1px solid #273043;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  user-select: none;
+}
+html.light .markdown-body .code-block-header {
+  background-color: #0f1420;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.markdown-body .code-block-header .lang-badge {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-weight: 500;
+  text-transform: lowercase;
+  color: #7dd3fc;
+  opacity: 0.9;
+}
+.markdown-body .code-block-header .copy-code-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.35rem;
+  transition: all 0.15s ease;
+  color: #94a3b8;
+  font-size: 0.75rem;
+}
+.markdown-body .code-block-header .copy-code-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #f1f5f9;
+}
+
+/* Pre and Code inside code blocks */
+.markdown-body pre {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.825rem;
+  line-height: 1.55;
+  background-color: transparent !important;
+}
+
+.markdown-body pre code.hljs {
+  background-color: transparent !important;
+  padding: 0 !important;
+}

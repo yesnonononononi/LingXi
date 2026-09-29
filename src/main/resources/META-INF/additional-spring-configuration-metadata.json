@@ -1,0 +1,76 @@
+{
+  "properties": [
+    {
+      "name": "spring.datasource.druid.initial-size",
+      "type": "java.lang.Integer",
+      "sourceType": "com.alibaba.druid.pool.DruidDataSource",
+      "description": "初始化时建立物理连接的个数。"
+    },
+    {
+      "name": "spring.datasource.druid.min-idle",
+      "type": "java.lang.Integer",
+      "sourceType": "com.alibaba.druid.pool.DruidDataSource",
+      "description": "最小空闲连接数。"
+    },
+    {
+      "name": "spring.datasource.druid.max-active",
+      "type": "java.lang.Integer",
+      "sourceType": "com.alibaba.druid.pool.DruidDataSource",
+      "description": "最大连接池数量。"
+    },
+    {
+      "name": "spring.datasource.druid.max-wait",
+      "type": "java.lang.Long",
+      "sourceType": "com.alibaba.druid.pool.DruidDataSource",
+      "description": "获取连接时最大等待时间，单位毫秒。"
+    },
+    {
+      "name": "spring.datasource.druid.test-while-idle",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.alibaba.druid.pool.DruidDataSource",
+      "description": "申请连接的时候检测空闲时间，根据空闲时间再检测连接是否有效。"
+    },
+    {
+      "name": "spring.datasource.druid.test-on-borrow",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.alibaba.druid.pool.DruidDataSource",
+      "description": "申请连接时执行 validationQuery 检测连接是否有效，开启会降低性能。"
+    },
+    {
+      "name": "spring.datasource.druid.test-on-return",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.alibaba.druid.pool.DruidDataSource",
+      "description": "归还连接时执行 validationQuery 检测连接是否有效，开启会降低性能。"
+    },
+    {
+      "name": "spring.datasource.druid.validation-query",
+      "type": "java.lang.String",
+      "sourceType": "com.alibaba.druid.pool.DruidDataSource",
+      "description": "用来检测连接是否有效的 SQL，要求是一个查询语句。"
+    },
+    {
+      "name": "spring.datasource.druid.validation-query-timeout",
+      "type": "java.lang.Integer",
+      "sourceType": "com.alibaba.druid.pool.DruidDataSource",
+      "description": "检测连接是否有效的超时时间，单位秒。"
+    },
+    {
+      "name": "spring.datasource.druid.time-between-eviction-runs-millis",
+      "type": "java.lang.Long",
+      "sourceType": "com.alibaba.druid.pool.DruidDataSource",
+      "description": "Destroy 线程检测连接的间隔时间，单位毫秒。"
+    },
+    {
+      "name": "spring.datasource.druid.min-evictable-idle-time-millis",
+      "type": "java.lang.Long",
+      "sourceType": "com.alibaba.druid.pool.DruidDataSource",
+      "description": "连接在池中保持空闲而不被驱逐的最小时间，单位毫秒。"
+    },
+    {
+      "name": "spring.datasource.druid.max-evictable-idle-time-millis",
+      "type": "java.lang.Long",
+      "sourceType": "com.alibaba.druid.pool.DruidDataSource",
+      "description": "连接在池中保持空闲而不被驱逐的最大时间，单位毫秒。"
+    }
+  ]
+}

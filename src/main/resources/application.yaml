@@ -1,0 +1,93 @@
+server:
+  port: 8088
+spring:
+  profiles:
+    active: dev
+  application:
+    name: LingXi
+  config:
+    import:
+      - optional:file:.env[.properties]
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 12MB
+  datasource:
+    url: ${LingXi.datasource.database.url}
+    username: ${LingXi.datasource.database.username}
+    password: ${LingXi.datasource.database.password}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    druid:
+      # 初始化连接数
+      initial-size: 5
+      # 最小空闲连接数
+      min-idle: 5
+      # 最大活跃连接数
+      max-active: 20
+      # 获取连接等待超时时间（毫秒）
+      max-wait: 60000
+      # 以下是解决你报错的关键配置
+      # 开启空闲连接检查
+      test-while-idle: true
+      # 指定探测 SQL（MySQL 专用）
+      validation-query: SELECT 1
+      # 建议开启借出时检查，确保拿到的连接一定是好的
+      test-on-borrow: true
+      # 定期清理任务执行的间隔（毫秒），默认 60 秒
+      time-between-eviction-runs-millis: 60000
+      # 连接在池中保持空闲而不被回收的最小时间
+      min-evictable-idle-time-millis: 300000
+lingxi:
+  system-prompt: ""
+  team:
+    max-member-size: 10
+  mcp:
+    # 必须为 enabled（与 McpAutoConfiguration 的 @ConditionalOnProperty 一致）
+    enabled: true
+  agent:
+    runtime:
+      tool:
+        common:
+          max-output: 500
+          requireAsync: true
+        read-file:
+          enabled: true
+        edit-file:
+          enabled: true
+        terminal:
+          enabled: true
+        web-search:
+          enabled: true
+          baseUrl: https://api.tavily.com/search
+          apiKey: ${TAVILY_APIKEY}
+          max-result: 3
+
+        context-compact:
+          enabled: true
+
+    model:
+      conf:
+        chat:
+          base-url: https://api.deepseek.com
+          api-key: ""
+          model-name: ""
+          timeout: 120s
+          max-iterations: 1000
+          max-tokens: 393200
+          reasoning-effort: medium
+          system-prompt: |
+            You are LingXi, a coding agent. Inspect the assigned workspace, implement the user's
+            request, and verify relevant changes. Use require_choice only when a decision genuinely
+            depends on the user. Respect command approval and plan approval decisions exactly.
+            Do not install system packages or perform destructive environment changes without an
+            explicit approval. Reply in the user's language and keep the result concise.
+        compact:
+          base-url:  https://api.deepseek.com
+          api-key: ${DEEPSEEK_APIKEY}
+          model-name: deepseek-flash
+          timeout: 120s
+          max-tokens: 32768
+
+
+
+

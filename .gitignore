@@ -1,0 +1,58 @@
+HELP.md
+target/
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+.env
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+/node_modules/
+
+### python ###
+venv/
+### 本地环境文件补充 ###
+# 注意：.env.example 必须入库（它是模板，不含真实密钥），因此不要写成 .env*
+.env.local
+
+### 前端构建产物补充 ###
+# frontend/.gitignore 已声明 dist，这里显式兜底，避免根目录视角下漏掉
+frontend/dist/
+
+### 本地日志 ###
+*.log
+
+### 本地运行/联调产物 ###
+# .run/ 存放本地启动脚本、临时 tmpdir 与接口联调脚本，不纳入版本控制。
+.run/
+
+### 本地调试残留 ###
+# 例如浏览器 user-data-dir 之类的调试产物。
+# 注意：scratch/ 下已有文件在历史提交中被跟踪，本规则不会自动取消跟踪，
+# 处置方式见 docs/RUNBOOK.md「仓库卫生」一节。
+scratch/
+

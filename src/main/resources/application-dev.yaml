@@ -1,0 +1,6 @@
+LingXi:
+  datasource:
+    database:
+      url: jdbc:mysql://${HOST:localhost}:3306/LingXi?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      username: root
+      password: root
