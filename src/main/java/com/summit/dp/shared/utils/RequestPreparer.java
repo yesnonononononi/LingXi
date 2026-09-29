@@ -100,12 +100,13 @@ public class RequestPreparer {
         // 单例设置：档位与模型缺省的唯一来源；查询失败按无设置处理（各项走各自缺省）。
         SettingsView settings = settingsProvider.current().orElse(null);
 
-        // 会话自带 workspaceId / teamId：创建后不可变，这里只读取，不回写（见 bindWorkspace 的封闭说明）。
+        // 会话自带 workspaceId / teamId：workspaceId 创建后不可变（改写会把会话引到另一个宿主机目录），
+        // teamId 可变但只经 /session/{id}/team 变更 —— 两条路径都只读取，聊天请求不回写。
         SessionVO session = requireSession(command.sessionId());
 
-        // 团队绑定的有效值：新会话取请求值（也是唯一写入时机）；已有会话一律以库中记录为准，
-        // 忽略请求带来的 teamId——否则调用方可以在后续轮次把会话改绑到另一个团队。
-        Long effectiveTeamId = session == null ? command.teamId() : session.getTeamId();
+
+        // 新会话（session == null）此刻还没有绑定，由前端在建会话时或随后经 /session/{id}/team 写入。
+        Long effectiveTeamId = session == null ? null : session.getTeamId();
 
         // 绑定执行身份并回落模型：team → 指挥者；model → agent 配置 → 单例设置。
         ChatCommand effective = effectiveCommand(command, settings, effectiveTeamId);
@@ -157,8 +158,8 @@ public class RequestPreparer {
         return new RuntimeContext(
                 executionContext,
                 effective.agentId(),
-                // 团队模式标识用会话级有效值：已有团队会话即使请求不带 teamId 也照常按团队编排
-                // （子代理委派赖以解析的 lingxi.team_id 因此在新执行快照中不缺）。
+                // （子代理委派赖以解析的 lingxi.team_id 因此在新执行快照中不缺）；
+                // 新会话此刻尚未绑定，本轮先按单 Agent / 裸模型跑。
                 effectiveTeamId,
                 session,
                 messageList,
@@ -174,9 +175,9 @@ public class RequestPreparer {
     /**
      * 绑定有效 Agent 并回落模型：
      * <ul>
-     *   <li>team 模式（有效团队非空且未显式指定 agent）：会话与执行都挂在指挥者名下，与首轮行为一致。
-     *       入参是会话级有效 teamId——新会话等于请求值，已有会话来自库中绑定，
-     *       因此「二次进入团队会话不带 teamId」也走同一条指挥者回落链路；</li>
+     *   <li>team 模式（会话绑定了团队且未显式指定 agent）：会话与执行都挂在指挥者名下，与首轮行为一致。
+     *       入参是会话的团队绑定——聊天请求已不携带 teamId，因此「二次进入团队会话」
+     *       必然走同一条指挥者回落链路；</li>
      *   <li>modelId 未指定：按「Agent 自带模型 → 单例设置」逐级回落，仍为 null 时
      *       由模型查询自行报错（与旧行为一致）。</li>
      * </ul>
@@ -202,7 +203,7 @@ public class RequestPreparer {
             return command;
         }
         return new ChatCommand(command.input(), command.sessionId(), modelId, command.workspaceId(),
-                command.teamId(), agentId, command.requirePlan(), command.imageFile(), command.imageUrl());
+                agentId, command.requirePlan(), command.imageFile(), command.imageUrl());
     }
 
     /**
@@ -279,25 +280,29 @@ public class RequestPreparer {
     /**
      * 请求级工具白名单。
      *
-     * <p>框架语义：名单即授权，{@code null} 与空清单等价，都表示不暴露任何静态工具 —— 模型能看到
-     * 什么必须在这里显式写出，杜绝清单组装失败时静默放大为进程内全部能力。</p>
+     * <p>框架语义：名单即授权，{@code null} 与空清单等价，都表示不暴露任何静态工具。</p>
      *
-     * <p>业务语义：带了 {@code mcpConfig} 就兜底 {@link ToolCatalog#SEARCH_TOOL}。MCP 工具名要等握手后
-     * 才存在，无法预先进清单，但框架对本次 {@code McpToolScope} 内的工具一律放行（可见即可执行），
-     * 检索工具正是模型发现它们的唯一途径。</p>
+     * <p>业务语义：带了 {@code mcpConfig} 就兜底 {@link ToolCatalog#LIST_MCP_TOOLS} 与
+     * {@link ToolCatalog#SEARCH_TOOL}。MCP 工具名要等握手后才存在，无法预先进清单；模型先用清单入口
+     * 按服务名看清有哪些工具（不含 schema），再用检索入口取回 schema，取回后框架才把该工具放进
+     * 下一轮可见清单（披露账本在框架侧 {@code McpToolScope}）。</p>
      *
-     * <p>顺序固定为「收敛原清单 → 补检索入口与 requirePlan → 只读过滤 → 身份剔除」。只读滤网必须
-     * 最后执行，否则 requirePlan 追加的工具会绕过滤网；它是剔除写工具而非替换成固定小集，依据
-     * 取自注册表的只读标记。</p>
+     * <p>顺序固定为「收敛原清单 → 补两级入口与 requirePlan → 只读过滤 → 身份剔除」；只读滤网必须
+     * 最后执行，否则 requirePlan 追加的工具会绕过滤网。</p>
      */
     private List<String> toolListOf(List<String> tools, RuntimeContext context, McpConfig mcpConfig) {
         final boolean readOnly = !context.accessMode().allowsWriteTools();
 
         List<String> result = new ArrayList<>(tools == null ? List.of() : tools);
 
-        // MCP 在场时兜底检索入口：MCP 工具只能靠它被发现。
-        if (mcpConfigured(mcpConfig) && !result.contains(ToolCatalog.SEARCH_TOOL)) {
-            result.add(ToolCatalog.SEARCH_TOOL);
+        // MCP 在场时兜底两级入口：先按服务名清单（不带 schema），再按关键字检索（带 schema 并揭露）。
+        if (mcpConfigured(mcpConfig)) {
+            if (!result.contains(ToolCatalog.LIST_MCP_TOOLS)) {
+                result.add(ToolCatalog.LIST_MCP_TOOLS);
+            }
+            if (!result.contains(ToolCatalog.SEARCH_TOOL)) {
+                result.add(ToolCatalog.SEARCH_TOOL);
+            }
         }
 
         if (context.requirePlan() && !result.contains(ToolCatalog.CREATE_PLAN)) {

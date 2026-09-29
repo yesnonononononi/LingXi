@@ -2,6 +2,7 @@ package com.summit.dp.mcp.application.service.impl;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.summit.core.conf.McpConfig;
+import com.summit.core.conf.McpTransport;
 import com.summit.ddd.application.vo.PageResult;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.mcp.application.command.McpCommand;
@@ -24,8 +25,8 @@ import java.util.Map;
 /**
  * Mcp 应用层服务实现。
  *
- * <p><b>凭据处理：</b>请求头里的值常是令牌。查询出口一律脱敏（见 {@link #toVO}），
- * 更新入口识别到脱敏值则保留库中原值（见 {@link #mergeHeaders}）——这样前端把表单原样提交
+ * <p><b>凭据处理：</b>请求头与环境变量里的值常是令牌。查询出口一律脱敏（见 {@link #toVO}），
+ * 更新入口识别到脱敏值则保留库中原值（见 {@link #mergeMaskedValues}）——这样前端把表单原样提交
  * 也不会把令牌覆盖成掩码串。</p>
  */
 @Service
@@ -61,9 +62,11 @@ public class McpServiceImpl implements McpService {
         if (error != null) throw new ClientException(error);
 
         try {
-            repository.save(toModel(command, Instant.now()));
+            Mcp model = toModel(command, Instant.now());
+            model.requireCoherent();
+            repository.save(model);
         } catch (IllegalArgumentException e) {
-            // 领域方法的护栏（长度/正数等）；校验器已覆盖常规路径，这里兜住直接构造的非法值
+            // 领域方法的护栏（长度/正数/传输-参数匹配等）；校验器已覆盖常规路径，这里兜住直接构造的非法值
             log.warn("MCP 新增被领域规则拒绝: {}", e.getMessage());
             throw new ClientException(e.getMessage());
         }
@@ -80,6 +83,7 @@ public class McpServiceImpl implements McpService {
 
         try {
             applyChanges(command, model);
+            model.requireCoherent();
         } catch (IllegalArgumentException e) {
             log.warn("MCP 更新被领域规则拒绝: {}", e.getMessage());
             throw new ClientException(e.getMessage());
@@ -120,17 +124,26 @@ public class McpServiceImpl implements McpService {
         return config;
     }
 
+    /**
+     * 按传输方式装配框架侧配置：http 系装 {@link McpConfig.StreamableHttp}，stdio 装
+     * {@link McpConfig.Stdio}——switch 对枚举穷举，框架侧新增传输时这里编译期即报错。
+     */
     private McpConfig.MCP toMCP(Mcp model) {
-        return new McpConfig.MCP(
-                model.getName(),
-                model.getTransport(),
-                model.getUrl(),
-                model.getHeaders() == null ? Map.of() : model.getHeaders(),
-                model.getToolNamePrefix(),
-                model.getInitializationTimeout(),
-                model.getExecutionTimeout(),
-                model.getMaxOutput()
-        );
+        McpTransport transport = McpTransport.parse(model.getTransport());
+        McpConfig.Conf conf = switch (transport) {
+            case STREAMABLE_HTTP, SSE -> new McpConfig.StreamableHttp(
+                    model.getUrl(),
+                    model.getHeaders() == null ? Map.of() : model.getHeaders(),
+                    model.getInitializationTimeout(),
+                    model.getExecutionTimeout());
+            case STDIO -> new McpConfig.Stdio(
+                    model.getCommand(),
+                    model.getEnv() == null ? Map.of() : model.getEnv(),
+                    model.getInitializationTimeout(),
+                    model.getExecutionTimeout());
+        };
+        return new McpConfig.MCP(model.getName(), transport, conf,
+                model.getToolNamePrefix(), model.getMaxOutput());
     }
 
     /** 逐字段条件变更：只动显式传入的字段，缺省字段保持原值 */
@@ -138,7 +151,11 @@ public class McpServiceImpl implements McpService {
         if (command.getName() != null) model.changeName(command.getName().trim());
         if (command.getTransport() != null) model.changeTransport(command.getTransport().trim().toLowerCase());
         if (command.getUrl() != null) model.changeUrl(command.getUrl().trim());
-        if (command.getHeaders() != null) model.changeHeaders(mergeHeaders(command.getHeaders(), model.getHeaders()));
+        if (command.getHeaders() != null)
+            model.changeHeaders(mergeMaskedValues(command.getHeaders(), model.getHeaders()));
+        if (command.getCommand() != null) model.changeCommand(command.getCommand());
+        if (command.getEnv() != null)
+            model.changeEnv(mergeMaskedValues(command.getEnv(), model.getEnv()));
         if (command.getToolNamePrefix() != null) model.changeToolNamePrefix(command.getToolNamePrefix().trim());
         if (command.getInitializationTimeout() != null)
             model.changeInitializationTimeout(Duration.ofMillis(command.getInitializationTimeout()));
@@ -149,12 +166,12 @@ public class McpServiceImpl implements McpService {
     }
 
     /**
-     * 合并请求头：值为脱敏掩码的条目保留库中原值。
+     * 合并凭据键值对（headers 与 env 通用）：值为脱敏掩码的条目保留库中原值。
      *
      * <p>否则前端「查出来—直接提交」的常规操作会把真实令牌写成掩码串，服务随即连不上，
      * 而错误现象（401）与真实原因（值被覆盖）相距很远，排查成本极高。</p>
      */
-    private Map<String, String> mergeHeaders(Map<String, String> incoming, Map<String, String> existing) {
+    private Map<String, String> mergeMaskedValues(Map<String, String> incoming, Map<String, String> existing) {
         if (incoming.isEmpty()) return Map.of();
         Map<String, String> current = existing == null ? Map.of() : existing;
 
@@ -165,7 +182,7 @@ public class McpServiceImpl implements McpService {
             String value = entry.getValue();
             if (McpVO.MASKED_VALUE.equals(value)) {
                 String original = current.get(key);
-                // 掩码值但库中并无该头：说明是前端凭空造出的，丢掉而不是写入掩码串
+                // 掩码值但库中并无该键：说明是前端凭空造出的，丢掉而不是写入掩码串
                 if (original != null) merged.put(key, original);
                 continue;
             }
@@ -180,7 +197,9 @@ public class McpServiceImpl implements McpService {
                 .name(model.getName())
                 .transport(model.getTransport())
                 .url(model.getUrl())
-                .headers(maskHeaders(model.getHeaders()))
+                .headers(maskValues(model.getHeaders()))
+                .command(model.getCommand())
+                .env(maskValues(model.getEnv()))
                 .toolNamePrefix(model.getToolNamePrefix())
                 .initializationTimeout(model.getInitializationTimeout() == null
                         ? null : model.getInitializationTimeout().toMillis())
@@ -191,11 +210,11 @@ public class McpServiceImpl implements McpService {
                 .build();
     }
 
-    /** 只保留头的<b>名字</b>，值统一替换为掩码；前端据此渲染「已配置」 */
-    private Map<String, String> maskHeaders(Map<String, String> headers) {
-        if (headers == null || headers.isEmpty()) return Map.of();
+    /** 只保留键名，值统一替换为掩码；前端据此渲染「已配置」（headers 与 env 通用） */
+    private Map<String, String> maskValues(Map<String, String> map) {
+        if (map == null || map.isEmpty()) return Map.of();
         Map<String, String> masked = new LinkedHashMap<>();
-        for (Map.Entry<String, String> entry : headers.entrySet()) {
+        for (Map.Entry<String, String> entry : map.entrySet()) {
             masked.put(entry.getKey(), McpVO.MASKED_VALUE);
         }
         return masked;
@@ -207,8 +226,10 @@ public class McpServiceImpl implements McpService {
                 .name(command.getName().trim())
                 .transport(command.getTransport() == null
                         ? Mcp.TRANSPORT_STREAMABLE_HTTP : command.getTransport().trim().toLowerCase())
-                .url(command.getUrl().trim())
+                .url(command.getUrl() == null ? null : command.getUrl().trim())
                 .headers(command.getHeaders() == null ? Map.of() : command.getHeaders())
+                .command(command.getCommand())
+                .env(command.getEnv() == null ? Map.of() : command.getEnv())
                 .toolNamePrefix(command.getToolNamePrefix() == null ? null : command.getToolNamePrefix().trim())
                 .initializationTimeout(command.getInitializationTimeout() == null
                         ? Mcp.DEFAULT_INITIALIZATION_TIMEOUT : Duration.ofMillis(command.getInitializationTimeout()))

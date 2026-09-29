@@ -14,15 +14,15 @@ import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.TokenUsage;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.application.service.SessionMessageQueryService;
-import com.summit.dp.shared.context.SettingsView;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.model.CursorResult;
-import com.summit.dp.shared.settings.SettingsProvider;
 import com.summit.dp.shared.vo.SessionMessagePageVO;
 import com.summit.dp.shared.vo.SessionMessageVO;
 import com.summit.dp.shared.vo.SessionTreeVO;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.shared.vo.WorkspaceVO;
+import com.summit.dp.team.application.service.TeamService;
+import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,13 +47,13 @@ public class SessionServiceImpl implements SessionService {
     private final WorkspaceService workspaceService;
     private final SessionRepository sessionRepository;
     private final SessionMessageQueryService messageQueryService;
-    /** 单例设置（user_configs）：agentId 等全局身份的读取入口。 */
-    private final SettingsProvider settingsProvider;
     /**
      * 执行查询服务：读侧唯一入口，批量取会话的执行状态列表用于展示状态组合。
      * 会话不持有执行状态，展示状态一律经此服务查询时组合（见 2026-09 状态技术债设计）。
      */
     private final ExecutionQueryService executionQueryService;
+    /** 团队校验入口：换绑前确认目标团队存在，避免把会话挂到一个查不到的团队上。 */
+    private final TeamService teamService;
 
     @Override
     public Result<Long> initialize(String input, Long workspaceId, Long teamId) {
@@ -64,7 +64,8 @@ public class SessionServiceImpl implements SessionService {
         Session session = Session.builder().id(IdUtil.getSnowflakeNextId())
                 .name(toSessionName(input))
                 .workspaceId(workspaceId)
-                // 团队绑定的唯一写入时机（此后不可变）；null=非团队会话。
+                // 首轮团队绑定；null=非团队会话。此后可经 bindTeam 换绑（团队不持有宿主机路径，
+                // 与 workspaceId 的「创建即固定」不是一回事）。
                 .teamId(teamId)
                 .tokenUsage(TokenUsage.empty())
                 .build();
@@ -86,6 +87,29 @@ public class SessionServiceImpl implements SessionService {
         if (command.name() != null && !command.name().isBlank()) session.rename(command.name());
         sessionAggregateService.save(session);
         return Result.success();
+    }
+
+    /**
+     * 换绑协作团队：前端团队下拉框的选中即写入此处。
+     *
+     * <p>拒绝运行中换绑——本轮编排身份已在执行快照里固化，中途换绑会造成
+     * 「本轮按旧队跑、恢复后按新队跑」。挂起态允许：挂起的执行尚未固化下一段编排，
+     * 恢复前换绑可让用户改主意（前提是先处理完待审批卡片）。</p>
+     */
+    @Override
+    public Result<Void> bindTeam(Long sessionId, Long teamId) {
+        if (sessionId == null) throw new ClientException("会话ID不能为空");
+        Session session = sessionAggregateService.requireOwned(sessionId);
+        if (teamId != null) requireTeam(teamId);
+        session.changeTeam(teamId);
+        sessionAggregateService.save(session);
+        return Result.success();
+    }
+
+    /** 团队存在性校验：换绑到一个不存在的团队会让后续编排在指挥者回落处才报错，提前拦下更清晰。 */
+    private void requireTeam(Long teamId) {
+        TeamVO team = teamService.findById(teamId).getData();
+        if (team == null) throw new ClientException("未找到指定的团队: " + teamId);
     }
 
     @Override
@@ -188,7 +212,7 @@ public class SessionServiceImpl implements SessionService {
         return SessionVO.builder().id(session.getId()).name(session.getName())
                 .runStatus(runStatusOf(states))
                 .lastOutcome(lastOutcomeOf(states))
-                .agentId(currentAgentId())
+                .agentId(session.getAgentId())
                 .rootSessionId(session.getRootSessionId()).createTime(session.getCreateTime())
                 .updateTime(session.getUpdateTime())
                 .workspaceId(session.getWorkspaceId())
@@ -228,16 +252,6 @@ public class SessionServiceImpl implements SessionService {
             }
         }
         return null;
-    }
-
-    /**
-     * 本实例全局选中的 Agent（{@code user_configs.agent_id}），未选择时为 {@code null}。
-     *
-     * <p>会话表已不再维护 {@code agent_id}：Agent 身份由单例设置承载，
-     * 对外需要的 {@code agentId} 一律经 {@link SettingsProvider} 读取。</p>
-     */
-    private Long currentAgentId() {
-        return settingsProvider.current().map(SettingsView::agentId).orElse(null);
     }
 
     /**

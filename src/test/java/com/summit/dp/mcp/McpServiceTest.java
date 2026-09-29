@@ -1,6 +1,7 @@
 package com.summit.dp.mcp;
 
 import com.summit.core.conf.McpConfig;
+import com.summit.core.conf.McpTransport;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.mcp.api.controller.McpController;
 import com.summit.dp.mcp.api.request.McpRequest;
@@ -37,8 +38,8 @@ import static org.mockito.Mockito.when;
  * <p>聚焦三处对外契约，它们决定了"管理端配置"能否正确变成"模型可见工具"：</p>
  * <ol>
  *   <li><b>凭据脱敏往返</b>：查询出口必须脱敏，且未改动的脱敏值回传时必须还原为库中原值——
- *       否则「打开表单直接保存」会把真实令牌写成掩码串，服务随即 401；</li>
- *   <li><b>currentConfig 装配</b>：字段需逐一映射到框架侧 {@code McpConfig.MCP}，
+ *       否则「打开表单直接保存」会把真实令牌写成掩码串，服务随即 401（headers 与 env 同规则）；</li>
+ *   <li><b>currentConfig 装配</b>：字段需逐一映射到框架侧 {@code McpConfig.MCP} 的对应传输 conf，
  *       且无启用项时返回 {@code null}（框架按无 MCP 处理）；</li>
  *   <li><b>校验与状态语义</b>：非法入参被拦截，启停只改 status。</li>
  * </ol>
@@ -149,6 +150,34 @@ class McpServiceTest {
         assertTrue(captor.getValue().getHeaders().isEmpty(), "凭空出现的掩码头不应落库");
     }
 
+    @Test
+    @DisplayName("stdio 环境变量同样脱敏往返：查询出口掩码，掩码回传保留库中原值")
+    void envValuesMaskAndRestoreLikeHeaders() {
+        McpRepository repository = repository();
+        Mcp stdio = Mcp.builder()
+                .id(6L).name("shadcn").transport(Mcp.TRANSPORT_STDIO)
+                .command(List.of("npx", "shadcn@latest", "mcp"))
+                .env(Map.of("GITHUB_TOKEN", TOKEN))
+                .status(Mcp.STATUS_ENABLED).build();
+        when(repository.findById(6L)).thenReturn(Optional.of(stdio));
+
+        // 查询出口：env 值脱敏
+        Result<McpVO> found = service(repository).findById(6L);
+        assertEquals(McpVO.MASKED_VALUE, found.getData().getEnv().get("GITHUB_TOKEN"));
+        assertFalse(found.getData().getEnv().containsValue(TOKEN), "环境变量中的令牌绝不出现在视图层");
+
+        // 前端把脱敏值原样提交 → 保留库中原值
+        McpCommand command = new McpCommand();
+        command.setId(6L);
+        command.setEnv(Map.of("GITHUB_TOKEN", McpVO.MASKED_VALUE));
+
+        service(repository).update(command);
+
+        ArgumentCaptor<Mcp> captor = ArgumentCaptor.forClass(Mcp.class);
+        verify(repository).updateById(captor.capture());
+        assertEquals(TOKEN, captor.getValue().getEnv().get("GITHUB_TOKEN"), "env 掩码必须还原为库中原值");
+    }
+
     /* ---------------- 框架侧装配 ---------------- */
 
     @Test
@@ -162,10 +191,12 @@ class McpServiceTest {
         assertEquals(1, config.getMcp().size());
         McpConfig.MCP mcp = config.getMcp().getFirst();
         assertEquals("github", mcp.name());
-        assertEquals(Mcp.TRANSPORT_STREAMABLE_HTTP, mcp.transport());
-        assertEquals("https://api.githubcopilot.com/mcp/", mcp.url());
+        assertEquals(McpTransport.STREAMABLE_HTTP, mcp.transport());
+        assertTrue(mcp.conf() instanceof McpConfig.StreamableHttp, "http 系应装配为 StreamableHttp");
+        McpConfig.StreamableHttp http = (McpConfig.StreamableHttp) mcp.conf();
+        assertEquals("https://api.githubcopilot.com/mcp/", http.url());
         // 下行给框架的是真实令牌，框架需要它才能连上服务
-        assertEquals(TOKEN, mcp.headers().get("Authorization"));
+        assertEquals(TOKEN, http.headers().get("Authorization"));
         assertEquals("gh_", mcp.toolNamePrefix());
         assertEquals(Duration.ofSeconds(30), mcp.initializationTimeout());
         assertEquals(Duration.ofSeconds(60), mcp.executionTimeout());
@@ -196,7 +227,35 @@ class McpServiceTest {
 
         McpConfig config = service(repository).currentConfig();
 
-        assertTrue(config.getMcp().getFirst().headers().isEmpty());
+        McpConfig.MCP mcp = config.getMcp().getFirst();
+        assertTrue(mcp.conf() instanceof McpConfig.StreamableHttp http && http.headers().isEmpty());
+    }
+
+    @Test
+    @DisplayName("currentConfig 把 stdio 服务映射为框架侧 Stdio conf，command/env 逐字段搬运")
+    void currentConfigMapsStdioToStdioConf() {
+        McpRepository repository = repository();
+        Mcp stdio = Mcp.builder()
+                .id(4L).name("shadcn").transport(Mcp.TRANSPORT_STDIO)
+                .command(List.of("npx", "shadcn@latest", "mcp"))
+                .env(Map.of("GITHUB_TOKEN", TOKEN))
+                .initializationTimeout(Duration.ofSeconds(15))
+                .executionTimeout(Duration.ofSeconds(45))
+                .maxOutput(5000)
+                .status(Mcp.STATUS_ENABLED).build();
+        when(repository.findEnabled()).thenReturn(List.of(stdio));
+
+        McpConfig config = service(repository).currentConfig();
+
+        McpConfig.MCP mcp = config.getMcp().getFirst();
+        assertEquals(McpTransport.STDIO, mcp.transport());
+        assertTrue(mcp.conf() instanceof McpConfig.Stdio, "stdio 应装配为 Stdio conf");
+        McpConfig.Stdio conf = (McpConfig.Stdio) mcp.conf();
+        assertEquals(List.of("npx", "shadcn@latest", "mcp"), conf.command());
+        // 下行给框架的是真实环境变量，框架需要它才能拉起子进程
+        assertEquals(TOKEN, conf.env().get("GITHUB_TOKEN"));
+        assertEquals(Duration.ofSeconds(15), mcp.initializationTimeout());
+        assertEquals(Duration.ofSeconds(45), mcp.executionTimeout());
     }
 
     /* ---------------- 校验与状态 ---------------- */
@@ -233,6 +292,44 @@ class McpServiceTest {
                 () -> service(repository).add(command));
 
         assertTrue(e.getMessage().contains("http"), "错误信息应说明地址协议要求: " + e.getMessage());
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("新增 stdio 服务：command/env 落库，url 可缺省")
+    void addStdioSavesCommandAndEnv() {
+        McpRepository repository = repository();
+
+        McpCommand command = new McpCommand();
+        command.setName("shadcn");
+        command.setTransport(Mcp.TRANSPORT_STDIO);
+        command.setCommand(List.of("npx", "shadcn@latest", "mcp"));
+        command.setEnv(Map.of("NO_COLOR", "1"));
+
+        Result<Void> result = service(repository).add(command);
+
+        assertNull(result.getErrMsg(), "成功路径不应带错误信息: " + result.getErrMsg());
+        ArgumentCaptor<Mcp> captor = ArgumentCaptor.forClass(Mcp.class);
+        verify(repository).save(captor.capture());
+        Mcp saved = captor.getValue();
+        assertEquals(List.of("npx", "shadcn@latest", "mcp"), saved.getCommand());
+        assertEquals(Map.of("NO_COLOR", "1"), saved.getEnv());
+        assertNull(saved.getUrl(), "stdio 服务不需要 url");
+    }
+
+    @Test
+    @DisplayName("新增 stdio 缺 command 被拒绝，且不落库")
+    void addStdioWithoutCommandIsRejected() {
+        McpRepository repository = repository();
+
+        McpCommand command = new McpCommand();
+        command.setName("broken");
+        command.setTransport(Mcp.TRANSPORT_STDIO);
+
+        ClientException e = assertThrows(ClientException.class,
+                () -> service(repository).add(command));
+
+        assertTrue(e.getMessage().contains("启动命令"), "错误信息应说明缺少启动命令: " + e.getMessage());
         verify(repository, never()).save(any());
     }
 
@@ -286,7 +383,7 @@ class McpServiceTest {
     }
 
     @Test
-    @DisplayName("Controller 平移全部字段到 Command，不漏 headers 与超时")
+    @DisplayName("Controller 平移全部字段到 Command，不漏 headers、command 与超时")
     void controllerCopiesAllFieldsToCommand() {
         McpRepository repository = repository();
         McpServiceImpl impl = service(repository);
@@ -298,6 +395,8 @@ class McpServiceTest {
         request.setTransport(Mcp.TRANSPORT_SSE);
         request.setUrl("https://gh/mcp/");
         request.setHeaders(Map.of("Authorization", "Bearer t"));
+        request.setCommand(List.of("npx", "shadcn@latest", "mcp"));
+        request.setEnv(Map.of("NO_COLOR", "1"));
         request.setToolNamePrefix("g_");
         request.setInitializationTimeout(5000L);
         request.setExecutionTimeout(7000L);
@@ -316,6 +415,8 @@ class McpServiceTest {
         assertEquals(Mcp.TRANSPORT_SSE, updated.getTransport());
         assertEquals("https://gh/mcp/", updated.getUrl());
         assertEquals("Bearer t", updated.getHeaders().get("Authorization"));
+        assertEquals(List.of("npx", "shadcn@latest", "mcp"), updated.getCommand());
+        assertEquals(Map.of("NO_COLOR", "1"), updated.getEnv());
         assertEquals("g_", updated.getToolNamePrefix());
         assertEquals(Duration.ofMillis(5000), updated.getInitializationTimeout());
         assertEquals(Duration.ofMillis(7000), updated.getExecutionTimeout());

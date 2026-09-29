@@ -59,6 +59,16 @@ public class SessionAggregateService {
                 messageRepository.findBySessionId(id)));
     }
 
+    /**
+     * 按「根会话 + Agent」取已存在的子代理会话（不含消息，调用方按需再取）。
+     *
+     * <p>委派工具用它实现「优先复用、按需派生」：同一根会话下同一 Agent 只维护一个子会话，
+     * 复用时把新任务作为新 USER 消息追加进去，让子 Agent 带着历史继续。</p>
+     */
+    public Optional<Session> findByRootAndAgent(Long rootSessionId, Long agentId) {
+        return sessionRepository.findByRootAndAgent(rootSessionId, agentId);
+    }
+
     @Transactional
     public boolean deleteById(Long id) {
         // 仓储先解析根会话，删掉整棵树，返回值必然非空。

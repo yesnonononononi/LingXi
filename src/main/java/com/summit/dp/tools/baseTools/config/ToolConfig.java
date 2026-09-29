@@ -74,19 +74,38 @@ public class ToolConfig {
                 .timeout(36_000L)
                 .build();
     }
+    /**
+     * 发信工具定义。
+     *
+     * <p>{@code description} 必须讲清<b>投递是异步的</b>：对方要等到它自己的下一次模型调用
+     * 才会读到这封信。这既符合实现（{@code EmailService.sendMail} 只落一条 PENDING 消息，
+     * 由收件方的 {@code AgenticLoopInterceptor} 在其下一轮消费），也是压住「发完不放心、再发一封」
+     * 这类行为的关键——曾观测到同一执行在 2.7 秒内发出两封内容完全相同的邮件。</p>
+     *
+     * <p>文案还刻意点明这是<b>编码协作</b>用途而非即时聊天：本工具没有回执通道，
+     * 不该被用于「一问一答」的往返等待。措辞保持英文以与其余工具定义一致。</p>
+     */
     @Bean
     public ToolDefinition<SendMailToAgentTool> sendMailToAgentToolToolDefinition(ObjectMapper objectMapper, EmailService emailService){
         return ToolDefinition.<SendMailToAgentTool>builder()
                 .id(ToolCatalog.SEND_MAIL_TO_AGENT)
                 .name(ToolCatalog.SEND_MAIL_TO_AGENT)
                 .executor(new SendMailToAgentTool(objectMapper,emailService))
-                .description("Send a mail to the agent from your team. require the target at running")
+                .description("""
+                        Send an asynchronous mail to a teammate agent.
+                        Delivery is asynchronous: the recipient reads this mail at the start of ITS next model round,
+                        not immediately. There is no reply channel on this call, so sending does not return an answer.
+                        After a successful send, continue with your own work, or if you have nothing left to do,
+                        end your turn and wait for incoming mail; never resend the same content because no reply arrived yet.
+                        Intended for code-collaboration hand-offs, not for real-time back-and-forth chat.
+                        The target agent must belong to your team.
+                        """)
                 .parametersJsonSchema("""
                         {
                           "type": "object",
                           "properties": {
                             "toAgentId": {"type": "integer", "description": "Agent id from the commander's teammate list."},
-                            "mailContent": {"type": "string", "description": "The mail body to deliver to that agent."}
+                            "mailContent": {"type": "string", "description": "The mail body. Write it as a complete, self-contained message; the recipient cannot ask clarifying questions synchronously."}
                           },
                           "required": ["toAgentId", "mailContent"],
                           "additionalProperties": false

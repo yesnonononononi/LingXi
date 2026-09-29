@@ -121,6 +121,25 @@ class ChatResumeTeamAttributeTest {
                 "会话没有团队就不写入 TEAM_ID");
     }
 
+    @Test
+    @DisplayName("解绑后恢复：快照里的旧团队被清除，不再按已解绑的团队委派")
+    void resumeClearsTeamAttributeAfterUnbind() {
+        Map<String, Object> snapshotAttributes = new HashMap<>();
+        snapshotAttributes.put(ExecutionAttributes.TEAM_ID, "3");
+        snapshotAttributes.put(ExecutionAttributes.AGENT_ID, "7");
+        Execution execution = execution(snapshotAttributes);
+
+        // 会话已解绑（库中 team_id 为 null），但快照里还留着换绑前的旧团队
+        stubResume(execution, Session.builder()
+                .id(SESSION_ID).rootSessionId(Session.ROOT_SESSION_ID).name("已解绑会话").teamId(null).build());
+
+        service().resume(SESSION_ID);
+
+        assertFalse(capturedResumeArgument().getAgentRequest().runtimeParametersOrDefault()
+                        .getAttributes().containsKey(ExecutionAttributes.TEAM_ID),
+                "解绑后恢复必须移除陈旧 TEAM_ID，否则仍会按旧团队委派");
+    }
+
     private void stubResume(Execution execution, Session session) {
         when(executionIdentity.latestSuspendedExecutionId(SESSION_ID)).thenReturn(EXECUTION_ID);
         when(toolCallRepository.listPendingByExecutionId(Long.valueOf(EXECUTION_ID))).thenReturn(List.of());

@@ -76,13 +76,20 @@ public class AgentWorkflowOrchestratorImpl implements AgentWorkflowOrchestrator 
     }
 
     /**
-     * 裸模型档位：不绑定 Agent，没有 Agent 级工具配置，因此传 {@code null} —— 即未授权任何静态工具。
-     * 例外是 MCP：配了 {@code mcpConfig} 时 {@code RequestPreparer} 会兜底
-     * {@link com.summit.dp.shared.model.ToolCatalog#SEARCH_TOOL}，让模型能发现并调用远端工具。
+     * 裸模型档位：不绑定 Agent，因此没有 Agent 级工具配置，改授基础工具集
+     * （{@link ToolCatalog#DEFAULT_AGENT_TOOLS}：终端 + 文件读写 + 联网检索）。
+     *
+     * <p>此前这里传 {@code null} = 不授权任何静态工具，于是默认档位除了 MCP 检索入口什么都干不了。
+     * 基础工具集不含协作工具，因为裸模型档位既没有团队也没有 Agent 身份，给了也只会一调用就报错
+     * （{@code RequestPreparer} 的身份剔除同样会兜住这种情况）。</p>
+     *
+     * <p>MCP 仍然由 {@code RequestPreparer} 兜底 {@link com.summit.dp.shared.model.ToolCatalog#SEARCH_TOOL}，
+     * 让模型能发现并调用远端工具。</p>
      */
     @Override
     public Execution executeDefaultAgent(RuntimeContext context) {
-        AgentRequest agentRequest = requestPreparer.buildRequest(userTextOf(context), context, null);
+        AgentRequest agentRequest = requestPreparer.buildRequest(userTextOf(context), context,
+                ToolCatalog.DEFAULT_AGENT_TOOLS);
         return agent.execute(agentRequest);
     }
 

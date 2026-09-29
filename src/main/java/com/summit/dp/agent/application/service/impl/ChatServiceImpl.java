@@ -59,6 +59,24 @@ public class ChatServiceImpl implements ChatService {
         return Result.success(executePrepared(context).getMessages().toString());
     }
 
+    /**
+     * 挂载 / 重挂会话事件流。
+     *
+     * <p>只订阅，不执行：不 prepare、不注册运行、不写任何会话状态，因此可以随时重复调用。
+     * 会话标识按根会话解析，与 {@code AgentEventListener} 的推送路由同一口径 ——
+     * 否则子会话订阅到的流会永远收不到事件。</p>
+     *
+     * <p>不回放历史：切走期间的缺口由前端回查会话历史补齐，本流只保证「挂上之后」的实时性。</p>
+     */
+    @Override
+    public SseEmitter subscribeSession(Long sessionId) {
+        if (sessionId == null) {
+            throw new ClientException("会话标识不能为空");
+        }
+        long rootSessionId = executionIdentity.rootSessionIdOfSession(sessionId);
+        return sseEventPublisher.connect(rootSessionId);
+    }
+
     @Override
     public SseEmitter chatStream(ChatCommand command) {
         // HC-2：先 resolve 出确定的会话身份，再注册运行与订阅事件。
@@ -95,7 +113,7 @@ public class ChatServiceImpl implements ChatService {
      */
     private Execution executePrepared(RuntimeContext context) {
         long rootSessionId = context.executionContext().rootSessionId();
-        Execution execution = null;
+        Execution execution;
         try {
             if (context.teamId() != null) {
                 execution = agentWorkflowOrchestrator.executeWorkflow(context.teamId(), context);

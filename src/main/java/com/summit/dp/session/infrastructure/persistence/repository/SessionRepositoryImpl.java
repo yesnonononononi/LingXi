@@ -16,6 +16,7 @@ import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 @RequiredArgsConstructor
@@ -42,6 +43,21 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
     @Override
     public List<Session> findSessionTree(Long rootSessionId) {
         return sessionMapper.selectSessionTree(rootSessionId).stream().map(this::toModel).toList();
+    }
+
+    /**
+     * 按「根会话 + Agent」取已存在的子会话，取最新一条。
+     *
+     * <p>{@code null} 入参直接返回空：不做「拿 null 查实体」的无意义查询，也不让它匹配上
+     * 任何一行（M8 的语义是「这个 Agent 的子会话是否已存在」）。</p>
+     */
+    @Override
+    public Optional<Session> findByRootAndAgent(Long rootSessionId, Long agentId) {
+        if (rootSessionId == null || agentId == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(sessionMapper.selectLatestByRootAndAgent(rootSessionId, agentId))
+                .map(this::toModel);
     }
 
     /**
@@ -77,6 +93,7 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
         return SessionPO.builder().id(session.getId()).name(session.getName()).workspaceId(session.getWorkspaceId())
                 .rootSessionId(session.getRootSessionId() == null ? SessionPO.ROOT_SESSION_ID
                         : session.getRootSessionId())
+                .agentId(session.getAgentId())
                 .teamId(session.getTeamId())
                 .totalTokens(usage.totalTokens()).inputTokens(usage.inputTokens()).outputTokens(usage.outputTokens())
                 .build();
@@ -86,6 +103,7 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
     protected Session toModel(SessionPO po) {
         return Session.builder().id(po.getId()).name(po.getName()).workspaceId(po.getWorkspaceId())
                 .rootSessionId(po.getRootSessionId())
+                .agentId(po.getAgentId())
                 .teamId(po.getTeamId())
                 .tokenUsage(new TokenUsage(po.getTotalTokens(), po.getInputTokens(), po.getOutputTokens()))
                 .createTime(po.getCreateTime()).updateTime(po.getUpdateTime())

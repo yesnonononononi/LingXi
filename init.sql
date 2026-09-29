@@ -3,12 +3,15 @@
 -- ------------------------------------------------------------
 -- MCP 服务配置：请求级连接容器的数据源（对齐框架侧 McpConfig.MCP）
 -- ------------------------------------------------------------
+drop table if exists mcp;
 CREATE TABLE mcp (
     id                     BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
     name                   VARCHAR(64)   NOT NULL COMMENT '服务唯一名：请求级会话标识与工具前缀回落依据',
-    transport              VARCHAR(32)   NOT NULL DEFAULT 'streamable-http' COMMENT '传输方式: streamable-http / sse',
-    url                    VARCHAR(1024) NOT NULL COMMENT '服务端点地址',
+    transport              VARCHAR(32)   NOT NULL DEFAULT 'streamable-http' COMMENT '传输方式: streamable-http / sse / stdio',
+    url                    VARCHAR(1024) NULL COMMENT '服务端点地址(http系传输); stdio 传输为空',
     headers                JSON          NULL COMMENT '自定义请求头(JSON对象), 如 {"Authorization":"Bearer xxx"}',
+    command                TEXT          NULL COMMENT 'stdio 启动命令(JSON数组), 如 ["npx","shadcn@latest","mcp"]',
+    env                    JSON          NULL COMMENT 'stdio 环境变量(JSON对象), 如 {"GITHUB_TOKEN":"xxx"}',
     tool_name_prefix       VARCHAR(64)   NULL COMMENT '工具名前缀, 为空时框架回落为 name_',
     initialization_timeout BIGINT        NULL COMMENT '初始化超时(毫秒)',
     execution_timeout      BIGINT        NULL COMMENT '执行超时(毫秒)',
@@ -19,6 +22,11 @@ CREATE TABLE mcp (
     UNIQUE KEY uk_mcp_name (name),
     KEY idx_mcp_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP服务配置表';
+
+-- 既有库升级 stdio 支持时执行（新库跑上面的 CREATE TABLE 即可，勿重复执行）：
+-- ALTER TABLE mcp MODIFY url VARCHAR(1024) NULL COMMENT '服务端点地址(http系传输); stdio 传输为空';
+-- ALTER TABLE mcp ADD COLUMN command TEXT NULL COMMENT 'stdio 启动命令(JSON数组), 如 ["npx","shadcn@latest","mcp"]' AFTER headers;
+-- ALTER TABLE mcp ADD COLUMN env JSON NULL COMMENT 'stdio 环境变量(JSON对象), 如 {"GITHUB_TOKEN":"xxx"}' AFTER command;
 
 CREATE TABLE model_config (
     id               BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
@@ -49,9 +57,10 @@ CREATE TABLE workspace (
 CREATE TABLE session (
     id             BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
     root_session_id BIGINT NOT NULL DEFAULT 0 COMMENT '所属根会话ID(关联session.id, 根会话写0); 团队模式下子代理会话回指委派发起的根会话',
+    agent_id       BIGINT COMMENT '会话归属的AgentID(关联agent.id); 根会话/非Agent会话为NULL; 子会话落为其子Agent, 支撑(root_session_id,agent_id)复用同一子会话',
     name           VARCHAR(100) NOT NULL DEFAULT '新对话' COMMENT '会话名称',
     workspace_id   BIGINT COMMENT '工作空间ID(关联workspace.id, 可被多个会话复用, 可空)',
-    team_id        BIGINT COMMENT '绑定的协作团队(关联team.id, 仅创建时绑定; NULL=非团队会话)',
+    team_id        BIGINT COMMENT '绑定的协作团队(关联team.id, 可经 /session/{id}/team 换绑; NULL=非团队会话)',
     total_tokens   INT NOT NULL DEFAULT 0 COMMENT '累计Token数',
     input_tokens   INT NOT NULL DEFAULT 0 COMMENT '输入Token数',
     output_tokens  INT NOT NULL DEFAULT 0 COMMENT '输出Token数',
@@ -59,7 +68,8 @@ CREATE TABLE session (
     update_time    DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     KEY idx_workspace_id (workspace_id),
     KEY idx_create_time (create_time),
-    KEY idx_root_session_id (root_session_id)
+    KEY idx_root_session_id (root_session_id),
+    KEY idx_root_agent (root_session_id, agent_id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '会话表';
 
 -- ------------------------------------------------------------

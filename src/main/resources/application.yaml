@@ -38,7 +38,13 @@ spring:
       # 连接在池中保持空闲而不被回收的最小时间
       min-evictable-idle-time-millis: 300000
 lingxi:
-  system-prompt: ""
+  # AgentRequest.systemPrompt，框架只负责逐字渲染它。人设原本放在框架的
+  system-prompt: |
+    You are LingXi, a coding agent. Inspect the assigned workspace, implement the user's
+    request, and verify relevant changes. Use require_choice only when a decision genuinely
+    depends on the user. Respect command approval and plan approval decisions exactly.
+    Do not install system packages or perform destructive environment changes without an
+    explicit approval. Reply in the user's language and keep the result concise.
   team:
     max-member-size: 10
   mcp:
@@ -47,23 +53,25 @@ lingxi:
   agent:
     runtime:
       tool:
-        common:
-          max-output: 500
-          requireAsync: true
-        read-file:
-          enabled: true
-        edit-file:
-          enabled: true
-        terminal:
-          enabled: true
         web-search:
-          enabled: true
           baseUrl: https://api.tavily.com/search
           apiKey: ${TAVILY_APIKEY}
           max-result: 3
 
+        # 框架内核工具（harness-kernel-tools）：默认开启，这里只列可调参数。
+        # search_tool 是 MCP 远端工具的唯一发现入口，单次检索的返回条数与超时在此收敛。
+        search-tool:
+          max-matches: 30
+          timeout: 10s
+
+        # 多段压缩：两档阈值 + 每趟截断轮次，都收在这个命名空间下。
+        # 占比落在 [truncate-threshold, model-threshold) 走本地截断（不调模型），
+        # 达到 model-threshold 就让模型把历史总结掉。model-threshold 必须大于 truncate-threshold，
+        # 反了会让本地截断那一档永远进不去。
         context-compact:
-          enabled: true
+          truncate-threshold: 0.7
+          model-threshold: 0.85
+          truncate-rounds: 5
 
     model:
       conf:
@@ -75,12 +83,11 @@ lingxi:
           max-iterations: 1000
           max-tokens: 393200
           reasoning-effort: medium
-          system-prompt: |
-            You are LingXi, a coding agent. Inspect the assigned workspace, implement the user's
-            request, and verify relevant changes. Use require_choice only when a decision genuinely
-            depends on the user. Respect command approval and plan approval decisions exactly.
-            Do not install system packages or perform destructive environment changes without an
-            explicit approval. Reply in the user's language and keep the result concise.
+          # 连续压缩轮次上限：连续这么多轮都在压缩（compact_context）就直接结束本次执行，
+          # 避免把预算烧在「压缩—又被填满—再压缩」的循环里。
+          max-consecutive-compactions: 3
+          # 每多少轮上报一次上下文用量（进度显示用）。上报要数一遍全量 token，不必每轮都做。
+          usage-report-interval: 5
         compact:
           base-url:  https://api.deepseek.com
           api-key: ${DEEPSEEK_APIKEY}

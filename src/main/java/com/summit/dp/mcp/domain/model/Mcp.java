@@ -5,6 +5,7 @@ import lombok.Getter;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -26,9 +27,14 @@ public class Mcp {
     public static final int URL_MAX_LENGTH = 1024;
     public static final int TOOL_NAME_PREFIX_MAX_LENGTH = 64;
 
-    /** 允许的传输方式；框架侧 {@code McpClientFactory} 按此值选择 builder */
+    /** 允许的传输方式；框架侧按 {@code McpTransport.parse} 归一后分派 builder */
     public static final String TRANSPORT_STREAMABLE_HTTP = "streamable-http";
     public static final String TRANSPORT_SSE = "sse";
+    public static final String TRANSPORT_STDIO = "stdio";
+
+    /** stdio 启动命令护栏：argv 条数与单段长度上限 */
+    public static final int COMMAND_MAX_ITEMS = 32;
+    public static final int COMMAND_ARGV_MAX_LENGTH = 1024;
 
     /** 超时缺省值，与框架侧缺省语义对齐 */
     public static final Duration DEFAULT_INITIALIZATION_TIMEOUT = Duration.ofSeconds(30);
@@ -47,14 +53,29 @@ public class Mcp {
     /** 传输方式，取值见 TRANSPORT_* 常量 */
     private String transport;
 
-    /** 服务端点 */
+    /**
+     * 服务端点（http 系传输）。
+     * <p>stdio 传输下为 {@code null}——端点的角色由 {@link #command} 承担。</p>
+     */
     private String url;
 
     /**
-     * 自定义请求头，如 {@code Authorization: Bearer xxx}。
+     * 自定义请求头，如 {@code Authorization: Bearer xxx}（http 系传输）。
      * <p>持久化为 JSON 字符串（PO 侧），领域侧始终是 Map，不暴露字符串形态。</p>
      */
     private Map<String, String> headers;
+
+    /**
+     * stdio 启动命令，argv 风格——如 {@code ["npx", "shadcn@latest", "mcp"]}。
+     * <p>argv 逐段传递而非整行 shell，天然规避空格/引号转义问题；仅 stdio 传输使用。</p>
+     */
+    private List<String> command;
+
+    /**
+     * stdio 环境变量，叠加在继承的进程环境之上——如 {@code GITHUB_TOKEN}。
+     * <p>常含凭据，视图层与 headers 同样脱敏。</p>
+     */
+    private Map<String, String> env;
 
     /** 工具名前缀；为空时由框架侧回落为 {@code name + "_"} */
     private String toolNamePrefix;
@@ -97,6 +118,26 @@ public class Mcp {
         update();
     }
 
+    public void changeCommand(List<String> command) {
+        if (command == null || command.isEmpty())
+            throw new IllegalArgumentException("Mcp command is empty");
+        if (command.size() > COMMAND_MAX_ITEMS)
+            throw new IllegalArgumentException("Mcp command has too many items");
+        for (String argv : command) {
+            if (argv == null || argv.isBlank())
+                throw new IllegalArgumentException("Mcp command contains blank argv");
+            if (argv.length() > COMMAND_ARGV_MAX_LENGTH)
+                throw new IllegalArgumentException("Mcp command argv is too long");
+        }
+        this.command = List.copyOf(command);
+        update();
+    }
+
+    public void changeEnv(Map<String, String> env) {
+        this.env = env == null ? Map.of() : Map.copyOf(env);
+        update();
+    }
+
     public void changeToolNamePrefix(String toolNamePrefix) {
         if (toolNamePrefix != null && toolNamePrefix.length() > TOOL_NAME_PREFIX_MAX_LENGTH)
             throw new IllegalArgumentException("Mcp toolNamePrefix is too long");
@@ -132,6 +173,20 @@ public class Mcp {
     /** 该服务是否参与本轮请求级装配 */
     public boolean enabled() {
         return status != null && status == STATUS_ENABLED;
+    }
+
+    /**
+     * 传输方式与连接参数的整体一致性：http 系必须有 url，stdio 必须有 command。
+     * <p>新增/更新落库前调用——单字段护栏（changeX）各自为政，拦不住「切换传输方式后
+     * 另一半参数缺失」的组合态。</p>
+     */
+    public void requireCoherent() {
+        if (TRANSPORT_STDIO.equals(transport)) {
+            if (command == null || command.isEmpty())
+                throw new IllegalArgumentException("Mcp stdio transport requires command");
+        } else if (url == null || url.isBlank()) {
+            throw new IllegalArgumentException("Mcp transport '" + transport + "' requires url");
+        }
     }
 
     private void update() {

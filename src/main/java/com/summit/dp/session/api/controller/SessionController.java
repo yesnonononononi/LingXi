@@ -25,12 +25,12 @@ public class SessionController {
 
     @PostMapping("/create")
     public Result<Long> create(@RequestBody SessionRequest sessionRequest){
-        // /session/create 不开放团队绑定：teamId 由聊天编排（ChatCommand）在会话创建那一刻写入，
-        // 与 workspace 的「绑定只在创建时确定」语义一致；此处显式传 null。
+        // /session/create 接受团队绑定：前端新建会话时可能已选好团队，一并落库；
+        // 不传（null）即非团队会话，后续仍可经 /session/{id}/team 换绑。
         return sessionService.initialize(
                 sessionRequest.name(),
                 sessionRequest.workspaceId(),
-                null
+                sessionRequest.teamId()
         );
     }
 
@@ -64,6 +64,16 @@ public class SessionController {
     }
     @PostMapping("/update")
     public Result<Void> update(@RequestBody SessionRequest request) {
-        return sessionService.update(new SessionCommand(request.id(), request.name()));
+        return sessionService.update(new SessionCommand(request.id(), request.name(), null));
+    }
+
+    /**
+     * 换绑会话的协作团队（前端团队下拉框选中的同步落点）。
+     *
+     * <p>{@code teamId} 不传或传空表示解绑，回到非团队会话。</p>
+     */
+    @PostMapping("/{id}/team")
+    public Result<Void> bindTeam(@PathVariable Long id, Long teamId) {
+        return sessionService.bindTeam(id, teamId);
     }
 }

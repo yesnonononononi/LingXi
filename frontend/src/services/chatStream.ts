@@ -38,6 +38,30 @@ function buildUnavailablePromptCard(toolCallId: string): PromptCardData {
 }
 
 /**
+ * 追加一条中间轮次 aimessage，并保证「同轮文本只记一次」。
+ *
+ * 后端 AI_MESSAGE 每个模型轮次发布一次，工具调用轮不含正文（text 为空），
+ * 断流恢复（EXECUTION_RESUMED）也可能重放同一事件。若不加判重，折叠区会重复展示同一段文本
+ * （正文取 aiMessages 末条、中间区取 slice(0,-1)，重复项必然同时出现在两处）。
+ *
+ * 规则：文本为空则只补 thinking，不落正文条目；文本与上一条完全相同则视为重放，忽略。
+ */
+function appendAiMessage(target: ChatMessage, text: string, thinking: string): void {
+  if (!target.aiMessages) target.aiMessages = [];
+  if (!text.trim()) return;
+  const last = target.aiMessages[target.aiMessages.length - 1];
+  if (last && last.text === text) return;
+  const order = target.aiMessages.reduce((max, m) => Math.max(max, m.order ?? 0), 0) + 1;
+  target.aiMessages.push({
+    id: createLocalId('aimsg'),
+    text,
+    thinking,
+    timestamp: Date.now(),
+    order
+  });
+}
+
+/**
  * CARD_PENDING 通知处理：拉取工具调用权威数据 → 构建统一 promptCard → 落到目标气泡。
  *
  * 契约来源：SSE 单值事件 CARD_PENDING 只做「有新的 pending 卡片」通知，卡片载荷权威源为
@@ -99,15 +123,21 @@ async function attachPromptCard(
  * 负责 Agent 会话流式事件处理与恢复执行的流式服务功能类
  */
 export class ChatStreamService {
-  /** 创建会话辅助方法 */
+  /** 创建会话辅助方法
+   *
+   * @param teamId 建会话时一并绑定的团队；聊天请求不带 teamId，
+   *               团队绑定只能在此（建会话）或 SessionAPI.bindTeam（换绑）落库。
+   */
   async createSession(
     name: string,
-    workspaceId?: string | number | null
+    workspaceId?: string | number | null,
+    teamId?: string | number | null
   ): Promise<string> {
     const trimmedName = name.trim() || '新对话';
     const res = await SessionAPI.create({
       name: trimmedName,
       workspaceId,
+      teamId,
     });
     if (!isOk(res.code) || res.data === undefined || res.data === null) {
       throw new Error(res.errMsg || '创建会话失败');
@@ -365,19 +395,12 @@ export class ChatStreamService {
                       timestamp: Date.now()
                     }];
                   }
-                  const messageText = event.text ?? currentTurnText;
-                  if (messageText !== undefined && messageText !== null) {
+                  const messageText = typeof event.text === 'string' ? event.text : '';
+                  if (messageText) {
                     currentTurnText = messageText;
                     botMessage.content = messageText;
                   }
-                  if (!botMessage.aiMessages) botMessage.aiMessages = [];
-                  botMessage.aiMessages.push({
-                    id: createLocalId('aimsg'),
-                    text: messageText || '',
-                    thinking: event.thinking || '',
-                    timestamp: Date.now(),
-                    order: timelineSeq++
-                  });
+                  appendAiMessage(botMessage, messageText, event.thinking || '');
                   botMessage.isThinking = false;
                   onProgress({ ...botMessage });
                   break;
@@ -477,9 +500,10 @@ export class ChatStreamService {
     requirePlan?: boolean,
     signal?: AbortSignal,
     onFinish?: () => void,
+    /** 当前选中的团队：仅用于新建会话时的首次绑定；已有会话的团队换绑走 SessionAPI.bindTeam */
     teamId?: number | string | null,
     routeSessionEvent?: (event: AgentStreamEvent) => boolean,
-    /** 单 Agent 直聊的 Agent ID；与 teamId 互斥，后端优先走团队编排 */
+    /** 单 Agent 直聊的 Agent ID */
     agentId?: number | string | null,
     imageFile?: File | null
   ): Promise<void> {
@@ -522,7 +546,8 @@ export class ChatStreamService {
     let realSessionId = toServerSessionId(sessionId);
     if (!realSessionId) {
       try {
-        const createdId = await this.createSession(content, workspaceId);
+        // 新建会话是唯一能带上团队绑定的时机（之后换绑走 SessionAPI.bindTeam）。
+        const createdId = await this.createSession(content, workspaceId, teamId);
         realSessionId = createdId;
         sessionIdNotified = true;
         onSessionCreated?.(String(createdId));
@@ -861,20 +886,14 @@ export class ChatStreamService {
               }
 
               // 2. 处理回复正文内容 (非思考)
-              const messageText = event.text ?? currentTurnText;
-              if (messageText !== undefined && messageText !== null) {
+              // 只有本轮的 event.text 才算新正文：工具调用轮不含文本（text=null），
+              // 此时沿用 currentTurnText 会把上一轮文本再记一次，造成折叠区重复展示。
+              const messageText = typeof event.text === 'string' ? event.text : '';
+              if (messageText) {
                 currentTurnText = messageText;
                 botMessage.content = messageText;
               }
-
-              if (!botMessage.aiMessages) botMessage.aiMessages = [];
-              botMessage.aiMessages.push({
-                id: createLocalId('aimsg'),
-                text: messageText || '',
-                thinking: event.thinking || '',
-                timestamp: Date.now(),
-                order: timelineSeq++
-              });
+              appendAiMessage(botMessage, messageText, event.thinking || '');
 
               botMessage.isThinking = false;
               onProgress({ ...botMessage });
@@ -968,7 +987,6 @@ export class ChatStreamService {
         modelId,
         requirePlan === true,
         signal,
-        teamId,
         agentId,
         imageFile,
         undefined

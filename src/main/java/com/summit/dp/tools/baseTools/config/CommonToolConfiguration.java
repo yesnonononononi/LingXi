@@ -2,7 +2,6 @@ package com.summit.dp.tools.baseTools.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import com.summit.dp.tools.baseTools.config.properties.TerminalToolProperties;
 import com.summit.dp.tools.baseTools.config.properties.WebSearchToolProperties;
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
@@ -10,33 +9,31 @@ import com.summit.core.interceptor.InterceptorProcessor;
 import com.summit.core.model.ModelProviderRegistry;
 import com.summit.core.model.chat.ChatModel;
 import com.summit.core.tool.*;
-import com.summit.dp.tools.baseTools.search.SearchToolExecutor;
 import com.summit.dp.tools.baseTools.terminal.CommandToolDefinitionExecutor;
 import com.summit.dp.tools.baseTools.web.WebResultSummarizer;
 import com.summit.dp.tools.baseTools.web.WebSearchConfig;
 import com.summit.dp.tools.baseTools.web.WebSearchEngine;
 import com.summit.dp.tools.baseTools.web.WebSearchExecutor;
-import com.summit.dp.shared.model.ToolCatalog;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 
 import java.net.http.HttpClient;
 
+/**
+ * 基础工具的装配入口。
+ *
+ * <p>这些工具不再有 yaml {@code enabled} 开关。装配由代码决定，不由某个部署恰好写没写一个键决定；
+ * 要停用某个工具，从 Agent 的工具清单里去掉它即可（框架侧名单即授权）。保留的 yaml 键只剩工具真正
+ * 需要的连接参数（web-search 的 baseUrl / apiKey / maxResult）。</p>
+ */
 @Slf4j
-@EnableConfigurationProperties({WebSearchToolProperties.class, TerminalToolProperties.class})
+@EnableConfigurationProperties(WebSearchToolProperties.class)
 @org.springframework.context.annotation.Configuration(proxyBeanMethods = false)
 public class CommonToolConfiguration {
     @Bean
-    @ConditionalOnProperty(
-            prefix = "lingxi.agent.runtime.tool.terminal",
-            name = "enabled",
-            havingValue = "true"
-    )
     @ConditionalOnMissingBean(name = "executeCommandToolDefinition")
     public ToolDefinition<CommandToolDefinitionExecutor> executeCommandToolDefinition(ObjectMapper objectMapper) {
         String name = "execute_command";
@@ -58,16 +55,11 @@ public class CommonToolConfiguration {
                         }
                         """)
                 .maxOutput(5_000)
-                .timeout(30L)
+                .timeout(120L)
                 .build();
     }
 
     @Bean
-    @ConditionalOnProperty(
-            prefix = "lingxi.agent.runtime.tool.web-search",
-            name = "enabled",
-            havingValue = "true"
-    )
     @ConditionalOnMissingBean(name = "webSearchToolDefinition")
     public ToolDefinition<WebSearchExecutor> webSearchToolDefinition(WebSearchEngine webSearchEngine, WebSearchToolProperties webSearchToolProperties, ObjectMapper objectMapper) {
         String name = "web_search";
@@ -97,11 +89,6 @@ public class CommonToolConfiguration {
     }
 
     @Bean
-    @ConditionalOnProperty(
-            prefix = "lingxi.agent.runtime.tool.web-search",
-            name = "enabled",
-            havingValue = "true"
-    )
     public WebSearchEngine webSearchEngine(WebSearchToolProperties webSearchToolProperties, ObjectMapper objectMapper, WebResultSummarizer webResultSummarizer) {
         return new WebSearchEngine(WebSearchConfig.builder()
                 .baseUrl(webSearchToolProperties.getBaseUrl())
@@ -116,40 +103,15 @@ public class CommonToolConfiguration {
     }
 
     /**
-     * 工具检索定义。MCP 工具名在握手前不存在，无法预先进白名单；与其把全部工具塞给模型，
-     * 不如给一个「按关键字查本次可调用的工具」的入口。
+     * 工具检索入口（{@code search_tool}）已归框架侧：{@code harness-kernel-tools} 模块的
+     * {@code SearchToolAutoConfiguration} 默认注册，应用侧不再重复声明——重复声明只会让
+     * 「哪个实现生效」取决于装配顺序。
      *
-     * <p>无 {@code @ConditionalOnProperty}：它是请求级 MCP 工具的发现入口，关掉即彻底不可达。</p>
+     * <p>要替换实现时，在本类声明同名 {@code searchToolDefinition} bean 即可，框架的
+     * {@code @ConditionalOnMissingBean} 会让位；工具名必须保持
+     * {@link com.summit.kernel.tools.search.SearchToolExecutor#NAME}，因为系统提示词与框架的披露账本
+     * 都按这个名字引用它。</p>
      */
-    @Bean
-    @ConditionalOnMissingBean(name = "searchToolDefinition")
-    public ToolDefinition<SearchToolExecutor> searchToolDefinition(ObjectMapper objectMapper,
-                                                                   ObjectProvider<ToolRegistry> toolRegistry) {
-        String name = ToolCatalog.SEARCH_TOOL;
-        ToolDefinition<SearchToolExecutor> definition = ToolDefinition.<SearchToolExecutor>builder()
-                .executor(new SearchToolExecutor(objectMapper, toolRegistry))
-                .id(name)
-                .name(name)
-                .concurrentPolicy(ConcurrentPolicy.READ_ONLY)
-                .description("""
-                        Search the tools callable in this run and return their names, descriptions and
-                        parameter schemas. Use it before calling a tool you have not used yet — remote
-                        (MCP) tools in particular are not listed up front. An empty keyword lists everything.
-                        """)
-                .parametersJsonSchema("""
-                        {
-                          "type": "object",
-                          "properties": {
-                            "keyword": {"type": "string", "description": "Fuzzy keyword matched against tool name and description. Optional; omit to list all callable tools."}
-                          }
-                        }
-                        """)
-                .maxOutput(4_000)
-                .timeout(10L)
-                .build();
-        log.info("searchToolDefinition successfully registered");
-        return definition;
-    }
 
     /** 压缩模型直接使用框架提供的 compact 配置。 */
     @Bean

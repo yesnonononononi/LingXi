@@ -22,9 +22,10 @@ import java.util.Optional;
 /**
  * Mcp 仓储实现。
  *
- * <p>承接三处形态转换，均收口在本层，领域侧不感知存储细节：</p>
+ * <p>承接四处形态转换，均收口在本层，领域侧不感知存储细节：</p>
  * <ul>
- *   <li>{@code headers}：JSON 字符串 ⇄ {@code Map<String,String>}；</li>
+ *   <li>{@code headers} / {@code env}：JSON 字符串 ⇄ {@code Map<String,String>}；</li>
+ *   <li>{@code command}：JSON 数组字符串 ⇄ {@code List<String>}；</li>
  *   <li>超时：毫秒 {@code Long} ⇄ {@link Duration}；</li>
  *   <li>时间列名差异：领域 {@code createAt/updateAt} ⇄ 库 {@code createTime/updateTime}。</li>
  * </ul>
@@ -79,7 +80,9 @@ public class McpRepositoryImpl extends AbstractRepository<Mcp, McpPO, Long>
                 .name(po.getName())
                 .transport(po.getTransport())
                 .url(po.getUrl())
-                .headers(parseHeaders(po.getHeaders()))
+                .headers(parseStringMap(po.getHeaders()))
+                .command(parseCommand(po.getCommand()))
+                .env(parseStringMap(po.getEnv()))
                 .toolNamePrefix(po.getToolNamePrefix())
                 .initializationTimeout(toDuration(po.getInitializationTimeout(), Mcp.DEFAULT_INITIALIZATION_TIMEOUT))
                 .executionTimeout(toDuration(po.getExecutionTimeout(), Mcp.DEFAULT_EXECUTION_TIMEOUT))
@@ -97,7 +100,9 @@ public class McpRepositoryImpl extends AbstractRepository<Mcp, McpPO, Long>
                 .name(model.getName())
                 .transport(model.getTransport())
                 .url(model.getUrl())
-                .headers(writeHeaders(model.getHeaders()))
+                .headers(writeStringMap(model.getHeaders()))
+                .command(writeCommand(model.getCommand()))
+                .env(writeStringMap(model.getEnv()))
                 .toolNamePrefix(model.getToolNamePrefix())
                 .initializationTimeout(model.getInitializationTimeout() == null
                         ? null : model.getInitializationTimeout().toMillis())
@@ -110,25 +115,48 @@ public class McpRepositoryImpl extends AbstractRepository<Mcp, McpPO, Long>
                 .build();
     }
 
-    /** 解析请求头 JSON；非法内容按空表处理并告警，不让单行脏数据拖垮整个装配 */
-    private Map<String, String> parseHeaders(String raw) {
+    /** 解析 JSON 键值对（headers/env）；非法内容按空表处理并告警，不让单行脏数据拖垮整个装配 */
+    private Map<String, String> parseStringMap(String raw) {
         if (raw == null || raw.isBlank()) return Map.of();
         try {
-            Map<String, String> headers = objectMapper.readValue(raw, new TypeReference<Map<String, String>>() {
+            Map<String, String> map = objectMapper.readValue(raw, new TypeReference<Map<String, String>>() {
             });
-            return headers == null ? Map.of() : headers;
+            return map == null ? Map.of() : map;
         } catch (Exception e) {
-            log.warn("MCP headers 不是合法 JSON 对象，按空表处理: {}", raw);
+            log.warn("MCP JSON 键值对不是合法 JSON 对象，按空表处理: {}", raw);
             return Map.of();
         }
     }
 
-    private String writeHeaders(Map<String, String> headers) {
-        if (headers == null || headers.isEmpty()) return null;
+    /** 解析 stdio 启动命令 JSON 数组；非法内容按空列表处理并告警 */
+    private List<String> parseCommand(String raw) {
+        if (raw == null || raw.isBlank()) return List.of();
         try {
-            return objectMapper.writeValueAsString(headers);
+            List<String> command = objectMapper.readValue(raw, new TypeReference<List<String>>() {
+            });
+            return command == null ? List.of() : command;
         } catch (Exception e) {
-            log.warn("MCP headers 序列化失败，按空处理: {}", headers);
+            log.warn("MCP command 不是合法 JSON 数组，按空列表处理: {}", raw);
+            return List.of();
+        }
+    }
+
+    private String writeStringMap(Map<String, String> map) {
+        if (map == null || map.isEmpty()) return null;
+        try {
+            return objectMapper.writeValueAsString(map);
+        } catch (Exception e) {
+            log.warn("MCP JSON 键值对序列化失败，按空处理: {}", map);
+            return null;
+        }
+    }
+
+    private String writeCommand(List<String> command) {
+        if (command == null || command.isEmpty()) return null;
+        try {
+            return objectMapper.writeValueAsString(command);
+        } catch (Exception e) {
+            log.warn("MCP command 序列化失败，按空处理: {}", command);
             return null;
         }
     }

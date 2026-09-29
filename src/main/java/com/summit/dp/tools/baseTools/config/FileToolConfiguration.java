@@ -5,8 +5,6 @@ import com.summit.dp.tools.baseTools.file.record.Differ;
 import com.summit.dp.tools.baseTools.file.record.FileHasher;
 import com.summit.dp.tools.baseTools.file.record.FileRecordManager;
 import com.summit.dp.tools.baseTools.file.record.FileRecordStore;
-import com.summit.dp.tools.baseTools.config.properties.EditFileProperties;
-import com.summit.dp.tools.baseTools.config.properties.ReadFileProperties;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.tool.*;
 import com.summit.dp.tools.baseTools.file.record.DefaultFileHasher;
@@ -16,21 +14,19 @@ import com.summit.dp.tools.baseTools.file.record.FileRecordRestorer;
 import com.summit.dp.tools.baseTools.file.edit.EditDiffer;
 import com.summit.dp.tools.baseTools.file.edit.EditFileToolExecutor;
 import com.summit.dp.tools.baseTools.file.read.ReadFileToolExecutor;
-import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 
-@EnableConfigurationProperties({EditFileProperties.class, ReadFileProperties.class})
+/**
+ * 文件读写工具的装配。
+ *
+ * <p>工具不再有 yaml {@code enabled} 开关：一个工具要么在本应用里存在，要么不存在 —— 装配由代码
+ * 决定，而不是由某个部署恰好写没写一个键决定。这样「这个工具为什么没生效」不会再变成一个查配置
+ * 文件的问题。要停用某个工具，从 Agent 的工具清单里去掉它即可（框架侧名单即授权）。</p>
+ */
 @org.springframework.context.annotation.Configuration(proxyBeanMethods = false)
 public class FileToolConfiguration {
     @Bean
-    @ConditionalOnProperty(
-            prefix = "lingxi.agent.runtime.tool.edit-file",
-            name = "enabled",
-            havingValue = "true"
-    )
     @ConditionalOnMissingBean(name = "editFileToolDefinition")
     public ToolDefinition<EditFileToolExecutor> editFileToolDefinition(ObjectMapper objectMapper, RuntimeEventPublisher runtimeEventPublisher, FileRecordManager fileRecordManager) {
         String name = "edit_file";
@@ -58,11 +54,6 @@ public class FileToolConfiguration {
     }
 
     @Bean
-    @ConditionalOnProperty(
-            prefix = "lingxi.agent.runtime.tool.read-file",
-            name = "enabled",
-            havingValue = "true"
-    )
     @ConditionalOnMissingBean(name = "readFileToolDefinition")
     public ToolDefinition<ReadFileToolExecutor> readFileToolDefinition(ObjectMapper objectMapper) {
         String name = "read_file";

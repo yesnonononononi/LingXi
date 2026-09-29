@@ -13,6 +13,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -101,4 +102,43 @@ class SseEventPublisherTest {
         });
         assertEquals(0, publisher.connectedRootCount());
     }
+
+    // --- 客户端断开：写不出去不是故障，但也不能留着每轮重试 ----------------------------------
+
+    /**
+     * 真实故障背景：执行终态事件先于收尾的用量推送发出，前端看到终态就关流，于是每轮都有一条
+     * 推送写到已断开的流上（{@code AsyncRequestNotUsableException} 继承 IOException）。此前它被
+     * 打成 WARN + 完整堆栈，每轮刷一条假告警。
+     */
+    @Test
+    @DisplayName("推送写不出去：不抛异常，并摘掉该流而不是留着每轮重试")
+    void unwritableStreamIsDroppedInsteadOfRetried() throws java.io.IOException {
+        publisher.connect(1L);
+        SseEmitter dead = created.get(0);
+        doThrow(new java.io.IOException("你的主机中的软件中止了一个已建立的连接。"))
+                .when(dead).send(any(SseEmitter.SseEventBuilder.class));
+
+        assertDoesNotThrow(() -> publisher.publish(1L, "{\"type\":\"CONTEXT_UPDATE\"}"));
+        assertEquals(0, publisher.connectedRootCount(), "写失败的流必须被摘掉");
+
+        publisher.publish(1L, "{\"type\":\"CONTEXT_UPDATE\"}");
+        verify(dead, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+    }
+
+    @Test
+    @DisplayName("一条流写失败不影响同会话的其他流")
+    void oneDeadStreamDoesNotBlockItsSiblings() throws java.io.IOException {
+        publisher.connect(1L);
+        publisher.connect(1L);
+        SseEmitter dead = created.get(0);
+        SseEmitter alive = created.get(1);
+        doThrow(new java.io.IOException("client gone"))
+                .when(dead).send(any(SseEmitter.SseEventBuilder.class));
+
+        publisher.publish(1L, "{\"type\":\"CONTEXT_UPDATE\"}");
+
+        verify(alive, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        assertEquals(1, publisher.connectedRootCount(), "只摘掉写不出去的那一条");
+    }
+
 }

@@ -14,12 +14,24 @@ public interface SessionService {
      * <p>{@code agentId} 已不再随会话落库：Agent 身份由单例设置（{@code user_configs.agent_id}）承载，
      * 对外经 {@code SettingsProvider} 下发。</p>
      *
-     * <p>{@code teamId} 是团队绑定的唯一写入时机（与 workspaceId 同构）：仅创建那一刻生效，
-     * 为 null 表示非团队会话；此后不可变，后续轮次请求值一律忽略。</p>
+     * <p>{@code teamId} 为 null 表示非团队会话；创建时带值即为首轮绑定，
+     * 此后仍可通过 {@link #bindTeam} 换绑。</p>
      */
     Result<Long> initialize(String input, Long workspaceId, Long teamId);
 
+    /**
+     * 更新会话元数据（名称）。{@code teamId} 的换绑请走 {@link #bindTeam}：
+     * 本方法无法表达「解绑到 null」，用 {@code null} 语义会与「不改」混淆。
+     */
     Result<Void> update(SessionCommand command);
+
+    /**
+     * 换绑会话的协作团队；{@code teamId} 为 null 表示解绑（回到非团队会话）。
+     *
+     * <p>执行中（RUNNING）拒绝换绑：本轮的编排身份已在执行快照里固化，中途换绑会让
+     * 「本轮按 A 队跑、恢复后按 B 队跑」，语义不成立。</p>
+     */
+    Result<Void> bindTeam(Long sessionId, Long teamId);
 
     Result<Void> del(Long id);
 

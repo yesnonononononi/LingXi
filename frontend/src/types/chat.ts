@@ -597,8 +597,21 @@ export interface ToolVO {
  * 契约来源：com.summit.dp.mcp.domain.model.Mcp 的 TRANSPORT_* 常量，
  * 与框架侧 McpClientFactory 选择 builder 的取值一致。
  */
-export const MCP_TRANSPORTS = ['streamable-http', 'sse'] as const;
+export const MCP_TRANSPORTS = ['streamable-http', 'sse', 'stdio'] as const;
 export type McpTransport = (typeof MCP_TRANSPORTS)[number];
+
+/**
+ * stdio 传输的环境限制提示。
+ *
+ * stdio 由宿主进程直接 spawn 子进程，不做 shell 解析：argv 逐段传给 `ProcessBuilder`/`CreateProcess`，
+ * 因此宿主 PATH 里没有对应的可执行文件时子进程起不来，该服务的工具会静默消失（后端只 warn 降级）。
+ * Windows 上尤其要注意 `npx` 是无扩展名的 sh 脚本，只有 `npx.cmd` 能被直接启动 —— 这是最常见的踩坑点。
+ *
+ * 列表卡片与编辑表单共用同一份文案，避免两处漂移。
+ */
+export const MCP_STDIO_ENV_HINT =
+  'stdio 由宿主进程直接启动子进程（不做 shell 解析），要求当前机器的 PATH 中存在对应可执行文件，否则该服务将无法连接、其工具会静默丢失。'
+  + 'Windows 上注意：`npx` 是无扩展名的脚本无法直接启动，启动命令请写 `npx.cmd`。';
 
 /**
  * 请求头脱敏掩码。
@@ -612,9 +625,14 @@ export interface McpVO {
   id: number | string;
   name: string;
   transport?: string;
-  url: string;
+  /** http 系传输的端点；stdio 传输为空 */
+  url?: string;
   /** 脱敏后的请求头；值恒为 MCP_HEADER_MASKED_VALUE */
   headers?: Record<string, string>;
+  /** stdio 启动命令（argv 风格）；仅 stdio 传输非空 */
+  command?: string[];
+  /** 脱敏后的 stdio 环境变量；仅 stdio 传输非空 */
+  env?: Record<string, string>;
   toolNamePrefix?: string;
   /** 初始化超时，毫秒 */
   initializationTimeout?: number;
@@ -634,6 +652,10 @@ export interface McpRequest {
   transport?: string;
   url?: string;
   headers?: Record<string, string>;
+  /** stdio 启动命令（argv 风格） */
+  command?: string[];
+  /** stdio 环境变量；值等于 MCP_HEADER_MASKED_VALUE 表示保持库中原值 */
+  env?: Record<string, string>;
   toolNamePrefix?: string;
   initializationTimeout?: number;
   executionTimeout?: number;

@@ -26,4 +26,13 @@ public interface SessionMapper extends BaseMapper<SessionPO> {
      */
     @Select("SELECT * FROM session WHERE id = #{root} OR root_session_id = #{root} ORDER BY id ASC")
     List<SessionPO> selectSessionTree(@Param("root") Long rootSessionId);
+
+    /**
+     * 按 (root_session_id, agent_id) 取最新一条子会话，走 idx_root_agent 联合索引。
+     *
+     * <p>{@code LIMIT 1} 与 {@code ORDER BY id DESC} 兜住「历史数据存在重复子会话」的情形：
+     * 复用语义下只可能也应该复用最近在用的那个。参数由绑定传入，无拼接。</p>
+     */
+    @Select("SELECT * FROM session WHERE root_session_id = #{root} AND agent_id = #{agentId} ORDER BY id DESC LIMIT 1")
+    SessionPO selectLatestByRootAndAgent(@Param("root") Long rootSessionId, @Param("agentId") Long agentId);
 }

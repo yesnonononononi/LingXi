@@ -8,13 +8,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
+import java.util.List;
 import java.util.Map;
 
 /**
  * Mcp 新增/更新的业务校验。
  *
  * <p>校验分两类：<b>形态校验</b>（非空、长度、URL 可解析、超时为正）与
- * <b>唯一性校验</b>（服务名不与他人重复）。重名查询下推到 SQL。</p>
+ * <b>唯一性校验</b>（服务名不与他人重复）。重名查询下推到 SQL。
+ * 必填项按传输方式分派：http 系必填 url，stdio 必填 command——
+ * 「切换传输后另一半参数缺失」的组合态由领域侧 {@code requireCoherent} 在落库前兜底。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -27,7 +30,19 @@ public class McpValidator {
     public String validateForCreate(McpCommand command) {
         if (command == null) return "新增参数不能为空";
 
-        String error = checkRequired(command.getName(), command.getTransport(), command.getUrl());
+        if (command.getName() == null || command.getName().isBlank()) return "服务名称不能为空";
+
+        String transport = command.getTransport() == null
+                ? Mcp.TRANSPORT_STREAMABLE_HTTP : command.getTransport().trim().toLowerCase();
+        String error = checkTransport(transport);
+        if (error != null) return error;
+
+        // 新增是全字段操作：必填项按传输方式分派
+        if (Mcp.TRANSPORT_STDIO.equals(transport)) {
+            error = checkCommand(command.getCommand());
+        } else {
+            if (command.getUrl() == null || command.getUrl().isBlank()) return "服务地址不能为空";
+        }
         if (error != null) return error;
 
         error = checkShape(command);
@@ -42,13 +57,7 @@ public class McpValidator {
         if (command.getId() == null) return "id不能为空";
 
         // 更新允许部分字段缺省；缺省的字段由应用层保持原值，因此只校验显式传入的部分
-        if (command.getName() != null || command.getTransport() != null || command.getUrl() != null) {
-            String error = checkRequired(
-                    command.getName() == null ? "-" : command.getName(),
-                    command.getTransport() == null ? "-" : command.getTransport(),
-                    command.getUrl() == null ? "-" : command.getUrl());
-            if (error != null) return error;
-        }
+        if (command.getName() != null && command.getName().isBlank()) return "服务名称不能为空";
 
         String error = checkShape(command);
         if (error != null) return error;
@@ -59,10 +68,12 @@ public class McpValidator {
         return null;
     }
 
-    private String checkRequired(String name, String transport, String url) {
-        if (name == null || name.isBlank()) return "服务名称不能为空";
-        if (transport == null || transport.isBlank()) return "传输方式不能为空";
-        if (url == null || url.isBlank()) return "服务地址不能为空";
+    private String checkTransport(String transport) {
+        if (!Mcp.TRANSPORT_STREAMABLE_HTTP.equals(transport)
+                && !Mcp.TRANSPORT_SSE.equals(transport)
+                && !Mcp.TRANSPORT_STDIO.equals(transport))
+            return "传输方式仅支持 " + Mcp.TRANSPORT_STREAMABLE_HTTP + " / "
+                    + Mcp.TRANSPORT_SSE + " / " + Mcp.TRANSPORT_STDIO;
         return null;
     }
 
@@ -80,9 +91,18 @@ public class McpValidator {
         }
 
         if (command.getTransport() != null) {
-            String transport = command.getTransport().trim().toLowerCase();
-            if (!Mcp.TRANSPORT_STREAMABLE_HTTP.equals(transport) && !Mcp.TRANSPORT_SSE.equals(transport))
-                return "传输方式仅支持 " + Mcp.TRANSPORT_STREAMABLE_HTTP + " 或 " + Mcp.TRANSPORT_SSE;
+            String error = checkTransport(command.getTransport().trim().toLowerCase());
+            if (error != null) return error;
+        }
+
+        if (command.getCommand() != null) {
+            String error = checkCommand(command.getCommand());
+            if (error != null) return error;
+        }
+
+        if (command.getEnv() != null) {
+            String error = checkEnv(command.getEnv());
+            if (error != null) return error;
         }
 
         if (command.getToolNamePrefix() != null
@@ -97,6 +117,36 @@ public class McpValidator {
             return "输出上限必须大于 0";
 
         return checkHeaders(command.getHeaders());
+    }
+
+    /**
+     * stdio 启动命令：argv 非空且每段非空白。
+     * <p>argv 逐段传递不需要转义，允许段内出现空格（如带空格的路径）——这正是 argv 的意义。</p>
+     */
+    private String checkCommand(List<String> command) {
+        if (command == null || command.isEmpty()) return "stdio 启动命令不能为空";
+        if (command.size() > Mcp.COMMAND_MAX_ITEMS)
+            return "启动命令段数不能超过" + Mcp.COMMAND_MAX_ITEMS;
+        for (String argv : command) {
+            if (argv == null || argv.isBlank()) return "启动命令包含空白段";
+            if (argv.length() > Mcp.COMMAND_ARGV_MAX_LENGTH)
+                return "启动命令单段长度不能超过" + Mcp.COMMAND_ARGV_MAX_LENGTH;
+        }
+        return null;
+    }
+
+    /** stdio 环境变量：键非空且不含等号/空白；值允许空串（如 {@code NO_COLOR=""}） */
+    private String checkEnv(Map<String, String> env) {
+        if (env.isEmpty()) return null;
+        for (Map.Entry<String, String> entry : env.entrySet()) {
+            if (entry.getKey() == null || entry.getKey().isBlank())
+                return "环境变量名不能为空";
+            if (entry.getKey().contains("=") || entry.getKey().contains(" "))
+                return "环境变量名不合法: " + entry.getKey();
+            if (entry.getValue() == null)
+                return "环境变量 " + entry.getKey() + " 的值不能为 null";
+        }
+        return null;
     }
 
     /** 请求头名与值都不能为空白——空白字符放进 HTTP 头会直接让连接建不起来 */

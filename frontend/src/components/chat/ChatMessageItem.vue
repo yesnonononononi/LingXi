@@ -87,12 +87,26 @@ watch(
   { immediate: true }
 );
 
-// 中间轮次的 aimessage（除了最后一条作为正文展示外，其余中间过程文本归入折叠块）
+// 中间轮次的 aimessage（与正文同文本的条目不再重复展示，其余中间过程文本归入折叠块）
+//
+// 判据用「文本是否等于正文」而非「是否为最后一个元素」：正文取 props.message.content，
+// 与 aiMessages 的末条不必等价（历史解析会去重、流式恢复会重放），按位置切会在
+// 「末条不等于正文」时把正文又重复渲染到折叠区里。
 const intermediateAiMessages = computed(() => {
-  if (!props.message.aiMessages || props.message.aiMessages.length <= 1) {
+  const list = props.message.aiMessages;
+  if (!list || list.length === 0) {
     return [];
   }
-  return props.message.aiMessages.slice(0, -1).filter(m => m.text && m.text.trim());
+  const body = (props.message.content ?? '').trim();
+  const seen = new Set<string>();
+  const out: typeof list = [];
+  for (const m of list) {
+    const text = (m.text ?? '').trim();
+    if (!text || text === body || seen.has(text)) continue;
+    seen.add(text);
+    out.push(m);
+  }
+  return out;
 });
 
 // 是否存在需要展示折叠的过程内容（思考步骤、思考中状态、工具调用、或中间过程文本）

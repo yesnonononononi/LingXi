@@ -14,6 +14,7 @@ import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.settings.SettingsProvider;
 import com.summit.dp.shared.utils.RequestPreparer;
 import com.summit.dp.tools.baseTools.sub_agent.CallSubAgentTool;
+import com.summit.dp.tools.baseTools.sub_agent.delegation.SubAgentRequestFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import java.util.Map;
@@ -25,8 +26,10 @@ class AgentModelConfigurationTest {
     private final ModelService models = mock(ModelService.class);
     private final SettingsProvider settings = mock(SettingsProvider.class);
     private final AgentService agents = mock(AgentService.class);
-    private final CallSubAgentTool child = new CallSubAgentTool(new ObjectMapper(), null, models,
-            settings, agents, null, null, null, null, null, null, null, null);
+    private final CallSubAgentTool child = new CallSubAgentTool(new ObjectMapper(), agents, null, null,
+            new SubAgentRequestFactory(null, models, settings, null), null, null, null, null, null, null, null);
+    /** 子模型解析已下沉到请求组装器，这里直接打它，避免再经工具入口绕行。 */
+    private final SubAgentRequestFactory childModels = new SubAgentRequestFactory(null, models, settings, null);
 
     @Test void unconfiguredChildFailsBeforeCreatingSessionOrInvokingModel() {
         AgentVO agent = new AgentVO();
@@ -44,7 +47,7 @@ class AgentModelConfigurationTest {
 
     @Test void missingChildModelNeverFallsBackToSettings() {
         ClientException error = assertThrows(ClientException.class,
-                () -> ReflectionTestUtils.invokeMethod(child, "resolveChildModel", (Object) null));
+                () -> ReflectionTestUtils.invokeMethod(childModels, "resolveChildModel", (Object) null));
         assertTrue(error.getMessage().contains("子 Agent 未配置模型"));
         verifyNoInteractions(models, settings);
     }
@@ -54,7 +57,7 @@ class AgentModelConfigurationTest {
         ModelConfig configured = config("child");
         when(settings.current()).thenReturn(Optional.of(selected));
         when(models.runtimeConfig(7L, selected)).thenReturn(configured);
-        assertSame(configured, ReflectionTestUtils.invokeMethod(child, "resolveChildModel", 7L));
+        assertSame(configured, ReflectionTestUtils.invokeMethod(childModels, "resolveChildModel", 7L));
         verify(models).runtimeConfig(7L, selected);
         verifyNoMoreInteractions(models);
     }

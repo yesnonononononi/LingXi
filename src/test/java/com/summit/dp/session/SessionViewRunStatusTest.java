@@ -11,7 +11,6 @@ import com.summit.dp.session.application.service.impl.SessionServiceImpl;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.TokenUsage;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.shared.settings.SettingsProvider;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.junit.jupiter.api.DisplayName;
@@ -46,7 +45,8 @@ class SessionViewRunStatusTest {
     private final ExecutionQueryService executionQueryService = mock(ExecutionQueryService.class);
     private final SessionServiceImpl service = new SessionServiceImpl(aggregate, mock(WorkspaceService.class),
             mock(SessionRepository.class), mock(SessionMessageQueryService.class),
-            mock(SettingsProvider.class), executionQueryService);
+            executionQueryService,
+            mock(com.summit.dp.team.application.service.TeamService.class));
 
     @Test
     @DisplayName("tree 出参组合：无执行→IDLE、RUNNING、SUSPENDED、完成后→IDLE+COMPLETED")

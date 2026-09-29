@@ -12,22 +12,20 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 每次模型调用前，把「本执行所属 Agent 在本次协作轮次里的邮箱」中的待处理消息注入上下文。
- *
- * <p>业务键与发信侧完全同源：{@code workflowExecutionId} 由
- * {@link ExecutionAttributes#workflowExecutionId(Map, String)} 算出（根执行取自身、子执行取
- * {@code ROOT_EXECUTION_ID} 属性），{@code recipientAgentId} 取当前执行的 {@code AGENT_ID} 属性。
- * 两者都来自受控上下文，因此只消费「这一轮协作发给这个 Agent 角色」的消息——
- * 不再用 execution ID 去 OR 命中 root/target 两列。裸模型未绑定 Agent 时不查邮箱。</p>
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class AgenticLoopInterceptor implements LoopInterceptor {
 
+
     private final EmailService emailService;
+
 
     @Override
     public void onBeforeModelInvoke(LoopContext context) {
@@ -49,11 +47,14 @@ public class AgenticLoopInterceptor implements LoopInterceptor {
 
         // 3, 只消费该业务键下的待处理消息
         List<EmailMessageVO> data = emailService.consumePending(workflowExecutionId, recipientAgentId).getData();
+
+        // 4, 空收件箱不发任何消息
         if (data == null || data.isEmpty()) {
             return;
         }
 
-        // 4, 作为 UserMessage 追加到本次模型上下文末尾
+
+        // 6, 作为 UserMessage 追加到本次模型上下文末尾
         List<UserMessageEntity> list = data.stream().map(vo -> UserMessageEntity.from(String.format("""
                 @%s 给你发送了一个新需求: \n
                 %s
@@ -65,4 +66,8 @@ public class AgenticLoopInterceptor implements LoopInterceptor {
         )).toList();
         context.appendMessage(list);
     }
+
+
+
+
 }

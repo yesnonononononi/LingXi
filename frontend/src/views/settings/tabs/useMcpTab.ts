@@ -21,15 +21,19 @@ export function useMcpTab() {
 
   /**
    * 表单模型。
-   * `headerLines` 是「一行一个 Key: Value」的纯文本编辑态——比做成键值对表格控件简单得多，
-   * 提交时再解析成对象；`headersUnchanged` 记录本次是否改动了请求头，
-   * 未改动则整体不提交该字段，由后端保留库中原值（避免把脱敏掩码写回库）。
+   * `headerLines` 是「一行一个 Key: Value」的请求头编辑态；`commandLines` 是 stdio
+   * 启动命令的「一行一段 argv」编辑态——argv 逐段传给子进程，不做 shell 拼接，
+   * 段内空格无需转义；`envLines` 是「一行一个 KEY=VALUE」的环境变量编辑态。
+   * `headersUnchanged` / env 同理：记录本次是否改动，未改动则整体不提交该字段，
+   * 由后端保留库中原值（避免把脱敏掩码写回库）。
    */
   const mcpForm = ref({
     name: '',
     transport: 'streamable-http' as string,
     url: '',
     headerLines: '',
+    commandLines: '',
+    envLines: '',
     toolNamePrefix: '',
     initializationTimeout: MCP_DEFAULT_INIT_TIMEOUT as number | null,
     executionTimeout: MCP_DEFAULT_EXEC_TIMEOUT as number | null,
@@ -38,6 +42,8 @@ export function useMcpTab() {
   });
   /** 编辑态下请求头是否保持原样（未改动则不提交 headers 字段） */
   const mcpHeadersPristine = ref(false);
+  /** 编辑态下环境变量是否保持原样（未改动则不提交 env 字段） */
+  const mcpEnvPristine = ref(false);
 
   const showMcpToast = (msg: string) => {
     mcpToast.value = msg;
@@ -89,6 +95,37 @@ export function useMcpTab() {
     return result;
   };
 
+  /** 把环境变量对象渲染成「KEY=VALUE」多行文本 */
+  const envToLines = (env?: Record<string, string>) => {
+    if (!env) return '';
+    return Object.entries(env)
+      .map(([k, v]) => `${k}=${v}`)
+      .join('\n');
+  };
+
+  /** 解析「KEY=VALUE」多行文本为环境变量对象；值允许空串 */
+  const linesToEnv = (text: string): Record<string, string> => {
+    const result: Record<string, string> = {};
+    for (const rawLine of text.split('\n')) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      const sep = line.indexOf('=');
+      if (sep <= 0) throw new Error(`环境变量格式应为 "KEY=VALUE"，无法解析: ${line}`);
+      const key = line.slice(0, sep).trim();
+      if (!key) throw new Error(`环境变量名不能为空: ${line}`);
+      result[key] = line.slice(sep + 1).trim();
+    }
+    return result;
+  };
+
+  /** 把「一行一段」文本解析为 argv 列表；段内空格合法（argv 不做 shell 拼接） */
+  const linesToCommand = (text: string): string[] => {
+    return text
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  };
+
   const startAddMcp = () => {
     editingMcpId.value = null;
     mcpForm.value = {
@@ -96,6 +133,8 @@ export function useMcpTab() {
       transport: 'streamable-http',
       url: '',
       headerLines: '',
+      commandLines: '',
+      envLines: '',
       toolNamePrefix: '',
       initializationTimeout: MCP_DEFAULT_INIT_TIMEOUT,
       executionTimeout: MCP_DEFAULT_EXEC_TIMEOUT,
@@ -103,6 +142,7 @@ export function useMcpTab() {
       enabled: true,
     };
     mcpHeadersPristine.value = false;
+    mcpEnvPristine.value = false;
     mcpFormError.value = '';
     isEditingOrAddingMcp.value = true;
   };
@@ -114,6 +154,8 @@ export function useMcpTab() {
       transport: item.transport || 'streamable-http',
       url: item.url || '',
       headerLines: headersToLines(item.headers),
+      commandLines: (item.command || []).join('\n'),
+      envLines: envToLines(item.env),
       toolNamePrefix: item.toolNamePrefix || '',
       initializationTimeout: item.initializationTimeout ?? MCP_DEFAULT_INIT_TIMEOUT,
       executionTimeout: item.executionTimeout ?? MCP_DEFAULT_EXEC_TIMEOUT,
@@ -121,6 +163,7 @@ export function useMcpTab() {
       enabled: item.status !== 0,
     };
     mcpHeadersPristine.value = true;
+    mcpEnvPristine.value = true;
     mcpFormError.value = '';
     isEditingOrAddingMcp.value = true;
   };
@@ -130,12 +173,13 @@ export function useMcpTab() {
     editingMcpId.value = null;
     mcpFormError.value = '';
     mcpHeadersPristine.value = false;
+    mcpEnvPristine.value = false;
   };
 
   const handleSaveMcp = async () => {
     mcpFormError.value = '';
     const trimmedName = mcpForm.value.name.trim();
-    const trimmedUrl = mcpForm.value.url.trim();
+    const isStdio = mcpForm.value.transport === 'stdio';
 
     if (!trimmedName) {
       mcpFormError.value = '请填写服务名称';
@@ -145,14 +189,50 @@ export function useMcpTab() {
       mcpFormError.value = '服务名称长度不能超过 64 个字符';
       return;
     }
-    if (!trimmedUrl) {
-      mcpFormError.value = '请填写服务地址';
-      return;
+
+    // 连接参数按传输方式分派：http 系填地址，stdio 填启动命令
+    let command: string[] | undefined;
+    let env: Record<string, string> | undefined;
+    let headers: Record<string, string> | undefined;
+    let url: string | undefined;
+
+    if (isStdio) {
+      command = linesToCommand(mcpForm.value.commandLines);
+      if (command.length === 0) {
+        mcpFormError.value = '请填写 stdio 启动命令（一行一段，如 npx）';
+        return;
+      }
+      // 仅在用户改动过环境变量时才提交该字段，否则后端保留库中原值
+      if (!mcpEnvPristine.value) {
+        try {
+          env = linesToEnv(mcpForm.value.envLines);
+        } catch (e: any) {
+          mcpFormError.value = e?.message || '环境变量格式不正确';
+          return;
+        }
+      }
+    } else {
+      const trimmedUrl = mcpForm.value.url.trim();
+      if (!trimmedUrl) {
+        mcpFormError.value = '请填写服务地址';
+        return;
+      }
+      if (!/^https?:\/\/.+/i.test(trimmedUrl)) {
+        mcpFormError.value = '服务地址必须以 http:// 或 https:// 开头';
+        return;
+      }
+      url = trimmedUrl;
+      // 仅在用户改动过请求头时才提交该字段，否则后端保留库中原值
+      if (!mcpHeadersPristine.value) {
+        try {
+          headers = linesToHeaders(mcpForm.value.headerLines);
+        } catch (e: any) {
+          mcpFormError.value = e?.message || '请求头格式不正确';
+          return;
+        }
+      }
     }
-    if (!/^https?:\/\/.+/i.test(trimmedUrl)) {
-      mcpFormError.value = '服务地址必须以 http:// 或 https:// 开头';
-      return;
-    }
+
     if (mcpForm.value.toolNamePrefix && mcpForm.value.toolNamePrefix.length > 64) {
       mcpFormError.value = '工具名前缀长度不能超过 64 个字符';
       return;
@@ -170,23 +250,13 @@ export function useMcpTab() {
       return;
     }
 
-    // 仅在用户改动过请求头时才提交该字段，否则后端保留库中原值
-    let headers: Record<string, string> | undefined;
-    const headersChanged = !mcpHeadersPristine.value;
-    if (headersChanged) {
-      try {
-        headers = linesToHeaders(mcpForm.value.headerLines);
-      } catch (e: any) {
-        mcpFormError.value = e?.message || '请求头格式不正确';
-        return;
-      }
-    }
-
     const payload = {
       name: trimmedName,
       transport: mcpForm.value.transport,
-      url: trimmedUrl,
+      url,
       headers,
+      command,
+      env,
       toolNamePrefix: mcpForm.value.toolNamePrefix.trim() || undefined,
       initializationTimeout: mcpForm.value.initializationTimeout ?? undefined,
       executionTimeout: mcpForm.value.executionTimeout ?? undefined,
@@ -247,15 +317,16 @@ export function useMcpTab() {
     }
   };
 
-  /** 列表内快速启停，不必进编辑表单 */
+  /**
+   * 列表内快速启停，不必进编辑表单。
+   * 只提交 id 与 status——后端按「缺省字段保持原值」处理，避免把另一传输方式的
+   * 连接参数（url/command）误传回库。
+   */
   const handleToggleMcp = async (item: McpVO) => {
     const nextEnabled = item.status === 0;
     try {
       const res = await McpAPI.update({
         id: item.id,
-        name: item.name,
-        transport: item.transport,
-        url: item.url,
         status: nextEnabled ? 1 : 0,
       });
       if (isOk(res.code)) {
@@ -271,6 +342,15 @@ export function useMcpTab() {
 
   /** 请求头数量，仅用于列表展示（值已脱敏，不展示内容） */
   const headerCountOf = (item: McpVO) => Object.keys(item.headers || {}).length;
+
+  /** 环境变量数量，仅用于列表展示（值已脱敏，不展示内容） */
+  const envCountOf = (item: McpVO) => Object.keys(item.env || {}).length;
+
+  /** 列表卡片的连接信息：http 系显示端点，stdio 显示启动命令 */
+  const connectionLabelOf = (item: McpVO) => {
+    if (item.transport === 'stdio') return (item.command || []).join(' ');
+    return item.url || '';
+  };
 
   onMounted(() => {
     loadMcp();
@@ -291,6 +371,7 @@ export function useMcpTab() {
     mcpToast,
     mcpForm,
     mcpHeadersPristine,
+    mcpEnvPristine,
     loadMcp,
     startAddMcp,
     startEditMcp,
@@ -299,5 +380,7 @@ export function useMcpTab() {
     handleDeleteMcp,
     handleToggleMcp,
     headerCountOf,
+    envCountOf,
+    connectionLabelOf,
   };
 }

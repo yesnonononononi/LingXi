@@ -2,6 +2,7 @@ package com.summit.dp.shared.utils;
 
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.conf.McpConfig;
+import com.summit.core.conf.McpTransport;
 import com.summit.core.conf.ModelConfig;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.service.impl.RuntimeContext;
@@ -69,12 +70,12 @@ class CollaborationToolExposureTest {
     }
 
     @Test
-    @DisplayName("未配清单但配了 MCP：兜底检索入口，静态工具仍不暴露")
+    @DisplayName("未配清单但配了 MCP：兜底两级检索入口，静态工具仍不暴露")
     void mcpPresenceFallsBackToTheSearchEntry() {
         AgentRequest request = request(null, null, null, REGISTERED, true);
 
-        assertEquals(List.of(ToolCatalog.SEARCH_TOOL), request.getToolList(),
-                "MCP 工具只能靠检索入口被发现；静态工具仍须显式授权");
+        assertEquals(List.of(ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.SEARCH_TOOL), request.getToolList(),
+                "MCP 工具分两级发现：先列清单（不含 schema）再检索（含 schema）；静态工具仍须显式授权");
     }
 
     @Test
@@ -87,12 +88,13 @@ class CollaborationToolExposureTest {
     }
 
     @Test
-    @DisplayName("配了静态工具清单：按清单走，并补上检索入口")
+    @DisplayName("配了静态工具清单：按清单走，并补上两级 MCP 入口")
     void explicitWhitelistIsHonouredAndCarriesSearchEntry() {
         AgentRequest request = request(null, null,
                 List.of("read_file", "edit_file"), REGISTERED, true);
 
-        assertEquals(List.of("read_file", "edit_file", ToolCatalog.SEARCH_TOOL), request.getToolList());
+        assertEquals(List.of("read_file", "edit_file", ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.SEARCH_TOOL),
+                request.getToolList());
     }
 
     @Test
@@ -102,6 +104,38 @@ class CollaborationToolExposureTest {
                 List.of("read_file", "edit_file"), REGISTERED, false);
 
         assertEquals(List.of("read_file", "edit_file"), request.getToolList());
+    }
+
+    // --- 默认档位：基础工具集 --------------------------------------------------------------
+
+    @Test
+    @DisplayName("默认 Agent（无团队无 Agent）：拿到基础工具集，且不含任何协作工具")
+    void defaultAgentGetsTheBasicTools() {
+        AgentRequest request = request(null, null, ToolCatalog.DEFAULT_AGENT_TOOLS, REGISTERED, true);
+
+        assertEquals(List.of("execute_command", "read_file", "edit_file", "web_search",
+                        ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.SEARCH_TOOL),
+                request.getToolList(),
+                "终端 + 文件读写 + 联网检索，外加两级 MCP 发现入口；协作工具不该出现（这里给了也调不动）");
+    }
+
+    @Test
+    @DisplayName("默认 Agent 无 MCP：基础工具集原样，不凭空多出检索入口")
+    void defaultAgentWithoutMcpGetsExactlyTheBasicTools() {
+        AgentRequest request = request(null, null, ToolCatalog.DEFAULT_AGENT_TOOLS, REGISTERED, false);
+
+        assertEquals(List.of("execute_command", "read_file", "edit_file", "web_search"),
+                request.getToolList());
+    }
+
+    @Test
+    @DisplayName("只读档位：基础工具集自动收敛成只读的那一半")
+    void readOnlyModeTrimsTheBasicToolsToTheirReadOnlyHalf() {
+        AgentRequest request = request(null, null, ToolCatalog.DEFAULT_AGENT_TOOLS, REGISTERED, false,
+                AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of("read_file", "web_search"));
+
+        assertEquals(List.of("read_file", "web_search"), request.getToolList(),
+                "写工具（execute_command / edit_file）被只读滤网剔除，其余原样保留");
     }
 
     // --- 身份剔除：模型看不到它用不了的能力 ----------------------------------------------
@@ -152,8 +186,16 @@ class CollaborationToolExposureTest {
 
     private AgentRequest request(Long agentId, Long teamId, List<String> configuredTools,
                                  Set<String> registered, boolean withMcp) {
+        return request(agentId, teamId, configuredTools, registered, withMcp,
+                AgentAccessMode.IN_WORKSPACE, Set.of());
+    }
+
+    private AgentRequest request(Long agentId, Long teamId, List<String> configuredTools,
+                                 Set<String> registered, boolean withMcp,
+                                 AgentAccessMode mode, Set<String> readOnlyNames) {
         ToolCatalog catalog = mock(ToolCatalog.class);
         when(catalog.names()).thenReturn(registered);
+        when(catalog.readOnlyNames()).thenReturn(readOnlyNames);
         McpService mcpService = mock(McpService.class);
         when(mcpService.currentConfig()).thenReturn(mcpConfig(withMcp));
 
@@ -164,11 +206,11 @@ class CollaborationToolExposureTest {
                 mock(TeamService.class), mcpService);
 
         ExecutionContext executionContext = ExecutionContext.root(500L, null, null, null,
-                AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS);
+                mode, CommandApprovalPolicy.FULL_ACCESS);
         RuntimeContext context = new RuntimeContext(executionContext, agentId, teamId,
                 SessionVO.builder().id(500L).build(), List.of(), null,
                 ModelConfig.builder().baseUrl("https://example.invalid").apiKey("k").modelName("m").build(),
-                AgentAccessMode.IN_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS, false);
+                mode, CommandApprovalPolicy.FULL_ACCESS, false);
 
         return preparer.buildRequest("prompt", context, configuredTools);
     }
@@ -180,8 +222,9 @@ class CollaborationToolExposureTest {
             config.setMcp(List.of());
             return config;
         }
-        config.setMcp(List.of(new McpConfig.MCP("test-server", "streamable-http",
-                "https://example.invalid/mcp", Map.of(), null, null, null, 1000)));
+        config.setMcp(List.of(new McpConfig.MCP("test-server", McpTransport.STREAMABLE_HTTP,
+                new McpConfig.StreamableHttp("https://example.invalid/mcp", Map.of(), null, null),
+                null, 1000)));
         return config;
     }
 }

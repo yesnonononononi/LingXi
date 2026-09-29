@@ -56,3 +56,7 @@ frontend/dist/
 # 处置方式见 docs/RUNBOOK.md「仓库卫生」一节。
 scratch/
 
+### 浏览器自动化产物 ###
+# Playwright MCP 落盘的页面快照（page-*.yml），仅供本地排查，不纳入版本控制。
+.playwright-mcp/
+

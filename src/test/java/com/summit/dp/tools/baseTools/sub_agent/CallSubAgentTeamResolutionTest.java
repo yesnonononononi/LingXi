@@ -29,10 +29,10 @@ class CallSubAgentTeamResolutionTest {
     private final AgentService agents = mock(AgentService.class);
     private final TeamService teams = mock(TeamService.class);
 
-    /** resolveTeamId 链路只依赖 agentService + teamService，其余构造参数可空。 */
+    /** 入口编排只依赖 agentService + teamService，其余构造参数可空。 */
     private CallSubAgentTool tool() {
-        return new CallSubAgentTool(new ObjectMapper(), null, null, null,
-                agents, null, null, teams, null, null, null, null, null);
+        return new CallSubAgentTool(new ObjectMapper(), agents, teams, null,
+                null, null, null, null, null, null, null, null);
     }
 
     private ToolExecution execution(Map<String, Object> attributes) {
@@ -42,12 +42,11 @@ class CallSubAgentTeamResolutionTest {
         return execution;
     }
 
-    private AgentVO agentWithModel() {
+    private void agentWithModel() {
         AgentVO agent = new AgentVO();
         agent.setId(7L);
         agent.setModelId(3L);
         when(agents.findById(7L)).thenReturn(Result.success(agent));
-        return agent;
     }
 
     @Test

@@ -1,5 +1,5 @@
 import { ref, type Ref, watch, computed, onMounted, onBeforeUnmount, provide } from 'vue';
-import { chatApi, UserConfigAPI } from '../../services/api';
+import { chatApi, UserConfigAPI, SessionAPI } from '../../services/api';
 import type { ChatSession, ModelConfig, ChatMessage, WorkspaceVO, WorkspaceRequest, AgentAccessMode, SubSessionVO } from '../../types/chat';
 import { useSubSessionRouting } from './useSubSessionRouting';
 import { useChatScroll } from './useChatScroll';
@@ -10,7 +10,7 @@ import { CHAT_INPUT_FOCUS_KEY } from '../../composables/useChatInputFocus';
 import { isPersistedSessionId, isTempSessionId, createLocalId } from '../../utils/ids';
 import { extractSubAgentParams, isSubAgentTool } from '../../utils/toolMeta';
 import { normalizeAccessMode, normalizeSettingsTab, type SettingsTabKey } from '../../utils/enum';
-import { toPositiveInt } from '../../utils/api';
+import { toPositiveInt, isOk } from '../../utils/api';
 import { extractErrorMessage } from '../../utils/error';
 // 会话树水合：由后端 runStatus + lastOutcome 派生展示态（唯一来源，前端不再猜测）
 import { toSubItemStatus } from '../../utils/subSessionStatus';
@@ -42,6 +42,7 @@ export type ChatViewEmits = {
   (e: 'updateAccessMode', mode: AgentAccessMode): void;
   (e: 'updateTools', tools: string[]): void;
   (e: 'sendMessage', text: string, isDeepThink: boolean, isHybridSearch: boolean, requirePlan: boolean, teamId?: string | number | null, agentId?: string | number | null, imageFile?: File | null): void;
+  (e: 'updateTeam', teamId: string | number | null): void;
   (e: 'switchBranch', messageId: string, index: number): void;
   (e: 'editMessage', messageId: string, newText: string): void;
   (e: 'toggleTool', toolId: string): void;
@@ -119,14 +120,56 @@ const handleOpenTeamModal = () => {
   isTeamModalOpen.value = true;
 };
 
+/**
+ * 团队下拉框选中变化的唯一同步入口。
+ *
+ * <p>团队是<b>会话绑定</b>（{@code session.team_id}），不再是请求级参数：聊天请求已不带 teamId，
+ * 后端一律按会话记录解析本轮编排身份。因此这里必须把选中值同步落库，否则选完立刻发消息，
+ * 后端仍按旧绑定（或非团队）编排，表现为「选了团队却不委派」。</p>
+ *
+ * <p>落库时机：仅当存在已入库的会话时；空会话（未创建/临时会话）先只更新本地状态，
+ * 等创建会话时随 {@code /session/create} 一并绑定 —— 对一个还不存在的会话换绑无从谈起。</p>
+ */
+const handleUpdateTeam = async (teamId: string | number | null) => {
+  localSelectedTeamId.value = teamId;
+  // 团队与单 Agent 直聊互斥（与输入区内的一致性保持一致）
+  if (teamId) localSelectedAgentId.value = null;
+
+  const activeId = displayActiveId.value;
+  if (!activeId || isTempSessionId(activeId)) return;
+
+  try {
+    const res = await SessionAPI.bindTeam(activeId, teamId);
+    if (!isOk(res.code)) {
+      // 同步失败不许静默：输入区会显示成已选团队，而实际绑定没落库，属于「界面骗人」。
+      console.error('同步会话团队绑定失败:', res.errMsg);
+      return;
+    }
+    // 回写本地会话条目：会话树/侧栏等读取 teamId 的地方随之更新。
+    // 受控分支（props.sessions）由父组件持有数据，只 emit 通知，不越权改写。
+    if (!props.sessions) {
+      const idx = localSessions.value.findIndex(s => String(s.id) === String(activeId));
+      if (idx !== -1) {
+        localSessions.value[idx] = {
+          ...localSessions.value[idx],
+          teamId: teamId === null || teamId === '' ? null : String(teamId),
+        };
+      }
+    } else {
+      emit('updateTeam', teamId);
+    }
+  } catch (err) {
+    console.error('同步会话团队绑定异常:', err);
+  }
+};
+
 const handleTeamCreated = async (newTeamId?: number | string) => {
   if (inputAreaRef.value?.fetchTeams) {
     await inputAreaRef.value.fetchTeams();
   }
   if (newTeamId) {
-    localSelectedTeamId.value = newTeamId;
-    // 团队与单 Agent 直聊互斥：新建并选定团队后退出单 Agent 模式
-    localSelectedAgentId.value = null;
+    // 与下拉框选择走同一条同步链路：本地状态 + 后端会话绑定一起落位
+    await handleUpdateTeam(newTeamId);
   }
 };
 
@@ -1036,6 +1079,14 @@ const handleExportSession = () => {
   URL.revokeObjectURL(url);
 };
 
+/**
+ * 发送消息。
+ *
+ * @param teamId 不作为请求参数下发（团队是会话绑定，聊天请求不带 teamId）：
+ *               仅在「本次要新建会话」时作为首绑参数随 /session/create 落库。
+ *               已有会话的选中变化已由 {@link handleUpdateTeam}（下拉框 updateTeam 事件）提前同步，
+ *               这里不重复调用，避免连点两次绑定请求。
+ */
 const handleSendMessage = async (text: string, isDeepThink: boolean, isHybridSearch: boolean, requirePlan = false, teamId?: string | number | null, agentId?: string | number | null, imageFile?: File | null) => {
   // 重入守卫：流进行中拒绝再次发送（与 handleResendMessage 同款），防止并发流叠加污染计数与归属快照
   if (isSending.value) return;
@@ -1064,9 +1115,12 @@ const handleSendMessage = async (text: string, isDeepThink: boolean, isHybridSea
       // 响应返回后的条目定位一律以快照为准，绝不读写「响应到达时的当下会话」
       const sentFromLocalId = localActiveId.value;
       try {
+        // 新会话连同当前选中的团队一并绑定：聊天请求已不带 teamId，
+        // 创建是唯一能同步团队绑定的时机（已有会话走 handleUpdateTeam → bindTeam）。
         const createdSessionId = await chatApi.createSession(
           text,
-          currentWs?.id
+          currentWs?.id,
+          localSelectedTeamId.value
         );
         sessionIdToSend = createdSessionId;
 
@@ -1393,6 +1447,7 @@ onBeforeUnmount(() => {
     handleDeleteWorkspace,
     handleOpenTeamModal,
     handleTeamCreated,
+    handleUpdateTeam,
     handleOpenModels,
     handleOpenModelEditor,
     handleUpdateModel,

@@ -90,6 +90,31 @@ class AgenticLoopInterceptorTest {
         assertTrue(((UserMessageEntity) appended.get(1)).text().contains("请处理乙"));
     }
 
+    @Test
+    @DisplayName("空收件箱：保持安静，不注入任何话术")
+    void staysSilentWhenInboxEmpty() {
+        when(emailService.consumePending(900L, 7L)).thenReturn(Result.success(List.of()));
+
+        List<Message> appended = new ArrayList<>();
+        interceptor.onBeforeModelInvoke(new LoopContext("900",
+                Map.of(ExecutionAttributes.AGENT_ID, "7"), appended::addAll));
+
+        assertTrue(appended.isEmpty(),
+                "收件箱为空时必须完全静默：任何催办话术都会让模型误以为上一封没发出去，从而重发");
+    }
+
+    @Test
+    @DisplayName("消费返回 null 数据：同样保持安静，不抛异常")
+    void staysSilentWhenConsumeReturnsNullData() {
+        when(emailService.consumePending(900L, 7L)).thenReturn(Result.success(null));
+
+        List<Message> appended = new ArrayList<>();
+        interceptor.onBeforeModelInvoke(new LoopContext("900",
+                Map.of(ExecutionAttributes.AGENT_ID, "7"), appended::addAll));
+
+        assertTrue(appended.isEmpty());
+    }
+
     private static EmailMessageVO message(Long id, Long senderId, String content) {
         return EmailMessageVO.builder()
                 .id(id)

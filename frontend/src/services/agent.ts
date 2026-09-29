@@ -8,6 +8,13 @@ const appendFormValue = (form: FormData, key: string, value: string | number | b
   if (value !== null && value !== undefined) form.append(key, String(value));
 };
 
+/**
+ * 组装聊天请求表单。
+ *
+ * <p>不含 {@code teamId}：团队是会话绑定（{@code session.team_id}）的属性，后端按会话记录
+ * 解析本轮编排身份，请求不再携带。团队选择由前端在会话创建/换绑时同步
+ * （{@code SessionAPI.create} / {@code SessionAPI.bindTeam}）。</p>
+ */
 const createChatForm = (
   sessionId: string | number | null,
   prompt: string,
@@ -15,7 +22,6 @@ const createChatForm = (
   workDir?: string | null,
   modelId?: number | string | null,
   requirePlan?: boolean,
-  teamId?: number | string | null,
   agentId?: number | string | null,
   imageFile?: File | null,
   imageUrl?: string | null
@@ -26,7 +32,6 @@ const createChatForm = (
   appendFormValue(form, 'workDir', workDir);
   appendFormValue(form, 'workspaceId', workspaceId);
   appendFormValue(form, 'modelId', modelId);
-  appendFormValue(form, 'teamId', toPositiveInt(teamId, 0) || null);
   appendFormValue(form, 'agentId', toPositiveInt(agentId, 0) || null);
   appendFormValue(form, 'requirePlan', requirePlan === true);
   if (imageFile) form.append('image', imageFile, imageFile.name);
@@ -56,14 +61,13 @@ export class AgentAPI {
     workDir?: string | null,
     modelId?: number | string | null,
     requirePlan?: boolean,
-    teamId?: number | string | null,
-    /** 单 Agent 直聊：指定该 Agent 的人设与工具清单；与 teamId 互斥，后端优先按 teamId 走团队编排 */
+    /** 单 Agent 直聊：指定该 Agent 的人设与工具清单；团队身份由会话绑定决定，后端优先走团队编排 */
     agentId?: number | string | null,
     imageFile?: File | null,
     imageUrl?: string | null
   ): Promise<Result<string>> {
     return http.post<any, Result<string>>('/a/completion', createChatForm(
-      sessionId, prompt, workspaceId, workDir, modelId, requirePlan, teamId, agentId, imageFile, imageUrl
+      sessionId, prompt, workspaceId, workDir, modelId, requirePlan, agentId, imageFile, imageUrl
     ));
   }
 
@@ -76,8 +80,7 @@ export class AgentAPI {
     modelId?: number | string | null,
     requirePlan?: boolean,
     signal?: AbortSignal,
-    teamId?: number | string | null,
-    /** 单 Agent 直聊：指定该 Agent 的人设与工具清单；与 teamId 互斥 */
+    /** 单 Agent 直聊：指定该 Agent 的人设与工具清单；团队身份由会话绑定决定 */
     agentId?: number | string | null,
     imageFile?: File | null,
     imageUrl?: string | null
@@ -89,7 +92,7 @@ export class AgentAPI {
       signal,
       // 不手动设置 Content-Type，由浏览器生成含 boundary 的 multipart/form-data。
       body: createChatForm(
-        sessionId, prompt, workspaceId, workDir, modelId, requirePlan, teamId, agentId, imageFile, imageUrl
+        sessionId, prompt, workspaceId, workDir, modelId, requirePlan, agentId, imageFile, imageUrl
       )
     });
 

@@ -1,9 +1,11 @@
-package com.summit.dp.tools.baseTools.sub_agent;
+package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.conf.ModelConfig;
+import com.summit.core.conversation.message.Message;
+import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.tool.ToolExecution;
+import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.model.application.service.ModelService;
@@ -15,7 +17,6 @@ import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Map;
@@ -27,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -36,20 +37,19 @@ import static org.mockito.Mockito.when;
  * <ul>
  *   <li>属性里带 {@code TEAM_ID}（成员也有 {@code send_mail_to_agent}，发信要用团队快照）；</li>
  *   <li>工具清单里有 {@code send_mail_to_agent}，但<b>永远没有</b> {@code call_sub_agent}；</li>
- *   <li>系统提示词里带上与指挥者同一份的团队成员名单。</li>
+ *   <li>系统提示词里带上与指挥者同一份的团队成员名单；</li>
+ *   <li>{@code messages} 是执行期历史唯一来源：复用时要带上既有历史，首派时只有本次任务。</li>
  * </ul>
  */
-class CallSubAgentMemberWiringTest {
+class SubAgentRequestFactoryTest {
 
     private final WorkspaceService workspaceService = mock(WorkspaceService.class);
     private final ModelService modelService = mock(ModelService.class);
     private final SettingsProvider settingsProvider = mock(SettingsProvider.class);
     private final WorkspaceConverter workspaceConverter = mock(WorkspaceConverter.class);
 
-    /** buildRequest 只依赖 modelService / settingsProvider / workspace*，其余构造参数可空。 */
-    private final CallSubAgentTool tool = new CallSubAgentTool(new ObjectMapper(), workspaceService,
-            modelService, settingsProvider, null, null, workspaceConverter,
-            null, null, null, null, null, null);
+    private final SubAgentRequestFactory factory = new SubAgentRequestFactory(
+            workspaceService, modelService, settingsProvider, workspaceConverter);
 
     @Test
     @DisplayName("子执行：带 TEAM_ID、带发信工具、不带委派工具，并带上团队成员名单")
@@ -65,7 +65,7 @@ class CallSubAgentMemberWiringTest {
                 .attributes(Map.of(ExecutionAttributes.AGENT_ID, "5", ExecutionAttributes.TEAM_ID, "3"))
                 .build();
 
-        AgentRequest request = buildRequest(member, team, toolExecution);
+        AgentRequest request = build(member, team, toolExecution);
 
         // 1) 属性：TEAM_ID 随委派下行，身份链完整
         Map<String, Object> attributes = request.runtimeParametersOrDefault().getAttributes();
@@ -100,7 +100,7 @@ class CallSubAgentMemberWiringTest {
                 .attributes(Map.of(ExecutionAttributes.AGENT_ID, "5"))
                 .build();
 
-        AgentRequest request = buildRequest(member, TeamVO.builder().id(3L).commanderAgentId(5L)
+        AgentRequest request = build(member, TeamVO.builder().id(3L).commanderAgentId(5L)
                 .agents(List.of(member)).build(), toolExecution);
 
         assertNull(request.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.TEAM_ID));
@@ -114,7 +114,7 @@ class CallSubAgentMemberWiringTest {
         AgentVO member = agent(6L, "架构师", "你是架构师");
         member.setToolList(null);
 
-        AgentRequest request = buildRequest(member, TeamVO.builder().id(3L).commanderAgentId(5L)
+        AgentRequest request = build(member, TeamVO.builder().id(3L).commanderAgentId(5L)
                 .agents(List.of(member)).build(), ToolExecution.builder()
                 .executionId("900")
                 .attributes(Map.of(ExecutionAttributes.AGENT_ID, "5", ExecutionAttributes.TEAM_ID, "3"))
@@ -123,20 +123,76 @@ class CallSubAgentMemberWiringTest {
         assertEquals(List.of(ToolCatalog.SEND_MAIL_TO_AGENT), request.getToolList());
     }
 
-    private AgentRequest buildRequest(AgentVO member, TeamVO team, ToolExecution toolExecution) {
+    @Test
+    @DisplayName("首派：messages 只有本次任务，不带任何历史")
+    void freshDelegationCarriesOnlyCurrentTask() {
+        stubModel();
+
+        AgentVO member = agent(6L, "架构师", "你是架构师");
+        AgentRequest request = build(member, teamOf(member), parentToolExecution(), List.of());
+
+        List<Message> messages = request.getMessages();
+        assertEquals(1, messages.size());
+        assertTrue(messages.getFirst().text().contains("请只回复一个词：ok"));
+    }
+
+    @Test
+    @DisplayName("复用：messages 为「既有历史 + 本次任务」，且本次任务在末位")
+    void reusedDelegationAppendsTaskAfterHistory() {
+        stubModel();
+
+        AgentVO member = agent(6L, "架构师", "你是架构师");
+        List<Message> prior = List.of(
+                UserMessageEntity.from("上次的任务"),
+                UserMessageEntity.from("上次的追问"));
+
+        AgentRequest request = build(member, teamOf(member), parentToolExecution(), prior);
+
+        List<Message> messages = request.getMessages();
+        assertEquals(3, messages.size(), "历史两条 + 本次任务一条");
+        assertTrue(messages.get(0).text().contains("上次的任务"));
+        assertTrue(messages.get(1).text().contains("上次的追问"));
+        assertTrue(messages.getLast().text().contains("请只回复一个词：ok"));
+    }
+
+    @Test
+    @DisplayName("子 Agent 未绑定模型：直接报错，不静默继承父任务模型")
+    void missingModelFailsFast() {
+        AgentVO member = agent(6L, "架构师", "你是架构师");
+        member.setModelId(null);
+
+        org.junit.jupiter.api.Assertions.assertThrows(com.summit.dp.shared.exception.ClientException.class,
+                () -> build(member, teamOf(member), parentToolExecution(), List.of()));
+    }
+
+    private AgentRequest build(AgentVO member, TeamVO team, ToolExecution toolExecution) {
+        return build(member, team, toolExecution, List.of());
+    }
+
+    private AgentRequest build(AgentVO member, TeamVO team, ToolExecution toolExecution, List<Message> priorMessages) {
         CallSubAgentToolArgument argument = new CallSubAgentToolArgument();
         argument.setAgentId(member.getId());
         argument.setTask("请只回复一个词：ok");
         argument.setPrompt("这是委派上下文");
-        return ReflectionTestUtils.invokeMethod(tool, "buildRequest",
-                argument, member, team, toolExecution, null, "1234", null);
+        return factory.build(argument, member, team, toolExecution, null, "1234", null, priorMessages);
+    }
+
+    private static TeamVO teamOf(AgentVO member) {
+        return TeamVO.builder().id(3L).commanderAgentId(5L).agents(List.of(member)).build();
+    }
+
+    private static ToolExecution parentToolExecution() {
+        return ToolExecution.builder()
+                .executionId("900")
+                .attributes(Map.of(ExecutionAttributes.AGENT_ID, "5", ExecutionAttributes.TEAM_ID, "3"))
+                .build();
     }
 
     private void stubModel() {
         when(settingsProvider.current()).thenReturn(Optional.empty());
         when(modelService.runtimeConfig(anyLong(), any())).thenReturn(ModelConfig.builder()
                 .baseUrl("https://example.invalid").apiKey("k").modelName("m").build());
-        when(workspaceService.findByDir(any())).thenReturn(com.summit.ddd.application.vo.Result.success(null));
+        when(workspaceService.findByDir(anyString())).thenReturn(Result.success(null));
     }
 
     private static AgentVO agent(Long id, String name, String prompt) {

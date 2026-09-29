@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useMcpTab } from './useMcpTab';
-import { MCP_TRANSPORTS } from '../../../types/chat';
+import { MCP_TRANSPORTS, MCP_STDIO_ENV_HINT } from '../../../types/chat';
 
 defineProps<{
   isDark?: boolean;
@@ -17,6 +17,7 @@ const {
   mcpToast,
   mcpForm,
   mcpHeadersPristine,
+  mcpEnvPristine,
   loadMcp,
   startAddMcp,
   startEditMcp,
@@ -25,6 +26,8 @@ const {
   handleDeleteMcp,
   handleToggleMcp,
   headerCountOf,
+  envCountOf,
+  connectionLabelOf,
 } = useMcpTab();
 </script>
 
@@ -121,15 +124,38 @@ const {
                 >
                   {{ item.transport || 'streamable-http' }}
                 </span>
+                <!-- stdio 环境依赖提示：黄圈白底感叹号，hover 说明 npx/PATH 限制 -->
+                <span
+                  v-if="item.transport === 'stdio'"
+                  class="inline-flex shrink-0 cursor-help"
+                  :title="MCP_STDIO_ENV_HINT"
+                >
+                  <svg
+                    class="w-3.5 h-3.5"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="#f59e0b"
+                    stroke-width="1.4"
+                    aria-hidden="true"
+                  >
+                    <circle cx="8" cy="8" r="7" fill="#ffffff" />
+                    <path stroke-linecap="round" d="M8 4.6v4.2" />
+                    <circle cx="8" cy="11.4" r="0.85" fill="#f59e0b" stroke="none" />
+                  </svg>
+                </span>
               </div>
 
+              <!-- 连接信息：http 系显示端点，stdio 显示启动命令 -->
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 break-all font-mono">
-                {{ item.url }}
+                {{ connectionLabelOf(item) }}
               </p>
 
               <div class="flex items-center gap-3 mt-1.5 text-[11px] text-gray-400 dark:text-gray-500">
                 <span v-if="headerCountOf(item) > 0">
                   {{ headerCountOf(item) }} 个请求头
+                </span>
+                <span v-if="envCountOf(item) > 0">
+                  {{ envCountOf(item) }} 个环境变量
                 </span>
                 <span v-if="item.toolNamePrefix">
                   前缀 {{ item.toolNamePrefix }}
@@ -199,7 +225,7 @@ const {
         <input
           v-model="mcpForm.name"
           type="text"
-          placeholder="如 github、filesystem，需全局唯一"
+          placeholder="如 github、filesystem、shadcn，需全局唯一"
           :class="[
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
             isDark
@@ -211,7 +237,28 @@ const {
 
       <!-- 传输方式 -->
       <div class="space-y-1.5">
-        <label class="text-xs font-medium text-gray-700 dark:text-gray-300">传输方式</label>
+        <label class="text-xs font-medium text-gray-700 dark:text-gray-300 inline-flex items-center gap-1.5">
+          传输方式
+          <!-- stdio 环境依赖提示：黄圈白底感叹号，hover 说明 npx/PATH 限制 -->
+          <span
+            v-if="mcpForm.transport === 'stdio'"
+            class="inline-flex cursor-help"
+            :title="MCP_STDIO_ENV_HINT"
+          >
+            <svg
+              class="w-3.5 h-3.5"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="#f59e0b"
+              stroke-width="1.4"
+              aria-hidden="true"
+            >
+              <circle cx="8" cy="8" r="7" fill="#ffffff" />
+              <path stroke-linecap="round" d="M8 4.6v4.2" />
+              <circle cx="8" cy="11.4" r="0.85" fill="#f59e0b" stroke="none" />
+            </svg>
+          </span>
+        </label>
         <div class="flex items-center gap-2">
           <button
             v-for="t in MCP_TRANSPORTS"
@@ -230,10 +277,13 @@ const {
             {{ t }}
           </button>
         </div>
+        <p v-if="mcpForm.transport === 'stdio'" class="text-[11px] text-gray-400 dark:text-gray-500">
+          stdio 通过子进程的标准输入/输出通信，本机需已安装对应 CLI（如 npx）。
+        </p>
       </div>
 
-      <!-- 服务地址 -->
-      <div class="space-y-1.5">
+      <!-- 服务地址（http 系传输） -->
+      <div v-if="mcpForm.transport !== 'stdio'" class="space-y-1.5">
         <label class="text-xs font-medium text-gray-700 dark:text-gray-300">服务地址</label>
         <input
           v-model="mcpForm.url"
@@ -248,8 +298,53 @@ const {
         />
       </div>
 
-      <!-- 请求头 -->
-      <div class="space-y-1.5">
+      <!-- stdio 启动命令 -->
+      <div v-if="mcpForm.transport === 'stdio'" class="space-y-1.5">
+        <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
+          启动命令
+          <span class="text-gray-400 dark:text-gray-500 font-normal">（一行一段 argv，段内空格无需转义）</span>
+        </label>
+        <textarea
+          v-model="mcpForm.commandLines"
+          rows="3"
+          placeholder="npx&#10;shadcn@latest&#10;mcp"
+          :class="[
+            'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
+            isDark
+              ? 'bg-[#151c2c] border-[#252f44] text-gray-100 placeholder-gray-600 focus:border-blue-500'
+              : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
+          ]"
+        ></textarea>
+      </div>
+
+      <!-- stdio 环境变量 -->
+      <div v-if="mcpForm.transport === 'stdio'" class="space-y-1.5">
+        <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
+          环境变量
+          <span class="text-gray-400 dark:text-gray-500 font-normal">（一行一个，格式 KEY=VALUE）</span>
+        </label>
+        <textarea
+          v-model="mcpForm.envLines"
+          @input="mcpEnvPristine = false"
+          rows="3"
+          placeholder="GITHUB_TOKEN=your-token"
+          :class="[
+            'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
+            isDark
+              ? 'bg-[#151c2c] border-[#252f44] text-gray-100 placeholder-gray-600 focus:border-blue-500'
+              : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
+          ]"
+        ></textarea>
+        <p
+          v-if="mcpEnvPristine && mcpForm.envLines"
+          class="text-[11px] text-gray-400 dark:text-gray-500"
+        >
+          已配置的环境变量值已脱敏显示；不作修改即保持原值不变。
+        </p>
+      </div>
+
+      <!-- 请求头（http 系传输） -->
+      <div v-if="mcpForm.transport !== 'stdio'" class="space-y-1.5">
         <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
           请求头
           <span class="text-gray-400 dark:text-gray-500 font-normal">（一行一个，格式 名称: 值）</span>

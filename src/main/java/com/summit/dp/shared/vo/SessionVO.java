@@ -26,7 +26,10 @@ public class SessionVO {
      * 与 {@link #runStatus} 相互独立、可同时非空。
      */
     private String lastOutcome;
-    /** 会话绑定的 Agent；0 表示未绑定 Agent 的普通会话 */
+    /**
+     * 会话绑定的 Agent；{@code null} 表示未绑定 Agent 的普通会话 / 根会话。
+     * <p>子代理会话返回其自身的子 Agent（{@code session.agent_id}），不再回落全局单例身份。</p>
+     */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long agentId;
     /** 所属根会话 ID；0 表示自身就是根会话（团队模式下的委派发起会话） */
@@ -39,7 +42,7 @@ public class SessionVO {
     /** 绑定的工作空间 id（可空） */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long workspaceId;
-    /** 绑定的协作团队 id（仅创建时绑定；null=非团队会话） */
+    /** 绑定的协作团队 id（可经 /session/{id}/team 换绑；null=非团队会话） */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long teamId;
     private String workDir;

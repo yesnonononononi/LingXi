@@ -5,6 +5,8 @@ import type { SessionMessagePageVO, SessionTreeVO, SessionVO } from '../types/ch
 export interface SessionCreateRequest {
   name: string;
   workspaceId?: number | string | null;
+  /** 建会话时一并绑定的团队；不传即非团队会话，后续可经 bindTeam 换绑。 */
+  teamId?: number | string | null;
 }
 
 /** 3. 会话 API (对应后端 SessionController) */
@@ -23,7 +25,22 @@ export class SessionAPI {
     return http.post<any, Result<string | number>>('/session/create', {
       name: data.name,
       workspaceId: data.workspaceId ?? null,
+      teamId: data.teamId ?? null,
     });
+  }
+
+  /**
+   * 换绑会话的协作团队（前端团队下拉框选中的同步落点）。
+   * 对应后端 @PostMapping("/{id}/team")；teamId 传 null/空即解绑。
+   *
+   * <p>teamId 作为 query 参数下发：雪花 ID 走 JSON body 会被 JS Number 抹掉精度，
+   * 原样以字符串传递最安全。</p>
+   */
+  static async bindTeam(id: number | string, teamId: number | string | null): Promise<Result<void>> {
+    const query = teamId === null || teamId === undefined || teamId === ''
+      ? ''
+      : `?teamId=${encodeURIComponent(String(teamId))}`;
+    return http.post<any, Result<void>>(`/session/${id}/team${query}`);
   }
 
   /**

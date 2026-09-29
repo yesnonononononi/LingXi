@@ -135,9 +135,22 @@ export async function readSseResponse(
     rootSessionId?: string | null;
     /** 空闲超时（毫秒）；<=0 表示不启用。缺省 DEFAULT_SSE_IDLE_TIMEOUT_MS */
     idleTimeoutMs?: number;
+    /**
+     * 是否在「根会话终态事件」处结束读取。缺省 `true`（请求级流：这条流本来就只服务一次执行）。
+     *
+     * 会话级订阅必须传 `false`：一次执行结束不代表这个会话不会再有事发生
+     * （恢复、子代理、下一轮消息都会继续往同一条流里推）。传 `true` 会让订阅在第一次
+     * 执行结束时静默失效，表现就是「切回来又收不到更新了」。
+     */
+    stopOnTerminal?: boolean;
   }
 ): Promise<void> {
-  const { onEvent, rootSessionId: initialRootSessionId, idleTimeoutMs = DEFAULT_SSE_IDLE_TIMEOUT_MS } = options;
+  const {
+    onEvent,
+    rootSessionId: initialRootSessionId,
+    idleTimeoutMs = DEFAULT_SSE_IDLE_TIMEOUT_MS,
+    stopOnTerminal = true,
+  } = options;
 
   if (!response.body) {
     throw new Error('SSE 响应不含可读流');
@@ -205,8 +218,10 @@ export async function readSseResponse(
             rootSessionId = eventSessionId;
           }
           // 子 Agent 也会发完成事件；只有根会话结束才能关闭本次读取。
+          // 会话级订阅（stopOnTerminal=false）跳过这段：一次执行结束不是这个会话的终点。
           if (
-            isTerminalEvent(typeUpper)
+            stopOnTerminal
+            && isTerminalEvent(typeUpper)
             && rootSessionId !== null
             && eventSessionId === rootSessionId
           ) {

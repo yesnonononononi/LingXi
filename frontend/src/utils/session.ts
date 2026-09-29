@@ -305,13 +305,18 @@ export function parseSessionMessages(rawMessages: any, sessionId = 'session'): C
       } else {
         if (!currentAssistantMsg.aiMessages) currentAssistantMsg.aiMessages = [];
         if (text) {
-          currentAssistantMsg.aiMessages.push({
-            id: `aimsg-${sessionId}-${i}`,
-            text,
-            thinking,
-            timestamp: ts,
-            order: i * 10 + 1
-          });
+          // 同一轮内相邻 AI 行文本相同视为重复（如断流恢复重放过的事件），只保留第一条，
+          // 否则正文（末条）与折叠区（slice(0,-1) 的非末条）会同时出现同一段文本。
+          const lastAi = currentAssistantMsg.aiMessages[currentAssistantMsg.aiMessages.length - 1];
+          if (!lastAi || lastAi.text !== text) {
+            currentAssistantMsg.aiMessages.push({
+              id: `aimsg-${sessionId}-${i}`,
+              text,
+              thinking,
+              timestamp: ts,
+              order: i * 10 + 1
+            });
+          }
           // 始终保持展示最后一条 aimessage 的正文
           currentAssistantMsg.content = text;
         }

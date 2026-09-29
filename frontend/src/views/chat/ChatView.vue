@@ -70,6 +70,7 @@ const {
   handleDeleteWorkspace,
   handleOpenTeamModal,
   handleTeamCreated,
+  handleUpdateTeam,
   handleOpenModels,
   handleOpenModelEditor,
   handleUpdateModel,
@@ -460,7 +461,7 @@ const {
             @stopGeneration="handleStopGeneration"
             @updateModel="handleUpdateModel"
             @updateAccessMode="handleUpdateAccessMode"
-            @updateTeam="(t) => localSelectedTeamId = t"
+            @updateTeam="handleUpdateTeam"
             @updateAgent="(a) => localSelectedAgentId = a"
             @openModelEditor="handleOpenModelEditor"
             @openTeamModal="handleOpenTeamModal"

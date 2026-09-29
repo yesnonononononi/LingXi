@@ -126,6 +126,39 @@ class SendMailToAgentToolTest {
         verifyNoInteractions(emailService);
     }
 
+    @Test
+    @DisplayName("注册的工具描述必须讲清投递是异步的、且无回复通道")
+    void registeredDescriptionExplainsAsynchronousDelivery() throws Exception {
+        ToolDefinition<SendMailToAgentTool> definition =
+                new ToolConfig().sendMailToAgentToolToolDefinition(objectMapper, emailService);
+
+        String description = definition.description();
+        assertTrue(description.contains("asynchronous"),
+                "必须点明投递是异步的，否则模型会以为发完就能同步拿到回复");
+        assertTrue(description.contains("next model round"),
+                "必须说明对方在它自己的下一轮才读到");
+        assertTrue(description.contains("no reply channel"),
+                "必须说明本调用不返回回复");
+        assertTrue(description.contains("never resend"),
+                "必须明确禁止「因为没收到回复就重发」——这正是重复投递的成因");
+    }
+
+    @Test
+    @DisplayName("成功回执必须与描述同口径：已投递 + 对方下一轮读到 + 不要重发")
+    void successAckStatesDeliveryAndAdvisesWaiting() {
+        ToolExecuteResult result = tool.execute(execution("900",
+                Map.of(ExecutionAttributes.AGENT_ID, "100"),
+                "{\"toAgentId\":7,\"mailContent\":\"开场立论\"}"));
+
+        String ack = result.getToolOutput();
+        assertTrue(result.isSuccess());
+        assertTrue(ack.contains("delivered"), "必须让模型确认这封确实发出去了");
+        assertTrue(ack.contains("7"), "回执要带上收件 Agent，便于模型对齐上下文");
+        assertTrue(ack.contains("next model round"), "要说明对方何时读到，与工具描述一致");
+        assertTrue(ack.contains("do not resend"),
+                "必须给出「别重发」的行动指引，掐断「怀疑没发出去 → 重发」的循环");
+    }
+
     private static ToolExecution execution(String executionId, Map<String, Object> attributes, String args) {
         return ToolExecution.builder()
                 .executionId(executionId)
