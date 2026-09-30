@@ -16,6 +16,7 @@ import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.application.service.SessionMessageQueryService;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.model.CursorResult;
+import com.summit.dp.shared.vo.ExecutionSummaryVO;
 import com.summit.dp.shared.vo.SessionMessagePageVO;
 import com.summit.dp.shared.vo.SessionMessageVO;
 import com.summit.dp.shared.vo.SessionTreeVO;
@@ -24,13 +25,23 @@ import com.summit.dp.shared.vo.WorkspaceVO;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.workspace.application.service.WorkspaceService;
+import com.summit.dp.agent.domain.model.Agent;
+import com.summit.dp.agent.domain.repository.AgentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 会话应用服务。
@@ -54,6 +65,7 @@ public class SessionServiceImpl implements SessionService {
     private final ExecutionQueryService executionQueryService;
     /** 团队校验入口：换绑前确认目标团队存在，避免把会话挂到一个查不到的团队上。 */
     private final TeamService teamService;
+    private final AgentRepository agentRepository;
 
     @Override
     public Result<Long> initialize(String input, Long workspaceId, Long teamId) {
@@ -126,12 +138,15 @@ public class SessionServiceImpl implements SessionService {
         // 一次 IN 批量取执行状态列表，逐会话组合展示状态（避免逐条查询）。
         Map<Long, List<ExecutionState>> statesBySession = executionQueryService.latestStatesBySession(
                 source.getRecords().stream().map(Session::getId).toList());
+        List<Long> agentIds = source.getRecords().stream().map(Session::getAgentId).filter(Objects::nonNull).distinct().toList();
+        Map<Long, String> agentNames = agentIds.isEmpty() ? Collections.emptyMap() :
+                agentRepository.findList(agentIds).stream().collect(Collectors.toMap(Agent::getId, Agent::getName, (a, b) -> a));
         PageResult<SessionVO> result = new PageResult<>(
                 source.getCurrent(),
                 source.getSize(),
                 source.getTotal(),
                 source.getRecords().stream()
-                        .map(session -> toVO(session, statesBySession.get(session.getId()), null))
+                        .map(session -> toVO(session, statesBySession.get(session.getId()), null, agentNames.get(session.getAgentId())))
                         .toList()
         );
         return Result.success(result);
@@ -142,7 +157,10 @@ public class SessionServiceImpl implements SessionService {
         // 查不到即抛「会话不存在」（全局处理器转 403），不回 200 + null：
         // 那会让调用方把「不存在」读成「这个会话是空的」。
         Session session = sessionAggregateService.requireOwned(id);
-        return Result.success(toVO(session, executionQueryService.latestStatesBySession(List.of(id)).get(id), null));
+        String agentName = session.getAgentId() != null
+                ? agentRepository.findById(session.getAgentId()).map(Agent::getName).orElse(null)
+                : null;
+        return Result.success(toVO(session, executionQueryService.latestStatesBySession(List.of(id)).get(id), null, agentName));
     }
 
     @Override
@@ -160,9 +178,80 @@ public class SessionServiceImpl implements SessionService {
         return Result.success(SessionMessagePageVO.builder()
                 .records(loaded.records())
                 .toolCallCount(loaded.toolCallCount())
+                // 本页涉及的执行摘要：一次 IN 批量装载（不是逐消息查），且不含 snapshot。
+                .executions(executionSummariesOf(sessionId, loaded.records()))
                 .nextCursor(slice.nextCursor())
                 .hasMore(slice.hasMore())
                 .build());
+    }
+
+    /**
+     * 装配本页消息涉及的执行摘要，键为 {@code executionId} 字符串。
+     *
+     * <p><b>一次 IN 查询</b>：先收集本页去重后的 executionId 再批量装载，避免逐消息查询的 N+1。
+     * 摘要字典与消息列表解耦 —— 同一执行横跨多条消息（USER + 多轮 AI/TOOL），
+     * 前端按 executionId 分组时，组内任意一条消息都能查到同一份摘要。</p>
+     *
+     * <p><b>归属校验</b>：只装配 sessionId 与本会话一致的摘要。缺了这道闸，一个串错的 id
+     * 就能让 A 会话显示 B 会话的用量 —— 统计口径错了比没有统计更糟。</p>
+     *
+     * <p>消息带 executionId 但摘要缺席（执行行不存在 / 属于别的会话）时不报错：
+     * 前端按「摘要缺失」降级展示，消息本身照常显示。</p>
+     */
+    private Map<String, ExecutionSummaryVO> executionSummariesOf(Long sessionId, List<SessionMessageVO> records) {
+        Set<Long> executionIds = new LinkedHashSet<>();
+        for (SessionMessageVO record : records) {
+            if (record != null && record.getExecutionId() != null) {
+                executionIds.add(record.getExecutionId());
+            }
+        }
+        if (executionIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<Long, ExecutionQueryService.ExecutionSummary> summaries =
+                executionQueryService.summariesByIds(executionIds);
+
+        // 进行中执行的「已历时」需要一个统一的时间基准：整页共用同一个 now，避免同页不同行差几毫秒。
+        Instant now = Instant.now();
+        Map<String, ExecutionSummaryVO> result = new LinkedHashMap<>();
+        for (ExecutionQueryService.ExecutionSummary summary : summaries.values()) {
+            if (!Objects.equals(summary.sessionId(), sessionId)) {
+                log.warn("执行摘要与会话归属不符，已丢弃: sessionId={}, executionId={}, actualSessionId={}",
+                        sessionId, summary.executionId(), summary.sessionId());
+                continue;
+            }
+            result.put(String.valueOf(summary.executionId()), ExecutionSummaryVO.builder()
+                    .executionId(summary.executionId())
+                    .status(summary.status())
+                    .modelName(summary.modelName())
+                    .modelProvider(summary.modelProvider())
+                    .inputTokens(summary.inputTokens())
+                    .outputTokens(summary.outputTokens())
+                    .totalTokens(summary.totalTokens())
+                    .startedAt(summary.startedAt())
+                    .completedAt(summary.completedAt())
+                    .elapsedMs(elapsedMillis(summary, now))
+                    .build());
+        }
+        return result;
+    }
+
+    /**
+     * 已历时毫秒：首次开始 →（终态时间 或 查询时刻）。
+     *
+     * <p><b>包含暂停与等待审批的时间</b> —— 这是首版刻意的口径，界面必须标注「总历时含等待」。
+     * 「扣除暂停的运行耗时」需要额外计时状态，属后续优化，不在首版。</p>
+     *
+     * <p>未开始（{@code startedAt} 为空）返回 {@code null}：没有开始时间就没有历时可言，
+     * 返回 0 会被读成「瞬间完成」。</p>
+     */
+    private static Long elapsedMillis(ExecutionQueryService.ExecutionSummary summary, Instant now) {
+        if (summary.startedAt() == null) {
+            return null;
+        }
+        Instant end = summary.completedAt() == null ? now : summary.completedAt();
+        return Math.max(Duration.between(summary.startedAt(), end).toMillis(), 0L);
     }
 
     @Override
@@ -174,11 +263,14 @@ public class SessionServiceImpl implements SessionService {
         Map<Long, Long> counts = sessionAggregateService.countMessages(ids);
         // 执行状态列表与消息条数同为「一次 IN 批量取」，逐会话组合。
         Map<Long, List<ExecutionState>> statesBySession = executionQueryService.latestStatesBySession(ids);
+        List<Long> agentIds = sessions.stream().map(Session::getAgentId).filter(Objects::nonNull).distinct().toList();
+        Map<Long, String> agentNames = agentIds.isEmpty() ? Collections.emptyMap() :
+                agentRepository.findList(agentIds).stream().collect(Collectors.toMap(Agent::getId, Agent::getName, (a, b) -> a));
         return Result.success(SessionTreeVO.builder()
                 .rootSessionId(tree.rootSessionId())
                 .sessions(sessions.stream()
                         .map(session -> toVO(session, statesBySession.get(session.getId()),
-                                counts.getOrDefault(session.getId(), 0L)))
+                                counts.getOrDefault(session.getId(), 0L), agentNames.get(session.getAgentId())))
                         .toList())
                 .build());
     }
@@ -205,7 +297,7 @@ public class SessionServiceImpl implements SessionService {
      * <p>展示状态（{@code runStatus}/{@code lastOutcome}）由执行状态列表组合而来，
      * 而非会话自身字段——会话不持有执行状态。</p>
      */
-    private SessionVO toVO(Session session, List<ExecutionState> states, Long messageCount) {
+    private SessionVO toVO(Session session, List<ExecutionState> states, Long messageCount, String agentName) {
         WorkspaceVO workspace = workspaceOrDefault(session.getWorkspaceId());
 
         TokenUsage usage = session.getTokenUsage() == null ? TokenUsage.empty() : session.getTokenUsage();
@@ -213,6 +305,7 @@ public class SessionServiceImpl implements SessionService {
                 .runStatus(runStatusOf(states))
                 .lastOutcome(lastOutcomeOf(states))
                 .agentId(session.getAgentId())
+                .agentName(agentName)
                 .rootSessionId(session.getRootSessionId()).createTime(session.getCreateTime())
                 .updateTime(session.getUpdateTime())
                 .workspaceId(session.getWorkspaceId())

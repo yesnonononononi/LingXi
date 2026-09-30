@@ -25,8 +25,6 @@ public class SessionController {
 
     @PostMapping("/create")
     public Result<Long> create(@RequestBody SessionRequest sessionRequest){
-        // /session/create 接受团队绑定：前端新建会话时可能已选好团队，一并落库；
-        // 不传（null）即非团队会话，后续仍可经 /session/{id}/team 换绑。
         return sessionService.initialize(
                 sessionRequest.name(),
                 sessionRequest.workspaceId(),

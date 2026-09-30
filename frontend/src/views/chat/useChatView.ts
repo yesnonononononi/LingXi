@@ -1,9 +1,13 @@
 import { ref, type Ref, watch, computed, onMounted, onBeforeUnmount, provide } from 'vue';
 import { chatApi, UserConfigAPI, SessionAPI } from '../../services/api';
-import type { ChatSession, ModelConfig, ChatMessage, WorkspaceVO, WorkspaceRequest, AgentAccessMode, SubSessionVO } from '../../types/chat';
+import type { ChatSession, ModelConfig, ChatMessage, WorkspaceVO, WorkspaceRequest, AgentAccessMode, SubSessionVO, AgentStreamEvent, ExecutionSummary } from '../../types/chat';
 import { useSubSessionRouting } from './useSubSessionRouting';
 import { useChatScroll } from './useChatScroll';
-import { useChatHistory } from './useChatHistory';
+import { useChatHistory, mergeExecutionSummaries } from './useChatHistory';
+import { groupMessagesByExecution } from '../../utils/session';
+// SSE 会话级事件流中心（pinia）：连接归属收进 store，断线自愈 + 重挂提示。
+// 它补的是请求级流的结构性缺口：终态之后事件无订阅者、子会话事件依赖「恰好开着的请求级流」。
+import { useSseRouterStore } from '../../stores/sseRouter';
 
 import { useTheme } from '../../composables/useTheme';
 import { CHAT_INPUT_FOCUS_KEY } from '../../composables/useChatInputFocus';
@@ -103,9 +107,24 @@ const isSubSessionDetailOpen = ref(false);
 const isSubPanelOpen = ref(true);
 const activeViewingSubSessionId = ref<string | number | null>(null);
 const subSessionMessagesMap = ref<Record<string, ChatMessage[]>>({});
+/**
+ * 子会话执行摘要表：键 = 子会话 id，值 = 该子会话已加载的 executionId → 摘要。
+ * 与主会话的 session.executions 同构，供子会话历史渲染按 executionId 绑定执行元信息。
+ */
+const subSessionExecutionsMap = ref<Record<string, Record<string, ExecutionSummary>>>({});
 const isLoadingSubMessages = ref(false);
 /** 子会话消息加载失败态：用于区分「加载失败」与「确实为空」 */
 const subMessagesError = ref('');
+/** 子会话游标分页映射表：记录各子会话的 hasMore 与 nextCursor */
+const subSessionPaginationMap = ref<Record<string, { hasMore: boolean; nextCursor: string | null }>>({});
+const isLoadingMoreSubMessages = ref(false);
+const subHistoryLoadError = ref('');
+
+const hasMoreSubMessages = computed(() => {
+  if (activeViewingSubSessionId.value === null) return false;
+  const key = String(activeViewingSubSessionId.value);
+  return !!subSessionPaginationMap.value[key]?.hasMore;
+});
 /** 初始化数据（会话/模型/工作空间）加载失败态：区分「加载失败」与「确实为空」 */
 const initLoadError = ref('');
 /** 会话详情加载失败态：区分「加载失败」与「确实为空」 */
@@ -346,13 +365,30 @@ const activeViewingSubSession = computed(() => {
   return availableSubSessionItems.value.find(it => String(it.id) === String(activeViewingSubSessionId.value)) || null;
 });
 
-/** 左侧当前展示的消息列表 (若处于子代理查看模式，则展示子代理对话历史) */
+/** 左侧当前展示的消息列表 (恒定锁定根会话展示，不被子会话替换) */
 const displayedMessages = computed<ChatMessage[]>(() => {
-  if (activeViewingSubSessionId.value !== null) {
-    const key = String(activeViewingSubSessionId.value);
-    return subSessionMessagesMap.value[key] || [];
-  }
   return currentActiveSession.value?.messages || [];
+});
+
+/** 当前选中的子会话消息列表 (供右侧卡片式子会话面板渲染) */
+const activeSubSessionMessages = computed<ChatMessage[]>(() => {
+  if (activeViewingSubSessionId.value === null) return [];
+  const key = String(activeViewingSubSessionId.value);
+  return subSessionMessagesMap.value[key] || [];
+});
+
+/** 当前选中的子会话完整 VO 对象 */
+const activeViewingSubSessionVO = computed<SubSessionVO | null>(() => {
+  if (activeViewingSubSessionId.value === null) return null;
+  const key = String(activeViewingSubSessionId.value);
+  const found = availableSubSessionItems.value.find(it => String(it.id) === key);
+  if (found?.subSession) return found.subSession;
+  if (subSessionRouteMap.value[key]) return subSessionRouteMap.value[key];
+  if (currentActiveSession.value?.subSessions) {
+    const fromTree = currentActiveSession.value.subSessions.find(s => String(s.id) === key);
+    if (fromTree) return fromTree;
+  }
+  return null;
 });
 
 const lastAssistantIndex = computed(() => {
@@ -364,49 +400,47 @@ const lastAssistantIndex = computed(() => {
   return -1;
 });
 
-/** 当前展示会话的 Token 信息（在主会话与子代理会话之间动态切换） */
-const currentDisplayTokenInfo = computed(() => {
-  if (activeViewingSubSessionId.value !== null) {
-    const key = String(activeViewingSubSessionId.value);
-    const subItem = availableSubSessionItems.value.find(it => String(it.id) === key);
-    const subFromRoute = subSessionRouteMap.value[key];
-    const subVO = subItem?.subSession || subFromRoute;
-
-    // 检查子会话消息历史里是否有携带 token 的 assistant 消息
-    const subMsgs = subSessionMessagesMap.value[key] || [];
-    const lastAssistant = [...subMsgs].reverse().find(m => m.role === 'assistant');
-
-    // Token 一律只读 tokenInfo（契约 §2.2：无顶层 token 字段）；
-    // 消息未携带时回落子会话元数据，最后回落 0。
-    const totalTokens = (lastAssistant?.tokenInfo?.totalTokenCount && lastAssistant.tokenInfo.totalTokenCount > 0)
-      ? lastAssistant.tokenInfo.totalTokenCount
-      : (subItem?.totalTokens ?? subVO?.totalTokens ?? 0);
-
-    const inputTokens = (lastAssistant?.tokenInfo?.inputTokenCount !== undefined && lastAssistant.tokenInfo.inputTokenCount > 0)
-      ? lastAssistant.tokenInfo.inputTokenCount
-      : (subItem?.inputTokens ?? subVO?.inputTokens ?? 0);
-
-    const outputTokens = (lastAssistant?.tokenInfo?.outputTokenCount !== undefined && lastAssistant.tokenInfo.outputTokenCount > 0)
-      ? lastAssistant.tokenInfo.outputTokenCount
-      : (subItem?.outputTokens ?? subVO?.outputTokens ?? 0);
-
-    return {
-      totalTokens,
-      inputTokens,
-      outputTokens
-    };
+/**
+ * 消息 → 所属回答组的执行摘要 / 是否组尾 映射（主会话渲染用）。
+ *
+ * <p>组以 executionId 为唯一键（{@link groupMessagesByExecution}，主会话与子会话共用同一规则）；
+ * 执行摘要来自会话的 executions 表。仅**组尾**展示一次执行元信息，避免「同一执行跨页」
+ * 时两个部分组各挂一次。旧数据（executionId 为 null 或摘要缺失）execution 为 null，
+ * 渲染层据此隐藏统计，绝不伪造为 0。</p>
+ */
+const messageExecutionMap = computed(() => {
+  const map = new Map<string, { execution: ExecutionSummary | null; isGroupTail: boolean }>();
+  const executions = currentActiveSession.value?.executions || {};
+  for (const group of groupMessagesByExecution(displayedMessages.value)) {
+    const execution = group.executionId ? executions[group.executionId] ?? null : null;
+    const lastIdx = group.messages.length - 1;
+    group.messages.forEach((m, i) => {
+      map.set(m.id, { execution, isGroupTail: i === lastIdx });
+    });
   }
-
-  if (!currentActiveSession.value) return undefined;
-  return {
-    totalTokens: currentActiveSession.value.totalTokens ?? 0,
-    inputTokens: currentActiveSession.value.inputTokens ?? 0,
-    outputTokens: currentActiveSession.value.outputTokens ?? 0
-  };
+  return map;
 });
 
-// 查看子会话时即使暂无消息也要展开消息区，以如实展示「暂无消息」（而非塌陷成空白）
-const hasMessages = computed(() => !!displayedMessages.value?.length || isLoadingCurrentSession.value || isLoadingSubMessages.value || activeViewingSubSessionId.value !== null);
+/**
+ * 子会话消息 → 所属回答组执行摘要 / 是否组尾 映射（右侧子会话面板渲染用）。
+ * 与主会话同一分组规则，摘要来自 subSessionExecutionsMap。
+ */
+const activeSubSessionExecutionMap = computed(() => {
+  const map = new Map<string, { execution: ExecutionSummary | null; isGroupTail: boolean }>();
+  if (activeViewingSubSessionId.value === null) return map;
+  const key = String(activeViewingSubSessionId.value);
+  const executions = subSessionExecutionsMap.value[key] || {};
+  for (const group of groupMessagesByExecution(subSessionMessagesMap.value[key] || [])) {
+    const execution = group.executionId ? executions[group.executionId] ?? null : null;
+    const lastIdx = group.messages.length - 1;
+    group.messages.forEach((m, i) => {
+      map.set(m.id, { execution, isGroupTail: i === lastIdx });
+    });
+  }
+  return map;
+});
+
+const hasMessages = computed(() => !!displayedMessages.value?.length || isLoadingCurrentSession.value);
 
 /**
  * 切换项目目录按钮只能存在于没有任何消息记录的新会话
@@ -481,7 +515,7 @@ const handleSelectSubSessionOption = async (subId: string | number | null) => {
       refreshSessionRoutes(String(currentActiveSession.value.id));
     }
     if (isRealSessionId) {
-      const pageResult = await chatApi.fetchSessionMessages(subId, null, 100);
+      const pageResult = await chatApi.fetchSessionMessages(subId, null, 30);
       if (!pageResult.ok) {
         subMessagesError.value = pageResult.error;
         return;
@@ -489,9 +523,20 @@ const handleSelectSubSessionOption = async (subId: string | number | null) => {
       // 拉取异步窗口内 live 可能已写入缓存：按 id 合并（历史为基底），绝不整体替换刷掉 live 行
       const liveRows = subSessionMessagesMap.value[key] || [];
       subSessionMessagesMap.value[key] = mergeSubSessionMessages(pageResult.data.messages, liveRows);
+      // 子会话执行摘要 union 合并（后到覆盖先到，更新的快照更准确）
+      subSessionExecutionsMap.value[key] = mergeExecutionSummaries(
+        subSessionExecutionsMap.value[key],
+        pageResult.data.executions
+      );
+      subSessionPaginationMap.value[key] = {
+        hasMore: pageResult.data.hasMore,
+        nextCursor: pageResult.data.nextCursor
+      };
     } else {
       // 面板项带着本地 id（如 tool-xxx）时无法查询后端历史，如实展示为空（模板显示「暂无消息」）
       subSessionMessagesMap.value[key] = [];
+      subSessionExecutionsMap.value[key] = {};
+      subSessionPaginationMap.value[key] = { hasMore: false, nextCursor: null };
     }
   } catch (err) {
     // 失败不再静默（否则用户看到空白会误以为「该子会话没有消息」）：保留可见失败态并可重试
@@ -500,6 +545,48 @@ const handleSelectSubSessionOption = async (subId: string | number | null) => {
   } finally {
     isLoadingSubMessages.value = false;
     scrollToBottomForce();
+  }
+};
+
+/** 触顶游标加载更多子会话历史消息 */
+const handleLoadMoreSubSessionHistory = async () => {
+  const subId = activeViewingSubSessionId.value;
+  if (subId === null || isLoadingMoreSubMessages.value) return;
+  const key = String(subId);
+  const pagination = subSessionPaginationMap.value[key];
+  if (!pagination || !pagination.hasMore || !pagination.nextCursor) return;
+
+  isLoadingMoreSubMessages.value = true;
+  subHistoryLoadError.value = '';
+  try {
+    const pageResultRes = await chatApi.fetchSessionMessages(subId, pagination.nextCursor, 30);
+    if (!pageResultRes.ok) {
+      subHistoryLoadError.value = pageResultRes.error;
+      return;
+    }
+    const pageResult = pageResultRes.data;
+    // 子会话执行摘要 union 合并（与主会话同一规则）
+    subSessionExecutionsMap.value[key] = mergeExecutionSummaries(
+      subSessionExecutionsMap.value[key],
+      pageResult.executions
+    );
+    if (pageResult.messages.length > 0) {
+      const curMsgs = subSessionMessagesMap.value[key] || [];
+      const existingIds = new Set(curMsgs.map(m => String(m.id)));
+      const fresh = pageResult.messages.filter(m => !existingIds.has(String(m.id)));
+      if (fresh.length > 0) {
+        subSessionMessagesMap.value[key] = [...fresh, ...curMsgs];
+      }
+    }
+    subSessionPaginationMap.value[key] = {
+      hasMore: pageResult.hasMore,
+      nextCursor: pageResult.nextCursor
+    };
+  } catch (err) {
+    console.error('加载更多子会话历史消息失败:', err);
+    subHistoryLoadError.value = '加载历史消息失败，请重试';
+  } finally {
+    isLoadingMoreSubMessages.value = false;
   }
 };
 
@@ -623,9 +710,22 @@ const applyStreamMessage = (updatedMsg: ChatMessage, ownerSessionId: string | nu
     messages.push({ ...updatedMsg });
   }
 
+  const curIdx = msgIdx !== -1 ? msgIdx : messages.length - 1;
+
+  // 实时归属回填：本执行的气泡出现时，把它前面最近的用户消息也标上同一 executionId，
+  // 使用户提问与其回答在实时阶段就归入同一回答组（本地新发的用户消息在发送时无从得知 executionId）。
+  // 仅在用户消息尚未归属时回填，绝不覆盖已有归属。
+  if (updatedMsg.role === 'assistant' && updatedMsg.executionId) {
+    for (let i = curIdx - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        if (!messages[i].executionId) messages[i].executionId = updatedMsg.executionId;
+        break;
+      }
+    }
+  }
+
   // 若本次流消息发生报错，同步回填给本轮对应的用户消息以展示错误重发标识
   if (updatedMsg.executionError) {
-    const curIdx = msgIdx !== -1 ? msgIdx : messages.length - 1;
     for (let i = curIdx - 1; i >= 0; i--) {
       if (messages[i].role === 'user') {
         messages[i].sendError = updatedMsg.executionError;
@@ -637,6 +737,109 @@ const applyStreamMessage = (updatedMsg: ChatMessage, ownerSessionId: string | nu
 
 /** 为一条流生成绑定了归属会话的流式写入回调（发起流时快照归属 id，闭包内不再漂移） */
 const makeStreamUpsert = (ownerSessionId: string | null) => (updatedMsg: ChatMessage) => applyStreamMessage(updatedMsg, ownerSessionId);
+
+/**
+ * 会话级事件流：**只要进了这个会话就挂着一条 SSE**，与「正在发消息 / 正在审批恢复」无关。
+ *
+ * <p>它补上请求级流的三个结构性缺口：</p>
+ * <ol>
+ *   <li>**子会话/映射事件不再依赖「哪条请求级流恰好开着」**——子代理挂起等审批时，那张卡片
+ *       由此可进子会话面板、也可在根会话气泡上双显示（这正是生产事故里「无人可见、无人可批」的一环）；</li>
+ *   <li>**根执行终态后事件仍有订阅者**——后端 `publish` 对空桶静默丢弃（SseEventPublisher:108-110），
+ *       请求级流在终态就关，之后子代理的后续事件原本一个都收不到；</li>
+ *   <li>**断线自愈**——store 内退避重连，重挂成功即回调 `onReattached`，这里统一回查历史补齐缺口。</li>
+ * </ol>
+ *
+ * <p><b>职责切分（防双渲染）</b>：这条流**只**消费子会话/映射事件与「请求级流不在场时的根事件」；
+ * 请求级流在场时，根会话自身事件仍由它渲染，本流直接跳过（同一事件会被后端同播到两条连接）。</p>
+ */
+const sseStreamStore = useSseRouterStore();
+let sessionStreamUnsubscribe: (() => void) | null = null;
+let attachedStreamRootId: string | null = null;
+/** 根事件兜底对账的防抖：合并同窗内的连续事件，一次对账；终态事件立即对账 */
+let rootEventReconcileTimer: number | null = null;
+
+/** 解析会话的根会话 id：root_session_id == 0/null 表示自身即根（与后端同一口径）。 */
+const rootIdOfSession = (session: ChatSession | null | undefined): string | null => {
+  if (!session) return null;
+  const id = String(session.id);
+  if (isTempSessionId(id)) return null;
+  const declared = session.rootSessionId != null ? String(session.rootSessionId) : null;
+  return declared && declared !== '0' ? declared : id;
+};
+
+/** 根事件兜底：不逐事件渲染（避免重写渲染管线），合并后用既有的消息级权威对账补齐。 */
+const reconcileForBackgroundEvent = (rootId: string, event: AgentStreamEvent) => {
+  const isTerminal = ['EXECUTION_COMPLETED', 'EXECUTION_FAILED', 'EXECUTION_CANCELLED']
+    .includes(String(event.type ?? ''));
+  if (rootEventReconcileTimer !== null) window.clearTimeout(rootEventReconcileTimer);
+  rootEventReconcileTimer = window.setTimeout(() => {
+    rootEventReconcileTimer = null;
+    if (isTempSessionId(rootId)) return;
+    void reconcileSessionAfterStream(rootId);
+  }, isTerminal ? 0 : 800);
+};
+
+/**
+ * 会话级流的事件入口。
+ *
+ * <p><b>谁渲染什么（防双渲染）</b>：后端对同一 rootSession 的桶里每个 emitter 各发一份
+ * （SseEventPublisher 同播语义），所以请求级流在场时，同一份事件会同时到达两条连接。
+ * 累积型事件（PARTIAL_TEXT / PARTIAL_THINKING / FILE_EDIT 是「追加」不是「覆盖」）处理两遍
+ * 就会翻倍，因此规则必须是一条渠道独占：</p>
+ * <ul>
+ *   <li>**请求级流在场** → 一切都由它渲染（routeSessionEvent + switch），本流只把「终态」
+ *       当安全网做一次幂等对账；</li>
+ *   <li>**请求级流不在场**（本轮已结束 / 后台子代理在跑） → 本流是唯一通道：
+ *       子会话与映射事件交给 `routeSessionEvent`，根事件交给对账兜底。</li>
+ * </ul>
+ */
+const handleSessionStreamEvent = (event: AgentStreamEvent, rootId: string) => {
+  if (activeStreamCount.value > 0) {
+    // 请求级流在场：只兜「终态」——它驱动的对账是幂等的，多跑一次无副作用。
+    if (['EXECUTION_COMPLETED', 'EXECUTION_FAILED', 'EXECUTION_CANCELLED'].includes(String(event.type ?? ''))) {
+      reconcileForBackgroundEvent(rootId, event);
+    }
+    return;
+  }
+  if (routeSessionEvent(event, rootId)) return;
+  reconcileForBackgroundEvent(rootId, event);
+};
+
+/** 挂/摘当前会话的会话级流：切会话与进/出视图都走这一个入口。 */
+const attachSessionStream = (rootId: string | null) => {
+  const key = rootId != null ? String(rootId) : null;
+  if (attachedStreamRootId === key) return;
+  // 摘旧：退订本组件的订阅；若旧会话已不再活跃，连流一起关（closeStream 会撤销重连意图）
+  if (sessionStreamUnsubscribe) {
+    sessionStreamUnsubscribe();
+    sessionStreamUnsubscribe = null;
+  }
+  if (attachedStreamRootId && attachedStreamRootId !== key) {
+    // 离开旧会话就关掉它的流（避免只挂不关的泄漏）。回来时由 handleSelectSession 的
+    // fetchSessionDetail 拉全量，本流只保证「挂上之后」的实时性 —— 与后端契约一致。
+    sseStreamStore.closeStream(attachedStreamRootId);
+  }
+  attachedStreamRootId = key;
+  if (!key) return;
+  sessionStreamUnsubscribe = sseStreamStore.subscribe(key, {
+    onEvent: event => handleSessionStreamEvent(event, key),
+    onReattached: () => {
+      // 重挂 = 中间可能漏了事件（重连/切走期间）。按既有约定回查历史补齐。
+      if (isTempSessionId(key)) return;
+      void reconcileSessionAfterStream(key);
+    },
+  });
+  sseStreamStore.ensureSessionStream(key);
+};
+
+// 切会话/进视图统一走 attachSessionStream：受控模式（props.sessions）与本地模式共用同一路径，
+// 不在 handleSelectSession / handleSelectSubSessionOption 里散落调用，避免漏挂。
+watch(
+  () => currentActiveSession.value?.id,
+  () => attachSessionStream(rootIdOfSession(currentActiveSession.value)),
+  { immediate: true }
+);
 
 /**
  * 工具调用决策的流式恢复（注入给 PromptCard 下的计划/澄清/命令卡片）：批准/否决/作答后，
@@ -680,7 +883,10 @@ provide('decideToolCall', async (payload: {
         const ownerSessionId = String(payload.conversationId);
         if (!ownerSessionId || isTempSessionId(ownerSessionId)) return;
         await reconcileSessionAfterStream(ownerSessionId);
-      }
+      },
+      // 会话映射 / 子会话事件的路由：归属显式取本次恢复的会话（abort 原流已把共享归属快照置空，
+      // 不能读它）。缺了它，子代理的待审批卡片在恢复期既到不了子会话面板、也到不了根会话。
+      (event, owner) => routeSessionEvent(event, owner ?? String(payload.conversationId))
     );
   } finally {
     activeStreamCount.value = Math.max(0, activeStreamCount.value - 1);
@@ -750,6 +956,7 @@ const handleSelectSession = async (id: string) => {
   selectedSubSessionForDetail.value = null;
   isSubSessionDetailOpen.value = false;
   subSessionMessagesMap.value = {};
+  subSessionExecutionsMap.value = {};
   clearPendingSubSessionEvents();
 
   lastKnownFirstMsgId.value = null;
@@ -798,6 +1005,9 @@ const handleSelectSession = async (id: string) => {
           rootSessionId: detail.rootSessionId ?? localSessions.value[idx].rootSessionId,
           subSessions: detail.subSessions ?? localSessions.value[idx].subSessions,
           messages: resolvedMessages,
+          // 执行摘要 union 合并：局部刷新（重新进入会话）不清空已加载摘要，
+          // 与「不清空已加载更早消息」同源，避免回答组的 token/耗时被抹掉。
+          executions: mergeExecutionSummaries(localSessions.value[idx].executions, detail.executions),
           hasMoreMessages: detail.hasMoreMessages,
           nextMessageCursor: detail.nextMessageCursor
         };
@@ -1382,6 +1592,17 @@ onBeforeUnmount(() => {
   }
   pendingTimers.forEach(id => window.clearTimeout(id));
   pendingTimers.clear();
+  // 会话级事件流：退订 + 关流（closeAll 内部会撤销重连意图，不会留下「断线自愈」定时器）
+  if (sessionStreamUnsubscribe) {
+    sessionStreamUnsubscribe();
+    sessionStreamUnsubscribe = null;
+  }
+  attachedStreamRootId = null;
+  sseStreamStore.closeAll();
+  if (rootEventReconcileTimer !== null) {
+    window.clearTimeout(rootEventReconcileTimer);
+    rootEventReconcileTimer = null;
+  }
   clearPendingSubSessionEvents();
 });
 
@@ -1414,6 +1635,10 @@ onBeforeUnmount(() => {
     availableSubSessionItems,
     isLoadingSubMessages,
     subMessagesError,
+    hasMoreSubMessages,
+    isLoadingMoreSubMessages,
+    subHistoryLoadError,
+    handleLoadMoreSubSessionHistory,
     displaySessions,
     displayActiveId,
     displayModels,
@@ -1432,7 +1657,10 @@ onBeforeUnmount(() => {
     isLoadingCurrentSession,
     sessionLoadError,
     initLoadError,
-    currentDisplayTokenInfo,
+    messageExecutionMap,
+    activeSubSessionExecutionMap,
+    activeSubSessionMessages,
+    activeViewingSubSessionVO,
     canChangeWorkspace,
     handleSelectSession,
     handleNewSession,

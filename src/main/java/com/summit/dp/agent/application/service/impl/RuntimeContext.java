@@ -2,6 +2,7 @@ package com.summit.dp.agent.application.service.impl;
 
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.conversation.message.Message;
+import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.shared.config.workflow.AgentAccessMode;
 import com.summit.dp.shared.config.workflow.CommandApprovalPolicy;
@@ -18,6 +19,9 @@ import java.util.List;
  * @param agentId          本次绑定的 Agent（编排回落后的有效值；下行进 ExecutionAttributes.AGENT_ID）
  * @param teamId           团队模式标识；null 表示非团队会话（分支依据，替代原 command.teamId()）
  * @param session          会话视图（一定非 null：prepare 内含建会话）
+ * @param pendingUserMessage 已解析但**尚未落库**的本轮用户消息；由调用方在取得运行资格后经
+ *                         {@code RequestPreparer#commitUserMessage} 落库。它与 {@code messageList}
+ *                         末元素是同一条消息（后者供模型上下文使用，前者供落库使用）。
  */
 public record RuntimeContext(
         ExecutionContext executionContext,
@@ -29,7 +33,8 @@ public record RuntimeContext(
         ModelConfig modelConfig,
         AgentAccessMode accessMode,
         CommandApprovalPolicy commandApprovalPolicy,
-        boolean requirePlan
+        boolean requirePlan,
+        UserMessageEntity pendingUserMessage
 ) {
 
 }

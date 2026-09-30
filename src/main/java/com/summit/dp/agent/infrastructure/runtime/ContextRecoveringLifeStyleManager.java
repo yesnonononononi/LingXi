@@ -71,11 +71,16 @@ public class ContextRecoveringLifeStyleManager implements RuntimeLifeStyleManage
                 return;
             }
             List<Message> recovered = new ArrayList<>(messages);
+
             recovered.add(SystemMessageEntity.builder().text(INTERRUPTION_NOTE).build());
+
             modelContextService.replace(sessionId, recovered);
+
             log.warn("【chat】execution failed, recovered {} message(s) into model context, "
                             + "sessionId={}, executionId={}, cause={}",
+
                     recovered.size(), sessionId, execution.getId(), cause.toString());
+
         } catch (Exception recoveryError) {
             log.warn("【chat】failed to recover model context after execution failure, executionId={}, cause={}",
                     execution.getId(), recoveryError.toString());

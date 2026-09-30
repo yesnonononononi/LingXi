@@ -190,6 +190,7 @@ export function resolveToolExecutionStatus(resultStatus?: string | null): ToolEx
 
 export interface SubAgentParams {
   agentId?: string | number;
+  agentName?: string;
   task?: string;
   prompt?: string;
   subSessionId?: string | number;
@@ -201,6 +202,7 @@ export interface SubAgentParams {
  */
 export function extractSubAgentParams(tc: {
   subAgentId?: unknown;
+  subAgentName?: unknown;
   subTask?: unknown;
   subPrompt?: unknown;
   subSessionId?: unknown;
@@ -208,6 +210,7 @@ export function extractSubAgentParams(tc: {
   query?: string;
 }): SubAgentParams {
   let agentId = tc.subAgentId as string | number | undefined;
+  let agentName = typeof tc.subAgentName === 'string' ? tc.subAgentName : undefined;
   let task = typeof tc.subTask === 'string' ? tc.subTask : '';
   let prompt = typeof tc.subPrompt === 'string' ? tc.subPrompt : '';
   let subSessionId = tc.subSessionId as string | number | undefined;
@@ -219,11 +222,14 @@ export function extractSubAgentParams(tc: {
   if (agentId === undefined || agentId === null || agentId === '') {
     agentId = merged.agentId as string | number | undefined;
   }
+  if (!agentName && typeof merged.agentName === 'string' && merged.agentName.trim()) {
+    agentName = merged.agentName.trim();
+  }
   if (!task) task = typeof merged.task === 'string' ? merged.task : '';
   if (!prompt) prompt = typeof merged.prompt === 'string' ? merged.prompt : '';
   if (subSessionId === undefined || subSessionId === null || subSessionId === '') {
     subSessionId = merged.subSessionId as string | number | undefined;
   }
 
-  return { agentId, task, prompt, subSessionId };
+  return { agentId, agentName, task, prompt, subSessionId };
 }

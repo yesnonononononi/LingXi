@@ -202,15 +202,17 @@ class CollaborationToolExposureTest {
         RequestPreparer preparer = new RequestPreparer(mock(SessionService.class),
                 mock(WorkspaceService.class), mock(ModelService.class), mock(WorkspaceConverter.class),
                 mock(SettingsProvider.class), catalog, mock(ConversationTranscriptService.class),
-                mock(ModelContextService.class), mock(ExecutionIdentity.class), mock(AgentService.class),
-                mock(TeamService.class), mcpService);
+                mock(ModelContextService.class), mock(ExecutionIdentity.class),
+                mock(com.summit.dp.execution.application.service.ExecutionRegistrationService.class),
+                mock(AgentService.class), mock(TeamService.class), mcpService);
 
-        ExecutionContext executionContext = ExecutionContext.root(500L, null, null, null,
+        // executionId 必须非空：buildRequest 不再自造身份，缺身份即视为「prepare 没跑」并直接报错。
+        ExecutionContext executionContext = ExecutionContext.root(500L, "2105000000000000001", null, null,
                 mode, CommandApprovalPolicy.FULL_ACCESS);
         RuntimeContext context = new RuntimeContext(executionContext, agentId, teamId,
                 SessionVO.builder().id(500L).build(), List.of(), null,
                 ModelConfig.builder().baseUrl("https://example.invalid").apiKey("k").modelName("m").build(),
-                mode, CommandApprovalPolicy.FULL_ACCESS, false);
+                mode, CommandApprovalPolicy.FULL_ACCESS, false, null);
 
         return preparer.buildRequest("prompt", context, configuredTools);
     }

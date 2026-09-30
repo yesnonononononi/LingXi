@@ -8,8 +8,9 @@ import { parseTimestamp } from './time';
  * 将后端 SessionMessageVO.records 解析为前端展示所用的标准 ChatMessage[] 结构。
  *
  * 契约来源：GET /session/{id}/messages → SessionMessagePageVO.records（已是结构化 VO）。
- * 消息类型收敛为 USER / AI / TOOL / SYSTEM；工具调用状态与卡片载荷来自 TOOL 行携带的
- * 聚合 ToolCallVO（`item.toolCall`），与实时流 CARD_PENDING 拉取的 VO 同源、同形状。
+ * 消息类型收敛为 USER / AI / TOOL / SYSTEM / ERROR；工具调用状态与卡片载荷来自 TOOL 行携带的
+ * 聚合 ToolCallVO（`item.toolCall`），与实时流 CARD_PENDING 拉取的 VO 同源、同形状；
+ * ERROR 行是执行失败的落库标注，并入所在轮次的 assistant 气泡的 executionError。
  */
 
 /**
@@ -19,6 +20,50 @@ import { parseTimestamp } from './time';
 function parseItemTimestamp(item: any): number | null {
   // 契约来源：SessionMessageVO.createTime（Instant，序列化为 ISO 字符串）。
   return parseTimestamp(item.createTime);
+}
+
+/**
+ * 归一化 executionId：字符串（雪花 ID 已 Long→String）保留，空值/缺失归为 null。
+ *
+ * <p>null 表示「归属未知」（旧数据），调用方须走降级路径，**不得**据此伪造统计。</p>
+ */
+export function normalizeExecutionId(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  const s = String(value).trim();
+  return s ? s : null;
+}
+
+/** 回答组：以 executionId 为唯一键的一段连续消息。 */
+export interface AnswerGroup {
+  /** 分组键：executionId；旧数据（归属未知）为 null。 */
+  executionId: string | null;
+  messages: ChatMessage[];
+}
+
+/**
+ * 按 executionId 把消息切成回答组（渲染层唯一分组规则，主会话与子会话共用）。
+ *
+ * <p>规则（务必与后端契约一致）：</p>
+ * <ol>
+ *   <li>按服务端顺序遍历；USER 消息一律开启新组 —— 用户提问是执行的起点；</li>
+ *   <li>非 USER 消息：executionId 与当前组相同则并入，**不同必须拆组**，
+ *       绝不能被旧的「USER 边界」逻辑跨执行合并；</li>
+ *   <li>executionId 为 null 的旧数据沿用「USER 边界」降级，且不伪造任何统计。</li>
+ * </ol>
+ */
+export function groupMessagesByExecution(messages: ChatMessage[]): AnswerGroup[] {
+  const groups: AnswerGroup[] = [];
+  let current: AnswerGroup | null = null;
+  for (const msg of messages) {
+    const executionId = normalizeExecutionId(msg.executionId);
+    // USER 开新组；executionId 变化也开新组（含旧数据 null 的边界降级）。
+    if (!current || msg.role === 'user' || current.executionId !== executionId) {
+      current = { executionId, messages: [] };
+      groups.push(current);
+    }
+    current.messages.push(msg);
+  }
+  return groups;
 }
 
 /**
@@ -135,6 +180,9 @@ export function parseSessionMessages(rawMessages: any, sessionId = 'session'): C
 
   const chatMessages: ChatMessage[] = [];
   let currentAssistantMsg: ChatMessage | null = null;
+  // 当前 assistant 容器归属的执行 id（null = 归属未知）。回答组以 executionId 为唯一键：
+  // 只有 executionId 相同的连续消息才能并入同一容器，变化必须拆组。
+  let currentAssistantExecutionId: string | null = null;
   // 展示用时间戳：契约 §6 禁止客户端排序，但消息仍需一个展示时间。
   // createTime 解析不出来时沿用上一条已知时间（绝不 Date.now() 冒充历史），仍无参照则退化为 0。
   let lastKnownTs = 0;
@@ -146,8 +194,9 @@ export function parseSessionMessages(rawMessages: any, sessionId = 'session'): C
     const parsedTs = parseItemTimestamp(item);
     if (parsedTs !== null) lastKnownTs = parsedTs;
     const ts = parsedTs ?? lastKnownTs;
+    const executionId = normalizeExecutionId(item.executionId);
 
-    // 契约来源：SessionMessageVO.type ∈ { USER, AI, TOOL, SYSTEM }（SessionMessageType 枚举名）。
+    // 契约来源：SessionMessageVO.type ∈ { USER, AI, TOOL, SYSTEM, ERROR }（SessionMessageType 枚举名）。
     const rawType = String(item.type ?? '').trim().toUpperCase();
 
     // 0. 系统提示词不参与对话展示
@@ -155,14 +204,50 @@ export function parseSessionMessages(rawMessages: any, sessionId = 'session'): C
       continue;
     }
 
+    /**
+     * 取「本执行」的 assistant 气泡：executionId 相同则复用，不同（或尚无容器）则新建一个。
+     *
+     * 锚点用触发本容器的行 id（后端行 id 全局唯一且稳定）：跨页不碰撞（页内下标 i 会撞），
+     * 重复解析同一页时幂等（同一行 → 同一容器 id）。刻意**不**用 executionId 直接做容器 id ——
+     * 同一 executionId 的消息可能跨页（页首 TOOL 行、其 AI 行落在下一页），若容器 id 只由
+     * executionId 决定，跨页两段会被按 id 误判为重复而整块丢弃，反而丢消息。
+     *
+     * 之所以需要它：游标分页从最新往回取，页首往往就是某个执行的 TOOL / ERROR 行，
+     * 其 AI 行落在下一页。不补容器就只能静默丢弃，历史里会凭空少掉工具执行记录或失败提示。
+     */
+    const openAssistant = (executionIdForMsg: string | null): ChatMessage => {
+      if (currentAssistantMsg && currentAssistantExecutionId === executionIdForMsg) {
+        return currentAssistantMsg;
+      }
+      // executionId 变化必须拆组：绝不沿用上一个执行的气泡（否则跨执行内容会被错误合并）
+      const created: ChatMessage = {
+        id: `msg-${sessionId}-orphan-${String(item.id ?? `idx-${i}`)}`,
+        role: 'assistant',
+        content: '',
+        timestamp: ts,
+        executionId: executionIdForMsg,
+        thoughtSteps: [],
+        toolCalls: [],
+        aiMessages: [],
+        isComplete: true
+      };
+      currentAssistantMsg = created;
+      currentAssistantExecutionId = executionIdForMsg;
+      chatMessages.push(created);
+      return created;
+    };
+
     // 1. 用户消息
     if (rawType === 'USER') {
-      currentAssistantMsg = null; // 开启新一轮对话
+      // 开启新一轮对话：用户提问是执行的起点，下一个非 USER 行必然开新容器。
+      currentAssistantMsg = null;
+      currentAssistantExecutionId = executionId;
       chatMessages.push({
         id: String(item.id),
         role: 'user',
         content: item.text ?? '',
-        timestamp: ts
+        timestamp: ts,
+        executionId
       });
       continue;
     }
@@ -174,30 +259,6 @@ export function parseSessionMessages(rawMessages: any, sessionId = 'session'): C
       const toolCall: ToolCallVO | null =
         item.toolCall && typeof item.toolCall === 'object' ? (item.toolCall as ToolCallVO) : null;
 
-      // 页首可能是 TOOL 消息：游标分页从最新往回取，加载更早历史时本页第一条往往是某个轮次的
-      // 工具结果，其 AI 调用消息落在下一页。这里补一个 assistant 容器把它挂上，而不是静默丢弃
-      // （丢弃会让历史里凭空少掉工具执行记录）。
-      const ensureAssistant = (): ChatMessage => {
-        if (!currentAssistantMsg) {
-          const created: ChatMessage = {
-            // 锚点用触发本容器的 TOOL 行 id（后端行 id 全局唯一且稳定）：
-            // 跨页不碰撞（页内下标 i 会撞），重复解析同一页时幂等（同一条 TOOL 行 → 同一容器 id）。
-            id: `msg-${sessionId}-orphan-${String(item.id ?? `idx-${i}`)}`,
-            role: 'assistant',
-            content: '',
-            timestamp: ts,
-            thoughtSteps: [],
-            toolCalls: [],
-            aiMessages: [],
-            isComplete: true
-          };
-          currentAssistantMsg = created;
-          chatMessages.push(created);
-          return created;
-        }
-        return currentAssistantMsg;
-      };
-
       const type = String(toolCall?.type ?? '').trim().toUpperCase();
       const resolvedCallId = callId || (toolCall?.id != null ? String(toolCall.id) : '');
 
@@ -205,7 +266,7 @@ export function parseSessionMessages(rawMessages: any, sessionId = 'session'): C
       if (toolCall && type === 'PROMISE') {
         const card = buildPromptCard(toolCall);
         if (card) {
-          const asst = ensureAssistant();
+          const asst = openAssistant(executionId);
           if (!asst.promptCards) asst.promptCards = [];
           const existingIdx = asst.promptCards.findIndex(c => c.toolCallId === card.toolCallId);
           if (existingIdx >= 0) {
@@ -242,7 +303,7 @@ export function parseSessionMessages(rawMessages: any, sessionId = 'session'): C
       }
 
       // 2c. EXECUTE：普通工具调用 → 按 callId 合并结果到当前 assistant 的 toolCalls
-      const assistant = ensureAssistant();
+      const assistant = openAssistant(executionId);
       const toolName = toolCall.toolName ?? '';
       // 契约 §3：ToolCallVO.rawOutput 已是解析后的对象（解析失败为 null）→ 按对象消费。
       const rawOutput = asObject(toolCall.rawOutput);
@@ -282,51 +343,60 @@ export function parseSessionMessages(rawMessages: any, sessionId = 'session'): C
       continue;
     }
 
-    // 3. AI / Assistant 消息
+    // 3. 执行失败标注行 (ERROR)：标注所在轮次。
+    //    标注字段必须与实时渲染同形——实时路径（applyStreamMessage）遇到执行失败时同时写
+    //    assistant 气泡的 executionError 与本轮用户气泡的 sendError。漏写任一，流结束的消息级
+    //    对账用落库行重建列表后，那个标识就会凭空消失（＝「错误一闪即逝」）。
+    if (rawType === 'ERROR') {
+      const errorText = typeof item.text === 'string' ? item.text.trim() : '';
+      if (errorText) {
+        openAssistant(executionId).executionError = errorText;
+        // 列表此刻尚未解析到本行之后的消息，从末尾回溯命中的即本轮的最近一条用户消息。
+        for (let prev = chatMessages.length - 1; prev >= 0; prev--) {
+          if (chatMessages[prev].role === 'user') {
+            chatMessages[prev].sendError = errorText;
+            break;
+          }
+        }
+      } else {
+        console.warn('[parseSessionMessages] ERROR 消息正文为空，已忽略:', item.id);
+      }
+      continue;
+    }
+
+    // 4. AI / Assistant 消息
     if (rawType === 'AI') {
       const text = item.text ?? '';
       const thinking = item.thinking;
-      // 注意：SessionMessageVO 不含 token 字段，令牌统计只在会话元数据（SessionVO）上，
-      // 由 fetchSessionDetail 回填到最新的一条 assistant 消息，这里不再逐条读取。
+      // 注意：SessionMessageVO 不承载 token / 模型 / 耗时统计，这些信息由分页接口的
+      // executions 字典（按 executionId 绑定到回答组）提供；这里不再逐条读取，也不回填会话累计值。
 
-      // 如果当前轮次已有 assistant 消息（例如之前是工具调用步骤），则进行同轮次合并
-      if (!currentAssistantMsg) {
-        currentAssistantMsg = {
-          id: String(item.id),
-          role: 'assistant',
-          content: text || '',
-          timestamp: ts,
-          thoughtSteps: [],
-          toolCalls: [],
-          aiMessages: text ? [{ id: `aimsg-${sessionId}-${i}`, text, thinking, timestamp: ts, order: i * 10 + 1 }] : [],
-          isComplete: true
-        };
-        chatMessages.push(currentAssistantMsg);
-      } else {
-        if (!currentAssistantMsg.aiMessages) currentAssistantMsg.aiMessages = [];
-        if (text) {
-          // 同一轮内相邻 AI 行文本相同视为重复（如断流恢复重放过的事件），只保留第一条，
-          // 否则正文（末条）与折叠区（slice(0,-1) 的非末条）会同时出现同一段文本。
-          const lastAi = currentAssistantMsg.aiMessages[currentAssistantMsg.aiMessages.length - 1];
-          if (!lastAi || lastAi.text !== text) {
-            currentAssistantMsg.aiMessages.push({
-              id: `aimsg-${sessionId}-${i}`,
-              text,
-              thinking,
-              timestamp: ts,
-              order: i * 10 + 1
-            });
-          }
-          // 始终保持展示最后一条 aimessage 的正文
-          currentAssistantMsg.content = text;
+      // 取「本执行」的 assistant 容器：executionId 相同则并入，变化则拆出新容器（绝不跨执行合并）。
+      const asst = openAssistant(executionId);
+
+      if (!asst.aiMessages) asst.aiMessages = [];
+      if (text) {
+        // 同一执行内相邻 AI 行文本相同视为重复（如断流恢复重放过的事件），只保留第一条，
+        // 否则正文（末条）与折叠区（slice(0,-1) 的非末条）会同时出现同一段文本。
+        const lastAi = asst.aiMessages[asst.aiMessages.length - 1];
+        if (!lastAi || lastAi.text !== text) {
+          asst.aiMessages.push({
+            id: `aimsg-${sessionId}-${i}`,
+            text,
+            thinking,
+            timestamp: ts,
+            order: i * 10 + 1
+          });
         }
-        currentAssistantMsg.isComplete = true;
+        // 始终保持展示最后一条 aimessage 的正文
+        asst.content = text;
       }
+      asst.isComplete = true;
 
       // 处理思维链
       if (thinking) {
-        if (!currentAssistantMsg.thoughtSteps) currentAssistantMsg.thoughtSteps = [];
-        currentAssistantMsg.thoughtSteps.push({
+        if (!asst.thoughtSteps) asst.thoughtSteps = [];
+        asst.thoughtSteps.push({
           id: `step-${sessionId}-${i}`,
           title: 'Thought for',
           content: thinking,
@@ -338,7 +408,7 @@ export function parseSessionMessages(rawMessages: any, sessionId = 'session'): C
       // 处理工具调用（AI 行的 toolCalls 是「模型请求视图」ModelToolCallVO：{id,name,arguments}）。
       // 人工在环卡片不在此处预置——其权威来源是随后的 TOOL 行携带的聚合 toolCall（2a 分支）。
       if (Array.isArray(item.toolCalls)) {
-        if (!currentAssistantMsg.toolCalls) currentAssistantMsg.toolCalls = [];
+        if (!asst.toolCalls) asst.toolCalls = [];
         for (let tIdx = 0; tIdx < item.toolCalls.length; tIdx++) {
           const tc = item.toolCalls[tIdx];
           const callId = String(tc.id);
@@ -349,7 +419,7 @@ export function parseSessionMessages(rawMessages: any, sessionId = 'session'): C
 
           const meta = resolveToolMeta({ toolName: tName, args, rawArgs });
 
-          currentAssistantMsg.toolCalls.push({
+          asst.toolCalls.push({
             id: callId,
             toolName: tName,
             category: meta.category,
@@ -369,7 +439,7 @@ export function parseSessionMessages(rawMessages: any, sessionId = 'session'): C
       continue;
     }
 
-    // 4. 未知类型：SessionMessageType 只有 USER/AI/TOOL/SYSTEM，出现其他值即契约变更，告警并忽略。
+    // 5. 未知类型：SessionMessageType 只有 USER/AI/TOOL/SYSTEM/ERROR，出现其他值即契约变更，告警并忽略。
     console.warn('[parseSessionMessages] 未知消息类型，已忽略:', rawType || '(空)');
   }
 

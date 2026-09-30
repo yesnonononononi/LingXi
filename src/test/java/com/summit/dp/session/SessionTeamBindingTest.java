@@ -57,7 +57,9 @@ class SessionTeamBindingTest {
     private final RequestPreparer preparer = new RequestPreparer(sessionService, workspaceService,
             modelService, workspaceConverter, settingsProvider,
             mock(com.summit.dp.shared.model.ToolCatalog.class), transcriptService, modelContextService,
-            mock(ExecutionIdentity.class), agentService, teamService,
+            mock(ExecutionIdentity.class),
+            mock(com.summit.dp.execution.application.service.ExecutionRegistrationService.class),
+            agentService, teamService,
             mock(com.summit.dp.mcp.application.service.McpService.class));
 
     private static final long SESSION_ID = 500L;

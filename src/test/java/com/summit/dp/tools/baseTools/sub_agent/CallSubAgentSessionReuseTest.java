@@ -172,7 +172,7 @@ class CallSubAgentSessionReuseTest {
         verify(publisher).publish(eq("turn-1"), eq(ROOT_SESSION_ID),
                 eq(String.valueOf(EXISTING_SUB_SESSION_ID)), eq(CHILD_AGENT_ID), any(), eq("call-1"));
         // 5) 新任务落 transcript
-        verify(transcriptService).appendUser(eq(EXISTING_SUB_SESSION_ID), any());
+        verify(transcriptService).appendUser(eq(EXISTING_SUB_SESSION_ID), any(), any());
         // 6) 收尾仍要把上下文快照写回子会话
         verify(modelContextService).replace(eq(EXISTING_SUB_SESSION_ID), any());
     }
@@ -243,7 +243,7 @@ class CallSubAgentSessionReuseTest {
         verify(sessionRepository, never()).saveAndReturnId(any());
         // 取消校验必须先于落库与事件：被取消的委派不允许留下任何可见痕迹
         verify(publisher, never()).publish(any(), any(), any(), any(), any(), any());
-        verify(transcriptService, never()).appendUser(anyLong(), any());
+        verify(transcriptService, never()).appendUser(anyLong(), any(), any());
     }
 
     @Test

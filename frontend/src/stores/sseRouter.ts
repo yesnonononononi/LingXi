@@ -59,6 +59,10 @@ interface SseConnection {
   delivered: boolean;
 }
 
+/** 重连退避：首次 1s，之后翻倍，封顶 15s。不做次数上限 —— 只要还有人订阅就一直尝试。 */
+const RECONNECT_BASE_DELAY_MS = 1000;
+const RECONNECT_MAX_DELAY_MS = 15000;
+
 /** 会话事件流的挂载地址；对应后端 `ChatController#subscribe`。 */
 export const sessionStreamUrl = (rootSessionId: string): string =>
   `/a/completion/${encodeURIComponent(rootSessionId)}/events`;
@@ -81,6 +85,17 @@ export const useSseRouterStore = defineStore('sseRouter', () => {
    * 否则重新建流时没人再收到事件，而订阅方还以为自己挂着。
    */
   const handlersBySession = new Map<string, Set<SseStreamHandlers>>();
+  /**
+   * 「想要挂着流」的会话集合（意图），与「正在挂着的连接」（现实）分开：
+   * 断线自愈必须以**意图**为准 —— 连接被服务端/网络终结时它自己会从 `connections` 里消失，
+   * 而意图还在，才应该重连。`closeStream`/`closeAll` 是唯一撤销意图的入口。
+   */
+  const desiredStreams = new Set<string>();
+  /** 各会话的建流函数：重连时要复用同一个 opener，不能在 store 里写死 URL。 */
+  const openersBySession = new Map<string, (signal: AbortSignal) => Promise<Response>>();
+  /** 各会话当前的重连尝试次数（算退避用）与待执行的重连定时器。 */
+  const reconnectAttempts = new Map<string, number>();
+  const reconnectTimers = new Map<string, number>();
   /** 只把状态暴露成响应式，供 UI 显示「该会话仍在跑」。 */
   const statuses = ref<Record<string, SseStreamStatus>>({});
 
@@ -117,10 +132,37 @@ export const useSseRouterStore = defineStore('sseRouter', () => {
     }
     setStatus(connection.rootSessionId, reason === 'error' ? 'error' : 'closed');
     const handlers = handlersBySession.get(connection.rootSessionId);
-    if (!handlers) return;
-    for (const handler of [...handlers]) {
-      safeCall(() => handler.onClosed?.(reason), 'onClosed');
+    if (handlers) {
+      for (const handler of [...handlers]) {
+        safeCall(() => handler.onClosed?.(reason), 'onClosed');
+      }
     }
+    // 自愈：本端没有主动关闭、且这个会话仍然想要一条流 → 退避后重连。
+    // 重连成功会触发订阅者的 onReattached（把「中间可能漏了事件」交给消费方回查历史补齐）。
+    if (reason !== 'aborted' && desiredStreams.has(connection.rootSessionId)) {
+      scheduleReconnect(connection.rootSessionId);
+    }
+  };
+
+  /**
+   * 退避重连。以「意图」为准：只要 `desiredStreams` 还包含该会话（closeStream/closeAll 之前）
+   * 且仍有人在听，就一直尝试；`openStream` 的复用语义保证同一时刻至多一条连接。
+   */
+  const scheduleReconnect = (rootSessionId: string) => {
+    if (reconnectTimers.has(rootSessionId)) return;
+    const attempts = reconnectAttempts.get(rootSessionId) ?? 0;
+    const delay = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** attempts, RECONNECT_MAX_DELAY_MS);
+    reconnectAttempts.set(rootSessionId, attempts + 1);
+    const timer = window.setTimeout(() => {
+      reconnectTimers.delete(rootSessionId);
+      if (!desiredStreams.has(rootSessionId)) return;
+      if (connections.has(rootSessionId)) return;   // 已有别的路径先把它挂回来了
+      const opener = openersBySession.get(rootSessionId);
+      if (!opener) return;
+      console.warn(`[sseRouter] 会话 ${rootSessionId} 事件流断开，${delay}ms 后重连（第 ${attempts + 1} 次）`);
+      openStream(rootSessionId, opener, { stopOnTerminal: false });
+    }, delay);
+    reconnectTimers.set(rootSessionId, timer);
   };
 
   const run = async (
@@ -174,6 +216,9 @@ export const useSseRouterStore = defineStore('sseRouter', () => {
     const existing = connections.get(key);
     if (existing) {
       // 复用：同一会话两条流会让每个事件投递两遍，消费方就得各自去重 —— 不如在这里堵住。
+      // 但意图与 opener 仍要登记：断线自愈以它们为准。
+      desiredStreams.add(key);
+      openersBySession.set(key, open);
       return;
     }
     const connection: SseConnection = {
@@ -181,6 +226,16 @@ export const useSseRouterStore = defineStore('sseRouter', () => {
       controller: new AbortController(),
       delivered: false,
     };
+    // 挂上即视为「意图成立」，并记录 opener 供断线自愈复用；随后取消可能还挂着的重连定时器
+    // （新连接已经就位，定时器再触发只会被上面那条复用分支挡掉，留着只会白耗一次日志）。
+    desiredStreams.add(key);
+    openersBySession.set(key, open);
+    reconnectAttempts.delete(key);
+    const pendingTimer = reconnectTimers.get(key);
+    if (pendingTimer !== undefined) {
+      window.clearTimeout(pendingTimer);
+      reconnectTimers.delete(key);
+    }
     connections.set(key, connection);
     setStatus(key, 'connecting');
     void run(connection, open, options.stopOnTerminal !== false);
@@ -235,15 +290,28 @@ export const useSseRouterStore = defineStore('sseRouter', () => {
     };
   };
 
-  /** 主动关闭该会话的流（停止按钮、离开会话且不再需要实时更新）。订阅关系保留。 */
+  /**
+   * 主动关闭该会话的流（停止按钮、离开会话且不再需要实时更新）。订阅关系保留。
+   *
+   * <p>撤销「想要挂着流」的意图并取消待执行的重连：这是**唯一**不会触发自愈的关流路径 ——
+   * 其余结束原因（服务端关流 / 网络 / 建流失败）都会退避重连。</p>
+   */
   const closeStream = (rootSessionId: string): void => {
-    connections.get(String(rootSessionId))?.controller.abort();
+    const key = String(rootSessionId);
+    desiredStreams.delete(key);
+    const pendingTimer = reconnectTimers.get(key);
+    if (pendingTimer !== undefined) {
+      window.clearTimeout(pendingTimer);
+      reconnectTimers.delete(key);
+    }
+    reconnectAttempts.delete(key);
+    connections.get(key)?.controller.abort();
   };
 
   /** 关闭全部连接（登出、页面卸载）。 */
   const closeAll = (): void => {
     for (const connection of [...connections.values()]) {
-      connection.controller.abort();
+      closeStream(connection.rootSessionId);
     }
   };
 

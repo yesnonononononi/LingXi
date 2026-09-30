@@ -60,3 +60,7 @@ scratch/
 # Playwright MCP 落盘的页面快照（page-*.yml），仅供本地排查，不纳入版本控制。
 .playwright-mcp/
 
+### Agent 本地工作目录 ###
+# /.lingxi 存放本地调试截图、临时产出等，不属于项目源码，不纳入版本控制。
+/.lingxi/
+

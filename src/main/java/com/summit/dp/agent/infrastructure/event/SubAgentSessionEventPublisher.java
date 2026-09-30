@@ -21,7 +21,7 @@ public class SubAgentSessionEventPublisher {
     private final ObjectMapper objectMapper;
 
     public void publish(String executionId, Long rootSessionId, String subSessionId,
-                        Long agentId, String task, String toolCallId) {
+                        Long agentId, String agentName, String task, String toolCallId) {
         if (rootSessionId == null || subSessionId == null || subSessionId.isBlank()) {
             log.warn("【sub-agent-event】skip invalid session mapping: root={}, child={}",
                     rootSessionId, subSessionId);
@@ -29,7 +29,7 @@ public class SubAgentSessionEventPublisher {
         }
         try {
             SubAgentSessionPayload payload = new SubAgentSessionPayload(
-                    rootSessionId, subSessionId, agentId, task, toolCallId);
+                    rootSessionId, subSessionId, agentId, agentName, task, toolCallId);
             BusinessEventEnvelope<SubAgentSessionPayload> envelope = new BusinessEventEnvelope<>(
                     EVENT_TYPE, executionId, rootSessionId, Instant.now(), payload);
             // 按根会话定向推送（HC-3）：入参已带 rootSessionId，子会话映射事件归入父任务。
@@ -38,5 +38,10 @@ public class SubAgentSessionEventPublisher {
             log.warn("【sub-agent-event】failed to publish session mapping: root={}, child={}, error={}",
                     rootSessionId, subSessionId, e.getMessage());
         }
+    }
+
+    public void publish(String executionId, Long rootSessionId, String subSessionId,
+                        Long agentId, String task, String toolCallId) {
+        publish(executionId, rootSessionId, subSessionId, agentId, null, task, toolCallId);
     }
 }

@@ -1,5 +1,9 @@
 
 
+-- 注：早期草稿里的 `request` 表（id/session_id/三列 token/status/create_at/finish_at）已删除。
+-- 全仓 Java / XML / 前端均无任何引用，真库也不存在该表；「一次执行的元信息」统一由
+-- execution 表承载（见下方 execution 建表脚本），不另起一套请求生命周期。
+
 -- ------------------------------------------------------------
 -- MCP 服务配置：请求级连接容器的数据源（对齐框架侧 McpConfig.MCP）
 -- ------------------------------------------------------------
@@ -75,12 +79,16 @@ CREATE TABLE session (
 -- ------------------------------------------------------------
 -- 4. 会话消息表(List<Message> 拆表存储)
 --    卡片快照不再占本表行：工具调用的状态与卡片载荷全部落在 tool_call 表。
+--    ERROR 行不是模型对话行：执行抛异常时追加一行，content 为纯文本失败文案。
+--    execution_id 是「产生该消息的执行」：刷新、重新订阅、暂停恢复后统计口径一致；
+--    旧数据为 NULL 表示归属未知，前端降级展示，不按位置或时间戳猜测归属。
 -- ------------------------------------------------------------
 CREATE TABLE session_message (
     id              BIGINT NOT NULL PRIMARY KEY COMMENT '雪花ID(消息排序键与游标分页键, 全局趋势递增)',
     session_id      BIGINT NOT NULL COMMENT '关联会话ID',
-    type            VARCHAR(16) NOT NULL COMMENT '消息类型: USER/AI/TOOL/SYSTEM',
-    content         LONGTEXT NOT NULL COMMENT '消息内容: USER/SYSTEM 存正文原文; AI 存 JSON {thinking,text,toolCalls}; TOOL 只存 call_id(call_xxx)',
+    execution_id    BIGINT NULL COMMENT '产生该消息的执行ID(关联execution.id); 旧数据为NULL表示归属未知',
+    type            VARCHAR(16) NOT NULL COMMENT '消息类型: USER/AI/TOOL/SYSTEM/ERROR',
+    content         LONGTEXT NOT NULL COMMENT '消息内容: USER/SYSTEM 存正文原文; AI 存 JSON {thinking,text,toolCalls}; TOOL 只存 call_id(call_xxx); ERROR 存纯文本失败文案',
     create_time     DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间(仅用于展示, 不参与排序)',
     update_time     DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
     KEY idx_session_msg (session_id, id)
@@ -147,39 +155,31 @@ CREATE TABLE team (
 
 -- One execution row stores immutable request parameters and mutable runtime state.
 -- Null tool_list means all registered tools; [] means no tools. Recovery state lives in snapshot.
-
-
+--
+-- 下面这些「摘要列」（root_execution_id / model_* / *_token_count / started_at / completed_at）
+-- 不参与恢复，只为**查询与展示**服务：历史接口按 executionId 批量装配本轮统计，
+-- 不必反序列化整个 snapshot。恢复路径仍然只读 status + snapshot。
+--
 -- status: 0 CREATED, 1 RUNNING, 2 SUSPENDED, 3 COMPLETED, 4 FAILED, 5 CANCELLED.
--- desired_action: 0 NONE, 1 SUSPEND, 2 CANCEL.
+-- token 列 NULL = 未采集到，0 = 确实为 0 —— 两者必须可区分，旧数据不得显示成零消耗。
+-- completed_at 只在进入终态时写入；未结束执行保持 NULL（不用 updated_at 代替）。
 CREATE TABLE IF NOT EXISTS execution (
     id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '执行ID；一次请求对应一次执行，也是请求的唯一标识',
     session_id BIGINT NOT NULL COMMENT '所属会话ID；同一会话可包含多次执行',
-    workspace_id BIGINT NULL COMMENT '本次请求绑定的业务工作空间ID；无工作空间时为空',
-    model_config_id BIGINT NULL COMMENT '本次请求选用的模型配置ID；使用默认配置时可为空',
-    agent_id BIGINT NULL COMMENT '执行任务的业务Agent ID；未指定Agent时为空',
-    root_execution_id BIGINT NULL COMMENT '所属根执行ID；主执行为空，子执行指向根执行',
-    worker_id VARCHAR(128) NULL COMMENT '当前认领此执行的worker标识；未被认领时为空',
-    system_prompt LONGTEXT NULL COMMENT '本次请求使用的系统提示词',
-    task TEXT NULL COMMENT '本次请求的任务描述；子Agent执行时通常为委派任务',
-    tool_list JSON NULL COMMENT '本次请求可用工具列表；NULL表示全部工具，空数组表示不开放工具',
-    attrs JSON NULL COMMENT '业务侧传入框架的运行属性；包含会话等不透明上下文',
-    allow_out_workspace TINYINT NOT NULL DEFAULT 0 COMMENT '是否允许访问工作空间外路径：0否，1是',
-    model_provider VARCHAR(100) NULL COMMENT '本次请求指定的模型提供者；为空时使用模型配置或默认值',
+    root_execution_id BIGINT NULL COMMENT '所属根执行ID；主执行为NULL，子执行指向发起委派的主执行',
+    model_name VARCHAR(128) NULL COMMENT '执行开始时实际解析出的模型名称快照',
+    model_provider VARCHAR(100) NULL COMMENT '执行开始时实际解析出的模型提供方快照',
+    input_token_count BIGINT NULL COMMENT '本执行累计已采集输入token；NULL=未知(区别于已知的0)',
+    output_token_count BIGINT NULL COMMENT '本执行累计已采集输出token；NULL=未知(区别于已知的0)',
+    total_token_count BIGINT NULL COMMENT '本执行累计已采集总token；NULL=未知(区别于已知的0)',
+    started_at DATETIME(3) NULL COMMENT '执行首次开始时间；暂停后恢复不重置',
+    completed_at DATETIME(3) NULL COMMENT '进入完成/失败/取消终态的时间；未结束为NULL',
     status TINYINT NOT NULL DEFAULT 0 COMMENT '执行状态：0创建，1运行，2暂停，3完成，4失败，5取消',
-    desired_action TINYINT NOT NULL DEFAULT 0 COMMENT '跨worker控制指令：0无，1请求暂停，2请求取消',
-    lease_until DATETIME(3) NULL COMMENT '当前worker租约到期时间；用于故障检测和执行认领',
-    version BIGINT NOT NULL DEFAULT 0 COMMENT '执行记录变更版本号；每次状态或控制更新递增',
-    max_steps INT NOT NULL DEFAULT 0 COMMENT '本次Agent循环允许的最大步数；0表示沿用运行时默认值',
     snapshot LONGTEXT NULL COMMENT '执行恢复检查点；保存请求、消息上下文和运行状态',
-    error_message VARCHAR(1000) NULL COMMENT '执行失败时的错误摘要；无错误时为空',
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '执行记录创建时间',
     updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '执行记录最后更新时间',
-    started_at DATETIME(3) NULL COMMENT '执行首次开始运行的时间',
-    completed_at DATETIME(3) NULL COMMENT '执行进入完成、失败或取消终态的时间',
     KEY idx_execution_session_recent (session_id, id DESC),
-    KEY idx_execution_session_status (session_id, status),
-    KEY idx_execution_recovery (status, lease_until),
-    KEY idx_execution_root_status (root_execution_id, status)
+    KEY idx_execution_session_status (session_id, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent 执行状态与恢复快照';
 
 -- ------------------------------------------------------------

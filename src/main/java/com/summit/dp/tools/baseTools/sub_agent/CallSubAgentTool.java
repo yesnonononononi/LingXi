@@ -168,10 +168,14 @@ public class CallSubAgentTool implements ToolExecutor {
             // 映射事件两条路径都要发：前端据它建立「子会话 id → 根会话」路由、把工具调用挂到子会话按钮上。
             // 事件是幂等的（前端按 id 合并），复用同一个子会话时不会产生第二张卡片。
             subAgentSessionEventPublisher.publish(toolExecution.getTurnId(), rootSessionId, target.subSessionId(),
-                    agent.getId(), argument.getTask(), toolExecution.getId());
+                    agent.getId(), agent.getName(), argument.getTask(), toolExecution.getId());
 
             // 复用与首派都要把本次任务追加进 transcript：子会话的消息流是 append-only 的可见记录。
-            transcriptService.appendUser(numericSubSessionId, UserMessageEntity.from(argument.getTask()));
+            // 归属用**本次委派自己的 executionId**（而不是「子会话最新执行」）：子会话会被复用，
+            // 同一个子会话先后承载多次委派，按会话累计用量推算本轮消耗必然错位。
+            transcriptService.appendUser(numericSubSessionId,
+                    ExecutionIdentity.numericOrNull(request.getExecutionId()),
+                    UserMessageEntity.from(argument.getTask()));
 
             Execution execution = SessionContextEntity.runWithSubSession(rootSessionId, agent.getId(),
                     () -> subAgent.execute(request));

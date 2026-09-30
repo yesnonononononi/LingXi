@@ -50,7 +50,7 @@ public class AgentWorkflowOrchestratorImpl implements AgentWorkflowOrchestrator 
         if (commanderAgent == null) throw new ClientException("Commander agent not found from team");
 
         AgentRequest agentRequest = requestPreparer.buildRequest(
-                TeamPromptComposer.commanderPrompt(commanderAgent.getPrompt(), team.getAgents(), commanderAgentId),
+                TeamPromptComposer.commanderPrompt(Objects.toString(commanderAgent.getPrompt(),""), team.getAgents(), commanderAgentId),
                 context,
                 commanderTools(commanderAgent.getToolList())
         );

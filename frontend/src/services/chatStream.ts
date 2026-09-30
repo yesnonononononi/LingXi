@@ -1,3 +1,16 @@
+/**
+ * ⚠️⚠️ 死代码（零引用），**改这里不会生效** ⚠️⚠️
+ *
+ * 2026-09-30 复核：`api.ts` 的 `export *` 清单不含本文件，全仓（除 `stores/sseRouter.ts:18`
+ * 的一句注释外）没有任何 `from './chatStream'` / `chatStreamService` 引用。
+ * **活跃实现是 `services/chat.ts`（`export const chatApi`，`chat.ts:171`）**，
+ * 入口链：`views/chat/useChatView.ts:2` → `api.ts` → `chat.ts`。
+ *
+ * 本文件与 `chat.ts` 的 `sendMessageStream` / `decideToolCall` 结构同构（参数表、事件 switch
+ * 逐字相同），历史上曾因「结构相同」被误当成活跃实现而把修复打在这里 —— 本次排查
+ * 「批准后子代理 SSE 事件丢失」时即中招。建议整个删除；删除前请先跑一次
+ * `vue-tsc -b --force` 确认无引用残留。
+ */
 import { AgentAPI } from './agent';
 import { SessionAPI } from './session';
 import { ToolCallAPI } from './toolCall';

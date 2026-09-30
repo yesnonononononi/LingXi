@@ -87,6 +87,23 @@ public class ExecutionIdentity {
         }
     }
 
+    /**
+     * 执行标识 → 数值主键；无法解析（框架在 executionId 缺省时回落 UUID）返回 {@code null}。
+     *
+     * <p>与 {@link #numeric(String)} 的差别是失败语义：这里把「不是数字」当成「归属未知」，
+     * 用于**观测落库**这类不得拖垮主链路的场景 —— 拿不到归属就写 NULL，绝不抛异常。</p>
+     */
+    public static Long numericOrNull(String executionId) {
+        if (executionId == null || executionId.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(executionId.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
     public static long sessionId(Execution execution) {
         return sessionId(execution.getAgentRequest());
     }

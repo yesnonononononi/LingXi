@@ -11,6 +11,7 @@ import lombok.Data;
 @Builder
 @Data
 public class FileEditEvent  {
+    private String executionId;
     private Object recordId;
     /** Id of the agent request (turn) this edit belongs to. */
     private String turnId;

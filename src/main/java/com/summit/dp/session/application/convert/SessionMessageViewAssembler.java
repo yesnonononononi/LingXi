@@ -26,13 +26,17 @@ public class SessionMessageViewAssembler {
     private final ToolCallConverter toolCallConverter;
 
     /**
-     * 单条转换：USER/SYSTEM → 正文；AI → 正文 + 思维链 + 请求视图；TOOL → {@code toolCallId}。
+     * 单条转换：USER/SYSTEM/ERROR → 正文；AI → 正文 + 思维链 + 请求视图；TOOL → {@code toolCallId}。
      *
      * <p>TOOL 行的聚合工具调用由应用层批量装载回填；本方法不触达任何持久化。</p>
+     *
+     * <p>{@code executionId} 原样透出（旧数据为 {@code null}）：前端据此分组与取摘要，
+     * 缺省即降级，**不在这里按位置补一个猜出来的归属**。</p>
      */
     public SessionMessageVO toVO(SessionMessage stored) {
         SessionMessageVO.SessionMessageVOBuilder builder = SessionMessageVO.builder()
                 .id(stored.getId())
+                .executionId(stored.getExecutionId())
                 .type(stored.getType().name())
                 .createTime(stored.getCreateTime());
 
@@ -58,6 +62,10 @@ public class SessionMessageViewAssembler {
             case TOOL -> {
                 // content 即 call_id（设计 §7.3）；结果与状态由应用层批量装载回填。
                 builder.toolCallId(stored.getText());
+            }
+            case ERROR -> {
+                // 执行失败标注行：content 即纯文本失败文案，不解析、原样下发。
+                builder.text(stored.getText());
             }
         }
         return builder.build();

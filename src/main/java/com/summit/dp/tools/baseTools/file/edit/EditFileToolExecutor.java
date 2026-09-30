@@ -101,6 +101,7 @@ public class EditFileToolExecutor implements ToolExecutor {
 
     private void publishEditEvent(ToolExecution toolExecution, EditOutcome outcome, Serializable recordId) {
         runtimeEventPublisher.onApplicationEvent(FileEditEvent.builder()
+                .executionId(toolExecution.getExecutionId())
                 .recordId(recordId)
                 .turnId(toolExecution.getTurnId())
                 .filePath(outcome.path())

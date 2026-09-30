@@ -54,6 +54,14 @@ class SessionMessageViewAssemblerTest {
         assertEquals("not-a-json-payload", vo.getText(), "解析失败按原样降级，消息不丢");
     }
 
+    @Test
+    void errorRowIsMappedAsPlainText() {
+        // ERROR 行 content 是纯文本（非 JSON 载荷），必须原样下发，不能被解析降级路径吞掉。
+        SessionMessageVO error = assembler.toVO(plainMessage(5L, SessionMessageType.ERROR, "模型服务不可用"));
+        assertEquals("ERROR", error.getType());
+        assertEquals("模型服务不可用", error.getText());
+    }
+
     private static SessionMessage plainMessage(long id, SessionMessageType type, String text) {
         return SessionMessage.builder()
                 .id(id)

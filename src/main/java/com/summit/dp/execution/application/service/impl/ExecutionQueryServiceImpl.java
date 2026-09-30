@@ -7,6 +7,9 @@ import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -46,5 +49,37 @@ public class ExecutionQueryServiceImpl implements ExecutionQueryService {
             case null, default -> throw new IllegalStateException(
                     "Unknown execution status " + status + " for execution " + execution.getId());
         };
+    }
+
+    /**
+     * 批量装配执行摘要。仓储层一次 IN 查询完成，不逐条查；仓储已排除 snapshot。
+     *
+     * <p>状态编码经 {@link #toState} 转成框架枚举名下发 —— 与 {@code latestStatesBySession}
+     * 用同一套映射，避免两处口径漂移。</p>
+     */
+    @Override
+    public Map<Long, ExecutionSummary> summariesByIds(Collection<Long> executionIds) {
+        if (executionIds == null || executionIds.isEmpty()) return Map.of();
+        List<Execution> executions = executionRepository.findSummariesByIds(executionIds);
+        Map<Long, ExecutionSummary> result = new LinkedHashMap<>();
+        for (Execution execution : executions) {
+            result.put(execution.getId(), new ExecutionSummary(
+                    execution.getId(),
+                    execution.getSessionId(),
+                    toState(execution).name(),
+                    execution.getModelName(),
+                    execution.getModelProvider(),
+                    execution.getInputTokenCount(),
+                    execution.getOutputTokenCount(),
+                    execution.getTotalTokenCount(),
+                    toInstant(execution.getStartedAt()),
+                    toInstant(execution.getCompletedAt())));
+        }
+        return result;
+    }
+
+    /** 库列是无时区的 {@code DATETIME}，按本机时区解释 —— 与写入侧同一口径，往返一致。 */
+    private static Instant toInstant(LocalDateTime value) {
+        return value == null ? null : value.atZone(ZoneId.systemDefault()).toInstant();
     }
 }

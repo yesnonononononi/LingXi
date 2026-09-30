@@ -32,6 +32,8 @@ public class SessionVO {
      */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long agentId;
+    /** 会话绑定的 Agent 名称（冗余字段供视图展示） */
+    private String agentName;
     /** 所属根会话 ID；0 表示自身就是根会话（团队模式下的委派发起会话） */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long rootSessionId;

@@ -3,6 +3,7 @@ package com.summit.dp.execution.infrastructure.repository;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
+import com.summit.core.conversation.message.TokenUsageEntity;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.ExecutionAttributes;
@@ -89,9 +90,58 @@ public class LocalExecutionRepository implements ExecutionRepository {
         checkpoint.setId(id);
         checkpoint.setStatus(statusOf(state));
         checkpoint.setSnapshot(snapshot);
+        applySummary(checkpoint, execution);
         int updated = executionMapper.updateById(checkpoint);
         if (updated != 1) throw new IllegalStateException("Execution checkpoint row missing: " + id);
         cacheAfterCommit(execution.getId(), snapshot, terminal);
+    }
+
+    /**
+     * 把「查询摘要」从执行快照摊到独立列：模型快照、token 累计、开始/结束时间、根执行。
+     *
+     * <p><b>只写有值的字段</b>：null 一律跳过，配合 MyBatis-Plus 默认的 NOT_NULL 更新策略，
+     * 未赋值的列不会进入 UPDATE 语句 —— 所以暂停、恢复、甚至一次失败的重试，都不会把已知的
+     * 模型名或已采集的用量抹掉（「空值不覆盖已知数据」由此显式成立，而不是碰巧成立）。</p>
+     *
+     * <p><b>token 取当前累计值，不做增量累加</b>：{@code Execution.tokenUsage} 本身就是框架跨轮
+     * 累加的结果，再累加一次会把同一执行算两遍 —— resume 之后终态事件会再发一次，
+     * 重复触发是常态而非异常。这里用「覆盖为最新累计值」，天然幂等。</p>
+     *
+     * <p><b>时间语义</b>：{@code startedAt} 只在 {@code Execution.start()} 时设置，恢复不重置，
+     * 所以「首次开始时间」天然不被覆盖；{@code completedAt} 只在进入终态时由框架设置，
+     * 挂起（SUSPENDED）时为 null → 不写入 → 未结束执行保持 NULL。</p>
+     */
+    private void applySummary(ExecutionPO checkpoint, Execution execution) {
+        AgentRequest request = execution.getAgentRequest();
+        Map<String, Object> attributes = request == null
+                ? Map.of()
+                : request.runtimeParametersOrDefault().getAttributes();
+
+        // 主执行没有该属性（ExecutionContext.root 不写），子执行由委派方写入父执行 id。
+        checkpoint.setRootExecutionId(
+                ExecutionAttributes.readLong(attributes, ExecutionAttributes.ROOT_EXECUTION_ID));
+
+        // 模型快照取「实际解析后的执行配置」，不取用户请求里可能为空的 modelId；
+        // 只存名称与提供方，baseUrl / apiKey 等连接凭据绝不落库。
+        if (request != null && request.getModelConfig() != null) {
+            checkpoint.setModelName(request.getModelConfig().getModelName());
+            checkpoint.setModelProvider(request.getModelConfig().getProvider());
+        }
+
+        TokenUsageEntity usage = execution.getTokenUsage();
+        if (usage != null) {
+            checkpoint.setInputTokenCount((long) usage.getInputTokens());
+            checkpoint.setOutputTokenCount((long) usage.getOutputTokens());
+            checkpoint.setTotalTokenCount((long) usage.getTotalTokens());
+        }
+
+        checkpoint.setStartedAt(toLocalDateTime(execution.getStartAt()));
+        checkpoint.setCompletedAt(toLocalDateTime(execution.getCompletedAt()));
+    }
+
+    /** {@code Instant} → 库列用的本地时间；null 原样透传（调用方据此跳过该列）。 */
+    private static LocalDateTime toLocalDateTime(Instant instant) {
+        return instant == null ? null : LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
     }
 
     private void cacheAfterCommit(String id, String snapshot, boolean terminal) {
@@ -121,6 +171,9 @@ public class LocalExecutionRepository implements ExecutionRepository {
         checkpoint.setSnapshot(snapshot);
         checkpoint.setCreatedAt(LocalDateTime.ofInstant(
                 execution.getCreateAt() == null ? Instant.now() : execution.getCreateAt(), ZoneId.systemDefault()));
+        // 建行时就带上模型快照与根执行归属：即使执行在首次保存后立刻失败，
+        // 历史接口也能显示「用的哪个模型」，而不是等到第一轮检查点才有值。
+        applySummary(checkpoint, execution);
         if (executionMapper.insert(checkpoint) != 1) {
             throw new IllegalStateException("Failed to create execution checkpoint: " + id);
         }

@@ -4,6 +4,7 @@ import cn.hutool.core.codec.Base64;
 import cn.hutool.core.util.IdUtil;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionRegistrationService;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Image;
@@ -42,6 +43,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -73,6 +75,7 @@ public class RequestPreparer {
     private final ConversationTranscriptService transcriptService;
     private final ModelContextService modelContextService;
     private final ExecutionIdentity executionIdentity;
+    private final ExecutionRegistrationService executionRegistrationService;
     private final AgentService agentService;
     private final TeamService teamService;
     private final McpService mcpService;
@@ -92,6 +95,16 @@ public class RequestPreparer {
         throw new ClientException("未配置可用的模型连接");
     }
 
+    /**
+     * 解析一次聊天请求：会话（必要时新建）、工作空间、档位、模型、执行身份与模型上下文。
+     *
+     * <p><b>本方法不写任何「请求已被接受」的消息副作用</b>（2026-09-30 改造）：用户消息只在
+     * {@link #commitUserMessage(RuntimeContext)} 里落库，由调用方在取得会话运行资格之后调用。
+     * 否则并发请求会在被单飞校验拒绝之前先把用户消息写进历史，留下「有提问、无执行、无错误」的孤行。</p>
+     *
+     * <p>执行身份（{@code executionId}）在本方法内生成并固化进 {@link RuntimeContext}，
+     * 后续 {@link #buildRequest} 直接复用，不再另生成。</p>
+     */
     public RuntimeContext prepare(ChatCommand command) {
         if (command == null || command.input() == null || command.input().isBlank()) {
             throw new ClientException("聊天内容不能为空");
@@ -148,12 +161,14 @@ public class RequestPreparer {
         List<Message> messageList = modelContextService.find(preparedSessionId)
                 .map(ArrayList::new)
                 .orElseGet(ArrayList::new);
-        transcriptService.appendUser(preparedSessionId, userMessageEntity);
         messageList.add(userMessageEntity);
 
-        // 执行身份在此固化：prepare 阶段 executionId 尚未生成（null），buildRequest 里补齐（HC-2）。
+        // 执行身份在 prepare 内就固化（而不是等 buildRequest）：
+        // 这样「用户消息落库」与「执行记录」从第一刻起共享同一个 executionId，
+        // 历史接口才能按它把这一轮的消息与统计装配到一起。
+        String executionId = String.valueOf(IdUtil.getSnowflakeNextId());
         ExecutionContext executionContext = ExecutionContext.root(
-                preparedSessionId, null, workspaceId, effective.modelId(), mode, policy);
+                preparedSessionId, executionId, workspaceId, effective.modelId(), mode, policy);
 
         return new RuntimeContext(
                 executionContext,
@@ -168,8 +183,47 @@ public class RequestPreparer {
                 rootModel(effective.modelId(), settings),
                 mode,
                 policy,
-                effective.requirePlan()
+                effective.requirePlan(),
+                // 用户消息此刻**还没有落库**：调用方先取运行资格，再调 commitUserMessage。
+                userMessageEntity
         );
+    }
+
+    /**
+     * 把本轮用户消息写入 append-only transcript，并归属到 {@code executionId}；
+     * 同时登记「初始执行」记录，使提问与执行从第一刻起共享同一个身份。
+     *
+     * <p><b>为什么必须与 {@link #prepare} 分开：</b>「同一会话单飞」的运行资格校验必须先解析出
+     * 会话（而解析就是 prepare 的职责），但校验本身可能失败。若在 prepare 里顺手写用户消息，
+     * 就会出现「消息已经入库、执行却被拒绝」——用户看到自己发出去的话永远没有回复，
+     * 也没有任何错误提示。因此约定：<b>prepare 只解析，调用方拿到运行资格后再调本方法</b>。</p>
+     *
+     * <p><b>一个短事务</b>：执行行与用户消息要么一起可见，要么都不可见。事务内不做任何模型调用 ——
+     * 模型调用发生在后续的 loop 里，与本次提交无关。</p>
+     */
+    @Transactional
+    public void commitUserMessage(RuntimeContext context) {
+        if (context == null || context.pendingUserMessage() == null) {
+            return;
+        }
+        ExecutionContext executionContext = context.executionContext();
+        Long executionId = ExecutionIdentity.numericOrNull(executionContext.executionId());
+        if (executionId == null) {
+            throw new IllegalStateException(
+                    "缺少可落库的 executionId：执行身份必须在 prepare 阶段固化为雪花 ID");
+        }
+
+        ModelConfig modelConfig = context.modelConfig();
+        executionRegistrationService.registerInitial(new ExecutionRegistrationService.InitialExecution(
+                executionId,
+                executionContext.sessionId(),
+                // 主执行没有根执行归属（不写自身 id，避免与「未知」混淆）。
+                ExecutionIdentity.numericOrNull(executionContext.rootExecutionId()),
+                modelConfig == null ? null : modelConfig.getModelName(),
+                modelConfig == null ? null : modelConfig.getProvider()));
+
+        transcriptService.appendUser(executionContext.sessionId(), executionId,
+                context.pendingUserMessage());
     }
 
     /**
@@ -226,9 +280,12 @@ public class RequestPreparer {
     }
 
     public AgentRequest buildRequest(String agentPrompt, RuntimeContext context, List<String> toolList) {
-        String executionId = String.valueOf(IdUtil.getSnowflakeNextId());
-        // 执行身份此刻才完整：把 executionId 补进上下文再随 attributes 下行（HC-2 执行链身份闭环）。
-        ExecutionContext executionContext = context.executionContext().withExecutionId(executionId);
+        // 执行身份在 prepare 阶段已生成（HC-2 执行链身份闭环）：用户消息、执行记录、
+        // 框架执行实例共用同一个 executionId，不再在这里另生成一个。
+        String executionId = context.executionContext().executionId();
+        if (executionId == null || executionId.isBlank()) {
+            throw new IllegalStateException("RuntimeContext 缺少 executionId：执行身份必须在 prepare 阶段固化");
+        }
 
         // 请求级 MCP：每次执行重新读库组装，管理端改动下一轮即生效。
         // 无启用服务时为 null，框架侧按「无 MCP」处理，仍走 McpToolScope.EMPTY。
@@ -244,7 +301,7 @@ public class RequestPreparer {
                 .modelConfig(context.modelConfig())
                 .mcpConfig(mcpConfig)
                 .runtimeParameters(AgentRuntimeParameters.builder()
-                        .attributes(attributes(executionContext, context))
+                        .attributes(attributes(context.executionContext(), context))
                         .build())
                 .build();
     }

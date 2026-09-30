@@ -33,7 +33,6 @@ const {
   activeViewingSubSessionId,
   isSubPanelOpen,
   isSubSessionDetailOpen,
-  activeViewingSubSession,
   availableSubSessionItems,
   isLoadingSubMessages,
   subMessagesError,
@@ -55,7 +54,13 @@ const {
   isLoadingCurrentSession,
   sessionLoadError,
   initLoadError,
-  currentDisplayTokenInfo,
+  messageExecutionMap,
+  activeSubSessionExecutionMap,
+  activeSubSessionMessages,
+  activeViewingSubSessionVO,
+  hasMoreSubMessages,
+  isLoadingMoreSubMessages,
+  handleLoadMoreSubSessionHistory,
   canChangeWorkspace,
   handleSelectSession,
   handleNewSession,
@@ -236,7 +241,7 @@ const {
             }"
             direction="top"
             :threshold="80"
-            :hasMore="!isLoadingCurrentSession && !activeViewingSubSession && !!currentActiveSession?.hasMoreMessages"
+            :hasMore="!isLoadingCurrentSession && !!currentActiveSession?.hasMoreMessages"
             :loading="isLoadingMoreHistory"
             loadingText="正在加载历史消息..."
             @load="handleLoadMoreHistory"
@@ -245,28 +250,6 @@ const {
             @touchstart.passive="handleTouchStart"
             @touchmove.passive="handleTouchMove"
           >
-            <!-- 子会话历史查看提示顶条 -->
-            <div
-              v-if="activeViewingSubSession"
-              class="sticky top-0 z-20 px-4 py-2 bg-blue-50/90 dark:bg-blue-950/70 border-b border-blue-200/80 dark:border-blue-900/50 backdrop-blur-md flex items-center justify-between text-xs select-none"
-            >
-              <div class="flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-                <span class="text-gray-500 dark:text-gray-400">正在查看子代理会话历史:</span>
-                <span class="font-semibold text-blue-600 dark:text-blue-400">{{ activeViewingSubSession.agentName }}</span>
-                <span class="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-[10px] font-mono text-blue-700 dark:text-blue-300">#{{ activeViewingSubSession.id }}</span>
-              </div>
-              <button
-                @click="handleSelectSubSessionOption(null)"
-                class="px-2.5 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer shadow-xs"
-              >
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                </svg>
-                <span>返回主会话</span>
-              </button>
-            </div>
-
             <div class="flex-1 max-w-3xl mx-auto w-full py-6 px-4 space-y-3">
               <!-- 加载更多历史失败：可见失败态 + 重试（否则转圈消失会让用户误以为「已到底」） -->
               <div
@@ -283,36 +266,13 @@ const {
                 </button>
               </div>
 
-              <!-- 子会话消息加载失败：可见失败态 + 重试（区别于「确实为空」） -->
-              <div
-                v-if="subMessagesError"
-                :class="['flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-xs', displayIsDark ? 'bg-red-950/40 border-red-900/60 text-red-300' : 'bg-red-50 border-red-200 text-red-600']"
-              >
-                <span>{{ subMessagesError }}</span>
-                <button
-                  type="button"
-                  @click="handleRetrySubSessionMessages"
-                  :class="['px-2.5 py-1 rounded-lg border text-xs font-medium transition cursor-pointer shrink-0', displayIsDark ? 'border-red-800 text-red-300 hover:bg-red-900/30' : 'border-red-300 text-red-600 hover:bg-red-100']"
-                >
-                  重试
-                </button>
-              </div>
-
-              <!-- 子会话确无真实消息：如实展示「暂无消息」（不再用合成假对话填充） -->
-              <div
-                v-if="activeViewingSubSession && !isLoadingCurrentSession && !isLoadingSubMessages && !subMessagesError && displayedMessages.length === 0"
-                class="text-center text-xs text-gray-400 py-16 select-none"
-              >
-                暂无消息
-              </div>
-
               <!-- 会话消息首次加载中动画 -->
-              <div v-if="isLoadingCurrentSession || isLoadingSubMessages" class="flex flex-col items-center justify-center py-20 text-xs text-gray-400 gap-3 select-none">
+              <div v-if="isLoadingCurrentSession" class="flex flex-col items-center justify-center py-20 text-xs text-gray-400 gap-3 select-none">
                 <svg class="animate-spin h-6 w-6 text-blue-500" viewBox="0 0 24 24" fill="none">
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                   <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
                 </svg>
-                <span class="tracking-wide">{{ isLoadingSubMessages ? '正在加载子代理会话历史...' : '正在加载对话历史...' }}</span>
+                <span class="tracking-wide">正在加载对话历史...</span>
               </div>
 
               <ChatMessageItem
@@ -323,7 +283,8 @@ const {
                 :subSessions="currentActiveSession?.subSessions"
                 :sessionId="currentActiveSession?.id"
                 :isDark="displayIsDark"
-                :sessionTokenInfo="currentDisplayTokenInfo"
+                :execution="messageExecutionMap.get(msg.id)?.execution ?? null"
+                :isGroupTail="messageExecutionMap.get(msg.id)?.isGroupTail ?? false"
                 :isLastAssistant="idx === lastAssistantIndex"
                 :isSending="isSending"
                 @switchBranch="(msgId, branchIdx) => emit('switchBranch', msgId, branchIdx)"
@@ -380,10 +341,19 @@ const {
           v-if="availableSubSessionItems.length > 0"
           :items="availableSubSessionItems"
           :activeSubId="activeViewingSubSessionId"
+          :activeSubSession="activeViewingSubSessionVO"
+          :subMessages="activeSubSessionMessages"
+          :executionMap="activeSubSessionExecutionMap"
+          :isLoadingMessages="isLoadingSubMessages"
+          :messagesError="subMessagesError"
+          :hasMoreSubMessages="hasMoreSubMessages"
+          :isLoadingMoreSubMessages="isLoadingMoreSubMessages"
           :isDark="displayIsDark"
           :isOpen="isSubPanelOpen"
           @selectOption="handleSelectSubSessionOption"
           @toggleOpen="isSubPanelOpen = !isSubPanelOpen"
+          @retryMessages="handleRetrySubSessionMessages"
+          @loadMoreMessages="handleLoadMoreSubSessionHistory"
         />
 
       </div>
@@ -414,31 +384,8 @@ const {
           />
         </div>
 
-        <!-- 子会话只读提示条：查看子代理历史时不展示主会话输入框，并引导快速切回 -->
-        <div
-          v-if="activeViewingSubSession"
-          class="w-full max-w-3xl mx-auto px-4 py-3 mb-2"
-        >
-          <div :class="['px-4 py-3 rounded-2xl border flex items-center justify-between text-xs transition-colors shadow-xs', displayIsDark ? 'bg-[#151c2a] border-[#222d42] text-gray-300' : 'bg-blue-50/90 border-blue-200 text-blue-900']">
-            <div class="flex items-center gap-2">
-              <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-              <span>正在查看【{{ activeViewingSubSession.agentName }}】子会话历史（只读模式）</span>
-            </div>
-            <button
-              @click="handleSelectSubSessionOption(null)"
-              class="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium flex items-center gap-1.5 transition cursor-pointer shadow-xs"
-            >
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              <span>返回主会话继续提问</span>
-            </button>
-          </div>
-        </div>
-
         <!-- 大圆角输入框卡片：发送首条消息时随着底部占位缩起，平滑下沉吸底 -->
         <div
-          v-else
           class="w-full transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]"
           :style="{
             paddingBottom: hasMessages ? '16px' : '0px'

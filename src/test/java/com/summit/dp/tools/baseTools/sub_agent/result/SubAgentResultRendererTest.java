@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -91,6 +92,37 @@ class SubAgentResultRendererTest {
         String rendered = renderer.render(execution);
 
         assertTrue(rendered.contains("未能执行成功"));
+    }
+
+    @Test
+    @DisplayName("暂停等审批：与失败明确区分，且明确要求指挥者不要重做")
+    void suspendedIsNotRenderedAsFailure() {
+        Execution execution = Execution.builder()
+                .executionState(ExecutionState.SUSPENDED)
+                .agentRequest(AgentRequest.builder().task(List.of("尝试安装并运行整个系统")).build())
+                .build();
+
+        String rendered = renderer.render(execution);
+
+        assertTrue(rendered.contains("等待人工审批"), "必须说明在等人工审批");
+        assertTrue(rendered.contains("不是失败"), "必须与失败明确区分");
+        assertTrue(rendered.contains("请勿重复执行同一任务"), "必须阻止指挥者重做同一件事");
+        assertFalse(rendered.contains("未能执行成功"),
+                "挂起态绝不能出现失败口径 —— 这正是生产事故里指挥者收到并据此重做的那句话");
+    }
+
+    @Test
+    @DisplayName("已取消：说明是用户停止，不套用失败文案")
+    void cancelledIsDistinctFromFailure() {
+        Execution execution = Execution.builder()
+                .executionState(ExecutionState.CANCELLED)
+                .agentRequest(AgentRequest.builder().task(List.of("评估方案")).build())
+                .build();
+
+        String rendered = renderer.render(execution);
+
+        assertTrue(rendered.contains("已被取消"), "必须说明是用户停止");
+        assertFalse(rendered.contains("未能执行成功"), "取消不是失败");
     }
 
     @Test

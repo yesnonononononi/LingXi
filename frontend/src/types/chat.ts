@@ -140,6 +140,7 @@ export interface SubAgentSessionCreatedData {
   rootSessionId: string | number;
   subSessionId: string | number;
   agentId?: string | number;
+  agentName?: string;
   task?: string;
   toolCallId?: string;
 }
@@ -152,6 +153,7 @@ export type RuntimeEventType =
   | 'EXECUTION_CANCELLED'
   | 'EXECUTION_RESUMED'
   | 'PARTIAL_TEXT'
+  | 'COMPLETE_TEXT'
   | 'PARTIAL_THINKING'
   | 'AI_MESSAGE'
   | 'TOOL_CALL'
@@ -166,6 +168,11 @@ export type RuntimeEventType =
 export interface AgentStreamEvent {
   type?: RuntimeEventType | string;
   id?: string | number;
+  meta?: {
+    id?: string;
+    modelName?: string;
+    finishReason?: 'STOP' | 'LENGTH' | 'TOOL_EXECUTION' | 'CONTENT_FILTER' | 'OTHER' | string;
+  };
   /** 互动快照行 session_message.id */
   sessionMessageId?: string | number;
   /** CARD_PENDING 事件：待处理卡片的 tool_call.id，前端据此拉取 ToolCallVO */
@@ -249,6 +256,15 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
 
+  /**
+   * 产生本条消息的执行 id（字符串；**旧数据为 null = 归属未知**）。
+   *
+   * <p>回答组以 executionId 为唯一键：同 executionId 的连续消息归为同一组，
+   * executionId 变化必须拆组，绝不能跨执行合并；null 的旧数据按 USER 边界降级，
+   * 且**不得伪造任何统计**。</p>
+   */
+  executionId?: string | null;
+
   // 消息模型标识
   model?: string;
   thoughtSteps?: ThoughtStep[];     // 思维链思考轨迹
@@ -302,6 +318,14 @@ export interface ChatSession {
   hasMoreMessages?: boolean;         // 游标分页：是否还有更多消息
   nextMessageCursor?: string | null; // 游标分页：下一页游标
   subSessions?: SubSessionVO[];      // 团队模式下委派产生的子会话列表
+  /**
+   * 本会话已加载的执行摘要表：键 = executionId 字符串。
+   *
+   * <p>由消息分页接口每页额外返回的 executions 字典逐页 union 合并（键为 executionId，
+   * 后到的覆盖先到的 —— 更新的快照更准确）。缺失或空对象表示本会话暂无执行摘要
+   * （旧数据 / 未采集），**不是**「用量为 0」。</p>
+   */
+  executions?: Record<string, ExecutionSummary>;
 }
 
 
@@ -395,12 +419,54 @@ export interface ModelToolCallVO {
   arguments?: string;
 }
 
+/**
+ * 一次执行的摘要（对应后端 ExecutionSummaryVO）。
+ *
+ * <p><b>一次执行 = 一个 executionId</b>：主会话中一次新提问；子会话中一次新委派。
+ * 审批后继续、暂停后恢复都**沿用同一个 executionId**，SSE 重新订阅**不创建**新执行。</p>
+ *
+ * <p><b>null 语义（禁止当作 0）</b>：项目全局把 Long 序列化成字符串（防雪花 ID 精度丢失），
+ * 但统计量被后端专门覆盖为真正的 JSON 数字，且**可能为 null**：
+ * `inputTokens` / `outputTokens` / `totalTokens` 为 null 表示「未采集到」；
+ * `elapsedMs` 为 null 表示 `startedAt` 缺失、无法计算；`completedAt` 为 null 表示执行尚未结束。
+ * 展示层遇到 null 一律显示「暂无统计」或隐藏，**绝不能显示成 0**。</p>
+ */
+export interface ExecutionSummary {
+  /** 执行主键（字符串，雪花 ID 全局 Long→String 序列化） */
+  executionId: string;
+  status: 'CREATED' | 'RUNNING' | 'SUSPENDED' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  /** 模型名；可能为 null（未采集）—— 为空时展示层隐藏模型项 */
+  modelName?: string | null;
+  /** 模型提供方；可能为 null */
+  modelProvider?: string | null;
+  /** 输入 token；null = 未采集到（≠ 0） */
+  inputTokens?: number | null;
+  /** 输出 token；null = 未采集到（≠ 0） */
+  outputTokens?: number | null;
+  /** 总 token；null = 未采集到（≠ 0） */
+  totalTokens?: number | null;
+  /** 开始时间；可能为 null */
+  startedAt?: string | null;
+  /** 完成时间；null = 尚未结束 */
+  completedAt?: string | null;
+  /**
+   * 总历时（毫秒），**包含暂停与等待审批的时间**；`startedAt` 为 null 时为 null。
+   * 状态为进行中（CREATED/RUNNING/SUSPENDED）时，这是「截至查询时刻」的已历时，不是最终值。
+   */
+  elapsedMs?: number | null;
+}
+
 /** 后端会话消息 VO（对应 SessionMessageVO） */
 export interface SessionMessageVO {
   id?: number | string;
-  /** USER / AI / TOOL / SYSTEM */
+  /**
+   * 产生本条消息的执行 id（字符串；**旧数据为 null = 归属未知**）。
+   * 回答组以此字段为唯一分组键。
+   */
+  executionId?: string | null;
+  /** USER / AI / TOOL / SYSTEM / ERROR（ERROR = 执行失败标注行，text 为纯文本失败文案） */
   type?: string;
-  /** USER、SYSTEM 正文；AI 回复正文 */
+  /** USER、SYSTEM、ERROR 正文；AI 回复正文 */
   text?: string;
   /** 结构化思考内容 */
   thinking?: string;
@@ -418,6 +484,11 @@ export interface SessionMessagePageVO {
   records?: SessionMessageVO[];
   /** 本页命中的 tool_call 行数 */
   toolCallCount?: number;
+  /**
+   * 本页消息涉及的执行摘要字典：键 = executionId 字符串；无执行时是 `{}` 或缺失。
+   * 与 records 同页返回，供前端把持久化的 token / 模型 / 耗时 / 状态绑定到回答组。
+   */
+  executions?: Record<string, ExecutionSummary> | null;
   nextCursor?: string | null;
   hasMore?: boolean;
 }

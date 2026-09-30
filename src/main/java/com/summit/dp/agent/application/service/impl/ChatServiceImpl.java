@@ -15,6 +15,7 @@ import com.summit.dp.shared.event.SseEventPublisher;
 import com.summit.dp.shared.utils.RequestPreparer;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.SessionAttributeRestorer;
+import com.summit.dp.execution.application.service.ExecutionRegistrationService;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.shared.exception.ClientException;
 import java.util.List;
@@ -50,11 +51,17 @@ public class ChatServiceImpl implements ChatService {
     private final ExecutionIdentity executionIdentity;
     private final ToolCallRepository toolCallRepository;
     private final SessionAttributeRestorer sessionAttributeRestorer;
+    /**
+     * 启动失败时收口执行终态用。归属来自 {@code RuntimeContext} 已固化的 executionId，
+     * 不从「会话最新执行」反查 —— 并发下那必然认错执行。
+     */
+    private final ExecutionRegistrationService executionRegistrationService;
 
     @Override
     public Result<String> chat(ChatCommand command) {
         RuntimeContext context = requestPreparer.prepare(command);
-        // 单飞校验前置到请求线程：冲突时在执行开始前立即失败，不写任何会话状态。
+        // 单飞校验前置到请求线程，且**先于用户消息落库**：冲突时执行尚未开始，
+        // 用户消息也还没写进历史，不会留下「有提问、无执行、无错误」的孤行。
         sessionExecutionRegistry.beginRoot(context.executionContext().rootSessionId());
         return Result.success(executePrepared(context).getMessages().toString());
     }
@@ -82,8 +89,8 @@ public class ChatServiceImpl implements ChatService {
         // HC-2：先 resolve 出确定的会话身份，再注册运行与订阅事件。
         RuntimeContext context = requestPreparer.prepare(command);   // 内含建会话，sessionId 一定非 null
 
-        // 单飞校验前置：必须在建立 emitter / 订阅事件之前，校验失败直接抛 ClientException，
-        // 不建立任何 SSE 连接；否则第一个请求已建流之后才冲突，语义与体验都不对。
+        // 单飞校验前置：必须在建立 emitter / 订阅事件 / 落库用户消息之前，校验失败直接抛
+        // ClientException，不建立任何 SSE 连接；否则第一个请求已建流之后才冲突，语义与体验都不对。
         sessionExecutionRegistry.beginRoot(context.executionContext().rootSessionId());
 
         // 订阅到根会话（HC-3 路由键）：本会话及其全部子会话的运行时事件都归入此流。
@@ -115,6 +122,10 @@ public class ChatServiceImpl implements ChatService {
         long rootSessionId = context.executionContext().rootSessionId();
         Execution execution;
         try {
+            // 运行资格已经拿到（调用方在进入本方法前调了 beginRoot），现在才把用户消息落库：
+            // 顺序反了就会出现「消息已入库、执行被拒绝」的孤行。放在 try 内还保证了
+            // 落库失败会走 finally 释放运行资格，不会把会话永久锁死在 RUNNING。
+            requestPreparer.commitUserMessage(context);
             if (context.teamId() != null) {
                 execution = agentWorkflowOrchestrator.executeWorkflow(context.teamId(), context);
             } else if (context.agentId() != null) {
@@ -124,8 +135,33 @@ public class ChatServiceImpl implements ChatService {
             }
             modelContextService.replace(ExecutionIdentity.sessionId(execution), execution.getMessages());
             return execution;
+        } catch (RuntimeException e) {
+            // 启动失败（编排器在框架 loop 起来之前抛异常）：执行行还停在 CREATED，
+            // 必须收口成终态，否则历史里会留下一条永远「创建中」、既无回复也无失败提示的记录。
+            // 条件更新只命中未终结状态 —— 已经自己 COMPLETED / SUSPENDED 的执行不会被改写。
+            markStartupFailedQuietly(context, e);
+            throw e;
         } finally {
             sessionExecutionRegistry.finishRoot(rootSessionId);
+        }
+    }
+
+    /**
+     * 启动失败时收口执行终态；收口本身失败只告警，绝不掩盖原始异常。
+     *
+     * <p>归属用 {@code RuntimeContext} 里已固化的 executionId（显式传递），
+     * 不通过「当前会话最新执行」猜测 —— 并发下那样必然认错执行。</p>
+     */
+    private void markStartupFailedQuietly(RuntimeContext context, RuntimeException cause) {
+        Long executionId = ExecutionIdentity.numericOrNull(context.executionContext().executionId());
+        if (executionId == null) {
+            return;
+        }
+        try {
+            executionRegistrationService.markStartupFailed(executionId);
+        } catch (RuntimeException markFailure) {
+            log.warn("收口启动失败的执行时出错: executionId={}, cause={}, 收口失败原因={}",
+                    executionId, cause.toString(), markFailure.toString());
         }
     }
 

@@ -9,8 +9,8 @@ import type {
   ChatSession
 } from '../../types/chat';
 import { chatApi } from '../../services/chat';
-import { resolveToolExecutionStatus } from '../../utils/toolMeta';
-import { buildPromptCard } from '../../utils/session';
+import { routeToSession } from './messageRouter';
+import { useChatSessionStore } from '../../stores/chatSessionStore';
 
 /** 单个子会话待处理事件缓冲的容量上限，超限淘汰最旧事件，避免内存持续增长 */
 const MAX_PENDING_SUB_SESSION_EVENTS = 500;
@@ -62,8 +62,6 @@ export function useSubSessionRouting(options: SubSessionRoutingOptions) {
     subSessionRouteMap.value[String(sub.id)] = root.subSessions[index >= 0 ? index : root.subSessions.length - 1];
   };
 
-  const subEventFailed = (event: AgentStreamEvent) => resolveToolExecutionStatus(event.resultStatus) === 'failed';
-
   /**
    * 把「工具执行态」收敛到子代理面板可渲染的展示集合（流式事件链专用）。
    * `ToolCallTrace.status` 含四态（success/failed/pending/unknown）+ 本地 'calling'，
@@ -78,176 +76,58 @@ export function useSubSessionRouting(options: SubSessionRoutingOptions) {
     return 'unknown';
   };
 
-  /** Consume a child runtime event without letting it mutate the root assistant bubble. */
+  /** Consume a child runtime event by delegating to messageRouter's unified routeToSession. */
   const consumeSubSessionEvent = (sub: SubSessionVO, event: AgentStreamEvent) => {
-    const key = String(sub.id);
-    let messages = subSessionMessagesMap.value[key];
+    const subSessionId = String(sub.id);
+    const sessionStore = useChatSessionStore();
+    sessionStore.bindSessionRoot(sub.id, sub.rootSessionId || currentActiveSession.value?.id);
+
+    // 确保子会话任务名称等首条用户消息存在
+    let messages = subSessionMessagesMap.value[subSessionId];
     if (!messages || messages.length === 0) {
       messages = [];
       if (sub.task || sub.name) {
         messages.push({
-          id: `sub-user-${key}`,
+          id: `sub-user-${subSessionId}`,
           role: 'user',
           content: sub.task || sub.name || '',
           timestamp: Date.now()
         });
       }
-      messages.push({
-        id: `sub-assistant-${key}`,
-        role: 'assistant',
-        content: '',
-        timestamp: Date.now(),
-        isThinking: true,
-        isExploring: true,
-        isComplete: false,
-        thoughtSteps: [],
-        toolCalls: [],
-        fileEdits: []
-      });
+      sessionStore.syncHistoryMessages(subSessionId, messages);
+      subSessionMessagesMap.value[subSessionId] = messages;
     }
 
-    let assistant = [...messages].reverse().find(message => message.role === 'assistant');
-    if (!assistant) {
-      assistant = { id: `sub-assistant-${key}`, role: 'assistant', content: '', timestamp: Date.now() };
-      messages.push(assistant);
-    }
+    // 统一通过 messageRouter 执行事件流转
+    routeToSession(event, sub, {
+      onMessageUpdated: (updatedMsg) => {
+        const curList = subSessionMessagesMap.value[subSessionId] || [];
+        const idx = curList.findIndex(m => m.id === updatedMsg.id);
+        if (idx >= 0) curList[idx] = updatedMsg;
+        else curList.push(updatedMsg);
+        subSessionMessagesMap.value[subSessionId] = [...curList];
 
-    // 遇到下一个非 PARTIAL_THINKING 事件即视为当前 thinking 结束，下一次监听到 PARTIAL_THINKING 另起新步骤
-    if (event.type !== 'PARTIAL_THINKING') {
-      assistant.isThinking = false;
-      const runningStep = assistant.thoughtSteps?.find(item => item.status === 'running');
-      if (runningStep) {
-        runningStep.status = 'success';
-      }
-    }
+        // 同步子会话状态
+        if (event.type === 'EXECUTION_STARTED') {
+          sub.runStatus = 'RUNNING';
+        } else if (event.type === 'EXECUTION_COMPLETED') {
+          sub.runStatus = 'IDLE';
+          sub.lastOutcome = 'COMPLETED';
+          if (event.tokenInfo?.totalTokenCount != null) sub.totalTokens = event.tokenInfo.totalTokenCount;
+          if (event.tokenInfo?.inputTokenCount != null) sub.inputTokens = event.tokenInfo.inputTokenCount;
+          if (event.tokenInfo?.outputTokenCount != null) sub.outputTokens = event.tokenInfo.outputTokenCount;
+        } else if (event.type === 'EXECUTION_FAILED') {
+          sub.runStatus = 'IDLE';
+          sub.lastOutcome = 'FAILED';
+        } else if (event.type === 'EXECUTION_CANCELLED') {
+          sub.runStatus = 'IDLE';
+          sub.lastOutcome = 'CANCELLED';
+        }
 
-    switch (event.type) {
-      case 'EXECUTION_STARTED':
-        sub.runStatus = 'RUNNING';
-        assistant.isThinking = true;
-        assistant.isExploring = true;
-        break;
-      case 'PARTIAL_THINKING': {
-        assistant.isThinking = true;
-        if (!assistant.thoughtSteps) assistant.thoughtSteps = [];
-        let step = assistant.thoughtSteps.find(item => item.status === 'running');
-        if (!step) {
-          step = { id: `sub-think-${key}-${assistant.thoughtSteps.length}`, title: 'Thought for', content: '', status: 'running' };
-          assistant.thoughtSteps.push(step);
-        }
-        step.content += event.content || event.thinking || '';
-        break;
+        updateSubSession(sub);
+        if (String(activeViewingSubSessionId.value) === subSessionId) scrollToBottomIfAuto();
       }
-      case 'PARTIAL_TEXT':
-        assistant.isThinking = false;
-        assistant.isExploring = false;
-        assistant.content += event.content || event.text || '';
-        break;
-      case 'AI_MESSAGE':
-        assistant.isThinking = false;
-        assistant.isExploring = false;
-        if (event.text ?? event.content) assistant.content = String(event.text ?? event.content);
-        break;
-      case 'TOOL_CALL': {
-        assistant.isExploring = false;
-        if (!assistant.toolCalls) assistant.toolCalls = [];
-        const args = typeof event.args === 'string' ? event.args : JSON.stringify(event.args || {});
-        if (!assistant.toolCalls.some(tool => tool.id === event.requestId)) {
-          assistant.toolCalls.push({
-            id: event.requestId || `sub-tool-${Date.now()}`,
-            toolName: event.toolName || 'tool',
-            query: args,
-            description: args,
-            status: 'calling'
-          });
-        }
-        break;
-      }
-      case 'TOOL_COMPLETED': {
-        if (!assistant.toolCalls) assistant.toolCalls = [];
-        const output = event.output ?? event.result;
-        const tool = assistant.toolCalls.find(item => item.id === event.requestId)
-          || [...assistant.toolCalls].reverse().find(item => item.status === 'calling');
-        if (tool) {
-          tool.result = typeof output === 'string' ? output : JSON.stringify(output ?? '');
-          tool.status = subEventFailed(event) ? 'failed' : 'success';
-        }
-        break;
-      }
-      case 'FILE_EDIT':
-        if (!assistant.fileEdits) assistant.fileEdits = [];
-        assistant.fileEdits.push({
-          turnId: event.turnId,
-          recordId: event.recordId,
-          filePath: event.filePath || '',
-          oldContent: event.oldContent,
-          newContent: event.newContent,
-          plusLines: event.plusLines,
-          minusLines: event.minusLines
-        });
-        break;
-      case 'CARD_PENDING': {
-        // 单值事件只做通知：拉取 tool_call 权威数据 → 构建统一 promptCard（与历史同形状）
-        const toolCallId = event.toolCallId != null ? String(event.toolCallId) : '';
-        if (toolCallId) {
-          void (async () => {
-            try {
-              const vo = await chatApi.fetchToolCall(toolCallId);
-              const card = buildPromptCard(vo);
-              if (card) {
-                assistant.promptCard = card;
-                subSessionMessagesMap.value[key] = [...messages];
-                updateSubSession(sub);
-                if (String(activeViewingSubSessionId.value) === key) scrollToBottomIfAuto();
-              }
-            } catch (err) {
-              console.warn('[consumeSubSessionEvent] 拉取工具调用卡片失败:', err);
-            }
-          })();
-        }
-        break;
-      }
-      case 'CONTEXT_UPDATE': {
-        if (event.phase === 'SQUEEZE_STARTED') {
-          assistant.isCompressingContext = true;
-        } else if (event.phase === 'SQUEEZE_COMPLETED') {
-          assistant.isCompressingContext = false;
-        }
-        break;
-      }
-      case 'EXECUTION_COMPLETED': {
-        sub.runStatus = 'IDLE';
-        sub.lastOutcome = 'COMPLETED';
-        assistant.isComplete = true;
-        assistant.isThinking = false;
-        assistant.isExploring = false;
-        assistant.isCompressingContext = false;
-        // 契约 §2.2：ExecutionCompleteEvent 只有 tokenInfo，无顶层 token 字段
-        assistant.tokenInfo = event.tokenInfo;
-        const total = event.tokenInfo?.totalTokenCount;
-        const input = event.tokenInfo?.inputTokenCount;
-        const output = event.tokenInfo?.outputTokenCount;
-        if (total !== undefined && total !== null) sub.totalTokens = total;
-        if (input !== undefined && input !== null) sub.inputTokens = input;
-        if (output !== undefined && output !== null) sub.outputTokens = output;
-        break;
-      }
-      case 'EXECUTION_FAILED':
-      case 'EXECUTION_CANCELLED':
-        sub.runStatus = 'IDLE';
-        sub.lastOutcome = event.type === 'EXECUTION_CANCELLED' ? 'CANCELLED' : 'FAILED';
-        assistant.isComplete = true;
-        assistant.isThinking = false;
-        assistant.isExploring = false;
-        assistant.isCompressingContext = false;
-        // 契约 §2.2：ExecutionErrorEvent 主文案恒在 errMsg
-        assistant.executionError = event.errMsg?.trim() || '子代理执行失败';
-        break;
-    }
-
-    subSessionMessagesMap.value[key] = [...messages];
-    updateSubSession(sub);
-    if (String(activeViewingSubSessionId.value) === key) scrollToBottomIfAuto();
+    });
   };
 
   const flushPendingSubSessionEvents = (subSessionId: string) => {
@@ -258,16 +138,24 @@ export function useSubSessionRouting(options: SubSessionRoutingOptions) {
     pending.forEach(event => consumeSubSessionEvent(sub, event));
   };
 
-  const applySubSessionCreated = (data: SubAgentSessionCreatedData) => {
-    const rootId = currentActiveSession.value?.id;
+  /**
+   * 应用「子会话已建立」映射：建路由条目 + 把 subSessionId 绑回发起委派的工具调用。
+   *
+   * <p>{@code ownerRootSessionId} 是事件归属的根会话。主聊天流不传（沿用当前活跃会话）；
+   * 审批恢复流必须显式传 —— 它前置的 abort 已把归属快照置空，不能依赖那份快照。</p>
+   */
+  const applySubSessionCreated = (data: SubAgentSessionCreatedData, ownerRootSessionId?: string) => {
+    const rootId = ownerRootSessionId ?? currentActiveSession.value?.id;
     if (!rootId || String(data.rootSessionId) !== String(rootId)) return;
     const key = String(data.subSessionId);
+    const existingRoute = subSessionRouteMap.value[key];
+    const resolvedAgentName = data.agentName || existingRoute?.agentName || (data.agentId ? `Agent #${data.agentId}` : '子代理');
     const sub: SubSessionVO = {
-      ...(subSessionRouteMap.value[key] || {}),
+      ...(existingRoute || {}),
       id: data.subSessionId,
       rootSessionId: data.rootSessionId,
       agentId: data.agentId,
-      agentName: data.agentId ? `Agent #${data.agentId}` : '子代理',
+      agentName: resolvedAgentName,
       task: data.task,
       name: data.task,
       runStatus: 'RUNNING'
@@ -280,6 +168,9 @@ export function useSubSessionRouting(options: SubSessionRoutingOptions) {
         if (tool) {
           tool.subSessionId = data.subSessionId;
           tool.subAgentId = data.agentId;
+          if (resolvedAgentName) {
+            tool.subAgentName = resolvedAgentName;
+          }
           tool.subTask = data.task;
           tool.category = '子代理';
         }
@@ -311,15 +202,20 @@ export function useSubSessionRouting(options: SubSessionRoutingOptions) {
     })();
   };
 
-  /** Returns true when the event belongs to the mapping channel or to a child session. */
-  const routeSessionEvent = (event: AgentStreamEvent): boolean => {
+  /**
+   * Returns true when the event belongs to the mapping channel or to a child session.
+   *
+   * <p>{@code ownerRootSessionId} 是本条流的归属根会话。缺省回落到活跃流快照（主聊天流走这条）；
+   * 审批恢复流与无归属的会话级订阅由调用方**显式传入**，不依赖共享可变快照。</p>
+   */
+  const routeSessionEvent = (event: AgentStreamEvent, ownerRootSessionId?: string): boolean => {
     if (event.type === 'SUB_AGENT_SESSION_CREATED') {
-      if (event.data) applySubSessionCreated(event.data as SubAgentSessionCreatedData);
+      if (event.data) applySubSessionCreated(event.data as SubAgentSessionCreatedData, ownerRootSessionId);
       return true;
     }
 
-    // 流归属快照：所有事件一律按「本流归属会话」路由，绝不落进「响应到达时的当下会话」。
-    const owningRootId = getActiveStreamOwnerSessionId();
+    // 流归属：显式传入优先；否则读「本流归属会话」快照。绝不落进「响应到达时的当下会话」。
+    const owningRootId = ownerRootSessionId ?? getActiveStreamOwnerSessionId();
     if (!owningRootId) {
       // 流已被切换终止（abort）或归属尚未建立：丢弃，防止跨会话串写
       console.warn('[routeSessionEvent] 事件缺少归属流，已丢弃:', event.type);

@@ -30,6 +30,11 @@ const toggleThought = (msgId: string) => {
   expandedThoughtMsgIds.value[msgId] = !expandedThoughtMsgIds.value[msgId];
 };
 
+const expandedToolCallIds = ref<Record<string, boolean>>({});
+const toggleToolCall = (tcId: string) => {
+  expandedToolCallIds.value[tcId] = !expandedToolCallIds.value[tcId];
+};
+
 const loadMessages = async () => {
   if (!props.subSession || !props.subSession.id) {
     messages.value = [];
@@ -276,17 +281,29 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                 </div>
               </div>
 
-              <!-- 内部工具调用记录 -->
-              <div v-if="msg.toolCalls?.length" class="space-y-2 my-1">
+              <!-- 内部工具调用记录 (默认折叠) -->
+              <div v-if="msg.toolCalls?.length" class="space-y-1.5 my-1">
                 <div
                   v-for="tc in msg.toolCalls"
                   :key="tc.id"
-                  :class="['rounded-xl border p-3 text-xs font-mono transition', isDark ? 'border-[#222b3d] bg-[#121620]' : 'border-gray-200 bg-gray-50']"
+                  :class="['rounded-xl border text-xs font-mono transition overflow-hidden', isDark ? 'border-[#222b3d] bg-[#121620]' : 'border-gray-200 bg-gray-50']"
                 >
-                  <div class="flex items-center justify-between text-gray-400 mb-1.5">
-                    <div class="flex items-center gap-2">
-                      <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                      <span class="font-semibold text-gray-300 dark:text-gray-200">{{ tc.toolName }}</span>
+                  <button
+                    type="button"
+                    @click="toggleToolCall(tc.id)"
+                    class="w-full p-2.5 flex items-center justify-between text-gray-400 hover:text-gray-200 transition cursor-pointer select-none text-left"
+                  >
+                    <div class="flex items-center gap-2 truncate min-w-0">
+                      <svg
+                        :class="['w-3.5 h-3.5 text-gray-400 transition-transform duration-200 shrink-0', expandedToolCallIds[tc.id] ? 'rotate-90' : '']"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                      </svg>
+                      <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="tc.status === 'failed' ? 'bg-rose-500' : tc.status === 'calling' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'"></span>
+                      <span class="font-semibold text-gray-300 dark:text-gray-200 truncate">{{ tc.toolName }}</span>
                       <span
                         v-if="getToolDiffStat(tc)"
                         class="inline-flex items-center gap-1 font-mono text-[11px] font-medium leading-none shrink-0 select-none ml-1"
@@ -301,10 +318,13 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                         >-{{ getToolDiffStat(tc)!.minusLines }}</span>
                       </span>
                     </div>
-                    <span>{{ tc.status }}</span>
+                    <span class="text-[11px] shrink-0">{{ tc.status || 'done' }}</span>
+                  </button>
+
+                  <div v-if="expandedToolCallIds[tc.id]" class="px-3 pb-3 pt-0 space-y-2 border-t border-gray-700/30">
+                    <pre v-if="tc.query" class="text-[11px] text-gray-400 overflow-x-auto whitespace-pre-wrap max-h-32 mt-2 p-2 rounded-lg bg-black/20">{{ tc.query }}</pre>
+                    <pre v-if="tc.result" class="text-[11px] text-gray-200 dark:text-gray-300 overflow-x-auto whitespace-pre-wrap max-h-48 p-2 rounded-lg bg-black/20">{{ tc.result }}</pre>
                   </div>
-                  <pre v-if="tc.query" class="text-[11px] text-gray-400 overflow-x-auto whitespace-pre-wrap max-h-32 mb-1">{{ tc.query }}</pre>
-                  <pre v-if="tc.result" class="text-[11px] text-gray-200 dark:text-gray-300 overflow-x-auto whitespace-pre-wrap max-h-40 border-t pt-1 border-gray-700/50">{{ tc.result }}</pre>
                 </div>
               </div>
 

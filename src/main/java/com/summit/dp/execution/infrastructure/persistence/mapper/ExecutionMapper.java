@@ -9,6 +9,7 @@ import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 
@@ -33,6 +34,26 @@ public interface ExecutionMapper extends BaseMapper<ExecutionPO> {
     int markOrphanRunsFailed(@Param("failedStatus") int failedStatus,
                              @Param("created") int created,
                              @Param("running") int running);
+
+    /**
+     * 收口「尚未终结就被中断」的执行：把 CREATED / RUNNING 条件更新为失败终态，并写下结束时间。
+     *
+     * <p>用在启动失败路径：编排器在框架 loop 起来之前就抛异常（例如 Agent 解析不到、模型配置缺失），
+     * 此时执行行还停在 CREATED，若不收口，历史里会留下一条永远「创建中」的记录。</p>
+     *
+     * <p><b>条件更新是安全边界</b>：只命中 CREATED / RUNNING。已经 COMPLETED 的执行不会被改写；
+     * SUSPENDED 也不在条件内 —— 挂起是可恢复状态，误标失败会让「待恢复」入口消失。
+     * 状态值与结束时间全部由 {@link Param} 传入，无任何外部输入拼接；重复调用幂等。</p>
+     *
+     * @return 实际被收口的行数（0 表示该执行已经自己走到了终态，或行还不存在）
+     */
+    @Update("UPDATE execution SET status = #{failedStatus}, completed_at = #{completedAt} "
+            + "WHERE id = #{id} AND status IN (#{created}, #{running})")
+    int markFailedIfUnfinished(@Param("id") long id,
+                               @Param("failedStatus") int failedStatus,
+                               @Param("created") int created,
+                               @Param("running") int running,
+                               @Param("completedAt") LocalDateTime completedAt);
 
     /**
      * 批量查询每个会话、每种状态下最新的执行，复用 ExecutionPO 接收轻量列。

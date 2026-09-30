@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
-import type { ChatMessage, ThoughtStep, ToolCallTrace, PlanTaskItem, SubSessionVO, ProcessTimelineItem, PromptCardData } from '../../types/chat';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import type { ChatMessage, ThoughtStep, ToolCallTrace, PlanTaskItem, SubSessionVO, ProcessTimelineItem, PromptCardData, ExecutionSummary } from '../../types/chat';
 import { extractErrorMessage } from '../../utils/error';
 import {
   isEditFileTool,
@@ -25,11 +25,16 @@ const props = defineProps<{
   isDark?: boolean;
   /** 消息所属会话 id：互动卡片的决策接口据此定位 */
   sessionId?: string | number;
-  sessionTokenInfo?: {
-    totalTokens?: number;
-    inputTokens?: number;
-    outputTokens?: number;
-  };
+  /**
+   * 本条消息所属回答组的执行摘要（按 executionId 从会话摘要表解析）。
+   * null = 无摘要（旧数据 / 未采集），**绝不**回落成会话累计用量或 0。
+   */
+  execution?: ExecutionSummary | null;
+  /**
+   * 是否为所在回答组的末条：仅组尾展示一次执行元信息（模型/提供方/token/状态/总历时），
+   * 避免「同一执行跨页」时两个部分组各挂一次。
+   */
+  isGroupTail?: boolean;
   isLastAssistant?: boolean;
   isSending?: boolean;
 }>();
@@ -74,14 +79,55 @@ const toggleThoughtStep = (stepId: string, step: ThoughtStep) => {
   expandedThoughtStepIds.value[stepId] = !isThoughtStepExpanded(step);
 };
 
+// 中间过程文本块 (中间轮次 text 像 thinking 那样折叠)
+const expandedIntermediateMsgIds = ref<Record<string, boolean>>({});
+
+const isIntermediateMsgExpanded = (msgId: string) => {
+  return expandedIntermediateMsgIds.value[msgId] === true;
+};
+
+const toggleIntermediateMsg = (msgId: string) => {
+  expandedIntermediateMsgIds.value[msgId] = !isIntermediateMsgExpanded(msgId);
+};
+
+const getIntermediateSummary = (text?: string): string => {
+  if (!text) return '过程说明';
+  const firstLine = text.trim().split('\n')[0];
+  return firstLine.length > 35 ? `${firstLine.substring(0, 35)}...` : firstLine;
+};
+
+// 计时器（按秒计算）
+const now = ref(Date.now());
+let timerInterval: number | undefined;
+
+onMounted(() => {
+  if (props.message.isComplete === false) {
+    timerInterval = window.setInterval(() => {
+      now.value = Date.now();
+    }, 1000);
+  }
+});
+
+onUnmounted(() => {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = undefined;
+  }
+});
+
 // 监听到 request 结束事件（或 isComplete 转为 true）后，将最后一条 aimessage 的文本展示，其余所有工具 call、thinking 都折叠
 watch(
   () => props.message.isComplete,
   (isDone) => {
     if (isDone) {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = undefined;
+      }
       isProcessExpanded.value = false;
       expandedToolIds.value = {};
       expandedThoughtStepIds.value = {};
+      expandedIntermediateMsgIds.value = {};
     }
   },
   { immediate: true }
@@ -429,36 +475,108 @@ const calculatedThoughtDuration = computed(() => {
 
 // formatDuration 已收敛到 utils/format.ts（原第 381-388 行）
 
+/** 本条消息所属回答组的执行摘要（权威来源）；null = 无摘要，不伪造统计。 */
+const execSummary = computed(() => props.execution ?? null);
+
+/** token 数量展示：≥1000 显示 `1.2K tok`，否则 `123 tok`。 */
+const formatTokenCount = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}K tok` : `${n} tok`);
+
+/**
+ * 是否展示本组的执行元信息（用量/耗时）。
+ * 仅组尾展示一次；实时流在摘要尚未写入会话表时，用气泡自带统计即时展示。
+ * 旧数据（无摘要且无自带统计）一律隐藏，不显示成 0。
+ */
+const showExecutionMeta = computed(() => {
+  if (props.isGroupTail === false) return false;
+  if (execSummary.value) return true;
+  return props.message.tokenInfo != null || props.message.tokens != null || (props.message.durationMs ?? 0) > 0;
+});
+
 const displayDuration = computed(() => {
+  const e = execSummary.value;
+  if (e) {
+    // elapsedMs 为 null（startedAt 缺失）→ 暂无统计，绝不当 0
+    return e.elapsedMs == null ? '暂无统计' : formatDuration(e.elapsedMs);
+  }
   const ms = calculatedThoughtDuration.value;
   return formatDuration(ms || 1200);
 });
 
+/** 耗时的补充提示：标注「总历时包含等待时间」，进行中时说明是「截至查询时刻」。 */
+const durationHint = computed(() => {
+  const e = execSummary.value;
+  if (!e) return '';
+  const running = e.status === 'CREATED' || e.status === 'RUNNING' || e.status === 'SUSPENDED';
+  return running
+    ? '总历时包含暂停与等待审批的时间；执行进行中，此处为截至查询时刻的已历时'
+    : '总历时包含暂停与等待审批的时间';
+});
+
+const displaySeconds = computed(() => {
+  if (props.message.durationMs && props.message.durationMs > 0) {
+    return Math.max(1, Math.round(props.message.durationMs / 1000));
+  }
+  if (!props.message.isComplete && props.message.timestamp) {
+    return Math.max(1, Math.floor((now.value - props.message.timestamp) / 1000));
+  }
+  const ms = calculatedThoughtDuration.value;
+  return ms > 0 ? Math.max(1, Math.round(ms / 1000)) : 1;
+});
+
 const displayTokens = computed(() => {
-  let count = props.message.tokens ?? props.message.tokenInfo?.totalTokenCount;
-  if ((count === undefined || count === null || count === 0) && props.isLastAssistant && props.sessionTokenInfo?.totalTokens) {
-    count = props.sessionTokenInfo.totalTokens;
+  const e = execSummary.value;
+  if (e) {
+    // totalTokens 缺失时用 input+output 兜底（两者都非 null 才相加）；仍为 null → 暂无统计
+    const total = e.totalTokens != null
+      ? e.totalTokens
+      : (e.inputTokens != null && e.outputTokens != null ? e.inputTokens + e.outputTokens : null);
+    return total == null ? '暂无统计' : formatTokenCount(total);
   }
-  if (count !== undefined && count !== null && count > 0) {
-    return count >= 1000 ? `${(count / 1000).toFixed(1)}K tok` : `${count} tok`;
-  }
-  return '0 tok';
+  // 实时流：气泡自带统计（本组摘要尚未写入会话表时的即时展示）
+  const own = props.message.tokenInfo?.totalTokenCount ?? props.message.tokens;
+  return own != null ? formatTokenCount(own) : '暂无统计';
 });
 
 const tokenTooltip = computed(() => {
-  let info = props.message.tokenInfo;
-  if (!info && props.isLastAssistant && props.sessionTokenInfo && (props.sessionTokenInfo.totalTokens || props.sessionTokenInfo.inputTokens || props.sessionTokenInfo.outputTokens)) {
-    info = {
-      inputTokenCount: props.sessionTokenInfo.inputTokens,
-      outputTokenCount: props.sessionTokenInfo.outputTokens,
-      totalTokenCount: props.sessionTokenInfo.totalTokens
-    };
+  const e = execSummary.value;
+  if (e) {
+    const fmt = (n?: number | null) => (n == null ? '暂无' : String(n));
+    if (e.inputTokens == null && e.outputTokens == null && e.totalTokens == null) return '暂无统计';
+    return `输入: ${fmt(e.inputTokens)} | 输出: ${fmt(e.outputTokens)} | 总计: ${fmt(e.totalTokens)}`;
   }
-  if (!info) {
-    const t = props.message.tokens ?? (props.isLastAssistant ? props.sessionTokenInfo?.totalTokens : undefined);
-    return t ? `总用量: ${t} tokens` : 'Token 消耗统计中...';
+  const info = props.message.tokenInfo;
+  if (info) {
+    const fmt = (n?: number) => (n == null ? '暂无' : String(n));
+    return `输入: ${fmt(info.inputTokenCount)} | 输出: ${fmt(info.outputTokenCount)} | 总计: ${fmt(info.totalTokenCount)}`;
   }
-  return `输入: ${info.inputTokenCount ?? 0} tok | 输出: ${info.outputTokenCount ?? 0} tok | 总计: ${info.totalTokenCount ?? 0} tok`;
+  const t = props.message.tokens;
+  return t != null ? `总用量: ${t} tokens` : '暂无统计';
+});
+
+/** 执行状态展示（仅摘要存在时展示）；进行中状态与终态用不同配色。 */
+const execStatusMeta = computed(() => {
+  const e = execSummary.value;
+  if (!e) return null;
+  const labels: Record<string, string> = {
+    CREATED: '已创建',
+    RUNNING: '执行中',
+    SUSPENDED: '已挂起',
+    COMPLETED: '已完成',
+    FAILED: '已失败',
+    CANCELLED: '已取消'
+  };
+  const running = e.status === 'CREATED' || e.status === 'RUNNING' || e.status === 'SUSPENDED';
+  return { text: labels[e.status] ?? e.status, running };
+});
+
+/** 模型展示（模型名为空时隐藏模型项；提供方可选）。 */
+const execModelLabel = computed(() => {
+  const e = execSummary.value;
+  if (!e) return '';
+  const name = (e.modelName || '').trim();
+  if (!name) return '';
+  const provider = (e.modelProvider || '').trim();
+  return provider ? `${name} · ${provider}` : name;
 });
 
 const displayTime = computed(() => {
@@ -603,6 +721,7 @@ const handleImageClick = (url?: string) => {
         >
           <span v-if="props.message.isThinking" class="text-blue-500 animate-pulse font-medium">思考中...</span>
           <span v-else class="text-gray-400 dark:text-gray-400 font-normal">{{ processTitle }}</span>
+          <span v-if="displaySeconds > 0" class="text-gray-400 dark:text-gray-400 font-normal">· {{ displaySeconds }}s</span>
           <svg
             :class="['w-3.5 h-3.5 text-gray-400 transition-transform duration-200', isProcessExpanded ? 'rotate-90' : '']"
             fill="none"
@@ -615,18 +734,6 @@ const handleImageClick = (url?: string) => {
 
         <!-- 展开后展示：思维链轨迹、中间推理过程、以及所有工具调用 -->
         <div v-if="isProcessExpanded" class="mt-2 pl-3 border-l-2 border-gray-200 dark:border-gray-700 space-y-2.5">
-          <!-- 探索中渐变动画 (用户发送消息到第一个工具调用事件接收前展示) -->
-          <div v-if="props.message.isExploring" class="py-1 flex items-center justify-start select-none">
-            <GradientText
-              :colors="['#3b82f6', '#6366f1', '#a855f7', '#38bdf8', '#3b82f6']"
-              :animation-speed="2.5"
-              :show-border="false"
-              class="text-sm font-medium tracking-wide !mx-0 !ml-0"
-            >
-              正在探索中...
-            </GradientText>
-          </div>
-
           <!-- 统一时序时间线：按执行先后顺序交替展示思维链 (Thought for)、中间文本与工具调用 -->
           <template v-for="item in processTimeline" :key="item.id">
             <!-- 1. 思维链思考内容 (Thought for 可折叠) -->
@@ -657,12 +764,34 @@ const handleImageClick = (url?: string) => {
               </div>
             </div>
 
-            <!-- 2. 中间轮次 aimessage 文本（多轮执行时产生的中间说明，非最终结论） -->
+            <!-- 2. 中间轮次 aimessage 过程文本块（像 thinking 那样折叠，仅展开时查看） -->
             <div
               v-else-if="item.type === 'intermediate_ai' && item.message"
-              class="text-xs text-gray-600 dark:text-gray-300 bg-gray-50/80 dark:bg-gray-800/40 p-2.5 rounded-xl border border-gray-200/60 dark:border-gray-700/60 leading-relaxed whitespace-pre-wrap font-sans"
+              class="text-xs text-gray-500 dark:text-gray-400 space-y-1"
             >
-              {{ item.message.text }}
+              <button
+                type="button"
+                @click="toggleIntermediateMsg(item.message.id || item.id)"
+                class="font-medium text-gray-600 dark:text-gray-300 flex items-center gap-1.5 cursor-pointer hover:text-gray-900 dark:hover:text-gray-100 transition select-none py-0.5 text-left max-w-full"
+                :title="item.message.text"
+              >
+                <svg
+                  :class="['w-3 h-3 text-gray-400 transition-transform duration-200 shrink-0', isIntermediateMsgExpanded(item.message.id || item.id) ? 'rotate-90' : '']"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                </svg>
+                <span class="truncate">{{ getIntermediateSummary(item.message.text) }}</span>
+              </button>
+
+              <div
+                v-if="isIntermediateMsgExpanded(item.message.id || item.id) && item.message.text"
+                class="font-mono text-[11px] whitespace-pre-wrap opacity-90 leading-relaxed pl-4.5 text-gray-500 dark:text-gray-400 select-text"
+              >
+                {{ item.message.text }}
+              </div>
             </div>
 
             <!-- 3. SubAgent 子代理多会话协同指示条 -->
@@ -886,6 +1015,18 @@ const handleImageClick = (url?: string) => {
               </div>
             </div>
           </template>
+
+          <!-- 探索中渐变动画 (紧贴最后一条消息块底部) -->
+          <div v-if="props.message.isExploring" class="py-1 flex items-center justify-start select-none">
+            <GradientText
+              :colors="['#3b82f6', '#6366f1', '#a855f7', '#38bdf8', '#3b82f6']"
+              :animation-speed="2.5"
+              :show-border="false"
+              class="text-sm font-medium tracking-wide !mx-0 !ml-0"
+            >
+              正在探索中...
+            </GradientText>
+          </div>
         </div>
 
         <!-- 细横线分割条 (右图风格) -->
@@ -1044,20 +1185,40 @@ const handleImageClick = (url?: string) => {
           </svg>
         </button>
 
-        <!-- 用量统计 -->
-        <div class="flex items-center gap-1 cursor-help" :title="tokenTooltip">
+        <!-- 执行状态（仅回答组有摘要时展示；进行中与终态不同配色） -->
+        <div v-if="execStatusMeta" class="flex items-center gap-1" :title="durationHint">
+          <span
+            :class="[
+              'w-1.5 h-1.5 rounded-full',
+              execStatusMeta.running ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500'
+            ]"
+          ></span>
+          <span>{{ execStatusMeta.text }}</span>
+        </div>
+
+        <!-- 模型（模型名为空时隐藏该整项） -->
+        <div v-if="execModelLabel" class="flex items-center gap-1" :title="`执行模型：${execModelLabel}`">
+          <svg class="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+          <span>{{ execModelLabel }}</span>
+        </div>
+
+        <!-- 用量统计（组尾展示一次；无摘要且无自带统计时隐藏，绝不显示成 0） -->
+        <div v-if="showExecutionMeta" class="flex items-center gap-1 cursor-help" :title="tokenTooltip">
           <svg class="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
           </svg>
           <span>用量 {{ displayTokens }}</span>
         </div>
 
-        <!-- 耗时统计 -->
-        <div class="flex items-center gap-1">
+        <!-- 耗时统计（组尾展示一次；标注「总历时包含等待时间」） -->
+        <div v-if="showExecutionMeta" class="flex items-center gap-1" :title="durationHint">
           <svg class="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           <span>用时 {{ displayDuration }}</span>
+          <span v-if="execSummary && execSummary.elapsedMs != null" class="text-[10px] opacity-70">(含等待)</span>
         </div>
 
         <!-- 时间戳 -->

@@ -6,23 +6,18 @@ import { AgentAPI } from './agent';
 import { TeamAPI } from './team';
 import { ToolCallAPI } from './toolCall';
 import { ApiError, classifyResult } from './interceptor';
-import { buildPromptCard, parseSessionMessages } from '../utils/session';
+import { parseSessionMessages } from '../utils/session';
 import { extractErrorMessage } from '../utils/error';
 import { isOk } from '../utils/api';
 import { createLocalId, createTempSessionId, toServerSessionId } from '../utils/ids';
 import { extractDirName } from '../utils/path';
 import {
   extractSubAgentParams,
-  isEditFileTool,
   isSubAgentTool,
-  resolveToolCategory,
-  resolveToolExecutionStatus,
-  resolveToolMeta,
   TOOL_CATEGORY
 } from '../utils/toolMeta';
-import { toText } from '../utils/json';
-import { parseToolDiffFromResult } from '../utils/toolDiff';
 import { parseTimestampOr } from '../utils/time';
+import { routeToSession } from '../views/chat/messageRouter';
 import type { 
   ChatSession, 
   ModelConfig, 
@@ -31,13 +26,12 @@ import type {
   WorkspaceVO, 
   WorkspaceRequest, 
   AgentStreamEvent,
-  ThoughtStep,
   UserConfigVO,
   TeamVO,
   SubSessionVO,
   AgentVO,
   ToolCallVO,
-  PromptCardData
+  ExecutionSummary
 } from '../types/chat';
 
 /**
@@ -67,104 +61,6 @@ function describeFetchFailure(err: unknown): string {
     }
   }
   return '加载失败，请稍后重试';
-}
-
-/**
- * 拉取失败时使用的「不可用」卡片：复用 PromptCard 既有的 `unavailable` 降级渲染，
- * 让用户看到「卡片状态不可用」而不是空等（无需新增消息字段）。
- */
-function buildUnavailablePromptCard(toolCallId: string): PromptCardData {
-  return {
-    kind: 'COMMAND',
-    toolCallId,
-    title: '',
-    content: '',
-    status: 'pending',
-    pending: false,
-    unavailable: true
-  };
-}
-
-/**
- * 追加一条中间轮次 aimessage，并保证「同轮文本只记一次」。
- *
- * 后端 AI_MESSAGE 每个模型轮次发布一次，工具调用轮不含正文（text 为空），
- * 断流恢复（EXECUTION_RESUMED）也可能重放同一事件。若不加判重，折叠区会重复展示同一段文本
- * （正文取 aiMessages 末条、中间区取 slice(0,-1)，重复项必然同时出现在两处）。
- *
- * 规则：文本为空则只补 thinking，不落正文条目；文本与上一条完全相同则视为重放，忽略。
- */
-function appendAiMessage(target: ChatMessage, text: string, thinking: string): void {
-  if (!target.aiMessages) target.aiMessages = [];
-  const trimmed = text.trim();
-  if (!trimmed) return;
-  const last = target.aiMessages[target.aiMessages.length - 1];
-  if (last && last.text === text) return;
-  const order = target.aiMessages.reduce((max, m) => Math.max(max, m.order ?? 0), 0) + 1;
-  target.aiMessages.push({
-    id: createLocalId('aimsg'),
-    text,
-    thinking,
-    timestamp: Date.now(),
-    order
-  });
-}
-
-/**
- * CARD_PENDING 通知处理：拉取工具调用权威数据 → 构建统一 promptCard → 落到目标气泡。
- *
- * 契约来源：SSE 单值事件 CARD_PENDING 只做「有新的 pending 卡片」通知，卡片载荷权威源为
- * tool_call 行（`GET /tool-call/{toolCallId}`）。历史与实时两条路径因此产出同一形状的 promptCard。
- *
- * 返回值：true = 已处理（含「该 tool_call 本就不是 PROMISE 卡片」）；false = 拉取失败。
- * 拉取失败时会在气泡上落一张 `unavailable` 卡片，使失败对用户可见——后端此时可能已暂停等待审批，
- * 若静默吞掉，用户只会看到「AI 卡住不动」。
- */
-async function attachPromptCard(
-  toolCallId: string,
-  target: ChatMessage,
-  onProgress: (msg: ChatMessage) => void
-): Promise<boolean> {
-  try {
-    const toolCall: ToolCallVO | null = await ToolCallAPI.find(toolCallId);
-    const card = buildPromptCard(toolCall);
-    if (card) {
-      if (!target.promptCards) target.promptCards = [];
-      const idx = target.promptCards.findIndex(c => c.toolCallId === card.toolCallId);
-      if (idx >= 0) {
-        target.promptCards[idx] = card;
-      } else {
-        target.promptCards.push(card);
-      }
-      target.promptCard = target.promptCards[0];
-
-      // 同步当前活跃工具调用的状态为 pending
-      if (target.toolCalls) {
-        const matched = target.toolCalls.find(tc => tc.id === card.toolCallId);
-        if (matched && card.pending) {
-          matched.status = 'pending';
-        }
-      }
-
-      onProgress({ ...target });
-      return true;
-    }
-    console.warn('[attachPromptCard] 工具调用未产生可渲染卡片:', toolCallId);
-    return true;
-  } catch (err) {
-    console.warn('[attachPromptCard] 拉取工具调用卡片失败:', toolCallId, err);
-    const unavailableCard = buildUnavailablePromptCard(toolCallId);
-    if (!target.promptCards) target.promptCards = [];
-    const idx = target.promptCards.findIndex(c => c.toolCallId === toolCallId);
-    if (idx >= 0) {
-      target.promptCards[idx] = unavailableCard;
-    } else {
-      target.promptCards.push(unavailableCard);
-    }
-    target.promptCard = target.promptCards[0];
-    onProgress({ ...target });
-    return false;
-  }
 }
 
 /** 7. 统一 chatApi 导出，供 UI 层直接调用 */
@@ -197,7 +93,18 @@ export const chatApi = {
     text: string,
     onProgress: (msg: ChatMessage) => void,
     signal?: AbortSignal,
-    onFinish?: () => void
+    onFinish?: () => void,
+    /**
+     * 会话映射事件 / 子会话事件的路由回调（与 {@link sendMessageStream} 同一契约）。
+     *
+     * <p>恢复期同样会产生子会话事件（子代理运行时事件、待审批卡片、`SUB_AGENT_SESSION_CREATED`
+     * 映射），它们必须由视图层按 sessionId 投递；本方法只负责渲染**本会话（根）**自身的事件。</p>
+     *
+     * <p>归属由第二参**显式**给出，不读共享的归属快照：decide 前置的 abort 已把
+     * `activeStreamOwnerSessionId` 置空，而那份快照有 3 个读取点（被中止原流的 onFinish、
+     * 原流 finally 会清空、路由守卫），跨流复用它会让「对账时机」与「归属是否被清空」都变成竞态。</p>
+     */
+    routeSessionEvent?: (event: AgentStreamEvent, ownerRootSessionId?: string) => boolean
   ): Promise<boolean> {
     const streamStartTime = Date.now();
     const botMsgId = createLocalId('msg-bot-resume');
@@ -217,9 +124,6 @@ export const chatApi = {
 
     const sessionIdFilter = String(conversationId);
     let thinkingStartTime = 0;
-    let currentThinkingStep: ThoughtStep | null = null;
-    let currentTurnText = '';
-    let timelineSeq = 0;
 
     const finalizeLastAiMessage = () => {
       const lastAiMsg = botMessage.aiMessages?.length
@@ -227,18 +131,7 @@ export const chatApi = {
         : null;
       if (lastAiMsg && lastAiMsg.text !== undefined && lastAiMsg.text !== null && lastAiMsg.text !== '') {
         botMessage.content = lastAiMsg.text;
-      } else if (currentTurnText) {
-        botMessage.content = currentTurnText;
       }
-    };
-
-    const finishThinkingStep = () => {
-      if (currentThinkingStep && currentThinkingStep.status === 'running') {
-        currentThinkingStep.status = 'success';
-        currentThinkingStep.durationMs = Math.max(Date.now() - thinkingStartTime, 1);
-        currentThinkingStep = null;
-      }
-      botMessage.isThinking = false;
     };
 
     const settleComplete = () => {
@@ -271,7 +164,15 @@ export const chatApi = {
           await ToolCallAPI.decide(
             { conversationId, toolCallId, approved, text },
             (event: AgentStreamEvent) => {
-              // 只渲染本会话的事件；子会话（委派执行）事件由视图层 routeSessionEvent 接入
+              // 会话映射事件与子会话事件先交视图层按 sessionId 路由（与 sendMessageStream 同一契约）。
+              // 必须在下面的「只渲染本会话」过滤之前：子会话事件的 sessionId 是**子会话 id**，
+              // 会被判为异己直接丢弃 —— 子代理的待审批卡片曾因此既进不了子会话面板、
+              // 也进不了根会话气泡，用户无从审批，子执行永久挂起。
+              if (routeSessionEvent?.(event, String(conversationId))) {
+                return;
+              }
+
+              // 只渲染本会话的事件；子会话（委派执行）事件已在上方交给视图层
               const eventSessionId = event.sessionId == null ? null : String(event.sessionId);
               if (eventSessionId !== null && eventSessionId !== sessionIdFilter) {
                 return;
@@ -281,225 +182,20 @@ export const chatApi = {
                 resolveEstablished(resolve);
               }
 
-              if (event.type !== 'PARTIAL_THINKING' && currentThinkingStep) {
-                finishThinkingStep();
-              }
-
-              switch (event.type) {
-                case 'EXECUTION_STARTED': {
-                  botMessage.isThinking = true;
-                  botMessage.isExploring = true;
+              // 统一委托给 messageRouter 核心分发器进行状态推进
+              routeToSession(event, { id: conversationId } as SessionVO, {
+                onMessageUpdated: (updatedMsg) => {
+                  // 钉住本流气泡 id：router 在 EXECUTION_STARTED 时会 initExecution 造出
+                  // 新 id 的 store 消息，若放任 assign 覆盖 id，下一次 onProgress 会因
+                  // id 失配追加第二条气泡，旧气泡永远停留在「思考中/正在探索中」假象
+                  Object.assign(botMessage, updatedMsg, { id: botMsgId });
                   onProgress({ ...botMessage });
-                  break;
-                }
-
-                case 'PARTIAL_THINKING': {
-                  botMessage.isThinking = true;
-                  if (!currentThinkingStep) {
-                    thinkingStartTime = Date.now();
-                    currentThinkingStep = {
-                      id: createLocalId('step'),
-                      title: 'Thought for',
-                      content: '',
-                      status: 'running',
-                      durationMs: 0,
-                      order: timelineSeq++,
-                      timestamp: Date.now()
-                    };
-                    if (!botMessage.thoughtSteps) botMessage.thoughtSteps = [];
-                    botMessage.thoughtSteps.push(currentThinkingStep);
-                  }
-                  if (event.content) {
-                    currentThinkingStep.content += event.content;
-                  }
-                  currentThinkingStep.durationMs = Math.max(Date.now() - thinkingStartTime, 1);
+                },
+                onCompleted: (completedMsg) => {
+                  Object.assign(botMessage, completedMsg, { id: botMsgId });
                   onProgress({ ...botMessage });
-                  break;
                 }
-
-                case 'TOOL_CALL': {
-                  botMessage.isExploring = false;
-                  if (currentTurnText && currentTurnText.trim()) {
-                    if (!botMessage.aiMessages) botMessage.aiMessages = [];
-                    const existing = botMessage.aiMessages.find(m => m.text === currentTurnText);
-                    if (!existing) {
-                      botMessage.aiMessages.push({
-                        id: createLocalId('aimsg-turn'),
-                        text: currentTurnText,
-                        timestamp: Date.now(),
-                        order: timelineSeq++
-                      });
-                    }
-                  }
-                  currentTurnText = '';
-                  finishThinkingStep();
-
-                  const rawArgs = typeof event.args === 'string' ? event.args : JSON.stringify(event.args || {});
-                  const toolName = event.toolName || 'tool';
-                  const meta = resolveToolMeta({ toolName, args: event.args, rawArgs });
-                  if (!botMessage.toolCalls) botMessage.toolCalls = [];
-                  const existingTool = botMessage.toolCalls.find(t => t.toolName === event.toolName && t.query === rawArgs);
-                  if (!existingTool) {
-                    botMessage.toolCalls.push({
-                      id: event.requestId || createLocalId('tool'),
-                      toolName,
-                      category: meta.category,
-                      description: meta.description,
-                      target: meta.target,
-                      command: meta.command,
-                      query: rawArgs,
-                      status: 'calling',
-                      order: timelineSeq++,
-                      timestamp: Date.now()
-                    });
-                  }
-                  onProgress({ ...botMessage });
-                  break;
-                }
-
-                case 'TOOL_COMPLETED': {
-                  botMessage.isExploring = false;
-                  if (!botMessage.toolCalls) botMessage.toolCalls = [];
-                  const rawArgs = typeof event.args === 'string' ? event.args : JSON.stringify(event.args || {});
-                  const resultStr = toText(event.output);
-
-                  let targetTool = event.requestId
-                    ? botMessage.toolCalls.find(t => t.id === event.requestId)
-                    : undefined;
-                  if (!targetTool) {
-                    targetTool = botMessage.toolCalls.find(t => t.toolName === event.toolName && t.query === rawArgs && t.status === 'calling');
-                  }
-                  if (!targetTool) {
-                    targetTool = botMessage.toolCalls.slice().reverse().find(t => t.toolName === event.toolName && t.status === 'calling');
-                  }
-
-                  const completedStatus = resolveToolExecutionStatus(event.resultStatus);
-                  if (targetTool) {
-                    targetTool.result = resultStr;
-                    targetTool.status = completedStatus;
-                    if (isEditFileTool(targetTool.toolName) || event.toolName === 'edit_file') {
-                      const diff = parseToolDiffFromResult(resultStr, `toolCall ${targetTool.id}`);
-                      if (diff.plusLines !== null) targetTool.plusLines = diff.plusLines;
-                      if (diff.minusLines !== null) targetTool.minusLines = diff.minusLines;
-                    }
-                  } else {
-                    let plusLines: number | undefined;
-                    let minusLines: number | undefined;
-                    if (isEditFileTool(event.toolName)) {
-                      const diff = parseToolDiffFromResult(resultStr, `toolCall ${event.requestId || event.toolName || 'unknown'}`);
-                      plusLines = diff.plusLines ?? undefined;
-                      minusLines = diff.minusLines ?? undefined;
-                    }
-                    botMessage.toolCalls.push({
-                      id: event.requestId || createLocalId('tool'),
-                      toolName: event.toolName || 'tool',
-                      category: resolveToolCategory(event.toolName),
-                      description: event.toolName || '',
-                      query: rawArgs,
-                      result: resultStr,
-                      status: completedStatus,
-                      plusLines,
-                      minusLines,
-                      order: timelineSeq++,
-                      timestamp: Date.now()
-                    });
-                  }
-                  onProgress({ ...botMessage });
-                  break;
-                }
-
-                case 'PARTIAL_TEXT': {
-                  botMessage.isExploring = false;
-                  finishThinkingStep();
-                  if (event.content) {
-                    currentTurnText += event.content;
-                    botMessage.content = currentTurnText;
-                  }
-                  onProgress({ ...botMessage });
-                  break;
-                }
-
-                case 'CARD_PENDING': {
-                  // 单值事件只做通知：拉取 tool_call 权威数据 → 构建统一 promptCard（与历史同形状）
-                  const cardToolCallId = event.toolCallId != null ? String(event.toolCallId) : '';
-                  if (cardToolCallId) {
-                    void attachPromptCard(cardToolCallId, botMessage, onProgress);
-                  }
-                  break;
-                }
-
-                case 'AI_MESSAGE': {
-                  if ((!botMessage.thoughtSteps || botMessage.thoughtSteps.length === 0) && event.thinking) {
-                    botMessage.thoughtSteps = [{
-                      id: createLocalId('step'),
-                      title: 'Thought for',
-                      content: event.thinking,
-                      status: 'success',
-                      durationMs: 0,
-                      order: timelineSeq++,
-                      timestamp: Date.now()
-                    }];
-                  }
-                  const messageText = typeof event.text === 'string' ? event.text : '';
-                  if (messageText) {
-                    currentTurnText = messageText;
-                    botMessage.content = messageText;
-                  }
-                  appendAiMessage(botMessage, messageText, event.thinking || '');
-                  botMessage.isThinking = false;
-                  onProgress({ ...botMessage });
-                  break;
-                }
-
-                case 'EXECUTION_FAILED': {
-                  settleComplete();
-                  // 契约 §2.2：ExecutionErrorEvent 主文案恒在 errMsg（extraDes 仅作补充，不作为主文案来源）
-                  const errMsg = event.errMsg?.trim() || '恢复执行异常';
-                  botMessage.executionError = errMsg;
-                  if (botMessage.toolCalls) {
-                    botMessage.toolCalls.forEach(t => {
-                      if (t.status === 'calling') {
-                        t.status = 'failed';
-                        if (!t.result) t.result = `[失败] ${errMsg}`;
-                      }
-                    });
-                  }
-                  onProgress({ ...botMessage });
-                  break;
-                }
-
-                case 'EXECUTION_CANCELLED':
-                case 'EXECUTION_COMPLETED': {
-                  const tokenInfo = event.tokenInfo;
-                  if (tokenInfo) {
-                    botMessage.tokenInfo = {
-                      inputTokenCount: tokenInfo.inputTokenCount,
-                      outputTokenCount: tokenInfo.outputTokenCount,
-                      totalTokenCount: tokenInfo.totalTokenCount
-                    };
-                    if (tokenInfo.totalTokenCount !== undefined && tokenInfo.totalTokenCount !== null) {
-                      botMessage.tokens = tokenInfo.totalTokenCount;
-                    }
-                  }
-                  if (event.type === 'EXECUTION_CANCELLED' && botMessage.toolCalls) {
-                    botMessage.toolCalls.forEach(t => {
-                      if (t.status === 'calling') {
-                        t.status = 'failed';
-                        if (!t.result) t.result = '[已取消]';
-                      }
-                    });
-                  }
-                  settleComplete();
-                  onProgress({ ...botMessage });
-                  break;
-                }
-
-                default: {
-                  // 只打印事件类型与字段名列表，避免把工具 args/output 等完整载荷写入日志
-                  console.warn('[decideToolCall] 收到未处理的事件类型:', event.type, Object.keys(event));
-                  break;
-                }
-              }
+              });
             },
             signal
           );
@@ -746,6 +442,10 @@ export const chatApi = {
   /**
    * 按游标分页拉取会话消息历史
    * 对应后端 @GetMapping("/{id}/messages")
+   *
+   * <p>返回值除 messages 外还透出本页的 executions 摘要字典（键 = executionId）：每条消息的
+   * executionId 已由 {@link parseSessionMessages} 落到 ChatMessage 上，调用方据此把
+   * token / 模型 / 耗时 / 状态绑定到回答组。</p>
    */
   async fetchSessionMessages(
     id: string | number,
@@ -753,6 +453,7 @@ export const chatApi = {
     size = 50
   ): Promise<FetchResult<{
     messages: ChatMessage[];
+    executions: Record<string, ExecutionSummary>;
     nextCursor: string | null;
     hasMore: boolean;
   }>> {
@@ -765,6 +466,8 @@ export const chatApi = {
           ok: true,
           data: {
             messages: parsedMsgs,
+            // 无执行时后端返回 {} 或缺失 —— 统一归一为 {}，调用方按「无摘要」处理（≠ 用量为 0）
+            executions: page.executions ?? {},
             nextCursor: page.nextCursor ?? null,
             hasMore: Boolean(page.hasMore)
           }
@@ -772,7 +475,7 @@ export const chatApi = {
       }
       if (isOk(res.code)) {
         // code 成功但无 data：按空页处理（不是失败）
-        return { ok: true, data: { messages: [], nextCursor: null, hasMore: false } };
+        return { ok: true, data: { messages: [], executions: {}, nextCursor: null, hasMore: false } };
       }
       return { ok: false, error: describeFetchFailure(classifyResult(res)) };
     } catch (err) {
@@ -862,7 +565,7 @@ export const chatApi = {
         const agent = sub.agentId !== undefined ? agentMap.get(String(sub.agentId)) : undefined;
         return {
           ...sub,
-          agentName: agent?.name,
+          agentName: sub.agentName || agent?.name,
           agentDescription: agent?.description
           // 不再硬编码 status: 'success' —— 后端未下发执行状态时如实留空，由 UI 决定展示形式
         };
@@ -879,10 +582,15 @@ export const chatApi = {
           tc.category = TOOL_CATEGORY.SUB_AGENT;
           const params = extractSubAgentParams(tc);
 
+          if (params.agentName) {
+            tc.subAgentName = params.agentName;
+          }
           if (params.agentId) {
             tc.subAgentId = params.agentId;
             const agent = agentMap.get(String(params.agentId));
-            tc.subAgentName = agent?.name || `Agent #${params.agentId}`;
+            if (!tc.subAgentName) {
+              tc.subAgentName = agent?.name || `Agent #${params.agentId}`;
+            }
           }
           if (params.task) {
             tc.subTask = params.task;
@@ -893,26 +601,17 @@ export const chatApi = {
             const matchedSub = enrichedSubSessions.find(s => String(s.id) === String(params.subSessionId));
             if (matchedSub) {
               tc.subSessionId = matchedSub.id;
+              if (matchedSub.agentName && (!tc.subAgentName || tc.subAgentName.startsWith('Agent #'))) {
+                tc.subAgentName = matchedSub.agentName;
+              }
             }
           }
         }
       }
 
-      // 将会话的 Token 元数据注入到历史消息中（挂载到最新的 assistant 消息上，使其在消息底栏正确展示）
-      if (meta && (meta.totalTokens !== undefined || meta.inputTokens !== undefined || meta.outputTokens !== undefined)) {
-        const assistantMsgs = messages.filter(m => m.role === 'assistant');
-        if (assistantMsgs.length > 0) {
-          const target = assistantMsgs[assistantMsgs.length - 1];
-          if (!target.tokens && !target.tokenInfo) {
-            target.tokens = meta.totalTokens;
-            target.tokenInfo = {
-              inputTokenCount: meta.inputTokens,
-              outputTokenCount: meta.outputTokens,
-              totalTokenCount: meta.totalTokens
-            };
-          }
-        }
-      }
+      // 注意：不再把「会话累计 Token」回填到最后一条回答气泡上。
+      // 会话累计用量只在会话级位置展示；回答气泡的用量/耗时一律来自该执行自身的 executions 摘要，
+      // 否则同一份累计值会被挂到某一条回答上，刷新/分页后错位且掩盖了「本执行未采集」的事实。
 
       return {
         ok: true,
@@ -926,6 +625,7 @@ export const chatApi = {
           activeTools: [],
           workspaceId: meta?.workspaceId !== undefined && meta?.workspaceId !== null ? String(meta.workspaceId) : undefined,
           workDir: meta?.workDir,
+          // 会话级累计用量（仅用于会话列表/头部展示，不回填到任何消息）
           totalTokens: meta?.totalTokens,
           inputTokens: meta?.inputTokens,
           outputTokens: meta?.outputTokens,
@@ -933,6 +633,8 @@ export const chatApi = {
           rootSessionId: meta?.rootSessionId,
           subSessions: enrichedSubSessions,
           messages: messages,
+          // 首屏执行摘要表：回答组的 token/模型/耗时/状态来源
+          executions: pageResult.executions,
           hasMoreMessages: pageResult.hasMore,
           nextMessageCursor: pageResult.nextCursor
         }
@@ -1018,10 +720,7 @@ export const chatApi = {
     onProgress({ ...botMessage });
 
     let thinkingStartTime = 0;
-    let currentThinkingStep: ThoughtStep | null = null;
     let sessionIdNotified = false;
-    let currentTurnText = '';
-    let timelineSeq = 0;
 
     const finalizeLastAiMessage = () => {
       const lastAiMsg = botMessage.aiMessages?.length
@@ -1029,8 +728,6 @@ export const chatApi = {
         : null;
       if (lastAiMsg && lastAiMsg.text !== undefined && lastAiMsg.text !== null && lastAiMsg.text !== '') {
         botMessage.content = lastAiMsg.text;
-      } else if (currentTurnText) {
-        botMessage.content = currentTurnText;
       }
     };
 
@@ -1074,405 +771,22 @@ export const chatApi = {
             return;
           }
 
-          // 核心机制：遇到下一个非 PARTIAL_THINKING 事件即视为当前 thinking 结束，下一次监听到 PARTIAL_THINKING 时另起新步骤
-          if (event.type !== 'PARTIAL_THINKING' && currentThinkingStep) {
-            if (currentThinkingStep.status === 'running') {
-              currentThinkingStep.status = 'success';
-              currentThinkingStep.durationMs = Math.max(Date.now() - thinkingStartTime, 1);
-            }
-            currentThinkingStep = null;
-            botMessage.isThinking = false;
-          }
-
-          // 2. 分事件类型精准消费
-          switch (event.type) {
-            case 'EXECUTION_STARTED': {
-              botMessage.isThinking = true;
-              botMessage.isExploring = true;
+          // 2. 统一委托给 messageRouter 核心分发器进行状态推进与 Pinia 维护
+          routeToSession(event, { id: realSessionId } as SessionVO, {
+            onMessageUpdated: (updatedMsg) => {
+              // 钉住本流气泡 id：router 收到 EXECUTION_STARTED / 首个事件时会 initExecution
+              // 造出新 id 的 store 消息，若放任 assign 覆盖 id，本流预建的气泡会成为孤儿
+              // （永远停在「思考中/正在探索中」），下一次 onProgress 又追加一条 → 气泡重复
+              Object.assign(botMessage, updatedMsg, { id: botMsgId });
               onProgress({ ...botMessage });
-              break;
-            }
-
-            case 'PARTIAL_THINKING': {
-              botMessage.isThinking = true;
-              // 每次监听到 partialThinking（且当前无活跃 thinking 步骤）时，另起一个 thinking 消息在列表底部
-              if (!currentThinkingStep) {
-                thinkingStartTime = Date.now();
-                currentThinkingStep = {
-                  id: createLocalId('step'),
-                  title: 'Thought for',
-                  content: '',
-                  status: 'running',
-                  durationMs: 0,
-                  order: timelineSeq++,
-                  timestamp: Date.now()
-                };
-                if (!botMessage.thoughtSteps) botMessage.thoughtSteps = [];
-                botMessage.thoughtSteps.push(currentThinkingStep);
-              }
-              if (event.content) {
-                currentThinkingStep.content += event.content;
-              }
-              currentThinkingStep.durationMs = Math.max(Date.now() - thinkingStartTime, 1);
-              onProgress({ ...botMessage });
-              break;
-            }
-
-            case 'TOOL_CALL': {
-              botMessage.isExploring = false; // 接收到首个工具调用事件，结束探索状态
-              // 如果在工具调用前有中间文本（例如模型的中间说明），保存为中间 AI 消息，以便按时序在折叠区展示
-              if (currentTurnText && currentTurnText.trim()) {
-                if (!botMessage.aiMessages) botMessage.aiMessages = [];
-                const existing = botMessage.aiMessages.find(m => m.text === currentTurnText);
-                if (!existing) {
-                  botMessage.aiMessages.push({
-                    id: createLocalId('aimsg-turn'),
-                    text: currentTurnText,
-                    timestamp: Date.now(),
-                    order: timelineSeq++
-                  });
-                }
-              }
-              currentTurnText = ''; // 启动工具调用，重置当前轮次文本流缓冲区
-              if (currentThinkingStep && currentThinkingStep.status === 'running') {
-                currentThinkingStep.status = 'success';
-                currentThinkingStep.durationMs = Date.now() - thinkingStartTime;
-                currentThinkingStep = null;
-              }
-              const rawArgs = typeof event.args === 'string' ? event.args : JSON.stringify(event.args || {});
-              const toolName = event.toolName || 'tool';
-
-              // 分类与展示元数据统一由 toolMeta 解析（不再按工具名子串猜测）
-              const meta = resolveToolMeta({ toolName, args: event.args, rawArgs });
-              const subAgentParams = isSubAgentTool(toolName, meta.category)
-                ? extractSubAgentParams({ args: event.args, query: rawArgs })
-                : {};
-
-              if (!botMessage.toolCalls) botMessage.toolCalls = [];
-              // 匹配策略与 TOOL_COMPLETED 同源：先按 requestId 精确匹配（同名同参并发调用不串位），
-              // 未命中再按名称+参数降级；requestId 命中后绝不因名称/参数不同而新建第二条。
-              const byRequestId = event.requestId
-                ? botMessage.toolCalls.find(t => t.id === event.requestId)
-                : undefined;
-              const existing = byRequestId
-                || botMessage.toolCalls.find(t => t.toolName === event.toolName && t.query === rawArgs);
-              if (!existing) {
-                const out = event.output;
-                botMessage.toolCalls.push({
-                  id: event.requestId || createLocalId('tool'),
-                  toolName,
-                  category: meta.category,
-                  description: meta.description,
-                  target: meta.target,
-                  command: meta.command,
-                  subAgentId: subAgentParams.agentId,
-                  subTask: subAgentParams.task,
-                  subPrompt: subAgentParams.prompt,
-                  workDir: extractDirName(workDir) || undefined,
-                  query: rawArgs,
-                  result: out === undefined || out === null ? undefined : toText(out),
-                  status: 'calling',
-                  order: timelineSeq++,
-                  timestamp: Date.now()
-                });
-              } else if (event.output) {
-                existing.result = toText(event.output);
-                existing.status = 'success';
-              }
-              onProgress({ ...botMessage });
-              break;
-            }
-
-            case 'TOOL_COMPLETED': {
-              botMessage.isExploring = false;
-              if (!botMessage.toolCalls) botMessage.toolCalls = [];
-              const rawArgs = typeof event.args === 'string' ? event.args : JSON.stringify(event.args || {});
-              const out = event.output;
-              const resultStr = toText(out);
-
-              // 优先按工具名和参数匹配，或匹配最后一个处于 calling 状态的同名工具
-              let targetTool = event.requestId
-                ? botMessage.toolCalls.find(t => t.id === event.requestId)
-                : undefined;
-              if (!targetTool) {
-                targetTool = botMessage.toolCalls.find(t => t.toolName === event.toolName && t.query === rawArgs && t.status === 'calling');
-              }
-              if (!targetTool) {
-                targetTool = botMessage.toolCalls.slice().reverse().find(t => t.toolName === event.toolName && t.status === 'calling');
-              }
-              if (!targetTool && botMessage.toolCalls.length > 0) {
-                targetTool = botMessage.toolCalls.slice().reverse().find(t => t.status === 'calling');
-              }
-
-              const completedStatus = resolveToolExecutionStatus(event.resultStatus);
-              if (targetTool) {
-                targetTool.result = resultStr;
-                targetTool.status = completedStatus;
-                if (isEditFileTool(targetTool.toolName) || event.toolName === 'edit_file') {
-                  const diff = parseToolDiffFromResult(resultStr, `toolCall ${targetTool.id}`);
-                  if (diff.plusLines !== null) targetTool.plusLines = diff.plusLines;
-                  if (diff.minusLines !== null) targetTool.minusLines = diff.minusLines;
-                }
-                if (isSubAgentTool(targetTool.toolName, targetTool.category)) {
-                  targetTool.category = TOOL_CATEGORY.SUB_AGENT;
-                }
-              } else {
-                let plusLines: number | undefined;
-                let minusLines: number | undefined;
-                if (isEditFileTool(event.toolName)) {
-                  const diff = parseToolDiffFromResult(resultStr, `toolCall ${event.requestId || event.toolName || 'unknown'}`);
-                  plusLines = diff.plusLines ?? undefined;
-                  minusLines = diff.minusLines ?? undefined;
-                }
-                botMessage.toolCalls.push({
-                  id: event.requestId || createLocalId('tool'),
-                  toolName: event.toolName || 'tool',
-                  category: resolveToolCategory(event.toolName),
-                  description: event.toolName || '',
-                  workDir: extractDirName(workDir) || undefined,
-                  query: rawArgs,
-                  result: resultStr,
-                  status: completedStatus,
-                  plusLines,
-                  minusLines,
-                  order: timelineSeq++,
-                  timestamp: Date.now()
-                });
-              }
-
-              onProgress({ ...botMessage });
-              break;
-            }
-
-            case 'FILE_EDIT': {
-              botMessage.isExploring = false;
-              if (!botMessage.fileEdits) botMessage.fileEdits = [];
-              botMessage.fileEdits.push({
-                turnId: event.turnId,
-                recordId: event.recordId,
-                filePath: event.filePath || '',
-                oldContent: event.oldContent,
-                newContent: event.newContent,
-                plusLines: event.plusLines,
-                minusLines: event.minusLines
-              });
-
-              // 优先关联已存在的 edit_file 工具调用条目
-              const fileTarget = event.filePath || '未命名文件';
-              const existingEditTool = botMessage.toolCalls?.find(t =>
-                (isEditFileTool(t.toolName) || t.toolName === 'edit_file') &&
-                (!t.target || t.target === fileTarget)
-              );
-
-              if (existingEditTool) {
-                existingEditTool.plusLines = event.plusLines;
-                existingEditTool.minusLines = event.minusLines;
-                if (!existingEditTool.target) existingEditTool.target = fileTarget;
-              } else {
-                if (!botMessage.toolCalls) botMessage.toolCalls = [];
-                const diffDesc = (event.plusLines !== undefined || event.minusLines !== undefined)
-                  ? `+${event.plusLines ?? 0} -${event.minusLines ?? 0}`
-                  : '文件修改';
-                botMessage.toolCalls.push({
-                  id: createLocalId('edit'),
-                  toolName: 'edit_file',
-                  category: TOOL_CATEGORY.WRITE,
-                  target: fileTarget,
-                  description: fileTarget,
-                  command: `edit ${fileTarget}`,
-                  workDir: extractDirName(workDir) || undefined,
-                  result: event.newContent || event.oldContent || `[文件修改] ${diffDesc}`,
-                  plusLines: event.plusLines,
-                  minusLines: event.minusLines,
-                  status: 'success',
-                  order: timelineSeq++,
-                  timestamp: Date.now()
-                });
-              }
-              onProgress({ ...botMessage });
-              break;
-            }
-
-            case 'CONTEXT_UPDATE': {
-              // 契约 §2.2：phase ∈ {UPDATE, SQUEEZE_STARTED, SQUEEZE_COMPLETED}。
-              // 未知 phase 不再伪装成 'UPDATE' —— 记录告警并忽略，避免污染上下文用量展示。
-              const phase = event.phase;
-              if (phase === 'SQUEEZE_STARTED') {
-                botMessage.isCompressingContext = true;
-                botMessage.contextUsage = {
-                  phase: 'SQUEEZE_STARTED',
-                  tokenCount: event.usage?.tokenCount,
-                  maxTokens: event.usage?.maxTokens,
-                  ratio: event.usage?.ratio,
-                  message: event.message || '正在压缩上下文'
-                };
-                onProgress({ ...botMessage });
-              } else if (phase === 'SQUEEZE_COMPLETED') {
-                botMessage.isCompressingContext = false;
-                if (botMessage.contextUsage) {
-                  botMessage.contextUsage.phase = 'SQUEEZE_COMPLETED';
-                  botMessage.contextUsage.tokenCount = event.usage?.tokenCount;
-                  botMessage.contextUsage.maxTokens = event.usage?.maxTokens;
-                  botMessage.contextUsage.ratio = event.usage?.ratio;
-                  botMessage.contextUsage.message = undefined;
-                }
-                onProgress({ ...botMessage });
-              } else if (phase === 'UPDATE') {
-                if (!botMessage.contextUsage) botMessage.contextUsage = {};
-                botMessage.contextUsage.phase = 'UPDATE';
-                if (event.usage?.tokenCount !== undefined) botMessage.contextUsage.tokenCount = event.usage.tokenCount;
-                if (event.usage?.maxTokens !== undefined) botMessage.contextUsage.maxTokens = event.usage.maxTokens;
-                if (event.usage?.ratio !== undefined) botMessage.contextUsage.ratio = event.usage.ratio;
-                onProgress({ ...botMessage });
-              } else {
-                console.warn('[sendMessageStream] CONTEXT_UPDATE 收到未知 phase，已忽略:', phase);
-              }
-              break;
-            }
-
-            case 'PARTIAL_TEXT': {
-              botMessage.isExploring = false;
-              if (currentThinkingStep && currentThinkingStep.status === 'running') {
-                currentThinkingStep.status = 'success';
-                currentThinkingStep.durationMs = Date.now() - thinkingStartTime;
-                currentThinkingStep = null;
-              }
-              botMessage.isThinking = false;
-              if (event.content) {
-                currentTurnText += event.content;
-                botMessage.content = currentTurnText;
-              }
-              onProgress({ ...botMessage });
-              break;
-            }
-
-            case 'CARD_PENDING': {
-              // 单值事件只做通知：拉取 tool_call 权威数据 → 构建统一 promptCard（与历史同形状）
-              if (currentThinkingStep && currentThinkingStep.status === 'running') {
-                currentThinkingStep.status = 'success';
-                currentThinkingStep.durationMs = Date.now() - thinkingStartTime;
-                currentThinkingStep = null;
-              }
-              botMessage.isThinking = false;
-              const cardToolCallId = event.toolCallId != null ? String(event.toolCallId) : '';
-              if (cardToolCallId) {
-                void attachPromptCard(cardToolCallId, botMessage, onProgress);
-              }
-              break;
-            }
-
-            case 'AI_MESSAGE': {
-              // 1. 处理思维链 thinking 内容：
-              // 流式过程已由 PARTIAL_THINKING 独立追加步骤，此处绝不重复创建；
-              // 仅当从未收到过任何 PARTIAL_THINKING（如非流式调用）且 event.thinking 存在时，才补入单条兜底。
-              if ((!botMessage.thoughtSteps || botMessage.thoughtSteps.length === 0) && event.thinking) {
-                botMessage.thoughtSteps = [{
-                  id: createLocalId('step'),
-                  title: 'Thought for',
-                  content: event.thinking,
-                  status: 'success',
-                  durationMs: 0,
-                  order: timelineSeq++,
-                  timestamp: Date.now()
-                }];
-              }
-
-              // 2. 处理回复正文内容 (非思考)
-              // 只有本轮的 event.text 才算新正文：工具调用轮不含文本（text=null），
-              // 此时沿用 currentTurnText 会把上一轮文本再记一次，造成折叠区重复展示。
-              const messageText = typeof event.text === 'string' ? event.text : '';
-              if (messageText) {
-                currentTurnText = messageText;
-                botMessage.content = messageText;
-              }
-              appendAiMessage(botMessage, messageText, event.thinking || '');
-
-              botMessage.isThinking = false;
-              onProgress({ ...botMessage });
-              break;
-            }
-
-            case 'EXECUTION_FAILED': {
-              finalizeLastAiMessage();
-              botMessage.isThinking = false;
-              botMessage.isExploring = false;
-              botMessage.isCompressingContext = false;
-              botMessage.isComplete = true;
-              if (!botMessage.durationMs) {
-                botMessage.durationMs = Math.max(Date.now() - streamStartTime, 1000);
-              }
-              // 契约 §2.2：ExecutionErrorEvent 主文案恒在 errMsg（extraDes 仅作补充，不作为主文案来源）
-              const errMsg = event.errMsg?.trim() || '执行异常';
-              botMessage.executionError = errMsg;
-              // 将仍处于 calling 状态的工具标记为 failed
-              if (botMessage.toolCalls) {
-                botMessage.toolCalls.forEach(t => {
-                  if (t.status === 'calling') {
-                    t.status = 'failed';
-                    if (!t.result) t.result = `[失败] ${errMsg}`;
-                  }
-                });
-              }
+            },
+            onCompleted: (completedMsg) => {
+              Object.assign(botMessage, completedMsg, { id: botMsgId });
               onProgress({ ...botMessage });
               onFinish?.();
-              break;
             }
-
-            case 'EXECUTION_CANCELLED': {
-              finalizeLastAiMessage();
-              botMessage.isThinking = false;
-              botMessage.isExploring = false;
-              botMessage.isCompressingContext = false;
-              botMessage.isComplete = true;
-              if (!botMessage.durationMs) {
-                botMessage.durationMs = Math.max(Date.now() - streamStartTime, 1000);
-              }
-              if (botMessage.toolCalls) {
-                botMessage.toolCalls.forEach(t => {
-                  if (t.status === 'calling') {
-                    t.status = 'failed';
-                    if (!t.result) t.result = '[已取消]';
-                  }
-                });
-              }
-              onProgress({ ...botMessage });
-              onFinish?.();
-              break;
-            }
-
-            case 'EXECUTION_COMPLETED': {
-              // 契约来源：ExecutionCompleteEvent.tokenInfo.{input,output,total}TokenCount。
-              const tokenInfo = event.tokenInfo;
-              if (tokenInfo) {
-                botMessage.tokenInfo = {
-                  inputTokenCount: tokenInfo.inputTokenCount,
-                  outputTokenCount: tokenInfo.outputTokenCount,
-                  totalTokenCount: tokenInfo.totalTokenCount
-                };
-                if (tokenInfo.totalTokenCount !== undefined && tokenInfo.totalTokenCount !== null) {
-                  botMessage.tokens = tokenInfo.totalTokenCount;
-                }
-              }
-              finalizeLastAiMessage();
-              botMessage.isThinking = false;
-              botMessage.isExploring = false;
-              botMessage.isCompressingContext = false;
-              botMessage.isComplete = true;
-              if (!botMessage.durationMs) {
-                botMessage.durationMs = Math.max(Date.now() - streamStartTime, 1000);
-              }
-              onProgress({ ...botMessage });
-              onFinish?.();
-              break;
-            }
-
-            default: {
-              // 未知事件不再静默拼进正文：记录告警，便于后端补齐事件类型后定位。
-              // 只打印事件类型与字段名列表，避免把工具 args/output 等完整载荷写入日志。
-              console.warn('[sendMessageStream] 收到未处理的事件类型:', event.type, Object.keys(event));
-              break;
-            }
-          }
+          });
+          return;
         },
         workspaceId,
         workDir,

@@ -12,6 +12,7 @@ import com.summit.dp.agent.infrastructure.workflow.AgentWorkflowOrchestrator;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.SessionAttributeRestorer;
+import com.summit.dp.execution.application.service.ExecutionRegistrationService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
@@ -63,7 +64,8 @@ class ChatResumeTeamAttributeTest {
         return new ChatServiceImpl(sseEventPublisher, requestPreparer, orchestrator, executionControl,
                 executionRepository, sessionRepository, sessionExecutionRegistry, modelContextService,
                 executionIdentity, toolCallRepository,
-                new SessionAttributeRestorer(sessionRepository));
+                new SessionAttributeRestorer(sessionRepository),
+                mock(ExecutionRegistrationService.class));
     }
 
     @Test

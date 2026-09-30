@@ -99,6 +99,11 @@ public class AgentEventListener implements RuntimeListener {
     }
 
     @Override
+    public void onCompleteText(AgentCompleteTextEvent event) {
+        broadcast(event);
+    }
+
+    @Override
     public void onPartialThinking(AgentPartialThinkingEvent event) {
         broadcast(event);
     }

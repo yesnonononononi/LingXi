@@ -55,7 +55,7 @@ public class CommonToolConfiguration {
                         }
                         """)
                 .maxOutput(5_000)
-                .timeout(120L)
+                .timeout(240L)
                 .build();
     }
 
