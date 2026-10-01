@@ -19,10 +19,13 @@ package com.summit.dp.execution.application.service;
 public interface ExecutionRegistrationService {
 
     /**
-     * 登记初始执行：状态 CREATED，含会话归属、模型快照与根执行归属。
+     * 登记初始执行：状态 CREATED，含会话归属与根执行归属。
      *
      * <p>与用户消息在同一个短事务内提交（由调用方保证），使「提问」与「执行」从第一刻起
      * 就共享同一个 {@code executionId}。**不得**在事务内发起模型调用。</p>
+     *
+     * <p><b>不写模型与用量</b>：那是业务事实，权威在 {@code chat_turn} ——
+     * 模型由业务受理时自己解析写入轮次，用量由框架完成事件回填。</p>
      */
     void registerInitial(InitialExecution initial);
 
@@ -45,13 +48,10 @@ public interface ExecutionRegistrationService {
     /**
      * 初始执行的登记参数。
      *
-     * @param executionId     执行 ID（雪花，即用户消息的 {@code execution_id}）
+     * @param executionId     执行 ID（雪花，即用户消息所归属轮次的 {@code execution_id}）
      * @param sessionId       所属会话
      * @param rootExecutionId 所属根执行；主执行为 {@code null}
-     * @param modelName       实际解析出的模型名称快照，可为 {@code null}
-     * @param modelProvider   模型提供方快照，可为 {@code null}
      */
-    record InitialExecution(long executionId, long sessionId, Long rootExecutionId,
-                            String modelName, String modelProvider) {
+    record InitialExecution(long executionId, long sessionId, Long rootExecutionId) {
     }
 }

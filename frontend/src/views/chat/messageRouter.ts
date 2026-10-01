@@ -24,7 +24,8 @@ export interface ResolvedSessionInfo {
   sessionId: string;
   rootSessionId: string | null;
   isSubSession: boolean;
-  executionId: string;
+  /** 业务轮次 id：生命周期事件直接携带；高频事件由 store 的活跃轮次回落（始终非空） */
+  turnId: string;
 }
 
 /**
@@ -58,14 +59,15 @@ export const resolveSession = (
   const rootSessionId = sessionStore.getRootSessionId(sessionId);
   const isSubSession = sessionStore.isSubSession(sessionId);
 
-  // 提取 executionId
-  const executionId = event.executionId || sessionStore.getActiveExecutionId(sessionId);
+  // 提取轮次身份：生命周期事件带 turnId，高频事件回落到 store 的活跃轮次
+  const turnId = (event as { turnId?: string }).turnId
+    || sessionStore.getActiveTurnId(sessionId);
 
   return {
     sessionId,
     rootSessionId,
     isSubSession,
-    executionId
+    turnId
   };
 };
 
@@ -85,12 +87,12 @@ const getNextOrder = (msg: ChatMessage): number => {
 };
 
 /** 结束正在运行的 thinking 步骤 */
-const settleRunningThinking = (botMessage: ChatMessage, store: ReturnType<typeof useChatSessionStore>, executionId: string) => {
+const settleRunningThinking = (botMessage: ChatMessage, store: ReturnType<typeof useChatSessionStore>, turnId: string) => {
   if (botMessage.thoughtSteps) {
     const running = botMessage.thoughtSteps.find(s => s.status === 'running');
     if (running) {
       running.status = 'success';
-      const duration = store.getTimerDuration(executionId);
+      const duration = store.getTimerDuration(turnId);
       if (duration > 0 && !running.durationMs) {
         running.durationMs = duration;
       }
@@ -112,17 +114,20 @@ export const routeToSession = (
   }
 ): void => {
   const sessionStore = useChatSessionStore();
-  const { sessionId, isSubSession, executionId } = resolveSession(event, sessionContext);
+  const { sessionId, isSubSession, turnId } = resolveSession(event, sessionContext);
 
   // 获取当前 assistant 消息体
-  let botMessage = sessionStore.getLatestAssistantMessage(sessionId, executionId);
+  let botMessage = sessionStore.getLatestAssistantMessage(sessionId, turnId || undefined);
 
-  // 实时回答组绑定 executionId：已有气泡补盖（首次可能建于 executionId 未知时），
-  // 保证同一执行的实时事件始终写入同一个回答组，重连/审批恢复不会新起一组。
+  // 实时回答组绑定 turnId：已有气泡补盖（首次可能建于 turnId 未知时），
+  // 保证同一轮次的实时事件始终写入同一个回答组，重连/审批恢复不会新起一组。
   // 'default'/空表示归属未知，不写（渲染层按旧数据降级，不伪造统计）。
-  const realExecutionId = executionId && executionId !== 'default' ? executionId : null;
-  if (botMessage && realExecutionId && botMessage.executionId !== realExecutionId) {
-    botMessage.executionId = realExecutionId;
+  const realTurnId = turnId && turnId !== 'default' ? turnId : null;
+  if (botMessage && realTurnId && botMessage.turnId !== realTurnId) {
+    botMessage.turnId = realTurnId;
+    if (botMessage.id.startsWith('bot-')) {
+      botMessage.id = `msg-${sessionId}-turn-${realTurnId}`;
+    }
   }
 
   switch (event.type) {
@@ -131,7 +136,7 @@ export const routeToSession = (
       // 1. 当前会话列表, 新增一个 AI 消息体
       // 2. 初始化一个计时器, 记录时间
       // 3. 上一轮兜底清理干净, 避免污染
-      botMessage = sessionStore.initExecution(sessionId, executionId);
+      botMessage = sessionStore.initTurn(sessionId, turnId);
       sessionStore.setSessionSending(sessionId, true);
       callbacks?.onMessageUpdated?.({ ...botMessage });
       break;
@@ -139,11 +144,11 @@ export const routeToSession = (
 
     case 'PARTIAL_THINKING': {
       if (!botMessage) {
-        botMessage = sessionStore.initExecution(sessionId, executionId);
+        botMessage = sessionStore.initTurn(sessionId, turnId);
       }
       botMessage.isThinking = true;
 
-      // 1. 叠加到当前最后一个 thinking 消息中 (按 executionId or sessionId)
+      // 1. 叠加到当前最后一个 thinking 消息中 (按 turnId or sessionId)
       // 2. 如果当前最后一轮消息不是 thinking, 则另起一个 thinking 气泡
       if (!botMessage.thoughtSteps) botMessage.thoughtSteps = [];
       let currentStep = botMessage.thoughtSteps.find(item => item.status === 'running');
@@ -162,7 +167,7 @@ export const routeToSession = (
 
       const content = event.content || event.thinking || '';
       currentStep.content += content;
-      currentStep.durationMs = sessionStore.getTimerDuration(sessionId, executionId);
+      currentStep.durationMs = sessionStore.getTimerDuration(sessionId, turnId);
 
       callbacks?.onMessageUpdated?.({ ...botMessage });
       break;
@@ -170,10 +175,10 @@ export const routeToSession = (
 
     case 'PARTIAL_TEXT': {
       if (!botMessage) {
-        botMessage = sessionStore.initExecution(sessionId, executionId);
+        botMessage = sessionStore.initTurn(sessionId, turnId);
       }
       botMessage.isExploring = false;
-      settleRunningThinking(botMessage, sessionStore, executionId);
+      settleRunningThinking(botMessage, sessionStore, turnId);
 
       // 1. 如果当前会话最后一个消息不是 text, 另起 text 气泡 (更新正文内容)
       const textChunk = event.content || event.text || '';
@@ -186,7 +191,7 @@ export const routeToSession = (
     case 'COMPLETE_TEXT': {
       if (!botMessage) return;
       botMessage.isExploring = false;
-      settleRunningThinking(botMessage, sessionStore, executionId);
+      settleRunningThinking(botMessage, sessionStore, turnId);
 
       const finishReason = event.meta?.finishReason;
       const textContent = (event.content || event.text || botMessage.content || '').trim();
@@ -246,10 +251,10 @@ export const routeToSession = (
 
     case 'TOOL_CALL': {
       if (!botMessage) {
-        botMessage = sessionStore.initExecution(sessionId, executionId);
+        botMessage = sessionStore.initTurn(sessionId, turnId);
       }
       botMessage.isExploring = false;
-      settleRunningThinking(botMessage, sessionStore, executionId);
+      settleRunningThinking(botMessage, sessionStore, turnId);
 
       // 防守兜底：若工具调用发生时正文中仍有前置说明文本未被清除，自动归档并清空正文，避免与最终结论串联
       if (botMessage.content && botMessage.content.trim()) {
@@ -271,7 +276,7 @@ export const routeToSession = (
       // 2. case toolType -> 展示 依次左边到右边 'loading动画' 'svgtool图标' '执行命令' '命令substring(0,10)+...'
       const rawArgs = typeof event.args === 'string' ? event.args : JSON.stringify(event.args || {});
       const toolName = event.toolName || 'tool';
-      const meta = resolveToolMeta({ toolName, args: event.args, rawArgs });
+      const meta = resolveToolMeta({ toolName, args: event.args });
 
       if (!botMessage.toolCalls) botMessage.toolCalls = [];
       const toolId = event.requestId || event.id ? String(event.requestId || event.id) : createLocalId('tool');
@@ -279,14 +284,12 @@ export const routeToSession = (
 
       if (!existing) {
         // 命令截取展示: substring(0, 10) + '...'
-        const cmd = meta.command || meta.target || meta.description || toolName;
-        const shortCmd = cmd.length > 10 ? `${cmd.substring(0, 10)}...` : cmd;
 
         botMessage.toolCalls.push({
           id: toolId,
           toolName,
           category: meta.category,
-          description: meta.description || shortCmd,
+          description: meta.description,
           target: meta.target,
           command: meta.command,
           query: rawArgs,
@@ -338,7 +341,7 @@ export const routeToSession = (
 
     case 'FILE_EDIT': {
       if (!botMessage) {
-        botMessage = sessionStore.initExecution(sessionId, executionId);
+        botMessage = sessionStore.initTurn(sessionId, turnId);
       }
       botMessage.isExploring = false;
       if (!botMessage.fileEdits) botMessage.fileEdits = [];
@@ -391,9 +394,9 @@ export const routeToSession = (
 
     case 'CARD_PENDING': {
       if (!botMessage) {
-        botMessage = sessionStore.initExecution(sessionId, executionId);
+        botMessage = sessionStore.initTurn(sessionId, turnId);
       }
-      settleRunningThinking(botMessage, sessionStore, executionId);
+      settleRunningThinking(botMessage, sessionStore, turnId);
       botMessage.isThinking = false;
 
       // 1. 按卡片类型 switch 新增卡片消息在列表底部, 等待选择, 内容根据 case 进行 JSON.parse() 或 fetchToolCall 权威拉取
@@ -443,7 +446,7 @@ export const routeToSession = (
     case 'EXECUTION_COMPLETED': {
       if (!botMessage) return;
       // 1. 关闭计时器, 展示整个消息流的底部元信息如 'svg复制图标' '点赞' 'token用量' '用时'
-      const totalDuration = sessionStore.stopTimer(sessionId, executionId);
+      const totalDuration = sessionStore.stopTimer(sessionId, turnId);
       botMessage.durationMs = totalDuration > 0 ? totalDuration : Math.max(1000, botMessage.durationMs || 0);
 
       const tokenInfo = event.tokenInfo;
@@ -460,7 +463,7 @@ export const routeToSession = (
       botMessage.isThinking = false;
       botMessage.isExploring = false;
       botMessage.isCompressingContext = false;
-      settleRunningThinking(botMessage, sessionStore, executionId);
+      settleRunningThinking(botMessage, sessionStore, turnId);
 
       // 2. 如果是子会话, 标识状态为已完成
       if (isSubSession) {
@@ -478,10 +481,8 @@ export const routeToSession = (
 
     case 'EXECUTION_FAILED': {
       if (!botMessage) return;
-      // 1. 增加一行消息, 红色字体标识 消息原因 || '执行发生错误'
-      const errMsg = event.errMsg?.trim() || event.error?.trim() || '执行发生错误';
-      botMessage.executionError = errMsg;
-
+      const errMsg = event.errMsg?.trim() || '执行发生错误';
+      // 失败不再写 executionError：由 turns[turnId].status/errorReason 权威呈现。
       // 标记未完成工具为 failed
       if (botMessage.toolCalls) {
         botMessage.toolCalls.forEach(t => {
@@ -493,13 +494,13 @@ export const routeToSession = (
       }
 
       // 2. 剩余逻辑参考 EXECUTION_COMPLETED
-      const totalDuration = sessionStore.stopTimer(sessionId, executionId);
+      const totalDuration = sessionStore.stopTimer(sessionId, turnId);
       botMessage.durationMs = totalDuration > 0 ? totalDuration : Math.max(1000, botMessage.durationMs || 0);
       botMessage.isComplete = true;
       botMessage.isThinking = false;
       botMessage.isExploring = false;
       botMessage.isCompressingContext = false;
-      settleRunningThinking(botMessage, sessionStore, executionId);
+      settleRunningThinking(botMessage, sessionStore, turnId);
 
       sessionStore.setSessionRunStatus(sessionId, 'IDLE', 'FAILED');
       sessionStore.setSessionSending(sessionId, false);
@@ -525,13 +526,13 @@ export const routeToSession = (
       }
 
       // 2. 剩余逻辑参考 EXECUTION_COMPLETED
-      const totalDuration = sessionStore.stopTimer(sessionId, executionId);
+      const totalDuration = sessionStore.stopTimer(sessionId, turnId);
       botMessage.durationMs = totalDuration > 0 ? totalDuration : Math.max(1000, botMessage.durationMs || 0);
       botMessage.isComplete = true;
       botMessage.isThinking = false;
       botMessage.isExploring = false;
       botMessage.isCompressingContext = false;
-      settleRunningThinking(botMessage, sessionStore, executionId);
+      settleRunningThinking(botMessage, sessionStore, turnId);
 
       sessionStore.setSessionRunStatus(sessionId, 'IDLE', 'CANCELLED');
 

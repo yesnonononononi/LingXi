@@ -106,7 +106,7 @@ function toApiError(error: unknown): ApiError {
 // 创建 axios 实例
 // 本地单实例（HC-1）：无认证头、无 401 跳转；仅保留统一解包 response.data。
 const http = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '',
+  baseURL: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) || '',
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',

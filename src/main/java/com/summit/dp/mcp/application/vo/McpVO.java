@@ -35,7 +35,8 @@ public class McpVO {
     private List<String> command;
     /** 脱敏后的 stdio 环境变量；仅 stdio 传输非空 */
     private Map<String, String> env;
-    private String toolNamePrefix;
+    /** 服务描述，随提示词下发给模型；由业务用户填写 */
+    private String description;
     private Long initializationTimeout;
     private Long executionTimeout;
     private Integer maxOutput;

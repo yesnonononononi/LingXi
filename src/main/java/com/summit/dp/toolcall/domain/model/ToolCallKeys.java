@@ -43,6 +43,9 @@ public final class ToolCallKeys {
     /** COMMAND 卡片：工作空间 id。 */
     public static final String WORKSPACE_ID = "workspaceId";
 
+    /** DELEGATION 卡片：目标子会话 id（回填时据此把子执行终态匹配到父执行的槽位）。 */
+    public static final String SUB_SESSION_ID = "subSessionId";
+
     // ------------------------------------------------------------------
     // raw_input：输入载荷
     // ------------------------------------------------------------------

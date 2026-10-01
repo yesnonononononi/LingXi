@@ -200,8 +200,12 @@ public class SubAgentRequestFactory {
      * + 本次委派的上下文。
      */
     private String buildSubAgentPrompt(AgentVO agent, TeamVO team, String callerPrompt) {
-        String role = TeamPromptComposer.memberPrompt(agent.getPrompt(),
-                team == null ? null : team.getAgents(), agent.getId());
+        String role = TeamPromptComposer.memberPrompt(
+                agent.getPrompt(),
+                team == null ? null : team.getAgents(),
+                agent.getId(),
+                team == null ? null : team.getDescription()
+        );
         return String.format("""
                 %s
                 

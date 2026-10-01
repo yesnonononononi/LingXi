@@ -13,6 +13,7 @@ import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.SessionAttributeRestorer;
 import com.summit.dp.execution.application.service.ExecutionRegistrationService;
+import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
@@ -65,7 +66,9 @@ class ChatResumeTeamAttributeTest {
                 executionRepository, sessionRepository, sessionExecutionRegistry, modelContextService,
                 executionIdentity, toolCallRepository,
                 new SessionAttributeRestorer(sessionRepository),
-                mock(ExecutionRegistrationService.class));
+                mock(com.summit.dp.execution.application.service.ExecutionRegistrationService.class),
+                mock(com.summit.dp.turn.application.service.ChatTurnService.class),
+                mock(com.summit.dp.execution.application.service.ExecutionQueryService.class));
     }
 
     @Test
@@ -140,6 +143,62 @@ class ChatResumeTeamAttributeTest {
         assertFalse(capturedResumeArgument().getAgentRequest().runtimeParametersOrDefault()
                         .getAttributes().containsKey(ExecutionAttributes.TEAM_ID),
                 "解绑后恢复必须移除陈旧 TEAM_ID，否则仍会按旧团队委派");
+    }
+
+    @Test
+    @DisplayName("子会话恢复：自身行不承载团队绑定，沿 root 链回落根会话的 teamId")
+    void resumeRestoresTeamIdFromRootForSubSession() {
+        long rootSessionId = 600L;
+        Map<String, Object> snapshotAttributes = new HashMap<>();
+        snapshotAttributes.put(ExecutionAttributes.SESSION_ID, String.valueOf(SESSION_ID));
+        snapshotAttributes.put(ExecutionAttributes.AGENT_ID, "7");
+        Execution execution = execution(snapshotAttributes);
+
+        // 子会话行由委派落库，不带 teamId；根会话绑定了团队
+        Session subSession = Session.builder()
+                .id(SESSION_ID).rootSessionId(rootSessionId).name("子代理会话").teamId(null).build();
+        Session rootSession = Session.builder()
+                .id(rootSessionId).rootSessionId(Session.ROOT_SESSION_ID).name("团队会话").teamId(TEAM_ID).build();
+        when(executionIdentity.latestSuspendedExecutionId(SESSION_ID)).thenReturn(EXECUTION_ID);
+        when(toolCallRepository.listPendingByExecutionId(Long.valueOf(EXECUTION_ID))).thenReturn(List.of());
+        when(executionRepository.findById(EXECUTION_ID)).thenReturn(Optional.of(execution));
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(subSession));
+        when(sessionRepository.findById(rootSessionId)).thenReturn(Optional.of(rootSession));
+        when(executionControl.resume(any(Execution.class))).thenReturn(execution);
+
+        service().resume(SESSION_ID);
+
+        assertEquals(TEAM_ID, ExecutionAttributes.readLong(
+                        capturedResumeArgument().getAgentRequest().runtimeParametersOrDefault().getAttributes(),
+                        ExecutionAttributes.TEAM_ID),
+                "子会话审批恢复必须保住快照里的 TEAM_ID（回落根会话），否则恢复后二次委派/发邮件失效");
+    }
+
+    @Test
+    @DisplayName("子会话恢复：根会话也未绑定团队时，快照里的陈旧 TEAM_ID 被清除")
+    void resumeClearsTeamAttributeWhenRootChainUnbound() {
+        long rootSessionId = 600L;
+        Map<String, Object> snapshotAttributes = new HashMap<>();
+        snapshotAttributes.put(ExecutionAttributes.TEAM_ID, "3");
+        snapshotAttributes.put(ExecutionAttributes.AGENT_ID, "7");
+        Execution execution = execution(snapshotAttributes);
+
+        Session subSession = Session.builder()
+                .id(SESSION_ID).rootSessionId(rootSessionId).name("子代理会话").teamId(null).build();
+        Session rootSession = Session.builder()
+                .id(rootSessionId).rootSessionId(Session.ROOT_SESSION_ID).name("直聊会话").teamId(null).build();
+        when(executionIdentity.latestSuspendedExecutionId(SESSION_ID)).thenReturn(EXECUTION_ID);
+        when(toolCallRepository.listPendingByExecutionId(Long.valueOf(EXECUTION_ID))).thenReturn(List.of());
+        when(executionRepository.findById(EXECUTION_ID)).thenReturn(Optional.of(execution));
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(subSession));
+        when(sessionRepository.findById(rootSessionId)).thenReturn(Optional.of(rootSession));
+        when(executionControl.resume(any(Execution.class))).thenReturn(execution);
+
+        service().resume(SESSION_ID);
+
+        assertFalse(capturedResumeArgument().getAgentRequest().runtimeParametersOrDefault()
+                        .getAttributes().containsKey(ExecutionAttributes.TEAM_ID),
+                "全链无团队绑定就必须移除 TEAM_ID，不得凭空保留");
     }
 
     private void stubResume(Execution execution, Session session) {

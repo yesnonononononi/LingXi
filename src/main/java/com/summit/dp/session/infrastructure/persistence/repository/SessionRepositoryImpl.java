@@ -6,7 +6,6 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.summit.ddd.infrastructure.repository.AbstractRepository;
 import com.summit.dp.session.domain.model.Session;
-import com.summit.dp.session.domain.model.TokenUsage;
 import com.summit.dp.session.domain.exception.SessionNoFoundException;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
@@ -15,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -89,13 +89,15 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
 
     @Override
     protected SessionPO toPO(Session session) {
-        TokenUsage usage =  session.getTokenUsage();
         return SessionPO.builder().id(session.getId()).name(session.getName()).workspaceId(session.getWorkspaceId())
                 .rootSessionId(session.getRootSessionId() == null ? SessionPO.ROOT_SESSION_ID
                         : session.getRootSessionId())
                 .agentId(session.getAgentId())
                 .teamId(session.getTeamId())
-                .totalTokens(usage.totalTokens()).inputTokens(usage.inputTokens()).outputTokens(usage.outputTokens())
+                .contextTokenCount(session.getContextTokenCount())
+                .contextMaxTokens(session.getContextMaxTokens())
+                .contextRatio(session.getContextRatio() == null ? null
+                        : BigDecimal.valueOf(session.getContextRatio()))
                 .build();
     }
 
@@ -105,7 +107,9 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
                 .rootSessionId(po.getRootSessionId())
                 .agentId(po.getAgentId())
                 .teamId(po.getTeamId())
-                .tokenUsage(new TokenUsage(po.getTotalTokens(), po.getInputTokens(), po.getOutputTokens()))
+                .contextTokenCount(po.getContextTokenCount())
+                .contextMaxTokens(po.getContextMaxTokens())
+                .contextRatio(po.getContextRatio() == null ? null : po.getContextRatio().doubleValue())
                 .createTime(po.getCreateTime()).updateTime(po.getUpdateTime())
                 .build();
     }

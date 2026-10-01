@@ -56,6 +56,8 @@ public class ExecutionQueryServiceImpl implements ExecutionQueryService {
      *
      * <p>状态编码经 {@link #toState} 转成框架枚举名下发 —— 与 {@code latestStatesBySession}
      * 用同一套映射，避免两处口径漂移。</p>
+     *
+     * <p>只装配框架自己的运行记录；模型与 token 是业务事实，由 {@code chat_turn} 承载。</p>
      */
     @Override
     public Map<Long, ExecutionSummary> summariesByIds(Collection<Long> executionIds) {
@@ -67,11 +69,6 @@ public class ExecutionQueryServiceImpl implements ExecutionQueryService {
                     execution.getId(),
                     execution.getSessionId(),
                     toState(execution).name(),
-                    execution.getModelName(),
-                    execution.getModelProvider(),
-                    execution.getInputTokenCount(),
-                    execution.getOutputTokenCount(),
-                    execution.getTotalTokenCount(),
                     toInstant(execution.getStartedAt()),
                     toInstant(execution.getCompletedAt())));
         }

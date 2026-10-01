@@ -16,8 +16,8 @@ public class SessionMessagePO {
     @TableId(type = IdType.INPUT)
     private Long id;
     private Long sessionId;
-    /** 产生该消息的执行 ID（关联 execution.id）；旧数据为 null 表示归属未知 */
-    private Long executionId;
+    /** 消息所属的业务轮次 ID（关联 chat_turn.id）；旧数据为 null 表示归属未知 */
+    private Long turnId;
     private String type;
     private String content;
     private Instant createTime;

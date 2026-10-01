@@ -4,18 +4,16 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.Execution;
-import com.summit.core.conversation.message.UserMessageEntity;
+import com.summit.core.agent.ExecutionState;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecutor;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.agent.infrastructure.agent.SubAgent;
-import com.summit.dp.agent.infrastructure.event.SubAgentSessionEventPublisher;
 import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionIdentity;
-import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
@@ -23,6 +21,8 @@ import com.summit.dp.shared.context.SessionContextEntity;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.tools.baseTools.arguments.CallSubAgentToolArgument;
+import com.summit.dp.tools.baseTools.sub_agent.delegation.DelegationRecorder;
+import com.summit.dp.tools.baseTools.sub_agent.delegation.DelegationSuspensionCard;
 import com.summit.dp.tools.baseTools.sub_agent.delegation.SubAgentRequestFactory;
 import com.summit.dp.tools.baseTools.sub_agent.result.SubAgentResultRenderer;
 import com.summit.dp.tools.baseTools.sub_agent.session.SubSessionResolver;
@@ -39,13 +39,14 @@ import java.util.Objects;
  * 委派工具：把一段任务交给团队里的另一个 Agent，并把它的最终结果回传给指挥者。
  *
  * <p>本类只做<b>编排</b>：校验参数与成员资格 → 解析目标子会话 → 组装请求 → 登记子执行 →
- * 落库 / 发事件 / 追加 transcript → 执行 → 渲染结果。四块可独立理解的逻辑各自落在协作者上：
- * 请求组装见 {@link SubAgentRequestFactory}，复用与落库见 {@link SubSessionResolver}，
- * 结果渲染见 {@link SubAgentResultRenderer}。改动其中任一块都不必再读懂其余三块。</p>
+ * 落账 → 执行 → 渲染结果（子执行挂起时改为登记 PROMISE 槽位，让父执行同步挂起等待子代理
+ * 终态）。各块可独立理解的逻辑都落在协作者上：请求组装见 {@link SubAgentRequestFactory}，
+ * 复用与建行见 {@link SubSessionResolver}，可见事实落账（映射事件 / 子轮次 / transcript）
+ * 见 {@link DelegationRecorder}，挂起槽位登记见 {@link DelegationSuspensionCard}，
+ * 结果渲染见 {@link SubAgentResultRenderer}。改动其中任一块都不必再读懂其余几块。</p>
  *
  * <p>编排顺序里有两处不能调换：<b>建会话行必须晚于取消校验</b>（否则被取消的委派会留下孤儿会话）；
- * <b>发映射事件与追加 transcript 在复用与首派两条路径上都要执行</b>（前端据前者建立
- * 「子会话 id → 根会话」路由，后者是子会话 append-only 的可见记录）。</p>
+ * <b>落账必须先建轮次再写消息</b>（消息要带 turn_id）。</p>
  */
 @AllArgsConstructor
 @Component
@@ -58,11 +59,11 @@ public class CallSubAgentTool implements ToolExecutor {
     private final SubAgentRequestFactory requestFactory;
     private final SubSessionResolver subSessionResolver;
     private final SubAgentResultRenderer resultRenderer;
-    private final SubAgentSessionEventPublisher subAgentSessionEventPublisher;
     private final SessionExecutionRegistry sessionExecutionRegistry;
-    private final ConversationTranscriptService transcriptService;
     private final ModelContextService modelContextService;
     private final SessionRepository sessionRepository;
+    private final DelegationSuspensionCard delegationSuspensionCard;
+    private final DelegationRecorder delegationRecorder;
 
     @Override
     public @NonNull ToolExecuteResult execute(ToolExecution toolExecution) {
@@ -165,22 +166,20 @@ public class CallSubAgentTool implements ToolExecutor {
                         argument.getTask());
             }
 
-            // 映射事件两条路径都要发：前端据它建立「子会话 id → 根会话」路由、把工具调用挂到子会话按钮上。
-            // 事件是幂等的（前端按 id 合并），复用同一个子会话时不会产生第二张卡片。
-            subAgentSessionEventPublisher.publish(toolExecution.getTurnId(), rootSessionId, target.subSessionId(),
-                    agent.getId(), agent.getName(), argument.getTask(), toolExecution.getId());
-
-            // 复用与首派都要把本次任务追加进 transcript：子会话的消息流是 append-only 的可见记录。
-            // 归属用**本次委派自己的 executionId**（而不是「子会话最新执行」）：子会话会被复用，
-            // 同一个子会话先后承载多次委派，按会话累计用量推算本轮消耗必然错位。
-            transcriptService.appendUser(numericSubSessionId,
-                    ExecutionIdentity.numericOrNull(request.getExecutionId()),
-                    UserMessageEntity.from(argument.getTask()));
+            delegationRecorder.record(rootSessionId, toolExecution, request,
+                    numericSubSessionId, target.subSessionId(), agent, argument.getTask());
 
             Execution execution = SessionContextEntity.runWithSubSession(rootSessionId, agent.getId(),
                     () -> subAgent.execute(request));
 
             modelContextService.replace(numericSubSessionId, execution.getMessages());
+
+            // 子执行挂起（等人工审批）→ 父执行以 PROMISE 槽位**同步挂起**：挂起沿委派链传播，
+            // 根会话不提前收尾。子执行终态后由 DelegationBackfillListener 回填结果并恢复父执行。
+            if (execution.getExecutionState() == ExecutionState.SUSPENDED) {
+                return delegationSuspensionCard.suspendAsPromise(toolExecution, target.subSessionId(),
+                        agent.getName(), argument.getTask());
+            }
 
             return ToolExecuteResult.success(resultRenderer.render(execution));
         } finally {

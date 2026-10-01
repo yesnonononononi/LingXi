@@ -60,10 +60,10 @@ class SubAgentResultRendererTest {
     @Test
     @DisplayName("失败：优先取执行自带错误信息（不触碰请求对象）")
     void failedPrefersExecutionError() {
-        Execution execution = Execution.builder()
-                .executionState(ExecutionState.FAILED)
-                .errorMessage("模型调用超时")
-                .build();
+        // 快照反序列化可能产出 agentRequest 为 null 的执行，builder 已禁止该形态 —— 用 mock 表达
+        Execution execution = mock(Execution.class);
+        when(execution.getExecutionState()).thenReturn(ExecutionState.FAILED);
+        when(execution.getErrorMessage()).thenReturn("模型调用超时");
 
         assertEquals("模型调用超时", renderer.render(execution));
     }
@@ -85,9 +85,9 @@ class SubAgentResultRendererTest {
     @Test
     @DisplayName("失败且连请求对象都没有：仍返回可读文案，不抛 NPE")
     void failedWithoutRequestDoesNotThrow() {
-        Execution execution = Execution.builder()
-                .executionState(ExecutionState.FAILED)
-                .build();
+        Execution execution = mock(Execution.class);
+        when(execution.getExecutionState()).thenReturn(ExecutionState.FAILED);
+        when(execution.getErrorMessage()).thenReturn(null);
 
         String rendered = renderer.render(execution);
 

@@ -34,7 +34,7 @@ export function useMcpTab() {
     headerLines: '',
     commandLines: '',
     envLines: '',
-    toolNamePrefix: '',
+    description: '',
     initializationTimeout: MCP_DEFAULT_INIT_TIMEOUT as number | null,
     executionTimeout: MCP_DEFAULT_EXEC_TIMEOUT as number | null,
     maxOutput: MCP_DEFAULT_MAX_OUTPUT as number | null,
@@ -135,7 +135,7 @@ export function useMcpTab() {
       headerLines: '',
       commandLines: '',
       envLines: '',
-      toolNamePrefix: '',
+      description: '',
       initializationTimeout: MCP_DEFAULT_INIT_TIMEOUT,
       executionTimeout: MCP_DEFAULT_EXEC_TIMEOUT,
       maxOutput: MCP_DEFAULT_MAX_OUTPUT,
@@ -156,7 +156,7 @@ export function useMcpTab() {
       headerLines: headersToLines(item.headers),
       commandLines: (item.command || []).join('\n'),
       envLines: envToLines(item.env),
-      toolNamePrefix: item.toolNamePrefix || '',
+      description: item.description || '',
       initializationTimeout: item.initializationTimeout ?? MCP_DEFAULT_INIT_TIMEOUT,
       executionTimeout: item.executionTimeout ?? MCP_DEFAULT_EXEC_TIMEOUT,
       maxOutput: item.maxOutput ?? MCP_DEFAULT_MAX_OUTPUT,
@@ -233,8 +233,8 @@ export function useMcpTab() {
       }
     }
 
-    if (mcpForm.value.toolNamePrefix && mcpForm.value.toolNamePrefix.length > 64) {
-      mcpFormError.value = '工具名前缀长度不能超过 64 个字符';
+    if (mcpForm.value.description && mcpForm.value.description.length > 200) {
+      mcpFormError.value = '服务描述长度不能超过 200 个字符';
       return;
     }
     if (mcpForm.value.initializationTimeout !== null && mcpForm.value.initializationTimeout <= 0) {
@@ -257,7 +257,7 @@ export function useMcpTab() {
       headers,
       command,
       env,
-      toolNamePrefix: mcpForm.value.toolNamePrefix.trim() || undefined,
+      description: mcpForm.value.description.trim() || undefined,
       initializationTimeout: mcpForm.value.initializationTimeout ?? undefined,
       executionTimeout: mcpForm.value.executionTimeout ?? undefined,
       maxOutput: mcpForm.value.maxOutput ?? undefined,

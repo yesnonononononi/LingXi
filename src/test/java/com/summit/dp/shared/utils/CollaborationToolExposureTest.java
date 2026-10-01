@@ -202,8 +202,9 @@ class CollaborationToolExposureTest {
         RequestPreparer preparer = new RequestPreparer(mock(SessionService.class),
                 mock(WorkspaceService.class), mock(ModelService.class), mock(WorkspaceConverter.class),
                 mock(SettingsProvider.class), catalog, mock(ConversationTranscriptService.class),
-                mock(ModelContextService.class), mock(ExecutionIdentity.class),
+                mock(ModelContextService.class),                 mock(ExecutionIdentity.class),
                 mock(com.summit.dp.execution.application.service.ExecutionRegistrationService.class),
+                mock(com.summit.dp.turn.application.service.ChatTurnService.class),
                 mock(AgentService.class), mock(TeamService.class), mcpService);
 
         // executionId 必须非空：buildRequest 不再自造身份，缺身份即视为「prepare 没跑」并直接报错。
@@ -224,9 +225,8 @@ class CollaborationToolExposureTest {
             config.setMcp(List.of());
             return config;
         }
-        config.setMcp(List.of(new McpConfig.MCP("test-server", McpTransport.STREAMABLE_HTTP,
-                new McpConfig.StreamableHttp("https://example.invalid/mcp", Map.of(), null, null),
-                null, 1000)));
+        config.setMcp(List.of(new McpConfig.MCP("test-server", "测试服务", McpTransport.STREAMABLE_HTTP,
+                new McpConfig.StreamableHttp("https://example.invalid/mcp", Map.of(), null, null), 1000)));
         return config;
     }
 }

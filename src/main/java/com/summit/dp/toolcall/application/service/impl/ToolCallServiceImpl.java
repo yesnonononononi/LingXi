@@ -2,8 +2,6 @@ package com.summit.dp.toolcall.application.service.impl;
 
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
-import com.summit.core.conversation.message.Message;
-import com.summit.core.conversation.message.ToolMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.ExecutionIdentity;
@@ -29,7 +27,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -108,6 +105,10 @@ public class ToolCallServiceImpl implements ToolCallService {
         if (kind == ToolCallKind.COMMAND) {
             return commandApprovalExecutor.decide(toolCall, approved, text);
         }
+        if (kind == ToolCallKind.DELEGATION) {
+            // 委派槽位不是人工审批：等的是子执行终态，由 DelegationBackfillListener 自动回填。
+            throw new ClientException("子代理执行无需人工审批，等待其审批落定后会自动回填结果");
+        }
         return decideDecision(toolCall, kind, approved, text);
     }
 
@@ -132,7 +133,9 @@ public class ToolCallServiceImpl implements ToolCallService {
 
         // 事务 T：同一事务内先写执行末条 toolcall 结论，再落 tool_call 状态 / 输出，最后回写模型上下文。
         transactions.executeWithoutResult(status -> {
-            appendDecision(execution, toolCall.getId(), outputText);
+            if (!ExecutionToolSlot.write(execution, toolCall.getId(), toolCall.getToolName(), outputText)) {
+                throw new ClientException("找不到原工具结果，不能恢复执行");
+            }
             toolCall.complete(rawOutput);
             toolCallRepository.updateById(toolCall);
             repository.save(execution);
@@ -210,25 +213,6 @@ public class ToolCallServiceImpl implements ToolCallService {
             log.warn("{} publish pending tool call failed: id={}, error={}",
                     LOG_PREFIX, toolCall.getId(), e.toString());
         }
-    }
-
-    /** 「execution 最后一条 toolcall」精确写入：主键命中优先，退化为按工具名取最后一条。 */
-    private static void appendDecision(Execution execution, String toolCallId, String outputText) {
-        List<Message> messages = new ArrayList<>(
-                execution.getMessages() == null ? List.of() : execution.getMessages());
-        ToolMessageEntity target = null;
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            Message message = messages.get(i);
-            if (message instanceof ToolMessageEntity tool && toolCallId.equals(String.valueOf(tool.getId()))) {
-                target = tool;
-                break;
-            }
-        }
-        if (target == null) {
-            throw new ClientException("找不到原工具结果，不能恢复执行");
-        }
-        target.setText(outputText);
-        execution.setMessages(messages);
     }
 
     private static Long numericOrNull(String raw) {

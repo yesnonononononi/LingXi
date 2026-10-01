@@ -4,7 +4,9 @@ import cn.hutool.core.codec.Base64;
 import cn.hutool.core.util.IdUtil;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.execution.application.service.ExecutionRegistrationService;
+import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Image;
@@ -76,6 +78,7 @@ public class RequestPreparer {
     private final ModelContextService modelContextService;
     private final ExecutionIdentity executionIdentity;
     private final ExecutionRegistrationService executionRegistrationService;
+    private final ChatTurnService chatTurnService;
     private final AgentService agentService;
     private final TeamService teamService;
     private final McpService mcpService;
@@ -190,7 +193,7 @@ public class RequestPreparer {
     }
 
     /**
-     * 把本轮用户消息写入 append-only transcript，并归属到 {@code executionId}；
+     * 把本轮用户消息写入 append-only transcript，并返回新建的业务轮次 ID；
      * 同时登记「初始执行」记录，使提问与执行从第一刻起共享同一个身份。
      *
      * <p><b>为什么必须与 {@link #prepare} 分开：</b>「同一会话单飞」的运行资格校验必须先解析出
@@ -198,13 +201,13 @@ public class RequestPreparer {
      * 就会出现「消息已经入库、执行却被拒绝」——用户看到自己发出去的话永远没有回复，
      * 也没有任何错误提示。因此约定：<b>prepare 只解析，调用方拿到运行资格后再调本方法</b>。</p>
      *
-     * <p><b>一个短事务</b>：执行行与用户消息要么一起可见，要么都不可见。事务内不做任何模型调用 ——
-     * 模型调用发生在后续的 loop 里，与本次提交无关。</p>
+     * <p><b>一个短事务</b>：执行行、业务轮次与用户消息要么一起可见，要么都不可见。
+     * 事务内不做任何模型调用 —— 模型调用发生在后续的 loop 里，与本次提交无关。</p>
      */
     @Transactional
-    public void commitUserMessage(RuntimeContext context) {
+    public Long commitUserMessage(RuntimeContext context) {
         if (context == null || context.pendingUserMessage() == null) {
-            return;
+            return context == null ? null : context.turnId();
         }
         ExecutionContext executionContext = context.executionContext();
         Long executionId = ExecutionIdentity.numericOrNull(executionContext.executionId());
@@ -214,16 +217,28 @@ public class RequestPreparer {
         }
 
         ModelConfig modelConfig = context.modelConfig();
+        String modelName = modelConfig == null ? null : modelConfig.getModelName();
+        String modelProvider = modelConfig == null ? null : modelConfig.getProvider();
+
         executionRegistrationService.registerInitial(new ExecutionRegistrationService.InitialExecution(
                 executionId,
                 executionContext.sessionId(),
                 // 主执行没有根执行归属（不写自身 id，避免与「未知」混淆）。
-                ExecutionIdentity.numericOrNull(executionContext.rootExecutionId()),
-                modelConfig == null ? null : modelConfig.getModelName(),
-                modelConfig == null ? null : modelConfig.getProvider()));
+                ExecutionIdentity.numericOrNull(executionContext.rootExecutionId())));
 
-        transcriptService.appendUser(executionContext.sessionId(), executionId,
+        // 业务轮次：与用户消息、初始执行行同属一个短事务。
+        // 「受理即落库」是本次改造的关键 —— 验收要求「只有 USER、没有 AI 回复的失败请求也要能
+        // 看到执行状态」，而框架执行行在启动前根本不存在，只有业务自己的轮次能承载这个状态。
+        // parentTurnId 为 null：普通用户提问不是任何轮次的子委派。
+        //
+        // 先建轮次再写消息，直接用 acceptTurn 返回的 turnId 作为消息归属 ——
+        // 框架执行 ID 不进消息归属，它只留在 chat_turn.execution_id 上用于接收框架信号。
+        long turnId = chatTurnService.acceptTurn(executionContext.sessionId(), null, executionId,
+                modelName, modelProvider);
+
+        transcriptService.appendUser(executionContext.sessionId(), turnId,
                 context.pendingUserMessage());
+        return turnId;
     }
 
     /**
@@ -302,6 +317,8 @@ public class RequestPreparer {
                 .mcpConfig(mcpConfig)
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(attributes(context.executionContext(), context))
+                        .eventMetaData(ExecutionEventMetadata.of(
+                                context.executionContext().sessionId(), context.turnId(), null))
                         .build())
                 .build();
     }

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.*;
 import com.summit.core.conversation.message.*;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
+import com.summit.core.agent.Execution;
 import com.summit.dp.execution.domain.lifecycle.ExecutionLifecycleListener;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
@@ -17,6 +18,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -112,6 +114,34 @@ class LocalExecutionRepositoryResumeTest {
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
+    }
+
+    @Test
+    void approvalNotificationRunsAfterCommitButNotRollback() {
+        AtomicInteger notifications = new AtomicInteger();
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            repository.afterCommit(notifications::incrementAndGet);
+            assertEquals(0, notifications.get());
+            for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
+                synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+            }
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+        assertEquals(0, notifications.get());
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            repository.afterCommit(notifications::incrementAndGet);
+            assertEquals(0, notifications.get());
+            for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
+                synchronization.afterCommit();
+            }
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+        assertEquals(1, notifications.get());
     }
 
     @Test
@@ -212,7 +242,7 @@ class LocalExecutionRepositoryResumeTest {
         }
 
         @Override
-        public void onExecutionFinished(String executionId) {
+        public void onExecutionFinished(String executionId, Execution execution) {
             finished.add(executionId);
         }
     }

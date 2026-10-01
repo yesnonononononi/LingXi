@@ -22,6 +22,18 @@ const props = defineProps<{
   selectedTeamId?: string | number | null;
   agents?: AgentVO[];
   selectedAgentId?: string | number | null;
+  /**
+   * 上下文用量指示器数据（模型选择器左侧展示）：
+   * usedTokens 来自运行时 CONTEXT_UPDATE 事件；maxTokens 优先事件自带、回落 common_config.max_tokens。
+   * null / usedTokens 缺失 = 会话尚无上下文数据，指示器隐藏（绝不显示伪造的 0）。
+   */
+  contextUsage?: {
+    usedTokens: number;
+    maxTokens?: number | null;
+    ratio?: number | null;
+    phase?: string;
+    message?: string;
+  } | null;
 }>();
 
 const emit = defineEmits<{
@@ -337,6 +349,37 @@ const modelOptions = computed<SelectOption<string | number>[]>(() => [
 const selectedModel = computed<string | number>({
   get: () => props.selectedModelId ?? '',
   set: (value) => { if (value === ADD_CUSTOM_MODEL) { emit('openModelEditor'); return; } emit('updateModel', value); }
+});
+
+/** ≥1000 显示 `216.7K`（与产品稿一致，1000000 → `1000.0K`），否则原值 */
+const formatContextTokens = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : `${n}`);
+
+/**
+ * 上下文用量文案：`21.7% · 216.7K / 1000.0K 上下文已使用`。
+ * ratio 优先事件自带；缺失时用 used/max 现算；max 也缺失时退化为仅用量。
+ * 正在压缩（SQUEEZE_STARTED）时把提示语换为压缩中文案，数值仍展示（压缩前口径）。
+ */
+const contextUsageText = computed<string>(() => {
+  const usage = props.contextUsage;
+  const used = usage?.usedTokens;
+  if (used == null || used <= 0) return '';
+  const max = usage?.maxTokens ?? null;
+  const ratio = usage?.ratio ?? (max && max > 0 ? used / max : null);
+  const pct = ratio != null && ratio >= 0 ? `${(ratio * 100).toFixed(1)}%` : null;
+  const amount = `${formatContextTokens(used)}${max && max > 0 ? ` / ${formatContextTokens(max)}` : ''}`;
+  const label = usage?.phase === 'SQUEEZE_STARTED' ? '上下文压缩中' : '上下文已使用';
+  return pct ? `${pct} · ${amount} ${label}` : `${amount} ${label}`;
+});
+
+/** 进度环几何：周长 = 2πr（r=6，viewBox 16）；弧长按 ratio 截断到 [0, 周长] */
+const CONTEXT_RING_RADIUS = 6;
+const CONTEXT_RING_CIRCUMFERENCE = 2 * Math.PI * CONTEXT_RING_RADIUS;
+const contextRingDash = computed<string>(() => {
+  const usage = props.contextUsage;
+  const ratio = usage?.ratio ?? (usage?.maxTokens && usage.maxTokens > 0 ? usage.usedTokens / usage.maxTokens : null);
+  const clamped = ratio != null ? Math.min(Math.max(ratio, 0), 1) : 0;
+  const arc = clamped * CONTEXT_RING_CIRCUMFERENCE;
+  return `${arc} ${CONTEXT_RING_CIRCUMFERENCE - arc}`;
 });
 
 const adjustHeight = () => {
@@ -674,7 +717,7 @@ defineExpose({
 <template>
   <div class="w-full max-w-3xl mx-auto px-4 select-none">
     <!-- Top Pills Row: Workspace Selector (仅在没有任何消息记录的新会话中展示) -->
-    <div v-if="allowWorkspaceChange" class="mb-2 flex items-center justify-start gap-2">
+    <div v-if="allowWorkspaceChange" class="mb-2 flex items-center justify-start gap-2 whitespace-nowrap overflow-hidden">
       <!-- 1. Workspace Pill Dropdown -->
       <ProjectDropdown
         :workspaces="workspaces || []"
@@ -838,12 +881,12 @@ defineExpose({
       </div>
 
       <!-- Textarea Input Area with optional /plan prefix and /agent token -->
-      <div class="flex items-start gap-1.5 w-full flex-wrap">
+      <div class="flex items-start gap-1.5 w-full min-w-0">
         <!-- Amber /plan token matching media_1789698947784.png -->
         <span
           v-if="isPlanMode"
           @click="isPlanMode = false"
-          class="text-amber-500 font-medium text-sm leading-relaxed shrink-0 select-none cursor-pointer hover:opacity-80 px-0.5"
+          class="text-amber-500 font-medium text-sm leading-relaxed shrink-0 select-none cursor-pointer hover:opacity-80 px-0.5 whitespace-nowrap"
           title="点击退出 Plan 模式"
         >
           /plan
@@ -853,7 +896,7 @@ defineExpose({
         <span
           v-if="currentAgentName"
           @click="openAgentMenu"
-          class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 my-0.5 rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400 select-none cursor-pointer hover:opacity-90 shrink-0 transition"
+          class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 my-0.5 rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400 select-none cursor-pointer hover:opacity-90 shrink-0 transition whitespace-nowrap"
           title="点击切换 Agent，或点击 × 清除"
         >
           <span>🤖 {{ currentAgentName }}</span>
@@ -872,22 +915,22 @@ defineExpose({
           rows="2"
           :placeholder="isPlanMode ? '描述你的任务以生成计划' : '描述你想要构建的内容，/ 调用指令，@ 文件或对话'"
           :class="[
-            'flex-1 min-w-[200px] bg-transparent outline-none border-none resize-none text-sm leading-relaxed px-0.5 max-h-44 scrollbar-thin focus:ring-0 focus:outline-none',
+            'flex-1 min-w-0 bg-transparent outline-none border-none resize-none text-sm leading-relaxed px-0.5 max-h-44 scrollbar-thin focus:ring-0 focus:outline-none placeholder:truncate placeholder:whitespace-nowrap',
             isDark ? 'text-gray-100 placeholder-gray-500' : 'text-gray-800 placeholder-gray-400'
           ]"
         ></textarea>
       </div>
 
       <!-- Bottom Toolbar Row -->
-      <div class="flex items-center justify-between pt-1">
+      <div class="flex items-center justify-between pt-1 flex-nowrap gap-2 min-w-0">
         <!-- Left Toolbar Items: +, @, 🛡️ Scope -->
-        <div class="flex items-center gap-1.5 flex-wrap">
+        <div class="flex items-center gap-1.5 flex-nowrap shrink min-w-0">
           <!-- + Add Button (Trigger Command Menu) -->
           <button
             type="button"
             @click="handlePlusClick"
             :class="[
-              'p-1.5 rounded-lg transition-colors cursor-pointer',
+              'p-1.5 rounded-lg transition-colors cursor-pointer shrink-0',
               isCommandMenuOpen
                 ? (isDark ? 'bg-white/10 text-white' : 'bg-gray-100 text-gray-900')
                 : (isDark ? 'text-gray-500 hover:text-gray-200 hover:bg-gray-800' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100')
@@ -911,7 +954,7 @@ defineExpose({
             type="button"
             @click="triggerUpload"
             :class="[
-              'p-1.5 rounded-lg transition-colors cursor-pointer',
+              'p-1.5 rounded-lg transition-colors cursor-pointer shrink-0',
               attachedImage
                 ? 'text-blue-500 bg-blue-50 dark:bg-blue-500/15'
                 : (isDark ? 'text-gray-500 hover:text-gray-200 hover:bg-gray-800' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100')
@@ -924,7 +967,7 @@ defineExpose({
           </button>
 
           <!-- Team Dropdown (👥 指定 Team 团队) -->
-          <div class="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400">
+          <div class="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 shrink min-w-0">
         
             <DropUpSelect
               ref="teamSelectRef"
@@ -933,13 +976,41 @@ defineExpose({
               :isDark="isDark"
               size="sm"
               placeholder="指定团队"
-              trigger-class="border-none bg-transparent hover:bg-black/[0.05] dark:hover:bg-white/[0.08] text-gray-600 dark:text-gray-400 text-xs px-2 h-8 flex items-center rounded-md"
+              trigger-class="border-none bg-transparent hover:bg-black/[0.05] dark:hover:bg-white/[0.08] text-gray-600 dark:text-gray-400 text-xs px-2 h-8 flex items-center rounded-md whitespace-nowrap shrink-0"
             />
           </div>
         </div>
 
-        <!-- Right Toolbar Items: Model Selector & Send Button -->
-        <div class="flex items-center gap-2">
+        <!-- Right Toolbar Items: Context Usage Indicator & Model Selector & Send Button -->
+        <div class="flex items-center gap-2 shrink-0">
+          <!-- 上下文用量指示器：常态只显示圆环，悬停时上方浮出文案气泡（会话尚无事件数据时隐藏） -->
+          <div
+            v-if="contextUsageText"
+            class="group relative flex items-center text-[11px] text-gray-400 dark:text-gray-500 select-none cursor-help"
+          >
+            <!-- 圆环进度：轨道灰环 + 按 ratio 的弧长，-90° 从顶部起弧 -->
+            <svg class="w-3.5 h-3.5 shrink-0 -rotate-90" viewBox="0 0 16 16" aria-hidden="true">
+              <circle
+                cx="8" cy="8" r="6" fill="none" stroke-width="2.5"
+                class="stroke-gray-200 dark:stroke-gray-700"
+              />
+              <circle
+                cx="8" cy="8" r="6" fill="none" stroke-width="2.5" stroke-linecap="round"
+                class="stroke-gray-400 dark:stroke-gray-500 transition-[stroke-dasharray] duration-500"
+                :stroke-dasharray="contextRingDash"
+              />
+            </svg>
+            <!-- 文案气泡：悬停时在圆环上方浮出（水平居中于环，淡入 + 轻微上移过渡） -->
+            <div
+              class="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg border px-2.5 py-1.5 shadow-md opacity-0 translate-y-1 transition-all duration-150 ease-out group-hover:opacity-100 group-hover:translate-y-0"
+              :class="isDark
+                ? 'bg-[#161d2b] border-gray-700/80 text-gray-300 shadow-black/40'
+                : 'bg-white border-gray-200 text-gray-500 shadow-gray-400/10'"
+            >
+              {{ contextUsageText }}
+            </div>
+          </div>
+
           <!-- Model Selector Pill -->
           <DropUpSelect
             v-model="selectedModel"
@@ -947,14 +1018,14 @@ defineExpose({
             :isDark="isDark"
             size="sm"
             placeholder="选择模型"
-            trigger-class="border-none bg-transparent hover:bg-black/[0.05] dark:hover:bg-white/[0.08] text-gray-600 dark:text-gray-300 text-xs px-2.5 h-8 flex items-center rounded-lg"
+            trigger-class="border-none bg-transparent hover:bg-black/[0.05] dark:hover:bg-white/[0.08] text-gray-600 dark:text-gray-300 text-xs px-2.5 h-8 flex items-center rounded-lg whitespace-nowrap"
           />
 
           <!-- Send / Stop Button -->
           <button
             v-if="isSending"
             @click="emit('stopGeneration')"
-            class="w-8 h-8 rounded-full bg-red-500 hover:bg-red-600 text-white transition flex items-center justify-center shadow-xs cursor-pointer"
+            class="w-8 h-8 rounded-full bg-red-500 hover:bg-red-600 text-white transition flex items-center justify-center shadow-xs cursor-pointer shrink-0"
             title="停止生成"
           >
             <div class="w-3 h-3 bg-white rounded-xs"></div>
@@ -965,7 +1036,7 @@ defineExpose({
             @click="handleSend"
             :disabled="!inputText.trim() && !attachedImage"
             :class="[
-              'w-8 h-8 rounded-full transition-colors flex items-center justify-center shadow-xs',
+              'w-8 h-8 rounded-full transition-colors flex items-center justify-center shadow-xs shrink-0',
               (inputText.trim() || attachedImage)
                 ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer' 
                 : (isDark ? 'bg-gray-800 text-gray-600 cursor-not-allowed' : 'bg-gray-200 text-gray-400 cursor-not-allowed')

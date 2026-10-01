@@ -97,7 +97,7 @@ const {
         <div
           v-for="agent in agentsList"
           :key="agent.id"
-          class="p-3.5 rounded-xl border transition-all"
+          class="px-4 py-3.5 rounded-2xl border transition-all"
           :class="[
             isDark
               ? 'bg-[#151c2c] border-[#252f44] hover:border-gray-700'

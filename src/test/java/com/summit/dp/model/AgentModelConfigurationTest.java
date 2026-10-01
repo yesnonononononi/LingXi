@@ -27,7 +27,8 @@ class AgentModelConfigurationTest {
     private final SettingsProvider settings = mock(SettingsProvider.class);
     private final AgentService agents = mock(AgentService.class);
     private final CallSubAgentTool child = new CallSubAgentTool(new ObjectMapper(), agents, null, null,
-            new SubAgentRequestFactory(null, models, settings, null), null, null, null, null, null, null, null);
+            new SubAgentRequestFactory(null, models, settings, null), null, null, null, null, null,
+            null, null);
     /** 子模型解析已下沉到请求组装器，这里直接打它，避免再经工具入口绕行。 */
     private final SubAgentRequestFactory childModels = new SubAgentRequestFactory(null, models, settings, null);
 
@@ -64,7 +65,7 @@ class AgentModelConfigurationTest {
 
     @Test void rootResolvesExplicitThenSettingsThenFails() {
         RequestPreparer root = new RequestPreparer(null, null, models, null, settings, null,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
         SettingsView selected = new SettingsView(null, null, null, null, 99L, null, 1234, "high");
         ModelConfig explicit = config("explicit");
         ModelConfig fallback = config("settings");

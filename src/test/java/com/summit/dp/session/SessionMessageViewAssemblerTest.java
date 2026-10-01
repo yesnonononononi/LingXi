@@ -55,11 +55,27 @@ class SessionMessageViewAssemblerTest {
     }
 
     @Test
-    void errorRowIsMappedAsPlainText() {
-        // ERROR 行 content 是纯文本（非 JSON 载荷），必须原样下发，不能被解析降级路径吞掉。
-        SessionMessageVO error = assembler.toVO(plainMessage(5L, SessionMessageType.ERROR, "模型服务不可用"));
-        assertEquals("ERROR", error.getType());
-        assertEquals("模型服务不可用", error.getText());
+    void turnIdIsCarriedStraightFromTheStoredRow() {
+        // 归属是消息行自己的列：装配器原样透出，不做任何位置或时间戳推断。
+        SessionMessage stored = SessionMessage.builder()
+                .id(5L)
+                .sessionId(7L)
+                .turnId(9001L)
+                .type(SessionMessageType.USER)
+                .text("你好")
+                .createTime(Instant.now())
+                .build();
+
+        SessionMessageVO vo = assembler.toVO(stored);
+
+        assertEquals(9001L, vo.getTurnId());
+    }
+
+    @Test
+    void legacyRowWithoutTurnIdKeepsNullOwnership() {
+        // 旧数据归属未知必须原样保持 null：不能伪造一个归属，也不能报错。
+        SessionMessageVO vo = assembler.toVO(plainMessage(6L, SessionMessageType.USER, "你好"));
+        assertNull(vo.getTurnId());
     }
 
     private static SessionMessage plainMessage(long id, SessionMessageType type, String text) {

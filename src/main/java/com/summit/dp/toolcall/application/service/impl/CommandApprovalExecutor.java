@@ -1,27 +1,18 @@
 package com.summit.dp.toolcall.application.service.impl;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
-import com.summit.core.conversation.event.ExecutionErrorEvent;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.event.ToolCallEndEvent;
 import com.summit.core.conversation.event.ToolCallStartEvent;
-import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.ToolMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
+import com.summit.core.runtime.loop.ApprovalOutcome;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolCallStatus;
-import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
-import com.summit.core.tool.ToolExecutor;
-import com.summit.core.tool.ToolRegistry;
-import com.summit.core.workspace.WorkspaceManager;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.SessionAttributeRestorer;
 import com.summit.dp.session.application.service.ModelContextService;
@@ -29,11 +20,8 @@ import com.summit.dp.shared.event.SseEventPublisher;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCall;
-import com.summit.dp.toolcall.domain.model.ToolCallKeys;
 import com.summit.dp.toolcall.domain.model.ToolCallOutcome;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
-import com.summit.dp.tools.baseTools.arguments.ExecuteCommandRequest;
-import com.summit.dp.tools.baseTools.terminal.CommandToolDefinitionExecutor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -41,9 +29,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -55,8 +40,9 @@ import java.util.concurrent.CompletableFuture;
  * T2 再把命令输出写回执行末条 toolcall 与 {@code tool_call} 行。若合并为单事务，
  * 崩溃后「未提交但副作用已发生」会静默重放命令，故不合并。</p>
  *
- * <p>拆出后 {@link ToolCallServiceImpl} 只保留编排入口 / 归属校验 / 幂等判定 / SSE 建流，
- * 本类独占命令执行上下文（工作空间校验、{@link ToolExecution} 重建、loop 恢复）。</p>
+ * <p><b>职责边界（二次拆分）：</b>本类只保留审批状态机——校验 / 登记 / 两段式事务 / loop 恢复。
+ * 「按快照重建待执行命令 + 环境一致性校验」下沉到 {@link ApprovedCommandRestorer}，
+ * 「工具结果槽位的定位与写入」复用 {@link ExecutionToolSlot}，两侧可独立演进。</p>
  */
 @Slf4j
 @Service
@@ -71,13 +57,11 @@ public class CommandApprovalExecutor {
     private final ExecutionIdentity executionIdentity;
     private final ModelContextService modelContextService;
     private final RuntimeEventPublisher runtimeEvents;
-    private final WorkspaceManager workspaces;
     private final TransactionTemplate transactions;
-    private final ObjectMapper objectMapper;
     private final ObjectProvider<ExecutionControl> executionControl;
     private final ObjectProvider<ExecutionRepository> executionRepository;
-    private final ObjectProvider<ToolRegistry> toolRegistry;
     private final SessionAttributeRestorer sessionAttributeRestorer;
+    private final ApprovedCommandRestorer commandRestorer;
 
     /**
      * 落定一条 {@code COMMAND} 审批：两段式执行（T1 提交先于副作用）+ 异步收尾，返回承载恢复事件流的 emitter。
@@ -90,7 +74,9 @@ public class CommandApprovalExecutor {
         ExecutionRepository repository = executionRepository.getObject();
         long conversationId = toolCall.getConversationId();
         String executionId = String.valueOf(toolCall.getExecutionId());
-        ExecutionControlSignal signal = repository.register(executionId);
+        // 先校验后登记：stop 与「点批准」竞争时，执行可能已被取消——状态校验前置于 register，
+        // 业务失败走 ClientException（Result.error），而不是 register 的 IllegalStateException 兜成 500。
+        ExecutionControlSignal signal = null;
         SseEmitter emitter = null;
         try {
             Execution execution = repository.findById(executionId)
@@ -103,26 +89,28 @@ public class CommandApprovalExecutor {
             if (!current.isApprovalPending()) {
                 throw new ClientException("该审批已处理");
             }
-            CommandSnapshot snapshot = readCommandSnapshot(current);
-            ToolMessageEntity message = findResult(execution, current.getId(), current.getToolName());
-            ToolExecution call = approved ? restoreCall(execution, snapshot, current.getId()) : null;
+            ToolMessageEntity message = findResult(execution, current);
+            ToolExecution call = approved ? commandRestorer.restore(execution, current) : null;
 
+            signal = repository.register(executionId);
             emitter = sseEventPublisher.connect(executionIdentity.rootSessionIdOfSession(conversationId));
             // 事务 T1（提交先于副作用）：先落 RUNNING，崩溃不会静默重放命令。
             transactions.executeWithoutResult(status -> {
                 current.markInProgress();
-                execution.resume();
-                repository.save(execution);
+                executionControl.getObject().beginApproval(execution);
                 toolCallRepository.updateById(current);
             });
             SseEmitter connected = emitter;
-            CompletableFuture.runAsync(() -> finish(current, execution, message, call, signal, connected));
+            ExecutionControlSignal registered = signal;
+            CompletableFuture.runAsync(() -> finish(current, execution, message, call, registered, connected));
             return emitter;
         } catch (RuntimeException e) {
-            try {
-                repository.unregister(signal);
-            } catch (RuntimeException cleanupFailure) {
-                e.addSuppressed(cleanupFailure);
+            if (signal != null) {
+                try {
+                    repository.unregister(signal);
+                } catch (RuntimeException cleanupFailure) {
+                    e.addSuppressed(cleanupFailure);
+                }
             }
             if (emitter != null) {
                 emitter.completeWithError(e);
@@ -158,22 +146,20 @@ public class CommandApprovalExecutor {
                 rawOutput = converter.commandOutcome(ToolCallOutcome.APPROVED, result.getToolOutput(), null);
             }
             message.setText(result.getToolOutput());
-            if (signal.isCancelRequired()) {
-                execution.cancel();
-            } else {
-                execution.suspended();
-            }
+            ApprovalOutcome approvalOutcome = signal.isCancelRequired()
+                    ? ApprovalOutcome.CANCELLED : ApprovalOutcome.CONTINUE;
             ToolCallOutcome finalOutcome = outcome;
             String finalRawOutput = rawOutput;
             // 事务 T2：把命令输出写回执行末条 toolcall 与 tool_call 行，再回写上下文。
             transactions.executeWithoutResult(status -> {
                 toolCall.complete(finalRawOutput);
-                repository.save(execution);
+                executionControl.getObject().finishApproval(execution, approvalOutcome);
                 modelContextService.replace(conversationId, execution.getMessages());
                 toolCallRepository.updateById(toolCall);
             });
             runtimeEvents.onToolCallOutput(new ToolCallEndEvent(String.valueOf(message.getId()), execution.getId(),
                     message.getName(), call == null ? "" : call.getArgs(), result.getToolOutput(),
+                    execution.eventMetaData(),
                     resultStatusOf(finalOutcome, signal.isCancelRequired())));
 
             boolean pending = !toolCallRepository.listPendingByExecutionId(Long.valueOf(executionId)).isEmpty();
@@ -190,16 +176,15 @@ public class CommandApprovalExecutor {
         } catch (Exception e) {
             log.error("{} command approval failed: executionId={}", LOG_PREFIX, executionId, e);
             if (!released) {
-                execution.fail("命令审批执行中断；请检查命令实际结果，禁止自动重放：" + e.getMessage());
                 try {
-                    repository.save(execution);
+                    executionControl.getObject().failApproval(execution,
+                            "命令审批执行中断；请检查命令实际结果，禁止自动重放：" + e.getMessage());
                     toolCall.complete(converter.commandOutcome(ToolCallOutcome.FAILED, null, e.getMessage()));
                     toolCallRepository.updateById(toolCall);
                 } catch (Exception saveFailure) {
                     e.addSuppressed(saveFailure);
                 }
             }
-            runtimeEvents.onExecutionError(new ExecutionErrorEvent(e.getMessage(), "命令审批执行失败", execution.getId()));
         } finally {
             try {
                 if (!released) {
@@ -212,68 +197,12 @@ public class CommandApprovalExecutor {
     }
 
     /** 定位承载该调用的 {@code ToolMessageEntity}：主键命中优先，退化为按工具名取最后一条。 */
-    private static ToolMessageEntity findResult(Execution execution, String toolCallId, String toolName) {
-        List<Message> messages = execution.getMessages();
-        if (messages != null) {
-            for (int i = messages.size() - 1; i >= 0; i--) {
-                Message message = messages.get(i);
-                if (message instanceof ToolMessageEntity tool && toolCallId.equals(String.valueOf(tool.getId()))) {
-                    return tool;
-                }
-            }
-            for (int i = messages.size() - 1; i >= 0; i--) {
-                Message message = messages.get(i);
-                if (message instanceof ToolMessageEntity tool && toolName != null && toolName.equals(tool.getName())) {
-                    return tool;
-                }
-            }
+    private static ToolMessageEntity findResult(Execution execution, ToolCall current) {
+        ToolMessageEntity message = ExecutionToolSlot.locate(execution, current.getId(), current.getToolName());
+        if (message == null) {
+            throw new ClientException("找不到原命令的工具结果，不能执行审批");
         }
-        throw new ClientException("找不到原命令的工具结果，不能执行审批");
-    }
-
-    /** 从 {@code content}（{@code kind=COMMAND}）解出重建 {@link ToolExecution} 所需的载荷。 */
-    private CommandSnapshot readCommandSnapshot(ToolCall toolCall) {
-        JsonNode node = converter.parse(toolCall.getContent());
-        if (node == null) {
-            throw new ClientException("命令审批快照不存在");
-        }
-        return new CommandSnapshot(field(node, ToolCallKeys.COMMAND), field(node, ToolCallKeys.WORK_DIR),
-                field(node, ToolCallKeys.SHELL), field(node, ToolCallKeys.WORKSPACE_ID),
-                field(node, ToolCallKeys.ARGS), toolCall.getToolName());
-    }
-
-    /**
-     * 用快照重建命令调用：校验工作空间 / 命令一致性，防止审批期间环境被替换后重放。
-     *
-     * <p>沿用既有安全约束：工作空间 id / workDir / shell 三者任一变化都拒绝执行。</p>
-     */
-    private ToolExecution restoreCall(Execution execution, CommandSnapshot snapshot, String toolCallId) {
-        ToolDefinition<? extends ToolExecutor> tool = toolRegistry.getObject().getTool(snapshot.toolName());
-        if (tool == null || !(tool.executor() instanceof CommandToolDefinitionExecutor)) {
-            throw new ClientException("审批命令工具不可用");
-        }
-        Workspace workspace = workspaces.acquire(execution.getAgentRequest().getWorkspaceSpec());
-        if (!Objects.equals(snapshot.workspaceId(), workspace.id())
-                || !Objects.equals(snapshot.workDir(), workspace.workDir())
-                || !Objects.equals(snapshot.shell(), workspace.runtimeEnvironment().shellType().name())) {
-            throw new ClientException("命令执行环境已变化，请重新发起审批");
-        }
-        String args = snapshot.args();
-        try {
-            if (!Objects.equals(snapshot.command(), objectMapper.readValue(args, ExecuteCommandRequest.class).getCommand())) {
-                throw new ClientException("命令审批参数不一致");
-            }
-        } catch (JsonProcessingException e) {
-            throw new ClientException("命令审批参数无效");
-        }
-        return ToolExecution.builder()
-                .id(toolCallId)
-                .executionId(execution.getId())
-                .toolDefinition(tool)
-                .args(args)
-                .workspace(workspace)
-                .attributes(execution.getAgentRequest().runtimeParametersOrDefault().getAttributes())
-                .build();
+        return message;
     }
 
     /** 业务结论 → 框架结果状态（用于向外界广播工具结束事件）。 */
@@ -287,14 +216,5 @@ public class CommandApprovalExecutor {
             case TIMED_OUT -> ToolCallStatus.TIMED_OUT;
             default -> ToolCallStatus.COMPLETED;
         };
-    }
-
-    private static String field(JsonNode node, String name) {
-        return node != null && node.hasNonNull(name) ? node.get(name).asText() : null;
-    }
-
-    /** 命令审批快照（来自 {@code tool_call.content}，{@code kind=COMMAND}）。 */
-    private record CommandSnapshot(String command, String workDir, String shell, String workspaceId,
-                                   String args, String toolName) {
     }
 }

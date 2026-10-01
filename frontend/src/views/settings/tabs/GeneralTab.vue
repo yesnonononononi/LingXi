@@ -38,7 +38,7 @@ const {
 </script>
 
 <template>
-  <div class="space-y-5 pb-6" @click="closeGeneralDropdowns">
+  <div class="space-y-5" @click="closeGeneralDropdowns">
     <!-- 主题选项 -->
     <div>
       <div class="text-xs font-medium text-gray-800 dark:text-gray-200 mb-2.5">主题</div>
@@ -48,7 +48,7 @@ const {
           type="button"
           @click="handleSelectTheme('light')"
           :class="[
-            'py-3.5 px-2 rounded-2xl border flex flex-col items-center justify-center gap-2 transition cursor-pointer',
+            'px-4 py-3.5 rounded-2xl border flex flex-col items-center justify-center gap-2 transition cursor-pointer',
             themeMode === 'light'
               ? (isDark ? 'bg-[#252f44] border-blue-500 text-white' : 'bg-gray-100 border-gray-300 text-gray-900 font-semibold shadow-sm')
               : (isDark ? 'border-[#2b374f] text-gray-400 hover:bg-white/5' : 'border-gray-200 text-gray-600 hover:bg-gray-50')
@@ -65,7 +65,7 @@ const {
           type="button"
           @click="handleSelectTheme('dark')"
           :class="[
-            'py-3.5 px-2 rounded-2xl border flex flex-col items-center justify-center gap-2 transition cursor-pointer',
+            'px-4 py-3.5 rounded-2xl border flex flex-col items-center justify-center gap-2 transition cursor-pointer',
             themeMode === 'dark'
               ? (isDark ? 'bg-[#252f44] border-blue-500 text-white font-semibold shadow-sm' : 'bg-gray-100 border-gray-300 text-gray-900 font-semibold')
               : (isDark ? 'border-[#2b374f] text-gray-400 hover:bg-white/5' : 'border-gray-200 text-gray-600 hover:bg-gray-50')
@@ -82,7 +82,7 @@ const {
           type="button"
           @click="handleSelectTheme('system')"
           :class="[
-            'py-3.5 px-2 rounded-2xl border flex flex-col items-center justify-center gap-2 transition cursor-pointer',
+            'px-4 py-3.5 rounded-2xl border flex flex-col items-center justify-center gap-2 transition cursor-pointer',
             themeMode === 'system'
               ? (isDark ? 'bg-[#252f44] border-blue-500 text-white font-semibold shadow-sm' : 'bg-gray-100 border-gray-300 text-gray-900 font-semibold shadow-sm')
               : (isDark ? 'border-[#2b374f] text-gray-400 hover:bg-white/5' : 'border-gray-200 text-gray-600 hover:bg-gray-50')
@@ -257,10 +257,10 @@ const {
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
           </svg>
         </button>
-        <transition name="dropdown-down">
+        <transition name="dropdown-up">
           <div
             v-if="isCommandApprovalPolicyOpen"
-            class="absolute right-0 mt-1.5 w-72 rounded-2xl bg-white dark:bg-[#1f293d] border border-gray-200 dark:border-gray-700 shadow-xl py-1.5 z-30 text-xs origin-top"
+            class="absolute right-0 bottom-full mb-1.5 w-72 rounded-2xl bg-white dark:bg-[#1f293d] border border-gray-200 dark:border-gray-700 shadow-xl py-1.5 z-30 text-xs origin-bottom-right"
           >
             <div
               v-for="opt in commandApprovalPolicyOptions"
@@ -316,5 +316,36 @@ const {
 .dropdown-down-leave-to {
   opacity: 0;
   transform: translateY(-6px) scaleY(0.9);
+}
+
+/* 下拉菜单向上展开动画 (右下角对齐触发器) */
+.dropdown-up-enter-active {
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: bottom right;
+}
+
+.dropdown-up-leave-active {
+  transition: opacity 0.15s ease-in, transform 0.15s ease-in;
+  transform-origin: bottom right;
+}
+
+.dropdown-up-enter-from {
+  opacity: 0;
+  transform: translateY(8px) scaleY(0.85);
+}
+
+.dropdown-up-enter-to {
+  opacity: 1;
+  transform: translateY(0) scaleY(1);
+}
+
+.dropdown-up-leave-from {
+  opacity: 1;
+  transform: translateY(0) scaleY(1);
+}
+
+.dropdown-up-leave-to {
+  opacity: 0;
+  transform: translateY(6px) scaleY(0.9);
 }
 </style>

@@ -10,13 +10,13 @@
 drop table if exists mcp;
 CREATE TABLE mcp (
     id                     BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
-    name                   VARCHAR(64)   NOT NULL COMMENT '服务唯一名：请求级会话标识与工具前缀回落依据',
+    name                   VARCHAR(64)   NOT NULL COMMENT '服务唯一名：请求级会话标识与工具清单查询依据',
+    description            VARCHAR(200)  NULL COMMENT '服务描述：随提示词下发给模型(每服务一行)，由业务用户填写',
     transport              VARCHAR(32)   NOT NULL DEFAULT 'streamable-http' COMMENT '传输方式: streamable-http / sse / stdio',
     url                    VARCHAR(1024) NULL COMMENT '服务端点地址(http系传输); stdio 传输为空',
     headers                JSON          NULL COMMENT '自定义请求头(JSON对象), 如 {"Authorization":"Bearer xxx"}',
     command                TEXT          NULL COMMENT 'stdio 启动命令(JSON数组), 如 ["npx","shadcn@latest","mcp"]',
     env                    JSON          NULL COMMENT 'stdio 环境变量(JSON对象), 如 {"GITHUB_TOKEN":"xxx"}',
-    tool_name_prefix       VARCHAR(64)   NULL COMMENT '工具名前缀, 为空时框架回落为 name_',
     initialization_timeout BIGINT        NULL COMMENT '初始化超时(毫秒)',
     execution_timeout      BIGINT        NULL COMMENT '执行超时(毫秒)',
     max_output             INT           NULL COMMENT '单次工具输出最大字符数',
@@ -31,6 +31,9 @@ CREATE TABLE mcp (
 -- ALTER TABLE mcp MODIFY url VARCHAR(1024) NULL COMMENT '服务端点地址(http系传输); stdio 传输为空';
 -- ALTER TABLE mcp ADD COLUMN command TEXT NULL COMMENT 'stdio 启动命令(JSON数组), 如 ["npx","shadcn@latest","mcp"]' AFTER headers;
 -- ALTER TABLE mcp ADD COLUMN env JSON NULL COMMENT 'stdio 环境变量(JSON对象), 如 {"GITHUB_TOKEN":"xxx"}' AFTER command;
+-- 工具名前缀退役 + 服务描述上线（既有库执行；工具名改由框架固定前缀 + 服务端原名组成）：
+-- ALTER TABLE mcp ADD COLUMN description VARCHAR(200) NULL COMMENT '服务描述' AFTER name;
+-- ALTER TABLE mcp DROP COLUMN tool_name_prefix;
 
 CREATE TABLE model_config (
     id               BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
@@ -58,6 +61,7 @@ CREATE TABLE workspace (
 -- 3. 会话表(一条记录 = 一个会话聚合)
 --    agent_id 已下线：本实例选中的 Agent 改由 user_configs.agent_id 承载(单例)。
 -- ------------------------------------------------------------
+drop table if exists session;
 CREATE TABLE session (
     id             BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
     root_session_id BIGINT NOT NULL DEFAULT 0 COMMENT '所属根会话ID(关联session.id, 根会话写0); 团队模式下子代理会话回指委派发起的根会话',
@@ -65,9 +69,9 @@ CREATE TABLE session (
     name           VARCHAR(100) NOT NULL DEFAULT '新对话' COMMENT '会话名称',
     workspace_id   BIGINT COMMENT '工作空间ID(关联workspace.id, 可被多个会话复用, 可空)',
     team_id        BIGINT COMMENT '绑定的协作团队(关联team.id, 可经 /session/{id}/team 换绑; NULL=非团队会话)',
-    total_tokens   INT NOT NULL DEFAULT 0 COMMENT '累计Token数',
-    input_tokens   INT NOT NULL DEFAULT 0 COMMENT '输入Token数',
-    output_tokens  INT NOT NULL DEFAULT 0 COMMENT '输出Token数',
+    context_token_count BIGINT COMMENT '上下文已用token: 最近一次终结执行由框架loop结束填充的Execution.contextUsageMetric上报; NULL=尚未采集',
+    context_max_tokens  INT COMMENT '上报时的上下文上限token(框架运行时max-tokens); NULL=尚未采集',
+    context_ratio       DECIMAL(10,6) COMMENT 'context_token_count/context_max_tokens, 可能>1(超限); NULL=尚未采集',
     create_time    DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time    DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     KEY idx_workspace_id (workspace_id),
@@ -79,16 +83,17 @@ CREATE TABLE session (
 -- ------------------------------------------------------------
 -- 4. 会话消息表(List<Message> 拆表存储)
 --    卡片快照不再占本表行：工具调用的状态与卡片载荷全部落在 tool_call 表。
---    ERROR 行不是模型对话行：执行抛异常时追加一行，content 为纯文本失败文案。
---    execution_id 是「产生该消息的执行」：刷新、重新订阅、暂停恢复后统计口径一致；
+--    失败不在这里留行：执行失败是**轮次的属性**（chat_turn.status=FAILED + error_reason），
+--    不再追加一条 ERROR 消息伪装成对话内容。
+--    turn_id 是「消息所属的业务轮次」：刷新、重新订阅、暂停恢复后统计口径一致；
 --    旧数据为 NULL 表示归属未知，前端降级展示，不按位置或时间戳猜测归属。
 -- ------------------------------------------------------------
 CREATE TABLE session_message (
     id              BIGINT NOT NULL PRIMARY KEY COMMENT '雪花ID(消息排序键与游标分页键, 全局趋势递增)',
     session_id      BIGINT NOT NULL COMMENT '关联会话ID',
-    execution_id    BIGINT NULL COMMENT '产生该消息的执行ID(关联execution.id); 旧数据为NULL表示归属未知',
-    type            VARCHAR(16) NOT NULL COMMENT '消息类型: USER/AI/TOOL/SYSTEM/ERROR',
-    content         LONGTEXT NOT NULL COMMENT '消息内容: USER/SYSTEM 存正文原文; AI 存 JSON {thinking,text,toolCalls}; TOOL 只存 call_id(call_xxx); ERROR 存纯文本失败文案',
+    turn_id         BIGINT NULL COMMENT '消息所属的业务轮次ID(关联chat_turn.id); 旧数据为NULL表示归属未知',
+    type            VARCHAR(16) NOT NULL COMMENT '消息类型: USER/AI/TOOL/SYSTEM',
+    content         LONGTEXT NOT NULL COMMENT '消息内容: USER/SYSTEM 存正文原文; AI 存 JSON {thinking,text,toolCalls}; TOOL 只存 call_id(call_xxx)',
     create_time     DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间(仅用于展示, 不参与排序)',
     update_time     DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
     KEY idx_session_msg (session_id, id)
@@ -156,22 +161,17 @@ CREATE TABLE team (
 -- One execution row stores immutable request parameters and mutable runtime state.
 -- Null tool_list means all registered tools; [] means no tools. Recovery state lives in snapshot.
 --
--- 下面这些「摘要列」（root_execution_id / model_* / *_token_count / started_at / completed_at）
--- 不参与恢复，只为**查询与展示**服务：历史接口按 executionId 批量装配本轮统计，
--- 不必反序列化整个 snapshot。恢复路径仍然只读 status + snapshot。
+-- 本表**只承载框架自己的运行记录**：请求与运行态在 snapshot，状态在 status，
+-- 生命周期时间在 started_at / completed_at，委派归属在 root_execution_id。
+-- 「用的哪个模型、花了多少 token」是**业务事实**，权威在 chat_turn（本轮实际使用的模型
+-- 由业务受理时解析写入，用量由框架完成事件回填）—— 本表不再冗余保存，避免同一事实两处存放。
 --
 -- status: 0 CREATED, 1 RUNNING, 2 SUSPENDED, 3 COMPLETED, 4 FAILED, 5 CANCELLED.
--- token 列 NULL = 未采集到，0 = 确实为 0 —— 两者必须可区分，旧数据不得显示成零消耗。
 -- completed_at 只在进入终态时写入；未结束执行保持 NULL（不用 updated_at 代替）。
 CREATE TABLE IF NOT EXISTS execution (
     id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '执行ID；一次请求对应一次执行，也是请求的唯一标识',
     session_id BIGINT NOT NULL COMMENT '所属会话ID；同一会话可包含多次执行',
     root_execution_id BIGINT NULL COMMENT '所属根执行ID；主执行为NULL，子执行指向发起委派的主执行',
-    model_name VARCHAR(128) NULL COMMENT '执行开始时实际解析出的模型名称快照',
-    model_provider VARCHAR(100) NULL COMMENT '执行开始时实际解析出的模型提供方快照',
-    input_token_count BIGINT NULL COMMENT '本执行累计已采集输入token；NULL=未知(区别于已知的0)',
-    output_token_count BIGINT NULL COMMENT '本执行累计已采集输出token；NULL=未知(区别于已知的0)',
-    total_token_count BIGINT NULL COMMENT '本执行累计已采集总token；NULL=未知(区别于已知的0)',
     started_at DATETIME(3) NULL COMMENT '执行首次开始时间；暂停后恢复不重置',
     completed_at DATETIME(3) NULL COMMENT '进入完成/失败/取消终态的时间；未结束为NULL',
     status TINYINT NOT NULL DEFAULT 0 COMMENT '执行状态：0创建，1运行，2暂停，3完成，4失败，5取消',
@@ -181,6 +181,44 @@ CREATE TABLE IF NOT EXISTS execution (
     KEY idx_execution_session_recent (session_id, id DESC),
     KEY idx_execution_session_status (session_id, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent 执行状态与恢复快照';
+
+-- ------------------------------------------------------------
+-- 7.5 业务轮次表(chat_turn)
+--     语义切分：execution（框架）= 运行时快照记录，提供可回滚能力，业务只读不写；
+--               chat_turn（业务）= 业务上最权威的用户单次请求记录。
+--     业务在「受理请求」那一刻创建本行，此时框架执行可能还不存在 → execution_id 可空。
+--     status: ACCEPTED(已受理) / RUNNING / WAITING(=框架SUSPENDED，挂起等审批) /
+--             COMPLETED / FAILED / CANCELLED。
+--     权威划分：本表 status 权威用于展示；框架 execution.status 权威用于控制
+--     （能否 resume / cancel），两者不互相替代。
+--     started_at 取框架 onStart 时刻（受理时刻由 created_at 承载）；未真正开始为 NULL。
+--     token 三列 NULL = 未采集到，0 = 确实为 0 —— 两者必须可区分。
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS chat_turn (
+    id                 BIGINT       NOT NULL COMMENT '业务轮次ID，由应用生成雪花ID',
+    session_id         BIGINT       NOT NULL COMMENT '所属会话ID；子Agent委派写入子会话ID',
+    parent_turn_id     BIGINT       NULL COMMENT '发起本次子Agent委派的主轮次ID；普通用户提问为空',
+    execution_id       BIGINT       NULL COMMENT '关联的框架执行ID；执行尚未创建或启动前失败时可为空',
+    status             VARCHAR(16)  NOT NULL DEFAULT 'ACCEPTED'
+        COMMENT '业务状态: ACCEPTED/RUNNING/WAITING(=框架SUSPENDED)/COMPLETED/FAILED/CANCELLED',
+    model_name         VARCHAR(128) NULL COMMENT '本轮实际使用的模型名称快照',
+    model_provider     VARCHAR(100) NULL COMMENT '本轮实际使用的模型提供方快照',
+    input_token_count  BIGINT       NULL COMMENT '本轮已采集输入token；NULL表示未知(区别于已知的0)',
+    output_token_count BIGINT       NULL COMMENT '本轮已采集输出token；NULL表示未知(区别于已知的0)',
+    total_token_count  BIGINT       NULL COMMENT '本轮已采集总token；NULL表示未知(区别于已知的0)',
+    started_at         DATETIME(3)  NULL COMMENT '本轮开始执行的时间(取框架onStart时刻)；未真正开始为NULL',
+    completed_at       DATETIME(3)  NULL COMMENT '本轮完成、失败或取消的时间；未结束为NULL',
+    error_reason       VARCHAR(1000) NULL COMMENT '本轮失败的面向用户原因；仅 status=FAILED 时渲染；未失败为NULL',
+    created_at         DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '受理时刻',
+    updated_at         DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    -- 一轮一次执行，故为唯一键。⚠️ 将来若支持「同一问题重新生成」，一轮会有 N 次执行，
+    -- 该唯一键不再成立，届时需迁移。
+    UNIQUE KEY uk_chat_turn_execution (execution_id),
+    KEY idx_chat_turn_session_recent (session_id, id DESC),
+    KEY idx_chat_turn_session_status (session_id, status),
+    KEY idx_chat_turn_parent (parent_turn_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='聊天业务轮次；执行检查点仍由框架execution存储';
 
 -- ------------------------------------------------------------
 -- 8. 工具调用表(唯一权威源：承载全部工具调用的状态与卡片载荷)

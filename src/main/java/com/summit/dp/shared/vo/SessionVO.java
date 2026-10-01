@@ -48,10 +48,19 @@ public class SessionVO {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long teamId;
     private String workDir;
-    private int totalTokens;
-    private int inputTokens;
-    private int outputTokens;
     /** 树查询批量统计的消息条数；未查询时不输出该字段。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private Long messageCount;
+
+    /**
+     * 上下文用量快照（三项同源，来自最近一次终结执行回写的 session 表快照）：
+     * 已用 token / 上限 token / 比率（可能大于 1）。任一项为 null 表示尚未采集——
+     * 前端「上下文用量」指示器在无 {@code CONTEXT_UPDATE} 事件（历史加载）时以此渲染。
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Long contextTokenCount;
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Integer contextMaxTokens;
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private Double contextRatio;
 }

@@ -1,11 +1,13 @@
 package com.summit.dp.mcp.domain.model;
 
+import com.summit.dp.shared.exception.ClientException;
 import lombok.Builder;
 import lombok.Getter;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -14,44 +16,73 @@ import java.util.Map;
  * <p>字段与框架侧 {@code com.summit.core.conf.McpConfig.MCP} 保持一致：本模块是<b>持久化侧</b>，
  * 框架侧是<b>消费侧</b>，装配时由 {@code McpConfigAssembler} 逐字段搬运到 {@code McpConfig.MCP}，
  * 因此字段语义（超时单位、prefix 语义、maxOutput 含义）以框架侧 record 为准，此处不另行解释。</p>
- *
- * <p>状态收敛为领域方法：{@link #changeEnabled(boolean)} 等，不由应用层直接赋值——
- * 变更时统一刷新 {@code updateAt}。</p>
  */
 @Builder
 @Getter
 public class Mcp {
 
-    /** 服务名上限：与框架侧日志/工具前缀可读性相关，此处仅作输入护栏 */
+    public enum Transport {
+        STREAMABLE_HTTP,
+        SSE,
+        STDIO;
+
+        public static Transport parse(String value) {
+            String normalized = value == null ? "" : value.trim().toUpperCase(Locale.ROOT).replace('-', '_');
+            try {
+                return Transport.valueOf(normalized);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Unknown MCP transport: " + value, e);
+            }
+        }
+    }
+
+    /**
+     * 服务名上限：与框架侧日志可读性相关，此处仅作输入护栏
+     */
     public static final int NAME_MAX_LENGTH = 64;
     public static final int URL_MAX_LENGTH = 1024;
-    public static final int TOOL_NAME_PREFIX_MAX_LENGTH = 64;
 
-    /** 允许的传输方式；框架侧按 {@code McpTransport.parse} 归一后分派 builder */
-    public static final String TRANSPORT_STREAMABLE_HTTP = "streamable-http";
-    public static final String TRANSPORT_SSE = "sse";
-    public static final String TRANSPORT_STDIO = "stdio";
+    /**
+     * 服务描述上限：提示词里一个服务一行（名字 - 描述 - 工具数），过长会挤占上下文
+     */
+    public static final int DESCRIPTION_MAX_LENGTH = 200;
 
-    /** stdio 启动命令护栏：argv 条数与单段长度上限 */
+    /**
+     * stdio 启动命令护栏：argv 条数与单段长度上限
+     */
     public static final int COMMAND_MAX_ITEMS = 32;
     public static final int COMMAND_ARGV_MAX_LENGTH = 1024;
 
-    /** 超时缺省值，与框架侧缺省语义对齐 */
+    /**
+     * 超时缺省值，与框架侧缺省语义对齐
+     */
     public static final Duration DEFAULT_INITIALIZATION_TIMEOUT = Duration.ofSeconds(30);
     public static final Duration DEFAULT_EXECUTION_TIMEOUT = Duration.ofSeconds(60);
     public static final int DEFAULT_MAX_OUTPUT = 20000;
 
-    /** 1 = 启用，0 = 停用；与库中 status 列一致 */
+    /**
+     * 1 = 启用，0 = 停用；与库中 status 列一致
+     */
     public static final int STATUS_ENABLED = 1;
     public static final int STATUS_DISABLED = 0;
 
     private final Long id;
 
-    /** 服务唯一名；请求级容器用它作为会话标识与工具前缀回落依据 */
+    /**
+     * 服务唯一名；请求级容器用它作为会话标识，也是模型按服务名查看工具清单的依据
+     */
     private String name;
 
-    /** 传输方式，取值见 TRANSPORT_* 常量 */
-    private String transport;
+    /**
+     * 服务描述：随提示词下发给模型（提示词里一个服务一行），用于让模型判断该服务是否相关。
+     * <p>由业务用户填写——服务端 MCP 的 {@code instructions} 有不确定性，不作为来源。</p>
+     */
+    private String description;
+
+    /**
+     * 传输方式，取值见 {@link Transport}
+     */
+    private Transport transport;
 
     /**
      * 服务端点（http 系传输）。
@@ -77,14 +108,13 @@ public class Mcp {
      */
     private Map<String, String> env;
 
-    /** 工具名前缀；为空时由框架侧回落为 {@code name + "_"} */
-    private String toolNamePrefix;
-
     private Duration initializationTimeout;
 
     private Duration executionTimeout;
 
-    /** 单次工具输出最大字符数 */
+    /**
+     * 单次工具输出最大字符数
+     */
     private int maxOutput;
 
     private Integer status;
@@ -94,21 +124,21 @@ public class Mcp {
     private Instant updateAt;
 
     public void changeName(String name) {
-        if (name == null || name.isBlank()) throw new IllegalArgumentException("Mcp name is blank");
-        if (name.length() > NAME_MAX_LENGTH) throw new IllegalArgumentException("Mcp name is too long");
+        throwEIf("Mcp name is blank", name == null || name.isBlank());
+        throwEIf("Mcp name is too long", name.length() > NAME_MAX_LENGTH);
         this.name = name;
         update();
     }
 
-    public void changeTransport(String transport) {
-        if (transport == null || transport.isBlank()) throw new IllegalArgumentException("Mcp transport is blank");
+    public void changeTransport(Transport transport) {
+        throwEIf("Mcp transport is null", transport == null);
         this.transport = transport;
         update();
     }
 
     public void changeUrl(String url) {
-        if (url == null || url.isBlank()) throw new IllegalArgumentException("Mcp url is blank");
-        if (url.length() > URL_MAX_LENGTH) throw new IllegalArgumentException("Mcp url is too long");
+        throwEIf("Mcp url is blank", url == null || url.isBlank());
+        throwEIf("Mcp url is too long", url.length() > URL_MAX_LENGTH);
         this.url = url;
         update();
     }
@@ -119,15 +149,13 @@ public class Mcp {
     }
 
     public void changeCommand(List<String> command) {
-        if (command == null || command.isEmpty())
-            throw new IllegalArgumentException("Mcp command is empty");
-        if (command.size() > COMMAND_MAX_ITEMS)
-            throw new IllegalArgumentException("Mcp command has too many items");
+
+        throwEIf("Mcp command is empty", command == null || command.isEmpty());
+        throwEIf("Mcp command has too many items", command.size() > COMMAND_MAX_ITEMS);
+
         for (String argv : command) {
-            if (argv == null || argv.isBlank())
-                throw new IllegalArgumentException("Mcp command contains blank argv");
-            if (argv.length() > COMMAND_ARGV_MAX_LENGTH)
-                throw new IllegalArgumentException("Mcp command argv is too long");
+            throwEIf("Mcp command contains blank argv", argv == null || argv.isBlank());
+            throwEIf("Mcp command argv is too long", argv.length() > COMMAND_ARGV_MAX_LENGTH);
         }
         this.command = List.copyOf(command);
         update();
@@ -138,29 +166,30 @@ public class Mcp {
         update();
     }
 
-    public void changeToolNamePrefix(String toolNamePrefix) {
-        if (toolNamePrefix != null && toolNamePrefix.length() > TOOL_NAME_PREFIX_MAX_LENGTH)
-            throw new IllegalArgumentException("Mcp toolNamePrefix is too long");
-        this.toolNamePrefix = toolNamePrefix;
+    public void changeDescription(String description) {
+        throwEIf("Mcp description is too long",
+                description != null && description.length() > DESCRIPTION_MAX_LENGTH);
+        this.description = description;
         update();
     }
 
     public void changeInitializationTimeout(Duration initializationTimeout) {
-        if (initializationTimeout == null || initializationTimeout.isNegative() || initializationTimeout.isZero())
-            throw new IllegalArgumentException("Mcp initializationTimeout must be positive");
+        boolean condition = initializationTimeout == null || initializationTimeout.isNegative() || initializationTimeout.isZero();
+
+        throwEIf("Mcp initializationTimeout must be positive", condition);
         this.initializationTimeout = initializationTimeout;
         update();
     }
 
     public void changeExecutionTimeout(Duration executionTimeout) {
-        if (executionTimeout == null || executionTimeout.isNegative() || executionTimeout.isZero())
-            throw new IllegalArgumentException("Mcp executionTimeout must be positive");
+        boolean condition = executionTimeout == null || executionTimeout.isNegative() || executionTimeout.isZero();
+        throwEIf("Mcp executionTimeout must be positive", condition);
         this.executionTimeout = executionTimeout;
         update();
     }
 
     public void changeMaxOutput(int maxOutput) {
-        if (maxOutput <= 0) throw new IllegalArgumentException("Mcp maxOutput must be positive");
+        throwEIf("Mcp maxOutput must be positive", maxOutput <= 0);
         this.maxOutput = maxOutput;
         update();
     }
@@ -170,7 +199,9 @@ public class Mcp {
         update();
     }
 
-    /** 该服务是否参与本轮请求级装配 */
+    /**
+     * 该服务是否参与本轮请求级装配
+     */
     public boolean enabled() {
         return status != null && status == STATUS_ENABLED;
     }
@@ -181,15 +212,18 @@ public class Mcp {
      * 另一半参数缺失」的组合态。</p>
      */
     public void requireCoherent() {
-        if (TRANSPORT_STDIO.equals(transport)) {
-            if (command == null || command.isEmpty())
-                throw new IllegalArgumentException("Mcp stdio transport requires command");
+        if (transport == Transport.STDIO) {
+            throwEIf("Mcp stdio transport requires command", command == null || command.isEmpty());
         } else if (url == null || url.isBlank()) {
-            throw new IllegalArgumentException("Mcp transport '" + transport + "' requires url");
+            throwEIf("Mcp transport '" + transport + "' requires url", url == null || url.isBlank());
         }
     }
 
     private void update() {
         this.updateAt = Instant.now();
+    }
+
+    private void throwEIf(String err, boolean condition) {
+        if (condition) throw new ClientException(err);
     }
 }

@@ -23,6 +23,19 @@ class ExecutionJsonTest {
     private final ObjectMapper mapper = new JsonConfig().objectMapper();
 
     @Test
+    void selectedEventMetadataSurvivesSnapshotWithoutPublishingInternalAttributes() throws Exception {
+        Execution original = execution(null, Map.of("internal", "private-value"));
+        original.getAgentRequest().runtimeParametersOrDefault().setEventMetaData(
+                ExecutionEventMetadata.of(9007199254740993L, 9007199254740995L, null));
+
+        Execution restored = mapper.readValue(mapper.writeValueAsString(original), Execution.class);
+
+        assertEquals(original.eventMetaData(), restored.eventMetaData());
+        assertFalse(restored.eventMetaData().containsKey("internal"));
+        assertEquals("9007199254740995", restored.eventMetaData().get("turnId"));
+    }
+
+    @Test
     void roundTripsCompleteExecutionForLocalAndDockerWorkspaces() throws Exception {
         LingXiWorkspaceSpec local = new LingXiWorkspaceSpec("local", "D:/workspace", LocalInstance.ID, Map.of());
         DockerWorkspaceSpec docker = DockerWorkspaceSpec.builder().workDir("/workspace").hostDir("D:/workspace")

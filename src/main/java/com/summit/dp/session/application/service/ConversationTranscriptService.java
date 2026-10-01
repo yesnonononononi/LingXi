@@ -24,11 +24,14 @@ import java.util.Map;
 /**
  * Append-only, user-visible transcript. It is deliberately independent from the mutable model context.
  *
- * <p><b>每条消息都带 {@code executionId}（2026-09-30 改造）：</b>它是「回答分组」与
- * 「本轮元信息归属」的唯一稳定键 —— 前端按它把 USER / AI / TOOL / ERROR 归到同一轮，
- * 并把 execution 摘要挂到组上。此前只能按「页内 USER 消息」划轮，分页切在
- * AI/TOOL/ERROR 中间时会造出孤行容器。{@code executionId} 为 {@code null} 只出现在
- * 本次改造之前落库的旧数据上，表示归属未知。</p>
+ * <p><b>每条消息只带 {@code turnId}（业务轮次）：</b>它是对外契约的回答分组键 —— 前端按它把
+ * USER / AI / TOOL / ERROR 归到同一轮，并把轮次信息挂到组上。框架执行 ID **不进入消息归属**：
+ * 它只活在 {@code chat_turn.execution_id}（接收框架信号）与 {@code tool_call.execution_id}
+ * （定位工具调用）这两个与框架交互的边界上。</p>
+ *
+     * <p><b>{@code turnId} 由调用方在写入边界解析</b>：从框架携带的事件元数据直接读取，
+     * 框架不需要认识业务轮次。缺少元数据（本次改造之前的执行）时传 {@code null}，
+ * 落库为「归属未知」，**不猜测**。</p>
  *
  * <p><b>TOOL 行只存 {@code call_id}（设计 §7.3）：</b>旧实现把整个 {@code ToolMessageEntity}
  * 序列化进 {@code content}，与 {@code tool_call} 行形成双写、易漂移。现在 TOOL 行的
@@ -44,49 +47,25 @@ public class ConversationTranscriptService {
     private final ObjectMapper objectMapper;
 
     @Transactional
-    public void appendToolResult(Long sessionId, Long executionId, ToolMessageEntity result) {
-        append(sessionId, executionId, List.of(result));
+    public void appendToolResult(Long sessionId, Long turnId, ToolMessageEntity result) {
+        append(sessionId, turnId, List.of(result));
     }
 
     @Transactional
-    public void appendUser(Long sessionId, Long executionId, UserMessageEntity message) {
-        append(sessionId, executionId, List.of(message));
+    public void appendUser(Long sessionId, Long turnId, UserMessageEntity message) {
+        append(sessionId, turnId, List.of(message));
     }
 
     @Transactional
-    public void appendRound(Long sessionId, Long executionId, AiMessageEntity aiMessage,
+    public void appendRound(Long sessionId, Long turnId, AiMessageEntity aiMessage,
                             List<ToolMessageEntity> toolMessages) {
         List<Message> round = new ArrayList<>();
         round.add(aiMessage);
         if (toolMessages != null) round.addAll(toolMessages);
-        append(sessionId, executionId, round);
+        append(sessionId, turnId, round);
     }
 
-    /**
-     * 追加一条执行失败标注行（{@link SessionMessageType#ERROR}）。
-     *
-     * <p><b>content 存纯文本，不是框架消息的 JSON 序列化：</b>ERROR 行不参与模型上下文，
-     * 只承载给人看的失败文案，前端按正文直接消费，因此无需再包一层 JSON 再去解析
-     * （USER/AI 行包 JSON 是因为要还原框架消息的字段，这里没有可还原的字段）。</p>
-     *
-     * <p>文案为空即不落行，由调用方（事件适配器）负责兜底文案。</p>
-     */
-    @Transactional
-    public void appendError(Long sessionId, Long executionId, String errorMessage) {
-        if (errorMessage == null || errorMessage.isBlank()) {
-            return;
-        }
-        SessionMessage record = SessionMessage.builder()
-                .id(IdUtil.getSnowflakeNextId())
-                .sessionId(sessionId)
-                .executionId(executionId)
-                .type(SessionMessageType.ERROR)
-                .text(errorMessage)
-                .build();
-        messageRepository.appendAll(sessionId, List.of(record));
-    }
-
-    private void append(Long sessionId, Long executionId, List<? extends Message> messages) {
+    private void append(Long sessionId, Long turnId, List<? extends Message> messages) {
         List<SessionMessage> records = new ArrayList<>();
         // callId → 新生成的 TOOL 行主键，用于回填 tool_call.session_message_id。
         Map<String, Long> toolAnchors = new LinkedHashMap<>();
@@ -102,7 +81,7 @@ public class ConversationTranscriptService {
                 records.add(SessionMessage.builder()
                         .id(messageId)
                         .sessionId(sessionId)
-                        .executionId(executionId)
+                        .turnId(turnId)
                         .type(type)
                         .text(callId)
                         .build());
@@ -112,7 +91,7 @@ public class ConversationTranscriptService {
                 records.add(SessionMessage.builder()
                         .id(messageId)
                         .sessionId(sessionId)
-                        .executionId(executionId)
+                        .turnId(turnId)
                         .type(type)
                         // Serialize synchronously: framework messages remain mutable and may later be compacted.
                         .text(objectMapper.writeValueAsString(message))

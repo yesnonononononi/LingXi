@@ -2,9 +2,11 @@ package com.summit.dp.toolcall;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
+import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
+import com.summit.core.conversation.event.ToolCallEndEvent;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.ToolMessageEntity;
 import com.summit.core.runtime.RuntimeEnvironment;
@@ -15,8 +17,10 @@ import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecuteResult;
+import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolRegistry;
 import com.summit.core.workspace.WorkspaceManager;
+import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.SessionAttributeRestorer;
@@ -31,9 +35,11 @@ import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.event.SseEventPublisher;
 import com.summit.dp.shared.event.ToolCallEventPublisher;
+import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.tools.baseTools.terminal.CommandToolDefinitionExecutor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -41,6 +47,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
@@ -96,9 +103,11 @@ class ToolCallDecisionTest {
 
         CommandApprovalExecutor commandApprovalExecutor = new CommandApprovalExecutor(toolCallRepository,
                 new ToolCallConverter(mapper), sseEventPublisher, executionIdentity, modelContextService,
-                runtimeEvents, workspaces, transactions, mapper,
-                provider(executionControl), provider(executionRepository), provider(toolRegistry),
-                new SessionAttributeRestorer(mock(SessionRepository.class)));
+                runtimeEvents, transactions,
+                provider(executionControl), provider(executionRepository),
+                new SessionAttributeRestorer(mock(SessionRepository.class)),
+                new com.summit.dp.toolcall.application.service.impl.ApprovedCommandRestorer(mapper, workspaces,
+                        provider(toolRegistry)));
         service = new ToolCallServiceImpl(toolCallRepository,
                 new ToolCallConverter(mapper), executionIdentity, modelContextService, sseEventPublisher,
                 toolCallEventPublisher, transactions,
@@ -149,6 +158,12 @@ class ToolCallDecisionTest {
         await();
 
         verify(commandExecutor, times(1)).execute(any());
+        ArgumentCaptor<ToolExecution> replayedTool = ArgumentCaptor.forClass(ToolExecution.class);
+        verify(commandExecutor).execute(replayedTool.capture());
+        assertEquals(Map.of("turnId", "9001"), replayedTool.getValue().getEventMetaData());
+        ArgumentCaptor<ToolCallEndEvent> replayedEvent = ArgumentCaptor.forClass(ToolCallEndEvent.class);
+        verify(runtimeEvents).onToolCallOutput(replayedEvent.capture());
+        assertEquals(Map.of("turnId", "9001"), replayedEvent.getValue().eventMetaData());
         assertTrue(toolMessage.getText().contains("real output"));
         assertEquals(ToolCallStatus.COMPLETED, toolCall.getStatus());
         assertTrue(toolCall.getRawOutput().contains("APPROVED"));
@@ -189,6 +204,25 @@ class ToolCallDecisionTest {
         verify(toolCallRepository, never()).updateById(any());
     }
 
+    @Test
+    void cancelledExecutionRejectsApprovalBeforeRegistering() {
+        // stop 与「点批准」竞争：执行已随停止被取消，但卡片行还停在 pending 的竞争窗口。
+        ToolCall toolCall = commandCall("call-stopped");
+        Execution cancelled = execution("3", ExecutionState.CANCELLED);
+
+        when(toolCallRepository.findById("call-stopped")).thenReturn(Optional.of(toolCall));
+        when(executionRepository.findById("3")).thenReturn(Optional.of(cancelled));
+
+        ClientException rejected = assertThrows(ClientException.class,
+                () -> service.decide(2L, "call-stopped", true, null));
+
+        assertTrue(rejected.getMessage().contains("执行尚未暂停或已结束"));
+        // 未登记控制信号、未收口卡片、未恢复执行 —— 卡片留给 stop 路径统一取消
+        verify(executionRepository, never()).register(any());
+        verify(toolCallRepository, never()).updateById(any());
+        verify(executionControl, never()).resume(any(Execution.class));
+    }
+
     private void await() throws Exception {
         assertTrue(finished.await(5, TimeUnit.SECONDS));
     }
@@ -227,11 +261,12 @@ class ToolCallDecisionTest {
 
     private Execution execution(String id, ExecutionState state, Message... messages) {
         return Execution.builder().id(id).executionState(state)
-                .agentRequest(AgentRequest.builder().workspaceSpec(mock(com.summit.core.workspace.WorkspaceSpec.class))
-                        .runtimeParameters(com.summit.core.agent.AgentRuntimeParameters.builder()
+                .agentRequest(AgentRequest.builder().workspaceSpec(mock(WorkspaceSpec.class))
+                        .runtimeParameters(AgentRuntimeParameters.builder()
+                                .eventMetaData(Map.of("turnId", "9001"))
                                 .attributes(Map.of(ExecutionAttributes.SESSION_ID, "2")).build())
                         .build())
-                .messages(new java.util.ArrayList<>(List.of(messages))).build();
+                .messages(new ArrayList<>(List.of(messages))).build();
     }
 
     private static <T> ObjectProvider<T> provider(T value) {

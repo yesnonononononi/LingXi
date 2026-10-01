@@ -5,7 +5,6 @@ import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.Session;
-import com.summit.dp.session.domain.model.TokenUsage;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -56,7 +55,6 @@ class SubSessionResolverTest {
                 .rootSessionId(ROOT_SESSION_ID)
                 .agentId(CHILD_AGENT_ID)
                 .name("架构师")
-                .tokenUsage(TokenUsage.empty())
                 .build();
     }
 

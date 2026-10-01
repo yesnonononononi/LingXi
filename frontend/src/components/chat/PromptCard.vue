@@ -4,6 +4,7 @@ import type { PromptCardData } from '../../types/chat';
 import PlanCard from './PlanCard.vue';
 import RequireChoiceCard from './RequireChoiceCard.vue';
 import ApprovalCard from './ApprovalCard.vue';
+import DelegationWaitCard from './DelegationWaitCard.vue';
 
 const props = defineProps<{
   /** 统一卡片数据（历史与实时同一形状） */
@@ -41,6 +42,12 @@ const isUnavailable = computed(() => props.promptCard.unavailable === true);
     v-else-if="kind === 'CHOICE'"
     :prompt-card="promptCard"
     :session-id="sessionId"
+    :is-dark="isDark"
+  />
+
+  <DelegationWaitCard
+    v-else-if="kind === 'DELEGATION'"
+    :prompt-card="promptCard"
     :is-dark="isDark"
   />
 

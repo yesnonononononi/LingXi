@@ -1,24 +1,9 @@
-/**
- * 工具调用元数据的唯一解析入口。
- *
- * 收敛原因（重要）：
- * 原先"工具分类"逻辑被复制了 3~4 份，且全部依赖 `toolName.includes('read')`
- * 这类子串猜测 —— `already_read`、`thread` 会被误判为"读取"，
- * 含 command 的任意工具名会被误判为终端命令。且三处规则已发生漂移。
- *
- * 现在的策略是"不猜"：
- *   1) 后端下发 category 时直接采用（唯一可信来源）
- *   2) 否则查已知工具名映射表（显式声明，不做子串匹配）
- *   3) 未知工具直接展示工具名，不再强行归类
- *
- * ⚠️ 后端依赖：映射表只是后端未下发 category 时的过渡兼容，
- *    后端应在工具定义中下发 category，届时整张表可删除。
- */
+/** 工具展示严格按后端固定工具名称及参数字段解析，不接受兼容名或分类推断。 */
 
-import { pickField, toObject } from './json';
+import { toObject } from './json';
 
 export const TOOL_CATEGORY = {
-  PWSH: 'Pwsh',
+  COMMAND: '执行命令',
   READ: '读取',
   WRITE: '写入',
   CHOICE: '选择',
@@ -38,7 +23,7 @@ export const TOOL_CATEGORY = {
  */
 const KNOWN_TOOL_CATEGORY: Record<string, string> = {
   // 终端命令
-  execute_command: TOOL_CATEGORY.PWSH,
+  execute_command: TOOL_CATEGORY.COMMAND,
   // 读取
   read_file: TOOL_CATEGORY.READ,
   web_search: TOOL_CATEGORY.READ,
@@ -52,32 +37,11 @@ const KNOWN_TOOL_CATEGORY: Record<string, string> = {
   call_sub_agent: TOOL_CATEGORY.SUB_AGENT,
 };
 
-/**
- * 工具参数名（唯一声明处）。
- * 契约来源：com.summit.dp.tools.baseTools.arguments.*
- *   - ExecuteCommandRequest：command / intention
- *   - ReadFileRequest、EditFileRequest：path
- *   - RequireChoiceToolExecutor：question / choice
- *   - CallSubAgentToolArgument：task / prompt / agentId / subSessionId / workDir / agentName
- *   - PlanCreateArgument：title / text
- * 各工具的参数名互不重名，无需别名兜底。
- */
-const ARG_KEYS = {
-  command: ['command'],
-  action: ['intention'],
-  target: ['path'],
-  question: ['question'],
-  task: ['task'],
-  prompt: ['prompt'],
-  agentId: ['agentId'],
-} as const;
+
 
 export interface ToolMetaInput {
   toolName?: string;
-  category?: string;
   args?: unknown;
-  query?: string;
-  rawArgs?: string;
 }
 
 export interface ToolMeta {
@@ -87,26 +51,21 @@ export interface ToolMeta {
   command: string;
 }
 
-/** 规范化工具名：小写、去空格 */
+/** 读取后端固定工具名称，不转换大小写或接受别名 */
 export function normalizeToolName(toolName?: string | null): string {
-  return (toolName || '').trim().toLowerCase();
+  return toolName ?? '';
 }
 
 /**
- * 解析工具分类。后端 category 优先，其次查表，未知工具返回工具名本身。
+ * 按后端固定工具名称映射展示文案；未知工具展示原名。
  */
-export function resolveToolCategory(toolName?: string | null, backendCategory?: string | null): string {
-  const explicit = (backendCategory || '').trim();
-  if (explicit) return explicit;
-
+export function resolveToolCategory(toolName?: string | null): string {
   const key = normalizeToolName(toolName);
-  if (!key) return TOOL_CATEGORY.DEFAULT;
   return KNOWN_TOOL_CATEGORY[key] ?? key;
 }
 
 /** 是否为子代理委派工具（精确匹配，不再用 includes） */
-export function isSubAgentTool(toolName?: string | null, category?: string | null): boolean {
-  if ((category || '').trim() === TOOL_CATEGORY.SUB_AGENT) return true;
+export function isSubAgentTool(toolName?: string | null, _category?: string | null): boolean {
   return normalizeToolName(toolName) === 'call_sub_agent';
 }
 
@@ -118,49 +77,51 @@ export function isPlanDocumentTool(toolName?: string | null): boolean {
   return normalizeToolName(toolName) === 'create_plan';
 }
 
-/** 是否为文件编辑工具 (edit_file / file_editor) */
+/** 是否为文件编辑工具（后端固定名称 edit_file） */
 export function isEditFileTool(toolName?: string | null): boolean {
   const name = normalizeToolName(toolName);
-  return name === 'edit_file' || name === 'file_editor';
+  return name === 'edit_file';
+}
+
+/** 仅命令和文件编辑工具展示原始参数，其他工具保留摘要与执行结果。 */
+export function shouldShowToolArguments(toolName?: string | null): boolean {
+  return normalizeToolName(toolName) === 'execute_command' || isEditFileTool(toolName);
 }
 
 /** 解析工具展示所需的全部元数据 */
 export function resolveToolMeta(input: ToolMetaInput): ToolMeta {
-  const { toolName, category, args, query, rawArgs } = input;
-
-  const parsedArgs = toObject(args, {});
-  const fallbackText = rawArgs ?? (typeof query === 'string' ? query : '');
-  const resolvedCategory = resolveToolCategory(toolName, category);
-
+  const args = toObject(input.args, {});
+  const field = (key: string): string => typeof args[key] === 'string' ? args[key] : '';
+  const category = resolveToolCategory(input.toolName);
   let description = '';
   let target = '';
   let command = '';
+  switch (input.toolName) {
+    case 'execute_command':
+      command = field('command');
+      description = field('intention');
+      break;
+      
+    case 'read_file':
 
-  switch (resolvedCategory) {
-    case TOOL_CATEGORY.PWSH:
-      command = pickField(parsedArgs, ARG_KEYS.command);
-      description = pickField(parsedArgs, ARG_KEYS.action) || command;
-      break;
-    case TOOL_CATEGORY.READ:
-      target = pickField(parsedArgs, ARG_KEYS.target);
+    case 'edit_file':
+      target = field('path');
       description = target;
       break;
-    case TOOL_CATEGORY.WRITE:
-      target = pickField(parsedArgs, ARG_KEYS.target);
-      description = target;
+
+    case 'require_choice':
+      description = field('question');
       break;
-    case TOOL_CATEGORY.CHOICE:
-      description = pickField(parsedArgs, ARG_KEYS.question);
+
+    case 'call_sub_agent':
+      description = field('task');
       break;
-    case TOOL_CATEGORY.SUB_AGENT:
-      description = pickField(parsedArgs, ARG_KEYS.task);
-      break;
-    default:
+
+    case 'create_plan':
+      description = field('title');
       break;
   }
-
-  if (!description) description = fallbackText;
-  return { category: resolvedCategory, description, target, command };
+  return { category, description, target, command };
 }
 
 /**
@@ -196,40 +157,17 @@ export interface SubAgentParams {
   subSessionId?: string | number;
 }
 
-/**
- * 从工具调用的多个可能来源中提取子代理参数。
- * 来源优先级：结构化字段 → args → query(JSON 字符串)。
- */
+/** 子代理请求参数只从 query 读取；派生会话 ID 由工具执行结果写入。 */
 export function extractSubAgentParams(tc: {
-  subAgentId?: unknown;
-  subAgentName?: unknown;
-  subTask?: unknown;
-  subPrompt?: unknown;
-  subSessionId?: unknown;
-  args?: unknown;
   query?: string;
+  subSessionId?: unknown;
 }): SubAgentParams {
-  let agentId = tc.subAgentId as string | number | undefined;
-  let agentName = typeof tc.subAgentName === 'string' ? tc.subAgentName : undefined;
-  let task = typeof tc.subTask === 'string' ? tc.subTask : '';
-  let prompt = typeof tc.subPrompt === 'string' ? tc.subPrompt : '';
-  let subSessionId = tc.subSessionId as string | number | undefined;
-
-  const args = toObject(tc.args, {});
-  const queryObj = toObject(tc.query, {});
-  const merged: Record<string, any> = { ...queryObj, ...args };
-
-  if (agentId === undefined || agentId === null || agentId === '') {
-    agentId = merged.agentId as string | number | undefined;
-  }
-  if (!agentName && typeof merged.agentName === 'string' && merged.agentName.trim()) {
-    agentName = merged.agentName.trim();
-  }
-  if (!task) task = typeof merged.task === 'string' ? merged.task : '';
-  if (!prompt) prompt = typeof merged.prompt === 'string' ? merged.prompt : '';
-  if (subSessionId === undefined || subSessionId === null || subSessionId === '') {
-    subSessionId = merged.subSessionId as string | number | undefined;
-  }
-
-  return { agentId, agentName, task, prompt, subSessionId };
+  const args = toObject(tc.query, {});
+  return {
+    agentId: args.agentId,
+    agentName: args.agentName,
+    task: args.task,
+    prompt: args.prompt,
+    subSessionId: tc.subSessionId as string | number | undefined
+  };
 }

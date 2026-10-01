@@ -13,11 +13,11 @@ import com.summit.dp.agent.infrastructure.agent.SubAgent;
 import com.summit.dp.agent.infrastructure.event.SubAgentSessionEventPublisher;
 import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.Session;
-import com.summit.dp.session.domain.model.TokenUsage;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.settings.SettingsProvider;
 import com.summit.dp.team.application.vo.TeamVO;
@@ -66,10 +66,17 @@ class CallSubAgentSessionReuseTest {
     private final ConversationTranscriptService transcriptService = mock(ConversationTranscriptService.class);
     private final SessionRepository sessionRepository = mock(SessionRepository.class);
     private final SubAgentSessionEventPublisher publisher = mock(SubAgentSessionEventPublisher.class);
+    private final com.summit.dp.toolcall.application.service.ToolCallRegistrar registrar =
+            mock(com.summit.dp.toolcall.application.service.ToolCallRegistrar.class);
+    private final com.summit.dp.shared.event.ToolCallEventPublisher toolCallEventPublisher =
+            mock(com.summit.dp.shared.event.ToolCallEventPublisher.class);
+    private final com.summit.dp.execution.ExecutionIdentity executionIdentity =
+            mock(com.summit.dp.execution.ExecutionIdentity.class);
 
     private final ModelService modelService = mock(ModelService.class);
     private final SettingsProvider settingsProvider = mock(SettingsProvider.class);
     private final ModelContextService modelContextService = mock(ModelContextService.class);
+    private final ChatTurnService chatTurnService = mock(ChatTurnService.class);
 
     private final SubSessionResolver subSessionResolver;
     private final CallSubAgentTool tool;
@@ -82,9 +89,17 @@ class CallSubAgentSessionReuseTest {
 
         this.subSessionResolver = new SubSessionResolver(sessionRepository, modelContextService);
         SubAgentRequestFactory requestFactory = new SubAgentRequestFactory(null, modelService, settingsProvider, null);
+        com.summit.dp.tools.baseTools.sub_agent.delegation.DelegationSuspensionCard suspensionCard =
+                new com.summit.dp.tools.baseTools.sub_agent.delegation.DelegationSuspensionCard(registrar,
+                        new com.summit.dp.toolcall.application.convert.ToolCallConverter(new ObjectMapper()),
+                        toolCallEventPublisher, executionIdentity);
+        com.summit.dp.tools.baseTools.sub_agent.delegation.DelegationRecorder recorder =
+                new com.summit.dp.tools.baseTools.sub_agent.delegation.DelegationRecorder(
+                        publisher, chatTurnService, transcriptService);
         this.tool = new CallSubAgentTool(new ObjectMapper(), null, null, subAgent,
                 requestFactory, subSessionResolver, new SubAgentResultRenderer(),
-                publisher, registry, transcriptService, modelContextService, sessionRepository);
+                registry, modelContextService, sessionRepository,
+                suspensionCard, recorder);
     }
 
     private ToolExecution toolExecution() {
@@ -96,6 +111,7 @@ class CallSubAgentSessionReuseTest {
                 ExecutionAttributes.AGENT_ID, String.valueOf(CHILD_AGENT_ID),
                 ExecutionAttributes.TEAM_ID, "3",
                 ExecutionAttributes.SESSION_ID, String.valueOf(ROOT_SESSION_ID)));
+        when(execution.getEventMetaData()).thenReturn(Map.of("turnId", "9001"));
         return execution;
     }
 
@@ -125,7 +141,7 @@ class CallSubAgentSessionReuseTest {
 
     private void stubRootSession() {
         when(sessionRepository.findById(ROOT_SESSION_ID))
-                .thenReturn(Optional.of(Session.builder().id(ROOT_SESSION_ID).tokenUsage(TokenUsage.empty()).build()));
+                .thenReturn(Optional.of(Session.builder().id(ROOT_SESSION_ID).build()));
     }
 
     private ToolExecuteResult invokeExecuteChild(ToolExecution toolExecution, CallSubAgentToolArgument argument) {
@@ -138,12 +154,13 @@ class CallSubAgentSessionReuseTest {
     @Test
     @DisplayName("命中已有子会话：复用其 id、不新建 session 行、把历史交给子 Agent")
     void reusesExistingSubSessionWithoutCreatingAnother() {
+        when(chatTurnService.acceptTurn(anyLong(), any(), any(), any(), any())).thenReturn(9002L);
         when(registry.registerChild(anyLong(), anyLong(), any())).thenReturn(true);
         stubRootSession();
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID))
                 .thenReturn(Optional.of(Session.builder().id(EXISTING_SUB_SESSION_ID)
                         .rootSessionId(ROOT_SESSION_ID).agentId(CHILD_AGENT_ID)
-                        .name("架构师").tokenUsage(TokenUsage.empty()).build()));
+                        .name("架构师").build()));
 
         List<Message> prior = new ArrayList<>(List.of(UserMessageEntity.from("上次的任务")));
         when(modelContextService.find(EXISTING_SUB_SESSION_ID)).thenReturn(Optional.of(prior));
@@ -167,10 +184,14 @@ class CallSubAgentSessionReuseTest {
         assertEquals(2, delivered.size(), "应为「既有历史 + 本次任务」");
         assertTrue(delivered.get(0).text().contains("上次的任务"));
         assertTrue(delivered.get(1).text().contains("再评估一下上次的方案"));
+        assertEquals(Map.of("sessionId", "555", "turnId", "9002", "parentTurnId", "9001"),
+                requestCaptor.getValue().runtimeParametersOrDefault().getEventMetaData());
+        verify(chatTurnService).acceptTurn(eq(EXISTING_SUB_SESSION_ID), eq(9001L), any(), any(), any());
+        verify(chatTurnService, never()).findByExecutionId(any());
 
         // 4) 映射事件必须发（前端据此建立路由并把工具调用挂到子会话按钮）
         verify(publisher).publish(eq("turn-1"), eq(ROOT_SESSION_ID),
-                eq(String.valueOf(EXISTING_SUB_SESSION_ID)), eq(CHILD_AGENT_ID), any(), eq("call-1"));
+                eq(String.valueOf(EXISTING_SUB_SESSION_ID)), eq(CHILD_AGENT_ID), any(), any(), eq("call-1"));
         // 5) 新任务落 transcript
         verify(transcriptService).appendUser(eq(EXISTING_SUB_SESSION_ID), any(), any());
         // 6) 收尾仍要把上下文快照写回子会话
@@ -213,7 +234,7 @@ class CallSubAgentSessionReuseTest {
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID))
                 .thenReturn(Optional.of(Session.builder().id(EXISTING_SUB_SESSION_ID)
                         .rootSessionId(ROOT_SESSION_ID).agentId(CHILD_AGENT_ID)
-                        .name("架构师").tokenUsage(TokenUsage.empty()).build()));
+                        .name("架构师").build()));
         when(modelContextService.find(EXISTING_SUB_SESSION_ID)).thenReturn(Optional.empty());
 
         Execution done = completed("好的");
@@ -254,7 +275,7 @@ class CallSubAgentSessionReuseTest {
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID))
                 .thenReturn(Optional.of(Session.builder().id(EXISTING_SUB_SESSION_ID)
                         .rootSessionId(ROOT_SESSION_ID).agentId(CHILD_AGENT_ID)
-                        .name("架构师").tokenUsage(TokenUsage.empty()).build()));
+                        .name("架构师").build()));
         when(modelContextService.find(EXISTING_SUB_SESSION_ID)).thenReturn(Optional.empty());
         Execution done = completed("好的");
         when(subAgent.execute(any(AgentRequest.class))).thenReturn(done);
@@ -279,5 +300,44 @@ class CallSubAgentSessionReuseTest {
         ToolExecuteResult result = invokeExecuteChild(toolExecution(), argument());
 
         assertTrue(result.getToolOutput().contains("最终答复：方案是 A"));
+    }
+
+    @Test
+    @DisplayName("子执行挂起：父执行以 PROMISE 槽位同步挂起，登记 DELEGATION 卡并按根会话推送")
+    void suspendsParentWhenChildSuspended() {
+        when(registry.registerChild(anyLong(), anyLong(), any())).thenReturn(true);
+        stubRootSession();
+        when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID))
+                .thenReturn(Optional.empty());
+        when(modelContextService.find(anyLong())).thenReturn(Optional.empty());
+
+        Execution suspended = mock(Execution.class);
+        when(suspended.getExecutionState()).thenReturn(ExecutionState.SUSPENDED);
+        when(suspended.getMessages()).thenReturn(List.of());
+        when(subAgent.execute(any(AgentRequest.class))).thenReturn(suspended);
+        when(executionIdentity.rootSessionIdOfSession(ROOT_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
+
+        ToolExecution execution = toolExecution();
+        // ToolDefinition 是 record（final），不能 mock —— 用真实实例，executor 恒不触达
+        com.summit.core.tool.ToolDefinition<?> definition = com.summit.core.tool.ToolDefinition.builder()
+                .maxOutput(1000).timeout(60L)
+                .executor(mock(com.summit.core.tool.ToolExecutor.class))
+                .id("call_sub_agent").name("call_sub_agent")
+                .build();
+        org.mockito.Mockito.doReturn(definition).when(execution).getToolDefinition();
+
+        ToolExecuteResult result = invokeExecuteChild(execution, argument());
+
+        assertTrue(result.isPromise(), "挂起分支必须返回 promise，让父执行同步挂起而非提前收尾");
+        ArgumentCaptor<com.summit.dp.toolcall.application.command.ToolCallRegisterCommand> command =
+                ArgumentCaptor.forClass(com.summit.dp.toolcall.application.command.ToolCallRegisterCommand.class);
+        verify(registrar).registerPromise(command.capture());
+        assertEquals(com.summit.dp.toolcall.domain.model.ToolCallKind.DELEGATION, command.getValue().kind());
+        assertEquals(String.valueOf(ROOT_SESSION_ID), String.valueOf(command.getValue().conversationId()));
+        assertTrue(command.getValue().content().contains("\"subSessionId\""),
+                "卡片载荷必须带 subSessionId，供子执行终态回填时匹配槽位");
+        verify(toolCallEventPublisher).publish(eq(ROOT_SESSION_ID), any());
+        // 挂起路径同样要解除登记
+        verify(registry).unregisterChild(eq(ROOT_SESSION_ID), anyLong());
     }
 }

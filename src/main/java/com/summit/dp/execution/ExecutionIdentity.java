@@ -58,17 +58,19 @@ public class ExecutionIdentity {
         return session.isSubSession() ? session.getRootSessionId() : sessionId;
     }
 
-    /** 会话下最近一次被暂停的执行标识，用于恢复入口。 */
+    /**
+     * 会话下最近一次被暂停的执行标识，用于恢复入口；没有挂起执行返回 {@code null}。
+     *
+     * <p>「无可恢复的执行」是正常业务状态（用户对空闲会话点了恢复），不是系统错误 ——
+     * 返回 null 交由调用方决定呈现方式，不在这里抛异常把业务失败顶成 500。</p>
+     */
     public String latestSuspendedExecutionId(long sessionId) {
         List<ExecutionPO> list = executionMapper.selectList(Wrappers.<ExecutionPO>lambdaQuery()
                 .eq(ExecutionPO::getSessionId, sessionId)
                 .eq(ExecutionPO::getStatus, STATUS_SUSPENDED)
                 .orderByDesc(ExecutionPO::getId)
                 .last("LIMIT 1"));
-        if (list.isEmpty()) {
-            throw new IllegalStateException("No suspended execution for session: " + sessionId);
-        }
-        return String.valueOf(list.getFirst().getId());
+        return list.isEmpty() ? null : String.valueOf(list.getFirst().getId());
     }
 
     /** 会话下仍在生命周期内（创建/运行/暂停）的执行标识，用于取消与中断。 */

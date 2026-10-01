@@ -6,8 +6,7 @@ import { AgentAPI } from './agent';
 import { TeamAPI } from './team';
 import { ToolCallAPI } from './toolCall';
 import { ApiError, classifyResult } from './interceptor';
-import { parseSessionMessages } from '../utils/session';
-import { extractErrorMessage } from '../utils/error';
+import { aggregateSessionMessages } from '../utils/session';
 import { isOk } from '../utils/api';
 import { createLocalId, createTempSessionId, toServerSessionId } from '../utils/ids';
 import { extractDirName } from '../utils/path';
@@ -31,7 +30,8 @@ import type {
   SubSessionVO,
   AgentVO,
   ToolCallVO,
-  ExecutionSummary
+  ChatTurn,
+  SessionMessageVO
 } from '../types/chat';
 
 /**
@@ -104,7 +104,17 @@ export const chatApi = {
      * `activeStreamOwnerSessionId` 置空，而那份快照有 3 个读取点（被中止原流的 onFinish、
      * 原流 finally 会清空、路由守卫），跨流复用它会让「对账时机」与「归属是否被清空」都变成竞态。</p>
      */
-    routeSessionEvent?: (event: AgentStreamEvent, ownerRootSessionId?: string) => boolean
+    routeSessionEvent?: (event: AgentStreamEvent, ownerRootSessionId?: string) => boolean,
+    /**
+     * 流真正终局时回调一次（正常结束 / 中途异常 / abort 均含）；建流前校验失败的 reject 路径**不**回调。
+     *
+     * <p>存在理由：本方法在流建立（首个事件）时即 resolve，此后恢复执行的事件循环仍在后台
+     * 消费直至终态。调用方（useChatView 的 decideToolCall provide）依赖 `activeStreamCount > 0`
+     * 压制会话级 SSE 流的防重渲染守卫——若调用方在自己的 finally 里回收计数，守卫会在恢复期
+     * 中途失效，同一批事件被 decide 流与会话级流各渲染一遍（子会话思考/正文逐字双写）。
+     * 因此「活跃流计数」的回收必须挂在本回调上；reject 路径由调用方在 catch 里自行回收。</p>
+     */
+    onSettled?: () => void
   ): Promise<boolean> {
     const streamStartTime = Date.now();
     const botMsgId = createLocalId('msg-bot-resume');
@@ -158,6 +168,15 @@ export const chatApi = {
       }
     };
 
+    // onSettled 恰好一次：仅在流建立后的终局路径回调（正常结束 / 中途异常 / abort）；
+    // 建流前 reject 的两条路径不回调，计数回收由调用方 catch 负责。
+    let settleNotified = false;
+    const notifySettled = () => {
+      if (settleNotified) return;
+      settleNotified = true;
+      onSettled?.();
+    };
+
     return new Promise<boolean>((resolve, reject) => {
       void (async () => {
         try {
@@ -208,6 +227,7 @@ export const chatApi = {
           settleComplete();
           onProgress({ ...botMessage });
           onFinish?.();
+          notifySettled();
         } catch (err: any) {
           if (!streamEstablished) {
             // 建流前的校验失败（互动/执行不存在等）：如实抛给调用方展示
@@ -217,13 +237,16 @@ export const chatApi = {
           if ((err instanceof DOMException && err.name === 'AbortError') || signal?.aborted) {
             settleComplete();
             onProgress({ ...botMessage });
+            notifySettled();
             return;
           }
-          // 流中途异常：把气泡置为失败态，不再向上抛（决策已落库，不能让卡片回退到待审）
-          botMessage.executionError = extractErrorMessage(err?.message || err) || '恢复执行流中断';
+          // 流中途异常：把气泡收尾为完成态，不再向上抛（决策已落库，不能让卡片回退到待审）。
+          // 失败原因不再写进消息：轮次落库后由 turns[turnId].status/errorReason 权威呈现。
+          console.error('[decideToolCall] 恢复执行流中断:', err);
           settleComplete();
           onProgress({ ...botMessage });
           onFinish?.();
+          notifySettled();
         }
       })();
     });
@@ -419,7 +442,7 @@ export const chatApi = {
   },
 
   /**
-   * 按 ID 查询单个会话元数据（包含 totalTokens, inputTokens, outputTokens 等）
+   * 按 ID 查询单个会话元数据
    * 对应后端 @GetMapping("/{id}")
    */
   async fetchSessionMeta(id: string | number): Promise<FetchResult<SessionVO>> {
@@ -443,8 +466,8 @@ export const chatApi = {
    * 按游标分页拉取会话消息历史
    * 对应后端 @GetMapping("/{id}/messages")
    *
-   * <p>返回值除 messages 外还透出本页的 executions 摘要字典（键 = executionId）：每条消息的
-   * executionId 已由 {@link parseSessionMessages} 落到 ChatMessage 上，调用方据此把
+   * <p>返回值除 messages 外还透出本页的 turns 摘要字典（键 = turnId）：每条消息的
+   * turnId 已由 {@link parseSessionMessages} 落到 ChatMessage 上，调用方据此把
    * token / 模型 / 耗时 / 状态绑定到回答组。</p>
    */
   async fetchSessionMessages(
@@ -452,8 +475,9 @@ export const chatApi = {
     cursor?: string | null,
     size = 50
   ): Promise<FetchResult<{
+    records: SessionMessageVO[];
     messages: ChatMessage[];
-    executions: Record<string, ExecutionSummary>;
+    turns: Record<string, ChatTurn>;
     nextCursor: string | null;
     hasMore: boolean;
   }>> {
@@ -461,13 +485,14 @@ export const chatApi = {
       const res = await SessionAPI.messages(id, cursor, size);
       if (isOk(res.code) && res.data) {
         const page = res.data;
-        const parsedMsgs = parseSessionMessages(page.records, String(id));
+        const parsedMsgs = aggregateSessionMessages(page.records, String(id));
         return {
           ok: true,
           data: {
+            records: page.records ?? [],
             messages: parsedMsgs,
-            // 无执行时后端返回 {} 或缺失 —— 统一归一为 {}，调用方按「无摘要」处理（≠ 用量为 0）
-            executions: page.executions ?? {},
+            // 无轮次时后端返回 {} 或缺失 —— 统一归一为 {}，调用方按「无摘要」处理（≠ 用量为 0）
+            turns: page.turns ?? {},
             nextCursor: page.nextCursor ?? null,
             hasMore: Boolean(page.hasMore)
           }
@@ -475,7 +500,7 @@ export const chatApi = {
       }
       if (isOk(res.code)) {
         // code 成功但无 data：按空页处理（不是失败）
-        return { ok: true, data: { messages: [], executions: {}, nextCursor: null, hasMore: false } };
+        return { ok: true, data: { records: [], messages: [], turns: {}, nextCursor: null, hasMore: false } };
       }
       return { ok: false, error: describeFetchFailure(classifyResult(res)) };
     } catch (err) {
@@ -610,8 +635,8 @@ export const chatApi = {
       }
 
       // 注意：不再把「会话累计 Token」回填到最后一条回答气泡上。
-      // 会话累计用量只在会话级位置展示；回答气泡的用量/耗时一律来自该执行自身的 executions 摘要，
-      // 否则同一份累计值会被挂到某一条回答上，刷新/分页后错位且掩盖了「本执行未采集」的事实。
+      // 会话累计用量只在会话级位置展示；回答气泡的用量/耗时一律来自该轮次自身的 turns 摘要，
+      // 否则同一份累计值会被挂到某一条回答上，刷新/分页后错位且掩盖了「本轮次未采集」的事实。
 
       return {
         ok: true,
@@ -625,16 +650,17 @@ export const chatApi = {
           activeTools: [],
           workspaceId: meta?.workspaceId !== undefined && meta?.workspaceId !== null ? String(meta.workspaceId) : undefined,
           workDir: meta?.workDir,
-          // 会话级累计用量（仅用于会话列表/头部展示，不回填到任何消息）
-          totalTokens: meta?.totalTokens,
-          inputTokens: meta?.inputTokens,
-          outputTokens: meta?.outputTokens,
           agentId: meta?.agentId,
           rootSessionId: meta?.rootSessionId,
           subSessions: enrichedSubSessions,
           messages: messages,
-          // 首屏执行摘要表：回答组的 token/模型/耗时/状态来源
-          executions: pageResult.executions,
+          rawRecords: pageResult.records,
+          // 上下文用量快照（root 来自 tree.root 的会话表快照）：供指示器在无事件空窗展示
+          contextTokenCount: meta?.contextTokenCount ?? null,
+          contextMaxTokens: meta?.contextMaxTokens ?? null,
+          contextRatio: meta?.contextRatio ?? null,
+          // 首屏轮次摘要表：回答组的 token/模型/耗时/状态来源
+          turns: pageResult.turns,
           hasMoreMessages: pageResult.hasMore,
           nextMessageCursor: pageResult.nextCursor
         }
@@ -857,8 +883,7 @@ export const chatApi = {
       if (!botMessage.durationMs) {
         botMessage.durationMs = Math.max(Date.now() - streamStartTime, 1000);
       }
-      const cleanErr = extractErrorMessage(err?.message || err) || '与后端 Agent 服务通信异常';
-      botMessage.executionError = cleanErr;
+      // 失败原因不再写进消息：轮次落库后由 turns[turnId].status/errorReason 权威呈现。
       onProgress({ ...botMessage });
       onFinish?.();
       throw err;

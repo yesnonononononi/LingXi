@@ -39,7 +39,8 @@ public class McpPO {
     private String command;
     /** JSON 对象字符串，如 {"GITHUB_TOKEN":"xxx"}；仅 stdio 传输 */
     private String env;
-    private String toolNamePrefix;
+    /** 服务描述，随提示词下发给模型；由业务用户填写 */
+    private String description;
     /** 初始化超时，毫秒 */
     private Long initializationTimeout;
     /** 执行超时，毫秒 */

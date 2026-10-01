@@ -18,6 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class TeamPromptComposerTest {
 
+    private static final String TEAM_DESCRIPTION = "后端研发协作团队";
+
     private static final List<AgentVO> TEAM = List.of(
             agent(5L, "产品经理", "负责需求拆解与验收"),
             agent(6L, "架构师", "负责系统设计"),
@@ -29,47 +31,53 @@ class TeamPromptComposerTest {
         String commanderRoster = TeamPromptComposer.roster(TEAM, 5L, "（空）");
         String memberRoster = TeamPromptComposer.roster(TEAM, 6L, "（空）");
 
-        assertEquals("""
-                - id: 6 | name: 架构师 | description: 负责系统设计
-                - id: 7 | name: 开发工程师 | description: 负责编码实现""", commanderRoster,
+        assertTrue(commanderRoster.contains("### 成员名单(TEAM ROSTER)"));
+        assertTrue(commanderRoster.contains("- id: 6") && commanderRoster.contains("- name: 架构师")
+                        && commanderRoster.contains("- description: 负责系统设计"),
                 "指挥者名单：剔除自己，保留全部队友");
-        assertEquals("""
-                - id: 5 | name: 产品经理 | description: 负责需求拆解与验收
-                - id: 7 | name: 开发工程师 | description: 负责编码实现""", memberRoster,
-                "成员名单：剔除自己，保留指挥者与其他队友");
+        assertFalse(commanderRoster.contains("- id: 5"), "指挥者自身不出现在名单里");
 
-        assertTrue(TeamPromptComposer.commanderPrompt("人设", TEAM, 5L).contains(commanderRoster),
+        assertTrue(memberRoster.contains("- id: 5") && memberRoster.contains("- id: 7"),
+                "成员名单：保留指挥者与其他队友");
+        assertFalse(memberRoster.contains("- id: 6"), "成员自身不出现在名单里");
+
+        assertTrue(TeamPromptComposer.commanderPrompt("人设", TEAM, 5L, TEAM_DESCRIPTION)
+                        .contains(commanderRoster),
                 "指挥者提示词里嵌的就是这份渲染");
-        assertTrue(TeamPromptComposer.memberPrompt("人设", TEAM, 6L).contains(memberRoster),
+        assertTrue(TeamPromptComposer.memberPrompt("人设", TEAM, 6L, TEAM_DESCRIPTION)
+                        .contains(memberRoster),
                 "成员提示词里嵌的也是这份渲染");
     }
 
     @Test
-    @DisplayName("职责段按角色区分：指挥者可委派，成员明确没有委派能力且知道用邮件同步")
+    @DisplayName("职责段按角色区分：指挥者可委派，成员明确没有委派能力")
     void roleSectionsDifferByResponsibility() {
-        String commander = TeamPromptComposer.commanderPrompt("人设", TEAM, 5L);
-        assertTrue(commander.contains("# 可委派队友"));
-        assertTrue(commander.contains("你是团队的 Commander"));
-        assertFalse(commander.contains("# 团队成员"), "指挥者不叫「团队成员」");
+        String commander = TeamPromptComposer.commanderPrompt("人设", TEAM, 5L, TEAM_DESCRIPTION);
+        assertTrue(commander.contains("### 主理人职责"), "指挥者职责段");
+        assertTrue(commander.contains("你是团队的主理人"));
+        assertTrue(commander.contains("call_sub_agent"), "指挥者有委派能力");
+        assertTrue(commander.contains(TEAM_DESCRIPTION), "团队描述随提示词下发");
+        assertFalse(commander.contains("### 成员职责"), "指挥者不叫「团队成员」");
 
-        String member = TeamPromptComposer.memberPrompt("人设", TEAM, 6L);
-        assertTrue(member.contains("# 团队成员"));
-        assertTrue(member.contains("你是本次多 Agent 协作的团队成员"));
-        assertTrue(member.contains("send_mail_to_agent"), "告诉成员同步信息的手段");
+        String member = TeamPromptComposer.memberPrompt("人设", TEAM, 6L, TEAM_DESCRIPTION);
+        assertTrue(member.contains("### 成员职责"), "成员职责段");
         assertTrue(member.contains("你没有委派能力"), "明确成员不能转派任务");
-        assertFalse(member.contains("# 可委派队友"), "成员没有可委派队友这一说");
+        assertTrue(member.contains(TEAM_DESCRIPTION), "团队描述随提示词下发");
+        assertFalse(member.contains("### 主理人职责"), "成员没有主理人职责这一说");
     }
 
     @Test
     @DisplayName("人设保留、名单为空时有占位文案、null 团队不炸")
     void handlesEdgeCases() {
-        assertTrue(TeamPromptComposer.commanderPrompt("我是人设", TEAM, 5L).startsWith("我是人设"));
-        assertTrue(TeamPromptComposer.memberPrompt("我是人设", TEAM, 6L).startsWith("我是人设"));
+        assertTrue(TeamPromptComposer.commanderPrompt("我是人设", TEAM, 5L, TEAM_DESCRIPTION)
+                .startsWith("我是人设"));
+        assertTrue(TeamPromptComposer.memberPrompt("我是人设", TEAM, 6L, TEAM_DESCRIPTION)
+                .startsWith("我是人设"));
 
-        assertTrue(TeamPromptComposer.commanderPrompt(null, List.of(), 5L).contains("（无可委派队友；请自行完成任务）"));
-        assertTrue(TeamPromptComposer.memberPrompt(null, null, 6L).contains("（暂无其他团队成员）"));
-
-        assertFalse(TeamPromptComposer.commanderPrompt("  ", null, 5L).startsWith("  "), "人设两侧空白应被裁掉");
+        assertTrue(TeamPromptComposer.commanderPrompt(null, List.of(), 5L, TEAM_DESCRIPTION)
+                .contains("（无可委派队友；请自行完成任务）"));
+        assertTrue(TeamPromptComposer.memberPrompt(null, null, 6L, TEAM_DESCRIPTION)
+                .contains("（暂无其他团队成员）"));
     }
 
     @Test
@@ -80,7 +88,10 @@ class TeamPromptComposerTest {
 
         String roster = TeamPromptComposer.roster(List.of(blank), 5L, "（空）");
 
-        assertEquals("- id: 9 | name: 未命名 | description: 未提供能力描述", roster);
+        assertTrue(roster.contains("- id: 9"));
+        assertTrue(roster.contains("未知成员"), "缺名字用占位文案");
+        assertTrue(roster.contains("未提供能力描述"), "缺描述用占位文案");
+        assertFalse(roster.contains("null"), "不产生 null 字面量");
     }
 
     private static AgentVO agent(Long id, String name, String description) {

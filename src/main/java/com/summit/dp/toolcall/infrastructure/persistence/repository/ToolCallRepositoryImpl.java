@@ -14,8 +14,10 @@ import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Repository;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * {@code tool_call} 表仓储实现。
@@ -34,7 +36,11 @@ public class ToolCallRepositoryImpl
     @Override
     public List<ToolCall> listByIds(Collection<String> ids) {
         if (ids == null || ids.isEmpty()) return List.of();
-        return toolCallMapper.selectByIds(ids).stream().map(this::toModel).toList();
+        return toolCallMapper.selectList(new LambdaQueryWrapper<ToolCallPO>()
+                .in(ToolCallPO::getId, ids)
+                .eq(ToolCallPO::getStatus, ToolCallStatus.PENDING.dbValue())
+                .orderByAsc(ToolCallPO::getId)
+        ).stream().map(this::toModel).collect(Collectors.toCollection(ArrayList::new));
     }
 
     @Override
@@ -137,7 +143,9 @@ public class ToolCallRepositoryImpl
                 .build();
     }
 
-    /** 统一按 created_at 升序（再按 id 兜底），供「取最近一条」等语义使用。 */
+    /**
+     * 统一按 created_at 升序（再按 id 兜底），供「取最近一条」等语义使用。
+     */
     private List<ToolCall> orderByCreatedAt(LambdaQueryWrapper<ToolCallPO> wrapper) {
         return toolCallMapper.selectList(wrapper
                         .orderByAsc(ToolCallPO::getCreatedAt)

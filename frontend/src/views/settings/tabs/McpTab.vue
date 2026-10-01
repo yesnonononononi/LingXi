@@ -95,7 +95,7 @@ const {
         <div
           v-for="item in mcpList"
           :key="item.id"
-          class="p-3.5 rounded-xl border transition-all"
+          class="px-4 py-3.5 rounded-2xl border transition-all"
           :class="[
             isDark
               ? 'bg-[#151c2c] border-[#252f44] hover:border-gray-700'
@@ -145,6 +145,11 @@ const {
                 </span>
               </div>
 
+              <!-- 服务描述：随提示词下发给模型，让模型判断该服务是否相关 -->
+              <p v-if="item.description" class="text-xs text-gray-600 dark:text-gray-300 mt-1 break-words">
+                {{ item.description }}
+              </p>
+
               <!-- 连接信息：http 系显示端点，stdio 显示启动命令 -->
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 break-all font-mono">
                 {{ connectionLabelOf(item) }}
@@ -156,9 +161,6 @@ const {
                 </span>
                 <span v-if="envCountOf(item) > 0">
                   {{ envCountOf(item) }} 个环境变量
-                </span>
-                <span v-if="item.toolNamePrefix">
-                  前缀 {{ item.toolNamePrefix }}
                 </span>
                 <span v-if="item.executionTimeout">
                   超时 {{ Math.round(item.executionTimeout / 1000) }}s
@@ -369,18 +371,19 @@ const {
         </p>
       </div>
 
-      <!-- 工具名前缀 -->
+      <!-- 服务描述：随提示词下发给模型（每服务一行），由业务用户填写 -->
       <div class="space-y-1.5">
         <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
-          工具名前缀
-          <span class="text-gray-400 dark:text-gray-500 font-normal">（可留空，默认用服务名）</span>
+          服务描述
+          <span class="text-gray-400 dark:text-gray-500 font-normal">（可选，最多 200 字；会随提示词下发给模型）</span>
         </label>
         <input
-          v-model="mcpForm.toolNamePrefix"
+          v-model="mcpForm.description"
           type="text"
-          placeholder="如 gh_"
+          maxlength="200"
+          placeholder="如：GitHub 仓库、Issue 与 PR 的读写工具"
           :class="[
-            'w-full px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
+            'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
             isDark
               ? 'bg-[#151c2c] border-[#252f44] text-gray-100 placeholder-gray-600 focus:border-blue-500'
               : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'

@@ -113,9 +113,6 @@ export function useSubSessionRouting(options: SubSessionRoutingOptions) {
         } else if (event.type === 'EXECUTION_COMPLETED') {
           sub.runStatus = 'IDLE';
           sub.lastOutcome = 'COMPLETED';
-          if (event.tokenInfo?.totalTokenCount != null) sub.totalTokens = event.tokenInfo.totalTokenCount;
-          if (event.tokenInfo?.inputTokenCount != null) sub.inputTokens = event.tokenInfo.inputTokenCount;
-          if (event.tokenInfo?.outputTokenCount != null) sub.outputTokens = event.tokenInfo.outputTokenCount;
         } else if (event.type === 'EXECUTION_FAILED') {
           sub.runStatus = 'IDLE';
           sub.lastOutcome = 'FAILED';
@@ -194,6 +191,9 @@ export function useSubSessionRouting(options: SubSessionRoutingOptions) {
         }
         const tree = treeRes.data;
         if (String(tree.rootSessionId) !== rootSessionId) return;
+        // 会话树返回的上下文用量快照随路由刷新种入（子会话 Metric；仅无数据时写入，不覆盖 live 值）。
+        const seedStore = useChatSessionStore();
+        tree.subSessions.forEach(sub => seedStore.seedContextUsage(sub.id, sub));
         tree.subSessions.forEach(updateSubSession);
         tree.subSessions.forEach(sub => flushPendingSubSessionEvents(String(sub.id)));
       } finally {

@@ -1,6 +1,7 @@
 package com.summit.dp.agent.application.service.impl;
 
 import com.summit.core.agent.Execution;
+import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.ddd.application.vo.Result;
@@ -15,7 +16,10 @@ import com.summit.dp.shared.event.SseEventPublisher;
 import com.summit.dp.shared.utils.RequestPreparer;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.SessionAttributeRestorer;
+import com.summit.dp.execution.application.service.ExecutionQueryService;
 import com.summit.dp.execution.application.service.ExecutionRegistrationService;
+import com.summit.dp.turn.application.service.ChatTurnService;
+import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.shared.exception.ClientException;
 import java.util.List;
@@ -25,6 +29,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.concurrent.CompletableFuture;
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -56,10 +61,13 @@ public class ChatServiceImpl implements ChatService {
      * 不从「会话最新执行」反查 —— 并发下那必然认错执行。
      */
     private final ExecutionRegistrationService executionRegistrationService;
+    private final ChatTurnService chatTurnService;
+    private final ExecutionQueryService executionQueryService;
 
     @Override
     public Result<String> chat(ChatCommand command) {
         RuntimeContext context = requestPreparer.prepare(command);
+        guardNotSuspended(context.executionContext().rootSessionId());
         // 单飞校验前置到请求线程，且**先于用户消息落库**：冲突时执行尚未开始，
         // 用户消息也还没写进历史，不会留下「有提问、无执行、无错误」的孤行。
         sessionExecutionRegistry.beginRoot(context.executionContext().rootSessionId());
@@ -88,6 +96,10 @@ public class ChatServiceImpl implements ChatService {
     public SseEmitter chatStream(ChatCommand command) {
         // HC-2：先 resolve 出确定的会话身份，再注册运行与订阅事件。
         RuntimeContext context = requestPreparer.prepare(command);   // 内含建会话，sessionId 一定非 null
+
+        // 挂起防护：会话还有挂起中的执行（等待子代理审批 / 人工决策）时不允许开新一轮 ——
+        // 否则旧执行的委派槽位永远悬空，审批落定后还会出现两个并发的根执行。
+        guardNotSuspended(context.executionContext().rootSessionId());
 
         // 单飞校验前置：必须在建立 emitter / 订阅事件 / 落库用户消息之前，校验失败直接抛
         // ClientException，不建立任何 SSE 连接；否则第一个请求已建流之后才冲突，语义与体验都不对。
@@ -125,7 +137,7 @@ public class ChatServiceImpl implements ChatService {
             // 运行资格已经拿到（调用方在进入本方法前调了 beginRoot），现在才把用户消息落库：
             // 顺序反了就会出现「消息已入库、执行被拒绝」的孤行。放在 try 内还保证了
             // 落库失败会走 finally 释放运行资格，不会把会话永久锁死在 RUNNING。
-            requestPreparer.commitUserMessage(context);
+            context = context.withTurnId(requestPreparer.commitUserMessage(context));
             if (context.teamId() != null) {
                 execution = agentWorkflowOrchestrator.executeWorkflow(context.teamId(), context);
             } else if (context.agentId() != null) {
@@ -163,6 +175,17 @@ public class ChatServiceImpl implements ChatService {
             log.warn("收口启动失败的执行时出错: executionId={}, cause={}, 收口失败原因={}",
                     executionId, cause.toString(), markFailure.toString());
         }
+        try {
+            // 轮次同样要收口：它在「受理」那一刻就落库了，若不收口会永远停在「已受理」，
+            // 而启动收尸钩子只会在**下次重启**时补 —— 这中间用户看到的是「已受理」，没有失败原因。
+            String executionIdText = String.valueOf(executionId);
+            chatTurnService.markTerminal(executionIdText, ChatTurnStatus.FAILED,
+                    null, null, null, Instant.now());
+            chatTurnService.recordFailureReason(executionIdText, cause.getMessage());
+        } catch (RuntimeException markFailure) {
+            log.warn("收口启动失败的轮次时出错: executionId={}, cause={}, 收口失败原因={}",
+                    executionId, cause.toString(), markFailure.toString());
+        }
     }
 
     @Override
@@ -196,8 +219,12 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
-    public Result<String> resume(Long sessionId) {
+    public synchronized Result<String> resume(Long sessionId) {
         String id = executionIdentity.latestSuspendedExecutionId(sessionId);
+        if (id == null) {
+            throw new ClientException("该会话没有可恢复的执行");
+        }
+
         // 未决卡片（pending PROMISE）优先：必须先经 /tool-call/decide 处理，再恢复。
         if (!toolCallRepository.listPendingByExecutionId(Long.valueOf(id)).isEmpty()) {
             throw new ClientException("请先处理待审批事项");
@@ -205,13 +232,19 @@ public class ChatServiceImpl implements ChatService {
         // 用 resume(Execution) 把实例直接交给 loop；resume(String) 是副本，禁用。
         Execution execution = executionRepository.findById(id)
                 .orElseThrow(() -> new ClientException("执行不存在: " + id));
+
+        if(execution.getExecutionState() != ExecutionState.SUSPENDED){
+            return Result.error("执行不可以恢复");
+        }
+
         // 恢复不经过 RequestPreparer，会话级业务属性不会被重新下发，必须先补齐再交给 loop。
         sessionAttributeRestorer.restore(execution, sessionId);
+
         // 交接通知由框架发布：resume(Execution) 内部触发 RuntimeLifeStyleManager#onResume，
-        // 该回调早于模型调用发出 EXECUTION_RESUMED，前端据此把会话切回执行态。
-        // 应用层因此不再自行发布恢复事件（此前自造的 ExecutionResumedEventPublisher 已移除）。
         Execution resumed = executionControl.resume(execution);
+
         modelContextService.replace(sessionId, resumed.getMessages());
+
         return Result.success(resumed.getMessages().toString());
     }
 
@@ -220,6 +253,19 @@ public class ChatServiceImpl implements ChatService {
             executionControl.cancel(executionId);
         } catch (IllegalStateException ignored) {
             // A session tree contains historical executions as well as the currently active ones.
+        }
+    }
+
+    /**
+     * 挂起防护：与前端展示的 {@code runStatus} 同一语义 —— 会话下任一执行仍处于 SUSPENDED
+     * （含「最新执行已终结、更早执行仍挂起」的组合）就拒绝开新一轮。恢复入口是审批卡片与
+     * {@code /resume}，不是再发一条消息。
+     */
+    private void guardNotSuspended(long rootSessionId) {
+        List<ExecutionState> states = executionQueryService.latestStatesBySession(List.of(rootSessionId))
+                .get(rootSessionId);
+        if (states != null && states.contains(ExecutionState.SUSPENDED)) {
+            throw new ClientException("会话有等待恢复的执行，请先处理待审批事项或恢复执行");
         }
     }
 

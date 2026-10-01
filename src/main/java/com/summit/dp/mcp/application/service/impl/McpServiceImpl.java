@@ -17,10 +17,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Collection;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Mcp 应用层服务实现。
@@ -129,7 +126,7 @@ public class McpServiceImpl implements McpService {
      * {@link McpConfig.Stdio}——switch 对枚举穷举，框架侧新增传输时这里编译期即报错。
      */
     private McpConfig.MCP toMCP(Mcp model) {
-        McpTransport transport = McpTransport.parse(model.getTransport());
+        McpTransport transport = McpTransport.parse(model.getTransport().toString());
         McpConfig.Conf conf = switch (transport) {
             case STREAMABLE_HTTP, SSE -> new McpConfig.StreamableHttp(
                     model.getUrl(),
@@ -142,21 +139,43 @@ public class McpServiceImpl implements McpService {
                     model.getInitializationTimeout(),
                     model.getExecutionTimeout());
         };
-        return new McpConfig.MCP(model.getName(), transport, conf,
-                model.getToolNamePrefix(), model.getMaxOutput());
+        return new McpConfig.MCP(
+                model.getName(),
+                model.getDescription(),
+                transport,
+                conf,
+                model.getMaxOutput());
+    }
+
+    /**
+     * 入参的传输方式是「线上形态」字符串（{@code streamable-http} / {@code sse} / {@code stdio}），
+     * 枚举常量名是下划线大写形态，直接 {@code valueOf} 取不到——先归一化再取。
+     * 非法值抛 {@link IllegalArgumentException}，与其他领域护栏同样是「请求非法」而非系统故障。
+     */
+    private Mcp.Transport parseTransport(String transport) {
+        return Mcp.Transport.valueOf(transport.trim().toUpperCase(Locale.ROOT).replace('-', '_'));
+    }
+
+    /**
+     * 枚举 → 线上形态（{@code streamable-http}）。
+     * <p>接口出参必须是形态值：前端按 {@code transport === 'stdio'} 判断 stdio 提示与表单分支，
+     * 枚举名（{@code STDIO}）会让这些判断全部落空。</p>
+     */
+    private String wireOf(Mcp.Transport transport) {
+        return transport.name().toLowerCase(Locale.ROOT).replace('_', '-');
     }
 
     /** 逐字段条件变更：只动显式传入的字段，缺省字段保持原值 */
     private void applyChanges(McpCommand command, Mcp model) {
         if (command.getName() != null) model.changeName(command.getName().trim());
-        if (command.getTransport() != null) model.changeTransport(command.getTransport().trim().toLowerCase());
+        if (command.getTransport() != null) model.changeTransport(parseTransport(command.getTransport()));
         if (command.getUrl() != null) model.changeUrl(command.getUrl().trim());
         if (command.getHeaders() != null)
             model.changeHeaders(mergeMaskedValues(command.getHeaders(), model.getHeaders()));
         if (command.getCommand() != null) model.changeCommand(command.getCommand());
         if (command.getEnv() != null)
             model.changeEnv(mergeMaskedValues(command.getEnv(), model.getEnv()));
-        if (command.getToolNamePrefix() != null) model.changeToolNamePrefix(command.getToolNamePrefix().trim());
+        if (command.getDescription() != null) model.changeDescription(command.getDescription().trim());
         if (command.getInitializationTimeout() != null)
             model.changeInitializationTimeout(Duration.ofMillis(command.getInitializationTimeout()));
         if (command.getExecutionTimeout() != null)
@@ -195,12 +214,12 @@ public class McpServiceImpl implements McpService {
         return McpVO.builder()
                 .id(model.getId())
                 .name(model.getName())
-                .transport(model.getTransport())
+                .transport(model.getTransport() == null ? null : wireOf(model.getTransport()))
                 .url(model.getUrl())
                 .headers(maskValues(model.getHeaders()))
                 .command(model.getCommand())
                 .env(maskValues(model.getEnv()))
-                .toolNamePrefix(model.getToolNamePrefix())
+                .description(model.getDescription())
                 .initializationTimeout(model.getInitializationTimeout() == null
                         ? null : model.getInitializationTimeout().toMillis())
                 .executionTimeout(model.getExecutionTimeout() == null
@@ -224,13 +243,12 @@ public class McpServiceImpl implements McpService {
         return Mcp.builder()
                 .id(command.getId())
                 .name(command.getName().trim())
-                .transport(command.getTransport() == null
-                        ? Mcp.TRANSPORT_STREAMABLE_HTTP : command.getTransport().trim().toLowerCase())
+                .transport(command.getTransport() == null ? Mcp.Transport.STREAMABLE_HTTP : parseTransport(command.getTransport()))
                 .url(command.getUrl() == null ? null : command.getUrl().trim())
                 .headers(command.getHeaders() == null ? Map.of() : command.getHeaders())
                 .command(command.getCommand())
                 .env(command.getEnv() == null ? Map.of() : command.getEnv())
-                .toolNamePrefix(command.getToolNamePrefix() == null ? null : command.getToolNamePrefix().trim())
+                .description(command.getDescription() == null ? null : command.getDescription().trim())
                 .initializationTimeout(command.getInitializationTimeout() == null
                         ? Mcp.DEFAULT_INITIALIZATION_TIMEOUT : Duration.ofMillis(command.getInitializationTimeout()))
                 .executionTimeout(command.getExecutionTimeout() == null

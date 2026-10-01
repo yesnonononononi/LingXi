@@ -1,7 +1,7 @@
 package com.summit.dp.agent.infrastructure.agent;
 
 import com.summit.core.conf.ModelConfig;
-import com.summit.core.mcp.McpRegister;
+import com.summit.core.mcp.ScopeMcpProvider;
 import com.summit.core.model.RequestModelInvokerFactory;
 import com.summit.core.runtime.RuntimeFactory;
 import com.summit.core.workspace.WorkspaceManager;
@@ -18,9 +18,9 @@ import com.summit.runtime.workspace.WorkspaceDestroyer;
 public class IChatAgent extends ChatAgent {
 
     /**
-     * 必须使用 5 参构造器并注入 {@link McpRegister}。
+     * 必须使用 5 参构造器并注入 {@link ScopeMcpProvider}。
      *
-     * <p>4 参构造器会把 {@code mcpRegister} 置为 {@code null}，导致
+     * <p>4 参构造器会把 {@code scopeMcpProvider} 置为 {@code null}，导致
      * {@code ChatAgent#openMcpScope} 恒走 {@code McpToolScope.EMPTY} 分支，
      * 请求级 MCP 工具全部无法注入且无任何日志提示。</p>
      */
@@ -28,8 +28,8 @@ public class IChatAgent extends ChatAgent {
                       RequestModelInvokerFactory modelInvokerFactory,
                       WorkspaceManager workspaceManager,
                       @Qualifier("chatModelConfig") ModelConfig modelConfig,
-                      McpRegister mcpRegister) {
-        super(defaultRuntimeFactory, modelInvokerFactory, workspaceManager, modelConfig, mcpRegister);
+                      ScopeMcpProvider scopeMcpProvider) {
+        super(defaultRuntimeFactory, modelInvokerFactory, workspaceManager, modelConfig, scopeMcpProvider);
     }
 
     @Override

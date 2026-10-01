@@ -5,10 +5,12 @@ import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.ToolMessageEntity;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.ExecutionEventMetadata;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Map;
 
 /** Persists only rounds accepted by ConversationManager; compaction never calls this sink. */
 @Component
@@ -18,13 +20,20 @@ public class DatabaseConversationTranscriptSink implements ConversationTranscrip
     private final ExecutionIdentity executionIdentity;
 
     /**
-     * 落一轮模型输出。会话与执行归属都从框架给的 {@code executionId} 解析：
-     * 同一执行的多轮输出因此挂在同一个 {@code execution_id} 上，前端按它分组，
-     * 用量与模型信息也按同一键对账。
+     * 落一轮模型输出。
+     *
+     * <p>轮次 ID 来自请求事件元数据。旧执行缺少元数据时归属未知，不反查、不猜测。</p>
      */
     @Override
     public void appendRound(String executionId, AiMessageEntity aiMessage, List<ToolMessageEntity> toolMessages) {
-        transcriptService.appendRound(executionIdentity.sessionId(executionId),
-                ExecutionIdentity.numericOrNull(executionId), aiMessage, toolMessages);
+        appendRound(executionId, aiMessage, toolMessages, Map.of());
+    }
+
+    @Override
+    public void appendRound(String executionId, AiMessageEntity aiMessage,
+                            List<ToolMessageEntity> toolMessages, Map<String, Object> eventMetaData) {
+        long sessionId = executionIdentity.sessionId(executionId);
+        transcriptService.appendRound(sessionId, ExecutionEventMetadata.turnId(eventMetaData),
+                aiMessage, toolMessages);
     }
 }

@@ -9,6 +9,8 @@ import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.agent.domain.repository.AgentRepository;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
+import com.summit.dp.turn.application.convert.ChatTurnConverter;
+import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -43,7 +45,8 @@ class SessionInitializeStatusTest {
     private SessionServiceImpl service() {
         return new SessionServiceImpl(aggregate, mock(WorkspaceService.class),
                 mock(SessionRepository.class), mock(SessionMessageQueryService.class),
-                mock(ExecutionQueryService.class), teamService, mock(AgentRepository.class));
+                mock(ExecutionQueryService.class), teamService, mock(AgentRepository.class),
+                mock(ChatTurnService.class), new ChatTurnConverter());
     }
 
     @Test

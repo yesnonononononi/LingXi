@@ -9,10 +9,11 @@ import com.summit.dp.session.application.service.SessionAggregateService;
 import com.summit.dp.session.application.service.SessionMessageQueryService;
 import com.summit.dp.session.application.service.impl.SessionServiceImpl;
 import com.summit.dp.session.domain.model.Session;
-import com.summit.dp.session.domain.model.TokenUsage;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.agent.domain.repository.AgentRepository;
 import com.summit.dp.shared.vo.SessionVO;
+import com.summit.dp.turn.application.convert.ChatTurnConverter;
+import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -48,7 +49,8 @@ class SessionViewRunStatusTest {
             mock(SessionRepository.class), mock(SessionMessageQueryService.class),
             executionQueryService,
             mock(com.summit.dp.team.application.service.TeamService.class),
-            mock(AgentRepository.class));
+            mock(AgentRepository.class),
+            mock(ChatTurnService.class), new ChatTurnConverter());
 
     @Test
     @DisplayName("tree 出参组合：无执行→IDLE、RUNNING、SUSPENDED、完成后→IDLE+COMPLETED")
@@ -191,7 +193,6 @@ class SessionViewRunStatusTest {
                 .id(id)
                 .rootSessionId(Session.ROOT_SESSION_ID)
                 .name("状态出参测试")
-                .tokenUsage(TokenUsage.empty())
                 .build();
     }
 }

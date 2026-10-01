@@ -18,6 +18,10 @@ import java.util.List;
  * <p><b>「暂停」不等于「失败」：</b>{@link ExecutionState#SUSPENDED} 表示子代理抛出了待人工审批的
  * 请求、正等人处理，任务并未失败。把它渲染成失败会让指挥者判定委派失败并**把同一件事重做一遍**；
  * 而父级的工具结果一旦落库就不可撤回，所以这一层必须自己把三种非完成态区分开。</p>
+ *
+ * <p><b>挂起分支如今是防御路径</b>：委派挂起的主路径已在 {@code CallSubAgentTool} promise 化
+ * （父执行以 DELEGATION 槽位同步挂起，子终态由回填监听器写入槽位文本）；本类只保留兜底渲染，
+ * 覆盖 promise 路径意外未生效时的场景。</p>
  */
 @Component
 public class SubAgentResultRenderer {

@@ -75,15 +75,16 @@ public class ExecutionRepositoryImpl extends AbstractRepository<Execution, Execu
      *
      * <p>用 LambdaQueryWrapper 的 select 而不是自定义 SQL —— MyBatis-Plus 会按
      * {@code @TableField} 生成实体 resultMap，列名映射因此不依赖全局驼峰开关。</p>
+     *
+     * <p>投影里只有框架自己的运行记录（状态 / 根执行归属 / 起止时间）；模型与 token
+     * 是业务事实，已不在本表，展示侧一律去 {@code chat_turn} 取。</p>
      */
     @Override
     public List<Execution> findSummariesByIds(Collection<Long> executionIds) {
         if (executionIds == null || executionIds.isEmpty()) return List.of();
         return mapper.selectList(new LambdaQueryWrapper<ExecutionPO>()
                         .select(ExecutionPO::getId, ExecutionPO::getSessionId, ExecutionPO::getStatus,
-                                ExecutionPO::getRootExecutionId, ExecutionPO::getModelName,
-                                ExecutionPO::getModelProvider, ExecutionPO::getInputTokenCount,
-                                ExecutionPO::getOutputTokenCount, ExecutionPO::getTotalTokenCount,
+                                ExecutionPO::getRootExecutionId,
                                 ExecutionPO::getStartedAt, ExecutionPO::getCompletedAt)
                         .in(ExecutionPO::getId, executionIds))
                 .stream().map(this::toModel).toList();

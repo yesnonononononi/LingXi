@@ -16,6 +16,7 @@ import org.springframework.stereotype.Repository;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -78,12 +79,12 @@ public class McpRepositoryImpl extends AbstractRepository<Mcp, McpPO, Long>
         return Mcp.builder()
                 .id(po.getId())
                 .name(po.getName())
-                .transport(po.getTransport())
+                .transport(Mcp.Transport.parse(po.getTransport()))
                 .url(po.getUrl())
                 .headers(parseStringMap(po.getHeaders()))
                 .command(parseCommand(po.getCommand()))
                 .env(parseStringMap(po.getEnv()))
-                .toolNamePrefix(po.getToolNamePrefix())
+                .description(po.getDescription())
                 .initializationTimeout(toDuration(po.getInitializationTimeout(), Mcp.DEFAULT_INITIALIZATION_TIMEOUT))
                 .executionTimeout(toDuration(po.getExecutionTimeout(), Mcp.DEFAULT_EXECUTION_TIMEOUT))
                 .maxOutput(po.getMaxOutput() == null ? Mcp.DEFAULT_MAX_OUTPUT : po.getMaxOutput())
@@ -93,17 +94,27 @@ public class McpRepositoryImpl extends AbstractRepository<Mcp, McpPO, Long>
                 .build();
     }
 
+
+
+    /**
+     * 枚举 → 库中形态（{@code streamable-http}）。
+     * <p>列默认值与既有数据都是形态值（见 {@code init.sql}），写枚举名会让同一列出现两种写法。</p>
+     */
+    private String wireOf(Mcp.Transport transport) {
+        return transport.name().toLowerCase(Locale.ROOT).replace('_', '-');
+    }
+
     @Override
     protected McpPO toPO(Mcp model) {
         return McpPO.builder()
                 .id(model.getId())
                 .name(model.getName())
-                .transport(model.getTransport())
+                .transport(wireOf(model.getTransport()))
                 .url(model.getUrl())
                 .headers(writeStringMap(model.getHeaders()))
                 .command(writeCommand(model.getCommand()))
                 .env(writeStringMap(model.getEnv()))
-                .toolNamePrefix(model.getToolNamePrefix())
+                .description(model.getDescription())
                 .initializationTimeout(model.getInitializationTimeout() == null
                         ? null : model.getInitializationTimeout().toMillis())
                 .executionTimeout(model.getExecutionTimeout() == null
@@ -119,7 +130,7 @@ public class McpRepositoryImpl extends AbstractRepository<Mcp, McpPO, Long>
     private Map<String, String> parseStringMap(String raw) {
         if (raw == null || raw.isBlank()) return Map.of();
         try {
-            Map<String, String> map = objectMapper.readValue(raw, new TypeReference<Map<String, String>>() {
+            Map<String, String> map = objectMapper.readValue(raw, new TypeReference<>() {
             });
             return map == null ? Map.of() : map;
         } catch (Exception e) {
@@ -132,7 +143,7 @@ public class McpRepositoryImpl extends AbstractRepository<Mcp, McpPO, Long>
     private List<String> parseCommand(String raw) {
         if (raw == null || raw.isBlank()) return List.of();
         try {
-            List<String> command = objectMapper.readValue(raw, new TypeReference<List<String>>() {
+            List<String> command = objectMapper.readValue(raw, new TypeReference<>() {
             });
             return command == null ? List.of() : command;
         } catch (Exception e) {

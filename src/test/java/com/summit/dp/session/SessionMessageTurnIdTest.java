@@ -20,51 +20,51 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * session_message 的执行归属列往返（2026-09-30 改造）。
+ * session_message 的业务轮次归属列往返（2026-10-01：归属彻底换成 turnId）。
  *
- * <p>这一列是前端「回答分组」与「元信息归属」的唯一稳定键，所以「写进去」和「读回来」
- * 都必须真的落到 PO 上；旧数据（该列为 NULL）必须原样读成 {@code null} 而不是报错或补 0。</p>
+ * <p>这一列是前端「回答分组」与「元信息归属」的唯一键，所以「写进去」和「读回来」
+ * 都必须真的落到 PO 上；旧数据（该列为 NULL）必须原样读成 {@code null} 而不是报错或补值。</p>
  */
-class SessionMessageExecutionIdTest {
+class SessionMessageTurnIdTest {
 
     private static final long SESSION_ID = 9L;
-    private static final long EXECUTION_ID = 5001L;
+    private static final long TURN_ID = 5001L;
 
     private final SessionMessageMapper mapper = mock(SessionMessageMapper.class);
     private final SessionMessageRepositoryImpl repository = new SessionMessageRepositoryImpl(mapper);
 
     @Test
-    @DisplayName("追加消息时把 executionId 写进 PO（而不是只留在领域对象里）")
-    void appendPersistsExecutionId() {
+    @DisplayName("追加消息时把 turnId 写进 PO（而不是只留在领域对象里）")
+    void appendPersistsTurnId() {
         repository.appendAll(SESSION_ID, List.of(SessionMessage.builder()
                 .id(1001L)
                 .sessionId(SESSION_ID)
-                .executionId(EXECUTION_ID)
+                .turnId(TURN_ID)
                 .type(SessionMessageType.USER)
                 .text("你好")
-                .createTime(Instant.parse("2026-09-30T10:00:00Z"))
+                .createTime(Instant.parse("2026-10-01T10:00:00Z"))
                 .build()));
 
         ArgumentCaptor<SessionMessagePO> inserted = ArgumentCaptor.forClass(SessionMessagePO.class);
         verify(mapper).insert(inserted.capture());
-        assertEquals(EXECUTION_ID, inserted.getValue().getExecutionId());
+        assertEquals(TURN_ID, inserted.getValue().getTurnId());
         assertEquals(SESSION_ID, inserted.getValue().getSessionId());
     }
 
     @Test
-    @DisplayName("读回来保留 executionId；旧数据（列为 NULL）读成 null，不报错也不补值")
-    void readsBackExecutionIdAndToleratesLegacyNull() {
-        SessionMessagePO withExecution = SessionMessagePO.builder()
-                .id(1001L).sessionId(SESSION_ID).executionId(EXECUTION_ID)
+    @DisplayName("读回来保留 turnId；旧数据（列为 NULL）读成 null，不报错也不补值")
+    void readsBackTurnIdAndToleratesLegacyNull() {
+        SessionMessagePO withTurn = SessionMessagePO.builder()
+                .id(1001L).sessionId(SESSION_ID).turnId(TURN_ID)
                 .type(SessionMessageType.AI.name()).content("{}").build();
         SessionMessagePO legacy = SessionMessagePO.builder()
-                .id(1002L).sessionId(SESSION_ID).executionId(null)
+                .id(1002L).sessionId(SESSION_ID).turnId(null)
                 .type(SessionMessageType.AI.name()).content("{}").build();
-        when(mapper.selectList(any())).thenReturn(List.of(withExecution, legacy));
+        when(mapper.selectList(any())).thenReturn(List.of(withTurn, legacy));
 
         List<SessionMessage> loaded = repository.findBySessionId(SESSION_ID);
 
-        assertEquals(EXECUTION_ID, loaded.get(0).getExecutionId());
-        assertNull(loaded.get(1).getExecutionId(), "旧数据归属未知必须是 null，不能伪造一个");
+        assertEquals(TURN_ID, loaded.get(0).getTurnId());
+        assertNull(loaded.get(1).getTurnId(), "旧数据归属未知必须是 null，不能伪造一个");
     }
 }

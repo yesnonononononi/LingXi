@@ -11,12 +11,10 @@ import com.summit.dp.session.application.service.SessionService;
 import com.summit.dp.session.application.service.SessionAggregateService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.SessionMessage;
-import com.summit.dp.session.domain.model.TokenUsage;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.application.service.SessionMessageQueryService;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.model.CursorResult;
-import com.summit.dp.shared.vo.ExecutionSummaryVO;
 import com.summit.dp.shared.vo.SessionMessagePageVO;
 import com.summit.dp.shared.vo.SessionMessageVO;
 import com.summit.dp.shared.vo.SessionTreeVO;
@@ -24,6 +22,10 @@ import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.shared.vo.WorkspaceVO;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
+import com.summit.dp.turn.application.convert.ChatTurnConverter;
+import com.summit.dp.turn.application.service.ChatTurnService;
+import com.summit.dp.turn.application.vo.ChatTurnVO;
+import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import com.summit.dp.agent.domain.model.Agent;
 import com.summit.dp.agent.domain.repository.AgentRepository;
@@ -66,6 +68,9 @@ public class SessionServiceImpl implements SessionService {
     /** 团队校验入口：换绑前确认目标团队存在，避免把会话挂到一个查不到的团队上。 */
     private final TeamService teamService;
     private final AgentRepository agentRepository;
+    /** 业务轮次读侧：历史接口按 executionId 批量反查轮次（一次 IN，不做 N+1）。 */
+    private final ChatTurnService chatTurnService;
+    private final ChatTurnConverter chatTurnConverter;
 
     @Override
     public Result<Long> initialize(String input, Long workspaceId, Long teamId) {
@@ -79,7 +84,6 @@ public class SessionServiceImpl implements SessionService {
                 // 首轮团队绑定；null=非团队会话。此后可经 bindTeam 换绑（团队不持有宿主机路径，
                 // 与 workspaceId 的「创建即固定」不是一回事）。
                 .teamId(teamId)
-                .tokenUsage(TokenUsage.empty())
                 .build();
         return Result.success(sessionAggregateService.save(session));
     }
@@ -172,86 +176,74 @@ public class SessionServiceImpl implements SessionService {
 
         CursorResult<SessionMessage> slice = sessionAggregateService.messageSlice(sessionId, cursor, size);
 
-        // 转换 + 一次 IN 批量挂载工具调用（单页 tool_call 查询恒为 1 次）：二者在 query() 内显式串联，杜绝漏调。
+        // 转换 + 一次 IN 批量挂载工具调用（单页 tool_call 查询恒为 1 次）。
+        // 归属直接从消息行的 turn_id 读出，**不需要再做「执行 ID → 轮次」映射** ——
+        // 这正是把归属落到消息行自己的收益。
         SessionMessageQueryService.SessionMessageQueryResult loaded = messageQueryService.query(slice.records());
+
+        // 一次 IN 批量装配本页涉及的轮次字典（含会话归属校验）。
+        Map<Long, ChatTurn> ownedTurns = ownedTurnsOf(sessionId,
+                chatTurnService.findByIds(collectTurnIds(loaded.records())));
+
+        // 本页统一的「查询时刻」：进行中的轮次用它算「截至此刻的已历时」。
+        // 整页共用一个基准，避免同页不同行差几毫秒。
+        Instant now = Instant.now();
 
         return Result.success(SessionMessagePageVO.builder()
                 .records(loaded.records())
                 .toolCallCount(loaded.toolCallCount())
-                // 本页涉及的执行摘要：一次 IN 批量装载（不是逐消息查），且不含 snapshot。
-                .executions(executionSummariesOf(sessionId, loaded.records()))
+                .turns(turnsOf(ownedTurns, now))
                 .nextCursor(slice.nextCursor())
                 .hasMore(slice.hasMore())
                 .build());
     }
 
-    /**
-     * 装配本页消息涉及的执行摘要，键为 {@code executionId} 字符串。
-     *
-     * <p><b>一次 IN 查询</b>：先收集本页去重后的 executionId 再批量装载，避免逐消息查询的 N+1。
-     * 摘要字典与消息列表解耦 —— 同一执行横跨多条消息（USER + 多轮 AI/TOOL），
-     * 前端按 executionId 分组时，组内任意一条消息都能查到同一份摘要。</p>
-     *
-     * <p><b>归属校验</b>：只装配 sessionId 与本会话一致的摘要。缺了这道闸，一个串错的 id
-     * 就能让 A 会话显示 B 会话的用量 —— 统计口径错了比没有统计更糟。</p>
-     *
-     * <p>消息带 executionId 但摘要缺席（执行行不存在 / 属于别的会话）时不报错：
-     * 前端按「摘要缺失」降级展示，消息本身照常显示。</p>
-     */
-    private Map<String, ExecutionSummaryVO> executionSummariesOf(Long sessionId, List<SessionMessageVO> records) {
-        Set<Long> executionIds = new LinkedHashSet<>();
+    /** 收集本页去重后的轮次 ID，用于一次 IN 批量装配轮次字典。 */
+    private static Set<Long> collectTurnIds(List<SessionMessageVO> records) {
+        Set<Long> ids = new LinkedHashSet<>();
+        if (records == null) {
+            return ids;
+        }
         for (SessionMessageVO record : records) {
-            if (record != null && record.getExecutionId() != null) {
-                executionIds.add(record.getExecutionId());
+            if (record != null && record.getTurnId() != null) {
+                ids.add(record.getTurnId());
             }
         }
-        if (executionIds.isEmpty()) {
-            return Map.of();
-        }
-
-        Map<Long, ExecutionQueryService.ExecutionSummary> summaries =
-                executionQueryService.summariesByIds(executionIds);
-
-        // 进行中执行的「已历时」需要一个统一的时间基准：整页共用同一个 now，避免同页不同行差几毫秒。
-        Instant now = Instant.now();
-        Map<String, ExecutionSummaryVO> result = new LinkedHashMap<>();
-        for (ExecutionQueryService.ExecutionSummary summary : summaries.values()) {
-            if (!Objects.equals(summary.sessionId(), sessionId)) {
-                log.warn("执行摘要与会话归属不符，已丢弃: sessionId={}, executionId={}, actualSessionId={}",
-                        sessionId, summary.executionId(), summary.sessionId());
-                continue;
-            }
-            result.put(String.valueOf(summary.executionId()), ExecutionSummaryVO.builder()
-                    .executionId(summary.executionId())
-                    .status(summary.status())
-                    .modelName(summary.modelName())
-                    .modelProvider(summary.modelProvider())
-                    .inputTokens(summary.inputTokens())
-                    .outputTokens(summary.outputTokens())
-                    .totalTokens(summary.totalTokens())
-                    .startedAt(summary.startedAt())
-                    .completedAt(summary.completedAt())
-                    .elapsedMs(elapsedMillis(summary, now))
-                    .build());
-        }
-        return result;
+        return ids;
     }
 
     /**
-     * 已历时毫秒：首次开始 →（终态时间 或 查询时刻）。
+     * 归属校验：只保留属于本会话的轮次。
      *
-     * <p><b>包含暂停与等待审批的时间</b> —— 这是首版刻意的口径，界面必须标注「总历时含等待」。
-     * 「扣除暂停的运行耗时」需要额外计时状态，属后续优化，不在首版。</p>
+     * <p>缺了这道闸，一个串错的轮次 ID 就能让 A 会话显示 B 会话的统计 ——
+     * 统计口径错了比没有统计更糟。</p>
      *
-     * <p>未开始（{@code startedAt} 为空）返回 {@code null}：没有开始时间就没有历时可言，
-     * 返回 0 会被读成「瞬间完成」。</p>
+     * <p>归属不符的轮次不下发，于是那条消息的 {@code turnId} 在字典里查不到，
+     * 前端按「无轮次信息」降级展示，消息本身照常显示。</p>
      */
-    private static Long elapsedMillis(ExecutionQueryService.ExecutionSummary summary, Instant now) {
-        if (summary.startedAt() == null) {
-            return null;
+    private Map<Long, ChatTurn> ownedTurnsOf(Long sessionId, Map<Long, ChatTurn> turnsById) {
+        if (turnsById.isEmpty()) {
+            return Map.of();
         }
-        Instant end = summary.completedAt() == null ? now : summary.completedAt();
-        return Math.max(Duration.between(summary.startedAt(), end).toMillis(), 0L);
+        Map<Long, ChatTurn> owned = new LinkedHashMap<>();
+        for (Map.Entry<Long, ChatTurn> entry : turnsById.entrySet()) {
+            ChatTurn turn = entry.getValue();
+            if (!Objects.equals(turn.getSessionId(), sessionId)) {
+                log.warn("轮次与会话归属不符，已丢弃: sessionId={}, turnId={}, actualSessionId={}",
+                        sessionId, turn.getId(), turn.getSessionId());
+                continue;
+            }
+            owned.put(entry.getKey(), turn);
+        }
+        return owned;
+    }
+
+    /** 本页涉及的业务轮次，键为 turnId 字符串（归属校验已在 {@link #ownedTurnsOf} 完成）。 */
+    private Map<String, ChatTurnVO> turnsOf(Map<Long, ChatTurn> ownedTurns, Instant now) {
+        Map<String, ChatTurnVO> result = new LinkedHashMap<>();
+        ownedTurns.values().forEach(turn ->
+                result.put(String.valueOf(turn.getId()), chatTurnConverter.toVO(turn, now)));
+        return result;
     }
 
     @Override
@@ -299,8 +291,6 @@ public class SessionServiceImpl implements SessionService {
      */
     private SessionVO toVO(Session session, List<ExecutionState> states, Long messageCount, String agentName) {
         WorkspaceVO workspace = workspaceOrDefault(session.getWorkspaceId());
-
-        TokenUsage usage = session.getTokenUsage() == null ? TokenUsage.empty() : session.getTokenUsage();
         return SessionVO.builder().id(session.getId()).name(session.getName())
                 .runStatus(runStatusOf(states))
                 .lastOutcome(lastOutcomeOf(states))
@@ -311,8 +301,10 @@ public class SessionServiceImpl implements SessionService {
                 .workspaceId(session.getWorkspaceId())
                 .teamId(session.getTeamId())
                 .workDir(workspace == null ? null : workspace.workDir())
-                .totalTokens(usage.totalTokens()).inputTokens(usage.inputTokens()).outputTokens(usage.outputTokens())
                 .messageCount(messageCount)
+                .contextTokenCount(session.getContextTokenCount())
+                .contextMaxTokens(session.getContextMaxTokens())
+                .contextRatio(session.getContextRatio())
                 .build();
 
     }

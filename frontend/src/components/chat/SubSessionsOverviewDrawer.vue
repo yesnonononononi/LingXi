@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue';
 import type { SubSessionVO } from '../../types/chat';
-import { formatTokens, formatClockTime } from '../../utils/format';
+import { formatClockTime } from '../../utils/format';
 
 const props = defineProps<{
   isOpen: boolean;
@@ -14,11 +13,6 @@ const emit = defineEmits<{
   (e: 'selectSubSession', sub: SubSessionVO): void;
 }>();
 
-const totalSubSessionsTokens = computed(() => {
-  return props.subSessions.reduce((sum, s) => sum + (s.totalTokens || 0), 0);
-});
-
-// formatTokens 已收敛到 utils/format.ts
 </script>
 
 <template>
@@ -87,12 +81,9 @@ const totalSubSessionsTokens = computed(() => {
           </button>
         </div>
 
-        <!-- 统计信息栏 -->
+        <!-- 查看提示 -->
         <div :class="['px-6 py-2.5 border-b text-xs flex items-center justify-between gap-4 select-none', isDark ? 'border-[#222b3d] bg-[#121721] text-gray-400' : 'border-gray-100 bg-gray-50/40 text-gray-500']">
-          <div class="flex items-center gap-2">
-            <span>总计协同消耗:</span>
-            <span class="font-mono font-semibold text-blue-500">{{ formatTokens(totalSubSessionsTokens) }}</span>
-          </div>
+
           <span class="text-[11px] opacity-70">点击卡片即可调出该代理的独立执行轨迹</span>
         </div>
 
@@ -141,9 +132,6 @@ const totalSubSessionsTokens = computed(() => {
 
               <!-- 右侧状态与查看按钮 -->
               <div class="flex items-center gap-2 shrink-0">
-                <span class="text-[11px] font-mono opacity-80">
-                  {{ formatTokens(sub.totalTokens) }}
-                </span>
                 <button
                   type="button"
                   class="p-1 rounded-lg text-blue-500 group-hover:bg-blue-500/10 transition"

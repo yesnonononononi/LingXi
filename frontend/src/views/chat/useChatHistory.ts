@@ -1,7 +1,9 @@
 import { ref, nextTick } from 'vue';
 import type { Ref, ComputedRef } from 'vue';
-import type { ChatSession, ChatMessage, ExecutionSummary } from '../../types/chat';
+import type { ChatSession, ChatMessage, ChatTurn, SessionMessageVO } from '../../types/chat';
 import { chatApi } from '../../services/chat';
+import { useChatSessionStore } from '../../stores/chatSessionStore';
+import { mergeRawRecords, aggregateSessionMessages, normalizeTurnId } from '../../utils/session';
 
 /** 加载更多历史时保证加载动画可见的最短展示时长（毫秒） */
 const HISTORY_PREPEND_SETTLE_MS = 350;
@@ -17,17 +19,17 @@ export interface ChatHistoryOptions {
 }
 
 /**
- * 执行摘要字典的 union 合并：键为 executionId，**后到的覆盖先到的**（更新的快照更准确）。
- * 缺省空对象；绝不因某一页没有 executions 而丢弃已加载的摘要。
+ * 轮次摘要字典的 union 合并：键为 turnId，**后到的覆盖先到的**（更新的快照更准确）。
+ * 缺省空对象；绝不因某一页没有 turns 而丢弃已加载的摘要。
  */
-export function mergeExecutionSummaries(
-  base: Record<string, ExecutionSummary> | undefined,
-  incoming: Record<string, ExecutionSummary> | undefined
-): Record<string, ExecutionSummary> {
-  const merged: Record<string, ExecutionSummary> = { ...(base || {}) };
+export function mergeTurns(
+  base: Record<string, ChatTurn> | undefined,
+  incoming: Record<string, ChatTurn> | undefined
+): Record<string, ChatTurn> {
+  const merged: Record<string, ChatTurn> = { ...(base || {}) };
   if (incoming) {
-    for (const [execId, summary] of Object.entries(incoming)) {
-      if (summary) merged[execId] = summary;
+    for (const [turnId, summary] of Object.entries(incoming)) {
+      if (summary) merged[turnId] = summary;
     }
   }
   return merged;
@@ -42,26 +44,35 @@ export function mergeExecutionSummaries(
  * - 对账发起之后新写入的在途行（对账请求期间用户又开启新流的 live 行），按发起时刻时间戳判定。
  * 绝不因对账失败或服务端返回为空清空本地状态。
  *
- * <p>同时合并 executions 摘要字典（union）。注意：同一 executionId 的消息可能跨页
- * （页首 TOOL 行、其 AI 行在下一页），此处**只按 messageId 去重**，绝不把「同 executionId
+ * <p>同时合并 turns 摘要字典（union）。注意：同一 turnId 的消息可能跨页
+ * （页首 TOOL 行、其 AI 行在下一页），此处**只按 messageId 去重**，绝不把「同 turnId
  * 但来自另一页」的消息整块丢弃 —— 那会凭空丢消息。摘要是幂等的旁路数据，与消息合并互不影响。</p>
  */
 export function mergeAuthoritativeMessages(
   existing: ChatMessage[],
   serverMsgs: ChatMessage[],
   reconcileStartedAt: number,
-  existingExecutions?: Record<string, ExecutionSummary>,
-  serverExecutions?: Record<string, ExecutionSummary>
-): { messages: ChatMessage[]; executions: Record<string, ExecutionSummary> } {
-  const executions = mergeExecutionSummaries(existingExecutions, serverExecutions);
-  if (serverMsgs.length === 0) return { messages: existing, executions };
+  existingTurns?: Record<string, ChatTurn>,
+  serverTurns?: Record<string, ChatTurn>
+): { messages: ChatMessage[]; turns: Record<string, ChatTurn> } {
+  const turns = mergeTurns(existingTurns, serverTurns);
+  if (serverMsgs.length === 0) return { messages: existing, turns };
   const serverIds = new Set(serverMsgs.map(m => String(m.id)));
+  const serverTurnIds = new Set(
+    serverMsgs.map(m => normalizeTurnId(m.turnId)).filter((tid): tid is string => tid !== null)
+  );
+
   const kept = existing.filter(m => {
     if (serverIds.has(String(m.id))) return false;
+    const mTurnId = normalizeTurnId(m.turnId);
+    // 已经由服务端落库的轮次，不再保留本地已完成的旧气泡（避免同一轮次出现本地与服务端两个气泡）
+    if (mTurnId && serverTurnIds.has(mTurnId)) {
+      if (m.role === 'assistant' && m.isComplete) return false;
+    }
     if (m.role === 'assistant' && m.isComplete === false) return true;
     return m.timestamp > reconcileStartedAt;
   });
-  return { messages: [...serverMsgs, ...kept], executions };
+  return { messages: [...serverMsgs, ...kept], turns };
 }
 
 export function useChatHistory(options: ChatHistoryOptions) {
@@ -75,6 +86,17 @@ export function useChatHistory(options: ChatHistoryOptions) {
 
   const isLoadingMoreHistory = ref(false);
   const historyLoadError = ref('');
+  const sessionStore = useChatSessionStore();
+
+  /** 把 tree 下发的上下文用量快照种进用量表（root + 全部子会话；仅在会话尚无数据时写入）。 */
+  const seedContextUsageFromTree = (rootId: string | number, tree: {
+    root?: { contextTokenCount?: number | null; contextMaxTokens?: number | null; contextRatio?: number | null } | null;
+    subSessions?: Array<{ id: string | number; contextTokenCount?: number | null; contextMaxTokens?: number | null; contextRatio?: number | null }>;
+  } | null) => {
+    if (!tree) return;
+    if (tree.root) sessionStore.seedContextUsage(rootId, tree.root);
+    (tree.subSessions || []).forEach(sub => sessionStore.seedContextUsage(sub.id, sub));
+  };
 
   /**
    * 流结束后的统一串行对账（tree + 权威消息，尽力而为）：
@@ -91,12 +113,9 @@ export function useChatHistory(options: ChatHistoryOptions) {
         const cur = localSessions.value.find(s => s.id === ownerSessionId);
         if (cur) {
           if (tree.subSessions.length > 0) cur.subSessions = tree.subSessions;
-          if (tree.root) {
-            if (tree.root.totalTokens) cur.totalTokens = tree.root.totalTokens;
-            if (tree.root.inputTokens) cur.inputTokens = tree.root.inputTokens;
-            if (tree.root.outputTokens) cur.outputTokens = tree.root.outputTokens;
-          }
         }
+        // 终态后 session 表的上下文用量快照刚被回写：随树种入用量表（无数据不覆盖 live 值）。
+        seedContextUsageFromTree(tree.rootSessionId ?? ownerSessionId, tree);
       }
     } catch (e) {
       console.warn('刷新子会话列表失败:', e);
@@ -104,10 +123,10 @@ export function useChatHistory(options: ChatHistoryOptions) {
     // 消息级权威对账：分页回溯拉取全量落库行（上限 10 页防失控），按 id 收编
     try {
       const reconcileStartedAt = Date.now();
-      const serverMsgs: ChatMessage[] = [];
-      // 逐页收集摘要字典（fetch 顺序为「最新 → 更早」），循环结束后按「旧 → 新」折叠，
+      const pageRecordsList: SessionMessageVO[][] = [];
+      // 逐页收集轮次字典（fetch 顺序为「最新 → 更早」），循环结束后按「旧 → 新」折叠，
       // 使更新（更靠新页）的快照在 union 中覆盖更早的，符合「更新的快照更准确」。
-      const pageExecutionsList: Array<Record<string, ExecutionSummary>> = [];
+      const pageTurnsList: Array<Record<string, ChatTurn>> = [];
       let cursor: string | null = null;
       let reconcileOk = true;
       for (let pageIdx = 0; pageIdx < 10; pageIdx++) {
@@ -118,8 +137,8 @@ export function useChatHistory(options: ChatHistoryOptions) {
           break;
         }
         // 游标从最新页向更早回溯：前插拼接保持「旧 → 新」顺序
-        serverMsgs.unshift(...msgRes.data.messages);
-        pageExecutionsList.push(msgRes.data.executions);
+        pageRecordsList.unshift(msgRes.data.records);
+        pageTurnsList.push(msgRes.data.turns);
         if (!msgRes.data.hasMore || !msgRes.data.nextCursor) break;
         cursor = msgRes.data.nextCursor;
       }
@@ -127,20 +146,27 @@ export function useChatHistory(options: ChatHistoryOptions) {
         const cur = localSessions.value.find(s => s.id === ownerSessionId);
         if (cur) {
           // 页面按「最新 → 更早」收集，倒序折叠让「更靠新页」的快照最后写入而胜出
-          let serverExecutions: Record<string, ExecutionSummary> = {};
-          for (let k = pageExecutionsList.length - 1; k >= 0; k--) {
-            serverExecutions = mergeExecutionSummaries(serverExecutions, pageExecutionsList[k]);
+          let serverTurns: Record<string, ChatTurn> = {};
+          for (let k = pageTurnsList.length - 1; k >= 0; k--) {
+            serverTurns = mergeTurns(serverTurns, pageTurnsList[k]);
           }
+          let fetchedRecords: SessionMessageVO[] = [];
+          for (const recs of pageRecordsList) {
+            fetchedRecords = mergeRawRecords(fetchedRecords, recs);
+          }
+          cur.rawRecords = mergeRawRecords(fetchedRecords, cur.rawRecords || []);
+          const serverMsgs = aggregateSessionMessages(cur.rawRecords, cur.id);
+
           // 合并为同步动作，existing 取执行时刻现值：对账在途期间新写入的 live 行按时间戳/running 规则保留
           const merged = mergeAuthoritativeMessages(
             cur.messages || [],
             serverMsgs,
             reconcileStartedAt,
-            cur.executions,
-            serverExecutions
+            cur.turns,
+            serverTurns
           );
           cur.messages = merged.messages;
-          cur.executions = merged.executions;
+          cur.turns = merged.turns;
         }
       }
     } catch (e) {
@@ -171,28 +197,29 @@ export function useChatHistory(options: ChatHistoryOptions) {
       }
       const pageResult = pageResultRes.data;
 
-      // 本页涉及的执行摘要并入会话摘要表（union）：即使本页无新消息也要合并，
-      // 否则「同一执行跨页」时较早页携带的摘要会被漏掉。用 existingIds 按 id 过滤保留（正确），
-      // 绝不用 executionId 过滤消息 —— 同 executionId 但来自另一页的消息不是重复气泡。
-      session.executions = mergeExecutionSummaries(session.executions, pageResult.executions);
+      // 1. 本页涉及的轮次并入会话轮次表（union）
+      session.turns = mergeTurns(session.turns, pageResult.turns);
 
-      if (pageResult.messages.length > 0) {
-        const existingIds = new Set(session.messages.map(m => m.id));
-        const freshMessages = pageResult.messages.filter(m => !existingIds.has(m.id));
-        if (freshMessages.length > 0) {
-          lastKnownFirstMsgId.value = freshMessages[0]?.id || lastKnownFirstMsgId.value;
+      // 2. 原始记录合并与重聚合（核心修复：消除跨页同一轮次割裂成两个气泡）
+      const combinedRecords = mergeRawRecords(pageResult.records, session.rawRecords || []);
+      session.rawRecords = combinedRecords;
 
-          // 1. 前置插入前精准记录高度与当前滚动偏移
-          messagesContainerRef.value?.beforePrepend();
+      // 3. 从合并后的完整原始记录统一按 turnId 聚合展示消息
+      const aggregated = aggregateSessionMessages(combinedRecords, session.id);
 
-          // 2. 将历史记录前置插入列表顶部
-          session.messages.unshift(...freshMessages);
+      // 4. 前置插入前精准记录高度与当前滚动偏移
+      messagesContainerRef.value?.beforePrepend();
 
-          // 3. 在 DOM 渲染前的首个 microtask 立即同步补偿 scrollTop，彻底消除位置突变与闪屏
-          await nextTick();
-          messagesContainerRef.value?.afterPrepend();
-        }
+      // 5. 替换为聚合后的完整消息列表
+      session.messages = aggregated;
+      if (aggregated.length > 0) {
+        lastKnownFirstMsgId.value = aggregated[0]?.id || lastKnownFirstMsgId.value;
       }
+
+      // 6. 在 DOM 渲染前的首个 microtask 立即同步补偿 scrollTop，彻底消除位置突变与闪屏
+      await nextTick();
+      messagesContainerRef.value?.afterPrepend();
+
       session.hasMoreMessages = pageResult.hasMore;
       session.nextMessageCursor = pageResult.nextCursor;
     } catch (err) {
@@ -218,6 +245,7 @@ export function useChatHistory(options: ChatHistoryOptions) {
     handleLoadMoreHistory,
     handleRetryLoadMoreHistory,
     reconcileSessionAfterStream,
+    seedContextUsageFromTree,
     mergeAuthoritativeMessages,
   };
 }

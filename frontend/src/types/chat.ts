@@ -4,7 +4,7 @@ export type MessageRole = 'user' | 'assistant' | 'system';
 /** 对话执行模式 - plan: 先规划再执行 - auto: 自动选择最优策略 */
 export type ChatMode = 'plan' | 'auto';
 
-/** 思维链步骤接口 (体现后端 CoT / 思维链亮点) */
+/** 思维链步骤接口 */
 export interface ThoughtStep {
   id: string;
   title: string;          // 步骤名称，如 "检索知识库", "Thought for"
@@ -15,10 +15,10 @@ export interface ThoughtStep {
   timestamp?: number;
 }
 
-/** Agent 工具调用日志 (体现后端 Tool Calling / Function Calling 亮点) */
+/** Agent 工具调用日志 */
 export interface ToolCallTrace {
   id: string;
-  toolName: string;          // 工具名称，如 "pwsh", "web_search", "read_file"
+  toolName: string;          // 工具名称，如 "execute_command", "web_search", "read_file"
   query?: string;            // 调用输入参数
   args?: any;                // 结构化输入参数对象
   result?: string;           // 工具返回的原始数据或状态
@@ -32,7 +32,7 @@ export interface ToolCallTrace {
   target?: string;           // 目标文件或参数，如 "README.md"
   command?: string;          // 终端命令详情
   workDir?: string;          // 工作空间或目录名
-  category?: string;         // 分类：Pwsh / 读取 / 写入 / 思考 / 子代理
+  category?: string;         // 分类：执行命令 / 读取 / 写入 / 思考 / 子代理
   subAgentId?: string | number;   // 子代理 ID
   subAgentName?: string;         // 子代理名称，如 "数学专家 (MathSpecialist)"
   subSessionId?: string | number;// 关联的子会话 ID
@@ -72,18 +72,20 @@ export interface PlanTaskItem {
  */
 export interface PromptCardData {
   /**
-   * 卡片形态：`PLAN` / `CHOICE` / `COMMAND`（= `toolCall.content.kind`）。
+   * 卡片形态：`PLAN` / `CHOICE` / `COMMAND` / `DELEGATION`（= `toolCall.content.kind`）。
+   * `DELEGATION` 是委派等待卡：等的是子会话里的审批落定，**不是人工审批卡**——
+   * 不渲染批准/拒绝按钮，子执行终态后由后端自动回填并恢复父执行。
    * `UNAVAILABLE` 表示 `content.kind` 缺失/非法（后端 `fromName()` 识别不了返回 `null`）——
    * 渲染为「状态不可用」，**绝不**回落成 `COMMAND`（否则语义未知的卡片会被渲染成带「批准并执行」按钮的命令审批卡）。
    */
-  kind: 'PLAN' | 'CHOICE' | 'COMMAND' | 'UNAVAILABLE';
+  kind: 'PLAN' | 'CHOICE' | 'COMMAND' | 'DELEGATION' | 'UNAVAILABLE';
   /** 决策锚点：tool_call.id / 模型 call_id */
   toolCallId: string;
   /** 归属会话（= session.id）；提交决策时回传 */
   conversationId?: string;
-  /** 卡片标题（PLAN 计划标题 / CHOICE 问题 / COMMAND 命令审批） */
+  /** 卡片标题（PLAN 计划标题 / CHOICE 问题 / COMMAND 命令审批 / DELEGATION 子代理名） */
   title: string;
-  /** 卡片正文：PLAN 为计划书 Markdown；CHOICE 为问题正文；COMMAND 为命令 */
+  /** 卡片正文：PLAN 为计划书 Markdown；CHOICE 为问题正文；COMMAND 为命令；DELEGATION 为委派任务 */
   content: string;
   /** CHOICE：候选答案；空数组表示只需自由输入 */
   options?: string[];
@@ -91,6 +93,8 @@ export interface PromptCardData {
   workDir?: string;
   shell?: string;
   command?: string;
+  /** DELEGATION：目标子会话 id（点击可跳转子会话视图；可空） */
+  subSessionId?: string;
   /** 生命周期：pending / in_progress / completed */
   status: 'pending' | 'in_progress' | 'completed';
   /** ★ 唯一可审批判定（后端权威） */
@@ -186,7 +190,17 @@ export interface AgentStreamEvent {
   /** 事件权威归属根会话 id（JSON 顶层，sse.ts spread 无损透传；CARD_PENDING 直判归属用，缺失走既有映射兜底） */
   rootSessionId?: string | null;
   agentId?: string;
+  /** 框架执行 id：高频流式事件（PARTIAL_TEXT / PARTIAL_THINKING 等）只带它，不带 turnId */
   executionId?: string;
+  /**
+   * 业务轮次 id（字符串，可能缺失 = 该执行没有对应轮次）。
+   *
+   * <p>仅生命周期事件（EXECUTION_STARTED / EXECUTION_RESUME / EXECUTION_SUSPENDED /
+   * EXECUTION_COMPLETED / EXECUTION_CANCELLED / EXECUTION_FAILED）以及 FILE_EDIT 携带；
+   * 高频流式事件**不带**本字段。实时路径须在收到带 turnId 的生命周期事件时记下
+   * `executionId → turnId` 映射，供后续只带 executionId 的事件补齐归属。</p>
+   */
+  turnId?: string;
   requestId?: string;
   content?: string;
   text?: string;
@@ -208,7 +222,6 @@ export interface AgentStreamEvent {
   toolExecutionId?: string;
   timeoutSeconds?: number;
   // File edit
-  turnId?: string;
   recordId?: any;
   filePath?: string;
   oldContent?: string;
@@ -257,13 +270,13 @@ export interface ChatMessage {
   timestamp: number;
 
   /**
-   * 产生本条消息的执行 id（字符串；**旧数据为 null = 归属未知**）。
+   * 产生本条消息的业务轮次 id（字符串；**旧数据为 null = 归属未知**）。
    *
-   * <p>回答组以 executionId 为唯一键：同 executionId 的连续消息归为同一组，
-   * executionId 变化必须拆组，绝不能跨执行合并；null 的旧数据按 USER 边界降级，
+   * <p>回答组以 turnId 为唯一键：同 turnId 的连续消息归为同一组，
+   * turnId 变化必须拆组，绝不能跨轮次合并；null 的旧数据按 USER 边界降级，
    * 且**不得伪造任何统计**。</p>
    */
-  executionId?: string | null;
+  turnId?: string | null;
 
   // 消息模型标识
   model?: string;
@@ -288,8 +301,6 @@ export interface ChatMessage {
   promptCards?: PromptCardData[];
   tokens?: number;                   // 消耗 token 数
   tokenInfo?: TokenInfo;             // 真实 token 计数明细
-  executionError?: string;           // 执行异常信息
-  sendError?: string;                // 发送或流式异常信息
   imageUrl?: string;                 // 用户上传/携带的图片 URL 或 Base64 Data URL
   imageFile?: File;                  // 用户上传的本地文件对象 (用于重发)
 
@@ -310,22 +321,28 @@ export interface ChatSession {
   workspaceId?: number | string;     // 关联的工作空间ID
   workDir?: string;                  // 工作目录 (workDir)
   teamId?: string | null;            // 绑定的协作团队 ID（未绑定为 null；后端 JSON 序列化为字符串）
-  totalTokens?: number;              // 总 token 数
-  inputTokens?: number;              // 输入 token 数
-  outputTokens?: number;             // 输出 token 数
   agentId?: number | string;         // 关联的 Agent ID
   rootSessionId?: number | string;   // 关联的根会话 ID
   hasMoreMessages?: boolean;         // 游标分页：是否还有更多消息
   nextMessageCursor?: string | null; // 游标分页：下一页游标
   subSessions?: SubSessionVO[];      // 团队模式下委派产生的子会话列表
   /**
-   * 本会话已加载的执行摘要表：键 = executionId 字符串。
+   * 本会话已加载的业务轮次摘要表：键 = turnId 字符串。
    *
-   * <p>由消息分页接口每页额外返回的 executions 字典逐页 union 合并（键为 executionId，
-   * 后到的覆盖先到的 —— 更新的快照更准确）。缺失或空对象表示本会话暂无执行摘要
+   * <p>由消息分页接口每页额外返回的 turns 字典逐页 union 合并（键为 turnId，
+   * 后到的覆盖先到的 —— 更新的快照更准确）。缺失或空对象表示本会话暂无轮次摘要
    * （旧数据 / 未采集），**不是**「用量为 0」。</p>
    */
-  executions?: Record<string, ExecutionSummary>;
+  turns?: Record<string, ChatTurn>;
+  /**
+   * 本会话已加载的原始服务端消息记录（按时间正序拼接，按记录 id 去重）。
+   * 用于跨分页按 turnId 完整聚合，消除游标分页切断同轮次导致的回答气泡割裂。
+   */
+  rawRecords?: SessionMessageVO[];
+  /** 上下文用量快照（最近一次终结执行回写，随 tree/detail 下发）；详见 SessionVO 同名字段。 */
+  contextTokenCount?: number | null;
+  contextMaxTokens?: number | null;
+  contextRatio?: number | null;
 }
 
 
@@ -420,21 +437,30 @@ export interface ModelToolCallVO {
 }
 
 /**
- * 一次执行的摘要（对应后端 ExecutionSummaryVO）。
+ * 一个业务轮次的摘要（对应后端 ChatTurnVO）。
  *
- * <p><b>一次执行 = 一个 executionId</b>：主会话中一次新提问；子会话中一次新委派。
- * 审批后继续、暂停后恢复都**沿用同一个 executionId**，SSE 重新订阅**不创建**新执行。</p>
+ * <p><b>一个轮次 = 一次用户请求</b>：主会话中一次新提问；子会话中一次新委派。
+ * 审批后继续、暂停后恢复都**沿用同一个 turnId**，SSE 重新订阅**不创建**新轮次。
+ * 子 Agent 委派产生的轮次通过 `parentTurnId` 指向发起委派的主轮次。</p>
  *
  * <p><b>null 语义（禁止当作 0）</b>：项目全局把 Long 序列化成字符串（防雪花 ID 精度丢失），
  * 但统计量被后端专门覆盖为真正的 JSON 数字，且**可能为 null**：
  * `inputTokens` / `outputTokens` / `totalTokens` 为 null 表示「未采集到」；
- * `elapsedMs` 为 null 表示 `startedAt` 缺失、无法计算；`completedAt` 为 null 表示执行尚未结束。
+ * `elapsedMs` 为 null 表示 `startedAt` 缺失、无法计算；`completedAt` 为 null 表示轮次尚未结束。
  * 展示层遇到 null 一律显示「暂无统计」或隐藏，**绝不能显示成 0**。</p>
  */
-export interface ExecutionSummary {
-  /** 执行主键（字符串，雪花 ID 全局 Long→String 序列化） */
-  executionId: string;
-  status: 'CREATED' | 'RUNNING' | 'SUSPENDED' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export interface ChatTurn {
+  /** 轮次主键（字符串，雪花 ID 全局 Long→String 序列化） */
+  turnId: string;
+  /** 子 Agent 委派指向发起委派的主轮次；普通提问为 null */
+  parentTurnId?: string | null;
+  /**
+   * 业务状态。`ACCEPTED` = 已受理尚未开始执行；`WAITING` = 挂起等待人工审批；
+   * `ACCEPTED` / `RUNNING` / `WAITING` 三者均属「进行中」。
+   */
+  status: 'ACCEPTED' | 'RUNNING' | 'WAITING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  /** 面向用户的失败原因；仅 status=FAILED 时有值，其余为 null */
+  errorReason?: string | null;
   /** 模型名；可能为 null（未采集）—— 为空时展示层隐藏模型项 */
   modelName?: string | null;
   /** 模型提供方；可能为 null */
@@ -451,7 +477,7 @@ export interface ExecutionSummary {
   completedAt?: string | null;
   /**
    * 总历时（毫秒），**包含暂停与等待审批的时间**；`startedAt` 为 null 时为 null。
-   * 状态为进行中（CREATED/RUNNING/SUSPENDED）时，这是「截至查询时刻」的已历时，不是最终值。
+   * 状态为进行中（ACCEPTED/RUNNING/WAITING）时，这是「截至查询时刻」的已历时，不是最终值。
    */
   elapsedMs?: number | null;
 }
@@ -460,11 +486,11 @@ export interface ExecutionSummary {
 export interface SessionMessageVO {
   id?: number | string;
   /**
-   * 产生本条消息的执行 id（字符串；**旧数据为 null = 归属未知**）。
+   * 产生本条消息的业务轮次 id（字符串；**旧数据为 null = 归属未知**）。
    * 回答组以此字段为唯一分组键。
    */
-  executionId?: string | null;
-  /** USER / AI / TOOL / SYSTEM / ERROR（ERROR = 执行失败标注行，text 为纯文本失败文案） */
+  turnId?: string | null;
+  /** USER / AI / TOOL / SYSTEM（失败不再以消息形式落库，改由 turns[turnId].errorReason 呈现） */
   type?: string;
   /** USER、SYSTEM、ERROR 正文；AI 回复正文 */
   text?: string;
@@ -485,10 +511,10 @@ export interface SessionMessagePageVO {
   /** 本页命中的 tool_call 行数 */
   toolCallCount?: number;
   /**
-   * 本页消息涉及的执行摘要字典：键 = executionId 字符串；无执行时是 `{}` 或缺失。
+   * 本页消息涉及的轮次摘要字典：键 = turnId 字符串；无轮次时是 `{}` 或缺失。
    * 与 records 同页返回，供前端把持久化的 token / 模型 / 耗时 / 状态绑定到回答组。
    */
-  executions?: Record<string, ExecutionSummary> | null;
+  turns?: Record<string, ChatTurn> | null;
   nextCursor?: string | null;
   hasMore?: boolean;
 }
@@ -510,13 +536,18 @@ export interface SessionVO {
   teamId?: string | null;
   workspaceId?: number | string;
   workDir?: string;
-  totalTokens?: number;
-  inputTokens?: number;
-  outputTokens?: number;
   /** 展示状态组合（后端唯一来源）：进行中状态 IDLE | RUNNING | SUSPENDED。 */
   runStatus?: 'IDLE' | 'RUNNING' | 'SUSPENDED';
   /** 展示状态组合：最近一次已终结执行结果 COMPLETED | FAILED | CANCELLED；从未终结为 null。 */
   lastOutcome?: 'COMPLETED' | 'FAILED' | 'CANCELLED' | null;
+  /**
+   * 上下文用量快照（来自最近一次终结执行回写的 session 表快照，随 tree 接口下发）：
+   * 「上下文用量」指示器在无 CONTEXT_UPDATE 事件（历史加载 / 刷新页面）时的权威数据源。
+   * 任一项为 null / 缺失表示尚未采集，指示器继续隐藏，不伪造 0。
+   */
+  contextTokenCount?: number | null;
+  contextMaxTokens?: number | null;
+  contextRatio?: number | null;
 }
 
 /**
@@ -704,7 +735,8 @@ export interface McpVO {
   command?: string[];
   /** 脱敏后的 stdio 环境变量；仅 stdio 传输非空 */
   env?: Record<string, string>;
-  toolNamePrefix?: string;
+  /** 服务描述，随提示词下发给模型；由业务用户填写 */
+  description?: string;
   /** 初始化超时，毫秒 */
   initializationTimeout?: number;
   /** 执行超时，毫秒 */
@@ -727,7 +759,8 @@ export interface McpRequest {
   command?: string[];
   /** stdio 环境变量；值等于 MCP_HEADER_MASKED_VALUE 表示保持库中原值 */
   env?: Record<string, string>;
-  toolNamePrefix?: string;
+  /** 服务描述，随提示词下发给模型；由业务用户填写 */
+  description?: string;
   initializationTimeout?: number;
   executionTimeout?: number;
   maxOutput?: number;

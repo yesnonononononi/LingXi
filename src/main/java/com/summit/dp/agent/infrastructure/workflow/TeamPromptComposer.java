@@ -31,12 +31,13 @@ public final class TeamPromptComposer {
      * @param team             团队全部成员（可为 null）
      * @param commanderAgentId 指挥者自身 id，从名单中剔除
      */
-    public static String commanderPrompt(String defaultPrompt, List<AgentVO> team, Long commanderAgentId) {
+    public static String commanderPrompt(String defaultPrompt, List<AgentVO> team, Long commanderAgentId,String teamDescription) {
         String roster = roster(team, commanderAgentId, "（无可委派队友；请自行完成任务）");
         return String.format("""
                 %s
                 #### **团队协作模式(TEAM COORDINATION MODE)**
-                
+                ### 团队描述(TEAM DESCRIPTION)
+                %s
                 ### 主理人职责
                 # 身份 :
                  - 你是团队的主理人,负责精准分析用户需求,对付较为复杂的开发工作,需要分配任务给团队成员,可以同时分配,也可以串行分配等待结果后再分配
@@ -47,7 +48,7 @@ public final class TeamPromptComposer {
                  - 不要调用自己，不要为同一任务重复委派，也不要调用下列名单之外的 Agent。
                  - 成员执行失败时,需要反馈给用户,等待用户决策是否重新委派还是自己兜底执行
                 %s
-                """, defaultPrompt, roster);
+                """, defaultPrompt, teamDescription, roster);
     }
 
     /**
@@ -57,12 +58,13 @@ public final class TeamPromptComposer {
      * @param team          团队全部成员（可为 null）
      * @param memberAgentId 成员自身 id，从名单中剔除
      */
-    public static String memberPrompt(String defaultPrompt, List<AgentVO> team, Long memberAgentId) {
+    public static String memberPrompt(String defaultPrompt, List<AgentVO> team, Long memberAgentId,String teamDescription) {
         String roster = roster(team, memberAgentId, "（暂无其他团队成员）");
         return String.format("""
                 %s
                 #### **团队协作模式(TEAM COORDINATION MODE)**
-                
+                ### 团队描述(TEAM DESCRIPTION)
+                %s
                 ### 成员职责
                 # 身份 :
                  - 你是本次参与协作的团队成员，认真负责完成主理人交给你的任务,结果最为一个包含`本次完成的工作`,`执行成果`,`遗留问题`的交付文档
@@ -74,7 +76,7 @@ public final class TeamPromptComposer {
                  - 只需要将结果交付给主理人
                  - 不要越过职责范围执行其他成员的工作,保持上下文干净
                 %s
-                """, defaultPrompt, roster);
+                """,defaultPrompt,teamDescription, roster);
     }
 
     /**

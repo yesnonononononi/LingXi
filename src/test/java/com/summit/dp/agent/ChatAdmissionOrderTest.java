@@ -27,8 +27,10 @@ import com.summit.dp.shared.utils.RequestPreparer;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
+import org.mockito.ArgumentCaptor;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
@@ -65,12 +67,22 @@ class ChatAdmissionOrderTest {
     private final ModelContextService modelContextService = mock(ModelContextService.class);
     private final ExecutionRegistrationService registrationService = mock(ExecutionRegistrationService.class);
 
+    /** 必须先于 sessionService 声明：Java 字段初始化按声明顺序执行，否则传进去的是 null。 */
+    private final com.summit.dp.turn.application.service.ChatTurnService chatTurnService =
+            mock(com.summit.dp.turn.application.service.ChatTurnService.class);
+
     private final ChatServiceImpl chatService = new ChatServiceImpl(
             sseEventPublisher, requestPreparer, orchestrator,
             mock(ExecutionControl.class), mock(ExecutionRepository.class),
             mock(SessionRepository.class), registry, modelContextService,
             mock(ExecutionIdentity.class), mock(ToolCallRepository.class),
-            mock(SessionAttributeRestorer.class), registrationService);
+            mock(SessionAttributeRestorer.class), registrationService, chatTurnService,
+            mock(com.summit.dp.execution.application.service.ExecutionQueryService.class));
+
+    @BeforeEach
+    void noAcceptedTurnUnlessSpecified() {
+        when(requestPreparer.commitUserMessage(any())).thenReturn(null);
+    }
 
     private static ChatCommand command() {
         return new ChatCommand("你好", ROOT_SESSION_ID, 7L, null, null, false, null, null);
@@ -125,6 +137,21 @@ class ChatAdmissionOrderTest {
         order.verify(requestPreparer).commitUserMessage(context);
         order.verify(orchestrator).executeDefaultAgent(context);
         verify(registry).finishRoot(ROOT_SESSION_ID);
+    }
+
+    @Test
+    void acceptedTurnIdTravelsToOrchestratorWithoutReverseLookup() {
+        RuntimeContext context = context();
+        when(requestPreparer.prepare(any(ChatCommand.class))).thenReturn(context);
+        when(requestPreparer.commitUserMessage(context)).thenReturn(9001L);
+        when(orchestrator.executeDefaultAgent(any(RuntimeContext.class))).thenReturn(execution());
+
+        chatService.chat(command());
+
+        ArgumentCaptor<RuntimeContext> accepted = ArgumentCaptor.forClass(RuntimeContext.class);
+        verify(orchestrator).executeDefaultAgent(accepted.capture());
+        assertEquals(9001L, accepted.getValue().turnId());
+        assertEquals(context.executionContext(), accepted.getValue().executionContext());
     }
 
     @Test

@@ -54,10 +54,22 @@ public class Session {
      * 而团队只影响编排身份，不含宿主机路径，因此允许会话中途换绑。</p>
      */
     private Long teamId;
-
-    private TokenUsage tokenUsage ;
     private final Instant createTime;
     private Instant updateTime ;
+
+    /**
+     * 上下文用量快照：最近一次终结执行上报的模型上下文占用。
+     *
+     * <p>由框架 loop 结束填充的 {@code Execution.contextUsageMetric} 经生命周期端口同步落库
+     * （{@code SessionContextMetricListener}），随 {@code /session/tree} 接口下发供前端
+     * 「上下文用量」指示器在**无任何 loop 运行**（历史加载、刷新页面）时也能展示——
+     * 实时口径仍以 {@code CONTEXT_UPDATE} 事件为准，本快照只兜住「没有事件可发」的空窗。</p>
+     */
+    private Long contextTokenCount;
+    /** 上报时的上下文上限 token（框架运行时 max-tokens）；null=尚未采集。 */
+    private Integer contextMaxTokens;
+    /** {@code contextTokenCount / contextMaxTokens}，可能大于 1（超限）；null=尚未采集。 */
+    private Double contextRatio;
 
     /** 消息视图（仅内存装配，不落库）；{@code @Builder.Default} 避免 null。 */
     @Builder.Default
@@ -65,6 +77,18 @@ public class Session {
 
     public boolean isSubSession() {
         return rootSessionId != null && rootSessionId != ROOT_SESSION_ID;
+    }
+
+    /**
+     * 回写上下文用量快照。与 {@link #changeTeam} 不同构：这是统计型旁路数据，
+     * **不刷新 {@code updateTime}**——会话列表按更新时间排序，用量回写不该把会话顶到最前。
+     * {@code tokenCount} 为 null（执行异常未采集到）时整体跳过，保留上一次已知值。
+     */
+    public void changeContextUsage(Long tokenCount, Integer maxTokens, Double ratio) {
+        if (tokenCount == null || tokenCount < 0) return;
+        this.contextTokenCount = tokenCount;
+        this.contextMaxTokens = maxTokens;
+        this.contextRatio = ratio;
     }
 
     public void rename(@NonNull String name) {
@@ -92,11 +116,6 @@ public class Session {
      */
     public void changeAgent(Long agentId) {
         this.agentId = agentId;
-        update();
-    }
-
-    public void addTokenUsage(TokenUsage tokenUsage) {
-        this.tokenUsage = this.tokenUsage.add(tokenUsage);
         update();
     }
 

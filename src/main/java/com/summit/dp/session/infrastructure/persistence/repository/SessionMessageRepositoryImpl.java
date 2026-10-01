@@ -56,7 +56,7 @@ public class SessionMessageRepositoryImpl
             save(SessionMessage.builder()
                     .id(message.getId())
                     .sessionId(sessionId)
-                    .executionId(message.getExecutionId())
+                    .turnId(message.getTurnId())
                     .type(message.getType())
                     .text(message.getText())
                     .createTime(message.getCreateTime())
@@ -103,7 +103,7 @@ public class SessionMessageRepositoryImpl
         // 雪花主键由应用层统一生成：趋势递增，插入集中在索引最右侧，页分裂概率接近自增
         Long id = message.getId() == null ? IdUtil.getSnowflakeNextId() : message.getId();
         return SessionMessagePO.builder().id(id).sessionId(message.getSessionId())
-                .executionId(message.getExecutionId())
+                .turnId(message.getTurnId())
                 .type(message.getType() == null ? null : message.getType().name())
                 .content(message.getText())
                 .createTime(message.getCreateTime()).build();
@@ -112,7 +112,7 @@ public class SessionMessageRepositoryImpl
     @Override
     protected SessionMessage toModel(SessionMessagePO po) {
         return SessionMessage.builder().id(po.getId()).sessionId(po.getSessionId())
-                .executionId(po.getExecutionId())
+                .turnId(po.getTurnId())
                 .type(po.getType() == null ? null : SessionMessageType.valueOf(po.getType()))
                 .text(po.getContent())
                 .createTime(po.getCreateTime()).build();

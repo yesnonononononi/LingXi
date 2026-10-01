@@ -235,10 +235,7 @@ onBeforeUnmount(() => {
         <span class="font-bold text-sm tracking-tight text-gray-900 dark:text-white">
           LingXi
         </span>
-        <!-- HARNESS/AGENT style badge -->
-        <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 tracking-wider">
-          AGENT
-        </span>
+      
       </div>
 
       <!-- Collapse / Expand Icon Button [|] -->
@@ -493,7 +490,7 @@ onBeforeUnmount(() => {
                   class="w-full bg-transparent border-b border-blue-500 outline-none text-xs px-0.5 text-inherit"
                   autoFocus
                 />
-                <span v-else class="block truncate" :title="session.totalTokens ? `${session.title || '新对话'} (${session.totalTokens} tok)` : (session.title || '新对话')">{{ session.title || '新对话' }}</span>
+                <span v-else class="block truncate" :title="session.title || '新对话'">{{ session.title || '新对话' }}</span>
               </div>
 
               <!-- Action Controls: Rename & Delete -->

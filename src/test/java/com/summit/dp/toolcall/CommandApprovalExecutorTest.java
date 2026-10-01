@@ -81,9 +81,11 @@ class CommandApprovalExecutorTest {
         when(sseEventPublisher.connect(anyLong())).thenReturn(emitter);
         when(executionIdentity.rootSessionIdOfSession(2L)).thenReturn(2L);
         executor = new CommandApprovalExecutor(toolCallRepository, new ToolCallConverter(mapper),
-                sseEventPublisher, executionIdentity, modelContextService, runtimeEvents, workspaces,
-                transactions, mapper, provider(executionControl), provider(executionRepository), provider(toolRegistry),
-                new SessionAttributeRestorer(mock(SessionRepository.class)));
+                sseEventPublisher, executionIdentity, modelContextService, runtimeEvents,
+                transactions, provider(executionControl), provider(executionRepository),
+                new SessionAttributeRestorer(mock(SessionRepository.class)),
+                new com.summit.dp.toolcall.application.service.impl.ApprovedCommandRestorer(mapper, workspaces,
+                        provider(toolRegistry)));
     }
 
     @Test

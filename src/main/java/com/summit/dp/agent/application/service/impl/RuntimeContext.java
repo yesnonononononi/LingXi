@@ -22,6 +22,7 @@ import java.util.List;
  * @param pendingUserMessage 已解析但**尚未落库**的本轮用户消息；由调用方在取得运行资格后经
  *                         {@code RequestPreparer#commitUserMessage} 落库。它与 {@code messageList}
  *                         末元素是同一条消息（后者供模型上下文使用，前者供落库使用）。
+ * @param turnId          受理事务生成的业务轮次 ID；受理前为 null，受理后显式传入框架事件元数据。
  */
 public record RuntimeContext(
         ExecutionContext executionContext,
@@ -34,7 +35,21 @@ public record RuntimeContext(
         AgentAccessMode accessMode,
         CommandApprovalPolicy commandApprovalPolicy,
         boolean requirePlan,
-        UserMessageEntity pendingUserMessage
+        UserMessageEntity pendingUserMessage,
+        Long turnId
 ) {
+    public RuntimeContext(ExecutionContext executionContext, Long agentId, Long teamId,
+                          SessionVO session, List<Message> messageList, WorkspaceSpec workspace,
+                          ModelConfig modelConfig, AgentAccessMode accessMode,
+                          CommandApprovalPolicy commandApprovalPolicy, boolean requirePlan,
+                          UserMessageEntity pendingUserMessage) {
+        this(executionContext, agentId, teamId, session, messageList, workspace, modelConfig,
+                accessMode, commandApprovalPolicy, requirePlan, pendingUserMessage, null);
+    }
 
+    public RuntimeContext withTurnId(Long turnId) {
+        return new RuntimeContext(executionContext, agentId, teamId, session, messageList,
+                workspace, modelConfig, accessMode, commandApprovalPolicy, requirePlan,
+                pendingUserMessage, turnId);
+    }
 }

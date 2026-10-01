@@ -24,6 +24,8 @@
 - 单飞：`SessionExecutionRegistry.beginRoot` 已 rootRunning 时抛 ClientException("该会话正在执行中")；`cancelRoot` 必须同时清 rootRunning；`beginRoot` 在请求线程（prepare 后、connect 前）
 - 启动收尸 `ExecutionStartupReaper`(ApplicationReadyEvent)：execution `status IN(0,1)`→FAILED，SUSPENDED/终态不动
 - **session.agent_id（09-30 新增列，idx_root_agent）**：子会话复用键 = `(root_session_id, agent_id)`，唯一入口 `SessionRepository.findByRootAndAgent`（ORDER BY id DESC LIMIT 1）；`CallSubAgentTool.resolveTarget` 命中则复用同子会话、不建行，历史经 `buildRequest(..., priorMessages)`；`SUB_AGENT_SESSION_CREATED` 两条路径必发；`SessionVO.agentId = session.getAgentId()`（子会话=真实子 Agent，根=null）
+- **子会话挂起语义（10-01 用户定案，勿当 bug 修）**：委派在子执行挂起点**提前定稿** —— ① 根会话立即收尾（不等待、不阻塞，subAgent.execute 对 SUSPENDED 是返回而非异常）；② 审批恢复是**带外续跑**（独立线程、不经 SessionExecutionRegistry.beginRoot，可打断/交织根的新执行流，设计接受）；③ 子会话最终结果**不回流根会话**（`SubAgentResultRenderer.renderSuspended` 文案即契约：非失败、勿重做、结果不回传）。隐含前提：恢复后子代理要「自行继续」跑完任务，故恢复时业务属性必须完好。
+- **execution（框架表）禁存业务事实（10-01 定案）**：execution 只留 id/session_id/status/snapshot/root_execution_id/started_at/completed_at；模型与 token 权威在 `chat_turn`（模型由业务受理时解析写入 `acceptTurn`，用量由 `ChatTurnRuntimeListener` 从**三个终态事件**的 `TokenInfo` 覆盖回填 —— 框架侧 10-01 已把 `TokenInfo` 提升为顶层 `core.conversation.event.TokenInfo`，完成/失败/取消同形携带，失败与取消带的是「结束前已累计」的部分用量）。`ExecutionSummary` 只含 (executionId, sessionId, status, startedAt, completedAt)；禁再往 execution 加展示/统计列。**残留**：`LocalExecutionRepository.requireCancel`（不活跃挂起执行被取消）不发事件 → 该轮用量为 null。
 
 ## 四、SSE 消息模型（09-29 定案）
 - **`AI_MESSAGE` = 一个模型轮次结束**（工具调用轮也会发，`text` 为 null）。消费方必须先判 `event.text` 空，禁止 `event.text ?? currentTurnText` 兜底
@@ -46,4 +48,7 @@
 - 排查 MCP 异常先确认运行时挂的是框架 1.1.0（`com.summit.core.conf.McpConfig` 仅 1.1.0 有）
 - Windows stdio `command` 必须 `npx.cmd`，`npx` 会静默降级丢全部工具
 - `McpClientFactory` 必须关 `subscribeTo{Tool,Prompt,Resource}ListChanges`（404 噪音根治），禁复活
-- 渐进披露：提示词 `### MCP Prompt` + `- <name> count: <n>`；`list_mcp_tools` 列名**不揭露**；`search_tool` 返 schema **并揭露**
+- 渐进披露三级（10-01 定案）：提示词 `## MCP Tools` + 每服务一行 `- <name> - <description> - <n> tools`（**服务级**）；`list_mcp_tools` 列名**不揭露**（工具级）；`search_tool` 返 schema **并揭露**
+- **工具名前缀已退役（10-01）**：框架 `McpConfig.MCP` = `name/description/transport/conf/maxOutput`（无 `toolNamePrefix`）；工具名 = 固定 `mcp_` + 服务端原始工具名，**服务名不再进 `function.name`**（可含点号/空格）。风险：跨服务同名工具会被 `McpToolScope.adopt` 的首个静默遮蔽
+- **服务描述**由业务用户填写（`mcp.description` VARCHAR(200) → `McpSession.description()` → `McpResume`），**不取**服务端 `instructions`（不确定性）
+- 长连接方案待落地：应用侧替换 `ScopeMcpProvider` + 包装 `McpSession.close()` 为 no-op；折中=只并行化 `openScope` 串行握手（每轮 10–16s → ≈4s）

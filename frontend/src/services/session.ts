@@ -69,7 +69,7 @@ export class SessionAPI {
   }
 
   /**
-   * 按 ID 查询单个会话元数据（包含 totalTokens, inputTokens, outputTokens 等）
+   * 按 ID 查询单个会话元数据
    * 对应后端 @GetMapping("/{id}")
    */
   static async findById(id: number | string): Promise<Result<SessionVO>> {

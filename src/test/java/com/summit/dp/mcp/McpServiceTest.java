@@ -61,10 +61,10 @@ class McpServiceTest {
         return Mcp.builder()
                 .id(1L)
                 .name("github")
-                .transport(Mcp.TRANSPORT_STREAMABLE_HTTP)
+                .transport(Mcp.Transport.STREAMABLE_HTTP)
                 .url("https://api.githubcopilot.com/mcp/")
                 .headers(Map.of("Authorization", TOKEN))
-                .toolNamePrefix("gh_")
+                .description("GitHub 仓库与 Issue 工具")
                 .initializationTimeout(Duration.ofSeconds(30))
                 .executionTimeout(Duration.ofSeconds(60))
                 .maxOutput(20000)
@@ -134,7 +134,7 @@ class McpServiceTest {
     void maskedValueWithoutOriginalIsDropped() {
         McpRepository repository = repository();
         Mcp modelWithoutHeaders = Mcp.builder()
-                .id(2L).name("fs").transport(Mcp.TRANSPORT_SSE).url("https://x/mcp/")
+                .id(2L).name("fs").transport(Mcp.Transport.SSE).url("https://x/mcp/")
                 .headers(Map.of()).status(Mcp.STATUS_ENABLED).build();
         when(repository.findById(2L)).thenReturn(Optional.of(modelWithoutHeaders));
         when(repository.findByName("fs")).thenReturn(Optional.of(modelWithoutHeaders));
@@ -155,7 +155,7 @@ class McpServiceTest {
     void envValuesMaskAndRestoreLikeHeaders() {
         McpRepository repository = repository();
         Mcp stdio = Mcp.builder()
-                .id(6L).name("shadcn").transport(Mcp.TRANSPORT_STDIO)
+                .id(6L).name("shadcn").transport(Mcp.Transport.STDIO)
                 .command(List.of("npx", "shadcn@latest", "mcp"))
                 .env(Map.of("GITHUB_TOKEN", TOKEN))
                 .status(Mcp.STATUS_ENABLED).build();
@@ -197,7 +197,7 @@ class McpServiceTest {
         assertEquals("https://api.githubcopilot.com/mcp/", http.url());
         // 下行给框架的是真实令牌，框架需要它才能连上服务
         assertEquals(TOKEN, http.headers().get("Authorization"));
-        assertEquals("gh_", mcp.toolNamePrefix());
+        assertEquals("GitHub 仓库与 Issue 工具", mcp.description());
         assertEquals(Duration.ofSeconds(30), mcp.initializationTimeout());
         assertEquals(Duration.ofSeconds(60), mcp.executionTimeout());
         assertEquals(20000, mcp.maxOutput());
@@ -217,7 +217,7 @@ class McpServiceTest {
     void currentConfigToleratesNullHeaders() {
         McpRepository repository = repository();
         Mcp noHeaders = Mcp.builder()
-                .id(3L).name("bare").transport(Mcp.TRANSPORT_STREAMABLE_HTTP)
+                .id(3L).name("bare").transport(Mcp.Transport.STREAMABLE_HTTP)
                 .url("https://bare/mcp/").headers(null)
                 .initializationTimeout(Duration.ofSeconds(10))
                 .executionTimeout(Duration.ofSeconds(20))
@@ -236,7 +236,7 @@ class McpServiceTest {
     void currentConfigMapsStdioToStdioConf() {
         McpRepository repository = repository();
         Mcp stdio = Mcp.builder()
-                .id(4L).name("shadcn").transport(Mcp.TRANSPORT_STDIO)
+                .id(4L).name("shadcn").transport(Mcp.Transport.STDIO)
                 .command(List.of("npx", "shadcn@latest", "mcp"))
                 .env(Map.of("GITHUB_TOKEN", TOKEN))
                 .initializationTimeout(Duration.ofSeconds(15))
@@ -261,6 +261,62 @@ class McpServiceTest {
     /* ---------------- 校验与状态 ---------------- */
 
     @Test
+    @DisplayName("接口出参的传输方式是线上形态：前端按 transport === 'stdio' 判分支")
+    void findByIdReturnsWireFormTransport() {
+        McpRepository repository = repository();
+        Mcp stdio = Mcp.builder()
+                .id(11L).name("playwright").transport(Mcp.Transport.STDIO)
+                .command(List.of("npx.cmd", "--yes", "@playwright/mcp@latest"))
+                .status(Mcp.STATUS_ENABLED).build();
+        when(repository.findById(11L)).thenReturn(Optional.of(stdio));
+
+        assertEquals("stdio", service(repository).findById(11L).getData().getTransport(),
+                "出参必须是线上形态（streamable-http / sse / stdio），枚举名会让前端分支落空");
+    }
+
+    @Test
+    @DisplayName("服务名含点号不再影响工具名：名字原样下发，装配侧不再产出任何前缀")
+    void currentConfigKeepsDottedNameAsIs() {
+        McpRepository repository = repository();
+        Mcp drawio = Mcp.builder()
+                .id(7L).name("draw.io").transport(Mcp.Transport.STREAMABLE_HTTP)
+                .url("https://mcp.draw.io/mcp").headers(Map.of())
+                .description("draw.io 图表工具")
+                .initializationTimeout(Duration.ofSeconds(30))
+                .executionTimeout(Duration.ofSeconds(60))
+                .maxOutput(20000)
+                .status(Mcp.STATUS_ENABLED).build();
+        when(repository.findEnabled()).thenReturn(List.of(drawio));
+
+        McpConfig.MCP mcp = service(repository).currentConfig().getMcp().getFirst();
+
+        assertEquals("draw.io", mcp.name(), "服务名只是标签，原样下发给框架");
+        assertEquals("draw.io 图表工具", mcp.description(), "服务描述随配置下发，进提示词");
+        // 框架侧工具名 = 固定前缀 "mcp_" + 服务端原始工具名；服务名不再参与，点号无从泄漏
+        assertTrue(("mcp_" + "create_diagram").matches("[a-zA-Z0-9_-]+"));
+    }
+
+    @Test
+    @DisplayName("名字含点号可新增（名字不再进入工具名），服务描述随配置落库")
+    void addAllowsDottedNameAndSavesDescription() {
+        McpRepository repository = repository();
+
+        McpCommand command = new McpCommand();
+        command.setName("draw.io");
+        command.setTransport(Mcp.Transport.STREAMABLE_HTTP.toString());
+        command.setUrl("https://mcp.draw.io/mcp");
+        command.setDescription("draw.io 图表工具");
+
+        Result<Void> result = service(repository).add(command);
+
+        assertNull(result.getErrMsg(), "成功路径不应带错误信息: " + result.getErrMsg());
+        ArgumentCaptor<Mcp> captor = ArgumentCaptor.forClass(Mcp.class);
+        verify(repository).save(captor.capture());
+        assertEquals("draw.io", captor.getValue().getName(), "名字只是标签，原样落库");
+        assertEquals("draw.io 图表工具", captor.getValue().getDescription());
+    }
+
+    @Test
     @DisplayName("重名新增被拒绝，且不落库")
     void addRejectsDuplicateName() {
         McpRepository repository = repository();
@@ -268,7 +324,7 @@ class McpServiceTest {
 
         McpCommand command = new McpCommand();
         command.setName("github");
-        command.setTransport(Mcp.TRANSPORT_STREAMABLE_HTTP);
+        command.setTransport(Mcp.Transport.STREAMABLE_HTTP.toString());
         command.setUrl("https://dup/mcp/");
 
         ClientException e = assertThrows(ClientException.class,
@@ -285,7 +341,7 @@ class McpServiceTest {
 
         McpCommand command = new McpCommand();
         command.setName("bad");
-        command.setTransport(Mcp.TRANSPORT_SSE);
+        command.setTransport(Mcp.Transport.SSE.toString());
         command.setUrl("ftp://example.com/mcp");
 
         ClientException e = assertThrows(ClientException.class,
@@ -302,7 +358,7 @@ class McpServiceTest {
 
         McpCommand command = new McpCommand();
         command.setName("shadcn");
-        command.setTransport(Mcp.TRANSPORT_STDIO);
+        command.setTransport(Mcp.Transport.STDIO.toString());
         command.setCommand(List.of("npx", "shadcn@latest", "mcp"));
         command.setEnv(Map.of("NO_COLOR", "1"));
 
@@ -324,7 +380,7 @@ class McpServiceTest {
 
         McpCommand command = new McpCommand();
         command.setName("broken");
-        command.setTransport(Mcp.TRANSPORT_STDIO);
+        command.setTransport(Mcp.Transport.STDIO.toString());
 
         ClientException e = assertThrows(ClientException.class,
                 () -> service(repository).add(command));
@@ -357,7 +413,7 @@ class McpServiceTest {
 
         McpCommand command = new McpCommand();
         command.setName("newone");
-        command.setTransport(Mcp.TRANSPORT_STREAMABLE_HTTP);
+        command.setTransport(Mcp.Transport.STREAMABLE_HTTP.toString());
         command.setUrl("https://new/mcp/");
 
         Result<Void> result = service(repository).add(command);
@@ -392,12 +448,12 @@ class McpServiceTest {
         McpRequest request = new McpRequest();
         request.setId(5L);
         request.setName("gh");
-        request.setTransport(Mcp.TRANSPORT_SSE);
+        request.setTransport(Mcp.Transport.SSE.toString());
         request.setUrl("https://gh/mcp/");
         request.setHeaders(Map.of("Authorization", "Bearer t"));
         request.setCommand(List.of("npx", "shadcn@latest", "mcp"));
         request.setEnv(Map.of("NO_COLOR", "1"));
-        request.setToolNamePrefix("g_");
+        request.setDescription("gh 服务");
         request.setInitializationTimeout(5000L);
         request.setExecutionTimeout(7000L);
         request.setMaxOutput(3000);
@@ -412,12 +468,12 @@ class McpServiceTest {
         verify(repository).updateById(captor.capture());
         Mcp updated = captor.getValue();
         assertEquals("gh", updated.getName());
-        assertEquals(Mcp.TRANSPORT_SSE, updated.getTransport());
+        assertEquals(Mcp.Transport.SSE, updated.getTransport());
         assertEquals("https://gh/mcp/", updated.getUrl());
         assertEquals("Bearer t", updated.getHeaders().get("Authorization"));
         assertEquals(List.of("npx", "shadcn@latest", "mcp"), updated.getCommand());
         assertEquals(Map.of("NO_COLOR", "1"), updated.getEnv());
-        assertEquals("g_", updated.getToolNamePrefix());
+        assertEquals("gh 服务", updated.getDescription());
         assertEquals(Duration.ofMillis(5000), updated.getInitializationTimeout());
         assertEquals(Duration.ofMillis(7000), updated.getExecutionTimeout());
         assertEquals(3000, updated.getMaxOutput());

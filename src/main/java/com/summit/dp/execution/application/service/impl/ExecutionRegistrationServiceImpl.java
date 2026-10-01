@@ -8,7 +8,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 
-/** 初始执行登记实现：只写「查询摘要 + 状态」，不写 snapshot（snapshot 归框架检查点）。 */
+/** 初始执行登记实现：只写「会话/根执行归属 + 状态」，不写 snapshot（snapshot 归框架检查点）。 */
 @Service
 @RequiredArgsConstructor
 public class ExecutionRegistrationServiceImpl implements ExecutionRegistrationService {
@@ -24,11 +24,9 @@ public class ExecutionRegistrationServiceImpl implements ExecutionRegistrationSe
         execution.setId(initial.executionId());
         execution.setSessionId(initial.sessionId());
         execution.setRootExecutionId(initial.rootExecutionId());
-        execution.setModelName(initial.modelName());
-        execution.setModelProvider(initial.modelProvider());
         execution.setStatus(STATUS_CREATED);
         // 刻意不写 snapshot：执行恢复检查点是框架的职责，这里只登记「这次执行存在」。
-        // token 三列同样留空 —— 未采集到就是 null，不能写成 0（0 表示确实为 0）。
+        // 模型与用量也不写 —— 它们是业务事实，权威在 chat_turn（模型受理时写入、用量完成事件回填）。
         executionRepository.save(execution);
     }
 

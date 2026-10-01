@@ -5,7 +5,6 @@ import com.summit.core.conversation.message.Message;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.Session;
-import com.summit.dp.session.domain.model.TokenUsage;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.context.SessionContextEntity;
 import lombok.RequiredArgsConstructor;
@@ -78,7 +77,6 @@ public class SubSessionResolver {
                 .agentId(agent == null ? null : agent.getId())
                 .workspaceId(workspaceId)
                 .name(subSessionName(agent, task))
-                .tokenUsage(TokenUsage.empty())
                 .build();
         sessionRepository.saveAndReturnId(subSession);
     }

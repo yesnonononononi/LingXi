@@ -84,7 +84,7 @@ const {
       <div v-else class="space-y-2.5">
         <div
           v-if="modelsList.length === 0"
-          class="py-8 text-center text-xs text-gray-400 border border-dashed rounded-2xl border-gray-200 dark:border-gray-800"
+          class="py-12 text-center text-xs text-gray-400 border border-dashed rounded-2xl border-gray-200 dark:border-gray-800"
         >
           暂未配置模型，请点击下方按钮添加提供方
         </div>
@@ -94,15 +94,15 @@ const {
           v-for="item in modelsList"
           :key="item.id"
           :class="[
-            'rounded-2xl border p-3.5 px-4 flex items-center justify-between transition-colors shadow-2xs',
+            'rounded-2xl border px-4 py-3.5 flex items-center justify-between transition-colors',
             isDark
-              ? 'bg-[#1e2738] border-[#2b374f] hover:border-gray-600'
-              : 'bg-white border-gray-200 hover:border-gray-300'
+              ? 'bg-[#151c2c] border-[#252f44] hover:border-gray-700'
+              : 'bg-gray-50/70 border-gray-200 hover:border-gray-300'
           ]"
         >
           <!-- 左侧：模型名称 + [自定义] 徽章 + 在线绿点 -->
           <div class="flex items-center gap-2 min-w-0">
-            <span class="font-medium text-xs text-gray-900 dark:text-gray-100 truncate">
+            <span class="font-semibold text-sm text-gray-900 dark:text-white truncate">
               {{ item.modelName || '未命名模型' }}
             </span>
             <!-- 提供方由后端下发，不再用 baseUrl 是否含某厂商域名来猜 -->

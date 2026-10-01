@@ -57,6 +57,7 @@ class InitSqlPoConsistencyTest {
             com.summit.dp.agent.infrastructure.persistence.po.AgentPO.class,
             com.summit.dp.team.infrastructure.persistence.po.TeamPO.class,
             com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO.class,
+            com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO.class,
             com.summit.dp.email.infrastructure.persistence.po.EmailPO.class,
             com.summit.dp.email.infrastructure.persistence.po.EmailMessagePO.class,
             com.summit.dp.mcp.infrastructure.persistence.po.McpPO.class);

@@ -14,10 +14,9 @@ import java.util.Map;
 /**
  * Mcp 新增/更新的业务校验。
  *
- * <p>校验分两类：<b>形态校验</b>（非空、长度、URL 可解析、超时为正）与
- * <b>唯一性校验</b>（服务名不与他人重复）。重名查询下推到 SQL。
- * 必填项按传输方式分派：http 系必填 url，stdio 必填 command——
- * 「切换传输后另一半参数缺失」的组合态由领域侧 {@code requireCoherent} 在落库前兜底。</p>
+ * <p>两类规则：<b>形态校验</b>（非空、长度、URL 可解析、超时为正）与
+ * <b>唯一性校验</b>（服务名不与他人重复，重名查询下推到 SQL）。每个校验都以
+ * 「返回错误文案 / 返回 null」表达，入口方法读成一张清单。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -26,26 +25,20 @@ public class McpValidator {
 
     private final McpRepository repository;
 
+    /** 入参与库里的传输方式都是线上形态（streamable-http / sse / stdio），取值不受支持时统一给这条 */
+    private static final String TRANSPORT_HINT = "传输方式仅支持 streamable-http / sse / stdio";
+
     /** @return null 表示校验通过，否则为错误提示 */
     public String validateForCreate(McpCommand command) {
         if (command == null) return "新增参数不能为空";
-
         if (command.getName() == null || command.getName().isBlank()) return "服务名称不能为空";
 
-        String transport = command.getTransport() == null
-                ? Mcp.TRANSPORT_STREAMABLE_HTTP : command.getTransport().trim().toLowerCase();
-        String error = checkTransport(transport);
-        if (error != null) return error;
-
-        // 新增是全字段操作：必填项按传输方式分派
-        if (Mcp.TRANSPORT_STDIO.equals(transport)) {
-            error = checkCommand(command.getCommand());
-        } else {
-            if (command.getUrl() == null || command.getUrl().isBlank()) return "服务地址不能为空";
-        }
-        if (error != null) return error;
-
-        error = checkShape(command);
+        Mcp.Transport transport = command.getTransport() == null
+                ? Mcp.Transport.STREAMABLE_HTTP : transportOrNull(command.getTransport());
+        String error = firstError(
+                transport == null ? TRANSPORT_HINT : null,
+                requiredByTransport(command, transport),
+                checkShape(command));
         if (error != null) return error;
 
         return checkNameUnique(command.getName(), null);
@@ -56,25 +49,46 @@ public class McpValidator {
         if (command == null) return "更新参数不能为空";
         if (command.getId() == null) return "id不能为空";
 
-        // 更新允许部分字段缺省；缺省的字段由应用层保持原值，因此只校验显式传入的部分
-        if (command.getName() != null && command.getName().isBlank()) return "服务名称不能为空";
-
-        String error = checkShape(command);
+        String error = firstError(
+                // 更新允许部分字段缺省；缺省的字段由应用层保持原值，因此只校验显式传入的部分
+                command.getName() != null && command.getName().isBlank() ? "服务名称不能为空" : null,
+                checkShape(command));
         if (error != null) return error;
 
-        if (command.getName() != null) {
-            return checkNameUnique(command.getName(), command.getId());
+        return command.getName() == null ? null : checkNameUnique(command.getName(), command.getId());
+    }
+
+    /** 依序取第一条错误（null 表示全过）：让两个入口读成一张校验清单，而不是一串 error 变量 */
+    private static String firstError(String... errors) {
+        for (String error : errors) {
+            if (error != null) return error;
         }
         return null;
     }
 
-    private String checkTransport(String transport) {
-        if (!Mcp.TRANSPORT_STREAMABLE_HTTP.equals(transport)
-                && !Mcp.TRANSPORT_SSE.equals(transport)
-                && !Mcp.TRANSPORT_STDIO.equals(transport))
-            return "传输方式仅支持 " + Mcp.TRANSPORT_STREAMABLE_HTTP + " / "
-                    + Mcp.TRANSPORT_SSE + " / " + Mcp.TRANSPORT_STDIO;
+    /**
+     * 新增是全字段操作：必填项按传输方式分派——stdio 要启动命令，http 系要服务地址。
+     * <p>「切换传输后另一半参数缺失」的组合态由领域侧 {@code requireCoherent} 在落库前兜底。</p>
+     */
+    private String requiredByTransport(McpCommand command, Mcp.Transport transport) {
+        if (transport == null) return null;
+        if (transport == Mcp.Transport.STDIO) return checkCommand(command.getCommand());
+        if (command.getUrl() == null || command.getUrl().isBlank()) return "服务地址不能为空";
         return null;
+    }
+
+    /**
+     * 归一传输方式：入参可能写成线上形态（{@code streamable-http}）或枚举名（{@code STREAMABLE_HTTP}），
+     * 统一交给领域枚举解析——与框架侧 {@code McpTransport.parse} 同一套规则，两端不各自定义合法写法。
+     *
+     * @return null 表示取值不受支持
+     */
+    private static Mcp.Transport transportOrNull(String transport) {
+        try {
+            return Mcp.Transport.parse(transport);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     private String checkShape(McpCommand command) {
@@ -90,9 +104,8 @@ public class McpValidator {
             if (!isHttpUrl(url)) return "服务地址必须是 http 或 https 开头的合法地址";
         }
 
-        if (command.getTransport() != null) {
-            String error = checkTransport(command.getTransport().trim().toLowerCase());
-            if (error != null) return error;
+        if (command.getTransport() != null && transportOrNull(command.getTransport()) == null) {
+            return TRANSPORT_HINT;
         }
 
         if (command.getCommand() != null) {
@@ -105,9 +118,9 @@ public class McpValidator {
             if (error != null) return error;
         }
 
-        if (command.getToolNamePrefix() != null
-                && command.getToolNamePrefix().length() > Mcp.TOOL_NAME_PREFIX_MAX_LENGTH)
-            return "工具名前缀长度不能超过" + Mcp.TOOL_NAME_PREFIX_MAX_LENGTH;
+        if (command.getDescription() != null
+                && command.getDescription().trim().length() > Mcp.DESCRIPTION_MAX_LENGTH)
+            return "服务描述长度不能超过" + Mcp.DESCRIPTION_MAX_LENGTH;
 
         if (command.getInitializationTimeout() != null && command.getInitializationTimeout() <= 0)
             return "初始化超时必须大于 0";

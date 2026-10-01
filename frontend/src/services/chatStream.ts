@@ -15,7 +15,6 @@ import { AgentAPI } from './agent';
 import { SessionAPI } from './session';
 import { ToolCallAPI } from './toolCall';
 import { buildPromptCard } from '../utils/session';
-import { extractErrorMessage } from '../utils/error';
 import { isOk } from '../utils/api';
 import { createLocalId, toServerSessionId } from '../utils/ids';
 import {
@@ -304,7 +303,7 @@ export class ChatStreamService {
 
                   const rawArgs = typeof event.args === 'string' ? event.args : JSON.stringify(event.args || {});
                   const toolName = event.toolName || 'tool';
-                  const meta = resolveToolMeta({ toolName, args: event.args, rawArgs });
+                  const meta = resolveToolMeta({ toolName, args: event.args });
                   if (!botMessage.toolCalls) botMessage.toolCalls = [];
                   const existingTool = botMessage.toolCalls.find(t => t.toolName === event.toolName && t.query === rawArgs);
                   if (!existingTool) {
@@ -423,7 +422,6 @@ export class ChatStreamService {
                   settleComplete();
                   // 契约 §2.2：ExecutionErrorEvent 主文案恒在 errMsg（extraDes 仅作补充，不作为主文案来源）
                   const errMsg = event.errMsg?.trim() || '恢复执行异常';
-                  botMessage.executionError = errMsg;
                   if (botMessage.toolCalls) {
                     botMessage.toolCalls.forEach(t => {
                       if (t.status === 'calling') {
@@ -492,7 +490,6 @@ export class ChatStreamService {
             return;
           }
           // 流中途异常：把气泡置为失败态，不再向上抛（决策已落库，不能让卡片回退到待审）
-          botMessage.executionError = extractErrorMessage(err?.message || err) || '恢复执行流中断';
           settleComplete();
           onProgress({ ...botMessage });
           onFinish?.();
@@ -664,9 +661,9 @@ export class ChatStreamService {
               const toolName = event.toolName || 'tool';
 
               // 分类与展示元数据统一由 toolMeta 解析（不再按工具名子串猜测）
-              const meta = resolveToolMeta({ toolName, args: event.args, rawArgs });
+              const meta = resolveToolMeta({ toolName, args: event.args });
               const subAgentParams = isSubAgentTool(toolName, meta.category)
-                ? extractSubAgentParams({ args: event.args, query: rawArgs })
+                ? extractSubAgentParams({ query: rawArgs })
                 : {};
 
               if (!botMessage.toolCalls) botMessage.toolCalls = [];
@@ -924,7 +921,6 @@ export class ChatStreamService {
               }
               // 契约 §2.2：ExecutionErrorEvent 主文案恒在 errMsg（extraDes 仅作补充，不作为主文案来源）
               const errMsg = event.errMsg?.trim() || '执行异常';
-              botMessage.executionError = errMsg;
               // 将仍处于 calling 状态的工具标记为 failed
               if (botMessage.toolCalls) {
                 botMessage.toolCalls.forEach(t => {
@@ -1064,8 +1060,6 @@ export class ChatStreamService {
       if (!botMessage.durationMs) {
         botMessage.durationMs = Math.max(Date.now() - streamStartTime, 1000);
       }
-      const cleanErr = extractErrorMessage(err?.message || err) || '与后端 Agent 服务通信异常';
-      botMessage.executionError = cleanErr;
       onProgress({ ...botMessage });
       onFinish?.();
       throw err;

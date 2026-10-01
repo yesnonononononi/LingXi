@@ -3,8 +3,9 @@ import { ref, watch, computed } from 'vue';
 import type { SubSessionVO, ChatMessage, ToolCallTrace } from '../../types/chat';
 import { SessionAPI } from '../../services/session';
 import { parseSessionMessages } from '../../utils/session';
-import { formatTokens, formatClockTime } from '../../utils/format';
+import { formatClockTime } from '../../utils/format';
 import { parseToolDiff } from '../../utils/toolDiff';
+import { shouldShowToolArguments, resolveToolCategory } from '../../utils/toolMeta';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
 import MarkdownRenderer from './MarkdownRenderer.vue';
 import { isOk } from '../../utils/api';
@@ -77,9 +78,6 @@ watch(
 const displayAgentName = computed(() => {
   return props.subSession?.agentName || (props.subSession?.agentId ? `Agent #${props.subSession.agentId}` : '子代理');
 });
-
-// formatTokens 已收敛到 utils/format.ts
-const displayTokens = computed(() => formatTokens(props.subSession?.totalTokens));
 
 const copyAllContent = () => {
   const text = messages.value
@@ -200,12 +198,6 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
               <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
               <span>执行完成</span>
             </span>
-            <span v-if="subSession?.totalTokens" class="font-mono">
-              Token 消耗: {{ displayTokens }}
-              <span v-if="subSession?.inputTokens || subSession?.outputTokens" class="opacity-70">
-                (入 {{ subSession.inputTokens || 0 }} / 出 {{ subSession.outputTokens || 0 }})
-              </span>
-            </span>
           </div>
           <div v-if="subSession?.createTime" class="font-mono opacity-80 text-[11px]">
             创建于 {{ new Date(subSession.createTime).toLocaleString() }}
@@ -303,7 +295,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                       </svg>
                       <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="tc.status === 'failed' ? 'bg-rose-500' : tc.status === 'calling' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'"></span>
-                      <span class="font-semibold text-gray-300 dark:text-gray-200 truncate">{{ tc.toolName }}</span>
+                      <span class="font-semibold text-gray-300 dark:text-gray-200 truncate">{{ resolveToolCategory(tc.toolName) }}</span>
                       <span
                         v-if="getToolDiffStat(tc)"
                         class="inline-flex items-center gap-1 font-mono text-[11px] font-medium leading-none shrink-0 select-none ml-1"
@@ -322,7 +314,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                   </button>
 
                   <div v-if="expandedToolCallIds[tc.id]" class="px-3 pb-3 pt-0 space-y-2 border-t border-gray-700/30">
-                    <pre v-if="tc.query" class="text-[11px] text-gray-400 overflow-x-auto whitespace-pre-wrap max-h-32 mt-2 p-2 rounded-lg bg-black/20">{{ tc.query }}</pre>
+                    <pre v-if="shouldShowToolArguments(tc.toolName) && tc.query" class="text-[11px] text-gray-400 overflow-x-auto whitespace-pre-wrap max-h-32 mt-2 p-2 rounded-lg bg-black/20">{{ tc.query }}</pre>
                     <pre v-if="tc.result" class="text-[11px] text-gray-200 dark:text-gray-300 overflow-x-auto whitespace-pre-wrap max-h-48 p-2 rounded-lg bg-black/20">{{ tc.result }}</pre>
                   </div>
                 </div>

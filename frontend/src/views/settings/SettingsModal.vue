@@ -52,7 +52,7 @@ onBeforeUnmount(() => {
   >
     <div
       :class="[
-        'w-full max-w-3xl rounded-3xl p-6 shadow-2xl transition-all border flex flex-col max-h-[85vh]',
+        'w-[768px] max-w-[calc(100vw-2rem)] h-[580px] max-h-[calc(100vh-2rem)] rounded-3xl p-6 shadow-2xl border flex flex-col',
         isDark
           ? 'bg-[#151c2c] border-[#2b374f] text-gray-200'
           : 'bg-white border-gray-100 text-gray-800'
@@ -209,11 +209,9 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Right Content Area -->
+        <!-- scrollbar-gutter: 恒定预留滚动条槽位，使各 tab 的盒子宽度一致（不因是否出现滚动条而变窄） -->
         <div
-          :class="[
-            'flex-1 min-w-0 pr-1 text-sm',
-            activeTab === 'general' ? 'overflow-visible' : 'overflow-y-auto max-h-[480px] scrollbar-thin'
-          ]"
+          class="flex-1 min-w-0 pr-1 text-sm h-full overflow-y-auto [scrollbar-gutter:stable]"
         >
           <GeneralTab v-if="activeTab === 'general'" :is-dark="isDark" @model-updated="emit('modelUpdated')" />
           <ModelsTab v-else-if="activeTab === 'models'" :is-dark="isDark" @model-updated="emit('modelUpdated')" />

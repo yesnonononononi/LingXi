@@ -10,6 +10,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 /** 会话元数据持久化对象。消息与工作空间分别通过 id 关联独立表。 */
@@ -39,11 +40,17 @@ public class SessionPO {
      * {@code updateById} 默认跳过 null 字段 —— 不加这条，解绑会静默失效：领域模型已改成 null，
      * 库里仍是旧值，表现为「下拉框清空了团队但后端还在按团队编排」。</p>
      */
-    @TableField(updateStrategy = FieldStrategy.IGNORED)
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private Long teamId;
-    private int totalTokens;
-    private int inputTokens;
-    private int outputTokens;
+    /**
+     * 上下文已用 token：最近一次终结执行由框架 loop 结束填充的 {@code Execution.contextUsageMetric}
+     * 上报（见 SessionContextMetricListener）；NULL=尚未采集（新会话 / 旧数据）。
+     */
+    private Long contextTokenCount;
+    /** 上报时的上下文上限 token（框架运行时 max-tokens）；NULL=尚未采集。 */
+    private Integer contextMaxTokens;
+    /** {@code context_token_count / context_max_tokens}，可能大于 1（超限）；NULL=尚未采集。 */
+    private BigDecimal contextRatio;
     private Instant createTime;
     private Instant updateTime;
 
