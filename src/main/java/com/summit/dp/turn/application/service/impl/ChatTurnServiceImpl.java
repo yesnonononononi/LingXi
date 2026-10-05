@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -29,21 +30,41 @@ public class ChatTurnServiceImpl implements ChatTurnService {
     private final ChatTurnRepository chatTurnRepository;
 
     @Override
-    public long acceptTurn(long sessionId, Long parentTurnId, Long executionId,
+    public long acceptTurn(long sessionId, Long rootSessionId, Long parentTurnId, Long executionId,
                            String modelName, String modelProvider) {
+        return acceptTurn(sessionId, rootSessionId, parentTurnId, executionId, modelName, modelProvider, null, null);
+    }
+
+    /**
+     * 带命令身份的受理。
+     *
+     * <p>命令身份在<b>落库那一刻</b>就与轮次同事务写入：受理与幂等键必须是同一个原子事实。
+     * 若先落轮次再补 commandId，中间崩溃会留下一条「已受理但查不回」的命令，
+     * 前端重试就会新开一轮并写第二条用户消息。</p>
+     */
+    @Override
+    public long acceptTurn(long sessionId, Long rootSessionId, Long parentTurnId, Long executionId,
+                           String modelName, String modelProvider,
+                           String commandId, String commandDigest) {
         long turnId = IdUtil.getSnowflakeNextId();
         ChatTurn turn = ChatTurn.accept(turnId, sessionId, parentTurnId, modelName, modelProvider);
         // 执行 ID 在 prepare 阶段就已生成，这里直接落库：观察钩子只给 executionId，
         // 若不在此刻写入，START 事件到达时就找不回本轮次（会永远停在 ACCEPTED）。
         turn.attachExecution(executionId);
-        chatTurnRepository.save(turn);
+        turn.attachCommand(commandId, commandDigest);
+        chatTurnRepository.save(turn, rootSessionId);
         return turnId;
     }
 
     @Override
+    public Optional<ChatTurn> findByCommandId(String commandId) {
+        return chatTurnRepository.findByCommandId(commandId);
+    }
+
+    @Override
     @Transactional
-    public void markRunning(String executionId, Instant startedAt) {
-        mutate(executionId, "markRunning", turn -> turn.markRunning(startedAt));
+    public void markRunning(String executionId, Instant startedAt, Long rootSessionId) {
+        mutate(executionId, "markRunning", rootSessionId, turn -> turn.markRunning(startedAt));
     }
 
     @Override
@@ -67,18 +88,19 @@ public class ChatTurnServiceImpl implements ChatTurnService {
 
     @Override
     @Transactional
-    public void markWaiting(String executionId) {
-        mutate(executionId, "markWaiting", ChatTurn::markWaiting);
+    public void markWaiting(String executionId, Long rootSessionId) {
+        mutate(executionId, "markWaiting", rootSessionId, ChatTurn::markWaiting);
     }
 
     @Override
     @Transactional
     public void markTerminal(String executionId, ChatTurnStatus terminalStatus,
-                             Long inputTokens, Long outputTokens, Long totalTokens, Instant completedAt) {
+                             Long inputTokens, Long outputTokens, Long totalTokens, Instant completedAt,
+                             Long rootSessionId) {
         if (terminalStatus == null || !terminalStatus.isTerminal()) {
             throw new IllegalArgumentException("markTerminal 只接受终态，收到: " + terminalStatus);
         }
-        mutate(executionId, "markTerminal/" + terminalStatus,
+        mutate(executionId, "markTerminal/" + terminalStatus, rootSessionId,
                 turn -> applyTerminal(turn, terminalStatus, inputTokens, outputTokens, totalTokens, completedAt));
     }
 
@@ -102,21 +124,22 @@ public class ChatTurnServiceImpl implements ChatTurnService {
 
     @Override
     @Transactional
-    public void refreshUsage(String executionId, Long inputTokens, Long outputTokens, Long totalTokens) {
+    public void refreshUsage(String executionId, Long inputTokens, Long outputTokens, Long totalTokens,
+                             Long rootSessionId) {
         if (inputTokens == null && outputTokens == null && totalTokens == null) {
             return;
         }
-        mutate(executionId, "refreshUsage",
+        mutate(executionId, "refreshUsage", rootSessionId,
                 turn -> turn.refreshUsage(inputTokens, outputTokens, totalTokens));
     }
 
     @Override
     @Transactional
-    public void recordFailureReason(String executionId, String reason) {
+    public void recordFailureReason(String executionId, String reason, Long rootSessionId) {
         if (reason == null || reason.isBlank()) {
             return;
         }
-        mutate(executionId, "recordFailureReason", turn -> turn.recordFailureReason(reason));
+        mutate(executionId, "recordFailureReason", rootSessionId, turn -> turn.recordFailureReason(reason));
     }
 
     @Override
@@ -142,6 +165,25 @@ public class ChatTurnServiceImpl implements ChatTurnService {
         return result;
     }
 
+    @Override
+    public List<ChatTurn> findActiveBySessionIds(Collection<Long> sessionIds) {
+        if (sessionIds == null || sessionIds.isEmpty()) {
+            return List.of();
+        }
+        return chatTurnRepository.findActiveBySessionIds(sessionIds);
+    }
+
+    @Override
+    @Transactional
+    public List<ChatTurn> rollbackFrom(long sessionId, long fromTurnId) {
+        List<ChatTurn> removed = chatTurnRepository.findFromId(sessionId, fromTurnId);
+        if (removed.isEmpty()) {
+            return removed;
+        }
+        chatTurnRepository.deleteFromId(sessionId, fromTurnId);
+        return removed;
+    }
+
     /**
      * 按执行 ID 找到轮次并施加一次变更；找不到就跳过。
      *
@@ -151,7 +193,7 @@ public class ChatTurnServiceImpl implements ChatTurnService {
      * <p>领域方法抛出的非法转移异常不在这里吞掉：它代表真实的状态机违约，
      * 应当暴露出来（观察钩子自身有 try/catch 兜底，不会打断主链路）。</p>
      */
-    private void mutate(String executionId, String action, Consumer<ChatTurn> mutation) {
+    private void mutate(String executionId, String action, Long rootSessionId, Consumer<ChatTurn> mutation) {
         Long id = ExecutionIdentity.numericOrNull(executionId);
         if (id == null) {
             return;
@@ -163,6 +205,6 @@ public class ChatTurnServiceImpl implements ChatTurnService {
             return;
         }
         mutation.accept(turn);
-        chatTurnRepository.updateById(turn);
+        chatTurnRepository.updateById(turn, rootSessionId);
     }
 }

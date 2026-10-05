@@ -18,4 +18,5 @@ public class UserConfigRequest {
     private Integer maxTokens;
     /** 思考深度/推理等级：low/none/medium/high/xhigh/max；空值表示沿用模型/框架缺省。 */
     private String reasoningEffort;
+    private String renderTheme;
 }

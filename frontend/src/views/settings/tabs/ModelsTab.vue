@@ -1,9 +1,14 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useModelsTab } from './useModelsTab';
+import { useTheme } from '../../../composables/useTheme';
 
-defineProps<{
+const props = defineProps<{
   isDark?: boolean;
 }>();
+
+const { isDark: globalIsDark } = useTheme();
+const isDark = computed(() => props.isDark ?? globalIsDark.value);
 
 const emit = defineEmits<{
   (e: 'modelUpdated'): void;
@@ -25,7 +30,6 @@ const {
   selectedProvider,
   isProviderDropdownOpen,
   isFetchingRemoteModels,
-  remoteModelList,
   isRemoteModelDropdownOpen,
   remoteModelSearch,
   fetchRemoteModelError,
@@ -55,16 +59,16 @@ const {
     <!-- 列表模式 (未在编辑或新增时) -->
     <div v-if="!isEditingOrAdding" class="space-y-4">
       <div>
-        <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white">
+        <h4 class="text-base font-bold tracking-tight" :class="isDark ? 'text-white text-glow-white' : 'text-gray-900'">
           模型
         </h4>
-        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+        <p class="text-xs mt-1" :class="isDark ? 'text-zinc-400 text-glow-subtle' : 'text-gray-500'">
           填入各提供方的 API 密钥即可使用其模型。
         </p>
       </div>
 
       <!-- 加载中 -->
-      <div v-if="isModelLoading" class="py-8 text-center text-xs text-gray-400">
+      <div v-if="isModelLoading" class="py-8 text-center text-xs" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">
         正在加载模型配置...
       </div>
 
@@ -84,7 +88,8 @@ const {
       <div v-else class="space-y-2.5">
         <div
           v-if="modelsList.length === 0"
-          class="py-12 text-center text-xs text-gray-400 border border-dashed rounded-2xl border-gray-200 dark:border-gray-800"
+          class="py-12 text-center text-xs border border-dashed rounded-2xl"
+          :class="isDark ? 'border-white/10 text-zinc-500' : 'border-gray-200 text-gray-400'"
         >
           暂未配置模型，请点击下方按钮添加提供方
         </div>
@@ -96,13 +101,13 @@ const {
           :class="[
             'rounded-2xl border px-4 py-3.5 flex items-center justify-between transition-colors',
             isDark
-              ? 'bg-[#151c2c] border-[#252f44] hover:border-gray-700'
+              ? 'bg-black/90 border-white/15 hover:border-white/30 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
               : 'bg-gray-50/70 border-gray-200 hover:border-gray-300'
           ]"
         >
           <!-- 左侧：模型名称 + [自定义] 徽章 + 在线绿点 -->
           <div class="flex items-center gap-2 min-w-0">
-            <span class="font-semibold text-sm text-gray-900 dark:text-white truncate">
+            <span class="font-semibold text-sm truncate" :class="isDark ? 'text-white text-glow-white' : 'text-gray-900'">
               {{ item.modelName || '未命名模型' }}
             </span>
             <!-- 提供方由后端下发，不再用 baseUrl 是否含某厂商域名来猜 -->
@@ -110,7 +115,7 @@ const {
               v-if="item.provider === 'CUSTOM'"
               :class="[
                 'text-[10px] px-1.5 py-0.5 rounded border tracking-tight shrink-0',
-                isDark ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-500'
+                isDark ? 'border-white/20 text-zinc-300 bg-white/5' : 'border-gray-200 text-gray-500'
               ]"
             >
               自定义
@@ -127,7 +132,7 @@ const {
               :class="[
                 'px-3 py-1 rounded-lg border text-xs font-medium transition cursor-pointer',
                 isDark
-                  ? 'border-gray-700 hover:bg-white/5 text-gray-200'
+                  ? 'border-white/20 hover:border-white/40 bg-white/[0.06] hover:bg-white/[0.12] text-zinc-100 text-glow-subtle'
                   : 'border-gray-200 hover:bg-gray-50 text-gray-700 shadow-2xs'
               ]"
             >
@@ -136,7 +141,10 @@ const {
             <button
               type="button"
               @click="handleDeleteModel(item)"
-              class="text-xs text-red-500 hover:text-red-600 px-2 py-1 transition cursor-pointer font-medium"
+              :class="[
+                'text-xs px-2 py-1 transition cursor-pointer font-medium',
+                isDark ? 'text-rose-400 hover:text-rose-300 drop-shadow-[0_0_8px_rgba(244,63,94,0.5)]' : 'text-red-500 hover:text-red-600'
+              ]"
             >
               删除
             </button>
@@ -151,7 +159,7 @@ const {
             :class="[
               'flex-1 py-2.5 rounded-2xl border border-dashed flex items-center justify-center gap-1.5 text-xs font-medium transition cursor-pointer',
               isDark
-                ? 'border-gray-700 hover:border-gray-500 text-gray-300 hover:bg-white/5'
+                ? 'border-white/20 hover:border-white/40 text-zinc-200 hover:text-white bg-white/[0.03] hover:bg-white/[0.08] text-glow-subtle'
                 : 'border-gray-300 hover:border-gray-400 text-gray-700 hover:bg-gray-50'
             ]"
           >
@@ -167,7 +175,7 @@ const {
             :class="[
               'flex-1 py-2.5 rounded-2xl border border-dashed flex items-center justify-center gap-1.5 text-xs font-medium transition cursor-pointer',
               isDark
-                ? 'border-gray-700 hover:border-gray-500 text-gray-300 hover:bg-white/5'
+                ? 'border-white/20 hover:border-white/40 text-zinc-200 hover:text-white bg-white/[0.03] hover:bg-white/[0.08] text-glow-subtle'
                 : 'border-gray-300 hover:border-gray-400 text-gray-700 hover:bg-gray-50'
             ]"
           >
@@ -209,7 +217,7 @@ const {
 
       <!-- 模型提供方下拉框 -->
       <div v-if="editingModelId === null && addType === 'preset'" class="provider-dropdown-container relative space-y-1" @click.stop>
-        <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+        <label class="block text-xs font-medium" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
           模型提供方
         </label>
         <div class="relative">
@@ -219,7 +227,7 @@ const {
             :class="[
               'w-full px-3 py-2 rounded-xl text-xs border flex items-center justify-between transition cursor-pointer select-none',
               isDark
-                ? 'bg-[#182030] border-[#2b374f] text-gray-100 hover:border-blue-500/60'
+                ? 'bg-black/90 border-white/20 text-zinc-100 hover:border-white/40'
                 : 'bg-white border-gray-200 text-gray-900 hover:border-blue-400 shadow-2xs'
             ]"
           >
@@ -239,15 +247,20 @@ const {
           <transition name="dropdown-down-center">
             <div
               v-if="isProviderDropdownOpen"
-              class="absolute left-0 right-0 mt-1 rounded-xl bg-white dark:bg-[#1f293d] border border-gray-200 dark:border-gray-700 shadow-xl py-1 z-30 text-xs max-h-56 overflow-y-auto scrollbar-thin origin-top"
+              :class="[
+                'absolute left-0 right-0 mt-1 rounded-xl border shadow-2xl py-1 z-30 text-xs max-h-56 overflow-y-auto scrollbar-thin origin-top backdrop-blur-xl',
+                isDark ? 'bg-black/95 border-white/20 text-zinc-100' : 'bg-white border-gray-200 text-gray-700'
+              ]"
             >
               <div
                 v-for="preset in providerPresets"
                 :key="preset.name"
                 @click="handleApplyPreset(preset)"
                 :class="[
-                  'px-3 py-2 hover:bg-gray-100 dark:hover:bg-white/10 cursor-pointer flex items-center justify-between transition',
-                  selectedProvider === preset.name ? 'text-blue-500 font-medium bg-blue-50/50 dark:bg-blue-500/10' : 'text-gray-700 dark:text-gray-200'
+                  'px-3 py-2 cursor-pointer flex items-center justify-between transition',
+                  selectedProvider === preset.name
+                    ? (isDark ? 'text-sky-400 text-glow-cyan font-medium bg-white/10' : 'text-blue-500 font-medium bg-blue-50/50')
+                    : (isDark ? 'text-zinc-200 hover:bg-white/10 hover:text-white' : 'text-gray-700 hover:bg-gray-100')
                 ]"
               >
                 <div class="font-medium text-xs">{{ preset.name }}</div>
@@ -264,7 +277,7 @@ const {
       <div class="space-y-3">
         <!-- 1. 模型名称与获取模型列表按钮 -->
         <div class="model-dropdown-container relative" @click.stop>
-          <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label class="block text-xs font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
             模型名称 <span class="text-red-500">*</span>
           </label>
           <div class="flex items-center gap-2">
@@ -274,7 +287,7 @@ const {
               :class="[
                 'flex-1 min-w-0 px-3 py-2 rounded-xl text-xs border outline-none transition',
                 isDark
-                  ? 'bg-[#182030] border-[#2b374f] text-gray-100 placeholder-gray-500 focus:border-blue-500'
+                  ? 'bg-black/90 border-white/20 text-zinc-100 placeholder-zinc-500 focus:border-cyan-400'
                   : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-blue-500 shadow-2xs'
               ]"
             />
@@ -285,9 +298,9 @@ const {
               :class="[
                 'px-3 py-2 rounded-xl text-xs font-medium shrink-0 flex items-center gap-1.5 transition border cursor-pointer select-none',
                 isFetchingRemoteModels
-                  ? 'opacity-60 cursor-not-allowed border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-[#1f293d] text-gray-400'
+                  ? 'opacity-60 cursor-not-allowed border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-black text-gray-400'
                   : (isDark
-                      ? 'border-[#3b4866] bg-[#222d42] text-blue-400 hover:bg-[#2b3954] hover:border-blue-500/60'
+                      ? 'border-white/20 bg-white/[0.06] text-sky-400 hover:bg-white/[0.12] hover:border-white/40 text-glow-cyan'
                       : 'border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100/80 hover:border-blue-300 shadow-2xs')
               ]"
             >
@@ -320,14 +333,20 @@ const {
           <transition name="dropdown-down-center">
             <div
               v-if="isRemoteModelDropdownOpen"
-              class="absolute left-0 right-0 mt-1 max-h-60 overflow-hidden rounded-xl bg-white dark:bg-[#1f293d] border border-gray-200 dark:border-gray-700 shadow-xl py-1 z-30 flex flex-col text-xs origin-top"
+              :class="[
+                'absolute left-0 right-0 mt-1 max-h-60 overflow-hidden rounded-xl border shadow-2xl py-1 z-30 flex flex-col text-xs origin-top backdrop-blur-xl',
+                isDark ? 'bg-black/95 border-white/20 text-zinc-100' : 'bg-white border-gray-200 text-gray-700'
+              ]"
             >
               <!-- 搜索过滤条 -->
-              <div v-if="remoteModelList.length > 5" class="p-2 border-b border-gray-100 dark:border-gray-700/60">
+              <div class="p-2 border-b" :class="isDark ? 'border-white/10' : 'border-gray-100'">
                 <input
                   v-model="remoteModelSearch"
                   placeholder="搜索模型..."
-                  class="w-full px-2.5 py-1 rounded-lg text-xs bg-gray-50 dark:bg-[#161d2b] border border-gray-200 dark:border-gray-700 outline-none text-gray-800 dark:text-gray-100 placeholder-gray-400"
+                  :class="[
+                    'w-full px-2.5 py-1 rounded-lg text-xs outline-none',
+                    isDark ? 'bg-white/5 border border-white/10 text-zinc-100 placeholder-zinc-500' : 'bg-gray-50 border border-gray-200 text-gray-800 placeholder-gray-400'
+                  ]"
                   @click.stop
                 />
               </div>
@@ -364,8 +383,10 @@ const {
                   :key="item.id"
                   @click="handleSelectRemoteModel(item.id)"
                   :class="[
-                    'px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-white/10 cursor-pointer flex items-center justify-between transition',
-                    modelForm.modelName === item.id ? 'text-blue-500 font-medium bg-blue-50/50 dark:bg-blue-500/10' : 'text-gray-700 dark:text-gray-200'
+                    'px-3 py-1.5 cursor-pointer flex items-center justify-between transition',
+                    modelForm.modelName === item.id
+                      ? (isDark ? 'text-sky-400 text-glow-cyan font-medium bg-white/10' : 'text-blue-500 font-medium bg-blue-50/50')
+                      : (isDark ? 'text-zinc-200 hover:bg-white/10 hover:text-white' : 'text-gray-700 hover:bg-gray-100')
                   ]"
                 >
                   <div class="min-w-0 pr-2">
@@ -385,7 +406,7 @@ const {
 
         <!-- 2. Base URL -->
         <div>
-          <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label class="block text-xs font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
             API Base URL <span class="text-red-500">*</span>
           </label>
           <input
@@ -394,7 +415,7 @@ const {
             :class="[
               'w-full px-3 py-2 rounded-xl text-xs border outline-none transition',
               isDark
-                ? 'bg-[#182030] border-[#2b374f] text-gray-100 placeholder-gray-500 focus:border-blue-500'
+                ? 'bg-black/90 border-white/20 text-zinc-100 placeholder-zinc-500 focus:border-cyan-400'
                 : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-blue-500 shadow-2xs'
             ]"
           />
@@ -402,7 +423,7 @@ const {
 
         <!-- 3. API Key -->
         <div>
-          <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label class="block text-xs font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
             API Key <span v-if="editingModelId === null" class="text-red-500">*</span>
           </label>
           <div class="relative">
@@ -413,7 +434,7 @@ const {
               :class="[
                 'w-full px-3 py-2 pr-10 rounded-xl text-xs border outline-none transition',
                 isDark
-                  ? 'bg-[#182030] border-[#2b374f] text-gray-100 placeholder-gray-500 focus:border-blue-500'
+                  ? 'bg-black/90 border-white/20 text-zinc-100 placeholder-zinc-500 focus:border-cyan-400'
                   : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-blue-500 shadow-2xs'
               ]"
             />
@@ -448,7 +469,7 @@ const {
           :class="[
             'px-4 py-1.5 rounded-xl border text-xs font-medium transition cursor-pointer',
             isDark
-              ? 'border-gray-700 hover:bg-white/5 text-gray-300'
+              ? 'border-white/20 hover:bg-white/10 text-zinc-200 text-glow-subtle'
               : 'border-gray-200 hover:bg-gray-50 text-gray-700'
           ]"
         >
@@ -461,7 +482,7 @@ const {
           :disabled="isSubmittingModel"
           :class="[
             'px-5 py-1.5 rounded-xl text-xs font-medium text-white transition cursor-pointer flex items-center gap-1.5',
-            isSubmittingModel ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500 shadow-sm'
+            isSubmittingModel ? 'bg-blue-400 cursor-not-allowed' : (isDark ? 'bg-sky-600 hover:bg-sky-500 text-glow-white shadow-[0_0_15px_rgba(56,189,248,0.4)]' : 'bg-blue-600 hover:bg-blue-500 shadow-sm')
           ]"
         >
           <svg v-if="isSubmittingModel" class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">

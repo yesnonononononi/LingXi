@@ -34,9 +34,6 @@ public interface ToolCallService {
      */
     SseEmitter decide(Long conversationId, String toolCallId, boolean approved, String text);
 
-    /** 发布该执行下所有 pending PROMISE 卡片事件（按根会话定向推送）。 */
-    void publishPendingToolCalls(String executionId);
-
-    /** 执行终结（失败 / 完成 / 取消）时把该执行下所有 pending 工具调用收尾为 completed（outcome=CANCELLED）。 */
+    /** 执行终结时收口全部未决槽位，准备态也不能遗留。 */
     void cancelPendingToolCalls(String executionId);
 }

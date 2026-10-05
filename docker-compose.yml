@@ -1,23 +1,5 @@
 
 services:
-  mysql:
-    image: mysql:8.0.30   #镜像版本
-    container_name: LingXi-mysql #容器名称
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-    ports:   #端口映射 主机 : 容器
-      - "3306:3306"
-      - "33060:33060"
-    networks:
-      - LingXi
-    volumes:
-      - mysql-data:/var/lib/mysql   #数据持久化
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    command: --default-authentication-plugin=mysql_native_password  #解决8.0兼容问题
-    restart: always  #启动时自动重启
   redis:
     image: redis:8
     container_name: LingXi-redis
@@ -70,11 +52,9 @@ services:
 #   build: . #构建镜像，当前目录
 #   container_name: LingXi-app #容器名称
 #   environment:
-#     MYSQL_HOST: mysql
 #     REDIS_HOST: redis
 #   restart: always
 #   depends_on:
-#     - mysql
 #     - redis
 #     - milvus
 #   ports:
@@ -95,7 +75,6 @@ networks:
   LingXi:
     driver: bridge
 volumes:
-  mysql-data:
   redis-data:
  # milvus-data:
  # etcd-data:

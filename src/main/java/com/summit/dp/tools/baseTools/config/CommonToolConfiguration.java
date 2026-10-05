@@ -45,13 +45,16 @@ public class CommonToolConfiguration {
                 .description("""
                         Execute a terminal command in the assigned workspace environment.
                         Output may be truncated according to the configured maximum.
+                        Always state in `intention` what the command is for; it is displayed to the user.
                         """)
                 .parametersJsonSchema("""
                         {
                           "type": "object",
                           "properties": {
-                            "command": {"type": "string", "description": "require notice system os and use PowerShell if windows. Instruction,example : ll  it is a required parameter"}
-                          }
+                            "command": {"type": "string", "description": "The terminal command to run. Detect the operating system and use PowerShell on Windows. Example: ll"},
+                            "intention": {"type": "string", "description": "One short sentence stating what this command is intended to achieve. It is shown to the user in the UI next to the command, so make it specific and human-readable."}
+                          },
+                          "required": ["command", "intention"]
                         }
                         """)
                 .maxOutput(5_000)

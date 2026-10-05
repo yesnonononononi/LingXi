@@ -6,12 +6,16 @@ import { AgentAPI } from '../../services/agent';
 import { ToolAPI } from '../../services/tool';
 import { isOk } from '../../utils/api';
 import { toUserFacingError } from '../../utils/error';
+import { useTheme } from '../../composables/useTheme';
 
 const props = defineProps<{
   isOpen: boolean;
   isDark?: boolean;
   models?: ModelConfig[];
 }>();
+
+const { isDark: themeIsDark } = useTheme();
+const isDark = computed(() => props.isDark ?? themeIsDark.value);
 
 const emit = defineEmits<{
   (e: 'close'): void;
@@ -362,20 +366,20 @@ const handleSaveTeam = async () => {
     <div
       :class="[
         'w-full max-w-lg max-h-[85vh] flex flex-col rounded-2xl border shadow-2xl transition-all overflow-hidden',
-        isDark ? 'bg-[#182030] border-[#2b374f] text-gray-100' : 'bg-white border-gray-200 text-gray-800'
+        isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_12px_40px_rgba(0,0,0,0.95)] backdrop-blur-2xl' : 'bg-white border-gray-200 text-gray-800'
       ]"
     >
       <!-- Header -->
-      <div class="px-6 py-4 flex items-center justify-between border-b border-gray-200/50 dark:border-gray-700/50 shrink-0">
+      <div class="px-6 py-4 flex items-center justify-between border-b shrink-0" :class="isDark ? 'border-white/10' : 'border-gray-200/50'">
         <h3 class="text-base font-semibold flex items-center gap-2">
-          <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
           </svg>
-          <span>创建团队 (Create Team)</span>
+          <span class="dark:text-white dark:text-glow-white">创建团队 (Create Team)</span>
         </h3>
         <button
           @click="emit('close')"
-          class="p-1 rounded-lg text-gray-400 hover:text-gray-200 transition-colors cursor-pointer"
+          class="p-1 rounded-lg text-gray-400 hover:text-zinc-200 hover:bg-white/5 transition-colors cursor-pointer"
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -401,7 +405,7 @@ const handleSaveTeam = async () => {
             :class="[
               'w-full px-3 py-2 rounded-xl border text-sm outline-none transition',
               isDark
-                ? 'bg-[#101725] border-[#2b374f] focus:border-blue-500 text-white placeholder-gray-600'
+                ? 'bg-black/90 border-white/15 focus:border-cyan-400/80 text-white placeholder-zinc-500'
                 : 'bg-gray-50 border-gray-300 focus:border-blue-500 text-gray-900 placeholder-gray-400'
             ]"
           />
@@ -419,7 +423,7 @@ const handleSaveTeam = async () => {
             :class="[
               'w-full px-3 py-2 rounded-xl border text-sm outline-none resize-none transition',
               isDark
-                ? 'bg-[#101725] border-[#2b374f] focus:border-blue-500 text-white placeholder-gray-600'
+                ? 'bg-black/90 border-white/15 focus:border-cyan-400/80 text-white placeholder-zinc-500'
                 : 'bg-gray-50 border-gray-300 focus:border-blue-500 text-gray-900 placeholder-gray-400'
             ]"
           ></textarea>
@@ -486,7 +490,7 @@ const handleSaveTeam = async () => {
                   placeholder="例如: MathSpecialist"
                   :class="[
                     'w-full px-2.5 py-1.5 rounded-lg border outline-none',
-                    isDark ? 'bg-[#101725] border-[#2b374f] text-white' : 'bg-white border-gray-300 text-gray-900'
+                    isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-gray-300 text-gray-900'
                   ]"
                 />
               </div>
@@ -495,11 +499,11 @@ const handleSaveTeam = async () => {
                 <select
                   v-model="agentFormModelId"
                   :class="[
-                    'w-full px-2 py-1.5 rounded-lg border outline-none cursor-pointer',
-                    isDark ? 'bg-[#101725] border-[#2b374f] text-white' : 'bg-white border-gray-300 text-gray-900'
+                    'w-full px-2.5 py-1.5 rounded-lg border outline-none cursor-pointer [color-scheme:dark]',
+                    isDark ? 'bg-black border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-gray-300 text-gray-900'
                   ]"
                 >
-                  <option v-for="m in (models || [])" :key="m.id" :value="m.id">
+                  <option v-for="m in (models || [])" :key="m.id" :value="m.id" class="bg-black text-white">
                     {{ m.name || m.modelName || `模型 #${m.id}` }}
                   </option>
                 </select>
@@ -513,7 +517,7 @@ const handleSaveTeam = async () => {
                 placeholder="例如: 负责高精度数学运算与推导"
                 :class="[
                   'w-full px-2.5 py-1.5 rounded-lg border outline-none',
-                  isDark ? 'bg-[#101725] border-[#2b374f] text-white' : 'bg-white border-gray-300 text-gray-900'
+                  isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-gray-300 text-gray-900'
                 ]"
               />
             </div>
@@ -526,7 +530,7 @@ const handleSaveTeam = async () => {
                 placeholder="设定该 Agent 的角色定位与职责规范..."
                 :class="[
                   'w-full px-2.5 py-1.5 rounded-lg border outline-none resize-none',
-                  isDark ? 'bg-[#101725] border-[#2b374f] text-white' : 'bg-white border-gray-300 text-gray-900'
+                  isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-gray-300 text-gray-900'
                 ]"
               ></textarea>
             </div>
@@ -584,14 +588,14 @@ const handleSaveTeam = async () => {
               <div
                 v-else-if="availableTools.length === 0"
                 class="p-2 text-center text-gray-400 text-xs rounded-lg border border-dashed"
-                :class="isDark ? 'border-gray-700 bg-gray-900/30' : 'border-gray-300 bg-gray-50/50'"
+                :class="isDark ? 'border-white/10 bg-black/60' : 'border-gray-300 bg-gray-50/50'"
               >
                 暂无可分配工具
               </div>
               <div
                 v-else
                 class="max-h-36 overflow-y-auto rounded-lg border p-1.5 grid grid-cols-1 sm:grid-cols-2 gap-1.5"
-                :class="isDark ? 'border-[#2b374f] bg-[#0c121e]' : 'border-gray-200 bg-white'"
+                :class="isDark ? 'border-white/15 bg-black/80' : 'border-gray-200 bg-white'"
               >
                 <div
                   v-for="tool in availableTools"
@@ -600,8 +604,8 @@ const handleSaveTeam = async () => {
                   :class="[
                     'p-1.5 rounded-md border transition-all cursor-pointer flex flex-col justify-between text-left',
                     agentFormToolList.includes(tool.name)
-                      ? (isDark ? 'bg-blue-600/20 border-blue-500/50 text-white' : 'bg-blue-50 border-blue-300 text-blue-900')
-                      : (isDark ? 'bg-[#141d2f]/60 border-[#2b374f] text-gray-300 hover:border-gray-600' : 'bg-gray-50/80 border-gray-200 text-gray-700 hover:border-gray-300')
+                      ? (isDark ? 'bg-cyan-600/20 border-cyan-500/50 text-white' : 'bg-blue-50 border-blue-300 text-blue-900')
+                      : (isDark ? 'bg-white/[0.04] border-white/10 text-zinc-300 hover:border-white/25' : 'bg-gray-50/80 border-gray-200 text-gray-700 hover:border-gray-300')
                   ]"
                 >
                   <div class="flex items-center justify-between gap-1">
@@ -609,13 +613,13 @@ const handleSaveTeam = async () => {
                       <input
                         type="checkbox"
                         :checked="agentFormToolList.includes(tool.name)"
-                        class="rounded text-blue-600 focus:ring-blue-500 h-3 w-3 pointer-events-none"
+                        class="rounded text-blue-600 focus:ring-blue-500 h-3 w-3 pointer-events-none accent-cyan-500"
                       />
                       <span class="font-medium truncate font-mono text-[11px]">{{ tool.name }}</span>
                     </div>
                     <span
-                      class="text-[9px] px-1 py-0.2 rounded font-normal shrink-0"
-                      :class="tool.readOnly ? (isDark ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-100 text-emerald-700') : (isDark ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-700')"
+                      class="text-[9px] px-1 py-0.2 rounded font-normal shrink-0 border"
+                      :class="tool.readOnly ? (isDark ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300' : 'bg-emerald-100 border-emerald-200 text-emerald-700') : (isDark ? 'bg-amber-500/20 border-amber-500/30 text-amber-300' : 'bg-amber-100 border-amber-200 text-amber-700')"
                     >
                       {{ tool.readOnly ? '只读' : '读写' }}
                     </span>
@@ -631,7 +635,7 @@ const handleSaveTeam = async () => {
               <button
                 type="button"
                 @click="closeAgentForm"
-                class="px-2.5 py-1 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded-lg cursor-pointer"
+                class="px-2.5 py-1 text-gray-500 hover:text-gray-700 dark:hover:text-zinc-200 rounded-lg cursor-pointer"
               >
                 取消
               </button>
@@ -639,7 +643,7 @@ const handleSaveTeam = async () => {
                 type="button"
                 :disabled="isSavingAgent || !!agentDetailError"
                 @click="handleSaveAgent"
-                class="px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg cursor-pointer shadow-sm transition"
+                class="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-lg cursor-pointer shadow-sm transition"
               >
                 {{ isSavingAgent ? '保存中...' : (editingAgentId ? '保存修改' : '保存并加入') }}
               </button>
@@ -650,7 +654,7 @@ const handleSaveTeam = async () => {
           <div
             class="rounded-xl border divide-y overflow-y-auto max-h-48"
             :class="[
-              isDark ? 'border-[#2b374f] divide-[#2b374f] bg-[#101725]' : 'border-gray-200 divide-gray-100 bg-gray-50'
+              isDark ? 'border-white/15 divide-white/10 bg-black/90' : 'border-gray-200 divide-gray-100 bg-gray-50'
             ]"
           >
             <div v-if="isLoadingAgents" class="p-4 text-center text-xs text-gray-500">
@@ -667,7 +671,7 @@ const handleSaveTeam = async () => {
               :class="[
                 'group p-2.5 flex items-center justify-between cursor-pointer transition-colors',
                 selectedAgentIds.includes(agent.id)
-                  ? (isDark ? 'bg-blue-600/15' : 'bg-blue-50')
+                  ? (isDark ? 'bg-cyan-500/15' : 'bg-blue-50')
                   : (isDark ? 'hover:bg-white/5' : 'hover:bg-gray-100/80'),
                 editingAgentId === agent.id ? 'ring-1 ring-blue-500/50' : ''
               ]"
@@ -754,22 +758,22 @@ const handleSaveTeam = async () => {
             :class="[
               'w-full px-3.5 py-2.5 rounded-xl border text-left flex items-center justify-between transition-all outline-none cursor-pointer',
               isDark
-                ? 'bg-[#101725] border-[#2b374f] hover:border-blue-500/60 focus:border-blue-500 text-white'
+                ? 'bg-black/90 border-white/15 hover:border-cyan-400/60 focus:border-cyan-400 text-white'
                 : 'bg-white border-gray-300 hover:border-blue-400 focus:border-blue-500 text-gray-900 shadow-sm'
             ]"
           >
             <div v-if="currentCommander" class="flex items-center gap-2.5 min-w-0">
-              <div class="w-7 h-7 rounded-lg bg-blue-500/15 text-blue-500 flex items-center justify-center shrink-0">
+              <div class="w-7 h-7 rounded-lg bg-cyan-500/15 text-cyan-400 flex items-center justify-center shrink-0">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                 </svg>
               </div>
               <div class="truncate">
                 <div class="flex items-center gap-1.5">
-                  <span class="text-xs font-semibold text-gray-900 dark:text-gray-100 truncate">{{ currentCommander.name }}</span>
-                  <span class="px-1.5 py-0.2 text-[9px] rounded-full bg-blue-500/20 text-blue-500 font-medium">管理者</span>
+                  <span class="text-xs font-semibold text-gray-900 dark:text-zinc-100 truncate">{{ currentCommander.name }}</span>
+                  <span class="px-1.5 py-0.2 text-[9px] rounded-full bg-cyan-500/20 text-cyan-300 font-medium">管理者</span>
                 </div>
-                <div class="text-[11px] text-gray-500 dark:text-gray-400 truncate max-w-[320px]">
+                <div class="text-[11px] text-gray-500 dark:text-zinc-400 truncate max-w-[320px]">
                   {{ currentCommander.description || '负责协调团队成员分工与分派子任务' }}
                 </div>
               </div>
@@ -792,10 +796,10 @@ const handleSaveTeam = async () => {
           <!-- 自定义下拉选项菜单面板 -->
           <div
             v-if="isCommanderDropdownOpen"
-            class="absolute z-20 w-full mt-1.5 py-1.5 rounded-xl border shadow-xl transition-all max-h-52 overflow-y-auto animate-in fade-in duration-100"
+            class="absolute z-20 w-full mt-1.5 py-1.5 rounded-xl border shadow-2xl transition-all max-h-52 overflow-y-auto animate-in fade-in duration-100 backdrop-blur-2xl"
             :class="[
               isDark
-                ? 'bg-[#141d2f] border-[#2b374f] shadow-black/40 text-gray-100'
+                ? 'bg-black/95 border-white/20 shadow-[0_12px_40px_rgba(0,0,0,0.95)] text-zinc-100'
                 : 'bg-white border-gray-200 shadow-gray-200/80 text-gray-800'
             ]"
           >
@@ -806,8 +810,8 @@ const handleSaveTeam = async () => {
               :class="[
                 'px-3 py-2 flex items-center justify-between cursor-pointer transition-colors text-xs',
                 commanderAgentId === agent.id
-                  ? (isDark ? 'bg-blue-600/20 text-blue-400 font-medium' : 'bg-blue-50 text-blue-700 font-medium')
-                  : (isDark ? 'hover:bg-white/5 text-gray-300' : 'hover:bg-gray-100/80 text-gray-700')
+                  ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-blue-50 text-blue-700 font-medium')
+                  : (isDark ? 'hover:bg-white/10 text-zinc-300' : 'hover:bg-gray-100/80 text-gray-700')
               ]"
             >
               <div class="flex items-center gap-2.5 min-w-0">
@@ -815,8 +819,8 @@ const handleSaveTeam = async () => {
                 <div
                   class="w-4 h-4 rounded-full flex items-center justify-center shrink-0 border transition"
                   :class="commanderAgentId === agent.id
-                    ? 'bg-blue-600 border-blue-600 text-white'
-                    : (isDark ? 'border-gray-600 bg-transparent' : 'border-gray-300 bg-transparent')"
+                    ? 'bg-cyan-500 border-cyan-400 text-black font-bold'
+                    : (isDark ? 'border-zinc-700 bg-transparent' : 'border-gray-300 bg-transparent')"
                 >
                   <svg v-if="commanderAgentId === agent.id" class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
@@ -826,11 +830,11 @@ const handleSaveTeam = async () => {
                 <div class="truncate">
                   <div class="flex items-center gap-1.5">
                     <span class="truncate font-medium">{{ agent.name }}</span>
-                    <span v-if="agent.toolList?.length" class="text-[10px] text-gray-400">
+                    <span v-if="agent.toolList?.length" class="text-[10px] text-zinc-400">
                       ({{ agent.toolList.length }}个工具)
                     </span>
                   </div>
-                  <div v-if="agent.description" class="text-[10px] text-gray-400 truncate max-w-[280px]">
+                  <div v-if="agent.description" class="text-[10px] text-zinc-400 truncate max-w-[280px]">
                     {{ agent.description }}
                   </div>
                 </div>
@@ -838,7 +842,7 @@ const handleSaveTeam = async () => {
 
               <span
                 v-if="commanderAgentId === agent.id"
-                class="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 font-medium shrink-0 ml-2"
+                class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-medium shrink-0 ml-2"
               >
                 当前管理者
               </span>
@@ -848,14 +852,14 @@ const handleSaveTeam = async () => {
       </div>
 
       <!-- Footer -->
-      <div class="px-6 py-3 flex items-center justify-end border-t border-gray-200/50 dark:border-gray-700/50 shrink-0">
+      <div class="px-6 py-3 flex items-center justify-end border-t shrink-0" :class="isDark ? 'border-white/10' : 'border-gray-200/50'">
         <div class="flex items-center gap-2">
           <button
             type="button"
             @click="emit('close')"
             :class="[
               'px-4 py-1.5 text-xs rounded-xl border transition cursor-pointer',
-              isDark ? 'border-[#2b374f] text-gray-400 hover:bg-white/5' : 'border-gray-300 text-gray-600 hover:bg-gray-100'
+              isDark ? 'border-white/15 text-zinc-300 hover:bg-white/5' : 'border-gray-300 text-gray-600 hover:bg-gray-100'
             ]"
           >
             取消
@@ -864,7 +868,8 @@ const handleSaveTeam = async () => {
             type="button"
             :disabled="isSubmitting"
             @click="handleSaveTeam"
-            class="px-4 py-1.5 text-xs rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium shadow-md transition cursor-pointer"
+            class="px-4 py-1.5 text-xs rounded-xl text-white font-medium shadow-md transition cursor-pointer"
+            :class="isDark ? 'bg-cyan-600 hover:bg-cyan-500 shadow-[0_0_15px_rgba(8,145,178,0.4)]' : 'bg-blue-600 hover:bg-blue-500 disabled:opacity-50'"
           >
             {{ isSubmitting ? '创建中...' : '创建团队' }}
           </button>

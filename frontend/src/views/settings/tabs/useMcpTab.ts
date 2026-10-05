@@ -341,13 +341,13 @@ export function useMcpTab() {
   };
 
   /** 请求头数量，仅用于列表展示（值已脱敏，不展示内容） */
-  const headerCountOf = (item: McpVO) => Object.keys(item.headers || {}).length;
+  const countHeaders = (item: McpVO) => Object.keys(item.headers || {}).length;
 
   /** 环境变量数量，仅用于列表展示（值已脱敏，不展示内容） */
-  const envCountOf = (item: McpVO) => Object.keys(item.env || {}).length;
+  const countEnvVars = (item: McpVO) => Object.keys(item.env || {}).length;
 
   /** 列表卡片的连接信息：http 系显示端点，stdio 显示启动命令 */
-  const connectionLabelOf = (item: McpVO) => {
+  const resolveConnectionLabel = (item: McpVO) => {
     if (item.transport === 'stdio') return (item.command || []).join(' ');
     return item.url || '';
   };
@@ -379,8 +379,8 @@ export function useMcpTab() {
     handleSaveMcp,
     handleDeleteMcp,
     handleToggleMcp,
-    headerCountOf,
-    envCountOf,
-    connectionLabelOf,
+    countHeaders,
+    countEnvVars,
+    resolveConnectionLabel,
   };
 }

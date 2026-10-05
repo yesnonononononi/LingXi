@@ -30,7 +30,7 @@ public interface ExecutionMapper extends BaseMapper<ExecutionPO> {
      *
      * @return 实际被收口的行数
      */
-    @Update("UPDATE execution SET status = #{failedStatus} WHERE status IN (#{created}, #{running})")
+    @Update("UPDATE execution SET status = #{failedStatus}, version = version + 1 WHERE status IN (#{created}, #{running})")
     int markOrphanRunsFailed(@Param("failedStatus") int failedStatus,
                              @Param("created") int created,
                              @Param("running") int running);
@@ -47,7 +47,7 @@ public interface ExecutionMapper extends BaseMapper<ExecutionPO> {
      *
      * @return 实际被收口的行数（0 表示该执行已经自己走到了终态，或行还不存在）
      */
-    @Update("UPDATE execution SET status = #{failedStatus}, completed_at = #{completedAt} "
+    @Update("UPDATE execution SET status = #{failedStatus}, completed_at = #{completedAt}, version = version + 1 "
             + "WHERE id = #{id} AND status IN (#{created}, #{running})")
     int markFailedIfUnfinished(@Param("id") long id,
                                @Param("failedStatus") int failedStatus,

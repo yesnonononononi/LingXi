@@ -17,6 +17,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -65,7 +66,7 @@ class SseEventPublisherTest {
 
         publisher.publish(1L, "{\"type\":\"TEST\"}");
 
-        verify(second, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        verify(second, timeout(3000).times(1)).send(any(SseEmitter.SseEventBuilder.class));
         verify(first, never()).send(any(SseEmitter.SseEventBuilder.class));
     }
 
@@ -119,6 +120,7 @@ class SseEventPublisherTest {
                 .when(dead).send(any(SseEmitter.SseEventBuilder.class));
 
         assertDoesNotThrow(() -> publisher.publish(1L, "{\"type\":\"CONTEXT_UPDATE\"}"));
+        verify(dead, timeout(3000)).completeWithError(any());
         assertEquals(0, publisher.connectedRootCount(), "写失败的流必须被摘掉");
 
         publisher.publish(1L, "{\"type\":\"CONTEXT_UPDATE\"}");
@@ -137,7 +139,8 @@ class SseEventPublisherTest {
 
         publisher.publish(1L, "{\"type\":\"CONTEXT_UPDATE\"}");
 
-        verify(alive, times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        verify(alive, timeout(3000).times(1)).send(any(SseEmitter.SseEventBuilder.class));
+        verify(dead, timeout(3000)).completeWithError(any());
         assertEquals(1, publisher.connectedRootCount(), "只摘掉写不出去的那一条");
     }
 

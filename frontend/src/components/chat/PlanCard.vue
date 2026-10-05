@@ -13,15 +13,18 @@ const props = defineProps<{
 }>();
 
 /**
- * 由视图层注入的流式决策：提交决策后消费恢复执行的事件流并渲染成新的消息气泡。
+ * 由视图层注入的决策提交：批 A 起走 JSON 回执，**不再消费请求级流**。
+ * 恢复期的实时内容由会话级 v3 流渲染；本回调只负责提交并回执结果。
  * 缺省（组件树外独立使用本卡片时）降级为不可提交，仅提示。
  */
 const decideToolCall = inject<((payload: {
   conversationId: string;
   toolCallId: string;
-  approved: boolean;
+  action: 'APPROVE' | 'REJECT' | 'ANSWER';
   text?: string;
-}) => Promise<boolean>) | null>('decideToolCall', null);
+  /** 卡片当前版本；提交给后端做冲突判定，避免过期界面覆盖先到的结论 */
+  expectedVersion?: string | number | null;
+}) => Promise<unknown>) | null>('decideToolCall', null);
 
 /**
  * 「去聊天里说」：聚焦聊天输入框的能力，由 ChatView 通过 CHAT_INPUT_FOCUS_KEY 类型化注入。
@@ -38,8 +41,8 @@ const errorMsg = ref('');
 const isAddingTip = ref(false);
 const tipText = ref('');
 
-/** 是否仍在等待用户审批：以后端下发的 pending 为准（唯一可审批判定） */
-const isPending = computed(() => props.promptCard.pending === true);
+/** pending 也可能是委派或暂不可操作，按钮只能看后端动作集合。 */
+const isPending = computed(() => props.promptCard.allowedActions?.includes('APPROVE') === true);
 
 /** 计划书正文：Markdown 正文 */
 const planBody = computed(() => props.promptCard.content || '');
@@ -60,14 +63,11 @@ const statusLabel = computed(() => {
   if (outcome.value === 'APPROVED') return '已批准';
   if (outcome.value === 'REJECTED') return '已否决';
   if (isPending.value) return '计划待审';
+  if (props.promptCard.status === 'preparing') return '准备中';
+  if (props.promptCard.status === 'in_progress') return '处理中';
+  if (props.promptCard.status === 'pending') return props.promptCard.unavailableReason || '正在同步状态';
   return '状态未知';
 });
-
-/** 任务进度（批准后由 promptCard.tasks 驱动；缺失时不展示） */
-const totalTasks = computed(() => props.promptCard.tasks?.length || 0);
-const doneTasks = computed(() =>
-  (props.promptCard.tasks || []).filter(t => String(t.status).trim().toUpperCase() === 'DONE').length
-);
 
 const toggleTipInput = () => {
   isAddingTip.value = !isAddingTip.value;
@@ -99,22 +99,16 @@ const decide = async (approved: boolean) => {
   isSubmitting.value = true;
   errorMsg.value = '';
   try {
-    // 流式审批：决策落库即 resolve（true），恢复执行的事件流由宿主继续渲染到消息列表
-    const accepted = await decideToolCall({
+    // 提交决策拿回执；恢复执行的实时内容由会话级 v3 流渲染，本组件不消费任何请求级流。
+    await decideToolCall({
       conversationId: String(conversationId),
       toolCallId: String(toolCallId),
-      approved,
-      text: tipText.value.trim()
+      action: approved ? 'APPROVE' : 'REJECT',
+      text: tipText.value.trim(),
+      expectedVersion: props.promptCard.version ?? null
     });
-    if (!accepted) {
-      errorMsg.value = approved ? '批准计划失败，请重试' : '否决计划失败，请重试';
-      return;
-    }
 
     // 结论由 outcome 表达，status 收敛为终态 completed
-    props.promptCard.pending = false;
-    props.promptCard.status = 'completed';
-    props.promptCard.outcome = approved ? 'APPROVED' : 'REJECTED';
   } catch (err: any) {
     errorMsg.value = err?.message || (approved ? '批准计划失败，请重试' : '否决计划失败，请重试');
   } finally {
@@ -151,11 +145,6 @@ const decide = async (approved: boolean) => {
           {{ statusLabel }}
         </span>
       </div>
-
-      <!-- 进度指示 (批准并铺开检查点后才有) -->
-      <span v-if="totalTasks" class="text-xs text-gray-400 font-mono flex-shrink-0">
-        进度: {{ doneTasks }} / {{ totalTasks }}
-      </span>
     </div>
 
     <!-- 2. 计划书正文（统一走 Markdown 渲染器） -->

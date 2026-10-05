@@ -1,6 +1,7 @@
 package com.summit.dp.tools.baseTools.sub_agent.communication;
 
 import com.summit.core.conversation.message.UserMessageEntity;
+import com.summit.core.runtime.loop.InterceptorResult;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopInterceptor;
 import com.summit.dp.email.application.service.EmailService;
@@ -12,8 +13,6 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 每次模型调用前，把「本执行所属 Agent 在本次协作轮次里的邮箱」中的待处理消息注入上下文。
@@ -27,22 +26,46 @@ public class AgenticLoopInterceptor implements LoopInterceptor {
     private final EmailService emailService;
 
 
+    /**
+     * 排在 {@code StreamResponseIdentityInterceptor}（-900）之后，保持业务钩子的显式顺序：
+     * 响应身份先于邮箱注入就位，后续读取元数据的下游拿到的是本轮身份。
+     *
+     * <p>注意 {@code appendMessage} 只改模型上下文、不直接发布正文增量，因此两者之间
+     * 没有「正文先于身份到达」的竞态 —— 这个顺序是稳定性约定，不是强依赖。</p>
+     */
     @Override
-    public void onBeforeModelInvoke(LoopContext context) {
+    public int order() {
+        return -800;
+    }
+
+
+    /**
+     * 取信失败必须让整轮失败。收件箱里的消息只消费一次，吞掉异常等于让协作方的新需求
+     * 被静默丢弃：模型会以为没人找它，继续按旧目标跑完这一轮。
+     */
+    @Override
+    public boolean catchErr() {
+        return false;
+    }
+
+
+    @Override
+    public InterceptorResult onBeforeModelInvoke(LoopContext context) {
 
         // 1, 未绑定 Agent 的裸模型没有邮箱可言，直接跳过
         Map<String, Object> attributes = context.attributes();
+        String executionId = context.execution().getId();
         Long recipientAgentId = ExecutionAttributes.readLong(attributes, ExecutionAttributes.AGENT_ID);
         if (recipientAgentId == null) {
-            log.debug("Execution {} has no bound Agent ID, skip mailbox", context.executionId());
-            return;
+            log.debug("执行 {} 未绑定 Agent，跳过邮箱注入", executionId);
+            return InterceptorResult.NONE;
         }
 
         // 2, 与发信侧同一规则算出协作根执行 ID：根执行取自身，子执行取 ROOT_EXECUTION_ID 属性
-        Long workflowExecutionId = ExecutionAttributes.workflowExecutionId(attributes, context.executionId());
+        Long workflowExecutionId = ExecutionAttributes.workflowExecutionId(attributes, executionId);
         if (workflowExecutionId == null) {
-            log.debug("Execution {} has no resolvable workflow execution id, skip mailbox", context.executionId());
-            return;
+            log.debug("执行 {} 无法解析协作根执行 ID，跳过邮箱注入", executionId);
+            return InterceptorResult.NONE;
         }
 
         // 3, 只消费该业务键下的待处理消息
@@ -50,11 +73,11 @@ public class AgenticLoopInterceptor implements LoopInterceptor {
 
         // 4, 空收件箱不发任何消息
         if (data == null || data.isEmpty()) {
-            return;
+            return InterceptorResult.NONE;
         }
 
 
-        // 6, 作为 UserMessage 追加到本次模型上下文末尾
+        // 5, 作为 UserMessage 追加到本次模型上下文末尾
         List<UserMessageEntity> list = data.stream().map(vo -> UserMessageEntity.from(String.format("""
                 @%s 给你发送了一个新需求: \n
                 %s
@@ -65,9 +88,6 @@ public class AgenticLoopInterceptor implements LoopInterceptor {
                 )
         )).toList();
         context.appendMessage(list);
+        return InterceptorResult.NONE;
     }
-
-
-
-
 }

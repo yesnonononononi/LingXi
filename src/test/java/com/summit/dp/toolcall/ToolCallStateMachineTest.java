@@ -66,7 +66,7 @@ class ToolCallStateMachineTest {
     @Test
     void statusEnumHasNoFailedOrCancelledTerminal() {
         for (ToolCallStatus status : ToolCallStatus.values()) {
-            assertTrue(status == ToolCallStatus.PENDING
+            assertTrue(status == ToolCallStatus.PREPARING || status == ToolCallStatus.PENDING
                             || status == ToolCallStatus.IN_PROGRESS
                             || status == ToolCallStatus.COMPLETED,
                     "tool_call.status 只允许 pending/in_progress/completed，实际=" + status);
@@ -88,7 +88,11 @@ class ToolCallStateMachineTest {
 
         executing.promoteToPromise(ToolCallType.PROMISE, "create_plan", "计划", "{\"kind\":\"PLAN\"}", "{\"args\":{}}");
         assertEquals(ToolCallType.PROMISE, executing.getType());
-        assertEquals(ToolCallStatus.PENDING, executing.getStatus());
+        assertEquals(ToolCallStatus.PREPARING, executing.getStatus());
+        assertFalse(executing.isApprovalPending());
+        assertFalse(executing.markInProgress());
+        assertTrue(executing.markReady());
+        assertFalse(executing.markReady());
         assertTrue(executing.isApprovalPending());
 
         // 已终态的行不因登记器 UPSERT 被降级。

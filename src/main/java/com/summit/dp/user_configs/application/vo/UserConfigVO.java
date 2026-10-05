@@ -27,4 +27,11 @@ public class UserConfigVO {
     private Integer maxTokens;
     /** 思考深度/推理等级：low/none/medium/high/xhigh/max；空值表示沿用模型/框架缺省。 */
     private String reasoningEffort;
+    /** 渲染主题：light/dark */
+    private String renderTheme;
+    /**
+     * 数据存储目录（绝对路径，H2 库文件所在目录）。
+     * <p>直接回显配置项 {@code lingxi.data.dir}；只读：客户端改它不会移动库文件，因此不接受写入。</p>
+     */
+    private String dataStorage;
 }

@@ -11,6 +11,9 @@ import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.LocalExecutionRepository;
 import com.summit.dp.shared.config.JsonConfig;
 import org.junit.jupiter.api.Test;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.mockito.ArgumentCaptor;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -29,7 +32,10 @@ class LocalExecutionRepositoryResumeTest {
     private final ExecutionMapper persistence = mock(ExecutionMapper.class);
     private final RecordingLifecycleListener lifecycle = new RecordingLifecycleListener();
     @org.junit.jupiter.api.BeforeEach
-    void allowCheckpointUpdates() { when(persistence.updateById(any(ExecutionPO.class))).thenReturn(1); }
+    void allowCheckpointUpdates() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "test"), ExecutionPO.class);
+        when(persistence.update(any(ExecutionPO.class), any())).thenReturn(1);
+    }
     private final LocalExecutionRepository repository =
             new LocalExecutionRepository(persistence, mapper, List.of(lifecycle));
 
@@ -56,7 +62,7 @@ class LocalExecutionRepositoryResumeTest {
         assertEquals(3, restored.getMessages().size());
         assertEquals(3, restored.getAgentRequest().getMessages().size());
         assertEquals(2, repository.findById("305").orElseThrow().getMessages().size());
-        verify(persistence).updateById(any(ExecutionPO.class));
+        verify(persistence).update(any(ExecutionPO.class), any());
     }
 
     @Test
@@ -71,9 +77,23 @@ class LocalExecutionRepositoryResumeTest {
     }
 
     @Test
+    void startupTerminalSummaryPreventsRestoringOldRunningSnapshot() throws Exception {
+        Execution interrupted = execution();
+        interrupted.start();
+        ExecutionPO row = new ExecutionPO();
+        row.setStatus(4);
+        row.setSnapshot(mapper.writeValueAsString(interrupted));
+        when(persistence.selectById(305L)).thenReturn(row);
+
+        assertEquals(ExecutionState.FAILED, repository.findById("305").orElseThrow().getExecutionState());
+        assertThrows(IllegalStateException.class, () -> repository.register("305"));
+        assertFalse(repository.isActive("305"));
+    }
+
+    @Test
     void createsAndUpdatesUsingExistingMapper() throws Exception {
         when(persistence.insert(any(ExecutionPO.class))).thenReturn(1);
-        when(persistence.updateById(any(ExecutionPO.class))).thenReturn(1);
+        when(persistence.update(any(ExecutionPO.class), any())).thenReturn(1);
         Execution source = execution();
         source = Execution.create(source.getAgentRequest(), "chatAgent");
         repository.register("305");
@@ -90,7 +110,7 @@ class LocalExecutionRepositoryResumeTest {
         source.suspended();
         repository.save(source);
         ArgumentCaptor<ExecutionPO> updated = ArgumentCaptor.forClass(ExecutionPO.class);
-        verify(persistence).updateById(updated.capture());
+        verify(persistence).update(updated.capture(), any());
         assertEquals(2, updated.getValue().getStatus());
         assertEquals(305L, updated.getValue().getId());
         assertNull(updated.getValue().getSessionId());
@@ -100,7 +120,7 @@ class LocalExecutionRepositoryResumeTest {
     void cacheChangesOnlyAfterTransactionCommit() {
         repository.save(execution());
         repository.register("305");
-        when(persistence.updateById(any(ExecutionPO.class))).thenReturn(1);
+        when(persistence.update(any(ExecutionPO.class), any())).thenReturn(1);
         Execution changed = execution();
         changed.setMessages(List.of(UserMessageEntity.from("committed")));
         TransactionSynchronizationManager.initSynchronization();
@@ -148,7 +168,7 @@ class LocalExecutionRepositoryResumeTest {
     void rolledBackTerminalSaveKeepsPreviousCheckpoint() {
         repository.save(execution());
         repository.register("305");
-        when(persistence.updateById(any(ExecutionPO.class))).thenReturn(1);
+        when(persistence.update(any(ExecutionPO.class), any())).thenReturn(1);
         Execution finished = execution();
         finished.complete();
         TransactionSynchronizationManager.initSynchronization();
@@ -167,7 +187,7 @@ class LocalExecutionRepositoryResumeTest {
     void committedTerminalSaveEvictsMemoryCheckpoint() {
         repository.save(execution());
         repository.register("305");
-        when(persistence.updateById(any(ExecutionPO.class))).thenReturn(1);
+        when(persistence.update(any(ExecutionPO.class), any())).thenReturn(1);
         Execution finished = execution();
         finished.complete();
         TransactionSynchronizationManager.initSynchronization();
@@ -190,7 +210,7 @@ class LocalExecutionRepositoryResumeTest {
         repository.register("305");
         Execution changed = execution();
         changed.start();
-        when(persistence.updateById(any(ExecutionPO.class))).thenReturn(0);
+        when(persistence.update(any(ExecutionPO.class), any())).thenReturn(0);
         assertThrows(IllegalStateException.class, () -> repository.save(changed));
         assertEquals(ExecutionState.SUSPENDED, repository.findById("305").orElseThrow().getExecutionState());
     }
@@ -200,7 +220,7 @@ class LocalExecutionRepositoryResumeTest {
         repository.save(execution());
         repository.requireCancel("305");
         ArgumentCaptor<ExecutionPO> saved = ArgumentCaptor.forClass(ExecutionPO.class);
-        verify(persistence, times(2)).updateById(saved.capture());
+        verify(persistence, times(2)).update(saved.capture(), any());
         assertEquals(5, saved.getValue().getStatus());
         when(persistence.selectById(305L)).thenReturn(saved.getValue());
         assertThrows(IllegalStateException.class, () -> repository.register("305"));
@@ -231,13 +251,30 @@ class LocalExecutionRepositoryResumeTest {
                 () -> repository.unregister(new ExecutionControlSignal("305")));
     }
 
+    @Test
+    void releasedSignalIsVisibleAndListenerFailureDoesNotBlockFollowingListener() {
+        ExecutionLifecycleListener failing = mock(ExecutionLifecycleListener.class);
+        LocalExecutionRepository isolated = new LocalExecutionRepository(persistence, mapper, List.of(failing, lifecycle));
+        doAnswer(invocation -> {
+            assertFalse(Thread.holdsLock(isolated));
+            assertFalse(isolated.isActive("305"));
+            throw new IllegalStateException("observer failed");
+        }).when(failing).onExecutionSuspended(eq("305"), any());
+        isolated.save(execution());
+        ExecutionControlSignal signal = isolated.register("305");
+        assertTrue(isolated.isActive("305"));
+        assertDoesNotThrow(() -> isolated.unregister(signal));
+        assertFalse(isolated.isActive("305"));
+        assertEquals(List.of("305"), lifecycle.suspended);
+    }
+
     /** 记录 loop 边界信号的订阅者（评审 P1-⑥ 生命周期端口）。 */
     private static final class RecordingLifecycleListener implements ExecutionLifecycleListener {
         private final List<String> suspended = new java.util.ArrayList<>();
         private final List<String> finished = new java.util.ArrayList<>();
 
         @Override
-        public void onExecutionSuspended(String executionId) {
+        public void onExecutionSuspended(String executionId, Execution execution) {
             suspended.add(executionId);
         }
 

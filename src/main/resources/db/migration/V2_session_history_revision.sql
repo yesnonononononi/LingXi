@@ -1,0 +1,1 @@
+ALTER TABLE session ADD COLUMN history_revision BIGINT NOT NULL DEFAULT 1;

@@ -9,6 +9,10 @@ import java.util.List;
 public interface ExecutionRepository extends RepositoryTemplate<Execution, Long> {
     Collection<Execution> findList(Collection<Long> ids);
     List<Execution> findRecentBySession(Long sessionId, int limit);
+    default List<Execution> findUnfinishedBySessions(Collection<Long> sessionIds) {
+        return sessionIds.stream().flatMap(id -> findRecentBySession(id, 100).stream())
+                .filter(execution -> execution.getStatus() != null && execution.getStatus() < 3).toList();
+    }
 
     /**
      * 收口孤儿执行：把进程崩溃后遗留的 CREATED / RUNNING 执行条件更新为 FAILED 终态。
@@ -56,4 +60,13 @@ public interface ExecutionRepository extends RepositoryTemplate<Execution, Long>
      * @param executionIds 执行 id 集合
      */
     List<Execution> findSummariesByIds(Collection<Long> executionIds);
+
+    /**
+     * 读执行的恢复代际。
+     *
+     * <p>恢复协调器判断任务是否过期、reaper 判断能否重新派发都只关心这一个数，
+     * 不该为了取它把整行（含 LONGTEXT 检查点）读进内存。行不存在返回 {@code 0}
+     * —— 「没有这条执行」对恢复而言等价于「没有任何未完成的恢复边界」。</p>
+     */
+    long findResumeGeneration(long executionId);
 }

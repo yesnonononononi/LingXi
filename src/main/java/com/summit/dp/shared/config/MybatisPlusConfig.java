@@ -14,10 +14,16 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class MybatisPlusConfig {
 
+    /**
+     * 分页方言固定 H2 —— 库只有这一种，且 LIMIT 语法与 MySQL 一致，业务无感。
+     *
+     * <p>刻意不做自动探测：方言配错时分页会静默返回错误结果，显式写死让
+     * 「换库忘了改」在启动期就炸出来，而不是等到某次分页查询数据不对。</p>
+     */
     @Bean
     public MybatisPlusInterceptor mybatisPlusInterceptor() {
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
-        interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.MYSQL));
+        interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.H2));
         return interceptor;
     }
 }

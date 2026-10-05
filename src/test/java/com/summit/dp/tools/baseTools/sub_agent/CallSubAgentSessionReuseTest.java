@@ -1,5 +1,8 @@
 package com.summit.dp.tools.baseTools.sub_agent;
 
+import com.summit.dp.tools.baseTools.sub_agent.delegation.DelegationSuspensionCard;
+import com.summit.dp.toolcall.application.convert.ToolCallConverter;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.Execution;
@@ -10,7 +13,6 @@ import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.agent.infrastructure.agent.SubAgent;
-import com.summit.dp.agent.infrastructure.event.SubAgentSessionEventPublisher;
 import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.turn.application.service.ChatTurnService;
@@ -65,7 +67,6 @@ class CallSubAgentSessionReuseTest {
     private final SessionExecutionRegistry registry = mock(SessionExecutionRegistry.class);
     private final ConversationTranscriptService transcriptService = mock(ConversationTranscriptService.class);
     private final SessionRepository sessionRepository = mock(SessionRepository.class);
-    private final SubAgentSessionEventPublisher publisher = mock(SubAgentSessionEventPublisher.class);
     private final com.summit.dp.toolcall.application.service.ToolCallRegistrar registrar =
             mock(com.summit.dp.toolcall.application.service.ToolCallRegistrar.class);
     private final com.summit.dp.shared.event.ToolCallEventPublisher toolCallEventPublisher =
@@ -89,13 +90,11 @@ class CallSubAgentSessionReuseTest {
 
         this.subSessionResolver = new SubSessionResolver(sessionRepository, modelContextService);
         SubAgentRequestFactory requestFactory = new SubAgentRequestFactory(null, modelService, settingsProvider, null);
-        com.summit.dp.tools.baseTools.sub_agent.delegation.DelegationSuspensionCard suspensionCard =
-                new com.summit.dp.tools.baseTools.sub_agent.delegation.DelegationSuspensionCard(registrar,
-                        new com.summit.dp.toolcall.application.convert.ToolCallConverter(new ObjectMapper()),
-                        toolCallEventPublisher, executionIdentity);
+        DelegationSuspensionCard suspensionCard = new DelegationSuspensionCard(registrar,
+                new ToolCallConverter(new ObjectMapper()));
         com.summit.dp.tools.baseTools.sub_agent.delegation.DelegationRecorder recorder =
                 new com.summit.dp.tools.baseTools.sub_agent.delegation.DelegationRecorder(
-                        publisher, chatTurnService, transcriptService);
+                        chatTurnService, transcriptService);
         this.tool = new CallSubAgentTool(new ObjectMapper(), null, null, subAgent,
                 requestFactory, subSessionResolver, new SubAgentResultRenderer(),
                 registry, modelContextService, sessionRepository,
@@ -154,7 +153,7 @@ class CallSubAgentSessionReuseTest {
     @Test
     @DisplayName("命中已有子会话：复用其 id、不新建 session 行、把历史交给子 Agent")
     void reusesExistingSubSessionWithoutCreatingAnother() {
-        when(chatTurnService.acceptTurn(anyLong(), any(), any(), any(), any())).thenReturn(9002L);
+        when(chatTurnService.acceptTurn(anyLong(), any(), any(), any(), any(), any())).thenReturn(9002L);
         when(registry.registerChild(anyLong(), anyLong(), any())).thenReturn(true);
         stubRootSession();
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID))
@@ -184,16 +183,16 @@ class CallSubAgentSessionReuseTest {
         assertEquals(2, delivered.size(), "应为「既有历史 + 本次任务」");
         assertTrue(delivered.get(0).text().contains("上次的任务"));
         assertTrue(delivered.get(1).text().contains("再评估一下上次的方案"));
-        assertEquals(Map.of("sessionId", "555", "turnId", "9002", "parentTurnId", "9001"),
+        // 子执行继承父的根会话（800）与代际（父元数据缺失代际，回落 1），替换会话/轮次/父轮次。
+        assertEquals(Map.of("rootSessionId", String.valueOf(ROOT_SESSION_ID), "sessionId", "555",
+                        "turnId", "9002", "parentTurnId", "9001", "historyRevision", "1"),
                 requestCaptor.getValue().runtimeParametersOrDefault().getEventMetaData());
-        verify(chatTurnService).acceptTurn(eq(EXISTING_SUB_SESSION_ID), eq(9001L), any(), any(), any());
+        verify(chatTurnService).acceptTurn(eq(EXISTING_SUB_SESSION_ID), eq(ROOT_SESSION_ID), eq(9001L), any(), any(), any());
         verify(chatTurnService, never()).findByExecutionId(any());
 
-        // 4) 映射事件必须发（前端据此建立路由并把工具调用挂到子会话按钮）
-        verify(publisher).publish(eq("turn-1"), eq(ROOT_SESSION_ID),
-                eq(String.valueOf(EXISTING_SUB_SESSION_ID)), eq(CHILD_AGENT_ID), any(), any(), eq("call-1"));
+        // 4) 子会话身份改由 v3 SESSION_UPDATED + DELEGATION 卡片承载，不再单独发映射事件。
         // 5) 新任务落 transcript
-        verify(transcriptService).appendUser(eq(EXISTING_SUB_SESSION_ID), any(), any());
+        verify(transcriptService).appendUser(eq(EXISTING_SUB_SESSION_ID), eq(ROOT_SESSION_ID), any(), any());
         // 6) 收尾仍要把上下文快照写回子会话
         verify(modelContextService).replace(eq(EXISTING_SUB_SESSION_ID), any());
     }
@@ -263,8 +262,7 @@ class CallSubAgentSessionReuseTest {
         verify(subAgent, never()).execute(any(AgentRequest.class));
         verify(sessionRepository, never()).saveAndReturnId(any());
         // 取消校验必须先于落库与事件：被取消的委派不允许留下任何可见痕迹
-        verify(publisher, never()).publish(any(), any(), any(), any(), any(), any());
-        verify(transcriptService, never()).appendUser(anyLong(), any(), any());
+        verify(transcriptService, never()).appendUser(anyLong(), any(), any(), any());
     }
 
     @Test
@@ -315,7 +313,7 @@ class CallSubAgentSessionReuseTest {
         when(suspended.getExecutionState()).thenReturn(ExecutionState.SUSPENDED);
         when(suspended.getMessages()).thenReturn(List.of());
         when(subAgent.execute(any(AgentRequest.class))).thenReturn(suspended);
-        when(executionIdentity.rootSessionIdOfSession(ROOT_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
+        when(executionIdentity.resolveRootSessionId(ROOT_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
 
         ToolExecution execution = toolExecution();
         // ToolDefinition 是 record（final），不能 mock —— 用真实实例，executor 恒不触达
@@ -336,7 +334,7 @@ class CallSubAgentSessionReuseTest {
         assertEquals(String.valueOf(ROOT_SESSION_ID), String.valueOf(command.getValue().conversationId()));
         assertTrue(command.getValue().content().contains("\"subSessionId\""),
                 "卡片载荷必须带 subSessionId，供子执行终态回填时匹配槽位");
-        verify(toolCallEventPublisher).publish(eq(ROOT_SESSION_ID), any());
+        verify(toolCallEventPublisher, never()).publish(anyLong(), any());
         // 挂起路径同样要解除登记
         verify(registry).unregisterChild(eq(ROOT_SESSION_ID), anyLong());
     }

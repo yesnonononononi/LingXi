@@ -20,12 +20,16 @@ import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.SessionAttributeRestorer;
+import com.summit.dp.execution.SuspendedExecutionResumer;
+import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.event.SseEventPublisher;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
+import com.summit.dp.toolcall.application.service.impl.ApprovalFinalizer;
 import com.summit.dp.toolcall.application.service.impl.CommandApprovalExecutor;
+import com.summit.dp.toolcall.application.service.impl.CommandOutcomeResolver;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
@@ -79,11 +83,18 @@ class CommandApprovalExecutorTest {
     void setup() {
         TransactionTemplate transactions = mock(TransactionTemplate.class);
         when(sseEventPublisher.connect(anyLong())).thenReturn(emitter);
-        when(executionIdentity.rootSessionIdOfSession(2L)).thenReturn(2L);
-        executor = new CommandApprovalExecutor(toolCallRepository, new ToolCallConverter(mapper),
-                sseEventPublisher, executionIdentity, modelContextService, runtimeEvents,
-                transactions, provider(executionControl), provider(executionRepository),
-                new SessionAttributeRestorer(mock(SessionRepository.class)),
+        when(executionIdentity.resolveRootSessionId(2L)).thenReturn(2L);
+        SuspendedExecutionResumer resumer = new SuspendedExecutionResumer(toolCallRepository,
+                new SessionAttributeRestorer(mock(SessionRepository.class)), modelContextService,
+                provider(executionControl));
+        executor = new CommandApprovalExecutor(toolCallRepository,
+                sseEventPublisher, executionIdentity, transactions,
+                provider(executionControl), provider(executionRepository),
+                new CommandOutcomeResolver(new ToolCallConverter(mapper), runtimeEvents),
+                new ApprovalFinalizer(toolCallRepository, new ToolCallConverter(mapper), modelContextService,
+                        runtimeEvents, transactions, provider(executionControl), resumer,
+                        mock(ExecutionResumeCoordinator.class)),
+                resumer,
                 new com.summit.dp.toolcall.application.service.impl.ApprovedCommandRestorer(mapper, workspaces,
                         provider(toolRegistry)));
     }

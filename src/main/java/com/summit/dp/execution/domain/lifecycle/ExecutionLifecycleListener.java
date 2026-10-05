@@ -20,8 +20,14 @@ import com.summit.core.agent.Execution;
  */
 public interface ExecutionLifecycleListener {
 
-    /** loop 边界：执行进入挂起态——可能有待人工审批的工具调用卡片需要推送。 */
-    void onExecutionSuspended(String executionId);
+    /**
+     * loop 边界：执行进入挂起态——可能有待人工审批的工具调用卡片需要推送。
+     *
+     * <p>{@code execution} 是广播点已加载的已落库执行对象，与 {@link #onExecutionFinished} 同一约定：
+     * 订阅方需要执行元数据（根会话身份、轮次）时直接读它，**不回查**。挂起信号在提交后广播，
+     * 此时对象里的状态与元数据都已就绪。</p>
+     */
+    void onExecutionSuspended(String executionId, Execution execution);
 
     /**
      * loop 边界：执行进入终态（完成 / 失败 / 取消）。

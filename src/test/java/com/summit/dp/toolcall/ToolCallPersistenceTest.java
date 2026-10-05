@@ -2,16 +2,20 @@ package com.summit.dp.toolcall;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.dp.toolcall.application.service.CardAvailabilityPolicy;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.infrastructure.persistence.mapper.ToolCallMapper;
 import com.summit.dp.toolcall.infrastructure.persistence.repository.ToolCallRepositoryImpl;
+import com.summit.dp.shared.exception.ClientException;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
@@ -23,6 +27,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
 
 /**
  * {@code tool_call} 表的持久化回归：PO + Mapper + RepositoryImpl 的整行读写与事务回滚。
@@ -48,14 +53,14 @@ class ToolCallPersistenceTest {
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
         SqlSessionTemplate session = new SqlSessionTemplate(sessionFactory);
-        repository = new ToolCallRepositoryImpl(session.getMapper(ToolCallMapper.class));
+        repository = new ToolCallRepositoryImpl(session.getMapper(ToolCallMapper.class),
+                new ObjectMapper(), buildCardAvailabilityPolicy());
         transactions = new TransactionTemplate(new DataSourceTransactionManager(database));
     }
 
     @AfterEach
     void shutdown() {
-        database.shutdown();
-    }
+        database.shutdown();    }
 
     @Test
     void roundTripsAllColumnsIncludingJsonPayloads() {
@@ -97,6 +102,27 @@ class ToolCallPersistenceTest {
         assertEquals(2, found.size());
         assertTrue(repository.listByIds(List.of()).isEmpty());
         assertEquals(2L, repository.countByConversationId(5L));
+    }
+
+    /**
+     * 批量装配不能按状态过滤：它的唯一调用方是消息分页装配，要的是「这一页 TOOL 行对应的
+     * 全部调用」。曾在此处误加 {@code status = PENDING} 条件，导致所有已完成调用的结果与
+     * 结论都无法下发，前端历史里全部工具卡都只剩「状态未知」。
+     */
+    @Test
+    void batchQueryReturnsCompletedCallsAlongsidePendingOnes() {
+        repository.save(pending("call_pending", 5L, 50L));
+
+        ToolCall executed = pending("call_executed", 5L, 50L).toBuilder()
+                .toolName("read_file")
+                .type(ToolCallType.EXECUTE)
+                .build();
+        assertTrue(executed.complete("{\"outcome\":\"SUCCEEDED\",\"output\":\"file body\"}"));
+        repository.save(executed);
+
+        List<ToolCall> found = repository.listByIds(List.of("call_pending", "call_executed"));
+        assertEquals(2, found.size(), "待决与已完成都要查回，完成态不得被过滤");
+        assertTrue(found.stream().anyMatch(row -> row.getStatus() == ToolCallStatus.COMPLETED));
     }
 
     @Test
@@ -151,6 +177,37 @@ class ToolCallPersistenceTest {
         ToolCall restored = repository.findById("call_r").orElseThrow();
         assertTrue(restored.isPending());
         assertNull(restored.getRawOutput());
+    }
+
+    @Test
+    void staleCompletionCannotOverwriteReadyStateOrMessageAnchor() {
+        ToolCall preparing = pending("call_version", 12L, 120L).toBuilder()
+                .status(ToolCallStatus.PREPARING).build();
+        repository.save(preparing);
+        ToolCall stale = repository.findById(preparing.getId()).orElseThrow();
+        ToolCall ready = repository.findById(preparing.getId()).orElseThrow();
+        assertTrue(ready.markReady());
+        repository.updateById(ready);
+        assertEquals(2L, ready.getVersion());
+        repository.bindSessionMessage(preparing.getId(), 909L);
+
+        stale.complete("{\"outcome\":\"APPROVED\"}");
+        assertThrows(ClientException.class, () -> repository.updateById(stale));
+        ToolCall current = repository.findById(preparing.getId()).orElseThrow();
+        assertEquals(ToolCallStatus.PENDING, current.getStatus());
+        assertEquals(909L, current.getSessionMessageId());
+        assertEquals(3L, current.getVersion());
+    }
+
+    /** 仓储的形态判定依赖卡片可用性策略；单测只关心持久化，策略给最简实现。 */
+    static CardAvailabilityPolicy buildCardAvailabilityPolicy() {
+        return new CardAvailabilityPolicy(provider(), provider());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> ObjectProvider<T> provider() {
+        ObjectProvider<T> provider = mock(ObjectProvider.class);
+        return provider;
     }
 
     private static ToolCall pending(String id, long conversationId, long executionId) {

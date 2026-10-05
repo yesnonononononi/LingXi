@@ -161,10 +161,10 @@ public class EmailServiceImpl implements EmailService {
      * 只有一个 INSERT 成功，其余落到 {@link DuplicateKeyException}，回查即得已存在邮箱。
      * 这里在<b>同一事务内</b>捕获并回查，成立的前提有两条：</p>
      * <ol>
-     *   <li>MySQL 的唯一键冲突不会中止当前事务（不像 PostgreSQL 会把事务置为 aborted），
+     *   <li>唯一键冲突不会中止当前事务（不像 PostgreSQL 会把事务置为 aborted），
      *       Spring 也只在异常穿透事务边界时才标记 rollback-only；</li>
      *   <li>回查必须用<b>锁定读</b>（{@link EmailRepository#findByBusinessKeyForUpdate}）：
-     *       REPEATABLE READ 下本方法开头的普通 SELECT 已经固定了 read view，普通 SELECT 读不到
+     *       可重复读类隔离级别下，本方法开头的普通 SELECT 已经固定了读快照，读不到
      *       竞争方随后提交的那一行，会误判成回查失败并把整次投递回滚掉。</li>
      * </ol>
      *

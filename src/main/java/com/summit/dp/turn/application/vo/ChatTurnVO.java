@@ -27,6 +27,8 @@ public class ChatTurnVO {
     /** 轮次 ID（雪花）：JSON 中按字符串下发，避免前端精度丢失。 */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long turnId;
+    private Long version;
+
 
     /** 发起本次子 Agent 委派的主轮次；普通用户提问为 null。 */
     @JsonSerialize(using = ToStringSerializer.class)

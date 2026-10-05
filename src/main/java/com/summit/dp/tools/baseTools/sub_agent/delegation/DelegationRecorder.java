@@ -4,7 +4,6 @@ import com.summit.core.agent.AgentRequest;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.tool.ToolExecution;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.agent.infrastructure.event.SubAgentSessionEventPublisher;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
@@ -15,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.util.Map;
 
 /**
  * 委派落账：把一次委派记成<b>可见事实</b>——子会话映射事件、子轮次、transcript 追加。
@@ -31,7 +31,6 @@ import java.time.Instant;
 @RequiredArgsConstructor
 public class DelegationRecorder {
 
-    private final SubAgentSessionEventPublisher subAgentSessionEventPublisher;
     private final ChatTurnService chatTurnService;
     private final ConversationTranscriptService transcriptService;
 
@@ -44,32 +43,50 @@ public class DelegationRecorder {
      */
     public long record(Long rootSessionId, ToolExecution toolExecution, AgentRequest request,
                        Long numericSubSessionId, String subSessionId, AgentVO agent, String task) {
-        subAgentSessionEventPublisher.publish(toolExecution.getTurnId(), rootSessionId, subSessionId,
-                agent.getId(), agent.getName(), task, toolExecution.getId());
+        // 子会话身份不再单独发映射事件：子会话行落库时后端就发 v3 SESSION_UPDATED（带 rootSessionId），
+        // 委派关联则由 DELEGATION 卡片的 content.subSessionId 表达，前端据此建立导航。
 
         // 子轮次：与子会话的 USER 行同源归属。parentTurnId 指向**发起本次委派的主轮次**，
         // 从父工具执行的事件元数据读取，不反查执行对应的轮次。
         // 子会话会被复用，所以每次委派都必须新建一个子轮次，否则多次委派会共用一条统计。
         Long parentTurnId = ExecutionEventMetadata.turnId(toolExecution.getEventMetaData());
-        long childTurnId = chatTurnService.acceptTurn(numericSubSessionId, parentTurnId,
+        long childTurnId = chatTurnService.acceptTurn(numericSubSessionId, rootSessionId, parentTurnId,
                 ExecutionIdentity.numericOrNull(request.getExecutionId()),
                 request.getModelConfig() == null ? null : request.getModelConfig().getModelName(),
                 request.getModelConfig() == null ? null : request.getModelConfig().getProvider());
         request.runtimeParametersOrDefault().setEventMetaData(
-                ExecutionEventMetadata.of(numericSubSessionId, childTurnId, parentTurnId));
+                childExecutionMetadata(rootSessionId, toolExecution.getEventMetaData(),
+                        numericSubSessionId, childTurnId, parentTurnId));
 
         try {
             // 复用与首派都要把本次任务追加进 transcript：子会话的消息流是 append-only 的可见记录。
             // 归属用**本次委派自己的轮次**（而不是「子会话最新轮次」）：子会话会被复用，
             // 同一个子会话先后承载多次委派，按会话累计用量推算本轮消耗必然错位。
-            transcriptService.appendUser(numericSubSessionId, childTurnId, UserMessageEntity.from(task));
+            transcriptService.appendUser(numericSubSessionId, rootSessionId, childTurnId, UserMessageEntity.from(task));
         } catch (RuntimeException e) {
             // 消息没写成 → **不留孤立轮次**：把它收口为失败终态。
             // 委派确实没跑起来，这个状态是如实的；比起留一条永远 ACCEPTED 的轮次更可解释。
-            markTurnFailedQuietly(request, e);
+            markTurnFailedQuietly(rootSessionId, request, e);
             throw e;
         }
         return childTurnId;
+    }
+
+    /**
+     * 子执行自己的事件归属：<b>继承父的根会话与历史代际，替换会话、轮次与父轮次</b>。
+     *
+     * <p>{@code rootSessionId} 由调用方显式传入（委派链路已经知道根会话），不反查、不猜测；
+     * historyRevision 沿用父元数据的同源快照 —— 子执行与父执行属于同一根会话的同一代际，
+     * 子执行不得自行推进代际（那属于重发路径）。父元数据缺失代际时回落 1，与根会话默认值一致。</p>
+     *
+     * <p><b>不含父响应 streamKey</b>：子执行在下一轮 <code>onBeforeModelInvoke</code> 生成自己的
+     * 响应身份，父的响应归属不得被继承。</p>
+     */
+    private Map<String, Object> childExecutionMetadata(long rootSessionId, Map<String, Object> parentMetadata,
+                                                       long childSessionId, long childTurnId, Long parentTurnId) {
+        Long parentRevision = ExecutionEventMetadata.parseHistoryRevision(parentMetadata);
+        long historyRevision = parentRevision == null || parentRevision <= 0L ? 1L : parentRevision;
+        return ExecutionEventMetadata.of(rootSessionId, childSessionId, childTurnId, parentTurnId, historyRevision);
     }
 
     /**
@@ -77,14 +94,14 @@ public class DelegationRecorder {
      *
      * <p>收口本身失败只告警：原始异常更重要，不能因为清理动作再抛一个把原因盖掉。</p>
      */
-    private void markTurnFailedQuietly(AgentRequest request, RuntimeException cause) {
+    private void markTurnFailedQuietly(Long rootSessionId, AgentRequest request, RuntimeException cause) {
         Long executionId = ExecutionIdentity.numericOrNull(request.getExecutionId());
         if (executionId == null) {
             return;
         }
         try {
             chatTurnService.markTerminal(String.valueOf(executionId), ChatTurnStatus.FAILED,
-                    null, null, null, Instant.now());
+                    null, null, null, Instant.now(), rootSessionId);
         } catch (RuntimeException markFailure) {
             log.warn("收口子轮次失败（不影响原始异常）: executionId={}, cause={}, 收口失败原因={}",
                     executionId, cause.toString(), markFailure.toString());

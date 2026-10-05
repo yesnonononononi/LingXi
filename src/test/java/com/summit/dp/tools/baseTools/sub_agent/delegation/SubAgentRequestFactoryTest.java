@@ -82,10 +82,11 @@ class SubAgentRequestFactoryTest {
 
         // 3) 提示词：与指挥者同一份成员名单 + 成员职责话术
         String prompt = request.getSystemPrompt();
-        assertTrue(prompt.contains("# 团队成员"));
-        assertTrue(prompt.contains("- id: 5 | name: 产品经理 | description: 未提供能力描述"),
-                "名单用与指挥者相同的行格式渲染");
-        assertFalse(prompt.contains("- id: 6 "), "成员名单里不含自己");
+        assertTrue(prompt.contains("### 成员名单(TEAM ROSTER)"), "名单标题与指挥者同一份渲染");
+        assertTrue(prompt.contains("- id: 5") && prompt.contains("- name: 产品经理")
+                        && prompt.contains("- description: 未提供能力描述"),
+                "名单用与指挥者相同的多行格式渲染；描述缺失时用统一兜底文案");
+        assertFalse(prompt.contains("- id: 6"), "成员名单里不含自己");
         assertFalse(prompt.contains("# 可委派队友"), "成员没有可委派队友");
     }
 

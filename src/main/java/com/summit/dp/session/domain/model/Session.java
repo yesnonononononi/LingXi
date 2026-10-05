@@ -28,6 +28,14 @@ public class Session {
     public static final int MAX_SESSION_NAME_LENGTH = 25;
 
     private final Long id;
+    @Builder.Default
+    private Long version = 1L;
+    @Builder.Default
+    private Long historyRevision = 1L;
+
+    public void acceptPersistedVersion(long next) { this.version = next; }
+    public void advanceHistoryRevision() { this.historyRevision++; }
+
 
     /** 所属根会话 id；{@code 0}（{@link #ROOT_SESSION_ID}）表示自身即根会话。 */
     private final Long rootSessionId;

@@ -1,12 +1,17 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { SubSessionVO } from '../../types/chat';
 import { formatClockTime } from '../../utils/format';
+import { useTheme } from '../../composables/useTheme';
 
 const props = defineProps<{
   isOpen: boolean;
   subSessions: SubSessionVO[];
   isDark?: boolean;
 }>();
+
+const { isDark: themeIsDark } = useTheme();
+const isDark = computed(() => props.isDark ?? themeIsDark.value);
 
 const emit = defineEmits<{
   (e: 'close'): void;
@@ -45,26 +50,26 @@ const emit = defineEmits<{
       <aside
         v-if="isOpen"
         :class="[
-          'fixed inset-y-0 right-0 w-full max-w-xl shadow-2xl z-50 flex flex-col border-l transition-colors',
-          isDark ? 'bg-[#0f141c] border-[#222b3d] text-gray-100' : 'bg-white border-gray-200 text-gray-800'
+          'fixed inset-y-0 right-0 w-full max-w-xl shadow-2xl z-50 flex flex-col border-l transition-colors backdrop-blur-2xl',
+          isDark ? 'bg-black/95 border-white/15 text-zinc-100 shadow-[0_0_60px_rgba(0,0,0,0.9)]' : 'bg-white border-gray-200 text-gray-800'
         ]"
       >
         <!-- 头部 -->
-        <div :class="['px-6 py-4 border-b flex items-center justify-between shrink-0', isDark ? 'border-[#222b3d] bg-[#141a24]' : 'border-gray-100 bg-gray-50/70']">
+        <div :class="['px-6 py-4 border-b flex items-center justify-between shrink-0', isDark ? 'border-white/10 bg-black/60' : 'border-gray-100 bg-gray-50/70']">
           <div class="flex items-center gap-3">
-            <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-cyan-400 flex items-center justify-center text-white shadow-sm shrink-0">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-600 via-indigo-600 to-cyan-400 flex items-center justify-center text-white shadow-sm shrink-0">
               <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
               </svg>
             </div>
             <div>
               <div class="flex items-center gap-2">
-                <h3 class="font-semibold text-sm">子代理协作会话列表</h3>
-                <span :class="['text-[11px] px-2 py-0.5 rounded-full font-mono font-medium', isDark ? 'bg-blue-500/15 text-blue-400 border border-blue-500/20' : 'bg-blue-50 text-blue-600 border border-blue-200']">
+                <h3 class="font-semibold text-sm dark:text-white dark:text-glow-white">子代理协作会话列表</h3>
+                <span :class="['text-[11px] px-2 py-0.5 rounded-full font-mono font-medium', isDark ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30' : 'bg-blue-50 text-blue-600 border border-blue-200']">
                   共 {{ subSessions.length }} 个子会话
                 </span>
               </div>
-              <p class="text-xs text-gray-400 mt-0.5">
+              <p class="text-xs text-gray-400 dark:text-zinc-400 dark:text-glow-subtle mt-0.5">
                 当前主会话在团队协同中派生并持久化的全部专业代理 Session
               </p>
             </div>
@@ -72,7 +77,7 @@ const emit = defineEmits<{
 
           <button
             @click="emit('close')"
-            :class="['p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-500/10 transition cursor-pointer']"
+            :class="['p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200 hover:bg-white/5 transition cursor-pointer']"
             title="关闭概览"
           >
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -82,7 +87,7 @@ const emit = defineEmits<{
         </div>
 
         <!-- 查看提示 -->
-        <div :class="['px-6 py-2.5 border-b text-xs flex items-center justify-between gap-4 select-none', isDark ? 'border-[#222b3d] bg-[#121721] text-gray-400' : 'border-gray-100 bg-gray-50/40 text-gray-500']">
+        <div :class="['px-6 py-2.5 border-b text-xs flex items-center justify-between gap-4 select-none', isDark ? 'border-white/10 bg-black/40 text-zinc-400' : 'border-gray-100 bg-gray-50/40 text-gray-500']">
 
           <span class="text-[11px] opacity-70">点击卡片即可调出该代理的独立执行轨迹</span>
         </div>
@@ -104,20 +109,20 @@ const emit = defineEmits<{
             :key="sub.id"
             @click="emit('selectSubSession', sub)"
             :class="[
-              'p-4 rounded-2xl border transition-all cursor-pointer group shadow-2xs hover:shadow-sm select-none',
+              'p-4 rounded-2xl border transition-all cursor-pointer group shadow-2xs select-none',
               isDark
-                ? 'border-[#222c3d] bg-[#131924] hover:border-blue-500/50 hover:bg-[#162030]'
+                ? 'border-white/15 bg-black/90 hover:border-cyan-400/50 hover:shadow-[0_0_20px_rgba(34,211,238,0.15)]'
                 : 'border-gray-200 bg-white hover:border-blue-400 hover:bg-blue-50/30'
             ]"
           >
             <div class="flex items-start justify-between gap-3">
               <div class="flex items-center gap-2.5 min-w-0">
-                <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-cyan-400 flex items-center justify-center text-white text-xs font-semibold shadow-xs shrink-0">
+                <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-500 flex items-center justify-center text-white text-xs font-semibold shadow-xs shrink-0">
                   {{ idx + 1 }}
                 </div>
                 <div class="min-w-0">
                   <div class="flex items-center gap-2">
-                    <h4 class="font-semibold text-sm truncate group-hover:text-blue-500 transition-colors">
+                    <h4 class="font-semibold text-sm truncate group-hover:text-cyan-400 transition-colors">
                       {{ sub.agentName || (sub.agentId ? `Agent #${sub.agentId}` : '子代理') }}
                     </h4>
                     <span :class="['text-[10px] px-1.5 py-0.2 rounded-full font-mono', isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600']">

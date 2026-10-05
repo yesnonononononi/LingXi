@@ -26,7 +26,7 @@ class ExecutionJsonTest {
     void selectedEventMetadataSurvivesSnapshotWithoutPublishingInternalAttributes() throws Exception {
         Execution original = execution(null, Map.of("internal", "private-value"));
         original.getAgentRequest().runtimeParametersOrDefault().setEventMetaData(
-                ExecutionEventMetadata.of(9007199254740993L, 9007199254740995L, null));
+                ExecutionEventMetadata.of(9007199254740993L, 9007199254740993L, 9007199254740995L, null, 3L));
 
         Execution restored = mapper.readValue(mapper.writeValueAsString(original), Execution.class);
 

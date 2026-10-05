@@ -28,17 +28,28 @@ public enum ToolCallOutcome {
         return name();
     }
 
-    /** 由框架 {@code ToolCallStatus} 映射而来（框架侧含 STARTED/PROMISED，业务侧不落库）。 */
-    public static ToolCallOutcome fromFrameworkStatus(String frameworkStatus) {
+    /**
+     * 由框架 {@link com.summit.core.tool.ToolCallStatus} 映射而来
+     * （框架侧含 STARTED/PROMISED，业务侧不落库）。
+     *
+     * <p><b>直接吃枚举而不是字符串</b>：调用方本来就持有框架枚举，先 {@code name()} 再回来
+     * 解析等于把已知的合法取值退化成可拼错的字符串；新增框架状态时编译器会在这里报穷尽性缺口。</p>
+     */
+    public static ToolCallOutcome fromFrameworkStatus(com.summit.core.tool.ToolCallStatus frameworkStatus) {
         if (frameworkStatus == null) {
             return FAILED;
         }
         return switch (frameworkStatus) {
-            case "COMPLETED" -> SUCCEEDED;
-            case "TIMED_OUT" -> TIMED_OUT;
-            case "CANCELLED" -> CANCELLED;
-            case "FAILED", "REJECTED" -> FAILED;
-            default -> FAILED;
+            case COMPLETED -> SUCCEEDED;
+            case TIMED_OUT -> TIMED_OUT;
+            case CANCELLED -> CANCELLED;
+            // REJECTED 仍并入 FAILED：这是既有行为，改成 REJECTED 会变更
+            // raw_output.outcome 的取值（wire 值），不在纯重构范围内。
+            // 「被拒绝」与「工具报错」应分开的语义问题已单独记录，待确认前端是否消费该字段后再改。
+            case REJECTED, FAILED -> FAILED;
+            // STARTED / PROMISED 不会走到结论映射（监听器对 PROMISED 提前返回）；
+            // 真到了这里说明上游给了非终态，按失败处理而不是猜一个乐观结论。
+            case STARTED, PROMISED -> FAILED;
         };
     }
 }

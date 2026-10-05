@@ -35,13 +35,13 @@ const handleClearSessions = async () => {
     </div>
 
     <!-- 删除所有对话：真实能力（清空全部会话），保留并带二次确认 -->
-    <div class="h-px bg-gray-100 dark:bg-gray-800/80"></div>
+    <div class="h-px bg-gray-100 dark:bg-white/10"></div>
     <div class="flex items-center justify-between py-1.5">
-      <span class="text-gray-800 dark:text-gray-200">删除所有对话</span>
+      <span class="text-gray-800 dark:text-zinc-200 dark:text-glow-subtle">删除所有对话</span>
       <button
         type="button"
         @click="handleClearSessions"
-        class="px-4 py-1 rounded-full border border-red-500 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 text-xs transition cursor-pointer"
+        class="px-4 py-1 rounded-full border border-red-500/40 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/15 text-xs transition cursor-pointer"
       >
         删除
       </button>

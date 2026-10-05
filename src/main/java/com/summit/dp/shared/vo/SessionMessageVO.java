@@ -29,6 +29,9 @@ public class SessionMessageVO {
 
     @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
+    private Long sessionId;
+    private String streamKey;
+
     /**
      * 该消息所属的**业务轮次** ID。JSON 中按字符串下发。
      *

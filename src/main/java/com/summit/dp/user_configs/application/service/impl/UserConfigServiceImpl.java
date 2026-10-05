@@ -1,6 +1,7 @@
 package com.summit.dp.user_configs.application.service.impl;
 
 import com.summit.ddd.application.vo.Result;
+import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.user_configs.application.command.UserConfigCommand;
 import com.summit.dp.user_configs.application.service.UserConfigService;
 import com.summit.dp.user_configs.application.vo.UserConfigVO;
@@ -12,6 +13,7 @@ import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.model.WorkspaceType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.Objects;
@@ -28,8 +30,17 @@ import java.util.Optional;
 @Slf4j
 public class UserConfigServiceImpl implements UserConfigService {
     private final UserConfigRepository repository;
-    /** 校验 modelId 存在性：模型业务在 model 模块，这里只借它的断言，不复制规则。 */
+    /**
+     * 校验 modelId 存在性：模型业务在 model 模块，这里只借它的断言，不复制规则。
+     */
     private final ModelService modelService;
+
+    /**
+     * 数据存储目录：普通配置项（{@code lingxi.data.dir}），H2 库文件即落在该目录。
+     * 它不再是库内字段，这里只负责把它原样回显给前端。
+     */
+    @Value("${lingxi.data.dir}")
+    private String dataDir;
 
     @Override
     public Result<UserConfigVO> current() {
@@ -77,13 +88,37 @@ public class UserConfigServiceImpl implements UserConfigService {
 
 
     private UserConfig update(UserConfigCommand userConfigCommand, UserConfig model) {
-        if (userConfigCommand.accessMode() != null) model.changeAccessMode(UserConfig.AccessMode.fromString(userConfigCommand.accessMode()));
-        if (userConfigCommand.commandApprovalPolicy() != null) model.changeCommandPolicy(UserConfig.CommandPolicy.fromString(userConfigCommand.commandApprovalPolicy()));
-        if (userConfigCommand.planMaxReminders() != null) model.changePlanMaxReminders(userConfigCommand.planMaxReminders());
-        if (userConfigCommand.modelId() != null) model.changeModel(userConfigCommand.modelId());
-        if (userConfigCommand.workspaceType() != null) model.changeWorkspace(new UserConfig.WorkSpaceConfig(WorkspaceType.fromCode(userConfigCommand.workspaceType())));
-        if (userConfigCommand.maxTokens() != null) model.changeMaxTokens(userConfigCommand.maxTokens());
-        if (userConfigCommand.reasoningEffort() != null) model.changeReasoningEffort(Objects.requireNonNull(ReasoningEffort.fromValue(userConfigCommand.reasoningEffort())));
+        String accessMode = userConfigCommand.accessMode();
+        if (accessMode != null)
+            model.changeAccessMode(UserConfig.AccessMode.fromString(accessMode));
+
+        String commandApprovalPolicy = userConfigCommand.commandApprovalPolicy();
+        if (commandApprovalPolicy != null)
+            model.changeCommandPolicy(UserConfig.CommandPolicy.fromString(commandApprovalPolicy));
+
+        Integer planMaxReminders = userConfigCommand.planMaxReminders();
+        if (planMaxReminders != null)
+            model.changePlanMaxReminders(planMaxReminders);
+
+        Long modelId = userConfigCommand.modelId();
+        if (modelId != null) model.changeModel(modelId);
+
+        String workspaceType = userConfigCommand.workspaceType();
+        if (workspaceType != null)
+            model.changeWorkspace(new UserConfig.WorkSpaceConfig(WorkspaceType.fromCode(workspaceType)));
+
+        Integer maxTokens = userConfigCommand.maxTokens();
+        if (maxTokens != null)
+            model.changeMaxTokens(maxTokens);
+
+        String reasoningEffort = userConfigCommand.reasoningEffort();
+        if (reasoningEffort != null)
+            model.changeReasoningEffort(Objects.requireNonNull(ReasoningEffort.fromValue(reasoningEffort)));
+
+        String renderTheme = userConfigCommand.renderTheme();
+        if (renderTheme != null)
+            model.changeRenderTheme(renderTheme);
+
         return model;
     }
 
@@ -102,6 +137,8 @@ public class UserConfigServiceImpl implements UserConfigService {
                 .planMaxReminders(model.getPlanMaxReminders())
                 .maxTokens(model.getMaxTokens())
                 .reasoningEffort(reasoningEffort == null ? null : reasoningEffort.getValue())
+                .renderTheme(model.getRenderTheme() == null ? null : model.getRenderTheme().toString())
+                .dataStorage(dataDir)
                 .build();
     }
 

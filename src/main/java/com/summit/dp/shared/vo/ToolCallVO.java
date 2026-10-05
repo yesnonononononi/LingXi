@@ -5,17 +5,9 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.Instant;
+import java.util.List;
 
-/**
- * 工具调用聚合视图：消息分页与单条查询统一下发的「完整工具调用对象」。
- *
- * <p>由 {@code tool_call} 行聚合而来，承载类型 / 状态 / 卡片载荷。
- * {@link #pending} 是前端唯一可审批判定（后端权威下发），等价于
- * {@code type == 'PROMISE' && status == 'pending'}。</p>
- *
- * <p>{@code content} / {@code rawInput} / {@code rawOutput} / {@code metaData}
- * 已是解析后的 JSON 对象，前端可直接使用；解析失败时为 {@code null}（降级为「状态不可用」）。</p>
- */
+/** 工具调用的客户端视图；pending 仅表示未决，可操作性以 allowedActions 为准。 */
 @Data
 @Builder
 public class ToolCallVO {
@@ -29,6 +21,9 @@ public class ToolCallVO {
     private String type;
     /** pending / in_progress / completed */
     private String status;
+    private Long version;
+    private List<String> allowedActions;
+    private String unavailableReason;
     private String title;
     private JsonNode content;
     private JsonNode rawInput;

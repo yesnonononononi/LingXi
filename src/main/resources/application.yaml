@@ -1,8 +1,6 @@
 server:
   port: 8088
 spring:
-  profiles:
-    active: dev
   application:
     name: LingXi
   config:
@@ -13,10 +11,13 @@ spring:
       max-file-size: 10MB
       max-request-size: 12MB
   datasource:
-    url: ${LingXi.datasource.database.url}
-    username: ${LingXi.datasource.database.username}
-    password: ${LingXi.datasource.database.password}
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    # 内嵌 H2 文件库；MODE=MySQL 使 SQL 方言与 MySQL 一致（backtick / DATETIME / ON UPDATE 等）。
+    # 库文件目录 = lingxi.data.dir（见下方 lingxi.data），不再随进程 cwd 漂移
+    # （旧写法 ./data/lingxi 会落在 Electron userData 或项目根下）。
+    url: jdbc:h2:file:${lingxi.data.dir}/lingxi;MODE=MySQL
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
     druid:
       # 初始化连接数
       initial-size: 5
@@ -26,25 +27,37 @@ spring:
       max-active: 20
       # 获取连接等待超时时间（毫秒）
       max-wait: 60000
-      # 以下是解决你报错的关键配置
       # 开启空闲连接检查
       test-while-idle: true
-      # 指定探测 SQL（MySQL 专用）
+      # 探测 SQL
       validation-query: SELECT 1
-      # 建议开启借出时检查，确保拿到的连接一定是好的
+      # 借出时检查，确保拿到的连接一定是好的
       test-on-borrow: true
-      # 定期清理任务执行的间隔（毫秒），默认 60 秒
+      # 定期清理任务执行的间隔（毫秒）
       time-between-eviction-runs-millis: 60000
       # 连接在池中保持空闲而不被回收的最小时间
       min-evictable-idle-time-millis: 300000
 lingxi:
+  mcp:
+    enabled: true
+  # 数据存储目录：H2 库文件落在 <dir>/lingxi.mv.db；/config/current 的 dataStorage 原样回显此值。
+  # 换位置改这里即可，也可用 -Dlingxi.data.dir=... 或环境变量 LINGXI_DATA_DIR 覆盖。
+  data:
+    dir: ${user.home}/.lingxi/data
+  config:
+    user-configs:
+      path: ${user.home}/.lingxi/config/user-configs.yaml
+    mcp:
+      path: ${user.home}/.lingxi/config/mcp.yaml
+    model:
+      path: ${user.home}/.lingxi/config/models.yaml
   tool:
     concurrent-tool-limit: 10 # 并发工具调用限制
   # AgentRequest.systemPrompt，框架只负责逐字渲染它。人设原本放在框架的
   system-prompt: |
     ### 默认提示(以被分配的角色提示词为主)
     
-      你名字为`灵犀`，一个主要任务为编码的agent。根据用户请求检查相关工作空间内容，执行修改并尽可能验证结果。使用用户的语言回复(优先中文)，结果保持简洁。
+    你名字为`灵犀`，一个主要任务为编码的agent。根据用户请求检查相关工作空间内容，执行修改并尽可能验证结果。使用用户的语言回复(优先中文)，结果保持简洁。
     
     ### 项目额外文件(不属于正在工作的项目)
     
@@ -62,7 +75,7 @@ lingxi:
     # 工作原则
     - 按任务需要读取文件，避免无目的扫描整个工作空间
     - 修改前获取足够上下文，避免猜测式修改
-    - 修改后尽可能执行相关编译、测试、lint或其他验证
+    - 修改后执行相关编译、测试、lint或其他验证
     - 无法验证时说明原因和未验证部分
     - 除非用户明确要求，不把 `/.lingxi` 当作项目源码修改
     - `/.lingxi` 默认加入 `.gitignore`
@@ -86,9 +99,6 @@ lingxi:
 
   team:
     max-member-size: 10
-  mcp:
-    # 必须为 enabled（与 McpAutoConfiguration 的 @ConditionalOnProperty 一致）
-    enabled: true
   agent:
     runtime:
       tool:

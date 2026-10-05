@@ -54,6 +54,14 @@ public class ToolCallPO {
 
     private String metaData;
 
+    /** 落定本结论的决策命令 ID；决策重试据此返回首次结论。 */
+    private String decisionCommandId;
+
+    /** 决策请求摘要；同 commandId 但内容不同即拒绝。 */
+    private String decisionDigest;
+
+    private Long version;
+
     private Instant createdAt;
 
     private Instant updatedAt;

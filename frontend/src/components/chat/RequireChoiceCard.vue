@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, inject } from 'vue';
 import type { PromptCardData } from '../../types/chat';
+import CollapseTransition from '../common/CollapseTransition.vue';
 
 const props = defineProps<{
   /** 统一卡片数据（CHOICE 澄清提问） */
@@ -11,16 +12,19 @@ const props = defineProps<{
 }>();
 
 /**
- * 由视图层注入的流式决策：提交回答后消费恢复执行的事件流并渲染成新的消息气泡。
+ * 由视图层注入的决策提交：批 A 起走 JSON 回执，**不再消费请求级流**。
+ * 恢复期的实时内容由会话级 v3 流渲染；本回调只负责提交并回执结果。
  * 缺省（组件树外独立使用本卡片时）降级为不可提交，仅提示。
  * 与 PlanCard 复用同一个宿主能力——require_choice 与 plan 走同一条恢复链路。
  */
 const decideToolCall = inject<((payload: {
   conversationId: string;
   toolCallId: string;
-  approved: boolean;
+  action: 'APPROVE' | 'REJECT' | 'ANSWER';
   text?: string;
-}) => Promise<boolean>) | null>('decideToolCall', null);
+  /** 卡片当前版本；提交给后端做冲突判定，避免过期界面覆盖先到的结论 */
+  expectedVersion?: string | number | null;
+}) => Promise<unknown>) | null>('decideToolCall', null);
 
 /** 是否最小化/折叠 */
 const isCollapsed = ref(false);
@@ -40,8 +44,8 @@ const options = computed<string[]>(() =>
   (props.promptCard.options || []).map(item => String(item ?? '').trim()).filter(Boolean)
 );
 
-/** 是否仍待决策：以后端下发的 pending 为准（唯一可审批判定） */
-const isPending = computed(() => props.promptCard.pending === true);
+/** pending 也可能暂不可操作，按钮只能看后端动作集合。 */
+const isPending = computed(() => props.promptCard.allowedActions?.includes('ANSWER') === true);
 const isResolved = computed(() => !isPending.value);
 const resolvedAnswer = computed(() => props.promptCard.answer || '');
 
@@ -73,10 +77,11 @@ const canSubmit = computed(() => {
 });
 
 /**
- * 提交选中的答案并恢复执行。
+ * 提交选中的答案。
  *
- * 决策统一走 /tool-call/decide（approved=true）：对澄清提问而言「给出回答」即批准继续，
- * 用户想表达拒绝时直接自由输入即可。回答原文作为 text 落进上下文，结论记为 ANSWERED。
+ * 决策走 /tool-call/decisions，动作为 ANSWER：澄清提问里「给出回答」就是回答本身，
+ * 不再借用 APPROVE 布尔表达（二者在库里必须可区分）。回答原文作为 text 落进上下文，
+ * 结论记为 ANSWERED。恢复执行的事件由会话级 v3 流渲染。
  */
 const submit = async (answer: string) => {
   const conversationId = props.promptCard.conversationId
@@ -92,28 +97,21 @@ const submit = async (answer: string) => {
     return;
   }
   if (!decideToolCall) {
-    errorMsg.value = '当前视图未接入事件流，无法提交回答';
+    errorMsg.value = '当前视图未接入决策通道，无法提交回答';
     return;
   }
 
   isSubmitting.value = true;
   errorMsg.value = '';
   try {
-    const accepted = await decideToolCall({
+    await decideToolCall({
       conversationId: String(conversationId),
       toolCallId: String(toolCallId),
-      approved: true,
-      text: answer
+      action: 'ANSWER',
+      text: answer,
+      expectedVersion: props.promptCard.version ?? null
     });
-    if (!accepted) {
-      errorMsg.value = '提交回答失败，请重试';
-      return;
-    }
     // 结论由 outcome 表达（ANSWERED），status 收敛为终态 completed
-    props.promptCard.pending = false;
-    props.promptCard.status = 'completed';
-    props.promptCard.outcome = 'ANSWERED';
-    props.promptCard.answer = answer;
   } catch (err: any) {
     errorMsg.value = err?.message || '提交回答失败，请重试';
   } finally {
@@ -166,9 +164,11 @@ const handleSubmit = () => {
     </div>
 
     <!-- 2. 卡片主要内容 -->
-    <div v-show="!isCollapsed" class="px-5 pb-5 space-y-3.5">
+    <CollapseTransition>
+      <div v-if="!isCollapsed">
+        <div class="px-5 pb-5 space-y-3.5">
 
-      <h3 :class="['text-[15px] sm:text-base font-bold leading-relaxed', isDark ? 'text-gray-100' : 'text-gray-900']">
+        <h3 :class="['text-[15px] sm:text-base font-bold leading-relaxed', isDark ? 'text-gray-100' : 'text-gray-900']">
         {{ questionText }}
       </h3>
 
@@ -188,7 +188,7 @@ const handleSubmit = () => {
         <svg v-else class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
-        <span v-if="isUnknownOutcome">状态未知（未获取到该提问的结论）</span>
+        <span v-if="isUnknownOutcome">{{ promptCard.status === 'preparing' ? '准备中' : promptCard.unavailableReason || '状态未知（未获取到该提问的结论）' }}</span>
         <span v-else>已确认决策：<span class="font-semibold">{{ resolvedAnswer }}</span></span>
       </div>
 
@@ -284,7 +284,8 @@ const handleSubmit = () => {
           <span>提交</span>
         </button>
       </div>
-
-    </div>
+      </div>
+      </div>
+    </CollapseTransition>
   </div>
 </template>

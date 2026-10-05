@@ -1,8 +1,13 @@
 import http from './interceptor';
 import type { Result } from './types';
-import type { AgentStreamEvent, PageResult, AgentVO, CreateAgentRequest } from '../types/chat';
+import type {
+  AgentVO,
+  CommandAcceptanceVO,
+  CreateAgentRequest,
+  PageResult,
+  ResendCommandAcceptanceVO,
+} from '../types/chat';
 import { toPositiveInt } from '../utils/api';
-import { readSseResponse } from '../utils/sse';
 
 const appendFormValue = (form: FormData, key: string, value: string | number | boolean | null | undefined) => {
   if (value !== null && value !== undefined) form.append(key, String(value));
@@ -24,7 +29,9 @@ const createChatForm = (
   requirePlan?: boolean,
   agentId?: number | string | null,
   imageFile?: File | null,
-  imageUrl?: string | null
+  imageUrl?: string | null,
+  /** 重发专用：要改写的那条历史提问；普通对话不传。 */
+  messageId?: number | string | null
 ) => {
   const form = new FormData();
   appendFormValue(form, 'input', prompt);
@@ -34,6 +41,7 @@ const createChatForm = (
   appendFormValue(form, 'modelId', modelId);
   appendFormValue(form, 'agentId', toPositiveInt(agentId, 0) || null);
   appendFormValue(form, 'requirePlan', requirePlan === true);
+  appendFormValue(form, 'messageId', messageId);
   if (imageFile) form.append('image', imageFile, imageFile.name);
   if (imageUrl) appendFormValue(form, 'imageUrl', imageUrl);
   return form;
@@ -71,44 +79,61 @@ export class AgentAPI {
     ));
   }
 
-  static async chatStream(
+  /**
+   * v3 发送受理：JSON 回执，**不建请求级 SSE**。
+   *
+   * <p>回执只承诺「命令被受理成了哪一轮」—— 它不携带 assistant 内容，也不能用作「模型执行完成」
+   * 的判据（见后端 {@code CommandAcceptanceVO} 的说明）。执行产生的实时事实统一走会话级 v3 流，
+   * 回执与事件按业务身份 + 版本合并，允许事件先到。</p>
+   *
+   * @param commandId 命令身份；同 ID 重试由后端查回首轮受理结果（幂等键）
+   */
+  static async sendCommand(
+    commandId: string,
     sessionId: string | number | null,
     prompt: string,
-    onEvent: (event: AgentStreamEvent) => void,
     workspaceId?: number | string | null,
     workDir?: string | null,
     modelId?: number | string | null,
     requirePlan?: boolean,
-    signal?: AbortSignal,
-    /** 单 Agent 直聊：指定该 Agent 的人设与工具清单；团队身份由会话绑定决定 */
     agentId?: number | string | null,
-    imageFile?: File | null,
-    imageUrl?: string | null
-  ): Promise<void> {
-    // 本地单实例（HC-1）：无认证头；不手动设置 Content-Type，
-    // 由浏览器生成含 boundary 的 multipart/form-data。
-    const response = await fetch('/a/completion/stream', {
-      method: 'POST',
-      signal,
-      // 不手动设置 Content-Type，由浏览器生成含 boundary 的 multipart/form-data。
-      body: createChatForm(
-        sessionId, prompt, workspaceId, workDir, modelId, requirePlan, agentId, imageFile, imageUrl
-      )
-    });
+    imageFile?: File | null
+  ): Promise<Result<CommandAcceptanceVO>> {
+    const form = createChatForm(
+      sessionId, prompt, workspaceId, workDir, modelId, requirePlan, agentId, imageFile
+    );
+    return http.post<any, Result<CommandAcceptanceVO>>(
+      `/a/completion/commands?commandId=${encodeURIComponent(commandId)}`,
+      form
+    );
+  }
 
-    if (!response.ok || !response.body) {
-      const errText = await response.text().catch(() => '');
-      throw new Error(`SSE 建立连接失败 (${response.status}): ${errText || response.statusText}`);
-    }
-
-    try {
-      await readSseResponse(response, { onEvent, rootSessionId: sessionId == null ? null : String(sessionId) });
-    } catch (err: any) {
-      if (err?.name === 'AbortError' || signal?.aborted) {
-        return;
-      }
-      throw err;
-    }
+  /**
+   * v3 重发受理：与 {@link sendCommand} 同一形态，额外回被作废的轮次/执行范围与新的 historyRevision。
+   *
+   * <p>重发会物理删除目标轮次及其之后的历史，前端必须按回执给出的 id 精确移除实体，
+   * 否则会留下一批指向已删除数据的空壳卡片。</p>
+   */
+  static async resendCommand(
+    commandId: string,
+    sessionId: string | number,
+    messageId: string | number,
+    prompt: string,
+    workspaceId?: number | string | null,
+    workDir?: string | null,
+    modelId?: number | string | null,
+    requirePlan?: boolean,
+    agentId?: number | string | null,
+    imageFile?: File | null
+  ): Promise<Result<ResendCommandAcceptanceVO>> {
+    const form = createChatForm(
+      sessionId, prompt, workspaceId, workDir, modelId, requirePlan, agentId,
+      imageFile, undefined, messageId
+    );
+    return http.post<any, Result<ResendCommandAcceptanceVO>>(
+      `/a/completion/resend/commands?commandId=${encodeURIComponent(commandId)}`,
+      form
+    );
   }
 
   /** 分页获取 Agent 列表 (GET /agent/list?page=1&pageSize=100) */

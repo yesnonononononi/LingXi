@@ -6,6 +6,7 @@ import com.summit.dp.session.application.convert.SessionMessageViewAssembler;
 import com.summit.dp.session.application.service.SessionMessageQueryService;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
+import com.summit.dp.session.infrastructure.persistence.repository.SessionMessageRepositoryImpl;
 import com.summit.dp.shared.vo.SessionMessageVO;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCall;
@@ -29,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.Mockito.mock;
 
 /**
  * 读路径「转换 + 一次批量装载」查询服务单测（对应 PRD C1 / P0-4 / P2-1，评审 P1-③）。
@@ -48,7 +50,9 @@ class SessionMessageQueryServiceTest {
         ObjectMapper mapper = new ObjectMapper();
         repository = new CountingToolCallRepository();
         SessionMessageViewAssembler assembler = new SessionMessageViewAssembler(mapper, new ToolCallConverter(mapper));
-        queryService = new SessionMessageQueryService(assembler, repository, new ToolCallConverter(mapper));
+        queryService = new SessionMessageQueryService(assembler, repository, new ToolCallConverter(mapper),
+                // 本测试只走 query 路径，findByMessageId 用不到，给一个占位实现即可。
+                mock(SessionMessageRepositoryImpl.class));
     }
 
     @Test
@@ -204,6 +208,14 @@ class SessionMessageQueryServiceTest {
         }
 
         @Override
+        public List<ToolCall> listActionableByExecutionId(Long executionId) {
+            return listByExecutionId(executionId).stream().filter(ToolCall::isApprovalPending).toList();
+        }
+
+        @Override
+        public List<Long> listUnresolvedExecutionIds() { return List.of(); }
+
+        @Override
         public List<ToolCall> listPendingByExecutionId(Long executionId) {
             return rows.values().stream()
                     .filter(row -> row.getExecutionId().equals(executionId)
@@ -233,6 +245,17 @@ class SessionMessageQueryServiceTest {
         public int deleteByConversationIds(Collection<Long> conversationIds) {
             List<String> doomed = rows.values().stream()
                     .filter(row -> conversationIds.contains(row.getConversationId()))
+                    .map(ToolCall::getId)
+                    .toList();
+            doomed.forEach(rows::remove);
+            return doomed.size();
+        }
+
+        @Override
+        public int deleteByExecutionIds(Collection<Long> executionIds) {
+            List<String> doomed = rows.values().stream()
+                    .filter(row -> row.getExecutionId() != null
+                            && executionIds.contains(row.getExecutionId()))
                     .map(ToolCall::getId)
                     .toList();
             doomed.forEach(rows::remove);

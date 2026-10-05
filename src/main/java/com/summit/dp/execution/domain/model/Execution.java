@@ -16,6 +16,8 @@ import java.time.LocalDateTime;
 @Data
 public class Execution {
     private Long id;
+    private Long version = 1L;
+
     private Long sessionId;
     /** 所属根执行 ID；主执行为 null，子执行指向发起委派的主执行。 */
     private Long rootExecutionId;
@@ -24,7 +26,14 @@ public class Execution {
     /** 进入终态的时间；未结束为 null。 */
     private LocalDateTime completedAt;
     private Integer status;
+    /**
+     * 恢复代际；执行实际转入 SUSPENDED 时递增。恢复任务按它判过期。
+     *
+     * <p>只由摘要查询填充，{@code snapshot} 路径不携带 —— 它是业务持久化列而非框架字段。</p>
+     */
+    private Long resumeGeneration;
     private String snapshot;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    public void acceptPersistedVersion(long persistedVersion) { this.version = persistedVersion; }
 }

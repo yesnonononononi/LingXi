@@ -22,17 +22,18 @@ interface SpecularButtonProps {
   proximity?: number;
   autoAnimate?: boolean;
   disabled?: boolean;
-  type?: 'button' | 'submit' | 'reset';
   noShadow?: boolean;
+  type?: 'button' | 'submit' | 'reset';
+  className?: string;
 }
 
 const PAD = 20;
 
 const SIZES: Record<ButtonSize, string> = {
-  xs: 'text-xs px-3 py-1.5',
-  sm: 'text-xs px-4 py-1.5',
-  md: 'text-sm px-5 py-2',
-  lg: 'text-base px-6 py-2.5'
+  xs: 'text-[0.75rem] px-[10px] py-[5px]',
+  sm: 'text-[0.85rem] px-[16px] py-[8px]',
+  md: 'text-[0.95rem] px-[22px] py-[10px]',
+  lg: 'text-[1.1rem] px-8 py-[14px]'
 };
 
 const VERT = `#version 300 es
@@ -98,10 +99,10 @@ void main() {
 `;
 
 const props = withDefaults(defineProps<SpecularButtonProps>(), {
-  size: 'lg',
-  radius: 18,
+  size: 'md',
+  radius: 14,
   tint: '#ffffff',
-  tintOpacity: 0,
+  tintOpacity: 0.03,
   blur: 0,
   textColor: '#f5f5f5',
   lineColor: '#ffffff',
@@ -112,11 +113,17 @@ const props = withDefaults(defineProps<SpecularButtonProps>(), {
   thickness: 1,
   speed: 0.35,
   followMouse: true,
-  proximity: 250,
+  proximity: 24,
   autoAnimate: false,
   disabled: false,
-  type: 'button'
+  noShadow: false,
+  type: 'button',
+  className: ''
 });
+
+const emit = defineEmits<{
+  (e: 'click', event: MouseEvent): void;
+}>();
 
 const btnRef = ref<HTMLButtonElement | null>(null);
 const fxRef = ref<HTMLSpanElement | null>(null);
@@ -130,9 +137,7 @@ const buttonStyle = computed<CSSProperties>(
       '--sb-tint': props.tint,
       '--sb-tint-opacity': props.tintOpacity,
       '--sb-blur': `${props.blur}px`,
-      '--sb-text-color': props.textColor,
-      color: props.textColor,
-      borderRadius: `${props.radius}px`
+      '--sb-text-color': props.textColor
     }) as CSSProperties
 );
 
@@ -142,16 +147,8 @@ onMounted(() => {
   if (!btn || !fx) return;
 
   const dpr = window.devicePixelRatio || 1;
-  let renderer: Renderer;
-  try {
-    renderer = new Renderer({ alpha: true, premultipliedAlpha: true, antialias: true, dpr });
-  } catch (e) {
-    console.warn('SpecularButton: WebGL initialization failed', e);
-    return;
-  }
+  const renderer = new Renderer({ alpha: true, premultipliedAlpha: true, antialias: true, dpr });
   const gl = renderer.gl;
-  if (!gl) return;
-
   gl.clearColor(0, 0, 0, 0);
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -183,7 +180,6 @@ onMounted(() => {
 
   const sizeRef = { w: 1, h: 1 };
   const resize = () => {
-    if (!btn) return;
     const rect = btn.getBoundingClientRect();
     const w = rect.width;
     const h = rect.height;
@@ -200,23 +196,27 @@ onMounted(() => {
   let pointerAngle: number | null = null;
   let proximityT = 0;
   const onPointerMove = (e: PointerEvent) => {
-    if (!btn) return;
     const rect = btn.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
     const dx = Math.max(rect.left - e.clientX, 0, e.clientX - rect.right);
     const dy = Math.max(rect.top - e.clientY, 0, e.clientY - rect.bottom);
     const dist = Math.hypot(dx, dy);
-
     if (dist === 0) {
-      const nx = (e.clientX - cx) / (rect.width / 2 || 1);
-      const ny = (cy - e.clientY) / (rect.height / 2 || 1);
-      pointerAngle = Math.atan2(2 / (rect.height || 1), -2 / (rect.width || 1)) + nx * 0.3 + ny * 0.15;
+      const nx = (e.clientX - cx) / (rect.width / 2);
+      const ny = (cy - e.clientY) / (rect.height / 2);
+      pointerAngle = Math.atan2(2 / rect.height, -2 / rect.width) + nx * 0.3 + ny * 0.15;
+      proximityT = 1;
     } else {
       pointerAngle = Math.atan2(cy - e.clientY, e.clientX - cx);
+      const maxDist = Math.max(props.proximity, 1);
+      if (dist > maxDist) {
+        proximityT = 0;
+      } else {
+        const t = Math.max(0, 1 - dist / maxDist);
+        proximityT = t * t * (3 - 2 * t);
+      }
     }
-    const t = Math.max(0, 1 - dist / Math.max(props.proximity, 1));
-    proximityT = t * t * (3 - 2 * t);
   };
   window.addEventListener('pointermove', onPointerMove);
 
@@ -243,14 +243,8 @@ onMounted(() => {
     const brightTarget = props.autoAnimate ? 1 : proximityT;
     bright += (brightTarget - bright) * (1 - Math.exp(-dt * 8));
 
-    try {
-      lineC.set(props.lineColor);
-      baseC.set(props.baseColor);
-    } catch {
-      lineC.set('#ffffff');
-      baseC.set('#525252');
-    }
-
+    lineC.set(props.lineColor);
+    baseC.set(props.baseColor);
     program.uniforms.uAngle.value = angle;
     program.uniforms.uRadius.value = Math.min(props.radius, Math.min(sizeRef.w, sizeRef.h) / 2) * dpr;
     program.uniforms.uLineColor.value = [lineC.r, lineC.g, lineC.b];
@@ -267,9 +261,7 @@ onMounted(() => {
     cancelAnimationFrame(raf);
     ro.disconnect();
     window.removeEventListener('pointermove', onPointerMove);
-    if (gl.canvas && gl.canvas.parentNode === fx) {
-      fx.removeChild(gl.canvas);
-    }
+    if (gl.canvas.parentNode === fx) fx.removeChild(gl.canvas);
     gl.getExtension('WEBGL_lose_context')?.loseContext();
   });
 });
@@ -281,17 +273,19 @@ onMounted(() => {
     :type="type"
     :disabled="disabled"
     :class="[
-      'relative m-0 inline-flex cursor-pointer items-center justify-center border-none font-medium leading-none tracking-[0.01em] outline-none transition-all duration-150 active:scale-[0.98] disabled:cursor-default disabled:opacity-55 disabled:active:scale-100 text-(--sb-text-color) rounded-(--sb-radius) [background:color-mix(in_srgb,var(--sb-tint)_calc(var(--sb-tint-opacity)*100%),transparent)] [backdrop-filter:blur(var(--sb-blur))] focus-visible:outline-2 focus-visible:outline-offset-[2px]',
-      noShadow ? '' : 'shadow-[0_1px_3px_rgba(0,0,0,0.08),0_1px_2px_rgba(0,0,0,0.04)]',
-      sizeClass
+      'relative m-0 inline-flex cursor-pointer items-center justify-center border border-gray-200 dark:border-white/20 bg-white/[0.05] hover:bg-white/[0.1] dark:bg-white/[0.06] dark:hover:bg-white/[0.12] font-medium leading-none tracking-[0.01em] outline-none transition-all duration-150 active:scale-[0.97] disabled:cursor-default disabled:opacity-55 disabled:active:scale-100 [color:var(--sb-text-color)] [border-radius:var(--sb-radius)] [background:color-mix(in_srgb,var(--sb-tint)_calc(var(--sb-tint-opacity)*100%),transparent)] [backdrop-filter:blur(var(--sb-blur))] focus-visible:outline-2 focus-visible:outline-offset-[3px]',
+      props.noShadow ? '' : 'shadow-xs dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_2px_8px_rgba(0,0,0,0.5)]',
+      sizeClass,
+      props.className
     ]"
     :style="buttonStyle"
+    @click="emit('click', $event)"
   >
     <span
       ref="fxRef"
       aria-hidden="true"
       class="[&_canvas]:block z-1 absolute -inset-5 [&_canvas]:w-full [&_canvas]:h-full pointer-events-none"
     />
-    <span class="z-2 relative flex items-center justify-center gap-1.5"><slot>Get Started</slot></span>
+    <span class="z-2 relative flex items-center gap-2"><slot>Get Started</slot></span>
   </button>
 </template>

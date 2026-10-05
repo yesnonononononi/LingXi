@@ -1,9 +1,15 @@
 package com.summit.dp.toolcall.api.controller;
 
 import com.summit.ddd.application.vo.Result;
+import com.summit.dp.toolcall.api.dto.ToolCallDecisionCommand;
+import com.summit.dp.toolcall.api.dto.ToolCallDecisionReceipt;
 import com.summit.dp.toolcall.api.dto.ToolCallDecisionRequest;
 import com.summit.dp.toolcall.application.service.ToolCallService;
+import com.summit.dp.toolcall.application.service.impl.VersionedToolCallDecisionService;
 import com.summit.dp.shared.vo.ToolCallVO;
+import com.summit.dp.stream.application.service.StreamToolQueryService;
+import com.summit.dp.stream.application.protocol.StreamToolProjection;
+import org.springframework.beans.factory.annotation.Autowired;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +38,10 @@ import java.util.List;
 public class ToolCallController {
 
     private final ToolCallService toolCallService;
+    /** v2 版本化决策入口；与 v1 SSE 入口并存，各自独立。 */
+    private final VersionedToolCallDecisionService versionedDecisionService;
+    @Autowired
+    private StreamToolQueryService streamTools;
 
     /**
      * 提交决策结论：批准 / 拒绝 / 作答一次待决策的卡片。
@@ -47,11 +57,30 @@ public class ToolCallController {
                 request.isApproved(), request.text());
     }
 
+    /**
+     * v2 决策入口：JSON 回执，不建 SSE 连接。
+     *
+     * <p><b>与 v1 的关系</b>：v1 的 {@code /decide} 保留给旧前端。v2 用动作判别
+     * （APPROVE / REJECT / ANSWER）而不是 {@code approved} 布尔，并带 {@code expectedVersion}
+     * 与 {@code commandId}，因此两套接口不能对同一张卡片混用。</p>
+     */
+    @Operation(summary = "提交工具调用决策（v2 版本化回执）")
+    @PostMapping("/decisions")
+    public Result<ToolCallDecisionReceipt> decideCommand(@RequestBody ToolCallDecisionCommand request) {
+        return Result.success(versionedDecisionService.decide(request));
+    }
+
     /** 按 {@code toolCallId} 查询聚合视图（前端收到 {@code CARD_PENDING} 后拉取卡片载荷）。 */
     @Operation(summary = "按 id 查询工具调用")
     @GetMapping("/{toolCallId}")
     public Result<ToolCallVO> findById(@PathVariable String toolCallId) {
         return Result.success(toolCallService.findById(toolCallId).orElse(null));
+    }
+
+    @Operation(summary = "查询 v2 工具投影与动作版本")
+    @GetMapping("/{toolCallId}/projection")
+    public Result<StreamToolProjection> projection(@PathVariable String toolCallId) {
+        return Result.success(streamTools.findById(toolCallId).orElse(null));
     }
 
     /** 按会话查询工具调用列表（按创建顺序升序）。 */

@@ -4,7 +4,6 @@ import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.ToolMessageEntity;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -50,17 +49,13 @@ public final class ExecutionToolSlot {
         return null;
     }
 
-    /**
-     * 把回填文本写入槽位：先定位（未命中返回 {@code false}，调用方决定失败语义），
-     * 写入不可变副本后回设 —— 维持框架对检查点消息列表的不可变约定。
-     */
+    /** 把回填文本写入槽位；未命中返回 {@code false}，失败语义由调用方决定。 */
     public static boolean write(Execution execution, String toolCallId, String toolName, String text) {
         ToolMessageEntity slot = locate(execution, toolCallId, toolName);
         if (slot == null) {
             return false;
         }
         slot.setText(text);
-        execution.setMessages(new ArrayList<>(execution.getMessages()));
         return true;
     }
 }

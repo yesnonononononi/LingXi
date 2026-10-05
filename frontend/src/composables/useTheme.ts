@@ -27,16 +27,31 @@ const getInitialTheme = (): ThemeMode => {
 // 模块级单例状态：所有页面共享同一份主题，切换后全局一致
 const theme = ref<ThemeMode>(getInitialTheme());
 
-/** 将主题同步到文档根节点，支持全局 CSS 与原生控件配色 */
+/** 将主题同步到文档根节点与 body，支持全局 CSS、Tailwind 暗色变体与原生控件配色 */
 const syncDocumentTheme = (value: ThemeMode) => {
   if (typeof document === 'undefined') return;
+  const isDark = value === 'dark';
   const root = document.documentElement;
-  root.classList.toggle('dark', value === 'dark');
-  root.classList.toggle('light', value === 'light');
+  root.classList.toggle('dark', isDark);
+  root.classList.toggle('light', !isDark);
   root.dataset.theme = value;
+  root.style.colorScheme = value;
+
+  if (document.body) {
+    document.body.classList.toggle('dark', isDark);
+    document.body.classList.toggle('light', !isDark);
+  }
 };
 
 syncDocumentTheme(theme.value);
+
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      syncDocumentTheme(theme.value);
+    });
+  }
+}
 
 // 主题变化时：持久化 + 同步文档根节点
 watch(theme, (value) => {

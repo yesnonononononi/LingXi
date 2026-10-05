@@ -1,5 +1,47 @@
 # 项目协作规范（用户明确要求，持续适用）
 
+## 注释与文档：按侧分语言，不要混
+
+- **框架侧保持全英文 doc。** 指的是 `D:\code\starter` 下的框架仓（`lingxi-harness-agent`、`dev-framework-ddd-starter` 等，即 `com.summit.core.*` / `com.summit.runtime.*`），与那里的既有风格保持一致，不要改成中文。
+- **业务侧（本项目 `com.summit.dp.*`）全中文 doc，且不能太长。** 一个类几行、一个方法一两句；不要写成大段设计说明，长篇推演放 `AGENTS.md` 或项目记忆里，不塞进代码。
+- 不模仿英文注释的写法与语序（例如 `// step one: find the turnId from the table named ... by messageId`），也不要在中文句子里夹英文短句。字段名、类名、专有名词保持英文原样即可。
+- 注释只写「为什么」：取舍理由、约束、坑与不变量（谁必须在本方法之前/之后调用、为什么不能反过来）。
+- 日志统一 `中文动作: key=value, key=value`。异常消息是给用户看的业务文案，必须说清哪里不对，禁止 `invalid state` 这类无信息量的英文。
+- 不留被注释掉的旧代码；要删就删干净，历史在 git 里。
+
+## 参数校验：统一用 `throwIf`
+
+- 业务侧 Service / Validator 里定义一个私有助手：`private void throwIf(boolean condition, String err) { if (condition) throw new ClientException(err); }`。
+- **入口校验一律走它**，不写散落的 `if (...) throw new ...`。文案是中文业务提示，说清哪里不对（`"用户输入不能为空"`、`"只有用户提问可以重发"`）。
+
+## 复杂业务入口：事务脚本，但不堆 private 方法
+
+- 直接对接 Service 接口的复杂入口（如 `ChatServiceImpl#resend`）按**事务脚本**写：一个方法从头到尾把顺序讲清楚，步骤之间留空行，用注释标出「哪几步的顺序不能动、为什么」。
+- **但不要把编排类堆成一个 private 方法仓库。** 某一步里成块的逻辑抽成独立的协作类（Service / Validator / Resolver），由入口注入、按顺序调用；入口方法里只留下属于「顺序」本身的那几行。
+- 判断标准：一个 private 方法如果只为某一个入口服务，它就应该是一个独立类。
+
+## 框架扩展点：一个模块一个实现，不挤在一个类里
+
+- 框架扩展点支持注册**多个** bean，运行时串成一条链：`LoopInterceptor` 由 `DefaultLoopInterceptorProcessor` 按 `order()` 升序调用，值相等的保持注册顺序。每个回调返回 `InterceptorResult`，返回非「继续」即当场终止这一轮，后续实现不再执行。
+- **异常默认被吃掉**（`catchErr()` 默认 `true`：只记一条 error 日志，不打失败整轮、也不阻断后面的实现）。会改变业务语义的动作必须显式 `catchErr()` 返回 `false` 让异常上抛 —— 判据是「吞掉之后世界是否还一致」：消费型、投影型动作吞掉等于静默丢数据，必须上抛。
+- **每个模块写自己的实现类**（邮箱注入归 `AgenticLoopInterceptor`，工具调用收尾之类归各自模块），不要把多个模块的逻辑堆进同一个类。
+- `order()` 越小越先；框架自己的 `DefaultLoopInterceptor` 占 `Integer.MIN_VALUE`（信号与预算判定，业务侧不要去抢），业务侧从 -900 起分段：新增实现给出自己的值，不要都取 0 —— 并列时先后只取决于 Spring 的注入顺序，不可依赖。
+- 回调签名里的 `LoopContext` 持有的是 `Execution` 实例本身（不是 id），需要执行身份时取 `context.execution()`，不要从 attributes 里绕。
+
+## 前端：工具名一律走枚举
+
+- 后端固定工具名的唯一真源是 `frontend/src/utils/toolNames.ts` 的 `AgentToolName`（对齐后端 `ToolCatalog` + 各 `ToolDefinition` 注册名 + 框架内核工具），前端任何地方**不得再写工具名字面量**（`'read_file'`、`"edit_file"` 这类）。
+- 实现用 `as const` 对象 + 派生联合类型，不是 `enum` —— tsconfig 开了 `erasableSyntaxOnly`，enum 语法编译不过。
+- MCP 工具名是远端下发的动态集合（`mcp_` 前缀），不入枚举。
+
+## 命名：不要 `xxxOf`
+
+- **不用以 `of` 结尾的命名**，方法名与变量名都算：`runStatusOf(...)`、`statusOf(...)`、`kindOf(...)`、`typeOf(...)`、`sessionIdOf(...)`、`taskOf(...)`、`baselineOf(...)` 这类一律不要。
+- 改用动词开头或明确的组合：`resolveXxx` / `toXxx` / `parseXxx` / `buildXxx`。
+  例：`runStatusOf(states)` → `resolveRunStatus(states)`；`kindOf(json)` → `resolveKind(json)`；`typeOf(message)` → `toMessageType(message)`。
+- 兜底判断：名字读起来像「A 的 B」这种名词短语就改掉，写成「做什么动作」。
+- 存量代码里这类命名很多，**不强制回头改**；新写的代码和本次改动的行必须遵守。
+
 ## Java 类型声明
 
 - 禁止使用 `var`。局部变量、循环变量、try-with-resources 变量及测试代码一律使用显式类型。

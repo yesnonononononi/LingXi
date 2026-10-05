@@ -3,7 +3,6 @@ package com.summit.dp.tools.baseTools.file.edit;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceBridge;
 import com.summit.core.tool.*;
@@ -19,12 +18,17 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 
 /**
  * Edits a file inside the workspace. The new content is written to disk
  * FIRST; the applied edit is then recorded as a pending {@link FileRecord} so
  * the user can accept (keep) or reject (restore) it afterwards.
+ *
+ * <p>The edit summary travels on the tool result's {@code toolMetaData} (reaching listeners via
+ * {@code ToolCallEndEvent.metaData}); there is no separate file-edit event.</p>
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -32,7 +36,6 @@ public class EditFileToolExecutor implements ToolExecutor {
     private final ObjectMapper objectMapper;
     private final Differ differ;
     private final FileRecordManager fileRecordManager;
-    private final RuntimeEventPublisher runtimeEventPublisher;
     private final int DEFAULT_AROUND_LINE = 3;
 
     @Override
@@ -50,8 +53,8 @@ public class EditFileToolExecutor implements ToolExecutor {
             }
 
             Serializable recordId = recordEdit(toolExecution, outcome);
-            publishEditEvent(toolExecution, outcome, recordId);
-            return ToolExecuteResult.success(objectMapper.writeValueAsString(outcome.toSummary()));
+            return ToolExecuteResult.success(objectMapper.writeValueAsString(outcome.toSummary()),
+                    ToolResultType.NORMAL, metaDataOf(outcome, recordId));
 
         } catch (IOException e) {
             return ToolExecuteResult.err(e.getMessage());
@@ -99,17 +102,19 @@ public class EditFileToolExecutor implements ToolExecutor {
         }
     }
 
-    private void publishEditEvent(ToolExecution toolExecution, EditOutcome outcome, Serializable recordId) {
-        runtimeEventPublisher.onApplicationEvent(FileEditEvent.builder()
-                .executionId(toolExecution.getExecutionId())
-                .recordId(recordId)
-                .turnId(toolExecution.getTurnId())
-                .filePath(outcome.path())
-                .oldContent(outcome.oldContent())
-                .newContent(outcome.newContent())
-                .plusLines(outcome.plusLines())
-                .minusLines(outcome.minusLines())
-                .build());
+    /**
+     * 编辑摘要（key = {@code fileEdit}）随返回值进 {@code ToolCallEndEvent.metaData} 广播。
+     * 全文不入事件（SSE 帧预算）；权威内容在 {@link FileRecordManager}，recordId 供前端定位记录。
+     */
+    private Map<String, Object> metaDataOf(EditOutcome outcome, Serializable recordId) {
+        Map<String, Object> fileEdit = new LinkedHashMap<>();
+        fileEdit.put("filePath", outcome.path());
+        if (recordId != null) {
+            fileEdit.put("recordId", String.valueOf(recordId));
+        }
+        fileEdit.put("plusLines", outcome.plusLines());
+        fileEdit.put("minusLines", outcome.minusLines());
+        return Map.of("fileEdit", fileEdit);
     }
 
     /**

@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, provide } from 'vue';
+import { useFilePreview } from '../../composables/useFilePreview';
+import { FILE_PREVIEW_KEY } from '../../types/filePreview';
+import FilePreviewPanel from '../../components/chat/FilePreviewPanel.vue';
 import { useChatView, type ChatViewProps, type ChatViewEmits } from './useChatView';
 import Sidebar from '../../components/chat/Sidebar.vue';
 import WelcomeView from '../../components/chat/WelcomeView.vue';
@@ -17,6 +20,8 @@ const emit = defineEmits<ChatViewEmits>();
 
 const inputAreaRef = ref<InstanceType<typeof ChatInputArea> | null>(null);
 const messagesContainerRef = ref<InstanceType<typeof ChatMessageList> | null>(null);
+const { fileTabs, activeFileId, filePreviewOpen, openFilePreview, closeFileTab, refreshFile, runFileAction } = useFilePreview();
+provide(FILE_PREVIEW_KEY, openFilePreview);
 
 const {
   isSidebarCollapsed,
@@ -42,11 +47,16 @@ const {
   displayActiveWorkspaceId,
   displaySelectedModel,
   displayAccessMode,
+  reasoningEffort,
+  reasoningEffortPending,
+  reasoningEffortError,
   displayIsDark,
   currentActiveSession,
   displayedMessages,
   contextUsageIndicator,
   hasMessages,
+  sendFailureNotice,
+  dismissSendFailure,
   lastAssistantIndex,
   isNearBottom,
   isLoadingMoreHistory,
@@ -80,6 +90,7 @@ const {
   handleOpenModelEditor,
   handleUpdateModel,
   handleUpdateAccessMode,
+  handleUpdateReasoningEffort,
   handleOpenSettings,
   handleOpenSettingsTab,
   handleCloseSettings,
@@ -88,6 +99,7 @@ const {
   handleSendMessage,
   handleStopGeneration,
   handleResendMessage,
+  handleEditMessage,
   handleHumanResponse,
   handleSelectPrompt,
   handleQuickStart,
@@ -109,9 +121,13 @@ const {
 <template>
   <div :class="['relative flex h-screen w-screen overflow-hidden font-sans', displayIsDark ? 'text-gray-100 dark' : 'text-gray-900 light']">
 
-    <!-- 全局纯净背景层 -->
+    <!-- 全局纯净背景层 (Vue Bits 纯黑科技质感 + 极微弱环境微光) -->
     <div class="pointer-events-none absolute inset-0 z-0 overflow-hidden">
-      <div :class="displayIsDark ? 'absolute inset-0 bg-[#0b0f17]' : 'absolute inset-0 bg-white'"></div>
+      <div :class="displayIsDark ? 'absolute inset-0 bg-black' : 'absolute inset-0 bg-white'"></div>
+      <div
+        v-if="displayIsDark"
+        class="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[360px] bg-gradient-to-b from-blue-500/[0.035] via-indigo-500/[0.015] to-transparent blur-3xl pointer-events-none"
+      ></div>
     </div>
 
 
@@ -200,7 +216,7 @@ const {
             @touchstart.passive="handleTouchStart"
             @touchmove.passive="handleTouchMove"
             @switchBranch="(msgId, branchIdx) => emit('switchBranch', msgId, branchIdx)"
-            @editMessage="(msgId, text) => emit('editMessage', msgId, text)"
+            @editMessage="handleEditMessage"
             @selectSubSession="handleSelectSubSessionOption"
             @humanResponse="handleHumanResponse"
             @resendMessage="handleResendMessage"
@@ -225,7 +241,7 @@ const {
                 :class="[
                   'flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium shadow-lg border backdrop-blur-md cursor-pointer transition-all hover:scale-105 active:scale-95 select-none',
                   displayIsDark
-                    ? 'bg-[#182234]/90 border-[#2d3f5e] text-blue-300 hover:bg-[#1f2d45] shadow-black/40'
+                    ? 'bg-zinc-900/90 border-white/10 text-zinc-200 hover:bg-zinc-850 shadow-black/50 hover:text-white'
                     : 'bg-white/95 border-blue-200/80 text-blue-600 hover:bg-blue-50/80 shadow-blue-500/10'
                 ]"
                 title="回到底部"
@@ -272,6 +288,22 @@ const {
             />
           </div>
 
+          <!-- 发送失败横幅：受理失败没有落库轮次，作为独立界面状态提示，不属于任何回答组 -->
+          <div
+            v-if="sendFailureNotice"
+            class="w-full shrink-0 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-500 dark:text-red-400 flex items-start gap-3"
+            role="alert"
+          >
+            <span class="flex-1">{{ sendFailureNotice.message }}</span>
+            <button
+              type="button"
+              class="shrink-0 rounded-md px-2 py-1 text-xs opacity-70 hover:opacity-100 transition-opacity"
+              @click="dismissSendFailure"
+            >
+              知道了
+            </button>
+          </div>
+
           <!-- 大圆角输入框卡片：发送首条消息时随着底部占位缩起，平滑下沉吸底 -->
           <div
             class="w-full transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]"
@@ -287,6 +319,9 @@ const {
               :models="displayModels"
               :selectedModelId="displaySelectedModel"
               :accessMode="displayAccessMode"
+              :reasoningEffort="reasoningEffort"
+              :reasoningEffortPending="reasoningEffortPending"
+              :reasoningEffortError="reasoningEffortError"
               :hasActiveSession="!!displayActiveId"
               :canChangeWorkspace="canChangeWorkspace"
               :workspaces="displayWorkspaces"
@@ -297,6 +332,7 @@ const {
               @stopGeneration="handleStopGeneration"
               @updateModel="handleUpdateModel"
               @updateAccessMode="handleUpdateAccessMode"
+              @updateReasoningEffort="handleUpdateReasoningEffort"
               @updateTeam="handleUpdateTeam"
               @updateAgent="(a) => localSelectedAgentId = a"
               @openModelEditor="handleOpenModelEditor"
@@ -322,9 +358,25 @@ const {
 
       </div>
 
+      <FilePreviewPanel
+        v-if="fileTabs.length"
+        v-show="filePreviewOpen"
+        :tabs="fileTabs"
+        :activeId="activeFileId"
+        :isDark="displayIsDark"
+        @activate="activeFileId = $event"
+        @closeTab="closeFileTab"
+        @close="filePreviewOpen = false"
+        @refresh="refreshFile"
+        @open="runFileAction('open')"
+        @reveal="runFileAction('reveal')"
+      />
+
+      <button v-if="fileTabs.length && !filePreviewOpen" type="button" class="absolute right-4 top-3 z-30 rounded-lg border border-zinc-400/20 bg-white px-3 py-1.5 text-xs shadow-sm dark:bg-zinc-900" @click="filePreviewOpen = true">文件预览 · {{ fileTabs.length }}</button>
+
       <!-- 右侧：子 Agent 会话轨迹和标签面板 -->
       <SubAgentSidePanel
-        v-if="availableSubSessionItems.length > 0"
+        v-if="availableSubSessionItems.length > 0 && !filePreviewOpen"
         :items="availableSubSessionItems"
         :activeSubId="activeViewingSubSessionId"
         :activeSubSession="activeViewingSubSessionVO"

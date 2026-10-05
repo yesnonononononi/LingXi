@@ -1,4 +1,4 @@
-import type { ChatMessage, PromptCardData, ToolCallVO, SessionMessageVO } from '../types/chat';
+import type { ChatMessage, ChatTurn, PromptCardData, ToolCallVO, SessionMessageVO } from '../types/chat';
 import type { ToolExecutionState } from './toolMeta';
 import { isEditFileTool, resolveToolCategory, resolveToolMeta } from './toolMeta';
 import { asObject, toObject, toText } from './json';
@@ -96,7 +96,7 @@ type PromptKind = (typeof PROMPT_KINDS)[number];
  */
 function normalizePromptStatus(status: unknown): PromptCardData['status'] {
   const normalized = String(status ?? '').trim().toLowerCase();
-  if (normalized === 'pending' || normalized === 'in_progress' || normalized === 'completed') {
+  if (normalized === 'preparing' || normalized === 'pending' || normalized === 'in_progress' || normalized === 'completed') {
     return normalized;
   }
   return 'pending';
@@ -133,7 +133,9 @@ export function buildPromptCard(toolCall?: ToolCallVO | null): PromptCardData | 
   const rawOutput = asObject(toolCall.rawOutput);
   const outcome = rawOutput && rawOutput.outcome != null ? String(rawOutput.outcome) : undefined;
   // 契约 §3：pending 是前端唯一可审批判定，后端权威下发 —— 直接读该字段，禁止自行用 status 推断。
-  const pending = toolCall.pending === true;
+  const pending = Array.isArray(toolCall.allowedActions)
+    ? toolCall.allowedActions.length > 0
+    : toolCall.pending === true;
 
   const card: PromptCardData = {
     kind,
@@ -143,6 +145,9 @@ export function buildPromptCard(toolCall?: ToolCallVO | null): PromptCardData | 
     content: '',
     status: normalizePromptStatus(toolCall.status),
     pending,
+    version: toolCall.version,
+    allowedActions: toolCall.allowedActions,
+    unavailableReason: toolCall.unavailableReason,
     outcome,
     answer: rawOutput && rawOutput.answer != null ? String(rawOutput.answer) : undefined,
     stdout: rawOutput && rawOutput.stdout != null ? String(rawOutput.stdout) : undefined,
@@ -164,6 +169,7 @@ export function buildPromptCard(toolCall?: ToolCallVO | null): PromptCardData | 
     card.content = card.command;
     card.workDir = content.workDir != null ? String(content.workDir) : undefined;
     card.shell = content.shell != null ? String(content.shell) : undefined;
+    card.intention = content.intention != null ? String(content.intention) : undefined;
     card.title = card.title || '命令审批';
   } else if (kindValid && content && kind === 'DELEGATION') {
     // 委派等待卡：标题 = 子代理名（登记时写入 tool_call.title），正文 = 委派任务。
@@ -225,13 +231,34 @@ export function mergeRawRecords(
 }
 
 /**
+ * 过程时间线的槽位步长：同一个 AI 行内按「思考 +0 / 中间文本 +1 / 工具 +2+tIdx」编号，
+ * 行的时序基准 = 该行在原始消息列表里的下标 × 本步长。
+ *
+ * <p>取 100 而不是 10：一行可以并行下发多个工具调用，步长必须容得下单行最多可能的工具数，
+ * 否则 `+2+tIdx` 会溢出撞进下一行的槽位，把工具行排到下一轮思考之前。</p>
+ */
+const TIMELINE_SLOT_STRIDE = 100;
+
+/**
+ * 雪花 ID 文本 → 可比较的 BigInt；不是纯数字（异常数据 / 本地假 ID）返回 null。
+ *
+ * <p>必须用 BigInt：雪花 ID 已超出 {@code Number.MAX_SAFE_INTEGER}，转 Number 会丢低位，
+ * 同一轮次内相邻记录的先后直接判不出来。</p>
+ */
+const snowflakeKey = (raw: unknown): bigint | null => {
+  if (raw === null || raw === undefined) return null;
+  const text = String(raw).trim();
+  return /^\d+$/.test(text) ? BigInt(text) : null;
+};
+
+/**
  * 统一聚合主会话与子会话的历史记录为 ChatMessage[] 展示列表。
  *
  * <p>核心方案（实施计划书 §二）：
  * 1. 原始记录统一合并后统一按 turnId 聚合，避免跨页拆分成多个独立气泡；
  * 2. 每个已知轮次生成唯一的回答组（id 为 stable 的 `msg-${sessionId}-turn-${turnId}`）；
  * 3. 收集该轮全部思考、AI 文本、工具调用与审批卡片；
- * 4. 最后一条非空 AI 文本作为正文，之前的 AI 文本进入折叠过程；
+ * 4. 只有「终结轮次」（该轮没有工具调用）的 AI 文本是正文，其余 AI 文本进入折叠过程区；
  * 5. 聚合过程完全幂等，不因多次加载或跨页产生重复计数或覆盖；
  * 6. 缺少 turnId 的旧消息采用 USER 消息边界降级，不将所有空值消息合并为一组。</p>
  */
@@ -244,7 +271,17 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
   const sid = String(sessionId);
   const chatMessages: ChatMessage[] = [];
   const turnAssistantMap = new Map<string, ChatMessage>();
-  const turnAiTextsMap = new Map<ChatMessage, Array<{ id: string; recordId: string; text: string; thinking?: string; timestamp: number }>>();
+  // rowIndex = 该 AI 行在原始消息列表里的下标，即三条过程集合共用的时序基准（见 TIMELINE_SLOT_STRIDE）。
+  // 思维链用 rowIndex*stride、工具用 rowIndex*stride+2+tIdx，中间文本必须落在同一基准上（+1），
+  // 否则三者的 order 不同量纲，排序结果就不是执行时序（详见 ChatMessageItem#processTimeline）。
+  const turnAiTextsMap = new Map<ChatMessage, Array<{ id: string; recordId: string; text: string; thinking?: string; timestamp: number; terminal: boolean; rowIndex: number }>>();
+
+  // 气泡排序键：同一轮次的用户消息与回答组共用「轮次雪花 ID」—— 它按受理先后递增，
+  // 与本次拉取到的是哪一页无关。**不能按「该轮次的行在本次 records 里第一次出现的先后」排**：
+  // 首屏只取最新一页，窗口滑进某一轮中间时那一轮会晚于更晚的轮次出现，两个气泡随即上下换位
+  // （线上事故：并发/相邻两轮随着会话推进反复换位）。缺 turnId 的旧数据回落用该组首条记录 ID
+  // （同为雪花，量级可比）；解析不出数字的异常数据不带键，按原始相对序排在最后。
+  const sortKeys = new Map<ChatMessage, { turnKey: bigint; roleRank: number }>();
 
   let currentLegacyAssistant: ChatMessage | null = null;
   let lastKnownTs = 0;
@@ -257,6 +294,8 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
     const ts = parsedTs ?? lastKnownTs;
     const turnId = normalizeTurnId(item.turnId);
     const rawType = String(item.type ?? '').trim().toUpperCase();
+    const recordKey = snowflakeKey(item.id);
+    const turnKey = turnId === null ? null : snowflakeKey(turnId);
 
     // 0. 系统提示词不参与对话展示
     if (rawType === 'SYSTEM') {
@@ -266,13 +305,16 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
     // 1. 用户消息
     if (rawType === 'USER') {
       currentLegacyAssistant = null;
-      chatMessages.push({
+      const userMessage: ChatMessage = {
         id: String(item.id),
         role: 'user',
         content: item.text ?? '',
         timestamp: ts,
         turnId
-      });
+      };
+      chatMessages.push(userMessage);
+      const userKey = turnKey ?? recordKey;
+      if (userKey !== null) sortKeys.set(userMessage, { turnKey: userKey, roleRank: 0 });
       continue;
     }
 
@@ -295,6 +337,8 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
           };
           turnAssistantMap.set(turnId, asst);
           chatMessages.push(asst);
+          const asstKey = turnKey ?? recordKey;
+          if (asstKey !== null) sortKeys.set(asst, { turnKey: asstKey, roleRank: 1 });
         }
         return asst;
       }
@@ -317,6 +361,7 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
       };
       currentLegacyAssistant = legacyAsst;
       chatMessages.push(legacyAsst);
+      if (recordKey !== null) sortKeys.set(legacyAsst, { turnKey: recordKey, roleRank: 1 });
       return legacyAsst;
     };
 
@@ -401,7 +446,7 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
           status: execStatus,
           plusLines: editLines?.plusLines,
           minusLines: editLines?.minusLines,
-          order: i * 10
+          order: i * TIMELINE_SLOT_STRIDE
         });
       }
       continue;
@@ -413,7 +458,12 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
       const thinking = item.thinking;
       const asst = getAssistantContainer();
 
-      // 处理 AI 文本：最后一条非空 AI 文本作为正文，之前的 AI 文本进入折叠过程
+      // 处理 AI 文本：只有「终结轮次」的文本才是正文，其余一律进折叠过程。
+      //
+      // 终结的判据是「该轮没有工具调用」—— 没有工具调用的那一轮就是循环的出口，它的文本是结论；
+      // 有工具调用的轮次文本只是中途叙述，哪怕它是最后一行。不能用「最后一条非空文本」按位置切：
+      // 末轮可能仍在调工具（那只是过程叙述），也可能整轮没有结论文本（执行被中断/取消），
+      // 两种情况都会把过程叙述顶到正文位置。
       if (text && text.trim()) {
         const recordId = String(item.id ?? `idx-${i}`);
         let aiList = turnAiTextsMap.get(asst);
@@ -427,31 +477,48 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
             recordId,
             text,
             thinking,
-            timestamp: ts
+            timestamp: ts,
+            terminal: !Array.isArray(item.toolCalls) || item.toolCalls.length === 0,
+            rowIndex: i
           });
         }
-        const lastAi = aiList[aiList.length - 1];
-        asst.content = lastAi.text;
-        asst.aiMessages = aiList.slice(0, -1).map((m, idx) => ({
-          id: m.id,
-          text: m.text,
-          thinking: m.thinking,
-          timestamp: m.timestamp,
-          order: idx * 10 + 1
-        }));
+        const terminalMessage = [...aiList].reverse().find(a => a.terminal);
+        asst.content = terminalMessage?.text ?? '';
+        asst.aiMessages = aiList
+          .filter(a => a !== terminalMessage)
+          .map(m => ({
+            id: m.id,
+            text: m.text,
+            thinking: m.thinking,
+            timestamp: m.timestamp,
+            order: m.rowIndex * TIMELINE_SLOT_STRIDE + 1
+          }));
       }
 
-      // 处理思维链
+      // 处理思维链：**同一轮次合并成一个「深度思考」**。
+      //
+      // 一个轮次里模型可能持续多轮「思考 → 调工具 → 再思考 → 再调工具」，每个 AI 行各自带一段
+      // thinking。若每行各建一个步骤，用户会看到一长串同名的「深度思考」下拉框（实测一轮可达 10 个），
+      // 既看不出是同一段推理，也把工具行挤到视口外。
+      //
+      // 合并策略：同一轮次的思考按行序**拼接**到同一个步骤里（保持模型推理的完整时序），
+      // 步骤 order 取**首个带思考的行**的位置 —— 让它在时间线上落在该轮工具调用之前，
+      // 而不是被最后一个思考行拖到末尾。
       if (thinking) {
         if (!asst.thoughtSteps) asst.thoughtSteps = [];
-        const stepId = `step-${sid}-${String(item.id ?? `idx-${i}`)}`;
-        if (!asst.thoughtSteps.some(s => s.id === stepId)) {
+        const mergedStepId = `step-${sid}-${normalizeTurnId(item.turnId) ?? 'legacy'}`;
+        const existingStep = asst.thoughtSteps.find(s => s.id === mergedStepId);
+        if (existingStep) {
+          existingStep.content = existingStep.content
+            ? `${existingStep.content}\n\n${thinking}`
+            : thinking;
+        } else {
           asst.thoughtSteps.push({
-            id: stepId,
-            title: 'Thought for',
+            id: mergedStepId,
+            title: '深度思考',
             content: thinking,
             status: 'success',
-            order: i * 10
+            order: i * TIMELINE_SLOT_STRIDE
           });
         }
       }
@@ -481,7 +548,7 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
             subPrompt: args.prompt,
             query: rawArgs,
             status: 'calling',
-            order: i * 10 + 2 + tIdx
+            order: i * TIMELINE_SLOT_STRIDE + 2 + tIdx
           });
         }
       }
@@ -519,9 +586,78 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
     }
   }
 
-  return chatMessages;
+  // 按轮次身份重排（见 sortKeys 的说明）：聚合出的先后不能取决于分页窗口落在哪里。
+  // 无键的异常数据排在最后并保持原始相对序；同轮内 roleRank 保证用户消息在回答组之前。
+  return chatMessages
+    .map((message, index) => ({ message, index, key: sortKeys.get(message) }))
+    .sort((left, right) => {
+      if (!left.key && !right.key) return left.index - right.index;
+      if (!left.key) return 1;
+      if (!right.key) return -1;
+      if (left.key.turnKey !== right.key.turnKey) {
+        return left.key.turnKey < right.key.turnKey ? -1 : 1;
+      }
+      return left.key.roleRank - right.key.roleRank;
+    })
+    .map(entry => entry.message);
 }
 
 export function parseSessionMessages(rawMessages: any, sessionId: string | number = 'session'): ChatMessage[] {
   return aggregateSessionMessages(rawMessages, sessionId);
+}
+
+/**
+ * 为「失败但没有任何 assistant 行」的轮次合成组尾错误气泡。
+ *
+ * <p>失败轮次（如模型接口 400，一轮输出都没有）在 session_message 里常常只有 USER 行，
+ * 而回答组的 FAILED 徽标只挂在 assistant 气泡（组尾）上 —— 缺行即徽标无处渲染，
+ * 用户刷新后彻底看不见失败。此函数按 turns 权威数据合成错误气泡，与实时路径
+ * （EXECUTION_FAILED 把原因写进气泡）同形；幂等：该轮次已有 assistant 行则不合成。</p>
+ */
+export function synthesizeFailedTurnBubbles(
+  messages: ChatMessage[],
+  turns: Record<string, ChatTurn>
+): ChatMessage[] {
+  const result = [...messages];
+  for (const [turnId, turn] of Object.entries(turns || {})) {
+    if (turn?.status !== 'FAILED') continue;
+    if (result.some(m => m.role === 'assistant' && normalizeTurnId(m.turnId) === turnId)) continue;
+    const synthetic: ChatMessage = {
+      id: `synthetic-failed-${turnId}`,
+      role: 'assistant',
+      content: (turn.errorReason || '').trim() || '执行失败',
+      turnId,
+      timestamp: Date.now(),
+      isComplete: true,
+      thoughtSteps: [],
+      toolCalls: [],
+      aiMessages: []
+    };
+    const lastIdx = result.map(m => normalizeTurnId(m.turnId)).lastIndexOf(turnId);
+    if (lastIdx >= 0) result.splice(lastIdx + 1, 0, synthetic);
+    else result.push(synthetic);
+  }
+  return result;
+}
+
+/**
+ * 把会话消息拼成可下载的 Markdown 正文（导出入口的唯一内容构造点）。
+ *
+ * <p>抽成纯函数以便回归：导出直接消费 **v3 派生视图**，这里只负责「消息数组 → 文本」，
+ * 不碰 Blob / DOM。顺序即派生数组顺序（提问 → 回答），不重排。</p>
+ *
+ * @param title    会话标题（空串回落「灵犀会话记录」）
+ * @param messages v3 派生消息数组（导出时原样传入，不做过滤）
+ */
+export function buildSessionMarkdown(title: string | undefined, messages: ChatMessage[]): string {
+  const lines = [
+    `# ${title || '灵犀会话记录'}`,
+    `> 导出时间: ${new Date().toLocaleString()}`,
+    '',
+    ...messages.map(message => {
+      const sender = message.role === 'user' ? '👤 用户' : '🤖 灵犀';
+      return `### ${sender}\n\n${message.content}\n`;
+    }),
+  ];
+  return lines.join('\n\n');
 }

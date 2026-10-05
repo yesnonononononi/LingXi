@@ -75,10 +75,10 @@
 .markdown-body blockquote {
   margin: 0.75rem 0;
   padding: 0.5rem 0.85rem;
-  border-left: 3.5px solid #4d6bfe;
-  background-color: rgba(77, 107, 254, 0.08);
+  border-left: 3px solid #71717a;
+  background-color: rgba(255, 255, 255, 0.04);
   border-radius: 0 8px 8px 0;
-  color: inherit;
+  color: #e4e4e7;
 }
 html.light .markdown-body blockquote {
   border-left-color: #3b82f6;
@@ -86,7 +86,7 @@ html.light .markdown-body blockquote {
   color: #334155;
 }
 
-/* Inline Code (matches LingXi pills) */
+/* Inline Code (matches Vue Bits pills) */
 .markdown-body :not(pre) > code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 0.825em;
@@ -94,9 +94,9 @@ html.light .markdown-body blockquote {
   margin: 0 0.2rem;
   border-radius: 0.35rem;
   white-space: break-spaces;
-  background-color: #1a2333;
-  border: 1px solid #2d3a54;
-  color: #e5e7eb;
+  background-color: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f4f4f5;
 }
 html.light .markdown-body :not(pre) > code {
   background-color: #f1f5f9;
@@ -115,14 +115,14 @@ html.light .markdown-body :not(pre) > code {
 }
 .markdown-body th,
 .markdown-body td {
-  border: 1px solid #273043;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   padding: 0.45rem 0.75rem;
   text-align: left;
 }
 .markdown-body th {
   font-weight: 600;
-  background-color: #161b26;
-  color: #94a3b8;
+  background-color: rgba(255, 255, 255, 0.04);
+  color: #a1a1aa;
 }
 .markdown-body tr:nth-child(even) {
   background-color: rgba(255, 255, 255, 0.02);
@@ -144,7 +144,7 @@ html.light .markdown-body tr:nth-child(even) {
 .markdown-body hr {
   height: 1px;
   border: none;
-  background-color: #273043;
+  background-color: rgba(255, 255, 255, 0.08);
   margin: 1rem 0;
 }
 html.light .markdown-body hr {
@@ -153,13 +153,13 @@ html.light .markdown-body hr {
 
 /* Links */
 .markdown-body a {
-  color: #3b82f6;
+  color: #38bdf8;
   text-decoration: underline;
   text-underline-offset: 2px;
   transition: color 0.15s ease;
 }
 .markdown-body a:hover {
-  color: #60a5fa;
+  color: #7dd3fc;
 }
 
 /* Code Blocks Container */
@@ -167,9 +167,9 @@ html.light .markdown-body hr {
   margin: 0.75rem 0;
   border-radius: 0.75rem;
   overflow: hidden;
-  border: 1px solid #273043;
-  background-color: #131722;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background-color: #0d0d10;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
 }
 html.light .markdown-body .code-block-wrapper {
   border: 1px solid #e2e8f0;
@@ -182,10 +182,10 @@ html.light .markdown-body .code-block-wrapper {
   align-items: center;
   justify-content: space-between;
   padding: 0.35rem 0.85rem;
-  background-color: #0e121a;
-  border-bottom: 1px solid #273043;
+  background-color: #121215;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: #a1a1aa;
   user-select: none;
 }
 html.light .markdown-body .code-block-header {

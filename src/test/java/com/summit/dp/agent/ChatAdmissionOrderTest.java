@@ -9,6 +9,7 @@ import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.command.ChatCommand;
 import com.summit.dp.agent.application.service.impl.ChatServiceImpl;
+import com.summit.dp.agent.application.service.impl.ResendTargetResolver;
 import com.summit.dp.agent.application.service.impl.RuntimeContext;
 import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
 import com.summit.dp.agent.infrastructure.workflow.AgentWorkflowOrchestrator;
@@ -16,6 +17,7 @@ import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.SessionAttributeRestorer;
 import com.summit.dp.execution.application.service.ExecutionRegistrationService;
+import com.summit.dp.session.application.service.ConversationRollbackService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.config.workflow.AgentAccessMode;
@@ -72,12 +74,18 @@ class ChatAdmissionOrderTest {
             mock(com.summit.dp.turn.application.service.ChatTurnService.class);
 
     private final ChatServiceImpl chatService = new ChatServiceImpl(
-            sseEventPublisher, requestPreparer, orchestrator,
+            sseEventPublisher, requestPreparer,
             mock(ExecutionControl.class), mock(ExecutionRepository.class),
             mock(SessionRepository.class), registry, modelContextService,
             mock(ExecutionIdentity.class), mock(ToolCallRepository.class),
-            mock(SessionAttributeRestorer.class), registrationService, chatTurnService,
-            mock(com.summit.dp.execution.application.service.ExecutionQueryService.class));
+            mock(SessionAttributeRestorer.class),
+            new com.summit.dp.agent.application.service.impl.PreparedChatExecutor(
+                    orchestrator, modelContextService, registry, registrationService, chatTurnService),
+            chatTurnService,
+            mock(com.summit.dp.execution.application.service.ExecutionQueryService.class),
+            // 本测试只盯「单飞校验先于用户消息落库」这一段顺序，重发链路用不到。
+            mock(ResendTargetResolver.class), mock(ConversationRollbackService.class)
+    );
 
     @BeforeEach
     void noAcceptedTurnUnlessSpecified() {
@@ -85,7 +93,7 @@ class ChatAdmissionOrderTest {
     }
 
     private static ChatCommand command() {
-        return new ChatCommand("你好", ROOT_SESSION_ID, 7L, null, null, false, null, null);
+        return new ChatCommand("你好", ROOT_SESSION_ID, 7L, null, null, null, false, null, null);
     }
 
     private static RuntimeContext context() {

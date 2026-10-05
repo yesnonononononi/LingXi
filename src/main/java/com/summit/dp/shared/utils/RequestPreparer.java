@@ -27,6 +27,8 @@ import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.application.service.SessionService;
+import com.summit.dp.session.domain.model.Session;
+import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.config.workflow.AgentAccessMode;
 import com.summit.dp.shared.config.workflow.CommandApprovalPolicy;
 import com.summit.dp.shared.context.ExecutionContext;
@@ -69,6 +71,7 @@ import java.util.*;
 public class RequestPreparer {
 
     private final SessionService sessionService;
+    private final SessionRepository sessionRepository;
     private final WorkspaceService workspaceService;
     private final ModelService modelService;
     private final WorkspaceConverter workspaceConverter;
@@ -109,9 +112,24 @@ public class RequestPreparer {
      * 后续 {@link #buildRequest} 直接复用，不再另生成。</p>
      */
     public RuntimeContext prepare(ChatCommand command) {
-        if (command == null || command.input() == null || command.input().isBlank()) {
-            throw new ClientException("聊天内容不能为空");
-        }
+        return resolve(command, null);
+    }
+
+    /**
+     * 重发准备：与 {@link #prepare} 同一条解析链路，只是模型上下文由调用方给定。
+     *
+     * <p>重发要复现「目标轮次当时看到的上下文」，而会话当前上下文里还带着即将被回滚掉的尾部。
+     * 会话必须已存在 —— 重发是对一条历史提问的重做，不建会话。</p>
+     *
+     * @param baseline 目标轮次之前的历史上下文（由执行快照截断得到），新提问接在它之后
+     */
+    public RuntimeContext prepareForResend(ChatCommand command, List<Message> baseline) {
+        throwIf(command == null || command.sessionId() == null, "重发必须指定会话");
+        return resolve(command, baseline);
+    }
+
+    private RuntimeContext resolve(ChatCommand command, List<Message> baseline) {
+        throwIf(command == null || command.input() == null || command.input().isBlank(), "聊天内容不能为空");
 
         // 单例设置：档位与模型缺省的唯一来源；查询失败按无设置处理（各项走各自缺省）。
         SettingsView settings = settingsProvider.current().orElse(null);
@@ -157,13 +175,14 @@ public class RequestPreparer {
         CommandApprovalPolicy policy = CommandApprovalPolicy.parse(
                 settings == null ? null : settings.commandApprovalPolicy());
 
-        // Model context is mutable and may already be compressed. A missing snapshot means a new
-        // context; the append-only transcript is display data and is never fed back to the model.
+        // 模型上下文是可变的、也可能已被压缩；查不到上下文即视为新会话。
+        // 只有展示用的 transcript 是只追加的，它任何时候都不会回喂给模型。
         UserMessageEntity userMessageEntity = buildUserMessage(effective);
         Long preparedSessionId = session.getId();
-        List<Message> messageList = modelContextService.find(preparedSessionId)
-                .map(ArrayList::new)
-                .orElseGet(ArrayList::new);
+        // 重发：基线来自目标轮次的历史快照；常规请求：基线来自当前模型上下文。
+        List<Message> messageList = baseline != null
+                ? new ArrayList<>(baseline)
+                : modelContextService.find(preparedSessionId).map(ArrayList::new).orElseGet(ArrayList::new);
         messageList.add(userMessageEntity);
 
         // 执行身份在 prepare 内就固化（而不是等 buildRequest）：
@@ -206,6 +225,21 @@ public class RequestPreparer {
      */
     @Transactional
     public Long commitUserMessage(RuntimeContext context) {
+        return commitUserMessage(context, null, null);
+    }
+
+    /**
+     * 带命令身份的提交：命令 ID 与请求摘要随轮次同事务落库。
+     *
+     * <p><b>为什么必须同事务</b>：命令身份是幂等判定的唯一依据。若轮次先落库、命令身份后补，
+     * 两者之间进程崩溃会留下一条「没有 commandId 的已受理轮次」—— 重试查不回它，
+     * 同一命令会被受理第二次，用户看到两条一样的提问。</p>
+     *
+     * @param commandId     命令受理身份；为 {@code null} 时与 {@link #commitUserMessage(RuntimeContext)} 完全等价
+     * @param commandDigest 请求摘要
+     */
+    @Transactional
+    public Long commitUserMessage(RuntimeContext context, String commandId, String commandDigest) {
         if (context == null || context.pendingUserMessage() == null) {
             return context == null ? null : context.turnId();
         }
@@ -233,10 +267,12 @@ public class RequestPreparer {
         //
         // 先建轮次再写消息，直接用 acceptTurn 返回的 turnId 作为消息归属 ——
         // 框架执行 ID 不进消息归属，它只留在 chat_turn.execution_id 上用于接收框架信号。
-        long turnId = chatTurnService.acceptTurn(executionContext.sessionId(), null, executionId,
-                modelName, modelProvider);
+        // 根身份就是本会话自身：普通用户提问必然落在根会话上（子委派不走这里）。
+        long rootSessionId = executionContext.sessionId();
+        long turnId = chatTurnService.acceptTurn(executionContext.sessionId(), rootSessionId, null, executionId,
+                modelName, modelProvider, commandId, commandDigest);
 
-        transcriptService.appendUser(executionContext.sessionId(), turnId,
+        transcriptService.appendUser(executionContext.sessionId(), rootSessionId, turnId,
                 context.pendingUserMessage());
         return turnId;
     }
@@ -272,6 +308,9 @@ public class RequestPreparer {
             return command;
         }
         return new ChatCommand(command.input(), command.sessionId(), modelId, command.workspaceId(),
+                // messageId 必须原样带过去：重发要靠它定位被改写的那条提问，
+                // 漏掉它这一路回落到「重发但不知道该重发哪条」，报错却是「消息标识不能为空」。
+                command.messageId(),
                 agentId, command.requirePlan(), command.imageFile(), command.imageUrl());
     }
 
@@ -317,10 +356,39 @@ public class RequestPreparer {
                 .mcpConfig(mcpConfig)
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(attributes(context.executionContext(), context))
-                        .eventMetaData(ExecutionEventMetadata.of(
-                                context.executionContext().sessionId(), context.turnId(), null))
+                        .eventMetaData(executionEventMetadata(context))
                         .build())
                 .build();
+    }
+
+    /**
+     * 构造本次执行的完整事件归属：根会话、自身会话、轮次与历史代际。
+     *
+     * <p><b>为什么在此处读一次库</b>：historyRevision 是根会话的历史代际，只能从会话行取。
+     * 这是设计允许的<b>低频冷路径</b>读 —— 只在请求准备（每个执行一次）发生，随执行检查点保存，
+     * 事件端不再回查。根会话取不到时按代际 1 处理（会话默认值），因为拿不到代际不能阻塞受理。</p>
+     *
+     * <p>{@code parentTurnId} 恒为 {@code null}：普通用户提问不是任何轮次的子委派；子执行的
+     * 归属由 {@code DelegationRecorder} 单独构造。</p>
+     */
+    private Map<String, Object> executionEventMetadata(RuntimeContext context) {
+        ExecutionContext executionContext = context.executionContext();
+        long sessionId = executionContext.sessionId();
+        long rootSessionId = executionContext.rootSessionId();
+        return ExecutionEventMetadata.of(rootSessionId, sessionId, context.turnId(), null,
+                rootHistoryRevision(rootSessionId));
+    }
+
+    /**
+     * 根会话的历史代际。
+     *
+     * <p>会话行缺失（刚建的会话尚未可见等异常）时回落到 1 —— 与 {@code Session} 的默认代际一致，
+     * 不因一次旁路读失败而拒绝整个请求。</p>
+     */
+    private long rootHistoryRevision(long rootSessionId) {
+        Session root = sessionRepository.findById(rootSessionId).orElse(null);
+        Long revision = root == null ? null : root.getHistoryRevision();
+        return revision == null || revision <= 0L ? 1L : revision;
     }
 
     public UserMessageEntity buildUserMessage(ChatCommand chatCommand) {
@@ -452,5 +520,9 @@ public class RequestPreparer {
         if (globalPrompt.isEmpty()) return rolePrompt;
         if (rolePrompt.isEmpty()) return globalPrompt;
         return globalPrompt + "\n\n" + rolePrompt;
+    }
+
+    private void throwIf(boolean condition, String err) {
+        if (condition) throw new ClientException(err);
     }
 }

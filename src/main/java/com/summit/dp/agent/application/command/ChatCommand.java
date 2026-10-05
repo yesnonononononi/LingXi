@@ -1,6 +1,6 @@
 package com.summit.dp.agent.application.command;
 
-import lombok.NonNull;
+
 import org.springframework.web.multipart.MultipartFile;
 
 /**
@@ -14,12 +14,11 @@ public record ChatCommand(
         Long sessionId,
         Long modelId,
         Long workspaceId,
+        Long messageId,
         Long agentId,
         boolean requirePlan,
         MultipartFile imageFile,
         String imageUrl
 ) {
-    public ChatCommand assignAgentId(Long agentId) {
-        return new ChatCommand(input, sessionId, modelId, workspaceId, agentId, requirePlan, imageFile, imageUrl);
-    }
+
 }

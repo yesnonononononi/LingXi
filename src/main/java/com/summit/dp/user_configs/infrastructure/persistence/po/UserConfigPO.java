@@ -35,6 +35,9 @@ public class UserConfigPO {
     private Integer maxTokens;
     /** 思考深度/推理等级（空则由模型/框架缺省兜底） */
     private String reasoningEffort;
+    /** 渲染主题 */
+    private String renderTheme;
+
     private Integer status;
     private Instant createTime;
     private Instant updateTime;

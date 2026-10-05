@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import type { WorkspaceVO } from '../../types/chat';
+import { useTheme } from '../../composables/useTheme';
 
 const props = defineProps<{
   workspaces: WorkspaceVO[];
@@ -8,13 +9,20 @@ const props = defineProps<{
   isDark?: boolean;
 }>();
 
+const { isDark: themeIsDark } = useTheme();
+const isDark = computed(() => props.isDark ?? themeIsDark.value);
+
 const emit = defineEmits<{
   (e: 'selectWorkspace', workspace: WorkspaceVO | null): void;
   (e: 'newProject'): void;
   (e: 'quickStart'): void;
+  (e: 'openChange', isOpen: boolean): void;
 }>();
 
 const isOpen = ref(false);
+watch(isOpen, (val) => {
+  emit('openChange', val);
+});
 const dropdownRef = ref<HTMLElement | null>(null);
 
 const currentWorkspace = computed(() => {
@@ -75,22 +83,26 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="dropdownRef" class="relative inline-block text-left select-none">
-    <!-- Trigger Button (Image 2 style) -->
+    <!-- Trigger Button -->
     <button
       type="button"
       @click="toggleDropdown"
       :class="[
-        'flex items-center gap-1.5 px-2 py-1 text-[13px] font-medium rounded-lg transition-colors cursor-pointer outline-none',
-        isDark
-          ? 'text-gray-300 hover:text-white hover:bg-white/[0.08]'
-          : 'text-gray-700 hover:text-gray-900 hover:bg-black/[0.05]'
+        'inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-medium rounded-lg transition-all cursor-pointer outline-none border shadow-2xs select-none',
+        isOpen
+          ? (isDark
+              ? 'bg-zinc-800 border-zinc-700 text-white shadow-xs'
+              : 'bg-zinc-100 border-zinc-300 text-gray-900 shadow-xs')
+          : (isDark
+              ? 'bg-zinc-800/80 border-zinc-700/60 text-zinc-300 hover:bg-zinc-800 hover:text-white hover:border-zinc-600'
+              : 'bg-white/90 border-zinc-200/90 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 hover:border-zinc-300')
       ]"
       title="选择项目 / 工作空间"
     >
       <!-- Folder Icon -->
       <svg
         v-if="currentWorkspace"
-        class="w-4 h-4 text-gray-500 dark:text-gray-400 shrink-0"
+        class="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400 shrink-0"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -100,7 +112,7 @@ onBeforeUnmount(() => {
       <!-- No Project Slash Icon -->
       <svg
         v-else
-        class="w-4 h-4 text-gray-400 shrink-0"
+        class="w-3.5 h-3.5 text-zinc-400 shrink-0"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -113,7 +125,7 @@ onBeforeUnmount(() => {
 
       <!-- Chevron Down -->
       <svg
-        :class="['w-3.5 h-3.5 text-gray-400 transition-transform duration-200 shrink-0', isOpen ? 'rotate-180' : '']"
+        :class="['w-3.5 h-3.5 text-zinc-400 transition-transform duration-200 shrink-0', isOpen ? 'rotate-180' : '']"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -122,14 +134,14 @@ onBeforeUnmount(() => {
       </svg>
     </button>
 
-    <!-- Dropdown Menu Card (Image 2 exact style) -->
+    <!-- Dropdown Menu Card -->
     <div
       v-if="isOpen"
       :class="[
-        'absolute left-0 bottom-full mb-1.5 w-56 rounded-2xl border shadow-2xl p-1.5 z-50 transition-all animate-in fade-in zoom-in-95 duration-150',
+        'absolute left-0 top-full mt-1.5 w-60 rounded-xl border shadow-2xl p-1.5 z-50 transition-all animate-in fade-in zoom-in-95 duration-150 backdrop-blur-2xl',
         isDark
-          ? 'bg-[#182030] border-[#2b374f] text-gray-200'
-          : 'bg-white border-gray-200 text-gray-800'
+          ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_12px_40px_rgba(0,0,0,0.95)]'
+          : 'bg-white/95 border-zinc-200 text-gray-800 shadow-gray-400/20'
       ]"
     >
       <!-- 1. Existing Workspaces List -->
@@ -141,13 +153,13 @@ onBeforeUnmount(() => {
           :class="[
             'group relative flex items-center justify-between px-2.5 py-1.5 rounded-xl cursor-pointer text-xs transition-colors',
             String(selectedWorkspaceId) === String(ws.id)
-              ? (isDark ? 'bg-[#252f44] text-white font-medium' : 'bg-gray-100 text-gray-900 font-medium')
-              : (isDark ? 'hover:bg-[#252f44]/60 text-gray-300 hover:text-white' : 'hover:bg-gray-100/70 text-gray-700 hover:text-gray-900')
+              ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-gray-100 text-gray-900 font-medium')
+              : (isDark ? 'hover:bg-white/10 text-zinc-300 hover:text-white' : 'hover:bg-gray-100/70 text-gray-700 hover:text-gray-900')
           ]"
         >
           <!-- Left: Folder Icon + Name -->
           <div class="flex items-center gap-2 truncate min-w-0 pr-2">
-            <svg class="w-4 h-4 text-gray-400 group-hover:text-gray-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-4 h-4 text-zinc-400 group-hover:text-cyan-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
             </svg>
             <span class="truncate">{{ ws.name || ws.workDir }}</span>
@@ -157,7 +169,7 @@ onBeforeUnmount(() => {
           <div class="flex items-center gap-1.5 shrink-0">
             <svg
               v-if="String(selectedWorkspaceId) === String(ws.id)"
-              class="w-3.5 h-3.5 text-gray-700 dark:text-gray-200"
+              class="w-3.5 h-3.5 text-cyan-400"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -169,7 +181,7 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- Divider 1 -->
-      <div :class="['h-px my-1 mx-1', isDark ? 'bg-[#2b374f]' : 'bg-gray-100']"></div>
+      <div :class="['h-px my-1 mx-1', isDark ? 'bg-white/10' : 'bg-gray-100']"></div>
 
       <!-- 2. Action Items: New Project & Quick Start -->
       <div class="space-y-0.5 px-0.5">
@@ -178,10 +190,10 @@ onBeforeUnmount(() => {
           @click="handleNewProject"
           :class="[
             'flex items-center gap-2 px-2.5 py-1.5 rounded-xl cursor-pointer text-xs transition-colors',
-            isDark ? 'hover:bg-[#252f44]/60 text-gray-300 hover:text-white' : 'hover:bg-gray-100/70 text-gray-700 hover:text-gray-900'
+            isDark ? 'hover:bg-white/10 text-zinc-300 hover:text-white' : 'hover:bg-gray-100/70 text-gray-700 hover:text-gray-900'
           ]"
         >
-          <svg class="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="w-4 h-4 text-zinc-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
           </svg>
           <span>New Project</span>
@@ -192,10 +204,10 @@ onBeforeUnmount(() => {
           @click="handleQuickStart"
           :class="[
             'flex items-center gap-2 px-2.5 py-1.5 rounded-xl cursor-pointer text-xs transition-colors',
-            isDark ? 'hover:bg-[#252f44]/60 text-gray-300 hover:text-white' : 'hover:bg-gray-100/70 text-gray-700 hover:text-gray-900'
+            isDark ? 'hover:bg-white/10 text-zinc-300 hover:text-white' : 'hover:bg-gray-100/70 text-gray-700 hover:text-gray-900'
           ]"
         >
-          <svg class="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="w-4 h-4 text-zinc-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M14 11l3 3m0 0l-3 3m3-3H9" />
           </svg>
@@ -204,7 +216,7 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- Divider 2 -->
-      <div :class="['h-px my-1 mx-1', isDark ? 'bg-[#2b374f]' : 'bg-gray-100']"></div>
+      <div :class="['h-px my-1 mx-1', isDark ? 'bg-white/10' : 'bg-gray-100']"></div>
 
       <!-- 3. No Project -->
       <div class="px-0.5">
@@ -213,11 +225,11 @@ onBeforeUnmount(() => {
           :class="[
             'flex items-center gap-2 px-2.5 py-1.5 rounded-xl cursor-pointer text-xs transition-colors',
             !selectedWorkspaceId
-              ? (isDark ? 'bg-[#252f44] text-white font-medium' : 'bg-gray-100 text-gray-900 font-medium')
-              : (isDark ? 'hover:bg-[#252f44]/60 text-gray-300 hover:text-white' : 'hover:bg-gray-100/70 text-gray-700 hover:text-gray-900')
+              ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-gray-100 text-gray-900 font-medium')
+              : (isDark ? 'hover:bg-white/10 text-zinc-300 hover:text-white' : 'hover:bg-gray-100/70 text-gray-700 hover:text-gray-900')
           ]"
         >
-          <svg class="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="w-4 h-4 text-zinc-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
           </svg>
           <span>No Project</span>

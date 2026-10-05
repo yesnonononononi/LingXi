@@ -1,5 +1,6 @@
-import { createRouter, createWebHistory } from 'vue-router';
+import { createRouter, createWebHistory, createWebHashHistory } from 'vue-router';
 import type { RouteRecordRaw } from 'vue-router';
+import { isElectron } from '../utils/platform';
 
 // 本地单实例（HC-1）：无账号体系，路由即页面，无守卫。
 const routes: Array<RouteRecordRaw> = [
@@ -29,8 +30,9 @@ const routes: Array<RouteRecordRaw> = [
   },
 ];
 
+// 桌面客户端 (Electron file:// 协议) 使用 Hash 路由避免刷新 404；Web 端保留标准 History 模式
 const router = createRouter({
-  history: createWebHistory(),
+  history: isElectron() ? createWebHashHistory() : createWebHistory(),
   routes,
 });
 

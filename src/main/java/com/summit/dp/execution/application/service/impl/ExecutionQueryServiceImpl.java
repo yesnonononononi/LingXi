@@ -75,6 +75,30 @@ public class ExecutionQueryServiceImpl implements ExecutionQueryService {
         return result;
     }
 
+    @Override
+    public String findSnapshotById(Long executionId) {
+        return executionRepository.findById(executionId).map(Execution::getSnapshot).orElse(null);
+    }
+
+    /**
+     * 批量取未终结执行（CREATED/RUNNING/SUSPENDED），带执行身份。
+     *
+     * <p>仓储层一次 {@code IN} 查询（状态条件走 {@code IN (0,1,2)}），不逐会话查；
+     * 状态经 {@link #toState} 转成框架枚举名，与其余方法同一口径。</p>
+     */
+    @Override
+    public List<ActiveExecution> activeBySession(Collection<Long> sessionIds) {
+        if (sessionIds == null || sessionIds.isEmpty()) return List.of();
+        return executionRepository.findUnfinishedBySessions(sessionIds).stream()
+                .map(execution -> new ActiveExecution(
+                        execution.getId(),
+                        execution.getSessionId(),
+                        toState(execution).name(),
+                        toInstant(execution.getStartedAt()),
+                        toInstant(execution.getCompletedAt())))
+                .toList();
+    }
+
     /** 库列是无时区的 {@code DATETIME}，按本机时区解释 —— 与写入侧同一口径，往返一致。 */
     private static Instant toInstant(LocalDateTime value) {
         return value == null ? null : value.atZone(ZoneId.systemDefault()).toInstant();

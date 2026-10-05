@@ -1,5 +1,7 @@
 package com.summit.dp.toolcall.domain.model;
 
+import java.util.Locale;
+
 /**
  * 卡片形态判别字段（{@code tool_call.content.kind}）。
  *
@@ -26,7 +28,7 @@ public enum ToolCallKind {
             return null;
         }
         try {
-            return ToolCallKind.valueOf(name.trim().toUpperCase());
+            return ToolCallKind.valueOf(name.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             return null;
         }

@@ -13,6 +13,7 @@ package com.summit.dp.toolcall.domain.model;
  * 里还有一份等价手写，属历史迁移契约，保持原样不引用本类（改它会让已建库与新脚本不一致）。</p>
  */
 public final class ToolCallKeys {
+    public static final String SUB_EXECUTION_ID = "subExecutionId";
 
     private ToolCallKeys() {
     }
@@ -42,6 +43,8 @@ public final class ToolCallKeys {
     public static final String SHELL = "shell";
     /** COMMAND 卡片：工作空间 id。 */
     public static final String WORKSPACE_ID = "workspaceId";
+    /** COMMAND 卡片：执行意图，从模型 args 提取后提到载荷顶层，供审批卡直接展示。 */
+    public static final String INTENTION = "intention";
 
     /** DELEGATION 卡片：目标子会话 id（回填时据此把子执行终态匹配到父执行的槽位）。 */
     public static final String SUB_SESSION_ID = "subSessionId";

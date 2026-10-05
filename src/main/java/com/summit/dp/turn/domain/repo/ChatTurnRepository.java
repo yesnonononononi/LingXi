@@ -12,12 +12,30 @@ import java.util.Optional;
 public interface ChatTurnRepository extends RepositoryTemplate<ChatTurn, Long> {
 
     /**
+     * 落库并随通知带上根身份。
+     *
+     * @param rootSessionId v3 投递目标（根会话）；子会话轮次必须传根，否则投错连接桶
+     */
+    void save(ChatTurn turn, Long rootSessionId);
+
+    /** 更新并发布落库终值；根身份语义同 {@link #save(ChatTurn, Long)}。 */
+    void updateById(ChatTurn turn, Long rootSessionId);
+
+    /**
      * 按框架执行 ID 反查轮次。
      *
      * <p>{@code execution_id} 上有唯一键，因此这是一次唯一键查询 —— 也是「框架给的 executionId
      * 反查业务轮次」的唯一入口。框架的观察钩子只给 executionId，业务靠它把信号落到自己的轮次上。</p>
      */
     Optional<ChatTurn> findByExecutionId(Long executionId);
+
+    /**
+     * 按命令受理身份反查轮次。
+     *
+     * <p>同 {@code commandId} 的重试靠它查回首次受理结果：命中即说明这条命令已经被受理过，
+     * 不再写用户消息、不再开启执行。查不到说明是首次受理。</p>
+     */
+    Optional<ChatTurn> findByCommandId(String commandId);
 
     /**
      * 按一批执行 ID 批量反查轮次（一次 IN 查询，不做 N+1）。
@@ -45,4 +63,19 @@ public interface ChatTurnRepository extends RepositoryTemplate<ChatTurn, Long> {
      * @return 被收口的行数
      */
     int markOrphansFailed(Instant completedAt);
+
+    /** 取目标轮次及其之后的全部轮次，按主键升序（雪花主键单调递增，{@code id >= fromTurnId}）。 */
+    List<ChatTurn> findFromId(Long sessionId, Long fromTurnId);
+
+    /**
+     * 按一批会话 id 批量取**进行中**轮次（ACCEPTED / RUNNING / WAITING），一次 IN 查询。
+     *
+     * <p>bootstrap 用它补「历史分页取不到的活跃轮次」：已终结轮次走 {@code history.turns}，
+     * 两者互补不重叠。WAITING 对应框架 SUSPENDED，是「可恢复」而非终态，必须算进行中 ——
+     * 漏掉它前端就无法在刷新后恢复挂起卡片的轮次归属。不做 N+1。</p>
+     */
+    List<ChatTurn> findActiveBySessionIds(Collection<Long> sessionIds);
+
+    /** 删除目标轮次及其之后的全部轮次，返回删除行数。只服务「重发」的会话回滚。 */
+    int deleteFromId(Long sessionId, Long fromTurnId);
 }

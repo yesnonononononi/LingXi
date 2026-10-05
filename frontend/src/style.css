@@ -1,42 +1,123 @@
 @import "tailwindcss";
 @import "./styles/markdown.css";
+@import "./styles/stream-animation.css";
 
-/* DeepSeek 亮/暗模式 CSS 变量与主题拓展 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Vue Bits 纯黑风格亮/暗模式 CSS 变量与主题拓展 */
 :root {
-  --bg-main-dark: #0b0f17;
-  --bg-sidebar-dark: #121722;
-  --bg-card-dark: #1a202c;
-  --border-dark: #273043;
-  --accent-blue: #4d6bfe;
-  --accent-blue-hover: #3b57e6;
-  --text-muted-dark: #8b99b0;
+  color-scheme: dark;
+  --bg-main-dark: #000000;
+  --bg-sidebar-dark: #000000;
+  --bg-card-dark: #080808;
+  --border-dark: rgba(255, 255, 255, 0.08);
+  --accent-blue: #38bdf8;
+  --accent-blue-hover: #0284c7;
+  --text-muted-dark: #a1a1aa;
 }
 
-/* 隐藏默认滚动条但保留滚动能力 */
+html.dark, body.dark {
+  color-scheme: dark;
+  background-color: #000000;
+  color: #f4f4f5;
+}
+
+html.light, body.light {
+  color-scheme: light;
+  background-color: #ffffff;
+  color: #111827;
+}
+
+/* 现代化跨浏览器透明细滚动条规范 (Chromium 121+ / Firefox / Safari 均原生支持) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(161, 161, 170, 0.25) transparent;
+}
+
+html.dark *,
+body.dark *,
+.dark * {
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+
+/* 隐藏默认滚动条底色但保留微光滑块 */
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: transparent !important;
+  background-color: transparent !important;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(139, 153, 176, 0.2);
-  border-radius: 4px;
+  background-color: rgba(161, 161, 170, 0.25) !important;
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(77, 107, 254, 0.4);
+  background-color: rgba(161, 161, 170, 0.45) !important;
 }
 
-textarea:focus {
-  outline: none;
-  box-shadow: none;
+html.dark ::-webkit-scrollbar-thumb,
+body.dark ::-webkit-scrollbar-thumb,
+.dark ::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.16) !important;
 }
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  overflow: hidden;
-  user-select: none;
+html.dark ::-webkit-scrollbar-thumb:hover,
+body.dark ::-webkit-scrollbar-thumb:hover,
+.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.32) !important;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* 细滚动条工具类（对齐各组件中显式声明的 scrollbar-thin，彻底杜绝浅色轨道） */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(161, 161, 170, 0.25) transparent;
+}
+
+.dark .scrollbar-thin,
+html.dark .scrollbar-thin {
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+
+/* ================= 极客发光字体 (Glow Text) 规范 ================= */
+/* 1. 柔和冷银微光 (用于普通文本、正文、思维链叙述，清晰不发虚) */
+.text-glow-subtle {
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.35), 0 0 16px rgba(255, 255, 255, 0.15);
+}
+
+/* 2. 亮白微光 (用于标题、重要高亮) */
+.text-glow-white {
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.65), 0 0 20px rgba(255, 255, 255, 0.3);
+}
+
+/* 3. 科技青蓝发光 (用于"思考中..."、步骤状态，灵动醒目) */
+.text-glow-cyan {
+  text-shadow: 0 0 8px rgba(56, 189, 248, 0.7), 0 0 18px rgba(56, 189, 248, 0.35);
+}
+
+/* 4. 冰蓝轻光 (用于 Thought for 标题) */
+.text-glow-blue {
+  text-shadow: 0 0 6px rgba(96, 165, 250, 0.65), 0 0 14px rgba(96, 165, 250, 0.3);
+}
+
+/* 5. 呼吸脉冲光晕 (纯净亮白发光，用于流式思考进行态) */
+@keyframes glow-pulse {
+  0%, 100% {
+    text-shadow: 0 0 6px rgba(255, 255, 255, 0.45), 0 0 14px rgba(255, 255, 255, 0.2);
+  }
+  50% {
+    text-shadow: 0 0 12px rgba(255, 255, 255, 0.95), 0 0 24px rgba(255, 255, 255, 0.55);
+  }
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 2s infinite ease-in-out;
 }
 
 /* DeepThink 深度思考面板斜纹背景背景图 */

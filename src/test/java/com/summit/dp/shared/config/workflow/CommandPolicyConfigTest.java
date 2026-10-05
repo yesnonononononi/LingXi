@@ -31,7 +31,7 @@ class CommandPolicyConfigTest {
     private final ExecutionIdentity identity = mock(ExecutionIdentity.class);
     private final ToolCallConverter converter = new ToolCallConverter(mapper);
     private final CommandApprovalRegistrar approvalRegistrar =
-            new CommandApprovalRegistrar(registrar, converter, events, identity);
+            new CommandApprovalRegistrar(registrar, converter);
     private final ToolExecutionPolicy policy = new CommandPolicyConfig()
             .commandApprovalPolicy(mapper, approvalRegistrar);
 
@@ -68,7 +68,7 @@ class CommandPolicyConfigTest {
         // 卡片载荷登记为一条 PROMISE（kind=COMMAND），SSE 只发「有新卡片」通知。
         verify(registrar).registerPromise(argThat(cmd -> "tool-1".equals(cmd.toolCallId())
                 && cmd.kind() == ToolCallKind.COMMAND && "command".equals(cmd.toolName())));
-        verify(events).publish(anyLong(), any());
+        verifyNoInteractions(events);
     }
 
     @Test

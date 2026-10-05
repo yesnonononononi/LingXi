@@ -37,6 +37,8 @@ public class SessionMessageViewAssembler {
     public SessionMessageVO toVO(SessionMessage stored) {
         SessionMessageVO.SessionMessageVOBuilder builder = SessionMessageVO.builder()
                 .id(stored.getId())
+                .sessionId(stored.getSessionId())
+                .streamKey(stored.getStreamKey() == null ? "history:" + stored.getId() : stored.getStreamKey())
                 .turnId(stored.getTurnId())
                 .type(stored.getType().name())
                 .createTime(stored.getCreateTime());

@@ -28,7 +28,8 @@ import java.util.Objects;
  * 不必再反序列化一次 LONGTEXT snapshot。「取消挂起中的执行」路径不经 loop，metric 为 null，
  * 本监听器按降级跳过：不猜、不写 0，保留上一次已知值。</p>
  *
- * <p><b>不抛异常</b>：观察链路不得影响执行本身，任何解析/落库失败只留告警。</p>
+ * <p><b>不自行兜异常</b>：广播方 {@code LocalExecutionRepository} 已逐监听器捕获并继续，
+ * 这里再包一层只是重复隔离。</p>
  */
 @Slf4j
 @Component
@@ -40,34 +41,29 @@ public class SessionContextMetricListener implements ExecutionLifecycleListener 
     private final SessionAggregateService sessionAggregateService;
 
     @Override
-    public void onExecutionSuspended(String executionId) {
+    public void onExecutionSuspended(String executionId, Execution execution) {
         // 挂起不是终态：用量快照以终结时的为准（挂起期间的实时口径由 CONTEXT_UPDATE 事件承担）。
     }
 
     @Override
     public void onExecutionFinished(String executionId, Execution execution) {
-        try {
-            ContextUsageMetric metric = execution == null ? null : execution.getContextUsageMetric();
-            if (metric == null) {
-                // 取消挂起中的执行等不经 loop 的路径：没有采集，降级跳过。
-                return;
-            }
-            Long sessionId = sessionIdOf(execution);
-            if (sessionId == null) {
-                log.warn("{} 终结执行缺少会话归属，用量快照丢弃: executionId={}", LOG_PREFIX, executionId);
-                return;
-            }
-            Session session = sessionAggregateService.requireOwned(sessionId);
-            session.changeContextUsage((long) metric.tokenCount(), metric.maxTokens(), metric.ratio());
-            sessionAggregateService.save(session);
-        } catch (RuntimeException e) {
-            log.warn("{} 会话上下文用量回写失败（不影响执行本身）: executionId={}, error={}",
-                    LOG_PREFIX, executionId, e.toString());
+        ContextUsageMetric metric = execution == null ? null : execution.getContextUsageMetric();
+        if (metric == null) {
+            // 取消挂起中的执行等不经 loop 的路径：没有采集，降级跳过。
+            return;
         }
+        Long sessionId = resolveSessionId(execution);
+        if (sessionId == null) {
+            log.warn("{} 终结执行缺少会话归属，用量快照丢弃: executionId={}", LOG_PREFIX, executionId);
+            return;
+        }
+        Session session = sessionAggregateService.requireOwned(sessionId);
+        session.changeContextUsage((long) metric.tokenCount(), metric.maxTokens(), metric.ratio());
+        sessionAggregateService.save(session);
     }
 
     /** 执行归属的会话 id：业务身份在请求属性里（与执行建行时同一来源）。 */
-    private static Long sessionIdOf(Execution execution) {
+    private static Long resolveSessionId(Execution execution) {
         Map<String, Object> attributes = execution.getAgentRequest() == null
                 ? Map.of()
                 : execution.getAgentRequest().runtimeParametersOrDefault().getAttributes();

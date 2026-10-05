@@ -23,7 +23,7 @@ public interface ChatTurnMapper extends BaseMapper<ChatTurnPO> {
      *
      * @return 实际被收口的行数
      */
-    @Update("UPDATE chat_turn SET status = #{failedStatus}, completed_at = #{completedAt} "
+    @Update("UPDATE chat_turn SET status = #{failedStatus}, completed_at = #{completedAt}, version = version + 1 "
             + "WHERE status IN (#{accepted}, #{running})")
     int markOrphansFailed(@Param("failedStatus") String failedStatus,
                           @Param("accepted") String accepted,

@@ -3,6 +3,10 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useConfirm } from '../../composables/useConfirm';
 import type { ChatSession, WorkspaceVO } from '../../types/chat';
 import logoUrl from '../../assets/lingxi-agent-logo.png';
+import BranchedMenu, { type BranchedMenuItem, type BranchedMenuChild } from '../common/BranchedMenu.vue';
+import { Comment01Icon } from '@hugeicons/core-free-icons';
+import { useTheme } from '../../composables/useTheme';
+import CollapseTransition from '../common/CollapseTransition.vue';
 
 const props = defineProps<{
   sessions: ChatSession[];
@@ -26,6 +30,9 @@ const emit = defineEmits<{
   (e: 'openModels'): void;
   (e: 'toggleTheme'): void;
 }>();
+
+const { isDark: themeIsDark } = useTheme();
+const isDark = computed(() => themeIsDark.value);
 
 const editingSessionId = ref<string | null>(null);
 const editingTitle = ref('');
@@ -156,6 +163,9 @@ const toggleWorkspaceExpand = (wsId: string | number) => {
 
 const handleSelectWorkspace = (ws: WorkspaceVO) => {
   emit('selectWorkspace', ws);
+  if (ws.id != null) {
+    toggleWorkspaceExpand(ws.id);
+  }
 };
 
 const handleNewSessionInProject = (ws: WorkspaceVO, event: Event) => {
@@ -201,6 +211,81 @@ const saveEdit = (session: ChatSession, event: Event) => {
   editingSessionId.value = null;
 };
 
+// 构造供 BranchedMenu 树形组件消费的分支数据
+const branchedMenuItems = computed<BranchedMenuItem[]>(() => {
+  const items: BranchedMenuItem[] = [];
+
+  for (const group of projectGroups.value) {
+    items.push({
+      label: group.workspace.name || group.workspace.workDir || '工作空间',
+      value: `ws-${group.workspace.id}`,
+      raw: group.workspace,
+      children: group.sessions.map(s => ({
+        value: String(s.id),
+        label: s.title || '新对话',
+        icon: Comment01Icon,
+        raw: s
+      }))
+    });
+  }
+
+  if (unassignedSessions.value.length > 0) {
+    items.push({
+      label: '历史对话',
+      value: 'ws-unassigned',
+      raw: null,
+      children: unassignedSessions.value.map(s => ({
+        value: String(s.id),
+        label: s.title || '新对话',
+        icon: Comment01Icon,
+        raw: s
+      }))
+    });
+  }
+
+  return items;
+});
+
+// 计算当前展开的区段索引
+const branchedOpenIndices = computed<number[]>(() => {
+  const indices: number[] = [];
+  branchedMenuItems.value.forEach((item, idx) => {
+    if (item.raw && item.raw.id) {
+      if (expandedWorkspaces.value[String(item.raw.id)] !== false) {
+        indices.push(idx);
+      }
+    } else {
+      indices.push(idx);
+    }
+  });
+  return indices;
+});
+
+const handleBranchedSelect = (value: string, item: BranchedMenuChild | BranchedMenuItem) => {
+  if (item.raw) {
+    if ('title' in item.raw) {
+      const session = item.raw as ChatSession;
+      emit('selectSession', session.id);
+      if (session.workspaceId && props.workspaces) {
+        const ws = props.workspaces.find(w => String(w.id) === String(session.workspaceId));
+        if (ws) emit('selectWorkspace', ws);
+      }
+    } else {
+      const ws = item.raw as WorkspaceVO;
+      handleSelectWorkspace(ws);
+    }
+  } else {
+    emit('selectSession', value);
+  }
+};
+
+const handleBranchedToggle = (index: number, isOpen: boolean) => {
+  const item = branchedMenuItems.value[index];
+  if (item && item.raw && item.raw.id) {
+    expandedWorkspaces.value[String(item.raw.id)] = isOpen;
+  }
+};
+
 const handleClickOutside = () => {
   if (activeMenuWorkspaceId.value) {
     activeMenuWorkspaceId.value = null;
@@ -222,7 +307,7 @@ onBeforeUnmount(() => {
       'h-full flex flex-col transition-all duration-300 z-30 select-none border-r',
       isCollapsed ? 'w-16' : 'w-64',
       isDark
-        ? 'bg-[#0f141f] border-gray-800 text-gray-200'
+        ? 'bg-black border-white/[0.06] text-zinc-100'
         : 'bg-[#fafafa] border-gray-200/80 text-gray-800'
     ]"
   >
@@ -232,7 +317,7 @@ onBeforeUnmount(() => {
         <!-- LingXi Logo Icon -->
         <img :src="logoUrl" alt="LingXi" class="h-7 w-7 object-contain drop-shadow-sm" />
         <!-- LingXi Text -->
-        <span class="font-bold text-sm tracking-tight text-gray-900 dark:text-white">
+        <span class="font-bold text-sm tracking-tight text-gray-900 dark:text-zinc-100">
           LingXi
         </span>
       
@@ -243,7 +328,10 @@ onBeforeUnmount(() => {
         @click="emit('toggleCollapse')"
         title="收起/展开侧边栏"
         :class="[
-          'p-1.5 rounded-lg hover:bg-gray-200/70 dark:hover:bg-gray-800 transition-colors text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 cursor-pointer',
+          'p-1.5 rounded-lg transition-colors cursor-pointer',
+          isDark
+            ? 'hover:bg-white/[0.06] text-zinc-400 hover:text-zinc-100'
+            : 'hover:bg-gray-200/70 text-gray-500 hover:text-gray-900',
           isCollapsed ? 'mx-auto' : ''
         ]"
       >
@@ -263,7 +351,7 @@ onBeforeUnmount(() => {
         :class="[
           'w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs sm:text-sm font-medium transition-all shadow-xs cursor-pointer',
           isDark
-            ? 'bg-[#151b29] border-gray-700/80 hover:bg-[#1c2436] text-gray-200 hover:border-gray-600'
+            ? 'bg-zinc-900/90 border-white/[0.08] hover:bg-zinc-850 hover:border-white/[0.16] text-zinc-200 hover:text-white'
             : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-white text-gray-800'
         ]"
         title="新建对话"
@@ -282,7 +370,7 @@ onBeforeUnmount(() => {
         :class="[
           'w-10 h-10 mx-auto flex items-center justify-center rounded-xl border transition-all shadow-xs cursor-pointer',
           isDark
-            ? 'bg-[#151b29] border-gray-700/80 hover:bg-[#1c2436] text-gray-200'
+            ? 'bg-zinc-900/90 border-white/[0.08] hover:bg-zinc-850 hover:border-white/[0.16] text-zinc-200 hover:text-white'
             : 'bg-white border-gray-200 hover:border-gray-300 text-gray-800'
         ]"
         title="新建会话"
@@ -294,15 +382,17 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Workspaces Section Header -->
-    <div v-if="!isCollapsed" class="px-4 pt-3 pb-1 flex items-center justify-between shrink-0 text-gray-500 dark:text-gray-400">
+    <div v-if="!isCollapsed" class="px-4 pt-3 pb-1 flex items-center justify-between shrink-0 text-gray-500 dark:text-zinc-400">
       <span class="font-medium text-xs tracking-tight">工作区</span>
       <div class="flex items-center gap-1">
         <!-- Search / Filter Icon -->
         <button
           @click="isFilterOpen = !isFilterOpen"
           :class="[
-            'p-1 rounded-md hover:bg-gray-200/70 dark:hover:bg-gray-800 transition-colors cursor-pointer',
-            isFilterOpen ? 'text-blue-500' : 'text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+            'p-1 rounded-md transition-colors cursor-pointer',
+            isFilterOpen
+              ? 'text-blue-500'
+              : 'text-gray-400 hover:text-gray-700 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-gray-200/70 dark:hover:bg-white/[0.06]'
           ]"
           title="搜索工作区"
         >
@@ -314,7 +404,7 @@ onBeforeUnmount(() => {
         <!-- Sort / Switch Icon -->
         <button
           @click="isSortAsc = !isSortAsc"
-          class="p-1 rounded-md text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200/70 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+          class="p-1 rounded-md text-gray-400 hover:text-gray-700 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-gray-200/70 dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
           :title="isSortAsc ? '默认排序' : '按名称字母排序'"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -325,7 +415,7 @@ onBeforeUnmount(() => {
         <!-- Add Workspace Icon -->
         <button
           @click="emit('newWorkspace')"
-          class="p-1 rounded-md text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200/70 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+          class="p-1 rounded-md text-gray-400 hover:text-gray-700 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-gray-200/70 dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
           title="新建工作区"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -336,14 +426,16 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Filter Search Input Box -->
-    <div v-if="!isCollapsed && isFilterOpen" class="px-3 pb-1.5 shrink-0">
-      <input
-        v-model="filterQuery"
-        placeholder="搜索工作区名称..."
-        class="w-full px-2.5 py-1 text-xs rounded-lg border outline-none bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:border-blue-500 text-gray-800 dark:text-gray-200"
-        autoFocus
-      />
-    </div>
+    <CollapseTransition>
+      <div v-if="!isCollapsed && isFilterOpen" class="px-3 pb-1.5 shrink-0">
+        <input
+          v-model="filterQuery"
+          placeholder="搜索工作区名称..."
+          class="w-full px-2.5 py-1 text-xs rounded-lg border outline-none bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-800 focus:border-blue-500 dark:focus:border-zinc-600 text-gray-800 dark:text-zinc-200 placeholder:text-gray-400 dark:placeholder:text-zinc-500"
+          autoFocus
+        />
+      </div>
+    </CollapseTransition>
 
     <!-- Workspaces List (Scrollable Area) -->
     <div class="flex-1 overflow-y-auto px-2 py-1 space-y-0.5 scrollbar-thin">
@@ -369,189 +461,347 @@ onBeforeUnmount(() => {
 
       <!-- Expanded Workspace Tree View -->
       <div v-else class="space-y-0.5">
-        <!-- Empty State if no workspaces: 仅显示提示，不显示添加按钮 -->
-        <div v-if="projectGroups.length === 0" class="px-2 py-6 text-center text-xs text-gray-400 dark:text-gray-500 select-none">
+        <!-- Empty State if no workspaces and no unassigned sessions -->
+        <div v-if="projectGroups.length === 0 && unassignedSessions.length === 0" class="px-2 py-6 text-center text-xs text-gray-400 dark:text-gray-500 select-none">
           暂未指定工作区
         </div>
 
-        <!-- Each Workspace Group Item -->
-        <div
-          v-for="group in projectGroups"
-          :key="group.workspace.id"
-          class="rounded-lg transition-colors"
-        >
-          <!-- Workspace Row (Folder Icon + Name) -->
-          <div
-            @click="handleSelectWorkspace(group.workspace)"
-            :class="[
-              'group relative flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
-              isWorkspaceActive(group.workspace)
-                ? (isDark ? 'bg-gray-800/80 text-white font-medium' : 'bg-gray-200/80 text-gray-900 font-medium')
-                : (isDark ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/40' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100')
-            ]"
+        <!-- Dark Mode: 使用 BranchedMenu 树形分支结构渲染 -->
+        <div v-else-if="isDark" class="py-1">
+          <BranchedMenu
+            :items="branchedMenuItems"
+            :active="activeSessionId || ''"
+            :openIndices="branchedOpenIndices"
+            color="#a1a1aa"
+            accentColor="#38bdf8"
+            lineColor="rgba(255, 255, 255, 0.12)"
+            :lineWidth="1.2"
+            :rowHeight="34"
+            :indent="36"
+            :trunk="14"
+            :radius="8"
+            :fontSize="13"
+            className="w-full"
+            @select="handleBranchedSelect"
+            @toggle="handleBranchedToggle"
           >
-            <!-- Left: Folder Icon + Workspace Name -->
-            <div class="flex items-center gap-2 truncate min-w-0 pr-1" @click.stop="toggleWorkspaceExpand(group.workspace.id!)">
+            <!-- Header Prefix: 文件夹图标 -->
+            <template #header-prefix="{ item }">
               <svg
-                class="w-4 h-4 shrink-0 transition-colors"
-                :class="isWorkspaceActive(group.workspace) ? 'text-blue-500' : 'text-gray-400 dark:text-gray-500'"
+                class="w-3.5 h-3.5 shrink-0 transition-colors"
+                :class="item.raw && isWorkspaceActive(item.raw) ? 'text-zinc-100' : 'text-zinc-500'"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
               >
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
               </svg>
-              <span class="truncate">{{ group.workspace.name || group.workspace.workDir }}</span>
-            </div>
+            </template>
 
-            <!-- Right: Three Dots Menu ⋮ and New Chat + -->
-            <div class="flex items-center gap-1 shrink-0">
-              <!-- Three Dots Context Menu ⋮ -->
-              <div class="relative">
+            <!-- Header Label: 标题 -->
+            <template #header-label="{ item }">
+              <span
+                class="truncate text-xs tracking-wide"
+                :class="item.raw && isWorkspaceActive(item.raw) ? 'text-white font-medium' : ''"
+              >
+                {{ item.label }}
+              </span>
+            </template>
+
+            <!-- Header Actions: 工作区操作与新建会话 -->
+            <template #header-actions="{ item }">
+              <div v-if="item.raw" class="flex items-center gap-1 shrink-0">
+                <div class="relative">
+                  <button
+                    @click="toggleProjectMenu(item.raw.id, $event)"
+                    class="p-0.5 rounded opacity-0 group-hover/head:opacity-80 hover:opacity-100 hover:text-zinc-100 transition cursor-pointer"
+                    title="工作区操作"
+                  >
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                    </svg>
+                  </button>
+
+                  <!-- Context Menu Floating Panel -->
+                  <Transition
+                    enter-active-class="transition duration-150 ease-out"
+                    enter-from-class="opacity-0 scale-95 translate-y-1"
+                    enter-to-class="opacity-100 scale-100 translate-y-0"
+                    leave-active-class="transition duration-100 ease-in"
+                    leave-from-class="opacity-100 scale-100 translate-y-0"
+                    leave-to-class="opacity-0 scale-95 translate-y-1"
+                  >
+                    <div
+                      v-if="activeMenuWorkspaceId === String(item.raw.id)"
+                      class="absolute right-0 top-6 w-32 py-1 rounded-xl shadow-2xl border border-white/[0.08] bg-zinc-900 text-zinc-200 z-50 text-xs backdrop-blur-md"
+                    >
+                      <button
+                        @click="handleDeleteProject(item.raw, $event)"
+                        class="w-full text-left px-3 py-1.5 hover:bg-red-500/10 text-red-400 transition-colors flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        <span>删除工作区</span>
+                      </button>
+                    </div>
+                  </Transition>
+                </div>
+
                 <button
-                  @click="toggleProjectMenu(group.workspace.id!, $event)"
+                  @click="handleNewSessionInProject(item.raw, $event)"
+                  class="p-0.5 rounded opacity-0 group-hover/head:opacity-80 hover:opacity-100 hover:text-white transition cursor-pointer"
+                  title="在该工作区新建会话"
+                >
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+              </div>
+            </template>
+
+            <!-- Item Label: 会话标题或行内编辑器 -->
+            <template #item-label="{ item }">
+              <div class="flex-1 truncate min-w-0 pr-1">
+                <input
+                  v-if="editingSessionId === item.value"
+                  v-model="editingTitle"
+                  @blur="saveEdit(item.raw, $event)"
+                  @keyup.enter="saveEdit(item.raw, $event)"
+                  @click.stop
+                  class="w-full bg-transparent border-b border-white/50 outline-none text-xs px-0.5 text-inherit"
+                  autoFocus
+                />
+                <span v-else class="block truncate" :title="item.label">{{ item.label }}</span>
+              </div>
+            </template>
+
+            <!-- Item Actions: 重命名与删除 -->
+            <template #item-actions="{ item }">
+              <div
+                v-if="editingSessionId !== item.value"
+                class="hidden group-hover/kid:flex items-center gap-1 opacity-70 shrink-0"
+                @click.stop
+              >
+                <button
+                  @click.stop="startEdit(item.raw, $event)"
+                  class="p-0.5 hover:text-white transition cursor-pointer"
+                  title="重命名"
+                >
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+                <button
+                  @click.stop="emit('deleteSession', item.value)"
+                  class="p-0.5 hover:text-red-400 transition cursor-pointer"
+                  title="删除"
+                >
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
+            </template>
+          </BranchedMenu>
+        </div>
+
+        <!-- Light Mode: 既有会话列表渲染 -->
+        <div v-else class="space-y-0.5">
+          <!-- Each Workspace Group Item -->
+          <div
+            v-for="group in projectGroups"
+            :key="group.workspace.id"
+            class="rounded-lg transition-colors"
+          >
+            <!-- Workspace Row (Folder Icon + Name) -->
+            <div
+              @click="handleSelectWorkspace(group.workspace)"
+              :class="[
+                'group relative flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
+                isWorkspaceActive(group.workspace)
+                  ? 'bg-gray-200/80 text-gray-900 font-medium'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
+              ]"
+            >
+              <!-- Left: Chevron Indicator + Folder Icon + Workspace Name -->
+              <div class="flex items-center gap-1.5 truncate min-w-0 pr-1" @click.stop="toggleWorkspaceExpand(group.workspace.id!)">
+                <svg
+                  class="w-3 h-3 shrink-0 transition-transform duration-200 text-gray-400 group-hover:text-gray-600"
+                  :class="expandedWorkspaces[String(group.workspace.id)] ? 'rotate-90' : 'rotate-0'"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                </svg>
+                <svg
+                  class="w-4 h-4 shrink-0 transition-colors text-gray-400 group-hover:text-gray-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                </svg>
+                <span class="truncate">{{ group.workspace.name || group.workspace.workDir }}</span>
+              </div>
+
+              <!-- Right: Three Dots Menu ⋮ and New Chat + -->
+              <div class="flex items-center gap-1 shrink-0">
+                <!-- Three Dots Context Menu ⋮ -->
+                <div class="relative">
+                  <button
+                    @click="toggleProjectMenu(group.workspace.id!, $event)"
+                    :class="[
+                      'p-0.5 rounded transition-opacity cursor-pointer',
+                      isWorkspaceActive(group.workspace) ? 'opacity-80 hover:opacity-100' : 'opacity-0 group-hover:opacity-80 hover:opacity-100',
+                      'hover:text-gray-900'
+                    ]"
+                    title="工作区操作"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                    </svg>
+                  </button>
+
+                  <!-- Context Menu Floating Panel -->
+                  <Transition
+                    enter-active-class="transition duration-150 ease-out"
+                    enter-from-class="opacity-0 scale-95 translate-y-1"
+                    enter-to-class="opacity-100 scale-100 translate-y-0"
+                    leave-active-class="transition duration-100 ease-in"
+                    leave-from-class="opacity-100 scale-100 translate-y-0"
+                    leave-to-class="opacity-0 scale-95 translate-y-1"
+                  >
+                    <div
+                      v-if="activeMenuWorkspaceId === String(group.workspace.id)"
+                      class="absolute right-0 top-6 w-32 py-1 rounded-xl shadow-xl border z-50 text-xs bg-white border-gray-200 text-gray-700 backdrop-blur-md"
+                    >
+                      <button
+                        @click="handleDeleteProject(group.workspace, $event)"
+                        class="w-full text-left px-3 py-1.5 hover:bg-red-500/10 text-red-500 transition-colors flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        <span>删除工作区</span>
+                      </button>
+                    </div>
+                  </Transition>
+                </div>
+
+                <!-- + New Chat in this Workspace -->
+                <button
+                  @click="handleNewSessionInProject(group.workspace, $event)"
                   :class="[
                     'p-0.5 rounded transition-opacity cursor-pointer',
                     isWorkspaceActive(group.workspace) ? 'opacity-80 hover:opacity-100' : 'opacity-0 group-hover:opacity-80 hover:opacity-100',
-                    'hover:text-gray-900 dark:hover:text-gray-100'
+                    'hover:text-blue-500'
                   ]"
-                  title="工作区操作"
+                  title="在该工作区新建会话"
                 >
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                   </svg>
                 </button>
+              </div>
+            </div>
 
-                <!-- Context Menu Floating Panel -->
-                <div
-                  v-if="activeMenuWorkspaceId === String(group.workspace.id)"
-                  :class="[
-                    'absolute right-0 top-6 w-32 py-1 rounded-xl shadow-xl border z-50 text-xs',
-                    isDark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-700'
-                  ]"
-                >
-                  <button
-                    @click="handleDeleteProject(group.workspace, $event)"
-                    class="w-full text-left px-3 py-1.5 hover:bg-red-500/10 text-red-500 transition-colors flex items-center gap-1.5 cursor-pointer"
+            <!-- Sessions under this Workspace -->
+            <CollapseTransition>
+              <div v-if="expandedWorkspaces[String(group.workspace.id)] && group.sessions.length > 0">
+                <div class="pl-4 pr-1 py-0.5 space-y-0.5">
+                  <div
+                    v-for="session in group.sessions"
+                    :key="session.id"
+                    @click="emit('selectSession', session.id)"
+                    :class="[
+                      'group/session relative flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
+                      activeSessionId === session.id
+                        ? 'bg-blue-50 text-blue-600 font-medium'
+                        : 'hover:bg-gray-100/70 text-gray-600 hover:text-gray-900'
+                    ]"
                   >
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    <!-- Chat Bubble Icon -->
+                    <svg class="w-3.5 h-3.5 shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                     </svg>
-                    <span>删除工作区</span>
-                  </button>
+
+                    <!-- Session Title or Inline Editor -->
+                    <div class="flex-1 truncate">
+                      <input
+                        v-if="editingSessionId === session.id"
+                        v-model="editingTitle"
+                        @blur="saveEdit(session, $event)"
+                        @keyup.enter="saveEdit(session, $event)"
+                        class="w-full bg-transparent border-b border-blue-500 outline-none text-xs px-0.5 text-inherit"
+                        autoFocus
+                      />
+                      <span v-else class="block truncate" :title="session.title || '新对话'">{{ session.title || '新对话' }}</span>
+                    </div>
+
+                    <!-- Action Controls: Rename & Delete -->
+                    <div v-if="editingSessionId !== session.id" class="hidden group-hover/session:flex items-center gap-1 opacity-70 shrink-0">
+                      <button @click="startEdit(session, $event)" class="p-0.5 hover:text-blue-500 transition cursor-pointer" title="重命名">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+                      <button @click.stop="emit('deleteSession', session.id)" class="p-0.5 hover:text-red-500 transition cursor-pointer" title="删除">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
+            </CollapseTransition>
+          </div>
 
-              <!-- + New Chat in this Workspace -->
-              <button
-                @click="handleNewSessionInProject(group.workspace, $event)"
+          <!-- Unassigned Sessions Section (if any) -->
+          <div v-if="unassignedSessions.length > 0" class="pt-2">
+            <div class="px-2 py-1 text-[11px] font-medium text-gray-400 tracking-wider">
+              历史对话
+            </div>
+            <div class="space-y-0.5">
+              <div
+                v-for="session in unassignedSessions"
+                :key="session.id"
+                @click="emit('selectSession', session.id)"
                 :class="[
-                  'p-0.5 rounded transition-opacity cursor-pointer',
-                  isWorkspaceActive(group.workspace) ? 'opacity-80 hover:opacity-100' : 'opacity-0 group-hover:opacity-80 hover:opacity-100',
-                  'hover:text-blue-500'
+                  'group/session relative flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
+                  activeSessionId === session.id
+                    ? 'bg-blue-50 text-blue-600 font-medium'
+                    : 'hover:bg-gray-100/70 text-gray-600 hover:text-gray-900'
                 ]"
-                title="在该工作区新建会话"
               >
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                <svg class="w-3.5 h-3.5 shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                 </svg>
-              </button>
-            </div>
-          </div>
-
-          <!-- Sessions under this Workspace -->
-          <div
-            v-if="expandedWorkspaces[String(group.workspace.id)] && group.sessions.length > 0"
-            class="pl-4 pr-1 py-0.5 space-y-0.5"
-          >
-            <div
-              v-for="session in group.sessions"
-              :key="session.id"
-              @click="emit('selectSession', session.id)"
-              :class="[
-                'group/session relative flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
-                activeSessionId === session.id
-                  ? (isDark ? 'bg-blue-600/20 text-blue-400 font-medium' : 'bg-blue-50 text-blue-600 font-medium')
-                  : (isDark ? 'hover:bg-gray-800/50 text-gray-400 hover:text-gray-200' : 'hover:bg-gray-100/70 text-gray-600 hover:text-gray-900')
-              ]"
-            >
-              <!-- Chat Bubble Icon -->
-              <svg class="w-3.5 h-3.5 shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-              </svg>
-
-              <!-- Session Title or Inline Editor -->
-              <div class="flex-1 truncate">
-                <input
-                  v-if="editingSessionId === session.id"
-                  v-model="editingTitle"
-                  @blur="saveEdit(session, $event)"
-                  @keyup.enter="saveEdit(session, $event)"
-                  class="w-full bg-transparent border-b border-blue-500 outline-none text-xs px-0.5 text-inherit"
-                  autoFocus
-                />
-                <span v-else class="block truncate" :title="session.title || '新对话'">{{ session.title || '新对话' }}</span>
-              </div>
-
-              <!-- Action Controls: Rename & Delete -->
-              <div v-if="editingSessionId !== session.id" class="hidden group-hover/session:flex items-center gap-1 opacity-70 shrink-0">
-                <button @click="startEdit(session, $event)" class="p-0.5 hover:text-blue-500 transition" title="重命名">
-                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </button>
-                <button @click.stop="emit('deleteSession', session.id)" class="p-0.5 hover:text-red-500 transition" title="删除">
-                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Unassigned Sessions Section (if any) -->
-        <div v-if="unassignedSessions.length > 0" class="pt-2">
-          <div class="px-2 py-1 text-[11px] font-medium text-gray-400 tracking-wider">
-            历史对话
-          </div>
-          <div class="space-y-0.5">
-            <div
-              v-for="session in unassignedSessions"
-              :key="session.id"
-              @click="emit('selectSession', session.id)"
-              :class="[
-                'group/session relative flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
-                activeSessionId === session.id
-                  ? (isDark ? 'bg-blue-600/20 text-blue-400 font-medium' : 'bg-blue-50 text-blue-600 font-medium')
-                  : (isDark ? 'hover:bg-gray-800/50 text-gray-400 hover:text-gray-200' : 'hover:bg-gray-100/70 text-gray-600 hover:text-gray-900')
-              ]"
-            >
-              <svg class="w-3.5 h-3.5 shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-              </svg>
-              <div class="flex-1 truncate">
-                <input
-                  v-if="editingSessionId === session.id"
-                  v-model="editingTitle"
-                  @blur="saveEdit(session, $event)"
-                  @keyup.enter="saveEdit(session, $event)"
-                  class="w-full bg-transparent border-b border-blue-500 outline-none text-xs px-0.5 text-inherit"
-                  autoFocus
-                />
-                <span v-else class="block truncate">{{ session.title || '新对话' }}</span>
-              </div>
-              <div v-if="editingSessionId !== session.id" class="hidden group-hover/session:flex items-center gap-1 opacity-70 shrink-0">
-                <button @click="startEdit(session, $event)" class="p-0.5 hover:text-blue-500 transition" title="重命名">
-                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </button>
-                <button @click.stop="emit('deleteSession', session.id)" class="p-0.5 hover:text-red-500 transition" title="删除">
-                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
+                <div class="flex-1 truncate">
+                  <input
+                    v-if="editingSessionId === session.id"
+                    v-model="editingTitle"
+                    @blur="saveEdit(session, $event)"
+                    @keyup.enter="saveEdit(session, $event)"
+                    class="w-full bg-transparent border-b border-blue-500 outline-none text-xs px-0.5 text-inherit"
+                    autoFocus
+                  />
+                  <span v-else class="block truncate">{{ session.title || '新对话' }}</span>
+                </div>
+                <div v-if="editingSessionId !== session.id" class="hidden group-hover/session:flex items-center gap-1 opacity-70 shrink-0">
+                  <button @click="startEdit(session, $event)" class="p-0.5 hover:text-blue-500 transition cursor-pointer" title="重命名">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                  <button @click.stop="emit('deleteSession', session.id)" class="p-0.5 hover:text-red-500 transition cursor-pointer" title="删除">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -560,14 +810,14 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Bottom Left Settings Bar (Image style) -->
-    <div :class="['p-3 border-t shrink-0', isDark ? 'border-gray-800' : 'border-gray-200/80']">
+    <div :class="['p-3 border-t shrink-0', isDark ? 'border-white/[0.06]' : 'border-gray-200/80']">
       <div :class="['flex items-center', isCollapsed ? 'justify-center' : 'justify-between']">
         <!-- Settings Button (⚙ 设置) -->
         <button
           @click="emit('openSettings')"
           :class="[
-            'flex items-center gap-2 text-xs font-medium transition-colors cursor-pointer py-1 px-1.5 rounded-lg',
-            isDark ? 'text-gray-400 hover:text-gray-100 hover:bg-gray-800' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/60'
+            'flex items-center gap-2 text-xs font-medium transition-colors cursor-pointer py-1.5 px-2 rounded-lg',
+            isDark ? 'text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.05]' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/60'
           ]"
           title="系统设置"
         >

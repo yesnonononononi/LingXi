@@ -6,17 +6,7 @@ import lombok.Getter;
 
 import java.time.Instant;
 
-/**
- * 工具调用聚合根（充血状态机）。
- *
- * <p>它是 {@code tool_call} 表的领域投影，也是**全部工具调用**（人工在环的 {@link ToolCallType#PROMISE}
- * 与框架直通的 {@link ToolCallType#EXECUTE}）状态与卡片载荷的唯一权威源。</p>
- *
- * <p><b>状态机约定：</b>生命周期只有 {@code pending → in_progress → completed}，
- * {@code completed} 为终态、不可再变；所有流转都收敛到 {@link #transferTo(ToolCallStatus)}
- * 这一个入口，外部不得直接改 {@code status}。结论 / 异常一律写进
- * {@code rawOutput}（{@code outcome}），不新增失败 / 取消状态。</p>
- */
+/** 工具状态与结论的权威对象；准备完成只允许推进一次，终态不回退。 */
 @Getter
 @Builder(toBuilder = true)
 @AllArgsConstructor
@@ -37,12 +27,7 @@ public class ToolCall {
     /** 原始工具名（仅展示，不作卡片判别依据）。 */
     private String toolName;
 
-    /**
-     * 调用类型。
-     *
-     * <p>非 {@code final}：登记器以「最后写入者胜出」策略把 {@link ToolCallType#EXECUTE} 占位
-     * 升级为 {@link ToolCallType#PROMISE}（见 {@link #promoteToPromise}），因此允许改型。</p>
-     */
+    /** 执行占位可升级为互动，已登记的互动不能再次覆盖。 */
     private ToolCallType type;
 
     @Builder.Default
@@ -54,7 +39,7 @@ public class ToolCall {
     /** 多态内容块 JSON：{@code {kind:"PLAN|CHOICE|COMMAND", ...}}。 */
     private String content;
 
-    /** 输入载荷 JSON：{@code {"args":<模型args>,"answers":<用户答复>}}。 */
+    /** 输入载荷 JSON：{@code {"args":<模型args>,"answer":<用户答复>}}。 */
     private String rawInput;
 
     /** 输出载荷 JSON：{@code {"outcome":...,"stdout":...,"exitCode":...}}。 */
@@ -62,6 +47,50 @@ public class ToolCall {
 
     /** 扩展元数据 JSON（{@code _meta}）。 */
     private String metaData;
+
+    @Builder.Default
+    private Long version = 1L;
+
+    /** 落定本结论的决策命令 ID；决策重试据此返回首次结论而不是重新执行。 */
+    private String decisionCommandId;
+
+    /** 决策请求摘要；同 commandId 但内容不同即拒绝，不会把后一次意图当作成功覆盖。 */
+    private String decisionDigest;
+
+    public void acceptPersistedVersion(long nextVersion) {
+        this.version = nextVersion;
+    }
+
+    /**
+     * 记录决策命令身份。
+     *
+     * <p><b>刻意不与 {@link #complete} 合并成一个入口</b>：命令审批的 T1 要先写
+     * 「决策已接受 + in_progress」再执行外部命令，此时还没有结论；T2 才补结论。
+     * 两段各自赋值、最终同事务落库，决策元信息因此总能与会话里的实际结论对齐。</p>
+     *
+     * <p><b>同 commandId 重复调用是幂等的</b>：重试返回首次结论，不改写元信息。</p>
+     *
+     * @param commandId 决策命令 ID
+     * @param digest    请求摘要，用于判定「同 ID 不同内容」
+     */
+    public void attachDecision(String commandId, String digest) {
+        if (isCompleted() && commandId != null && commandId.equals(this.decisionCommandId)) {
+            return;
+        }
+        this.decisionCommandId = commandId;
+        this.decisionDigest = digest;
+        this.updatedAt = Instant.now();
+    }
+
+    /** 该结论是否由指定命令落定；用于「同 commandId 重试」判定。 */
+    public boolean isDecidedBy(String commandId) {
+        return commandId != null && commandId.equals(this.decisionCommandId);
+    }
+
+    public void bindSessionMessage(Long messageId) {
+        this.sessionMessageId = messageId;
+        this.updatedAt = Instant.now();
+    }
 
     private final Instant createdAt;
 
@@ -81,6 +110,11 @@ public class ToolCall {
         if (status == next) {
             return false;   // 幂等 no-op
         }
+        if (next == ToolCallStatus.PREPARING
+                || (next == ToolCallStatus.PENDING && status != ToolCallStatus.PREPARING)
+                || (next == ToolCallStatus.IN_PROGRESS && status != ToolCallStatus.PENDING)) {
+            return false;
+        }
         this.status = next;
         this.updatedAt = Instant.now();
         return true;
@@ -89,6 +123,15 @@ public class ToolCall {
     /** 放行执行：pending → in_progress（命令批准后进入执行中）。 */
     public boolean markInProgress() {
         return transferTo(ToolCallStatus.IN_PROGRESS);
+    }
+
+    public boolean markReady() {
+        return type == ToolCallType.PROMISE && status == ToolCallStatus.PREPARING
+                && transferTo(ToolCallStatus.PENDING);
+    }
+
+    public boolean isUnresolved() {
+        return type == ToolCallType.PROMISE && status != ToolCallStatus.COMPLETED;
     }
 
     /**
@@ -111,20 +154,27 @@ public class ToolCall {
 
     /** 结论落定但**不**改状态（用于「先写结论、再执行命令」的两段式命令审批）。 */
     public void attachOutput(String rawOutputJson) {
+        if (isCompleted()) return;
         this.rawOutput = rawOutputJson;
         this.updatedAt = Instant.now();
     }
 
     /**
-     * 登记器 UPSERT 升级入口：命中已有的 EXECUTE 占位行时升级为 PROMISE / pending，
-     * 并补齐卡片载荷（最后写入者胜出）。已是 completed 的行不降级。
+     * 只升级未完成的执行占位，已有互动不能再次登记或降级。
+     *
+     * <p><b>为什么这里可以绕过 {@link #transferTo}</b>：本方法不是「推进生命周期」，
+     * 而是「重新分类」—— {@code ToolCallRegistrarImpl#markExecuteStarted} 先按普通工具
+     * 落一行 {@code EXECUTE + IN_PROGRESS} 占位，模型随后用同一个 call id 发起
+     * {@code create_plan} / {@code require_choice} 时，靠这次重分类把它转成待决卡片。
+     * {@code IN_PROGRESS} 在这里是「工具已被框架调度」的记录，不是「用户已批准，正在执行」，
+     * 因此打回 {@code PREPARING} 是正确的，且 {@code transferTo} 本就拒绝该迁移。</p>
      */
     public void promoteToPromise(ToolCallType type, String toolName, String title, String content, String rawInput) {
-        if (status == ToolCallStatus.COMPLETED) {
+        if (status == ToolCallStatus.COMPLETED || this.type == ToolCallType.PROMISE) {
             return;
         }
         this.type = type;
-        this.status = ToolCallStatus.PENDING;
+        this.status = ToolCallStatus.PREPARING;
         if (toolName != null) {
             this.toolName = toolName;
         }
@@ -140,7 +190,7 @@ public class ToolCall {
         this.updatedAt = Instant.now();
     }
 
-    /** 是否仍在等待用户决策。 */
+    /** 仅表示未决槽位，DELEGATION 不开放人工操作。 */
     public boolean isPending() {
         return status == ToolCallStatus.PENDING;
     }
@@ -150,7 +200,7 @@ public class ToolCall {
         return status == ToolCallStatus.COMPLETED;
     }
 
-    /** 前端唯一可审批判定：{@code type == PROMISE && status == pending}。 */
+    /** 仅判断槽位状态；人工可操作性还要核对形态与执行是否退出。 */
     public boolean isApprovalPending() {
         return type == ToolCallType.PROMISE && status == ToolCallStatus.PENDING;
     }

@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Builder;
 import lombok.Getter;
+import lombok.extern.jackson.Jacksonized;
 
 import java.time.Instant;
 
@@ -23,7 +24,8 @@ import java.time.Instant;
  *   <li>{@code max_output} 用 INT——框架侧 record 声明为 {@code int}。</li>
  * </ul>
  */
-@Builder
+@Builder(toBuilder = true)
+@Jacksonized
 @Getter
 @TableName("mcp")
 public class McpPO {

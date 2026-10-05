@@ -20,9 +20,9 @@ import java.util.Map;
 public class ExecutionIdentity {
 
     /** execution.status 取值，与框架 ExecutionState 的序号一一对应。 */
-    private static final int STATUS_CREATED = 0;
-    private static final int STATUS_RUNNING = 1;
-    private static final int STATUS_SUSPENDED = 2;
+    private static final int STATUS_CREATED = ExecutionStatusCodes.CREATED;
+    private static final int STATUS_RUNNING = ExecutionStatusCodes.RUNNING;
+    private static final int STATUS_SUSPENDED = ExecutionStatusCodes.SUSPENDED;
 
     private final ExecutionMapper executionMapper;
     private final SessionRepository sessionRepository;
@@ -48,14 +48,32 @@ public class ExecutionIdentity {
      * （{@code root_session_id == 0} 表示自身即根）。供 T06 的 SSE 根会话路由使用。
      */
     public long rootSessionId(String executionId) {
-        return rootSessionIdOfSession(sessionId(executionId));
+        return resolveRootSessionId(sessionId(executionId));
     }
 
     /** 解析会话的根会话 id，无需执行标识（子会话回指根，根会话返回自身）。 */
-    public long rootSessionIdOfSession(long sessionId) {
+    public long resolveRootSessionId(long sessionId) {
         Session session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new IllegalStateException("Unknown session: " + sessionId));
         return session.isSubSession() ? session.getRootSessionId() : sessionId;
+    }
+
+    /**
+     * 同 {@link #resolveRootSessionId(long)}，但会话查不到时返回 {@code null} 而不抛异常。
+     *
+     * <p><b>两种失败语义并存是有意的</b>：用户显式点名的入口（订阅自己的会话）
+     * 查不到就是业务失败，必须报错；而投影与自动恢复这类**旁路**动作查不到只说明
+     * 实体尚未落库或已被清理，静默跳过即可，抛异常会把「开始一次模型调用」变成 500。</p>
+     */
+    public Long resolveRootSessionIdOrNull(Long sessionId) {
+        if (sessionId == null) {
+            return null;
+        }
+        Session session = sessionRepository.findById(sessionId).orElse(null);
+        if (session == null) {
+            return null;
+        }
+        return session.isSubSession() ? session.getRootSessionId() : session.getId();
     }
 
     /**

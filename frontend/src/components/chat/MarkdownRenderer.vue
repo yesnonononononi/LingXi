@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { renderMarkdown } from '../../utils/markdown';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
+import { useTheme } from '../../composables/useTheme';
 
 const props = withDefaults(
   defineProps<{
@@ -11,10 +12,13 @@ const props = withDefaults(
   }>(),
   {
     content: '',
-    isDark: true,
+    isDark: undefined,
     isThinking: false
   }
 );
+
+const { isDark: globalIsDark } = useTheme();
+const isDark = computed(() => props.isDark ?? globalIsDark.value);
 
 const renderedHtml = computed(() => {
   return renderMarkdown(props.content || '');
@@ -51,9 +55,10 @@ const handleContainerClick = async (event: MouseEvent) => {
 
 <template>
   <div
-    class="markdown-container select-text"
+    class="markdown-container markdown-stream-flow select-text"
     :class="[
-      props.isDark ? 'text-gray-100' : 'text-gray-800'
+      isDark ? 'text-zinc-100' : 'text-gray-800',
+      { 'is-streaming': props.isThinking }
     ]"
     @click="handleContainerClick"
   >

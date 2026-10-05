@@ -8,8 +8,8 @@ defineProps<{
   <div class="space-y-3.5 text-xs">
     <!-- 用户名 -->
     <div class="flex items-center justify-between py-1.5">
-      <span class="text-gray-800 dark:text-gray-200">用户名</span>
-      <div class="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
+      <span class="text-gray-800 dark:text-zinc-200 dark:text-glow-subtle">用户名</span>
+      <div class="flex items-center gap-1.5 text-gray-500 dark:text-zinc-300">
         <span>灵犀用户</span>
         <!-- WeChat Icon -->
         <svg class="w-4 h-4 text-[#07c160] inline shrink-0" viewBox="0 0 24 24" fill="currentColor">
@@ -17,41 +17,41 @@ defineProps<{
         </svg>
       </div>
     </div>
-    <div class="h-px bg-gray-100 dark:bg-gray-800/80"></div>
+    <div class="h-px bg-gray-100 dark:bg-white/10"></div>
 
     <!-- 邮箱 -->
     <div class="flex items-center justify-between py-1.5">
-      <span class="text-gray-800 dark:text-gray-200">邮箱</span>
-      <span class="text-gray-600 dark:text-gray-300">215*****89@qq.com</span>
+      <span class="text-gray-800 dark:text-zinc-200 dark:text-glow-subtle">邮箱</span>
+      <span class="text-gray-600 dark:text-zinc-300">215*****89@qq.com</span>
     </div>
-    <div class="h-px bg-gray-100 dark:bg-gray-800/80"></div>
+    <div class="h-px bg-gray-100 dark:bg-white/10"></div>
 
     <!-- 手机号码 -->
     <div class="flex items-center justify-between py-1.5">
-      <span class="text-gray-800 dark:text-gray-200">手机号码</span>
+      <span class="text-gray-800 dark:text-zinc-200 dark:text-glow-subtle">手机号码</span>
       <div class="flex items-center gap-2">
-        <span class="text-gray-600 dark:text-gray-300">185******27</span>
-        <button class="text-blue-500 hover:text-blue-600 cursor-pointer">变更</button>
+        <span class="text-gray-600 dark:text-zinc-300">185******27</span>
+        <button class="text-cyan-500 dark:text-cyan-400 hover:underline cursor-pointer">变更</button>
       </div>
     </div>
-    <div class="h-px bg-gray-100 dark:bg-gray-800/80"></div>
+    <div class="h-px bg-gray-100 dark:bg-white/10"></div>
 
     <!-- 微信 -->
     <div class="flex items-center justify-between py-1.5">
-      <span class="text-gray-800 dark:text-gray-200">微信</span>
+      <span class="text-gray-800 dark:text-zinc-200 dark:text-glow-subtle">微信</span>
       <div class="flex items-center gap-2">
-        <span class="text-gray-600 dark:text-gray-300">已绑定</span>
-        <button class="text-blue-500 hover:text-blue-600 cursor-pointer">解绑</button>
+        <span class="text-gray-600 dark:text-zinc-300">已绑定</span>
+        <button class="text-cyan-500 dark:text-cyan-400 hover:underline cursor-pointer">解绑</button>
       </div>
     </div>
-    <div class="h-px bg-gray-100 dark:bg-gray-800/80"></div>
+    <div class="h-px bg-gray-100 dark:bg-white/10"></div>
 
     <!-- 未成年人模式 -->
     <div class="flex items-center justify-between py-1.5">
-      <span class="text-gray-800 dark:text-gray-200">未成年人模式</span>
+      <span class="text-gray-800 dark:text-zinc-200 dark:text-glow-subtle">未成年人模式</span>
       <div class="flex items-center gap-2">
-        <span class="text-gray-600 dark:text-gray-300">已关闭</span>
-        <button class="text-blue-500 hover:text-blue-600 cursor-pointer">变更</button>
+        <span class="text-gray-600 dark:text-zinc-300">已关闭</span>
+        <button class="text-cyan-500 dark:text-cyan-400 hover:underline cursor-pointer">变更</button>
       </div>
     </div>
   </div>

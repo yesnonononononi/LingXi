@@ -34,6 +34,7 @@ const proxy = Object.fromEntries(
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: './',
   plugins: [vue()],
   server: {
     port: 5174,

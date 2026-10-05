@@ -47,7 +47,8 @@ public class UserConfigController {
                 request.getAgentId(),
                 request.getType(),
                 request.getMaxTokens(),
-                request.getReasoningEffort()
+                request.getReasoningEffort(),
+                request.getRenderTheme()
         );
     }
 }

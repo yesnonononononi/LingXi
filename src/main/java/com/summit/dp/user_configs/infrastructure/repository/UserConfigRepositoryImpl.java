@@ -1,34 +1,54 @@
 package com.summit.dp.user_configs.infrastructure.repository;
 
-import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.summit.ddd.infrastructure.repository.AbstractRepository;
-import com.summit.dp.user_configs.domain.model.UserConfig;
-import com.summit.dp.user_configs.domain.model.ReasoningEffort;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.summit.ddd.infrastructure.repository.yaml.AbstractYamlRepository;
+import com.summit.ddd.infrastructure.repository.yaml.YamlListStore;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.shared.model.WorkspaceType;
+import com.summit.dp.shared.utils.YamlSerializer;
+import com.summit.dp.user_configs.domain.model.ReasoningEffort;
+import com.summit.dp.user_configs.domain.model.UserConfig;
 import com.summit.dp.user_configs.domain.repository.UserConfigRepository;
 import com.summit.dp.user_configs.infrastructure.persistence.mapper.UserConfigMapper;
 import com.summit.dp.user_configs.infrastructure.persistence.po.UserConfigPO;
-import org.jetbrains.annotations.NotNull;
+
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 
+import java.nio.file.Path;
+import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
 /** UserConfig 仓储实现 */
 @Repository
-public class UserConfigRepositoryImpl extends AbstractRepository<UserConfig, UserConfigPO, Long>
+public class UserConfigRepositoryImpl extends AbstractYamlRepository<UserConfig, UserConfigPO>
         implements UserConfigRepository {
 
-    private final UserConfigMapper mapper;
-
-    public UserConfigRepositoryImpl(UserConfigMapper mapper) {
-        this.mapper = mapper;
+    public UserConfigRepositoryImpl(UserConfigMapper mapper, YamlSerializer serializer,
+                                    @Value("${lingxi.config.user-configs.path:${user.home}/.lingxi/config/user-configs.yaml}") String path) {
+        super(new YamlListStore<>(Path.of(path), serializer.listCodec(new TypeReference<List<UserConfigPO>>() {}),
+                () -> mapper.selectList(null)));
     }
 
     @Override
-    protected @NotNull BaseMapper<UserConfigPO> mapper() {
-        return this.mapper;
+    protected Long resolveId(UserConfigPO po) { return po.getId(); }
+
+    @Override
+    protected UserConfigPO prepareInsert(UserConfigPO po, long id) {
+        if (id != LocalInstance.SETTINGS_ROW_ID) throw new IllegalArgumentException("用户配置 ID 必须为 1");
+        po.setId(id);
+        if (po.getCreateTime() == null) po.setCreateTime(Instant.now());
+        po.setUpdateTime(Instant.now());
+        return po;
+    }
+
+    @Override
+    protected UserConfigPO prepareUpdate(UserConfigPO previous, UserConfigPO replacement) {
+        replacement.setCreateTime(previous.getCreateTime());
+        replacement.setUpdateTime(Instant.now());
+        return replacement;
     }
 
     @Override
@@ -36,6 +56,7 @@ public class UserConfigRepositoryImpl extends AbstractRepository<UserConfig, Use
         if (po == null) {
             return null;
         }
+        String renderTheme = po.getRenderTheme();
 
         return UserConfig.builder()
                 .id(po.getId())
@@ -48,6 +69,7 @@ public class UserConfigRepositoryImpl extends AbstractRepository<UserConfig, Use
                 .maxTokens(po.getMaxTokens())
                 .reasoningEffort(ReasoningEffort.fromValue(po.getReasoningEffort()))
                 .workSpaceConfig(new UserConfig.WorkSpaceConfig(WorkspaceType.fromCode(po.getWorkspaceType())))
+                .renderTheme(renderTheme == null ? null :UserConfig.RenderTheme.valueOf(renderTheme))
                 .createAt(po.getCreateTime())
                 .updateAt(po.getUpdateTime())
                 .build();
@@ -68,10 +90,12 @@ public class UserConfigRepositoryImpl extends AbstractRepository<UserConfig, Use
                 .commandApprovalPolicy(Objects.toString(model.getCommandApprovalPolicy(), null))
                 .accessMode(Objects.toString(model.getAccessMode(), null))
                 .planMaxReminders(model.getPlanMaxReminders())
+                .agentId(model.getAgentId())
                 .modelId(model.getModelId())
                 .maxTokens(model.getMaxTokens())
                 .reasoningEffort(model.getReasoningEffort() == null ? null : model.getReasoningEffort().getValue())
                 .workspaceType(type == null ? null :type.code())
+                .renderTheme(model.getRenderTheme() == null ? null : model.getRenderTheme().name())
                 .createTime(model.getCreateAt())
                 .updateTime(model.getUpdateAt())
                 .build();

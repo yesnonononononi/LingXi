@@ -16,22 +16,22 @@ import {
   TOOL_CATEGORY
 } from '../utils/toolMeta';
 import { parseTimestampOr } from '../utils/time';
-import { routeToSession } from '../views/chat/messageRouter';
 import type { 
   ChatSession, 
   ModelConfig, 
   ChatMessage, 
   SessionVO, 
   WorkspaceVO, 
-  WorkspaceRequest, 
-  AgentStreamEvent,
+  WorkspaceRequest,
   UserConfigVO,
   TeamVO,
   SubSessionVO,
   AgentVO,
   ToolCallVO,
   ChatTurn,
-  SessionMessageVO
+  SessionMessageVO,
+  CommandAcceptanceVO,
+  ToolCallDecisionReceipt
 } from '../types/chat';
 
 /**
@@ -70,185 +70,33 @@ export const chatApi = {
   },
 
   /**
-   * 提交工具调用决策结论并消费恢复执行的事件流。
+   * 提交工具调用决策（v3 JSON 回执，**不建请求级 SSE**）。
    *
-   * 批准/否决/作答后后端恢复被暂停的执行，期间的全部运行时事件（思考、流式正文、工具调用、终态、
-   * 新的 pending 卡片通知）以本方法创建的 assistant 气泡为载体经 onProgress 实时渲染——契约与
-   * sendMessageStream 一致。
+   * <p><b>为什么不再建流</b>：恢复期的实时事实全部由会话级 v3 流下发。请求级 SSE 与会话级流
+   * 会各渲染一遍同一批事件（子会话思考/正文逐字双写）。回执只承诺「决策已落库 + 恢复处置」，
+   * 供调用方控制按钮等待/错误提示；请求失败**不得**擅自改动卡片的业务状态。</p>
    *
-   * 返回值语义：true = 决策已落库且事件流已建立（此后流在后台继续消费直至执行终态）；
-   * false 不会出现——校验失败直接抛错（tool_call/执行不存在、归属不符等），由调用方展示错误。
-   * 本方法只在流建立时 resolve，不等执行完成，调用方可立即更新卡片状态。
-   *
-   * onFinish：恢复执行流到达终态（正常结束或中途异常，abort 除外）时回调一次，
-   * 供调用方做消息级权威对账；abort 场景（用户主动停止/切换会话）不回调。
-   *
-   * @param conversationId 归属会话 id（= session.id），后端据以校验归属并解析根会话订阅 SSE
+   * @param conversationId 归属会话 id（= session.id）
    * @param toolCallId     决策锚点（tool_call.id / 模型 call_id）
+   * @param action         动作判别：APPROVE / REJECT / ANSWER
+   * @param expectedVersion 客户端看到的卡片版本（可空）；与库中不符即冲突
+   * @param commandId      决策命令身份；同 ID 重试不重复提交
    */
   async decideToolCall(
     conversationId: string | number,
     toolCallId: string,
-    approved: boolean,
+    action: 'APPROVE' | 'REJECT' | 'ANSWER',
     text: string,
-    onProgress: (msg: ChatMessage) => void,
-    signal?: AbortSignal,
-    onFinish?: () => void,
-    /**
-     * 会话映射事件 / 子会话事件的路由回调（与 {@link sendMessageStream} 同一契约）。
-     *
-     * <p>恢复期同样会产生子会话事件（子代理运行时事件、待审批卡片、`SUB_AGENT_SESSION_CREATED`
-     * 映射），它们必须由视图层按 sessionId 投递；本方法只负责渲染**本会话（根）**自身的事件。</p>
-     *
-     * <p>归属由第二参**显式**给出，不读共享的归属快照：decide 前置的 abort 已把
-     * `activeStreamOwnerSessionId` 置空，而那份快照有 3 个读取点（被中止原流的 onFinish、
-     * 原流 finally 会清空、路由守卫），跨流复用它会让「对账时机」与「归属是否被清空」都变成竞态。</p>
-     */
-    routeSessionEvent?: (event: AgentStreamEvent, ownerRootSessionId?: string) => boolean,
-    /**
-     * 流真正终局时回调一次（正常结束 / 中途异常 / abort 均含）；建流前校验失败的 reject 路径**不**回调。
-     *
-     * <p>存在理由：本方法在流建立（首个事件）时即 resolve，此后恢复执行的事件循环仍在后台
-     * 消费直至终态。调用方（useChatView 的 decideToolCall provide）依赖 `activeStreamCount > 0`
-     * 压制会话级 SSE 流的防重渲染守卫——若调用方在自己的 finally 里回收计数，守卫会在恢复期
-     * 中途失效，同一批事件被 decide 流与会话级流各渲染一遍（子会话思考/正文逐字双写）。
-     * 因此「活跃流计数」的回收必须挂在本回调上；reject 路径由调用方在 catch 里自行回收。</p>
-     */
-    onSettled?: () => void
-  ): Promise<boolean> {
-    const streamStartTime = Date.now();
-    const botMsgId = createLocalId('msg-bot-resume');
-    const botMessage: ChatMessage = {
-      id: botMsgId,
-      role: 'assistant',
-      model: 'AI',
-      content: '',
-      timestamp: streamStartTime,
-      isThinking: true,
-      isExploring: true,
-      isComplete: false,
-      thoughtSteps: [],
-      toolCalls: [],
-      aiMessages: []
-    };
-
-    const sessionIdFilter = String(conversationId);
-    let thinkingStartTime = 0;
-
-    const finalizeLastAiMessage = () => {
-      const lastAiMsg = botMessage.aiMessages?.length
-        ? botMessage.aiMessages[botMessage.aiMessages.length - 1]
-        : null;
-      if (lastAiMsg && lastAiMsg.text !== undefined && lastAiMsg.text !== null && lastAiMsg.text !== '') {
-        botMessage.content = lastAiMsg.text;
-      }
-    };
-
-    const settleComplete = () => {
-      const runningStep = botMessage.thoughtSteps?.find(s => s.status === 'running');
-      if (runningStep) {
-        runningStep.status = 'success';
-        runningStep.durationMs = Math.max(Date.now() - thinkingStartTime, 1);
-      }
-      finalizeLastAiMessage();
-      botMessage.isThinking = false;
-      botMessage.isExploring = false;
-      botMessage.isComplete = true;
-      if (!botMessage.durationMs) {
-        botMessage.durationMs = Math.max(Date.now() - streamStartTime, 1000);
-      }
-    };
-
-    let streamEstablished = false;
-    const resolveEstablished = (resolve: (v: boolean) => void) => {
-      if (!streamEstablished) {
-        streamEstablished = true;
-        onProgress({ ...botMessage });
-        resolve(true);
-      }
-    };
-
-    // onSettled 恰好一次：仅在流建立后的终局路径回调（正常结束 / 中途异常 / abort）；
-    // 建流前 reject 的两条路径不回调，计数回收由调用方 catch 负责。
-    let settleNotified = false;
-    const notifySettled = () => {
-      if (settleNotified) return;
-      settleNotified = true;
-      onSettled?.();
-    };
-
-    return new Promise<boolean>((resolve, reject) => {
-      void (async () => {
-        try {
-          await ToolCallAPI.decide(
-            { conversationId, toolCallId, approved, text },
-            (event: AgentStreamEvent) => {
-              // 会话映射事件与子会话事件先交视图层按 sessionId 路由（与 sendMessageStream 同一契约）。
-              // 必须在下面的「只渲染本会话」过滤之前：子会话事件的 sessionId 是**子会话 id**，
-              // 会被判为异己直接丢弃 —— 子代理的待审批卡片曾因此既进不了子会话面板、
-              // 也进不了根会话气泡，用户无从审批，子执行永久挂起。
-              if (routeSessionEvent?.(event, String(conversationId))) {
-                return;
-              }
-
-              // 只渲染本会话的事件；子会话（委派执行）事件已在上方交给视图层
-              const eventSessionId = event.sessionId == null ? null : String(event.sessionId);
-              if (eventSessionId !== null && eventSessionId !== sessionIdFilter) {
-                return;
-              }
-
-              if (!streamEstablished) {
-                resolveEstablished(resolve);
-              }
-
-              // 统一委托给 messageRouter 核心分发器进行状态推进
-              routeToSession(event, { id: conversationId } as SessionVO, {
-                onMessageUpdated: (updatedMsg) => {
-                  // 钉住本流气泡 id：router 在 EXECUTION_STARTED 时会 initExecution 造出
-                  // 新 id 的 store 消息，若放任 assign 覆盖 id，下一次 onProgress 会因
-                  // id 失配追加第二条气泡，旧气泡永远停留在「思考中/正在探索中」假象
-                  Object.assign(botMessage, updatedMsg, { id: botMsgId });
-                  onProgress({ ...botMessage });
-                },
-                onCompleted: (completedMsg) => {
-                  Object.assign(botMessage, completedMsg, { id: botMsgId });
-                  onProgress({ ...botMessage });
-                }
-              });
-            },
-            signal
-          );
-
-          // 流读取完毕（终态事件或服务端关流）：若从未建立过流（如空响应），按失败处理
-          if (!streamEstablished) {
-            reject(new Error('审批请求未返回事件流'));
-            return;
-          }
-          settleComplete();
-          onProgress({ ...botMessage });
-          onFinish?.();
-          notifySettled();
-        } catch (err: any) {
-          if (!streamEstablished) {
-            // 建流前的校验失败（互动/执行不存在等）：如实抛给调用方展示
-            reject(err);
-            return;
-          }
-          if ((err instanceof DOMException && err.name === 'AbortError') || signal?.aborted) {
-            settleComplete();
-            onProgress({ ...botMessage });
-            notifySettled();
-            return;
-          }
-          // 流中途异常：把气泡收尾为完成态，不再向上抛（决策已落库，不能让卡片回退到待审）。
-          // 失败原因不再写进消息：轮次落库后由 turns[turnId].status/errorReason 权威呈现。
-          console.error('[decideToolCall] 恢复执行流中断:', err);
-          settleComplete();
-          onProgress({ ...botMessage });
-          onFinish?.();
-          notifySettled();
-        }
-      })();
+    expectedVersion?: string | number | null,
+    commandId?: string
+  ): Promise<ToolCallDecisionReceipt> {
+    return ToolCallAPI.decide({
+      conversationId,
+      toolCallId,
+      commandId: commandId ?? createLocalId('cmd-decision'),
+      expectedVersion: expectedVersion ?? null,
+      action,
+      text
     });
   },
 
@@ -429,6 +277,8 @@ export const chatApi = {
               updatedAt: createdAt,
               modelId: '',
               activeTools: [],
+              runStatus: item.runStatus,
+              lastOutcome: item.lastOutcome,
               messages: []
             };
           })
@@ -650,8 +500,13 @@ export const chatApi = {
           activeTools: [],
           workspaceId: meta?.workspaceId !== undefined && meta?.workspaceId !== null ? String(meta.workspaceId) : undefined,
           workDir: meta?.workDir,
+          // 会话级团队绑定必须透出：切回该会话时输入区据此恢复团队下拉选中项，
+          // 漏传即表现为「重新加载会话后团队变未指定」。后端序列化为字符串，统一归一 null。
+          teamId: meta?.teamId ?? null,
           agentId: meta?.agentId,
           rootSessionId: meta?.rootSessionId,
+          runStatus: meta?.runStatus,
+          lastOutcome: meta?.lastOutcome,
           subSessions: enrichedSubSessions,
           messages: messages,
           rawRecords: pageResult.records,
@@ -708,185 +563,64 @@ export const chatApi = {
     }
   },
 
-  async sendMessageStream(
-    sessionId: string | number | null, 
-    content: string, 
-    onProgress: (msg: ChatMessage) => void,
+  /**
+   * v3 发送：JSON 命令受理，**不建请求级 SSE**。
+   *
+   * <p>统一链路（批次 A 起）：`发送 / 重发 → JSON 命令接口 → 回执；后端执行产生事件 →
+   * 唯一 v3 会话流 → streamV3Store`。回执只确认命令受理、绑定身份，**不能**据此判定模型执行完成，
+   * 也**不**另建 assistant 气泡 —— 正文一律走 v3 会话流与持久化历史。</p>
+   *
+   * <p>会话尚未入库时（新会话）先走 {@code SessionAPI.create} 建会话，再用真实会话 id 发命令。</p>
+   *
+   * @param commandId 命令身份；同 ID 重试由后端查回首轮受理结果（幂等键）
+   * @returns 受理回执（含 sessionId / turnId / executionId）
+   */
+  async sendCommand(
+    commandId: string,
+    sessionId: string | number | null,
+    content: string,
     workspaceId?: number | string | null,
     workDir?: string | null,
     modelId?: number | string | null,
     modelName?: string,
-    onSessionCreated?: (sessionId: string) => void,
     requirePlan?: boolean,
-    signal?: AbortSignal,
-    onFinish?: () => void,
-    /** 当前选中的团队：仅用于新建会话时的首次绑定；已有会话的团队换绑走 SessionAPI.bindTeam */
     teamId?: number | string | null,
-    routeSessionEvent?: (event: AgentStreamEvent) => boolean,
-    /** 单 Agent 直聊的 Agent ID */
     agentId?: number | string | null,
-    imageFile?: File | null
-  ): Promise<void> {
-    const streamStartTime = Date.now();
-    const botMsgId = createLocalId('msg-bot');
-    const botMessage: ChatMessage = {
-      id: botMsgId,
-      role: 'assistant',
-      model: modelName || 'AI',
-      content: '',
-      timestamp: streamStartTime,
-      isThinking: true,
-      isExploring: true,
-      isComplete: false,
-      thoughtSteps: [],
-      toolCalls: [],
-      aiMessages: []
-    };
+    imageFile?: File | null,
+    /** 重发专用：要改写的那条历史提问（checkpoint）。传了就走重发端点，且不新建会话。 */
+    resendMessageId?: string | null
+  ): Promise<CommandAcceptanceVO> {
+    void modelName;
 
-    onProgress({ ...botMessage });
-
-    let thinkingStartTime = 0;
-    let sessionIdNotified = false;
-
-    const finalizeLastAiMessage = () => {
-      const lastAiMsg = botMessage.aiMessages?.length
-        ? botMessage.aiMessages[botMessage.aiMessages.length - 1]
-        : null;
-      if (lastAiMsg && lastAiMsg.text !== undefined && lastAiMsg.text !== null && lastAiMsg.text !== '') {
-        botMessage.content = lastAiMsg.text;
+    // 重发不走新建：目标是一条历史提问，它所属的会话必然已入库。
+    if (resendMessageId) {
+      const resendSessionId = toServerSessionId(sessionId);
+      if (resendSessionId == null) {
+        throw new Error('重发需要已入库的会话');
       }
-    };
+      const res = await AgentAPI.resendCommand(
+        commandId, resendSessionId, resendMessageId, content,
+        workspaceId, workDir, modelId, requirePlan === true, agentId, imageFile
+      );
+      if (!isOk(res.code) || !res.data) {
+        throw new Error(res.errMsg || '重发失败');
+      }
+      return res.data;
+    }
 
-    // 若当前会话尚未入库（新会话），在发送 chat 请求之前，先请求 session 模块的 create 接口新建 session 会话
+    // 未入库的新会话：先建会话（新建会话是唯一能带上团队绑定的时机）。
     let realSessionId = toServerSessionId(sessionId);
     if (!realSessionId) {
-      try {
-        // 新建会话是唯一能带上团队绑定的时机（之后换绑走 SessionAPI.bindTeam）。
-        const createdId = await this.createSession(content, workspaceId, teamId);
-        realSessionId = createdId;
-        sessionIdNotified = true;
-        onSessionCreated?.(String(createdId));
-      } catch (createErr) {
-        console.error('[sendMessageStream] 自动创建会话失败:', createErr);
-        throw createErr;
-      }
+      realSessionId = await this.createSession(content, workspaceId, teamId);
     }
-    // 请求自身已携带真实会话 ID 时，SSE 下发的 sessionId 一律不采纳：
-    // REST 返回的 ID 是字符串（精度安全），而 SSE 事件曾以 JSON 数字下发雪花 ID，
-    // JS 解析即丢精度；采纳会把会话绑定到错误 ID 上，后续请求全部落空，
-    // 表现为「空对话仍旧按上次的失真 sessionId 发请求」。
-    const sentRealSessionId = !sessionIdNotified && realSessionId != null ? String(realSessionId) : null;
 
-    try {
-      await AgentAPI.chatStream(
-        realSessionId,
-        content,
-        (event: AgentStreamEvent) => {
-          // 1. 仅当本次请求没有携带真实会话 ID 时，才采纳后端 SSE 推送的 sessionId。
-          //    契约 §2：sessionId 恒为信封顶层字段（后端刻意写成字符串，避免雪花 ID 数字丢精度），
-          //    禁止读 event.data?.sessionId 兜底。
-          const incomingSessionId = event.sessionId;
-          if (incomingSessionId !== undefined && incomingSessionId !== null
-              && !sessionIdNotified && !sentRealSessionId) {
-            sessionIdNotified = true;
-            onSessionCreated?.(String(incomingSessionId));
-          }
-
-          // 会话映射事件和子会话运行时事件由视图层按 sessionId 独立消费。
-          if (routeSessionEvent?.(event)) {
-            return;
-          }
-
-          // 2. 统一委托给 messageRouter 核心分发器进行状态推进与 Pinia 维护
-          routeToSession(event, { id: realSessionId } as SessionVO, {
-            onMessageUpdated: (updatedMsg) => {
-              // 钉住本流气泡 id：router 收到 EXECUTION_STARTED / 首个事件时会 initExecution
-              // 造出新 id 的 store 消息，若放任 assign 覆盖 id，本流预建的气泡会成为孤儿
-              // （永远停在「思考中/正在探索中」），下一次 onProgress 又追加一条 → 气泡重复
-              Object.assign(botMessage, updatedMsg, { id: botMsgId });
-              onProgress({ ...botMessage });
-            },
-            onCompleted: (completedMsg) => {
-              Object.assign(botMessage, completedMsg, { id: botMsgId });
-              onProgress({ ...botMessage });
-              onFinish?.();
-            }
-          });
-          return;
-        },
-        workspaceId,
-        workDir,
-        modelId,
-        requirePlan === true,
-        signal,
-        agentId,
-        imageFile,
-        undefined
-      );
-
-      // 流结束后的收尾状态与耗时结算
-      const runningStep = botMessage.thoughtSteps?.find(s => s.status === 'running');
-      if (runningStep) {
-        runningStep.status = 'success';
-        runningStep.durationMs = Date.now() - thinkingStartTime;
-      }
-      finalizeLastAiMessage();
-      botMessage.isThinking = false;
-      botMessage.isExploring = false;
-      botMessage.isComplete = true;
-      if (!botMessage.durationMs) {
-        botMessage.durationMs = Math.max(Date.now() - streamStartTime, 1000);
-      }
-      // 流正常结束但工具仍停留在 calling：若有待审批卡片则置为 pending，否则如实保留为 failed
-      if (botMessage.toolCalls) {
-        for (const tc of botMessage.toolCalls) {
-          if (tc.status === 'calling') {
-            const hasPendingCard = botMessage.promptCards?.some(c => c.toolCallId === tc.id && c.pending)
-              || (botMessage.promptCard?.toolCallId === tc.id && botMessage.promptCard?.pending);
-            if (hasPendingCard) {
-              tc.status = 'pending';
-            } else {
-              tc.status = 'failed';
-              if (!tc.result) tc.result = '[无结果] 后端未返回该工具的执行结果';
-            }
-          }
-        }
-      }
-      onProgress({ ...botMessage });
-      onFinish?.();
-    } catch (err: any) {
-      if ((err instanceof DOMException && err.name === 'AbortError') || signal?.aborted) {
-        const runningStep = botMessage.thoughtSteps?.find(s => s.status === 'running');
-        if (runningStep) {
-          runningStep.status = 'success';
-          runningStep.durationMs = Date.now() - thinkingStartTime;
-        }
-        finalizeLastAiMessage();
-        botMessage.isThinking = false;
-        botMessage.isExploring = false;
-        botMessage.isComplete = true;
-        if (!botMessage.durationMs) {
-          botMessage.durationMs = Math.max(Date.now() - streamStartTime, 1000);
-        }
-        onProgress({ ...botMessage });
-        onFinish?.();
-        return;
-      }
-      const runningStep = botMessage.thoughtSteps?.find(s => s.status === 'running');
-      if (runningStep) {
-        runningStep.status = 'failed';
-        runningStep.durationMs = Date.now() - thinkingStartTime;
-      }
-      botMessage.isThinking = false;
-      botMessage.isExploring = false;
-      botMessage.isComplete = true;
-      if (!botMessage.durationMs) {
-        botMessage.durationMs = Math.max(Date.now() - streamStartTime, 1000);
-      }
-      // 失败原因不再写进消息：轮次落库后由 turns[turnId].status/errorReason 权威呈现。
-      onProgress({ ...botMessage });
-      onFinish?.();
-      throw err;
+    const res = await AgentAPI.sendCommand(
+      commandId, realSessionId, content,
+      workspaceId, workDir, modelId, requirePlan === true, agentId, imageFile
+    );
+    if (!isOk(res.code) || !res.data) {
+      throw new Error(res.errMsg || '发送失败');
     }
+    return res.data;
   },
 };

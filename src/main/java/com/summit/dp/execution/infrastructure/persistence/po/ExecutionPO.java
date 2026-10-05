@@ -27,6 +27,8 @@ import java.time.LocalDateTime;
 public class ExecutionPO {
     @TableId(type = IdType.AUTO)
     private Long id;
+    private Long version;
+
     @TableField("session_id")
     private Long sessionId;
     /** 所属根执行 ID；主执行为 null，子执行指向发起委派的主执行。 */
@@ -40,6 +42,14 @@ public class ExecutionPO {
     private LocalDateTime completedAt;
     @TableField("status")
     private Integer status;
+    /**
+     * 恢复代际：执行实际从非 SUSPENDED 落为 SUSPENDED 时 +1。
+     *
+     * <p>业务持久化列，框架 {@code Execution} 对象无此字段 —— 代际只服务业务侧恢复意图的
+     * 过期判定，不参与框架控制流。</p>
+     */
+    @TableField("resume_generation")
+    private Long resumeGeneration;
     @TableField("snapshot")
     private String snapshot;
     @TableField("created_at")

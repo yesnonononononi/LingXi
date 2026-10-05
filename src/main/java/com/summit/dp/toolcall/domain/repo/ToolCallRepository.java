@@ -29,6 +29,14 @@ public interface ToolCallRepository extends RepositoryTemplate<ToolCall, String>
 
     List<ToolCall> listPendingByConversationId(Long conversationId);
 
+    default List<ToolCall> listUnresolvedByExecutionId(Long executionId) {
+        return listByExecutionId(executionId).stream().filter(ToolCall::isUnresolved).toList();
+    }
+
+    List<ToolCall> listActionableByExecutionId(Long executionId);
+
+    List<Long> listUnresolvedExecutionIds();
+
     /** 登记器幂等判定：同一 call id 是否已存在记录。 */
     boolean existsById(String id);
 
@@ -36,6 +44,14 @@ public interface ToolCallRepository extends RepositoryTemplate<ToolCall, String>
 
     /** 会话删除级联：按 {@code conversation_id} 批量清理，返回删除行数。 */
     int deleteByConversationIds(Collection<Long> conversationIds);
+
+    /**
+     * 重发回滚级联：按一批执行 ID 批量清理工具调用卡片，返回删除行数。
+     *
+     * <p>按执行 ID 而不是消息 ID 定位：卡片与消息并非一一对应（审批卡片可以没有 TOOL 消息行，
+     * 而 {@code session_message_id} 锚点只做尽力回填），只有执行 ID 是每张卡片必然带的归属。</p>
+     */
+    int deleteByExecutionIds(Collection<Long> executionIds);
 
     /** 尽力回填 TOOL 行锚点：设置 {@code session_message_id}。 */
     void bindSessionMessage(String toolCallId, Long sessionMessageId);

@@ -11,6 +11,10 @@ public interface ChatService {
     SseEmitter chatStream(ChatCommand command);
 
     /**
+     * 重发：按 checkpoint（{@code messageId} 指明的历史提问）编辑当时输入后重跑，该轮及其之后的历史作废。
+     */
+    SseEmitter resend(ChatCommand chatCommand);
+    /**
      * 订阅会话的实时事件流 —— 纯粹的挂载入口，不产生任何执行。
      *
      * <p>与 {@link #chatStream} 的区别：那条流属于「本次发消息」这一次请求，执行结束就 complete；

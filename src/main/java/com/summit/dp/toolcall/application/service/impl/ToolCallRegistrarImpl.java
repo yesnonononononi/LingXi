@@ -15,21 +15,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Objects;
+import com.summit.dp.shared.exception.ClientException;
 
-/**
- * 唯一登记器实现：{@code tool_call} 表的唯一写入入口（幂等 UPSERT，最后写入者胜出）。
- *
- * <p><b>为什么不在本类注入 {@code ExecutionControl} / {@code IChatAgent}：</b>本类被
- * {@code CreatePlanTool} 依赖，若注入上述重量级 bean 会形成
- * {@code IChatAgent → createPlanTool → registrar → executionControl → IChatAgent} 的构造期闭环。
- * 会话 id 通过 {@link ExecutionIdentity} 的纯仓储回查获得，无构造期依赖环。</p>
- */
+/** 登记时只建立准备槽位；重复登记不得覆盖已开放或已处理的互动。 */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ToolCallRegistrarImpl implements ToolCallRegistrar {
-
-    private static final String LOG_PREFIX = "【tool-call-registrar】";
 
     private final ToolCallRepository toolCallRepository;
     private final ToolCallConverter converter;
@@ -38,9 +31,7 @@ public class ToolCallRegistrarImpl implements ToolCallRegistrar {
     @Override
     @Transactional
     public String registerPromise(ToolCallRegisterCommand cmd) {
-        if (cmd == null || cmd.toolCallId() == null || cmd.toolCallId().isBlank()) {
-            throw new IllegalArgumentException("toolCallId is required to register a promise");
-        }
+        throwIf(cmd == null || cmd.toolCallId() == null || cmd.toolCallId().isBlank(), "工具调用标识不能为空");
         ToolCall existing = toolCallRepository.findById(cmd.toolCallId()).orElse(null);
         if (existing == null) {
             ToolCall created = ToolCall.builder()
@@ -49,7 +40,7 @@ public class ToolCallRegistrarImpl implements ToolCallRegistrar {
                     .executionId(cmd.executionId())
                     .toolName(cmd.toolName())
                     .type(ToolCallType.PROMISE)
-                    .status(ToolCallStatus.PENDING)
+                    .status(ToolCallStatus.PREPARING)
                     .title(cmd.title())
                     .content(cmd.content())
                     .rawInput(cmd.rawInput())
@@ -59,7 +50,15 @@ public class ToolCallRegistrarImpl implements ToolCallRegistrar {
                     .build();
             toolCallRepository.save(created);
         } else {
-            // 命中已有行（可能是 EXECUTE 占位）→ 升级为 PROMISE/pending，最后写入者胜出。
+            throwIf(!Objects.equals(existing.getConversationId(), cmd.conversationId())
+                    || !Objects.equals(existing.getExecutionId(), cmd.executionId())
+                    || !Objects.equals(existing.getToolName(), cmd.toolName()), "工具调用归属不一致，不能重复登记");
+            if (existing.getType() == ToolCallType.PROMISE) {
+                throwIf(!Objects.equals(existing.getContent(), cmd.content())
+                        || !Objects.equals(existing.getRawInput(), cmd.rawInput()), "工具调用已登记，不能覆盖原互动内容");
+                return cmd.toolCallId();
+            }
+            if (existing.isCompleted()) return cmd.toolCallId();
             existing.promoteToPromise(ToolCallType.PROMISE, cmd.toolName(), cmd.title(), cmd.content(), cmd.rawInput());
             toolCallRepository.updateById(existing);
         }
@@ -77,8 +76,8 @@ public class ToolCallRegistrarImpl implements ToolCallRegistrar {
         }
         Long conversationId = resolveConversationId(executionId);
         if (conversationId == null) {
-            log.warn("{} markExecuteStarted 无法定位会话，跳过: toolCallId={}, executionId={}",
-                    LOG_PREFIX, toolCallId, executionId);
+            log.warn("登记执行开始失败，无法定位会话，跳过: toolCallId={}, executionId={}",
+                    toolCallId, executionId);
             return;
         }
         ToolCall started = ToolCall.builder()
@@ -109,8 +108,8 @@ public class ToolCallRegistrarImpl implements ToolCallRegistrar {
             // 兜底：无占位行（如框架 REJECTED/超时且未发 START）时补一条 completed。
             Long conversationId = resolveConversationId(executionId);
             if (conversationId == null) {
-                log.warn("{} completeExecute 无法定位会话，跳过: toolCallId={}, executionId={}",
-                        LOG_PREFIX, toolCallId, executionId);
+                log.warn("登记执行结束失败，无法定位会话，跳过: toolCallId={}, executionId={}",
+                        toolCallId, executionId);
                 return;
             }
             ToolCall fallback = ToolCall.builder()
@@ -146,5 +145,9 @@ public class ToolCallRegistrarImpl implements ToolCallRegistrar {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    private void throwIf(boolean condition, String err) {
+        if (condition) throw new ClientException(err);
     }
 }

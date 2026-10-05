@@ -7,6 +7,7 @@
 DROP TABLE IF EXISTS chat_turn;
 
 CREATE TABLE chat_turn (
+    version BIGINT NOT NULL DEFAULT 1,
     id                 BIGINT       NOT NULL PRIMARY KEY,
     session_id         BIGINT       NOT NULL,
     parent_turn_id     BIGINT       NULL,
@@ -20,6 +21,8 @@ CREATE TABLE chat_turn (
     started_at         TIMESTAMP(3) NULL,
     completed_at       TIMESTAMP(3) NULL,
     error_reason       VARCHAR(1000) NULL,
+    command_id         VARCHAR(64)  NULL,
+    command_digest     VARCHAR(64)  NULL,
     created_at         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
 );
@@ -27,3 +30,7 @@ CREATE TABLE chat_turn (
 -- 与 init.sql 的 uk_chat_turn_execution 一致：一轮一次执行。
 -- H2 的唯一约束允许多个 NULL，与 MySQL 行为一致（未关联执行的轮次可以共存）。
 ALTER TABLE chat_turn ADD CONSTRAINT uk_chat_turn_execution UNIQUE (execution_id);
+
+-- 与 init.sql 的 uk_chat_turn_command 一致：同一命令只能落一行，
+-- 重试据此查回首次受理结果而不是新开一轮。
+ALTER TABLE chat_turn ADD CONSTRAINT uk_chat_turn_command UNIQUE (command_id);

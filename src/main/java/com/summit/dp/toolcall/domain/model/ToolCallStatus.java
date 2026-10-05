@@ -1,5 +1,7 @@
 package com.summit.dp.toolcall.domain.model;
 
+import java.util.Locale;
+
 /**
  * 工具调用生命周期状态（落库 {@code tool_call.status}）。
  *
@@ -9,6 +11,7 @@ package com.summit.dp.toolcall.domain.model;
  */
 public enum ToolCallStatus {
 
+    PREPARING("preparing"),
     PENDING("pending"),
     IN_PROGRESS("in_progress"),
     COMPLETED("completed");
@@ -24,17 +27,17 @@ public enum ToolCallStatus {
         return dbValue;
     }
 
-    /** 宽松解析数据库取值；识别不了回落 {@link #PENDING}（宁可渲染成待处理，也不静默吞掉）。 */
+    /** 未知状态保留卡片但关闭决策，避免缺失数据误开放审批。 */
     public static ToolCallStatus parse(String raw) {
         if (raw == null || raw.isBlank()) {
-            return PENDING;
+            return PREPARING;
         }
-        String normalized = raw.trim().toLowerCase();
+        String normalized = raw.trim().toLowerCase(Locale.ROOT);
         for (ToolCallStatus status : values()) {
             if (status.dbValue.equals(normalized)) {
                 return status;
             }
         }
-        return PENDING;
+        return PREPARING;
     }
 }

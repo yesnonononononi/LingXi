@@ -1,20 +1,26 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-import type { ChatMessage, ThoughtStep, ToolCallTrace, PlanTaskItem, SubSessionVO, ProcessTimelineItem, PromptCardData, ChatTurn } from '../../types/chat';
+import { ref, computed, watch, onMounted, onUnmounted, inject } from 'vue';
+import { FILE_PREVIEW_KEY } from '../../types/filePreview';
+import type { ChatMessage, ThoughtStep, ToolCallTrace, SubSessionVO, ProcessTimelineItem, PromptCardData, ChatTurn } from '../../types/chat';
 import {
   isEditFileTool,
+  isReadFileTool,
   shouldShowToolArguments,
   isSubAgentTool,
   resolveToolMeta,
+  extractSubAgentParams,
 } from '../../utils/toolMeta';
 import { toObject } from '../../utils/json';
+import { AgentToolName } from '../../utils/toolNames';
+import { isActiveTurnStatus, isFailedTurnStatus, turnStatusLabel } from '../../utils/turnStatus';
 import { formatDuration } from '../../utils/format';
 import { parseToolDiff } from '../../utils/toolDiff';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
+import { useTheme } from '../../composables/useTheme';
 import GradientText from '../common/GradientText.vue';
 import PromptCard from './PromptCard.vue';
-import TaskProgressCard from './TaskProgressCard.vue';
 import MarkdownRenderer from './MarkdownRenderer.vue';
+import CollapseTransition from '../common/CollapseTransition.vue';
 
 const props = defineProps<{
   message: ChatMessage;
@@ -35,6 +41,11 @@ const props = defineProps<{
   isLastAssistant?: boolean;
   isSending?: boolean;
 }>();
+
+const { isDark: globalIsDark } = useTheme();
+const isDark = computed(() => props.isDark ?? globalIsDark.value);
+const openFilePreview = inject(FILE_PREVIEW_KEY);
+const canPreviewFile = (tool: ToolCallTrace) => !!openFilePreview && (isReadFileTool(tool.toolName) || isEditFileTool(tool.toolName));
 
 const emit = defineEmits<{
   (e: 'switchBranch', messageId: string, index: number): void;
@@ -70,6 +81,47 @@ const isThoughtStepExpanded = (step: ThoughtStep) => {
 const toggleThoughtStep = (stepId: string, step: ThoughtStep) => {
   expandedThoughtStepIds.value[stepId] = !isThoughtStepExpanded(step);
 };
+
+const formatThoughtTitle = (title?: string): string => {
+  if (!title) return '深度思考';
+  const t = title.trim();
+  if (t === 'Thought for' || t === 'Thought' || t === '思考过程' || t === '思考' || t.toLowerCase() === 'thought for') {
+    return '深度思考';
+  }
+  return t;
+};
+
+// 思考内容展开框 DOM 引用与流式输出自动贴底滚动
+const thinkingBoxRefs = ref<Record<string, HTMLElement | null>>({});
+const setThinkingBoxRef = (stepId: string, el: unknown) => {
+  if (el) {
+    thinkingBoxRefs.value[stepId] = el as HTMLElement;
+  } else {
+    delete thinkingBoxRefs.value[stepId];
+  }
+};
+
+const runningThoughtState = computed(() => {
+  if (props.message.isComplete) return '';
+  const runningStep = props.message.thoughtSteps?.find(s => s.status === 'running');
+  if (!runningStep) return '';
+  return `${runningStep.id}:${runningStep.content?.length || 0}`;
+});
+
+watch(
+  runningThoughtState,
+  () => {
+    const runningStep = props.message.thoughtSteps?.find(s => s.status === 'running');
+    if (!runningStep) return;
+    const box = thinkingBoxRefs.value[runningStep.id];
+    if (!box) return;
+    const isNearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+    if (isNearBottom) {
+      box.scrollTop = box.scrollHeight;
+    }
+  },
+  { flush: 'post' }
+);
 
 // 中间过程文本块 (中间轮次 text 像 thinking 那样折叠)
 const expandedIntermediateMsgIds = ref<Record<string, boolean>>({});
@@ -183,14 +235,48 @@ const promptCardsList = computed<PromptCardData[]>(() => {
   return [];
 });
 
-/** 计划书是否已批准（决定是否展示任务清单进度卡） */
-const isPlanApproved = computed(() =>
-  props.message.promptCards?.some(c => c.kind === 'PLAN' && c.outcome === 'APPROVED') ||
-  (props.message.promptCard?.kind === 'PLAN' && props.message.promptCard?.outcome === 'APPROVED')
-);
+// 已决断卡片的折叠：待决策的照常整卡展开（要按键），已有结论的默认收成一行，细节按需展开。
+// 大卡片常驻页底占位是明确不要的形态，但不靠后端停发数据解决。
+const expandedCardIds = ref<Record<string, boolean>>({});
+const cardKey = (card: PromptCardData): string => card.toolCallId || card.kind;
+const toggleCard = (card: PromptCardData): void => {
+  const key = cardKey(card);
+  expandedCardIds.value[key] = !expandedCardIds.value[key];
+};
+const isCardExpanded = (card: PromptCardData): boolean => !!expandedCardIds.value[cardKey(card)];
+
+const CARD_KIND_LABEL: Record<PromptCardData['kind'], string> = {
+  PLAN: '计划',
+  CHOICE: '提问',
+  COMMAND: '命令审批',
+  DELEGATION: '子代理委派',
+  UNAVAILABLE: '互动卡片'
+};
+const CARD_OUTCOME_LABEL: Record<string, string> = {
+  APPROVED: '已批准',
+  REJECTED: '已拒绝',
+  ANSWERED: '已答复',
+  CANCELLED: '已取消',
+  SUCCEEDED: '已执行',
+  FAILED: '已失败',
+  TIMED_OUT: '已超时'
+};
+const cardSummary = (card: PromptCardData): string => {
+  const kind = CARD_KIND_LABEL[card.kind];
+  const outcome = card.outcome ? (CARD_OUTCOME_LABEL[card.outcome] ?? card.outcome) : '已结束';
+  return `${kind}${card.title ? `：${card.title}` : ''} · ${outcome}`;
+};
 
 const isSubAgentToolCall = (tc?: ToolCallTrace): boolean => isSubAgentTool(tc?.toolName, tc?.category);
 const isEditFileToolCall = (toolName?: string): boolean => isEditFileTool(toolName);
+
+/**
+ * 该工具是否有可展开的详情。
+ *
+ * <p>读文件没有：头部一行已给全（读了哪个文件），展开拿不到头部没有的信息，
+ * 只会把「路径 + 状态」重复一遍。其余工具（命令、编辑、检索等）保留详情。</p>
+ */
+const canExpandTool = (tc?: ToolCallTrace): boolean => !!tc && !isReadFileTool(tc.toolName);
 
 /**
  * 展示文案字段映射（契约 §4）：按工具名映射到各自规范字段。
@@ -201,61 +287,77 @@ const isEditFileToolCall = (toolName?: string): boolean => isEditFileTool(toolNa
 
 
 
+/**
+ * 聚合子代理协同成员：
+ * 同一子会话可能被多次调用复用（如多次委派产品经理），按 subSessionId / agentId 去重合并，
+ * 并与 props.subSessions 关联取得权威名称与团队序号，解决成员数量虚增与名字回退为 Agent #N 的问题。
+ */
 const subAgentToolCalls = computed<ToolCallTrace[]>(() => {
-  return props.message.toolCalls?.filter(tc => isSubAgentToolCall(tc)) || [];
+  const tcs = props.message.toolCalls?.filter(tc => isSubAgentToolCall(tc)) || [];
+  if (tcs.length === 0) return [];
+
+  const map = new Map<string, ToolCallTrace>();
+
+  tcs.forEach((tc, idx) => {
+    const params = extractSubAgentParams(tc);
+    const agentId = params.agentId ?? tc.subAgentId;
+    const subSessionId = tc.subSessionId ?? params.subSessionId;
+
+    // 优先匹配当前会话绑定的权威 subSessions
+    const matchedSub = (subSessionId
+      ? props.subSessions?.find(s => String(s.id) === String(subSessionId))
+      : undefined)
+      || (agentId ? props.subSessions?.find(s => String(s.agentId) === String(agentId)) : undefined);
+
+    // 计算在团队中的真实序号（1-indexed）
+    let displayIndex = idx + 1;
+    if (props.subSessions?.length) {
+      const subIdx = props.subSessions.findIndex(s =>
+        (subSessionId && String(s.id) === String(subSessionId)) ||
+        (agentId && String(s.agentId) === String(agentId))
+      );
+      if (subIdx !== -1) {
+        displayIndex = subIdx + 1;
+      }
+    }
+
+    const agentName = matchedSub?.agentName
+      || matchedSub?.name
+      || params.agentName
+      || tc.subAgentName
+      || (agentId ? `Agent #${agentId}` : `子代理 #${displayIndex}`);
+
+    const resolvedSubSessionId = subSessionId || matchedSub?.id || tc.subSessionId;
+    const resolvedAgentId = agentId || matchedSub?.agentId;
+
+    // 去重键：优先子会话 ID，其次 agentId
+    const key = String(resolvedSubSessionId || resolvedAgentId || tc.id || `tc-${idx}`);
+
+    const existing = map.get(key);
+    if (existing) {
+      // 若多次调用复用，更新状态与相关属性
+      existing.status = tc.status || existing.status;
+      if (tc.order !== undefined) existing.order = tc.order;
+      if (resolvedSubSessionId && !existing.subSessionId) existing.subSessionId = resolvedSubSessionId;
+      if (agentName && !existing.subAgentName) existing.subAgentName = agentName;
+    } else {
+      map.set(key, {
+        ...tc,
+        subSessionId: resolvedSubSessionId,
+        subAgentId: resolvedAgentId,
+        subAgentName: agentName,
+        displayIndex,
+        order: tc.order ?? idx
+      });
+    }
+  });
+
+  return Array.from(map.values()).sort((a, b) => (a.displayIndex ?? 0) - (b.displayIndex ?? 0));
 });
 
 const regularToolCalls = computed<ToolCallTrace[]>(() => {
   return props.message.toolCalls?.filter(tc => !isSubAgentToolCall(tc)) || [];
 });
-
-/** 从工具调用的多个可能来源中取出任务清单（唯一解析点） */
-const extractTasks = (source: unknown, nestedKey?: string): PlanTaskItem[] => {
-  const obj = toObject(source, {});
-  if (Array.isArray(obj.tasks) && obj.tasks.length > 0) return obj.tasks;
-  if (nestedKey) {
-    const nested = obj[nestedKey];
-    if (nested && typeof nested === 'object' && Array.isArray(nested.tasks) && nested.tasks.length > 0) {
-      return nested.tasks;
-    }
-  }
-  return [];
-};
-
-const getPlanTasks = (tc?: ToolCallTrace): PlanTaskItem[] => {
-  // 只有计划书已批准才展示任务清单。
-  // 原先还接受 isTaskExecutionToolCall(...) 作为第二个入口，但 create_task_manifest /
-  // update_task / complete_task 从未在后端注册，该分支恒不成立，已删除以免掩盖真实来源。
-  if (!isPlanApproved.value) {
-    return [];
-  }
-
-  if (props.message.promptCards) {
-    const planCard = props.message.promptCards.find(c => c.kind === 'PLAN' && c.tasks?.length);
-    if (planCard?.tasks?.length) return planCard.tasks;
-  }
-  if (props.message.promptCard?.tasks?.length) {
-    return props.message.promptCard.tasks;
-  }
-  if (tc) {
-    // 来源顺序：args → result(含 tasks 字段) → query
-    const fromArgs = extractTasks(tc.args);
-    if (fromArgs.length > 0) return fromArgs;
-
-    const fromResult = extractTasks(tc.result, 'plan');
-    if (fromResult.length > 0) return fromResult;
-
-    const fromQuery = extractTasks(tc.query);
-    if (fromQuery.length > 0) return fromQuery;
-  }
-  return [];
-};
-
-
-/** 任务清单进度卡只在首个工具调用处渲染一次，避免同一份清单重复铺开 */
-const isFirstToolCall = (tc: ToolCallTrace): boolean => {
-  return props.message.toolCalls?.[0]?.id === tc.id;
-};
 
 // 统一执行过程时间线：按真实时序交替排列思维链思考 (Thought for)、中间轮次文本、子代理协同与工具调用
 const processTimeline = computed<ProcessTimelineItem[]>(() => {
@@ -315,7 +417,19 @@ const processTimeline = computed<ProcessTimelineItem[]>(() => {
   return items.sort((a, b) => a.order - b.order);
 });
 
-const getToolMeta = (tc: ToolCallTrace) => resolveToolMeta({ toolName: tc.toolName, args: tc.query });
+/**
+ * 头部行的交互样式：能展开时才是按钮，读文件这类没有详情的行不该有「可点」的视觉暗示。
+ * （样式集中在此的理由同 {@link toolStatusDotClass}：模板里只保留一次类绑定，避免分支散落。）
+ */
+const toolRowHeaderClass = (tc: ToolCallTrace, dark: boolean): string[] => {
+  const base = dark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-600';
+  if (!canExpandTool(tc)) {
+    return [base, 'cursor-default'];
+  }
+  return [base, dark ? 'cursor-pointer hover:text-white' : 'cursor-pointer hover:text-gray-900'];
+};
+
+const getToolMeta = (tc: ToolCallTrace) => resolveToolMeta({ toolName: tc.toolName, args: tc.args ?? tc.query });
 const getToolCategory = (tc: ToolCallTrace): string => getToolMeta(tc).category;
 
 /**
@@ -343,10 +457,11 @@ const toolStatusDotClass = (status?: string): string => {
 const isToolInProgress = (status?: string): boolean => status === 'calling' || status === 'pending';
 
 const getToolTarget = (tc: ToolCallTrace): string => getToolMeta(tc).target;
+const getToolLineRange = (tc: ToolCallTrace): string => getToolMeta(tc).lineRange;
 const getToolDescription = (tc: ToolCallTrace): string => getToolMeta(tc).description;
 const getToolDetail = (tc: ToolCallTrace): string => {
   const meta = getToolMeta(tc);
-  return tc.toolName === 'execute_command' ? meta.command : meta.description;
+  return tc.toolName === AgentToolName.ExecuteCommand ? meta.command : meta.description;
 };
 
 /**
@@ -412,7 +527,7 @@ const isMessageCompleted = computed(() => {
   const hasTerminalEvidence = props.message.durationMs != null
     || props.message.tokenInfo != null
     || props.message.tokens != null;
-  if ((status === 'ACCEPTED' || status === 'RUNNING' || status === 'WAITING') && !hasTerminalEvidence) {
+  if (isActiveTurnStatus(status) && !hasTerminalEvidence) {
     return false;
   }
   // 5. 必须有回复内容、工具调用或报错信息之一
@@ -456,15 +571,6 @@ const displayDuration = computed(() => {
   return formatDuration(ms || 1200);
 });
 
-/** 耗时的补充提示：标注「总历时包含等待时间」，进行中时说明是「截至查询时刻」。 */
-const durationHint = computed(() => {
-  const e = execSummary.value;
-  if (!e) return '';
-  const running = e.status === 'ACCEPTED' || e.status === 'RUNNING' || e.status === 'WAITING';
-  return running
-    ? '总历时包含暂停与等待审批的时间；执行进行中，此处为截至查询时刻的已历时'
-    : '总历时包含暂停与等待审批的时间';
-});
 
 const displayTokens = computed(() => {
   const e = execSummary.value;
@@ -496,20 +602,18 @@ const tokenTooltip = computed(() => {
   return t != null ? `总用量: ${t} tokens` : '暂无统计';
 });
 
-/** 执行状态展示（仅摘要存在时展示）；进行中状态与终态用不同配色。 */
+/** 执行状态展示（仅摘要存在时展示）；进行中/失败/终态用不同配色，失败附带原因全文。 */
 const execStatusMeta = computed(() => {
   const e = execSummary.value;
   if (!e) return null;
-  const labels: Record<string, string> = {
-    ACCEPTED: '已受理',
-    RUNNING: '执行中',
-    WAITING: '等待审批',
-    COMPLETED: '已完成',
-    FAILED: '已失败',
-    CANCELLED: '已取消'
+  const running = isActiveTurnStatus(e.status);
+  const failed = isFailedTurnStatus(e.status);
+  return {
+    text: turnStatusLabel(e.status),
+    running,
+    failed,
+    errorReason: failed ? (e.errorReason || '').trim() : ''
   };
-  const running = e.status === 'ACCEPTED' || e.status === 'RUNNING' || e.status === 'WAITING';
-  return { text: labels[e.status] ?? e.status, running };
 });
 
 /** 模型展示（模型名为空时隐藏模型项；提供方可选）。 */
@@ -557,7 +661,7 @@ const handleImageClick = (url?: string) => {
           :class="[
             'rounded-[18px] text-sm leading-relaxed whitespace-pre-wrap transition-colors break-words overflow-hidden',
             props.message.imageUrl ? 'p-2' : 'px-4 py-2.5',
-            isDark ? 'bg-[#1e2738] text-gray-100 border border-[#2c3850]' : 'bg-[#edf3fc] text-gray-800'
+            isDark ? 'bg-zinc-850 text-zinc-100 border border-white/[0.08] shadow-xs' : 'bg-[#edf3fc] text-gray-800'
           ]"
         >
           <div v-if="props.message.imageUrl" class="mb-2 max-w-sm rounded-xl overflow-hidden border border-black/10 dark:border-white/10">
@@ -575,7 +679,7 @@ const handleImageClick = (url?: string) => {
         <!-- 悬停编辑按钮 -->
         <button
           @click="isEditing = true"
-          class="absolute -left-7 top-2.5 opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-blue-400 transition"
+          class="absolute -left-7 top-2.5 opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-blue-400 dark:hover:text-zinc-200 transition"
           title="编辑消息"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -589,20 +693,20 @@ const handleImageClick = (url?: string) => {
         <textarea
           v-model="editText"
           rows="3"
-          :class="['w-full p-3 rounded-xl text-sm border outline-none resize-none', isDark ? 'bg-[#161b26] border-[#273043] text-white' : 'bg-white border-gray-300 text-gray-900']"
+          :class="['w-full p-3 rounded-xl text-sm border outline-none resize-none', isDark ? 'bg-zinc-900 border-zinc-700/80 text-zinc-100 focus:border-zinc-500' : 'bg-white border-gray-300 text-gray-900']"
         ></textarea>
         <div class="flex justify-end gap-2 text-xs">
-          <button @click="isEditing = false" class="px-3 py-1.5 rounded-lg border hover:bg-gray-500/10">取消</button>
+          <button @click="isEditing = false" class="px-3 py-1.5 rounded-lg border hover:bg-gray-500/10 dark:border-zinc-700 dark:text-zinc-300">取消</button>
           <button @click="handleSaveEdit" class="px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-500 font-medium">发送并更新</button>
         </div>
       </div>
 
       <!-- 气泡下方时间与复制图标 (完全匹配左图) -->
-      <div v-if="!isEditing" class="flex items-center gap-2 mt-1.5 text-xs text-gray-400 pr-1 select-none">
+      <div v-if="!isEditing" class="flex items-center gap-2 mt-1.5 text-xs text-gray-400 dark:text-zinc-500 pr-1 select-none">
         <span>{{ displayTime }}</span>
         <button
           @click="copyContent"
-          class="hover:text-gray-600 dark:hover:text-gray-200 transition p-0.5"
+          class="hover:text-gray-600 dark:hover:text-zinc-200 transition p-0.5"
           :title="copied ? '已复制' : '复制内容'"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -615,17 +719,28 @@ const handleImageClick = (url?: string) => {
     <!-- 2. Agent 回复展示样式 (匹配右图：无头像，顶部折叠"已思考 >"及分割线，正文高亮，底部丰富状态操作栏) -->
     <div v-else class="flex flex-col items-start w-full max-w-3xl space-y-2.5">
       
-      <!-- 顶部：思考过程与工具调用统一折叠区 (样式复用当前系统固有风格，不硬搬外部样式) -->
+      <!-- 顶部：思考过程与工具调用统一折叠区 (发光字体与差异化微光) -->
       <div v-if="hasProcessContent" class="w-full">
         <button
           type="button"
           @click="isProcessExpanded = !isProcessExpanded"
-          class="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 select-none py-0.5 group transition cursor-pointer"
+          class="flex items-center gap-1.5 text-xs select-none py-0.5 group transition cursor-pointer"
+          :class="isDark ? 'text-zinc-200 hover:text-white' : 'text-gray-500 hover:text-gray-800'"
         >
-          <span v-if="props.message.isThinking" class="text-blue-500 animate-pulse font-medium">思考中...</span>
-          <span v-else class="text-gray-400 dark:text-gray-400 font-normal">{{ processTitle }}</span>
+          <span
+            v-if="props.message.isThinking"
+            :class="[
+              'font-medium',
+              isDark ? 'text-white text-glow-white animate-glow-pulse' : 'text-blue-600 animate-pulse'
+            ]"
+          >思考中...</span>
+          <span
+            v-else
+            class="font-medium"
+            :class="isDark ? 'text-zinc-100 text-glow-white' : 'text-gray-600'"
+          >{{ processTitle }}</span>
           <svg
-            :class="['w-3.5 h-3.5 text-gray-400 transition-transform duration-200', isProcessExpanded ? 'rotate-90' : '']"
+            :class="['w-3.5 h-3.5 transition-transform duration-200', isProcessExpanded ? 'rotate-90' : '', isDark ? 'text-zinc-200 drop-shadow-[0_0_6px_rgba(255,255,255,0.4)]' : 'text-gray-400 group-hover:text-gray-600']"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -635,45 +750,74 @@ const handleImageClick = (url?: string) => {
         </button>
 
         <!-- 展开后展示：思维链轨迹、中间推理过程、以及所有工具调用 -->
-        <div v-if="isProcessExpanded" class="mt-2 pl-3 border-l-2 border-gray-200 dark:border-gray-700 space-y-2.5">
-          <!-- 统一时序时间线：按执行先后顺序交替展示思维链 (Thought for)、中间文本与工具调用 -->
+        <CollapseTransition>
+          <div v-if="isProcessExpanded">
+            <div :class="['mt-2 pl-3 space-y-2.5', processTimeline.length > 0 ? (isDark ? 'border-l border-white/10' : 'border-l border-gray-200') : '']">
+          <!-- 统一时序时间线：按执行先后顺序交替展示思维链 (深度思考)、中间文本与工具调用 -->
           <template v-for="item in processTimeline" :key="item.id">
-            <!-- 1. 思维链思考内容 (Thought for 可折叠) -->
-            <div v-if="item.type === 'thought' && item.step" class="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+            <!-- 1. 思维链思考内容 (深度思考 可折叠，亮白发光) -->
+            <div v-if="item.type === 'thought' && item.step" class="text-xs space-y-1">
               <button
                 type="button"
                 @click="toggleThoughtStep(item.step.id, item.step)"
-                class="font-medium text-gray-600 dark:text-gray-300 flex items-center gap-1.5 cursor-pointer hover:text-gray-900 dark:hover:text-gray-100 transition select-none py-0.5 text-left"
+                class="font-medium flex items-center gap-1.5 cursor-pointer transition select-none py-0.5 text-left"
+                :class="item.step.status === 'running'
+                  ? (isDark ? 'text-white text-glow-white animate-glow-pulse' : 'text-blue-600 animate-pulse')
+                  : (isDark ? 'text-zinc-100 text-glow-white hover:text-white' : 'text-gray-700 hover:text-gray-900')"
               >
                 <svg
-                  :class="['w-3 h-3 text-gray-400 transition-transform duration-200 shrink-0', isThoughtStepExpanded(item.step) ? 'rotate-90' : '']"
+                  :class="['w-3 h-3 transition-transform duration-200 shrink-0', isThoughtStepExpanded(item.step) ? 'rotate-90' : '', isDark ? 'text-zinc-300 drop-shadow-[0_0_4px_rgba(255,255,255,0.4)]' : 'text-gray-400']"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
                 >
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                 </svg>
-                <span>{{ (item.step.title && item.step.title !== '思考过程') ? item.step.title : '思考' }}</span>
-                <span v-if="item.step.durationMs" class="text-[10px] text-gray-400 font-normal">({{ item.step.durationMs }}ms)</span>
-                <span v-if="item.step.status === 'running'" class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                <span class="tracking-wide">{{ formatThoughtTitle(item.step.title) }}</span>
+                <span
+                  v-if="item.step.status === 'running'"
+                  :class="[
+                    'w-1.5 h-1.5 rounded-full animate-ping',
+                    isDark ? 'bg-white shadow-[0_0_8px_#ffffff]' : 'bg-blue-600 shadow-[0_0_6px_rgba(37,99,235,0.4)]'
+                  ]"
+                ></span>
               </button>
 
-              <div
-                v-if="isThoughtStepExpanded(item.step) && item.step.content"
-                class="font-mono text-[11px] whitespace-pre-wrap opacity-90 leading-relaxed pl-4.5 text-gray-500 dark:text-gray-400 select-text"
-              >
-                {{ item.step.content }}
-              </div>
+              <!-- 思考内容正文：带固定高度上限与滚动条限制的思考框，防止无限制向下叠加覆盖页面视图 -->
+              <CollapseTransition>
+                <div v-if="isThoughtStepExpanded(item.step) && item.step.content">
+                  <div
+                    :ref="(el) => item.step && setThinkingBoxRef(item.step.id, el)"
+                    :class="[
+                      'my-1.5 ml-4.5 rounded-xl border p-3 max-h-60 overflow-y-auto scrollbar-thin transition-colors select-text',
+                      isDark
+                        ? 'bg-zinc-900/60 border-white/10 text-zinc-100 shadow-inner'
+                        : 'bg-gray-50/90 border-gray-200 text-gray-800'
+                    ]"
+                  >
+                    <div
+                      class="stream-thinking-content thinking-text whitespace-pre-wrap"
+                      :class="[
+                        isDark ? 'text-zinc-300' : 'text-slate-600',
+                        { 'is-running': item.step.status === 'running' }
+                      ]"
+                    >
+                      {{ item.step.content }}
+                    </div>
+                  </div>
+                </div>
+              </CollapseTransition>
             </div>
 
-            <!-- 2. 中间轮次 aimessage 过程文本块（像 thinking 那样折叠，仅展开时查看） -->
+            <!-- 2. 中间轮次 aimessage 过程文本块 -->
             <div
               v-else-if="item.type === 'intermediate_ai' && item.message"
-              class="text-xs text-gray-500 dark:text-gray-400 space-y-1"
+              class="text-xs space-y-1"
             >
               <div
                 v-if="item.message.text"
-                class="font-semibold text-[11px] whitespace-pre-wrap  leading-relaxed pl-4.5  text-black dark:text-gray-400 select-text"
+                class="font-medium text-[11.5px] whitespace-pre-wrap leading-relaxed pl-4.5 select-text"
+                :class="isDark ? 'text-zinc-100 text-glow-white' : 'text-gray-800'"
               >
                 {{ item.message.text }}
               </div>
@@ -683,203 +827,123 @@ const handleImageClick = (url?: string) => {
             <div
               v-else-if="item.type === 'sub_agent' && item.subAgents?.length"
               :class="[
-                'w-full px-3.5 py-2.5 rounded-2xl border flex items-center justify-between gap-3 text-xs select-none transition-colors',
+                'w-full min-w-0 px-3.5 py-2.5 rounded-2xl border flex items-center justify-between gap-3 text-xs select-none transition-colors overflow-hidden',
                 props.isDark ? 'bg-[#141b29]/70 border-[#222d42] text-gray-200' : 'bg-blue-50/70 border-blue-200/80 text-blue-900'
               ]"
             >
-              <div class="flex items-center gap-2.5 min-w-0">
+              <!-- 左侧信息区：固定尺寸，禁止压缩，文案不折行 -->
+              <div class="flex items-center gap-2.5 shrink-0 select-none">
                 <div class="w-6 h-6 rounded-lg bg-linear-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white shrink-0 shadow-2xs">
                   <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                   </svg>
                 </div>
-                <div class="min-w-0">
-                  <div class="flex items-center gap-1.5">
+                <div class="flex flex-col shrink-0">
+                  <div class="flex items-center gap-1.5 whitespace-nowrap">
                     <span class="font-medium">团队协作</span>
-                    <span :class="['px-1.5 py-0.2 rounded-full text-[10px] font-mono', props.isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-700']">
+                    <span :class="['px-1.5 py-0.5 rounded-full text-[10px] font-mono whitespace-nowrap', props.isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-700']">
                       {{ item.subAgents.length }} 成员正在协作
                     </span>
                   </div>
-                  <p class="text-[11px] text-gray-400 truncate">轨迹与标签已在右侧图示面板铺开</p>
+                  <p class="text-[11px] text-gray-400 whitespace-nowrap">轨迹与标签已在右侧图示面板铺开</p>
                 </div>
               </div>
 
-              <div class="flex items-center gap-1.5 shrink-0 overflow-x-auto">
+              <!-- 右侧成员列表：占用剩余空间，横向超出滚动，不溢出卡片 -->
+              <div class="flex-1 min-w-0 flex items-center justify-end gap-1.5 overflow-x-auto scrollbar-thin py-0.5">
                 <button
                   v-for="(tc, idx) in item.subAgents"
                   :key="tc.id || idx"
                   @click="emit('selectSubSession', tc.subSessionId || tc.id)"
                   :class="[
-                    'px-2.5 py-1 rounded-xl text-xs font-medium border flex items-center gap-1.5 transition cursor-pointer',
+                    'px-2.5 py-1 rounded-xl text-xs font-medium border flex items-center gap-1.5 transition cursor-pointer shrink-0',
                     props.isDark ? 'border-blue-500/30 bg-blue-600/15 hover:bg-blue-600/25 text-blue-300' : 'border-blue-200 bg-white hover:bg-blue-100 text-blue-700'
                   ]"
-                  :title="`切换查看 ${tc.subAgentName || `Agent #${idx + 1}`} 的独立会话轨迹`"
+                  :title="`切换查看 ${tc.subAgentName || `Agent #${tc.displayIndex || idx + 1}`} 的独立会话轨迹`"
                 >
-                  <span class="w-1.5 h-1.5 rounded-full" :class="toolStatusDotClass(tc.status)"></span>
-                  <span class="truncate max-w-27.5">{{ tc.subAgentName || `Agent #${idx + 1}` }}</span>
-                  <span class="text-[10px] opacity-60">#{{ idx + 1 }}</span>
+                  <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="toolStatusDotClass(tc.status)"></span>
+                  <span class="truncate max-w-28">{{ tc.subAgentName || `Agent #${tc.displayIndex || idx + 1}` }}</span>
+                  <span class="text-[10px] opacity-60 shrink-0">#{{ tc.displayIndex ?? (idx + 1) }}</span>
                 </button>
               </div>
             </div>
 
             <!-- 4. 普通 Agent 工具调用展示 -->
             <div v-else-if="item.type === 'tool' && item.tool" class="w-full my-0.5">
-              <!-- 任务清单进度卡：计划已批准时在首个工具调用处展示一次 -->
-              <TaskProgressCard
-                v-if="isFirstToolCall(item.tool) && getPlanTasks(item.tool).length > 0"
-                :tasks="getPlanTasks(item.tool)"
-                :is-dark="props.isDark"
-              />
-
               <!-- 普通工具调用 -->
-              <div v-else class="w-full">
-                <!-- 展开状态卡片 -->
-                <div v-if="expandedToolIds[item.tool.id]" class="w-full">
-                  <button
-                    type="button"
-                    @click="toggleToolCall(item.tool.id)"
-                    class="flex items-center gap-1.5 text-[13px] text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition select-none cursor-pointer py-0.5 group w-full max-w-full min-w-0 overflow-hidden text-left"
-                    :title="cleanDisplayPath(getToolDescription(item.tool))"
-                  >
-                    <svg class="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 transition-transform flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                    </svg>
-                    <span class="font-normal shrink-0">{{ getToolCategory(item.tool) }}</span>
-                    <span class="text-gray-600 dark:text-gray-300 truncate min-w-0">{{ cleanDisplayPath(getToolDescription(item.tool)) }}</span>
-
-                    <!-- edit_file 差异行指示（完全还原图片风格：绿+N 红-M） -->
-                    <span
-                      v-if="getToolDiffStat(item.tool)"
-                      class="inline-flex items-center gap-1 font-mono text-[12px] font-medium leading-none shrink-0 select-none ml-1"
-                    >
-                      <span
-                        v-if="getToolDiffStat(item.tool)!.plusLines !== undefined && (getToolDiffStat(item.tool)!.plusLines! > 0 || (getToolDiffStat(item.tool)!.plusLines === 0 && getToolDiffStat(item.tool)!.minusLines === 0))"
-                        class="text-[#088f50] dark:text-emerald-400"
-                      >+{{ getToolDiffStat(item.tool)!.plusLines }}</span>
-                      <span
-                        v-if="getToolDiffStat(item.tool)!.minusLines !== undefined && (getToolDiffStat(item.tool)!.minusLines! > 0 || (getToolDiffStat(item.tool)!.plusLines === 0 && getToolDiffStat(item.tool)!.minusLines === 0))"
-                        class="text-[#b42c3f] dark:text-rose-400"
-                      >-{{ getToolDiffStat(item.tool)!.minusLines }}</span>
-                    </span>
-                  </button>
-
-                  <div :class="['w-full rounded-2xl border overflow-hidden mt-1.5 shadow-xs transition-colors', isDark ? 'border-[#273043] bg-[#12161f]' : 'border-gray-200/90 bg-white']">
-                    <div :class="['px-4 py-2.5 flex items-center justify-between gap-3 text-xs border-b', isDark ? 'border-gray-800/80' : 'border-gray-100']">
-                      <div class="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
-                        <span
-                          :class="[
-                            'w-2 h-2 rounded-full flex-shrink-0',
-                            toolStatusDotClass(item.tool.status)
-                          ]"
-                        ></span>
-                        <span class="text-gray-400 dark:text-gray-500 font-mono text-xs flex-shrink-0 select-none">
-                          {{ item.tool.workDir }}
-                        </span>
-                        <span class="font-mono text-xs text-gray-800 dark:text-gray-200 truncate select-text">
-                          {{ cleanDisplayPath(getToolDetail(item.tool)) }}
-                        </span>
-                        <!-- 卡片栏中的 diff 状态指示 -->
-                        <span
-                          v-if="getToolDiffStat(item.tool)"
-                          class="inline-flex items-center gap-1 font-mono text-[12px] font-medium leading-none shrink-0 select-none ml-1"
-                        >
-                          <span
-                            v-if="getToolDiffStat(item.tool)!.plusLines !== undefined && (getToolDiffStat(item.tool)!.plusLines! > 0 || (getToolDiffStat(item.tool)!.plusLines === 0 && getToolDiffStat(item.tool)!.minusLines === 0))"
-                            class="text-[#088f50] dark:text-emerald-400"
-                          >+{{ getToolDiffStat(item.tool)!.plusLines }}</span>
-                          <span
-                            v-if="getToolDiffStat(item.tool)!.minusLines !== undefined && (getToolDiffStat(item.tool)!.minusLines! > 0 || (getToolDiffStat(item.tool)!.plusLines === 0 && getToolDiffStat(item.tool)!.minusLines === 0))"
-                            class="text-[#b42c3f] dark:text-rose-400"
-                          >-{{ getToolDiffStat(item.tool)!.minusLines }}</span>
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        @click.stop="copyToolContent(item.tool.result ?? '', item.tool.id)"
-                        class="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition px-1 py-0.5 select-none flex-shrink-0 cursor-pointer"
-                      >
-                        {{ toolCopiedId === item.tool.id ? '已复制' : '复制' }}
-                      </button>
-                    </div>
-
-                    <div class="p-4">
-                      <!-- edit_file 工具展示增删对比块 -->
-                      <div v-if="isEditFileToolCall(item.tool.toolName) && getEditFileDiffChunks(item.tool)" class="space-y-2.5 font-mono text-xs select-text">
-                        <div v-if="getEditFileDiffChunks(item.tool)!.oldText" class="rounded-xl bg-red-500/10 border border-red-500/20 p-3 text-[#b42c3f] dark:text-rose-300 whitespace-pre-wrap overflow-x-auto max-h-48 scrollbar-thin">
-                          <div class="text-[11px] font-sans font-medium text-red-500/80 dark:text-red-400/80 mb-1.5 select-none flex items-center gap-1.5">
-                            <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                            <span>- 变更前 (oldText)</span>
-                          </div>
-                          {{ getEditFileDiffChunks(item.tool)!.oldText }}
-                        </div>
-                        <div v-if="getEditFileDiffChunks(item.tool)!.newText" class="rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-3 text-[#088f50] dark:text-emerald-300 whitespace-pre-wrap overflow-x-auto max-h-48 scrollbar-thin">
-                          <div class="text-[11px] font-sans font-medium text-emerald-600/80 dark:text-emerald-400/80 mb-1.5 select-none flex items-center gap-1.5">
-                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                            <span>+ 变更后 (newText)</span>
-                          </div>
-                          {{ getEditFileDiffChunks(item.tool)!.newText }}
-                        </div>
-                      </div>
-                      <pre
-                        v-else-if="item.tool.result"
-                        :class="['font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto max-h-[380px] scrollbar-thin select-text', isDark ? 'text-gray-200' : 'text-gray-800']"
-                      >{{ item.tool.result }}</pre>
-                      <div v-else-if="isToolInProgress(item.tool.status)" class="font-mono text-xs text-amber-500/80 animate-pulse flex items-center gap-2">
-                        <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
-                        <span>正在执行中...</span>
-                      </div>
-                      <pre
-                        v-else-if="shouldShowToolArguments(item.tool.toolName) && item.tool.query"
-                        :class="['font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto select-text', isDark ? 'text-gray-400' : 'text-gray-600']"
-                      >{{ item.tool.query }}</pre>
-                      <div v-else class="text-xs text-gray-400 font-mono">
-                        (暂无输出)
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- 收起状态单行 -->
+              <div class="w-full">
+                <!-- 头部操作条 (始终显示，带旋转指示箭头和类型图标) -->
                 <div
-                  v-else
-                  @click="toggleToolCall(item.tool.id)"
-                  class="flex items-center gap-2 text-[13px] text-gray-600 dark:text-gray-300 py-0.5 cursor-pointer hover:text-gray-900 dark:hover:text-gray-100 transition group select-none w-full max-w-full min-w-0 overflow-hidden"
-                  :title="cleanDisplayPath(getToolDescription(item.tool))"
+                  @click="canExpandTool(item.tool) && toggleToolCall(item.tool.id)"
+                  class="flex items-center gap-1.5 text-[13px] py-0.5 transition group select-none w-full max-w-full min-w-0 overflow-hidden text-left"
+                  :class="toolRowHeaderClass(item.tool, isDark)"
+                  :title="cleanDisplayPath(getToolDescription(item.tool)) || getToolCategory(item.tool)"
                 >
+                  <button v-if="canExpandTool(item.tool)" type="button" class="shrink-0 cursor-pointer" :aria-expanded="!!expandedToolIds[item.tool.id]" :aria-label="`查看${getToolCategory(item.tool)}详情`" @click.stop="toggleToolCall(item.tool.id)">
+                  <svg
+                    :class="['w-3.5 h-3.5 transition-transform duration-200 shrink-0', expandedToolIds[item.tool.id] ? 'rotate-90' : '', isDark ? 'text-zinc-300 drop-shadow-[0_0_4px_rgba(255,255,255,0.4)]' : 'text-gray-400']"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                  </svg>
+                  </button>
                   <div class="flex-shrink-0 flex items-center">
-                    <svg v-if="getToolCategory(item.tool) === '读取' || getToolCategory(item.tool) === '写入'" class="w-4 h-4 text-gray-500 dark:text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <svg v-if="getToolCategory(item.tool) === '读取' || getToolCategory(item.tool) === '写入'" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                       <rect x="4" y="3" width="16" height="18" rx="2" />
                       <path stroke-linecap="round" d="M8 8h8M8 12h8M8 16h4" />
                     </svg>
-                    <svg v-else-if="getToolCategory(item.tool) === '执行命令'" class="w-4 h-4 text-gray-500 dark:text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <svg v-else-if="getToolCategory(item.tool) === '执行命令'" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                       <rect x="3" y="4" width="18" height="16" rx="3" />
                       <path stroke-linecap="round" stroke-linejoin="round" d="M7 9l3 3-3 3M13 15h4" />
                     </svg>
-                    <svg v-else-if="getToolCategory(item.tool) === '思考'" class="w-4 h-4 text-gray-500 dark:text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <svg v-else-if="getToolCategory(item.tool) === '思考'" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                       <circle cx="9" cy="9" r="3.5" />
                       <circle cx="15" cy="9" r="3.5" />
                       <circle cx="9" cy="15" r="3.5" />
                       <circle cx="15" cy="15" r="3.5" />
                     </svg>
-                    <svg v-else class="w-4 h-4 text-gray-500 dark:text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <svg v-else class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                       <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
                   </div>
-                  <span class="font-normal shrink-0">{{ getToolCategory(item.tool) }}</span>
-                
-                  <span
-                    v-if="getToolTarget(item.tool)"
-                    class="border-b border-dotted border-gray-400 dark:border-gray-500 group-hover:border-gray-600 dark:group-hover:border-gray-300 font-mono text-[12.5px] pb-px transition-colors truncate min-w-0"
-                  >
-                    {{ cleanDisplayPath(getToolTarget(item.tool)) }}
-                  </span>
-                  <span
-                    v-else
-                    class="text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-200 transition-colors text-[13px] truncate min-w-0"
-                  >
-                    {{ cleanDisplayPath(getToolDescription(item.tool)) }}
-                  </span>
+                  <!-- 有目标路径/对象时（如读取/写入）：分类名 + 目标路径（读文件附行范围） -->
+                  <template v-if="getToolTarget(item.tool)">
+                    <span class="font-normal shrink-0" :class="isDark ? 'text-zinc-100 text-glow-white font-medium' : 'text-gray-700'">{{ getToolCategory(item.tool) }}</span>
+                    <button
+                      type="button"
+                      :disabled="!canPreviewFile(item.tool)"
+                      :title="canPreviewFile(item.tool) ? '预览文件' : undefined"
+                      @click.stop="openFilePreview?.(props.sessionId, getToolTarget(item.tool))"
+                      class="border-b border-dotted font-mono text-[12.5px] pb-px transition-colors truncate min-w-0"
+                      :class="isDark ? 'border-white/30 text-zinc-200 text-glow-subtle' : 'border-gray-400 text-gray-700'"
+                    >
+                      {{ cleanDisplayPath(getToolTarget(item.tool)) }}
+                    </button>
+                    <span
+                      v-if="getToolLineRange(item.tool)"
+                      class="font-mono text-[11.5px] shrink-0 select-none"
+                      :class="isDark ? 'text-zinc-400' : 'text-gray-400'"
+                    >
+                      {{ getToolLineRange(item.tool) }}
+                    </span>
+                  </template>
+
+                  <!-- 无目标路径时（如执行命令）：描述文本与分类名称二选一（优先描述文本，如「确保workspace依赖链接完整」；缺省回退「执行命令」） -->
+                  <template v-else>
+                    <button
+                      type="button"
+                      :disabled="!canExpandTool(item.tool)"
+                      :aria-expanded="!!expandedToolIds[item.tool.id]"
+                      @click.stop="toggleToolCall(item.tool.id)"
+                      class="transition-colors text-[13px] truncate min-w-0"
+                      :class="isDark ? 'text-zinc-100 text-glow-white font-medium' : 'text-gray-700 font-medium'"
+                    >
+                      {{ cleanDisplayPath(getToolDescription(item.tool)) || getToolCategory(item.tool) }}
+                    </button>
+                  </template>
 
                   <!-- edit_file 差异行指示（完全还原图片风格：绿+N 红-M） -->
                   <span
@@ -896,6 +960,86 @@ const handleImageClick = (url?: string) => {
                     >-{{ getToolDiffStat(item.tool)!.minusLines }}</span>
                   </span>
                 </div>
+
+                <!-- 展开的工具详情卡片 (带平滑折叠动画)；读文件没有详情，见 canExpandTool -->
+                <CollapseTransition>
+                  <div v-if="canExpandTool(item.tool) && expandedToolIds[item.tool.id]">
+                    <div :class="['w-full rounded-2xl border overflow-hidden mt-1.5 shadow-xs transition-colors', isDark ? 'border-[#273043] bg-[#12161f]' : 'border-gray-200/90 bg-white']">
+                      <div :class="['px-4 py-2.5 flex items-center justify-between gap-3 text-xs border-b', isDark ? 'border-gray-800/80' : 'border-gray-100']">
+                        <div class="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
+                          <span
+                            :class="[
+                              'w-2 h-2 rounded-full flex-shrink-0',
+                              toolStatusDotClass(item.tool.status)
+                            ]"
+                          ></span>
+                          <span class="text-gray-400 dark:text-gray-500 font-mono text-xs flex-shrink-0 select-none">
+                            {{ item.tool.workDir }}
+                          </span>
+                          <span class="font-mono text-xs text-gray-800 dark:text-gray-200 truncate select-text">
+                            {{ cleanDisplayPath(getToolDetail(item.tool)) }}
+                          </span>
+                          <!-- 卡片栏中的 diff 状态指示 -->
+                          <span
+                            v-if="getToolDiffStat(item.tool)"
+                            class="inline-flex items-center gap-1 font-mono text-[12px] font-medium leading-none shrink-0 select-none ml-1"
+                          >
+                            <span
+                              v-if="getToolDiffStat(item.tool)!.plusLines !== undefined && (getToolDiffStat(item.tool)!.plusLines! > 0 || (getToolDiffStat(item.tool)!.plusLines === 0 && getToolDiffStat(item.tool)!.minusLines === 0))"
+                              class="text-[#088f50] dark:text-emerald-400"
+                            >+{{ getToolDiffStat(item.tool)!.plusLines }}</span>
+                            <span
+                              v-if="getToolDiffStat(item.tool)!.minusLines !== undefined && (getToolDiffStat(item.tool)!.minusLines! > 0 || (getToolDiffStat(item.tool)!.plusLines === 0 && getToolDiffStat(item.tool)!.minusLines === 0))"
+                              class="text-[#b42c3f] dark:text-rose-400"
+                            >-{{ getToolDiffStat(item.tool)!.minusLines }}</span>
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          @click.stop="copyToolContent(item.tool.result ?? '', item.tool.id)"
+                          class="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition px-1 py-0.5 select-none flex-shrink-0 cursor-pointer"
+                        >
+                          {{ toolCopiedId === item.tool.id ? '已复制' : '复制' }}
+                        </button>
+                      </div>
+
+                      <div class="p-4">
+                        <!-- edit_file 工具展示增删对比块 -->
+                        <div v-if="isEditFileToolCall(item.tool.toolName) && getEditFileDiffChunks(item.tool)" class="space-y-2.5 font-mono text-xs select-text">
+                          <div v-if="getEditFileDiffChunks(item.tool)!.oldText" class="rounded-xl bg-red-500/10 border border-red-500/20 p-3 text-[#b42c3f] dark:text-rose-300 whitespace-pre-wrap overflow-x-auto max-h-48 scrollbar-thin">
+                            <div class="text-[11px] font-sans font-medium text-red-500/80 dark:text-red-400/80 mb-1.5 select-none flex items-center gap-1.5">
+                              <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                              <span>- 变更前 (oldText)</span>
+                            </div>
+                            {{ getEditFileDiffChunks(item.tool)!.oldText }}
+                          </div>
+                          <div v-if="getEditFileDiffChunks(item.tool)!.newText" class="rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-3 text-[#088f50] dark:text-emerald-300 whitespace-pre-wrap overflow-x-auto max-h-48 scrollbar-thin">
+                            <div class="text-[11px] font-sans font-medium text-emerald-600/80 dark:text-emerald-400/80 mb-1.5 select-none flex items-center gap-1.5">
+                              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                              <span>+ 变更后 (newText)</span>
+                            </div>
+                            {{ getEditFileDiffChunks(item.tool)!.newText }}
+                          </div>
+                        </div>
+                        <pre
+                          v-else-if="item.tool.result"
+                          :class="['font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto max-h-[380px] scrollbar-thin select-text', isDark ? 'text-gray-200' : 'text-gray-800']"
+                        >{{ item.tool.result }}</pre>
+                        <div v-else-if="isToolInProgress(item.tool.status)" class="font-mono text-xs text-amber-500/80 animate-pulse flex items-center gap-2">
+                          <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+                          <span>正在执行中...</span>
+                        </div>
+                        <pre
+                          v-else-if="shouldShowToolArguments(item.tool.toolName) && item.tool.query"
+                          :class="['font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto select-text', isDark ? 'text-gray-400' : 'text-gray-600']"
+                        >{{ item.tool.query }}</pre>
+                        <div v-else class="text-xs text-gray-400 font-mono">
+                          (暂无输出)
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CollapseTransition>
               </div>
             </div>
           </template>
@@ -912,21 +1056,45 @@ const handleImageClick = (url?: string) => {
             </GradientText>
           </div>
         </div>
+      </div>
+    </CollapseTransition>
 
         <!-- 细横线分割条 -->
-        <div class="border-b border-gray-200/70 dark:border-gray-800/80 w-full mt-2 mb-2.5"></div>
+        <div v-if="!props.message.isExploring" class="border-b border-gray-200/70 dark:border-gray-800/80 w-full mt-2 mb-2.5"></div>
       </div>
-
-      <!-- 计划已批准且存在任务清单：展示任务进度卡（批准后由 promptCard.tasks 驱动） -->
-      <TaskProgressCard
-        v-if="isPlanApproved && getPlanTasks().length"
-        :tasks="getPlanTasks()"
-        :is-dark="props.isDark"
-      />
 
       <!-- 统一互动卡片：按 promptCard.kind 分派到计划 / 澄清 / 命令审批卡片（历史与实时同形状） -->
       <template v-for="card in promptCardsList" :key="card.toolCallId || card.kind">
+        <!-- 待决策卡片原样整卡展开（要按键）；已有结论的默认收成一行，细节按需展开 -->
+        <div v-if="!card.pending" class="w-full">
+          <button
+            type="button"
+            @click="toggleCard(card)"
+            class="w-full flex items-center gap-1.5 text-xs py-1 transition select-none text-left cursor-pointer min-w-0"
+            :class="isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-gray-400 hover:text-gray-600'"
+          >
+            <svg
+              :class="['w-3 h-3 transition-transform duration-200 shrink-0', isCardExpanded(card) ? 'rotate-90' : '']"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+            </svg>
+            <span class="truncate">{{ cardSummary(card) }}</span>
+          </button>
+          <CollapseTransition>
+            <div v-if="isCardExpanded(card)">
+              <PromptCard
+                :prompt-card="card"
+                :session-id="props.sessionId"
+                :is-dark="props.isDark"
+              />
+            </div>
+          </CollapseTransition>
+        </div>
         <PromptCard
+          v-else
           :prompt-card="card"
           :session-id="props.sessionId"
           :is-dark="props.isDark"
@@ -994,15 +1162,20 @@ const handleImageClick = (url?: string) => {
         </button>
 
 
-        <!-- 执行状态（仅回答组有摘要时展示；进行中与终态不同配色） -->
-        <div v-if="execStatusMeta" class="flex flex-1 whitespace-nowrap items-center gap-1" :title="durationHint">
+        <!-- 执行状态（仅回答组有摘要时展示；进行中/失败/终态不同配色，失败附带原因全文 title） -->
+        <div v-if="execStatusMeta" class="flex flex-1 whitespace-nowrap items-center gap-1" :title="execStatusMeta.errorReason">
           <span
             :class="[
-              'w-1.5 h-1.5 rounded-full',
-              execStatusMeta.running ? 'bg-amber-400 animate-pulse' : 'bg-gray-500'
+              'w-1.5 h-1.5 rounded-full shrink-0',
+              execStatusMeta.failed ? 'bg-red-500' : execStatusMeta.running ? 'bg-amber-400 animate-pulse' : 'bg-gray-500'
             ]"
           ></span>
-          <span>{{ execStatusMeta.text }}</span>
+          <span :class="execStatusMeta.failed ? (isDark ? 'text-red-400' : 'text-red-600') : ''">{{ execStatusMeta.text }}</span>
+          <span
+            v-if="execStatusMeta.errorReason"
+            class="text-red-500/90 truncate max-w-[24rem] cursor-help"
+            :title="execStatusMeta.errorReason"
+          >：{{ execStatusMeta.errorReason }}</span>
         </div>
 
         <!-- 模型（模型名为空时隐藏该整项） -->
@@ -1022,7 +1195,7 @@ const handleImageClick = (url?: string) => {
         </div>
 
         <!-- 耗时统计（组尾展示一次；标注「总历时包含等待时间」） -->
-        <div v-if="showExecutionMeta" class="flex flex-1 whitespace-nowrap items-center gap-1" :title="durationHint">
+        <div v-if="showExecutionMeta" class="flex flex-1 whitespace-nowrap items-center gap-1">
           <svg class="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
@@ -1054,6 +1227,16 @@ const handleImageClick = (url?: string) => {
 </template>
 
 <style scoped>
+.thinking-text {
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.85;
+  letter-spacing: 0.01em;
+  overflow-wrap: anywhere;
+  text-shadow: none;
+}
+
 /* 淡入淡出过渡 */
 .context-compact-fade-enter-active,
 .context-compact-fade-leave-active {

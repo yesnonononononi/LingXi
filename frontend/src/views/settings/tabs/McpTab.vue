@@ -1,10 +1,15 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useMcpTab } from './useMcpTab';
 import { MCP_TRANSPORTS, MCP_STDIO_ENV_HINT } from '../../../types/chat';
+import { useTheme } from '../../../composables/useTheme';
 
-defineProps<{
+const props = defineProps<{
   isDark?: boolean;
 }>();
+
+const { isDark: themeIsDark } = useTheme();
+const isDark = computed(() => props.isDark ?? themeIsDark.value);
 
 const {
   mcpList,
@@ -25,9 +30,9 @@ const {
   handleSaveMcp,
   handleDeleteMcp,
   handleToggleMcp,
-  headerCountOf,
-  envCountOf,
-  connectionLabelOf,
+  countHeaders,
+  countEnvVars,
+  resolveConnectionLabel,
 } = useMcpTab();
 </script>
 
@@ -45,10 +50,10 @@ const {
     <div v-if="!isEditingOrAddingMcp" class="space-y-4">
       <div class="flex items-center justify-between">
         <div>
-          <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white">
+          <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
             MCP 服务
           </h4>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+          <p class="text-xs text-gray-500 dark:text-gray-400 dark:text-glow-subtle mt-0.5">
             接入 Model Context Protocol 服务，其工具将在每次执行时注入模型可见的工具集。
           </p>
         </div>
@@ -85,7 +90,7 @@ const {
       <div
         v-else-if="mcpList.length === 0"
         class="py-12 text-center text-xs text-gray-400 dark:text-gray-500 border border-dashed rounded-2xl"
-        :class="isDark ? 'border-gray-800' : 'border-gray-200'"
+        :class="isDark ? 'border-white/10' : 'border-gray-200'"
       >
         暂无配置的 MCP 服务，请点击上方「新建服务」进行添加。
       </div>
@@ -98,29 +103,29 @@ const {
           class="px-4 py-3.5 rounded-2xl border transition-all"
           :class="[
             isDark
-              ? 'bg-[#151c2c] border-[#252f44] hover:border-gray-700'
+              ? 'bg-black/90 border-white/15 hover:border-white/30 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
               : 'bg-gray-50/70 border-gray-200 hover:border-gray-300'
           ]"
         >
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2 flex-wrap">
-                <span class="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                <span class="text-sm font-semibold text-gray-900 dark:text-white dark:text-glow-subtle truncate">
                   {{ item.name }}
                 </span>
                 <!-- 启停状态徽标 -->
                 <span
-                  class="px-1.5 py-0.5 rounded-md text-[10px] font-medium shrink-0"
+                  class="px-1.5 py-0.5 rounded-md text-[10px] font-medium shrink-0 border"
                   :class="item.status === 0
-                    ? (isDark ? 'bg-gray-700/60 text-gray-400' : 'bg-gray-200 text-gray-500')
-                    : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'"
+                    ? (isDark ? 'bg-white/5 border-white/10 text-zinc-400' : 'bg-gray-200 border-gray-300 text-gray-500')
+                    : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'"
                 >
                   {{ item.status === 0 ? '已停用' : '已启用' }}
                 </span>
                 <!-- 传输方式 -->
                 <span
-                  class="px-1.5 py-0.5 rounded-md text-[10px] shrink-0"
-                  :class="isDark ? 'bg-white/5 text-gray-400' : 'bg-black/5 text-gray-500'"
+                  class="px-1.5 py-0.5 rounded-md text-[10px] shrink-0 border"
+                  :class="isDark ? 'bg-white/5 border-white/10 text-zinc-300' : 'bg-black/5 border-gray-200 text-gray-500'"
                 >
                   {{ item.transport || 'streamable-http' }}
                 </span>
@@ -152,15 +157,15 @@ const {
 
               <!-- 连接信息：http 系显示端点，stdio 显示启动命令 -->
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 break-all font-mono">
-                {{ connectionLabelOf(item) }}
+                {{ resolveConnectionLabel(item) }}
               </p>
 
               <div class="flex items-center gap-3 mt-1.5 text-[11px] text-gray-400 dark:text-gray-500">
-                <span v-if="headerCountOf(item) > 0">
-                  {{ headerCountOf(item) }} 个请求头
+                <span v-if="countHeaders(item) > 0">
+                  {{ countHeaders(item) }} 个请求头
                 </span>
-                <span v-if="envCountOf(item) > 0">
-                  {{ envCountOf(item) }} 个环境变量
+                <span v-if="countEnvVars(item) > 0">
+                  {{ countEnvVars(item) }} 个环境变量
                 </span>
                 <span v-if="item.executionTimeout">
                   超时 {{ Math.round(item.executionTimeout / 1000) }}s
@@ -179,7 +184,7 @@ const {
                 :class="[
                   'px-2 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer',
                   isDark
-                    ? 'text-gray-300 hover:bg-white/5'
+                    ? 'text-zinc-300 hover:bg-white/5'
                     : 'text-gray-600 hover:bg-black/5'
                 ]"
               >
@@ -191,7 +196,7 @@ const {
                 :class="[
                   'px-2 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer',
                   isDark
-                    ? 'text-blue-400 hover:bg-white/5'
+                    ? 'text-cyan-400 hover:bg-white/5'
                     : 'text-blue-600 hover:bg-black/5'
                 ]"
               >
@@ -217,7 +222,7 @@ const {
 
     <!-- 编辑 / 新增表单 -->
     <div v-else class="space-y-4">
-      <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white">
+      <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
         {{ editingMcpId ? '编辑 MCP 服务' : '新建 MCP 服务' }}
       </h4>
 
@@ -231,7 +236,7 @@ const {
           :class="[
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
             isDark
-              ? 'bg-[#151c2c] border-[#252f44] text-gray-100 placeholder-gray-600 focus:border-blue-500'
+              ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
               : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
           ]"
         />
@@ -270,9 +275,9 @@ const {
             :class="[
               'px-3 py-1.5 rounded-xl border text-xs font-medium transition cursor-pointer',
               mcpForm.transport === t
-                ? 'bg-blue-600 border-blue-600 text-white'
+                ? 'bg-cyan-600 border-cyan-500 text-white shadow-[0_0_12px_rgba(8,145,178,0.4)]'
                 : (isDark
-                    ? 'border-[#252f44] text-gray-400 hover:bg-white/5'
+                    ? 'border-white/15 text-zinc-300 hover:bg-white/5'
                     : 'border-gray-200 text-gray-600 hover:bg-gray-50')
             ]"
           >
@@ -294,7 +299,7 @@ const {
           :class="[
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
             isDark
-              ? 'bg-[#151c2c] border-[#252f44] text-gray-100 placeholder-gray-600 focus:border-blue-500'
+              ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
               : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
           ]"
         />
@@ -313,7 +318,7 @@ const {
           :class="[
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
             isDark
-              ? 'bg-[#151c2c] border-[#252f44] text-gray-100 placeholder-gray-600 focus:border-blue-500'
+              ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
               : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
           ]"
         ></textarea>
@@ -333,7 +338,7 @@ const {
           :class="[
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
             isDark
-              ? 'bg-[#151c2c] border-[#252f44] text-gray-100 placeholder-gray-600 focus:border-blue-500'
+              ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
               : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
           ]"
         ></textarea>
@@ -359,7 +364,7 @@ const {
           :class="[
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
             isDark
-              ? 'bg-[#151c2c] border-[#252f44] text-gray-100 placeholder-gray-600 focus:border-blue-500'
+              ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
               : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
           ]"
         ></textarea>
@@ -385,7 +390,7 @@ const {
           :class="[
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
             isDark
-              ? 'bg-[#151c2c] border-[#252f44] text-gray-100 placeholder-gray-600 focus:border-blue-500'
+              ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
               : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
           ]"
         />
@@ -402,7 +407,7 @@ const {
             :class="[
               'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
               isDark
-                ? 'bg-[#151c2c] border-[#252f44] text-gray-100 focus:border-blue-500'
+                ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80'
                 : 'bg-white border-gray-200 text-gray-800 focus:border-blue-500'
             ]"
           />
@@ -416,7 +421,7 @@ const {
             :class="[
               'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
               isDark
-                ? 'bg-[#151c2c] border-[#252f44] text-gray-100 focus:border-blue-500'
+                ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80'
                 : 'bg-white border-gray-200 text-gray-800 focus:border-blue-500'
             ]"
           />
@@ -430,7 +435,7 @@ const {
             :class="[
               'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
               isDark
-                ? 'bg-[#151c2c] border-[#252f44] text-gray-100 focus:border-blue-500'
+                ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80'
                 : 'bg-white border-gray-200 text-gray-800 focus:border-blue-500'
             ]"
           />
@@ -439,7 +444,7 @@ const {
 
       <!-- 启用开关 -->
       <label class="flex items-center gap-2 cursor-pointer select-none">
-        <input v-model="mcpForm.enabled" type="checkbox" class="w-3.5 h-3.5 cursor-pointer" />
+        <input v-model="mcpForm.enabled" type="checkbox" class="w-3.5 h-3.5 cursor-pointer accent-cyan-500" />
         <span class="text-xs text-gray-700 dark:text-gray-300">启用该服务</span>
       </label>
 
@@ -452,14 +457,14 @@ const {
       </div>
 
       <!-- 底部操作按钮 -->
-      <div class="flex items-center justify-end gap-2.5 pt-3 border-t" :class="isDark ? 'border-gray-800' : 'border-gray-200'">
+      <div class="flex items-center justify-end gap-2.5 pt-3 border-t" :class="isDark ? 'border-white/10' : 'border-gray-200'">
         <button
           type="button"
           @click="cancelMcpForm"
           :class="[
             'px-4 py-1.5 rounded-xl border text-xs font-medium transition cursor-pointer',
             isDark
-              ? 'border-gray-700 hover:bg-white/5 text-gray-300'
+              ? 'border-white/15 hover:bg-white/5 text-zinc-300'
               : 'border-gray-200 hover:bg-gray-50 text-gray-700'
           ]"
         >
@@ -471,7 +476,7 @@ const {
           @click="handleSaveMcp"
           class="px-4 py-1.5 rounded-xl text-xs font-medium text-white cursor-pointer transition shadow-sm"
           :class="[
-            isSubmittingMcp ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-500'
+            isSubmittingMcp ? 'bg-cyan-600/50 cursor-not-allowed' : 'bg-cyan-600 hover:bg-cyan-500 shadow-[0_0_15px_rgba(8,145,178,0.4)]'
           ]"
         >
           {{ isSubmittingMcp ? '正在保存...' : '保存' }}

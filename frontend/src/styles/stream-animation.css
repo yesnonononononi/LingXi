@@ -1,0 +1,67 @@
+/**
+ * 流式文本微模糊出场动效体系 (Token Stream Blur & Fade)
+ *
+ * 方案 A 全局样式抽象：
+ * 专为 AI 流式输出 (SSE Stream / Thinking / Markdown) 优化的轻量硬件加速动效。
+ * 避免了虚拟 DOM 拆字带来的高频重渲染、闪烁与内存消耗，仅通过 CSS GPU 复合层实现平滑浮现。
+ */
+
+/* 1. 核心关键帧：微模糊渐显出场 */
+@keyframes stream-blur-in {
+  0% {
+    filter: blur(5px);
+    opacity: 0.2;
+    transform: translateY(3px);
+  }
+  50% {
+    filter: blur(2px);
+    opacity: 0.75;
+  }
+  100% {
+    filter: blur(0px);
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 2. 思维链 (Thinking) 流式呼吸渐显 */
+@keyframes stream-thinking-flow {
+  0% {
+    filter: blur(3px);
+    opacity: 0.4;
+  }
+  100% {
+    filter: blur(0px);
+    opacity: 1;
+  }
+}
+
+/* 3. 通用单次文本模糊入场类 (可任意元素直接使用) */
+.animate-blur-in {
+  animation: stream-blur-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: filter, opacity, transform;
+}
+
+/* 4. 流式 Markdown 容器：在流式生成中时，最新生成的尾部段落/列表/代码块自动享有平滑模糊出场 */
+.markdown-stream-flow.is-streaming .markdown-body > *:last-child {
+  animation: stream-blur-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* 5. 思维链流式内容专用类 */
+.stream-thinking-content {
+  position: relative;
+}
+
+.stream-thinking-content.is-running {
+  animation: stream-thinking-flow 0.2s ease-out;
+}
+
+/* 用户开启减弱动态效果时自动平滑优雅降级 */
+@media (prefers-reduced-motion: reduce) {
+  .animate-blur-in,
+  .markdown-stream-flow.is-streaming .markdown-body > *:last-child,
+  .stream-thinking-content.is-running {
+    animation: none !important;
+    filter: none !important;
+  }
+}

@@ -2,7 +2,9 @@
 import { ref, computed, inject } from 'vue';
 import type { PromptCardData } from '../../types/chat';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
+import { APPROVE_ACTION, normalizeOutcome, resolveApprovalState } from '../../utils/approvalOutcome';
 import SpecularButton from '../common/SpecularButton.vue';
+import CollapseTransition from '../common/CollapseTransition.vue';
 
 const props = defineProps<{
   /** 统一卡片数据（COMMAND 命令审批） */
@@ -12,16 +14,19 @@ const props = defineProps<{
 }>();
 
 /**
- * 由视图层注入的流式决策：提交审批后消费恢复执行的事件流并渲染成新的消息气泡。
+ * 由视图层注入的决策提交：批 A 起走 JSON 回执，**不再消费请求级流**。
+ * 恢复期的实时内容由会话级 v3 流渲染；本回调只负责提交并回执结果。
  * 缺省（组件树外独立使用本卡片时）降级为不可提交，仅提示。
- * 契约：决策统一以 toolCallId 为锚点，走 decideToolCall({conversationId, toolCallId, approved, text})。
+ * 契约：决策以 toolCallId 为锚点，走 decideToolCall({conversationId, toolCallId, action, text, expectedVersion})。
  */
 const decideToolCall = inject<((payload: {
   conversationId: string;
   toolCallId: string;
-  approved: boolean;
+  action: 'APPROVE' | 'REJECT' | 'ANSWER';
   text?: string;
-}) => Promise<boolean>) | null>('decideToolCall', null);
+  /** 卡片当前版本；提交给后端做冲突判定，避免过期界面覆盖先到的结论 */
+  expectedVersion?: string | number | null;
+}) => Promise<unknown>) | null>('decideToolCall', null);
 
 const isCollapsed = ref(false);
 const isDismissed = ref(false);
@@ -35,31 +40,24 @@ const { isCopied: copied, copy: copyRaw } = useCopyFeedback();
 const commandText = computed(() => props.promptCard.command || props.promptCard.content || '');
 const commandWorkDir = computed(() => props.promptCard.workDir || '');
 const shellLabel = computed(() => props.promptCard.shell || '');
+/** 模型声明的命令意图（content.intention）；缺失时整行不渲染 */
+const commandIntention = computed(() => props.promptCard.intention || '');
 
-/** 是否仍待决策：以后端下发的 pending 为准（唯一可审批判定） */
-const isPending = computed(() => props.promptCard.pending === true);
+/** pending 也可能暂不可操作，按钮只能看后端动作集合。 */
+const isPending = computed(() => props.promptCard.allowedActions?.includes(APPROVE_ACTION) === true);
 /** 数据不可用（tool_call 缺行 / content 解析失败） */
 const isUnavailable = computed(() => props.promptCard.unavailable === true);
 
 /** 结论：raw_output.outcome（APPROVED/REJECTED/CANCELLED/SUCCEEDED/FAILED/TIMED_OUT） */
-const outcome = computed(() => String(props.promptCard.outcome ?? '').trim().toUpperCase());
+const outcome = computed(() => normalizeOutcome(props.promptCard.outcome));
 
 /** 已决断（不可再操作）：不再 pending，或数据不可用 */
 const isResolved = computed(() => isUnavailable.value || !isPending.value);
 
-const resolvedStatus = computed<'approved' | 'rejected' | 'unknown' | null>(() => {
+const resolvedStatus = computed(() => {
   if (isUnavailable.value) return null;
-  if (outcome.value === 'APPROVED' || outcome.value === 'SUCCEEDED') return 'approved';
-  if (
-    outcome.value === 'REJECTED' ||
-    outcome.value === 'CANCELLED' ||
-    outcome.value === 'FAILED' ||
-    outcome.value === 'TIMED_OUT'
-  ) {
-    return 'rejected';
-  }
   // 契约 §3：结论缺失/无法识别 = 状态未知，绝不臆断为「已批准」。
-  return isPending.value ? null : 'unknown';
+  return resolveApprovalState(outcome.value, isPending.value);
 });
 
 // 复制命令（保留原有「空文本不复制」守卫）
@@ -84,19 +82,14 @@ const submit = async (approved: boolean) => {
   errorMsg.value = '';
 
   try {
-    const accepted = await decideToolCall({
+    await decideToolCall({
       conversationId: String(conversationId),
       toolCallId: String(toolCallId),
-      approved
+      action: approved ? 'APPROVE' : 'REJECT',
+      expectedVersion: props.promptCard.version ?? null
     });
-    if (!accepted) {
-      errorMsg.value = '提交审批失败，请重试';
-      return;
-    }
-    // 结论由 outcome 表达，status 收敛为终态 completed（不再用 [rejected] 字符串嗅探）
-    props.promptCard.pending = false;
-    props.promptCard.status = 'completed';
-    props.promptCard.outcome = approved ? 'APPROVED' : 'REJECTED';
+    // 结论由 outcome 表达，status 收敛为终态 completed（不再用 [rejected] 字符串嗅探）。
+    // 卡片状态一律以回执携带的工具实体与后续 v3 事件为准，不在此自行改写。
   } catch (err: any) {
     errorMsg.value = err?.message || '提交审批失败，请重试';
   } finally {
@@ -179,8 +172,10 @@ const handleReject = () => submit(false);
       </div>
 
       <!-- 2. 内容主体 (可折叠) -->
-      <div v-show="!isCollapsed" class="space-y-2.5">
-        <!-- 命令展示区 (对齐现代开发者工具，浅色高质感灰底 / 深色低反光底) -->
+      <CollapseTransition>
+        <div v-if="!isCollapsed">
+          <div class="space-y-2.5">
+          <!-- 命令展示区 (对齐现代开发者工具，浅色高质感灰底 / 深色低反光底) -->
         <div
           v-if="commandText"
           :class="[
@@ -215,6 +210,9 @@ const handleReject = () => submit(false);
             </button>
           </div>
 
+          <div v-if="commandIntention" class="px-3 pt-2 text-xs break-all" :class="isDark ? 'text-gray-300' : 'text-gray-600'">
+            <span class="font-medium">意图：</span>{{ commandIntention }}
+          </div>
           <div v-if="commandWorkDir" class="px-3 pt-2 text-xs text-gray-500 break-all">工作目录：{{ commandWorkDir }}</div>
           <!-- 命令正文 -->
           <div class="p-3 pr-16 font-mono text-[12px] leading-relaxed break-all select-text flex items-start gap-2">
@@ -244,7 +242,7 @@ const handleReject = () => submit(false);
           <svg v-else class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <span>{{ isUnavailable ? '审批已结束或状态不可用' : resolvedStatus === 'approved' ? '已批准执行该命令' : resolvedStatus === 'rejected' ? '已拒绝执行该命令' : '状态未知' }}</span>
+          <span>{{ isUnavailable ? '审批已结束或状态不可用' : resolvedStatus === 'approved' ? '已批准执行该命令' : resolvedStatus === 'rejected' ? '已拒绝执行该命令' : promptCard.status === 'preparing' ? '准备中' : promptCard.unavailableReason || '状态未知' }}</span>
         </div>
 
         <!-- 错误提示 -->
@@ -306,8 +304,10 @@ const handleReject = () => submit(false);
               <span>批准并执行</span>
             </div>
           </SpecularButton>
+          </div>
         </div>
+        </div>
+      </CollapseTransition>
       </div>
     </div>
-  </div>
-</template>
+  </template>

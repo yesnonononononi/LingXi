@@ -4,6 +4,7 @@ import { UserConfigAPI } from '../../../services/api';
 import type { AgentAccessMode, CommandApprovalPolicyType } from '../../../types/chat';
 import { isOk } from '../../../utils/api';
 import { normalizeAccessMode, normalizeCommandApprovalPolicy } from '../../../utils/enum';
+import { getApiBaseUrl, setApiBaseUrl, resetApiBaseUrl } from '../../../utils/apiConfig';
 
 export function useGeneralTab(emit: (e: 'modelUpdated') => void) {
   // 主题设置
@@ -148,13 +149,16 @@ export function useGeneralTab(emit: (e: 'modelUpdated') => void) {
     themeMode.value = mode;
     if (mode === 'light') {
       setTheme('light');
+      void UserConfigAPI.updateCurrent({ renderTheme: 'LIGHT' });
     } else if (mode === 'dark') {
       setTheme('dark');
+      void UserConfigAPI.updateCurrent({ renderTheme: 'DARK' });
     } else {
       // 跟随系统
       const isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
       setTheme(isSysDark ? 'dark' : 'light');
       localStorage.removeItem('lingxi-theme');
+      void UserConfigAPI.updateCurrent({ renderTheme: isSysDark ? 'DARK' : 'LIGHT' });
     }
   };
 
@@ -167,6 +171,13 @@ export function useGeneralTab(emit: (e: 'modelUpdated') => void) {
     try {
       const res = await UserConfigAPI.current();
       if (isOk(res.code) && res.data) {
+        // 同步后端持久化的 renderTheme（未在本地明确设置时采纳服务端偏好）
+        if (res.data.renderTheme && !saved) {
+          const remoteTheme = res.data.renderTheme.toUpperCase() === 'DARK' ? 'dark' : 'light';
+          setTheme(remoteTheme);
+          themeMode.value = remoteTheme;
+        }
+
         // 枚举校验收敛到 utils/enum，不再 as 强转后靠 includes 白名单兜底
         const mode = normalizeAccessMode(res.data.accessMode);
         if (mode) accessMode.value = mode;
@@ -191,6 +202,24 @@ export function useGeneralTab(emit: (e: 'modelUpdated') => void) {
     window.removeEventListener('click', handleDocumentClick);
   });
 
+  // 后端服务地址配置 (桌面客户端 / 局域网 / 远程直连)
+  const apiBaseUrl = ref(getApiBaseUrl() || 'http://localhost:8088');
+  const isApiUrlSaved = ref(false);
+
+  const handleSaveApiUrl = () => {
+    setApiBaseUrl(apiBaseUrl.value);
+    apiBaseUrl.value = getApiBaseUrl() || 'http://localhost:8088';
+    isApiUrlSaved.value = true;
+    setTimeout(() => {
+      isApiUrlSaved.value = false;
+    }, 2000);
+  };
+
+  const handleResetApiUrl = () => {
+    resetApiBaseUrl();
+    apiBaseUrl.value = getApiBaseUrl() || 'http://localhost:8088';
+  };
+
   return {
     themeMode,
     language,
@@ -207,6 +236,10 @@ export function useGeneralTab(emit: (e: 'modelUpdated') => void) {
     isCommandApprovalPolicyOpen,
     commandApprovalPolicyOptions,
     currentCommandApprovalPolicyLabel,
+    apiBaseUrl,
+    isApiUrlSaved,
+    handleSaveApiUrl,
+    handleResetApiUrl,
     toggleLanguageDropdown,
     toggleExecutionEnvDropdown,
     toggleAccessModeDropdown,

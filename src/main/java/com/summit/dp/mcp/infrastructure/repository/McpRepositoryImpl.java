@@ -1,52 +1,61 @@
 package com.summit.dp.mcp.infrastructure.repository;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.ddd.infrastructure.repository.AbstractRepository;
 import com.summit.dp.mcp.domain.model.Mcp;
 import com.summit.dp.mcp.domain.repository.McpRepository;
 import com.summit.dp.mcp.infrastructure.persistence.mapper.McpMapper;
 import com.summit.dp.mcp.infrastructure.persistence.po.McpPO;
+import com.summit.ddd.infrastructure.repository.yaml.AbstractYamlRepository;
+import com.summit.ddd.infrastructure.repository.yaml.YamlListStore;
+import com.summit.dp.shared.utils.YamlSerializer;
+
 import lombok.extern.slf4j.Slf4j;
-import org.jetbrains.annotations.NotNull;
+
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 
+import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
-/**
- * Mcp 仓储实现。
- *
- * <p>承接四处形态转换，均收口在本层，领域侧不感知存储细节：</p>
- * <ul>
- *   <li>{@code headers} / {@code env}：JSON 字符串 ⇄ {@code Map<String,String>}；</li>
- *   <li>{@code command}：JSON 数组字符串 ⇄ {@code List<String>}；</li>
- *   <li>超时：毫秒 {@code Long} ⇄ {@link Duration}；</li>
- *   <li>时间列名差异：领域 {@code createAt/updateAt} ⇄ 库 {@code createTime/updateTime}。</li>
- * </ul>
- */
+/** 沿用既有 PO 字段，首次从 H2 迁移后以 YAML 为准。 */
 @Repository
 @Slf4j
-public class McpRepositoryImpl extends AbstractRepository<Mcp, McpPO, Long>
+public class McpRepositoryImpl extends AbstractYamlRepository<Mcp, McpPO>
         implements McpRepository {
 
-    private final McpMapper mapper;
     private final ObjectMapper objectMapper;
 
-    public McpRepositoryImpl(McpMapper mapper, ObjectMapper objectMapper) {
-        this.mapper = mapper;
+    public McpRepositoryImpl(McpMapper mapper, ObjectMapper objectMapper, YamlSerializer serializer,
+                             @Value("${lingxi.config.mcp.path:${user.home}/.lingxi/config/mcp.yaml}") String path) {
+        super(new YamlListStore<>(Path.of(path), serializer.listCodec(new TypeReference<List<McpPO>>() {}),
+                () -> mapper.selectList(null)));
         this.objectMapper = objectMapper;
     }
 
     @Override
-    protected @NotNull BaseMapper<McpPO> mapper() {
-        return this.mapper;
+    protected Long resolveId(McpPO po) { return po.getId(); }
+
+    @Override
+    protected McpPO prepareInsert(McpPO po, long id) {
+        Instant now = Instant.now();
+        return po.toBuilder()
+                .id(id)
+                .createTime(po.getCreateTime() == null ? now : po.getCreateTime())
+                .updateTime(now).build();
+    }
+
+    @Override
+    protected McpPO prepareUpdate(McpPO previous, McpPO replacement) {
+        return replacement.toBuilder().createTime(previous.getCreateTime()).updateTime(Instant.now()).build();
     }
 
     @Override
@@ -57,21 +66,15 @@ public class McpRepositoryImpl extends AbstractRepository<Mcp, McpPO, Long>
     @Override
     public Optional<Mcp> findByName(String name) {
         if (name == null || name.isBlank()) return Optional.empty();
-        // 重名校验的过滤条件下推到 SQL，不捞全表后比较
-        List<McpPO> found = mapper.selectList(new LambdaQueryWrapper<McpPO>()
-                .eq(McpPO::getName, name.trim())
-                .last("LIMIT 1"));
-        return found.isEmpty() ? Optional.empty() : Optional.of(toModel(found.getFirst()));
+        return store.access(false, records -> records.stream()
+                .filter(po -> name.trim().equals(po.getName())).findFirst().map(this::toModel));
     }
 
     @Override
     public List<Mcp> findEnabled() {
-        return mapper.selectList(new LambdaQueryWrapper<McpPO>()
-                        .eq(McpPO::getStatus, Mcp.STATUS_ENABLED)
-                        .orderByAsc(McpPO::getId))
-                .stream()
-                .map(this::toModel)
-                .toList();
+        return store.access(false, records -> records.stream()
+                .filter(po -> Objects.equals(po.getStatus(), Mcp.STATUS_ENABLED))
+                .sorted(Comparator.comparing(McpPO::getId)).map(this::toModel).toList());
     }
 
     @Override
@@ -100,7 +103,7 @@ public class McpRepositoryImpl extends AbstractRepository<Mcp, McpPO, Long>
      * 枚举 → 库中形态（{@code streamable-http}）。
      * <p>列默认值与既有数据都是形态值（见 {@code init.sql}），写枚举名会让同一列出现两种写法。</p>
      */
-    private String wireOf(Mcp.Transport transport) {
+    private String toTransportValue(Mcp.Transport transport) {
         return transport.name().toLowerCase(Locale.ROOT).replace('_', '-');
     }
 
@@ -109,7 +112,7 @@ public class McpRepositoryImpl extends AbstractRepository<Mcp, McpPO, Long>
         return McpPO.builder()
                 .id(model.getId())
                 .name(model.getName())
-                .transport(wireOf(model.getTransport()))
+                .transport(toTransportValue(model.getTransport()))
                 .url(model.getUrl())
                 .headers(writeStringMap(model.getHeaders()))
                 .command(writeCommand(model.getCommand()))

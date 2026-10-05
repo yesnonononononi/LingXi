@@ -149,9 +149,13 @@ public class ToolConfig {
      *
      * <p>计划书正文现存放于 {@code tool_call.content}（{@code kind=PLAN}）；按
      * {@code execution_id} 取本执行<b>最后一条</b> PLAN 卡片即可拿回正文，无需再经快照行二次回查。</p>
+     *
+     * <p>Bean 名固定为 {@code contextAttachmentProvider}：框架兜底 Bean 用
+     * {@code @ConditionalOnMissingBean(name = "contextAttachmentProvider")} 按名字退位，
+     * 业务侧改名覆盖它，否则同类型两个 Bean 导致 conversationManager 注入歧义。</p>
      */
     @Bean
-    public ContextAttachmentProvider planContextAttachment(ToolCallRepository toolCallRepository,
+    public ContextAttachmentProvider contextAttachmentProvider(ToolCallRepository toolCallRepository,
                                                            ToolCallConverter converter) {
         return executionId -> {
             Long execId = toId(executionId);
@@ -160,7 +164,7 @@ public class ToolConfig {
             }
             return toolCallRepository.listByExecutionId(execId).stream()
                     .filter(toolCall -> toolCall.getType() == ToolCallType.PROMISE)
-                    .filter(toolCall -> converter.kindOf(toolCall.getContent()) == ToolCallKind.PLAN)
+                    .filter(toolCall -> converter.resolveKind(toolCall.getContent()) == ToolCallKind.PLAN)
                     .reduce((first, second) -> second)   // 取最后一条
                     .map(toolCall -> renderPlanAttachment(converter.parse(toolCall.getContent())));
         };

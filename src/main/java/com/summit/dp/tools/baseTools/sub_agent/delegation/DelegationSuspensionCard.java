@@ -3,8 +3,6 @@ package com.summit.dp.tools.baseTools.sub_agent.delegation;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.dp.execution.ExecutionIdentity;
-import com.summit.dp.shared.event.ToolCallEventPublisher;
-import com.summit.dp.shared.event.ToolCallPendingEvent;
 import com.summit.dp.toolcall.application.command.ToolCallRegisterCommand;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.ToolCallRegistrar;
@@ -29,12 +27,10 @@ public class DelegationSuspensionCard {
 
     private final ToolCallRegistrar toolCallRegistrar;
     private final ToolCallConverter toolCallConverter;
-    private final ToolCallEventPublisher toolCallEventPublisher;
-    private final ExecutionIdentity executionIdentity;
 
     /** 登记 DELEGATION 槽位、按根会话推送卡片事件，返回让父执行挂起的 promise 工具结果。 */
     public ToolExecuteResult suspendAsPromise(ToolExecution toolExecution, String subSessionId,
-                                              String agentName, String task) {
+                                              String subExecutionId, String agentName, String task) {
         long sessionId = ExecutionIdentity.sessionId(toolExecution);
         long executionId = Long.parseLong(toolExecution.getExecutionId());
         String toolCallId = toolExecution.getId();
@@ -42,12 +38,9 @@ public class DelegationSuspensionCard {
         toolCallRegistrar.registerPromise(ToolCallRegisterCommand.promise(
                 toolCallId, sessionId, executionId, toolExecution.getToolDefinition().name(),
                 ToolCallKind.DELEGATION, agentName,
-                toolCallConverter.delegationContent(subSessionId, task),
+                toolCallConverter.delegationContent(subSessionId, subExecutionId, task),
                 toolCallConverter.rawInput(toolExecution.getArgs())));
 
-        long rootSessionId = executionIdentity.rootSessionIdOfSession(sessionId);
-        toolCallEventPublisher.publish(rootSessionId, ToolCallPendingEvent.of(rootSessionId, toolCallId,
-                ToolCallKind.DELEGATION.name(), String.valueOf(sessionId), String.valueOf(executionId)));
         return ToolExecuteResult.promise("子代理已暂停，等待人工审批");
     }
 }

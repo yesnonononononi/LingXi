@@ -3,6 +3,22 @@ import type { Ref } from 'vue';
 
 const AUTO_SCROLL_THRESHOLD = 96; // px，距底部小于此值视为在底部
 
+/** 组件实例可能自带滚动容器（`getContainer()`），也可能只暴露 `containerRef` / `$el`。 */
+interface ScrollHost {
+  getContainer?: () => HTMLElement | null;
+  containerRef?: HTMLElement | null;
+  $el?: HTMLElement | null;
+}
+
+/**
+ * 是否为组件实例宿主（而非裸 DOM 元素）。
+ * 裸元素身上没有 `getContainer` / `containerRef` / `$el` 这三个实例成员。
+ */
+const isScrollHost = (value: unknown): value is ScrollHost => {
+  if (typeof value !== 'object' || value === null) return false;
+  return 'getContainer' in value || 'containerRef' in value || '$el' in value;
+};
+
 export interface ChatScrollOptions {
   messagesContainerRef: Ref<any>;
 }
@@ -17,13 +33,13 @@ export function useChatScroll(options: ChatScrollOptions) {
   let scrollRafId: number | null = null;
 
   const getScrollElement = (): HTMLElement | null => {
-    if (!messagesContainerRef.value) return null;
-    if ('getContainer' in messagesContainerRef.value && typeof messagesContainerRef.value.getContainer === 'function') {
-      return messagesContainerRef.value.getContainer();
+    const host = messagesContainerRef.value;
+    if (!isScrollHost(host)) return null;
+    if (typeof host.getContainer === 'function') {
+      return host.getContainer();
     }
-    return (messagesContainerRef.value as any)?.containerRef
-      || (messagesContainerRef.value as any)?.$el
-      || null;
+    // 两种承载方式任选其一：显式容器引用、组件根元素。
+    return host.containerRef || host.$el || null;
   };
 
   const updateScrollMetrics = () => {

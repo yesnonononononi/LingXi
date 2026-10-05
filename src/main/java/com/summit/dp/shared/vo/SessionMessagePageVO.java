@@ -16,6 +16,9 @@ public class SessionMessagePageVO {
     /** 下一页游标，为空表示已到末页 */
     private String nextCursor;
     private boolean hasMore;
+    private Long historyRevision;
+    private String messageCursor;
+
 
     /**
      * 本页消息涉及的业务轮次，键为 {@code turnId} 字符串（雪花 ID 走字符串避免前端精度丢失）。

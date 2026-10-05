@@ -22,11 +22,6 @@ export function isOk(code?: number | string | null): boolean {
   return Number.isFinite(n) && SUCCESS_CODES.includes(n);
 }
 
-/** 判定后端响应是否成功且携带数据 */
-export function isOkWithData<T>(res: { code?: number | string; data?: T } | null | undefined): res is { code?: number | string; data: T } {
-  return !!res && isOk(res.code) && res.data !== null && res.data !== undefined;
-}
-
 /**
  * 安全取整：用于分页等必须为有效数字的场景。
  * 解析失败返回 fallback，绝不返回 NaN。

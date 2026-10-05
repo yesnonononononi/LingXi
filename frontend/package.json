@@ -3,25 +3,26 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "main": "electron/main.cjs",
+  "author": "Summit",
+  "description": "AetherAgent Console Desktop Application",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
-    "test": "npx tsx --test tests/crossPageTurn.test.ts"
-  },
-  "dependencies": {
-    "axios": "^1.19.0",
-    "dompurify": "^3.4.15",
-    "gsap": "^3.15.0",
-    "highlight.js": "^11.12.0",
-    "markdown-it": "^15.0.2",
-    "motion-v": "^2.4.4",
-    "ogl": "^1.0.11",
-    "pinia": "^4.0.3",
-    "vue": "^3.5.39",
-    "vue-router": "^5.2.0"
+    "test": "npx tsx --test tests/crossPageTurn.test.ts tests/sseResponse.test.ts tests/sessionRunState.test.ts tests/reasoningEffort.test.ts tests/streamV3.test.ts tests/messageProjection.test.ts tests/streamV3Recovery.test.ts tests/streamV3Resend.test.ts tests/streamV3Concurrency.test.ts tests/streamV3Operations.test.ts tests/streamV3PlanCard.test.ts tests/chatViewOperations.test.ts tests/streamV3SwitchAudit.test.ts tests/streamV3FixProbe.test.ts tests/probeReconnectGeneration.test.ts tests/probeDerivedBubble.test.ts tests/probeInvalidationScope.test.ts tests/probeNewSessionAttach.test.ts tests/streamV3DeliveryAudit.test.ts tests/streamV3DeliveryFollowupAudit.test.ts tests/streamV3TerminalReconcileAudit.test.ts tests/streamV3LatestReportAudit.test.ts && node --test tests/filePreview.native.test.cjs",
+    "test:desktop-titlebar": "npm run build && electron tests/electronTitleBar.smoke.cjs",
+    "test:file-preview": "electron tests/filePreview.smoke.cjs",
+    "app:dev": "node electron/dev.mjs",
+    "backend:runtime": "node scripts/build-backend-runtime.mjs",
+    "backend:runtime:quick": "node scripts/build-backend-runtime.mjs --skip-jar",
+    "app:build": "npm run build && npm run backend:runtime && electron-builder --publish never",
+    "app:build:dir": "npm run build && npm run backend:runtime && electron-builder --dir"
   },
   "devDependencies": {
+    "@guolao/vue-monaco-editor": "^1.6.0",
+    "@hugeicons/core-free-icons": "^4.3.5",
+    "@hugeicons/vue": "^1.0.8",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/dompurify": "^3.0.5",
     "@types/markdown-it": "^14.2.0",
@@ -29,10 +30,69 @@
     "@vitejs/plugin-vue": "^6.0.7",
     "@vue/tsconfig": "^0.9.1",
     "autoprefixer": "^10.5.4",
+    "axios": "^1.19.0",
+    "dompurify": "^3.4.15",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "gsap": "^3.15.0",
+    "highlight.js": "^11.12.0",
+    "markdown-it": "^15.0.2",
+    "monaco-editor": "^0.57.0",
+    "motion-v": "^2.4.4",
+    "ogl": "^1.0.11",
+    "pinia": "^4.0.3",
     "postcss": "^8.5.25",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",
     "vite": "7.3.6",
+    "vue": "^3.5.39",
+    "vue-router": "^5.2.0",
     "vue-tsc": "^3.3.5"
+  },
+  "build": {
+    "appId": "com.lingxi.lx",
+    "productName": "LX",
+    "directories": {
+      "output": "release"
+    },
+    "publish": null,
+    "electronDist": "node_modules/electron/dist",
+    "npmRebuild": false,
+    "nodeGypRebuild": false,
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/backend",
+        "to": "backend"
+      }
+    ],
+    "win": {
+      "icon": "electron/resources/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "LX"
+    }
   }
 }

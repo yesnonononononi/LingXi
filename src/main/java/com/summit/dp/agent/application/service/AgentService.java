@@ -18,6 +18,7 @@ public interface AgentService {
 
     Result<Void> update(AgentCommand command);
 
+
     Result<Void> delById(Long id);
 
     Result<List<AgentVO>> queryIn(Collection<Long> ids);

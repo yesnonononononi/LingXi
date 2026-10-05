@@ -76,10 +76,13 @@ class RequestPreparerExecutionIdentityTest {
     private final com.summit.dp.mcp.application.service.McpService mcpService =
             mock(com.summit.dp.mcp.application.service.McpService.class);
 
-    private final RequestPreparer preparer = new RequestPreparer(sessionService, workspaceService,
-            modelService, workspaceConverter, settingsProvider, toolCatalog, transcriptService,
-            modelContextService, executionIdentity, registrationService, chatTurnService,
-            agentService, teamService, mcpService);
+    private final com.summit.dp.session.domain.repo.SessionRepository sessionRepository =
+            mock(com.summit.dp.session.domain.repo.SessionRepository.class);
+
+    private final RequestPreparer preparer = new RequestPreparer(sessionService, sessionRepository,
+            workspaceService, modelService, workspaceConverter, settingsProvider, toolCatalog,
+            transcriptService, modelContextService, executionIdentity, registrationService,
+            chatTurnService, agentService, teamService, mcpService);
 
     @BeforeEach
     void stubHappyPath() {
@@ -88,6 +91,9 @@ class RequestPreparerExecutionIdentityTest {
         when(settingsProvider.current()).thenReturn(Optional.empty());
         when(sessionService.findById(SESSION_ID))
                 .thenReturn(Result.success(SessionVO.builder().id(SESSION_ID).build()));
+        // 根会话行用于取历史代际；当前会话即根会话。
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(com.summit.dp.session.domain.model.Session
+                .builder().id(SESSION_ID).rootSessionId(0L).historyRevision(3L).build()));
         when(modelService.runtimeConfig(eq(MODEL_ID), any())).thenReturn(ModelConfig.builder()
                 .baseUrl("https://example.invalid").apiKey("secret-key")
                 .modelName("deepseek-chat").provider("deepseek").build());
@@ -100,7 +106,7 @@ class RequestPreparerExecutionIdentityTest {
     }
 
     private static ChatCommand command() {
-        return new ChatCommand("你好", SESSION_ID, MODEL_ID, null, null, false, null, null);
+        return new ChatCommand("你好", SESSION_ID, MODEL_ID, null, null, null, false, null, null);
     }
 
     @Test
@@ -125,12 +131,20 @@ class RequestPreparerExecutionIdentityTest {
         RuntimeContext context = preparer.prepare(command());
         long executionId = Long.parseLong(context.executionContext().executionId());
         long turnId = 9001L;
-        when(chatTurnService.acceptTurn(anyLong(), any(), any(), any(), any())).thenReturn(turnId);
+        // 受理入口内部统一走带命令身份的重载（无命令身份时传 null/null），
+        // 桩与断言都要落在同一层，否则桩挂在一个没人调的方法上。
+        when(chatTurnService.acceptTurn(anyLong(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(turnId);
 
         Long acceptedTurnId = preparer.commitUserMessage(context);
         assertEquals(turnId, acceptedTurnId);
         AgentRequest request = preparer.buildRequest("prompt", context.withTurnId(acceptedTurnId), List.of());
-        assertEquals(Map.of("sessionId", Long.toString(SESSION_ID), "turnId", Long.toString(turnId)),
+        // 完整身份：根会话、会话、轮次与历史代际；来源是 prepare 阶段的一次冷路径读，不含 parentTurnId。
+        assertEquals(Map.of(
+                        "rootSessionId", Long.toString(SESSION_ID),
+                        "sessionId", Long.toString(SESSION_ID),
+                        "turnId", Long.toString(turnId),
+                        "historyRevision", "3"),
                 request.runtimeParametersOrDefault().getEventMetaData());
         verify(chatTurnService, never()).findByExecutionId(any());
 
@@ -143,9 +157,9 @@ class RequestPreparerExecutionIdentityTest {
 
         // 模型快照不进执行行（execution 不再保存业务事实），而是落到轮次上：
         // 下面 acceptTurn 的断言才是模型名的落点，二者口径必须一致。
-        verify(chatTurnService).acceptTurn(SESSION_ID, null, executionId, "deepseek-chat", "deepseek");
+        verify(chatTurnService).acceptTurn(SESSION_ID, SESSION_ID, null, executionId, "deepseek-chat", "deepseek", null, null);
         // 消息归属是**轮次 ID**，不是执行 ID —— 框架执行 ID 不进入消息归属。
-        verify(transcriptService).appendUser(SESSION_ID, turnId, context.pendingUserMessage());
+        verify(transcriptService).appendUser(SESSION_ID, SESSION_ID, turnId, context.pendingUserMessage());
     }
 
     @Test

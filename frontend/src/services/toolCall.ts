@@ -1,72 +1,58 @@
 import http from './interceptor';
 import type { Result } from './types';
-import { readSseResponse } from '../utils/sse';
 import { isOk } from '../utils/api';
-import type { AgentStreamEvent, ToolCallVO } from '../types/chat';
+import type { ToolCallAction, ToolCallDecisionReceipt, ToolCallVO } from '../types/chat';
 
-/** 提交工具调用决策的载荷（对应后端 ToolCallDecisionRequest） */
+/** 提交工具调用决策的载荷（对应后端 ToolCallDecisionCommand）。 */
 export interface ToolCallDecisionPayload {
-  /** 归属会话（= session.id）；后端据以校验归属并解析根会话订阅 SSE */
-  conversationId: number | string;
+  /** 归属会话（= session.id），用于归属校验 */
+  conversationId?: number | string;
   /** 决策锚点：tool_call.id / 模型 call_id */
   toolCallId: string;
-  approved: boolean;
+  /** 决策命令身份；同 ID 重试由后端查回首轮结论，不会重复提交 */
+  commandId: string;
+  /** 客户端看到的卡片版本；与库中不符即 STATE_CONFLICT（可判定，而非静默覆盖） */
+  expectedVersion?: string | number | null;
+  /** 动作判别：APPROVE 放行 / REJECT 终态拒绝 / ANSWER 作答 */
+  action: ToolCallAction;
+  /** 用户答复原文（ANSWER 必填） */
   text?: string;
 }
 
 /**
  * 工具调用 API（对应后端 ToolCallController）。
  *
- * <p>重构后人工在环的唯一入口：决策端点统一以 `toolCallId`（`call_xxx`）为定位键，
- * 旧 `POST /interaction/decide`、`/interaction-status/*` 已物理下线。</p>
+ * <p>重构后人工在环的唯一入口：决策端点统一以 `toolCallId`（`call_xxx`）为定位键。
+ * v3 前端**不再建立请求级 SSE** —— 决策走 JSON 回执，恢复期的实时事实统一由会话级 v3 流下发；
+ * 同一根会话同时消费两种协议会把同一批事件渲染两遍。</p>
  *
  * <ul>
- *   <li>`POST /tool-call/decide`：入参 `{conversationId, toolCallId, approved, text}`，返回 `text/event-stream`；</li>
+ *   <li>`POST /tool-call/decisions`：入参 `{conversationId, toolCallId, commandId, expectedVersion, action, text}`，返回 `Result<ToolCallDecisionReceipt>`；</li>
  *   <li>`GET /tool-call/{toolCallId}`：返回 `Result<ToolCallVO>`；</li>
  *   <li>`GET /tool-call/query?conversationId=`：返回 `Result<ToolCallVO[]>`。</li>
  * </ul>
  */
 export class ToolCallAPI {
   /**
-   * 提交决策并消费恢复执行的事件流。
+   * 提交决策（v3 版本化 JSON 回执，不建 SSE）。
    *
-   * <p>决策落库后后端恢复被暂停的执行，期间全部运行时事件以 SSE 下发。建流前的校验失败
-   * （tool_call / execution 不存在、归属不符等）返回普通 JSON 的 `Result` 错误体
-   * （HTTP 可能为 200），故按 content-type 分流而非只看状态码。</p>
+   * <p>回执只承诺「决策已落库 + 恢复意图被怎么处理了」。请求失败**不得**擅自改动卡片的业务状态
+   * —— 卡片状态一律以回执携带的 `toolCall` 与后续 v3 事件为准。</p>
    */
-  static async decide(
-    payload: ToolCallDecisionPayload,
-    onEvent: (event: AgentStreamEvent) => void,
-    signal?: AbortSignal
-  ): Promise<void> {
-    const response = await fetch('/tool-call/decide', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      signal,
-      body: JSON.stringify({
-        conversationId: payload.conversationId,
-        toolCallId: payload.toolCallId,
-        approved: payload.approved,
-        text: payload.text || ''
-      })
+  static async decide(payload: ToolCallDecisionPayload): Promise<ToolCallDecisionReceipt> {
+    const res = await http.post<any, Result<ToolCallDecisionReceipt>>('/tool-call/decisions', {
+      conversationId: payload.conversationId ?? null,
+      toolCallId: payload.toolCallId,
+      commandId: payload.commandId,
+      expectedVersion: payload.expectedVersion ?? null,
+      action: payload.action,
+      text: payload.text ?? ''
     });
-
-    const contentType = response.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-      const result = await response.json().catch(() => null);
-      throw new Error(result?.errMsg || `提交决策失败 (${response.status})`);
+    if (!isOk(res.code) || !res.data) {
+      // 后端把「卡片不存在 / 版本冲突」等业务拒绝放在 Result 里，文案直接透出给用户。
+      throw new Error(res.errMsg || '提交决策失败');
     }
-    if (!response.ok || !response.body) {
-      const errText = await response.text().catch(() => '');
-      throw new Error(`SSE 建立连接失败 (${response.status}): ${errText || response.statusText}`);
-    }
-
-    await readSseResponse(response, {
-      onEvent,
-      rootSessionId: String(payload.conversationId)
-    });
+    return res.data;
   }
 
   /**

@@ -10,8 +10,12 @@ import com.summit.dp.toolcall.domain.model.ToolCallKeys;
 import com.summit.dp.toolcall.domain.model.ToolCallKind;
 import com.summit.dp.toolcall.domain.model.ToolCallOutcome;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
+import com.summit.dp.shared.model.ToolCatalog;
 import com.summit.dp.shared.vo.ModelToolCallVO;
 import com.summit.dp.shared.vo.ToolCallVO;
+import com.summit.dp.toolcall.application.service.CardAvailabilityPolicy;
+import com.summit.dp.toolcall.application.service.ToolCallActionResolver;
+import org.springframework.beans.factory.annotation.Autowired;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -35,11 +39,42 @@ public class ToolCallConverter {
 
     private final ObjectMapper objectMapper;
 
+    @Autowired(required = false)
+    private ToolCallActionResolver actionResolver;
+
     /** 领域对象 → 聚合视图；{@code null} 入参返回 {@code null}。 */
     public ToolCallVO toVO(ToolCall toolCall) {
         if (toolCall == null) {
             return null;
         }
+        JsonNode content = parse(toolCall.getContent());
+        ToolCallActionResolver.Availability availability = actionResolver == null
+                ? new ToolCallActionResolver.Availability(List.of(), "互动状态尚未确认")
+                : actionResolver.resolveActions(toolCall, resolveKind(toolCall.getContent()), content);
+        return assemble(toolCall, content, availability);
+    }
+
+    /**
+     * 纯计算入口：动作可用性由调用方提供的执行闸门直接算出，<b>不查执行表</b>。
+     *
+     * <p>用于提交事件与 bootstrap 批量转换 —— 调用方已经持有执行事实（提交事件即刚挂起的执行，
+     * bootstrap 已批量读取执行摘要），禁止在发布 DTO 时逐卡隐式回查（§7）。</p>
+     *
+     * @param gate 已解析的执行侧闸门
+     */
+    public ToolCallVO toVO(ToolCall toolCall, CardAvailabilityPolicy.ExecutionGate gate) {
+        if (toolCall == null) {
+            return null;
+        }
+        JsonNode content = parse(toolCall.getContent());
+        ToolCallActionResolver.Availability availability = actionResolver == null
+                ? new ToolCallActionResolver.Availability(List.of(), "互动状态尚未确认")
+                : actionResolver.resolveActions(toolCall, resolveKind(toolCall.getContent()), content, gate);
+        return assemble(toolCall, content, availability);
+    }
+
+    /** 组装视图：与动作来源无关，两条入口共用同一映射，避免字段漂移。 */
+    private ToolCallVO assemble(ToolCall toolCall, JsonNode content, ToolCallActionResolver.Availability availability) {
         return ToolCallVO.builder()
                 .id(toolCall.getId())
                 .conversationId(toolCall.getConversationId())
@@ -48,12 +83,15 @@ public class ToolCallConverter {
                 .toolName(toolCall.getToolName())
                 .type(toolCall.getType() == null ? null : toolCall.getType().name())
                 .status(toolCall.getStatus() == null ? null : toolCall.getStatus().dbValue())
+                .version(toolCall.getVersion())
+                .allowedActions(availability.allowedActions())
+                .unavailableReason(availability.unavailableReason())
                 .title(toolCall.getTitle())
-                .content(parse(toolCall.getContent()))
+                .content(content)
                 .rawInput(parse(toolCall.getRawInput()))
-                .rawOutput(parse(toolCall.getRawOutput()))
+                .rawOutput(clientOutput(toolCall))
                 .metaData(parse(toolCall.getMetaData()))
-                .pending(toolCall.isApprovalPending())
+                .pending(toolCall.isUnresolved())
                 .createdAt(toolCall.getCreatedAt())
                 .updatedAt(toolCall.getUpdatedAt())
                 .build();
@@ -86,13 +124,29 @@ public class ToolCallConverter {
         }
     }
 
-    /** 判断链路的辅助：状态是否 pending。 */
-    public static boolean isPending(ToolCall toolCall) {
-        return toolCall != null && toolCall.getStatus() == ToolCallStatus.PENDING;
+    /**
+     * 下发前裁剪 {@code raw_output}：读文件的结果正文（文件内容）只有模型需要，前端不展示也不使用，
+     * 因此不下发 —— 「读了哪个文件、读了哪几行」是 {@code raw_input.args} 的事，本来就在另一列。
+     *
+     * <p>{@code outcome} 必须保留：前端靠它判成功/失败。裁剪只作用于下发，库里仍是全文，排查不受影响。</p>
+     */
+    private JsonNode clientOutput(ToolCall toolCall) {
+        JsonNode output = parse(toolCall.getRawOutput());
+        if (output == null || !output.isObject() || !isReadFile(toolCall.getToolName())) {
+            return output;
+        }
+        ObjectNode trimmed = (ObjectNode) output;
+        trimmed.remove(ToolCallKeys.OUTPUT);
+        return trimmed;
+    }
+
+    /** 读文件工具名判定（对齐 {@link ToolCatalog#READ_FILE}，不另写字面量）。 */
+    private static boolean isReadFile(String toolName) {
+        return ToolCatalog.READ_FILE.equals(toolName == null ? null : toolName.trim());
     }
 
     /** 从 {@code content} 提取卡片形态判别字段 {@code kind}；缺失 / 非法返回 {@code null}（降级）。 */
-    public ToolCallKind kindOf(String contentJson) {
+    public ToolCallKind resolveKind(String contentJson) {
         JsonNode node = parse(contentJson);
         if (node == null || !node.hasNonNull(ToolCallKeys.KIND)) {
             return null;
@@ -152,7 +206,10 @@ public class ToolCallConverter {
         return node.toString();
     }
 
-    /** {@code content.kind=COMMAND}：{@code {kind,command,workDir,shell,workspaceId,args}}。 */
+    /**
+     * {@code content.kind=COMMAND}：{@code {kind,command,workDir,shell,workspaceId,intention?,args}}。
+     * {@code intention} 从模型 args 提取（缺失/非法时省略键），供审批卡直接展示，前端无需二次解析 args。
+     */
     public String commandContent(String command, String workDir, String shell, String workspaceId, String args) {
         ObjectNode node = objectMapper.createObjectNode();
         node.put(ToolCallKeys.KIND, ToolCallKind.COMMAND.name());
@@ -160,8 +217,25 @@ public class ToolCallConverter {
         node.put(ToolCallKeys.WORK_DIR, workDir);
         node.put(ToolCallKeys.SHELL, shell);
         node.put(ToolCallKeys.WORKSPACE_ID, workspaceId);
+        String intention = resolveIntention(args);
+        if (intention != null) {
+            node.put(ToolCallKeys.INTENTION, intention);
+        }
         node.put(ToolCallKeys.ARGS, args);
         return node.toString();
+    }
+
+    /** 从模型 args JSON 提取 {@code intention}；args 缺失 / 非法 / 无该字段一律返回 {@code null}。 */
+    private String resolveIntention(String argsJson) {
+        if (argsJson == null || argsJson.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode intention = objectMapper.readTree(argsJson).get(ToolCallKeys.INTENTION);
+            return intention == null || intention.isNull() ? null : intention.asText();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**
@@ -169,9 +243,14 @@ public class ToolCallConverter {
      * {@code subSessionId} 是子执行终态回填时匹配父执行槽位的依据，必须写字符串。
      */
     public String delegationContent(String subSessionId, String task) {
+        return delegationContent(subSessionId, null, task);
+    }
+
+    public String delegationContent(String subSessionId, String subExecutionId, String task) {
         ObjectNode node = objectMapper.createObjectNode();
         node.put(ToolCallKeys.KIND, ToolCallKind.DELEGATION.name());
         node.put(ToolCallKeys.SUB_SESSION_ID, subSessionId);
+        if (subExecutionId != null) node.put(ToolCallKeys.SUB_EXECUTION_ID, subExecutionId);
         node.put(ToolCallKeys.TEXT, task);
         return node.toString();
     }
@@ -187,6 +266,27 @@ public class ToolCallConverter {
             node.put(ToolCallKeys.DECIDED_AT, Instant.now().toString());
         }
         return node.toString();
+    }
+
+    /**
+     * 从已落库的 {@code raw_output} 读回结论。
+     *
+     * <p><b>与 {@link #decisionOutcome} 写读同源</b>：决策重试要回「首次实际结论」，
+     * 若另写一份解析，键名一改就会静默读到 {@code null}，回执里 {@code decision} 变空。</p>
+     *
+     * @return 结论；载荷缺失或不可识别时返回 {@code null}（调用方决定降级语义）
+     */
+    public ToolCallOutcome readOutcome(ToolCall toolCall) {
+        JsonNode output = parse(toolCall == null ? null : toolCall.getRawOutput());
+        if (output == null || !output.isObject() || !output.hasNonNull(ToolCallKeys.OUTCOME)) {
+            return null;
+        }
+        try {
+            return ToolCallOutcome.valueOf(output.get(ToolCallKeys.OUTCOME).asText());
+        } catch (IllegalArgumentException unknown) {
+            // 历史行里出现过枚举之外的取值：按「结论不可识别」处理，不猜。
+            return null;
+        }
     }
 
     /** {@code raw_output}（命令批准 / 执行结果）：{@code {outcome,stdout?/output?,reason?}}。 */

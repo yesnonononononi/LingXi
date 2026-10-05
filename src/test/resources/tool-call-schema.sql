@@ -14,6 +14,9 @@ CREATE TABLE tool_call (
     raw_input         CLOB,
     raw_output        CLOB,
     meta_data         CLOB,
+    decision_command_id VARCHAR(64),
+    decision_digest    VARCHAR(64),
+    version           BIGINT NOT NULL DEFAULT 1,
     created_at        TIMESTAMP,
     updated_at        TIMESTAMP
 );

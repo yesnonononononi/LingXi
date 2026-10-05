@@ -7,6 +7,7 @@ import org.jspecify.annotations.NonNull;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationListener;
 import org.springframework.stereotype.Component;
+import org.springframework.core.annotation.Order;
 
 /**
  * 轮次收尸钩子：与 {@code ExecutionStartupReaper} 同时机、同口径。
@@ -23,6 +24,7 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
+@Order(200)
 @RequiredArgsConstructor
 public class ChatTurnStartupReaper implements ApplicationListener<ApplicationReadyEvent> {
 

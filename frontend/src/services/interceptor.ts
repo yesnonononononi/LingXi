@@ -1,6 +1,7 @@
 import axios from 'axios';
 import type { AxiosError } from 'axios';
 import { isOk } from '../utils/api';
+import { getApiBaseUrl } from '../utils/apiConfig';
 
 /**
  * 可区分的 API 错误类型。
@@ -104,13 +105,20 @@ function toApiError(error: unknown): ApiError {
 }
 
 // 创建 axios 实例
-// 本地单实例（HC-1）：无认证头、无 401 跳转；仅保留统一解包 response.data。
+// 本地单实例（HC-1）：无认证头、无 401 跳转；支持动态服务地址寻址（桌面端直连、Web走配置或代理）。
+// 不设默认 Content-Type：由 axios 按请求体类型自行判定。
+// 若在此写死 application/json，axios 会把 FormData 拍平成 JSON 字符串（见其 transformRequest），
+// 导致 chat 端点的 multipart 请求变成 application/json，命中后端的 consumes 断言失败。
+// 同理，也不得手动指定 multipart/form-data：boundary 由浏览器生成，写死会丢 boundary。
 const http = axios.create({
-  baseURL: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) || '',
+  baseURL: getApiBaseUrl(),
   timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+});
+
+// 请求拦截器：保证每次请求动态匹配当前最新配置的 baseURL
+http.interceptors.request.use((config) => {
+  config.baseURL = getApiBaseUrl();
+  return config;
 });
 
 // 响应拦截器：统一解包，调用方拿到的直接是 {code, data, errMsg}；

@@ -1,6 +1,11 @@
 package com.summit.dp.session.infrastructure.persistence.repository;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.shared.event.CommittedStatePublisher;
+import com.summit.dp.shared.event.CommittedStateChange;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -17,17 +22,45 @@ import org.springframework.stereotype.Repository;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
+import java.util.Collection;
 
 @Repository
 @RequiredArgsConstructor
 public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO, Long>
         implements SessionRepository {
     private final SessionMapper sessionMapper;
+    @Autowired(required = false)
+    private CommittedStatePublisher statePublisher;
+
+    @Override
+    public void save(Session session) { saveAndReturnId(session); }
+
+    @Override
+    public void updateById(@NotNull Session session) {
+        SessionPO row = toPO(session);
+        long expected = session.getVersion();
+        row.setVersion(expected + 1);
+        if (sessionMapper.update(row, Wrappers.<SessionPO>lambdaUpdate()
+                .eq(SessionPO::getId, session.getId()).eq(SessionPO::getVersion, expected)) != 1) {
+            throw new ClientException("会话状态已变化，请刷新后重试");
+        }
+        session.acceptPersistedVersion(expected + 1);
+        // 带上落库终值快照：v3 观察者直接转换，不再回查会话行。
+        if (statePublisher != null) statePublisher.publish(CommittedStateChange.of(
+                CommittedStateChange.Kind.SESSION, session.getId(), session.getId(), session));
+    }
+
+    @Override
+    public void update(Collection<Session> sessions) { sessions.forEach(this::updateById); }
 
     @Override
     public Long saveAndReturnId(Session session) {
-        Number id = save(session, SessionPO::getId);
-        return id == null ? null : id.longValue();
+        SessionPO row = toPO(session);
+        sessionMapper.insert(row);
+        // insert 后 row 才带自增主键：用 toModel 还原成领域快照再下发，保证版本/代际字段口径一致。
+        if (statePublisher != null) statePublisher.publish(CommittedStateChange.of(
+                CommittedStateChange.Kind.SESSION, row.getId(), row.getId(), toModel(row)));
+        return row.getId();
     }
 
     @Override
@@ -90,6 +123,7 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
     @Override
     protected SessionPO toPO(Session session) {
         return SessionPO.builder().id(session.getId()).name(session.getName()).workspaceId(session.getWorkspaceId())
+                .version(session.getVersion()).historyRevision(session.getHistoryRevision())
                 .rootSessionId(session.getRootSessionId() == null ? SessionPO.ROOT_SESSION_ID
                         : session.getRootSessionId())
                 .agentId(session.getAgentId())
@@ -104,6 +138,8 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
     @Override
     protected Session toModel(SessionPO po) {
         return Session.builder().id(po.getId()).name(po.getName()).workspaceId(po.getWorkspaceId())
+                .version(po.getVersion() == null ? 1L : po.getVersion())
+                .historyRevision(po.getHistoryRevision() == null ? 1L : po.getHistoryRevision())
                 .rootSessionId(po.getRootSessionId())
                 .agentId(po.getAgentId())
                 .teamId(po.getTeamId())

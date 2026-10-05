@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -56,7 +57,7 @@ class ToolCallRegistrarImplTest {
     void markThenPromiseUpsertsToExactlyOneRowInPendingPromise() {
         when(identity.sessionId("100")).thenReturn(5L);
 
-        registrar.markExecuteStarted("call-x", 100L, "read_file", "{}");
+        registrar.markExecuteStarted("call-x", 100L, "create_plan", "{}");
         assertEquals(1, repository.rowCount(), "EXECUTE 开始应先落一行占位");
         assertEquals(ToolCallType.EXECUTE, repository.findById("call-x").orElseThrow().getType());
         assertEquals(ToolCallStatus.IN_PROGRESS, repository.findById("call-x").orElseThrow().getStatus());
@@ -67,8 +68,8 @@ class ToolCallRegistrarImplTest {
         assertEquals(1, repository.rowCount(), "同一 callId 只能有一行");
         ToolCall merged = repository.findById("call-x").orElseThrow();
         assertEquals(ToolCallType.PROMISE, merged.getType());
-        assertEquals(ToolCallStatus.PENDING, merged.getStatus());
-        assertTrue(merged.isApprovalPending());
+        assertEquals(ToolCallStatus.PREPARING, merged.getStatus());
+        assertFalse(merged.isApprovalPending());
         assertEquals("create_plan", merged.getToolName());
         assertEquals("重构计划", merged.getTitle());
     }
@@ -76,14 +77,14 @@ class ToolCallRegistrarImplTest {
     @Test
     void completeExecuteIsNoOpOnPromiseRow() {
         when(identity.sessionId("100")).thenReturn(5L);
-        registrar.markExecuteStarted("call-y", 100L, "read_file", "{}");
+        registrar.markExecuteStarted("call-y", 100L, "create_plan", "{}");
         registrar.registerPromise(ToolCallRegisterCommand.promise(
                 "call-y", 5L, 100L, "create_plan", ToolCallKind.PLAN, "t", "{\"kind\":\"PLAN\"}", "{}"));
 
-        registrar.completeExecute("call-y", 100L, "read_file", "{}", "should-be-ignored", ToolCallOutcome.SUCCEEDED);
+        registrar.completeExecute("call-y", 100L, "create_plan", "{}", "should-be-ignored", ToolCallOutcome.SUCCEEDED);
 
         ToolCall after = repository.findById("call-y").orElseThrow();
-        assertEquals(ToolCallStatus.PENDING, after.getStatus(), "PROMISE 的收尾交给 decide 端点");
+        assertEquals(ToolCallStatus.PREPARING, after.getStatus(), "PROMISE 的收尾交给 decide 端点");
         assertNull(after.getRawOutput());
         assertEquals(1, repository.rowCount());
     }
@@ -94,11 +95,11 @@ class ToolCallRegistrarImplTest {
         registrar.registerPromise(ToolCallRegisterCommand.promise(
                 "call-z", 5L, 100L, "create_plan", ToolCallKind.PLAN, "t", "{\"kind\":\"PLAN\"}", "{}"));
 
-        registrar.markExecuteStarted("call-z", 100L, "read_file", "{}");
+        registrar.markExecuteStarted("call-z", 100L, "create_plan", "{}");
 
         ToolCall after = repository.findById("call-z").orElseThrow();
         assertEquals(ToolCallType.PROMISE, after.getType());
-        assertEquals(ToolCallStatus.PENDING, after.getStatus());
+        assertEquals(ToolCallStatus.PREPARING, after.getStatus());
         assertEquals(1, repository.rowCount());
     }
 
@@ -123,7 +124,7 @@ class ToolCallRegistrarImplTest {
     void completeExecuteFallsBackToInsertWhenNoPlaceholderRow() {
         when(identity.sessionId("100")).thenReturn(5L);
 
-        registrar.completeExecute("call-orphan", 100L, "read_file", "{}", "out", ToolCallOutcome.SUCCEEDED);
+        registrar.completeExecute("call-orphan", 100L, "create_plan", "{}", "out", ToolCallOutcome.SUCCEEDED);
 
         assertEquals(1, repository.rowCount());
         ToolCall fallback = repository.findById("call-orphan").orElseThrow();
@@ -135,7 +136,7 @@ class ToolCallRegistrarImplTest {
     void markExecuteStartedSkipsWhenConversationCannotBeResolved() {
         when(identity.sessionId("100")).thenThrow(new IllegalStateException("Unknown execution"));
 
-        registrar.markExecuteStarted("call-no-conv", 100L, "read_file", "{}");
+        registrar.markExecuteStarted("call-no-conv", 100L, "create_plan", "{}");
 
         assertEquals(0, repository.rowCount(), "无法定位会话时应降级跳过，不写脏行、不抛异常");
     }
@@ -202,6 +203,14 @@ class ToolCallRegistrarImplTest {
         }
 
         @Override
+        public List<ToolCall> listActionableByExecutionId(Long executionId) {
+            return listByExecutionId(executionId).stream().filter(ToolCall::isApprovalPending).toList();
+        }
+
+        @Override
+        public List<Long> listUnresolvedExecutionIds() { return List.of(); }
+
+        @Override
         public List<ToolCall> listPendingByExecutionId(Long executionId) {
             return rows.values().stream()
                     .filter(row -> row.getExecutionId().equals(executionId)
@@ -231,6 +240,17 @@ class ToolCallRegistrarImplTest {
         public int deleteByConversationIds(Collection<Long> conversationIds) {
             List<String> doomed = rows.values().stream()
                     .filter(row -> conversationIds.contains(row.getConversationId()))
+                    .map(ToolCall::getId)
+                    .toList();
+            doomed.forEach(rows::remove);
+            return doomed.size();
+        }
+
+        @Override
+        public int deleteByExecutionIds(Collection<Long> executionIds) {
+            List<String> doomed = rows.values().stream()
+                    .filter(row -> row.getExecutionId() != null
+                            && executionIds.contains(row.getExecutionId()))
                     .map(ToolCall::getId)
                     .toList();
             doomed.forEach(rows::remove);

@@ -177,4 +177,49 @@ class ChatTurnRepositoryTest {
 
         assertNull(loaded.getStatus(), "非法状态降级为 null，由展示层处理");
     }
+
+    @Test
+    @DisplayName("按会话集合取进行中轮次：ACCEPTED/RUNNING/WAITING 命中，终态排除；空入参不查库")
+    void activeBySessionIdsKeepsOnlyUnfinished() {
+        save(7061L, ChatTurnStatus.ACCEPTED, null, SESSION_ID);
+        save(7062L, ChatTurnStatus.RUNNING, 9602L, SESSION_ID);
+        save(7063L, ChatTurnStatus.WAITING, 9603L, SESSION_ID);
+        save(7064L, ChatTurnStatus.COMPLETED, 9604L, SESSION_ID);
+        save(7065L, ChatTurnStatus.FAILED, 9605L, SESSION_ID);
+        // 另一个会话的进行中轮次：只有被请求的会话才应命中。
+        save(7066L, ChatTurnStatus.RUNNING, 9606L, 999L);
+
+        List<ChatTurn> active = repository.findActiveBySessionIds(List.of(SESSION_ID));
+
+        assertEquals(3, active.size(), "只回 ACCEPTED / RUNNING / WAITING");
+        assertTrue(active.stream().allMatch(t -> t.getSessionId() == SESSION_ID),
+                "不得串到其它会话");
+        assertTrue(active.stream().anyMatch(t -> t.getStatus() == ChatTurnStatus.WAITING),
+                "WAITING 可恢复，必须算进行中");
+        assertTrue(repository.findActiveBySessionIds(List.of()).isEmpty());
+    }
+
+    private ChatTurn save(long turnId, ChatTurnStatus status, Long executionId, long sessionId) {
+        ChatTurn turn = ChatTurn.accept(turnId, sessionId, null, "deepseek-chat", "deepseek");
+        turn.attachExecution(executionId);
+        if (status == ChatTurnStatus.RUNNING || status == ChatTurnStatus.WAITING
+                || status == ChatTurnStatus.COMPLETED || status == ChatTurnStatus.FAILED
+                || status == ChatTurnStatus.CANCELLED) {
+            turn.markRunning(Instant.now());
+        }
+        if (status == ChatTurnStatus.WAITING) {
+            turn.markWaiting();
+        }
+        if (status == ChatTurnStatus.COMPLETED) {
+            turn.markCompleted(100L, 50L, 150L, Instant.now());
+        }
+        if (status == ChatTurnStatus.FAILED) {
+            turn.markFailed(null, null, null, Instant.now());
+        }
+        if (status == ChatTurnStatus.CANCELLED) {
+            turn.markCancelled(null, null, null, Instant.now());
+        }
+        repository.save(turn);
+        return turn;
+    }
 }

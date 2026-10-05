@@ -3,6 +3,10 @@ package com.summit.dp.shared.event;
 import lombok.extern.slf4j.Slf4j;
 import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Component;
+import com.summit.dp.stream.application.service.SessionStreamHub;
+import com.summit.dp.stream.infrastructure.transport.StreamSubscription;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -13,33 +17,9 @@ import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ExecutorService;
 
-/**
- * Server-Sent Events publisher that keeps connected front-end event streams
- * alive and pushes agent runtime events to them in real-time.
- *
- * <p>Drop-in replacement for the WebSocket channel: the JSON envelope
- * ({@code type / executionId / timestamp / data}) is unchanged, only the
- * transport differs.</p>
- *
- * <p>本地模式：事件只推送给当前进程持有的 emitter，不经过任何跨节点通道。</p>
- *
- * <p><b>按根会话路由（HC-3 终态）：</b>连接按 rootSessionId 归档，推送必须显式给出
- * 目标根会话。全局广播方法已<b>物理删除</b> —— 无法确定归属的事件会被丢弃并告警，
- * 不存在「发不出去就发给所有人」的退路；编译器同时兜底：新的调用不可能再出现
- * 无目标的广播。</p>
- *
- * <p>子执行事件归入父任务：子会话的事件必须用 <b>rootSessionId</b> 推送，
- * 因为前端只为根会话建流（子代理产生的 runtime 事件由前端按 sessionId 渲染）。</p>
- *
- * <h2>流是会话级的，不是请求级的</h2>
- *
- * <p>推送通道只做一件事：把事件投递给<b>当前连着</b>的流。没有订阅者时事件即丢弃 ——
- * 这是刻意的：SSE 是实时通道，不是可靠投递，也不承担补历史的责任。前端切走再切回时
- * 由它自己回查会话历史（{@code session} 接口）对齐状态，然后重新挂载本流接收后续事件。
- * 服务端因此不需要事件日志、序号与缺口回放 —— 那些是「通道负责一致性」的另一套设计，
- * 与「历史接口负责一致性」重复且更容易腐坏。</p>
- */
+/** v1 仅负责兼容传输，业务发布统一先进入根会话投影。 */
 @Slf4j
 @Component
 public class SseEventPublisher {
@@ -48,6 +28,10 @@ public class SseEventPublisher {
 
     /** 订阅注册表：rootSessionId → 该根会话（含其全部子会话）的所有活跃流。 */
     private final Map<Long, Set<SseEmitter>> emittersByRootSession = new ConcurrentHashMap<>();
+    private final Map<SseEmitter, StreamSubscription> queues = new ConcurrentHashMap<>();
+    private final ExecutorService sender = Executors.newVirtualThreadPerTaskExecutor();
+    @Autowired(required = false)
+    private ObjectProvider<SessionStreamHub> hub;
     private final ScheduledExecutorService heartbeatScheduler =
             Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "sse-heartbeat");
@@ -63,6 +47,8 @@ public class SseEventPublisher {
     @PreDestroy
     public void close() {
         heartbeatScheduler.shutdownNow();
+        queues.values().forEach(StreamSubscription::close);
+        sender.shutdownNow();
     }
 
     /**
@@ -76,24 +62,26 @@ public class SseEventPublisher {
      */
     public SseEmitter connect(long rootSessionId) {
         SseEmitter emitter = newEmitter();
+        queues.put(emitter, new StreamSubscription(emitter, sender, SessionStreamHub.SUBSCRIBER_QUEUE_CAPACITY,
+                () -> remove(rootSessionId, emitter), false));
         Set<SseEmitter> bucket = emittersByRootSession.computeIfAbsent(rootSessionId,
                 key -> new CopyOnWriteArraySet<>());
         bucket.add(emitter);
 
         emitter.onCompletion(() -> {
             remove(rootSessionId, emitter);
-            log.info("SSE connection completed, rootSession={}, total={}", rootSessionId, connectedCount());
+            log.info("结束流连接: rootSessionId={}, total={}", rootSessionId, connectedCount());
         });
         emitter.onTimeout(() -> {
             remove(rootSessionId, emitter);
-            log.info("SSE connection timed out, rootSession={}, total={}", rootSessionId, connectedCount());
+            log.info("流连接超时: rootSessionId={}, total={}", rootSessionId, connectedCount());
             emitter.complete();
         });
         emitter.onError(e -> {
             remove(rootSessionId, emitter);
-            log.warn("SSE connection error, rootSession={}, error={}", rootSessionId, e.getMessage());
+            log.warn("流连接异常: rootSessionId={}, error={}", rootSessionId, e.getMessage());
         });
-        log.info("SSE connected, rootSession={}, total={}", rootSessionId, connectedCount());
+        log.info("建立流连接: rootSessionId={}, total={}", rootSessionId, connectedCount());
         return emitter;
     }
 
@@ -104,6 +92,24 @@ public class SseEventPublisher {
      * 没有活跃订阅时静默忽略（前端可能尚未建流，或已切走待回查历史）。</p>
      */
     public void publish(long rootSessionId, String payload) {
+        SessionStreamHub stream = hub == null ? null : hub.getIfAvailable();
+        if (stream == null) publishV1(rootSessionId, payload);
+        else stream.publishLegacy(rootSessionId, payload);
+    }
+
+    public void prepareProjection(long rootSessionId) {
+        SessionStreamHub stream = hub == null ? null : hub.getIfAvailable();
+        if (stream != null) stream.ensureInitialized(rootSessionId);
+    }
+
+    public void finish(SseEmitter emitter) {
+        StreamSubscription subscription = queues.get(emitter);
+        if (subscription != null) subscription.finish();
+        else emitter.complete();
+    }
+
+    /** 兼容传输入口仅供 hub 调用，业务事件不能绕过投影。 */
+    public void publishV1(long rootSessionId, String payload) {
         Set<SseEmitter> bucket = emittersByRootSession.get(rootSessionId);
         if (bucket == null || bucket.isEmpty()) {
             return;
@@ -126,13 +132,8 @@ public class SseEventPublisher {
      * 只会重复失败。会话状态另有快照兜底，丢一条推送不影响正确性。</p>
      */
     private void send(long rootSessionId, SseEmitter emitter, String payload) {
-        try {
-            emitter.send(SseEmitter.event().name("message").data(payload));
-        } catch (IOException | IllegalStateException e) {
-            log.debug("SSE stream no longer writable, subscription dropped: rootSession={}, cause={}",
-                    rootSessionId, causeSummary(e));
-            remove(rootSessionId, emitter);
-        }
+        StreamSubscription subscription = queues.get(emitter);
+        if (subscription != null) subscription.offer(SseEmitter.event().name("message").data(payload));
     }
 
     /** 断开原因摘要：只取最内层 cause 的类名与消息，避免把整条堆栈写进日志。 */
@@ -150,6 +151,8 @@ public class SseEventPublisher {
      * 「断开回调与并发 connect 之间误删新桶」的竞态。幂等：重复调用无害。
      */
     private void remove(long rootSessionId, SseEmitter emitter) {
+        StreamSubscription subscription = queues.remove(emitter);
+        if (subscription != null) subscription.close();
         emittersByRootSession.compute(rootSessionId, (key, existing) -> {
             if (existing == null) {
                 return null; // 桶已被回收，本次移除无事可做。
@@ -163,11 +166,8 @@ public class SseEventPublisher {
     private void heartbeat() {
         for (Set<SseEmitter> bucket : emittersByRootSession.values()) {
             for (SseEmitter emitter : bucket) {
-                try {
-                    emitter.send(SseEmitter.event().comment("ping"));
-                } catch (IOException | IllegalStateException e) {
-                    // 断开连接由 onError/onCompletion 兜底移除，这里只跳过。
-                }
+                StreamSubscription subscription = queues.get(emitter);
+                if (subscription != null) subscription.offer(SseEmitter.event().comment("ping"));
             }
         }
     }

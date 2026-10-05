@@ -4,7 +4,9 @@ import com.summit.ddd.application.vo.PageResult;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.session.api.dto.SessionRequest;
 import com.summit.dp.session.application.command.SessionCommand;
+import com.summit.dp.session.application.service.SessionBootstrapService;
 import com.summit.dp.session.application.service.SessionService;
+import com.summit.dp.shared.vo.SessionBootstrapVO;
 import com.summit.dp.shared.vo.SessionMessagePageVO;
 import com.summit.dp.shared.vo.SessionTreeVO;
 import com.summit.dp.shared.vo.SessionVO;
@@ -22,6 +24,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class SessionController {
     private final SessionService sessionService;
+    /** v3 bootstrap 装配入口（重连显式同步）。 */
+    private final SessionBootstrapService sessionBootstrapService;
 
     @PostMapping("/create")
     public Result<Long> create(@RequestBody SessionRequest sessionRequest){
@@ -50,6 +54,20 @@ public class SessionController {
     @GetMapping("/{id}/tree")
     public Result<SessionTreeVO> tree(@PathVariable Long id) {
         return sessionService.tree(id);
+    }
+
+    /**
+     * v3 bootstrap 显式同步：前端收到 {@code STREAM_READY} 后调用一次，拿持久化状态与实时帧合并。
+     *
+     * <p>信封内容见 {@link SessionBootstrapVO}（会话树 / 历史首屏 / 未决卡片 / 进行中轮次 /
+     * 进行中或挂起执行）。翻页仍走 {@code /session/{id}/messages}；本接口只在重连时各调一次，
+     * 不承担分页。</p>
+     *
+     * @param rootSessionId 根会话 id（或任意子会话 id，内部解析为根）
+     */
+    @GetMapping("/{rootSessionId}/bootstrap")
+    public Result<SessionBootstrapVO> bootstrap(@PathVariable Long rootSessionId) {
+        return Result.success(sessionBootstrapService.bootstrap(rootSessionId));
     }
 
     @GetMapping("/del")

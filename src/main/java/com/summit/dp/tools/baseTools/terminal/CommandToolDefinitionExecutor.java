@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 
 import java.io.IOException;
+import java.util.Map;
 
 /** The executor of the command tool: parses arguments, refuses destructive commands and runs the rest. */
 @Slf4j
@@ -29,21 +30,17 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
             ExecuteCommandRequest request = resolveArgs(toolExecution);
 
             if (request.getCommand() == null || request.getCommand().isBlank())
-                return ToolExecuteResult.err("instruction is empty");
+                return ToolExecuteResult.err("instruction is empty", ToolResultType.NORMAL, metaDataOf(request));
 
-            // Kernel safety floor — a deliberate SECOND interception that must NOT be removed.
-            // The approval policy (CommandPolicyConfig) already calls CommandGuard.assess, but a policy
-            // can be reconfigured (FULL_ACCESS) or bypassed on other execution paths; re-asserting the
-            // SAME CommandGuard.assess verdict here guarantees a destructive command is refused at the
-            // kernel and never offered for approval — approving it once would be unrecoverable.
-            // Both sites share one judgment entry (CommandGuard.assess) so they can never disagree.
             Workspace workspace = toolExecution.getWorkspace();
             ShellType shellType = workspace == null ? null : workspace.runtimeEnvironment().shellType();
             if (CommandGuard.assess(request.getCommand(), shellType) == CommandGuard.Verdict.DESTRUCTIVE) {
+
                 log.warn("【ToolCall】 refused destructive command: {}", request.getCommand());
+
                 return ToolExecuteResult.err("command refused: it is destructive (disk/volume level, "
                         + "system-wide deletion or an irreversible halt) and cannot be approved — "
-                        + "rephrase it or ask the user to run it themselves");
+                        + "rephrase it or ask the user to run it themselves", ToolResultType.NORMAL, metaDataOf(request));
             }
 
             // execute
@@ -72,7 +69,7 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
         );
 
         if (result.timedOut()) {
-            return ToolExecuteResult.err("process timeout");
+            return ToolExecuteResult.err("process timeout", ToolResultType.NORMAL, metaDataOf(request));
         }
 
         String processResult = result.truncated()
@@ -85,7 +82,20 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
                     """, toolDefinition.maxOutput()
             );
         }
-        return result.exitCode() == 0 ? ToolExecuteResult.success(processResult) : ToolExecuteResult.err(processResult);
+        return result.exitCode() == 0
+                ? ToolExecuteResult.success(processResult, ToolResultType.NORMAL, metaDataOf(request))
+                : ToolExecuteResult.err(processResult, ToolResultType.NORMAL, metaDataOf(request));
+    }
+
+    /**
+     * 工具自声明元数据：意图随返回值进 {@code ToolCallEndEvent.metaData}（与命令级 eventMetaData 合并），
+     * 供监听器与前端结构化读取；模型未填时省略键，不放 null 值。
+     */
+    private Map<String, Object> metaDataOf(ExecuteCommandRequest request) {
+        if (request == null || request.getIntention() == null || request.getIntention().isBlank()) {
+            return Map.of();
+        }
+        return Map.of(ExecuteCommandRequest.INTENTION, request.getIntention());
     }
 
     /** resolve the tool args of agent str -> toolExecution */

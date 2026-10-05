@@ -3,6 +3,7 @@ package com.summit.dp.execution;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.core.agent.ExecutionState;
+import com.summit.dp.execution.application.service.ExecutionQueryService;
 import com.summit.dp.execution.application.service.impl.ExecutionQueryServiceImpl;
 import com.summit.dp.execution.domain.model.Execution;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
@@ -132,6 +133,32 @@ class ExecutionQueryServiceTest {
             status.setRollbackOnly();
         });
         assertTrue(service.latestStatesBySession(List.of(1L)).isEmpty());
+    }
+
+    @Test
+    void activeBySessionCarriesExecutionIdentityAndOnlyUnfinished() {
+        long running = insert(1L, 1);
+        insert(1L, 3);
+        insert(2L, 2);
+        insert(2L, 4);
+
+        List<ExecutionQueryService.ActiveExecution> active = service.activeBySession(List.of(1L, 2L));
+
+        // 只回 CREATED/RUNNING/SUSPENDED（0/1/2），终态（3/4）不下发。
+        assertEquals(2, active.size());
+        ExecutionQueryService.ActiveExecution runningRow = active.stream()
+                .filter(row -> row.executionId() == running).findFirst().orElseThrow();
+        assertEquals(1L, runningRow.sessionId());
+        assertEquals("RUNNING", runningRow.status());
+        ExecutionQueryService.ActiveExecution suspended = active.stream()
+                .filter(row -> row.status().equals("SUSPENDED")).findFirst().orElseThrow();
+        assertEquals(2L, suspended.sessionId());
+    }
+
+    @Test
+    void activeBySessionEmptyInputDoesNotReachPersistence() {
+        assertTrue(service.activeBySession(null).isEmpty());
+        assertTrue(service.activeBySession(List.of()).isEmpty());
     }
 
     @ParameterizedTest

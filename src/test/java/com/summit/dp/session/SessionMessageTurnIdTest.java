@@ -36,7 +36,7 @@ class SessionMessageTurnIdTest {
     @Test
     @DisplayName("追加消息时把 turnId 写进 PO（而不是只留在领域对象里）")
     void appendPersistsTurnId() {
-        repository.appendAll(SESSION_ID, List.of(SessionMessage.builder()
+        repository.appendAll(SESSION_ID, SESSION_ID, List.of(SessionMessage.builder()
                 .id(1001L)
                 .sessionId(SESSION_ID)
                 .turnId(TURN_ID)

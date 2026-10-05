@@ -24,11 +24,14 @@ public class ModelContextService {
     private final ObjectMapper objectMapper;
     private final SessionContextRepository repository;
 
+
+
     public Optional<List<Message>> find(Long sessionId) {
         Optional<SessionContext> context = repository.findById(sessionId);
         if (context.isEmpty()) return Optional.empty();
         try {
-            return Optional.of(objectMapper.readValue(context.get().getContent(), new TypeReference<List<Message>>() {}));
+            return Optional.of(objectMapper.readValue(context.get().getContent(), new TypeReference<>() {
+            }));
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to restore model context for session " + sessionId, e);
         }

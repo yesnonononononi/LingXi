@@ -40,22 +40,9 @@ export interface ToolCallTrace {
   subPrompt?: string;            // Commander 提供的补充提示词
   plusLines?: number;            // 文件变更添加行数 (+N)
   minusLines?: number;           // 文件变更删除行数 (-N)
+  displayIndex?: number;         // 团队协同成员显示序号 (1-indexed)
   order?: number;                // 执行时间线顺序
   timestamp?: number;
-}
-
-/** 计划检查点 (对应后端 SsePlanEventPublisher.TaskSnapshot；批准后由 create_task_manifest 铺开) */
-export interface PlanTaskItem {
-  id?: string;
-  title?: string;
-  /** 后端 TaskStatus：TODO / DOING / BLOCKED / DONE */
-  status?: 'TODO' | 'DOING' | 'BLOCKED' | 'DONE' | string;
-  /** 后端已下发的中文状态文案 */
-  statusLabel?: string;
-  description?: string;
-  dependencies?: string[];
-  priority?: number | null;
-  acceptance?: string;
 }
 
 /**
@@ -93,10 +80,15 @@ export interface PromptCardData {
   workDir?: string;
   shell?: string;
   command?: string;
+  /** COMMAND：模型声明的命令意图（content.intention，后端从 args 提取；缺失时无此键） */
+  intention?: string;
   /** DELEGATION：目标子会话 id（点击可跳转子会话视图；可空） */
   subSessionId?: string;
   /** 生命周期：pending / in_progress / completed */
-  status: 'pending' | 'in_progress' | 'completed';
+  status: 'preparing' | 'pending' | 'in_progress' | 'completed';
+  version?: string;
+  allowedActions?: Array<'APPROVE' | 'REJECT' | 'ANSWER'>;
+  unavailableReason?: string;
   /** ★ 唯一可审批判定（后端权威） */
   pending: boolean;
   /** 结论/异常（raw_output.outcome）：APPROVED/REJECTED/ANSWERED/CANCELLED/SUCCEEDED/FAILED/TIMED_OUT */
@@ -108,8 +100,6 @@ export interface PromptCardData {
   exitCode?: number;
   /** tool_call 缺行 / content 解析失败时的诚实降级标记 */
   unavailable?: boolean;
-  /** PLAN 批准后后端下发的任务清单（可空；仅供任务进度卡展示） */
-  tasks?: PlanTaskItem[];
 }
 
 /** 轮次 Token 统计信息 (对应后端 ExecutionCompleteEvent.TokenInfo) */
@@ -119,7 +109,7 @@ export interface TokenInfo {
   totalTokenCount?: number;
 }
 
-/** 文件编辑记录 (对应后端 FileEditEvent) */
+/** 文件编辑记录（来源：TOOL_COMPLETED 事件的 metaData.fileEdit，由后端 edit_file 工具写入） */
 export interface FileEditRecord {
   turnId?: string;
   recordId?: any;
@@ -139,34 +129,42 @@ export interface ContextUsageData {
   message?: string;
 }
 
-/** 子 Agent 委派建立的会话映射。 */
-export interface SubAgentSessionCreatedData {
-  rootSessionId: string | number;
-  subSessionId: string | number;
-  agentId?: string | number;
-  agentName?: string;
-  task?: string;
-  toolCallId?: string;
-}
-
-/** 规范的 Agent 运行时事件类型 (对齐后端 com.summit.core.conversation.event.RuntimeEventType) */
+/**
+ * 规范的 Agent 运行时事件类型 (对齐后端 com.summit.core.conversation.event.RuntimeEventType)
+ *
+ * <p><b>需与后端人工同步，无生成关系。</b>本联合类型是手写的，后端没有代码生成器，
+ * 改词表时必须人工同步两侧，否则事件会被静默丢弃（`messageRouter.ts` 按字面量匹配，
+ * 未命中的 case 走 default，不报错只是不处理）。</p>
+ *
+ * <p><b>真源：</b>后端框架枚举
+ * {@code com.summit.core.conversation.event.RuntimeEventType}（harness-core）。
+ * 该枚举的命名规则是「常量名即下发值」（{@code type() == name()}），所以这里的字面量
+ * 必须与枚举名一字不差。</p>
+ *
+ * <p><b>注意区分：</b>本类型是<b>框架 v1 上游</b>事件，与后端
+ * {@code com.summit.dp.stream.application.protocol.StreamEventType}（v2 投影事件，
+ * 如 {@code TEXT_DELTA} / {@code THINKING_DELTA} / {@code MESSAGE_FINALIZED}）是<b>两套并列</b>
+ * 的协议，前端当前消费的是本套 v1 事件。两个词表不可互相代入、也不可合并。</p>
+ *
+ * <p>本类型与 messageRouter 的 switch 分支同为阶段 C 信封改造的登记点，本批不整改结构。</p>
+ */
 export type RuntimeEventType =
   | 'EXECUTION_STARTED'
   | 'EXECUTION_COMPLETED'
   | 'EXECUTION_FAILED'
   | 'EXECUTION_CANCELLED'
-  | 'EXECUTION_RESUMED'
+  | 'EXECUTION_RESUME'
+  | 'EXECUTION_SUSPENDED'
   | 'PARTIAL_TEXT'
   | 'COMPLETE_TEXT'
   | 'PARTIAL_THINKING'
   | 'AI_MESSAGE'
   | 'TOOL_CALL'
   | 'TOOL_COMPLETED'
+  /** 已退役：独立 FILE_EDIT 事件不再下发，编辑摘要改由 TOOL_COMPLETED 的 metaData.fileEdit 携带 */
   | 'FILE_EDIT'
   | 'CONTEXT_UPDATE'
-  | 'CARD_PENDING'
-  | 'PLAN_UPDATE'
-  | 'SUB_AGENT_SESSION_CREATED';
+  | 'CARD_PENDING';
 
 /** 结构化 SSE 流事件定义 */
 export interface AgentStreamEvent {
@@ -196,7 +194,7 @@ export interface AgentStreamEvent {
    * 业务轮次 id（字符串，可能缺失 = 该执行没有对应轮次）。
    *
    * <p>仅生命周期事件（EXECUTION_STARTED / EXECUTION_RESUME / EXECUTION_SUSPENDED /
-   * EXECUTION_COMPLETED / EXECUTION_CANCELLED / EXECUTION_FAILED）以及 FILE_EDIT 携带；
+   * EXECUTION_COMPLETED / EXECUTION_CANCELLED / EXECUTION_FAILED）携带；
    * 高频流式事件**不带**本字段。实时路径须在收到带 turnId 的生命周期事件时记下
    * `executionId → turnId` 映射，供后续只带 executionId 的事件补齐归属。</p>
    */
@@ -215,6 +213,8 @@ export interface AgentStreamEvent {
   args?: any;
   result?: any;
   output?: any;
+  /** TOOL_COMPLETED 携带：命令级 eventMetaData 与工具自声明 toolMetaData 的合并结果（如 fileEdit） */
+  metaData?: any;
   resultStatus?: 'STARTED' | 'COMPLETED' | 'REJECTED' | 'FAILED' | 'TIMED_OUT' | 'CANCELLED' | string;
   suspensionId?: string;
   /** 后端错误载荷里的简写字段 */
@@ -292,6 +292,11 @@ export interface ChatMessage {
   isComplete?: boolean;              // 会话/轮次是否已结束
   durationMs?: number;               // 轮次总耗时毫秒
   /**
+   * 失败标记：传输层/建流前失败或 EXECUTION_FAILED 已把原因写进 content 时置位。
+   * 重发清理据此识别「失败气泡应随原提问一并移除」——不再依赖空气泡嗅探。
+   */
+  sendError?: string;
+  /**
    * 统一互动卡片（由 ToolCallVO 派生的同一形状）。
    *
    * <p>历史（TOOL 行 `toolCall`）与实时（CARD_PENDING → `GET /tool-call/{id}`）
@@ -323,6 +328,8 @@ export interface ChatSession {
   teamId?: string | null;            // 绑定的协作团队 ID（未绑定为 null；后端 JSON 序列化为字符串）
   agentId?: number | string;         // 关联的 Agent ID
   rootSessionId?: number | string;   // 关联的根会话 ID
+  runStatus?: SessionVO['runStatus'];
+  lastOutcome?: SessionVO['lastOutcome'];
   hasMoreMessages?: boolean;         // 游标分页：是否还有更多消息
   nextMessageCursor?: string | null; // 游标分页：下一页游标
   subSessions?: SubSessionVO[];      // 团队模式下委派产生的子会话列表
@@ -406,6 +413,9 @@ export interface ToolCallVO {
   conversationId?: string;
   sessionMessageId?: string;
   executionId?: string;
+  version?: string;
+  allowedActions?: Array<'APPROVE' | 'REJECT' | 'ANSWER'>;
+  unavailableReason?: string;
   /** 原始工具名（仅展示，不作卡片判别依据） */
   toolName?: string;
   /** 调用类型：PROMISE（人工在环）/ EXECUTE（框架直通） */
@@ -520,6 +530,103 @@ export interface SessionMessagePageVO {
 }
 
 /**
+ * 单条执行状态（对应后端 ExecutionStateVO，v3 bootstrap 信封的 executions 元素）。
+ *
+ * <p>`status` 是框架 `ExecutionState` 的名字（CREATED | RUNNING | SUSPENDED | COMPLETED |
+ * FAILED | CANCELLED），与实时 `EXECUTION_UPDATED.data.state` 同一字面量集合 —— 前端据它
+ * 用同一份谓词（`resolveExecutionTerminal`）判「是否结束进行态」（design §8.1 路径 2）。</p>
+ *
+ * <p>只回答「这个执行现在是什么状态」：**不含** token/模型（那些权威在 `ChatTurn`）。</p>
+ */
+export interface ExecutionStateVO {
+  executionId: string;
+  sessionId: string | null;
+  status: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+}
+
+/**
+ * v3 显式同步信封（对应后端 SessionBootstrapVO）。
+ *
+ * <p>字段全部复用既有 VO，不新造读路径（design §8.2）：会话树用 `SessionVO`，历史页用
+ * `SessionMessagePageVO`，未决卡片用 `ToolCallVO`，进行中轮次用 `ChatTurn`（= 后端
+ * `ChatTurnVO`），唯一新增的是 `executions`（`ExecutionStateVO`）。</p>
+ */
+export interface SessionBootstrapVO {
+  /** 雪花 ID 字符串，即请求路径参数的回显 */
+  rootSessionId: string;
+  /** 根会话当前代际；读取前后各校验一次，变了则服务端已有限重读 */
+  historyRevision: string;
+  /** 会话树平铺（根 + 全部子会话）；根由 `id == rootSessionId` 判定 */
+  sessions: SessionVO[];
+  /** 当前历史页（首屏），含 records/turns/nextCursor/hasMore */
+  history: SessionMessagePageVO;
+  /** 全部未决卡片（不受历史分页窗口限制） */
+  toolCalls: ToolCallVO[];
+  /** 进行中（ACCEPTED/RUNNING/WAITING）的轮次；已终结的走 history.turns */
+  turns: ChatTurn[];
+  /** 本根会话下"进行中或挂起"的执行 */
+  executions: ExecutionStateVO[];
+}
+
+/**
+ * 命令受理状态（对应后端 CommandAcceptance）。
+ *
+ * <p>`REPLAYED` = 同 `commandId` 重试命中首轮受理结果 —— 前端据此知道「这不是一次新执行」，
+ * 不重复乐观插入用户气泡。</p>
+ */
+export type CommandAcceptance = 'ACCEPTED' | 'REPLAYED';
+
+/**
+ * 发送受理回执（对应后端 CommandAcceptanceVO）。
+ *
+ * <p><b>只绑定身份，不携带内容</b>：回执告诉你「命令成了哪一轮」（sessionId / turnId /
+ * executionId），assistant 正文一律走 v3 会话流。回执另建气泡会与事件流双渲染。</p>
+ */
+export interface CommandAcceptanceVO {
+  sessionId: string;
+  turnId: string;
+  executionId: string | null;
+  commandId: string;
+  acceptance: CommandAcceptance;
+}
+
+/**
+ * 重发受理回执（对应后端 ResendCommandAcceptanceVO）。
+ *
+ * <p>在受理回执之外给出被作废范围：重发物理删除目标轮次及其之后的历史，
+ * 前端必须按 `invalidatedTurnIds` / `invalidatedExecutionIds` 精确移除实体，
+ * 并按 `historyRevision` 丢弃作废前到达的迟到事件。</p>
+ */
+export interface ResendCommandAcceptanceVO extends CommandAcceptanceVO {
+  historyRevision: string | null;
+  invalidatedTurnIds: string[];
+  invalidatedExecutionIds: string[];
+}
+
+/** 工具卡片的决策动作（对应后端 ToolCallAction）：APPROVE 放行 / REJECT 终态拒绝 / ANSWER 作答。 */
+export type ToolCallAction = 'APPROVE' | 'REJECT' | 'ANSWER';
+
+/**
+ * 决策后恢复处置（对应后端 ResumeDisposition）。
+ *
+ * <p>批准一张卡片后执行**不一定马上跑**：可能还有其他未决槽位在等、可能只是入了队列、
+ * 可能恢复失败了。UI 据此决定按钮文案（等其它卡片 / 已排队 / 已结束），
+ * 而不是一律显示「正在实施」让用户干等。</p>
+ */
+export type ResumeDisposition = 'QUEUED' | 'WAITING_OTHER_TOOLS' | 'RUNNING' | 'FAILED' | 'ENDED';
+
+/** 决策回执（对应后端 ToolCallDecisionReceipt）：只承诺「决策已落库」。 */
+export interface ToolCallDecisionReceipt {
+  commandId: string;
+  decisionApplied: boolean;
+  decision: ToolCallAction | string;
+  toolCall: ToolCallVO;
+  resumeDisposition: ResumeDisposition;
+}
+
+/**
  * 后端会话 VO（对应 SessionVO）。
  * 注意：后端列表接口只返回会话元数据，不含消息正文，
  * 消息一律走 GET /session/{id}/messages 游标分页。
@@ -575,6 +682,8 @@ export type AgentAccessMode = 'IN_WORKSPACE' | 'READ_ONLY_IN_WORKSPACE' | 'OUT_O
 /** 命令放行档位：对应后端 UserConfig.CommandPolicy (DANGEROUS_BLOCK | PRE_EXEC_CONFIRM | FULL_ACCESS) */
 export type CommandApprovalPolicyType = 'DANGEROUS_BLOCK' | 'PRE_EXEC_CONFIRM' | 'FULL_ACCESS';
 
+export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 /** 通用配置视图对象 (对应后端 UserConfigVO) */
 export interface UserConfigVO {
   id?: number | string;
@@ -589,7 +698,9 @@ export interface UserConfigVO {
   /** 模型最大 Token 数；空值表示沿用模型/框架缺省 */
   maxTokens?: number;
   /** 思考深度/推理等级：low/none/medium/high/xhigh/max；空值表示沿用缺省 */
-  reasoningEffort?: string;
+  reasoningEffort?: ReasoningEffort;
+  /** 界面渲染主题：LIGHT / DARK */
+  renderTheme?: 'LIGHT' | 'DARK' | string;
 }
 
 /** 工作空间请求体 (对应后端 WorkspaceRequest) */
@@ -626,12 +737,6 @@ export interface OpenAIModelItem {
   owned_by?: string;
   shutdown_date?: string | null;
   [key: string]: any;
-}
-
-/** OpenAI 获取模型列表通用响应结构 (GET /v1/models) */
-export interface OpenAIModelListResponse {
-  object?: 'list' | string;
-  data: OpenAIModelItem[];
 }
 
 /** Agent 视图对象 (对应后端 AgentVO) */
@@ -700,7 +805,6 @@ export interface ToolVO {
  * 与框架侧 McpClientFactory 选择 builder 的取值一致。
  */
 export const MCP_TRANSPORTS = ['streamable-http', 'sse', 'stdio'] as const;
-export type McpTransport = (typeof MCP_TRANSPORTS)[number];
 
 /**
  * stdio 传输的环境限制提示。

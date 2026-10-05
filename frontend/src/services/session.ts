@@ -1,6 +1,6 @@
 import http from './interceptor';
 import type { Result } from './types';
-import type { SessionMessagePageVO, SessionTreeVO, SessionVO } from '../types/chat';
+import type { SessionBootstrapVO, SessionMessagePageVO, SessionTreeVO, SessionVO } from '../types/chat';
 
 export interface SessionCreateRequest {
   name: string;
@@ -83,5 +83,20 @@ export class SessionAPI {
    */
   static async tree(id: number | string): Promise<Result<SessionTreeVO>> {
     return http.get<any, Result<SessionTreeVO>>(`/session/${id}/tree`);
+  }
+
+  /**
+   * v3 显式同步入口：一次读回根会话树摘要、历史首屏、未决卡片、进行中轮次与活跃/挂起执行。
+   *
+   * <p>对应后端 {@code GET /session/{rootSessionId}/bootstrap}（design §8.2）。这是 v3 前端
+   * 在收到 {@code STREAM_READY} 后发起的**唯一一次**持久化状态读取：实时帧只负责增量，
+   * 断线期间的状态由它兜底，不靠超时轮询库（§1 禁止的读路径）。</p>
+   *
+   * @param rootSessionId 根会话 ID（传子会话 ID 后端也会解析到根）
+   */
+  static async bootstrap(rootSessionId: number | string): Promise<Result<SessionBootstrapVO>> {
+    return http.get<any, Result<SessionBootstrapVO>>(
+      `/session/${encodeURIComponent(String(rootSessionId))}/bootstrap`
+    );
   }
 }

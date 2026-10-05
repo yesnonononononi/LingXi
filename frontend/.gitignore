@@ -24,3 +24,9 @@ dist-ssr
 *.sw?
 # Vite 依赖预构建缓存
 .vite/
+
+# 桌面端后端运行产物暂存区（jlink 出的 JRE + fat jar，由 npm run backend:runtime 生成）
+/build/
+
+# electron-builder 打包输出（安装包 + 免安装目录）
+/release/

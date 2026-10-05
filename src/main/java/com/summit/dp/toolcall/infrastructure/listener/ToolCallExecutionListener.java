@@ -29,8 +29,6 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class ToolCallExecutionListener implements RuntimeListener {
 
-    private static final String LOG_PREFIX = "【tool-call-execute】";
-
     private final ToolCallRegistrar registrar;
 
     @Override
@@ -40,8 +38,7 @@ public class ToolCallExecutionListener implements RuntimeListener {
                     event.getToolName(), event.getArgs());
         } catch (RuntimeException e) {
             // 观测链路不得拖垮主执行流：登记失败只告警，工具照常执行。
-            log.warn("{} markExecuteStarted failed: requestId={}, error={}",
-                    LOG_PREFIX, event.getRequestId(), e.toString());
+            log.warn("登记工具调用开始失败: requestId={}, error={}", event.getRequestId(), e.toString());
         }
     }
 
@@ -51,13 +48,11 @@ public class ToolCallExecutionListener implements RuntimeListener {
             return;   // PROMISE 的结论交给 decide 端点收尾
         }
         try {
-            ToolCallOutcome outcome = ToolCallOutcome.fromFrameworkStatus(
-                    event.resultStatus() == null ? null : event.resultStatus().name());
+            ToolCallOutcome outcome = ToolCallOutcome.fromFrameworkStatus(event.resultStatus());
             registrar.completeExecute(event.getRequestId(), numericId(event.getExecutionId()),
                     event.getToolName(), event.getArgs(), event.getOutput(), outcome);
         } catch (RuntimeException e) {
-            log.warn("{} completeExecute failed: requestId={}, error={}",
-                    LOG_PREFIX, event.getRequestId(), e.toString());
+            log.warn("登记工具调用结束失败: requestId={}, error={}", event.getRequestId(), e.toString());
         }
     }
 

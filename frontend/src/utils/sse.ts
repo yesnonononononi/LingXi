@@ -7,6 +7,23 @@
  */
 
 import type { AgentStreamEvent } from '../types/chat';
+import { isOk } from './api';
+
+const resolveBusinessError = (payload: unknown): string | undefined => {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const errMsg = (payload as Record<string, unknown>).errMsg;
+  return typeof errMsg === 'string' && errMsg.trim() ? errMsg.trim() : undefined;
+};
+
+const validateStreamResponse = async (response: Response): Promise<void> => {
+  const contentType = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
+  if (response.ok && response.body && contentType === 'text/event-stream') return;
+
+  // 业务拒绝可能仍返回 HTTP 200，必须先识别响应格式，否则错误会被当作空流吞掉。
+  const payload: unknown = await response.json().catch(() => null);
+  throw new Error(resolveBusinessError(payload)
+    ?? (response.ok ? '服务器未返回有效的消息流，请稍后重试' : `消息流连接失败（HTTP ${response.status}），请稍后重试`));
+};
 
 /** OpenAI 风格流结束标记 */
 export const SSE_DONE_SIGNAL = '[DONE]';
@@ -152,11 +169,9 @@ export async function readSseResponse(
     stopOnTerminal = true,
   } = options;
 
-  if (!response.body) {
-    throw new Error('SSE 响应不含可读流');
-  }
+  await validateStreamResponse(response);
 
-  const reader = response.body.getReader();
+  const reader = response.body!.getReader();
   const decoder = new TextDecoder('utf-8');
   let buffer = '';
 
@@ -231,6 +246,11 @@ export async function readSseResponse(
           continue;
         }
 
+        // 异常响应也可能被包装成 SSE，不能把业务拒绝当作正常完成。
+        if ('code' in parsed && !isOk(parsed.code)) {
+          throw new Error(resolveBusinessError(parsed) ?? '消息发送失败，请稍后重试');
+        }
+
         // 无事件类型的 JSON 载荷：仅在其确实携带文本字段时才作为正文推送，
         // 否则记录告警并忽略 —— 不再把整个 JSON 序列化后展示给用户
         const textContent = extractTextContent(parsed);
@@ -248,13 +268,4 @@ export async function readSseResponse(
   } finally {
     await reader.cancel().catch(() => {});
   }
-}
-
-/**
- * 从错误载荷中提取人可读的错误文本。
- * 契约来源：ExecutionErrorEvent —— 主文案 errMsg，补充说明 extraDes。
- */
-export function extractEventError(payload: Record<string, any>): string {
-  const raw = payload.errMsg ?? payload.extraDes;
-  return typeof raw === 'string' && raw.trim() ? raw.trim() : '';
 }

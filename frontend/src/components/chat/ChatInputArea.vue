@@ -1,9 +1,23 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, watch, nextTick, computed, onMounted, onBeforeUnmount, type CSSProperties } from 'vue';
+import {
+  Attachment01Icon,
+  Cancel01Icon,
+  File02Icon,
+  HelpCircleIcon,
+  Mic01Icon,
+  PlusSignIcon,
+  SparklesIcon,
+  Tick02Icon
+} from '@hugeicons/core-free-icons';
+import { HugeiconsIcon, type IconArray } from '@hugeicons/vue';
+import { animate, motionValue, useReducedMotion, type AnimationPlaybackControls } from 'motion-v';
 import DropUpSelect from '../common/DropUpSelect.vue';
+import BorderGlow from '../common/BorderGlow.vue';
 import ProjectDropdown from './ProjectDropdown.vue';
 import type { SelectOption } from '../../types/ui';
-import type { ChatMode, ModelConfig, WorkspaceVO, AgentAccessMode, TeamVO, AgentVO } from '../../types/chat';
+import type { ChatMode, ModelConfig, WorkspaceVO, AgentAccessMode, TeamVO, AgentVO, ReasoningEffort } from '../../types/chat';
+import { reasoningEffortOptions } from '../../composables/useReasoningEffort';
 import { TeamAPI } from '../../services/team';
 import { AgentAPI } from '../../services/agent';
 import { isOk } from '../../utils/api';
@@ -18,6 +32,9 @@ const props = defineProps<{
   workspaces?: WorkspaceVO[];
   selectedWorkspaceId?: string | number | null;
   accessMode?: AgentAccessMode | string;
+  reasoningEffort?: ReasoningEffort;
+  reasoningEffortPending?: boolean;
+  reasoningEffortError?: string;
   teams?: TeamVO[];
   selectedTeamId?: string | number | null;
   agents?: AgentVO[];
@@ -44,6 +61,7 @@ const emit = defineEmits<{
   (e: 'updateMode', mode: ChatMode): void;
   (e: 'updateModel', modelId: string | number): void;
   (e: 'updateAccessMode', mode: AgentAccessMode): void;
+  (e: 'updateReasoningEffort', effort: ReasoningEffort): void;
   (e: 'updateTeam', teamId: string | number | null): void;
   (e: 'updateAgent', agentId: string | number | null): void;
   (e: 'selectWorkspace', workspace: WorkspaceVO | null): void;
@@ -56,16 +74,53 @@ const emit = defineEmits<{
   (e: 'openSettingsTab', tab: string): void;
 }>();
 
+// PromptBar 样式与动效常量
+const ARROW_UP = [12, 4.5, 18.5, 11, 14.25, 11, 14.25, 19.5, 9.75, 19.5, 9.75, 11, 5.5, 11];
+const SQUARE = [12, 6, 18, 6, 18, 12, 18, 18, 6, 18, 6, 12, 6, 6];
+const EASE_IN_OUT: [number, number, number, number] = [0.77, 0, 0.175, 1];
+const LINE = 22;
+const EDGE = 11;
+
+const MUTED = '[color:color-mix(in_srgb,var(--pb-ink)_55%,transparent)]';
+const TOOL_BTN =
+  'inline-flex h-7 flex-none cursor-pointer touch-manipulation items-center gap-1 rounded-lg border-0 bg-transparent px-2 text-[12px] font-medium outline-none select-none [color:color-mix(in_srgb,var(--pb-ink)_70%,transparent)] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease] data-[on]:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] data-[on]:[color:var(--pb-ink)] [@media(hover:hover)_and_(pointer:fine)]:hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] [@media(hover:hover)_and_(pointer:fine)]:hover:[color:var(--pb-ink)] data-[max]:[color:var(--pb-spark)]!';
+const ICON_BTN =
+  'inline-grid h-7 w-7 flex-none cursor-pointer touch-manipulation place-items-center rounded-lg border-0 bg-transparent p-0 outline-none select-none [color:color-mix(in_srgb,var(--pb-ink)_60%,transparent)] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease,transform_160ms_cubic-bezier(0.23,1,0.32,1)] active:[transform:scale(0.94)] data-[on]:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] data-[on]:[color:var(--pb-ink)] motion-reduce:active:[transform:none] [@media(hover:hover)_and_(pointer:fine)]:hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] [@media(hover:hover)_and_(pointer:fine)]:hover:[color:var(--pb-ink)]';
+
+const mix = (a: number, b: number, t: number) => a + (b - a) * t;
+const pathAt = (a: number[], b: number[], t: number) => {
+  let d = '';
+  for (let i = 0; i < a.length; i += 2) {
+    d += `${i ? 'L' : 'M'}${mix(a[i], b[i], t).toFixed(2)} ${mix(a[i + 1], b[i + 1], t).toFixed(2)}`;
+  }
+  return `${d}Z`;
+};
+
+type Spark = {
+  x: number;
+  y: number;
+  r: number;
+  vy: number;
+  sway: number;
+  phase: number;
+  life: number;
+  span: number;
+};
+
+const reduce = useReducedMotion();
+const commandContainerRef = ref<HTMLDivElement | null>(null);
+const textareaRef = ref<HTMLTextAreaElement | null>(null);
+const sparkRef = ref<HTMLCanvasElement | null>(null);
+const sendSvg = ref<SVGSVGElement | null>(null);
+const sendPath = ref<SVGPathElement | null>(null);
+const typing = { energy: 0, strokes: 0 };
 
 const inputText = ref('');
-const textareaRef = ref<HTMLTextAreaElement | null>(null);
-
-// 状态：深度思考、混合搜索、计划模式
-const isDeepThink = ref(false);
+const isDeepThink = computed(() => ['high', 'xhigh', 'max'].includes(props.reasoningEffort ?? 'low'));
 const isHybridSearch = ref(false);
 const isPlanMode = ref(false);
 
-// 原始 File 用于上传，Object URL 仅用于本地预览。
+// 附件管理
 const attachedImage = ref<File | null>(null);
 const attachedImagePreview = ref<string | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
@@ -113,11 +168,6 @@ const removeAttachedImage = () => {
   attachedImagePreview.value = null;
 };
 
-// 模式同步
-watch(() => props.hasActiveSession, () => {
-  // 会话切换时的处理逻辑（如需）
-});
-
 // 仅在没有任何消息记录的新会话中允许切换项目目录
 const allowWorkspaceChange = computed(() => {
   if (props.canChangeWorkspace !== undefined) {
@@ -125,10 +175,82 @@ const allowWorkspaceChange = computed(() => {
   }
   return !props.hasActiveSession;
 });
+const isProjectDropdownOpen = ref(false);
 
 watch(isPlanMode, (val) => {
   emit('updateMode', val ? 'plan' : 'auto');
 });
+
+const effortList = reasoningEffortOptions.map(option => option.label);
+const effortIndex = ref(1);
+const effortOpen = ref(false);
+const level = computed(() => effortList[effortIndex.value] ?? 'Low');
+const maxed = computed(() => effortIndex.value === effortList.length - 1);
+
+watch(() => [props.reasoningEffort, props.reasoningEffortPending] as const, ([value]) => {
+  const index = reasoningEffortOptions.findIndex(option => option.value === value);
+  effortIndex.value = index < 0 ? 1 : index;
+}, { immediate: true });
+
+const setEffort = (i: number) => {
+  const next = Math.max(0, Math.min(effortList.length - 1, i));
+  if (next === effortIndex.value) return;
+  effortIndex.value = next;
+  emit('updateReasoningEffort', reasoningEffortOptions[next]!.value);
+};
+const effortFromPointer = (e: PointerEvent) => {
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const k = (e.clientX - rect.left - EDGE) / Math.max(1, rect.width - 2 * EDGE);
+  setEffort(Math.round(k * (effortList.length - 1)));
+};
+const onEffortDown = (e: PointerEvent) => {
+  if (e.button !== 0) return;
+  const el = e.currentTarget as HTMLElement;
+  try {
+    el.setPointerCapture(e.pointerId);
+  } catch {
+    // ignore
+  }
+  el.focus({ preventScroll: true });
+  effortFromPointer(e);
+};
+const onEffortMove = (e: PointerEvent) => {
+  if (e.buttons & 1) effortFromPointer(e);
+};
+const onEffortKey = (e: KeyboardEvent) => {
+  const step =
+    e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : 0;
+  if (step) {
+    e.preventDefault();
+    setEffort(effortIndex.value + step);
+  } else if (e.key === 'Home') {
+    e.preventDefault();
+    setEffort(0);
+  } else if (e.key === 'End') {
+    e.preventDefault();
+    setEffort(effortList.length - 1);
+  } else if (e.key === 'Escape') {
+    effortOpen.value = false;
+    textareaRef.value?.focus();
+  }
+};
+const stepAt = (i: number) =>
+  `calc(${EDGE}px + (100% - ${EDGE * 2}px) * ${i / Math.max(1, effortList.length - 1)})`;
+const fillAt = (i: number) => (i === effortList.length - 1 ? '100%' : `calc(${stepAt(i)} + 7px)`);
+const effortStyle = computed(
+  () =>
+    ({
+      '--pb-effort-x': stepAt(effortIndex.value),
+      '--pb-effort-fill': fillAt(effortIndex.value)
+    }) as CSSProperties
+);
+
+const toggleEffort = () => {
+  isCommandMenuOpen.value = false;
+  isCommandMenuClickedOpen.value = false;
+  isAgentMenuOpen.value = false;
+  effortOpen.value = !effortOpen.value;
+};
 
 // ====== Team 团队选择与后端分页获取 ======
 const teamSelectRef = ref<{ open: () => void; close: () => void } | null>(null);
@@ -153,11 +275,6 @@ const fetchTeams = async (page = 1) => {
     isLoadingTeams.value = false;
   }
 };
-
-onMounted(() => {
-  fetchTeams(1);
-  fetchAgents(1);
-});
 
 const localSelectedTeamId = ref<string | number>('');
 watch(
@@ -243,12 +360,14 @@ const clearSelectedAgent = () => {
   selectedAgent.value = '';
 };
 
-// ====== /agent 触发的上拉浮层菜单 (对齐 media_1789911005357.png) ======
+// ====== /agent 触发的上拉浮层菜单 ======
 const isAgentMenuOpen = ref(false);
 const agentMenuRef = ref<HTMLElement | null>(null);
 const agentSearchInputRef = ref<HTMLInputElement | null>(null);
 const agentSearchQuery = ref('');
 const activeAgentIndex = ref(0);
+const agentRowRefs: (HTMLButtonElement | null)[] = [];
+const agentGlowRef = ref<HTMLSpanElement | null>(null);
 
 interface AgentItem {
   id: string | number;
@@ -287,6 +406,7 @@ const openAgentMenu = () => {
   isAgentMenuOpen.value = true;
   isCommandMenuOpen.value = false;
   isCommandMenuClickedOpen.value = false;
+  effortOpen.value = false;
   agentSearchQuery.value = '';
   const currentIdx = filteredAgentList.value.findIndex(a => String(a.id) === String(selectedAgent.value));
   activeAgentIndex.value = currentIdx >= 0 ? currentIdx : 0;
@@ -324,6 +444,23 @@ const selectAgentItem = (agent: AgentItem) => {
   closeAgentMenu();
 };
 
+watch(
+  [isAgentMenuOpen, activeAgentIndex, filteredAgentList],
+  () => {
+    const glow = agentGlowRef.value;
+    if (!glow || !isAgentMenuOpen.value) return;
+    const row = agentRowRefs[activeAgentIndex.value];
+    if (!row) {
+      glow.style.opacity = '0';
+      return;
+    }
+    glow.style.top = `${row.offsetTop}px`;
+    glow.style.height = `${row.offsetHeight}px`;
+    glow.style.opacity = '1';
+  },
+  { flush: 'post' }
+);
+
 const teamOptions = computed<SelectOption<string | number>[]>(() => {
   const list = props.teams && props.teams.length > 0 ? props.teams : localTeams.value;
   return [
@@ -335,7 +472,6 @@ const teamOptions = computed<SelectOption<string | number>[]>(() => {
     { label: '+ 添加团队', value: ADD_TEAM_OPTION }
   ];
 });
-
 
 // 基座模型
 const ADD_CUSTOM_MODEL = '__add_custom_model__';
@@ -351,14 +487,9 @@ const selectedModel = computed<string | number>({
   set: (value) => { if (value === ADD_CUSTOM_MODEL) { emit('openModelEditor'); return; } emit('updateModel', value); }
 });
 
-/** ≥1000 显示 `216.7K`（与产品稿一致，1000000 → `1000.0K`），否则原值 */
+/** ≥1000 显示 `216.7K` */
 const formatContextTokens = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : `${n}`);
 
-/**
- * 上下文用量文案：`21.7% · 216.7K / 1000.0K 上下文已使用`。
- * ratio 优先事件自带；缺失时用 used/max 现算；max 也缺失时退化为仅用量。
- * 正在压缩（SQUEEZE_STARTED）时把提示语换为压缩中文案，数值仍展示（压缩前口径）。
- */
 const contextUsageText = computed<string>(() => {
   const usage = props.contextUsage;
   const used = usage?.usedTokens;
@@ -371,7 +502,6 @@ const contextUsageText = computed<string>(() => {
   return pct ? `${pct} · ${amount} ${label}` : `${amount} ${label}`;
 });
 
-/** 进度环几何：周长 = 2πr（r=6，viewBox 16）；弧长按 ratio 截断到 [0, 周长] */
 const CONTEXT_RING_RADIUS = 6;
 const CONTEXT_RING_CIRCUMFERENCE = 2 * Math.PI * CONTEXT_RING_RADIUS;
 const contextRingDash = computed<string>(() => {
@@ -382,10 +512,15 @@ const contextRingDash = computed<string>(() => {
   return `${arc} ${CONTEXT_RING_CIRCUMFERENCE - arc}`;
 });
 
+/** 仅在鼠标悬停在用量圆环图标上时显示上下文浮层提示 */
+const isContextTooltipVisible = ref(false);
+
 const adjustHeight = () => {
   if (!textareaRef.value) return;
-  textareaRef.value.style.height = 'auto';
-  textareaRef.value.style.height = `${Math.min(textareaRef.value.scrollHeight, 180)}px`;
+  textareaRef.value.style.height = '0px';
+  const max = LINE * 5;
+  textareaRef.value.style.height = `${Math.min(textareaRef.value.scrollHeight, max)}px`;
+  textareaRef.value.style.overflowY = textareaRef.value.scrollHeight > max ? 'auto' : 'hidden';
 };
 
 // 快捷指令 (/ 或 + 触发)
@@ -399,7 +534,8 @@ interface CommandItem {
 const isCommandMenuOpen = ref(false);
 const isCommandMenuClickedOpen = ref(false);
 const activeCommandIndex = ref(0);
-const commandContainerRef = ref<HTMLElement | null>(null);
+const commandRowRefs: (HTMLButtonElement | null)[] = [];
+const commandGlowRef = ref<HTMLSpanElement | null>(null);
 
 const allCommands = computed<CommandItem[]>(() => [
   {
@@ -428,14 +564,6 @@ const allCommands = computed<CommandItem[]>(() => [
     desc: '切换或新建工作空间 (Workspace)',
     action: () => {
       emit('newProject');
-    }
-  },
-  {
-    id: 'clear',
-    name: 'clear',
-    desc: '清空当前会话的历史消息',
-    action: () => {
-      emit('clearCurrentSession');
     }
   },
   {
@@ -470,7 +598,6 @@ const allCommands = computed<CommandItem[]>(() => [
       openAgentMenu();
     }
   },
-
   {
     id: 'permission',
     name: 'permission',
@@ -510,9 +637,25 @@ const filteredCommands = computed(() => {
   return allCommands.value.filter(c => c.name.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q));
 });
 
+watch(
+  [isCommandMenuOpen, activeCommandIndex, filteredCommands],
+  () => {
+    const glow = commandGlowRef.value;
+    if (!glow || !isCommandMenuOpen.value) return;
+    const row = commandRowRefs[activeCommandIndex.value];
+    if (!row) {
+      glow.style.opacity = '0';
+      return;
+    }
+    glow.style.top = `${row.offsetTop}px`;
+    glow.style.height = `${row.offsetHeight}px`;
+    glow.style.opacity = '1';
+  },
+  { flush: 'post' }
+);
+
 watch(inputText, (val) => {
   nextTick(adjustHeight);
-  // 用户输入 /plan 触发 Plan 模式
   if (val.startsWith('/plan ') || val === '/plan') {
     isPlanMode.value = true;
     inputText.value = val.replace(/^\/plan\s*/, '');
@@ -520,7 +663,6 @@ watch(inputText, (val) => {
     isCommandMenuClickedOpen.value = false;
     return;
   }
-  // 用户输入 /permission 引导打开设置弹窗
   if (val.startsWith('/permission ') || val === '/permission') {
     inputText.value = '';
     isCommandMenuOpen.value = false;
@@ -528,7 +670,6 @@ watch(inputText, (val) => {
     emit('openSettings');
     return;
   }
-  // 用户输入 /agent 自动展开 Agent 选择浮层 (对齐 media_1789911005357.png)
   if (val === '/agent' || val.startsWith('/agent ') || val === '/agent\n') {
     inputText.value = val.replace(/^\/agent\s*/, '');
     isCommandMenuOpen.value = false;
@@ -536,7 +677,6 @@ watch(inputText, (val) => {
     openAgentMenu();
     return;
   }
-  // 用户输入 /mcp 直达设置弹窗的 MCP 服务页
   if (val.startsWith('/mcp ') || val === '/mcp') {
     inputText.value = '';
     isCommandMenuOpen.value = false;
@@ -555,6 +695,8 @@ watch(inputText, (val) => {
 });
 
 const handlePlusClick = () => {
+  effortOpen.value = false;
+  isAgentMenuOpen.value = false;
   isCommandMenuOpen.value = !isCommandMenuOpen.value;
   if (isCommandMenuOpen.value) {
     isCommandMenuClickedOpen.value = true;
@@ -567,9 +709,7 @@ const handlePlusClick = () => {
 const selectCommand = (cmd: CommandItem) => {
   if (inputText.value.startsWith('/')) {
     inputText.value = '';
-    if (textareaRef.value) {
-      textareaRef.value.style.height = 'auto';
-    }
+    nextTick(adjustHeight);
   }
   isCommandMenuOpen.value = false;
   isCommandMenuClickedOpen.value = false;
@@ -587,19 +727,253 @@ const handleClickOutside = (event: MouseEvent) => {
     isCommandMenuOpen.value = false;
     isCommandMenuClickedOpen.value = false;
     isAgentMenuOpen.value = false;
+    effortOpen.value = false;
   } else if (agentMenuRef.value && !agentMenuRef.value.contains(target) && textareaRef.value?.contains(target)) {
     isAgentMenuOpen.value = false;
   }
 };
 
+// ====== 语音听写 (Mic) 支撑 ======
+let dictation = 0;
+const listening = ref(false);
+const hasDictate = computed(() => {
+  if (typeof window === 'undefined') return false;
+  const win = window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown };
+  return !!(win.SpeechRecognition || win.webkitSpeechRecognition);
+});
+
+const toggleListen = () => {
+  const win = window as unknown as {
+    SpeechRecognition?: new () => SpeechRecognitionInstance;
+    webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
+  };
+  const SpeechRecognitionCtor = win.SpeechRecognition || win.webkitSpeechRecognition;
+  if (!SpeechRecognitionCtor) return;
+
+  if (listening.value) {
+    dictation += 1;
+    listening.value = false;
+    return;
+  }
+
+  const seq = ++dictation;
+  listening.value = true;
+  try {
+    const recognition = new SpeechRecognitionCtor();
+    recognition.lang = 'zh-CN';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.onresult = (e: SpeechRecognitionEventInstance) => {
+      if (seq !== dictation) return;
+      const text = e.results?.[0]?.[0]?.transcript;
+      if (text) {
+        inputText.value = inputText.value.trim() ? `${inputText.value.trimEnd()} ${text}` : text;
+        nextTick(adjustHeight);
+      }
+      listening.value = false;
+      textareaRef.value?.focus();
+    };
+    recognition.onerror = () => {
+      if (seq === dictation) listening.value = false;
+    };
+    recognition.onend = () => {
+      if (seq === dictation) listening.value = false;
+    };
+    recognition.start();
+  } catch {
+    listening.value = false;
+  }
+};
+
+type SpeechRecognitionEventInstance = {
+  results: { [index: number]: { [index: number]: { transcript: string } } };
+};
+type SpeechRecognitionInstance = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((e: SpeechRecognitionEventInstance) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+};
+
+// ====== Send 按钮 SVG 图标 Morphing 动画 (motion-v) ======
+const canSend = computed(() => !props.reasoningEffortPending && (inputText.value.trim().length > 0 || !!attachedImage.value));
+const armed = computed(() => !!props.isSending || canSend.value);
+const pressed = ref(false);
+
+const sendT = motionValue(props.isSending ? 1 : 0);
+let sendDir = props.isSending ? 1 : -1;
+let sendControls: AnimationPlaybackControls | null = null;
+const sendStart = pathAt(ARROW_UP, SQUARE, sendT.get());
+let offSend: (() => void) | undefined;
+
+const syncSend = () => {
+  const target = props.isSending ? 1 : 0;
+  sendDir = props.isSending ? 1 : -1;
+  if (sendT.get() === target) return;
+  sendControls?.stop();
+  sendControls = animate(
+    sendT,
+    target,
+    reduce.value ? { duration: 0 } : { duration: 0.24, ease: EASE_IN_OUT }
+  );
+};
+watch(() => props.isSending, syncSend);
+
+const down = (e: PointerEvent) => {
+  if (e.button !== 0 || !armed.value) return;
+  pressed.value = true;
+};
+const up = () => {
+  pressed.value = false;
+};
+
+const onSendClick = () => {
+  if (props.isSending) emit('stopGeneration');
+  else handleSend();
+};
+
+// ====== 粒子画布特效 (Sparks Canvas) ======
+let stopSpark: (() => void) | null = null;
+const startSpark = () => {
+  const canvas = sparkRef.value;
+  if (!canvas) return null;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  typing.strokes = 0;
+  let raf = 0;
+  let last = performance.now();
+  let w = 0;
+  let h = 0;
+  let due = 0;
+  let speed = 1;
+  let pulse = 0;
+  const parts: Spark[] = [];
+  const resize = () => {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    w = rect.width;
+    h = rect.height;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
+  const spawn = (burst: boolean) => {
+    parts.push({
+      x: Math.random() * w,
+      y: burst ? h * (0.2 + Math.random() * 0.8) : h + 3,
+      r: 0.9 + Math.random() * 1.1,
+      vy: -(7 + Math.random() * 9),
+      sway: (Math.random() - 0.5) * 10,
+      phase: Math.random() * Math.PI * 2,
+      life: burst ? Math.random() * 1.2 : 0,
+      span: 2.4 + Math.random() * 2.4
+    });
+  };
+  const tick = (now: number) => {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    const gain = 1;
+    typing.energy *= Math.exp(-dt / 0.8);
+    pulse *= Math.exp(-dt / 0.16);
+    if (typing.strokes > 0) {
+      typing.strokes = 0;
+      if (gain > 0) pulse = 1;
+    }
+    const energy = typing.energy * gain;
+    speed += (1 + energy * 6 - speed) * (1 - Math.exp(-dt / 0.15));
+    due += dt;
+    while (due > 0.14) {
+      due -= 0.14;
+      if (parts.length < 30) spawn(false);
+    }
+    ctx.clearRect(0, 0, w, h);
+    const color = props.isDark !== false ? '#ffffff' : '#10b981';
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 6 + energy * 10 + pulse * 6;
+    for (let i = parts.length - 1; i >= 0; i -= 1) {
+      const p = parts[i];
+      p.life += dt;
+      if (p.life > p.span) {
+        parts.splice(i, 1);
+        continue;
+      }
+      const k = p.life / p.span;
+      const twinkle = 0.7 + 0.3 * Math.sin((now / 160) * (1 + energy) + p.phase);
+      p.y += p.vy * dt * speed;
+      if (p.y < -4) {
+        p.y = h + 3;
+        p.x = Math.random() * w;
+      }
+      const edge = Math.min(1, Math.max(0, p.y / 14), Math.max(0, (h - p.y) / 14));
+      ctx.globalAlpha = Math.min(1, Math.sin(k * Math.PI) * (0.9 + energy * 0.25) * twinkle) * edge;
+      ctx.beginPath();
+      ctx.arc(
+        p.x + Math.sin((now / 900) * (1 + energy * 0.8) + p.phase) * p.sway,
+        p.y,
+        p.r * twinkle * (1 + energy * 0.35),
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+    }
+    raf = requestAnimationFrame(tick);
+  };
+  resize();
+  for (let i = 0; i < 26; i += 1) spawn(true);
+  const ro = new ResizeObserver(resize);
+  ro.observe(canvas);
+  raf = requestAnimationFrame(tick);
+  return () => {
+    cancelAnimationFrame(raf);
+    ro.disconnect();
+    ctx.clearRect(0, 0, w, h);
+  };
+};
+
+const syncSpark = () => {
+  stopSpark?.();
+  stopSpark = null;
+  if (!maxed.value || reduce.value) return;
+  stopSpark = startSpark();
+};
+watch([maxed, reduce], syncSpark, { flush: 'post' });
+
 onMounted(() => {
   document.addEventListener('mousedown', handleClickOutside);
+  fetchTeams(1);
+  fetchAgents(1);
+
+  offSend = sendT.on('change', v => {
+    sendPath.value?.setAttribute('d', pathAt(ARROW_UP, SQUARE, v));
+    const goo = reduce.value ? 0 : Math.sin(v * Math.PI);
+    const sx = 1 - 0.12 * goo;
+    if (sendSvg.value) {
+      sendSvg.value.style.transform = goo ? `rotate(${sendDir * 8 * goo}deg) scale(${sx}, ${1 / sx})` : '';
+    }
+  });
+
+  adjustHeight();
+  syncSpark();
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener('mousedown', handleClickOutside);
+  dictation += 1;
+  stopSpark?.();
+  offSend?.();
+  sendControls?.stop();
   if (attachedImagePreview.value) URL.revokeObjectURL(attachedImagePreview.value);
 });
+
+const onInput = (e: Event) => {
+  inputText.value = (e.target as HTMLTextAreaElement).value;
+  typing.energy = Math.min(1.6, typing.energy + 0.22);
+  typing.strokes = Math.min(4, typing.strokes + 1);
+};
 
 const handleKeyDown = (e: KeyboardEvent) => {
   if (isAgentMenuOpen.value) {
@@ -637,21 +1011,19 @@ const handleKeyDown = (e: KeyboardEvent) => {
     }
   }
 
-  // 当处于 Plan 模式且输入为空时，按 Backspace 键退出 Plan 模式
   if (e.key === 'Backspace' && isPlanMode.value && !inputText.value) {
     e.preventDefault();
     isPlanMode.value = false;
     return;
   }
 
-  // 当处于单 Agent 模式且输入为空时，按 Backspace 键退出 Agent 直聊模式
   if (e.key === 'Backspace' && localSelectedAgentId.value && !inputText.value) {
     e.preventDefault();
     clearSelectedAgent();
     return;
   }
 
-  if (e.key === 'Enter' && !e.shiftKey) {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     handleSend();
   }
@@ -660,9 +1032,8 @@ const handleKeyDown = (e: KeyboardEvent) => {
 const handleSend = () => {
   const text = inputText.value.trim();
   const image = attachedImage.value;
-  if ((!text && !image) || props.isSending) return;
+  if ((!text && !image) || props.isSending || props.reasoningEffortPending) return;
 
-  // 若用户只上传了图片没输入文字，自动填入默认提示词避免后端校验失败
   const effectiveText = text || '请分析并描述该图片';
 
   emit(
@@ -677,19 +1048,26 @@ const handleSend = () => {
   );
 
   inputText.value = '';
-  // 请求链已持有 File，此时可释放本地预览 URL。
   if (attachedImagePreview.value) URL.revokeObjectURL(attachedImagePreview.value);
   attachedImage.value = null;
   attachedImagePreview.value = null;
-  if (textareaRef.value) {
-    textareaRef.value.style.height = 'auto';
-  }
+  nextTick(adjustHeight);
 };
 
-// 暴露常用方法以支持外部调用
+const rootStyle = computed(
+  () =>
+    ({
+      '--pb-bg': props.isDark !== false ? '#000000' : '#ffffff',
+      '--pb-ink': props.isDark !== false ? '#f4f4f5' : '#18181b',
+      '--pb-menu': props.isDark !== false ? '#0a0a0c' : '#ffffff',
+      '--pb-radius': '18px',
+      '--pb-spark': props.isDark !== false ? '#ffffff' : '#10b981',
+      '--pb-press': 0.96
+    }) as CSSProperties
+);
+
 defineExpose({
   focus: () => textareaRef.value?.focus(),
-  /** 聚焦输入框（供 useChatInputFocus 注入的聚焦能力调用；基于本组件已有的 textareaRef，不用全局 querySelector） */
   focusInput: () => textareaRef.value?.focus(),
   setInputText: (text: string) => {
     inputText.value = text;
@@ -711,14 +1089,16 @@ defineExpose({
   },
   openAgentMenu
 });
-
 </script>
 
 <template>
   <div class="w-full max-w-3xl mx-auto px-4 select-none">
-    <!-- Top Pills Row: Workspace Selector (仅在没有任何消息记录的新会话中展示) -->
-    <div v-if="allowWorkspaceChange" class="mb-2 flex items-center justify-start gap-2 whitespace-nowrap overflow-hidden">
-      <!-- 1. Workspace Pill Dropdown -->
+    <!-- Top Pills Row: Workspace Selector -->
+    <div
+      v-if="allowWorkspaceChange"
+      class="mb-3 flex items-center justify-start gap-2 whitespace-nowrap transition-all"
+      :class="isProjectDropdownOpen ? 'relative z-50' : 'relative z-0'"
+    >
       <ProjectDropdown
         :workspaces="workspaces || []"
         :selectedWorkspaceId="selectedWorkspaceId"
@@ -726,79 +1106,88 @@ defineExpose({
         @selectWorkspace="(ws) => emit('selectWorkspace', ws)"
         @newProject="emit('newProject')"
         @quickStart="emit('quickStart')"
+        @openChange="(open) => isProjectDropdownOpen = open"
       />
     </div>
 
-    <!-- Big Rounded Input Card Container -->
-    <div
-      ref="commandContainerRef"
-      @paste="handlePaste"
-      :class="[
-        'relative rounded-[20px] border shadow-xs transition-all p-3.5 pb-2.5 flex flex-col gap-2 outline-none ring-0 focus-within:outline-none focus-within:ring-0',
-        isDark 
-          ? 'bg-[#151b28] border-gray-800' 
-          : 'bg-white border-gray-200/90'
-      ]"
+    <!-- 主输入框卡片（Dark 模式下集成 Vue Bits <BorderGlow /> 亮白流光边框） -->
+    <BorderGlow
+      :enabled="isDark !== false"
+      :edge-sensitivity="28"
+      glow-color="0 0 100"
+      :background-color="isDark !== false ? '#000000' : '#ffffff'"
+      :border-radius="18"
+      :glow-radius="36"
+      :glow-intensity="1.1"
+      :cone-spread="28"
+      :animated="false"
+      :colors="['#ffffff', '#f8fafc', '#cbd5e1']"
+      :fill-opacity="0.08"
+      class-name="w-full transition-all"
+      content-class="overflow-visible"
     >
-      <!-- Floating Command Menu (/ or + triggered, exactly matching media_1789698282919.png) -->
+      <div
+        ref="commandContainerRef"
+        class="group relative z-10 text-[14px] leading-[22px] [color:var(--pb-ink)] [border-radius:var(--pb-radius)] transition-all isolate before:-z-10 before:absolute before:inset-0 before:rounded-[inherit] before:content-[''] before:pointer-events-none before:[transition:opacity_500ms_ease] data-[max]:before:opacity-100 before:opacity-0 before:[background:radial-gradient(140%_120%_at_0%_100%,color-mix(in_srgb,var(--pb-spark)_26%,transparent),transparent_62%)] p-3 flex flex-col gap-2 bg-transparent border-0"
+        :data-busy="isSending ? '' : undefined"
+        :data-max="maxed ? '' : undefined"
+        :style="rootStyle"
+        @paste="handlePaste"
+      >
+      <!-- 背景飘浮微光粒子 Canvas -->
+      <canvas
+        ref="sparkRef"
+        class="-z-10 absolute inset-0 rounded-[inherit] w-full h-full pointer-events-none"
+        aria-hidden="true"
+      />
+
+      <!-- 快捷指令菜单 (/ 或 + 触发) -->
       <div
         v-if="isCommandMenuOpen && filteredCommands.length > 0"
-        :class="[
-          'absolute bottom-full left-0 mb-2.5 w-full rounded-2xl border shadow-2xl p-2 z-40 transition-all animate-in fade-in zoom-in-95 duration-100',
-          isDark
-            ? 'bg-[#182030] border-[#2b374f] text-gray-200'
-            : 'bg-white border-gray-200 text-gray-800'
-        ]"
+        class="bottom-[calc(100%+8px)] z-40 absolute inset-x-0 shadow-[0_12px_40px_-10px_rgba(0,0,0,0.7),0_1px_2px_rgba(0,0,0,0.08)] p-1.5 [background:var(--pb-menu)] rounded-xl border border-white/[0.08] backdrop-blur-md [animation:prompt-bar-pop_180ms_cubic-bezier(0.23,1,0.32,1)_both]"
       >
-        <!-- Header -->
-        <div class="px-2.5 pt-1 pb-1.5 text-xs text-gray-400 dark:text-gray-500 font-medium select-none">
-          指令
+        <div class="px-2.5 pt-1 pb-1.5 text-xs font-medium select-none" :class="MUTED">
+          快捷指令
         </div>
-
-        <!-- Command List -->
-        <div class="max-h-60 overflow-y-auto scrollbar-thin space-y-0.5">
-          <div
+        <div class="relative max-h-60 overflow-y-auto scrollbar-thin space-y-0.5">
+          <span
+            ref="commandGlowRef"
+            class="absolute inset-x-0 opacity-0 [background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] rounded-lg pointer-events-none motion-reduce:[transition:opacity_150ms_ease] [transition:top_220ms_cubic-bezier(0.23,1,0.32,1),height_220ms_cubic-bezier(0.23,1,0.32,1),opacity_150ms_ease]"
+            aria-hidden="true"
+          />
+          <button
             v-for="(cmd, idx) in filteredCommands"
             :key="cmd.id"
-            @click="selectCommand(cmd)"
+            :ref="el => (commandRowRefs[idx] = el as HTMLButtonElement | null)"
+            type="button"
+            class="z-[1] relative flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors text-xs select-none w-full text-left bg-transparent border-0 outline-none"
             @mouseenter="activeCommandIndex = idx"
-            :class="[
-              'flex items-center gap-3 px-3 py-2 rounded-xl cursor-pointer transition-colors text-xs select-none',
-              activeCommandIndex === idx
-                ? (isDark ? 'bg-white/10 text-white' : 'bg-gray-100 text-gray-900 font-medium')
-                : (isDark ? 'text-gray-300 hover:bg-white/5' : 'text-gray-700 hover:bg-gray-50')
-            ]"
+            @click="selectCommand(cmd)"
           >
-            <span class="font-medium text-gray-900 dark:text-white shrink-0 min-w-18">
+            <span class="font-medium shrink-0 min-w-18 [color:var(--pb-ink)]">
               {{ cmd.name }}
             </span>
-            <span class="text-gray-500 dark:text-gray-400 truncate">
+            <span class="truncate" :class="MUTED">
               {{ cmd.desc }}
             </span>
-          </div>
+          </button>
         </div>
       </div>
 
-      <!-- Floating Agent Selection Menu (/agent triggered, exactly matching media_1789911005357.png) -->
+      <!-- Agent 选择菜单 (/agent 触发) -->
       <div
         v-if="isAgentMenuOpen"
         ref="agentMenuRef"
-        :class="[
-          'absolute bottom-full left-0 mb-2.5 w-full rounded-2xl border shadow-2xl p-2 z-50 transition-all animate-in fade-in zoom-in-95 duration-100 backdrop-blur-md',
-          isDark
-            ? 'bg-[#182030]/95 border-[#2b374f] text-gray-200 shadow-[0_12px_30px_rgba(0,0,0,0.5)]'
-            : 'bg-white/95 border-gray-200 text-gray-800 shadow-[0_12px_30px_rgba(0,0,0,0.12)]'
-        ]"
+        class="bottom-[calc(100%+8px)] z-50 absolute inset-x-0 shadow-[0_16px_40px_rgba(0,0,0,0.7)] p-1.5 rounded-xl border backdrop-blur-md [background:color-mix(in_srgb,var(--pb-menu)_95%,transparent)] [animation:prompt-bar-pop_180ms_cubic-bezier(0.23,1,0.32,1)_both]"
+        :class="isDark !== false ? 'border-white/[0.08] text-zinc-200' : 'border-zinc-200 text-gray-800'"
       >
-        <!-- Top Search Box (搜索...) -->
-        <div class="px-2.5 pt-1 pb-1.5 shrink-0">
+        <div class="px-2.5 pt-1.5 pb-1.5 shrink-0 border-b border-black/5 dark:border-white/5">
           <input
             ref="agentSearchInputRef"
             v-model="agentSearchQuery"
             type="text"
-            placeholder="搜索..."
-            class="w-full px-1 py-0.5 text-xs bg-transparent border-none outline-none focus:outline-none focus:ring-0 select-text"
-            :class="isDark ? 'text-gray-100 placeholder-gray-500' : 'text-gray-800 placeholder-gray-400'"
+            placeholder="搜索 Agent..."
+            class="w-full px-1 py-0.5 text-xs bg-transparent border-none outline-none focus:outline-none focus:ring-0 select-text [color:var(--pb-ink)] placeholder:[color:color-mix(in_srgb,var(--pb-ink)_45%,transparent)]"
             @keydown.down.prevent="navigateAgent(1)"
             @keydown.up.prevent="navigateAgent(-1)"
             @keydown.enter.prevent="handleAgentEnter"
@@ -806,143 +1195,182 @@ defineExpose({
           />
         </div>
 
-        <!-- Agent List -->
-        <div class="max-h-60 overflow-y-auto scrollbar-thin space-y-0.5 pt-0.5">
+        <div class="relative max-h-60 overflow-y-auto scrollbar-thin space-y-0.5 pt-1">
           <div
             v-if="filteredAgentList.length === 0"
-            class="px-3 py-3 text-xs text-gray-400 dark:text-gray-500 text-center"
+            class="px-3 py-3 text-xs text-center"
+            :class="MUTED"
           >
             无匹配的 Agent
           </div>
 
-          <div
+          <span
+            ref="agentGlowRef"
+            class="absolute inset-x-0 opacity-0 [background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] rounded-lg pointer-events-none motion-reduce:[transition:opacity_150ms_ease] [transition:top_220ms_cubic-bezier(0.23,1,0.32,1),height_220ms_cubic-bezier(0.23,1,0.32,1),opacity_150ms_ease]"
+            aria-hidden="true"
+          />
+
+          <button
             v-for="(agent, idx) in filteredAgentList"
             :key="agent.id"
-            @click="selectAgentItem(agent)"
+            :ref="el => (agentRowRefs[idx] = el as HTMLButtonElement | null)"
+            type="button"
+            class="z-[1] relative flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-xs cursor-pointer select-none w-full text-left bg-transparent border-0 outline-none"
             @mouseenter="activeAgentIndex = idx"
-            :class="[
-              'px-3 py-2 rounded-xl text-xs flex items-center justify-between gap-3 cursor-pointer transition-colors select-none',
-              activeAgentIndex === idx
-                ? (isDark ? 'bg-white/10 text-white' : 'bg-gray-100 text-gray-900 font-medium')
-                : (isDark ? 'text-gray-300 hover:bg-white/5' : 'text-gray-700 hover:bg-gray-50')
-            ]"
+            @click="selectAgentItem(agent)"
           >
-            <!-- Left: Agent Name -->
-            <span class="font-normal truncate shrink-0 max-w-[45%]">
+            <span class="font-medium truncate shrink-0 max-w-[45%] [color:var(--pb-ink)]">
               {{ agent.name }}
             </span>
-
-            <!-- Right: Description / Model tag & Checkmark -->
             <div class="flex items-center gap-2 overflow-hidden justify-end flex-1 min-w-0">
-              <span class="text-xs text-gray-400 dark:text-gray-500 truncate text-right">
+              <span class="text-xs truncate text-right" :class="MUTED">
                 {{ agent.description }}
               </span>
-
-              <!-- Selected Checkmark (✓) -->
-              <svg
+              <HugeiconsIcon
                 v-if="String(agent.id) === String(selectedAgent)"
-                class="w-4 h-4 shrink-0"
-                :class="isDark ? 'text-gray-200' : 'text-gray-900'"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-              </svg>
+                :icon="Tick02Icon as IconArray"
+                :size="14"
+                :stroke-width="2.5"
+                class="shrink-0 [color:var(--pb-ink)]"
+              />
             </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Image Thumbnail Preview (匹配用户参考图 media_1789908967614.png) -->
-      <div v-if="attachedImage" class="pt-0.5 pb-1 flex items-center">
-        <div class="relative inline-block group/preview">
-          <!-- 缩略图本体：黑色/深色底圆角卡片，内部预览图 -->
-          <div class="w-13 h-13 sm:w-14 sm:h-14 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700/80 bg-black/90 shadow-sm flex items-center justify-center">
-            <img
-              :src="attachedImagePreview || ''"
-              alt="待发送图片"
-              class="w-full h-full object-cover"
-            />
-          </div>
-          <!-- 右上角小圆关闭按钮 (对齐参考图中右上角带 x 的浅色圆形按钮) -->
-          <button
-            type="button"
-            @click="removeAttachedImage"
-            class="absolute -top-1.5 -right-1.5 w-4.5 h-4.5 rounded-full bg-white dark:bg-[#1e2638] text-gray-500 hover:text-gray-800 dark:text-gray-300 dark:hover:text-white shadow-sm border border-gray-200/90 dark:border-gray-600 flex items-center justify-center cursor-pointer transition-transform hover:scale-110 select-none z-10"
-            title="移除图片"
-          >
-            <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
           </button>
         </div>
       </div>
 
-      <!-- Textarea Input Area with optional /plan prefix and /agent token -->
+      <!-- Effort 思考强度调节弹层 -->
+      <div
+        v-if="effortOpen"
+        class="bottom-[calc(100%+8px)] z-40 absolute left-2 sm:left-6 shadow-[0_12px_40px_-10px_rgba(0,0,0,0.7),0_1px_2px_rgba(0,0,0,0.08)] p-1 px-3.5 pt-3 pb-3.5 [background:var(--pb-menu)] rounded-xl w-[248px] origin-bottom-left border border-white/[0.08] backdrop-blur-md [animation:prompt-bar-pop_180ms_cubic-bezier(0.23,1,0.32,1)_both] motion-reduce:[animation:none]"
+        role="dialog"
+        aria-label="Effort"
+      >
+        <div class="flex items-center gap-2 text-[13px] leading-[18px]">
+          <span :class="MUTED">思考强度</span>
+          <span class="font-medium">{{ level }}</span>
+          <span v-if="reasoningEffortPending" role="status" class="text-xs" :class="MUTED">同步中…</span>
+          <span class="inline-flex ml-auto cursor-help" :class="MUTED" title="更高思考强度会在作答前深度思考更长时间">
+            <HugeiconsIcon :icon="HelpCircleIcon as IconArray" :size="14" :stroke-width="1.8" />
+          </span>
+        </div>
+        <div class="flex justify-between mt-3 text-[12px] leading-4" :class="MUTED">
+          <span>Faster</span>
+          <span>Smarter</span>
+        </div>
+        <div
+          class="relative mt-2 [background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] rounded-[11px] outline-none h-[22px] touch-none cursor-pointer select-none"
+          role="slider"
+          tabindex="0"
+          aria-label="Effort"
+          :aria-valuemin="0"
+          :aria-valuemax="effortList.length - 1"
+          :aria-valuenow="effortIndex"
+          :aria-valuetext="level"
+          :style="effortStyle"
+          @pointerdown="onEffortDown"
+          @pointermove="onEffortMove"
+          @keydown="onEffortKey"
+        >
+          <span
+            class="left-0 absolute inset-y-0 [background:color-mix(in_srgb,var(--pb-ink)_18%,transparent)] [width:var(--pb-effort-fill)] group-data-[max]:[background:color-mix(in_srgb,var(--pb-spark)_35%,transparent)] rounded-[11px] motion-reduce:[transition:background-color_300ms_ease] [transition:width_220ms_cubic-bezier(0.23,1,0.32,1),background-color_300ms_ease]"
+          />
+          <i
+            v-for="(name, i) in effortList"
+            :key="name"
+            class="top-1/2 absolute -mt-0.5 -ml-0.5 [background:color-mix(in_srgb,var(--pb-ink)_30%,transparent)] rounded-full w-1 h-1"
+            :style="{ left: stepAt(i) }"
+          />
+          <span
+            class="-top-[3px] absolute shadow-[0_2px_6px_rgba(0,0,0,0.25)] -ml-[7px] [background:var(--pb-ink)] [left:var(--pb-effort-x)] group-data-[max]:[background:var(--pb-spark)] rounded-[7px] w-3.5 h-7 motion-reduce:[transition:background-color_300ms_ease] [transition:left_220ms_cubic-bezier(0.23,1,0.32,1),background-color_300ms_ease]"
+          />
+        </div>
+      </div>
+
+      <p v-if="reasoningEffortError" role="alert" class="text-xs text-red-500">
+        {{ reasoningEffortError }}
+      </p>
+
+      <!-- 图片与附件 Chips 栏 -->
+      <div v-if="attachedImage" class="flex flex-wrap gap-1.5 pb-0.5">
+        <span
+          class="inline-flex items-center gap-1.5 pr-1.5 [background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] pl-2 rounded-lg h-[28px] text-[12px] motion-reduce:[animation:none] [animation:prompt-bar-pop_200ms_cubic-bezier(0.23,1,0.32,1)_both] border border-white/5"
+        >
+          <img
+            v-if="attachedImagePreview"
+            :src="attachedImagePreview"
+            alt="Preview"
+            class="w-4 h-4 rounded object-cover flex-none"
+          />
+          <HugeiconsIcon v-else :icon="File02Icon as IconArray" :size="12" :stroke-width="2" />
+          <span class="max-w-[150px] truncate text-xs">{{ attachedImage.name || '图片附件' }}</span>
+          <button
+            type="button"
+            class="inline-grid place-items-center bg-transparent opacity-60 hover:opacity-100 p-0 hover:[background:color-mix(in_srgb,var(--pb-ink)_10%,transparent)] border-0 rounded-[5px] outline-none w-[18px] h-[18px] text-inherit cursor-pointer [transition:opacity_120ms_ease,background-color_120ms_ease]"
+            title="移除附件"
+            @click.stop="removeAttachedImage"
+          >
+            <HugeiconsIcon :icon="Cancel01Icon as IconArray" :size="10" :stroke-width="2.5" />
+          </button>
+        </span>
+      </div>
+
+      <!-- 文本输入行 (支持 /plan 与 Agent Token Pill) -->
       <div class="flex items-start gap-1.5 w-full min-w-0">
-        <!-- Amber /plan token matching media_1789698947784.png -->
         <span
           v-if="isPlanMode"
-          @click="isPlanMode = false"
-          class="text-amber-500 font-medium text-sm leading-relaxed shrink-0 select-none cursor-pointer hover:opacity-80 px-0.5 whitespace-nowrap"
+          class="text-amber-500 font-medium text-xs leading-[22px] shrink-0 select-none cursor-pointer hover:opacity-80 px-1.5 rounded bg-amber-500/10 whitespace-nowrap"
           title="点击退出 Plan 模式"
+          @click.stop="isPlanMode = false"
         >
           /plan
         </span>
 
-        <!-- Agent Token Pill when a specific agent is selected -->
         <span
           v-if="currentAgentName"
-          @click="openAgentMenu"
-          class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 my-0.5 rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400 select-none cursor-pointer hover:opacity-90 shrink-0 transition whitespace-nowrap"
+          class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-lg bg-blue-500/15 text-blue-400 select-none cursor-pointer hover:opacity-90 shrink-0 transition whitespace-nowrap leading-tight"
           title="点击切换 Agent，或点击 × 清除"
+          @click.stop="openAgentMenu"
         >
           <span>🤖 {{ currentAgentName }}</span>
           <span
-            class="hover:text-red-500 hover:bg-black/5 dark:hover:bg-white/10 rounded-full w-3.5 h-3.5 flex items-center justify-center text-xs leading-none transition"
-            @click.stop="clearSelectedAgent"
+            class="hover:text-red-400 hover:bg-black/10 dark:hover:bg-white/10 rounded-full w-3.5 h-3.5 flex items-center justify-center text-xs leading-none transition"
             title="退出 Agent 直聊"
+            @click.stop="clearSelectedAgent"
           >×</span>
         </span>
 
         <textarea
           ref="textareaRef"
-          v-model="inputText"
+          rows="1"
+          :value="inputText"
+          :placeholder="listening ? '正在倾听…' : (isPlanMode ? '描述你的任务以生成计划' : '描述你想要构建的内容，/ 调用指令，@ 文件或对话')"
+          class="block bg-transparent p-0 placeholder:[color:color-mix(in_srgb,var(--pb-ink)_45%,transparent)] border-0 outline-none w-full text-[14px] text-inherit [@media(pointer:coarse)]:text-[16px] leading-[22px] resize-none [font:inherit] [overflow-wrap:anywhere]"
+          aria-label="Prompt"
+          @input="onInput"
+          @focus="effortOpen = false"
           @keydown="handleKeyDown"
-          @paste="handlePaste"
-          rows="2"
-          :placeholder="isPlanMode ? '描述你的任务以生成计划' : '描述你想要构建的内容，/ 调用指令，@ 文件或对话'"
-          :class="[
-            'flex-1 min-w-0 bg-transparent outline-none border-none resize-none text-sm leading-relaxed px-0.5 max-h-44 scrollbar-thin focus:ring-0 focus:outline-none placeholder:truncate placeholder:whitespace-nowrap',
-            isDark ? 'text-gray-100 placeholder-gray-500' : 'text-gray-800 placeholder-gray-400'
-          ]"
-        ></textarea>
+        />
       </div>
 
-      <!-- Bottom Toolbar Row -->
+      <!-- 底部工具栏行 -->
       <div class="flex items-center justify-between pt-1 flex-nowrap gap-2 min-w-0">
-        <!-- Left Toolbar Items: +, @, 🛡️ Scope -->
-        <div class="flex items-center gap-1.5 flex-nowrap shrink min-w-0">
-          <!-- + Add Button (Trigger Command Menu) -->
+        <!-- 左侧工具组：+ 按钮、图片附件、团队下拉、Effort 强度 -->
+        <div class="flex items-center gap-1 flex-nowrap shrink min-w-0">
+          <!-- + 按钮 -->
           <button
             type="button"
-            @click="handlePlusClick"
-            :class="[
-              'p-1.5 rounded-lg transition-colors cursor-pointer shrink-0',
-              isCommandMenuOpen
-                ? (isDark ? 'bg-white/10 text-white' : 'bg-gray-100 text-gray-900')
-                : (isDark ? 'text-gray-500 hover:text-gray-200 hover:bg-gray-800' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100')
-            ]"
+            :class="ICON_BTN"
+            aria-label="快捷指令 (/)"
+            :aria-expanded="isCommandMenuOpen"
+            :data-on="isCommandMenuOpen ? '' : undefined"
             title="快捷指令 (/)"
+            @mousedown.prevent
+            @click="handlePlusClick"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-            </svg>
+            <HugeiconsIcon :icon="PlusSignIcon as IconArray" :size="16" :stroke-width="2" />
           </button>
 
-          <!-- 图片上传按钮与隐藏文件选择器 -->
+          <!-- 图片附件上传按钮与隐藏文件输入 -->
           <input
             ref="fileInputRef"
             type="file"
@@ -952,104 +1380,167 @@ defineExpose({
           />
           <button
             type="button"
-            @click="triggerUpload"
-            :class="[
-              'p-1.5 rounded-lg transition-colors cursor-pointer shrink-0',
-              attachedImage
-                ? 'text-blue-500 bg-blue-50 dark:bg-blue-500/15'
-                : (isDark ? 'text-gray-500 hover:text-gray-200 hover:bg-gray-800' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100')
-            ]"
+            :class="ICON_BTN"
+            :data-on="attachedImage ? '' : undefined"
             title="上传图片 (可直接粘贴图片到输入框)"
+            @mousedown.prevent
+            @click="triggerUpload"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
+            <HugeiconsIcon :icon="Attachment01Icon as IconArray" :size="15" :stroke-width="2" />
           </button>
 
-          <!-- Team Dropdown (👥 指定 Team 团队) -->
-          <div class="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400 shrink min-w-0">
-        
-            <DropUpSelect
-              ref="teamSelectRef"
-              v-model="selectedTeam"
-              :options="teamOptions"
-              :isDark="isDark"
-              size="sm"
-              placeholder="指定团队"
-              trigger-class="border-none bg-transparent hover:bg-black/[0.05] dark:hover:bg-white/[0.08] text-gray-600 dark:text-gray-400 text-xs px-2 h-8 flex items-center rounded-md whitespace-nowrap shrink-0"
-            />
-          </div>
+          <!-- 团队选择下拉 -->
+          <DropUpSelect
+            ref="teamSelectRef"
+            v-model="selectedTeam"
+            :options="teamOptions"
+            :isDark="isDark"
+            size="sm"
+            placeholder="指定团队"
+            trigger-class="inline-flex h-7 flex-none cursor-pointer touch-manipulation items-center gap-1 rounded-lg border-0 bg-transparent px-2 text-[12px] font-medium outline-none select-none [color:color-mix(in_srgb,var(--pb-ink)_70%,transparent)] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease] hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] hover:[color:var(--pb-ink)] whitespace-nowrap"
+          />
+
+          <!-- Effort 思考强度按钮 -->
+          <button
+            type="button"
+            :class="TOOL_BTN"
+            aria-label="选择思考强度"
+            :aria-expanded="effortOpen"
+            :data-on="effortOpen ? '' : undefined"
+            :data-max="maxed ? '' : undefined"
+            title="选择思考强度 (Effort)"
+            @mousedown.prevent
+            @click="toggleEffort"
+          >
+            <HugeiconsIcon :icon="SparklesIcon as IconArray" :size="13" :stroke-width="2" />
+            <span>{{ level }}</span>
+          </button>
         </div>
 
-        <!-- Right Toolbar Items: Context Usage Indicator & Model Selector & Send Button -->
-        <div class="flex items-center gap-2 shrink-0">
-          <!-- 上下文用量指示器：常态只显示圆环，悬停时上方浮出文案气泡（会话尚无事件数据时隐藏） -->
+        <!-- 右侧工具组：上下文用量环、模型选择、语音听写、Morphing 发送按钮 -->
+        <div class="flex items-center gap-1.5 shrink-0">
+          <!-- 上下文用量指示器：仅悬浮于圆环图标时触发浮层 -->
           <div
             v-if="contextUsageText"
-            class="group relative flex items-center text-[11px] text-gray-400 dark:text-gray-500 select-none cursor-help"
+            class="relative inline-flex h-7 items-center justify-center select-none cursor-help mr-0.5"
+            :class="MUTED"
+            @mouseenter="isContextTooltipVisible = true"
+            @mouseleave="isContextTooltipVisible = false"
           >
-            <!-- 圆环进度：轨道灰环 + 按 ratio 的弧长，-90° 从顶部起弧 -->
-            <svg class="w-3.5 h-3.5 shrink-0 -rotate-90" viewBox="0 0 16 16" aria-hidden="true">
+            <svg class="w-[18px] h-[18px] shrink-0 -rotate-90 -translate-y-[0.5px]" viewBox="0 0 16 16" aria-hidden="true">
+              <!-- 未占用底轨：浅色模式为浅白灰，深色模式为深灰 -->
               <circle
-                cx="8" cy="8" r="6" fill="none" stroke-width="2.5"
-                class="stroke-gray-200 dark:stroke-gray-700"
+                cx="8" cy="8" r="6" fill="none" stroke-width="2.3"
+                class="stroke-zinc-200 dark:stroke-zinc-700/60"
               />
+              <!-- 已占用进度：浅色模式为黑色，深色模式为白色 -->
               <circle
-                cx="8" cy="8" r="6" fill="none" stroke-width="2.5" stroke-linecap="round"
-                class="stroke-gray-400 dark:stroke-gray-500 transition-[stroke-dasharray] duration-500"
+                cx="8" cy="8" r="6" fill="none" stroke-width="2.3" stroke-linecap="round"
+                class="stroke-zinc-900 dark:stroke-zinc-100 transition-[stroke-dasharray] duration-500"
                 :stroke-dasharray="contextRingDash"
               />
             </svg>
-            <!-- 文案气泡：悬停时在圆环上方浮出（水平居中于环，淡入 + 轻微上移过渡） -->
-            <div
-              class="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg border px-2.5 py-1.5 shadow-md opacity-0 translate-y-1 transition-all duration-150 ease-out group-hover:opacity-100 group-hover:translate-y-0"
-              :class="isDark
-                ? 'bg-[#161d2b] border-gray-700/80 text-gray-300 shadow-black/40'
-                : 'bg-white border-gray-200 text-gray-500 shadow-gray-400/10'"
+            <Transition
+              enter-active-class="transition duration-150 ease-out"
+              enter-from-class="opacity-0 translate-y-1"
+              enter-to-class="opacity-100 translate-y-0"
+              leave-active-class="transition duration-100 ease-in"
+              leave-from-class="opacity-100 translate-y-0"
+              leave-to-class="opacity-0 translate-y-1"
             >
-              {{ contextUsageText }}
-            </div>
+              <div
+                v-if="isContextTooltipVisible"
+                class="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg border px-2.5 py-1.5 shadow-xl z-50 [background:var(--pb-menu)] border-white/[0.08] backdrop-blur-md [color:var(--pb-ink)] text-xs"
+              >
+                {{ contextUsageText }}
+              </div>
+            </Transition>
           </div>
 
-          <!-- Model Selector Pill -->
+          <!-- 模型选择下拉 -->
           <DropUpSelect
             v-model="selectedModel"
             :options="modelOptions"
             :isDark="isDark"
             size="sm"
             placeholder="选择模型"
-            trigger-class="border-none bg-transparent hover:bg-black/[0.05] dark:hover:bg-white/[0.08] text-gray-600 dark:text-gray-300 text-xs px-2.5 h-8 flex items-center rounded-lg whitespace-nowrap"
+            trigger-class="inline-flex h-7 flex-none cursor-pointer touch-manipulation items-center gap-1 rounded-lg border-0 bg-transparent px-2 text-[12px] font-medium outline-none select-none [color:color-mix(in_srgb,var(--pb-ink)_70%,transparent)] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease] hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] hover:[color:var(--pb-ink)] whitespace-nowrap"
           />
 
-          <!-- Send / Stop Button -->
+          <!-- 语音录入 (Mic) 按钮 -->
           <button
-            v-if="isSending"
-            @click="emit('stopGeneration')"
-            class="w-8 h-8 rounded-full bg-red-500 hover:bg-red-600 text-white transition flex items-center justify-center shadow-xs cursor-pointer shrink-0"
-            title="停止生成"
+            v-if="hasDictate"
+            type="button"
+            :class="ICON_BTN"
+            :aria-label="listening ? '停止录音' : '语音输入'"
+            :aria-pressed="listening"
+            :data-on="listening ? '' : undefined"
+            title="语音输入"
+            @mousedown.prevent
+            @click="toggleListen"
           >
-            <div class="w-3 h-3 bg-white rounded-xs"></div>
+            <span
+              v-if="listening"
+              class="[&>i]:block flex items-center gap-[2.5px] [&>i]:bg-current [&>i]:rounded-full [&>i]:w-[2.5px] h-3.5 [&>i]:h-full [&>i]:origin-center [&>i]:[animation:prompt-bar-eq_900ms_ease-in-out_infinite] [&>i:nth-child(2)]:[animation-delay:150ms] [&>i:nth-child(3)]:[animation-delay:300ms]"
+              aria-hidden="true"
+            >
+              <i />
+              <i />
+              <i />
+            </span>
+            <HugeiconsIcon v-else :icon="Mic01Icon as IconArray" :size="15" :stroke-width="2" />
           </button>
 
+          <!-- PromptBar 经典 Morphing 发送 / 停止按钮 -->
           <button
-            v-else
-            @click="handleSend"
-            :disabled="!inputText.trim() && !attachedImage"
-            :class="[
-              'w-8 h-8 rounded-full transition-colors flex items-center justify-center shadow-xs shrink-0',
-              (inputText.trim() || attachedImage)
-                ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer' 
-                : (isDark ? 'bg-gray-800 text-gray-600 cursor-not-allowed' : 'bg-gray-200 text-gray-400 cursor-not-allowed')
-            ]"
-            title="发送消息"
+            type="button"
+            class="inline-grid relative flex-none place-items-center p-0 [background:color-mix(in_srgb,var(--pb-ink)_12%,var(--pb-bg))] [color:color-mix(in_srgb,var(--pb-ink)_55%,var(--pb-bg))] data-[armed]:[background:var(--pb-ink)] data-[armed]:[color:var(--pb-bg)] data-[pressed]:[transform:scale(var(--pb-press))] border-0 rounded-lg outline-none w-7 h-7 touch-manipulation cursor-pointer disabled:cursor-default select-none motion-reduce:data-[pressed]:[transform:none] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_200ms_ease,color_200ms_ease,transform_160ms_cubic-bezier(0.23,1,0.32,1)]"
+            :disabled="!armed"
+            :aria-label="isSending ? '停止' : '发送'"
+            :data-armed="armed ? '' : undefined"
+            :data-pressed="pressed ? '' : undefined"
+            title="发送消息 (Enter)"
+            @mousedown.prevent
+            @pointerdown="down"
+            @pointerup="up"
+            @pointercancel="up"
+            @pointerleave="up"
+            @click="onSendClick"
           >
-            <!-- Upward Arrow SVG -->
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M12 19V5m0 0l-5 5m5-5l5 5" />
+            <svg
+              ref="sendSvg"
+              class="block w-4 h-4 origin-center"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              fill="currentColor"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linejoin="round"
+            >
+              <path ref="sendPath" :d="sendStart" />
             </svg>
           </button>
         </div>
       </div>
     </div>
+    </BorderGlow>
   </div>
 </template>
+
+<style>
+@keyframes prompt-bar-pop {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+@keyframes prompt-bar-eq {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+</style>

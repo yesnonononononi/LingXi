@@ -1,8 +1,10 @@
 package com.summit.dp.session.application.service;
 
+import com.summit.ddd.application.vo.Result;
 import com.summit.dp.session.application.convert.SessionMessageViewAssembler;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
+import com.summit.dp.session.infrastructure.persistence.repository.SessionMessageRepositoryImpl;
 import com.summit.dp.shared.vo.SessionMessageVO;
 import com.summit.dp.shared.vo.ToolCallVO;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
@@ -36,6 +38,7 @@ public class SessionMessageQueryService {
     private final SessionMessageViewAssembler viewAssembler;
     private final ToolCallRepository toolCallRepository;
     private final ToolCallConverter toolCallConverter;
+    private final SessionMessageRepositoryImpl sessionMessageRepositoryImpl;
 
     /**
      * 转换 + 一次批量装载工具调用。
@@ -91,6 +94,11 @@ public class SessionMessageQueryService {
 
     private static boolean isToolRow(SessionMessageVO vo) {
         return vo != null && SessionMessageType.TOOL.name().equals(vo.getType());
+    }
+
+    public Result<SessionMessageVO> findByMessageId(Long messageId) {
+        SessionMessage sessionMessage = sessionMessageRepositoryImpl.findById(messageId).orElse(null);
+        return Result.success(sessionMessage == null ? null :viewAssembler.toVO(sessionMessage));
     }
 
     /** 查询结果：本页消息 VO 列表 + 命中工具调用的行数。 */

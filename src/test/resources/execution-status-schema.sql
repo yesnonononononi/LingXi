@@ -8,12 +8,14 @@
 DROP TABLE IF EXISTS execution;
 
 CREATE TABLE execution (
+    version BIGINT NOT NULL DEFAULT 1,
     id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
     session_id          BIGINT       NOT NULL,
     root_execution_id   BIGINT       NULL,
     started_at          TIMESTAMP    NULL,
     completed_at        TIMESTAMP    NULL,
     status              TINYINT      NOT NULL DEFAULT 0,
+    resume_generation   BIGINT       NOT NULL DEFAULT 0,
     snapshot            CLOB         NULL,
     created_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP

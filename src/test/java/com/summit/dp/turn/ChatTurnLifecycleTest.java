@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -210,10 +211,10 @@ class ChatTurnLifecycleTest {
         @Test
         @DisplayName("受理：落库 ACCEPTED，并带上业务已生成的执行 ID（观察钩子靠它找回轮次）")
         void acceptPersistsAcceptedTurnWithExecutionId() {
-            long turnId = service.acceptTurn(SESSION_ID, null, EXECUTION_ID, "deepseek-chat", "deepseek");
+            long turnId = service.acceptTurn(SESSION_ID, SESSION_ID, null, EXECUTION_ID, "deepseek-chat", "deepseek");
 
             ArgumentCaptor<ChatTurn> saved = ArgumentCaptor.forClass(ChatTurn.class);
-            verify(repository).save(saved.capture());
+            verify(repository).save(saved.capture(), eq(SESSION_ID));
             assertEquals(turnId, saved.getValue().getId());
             assertEquals(SESSION_ID, saved.getValue().getSessionId());
             assertEquals(EXECUTION_ID, saved.getValue().getExecutionId(),
@@ -227,17 +228,17 @@ class ChatTurnLifecycleTest {
         void missingTurnIsSkippedQuietly() {
             when(repository.findByExecutionId(EXECUTION_ID)).thenReturn(Optional.empty());
 
-            service.markRunning(String.valueOf(EXECUTION_ID), Instant.now());
-            service.markWaiting(String.valueOf(EXECUTION_ID));
-            service.refreshUsage(String.valueOf(EXECUTION_ID), 1L, 2L, 3L);
+            service.markRunning(String.valueOf(EXECUTION_ID), Instant.now(), SESSION_ID);
+            service.markWaiting(String.valueOf(EXECUTION_ID), SESSION_ID);
+            service.refreshUsage(String.valueOf(EXECUTION_ID), 1L, 2L, 3L, SESSION_ID);
 
-            verify(repository, never()).updateById(any());
+            verify(repository, never()).updateById(any(), any());
         }
 
         @Test
         @DisplayName("非数字执行 ID（框架兜底 UUID）同样跳过，不抛异常")
         void nonNumericExecutionIdIsSkipped() {
-            service.markRunning("3f1c9a2e-uuid", Instant.now());
+            service.markRunning("3f1c9a2e-uuid", Instant.now(), SESSION_ID);
             verifyNoInteractions(repository);
         }
 
@@ -246,10 +247,10 @@ class ChatTurnLifecycleTest {
         void markTerminalRejectsNonTerminal() {
             assertThrows(IllegalArgumentException.class,
                     () -> service.markTerminal(String.valueOf(EXECUTION_ID), ChatTurnStatus.RUNNING,
-                            null, null, null, Instant.now()));
+                            null, null, null, Instant.now(), SESSION_ID));
             assertThrows(IllegalArgumentException.class,
                     () -> service.markTerminal(String.valueOf(EXECUTION_ID), null,
-                            null, null, null, Instant.now()));
+                            null, null, null, Instant.now(), SESSION_ID));
         }
 
         @Test
@@ -259,14 +260,14 @@ class ChatTurnLifecycleTest {
             when(repository.findByExecutionId(EXECUTION_ID)).thenReturn(Optional.of(turn));
 
             Instant startedAt = Instant.now();
-            service.markRunning(String.valueOf(EXECUTION_ID), startedAt);
+            service.markRunning(String.valueOf(EXECUTION_ID), startedAt, SESSION_ID);
             service.markTerminal(String.valueOf(EXECUTION_ID), ChatTurnStatus.COMPLETED,
-                    10L, 20L, 30L, Instant.now());
+                    10L, 20L, 30L, Instant.now(), SESSION_ID);
 
             assertEquals(ChatTurnStatus.COMPLETED, turn.getStatus());
             assertEquals(startedAt, turn.getStartedAt());
             assertEquals(30L, turn.getTotalTokenCount());
-            verify(repository, org.mockito.Mockito.times(2)).updateById(turn);
+            verify(repository, org.mockito.Mockito.times(2)).updateById(turn, SESSION_ID);
         }
 
         @Test

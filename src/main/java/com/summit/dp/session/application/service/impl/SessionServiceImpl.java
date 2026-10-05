@@ -169,10 +169,12 @@ public class SessionServiceImpl implements SessionService {
 
     @Override
     public Result<SessionMessagePageVO> messages(Long sessionId, String cursor, Integer size) {
-        if (sessionId == null) throw new ClientException("会话ID不能为空");
+        throwIf(sessionId == null, "会话ID不能为空");
 
         // 先确认会话存在，再取一页消息。
-        sessionAggregateService.requireOwned(sessionId);
+        Session ownedSession = sessionAggregateService.requireOwned(sessionId);
+        Long rootId = ownedSession.isSubSession() ? ownedSession.getRootSessionId() : sessionId;
+        Long revision = sessionAggregateService.requireOwned(rootId).getHistoryRevision();
 
         CursorResult<SessionMessage> slice = sessionAggregateService.messageSlice(sessionId, cursor, size);
 
@@ -182,17 +184,22 @@ public class SessionServiceImpl implements SessionService {
         SessionMessageQueryService.SessionMessageQueryResult loaded = messageQueryService.query(slice.records());
 
         // 一次 IN 批量装配本页涉及的轮次字典（含会话归属校验）。
-        Map<Long, ChatTurn> ownedTurns = ownedTurnsOf(sessionId,
+        Map<Long, ChatTurn> ownedTurns = resolveOwnedTurns(sessionId,
                 chatTurnService.findByIds(collectTurnIds(loaded.records())));
 
         // 本页统一的「查询时刻」：进行中的轮次用它算「截至此刻的已历时」。
         // 整页共用一个基准，避免同页不同行差几毫秒。
         Instant now = Instant.now();
 
+        throwIf(!Objects.equals(revision, sessionAggregateService.requireOwned(rootId).getHistoryRevision()),
+                "历史正在变更，请重新加载本页");
+
         return Result.success(SessionMessagePageVO.builder()
                 .records(loaded.records())
                 .toolCallCount(loaded.toolCallCount())
-                .turns(turnsOf(ownedTurns, now))
+                .turns(buildTurnViews(ownedTurns, now))
+                .historyRevision(revision)
+                .messageCursor(slice.nextCursor())
                 .nextCursor(slice.nextCursor())
                 .hasMore(slice.hasMore())
                 .build());
@@ -221,7 +228,9 @@ public class SessionServiceImpl implements SessionService {
      * <p>归属不符的轮次不下发，于是那条消息的 {@code turnId} 在字典里查不到，
      * 前端按「无轮次信息」降级展示，消息本身照常显示。</p>
      */
-    private Map<Long, ChatTurn> ownedTurnsOf(Long sessionId, Map<Long, ChatTurn> turnsById) {
+    private void throwIf(boolean condition, String err) { if (condition) throw new ClientException(err); }
+
+    private Map<Long, ChatTurn> resolveOwnedTurns(Long sessionId, Map<Long, ChatTurn> turnsById) {
         if (turnsById.isEmpty()) {
             return Map.of();
         }
@@ -238,8 +247,8 @@ public class SessionServiceImpl implements SessionService {
         return owned;
     }
 
-    /** 本页涉及的业务轮次，键为 turnId 字符串（归属校验已在 {@link #ownedTurnsOf} 完成）。 */
-    private Map<String, ChatTurnVO> turnsOf(Map<Long, ChatTurn> ownedTurns, Instant now) {
+    /** 只返回已校验归属的轮次，避免混入其他会话状态。 */
+    private Map<String, ChatTurnVO> buildTurnViews(Map<Long, ChatTurn> ownedTurns, Instant now) {
         Map<String, ChatTurnVO> result = new LinkedHashMap<>();
         ownedTurns.values().forEach(turn ->
                 result.put(String.valueOf(turn.getId()), chatTurnConverter.toVO(turn, now)));
@@ -292,6 +301,7 @@ public class SessionServiceImpl implements SessionService {
     private SessionVO toVO(Session session, List<ExecutionState> states, Long messageCount, String agentName) {
         WorkspaceVO workspace = workspaceOrDefault(session.getWorkspaceId());
         return SessionVO.builder().id(session.getId()).name(session.getName())
+                .version(session.getVersion()).historyRevision(session.getHistoryRevision())
                 .runStatus(runStatusOf(states))
                 .lastOutcome(lastOutcomeOf(states))
                 .agentId(session.getAgentId())

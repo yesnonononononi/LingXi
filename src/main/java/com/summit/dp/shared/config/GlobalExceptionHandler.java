@@ -4,6 +4,7 @@ import com.summit.ddd.application.vo.Result;
 import com.summit.dp.session.domain.exception.SessionNoFoundException;
 import com.summit.dp.shared.exception.AccessDeniedException;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.toolcall.application.vo.DecisionConflictException;
 import com.summit.dp.workspace.domain.exception.WorkspaceNoFoundException;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -51,6 +52,19 @@ public class GlobalExceptionHandler {
         log.warn("【全局异常处理】越权访问被拒: {}", e.getMessage());
         response.setStatus(HttpStatus.FORBIDDEN.value());
         return Result.error(403, e.getMessage());
+    }
+
+    /**
+     * v2 决策冲突：必须回机器可判别业务码，而不是退化成 code 0 的普通文案。
+     *
+     * <p><b>为什么要独立 handler</b>：走 {@link ClientException} 那条路会得到 {@code code: 0}，
+     * 前端无法把「版本冲突要刷新」「已决要采纳现有结论」「执行已结束要停止轮询」区分开，
+     * 只能对中文做字符串匹配 —— 改一次文案就静默改坏行为。</p>
+     */
+    @ExceptionHandler(DecisionConflictException.class)
+    public Result<Void> handleDecisionConflict(DecisionConflictException e) {
+        log.warn("【全局异常处理】决策被拒: code={}, message={}", e.errorCode().code(), e.getMessage());
+        return Result.error(e.errorCode().code(), e.getMessage());
     }
 
     /** 捕获业务异常 ClientException */

@@ -13,7 +13,9 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 恢复执行前，把<b>会话级业务属性</b>补回执行请求（目前是 {@link ExecutionAttributes#TEAM_ID}）。
+ * 恢复执行前，把<b>会话级业务属性</b>（{@link ExecutionAttributes#TEAM_ID}）与<b>执行事件归属身份</b>
+ * （{@link ExecutionEventMetadata#ROOT_SESSION_ID} / {@link ExecutionEventMetadata#HISTORY_REVISION}）
+ * 补回执行请求。
  *
  * <p><b>为什么恢复需要单独补</b>：新建执行走 {@code RequestPreparer}，会话级属性（团队绑定）
  * 会随请求一起写进 {@code AgentRequest.attributes} 并落进执行快照；而<b>恢复不经过 prepare</b>——
@@ -42,11 +44,21 @@ public class SessionAttributeRestorer {
     private final SessionRepository sessionRepository;
 
     /**
-     * 用会话生效的团队绑定覆盖执行请求上的 {@link ExecutionAttributes#TEAM_ID}。
+     * 恢复准备：补回会话级业务属性（团队绑定）与事件归属身份（根会话、历史代际）。
+     *
+     * <p>两类修复的理由不同，但<b>都只在恢复准备阶段做一次</b>：</p>
+     * <ul>
+     *   <li><b>团队绑定</b>：恢复不经过 {@code RequestPreparer}，会话级属性不会重新下发；</li>
+     *   <li><b>根会话 / 历史代际</b>：旧检查点是在本次改造之前落库的，元数据里根本没有
+     *       {@code rootSessionId}/{@code historyRevision} 两个键。补齐后随恢复的检查点自固化，
+     *       后续事件不会再重复修复（§12 的明确口径）。</li>
+     * </ul>
+     *
+     * <p>代际取<b>恢复时</b>的根会话代际：恢复读的是当前所有者会话，其代际即当下权威值。</p>
      *
      * @param execution 即将交给 loop 恢复的执行实例（会被原地修改）
      * @param sessionId 该执行所属会话（可能是子会话）
-     * @return 是否真的改动了属性；会话或执行请求缺失时返回 {@code false}
+     * @return 是否真的改动了属性或元数据；会话或执行请求缺失时返回 {@code false}
      */
     public boolean restore(Execution execution, Long sessionId) {
         if (execution == null || sessionId == null) {
@@ -57,6 +69,13 @@ public class SessionAttributeRestorer {
             return false;
         }
         AgentRuntimeParameters parameters = execution.getAgentRequest().runtimeParametersOrDefault();
+        boolean attributesChanged = restoreTeamAttribute(parameters, session);
+        boolean metadataChanged = repairEventMetadata(parameters, session);
+        return attributesChanged || metadataChanged;
+    }
+
+    /** 用会话生效的团队绑定覆盖请求属性；是否改动见返回值。 */
+    private boolean restoreTeamAttribute(AgentRuntimeParameters parameters, Session session) {
         Map<String, Object> attributes = new HashMap<>(parameters.getAttributes());
         Long teamId = effectiveTeamIdOf(session);
         if (teamId == null) {
@@ -69,6 +88,48 @@ public class SessionAttributeRestorer {
         }
         parameters.setAttributes(Map.copyOf(attributes));
         return true;
+    }
+
+    /**
+     * 补齐旧检查点缺失的根会话与历史代际；两者都已存在时不改动。
+     *
+     * <p>根会话沿 {@link Session#getRootSessionId()} 解析：子会话回指其根，根会话指向自身；
+     * 子会话行缺根时回落为会话自身 id（与 {@code ExecutionContext.root} 同口径）。</p>
+     */
+    private boolean repairEventMetadata(AgentRuntimeParameters parameters, Session session) {
+        Map<String, Object> metadata = parameters.getEventMetaData();
+        Long rootSessionId = ExecutionEventMetadata.parseRootSessionId(metadata);
+        Long historyRevision = ExecutionEventMetadata.parseHistoryRevision(metadata);
+        if (rootSessionId != null && historyRevision != null) {
+            return false;
+        }
+        long resolvedRoot = rootSessionId != null
+                ? rootSessionId
+                : resolveRootSessionId(session);
+        long resolvedRevision = historyRevision != null && historyRevision > 0L
+                ? historyRevision
+                : resolveHistoryRevision(resolvedRoot);
+        parameters.setEventMetaData(ExecutionEventMetadata.of(resolvedRoot,
+                session.getId(),
+                ExecutionEventMetadata.turnId(metadata),
+                ExecutionAttributes.readLong(metadata, ExecutionEventMetadata.PARENT_TURN_ID),
+                resolvedRevision));
+        return true;
+    }
+
+    /** 会话的根会话 id：子会话回指其根，根会话指向自身；根字段缺失时回落自身 id。 */
+    private long resolveRootSessionId(Session session) {
+        Long rootSessionId = session.getRootSessionId();
+        return rootSessionId == null || rootSessionId == Session.ROOT_SESSION_ID
+                ? session.getId()
+                : rootSessionId;
+    }
+
+    /** 根会话的历史代际；根行缺失或代际非法时回落 1（会话默认值）。 */
+    private long resolveHistoryRevision(long rootSessionId) {
+        Session root = sessionRepository.findById(rootSessionId).orElse(null);
+        Long revision = root == null ? null : root.getHistoryRevision();
+        return revision == null || revision <= 0L ? 1L : revision;
     }
 
     /**

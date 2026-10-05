@@ -23,8 +23,7 @@ public interface McpRepository extends RepositoryTemplate<Mcp, Long> {
     Optional<Mcp> findByName(String name);
 
     /**
-     * 查询全部<b>启用</b>的 MCP 服务，供请求级装配使用。
-     * <p>过滤下推到 SQL（status = 1），不在应用层捞全表再筛。</p>
+     * 仅启用的服务参与请求装配，按 ID 保持稳定顺序。
      */
     List<Mcp> findEnabled();
 }

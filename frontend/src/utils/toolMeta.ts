@@ -1,6 +1,7 @@
 /** 工具展示严格按后端固定工具名称及参数字段解析，不接受兼容名或分类推断。 */
 
 import { toObject } from './json';
+import { AgentToolName } from './toolNames';
 
 export const TOOL_CATEGORY = {
   COMMAND: '执行命令',
@@ -14,27 +15,25 @@ export const TOOL_CATEGORY = {
 } as const;
 
 /**
- * 已知工具名 → 分类。键为规范化后的工具名（小写），仅精确匹配。
- * 契约来源：com.summit.dp.tools.baseTools.config.AvailableTool / ToolConfig / ToolCatalog——
- * 后端实际注册的工具名仅有：read_file、edit_file、execute_command、web_search、
- * compact_context、create_plan、require_choice、call_sub_agent。
- * 后端不下发 category 字段，故这是"名称→展示分类"的纯前端映射，只列真实工具名；
- * 未列出的工具（如 compact_context）不强行归类，直接展示原始工具名。
+ * 已知工具名 → 分类。键为后端注册名（见 {@link AgentToolName}），仅精确匹配。
+ *
+ * <p>后端不下发 category 字段，故这是"名称→展示分类"的纯前端映射；未列出的工具
+ * （如 compact_context）不强行归类，直接展示原始工具名。</p>
  */
-const KNOWN_TOOL_CATEGORY: Record<string, string> = {
+const KNOWN_TOOL_CATEGORY: Partial<Record<AgentToolName, string>> = {
   // 终端命令
-  execute_command: TOOL_CATEGORY.COMMAND,
+  [AgentToolName.ExecuteCommand]: TOOL_CATEGORY.COMMAND,
   // 读取
-  read_file: TOOL_CATEGORY.READ,
-  web_search: TOOL_CATEGORY.READ,
+  [AgentToolName.ReadFile]: TOOL_CATEGORY.READ,
+  [AgentToolName.WebSearch]: TOOL_CATEGORY.READ,
   // 写入
-  edit_file: TOOL_CATEGORY.WRITE,
+  [AgentToolName.EditFile]: TOOL_CATEGORY.WRITE,
   // 选择 / 人工确认
-  require_choice: TOOL_CATEGORY.CHOICE,
+  [AgentToolName.RequireChoice]: TOOL_CATEGORY.CHOICE,
   // 计划书
-  create_plan: TOOL_CATEGORY.PLAN,
+  [AgentToolName.CreatePlan]: TOOL_CATEGORY.PLAN,
   // 子代理
-  call_sub_agent: TOOL_CATEGORY.SUB_AGENT,
+  [AgentToolName.CallSubAgent]: TOOL_CATEGORY.SUB_AGENT,
 };
 
 
@@ -49,6 +48,8 @@ export interface ToolMeta {
   description: string;
   target: string;
   command: string;
+  /** 读文件的行范围文案（L起点-终点，0 基口径与后端一致）；整文件读取为空串。 */
+  lineRange: string;
 }
 
 /** 读取后端固定工具名称，不转换大小写或接受别名 */
@@ -61,32 +62,48 @@ export function normalizeToolName(toolName?: string | null): string {
  */
 export function resolveToolCategory(toolName?: string | null): string {
   const key = normalizeToolName(toolName);
-  return KNOWN_TOOL_CATEGORY[key] ?? key;
+  return KNOWN_TOOL_CATEGORY[key as AgentToolName] ?? key;
 }
 
 /** 是否为子代理委派工具（精确匹配，不再用 includes） */
 export function isSubAgentTool(toolName?: string | null, _category?: string | null): boolean {
-  return normalizeToolName(toolName) === 'call_sub_agent';
+  return normalizeToolName(toolName) === AgentToolName.CallSubAgent;
+}
+
+/** 是否为文件编辑工具（后端固定名称见枚举） */
+export function isEditFileTool(toolName?: string | null): boolean {
+  return normalizeToolName(toolName) === AgentToolName.EditFile;
 }
 
 /**
- * 是否为计划书提交工具（模型提交一段 Markdown 计划书 ⇒ loop 暂停等审批）。
- * 契约来源：ToolCatalog.CREATE_PLAN = "create_plan"。
+ * 是否为文件读取工具。
+ *
+ * <p>读文件没有可展开的详情：头部一行已经说清「读了哪个文件、读了哪几行」，展开后只剩路径与状态
+ * 这几项头部已有的信息 —— 结果正文（文件内容）是给模型看的，前端不展示，后端也不再下发。</p>
  */
-export function isPlanDocumentTool(toolName?: string | null): boolean {
-  return normalizeToolName(toolName) === 'create_plan';
-}
-
-/** 是否为文件编辑工具（后端固定名称 edit_file） */
-export function isEditFileTool(toolName?: string | null): boolean {
-  const name = normalizeToolName(toolName);
-  return name === 'edit_file';
+export function isReadFileTool(toolName?: string | null): boolean {
+  return normalizeToolName(toolName) === AgentToolName.ReadFile;
 }
 
 /** 仅命令和文件编辑工具展示原始参数，其他工具保留摘要与执行结果。 */
 export function shouldShowToolArguments(toolName?: string | null): boolean {
-  return normalizeToolName(toolName) === 'execute_command' || isEditFileTool(toolName);
+  return normalizeToolName(toolName) === AgentToolName.ExecuteCommand || isEditFileTool(toolName);
 }
+
+/** 参数里的整数（容忍数字字符串，模型下发的 args 偶有字符串数字） */
+const intArg = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) return Number(value);
+  return null;
+};
+
+/** 读文件行范围文案：L起点-终点；两端都缺（整文件读取）为空串。 */
+const readLineRange = (args: Record<string, unknown>): string => {
+  const start = intArg(args.startLine);
+  const end = intArg(args.endLine);
+  if (start === null && end === null) return '';
+  return `L${start ?? ''}-${end ?? ''}`;
+};
 
 /** 解析工具展示所需的全部元数据 */
 export function resolveToolMeta(input: ToolMetaInput): ToolMeta {
@@ -96,32 +113,37 @@ export function resolveToolMeta(input: ToolMetaInput): ToolMeta {
   let description = '';
   let target = '';
   let command = '';
+  let lineRange = '';
   switch (input.toolName) {
-    case 'execute_command':
+    case AgentToolName.ExecuteCommand:
       command = field('command');
       description = field('intention');
       break;
-      
-    case 'read_file':
 
-    case 'edit_file':
+    case AgentToolName.ReadFile:
+      target = field('path');
+      description = target;
+      lineRange = readLineRange(args);
+      break;
+
+    case AgentToolName.EditFile:
       target = field('path');
       description = target;
       break;
 
-    case 'require_choice':
+    case AgentToolName.RequireChoice:
       description = field('question');
       break;
 
-    case 'call_sub_agent':
+    case AgentToolName.CallSubAgent:
       description = field('task');
       break;
 
-    case 'create_plan':
+    case AgentToolName.CreatePlan:
       description = field('title');
       break;
   }
-  return { category, description, target, command };
+  return { category, description, target, command, lineRange };
 }
 
 /**

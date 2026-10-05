@@ -15,6 +15,9 @@ import java.time.Instant;
 public class SessionVO {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
+    private Long version;
+    private Long historyRevision;
+
     private String name;
     /**
      * 展示状态组合（后端唯一来源，前端不再猜测）：进行中状态，取值 IDLE | RUNNING | SUSPENDED。

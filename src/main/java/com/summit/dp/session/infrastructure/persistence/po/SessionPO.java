@@ -26,6 +26,9 @@ public class SessionPO {
 
     @TableId(type = IdType.AUTO)
     private Long id;
+    private Long version;
+    private Long historyRevision;
+
 
     private Long rootSessionId;
     /** 会话归属的 Agent；根会话/非 Agent 会话为 NULL，子代理会话为其子 Agent。 */

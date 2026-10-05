@@ -7,6 +7,8 @@ import com.summit.dp.session.application.service.SessionAggregateService;
 import com.summit.dp.session.application.service.SessionMessageQueryService;
 import com.summit.dp.session.application.service.impl.SessionServiceImpl;
 import com.summit.dp.session.domain.model.SessionMessage;
+import com.summit.dp.session.domain.model.Session;
+import org.junit.jupiter.api.BeforeEach;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.model.CursorResult;
@@ -66,6 +68,10 @@ class SessionMessagePageTurnsTest {
             executionQueryService, teamService, agentRepository,
             chatTurnService, new ChatTurnConverter());
 
+    @BeforeEach void ownedSessionHasRevision() {
+        when(aggregateService.requireOwned(SESSION_ID)).thenReturn(Session.builder().id(SESSION_ID).rootSessionId(0L).build());
+    }
+
     /** 造一页消息：存储态行带 turnId，视图也带同样的 turnId（归属来自消息行自身）。 */
     private void stubSliceWith(Long turnId) {
         SessionMessage stored = SessionMessage.builder()
@@ -97,8 +103,8 @@ class SessionMessagePageTurnsTest {
     @DisplayName("轮次字典以 turnId 字符串为键，字段完整，一次 IN 批量装配")
     void attachesTurnsKeyedByTurnId() {
         stubSliceWith(TURN_ID);
-        Instant started = Instant.now().minus(30, ChronoUnit.SECONDS);
-        Instant completed = Instant.now();
+        Instant completed = Instant.parse("2026-10-03T10:00:00Z");
+        Instant started = completed.minus(30, ChronoUnit.SECONDS);
         when(chatTurnService.findByIds(any()))
                 .thenReturn(Map.of(TURN_ID, turn(TURN_ID, SESSION_ID, ChatTurnStatus.COMPLETED,
                         150L, started, completed)));

@@ -11,6 +11,8 @@ import java.time.Instant;
 @Getter
 public class SessionMessage {
     private final Long id;
+    private final String streamKey;
+
     private final Long sessionId;
     /**
      * 这条消息所属的**业务轮次** ID（关联 {@code chat_turn.id}）。

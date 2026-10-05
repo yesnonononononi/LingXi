@@ -30,6 +30,8 @@ public class ChatTurnPO {
 
     @TableId(type = IdType.INPUT)
     private Long id;
+    private Long version;
+
 
     @TableField("session_id")
     private Long sessionId;
@@ -70,6 +72,14 @@ public class ChatTurnPO {
     /** 面向用户的失败原因；仅 status=FAILED 时渲染。 */
     @TableField("error_reason")
     private String errorReason;
+
+    /** 命令受理身份：发送/重发入口的 commandId；同 ID 重试据此幂等。 */
+    @TableField("command_id")
+    private String commandId;
+
+    /** 命令请求摘要；同 commandId 但内容不同即拒绝重放。 */
+    @TableField("command_digest")
+    private String commandDigest;
 
     @TableField("created_at")
     private Instant createdAt;

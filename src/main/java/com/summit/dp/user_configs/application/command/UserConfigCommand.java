@@ -12,7 +12,8 @@ public record UserConfigCommand(
         Long agentId,
         String workspaceType,
         Integer maxTokens,
-        String reasoningEffort
+        String reasoningEffort,
+        String renderTheme
 )  {
 
 }

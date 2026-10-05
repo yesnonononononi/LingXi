@@ -1,8 +1,82 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue';
+import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
 import type { SubSessionVO, SubItemStatus, ToolCallTrace, ChatMessage, ChatTurn } from '../../types/chat';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
 import ChatMessageList from './ChatMessageList.vue';
+
+/** 默认及最小宽度配置 */
+const DEFAULT_PANEL_WIDTH = 460;
+const MIN_PANEL_WIDTH = 320;
+
+const resolveStoredWidth = (): number => {
+  try {
+    const val = localStorage.getItem('lingxi-sub-panel-width');
+    if (val) {
+      const parsed = parseInt(val, 10);
+      if (!isNaN(parsed) && parsed >= MIN_PANEL_WIDTH) {
+        return parsed;
+      }
+    }
+  } catch {
+    // 忽略异常
+  }
+  return DEFAULT_PANEL_WIDTH;
+};
+
+const panelWidth = ref(resolveStoredWidth());
+const isDragging = ref(false);
+
+let startX = 0;
+let startWidth = 0;
+
+const onMouseMove = (e: MouseEvent) => {
+  if (!isDragging.value) return;
+  const deltaX = startX - e.clientX;
+  const maxAllowedWidth = Math.max(MIN_PANEL_WIDTH, window.innerWidth - 400);
+  const nextWidth = Math.min(Math.max(startWidth + deltaX, MIN_PANEL_WIDTH), maxAllowedWidth);
+  panelWidth.value = nextWidth;
+};
+
+const onMouseUp = () => {
+  if (!isDragging.value) return;
+  isDragging.value = false;
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+  window.removeEventListener('mousemove', onMouseMove);
+  window.removeEventListener('mouseup', onMouseUp);
+  try {
+    localStorage.setItem('lingxi-sub-panel-width', String(panelWidth.value));
+  } catch {
+    // 忽略异常
+  }
+};
+
+const startResize = (e: MouseEvent) => {
+  e.preventDefault();
+  isDragging.value = true;
+  startX = e.clientX;
+  startWidth = panelWidth.value;
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mouseup', onMouseUp);
+};
+
+const handleResetWidth = () => {
+  panelWidth.value = DEFAULT_PANEL_WIDTH;
+  try {
+    localStorage.setItem('lingxi-sub-panel-width', String(DEFAULT_PANEL_WIDTH));
+  } catch {
+    // 忽略异常
+  }
+};
+
+onUnmounted(() => {
+  window.removeEventListener('mousemove', onMouseMove);
+  window.removeEventListener('mouseup', onMouseUp);
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+});
 
 /** 距底部多少像素以内仍视为「用户在跟随底部」（与主列表 scrollToBottomIfAuto 同款意图判定） */
 const NEAR_BOTTOM_THRESHOLD_PX = 120;
@@ -153,6 +227,7 @@ defineExpose({
 
 <template>
   <!-- 1. 折叠状态：右侧贴边胶囊按钮 (点击展开) -->
+  <Transition name="sub-panel-tab">
   <div
     v-if="!isOpen"
     class="absolute right-0 top-1/2 -translate-y-1/2 z-30 transition-transform duration-300"
@@ -174,25 +249,50 @@ defineExpose({
       <span>子代理 ({{ items.length }})</span>
     </button>
   </div>
+  </Transition>
 
-  <!-- 2. 展开状态：位于右侧红框位置的子 Agent 轨迹与标签面板 -->
+  <!-- 2. 展开状态：位于右侧的子 Agent 轨迹与标签面板 (支持左边缘拖拽调整宽度) -->
+  <Transition name="sub-panel">
+  <div
+    v-if="isOpen"
+    class="sub-panel-shell relative shrink-0 h-full"
+    :class="{ 'is-resizing': isDragging }"
+    :style="{ '--sub-panel-width': `${panelWidth}px` }"
+  >
   <aside
-    v-else
+    :style="{ width: `${panelWidth}px` }"
     :class="[
-      'w-88 sm:w-96 lg:w-[420px] xl:w-[460px] shrink-0 border-l flex flex-col h-full z-20 backdrop-blur-md transition-all duration-300 ease-in-out select-none',
-      isDark ? 'bg-[#0e131c]/95 border-[#1f2838] text-gray-200' : 'bg-gray-50/90 border-gray-200 text-gray-800'
+      'relative shrink-0 border-l flex flex-col h-full z-20 backdrop-blur-md select-none',
+      isDark ? 'bg-[#09090b]/95 border-white/[0.06] text-zinc-200' : 'bg-gray-50/90 border-gray-200 text-gray-800'
     ]"
   >
+    <!-- 左边缘拖拽分割条 (Resize Handle) -->
+    <div
+      class="absolute -left-1.5 top-0 bottom-0 w-3 cursor-col-resize z-40 group flex items-center justify-center select-none"
+      title="拖拽调节主会话与子会话宽度（双击复原）"
+      @mousedown="startResize"
+      @dblclick="handleResetWidth"
+    >
+      <!-- 高亮中线指示器 -->
+      <div
+        class="w-[2px] h-full transition-colors duration-150"
+        :class="[
+          isDragging
+            ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]'
+            : (isDark ? 'group-hover:bg-blue-400/80 bg-transparent' : 'group-hover:bg-blue-500/80 bg-transparent')
+        ]"
+      />
+    </div>
     <!-- 2.1 当选中子会话时：展示该子代理的专属任务卡片与消息流 (图二/图三右侧排版) -->
     <div v-if="activeItem" class="flex flex-col h-full overflow-hidden">
       <!-- 顶部：标题与收束按钮 (去掉头像，名字为纯agentName无后缀，仅保留右侧向右按钮) -->
-      <div :class="['px-4 py-3 border-b flex items-center justify-between shrink-0', isDark ? 'border-[#1d2637] bg-[#131924]/80' : 'border-gray-200/80 bg-white/80']">
+      <div :class="['px-4 py-3 border-b flex items-center justify-between shrink-0', isDark ? 'border-white/[0.06] bg-[#0d0e12]/80' : 'border-gray-200/80 bg-white/80']">
         <div class="flex items-center gap-2.5 min-w-0">
           <div class="min-w-0">
             <div class="flex items-center gap-1.5">
               <h3 class="text-xs font-semibold truncate">{{ activeItem.agentName }}</h3>
             </div>
-            <p v-if="activeItem.task" class="text-[11px] text-gray-400 truncate mt-0.5">{{ activeItem.task }}</p>
+            <p v-if="activeItem.task" class="text-[11px] text-gray-400 dark:text-zinc-500 truncate mt-0.5">{{ activeItem.task }}</p>
           </div>
         </div>
 
@@ -200,7 +300,7 @@ defineExpose({
           <!-- 返回成员列表：清空选中子会话，面板回到成员概览（此前只能收起整个面板，回不去列表） -->
           <button
             @click="emit('selectOption', null)"
-            :class="['p-1.5 rounded-lg border transition cursor-pointer text-gray-400 hover:text-blue-500', isDark ? 'border-[#253247] hover:bg-[#1a2333]' : 'border-gray-200 hover:bg-blue-50']"
+            :class="['p-1.5 rounded-lg border transition cursor-pointer text-gray-400 hover:text-blue-500', isDark ? 'border-white/[0.08] hover:bg-white/[0.06]' : 'border-gray-200 hover:bg-blue-50']"
             title="返回成员列表"
           >
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -210,7 +310,7 @@ defineExpose({
           <!-- 收起整个侧边面板按钮 -->
           <button
             @click="emit('toggleOpen')"
-            :class="['p-1.5 rounded-lg border transition cursor-pointer text-gray-400 hover:text-gray-200', isDark ? 'border-[#253247] hover:bg-[#1a2333]' : 'border-gray-200 hover:bg-gray-100']"
+            :class="['p-1.5 rounded-lg border transition cursor-pointer text-gray-400 hover:text-gray-200', isDark ? 'border-white/[0.08] hover:bg-white/[0.06]' : 'border-gray-200 hover:bg-gray-100']"
             title="收起侧边面板"
           >
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -221,7 +321,7 @@ defineExpose({
       </div>
 
       <!-- 状态与用量指标栏 -->
-      <div :class="['px-4 py-2 border-b text-[11px] flex items-center justify-between gap-2 select-none shrink-0', isDark ? 'border-[#1b2333] bg-[#111722]/60 text-gray-400' : 'border-gray-100 bg-gray-50/60 text-gray-500']">
+      <div :class="['px-4 py-2 border-b text-[11px] flex items-center justify-between gap-2 select-none shrink-0', isDark ? 'border-white/[0.06] bg-[#09090b]/60 text-zinc-400' : 'border-gray-100 bg-gray-50/60 text-gray-500']">
         <span class="flex items-center gap-1.5">
           <span class="w-1.5 h-1.5 rounded-full" :class="activeItem.status === 'running' ? 'bg-amber-400 animate-ping' : activeItem.status === 'completed' ? 'bg-emerald-500' : 'bg-gray-400'"></span>
           <span>{{ statusLabel(activeItem.status) }}</span>
@@ -253,7 +353,7 @@ defineExpose({
     <!-- 2.2 未选中具体子会话时：展示全部成员 Options 概览列表 -->
     <div v-else class="flex flex-col h-full overflow-hidden">
       <!-- 面板顶栏：协作状态与折叠操作 -->
-      <div :class="['px-4 py-3 border-b flex items-center justify-between shrink-0', isDark ? 'border-[#1d2637] bg-[#131924]/80' : 'border-gray-200/80 bg-white/80']">
+      <div :class="['px-4 py-3 border-b flex items-center justify-between shrink-0', isDark ? 'border-white/[0.06] bg-[#0d0e12]/80' : 'border-gray-200/80 bg-white/80']">
         <div class="flex items-center gap-2.5 min-w-0">
           <div class="w-7 h-7 rounded-xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-xs shrink-0">
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -267,14 +367,14 @@ defineExpose({
                 {{ items.length }}
               </span>
             </div>
-            <p class="text-[11px] text-gray-400 truncate">点击成员卡片展开独立执行轨迹</p>
+            <p class="text-[11px] text-gray-400 dark:text-zinc-500 truncate">点击成员卡片展开独立执行轨迹</p>
           </div>
         </div>
 
         <!-- 折叠面板按钮 -->
         <button
           @click="emit('toggleOpen')"
-          :class="['p-1.5 rounded-lg border transition cursor-pointer text-gray-400 hover:text-gray-200', isDark ? 'border-[#253247] hover:bg-[#1a2333]' : 'border-gray-200 hover:bg-gray-100']"
+          :class="['p-1.5 rounded-lg border transition cursor-pointer text-gray-400 hover:text-gray-200', isDark ? 'border-white/[0.08] hover:bg-white/[0.06]' : 'border-gray-200 hover:bg-gray-100']"
           title="收起侧边面板"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -294,7 +394,7 @@ defineExpose({
             'p-3 rounded-2xl border transition-all cursor-pointer select-none space-y-2',
             String(activeSubId) === String(it.id)
               ? (isDark ? 'border-blue-500 bg-blue-600/15 ring-1 ring-blue-500/40 shadow-sm' : 'border-blue-400 bg-blue-50/70 ring-1 ring-blue-300 shadow-sm')
-              : (isDark ? 'border-[#222d40] bg-[#121824]/70 hover:border-blue-500/40 hover:bg-[#161e2e]' : 'border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/30')
+              : (isDark ? 'border-white/[0.06] bg-zinc-900/60 hover:border-white/[0.12] hover:bg-zinc-850/80' : 'border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/30')
           ]"
         >
           <!-- 头部标签行：编号、名称、状态、Token -->
@@ -388,4 +488,62 @@ defineExpose({
       </div>
     </div>
   </aside>
+  </div>
+  </Transition>
 </template>
+
+<style scoped>
+.sub-panel-shell {
+  width: var(--sub-panel-width);
+  transition: width 200ms ease-out;
+}
+
+.sub-panel-shell.is-resizing {
+  transition: none;
+}
+
+.sub-panel-enter-active,
+.sub-panel-leave-active {
+  overflow: hidden;
+  pointer-events: none;
+  transition: width 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sub-panel-enter-active > aside,
+.sub-panel-leave-active > aside {
+  transition: opacity 240ms ease, transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sub-panel-enter-from,
+.sub-panel-leave-to {
+  width: 0;
+}
+
+.sub-panel-enter-from > aside,
+.sub-panel-leave-to > aside {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+.sub-panel-tab-enter-active,
+.sub-panel-tab-leave-active {
+  transition: opacity 180ms ease;
+}
+
+.sub-panel-tab-enter-from,
+.sub-panel-tab-leave-to {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sub-panel-shell,
+  .sub-panel-enter-active,
+  .sub-panel-leave-active,
+  .sub-panel-enter-active > aside,
+  .sub-panel-leave-active > aside,
+  .sub-panel-tab-enter-active,
+  .sub-panel-tab-leave-active {
+    transition: none;
+  }
+}
+</style>

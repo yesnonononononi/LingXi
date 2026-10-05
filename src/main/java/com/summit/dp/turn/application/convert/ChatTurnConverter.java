@@ -23,6 +23,7 @@ public class ChatTurnConverter {
         }
         return ChatTurnVO.builder()
                 .turnId(turn.getId())
+                .version(turn.getVersion())
                 .parentTurnId(turn.getParentTurnId())
                 .status(turn.getStatus() == null ? null : turn.getStatus().name())
                 .modelName(turn.getModelName())

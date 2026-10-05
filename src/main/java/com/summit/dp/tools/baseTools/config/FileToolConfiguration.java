@@ -5,7 +5,6 @@ import com.summit.dp.tools.baseTools.file.record.Differ;
 import com.summit.dp.tools.baseTools.file.record.FileHasher;
 import com.summit.dp.tools.baseTools.file.record.FileRecordManager;
 import com.summit.dp.tools.baseTools.file.record.FileRecordStore;
-import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.tool.*;
 import com.summit.dp.tools.baseTools.file.record.DefaultFileHasher;
 import com.summit.dp.tools.baseTools.file.record.DefaultFileRecordManager;
@@ -28,10 +27,10 @@ import org.springframework.context.annotation.Bean;
 public class FileToolConfiguration {
     @Bean
     @ConditionalOnMissingBean(name = "editFileToolDefinition")
-    public ToolDefinition<EditFileToolExecutor> editFileToolDefinition(ObjectMapper objectMapper, RuntimeEventPublisher runtimeEventPublisher, FileRecordManager fileRecordManager) {
+    public ToolDefinition<EditFileToolExecutor> editFileToolDefinition(ObjectMapper objectMapper, FileRecordManager fileRecordManager, Differ differ) {
         String name = "edit_file";
         return ToolDefinition.<EditFileToolExecutor>builder()
-                .executor(new EditFileToolExecutor(objectMapper, differ(), fileRecordManager, runtimeEventPublisher))
+                .executor(new EditFileToolExecutor(objectMapper, differ, fileRecordManager))
                 .id(name)
                 .name(name)
                 .concurrentPolicy(ConcurrentPolicy.SERIAL_MUTATION)

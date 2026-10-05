@@ -1,8 +1,13 @@
 package com.summit.dp.tools.baseTools.sub_agent.communication;
 
+import com.summit.core.agent.AgentRequest;
+import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
+import com.summit.core.runtime.loop.ExecutionControlSignal;
+import com.summit.core.runtime.loop.InterceptorResult;
 import com.summit.core.runtime.loop.LoopContext;
+import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.email.application.vo.EmailMessageVO;
@@ -17,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -40,12 +46,12 @@ class AgenticLoopInterceptorTest {
     @DisplayName("裸模型未绑定 Agent：不查邮箱、不追加消息")
     void skipsMailboxWhenNoAgentBound() {
         List<Message> appended = new ArrayList<>();
-        LoopContext context = new LoopContext("900", Map.of(), appended::addAll);
 
-        interceptor.onBeforeModelInvoke(context);
+        InterceptorResult result = interceptor.onBeforeModelInvoke(context("900", Map.of(), appended));
 
         verifyNoInteractions(emailService);
         assertTrue(appended.isEmpty());
+        assertTrue(result.shouldContinue(), "跳过注入只是不消费邮箱，不该中断这一轮");
     }
 
     @Test
@@ -53,8 +59,7 @@ class AgenticLoopInterceptorTest {
     void rootExecutionUsesItsOwnExecutionId() {
         when(emailService.consumePending(900L, 7L)).thenReturn(Result.success(List.of()));
 
-        interceptor.onBeforeModelInvoke(new LoopContext("900",
-                Map.of(ExecutionAttributes.AGENT_ID, "7"), messages -> { }));
+        interceptor.onBeforeModelInvoke(context("900", Map.of(ExecutionAttributes.AGENT_ID, "7"), new ArrayList<>()));
 
         verify(emailService).consumePending(900L, 7L);
     }
@@ -64,9 +69,9 @@ class AgenticLoopInterceptorTest {
     void childExecutionUsesRootExecutionAttribute() {
         when(emailService.consumePending(900L, 8L)).thenReturn(Result.success(List.of()));
 
-        interceptor.onBeforeModelInvoke(new LoopContext("1234",
+        interceptor.onBeforeModelInvoke(context("1234",
                 Map.of(ExecutionAttributes.AGENT_ID, "8",
-                        ExecutionAttributes.ROOT_EXECUTION_ID, "900"), messages -> { }));
+                        ExecutionAttributes.ROOT_EXECUTION_ID, "900"), new ArrayList<>()));
 
         verify(emailService).consumePending(900L, 8L);
         verify(emailService, never()).consumePending(1234L, 8L);
@@ -80,8 +85,7 @@ class AgenticLoopInterceptorTest {
                 message(2L, 101L, "请处理乙"))));
 
         List<Message> appended = new ArrayList<>();
-        interceptor.onBeforeModelInvoke(new LoopContext("900",
-                Map.of(ExecutionAttributes.AGENT_ID, "7"), appended::addAll));
+        interceptor.onBeforeModelInvoke(context("900", Map.of(ExecutionAttributes.AGENT_ID, "7"), appended));
 
         assertEquals(2, appended.size());
         assertTrue(appended.get(0) instanceof UserMessageEntity);
@@ -96,8 +100,7 @@ class AgenticLoopInterceptorTest {
         when(emailService.consumePending(900L, 7L)).thenReturn(Result.success(List.of()));
 
         List<Message> appended = new ArrayList<>();
-        interceptor.onBeforeModelInvoke(new LoopContext("900",
-                Map.of(ExecutionAttributes.AGENT_ID, "7"), appended::addAll));
+        interceptor.onBeforeModelInvoke(context("900", Map.of(ExecutionAttributes.AGENT_ID, "7"), appended));
 
         assertTrue(appended.isEmpty(),
                 "收件箱为空时必须完全静默：任何催办话术都会让模型误以为上一封没发出去，从而重发");
@@ -109,11 +112,40 @@ class AgenticLoopInterceptorTest {
         when(emailService.consumePending(900L, 7L)).thenReturn(Result.success(null));
 
         List<Message> appended = new ArrayList<>();
-        interceptor.onBeforeModelInvoke(new LoopContext("900",
-                Map.of(ExecutionAttributes.AGENT_ID, "7"), appended::addAll));
+        interceptor.onBeforeModelInvoke(context("900", Map.of(ExecutionAttributes.AGENT_ID, "7"), appended));
 
         assertTrue(appended.isEmpty());
     }
+
+    @Test
+    @DisplayName("取信失败必须向上抛出：消息只消费一次，吞掉等于静默丢弃协作方的新需求")
+    void propagatesConsumeFailure() {
+        when(emailService.consumePending(900L, 7L)).thenThrow(new IllegalStateException("邮箱不可用"));
+
+        assertThrows(IllegalStateException.class,
+                () -> interceptor.onBeforeModelInvoke(
+                        context("900", Map.of(ExecutionAttributes.AGENT_ID, "7"), new ArrayList<>())));
+    }
+
+    private static LoopContext context(String executionId, Map<String, Object> attributes, List<Message> appended) {
+        Execution execution = Execution.builder()
+                .id(executionId)
+                .agentRequest(AgentRequest.builder().workspaceSpec(TEST_WORKSPACE).build())
+                .build();
+        return new LoopContext(execution, new ExecutionControlSignal(executionId), 0, attributes, appended::addAll);
+    }
+
+    private static final WorkspaceSpec TEST_WORKSPACE = new WorkspaceSpec() {
+        @Override
+        public String provider() {
+            return "test";
+        }
+
+        @Override
+        public String workDir() {
+            return "D:/tmp";
+        }
+    };
 
     private static EmailMessageVO message(Long id, Long senderId, String content) {
         return EmailMessageVO.builder()

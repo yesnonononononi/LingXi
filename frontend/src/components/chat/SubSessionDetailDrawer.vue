@@ -9,12 +9,16 @@ import { shouldShowToolArguments, resolveToolCategory } from '../../utils/toolMe
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
 import MarkdownRenderer from './MarkdownRenderer.vue';
 import { isOk } from '../../utils/api';
+import { useTheme } from '../../composables/useTheme';
 
 const props = defineProps<{
   isOpen: boolean;
   subSession: SubSessionVO | null;
   isDark?: boolean;
 }>();
+
+const { isDark: themeIsDark } = useTheme();
+const isDark = computed(() => props.isDark ?? themeIsDark.value);
 
 const emit = defineEmits<{
   (e: 'close'): void;
@@ -34,6 +38,16 @@ const toggleThought = (msgId: string) => {
 const expandedToolCallIds = ref<Record<string, boolean>>({});
 const toggleToolCall = (tcId: string) => {
   expandedToolCallIds.value[tcId] = !expandedToolCallIds.value[tcId];
+};
+
+/**
+ * 该工具是否有可展开的内容。
+ *
+ * <p>详情里只有「原始参数（仅命令/编辑工具）」与「执行结果」两块，都没有就不该给一个
+ * 展开后空白的箭头。读文件是典型：它的结果是文件正文，后端已不下发，展开只会是空的。</p>
+ */
+const hasToolDetail = (tc: ToolCallTrace): boolean => {
+  return (shouldShowToolArguments(tc.toolName) && !!tc.query) || !!tc.result;
 };
 
 const loadMessages = async () => {
@@ -139,26 +153,26 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
       <aside
         v-if="isOpen"
         :class="[
-          'fixed inset-y-0 right-0 w-full max-w-2xl shadow-2xl z-50 flex flex-col border-l transition-colors',
-          isDark ? 'bg-[#0f141c] border-[#222b3d] text-gray-100' : 'bg-white border-gray-200 text-gray-800'
+          'fixed inset-y-0 right-0 w-full max-w-2xl shadow-2xl z-50 flex flex-col border-l transition-colors backdrop-blur-2xl',
+          isDark ? 'bg-black/95 border-white/15 text-zinc-100 shadow-[0_0_60px_rgba(0,0,0,0.9)]' : 'bg-white border-gray-200 text-gray-800'
         ]"
       >
         <!-- 抽屉头部 -->
-        <div :class="['px-6 py-4 border-b flex items-center justify-between shrink-0', isDark ? 'border-[#222b3d] bg-[#141a24]' : 'border-gray-100 bg-gray-50/70']">
+        <div :class="['px-6 py-4 border-b flex items-center justify-between shrink-0', isDark ? 'border-white/10 bg-black/60' : 'border-gray-100 bg-gray-50/70']">
           <div class="flex items-center gap-3 min-w-0">
-            <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-cyan-400 flex items-center justify-center text-white shadow-sm shrink-0">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-600 via-indigo-600 to-cyan-400 flex items-center justify-center text-white shadow-sm shrink-0">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
             </div>
             <div class="min-w-0">
               <div class="flex items-center gap-2">
-                <h3 class="font-semibold text-sm truncate">{{ displayAgentName }}</h3>
-                <span :class="['text-[11px] px-2 py-0.5 rounded-full font-mono font-medium', isDark ? 'bg-blue-500/15 text-blue-400 border border-blue-500/20' : 'bg-blue-50 text-blue-600 border border-blue-200']">
+                <h3 class="font-semibold text-sm truncate dark:text-white dark:text-glow-white">{{ displayAgentName }}</h3>
+                <span :class="['text-[11px] px-2 py-0.5 rounded-full font-mono font-medium', isDark ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30' : 'bg-blue-50 text-blue-600 border border-blue-200']">
                   子会话 #{{ subSession?.id }}
                 </span>
               </div>
-              <p class="text-xs text-gray-400 truncate mt-0.5">
+              <p class="text-xs text-gray-400 dark:text-zinc-400 dark:text-glow-subtle truncate mt-0.5">
                 {{ subSession?.name || subSession?.task || '子代理执行会话' }}
               </p>
             </div>
@@ -169,7 +183,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
             <button
               v-if="messages.length > 0"
               @click="copyAllContent"
-              :class="['px-2.5 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition cursor-pointer', isDark ? 'border-[#2c374d] hover:bg-[#1f2838] text-gray-300' : 'border-gray-200 hover:bg-gray-100 text-gray-600']"
+              :class="['px-2.5 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition cursor-pointer', isDark ? 'border-white/15 hover:bg-white/5 text-zinc-300' : 'border-gray-200 hover:bg-gray-100 text-gray-600']"
               :title="copied ? '已复制全部对话' : '复制全部对话'"
             >
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -181,7 +195,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
             <!-- 关闭按钮 -->
             <button
               @click="emit('close')"
-              :class="['p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-500/10 transition cursor-pointer']"
+              :class="['p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200 hover:bg-white/5 transition cursor-pointer']"
               title="关闭详情"
             >
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -192,7 +206,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
         </div>
 
         <!-- 会话状态与指标信息栏 -->
-        <div :class="['px-6 py-2.5 border-b text-xs flex items-center justify-between gap-4 flex-wrap select-none', isDark ? 'border-[#222b3d] bg-[#121721] text-gray-400' : 'border-gray-100 bg-gray-50/40 text-gray-500']">
+        <div :class="['px-6 py-2.5 border-b text-xs flex items-center justify-between gap-4 flex-wrap select-none', isDark ? 'border-white/10 bg-black/40 text-zinc-400' : 'border-gray-100 bg-gray-50/40 text-gray-500']">
           <div class="flex items-center gap-4">
             <span class="flex items-center gap-1.5">
               <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
@@ -261,13 +275,25 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                   @click="toggleThought(msg.id)"
                   class="text-xs text-indigo-400 font-medium flex items-center gap-1.5 cursor-pointer hover:text-indigo-300 transition select-none"
                 >
-                  <svg :class="['w-3 h-3 text-indigo-400 transition-transform duration-200', expandedThoughtMsgIds[msg.id] ? 'rotate-90' : '']" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg :class="['w-3 h-3 text-zinc-300 transition-transform duration-200', expandedThoughtMsgIds[msg.id] ? 'rotate-90' : '']" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                   </svg>
-                  <span>Thought for</span>
+                  <span :class="isDark ? 'text-zinc-100 text-glow-white' : 'text-gray-700'">深度思考</span>
                 </button>
-                <div v-if="expandedThoughtMsgIds[msg.id]">
-                  <div v-for="step in msg.thoughtSteps" :key="step.id" class="text-xs text-gray-500 dark:text-gray-400 font-mono whitespace-pre-wrap leading-relaxed pl-4">
+                <div
+                  v-if="expandedThoughtMsgIds[msg.id]"
+                  :class="[
+                    'my-1.5 ml-4 rounded-xl border p-3 max-h-60 overflow-y-auto scrollbar-thin transition-colors select-text',
+                    isDark
+                      ? 'bg-zinc-900/60 border-white/10 text-zinc-200'
+                      : 'bg-gray-50/90 border-gray-200 text-gray-800'
+                  ]"
+                >
+                  <div
+                    v-for="step in msg.thoughtSteps"
+                    :key="step.id"
+                    class="text-xs font-mono whitespace-pre-wrap leading-relaxed text-gray-800 dark:text-zinc-200"
+                  >
                     {{ step.content }}
                   </div>
                 </div>
@@ -278,15 +304,18 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                 <div
                   v-for="tc in msg.toolCalls"
                   :key="tc.id"
-                  :class="['rounded-xl border text-xs font-mono transition overflow-hidden', isDark ? 'border-[#222b3d] bg-[#121620]' : 'border-gray-200 bg-gray-50']"
+                  :class="['rounded-xl border text-xs font-mono transition overflow-hidden', isDark ? 'border-white/15 bg-black/80' : 'border-gray-200 bg-gray-50']"
                 >
                   <button
                     type="button"
+                    :disabled="!hasToolDetail(tc)"
                     @click="toggleToolCall(tc.id)"
-                    class="w-full p-2.5 flex items-center justify-between text-gray-400 hover:text-gray-200 transition cursor-pointer select-none text-left"
+                    class="w-full p-2.5 flex items-center justify-between text-gray-400 transition select-none text-left"
+                    :class="hasToolDetail(tc) ? 'hover:text-gray-200 cursor-pointer' : 'cursor-default'"
                   >
                     <div class="flex items-center gap-2 truncate min-w-0">
                       <svg
+                        v-if="hasToolDetail(tc)"
                         :class="['w-3.5 h-3.5 text-gray-400 transition-transform duration-200 shrink-0', expandedToolCallIds[tc.id] ? 'rotate-90' : '']"
                         fill="none"
                         stroke="currentColor"
@@ -295,7 +324,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                       </svg>
                       <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="tc.status === 'failed' ? 'bg-rose-500' : tc.status === 'calling' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'"></span>
-                      <span class="font-semibold text-gray-300 dark:text-gray-200 truncate">{{ resolveToolCategory(tc.toolName) }}</span>
+                      <span class="font-semibold text-gray-300 dark:text-zinc-100 truncate">{{ resolveToolCategory(tc.toolName) }}</span>
                       <span
                         v-if="getToolDiffStat(tc)"
                         class="inline-flex items-center gap-1 font-mono text-[11px] font-medium leading-none shrink-0 select-none ml-1"
@@ -313,9 +342,9 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                     <span class="text-[11px] shrink-0">{{ tc.status || 'done' }}</span>
                   </button>
 
-                  <div v-if="expandedToolCallIds[tc.id]" class="px-3 pb-3 pt-0 space-y-2 border-t border-gray-700/30">
-                    <pre v-if="shouldShowToolArguments(tc.toolName) && tc.query" class="text-[11px] text-gray-400 overflow-x-auto whitespace-pre-wrap max-h-32 mt-2 p-2 rounded-lg bg-black/20">{{ tc.query }}</pre>
-                    <pre v-if="tc.result" class="text-[11px] text-gray-200 dark:text-gray-300 overflow-x-auto whitespace-pre-wrap max-h-48 p-2 rounded-lg bg-black/20">{{ tc.result }}</pre>
+                  <div v-if="hasToolDetail(tc) && expandedToolCallIds[tc.id]" class="px-3 pb-3 pt-0 space-y-2 border-t border-gray-700/30">
+                    <pre v-if="shouldShowToolArguments(tc.toolName) && tc.query" class="text-[11px] text-zinc-300 overflow-x-auto whitespace-pre-wrap max-h-32 mt-2 p-2 rounded-lg bg-black/40 border border-white/10">{{ tc.query }}</pre>
+                    <pre v-if="tc.result" class="text-[11px] text-zinc-200 overflow-x-auto whitespace-pre-wrap max-h-48 p-2 rounded-lg bg-black/40 border border-white/10">{{ tc.result }}</pre>
                   </div>
                 </div>
               </div>
@@ -325,11 +354,11 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                 :class="[
                   'p-4 rounded-2xl text-sm leading-relaxed border transition-colors shadow-2xs',
                   msg.role === 'user'
-                    ? (isDark ? 'bg-[#151c28] border-[#222c3d] text-blue-50' : 'bg-[#eef4fd] border-blue-100 text-gray-900')
-                    : (isDark ? 'bg-[#121721] border-[#20293a] text-gray-100' : 'bg-white border-gray-200 text-gray-900')
+                    ? (isDark ? 'bg-cyan-950/20 border-cyan-500/30 text-cyan-100' : 'bg-[#eef4fd] border-blue-100 text-gray-900')
+                    : (isDark ? 'bg-black/90 border-white/15 text-zinc-100 shadow-[0_0_20px_rgba(0,0,0,0.8)]' : 'bg-white border-gray-200 text-gray-900')
                 ]"
               >
-                <MarkdownRenderer :content="msg.content" :is-dark="props.isDark" />
+                <MarkdownRenderer :content="msg.content" :is-dark="isDark" />
               </div>
             </div>
           </template>

@@ -53,9 +53,11 @@ class SessionTeamBindingTest {
     private final AgentService agentService = mock(AgentService.class);
     private final TeamService teamService = mock(TeamService.class);
     private final SettingsProvider settingsProvider = mock(SettingsProvider.class);
+    private final com.summit.dp.session.domain.repo.SessionRepository sessionRepository =
+            mock(com.summit.dp.session.domain.repo.SessionRepository.class);
 
-    private final RequestPreparer preparer = new RequestPreparer(sessionService, workspaceService,
-            modelService, workspaceConverter, settingsProvider,
+    private final RequestPreparer preparer = new RequestPreparer(sessionService, sessionRepository,
+            workspaceService, modelService, workspaceConverter, settingsProvider,
             mock(com.summit.dp.shared.model.ToolCatalog.class), transcriptService, modelContextService,
             mock(ExecutionIdentity.class),
             mock(com.summit.dp.execution.application.service.ExecutionRegistrationService.class),
@@ -104,7 +106,7 @@ class SessionTeamBindingTest {
                 .thenReturn(com.summit.ddd.application.vo.Result.success(commander));
 
         RuntimeContext context = preparer().prepare(
-                new ChatCommand("继续委派", SESSION_ID, null, null, null, false, null, null));
+                new ChatCommand("继续委派", SESSION_ID, null, null, null, null, false, null, null));
 
         assertEquals(TEAM_ID, context.teamId(), "团队绑定来自库中记录");
         assertEquals(COMMANDER_AGENT_ID, context.agentId(), "指挥者回落链路与首轮一致");
@@ -126,7 +128,7 @@ class SessionTeamBindingTest {
                 .thenReturn(com.summit.ddd.application.vo.Result.success(commander));
 
         RuntimeContext context = preparer().prepare(
-                new ChatCommand("继续委派", SESSION_ID, null, null, null, false, null, null));
+                new ChatCommand("继续委派", SESSION_ID, null, null, null, null, false, null, null));
 
         assertEquals(reboundTeamId, context.teamId(), "换绑经 /session/{id}/team 落库后，编排按新团队取值");
         verify(teamService, never()).findById(TEAM_ID);
@@ -145,7 +147,7 @@ class SessionTeamBindingTest {
                 .thenReturn(com.summit.ddd.application.vo.Result.success(boundSession(null)));
 
         RuntimeContext context = preparer().prepare(
-                new ChatCommand("开始委派", null, 99L, null, null, false, null, null));
+                new ChatCommand("开始委派", null, 99L, null, null, null, false, null, null));
 
         assertNull(context.teamId(), "新会话尚未绑定团队，本轮先按单 Agent / 裸模型编排");
         verify(sessionService).initialize(anyString(), isNull(), isNull());
@@ -164,7 +166,7 @@ class SessionTeamBindingTest {
                 .thenReturn(com.summit.ddd.application.vo.Result.success(solo));
 
         RuntimeContext context = preparer().prepare(
-                new ChatCommand("普通直聊", SESSION_ID, null, null, 5L, false, null, null));
+                new ChatCommand("普通直聊", SESSION_ID, null, null, null, 5L, false, null, null));
 
         assertNull(context.teamId());
         assertEquals(5L, context.agentId());
@@ -185,7 +187,7 @@ class SessionTeamBindingTest {
                 .thenReturn(com.summit.ddd.application.vo.Result.success(selected));
 
         RuntimeContext context = preparer().prepare(
-                new ChatCommand("普通直聊", SESSION_ID, null, null, null, false, null, null));
+                new ChatCommand("普通直聊", SESSION_ID, null, null, null, null, false, null, null));
         AgentRequest request = preparer().buildRequest("Agent prompt", context, null);
 
         assertEquals(5L, context.agentId());
@@ -206,7 +208,7 @@ class SessionTeamBindingTest {
                 .thenReturn(com.summit.ddd.application.vo.Result.success(explicit));
 
         RuntimeContext context = preparer().prepare(
-                new ChatCommand("指定角色", SESSION_ID, null, null, 9L, false, null, null));
+                new ChatCommand("指定角色", SESSION_ID, null, null, null, 9L, false, null, null));
 
         assertEquals(9L, context.agentId());
         verify(agentService, never()).findById(5L);
@@ -221,7 +223,7 @@ class SessionTeamBindingTest {
         when(settingsProvider.current()).thenReturn(Optional.of(settingsWithAgent(null)));
 
         RuntimeContext context = preparer().prepare(
-                new ChatCommand("裸模型", SESSION_ID, 99L, null, null, false, null, null));
+                new ChatCommand("裸模型", SESSION_ID, 99L, null, null, null, false, null, null));
         AgentRequest request = preparer().buildRequest("", context, null);
 
         assertNull(context.agentId());

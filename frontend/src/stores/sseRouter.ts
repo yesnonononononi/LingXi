@@ -2,6 +2,8 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { AgentStreamEvent } from '../types/chat';
 import { readSseResponse } from '../utils/sse';
+import { resolveApiUrl } from '../utils/apiConfig';
+import { STREAM_V3_SCHEMA_VERSION } from '../utils/streamV3';
 
 /**
  * SSE 路由管理中心。
@@ -57,15 +59,31 @@ interface SseConnection {
   controller: AbortController;
   /** 是否已投递过至少一条事件：重新订阅时据此判断「注册前可能漏过事件」 */
   delivered: boolean;
+  /**
+   * 连接代次（generation）：同一根会话每建一次流自增。
+   *
+   * <p>用途：所有异步回调（建连成功、读取循环结束、错误、终态）在动作前先比对本连接代次是否
+   * 仍是该会话的当前代次，不是则**静默丢弃**。这样「旧连接迟到的回调」就不会误改新连接的状态、
+   * 误触发重连、或把旧流的事件渲染进已换代的前端状态。</p>
+   */
+  generation: number;
 }
 
 /** 重连退避：首次 1s，之后翻倍，封顶 15s。不做次数上限 —— 只要还有人订阅就一直尝试。 */
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 15000;
 
-/** 会话事件流的挂载地址；对应后端 `ChatController#subscribe`。 */
+/**
+ * 会话事件流的挂载地址；对应后端 `ChatController#subscribe`。
+ *
+ * <p>**必须带 `?schemaVersion=3`**：后端 `subscribe` 按该参数分流，缺省（未带）会落到 `1`
+ * （旧 v1 协议）。整条 v3 直投链路（唯一 ingress、RESPONSE_STARTED/FINALIZED、bootstrap 时序）
+ * 都以这版参数为前提，漏带就等于整链跑不起来。</p>
+ */
 export const sessionStreamUrl = (rootSessionId: string): string =>
-  `/a/completion/${encodeURIComponent(rootSessionId)}/events`;
+  resolveApiUrl(
+    `/a/completion/${encodeURIComponent(rootSessionId)}/events?schemaVersion=${STREAM_V3_SCHEMA_VERSION}`
+  );
 
 const isAbortError = (error: unknown): boolean =>
   error instanceof DOMException ? error.name === 'AbortError' : false;
@@ -96,6 +114,12 @@ export const useSseRouterStore = defineStore('sseRouter', () => {
   /** 各会话当前的重连尝试次数（算退避用）与待执行的重连定时器。 */
   const reconnectAttempts = new Map<string, number>();
   const reconnectTimers = new Map<string, number>();
+  /**
+   * 各会话当前连接代次：每建一次流自增。旧连接的回调据此判定自己是否已被换代而丢弃。
+   * 与 `connections` 分离：连接被换掉后旧连接对象仍短暂存活（读取循环尚未退出），
+   * 需要用它自己的 generation 与新值比对，而不能只看 `connections` 里是否还是它。
+   */
+  const generations = new Map<string, number>();
   /** 只把状态暴露成响应式，供 UI 显示「该会话仍在跑」。 */
   const statuses = ref<Record<string, SseStreamStatus>>({});
 
@@ -112,7 +136,14 @@ export const useSseRouterStore = defineStore('sseRouter', () => {
     }
   };
 
+  /** 本连接是否仍是该会话的当前代次。旧连接的一切异步回调据此短路。 */
+  const isCurrent = (connection: SseConnection): boolean =>
+    generations.get(connection.rootSessionId) === connection.generation
+    && connections.get(connection.rootSessionId) === connection;
+
   const dispatch = (connection: SseConnection, event: AgentStreamEvent) => {
+    // 旧代次连接迟到的事件一律丢弃：它们属于被替换掉的那条流，渲染进去会造成重复/回退。
+    if (!isCurrent(connection)) return;
     connection.delivered = true;
     const handlers = handlersBySession.get(connection.rootSessionId);
     if (!handlers || handlers.size === 0) {
@@ -125,11 +156,18 @@ export const useSseRouterStore = defineStore('sseRouter', () => {
   };
 
   const finish = (connection: SseConnection, reason: SseCloseReason) => {
+    // 先判定「本连接是否仍是当前代次」——必须在摘除/回收代次**之前**取快照，
+    // 否则回收 generations 会让 isCurrent 立刻转假，正常收尾的 onClosed 与自愈重连都会被吞掉。
+    const currentGeneration = isCurrent(connection);
     // 只有当前这条连接才允许把自己从表里摘掉：期间可能已经建了新连接，
-    // 旧连接迟到的结束回调不能把新连接误删。
+    // 旧连接迟到的结束回调不能把新连接误删、也不能把状态/订阅回调打到新一代上。
     if (connections.get(connection.rootSessionId) === connection) {
       connections.delete(connection.rootSessionId);
+      // 连接已摘除，代次随之回收（下一个 openStream 会重新从 1 起算，无旧连接可比对）。
+      generations.delete(connection.rootSessionId);
     }
+    // 已被更新的连接取代：静默丢弃，不置状态、不回调、不重连。
+    if (!currentGeneration) return;
     setStatus(connection.rootSessionId, reason === 'error' ? 'error' : 'closed');
     const handlers = handlersBySession.get(connection.rootSessionId);
     if (handlers) {
@@ -175,6 +213,14 @@ export const useSseRouterStore = defineStore('sseRouter', () => {
       if (!response.ok || !response.body) {
         throw new Error(`SSE 建立连接失败 (${response.status})`);
       }
+      // 已换代：这条连接的建连结果不再属于当前会话，直接收尾（不置状态、不触发重连）。
+      if (!isCurrent(connection)) {
+        await response.body?.cancel().catch(() => {});
+        return;
+      }
+      // ★ 退避计数只在**成功建立连接之后**清零：若在发起建连时就清零，
+      //   后端持续不可达（每次都在 open 处失败）会让退避永远从 1s 起步，表现为无限快重连。
+      reconnectAttempts.delete(connection.rootSessionId);
       setStatus(connection.rootSessionId, 'open');
       await readSseResponse(response, {
         // 会话级订阅不在终态处结束（一次执行结束不是这个会话的终点）；
@@ -187,6 +233,11 @@ export const useSseRouterStore = defineStore('sseRouter', () => {
     } catch (err) {
       if (isAbortError(err) || connection.controller.signal.aborted) {
         finish(connection, 'aborted');
+        return;
+      }
+      // 已换代：旧连接的错误不再上报、不改状态、不触发重连（新连接有自己的生命周期）。
+      if (!isCurrent(connection)) {
+        finish(connection, 'server-closed');
         return;
       }
       setStatus(connection.rootSessionId, 'error');
@@ -225,12 +276,16 @@ export const useSseRouterStore = defineStore('sseRouter', () => {
       rootSessionId: key,
       controller: new AbortController(),
       delivered: false,
+      generation: (generations.get(key) ?? 0) + 1,
     };
+    // 换代：登记新代次后，旧连接（若有）随后的一切回调都会因 isCurrent 为假而被丢弃。
+    generations.set(key, connection.generation);
     // 挂上即视为「意图成立」，并记录 opener 供断线自愈复用；随后取消可能还挂着的重连定时器
     // （新连接已经就位，定时器再触发只会被上面那条复用分支挡掉，留着只会白耗一次日志）。
+    // ★ 刻意不在此处重置 reconnectAttempts —— 退避清零只在 run() 里「真正建连成功」之后做，
+    //   否则后端不可达时每次都从 1s 起步，变成无限快重连。
     desiredStreams.add(key);
     openersBySession.set(key, open);
-    reconnectAttempts.delete(key);
     const pendingTimer = reconnectTimers.get(key);
     if (pendingTimer !== undefined) {
       window.clearTimeout(pendingTimer);
@@ -305,8 +360,11 @@ export const useSseRouterStore = defineStore('sseRouter', () => {
       reconnectTimers.delete(key);
     }
     reconnectAttempts.delete(key);
+    // 主动关闭只 abort，不动代次：本条连接仍是「当前代次」，其 abort 迟到回调走 finish('aborted')，
+    // 正常清理自身并回调一次 onClosed（既有契约）。若期间已建了新连接（复用了新代次），
+    // finish 的 isCurrent 判定自然会把它挡掉，不会误删新连接。
     connections.get(key)?.controller.abort();
-  };
+  };;
 
   /** 关闭全部连接（登出、页面卸载）。 */
   const closeAll = (): void => {

@@ -200,6 +200,7 @@ class CollaborationToolExposureTest {
         when(mcpService.currentConfig()).thenReturn(mcpConfig(withMcp));
 
         RequestPreparer preparer = new RequestPreparer(mock(SessionService.class),
+                mock(com.summit.dp.session.domain.repo.SessionRepository.class),
                 mock(WorkspaceService.class), mock(ModelService.class), mock(WorkspaceConverter.class),
                 mock(SettingsProvider.class), catalog, mock(ConversationTranscriptService.class),
                 mock(ModelContextService.class),                 mock(ExecutionIdentity.class),

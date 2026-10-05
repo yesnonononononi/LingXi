@@ -23,20 +23,34 @@ import com.summit.core.workspace.WorkspaceManager;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.SessionAttributeRestorer;
+import com.summit.dp.execution.SuspendedExecutionResumer;
+import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
+import com.summit.dp.execution.domain.lifecycle.ExecutionActivity;
+import com.summit.dp.execution.domain.model.ExecutionResumeTask;
+import com.summit.dp.execution.domain.model.ResumeTaskState;
+import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
+import com.summit.dp.toolcall.application.service.CardAvailabilityPolicy;
+import com.summit.dp.toolcall.application.service.impl.ApprovalFinalizer;
 import com.summit.dp.toolcall.application.service.impl.CommandApprovalExecutor;
+import com.summit.dp.toolcall.application.service.impl.CommandOutcomeResolver;
+import com.summit.dp.toolcall.application.service.impl.ApprovedCommandRestorer;
 import com.summit.dp.toolcall.application.service.impl.ToolCallServiceImpl;
+import com.summit.dp.toolcall.application.service.impl.ToolCallDecisionService;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.repo.SessionRepository;
+import com.summit.dp.shared.event.CommittedStatePublisher;
 import com.summit.dp.shared.event.SseEventPublisher;
 import com.summit.dp.shared.event.ToolCallEventPublisher;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.tools.baseTools.terminal.CommandToolDefinitionExecutor;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -71,6 +85,7 @@ class ToolCallDecisionTest {
     private final ToolCallRepository toolCallRepository = mock(ToolCallRepository.class);
     private final ExecutionRepository executionRepository = mock(ExecutionRepository.class);
     private final ExecutionControl executionControl = mock(ExecutionControl.class);
+    private final ExecutionActivity activity = mock(ExecutionActivity.class);
     private final ToolRegistry toolRegistry = mock(ToolRegistry.class);
     private final WorkspaceManager workspaces = mock(WorkspaceManager.class);
     private final SseEventPublisher sseEventPublisher = mock(SseEventPublisher.class);
@@ -81,9 +96,20 @@ class ToolCallDecisionTest {
     private final SseEmitter emitter = mock(SseEmitter.class);
     private final CommandToolDefinitionExecutor commandExecutor = mock(CommandToolDefinitionExecutor.class);
     private final CountDownLatch finished = new CountDownLatch(1);
+    /**
+     * COMMAND 路径的 {@code resume} 由恢复协调器异步派发，SSE 结束不代表它已发生；
+     * 断言「命令执行后父执行真的恢复」必须等这个信号，等 {@code emitter.complete()} 会漏判。
+     */
+    private final CountDownLatch resumed = new CountDownLatch(1);
     private final ObjectMapper mapper = new ObjectMapper();
+    /** 恢复协调器的两张表在单测里只有桩：命令 T2 是否真的派发出去才是这些用例的断言点。 */
+    private final ExecutionResumeTaskRepository resumeTaskRepository = mock(ExecutionResumeTaskRepository.class);
+    private final com.summit.dp.execution.domain.repository.ExecutionRepository resumeExecutions =
+            mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class);
+    private final CommittedStatePublisher statePublisher = mock(CommittedStatePublisher.class);
 
     private ToolCallServiceImpl service;
+    private final List<ExecutionResumeCoordinator> coordinators = new ArrayList<>();
 
     @BeforeEach
     void setup() {
@@ -95,28 +121,78 @@ class ToolCallDecisionTest {
         }).when(transactions).executeWithoutResult(any());
 
         when(sseEventPublisher.connect(anyLong())).thenReturn(emitter);
-        when(executionIdentity.rootSessionIdOfSession(2L)).thenReturn(2L);
+        when(executionIdentity.resolveRootSessionId(2L)).thenReturn(2L);
         doAnswer(invocation -> {
             finished.countDown();
             return null;
         }).when(emitter).complete();
+        doAnswer(invocation -> { emitter.complete(); return null; }).when(sseEventPublisher).finish(emitter);
 
+        SuspendedExecutionResumer resumer = new SuspendedExecutionResumer(toolCallRepository,
+                new SessionAttributeRestorer(mock(SessionRepository.class)), modelContextService,
+                provider(executionControl));
+        ToolCallConverter converter = new ToolCallConverter(mapper);
         CommandApprovalExecutor commandApprovalExecutor = new CommandApprovalExecutor(toolCallRepository,
-                new ToolCallConverter(mapper), sseEventPublisher, executionIdentity, modelContextService,
-                runtimeEvents, transactions,
+                sseEventPublisher, executionIdentity, transactions,
                 provider(executionControl), provider(executionRepository),
-                new SessionAttributeRestorer(mock(SessionRepository.class)),
-                new com.summit.dp.toolcall.application.service.impl.ApprovedCommandRestorer(mapper, workspaces,
-                        provider(toolRegistry)));
+                new CommandOutcomeResolver(converter, runtimeEvents),
+                new ApprovalFinalizer(toolCallRepository, converter, modelContextService,
+                        runtimeEvents, transactions, provider(executionControl), resumer,
+                        coordinator(resumer)),
+                resumer,
+                new ApprovedCommandRestorer(mapper, workspaces, provider(toolRegistry)));
         service = new ToolCallServiceImpl(toolCallRepository,
-                new ToolCallConverter(mapper), executionIdentity, modelContextService, sseEventPublisher,
-                toolCallEventPublisher, transactions,
-                provider(executionControl), provider(executionRepository), commandApprovalExecutor,
-                new SessionAttributeRestorer(mock(SessionRepository.class)));
+                converter, transactions, commandApprovalExecutor,
+                new ToolCallDecisionService(toolCallRepository, converter, executionIdentity,
+                        modelContextService, sseEventPublisher, toolCallEventPublisher, transactions,
+                        provider(executionRepository), resumer),
+                new CardAvailabilityPolicy(provider(executionRepository), provider(activity)));
+        // 恢复协调器异步派发：任务行桩成「已入队可领取」，让命令 T2 真的走到 executionControl.resume。
+        when(resumeTaskRepository.enqueue(anyLong(), anyLong(), any())).thenReturn(resumeTask());
+        when(resumeTaskRepository.findByExecutionId(3L)).thenReturn(List.of(resumeTask()));
+        when(resumeTaskRepository.claim(any(), any())).thenReturn(true);
+        when(resumeTaskRepository.updateState(any())).thenReturn(true);
+        when(resumeExecutions.findResumeGeneration(3L)).thenReturn(1L);
+        when(resumeExecutions.findSummariesByIds(any())).thenReturn(List.of(summary(ExecutionState.SUSPENDED)));
+    }
+
+    /**
+     * 建一个真的恢复协调器：命令 T2 是否把父执行恢复回去正是这些用例的断言点，
+     * 用 mock 协调器只能验到「派发被调用」，验不到恢复真的发生。
+     * 登记下来在 {@code @AfterEach} 关闭，否则巡检线程会漏到后续测试类。
+     */
+    private ExecutionResumeCoordinator coordinator(SuspendedExecutionResumer resumer) {
+        ExecutionResumeCoordinator coordinator = new ExecutionResumeCoordinator(resumeTaskRepository,
+                resumeExecutions, resumer, provider(executionRepository), provider(statePublisher));
+        coordinators.add(coordinator);
+        return coordinator;
+    }
+
+    @AfterEach
+    void shutdownCoordinators() {
+        coordinators.forEach(ExecutionResumeCoordinator::close);
+        coordinators.clear();
+    }
+
+    /** 供恢复协调器读取的挂起代摘要（不载 snapshot）。 */
+    private com.summit.dp.execution.domain.model.Execution summary(ExecutionState state) {
+        com.summit.dp.execution.domain.model.Execution summary =
+                new com.summit.dp.execution.domain.model.Execution();
+        summary.setId(3L);
+        summary.setSessionId(2L);
+        summary.setStatus(ExecutionStatusCodes.encode(state));
+        summary.setResumeGeneration(1L);
+        return summary;
+    }
+
+    private ExecutionResumeTask resumeTask() {
+        return ExecutionResumeTask.builder().id(1L).executionId(3L).generation(1L)
+                .state(ResumeTaskState.READY).attempts(0).version(1L)
+                .nextAttemptAt(Instant.now()).createdAt(Instant.now()).updatedAt(Instant.now()).build();
     }
 
     @Test
-    void planApprovalCompletesCardWritesAnswerAndResumesInOneTransaction() {
+    void planApprovalCompletesCardWritesAnswerAndResumesInOneTransaction() throws Exception {
         ToolCall toolCall = promiseCall("call-plan", "create_plan",
                 "{\"kind\":\"PLAN\",\"title\":\"T\",\"text\":\"body\"}");
         ToolMessageEntity toolMessage = ToolMessageEntity.builder().id("call-plan").name("create_plan").text("pending").build();
@@ -127,6 +203,7 @@ class ToolCallDecisionTest {
         when(executionControl.resume(any(Execution.class))).thenReturn(execution);
 
         service.decide(2L, "call-plan", true, "可以");
+        await();
 
         assertEquals(ToolCallStatus.COMPLETED, toolCall.getStatus());
         assertTrue(toolCall.getRawOutput().contains("APPROVED"));
@@ -150,12 +227,15 @@ class ToolCallDecisionTest {
         when(executionRepository.register("3")).thenReturn(signal);
         when(executionRepository.findById("3")).thenReturn(Optional.of(execution));
         doReturn(commandTool()).when(toolRegistry).getTool("command");
-        when(workspaces.acquire(any(com.summit.core.workspace.WorkspaceSpec.class))).thenReturn(workspace);
+        when(workspaces.acquire(any(WorkspaceSpec.class))).thenReturn(workspace);
         when(commandExecutor.execute(any())).thenReturn(ToolExecuteResult.success("real output"));
-        when(executionControl.resume(any(Execution.class))).thenReturn(execution);
+        when(executionControl.resume(any(Execution.class))).thenAnswer(invocation -> {
+            resumed.countDown();
+            return execution;
+        });
 
         service.decide(2L, "call-cmd", true, null);
-        await();
+        awaitResume();
 
         verify(commandExecutor, times(1)).execute(any());
         ArgumentCaptor<ToolExecution> replayedTool = ArgumentCaptor.forClass(ToolExecution.class);
@@ -181,10 +261,13 @@ class ToolCallDecisionTest {
         when(toolCallRepository.findById("call-rej")).thenReturn(Optional.of(toolCall));
         when(executionRepository.register("3")).thenReturn(signal);
         when(executionRepository.findById("3")).thenReturn(Optional.of(execution));
-        when(executionControl.resume(any(Execution.class))).thenReturn(execution);
+        when(executionControl.resume(any(Execution.class))).thenAnswer(invocation -> {
+            resumed.countDown();
+            return execution;
+        });
 
         service.decide(2L, "call-rej", false, null);
-        await();
+        awaitResume();
 
         verifyNoInteractions(commandExecutor, workspaces, toolRegistry);
         assertTrue(toolMessage.getText().contains("拒绝"));
@@ -202,6 +285,53 @@ class ToolCallDecisionTest {
 
         verifyNoInteractions(executionRepository, executionControl, commandExecutor);
         verify(toolCallRepository, never()).updateById(any());
+    }
+
+    @Test
+    void preparingAndActiveExecutionsCannotAcceptDecision() {
+        ToolCall preparing = commandCall("call-preparing").toBuilder().status(ToolCallStatus.PREPARING).build();
+        when(toolCallRepository.findById(preparing.getId())).thenReturn(Optional.of(preparing));
+        assertThrows(ClientException.class, () -> service.decide(2L, preparing.getId(), true, null));
+
+        ToolCall waiting = commandCall("call-active");
+        when(toolCallRepository.findById(waiting.getId())).thenReturn(Optional.of(waiting));
+        when(activity.isActive("3")).thenReturn(true);
+        assertThrows(ClientException.class, () -> service.decide(2L, waiting.getId(), true, null));
+        verifyNoInteractions(executionRepository, executionControl, commandExecutor);
+        verify(toolCallRepository, never()).updateById(any());
+    }
+
+    @Test
+    void remainingPreparingAndDelegationSlotsPreventEarlyResume() throws Exception {
+        ToolCall plan = promiseCall("call-plan", "create_plan", "{\"kind\":\"PLAN\",\"text\":\"计划\"}");
+        ToolCall preparing = commandCall("call-preparing").toBuilder().status(ToolCallStatus.PREPARING).build();
+        ToolCall delegation = promiseCall("call-child", "call_sub_agent", "{\"kind\":\"DELEGATION\"}");
+        ToolMessageEntity slot = ToolMessageEntity.builder().id(plan.getId()).name(plan.getToolName()).text("pending").build();
+        Execution execution = execution("3", ExecutionState.SUSPENDED, slot);
+        when(toolCallRepository.findById(plan.getId())).thenReturn(Optional.of(plan));
+        when(toolCallRepository.listUnresolvedByExecutionId(3L)).thenReturn(List.of(preparing, delegation));
+        when(executionRepository.findById("3")).thenReturn(Optional.of(execution));
+
+        service.decide(2L, plan.getId(), true, "可以");
+        await();
+        assertEquals(ToolCallStatus.COMPLETED, plan.getStatus());
+        verify(executionControl, never()).resume(any(Execution.class));
+    }
+
+    @Test
+    void publicationFailureDoesNotUndoCommittedDecision() throws Exception {
+        ToolCall plan = promiseCall("call-plan", "create_plan", "{\"kind\":\"PLAN\",\"text\":\"计划\"}");
+        ToolMessageEntity slot = ToolMessageEntity.builder().id(plan.getId()).name(plan.getToolName()).text("pending").build();
+        Execution execution = execution("3", ExecutionState.SUSPENDED, slot);
+        when(toolCallRepository.findById(plan.getId())).thenReturn(Optional.of(plan));
+        when(executionRepository.findById("3")).thenReturn(Optional.of(execution));
+        when(executionControl.resume(any(Execution.class))).thenReturn(execution);
+        doThrow(new IllegalStateException("observer failed")).when(toolCallEventPublisher).publish(anyLong(), any());
+
+        assertDoesNotThrow(() -> service.decide(2L, plan.getId(), true, "可以"));
+        await();
+        assertEquals(ToolCallStatus.COMPLETED, plan.getStatus());
+        verify(executionControl).resume(execution);
     }
 
     @Test
@@ -225,6 +355,12 @@ class ToolCallDecisionTest {
 
     private void await() throws Exception {
         assertTrue(finished.await(5, TimeUnit.SECONDS));
+    }
+
+    /** 等异步恢复真的发生；命令链路的 resume 由协调器派发，SSE 结束早于它。 */
+    private void awaitResume() throws Exception {
+        assertTrue(finished.await(5, TimeUnit.SECONDS));
+        assertTrue(resumed.await(10, TimeUnit.SECONDS), "命令 T2 之后父执行应被协调器恢复");
     }
 
     private ToolCall promiseCall(String id, String toolName, String content) {

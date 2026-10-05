@@ -26,6 +26,10 @@ import java.time.Instant;
 public class ChatTurn {
 
     private final Long id;
+    @Builder.Default
+    private Long version = 1L;
+    public void acceptPersistedVersion(long next) { this.version = next; }
+
     private final Long sessionId;
     /** 发起本次子 Agent 委派的主轮次；普通用户提问为 {@code null}。 */
     private final Long parentTurnId;
@@ -54,6 +58,43 @@ public class ChatTurn {
     /** 受理时刻。 */
     private final Instant createdAt;
     private Instant updatedAt;
+
+    /**
+     * 命令受理身份：发送 / 重发入口的 commandId 与其请求摘要。
+     *
+     * <p><b>为什么落在轮次而不是另开受理表</b>：轮次在「接受请求」那一刻落库，本来就是
+     * 这次请求的权威记录；{@code commandId} 唯一索引直接把它变成幂等键 ——
+     * 同 ID 重试命中同一行就能查回首次结果，不必再维护一张与轮次一一对应的旁表。</p>
+     *
+     * <p>子 Agent 委派轮次与恢复过程不携带命令身份，两列均为 {@code null}。</p>
+     */
+    private String commandId;
+    private String commandDigest;
+
+    /**
+     * 绑定命令受理身份。
+     *
+     * <p><b>只在受理时调用一次</b>：受理后改绑会让「同 commandId 查回首次结果」指向另一个轮次，
+     * 幂等就失效了。重复绑定同一 commandId 是幂等的（不覆盖摘要）。</p>
+     */
+    public void attachCommand(String commandId, String digest) {
+        if (commandId == null || commandId.isBlank()) {
+            return;
+        }
+        if (this.commandId != null && !this.commandId.equals(commandId)) {
+            throw new IllegalStateException("轮次已绑定其他命令身份，不允许改绑: turnId=" + id
+                    + ", existing=" + this.commandId + ", incoming=" + commandId);
+        }
+        this.commandId = commandId;
+        if (this.commandDigest == null) {
+            this.commandDigest = digest;
+        }
+    }
+
+    /** 摘要是否匹配；{@code null} 摘要视为不匹配（要求显式一致）。 */
+    public boolean matchesCommandDigest(String digest) {
+        return this.commandDigest != null && this.commandDigest.equals(digest);
+    }
 
     /**
      * 受理一次请求：轮次在「接受请求」那一刻就以 ACCEPTED 落库，此时框架执行可能还不存在。

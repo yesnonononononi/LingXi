@@ -11,6 +11,9 @@ import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.LocalExecutionRepository;
 import com.summit.dp.shared.config.JsonConfig;
 import org.junit.jupiter.api.BeforeEach;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -59,7 +62,8 @@ class ExecutionSummaryCheckpointTest {
 
     @BeforeEach
     void allowCheckpointWrites() {
-        when(persistence.updateById(any(ExecutionPO.class))).thenReturn(1);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "test"), ExecutionPO.class);
+        when(persistence.update(any(ExecutionPO.class), any())).thenReturn(1);
         when(persistence.insert(any(ExecutionPO.class))).thenReturn(1);
     }
 
@@ -124,13 +128,13 @@ class ExecutionSummaryCheckpointTest {
         execution.start();
         repository.save(execution);
         ArgumentCaptor<ExecutionPO> rows = ArgumentCaptor.forClass(ExecutionPO.class);
-        verify(persistence, times(1)).updateById(rows.capture());
+        verify(persistence, times(1)).update(rows.capture(), any());
         assertNotNull(rows.getValue().getStartedAt(), "开始后必须有首次开始时间");
         assertNull(rows.getValue().getCompletedAt(), "还在跑，不得写结束时间");
 
         execution.complete();
         repository.save(execution);
-        verify(persistence, times(2)).updateById(rows.capture());
+        verify(persistence, times(2)).update(rows.capture(), any());
         assertNotNull(rows.getValue().getCompletedAt(), "终态必须写结束时间");
         assertEquals(3, rows.getValue().getStatus(), "COMPLETED");
     }
@@ -148,7 +152,7 @@ class ExecutionSummaryCheckpointTest {
 
         ArgumentCaptor<ExecutionPO> rows = ArgumentCaptor.forClass(ExecutionPO.class);
         // 只有 start 与 suspend 两次 UPDATE：首次 CREATED 保存走的是 INSERT。
-        verify(persistence, times(2)).updateById(rows.capture());
+        verify(persistence, times(2)).update(rows.capture(), any());
         ExecutionPO suspended = rows.getValue();
 
         assertEquals(2, suspended.getStatus(), "SUSPENDED");
@@ -174,7 +178,7 @@ class ExecutionSummaryCheckpointTest {
 
         ArgumentCaptor<ExecutionPO> rows = ArgumentCaptor.forClass(ExecutionPO.class);
         // 首次 CREATED 保存是 INSERT；start / suspend / resume 三次 UPDATE。
-        verify(persistence, times(3)).updateById(rows.capture());
+        verify(persistence, times(3)).update(rows.capture(), any());
         assertEquals(LocalDateTime.ofInstant(firstStart, ZoneId.systemDefault()), rows.getValue().getStartedAt());
     }
 }

@@ -14,6 +14,7 @@ import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.SessionAttributeRestorer;
 import com.summit.dp.execution.application.service.ExecutionRegistrationService;
 import com.summit.dp.turn.application.service.ChatTurnService;
+import com.summit.dp.session.application.service.ConversationRollbackService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
@@ -62,13 +63,19 @@ class ChatResumeTeamAttributeTest {
     private final ToolCallRepository toolCallRepository = mock(ToolCallRepository.class);
 
     private ChatServiceImpl service() {
-        return new ChatServiceImpl(sseEventPublisher, requestPreparer, orchestrator, executionControl,
+        com.summit.dp.turn.application.service.ChatTurnService chatTurnService =
+                mock(com.summit.dp.turn.application.service.ChatTurnService.class);
+        return new ChatServiceImpl(sseEventPublisher, requestPreparer, executionControl,
                 executionRepository, sessionRepository, sessionExecutionRegistry, modelContextService,
                 executionIdentity, toolCallRepository,
                 new SessionAttributeRestorer(sessionRepository),
-                mock(com.summit.dp.execution.application.service.ExecutionRegistrationService.class),
-                mock(com.summit.dp.turn.application.service.ChatTurnService.class),
-                mock(com.summit.dp.execution.application.service.ExecutionQueryService.class));
+                new PreparedChatExecutor(orchestrator, modelContextService, sessionExecutionRegistry,
+                        mock(com.summit.dp.execution.application.service.ExecutionRegistrationService.class),
+                        chatTurnService),
+                chatTurnService,
+                mock(com.summit.dp.execution.application.service.ExecutionQueryService.class),
+                // 本测试只盯 resume 的属性补齐，重发链路用不到。
+                mock(ResendTargetResolver.class), mock(ConversationRollbackService.class));
     }
 
     @Test
@@ -160,7 +167,7 @@ class ChatResumeTeamAttributeTest {
         Session rootSession = Session.builder()
                 .id(rootSessionId).rootSessionId(Session.ROOT_SESSION_ID).name("团队会话").teamId(TEAM_ID).build();
         when(executionIdentity.latestSuspendedExecutionId(SESSION_ID)).thenReturn(EXECUTION_ID);
-        when(toolCallRepository.listPendingByExecutionId(Long.valueOf(EXECUTION_ID))).thenReturn(List.of());
+        when(toolCallRepository.listUnresolvedByExecutionId(Long.valueOf(EXECUTION_ID))).thenReturn(List.of());
         when(executionRepository.findById(EXECUTION_ID)).thenReturn(Optional.of(execution));
         when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(subSession));
         when(sessionRepository.findById(rootSessionId)).thenReturn(Optional.of(rootSession));
@@ -188,7 +195,7 @@ class ChatResumeTeamAttributeTest {
         Session rootSession = Session.builder()
                 .id(rootSessionId).rootSessionId(Session.ROOT_SESSION_ID).name("直聊会话").teamId(null).build();
         when(executionIdentity.latestSuspendedExecutionId(SESSION_ID)).thenReturn(EXECUTION_ID);
-        when(toolCallRepository.listPendingByExecutionId(Long.valueOf(EXECUTION_ID))).thenReturn(List.of());
+        when(toolCallRepository.listUnresolvedByExecutionId(Long.valueOf(EXECUTION_ID))).thenReturn(List.of());
         when(executionRepository.findById(EXECUTION_ID)).thenReturn(Optional.of(execution));
         when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(subSession));
         when(sessionRepository.findById(rootSessionId)).thenReturn(Optional.of(rootSession));
@@ -203,7 +210,7 @@ class ChatResumeTeamAttributeTest {
 
     private void stubResume(Execution execution, Session session) {
         when(executionIdentity.latestSuspendedExecutionId(SESSION_ID)).thenReturn(EXECUTION_ID);
-        when(toolCallRepository.listPendingByExecutionId(Long.valueOf(EXECUTION_ID))).thenReturn(List.of());
+        when(toolCallRepository.listUnresolvedByExecutionId(Long.valueOf(EXECUTION_ID))).thenReturn(List.of());
         when(executionRepository.findById(EXECUTION_ID)).thenReturn(Optional.of(execution));
         when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(session));
         when(executionControl.resume(any(Execution.class))).thenReturn(execution);

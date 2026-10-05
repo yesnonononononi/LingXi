@@ -75,36 +75,6 @@ export function normalizeSettingsTab(raw: unknown, fallback: SettingsTabKey = 'g
 }
 
 /* ------------------------------------------------------------------ */
-/* 任务状态                                                             */
-/* ------------------------------------------------------------------ */
-
-export type TaskPhase = 'done' | 'doing' | 'blocked' | 'todo';
-
-/**
- * 计划任务状态归一化。
- * 契约来源：com.summit.dp.interaction.domain.model.TaskStatus —— 仅有
- * TODO / DOING / BLOCKED / DONE 四个枚举名，序列化即枚举名。
- * 后端从不产生 completed/running 等别名，故不再兼容。
- */
-const TASK_PHASE_MAP: Record<string, TaskPhase> = {
-  todo: 'todo',
-  doing: 'doing',
-  blocked: 'blocked',
-  done: 'done',
-};
-
-export function resolveTaskPhase(status?: string | null): TaskPhase {
-  if (!status) return 'todo';
-  const key = status.trim().toLowerCase();
-  return TASK_PHASE_MAP[key] ?? 'todo';
-}
-
-export const isTaskDone = (task?: { status?: string | null }) => resolveTaskPhase(task?.status) === 'done';
-export const isTaskDoing = (task?: { status?: string | null }) => resolveTaskPhase(task?.status) === 'doing';
-export const isTaskBlocked = (task?: { status?: string | null }) => resolveTaskPhase(task?.status) === 'blocked';
-export const isTaskTodo = (task?: { status?: string | null }) => resolveTaskPhase(task?.status) === 'todo';
-
-/* ------------------------------------------------------------------ */
 /* 计划状态                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -115,21 +85,6 @@ export function isPlanApproved(status?: string | null): boolean {
   if (!status) return false;
   const normalized = status.trim().toUpperCase();
   return (PLAN_APPROVED_STATUSES as readonly string[]).includes(normalized);
-}
-
-export function isPlanRejected(status?: string | null): boolean {
-  if (!status) return false;
-  return status.trim().toUpperCase() === 'REJECTED';
-}
-
-/**
- * 计划书是否仍在等待用户审批。
- * 后端三态：PENDING_APPROVAL / APPROVED / REJECTED；缺失状态按待审处理，
- * 避免卡片在状态字段缺省时丢掉审批按钮。
- */
-export function isPlanPending(status?: string | null): boolean {
-  if (!status) return true;
-  return status.trim().toUpperCase() === 'PENDING_APPROVAL';
 }
 
 /* ------------------------------------------------------------------ */
