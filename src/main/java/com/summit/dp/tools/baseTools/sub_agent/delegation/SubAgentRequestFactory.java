@@ -4,6 +4,7 @@ import cn.hutool.core.util.IdUtil;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.conf.ModelConfig;
+import com.summit.core.conf.SkillConfig;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.workspace.Workspace;
@@ -17,6 +18,7 @@ import com.summit.dp.shared.context.SettingsView;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.model.ToolCatalog;
 import com.summit.dp.shared.settings.SettingsProvider;
+import com.summit.dp.shared.skill.SkillRootResolver;
 import com.summit.dp.shared.vo.WorkspaceVO;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.tools.baseTools.arguments.CallSubAgentToolArgument;
@@ -25,6 +27,7 @@ import com.summit.dp.workspace.application.service.WorkspaceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -47,6 +50,8 @@ public class SubAgentRequestFactory {
     private final ModelService modelService;
     private final SettingsProvider settingsProvider;
     private final WorkspaceConverter workspaceConverter;
+    /** Skill 根目录：子执行的 skillConfig 与 read_skill 都由它决定是否下发。 */
+    private final SkillRootResolver skillRootResolver;
 
     /**
      * 组装子执行请求。
@@ -81,6 +86,10 @@ public class SubAgentRequestFactory {
             builder.workspaceSpec(workspaceSpec);
         }
 
+        // Skill 能力随委派下行：框架按请求级 skillConfig 渲染 Skill 提示词，read_skill 也按它做
+        // 越界校验。子执行是真正干活的一方，不给它就等于「成员看不到任何技能」。
+        Path skillRoot = skillRootResolver.root();
+
         Objects.requireNonNull(toolExecution);
         return builder
                 .messages(contextOf(priorMessages, task))
@@ -90,7 +99,8 @@ public class SubAgentRequestFactory {
                         .attributes(childAttributes(subAgent, toolExecution, subSessionId))
                         .build())
                 .systemPrompt(buildSubAgentPrompt(subAgent, team, argument.getPrompt()))
-                .toolList(memberTools(subAgent.getToolList()))
+                .toolList(memberTools(subAgent.getToolList(), skillRoot))
+                .skillConfig(skillRoot == null ? null : new SkillConfig(skillRoot))
                 .task(List.of(task))
                 .build();
     }
@@ -178,8 +188,11 @@ public class SubAgentRequestFactory {
      * <p>两个协作工具都不写进 Agent 配置，而是由委派方按角色显式授予，与指挥者侧的
      * {@code AgentWorkflowOrchestratorImpl#commanderTools} 对称。未配置清单的 Agent 原本
      * 一个工具都拿不到，这里同样至少给出发信能力，避免成员完全失联。</p>
+     *
+     * <p>{@code read_skill} 与 {@code send_mail_to_agent} 同属「不写进 Agent 配置、由这里补」：
+     * 名单即授权，不补则子执行拿到 Skill 提示词也调不动读它的工具。</p>
      */
-    private List<String> memberTools(List<String> configured) {
+    private List<String> memberTools(List<String> configured, Path skillRoot) {
         List<String> tools = configured == null
                 ? new ArrayList<>()
                 : configured.stream()
@@ -190,6 +203,9 @@ public class SubAgentRequestFactory {
                 .collect(Collectors.toCollection(ArrayList::new));
         if (!tools.contains(ToolCatalog.SEND_MAIL_TO_AGENT)) {
             tools.add(ToolCatalog.SEND_MAIL_TO_AGENT);
+        }
+        if (skillRoot != null && !tools.contains(ToolCatalog.READ_SKILL)) {
+            tools.add(ToolCatalog.READ_SKILL);
         }
         return tools;
     }

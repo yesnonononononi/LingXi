@@ -1,6 +1,7 @@
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { McpAPI } from '../../../services/api';
-import type { McpVO } from '../../../types/chat';
+import { ApiError } from '../../../services/interceptor';
+import type { McpVO, McpRequest, McpConnectionVO } from '../../../types/chat';
 import { isOk } from '../../../utils/api';
 import { useConfirm } from '../../../composables/useConfirm';
 
@@ -16,6 +17,10 @@ export function useMcpTab() {
   const editingMcpId = ref<number | string | null>(null);
   const mcpFormError = ref('');
   const isSubmittingMcp = ref(false);
+  const isConnectingMcp = ref(false);
+  const mcpConnectionResult = ref<McpConnectionVO | null>(null);
+  const mcpConnectionError = ref('');
+  let connectionRequest = 0;
   const mcpToast = ref('');
   let mcpToastTimer: number | undefined;
 
@@ -44,6 +49,13 @@ export function useMcpTab() {
   const mcpHeadersPristine = ref(false);
   /** 编辑态下环境变量是否保持原样（未改动则不提交 env 字段） */
   const mcpEnvPristine = ref(false);
+
+  // 表单改动后旧结果失效，迟到响应不能把另一份配置标成连接成功。
+  watch(mcpForm, () => {
+    connectionRequest++;
+    mcpConnectionResult.value = null;
+    mcpConnectionError.value = '';
+  }, { deep: true, flush: 'sync' });
 
   const showMcpToast = (msg: string) => {
     mcpToast.value = msg;
@@ -169,6 +181,9 @@ export function useMcpTab() {
   };
 
   const cancelMcpForm = () => {
+    connectionRequest++;
+    mcpConnectionResult.value = null;
+    mcpConnectionError.value = '';
     isEditingOrAddingMcp.value = false;
     editingMcpId.value = null;
     mcpFormError.value = '';
@@ -176,18 +191,18 @@ export function useMcpTab() {
     mcpEnvPristine.value = false;
   };
 
-  const handleSaveMcp = async () => {
+  const buildMcpPayload = (): McpRequest | null => {
     mcpFormError.value = '';
     const trimmedName = mcpForm.value.name.trim();
     const isStdio = mcpForm.value.transport === 'stdio';
 
     if (!trimmedName) {
       mcpFormError.value = '请填写服务名称';
-      return;
+      return null;
     }
     if (trimmedName.length > 64) {
       mcpFormError.value = '服务名称长度不能超过 64 个字符';
-      return;
+      return null;
     }
 
     // 连接参数按传输方式分派：http 系填地址，stdio 填启动命令
@@ -200,7 +215,7 @@ export function useMcpTab() {
       command = linesToCommand(mcpForm.value.commandLines);
       if (command.length === 0) {
         mcpFormError.value = '请填写 stdio 启动命令（一行一段，如 npx）';
-        return;
+        return null;
       }
       // 仅在用户改动过环境变量时才提交该字段，否则后端保留库中原值
       if (!mcpEnvPristine.value) {
@@ -208,18 +223,18 @@ export function useMcpTab() {
           env = linesToEnv(mcpForm.value.envLines);
         } catch (e: any) {
           mcpFormError.value = e?.message || '环境变量格式不正确';
-          return;
+          return null;
         }
       }
     } else {
       const trimmedUrl = mcpForm.value.url.trim();
       if (!trimmedUrl) {
         mcpFormError.value = '请填写服务地址';
-        return;
+        return null;
       }
       if (!/^https?:\/\/.+/i.test(trimmedUrl)) {
         mcpFormError.value = '服务地址必须以 http:// 或 https:// 开头';
-        return;
+        return null;
       }
       url = trimmedUrl;
       // 仅在用户改动过请求头时才提交该字段，否则后端保留库中原值
@@ -228,26 +243,26 @@ export function useMcpTab() {
           headers = linesToHeaders(mcpForm.value.headerLines);
         } catch (e: any) {
           mcpFormError.value = e?.message || '请求头格式不正确';
-          return;
+          return null;
         }
       }
     }
 
     if (mcpForm.value.description && mcpForm.value.description.length > 200) {
       mcpFormError.value = '服务描述长度不能超过 200 个字符';
-      return;
+      return null;
     }
     if (mcpForm.value.initializationTimeout !== null && mcpForm.value.initializationTimeout <= 0) {
       mcpFormError.value = '初始化超时必须大于 0';
-      return;
+      return null;
     }
     if (mcpForm.value.executionTimeout !== null && mcpForm.value.executionTimeout <= 0) {
       mcpFormError.value = '执行超时必须大于 0';
-      return;
+      return null;
     }
     if (mcpForm.value.maxOutput !== null && mcpForm.value.maxOutput <= 0) {
       mcpFormError.value = '输出上限必须大于 0';
-      return;
+      return null;
     }
 
     const payload = {
@@ -263,6 +278,41 @@ export function useMcpTab() {
       maxOutput: mcpForm.value.maxOutput ?? undefined,
       status: mcpForm.value.enabled ? 1 : 0,
     };
+
+    return payload;
+  };
+
+  const handleConnectMcp = async () => {
+    if (isConnectingMcp.value || isSubmittingMcp.value) return;
+    const payload = buildMcpPayload();
+    if (!payload) return;
+    const request = ++connectionRequest;
+    mcpConnectionResult.value = null;
+    mcpConnectionError.value = '';
+    isConnectingMcp.value = true;
+    try {
+      const res = await McpAPI.connect(payload);
+      if (request !== connectionRequest) return;
+      if (isOk(res.code) && res.data) {
+        mcpConnectionResult.value = res.data;
+      } else {
+        mcpConnectionError.value = res.errMsg || '连接测试失败，请检查 MCP 配置';
+      }
+    } catch (error: unknown) {
+      if (request === connectionRequest) {
+        mcpConnectionError.value = error instanceof ApiError && error.kind === 'network'
+          ? '连接测试请求失败或超时，请检查后端是否可用'
+          : error instanceof Error ? error.message : '连接测试失败，请稍后重试';
+      }
+    } finally {
+      isConnectingMcp.value = false;
+    }
+  };
+
+  const handleSaveMcp = async () => {
+    if (isSubmittingMcp.value || isConnectingMcp.value) return;
+    const payload = buildMcpPayload();
+    if (!payload) return;
 
     isSubmittingMcp.value = true;
     try {
@@ -357,6 +407,7 @@ export function useMcpTab() {
   });
 
   onBeforeUnmount(() => {
+    connectionRequest++;
     if (mcpToastTimer) window.clearTimeout(mcpToastTimer);
   });
 
@@ -368,6 +419,9 @@ export function useMcpTab() {
     editingMcpId,
     mcpFormError,
     isSubmittingMcp,
+    isConnectingMcp,
+    mcpConnectionResult,
+    mcpConnectionError,
     mcpToast,
     mcpForm,
     mcpHeadersPristine,
@@ -377,6 +431,7 @@ export function useMcpTab() {
     startEditMcp,
     cancelMcpForm,
     handleSaveMcp,
+    handleConnectMcp,
     handleDeleteMcp,
     handleToggleMcp,
     countHeaders,

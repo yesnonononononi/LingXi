@@ -245,6 +245,9 @@ export class TurnStreamReducer {
       isSuspended: false,
       thoughtSteps: [],
       toolCalls: [],
+      // 中间叙述必须从一开始就存在：实时路径原先只写 content，导致流式期间所有轮次的
+      // 文本都堆在正文里、对账后才被搬进过程区（用户看到一次跳变）。见 handleToolCall。
+      aiMessages: [],
       processTimeline: []
     };
 
@@ -333,6 +336,22 @@ export class TurnStreamReducer {
       bubble.thoughtSteps.forEach(step => {
         if (step.status === 'running') step.status = 'success';
       });
+    }
+
+    // 工具调用意味着「本轮叙述到此为止」：把已累计的文本从正文移到中间叙述集合。
+    // 判据与历史路径一致（aggregateSessionMessages：同一轮里文本行后跟工具行 = 中间过程），
+    // 因此对账替换时 intermediateAiMessages 的「等于正文则剔除」判据继续成立、不再跳变。
+    // 放在 requestId 守卫之前：缺 requestId 只是不建卡，工具调用本身已经发生，正文同样该断句。
+    if (bubble.content && bubble.content.trim()) {
+      if (!bubble.aiMessages) {
+        bubble.aiMessages = [];
+      }
+      bubble.aiMessages.push({
+        id: `ai-${bubble.id}-${bubble.aiMessages.length}`,
+        text: bubble.content,
+        order: this.allocateOrder(bubble)
+      });
+      bubble.content = '';
     }
 
     // requestId 是后端 tool_call 主键，缺失则不建卡：伪造 ID 会让同一次调用的开始/结束事件落到两个气泡上。
@@ -574,13 +593,18 @@ export class TurnStreamReducer {
   }
 
   /**
-   * 分配时间线顺序：实时路径按「创建先后」给思考步与工具调用统一编号，二者严格交错。
+   * 分配时间线顺序：实时路径按「创建先后」给思考步、中间文本与工具调用统一编号，三者严格交错。
    *
-   * <p>取「当前时间线项数 × 10」而非各类各自的计数：思考步与工具调用若用不同基准，
+   * <p>取「当前时间线项数 × 10」而非各类各自的计数：三者若用不同基准，
    * 排序后整轮思考会挤到工具之前（同一轮多段思考尤其明显）。必须在 push 新项之前调用。</p>
+   *
+   * <p><b>aiMessages 必须计入</b>：漏掉它会让新落的中间文本与紧随其后的工具调用拿到
+   * 相同 order，排序退化成依赖插入顺序，表现为「文本与工具偶发错位」。</p>
    */
   private allocateOrder(bubble: ChatMessage): number {
-    const used = (bubble.thoughtSteps?.length ?? 0) + (bubble.toolCalls?.length ?? 0);
+    const used = (bubble.thoughtSteps?.length ?? 0)
+        + (bubble.toolCalls?.length ?? 0)
+        + (bubble.aiMessages?.length ?? 0);
     return used * 10;
   }
 

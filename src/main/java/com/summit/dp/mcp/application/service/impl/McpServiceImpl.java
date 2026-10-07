@@ -1,13 +1,16 @@
 package com.summit.dp.mcp.application.service.impl;
 
+import cn.hutool.core.util.IdUtil;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.summit.core.conf.McpConfig;
-import com.summit.core.conf.McpTransport;
 import com.summit.ddd.application.vo.PageResult;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.mcp.application.command.McpCommand;
 import com.summit.dp.mcp.application.service.McpService;
+import com.summit.dp.mcp.application.service.McpConfigAssembler;
+import com.summit.dp.mcp.application.service.McpConnectionRegistry;
 import com.summit.dp.mcp.application.vo.McpVO;
+import com.summit.dp.mcp.application.vo.McpConnectionVO;
 import com.summit.dp.mcp.domain.model.Mcp;
 import com.summit.dp.mcp.domain.repository.McpRepository;
 import com.summit.dp.shared.exception.ClientException;
@@ -33,6 +36,8 @@ public class McpServiceImpl implements McpService {
 
     private final McpRepository repository;
     private final McpValidator validator;
+    private final McpConfigAssembler assembler;
+    private final McpConnectionRegistry connections;
 
     @Override
     public Result<McpVO> findById(Long id) {
@@ -54,47 +59,60 @@ public class McpServiceImpl implements McpService {
     }
 
     @Override
+    public Result<McpConnectionVO> connect(McpCommand command) {
+        String error = validator.validateForConnection(command);
+        throwIf(error != null, error);
+        Mcp model = toModel(command, Instant.now());
+        model.requireCoherent();
+        return Result.success(connections.connect(assembler.toServer(model)));
+    }
+
+    @Override
     public Result<Void> add(McpCommand command) {
         String error = validator.validateForCreate(command);
-        if (error != null) throw new ClientException(error);
+        throwIf(error != null, error);
 
+        Mcp model;
         try {
-            Mcp model = toModel(command, Instant.now());
+            model = toModel(command, Instant.now());
             model.requireCoherent();
             repository.save(model);
         } catch (IllegalArgumentException e) {
             // 领域方法的护栏（长度/正数/传输-参数匹配等）；校验器已覆盖常规路径，这里兜住直接构造的非法值
-            log.warn("MCP 新增被领域规则拒绝: {}", e.getMessage());
+            log.warn("新增 MCP 被领域规则拒绝: error={}", e.getMessage());
             throw new ClientException(e.getMessage());
         }
+        // 必须先保存再连接；远端故障不能让用户丢失配置。
+        connections.register(model.getId());
         return Result.success();
     }
 
     @Override
     public Result<Void> update(McpCommand command) {
         String error = validator.validateForUpdate(command);
-        if (error != null) throw new ClientException(error);
+        throwIf(error != null, error);
 
         Mcp model = repository.findById(command.getId())
-                .orElseThrow(() -> new ClientException("id 对应数据不存在: " + command.getId()));
+                .orElseThrow(ClientException::new);
 
         try {
             applyChanges(command, model);
             model.requireCoherent();
         } catch (IllegalArgumentException e) {
-            log.warn("MCP 更新被领域规则拒绝: {}", e.getMessage());
+            log.warn("更新 MCP 被领域规则拒绝: error={}", e.getMessage());
             throw new ClientException(e.getMessage());
         }
 
         repository.updateById(model);
+        connections.register(model.getId());
         return Result.success();
     }
 
     @Override
     public Result<Void> delById(Long id) {
-        if (id == null)
-            throw new ClientException("id is null");
+        throwIf(id == null, "MCP 配置标识不能为空");
         repository.findById(id).ifPresent(repository::delete);
+        connections.remove(id);
         return Result.success();
     }
 
@@ -117,34 +135,8 @@ public class McpServiceImpl implements McpService {
         if (enabled.isEmpty()) return null;
 
         McpConfig config = new McpConfig();
-        config.setMcp(enabled.stream().map(this::toMCP).toList());
+        config.setMcp(enabled.stream().map(assembler::toServer).toList());
         return config;
-    }
-
-    /**
-     * 按传输方式装配框架侧配置：http 系装 {@link McpConfig.StreamableHttp}，stdio 装
-     * {@link McpConfig.Stdio}——switch 对枚举穷举，框架侧新增传输时这里编译期即报错。
-     */
-    private McpConfig.MCP toMCP(Mcp model) {
-        McpTransport transport = McpTransport.parse(model.getTransport().toString());
-        McpConfig.Conf conf = switch (transport) {
-            case STREAMABLE_HTTP, SSE -> new McpConfig.StreamableHttp(
-                    model.getUrl(),
-                    model.getHeaders() == null ? Map.of() : model.getHeaders(),
-                    model.getInitializationTimeout(),
-                    model.getExecutionTimeout());
-            case STDIO -> new McpConfig.Stdio(
-                    model.getCommand(),
-                    model.getEnv() == null ? Map.of() : model.getEnv(),
-                    model.getInitializationTimeout(),
-                    model.getExecutionTimeout());
-        };
-        return new McpConfig.MCP(
-                model.getName(),
-                model.getDescription(),
-                transport,
-                conf,
-                model.getMaxOutput());
     }
 
     /**
@@ -241,7 +233,7 @@ public class McpServiceImpl implements McpService {
 
     private Mcp toModel(McpCommand command, Instant now) {
         return Mcp.builder()
-                .id(command.getId())
+                .id(command.getId() == null ? IdUtil.getSnowflakeNextId() : command.getId())
                 .name(command.getName().trim())
                 .transport(command.getTransport() == null ? Mcp.Transport.STREAMABLE_HTTP : parseTransport(command.getTransport()))
                 .url(command.getUrl() == null ? null : command.getUrl().trim())
@@ -258,5 +250,9 @@ public class McpServiceImpl implements McpService {
                 .createAt(now)
                 .updateAt(now)
                 .build();
+    }
+
+    private void throwIf(boolean condition, String err) {
+        if (condition) throw new ClientException(err);
     }
 }

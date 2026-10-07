@@ -44,6 +44,11 @@ lingxi:
   # 换位置改这里即可，也可用 -Dlingxi.data.dir=... 或环境变量 LINGXI_DATA_DIR 覆盖。
   data:
     dir: ${user.home}/.lingxi/data
+  # Skill 根目录：框架递归查找其下的 SKILL.md，把 name/description/入口路径渲染进系统提示词，
+  # 模型再用 read_skill 读取正文与引用资源。启动时目录不存在会被自动创建。
+  # 置空（skill.dir: ""）即关闭 Skill 能力，此时不再下发 read_skill 工具。
+  skill:
+    dir: ${user.home}/.lingxi/skill
   config:
     user-configs:
       path: ${user.home}/.lingxi/config/user-configs.yaml

@@ -14,7 +14,8 @@ import type { ChatMessage, ChatSession } from '../src/types/chat';
  *
  * <p>覆盖本期三个易错点，每条都必须能因缺陷变红：</p>
  * <ol>
- *   <li><b>连接共享</b>：同一根会话只开一条连接；一个使用者卸载不 abort，最后一个才 abort。</li>
+ *   <li><b>连接共享</b>：同一根会话只开一条连接；一个使用者卸载不 abort，最后一个才 abort。
+ *       且<b>发送链路不增加引用计数</b>（1d）、<b>就绪等待作用于被请求的根会话</b>（1e）。</li>
  *   <li><b>就绪握手</b>：READY 到达前 waitUntilReady 不 resolve；到达后 resolve。</li>
  *   <li><b>健康与失败</b>：心跳超时判定不健康并重挂；重试耗尽暴露「连接失败」，reconnect() 可恢复。</li>
  *   <li><b>生成态</b>：isSubmitting 在受理 POST 未返回期间为 true（禁重复点击），返回后为 false。</li>
@@ -269,6 +270,98 @@ test('1c. ★ 根会话场景：rootSessionId 为 "0" 时订阅键必须是会�
   scope.stop();
 });
 
+test('1d. ★ 发送链路走 ensure（不计数）：多次发送后切走会话必须能真的断开', async () => {
+  const endpoint = installEventEndpoint();
+  const scheduler = makeManualScheduler();
+  const stream = new SessionEventStream({
+    onEvent: () => {},
+    onConnectionClosed: () => {},
+    scheduleRetry: scheduler.schedule,
+    cancelRetry: scheduler.cancel,
+  });
+
+  // 进入会话：唯一的使用者（watch 路径）
+  stream.acquire(ROOT);
+  for (let i = 0; i < 30 && !endpoint.controller; i++) await tick();
+  endpoint.send('READY', { rootSessionId: ROOT });
+  for (let i = 0; i < 20 && !stream.isReady(ROOT); i++) await tick();
+
+  // 连发 3 次：每次都要「连接在且就绪」，但那是使用前提，不是新增使用者
+  for (let i = 0; i < 3; i++) {
+    stream.ensure(ROOT);
+    assert.equal(await stream.waitUntilReady(ROOT, 60_000), true, '已就绪时应立即 resolve');
+  }
+  // ★ 若发送链路用 acquire，计数会变成 4 —— 切走时归不了零，旧连接永远滞留（后端 total 只增）
+  assert.equal(
+    stream.resolveRefCount(ROOT), 1,
+    `发送链路不得增加引用计数（那是使用前提，不是新增使用者），实际=${stream.resolveRefCount(ROOT)}`,
+  );
+  assert.equal(endpoint.fetchCount, 1, '发送链路不得重建连接');
+
+  // ★ 切走会话：计数必须归零并真的断开
+  stream.release(ROOT);
+  for (let i = 0; i < 10; i++) await tick();
+  assert.equal(
+    stream.isConnected(), false,
+    '发送过多次也必须能在切走时释放连接（否则旧连接永远滞留、后端只能靠心跳探测才发现）',
+  );
+  assert.equal(stream.resolveRefCount(ROOT), 0);
+});
+
+test('1e. ★ 就绪等待必须作用于被请求的根会话（多会话并存时不得落到「最近插入」的那条）', async () => {
+  const ROOT_B = '2107364703088017499';
+  const scheduler = makeManualScheduler();
+  const controllers = new Map<string, ReadableStreamDefaultController<Uint8Array>>();
+  (globalThis as any).fetch = async (url: string) => {
+    const text = String(url);
+    const body = new ReadableStream<Uint8Array>({ start(c) { controllers.set(text, c); } });
+    return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+  };
+  const stream = new SessionEventStream({
+    onEvent: () => {},
+    onConnectionClosed: () => {},
+    scheduleRetry: scheduler.schedule,
+    cancelRetry: scheduler.cancel,
+  });
+  const sendTo = (rootId: string, event: string, data: unknown): void => {
+    for (const [url, ctl] of controllers) {
+      if (url.includes(`/${rootId}/events`)) { ctl.enqueue(encode(frame(event, data))); return; }
+    }
+    throw new Error(`没有该根会话的连接: ${rootId}`);
+  };
+
+  // A 先建并握手；B 后建、永不握手 ⇒「最近插入」的是 B
+  stream.acquire(ROOT);
+  for (let i = 0; i < 30 && controllers.size < 1; i++) await tick();
+  stream.acquire(ROOT_B);
+  for (let i = 0; i < 30 && controllers.size < 2; i++) await tick();
+  assert.equal(controllers.size, 2, '两个根会话应各有一条连接');
+  sendTo(ROOT, 'READY', { rootSessionId: ROOT });
+  for (let i = 0; i < 20 && !stream.isReady(ROOT); i++) await tick();
+  assert.equal(stream.isReady(ROOT), true, 'A 应已握手');
+  assert.equal(stream.isReady(ROOT_B), false, 'B 未握手');
+
+  // ★ A 已就绪 ⇒ 等 A 必须立即成功。若按「最近插入」解析（=B），这里会挂到超时
+  let readyA: boolean | null = null;
+  void stream.waitUntilReady(ROOT, 100).then(v => { readyA = v; });
+  for (let i = 0; i < 5; i++) await tick();
+  assert.equal(
+    readyA, true,
+    'waitUntilReady(A) 必须看 A 自己的连接；落到 B 上会误判超时，进而触发整轮重挂',
+  );
+
+  // ★ 反向：B 未就绪 ⇒ 等 B 必须超时失败，绝不能因为 A 已就绪而误判成功
+  let readyB: boolean | null = null;
+  void stream.waitUntilReady(ROOT_B, 100).then(v => { readyB = v; });
+  for (let i = 0; i < 5; i++) await tick();
+  assert.equal(readyB, null, 'B 未握手：不得立即成功');
+  assert.equal(scheduler.takeByDelay(100), true, '应安排过就绪等待定时器');
+  for (let i = 0; i < 5; i++) await tick();
+  assert.equal(readyB, false, 'B 未握手：超时后必须失败');
+
+  stream.close();
+});
+
 /* ------------------------------------------------------------------ */
 /* 2. 就绪握手                                                         */
 /* ------------------------------------------------------------------ */
@@ -287,12 +380,12 @@ test('2. READY 到达前 waitUntilReady 不 resolve；到达后 resolve', async 
   for (let i = 0; i < 30 && !endpoint.controller; i++) await tick();
 
   let resolved: boolean | null = null;
-  const waiting = stream.waitUntilReady(60_000).then(v => { resolved = v; return v; });
+  const waiting = stream.waitUntilReady(ROOT, 60_000).then(v => { resolved = v; return v; });
 
   // READY 之前：不得 resolve（否则会在「emitter 尚未入桶」时提交发送，首批事件被丢弃）
   for (let i = 0; i < 10; i++) await tick();
   assert.equal(resolved, null, 'READY 到达前 waitUntilReady 不得 resolve');
-  assert.equal(stream.isReady(), false);
+  assert.equal(stream.isReady(ROOT), false);
 
   endpoint.send('READY', { rootSessionId: ROOT });
 
@@ -301,10 +394,10 @@ test('2. READY 到达前 waitUntilReady 不 resolve；到达后 resolve', async 
   for (let i = 0; i < 40 && !ready; i++) { await tick(); ready = resolved === true; }
   assert.equal(ready, true, 'READY 到达后必须 resolve');
   assert.equal(await waiting, true);
-  assert.equal(stream.isReady(), true);
+  assert.equal(stream.isReady(ROOT), true);
 
   // 已就绪后再调：立即 resolve
-  assert.equal(await stream.waitUntilReady(60_000), true, '已就绪时应立即 resolve');
+  assert.equal(await stream.waitUntilReady(ROOT, 60_000), true, '已就绪时应立即 resolve');
   stream.close();
 });
 
@@ -329,8 +422,8 @@ test('3. 心跳超时判定为不健康 → 触发重挂', async () => {
   stream.acquire(ROOT);
   for (let i = 0; i < 30 && !endpoint.controller; i++) await tick();
   endpoint.send('READY', { rootSessionId: ROOT });
-  for (let i = 0; i < 20 && !stream.isReady(); i++) await tick();
-  assert.equal(stream.getHealthState(), 'READY');
+  for (let i = 0; i < 20 && !stream.isReady(ROOT); i++) await tick();
+  assert.equal(stream.getHealthState(ROOT), 'READY');
   const fetchBefore = endpoint.fetchCount;
 
   // 时间推进但一帧未收：心跳探测应判定不健康并重挂
@@ -349,8 +442,8 @@ test('3. 心跳超时判定为不健康 → 触发重挂', async () => {
 
   // 新连接重新握手后恢复健康
   endpoint.send('READY', { rootSessionId: ROOT });
-  for (let i = 0; i < 20 && !stream.isReady(); i++) await tick();
-  assert.equal(stream.getHealthState(), 'READY', '重连握手后应恢复健康');
+  for (let i = 0; i < 20 && !stream.isReady(ROOT); i++) await tick();
+  assert.equal(stream.getHealthState(ROOT), 'READY', '重连握手后应恢复健康');
   stream.close();
 });
 
@@ -379,7 +472,7 @@ test('3b. 重试耗尽 → 暴露「连接失败」，reconnect() 可恢复', as
   }
 
   // ★ 重试耗尽不得静默：必须暴露「连接失败」供界面呈现
-  assert.equal(stream.getHealthState(), 'FAILED', `重试耗尽后必须暴露连接失败，实际=${stream.getHealthState()}`);
+  assert.equal(stream.getHealthState(ROOT), 'FAILED', `重试耗尽后必须暴露连接失败，实际=${stream.getHealthState(ROOT)}`);
   assert.ok(states.includes('FAILED'), '必须通过 onHealthChange 通知界面（供显式呈现与重挂入口）');
 
   // reconnect() 必须能恢复（引用计数保持不变）
@@ -389,7 +482,7 @@ test('3b. 重试耗尽 → 暴露「连接失败」，reconnect() 可恢复', as
   assert.ok(endpoint.fetchCount > fetchBefore, 'reconnect() 必须真的重开连接');
   endpoint.send('READY', { rootSessionId: ROOT });
   for (let i = 0; i < 10; i++) await tick();
-  assert.equal(stream.getHealthState(), 'READY', 'reconnect() 后握手成功应恢复 READY');
+  assert.equal(stream.getHealthState(ROOT), 'READY', 'reconnect() 后握手成功应恢复 READY');
   assert.equal(stream.resolveRefCount(ROOT), 1, 'reconnect 不得破坏引用计数');
   stream.close();
 });

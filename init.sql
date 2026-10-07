@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS team (
     name               VARCHAR(100) COMMENT '团队名称',
     commander_agent_id BIGINT COMMENT '指挥者AgentID(关联agent.id, 必填)',
     agent_ids          VARCHAR(500) COMMENT '成员AgentID列表(逗号分隔, 含指挥者)',
-    description        VARCHAR(500) COMMENT '团队描述',
+    description        VARCHAR(1000) COMMENT '团队描述',
     status             TINYINT DEFAULT 1 COMMENT '状态: 1正常 0删除',
     create_time        DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time        DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'

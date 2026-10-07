@@ -87,6 +87,52 @@ class H2SchemaMigrationTest {
         }
     }
 
+    /**
+     * 旧库的 team.description 只有 500，必须被迁移加宽到 1000。
+     *
+     * <p><b>为什么必须有这条</b>：加宽列不是「缺列」，{@code init.sql} 里改列宽对已有库完全无效
+     * （{@code CREATE TABLE IF NOT EXISTS} 不改已存在列）。少了这个迁移，就是「前端放行 1000 字、
+     * 后端校验也放行 1000 字、最后在 DB 列宽上炸掉」—— 这正是本次要修的缺陷形态。</p>
+     */
+    @Test
+    void legacyNarrowTeamDescriptionColumnIsWidened() throws Exception {
+        EmbeddedDatabase database = new EmbeddedDatabaseBuilder().setType(EmbeddedDatabaseType.H2)
+                .setName(UUID.randomUUID() + ";MODE=MySQL")
+                .addScript("team-legacy-schema.sql").build();
+        try {
+            // 金丝雀：先证明列宽扫描器本身有效，否则下面的 500 可能是「扫不到 → 恒返回 0」的假绿
+            assertEquals(500, columnSize(database, "team", "description"),
+                    "前置条件：旧库的团队描述列宽确实是 500（扫描器有效性对照）");
+
+            new H2SchemaInitializer().h2SchemaBootstrap(database).run(new DefaultApplicationArguments());
+
+            assertEquals(1000, columnSize(database, "team", "description"),
+                    "init.sql 改列宽对已有库无效，必须由迁移显式 ALTER 加宽");
+            assertEquals(1L, countRows(database, "team"), "加宽列不得丢数据");
+
+            // 幂等：第二次启动不得再 ALTER（对已是 1000 的列应当直接跳过）
+            new H2SchemaInitializer().h2SchemaBootstrap(database).run(new DefaultApplicationArguments());
+            assertEquals(1000, columnSize(database, "team", "description"));
+            assertEquals(1L, countRows(database, "team"));
+        } finally {
+            database.shutdown();
+        }
+    }
+
+    /** 列的声明宽度；与 {@code H2SchemaInitializer#columnSize} 同口径。 */
+    private int columnSize(EmbeddedDatabase database, String table, String column) throws Exception {
+        try (Connection connection = database.getConnection();
+             ResultSet columns = connection.getMetaData().getColumns(null, null, "%", "%")) {
+            while (columns.next()) {
+                if (table.equalsIgnoreCase(columns.getString("TABLE_NAME"))
+                        && column.equalsIgnoreCase(columns.getString("COLUMN_NAME"))) {
+                    return columns.getInt("COLUMN_SIZE");
+                }
+            }
+        }
+        return 0;
+    }
+
     /** 列是否存在；与 {@code H2SchemaInitializer#hasColumn} 同口径（逐表扫元数据）。 */
     private boolean hasColumn(EmbeddedDatabase database, String table, String column) throws Exception {
         try (Connection connection = database.getConnection();

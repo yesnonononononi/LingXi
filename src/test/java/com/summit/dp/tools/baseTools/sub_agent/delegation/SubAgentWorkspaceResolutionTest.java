@@ -10,6 +10,7 @@ import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.shared.model.WorkspaceType;
 import com.summit.dp.shared.settings.SettingsProvider;
+import com.summit.dp.shared.skill.SkillRootResolver;
 import com.summit.dp.shared.vo.WorkspaceVO;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.tools.baseTools.arguments.CallSubAgentToolArgument;
@@ -45,7 +46,7 @@ class SubAgentWorkspaceResolutionTest {
     private final WorkspaceConverter workspaceConverter = mock(WorkspaceConverter.class);
 
     private final SubAgentRequestFactory factory = new SubAgentRequestFactory(
-            workspaceService, modelService, settingsProvider, workspaceConverter);
+            workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""));
 
     @BeforeEach
     void stubModel() {

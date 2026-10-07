@@ -19,6 +19,9 @@ const {
   editingMcpId,
   mcpFormError,
   isSubmittingMcp,
+  isConnectingMcp,
+  mcpConnectionResult,
+  mcpConnectionError,
   mcpToast,
   mcpForm,
   mcpHeadersPristine,
@@ -28,6 +31,7 @@ const {
   startEditMcp,
   cancelMcpForm,
   handleSaveMcp,
+  handleConnectMcp,
   handleDeleteMcp,
   handleToggleMcp,
   countHeaders,
@@ -56,16 +60,16 @@ const {
           <p class="text-xs text-gray-500 dark:text-gray-400 dark:text-glow-subtle mt-0.5">
             接入 Model Context Protocol 服务，其工具将在每次执行时注入模型可见的工具集。
           </p>
-        </div>
+                </div>
         <button
           type="button"
-          @click="startAddMcp"
-          class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium cursor-pointer shadow-sm transition"
+          @click="startAddMcp""
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-medium cursor-pointer shadow-sm transition whitespace-nowrap shrink-0"
         >
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
-          <span>新建服务</span>
+          <span class="whitespace-nowrap">新建服务</span>
         </button>
       </div>
 
@@ -456,6 +460,17 @@ const {
         {{ mcpFormError }}
       </div>
 
+      <div v-if="mcpConnectionError" role="alert"
+        class="p-2.5 rounded-xl text-xs bg-red-500/10 border border-red-500/20 text-red-500 dark:text-red-400">
+        {{ mcpConnectionError }}
+      </div>
+      <div v-if="mcpConnectionResult" role="status"
+        class="p-2.5 rounded-xl text-xs bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 space-y-1">
+        <p>连接成功，发现 {{ mcpConnectionResult.toolCount }} 个工具，耗时 {{ mcpConnectionResult.elapsedMillis }} ms。</p>
+        <p v-if="mcpConnectionResult.toolNames.length" class="break-words">{{ mcpConnectionResult.toolNames.join('、') }}</p>
+        <p>测试结果仅针对当前配置，保存并启用后可在后续执行中使用。</p>
+      </div>
+
       <!-- 底部操作按钮 -->
       <div class="flex items-center justify-end gap-2.5 pt-3 border-t" :class="isDark ? 'border-white/10' : 'border-gray-200'">
         <button
@@ -471,12 +486,22 @@ const {
           取消
         </button>
         <button
+          v-if="!editingMcpId"
           type="button"
-          :disabled="isSubmittingMcp"
+          :disabled="isConnectingMcp || isSubmittingMcp"
+          @click="handleConnectMcp"
+          class="px-4 py-1.5 rounded-xl border text-xs font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+          :class="isDark ? 'border-white/15 text-zinc-300 hover:bg-white/5' : 'border-gray-200 text-gray-700 hover:bg-gray-50'"
+        >
+          {{ isConnectingMcp ? '正在连接...' : '测试连接' }}
+        </button>
+        <button
+          type="button"
+          :disabled="isSubmittingMcp || isConnectingMcp"
           @click="handleSaveMcp"
           class="px-4 py-1.5 rounded-xl text-xs font-medium text-white cursor-pointer transition shadow-sm"
           :class="[
-            isSubmittingMcp ? 'bg-cyan-600/50 cursor-not-allowed' : 'bg-cyan-600 hover:bg-cyan-500 shadow-[0_0_15px_rgba(8,145,178,0.4)]'
+            isSubmittingMcp || isConnectingMcp ? 'bg-cyan-600/50 cursor-not-allowed' : 'bg-cyan-600 hover:bg-cyan-500 shadow-[0_0_15px_rgba(8,145,178,0.4)]'
           ]"
         >
           {{ isSubmittingMcp ? '正在保存...' : '保存' }}

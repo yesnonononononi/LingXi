@@ -129,20 +129,23 @@ class ToolCallDecisionTest {
                 provider(executionControl));
         ToolCallConverter converter = new ToolCallConverter(mapper);
         CommandApprovalExecutor commandApprovalExecutor = new CommandApprovalExecutor(toolCallRepository,
-                sseEventPublisher, executionIdentity, transactions,
+                converter, transactions,
                 provider(executionControl), provider(executionRepository),
                 new CommandOutcomeResolver(converter, runtimeEvents),
                 new ApprovalFinalizer(toolCallRepository, converter, modelContextService,
                         runtimeEvents, transactions, provider(executionControl), resumer,
                         coordinator(resumer)),
                 resumer,
-                new ApprovedCommandRestorer(mapper, workspaces, provider(toolRegistry)));
+                new ApprovedCommandRestorer(mapper, workspaces, provider(toolRegistry)),
+                modelContextService,
+                coordinator(resumer));
         service = new ToolCallServiceImpl(toolCallRepository,
                 converter, transactions, commandApprovalExecutor,
                 new ToolCallDecisionService(toolCallRepository, converter, executionIdentity,
                         modelContextService, sseEventPublisher, transactions,
                         provider(executionRepository), resumer),
-                new CardAvailabilityPolicy(provider(executionRepository), provider(activity)));
+                new CardAvailabilityPolicy(provider(executionRepository), provider(activity)),
+                sseEventPublisher, executionIdentity);
         // 恢复协调器异步派发：任务行桩成「已入队可领取」，让命令 T2 真的走到 executionControl.resume。
         when(resumeTaskRepository.enqueue(anyLong(), anyLong(), any())).thenReturn(resumeTask());
         when(resumeTaskRepository.findByExecutionId(3L)).thenReturn(List.of(resumeTask()));

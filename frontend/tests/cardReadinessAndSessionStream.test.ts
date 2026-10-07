@@ -189,7 +189,7 @@ test('B-unit. 会话级流：挂上后把业务事件派发给出口；READY 在
   holder.ctl!.enqueue(encode(frame('READY', { rootSessionId: SID })));
   await tick(); await tick();
   assert.equal(events.length, 0, 'READY 不得当作业务事件派发（会被 Router 当业务事件处理）');
-  assert.equal(stream.isReady(), true, '收到 READY 后才算就绪');
+  assert.equal(stream.isReady(SID), true, '收到 READY 后才算就绪');
 
   holder.ctl!.enqueue(encode(frame('EXECUTION_RESUME', {
     type: 'EXECUTION_RESUME', executionId: 'e1', timestamp: 't',

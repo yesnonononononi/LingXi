@@ -464,3 +464,133 @@ test('8. CONTEXT_UPDATE 前置到达: 助手气泡稳定复用，不分裂空气
   assert.equal(messages.length, 1);
   assert.equal(messages[0].content, '测试前置更新成功');
 });
+
+/**
+ * ★ 实时路径：中间叙述不得留在正文里。
+ *
+ * <p>改造前 `handlePartialText` 把所有轮次的文本都累加进 `content`（正文），
+ * 只有历史对账才把中间叙述分桶进 `aiMessages` —— 于是流式期间正文堆着全部叙述、
+ * 对账后被搬进过程区，用户看到一次跳变。本用例锁住「工具调用即断句」这条判据，
+ * 它与历史路径（aggregateSessionMessages）同源。</p>
+ */
+test('★ 实时路径: 工具调用把已累计叙述移出正文，正文只留最后一段', () => {
+  const messages: ChatMessage[] = [];
+  const reducer = new TurnStreamReducer(messages, { sessionId: 'test-session-narration' });
+
+  reducer.pushUserMessage('看看这个文件');
+  reducer.consume({
+    type: 'EXECUTION_STARTED',
+    executionId: 'exec-n1',
+    timestamp: '2026-10-07T09:00:00Z',
+    metaData: { turnId: 'turn-n1', sessionId: 'test-session-narration' }
+  });
+  const bubble = messages[1];
+
+  // 第 1 轮：叙述 -> 工具调用（叙述应当被移出正文）
+  reducer.consume({
+    type: 'PARTIAL_TEXT',
+    content: '先看一下这个文件的实现。',
+    executionId: 'exec-n1',
+    timestamp: '2026-10-07T09:00:01Z',
+    metaData: { turnId: 'turn-n1' }
+  });
+  reducer.flush();
+  assert.equal(bubble.content, '先看一下这个文件的实现。', '工具调用之前，叙述暂时就是正文');
+
+  reducer.consume({
+    type: 'TOOL_CALL',
+    toolName: AgentToolName.ReadFile,
+    requestId: 'call-n1',
+    args: '{"path":"a.ts"}',
+    resultStatus: 'STARTED',
+    executionId: 'exec-n1',
+    timestamp: '2026-10-07T09:00:02Z',
+    metaData: { turnId: 'turn-n1' }
+  });
+
+  assert.equal(bubble.content, '', '★ 工具调用即断句：已累计叙述必须移出正文');
+  assert.equal(bubble.aiMessages?.length, 1, '★ 被移出的叙述必须落进中间叙述集合');
+  assert.equal(bubble.aiMessages?.[0].text, '先看一下这个文件的实现。');
+
+  reducer.consume({
+    type: 'TOOL_COMPLETED',
+    toolName: AgentToolName.ReadFile,
+    requestId: 'call-n1',
+    output: 'file content',
+    resultStatus: 'COMPLETED',
+    executionId: 'exec-n1',
+    timestamp: '2026-10-07T09:00:03Z',
+    metaData: { turnId: 'turn-n1' }
+  });
+
+  // 第 2 轮：无工具调用的终结叙述 -> 这才是正文
+  reducer.consume({
+    type: 'COMPLETE_TEXT',
+    content: '这个文件做了三件事。',
+    executionId: 'exec-n1',
+    timestamp: '2026-10-07T09:00:04Z',
+    metaData: { turnId: 'turn-n1' }
+  });
+  reducer.consume({
+    type: 'EXECUTION_COMPLETED',
+    executionId: 'exec-n1',
+    timestamp: '2026-10-07T09:00:05Z',
+    metaData: { turnId: 'turn-n1' }
+  });
+
+  assert.equal(bubble.content, '这个文件做了三件事。', '正文只能是最后一个无工具调用的轮次');
+  assert.equal(bubble.aiMessages?.length, 1, '中间叙述集合不得被终结事件改写');
+  assert.ok(
+    !String(bubble.content).includes('先看一下'),
+    '★ 中间叙述绝不能留在正文里（这正是改造前的缺陷）'
+  );
+});
+
+/**
+ * ★ 顺序基准：实时路径的 order 必须把 aiMessages 计入。
+ *
+ * <p>`allocateOrder` 原本只数 thoughtSteps + toolCalls。若漏掉 aiMessages，
+ * 新落的中间文本与紧随其后的工具调用会拿到相同 order，排序退化成依赖插入顺序，
+ * 表现为「文本与工具偶发错位」。本用例断言严格小于，而不是断言「都大于 0」——
+ * 后者在两者相等时依然通过，属无效断言。</p>
+ */
+test('★ 实时路径: 中间叙述与紧随的工具调用必须拿到不同 order（交错可排序）', () => {
+  const messages: ChatMessage[] = [];
+  const reducer = new TurnStreamReducer(messages, { sessionId: 'test-session-order' });
+
+  reducer.pushUserMessage('查一下');
+  reducer.consume({
+    type: 'EXECUTION_STARTED',
+    executionId: 'exec-o1',
+    timestamp: '2026-10-07T09:10:00Z',
+    metaData: { turnId: 'turn-o1', sessionId: 'test-session-order' }
+  });
+  const bubble = messages[1];
+
+  reducer.consume({
+    type: 'COMPLETE_TEXT',
+    content: '我先搜索一下。',
+    executionId: 'exec-o1',
+    timestamp: '2026-10-07T09:10:01Z',
+    metaData: { turnId: 'turn-o1' }
+  });
+  reducer.consume({
+    type: 'TOOL_CALL',
+    toolName: AgentToolName.WebSearch,
+    requestId: 'call-o1',
+    args: '{"q":"x"}',
+    resultStatus: 'STARTED',
+    executionId: 'exec-o1',
+    timestamp: '2026-10-07T09:10:02Z',
+    metaData: { turnId: 'turn-o1' }
+  });
+
+  const textOrder = bubble.aiMessages?.[0]?.order;
+  const toolOrder = bubble.toolCalls?.[0]?.order;
+  assert.notEqual(textOrder, undefined, '中间叙述必须带 order');
+  assert.notEqual(toolOrder, undefined, '工具调用必须带 order');
+  assert.ok(
+    Number(textOrder) < Number(toolOrder),
+    `叙述在前、工具在后，order 必须严格递增（否则排序结果不稳定）：text=${textOrder}, tool=${toolOrder}`
+  );
+});

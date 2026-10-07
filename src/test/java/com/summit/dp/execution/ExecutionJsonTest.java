@@ -4,14 +4,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import com.summit.core.agent.*;
 import com.summit.core.conf.ModelConfig;
+import com.summit.core.conf.SkillConfig;
 import com.summit.core.conversation.message.*;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.shared.config.JsonConfig;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.workspace.application.convert.LingXiWorkspaceSpec;
 import com.summit.sandbox.docker.DockerWorkspaceSpec;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -100,6 +103,25 @@ class ExecutionJsonTest {
         Execution restored = mapper.readValue(mapper.writeValueAsString(execution(null,
                 Map.of(ExecutionAttributes.SESSION_ID, id))), Execution.class);
         assertEquals(id, ExecutionIdentity.sessionId(restored));
+    }
+
+    @Test
+    @DisplayName("skillConfig 随执行快照往返：恢复后的执行仍要知道 Skill 根目录在哪")
+    void skillRootSurvivesSnapshotRoundTrip() throws Exception {
+        Path skillRoot = Path.of(System.getProperty("user.home"), ".lingxi", "skill");
+        Execution original = execution(null, Map.of());
+        original.getAgentRequest().setSkillConfig(new SkillConfig(skillRoot));
+
+        String json = mapper.writeValueAsString(original);
+        Execution restored = mapper.readValue(json, Execution.class);
+
+        // 恢复要重放同一个请求：skillConfig 丢了，恢复后的执行就渲染不出 Skill 提示词，
+        // 且 read_skill 会以「No Skill directory configured」拒绝每一次读取。
+        assertNotNull(restored.getAgentRequest().getSkillConfig(), "skillConfig 不能在快照往返中丢失");
+        assertEquals(skillRoot, restored.getAgentRequest().getSkillConfig().getPath(),
+                "Path 必须原样往返");
+        // Path 若「写出去是对象、读回来是字符串」，这里的二次序列化会与首次不等
+        assertEquals(mapper.readTree(json), mapper.readTree(mapper.writeValueAsString(restored)));
     }
 
     private Execution execution(WorkspaceSpec spec, Map<String, Object> attributes) {

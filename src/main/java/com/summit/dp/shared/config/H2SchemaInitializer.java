@@ -29,6 +29,14 @@ public class H2SchemaInitializer {
     /** classpath 上的 init.sql（构建期由 maven-resources-plugin 从仓库根打入） */
     private static final String INIT_SQL = "init.sql";
 
+    /**
+     * 团队描述列宽上限：与 {@code Team.MAX_DESCRIPTION_LENGTH} 及 init.sql 的列宽三处一致。
+     *
+     * <p>刻意不 import 领域常量 —— 本类在 shared 层，不该反向依赖 team 域；代价是改上限时要三处同步，
+     * 这条注释就是那个提醒。</p>
+     */
+    private static final int TEAM_DESCRIPTION_MAX_LENGTH = 1000;
+
     private static final Pattern CREATE_TABLE =
             Pattern.compile("(?i)create\\s+table\\s+(?:if\\s+not\\s+exists\\s+)?[`\"]?(\\w+)[`\"]?");
 
@@ -53,6 +61,7 @@ public class H2SchemaInitializer {
                 migrateToolCall(connection);
                 migrateStream(connection);
                 migrateV3(connection);
+                migrateV4(connection);
             }
         };
     }
@@ -152,6 +161,27 @@ public class H2SchemaInitializer {
                 "db/migration/V3_record.sql"), StandardCharsets.UTF_8));
     }
 
+    /**
+     * V4：团队描述列宽 500 → 1000。
+     *
+     * <p><b>加宽列不是「缺列」</b>：{@code hasColumn} 那套判定对它无效，而 init.sql 里把
+     * {@code VARCHAR(500)} 改成 {@code VARCHAR(1000)} 对**已有库完全无效** ——
+     * {@code CREATE TABLE IF NOT EXISTS} 不会改已存在列的宽度。所以必须按列宽判定后显式 ALTER；
+     * 只认「存在且低于目标宽度」，因此对已是 1000 的库天然幂等。</p>
+     *
+     * <p>先判存在再判宽度：列整个缺失时本迁移**不介入**（ALTER 会失败，那属于建列的事），
+     * 保持与其它迁移一致的「只补自己的那一项」边界。</p>
+     */
+    private void migrateV4(Connection connection) throws Exception {
+        if (hasColumn(connection, "team", "description")
+                && columnSize(connection, "team", "description") < TEAM_DESCRIPTION_MAX_LENGTH) {
+            ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                    "db/migration/V4_team_description.sql"), StandardCharsets.UTF_8));
+        }
+        ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                "db/migration/V4_record.sql"), StandardCharsets.UTF_8));
+    }
+
     private boolean hasColumn(Connection connection, String table, String column) throws Exception {
         try (ResultSet columns = connection.getMetaData().getColumns(null, null, "%", "%")) {
             while (columns.next()) {
@@ -164,6 +194,18 @@ public class H2SchemaInitializer {
         return false;
     }
 
+    /** 列的声明宽度；列不存在返回 0（调用方须先判存在，别把 0 当成「太窄」）。 */
+    private int columnSize(Connection connection, String table, String column) throws Exception {
+        try (ResultSet columns = connection.getMetaData().getColumns(null, null, "%", "%")) {
+            while (columns.next()) {
+                if (table.equalsIgnoreCase(columns.getString("TABLE_NAME"))
+                        && column.equalsIgnoreCase(columns.getString("COLUMN_NAME"))) {
+                    return columns.getInt("COLUMN_SIZE");
+                }
+            }
+        }
+        return 0;
+    }
     /** 索引存在性按名字判定；H2 与 MySQL 都把索引挂在表上，这里逐表扫描一次。 */
     private boolean hasIndexNamed(Connection connection, String table, String indexName) throws Exception {
         try (ResultSet tables = connection.getMetaData().getTables(null, null, "%", new String[] {"TABLE"})) {

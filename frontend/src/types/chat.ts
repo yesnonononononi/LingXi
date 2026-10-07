@@ -719,6 +719,13 @@ export interface McpVO {
   updateAt?: string;
 }
 
+/** MCP 连接测试结果，对齐后端 McpConnectionVO。 */
+export interface McpConnectionVO {
+  toolCount: number;
+  toolNames: string[];
+  elapsedMillis: number;
+}
+
 /** MCP 新增/更新请求 (对应后端 McpRequest) */
 export interface McpRequest {
   id?: number | string;

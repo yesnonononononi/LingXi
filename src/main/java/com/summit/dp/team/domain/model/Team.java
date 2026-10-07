@@ -17,7 +17,7 @@ public class Team {
     /** 默认成员数量上限，可由 {@code lingxi.team.max-member-size} 覆盖 */
     public static final int MAX_MEMBER_SIZE = 10;
 
-    public static final int MAX_DESCRIPTION_LENGTH = 500;
+    public static final int MAX_DESCRIPTION_LENGTH = 1000;
 
     private final Long id;
     private final Long uid;

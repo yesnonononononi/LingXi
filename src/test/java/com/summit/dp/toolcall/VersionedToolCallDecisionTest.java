@@ -5,9 +5,19 @@ import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
+import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.message.ToolMessageEntity;
+import com.summit.core.runtime.RuntimeEnvironment;
 import com.summit.core.runtime.loop.ExecutionControl;
+import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.runtime.loop.ExecutionRepository;
+import com.summit.core.runtime.workspace.ShellType;
+import com.summit.core.runtime.workspace.Workspace;
+import com.summit.core.tool.ToolDefinition;
+import com.summit.core.tool.ToolExecuteResult;
+import com.summit.core.tool.ToolRegistry;
+import com.summit.core.workspace.WorkspaceManager;
+import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.SessionAttributeRestorer;
@@ -22,6 +32,10 @@ import com.summit.dp.shared.vo.ToolCallVO;
 import com.summit.dp.toolcall.api.dto.ToolCallDecisionCommand;
 import com.summit.dp.toolcall.api.dto.ToolCallDecisionReceipt;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
+import com.summit.dp.toolcall.application.service.impl.ApprovalFinalizer;
+import com.summit.dp.toolcall.application.service.impl.ApprovedCommandRestorer;
+import com.summit.dp.toolcall.application.service.impl.CommandApprovalExecutor;
+import com.summit.dp.toolcall.application.service.impl.CommandOutcomeResolver;
 import com.summit.dp.toolcall.application.service.impl.VersionedToolCallDecisionService;
 import com.summit.dp.toolcall.application.vo.DecisionConflictException;
 import com.summit.dp.toolcall.application.vo.DecisionErrorCode;
@@ -30,6 +44,7 @@ import com.summit.dp.toolcall.domain.model.ToolCallAction;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
+import com.summit.dp.tools.baseTools.terminal.CommandToolDefinitionExecutor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -43,6 +58,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -57,10 +73,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -72,6 +90,9 @@ import static org.mockito.Mockito.when;
  *   <li><b>同 commandId + 不同摘要</b> → {@code COMMAND_CONFLICT}，不静默丢弃后一次意图；</li>
  *   <li><b>另一 commandId 争抢已决互动</b> → {@code DECISION_ALREADY_APPLIED} + 实际最新视图。</li>
  * </ol>
+ *
+ * <p>命令审批（COMMAND）走独立命令链：批准必须真的执行命令（恰好一次），拒绝必须一次都不执行，
+ * 执行中重试必须返回在途回执而不是重新执行或丢掉结论。</p>
  *
  * <p>并发用例用 {@link CyclicBarrier} 让两个决策同时进入同 execution 的门闩，
  * <b>不靠固定 sleep 赌竞态</b>：闸点两侧的线程都到齐才继续，时序是构造出来的而不是等出来的。</p>
@@ -89,6 +110,10 @@ class VersionedToolCallDecisionTest {
     private final ExecutionIdentity executionIdentity = mock(ExecutionIdentity.class);
     private final SseEventPublisher sseEventPublisher = mock(SseEventPublisher.class);
     private final ExecutionResumeCoordinator resumeCoordinator = mock(ExecutionResumeCoordinator.class);
+    private final RuntimeEventPublisher runtimeEvents = mock(RuntimeEventPublisher.class);
+    private final ToolRegistry toolRegistry = mock(ToolRegistry.class);
+    private final WorkspaceManager workspaces = mock(WorkspaceManager.class);
+    private final CommandToolDefinitionExecutor commandExecutor = mock(CommandToolDefinitionExecutor.class);
     private final ObjectMapper mapper = new ObjectMapper();
 
     private VersionedToolCallDecisionService service;
@@ -107,14 +132,30 @@ class VersionedToolCallDecisionTest {
         // 默认无未决槽位：单卡决策应当直接派发恢复。
         when(toolCallRepository.listUnresolvedByExecutionId(EXECUTION_ID)).thenReturn(List.of());
         when(resumeCoordinator.accept(EXECUTION_ID)).thenReturn(ResumeDisposition.QUEUED);
+        // 模拟框架 beginApproval：SUSPENDED → RUNNING。执行中重试的恢复处置据此回答 RUNNING。
+        doAnswer(invocation -> {
+            ((Execution) invocation.getArgument(0)).resumeChecked();
+            return null;
+        }).when(executionControl).beginApproval(any(Execution.class));
 
         resumer = new SuspendedExecutionResumer(toolCallRepository,
                 new SessionAttributeRestorer(mock(SessionRepository.class)), modelContextService,
                 provider(executionControl));
+        ToolCallConverter converter = new ToolCallConverter(mapper);
+        CommandApprovalExecutor commandApprovalExecutor = new CommandApprovalExecutor(toolCallRepository,
+                converter, transactions,
+                provider(executionControl), provider(executionRepository),
+                new CommandOutcomeResolver(converter, runtimeEvents),
+                new ApprovalFinalizer(toolCallRepository, converter, modelContextService,
+                        runtimeEvents, transactions, provider(executionControl), resumer, resumeCoordinator),
+                resumer,
+                new ApprovedCommandRestorer(mapper, workspaces, provider(toolRegistry)),
+                modelContextService,
+                resumeCoordinator);
         service = new VersionedToolCallDecisionService(toolCallRepository,
-                new ToolCallConverter(mapper), modelContextService,
+                converter, modelContextService,
                 sseEventPublisher, transactions, provider(executionRepository),
-                resumer, resumeCoordinator);
+                resumer, resumeCoordinator, commandApprovalExecutor);
     }
 
     // ------------------------------------------------------------------
@@ -125,7 +166,7 @@ class VersionedToolCallDecisionTest {
     @DisplayName("同 commandId 同摘要重试：返回首次实际结论，不重新落库也不重新派发恢复")
     void retryWithSameDigestReturnsFirstOutcomeWithoutReexecution() {
         ToolCall decided = planCall("call-plan");
-        decided.attachDecision("cmd-1", digestOf(command("cmd-1", ToolCallAction.APPROVE, "可以")));
+        decided.attachDecision("cmd-1", buildDigest(command("cmd-1", ToolCallAction.APPROVE, "可以")));
         decided.complete("{\"outcome\":\"APPROVED\",\"answer\":\"可以\"}");
         when(toolCallRepository.findById("call-plan")).thenReturn(Optional.of(decided));
         when(executionRepository.findById(EXECUTION_ID_TEXT))
@@ -145,7 +186,7 @@ class VersionedToolCallDecisionTest {
     @DisplayName("同 commandId 重试：回执的恢复处置按当前事实回答，已进入运行态即 RUNNING")
     void retryReportsCurrentDispositionInsteadOfRequeuing() {
         ToolCall decided = planCall("call-plan");
-        decided.attachDecision("cmd-1", digestOf(command("cmd-1", ToolCallAction.APPROVE, "可以")));
+        decided.attachDecision("cmd-1", buildDigest(command("cmd-1", ToolCallAction.APPROVE, "可以")));
         decided.complete("{\"outcome\":\"APPROVED\"}");
         when(toolCallRepository.findById("call-plan")).thenReturn(Optional.of(decided));
         // 首次决策后 loop 已经跑起来：处置不能说成 QUEUED 让用户以为还要等
@@ -165,7 +206,7 @@ class VersionedToolCallDecisionTest {
     @DisplayName("同 commandId 不同内容：拒绝（COMMAND_CONFLICT），不得把后一次意图当作成功覆盖")
     void sameCommandIdWithDifferentContentIsRejected() {
         ToolCall decided = planCall("call-plan");
-        decided.attachDecision("cmd-1", digestOf(command("cmd-1", ToolCallAction.APPROVE, "可以")));
+        decided.attachDecision("cmd-1", buildDigest(command("cmd-1", ToolCallAction.APPROVE, "可以")));
         decided.complete("{\"outcome\":\"APPROVED\",\"answer\":\"可以\"}");
         when(toolCallRepository.findById("call-plan")).thenReturn(Optional.of(decided));
 
@@ -187,7 +228,7 @@ class VersionedToolCallDecisionTest {
     @DisplayName("另一 commandId 争抢已决互动：DECISION_ALREADY_APPLIED + 实际最新视图，不谎报成功")
     void otherCommandIdContestingDecidedInteractionGetsActualView() {
         ToolCall decided = planCall("call-plan");
-        decided.attachDecision("cmd-1", digestOf(command("cmd-1", ToolCallAction.APPROVE, "可以")));
+        decided.attachDecision("cmd-1", buildDigest(command("cmd-1", ToolCallAction.APPROVE, "可以")));
         decided.complete("{\"outcome\":\"APPROVED\",\"answer\":\"可以\"}");
         when(toolCallRepository.findById("call-plan")).thenReturn(Optional.of(decided));
 
@@ -314,6 +355,140 @@ class VersionedToolCallDecisionTest {
     }
 
     // ------------------------------------------------------------------
+    // COMMAND：批准 / 拒绝 / 执行中重试 / 版本冲突
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("命令批准：命令恰好执行一次，回执确认决策已应用")
+    void commandApproveExecutesExactlyOnce() throws Exception {
+        ToolCall card = commandCall("call-cmd");
+        ToolMessageEntity slot = ToolMessageEntity.builder().id("call-cmd").name("command").text("pending").build();
+        Execution execution = execution(ExecutionState.SUSPENDED, slot);
+        ExecutionControlSignal signal = new ExecutionControlSignal(EXECUTION_ID_TEXT);
+        CountDownLatch completed = new CountDownLatch(1);
+
+        stubCommand(card, execution, signal, ToolExecuteResult.success("done"));
+        doAnswer(invocation -> {
+            if (((ToolCall) invocation.getArgument(0)).isCompleted()) {
+                completed.countDown();
+            }
+            return null;
+        }).when(toolCallRepository).updateById(any());
+
+        ToolCallDecisionReceipt receipt = service.decide(new ToolCallDecisionCommand(CONVERSATION_ID, "call-cmd",
+                "cmd-cmd", 1L, ToolCallAction.APPROVE, null));
+
+        assertTrue(receipt.decisionApplied(), "回执必须确认决策已应用");
+        assertEquals("APPROVED", receipt.decision());
+        assertTrue(completed.await(5, TimeUnit.SECONDS), "命令应被异步执行并收尾");
+        verify(commandExecutor, times(1)).execute(any());
+        assertEquals(ToolCallStatus.COMPLETED, card.getStatus());
+        assertTrue(slot.getText().contains("done"), "工具结果应写回真实命令输出");
+    }
+
+    @Test
+    @DisplayName("命令拒绝：命令一次都不执行，工具结果为「用户拒绝，命令未执行」")
+    void commandRejectNeverExecutesAndWritesRejectText() {
+        ToolCall card = commandCall("call-rej");
+        ToolMessageEntity slot = ToolMessageEntity.builder().id("call-rej").name("command").text("pending").build();
+        Execution execution = execution(ExecutionState.SUSPENDED, slot);
+
+        when(toolCallRepository.findById("call-rej")).thenReturn(Optional.of(card));
+        when(executionRepository.findById(EXECUTION_ID_TEXT)).thenReturn(Optional.of(execution));
+
+        ToolCallDecisionReceipt receipt = service.decide(new ToolCallDecisionCommand(CONVERSATION_ID, "call-rej",
+                "cmd-rej", 1L, ToolCallAction.REJECT, null));
+
+        assertEquals("REJECTED", receipt.decision());
+        assertTrue(receipt.decisionApplied());
+        verify(commandExecutor, never()).execute(any());
+        // 拒绝不得依赖命令环境可重建：restore 需要的工作空间 / 注册表一次都不能碰
+        verifyNoInteractions(workspaces, toolRegistry);
+        assertEquals("用户拒绝，命令未执行", slot.getText());
+        assertEquals(ToolCallStatus.COMPLETED, card.getStatus());
+        assertTrue(card.getRawOutput().contains("REJECTED"));
+    }
+
+    @Test
+    @DisplayName("命令执行中重试同 commandId+摘要：返回已受理的在途回执，不二次执行，结论仍是 APPROVED")
+    void inflightDuplicateReturnsAcceptedReceiptWithoutReexecution() throws Exception {
+        ToolCall card = commandCall("call-cmd");
+        ToolMessageEntity slot = ToolMessageEntity.builder().id("call-cmd").name("command").text("pending").build();
+        Execution execution = execution(ExecutionState.SUSPENDED, slot);
+        ExecutionControlSignal signal = new ExecutionControlSignal(EXECUTION_ID_TEXT);
+
+        when(toolCallRepository.findById("call-cmd")).thenReturn(Optional.of(card));
+        when(executionRepository.findById(EXECUTION_ID_TEXT)).thenReturn(Optional.of(execution));
+        when(executionRepository.register(EXECUTION_ID_TEXT)).thenReturn(signal);
+        doReturn(commandTool()).when(toolRegistry).getTool("command");
+        Workspace approvedWorkspace = workspace();
+        when(workspaces.acquire(any(WorkspaceSpec.class))).thenReturn(approvedWorkspace);
+
+        // 命令卡在执行中：第一次点击已受理，第二次点击在输出落库前到达。
+        CountDownLatch running = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch completed = new CountDownLatch(1);
+        when(commandExecutor.execute(any())).thenAnswer(invocation -> {
+            running.countDown();
+            release.await(10, TimeUnit.SECONDS);
+            return ToolExecuteResult.success("done");
+        });
+        doAnswer(invocation -> {
+            if (((ToolCall) invocation.getArgument(0)).isCompleted()) {
+                completed.countDown();
+            }
+            return null;
+        }).when(toolCallRepository).updateById(any());
+
+        ToolCallDecisionCommand command = new ToolCallDecisionCommand(CONVERSATION_ID, "call-cmd",
+                "cmd-cmd", 1L, ToolCallAction.APPROVE, null);
+        ToolCallDecisionReceipt first = service.decide(command);
+        assertEquals("APPROVED", first.decision());
+        assertTrue(running.await(10, TimeUnit.SECONDS), "命令应已开始执行");
+
+        ToolCallDecisionReceipt duplicate = service.decide(command);
+
+        assertTrue(duplicate.decisionApplied(), "在途重试视同已受理");
+        assertEquals("APPROVED", duplicate.decision(), "输出未落库也不能把批准结论丢成 null");
+        assertEquals(ResumeDisposition.RUNNING, duplicate.resumeDisposition(), "执行中应回答 RUNNING");
+        // 在途期间命令只跑过一次：重试没有触发第二次执行
+        verify(commandExecutor, times(1)).execute(any());
+
+        release.countDown();
+        assertTrue(completed.await(10, TimeUnit.SECONDS), "命令收尾应完成");
+    }
+
+    @Test
+    @DisplayName("命令卡版本过期：STATE_CONFLICT，命令不执行也不落库")
+    void commandStaleVersionDoesNotExecute() {
+        ToolCall card = commandCall("call-cmd");
+        when(toolCallRepository.findById("call-cmd")).thenReturn(Optional.of(card));
+
+        DecisionConflictException failure = assertThrows(DecisionConflictException.class,
+                () -> service.decide(new ToolCallDecisionCommand(CONVERSATION_ID, "call-cmd",
+                        "cmd-cmd", 99L, ToolCallAction.APPROVE, null)));
+
+        assertEquals(DecisionErrorCode.STATE_CONFLICT, failure.errorCode());
+        verify(commandExecutor, never()).execute(any());
+        verify(toolCallRepository, never()).updateById(any());
+    }
+
+    @Test
+    @DisplayName("命令卡不接受 ANSWER：作答对命令无意义，不得静默当成拒绝")
+    void commandAnswerIsRejected() {
+        ToolCall card = commandCall("call-cmd");
+        when(toolCallRepository.findById("call-cmd")).thenReturn(Optional.of(card));
+        when(executionRepository.findById(EXECUTION_ID_TEXT)).thenReturn(Optional.of(execution(ExecutionState.SUSPENDED)));
+
+        assertThrows(com.summit.dp.shared.exception.ClientException.class,
+                () -> service.decide(new ToolCallDecisionCommand(CONVERSATION_ID, "call-cmd",
+                        "cmd-cmd", 1L, ToolCallAction.ANSWER, "随便")));
+
+        verify(commandExecutor, never()).execute(any());
+        verify(toolCallRepository, never()).updateById(any());
+    }
+
+    // ------------------------------------------------------------------
     // 并发决策不丢槽位
     // ------------------------------------------------------------------
 
@@ -362,6 +537,18 @@ class VersionedToolCallDecisionTest {
     // 构桩
     // ------------------------------------------------------------------
 
+    /** 命令批准链所需的最小桩：命令工具、匹配的工作空间、可执行的命令。 */
+    private void stubCommand(ToolCall card, Execution execution, ExecutionControlSignal signal,
+                             ToolExecuteResult result) {
+        when(toolCallRepository.findById(card.getId())).thenReturn(Optional.of(card));
+        when(executionRepository.findById(EXECUTION_ID_TEXT)).thenReturn(Optional.of(execution));
+        when(executionRepository.register(EXECUTION_ID_TEXT)).thenReturn(signal);
+        doReturn(commandTool()).when(toolRegistry).getTool("command");
+        Workspace approvedWorkspace = workspace();
+        when(workspaces.acquire(any(WorkspaceSpec.class))).thenReturn(approvedWorkspace);
+        when(commandExecutor.execute(any())).thenReturn(result);
+    }
+
     private ToolCallDecisionCommand command(String commandId, ToolCallAction action, String text) {
         return new ToolCallDecisionCommand(CONVERSATION_ID, "call-plan", commandId, 1L, action, text);
     }
@@ -370,7 +557,7 @@ class VersionedToolCallDecisionTest {
      * 决策摘要：与生产侧 {@code VersionedToolCallDecisionService#buildDigest} 调同一个
      * {@link CommandDigest}，测试不重写一份算法（重写就会在算法演进时静默假绿）。
      */
-    private String digestOf(ToolCallDecisionCommand command) {
+    private String buildDigest(ToolCallDecisionCommand command) {
         return CommandDigest.build(command.toolCallId(), command.conversationId(), command.expectedVersion(),
                 command.action().wireValue(), command.text());
     }
@@ -389,9 +576,35 @@ class VersionedToolCallDecisionTest {
                 .createdAt(Instant.now()).updatedAt(Instant.now()).build();
     }
 
+    private ToolCall commandCall(String id) {
+        String content = "{\"kind\":\"COMMAND\",\"command\":\"echo hi\",\"workDir\":\"/project\","
+                + "\"shell\":\"BASH\",\"workspaceId\":\"workspace\",\"args\":\"{\\\"command\\\":\\\"echo hi\\\"}\"}";
+        return ToolCall.builder().id(id).conversationId(CONVERSATION_ID).executionId(EXECUTION_ID).toolName("command")
+                .type(ToolCallType.PROMISE).status(ToolCallStatus.PENDING)
+                .title("命令审批").content(content).rawInput("{\"args\":{\"command\":\"echo hi\"}}")
+                .createdAt(Instant.now()).updatedAt(Instant.now()).build();
+    }
+
+    private Workspace workspace() {
+        Workspace workspace = mock(Workspace.class);
+        RuntimeEnvironment environment = mock(RuntimeEnvironment.class);
+        when(workspace.id()).thenReturn("workspace");
+        when(workspace.workDir()).thenReturn("/project");
+        when(workspace.runtimeEnvironment()).thenReturn(environment);
+        when(environment.shellType()).thenReturn(ShellType.BASH);
+        return workspace;
+    }
+
+    private ToolDefinition<CommandToolDefinitionExecutor> commandTool() {
+        return ToolDefinition.<CommandToolDefinitionExecutor>builder()
+                .id("command").name("command").maxOutput(1000).timeout(30L)
+                .executor(commandExecutor).build();
+    }
+
     private Execution execution(ExecutionState state, ToolMessageEntity... messages) {
         return Execution.builder().id(EXECUTION_ID_TEXT).executionState(state)
                 .agentRequest(AgentRequest.builder()
+                        .workspaceSpec(mock(WorkspaceSpec.class))
                         .runtimeParameters(AgentRuntimeParameters.builder()
                                 .attributes(Map.of(ExecutionAttributes.SESSION_ID, String.valueOf(CONVERSATION_ID)))
                                 .build())

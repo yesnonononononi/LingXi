@@ -81,6 +81,10 @@ interface RootConnection {
  * 主视图与子会话抽屉各持一个引用，最后一个使用者释放时才 abort。
  * 键必须是<b>根</b>会话 id：看子会话时另开一条连到同一根桶的流就会双投。</p>
  *
+ * <p><b>「使用前提」与「新增使用者」必须分开</b>：{@link #acquire} 是后者（计数 +1，必须配对
+ * {@link #release}）；发送链路每次要的只是「连接在且就绪」，那是前者，走 {@link #ensure}。
+ * 把前者也写成 {@code acquire} 会让计数随发送次数单调增长，切走会话时永远归不了零、连接释放不掉。</p>
+ *
  * <p><b>就绪握手</b>：连接建立后服务端立即发一帧命名事件 {@code READY}（emitter 先入桶再发帧），
  * 因此「收到 READY」等价于「已订阅成功」。发送前必须 {@link waitUntilReady} 等到它，
  * 否则受理落库的行不会推给任何流。</p>
@@ -104,8 +108,8 @@ export class SessionEventStream {
   /**
    * 声明一个使用者开始关注该根会话；同一根会话的第二个使用者复用同一条连接。
    *
-   * <p>连接已断（refCount 仍 > 0 但无 controller）时立即补挂，不消耗重试预算 ——
-   * 使用者还挂着说明这条连接本来就该在。</p>
+   * <p>只用于<b>真正的使用者</b>（主视图 / 子会话抽屉的挂载），调用方必须配对 {@link #release}。
+   * 只是「发送前确认连接在」的场景走 {@link #ensure}，否则计数会随发送次数增长。</p>
    */
   public acquire(rootSessionId: string | null | undefined): void {
     if (!rootSessionId) return;
@@ -114,9 +118,7 @@ export class SessionEventStream {
     const existing = this.connections.get(key);
     if (existing) {
       existing.refCount += 1;
-      if (!existing.controller && existing.retryTimer === null && existing.state !== 'FAILED') {
-        this.open(existing);
-      }
+      this.revive(existing);
       return;
     }
 
@@ -135,6 +137,24 @@ export class SessionEventStream {
     };
     this.connections.set(key, connection);
     this.open(connection);
+  }
+
+  /**
+   * 确保该根会话有活跃连接，但<b>不增加引用计数</b>。
+   *
+   * <p>发送链路的前置是「连接在且就绪」，那是<b>使用前提</b>而非新增使用者：每次发送都
+   * {@link #acquire} 会让计数只增不减，切走会话时归不了零，旧连接永远滞留（后端 total 只增）。</p>
+   */
+  public ensure(rootSessionId: string | null | undefined): void {
+    if (!rootSessionId) return;
+    const connection = this.connections.get(String(rootSessionId));
+    if (!connection) {
+      // 一条连接都没有，说明调用方没按约定先 acquire —— 此时按 acquire 记账，而不是
+      // 造一条「有连接、无使用者」的孤儿（那种连接没人 release，反而更糟）。
+      this.acquire(rootSessionId);
+      return;
+    }
+    this.revive(connection);
   }
 
   /**
@@ -159,21 +179,17 @@ export class SessionEventStream {
     this.setState(connection, 'IDLE');
   }
 
-  /** 最近一次 acquire 的、仍存活的根会话 id（发送链路据此确认「发的就是这个连接的会话」）。 */
-  public currentRootId(): string | null {
-    let latest: string | null = null;
-    this.connections.forEach((_connection, key) => { latest = key; });
-    return latest;
-  }
-
   /**
-   * 等到「已订阅且就绪」（收到 READY）。
+   * 等到<b>指定根会话</b>「已订阅且就绪」（收到 READY）。
    *
    * <p>发送前必须 await 它：READY 之前提交，受理落库那批事件会推给空桶被丢弃。
    * 超时返回 false，由调用方决定重挂后重试还是显式报错。</p>
+   *
+   * <p>必须显式传根会话 id：多会话并存时没有「当前连接」这个概念，
+   * 按「最近一次 acquire 的那条」解析会等到别的会话上（随后误判超时并触发重挂）。</p>
    */
-  public async waitUntilReady(timeoutMs: number): Promise<boolean> {
-    const connection = this.resolveCurrentConnection();
+  public async waitUntilReady(rootSessionId: string, timeoutMs: number): Promise<boolean> {
+    const connection = this.resolveConnection(rootSessionId);
     if (!connection) return false;
     if (connection.ready) return true;
     if (connection.state === 'FAILED') return false;
@@ -228,14 +244,14 @@ export class SessionEventStream {
     return connected;
   }
 
-  /** 当前连接是否已收到 READY（观测 / 测试用）。 */
-  public isReady(): boolean {
-    return this.resolveCurrentConnection()?.ready === true;
+  /** 指定根会话的连接是否已收到 READY（观测 / 测试用）。 */
+  public isReady(rootSessionId: string): boolean {
+    return this.resolveConnection(rootSessionId)?.ready === true;
   }
 
-  /** 当前连接健康状态（观测 / 测试用）。 */
-  public getHealthState(): StreamHealthState {
-    return this.resolveCurrentConnection()?.state ?? 'IDLE';
+  /** 指定根会话的连接健康状态（观测 / 测试用）。 */
+  public getHealthState(rootSessionId: string): StreamHealthState {
+    return this.resolveConnection(rootSessionId)?.state ?? 'IDLE';
   }
 
   /** 某根会话的引用计数（测试用：验证共享连接与「一个卸载不 abort」）。 */
@@ -247,9 +263,25 @@ export class SessionEventStream {
   /* 内部实现                                                          */
   /* ---------------------------------------------------------------- */
 
-  private resolveCurrentConnection(): RootConnection | null {
-    const key = this.currentRootId();
-    return key ? this.connections.get(key) ?? null : null;
+  /**
+   * 按根会话取连接。
+   *
+   * <p>必须按调用方给的键取，不能退化成「取最近一次 acquire 的那条」：Map 的插入顺序与
+   * 本次请求的会话无关，那样就绪等待会落到别的会话上。</p>
+   */
+  private resolveConnection(rootSessionId: string): RootConnection | null {
+    return this.connections.get(String(rootSessionId)) ?? null;
+  }
+
+  /**
+   * 连接已断（refCount 仍 > 0 但无 controller）时立即补挂，不消耗重试预算 ——
+   * 使用者还挂着说明这条连接本来就该在。
+   */
+  private revive(connection: RootConnection): void {
+    if (connection.controller) return;
+    if (connection.retryTimer !== null) return;
+    if (connection.state === 'FAILED') return;
+    this.open(connection);
   }
 
   private open(connection: RootConnection): void {

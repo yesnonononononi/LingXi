@@ -67,6 +67,7 @@ public class VersionedToolCallDecisionService {
     private final ObjectProvider<ExecutionRepository> executionRepository;
     private final SuspendedExecutionResumer resumer;
     private final ExecutionResumeCoordinator resumeCoordinator;
+    private final CommandApprovalExecutor commandApprovalExecutor;
 
     /**
      * 受理一次 v2 决策。
@@ -153,8 +154,11 @@ public class VersionedToolCallDecisionService {
         ToolCallKind kind = converter.resolveKind(toolCall.getContent());
         throwIf(kind == null, new DecisionConflictException(DecisionErrorCode.INTERACTION_NOT_READY,
                 "互动内容不可识别，请刷新后重试"));
-        throwIf(kind == ToolCallKind.COMMAND, new DecisionConflictException(DecisionErrorCode.INTERACTION_NOT_READY,
-                "命令审批需经命令决策入口提交"));
+
+        // 命令审批有外部副作用，走独立命令链（T1 提交先于副作用）；PLAN/CHOICE 走无副作用单事务。
+        if (kind == ToolCallKind.COMMAND) {
+            return decideCommand(toolCall, command, digest);
+        }
 
         ToolCallOutcome outcome = resolveOutcome(kind, command.action());
         boolean affirmative = outcome == ToolCallOutcome.APPROVED || outcome == ToolCallOutcome.ANSWERED;
@@ -187,6 +191,26 @@ public class VersionedToolCallDecisionService {
 
         ToolCall latest = toolCallRepository.findById(toolCall.getId()).orElse(toolCall);
         return receipt(command.commandId(), latest, outcome, disposition[0]);
+    }
+
+    /**
+     * 命令审批：只接受批准 / 拒绝，转交命令链编排。
+     *
+     * <p><b>为什么不复用通用分支</b>：通用分支只把结论写回槽位、<b>不执行命令</b>，
+     * 会把「已批准」落成一个永远不会执行的假象——用户以为命令跑了，其实没有。
+     * 命令批准必须进 T1 提交 + 异步执行 + T2 落结果这条链。</p>
+     *
+     * <p>{@code ANSWER} 对命令卡无意义：放行会把「作答」静默当成「拒绝」，
+     * 因此在这里显式拒绝，而不是靠布尔推导。</p>
+     */
+    private ToolCallDecisionReceipt decideCommand(ToolCall toolCall, ToolCallDecisionCommand command, String digest) {
+        throwIf(command.action() == ToolCallAction.ANSWER, "命令审批只接受批准或拒绝");
+        boolean approved = command.action() == ToolCallAction.APPROVE;
+        CommandApprovalExecutor.CommandApprovalResult result =
+                commandApprovalExecutor.decide(toolCall, approved, command.commandId(), digest, null);
+        ToolCall latest = toolCallRepository.findById(toolCall.getId()).orElse(toolCall);
+        return new ToolCallDecisionReceipt(command.commandId(), true, result.outcome().name(),
+                converter.toVO(latest), result.disposition());
     }
 
     /**

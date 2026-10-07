@@ -6,6 +6,7 @@ import com.summit.dp.mcp.api.request.McpRequest;
 import com.summit.dp.mcp.application.command.McpCommand;
 import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.mcp.application.vo.McpVO;
+import com.summit.dp.mcp.application.vo.McpConnectionVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -41,6 +42,11 @@ public class McpController {
     @PostMapping("/add")
     public Result<Void> add(@RequestBody McpRequest request) {
         return service.add(toCommand(request));
+    }
+
+    @PostMapping("/connect")
+    public Result<McpConnectionVO> connect(@RequestBody McpRequest request) {
+        return service.connect(toCommand(request));
     }
 
     @PostMapping("/update")

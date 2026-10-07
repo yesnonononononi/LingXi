@@ -1,6 +1,8 @@
 package com.summit.dp.toolcall.application.service.impl;
 
+import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.domain.lifecycle.ExecutionCoordination;
+import com.summit.dp.shared.event.SseEventPublisher;
 import com.summit.dp.toolcall.application.service.CardAvailabilityPolicy;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.shared.exception.ClientException;
@@ -37,6 +39,10 @@ public class ToolCallServiceImpl implements ToolCallService {
     private final ToolCallDecisionService decisionService;
 
     private final CardAvailabilityPolicy cardAvailability;
+
+    /** v1 请求级 SSE：命令审批在提交前先建流，恢复期事件与命令输出经它下发。 */
+    private final SseEventPublisher sseEventPublisher;
+    private final ExecutionIdentity executionIdentity;
 
     // ------------------------------------------------------------------
     // 读侧
@@ -83,7 +89,17 @@ public class ToolCallServiceImpl implements ToolCallService {
             throwIf(cardAvailability.isExecutionActive(String.valueOf(toolCall.getExecutionId())),
                     "执行仍在运行或退出，请等待后再提交");
             if (kind == ToolCallKind.COMMAND) {
-                return commandApprovalExecutor.decide(toolCall, approved, text);
+                // v1 请求级 SSE：先建流再提交，恢复期事件才接得住；收尾由回调关流。
+                SseEmitter emitter = sseEventPublisher.connect(
+                        executionIdentity.resolveRootSessionId(toolCall.getConversationId()));
+                try {
+                    commandApprovalExecutor.decide(toolCall, approved, null, null,
+                            () -> sseEventPublisher.finish(emitter));
+                } catch (RuntimeException failure) {
+                    emitter.completeWithError(failure);
+                    throw failure;
+                }
+                return emitter;
             }
             throwIf(kind != ToolCallKind.PLAN && kind != ToolCallKind.CHOICE,
                     "该工具调用无需人工审批，子代理结果会自动回填");

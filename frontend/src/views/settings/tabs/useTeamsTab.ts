@@ -4,6 +4,14 @@ import type { TeamVO, AgentVO } from '../../../types/chat';
 import { isOk } from '../../../utils/api';
 import { useConfirm } from '../../../composables/useConfirm';
 
+/**
+ * 团队描述上限。**必须与后端 `Team.MAX_DESCRIPTION_LENGTH` 及 `init.sql` 里
+ * `team.description` 的列宽一致** —— 这三处曾各写一份，前端这份漂成了 500：
+ * 前端先拦、拦不住时后端也放行（后端本就是 1000），最后在 DB 列宽上炸掉。
+ * 改这里时三处一起改。
+ */
+const TEAM_DESCRIPTION_MAX_LENGTH = 1000;
+
 export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
   const teamsList = ref<TeamVO[]>([]);
   const isTeamsLoading = ref(false);
@@ -127,8 +135,9 @@ export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
       teamFormError.value = '团队名称长度不能超过 100 个字符';
       return;
     }
-    if (teamForm.value.description && teamForm.value.description.trim().length > 500) {
-      teamFormError.value = '团队描述长度不能超过 500 个字符';
+    if (teamForm.value.description
+      && teamForm.value.description.trim().length > TEAM_DESCRIPTION_MAX_LENGTH) {
+      teamFormError.value = `团队描述长度不能超过 ${TEAM_DESCRIPTION_MAX_LENGTH} 个字符`;
       return;
     }
     if (teamForm.value.agentIds.length === 0) {

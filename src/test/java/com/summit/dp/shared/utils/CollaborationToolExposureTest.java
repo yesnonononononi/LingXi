@@ -17,13 +17,16 @@ import com.summit.dp.shared.config.workflow.CommandApprovalPolicy;
 import com.summit.dp.shared.context.ExecutionContext;
 import com.summit.dp.shared.model.ToolCatalog;
 import com.summit.dp.shared.settings.SettingsProvider;
+import com.summit.dp.shared.skill.SkillRootResolver;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -178,6 +181,45 @@ class CollaborationToolExposureTest {
         assertTrue(tools.contains(ToolCatalog.SEND_MAIL_TO_AGENT));
     }
 
+    // --- Skill：提示词说了，工具就必须给 ---------------------------------------------------
+
+    @TempDir
+    Path skillDir;
+
+    @Test
+    @DisplayName("Skill 根目录可用：补 read_skill 并下发 skillConfig")
+    void skillRootAddsReadSkillAndConfig() {
+        AgentRequest request = request(null, null, List.of("read_file"), REGISTERED, false,
+                AgentAccessMode.IN_WORKSPACE, Set.of(), new SkillRootResolver(skillDir.toString()));
+
+        assertEquals(List.of("read_file", ToolCatalog.READ_SKILL), request.getToolList(),
+                "框架渲染的 Skill 提示词只给名称与入口路径，读正文全靠 read_skill；名单即授权，必须在这里补");
+        assertNotNull(request.getSkillConfig(), "必须下发 skillConfig，否则框架压根不会渲染 Skill 提示词");
+        assertEquals(skillDir.toAbsolutePath().normalize(), request.getSkillConfig().getPath(),
+                "skillConfig 必须指向配置的根目录，框架按它递归找 SKILL.md");
+    }
+
+    @Test
+    @DisplayName("Skill 可用 + 只读档位：read_skill 必须通过只读滤网（登记为 READ_ONLY）")
+    void skillRootToolSurvivesTheReadOnlyFilter() {
+        AgentRequest request = request(null, null, List.of("read_file", "edit_file"), REGISTERED, false,
+                AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of("read_file", ToolCatalog.READ_SKILL),
+                new SkillRootResolver(skillDir.toString()));
+
+        assertEquals(List.of("read_file", ToolCatalog.READ_SKILL), request.getToolList(),
+                "补入位置必须在只读滤网之前：滤网只剔写工具，读技能是只读动作，不该被剔掉");
+    }
+
+    @Test
+    @DisplayName("Skill 关闭（目录不可用）：不补 read_skill、不下发 skillConfig")
+    void absentSkillRootAddsNothing() {
+        AgentRequest request = request(null, null, List.of("read_file"));
+
+        assertEquals(List.of("read_file"), request.getToolList(),
+                "目录不可用时不下发：框架把「配了目录却不存在」判为错误，不能凭空造一个");
+        assertNull(request.getSkillConfig());
+    }
+
     // --- helpers -------------------------------------------------------------------------
 
     private AgentRequest request(Long agentId, Long teamId, List<String> configuredTools) {
@@ -193,6 +235,14 @@ class CollaborationToolExposureTest {
     private AgentRequest request(Long agentId, Long teamId, List<String> configuredTools,
                                  Set<String> registered, boolean withMcp,
                                  AgentAccessMode mode, Set<String> readOnlyNames) {
+        return request(agentId, teamId, configuredTools, registered, withMcp, mode, readOnlyNames,
+                new SkillRootResolver(""));
+    }
+
+    private AgentRequest request(Long agentId, Long teamId, List<String> configuredTools,
+                                 Set<String> registered, boolean withMcp,
+                                 AgentAccessMode mode, Set<String> readOnlyNames,
+                                 SkillRootResolver skillRootResolver) {
         ToolCatalog catalog = mock(ToolCatalog.class);
         when(catalog.names()).thenReturn(registered);
         when(catalog.readOnlyNames()).thenReturn(readOnlyNames);
@@ -205,7 +255,7 @@ class CollaborationToolExposureTest {
                 mock(SettingsProvider.class), catalog, mock(ConversationTranscriptService.class),
                 mock(ModelContextService.class),                 mock(ExecutionIdentity.class),
                 mock(com.summit.dp.turn.application.service.ChatTurnService.class),
-                mock(AgentService.class), mock(TeamService.class), mcpService);
+                mock(AgentService.class), mock(TeamService.class), mcpService, skillRootResolver);
 
         // executionId 必须非空：buildRequest 不再自造身份，缺身份即视为「prepare 没跑」并直接报错。
         ExecutionContext executionContext = ExecutionContext.root(500L, "2105000000000000001", null, null,

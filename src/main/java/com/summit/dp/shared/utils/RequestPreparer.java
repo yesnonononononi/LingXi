@@ -21,7 +21,9 @@ import com.summit.dp.shared.model.ToolCatalog;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.core.conf.McpConfig;
 import com.summit.core.conf.ModelConfig;
+import com.summit.core.conf.SkillConfig;
 import com.summit.dp.shared.settings.SettingsProvider;
+import com.summit.dp.shared.skill.SkillRootResolver;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
@@ -50,6 +52,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.*;
 
 /**
@@ -83,6 +86,8 @@ public class RequestPreparer {
     private final AgentService agentService;
     private final TeamService teamService;
     private final McpService mcpService;
+    /** Skill 根目录（框架按它渲染 Skill 提示词、read_skill 也按它做越界校验）。 */
+    private final SkillRootResolver skillRootResolver;
 
     @Value("${lingxi.system-prompt:}")
     private String SYSTEM_PROMPT;
@@ -333,15 +338,20 @@ public class RequestPreparer {
         // 无启用服务时为 null，框架侧按「无 MCP」处理，仍走 McpToolScope.EMPTY。
         McpConfig mcpConfig = mcpService.currentConfig();
 
+        // Skill 根目录在启动时就绪（见 SkillRootResolver）；目录不可用时为 null，
+        // 框架据此跳过 Skill 提示词段，read_skill 也不再下发。
+        Path skillRoot = skillRootResolver.root();
+
         return AgentRequest
                 .builder()
                 .executionId(executionId)
                 .messages(context.messageList())
                 .systemPrompt(mergeSystemPrompt(agentPrompt))
                 .workspaceSpec(context.workspace())
-                .toolList(toolListOf(toolList, context, mcpConfig))
+                .toolList(toolListOf(toolList, context, mcpConfig, skillRoot))
                 .modelConfig(context.modelConfig())
                 .mcpConfig(mcpConfig)
+                .skillConfig(skillRoot == null ? null : new SkillConfig(skillRoot))
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(attributes(context.executionContext(), context))
                         .eventMetaData(executionEventMetadata(context))
@@ -417,10 +427,15 @@ public class RequestPreparer {
      * 按服务名看清有哪些工具（不含 schema），再用检索入口取回 schema，取回后框架才把该工具放进
      * 下一轮可见清单（披露账本在框架侧 {@code McpToolScope}）。</p>
      *
-     * <p>顺序固定为「收敛原清单 → 补两级入口与 requirePlan → 只读过滤 → 身份剔除」；只读滤网必须
-     * 最后执行，否则 requirePlan 追加的工具会绕过滤网。</p>
+     * <p>Skill 正文同理兜底 {@link ToolCatalog#READ_SKILL}：框架渲染的「## Skill Prompt」只给出
+     * 名称、描述与入口路径，读正文与引用资源全靠这个工具；名单即授权，不补就等于提示词里说了
+     * 一件模型做不到的事。</p>
+     *
+     * <p>顺序固定为「收敛原清单 → 补 MCP 两级入口与 requirePlan 与 read_skill → 只读过滤 → 身份剔除」；
+     * 只读滤网必须最后执行，否则 requirePlan 追加的工具会绕过滤网。补进去的 {@code read_skill}
+     * 自带 {@code ConcurrentPolicy.READ_ONLY}，能通过只读滤网。</p>
      */
-    private List<String> toolListOf(List<String> tools, RuntimeContext context, McpConfig mcpConfig) {
+    private List<String> toolListOf(List<String> tools, RuntimeContext context, McpConfig mcpConfig, Path skillRoot) {
         final boolean readOnly = !context.accessMode().allowsWriteTools();
 
         List<String> result = new ArrayList<>(tools == null ? List.of() : tools);
@@ -433,6 +448,10 @@ public class RequestPreparer {
             if (!result.contains(ToolCatalog.SEARCH_TOOL)) {
                 result.add(ToolCatalog.SEARCH_TOOL);
             }
+        }
+
+        if (skillRoot != null && !result.contains(ToolCatalog.READ_SKILL)) {
+            result.add(ToolCatalog.READ_SKILL);
         }
 
         if (context.requirePlan() && !result.contains(ToolCatalog.CREATE_PLAN)) {

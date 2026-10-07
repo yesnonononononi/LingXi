@@ -30,18 +30,22 @@ public class McpValidator {
 
     /** @return null 表示校验通过，否则为错误提示 */
     public String validateForCreate(McpCommand command) {
+        String error = validateForConnection(command);
+        if (error != null) return error;
+        return checkNameUnique(command.getName(), null);
+    }
+
+    /** 测试配置不落库，因此不执行服务名唯一性校验。 */
+    public String validateForConnection(McpCommand command) {
         if (command == null) return "新增参数不能为空";
         if (command.getName() == null || command.getName().isBlank()) return "服务名称不能为空";
 
         Mcp.Transport transport = command.getTransport() == null
                 ? Mcp.Transport.STREAMABLE_HTTP : transportOrNull(command.getTransport());
-        String error = firstError(
+        return firstError(
                 transport == null ? TRANSPORT_HINT : null,
                 requiredByTransport(command, transport),
                 checkShape(command));
-        if (error != null) return error;
-
-        return checkNameUnique(command.getName(), null);
     }
 
     /** @return null 表示校验通过，否则为错误提示 */

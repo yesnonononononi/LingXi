@@ -13,6 +13,7 @@ import com.summit.dp.shared.config.workflow.CommandApprovalPolicy;
 import com.summit.dp.shared.context.ExecutionContext;
 import com.summit.dp.shared.model.ToolCatalog;
 import com.summit.dp.shared.settings.SettingsProvider;
+import com.summit.dp.shared.skill.SkillRootResolver;
 import com.summit.dp.shared.vo.SessionVO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -78,7 +79,7 @@ class RequestPreparerExecutionIdentityTest {
     private final RequestPreparer preparer = new RequestPreparer(sessionService, sessionRepository,
             workspaceService, modelService, workspaceConverter, settingsProvider, toolCatalog,
             transcriptService, modelContextService, executionIdentity,
-            chatTurnService, agentService, teamService, mcpService);
+            chatTurnService, agentService, teamService, mcpService, new SkillRootResolver(""));
 
     @BeforeEach
     void stubHappyPath() {

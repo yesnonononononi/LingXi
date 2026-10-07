@@ -291,8 +291,11 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     const rootId = session && String(session.id) === String(sessionId)
       ? resolveRootSessionId(session) ?? String(sessionId)
       : String(sessionId);
-    sessionEventStream.acquire(rootId);
-    return sessionEventStream.waitUntilReady(SUBSCRIBE_READY_TIMEOUT_MS);
+    // 「发送前确保连接在」是使用前提、不是新增使用者：走 ensure（不计数）。
+    // 这里若用 acquire，引用计数会随发送次数单调增长，切走会话时归不了零 → 连接永远释放不掉。
+    sessionEventStream.ensure(rootId);
+    // 就绪等待必须带上根会话 id：多会话并存时没有「当前连接」，按最近插入的那条解析会等错连接。
+    return sessionEventStream.waitUntilReady(rootId, SUBSCRIBE_READY_TIMEOUT_MS);
   };
 
   /** 连接失败时的重挂入口（界面显式按钮）。 */

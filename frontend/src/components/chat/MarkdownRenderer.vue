@@ -9,11 +9,19 @@ const props = withDefaults(
     content?: string;
     isDark?: boolean;
     isThinking?: boolean;
+    /**
+     * 弱化档：中间叙述（过程文本）用它，字号与颜色都降一级，与正文明确分层。
+     *
+     * <p><b>必须由本组件承担</b>：{@code .markdown-body} 的 {@code font-size} 是绝对值，
+     * 父级加 {@code text-xs} 压不下去；颜色虽可继承，但本容器默认写死了正文色。</p>
+     */
+    muted?: boolean;
   }>(),
   {
     content: '',
     isDark: undefined,
-    isThinking: false
+    isThinking: false,
+    muted: false
   }
 );
 
@@ -58,13 +66,15 @@ const handleContainerClick = async (event: MouseEvent) => {
     class="markdown-container markdown-stream-flow select-text"
     :class="[
       isDark ? 'text-zinc-100' : 'text-gray-800',
-      { 'is-streaming': props.isThinking }
+      { 'is-streaming': props.isThinking },
+      props.muted && (isDark ? 'text-zinc-400' : 'text-slate-600')
     ]"
     @click="handleContainerClick"
   >
     <div
       v-if="renderedHtml"
       class="markdown-body"
+      :class="{ 'markdown-body--muted': props.muted }"
       v-html="renderedHtml"
     ></div>
     

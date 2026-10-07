@@ -76,7 +76,7 @@
           </svg>
         </button>
 
-        <!-- 展开后展示：思维链轨迹、中间推理过程、以及所有工具调用 -->
+        <!-- 中间叙述与思考、工具共用折叠边界，正文在过程区外展示。 -->
         <CollapseTransition>
           <div v-if="isProcessExpanded">
             <div :class="['mt-2 pl-3 space-y-2.5', processTimeline.length > 0 ? (isDark ? 'border-l border-white/10' : 'border-l border-gray-200') : '']">
@@ -136,17 +136,20 @@
               </CollapseTransition>
             </div>
 
-            <!-- 2. 中间轮次 aimessage 过程文本块 -->
+            <!-- 中间叙述只在展开过程时展示，避免与正文混淆。 -->
             <div
               v-else-if="item.type === 'intermediate_ai' && item.message"
-              class="text-xs space-y-1"
+              class="text-xs"
             >
               <div
                 v-if="item.message.text"
-                class="font-medium text-[11.5px] whitespace-pre-wrap leading-relaxed pl-4.5 select-text"
-                :class="isDark ? 'text-zinc-100 text-glow-white' : 'text-gray-800'"
+                class="pl-4.5 select-text"
               >
-                {{ item.message.text }}
+                <MarkdownRenderer
+                  :content="item.message.text"
+                  :is-dark="isDark"
+                  :muted="true"
+                />
               </div>
             </div>
 
@@ -700,11 +703,6 @@ watch(
   { flush: 'post' }
 );
 
-// 中间过程文本块 (中间轮次 text 像 thinking 那样折叠)
-const expandedIntermediateMsgIds = ref<Record<string, boolean>>({});
-
-
-
 // 计时器（按秒计算）
 const now = ref(Date.now());
 let timerInterval: number | undefined;
@@ -736,7 +734,6 @@ watch(
       isProcessExpanded.value = false;
       expandedToolIds.value = {};
       expandedThoughtStepIds.value = {};
-      expandedIntermediateMsgIds.value = {};
     }
   },
   { immediate: true }
@@ -764,7 +761,7 @@ const intermediateAiMessages = computed(() => {
   return out;
 });
 
-// 是否存在需要展示折叠的过程内容（思考步骤、思考中状态、工具调用、或中间过程文本）
+// 只有中间叙述时也需要折叠入口，否则过程文本无法展开。
 const hasProcessContent = computed(() => {
   return !!(
     props.message.thoughtSteps?.length ||
@@ -1101,6 +1098,19 @@ const isMessageCompleted = computed(() => {
   }
   // 5. 必须有回复内容、工具调用或报错信息之一
   return !!(props.message.content || props.message.toolCalls?.length);
+});
+
+/**
+ * 终结时收起整轮过程。
+ *
+ * <p>只在 false→true 这一次跳变上收起：若持续 watch，用户手动展开后会被立刻重新收起，
+ * 等于「终结之后再也没法展开」。历史加载的气泡一开始就是 completed，不触发跳变，
+ * 其展开态由 {@link isProcessExpanded} 的初值决定。</p>
+ */
+watch(isMessageCompleted, (completed, wasCompleted) => {
+  if (completed && !wasCompleted) {
+    isProcessExpanded.value = false;
+  }
 });
 
  

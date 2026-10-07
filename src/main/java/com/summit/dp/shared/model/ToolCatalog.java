@@ -3,6 +3,7 @@ package com.summit.dp.shared.model;
 
 import com.summit.kernel.tools.mcp.ListMcpToolsExecutor;
 import com.summit.kernel.tools.search.SearchToolExecutor;
+import com.summit.kernel.tools.skill.ReadSkillTool;
 
 import java.util.List;
 import java.util.Set;
@@ -50,6 +51,13 @@ public interface ToolCatalog {
 
     /** MCP 工具清单工具名，与 {@link #SEARCH_TOOL} 同属渐进披露的两级入口，同样转发框架常量。 */
     String LIST_MCP_TOOLS = ListMcpToolsExecutor.NAME;
+
+    /**
+     * Skill 正文读取工具名。实现归框架侧（{@code harness-kernel-tools} 的 {@link ReadSkillTool}），
+     * 这里同样转发常量而非另写字面量：该名字同时被框架渲染的 Skill 提示词与工具注册表引用，
+     * 各写一遍迟早漂移。
+     */
+    String READ_SKILL = ReadSkillTool.NAME;
 
     /** 当前已注册的全部工具名 */
     Set<String> names();

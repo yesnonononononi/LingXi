@@ -22,6 +22,7 @@ import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.settings.SettingsProvider;
+import com.summit.dp.shared.skill.SkillRootResolver;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.tools.baseTools.arguments.CallSubAgentToolArgument;
 import com.summit.dp.tools.baseTools.sub_agent.delegation.SubAgentRequestFactory;
@@ -87,7 +88,8 @@ class CallSubAgentSessionReuseTest {
                         .baseUrl("https://example.invalid").apiKey("k").modelName("m").build());
 
         this.subSessionResolver = new SubSessionResolver(sessionRepository, modelContextService);
-        SubAgentRequestFactory requestFactory = new SubAgentRequestFactory(null, modelService, settingsProvider, null);
+        SubAgentRequestFactory requestFactory = new SubAgentRequestFactory(null, modelService, settingsProvider, null,
+                new SkillRootResolver(""));
         DelegationSuspensionCard suspensionCard = new DelegationSuspensionCard(registrar,
                 new ToolCallConverter(new ObjectMapper()));
         com.summit.dp.tools.baseTools.sub_agent.delegation.DelegationRecorder recorder =

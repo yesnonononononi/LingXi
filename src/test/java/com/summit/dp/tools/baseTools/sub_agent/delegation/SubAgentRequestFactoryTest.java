@@ -11,19 +11,23 @@ import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.shared.model.ToolCatalog;
 import com.summit.dp.shared.settings.SettingsProvider;
+import com.summit.dp.shared.skill.SkillRootResolver;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.tools.baseTools.arguments.CallSubAgentToolArgument;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -48,8 +52,18 @@ class SubAgentRequestFactoryTest {
     private final SettingsProvider settingsProvider = mock(SettingsProvider.class);
     private final WorkspaceConverter workspaceConverter = mock(WorkspaceConverter.class);
 
+    /** Skill 关闭（空配置）时的组装器：本类多数用例的基线。 */
     private final SubAgentRequestFactory factory = new SubAgentRequestFactory(
-            workspaceService, modelService, settingsProvider, workspaceConverter);
+            workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""));
+
+    @TempDir
+    Path skillDir;
+
+    /** Skill 开启时的组装器：根目录指向一个真实存在的临时目录。 */
+    private SubAgentRequestFactory factoryWithSkills() {
+        return new SubAgentRequestFactory(workspaceService, modelService, settingsProvider,
+                workspaceConverter, new SkillRootResolver(skillDir.toString()));
+    }
 
     @Test
     @DisplayName("子执行：带 TEAM_ID、带发信工具、不带委派工具，并带上团队成员名单")
@@ -166,16 +180,44 @@ class SubAgentRequestFactoryTest {
                 () -> build(member, teamOf(member), parentToolExecution(), List.of()));
     }
 
+    @Test
+    @DisplayName("Skill 根目录可用：子执行拿到 read_skill 与请求级 skillConfig；关闭时两者都不给")
+    void childRequestCarriesSkillRootOnlyWhenConfigured() {
+        stubModel();
+
+        AgentVO member = agent(6L, "架构师", "你是架构师");
+        TeamVO team = teamOf(member);
+
+        // 开启：框架按请求级 skillConfig 渲染 Skill 提示词，正文只能靠 read_skill 取回 ——
+        // 名单即授权，不补工具就等于提示词里说了件模型做不到的事。
+        AgentRequest withSkills = build(factoryWithSkills(), member, team, parentToolExecution(), List.of());
+        assertTrue(withSkills.getToolList().contains(ToolCatalog.READ_SKILL),
+                "Skill 可用时必须下发 read_skill，否则子执行看得到入口路径却读不了");
+        assertNotNull(withSkills.getSkillConfig(), "必须下发 skillConfig，否则框架不会渲染 Skill 提示词");
+        assertEquals(skillDir.toAbsolutePath().normalize(), withSkills.getSkillConfig().getPath(),
+                "skillConfig 必须指向配置的根目录（read_skill 也按它做越界校验）");
+
+        // 关闭：目录不可用时不下发，避免框架把「配了目录却不存在」判为错误
+        AgentRequest withoutSkills = build(member, team, parentToolExecution(), List.of());
+        assertFalse(withoutSkills.getToolList().contains(ToolCatalog.READ_SKILL));
+        assertNull(withoutSkills.getSkillConfig());
+    }
+
     private AgentRequest build(AgentVO member, TeamVO team, ToolExecution toolExecution) {
         return build(member, team, toolExecution, List.of());
     }
 
     private AgentRequest build(AgentVO member, TeamVO team, ToolExecution toolExecution, List<Message> priorMessages) {
+        return build(factory, member, team, toolExecution, priorMessages);
+    }
+
+    private AgentRequest build(SubAgentRequestFactory target, AgentVO member, TeamVO team,
+                               ToolExecution toolExecution, List<Message> priorMessages) {
         CallSubAgentToolArgument argument = new CallSubAgentToolArgument();
         argument.setAgentId(member.getId());
         argument.setTask("请只回复一个词：ok");
         argument.setPrompt("这是委派上下文");
-        return factory.build(argument, member, team, toolExecution, null, "1234", null, priorMessages);
+        return target.build(argument, member, team, toolExecution, null, "1234", null, priorMessages);
     }
 
     private static TeamVO teamOf(AgentVO member) {

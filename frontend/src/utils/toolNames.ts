@@ -8,7 +8,7 @@
  *   <li>各 {@code ToolDefinition} 注册名：{@code FileToolConfiguration}（read_file / edit_file）、
  *       {@code CommonToolConfiguration}（execute_command / web_search）、{@code ToolConfig}（require_choice）；</li>
  *   <li>框架内核工具：{@code search_tool} / {@code list_mcp_tools}（harness-kernel-tools）、
- *       {@code compact_context}（上下文压缩）。</li>
+ *       {@code compact_context}（上下文压缩）、{@code read_skill}（Skill 正文读取）。</li>
  * </ul>
  *
  * <p>前端任何地方都引用这里的成员，不写工具名字面量 —— 名字改动时只改这里，编译器替你找出全部引用点。
@@ -40,6 +40,8 @@ export const AgentToolName = {
   SearchTool: 'search_tool',
   /** MCP 工具清单（渐进披露第一级） */
   ListMcpTools: 'list_mcp_tools',
+  /** Skill 正文读取（入口路径由框架的 Skill 提示词下发） */
+  ReadSkill: 'read_skill',
 } as const;
 
 /** 后端固定工具名的联合类型（即上面任一键的值）。 */

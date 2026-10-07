@@ -6,6 +6,8 @@ import com.summit.ddd.application.vo.Result;
 import com.summit.dp.mcp.api.controller.McpController;
 import com.summit.dp.mcp.api.request.McpRequest;
 import com.summit.dp.mcp.application.command.McpCommand;
+import com.summit.dp.mcp.application.service.McpConfigAssembler;
+import com.summit.dp.mcp.application.service.McpConnectionRegistry;
 import com.summit.dp.mcp.application.service.impl.McpServiceImpl;
 import com.summit.dp.mcp.application.service.impl.McpValidator;
 import com.summit.dp.mcp.application.vo.McpVO;
@@ -53,7 +55,8 @@ class McpServiceTest {
     }
 
     private McpServiceImpl service(McpRepository repository) {
-        McpServiceImpl impl = new McpServiceImpl(repository, new McpValidator(repository));
+        McpServiceImpl impl = new McpServiceImpl(repository, new McpValidator(repository),
+                new McpConfigAssembler(), mock(McpConnectionRegistry.class));
         return impl;
     }
 

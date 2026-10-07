@@ -4,6 +4,7 @@ import com.summit.ddd.application.vo.PageResult;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.mcp.application.command.McpCommand;
 import com.summit.dp.mcp.application.vo.McpVO;
+import com.summit.dp.mcp.application.vo.McpConnectionVO;
 import com.summit.core.conf.McpConfig;
 
 import java.util.Collection;
@@ -22,6 +23,8 @@ public interface McpService {
     Result<PageResult<McpVO>> findPage(Integer page, Integer pageSize);
 
     Result<Void> add(McpCommand command);
+
+    Result<McpConnectionVO> connect(McpCommand command);
 
     Result<Void> update(McpCommand command);
 

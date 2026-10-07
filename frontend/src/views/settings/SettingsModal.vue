@@ -7,7 +7,6 @@ import ModelsTab from './tabs/ModelsTab.vue';
 import AgentsTab from './tabs/AgentsTab.vue';
 import TeamsTab from './tabs/TeamsTab.vue';
 import McpTab from './tabs/McpTab.vue';
-import AccountTab from './tabs/AccountTab.vue';
 import DataTab from './tabs/DataTab.vue';
 import TermsTab from './tabs/TermsTab.vue';
 import { useTheme } from '../../composables/useTheme';
@@ -161,25 +160,9 @@ onBeforeUnmount(() => {
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M5 12h14M5 12a7 7 0 0114 0M5 12a7 7 0 0014 0M12 5V3m0 18v-2m7-7h2M3 12h2" />
             </svg>
             <span>MCP 服务</span>
-          </button>
+                    </button>
 
-          <!-- 6. 账号管理 -->
-          <button
-            @click="activeTab = 'account'"
-            :class="[
-              'w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
-              activeTab === 'account'
-                ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
-                : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]' : 'text-gray-600 hover:text-gray-900 hover:bg-black/5')
-            ]"
-          >
-            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-            <span>账号管理</span>
-          </button>
-
-          <!-- 7. 数据管理 -->
+          <!-- 6. 数据管理 -->
           <button
             @click="activeTab = 'data'"
             :class="[
@@ -195,7 +178,7 @@ onBeforeUnmount(() => {
             <span>数据管理</span>
           </button>
 
-          <!-- 8. 服务协议 -->
+          <!-- 7. 服务协议 -->
           <button
             @click="activeTab = 'terms'"
             :class="[
@@ -221,8 +204,7 @@ onBeforeUnmount(() => {
           <ModelsTab v-else-if="activeTab === 'models'" :is-dark="isDark" @model-updated="emit('modelUpdated')" />
           <AgentsTab v-else-if="activeTab === 'agents'" :is-dark="isDark" />
           <TeamsTab v-else-if="activeTab === 'teams'" :is-dark="isDark" @model-updated="emit('modelUpdated')" />
-          <McpTab v-else-if="activeTab === 'mcp'" :is-dark="isDark" />
-          <AccountTab v-else-if="activeTab === 'account'" :is-dark="isDark" />
+                    <McpTab v-else-if="activeTab === 'mcp'" :is-dark="isDark" />
           <DataTab v-else-if="activeTab === 'data'" :is-dark="isDark" @clear-sessions="emit('clearSessions')" />
           <TermsTab v-else-if="activeTab === 'terms'" :is-dark="isDark" />
         </div>
