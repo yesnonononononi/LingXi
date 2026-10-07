@@ -60,7 +60,7 @@ class ResumeGenerationTest {
         SqlSessionFactory sessionFactory = factory.getObject();
         SqlSessionTemplate session = new SqlSessionTemplate(sessionFactory);
         mapper = session.getMapper(ExecutionMapper.class);
-        repository = new LocalExecutionRepository(mapper, new ObjectMapper(), List.of());
+        repository = ExecutionRepositoryTestFactory.create(mapper, new ObjectMapper());
     }
 
     @AfterEach

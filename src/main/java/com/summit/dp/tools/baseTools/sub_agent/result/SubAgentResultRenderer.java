@@ -73,7 +73,7 @@ public class SubAgentResultRenderer {
      */
     private String taskOf(Execution execution) {
         AgentRequest request = execution.getAgentRequest();
-        if (request == null || request.getTask() == null) {
+        if (request.getTask() == null) {
             return "未提供任务描述";
         }
         return String.valueOf(request.getTask());

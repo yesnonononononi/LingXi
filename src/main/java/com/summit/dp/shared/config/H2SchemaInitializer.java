@@ -133,6 +133,15 @@ public class H2SchemaInitializer {
                         "db/migration/V3_" + column[0] + "_" + column[1] + ".sql"), StandardCharsets.UTF_8));
             }
         }
+        // 旧形状（带 attempts / next_attempt_at 与退避索引）已随「恢复只尝试一次」重构废弃。
+        // CREATE TABLE IF NOT EXISTS 对已有旧表是空操作：死列会留下，且旧状态行
+        // （EXHAUSTED / NEEDS_MANUAL / 旧语义的 FAILED）不在新收口逻辑的取值集合里，
+        // 对应执行永远收不了口。恢复请求是纯瞬态标记、旧数据可全量舍弃，故检测到旧列即重建。
+        if (hasColumn(connection, "execution_resume_task", "attempts")) {
+            ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                    "db/migration/V3_execution_resume_task_legacy_drop.sql"), StandardCharsets.UTF_8));
+            log.info("恢复请求表为旧形状，已整体重建为纯请求记录（旧请求数据按约定舍弃）");
+        }
         ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
                 "db/migration/V3_execution_resume_task.sql"), StandardCharsets.UTF_8));
         if (!hasIndexNamed(connection, "chat_turn", "uk_chat_turn_command")) {

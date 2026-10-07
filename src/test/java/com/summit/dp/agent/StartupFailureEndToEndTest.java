@@ -1,5 +1,6 @@
 package com.summit.dp.agent;
 
+import com.summit.dp.execution.ExecutionRepositoryTestFactory;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
@@ -33,7 +34,6 @@ import com.summit.dp.shared.utils.RequestPreparer;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.application.service.impl.ChatTurnServiceImpl;
-import com.summit.dp.turn.infrastructure.listener.ChatTurnLifecycleListener;
 import com.summit.dp.turn.infrastructure.listener.ChatTurnRuntimeListener;
 import com.summit.dp.turn.infrastructure.persistence.mapper.ChatTurnMapper;
 import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
@@ -73,7 +73,7 @@ import static org.mockito.Mockito.when;
  * 只有这里用<b>真实 emitter</b> 接一条真实 SSE 链，逐环都是生产实现：
  * {@code LocalExecutionRepository} / {@code DefaultExecutionController} /
  * {@code DefaultRuntimeLifeStyleManager} / {@code RuntimeEventPublisher} / {@code AgentEventListener} /
- * {@code ChatTurnRuntimeListener} / {@code ChatTurnLifecycleListener} /
+ * {@code ChatTurnRuntimeListener} /
  * {@code ChatTurnServiceImpl}（H2 真表）。只 mock 模型调用与请求准备。</p>
  */
 class StartupFailureEndToEndTest {
@@ -153,9 +153,8 @@ class StartupFailureEndToEndTest {
                 new ChatTurnRuntimeListener(chatTurnService),
                 agentEvents,
                 new NoopRuntimeListener()));
-        LocalExecutionRepository repository = new LocalExecutionRepository(executionMapper,
-                new JsonConfig().objectMapper(),
-                List.of(new ChatTurnLifecycleListener(chatTurnService)));
+        LocalExecutionRepository repository = ExecutionRepositoryTestFactory.create(executionMapper,
+                new JsonConfig().objectMapper(), chatTurnService);
 
         AgentWorkflowOrchestrator orchestrator = mock(AgentWorkflowOrchestrator.class);
         when(orchestrator.execute(any(RuntimeContext.class), any(Execution.class)))
@@ -212,7 +211,7 @@ class StartupFailureEndToEndTest {
             turn.setCreatedAt(java.time.Instant.now());
             turn.setUpdatedAt(java.time.Instant.now());
             chatTurnMapper.insert(turn);
-            new LocalExecutionRepository(executionMapper, new JsonConfig().objectMapper(), List.of())
+            ExecutionRepositoryTestFactory.create(executionMapper, new JsonConfig().objectMapper())
                     .save(execution);
         });
     }

@@ -53,6 +53,12 @@ public class SuspendedExecutionResumer {
      * 时读到的消息集合可能比「落定事务里写过的那一份」更新（含恢复后新追加的消息），
      * 不整体替换会让模型上下文停在恢复前的旧状态。重复写同一份内容是幂等的，
      * 代价远小于上下文停在旧状态。</p>
+     *
+     * <p><b>本方法抛出的异常不都是「启动失败」，判责在调用方</b>：这里既可能在 loop 起步前
+     * 抛（补会话属性失败、框架 register/save 失败），也可能是 loop 已经跑完、仅在回写上下文
+     * 时抛。两者处置相反，只能由调用方重读落库状态与控制槽位来区分 —— 见
+     * {@code ExecutionResumeCoordinator#handleStartupFailure}。不要在这里「简化」成
+     * 一律按失败处理。</p>
      */
     public void resume(Execution execution, Long conversationId) {
         sessionAttributeRestorer.restore(execution, conversationId);

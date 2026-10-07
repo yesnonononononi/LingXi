@@ -146,10 +146,15 @@ class ToolCallDecisionTest {
         // 恢复协调器异步派发：任务行桩成「已入队可领取」，让命令 T2 真的走到 executionControl.resume。
         when(resumeTaskRepository.enqueue(anyLong(), anyLong(), any())).thenReturn(resumeTask());
         when(resumeTaskRepository.findByExecutionId(3L)).thenReturn(List.of(resumeTask()));
-        when(resumeTaskRepository.claim(any(), any())).thenReturn(true);
+        when(resumeTaskRepository.claim(any())).thenReturn(true);
         when(resumeTaskRepository.updateState(any())).thenReturn(true);
         when(resumeExecutions.findResumeGeneration(3L)).thenReturn(1L);
         when(resumeExecutions.findSummariesByIds(any())).thenReturn(List.of(summary(ExecutionState.SUSPENDED)));
+        // 决策事务提交后派发：单测无真事务，afterCommit 立即执行，让 accept 真的唤醒 worker。
+        doAnswer(invocation -> {
+            ((Runnable) invocation.getArgument(0)).run();
+            return null;
+        }).when(executionRepository).afterCommit(any());
     }
 
     /**
@@ -159,7 +164,7 @@ class ToolCallDecisionTest {
      */
     private ExecutionResumeCoordinator coordinator(SuspendedExecutionResumer resumer) {
         ExecutionResumeCoordinator coordinator = new ExecutionResumeCoordinator(resumeTaskRepository,
-                resumeExecutions, resumer, provider(executionRepository));
+                resumeExecutions, resumer, executionControl, provider(executionRepository), provider(activity));
         coordinators.add(coordinator);
         return coordinator;
     }
@@ -183,8 +188,8 @@ class ToolCallDecisionTest {
 
     private ExecutionResumeTask resumeTask() {
         return ExecutionResumeTask.builder().id(1L).executionId(3L).generation(1L)
-                .state(ResumeTaskState.READY).attempts(0).version(1L)
-                .nextAttemptAt(Instant.now()).createdAt(Instant.now()).updatedAt(Instant.now()).build();
+                .state(ResumeTaskState.READY).version(1L)
+                .createdAt(Instant.now()).updatedAt(Instant.now()).build();
     }
 
     @Test

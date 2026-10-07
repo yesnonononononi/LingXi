@@ -1,6 +1,9 @@
 package com.summit.dp.turn.application.service.impl;
 
 import cn.hutool.core.util.IdUtil;
+import com.summit.core.agent.Execution;
+import com.summit.core.agent.ExecutionState;
+import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.ChatTurn;
@@ -90,6 +93,30 @@ public class ChatTurnServiceImpl implements ChatTurnService {
     @Transactional
     public void markWaiting(String executionId, Long rootSessionId) {
         mutate(executionId, "markWaiting", rootSessionId, ChatTurn::markWaiting);
+    }
+
+    @Override
+    @Transactional
+    public void markExecutionWaiting(Execution execution) {
+        Long rootSessionId = ExecutionEventMetadata.parseRootSessionId(execution.eventMetaData());
+        markWaiting(execution.getId(), rootSessionId);
+    }
+
+    @Override
+    @Transactional
+    public void finishExecution(Execution execution) {
+        ExecutionState state = execution == null ? null : execution.getExecutionState();
+        if (state == null) return;
+        ChatTurnStatus terminalStatus = switch (state) {
+            case COMPLETED -> ChatTurnStatus.COMPLETED;
+            case FAILED -> ChatTurnStatus.FAILED;
+            case CANCELLED -> ChatTurnStatus.CANCELLED;
+            default -> null;
+        };
+        if (terminalStatus == null) return;
+        Long rootSessionId = ExecutionEventMetadata.parseRootSessionId(execution.eventMetaData());
+        // 执行终结与用量事件的到达顺序不固定，不能用空值抹掉已知用量。
+        markTerminal(execution.getId(), terminalStatus, null, null, null, execution.getCompletedAt(), rootSessionId);
     }
 
     @Override

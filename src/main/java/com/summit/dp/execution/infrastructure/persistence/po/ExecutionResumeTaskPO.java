@@ -12,10 +12,10 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 /**
- * {@code execution_resume_task} 表映射：只存恢复意图，不存事件。
+ * {@code execution_resume_task} 表映射：只存恢复请求，不存事件。
  *
- * <p>时间列用 {@link LocalDateTime}：本表的时间只服务「退避后何时可再领」这一本地语义，
- * 不参与跨时区展示，与 {@code execution} 表的既有口径一致。</p>
+ * <p>时间列用 {@link LocalDateTime}：本表的时间只服务「进程重启后按 updated_at 回收终态行」
+ * 这一本地语义，不参与跨时区展示，与 {@code execution} 表的既有口径一致。</p>
  */
 @Data
 @Builder
@@ -32,9 +32,6 @@ public class ExecutionResumeTaskPO {
 
     private Long generation;
     private String state;
-    private Integer attempts;
-    @TableField("next_attempt_at")
-    private LocalDateTime nextAttemptAt;
     @TableField("error_reason")
     private String errorReason;
     private Long version;

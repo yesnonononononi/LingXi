@@ -1,0 +1,12 @@
+-- 恢复请求表的「旧形状」清理：整表重建前的丢弃步骤。
+--
+-- 旧形状带 attempts / next_attempt_at 两列与 idx_resume_task_state 索引，随
+-- 「恢复只尝试一次」重构一起废弃。而 V3_execution_resume_task.sql 是
+-- CREATE TABLE IF NOT EXISTS —— 对已存在的旧表是**空操作**，死列会一直留在库里，
+-- 且旧状态行（EXHAUSTED / NEEDS_MANUAL / 旧语义的 FAILED）不会被新的收口逻辑看见，
+-- 对应执行就再也收不了口。
+--
+-- 恢复请求是纯瞬态标记（只为覆盖崩溃窗口），旧数据按约定可全量舍弃，故整体重建。
+-- ⚠️ 本脚本含 DROP，**只能**由 H2SchemaInitializer#migrateV3 在检测到旧列 attempts 时
+-- 执行一次；若被无条件执行，每次启动都会抹掉刚写入的崩溃标记，恢复请求将彻底失效。
+DROP TABLE IF EXISTS execution_resume_task;

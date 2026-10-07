@@ -13,6 +13,7 @@ import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.SessionAttributeRestorer;
 import com.summit.dp.execution.SuspendedExecutionResumer;
 import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
+import com.summit.dp.execution.domain.lifecycle.ExecutionActivity;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
@@ -28,6 +29,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
@@ -38,6 +40,7 @@ import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -60,7 +63,7 @@ import static org.mockito.Mockito.doAnswer;
  * 恢复走<b>真实</b>的 {@link ExecutionResumeCoordinator}：回填路径现在只登记恢复意图，
  * 真正跑 loop 的是协调器的异步 worker，因此断言必须等它跑完（latch），不能靠固定 sleep。</p>
  */
-class DelegationBackfillListenerTest {
+class DelegationSettleServiceTest {
 
     private static final long PARENT_EXECUTION_ID = 1000L;
     private static final long ROOT_SESSION_ID = 800L;
@@ -76,23 +79,20 @@ class DelegationBackfillListenerTest {
     private final ExecutionControl executionControl = mock(ExecutionControl.class);
     private final List<ExecutionResumeCoordinator> coordinators = new CopyOnWriteArrayList<>();
 
-    private final DelegationBackfillListener listener;
+    private final DelegationSettleService service;
 
-    DelegationBackfillListenerTest() {
+    DelegationSettleServiceTest() {
         // 事务模板直通执行（单测无真事务）
-        org.mockito.Mockito.doAnswer(invocation -> {
-            java.util.function.Consumer<org.springframework.transaction.TransactionStatus> consumer =
-                    invocation.getArgument(0);
+        doAnswer(invocation -> {
+            Consumer<TransactionStatus> consumer = invocation.getArgument(0);
             consumer.accept(null);
             return null;
         }).when(transactions).executeWithoutResult(any());
 
         SuspendedExecutionResumer resumer = new SuspendedExecutionResumer(toolCallRepository,
                 sessionAttributeRestorer, modelContextService, controlProvider());
-        DelegationSettleService settleService = new DelegationSettleService(toolCallRepository, converter,
-                resultRenderer, modelContextService, transactions, resumeCoordinator(resumer));
-        this.listener = new DelegationBackfillListener(toolCallRepository, converter,
-                repositoryProvider(), settleService);
+        this.service = new DelegationSettleService(toolCallRepository, converter,
+                resultRenderer, modelContextService, transactions, resumeCoordinator(resumer), repositoryProvider());
     }
 
     @AfterEach
@@ -109,16 +109,21 @@ class DelegationBackfillListenerTest {
         com.summit.dp.execution.domain.repository.ExecutionRepository executions =
                 mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class);
         ExecutionResumeTask task = ExecutionResumeTask.builder().id(1L).executionId(PARENT_EXECUTION_ID)
-                .generation(1L).state(ResumeTaskState.READY).attempts(0).version(1L)
-                .nextAttemptAt(Instant.now()).createdAt(Instant.now()).updatedAt(Instant.now()).build();
+                .generation(1L).state(ResumeTaskState.READY).version(1L)
+                .createdAt(Instant.now()).updatedAt(Instant.now()).build();
         when(tasks.enqueue(anyLong(), anyLong(), any())).thenReturn(task);
         when(tasks.findByExecutionId(PARENT_EXECUTION_ID)).thenReturn(List.of(task));
-        when(tasks.claim(any(), any())).thenReturn(true);
+        when(tasks.claim(any())).thenReturn(true);
         when(tasks.updateState(any())).thenReturn(true);
         when(executions.findResumeGeneration(PARENT_EXECUTION_ID)).thenReturn(1L);
         when(executions.findSummariesByIds(any())).thenReturn(List.of(suspendedSummary()));
+        // 决策事务提交后派发：单测无真事务，afterCommit 立即执行，让 accept 真的唤醒 worker。
+        doAnswer(invocation -> {
+            ((Runnable) invocation.getArgument(0)).run();
+            return null;
+        }).when(executionRepository).afterCommit(any());
         ExecutionResumeCoordinator coordinator = new ExecutionResumeCoordinator(tasks, executions, resumer,
-                repositoryProvider());
+                executionControl, repositoryProvider(), activityProvider());
         coordinators.add(coordinator);
         return coordinator;
     }
@@ -137,6 +142,15 @@ class DelegationBackfillListenerTest {
     private ObjectProvider<ExecutionRepository> repositoryProvider() {
         ObjectProvider<ExecutionRepository> provider = mock(ObjectProvider.class);
         when(provider.getObject()).thenReturn(executionRepository);
+        return provider;
+    }
+
+    /** 控制槽位判定：默认无活跃 loop。 */
+    @SuppressWarnings("unchecked")
+    private ObjectProvider<ExecutionActivity> activityProvider() {
+        ExecutionActivity activity = mock(ExecutionActivity.class);
+        ObjectProvider<ExecutionActivity> provider = mock(ObjectProvider.class);
+        when(provider.getObject()).thenReturn(activity);
         return provider;
     }
 
@@ -214,8 +228,8 @@ class DelegationBackfillListenerTest {
         CountDownLatch resumed = new CountDownLatch(1);
         doAnswer(invocation -> { resumed.countDown(); return parent; }).when(executionControl).resume(parent);
 
-        DelegationBackfillListener.BackfillTarget target = listener.matchParentSlot(sub);
-        listener.settle(target);
+        DelegationSettleService.BackfillTarget target = service.matchParentSlot(sub);
+        service.settle(target, executionRepository);
 
         // 槽位文本被真实结果覆盖
         assertEquals("最终结果：方案是 A", parent.getMessages().get(0).text());
@@ -229,6 +243,28 @@ class DelegationBackfillListenerTest {
         assertTrue(resumed.await(5, TimeUnit.SECONDS), "协调器应派发恢复并让 loop 继续");
         verify(modelContextService, times(2)).replace(eq(ROOT_SESSION_ID), any());
         verify(sessionAttributeRestorer).restore(parent, ROOT_SESSION_ID);
+    }
+
+    @Test
+    void finishedChildIsBackfilledThroughServiceEntry() throws Exception {
+        Execution child = subExecution(ExecutionState.COMPLETED);
+        Execution parent = suspendedParentWithSlot();
+        ToolCall slot = pendingSlot();
+        when(resultRenderer.render(child)).thenReturn("子执行最终结果");
+        when(executionRepository.findById(String.valueOf(PARENT_EXECUTION_ID))).thenReturn(Optional.of(parent));
+        when(toolCallRepository.listUnresolvedByExecutionId(PARENT_EXECUTION_ID))
+                .thenReturn(List.of(slot)).thenReturn(List.of());
+        when(toolCallRepository.findById("call-1")).thenReturn(Optional.of(slot));
+        CountDownLatch resumed = new CountDownLatch(1);
+        doAnswer(invocation -> { resumed.countDown(); return parent; }).when(executionControl).resume(parent);
+
+        service.backfillFinishedExecution(child);
+
+        assertTrue(resumed.await(5, TimeUnit.SECONDS));
+        assertEquals("子执行最终结果", parent.getMessages().getFirst().text());
+        assertTrue(slot.isCompleted());
+        verify(executionControl).resume(parent);
+        verify(toolCallRepository).updateById(slot);
     }
 
     @Test
@@ -247,11 +283,11 @@ class DelegationBackfillListenerTest {
         CountDownLatch resumed = new CountDownLatch(1);
         doAnswer(invocation -> { resumed.countDown(); return parent; }).when(executionControl).resume(parent);
 
-        listener.settle(listener.matchParentSlot(child));
+        service.settle(service.matchParentSlot(child), executionRepository);
         assertEquals(ToolCallStatus.PREPARING, slot.getStatus());
         verify(executionControl, never()).resume(any(Execution.class));
         when(parent.getExecutionState()).thenReturn(ExecutionState.SUSPENDED);
-        listener.onExecutionSuspended(String.valueOf(PARENT_EXECUTION_ID), null);
+        service.reconcileSuspendedExecution(String.valueOf(PARENT_EXECUTION_ID));
         assertTrue(resumed.await(5, TimeUnit.SECONDS));
         assertTrue(slot.isCompleted());
         assertEquals("对应子执行的结果", parent.getMessages().getFirst().text());
@@ -274,7 +310,7 @@ class DelegationBackfillListenerTest {
                 .thenReturn(List.of(slot, other)).thenReturn(List.of(other));
         when(toolCallRepository.findById("call-1")).thenReturn(Optional.of(slot));
 
-        listener.settle(listener.matchParentSlot(sub));
+        service.settle(service.matchParentSlot(sub), executionRepository);
 
         verify(executionControl, never()).resume(any(Execution.class));
         assertTrue(slot.isCompleted(), "本槽位照常收口");
@@ -293,7 +329,7 @@ class DelegationBackfillListenerTest {
                 .thenReturn(List.of(slot)).thenReturn(List.of());
         when(toolCallRepository.findById("call-1")).thenReturn(Optional.of(slot));
 
-        listener.settle(listener.matchParentSlot(sub));
+        service.settle(service.matchParentSlot(sub), executionRepository);
 
         verify(executionControl, never()).resume(any(Execution.class));
         assertTrue(slot.isCompleted());
@@ -315,7 +351,7 @@ class DelegationBackfillListenerTest {
         CountDownLatch resumed = new CountDownLatch(1);
         doAnswer(invocation -> { resumed.countDown(); return parent; }).when(executionControl).resume(parent);
 
-        listener.settle(listener.matchParentSlot(sub));
+        service.settle(service.matchParentSlot(sub), executionRepository);
 
         assertEquals("子代理执行已被取消（用户已停止），无结果: 评估方案",
                 parent.getMessages().get(0).text(), "父模型看到的是取消说明而非暂停占位");
@@ -326,7 +362,7 @@ class DelegationBackfillListenerTest {
     @Test
     @DisplayName("主执行终结（无 ROOT_EXECUTION_ID）：不产生任何回填动作")
     void ignoresRootExecution() {
-        assertNull(listener.matchParentSlot(rootExecution()));
+        assertNull(service.matchParentSlot(rootExecution()));
         verify(toolCallRepository, never()).listUnresolvedByExecutionId(anyLong());
     }
 
@@ -347,6 +383,6 @@ class DelegationBackfillListenerTest {
                 .status(ToolCallStatus.PENDING).content("{\"kind\":\"CHOICE\"}").build();
         when(toolCallRepository.listUnresolvedByExecutionId(PARENT_EXECUTION_ID)).thenReturn(List.of(legacy));
 
-        assertNull(listener.matchParentSlot(subExecution(ExecutionState.COMPLETED)));
+        assertNull(service.matchParentSlot(subExecution(ExecutionState.COMPLETED)));
     }
 }

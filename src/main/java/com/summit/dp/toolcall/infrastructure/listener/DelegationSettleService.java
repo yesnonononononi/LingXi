@@ -1,9 +1,11 @@
 package com.summit.dp.toolcall.infrastructure.listener;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
 import com.summit.dp.execution.application.service.ResumeDisposition;
@@ -14,23 +16,23 @@ import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.impl.ExecutionToolSlot;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallOutcome;
+import com.summit.dp.toolcall.domain.model.ToolCallKeys;
+import com.summit.dp.toolcall.domain.model.ToolCallKind;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.tools.baseTools.sub_agent.result.SubAgentResultRenderer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+
 /**
- * 委派结果回填的<b>落定</b>：把子执行结果写回父执行的委派槽位、收口卡片、落父检查点与
- * 模型上下文；门闩释放后再按未决情况恢复父执行。
- *
- * <p><b>为什么独立成类</b>：{@link DelegationBackfillListener} 的职责是「匹配到该被填的
- * 槽位 → 异步委派出去」，落定细节（终态父执行、槽位缺失兜底、检查点写入）不该挤在
- * 监听器里。拆开后监听器只剩匹配与调度，事务边界集中在一处。</p>
- *
- * <p><b>锁序不变量</b>：{@code ExecutionCoordination} 门闩只护住落库段；模型上下文替换与
- * resume 都必须在门闩之外，否则与审批路径的锁序倒置。模型运行更不能持有决策门闩。</p>
+ * 委派结果只回填已提交的父槽位；子执行先结束时，在父执行挂起后再次校准。
+ * 恢复派发必须在父执行门闩外，避免模型运行阻塞其他决策。
  */
 @Slf4j
 @Component
@@ -43,9 +45,64 @@ public class DelegationSettleService {
     private final ModelContextService modelContextService;
     private final TransactionTemplate transactions;
     private final ExecutionResumeCoordinator resumeCoordinator;
+    private final ObjectProvider<ExecutionRepository> executionRepository;
+
+    /** 父槽位提交可能晚于子执行终结，必须按子执行身份重新核对。 */
+    public void reconcileSuspendedExecution(String executionId) {
+        for (ToolCall slot : toolCallRepository.listUnresolvedByExecutionId(Long.valueOf(executionId))) {
+            if (converter.resolveKind(slot.getContent()) != ToolCallKind.DELEGATION) continue;
+            JsonNode content = converter.parse(slot.getContent());
+            if (content == null || !content.hasNonNull(ToolCallKeys.SUB_EXECUTION_ID)) continue;
+            String childId = content.get(ToolCallKeys.SUB_EXECUTION_ID).asText();
+            executionRepository.getObject().findById(childId).ifPresent(child -> {
+                if (ExecutionStatusCodes.isTerminalState(child.getExecutionState())) {
+                    CompletableFuture.runAsync(() -> settle(new BackfillTarget(slot, Long.parseLong(executionId), child),
+                            executionRepository.getObject()));
+                }
+            });
+        }
+    }
+
+    /** 回填异步执行，不能占住子执行终结通知线程。 */
+    public void backfillFinishedExecution(Execution execution) {
+        BackfillTarget target = matchParentSlot(execution);
+        if (target != null) {
+            CompletableFuture.runAsync(() -> settle(target, executionRepository.getObject()));
+        }
+    }
+
+    BackfillTarget matchParentSlot(Execution execution) {
+        if (execution == null) return null;
+
+        Map<String, Object> attributes = execution.getAgentRequest().runtimeParametersOrDefault().getAttributes();
+
+        Long parentExecutionId = ExecutionAttributes.readLong(attributes, ExecutionAttributes.ROOT_EXECUTION_ID);
+
+        if (parentExecutionId == null) return null;
+
+        String subSessionId = String.valueOf(ExecutionIdentity.sessionId(attributes));
+
+        for (ToolCall slot : toolCallRepository.listUnresolvedByExecutionId(parentExecutionId)) {
+
+            if (converter.resolveKind(slot.getContent()) != ToolCallKind.DELEGATION) continue;
+
+            JsonNode content = converter.parse(slot.getContent());
+
+            String slotSessionId = content == null || !content.hasNonNull(ToolCallKeys.SUB_SESSION_ID)
+                    ? null : content.get(ToolCallKeys.SUB_SESSION_ID).asText();
+
+            if (!Objects.equals(subSessionId, slotSessionId)) continue;
+
+            if (content.hasNonNull(ToolCallKeys.SUB_EXECUTION_ID)
+                    && !Objects.equals(execution.getId(), content.get(ToolCallKeys.SUB_EXECUTION_ID).asText())) continue;
+
+            return new BackfillTarget(slot, parentExecutionId, execution);
+        }
+        return null;
+    }
 
     /** 回填落定：槽位写入 + 槽位卡片收口 + 父检查点/上下文落库（单事务），父执行无 pending 后恢复。 */
-    public void settle(DelegationBackfillListener.BackfillTarget target, ExecutionRepository repository) {
+    public void settle(BackfillTarget target, ExecutionRepository repository) {
         synchronized (ExecutionCoordination.monitor(String.valueOf(target.parentExecutionId()))) {
             try {
                 if (!settleInsideLatch(target, repository)) {
@@ -70,7 +127,7 @@ public class DelegationSettleService {
      *
      * @return 是否应继续走门闩外的恢复判定（父执行缺失、未就绪、已终态都返回 {@code false}）
      */
-    private boolean settleInsideLatch(DelegationBackfillListener.BackfillTarget target,
+    private boolean settleInsideLatch(BackfillTarget target,
                                       ExecutionRepository repository) {
         Execution parent = repository.findById(String.valueOf(target.parentExecutionId())).orElse(null);
         if (parent == null) {
@@ -130,5 +187,8 @@ public class DelegationSettleService {
         } catch (RuntimeException e) {
             throw new ClientException("父执行缺少会话标识，不能回填: " + parent.getId());
         }
+    }
+
+    record BackfillTarget(ToolCall slot, long parentExecutionId, Execution subExecution) {
     }
 }

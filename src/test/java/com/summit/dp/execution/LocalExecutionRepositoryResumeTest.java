@@ -5,7 +5,12 @@ import com.summit.core.agent.*;
 import com.summit.core.conversation.message.*;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.agent.Execution;
-import com.summit.dp.execution.domain.lifecycle.ExecutionLifecycleListener;
+import com.summit.dp.execution.domain.lifecycle.ExecutionCoordination;
+import com.summit.dp.session.application.service.SessionAggregateService;
+import com.summit.dp.toolcall.application.service.ToolCallReadinessService;
+import com.summit.dp.toolcall.application.service.ToolCallService;
+import com.summit.dp.toolcall.infrastructure.listener.DelegationSettleService;
+import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
@@ -19,26 +24,39 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static com.summit.dp.execution.ExecutionRepositoryTestFactory.provider;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class LocalExecutionRepositoryResumeTest {
     private final ObjectMapper mapper = new JsonConfig().objectMapper();
     private final ExecutionMapper persistence = mock(ExecutionMapper.class);
-    private final RecordingLifecycleListener lifecycle = new RecordingLifecycleListener();
+    private final ToolCallReadinessService readiness = mock(ToolCallReadinessService.class);
+    private final ToolCallService tools = mock(ToolCallService.class);
+    private final DelegationSettleService delegation = mock(DelegationSettleService.class);
+    private final SessionAggregateService sessions = mock(SessionAggregateService.class);
+    private final ChatTurnService turns = mock(ChatTurnService.class);
+    private final List<String> suspended = new ArrayList<>();
+    private final List<String> finished = new ArrayList<>();
     @org.junit.jupiter.api.BeforeEach
     void allowCheckpointUpdates() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "test"), ExecutionPO.class);
         when(persistence.update(any(ExecutionPO.class), any())).thenReturn(1);
+        doAnswer(invocation -> { suspended.add(invocation.<Execution>getArgument(0).getId()); return null; })
+                .when(turns).markExecutionWaiting(any());
+        doAnswer(invocation -> { finished.add(invocation.<Execution>getArgument(0).getId()); return null; })
+                .when(turns).finishExecution(any());
     }
     private final LocalExecutionRepository repository =
-            new LocalExecutionRepository(persistence, mapper, List.of(lifecycle));
+            new LocalExecutionRepository(persistence, mapper, provider(readiness), provider(tools),
+                    provider(delegation), provider(sessions), provider(turns));
 
     private static Execution execution() {
         List<Message> history = List.of(UserMessageEntity.from("hi"),
@@ -225,8 +243,8 @@ class LocalExecutionRepositoryResumeTest {
         assertEquals(5, saved.getValue().getStatus());
         when(persistence.selectById(305L)).thenReturn(saved.getValue());
         assertThrows(IllegalStateException.class, () -> repository.register("305"));
-        // loop 边界终结信号经生命周期端口广播（评审 P1-⑥）
-        assertEquals(List.of("305"), lifecycle.finished);
+        // 取消挂起执行也必须推进业务终结处理。
+        assertEquals(List.of("305"), finished);
     }
 
     @Test
@@ -253,20 +271,97 @@ class LocalExecutionRepositoryResumeTest {
     }
 
     @Test
-    void releasedSignalIsVisibleAndListenerFailureDoesNotBlockFollowingListener() {
-        ExecutionLifecycleListener failing = mock(ExecutionLifecycleListener.class);
-        LocalExecutionRepository isolated = new LocalExecutionRepository(persistence, mapper, List.of(failing, lifecycle));
+    void releasedSignalIsVisibleAndServiceFailureDoesNotBlockFollowingService() {
+        ToolCallReadinessService failing = mock(ToolCallReadinessService.class);
+        LocalExecutionRepository isolated = new LocalExecutionRepository(persistence, mapper,
+                provider(failing), provider(tools), provider(delegation), provider(sessions), provider(turns));
         doAnswer(invocation -> {
-            assertFalse(Thread.holdsLock(isolated));
+            assertFalse(Thread.holdsLock(ExecutionCoordination.monitor("305")));
             assertFalse(isolated.isActive("305"));
-            throw new IllegalStateException("observer failed");
-        }).when(failing).onExecutionSuspended(eq("305"), any());
+            throw new IllegalStateException("卡片开放失败");
+        }).when(failing).markReady("305");
         isolated.save(execution());
         ExecutionControlSignal signal = isolated.register("305");
         assertTrue(isolated.isActive("305"));
         assertDoesNotThrow(() -> isolated.unregister(signal));
         assertFalse(isolated.isActive("305"));
-        assertEquals(List.of("305"), lifecycle.suspended);
+        assertEquals(List.of("305"), suspended);
+        verify(delegation).reconcileSuspendedExecution("305");
+        verify(tools, never()).cancelPendingToolCalls(any());
+        verify(sessions, never()).saveExecutionContextUsage(any());
+    }
+
+    @Test
+    void suspensionServicesRunAfterCommitAndNeverAfterRollback() {
+        repository.save(execution());
+        ExecutionControlSignal signal = repository.register("305");
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            repository.unregister(signal);
+            assertFalse(repository.isActive("305"));
+            verifyNoInteractions(readiness, delegation, turns, tools, sessions);
+            for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
+                synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+            }
+            verifyNoInteractions(readiness, delegation, turns, tools, sessions);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+
+        signal = repository.register("305");
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            repository.unregister(signal);
+            verifyNoInteractions(readiness, delegation, turns, tools, sessions);
+            for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
+                synchronization.afterCommit();
+            }
+            verify(readiness).markReady("305");
+            verify(delegation).reconcileSuspendedExecution("305");
+            assertEquals(List.of("305"), suspended);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    void terminalServiceFailuresDoNotBlockMetricsAndTurnClosure() {
+        repository.save(execution());
+        doThrow(new IllegalStateException("工具收口失败")).when(tools).cancelPendingToolCalls("305");
+        doThrow(new IllegalStateException("委派回填失败")).when(delegation).backfillFinishedExecution(any());
+        doThrow(new IllegalStateException("会话用量保存失败")).when(sessions).saveExecutionContextUsage(any());
+
+        assertDoesNotThrow(() -> repository.requireCancel("305"));
+
+        ArgumentCaptor<Execution> checkpoint = ArgumentCaptor.forClass(Execution.class);
+        verify(delegation).backfillFinishedExecution(checkpoint.capture());
+        assertEquals(ExecutionState.CANCELLED, checkpoint.getValue().getExecutionState());
+        verify(sessions).saveExecutionContextUsage(same(checkpoint.getValue()));
+        verify(turns).finishExecution(same(checkpoint.getValue()));
+        assertEquals(List.of("305"), finished);
+        verifyNoInteractions(readiness);
+    }
+
+    @Test
+    void initializationFailureServicesWaitForCheckpointCommit() {
+        when(persistence.selectOne(any())).thenReturn(statusRow(ExecutionStatusCodes.CREATED, 1L));
+        Execution failed = execution();
+        failed.fail("初始化失败");
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            repository.save(failed);
+            verifyNoInteractions(readiness, delegation, turns, tools, sessions);
+            for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
+                synchronization.afterCommit();
+            }
+            verify(tools).cancelPendingToolCalls("305");
+            verify(delegation).backfillFinishedExecution(same(failed));
+            verify(sessions).saveExecutionContextUsage(same(failed));
+            verify(turns).finishExecution(same(failed));
+            assertEquals(List.of("305"), finished);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     /**
@@ -283,8 +378,8 @@ class LocalExecutionRepositoryResumeTest {
         failed.fail("模型不可用");
         repository.save(failed);
 
-        assertEquals(List.of("305"), lifecycle.finished, "初始化失败必须补一次终结广播，否则轮次永远停在已受理");
-        assertEquals(List.of(), lifecycle.suspended);
+        assertEquals(List.of("305"), finished, "初始化失败必须补一次终结广播，否则轮次永远停在已受理");
+        assertEquals(List.of(), suspended);
     }
 
     /** 活跃循环的失败不在这里广播：控制槽位仍在，由 unregister 负责（两条路径互斥，不会双发）。 */
@@ -296,7 +391,7 @@ class LocalExecutionRepositoryResumeTest {
         Execution failed = execution();
         failed.fail("loop 内失败");
         repository.save(failed);
-        assertEquals(List.of(), lifecycle.finished);
+        assertEquals(List.of(), finished);
 
         ArgumentCaptor<ExecutionPO> saved = ArgumentCaptor.forClass(ExecutionPO.class);
         verify(persistence).update(saved.capture(), any());
@@ -304,7 +399,7 @@ class LocalExecutionRepositoryResumeTest {
 
         // 必须用 register 返回的那个信号：unregister 按实例身份摘槽位。
         repository.unregister(signal);
-        assertEquals(List.of("305"), lifecycle.finished, "释放控制信号时才广播");
+        assertEquals(List.of("305"), finished, "释放控制信号时才广播");
     }
 
     /** 只有 FAILED 需要补：完成 / 挂起都有各自的收口路径，重复落 FAILED 也不算首次。 */
@@ -315,16 +410,16 @@ class LocalExecutionRepositoryResumeTest {
         Execution completed = execution();
         completed.complete();
         repository.save(completed);
-        assertEquals(List.of(), lifecycle.finished, "完成不是失败");
+        assertEquals(List.of(), finished, "完成不是失败");
 
         repository.save(execution());
-        assertEquals(List.of(), lifecycle.finished, "挂起不是终态");
+        assertEquals(List.of(), finished, "挂起不是终态");
 
         when(persistence.selectOne(any())).thenReturn(statusRow(ExecutionStatusCodes.FAILED, 3L));
         Execution again = execution();
         again.fail("重复落库");
         repository.save(again);
-        assertEquals(List.of(), lifecycle.finished, "行前态已是 FAILED ⇒ 不是首次，不重复广播");
+        assertEquals(List.of(), finished, "行前态已是 FAILED ⇒ 不是首次，不重复广播");
     }
 
     private static ExecutionPO statusRow(int status, long version) {
@@ -336,19 +431,4 @@ class LocalExecutionRepositoryResumeTest {
         return row;
     }
 
-    /** 记录 loop 边界信号的订阅者（评审 P1-⑥ 生命周期端口）。 */
-    private static final class RecordingLifecycleListener implements ExecutionLifecycleListener {
-        private final List<String> suspended = new java.util.ArrayList<>();
-        private final List<String> finished = new java.util.ArrayList<>();
-
-        @Override
-        public void onExecutionSuspended(String executionId, Execution execution) {
-            suspended.add(executionId);
-        }
-
-        @Override
-        public void onExecutionFinished(String executionId, Execution execution) {
-            finished.add(executionId);
-        }
-    }
 }

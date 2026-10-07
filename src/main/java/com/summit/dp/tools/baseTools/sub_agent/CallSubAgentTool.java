@@ -175,7 +175,7 @@ public class CallSubAgentTool implements ToolExecutor {
             modelContextService.replace(numericSubSessionId, execution.getMessages());
 
             // 子执行挂起（等人工审批）→ 父执行以 PROMISE 槽位**同步挂起**：挂起沿委派链传播，
-            // 根会话不提前收尾。子执行终态后由 DelegationBackfillListener 回填结果并恢复父执行。
+            // 根会话不提前收尾。子执行终态后由 DelegationSettleService 回填结果并恢复父执行。
             if (execution.getExecutionState() == ExecutionState.SUSPENDED) {
                 return delegationSuspensionCard.suspendAsPromise(toolExecution, target.subSessionId(), execution.getId(),
                         agent.getName(), argument.getTask());

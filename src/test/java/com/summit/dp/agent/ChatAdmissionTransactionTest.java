@@ -1,5 +1,6 @@
 package com.summit.dp.agent;
 
+import com.summit.dp.execution.ExecutionRepositoryTestFactory;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
@@ -123,8 +124,8 @@ class ChatAdmissionTransactionTest {
         sessionMessageMapper = template.getMapper(SessionMessageMapper.class);
         transaction = new TransactionTemplate(new DataSourceTransactionManager(database));
 
-        executionRepository = new LocalExecutionRepository(executionMapper,
-                new JsonConfig().objectMapper(), List.of());
+        executionRepository = ExecutionRepositoryTestFactory.create(executionMapper,
+                new JsonConfig().objectMapper());
         ChatTurnServiceImpl chatTurnService = new ChatTurnServiceImpl(new ChatTurnRepositoryImpl(chatTurnMapper));
         ConversationTranscriptService transcriptService = new ConversationTranscriptService(
                 new SessionMessageRepositoryImpl(sessionMessageMapper), mock(ToolCallRepository.class),

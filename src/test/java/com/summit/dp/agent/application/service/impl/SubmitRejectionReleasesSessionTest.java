@@ -1,5 +1,6 @@
 package com.summit.dp.agent.application.service.impl;
 
+import com.summit.dp.execution.ExecutionRepositoryTestFactory;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
@@ -26,7 +27,6 @@ import com.summit.dp.shared.utils.RequestPreparer;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.application.service.impl.ChatTurnServiceImpl;
-import com.summit.dp.turn.infrastructure.listener.ChatTurnLifecycleListener;
 import com.summit.dp.turn.infrastructure.persistence.mapper.ChatTurnMapper;
 import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
 import com.summit.dp.turn.infrastructure.persistence.repository.ChatTurnRepositoryImpl;
@@ -100,9 +100,8 @@ class SubmitRejectionReleasesSessionTest {
         transaction = new TransactionTemplate(new DataSourceTransactionManager(database));
 
         ChatTurnService chatTurnService = new ChatTurnServiceImpl(new ChatTurnRepositoryImpl(chatTurnMapper));
-        LocalExecutionRepository repository = new LocalExecutionRepository(executionMapper,
-                new JsonConfig().objectMapper(),
-                List.of(new ChatTurnLifecycleListener(chatTurnService)));
+        LocalExecutionRepository repository = ExecutionRepositoryTestFactory.create(executionMapper,
+                new JsonConfig().objectMapper(), chatTurnService);
         RuntimeEventPublisher events = new RuntimeEventPublisher(List.of());
         ExecutionControl control = new DefaultExecutionController(() -> null, repository, events,
                 new DefaultRuntimeLifeStyleManager(events));
@@ -152,7 +151,7 @@ class SubmitRejectionReleasesSessionTest {
             turn.setCreatedAt(java.time.Instant.now());
             turn.setUpdatedAt(java.time.Instant.now());
             chatTurnMapper.insert(turn);
-            new LocalExecutionRepository(executionMapper, new JsonConfig().objectMapper(), List.of())
+            ExecutionRepositoryTestFactory.create(executionMapper, new JsonConfig().objectMapper())
                     .save(execution);
         });
     }

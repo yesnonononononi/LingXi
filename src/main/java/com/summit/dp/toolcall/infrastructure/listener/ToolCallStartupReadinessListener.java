@@ -24,7 +24,7 @@ public class ToolCallStartupReadinessListener {
     private final ExecutionRepository executions;
     private final ToolCallReadinessService readiness;
     private final ToolCallService service;
-    private final DelegationBackfillListener delegation;
+    private final DelegationSettleService delegation;
 
     @EventListener(ApplicationReadyEvent.class)
     @Order(300)
@@ -35,9 +35,7 @@ public class ToolCallStartupReadinessListener {
             try {
                 if (Integer.valueOf(2).equals(execution.getStatus())) {
                     readiness.markReady(String.valueOf(execution.getId()));
-                    // 启动校准只补「槽位可审批」这一件事，框架 Execution 在这里没有加载，
-                    // 而本回调的实现只用到 executionId（根身份对它是无意义的）。
-                    delegation.onExecutionSuspended(String.valueOf(execution.getId()), null);
+                    delegation.reconcileSuspendedExecution(String.valueOf(execution.getId()));
                 } else if (execution.getStatus() != null && execution.getStatus() >= 3) {
                     service.cancelPendingToolCalls(String.valueOf(execution.getId()));
                 }

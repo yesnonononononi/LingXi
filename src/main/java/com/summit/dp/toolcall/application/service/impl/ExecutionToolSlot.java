@@ -18,7 +18,7 @@ import java.util.List;
  * 由调用方决定抛错还是降级（不同决策方的失败语义不同）。</p>
  *
  * <p>public 但仅限 toolcall 模块内使用：应用侧决策（{@code ToolCallServiceImpl} /
- * {@code CommandApprovalExecutor}）与基础设施侧回填（{@code DelegationBackfillListener}）共用。</p>
+ * {@code CommandApprovalExecutor}）与基础设施侧回填（{@code DelegationSettleService}）共用。</p>
  */
 public final class ExecutionToolSlot {
 

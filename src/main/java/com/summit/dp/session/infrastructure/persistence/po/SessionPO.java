@@ -47,7 +47,7 @@ public class SessionPO {
     private Long teamId;
     /**
      * 上下文已用 token：最近一次终结执行由框架 loop 结束填充的 {@code Execution.contextUsageMetric}
-     * 上报（见 SessionContextMetricListener）；NULL=尚未采集（新会话 / 旧数据）。
+     * 上报（见 SessionAggregateService）；NULL=尚未采集（新会话 / 旧数据）。
      */
     private Long contextTokenCount;
     /** 上报时的上下文上限 token（框架运行时 max-tokens）；NULL=尚未采集。 */

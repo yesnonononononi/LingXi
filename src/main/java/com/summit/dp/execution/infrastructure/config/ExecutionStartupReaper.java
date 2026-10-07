@@ -18,7 +18,6 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 /**
  * 启动执行收尸钩子：进程崩溃重启后，{@code execution} 表里遗留的 CREATED / RUNNING
@@ -30,18 +29,18 @@ import java.util.Objects;
  * 「已暂停待恢复」，必须保留，误标会让恢复入口消失；COMPLETED / FAILED / CANCELLED 等
  * 终态行不属于本钩子职责，绝不触碰。</p>
  *
- * <p><b>遗留 CLAIMED 恢复任务按恢复边界分流（架构 §10.1）</b>：{@code CLAIMED} 只说明
- * 「某个 worker 领到过这条任务」，不代表它没跑完 —— 模型可能已经跑了一半。崩溃后把它当
- * 未启动重跑，等于让同一段恢复执行两次；但直接删又会丢失「领取后崩溃、尚未 resume」窗口里的
- * 恢复意图。因此单查遗留 CLAIMED，按「执行是否已终态 / 代际是否过期 / 是否仍停在挂起点」
- * 四路分流，无法证明未跨边界的一律标记需人工处理、禁止自动重跑。</p>
+ * <p><b>遗留恢复请求只收口、不重投</b>：恢复已改为「只尝试一次」。进程崩溃后留下的
+ * READY / CLAIMED 请求代表「批准已落库、恢复没跑完」，自动重投会让同一段恢复执行两次，
+ * 因此这里只做失败收口：执行已终态或代际已变的请求作废；其余请求把执行按框架失败链
+ * 落终态并把请求标 FAILED。<b>完全没有遗留请求的 SUSPENDED 执行是「正常等待审批」，
+ * 原样保留</b>，用户仍可经 {@code /resume} 手工恢复。</p>
  *
- * <p>收口是幂等的条件更新（见 {@link ExecutionRepository#markOrphanRunsFailed()}），
- * 重复启动 / 重复执行无副作用（第二次命中 0 行）。</p>
+ * <p><b>顺序不可调换</b>：请求对应执行的状态必须在
+ * {@link ExecutionRepository#markOrphanRunsFailed()} <b>之前</b>取快照 —— 收口会把崩溃时
+ * 仍 RUNNING 的执行改成 FAILED，收口后再读就丢失「崩溃时是否正在 loop 中」的信息，
+ * 无法区分「崩溃前就已是终态、请求本就作废」与「被本次收口终结」。</p>
  *
- * <p><b>顺序不可调换</b>：实际的重新派发必须发生在收口之后 —— 反过来会让刚被重新派发的执行
- * 在下一步被自己的收尸条件更新标成 FAILED。为此遗留 CLAIMED 的执行状态在收口<b>前</b>取快照、
- * 派发动作在收口<b>后</b>执行，两者既保住了「按收口前状态判副作用」的口径，又不踩收口误标。</p>
+ * <p>收口是幂等的条件更新，重复启动 / 重复执行无副作用（第二次命中 0 行）。</p>
  */
 @Slf4j
 @Component
@@ -49,8 +48,10 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class ExecutionStartupReaper implements ApplicationListener<ApplicationReadyEvent> {
 
-    /** 遗留 CLAIMED 启动分流的批次上限；启动只处理有界的一批，避免拉全表。 */
-    private static final int CLAIMED_BATCH = 500;
+    /** 遗留请求启动收口的批次上限；启动只处理有界的一批，避免拉全表。 */
+    private static final int UNFINISHED_BATCH = 500;
+    /** 已结束请求的回收窗口：巡检已随重试模型删除，终态回收只在启动时做一次。 */
+    private static final long PURGE_AFTER_SECONDS = 3600L;
 
     private final ExecutionRepository executionRepository;
     private final ExecutionResumeTaskRepository resumeTaskRepository;
@@ -58,100 +59,57 @@ public class ExecutionStartupReaper implements ApplicationListener<ApplicationRe
 
     @Override
     public void onApplicationEvent(@NonNull ApplicationReadyEvent event) {
-        // 先快照遗留 CLAIMED 与它们此刻的执行状态，再收口孤儿运行。
-        // 顺序不可颠倒：收口会把崩溃时仍 RUNNING 的执行改成 FAILED 终态，若在收口之后才读状态，
-        // 「恢复已跑了一半」就会被误判成「执行已终态 → 作废」，把「副作用不明、需人工」抹掉。
-        List<ExecutionResumeTask> leftoverClaimed = resumeTaskRepository.listClaimed(CLAIMED_BATCH);
-        Map<Long, Execution> claimedSnapshots = readExecutionSummaries(leftoverClaimed);
+        // 先快照遗留请求与它们此刻的执行状态，再收口孤儿运行。
+        // 顺序不可颠倒：收口会把崩溃时仍 RUNNING 的执行改成 FAILED，若在收口之后才读状态，
+        // 「崩溃时正在 loop 中」这一信息就没了。
+        List<ExecutionResumeTask> leftover = resumeTaskRepository.listUnfinished(UNFINISHED_BATCH);
+        Map<Long, Execution> snapshots = readExecutionSummaries(leftover);
 
         int reaped = executionRepository.markOrphanRunsFailed();
         log.info("execution 表遗留 CREATED/RUNNING 已收口为 FAILED，共 {} 行", reaped);
 
-        int triaged = triageLeftoverClaimed(leftoverClaimed, claimedSnapshots);
-        if (triaged > 0) {
-            log.info("启动分流遗留 CLAIMED 恢复任务，共 {} 条", triaged);
+        int closed = closeLeftoverRequests(leftover, snapshots);
+        if (closed > 0) {
+            log.info("启动收口遗留恢复请求，共 {} 条", closed);
         }
 
-        int redispatched = redispatchPendingResumes();
-        if (redispatched > 0) {
-            log.info("启动后重新派发未启动的恢复任务，共 {} 条", redispatched);
+        int purged = resumeTaskRepository.purgeFinishedBefore(Instant.now().minusSeconds(PURGE_AFTER_SECONDS));
+        if (purged > 0) {
+            log.info("回收已结束的恢复请求，共 {} 条", purged);
         }
     }
 
     /**
-     * 重新派发「确实没启动过」的恢复任务。
+     * 逐条收口遗留请求：只失败收口，绝不重新派发。
      *
-     * <p><b>只判两条，其余交给协调器</b>：本钩子筛掉「一定不该重跑」的代际过期者，
-     * 其余推回流水线，由协调器在真正跑之前核对「执行是否终态」「是否还有未决槽位」——
-     * 判闸门逻辑只留一份，重复实现必然走偏。</p>
+     * <p>执行已终态（崩溃前就结束了）或代际已变（期间又挂起过一次）的请求直接作废 ——
+     * 前者已无恢复对象，后者的新挂起边界是合法的等待，不能被旧请求连坐。其余（仍 SUSPENDED
+     * 或崩溃时正在 loop 中）说明恢复没跑完：把执行按框架失败链落终态，请求标 FAILED。
+     * 崩溃时 RUNNING 的执行已被 {@link ExecutionRepository#markOrphanRunsFailed()} 收口，
+     * 这里的收口对它是幂等的空操作。</p>
      *
-     * <p>{@code listDispatchable} 的状态条件为 {@code IN (READY, FAILED)}，因此这里拿不到
-     * CLAIMED 行；遗留 CLAIMED 由 {@link #triageLeftoverClaimed} 单独分流。</p>
-     *
-     * @return 重新派发的任务条数
+     * @param leftover  收口前读到的遗留请求
+     * @param snapshots 上述请求对应执行在收口前的状态摘要
+     * @return 本批次实际处置的请求条数
      */
-    private int redispatchPendingResumes() {
-        List<ExecutionResumeTask> pending = resumeTaskRepository.listDispatchable(Instant.now(), 200);
-        int dispatched = 0;
-        for (ExecutionResumeTask task : pending) {
-            long generation = executionRepository.findResumeGeneration(task.getExecutionId());
-            if (generation != task.getGeneration()) {
-                log.info("跳过代际已过期的恢复任务: taskId={}, executionId={}, taskGeneration={}, currentGeneration={}",
-                        task.getId(), task.getExecutionId(), task.getGeneration(), generation);
-                continue;
-            }
-            // 交给协调器走同一条派发路径：它领取时会再核对一次终态与未决槽位，
-            // 这里只负责把「值得一试」的任务推回流水线，不重复它的判闸门逻辑。
-            resumeCoordinator.dispatch(task.getExecutionId());
-            dispatched++;
-        }
-        return dispatched;
-    }
-
-    /**
-     * 启动分流遗留 CLAIMED 任务（架构 §10.1）。
-     *
-     * <p><b>为什么必须按状态与代际分流，而不是删或盲目重跑</b>：CLAIMED 只表示「领取成功」，
-     * 不能证明恢复已经开始。存在这个窗口 —— 领取并提交 CLAIMED → 进程崩溃 → 尚未调用 resume，
-     * 执行仍为 SUSPENDED。此时直接删会留下「决策已提交、执行永久暂停」，丢失恢复意图；
-     * 而盲目重跑则可能让已跑过一半的恢复再跑一次。</p>
-     *
-     * <p><b>恢复边界判据</b>：框架 {@code RuntimeProcessorTemplate.process} 的顺序是
-     * {@code save(execution)} → 若 resumed 则 {@code Execution.resumeChecked} + {@code save}
-     * → 进 loop。即<b>恢复后的状态先落库，才进入模型与工具执行</b>。因此「执行状态是否已离开
-     * 挂起点」就是「是否跨过边界」的判据：仍为 SUSPENDED 且代际一致 → 证明恢复尚未真正开始，
-     * 可安全重投；否则不能自动重跑。</p>
-     *
-     * <p>四路处置：执行已终态 → 作废；代际过期 → 作废；仍 SUSPENDED 且代际一致 → 退回可派发态；
-     * 其余（已脱离挂起点但非终态，副作用不明）→ 标记需人工处理，禁止自动重跑。</p>
-     *
-     * <p>状态用<b>收口前的快照</b>判定：崩溃时仍 RUNNING 的执行随后会被孤儿收口改成 FAILED，
-     * 若按收口后的状态看就会被误判成「已终态 → 作废」，抹掉真正需要人工的那一类。</p>
-     *
-     * @param claimed          收口前读到的遗留 CLAIMED 任务
-     * @param claimedSnapshots 上述任务对应执行在收口前的状态摘要
-     * @return 本批次实际处置的任务条数
-     */
-    private int triageLeftoverClaimed(List<ExecutionResumeTask> claimed, Map<Long, Execution> claimedSnapshots) {
+    private int closeLeftoverRequests(List<ExecutionResumeTask> leftover, Map<Long, Execution> snapshots) {
         int handled = 0;
-        for (ExecutionResumeTask task : claimed) {
-            Execution summary = claimedSnapshots.get(task.getExecutionId());
-            if (supersedeIfDead(task, summary)) {
+        for (ExecutionResumeTask task : leftover) {
+            Execution snapshot = snapshots.get(task.getExecutionId());
+            if (supersedeIfMoot(task, snapshot)) {
                 handled++;
                 continue;
             }
-            if (canResumeWithinBoundary(task, summary)) {
-                resumeCoordinator.dispatch(task.getExecutionId());
-                handled++;
-            } else {
-                flagForManual(task);
-                handled++;
-            }
+            // 恢复没跑完：执行收口为 FAILED，请求标 FAILED，不再自动派发。
+            resumeCoordinator.closeStartupFailure(task.getExecutionId(),
+                    "进程崩溃时恢复未完成，无法确认是否已产生副作用");
+            markFailed(task, "进程崩溃时恢复未完成，无法确认是否已产生副作用，只收口不重投");
+            handled++;
         }
         return handled;
     }
 
-    /** 批量读一批恢复任务对应执行的摘要（状态 + 代际），供收口前快照使用。 */
+    /** 批量读一批请求对应执行的摘要（状态 + 代际），供收口前快照使用。 */
     private Map<Long, Execution> readExecutionSummaries(List<ExecutionResumeTask> tasks) {
         if (tasks.isEmpty()) {
             return Map.of();
@@ -166,50 +124,48 @@ public class ExecutionStartupReaper implements ApplicationListener<ApplicationRe
         return summaries;
     }
 
-    /** 执行已终态或代际已过期 → 作废；返回 true 表示已处置，无需继续分流。 */
-    private boolean supersedeIfDead(ExecutionResumeTask task, Execution summary) {
-        Integer status = summary == null ? null : summary.getStatus();
-        if (ExecutionStatusCodes.isTerminal(status)) {
-            if (task.supersede()) {
-                resumeTaskRepository.updateState(task);
-            }
-            log.info("遗留 CLAIMED 任务作废（执行已终态）: taskId={}, executionId={}, status={}",
-                    task.getId(), task.getExecutionId(), status);
+    /**
+     * 请求是否已无意义：执行行缺失、执行已终态，或代际已变。
+     *
+     * <p>代际已变意味着执行期间又挂起过一次，当前挂起边界是合法的等待，旧请求不能连坐它。</p>
+     */
+    private boolean supersedeIfMoot(ExecutionResumeTask task, Execution snapshot) {
+        if (snapshot == null) {
+            markSuperseded(task, "执行行缺失，恢复请求作废");
             return true;
         }
-        Long currentGeneration = summary == null ? null : summary.getResumeGeneration();
-        long generation = currentGeneration == null ? 0L : currentGeneration;
-        if (summary != null && generation != task.getGeneration()) {
-            if (task.supersede()) {
-                resumeTaskRepository.updateState(task);
-            }
-            log.info("遗留 CLAIMED 任务作废（代际已过期）: taskId={}, executionId={}, taskGeneration={}, currentGeneration={}",
-                    task.getId(), task.getExecutionId(), task.getGeneration(), generation);
+        if (ExecutionStatusCodes.isTerminal(snapshot.getStatus())) {
+            markSuperseded(task, "执行已终态，恢复请求作废");
+            return true;
+        }
+        long generation = snapshot.getResumeGeneration() == null ? 0L : snapshot.getResumeGeneration();
+        if (generation != task.getGeneration()) {
+            markSuperseded(task, "恢复代际已变更，请求作废");
             return true;
         }
         return false;
     }
 
-    /**
-     * 能否证明未跨恢复边界：执行行存在、仍为 SUSPENDED 且与任务代际一致。
-     *
-     * <p>执行行缺失（summary 为 null）视为无法证明，不返回 true。</p>
-     */
-    private boolean canResumeWithinBoundary(ExecutionResumeTask task, Execution summary) {
-        return summary != null
-                && ExecutionStatusCodes.isSuspended(summary.getStatus())
-                && Objects.equals(task.getGeneration(), summary.getResumeGeneration());
+    private void markSuperseded(ExecutionResumeTask task, String reason) {
+        if (!task.supersede()) {
+            return;
+        }
+        if (!resumeTaskRepository.updateState(task)) {
+            log.debug("恢复请求作废时状态已变化: taskId={}, reason={}", task.getId(), reason);
+            return;
+        }
+        log.info("遗留恢复请求作废: taskId={}, executionId={}, reason={}",
+                task.getId(), task.getExecutionId(), reason);
     }
 
-    /** 无法证明未跨边界：标记需人工处理，禁止自动重跑。 */
-    private void flagForManual(ExecutionResumeTask task) {
-        task.flagForManual("领取后进程崩溃且执行已离开挂起点，无法确认是否已产生副作用");
+    private void markFailed(ExecutionResumeTask task, String reason) {
+        task.fail(reason);
         if (!resumeTaskRepository.updateState(task)) {
-            log.warn("遗留 CLAIMED 任务标记人工处理失败（状态已被改写）: taskId={}, executionId={}",
+            log.warn("恢复请求失败状态未能落库（可能已被改写）: taskId={}, executionId={}",
                     task.getId(), task.getExecutionId());
             return;
         }
-        log.warn("遗留 CLAIMED 任务标记需人工处理（禁止自动重跑）: taskId={}, executionId={}, attempts={}",
-                task.getId(), task.getExecutionId(), task.getAttempts());
+        log.warn("遗留恢复请求收口为 FAILED（禁止自动重投）: taskId={}, executionId={}",
+                task.getId(), task.getExecutionId());
     }
 }

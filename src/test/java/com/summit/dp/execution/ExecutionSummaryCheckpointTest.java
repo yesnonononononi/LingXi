@@ -58,7 +58,7 @@ class ExecutionSummaryCheckpointTest {
     private final ObjectMapper mapper = new JsonConfig().objectMapper();
     private final ExecutionMapper persistence = mock(ExecutionMapper.class);
     private final LocalExecutionRepository repository =
-            new LocalExecutionRepository(persistence, mapper, List.of());
+            ExecutionRepositoryTestFactory.create(persistence, mapper);
 
     @BeforeEach
     void allowCheckpointWrites() {

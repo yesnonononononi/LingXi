@@ -68,8 +68,8 @@ public class Session {
     /**
      * 上下文用量快照：最近一次终结执行上报的模型上下文占用。
      *
-     * <p>由框架 loop 结束填充的 {@code Execution.contextUsageMetric} 经生命周期端口同步落库
-     * （{@code SessionContextMetricListener}），随 {@code /session/tree} 接口下发供前端
+     * <p>由框架 loop 结束填充的 {@code Execution.contextUsageMetric} 在执行终结后同步落库
+     * （{@code SessionAggregateService}），随 {@code /session/tree} 接口下发供前端
      * 「上下文用量」指示器在**无任何 loop 运行**（历史加载、刷新页面）时也能展示——
      * 实时口径仍以 {@code CONTEXT_UPDATE} 事件为准，本快照只兜住「没有事件可发」的空窗。</p>
      */

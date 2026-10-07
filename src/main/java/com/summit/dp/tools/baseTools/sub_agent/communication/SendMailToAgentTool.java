@@ -33,34 +33,33 @@ public class SendMailToAgentTool implements ToolExecutor {
     @Override
     public @NonNull ToolExecuteResult execute(ToolExecution toolExecution) {
         try {
+            // parse argument
             SendMailArgument argument = objectMapper.readValue(toolExecution.getArgs(), SendMailArgument.class);
 
+            // resolve business attributes
             Long toAgentId = argument.getToAgentId();
             String mailContent = argument.getMailContent();
-
-            if (toAgentId == null) {
-                return ToolExecuteResult.err("toAgentId is required");
-            }
-            if (mailContent == null || mailContent.isBlank()) {
-                return ToolExecuteResult.err("Email content cannot be empty");
-            }
-
+            if (toAgentId == null)  return ToolExecuteResult.err("toAgentId is required");
+            if (mailContent == null || mailContent.isBlank()) return ToolExecuteResult.err("Email content cannot be empty");
             Map<String, Object> attributes = toolExecution.getAttributes();
             Long senderAgentId = requireAgentId(toolExecution);
-
             Long workflowExecutionId = requireWorkflowExecutionId(toolExecution);
-
             Long teamId = ExecutionAttributes.readLong(attributes, ExecutionAttributes.TEAM_ID);
 
+            // send mail
             emailService.sendMail(toAgentId, mailContent,new MailSendContext(workflowExecutionId, senderAgentId, teamId));
+
+
+
 
             // 回执必须与工具 description 同口径：讲明「已投递 + 对方下一轮才读到 + 无回复通道 + 别重发」。
             // 模型看不到投递结果，含糊的回执会让它怀疑没发出去而重发同一封
-            // （曾观测到同一执行 2.7 秒内发出两封内容完全相同的邮件）。
             return ToolExecuteResult.success(String.format(
                     "Mail delivered to agent %d. It will be read at the start of that agent's next model round. "
                             + "This call returns no reply, so continue your own work or end your turn; do not resend the same content.",
                     toAgentId));
+
+
         } catch (JsonProcessingException e) {
             throw new RuntimeException(e);
         } catch (Exception e) {

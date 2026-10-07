@@ -1,5 +1,6 @@
 package com.summit.dp.agent.application.service.impl;
 
+import com.summit.dp.execution.ExecutionRepositoryTestFactory;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.summit.core.agent.AgentRequest;
@@ -29,7 +30,6 @@ import com.summit.dp.shared.utils.RequestPreparer;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
-import com.summit.dp.turn.infrastructure.listener.ChatTurnLifecycleListener;
 import com.summit.dp.turn.infrastructure.listener.ChatTurnRuntimeListener;
 import com.summit.runtime.loop.DefaultExecutionController;
 import com.summit.runtime.loop.DefaultRuntimeLifeStyleManager;
@@ -47,6 +47,7 @@ import java.util.Map;
 import java.util.concurrent.RejectedExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -97,9 +98,8 @@ class PreparedChatExecutorTest {
         // 与生产同序：轮次侧监听器（HIGHEST_PRECEDENCE）在前，SSE 广播在后。
         RuntimeEventPublisher publisher = new RuntimeEventPublisher(List.of(
                 new ChatTurnRuntimeListener(chatTurnService), agentEvents));
-        LocalExecutionRepository repository = new LocalExecutionRepository(
-                executionMapper, new JsonConfig().objectMapper(),
-                List.of(new ChatTurnLifecycleListener(chatTurnService)));
+        LocalExecutionRepository repository = ExecutionRepositoryTestFactory.create(
+                executionMapper, new JsonConfig().objectMapper(), chatTurnService);
         DefaultRuntimeLifeStyleManager lifeStyle = new DefaultRuntimeLifeStyleManager(publisher);
         realChainExecutor = new PreparedChatExecutor(orchestrator, requestPreparer, modelContextService, registry,
                 new DefaultExecutionController(() -> null, repository, publisher, lifeStyle));
@@ -149,8 +149,11 @@ class PreparedChatExecutorTest {
 
         // 顺序即不变量：轮次终态 → 失败原因 → 事件广播。
         InOrder order = inOrder(chatTurnService, sseEventPublisher);
-        order.verify(chatTurnService).markTerminal(eq(EXECUTION_ID), eq(ChatTurnStatus.FAILED),
-                isNull(), isNull(), isNull(), any(Instant.class), eq(ROOT_SESSION_ID));
+        ArgumentCaptor<Execution> failedCheckpoint = ArgumentCaptor.forClass(Execution.class);
+        order.verify(chatTurnService).finishExecution(failedCheckpoint.capture());
+        assertEquals(EXECUTION_ID, failedCheckpoint.getValue().getId());
+        assertEquals(ExecutionState.FAILED, failedCheckpoint.getValue().getExecutionState());
+        assertNotNull(failedCheckpoint.getValue().getCompletedAt());
         order.verify(chatTurnService).recordFailureReason(EXECUTION_ID, "模型不可用", ROOT_SESSION_ID);
         order.verify(sseEventPublisher).publish(eq(ROOT_SESSION_ID), any(AgentEvent.class));
 
@@ -188,9 +191,8 @@ class PreparedChatExecutorTest {
             agentEvents.init();
             RuntimeEventPublisher events = new RuntimeEventPublisher(List.of(
                     new ChatTurnRuntimeListener(chatTurnService), agentEvents));
-            LocalExecutionRepository repository = new LocalExecutionRepository(
-                    executionMapper, new JsonConfig().objectMapper(),
-                    List.of(new ChatTurnLifecycleListener(chatTurnService)));
+            LocalExecutionRepository repository = ExecutionRepositoryTestFactory.create(
+                    executionMapper, new JsonConfig().objectMapper(), chatTurnService);
             PreparedChatExecutor executor = new PreparedChatExecutor(orchestrator, requestPreparer,
                     modelContextService, registry, new DefaultExecutionController(() -> null, repository,
                     events, new DefaultRuntimeLifeStyleManager(events)));
@@ -244,7 +246,7 @@ class PreparedChatExecutorTest {
         assertThrows(IllegalStateException.class, () -> guardedExecutor.run(context(execution)));
 
         verify(frameworkFail, never()).fail(any(Execution.class), any());
-        verify(chatTurnService, never()).markTerminal(any(), any(), any(), any(), any(), any(), any());
+        verify(chatTurnService, never()).finishExecution(any());
     }
 
     @Test

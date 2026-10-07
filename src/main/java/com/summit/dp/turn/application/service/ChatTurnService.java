@@ -1,5 +1,6 @@
 package com.summit.dp.turn.application.service;
 
+import com.summit.core.agent.Execution;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
 
@@ -63,11 +64,17 @@ public interface ChatTurnService {
     /** 框架挂起（SUSPENDED）：→ WAITING。挂起不是终态，不写结束时间。 */
     void markWaiting(String executionId, Long rootSessionId);
 
+    /** 已提交的挂起执行只推进等待状态，不写结束时间。 */
+    void markExecutionWaiting(Execution execution);
+
+    /** 终态和结束时间取已提交执行，用量仍由运行事件独立更新。 */
+    void finishExecution(Execution execution);
+
     /**
      * 进入终态：COMPLETED / FAILED / CANCELLED，写入结束时间。
      *
      * <p><b>用量不从这里进</b>：用量权威在三个终态事件的 {@code tokenInfo}，由
-     * {@link #refreshUsage} 覆盖入账 —— 生命周期端口虽带执行对象，但本路径一律传 {@code null}。
+     * {@link #refreshUsage} 覆盖入账，执行终结处理不覆盖已知用量。
      * 保留用量形参只为兼容「已知用量时顺带补齐」的调用方（启动失败等路径一律传 {@code null}），
      * 且 {@code null} 永不覆盖已知值。</p>
      *

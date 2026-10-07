@@ -19,8 +19,7 @@ import org.springframework.stereotype.Component;
 /**
  * 用运行时事件驱动轮次的「开始执行」「失败原因」与「用量入账」语义。
  *
- * <p><b>职责切分</b>：终态的**状态与结束时间**由 {@link ChatTurnLifecycleListener} 经
- * execution 模块的生命周期端口写（那条路覆盖事件覆盖不到的「取消挂起中的执行」）；
+ * <p><b>职责切分</b>：终态的**状态与结束时间**由 {@link ChatTurnService#finishExecution} 在执行检查点提交后写（那条路覆盖事件覆盖不到的「取消挂起中的执行」）；
  * 本类只补事件独有的时机 —— 开始时间、失败原因，以及三个终态事件的**用量**：</p>
  * <ul>
  *   <li>{@code EXECUTION_STARTED} —— 写入首次开始时间。框架的顺序是

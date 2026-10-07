@@ -91,7 +91,6 @@ public class SubAgentRequestFactory {
                         .build())
                 .systemPrompt(buildSubAgentPrompt(subAgent, team, argument.getPrompt()))
                 .toolList(memberTools(subAgent.getToolList()))
-                // 桥接框架侧 API 演进：task 由 String 改为 List<String>（逐段提示）
                 .task(List.of(task))
                 .build();
     }

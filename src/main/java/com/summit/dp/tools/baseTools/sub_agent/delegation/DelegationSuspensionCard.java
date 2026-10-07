@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
  * <p>从 {@code CallSubAgentTool} 拆出的挂起分支：与 {@code require_choice} / 命令审批同一条
  * 机制——登记器 UPSERT 升级 EXECUTE 占位行（call_sub_agent 启动时已落 EXECUTE 行），工具结果
  * 以 PROMISE 结束 → 框架提交占位工具消息、挂起本执行。父执行因此**同步挂起**等待子代理终态，
- * 而不是提前收尾；子执行终态后由 {@code DelegationBackfillListener} 按卡片载荷里的
+ * 而不是提前收尾；子执行终态后由 {@code DelegationSettleService} 按卡片载荷里的
  * {@code subSessionId} 匹配槽位回填结果并恢复父执行。</p>
  *
  * <p>这不是人工审批卡：审批对象仍是子会话里的那张卡；本卡等的是子执行的终态信号。</p>

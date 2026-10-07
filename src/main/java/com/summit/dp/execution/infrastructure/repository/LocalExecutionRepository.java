@@ -8,15 +8,20 @@ import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionStatusCodes;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.summit.dp.execution.domain.lifecycle.ExecutionLifecycleListener;
 import com.summit.dp.execution.domain.lifecycle.ExecutionActivity;
 import com.summit.dp.execution.domain.lifecycle.ExecutionCoordination;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
+import com.summit.dp.session.application.service.SessionAggregateService;
+import com.summit.dp.toolcall.application.service.ToolCallReadinessService;
+import com.summit.dp.toolcall.application.service.ToolCallService;
+import com.summit.dp.toolcall.infrastructure.listener.DelegationSettleService;
+import com.summit.dp.turn.application.service.ChatTurnService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -25,7 +30,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.Instant;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -38,8 +42,12 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
 
     private final ExecutionMapper executionMapper;
     private final ObjectMapper objectMapper;
-    /** 通过领域端口通知，避免仓储反向依赖工具应用服务。 */
-    private final List<ExecutionLifecycleListener> lifecycleListeners;
+    /** 延迟取服务，避免生命周期处理与执行仓储形成构造期闭环。 */
+    private final ObjectProvider<ToolCallReadinessService> readinessService;
+    private final ObjectProvider<ToolCallService> toolCallService;
+    private final ObjectProvider<DelegationSettleService> delegationService;
+    private final ObjectProvider<SessionAggregateService> sessionService;
+    private final ObjectProvider<ChatTurnService> chatTurnService;
 
     /** 进程内活跃执行的控制信号；与框架 InMemoryActiveExecutionRegistry 语义一致。 */
     private final Map<String, ExecutionControlSignal> active = new ConcurrentHashMap<>();
@@ -295,25 +303,27 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
         }
     }
 
-    /** loop 边界：执行挂起 → 广播给订阅者（推送待处理卡片）。 */
+    /** 控制槽位释放且检查点提交后，才能开放卡片并校准委派结果。 */
     private void notifySuspended(Execution execution) {
-        for (ExecutionLifecycleListener listener : lifecycleListeners) {
-            try {
-                listener.onExecutionSuspended(execution.getId(), execution);
-            } catch (RuntimeException error) {
-                log.error("暂停通知失败: executionId={}, listener={}", execution.getId(), listener.getClass().getSimpleName(), error);
-            }
-        }
+        invokeLifecycle("开放工具卡片", execution, () -> readinessService.getObject().markReady(execution.getId()));
+        invokeLifecycle("校准委派结果", execution, () -> delegationService.getObject().reconcileSuspendedExecution(execution.getId()));
+        invokeLifecycle("更新等待轮次", execution, () -> chatTurnService.getObject().markExecutionWaiting(execution));
     }
 
     /** 传递已提交对象，避免订阅方重复解码检查点。 */
     private void notifyFinished(Execution execution) {
-        for (ExecutionLifecycleListener listener : lifecycleListeners) {
-            try {
-                listener.onExecutionFinished(execution.getId(), execution);
-            } catch (RuntimeException error) {
-                log.error("终结通知失败: executionId={}, listener={}", execution.getId(), listener.getClass().getSimpleName(), error);
-            }
+        invokeLifecycle("收口工具卡片", execution, () -> toolCallService.getObject().cancelPendingToolCalls(execution.getId()));
+        invokeLifecycle("回填委派结果", execution, () -> delegationService.getObject().backfillFinishedExecution(execution));
+        invokeLifecycle("保存会话用量", execution, () -> sessionService.getObject().saveExecutionContextUsage(execution));
+        invokeLifecycle("收口业务轮次", execution, () -> chatTurnService.getObject().finishExecution(execution));
+    }
+
+    /** 各模块独立隔离失败，不能让一项失败阻止其余终结处理。 */
+    private void invokeLifecycle(String action, Execution execution, Runnable callback) {
+        try {
+            callback.run();
+        } catch (RuntimeException error) {
+            log.error("执行生命周期处理失败: executionId={}, action={}", execution.getId(), action, error);
         }
     }
 

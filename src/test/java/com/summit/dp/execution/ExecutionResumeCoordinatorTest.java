@@ -7,11 +7,12 @@ import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
+import com.summit.dp.execution.application.service.ResumeDisposition;
+import com.summit.dp.execution.domain.lifecycle.ExecutionActivity;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.session.application.service.ModelContextService;
-import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -27,6 +28,7 @@ import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -34,6 +36,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -45,38 +49,39 @@ import static org.mockito.Mockito.when;
 /**
  * 恢复协调器（{@code ExecutionResumeCoordinator}）的 worker 纪律回归。
  *
- * <p>核心不变量是「<b>恢复绝不能让已取消的执行复活</b>」。它难在时序：worker 领取任务 →
- * 释放 executionId 门闩 → 真正 resume 之前，stop 可能正好落库 CANCELLED。若恢复是无条件写，
- * 迟到的 worker 会把 CANCELLED 改回运行中，用户点了停止却停不下来。</p>
+ * <p>核心不变量是「<b>恢复只尝试一次，且绝不把竞争失败判成执行失败</b>」。它难在时序：
+ * worker 领取请求 → 释放 executionId 门闩 → 真正 resume 之前，stop 可能正好落库 CANCELLED，
+ * 或另一条 loop 已抢占控制槽位；异常抛出后若不加区分地收口，会把一次正常的竞争/让位
+ * 错记成执行失败。</p>
  *
- * <p><b>时序用 latch 构造而不是 sleep 赌</b>：测试在线程池外亲手执行 {@code runLoop}
- * 之前先卡住关键桩（{@code findById} 里 await 一个闸门），让「stop 落库」这一步由测试线程
- * 在确定的位置插入。观察完成同样用信号量（状态写入的桩里 countDown），不用固定 sleep。</p>
+ * <p><b>时序用 latch 构造而不是 sleep 赌</b>：测试在线程池外亲手执行 {@code runOnce}
+ * 之前先卡住关键桩，让「stop 落库」「loop 已跑完」这类事件由测试线程在确定的位置插入。
+ * 观察完成同样用信号量（状态写入的桩里 countDown），不用固定 sleep。</p>
  */
 class ExecutionResumeCoordinatorTest {
 
     private static final long EXECUTION_ID = 1000L;
     private static final long SESSION_ID = 800L;
     private static final long GENERATION = 3L;
+    private static final long AWAIT_TIMEOUT_SECONDS = 10L;
 
     private final ToolCallRepository toolCallRepository = mock(ToolCallRepository.class);
     private final ModelContextService modelContextService = mock(ModelContextService.class);
     private final SessionAttributeRestorer sessionAttributeRestorer = mock(SessionAttributeRestorer.class);
     private final ExecutionControl executionControl = mock(ExecutionControl.class);
     private final ExecutionRepository frameworkExecutions = mock(ExecutionRepository.class);
+    private final ExecutionActivity activity = mock(ExecutionActivity.class);
     private final com.summit.dp.execution.domain.repository.ExecutionRepository executions =
             mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class);
     private final ExecutionResumeTaskRepository tasks = mock(ExecutionResumeTaskRepository.class);
 
-    /** 恢复任务状态落库的通知：worker 线程写完就 countDown，观察端 await 它而不是 sleep。 */
+    /** 恢复请求状态落库的通知：worker 线程写完就 countDown，观察端 await 它而不是 sleep。 */
     private final AtomicReference<StateWritten> stateWritten = new AtomicReference<>();
     private final AtomicReference<ExecutionResumeTask> task = new AtomicReference<>();
-    /**
-     * 当前任务是否仍可被领取。照抄生产 {@code claim} 的条件更新语义：同一条任务只有一方领得到。
-     * 不做真实 CAS 的话，测试为绕开派发窗口而重试派发时会跑出第二个 loop，
-     * 「连续多轮各恢复一次」这条断言反而变成假绿。
-     */
+    /** 照抄生产 {@code claim} 的条件更新语义：同一条请求只有一方领得到。 */
     private final AtomicBoolean claimable = new AtomicBoolean(true);
+    /** worker 每次读请求列表记一次；用来确认「上一个 worker 已退出、门闩已回收」。 */
+    private final AtomicInteger dispatchReads = new AtomicInteger();
 
     private ExecutionResumeCoordinator coordinator;
 
@@ -84,13 +89,18 @@ class ExecutionResumeCoordinatorTest {
     void setup() {
         SuspendedExecutionResumer resumer = new SuspendedExecutionResumer(toolCallRepository,
                 sessionAttributeRestorer, modelContextService, provider(executionControl));
-        coordinator = new ExecutionResumeCoordinator(tasks, executions, resumer,
-                provider(frameworkExecutions));
+        coordinator = new ExecutionResumeCoordinator(tasks, executions, resumer, executionControl,
+                provider(frameworkExecutions), provider(activity));
 
         task.set(newTask(0));
         claimable.set(true);
-        when(tasks.findByExecutionId(EXECUTION_ID)).thenAnswer(invocation -> List.of(task.get()));
-        when(tasks.claim(any(), any())).thenAnswer(invocation -> {
+        when(activity.isActive(any())).thenReturn(false);
+        when(executionControl.fail(any(), any())).thenReturn(() -> { });
+        when(tasks.findByExecutionId(EXECUTION_ID)).thenAnswer(invocation -> {
+            dispatchReads.incrementAndGet();
+            return List.of(task.get());
+        });
+        when(tasks.claim(any())).thenAnswer(invocation -> {
             if (!claimable.compareAndSet(true, false)) {
                 return false;
             }
@@ -99,8 +109,7 @@ class ExecutionResumeCoordinatorTest {
         });
         when(tasks.updateState(any())).thenAnswer(invocation -> {
             ExecutionResumeTask written = invocation.getArgument(0);
-            stateWritten.set(new StateWritten(written.getState(), written.getErrorReason(),
-                    written.getNextAttemptAt()));
+            stateWritten.set(new StateWritten(written.getState(), written.getErrorReason()));
             return true;
         });
         when(executions.findResumeGeneration(EXECUTION_ID)).thenReturn(GENERATION);
@@ -117,7 +126,7 @@ class ExecutionResumeCoordinatorTest {
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("执行已取消：恢复任务作废，绝不 resume")
+    @DisplayName("执行已取消：恢复请求作废，绝不 resume")
     void cancelledExecutionIsSupersededAndNeverResumed() {
         stubStatus(ExecutionState.CANCELLED);
         when(frameworkExecutions.findById(String.valueOf(EXECUTION_ID)))
@@ -125,10 +134,10 @@ class ExecutionResumeCoordinatorTest {
 
         coordinator.dispatch(EXECUTION_ID);
 
-        StateWritten written = awaitStateWritten();
-        assertEquals(ResumeTaskState.SUPERSEDED, written.state(),
-                "已取消的执行对应的恢复意图必须作废，不能记成失败再无限重试");
+        assertEquals(ResumeTaskState.SUPERSEDED, awaitStateWritten().state(),
+                "已取消的执行对应的恢复请求必须作废，不能记成失败");
         verify(executionControl, never()).resume(any(Execution.class));
+        verify(executionControl, never()).fail(any(), any());
         verify(sessionAttributeRestorer, never()).restore(any(Execution.class), any());
     }
 
@@ -136,7 +145,6 @@ class ExecutionResumeCoordinatorTest {
     @DisplayName("stop 在 stale 检查之后落库：迟到的恢复按当前状态让位，不覆盖 CANCELLED")
     void stopLandingAfterStaleCheckIsNotOverwritten() {
         stubStatus(ExecutionState.SUSPENDED);
-        // 卡在「锁已释放、读检查点」这一步：测试线程亲手把执行改成已取消再放行
         CountDownLatch checkpointRead = new CountDownLatch(1);
         CountDownLatch stopLanded = new CountDownLatch(1);
         when(frameworkExecutions.findById(String.valueOf(EXECUTION_ID))).thenAnswer(invocation -> {
@@ -147,8 +155,7 @@ class ExecutionResumeCoordinatorTest {
         CountDownLatch workerDone = new CountDownLatch(1);
         doAnswer(invocation -> {
             ExecutionResumeTask written = invocation.getArgument(0);
-            stateWritten.set(new StateWritten(written.getState(), written.getErrorReason(),
-                    written.getNextAttemptAt()));
+            stateWritten.set(new StateWritten(written.getState(), written.getErrorReason()));
             workerDone.countDown();
             return true;
         }).when(tasks).updateState(any());
@@ -160,12 +167,12 @@ class ExecutionResumeCoordinatorTest {
         await(workerDone);
 
         assertEquals(ResumeTaskState.SUPERSEDED, stateWritten.get().state(),
-                "stop 已落库后，迟到的恢复任务必须让位");
+                "stop 已落库后，迟到的恢复请求必须让位");
         verify(executionControl, never()).resume(any(Execution.class));
     }
 
     @Test
-    @DisplayName("代际已变更：旧挂起点的恢复意图作废，不作用在新边界上")
+    @DisplayName("代际已变更：旧挂起点的恢复请求作废，不作用在新边界上")
     void staleGenerationTaskIsSuperseded() {
         stubStatus(ExecutionState.SUSPENDED);
         when(executions.findResumeGeneration(EXECUTION_ID)).thenReturn(GENERATION + 1);
@@ -192,29 +199,114 @@ class ExecutionResumeCoordinatorTest {
     }
 
     // ------------------------------------------------------------------
-    // 未决槽位：等待而非恢复
+    // 竞争失败不判执行失败（变异守卫 #1）
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("仍有未决槽位：退回可派发态等待，不恢复也不记失败原因")
-    void unresolvedSlotRequeuesInsteadOfResuming() {
+    @DisplayName("控制槽位已被占用：让位，绝不把竞争失败判成执行失败")
+    void activeControlSlotYieldsWithoutFailingExecution() {
         stubStatus(ExecutionState.SUSPENDED);
         when(frameworkExecutions.findById(String.valueOf(EXECUTION_ID)))
                 .thenReturn(Optional.of(execution(ExecutionState.SUSPENDED)));
-        when(toolCallRepository.listUnresolvedByExecutionId(EXECUTION_ID))
-                .thenReturn(List.of(mock(ToolCall.class)));
+        // 另一条 loop 已持有该执行的控制槽位：本次让位，不是启动失败。
+        when(activity.isActive(String.valueOf(EXECUTION_ID))).thenReturn(true);
+
+        coordinator.dispatch(EXECUTION_ID);
+
+        assertEquals(ResumeTaskState.SUPERSEDED, awaitStateWritten().state(),
+                "控制槽位被占用属于竞争失败，请求作废即可，绝不记成 FAILED");
+        verify(executionControl, never()).resume(any(Execution.class));
+        verify(executionControl, never()).fail(any(), any());
+    }
+
+    @Test
+    @DisplayName("起步前控制槽位被抢占（resume 抛异常）：让位，绝不把竞争失败判成执行失败")
+    void raceLostBeforeStartupYieldsWithoutFailingExecution() {
+        stubStatus(ExecutionState.SUSPENDED);
+        when(frameworkExecutions.findById(String.valueOf(EXECUTION_ID)))
+                .thenReturn(Optional.of(execution(ExecutionState.SUSPENDED)));
+        // 起步前检查：无活跃 loop；resume 抛异常后重查：已被另一条 loop 抢占控制槽位。
+        when(activity.isActive(String.valueOf(EXECUTION_ID))).thenReturn(false).thenReturn(true);
+        when(executionControl.resume(any(Execution.class)))
+                .thenThrow(new IllegalStateException("执行已在运行"));
+
+        coordinator.dispatch(EXECUTION_ID);
+
+        assertEquals(ResumeTaskState.SUPERSEDED, awaitStateWritten().state(),
+                "控制槽位已被抢占属于竞争失败，绝不改判为启动失败");
+        verify(executionControl, never()).fail(any(), any());
+    }
+
+    // ------------------------------------------------------------------
+    // loop 已跑完、回写异常不得覆盖终态（变异守卫 #2）
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("loop 已跑完、仅回写异常：执行已终态，请求作废且不收口")
+    void completedLoopWithWriteBackFailureMustNotBeReclassifiedAsStartupFailure() {
+        stubStatus(ExecutionState.SUSPENDED);
+        // 首次读：挂起（worker 决定恢复）；异常后重读：已 COMPLETED（loop 跑完了，只是回写抛了）
+        when(frameworkExecutions.findById(String.valueOf(EXECUTION_ID)))
+                .thenReturn(Optional.of(execution(ExecutionState.SUSPENDED)))
+                .thenReturn(Optional.of(execution(ExecutionState.COMPLETED)));
+        when(executionControl.resume(any(Execution.class)))
+                .thenThrow(new IllegalStateException("回写模型上下文失败"));
+
+        coordinator.dispatch(EXECUTION_ID);
+
+        assertEquals(ResumeTaskState.SUPERSEDED, awaitStateWritten().state(),
+                "loop 已跑完、异常发生在回写阶段：绝不能覆盖终态、也不得改判为启动失败");
+        verify(executionControl, never()).fail(any(), any());
+    }
+
+    // ------------------------------------------------------------------
+    // 真正的启动失败：收口执行 + 记失败（且只尝试一次）
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("真正启动失败（仍挂起且无控制槽位）：收口执行并记失败，只尝试一次")
+    void genuineStartupFailureClosesExecutionAndRecordsFailure() {
+        stubStatus(ExecutionState.SUSPENDED);
+        when(frameworkExecutions.findById(String.valueOf(EXECUTION_ID)))
+                .thenReturn(Optional.of(execution(ExecutionState.SUSPENDED)));
+        when(executionControl.resume(any(Execution.class)))
+                .thenThrow(new IllegalStateException("loop 起不来"));
 
         coordinator.dispatch(EXECUTION_ID);
 
         StateWritten written = awaitStateWritten();
-        assertEquals(ResumeTaskState.FAILED, written.state(), "退回可派发态等下一轮");
-        assertTrue(written.retryAt() != null, "「还没到时候」必须给出退避时刻而不是记错误");
-        assertNull(written.errorReason(), "等待不是错误：记失败原因会让用户以为恢复坏了");
-        verify(executionControl, never()).resume(any(Execution.class));
+        assertEquals(ResumeTaskState.FAILED, written.state(), "启动失败必须收口为 FAILED");
+        assertNotNull(written.errorReason());
+        assertTrue(written.errorReason().contains("loop 起不来"), "失败原因要留痕，实际=" + written.errorReason());
+        // 执行按框架失败链收口（终态 + 轮次 + 事件都在框架里）。
+        verify(executionControl).fail(any(Execution.class), any());
+        // 只尝试一次：没有重试，resume 只被调用一次。
+        verify(executionControl, times(1)).resume(any(Execution.class));
+    }
+
+    @Test
+    @DisplayName("关闭导致的中断：不是启动失败，请求留在未完成态、不收口")
+    void interruptDuringResumeDoesNotWriteTerminalState() {
+        stubStatus(ExecutionState.SUSPENDED);
+        when(frameworkExecutions.findById(String.valueOf(EXECUTION_ID)))
+                .thenReturn(Optional.of(execution(ExecutionState.SUSPENDED)));
+        when(executionControl.resume(any(Execution.class))).thenAnswer(invocation -> {
+            // 模拟关闭打断：worker 线程被 interrupt 后抛出。
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("closed");
+        });
+
+        coordinator.dispatch(EXECUTION_ID);
+        awaitWorkerQuiescent();
+
+        StateWritten written = stateWritten.get();
+        assertTrue(written == null || written.state() != ResumeTaskState.FAILED,
+                "关闭中断不是启动失败：落 FAILED 会把一条本可收口的请求改判，实际=" + written);
+        verify(executionControl, never()).fail(any(), any());
     }
 
     // ------------------------------------------------------------------
-    // 正常路径与失败路径
+    // 正常路径
     // ------------------------------------------------------------------
 
     @Test
@@ -234,57 +326,57 @@ class ExecutionResumeCoordinatorTest {
     }
 
     @Test
-    @DisplayName("恢复失败：记 FAILED + 退避时刻并留痕，不抛出打断派发线程")
-    void resumeFailureIsRecordedWithBackoff() {
-        stubStatus(ExecutionState.SUSPENDED);
-        when(frameworkExecutions.findById(String.valueOf(EXECUTION_ID)))
-                .thenReturn(Optional.of(execution(ExecutionState.SUSPENDED)));
-        when(executionControl.resume(any(Execution.class)))
-                .thenThrow(new IllegalStateException("loop 起不来"));
-
-        coordinator.dispatch(EXECUTION_ID);
-
-        StateWritten written = awaitStateWritten();
-        assertEquals(ResumeTaskState.FAILED, written.state());
-        assertNotNull(written.errorReason());
-        assertTrue(written.errorReason().contains("loop 起不来"), "失败原因要留痕，实际=" + written.errorReason());
-        assertNotNull(written.retryAt(), "未达重试上限时要给出退避时刻，由巡检再试");
-    }
-
-    @Test
-    @DisplayName("重试次数达上限：不再自动重试，交给用户手工恢复")
-    void exhaustedTaskStopsAutoRetry() {
-        stubStatus(ExecutionState.SUSPENDED);
-        when(frameworkExecutions.findById(String.valueOf(EXECUTION_ID)))
-                .thenReturn(Optional.of(execution(ExecutionState.SUSPENDED)));
-        when(executionControl.resume(any(Execution.class)))
-                .thenThrow(new IllegalStateException("loop 起不来"));
-        // 逐次领取把 attempts 推到上限；最后一次派发不再给出退避时刻
-        for (int attempt = 0; attempt < ExecutionResumeCoordinator.MAX_ATTEMPTS; attempt++) {
-            task.get().claim();
-        }
-        assertTrue(task.get().exhausted(ExecutionResumeCoordinator.MAX_ATTEMPTS), "前置条件：已达上限");
-
-        coordinator.dispatch(EXECUTION_ID);
-
-        StateWritten written = awaitStateWritten();
-        assertEquals(ResumeTaskState.EXHAUSTED, written.state(),
-                "耗尽的字面量状态必须与「退避未到点的 FAILED」可区分，否则会被 listDispatchable 反复选中");
-        assertNull(written.retryAt(), "达上限后不再自动重试，否则会无限刷失败");
-    }
-
-    @Test
     @DisplayName("领取失败（已被另一 worker 领走）：本 worker 让位，绝不跑第二个 loop")
     void failedClaimYieldsToOtherWorker() {
-        // 覆盖领取桩必须用 doReturn：when(...) 的注册期会真实调用 claim(null, ...)
-        doReturn(false).when(tasks).claim(any(), any());
+        doReturn(false).when(tasks).claim(any());
         stubStatus(ExecutionState.SUSPENDED);
 
         coordinator.dispatch(EXECUTION_ID);
 
         verify(frameworkExecutions, never()).findById(any());
         verify(executionControl, never()).resume(any(Execution.class));
-        assertNull(stateWritten.get(), "领取失败时任务归另一 worker，本 worker 不写任何状态");
+        assertNull(stateWritten.get(), "领取失败时请求归另一 worker，本 worker 不写任何状态");
+    }
+
+    // ------------------------------------------------------------------
+    // accept：落请求 + 提交后派发
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("accept：无未决槽位则落请求并排到提交后派发，最终恢复")
+    void acceptWritesMarkerAndSchedulesDispatchAfterCommit() {
+        stubStatus(ExecutionState.SUSPENDED);
+        when(tasks.enqueue(anyLong(), anyLong(), any())).thenReturn(task.get());
+        when(frameworkExecutions.findById(String.valueOf(EXECUTION_ID)))
+                .thenReturn(Optional.of(execution(ExecutionState.SUSPENDED)));
+        when(executionControl.resume(any(Execution.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        // 无事务同步时立即执行派发（真实 LocalExecutionRepository 的同款降级语义）。
+        doAnswer(invocation -> {
+            ((Runnable) invocation.getArgument(0)).run();
+            return null;
+        }).when(frameworkExecutions).afterCommit(any());
+
+        ResumeDisposition disposition = coordinator.accept(EXECUTION_ID);
+
+        assertEquals(ResumeDisposition.QUEUED, disposition);
+        assertEquals(ResumeTaskState.SUCCEEDED, awaitStateWritten().state());
+        verify(tasks).enqueue(eq(EXECUTION_ID), eq(GENERATION), any());
+        verify(frameworkExecutions).afterCommit(any());
+    }
+
+    @Test
+    @DisplayName("accept：仍有未决槽位则不落请求、不派发，交最后一个槽位触发")
+    void acceptWithUnresolvedSlotWaitsWithoutMarker() {
+        stubStatus(ExecutionState.SUSPENDED);
+        when(toolCallRepository.listUnresolvedByExecutionId(EXECUTION_ID))
+                .thenReturn(List.of(mock(ToolCall.class)));
+
+        ResumeDisposition disposition = coordinator.accept(EXECUTION_ID);
+
+        assertEquals(ResumeDisposition.WAITING_OTHER_TOOLS, disposition);
+        verify(tasks, never()).enqueue(anyLong(), anyLong(), any());
+        verify(frameworkExecutions, never()).afterCommit(any());
     }
 
     // ------------------------------------------------------------------
@@ -310,14 +402,13 @@ class ExecutionResumeCoordinatorTest {
                     "第 " + (round + 1) + " 轮应正常派发并恢复");
         }
 
-        // claim 桩是真 CAS：三轮各恢复一次，不会有多跑出来的 loop
         verify(executionControl, times(3)).resume(any(Execution.class));
     }
 
     private ExecutionResumeTask newTask(long seq) {
         return ExecutionResumeTask.builder().id(seq + 1).executionId(EXECUTION_ID)
-                .generation(GENERATION).state(ResumeTaskState.READY).attempts(0).version(1L)
-                .nextAttemptAt(Instant.now()).createdAt(Instant.now()).updatedAt(Instant.now()).build();
+                .generation(GENERATION).state(ResumeTaskState.READY).version(1L)
+                .createdAt(Instant.now()).updatedAt(Instant.now()).build();
     }
 
     // ------------------------------------------------------------------
@@ -339,11 +430,10 @@ class ExecutionResumeCoordinatorTest {
      *
      * <p><b>为什么允许重试派发</b>：观察点（状态写入）发生在 worker 的 {@code finally} 之前，
      * 而门闩正是在 {@code finally} 里释放 —— 观察到状态的那一刻门闩可能还没放掉，下一次
-     * {@code dispatch} 会被 CAS 吞掉。这不是缺陷：生产里同样由巡检重投，语义一致。
-     * 用「重投直到落库」而不是 sleep 来对齐，避免把时序假设写进断言。</p>
+     * {@code dispatch} 会被 CAS 吞掉。用「重投直到落库」而不是 sleep 来对齐。</p>
      */
     private StateWritten dispatchAndAwaitState() {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(AWAIT_TIMEOUT_SECONDS);
         while (System.nanoTime() < deadline) {
             coordinator.dispatch(EXECUTION_ID);
             if (stateWritten.get() != null) {
@@ -351,12 +441,12 @@ class ExecutionResumeCoordinatorTest {
             }
             Thread.onSpinWait();
         }
-        throw new AssertionError("5 秒内没有观察到恢复任务状态写入");
+        throw new AssertionError(AWAIT_TIMEOUT_SECONDS + " 秒内没有观察到恢复请求状态写入");
     }
 
     /** 阻塞到 worker 写完状态；观察端靠它同步，不用固定 sleep 赌。 */
     private StateWritten awaitStateWritten() {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(AWAIT_TIMEOUT_SECONDS);
         while (System.nanoTime() < deadline) {
             StateWritten written = stateWritten.get();
             if (written != null) {
@@ -364,12 +454,30 @@ class ExecutionResumeCoordinatorTest {
             }
             Thread.onSpinWait();
         }
-        throw new AssertionError("5 秒内没有观察到恢复任务状态写入");
+        throw new AssertionError(AWAIT_TIMEOUT_SECONDS + " 秒内没有观察到恢复请求状态写入");
+    }
+
+    /**
+     * 等到「上一个 worker 已退出」：反复派发，直到新 worker 再次读到请求列表。
+     *
+     * <p><b>为什么必须等</b>：让位/中断路径若被误当异常，其副作用可能晚于观察点发生；
+     * 只有确认前一个 worker 已释放门闩，这类「没有第二次尝试」的断言才成立。</p>
+     */
+    private void awaitWorkerQuiescent() {
+        int nextRead = dispatchReads.get() + 1;
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(AWAIT_TIMEOUT_SECONDS);
+        while (dispatchReads.get() < nextRead) {
+            coordinator.dispatch(EXECUTION_ID);
+            if (System.nanoTime() >= deadline) {
+                throw new AssertionError("未观察到上一个 worker 退出（门闩未回收）");
+            }
+            Thread.onSpinWait();
+        }
     }
 
     private static void await(CountDownLatch latch) {
         try {
-            if (!latch.await(5, TimeUnit.SECONDS)) {
+            if (!latch.await(AWAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 throw new AssertionError("等待闸门超时");
             }
         } catch (InterruptedException e) {
@@ -395,7 +503,7 @@ class ExecutionResumeCoordinatorTest {
         return provider;
     }
 
-    /** 一次状态落库的快照：断言需要状态、失败原因、退避时刻三者，缺一不可。 */
-    private record StateWritten(ResumeTaskState state, String errorReason, Instant retryAt) {
+    /** 一次状态落库的快照：断言需要状态与失败原因两者。 */
+    private record StateWritten(ResumeTaskState state, String errorReason) {
     }
 }

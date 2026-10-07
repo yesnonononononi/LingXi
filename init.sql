@@ -256,31 +256,28 @@ CREATE TABLE IF NOT EXISTS tool_call (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='工具调用状态与卡片载荷(唯一权威源)';
 
 -- ------------------------------------------------------------
--- 8.1 执行恢复意图表(execution_resume_task)
---     只保存「这个执行在这个代际上要恢复一次」这一条意图，**不保存任何事件**：
---     事件流没有日志，恢复靠的是已提交检查点，本表只负责让「提交事务」与「线程提交」
---     之间不留崩溃窗口 —— 事务落库即代表恢复意图已受理，进程重启后可重新派发。
---     state: READY(待派发) / CLAIMED(已领取,worker 正在跑) / SUCCEEDED / FAILED /
---            SUPERSEDED(代际已变或执行已终态,作废) /
---            EXHAUSTED(重试已达上限,不再自动重试) /
---            NEEDS_MANUAL(无法证明未跨恢复边界,禁止自动重跑,待人工)。
---     EXHAUSTED 与 NEEDS_MANUAL 都不进可派发集合,与「退避未到点的 FAILED」在 SQL 层可区分。
---     (execution_id, generation) 唯一：同一执行同一可恢复代际最多一条任务。
+-- 8.1 执行恢复请求表(execution_resume_task)
+--     只保存「这个执行在这个代际上要恢复一次」这一条请求，**不保存任何事件**：
+--     事件流没有日志，恢复靠的是已提交检查点，本表只负责让「提交事务」与「派发动作」
+--     之间不留崩溃窗口 —— 事务落库即代表恢复请求已受理，进程重启后可据此识别。
+--     恢复只尝试一次：启动失败即收口为 FAILED，无退避、不重试、不轮询。
+--     state: READY(待派发) / CLAIMED(已领取,worker 正在跑) / SUCCEEDED /
+--            FAILED(启动失败已收口) / SUPERSEDED(代际已变或执行已终态,作废)。
+--     请求行的唯一用途：重启后区分「正常等待审批的 SUSPENDED」与
+--     「已批准但恢复没起步的 SUSPENDED」。后者只收口、绝不自动重投。
+--     (execution_id, generation) 唯一：同一执行同一可恢复代际最多一条请求。
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS execution_resume_task (
-    id              BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '恢复任务ID',
+    id              BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '恢复请求ID',
     execution_id    BIGINT       NOT NULL COMMENT '待恢复的执行ID(execution.id)',
     generation      BIGINT       NOT NULL COMMENT '恢复代际；与 execution.resume_generation 对应,不一致即作废',
-    state           VARCHAR(16)  NOT NULL COMMENT 'READY/CLAIMED/SUCCEEDED/FAILED/SUPERSEDED/EXHAUSTED/NEEDS_MANUAL',
-    attempts        INT          NOT NULL DEFAULT 0 COMMENT '已领取次数;达到上限后不再自动重试',
-    next_attempt_at DATETIME(3)  NULL COMMENT '下次可派发时刻;失败退避后写入,NULL 表示可立即派发',
-    error_reason    VARCHAR(500) NULL COMMENT '最近一次失败原因;仅 FAILED 有值',
+    state           VARCHAR(16)  NOT NULL COMMENT 'READY/CLAIMED/SUCCEEDED/FAILED/SUPERSEDED',
+    error_reason    VARCHAR(500) NULL COMMENT '失败原因;仅 FAILED 有值',
     version         BIGINT       NOT NULL DEFAULT 1 COMMENT '实体版本;领取与状态写入按它条件更新',
     created_at      DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
     updated_at      DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-    UNIQUE KEY uk_resume_task_generation (execution_id, generation),
-    KEY idx_resume_task_state (state, next_attempt_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='执行恢复意图;只保存意图,不保存事件';
+    UNIQUE KEY uk_resume_task_generation (execution_id, generation)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='执行恢复请求;只保存请求,不保存事件';
 
 -- ------------------------------------------------------------
 -- 9. Agent 邮箱与消息（主键均由应用生成雪花 ID）

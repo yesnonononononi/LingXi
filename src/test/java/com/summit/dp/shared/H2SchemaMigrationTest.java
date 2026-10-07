@@ -17,6 +17,9 @@ import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import lombok.Data;
 
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -42,6 +45,69 @@ class H2SchemaMigrationTest {
             assertEquals(1L, tools.selectCount(null));
             assertEquals(1, session.getMapper(SchemaVersionMapper.class).selectById(1).getVersion());
         } finally { database.shutdown(); }
+    }
+
+    /**
+     * 旧形状的恢复请求表必须被整体重建，而不是被 {@code CREATE TABLE IF NOT EXISTS} 空操作放过。
+     *
+     * <p><b>为什么必须重建而不是补列</b>：旧形状的 {@code attempts} / {@code next_attempt_at} 是
+     * 已废弃的重试退避语义；更要紧的是旧状态行（{@code EXHAUSTED} / {@code NEEDS_MANUAL}）
+     * 不在新收口逻辑的取值集合（READY / CLAIMED）里，留着就等于那些执行永远收不了口。
+     * 恢复请求是纯瞬态标记，旧数据按约定可全量舍弃。</p>
+     */
+    @Test
+    void legacyResumeRequestTableIsRebuiltAndLegacyRowsDiscarded() throws Exception {
+        EmbeddedDatabase database = new EmbeddedDatabaseBuilder().setType(EmbeddedDatabaseType.H2)
+                .setName(UUID.randomUUID() + ";MODE=MySQL")
+                .addScript("tool-call-legacy-schema.sql").build();
+        try {
+            // 金丝雀：证明 hasColumn 这个扫描器本身有效，否则下面的 false 可能是假绿。
+            assertTrue(hasColumn(database, "execution_resume_task", "state"),
+                    "前置条件：旧形状里 state 列存在（扫描器有效性对照）");
+            assertEquals(1L, countRows(database, "execution_resume_task"),
+                    "前置条件：旧形状里有一条遗留请求行");
+
+            H2SchemaInitializer initializer = new H2SchemaInitializer();
+            initializer.h2SchemaBootstrap(database).run(new DefaultApplicationArguments());
+
+            assertFalse(hasColumn(database, "execution_resume_task", "attempts"),
+                    "旧形状的 attempts 列必须被重建掉，CREATE IF NOT EXISTS 做不到这一点");
+            assertFalse(hasColumn(database, "execution_resume_task", "next_attempt_at"),
+                    "旧形状的 next_attempt_at 列必须被重建掉");
+            assertEquals(0L, countRows(database, "execution_resume_task"),
+                    "旧请求数据按约定全量舍弃：遗留的 EXHAUSTED 行不得留下");
+
+            // 幂等：第二次启动不得再触发重建，也不得因为 DROP 报错
+            initializer.h2SchemaBootstrap(database).run(new DefaultApplicationArguments());
+            assertFalse(hasColumn(database, "execution_resume_task", "attempts"));
+            assertTrue(hasColumn(database, "execution_resume_task", "generation"),
+                    "重建后新形状的列必须齐备");
+        } finally {
+            database.shutdown();
+        }
+    }
+
+    /** 列是否存在；与 {@code H2SchemaInitializer#hasColumn} 同口径（逐表扫元数据）。 */
+    private boolean hasColumn(EmbeddedDatabase database, String table, String column) throws Exception {
+        try (Connection connection = database.getConnection();
+             ResultSet columns = connection.getMetaData().getColumns(null, null, "%", "%")) {
+            while (columns.next()) {
+                if (table.equalsIgnoreCase(columns.getString("TABLE_NAME"))
+                        && column.equalsIgnoreCase(columns.getString("COLUMN_NAME"))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private long countRows(EmbeddedDatabase database, String table) throws Exception {
+        try (Connection connection = database.getConnection();
+             Statement statement = connection.createStatement();
+             ResultSet rows = statement.executeQuery("SELECT COUNT(*) FROM " + table)) {
+            rows.next();
+            return rows.getLong(1);
+        }
     }
 
     private SqlSessionTemplate session(EmbeddedDatabase database) throws Exception {
