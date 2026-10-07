@@ -1,13 +1,12 @@
 /**
  * 「复制到剪贴板 + N 秒后复位」状态的统一实现。
  *
- * 收敛原因：同一套「writeText → 置为已复制 → setTimeout 复位」逻辑在 6 处逐字复制：
- *   - components/chat/ChatMessageItem.vue:126-138（copyToolContent，按工具 id 键控）
- *   - components/chat/ChatMessageItem.vue:427-435（copyContent，布尔）
- *   - components/chat/ApprovalCard.vue:56-68（copyCommand，布尔）
- *   - components/chat/SubAgentSidePanel.vue:55-65（handleCopyResult，按子会话 id 键控）
- *   - components/chat/SubSessionDetailDrawer.vue:69-80（copyAllContent，布尔）
- *   - components/chat/MarkdownRenderer.vue:33-44（代码块复制，DOM 事件委托）
+ * 收敛原因：同一套「writeText → 置为已复制 → setTimeout 复位」逻辑在 5 处逐字复制：
+ *   - components/chat/ChatMessageItem.vue（copyToolContent，按工具 id 键控）
+ *   - components/chat/ChatMessageItem.vue（copyContent，布尔）
+ *   - components/chat/SubAgentSidePanel.vue（handleCopyResult，按子会话 id 键控）
+ *   - components/chat/SubSessionDetailDrawer.vue（copyAllContent，布尔）
+ *   - components/chat/MarkdownRenderer.vue（代码块复制，DOM 事件委托）
  *
  * 用法：
  *   const { copiedKey, isCopied, copy } = useCopyFeedback();      // 默认 2000ms

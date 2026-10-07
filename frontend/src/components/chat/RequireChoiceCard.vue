@@ -1,6 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, inject } from 'vue';
+import { ref, computed, inject, nextTick } from 'vue';
 import type { PromptCardData } from '../../types/chat';
+import { DECIDE_TOOL_CALL_KEY } from '../../types/toolDecision';
+import { CARD_SHELL_CLASS, CARD_BODY_CLASS, CARD_ERROR_TEXT_CLASS, cardToneClass, type CardTone } from '../../utils/cardUi';
+import { canDecideCard } from '../../utils/toolCallCard';
+import CardHeader from './CardHeader.vue';
+import CardActionButton from './CardActionButton.vue';
 import CollapseTransition from '../common/CollapseTransition.vue';
 
 const props = defineProps<{
@@ -12,19 +17,10 @@ const props = defineProps<{
 }>();
 
 /**
- * 由视图层注入的决策提交：批 A 起走 JSON 回执，**不再消费请求级流**。
- * 恢复期的实时内容由会话级 v3 流渲染；本回调只负责提交并回执结果。
- * 缺省（组件树外独立使用本卡片时）降级为不可提交，仅提示。
+ * 由视图层注入的决策提交：走 JSON 回执，**不再消费请求级流**。
  * 与 PlanCard 复用同一个宿主能力——require_choice 与 plan 走同一条恢复链路。
  */
-const decideToolCall = inject<((payload: {
-  conversationId: string;
-  toolCallId: string;
-  action: 'APPROVE' | 'REJECT' | 'ANSWER';
-  text?: string;
-  /** 卡片当前版本；提交给后端做冲突判定，避免过期界面覆盖先到的结论 */
-  expectedVersion?: string | number | null;
-}) => Promise<unknown>) | null>('decideToolCall', null);
+const decideToolCall = inject(DECIDE_TOOL_CALL_KEY, null);
 
 /** 是否最小化/折叠 */
 const isCollapsed = ref(false);
@@ -36,6 +32,7 @@ const customInput = ref('');
 const isCustomSelected = ref(false);
 const isSubmitting = ref(false);
 const errorMsg = ref('');
+const inputRef = ref<HTMLInputElement | null>(null);
 
 const questionText = computed(() => props.promptCard.content || props.promptCard.title || '需要您的进一步确认：');
 
@@ -44,14 +41,23 @@ const options = computed<string[]>(() =>
   (props.promptCard.options || []).map(item => String(item ?? '').trim()).filter(Boolean)
 );
 
-/** pending 也可能暂不可操作，按钮只能看后端动作集合。 */
-const isPending = computed(() => props.promptCard.allowedActions?.includes('ANSWER') === true);
+/**
+ * 是否可操作：**叠加权威 `pending`**（= type==='PROMISE' && status==='pending'），
+ * 再要求后端动作集合含 ANSWER。只判 allowedActions 会被「已决但残留动作」的脏数据骗过。
+ */
+const isPending = computed(() => canDecideCard(props.promptCard, 'ANSWER'));
 const isResolved = computed(() => !isPending.value);
 const resolvedAnswer = computed(() => props.promptCard.answer || '');
 
 /** 结论：raw_output.outcome（ANSWERED / ...）；缺失 = 状态未知，不得默认成功 */
 const outcome = computed(() => String(props.promptCard.outcome ?? '').trim().toUpperCase());
 const isUnknownOutcome = computed(() => isResolved.value && !outcome.value);
+
+/** header 状态点语义色：未决=待答，已决=已答/未知 */
+const headerTone = computed<CardTone>(() => {
+  if (!isResolved.value) return 'pending';
+  return isUnknownOutcome.value ? 'unknown' : 'approved';
+});
 
 // 选择预设选项
 const selectChoice = (idx: number) => {
@@ -61,7 +67,16 @@ const selectChoice = (idx: number) => {
   errorMsg.value = '';
 };
 
-// 聚焦自定义输入框
+// 点击「自定义答案」整行 → 选中并聚焦输入框（避免用户需二次点击）
+const selectCustom = () => {
+  if (isResolved.value) return;
+  isCustomSelected.value = true;
+  selectedIndex.value = null;
+  errorMsg.value = '';
+  void nextTick(() => inputRef.value?.focus());
+};
+
+// 输入框自身获得焦点时同步选中态
 const onCustomFocus = () => {
   if (isResolved.value) return;
   isCustomSelected.value = true;
@@ -76,12 +91,17 @@ const canSubmit = computed(() => {
   return selectedIndex.value !== null;
 });
 
+/** 提交按钮禁用原因（明确提示，避免「点了没反应」） */
+const disabledReason = computed(() => {
+  if (isResolved.value || isSubmitting.value) return '';
+  return canSubmit.value ? '' : '请选择一个选项，或输入你的答案后再提交';
+});
+
 /**
  * 提交选中的答案。
  *
- * 决策走 /tool-call/decisions，动作为 ANSWER：澄清提问里「给出回答」就是回答本身，
- * 不再借用 APPROVE 布尔表达（二者在库里必须可区分）。回答原文作为 text 落进上下文，
- * 结论记为 ANSWERED。恢复执行的事件由会话级 v3 流渲染。
+ * 决策走 /tool-call/decisions，动作为 ANSWER：澄清提问里「给出回答」就是回答本身。
+ * 回答原文作为 text 落进上下文，结论记为 ANSWERED。
  */
 const submit = async (answer: string) => {
   const conversationId = props.promptCard.conversationId
@@ -90,7 +110,6 @@ const submit = async (answer: string) => {
     errorMsg.value = '提问卡片缺少所属会话，无法提交回答';
     return;
   }
-  // 决策锚点是 toolCallId：历史卡片由 TOOL 行 toolCall 提供、实时卡片由 CARD_PENDING 拉取。
   const toolCallId = props.promptCard.toolCallId;
   if (!toolCallId) {
     errorMsg.value = '提问卡片缺少互动状态ID，无法提交回答';
@@ -111,7 +130,6 @@ const submit = async (answer: string) => {
       text: answer,
       expectedVersion: props.promptCard.version ?? null
     });
-    // 结论由 outcome 表达（ANSWERED），status 收敛为终态 completed
   } catch (err: any) {
     errorMsg.value = err?.message || '提交回答失败，请重试';
   } finally {
@@ -133,159 +151,161 @@ const handleSubmit = () => {
 </script>
 
 <template>
-  <!-- 当卡片被彻底关闭时隐藏 -->
-  <div v-if="!isDismissed" :class="['w-full rounded-2xl border transition-all my-2 shadow-[0_1px_4px_rgba(0,0,0,0.05)]', isDark ? 'bg-[#161b26] border-gray-800' : 'bg-white border-gray-200/90']">
-
-    <!-- 1. 顶部 Header -->
-    <div class="px-5 pt-4 pb-2 flex items-center justify-between select-none">
-      <span class="text-xs font-normal text-gray-400 tracking-wide">Clarify</span>
-      <div class="flex items-center gap-2">
-        <button
-          type="button"
-          @click="isCollapsed = !isCollapsed"
-          class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition rounded-md"
-          :title="isCollapsed ? '展开' : '收起'"
-        >
-          <svg :class="['w-4 h-4 transition-transform duration-200', isCollapsed ? '-rotate-90' : '']" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          @click="isDismissed = true"
-          class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition rounded-md"
-          title="关闭"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-    </div>
-
-    <!-- 2. 卡片主要内容 -->
-    <CollapseTransition>
-      <div v-if="!isCollapsed">
-        <div class="px-5 pb-5 space-y-3.5">
-
-        <h3 :class="['text-[15px] sm:text-base font-bold leading-relaxed', isDark ? 'text-gray-100' : 'text-gray-900']">
-        {{ questionText }}
-      </h3>
-
-      <!-- 已决断提示状态 -->
-      <div
-        v-if="isResolved"
-        :class="[
-          'flex items-center gap-2 py-2 px-3 rounded-xl text-xs font-medium',
-          isUnknownOutcome
-            ? 'bg-gray-500/10 border border-gray-500/20 text-gray-400'
-            : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500'
-        ]"
-      >
-        <svg v-if="!isUnknownOutcome" class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-        </svg>
-        <svg v-else class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-        <span v-if="isUnknownOutcome">{{ promptCard.status === 'preparing' ? '准备中' : promptCard.unavailableReason || '状态未知（未获取到该提问的结论）' }}</span>
-        <span v-else>已确认决策：<span class="font-semibold">{{ resolvedAnswer }}</span></span>
-      </div>
-
-      <div v-if="!isResolved" class="space-y-2">
-        <!-- 候选项列表（options 为空时整块不渲染） -->
-        <div
-          v-for="(item, idx) in options"
-          :key="idx"
-          @click="selectChoice(idx)"
-          :class="[
-            'flex items-start sm:items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer select-none group',
-            selectedIndex === idx
-              ? (isDark ? 'bg-blue-950/30 border-blue-500/60' : 'bg-blue-50/80 border-blue-400/80 shadow-xs')
-              : (isDark ? 'border-transparent hover:bg-gray-800/40 hover:border-gray-700' : 'border-transparent hover:bg-gray-50/80 hover:border-gray-200')
-          ]"
-        >
-          <div
-            :class="[
-              'w-6 h-6 rounded-md flex items-center justify-center text-xs font-semibold flex-shrink-0 transition-colors mt-0.5 sm:mt-0',
-              selectedIndex === idx
-                ? 'bg-blue-600 text-white'
-                : (isDark ? 'bg-gray-800 text-gray-400 group-hover:text-gray-200' : 'bg-[#eef2f6] text-gray-500 group-hover:text-gray-700')
-            ]"
+  <div
+    v-if="!isDismissed"
+    :class="[CARD_SHELL_CLASS, isDark ? 'bg-[#161b26] border-gray-800' : 'bg-white border-gray-200/90']"
+  >
+    <div :class="CARD_BODY_CLASS">
+      <!-- 1. 统一 header：状态点 + 类型标签；右侧折叠/关闭（关闭仅在已决态出现） -->
+      <CardHeader :tone="headerTone" type-label="提问" :is-dark="isDark">
+        <template #actions>
+          <!-- ★ 待决策态不得移除操作入口：折叠 / 关闭均只在已决态出现 -->
+          <button
+            v-if="isResolved"
+            type="button"
+            @click="isCollapsed = !isCollapsed"
+            class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition rounded-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50"
+            :title="isCollapsed ? '展开' : '收起'"
+            :aria-label="isCollapsed ? '展开卡片' : '收起卡片'"
           >
-            {{ idx + 1 }}
-          </div>
-
-          <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 flex-1 min-w-0">
-            <span :class="['text-[13.5px] font-semibold transition-colors', isDark ? 'text-gray-100' : 'text-gray-900']">
-              {{ item }}
-            </span>
-          </div>
-        </div>
-
-        <!-- 自定义答案输入行 -->
-        <div
-          @click="onCustomFocus"
-          :class="[
-            'flex items-center gap-3 p-2 rounded-xl border transition-all cursor-text',
-            isCustomSelected
-              ? (isDark ? 'bg-blue-950/30 border-blue-500/60' : 'bg-blue-50/80 border-blue-400/80 shadow-xs')
-              : (isDark ? 'border-transparent hover:bg-gray-800/40 hover:border-gray-700' : 'border-transparent hover:bg-gray-50/80 hover:border-gray-200')
-          ]"
-        >
-          <div
-            :class="[
-              'w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 transition-colors',
-              isCustomSelected
-                ? 'bg-blue-600 text-white'
-                : (isDark ? 'bg-gray-800 text-gray-400' : 'bg-[#eef2f6] text-gray-400')
-            ]"
-          >
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            <svg :class="['w-4 h-4 transition-transform duration-200', isCollapsed ? '-rotate-90' : '']" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
             </svg>
+          </button>
+          <!-- ★ 待决策态不得移除操作入口：只有已决态才允许关闭整卡 -->
+          <button
+            v-if="isResolved"
+            type="button"
+            @click="isDismissed = true"
+            class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition rounded-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50"
+            title="关闭"
+            aria-label="关闭卡片"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </template>
+      </CardHeader>
+
+      <!-- 2. 卡片主要内容 -->
+      <CollapseTransition>
+        <div v-if="!isCollapsed">
+          <div class="space-y-3.5">
+
+            <h3 :class="['text-[15px] sm:text-base font-bold leading-relaxed', isDark ? 'text-gray-100' : 'text-gray-900']">
+              {{ questionText }}
+            </h3>
+
+            <!-- 已决断提示状态 -->
+            <div
+              v-if="isResolved"
+              :class="['flex items-center gap-2 py-2 px-3 rounded-xl text-xs font-medium', cardToneClass(headerTone, isDark)]"
+            >
+              <svg v-if="!isUnknownOutcome" class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+              </svg>
+              <svg v-else class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span v-if="isUnknownOutcome">{{ promptCard.status === 'preparing' ? '准备中' : promptCard.unavailableReason || '状态未知（未获取到该提问的结论）' }}</span>
+              <span v-else>已确认决策：<span class="font-semibold">{{ resolvedAnswer }}</span></span>
+            </div>
+
+            <div v-if="!isResolved" class="space-y-2">
+              <!-- 候选项列表（options 为空时整块不渲染） -->
+              <div
+                v-for="(item, idx) in options"
+                :key="idx"
+                @click="selectChoice(idx)"
+                :class="[
+                  'flex items-start sm:items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer select-none group',
+                  selectedIndex === idx
+                    ? (isDark ? 'bg-blue-950/30 border-blue-500/60' : 'bg-blue-50/80 border-blue-400/80 shadow-xs')
+                    : (isDark ? 'border-transparent hover:bg-gray-800/40 hover:border-gray-700' : 'border-transparent hover:bg-gray-50/80 hover:border-gray-200')
+                ]"
+              >
+                <div
+                  :class="[
+                    'w-6 h-6 rounded-md flex items-center justify-center text-xs font-semibold flex-shrink-0 transition-colors mt-0.5 sm:mt-0',
+                    selectedIndex === idx
+                      ? 'bg-blue-600 text-white'
+                      : (isDark ? 'bg-gray-800 text-gray-400 group-hover:text-gray-200' : 'bg-[#eef2f6] text-gray-500 group-hover:text-gray-700')
+                  ]"
+                >
+                  {{ idx + 1 }}
+                </div>
+
+                <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 flex-1 min-w-0">
+                  <span :class="['text-[13.5px] font-semibold transition-colors', isDark ? 'text-gray-100' : 'text-gray-900']">
+                    {{ item }}
+                  </span>
+                </div>
+              </div>
+
+              <!-- 自定义答案输入行（整行点击即选中并聚焦） -->
+              <div
+                @click="selectCustom"
+                :class="[
+                  'flex items-center gap-3 p-2 rounded-xl border transition-all cursor-text',
+                  isCustomSelected
+                    ? (isDark ? 'bg-blue-950/30 border-blue-500/60' : 'bg-blue-50/80 border-blue-400/80 shadow-xs')
+                    : (isDark ? 'border-transparent hover:bg-gray-800/40 hover:border-gray-700' : 'border-transparent hover:bg-gray-50/80 hover:border-gray-200')
+                ]"
+              >
+                <div
+                  :class="[
+                    'w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 transition-colors',
+                    isCustomSelected
+                      ? 'bg-blue-600 text-white'
+                      : (isDark ? 'bg-gray-800 text-gray-400' : 'bg-[#eef2f6] text-gray-400')
+                  ]"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </div>
+
+                <input
+                  ref="inputRef"
+                  v-model="customInput"
+                  @focus="onCustomFocus"
+                  @keydown.enter.prevent="handleSubmit"
+                  type="text"
+                  placeholder="输入你的答案"
+                  :class="[
+                    'w-full text-[13px] bg-transparent outline-none placeholder:text-gray-400',
+                    isDark ? 'text-gray-100' : 'text-gray-800'
+                  ]"
+                />
+              </div>
+            </div>
+
+            <div v-if="errorMsg" :class="['text-xs py-1', CARD_ERROR_TEXT_CLASS]">
+              {{ errorMsg }}
+            </div>
+
+            <!-- 3. 底部操作工具栏 -->
+            <div v-if="!isResolved" class="pt-2 flex items-center justify-between gap-3 select-none">
+              <span class="text-[11px] text-gray-500 dark:text-gray-400">{{ disabledReason }}</span>
+              <CardActionButton
+                tone="blue"
+                :loading="isSubmitting"
+                :disabled="!canSubmit"
+                :is-dark="isDark"
+                @click="handleSubmit"
+              >
+                <template #icon>
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                </template>
+                提交回答
+              </CardActionButton>
+            </div>
           </div>
-
-          <input
-            v-model="customInput"
-            @focus="onCustomFocus"
-            @keydown.enter.prevent="handleSubmit"
-            type="text"
-            placeholder="输入你的答案"
-            :class="[
-              'w-full text-[13px] bg-transparent outline-none placeholder:text-gray-400',
-              isDark ? 'text-gray-100' : 'text-gray-800'
-            ]"
-          />
         </div>
-      </div>
-
-      <div v-if="errorMsg" class="text-xs text-red-400 py-1">
-        {{ errorMsg }}
-      </div>
-
-      <!-- 3. 底部操作工具栏 -->
-      <div v-if="!isResolved" class="pt-2 flex items-center justify-end select-none">
-        <button
-          type="button"
-          @click="handleSubmit"
-          :disabled="!canSubmit"
-          :class="[
-            'px-5 py-1.5 rounded-xl text-xs font-medium text-white transition shadow-xs flex items-center gap-1',
-            canSubmit
-              ? 'bg-blue-600 hover:bg-blue-500 cursor-pointer'
-              : 'bg-[#888e9b] dark:bg-gray-700 opacity-60 cursor-not-allowed'
-          ]"
-        >
-          <svg v-if="isSubmitting" class="w-3 h-3 animate-spin mr-1" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-          </svg>
-          <span>提交</span>
-        </button>
-      </div>
-      </div>
-      </div>
-    </CollapseTransition>
+      </CollapseTransition>
+    </div>
   </div>
 </template>

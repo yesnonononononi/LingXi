@@ -9,9 +9,6 @@ import com.summit.ddd.infrastructure.repository.AbstractRepository;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
-import com.summit.dp.shared.event.CommittedStatePublisher;
-import com.summit.dp.shared.event.CommittedStateChange;
-import org.springframework.beans.factory.annotation.Autowired;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMessageMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionMessagePO;
 import lombok.RequiredArgsConstructor;
@@ -30,32 +27,21 @@ public class SessionMessageRepositoryImpl
         extends AbstractRepository<SessionMessage, SessionMessagePO, Long>
         implements MessageRepository {
     private final SessionMessageMapper messageMapper;
-    @Autowired(required = false)
-    private CommittedStatePublisher statePublisher;
 
     @Override
     public void save(SessionMessage message) {
         super.save(message);
-        publishCommitted(message, null);
     }
 
     /**
-     * 落库并随通知带上根身份与已提交事实。
+     * 落库并保留根身份入参。
      *
-     * <p>{@code rootSessionId} 是 v3 的**投递目标**（前端只订阅根连接），{@code message.getSessionId()}
-     * 是**实体归属**。子会话消息必须由调用方传入根，否则会投进子会话桶而无人接收。</p>
+     * <p>{@code rootSessionId} 曾是投影的投递目标；协议渲染移除后该参数不再参与投递，
+     * 但接口保留以免调用方到处改动。</p>
      */
     @Override
     public void save(SessionMessage message, Long rootSessionId) {
         super.save(message);
-        publishCommitted(message, rootSessionId);
-    }
-
-    /** 随通知带上已提交事实：v3 观察者据此直接构造 MESSAGE_COMMITTED（含原 streamKey），不再回查本行。 */
-    private void publishCommitted(SessionMessage message, Long rootSessionId) {
-        if (statePublisher == null) return;
-        statePublisher.publish(CommittedStateChange.of(
-                CommittedStateChange.Kind.MESSAGE, rootSessionId, message.getSessionId(), message.getId(), message));
     }
 
     @Override

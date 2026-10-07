@@ -5,7 +5,6 @@ import cn.hutool.core.util.IdUtil;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.ExecutionEventMetadata;
-import com.summit.dp.execution.application.service.ExecutionRegistrationService;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -80,7 +79,6 @@ public class RequestPreparer {
     private final ConversationTranscriptService transcriptService;
     private final ModelContextService modelContextService;
     private final ExecutionIdentity executionIdentity;
-    private final ExecutionRegistrationService executionRegistrationService;
     private final ChatTurnService chatTurnService;
     private final AgentService agentService;
     private final TeamService teamService;
@@ -151,6 +149,7 @@ public class RequestPreparer {
             workspaceId = effective.workspaceId();
             Result<Long> initializeRes = sessionService.initialize(effective.input(), workspaceId,
                     effectiveTeamId);
+
             Long sessionId = initializeRes.getData();
             if (sessionId == null)
                 throw new ClientException(Objects.toString(initializeRes.getErrMsg(), "会话初始化失败"));
@@ -212,16 +211,16 @@ public class RequestPreparer {
     }
 
     /**
-     * 把本轮用户消息写入 append-only transcript，并返回新建的业务轮次 ID；
-     * 同时登记「初始执行」记录，使提问与执行从第一刻起共享同一个身份。
+     * 把本轮用户消息写入 append-only transcript，并返回新建的业务轮次 ID。
      *
      * <p><b>为什么必须与 {@link #prepare} 分开：</b>「同一会话单飞」的运行资格校验必须先解析出
      * 会话（而解析就是 prepare 的职责），但校验本身可能失败。若在 prepare 里顺手写用户消息，
      * 就会出现「消息已经入库、执行却被拒绝」——用户看到自己发出去的话永远没有回复，
      * 也没有任何错误提示。因此约定：<b>prepare 只解析，调用方拿到运行资格后再调本方法</b>。</p>
      *
-     * <p><b>一个短事务</b>：执行行、业务轮次与用户消息要么一起可见，要么都不可见。
-     * 事务内不做任何模型调用 —— 模型调用发生在后续的 loop 里，与本次提交无关。</p>
+     * <p><b>执行行不在这里登记</b>：执行行由框架在受理事务内创建（见
+     * {@code PreparedChatExecutor#admit}）—— 那一步需要编排器解析人设与工具清单，
+     * 放在本类会构成 {@code RequestPreparer ↔ 编排器} 的循环依赖。</p>
      */
     @Transactional
     public Long commitUserMessage(RuntimeContext context) {
@@ -234,6 +233,9 @@ public class RequestPreparer {
      * <p><b>为什么必须同事务</b>：命令身份是幂等判定的唯一依据。若轮次先落库、命令身份后补，
      * 两者之间进程崩溃会留下一条「没有 commandId 的已受理轮次」—— 重试查不回它，
      * 同一命令会被受理第二次，用户看到两条一样的提问。</p>
+     *
+     * <p>本方法须被受理事务包裹（{@code admit} 上的 {@code @Transactional}）：轮次与用户消息
+     * 要么一起可见、要么都不可见，且与执行行同为一个事务。事务内不做任何模型调用。</p>
      *
      * @param commandId     命令受理身份；为 {@code null} 时与 {@link #commitUserMessage(RuntimeContext)} 完全等价
      * @param commandDigest 请求摘要
@@ -254,20 +256,6 @@ public class RequestPreparer {
         String modelName = modelConfig == null ? null : modelConfig.getModelName();
         String modelProvider = modelConfig == null ? null : modelConfig.getProvider();
 
-        executionRegistrationService.registerInitial(new ExecutionRegistrationService.InitialExecution(
-                executionId,
-                executionContext.sessionId(),
-                // 主执行没有根执行归属（不写自身 id，避免与「未知」混淆）。
-                ExecutionIdentity.numericOrNull(executionContext.rootExecutionId())));
-
-        // 业务轮次：与用户消息、初始执行行同属一个短事务。
-        // 「受理即落库」是本次改造的关键 —— 验收要求「只有 USER、没有 AI 回复的失败请求也要能
-        // 看到执行状态」，而框架执行行在启动前根本不存在，只有业务自己的轮次能承载这个状态。
-        // parentTurnId 为 null：普通用户提问不是任何轮次的子委派。
-        //
-        // 先建轮次再写消息，直接用 acceptTurn 返回的 turnId 作为消息归属 ——
-        // 框架执行 ID 不进消息归属，它只留在 chat_turn.execution_id 上用于接收框架信号。
-        // 根身份就是本会话自身：普通用户提问必然落在根会话上（子委派不走这里）。
         long rootSessionId = executionContext.sessionId();
         long turnId = chatTurnService.acceptTurn(executionContext.sessionId(), rootSessionId, null, executionId,
                 modelName, modelProvider, commandId, commandDigest);
@@ -319,7 +307,7 @@ public class RequestPreparer {
      * 属于正常路径。非空但取不到（不存在）必须拒绝。
      */
     public SessionVO requireSession(Long sessionId) {
-        if (sessionId == null) return null;
+        if (sessionId == null || sessionId <= 0) return null;
         SessionVO session = sessionService.findById(sessionId).getData();
         if (session == null) throw new AccessDeniedException("会话不存在: " + sessionId);
         return session;
@@ -327,7 +315,7 @@ public class RequestPreparer {
 
     /** 取工作空间；不存在时拒绝。 */
     public @Nullable WorkspaceVO requireWorkspace(Long workspaceId) {
-        if (workspaceId == null) return null;
+        if (workspaceId == null || workspaceId <= 0) return null;
         WorkspaceVO workspace = workspaceService.findById(workspaceId).getData();
         if (workspace == null) throw new AccessDeniedException("工作空间不存在: " + workspaceId);
         return workspace;

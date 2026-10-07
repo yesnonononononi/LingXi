@@ -160,7 +160,8 @@ CREATE TABLE IF NOT EXISTS team (
 -- Null tool_list means all registered tools; [] means no tools. Recovery state lives in snapshot.
 --
 -- 本表**只承载框架自己的运行记录**：请求与运行态在 snapshot，状态在 status，
--- 生命周期时间在 started_at / completed_at，委派归属在 root_execution_id。
+-- 生命周期时间在 started_at / completed_at；委派归属不是独立列，而是 snapshot 里的
+-- lingxi.root_execution_id 属性（执行归属的真源在请求属性，不在此表冗余成列）。
 -- 「用的哪个模型、花了多少 token」是**业务事实**，权威在 chat_turn（本轮实际使用的模型
 -- 由业务受理时解析写入，用量由框架完成事件回填）—— 本表不再冗余保存，避免同一事实两处存放。
 --
@@ -172,7 +173,6 @@ CREATE TABLE IF NOT EXISTS execution (
     version BIGINT NOT NULL DEFAULT 1,
     id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '执行ID；一次请求对应一次执行，也是请求的唯一标识',
     session_id BIGINT NOT NULL COMMENT '所属会话ID；同一会话可包含多次执行',
-    root_execution_id BIGINT NULL COMMENT '所属根执行ID；主执行为NULL，子执行指向发起委派的主执行',
     started_at DATETIME(3) NULL COMMENT '执行首次开始时间；暂停后恢复不重置',
     completed_at DATETIME(3) NULL COMMENT '进入完成/失败/取消终态的时间；未结束为NULL',
     status TINYINT NOT NULL DEFAULT 0 COMMENT '执行状态：0创建，1运行，2暂停，3完成，4失败，5取消',

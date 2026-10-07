@@ -394,7 +394,7 @@ defineExpose({
             'p-3 rounded-2xl border transition-all cursor-pointer select-none space-y-2',
             String(activeSubId) === String(it.id)
               ? (isDark ? 'border-blue-500 bg-blue-600/15 ring-1 ring-blue-500/40 shadow-sm' : 'border-blue-400 bg-blue-50/70 ring-1 ring-blue-300 shadow-sm')
-              : (isDark ? 'border-white/[0.06] bg-zinc-900/60 hover:border-white/[0.12] hover:bg-zinc-850/80' : 'border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/30')
+              : (isDark ? 'border-white/[0.06] bg-zinc-900/60 hover:border-white/[0.12] hover:bg-zinc-800/80' : 'border-gray-200 bg-white hover:border-blue-300 hover:bg-blue-50/30')
           ]"
         >
           <!-- 头部标签行：编号、名称、状态、Token -->

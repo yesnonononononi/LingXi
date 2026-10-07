@@ -4,8 +4,6 @@ import com.summit.core.conversation.message.Message;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.domain.model.Session;
-import com.summit.dp.shared.event.CommittedStatePublisher;
-import com.summit.dp.shared.event.CommittedStateChange;
 import com.summit.dp.shared.exception.ClientException;
 import org.springframework.beans.factory.annotation.Autowired;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
@@ -38,8 +36,6 @@ public class ConversationRollbackService {
     private final ModelContextService modelContextService;
     @Autowired(required = false)
     private SessionRepository sessions;
-    @Autowired(required = false)
-    private CommittedStatePublisher changes;
 
     /**
      * 回滚到目标轮次之前。
@@ -77,9 +73,6 @@ public class ConversationRollbackService {
             root.advanceHistoryRevision();
             sessions.updateById(root);
             historyRevision = root.getHistoryRevision();
-            if (changes != null) changes.publish(new CommittedStateChange(CommittedStateChange.Kind.HISTORY,
-                    rootId, rootId, String.valueOf(rootId), historyRevision, invalidatedTurns,
-                    invalidatedExecutions, root.getHistoryRevision()));
         }
 
         log.info("回滚会话历史: sessionId={}, turnId={}, removedTurns={}, removedMessages={}, removedCards={}",

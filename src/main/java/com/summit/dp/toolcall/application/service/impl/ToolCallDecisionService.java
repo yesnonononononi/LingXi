@@ -7,8 +7,6 @@ import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.SuspendedExecutionResumer;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.shared.event.SseEventPublisher;
-import com.summit.dp.shared.event.ToolCallEventPublisher;
-import com.summit.dp.shared.event.ToolCallPendingEvent;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCall;
@@ -34,7 +32,6 @@ public class ToolCallDecisionService {
     private final ExecutionIdentity executionIdentity;
     private final ModelContextService modelContextService;
     private final SseEventPublisher sseEventPublisher;
-    private final ToolCallEventPublisher events;
     private final TransactionTemplate transactions;
     private final ObjectProvider<ExecutionRepository> executionRepository;
     private final SuspendedExecutionResumer resumer;
@@ -69,13 +66,6 @@ public class ToolCallDecisionService {
         boolean pending = resumer.hasUnresolvedSlot(toolCall.getExecutionId());
         long rootId = executionIdentity.resolveRootSessionId(conversationId);
         SseEmitter emitter = sseEventPublisher.connect(rootId);
-        try {
-            events.publish(rootId, ToolCallPendingEvent.of(rootId, toolCall.getId(), kind.name(),
-                    String.valueOf(conversationId), executionId));
-        } catch (RuntimeException error) {
-            // 通知失败不能把已经提交的决策报告为失败，刷新仍可读取结论。
-            log.error("决策通知失败: toolCallId={}, executionId={}", toolCall.getId(), executionId, error);
-        }
         CompletableFuture.runAsync(() -> {
             try {
                 // 未决判定在事务提交后即已完成（见上方 pending），异步段只负责恢复。

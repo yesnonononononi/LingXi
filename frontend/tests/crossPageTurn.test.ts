@@ -228,7 +228,7 @@ test('4. 旧消息无 turnId: 正常降级，按用户消息边界分组，无�
   assert.strictEqual(groups[1].messages.length, 2);
 });
 
-test('6. PROMISE 人工在环卡片跨页: 审批状态与结果与工具调用正确同步', () => {
+test('6. PROMISE 工具跨页: 审批状态与结果与工具调用正确同步', () => {
   const sessionId: string = 'sess-card';
   const turnId: string = 'turn-card';
   const callId: string = 'call-promise-1';
@@ -272,10 +272,9 @@ test('6. PROMISE 人工在环卡片跨页: 审批状态与结果与工具调用�
   assert.strictEqual(msgs.length, 1);
   const asst = msgs[0];
   assert.strictEqual(asst.content, '命令已执行');
-  assert.strictEqual(asst.promptCards?.length, 1);
-  assert.strictEqual(asst.promptCards[0].kind, 'COMMAND');
-  assert.strictEqual(asst.promptCards[0].outcome, 'APPROVED');
-  assert.strictEqual(asst.toolCalls?.[0]?.status, 'success', '审批通过后工具调用状态应更新为 success');
+  assert.strictEqual(asst.toolCalls?.length, 1, 'PROMISE 工具仍作为普通工具调用聚合');
+  assert.strictEqual(asst.toolCalls?.[0]?.id, callId);
+  assert.strictEqual(asst.toolCalls?.[0]?.status, 'success', '审批通过后工具调用状态应为 success');
 });
 
 test('7. 相同轮次恢复（审批恢复/暂停恢复/重新订阅）: 复用原有回答气泡组', () => {
@@ -309,7 +308,11 @@ test('7. 相同轮次恢复（审批恢复/暂停恢复/重新订阅）: 复用�
   const initialMsgs = aggregateSessionMessages(initialRecords, sessionId);
   assert.strictEqual(initialMsgs.length, 2);
   assert.strictEqual(initialMsgs[1].id, `msg-${sessionId}-turn-${turnId}`);
-  assert.strictEqual(initialMsgs[1].promptCard?.pending, true);
+  assert.strictEqual(initialMsgs[1].toolCalls?.[0]?.id, 'call-cmd');
+  // 语义变更（A2，产品决策）：仍待决策的 PROMISE 卡片（type=PROMISE 且 status=pending、无终态 outcome），
+  // 工具行状态标为 pending（等待人工决策），与实时路径 handleExecutionSuspended 的处置一致。
+  // 旧实现落成 unknown，会把「等待人工决策」误显为「状态未知」。
+  assert.strictEqual(initialMsgs[1].toolCalls?.[0]?.status, 'pending', '待决策的 PROMISE 工具调用应标记为 pending');
 
   // 模拟第二阶段：用户审批通过后恢复流并完成
   const resumedRecords: SessionMessageVO[] = [
@@ -341,8 +344,7 @@ test('7. 相同轮次恢复（审批恢复/暂停恢复/重新订阅）: 复用�
   assert.strictEqual(finalMsgs.length, 2, '恢复后应沿用同一个回答组，不生成新气泡');
   assert.strictEqual(finalMsgs[1].id, `msg-${sessionId}-turn-${turnId}`);
   assert.strictEqual(finalMsgs[1].content, '已处理完毕');
-  assert.strictEqual(finalMsgs[1].promptCard?.pending, false);
-  assert.strictEqual(finalMsgs[1].promptCard?.outcome, 'APPROVED');
+  assert.strictEqual(finalMsgs[1].toolCalls?.[0]?.status, 'success', '审批通过后同一条工具调用被就地更新为 success');
 });
 
 test('8. 子会话历史跨页聚合: 与主会话采用相同聚合规则', () => {
@@ -402,13 +404,12 @@ test('8. 子会话历史跨页聚合: 与主会话采用相同聚合规则', () 
  * 前者增长远慢于后者，于是整轮的过程文本被整体排到思维链与工具之前 —— 表现为
  * 「AI 文本被堆砌在过程消息区顶部，深度思考挤成一堵墙」。
  *
- * <p><b>10-05 契约变更</b>：同一轮次的多段思考**合并为一个「深度思考」步骤**（见下条断言）。
- * 取舍：实测一轮可达 10 段思考，若各建一步会渲染出 10 个同名下拉框，既看不出是同一段推理，
- * 也把工具行挤出视口（用户实拍验收：10 个「深度思考」排队，找不到任何工具痕迹）。
- * 合并后思考落在**首段位置**（工具之前），牺牲「思考与工具逐段交错」换取可读性 ——
- * 这是产品决策，不是回归。中间文本与工具调用仍严格按各自 order 交错。</p>
+ * <p><b>10-06 契约变更</b>：同一轮次的多段思考**按 AI 行拆分为多个「深度思考」步骤**（与工具调用同粒度），
+ * 不再拼接成一个大框。旧实现把整轮思考合并成一步，用户实拍验收：整轮思考挤成一个折叠框，
+ * 与工具的逐段交错时序对不上。现每段思考独立成步、各取所在 AI 行的时序基准，与工具 / 中间文本
+ * 交错还原真实执行顺序。这是产品决策变更，不是回归。</p>
  */
-test('9. 过程时间线时序: 思维链 → 中间文本 → 工具调用 按真实执行顺序交替，文本不再被顶到过程区顶部', () => {
+test('9. 过程时间线时序: 思维链 → 中间文本 → 工具调用 按真实执行顺序交替，思考按行拆分为多段', () => {
   const sessionId: string = 'sess-timeline';
   const turnId: string = 'turn-timeline-1';
 
@@ -464,26 +465,26 @@ test('9. 过程时间线时序: 思维链 → 中间文本 → 工具调用 按�
 
   assert.strictEqual(asst.content, '已完成交付。', '终结轮次文本落正文');
   assert.strictEqual(asst.aiMessages?.length, 1, '仅中途叙述进过程区');
-  assert.strictEqual(asst.thoughtSteps?.length, 1, '同一轮多段思考合并为一个步骤');
-  assert.strictEqual(
-    asst.thoughtSteps?.[0].content,
-    '先读代码摸清现状\n\n方向已确认，直接委派\n\n汇总交付结论',
-    '合并内容按行序拼接，保留完整推理轨迹'
+  assert.strictEqual(asst.thoughtSteps?.length, 3, '同一轮多段思考按 AI 行拆分为多个步骤（与工具调用同粒度）');
+  assert.deepStrictEqual(
+    asst.thoughtSteps?.map(s => s.content),
+    ['先读代码摸清现状', '方向已确认，直接委派', '汇总交付结论'],
+    '每段思考独立成步，内容不再拼接'
   );
   assert.strictEqual(asst.toolCalls?.length, 2);
 
   // 还原 ChatMessageItem#processTimeline 的排序（order 升序），检查三类条目的交替顺序
   type Entry = { order: number; kind: string };
   const entries: Entry[] = [];
-  (asst.thoughtSteps || []).forEach(s => entries.push({ order: s.order, kind: 'thought' }));
-  (asst.aiMessages || []).forEach(m => entries.push({ order: m.order, kind: 'text' }));
-  (asst.toolCalls || []).forEach(t => entries.push({ order: t.order, kind: 'tool' }));
+  (asst.thoughtSteps || []).forEach(s => entries.push({ order: s.order ?? 0, kind: 'thought' }));
+  (asst.aiMessages || []).forEach(m => entries.push({ order: m.order ?? 0, kind: 'text' }));
+  (asst.toolCalls || []).forEach(t => entries.push({ order: t.order ?? 0, kind: 'tool' }));
   entries.sort((a, b) => a.order - b.order);
 
   assert.deepStrictEqual(
     entries.map(e => e.kind),
-    ['thought', 'text', 'tool', 'tool'],
-    '合并后的思考落在首段位置，中间文本与工具仍按真实时序排列'
+    ['thought', 'text', 'tool', 'thought', 'tool', 'thought'],
+    '思考与工具 / 中间文本按真实执行顺序逐段交错'
   );
 });
 

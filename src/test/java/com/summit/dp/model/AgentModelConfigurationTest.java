@@ -65,7 +65,7 @@ class AgentModelConfigurationTest {
 
     @Test void rootResolvesExplicitThenSettingsThenFails() {
         RequestPreparer root = new RequestPreparer(null, null, null, models, null, settings, null,
-                null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null);
         SettingsView selected = new SettingsView(null, null, null, null, 99L, null, 1234, "high");
         ModelConfig explicit = config("explicit");
         ModelConfig fallback = config("settings");

@@ -43,6 +43,16 @@ export function normalizeCommandApprovalPolicy(
 export const WORKSPACE_ENV_TYPES = ['SAND_BOX', 'LOCAL', 'NONE'] as const;
 export type WorkspaceEnvType = (typeof WORKSPACE_ENV_TYPES)[number];
 
+/** 思考深度档位：对应后端 UserConfig.reasoning_effort（小写字面量） */
+export const REASONING_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
+/** 归一化思考深度：后端可能下发大写或带空格，识别不了回落缺省 low */
+export function normalizeReasoningEffort(raw: unknown, fallback?: ReasoningEffort): ReasoningEffort | undefined {
+  if (typeof raw !== 'string') return fallback;
+  return normalizeEnum(raw.trim().toLowerCase(), REASONING_EFFORTS, fallback);
+}
+
 /**
  * 归一化工作空间类型。
  *
@@ -87,8 +97,3 @@ export function isPlanApproved(status?: string | null): boolean {
   return (PLAN_APPROVED_STATUSES as readonly string[]).includes(normalized);
 }
 
-/* ------------------------------------------------------------------ */
-/* 说明：旧「悬挂话题」常量（SUSPENSION_TOPIC / isCommandTopic /        */
-/* isLegacyPlanTopic）已随消息链路重构消亡——人工在环卡片不再依赖 topic， */
-/* 统一由 PromptCardData.kind 判别，结论由 PromptCardData.outcome 表达。 */
-/* ------------------------------------------------------------------ */

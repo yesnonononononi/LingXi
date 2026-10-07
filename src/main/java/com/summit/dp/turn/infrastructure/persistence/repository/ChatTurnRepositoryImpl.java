@@ -8,9 +8,6 @@ import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.shared.event.CommittedStatePublisher;
-import com.summit.dp.shared.event.CommittedStateChange;
-import org.springframework.beans.factory.annotation.Autowired;
 import com.summit.dp.turn.infrastructure.persistence.mapper.ChatTurnMapper;
 import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
 import lombok.RequiredArgsConstructor;
@@ -29,39 +26,30 @@ public class ChatTurnRepositoryImpl extends AbstractRepository<ChatTurn, ChatTur
         implements ChatTurnRepository {
 
     private final ChatTurnMapper chatTurnMapper;
-    @Autowired(required = false)
-    private CommittedStatePublisher statePublisher;
 
     @Override
     public void save(ChatTurn turn) {
         super.save(turn);
-        publishCommitted(turn, null);
     }
 
-    /**
-     * 落库并随通知带上根身份与已提交事实（含终值 version）。
-     *
-     * <p>{@code rootSessionId} 是 v3 投递目标，{@code turn.getSessionId()} 是实体归属。
-     * 子会话轮次必须由调用方传入根，否则投进子会话桶而无人接收。</p>
-     */
+    /** 落库并保留根身份入参；协议渲染移除后该参数不再参与投递。 */
     @Override
     public void save(ChatTurn turn, Long rootSessionId) {
         super.save(turn);
-        publishCommitted(turn, rootSessionId);
     }
 
     @Override
     public void updateById(@NotNull ChatTurn turn) {
-        mutate(turn, null);
+        mutate(turn);
     }
 
-    /** 更新并发布落库终值；根身份语义同 {@link #save(ChatTurn, Long)}。 */
+    /** 更新并保留根身份入参；协议渲染移除后该参数不再参与投递。 */
     @Override
     public void updateById(@NotNull ChatTurn turn, Long rootSessionId) {
-        mutate(turn, rootSessionId);
+        mutate(turn);
     }
 
-    private void mutate(ChatTurn turn, Long rootSessionId) {
+    private void mutate(ChatTurn turn) {
         ChatTurnPO row = toPO(turn);
         long expected = turn.getVersion();
         row.setVersion(expected + 1);
@@ -70,14 +58,6 @@ public class ChatTurnRepositoryImpl extends AbstractRepository<ChatTurn, ChatTur
             throw new ClientException("轮次状态已变化，请刷新后重试");
         }
         turn.acceptPersistedVersion(expected + 1);
-        // acceptPersistedVersion 之后才发布：通知里带的是落库终值，不是提交前的旧版本。
-        publishCommitted(turn, rootSessionId);
-    }
-
-    private void publishCommitted(ChatTurn turn, Long rootSessionId) {
-        if (statePublisher == null) return;
-        statePublisher.publish(CommittedStateChange.of(
-                CommittedStateChange.Kind.TURN, rootSessionId, turn.getSessionId(), turn.getId(), turn));
     }
 
     @Override
@@ -143,14 +123,8 @@ public class ChatTurnRepositoryImpl extends AbstractRepository<ChatTurn, ChatTur
 
     @Override
     public int markOrphansFailed(Instant completedAt) {
-        List<ChatTurnPO> affected = chatTurnMapper.selectList(Wrappers.<ChatTurnPO>lambdaQuery()
-                .select(ChatTurnPO::getId, ChatTurnPO::getSessionId)
-                .in(ChatTurnPO::getStatus, ChatTurnStatus.ACCEPTED.name(), ChatTurnStatus.RUNNING.name()));
-        int count = chatTurnMapper.markOrphansFailed(ChatTurnStatus.FAILED.name(),
+        return chatTurnMapper.markOrphansFailed(ChatTurnStatus.FAILED.name(),
                 ChatTurnStatus.ACCEPTED.name(), ChatTurnStatus.RUNNING.name(), completedAt);
-        if (count > 0 && statePublisher != null) affected.forEach(row -> statePublisher.publish(
-                CommittedStateChange.entity(CommittedStateChange.Kind.TURN, row.getSessionId(), row.getId())));
-        return count;
     }
 
     @Override

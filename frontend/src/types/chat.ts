@@ -1,3 +1,5 @@
+import type { TokenInfo } from './Event';
+
 /** 消息角色定义 */
 export type MessageRole = 'user' | 'assistant' | 'system';
 
@@ -46,68 +48,12 @@ export interface ToolCallTrace {
 }
 
 /**
- * 统一互动卡片数据（由聚合 ToolCallVO 派生）。
+ * 轮次 Token 统计信息。
  *
- * <p>重构后前端**唯一**卡片形态：历史（消息分页 TOOL 行的 `toolCall`）与实时
- * （收到 CARD_PENDING 后拉取 `GET /tool-call/{toolCallId}`）两条路径产出**同一形状**。</p>
- *
- * <p>渲染分派依据 `kind`（= `toolCall.content.kind`，唯一判别字段）；是否可审批依据
- * `pending`（后端**权威下发**的 `ToolCallVO.pending`，等价于 `type==='PROMISE' && status==='pending'`，
- * 前端**直接读该字段**、禁止自行用 `status` 推断）；
- * 结论/异常一律读 `outcome`（= `toolCall.rawOutput.outcome`），禁止字符串嗅探
- * （旧 `[rejected]` 前缀已消亡）；缺失 = 状态未知，**禁止默认成功**。</p>
+ * <p>真源在 `types/Event.ts`（与终结事件的 {@code tokenInfo} 同形，避免两处漂移）；此处仅转发，
+ * 供会话 / 轮次实体引用。null = 未采集（≠ 0）。</p>
  */
-export interface PromptCardData {
-  /**
-   * 卡片形态：`PLAN` / `CHOICE` / `COMMAND` / `DELEGATION`（= `toolCall.content.kind`）。
-   * `DELEGATION` 是委派等待卡：等的是子会话里的审批落定，**不是人工审批卡**——
-   * 不渲染批准/拒绝按钮，子执行终态后由后端自动回填并恢复父执行。
-   * `UNAVAILABLE` 表示 `content.kind` 缺失/非法（后端 `fromName()` 识别不了返回 `null`）——
-   * 渲染为「状态不可用」，**绝不**回落成 `COMMAND`（否则语义未知的卡片会被渲染成带「批准并执行」按钮的命令审批卡）。
-   */
-  kind: 'PLAN' | 'CHOICE' | 'COMMAND' | 'DELEGATION' | 'UNAVAILABLE';
-  /** 决策锚点：tool_call.id / 模型 call_id */
-  toolCallId: string;
-  /** 归属会话（= session.id）；提交决策时回传 */
-  conversationId?: string;
-  /** 卡片标题（PLAN 计划标题 / CHOICE 问题 / COMMAND 命令审批 / DELEGATION 子代理名） */
-  title: string;
-  /** 卡片正文：PLAN 为计划书 Markdown；CHOICE 为问题正文；COMMAND 为命令；DELEGATION 为委派任务 */
-  content: string;
-  /** CHOICE：候选答案；空数组表示只需自由输入 */
-  options?: string[];
-  /** COMMAND：执行工作目录 / shell 类型 / 原始命令 */
-  workDir?: string;
-  shell?: string;
-  command?: string;
-  /** COMMAND：模型声明的命令意图（content.intention，后端从 args 提取；缺失时无此键） */
-  intention?: string;
-  /** DELEGATION：目标子会话 id（点击可跳转子会话视图；可空） */
-  subSessionId?: string;
-  /** 生命周期：pending / in_progress / completed */
-  status: 'preparing' | 'pending' | 'in_progress' | 'completed';
-  version?: string;
-  allowedActions?: Array<'APPROVE' | 'REJECT' | 'ANSWER'>;
-  unavailableReason?: string;
-  /** ★ 唯一可审批判定（后端权威） */
-  pending: boolean;
-  /** 结论/异常（raw_output.outcome）：APPROVED/REJECTED/ANSWERED/CANCELLED/SUCCEEDED/FAILED/TIMED_OUT */
-  outcome?: string;
-  /** 已决断时的用户答复原文 */
-  answer?: string;
-  /** COMMAND 批准后的命令输出 */
-  stdout?: string;
-  exitCode?: number;
-  /** tool_call 缺行 / content 解析失败时的诚实降级标记 */
-  unavailable?: boolean;
-}
-
-/** 轮次 Token 统计信息 (对应后端 ExecutionCompleteEvent.TokenInfo) */
-export interface TokenInfo {
-  inputTokenCount?: number;
-  outputTokenCount?: number;
-  totalTokenCount?: number;
-}
+export type { TokenInfo };
 
 /** 文件编辑记录（来源：TOOL_COMPLETED 事件的 metaData.fileEdit，由后端 edit_file 工具写入） */
 export interface FileEditRecord {
@@ -129,120 +75,6 @@ export interface ContextUsageData {
   message?: string;
 }
 
-/**
- * 规范的 Agent 运行时事件类型 (对齐后端 com.summit.core.conversation.event.RuntimeEventType)
- *
- * <p><b>需与后端人工同步，无生成关系。</b>本联合类型是手写的，后端没有代码生成器，
- * 改词表时必须人工同步两侧，否则事件会被静默丢弃（`messageRouter.ts` 按字面量匹配，
- * 未命中的 case 走 default，不报错只是不处理）。</p>
- *
- * <p><b>真源：</b>后端框架枚举
- * {@code com.summit.core.conversation.event.RuntimeEventType}（harness-core）。
- * 该枚举的命名规则是「常量名即下发值」（{@code type() == name()}），所以这里的字面量
- * 必须与枚举名一字不差。</p>
- *
- * <p><b>注意区分：</b>本类型是<b>框架 v1 上游</b>事件，与后端
- * {@code com.summit.dp.stream.application.protocol.StreamEventType}（v2 投影事件，
- * 如 {@code TEXT_DELTA} / {@code THINKING_DELTA} / {@code MESSAGE_FINALIZED}）是<b>两套并列</b>
- * 的协议，前端当前消费的是本套 v1 事件。两个词表不可互相代入、也不可合并。</p>
- *
- * <p>本类型与 messageRouter 的 switch 分支同为阶段 C 信封改造的登记点，本批不整改结构。</p>
- */
-export type RuntimeEventType =
-  | 'EXECUTION_STARTED'
-  | 'EXECUTION_COMPLETED'
-  | 'EXECUTION_FAILED'
-  | 'EXECUTION_CANCELLED'
-  | 'EXECUTION_RESUME'
-  | 'EXECUTION_SUSPENDED'
-  | 'PARTIAL_TEXT'
-  | 'COMPLETE_TEXT'
-  | 'PARTIAL_THINKING'
-  | 'AI_MESSAGE'
-  | 'TOOL_CALL'
-  | 'TOOL_COMPLETED'
-  /** 已退役：独立 FILE_EDIT 事件不再下发，编辑摘要改由 TOOL_COMPLETED 的 metaData.fileEdit 携带 */
-  | 'FILE_EDIT'
-  | 'CONTEXT_UPDATE'
-  | 'CARD_PENDING';
-
-/** 结构化 SSE 流事件定义 */
-export interface AgentStreamEvent {
-  type?: RuntimeEventType | string;
-  id?: string | number;
-  meta?: {
-    id?: string;
-    modelName?: string;
-    finishReason?: 'STOP' | 'LENGTH' | 'TOOL_EXECUTION' | 'CONTENT_FILTER' | 'OTHER' | string;
-  };
-  /** 互动快照行 session_message.id */
-  sessionMessageId?: string | number;
-  /** CARD_PENDING 事件：待处理卡片的 tool_call.id，前端据此拉取 ToolCallVO */
-  toolCallId?: string;
-  /** CARD_PENDING 事件：卡片形态 PLAN / CHOICE / COMMAND（仅通知用，权威源为 tool_call 行） */
-  cardKind?: string;
-  title?: string;
-  description?: string;
-  planText?: string;
-  sessionId?: string | number;
-  /** 事件权威归属根会话 id（JSON 顶层，sse.ts spread 无损透传；CARD_PENDING 直判归属用，缺失走既有映射兜底） */
-  rootSessionId?: string | null;
-  agentId?: string;
-  /** 框架执行 id：高频流式事件（PARTIAL_TEXT / PARTIAL_THINKING 等）只带它，不带 turnId */
-  executionId?: string;
-  /**
-   * 业务轮次 id（字符串，可能缺失 = 该执行没有对应轮次）。
-   *
-   * <p>仅生命周期事件（EXECUTION_STARTED / EXECUTION_RESUME / EXECUTION_SUSPENDED /
-   * EXECUTION_COMPLETED / EXECUTION_CANCELLED / EXECUTION_FAILED）携带；
-   * 高频流式事件**不带**本字段。实时路径须在收到带 turnId 的生命周期事件时记下
-   * `executionId → turnId` 映射，供后续只带 executionId 的事件补齐归属。</p>
-   */
-  turnId?: string;
-  requestId?: string;
-  content?: string;
-  text?: string;
-  thinking?: string;
-  tokenInfo?: TokenInfo;
-  totalTokens?: number;
-  inputTokens?: number;
-  outputTokens?: number;
-  delta?: string;
-  message?: string;
-  toolName?: string;
-  args?: any;
-  result?: any;
-  output?: any;
-  /** TOOL_COMPLETED 携带：命令级 eventMetaData 与工具自声明 toolMetaData 的合并结果（如 fileEdit） */
-  metaData?: any;
-  resultStatus?: 'STARTED' | 'COMPLETED' | 'REJECTED' | 'FAILED' | 'TIMED_OUT' | 'CANCELLED' | string;
-  suspensionId?: string;
-  /** 后端错误载荷里的简写字段 */
-  err?: string;
-  toolExecutionId?: string;
-  timeoutSeconds?: number;
-  // File edit
-  recordId?: any;
-  filePath?: string;
-  oldContent?: string;
-  newContent?: string;
-  plusLines?: number;
-  minusLines?: number;
-  // Context update
-  phase?: string;
-  usage?: {
-    tokenCount?: number;
-    maxTokens?: number;
-    ratio?: number;
-  };
-  // Error
-  errMsg?: string;
-  error?: string;
-  extraDes?: string;
-  timestamp?: number;
-  data?: any;
-}
-
 export interface AiMessageItem {
   id?: string;
   text?: string;
@@ -251,15 +83,24 @@ export interface AiMessageItem {
   order?: number;
 }
 
-/** 执行时序时间线单项 (按时间线交替排列思考与工具调用) */
+/**
+ * 执行时序时间线单项 (按时间线交替排列思考与工具调用)。
+ *
+ * <p>{@code prompt_card} 是「用户可操作项」：PLAN / CHOICE / COMMAND 三类 PROMISE 卡片。
+ * 它虽与思考、工具共用同一时序集合，但**必须在过程折叠区之外**渲染 —— 否则用户可操作项会被
+ * 吞进「已思考并调用 N 个工具」大框里，折叠起来就再也点不到按钮。卡片数据用 {@code ToolCallVO}
+ * （卡片唯一权威数据源），渲染时再映射为 {@link PromptCardData}。</p>
+ */
 export interface ProcessTimelineItem {
   id: string;
-  type: 'thought' | 'intermediate_ai' | 'tool' | 'sub_agent';
+  type: 'thought' | 'intermediate_ai' | 'tool' | 'sub_agent' | 'prompt_card';
   order: number;
   step?: ThoughtStep;
   message?: AiMessageItem;
   tool?: ToolCallTrace;
   subAgents?: ToolCallTrace[];
+  /** 互动卡片载荷（仅 type==='prompt_card' 时有值） */
+  card?: ToolCallVO;
 }
 
 /** 单条消息接口 (支持多分支对话) */
@@ -282,6 +123,13 @@ export interface ChatMessage {
   model?: string;
   thoughtSteps?: ThoughtStep[];     // 思维链思考轨迹
   toolCalls?: ToolCallTrace[];       // 工具调用日志
+  /**
+   * 互动卡片（PLAN / CHOICE / COMMAND 等 PROMISE 工具调用）。
+   *
+   * <p>权威数据源是 {@link ToolCallVO}；历史路径由 TOOL 行携带的聚合 VO 还原，实时路径由
+   * `ToolCallAPI.find(toolCallId)` 拉取。卡片是用户可操作项，渲染在过程折叠区之外。</p>
+   */
+  promptCards?: ToolCallVO[];
   aiMessages?: AiMessageItem[];      // 运行时收到的所有 AI 轮次消息
   processTimeline?: ProcessTimelineItem[]; // 严格时序混合时间线
   fileEdits?: FileEditRecord[];      // 文件修改记录
@@ -290,28 +138,13 @@ export interface ChatMessage {
   isThinking?: boolean;              // 是否正在思考中
   isExploring?: boolean;             // 是否正在探索中（发送消息到第一个工具调用之间）
   isComplete?: boolean;              // 会话/轮次是否已结束
+  isSuspended?: boolean;             // 是否处于协作式暂停/挂起等待中
   durationMs?: number;               // 轮次总耗时毫秒
-  /**
-   * 失败标记：传输层/建流前失败或 EXECUTION_FAILED 已把原因写进 content 时置位。
-   * 重发清理据此识别「失败气泡应随原提问一并移除」——不再依赖空气泡嗅探。
-   */
+  /** 失败标记：传输层/建流前失败或 EXECUTION_FAILED 已把原因写进 content 时置位。 */
   sendError?: string;
-  /**
-   * 统一互动卡片（由 ToolCallVO 派生的同一形状）。
-   *
-   * <p>历史（TOOL 行 `toolCall`）与实时（CARD_PENDING → `GET /tool-call/{id}`）
-   * 两条路径都写入本字段，渲染与决策逻辑因此完全一致。</p>
-   */
-  promptCard?: PromptCardData;
-  promptCards?: PromptCardData[];
   tokens?: number;                   // 消耗 token 数
   tokenInfo?: TokenInfo;             // 真实 token 计数明细
   imageUrl?: string;                 // 用户上传/携带的图片 URL 或 Base64 Data URL
-  imageFile?: File;                  // 用户上传的本地文件对象 (用于重发)
-
-  // 对话多分支相关
-  branches?: string[];               // 该节点下的替代消息文本列表
-  activeBranchIndex?: number;        // 当前激活的分支索引
 }
 
 /** 聊天会话接口 */
@@ -366,6 +199,8 @@ export interface SubSessionVO extends SessionVO {
   agentDescription?: string;
   task?: string;
   messages?: ChatMessage[];
+  /** 本子会话已加载的轮次摘要表（键 = turnId），由消息分页接口逐页 union 合并；语义同 {@link ChatSession.turns}。 */
+  turns?: Record<string, ChatTurn>;
 }
 
 /** 会话树 (对应后端 SessionTreeVO)：平铺列表 + 真正的根会话 id */
@@ -436,6 +271,57 @@ export interface ToolCallVO {
   pending?: boolean;
   createdAt?: string | number;
   updatedAt?: string | number;
+}
+
+/**
+ * 互动卡片展示数据（由 {@link ToolCallVO} 映射而来，供卡片组件消费）。
+ *
+ * <p>契约来源：后端 {@code content} 多态块 + {@code raw_output} 结论。所有字段都由
+ * {@code utils/toolCallCard.ts#toPromptCardData} 从权威 {@link ToolCallVO} 派生，
+ * 卡片组件**不得**再自行解析 {@code content}。</p>
+ */
+export interface PromptCardData {
+  /**
+   * 卡片形态：`PLAN` / `CHOICE` / `COMMAND` / `DELEGATION`（= `toolCall.content.kind`）。
+   * `DELEGATION` 是委派等待卡：等的是子会话里的审批落定，**不是人工审批卡** ——
+   * 不渲染批准/拒绝按钮。`UNAVAILABLE` 表示 `content.kind` 缺失/非法（后端 `fromName()` 识别不了返回 `null`），
+   * 渲染为「状态不可用」，**绝不**回落成 `COMMAND`（否则语义未知的卡片会被渲染成带「批准并执行」按钮的命令审批卡）。
+   */
+  kind: 'PLAN' | 'CHOICE' | 'COMMAND' | 'DELEGATION' | 'UNAVAILABLE';
+  /** 决策锚点：tool_call.id / 模型 call_id */
+  toolCallId: string;
+  /** 归属会话（= session.id）；提交决策时回传 */
+  conversationId?: string;
+  /** 卡片标题（PLAN 计划标题 / CHOICE 问题 / COMMAND 命令审批 / DELEGATION 子代理名） */
+  title: string;
+  /** 卡片正文：PLAN 为计划书 Markdown；CHOICE 为问题正文；COMMAND 为命令；DELEGATION 为委派任务 */
+  content: string;
+  /** CHOICE：候选答案；空数组表示只需自由输入 */
+  options?: string[];
+  /** COMMAND：执行工作目录 / shell 类型 / 原始命令 */
+  workDir?: string;
+  shell?: string;
+  command?: string;
+  /** COMMAND：模型声明的命令意图（content.intention，后端从 args 提取；缺失时无此键） */
+  intention?: string;
+  /** DELEGATION：目标子会话 id（点击可跳转子会话视图；可空） */
+  subSessionId?: string;
+  /** 生命周期：pending / in_progress / completed */
+  status: 'preparing' | 'pending' | 'in_progress' | 'completed';
+  version?: string;
+  allowedActions?: Array<'APPROVE' | 'REJECT' | 'ANSWER'>;
+  unavailableReason?: string;
+  /** ★ 唯一可审批判定（后端权威）：type==='PROMISE' && status==='pending' */
+  pending: boolean;
+  /** 结论/异常（raw_output.outcome）：APPROVED/REJECTED/ANSWERED/CANCELLED/SUCCEEDED/FAILED/TIMED_OUT */
+  outcome?: string;
+  /** 已决断时的用户答复原文 */
+  answer?: string;
+  /** COMMAND 批准后的命令输出 */
+  stdout?: string;
+  exitCode?: number;
+  /** tool_call 缺行 / content 解析失败时的诚实降级标记 */
+  unavailable?: boolean;
 }
 
 /** 模型请求视图里的工具调用（对应后端 ModelToolCallVO：{id,name,arguments}） */
@@ -570,41 +456,6 @@ export interface SessionBootstrapVO {
   executions: ExecutionStateVO[];
 }
 
-/**
- * 命令受理状态（对应后端 CommandAcceptance）。
- *
- * <p>`REPLAYED` = 同 `commandId` 重试命中首轮受理结果 —— 前端据此知道「这不是一次新执行」，
- * 不重复乐观插入用户气泡。</p>
- */
-export type CommandAcceptance = 'ACCEPTED' | 'REPLAYED';
-
-/**
- * 发送受理回执（对应后端 CommandAcceptanceVO）。
- *
- * <p><b>只绑定身份，不携带内容</b>：回执告诉你「命令成了哪一轮」（sessionId / turnId /
- * executionId），assistant 正文一律走 v3 会话流。回执另建气泡会与事件流双渲染。</p>
- */
-export interface CommandAcceptanceVO {
-  sessionId: string;
-  turnId: string;
-  executionId: string | null;
-  commandId: string;
-  acceptance: CommandAcceptance;
-}
-
-/**
- * 重发受理回执（对应后端 ResendCommandAcceptanceVO）。
- *
- * <p>在受理回执之外给出被作废范围：重发物理删除目标轮次及其之后的历史，
- * 前端必须按 `invalidatedTurnIds` / `invalidatedExecutionIds` 精确移除实体，
- * 并按 `historyRevision` 丢弃作废前到达的迟到事件。</p>
- */
-export interface ResendCommandAcceptanceVO extends CommandAcceptanceVO {
-  historyRevision: string | null;
-  invalidatedTurnIds: string[];
-  invalidatedExecutionIds: string[];
-}
-
 /** 工具卡片的决策动作（对应后端 ToolCallAction）：APPROVE 放行 / REJECT 终态拒绝 / ANSWER 作答。 */
 export type ToolCallAction = 'APPROVE' | 'REJECT' | 'ANSWER';
 
@@ -689,6 +540,8 @@ export interface UserConfigVO {
   id?: number | string;
   type?: WorkspaceEnvType | string;
   modelId?: number | string;
+  /** 本实例全局选中的 Agent（关联 agent.id；空表示未选择） */
+  agentId?: number | string;
   /** 命令放行档位：FULL_ACCESS / PRE_EXEC_CONFIRM / DANGEROUS_BLOCK（空值表示沿用缺省） */
   commandApprovalPolicy?: CommandApprovalPolicyType | string;
   /** 会话访问档位：IN_WORKSPACE / READ_ONLY_IN_WORKSPACE / OUT_OF_WORKSPACE（空值表示沿用缺省） */
@@ -793,6 +646,20 @@ export interface ToolVO {
   name: string;
   description?: string;
   readOnly?: boolean;
+}
+
+/**
+ * 一次聊天请求的受理回执（对应后端 {@code ChatAcceptanceVO}）。
+ *
+ * <p>受理 = 「请求线程同步完成后立刻返回」的那一刻：轮次、用户消息、执行行已同事务落库，
+ * 模型调用随后异步进行。两个 id 都是雪花值，后端以字符串下发，
+ * 前端**不得**用 {@code Number()} 强转（会丢精度，把轮次绑到不存在的 id 上）。</p>
+ */
+export interface ChatAcceptance {
+  /** 本轮次所属会话 id（新建会话时即其权威雪花 id）。 */
+  sessionId: string;
+  /** 本次受理创建的业务轮次 id；与落库轮次一致，是前端对齐事件与历史的键。 */
+  turnId: string;
 }
 
 /* ------------------------------------------------------------------ */

@@ -1,6 +1,5 @@
 package com.summit.dp.user_configs.application.command;
 
-
 /** UserConfig 应用层命令（生成骨架） */
 
 public record UserConfigCommand(
@@ -10,6 +9,7 @@ public record UserConfigCommand(
         Integer planMaxReminders,
         Long modelId,
         Long agentId,
+        boolean agentIdPresent,
         String workspaceType,
         Integer maxTokens,
         String reasoningEffort,

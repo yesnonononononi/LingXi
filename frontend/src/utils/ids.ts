@@ -33,13 +33,15 @@ export function isTempSessionId(id?: string | number | null): boolean {
 export function isPersistedSessionId(id?: string | number | null): boolean {
   if (id === null || id === undefined) return false;
   const text = String(id).trim();
-  return /^\d+$/.test(text);
+  return /^\d+$/.test(text) && text !== '0';
 }
 
-/** 传给后端的会话 ID：临时会话要传 null 以触发后端自动初始化 */
+/** 传给后端的会话 ID：临时会话或无效 ID 要传 null 以触发后端自动初始化 */
 export function toServerSessionId(id?: string | number | null): string | number | null {
   if (id === null || id === undefined) return null;
-  return isTempSessionId(id) ? null : id;
+  const text = String(id).trim();
+  if (isTempSessionId(text) || text === '0' || text === '') return null;
+  return isPersistedSessionId(text) ? id : null;
 }
 
 /** 生成稳定的本地唯一 ID（用于消息、工具调用等纯前端实体） */

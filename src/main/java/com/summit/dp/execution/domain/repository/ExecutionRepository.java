@@ -2,7 +2,6 @@ package com.summit.dp.execution.domain.repository;
 
 import com.summit.ddd.domain.repository.RepositoryTemplate;
 import com.summit.dp.execution.domain.model.Execution;
-import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 
@@ -23,19 +22,6 @@ public interface ExecutionRepository extends RepositoryTemplate<Execution, Long>
      * @return 被收口的行数
      */
     int markOrphanRunsFailed();
-
-    /**
-     * 收口「尚未终结就被中断」的单个执行：把 CREATED / RUNNING 条件更新为失败终态并写结束时间。
-     *
-     * <p>用于启动失败路径（编排器在框架 loop 起来之前抛异常）。条件更新是安全边界：
-     * 已 COMPLETED 的执行不会被改写，SUSPENDED 也不在条件内（挂起可恢复，误标失败会让
-     * 「待恢复」入口消失）。行不存在或已终态时返回 0，幂等。</p>
-     *
-     * @param executionId 执行 id
-     * @param completedAt 结束时间（失败终态时间）
-     * @return 被收口的行数
-     */
-    int markFailedIfUnfinished(long executionId, LocalDateTime completedAt);
 
     /**
      * 批量取每个会话、每种状态下 id 最大的执行，按 sessionId 升序、id 降序返回。

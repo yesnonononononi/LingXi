@@ -10,8 +10,6 @@ import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.domain.lifecycle.ExecutionActivity;
 import com.summit.dp.execution.domain.lifecycle.ExecutionCoordination;
-import com.summit.dp.shared.event.ToolCallEventPublisher;
-import com.summit.dp.stream.application.service.EventStreamPublisher;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.ToolCallReadinessService;
 import com.summit.dp.toolcall.domain.model.ToolCall;
@@ -52,7 +50,6 @@ class ToolCallReadinessTest {
     private ToolCallReadinessService readiness;
     private final ExecutionRepository executions = mock(ExecutionRepository.class);
     private final ExecutionActivity activity = mock(ExecutionActivity.class);
-    private final ToolCallEventPublisher events = mock(ToolCallEventPublisher.class);
     private final Execution execution = Execution.builder().id("11").agentId("test")
             .agentRequest(AgentRequest.builder().executionId("11").build())
             .executionState(ExecutionState.SUSPENDED).build();
@@ -80,9 +77,8 @@ class ToolCallReadinessTest {
             });
             return null;
         }).when(executions).afterCommit(any());
-        readiness = new ToolCallReadinessService(tools, new ToolCallConverter(new ObjectMapper()), identity, events,
-                new TransactionTemplate(new DataSourceTransactionManager(database)), provider(executions), provider(activity),
-                provider((EventStreamPublisher) null));
+        readiness = new ToolCallReadinessService(tools, new ToolCallConverter(new ObjectMapper()), identity,
+                new TransactionTemplate(new DataSourceTransactionManager(database)), provider(executions), provider(activity));
     }
 
     @AfterEach
@@ -97,28 +93,13 @@ class ToolCallReadinessTest {
         execution.setExecutionState(ExecutionState.SUSPENDED);
         when(activity.isActive("11")).thenReturn(true);
         readiness.markReady("11");
-        verifyNoInteractions(events);
+        assertEquals(ToolCallStatus.PREPARING, tools.findById("call_plan").orElseThrow().getStatus(),
+                "旧信号未释放时卡片不得开放");
         when(activity.isActive("11")).thenReturn(false);
         readiness.markReady("11");
         ToolCall ready = tools.findById("call_plan").orElseThrow();
         assertEquals(ToolCallStatus.PENDING, ready.getStatus());
         assertEquals(2L, ready.getVersion());
-        verify(events).publish(anyLong(), any());
-    }
-
-    @Test
-    void publicationObservesCommittedStateAndFailureDoesNotRollbackReadiness() {
-        tools.save(preparing("call_plan", "PLAN"));
-        doAnswer(invocation -> {
-            try (ExecutorService workers = Executors.newVirtualThreadPerTaskExecutor()) {
-                ToolCall committed = workers.submit(() -> tools.findById("call_plan").orElseThrow()).get(5, TimeUnit.SECONDS);
-                assertEquals(ToolCallStatus.PENDING, committed.getStatus());
-                assertEquals(2L, committed.getVersion());
-            }
-            throw new IllegalStateException("模拟断线");
-        }).when(events).publish(anyLong(), any());
-        assertDoesNotThrow(() -> readiness.markReady("11"));
-        assertEquals(ToolCallStatus.PENDING, tools.findById("call_plan").orElseThrow().getStatus());
     }
 
     @Test
@@ -134,7 +115,6 @@ class ToolCallReadinessTest {
         }
         readiness.markReady("11");
         assertEquals(2L, tools.findById("call_choice").orElseThrow().getVersion());
-        verify(events, times(1)).publish(anyLong(), any());
         ToolCall completed = tools.findById("call_choice").orElseThrow();
         completed.complete("{\"outcome\":\"ANSWERED\"}");
         tools.updateById(completed);
@@ -159,7 +139,6 @@ class ToolCallReadinessTest {
             late.get(5, TimeUnit.SECONDS);
         }
         assertEquals(ToolCallStatus.COMPLETED, tools.findById("call_command").orElseThrow().getStatus());
-        verifyNoInteractions(events);
     }
 
     @Test

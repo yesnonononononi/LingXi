@@ -1,14 +1,16 @@
 import { ref, nextTick } from 'vue';
 import type { Ref, ComputedRef } from 'vue';
-import type { ChatSession } from '../../types/chat';
+import type { ChatMessage, ChatSession, ChatTurn } from '../../types/chat';
 import { chatApi } from '../../services/chat';
+import { mergeTurns, mergeSubSessionTree, mergeMessagesByTurn } from '../../utils/session';
 import { useChatSessionStore } from '../../stores/chatSessionStore';
-import { useStreamV3Store } from '../../stores/streamV3Store';
 
 /** 加载更多历史时保证加载动画可见的最短展示时长（毫秒） */
 const HISTORY_PREPEND_SETTLE_MS = 350;
 /** 加载更多历史结束后收起 loading 的延时（毫秒） */
 const HISTORY_LOADING_SETTLE_MS = 200;
+/** 回查时最多回溯的页数（每页 100 条），防失控。 */
+const RECONCILE_MAX_PAGES = 10;
 
 export interface ChatHistoryOptions {
   currentActiveSession: ComputedRef<ChatSession | null | undefined>;
@@ -18,15 +20,16 @@ export interface ChatHistoryOptions {
 }
 
 /**
- * 会话历史：持久化行的唯一去处是 **v3 状态源**。
+ * 会话历史：拉取分页并写回会话实体的消息数组。
  *
- * <p>视图（{@code messageProjection}）从 v3 的历史槽 + 未提交活响应派生消息数组；
- * 本模块只负责「拉取 → 写入 v3」与**分页请求状态**（hasMore / cursor / loading / 失败态）。
- * 不再维护本地的消息表、原始行表或轮次摘要表 —— 第 3／4 组删除后，那三张兼容表已不存在。</p>
+ * <p><b>写入规则（本期最易做错的一处）</b>：不能用「按消息 id 追加」也不能「整体替换」——
+ * 实时助手气泡 id 形如 {@code bubble-<sessionId>-<turnId>}，历史消息 id 形如
+ * {@code msg-<sessionId>-turn-<turnId>}，同一轮的两个 id 不同。统一走
+ * {@link mergeMessagesByTurn} 按权威 turnId 分轮处理。</p>
  *
- * <p><b>滚动补偿</b>：前置插入会让派生视图变长。在写入 v3 **之前**记录高度与偏移，
- * 渲染完成后恢复 —— 派生数组的变更由 useChatView 的 watch 感知并据此判断「这是前置插入」，
- * 不再需要本模块替它算首尾 id。</p>
+ * <p><b>查询响应版本控制</b>：每次发起回查自增一个版本号，响应回来时版本已变即整份丢弃。
+ * 这是少量请求级版本控制（不是投影缓冲）：切走会话 / 重连 / 执行状态变化都会作废在途响应，
+ * 避免「旧会话的迟到响应覆盖新会话」。</p>
  */
 export function useChatHistory(options: ChatHistoryOptions) {
   const {
@@ -39,18 +42,19 @@ export function useChatHistory(options: ChatHistoryOptions) {
   const isLoadingMoreHistory = ref(false);
   const historyLoadError = ref('');
   const sessionStore = useChatSessionStore();
-  const streamV3 = useStreamV3Store();
+
+  /** 回查请求版本号：只有发起时版本仍然最新的响应才允许写回。 */
+  let reconcileVersion = 0;
 
   /**
-   * 把会话 id 归到根会话 id（与后端「事件按根会话路由」同一口径），供 v3 历史槽定位。
+   * 作废所有在途回查响应。
    *
-   * <p>历史页是按**会话自身**请求的（子会话有自己的历史），但 v3 历史槽按根会话的树组织时
-   * 需要子会话各自的槽 —— 因此这里返回**请求所用会话 id**，不做根化：写入时按该会话 id 入槽，
-   * 视图适配层再按根会话树把子会话槽一并聚合。</p>
+   * <p>在「切换会话 / 重连 / 执行状态变化」时调用：这些事件之后的一切回查结果都来自旧的世界，
+   * 写回去就是把上一个会话的数据糊到当前界面上。</p>
    */
-  const v3HistoryKey = (sessionId: string | number): string => String(sessionId);
+  const invalidateReconcile = (): void => { reconcileVersion += 1; };
 
-  /** 把 tree 下发的上下文用量快照种进用量表（root + 全部子会话；仅在会话尚无数据时写入）。 */
+  /** 把 tree 下发的上下文用量快照种进用量表（root + 全部子会话）。 */
   const seedContextUsageFromTree = (rootId: string | number, tree: {
     root?: { contextTokenCount?: number | null; contextMaxTokens?: number | null; contextRatio?: number | null } | null;
     subSessions?: Array<{ id: string | number; contextTokenCount?: number | null; contextMaxTokens?: number | null; contextRatio?: number | null }>;
@@ -61,61 +65,96 @@ export function useChatHistory(options: ChatHistoryOptions) {
   };
 
   /**
-   * 流结束后的统一串行对账（tree + 权威消息，尽力而为）：
-   * chat 主流 onFinish 与 decide 决策恢复流结束点共用。
+   * 回读会话权威状态并按分轮规则写回（tree + 消息，尽力而为）。
    *
-   * <p>消息侧只做「分页回溯 → 写入 v3」（上限 10 页防失控）：首页是代际基准（整页替换，
-   * 清掉可能过期的旧行），其后更早的页追加合并。**不做本地消息合并** —— 那是旧消息表时代
-   * 的收编逻辑，v3 的版本合并（{@code shouldApply}）天然幂等，重复写不会产生重复气泡。</p>
+   * <p>三个对齐入口都走这里：<b>进入会话</b>、<b>重连成功后</b>、<b>本轮终结或挂起后</b>。
+   * 用户切走时执行仍在跑、跑完时没人收终态事件 —— 「进入会话回查」是这类场景唯一的对齐入口，
+   * 因此这里必须无条件执行，不能只在「检测到掉线」时才做。</p>
+   *
+   * @param ownerSessionId 回查的会话（根会话 id）
+   * @param terminalTurnIds 已确认终结的轮次；这些轮用权威历史整体替换。
+   *                        未列出的轮次一律保留本地正文，只用历史补齐过程数据。
    */
-  const reconcileSessionAfterStream = async (ownerSessionId: string) => {
-    // 树对账：刷新归属会话的子会话列表与 token 统计
+  const reconcileSessionAfterStream = async (
+    ownerSessionId: string,
+    terminalTurnIds?: string[] | null,
+  ) => {
+    const version = ++reconcileVersion;
+
     try {
       const treeRes = await chatApi.fetchSessionTree(ownerSessionId);
+      if (version !== reconcileVersion) return;
       if (!treeRes.ok) {
         console.warn('刷新子会话列表失败:', treeRes.error);
       } else {
         const tree = treeRes.data;
-        const cur = localSessions.value.find(s => s.id === ownerSessionId);
-        if (cur) {
-          if (tree.subSessions.length > 0) cur.subSessions = tree.subSessions;
+        let cur = localSessions.value.find(s => s.id === ownerSessionId);
+        if (!cur && tree.root) {
+          cur = {
+            id: String(tree.root.id),
+            title: tree.root.name || '新会话',
+            messages: [],
+            subSessions: tree.subSessions || [],
+            runStatus: tree.root.runStatus || 'IDLE',
+            lastOutcome: tree.root.lastOutcome || 'COMPLETED',
+            workspaceId: tree.root.workspaceId,
+            createdAt: tree.root.createTime ? new Date(tree.root.createTime).getTime() : Date.now(),
+            updatedAt: tree.root.updateTime ? new Date(tree.root.updateTime).getTime() : Date.now(),
+            modelId: '',
+            activeTools: [],
+          };
+          localSessions.value.unshift(cur);
+        } else if (cur) {
+          // 按 id 保留各子会话已加载的消息（树不带正文）：整体替换会丢掉子会话历史，
+          // 见 mergeSubSessionTree 的说明。
+          if (tree.subSessions.length > 0) {
+            cur.subSessions = mergeSubSessionTree(cur.subSessions, tree.subSessions);
+          }
           if (tree.root) {
             cur.runStatus = tree.root.runStatus;
             cur.lastOutcome = tree.root.lastOutcome;
           }
         }
-        // 终态后 session 表的上下文用量快照刚被回写：随树种入用量表（无数据不覆盖 live 值）。
         seedContextUsageFromTree(tree.rootSessionId ?? ownerSessionId, tree);
       }
     } catch (e) {
       console.warn('刷新子会话列表失败:', e);
     }
-    // 消息级权威对账：写入 v3
+
     try {
-      // 发起时快照代际：对账是多次网络往返，期间若代际被推进（如重发触发 HISTORY_INVALIDATED），
-      // 返回的旧快照必须**整体丢弃** —— 快照缺行不等于行被删除，替换会把实时写入的新行抹掉。
-      const expectedRevision = streamV3.currentHistoryRevision(v3HistoryKey(ownerSessionId));
       let cursor: string | null = null;
       let hasMore = false;
-      for (let pageIdx = 0; pageIdx < 10; pageIdx++) {
+      // 逐页累积的历史消息：所有页合并完再一次性写回，避免中间态把「局部历史」当成全量覆盖正文
+      const collected: ChatMessage[] = [];
+      let collectedTurns: Record<string, ChatTurn> = {};
+
+      for (let pageIdx = 0; pageIdx < RECONCILE_MAX_PAGES; pageIdx++) {
         const msgRes = await chatApi.fetchSessionMessages(ownerSessionId, cursor, 100);
+        if (version !== reconcileVersion) return;
         if (!msgRes.ok) {
           console.warn('主流结束消息对账失败:', msgRes.error);
-          return;
+          break;
         }
-        // 全部走**同代际合并**：首页不再是「整体替换」—— 首页基准由受同步屏障保护的 bootstrap
-        // 建立；对账只在与当前代际一致时合并事实，绝不因快照缺行就清掉实时写入的行。
-        if (!streamV3.ingestHistoryPage(v3HistoryKey(ownerSessionId), msgRes.data, expectedRevision)) {
-          console.warn('[history] 过期代际的对账快照，已整体丢弃:', ownerSessionId);
-          return;
-        }
+        collected.unshift(...msgRes.data.messages);
+        collectedTurns = mergeTurns(collectedTurns, msgRes.data.turns);
+
         hasMore = msgRes.data.hasMore;
         if (!msgRes.data.hasMore || !msgRes.data.nextCursor) break;
         cursor = msgRes.data.nextCursor;
       }
-      if (!hasMore) {
-        const cur = localSessions.value.find(s => s.id === ownerSessionId);
-        if (cur) {
+
+      const cur = localSessions.value.find(s => s.id === ownerSessionId);
+      if (cur) {
+        // 按轮次合并：未确认终结的轮保留本地实时正文、历史只补过程数据；
+        // 已终结轮用权威历史整体替换。
+        cur.messages = mergeMessagesByTurn({
+          local: cur.messages,
+          history: collected,
+          terminalTurnIds: terminalTurnIds ?? null,
+        });
+        // 轮次摘要逐页 union（键=turnId，后到覆盖先到）：气泡工具条的 token/耗时/模型/状态权威来源
+        cur.turns = mergeTurns(cur.turns, collectedTurns);
+        if (!hasMore) {
           cur.hasMoreMessages = false;
           cur.nextMessageCursor = null;
         }
@@ -133,8 +172,6 @@ export function useChatHistory(options: ChatHistoryOptions) {
     isLoadingMoreHistory.value = true;
     historyLoadError.value = '';
     const startTime = Date.now();
-    // 发起时快照代际：分页是网络往返，期间若发生重发（代际推进），返回的旧页必须丢弃。
-    const expectedRevision = streamV3.currentHistoryRevision(String(session.id));
     try {
       const pageResultRes = await chatApi.fetchSessionMessages(session.id, session.nextMessageCursor, 50);
 
@@ -149,17 +186,14 @@ export function useChatHistory(options: ChatHistoryOptions) {
         return;
       }
 
-      // 写入 v3（同代际才应用；过期代际整体丢弃 —— 不写、不补偿、不推进游标）
-      const applied = streamV3.ingestHistoryPage(v3HistoryKey(session.id), pageResultRes.data, expectedRevision);
-      if (!applied) return;
-
-      // 滚动补偿：写入已触发响应式更新，但 DOM 尚未重渲染 —— 此刻记录高度与偏移，
-      // 渲染完成后恢复。前置插入的判定由 useChatView 的派生视图 watch 完成。
+      // 滚动补偿：写入前记录高度与偏移，渲染完成后恢复。
       messagesContainerRef.value?.beforePrepend();
+      session.messages = [...pageResultRes.data.messages, ...(session.messages || [])];
+      // 更早页的轮次摘要 union 进会话表：翻页后组尾工具条仍能拿到权威 token/耗时
+      session.turns = mergeTurns(session.turns, pageResultRes.data.turns);
       await nextTick();
       messagesContainerRef.value?.afterPrepend();
 
-      // 分页请求状态属于会话实体的**界面状态**（hasMore / cursor），不是消息数据。
       session.hasMoreMessages = pageResultRes.data.hasMore;
       session.nextMessageCursor = pageResultRes.data.nextCursor;
     } catch (err) {
@@ -185,6 +219,7 @@ export function useChatHistory(options: ChatHistoryOptions) {
     handleLoadMoreHistory,
     handleRetryLoadMoreHistory,
     reconcileSessionAfterStream,
+    invalidateReconcile,
     seedContextUsageFromTree,
   };
 }

@@ -3,19 +3,12 @@ import { ref } from 'vue';
 import type { ContextUsageData } from '../types/chat';
 
 /**
- * ChatSessionStore：第 4A 组之后只承载**上下文用量**。
+ * ChatSessionStore：只承载**上下文用量**。
  *
- * <p><b>消息/轮次已迁出</b>：持久化历史行、未提交活响应、工具实体与轮次摘要由
- * {@code streamV3Store} 作为唯一状态源统一承载，视图从 v3 派生（见
- * {@code views/chat/messageProjection.ts}）。原来的 {@code turnMessages} /
- * {@code activeTurnMap} / {@code turnTimers} 与 {@code getTurnMessages} /
- * {@code getAllMessages} / {@code syncHistoryMessages} / {@code initTurn} /
- * {@code getLatestAssistantMessage} 已随第 3 组删除。</p>
- *
- * <p><b>根会话映射与运行态已删除</b>（第 4A 组）：{@code sessionRootMap} 与
- * {@code sessionStatusMap} 在批次 A 完成迁移后已无任何外部读取方（0 引用）——
- * 会话的根归属由 v3 的 {@code sessions} 槽（{@code rootSessionId}）表达，
- * 运行态由会话实体自身（{@code SessionVO.runStatus}）与执行状态表达。</p>
+ * <p>消息与轮次由会话实体自身（{@code ChatSession.messages}）承载，视图直接读它；
+ * 运行态由会话实体自身（{@code SessionVO.runStatus}）表达。原先的
+ * {@code turnMessages} / {@code activeTurnMap} / {@code turnTimers} /
+ * {@code sessionRootMap} / {@code sessionStatusMap} 均无读取方，已删除。</p>
  */
 export const useChatSessionStore = defineStore('chatSession', () => {
   // 上下文用量: Map<sessionId, ContextUsageData>

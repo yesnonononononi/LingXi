@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
  * 与执行元状态（errorMessage / startedAt / completedAt / maxSteps 等）全部由
  * {@code snapshot} 列承载，恢复路径 {@code findById} 只读 {@code status + snapshot}。</p>
  *
- * <p><b>只保留框架自己的运行记录：</b>{@code root_execution_id / started_at / completed_at}
+ * <p><b>只保留框架自己的运行记录：</b>{@code started_at / completed_at}
  * 是给查询与收尸用的列，由检查点保存时同步维护。「用的哪个模型、花了多少 token」是业务事实，
  * 权威在 {@code chat_turn}（模型由业务受理时解析写入，用量由框架完成事件回填），
  * 本表不再冗余保存 —— 同一事实两处存放必然漂移。</p>
@@ -31,9 +31,6 @@ public class ExecutionPO {
 
     @TableField("session_id")
     private Long sessionId;
-    /** 所属根执行 ID；主执行为 null，子执行指向发起委派的主执行。 */
-    @TableField("root_execution_id")
-    private Long rootExecutionId;
     /** 执行首次开始时间；暂停后恢复不重置。 */
     @TableField("started_at")
     private LocalDateTime startedAt;

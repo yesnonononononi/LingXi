@@ -1,5 +1,6 @@
 package com.summit.dp.agent.application.service.impl;
 
+import com.summit.core.agent.Execution;
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
@@ -23,6 +24,9 @@ import java.util.List;
  *                         {@code RequestPreparer#commitUserMessage} 落库。它与 {@code messageList}
  *                         末元素是同一条消息（后者供模型上下文使用，前者供落库使用）。
  * @param turnId          受理事务生成的业务轮次 ID；受理前为 null，受理后显式传入框架事件元数据。
+ * @param execution       受理事务内由框架创建并保存的执行对象；受理前为 null。
+ *                        执行阶段必须用它（而不是回查执行表）：loop 就地改这个实例，
+ *                        拿解码副本会让「执行行里的对象」与「loop 手里的对象」变成两份。
  */
 public record RuntimeContext(
         ExecutionContext executionContext,
@@ -36,20 +40,28 @@ public record RuntimeContext(
         CommandApprovalPolicy commandApprovalPolicy,
         boolean requirePlan,
         UserMessageEntity pendingUserMessage,
-        Long turnId
+        Long turnId,
+        Execution execution
 ) {
+    /** 受理前的便捷构造器：turnId 与 execution 都还没有。 */
     public RuntimeContext(ExecutionContext executionContext, Long agentId, Long teamId,
                           SessionVO session, List<Message> messageList, WorkspaceSpec workspace,
                           ModelConfig modelConfig, AgentAccessMode accessMode,
                           CommandApprovalPolicy commandApprovalPolicy, boolean requirePlan,
                           UserMessageEntity pendingUserMessage) {
         this(executionContext, agentId, teamId, session, messageList, workspace, modelConfig,
-                accessMode, commandApprovalPolicy, requirePlan, pendingUserMessage, null);
+                accessMode, commandApprovalPolicy, requirePlan, pendingUserMessage, null, null);
     }
 
     public RuntimeContext withTurnId(Long turnId) {
         return new RuntimeContext(executionContext, agentId, teamId, session, messageList,
                 workspace, modelConfig, accessMode, commandApprovalPolicy, requirePlan,
-                pendingUserMessage, turnId);
+                pendingUserMessage, turnId, execution);
+    }
+
+    public RuntimeContext withExecution(Execution execution) {
+        return new RuntimeContext(executionContext, agentId, teamId, session, messageList,
+                workspace, modelConfig, accessMode, commandApprovalPolicy, requirePlan,
+                pendingUserMessage, turnId, execution);
     }
 }

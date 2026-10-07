@@ -45,9 +45,7 @@ import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.shared.event.CommittedStatePublisher;
 import com.summit.dp.shared.event.SseEventPublisher;
-import com.summit.dp.shared.event.ToolCallEventPublisher;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.tools.baseTools.terminal.CommandToolDefinitionExecutor;
 import org.junit.jupiter.api.AfterEach;
@@ -89,7 +87,6 @@ class ToolCallDecisionTest {
     private final ToolRegistry toolRegistry = mock(ToolRegistry.class);
     private final WorkspaceManager workspaces = mock(WorkspaceManager.class);
     private final SseEventPublisher sseEventPublisher = mock(SseEventPublisher.class);
-    private final ToolCallEventPublisher toolCallEventPublisher = mock(ToolCallEventPublisher.class);
     private final RuntimeEventPublisher runtimeEvents = mock(RuntimeEventPublisher.class);
     private final ModelContextService modelContextService = mock(ModelContextService.class);
     private final ExecutionIdentity executionIdentity = mock(ExecutionIdentity.class);
@@ -106,7 +103,6 @@ class ToolCallDecisionTest {
     private final ExecutionResumeTaskRepository resumeTaskRepository = mock(ExecutionResumeTaskRepository.class);
     private final com.summit.dp.execution.domain.repository.ExecutionRepository resumeExecutions =
             mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class);
-    private final CommittedStatePublisher statePublisher = mock(CommittedStatePublisher.class);
 
     private ToolCallServiceImpl service;
     private final List<ExecutionResumeCoordinator> coordinators = new ArrayList<>();
@@ -144,7 +140,7 @@ class ToolCallDecisionTest {
         service = new ToolCallServiceImpl(toolCallRepository,
                 converter, transactions, commandApprovalExecutor,
                 new ToolCallDecisionService(toolCallRepository, converter, executionIdentity,
-                        modelContextService, sseEventPublisher, toolCallEventPublisher, transactions,
+                        modelContextService, sseEventPublisher, transactions,
                         provider(executionRepository), resumer),
                 new CardAvailabilityPolicy(provider(executionRepository), provider(activity)));
         // 恢复协调器异步派发：任务行桩成「已入队可领取」，让命令 T2 真的走到 executionControl.resume。
@@ -163,7 +159,7 @@ class ToolCallDecisionTest {
      */
     private ExecutionResumeCoordinator coordinator(SuspendedExecutionResumer resumer) {
         ExecutionResumeCoordinator coordinator = new ExecutionResumeCoordinator(resumeTaskRepository,
-                resumeExecutions, resumer, provider(executionRepository), provider(statePublisher));
+                resumeExecutions, resumer, provider(executionRepository));
         coordinators.add(coordinator);
         return coordinator;
     }
@@ -326,7 +322,8 @@ class ToolCallDecisionTest {
         when(toolCallRepository.findById(plan.getId())).thenReturn(Optional.of(plan));
         when(executionRepository.findById("3")).thenReturn(Optional.of(execution));
         when(executionControl.resume(any(Execution.class))).thenReturn(execution);
-        doThrow(new IllegalStateException("observer failed")).when(toolCallEventPublisher).publish(anyLong(), any());
+        // 广播通道故障不得回滚已提交的决策与恢复派发。
+        doThrow(new IllegalStateException("broadcast failed")).when(sseEventPublisher).publish(anyLong(), any());
 
         assertDoesNotThrow(() -> service.decide(2L, plan.getId(), true, "可以"));
         await();

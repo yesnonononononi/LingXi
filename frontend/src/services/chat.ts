@@ -1,6 +1,5 @@
 import { ModelAPI } from './model';
 import { WorkspaceAPI } from './workspace';
-import { UserConfigAPI } from './userConfig';
 import { SessionAPI } from './session';
 import { AgentAPI } from './agent';
 import { TeamAPI } from './team';
@@ -8,7 +7,7 @@ import { ToolCallAPI } from './toolCall';
 import { ApiError, classifyResult } from './interceptor';
 import { aggregateSessionMessages } from '../utils/session';
 import { isOk } from '../utils/api';
-import { createLocalId, createTempSessionId, toServerSessionId } from '../utils/ids';
+import { createLocalId, createTempSessionId } from '../utils/ids';
 import { extractDirName } from '../utils/path';
 import {
   extractSubAgentParams,
@@ -23,14 +22,13 @@ import type {
   SessionVO, 
   WorkspaceVO, 
   WorkspaceRequest,
-  UserConfigVO,
+  WorkspaceEnvType,
   TeamVO,
   SubSessionVO,
   AgentVO,
   ToolCallVO,
   ChatTurn,
   SessionMessageVO,
-  CommandAcceptanceVO,
   ToolCallDecisionReceipt
 } from '../types/chat';
 
@@ -65,10 +63,6 @@ function describeFetchFailure(err: unknown): string {
 
 /** 7. 统一 chatApi 导出，供 UI 层直接调用 */
 export const chatApi = {
-  async stopGeneration(sessionId: string | number): Promise<void> {
-    await AgentAPI.stop(sessionId);
-  },
-
   /**
    * 提交工具调用决策（v3 JSON 回执，**不建请求级 SSE**）。
    *
@@ -101,7 +95,7 @@ export const chatApi = {
   },
 
   /**
-   * 按 toolCallId 拉取聚合工具调用（CARD_PENDING 通知后取卡片权威数据）。
+   * 按 toolCallId 拉取聚合工具调用（工具调用详情的权威数据源）。
    * 供 ChatView 的根会话/子会话事件分支使用。
    */
   async fetchToolCall(toolCallId: string): Promise<ToolCallVO | null> {
@@ -158,19 +152,6 @@ export const chatApi = {
       return { ok: false, error: describeFetchFailure(err) };
     }
   },
-  /** 取当前登录用户的通用配置（含选中的 modelId）；保持数组返回以兼容调用方。 */
-  async fetchUserConfigs(): Promise<FetchResult<UserConfigVO[]>> {
-    try {
-      const res = await UserConfigAPI.current();
-      if (isOk(res.code)) {
-        return { ok: true, data: res.data ? [res.data] : [] };
-      }
-      return { ok: false, error: describeFetchFailure(classifyResult(res)) };
-    } catch (err) {
-      console.error('Failed to fetch current common config:', err);
-      return { ok: false, error: describeFetchFailure(err) };
-    }
-  },
   async fetchModels(): Promise<FetchResult<ModelConfig[]>> {
     try {
       const res = await ModelAPI.list(1, 100);
@@ -208,7 +189,13 @@ export const chatApi = {
     }
   },
 
-  async createWorkspace(data: WorkspaceRequest): Promise<WorkspaceVO | null> {
+  /**
+   * 新建工作空间。
+   *
+   * @param envType 当前环境类型（来自 {@code user_configs.type}）——
+   *   沙箱下 workDir 是容器内路径，本地才是宿主机目录。不传时按沙箱推导。
+   */
+  async createWorkspace(data: WorkspaceRequest, envType: WorkspaceEnvType = 'SAND_BOX'): Promise<WorkspaceVO | null> {
     try {
       const res = await WorkspaceAPI.add(data);
       if (isOk(res.code)) {
@@ -231,11 +218,10 @@ export const chatApi = {
         const folderName = extractDirName(hostDir);
         const derivedName = data.name || folderName || '工作空间';
         // 契约 §5：WorkspaceVO 不含 type（环境类型来源是 user_configs）；此处仅据其推导 workDir。
-        const derivedType = await UserConfigAPI.currentWorkspaceType();
         return {
           id: res.data,
           name: derivedName,
-          workDir: derivedType === 'LOCAL' ? hostDir : (folderName ? `/${folderName}` : '/workspace'),
+          workDir: envType === 'LOCAL' ? hostDir : (folderName ? `/${folderName}` : '/workspace'),
           hostDir: hostDir
         };
       }
@@ -317,7 +303,7 @@ export const chatApi = {
    * 对应后端 @GetMapping("/{id}/messages")
    *
    * <p>返回值除 messages 外还透出本页的 turns 摘要字典（键 = turnId）：每条消息的
-   * turnId 已由 {@link parseSessionMessages} 落到 ChatMessage 上，调用方据此把
+   * turnId 已由 {@link aggregateSessionMessages} 落到 ChatMessage 上，调用方据此把
    * token / 模型 / 耗时 / 状态绑定到回答组。</p>
    */
   async fetchSessionMessages(
@@ -561,66 +547,5 @@ export const chatApi = {
     } catch {
       return false;
     }
-  },
-
-  /**
-   * v3 发送：JSON 命令受理，**不建请求级 SSE**。
-   *
-   * <p>统一链路（批次 A 起）：`发送 / 重发 → JSON 命令接口 → 回执；后端执行产生事件 →
-   * 唯一 v3 会话流 → streamV3Store`。回执只确认命令受理、绑定身份，**不能**据此判定模型执行完成，
-   * 也**不**另建 assistant 气泡 —— 正文一律走 v3 会话流与持久化历史。</p>
-   *
-   * <p>会话尚未入库时（新会话）先走 {@code SessionAPI.create} 建会话，再用真实会话 id 发命令。</p>
-   *
-   * @param commandId 命令身份；同 ID 重试由后端查回首轮受理结果（幂等键）
-   * @returns 受理回执（含 sessionId / turnId / executionId）
-   */
-  async sendCommand(
-    commandId: string,
-    sessionId: string | number | null,
-    content: string,
-    workspaceId?: number | string | null,
-    workDir?: string | null,
-    modelId?: number | string | null,
-    modelName?: string,
-    requirePlan?: boolean,
-    teamId?: number | string | null,
-    agentId?: number | string | null,
-    imageFile?: File | null,
-    /** 重发专用：要改写的那条历史提问（checkpoint）。传了就走重发端点，且不新建会话。 */
-    resendMessageId?: string | null
-  ): Promise<CommandAcceptanceVO> {
-    void modelName;
-
-    // 重发不走新建：目标是一条历史提问，它所属的会话必然已入库。
-    if (resendMessageId) {
-      const resendSessionId = toServerSessionId(sessionId);
-      if (resendSessionId == null) {
-        throw new Error('重发需要已入库的会话');
-      }
-      const res = await AgentAPI.resendCommand(
-        commandId, resendSessionId, resendMessageId, content,
-        workspaceId, workDir, modelId, requirePlan === true, agentId, imageFile
-      );
-      if (!isOk(res.code) || !res.data) {
-        throw new Error(res.errMsg || '重发失败');
-      }
-      return res.data;
-    }
-
-    // 未入库的新会话：先建会话（新建会话是唯一能带上团队绑定的时机）。
-    let realSessionId = toServerSessionId(sessionId);
-    if (!realSessionId) {
-      realSessionId = await this.createSession(content, workspaceId, teamId);
-    }
-
-    const res = await AgentAPI.sendCommand(
-      commandId, realSessionId, content,
-      workspaceId, workDir, modelId, requirePlan === true, agentId, imageFile
-    );
-    if (!isOk(res.code) || !res.data) {
-      throw new Error(res.errMsg || '发送失败');
-    }
-    return res.data;
   },
 };

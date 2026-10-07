@@ -1,0 +1,157 @@
+import type { PromptCardData, ToolCallVO } from '../types/chat';
+import { asObject, toText } from './json';
+import { AgentToolName } from './toolNames';
+
+/**
+ * {@link ToolCallVO} → {@link PromptCardData} 的唯一映射点（历史与实时共用）。
+ *
+ * <p>卡片形态只认 {@code content.kind}（后端唯一判别依据），{@code tool_name} 仅用于展示。
+ * {@code kind} 缺失 / 非法（含 {@code EXECUTE}）一律降级为 {@code UNAVAILABLE}，
+ * **绝不**回落成 {@code COMMAND} —— 否则语义未知的卡片会被渲染成带「批准并执行」按钮的命令审批卡。</p>
+ */
+
+/** 后端可识别的卡片形态（{@code content.kind} 的合法取值）。 */
+const KNOWN_CARD_KINDS = ['PLAN', 'CHOICE', 'COMMAND', 'DELEGATION'] as const;
+
+type CardKind = PromptCardData['kind'];
+
+/**
+ * 解析卡片形态：仅接受后端 `ToolCallKind` 中的人工/委派形态；
+ * 其余（缺失、`EXECUTE`、乱值）统一返回 `UNAVAILABLE`。
+ */
+export function resolveCardKind(content: unknown): CardKind {
+  const node = asObject(content);
+  const raw = node && node.kind != null ? String(node.kind).trim().toUpperCase() : '';
+  return (KNOWN_CARD_KINDS as readonly string[]).includes(raw) ? (raw as CardKind) : 'UNAVAILABLE';
+}
+
+/** 工具名是否可能承载互动卡片（后端 PROMISE 形态的四种工具：计划 / 提问 / 命令审批 / 子代理委派）。 */
+export function isCardToolName(toolName?: string | null): boolean {
+  return toolName === AgentToolName.CreatePlan
+    || toolName === AgentToolName.RequireChoice
+    || toolName === AgentToolName.ExecuteCommand
+    || toolName === AgentToolName.CallSubAgent;
+}
+
+/**
+ * ★ 唯一可审批判定：`type==='PROMISE' && status==='pending'`（后端权威）。
+ * 禁止用 `status` 单字段或 `pending` 布尔自行推断。
+ */
+export function isApprovableCard(card: ToolCallVO): boolean {
+  return card.type === 'PROMISE' && card.status === 'pending';
+}
+
+/**
+ * 卡片决策动作（与后端 `allowedActions` 元素同集合）。
+ */
+export type CardDecisionAction = 'APPROVE' | 'REJECT' | 'ANSWER';
+
+/**
+ * 卡片操作按钮是否可用：**必须叠加权威 `pending`**（= {@link isApprovableCard}），
+ * 再要求后端动作集合含目标动作。只判 `allowedActions` 会被「已决但残留动作」的脏数据骗过，
+ * 在已决卡上渲染出可点按钮（A3 纵深防御）。四类卡片的按钮门控统一走此判定。
+ */
+export function canDecideCard(card: PromptCardData, action: CardDecisionAction): boolean {
+  return card.pending === true && card.allowedActions?.includes(action) === true;
+}
+
+/** 生命周期状态映射：后端 `preparing/pending/in_progress/completed` → 卡片状态；未知归 `preparing`。 */
+function resolveCardStatus(status?: string): PromptCardData['status'] {
+  switch ((status ?? '').trim().toLowerCase()) {
+    case 'pending':
+      return 'pending';
+    case 'in_progress':
+      return 'in_progress';
+    case 'completed':
+      return 'completed';
+    default:
+      return 'preparing';
+  }
+}
+
+/** 按形态取卡片正文（PLAN 计划书 / CHOICE 问题 / COMMAND 命令 / DELEGATION 委派任务）。 */
+function resolveCardContent(kind: CardKind, content: Record<string, any> | null): string {
+  if (!content) return '';
+  switch (kind) {
+    case 'PLAN':
+      return content.text != null ? toText(content.text) : '';
+    case 'CHOICE':
+      return content.question != null ? toText(content.question) : '';
+    case 'COMMAND':
+      return content.command != null ? toText(content.command) : '';
+    case 'DELEGATION':
+      return content.text != null ? toText(content.text) : '';
+    default:
+      return '';
+  }
+}
+
+/** CHOICE 候选答案：仅接受字符串数组，逐项去空；非数组返回 undefined。 */
+function resolveOptions(content: Record<string, any> | null): string[] | undefined {
+  if (!content || !Array.isArray(content.options)) return undefined;
+  return content.options.map((item: unknown) => String(item ?? '').trim()).filter(Boolean);
+}
+
+/** 把权威 {@link ToolCallVO} 映射为卡片展示数据。 */
+export function toPromptCardData(card: ToolCallVO): PromptCardData {
+  const content = asObject(card.content);
+  const rawOutput = asObject(card.rawOutput);
+  const kind = resolveCardKind(card.content);
+
+  const planTitle = content && content.title != null ? toText(content.title) : '';
+  const title = planTitle || card.title || '';
+
+  const exitCodeRaw = rawOutput ? rawOutput.exitCode : undefined;
+  const exitCode = typeof exitCodeRaw === 'number' ? exitCodeRaw : undefined;
+
+  return {
+    kind,
+    toolCallId: card.id != null ? String(card.id) : '',
+    conversationId: card.conversationId != null ? String(card.conversationId) : undefined,
+    title,
+    content: resolveCardContent(kind, content),
+    options: kind === 'CHOICE' ? resolveOptions(content) : undefined,
+    workDir: content && content.workDir != null ? toText(content.workDir) : undefined,
+    shell: content && content.shell != null ? toText(content.shell) : undefined,
+    command: content && content.command != null ? toText(content.command) : undefined,
+    intention: content && content.intention != null ? toText(content.intention) : undefined,
+    subSessionId: content && content.subSessionId != null ? String(content.subSessionId) : undefined,
+    status: resolveCardStatus(card.status),
+    version: card.version != null ? String(card.version) : undefined,
+    allowedActions: card.allowedActions,
+    unavailableReason: card.unavailableReason,
+    pending: isApprovableCard(card),
+    outcome: rawOutput && rawOutput.outcome != null ? String(rawOutput.outcome) : undefined,
+    answer: rawOutput && rawOutput.answer != null ? toText(rawOutput.answer) : undefined,
+    stdout: rawOutput && rawOutput.stdout != null ? toText(rawOutput.stdout) : undefined,
+    exitCode,
+    unavailable: kind === 'UNAVAILABLE'
+  };
+}
+
+/** 卡片类型标签（已决卡片折叠摘要用）。 */
+const CARD_KIND_LABEL: Record<CardKind, string> = {
+  PLAN: '计划',
+  CHOICE: '提问',
+  COMMAND: '命令审批',
+  DELEGATION: '子代理委派',
+  UNAVAILABLE: '互动卡片'
+};
+
+/** 结论标签（已决卡片折叠摘要用）。 */
+const CARD_OUTCOME_LABEL: Record<string, string> = {
+  APPROVED: '已批准',
+  REJECTED: '已拒绝',
+  ANSWERED: '已答复',
+  CANCELLED: '已取消',
+  SUCCEEDED: '已执行',
+  FAILED: '已失败',
+  TIMED_OUT: '已超时'
+};
+
+/** 已决卡片的单行摘要文案。 */
+export function buildCardSummary(card: PromptCardData): string {
+  const kind = CARD_KIND_LABEL[card.kind];
+  const outcome = card.outcome ? (CARD_OUTCOME_LABEL[card.outcome] ?? card.outcome) : '已结束';
+  return `${kind}${card.title ? `：${card.title}` : ''} · ${outcome}`;
+}

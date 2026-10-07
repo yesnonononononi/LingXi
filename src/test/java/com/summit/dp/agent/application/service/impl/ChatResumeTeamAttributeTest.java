@@ -12,7 +12,6 @@ import com.summit.dp.agent.infrastructure.workflow.AgentWorkflowOrchestrator;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.SessionAttributeRestorer;
-import com.summit.dp.execution.application.service.ExecutionRegistrationService;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.session.application.service.ConversationRollbackService;
 import com.summit.dp.session.application.service.ModelContextService;
@@ -69,9 +68,8 @@ class ChatResumeTeamAttributeTest {
                 executionRepository, sessionRepository, sessionExecutionRegistry, modelContextService,
                 executionIdentity, toolCallRepository,
                 new SessionAttributeRestorer(sessionRepository),
-                new PreparedChatExecutor(orchestrator, modelContextService, sessionExecutionRegistry,
-                        mock(com.summit.dp.execution.application.service.ExecutionRegistrationService.class),
-                        chatTurnService),
+                new PreparedChatExecutor(orchestrator, requestPreparer, modelContextService,
+                        sessionExecutionRegistry, executionControl),
                 chatTurnService,
                 mock(com.summit.dp.execution.application.service.ExecutionQueryService.class),
                 // 本测试只盯 resume 的属性补齐，重发链路用不到。

@@ -1,13 +1,13 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
-import { useTheme } from '../../../composables/useTheme';
-import { UserConfigAPI } from '../../../services/api';
-import type { AgentAccessMode, CommandApprovalPolicyType } from '../../../types/chat';
-import { isOk } from '../../../utils/api';
-import { normalizeAccessMode, normalizeCommandApprovalPolicy } from '../../../utils/enum';
+import { useTheme, THEME_STORAGE_KEY } from '../../../composables/useTheme';
+import { useUserConfigStore } from '../../../stores/userConfigStore';
+import type { AgentAccessMode, CommandApprovalPolicyType, WorkspaceEnvType } from '../../../types/chat';
 import { getApiBaseUrl, setApiBaseUrl, resetApiBaseUrl } from '../../../utils/apiConfig';
 
 export function useGeneralTab(emit: (e: 'modelUpdated') => void) {
-  // 主题设置
+  const userConfig = useUserConfigStore();
+
+  // 主题设置：内存态在 useTheme，落库走 userConfigStore
   const { setTheme } = useTheme();
   const themeMode = ref<'light' | 'dark' | 'system'>('system');
 
@@ -16,13 +16,18 @@ export function useGeneralTab(emit: (e: 'modelUpdated') => void) {
   const isLanguageOpen = ref(false);
   const languageOptions = ['跟随系统', '简体中文', 'English'];
 
-  // 执行环境设置 (可选本地/沙箱，默认沙箱)
-  const executionEnv = ref<'本地' | '沙箱' | '未知'>('未知');
+  // 执行环境：后端 NONE 表示未设置，语义上不同于沙箱，界面显示「未知」而非兜底成沙箱
+  const executionEnv = computed<'本地' | '沙箱' | '未知'>(() => {
+    const type = userConfig.envType;
+    if (type === 'LOCAL') return '本地';
+    if (type === 'SAND_BOX') return '沙箱';
+    return '未知';
+  });
   const isExecutionEnvOpen = ref(false);
   const executionEnvOptions: ('本地' | '沙箱')[] = ['本地', '沙箱'];
 
   // 1. 工作空间权限 (对应 UserConfigVO.accessMode)
-  const accessMode = ref<AgentAccessMode>('IN_WORKSPACE');
+  const accessMode = computed<AgentAccessMode>(() => userConfig.accessMode);
   const isAccessModeOpen = ref(false);
   const accessModeOptions: { label: string; value: AgentAccessMode; desc: string }[] = [
     { label: '工作区内修改', value: 'IN_WORKSPACE', desc: '仅限在工作区根目录下读写 (推荐)' },
@@ -31,7 +36,9 @@ export function useGeneralTab(emit: (e: 'modelUpdated') => void) {
   ];
 
   // 2. 工具权限 (对应 UserConfigVO.commandApprovalPolicy)
-  const commandApprovalPolicy = ref<CommandApprovalPolicyType>('DANGEROUS_BLOCK');
+  const commandApprovalPolicy = computed<CommandApprovalPolicyType>(
+    () => userConfig.commandApprovalPolicy ?? 'DANGEROUS_BLOCK',
+  );
   const isCommandApprovalPolicyOpen = ref(false);
   const commandApprovalPolicyOptions: { label: string; value: CommandApprovalPolicyType; desc: string }[] = [
     { label: '危险拦截', value: 'DANGEROUS_BLOCK', desc: '高危敏感命令需人工确认 (推荐)' },
@@ -88,38 +95,21 @@ export function useGeneralTab(emit: (e: 'modelUpdated') => void) {
   };
 
   const handleSelectExecutionEnv = async (opt: '本地' | '沙箱') => {
-    executionEnv.value = opt;
     isExecutionEnvOpen.value = false;
-    const type = opt === '本地' ? 'local' : 'sandbox';
-    // 单一来源：类型只落库（/config/current/update），不再写本地缓存
-    try {
-      await UserConfigAPI.updateCurrent({ type });
-      emit('modelUpdated');
-    } catch (err) {
-      console.error('更新工作空间类型失败:', err);
-    }
+    const type: WorkspaceEnvType = opt === '本地' ? 'LOCAL' : 'SAND_BOX';
+    // 后端入参用 code（sandbox/local）而非枚举名，WorkspaceType.fromCode 按 code 解析
+    const ok = await userConfig.patch('envType', type, { type: type === 'LOCAL' ? 'local' : 'sandbox' });
+    if (ok) emit('modelUpdated');
   };
 
   const handleSelectAccessMode = async (opt: AgentAccessMode) => {
-    accessMode.value = opt;
     isAccessModeOpen.value = false;
-    try {
-      await UserConfigAPI.updateCurrent({ accessMode: opt });
-      emit('modelUpdated');
-    } catch (err) {
-      console.error('更新工作空间权限失败:', err);
-    }
+    await userConfig.patch('accessMode', opt, { accessMode: opt });
   };
 
   const handleSelectCommandApprovalPolicy = async (opt: CommandApprovalPolicyType) => {
-    commandApprovalPolicy.value = opt;
     isCommandApprovalPolicyOpen.value = false;
-    try {
-      await UserConfigAPI.updateCurrent({ commandApprovalPolicy: opt });
-      emit('modelUpdated');
-    } catch (err) {
-      console.error('更新工具权限失败:', err);
-    }
+    await userConfig.patch('commandApprovalPolicy', opt, { commandApprovalPolicy: opt });
   };
 
   const closeGeneralDropdowns = () => {
@@ -147,52 +137,33 @@ export function useGeneralTab(emit: (e: 'modelUpdated') => void) {
 
   const handleSelectTheme = (mode: 'light' | 'dark' | 'system') => {
     themeMode.value = mode;
-    if (mode === 'light') {
-      setTheme('light');
-      void UserConfigAPI.updateCurrent({ renderTheme: 'LIGHT' });
-    } else if (mode === 'dark') {
-      setTheme('dark');
-      void UserConfigAPI.updateCurrent({ renderTheme: 'DARK' });
-    } else {
-      // 跟随系统
-      const isSysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-      setTheme(isSysDark ? 'dark' : 'light');
-      localStorage.removeItem('lingxi-theme');
-      void UserConfigAPI.updateCurrent({ renderTheme: isSysDark ? 'DARK' : 'LIGHT' });
+    if (mode === 'system') {
+      // 跟随系统：解析出当前系统主题落到内存与库里。
+      // 这样下次打开仍是确定的一个值，不会因为系统主题变了而与库里记录对不上。
+      localStorage.removeItem(THEME_STORAGE_KEY);
+      mode = window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     }
+    setTheme(mode);
+    const persisted = mode === 'dark' ? 'DARK' : 'LIGHT';
+    void userConfig.patch('renderTheme', persisted, { renderTheme: persisted });
   };
 
   onMounted(async () => {
-    const saved = localStorage.getItem('lingxi-theme');
-    if (saved === 'light') themeMode.value = 'light';
-    else if (saved === 'dark') themeMode.value = 'dark';
-    else themeMode.value = 'system';
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    if (saved === 'light' || saved === 'dark') {
+      themeMode.value = saved;
+    } else {
+      themeMode.value = 'system';
+    }
 
-    try {
-      const res = await UserConfigAPI.current();
-      if (isOk(res.code) && res.data) {
-        // 同步后端持久化的 renderTheme（未在本地明确设置时采纳服务端偏好）
-        if (res.data.renderTheme && !saved) {
-          const remoteTheme = res.data.renderTheme.toUpperCase() === 'DARK' ? 'dark' : 'light';
-          setTheme(remoteTheme);
-          themeMode.value = remoteTheme;
-        }
-
-        // 枚举校验收敛到 utils/enum，不再 as 强转后靠 includes 白名单兜底
-        const mode = normalizeAccessMode(res.data.accessMode);
-        if (mode) accessMode.value = mode;
-
-        const policy = normalizeCommandApprovalPolicy(res.data.commandApprovalPolicy);
-        if (policy) commandApprovalPolicy.value = policy;
+    // 配置真值统一由 store 载入；本页只负责把已载入的 renderTheme 同步到运行时主题。
+    if (await userConfig.load()) {
+      const remote = userConfig.renderTheme === 'DARK' ? 'dark' : 'light';
+      // 本地显式选过就尊重本地（首屏已经按它渲染过了），否则采纳服务端偏好
+      if (!saved) {
+        setTheme(remote);
+        themeMode.value = remote;
       }
-      // 契约来源：docs/frontend-backend-contract.md §5。
-      // 后端下发的是 WorkspaceType 枚举名 SAND_BOX / LOCAL / NONE（非小写 code）。
-      // 查询失败或下发 NONE 时显示「未知」——「未知」与「沙箱」语义不同，
-      // 兜底成沙箱会让用户误判当前安全边界。
-      const env = await UserConfigAPI.currentWorkspaceType();
-      executionEnv.value = env === 'LOCAL' ? '本地' : env === 'SAND_BOX' ? '沙箱' : '未知';
-    } catch {
-      executionEnv.value = '未知';
     }
 
     window.addEventListener('click', handleDocumentClick);

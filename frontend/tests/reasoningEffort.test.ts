@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { setActivePinia, createPinia } from 'pinia';
 import { UserConfigAPI } from '../src/services/userConfig';
 import { useReasoningEffort } from '../src/composables/useReasoningEffort';
 import type { ReasoningEffort } from '../src/types/chat';
 import type { Result } from '../src/services/types';
+
+setActivePinia(createPinia());
 
 test('恢复后端档位不触发保存，未加载前禁止发送', async (t) => {
   const writes: unknown[] = [];

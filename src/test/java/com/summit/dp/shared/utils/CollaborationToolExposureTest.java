@@ -204,7 +204,6 @@ class CollaborationToolExposureTest {
                 mock(WorkspaceService.class), mock(ModelService.class), mock(WorkspaceConverter.class),
                 mock(SettingsProvider.class), catalog, mock(ConversationTranscriptService.class),
                 mock(ModelContextService.class),                 mock(ExecutionIdentity.class),
-                mock(com.summit.dp.execution.application.service.ExecutionRegistrationService.class),
                 mock(com.summit.dp.turn.application.service.ChatTurnService.class),
                 mock(AgentService.class), mock(TeamService.class), mcpService);
 

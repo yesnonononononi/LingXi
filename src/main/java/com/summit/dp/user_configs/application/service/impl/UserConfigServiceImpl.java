@@ -103,6 +103,10 @@ public class UserConfigServiceImpl implements UserConfigService {
         Long modelId = userConfigCommand.modelId();
         if (modelId != null) model.changeModel(modelId);
 
+        // agentId 允许显式为 null（取消绑定），与 modelId 的「非 null 才改」规则相反：
+        // 必须按 command 上的出现标记判断，光判值会把「解绑」当成「没传」。
+        if (userConfigCommand.agentIdPresent()) model.changeAgent(userConfigCommand.agentId());
+
         String workspaceType = userConfigCommand.workspaceType();
         if (workspaceType != null)
             model.changeWorkspace(new UserConfig.WorkSpaceConfig(WorkspaceType.fromCode(workspaceType)));

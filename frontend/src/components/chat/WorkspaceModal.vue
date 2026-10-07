@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import type { WorkspaceRequest, WorkspaceEnvType } from '../../types/chat';
-import { UserConfigAPI } from '../../services/api';
+import type { WorkspaceRequest } from '../../types/chat';
 import { extractDirName } from '../../utils/path';
 import { isElectron, openDirectoryPicker } from '../../utils/platform';
 import { useTheme } from '../../composables/useTheme';
@@ -19,8 +18,7 @@ const emit = defineEmits<{
   (e: 'save', data: WorkspaceRequest): void;
 }>();
 
-// 契约 §5：环境类型取值为后端 WorkspaceType 枚举名（SAND_BOX / LOCAL / NONE），非小写 sandbox。
-const envType = ref<WorkspaceEnvType>('SAND_BOX');
+
 const pathInput = ref('');
 const errorMsg = ref('');
 const showManualInput = ref(false);
@@ -29,10 +27,6 @@ const detectedProjectName = computed(() => {
   const trimmed = pathInput.value.trim();
   return extractDirName(trimmed) || (trimmed ? '未命名项目' : '');
 });
-
-const loadEnvType = async () => {
-  envType.value = await UserConfigAPI.currentWorkspaceType();
-};
 
 const pickFolder = async () => {
   errorMsg.value = '';
@@ -84,7 +78,6 @@ watch(
     pathInput.value = '';
     errorMsg.value = '';
     showManualInput.value = false;
-    loadEnvType();
   },
   { immediate: true }
 );

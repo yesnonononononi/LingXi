@@ -1,9 +1,9 @@
 /**
  * 审批结论（`raw_output.outcome`）判定（唯一定义处）。
  *
- * <p>后端下发的 `outcome` 是**字符串**，取值词表见 `types/chat.ts` 的 `PromptCardData.outcome`：
+ * <p>后端下发的 `outcome` 是**字符串**，取值词表：
  * `APPROVED / REJECTED / ANSWERED / CANCELLED / SUCCEEDED / FAILED / TIMED_OUT`。
- * 此前 `ApprovalCard.vue` 用 if 链把七个值逐个比对，改词表必然漏改；这里收成两张常量表。</p>
+ * 这里收成两张常量表，避免调用方各写一条 if 链、改词表时漏改。</p>
  */
 
 /** 归为「已批准」侧的结论。`SUCCEEDED` 表示命令执行成功，与 `APPROVED` 同侧。 */

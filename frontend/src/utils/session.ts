@@ -1,7 +1,8 @@
-import type { ChatMessage, ChatTurn, PromptCardData, ToolCallVO, SessionMessageVO } from '../types/chat';
+import type { ChatMessage, ChatSession, ChatTurn, ToolCallVO, SessionMessageVO, SubSessionVO } from '../types/chat';
 import type { ToolExecutionState } from './toolMeta';
 import { isEditFileTool, resolveToolCategory, resolveToolMeta } from './toolMeta';
 import { asObject, toObject, toText } from './json';
+import { isTempSessionId } from './ids';
 import { parseTimestamp } from './time';
 
 /**
@@ -9,7 +10,7 @@ import { parseTimestamp } from './time';
  *
  * 契约来源：GET /session/{id}/messages → SessionMessagePageVO.records（已是结构化 VO）。
  * 消息类型收敛为 USER / AI / TOOL / SYSTEM；工具调用状态与卡片载荷来自 TOOL 行携带的
- * 聚合 ToolCallVO（`item.toolCall`），与实时流 CARD_PENDING 拉取的 VO 同源、同形状。
+ * 聚合 ToolCallVO（`item.toolCall`），与实时工具事件拉取的 VO 同源、同形状。
  * 执行失败**不再**以 ERROR 行落库，改由同页下发的 turns[turnId].status/errorReason 呈现。
  */
 
@@ -66,6 +67,375 @@ export function groupMessagesByTurn(messages: ChatMessage[]): AnswerGroup[] {
   return groups;
 }
 
+/** 消息 → 所属回答组的轮次摘要与组尾标记（主会话与子会话共用同一分组规则）。 */
+export interface MessageTurnBinding {
+  /** 该组所属轮次的权威摘要；null = 无摘要（旧数据 / 未采集），展示层须隐藏统计、绝不显示成 0。 */
+  turn: ChatTurn | null;
+  /** 是否为组尾：同一轮次只在组尾展示一次执行元信息。 */
+  isGroupTail: boolean;
+}
+
+/**
+ * 按 turnId 把消息分组，并把每组的轮次摘要（来自会话轮次表 `session.turns`）绑定到组内每条消息。
+ *
+ * <p>回答组的 token / 模型 / 耗时 / 状态是整轮属性，同组消息共享同一 turn。turnId 缺失
+ * （旧数据）或轮次表无该键时保持 null —— 不得回落成会话累计用量或 0。</p>
+ */
+export function buildMessageTurnMap(
+  messages: ChatMessage[],
+  turns?: Record<string, ChatTurn> | null
+): Map<string, MessageTurnBinding> {
+  const map = new Map<string, MessageTurnBinding>();
+  for (const group of groupMessagesByTurn(messages)) {
+    const lastIdx = group.messages.length - 1;
+    const turn = group.turnId != null ? turns?.[group.turnId] ?? null : null;
+    group.messages.forEach((m, i) => {
+      map.set(m.id, { turn, isGroupTail: i === lastIdx });
+    });
+  }
+  return map;
+}
+
+/**
+ * 逐页 union 合并轮次摘要表（键 = turnId，后到的覆盖先到的 —— 更新的快照更准确）。
+ *
+ * <p>返回新对象，不改动入参；缺失归一为 `{}`（无摘要 ≠ 用量为 0）。供消息对账与分页加载
+ * 把每页下发的 turns 累积进会话实体的 `session.turns`。</p>
+ */
+export function mergeTurns(
+  base: Record<string, ChatTurn> | null | undefined,
+  incoming: Record<string, ChatTurn> | null | undefined
+): Record<string, ChatTurn> {
+  if (!base && !incoming) return {};
+  return { ...(base ?? {}), ...(incoming ?? {}) };
+}
+
+/**
+ * 会话是否处于「运行中」（进行中 或 挂起等待）。
+ *
+ * <p>生成中判据的唯一真源：受理是同步的（POST 立刻返回），只看 POST 会让界面在返回瞬间
+ * 闪回可发送态；挂起（SUSPENDED）同样算运行中 —— 此时后端拒绝开新一轮，用户也不该能发。</p>
+ */
+export function isSessionRunning(runStatus: string | null | undefined): boolean {
+  return runStatus === 'RUNNING' || runStatus === 'SUSPENDED';
+}
+
+/**
+ * 会话树对账时合并子会话：树只下发元数据、不带消息正文，按 id 保留旧 VO 上已加载的消息。
+ *
+ * <p><b>为什么不能整体替换</b>：{@code subSessions} 每次对账都被树的新 VO 替换，而新 VO 的
+ * {@code messages} 是空的；直接替换会把已加载/已实时渲染的子会话历史整段丢掉，且分页守卫会
+ * 让后续点击不再重拉（表现为「点了子会话卡片，历史一闪就没了，再点也不加载」）。
+ * 保留同一个 {@code messages} 数组引用，实时 reducer 也才能继续写进当前数组。</p>
+ *
+ * <p>轮次摘要逐页 union（键 = turnId，后到覆盖先到），语义同 {@link mergeTurns}。</p>
+ */
+export function mergeSubSessionTree(
+  previous: SubSessionVO[] | null | undefined,
+  incoming: SubSessionVO[]
+): SubSessionVO[] {
+  const prevById = new Map<string, SubSessionVO>();
+  for (const sub of previous ?? []) {
+    if (sub?.id == null) continue;
+    prevById.set(String(sub.id), sub);
+  }
+  return incoming.map(fresh => {
+    const old = prevById.get(String(fresh.id));
+    if (!old) return fresh;
+    return {
+      ...fresh,
+      messages: old.messages ?? fresh.messages,
+      turns: mergeTurns(old.turns, fresh.turns)
+    };
+  });
+}
+
+/**
+ * 解析会话实体的根会话 id（订阅键与子会话归属判定的唯一真源）。
+ *
+ * <p>后端契约：{@code rootSessionId} 为 {@code 0}（{@code Session.ROOT_SESSION_ID}）或 null
+ * 都表示「自身即根」。只有非空且非 {@code '0'} 时才回指真正的根，否则取会话自身 id ——
+ * 把 {@code '0'} 当连接键会请求 {@code /a/completion/0/events}，后端 {@code Unknown session: 0} → HTTP 500。</p>
+ *
+ * <p>临时会话（尚未落库）没有根，返回 null，由调用方决定是否订阅。</p>
+ */
+export function resolveRootSessionId(session: ChatSession | null | undefined): string | null {
+  if (!session) return null;
+  const id = String(session.id);
+  if (isTempSessionId(id)) return null;
+  const declared = session.rootSessionId != null ? String(session.rootSessionId) : null;
+  return declared && declared !== '0' ? declared : id;
+}
+
+/**
+ * 历史与本地实时消息的合并输入。
+ *
+ * <p>{@code terminalTurnIds} 是已确认终结的轮次（收到终态事件或挂起事件，或对账读回非运行态）。
+ * 它是「替换 vs 保留」的唯一开关。</p>
+ */
+export interface MergeMessagesByTurnInput {
+  /** 本地消息（实时 reducer 正在追加的正文在这里）。 */
+  local: ChatMessage[] | null | undefined;
+  /** 权威历史消息（由 {@link aggregateSessionMessages} 聚合而来）。 */
+  history: ChatMessage[] | null | undefined;
+  /** 已终结的轮次集合；其中的轮次用权威历史整体替换。未列出的轮次保留本地正文。 */
+  terminalTurnIds?: Iterable<string> | null;
+}
+
+/** 合并一条回答组内的过程数据：按 id 补齐本地缺失项，本地已有项保持不动（实时更新更近）。 */
+function complementProcessData<T extends { id?: string }>(
+  localItems: T[] | undefined,
+  historyItems: T[] | undefined
+): T[] | undefined {
+  if (!historyItems || historyItems.length === 0) return localItems;
+  const merged = [...(localItems ?? [])];
+  const localIds = new Set(merged.map(item => String(item?.id ?? '')));
+  for (const item of historyItems) {
+    const id = String(item?.id ?? '');
+    if (!id || localIds.has(id)) continue;
+    merged.push(item);
+  }
+  return merged;
+}
+
+/**
+ * 同一轮内角色的排序权重：user 必须排在 assistant 之前。
+ *
+ * <p>渲染层按「先提问、后回答」组织气泡，顺序颠倒会让用户先看到回答再看到自己的提问。</p>
+ */
+function roleOrder(role: ChatMessage['role']): number {
+  return role === 'user' ? 0 : role === 'assistant' ? 1 : 2;
+}
+
+/**
+ * 保留本地正文、用历史补齐该轮缺失的过程数据。
+ *
+ * <p>实时路径的正文是增量追加的，而「正在生成的片段不保证已落库」——
+ * 直接整体替换会把已经渲染出来的正文回退成半截。</p>
+ *
+ * <p>补齐进来的整条消息<b>按角色归位</b>（user 在 assistant 之前），不能一律 push 到末尾：
+ * 本地该轮可能只有助手气泡（用户气泡还没绑定 turnId），无条件追加会让提问排到回答之后。</p>
+ */
+function complementTurnKeepingLocalBody(
+  localTurn: ChatMessage[],
+  historyTurn: ChatMessage[]
+): ChatMessage[] {
+  if (localTurn.length === 0) return historyTurn;
+
+  const merged = localTurn.map(message => {
+    const historyAssistant = historyTurn.find(item => item.role === 'assistant');
+    if (message.role !== 'assistant' || !historyAssistant) return message;
+    return {
+      ...message,
+      thoughtSteps: complementProcessData(message.thoughtSteps, historyAssistant.thoughtSteps),
+      toolCalls: complementProcessData(message.toolCalls, historyAssistant.toolCalls),
+      aiMessages: complementProcessData(message.aiMessages, historyAssistant.aiMessages),
+      promptCards: complementProcessData(message.promptCards, historyAssistant.promptCards)
+    };
+  });
+
+  // 按角色去重：一个轮次里 user / assistant 各只应有一条。实时乐观气泡 id 形如
+  // `user-<sessionId>-<ts>`，历史 id 形如 `srv-<雪花>` —— 同一轮两者 id 不同，
+  // 不按角色去重就会渲染出两个用户气泡。
+  const mergedRoles = new Set(merged.map(message => message.role));
+  for (const message of historyTurn) {
+    if (mergedRoles.has(message.role)) continue;
+    mergedRoles.add(message.role);
+    // 归位：插到第一条权重更大的消息之前，保证 user 不落在 assistant 后面
+    const weight = roleOrder(message.role);
+    const insertAt = merged.findIndex(item => roleOrder(item.role) > weight);
+    if (insertAt < 0) merged.push(message);
+    else merged.splice(insertAt, 0, message);
+  }
+  return merged;
+}
+
+/**
+ * 按权威 turnId 分轮合并「本地实时消息」与「服务端历史消息」。
+ *
+ * <p><b>为什么不能按消息 ID 追加</b>：实时助手气泡 id 形如 {@code bubble-<sessionId>-<turnId>}，
+ * 历史消息 id 形如 {@code msg-<sessionId>-turn-<turnId>} —— <b>同一轮的两个 id 不同</b>，
+ * 按 id 合并必然产生重复气泡。</p>
+ *
+ * <p>合并规则：</p>
+ * <ol>
+ *   <li>先按 turnId 把两侧各自分组（历史侧已由聚合器按 turnId 归一）；</li>
+ *   <li><b>被确认终结的轮次</b>（在 {@code terminalTurnIds} 内）：用权威历史整体替换；</li>
+ *   <li><b>其余轮次</b>：保留本地实时正文，只用历史补齐该轮缺失的过程数据；</li>
+ *   <li><b>turnId 未知（null）的本地消息</b>：按 {@code role + content} 与历史对账，
+ *       命中说明历史已把它落库（权威），删本地那条；未命中才追加。</li>
+ * </ol>
+ *
+ * <p>排序沿用历史顺序（已按轮次雪花 ID 排好），本地多出的轮次按其 snowflake 键插到正确位置，
+ * 保证「实时气泡不会跳到会话末尾」。</p>
+ */
+export function mergeMessagesByTurn(input: MergeMessagesByTurnInput): ChatMessage[] {
+  const local = input.local ?? [];
+  const history = input.history ?? [];
+  if (history.length === 0) return [...local];
+  if (local.length === 0) return [...history];
+
+  const terminalTurnIds = new Set<string>();
+  for (const turnId of input.terminalTurnIds ?? []) {
+    const normalized = normalizeTurnId(turnId);
+    if (normalized) terminalTurnIds.add(normalized);
+  }
+
+  /** 本地消息按 turnId 分组；null 轮次单独保留原顺序。 */
+  const localByTurn = new Map<string, ChatMessage[]>();
+  const localWithoutTurn: ChatMessage[] = [];
+  for (const message of local) {
+    const turnId = normalizeTurnId(message.turnId);
+    if (!turnId) {
+      localWithoutTurn.push(message);
+      continue;
+    }
+    const bucket = localByTurn.get(turnId);
+    if (bucket) bucket.push(message);
+    else localByTurn.set(turnId, [message]);
+  }
+
+  const historyByTurn = new Map<string, ChatMessage[]>();
+  for (const message of history) {
+    const turnId = normalizeTurnId(message.turnId);
+    if (!turnId) continue;
+    const bucket = historyByTurn.get(turnId);
+    if (bucket) bucket.push(message);
+    else historyByTurn.set(turnId, [message]);
+  }
+
+  /**
+   * 指纹比对范围：**只有历史的最后一个轮次**。
+   *
+   * <p>为什么不能比全历史：指纹只由 role + content 构成，用户重复发送相同内容
+   * （「继续」「好的」「1」这类高频短消息，或失败后原样重发）时，新乐观气泡会与
+   * <b>更早轮次</b>的同内容消息误判为同一条 → 用户刚发的消息在界面上消失。
+   * 吞掉用户输入比多渲染一个气泡严重得多。</p>
+   *
+   * <p>为什么「最后一个轮次」是对的：乐观气泡只可能对应最近落库的那一轮
+   * （bindUserMessageTurn 在受理返回后才写 turnId，此前它没有轮次身份）。</p>
+   */
+  const latestHistoryTurnId = resolveLatestHistoryTurnId(history);
+  const latestHistoryFingerprints = new Set(
+    latestHistoryTurnId === null
+      ? []
+      : (historyByTurn.get(latestHistoryTurnId) ?? []).map(buildFingerprint),
+  );
+
+  // 以历史顺序为主干，逐轮决定「整体替换 / 保留本地正文」
+  const merged: ChatMessage[] = [];
+  const emittedTurnIds = new Set<string>();
+  for (const message of history) {
+    const turnId = normalizeTurnId(message.turnId);
+    if (!turnId) {
+      merged.push(message);
+      continue;
+    }
+    if (emittedTurnIds.has(turnId)) continue; // 同一轮已在上一条消息时整体处理过
+    emittedTurnIds.add(turnId);
+
+    const historyTurn = historyByTurn.get(turnId) ?? [];
+    const localTurn = localByTurn.get(turnId);
+
+    if (!localTurn || localTurn.length === 0) {
+      merged.push(...historyTurn);
+      continue;
+    }
+    if (terminalTurnIds.has(turnId)) {
+      merged.push(...historyTurn);
+      continue;
+    }
+    // 未确认终结：保留本地正文（更近），过程数据用历史补齐
+    merged.push(...complementTurnKeepingLocalBody(localTurn, historyTurn));
+  }
+
+  // 本地有、历史还没有的轮次：按雪花键插到正确位置（不能一律追加到末尾）
+  const localOnlyTurnIds = Array.from(localByTurn.keys()).filter(turnId => !emittedTurnIds.has(turnId));
+  for (const turnId of localOnlyTurnIds) {
+    const bucket = localByTurn.get(turnId) ?? [];
+    if (bucket.length === 0) continue;
+    const insertAt = resolveInsertIndex(merged, turnId);
+    merged.splice(insertAt, 0, ...bucket);
+  }
+
+  // turnId 未知的本地消息：与「历史最后一轮」对账 —— 命中说明它就是那一轮已落库的
+  // 同一条消息（历史权威），删本地那条。不做这一步会同时渲染乐观气泡与历史消息，
+  // 变成两个用户气泡（bindUserMessageTurn 尚未执行或执行失败时就是这个窗口）。
+  //
+  // 额外要求本地已有那一轮的其它消息：没有就说明这条乐观气泡属于<b>另一轮</b>
+  // （很可能是用户重复发送相同内容），删掉就是吞掉用户输入。
+  //
+  // <b>已接受的副作用（v1 边界，不要当 bug 改）</b>：当「本地恰好留有上一轮的助手气泡」
+  // 且「新消息内容与上一轮完全相同」，且这次对账恰好发生在 POST 在途、
+  // bindUserMessageTurn 尚未执行的窗口内时，这条乐观气泡会被去重（界面上少一条用户消息）。
+  // 为何接受：概率低；下一轮对账自愈（届时气泡已带 turnId，按轮归并会正确保留），
+  // 属瞬态而非持久丢失；消除它需要先拿到 turnId，而那正是该窗口存在的原因（鸡生蛋）。
+  // 回归守卫见 tests/singleSessionStream.test.ts 的「已知边界」用例。
+  for (const message of localWithoutTurn) {
+    if (latestHistoryTurnId !== null && localByTurn.has(latestHistoryTurnId)
+      && latestHistoryFingerprints.has(buildFingerprint(message))) {
+      continue;
+    }
+    merged.push(message);
+  }
+  return merged;
+}
+
+/**
+ * 历史里最后一个（雪花键最大）的轮次 id；无法解析时返回 null。
+ *
+ * <p><b>必须按雪花键，不能按数组下标</b>：分页回溯时数组顺序不完全等于轮次先后
+ * （窗口滑进某一轮中间时，该轮可能晚于更晚的轮次出现）。按下标取「最后一条」会在乱序
+ * 历史里选错轮次，使「指纹比对范围」与「本地是否有该轮消息」两个判断同时失效。</p>
+ *
+ * <p>回归守卫：tests/singleSessionStream.test.ts 的「历史倒序」用例。</p>
+ */
+function resolveLatestHistoryTurnId(history: ChatMessage[]): string | null {
+  let latestTurnId: string | null = null;
+  let latestKey: bigint | null = null;
+  for (const message of history) {
+    const turnId = normalizeTurnId(message.turnId);
+    if (!turnId) continue;
+    const key = snowflakeKey(turnId);
+    if (key === null) {
+      // 异常数据（非雪花）：退化为「后出现者为准」，不参与雪花比较
+      latestTurnId = turnId;
+      continue;
+    }
+    if (latestKey === null || key > latestKey) {
+      latestKey = key;
+      latestTurnId = turnId;
+    }
+  }
+  return latestTurnId;
+}
+
+/**
+ * 消息指纹：角色 + 正文。
+ *
+ * <p>用于把「本地乐观气泡」与「历史里同一条落库消息」对上 —— 两者 id 不同
+ * （{@code user-<sessionId>-<ts>} vs 雪花 id），只能按内容认。</p>
+ */
+function buildFingerprint(message: ChatMessage): string {
+  return `${message.role}\u0000${message.content ?? ''}`;
+}
+
+/**
+ * 本地独有轮次相对「已合并消息数组」的插入位置。
+ *
+ * <p>按 turnId 的雪花键比较：比现有第一轮晚就插到末尾，否则插到第一个比自己晚的轮次之前。
+ * 这样「刚发出的这一轮」不会被塞到会话最末尾（那里通常是更早的历史轮次）。</p>
+ */
+function resolveInsertIndex(merged: ChatMessage[], turnId: string): number {
+  const key = snowflakeKey(turnId);
+  if (key === null) return merged.length;
+  for (let i = 0; i < merged.length; i++) {
+    const currentKey = snowflakeKey(normalizeTurnId(merged[i].turnId));
+    if (currentKey !== null && key < currentKey) return i;
+  }
+  return merged.length;
+}
+
 /**
  * 从 edit_file 类工具的执行输出里取出行数增减。
  * 输出不是 JSON 或缺字段时返回 null —— 行数只是卡片上的装饰信息，取不到就不显示。
@@ -82,104 +452,8 @@ function extractEditResultLines(toolName: string, outputText: string): { plusLin
 }
 
 /* ------------------------------------------------------------------ */
-/* ToolCallVO → PromptCardData（历史与实时共用的唯一转换点）            */
+/* ToolCallVO → 工具调用展示（历史与实时共用的唯一转换点）              */
 /* ------------------------------------------------------------------ */
-
-/** content.kind 合法取值（卡片渲染唯一判别字段） */
-const PROMPT_KINDS = ['PLAN', 'CHOICE', 'COMMAND', 'DELEGATION'] as const;
-type PromptKind = (typeof PROMPT_KINDS)[number];
-
-/**
- * 归一化生命周期状态。
- * 契约来源：docs/frontend-backend-contract.md §3 —— `ToolCallStatus` 识别不了回落 **PENDING**
- * （「宁可渲染成待处理，也不静默吞掉」），故缺失/非法值一律按 `pending` 处理，不臆断为 `completed`。
- */
-function normalizePromptStatus(status: unknown): PromptCardData['status'] {
-  const normalized = String(status ?? '').trim().toLowerCase();
-  if (normalized === 'preparing' || normalized === 'pending' || normalized === 'in_progress' || normalized === 'completed') {
-    return normalized;
-  }
-  return 'pending';
-}
-
-/**
- * 由聚合工具调用（ToolCallVO）构建统一卡片数据。
- *
- * <p>返回 null 表示该工具调用不是待渲染的 PROMISE 卡片（EXECUTE / 非 PROMISE / 缺失），调用方据此跳过。</p>
- *
- * <p>契约来源（docs/frontend-backend-contract.md §3）：</p>
- * <ul>
- *   <li>`content`/`rawOutput` 是后端**已解析的 `JsonNode` 对象**，解析失败为 `null` → 按对象直接消费，不再字符串解析；</li>
- *   <li>`content.kind` 非法/缺失（后端 `fromName()` 识别不了返回 `null`）→ `unavailable:true`，**绝不回落 `COMMAND`**；</li>
- *   <li>`kind === 'EXECUTE'` 是「无卡片载荷的普通工具」，不渲染为卡片（返回 null）；</li>
- *   <li>`pending` 直接读后端权威下发的 `ToolCallVO.pending`，不再自行用 `status` 推断。</li>
- * </ul>
- */
-export function buildPromptCard(toolCall?: ToolCallVO | null): PromptCardData | null {
-  if (!toolCall) return null;
-  const type = String(toolCall.type ?? '').trim().toUpperCase();
-  if (type !== 'PROMISE') return null;
-
-  // 契约 §3：ToolCallVO.content 已是解析后的对象（解析失败为 null）→ 按对象消费，禁止字符串 JSON.parse。
-  const content = asObject(toolCall.content);
-  const kindRaw = content ? String(content.kind ?? '').trim().toUpperCase() : '';
-  // EXECUTE：无卡片载荷的普通工具，不渲染为卡片。
-  if (kindRaw === 'EXECUTE') return null;
-  const kindValid = (PROMPT_KINDS as readonly string[]).includes(kindRaw);
-  // 非法/缺失 → 不可用态，绝不回落 COMMAND。
-  const kind: PromptCardData['kind'] = kindValid ? (kindRaw as PromptKind) : 'UNAVAILABLE';
-
-  // 契约 §3：rawOutput 同为已解析对象；结论唯一依据是 rawOutput.outcome。
-  const rawOutput = asObject(toolCall.rawOutput);
-  const outcome = rawOutput && rawOutput.outcome != null ? String(rawOutput.outcome) : undefined;
-  // 契约 §3：pending 是前端唯一可审批判定，后端权威下发 —— 直接读该字段，禁止自行用 status 推断。
-  const pending = Array.isArray(toolCall.allowedActions)
-    ? toolCall.allowedActions.length > 0
-    : toolCall.pending === true;
-
-  const card: PromptCardData = {
-    kind,
-    toolCallId: toolCall.id != null ? String(toolCall.id) : '',
-    conversationId: toolCall.conversationId != null ? String(toolCall.conversationId) : undefined,
-    title: toolCall.title != null ? String(toolCall.title) : '',
-    content: '',
-    status: normalizePromptStatus(toolCall.status),
-    pending,
-    version: toolCall.version,
-    allowedActions: toolCall.allowedActions,
-    unavailableReason: toolCall.unavailableReason,
-    outcome,
-    answer: rawOutput && rawOutput.answer != null ? String(rawOutput.answer) : undefined,
-    stdout: rawOutput && rawOutput.stdout != null ? String(rawOutput.stdout) : undefined,
-    exitCode: rawOutput && typeof rawOutput.exitCode === 'number' ? rawOutput.exitCode : undefined,
-    unavailable: !kindValid
-  };
-
-  if (kindValid && content && kind === 'PLAN') {
-    card.title = card.title || (content.title != null ? String(content.title) : '') || '任务计划';
-    card.content = content.text != null ? String(content.text) : '';
-  } else if (kindValid && content && kind === 'CHOICE') {
-    card.content = content.question != null ? String(content.question) : '';
-    card.title = card.title || card.content || '需要您的进一步确认';
-    card.options = Array.isArray(content.options)
-      ? content.options.map((o: unknown) => String(o ?? ''))
-      : [];
-  } else if (kindValid && content && kind === 'COMMAND') {
-    card.command = content.command != null ? String(content.command) : '';
-    card.content = card.command;
-    card.workDir = content.workDir != null ? String(content.workDir) : undefined;
-    card.shell = content.shell != null ? String(content.shell) : undefined;
-    card.intention = content.intention != null ? String(content.intention) : undefined;
-    card.title = card.title || '命令审批';
-  } else if (kindValid && content && kind === 'DELEGATION') {
-    // 委派等待卡：标题 = 子代理名（登记时写入 tool_call.title），正文 = 委派任务。
-    card.subSessionId = content.subSessionId != null ? String(content.subSessionId) : undefined;
-    card.content = content.text != null ? String(content.text) : '';
-    card.title = card.title || '子代理';
-  }
-
-  return card;
-}
 
 /**
  * 合并不同分页的原始消息记录（SessionMessageVO）：
@@ -332,7 +606,6 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
             thoughtSteps: [],
             toolCalls: [],
             aiMessages: [],
-            promptCards: [],
             isComplete: true
           };
           turnAssistantMap.set(turnId, asst);
@@ -356,7 +629,6 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
         thoughtSteps: [],
         toolCalls: [],
         aiMessages: [],
-        promptCards: [],
         isComplete: true
       };
       currentLegacyAssistant = legacyAsst;
@@ -370,68 +642,56 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
       const callId = item.toolCallId != null ? String(item.toolCallId) : '';
       const toolCall: ToolCallVO | null =
         item.toolCall && typeof item.toolCall === 'object' ? (item.toolCall as ToolCallVO) : null;
-      const type = String(toolCall?.type ?? '').trim().toUpperCase();
       const resolvedCallId = callId || (toolCall?.id != null ? String(toolCall.id) : '');
 
-      // 2a. PROMISE：人工在环卡片 → 构建统一 promptCard
-      if (toolCall && type === 'PROMISE') {
-        const card = buildPromptCard(toolCall);
-        if (card) {
-          const asst = getAssistantContainer();
-          if (!asst.promptCards) asst.promptCards = [];
-          const existingIdx = asst.promptCards.findIndex(c => c.toolCallId === card.toolCallId);
-          if (existingIdx >= 0) {
-            asst.promptCards[existingIdx] = card;
-          } else {
-            asst.promptCards.push(card);
-          }
-          asst.promptCard = asst.promptCards[0];
-
-          if (asst.toolCalls && resolvedCallId) {
-            const matched = asst.toolCalls.find(tc => tc.id === resolvedCallId);
-            if (matched) {
-              if (card.pending) {
-                matched.status = 'pending';
-                if (!matched.result) {
-                  matched.result = card.command
-                    ? `命令尚未执行，正在等待用户批准: ${card.command}`
-                    : '工具尚未执行，正在等待用户批准';
-                }
-              } else if (card.outcome) {
-                matched.status = (card.outcome === 'APPROVED' || card.outcome === 'SUCCEEDED') ? 'success' : 'failed';
-              }
-            }
-          }
-        }
-        continue;
-      }
-
-      // 2b. toolCall 缺行
+      // 2a. toolCall 缺行
       if (!toolCall) {
         console.warn('[aggregateSessionMessages] TOOL 消息缺少 tool_call 行，已降级为不可用:', item.id, resolvedCallId);
         continue;
       }
 
-      // 2c. EXECUTE：普通工具调用
       const asst = getAssistantContainer();
+
+      // 2b. 互动卡片（PROMISE）：保留权威 ToolCallVO 供卡片渲染。
+      // 卡片是用户可操作项，必须能在历史/刷新后重建（ToolCallTrace 丢弃了 type/status/content 等字段，
+      // 故不能只靠 toolCalls 还原）。已决卡片携带 rawOutput.outcome/answer/stdout，同样由此还原。
+      if (toolCall.type === 'PROMISE') {
+        if (!asst.promptCards) asst.promptCards = [];
+        const cardIdx = asst.promptCards.findIndex(c => String(c.id) === String(resolvedCallId));
+        if (cardIdx >= 0) {
+          asst.promptCards[cardIdx] = toolCall;
+        } else {
+          asst.promptCards.push(toolCall);
+        }
+      }
+
+      // 2c. 普通工具调用
       const toolName = toolCall.toolName ?? '';
       const rawOutput = asObject(toolCall.rawOutput);
       const resultValue = rawOutput ? (rawOutput.output !== undefined ? rawOutput.output : rawOutput.stdout) : undefined;
       const resultStr = resultValue === undefined || resultValue === null ? '' : toText(resultValue);
       const outcome = rawOutput && rawOutput.outcome != null ? String(rawOutput.outcome).trim().toUpperCase() : '';
       const execStatus: ToolExecutionState =
-        outcome === 'SUCCEEDED'
+        outcome === 'SUCCEEDED' || outcome === 'APPROVED'
           ? 'success'
           : (['FAILED', 'REJECTED', 'TIMED_OUT', 'CANCELLED'].includes(outcome))
             ? 'failed'
             : 'unknown';
+      // 仍待决策的 PROMISE 卡片（type=PROMISE）：工具行状态如实标为 pending，
+      // 与实时路径 handleExecutionSuspended 的处置一致；否则会落成 unknown，
+      // 把「等待人工决策」误显为「状态未知」。
+      // 判定：以权威 `status==='pending'` 为准；历史行可能只带 `pending` 布尔，故二者取或。
+      const statusNorm = String(toolCall.status ?? '').trim().toLowerCase();
+      const isPendingPromise = toolCall.type === 'PROMISE'
+        && (statusNorm === 'pending' || toolCall.pending === true);
+      const rowStatus: ToolExecutionState = isPendingPromise && execStatus === 'unknown' ? 'pending' : execStatus;
       const editLines = extractEditResultLines(toolName, resultStr);
 
       if (!asst.toolCalls) asst.toolCalls = [];
       const matched = resolvedCallId ? asst.toolCalls.find(tc => tc.id === resolvedCallId) : undefined;
       if (matched) {
         matched.result = resultStr;
-        matched.status = execStatus;
+        matched.status = rowStatus;
         if (editLines) {
           matched.plusLines = editLines.plusLines;
           matched.minusLines = editLines.minusLines;
@@ -443,7 +703,7 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
           category: resolveToolCategory(toolName),
           description: toolName,
           result: resultStr,
-          status: execStatus,
+          status: rowStatus,
           plusLines: editLines?.plusLines,
           minusLines: editLines?.minusLines,
           order: i * TIMELINE_SLOT_STRIDE
@@ -457,6 +717,7 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
       const text = item.text ?? '';
       const thinking = item.thinking;
       const asst = getAssistantContainer();
+      const recordId = String(item.id ?? `idx-${i}`);
 
       // 处理 AI 文本：只有「终结轮次」的文本才是正文，其余一律进折叠过程。
       //
@@ -465,7 +726,6 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
       // 末轮可能仍在调工具（那只是过程叙述），也可能整轮没有结论文本（执行被中断/取消），
       // 两种情况都会把过程叙述顶到正文位置。
       if (text && text.trim()) {
-        const recordId = String(item.id ?? `idx-${i}`);
         let aiList = turnAiTextsMap.get(asst);
         if (!aiList) {
           aiList = [];
@@ -495,26 +755,19 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
           }));
       }
 
-      // 处理思维链：**同一轮次合并成一个「深度思考」**。
+      // 处理思维链：**每个 AI 行的思考独立成步，与工具调用同粒度**。
       //
-      // 一个轮次里模型可能持续多轮「思考 → 调工具 → 再思考 → 再调工具」，每个 AI 行各自带一段
-      // thinking。若每行各建一个步骤，用户会看到一长串同名的「深度思考」下拉框（实测一轮可达 10 个），
-      // 既看不出是同一段推理，也把工具行挤到视口外。
-      //
-      // 合并策略：同一轮次的思考按行序**拼接**到同一个步骤里（保持模型推理的完整时序），
-      // 步骤 order 取**首个带思考的行**的位置 —— 让它在时间线上落在该轮工具调用之前，
-      // 而不是被最后一个思考行拖到末尾。
+      // 一个轮次里模型持续多轮「思考 → 调工具 → 再思考 → 再调工具」，每个 AI 行各带一段 thinking。
+      // 若把整轮思考拼接成一个「深度思考」步骤，用户会看到所有思考挤进同一个折叠框，与工具调用的
+      // 逐段交错时序对不上（实拍验收：整轮思考一堵墙，看不出每段思考对应哪次工具）。改为按行拆分，
+      // 每步 order 取该 AI 行的时序基准，与工具调用（+2+tIdx）、中间文本（+1）交错还原真实执行顺序。
       if (thinking) {
         if (!asst.thoughtSteps) asst.thoughtSteps = [];
-        const mergedStepId = `step-${sid}-${normalizeTurnId(item.turnId) ?? 'legacy'}`;
-        const existingStep = asst.thoughtSteps.find(s => s.id === mergedStepId);
-        if (existingStep) {
-          existingStep.content = existingStep.content
-            ? `${existingStep.content}\n\n${thinking}`
-            : thinking;
-        } else {
+        const stepId = `step-${sid}-${recordId}`;
+        // 幂等：同一 AI 行重复加载不重复建步（id 由行 id 派生，天然去重）
+        if (!asst.thoughtSteps.some(s => s.id === stepId)) {
           asst.thoughtSteps.push({
-            id: mergedStepId,
+            id: stepId,
             title: '深度思考',
             content: thinking,
             status: 'success',
@@ -559,28 +812,13 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
     console.warn('[aggregateSessionMessages] 未知消息类型，已忽略:', rawType || '(空)');
   }
 
-  // 历史里未回填结果的工具调用：检查匹配卡片或标记为 unknown
+  // 历史里未回填结果的工具调用：标记为「状态未知」。
+  // 不补 result 文案 —— 那是编造用户可见结论；此处只改状态，具体原因由轮次摘要（turn.errorReason）承载。
   for (const msg of chatMessages) {
     if (msg.toolCalls) {
       for (const tc of msg.toolCalls) {
         if (tc.status === 'calling') {
-          const matchingCard = msg.promptCards?.find(c => c.toolCallId === tc.id)
-            || (msg.promptCard?.toolCallId === tc.id ? msg.promptCard : null);
-          if (matchingCard) {
-            if (matchingCard.pending) {
-              tc.status = 'pending';
-              if (!tc.result) {
-                tc.result = matchingCard.command
-                  ? `命令尚未执行，正在等待用户批准: ${matchingCard.command}`
-                  : '工具尚未执行，正在等待用户批准';
-              }
-            } else if (matchingCard.outcome) {
-              tc.status = (matchingCard.outcome === 'APPROVED' || matchingCard.outcome === 'SUCCEEDED') ? 'success' : 'failed';
-            }
-            continue;
-          }
           tc.status = 'unknown';
-          if (!tc.result) tc.result = '[状态未知] 后端未保留该工具的执行结果';
         }
       }
     }
@@ -600,10 +838,6 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
       return left.key.roleRank - right.key.roleRank;
     })
     .map(entry => entry.message);
-}
-
-export function parseSessionMessages(rawMessages: any, sessionId: string | number = 'session'): ChatMessage[] {
-  return aggregateSessionMessages(rawMessages, sessionId);
 }
 
 /**

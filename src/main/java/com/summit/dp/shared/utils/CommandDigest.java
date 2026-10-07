@@ -44,34 +44,12 @@ public final class CommandDigest {
         return sha256Hex(joined.toString());
     }
 
-    /**
-     * 图片的可比对描述：文件名 + 字节数 + 头部内容摘要。
-     *
-     * <p>只取头部是因为命令幂等要判断的是「同一个上传」，而同一张图重传两次
-     * 文件名与字节数必然一致；完整内容哈希对十几 MB 的图片要额外读一遍流，
-     * 收益远低于成本。</p>
-     */
-    public static String describeImage(MultipartFile image) {
-        if (image == null || image.isEmpty()) {
-            return "";
-        }
-        return image.getOriginalFilename() + ":" + image.getSize() + ":" + sampleContent(image);
-    }
+
 
     private static String text(Object value) {
         return value == null ? "" : value.toString();
     }
 
-    private static String sampleContent(MultipartFile image) {
-        try {
-            byte[] head = image.getInputStream().readNBytes(IMAGE_SAMPLE_BYTES);
-            return sha256Hex(new String(head, StandardCharsets.ISO_8859_1));
-        } catch (IOException e) {
-            // 读不到内容就只靠「文件名 + 字节数」判同：宁可摘要粗一点，
-            // 也不能因为一次读取失败就让整个受理入口不可用。
-            return "unreadable";
-        }
-    }
 
     private static String sha256Hex(String value) {
         try {

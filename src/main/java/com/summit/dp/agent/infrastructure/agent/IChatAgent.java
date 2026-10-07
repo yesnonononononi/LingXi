@@ -4,6 +4,8 @@ import com.summit.core.conf.ModelConfig;
 import com.summit.core.mcp.ScopeMcpProvider;
 import com.summit.core.model.RequestModelInvokerFactory;
 import com.summit.core.runtime.RuntimeFactory;
+import com.summit.core.runtime.loop.ExecutionControl;
+import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.core.workspace.WorkspaceManager;
 
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -18,18 +20,21 @@ import com.summit.runtime.workspace.WorkspaceDestroyer;
 public class IChatAgent extends ChatAgent {
 
     /**
-     * 必须使用 5 参构造器并注入 {@link ScopeMcpProvider}。
+     * {@link ScopeMcpProvider} 必须显式传在第 5 位：传成 null 会让
+     * {@code ChatAgent#openMcpScope} 恒走 {@code McpToolScope.EMPTY}，请求级 MCP 工具静默失效。
      *
-     * <p>4 参构造器会把 {@code scopeMcpProvider} 置为 {@code null}，导致
-     * {@code ChatAgent#openMcpScope} 恒走 {@code McpToolScope.EMPTY} 分支，
-     * 请求级 MCP 工具全部无法注入且无任何日志提示。</p>
+     * <p>{@code executionRepository} / {@code executionControl} 是框架构造器新增的执行协作者，
+     * 容器注入即可（业务侧 {@code LocalExecutionRepository} 即为 {@code ExecutionRepository} 实现）。</p>
      */
     public IChatAgent(RuntimeFactory defaultRuntimeFactory,
                       RequestModelInvokerFactory modelInvokerFactory,
                       WorkspaceManager workspaceManager,
                       @Qualifier("chatModelConfig") ModelConfig modelConfig,
-                      ScopeMcpProvider scopeMcpProvider) {
-        super(defaultRuntimeFactory, modelInvokerFactory, workspaceManager, modelConfig, scopeMcpProvider);
+                      ScopeMcpProvider scopeMcpProvider,
+                      ExecutionRepository executionRepository,
+                      ExecutionControl executionControl) {
+        super(defaultRuntimeFactory, modelInvokerFactory, workspaceManager, modelConfig, scopeMcpProvider,
+                executionRepository, executionControl);
     }
 
     @Override

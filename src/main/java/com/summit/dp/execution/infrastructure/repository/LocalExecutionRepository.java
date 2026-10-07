@@ -8,9 +8,6 @@ import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionStatusCodes;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.summit.dp.shared.event.CommittedStateChange;
-import com.summit.dp.shared.event.CommittedStatePublisher;
-import org.springframework.beans.factory.annotation.Autowired;
 import com.summit.dp.execution.domain.lifecycle.ExecutionLifecycleListener;
 import com.summit.dp.execution.domain.lifecycle.ExecutionActivity;
 import com.summit.dp.execution.domain.lifecycle.ExecutionCoordination;
@@ -41,8 +38,6 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
 
     private final ExecutionMapper executionMapper;
     private final ObjectMapper objectMapper;
-    @Autowired(required = false)
-    private CommittedStatePublisher statePublisher;
     /** 通过领域端口通知，避免仓储反向依赖工具应用服务。 */
     private final List<ExecutionLifecycleListener> lifecycleListeners;
 
@@ -83,6 +78,12 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
                 && previous.getStatus() != resolveStatus(state)) {
             throw new IllegalStateException("执行已结束，不能覆盖为运行状态: executionId=" + id);
         }
+        // 「首次落 FAILED」且「本进程没有该执行的控制槽位」⇒ 这是初始化失败路径：框架从未 register
+        // （register 只在 loop 启动时发生），因此也不会有人来 unregister，终结信号无人广播。
+        boolean firstFailure = state == ExecutionState.FAILED
+                && (previous == null || previous.getStatus() == null
+                    || previous.getStatus() != ExecutionStatusCodes.FAILED);
+        boolean withoutControlSlot = !active.containsKey(execution.getId());
         long expectedVersion = previous == null || previous.getVersion() == null ? 1L : previous.getVersion();
         long expectedGeneration = previous == null || previous.getResumeGeneration() == null
                 ? 0L : previous.getResumeGeneration();
@@ -98,8 +99,12 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
                 .eq(ExecutionPO::getId, id).eq(ExecutionPO::getVersion, expectedVersion));
         if (updated != 1) throw new IllegalStateException("执行检查点不存在: executionId=" + id);
         cacheAfterCommit(execution.getId(), snapshot, terminal);
-        if (statePublisher != null) statePublisher.publish(CommittedStateChange.entity(
-                CommittedStateChange.Kind.EXECUTION, previous == null ? null : previous.getSessionId(), id));
+        // 补一次终结广播，使轮次收口落在框架发布终态事件之前 —— 框架的顺序是
+        // 「save(FAILED) → 返回发布任务 → 调用方 run 它」，业务侧没有排序权，只能在这里补。
+        // 活跃循环的那次保存走不到这里：那时控制槽位仍在，由 unregister 负责通知（两者互斥）。
+        if (firstFailure && withoutControlSlot) {
+            afterCommit(() -> notifyFinished(execution));
+        }
         }
     }
 
@@ -125,15 +130,6 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
 
     /** 空值不覆盖既有生命周期时间，用量由业务轮次保存。 */
     private void applySummary(ExecutionPO checkpoint, Execution execution) {
-        AgentRequest request = execution.getAgentRequest();
-        Map<String, Object> attributes = request == null
-                ? Map.of()
-                : request.runtimeParametersOrDefault().getAttributes();
-
-        // 主执行没有该属性（ExecutionContext.root 不写），子执行由委派方写入父执行 id。
-        checkpoint.setRootExecutionId(
-                ExecutionAttributes.readLong(attributes, ExecutionAttributes.ROOT_EXECUTION_ID));
-
         checkpoint.setStartedAt(toLocalDateTime(execution.getStartAt()));
         checkpoint.setCompletedAt(toLocalDateTime(execution.getCompletedAt()));
     }
@@ -182,14 +178,10 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
         checkpoint.setSnapshot(snapshot);
         checkpoint.setCreatedAt(LocalDateTime.ofInstant(
                 execution.getCreateAt() == null ? Instant.now() : execution.getCreateAt(), ZoneId.systemDefault()));
-        // 建行时就带上根执行归属：即使执行在首次保存后立刻失败，
-        // 也能看出它属于哪个主执行，而不是等到第一轮检查点才有值。
         applySummary(checkpoint, execution);
         if (executionMapper.insert(checkpoint) != 1) {
             throw new IllegalStateException("创建执行检查点失败: executionId=" + id);
         }
-        if (statePublisher != null) statePublisher.publish(CommittedStateChange.entity(
-                CommittedStateChange.Kind.EXECUTION, sessionId, id));
     }
 
     @Override

@@ -1,5 +1,5 @@
 -- H2 schema for execution startup-reaper / query tests (mirrors init.sql's execution table).
--- 列名严格对齐 init.sql；本测试仅使用 status / 时间列与根执行归属，
+-- 列名严格对齐 init.sql；本测试仅使用 status / 时间列，
 -- 建表保留完整列形状，防止与 BaseMapper 生成 SQL 的列集合不一致。
 --
 -- 注意：模型与 token 列已从 execution 删除（权威在 chat_turn）——
@@ -11,7 +11,6 @@ CREATE TABLE execution (
     version BIGINT NOT NULL DEFAULT 1,
     id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
     session_id          BIGINT       NOT NULL,
-    root_execution_id   BIGINT       NULL,
     started_at          TIMESTAMP    NULL,
     completed_at        TIMESTAMP    NULL,
     status              TINYINT      NOT NULL DEFAULT 0,

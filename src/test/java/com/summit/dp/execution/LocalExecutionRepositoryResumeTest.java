@@ -6,6 +6,7 @@ import com.summit.core.conversation.message.*;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.agent.Execution;
 import com.summit.dp.execution.domain.lifecycle.ExecutionLifecycleListener;
+import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.LocalExecutionRepository;
@@ -107,7 +108,7 @@ class LocalExecutionRepositoryResumeTest {
         assertEquals(ExecutionState.CREATED,
                 mapper.readValue(inserted.getValue().getSnapshot(), Execution.class).getExecutionState());
 
-        source.suspended();
+        source.suspend();
         repository.save(source);
         ArgumentCaptor<ExecutionPO> updated = ArgumentCaptor.forClass(ExecutionPO.class);
         verify(persistence).update(updated.capture(), any());
@@ -266,6 +267,73 @@ class LocalExecutionRepositoryResumeTest {
         assertDoesNotThrow(() -> isolated.unregister(signal));
         assertFalse(isolated.isActive("305"));
         assertEquals(List.of("305"), lifecycle.suspended);
+    }
+
+    /**
+     * 初始化失败路径的终结广播：首次落 FAILED 且本进程没有控制槽位。
+     *
+     * <p>框架的顺序是「save(FAILED) → 返回发布任务 → 调用方 run 它」，业务侧没有排序权；
+     * 轮次收口只能由这里在保存提交后补，才能保证它早于框架发布终态事件。</p>
+     */
+    @Test
+    void firstFailureWithoutControlSlotNotifiesFinish() {
+        when(persistence.selectOne(any())).thenReturn(statusRow(ExecutionStatusCodes.CREATED, 1L));
+
+        Execution failed = execution();
+        failed.fail("模型不可用");
+        repository.save(failed);
+
+        assertEquals(List.of("305"), lifecycle.finished, "初始化失败必须补一次终结广播，否则轮次永远停在已受理");
+        assertEquals(List.of(), lifecycle.suspended);
+    }
+
+    /** 活跃循环的失败不在这里广播：控制槽位仍在，由 unregister 负责（两条路径互斥，不会双发）。 */
+    @Test
+    void failureWithActiveControlSlotDefersToUnregister() {
+        when(persistence.selectOne(any())).thenReturn(statusRow(ExecutionStatusCodes.RUNNING, 2L));
+        ExecutionControlSignal signal = repository.register("305");
+
+        Execution failed = execution();
+        failed.fail("loop 内失败");
+        repository.save(failed);
+        assertEquals(List.of(), lifecycle.finished);
+
+        ArgumentCaptor<ExecutionPO> saved = ArgumentCaptor.forClass(ExecutionPO.class);
+        verify(persistence).update(saved.capture(), any());
+        when(persistence.selectById(305L)).thenReturn(saved.getValue());
+
+        // 必须用 register 返回的那个信号：unregister 按实例身份摘槽位。
+        repository.unregister(signal);
+        assertEquals(List.of("305"), lifecycle.finished, "释放控制信号时才广播");
+    }
+
+    /** 只有 FAILED 需要补：完成 / 挂起都有各自的收口路径，重复落 FAILED 也不算首次。 */
+    @Test
+    void onlyFirstFailureNotifiesFinish() {
+        when(persistence.selectOne(any())).thenReturn(statusRow(ExecutionStatusCodes.CREATED, 1L));
+
+        Execution completed = execution();
+        completed.complete();
+        repository.save(completed);
+        assertEquals(List.of(), lifecycle.finished, "完成不是失败");
+
+        repository.save(execution());
+        assertEquals(List.of(), lifecycle.finished, "挂起不是终态");
+
+        when(persistence.selectOne(any())).thenReturn(statusRow(ExecutionStatusCodes.FAILED, 3L));
+        Execution again = execution();
+        again.fail("重复落库");
+        repository.save(again);
+        assertEquals(List.of(), lifecycle.finished, "行前态已是 FAILED ⇒ 不是首次，不重复广播");
+    }
+
+    private static ExecutionPO statusRow(int status, long version) {
+        ExecutionPO row = new ExecutionPO();
+        row.setId(305L);
+        row.setStatus(status);
+        row.setVersion(version);
+        row.setSessionId(405L);
+        return row;
     }
 
     /** 记录 loop 边界信号的订阅者（评审 P1-⑥ 生命周期端口）。 */

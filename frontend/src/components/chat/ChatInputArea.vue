@@ -11,9 +11,10 @@ import {
   Tick02Icon
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon, type IconArray } from '@hugeicons/vue';
-import { animate, motionValue, useReducedMotion, type AnimationPlaybackControls } from 'motion-v';
 import DropUpSelect from '../common/DropUpSelect.vue';
 import BorderGlow from '../common/BorderGlow.vue';
+import SparkTrail from '../common/SparkTrail.vue';
+import MorphingSendIcon from '../common/MorphingSendIcon.vue';
 import ProjectDropdown from './ProjectDropdown.vue';
 import type { SelectOption } from '../../types/ui';
 import type { ChatMode, ModelConfig, WorkspaceVO, AgentAccessMode, TeamVO, AgentVO, ReasoningEffort } from '../../types/chat';
@@ -56,7 +57,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'openModelEditor'): void;
   (e: 'openTeamModal'): void;
-  (e: 'sendMessage', text: string, isDeepThink: boolean, isHybridSearch: boolean, requirePlan: boolean, teamId?: string | number | null, agentId?: string | number | null, imageFile?: File | null): void;
+  (e: 'sendMessage', text: string, requirePlan: boolean, teamId?: string | number | null, agentId?: string | number | null, imageFile?: File | null): void;
   (e: 'stopGeneration'): void;
   (e: 'updateMode', mode: ChatMode): void;
   (e: 'updateModel', modelId: string | number): void;
@@ -74,50 +75,22 @@ const emit = defineEmits<{
   (e: 'openSettingsTab', tab: string): void;
 }>();
 
-// PromptBar 样式与动效常量
-const ARROW_UP = [12, 4.5, 18.5, 11, 14.25, 11, 14.25, 19.5, 9.75, 19.5, 9.75, 11, 5.5, 11];
-const SQUARE = [12, 6, 18, 6, 18, 12, 18, 18, 6, 18, 6, 12, 6, 6];
-const EASE_IN_OUT: [number, number, number, number] = [0.77, 0, 0.175, 1];
+// PromptBar 样式常量
+/** 行高（px）：与模板 line-height 一致，用于 textarea 自适应高度换算。 */
 const LINE = 22;
+/** 拖拽缩放手柄的命中区边距（px）。 */
 const EDGE = 11;
-
 const MUTED = '[color:color-mix(in_srgb,var(--pb-ink)_55%,transparent)]';
 const TOOL_BTN =
   'inline-flex h-7 flex-none cursor-pointer touch-manipulation items-center gap-1 rounded-lg border-0 bg-transparent px-2 text-[12px] font-medium outline-none select-none [color:color-mix(in_srgb,var(--pb-ink)_70%,transparent)] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease] data-[on]:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] data-[on]:[color:var(--pb-ink)] [@media(hover:hover)_and_(pointer:fine)]:hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] [@media(hover:hover)_and_(pointer:fine)]:hover:[color:var(--pb-ink)] data-[max]:[color:var(--pb-spark)]!';
 const ICON_BTN =
   'inline-grid h-7 w-7 flex-none cursor-pointer touch-manipulation place-items-center rounded-lg border-0 bg-transparent p-0 outline-none select-none [color:color-mix(in_srgb,var(--pb-ink)_60%,transparent)] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease,transform_160ms_cubic-bezier(0.23,1,0.32,1)] active:[transform:scale(0.94)] data-[on]:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] data-[on]:[color:var(--pb-ink)] motion-reduce:active:[transform:none] [@media(hover:hover)_and_(pointer:fine)]:hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] [@media(hover:hover)_and_(pointer:fine)]:hover:[color:var(--pb-ink)]';
 
-const mix = (a: number, b: number, t: number) => a + (b - a) * t;
-const pathAt = (a: number[], b: number[], t: number) => {
-  let d = '';
-  for (let i = 0; i < a.length; i += 2) {
-    d += `${i ? 'L' : 'M'}${mix(a[i], b[i], t).toFixed(2)} ${mix(a[i + 1], b[i + 1], t).toFixed(2)}`;
-  }
-  return `${d}Z`;
-};
-
-type Spark = {
-  x: number;
-  y: number;
-  r: number;
-  vy: number;
-  sway: number;
-  phase: number;
-  life: number;
-  span: number;
-};
-
-const reduce = useReducedMotion();
 const commandContainerRef = ref<HTMLDivElement | null>(null);
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
-const sparkRef = ref<HTMLCanvasElement | null>(null);
-const sendSvg = ref<SVGSVGElement | null>(null);
-const sendPath = ref<SVGPathElement | null>(null);
-const typing = { energy: 0, strokes: 0 };
+const sparkRef = ref<InstanceType<typeof SparkTrail> | null>(null);
 
 const inputText = ref('');
-const isDeepThink = computed(() => ['high', 'xhigh', 'max'].includes(props.reasoningEffort ?? 'low'));
-const isHybridSearch = ref(false);
 const isPlanMode = ref(false);
 
 // 附件管理
@@ -798,29 +771,10 @@ type SpeechRecognitionInstance = {
   start: () => void;
 };
 
-// ====== Send 按钮 SVG 图标 Morphing 动画 (motion-v) ======
+// ====== Send 按钮 ======
 const canSend = computed(() => !props.reasoningEffortPending && (inputText.value.trim().length > 0 || !!attachedImage.value));
 const armed = computed(() => !!props.isSending || canSend.value);
 const pressed = ref(false);
-
-const sendT = motionValue(props.isSending ? 1 : 0);
-let sendDir = props.isSending ? 1 : -1;
-let sendControls: AnimationPlaybackControls | null = null;
-const sendStart = pathAt(ARROW_UP, SQUARE, sendT.get());
-let offSend: (() => void) | undefined;
-
-const syncSend = () => {
-  const target = props.isSending ? 1 : 0;
-  sendDir = props.isSending ? 1 : -1;
-  if (sendT.get() === target) return;
-  sendControls?.stop();
-  sendControls = animate(
-    sendT,
-    target,
-    reduce.value ? { duration: 0 } : { duration: 0.24, ease: EASE_IN_OUT }
-  );
-};
-watch(() => props.isSending, syncSend);
 
 const down = (e: PointerEvent) => {
   if (e.button !== 0 || !armed.value) return;
@@ -835,144 +789,22 @@ const onSendClick = () => {
   else handleSend();
 };
 
-// ====== 粒子画布特效 (Sparks Canvas) ======
-let stopSpark: (() => void) | null = null;
-const startSpark = () => {
-  const canvas = sparkRef.value;
-  if (!canvas) return null;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-  typing.strokes = 0;
-  let raf = 0;
-  let last = performance.now();
-  let w = 0;
-  let h = 0;
-  let due = 0;
-  let speed = 1;
-  let pulse = 0;
-  const parts: Spark[] = [];
-  const resize = () => {
-    const rect = canvas.getBoundingClientRect();
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    w = rect.width;
-    h = rect.height;
-    canvas.width = Math.round(w * dpr);
-    canvas.height = Math.round(h * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  };
-  const spawn = (burst: boolean) => {
-    parts.push({
-      x: Math.random() * w,
-      y: burst ? h * (0.2 + Math.random() * 0.8) : h + 3,
-      r: 0.9 + Math.random() * 1.1,
-      vy: -(7 + Math.random() * 9),
-      sway: (Math.random() - 0.5) * 10,
-      phase: Math.random() * Math.PI * 2,
-      life: burst ? Math.random() * 1.2 : 0,
-      span: 2.4 + Math.random() * 2.4
-    });
-  };
-  const tick = (now: number) => {
-    const dt = Math.min(0.05, (now - last) / 1000);
-    last = now;
-    const gain = 1;
-    typing.energy *= Math.exp(-dt / 0.8);
-    pulse *= Math.exp(-dt / 0.16);
-    if (typing.strokes > 0) {
-      typing.strokes = 0;
-      if (gain > 0) pulse = 1;
-    }
-    const energy = typing.energy * gain;
-    speed += (1 + energy * 6 - speed) * (1 - Math.exp(-dt / 0.15));
-    due += dt;
-    while (due > 0.14) {
-      due -= 0.14;
-      if (parts.length < 30) spawn(false);
-    }
-    ctx.clearRect(0, 0, w, h);
-    const color = props.isDark !== false ? '#ffffff' : '#10b981';
-    ctx.fillStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 6 + energy * 10 + pulse * 6;
-    for (let i = parts.length - 1; i >= 0; i -= 1) {
-      const p = parts[i];
-      p.life += dt;
-      if (p.life > p.span) {
-        parts.splice(i, 1);
-        continue;
-      }
-      const k = p.life / p.span;
-      const twinkle = 0.7 + 0.3 * Math.sin((now / 160) * (1 + energy) + p.phase);
-      p.y += p.vy * dt * speed;
-      if (p.y < -4) {
-        p.y = h + 3;
-        p.x = Math.random() * w;
-      }
-      const edge = Math.min(1, Math.max(0, p.y / 14), Math.max(0, (h - p.y) / 14));
-      ctx.globalAlpha = Math.min(1, Math.sin(k * Math.PI) * (0.9 + energy * 0.25) * twinkle) * edge;
-      ctx.beginPath();
-      ctx.arc(
-        p.x + Math.sin((now / 900) * (1 + energy * 0.8) + p.phase) * p.sway,
-        p.y,
-        p.r * twinkle * (1 + energy * 0.35),
-        0,
-        Math.PI * 2
-      );
-      ctx.fill();
-    }
-    raf = requestAnimationFrame(tick);
-  };
-  resize();
-  for (let i = 0; i < 26; i += 1) spawn(true);
-  const ro = new ResizeObserver(resize);
-  ro.observe(canvas);
-  raf = requestAnimationFrame(tick);
-  return () => {
-    cancelAnimationFrame(raf);
-    ro.disconnect();
-    ctx.clearRect(0, 0, w, h);
-  };
-};
-
-const syncSpark = () => {
-  stopSpark?.();
-  stopSpark = null;
-  if (!maxed.value || reduce.value) return;
-  stopSpark = startSpark();
-};
-watch([maxed, reduce], syncSpark, { flush: 'post' });
-
 onMounted(() => {
   document.addEventListener('mousedown', handleClickOutside);
   fetchTeams(1);
   fetchAgents(1);
-
-  offSend = sendT.on('change', v => {
-    sendPath.value?.setAttribute('d', pathAt(ARROW_UP, SQUARE, v));
-    const goo = reduce.value ? 0 : Math.sin(v * Math.PI);
-    const sx = 1 - 0.12 * goo;
-    if (sendSvg.value) {
-      sendSvg.value.style.transform = goo ? `rotate(${sendDir * 8 * goo}deg) scale(${sx}, ${1 / sx})` : '';
-    }
-  });
-
   adjustHeight();
-  syncSpark();
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener('mousedown', handleClickOutside);
   dictation += 1;
-  stopSpark?.();
-  offSend?.();
-  sendControls?.stop();
   if (attachedImagePreview.value) URL.revokeObjectURL(attachedImagePreview.value);
 });
 
 const onInput = (e: Event) => {
   inputText.value = (e.target as HTMLTextAreaElement).value;
-  typing.energy = Math.min(1.6, typing.energy + 0.22);
-  typing.strokes = Math.min(4, typing.strokes + 1);
+  sparkRef.value?.ping();
 };
 
 const handleKeyDown = (e: KeyboardEvent) => {
@@ -1039,8 +871,6 @@ const handleSend = () => {
   emit(
     'sendMessage',
     effectiveText,
-    isDeepThink.value,
-    isHybridSearch.value,
     isPlanMode.value,
     localSelectedTeamId.value ? localSelectedTeamId.value : null,
     localSelectedAgentId.value ? localSelectedAgentId.value : null,
@@ -1134,11 +964,12 @@ defineExpose({
         :style="rootStyle"
         @paste="handlePaste"
       >
-      <!-- 背景飘浮微光粒子 Canvas -->
-      <canvas
+      <!-- 背景飘浮微光粒子（思考强度拉满时点亮；打字时由 onInput 提亮） -->
+      <SparkTrail
         ref="sparkRef"
-        class="-z-10 absolute inset-0 rounded-[inherit] w-full h-full pointer-events-none"
-        aria-hidden="true"
+        :active="maxed"
+        :ink="isDark === false ? '#10b981' : '#ffffff'"
+        class="-z-10 absolute inset-0 rounded-[inherit]"
       />
 
       <!-- 快捷指令菜单 (/ 或 + 触发) -->
@@ -1507,18 +1338,7 @@ defineExpose({
             @pointerleave="up"
             @click="onSendClick"
           >
-            <svg
-              ref="sendSvg"
-              class="block w-4 h-4 origin-center"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-              fill="currentColor"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linejoin="round"
-            >
-              <path ref="sendPath" :d="sendStart" />
-            </svg>
+            <MorphingSendIcon :is-sending="!!isSending" class="w-4 h-4" />
           </button>
         </div>
       </div>

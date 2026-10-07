@@ -17,7 +17,6 @@ import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.session.application.service.ModelContextService;
-import com.summit.dp.shared.event.CommittedStatePublisher;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
@@ -119,7 +118,7 @@ class DelegationBackfillListenerTest {
         when(executions.findResumeGeneration(PARENT_EXECUTION_ID)).thenReturn(1L);
         when(executions.findSummariesByIds(any())).thenReturn(List.of(suspendedSummary()));
         ExecutionResumeCoordinator coordinator = new ExecutionResumeCoordinator(tasks, executions, resumer,
-                repositoryProvider(), publisherProvider());
+                repositoryProvider());
         coordinators.add(coordinator);
         return coordinator;
     }
@@ -141,12 +140,6 @@ class DelegationBackfillListenerTest {
         return provider;
     }
 
-    @SuppressWarnings("unchecked")
-    private ObjectProvider<CommittedStatePublisher> publisherProvider() {
-        ObjectProvider<CommittedStatePublisher> provider = mock(ObjectProvider.class);
-        when(provider.getIfAvailable()).thenReturn(mock(CommittedStatePublisher.class));
-        return provider;
-    }
 
     @SuppressWarnings("unchecked")
     private ObjectProvider<ExecutionControl> controlProvider() {

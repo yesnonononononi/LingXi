@@ -16,7 +16,6 @@ public class ExecutionCommand {
     private String modelProvider;
     private Long sessionId;
     private Long agentId;
-    private Long rootExecutionId;
     private Integer status;
     private Integer desiredAction;
     private String workerId;

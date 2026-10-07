@@ -45,6 +45,7 @@ public class UserConfigController {
                 request.getPlanMaxReminders(),
                 request.getModelId(),
                 request.getAgentId(),
+                request.isAgentIdPresent(),
                 request.getType(),
                 request.getMaxTokens(),
                 request.getReasoningEffort(),

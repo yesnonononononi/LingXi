@@ -17,7 +17,6 @@ import com.summit.dp.execution.application.service.ResumeDisposition;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.event.SseEventPublisher;
-import com.summit.dp.shared.event.ToolCallEventPublisher;
 import com.summit.dp.shared.utils.CommandDigest;
 import com.summit.dp.shared.vo.ToolCallVO;
 import com.summit.dp.toolcall.api.dto.ToolCallDecisionCommand;
@@ -89,7 +88,6 @@ class VersionedToolCallDecisionTest {
     private final ModelContextService modelContextService = mock(ModelContextService.class);
     private final ExecutionIdentity executionIdentity = mock(ExecutionIdentity.class);
     private final SseEventPublisher sseEventPublisher = mock(SseEventPublisher.class);
-    private final ToolCallEventPublisher events = mock(ToolCallEventPublisher.class);
     private final ExecutionResumeCoordinator resumeCoordinator = mock(ExecutionResumeCoordinator.class);
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -114,8 +112,8 @@ class VersionedToolCallDecisionTest {
                 new SessionAttributeRestorer(mock(SessionRepository.class)), modelContextService,
                 provider(executionControl));
         service = new VersionedToolCallDecisionService(toolCallRepository,
-                new ToolCallConverter(mapper), executionIdentity, modelContextService,
-                sseEventPublisher, events, transactions, provider(executionRepository),
+                new ToolCallConverter(mapper), modelContextService,
+                sseEventPublisher, transactions, provider(executionRepository),
                 resumer, resumeCoordinator);
     }
 

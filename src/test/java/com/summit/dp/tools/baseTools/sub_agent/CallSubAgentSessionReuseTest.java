@@ -69,8 +69,6 @@ class CallSubAgentSessionReuseTest {
     private final SessionRepository sessionRepository = mock(SessionRepository.class);
     private final com.summit.dp.toolcall.application.service.ToolCallRegistrar registrar =
             mock(com.summit.dp.toolcall.application.service.ToolCallRegistrar.class);
-    private final com.summit.dp.shared.event.ToolCallEventPublisher toolCallEventPublisher =
-            mock(com.summit.dp.shared.event.ToolCallEventPublisher.class);
     private final com.summit.dp.execution.ExecutionIdentity executionIdentity =
             mock(com.summit.dp.execution.ExecutionIdentity.class);
 
@@ -334,7 +332,6 @@ class CallSubAgentSessionReuseTest {
         assertEquals(String.valueOf(ROOT_SESSION_ID), String.valueOf(command.getValue().conversationId()));
         assertTrue(command.getValue().content().contains("\"subSessionId\""),
                 "卡片载荷必须带 subSessionId，供子执行终态回填时匹配槽位");
-        verify(toolCallEventPublisher, never()).publish(anyLong(), any());
         // 挂起路径同样要解除登记
         verify(registry).unregisterChild(eq(ROOT_SESSION_ID), anyLong());
     }

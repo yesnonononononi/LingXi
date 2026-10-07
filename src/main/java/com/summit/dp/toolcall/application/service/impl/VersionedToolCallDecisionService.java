@@ -3,7 +3,6 @@ package com.summit.dp.toolcall.application.service.impl;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.SuspendedExecutionResumer;
 import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
@@ -11,8 +10,6 @@ import com.summit.dp.execution.application.service.ResumeDisposition;
 import com.summit.dp.execution.domain.lifecycle.ExecutionCoordination;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.shared.event.SseEventPublisher;
-import com.summit.dp.shared.event.ToolCallEventPublisher;
-import com.summit.dp.shared.event.ToolCallPendingEvent;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.utils.CommandDigest;
 import com.summit.dp.toolcall.api.dto.ToolCallDecisionCommand;
@@ -64,10 +61,8 @@ public class VersionedToolCallDecisionService {
 
     private final ToolCallRepository toolCallRepository;
     private final ToolCallConverter converter;
-    private final ExecutionIdentity executionIdentity;
     private final ModelContextService modelContextService;
     private final SseEventPublisher sseEventPublisher;
-    private final ToolCallEventPublisher events;
     private final TransactionTemplate transactions;
     private final ObjectProvider<ExecutionRepository> executionRepository;
     private final SuspendedExecutionResumer resumer;
@@ -191,7 +186,6 @@ public class VersionedToolCallDecisionService {
         });
 
         ToolCall latest = toolCallRepository.findById(toolCall.getId()).orElse(toolCall);
-        notifyPending(toolCall, kind, conversationId, executionId);
         return receipt(command.commandId(), latest, outcome, disposition[0]);
     }
 
@@ -247,17 +241,6 @@ public class VersionedToolCallDecisionService {
     private ToolCallDecisionReceipt receipt(String commandId, ToolCall toolCall,
                                             ToolCallOutcome outcome, ResumeDisposition disposition) {
         return new ToolCallDecisionReceipt(commandId, true, outcome.name(), converter.toVO(toolCall), disposition);
-    }
-
-    private void notifyPending(ToolCall toolCall, ToolCallKind kind, long conversationId, String executionId) {
-        long rootId = executionIdentity.resolveRootSessionId(conversationId);
-        try {
-            events.publish(rootId, ToolCallPendingEvent.of(rootId, toolCall.getId(), kind.name(),
-                    String.valueOf(conversationId), executionId));
-        } catch (RuntimeException error) {
-            // 通知失败不能把已经提交的决策报告为失败，刷新仍可读取结论。
-            log.error("决策通知失败: toolCallId={}, executionId={}", toolCall.getId(), executionId, error);
-        }
     }
 
     private void throwIf(boolean condition, String err) {

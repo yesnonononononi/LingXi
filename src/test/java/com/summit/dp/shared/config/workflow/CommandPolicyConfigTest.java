@@ -13,7 +13,6 @@ import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.CommandApprovalRegistrar;
 import com.summit.dp.toolcall.application.service.ToolCallRegistrar;
 import com.summit.dp.toolcall.domain.model.ToolCallKind;
-import com.summit.dp.shared.event.ToolCallEventPublisher;
 import com.summit.dp.tools.baseTools.terminal.CommandToolDefinitionExecutor;
 import org.junit.jupiter.api.Test;
 
@@ -27,7 +26,6 @@ import static org.mockito.Mockito.*;
 class CommandPolicyConfigTest {
     private final ObjectMapper mapper = new ObjectMapper();
     private final ToolCallRegistrar registrar = mock(ToolCallRegistrar.class);
-    private final ToolCallEventPublisher events = mock(ToolCallEventPublisher.class);
     private final ExecutionIdentity identity = mock(ExecutionIdentity.class);
     private final ToolCallConverter converter = new ToolCallConverter(mapper);
     private final CommandApprovalRegistrar approvalRegistrar =
@@ -68,13 +66,11 @@ class CommandPolicyConfigTest {
         // 卡片载荷登记为一条 PROMISE（kind=COMMAND），SSE 只发「有新卡片」通知。
         verify(registrar).registerPromise(argThat(cmd -> "tool-1".equals(cmd.toolCallId())
                 && cmd.kind() == ToolCallKind.COMMAND && "command".equals(cmd.toolName())));
-        verifyNoInteractions(events);
     }
 
     @Test
     void destructiveCommandsAreBlocked() throws Exception {
         assertFalse(policy.beforeExecution(command("1", "shutdown now", CommandApprovalPolicy.FULL_ACCESS)).isSuccess());
-        verifyNoInteractions(events);
         verifyNoInteractions(registrar);
     }
 

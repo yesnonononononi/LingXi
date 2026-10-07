@@ -60,7 +60,6 @@ class SessionTeamBindingTest {
             workspaceService, modelService, workspaceConverter, settingsProvider,
             mock(com.summit.dp.shared.model.ToolCatalog.class), transcriptService, modelContextService,
             mock(ExecutionIdentity.class),
-            mock(com.summit.dp.execution.application.service.ExecutionRegistrationService.class),
             mock(com.summit.dp.turn.application.service.ChatTurnService.class),
             agentService, teamService,
             mock(com.summit.dp.mcp.application.service.McpService.class));

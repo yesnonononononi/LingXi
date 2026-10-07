@@ -7,9 +7,6 @@ import com.summit.dp.toolcall.api.dto.ToolCallDecisionRequest;
 import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.toolcall.application.service.impl.VersionedToolCallDecisionService;
 import com.summit.dp.shared.vo.ToolCallVO;
-import com.summit.dp.stream.application.service.StreamToolQueryService;
-import com.summit.dp.stream.application.protocol.StreamToolProjection;
-import org.springframework.beans.factory.annotation.Autowired;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -26,10 +23,6 @@ import java.util.List;
 
 /**
  * 工具调用接口：读侧查询 + 决策提交。
- *
- * <p>承接旧 {@code /interaction} 与 {@code /interaction-status} 的全部对外行为：
- * 历史卡片随消息分页下发 {@code ToolCallVO}；实时新卡片经 {@code CARD_PENDING} 事件触发，
- * 前端再按 {@code toolCallId} 拉取本接口的形状（与历史路径同一形状）。</p>
  */
 @RestController
 @RequestMapping("/tool-call")
@@ -40,8 +33,6 @@ public class ToolCallController {
     private final ToolCallService toolCallService;
     /** v2 版本化决策入口；与 v1 SSE 入口并存，各自独立。 */
     private final VersionedToolCallDecisionService versionedDecisionService;
-    @Autowired
-    private StreamToolQueryService streamTools;
 
     /**
      * 提交决策结论：批准 / 拒绝 / 作答一次待决策的卡片。
@@ -75,12 +66,6 @@ public class ToolCallController {
     @GetMapping("/{toolCallId}")
     public Result<ToolCallVO> findById(@PathVariable String toolCallId) {
         return Result.success(toolCallService.findById(toolCallId).orElse(null));
-    }
-
-    @Operation(summary = "查询 v2 工具投影与动作版本")
-    @GetMapping("/{toolCallId}/projection")
-    public Result<StreamToolProjection> projection(@PathVariable String toolCallId) {
-        return Result.success(streamTools.findById(toolCallId).orElse(null));
     }
 
     /** 按会话查询工具调用列表（按创建顺序升序）。 */

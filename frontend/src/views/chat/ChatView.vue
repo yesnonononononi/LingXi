@@ -1,122 +1,3 @@
-<script setup lang="ts">
-import { ref, provide } from 'vue';
-import { useFilePreview } from '../../composables/useFilePreview';
-import { FILE_PREVIEW_KEY } from '../../types/filePreview';
-import FilePreviewPanel from '../../components/chat/FilePreviewPanel.vue';
-import { useChatView, type ChatViewProps, type ChatViewEmits } from './useChatView';
-import Sidebar from '../../components/chat/Sidebar.vue';
-import WelcomeView from '../../components/chat/WelcomeView.vue';
-import ChatMessageList from '../../components/chat/ChatMessageList.vue';
-import ChatInputArea from '../../components/chat/ChatInputArea.vue';
-import SettingsModal from '../settings/SettingsModal.vue';
-import WorkspaceModal from '../../components/chat/WorkspaceModal.vue';
-import TeamModal from '../../components/chat/TeamModal.vue';
-import SubSessionsOverviewDrawer from '../../components/chat/SubSessionsOverviewDrawer.vue';
-import SubSessionDetailDrawer from '../../components/chat/SubSessionDetailDrawer.vue';
-import SubAgentSidePanel from '../../components/chat/SubAgentSidePanel.vue';
-
-const props = defineProps<ChatViewProps>();
-const emit = defineEmits<ChatViewEmits>();
-
-const inputAreaRef = ref<InstanceType<typeof ChatInputArea> | null>(null);
-const messagesContainerRef = ref<InstanceType<typeof ChatMessageList> | null>(null);
-const { fileTabs, activeFileId, filePreviewOpen, openFilePreview, closeFileTab, refreshFile, runFileAction } = useFilePreview();
-provide(FILE_PREVIEW_KEY, openFilePreview);
-
-const {
-  isSidebarCollapsed,
-  isSettingsOpen,
-  settingsInitialTab,
-  isSending,
-  localSelectedTeamId,
-  localSelectedAgentId,
-  isWorkspaceModalOpen,
-  isTeamModalOpen,
-  isSubSessionsOverviewOpen,
-  selectedSubSessionForDetail,
-  activeViewingSubSessionId,
-  isSubPanelOpen,
-  isSubSessionDetailOpen,
-  availableSubSessionItems,
-  isLoadingSubMessages,
-  subMessagesError,
-  displaySessions,
-  displayActiveId,
-  displayModels,
-  displayWorkspaces,
-  displayActiveWorkspaceId,
-  displaySelectedModel,
-  displayAccessMode,
-  reasoningEffort,
-  reasoningEffortPending,
-  reasoningEffortError,
-  displayIsDark,
-  currentActiveSession,
-  displayedMessages,
-  contextUsageIndicator,
-  hasMessages,
-  sendFailureNotice,
-  dismissSendFailure,
-  lastAssistantIndex,
-  isNearBottom,
-  isLoadingMoreHistory,
-  historyLoadError,
-  isLoadingCurrentSession,
-  sessionLoadError,
-  initLoadError,
-  messageTurnMap,
-  activeSubSessionTurnMap,
-  activeSubSessionMessages,
-  activeViewingSubSessionVO,
-  hasMoreSubMessages,
-  isLoadingMoreSubMessages,
-  handleLoadMoreSubSessionHistory,
-  canChangeWorkspace,
-  handleSelectSession,
-  handleNewSession,
-  handleDeleteSession,
-  handleRenameSession,
-  handleExportSession,
-  handleClearCurrentSession,
-  handleClearSessions,
-  handleSelectWorkspace,
-  handleOpenNewWorkspace,
-  handleSaveWorkspace,
-  handleDeleteWorkspace,
-  handleOpenTeamModal,
-  handleTeamCreated,
-  handleUpdateTeam,
-  handleOpenModels,
-  handleOpenModelEditor,
-  handleUpdateModel,
-  handleUpdateAccessMode,
-  handleUpdateReasoningEffort,
-  handleOpenSettings,
-  handleOpenSettingsTab,
-  handleCloseSettings,
-  handleModelUpdated,
-  handleToggleTheme,
-  handleSendMessage,
-  handleStopGeneration,
-  handleResendMessage,
-  handleEditMessage,
-  handleHumanResponse,
-  handleSelectPrompt,
-  handleQuickStart,
-  handleLoadMoreHistory,
-  handleRetryLoadMoreHistory,
-  handleRetrySessionLoad,
-  handleRetryInit,
-  handleRetrySubSessionMessages,
-  handleSelectSubSessionOption,
-  handleOpenSubSessionDetailFromOverview,
-  handleScrollToBottomClick,
-  handleMessagesScroll,
-  handleMessagesWheel,
-  handleTouchStart,
-  handleTouchMove,
-} = useChatView(props, emit, { inputAreaRef, messagesContainerRef });
-</script>
 
 <template>
   <div :class="['relative flex h-screen w-screen overflow-hidden font-sans', displayIsDark ? 'text-gray-100 dark' : 'text-gray-900 light']">
@@ -132,10 +13,10 @@ const {
 
 
     <Sidebar
-      :sessions="displaySessions"
-      :activeSessionId="displayActiveId"
-      :workspaces="displayWorkspaces"
-      :activeWorkspaceId="displayActiveWorkspaceId"
+      :sessions="localSessions"
+      :activeSessionId="localActiveId"
+      :workspaces="localWorkspaces"
+      :activeWorkspaceId="localActiveWorkspaceId"
       :isCollapsed="isSidebarCollapsed"
       :isDark="displayIsDark"
       @selectSession="handleSelectSession"
@@ -157,19 +38,12 @@ const {
       <!-- 左侧：根会话工作区 (包含消息列表与底部输入框，被右侧子代理面板向左挤压) -->
       <div class="relative flex-1 min-w-0 h-full flex flex-col overflow-hidden">
 
-        <!-- 初始化数据加载失败：可见失败态 + 重试（区别于「确实为空」，避免后端宕机时静默显示为空） -->
+        <!-- 初始化数据加载失败：可见失败态（区别于「确实为空」，避免后端宕机时静默显示为空） -->
         <div
           v-if="initLoadError"
-          :class="['px-4 py-2 border-b shrink-0 flex items-center justify-between gap-2 text-xs', displayIsDark ? 'bg-red-950/40 border-red-900/60 text-red-300' : 'bg-red-50 border-red-200 text-red-600']"
+          :class="['px-4 py-2 border-b shrink-0 flex items-center text-xs', displayIsDark ? 'bg-red-950/40 border-red-900/60 text-red-300' : 'bg-red-50 border-red-200 text-red-600']"
         >
           <span>{{ initLoadError }}</span>
-          <button
-            type="button"
-            @click="handleRetryInit"
-            :class="['px-2.5 py-1 rounded-lg border text-xs font-medium transition cursor-pointer shrink-0', displayIsDark ? 'border-red-800 text-red-300 hover:bg-red-900/30' : 'border-red-300 text-red-600 hover:bg-red-100']"
-          >
-            重试
-          </button>
         </div>
 
         <!-- 会话详情加载失败：可见失败态 + 重试 -->
@@ -215,11 +89,8 @@ const {
             @wheel.passive="handleMessagesWheel"
             @touchstart.passive="handleTouchStart"
             @touchmove.passive="handleTouchMove"
-            @switchBranch="(msgId, branchIdx) => emit('switchBranch', msgId, branchIdx)"
-            @editMessage="handleEditMessage"
             @selectSubSession="handleSelectSubSessionOption"
-            @humanResponse="handleHumanResponse"
-            @resendMessage="handleResendMessage"
+            @resume="handleResumeGeneration"
           />
 
           <!-- 悬浮“回到底部” / “新内容” 提示按钮 -->
@@ -241,7 +112,7 @@ const {
                 :class="[
                   'flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium shadow-lg border backdrop-blur-md cursor-pointer transition-all hover:scale-105 active:scale-95 select-none',
                   displayIsDark
-                    ? 'bg-zinc-900/90 border-white/10 text-zinc-200 hover:bg-zinc-850 shadow-black/50 hover:text-white'
+                    ? 'bg-zinc-900/90 border-white/10 text-zinc-200 hover:bg-zinc-800 shadow-black/50 hover:text-white'
                     : 'bg-white/95 border-blue-200/80 text-blue-600 hover:bg-blue-50/80 shadow-blue-500/10'
                 ]"
                 title="回到底部"
@@ -304,7 +175,22 @@ const {
             </button>
           </div>
 
-          <!-- 大圆角输入框卡片：发送首条消息时随着底部占位缩起，平滑下沉吸底 -->
+          <!-- 实时连接失败横幅：重试耗尽后不静默，显式呈现并给出重挂入口。
+               不承诺无条件自动恢复 —— 断线期间服务端不补发事件，重挂后由历史回查对齐。 -->
+          <div
+            v-if="streamHealthState === 'FAILED'"
+            class="w-full shrink-0 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-600 dark:text-amber-400 flex items-center gap-3"
+            role="alert"
+          >
+            <span class="flex-1">实时连接已断开，生成结果可能有延迟。可重新连接并同步最新进度。</span>
+            <button
+              type="button"
+              class="shrink-0 rounded-md border border-current px-2 py-1 text-xs opacity-80 hover:opacity-100 transition-opacity"
+              @click="handleReconnectStream"
+            >
+              重新连接
+            </button>
+          </div>
           <div
             class="w-full transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]"
             :style="{
@@ -316,25 +202,25 @@ const {
               :isSending="isSending"
               :isDark="displayIsDark"
               :contextUsage="contextUsageIndicator"
-              :models="displayModels"
-              :selectedModelId="displaySelectedModel"
-              :accessMode="displayAccessMode"
+              :models="localModels"
+              :selectedModelId="selectedModelId"
+              :accessMode="accessMode"
               :reasoningEffort="reasoningEffort"
               :reasoningEffortPending="reasoningEffortPending"
               :reasoningEffortError="reasoningEffortError"
-              :hasActiveSession="!!displayActiveId"
+              :hasActiveSession="!!localActiveId"
               :canChangeWorkspace="canChangeWorkspace"
-              :workspaces="displayWorkspaces"
-              :selectedWorkspaceId="displayActiveWorkspaceId"
+              :workspaces="localWorkspaces"
+              :selectedWorkspaceId="localActiveWorkspaceId"
               :selectedTeamId="localSelectedTeamId"
-              :selectedAgentId="localSelectedAgentId"
+              :selectedAgentId="selectedAgentId"
               @sendMessage="handleSendMessage"
               @stopGeneration="handleStopGeneration"
               @updateModel="handleUpdateModel"
               @updateAccessMode="handleUpdateAccessMode"
               @updateReasoningEffort="handleUpdateReasoningEffort"
               @updateTeam="handleUpdateTeam"
-              @updateAgent="(a) => localSelectedAgentId = a"
+              @updateAgent="handleUpdateAgent"
               @openModelEditor="handleOpenModelEditor"
               @openTeamModal="handleOpenTeamModal"
               @selectWorkspace="handleSelectWorkspace"
@@ -420,7 +306,7 @@ const {
       <TeamModal
         :isOpen="isTeamModalOpen"
         :isDark="displayIsDark"
-        :models="displayModels"
+        :models="localModels"
         @close="isTeamModalOpen = false"
         @created="handleTeamCreated"
       />
@@ -446,3 +332,124 @@ const {
   </div>
 </template>
 
+<script setup lang="ts">
+import { ref, provide } from 'vue';
+import { useFilePreview } from '../../composables/useFilePreview';
+import { FILE_PREVIEW_KEY } from '../../types/filePreview';
+import { DECIDE_TOOL_CALL_KEY } from '../../types/toolDecision';
+import FilePreviewPanel from '../../components/chat/FilePreviewPanel.vue';
+import { useChatView } from './useChatView';
+import Sidebar from '../../components/chat/Sidebar.vue';
+import WelcomeView from '../../components/chat/WelcomeView.vue';
+import ChatMessageList from '../../components/chat/ChatMessageList.vue';
+import ChatInputArea from '../../components/chat/ChatInputArea.vue';
+import SettingsModal from '../settings/SettingsModal.vue';
+import WorkspaceModal from '../../components/chat/WorkspaceModal.vue';
+import TeamModal from '../../components/chat/TeamModal.vue';
+import SubSessionsOverviewDrawer from '../../components/chat/SubSessionsOverviewDrawer.vue';
+import SubSessionDetailDrawer from '../../components/chat/SubSessionDetailDrawer.vue';
+import SubAgentSidePanel from '../../components/chat/SubAgentSidePanel.vue';
+
+const inputAreaRef = ref<InstanceType<typeof ChatInputArea> | null>(null);
+const messagesContainerRef = ref<InstanceType<typeof ChatMessageList> | null>(null);
+const { fileTabs, activeFileId, filePreviewOpen, openFilePreview, closeFileTab, refreshFile, runFileAction } = useFilePreview();
+provide(FILE_PREVIEW_KEY, openFilePreview);
+
+const {
+  isSidebarCollapsed,
+  isSettingsOpen,
+  settingsInitialTab,
+  isSending,
+  localSelectedTeamId,
+  isWorkspaceModalOpen,
+  isTeamModalOpen,
+  isSubSessionsOverviewOpen,
+  selectedSubSessionForDetail,
+  activeViewingSubSessionId,
+  isSubPanelOpen,
+  isSubSessionDetailOpen,
+  availableSubSessionItems,
+  isLoadingSubMessages,
+  subMessagesError,
+  localSessions,
+  localActiveId,
+  localModels,
+  localWorkspaces,
+  localActiveWorkspaceId,
+  selectedModelId,
+  accessMode,
+  selectedAgentId,
+  reasoningEffort,
+  reasoningEffortPending,
+  reasoningEffortError,
+  displayIsDark,
+  currentActiveSession,
+  displayedMessages,
+  contextUsageIndicator,
+  hasMessages,
+  sendFailureNotice,
+  dismissSendFailure,
+  streamHealthState,
+  handleReconnectStream,
+  lastAssistantIndex,
+  isNearBottom,
+  isLoadingMoreHistory,
+  historyLoadError,
+  isLoadingCurrentSession,
+  sessionLoadError,
+  initLoadError,
+  messageTurnMap,
+  activeSubSessionTurnMap,
+  activeSubSessionMessages,
+  activeViewingSubSessionVO,
+  hasMoreSubMessages,
+  isLoadingMoreSubMessages,
+  handleLoadMoreSubSessionHistory,
+  canChangeWorkspace,
+  handleSelectSession,
+  handleNewSession,
+  handleDeleteSession,
+  handleRenameSession,
+  handleExportSession,
+  handleClearCurrentSession,
+  handleClearSessions,
+  handleSelectWorkspace,
+  handleOpenNewWorkspace,
+  handleSaveWorkspace,
+  handleDeleteWorkspace,
+  handleOpenTeamModal,
+  handleTeamCreated,
+  handleUpdateTeam,
+  handleOpenModels,
+  handleOpenModelEditor,
+  handleUpdateModel,
+  handleUpdateAccessMode,
+  handleUpdateAgent,
+  handleUpdateReasoningEffort,
+  handleOpenSettings,
+  handleOpenSettingsTab,
+  handleCloseSettings,
+  handleModelUpdated,
+  handleToggleTheme,
+  handleSendMessage,
+  handleStopGeneration,
+  handleResumeGeneration,
+  decideToolCall,
+  handleSelectPrompt,
+  handleQuickStart,
+  handleLoadMoreHistory,
+  handleRetryLoadMoreHistory,
+  handleRetrySessionLoad,
+  handleRetrySubSessionMessages,
+  handleSelectSubSessionOption,
+  handleOpenSubSessionDetailFromOverview,
+  handleScrollToBottomClick,
+  handleMessagesScroll,
+  handleMessagesWheel,
+  handleTouchStart,
+  handleTouchMove,
+} = useChatView({ inputAreaRef, messagesContainerRef });
+
+// 卡片决策提交能力：注入给深层卡片组件（PlanCard / ApprovalCard / RequireChoiceCard）
+provide(DECIDE_TOOL_CALL_KEY, decideToolCall);
+</script>

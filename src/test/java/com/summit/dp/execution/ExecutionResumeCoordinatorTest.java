@@ -12,7 +12,6 @@ import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.shared.event.CommittedStatePublisher;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -86,7 +85,7 @@ class ExecutionResumeCoordinatorTest {
         SuspendedExecutionResumer resumer = new SuspendedExecutionResumer(toolCallRepository,
                 sessionAttributeRestorer, modelContextService, provider(executionControl));
         coordinator = new ExecutionResumeCoordinator(tasks, executions, resumer,
-                provider(frameworkExecutions), publisherProvider());
+                provider(frameworkExecutions));
 
         task.set(newTask(0));
         claimable.set(true);
@@ -393,13 +392,6 @@ class ExecutionResumeCoordinatorTest {
     private static <T> ObjectProvider<T> provider(T value) {
         ObjectProvider<T> provider = mock(ObjectProvider.class);
         when(provider.getObject()).thenReturn(value);
-        return provider;
-    }
-
-    @SuppressWarnings("unchecked")
-    private ObjectProvider<CommittedStatePublisher> publisherProvider() {
-        ObjectProvider<CommittedStatePublisher> provider = mock(ObjectProvider.class);
-        when(provider.getIfAvailable()).thenReturn(mock(CommittedStatePublisher.class));
         return provider;
     }
 

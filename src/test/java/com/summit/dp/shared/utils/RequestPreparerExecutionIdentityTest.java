@@ -6,7 +6,6 @@ import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.command.ChatCommand;
 import com.summit.dp.agent.application.service.impl.RuntimeContext;
 import com.summit.dp.execution.ExecutionIdentity;
-import com.summit.dp.execution.application.service.ExecutionRegistrationService;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.shared.config.workflow.AgentAccessMode;
@@ -18,7 +17,6 @@ import com.summit.dp.shared.vo.SessionVO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
@@ -27,7 +25,6 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -66,7 +63,6 @@ class RequestPreparerExecutionIdentityTest {
     private final ConversationTranscriptService transcriptService = mock(ConversationTranscriptService.class);
     private final ModelContextService modelContextService = mock(ModelContextService.class);
     private final ExecutionIdentity executionIdentity = mock(ExecutionIdentity.class);
-    private final ExecutionRegistrationService registrationService = mock(ExecutionRegistrationService.class);
     private final com.summit.dp.turn.application.service.ChatTurnService chatTurnService =
             mock(com.summit.dp.turn.application.service.ChatTurnService.class);
     private final com.summit.dp.agent.application.service.AgentService agentService =
@@ -81,7 +77,7 @@ class RequestPreparerExecutionIdentityTest {
 
     private final RequestPreparer preparer = new RequestPreparer(sessionService, sessionRepository,
             workspaceService, modelService, workspaceConverter, settingsProvider, toolCatalog,
-            transcriptService, modelContextService, executionIdentity, registrationService,
+            transcriptService, modelContextService, executionIdentity,
             chatTurnService, agentService, teamService, mcpService);
 
     @BeforeEach
@@ -119,15 +115,14 @@ class RequestPreparerExecutionIdentityTest {
         assertNotNull(context.pendingUserMessage(), "用户消息已解析，但此刻还没落库");
         assertEquals("你好", context.pendingUserMessage().text());
 
-        // 关键：解析阶段不得产生「请求已被接受」的副作用 —— 用户消息、执行行、业务轮次都不许落库。
+        // 关键：解析阶段不得产生「请求已被接受」的副作用 —— 用户消息与业务轮次都不许落库。
         verifyNoInteractions(transcriptService);
-        verifyNoInteractions(registrationService);
         verifyNoInteractions(chatTurnService);
     }
 
     @Test
-    @DisplayName("commitUserMessage：执行行与用户消息同一事务落库；消息归属用 acceptTurn 返回的轮次 ID")
-    void commitWritesExecutionRowAndUserMessageUnderSameIdentity() {
+    @DisplayName("commitUserMessage：轮次与用户消息同一事务落库；消息归属用 acceptTurn 返回的轮次 ID")
+    void commitWritesTurnAndUserMessageUnderSameIdentity() {
         RuntimeContext context = preparer.prepare(command());
         long executionId = Long.parseLong(context.executionContext().executionId());
         long turnId = 9001L;
@@ -147,13 +142,6 @@ class RequestPreparerExecutionIdentityTest {
                         "historyRevision", "3"),
                 request.runtimeParametersOrDefault().getEventMetaData());
         verify(chatTurnService, never()).findByExecutionId(any());
-
-        ArgumentCaptor<ExecutionRegistrationService.InitialExecution> registration =
-                ArgumentCaptor.forClass(ExecutionRegistrationService.InitialExecution.class);
-        verify(registrationService).registerInitial(registration.capture());
-        assertEquals(executionId, registration.getValue().executionId());
-        assertEquals(SESSION_ID, registration.getValue().sessionId());
-        assertNull(registration.getValue().rootExecutionId(), "主执行没有根执行归属");
 
         // 模型快照不进执行行（execution 不再保存业务事实），而是落到轮次上：
         // 下面 acceptTurn 的断言才是模型名的落点，二者口径必须一致。
@@ -195,7 +183,6 @@ class RequestPreparerExecutionIdentityTest {
 
         preparer.commitUserMessage(withoutPending);
 
-        verifyNoInteractions(registrationService);
         verifyNoInteractions(transcriptService);
         verifyNoInteractions(chatTurnService);
     }

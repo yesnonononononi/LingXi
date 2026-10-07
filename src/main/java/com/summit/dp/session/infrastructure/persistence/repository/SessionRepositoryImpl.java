@@ -3,9 +3,6 @@ package com.summit.dp.session.infrastructure.persistence.repository;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.shared.event.CommittedStatePublisher;
-import com.summit.dp.shared.event.CommittedStateChange;
-import org.springframework.beans.factory.annotation.Autowired;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -29,8 +26,6 @@ import java.util.Collection;
 public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO, Long>
         implements SessionRepository {
     private final SessionMapper sessionMapper;
-    @Autowired(required = false)
-    private CommittedStatePublisher statePublisher;
 
     @Override
     public void save(Session session) { saveAndReturnId(session); }
@@ -45,9 +40,6 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
             throw new ClientException("会话状态已变化，请刷新后重试");
         }
         session.acceptPersistedVersion(expected + 1);
-        // 带上落库终值快照：v3 观察者直接转换，不再回查会话行。
-        if (statePublisher != null) statePublisher.publish(CommittedStateChange.of(
-                CommittedStateChange.Kind.SESSION, session.getId(), session.getId(), session));
     }
 
     @Override
@@ -57,9 +49,6 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
     public Long saveAndReturnId(Session session) {
         SessionPO row = toPO(session);
         sessionMapper.insert(row);
-        // insert 后 row 才带自增主键：用 toModel 还原成领域快照再下发，保证版本/代际字段口径一致。
-        if (statePublisher != null) statePublisher.publish(CommittedStateChange.of(
-                CommittedStateChange.Kind.SESSION, row.getId(), row.getId(), toModel(row)));
         return row.getId();
     }
 

@@ -2,16 +2,29 @@ import http from './interceptor';
 import type { Result } from './types';
 import type {
   AgentVO,
-  CommandAcceptanceVO,
+  ChatAcceptance,
   CreateAgentRequest,
   PageResult,
-  ResendCommandAcceptanceVO,
 } from '../types/chat';
 import { toPositiveInt } from '../utils/api';
+import { toServerSessionId } from '../utils/ids';
+import { getApiBaseUrl } from '../utils/apiConfig';
+import type { ChatCommand } from './dto/chat_command';
 
 const appendFormValue = (form: FormData, key: string, value: string | number | boolean | null | undefined) => {
   if (value !== null && value !== undefined) form.append(key, String(value));
 };
+
+/**
+ * 是否为「主动中止」引起的错误。
+ *
+ * <p>{@code AbortSignal} 触发后 {@code fetch} 会以 {@link DOMException}（name=AbortError）拒绝，
+ * 调用方据此把「用户点了停止」与「真实网络故障」区分开，不要弹失败提示。</p>
+ */
+export const isAbortError = (error: unknown): boolean =>
+  error instanceof DOMException ? error.name === 'AbortError' : false;
+
+
 
 /**
  * 组装聊天请求表单。
@@ -20,30 +33,20 @@ const appendFormValue = (form: FormData, key: string, value: string | number | b
  * 解析本轮编排身份，请求不再携带。团队选择由前端在会话创建/换绑时同步
  * （{@code SessionAPI.create} / {@code SessionAPI.bindTeam}）。</p>
  */
-const createChatForm = (
-  sessionId: string | number | null,
-  prompt: string,
-  workspaceId?: number | string | null,
-  workDir?: string | null,
-  modelId?: number | string | null,
-  requirePlan?: boolean,
-  agentId?: number | string | null,
-  imageFile?: File | null,
-  imageUrl?: string | null,
-  /** 重发专用：要改写的那条历史提问；普通对话不传。 */
-  messageId?: number | string | null
-) => {
+const toChatForm = (command: ChatCommand): FormData => {
   const form = new FormData();
-  appendFormValue(form, 'input', prompt);
-  appendFormValue(form, 'sessionId', sessionId);
-  appendFormValue(form, 'workDir', workDir);
-  appendFormValue(form, 'workspaceId', workspaceId);
-  appendFormValue(form, 'modelId', modelId);
-  appendFormValue(form, 'agentId', toPositiveInt(agentId, 0) || null);
-  appendFormValue(form, 'requirePlan', requirePlan === true);
-  appendFormValue(form, 'messageId', messageId);
-  if (imageFile) form.append('image', imageFile, imageFile.name);
-  if (imageUrl) appendFormValue(form, 'imageUrl', imageUrl);
+  appendFormValue(form, 'input', command.input);
+  const serverSessionId = toServerSessionId(command.sessionId);
+  if (serverSessionId !== null && serverSessionId !== undefined) {
+    appendFormValue(form, 'sessionId', serverSessionId);
+  }
+  appendFormValue(form, 'workDir', command.workDir);
+  appendFormValue(form, 'workspaceId', command.workspaceId);
+  appendFormValue(form, 'modelId', command.modelId);
+  appendFormValue(form, 'agentId', toPositiveInt(command.agentId, 0) || null);
+  appendFormValue(form, 'requirePlan', command.requirePlan === true);
+  if (command.image) form.append('image', command.image, command.image.name);
+  appendFormValue(form, 'imageUrl', command.imageUrl);
   return form;
 };
 
@@ -62,78 +65,48 @@ export class AgentAPI {
     return http.post<any, Result<string>>(`/a/completion/${sessionId}/resume`);
   }
 
-  static async chat(
-    sessionId: string | number | null,
-    prompt: string,
-    workspaceId?: number | string | null,
-    workDir?: string | null,
-    modelId?: number | string | null,
-    requirePlan?: boolean,
-    /** 单 Agent 直聊：指定该 Agent 的人设与工具清单；团队身份由会话绑定决定，后端优先走团队编排 */
-    agentId?: number | string | null,
-    imageFile?: File | null,
-    imageUrl?: string | null
-  ): Promise<Result<string>> {
-    return http.post<any, Result<string>>('/a/completion', createChatForm(
-      sessionId, prompt, workspaceId, workDir, modelId, requirePlan, agentId, imageFile, imageUrl
-    ));
+  /**
+   * 受理聊天请求：{@code POST /a/completion/commands}。
+   *
+   * <p><b>同步受理</b>：请求线程内同事务落库（轮次 + 用户消息 + 执行行）后立即返回权威
+   * {@code sessionId} / {@code turnId}，模型调用异步进行。该端点<b>不返回流、不建 emitter</b>，
+   * 实时事件一律由会话级订阅（{@link #subscribeSessionEvents}）承载。</p>
+   *
+   * <p>走原生 fetch 而非 axios：请求体是 FormData（multipart），交给浏览器生成 boundary；
+   * 响应体是普通 JSON，用原生 fetch 反而少一层包装。</p>
+   */
+  static async acceptCommand(form: ChatCommand, signal?: AbortSignal): Promise<Result<ChatAcceptance>> {
+    const response = await fetch(`${getApiBaseUrl()}/a/completion/commands`, {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      body: toChatForm(form),
+      signal,
+    });
+    if (!response.ok) {
+      throw new Error(`受理请求失败：HTTP ${response.status}`);
+    }
+    return response.json() as Promise<Result<ChatAcceptance>>;
   }
 
   /**
-   * v3 发送受理：JSON 回执，**不建请求级 SSE**。
+   * 订阅会话级事件流：{@code GET /a/completion/{sessionId}/events}。
    *
-   * <p>回执只承诺「命令被受理成了哪一轮」—— 它不携带 assistant 内容，也不能用作「模型执行完成」
-   * 的判据（见后端 {@code CommandAcceptanceVO} 的说明）。执行产生的实时事实统一走会话级 v3 流，
-   * 回执与事件按业务身份 + 版本合并，允许事件先到。</p>
+   * <p>发送不再自带流，本流是唯一的实时通道：连接建立后服务端立即发一帧命名事件
+   * {@code READY}（emitter 先入桶再发帧），此后每 30s 一帧 {@code HEARTBEAT}。
+   * 二者是传输层信号、不是框架 {@code AgentEvent}，必须由 {@code SessionEventStream}
+   * 在传输层按事件名消费。</p>
    *
-   * @param commandId 命令身份；同 ID 重试由后端查回首轮受理结果（幂等键）
+   * <p>走原生 {@code fetch}（拿到 {@code response.body} 交给 {@code readSseStream}），
+   * 不用 {@code EventSource}：它只支持 GET 且会自行重连，重连时机不可控。</p>
+   *
+   * <p>不回放历史：只投递挂上之后的事件，切走期间的缺口由会话历史接口对齐。</p>
    */
-  static async sendCommand(
-    commandId: string,
-    sessionId: string | number | null,
-    prompt: string,
-    workspaceId?: number | string | null,
-    workDir?: string | null,
-    modelId?: number | string | null,
-    requirePlan?: boolean,
-    agentId?: number | string | null,
-    imageFile?: File | null
-  ): Promise<Result<CommandAcceptanceVO>> {
-    const form = createChatForm(
-      sessionId, prompt, workspaceId, workDir, modelId, requirePlan, agentId, imageFile
-    );
-    return http.post<any, Result<CommandAcceptanceVO>>(
-      `/a/completion/commands?commandId=${encodeURIComponent(commandId)}`,
-      form
-    );
-  }
-
-  /**
-   * v3 重发受理：与 {@link sendCommand} 同一形态，额外回被作废的轮次/执行范围与新的 historyRevision。
-   *
-   * <p>重发会物理删除目标轮次及其之后的历史，前端必须按回执给出的 id 精确移除实体，
-   * 否则会留下一批指向已删除数据的空壳卡片。</p>
-   */
-  static async resendCommand(
-    commandId: string,
-    sessionId: string | number,
-    messageId: string | number,
-    prompt: string,
-    workspaceId?: number | string | null,
-    workDir?: string | null,
-    modelId?: number | string | null,
-    requirePlan?: boolean,
-    agentId?: number | string | null,
-    imageFile?: File | null
-  ): Promise<Result<ResendCommandAcceptanceVO>> {
-    const form = createChatForm(
-      sessionId, prompt, workspaceId, workDir, modelId, requirePlan, agentId,
-      imageFile, undefined, messageId
-    );
-    return http.post<any, Result<ResendCommandAcceptanceVO>>(
-      `/a/completion/resend/commands?commandId=${encodeURIComponent(commandId)}`,
-      form
-    );
+  static async subscribeSessionEvents(sessionId: string | number, signal?: AbortSignal): Promise<Response> {
+    return fetch(`${getApiBaseUrl()}/a/completion/${sessionId}/events`, {
+      method: 'GET',
+      headers: { Accept: 'text/event-stream' },
+      signal,
+    });
   }
 
   /** 分页获取 Agent 列表 (GET /agent/list?page=1&pageSize=100) */

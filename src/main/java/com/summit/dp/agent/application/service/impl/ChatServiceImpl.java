@@ -8,6 +8,7 @@ import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.command.ChatCommand;
 import com.summit.dp.agent.application.service.ChatService;
 import com.summit.dp.agent.application.service.impl.ResendTargetResolver.ResendTarget;
+import com.summit.dp.agent.application.vo.ChatAcceptanceVO;
 import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
 import com.summit.dp.session.application.service.ConversationRollbackService;
 import com.summit.dp.session.application.service.ModelContextService;
@@ -29,7 +30,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.util.concurrent.CompletableFuture;
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -71,7 +71,6 @@ public class ChatServiceImpl implements ChatService {
         ensureSessionTreeIsIdle(context.executionContext().rootSessionId());
         // 单飞校验前置到请求线程，且**先于用户消息落库**：冲突时执行尚未开始，
         // 用户消息也还没写进历史，不会留下「有提问、无执行、无错误」的孤行。
-        sseEventPublisher.prepareProjection(context.executionContext().rootSessionId());
         sessionExecutionRegistry.beginRoot(context.executionContext().rootSessionId());
         return Result.success(executePrepared(context).getMessages().toString());
     }
@@ -87,42 +86,28 @@ public class ChatServiceImpl implements ChatService {
      */
     @Override
     public SseEmitter subscribeSession(Long sessionId) {
-        if (sessionId == null) {
-            throw new ClientException("会话标识不能为空");
-        }
+        // 入口校验：0 是「自身即根」的哨兵（Session.ROOT_SESSION_ID），不是合法会话主键。
+        // 非正数必须在这里拒成业务错误，否则会落进 resolveRootSessionId 抛
+        // IllegalStateException → 兜底 handler 报 HTTP 500「系统繁忙」。
+        throwIf(sessionId == null || sessionId <= 0, "会话标识不合法");
         long rootSessionId = executionIdentity.resolveRootSessionId(sessionId);
         return sseEventPublisher.connect(rootSessionId);
     }
 
+    /**
+     * 受理一次聊天请求：请求线程同步落库，模型调用异步，不建立 emitter。
+     *
+     * <p>顺序与 {@link #chat} 一致，只把「提交用户消息」放在返回之前：
+     * prepare 解析会话 → 单飞校验 → 取运行资格 → <b>在请求线程同事务落库并拿到 turnId</b>
+     * → 异步只跑模型。这样「受理返回成功」就有明确的落库依据，turnId 也已产生并随响应返回；
+     * 事件一律由会话级订阅承载，这条入口不建流、不订阅。</p>
+     */
     @Override
-    public SseEmitter chatStream(ChatCommand command) {
-        // HC-2：先 resolve 出确定的会话身份，再注册运行与订阅事件。
-        RuntimeContext context = requestPreparer.prepare(command);   // 内含建会话，sessionId 一定非 null
-
-        // 挂起防护：会话还有挂起中的执行（等待子代理审批 / 人工决策）时不允许开新一轮 ——
-        // 否则旧执行的委派槽位永远悬空，审批落定后还会出现两个并发的根执行。
+    public Result<ChatAcceptanceVO> acceptCommand(ChatCommand command) {
+        RuntimeContext context = requestPreparer.prepare(command);
         ensureSessionTreeIsIdle(context.executionContext().rootSessionId());
-
-        // 单飞校验前置：必须在建立 emitter / 订阅事件 / 落库用户消息之前，校验失败直接抛
-        // ClientException，不建立任何 SSE 连接；否则第一个请求已建流之后才冲突，语义与体验都不对。
-        sseEventPublisher.prepareProjection(context.executionContext().rootSessionId());
         sessionExecutionRegistry.beginRoot(context.executionContext().rootSessionId());
-
-        // 订阅到根会话（HC-3 路由键）：本会话及其全部子会话的运行时事件都归入此流。
-        SseEmitter sseEmitter = sseEventPublisher.connect(context.executionContext().rootSessionId());
-
-        CompletableFuture.runAsync(() -> {
-            try {
-                executePrepared(context);
-            } catch (Exception e) {
-                log.error("Error during chatStream execution", e);
-            } finally {
-                // 运行时的终态事件已在 executePrepared 返回前发送。及时结束该请求的流，
-                // 避免浏览器结束读取后后端仍保留失效 emitter。
-                sseEventPublisher.finish(sseEmitter);
-            }
-        });
-        return sseEmitter;
+        return Result.success(commitAndSubmit(context));
     }
 
     /**
@@ -130,9 +115,11 @@ public class ChatServiceImpl implements ChatService {
      *
      * <p>顺序不能动：回滚必须在取到运行资格之后（否则并发重发各砍一遍历史），
      * 且必须在 {@code commitUserMessage} 之前（否则新提问会被自己删掉）。</p>
+     *
+     * <p>与 {@link #acceptCommand} 同形态：同步受理、异步执行、不建 emitter。</p>
      */
     @Override
-    public SseEmitter resend(ChatCommand command) {
+    public Result<ChatAcceptanceVO> resend(ChatCommand command) {
         ResendTarget target = resendTargetResolver.resolve(command);
 
         // 上下文取目标轮次的历史基线
@@ -142,7 +129,6 @@ public class ChatServiceImpl implements ChatService {
 
         ensureSessionTreeIsIdle(rootSessionId);
 
-        sseEventPublisher.prepareProjection(rootSessionId);
         sessionExecutionRegistry.beginRoot(rootSessionId);
 
         try {
@@ -154,42 +140,51 @@ public class ChatServiceImpl implements ChatService {
             throw e;
         }
 
-        SseEmitter sseEmitter = sseEventPublisher.connect(rootSessionId);
-        CompletableFuture.runAsync(() -> {
-            try {
-                executePrepared(context);
-            } catch (Exception e) {
-                log.error("Error during resend execution", e);
-            } finally {
-                sseEventPublisher.finish(sseEmitter);
-            }
-        });
-        return sseEmitter;
+        return Result.success(commitAndSubmit(context));
+    }
+
+    /**
+     * 已拿到运行资格的上下文：请求线程同事务落库并取 turnId，随后异步只跑模型，返回受理回执。
+     */
+    private ChatAcceptanceVO commitAndSubmit(RuntimeContext context) {
+        RuntimeContext committed = commitUserMessage(context);
+        // 只跑模型：不建 emitter、不订阅；失败收口与运行资格释放在协作类内统一处理。
+        chatExecutor.submitAsync(committed);
+        return ChatAcceptanceVO.builder()
+                .sessionId(context.executionContext().sessionId())
+                .turnId(committed.turnId())
+                .build();
+    }
+
+    /**
+     * 共同受理入口：在请求线程同事务提交轮次、用户消息与执行行，返回带上 turnId 与执行对象的上下文。
+     *
+     * <p>三个入口（{@code chat} / {@code acceptCommand} / {@code resend}）都经这里，
+     * 受理流程只在这一处收口。事务边界在被调方（{@code PreparedChatExecutor#admit}）—— 本方法是
+     * 私有自调用，事务注解挂在这里不会生效。</p>
+     *
+     * <p><b>提交失败必须自己释放运行资格</b>：{@code chatExecutor} 的收尾只在它被调用之后生效，
+     * 提交抛异常时它根本没进 —— 不在这里补一次释放，会话会被永久锁死在「执行中」，
+     * 用户既发不出下一条也看不到任何错误。</p>
+     */
+    private RuntimeContext commitUserMessage(RuntimeContext context) {
+        try {
+            return chatExecutor.admit(context);
+        } catch (RuntimeException commitFailure) {
+            sessionExecutionRegistry.finishRoot(context.executionContext().rootSessionId());
+            throw commitFailure;
+        }
     }
 
     /**
      * 执行档位：团队 > 单 Agent > 裸模型。
      *
-     * <p><b>为什么还留着这一层</b>：v1 的 SSE 入口在提交用户消息之后还要把执行结果
-     * 交回给请求线程（{@code chat()} 要返回消息内容）。真正的模型调用与收尾已经搬进
+     * <p><b>为什么还留着这一层</b>：同步 {@code chat()} 要把执行结果交回给请求线程
+     * （返回消息内容），而受理必须在请求线程同步提交。真正的模型调用与收尾已经搬进
      * {@link PreparedChatExecutor}，这里只保留「提交 → 委托 → 返回」三步。</p>
-     *
-     * <p><b>提交失败必须自己释放运行资格</b>：{@code chatExecutor} 的 {@code finally}
-     * 只覆盖它自己被调用的那段，提交抛异常时它根本没进 —— 不在这里补一次释放，
-     * 会话会被永久锁死在「执行中」，用户既发不出下一条也看不到任何错误。</p>
      */
     private Execution executePrepared(RuntimeContext context) {
-        long rootSessionId = context.executionContext().rootSessionId();
-        RuntimeContext committed;
-        try {
-            // 运行资格已经拿到（调用方在进入本方法前调了 beginRoot），现在才把用户消息落库：
-            // 顺序反了就会出现「消息已入库、执行被拒绝」的孤行。
-            committed = context.withTurnId(requestPreparer.commitUserMessage(context));
-        } catch (RuntimeException commitFailure) {
-            sessionExecutionRegistry.finishRoot(rootSessionId);
-            throw commitFailure;
-        }
-        return chatExecutor.run(committed);
+        return chatExecutor.run(commitUserMessage(context));
     }
 
     @Override
@@ -214,6 +209,9 @@ public class ChatServiceImpl implements ChatService {
             Thread thread = child.thread();
             if (thread != null && thread != Thread.currentThread()) thread.interrupt();
         });
+
+        // 不关流：会话流是会话级资源，生命周期跟页面挂载 / 卸载走。停止只取消执行 ——
+        // 一旦在这里断开，前端下一次发送前就必须重新挂载，否则那段时间的事件无处可去。
     }
 
     @Override
@@ -241,7 +239,6 @@ public class ChatServiceImpl implements ChatService {
 
         // 恢复不经过 RequestPreparer，会话级业务属性不会被重新下发，必须先补齐再交给 loop。
         sessionAttributeRestorer.restore(execution, sessionId);
-        sseEventPublisher.prepareProjection(executionIdentity.resolveRootSessionId(sessionId));
 
         // 交接通知由框架发布：resume(Execution) 内部触发 RuntimeLifeStyleManager#onResume，
         Execution resumed = executionControl.resume(execution);
@@ -255,7 +252,7 @@ public class ChatServiceImpl implements ChatService {
         try {
             executionControl.cancel(executionId);
         } catch (IllegalStateException ignored) {
-            // A session tree contains historical executions as well as the currently active ones.
+            // 会话树里既有历史执行，也有当前活跃的执行，取消时命中已终结的执行属正常情况。
         }
     }
 

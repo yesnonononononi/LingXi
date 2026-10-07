@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
 import type { SubSessionVO, ChatMessage, ToolCallTrace } from '../../types/chat';
-import { SessionAPI } from '../../services/session';
-import { parseSessionMessages } from '../../utils/session';
+import { chatApi } from '../../services/chat';
 import { formatClockTime } from '../../utils/format';
 import { parseToolDiff } from '../../utils/toolDiff';
 import { shouldShowToolArguments, resolveToolCategory } from '../../utils/toolMeta';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
 import MarkdownRenderer from './MarkdownRenderer.vue';
-import { isOk } from '../../utils/api';
 import { useTheme } from '../../composables/useTheme';
 
 const props = defineProps<{
@@ -60,13 +58,13 @@ const loadMessages = async () => {
   isLoading.value = true;
   loadError.value = false;
   try {
-    const res = await SessionAPI.messages(props.subSession.id, null, 100);
-    if (isOk(res.code)) {
-      messages.value = res.data?.records
-        ? parseSessionMessages(res.data.records, String(props.subSession.id))
-        : [];
+    // 与根会话共用同一条历史管线（chatApi.fetchSessionMessages：分页 + aggregateSessionMessages 解析），
+    // 不再自建第二套加载/解析。
+    const res = await chatApi.fetchSessionMessages(props.subSession.id, null, 100);
+    if (res.ok) {
+      messages.value = res.data.messages;
     } else {
-      // 接口返回失败：区别于「确实为空」，置失败态允许重试
+      // 加载失败：区别于「确实为空」，置失败态允许重试
       messages.value = [];
       loadError.value = true;
     }

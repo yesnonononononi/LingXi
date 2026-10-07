@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, inject } from 'vue';
 import type { PromptCardData } from '../../types/chat';
+import { DECIDE_TOOL_CALL_KEY } from '../../types/toolDecision';
 import { useChatInputFocus } from '../../composables/useChatInputFocus';
+import { CARD_SHELL_CLASS, CARD_BODY_CLASS, CARD_ERROR_TEXT_CLASS, cardToneClass, type CardTone } from '../../utils/cardUi';
+import { canDecideCard } from '../../utils/toolCallCard';
+import CardHeader from './CardHeader.vue';
+import CardActionButton from './CardActionButton.vue';
 import MarkdownRenderer from './MarkdownRenderer.vue';
 
 const props = defineProps<{
@@ -13,23 +18,15 @@ const props = defineProps<{
 }>();
 
 /**
- * 由视图层注入的决策提交：批 A 起走 JSON 回执，**不再消费请求级流**。
+ * 由视图层注入的决策提交：走 JSON 回执，**不再消费请求级流**。
  * 恢复期的实时内容由会话级 v3 流渲染；本回调只负责提交并回执结果。
  * 缺省（组件树外独立使用本卡片时）降级为不可提交，仅提示。
  */
-const decideToolCall = inject<((payload: {
-  conversationId: string;
-  toolCallId: string;
-  action: 'APPROVE' | 'REJECT' | 'ANSWER';
-  text?: string;
-  /** 卡片当前版本；提交给后端做冲突判定，避免过期界面覆盖先到的结论 */
-  expectedVersion?: string | number | null;
-}) => Promise<unknown>) | null>('decideToolCall', null);
+const decideToolCall = inject(DECIDE_TOOL_CALL_KEY, null);
 
 /**
  * 「去聊天里说」：聚焦聊天输入框的能力，由 ChatView 通过 CHAT_INPUT_FOCUS_KEY 类型化注入。
  * 无 provider 时为 null，按钮不渲染（杜绝「点了没反应的死按钮」）。
- * 不再使用 window.dispatchEvent('focus-chat-input')（死事件）与全局 querySelector（审计 G8）。
  */
 const focusChatInput = useChatInputFocus();
 const goToChatInput = () => {
@@ -41,8 +38,12 @@ const errorMsg = ref('');
 const isAddingTip = ref(false);
 const tipText = ref('');
 
-/** pending 也可能是委派或暂不可操作，按钮只能看后端动作集合。 */
-const isPending = computed(() => props.promptCard.allowedActions?.includes('APPROVE') === true);
+/**
+ * 是否可操作：**叠加权威 `pending`**（= type==='PROMISE' && status==='pending'），
+ * 再要求后端动作集合含 APPROVE。只判 allowedActions 会被「已决但残留动作」的脏数据骗过，
+ * 从而在已决卡上渲染出可点按钮。
+ */
+const isPending = computed(() => canDecideCard(props.promptCard, 'APPROVE'));
 
 /** 计划书正文：Markdown 正文 */
 const planBody = computed(() => props.promptCard.content || '');
@@ -51,7 +52,7 @@ const planTitle = computed(() => props.promptCard.title || '任务计划');
 /** 结论：raw_output.outcome（APPROVED / REJECTED / ...） */
 const outcome = computed(() => String(props.promptCard.outcome ?? '').trim().toUpperCase());
 
-const statusTone = computed<'approved' | 'rejected' | 'pending' | 'unknown'>(() => {
+const statusTone = computed<CardTone>(() => {
   if (outcome.value === 'APPROVED') return 'approved';
   if (outcome.value === 'REJECTED') return 'rejected';
   if (isPending.value) return 'pending';
@@ -60,8 +61,8 @@ const statusTone = computed<'approved' | 'rejected' | 'pending' | 'unknown'>(() 
 });
 
 const statusLabel = computed(() => {
-  if (outcome.value === 'APPROVED') return '已批准';
-  if (outcome.value === 'REJECTED') return '已否决';
+  if (outcome.value === 'APPROVED') return '✓ 计划已批准，正在实施';
+  if (outcome.value === 'REJECTED') return '✕ 计划已被否决';
   if (isPending.value) return '计划待审';
   if (props.promptCard.status === 'preparing') return '准备中';
   if (props.promptCard.status === 'in_progress') return '处理中';
@@ -99,7 +100,6 @@ const decide = async (approved: boolean) => {
   isSubmitting.value = true;
   errorMsg.value = '';
   try {
-    // 提交决策拿回执；恢复执行的实时内容由会话级 v3 流渲染，本组件不消费任何请求级流。
     await decideToolCall({
       conversationId: String(conversationId),
       toolCallId: String(toolCallId),
@@ -107,10 +107,8 @@ const decide = async (approved: boolean) => {
       text: tipText.value.trim(),
       expectedVersion: props.promptCard.version ?? null
     });
-
-    // 结论由 outcome 表达，status 收敛为终态 completed
   } catch (err: any) {
-    errorMsg.value = err?.message || (approved ? '批准计划失败，请重试' : '否决计划失败，请重试');
+    errorMsg.value = err?.message || (approved ? '批准计划失败，请重试' : '拒绝计划失败，请重试');
   } finally {
     isSubmitting.value = false;
   }
@@ -118,172 +116,135 @@ const decide = async (approved: boolean) => {
 </script>
 
 <template>
-  <div :class="['w-full rounded-2xl border transition-all my-3 p-6 shadow-xs', isDark ? 'bg-[#161b26] border-gray-800' : 'bg-white border-gray-200/90']">
+  <div :class="[CARD_SHELL_CLASS, isDark ? 'bg-[#161b26] border-gray-800' : 'bg-white border-gray-200/90']">
+    <div :class="CARD_BODY_CLASS">
 
-    <!-- 1. 顶部标题与状态指示徽标 -->
-    <div class="flex items-center justify-between select-none">
-      <div class="flex items-center gap-2.5 min-w-0">
-        <span
+      <!-- 1. 统一 header：状态点 + 类型标签 + 标题 -->
+      <CardHeader :tone="statusTone" type-label="计划" :title="planTitle" :is-dark="isDark" />
+
+      <!-- 2. 计划书正文（Markdown；长文限高可滚动） -->
+      <div
+        v-if="planBody"
+        class="text-[13.5px] leading-relaxed max-h-[420px] overflow-y-auto scrollbar-thin pr-1"
+      >
+        <MarkdownRenderer :content="planBody" :is-dark="isDark" />
+      </div>
+
+      <!-- 3. 补充 Tip 输入区（可折叠） -->
+      <div
+        v-if="isPending && isAddingTip"
+        class="pt-3 border-t border-gray-100 dark:border-gray-800/80"
+      >
+        <div class="flex items-center justify-between mb-1.5 text-xs text-gray-500 dark:text-gray-400">
+          <div class="flex items-center gap-1.5">
+            <svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            <span class="font-medium text-gray-700 dark:text-gray-300">补充 Tip / 修改建议</span>
+          </div>
+          <button
+            type="button"
+            @click="isAddingTip = false"
+            class="text-[11px] text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50"
+          >
+            收起
+          </button>
+        </div>
+        <textarea
+          v-model="tipText"
+          rows="2"
+          placeholder="输入补充建议、指导意见或调整要求（选填，点批准或拒绝时会自动带上）..."
           :class="[
-            'w-2 h-2 rounded-full flex-shrink-0',
-            statusTone === 'approved' ? 'bg-emerald-500' :
-            statusTone === 'rejected' ? 'bg-red-500' :
-            statusTone === 'pending' ? 'bg-amber-400 animate-pulse' : 'bg-gray-400'
+            'w-full text-xs sm:text-sm px-3 py-2 rounded-xl border outline-none transition resize-none',
+            isDark
+              ? 'bg-[#1a2130] border-gray-700 text-gray-200 placeholder-gray-500 focus:border-blue-500'
+              : 'bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
           ]"
-        ></span>
-        <h4 class="font-medium text-sm text-gray-800 dark:text-gray-100 truncate">
-          {{ planTitle }}
-        </h4>
-        <span
+        ></textarea>
+      </div>
+
+      <!-- 错误反馈 -->
+      <div v-if="errorMsg" :class="['text-xs', CARD_ERROR_TEXT_CLASS]">
+        {{ errorMsg }}
+      </div>
+
+      <!-- 4. 底部操作栏 -->
+      <div class="pt-3 border-t border-gray-100 dark:border-gray-800/80 flex items-center justify-between gap-3 select-none flex-wrap">
+
+        <!-- 左：去聊天里说（无 provider 时不渲染，避免死按钮） -->
+        <button
+          v-if="isPending && focusChatInput"
+          type="button"
+          @click="goToChatInput"
           :class="[
-            'text-xs font-semibold px-2 py-0.5 rounded-full',
-            statusTone === 'approved' ? 'bg-emerald-500/10 text-emerald-500' :
-            statusTone === 'rejected' ? 'bg-red-500/10 text-red-500' :
-            statusTone === 'pending' ? 'bg-amber-400/10 text-amber-500' : 'bg-gray-500/10 text-gray-400'
+            'text-xs sm:text-sm font-normal transition flex items-center gap-1.5 cursor-pointer rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50',
+            isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-600 hover:text-gray-900'
           ]"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+          </svg>
+          <span>去聊天里说</span>
+        </button>
+        <div v-else></div>
+
+        <!-- 待审：决策按钮组 -->
+        <div v-if="isPending" class="flex items-center gap-2.5">
+          <button
+            type="button"
+            @click="toggleTipInput"
+            :class="[
+              'px-3.5 py-1.5 rounded-xl border text-xs sm:text-sm font-normal transition cursor-pointer flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50',
+              isAddingTip
+                ? (isDark ? 'border-amber-500/50 bg-amber-500/10 text-amber-400' : 'border-amber-400 bg-amber-50 text-amber-700')
+                : (isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-gray-200 text-gray-700 hover:bg-gray-50')
+            ]"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            <span>{{ isAddingTip ? '收起 Tip' : '增加 Tip' }}</span>
+          </button>
+
+          <CardActionButton
+            tone="danger"
+            variant="outline"
+            :disabled="isSubmitting"
+            :is-dark="isDark"
+            @click="decide(false)"
+          >
+            <template #icon>
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </template>
+            拒绝执行
+          </CardActionButton>
+
+          <CardActionButton
+            tone="emerald"
+            :loading="isSubmitting"
+            :is-dark="isDark"
+            @click="decide(true)"
+          >
+            <template #icon>
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+              </svg>
+            </template>
+            批准
+          </CardActionButton>
+        </div>
+
+        <!-- 已决：状态横幅（二级信息） -->
+        <div
+          v-else
+          :class="['text-xs px-3 py-1.5 rounded-xl font-medium', cardToneClass(statusTone, isDark)]"
         >
           {{ statusLabel }}
-        </span>
-      </div>
-    </div>
-
-    <!-- 2. 计划书正文（统一走 Markdown 渲染器） -->
-    <div class="text-[13.5px] leading-relaxed mt-4">
-      <MarkdownRenderer
-        v-if="planBody"
-        :content="planBody"
-        :is-dark="isDark"
-      />
-    </div>
-
-    <!-- 3. 增加 Tip 输入区 (可折叠展示) -->
-    <div
-      v-if="isPending && isAddingTip"
-      class="mt-4 pt-3 border-t border-gray-100 dark:border-gray-800/80 transition-all duration-200"
-    >
-      <div class="flex items-center justify-between mb-1.5 text-xs text-gray-500 dark:text-gray-400">
-        <div class="flex items-center gap-1.5">
-          <svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-          </svg>
-          <span class="font-medium text-gray-700 dark:text-gray-300">补充 Tip / 修改建议</span>
         </div>
-        <button
-          type="button"
-          @click="isAddingTip = false"
-          class="text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
-        >
-          收起
-        </button>
+
       </div>
-      <textarea
-        v-model="tipText"
-        rows="2"
-        placeholder="输入补充建议、指导意见或调整要求（选填，点批准或否决时会自动带上）..."
-        :class="[
-          'w-full text-xs sm:text-sm px-3 py-2 rounded-xl border outline-none transition resize-none',
-          isDark
-            ? 'bg-[#1a2130] border-gray-700 text-gray-200 placeholder-gray-500 focus:border-blue-500'
-            : 'bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
-        ]"
-      ></textarea>
     </div>
-
-    <!-- 错误反馈提示 -->
-    <div v-if="errorMsg" class="mt-3 text-xs text-red-400">
-      {{ errorMsg }}
-    </div>
-
-    <!-- 4. 底部操作栏 -->
-    <div class="mt-6 pt-3 flex items-center justify-between gap-3 select-none flex-wrap">
-
-      <!-- 左侧：去聊天里说（聚焦聊天输入框）。能力由 ChatView 类型化注入；无 provider 时不渲染，避免死按钮。 -->
-      <button
-        v-if="isPending && focusChatInput"
-        type="button"
-        @click="goToChatInput"
-        :class="[
-          'text-xs sm:text-sm font-normal transition flex items-center gap-1.5 cursor-pointer',
-          isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-600 hover:text-gray-900'
-        ]"
-      >
-        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-        </svg>
-        <span>去聊天里说</span>
-      </button>
-      <div v-else></div>
-
-      <!-- 待审状态下的决策按钮组 -->
-      <div v-if="isPending" class="flex items-center gap-2.5">
-        <!-- 增加 Tip 按钮 -->
-        <button
-          type="button"
-          @click="toggleTipInput"
-          :class="[
-            'px-3.5 py-1.5 rounded-xl border text-xs sm:text-sm font-normal transition cursor-pointer flex items-center gap-1.5',
-            isAddingTip
-              ? (isDark ? 'border-amber-500/50 bg-amber-500/10 text-amber-400' : 'border-amber-400 bg-amber-50 text-amber-700')
-              : (isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-gray-200 text-gray-700 hover:bg-gray-50')
-          ]"
-        >
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-          </svg>
-          <span>{{ isAddingTip ? '收起Tip' : '增加tip' }}</span>
-        </button>
-
-        <!-- 否决按钮 -->
-        <button
-          type="button"
-          @click="decide(false)"
-          :disabled="isSubmitting"
-          :class="[
-            'px-4 py-1.5 rounded-xl border text-xs sm:text-sm font-normal transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5',
-            isDark
-              ? 'border-red-900/60 text-red-400 hover:bg-red-950/40 hover:border-red-800'
-              : 'border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300'
-          ]"
-        >
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-          <span>否决</span>
-        </button>
-
-        <!-- 批准按钮 -->
-        <button
-          type="button"
-          @click="decide(true)"
-          :disabled="isSubmitting"
-          :class="[
-            'px-5 py-1.5 rounded-xl text-xs sm:text-sm font-medium transition cursor-pointer shadow-xs flex items-center gap-1.5 disabled:opacity-50',
-            isDark
-              ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-              : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-          ]"
-        >
-          <svg v-if="isSubmitting" class="w-3.5 h-3.5 animate-spin mr-1" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-          </svg>
-          <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-          </svg>
-          <span>批准</span>
-        </button>
-      </div>
-
-      <!-- 已决断状态提示 -->
-      <div
-        v-else
-        class="text-xs px-3 py-1.5 rounded-xl font-medium"
-        :class="statusTone === 'approved' ? 'bg-emerald-500/10 text-emerald-500' : statusTone === 'rejected' ? 'bg-red-500/10 text-red-400' : 'bg-gray-500/10 text-gray-400'"
-      >
-        {{ statusTone === 'approved' ? '✓ 计划已批准，正在实施' : statusTone === 'rejected' ? '✕ 计划已被否决' : '状态未知' }}
-      </div>
-
-    </div>
-
   </div>
 </template>

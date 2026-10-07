@@ -10,7 +10,7 @@
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
-    "test": "npx tsx --test tests/crossPageTurn.test.ts tests/sseResponse.test.ts tests/sessionRunState.test.ts tests/reasoningEffort.test.ts tests/streamV3.test.ts tests/messageProjection.test.ts tests/streamV3Recovery.test.ts tests/streamV3Resend.test.ts tests/streamV3Concurrency.test.ts tests/streamV3Operations.test.ts tests/streamV3PlanCard.test.ts tests/chatViewOperations.test.ts tests/streamV3SwitchAudit.test.ts tests/streamV3FixProbe.test.ts tests/probeReconnectGeneration.test.ts tests/probeDerivedBubble.test.ts tests/probeInvalidationScope.test.ts tests/probeNewSessionAttach.test.ts tests/streamV3DeliveryAudit.test.ts tests/streamV3DeliveryFollowupAudit.test.ts tests/streamV3TerminalReconcileAudit.test.ts tests/streamV3LatestReportAudit.test.ts && node --test tests/filePreview.native.test.cjs",
+    "test": "npx tsx --test tests/crossPageTurn.test.ts tests/promiseCard.test.ts tests/reasoningEffort.test.ts tests/sseParse.test.ts tests/streamRendering.test.ts tests/frontendRenderFix.test.ts tests/chatLiveRenderFixes.test.ts tests/cardReadinessAndSessionStream.test.ts tests/singleSessionStream.test.ts tests/qaIndependentVerification.test.ts tests/subSessionHistoryReuse.test.ts && node --test tests/filePreview.native.test.cjs",
     "test:desktop-titlebar": "npm run build && electron tests/electronTitleBar.smoke.cjs",
     "test:file-preview": "electron tests/filePreview.smoke.cjs",
     "app:dev": "node electron/dev.mjs",

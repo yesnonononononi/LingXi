@@ -30,6 +30,7 @@ public class ContextRecoveringFailureObserver implements ExecutionFailureObserve
         try {
             long sessionId = ExecutionIdentity.sessionId(execution);
             List<Message> messages = execution.getMessages();
+
             if (messages == null || messages.isEmpty()) {
                 log.warn("【chat】execution failed before any message was produced, nothing to recover, "
                         + "sessionId={}, executionId={}", sessionId, execution.getId());
@@ -38,8 +39,10 @@ public class ContextRecoveringFailureObserver implements ExecutionFailureObserve
             List<Message> recovered = new ArrayList<>(messages);
             recovered.add(SystemMessageEntity.builder().text(INTERRUPTION_NOTE).build());
             modelContextService.replace(sessionId, recovered);
+
             log.warn("【chat】execution failed, recovered {} message(s) into model context, "
                             + "sessionId={}, executionId={}, cause={}",
+
                     recovered.size(), sessionId, execution.getId(), cause.toString());
         } catch (Exception recoveryError) {
             log.warn("【chat】failed to recover model context after execution failure, executionId={}, cause={}",

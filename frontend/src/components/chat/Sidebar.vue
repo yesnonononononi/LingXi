@@ -351,7 +351,7 @@ onBeforeUnmount(() => {
         :class="[
           'w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs sm:text-sm font-medium transition-all shadow-xs cursor-pointer',
           isDark
-            ? 'bg-zinc-900/90 border-white/[0.08] hover:bg-zinc-850 hover:border-white/[0.16] text-zinc-200 hover:text-white'
+            ? 'bg-zinc-900/90 border-white/[0.08] hover:bg-zinc-800 hover:border-white/[0.16] text-zinc-200 hover:text-white'
             : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-white text-gray-800'
         ]"
         title="新建对话"
@@ -370,7 +370,7 @@ onBeforeUnmount(() => {
         :class="[
           'w-10 h-10 mx-auto flex items-center justify-center rounded-xl border transition-all shadow-xs cursor-pointer',
           isDark
-            ? 'bg-zinc-900/90 border-white/[0.08] hover:bg-zinc-850 hover:border-white/[0.16] text-zinc-200 hover:text-white'
+            ? 'bg-zinc-900/90 border-white/[0.08] hover:bg-zinc-800 hover:border-white/[0.16] text-zinc-200 hover:text-white'
             : 'bg-white border-gray-200 hover:border-gray-300 text-gray-800'
         ]"
         title="新建会话"

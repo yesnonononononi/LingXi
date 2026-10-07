@@ -1,65 +1,3 @@
-<script setup lang="ts">
-import { ref, computed } from 'vue';
-import type { ChatMessage, ChatTurn, SubSessionVO } from '../../types/chat';
-import ScrollCursorLoader from '../common/ScrollCursorLoader.vue';
-import ChatMessageItem from './ChatMessageItem.vue';
-
-const props = defineProps<{
-  messages: ChatMessage[];
-  turnMap?: Map<string, { turn: ChatTurn | null; isGroupTail: boolean }>;
-  sessionId?: string | number;
-  subSessions?: SubSessionVO[];
-  isDark?: boolean;
-  isSending?: boolean;
-  isLoading?: boolean;
-  loadingText?: string;
-  loadError?: string | null;
-  historyLoadError?: string | null;
-  hasMore?: boolean;
-  isLoadingMore?: boolean;
-  lastAssistantIndex?: number;
-  compact?: boolean;
-}>();
-
-const emit = defineEmits<{
-  (e: 'load'): void;
-  (e: 'retryHistoryLoad'): void;
-  (e: 'retryInitialLoad'): void;
-  (e: 'scroll', event: Event): void;
-  (e: 'switchBranch', messageId: string, index: number): void;
-  (e: 'editMessage', messageId: string, newText: string): void;
-  (e: 'selectSubSession', id: string | number): void;
-  (e: 'humanResponse', message: string): void;
-  (e: 'resendMessage', message: ChatMessage): void;
-}>();
-
-const scrollLoaderRef = ref<InstanceType<typeof ScrollCursorLoader> | null>(null);
-
-const computedLastAssistantIndex = computed(() => {
-  if (props.lastAssistantIndex !== undefined) return props.lastAssistantIndex;
-  const msgs = props.messages;
-  if (!msgs || msgs.length === 0) return -1;
-  for (let i = msgs.length - 1; i >= 0; i--) {
-    if (msgs[i].role === 'assistant') return i;
-  }
-  return -1;
-});
-
-const handleScroll = (e: Event) => {
-  emit('scroll', e);
-};
-
-defineExpose({
-  scrollToBottom: (behavior?: ScrollBehavior) => scrollLoaderRef.value?.scrollToBottom(behavior),
-  scrollToTop: (behavior?: ScrollBehavior) => scrollLoaderRef.value?.scrollToTop(behavior),
-  beforePrepend: () => scrollLoaderRef.value?.beforePrepend(),
-  afterPrepend: () => scrollLoaderRef.value?.afterPrepend(),
-  restoreScrollPosition: () => scrollLoaderRef.value?.restoreScrollPosition(),
-  getContainer: () => scrollLoaderRef.value?.getContainer(),
-  containerRef: computed(() => scrollLoaderRef.value?.containerRef),
-  scrollLoaderRef
-});
-</script>
 
 <template>
   <ScrollCursorLoader
@@ -132,13 +70,71 @@ defineExpose({
           :isGroupTail="turnMap ? (turnMap.get(msg.id)?.isGroupTail ?? false) : undefined"
           :isLastAssistant="idx === computedLastAssistantIndex"
           :isSending="isSending"
-          @switchBranch="(msgId, branchIdx) => emit('switchBranch', msgId, branchIdx)"
-          @editMessage="(msgId, text) => emit('editMessage', msgId, text)"
           @selectSubSession="(id) => emit('selectSubSession', id)"
-          @humanResponse="(content) => emit('humanResponse', content)"
-          @resendMessage="(m) => emit('resendMessage', m)"
+          @resume="(sid) => emit('resume', sid)"
         />
       </template>
     </div>
   </ScrollCursorLoader>
 </template>
+
+
+<script setup lang="ts">
+import { ref, computed } from 'vue';
+import type { ChatMessage, ChatTurn, SubSessionVO } from '../../types/chat';
+import ScrollCursorLoader from '../common/ScrollCursorLoader.vue';
+import ChatMessageItem from './ChatMessageItem.vue';
+
+const props = defineProps<{
+  messages: ChatMessage[];
+  turnMap?: Map<string, { turn: ChatTurn | null; isGroupTail: boolean }>;
+  sessionId?: string | number;
+  subSessions?: SubSessionVO[];
+  isDark?: boolean;
+  isSending?: boolean;
+  isLoading?: boolean;
+  loadingText?: string;
+  loadError?: string | null;
+  historyLoadError?: string | null;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  lastAssistantIndex?: number;
+  compact?: boolean;
+}>();
+
+const emit = defineEmits<{
+  (e: 'load'): void;
+  (e: 'retryHistoryLoad'): void;
+  (e: 'retryInitialLoad'): void;
+  (e: 'scroll', event: Event): void;
+  (e: 'selectSubSession', id: string | number): void;
+  (e: 'resume', sessionId?: string | number): void;
+}>();
+
+const scrollLoaderRef = ref<InstanceType<typeof ScrollCursorLoader> | null>(null);
+
+const computedLastAssistantIndex = computed(() => {
+  if (props.lastAssistantIndex !== undefined) return props.lastAssistantIndex;
+  const msgs = props.messages;
+  if (!msgs || msgs.length === 0) return -1;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role === 'assistant') return i;
+  }
+  return -1;
+});
+
+const handleScroll = (e: Event) => {
+  emit('scroll', e);
+};
+
+defineExpose({
+  scrollToBottom: (behavior?: ScrollBehavior) => scrollLoaderRef.value?.scrollToBottom(behavior),
+  scrollToTop: (behavior?: ScrollBehavior) => scrollLoaderRef.value?.scrollToTop(behavior),
+  beforePrepend: () => scrollLoaderRef.value?.beforePrepend(),
+  afterPrepend: () => scrollLoaderRef.value?.afterPrepend(),
+  restoreScrollPosition: () => scrollLoaderRef.value?.restoreScrollPosition(),
+  getContainer: () => scrollLoaderRef.value?.getContainer(),
+  containerRef: computed(() => scrollLoaderRef.value?.containerRef),
+  scrollLoaderRef
+});
+</script>

@@ -12,18 +12,13 @@ import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.toolcall.infrastructure.persistence.VersionedUpdate;
 import com.summit.dp.toolcall.infrastructure.persistence.mapper.ToolCallMapper;
 import com.summit.dp.toolcall.infrastructure.persistence.po.ToolCallPO;
-import com.summit.dp.shared.event.CommittedStatePublisher;
-import com.summit.dp.shared.event.CommittedStateChange;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.toolcall.domain.model.ToolCallKind;
 import com.summit.dp.toolcall.domain.model.ToolCallKeys;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -37,9 +32,6 @@ public class ToolCallRepositoryImpl
         extends AbstractRepository<ToolCall, ToolCallPO, String>
         implements ToolCallRepository {
 
-    @Autowired(required = false)
-    private CommittedStatePublisher statePublisher;
-
     private final ToolCallMapper toolCallMapper;
     private final ObjectMapper contentMapper;
     private final CardAvailabilityPolicy cardAvailability;
@@ -47,27 +39,6 @@ public class ToolCallRepositoryImpl
     @Override
     public void save(ToolCall tool) {
         super.save(tool);
-        publishAfterCommit(tool);
-    }
-
-    /**
-     * 状态变更通知走事务提交后。
-     *
-     * <p><b>为什么不能提交前发</b>：订阅者收到通知后会立刻回查投影，而查询可能落到另一个
-     * 连接上，读不到尚未提交的行 —— 表现为「收到更新事件，刷新却还是旧状态」。
-     * 对齐 {@code LocalExecutionRepository} 的 {@code cacheAfterCommit} 口径。</p>
-     */
-    private void publishAfterCommit(ToolCall tool) {
-        if (statePublisher == null) return;
-        Runnable publish = () -> statePublisher.publish(CommittedStateChange.entity(
-                CommittedStateChange.Kind.TOOL, tool.getConversationId(), tool.getId()));
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            publish.run();
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override public void afterCommit() { publish.run(); }
-        });
     }
 
     @Override
@@ -123,7 +94,6 @@ public class ToolCallRepositoryImpl
                 .eq(ToolCallPO::getVersion, expectedVersion));
         VersionedUpdate.requireSingleRow(changed);
         model.acceptPersistedVersion(expectedVersion + 1);
-        publishAfterCommit(model);
     }
 
     @Override

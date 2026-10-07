@@ -10,8 +10,7 @@ import com.summit.dp.execution.domain.lifecycle.ExecutionCoordination;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
-import com.summit.dp.shared.event.CommittedStateChange;
-import com.summit.dp.shared.event.CommittedStatePublisher;
+import com.summit.dp.shared.exception.ClientException;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -73,7 +72,6 @@ public class ExecutionResumeCoordinator {
     private final SuspendedExecutionResumer resumer;
     /** 框架仓储经 ObjectProvider 断开构造期闭环：它由 LocalExecutionRepository 实现，与恢复链互为依赖。 */
     private final ObjectProvider<ExecutionRepository> frameworkExecutions;
-    private final ObjectProvider<CommittedStatePublisher> statePublisher;
 
     /** 派发线程：与请求线程、loop 线程都分开，恢复失败不会拖垮受理响应。 */
     private final ExecutorService workers = Executors.newVirtualThreadPerTaskExecutor();
@@ -89,13 +87,11 @@ public class ExecutionResumeCoordinator {
     public ExecutionResumeCoordinator(ExecutionResumeTaskRepository taskRepository,
                                       com.summit.dp.execution.domain.repository.ExecutionRepository executions,
                                       SuspendedExecutionResumer resumer,
-                                      ObjectProvider<ExecutionRepository> frameworkExecutions,
-                                      ObjectProvider<CommittedStatePublisher> statePublisher) {
+                                      ObjectProvider<ExecutionRepository> frameworkExecutions) {
         this.taskRepository = taskRepository;
         this.executions = executions;
         this.resumer = resumer;
         this.frameworkExecutions = frameworkExecutions;
-        this.statePublisher = statePublisher;
         this.sweeper.scheduleWithFixedDelay(this::sweep, SWEEP_INTERVAL_SECONDS, SWEEP_INTERVAL_SECONDS,
                 TimeUnit.SECONDS);
     }
@@ -207,7 +203,6 @@ public class ExecutionResumeCoordinator {
             resumer.resume(execution, conversationId);
             task.succeed();
             taskRepository.updateState(task);
-            publishExecutionState(executionId);
         } catch (RuntimeException error) {
             // 恢复失败不回退已落库的决策：只标记任务，用户仍可手工重试「恢复执行」。
             // 已达重试上限时置 EXHAUSTED（无退避），而不是 FAILED + nextAttemptAt=null ——
@@ -263,7 +258,6 @@ public class ExecutionResumeCoordinator {
         if (!taskRepository.updateState(task)) {
             log.warn("恢复失败状态未能落库，可能已被他人改写: taskId={}, reason={}", task.getId(), reason);
         }
-        publishExecutionState(task.getExecutionId());
     }
 
     /** 重试耗尽：置 EXHAUSTED（等价于「永久失败」，无退避），不再自动派发。 */
@@ -272,7 +266,6 @@ public class ExecutionResumeCoordinator {
         if (!taskRepository.updateState(task)) {
             log.warn("恢复耗尽状态未能落库，可能已被他人改写: taskId={}, reason={}", task.getId(), reason);
         }
-        publishExecutionState(task.getExecutionId());
     }
 
     /** 失败退避按尝试次数指数放大，避免恢复失败时把线程池打满。 */
@@ -334,14 +327,6 @@ public class ExecutionResumeCoordinator {
             log.warn("解析执行会话归属失败: executionId={}, error={}", execution.getId(), error.toString());
             return null;
         }
-    }
-
-    private void publishExecutionState(long executionId) {
-        CommittedStatePublisher publisher = statePublisher.getIfAvailable();
-        if (publisher == null) {
-            return;
-        }
-        publisher.publish(CommittedStateChange.entity(CommittedStateChange.Kind.EXECUTION, null, executionId));
     }
 
     /**

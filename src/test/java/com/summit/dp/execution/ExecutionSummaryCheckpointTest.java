@@ -43,7 +43,7 @@ import static org.mockito.Mockito.when;
  *
  * <p><b>模型与 token 已不在本表</b>：它们是业务事实，权威在 {@code chat_turn} ——
  * 模型由业务受理时自己解析写入，用量由框架完成事件覆盖回填。执行表只留框架自己的运行记录
- * （状态 / 根执行归属 / 起止时间），所以这里不再断言模型与用量落库。</p>
+ * （状态 / 起止时间），所以这里不再断言模型与用量落库。</p>
  *
  * <p>本测试用真实 {@link LocalExecutionRepository} + mock mapper，捕获真正写进 PO 的列 ——
  * 直接断言「字段被 set 了」没有意义，要断言的是「进 INSERT/UPDATE 语句的列」。</p>
@@ -88,9 +88,9 @@ class ExecutionSummaryCheckpointTest {
     }
 
     @Test
-    @DisplayName("建行即带根执行归属；未开始一律为空，不得写成 0 或 1970")
-    void createdCheckpointCarriesSnapshotAndRootExecution() {
-        Execution execution = newExecution(Map.of(ExecutionAttributes.ROOT_EXECUTION_ID, "111"));
+    @DisplayName("建行即带执行身份；未开始一律为空，不得写成 0 或 1970")
+    void createdCheckpointCarriesIdentityAndEmptyLifecycle() {
+        Execution execution = newExecution(Map.of());
 
         repository.save(execution);
 
@@ -101,21 +101,10 @@ class ExecutionSummaryCheckpointTest {
         assertEquals(EXECUTION_ID, row.getId());
         assertEquals(SESSION_ID, row.getSessionId());
         assertEquals(0, row.getStatus(), "CREATED");
-        assertEquals(111L, row.getRootExecutionId());
 
         // 「未知」与「已知为零」必须可区分：没有开始时间就是 null，不是 1970，也不是 0。
         assertNull(row.getStartedAt());
         assertNull(row.getCompletedAt());
-    }
-
-    @Test
-    @DisplayName("主执行没有根执行归属：写 null，不写自身 id（避免与「未知」混淆）")
-    void mainExecutionHasNoRootExecutionId() {
-        repository.save(newExecution(Map.of()));
-
-        ArgumentCaptor<ExecutionPO> inserted = ArgumentCaptor.forClass(ExecutionPO.class);
-        verify(persistence).insert(inserted.capture());
-        assertNull(inserted.getValue().getRootExecutionId());
     }
 
     @Test
@@ -147,7 +136,7 @@ class ExecutionSummaryCheckpointTest {
         execution.start();
         repository.save(execution);
 
-        execution.suspended();
+        execution.suspend();
         repository.save(execution);
 
         ArgumentCaptor<ExecutionPO> rows = ArgumentCaptor.forClass(ExecutionPO.class);
@@ -169,7 +158,7 @@ class ExecutionSummaryCheckpointTest {
         execution.start();
         Instant firstStart = execution.getStartAt();
         repository.save(execution);
-        execution.suspended();
+        execution.suspend();
         repository.save(execution);
         execution.resume();
         repository.save(execution);

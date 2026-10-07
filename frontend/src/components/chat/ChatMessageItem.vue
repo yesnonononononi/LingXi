@@ -1,653 +1,3 @@
-<script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, inject } from 'vue';
-import { FILE_PREVIEW_KEY } from '../../types/filePreview';
-import type { ChatMessage, ThoughtStep, ToolCallTrace, SubSessionVO, ProcessTimelineItem, PromptCardData, ChatTurn } from '../../types/chat';
-import {
-  isEditFileTool,
-  isReadFileTool,
-  shouldShowToolArguments,
-  isSubAgentTool,
-  resolveToolMeta,
-  extractSubAgentParams,
-} from '../../utils/toolMeta';
-import { toObject } from '../../utils/json';
-import { AgentToolName } from '../../utils/toolNames';
-import { isActiveTurnStatus, isFailedTurnStatus, turnStatusLabel } from '../../utils/turnStatus';
-import { formatDuration } from '../../utils/format';
-import { parseToolDiff } from '../../utils/toolDiff';
-import { useCopyFeedback } from '../../composables/useCopyFeedback';
-import { useTheme } from '../../composables/useTheme';
-import GradientText from '../common/GradientText.vue';
-import PromptCard from './PromptCard.vue';
-import MarkdownRenderer from './MarkdownRenderer.vue';
-import CollapseTransition from '../common/CollapseTransition.vue';
-
-const props = defineProps<{
-  message: ChatMessage;
-  subSessions?: SubSessionVO[];
-  isDark?: boolean;
-  /** 消息所属会话 id：互动卡片的决策接口据此定位 */
-  sessionId?: string | number;
-  /**
-   * 本条消息所属回答组的轮次信息（按 turnId 从会话轮次表解析）。
-   * null = 无轮次（旧数据 / 未采集），**绝不**回落成会话累计用量或 0。
-   */
-  turn?: ChatTurn | null;
-  /**
-   * 是否为所在回答组的末条：仅组尾展示一次执行元信息（模型/提供方/token/状态/总历时），
-   * 避免「同一执行跨页」时两个部分组各挂一次。
-   */
-  isGroupTail?: boolean;
-  isLastAssistant?: boolean;
-  isSending?: boolean;
-}>();
-
-const { isDark: globalIsDark } = useTheme();
-const isDark = computed(() => props.isDark ?? globalIsDark.value);
-const openFilePreview = inject(FILE_PREVIEW_KEY);
-const canPreviewFile = (tool: ToolCallTrace) => !!openFilePreview && (isReadFileTool(tool.toolName) || isEditFileTool(tool.toolName));
-
-const emit = defineEmits<{
-  (e: 'switchBranch', messageId: string, index: number): void;
-  (e: 'editMessage', messageId: string, newText: string): void;
-  (e: 'selectSubSession', id: string | number): void;
-  (e: 'humanResponse', message: string): void;
-  (e: 'resendMessage', message: ChatMessage): void;
-}>();
-
-// 过程折叠状态：已结束会话/消息默认全部折叠；仅未完成的消息在生成时展开以提供实时反馈
-const isProcessExpanded = ref(props.message.isComplete === false);
-const isEditing = ref(false);
-const editText = ref(props.message.content);
-// 复制反馈（消息正文按布尔键控；见 composables/useCopyFeedback.ts）
-const { isCopied: copied, copy: copyContentRaw } = useCopyFeedback();
-
-// 工具调用展开与复制状态
-const expandedToolIds = ref<Record<string, boolean>>({});
-// 复制反馈（工具卡片按 toolCall.id 键控；见 composables/useCopyFeedback.ts）
-const { copiedKey: toolCopiedId, copy: copyToolContentRaw } = useCopyFeedback();
-
-// 思考步骤 (Thought for) 独立展开/折叠状态
-const expandedThoughtStepIds = ref<Record<string, boolean>>({});
-
-const isThoughtStepExpanded = (step: ThoughtStep) => {
-  if (expandedThoughtStepIds.value[step.id] !== undefined) {
-    return expandedThoughtStepIds.value[step.id];
-  }
-  // 如果步骤正在运行且消息未完成，默认展开显示流式思考；否则（如已完成消息）默认折叠
-  return step.status === 'running' && props.message.isComplete === false;
-};
-
-const toggleThoughtStep = (stepId: string, step: ThoughtStep) => {
-  expandedThoughtStepIds.value[stepId] = !isThoughtStepExpanded(step);
-};
-
-const formatThoughtTitle = (title?: string): string => {
-  if (!title) return '深度思考';
-  const t = title.trim();
-  if (t === 'Thought for' || t === 'Thought' || t === '思考过程' || t === '思考' || t.toLowerCase() === 'thought for') {
-    return '深度思考';
-  }
-  return t;
-};
-
-// 思考内容展开框 DOM 引用与流式输出自动贴底滚动
-const thinkingBoxRefs = ref<Record<string, HTMLElement | null>>({});
-const setThinkingBoxRef = (stepId: string, el: unknown) => {
-  if (el) {
-    thinkingBoxRefs.value[stepId] = el as HTMLElement;
-  } else {
-    delete thinkingBoxRefs.value[stepId];
-  }
-};
-
-const runningThoughtState = computed(() => {
-  if (props.message.isComplete) return '';
-  const runningStep = props.message.thoughtSteps?.find(s => s.status === 'running');
-  if (!runningStep) return '';
-  return `${runningStep.id}:${runningStep.content?.length || 0}`;
-});
-
-watch(
-  runningThoughtState,
-  () => {
-    const runningStep = props.message.thoughtSteps?.find(s => s.status === 'running');
-    if (!runningStep) return;
-    const box = thinkingBoxRefs.value[runningStep.id];
-    if (!box) return;
-    const isNearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
-    if (isNearBottom) {
-      box.scrollTop = box.scrollHeight;
-    }
-  },
-  { flush: 'post' }
-);
-
-// 中间过程文本块 (中间轮次 text 像 thinking 那样折叠)
-const expandedIntermediateMsgIds = ref<Record<string, boolean>>({});
-
-
-
-// 计时器（按秒计算）
-const now = ref(Date.now());
-let timerInterval: number | undefined;
-
-onMounted(() => {
-  if (props.message.isComplete === false) {
-    timerInterval = window.setInterval(() => {
-      now.value = Date.now();
-    }, 1000);
-  }
-});
-
-onUnmounted(() => {
-  if (timerInterval) {
-    clearInterval(timerInterval);
-    timerInterval = undefined;
-  }
-});
-
-// 监听到 request 结束事件（或 isComplete 转为 true）后，将最后一条 aimessage 的文本展示，其余所有工具 call、thinking 都折叠
-watch(
-  () => props.message.isComplete,
-  (isDone) => {
-    if (isDone) {
-      if (timerInterval) {
-        clearInterval(timerInterval);
-        timerInterval = undefined;
-      }
-      isProcessExpanded.value = false;
-      expandedToolIds.value = {};
-      expandedThoughtStepIds.value = {};
-      expandedIntermediateMsgIds.value = {};
-    }
-  },
-  { immediate: true }
-);
-
-// 中间轮次的 aimessage（与正文同文本的条目不再重复展示，其余中间过程文本归入折叠块）
-//
-// 判据用「文本是否等于正文」而非「是否为最后一个元素」：正文取 props.message.content，
-// 与 aiMessages 的末条不必等价（历史解析会去重、流式恢复会重放），按位置切会在
-// 「末条不等于正文」时把正文又重复渲染到折叠区里。
-const intermediateAiMessages = computed(() => {
-  const list = props.message.aiMessages;
-  if (!list || list.length === 0) {
-    return [];
-  }
-  const body = (props.message.content ?? '').trim();
-  const seen = new Set<string>();
-  const out: typeof list = [];
-  for (const m of list) {
-    const text = (m.text ?? '').trim();
-    if (!text || text === body || seen.has(text)) continue;
-    seen.add(text);
-    out.push(m);
-  }
-  return out;
-});
-
-// 是否存在需要展示折叠的过程内容（思考步骤、思考中状态、工具调用、或中间过程文本）
-const hasProcessContent = computed(() => {
-  return !!(
-    props.message.thoughtSteps?.length ||
-    props.message.isThinking ||
-    props.message.toolCalls?.length ||
-    intermediateAiMessages.value.length > 0
-  );
-});
-
-// 折叠栏头部标题文案
-const processTitle = computed(() => {
-  if (props.message.isThinking) {
-    return '思考中...';
-  }
-  const toolCount = props.message.toolCalls?.length || 0;
-  const hasThoughts = !!(props.message.thoughtSteps?.length);
-
-  if (hasThoughts && toolCount > 0) {
-    return `已思考并调用 ${toolCount} 个工具`;
-  }
-  if (toolCount > 0) {
-    return `已调用 ${toolCount} 个工具`;
-  }
-  if (hasThoughts) {
-    return '已思考';
-  }
-  return '执行过程';
-});
-
-const toggleToolCall = (id: string) => {
-  expandedToolIds.value[id] = !expandedToolIds.value[id];
-};
-
-const copyToolContent = (text: string, id: string) => {
-  void copyToolContentRaw(text, id);
-};
-
-const promptCardsList = computed<PromptCardData[]>(() => {
-  if (props.message.promptCards && props.message.promptCards.length > 0) {
-    return props.message.promptCards;
-  }
-  if (props.message.promptCard) {
-    return [props.message.promptCard];
-  }
-  return [];
-});
-
-// 已决断卡片的折叠：待决策的照常整卡展开（要按键），已有结论的默认收成一行，细节按需展开。
-// 大卡片常驻页底占位是明确不要的形态，但不靠后端停发数据解决。
-const expandedCardIds = ref<Record<string, boolean>>({});
-const cardKey = (card: PromptCardData): string => card.toolCallId || card.kind;
-const toggleCard = (card: PromptCardData): void => {
-  const key = cardKey(card);
-  expandedCardIds.value[key] = !expandedCardIds.value[key];
-};
-const isCardExpanded = (card: PromptCardData): boolean => !!expandedCardIds.value[cardKey(card)];
-
-const CARD_KIND_LABEL: Record<PromptCardData['kind'], string> = {
-  PLAN: '计划',
-  CHOICE: '提问',
-  COMMAND: '命令审批',
-  DELEGATION: '子代理委派',
-  UNAVAILABLE: '互动卡片'
-};
-const CARD_OUTCOME_LABEL: Record<string, string> = {
-  APPROVED: '已批准',
-  REJECTED: '已拒绝',
-  ANSWERED: '已答复',
-  CANCELLED: '已取消',
-  SUCCEEDED: '已执行',
-  FAILED: '已失败',
-  TIMED_OUT: '已超时'
-};
-const cardSummary = (card: PromptCardData): string => {
-  const kind = CARD_KIND_LABEL[card.kind];
-  const outcome = card.outcome ? (CARD_OUTCOME_LABEL[card.outcome] ?? card.outcome) : '已结束';
-  return `${kind}${card.title ? `：${card.title}` : ''} · ${outcome}`;
-};
-
-const isSubAgentToolCall = (tc?: ToolCallTrace): boolean => isSubAgentTool(tc?.toolName, tc?.category);
-const isEditFileToolCall = (toolName?: string): boolean => isEditFileTool(toolName);
-
-/**
- * 该工具是否有可展开的详情。
- *
- * <p>读文件没有：头部一行已给全（读了哪个文件），展开拿不到头部没有的信息，
- * 只会把「路径 + 状态」重复一遍。其余工具（命令、编辑、检索等）保留详情。</p>
- */
-const canExpandTool = (tc?: ToolCallTrace): boolean => !!tc && !isReadFileTool(tc.toolName);
-
-/**
- * 展示文案字段映射（契约 §4）：按工具名映射到各自规范字段。
- * 命令 → `intention`，子代理 → `task`，计划 → `title`，提问 → `question`；未列出的工具不展示文案。
- */
-
-
-
-
-
-/**
- * 聚合子代理协同成员：
- * 同一子会话可能被多次调用复用（如多次委派产品经理），按 subSessionId / agentId 去重合并，
- * 并与 props.subSessions 关联取得权威名称与团队序号，解决成员数量虚增与名字回退为 Agent #N 的问题。
- */
-const subAgentToolCalls = computed<ToolCallTrace[]>(() => {
-  const tcs = props.message.toolCalls?.filter(tc => isSubAgentToolCall(tc)) || [];
-  if (tcs.length === 0) return [];
-
-  const map = new Map<string, ToolCallTrace>();
-
-  tcs.forEach((tc, idx) => {
-    const params = extractSubAgentParams(tc);
-    const agentId = params.agentId ?? tc.subAgentId;
-    const subSessionId = tc.subSessionId ?? params.subSessionId;
-
-    // 优先匹配当前会话绑定的权威 subSessions
-    const matchedSub = (subSessionId
-      ? props.subSessions?.find(s => String(s.id) === String(subSessionId))
-      : undefined)
-      || (agentId ? props.subSessions?.find(s => String(s.agentId) === String(agentId)) : undefined);
-
-    // 计算在团队中的真实序号（1-indexed）
-    let displayIndex = idx + 1;
-    if (props.subSessions?.length) {
-      const subIdx = props.subSessions.findIndex(s =>
-        (subSessionId && String(s.id) === String(subSessionId)) ||
-        (agentId && String(s.agentId) === String(agentId))
-      );
-      if (subIdx !== -1) {
-        displayIndex = subIdx + 1;
-      }
-    }
-
-    const agentName = matchedSub?.agentName
-      || matchedSub?.name
-      || params.agentName
-      || tc.subAgentName
-      || (agentId ? `Agent #${agentId}` : `子代理 #${displayIndex}`);
-
-    const resolvedSubSessionId = subSessionId || matchedSub?.id || tc.subSessionId;
-    const resolvedAgentId = agentId || matchedSub?.agentId;
-
-    // 去重键：优先子会话 ID，其次 agentId
-    const key = String(resolvedSubSessionId || resolvedAgentId || tc.id || `tc-${idx}`);
-
-    const existing = map.get(key);
-    if (existing) {
-      // 若多次调用复用，更新状态与相关属性
-      existing.status = tc.status || existing.status;
-      if (tc.order !== undefined) existing.order = tc.order;
-      if (resolvedSubSessionId && !existing.subSessionId) existing.subSessionId = resolvedSubSessionId;
-      if (agentName && !existing.subAgentName) existing.subAgentName = agentName;
-    } else {
-      map.set(key, {
-        ...tc,
-        subSessionId: resolvedSubSessionId,
-        subAgentId: resolvedAgentId,
-        subAgentName: agentName,
-        displayIndex,
-        order: tc.order ?? idx
-      });
-    }
-  });
-
-  return Array.from(map.values()).sort((a, b) => (a.displayIndex ?? 0) - (b.displayIndex ?? 0));
-});
-
-const regularToolCalls = computed<ToolCallTrace[]>(() => {
-  return props.message.toolCalls?.filter(tc => !isSubAgentToolCall(tc)) || [];
-});
-
-// 统一执行过程时间线：按真实时序交替排列思维链思考 (Thought for)、中间轮次文本、子代理协同与工具调用
-const processTimeline = computed<ProcessTimelineItem[]>(() => {
-  const items: ProcessTimelineItem[] = [];
-
-  // 1. 思维链思考步骤
-  if (props.message.thoughtSteps?.length) {
-    props.message.thoughtSteps.forEach((step, idx) => {
-      items.push({
-        id: step.id || `step-${idx}`,
-        type: 'thought',
-        order: step.order ?? (idx * 10),
-        step
-      });
-    });
-  }
-
-  // 2. 中间轮次 aimessage 文本（多轮执行时产生的中间说明，非最终结论）
-  if (intermediateAiMessages.value.length) {
-    intermediateAiMessages.value.forEach((im, idx) => {
-      items.push({
-        id: im.id || `im-${idx}`,
-        type: 'intermediate_ai',
-        order: im.order ?? (idx * 10 + 1),
-        message: im
-      });
-    });
-  }
-
-  // 3. SubAgent 协同条（按首个子会话时间线位置插入）
-  if (subAgentToolCalls.value.length > 0) {
-    const firstSubOrder = subAgentToolCalls.value.reduce(
-      (min, tc) => Math.min(min, tc.order ?? 9999),
-      subAgentToolCalls.value[0]?.order ?? 5
-    );
-    items.push({
-      id: 'sub-agents-banner',
-      type: 'sub_agent',
-      order: firstSubOrder,
-      subAgents: subAgentToolCalls.value
-    });
-  }
-
-  // 4. 普通 Agent 工具调用
-  if (regularToolCalls.value.length > 0) {
-    regularToolCalls.value.forEach((tc, idx) => {
-      items.push({
-        id: tc.id || `tool-${idx}`,
-        type: 'tool',
-        order: tc.order ?? (idx * 10 + 2),
-        tool: tc
-      });
-    });
-  }
-
-  // 按 order 升序排列，形成真实的时序执行轨迹（新 thinking 步骤在列表底部动态追加）
-  return items.sort((a, b) => a.order - b.order);
-});
-
-/**
- * 头部行的交互样式：能展开时才是按钮，读文件这类没有详情的行不该有「可点」的视觉暗示。
- * （样式集中在此的理由同 {@link toolStatusDotClass}：模板里只保留一次类绑定，避免分支散落。）
- */
-const toolRowHeaderClass = (tc: ToolCallTrace, dark: boolean): string[] => {
-  const base = dark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-600';
-  if (!canExpandTool(tc)) {
-    return [base, 'cursor-default'];
-  }
-  return [base, dark ? 'cursor-pointer hover:text-white' : 'cursor-pointer hover:text-gray-900'];
-};
-
-const getToolMeta = (tc: ToolCallTrace) => resolveToolMeta({ toolName: tc.toolName, args: tc.args ?? tc.query });
-const getToolCategory = (tc: ToolCallTrace): string => getToolMeta(tc).category;
-
-/**
- * 工具执行状态 → 指示灯样式。
- * 契约 §2.3：`pending`（挂起待人工决策）与 `unknown`（状态未知）**不得**显示为成功或失败。
- */
-const toolStatusDotClass = (status?: string): string => {
-  switch (status) {
-    case 'calling':
-      
-    case 'pending':
-      return 'bg-amber-400 animate-pulse';
-    case 'failed':
-      return 'bg-red-500';
-
-    case 'unknown':
-      return 'bg-gray-400';
-
-    default:
-      return 'bg-emerald-500';
-  }
-};
-
-/** 是否处于「进行中」（已请求 / 挂起待决断）——用于展示执行中占位 */
-const isToolInProgress = (status?: string): boolean => status === 'calling' || status === 'pending';
-
-const getToolTarget = (tc: ToolCallTrace): string => getToolMeta(tc).target;
-const getToolLineRange = (tc: ToolCallTrace): string => getToolMeta(tc).lineRange;
-const getToolDescription = (tc: ToolCallTrace): string => getToolMeta(tc).description;
-const getToolDetail = (tc: ToolCallTrace): string => {
-  const meta = getToolMeta(tc);
-  return tc.toolName === AgentToolName.ExecuteCommand ? meta.command : meta.description;
-};
-
-/**
- * 工具 diff 统计：统一走 utils/toolDiff.ts 的 parseToolDiff（收敛原因见该模块头注释）。
- * 这里仅把「未知(null)」适配成模板约定的 undefined 形态，保持 UI 输出不变。
- * 原实现在此处用 `catch {}` 静默吞掉 result 的 JSON 解析异常，现由 parseToolDiff 统一告警。
- */
-const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: number } | null => {
-  const stat = parseToolDiff({
-    toolName: tc.toolName,
-    category: tc.category,
-    plusLines: tc.plusLines,
-    minusLines: tc.minusLines,
-    result: tc.result,
-    description: tc.description,
-    target: getToolTarget(tc),
-    fileEdits: props.message.fileEdits,
-    context: `toolCall ${tc.id}`
-  });
-  if (!stat) return null;
-  return {
-    plusLines: stat.plusLines ?? undefined,
-    minusLines: stat.minusLines ?? undefined
-  };
-};
-
-const cleanDisplayPath = (val?: string): string => {
-  if (!val) return '';
-  return val.replace(/\s*\(\+\d+\s+-\d+\)$/, '').trim();
-};
-
-const getEditFileDiffChunks = (tc: ToolCallTrace) => {
-  const args = toObject(tc.query, {});
-  const oldText = typeof args.oldText === 'string' ? args.oldText : '';
-  const newText = typeof args.newText === 'string' ? args.newText : '';
-  if (!oldText && !newText) return null;
-  return { oldText, newText };
-};
-
-const activeBranchIdx = computed(() => props.message.activeBranchIndex ?? 0);
-const totalBranches = computed(() => props.message.branches?.length ?? 1);
-
-/** 该助手回答是否已完成会话生成（会话/响应结束时才展示底栏工具栏与状态） */
-const isMessageCompleted = computed(() => {
-  // 1. 如果正在思考或探索中，尚未结束
-  if (props.message.isThinking || props.message.isExploring) {
-    return false;
-  }
-  // 2. 如果消息本身显式标记未完成 (流式接收中)
-  if (props.message.isComplete === false) {
-    return false;
-  }
-  // 3. 如果全局仍处于生成发送中且本条是最新助手消息（会话响应尚未结束）
-  if (props.isSending && props.isLastAssistant) {
-    return false;
-  }
-  // 4. 轮次摘要仍在进行中（ACCEPTED/RUNNING/WAITING = 后端尚未下发终结事件）：
-  // 工具条的出现时机在活跃期只跟随后端终结/开始事件 —— 对账重建的历史行 isComplete 恒为 true，
-  // 不加此守卫，「还在跑的轮次」会在后台 reconcile 拉入行后立刻出现工具条（状态点显示执行中）。
-  // 但若气泡已带终结证据（终态事件路径 stopTimer 写入的 durationMs / 回填的 tokenInfo），
-  // 说明本端已收到终结事件 —— 立即出现，不等（也不依赖）对账刷新轮次摘要。
-  const status = String(props.turn?.status ?? '').toUpperCase();
-  const hasTerminalEvidence = props.message.durationMs != null
-    || props.message.tokenInfo != null
-    || props.message.tokens != null;
-  if (isActiveTurnStatus(status) && !hasTerminalEvidence) {
-    return false;
-  }
-  // 5. 必须有回复内容、工具调用或报错信息之一
-  return !!(props.message.content || props.message.toolCalls?.length);
-});
-
-const calculatedThoughtDuration = computed(() => {
-  if (props.message.durationMs && props.message.durationMs > 0) {
-    return props.message.durationMs;
-  }
-  if (!props.message.thoughtSteps?.length) return 0;
-  return props.message.thoughtSteps.reduce((acc, step) => acc + (step.durationMs || 0), 0);
-});
-
-// formatDuration 已收敛到 utils/format.ts（原第 381-388 行）
-
-/** 本条消息所属回答组的轮次信息（权威来源）；null = 无轮次，不伪造统计。 */
-const execSummary = computed(() => props.turn ?? null);
-
-/** token 数量展示：≥1000 显示 `1.2K tok`，否则 `123 tok`。 */
-const formatTokenCount = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}K ` : `${n} `);
-
-/**
- * 是否展示本组的执行元信息（用量/耗时）。
- * 仅组尾展示一次；实时流在摘要尚未写入会话表时，用气泡自带统计即时展示。
- * 旧数据（无摘要且无自带统计）一律隐藏，不显示成 0。
- */
-const showExecutionMeta = computed(() => {
-  if (props.isGroupTail === false) return false;
-  if (execSummary.value) return true;
-  return props.message.tokenInfo != null || props.message.tokens != null || (props.message.durationMs ?? 0) > 0;
-});
-
-const displayDuration = computed(() => {
-  const e = execSummary.value;
-  if (e) {
-    // elapsedMs 为 null（startedAt 缺失）→ 暂无统计，绝不当 0
-    return e.elapsedMs == null ? '暂无统计' : formatDuration(e.elapsedMs);
-  }
-  const ms = calculatedThoughtDuration.value;
-  return formatDuration(ms || 1200);
-});
-
-
-const displayTokens = computed(() => {
-  const e = execSummary.value;
-  if (e) {
-    // totalTokens 缺失时用 input+output 兜底（两者都非 null 才相加）；仍为 null → 暂无统计
-    const total = e.totalTokens != null
-      ? e.totalTokens
-      : (e.inputTokens != null && e.outputTokens != null ? e.inputTokens + e.outputTokens : null);
-    return total == null ? '暂无统计' : formatTokenCount(total);
-  }
-  // 实时流：气泡自带统计（本组摘要尚未写入会话表时的即时展示）
-  const own = props.message.tokenInfo?.totalTokenCount ?? props.message.tokens;
-  return own != null ? formatTokenCount(own) : '暂无统计';
-});
-
-const tokenTooltip = computed(() => {
-  const e = execSummary.value;
-  if (e) {
-    const fmt = (n?: number | null) => (n == null ? '暂无' : String(n));
-    if (e.inputTokens == null && e.outputTokens == null && e.totalTokens == null) return '暂无统计';
-    return `输入: ${fmt(e.inputTokens)} | 输出: ${fmt(e.outputTokens)} | 总计: ${fmt(e.totalTokens)}`;
-  }
-  const info = props.message.tokenInfo;
-  if (info) {
-    const fmt = (n?: number) => (n == null ? '暂无' : String(n));
-    return `输入: ${fmt(info.inputTokenCount)} | 输出: ${fmt(info.outputTokenCount)} | 总计: ${fmt(info.totalTokenCount)}`;
-  }
-  const t = props.message.tokens;
-  return t != null ? `总用量: ${t} tokens` : '暂无统计';
-});
-
-/** 执行状态展示（仅摘要存在时展示）；进行中/失败/终态用不同配色，失败附带原因全文。 */
-const execStatusMeta = computed(() => {
-  const e = execSummary.value;
-  if (!e) return null;
-  const running = isActiveTurnStatus(e.status);
-  const failed = isFailedTurnStatus(e.status);
-  return {
-    text: turnStatusLabel(e.status),
-    running,
-    failed,
-    errorReason: failed ? (e.errorReason || '').trim() : ''
-  };
-});
-
-/** 模型展示（模型名为空时隐藏模型项；提供方可选）。 */
-const execModelLabel = computed(() => {
-  const e = execSummary.value;
-  if (!e) return '';
-  const name = (e.modelName || '').trim();
-  if (!name) return '';
-  const provider = (e.modelProvider || '').trim();
-  return provider ? `${name} · ${provider}` : name;
-});
-
-const displayTime = computed(() => {
-  return new Date(props.message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-});
-
-
-const copyContent = () => {
-  void copyContentRaw(props.message.content);
-};
-
-const handleSaveEdit = () => {
-  if (editText.value.trim() && editText.value !== props.message.content) {
-    emit('editMessage', props.message.id, editText.value.trim());
-  }
-  isEditing.value = false;
-};
-
-const handleImageClick = (url?: string) => {
-  if (url) {
-    window.open(url, '_blank');
-  }
-};
-</script>
 
 <template>
   <div :class="['w-full py-3 px-2 sm:px-4 transition-colors', props.message.role === 'user' ? 'flex justify-end' : 'flex justify-start']">
@@ -655,13 +5,13 @@ const handleImageClick = (url?: string) => {
     <!-- 1. 用户消息展示样式 (匹配左图：无头像，柔和浅蓝背景圆角气泡，下方展示时间与复制图标) -->
     <div v-if="props.message.role === 'user'" class="flex flex-col items-end max-w-2xl group">
       <!-- 气泡内容 -->
-      <div v-if="!isEditing" class="relative flex items-center gap-2">
+      <div class="relative flex items-center gap-2">
         <!-- 报错标识已移除：失败是轮次的属性，由回答组统一渲染（turn.status=FAILED + errorReason） -->
         <div
           :class="[
             'rounded-[18px] text-sm leading-relaxed whitespace-pre-wrap transition-colors break-words overflow-hidden',
             props.message.imageUrl ? 'p-2' : 'px-4 py-2.5',
-            isDark ? 'bg-zinc-850 text-zinc-100 border border-white/[0.08] shadow-xs' : 'bg-[#edf3fc] text-gray-800'
+            isDark ? 'bg-zinc-800 text-zinc-100 border border-white/[0.08] shadow-xs' : 'bg-[#edf3fc] text-gray-800'
           ]"
         >
           <div v-if="props.message.imageUrl" class="mb-2 max-w-sm rounded-xl overflow-hidden border border-black/10 dark:border-white/10">
@@ -676,33 +26,10 @@ const handleImageClick = (url?: string) => {
             {{ props.message.content }}
           </div>
         </div>
-        <!-- 悬停编辑按钮 -->
-        <button
-          @click="isEditing = true"
-          class="absolute -left-7 top-2.5 opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-blue-400 dark:hover:text-zinc-200 transition"
-          title="编辑消息"
-        >
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-          </svg>
-        </button>
-      </div>
-
-      <!-- 编辑输入框 -->
-      <div v-else class="w-full min-w-70 space-y-2">
-        <textarea
-          v-model="editText"
-          rows="3"
-          :class="['w-full p-3 rounded-xl text-sm border outline-none resize-none', isDark ? 'bg-zinc-900 border-zinc-700/80 text-zinc-100 focus:border-zinc-500' : 'bg-white border-gray-300 text-gray-900']"
-        ></textarea>
-        <div class="flex justify-end gap-2 text-xs">
-          <button @click="isEditing = false" class="px-3 py-1.5 rounded-lg border hover:bg-gray-500/10 dark:border-zinc-700 dark:text-zinc-300">取消</button>
-          <button @click="handleSaveEdit" class="px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-500 font-medium">发送并更新</button>
-        </div>
       </div>
 
       <!-- 气泡下方时间与复制图标 (完全匹配左图) -->
-      <div v-if="!isEditing" class="flex items-center gap-2 mt-1.5 text-xs text-gray-400 dark:text-zinc-500 pr-1 select-none">
+      <div class="flex items-center gap-2 mt-1.5 text-xs text-gray-400 dark:text-zinc-500 pr-1 select-none">
         <span>{{ displayTime }}</span>
         <button
           @click="copyContent"
@@ -754,7 +81,7 @@ const handleImageClick = (url?: string) => {
           <div v-if="isProcessExpanded">
             <div :class="['mt-2 pl-3 space-y-2.5', processTimeline.length > 0 ? (isDark ? 'border-l border-white/10' : 'border-l border-gray-200') : '']">
           <!-- 统一时序时间线：按执行先后顺序交替展示思维链 (深度思考)、中间文本与工具调用 -->
-          <template v-for="item in processTimeline" :key="item.id">
+          <template v-for="item in processItems" :key="item.id">
             <!-- 1. 思维链思考内容 (深度思考 可折叠，亮白发光) -->
             <div v-if="item.type === 'thought' && item.step" class="text-xs space-y-1">
               <button
@@ -763,7 +90,7 @@ const handleImageClick = (url?: string) => {
                 class="font-medium flex items-center gap-1.5 cursor-pointer transition select-none py-0.5 text-left"
                 :class="item.step.status === 'running'
                   ? (isDark ? 'text-white text-glow-white animate-glow-pulse' : 'text-blue-600 animate-pulse')
-                  : (isDark ? 'text-zinc-100 text-glow-white hover:text-white' : 'text-gray-700 hover:text-gray-900')"
+                  : (isDark ? 'text-zinc-100 text-glow-white hover:text-white' : 'text-indigo-700 hover:text-indigo-900')"
               >
                 <svg
                   :class="['w-3 h-3 transition-transform duration-200 shrink-0', isThoughtStepExpanded(item.step) ? 'rotate-90' : '', isDark ? 'text-zinc-300 drop-shadow-[0_0_4px_rgba(255,255,255,0.4)]' : 'text-gray-400']"
@@ -792,7 +119,7 @@ const handleImageClick = (url?: string) => {
                       'my-1.5 ml-4.5 rounded-xl border p-3 max-h-60 overflow-y-auto scrollbar-thin transition-colors select-text',
                       isDark
                         ? 'bg-zinc-900/60 border-white/10 text-zinc-100 shadow-inner'
-                        : 'bg-gray-50/90 border-gray-200 text-gray-800'
+                        : 'bg-indigo-50/40 border-indigo-100 text-slate-700'
                     ]"
                   >
                     <div
@@ -1025,6 +352,10 @@ const handleImageClick = (url?: string) => {
                           v-else-if="item.tool.result"
                           :class="['font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto max-h-[380px] scrollbar-thin select-text', isDark ? 'text-gray-200' : 'text-gray-800']"
                         >{{ item.tool.result }}</pre>
+                        <div v-else-if="item.tool.status === 'pending'" class="font-mono text-xs text-amber-500/90 flex items-center gap-2">
+                          <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+                          <span>等待人工决策（审批卡片在过程区之外）</span>
+                        </div>
                         <div v-else-if="isToolInProgress(item.tool.status)" class="font-mono text-xs text-amber-500/80 animate-pulse flex items-center gap-2">
                           <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
                           <span>正在执行中...</span>
@@ -1063,41 +394,54 @@ const handleImageClick = (url?: string) => {
         <div v-if="!props.message.isExploring" class="border-b border-gray-200/70 dark:border-gray-800/80 w-full mt-2 mb-2.5"></div>
       </div>
 
-      <!-- 统一互动卡片：按 promptCard.kind 分派到计划 / 澄清 / 命令审批卡片（历史与实时同形状） -->
-      <template v-for="card in promptCardsList" :key="card.toolCallId || card.kind">
-        <!-- 待决策卡片原样整卡展开（要按键）；已有结论的默认收成一行，细节按需展开 -->
-        <div v-if="!card.pending" class="w-full">
+      <!-- 统一互动卡片：PLAN / CHOICE / COMMAND 三类 PROMISE 卡片（含 DELEGATION / UNAVAILABLE）。
+           渲染在过程折叠区之外，作为一等时间线项，确保用户可操作项不会被吞进折叠框。 -->
+      <template v-for="entry in cardItems" :key="entry.id">
+        <!-- 待决策卡片整卡展开（要按键）；已决卡片默认收成一行，细节按需展开 -->
+        <div v-if="!entry.card.pending" class="w-full">
           <button
             type="button"
-            @click="toggleCard(card)"
+            @click="toggleCard(entry.id)"
             class="w-full flex items-center gap-1.5 text-xs py-1 transition select-none text-left cursor-pointer min-w-0"
-            :class="isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-gray-400 hover:text-gray-600'"
+            :class="isDark ? 'text-zinc-300 hover:text-zinc-100' : 'text-gray-600 hover:text-gray-900'"
           >
             <svg
-              :class="['w-3 h-3 transition-transform duration-200 shrink-0', isCardExpanded(card) ? 'rotate-90' : '']"
+              :class="['w-3 h-3 transition-transform duration-200 shrink-0', isCardExpanded(entry.id) ? 'rotate-90' : '']"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
             >
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
             </svg>
-            <span class="truncate">{{ cardSummary(card) }}</span>
+            <!-- 已决卡片摘要：状态点 + 类型图标，与过程区灰字拉开层级 -->
+            <span :class="['w-1.5 h-1.5 rounded-full shrink-0', cardDotClass(resolveCardTone(entry.card))]"></span>
+            <svg
+              class="w-3.5 h-3.5 shrink-0"
+              :class="isDark ? 'text-zinc-400' : 'text-gray-500'"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" :d="cardKindIconPath(entry.card.kind)" />
+            </svg>
+            <span class="truncate">{{ cardSummary(entry.card) }}</span>
           </button>
           <CollapseTransition>
-            <div v-if="isCardExpanded(card)">
+            <div v-if="isCardExpanded(entry.id)">
               <PromptCard
-                :prompt-card="card"
+                :prompt-card="entry.card"
                 :session-id="props.sessionId"
-                :is-dark="props.isDark"
+                :is-dark="isDark"
               />
             </div>
           </CollapseTransition>
         </div>
         <PromptCard
           v-else
-          :prompt-card="card"
+          :prompt-card="entry.card"
           :session-id="props.sessionId"
-          :is-dark="props.isDark"
+          :is-dark="isDark"
         />
       </template>
 
@@ -1131,6 +475,30 @@ const handleImageClick = (url?: string) => {
           <div class="pointer-events-none absolute inset-0 overflow-hidden">
             <div class="context-compact-beam"></div>
           </div>
+        </div>
+      </transition>
+
+      <!-- 协作式暂停 / 挂起等待提示条 -->
+      <transition name="context-compact-fade">
+        <div
+          v-if="props.message.isSuspended"
+          class="w-full my-2.5 px-3.5 py-2.5 rounded-2xl border flex items-center justify-between gap-3 text-xs select-none transition-colors"
+          :class="isDark ? 'bg-amber-950/40 border-amber-800/60 text-amber-200' : 'bg-amber-50 border-amber-200 text-amber-800'"
+        >
+          <div class="flex items-center gap-2">
+            <span class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+            </span>
+            <span class="font-medium">当前轮次已挂起，等待人工决策或继续操作</span>
+          </div>
+          <button
+            type="button"
+            @click="emit('resume', props.sessionId)"
+            class="px-3 py-1 rounded-xl text-xs font-medium bg-amber-600 hover:bg-amber-500 text-white transition cursor-pointer shadow-xs shrink-0"
+          >
+            恢复执行
+          </button>
         </div>
       </transition>
 
@@ -1204,27 +572,638 @@ const handleImageClick = (url?: string) => {
 
         <!-- 时间戳 -->
         <span>{{ displayTime }}</span>
-
-        <!-- 多分支切换器 (当有分支时) -->
-        <div v-if="totalBranches > 1" class="flex items-center gap-1 bg-gray-500/10 px-2 py-0.5 rounded-lg ml-auto text-[11px]">
-          <button
-            :disabled="activeBranchIdx === 0"
-            @click="emit('switchBranch', props.message.id, activeBranchIdx - 1)"
-            class="disabled:opacity-30 hover:text-blue-400"
-          >&lt;</button>
-          <span>{{ activeBranchIdx + 1 }} / {{ totalBranches }}</span>
-          <button
-            :disabled="activeBranchIdx === totalBranches - 1"
-            @click="emit('switchBranch', props.message.id, activeBranchIdx + 1)"
-            class="disabled:opacity-30 hover:text-blue-400"
-          >&gt;</button>
-        </div>
       </div>
     </div>
 
 
   </div>
 </template>
+<script setup lang="ts">
+import { ref, computed, watch, onMounted, onUnmounted, inject } from 'vue';
+import { FILE_PREVIEW_KEY } from '../../types/filePreview';
+import type { ChatMessage, ThoughtStep, ToolCallTrace, SubSessionVO, ProcessTimelineItem, ChatTurn, PromptCardData } from '../../types/chat';
+import { toPromptCardData, buildCardSummary } from '../../utils/toolCallCard';
+import { cardDotClass, cardKindIconPath, resolveCardTone } from '../../utils/cardUi';
+import {
+  isEditFileTool,
+  isReadFileTool,
+  shouldShowToolArguments,
+  isSubAgentTool,
+  resolveToolMeta,
+  extractSubAgentParams,
+} from '../../utils/toolMeta';
+import { toObject } from '../../utils/json';
+import { AgentToolName } from '../../utils/toolNames';
+import { isActiveTurnStatus, isFailedTurnStatus, turnStatusLabel } from '../../utils/turnStatus';
+import { formatDurationOrPlaceholder } from '../../utils/format';
+import { parseToolDiff } from '../../utils/toolDiff';
+import { useCopyFeedback } from '../../composables/useCopyFeedback';
+import { useTheme } from '../../composables/useTheme';
+import GradientText from '../common/GradientText.vue';
+import MarkdownRenderer from './MarkdownRenderer.vue';
+import PromptCard from './PromptCard.vue';
+import CollapseTransition from '../common/CollapseTransition.vue';
+
+const props = defineProps<{
+  message: ChatMessage;
+  subSessions?: SubSessionVO[];
+  isDark?: boolean;
+  /** 消息所属会话 id：互动卡片的决策接口据此定位 */
+  sessionId?: string | number;
+  /**
+   * 本条消息所属回答组的轮次信息（按 turnId 从会话轮次表解析）。
+   * null = 无轮次（旧数据 / 未采集），**绝不**回落成会话累计用量或 0。
+   */
+  turn?: ChatTurn | null;
+  /**
+   * 是否为所在回答组的末条：仅组尾展示一次执行元信息（模型/提供方/token/状态/总历时），
+   * 避免「同一执行跨页」时两个部分组各挂一次。
+   */
+  isGroupTail?: boolean;
+  isLastAssistant?: boolean;
+  isSending?: boolean;
+}>();
+
+const { isDark: globalIsDark } = useTheme();
+const isDark = computed(() => props.isDark ?? globalIsDark.value);
+const openFilePreview = inject(FILE_PREVIEW_KEY);
+const canPreviewFile = (tool: ToolCallTrace) => !!openFilePreview && (isReadFileTool(tool.toolName) || isEditFileTool(tool.toolName));
+
+const emit = defineEmits<{
+  (e: 'selectSubSession', id: string | number): void;
+  (e: 'resume', sessionId?: string | number): void;
+}>();
+
+// 过程折叠状态：已结束会话/消息默认全部折叠；仅未完成的消息在生成时展开以提供实时反馈
+const isProcessExpanded = ref(props.message.isComplete === false);
+// 复制反馈（消息正文按布尔键控；见 composables/useCopyFeedback.ts）
+const { isCopied: copied, copy: copyContentRaw } = useCopyFeedback();
+
+// 工具调用展开与复制状态
+const expandedToolIds = ref<Record<string, boolean>>({});
+// 复制反馈（工具卡片按 toolCall.id 键控；见 composables/useCopyFeedback.ts）
+const { copiedKey: toolCopiedId, copy: copyToolContentRaw } = useCopyFeedback();
+
+// 思考步骤 (Thought for) 独立展开/折叠状态
+const expandedThoughtStepIds = ref<Record<string, boolean>>({});
+
+const isThoughtStepExpanded = (step: ThoughtStep) => {
+  if (expandedThoughtStepIds.value[step.id] !== undefined) {
+    return expandedThoughtStepIds.value[step.id];
+  }
+  // 如果步骤正在运行且消息未完成，默认展开显示流式思考；否则（如已完成消息）默认折叠
+  return step.status === 'running' && props.message.isComplete === false;
+};
+
+const toggleThoughtStep = (stepId: string, step: ThoughtStep) => {
+  expandedThoughtStepIds.value[stepId] = !isThoughtStepExpanded(step);
+};
+
+const formatThoughtTitle = (title?: string): string => {
+  if (!title) return '深度思考';
+  const t = title.trim();
+  if (t === 'Thought for' || t === 'Thought' || t === '思考过程' || t === '思考' || t.toLowerCase() === 'thought for') {
+    return '深度思考';
+  }
+  return t;
+};
+
+// 思考内容展开框 DOM 引用与流式输出自动贴底滚动
+const thinkingBoxRefs = ref<Record<string, HTMLElement | null>>({});
+const setThinkingBoxRef = (stepId: string, el: unknown) => {
+  if (el) {
+    thinkingBoxRefs.value[stepId] = el as HTMLElement;
+  } else {
+    delete thinkingBoxRefs.value[stepId];
+  }
+};
+
+const runningThoughtState = computed(() => {
+  if (props.message.isComplete) return '';
+  const runningStep = props.message.thoughtSteps?.find(s => s.status === 'running');
+  if (!runningStep) return '';
+  return `${runningStep.id}:${runningStep.content?.length || 0}`;
+});
+
+watch(
+  runningThoughtState,
+  () => {
+    const runningStep = props.message.thoughtSteps?.find(s => s.status === 'running');
+    if (!runningStep) return;
+    const box = thinkingBoxRefs.value[runningStep.id];
+    if (!box) return;
+    const isNearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+    if (isNearBottom) {
+      box.scrollTop = box.scrollHeight;
+    }
+  },
+  { flush: 'post' }
+);
+
+// 中间过程文本块 (中间轮次 text 像 thinking 那样折叠)
+const expandedIntermediateMsgIds = ref<Record<string, boolean>>({});
+
+
+
+// 计时器（按秒计算）
+const now = ref(Date.now());
+let timerInterval: number | undefined;
+
+onMounted(() => {
+  if (props.message.isComplete === false) {
+    timerInterval = window.setInterval(() => {
+      now.value = Date.now();
+    }, 1000);
+  }
+});
+
+onUnmounted(() => {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = undefined;
+  }
+});
+
+// 监听到 request 结束事件（或 isComplete 转为 true）后，将最后一条 aimessage 的文本展示，其余所有工具 call、thinking 都折叠
+watch(
+  () => props.message.isComplete,
+  (isDone) => {
+    if (isDone) {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = undefined;
+      }
+      isProcessExpanded.value = false;
+      expandedToolIds.value = {};
+      expandedThoughtStepIds.value = {};
+      expandedIntermediateMsgIds.value = {};
+    }
+  },
+  { immediate: true }
+);
+
+// 中间轮次的 aimessage（与正文同文本的条目不再重复展示，其余中间过程文本归入折叠块）
+//
+// 判据用「文本是否等于正文」而非「是否为最后一个元素」：正文取 props.message.content，
+// 与 aiMessages 的末条不必等价（历史解析会去重、流式恢复会重放），按位置切会在
+// 「末条不等于正文」时把正文又重复渲染到折叠区里。
+const intermediateAiMessages = computed(() => {
+  const list = props.message.aiMessages;
+  if (!list || list.length === 0) {
+    return [];
+  }
+  const body = (props.message.content ?? '').trim();
+  const seen = new Set<string>();
+  const out: typeof list = [];
+  for (const m of list) {
+    const text = (m.text ?? '').trim();
+    if (!text || text === body || seen.has(text)) continue;
+    seen.add(text);
+    out.push(m);
+  }
+  return out;
+});
+
+// 是否存在需要展示折叠的过程内容（思考步骤、思考中状态、工具调用、或中间过程文本）
+const hasProcessContent = computed(() => {
+  return !!(
+    props.message.thoughtSteps?.length ||
+    props.message.isThinking ||
+    props.message.toolCalls?.length ||
+    intermediateAiMessages.value.length > 0
+  );
+});
+
+// 折叠栏头部标题文案
+const processTitle = computed(() => {
+  if (props.message.isThinking) {
+    return '思考中...';
+  }
+  const toolCount = props.message.toolCalls?.length || 0;
+  const hasThoughts = !!(props.message.thoughtSteps?.length);
+
+  if (hasThoughts && toolCount > 0) {
+    return `已思考并调用 ${toolCount} 个工具`;
+  }
+  if (toolCount > 0) {
+    return `已调用 ${toolCount} 个工具`;
+  }
+  if (hasThoughts) {
+    return '已思考';
+  }
+  return '执行过程';
+});
+
+const toggleToolCall = (id: string) => {
+  expandedToolIds.value[id] = !expandedToolIds.value[id];
+};
+
+const copyToolContent = (text: string, id: string) => {
+  void copyToolContentRaw(text, id);
+};
+
+const isSubAgentToolCall = (tc?: ToolCallTrace): boolean => isSubAgentTool(tc?.toolName, tc?.category);
+const isEditFileToolCall = (toolName?: string): boolean => isEditFileTool(toolName);
+
+/**
+ * 该工具是否有可展开的详情。
+ *
+ * <p>读文件没有：头部一行已给全（读了哪个文件），展开拿不到头部没有的信息，
+ * 只会把「路径 + 状态」重复一遍。其余工具（命令、编辑、检索等）保留详情。</p>
+ */
+const canExpandTool = (tc?: ToolCallTrace): boolean => !!tc && !isReadFileTool(tc.toolName);
+
+/**
+ * 展示文案字段映射（契约 §4）：按工具名映射到各自规范字段。
+ * 命令 → `intention`，子代理 → `task`，计划 → `title`，提问 → `question`；未列出的工具不展示文案。
+ */
+
+
+
+
+
+/**
+ * 聚合子代理协同成员：
+ * 同一子会话可能被多次调用复用（如多次委派产品经理），按 subSessionId / agentId 去重合并，
+ * 并与 props.subSessions 关联取得权威名称与团队序号，解决成员数量虚增与名字回退为 Agent #N 的问题。
+ */
+const subAgentToolCalls = computed<ToolCallTrace[]>(() => {
+  const tcs = props.message.toolCalls?.filter(tc => isSubAgentToolCall(tc)) || [];
+  if (tcs.length === 0) return [];
+
+  const map = new Map<string, ToolCallTrace>();
+
+  tcs.forEach((tc, idx) => {
+    const params = extractSubAgentParams(tc);
+    const agentId = params.agentId ?? tc.subAgentId;
+    const subSessionId = tc.subSessionId ?? params.subSessionId;
+
+    // 优先匹配当前会话绑定的权威 subSessions
+    const matchedSub = (subSessionId
+      ? props.subSessions?.find(s => String(s.id) === String(subSessionId))
+      : undefined)
+      || (agentId ? props.subSessions?.find(s => String(s.agentId) === String(agentId)) : undefined);
+
+    // 计算在团队中的真实序号（1-indexed）
+    let displayIndex = idx + 1;
+    if (props.subSessions?.length) {
+      const subIdx = props.subSessions.findIndex(s =>
+        (subSessionId && String(s.id) === String(subSessionId)) ||
+        (agentId && String(s.agentId) === String(agentId))
+      );
+      if (subIdx !== -1) {
+        displayIndex = subIdx + 1;
+      }
+    }
+
+    const agentName = matchedSub?.agentName
+      || matchedSub?.name
+      || params.agentName
+      || tc.subAgentName
+      || (agentId ? `Agent #${agentId}` : `子代理 #${displayIndex}`);
+
+    const resolvedSubSessionId = subSessionId || matchedSub?.id || tc.subSessionId;
+    const resolvedAgentId = agentId || matchedSub?.agentId;
+
+    // 去重键：优先子会话 ID，其次 agentId
+    const key = String(resolvedSubSessionId || resolvedAgentId || tc.id || `tc-${idx}`);
+
+    const existing = map.get(key);
+    if (existing) {
+      // 若多次调用复用，更新状态与相关属性
+      existing.status = tc.status || existing.status;
+      if (tc.order !== undefined) existing.order = tc.order;
+      if (resolvedSubSessionId && !existing.subSessionId) existing.subSessionId = resolvedSubSessionId;
+      if (agentName && !existing.subAgentName) existing.subAgentName = agentName;
+    } else {
+      map.set(key, {
+        ...tc,
+        subSessionId: resolvedSubSessionId,
+        subAgentId: resolvedAgentId,
+        subAgentName: agentName,
+        displayIndex,
+        order: tc.order ?? idx
+      });
+    }
+  });
+
+  return Array.from(map.values()).sort((a, b) => (a.displayIndex ?? 0) - (b.displayIndex ?? 0));
+});
+
+const regularToolCalls = computed<ToolCallTrace[]>(() => {
+  return props.message.toolCalls?.filter(tc => !isSubAgentToolCall(tc)) || [];
+});
+
+/** 卡片无对应工具行时的排序基准（大于任何 rowIndex 派生的工具 order，保证卡片排在过程项之后） */
+const CARD_ORDER_BASE = 1_000_000;
+
+// 统一执行过程时间线：按真实时序交替排列思维链思考 (Thought for)、中间轮次文本、子代理协同与工具调用
+const processTimeline = computed<ProcessTimelineItem[]>(() => {
+  const items: ProcessTimelineItem[] = [];
+
+  // 1. 思维链思考步骤
+  if (props.message.thoughtSteps?.length) {
+    props.message.thoughtSteps.forEach((step, idx) => {
+      items.push({
+        id: step.id || `step-${idx}`,
+        type: 'thought',
+        order: step.order ?? (idx * 10),
+        step
+      });
+    });
+  }
+
+  // 2. 中间轮次 aimessage 文本（多轮执行时产生的中间说明，非最终结论）
+  if (intermediateAiMessages.value.length) {
+    intermediateAiMessages.value.forEach((im, idx) => {
+      items.push({
+        id: im.id || `im-${idx}`,
+        type: 'intermediate_ai',
+        order: im.order ?? (idx * 10 + 1),
+        message: im
+      });
+    });
+  }
+
+  // 3. SubAgent 协同条（按首个子会话时间线位置插入）
+  if (subAgentToolCalls.value.length > 0) {
+    const firstSubOrder = subAgentToolCalls.value.reduce(
+      (min, tc) => Math.min(min, tc.order ?? 9999),
+      subAgentToolCalls.value[0]?.order ?? 5
+    );
+    items.push({
+      id: 'sub-agents-banner',
+      type: 'sub_agent',
+      order: firstSubOrder,
+      subAgents: subAgentToolCalls.value
+    });
+  }
+
+  // 4. 普通 Agent 工具调用
+  if (regularToolCalls.value.length > 0) {
+    regularToolCalls.value.forEach((tc, idx) => {
+      items.push({
+        id: tc.id || `tool-${idx}`,
+        type: 'tool',
+        order: tc.order ?? (idx * 10 + 2),
+        tool: tc
+      });
+    });
+  }
+
+  // 5. 互动卡片（PLAN / CHOICE / COMMAND 三类 PROMISE 卡片）：参与同一时序集合，
+  //    但模板里被分离到过程折叠区之外渲染 —— 用户可操作项不能被吞进「已思考并调用工具」大框。
+  if (props.message.promptCards?.length) {
+    props.message.promptCards.forEach((card, idx) => {
+      const toolOrder = props.message.toolCalls?.find(tc => String(tc.id) === String(card.id))?.order;
+      items.push({
+        id: `card-${card.id ?? idx}`,
+        type: 'prompt_card',
+        order: toolOrder ?? (CARD_ORDER_BASE + idx),
+        card
+      });
+    });
+  }
+
+  // 按 order 升序排列，形成真实的时序执行轨迹（新 thinking 步骤在列表底部动态追加）
+  return items.sort((a, b) => a.order - b.order);
+});
+
+/** 过程折叠区内的时序项（剔除互动卡片）。 */
+const processItems = computed<ProcessTimelineItem[]>(() =>
+  processTimeline.value.filter(item => item.type !== 'prompt_card')
+);
+
+/** 过程折叠区之外的互动卡片（映射为卡片展示数据）。 */
+const cardItems = computed<Array<{ id: string; card: PromptCardData }>>(() =>
+  processTimeline.value
+    .filter(item => item.type === 'prompt_card' && !!item.card)
+    .map(item => ({ id: item.id, card: toPromptCardData(item.card as NonNullable<ProcessTimelineItem['card']>) }))
+);
+
+/** 已决卡片默认收成一行（避免大卡片常驻页底占位），细节按需展开；待决策卡片整卡展开。 */
+const expandedCardIds = ref<Record<string, boolean>>({});
+const toggleCard = (id: string) => {
+  expandedCardIds.value[id] = !expandedCardIds.value[id];
+};
+const isCardExpanded = (id: string): boolean => !!expandedCardIds.value[id];
+const cardSummary = (card: PromptCardData): string => buildCardSummary(card);
+
+/**
+ * 头部行的交互样式：能展开时才是按钮，读文件这类没有详情的行不该有「可点」的视觉暗示。
+ * （样式集中在此的理由同 {@link toolStatusDotClass}：模板里只保留一次类绑定，避免分支散落。）
+ */
+const toolRowHeaderClass = (tc: ToolCallTrace, dark: boolean): string[] => {
+  const base = dark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-600';
+  if (!canExpandTool(tc)) {
+    return [base, 'cursor-default'];
+  }
+  return [base, dark ? 'cursor-pointer hover:text-white' : 'cursor-pointer hover:text-gray-900'];
+};
+
+const getToolMeta = (tc: ToolCallTrace) => resolveToolMeta({ toolName: tc.toolName, args: tc.args ?? tc.query });
+const getToolCategory = (tc: ToolCallTrace): string => getToolMeta(tc).category;
+
+/**
+ * 工具执行状态 → 指示灯样式。
+ * 契约 §2.3：`pending`（挂起待人工决策）与 `unknown`（状态未知）**不得**显示为成功或失败。
+ */
+const toolStatusDotClass = (status?: string): string => {
+  switch (status) {
+    case 'calling':
+      
+    case 'pending':
+      return 'bg-amber-400 animate-pulse';
+    case 'failed':
+      return 'bg-red-500';
+
+    case 'unknown':
+      return 'bg-gray-400';
+
+    default:
+      return 'bg-emerald-500';
+  }
+};
+
+/** 是否处于「进行中」（已请求 / 挂起待决断）——用于展示执行中占位 */
+const isToolInProgress = (status?: string): boolean => status === 'calling' || status === 'pending';
+
+const getToolTarget = (tc: ToolCallTrace): string => getToolMeta(tc).target;
+const getToolLineRange = (tc: ToolCallTrace): string => getToolMeta(tc).lineRange;
+const getToolDescription = (tc: ToolCallTrace): string => getToolMeta(tc).description;
+const getToolDetail = (tc: ToolCallTrace): string => {
+  const meta = getToolMeta(tc);
+  return tc.toolName === AgentToolName.ExecuteCommand ? meta.command : meta.description;
+};
+
+/**
+ * 工具 diff 统计：统一走 utils/toolDiff.ts 的 parseToolDiff（收敛原因见该模块头注释）。
+ * 这里仅把「未知(null)」适配成模板约定的 undefined 形态，保持 UI 输出不变。
+ * 原实现在此处用 `catch {}` 静默吞掉 result 的 JSON 解析异常，现由 parseToolDiff 统一告警。
+ */
+const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: number } | null => {
+  const stat = parseToolDiff({
+    toolName: tc.toolName,
+    category: tc.category,
+    plusLines: tc.plusLines,
+    minusLines: tc.minusLines,
+    result: tc.result,
+    description: tc.description,
+    target: getToolTarget(tc),
+    fileEdits: props.message.fileEdits,
+    context: `toolCall ${tc.id}`
+  });
+  if (!stat) return null;
+  return {
+    plusLines: stat.plusLines ?? undefined,
+    minusLines: stat.minusLines ?? undefined
+  };
+};
+
+const cleanDisplayPath = (val?: string): string => {
+  if (!val) return '';
+  return val.replace(/\s*\(\+\d+\s+-\d+\)$/, '').trim();
+};
+
+const getEditFileDiffChunks = (tc: ToolCallTrace) => {
+  const args = toObject(tc.query, {});
+  const oldText = typeof args.oldText === 'string' ? args.oldText : '';
+  const newText = typeof args.newText === 'string' ? args.newText : '';
+  if (!oldText && !newText) return null;
+  return { oldText, newText };
+};
+
+/** 该助手回答是否已完成会话生成（会话/响应结束时才展示底栏工具栏与状态） */
+const isMessageCompleted = computed(() => {
+  // 1. 如果正在思考或探索中，尚未结束
+  if (props.message.isThinking || props.message.isExploring) {
+    return false;
+  }
+  // 2. 如果消息本身显式标记未完成 (流式接收中)
+  if (props.message.isComplete === false) {
+    return false;
+  }
+  // 3. 如果全局仍处于生成发送中且本条是最新助手消息（会话响应尚未结束）
+  if (props.isSending && props.isLastAssistant) {
+    return false;
+  }
+  // 4. 轮次摘要仍在进行中（ACCEPTED/RUNNING/WAITING = 后端尚未下发终结事件）：
+  // 工具条的出现时机在活跃期只跟随后端终结/开始事件 —— 对账重建的历史行 isComplete 恒为 true，
+  // 不加此守卫，「还在跑的轮次」会在后台 reconcile 拉入行后立刻出现工具条（状态点显示执行中）。
+  // 但若气泡已带终结证据（终态事件路径 stopTimer 写入的 durationMs / 回填的 tokenInfo），
+  // 说明本端已收到终结事件 —— 立即出现，不等（也不依赖）对账刷新轮次摘要。
+  const status = String(props.turn?.status ?? '').toUpperCase();
+  const hasTerminalEvidence = props.message.durationMs != null
+    || props.message.tokenInfo != null
+    || props.message.tokens != null;
+  if (isActiveTurnStatus(status) && !hasTerminalEvidence) {
+    return false;
+  }
+  // 5. 必须有回复内容、工具调用或报错信息之一
+  return !!(props.message.content || props.message.toolCalls?.length);
+});
+
+ 
+
+// formatDuration 已收敛到 utils/format.ts（原第 381-388 行）
+
+/** 本条消息所属回答组的轮次信息（权威来源）；null = 无轮次，不伪造统计。 */
+const execSummary = computed(() => props.turn ?? null);
+
+/** token 数量展示：≥1000 显示 `1.2K tok`，否则 `123 tok`。 */
+const formatTokenCount = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}K ` : `${n} `);
+
+/**
+ * 是否展示本组的执行元信息（用量/耗时）。
+ * 仅组尾展示一次；实时流在摘要尚未写入会话表时，用气泡自带统计即时展示。
+ * 旧数据（无摘要且无自带统计）一律隐藏，不显示成 0。
+ */
+const showExecutionMeta = computed(() => {
+  if (props.isGroupTail === false) return false;
+  if (execSummary.value) return true;
+  return props.message.tokenInfo != null || props.message.tokens != null || (props.message.durationMs ?? 0) > 0;
+});
+
+const displayDuration = computed(() => {
+  const e = execSummary.value;
+  if (e) {
+    // elapsedMs 为 null（startedAt 缺失）→ 暂无统计，绝不当 0
+    return formatDurationOrPlaceholder(e.elapsedMs);
+  }
+  // 实时流：本组摘要尚未写入会话表时，用气泡自带耗时兜底；都缺失则「暂无统计」
+  return formatDurationOrPlaceholder(props.message.durationMs);
+});
+
+
+const displayTokens = computed(() => {
+  const e = execSummary.value;
+  if (e) {
+    // totalTokens 缺失时用 input+output 兜底（两者都非 null 才相加）；仍为 null → 暂无统计
+    const total = e.totalTokens != null
+      ? e.totalTokens
+      : (e.inputTokens != null && e.outputTokens != null ? e.inputTokens + e.outputTokens : null);
+    return total == null ? '暂无统计' : formatTokenCount(total);
+  }
+  // 实时流：气泡自带统计（本组摘要尚未写入会话表时的即时展示）
+  const own = props.message.tokenInfo?.totalTokenCount ?? props.message.tokens;
+  return own != null ? formatTokenCount(own) : '暂无统计';
+});
+
+const tokenTooltip = computed(() => {
+  const e = execSummary.value;
+  if (e) {
+    const fmt = (n?: number | null) => (n == null ? '暂无' : String(n));
+    if (e.inputTokens == null && e.outputTokens == null && e.totalTokens == null) return '暂无统计';
+    return `输入: ${fmt(e.inputTokens)} | 输出: ${fmt(e.outputTokens)} | 总计: ${fmt(e.totalTokens)}`;
+  }
+  const info = props.message.tokenInfo;
+  if (info) {
+    const fmt = (n?: number | null) => (n == null ? '暂无' : String(n));
+    return `输入: ${fmt(info.inputTokenCount)} | 输出: ${fmt(info.outputTokenCount)} | 总计: ${fmt(info.totalTokenCount)}`;
+  }
+  const t = props.message.tokens;
+  return t != null ? `总用量: ${t} tokens` : '暂无统计';
+});
+
+/** 执行状态展示（仅摘要存在时展示）；进行中/失败/终态用不同配色，失败附带原因全文。 */
+const execStatusMeta = computed(() => {
+  const e = execSummary.value;
+  if (!e) return null;
+  const running = isActiveTurnStatus(e.status);
+  const failed = isFailedTurnStatus(e.status);
+  return {
+    text: turnStatusLabel(e.status),
+    running,
+    failed,
+    errorReason: failed ? (e.errorReason || '').trim() : ''
+  };
+});
+
+/** 模型展示（模型名为空时隐藏模型项；提供方可选）。 */
+const execModelLabel = computed(() => {
+  const e = execSummary.value;
+  if (!e) return '';
+  const name = (e.modelName || '').trim();
+  if (!name) return '';
+  const provider = (e.modelProvider || '').trim();
+  return provider ? `${name} · ${provider}` : name;
+});
+
+const displayTime = computed(() => {
+  return new Date(props.message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+});
+
+
+const copyContent = () => {
+  void copyContentRaw(props.message.content);
+};
+
+const handleImageClick = (url?: string) => {
+  if (url) {
+    window.open(url, '_blank');
+  }
+};
+</script>
 
 <style scoped>
 .thinking-text {
