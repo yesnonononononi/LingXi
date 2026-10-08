@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { ChatMessage } from '../src/types/chat';
 import type { Block, TurnViewVO } from '../src/types/block';
-import { groupMessagesByTurn } from '../src/utils/session';
+import { aggregateRecordsByIdentity, groupMessagesByTurn } from '../src/utils/session';
 import { upsertTurnViewIntoMessages } from '../src/views/chat/blockProjection';
 
 /**
@@ -376,4 +376,50 @@ test('11. 视图乱序并入: 气泡顺序仍按轮次雪花键升序，不随�
 
   const groups = groupMessagesByTurn(messages);
   assert.deepStrictEqual(groups.map(g => g.turnId), [earlierTurn, laterTurn]);
+});
+
+/**
+ * 共享版本表：一次「多页累计投影」里，同一轮的低版本不得覆盖高版本。
+ *
+ * <p>{@link aggregateRecordsByIdentity} 是纯函数 —— 每次调用从零重建完整投影。
+ * 翻页入口的正确用法是「先把多页 turnViews 累计成一张表再调用一次」，因此同一 turnId
+ * 在一张累计表里只会留下装配器写入的那一份；若调用方额外保留了旧版本（如手工合并的
+ * 两页 map），共享版本表负责把旧版本挡掉，不让它回退已投影的新内容。</p>
+ *
+ * <p>两条断言：① 同一调用内高版本先入、低版本后入被拒；② 版本表在调用外可复用，
+ * 低版本视图被整体跳过（返回空投影而非回退内容）。</p>
+ */
+test('12. 共享版本表: 同一轮的低版本不得回退高版本内容', () => {
+  const sessionId = 'sess-version';
+  const turnId = '2106057094397558784';
+
+  // ① 同一调用内：高版本先并入，随后并入同一轮的低版本 —— 必须被拒
+  const messages: ChatMessage[] = [];
+  const versions = new Map<string, number>();
+  upsertTurnViewIntoMessages(
+    messages,
+    turnView(sessionId, turnId, { version: 5, user: '提问', blocks: [bodyText('定稿正文')] }),
+    versions,
+  );
+  upsertTurnViewIntoMessages(
+    messages,
+    turnView(sessionId, turnId, { version: 3, user: '提问', blocks: [bodyText('中途稿正文')] }),
+    versions,
+  );
+  assert.strictEqual(messages[1]?.content, '定稿正文', '低版本视图不得覆盖高版本内容');
+  assert.strictEqual(versions.get(turnId), 5, '版本表保留已接受的高水位');
+
+  // ② 跨调用复用同一版本表：低版本视图被整体跳过，返回空投影（而非回退内容）
+  const stale = aggregateRecordsByIdentity(
+    sessionId,
+    { [turnId]: turnView(sessionId, turnId, { version: 3, user: '提问', blocks: [bodyText('中途稿正文')] }) },
+    versions,
+  );
+  assert.strictEqual(stale.length, 0, '版本表已记录更高水位时，低版本视图被跳过');
+
+  // ③ 纯函数性：不带版本表调用时，单次投影按视图自身内容完整重建
+  const fresh = aggregateRecordsByIdentity(sessionId, {
+    [turnId]: turnView(sessionId, turnId, { version: 9, user: '提问', blocks: [bodyText('最终正文')] }),
+  });
+  assert.strictEqual(fresh[1]?.content, '最终正文');
 });
