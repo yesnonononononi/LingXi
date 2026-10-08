@@ -24,10 +24,10 @@ export interface ChatHistoryOptions {
 /**
  * 会话历史：拉取分页并写回会话实体的消息数组。
  *
- * <p><b>写入规则（本期最易做错的一处）</b>：不能用「按消息 id 追加」也不能「整体替换」——
- * 实时助手气泡 id 形如 {@code bubble-<sessionId>-<turnId>}，历史消息 id 形如
- * {@code msg-<sessionId>-turn-<turnId>}，同一轮的两个 id 不同。统一走
- * {@link mergeMessagesByTurn} 按权威 turnId 分轮处理。</p>
+ * <p><b>写入规则</b>：唯一链路是「后端轮次视图 → {@link upsertTurnViewIntoMessages}」。
+ * 按 {@code sessionId + turnId} 定位、按 {@code viewVersion} 接受更新：
+ * 已在的轮次就地更新（保留实时已写入的内容，旧帧被版本拦截），
+ * 缺失的轮次按雪花键插入到正确位置。既不按消息 id 追加，也不整体替换数组。</p>
  *
  * <p><b>查询响应版本控制</b>：每次发起回查自增一个版本号，响应回来时版本已变即整份丢弃。
  * 这是少量请求级版本控制（不是投影缓冲）：切走会话 / 重连 / 执行状态变化都会作废在途响应，

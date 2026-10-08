@@ -21,23 +21,34 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-  aggregateSessionMessages,
   synthesizeFailedTurnBubbles,
 } from '../src/utils/session';
+import { upsertTurnViewIntoMessages } from '../src/views/chat/blockProjection';
 import type { ChatMessage, ChatTurn } from '../src/types/chat';
+import type { TurnViewVO } from '../src/types/block';
 
 const SESSION_ID = '777000111222333444';
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(TEST_DIR, '..');
 
-function userRecord(turnId: string, text = '你好') {
-  return {
-    id: `${turnId}-user`,
-    turnId,
-    type: 'USER',
-    text,
-    timestamp: '2026-10-08T10:00:00Z',
-  };
+/**
+ * 历史侧的最小投影：把若干轮视图并入消息数组。
+ *
+ * <p>失败轮在库里常常只有 USER 行 —— 视图里就只有 {@code userMessage}、没有块，
+ * 这正是「FAILED 徽标无处可挂」的场景。</p>
+ */
+function projectViews(views: TurnViewVO[]): ChatMessage[] {
+  const messages: ChatMessage[] = [];
+  const versions = new Map<string, number>();
+  for (const view of views) upsertTurnViewIntoMessages(messages, view, versions);
+  return messages;
+}
+
+/** 一页里某几轮的视图（只给提问，不给块）。失败轮在库里常常只有 USER 行。 */
+function viewsOfUserMessages(turnIds: string[]): TurnViewVO[] {
+  return turnIds.map(turnId => ({
+    sessionId: SESSION_ID, turnId, status: 'FAILED', viewVersion: '1', userMessage: '你好', blocks: [],
+  }));
 }
 
 function failedTurn(errorReason?: string): ChatTurn {
@@ -154,12 +165,12 @@ test('★ 接线：聚合产物里必须已包含失败轮的合成气泡（核�
   // 这条是本次缺陷的直接守卫：
   // 只有 USER 行 + 该轮 FAILED → 历史路径必须能渲染出失败气泡。
   // 变异：把 useChatHistory/useChatSubSession 里的 synthesize 调用删掉 → 本测试红
-  const records = [userRecord('T-FAILED')];
+  const views = viewsOfUserMessages(['T-FAILED']);
   const turns: Record<string, ChatTurn> = { 'T-FAILED': failedTurn('模型接口返回 400：invalid api key') };
 
-  const aggregated = aggregateSessionMessages(records, SESSION_ID);
-  // 接线点：历史管线在聚合之后、turns 已知时调用
-  const wired = synthesizeFailedTurnBubbles(aggregated, turns);
+  const projected = projectViews(views);
+  // 接线点：历史管线在逐轮 upsert 之后、turns 已知时调用
+  const wired = synthesizeFailedTurnBubbles(projected, turns);
 
   const bubbles = wired.filter(m => m.role === 'assistant' && m.turnId === 'T-FAILED');
   assert.equal(bubbles.length, 1, '失败轮必须有一个可挂 FAILED 徽标的 assistant 气泡');
@@ -167,32 +178,37 @@ test('★ 接线：聚合产物里必须已包含失败轮的合成气泡（核�
 });
 
 test('★ 接线：成功轮次不受影响（不产生多余气泡）', () => {
-  const records = [
-    userRecord('T-OK'),
-    { id: 'T-OK-ai', turnId: 'T-OK', type: 'AI', text: '这是回答', timestamp: '2026-10-08T10:00:01Z' },
+  const views: TurnViewVO[] = [
+    ...viewsOfUserMessages(['T-OK']),
+    {
+      sessionId: SESSION_ID, turnId: 'T-OK', status: 'COMPLETED', viewVersion: '1', userMessage: '你好',
+      blocks: [{ blockId: 'text:T-OK', type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: '这是回答' }],
+    },
   ];
   const turns: Record<string, ChatTurn> = { 'T-OK': { turnId: 'T-OK', status: 'COMPLETED' } as ChatTurn };
 
-  const aggregated = aggregateSessionMessages(records, SESSION_ID);
-  const wired = synthesizeFailedTurnBubbles(aggregated, turns);
+  const projected = projectViews(views);
+  const wired = synthesizeFailedTurnBubbles(projected, turns);
 
-  assert.equal(wired.length, aggregated.length, '成功轮不得被插入任何合成气泡');
+  assert.equal(wired.length, projected.length, '成功轮不得被插入任何合成气泡');
   assert.ok(!wired.some(m => String(m.id).startsWith('synthetic-failed-')), '不得出现合成气泡');
 });
 
 test('★ 接线：一次失败一轮成功时，只在失败轮插入', () => {
-  const records = [
-    userRecord('T-OK'),
-    { id: 'T-OK-ai', turnId: 'T-OK', type: 'AI', text: '正常回答', timestamp: '2026-10-08T10:00:01Z' },
-    userRecord('T-FAILED', '这一轮会失败'),
+  const views: TurnViewVO[] = [
+    {
+      sessionId: SESSION_ID, turnId: 'T-OK', status: 'COMPLETED', viewVersion: '1', userMessage: '你好',
+      blocks: [{ blockId: 'text:T-OK', type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: '正常回答' }],
+    },
+    { sessionId: SESSION_ID, turnId: 'T-FAILED', status: 'FAILED', viewVersion: '1', userMessage: '这一轮会失败', blocks: [] },
   ];
   const turns: Record<string, ChatTurn> = {
     'T-OK': { turnId: 'T-OK', status: 'COMPLETED' } as ChatTurn,
     'T-FAILED': failedTurn('超时'),
   };
 
-  const aggregated = aggregateSessionMessages(records, SESSION_ID);
-  const wired = synthesizeFailedTurnBubbles(aggregated, turns);
+  const projected = projectViews(views);
+  const wired = synthesizeFailedTurnBubbles(projected, turns);
 
   const synth = wired.filter(m => String(m.id).startsWith('synthetic-failed-'));
   assert.equal(synth.length, 1, '只应给失败轮补气泡');

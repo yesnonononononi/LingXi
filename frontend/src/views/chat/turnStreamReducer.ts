@@ -3,7 +3,7 @@ import type { BlockEventPayload } from '../../types/block';
 import { parseVersion } from '../../types/block';
 import type { ChatMessage, ContextUsageData, ToolCallVO } from '../../types/chat';
 import { isCardToolName, upsertPromptCard } from '../../utils/toolCallCard';
-import { projectTurnView, upsertBlockIntoBubble } from './blockProjection';
+import { buildBubbleFromTurnView, buildUserMessageFromTurnView, projectTurnView, upsertBlockIntoBubble } from './blockProjection';
 
 /** 卡片就绪重试上限（次）。 */
 const CARD_RETRY_MAX = 5;
@@ -208,8 +208,27 @@ export class TurnStreamReducer {
     }
     this.turnViewVersions.set(turnId, incoming);
 
-    const bubble = this.obtainActiveBubble(turnId);
-    projectTurnView(bubble, payload.view);
+    // 与历史侧共用同一更新入口：按 sessionId + turnId 定位、按版本接受更新，
+    // 用户气泡与助手气泡成对写入。这样「实时到达」与「历史回查」走的是同一条规则。
+    const messages = this.getMessages();
+    const existing = this.findBubbleByTurnId(turnId);
+    let bubble: ChatMessage;
+    if (existing) {
+      // 已存在（含 obtainActiveBubble 建出的进行中气泡）→ 就地重投影，身份不变
+      bubble = existing;
+      projectTurnView(bubble, payload.view);
+      // 用户气泡若还没落（首屏从未给过）补上，已存在则不动
+      if (payload.view.userMessage && !messages.some(m => m.role === 'user' && m.turnId === turnId)) {
+        const userMessage = buildUserMessageFromTurnView(payload.view, bubble.timestamp);
+        if (userMessage) messages.splice(messages.indexOf(bubble), 0, userMessage);
+      }
+    } else {
+      bubble = buildBubbleFromTurnView(payload.view);
+      const userMessage = buildUserMessageFromTurnView(payload.view);
+      const pair = userMessage ? [userMessage, bubble] : [bubble];
+      messages.splice(messages.length, 0, ...pair);
+    }
+    this.activeBubbleId = bubble.id;
     // 轮次状态是权威的：终态/挂起据此对齐，避免快照到了但气泡还停在「进行中」。
     this.applyTurnStatus(bubble, payload.view.status);
     this.onScrollFollow?.();

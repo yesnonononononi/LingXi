@@ -231,6 +231,11 @@ export function buildUserMessageFromTurnView(
  *   <li>该轮不存在 → 新建气泡（用户 + 助手）并按雪花键插到正确位置。</li>
  * </ul>
  *
+ * <p><b>空块 + 失败态</b>：失败轮在库里往往只有 USER 行（模型接口直接报错，一个块都没有）。
+ * 这种视图**不建助手气泡** —— 空气泡会占住「该轮已有 assistant」的判定，
+ * 让 {@link synthesizeFailedTurnBubbles} 无法补出带失败原因的组尾气泡，
+ * 结果是用户刷新后只看到提问、看不见为什么失败。此处让位给合成步骤。</p>
+ *
  * @param versions 每轮已接受的版本号（就地表，调用方持有，跨页累计）
  */
 export function upsertTurnViewIntoMessages(
@@ -257,12 +262,29 @@ export function upsertTurnViewIntoMessages(
     return;
   }
 
+  // 空块 + 失败态：不建空气泡，交给 synthesizeFailedTurnBubbles 用 turns.errorReason 合成。
+  // 但用户提问仍要落（否则该轮在界面上完全没有痕迹）。
+  if (view.blocks.length === 0 && isFailedStatus(view.status)) {
+    if (view.userMessage && !messages.some(m => m.role === 'user' && m.turnId === view.turnId)) {
+      const userMessage = buildUserMessageFromTurnView(view, fallbackTimestamp);
+      if (userMessage) {
+        messages.splice(resolveTurnInsertIndex(messages, view.turnId), 0, userMessage);
+      }
+    }
+    return;
+  }
+
   // 新轮次：按雪花键插到正确位置（不能一律追加，否则翻旧页会把旧轮次塞到末尾）
   const insertAt = resolveTurnInsertIndex(messages, view.turnId);
   const bubble = buildBubbleFromTurnView(view, fallbackTimestamp);
   const userMessage = buildUserMessageFromTurnView(view, fallbackTimestamp);
   const pair = userMessage ? [userMessage, bubble] : [bubble];
   messages.splice(insertAt, 0, ...pair);
+}
+
+/** 该轮是否为「失败但可能无内容」的终态（无块时不该建空气泡）。 */
+function isFailedStatus(status: string | null | undefined): boolean {
+  return status === 'FAILED' || status === 'CANCELLED';
 }
 
 /**

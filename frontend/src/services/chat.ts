@@ -304,15 +304,14 @@ export const chatApi = {
    * 对应后端 @GetMapping("/{id}/messages")
    *
    * <p><b>本页的 {@code messages} 只是「仅本页记录」的派生视图，仅当调用方确实只加载一页时才可用。</b>
-   * 后端的页按原始消息行切、不按轮次切，同一 turnId 可横跨两页；逐页聚合会为同一轮各建一个助手气泡。
-   * 多页入口必须自行累积 {@code records}，再用 {@link aggregateRecordsByIdentity} 一次性聚合。</p>
+   * 多页入口必须自行累积 {@code turnViews}，再用 {@link aggregateRecordsByIdentity} 一次性投影。</p>
    *
    * <p>返回值除 messages 外还透出本页的 turns 摘要字典（键 = turnId）：每条消息的
-   * turnId 已由聚合器落到 ChatMessage 上，调用方据此把 token / 模型 / 耗时 / 状态绑定到回答组。</p>
+   * turnId 已落到 ChatMessage 上，调用方据此把 token / 模型 / 耗时 / 状态绑定到回答组。</p>
    *
-   * <p>同时透出本页的 {@code turnViews} 块视图字典（键 = turnId）：多页入口必须与 records 一样
-   * **逐页累计**再一并传入 {@link aggregateRecordsByIdentity}，否则重新聚合时那一轮的块顺序
-   * 会退回前端自造口径。</p>
+   * <p>同时透出本页的 {@code turnViews} 块视图字典（键 = turnId）：多页入口必须
+   * **逐页累计**再一并传入 {@link aggregateRecordsByIdentity}，否则跨页的同一轮
+   * 会被拆成两条气泡。</p>
    */
   async fetchSessionMessages(
     id: string | number,
@@ -331,9 +330,9 @@ export const chatApi = {
       if (isOk(res.code) && res.data) {
         const page = res.data;
         const pageRecords = page.records ?? [];
-        // 单页入口（首屏详情、子会话抽屉）直接可用 messages；多页入口用 records + turnViews 自聚合。
+        // 单页入口（首屏详情、子会话抽屉）直接可用 messages；多页入口用累积的 turnViews 自聚合。
         const pageTurnViews = page.turnViews ?? {};
-        const parsedMsgs = aggregateRecordsByIdentity(undefined, pageRecords, String(id), pageTurnViews);
+        const parsedMsgs = aggregateRecordsByIdentity(String(id), pageTurnViews);
         return {
           ok: true,
           data: {

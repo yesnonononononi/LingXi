@@ -6,7 +6,11 @@ import axios from 'axios';
 import { SessionEventStream } from '../src/views/chat/sessionEventStream';
 import { useChatSending } from '../src/views/chat/useChatSending';
 import { useChatHistory } from '../src/views/chat/useChatHistory';
-import { mergeMessagesByTurn } from '../src/utils/session';
+import { aggregateRecordsByIdentity } from '../src/utils/session';
+import { upsertTurnViewIntoMessages } from '../src/views/chat/blockProjection';
+import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
+import type { AgentEvent } from '../src/types/Event';
+import type { Block, TurnViewVO } from '../src/types/block';
 import type { ChatMessage, ChatSession } from '../src/types/chat';
 
 /**
@@ -585,10 +589,10 @@ test('4b. 订阅不就绪时先重挂再重试；仍不就绪则显式失败（�
 });
 
 /* ------------------------------------------------------------------ */
-/* 5. 历史合并规则                                                     */
+/* 5. 历史合并规则（唯一链路：后端轮次视图 → upsertTurnViewIntoMessages）  */
 /* ------------------------------------------------------------------ */
 
-/** 实时助手气泡：id 形如 bubble-<sessionId>-<turnId>（与历史 id 不同）。 */
+/** 实时助手气泡：id 形如 bubble-<sessionId>-<turnId>（与历史投影同 id）。 */
 const liveBubble = (turnId: string, content: string, extra: Partial<ChatMessage> = {}): ChatMessage => ({
   id: `bubble-${ROOT}-${turnId}`,
   role: 'assistant',
@@ -601,261 +605,141 @@ const liveBubble = (turnId: string, content: string, extra: Partial<ChatMessage>
   ...extra,
 });
 
-/** 历史助手气泡：id 形如 msg-<sessionId>-turn-<turnId>。 */
-const historyBubble = (turnId: string, content: string, extra: Partial<ChatMessage> = {}): ChatMessage => ({
-  id: `msg-${ROOT}-turn-${turnId}`,
-  role: 'assistant',
-  content,
-  timestamp: 2,
-  turnId,
-  isComplete: true,
-  toolCalls: [],
-  ...extra,
+/**
+ * 造一个 `TURN_SNAPSHOT` 事件。
+ *
+ * <p>后端把载荷平铺在事件体顶层：{@code turnId / viewVersion / view}，
+ * 其中 {@code view} 才是 {@link TurnViewVO}。</p>
+ */
+function snapshotEvent(view: TurnViewVO): AgentEvent {
+  return {
+    type: 'TURN_SNAPSHOT',
+    turnId: view.turnId,
+    viewVersion: view.viewVersion,
+    view,
+    executionId: 'execution-1',
+    timestamp: '2026-10-08T08:56:01Z',
+    metaData: { sessionId: view.sessionId, rootSessionId: ROOT, turnId: view.turnId },
+  } as unknown as AgentEvent;
+}
+
+/** 一轮的权威视图：正文写在 BODY 段，工具写在 TOOL 段。 */
+const turnView = (
+  turnId: string,
+  opts: { version?: number; user?: string; text?: string; tools?: string[] } = {},
+): TurnViewVO => {
+  const blocks: Block[] = [];
+  let order = 0;
+  if (opts.text !== undefined) {
+    blocks.push({ blockId: `text:${turnId}`, type: 'TEXT', order: order++, status: 'COMPLETE', placement: 'BODY', text: opts.text });
+  }
+  for (const callId of opts.tools ?? []) {
+    blocks.push({
+      blockId: `tool:${callId}`, type: 'TOOL', order: order++, status: 'COMPLETED',
+      toolCallId: callId, toolName: 'read_file',
+    });
+  }
+  return {
+    sessionId: ROOT, turnId, status: 'COMPLETED',
+    viewVersion: String(opts.version ?? 1),
+    userMessage: opts.user, blocks,
+  };
+};
+
+test('5a. ★ 原始增量事件不再改写正文，正文只等后端视图', () => {
+  const messages: ChatMessage[] = [];
+  const reducer = new TurnStreamReducer(messages, { sessionId: ROOT });
+  reducer.consume({ type: 'PARTIAL_TEXT', content: '这是正在逐字输出的正文', metaData: { sessionId: ROOT, rootSessionId: ROOT, turnId: T1 } } as unknown as AgentEvent);
+  reducer.flush();
+
+  const assistants = messages.filter(m => m.role === 'assistant');
+  assert.equal(assistants.length, 1, `同一轮不得出现两个助手气泡，实际=${messages.map(m => m.id).join(',')}`);
+  assert.equal(assistants[0].content, '', '原始事件不写正文，正文只认后端视图');
+  assert.equal(assistants[0].toolCalls?.length, 0, '工具轨迹只等视图，原始事件不建工具项');
+  assert.equal(assistants[0].isThinking, true, '增量事件把气泡维持在生成态');
 });
 
-test('5a. 未终结轮的实时正文不被历史覆盖；历史只补齐缺失的过程数据', () => {
-  const local = [
-    { id: 'u1', role: 'user', content: '问题', timestamp: 1, turnId: T1 } as ChatMessage,
-    liveBubble(T1, '这是正在逐字输出的正文', { toolCalls: [{ id: 'c1', toolName: 'read_file', status: 'calling' }] }),
-  ];
-  const history = [
-    { id: 'srv-u1', role: 'user', content: '问题', timestamp: 1, turnId: T1 } as ChatMessage,
-    // 历史里这一轮只落了半截（正在生成的片段不保证已落库），且工具轨迹比本地全
-    historyBubble(T1, '这是正在逐', {
-      toolCalls: [
-        { id: 'c1', toolName: 'read_file', status: 'success' },
-        { id: 'c2', toolName: 'write_file', status: 'success' },
-      ],
-    }),
-  ];
+test('5b. ★ 不产生重复气泡：视图到达后该轮只有一条助手气泡，且正文/工具整体来自视图', () => {
+  const messages: ChatMessage[] = [];
+  const reducer = new TurnStreamReducer(messages, { sessionId: ROOT });
+  reducer.consume({ type: 'PARTIAL_TEXT', content: '本地半截', metaData: { sessionId: ROOT, rootSessionId: ROOT, turnId: T1 } } as unknown as AgentEvent);
+  reducer.flush();
+  assert.equal(messages.filter(m => m.role === 'assistant').length, 1);
 
-  const merged = mergeMessagesByTurn({ local, history });
+  // 权威视图到达：整轮重投影（正文、工具全以后端为准），不得裂出第二条气泡
+  reducer.consume(snapshotEvent(turnView(T1, { version: 2, user: '问题', text: '权威完整正文', tools: ['c1', 'c2'] })));
+  const assistants = messages.filter(m => m.role === 'assistant');
+  assert.equal(assistants.length, 1, `同一轮只能有一条助手气泡，实际=${messages.map(m => m.id).join(',')}`);
+  assert.equal(assistants[0].content, '权威完整正文', '视图到达后正文以后端为准');
+  assert.deepEqual(assistants[0].toolCalls?.map(tc => tc.id).sort(), ['c1', 'c2'], '工具轨迹来自后端视图');
+  assert.equal(messages.filter(m => m.role === 'user').length, 1, '用户提问由视图补齐，且只有一条');
+});
 
-  const assistants = merged.filter(m => m.role === 'assistant');
-  assert.equal(assistants.length, 1, `同一轮不得出现两个助手气泡，实际=${merged.map(m => m.id).join(',')}`);
-  // ★ 核心：实时正文不被历史半截覆盖
-  assert.equal(assistants[0].content, '这是正在逐字输出的正文', '未终结轮正文必须保留本地实时内容');
-  // 历史补齐了本地没有的工具轨迹
+test('5c. ★ 轮次视图驱动展示：用户提问归位到助手之前，正文与工具全来自后端', () => {
+  const messages: ChatMessage[] = [];
+  const reducer = new TurnStreamReducer(messages, { sessionId: ROOT });
+  reducer.consume(snapshotEvent(turnView(T1, { version: 1, user: '第一问', text: '第一轮权威正文', tools: ['c1'] })));
+  reducer.consume(snapshotEvent(turnView(T2, { version: 1, user: '第二问', text: '第二轮权威正文' })));
+
   assert.deepEqual(
-    assistants[0].toolCalls?.map(tc => tc.id).sort(),
-    ['c1', 'c2'],
-    '历史应补齐本地缺失的工具轨迹',
+    messages.map(m => m.role), ['user', 'assistant', 'user', 'assistant'],
+    `用户消息必须归位到助手之前，实际顺序=${messages.map(m => `${m.role}:${m.id}`).join(',')}`,
   );
-  // 不产生重复用户气泡
-  assert.equal(merged.filter(m => m.role === 'user').length, 1, '不得产生重复用户气泡');
-});
-
-test('5b. ★ 不产生重复气泡：实时气泡与历史气泡 id 不同也只留一个（按 turnId 归并）', () => {
-  const local = [
-    { id: 'u1', role: 'user', content: '问题', timestamp: 1, turnId: T1 } as ChatMessage,
-    liveBubble(T1, '完整正文'),
-  ];
-  const history = [
-    { id: 'srv-u1', role: 'user', content: '问题', timestamp: 1, turnId: T1 } as ChatMessage,
-    historyBubble(T1, '完整正文'),
-  ];
-
-  // 终结后回查：权威历史整体替换该轮
-  const merged = mergeMessagesByTurn({ local, history, terminalTurnIds: [T1] });
-
-  assert.equal(merged.length, 2, `同一轮只能留下 user+assistant 两条，实际=${merged.length}：${merged.map(m => m.id).join(',')}`);
-  assert.equal(merged.filter(m => m.role === 'assistant').length, 1, '实时气泡与历史气泡 id 不同，但按 turnId 只能留一个');
-  assert.equal(merged[1].id, `msg-${ROOT}-turn-${T1}`, '已终结轮应以权威历史整体替换');
-});
-
-test('5c. 已终结轮用权威历史整体替换；未终结轮保留本地正文，本地独有轮次按序插入', () => {
-  const local = [
-    { id: 'u1', role: 'user', content: '第一问', timestamp: 1, turnId: T1 } as ChatMessage,
-    liveBubble(T1, '第一轮本地半截正文'),
-    // 本地独有：刚发出、还没落库的第二轮
-    { id: 'u2', role: 'user', content: '第二问', timestamp: 3, turnId: T2 } as ChatMessage,
-    liveBubble(T2, '第二轮实时正文'),
-  ];
-  const history = [
-    { id: 'srv-u1', role: 'user', content: '第一问', timestamp: 1, turnId: T1 } as ChatMessage,
-    historyBubble(T1, '第一轮权威完整正文'),
-  ];
-
-  const merged = mergeMessagesByTurn({ local, history, terminalTurnIds: [T1] });
-
-  // 第一轮已终结 → 权威历史整体替换（本地半截不得留下）
-  const firstAssistant = merged.filter(m => m.role === 'assistant' && m.turnId === T1);
-  assert.equal(firstAssistant.length, 1);
-  assert.equal(firstAssistant[0].content, '第一轮权威完整正文', '已终结轮必须用权威历史整体替换');
-
-  // 第二轮未终结 → 保留实时正文
-  const secondAssistant = merged.filter(m => m.role === 'assistant' && m.turnId === T2);
-  assert.equal(secondAssistant.length, 1);
-  assert.equal(secondAssistant[0].content, '第二轮实时正文', '未终结轮必须保留实时正文');
-
-  // 本地独有轮次按雪花键排在更早轮次之后，不得被塞到会话最末尾之前
-  const order = merged.filter(m => m.turnId).map(m => m.turnId);
-  assert.deepEqual(order, [T1, T1, T2, T2], `轮次顺序必须按 turnId 递增，实际=${order.join(',')}`);
-});
-
-test('5d. ★ 用户消息归位：本地该轮只有助手气泡时，补齐的用户消息必须排在助手之前', () => {
-  // 构造：用户气泡还没绑定 turnId（bindUserMessageTurn 未执行），本地该轮只有助手气泡
-  const local = [liveBubble(T1, '本地正文')];
-  const history = [
-    { id: 'srv-user', role: 'user', content: '问题', timestamp: 1, turnId: T1 } as ChatMessage,
-    historyBubble(T1, '权威正文'),
-  ];
-
-  const merged = mergeMessagesByTurn({ local, history });
-
-  // ★ 角色顺序：同一轮内 user 必须先于 assistant
   assert.deepEqual(
-    merged.map(m => m.role), ['user', 'assistant'],
-    `用户消息必须归位到助手之前，实际顺序=${merged.map(m => `${m.role}:${m.id}`).join(',')}`,
+    messages.filter(m => m.turnId).map(m => m.turnId), [T1, T1, T2, T2],
+    `轮次顺序必须按 turnId 递增，实际=${messages.map(m => m.turnId).join(',')}`,
   );
-  // 正文仍取本地实时内容
-  assert.equal(merged[1].content, '本地正文', '未终结轮正文必须保留本地实时内容');
+  assert.equal(messages[1].content, '第一轮权威正文');
+  assert.equal(messages[3].content, '第二轮权威正文');
 });
 
-test('5e. ★ 乐观气泡去重：本地 turnId 为 null 的用户气泡若历史已落库，不得渲染两条', () => {
-  // 构造：bindUserMessageTurn 还没执行 / 执行失败，乐观气泡 turnId 仍为 null，
-  // 而历史已把该用户消息落库并带上 turnId —— 两者 id 不同但内容相同
-  const local = [
-    { id: 'user-optimistic', role: 'user', content: '问题', timestamp: 1, turnId: null } as ChatMessage,
-    liveBubble(T1, '本地正文'),
-  ];
-  const history = [
-    { id: 'srv-user', role: 'user', content: '问题', timestamp: 1, turnId: T1 } as ChatMessage,
-    historyBubble(T1, '权威正文'),
-  ];
+test('5d. ★ 低版本视图不得回退高版本：同一轮按 viewVersion 只接受更新', () => {
+  const messages: ChatMessage[] = [];
+  const reducer = new TurnStreamReducer(messages, { sessionId: ROOT });
+  reducer.consume(snapshotEvent(turnView(T1, { version: 10, user: '问题', text: '新正文', tools: ['c1', 'c2'] })));
+  assert.equal(messages[1].content, '新正文');
 
-  const merged = mergeMessagesByTurn({ local, history });
-
-  const users = merged.filter(m => m.role === 'user');
-  assert.equal(
-    users.length, 1,
-    `乐观气泡与历史同一条用户消息只能留一条（历史权威），实际=${users.map(u => u.id).join(',')}`,
-  );
-  assert.equal(users[0].id, 'srv-user', '命中时应保留历史那条（权威），删掉本地乐观气泡');
+  // 迟到的旧版本（十进制字符串不能按字典序比较：'9' > '10' 是假命题，必须转数值）
+  reducer.consume(snapshotEvent(turnView(T1, { version: 9, user: '问题', text: '旧正文', tools: ['c1'] })));
+  assert.equal(messages.filter(m => m.role === 'assistant').length, 1, '不得裂出第二条气泡');
+  assert.equal(messages[1].content, '新正文', '低版本视图必须被拒绝');
+  assert.deepEqual(messages[1].toolCalls?.map(tc => tc.id).sort(), ['c1', 'c2'], '低版本工具不得回退');
 });
 
-test('5f. 未落库的乐观气泡必须保留（对账不能把用户刚发的消息吃掉）', () => {
-  // 反向：历史里没有这条用户消息（还没落库），不能被对账删掉
-  const local = [
-    { id: 'user-optimistic', role: 'user', content: '刚发的问题', timestamp: 1, turnId: null } as ChatMessage,
-    liveBubble(T2, '实时正文'),
-  ];
-  const history = [
-    { id: 'srv-user', role: 'user', content: '更早的问题', timestamp: 1, turnId: T1 } as ChatMessage,
-    historyBubble(T1, '更早的权威正文'),
-  ];
+test('5e. ★ 视图内块按 blockId 幂等覆盖：重复投递同一视图不翻倍', () => {
+  const messages: ChatMessage[] = [];
+  const reducer = new TurnStreamReducer(messages, { sessionId: ROOT });
+  const view = turnView(T1, { version: 4, user: '问题', text: '正文', tools: ['c1', 'c2'] });
+  reducer.consume(snapshotEvent(view));
+  const before = messages[1].toolCalls?.length;
 
-  const merged = mergeMessagesByTurn({ local, history });
-
-  assert.ok(
-    merged.some(m => m.id === 'user-optimistic'),
-    `历史里没有的乐观气泡必须保留，否则用户刚发的消息会消失，实际=${merged.map(m => m.id).join(',')}`,
-  );
+  reducer.consume(snapshotEvent(view));
+  assert.equal(messages[1].toolCalls?.length, before, '重复投影不得翻倍');
+  assert.equal(messages.filter(m => m.role === 'assistant').length, 1, '不得裂出第二条气泡');
 });
 
-test('5g. ★ 用户重复发送相同内容：新乐观气泡不得被更早轮次的同内容消息吞掉', () => {
-  // 反例（QA 提出）：本地乐观气泡「重复的问题」turnId 仍为 null，
-  // 历史里存在**异轮次**的同 role+content 消息 —— 全历史指纹比对会把它误删。
-  // 本例历史只有一轮（且它就是最后一轮），考验的是「本地没有那一轮的任何消息 ⇒ 不得删」。
-  const local = [
-    { id: 'user-new', role: 'user', content: '重复的问题', timestamp: 2, turnId: null } as ChatMessage,
-  ];
-  const history = [
-    { id: 'srv-other', role: 'user', content: '重复的问题', timestamp: 1, turnId: T1 } as ChatMessage,
-    historyBubble(T1, '上一轮的回答'),
-  ];
+test('5f. ★ 视图按 turnId 定位：同一轮跨页多次下发只保留一条气泡', () => {
+  const messages: ChatMessage[] = [];
+  // 第一页：该轮只落了部分块（版本 3）；第二页：同一轮更全（版本 5）
+  upsertTurnViewIntoMessages(messages, turnView(T1, { version: 3, user: '问题', text: '半截', tools: ['c1'] }), new Map());
+  upsertTurnViewIntoMessages(messages, turnView(T1, { version: 5, user: '问题', text: '完整正文', tools: ['c1', 'c2', 'c3'] }), new Map());
 
-  const merged = mergeMessagesByTurn({ local, history });
-
-  assert.ok(
-    merged.some(m => m.id === 'user-new'),
-    `异轮次的同内容消息不得吞掉本地乐观气泡（用户重复发相同内容），实际=${merged.map(m => m.id).join(',')}`,
-  );
-  assert.ok(
-    merged.some(m => m.id === 'srv-other'),
-    '上一轮的同内容历史消息必须保留',
-  );
+  const assistants = messages.filter(m => m.role === 'assistant');
+  assert.equal(assistants.length, 1, `同一轮跨页只能有一条气泡，实际=${messages.map(m => m.id).join(',')}`);
+  assert.equal(assistants[0].content, '完整正文', '按版本取新');
+  assert.equal(assistants[0].toolCalls?.length, 3, '同一轮按版本更新后必须含全部工具');
 });
 
-test('5i. ★ 指纹只比「历史最后一轮」：更早轮次的同内容消息必须被忽略', () => {
-  // 本例本地**已有**最后一轮的消息（只有这种情况才允许走删除分支），
-  // 因此能否正确保留完全取决于「比对范围是否收紧到最后一轮」。
-  // 若把范围改回全历史，T1 的同内容消息会误命中 → 本地乐观气泡被吞 → 变红。
-  const local = [
-    { id: 'user-new', role: 'user', content: '重复的问题', timestamp: 3, turnId: null } as ChatMessage,
-    // 本地已有最后一轮（T2）的助手气泡
-    liveBubble(T2, '最后一轮的回答'),
-  ];
-  const history = [
-    // 更早一轮：同 role + 同 content，但不是同一轮
-    { id: 'srv-u1', role: 'user', content: '重复的问题', timestamp: 1, turnId: T1 } as ChatMessage,
-    historyBubble(T1, '更早轮的回答'),
-    // 最后一轮：内容不同
-    { id: 'srv-u2', role: 'user', content: '换个问题', timestamp: 2, turnId: T2 } as ChatMessage,
-    historyBubble(T2, '最后一轮的回答'),
-  ];
-
-  const merged = mergeMessagesByTurn({ local, history });
-
-  assert.ok(
-    merged.some(m => m.id === 'user-new'),
-    `更早轮次的同内容消息必须被忽略（比对范围只取最后一轮），实际=${merged.map(m => m.id).join(',')}`,
-  );
+test('5g. ★ 无视图即无气泡：缺 turnViews 时不从原始记录聚合', () => {
+  const merged = aggregateRecordsByIdentity(ROOT, undefined);
+  assert.equal(merged.length, 0, '没有轮次视图就没有任何气泡');
 });
 
-test('5j. ★ 已知边界（v1 接受，不当 bug 改）：上一轮助手气泡在本地 + 内容完全相同 ⇒ 乐观气泡被去重', () => {
-  // 触发需三条同时成立：内容与上一轮完全相同 + 恰好落在「POST 在途、
-  // bindUserMessageTurn 未执行」的窗口内发生一次对账 + 本地已保留上一轮助手气泡。
-  // 为何接受：概率低；下一轮对账自愈（届时气泡已带 turnId，按轮归并会正确保留），
-  // 属瞬态而非持久丢失。消除它要先拿到 turnId，而那正是该窗口存在的原因（鸡生蛋）。
-  // 本用例把「有意接受的边界」钉住，防止它被当 bug 顺手改掉、或当 bug 报回来。
-  const local = [
-    { id: 'srv-u1', role: 'user', content: '继续', timestamp: 1, turnId: T1 } as ChatMessage,
-    historyBubble(T1, '第一轮回答'),
-    { id: 'user-new', role: 'user', content: '继续', timestamp: 2, turnId: null } as ChatMessage,
-  ];
-  const history = [
-    { id: 'srv-u1', role: 'user', content: '继续', timestamp: 1, turnId: T1 } as ChatMessage,
-    historyBubble(T1, '第一轮回答'),
-  ];
-
-  const merged = mergeMessagesByTurn({ local, history });
-
-  assert.equal(
-    merged.filter(m => m.role === 'user').length, 1,
-    `v1 已知边界：此构造下乐观气泡会被去重（下一轮对账自愈），实际=${merged.map(m => m.id).join(',')}`,
-  );
-  assert.ok(
-    !merged.some(m => m.id === 'user-new'),
-    'v1 已知边界：此构造下乐观气泡会被去重',
-  );
-});
-
-test('5k. ★ 轮次先后必须按雪花键判定：历史数组倒序时仍取雪花键最大的那一轮', () => {
-  // resolveLatestHistoryTurnId 若退化成「按数组下标取最后一条有 turnId 的消息」，
-  // 倒序历史会选错轮次 ⇒ 指纹比对范围与「本地是否有该轮消息」两个判断同时失效。
-  // 构造：T2（雪花键更大）排在数组前面；本地乐观气泡与 T1 的 user 同内容。
-  // 只有正确按雪花键取到 T2，才会因「T2 的指纹里没有该内容」而保留乐观气泡。
-  const local = [
-    { id: 'user-new', role: 'user', content: '重复的问题', timestamp: 3, turnId: null } as ChatMessage,
-    // 本地已有 T1 与 T2 的助手气泡（满足「本地已有该轮消息」的前置条件）
-    historyBubble(T1, '第一轮回答'),
-    historyBubble(T2, '第二轮回答'),
-  ];
-  const history = [
-    // 故意倒序：较新的 T2 在数组前面
-    { id: 'srv-u2', role: 'user', content: '换个问题', timestamp: 2, turnId: T2 } as ChatMessage,
-    historyBubble(T2, '第二轮回答'),
-    { id: 'srv-u1', role: 'user', content: '重复的问题', timestamp: 1, turnId: T1 } as ChatMessage,
-    historyBubble(T1, '第一轮回答'),
-  ];
-
-  const merged = mergeMessagesByTurn({ local, history });
-
-  assert.ok(
-    merged.some(m => m.id === 'user-new'),
-    `轮次先后必须按雪花键判定（历史倒序时取雪花键最大的那轮），实际=${merged.map(m => m.id).join(',')}`,
-  );
+test('5h. ★ 视图缺 userMessage 时不伪造用户气泡，只投影助手气泡', () => {
+  const messages: ChatMessage[] = [];
+  upsertTurnViewIntoMessages(messages, turnView(T1, { version: 1, text: '只有回答' }), new Map());
+  assert.equal(messages.filter(m => m.role === 'user').length, 0, '视图未给 userMessage 就不应造用户气泡');
+  assert.equal(messages.filter(m => m.role === 'assistant').length, 1);
 });
 
 /* ------------------------------------------------------------------ */

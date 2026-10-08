@@ -1,91 +1,43 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { SessionMessageVO, ChatMessage, ToolCallVO } from '../src/types/chat';
-import { aggregateSessionMessages } from '../src/utils/session';
-import { toPromptCardData, resolveCardKind, isApprovableCard, isCardToolName, canDecideCard, buildCardSummary } from '../src/utils/toolCallCard';
+import type { ChatMessage, ToolCallVO } from '../src/types/chat';
+import { upsertTurnViewIntoMessages } from '../src/views/chat/blockProjection';
+import { toPromptCardData, resolveCardKind, isApprovableCard, isCardToolName, canDecideCard, buildCardSummary, upsertPromptCard } from '../src/utils/toolCallCard';
 import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
 import { AgentToolName } from '../src/utils/toolNames';
 
 /** 等待 reducer 内部 fire-and-forget 的建卡 promise 落定。 */
 const flushAsync = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
-test('1. 历史聚合：PLAN / CHOICE / COMMAND 三类 PROMISE 卡片分别从 TOOL 行还原（含已决状态）', () => {
+test('1. 轮次视图 + 权威卡片 VO：PLAN / CHOICE / COMMAND 三类 PROMISE 卡片分别还原（含已决状态）', () => {
   const sessionId = 'sess-card';
   const turnId = 'turn-card';
 
-  const records: SessionMessageVO[] = [
-    { id: 'u1', turnId, type: 'USER', text: '执行任务' },
-    {
-      id: 'ai1',
-      turnId,
-      type: 'AI',
-      toolCalls: [{ id: 'call-plan', name: 'create_plan', arguments: '{"title":"方案","text":"# 计划"}' }]
-    },
-    {
-      id: 'tool-plan',
-      turnId,
-      type: 'TOOL',
-      toolCallId: 'call-plan',
-      toolCall: {
-        id: 'call-plan',
-        toolName: 'create_plan',
-        type: 'PROMISE',
-        status: 'pending',
-        pending: true,
-        title: '方案',
-        content: { kind: 'PLAN', title: '方案', text: '# 计划正文' },
-        allowedActions: ['APPROVE', 'REJECT']
-      }
-    },
-    {
-      id: 'ai2',
-      turnId,
-      type: 'AI',
-      toolCalls: [{ id: 'call-choice', name: 'require_choice', arguments: '{"question":"选哪个"}' }]
-    },
-    {
-      id: 'tool-choice',
-      turnId,
-      type: 'TOOL',
-      toolCallId: 'call-choice',
-      toolCall: {
-        id: 'call-choice',
-        toolName: 'require_choice',
-        type: 'PROMISE',
-        status: 'pending',
-        pending: true,
-        content: { kind: 'CHOICE', question: '选哪个方案？', options: ['方案A', '方案B'] },
-        allowedActions: ['ANSWER']
-      }
-    },
-    {
-      id: 'ai3',
-      turnId,
-      type: 'AI',
-      toolCalls: [{ id: 'call-cmd', name: 'execute_command', arguments: '{"command":"ls"}' }]
-    },
-    {
-      id: 'tool-cmd',
-      turnId,
-      type: 'TOOL',
-      toolCallId: 'call-cmd',
-      toolCall: {
-        id: 'call-cmd',
-        toolName: 'execute_command',
-        type: 'PROMISE',
-        status: 'completed',
-        pending: false,
-        content: { kind: 'COMMAND', command: 'ls -la', workDir: '/workspace', shell: 'bash', intention: '列出目录' },
-        rawOutput: { outcome: 'APPROVED', stdout: 'a.txt\nb.txt' },
-        allowedActions: []
-      }
-    },
-    { id: 'ai-end', turnId, type: 'AI', text: '已完成' }
-  ];
+  // 展示结构来自轮次视图（块只给身份与状态）；卡片载荷来自权威 ToolCallVO（审批操作同源）。
+  const messages: ChatMessage[] = [];
+  upsertTurnViewIntoMessages(messages, {
+    sessionId,
+    turnId,
+    status: 'COMPLETED',
+    viewVersion: '1',
+    userMessage: '执行任务',
+    blocks: [
+      { blockId: 'tool:call-plan', type: 'TOOL', order: 0, status: 'PROMISED', toolCallId: 'call-plan', toolName: 'create_plan' },
+      { blockId: 'tool:call-choice', type: 'TOOL', order: 10, status: 'PROMISED', toolCallId: 'call-choice', toolName: 'require_choice' },
+      { blockId: 'tool:call-cmd', type: 'TOOL', order: 20, status: 'COMPLETED', toolCallId: 'call-cmd', toolName: 'execute_command' },
+      { blockId: 'text:end', type: 'TEXT', order: 30, status: 'COMPLETE', placement: 'BODY', text: '已完成' },
+    ],
+  }, new Map());
 
-  const msgs = aggregateSessionMessages(records, sessionId);
-  const asst = msgs.find(m => m.role === 'assistant');
-  assert.ok(asst, '应聚合出助手回答组');
+  const asst = messages.find(m => m.role === 'assistant');
+  assert.ok(asst, '应投影出助手回答组');
+
+  // 权威卡片 VO（与实时路径 onResolveCard 拉到的同形状）写入唯一落点
+  const planCard = { id: 'call-plan', toolName: 'create_plan', type: 'PROMISE', status: 'pending', pending: true, title: '方案', content: { kind: 'PLAN', title: '方案', text: '# 计划正文' }, allowedActions: ['APPROVE', 'REJECT'] } as unknown as ToolCallVO;
+  const choiceCard = { id: 'call-choice', toolName: 'require_choice', type: 'PROMISE', status: 'pending', pending: true, content: { kind: 'CHOICE', question: '选哪个方案？', options: ['方案A', '方案B'] }, allowedActions: ['ANSWER'] } as unknown as ToolCallVO;
+  const cmdCard = { id: 'call-cmd', toolName: 'execute_command', type: 'PROMISE', status: 'completed', pending: false, content: { kind: 'COMMAND', command: 'ls -la', workDir: '/workspace', shell: 'bash', intention: '列出目录' }, rawOutput: { outcome: 'APPROVED', stdout: 'a.txt\nb.txt' }, allowedActions: [] } as unknown as ToolCallVO;
+  for (const card of [planCard, choiceCard, cmdCard]) upsertPromptCard(asst, card);
+
   assert.ok(asst.promptCards, 'PROMISE 卡片应保留在 promptCards');
   assert.strictEqual(asst.promptCards?.length, 3, '三类卡片各一张');
 

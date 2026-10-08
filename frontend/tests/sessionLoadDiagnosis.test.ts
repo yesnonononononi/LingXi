@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { computed, ref } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
 import type { AgentEvent } from '../src/types/Event';
-import type { ChatMessage, ChatSession, SessionMessageVO } from '../src/types/chat';
+import type { ChatMessage, ChatSession } from '../src/types/chat';
 import type { Block, TurnViewVO } from '../src/types/block';
 import { chatApi } from '../src/services/chat';
 import { AgentToolName } from '../src/utils/toolNames';
@@ -48,27 +48,10 @@ function createTurnView(turnId = TURN_ID, viewVersion = 4): TurnViewVO {
   };
 }
 
-/** 兼容旧用例：保留原始消息行 fixture（仅用于 mergeRawRecords 等纯函数用例）。 */
-function createRecords(): SessionMessageVO[] {  const records: SessionMessageVO[] = [];
-  let nextRecordId = 2107364703113184000n;
-  let nextCall = 0;
-  const append = (record: Omit<SessionMessageVO, 'id' | 'turnId'>): void => {
-    records.push({ ...record, id: String(nextRecordId++), turnId: TURN_ID, createTime: '2026-10-08T08:56:00Z' });
-  };
-  append({ type: 'USER', text: '分析消息渲染' });
-  for (let round = 0; round < 57; round++) {
-    const calls = Array.from({ length: round === 8 || round === 9 ? 2 : 1 }, () => ({
-      id: `call-${nextCall++}`, name: AgentToolName.ReadFile, arguments: JSON.stringify({ path: 'example.txt' })
-    }));
-    append({ type: 'AI', thinking: `思考 ${round}`, toolCalls: calls });
-    for (const call of calls) {
-      append({ type: 'TOOL', toolCallId: call.id, toolCall: {
-        id: call.id, toolName: AgentToolName.ReadFile, type: 'EXECUTE', status: 'completed',
-        rawOutput: { outcome: 'SUCCEEDED', output: '完成' }
-      } });
-    }
-  }
-  return records;
+/** 分页游标锚点：只用来算「还有没有下一页」，不参与任何展示构造。 */
+function createCursorRows(count = 150): Array<{ id: string }> {
+  let nextId = 2107364703113184000n;
+  return Array.from({ length: count }, () => ({ id: String(nextId++) }));
 }
 
 function createEvent(event: Partial<AgentEvent>): AgentEvent {
@@ -103,7 +86,7 @@ async function reconcilePages(messages: ChatMessage[]): Promise<ChatMessage[]> {
   setActivePinia(createPinia());
   const session = createSession(messages);
   const sessions = ref([session]);
-  const records = createRecords();
+  const records = createCursorRows();
   const views = { [TURN_ID]: createTurnView() };
   const originalTree = chatApi.fetchSessionTree;
   const originalMessages = chatApi.fetchSessionMessages;
@@ -124,7 +107,7 @@ async function reconcilePages(messages: ChatMessage[]): Promise<ChatMessage[]> {
 }
 
 test('正对照：历史视图并入后只有一个含 59 个工具的助手气泡', () => {
-  const messages = aggregateRecordsByIdentity(undefined, undefined, SESSION_ID, { [TURN_ID]: createTurnView() });
+  const messages = aggregateRecordsByIdentity(SESSION_ID, { [TURN_ID]: createTurnView() });
   const assistants = messages.filter(message => message.role === 'assistant');
   assert.equal(assistants.length, 1);
   assert.equal(assistants[0].toolCalls?.length, 59);
@@ -149,7 +132,7 @@ test('诊断：实际终态回查替换实时气泡，同一轮跨页只能有�
 test('诊断：跨页气泡 ID 相同时，工具条只能标记一个组尾', () => {
   // 旧路径下同一轮可能被拆成两条同 id 气泡（组尾相撞）。新口径下视图驱动的气泡 id 唯一，
   // 这里守住「同一轮只有一条助手气泡」这条更根本的不变量。
-  const messages = aggregateRecordsByIdentity(undefined, undefined, SESSION_ID, { [TURN_ID]: createTurnView() });
+  const messages = aggregateRecordsByIdentity(SESSION_ID, { [TURN_ID]: createTurnView() });
   assert.equal(messages.filter(message => message.role === 'assistant').length, 1, summarize(messages));
 
   const bindings = buildMessageTurnMap(messages, { [TURN_ID]: { turnId: TURN_ID, status: 'CANCELLED', totalTokens: 3308400 } });
@@ -164,14 +147,17 @@ test('诊断：同一轮的实时气泡被权威视图整体接管（顺序与�
   reducer.consume(createEvent({ type: 'TOOL_CALL', requestId: 'live-call', toolName: AgentToolName.ReadFile, args: '{}' }));
   reducer.flush();
   // 实时阶段：不建工具、不写思考（内容等视图）
-  assert.equal(messages[0].toolCalls?.length, 0, '原始事件不建工具项');
-  assert.equal(messages[0].thoughtSteps?.length, 0, '原始事件不写思考');
+  const live = messages.find(m => m.role === 'assistant')!;
+  assert.equal(live.toolCalls?.length, 0, '原始事件不建工具项');
+  assert.equal(live.thoughtSteps?.length, 0, '原始事件不写思考');
 
-  // 权威视图到达：整轮重写为后端给的 57 思考 + 59 工具
+  // 权威视图到达：整轮重写为后端给的 57 思考 + 59 工具，并补上用户提问
   reducer.consume(snapshotEvent(createTurnView()));
-  assert.equal(messages.filter(message => message.role === 'assistant').length, 1, '同一轮只有一个气泡');
-  assert.equal(messages[0].thoughtSteps?.length, 57, '思考数量来自后端');
-  assert.equal(messages[0].toolCalls?.length, 59, '工具数量来自后端');
+  const assistants = messages.filter(m => m.role === 'assistant');
+  assert.equal(assistants.length, 1, '同一轮只有一个气泡');
+  assert.equal(messages.filter(m => m.role === 'user').length, 1, '用户提问由视图补齐');
+  assert.equal(assistants[0].thoughtSteps?.length, 57, '思考数量来自后端');
+  assert.equal(assistants[0].toolCalls?.length, 59, '工具数量来自后端');
 });
 
 test('诊断：同 id 的块按 blockId 幂等覆盖，不依赖内容指纹', () => {
@@ -199,12 +185,19 @@ test('诊断：选中会话的详情响应迟到时，期间到达的实时轮�
     const reducer = new TurnStreamReducer(() => current.value!.messages, { sessionId: SESSION_ID });
     // 在途期间实时轮次视图到达（版本 4）
     reducer.consume(snapshotEvent(createTurnView(TURN_ID, 4)));
-    assert.equal(current.value!.messages[0]?.content, '', '详情未到，实时视图已建气泡');
-    assert.equal(current.value!.messages[0]?.toolCalls?.length, 59);
+    const live = current.value!.messages.find(m => m.role === 'assistant')!;
+    assert.equal(
+      current.value!.messages.find(m => m.role === 'user')?.content, '分析消息渲染',
+      '详情未到，实时视图已建气泡并补齐用户提问',
+    );
+    assert.equal(live.toolCalls?.length, 59);
     // 详情回来（不带视图 → 空）：按统一入口 upsert，实时已写入的轮次必须保留
     resolveDetail({ ok: true, data: createSession() });
     await loading;
-    assert.equal(current.value!.messages[0]?.toolCalls?.length, 59, '在途到达的实时轮次不得被详情清空');
+    assert.equal(
+      current.value!.messages.find(m => m.role === 'assistant')?.toolCalls?.length, 59,
+      '在途到达的实时轮次不得被详情清空',
+    );
   } finally {
     chatApi.fetchSessionDetail = originalDetail;
   }
@@ -276,7 +269,7 @@ test('诊断：往前翻页时同一轮仍只有一个助手气泡，且补齐�
   const session = createSession();
   // 首屏已加载该轮：视图版本较低（模拟后端先落的部分块）
   session.turnViews = { [TURN_ID]: createTurnView(TURN_ID, 3) };
-  session.messages = aggregateRecordsByIdentity(undefined, undefined, SESSION_ID, session.turnViews);
+  session.messages = aggregateRecordsByIdentity(SESSION_ID, session.turnViews);
   session.hasMoreMessages = true;
   session.nextMessageCursor = 'cursor-1';
   const sessions = ref([session]);

@@ -1,198 +1,141 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { SessionMessageVO, ChatMessage, ChatTurn } from '../src/types/chat';
-import {
-  mergeRawRecords,
-  aggregateSessionMessages,
-  groupMessagesByTurn
-} from '../src/utils/session';
+import type { ChatMessage } from '../src/types/chat';
+import type { Block, TurnViewVO } from '../src/types/block';
+import { groupMessagesByTurn } from '../src/utils/session';
+import { upsertTurnViewIntoMessages } from '../src/views/chat/blockProjection';
 
-test('1. 本次真实会话跨两页: 一个回答组，合并 40 个工具调用，最终正文为"已修复并实测通过 ✅"', () => {
-  const sessionId: string = '2105536374932451328';
-  const turnId: string = '2105537327467278336';
+/**
+ * 跨页 / 幂等 / 排序契约（唯一链路：后端轮次视图 → {@link upsertTurnViewIntoMessages}）。
+ *
+ * <p>旧实现建立在「原始消息行 → 前端聚合」之上，那条链路已随本次改造删除。
+ * 本文件把同一批能力面（跨页合并、重复加载幂等、相邻轮次不误合并、PROMISE 卡片、
+ * 恢复流复用、子会话同规则、气泡排序稳定）重新钉在轮次视图契约上。</p>
+ */
 
-  // 模拟较早页（Page 2，游标更早拉取到的消息：包含 14 个工具调用及较早 AI 文本）
-  const olderPageRecords: SessionMessageVO[] = [];
-  olderPageRecords.push({
-    id: 'msg-user-1',
+/** 造一轮视图：思考 / 文本 / 工具都通过 block 表达，order 由调用方决定。 */
+function turnView(
+  sessionId: string,
+  turnId: string,
+  opts: { version?: number; user?: string; blocks?: Block[]; status?: string } = {},
+): TurnViewVO {
+  return {
+    sessionId,
     turnId,
-    type: 'USER',
-    text: '请帮我排查并修复会话展示问题',
-    createTime: '2026-10-01T06:00:00Z'
-  });
+    status: opts.status ?? 'COMPLETED',
+    viewVersion: String(opts.version ?? 1),
+    userMessage: opts.user,
+    blocks: opts.blocks ?? [],
+  };
+}
 
-  for (let i = 1; i <= 14; i++) {
-    const callId: string = `call-tool-${i}`;
-    olderPageRecords.push({
-      id: `ai-tool-req-${i}`,
-      turnId,
-      type: 'AI',
-      toolCalls: [{ id: callId, name: 'search_code', arguments: '{"q":"fix"}' }],
-      createTime: '2026-10-01T06:00:01Z'
-    });
-    olderPageRecords.push({
-      id: `tool-res-${i}`,
-      turnId,
-      type: 'TOOL',
-      toolCallId: callId,
-      toolCall: {
-        id: callId,
-        toolName: 'search_code',
-        type: 'EXECUTE',
-        rawOutput: { outcome: 'SUCCEEDED', output: `result ${i}` }
-      },
-      createTime: '2026-10-01T06:00:02Z'
-    });
-  }
+let orderSeq = 0;
+const nextOrder = () => orderSeq++;
 
-  olderPageRecords.push({
-    id: 'ai-intermediate-text',
-    turnId,
-    type: 'AI',
-    text: '开发完成。我用浏览器实测……',
-    createTime: '2026-10-01T06:00:15Z'
-  });
+function thinking(text: string, order = nextOrder()): Block {
+  return { blockId: `thinking:${order}`, type: 'THINKING', order, status: 'COMPLETE', text };
+}
 
-  // 模拟最新页（Page 1，最初拉取到的消息：包含后续 26 个工具调用及最终定稿 AI 文本）
-  const newerPageRecords: SessionMessageVO[] = [];
-  for (let i = 15; i <= 40; i++) {
-    const callId: string = `call-tool-${i}`;
-    newerPageRecords.push({
-      id: `ai-tool-req-${i}`,
-      turnId,
-      type: 'AI',
-      toolCalls: [{ id: callId, name: 'run_command', arguments: '{"cmd":"npm test"}' }],
-      createTime: '2026-10-01T06:00:20Z'
-    });
-    newerPageRecords.push({
-      id: `tool-res-${i}`,
-      turnId,
-      type: 'TOOL',
-      toolCallId: callId,
-      toolCall: {
-        id: callId,
-        toolName: 'run_command',
-        type: 'EXECUTE',
-        rawOutput: { outcome: 'SUCCEEDED', output: `pass ${i}` }
-      },
-      createTime: '2026-10-01T06:00:21Z'
-    });
-  }
+function bodyText(text: string, order = nextOrder()): Block {
+  return { blockId: `text:${order}`, type: 'TEXT', order, status: 'COMPLETE', placement: 'BODY', text };
+}
 
-  newerPageRecords.push({
-    id: 'ai-final-text',
-    turnId,
-    type: 'AI',
-    text: '已修复并实测通过 ✅',
-    createTime: '2026-10-01T06:00:40Z'
-  });
+function processText(text: string, order = nextOrder()): Block {
+  return { blockId: `text-p:${order}`, type: 'TEXT', order, status: 'COMPLETE', placement: 'PROCESS', text };
+}
 
-  // 按照实施方案：mergeRawRecords(older, newer) -> aggregateSessionMessages
-  const combinedRecords: SessionMessageVO[] = mergeRawRecords(olderPageRecords, newerPageRecords);
-  const messages: ChatMessage[] = aggregateSessionMessages(combinedRecords, sessionId);
+function toolBlock(callId: string, toolName: string, order = nextOrder(), output = 'ok'): Block {
+  return {
+    blockId: `tool:${callId}`, type: 'TOOL', order, status: 'COMPLETED',
+    toolCallId: callId, toolName, output: JSON.stringify({ outcome: 'SUCCEEDED', output }),
+  };
+}
 
-  // 验证结果：1 条 USER 消息 + 1 条 ASSISTANT 消息，共 2 条消息（同一个回答组）
+/** 单一入口：把若干视图并入一个新消息数组。 */
+function project(views: TurnViewVO[]): ChatMessage[] {
+  const messages: ChatMessage[] = [];
+  const versions = new Map<string, number>();
+  for (const view of views) upsertTurnViewIntoMessages(messages, view, versions);
+  return messages;
+}
+
+test('1. 本次真实会话跨页: 同一轮跨两页合并后只有一个回答组，工具完整', () => {
+  const sessionId = '2105536374932451328';
+  const turnId = '2105537327467278336';
+
+  // 较早页：14 个工具 + 一段中途叙述
+  const olderBlocks: Block[] = [processText('开发完成。我用浏览器实测……')];
+  for (let i = 1; i <= 14; i++) olderBlocks.push(toolBlock(`call-tool-${i}`, 'search_code'));
+
+  // 较新页：后续 26 个工具 + 定稿正文
+  const newerBlocks: Block[] = [];
+  for (let i = 15; i <= 40; i++) newerBlocks.push(toolBlock(`call-tool-${i}`, 'run_command'));
+  newerBlocks.push(bodyText('已修复并实测通过 ✅'));
+
+  // 两页下发的是同一轮：较高的版本整轮接管（后端装配器读该轮全部消息）
+  const messages = project([
+    turnView(sessionId, turnId, { version: 3, user: '请帮我排查并修复会话展示问题', blocks: olderBlocks }),
+    turnView(sessionId, turnId, { version: 5, user: '请帮我排查并修复会话展示问题', blocks: [...olderBlocks, ...newerBlocks] }),
+  ]);
+
   assert.strictEqual(messages.length, 2, '应当只有 1 条用户消息和 1 条聚合后的回答消息');
-
-  const userMsg: ChatMessage = messages[0];
-  const asstMsg: ChatMessage = messages[1];
+  const userMsg = messages[0];
+  const asstMsg = messages[1];
 
   assert.strictEqual(userMsg.role, 'user');
   assert.strictEqual(asstMsg.role, 'assistant');
   assert.strictEqual(asstMsg.turnId, turnId);
-  assert.strictEqual(asstMsg.id, `msg-${sessionId}-turn-${turnId}`);
+  assert.strictEqual(asstMsg.id, `bubble-${sessionId}-${turnId}`);
 
-  // 验证工具数量：完整合并 40 个工具调用
   assert.strictEqual(asstMsg.toolCalls?.length, 40, '应当完整包含 40 个工具调用');
-
-  // 验证正文：最后一条非空 AI 文本作为正文
-  assert.strictEqual(asstMsg.content, '已修复并实测通过 ✅', '最终正文应为最新页的定稿文本');
-
-  // 验证折叠过程：较早页的非空 AI 文本进入折叠过程
-  assert.strictEqual(asstMsg.aiMessages?.length, 1, '较早页的文本应进入 aiMessages 折叠列表');
+  assert.strictEqual(asstMsg.content, '已修复并实测通过 ✅', 'BODY 段文本落正文');
+  assert.strictEqual(asstMsg.aiMessages?.length, 1, 'PROCESS 段文本进折叠过程区');
   assert.strictEqual(asstMsg.aiMessages?.[0]?.text, '开发完成。我用浏览器实测……');
 
-  // 验证回答分组
   const groups = groupMessagesByTurn(messages);
   assert.strictEqual(groups.length, 1, '同一轮次跨页合并后应仅生成 1 个回答组');
   assert.strictEqual(groups[0].turnId, turnId);
 });
 
-test('2. 重复加载同一页: 幂等性去重，消息、工具与卡片不重复计数', () => {
-  const sessionId: string = 'sess-100';
-  const turnId: string = 'turn-200';
+test('2. 重复投递同一视图: 幂等，消息 / 工具 / 文本不重复计数', () => {
+  const sessionId = 'sess-100';
+  const turnId = 'turn-200';
 
-  const singlePage: SessionMessageVO[] = [
-    {
-      id: 'msg-u1',
-      turnId,
-      type: 'USER',
-      text: '你好',
-      createTime: '2026-10-01T00:00:00Z'
-    },
-    {
-      id: 'msg-ai-1',
-      turnId,
-      type: 'AI',
-      text: '你好！',
-      toolCalls: [{ id: 'call-1', name: 'calc', arguments: '{}' }],
-      createTime: '2026-10-01T00:00:01Z'
-    },
-    {
-      id: 'msg-tool-1',
-      turnId,
-      type: 'TOOL',
-      toolCallId: 'call-1',
-      toolCall: {
-        id: 'call-1',
-        toolName: 'calc',
-        type: 'EXECUTE',
-        rawOutput: { outcome: 'SUCCEEDED', output: '42' }
-      },
-      createTime: '2026-10-01T00:00:02Z'
-    }
-  ];
+  const view = turnView(sessionId, turnId, {
+    version: 2,
+    user: '你好',
+    blocks: [bodyText('你好！'), toolBlock('call-1', 'calc', undefined, '42')],
+  });
 
-  // 模拟同一页被加载两次
-  const mergedOnce: SessionMessageVO[] = mergeRawRecords(singlePage, []);
-  const mergedTwice: SessionMessageVO[] = mergeRawRecords(singlePage, mergedOnce);
+  const messages: ChatMessage[] = [];
+  const versions = new Map<string, number>();
+  upsertTurnViewIntoMessages(messages, view, versions);
+  const snapshot = JSON.stringify(messages);
+  upsertTurnViewIntoMessages(messages, view, versions);
+  upsertTurnViewIntoMessages(messages, view, versions);
 
-  assert.strictEqual(mergedTwice.length, singlePage.length, '重复合并同一页原始记录长度不变');
-
-  const msgsOnce: ChatMessage[] = aggregateSessionMessages(mergedOnce, sessionId);
-  const msgsTwice: ChatMessage[] = aggregateSessionMessages(mergedTwice, sessionId);
-
-  assert.strictEqual(msgsTwice.length, 2);
-  assert.strictEqual(msgsTwice[1].toolCalls?.length, 1);
-  // 该 AI 行仍带工具调用 = 这一轮没有结论（终结判据「该轮无工具调用」，见 session.ts），
-  // 因此它的文本属于中途叙述，进折叠过程区而不是正文。
-  assert.strictEqual(msgsTwice[1].content, '');
-  assert.strictEqual(msgsTwice[1].aiMessages?.length, 1);
-  assert.strictEqual(msgsTwice[1].aiMessages?.[0]?.text, '你好！');
-  assert.deepStrictEqual(msgsOnce, msgsTwice, '重复解析输出严格一致');
+  assert.strictEqual(messages.length, 2, '重复投递不增加消息条数');
+  assert.strictEqual(messages[1].toolCalls?.length, 1, '重复投递不增加工具条数');
+  assert.strictEqual(messages[1].content, '你好！');
+  assert.strictEqual(JSON.stringify(messages), snapshot, '重复投影输出严格一致（幂等）');
 });
 
-test('3. 不同轮次相邻: 分别展示，不误合并', () => {
-  const sessionId: string = 'sess-multi';
-  const turn1: string = 'turn-1';
-  const turn2: string = 'turn-2';
+test('3. 不同轮次相邻: 分别展示，不误合并，且按雪花键升序', () => {
+  const sessionId = 'sess-multi';
+  const turn1 = '2106057094397558784';
+  const turn2 = '2106057227516379136';
 
-  const records: SessionMessageVO[] = [
-    { id: 'u1', turnId: turn1, type: 'USER', text: '问题 1' },
-    { id: 'a1', turnId: turn1, type: 'AI', text: '回答 1' },
-    { id: 'u2', turnId: turn2, type: 'USER', text: '问题 2' },
-    { id: 'a2', turnId: turn2, type: 'AI', text: '回答 2' }
-  ];
+  const messages = project([
+    turnView(sessionId, turn1, { user: '问题 1', blocks: [bodyText('回答 1')] }),
+    turnView(sessionId, turn2, { user: '问题 2', blocks: [bodyText('回答 2')] }),
+  ]);
 
-  const messages: ChatMessage[] = aggregateSessionMessages(records, sessionId);
   assert.strictEqual(messages.length, 4, '两个轮次应有 4 条消息');
-
   assert.strictEqual(messages[0].turnId, turn1);
-  assert.strictEqual(messages[1].id, `msg-${sessionId}-turn-${turn1}`);
+  assert.strictEqual(messages[1].id, `bubble-${sessionId}-${turn1}`);
   assert.strictEqual(messages[1].content, '回答 1');
-
   assert.strictEqual(messages[2].turnId, turn2);
-  assert.strictEqual(messages[3].id, `msg-${sessionId}-turn-${turn2}`);
+  assert.strictEqual(messages[3].id, `bubble-${sessionId}-${turn2}`);
   assert.strictEqual(messages[3].content, '回答 2');
 
   const groups = groupMessagesByTurn(messages);
@@ -201,194 +144,133 @@ test('3. 不同轮次相邻: 分别展示，不误合并', () => {
   assert.strictEqual(groups[1].turnId, turn2);
 });
 
-test('4. 旧消息无 turnId: 正常降级，按用户消息边界分组，无跨用户提问误合并', () => {
-  const sessionId: string = 'sess-legacy';
+test('4. 视图缺 userMessage: 只投影助手气泡，不造空用户气泡', () => {
+  const sessionId = 'sess-legacy';
+  const turnId = '2106057094397558784';
 
-  const legacyRecords: SessionMessageVO[] = [
-    { id: 'leg-u1', turnId: null, type: 'USER', text: '旧提问 1' },
-    { id: 'leg-a1', turnId: null, type: 'AI', text: '旧回答 1' },
-    { id: 'leg-u2', turnId: null, type: 'USER', text: '旧提问 2' },
-    { id: 'leg-a2', turnId: null, type: 'AI', text: '旧回答 2' }
-  ];
+  const messages = project([turnView(sessionId, turnId, { blocks: [bodyText('旧回答 1')] })]);
 
-  const messages: ChatMessage[] = aggregateSessionMessages(legacyRecords, sessionId);
-  assert.strictEqual(messages.length, 4);
-
-  assert.strictEqual(messages[0].content, '旧提问 1');
-  assert.strictEqual(messages[1].id, `msg-${sessionId}-legacy-leg-a1`);
-  assert.strictEqual(messages[1].content, '旧回答 1');
-
-  assert.strictEqual(messages[2].content, '旧提问 2');
-  assert.strictEqual(messages[3].id, `msg-${sessionId}-legacy-leg-a2`);
-  assert.strictEqual(messages[3].content, '旧回答 2');
+  assert.strictEqual(messages.length, 1, '缺 userMessage 时不应造用户气泡');
+  assert.strictEqual(messages[0].role, 'assistant');
+  assert.strictEqual(messages[0].content, '旧回答 1');
 
   const groups = groupMessagesByTurn(messages);
-  assert.strictEqual(groups.length, 2, '无 turnId 的旧消息应按 USER 消息边界拆分为两个独立组');
-  assert.strictEqual(groups[0].messages.length, 2);
-  assert.strictEqual(groups[1].messages.length, 2);
+  assert.strictEqual(groups.length, 1);
 });
 
-test('6. PROMISE 工具跨页: 审批状态与结果与工具调用正确同步', () => {
-  const sessionId: string = 'sess-card';
-  const turnId: string = 'turn-card';
-  const callId: string = 'call-promise-1';
+test('6. PROMISE 工具跨页: 审批卡片按 blockId 就地更新，不新增气泡', () => {
+  const sessionId = 'sess-card';
+  const turnId = '2106057094397558784';
+  const callId = 'call-promise-1';
 
-  const olderPage: SessionMessageVO[] = [
-    {
-      id: 'ai-req',
-      turnId,
-      type: 'AI',
-      toolCalls: [{ id: callId, name: 'execute_command', arguments: '{"command":"dir"}' }]
-    }
-  ];
+  const messages: ChatMessage[] = [];
+  const versions = new Map<string, number>();
 
-  const newerPage: SessionMessageVO[] = [
-    {
-      id: 'tool-card',
-      turnId,
-      type: 'TOOL',
-      toolCallId: callId,
-      toolCall: {
-        id: callId,
-        toolName: 'execute_command',
-        type: 'PROMISE',
-        title: '命令审批',
-        content: { kind: 'COMMAND', command: 'dir' },
-        rawOutput: { outcome: 'APPROVED', stdout: 'File1.txt' },
-        pending: false
-      }
-    },
-    {
-      id: 'ai-end',
-      turnId,
-      type: 'AI',
-      text: '命令已执行'
-    }
-  ];
+  // 第一阶段：待决策（同一轮，版本 1）
+  upsertTurnViewIntoMessages(messages, turnView(sessionId, turnId, {
+    version: 1,
+    blocks: [{
+      blockId: `tool:${callId}`, type: 'TOOL', order: 0, status: 'PROMISED',
+      toolCallId: callId, toolName: 'execute_command',
+    }],
+  }), versions);
+  assert.strictEqual(messages.length, 1);
+  assert.strictEqual(messages[0].toolCalls?.length, 1);
 
-  const combined = mergeRawRecords(olderPage, newerPage);
-  const msgs = aggregateSessionMessages(combined, sessionId);
+  // 第二阶段：审批通过并收尾（同一轮，版本 2）；该轮多了一段正文
+  upsertTurnViewIntoMessages(messages, turnView(sessionId, turnId, {
+    version: 2,
+    blocks: [
+      {
+        blockId: `tool:${callId}`, type: 'TOOL', order: 0, status: 'COMPLETED',
+        toolCallId: callId, toolName: 'execute_command',
+        output: JSON.stringify({ outcome: 'SUCCEEDED', output: 'File1.txt' }),
+      },
+      bodyText('命令已执行', 1),
+    ],
+  }), versions);
 
-  assert.strictEqual(msgs.length, 1);
-  const asst = msgs[0];
-  assert.strictEqual(asst.content, '命令已执行');
-  assert.strictEqual(asst.toolCalls?.length, 1, 'PROMISE 工具仍作为普通工具调用聚合');
-  assert.strictEqual(asst.toolCalls?.[0]?.id, callId);
-  assert.strictEqual(asst.toolCalls?.[0]?.status, 'success', '审批通过后工具调用状态应为 success');
+  assert.strictEqual(messages.length, 1, '同一轮不得裂出第二条气泡');
+  assert.strictEqual(messages[0].content, '命令已执行');
+  assert.strictEqual(messages[0].toolCalls?.length, 1, 'PROMISE 工具仍作为普通工具调用聚合');
+  assert.strictEqual(messages[0].toolCalls?.[0]?.id, callId);
+  assert.strictEqual(messages[0].toolCalls?.[0]?.status, 'success', '审批通过后工具调用状态应为 success');
 });
 
-test('7. 相同轮次恢复（审批恢复/暂停恢复/重新订阅）: 复用原有回答气泡组', () => {
-  const sessionId: string = 'sess-resume';
-  const turnId: string = 'turn-resume-1';
+test('7. 相同轮次恢复（审批恢复/暂停恢复/重新订阅）: 复用原有回答气泡', () => {
+  const sessionId = 'sess-resume';
+  const turnId = '2106057094397558784';
+  const callId = 'call-cmd';
 
-  // 模拟第一阶段：触发审批并暂停
-  const initialRecords: SessionMessageVO[] = [
-    { id: 'u-res', turnId, type: 'USER', text: '执行危险命令' },
-    {
-      id: 'ai-promise',
-      turnId,
-      type: 'AI',
-      toolCalls: [{ id: 'call-cmd', name: 'execute_command', arguments: '{"command":"rm -rf"}' }]
-    },
-    {
-      id: 'tool-pending',
-      turnId,
-      type: 'TOOL',
-      toolCallId: 'call-cmd',
-      toolCall: {
-        id: 'call-cmd',
-        toolName: 'execute_command',
-        type: 'PROMISE',
-        content: { kind: 'COMMAND', command: 'rm -rf' },
-        pending: true
-      }
-    }
-  ];
+  const messages: ChatMessage[] = [];
+  const versions = new Map<string, number>();
 
-  const initialMsgs = aggregateSessionMessages(initialRecords, sessionId);
-  assert.strictEqual(initialMsgs.length, 2);
-  assert.strictEqual(initialMsgs[1].id, `msg-${sessionId}-turn-${turnId}`);
-  assert.strictEqual(initialMsgs[1].toolCalls?.[0]?.id, 'call-cmd');
-  // 语义变更（A2，产品决策）：仍待决策的 PROMISE 卡片（type=PROMISE 且 status=pending、无终态 outcome），
-  // 工具行状态标为 pending（等待人工决策），与实时路径 handleExecutionSuspended 的处置一致。
-  // 旧实现落成 unknown，会把「等待人工决策」误显为「状态未知」。
-  assert.strictEqual(initialMsgs[1].toolCalls?.[0]?.status, 'pending', '待决策的 PROMISE 工具调用应标记为 pending');
+  // 第一阶段：触发审批并暂停
+  upsertTurnViewIntoMessages(messages, turnView(sessionId, turnId, {
+    version: 1,
+    status: 'WAITING',
+    user: '执行危险命令',
+    blocks: [{
+      blockId: `tool:${callId}`, type: 'TOOL', order: 0, status: 'PROMISED',
+      toolCallId: callId, toolName: 'execute_command',
+    }],
+  }), versions);
 
-  // 模拟第二阶段：用户审批通过后恢复流并完成
-  const resumedRecords: SessionMessageVO[] = [
-    {
-      id: 'tool-approved',
-      turnId,
-      type: 'TOOL',
-      toolCallId: 'call-cmd',
-      toolCall: {
-        id: 'call-cmd',
-        toolName: 'execute_command',
-        type: 'PROMISE',
-        content: { kind: 'COMMAND', command: 'rm -rf' },
-        rawOutput: { outcome: 'APPROVED', stdout: 'done' },
-        pending: false
-      }
-    },
-    {
-      id: 'ai-done',
-      turnId,
-      type: 'AI',
-      text: '已处理完毕'
-    }
-  ];
+  assert.strictEqual(messages.length, 2);
+  assert.strictEqual(messages[1].id, `bubble-${sessionId}-${turnId}`);
+  assert.strictEqual(messages[1].toolCalls?.[0]?.id, callId);
+  // 待决策的 PROMISE 卡片（status=STARTED/PROMISED 且无终态 outcome）标为 pending（等待人工决策）。
+  assert.strictEqual(messages[1].toolCalls?.[0]?.status, 'pending', '待决策的 PROMISE 工具调用应标记为 pending');
 
-  const merged = mergeRawRecords(initialRecords, resumedRecords);
-  const finalMsgs = aggregateSessionMessages(merged, sessionId);
+  // 第二阶段：审批通过后恢复流并完成（同一轮，版本 2）
+  upsertTurnViewIntoMessages(messages, turnView(sessionId, turnId, {
+    version: 2,
+    user: '执行危险命令',
+    blocks: [
+      {
+        blockId: `tool:${callId}`, type: 'TOOL', order: 0, status: 'COMPLETED',
+        toolCallId: callId, toolName: 'execute_command',
+        output: JSON.stringify({ outcome: 'APPROVED', stdout: 'done' }),
+      },
+      bodyText('已处理完毕', 1),
+    ],
+  }), versions);
 
-  assert.strictEqual(finalMsgs.length, 2, '恢复后应沿用同一个回答组，不生成新气泡');
-  assert.strictEqual(finalMsgs[1].id, `msg-${sessionId}-turn-${turnId}`);
-  assert.strictEqual(finalMsgs[1].content, '已处理完毕');
-  assert.strictEqual(finalMsgs[1].toolCalls?.[0]?.status, 'success', '审批通过后同一条工具调用被就地更新为 success');
+  assert.strictEqual(messages.length, 2, '恢复后应沿用同一个回答组，不生成新气泡');
+  assert.strictEqual(messages[1].id, `bubble-${sessionId}-${turnId}`);
+  assert.strictEqual(messages[1].content, '已处理完毕');
+  assert.strictEqual(messages[1].toolCalls?.[0]?.status, 'success', '审批通过后同一条工具调用被就地更新为 success');
 });
 
-test('8. 子会话历史跨页聚合: 与主会话采用相同聚合规则', () => {
-  const subSessionId: string = 'sub-4001';
-  const subTurnId: string = 'sub-turn-888';
+test('8. 子会话历史跨页: 与主会话采用同一投影规则', () => {
+  const subSessionId = '2106057094397558785';
+  const subTurnId = '2106057227516379137';
 
-  const subOlderPage: SessionMessageVO[] = [
-    { id: 'sub-u1', turnId: subTurnId, type: 'USER', text: '子任务指令' },
-    {
-      id: 'sub-ai-1',
-      turnId: subTurnId,
-      type: 'AI',
-      text: '准备处理数据...',
-      toolCalls: [{ id: 'sub-call-1', name: 'read_file', arguments: '{"path":"data.csv"}' }]
-    },
-    {
-      id: 'sub-tool-1',
-      turnId: subTurnId,
-      type: 'TOOL',
-      toolCallId: 'sub-call-1',
-      toolCall: {
-        id: 'sub-call-1',
-        toolName: 'read_file',
-        type: 'EXECUTE',
-        rawOutput: { outcome: 'SUCCEEDED', output: 'a,b,c' }
-      }
-    }
-  ];
+  const messages: ChatMessage[] = [];
+  const versions = new Map<string, number>();
 
-  const subNewerPage: SessionMessageVO[] = [
-    {
-      id: 'sub-ai-2',
-      turnId: subTurnId,
-      type: 'AI',
-      text: '子任务完成'
-    }
-  ];
+  upsertTurnViewIntoMessages(messages, turnView(subSessionId, subTurnId, {
+    version: 3,
+    user: '子任务指令',
+    blocks: [
+      processText('准备处理数据...', 0),
+      toolBlock('sub-call-1', 'read_file', 1, 'a,b,c'),
+    ],
+  }), versions);
+  // 同一轮更全的一页
+  upsertTurnViewIntoMessages(messages, turnView(subSessionId, subTurnId, {
+    version: 4,
+    user: '子任务指令',
+    blocks: [
+      processText('准备处理数据...', 0),
+      toolBlock('sub-call-1', 'read_file', 1, 'a,b,c'),
+      bodyText('子任务完成', 2),
+    ],
+  }), versions);
 
-  const subCombined = mergeRawRecords(subOlderPage, subNewerPage);
-  const subMsgs = aggregateSessionMessages(subCombined, subSessionId);
-
-  assert.strictEqual(subMsgs.length, 2);
-  const subAsst = subMsgs[1];
-  assert.strictEqual(subAsst.id, `msg-${subSessionId}-turn-${subTurnId}`);
+  assert.strictEqual(messages.length, 2);
+  const subAsst = messages[1];
+  assert.strictEqual(subAsst.id, `bubble-${subSessionId}-${subTurnId}`);
   assert.strictEqual(subAsst.content, '子任务完成');
   assert.strictEqual(subAsst.aiMessages?.length, 1);
   assert.strictEqual(subAsst.aiMessages?.[0]?.text, '准备处理数据...');
@@ -397,79 +279,36 @@ test('8. 子会话历史跨页聚合: 与主会话采用相同聚合规则', () 
 });
 
 /**
- * 过程时间线的时序契约：思维链 / 中间文本 / 工具调用三条集合的 order 必须同基准，
- * 否则 ChatMessageItem#processTimeline 的排序结果不是执行时序。
- *
- * 回归的是真实事故：中间文本曾用「AI 文本列表内下标 * 10 + 1」、思维链与工具用「原始消息行下标 * 10」，
- * 前者增长远慢于后者，于是整轮的过程文本被整体排到思维链与工具之前 —— 表现为
- * 「AI 文本被堆砌在过程消息区顶部，深度思考挤成一堵墙」。
- *
- * <p><b>10-06 契约变更</b>：同一轮次的多段思考**按 AI 行拆分为多个「深度思考」步骤**（与工具调用同粒度），
- * 不再拼接成一个大框。旧实现把整轮思考合并成一步，用户实拍验收：整轮思考挤成一个折叠框，
- * 与工具的逐段交错时序对不上。现每段思考独立成步、各取所在 AI 行的时序基准，与工具 / 中间文本
- * 交错还原真实执行顺序。这是产品决策变更，不是回归。</p>
+ * 过程时间线的时序契约：思维链 / 中间文本 / 工具调用三条集合的 order 必须同基准。
+ * 新口径下 order **完全来自后端 block.order**，前端不参与任何排序推断 ——
+ * 这里验证「后端的 order 原样还原成交错时序」。
  */
-test('9. 过程时间线时序: 思维链 → 中间文本 → 工具调用 按真实执行顺序交替，思考按行拆分为多段', () => {
-  const sessionId: string = 'sess-timeline';
-  const turnId: string = 'turn-timeline-1';
+test('9. 过程时间线时序: 思考 / 中间文本 / 工具按后端 order 逐段交错', () => {
+  const sessionId = 'sess-timeline';
+  const turnId = '2106057094397558784';
 
-  const records: SessionMessageVO[] = [
-    { id: 'u1', turnId, type: 'USER', text: '按团队流程实现' },
-    // 第 1 轮：思考 + 叙述文本 + 委派工具
-    {
-      id: 'ai-r1',
-      turnId,
-      type: 'AI',
-      text: '现有工程是移动竖屏 H5，与截图冲突，先确认方向。',
-      thinking: '先读代码摸清现状',
-      toolCalls: [{ id: 'call-1', name: 'execute_command', arguments: '{"command":"ls"}' }]
-    },
-    {
-      id: 'tool-r1',
-      turnId,
-      type: 'TOOL',
-      toolCallId: 'call-1',
-      toolCall: {
-        id: 'call-1',
-        toolName: 'execute_command',
-        type: 'EXECUTE',
-        rawOutput: { outcome: 'SUCCEEDED', output: 'ok' }
-      }
-    },
-    // 第 2 轮：只有思考 + 工具，没有叙述文本
-    {
-      id: 'ai-r2',
-      turnId,
-      type: 'AI',
-      thinking: '方向已确认，直接委派',
-      toolCalls: [{ id: 'call-2', name: 'read_file', arguments: '{"path":"a.tsx"}' }]
-    },
-    {
-      id: 'tool-r2',
-      turnId,
-      type: 'TOOL',
-      toolCallId: 'call-2',
-      toolCall: {
-        id: 'call-2',
-        toolName: 'read_file',
-        type: 'EXECUTE',
-        rawOutput: { outcome: 'SUCCEEDED', output: 'code' }
-      }
-    },
-    // 第 3 轮：终结轮次（无工具调用）→ 它的文本是正文
-    { id: 'ai-r3', turnId, type: 'AI', text: '已完成交付。', thinking: '汇总交付结论' }
-  ];
+  // 后端给出的 order 故意交错：思考(0) 文本(10) 工具(20) 思考(30) 工具(40) 思考(50)
+  const messages = project([turnView(sessionId, turnId, {
+    user: '按团队流程实现',
+    blocks: [
+      thinking('先读代码摸清现状', 0),
+      processText('现有工程是移动竖屏 H5，与截图冲突，先确认方向。', 10),
+      toolBlock('call-1', 'execute_command', 20, 'ok'),
+      thinking('方向已确认，直接委派', 30),
+      toolBlock('call-2', 'read_file', 40, 'code'),
+      thinking('汇总交付结论', 50),
+      bodyText('已完成交付。', 60),
+    ],
+  })]);
 
-  const msgs = aggregateSessionMessages(records, sessionId);
-  const asst = msgs[1];
-
-  assert.strictEqual(asst.content, '已完成交付。', '终结轮次文本落正文');
-  assert.strictEqual(asst.aiMessages?.length, 1, '仅中途叙述进过程区');
-  assert.strictEqual(asst.thoughtSteps?.length, 3, '同一轮多段思考按 AI 行拆分为多个步骤（与工具调用同粒度）');
+  const asst = messages[1];
+  assert.strictEqual(asst.content, '已完成交付。', 'BODY 文本落正文');
+  assert.strictEqual(asst.aiMessages?.length, 1, '仅 PROCESS 文本进过程区');
+  assert.strictEqual(asst.thoughtSteps?.length, 3, '多段思考各成一step');
   assert.deepStrictEqual(
     asst.thoughtSteps?.map(s => s.content),
     ['先读代码摸清现状', '方向已确认，直接委派', '汇总交付结论'],
-    '每段思考独立成步，内容不再拼接'
+    '每段思考独立成步，内容不再拼接',
   );
   assert.strictEqual(asst.toolCalls?.length, 2);
 
@@ -484,88 +323,57 @@ test('9. 过程时间线时序: 思维链 → 中间文本 → 工具调用 按�
   assert.deepStrictEqual(
     entries.map(e => e.kind),
     ['thought', 'text', 'tool', 'thought', 'tool', 'thought'],
-    '思考与工具 / 中间文本按真实执行顺序逐段交错'
+    '思考与工具 / 中间文本按真实执行顺序逐段交错',
   );
 });
 
 /**
- * 槽位步长的容量契约：单行并行下发多个工具调用时，`+2+tIdx` 不得溢出到下一行的槽位。
- * 溢出会让该工具行排到下一轮思考之前（步长 10 时，第 9 个并行工具即撞位）。
+ * 槽位契约：并行工具在同 order 段内的相对次序由后端给定，前端不得重排。
+ * 这里验证「单行 10 个并行工具」全部保留、且都早于后一段思考。
  */
-test('10. 过程时间线槽位: 单行 10 个并行工具调用不溢出到下一轮', () => {
-  const sessionId: string = 'sess-slot';
-  const turnId: string = 'turn-slot-1';
+test('10. 过程时间线槽位: 单行 10 个并行工具全部保留且早于后续思考', () => {
+  const sessionId = 'sess-slot';
+  const turnId = '2106057094397558784';
 
-  const parallelTools = Array.from({ length: 10 }, (_, k) => ({
-    id: `call-p${k}`,
-    name: 'read_file',
-    arguments: `{"path":"f${k}.ts"}`
-  }));
+  const blocks: Block[] = [processText('并行读取多个文件。', 0)];
+  for (let k = 0; k < 10; k++) blocks.push(toolBlock(`call-p${k}`, 'read_file', 10 + k, `f${k}.ts`));
+  blocks.push(thinking('汇总读取结果', 100));
+  blocks.push(bodyText('读取完毕。', 110));
 
-  const records: SessionMessageVO[] = [
-    { id: 'u1', turnId, type: 'USER', text: '并行读取' },
-    { id: 'ai-p', turnId, type: 'AI', text: '并行读取多个文件。', toolCalls: parallelTools },
-    { id: 'ai-end', turnId, type: 'AI', text: '读取完毕。', thinking: '汇总读取结果' }
-  ];
-
-  const msgs = aggregateSessionMessages(records, sessionId);
-  const asst = msgs[1];
+  const messages = project([turnView(sessionId, turnId, { user: '并行读取', blocks })]);
+  const asst = messages[1];
   const tools = asst.toolCalls || [];
-  assert.strictEqual(tools.length, 10);
+  assert.strictEqual(tools.length, 10, '10 个并行工具全部保留');
 
   const lastToolOrder = Math.max(...tools.map(t => t.order));
-  const nextStepOrder = Math.max(...(asst.thoughtSteps || []).map(s => s.order));
+  const nextStepOrder = Math.min(...(asst.thoughtSteps || []).map(s => s.order));
   assert.ok(
     lastToolOrder < nextStepOrder,
-    `同一行第 10 个工具 (order=${lastToolOrder}) 必须仍排在本行槽位内、早于后续行 (order=${nextStepOrder})`
+    `第 10 个工具 (order=${lastToolOrder}) 必须仍早于后续思考 (order=${nextStepOrder})`,
   );
 });
 
 /**
- * 气泡顺序的稳定性：聚合顺序**不能**取决于「该轮次的行在本次 records 里第一次出现在哪」。
- * 首屏只取最新一页，窗口滑进某一轮中间时，那一轮会晚于更晚的轮次出现 —— 按首次出现排序，
- * 两个气泡就会上下换位（线上事故：并发/相邻两轮随会话推进反复换位）。
- * 顺序改由轮次雪花 ID（受理先后）决定后，与拉的是哪一页无关。
+ * 气泡顺序的稳定性：顺序由轮次雪花 id 决定，与「视图并入的先后」无关。
+ * 翻旧页把较晚轮次先并入时，较早轮次必须插到它前面（而不是一律追加到末尾）。
  */
-test('11. 首屏窗口切在轮次中间: 气泡顺序仍按轮次先后，不随分页窗口漂移', () => {
-  const sessionId: string = 'sess-order';
-  const earlierTurn: string = '2106057094397558784';
-  const laterTurn: string = '2106057227516379136';
+test('11. 视图乱序并入: 气泡顺序仍按轮次雪花键升序，不随并入先后漂移', () => {
+  const sessionId = 'sess-order';
+  const earlierTurn = '2106057094397558784';
+  const laterTurn = '2106057227516379136';
 
-  // 模拟真实首屏：最新的 50 条里，较晚的那一轮（laterTurn）的行排在更前面，
-  // 较早那一轮（earlierTurn）只剩后半段 —— 它的首条已落在窗口之外。
-  const page: SessionMessageVO[] = [
-    {
-      id: '2106057986672820224',
-      turnId: laterTurn,
-      type: 'AI',
-      text: '继续收尾。先让 QA 对修复版本复测。',
-      toolCalls: [{ id: 'c-l1', name: 'call_sub_agent', arguments: '{}' }]
-    },
-    {
-      id: '2106058112480968704',
-      turnId: earlierTurn,
-      type: 'AI',
-      text: 'QA 复测：BUG-01 已关闭。',
-      toolCalls: [{ id: 'c-e1', name: 'call_sub_agent', arguments: '{}' }]
-    },
-    { id: '2106060153068584960', turnId: laterTurn, type: 'AI', text: '交付闭环完成。' },
-    { id: '2106059701899886592', turnId: earlierTurn, type: 'AI', text: '团队协作流程已完整走完。' }
-  ];
+  // 故意倒序并入：较晚的轮次先来
+  const messages = project([
+    turnView(sessionId, laterTurn, { user: '继续收尾', blocks: [bodyText('交付闭环完成。')] }),
+    turnView(sessionId, earlierTurn, { user: '走团队流程', blocks: [bodyText('团队协作流程已完整走完。')] }),
+  ]);
 
-  const msgs = aggregateSessionMessages(page, sessionId);
-  assert.strictEqual(msgs.length, 2);
-  assert.strictEqual(msgs[0].turnId, earlierTurn, '较早的轮次必须排在前面');
-  assert.strictEqual(msgs[1].turnId, laterTurn, '较晚的轮次必须排在后面');
-  assert.strictEqual(msgs[0].content, '团队协作流程已完整走完。');
-  assert.strictEqual(msgs[1].content, '交付闭环完成。');
+  assert.strictEqual(messages.length, 4);
+  assert.strictEqual(messages[0].turnId, earlierTurn, '较早的轮次必须排在前面');
+  assert.strictEqual(messages[2].turnId, laterTurn, '较晚的轮次必须排在后面');
+  assert.strictEqual(messages[1].content, '团队协作流程已完整走完。');
+  assert.strictEqual(messages[3].content, '交付闭环完成。');
+
+  const groups = groupMessagesByTurn(messages);
+  assert.deepStrictEqual(groups.map(g => g.turnId), [earlierTurn, laterTurn]);
 });
-
-/**
- * 同一轮次只允许一条 assistant 气泡：审批恢复流的调用方给气泡钉的是本地 id
- * （msg-bot-resume-*），与服务端落库行 id 不同源，对账时按 id 收编拦不住它 ——
- * 两条并存就是一个轮次两个「已思考并调用」头。
- *
- * 保留**本地在途**那条：它的正文来自实时事件（会话级流现在直接渲染根事件），比落库行新；
- * 服务端那条收尾后（isComplete 转 true）自然会在下一轮对账里收编。
- */

@@ -3,6 +3,8 @@ import { ref, watch, computed } from 'vue';
 import type { SubSessionVO, ChatMessage, ToolCallTrace } from '../../types/chat';
 import { chatApi } from '../../services/chat';
 import { formatClockTime } from '../../utils/format';
+import { synthesizeFailedTurnBubbles } from '../../utils/session';
+import { upsertTurnViewIntoMessages } from '../../views/chat/blockProjection';
 import { parseToolDiff } from '../../utils/toolDiff';
 import { shouldShowToolArguments, resolveToolCategory } from '../../utils/toolMeta';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
@@ -58,11 +60,19 @@ const loadMessages = async () => {
   isLoading.value = true;
   loadError.value = false;
   try {
-    // 与根会话共用同一条历史管线（chatApi.fetchSessionMessages：分页 + aggregateSessionMessages 解析），
-    // 不再自建第二套加载/解析。
+    // 与根会话共用同一条历史管线：chatApi.fetchSessionMessages 分页拉取，
+    // 返回的 turnViews 由后端轮次视图统一投影，不再自建第二套加载/解析。
     const res = await chatApi.fetchSessionMessages(props.subSession.id, null, 100);
     if (res.ok) {
-      messages.value = res.data.messages;
+      // 与主会话同口径：失败轮在库里可能只有 USER 行，需按 turns 补合成气泡，
+      // 否则子代理失败在这里同样看不见原因。
+      const versions = new Map<string, number>();
+      const projected: ChatMessage[] = [];
+      for (const view of Object.values(res.data.turnViews ?? {})) {
+        if (!view) continue;
+        upsertTurnViewIntoMessages(projected, view, versions);
+      }
+      messages.value = synthesizeFailedTurnBubbles(projected, res.data.turns);
     } else {
       // 加载失败：区别于「确实为空」，置失败态允许重试
       messages.value = [];

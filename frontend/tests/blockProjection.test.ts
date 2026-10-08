@@ -186,7 +186,7 @@ function historyView(): TurnViewVO {
 }
 
 test('★ 历史轮次只走视图：整轮按后端 order / 落点重写（不再有 rowIndex*100 旧口径）', () => {
-  const messages = aggregateRecordsByIdentity(undefined, historyRecords(), HISTORY_SESSION, {
+  const messages = aggregateRecordsByIdentity(HISTORY_SESSION, {
     [HISTORY_TURN]: historyView()
   });
 
@@ -210,8 +210,8 @@ test('★ 历史轮次只走视图：整轮按后端 order / 落点重写（不�
 });
 
 test('视图缺失即无气泡：不再有「回落旧聚合」这条第二链路', () => {
-  const noViews = aggregateRecordsByIdentity(undefined, historyRecords(), HISTORY_SESSION, {});
-  const otherTurnOnly = aggregateRecordsByIdentity(undefined, historyRecords(), HISTORY_SESSION, {
+  const noViews = aggregateRecordsByIdentity(HISTORY_SESSION, {});
+  const otherTurnOnly = aggregateRecordsByIdentity(HISTORY_SESSION, {
     '999': { ...historyView(), turnId: '999' }
   });
 
@@ -254,7 +254,7 @@ test('★ 跨页累计：mergeTurnViews 后到覆盖先到，聚合用合并后�
   assert.equal(merged['999'].viewVersion, 1, '本页未出现的轮次不得丢');
   assert.equal(Object.keys(merged).length, 2);
 
-  const messages = aggregateRecordsByIdentity(undefined, historyRecords(), HISTORY_SESSION, merged);
+  const messages = aggregateRecordsByIdentity(HISTORY_SESSION, merged);
   assert.equal(
     messages.find(m => m.role === 'assistant')?.content,
     '结论正文',
