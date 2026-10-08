@@ -782,9 +782,11 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
       } else if (resolvedCallId) {
         asst.toolCalls.push({
           id: resolvedCallId,
-          toolName: toolName || 'tool',
+          toolName: toolName || '',
           category: resolveToolCategory(toolName),
-          description: toolName,
+          // 不裸显原生工具名：此处是「结果行找不到起始行」的兜底，拿不到参数可解析，
+          // 留空让 UI 回落到分类名（resolveToolCategory 已给出中文名）。
+          description: '',
           result: resultStr,
           status: rowStatus,
           plusLines: editLines?.plusLines,
@@ -867,7 +869,7 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
           const callId = String(tc.id);
           if (asst.toolCalls.some(t => t.id === callId)) continue;
 
-          const tName = tc.name ?? 'tool';
+          const tName = tc.name ?? '';
           const rawArgs = typeof tc.arguments === 'string' ? tc.arguments : '';
           const args = toObject(rawArgs, {});
           const meta = resolveToolMeta({ toolName: tName, args });
