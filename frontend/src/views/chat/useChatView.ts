@@ -203,13 +203,6 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   }, { immediate: true });
 
   // ---------- 会话级实时事件流（唯一的实时通道） ----------
-  /**
-   * 已确认终结的轮次集合。
-   *
-   * <p>它是历史合并里「用权威历史整体替换」的唯一开关：收到终态 / 挂起事件即把该轮并入，
-   * 回查时按轮替换；未列出的轮次一律保留本地实时正文。</p>
-   */
-  let terminalTurnIds: string[] = [];
   /** 会话级流健康状态（供界面呈现「连接失败」并提供重挂入口）。 */
   const streamHealthState = ref<StreamHealthState>('IDLE');
 
@@ -254,28 +247,27 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   const sessionEventStream = new SessionEventStream({
     onEvent: (event) => {
       streamRouter.dispatch(event);
-      const turnId = event.metaData?.turnId ? String(event.metaData.turnId) : null;
       if (isRunStatusEvent(event.type)) {
         applyRunStatusFromEvent(event);
       }
-      // 终态 / 挂起是本轮不再追加的权威信号：立刻回查一次，把该轮用权威历史整体替换。
-      // 这里必须单独判挂起：挂起轮要进 terminalTurnIds 做权威替换，与状态更新是两件事。
+      // 终态 / 挂起是本轮不再追加的权威信号：立刻回查一次。
+      // 新口径下回查把所有轮次视图逐轮 upsert（版本拦截旧帧），无需「终结才替换」的开关，
+      // 因此挂起与终态走同一条路径。
       if (isTerminalEvent(event.type) || event.type === 'EXECUTION_SUSPENDED') {
-        if (turnId && !terminalTurnIds.includes(turnId)) terminalTurnIds.push(turnId);
         const owner = currentActiveSession.value?.id ?? null;
         if (owner) {
-          void reconcileSessionAfterStream(String(owner), terminalTurnIds);
+          void reconcileSessionAfterStream(String(owner));
         }
       }
     },
     onConnectionClosed: (sessionId) => {
       // 掉线也可能意味着「终态事件没收到」：回读权威状态并对齐历史。
-      void reconcileSessionAfterStream(sessionId, null);
+      void reconcileSessionAfterStream(sessionId);
     },
     onResubscribed: (rootSessionId) => {
       // 断线期间服务端不补发：重连成功是唯一能对齐缺口的时机。
       console.info('[chat] 会话级流重连成功，回查历史对齐:', rootSessionId);
-      void reconcileSessionAfterStream(rootSessionId, null);
+      void reconcileSessionAfterStream(rootSessionId);
     },
     onHealthChange: (_rootSessionId, state) => { streamHealthState.value = state; },
     scheduleRetry: (handler, delayMs) => scheduleTimeout(handler, delayMs),
@@ -309,13 +301,13 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     ensureSubscribed,
     reconnectStream: handleReconnectStream,
     reconcileSessionAfterStream: (sessionId) =>
-      reconcileSessionAfterStream(sessionId, null),
+      reconcileSessionAfterStream(sessionId),
     scrollToBottom,
     // 受理被拒时必须回读权威 runStatus：受理失败后本地无从得知真实状态，
     // 不回读就会让界面停留在错误的执行态（卡在「生成中」或误显示空闲）。
     onSendFailure: (sessionId) => {
       if (isPersistedSessionId(sessionId)) {
-        void reconcileSessionAfterStream(sessionId, null);
+        void reconcileSessionAfterStream(sessionId);
       }
     },
   });
@@ -342,18 +334,14 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
       sessionEventStream.acquire(rootId);
       // 「进入会话」回查：无条件执行。用户切走时执行仍在跑、跑完时没人收终态事件，
       // 这里是对齐这类场景的唯一入口，不能只在「检测到掉线」时才做。
-      terminalTurnIds = [];
       invalidateReconcile();
-      void reconcileSessionAfterStream(rootId, null);
+      void reconcileSessionAfterStream(rootId);
     },
     { immediate: true },
   );
 
   /**
    * 执行状态变化：作废在途回查响应（它们属于旧状态的世界），并在转终态时对齐一次。
-   *
-   * <p>不在此并入 {@code terminalTurnIds}：终态事件的 {@code metaData.turnId} 才是该轮的
-   * 权威身份，由事件处理器登记。这里只按已登记集合回查。</p>
    */
   watch(
     () => currentActiveSession.value?.runStatus,
@@ -363,7 +351,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
       if (!isSessionRunning(String(status))) {
         const owner = currentActiveSession.value?.id ?? null;
         if (owner) {
-          void reconcileSessionAfterStream(String(owner), terminalTurnIds);
+          void reconcileSessionAfterStream(String(owner));
         }
       }
     },

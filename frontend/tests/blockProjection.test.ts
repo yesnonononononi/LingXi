@@ -1,23 +1,23 @@
 /**
  * Block 契约投影守卫（P3）。
  *
- * <p>钉住两条不变量：</p>
+ * <p>钉住三条不变量：</p>
  * <ol>
  *   <li><b>块 → 气泡的落点由后端 type/placement 唯一决定</b>：THINKING→thoughtSteps、
  *       TEXT+PROCESS→aiMessages、TEXT+BODY→content、TOOL→toolCalls；顺序全来自 {@code order}。</li>
  *   <li><b>增量按 blockId 覆盖而非版本比较</b>：同一 blockId 的第二次 upsert 必须替换掉第一次，
  *       即使 viewVersion 未变（工具收尾不改 chat_turn，版本号相等是合法情形）。</li>
- *   <li><b>历史路径（分页 turnViews）与实时共用同一投影</b>：视图存在则整轮按后端 order 重写，
- *       视图缺失则回落原历史聚合 —— 缺视图必须是「零影响」，不能把内容清空。</li>
+ *   <li><b>唯一展示链路：视图 → reducer → 按后端顺序渲染</b>。历史分页与实时快照共用
+ *       {@link upsertTurnViewIntoMessages}；**没有视图就不展示**，不再有「回落旧聚合」的第二条链路。</li>
  * </ol>
  *
- * <p>这两条正是「删掉前端自造 order / 内容指纹去重」的前提 —— 前提不成立就不能删旧逻辑。</p>
+ * <p>这三条正是「删掉前端自造 order / 内容指纹去重 / 旧历史聚合」的前提 —— 前提不成立就不能删旧逻辑。</p>
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Block, TurnViewVO } from '../src/types/block';
-import { projectTurnView, upsertBlockIntoBubble } from '../src/views/chat/blockProjection';
+import { projectTurnView, upsertBlockIntoBubble, upsertTurnViewIntoMessages } from '../src/views/chat/blockProjection';
 import type { ChatMessage, SessionMessageVO } from '../src/types/chat';
 import { aggregateRecordsByIdentity, mergeTurnViews } from '../src/utils/session';
 import { chatApi } from '../src/services/chat';
@@ -180,24 +180,19 @@ function historyView(): TurnViewVO {
     turnId: HISTORY_TURN,
     status: 'COMPLETED',
     viewVersion: 7,
+    userMessage: '帮我看下 a.ts',
     blocks: [thinking(0), processText(1), tool(2), bodyText(3000)]
   };
 }
 
-test('★ 历史轮次带块视图：整轮按后端 order / 落点重写（不再是 rowIndex*100）', () => {
-  const legacy = aggregateRecordsByIdentity(undefined, historyRecords(), HISTORY_SESSION);
-  const projected = aggregateRecordsByIdentity(undefined, historyRecords(), HISTORY_SESSION, {
+test('★ 历史轮次只走视图：整轮按后端 order / 落点重写（不再有 rowIndex*100 旧口径）', () => {
+  const messages = aggregateRecordsByIdentity(undefined, historyRecords(), HISTORY_SESSION, {
     [HISTORY_TURN]: historyView()
   });
 
-  const legacyAsst = legacy.find(m => m.role === 'assistant');
-  const asst = projected.find(m => m.role === 'assistant');
+  const asst = messages.find(m => m.role === 'assistant');
 
-  // 旧口径：带工具请求的 AI 文本只能进过程区（正文为空），思考 order = 行下标 × 100
-  assert.equal(legacyAsst?.content, '');
-  assert.equal(legacyAsst?.thoughtSteps?.[0].order, 100);
-
-  // 新口径：正文来自 BODY 块、顺序与身份全来自后端
+  // 正文来自 BODY 块、顺序与身份全来自后端 —— 前端不再从原始记录推导任何 order
   assert.equal(asst?.content, '结论正文', 'BODY 块必须落到气泡正文');
   assert.equal(asst?.thoughtSteps?.[0].order, 0, '思考 order 取后端值，不是 rowIndex*100');
   assert.equal(asst?.thoughtSteps?.[0].id, 'thinking:r1', '块身份是 blockId');
@@ -209,21 +204,26 @@ test('★ 历史轮次带块视图：整轮按后端 order / 落点重写（不�
     ['thought', 'intermediate_ai', 'tool'],
     '时间线按后端 order 升序'
   );
+
+  const user = messages.find(m => m.role === 'user');
+  assert.equal(user?.content, '帮我看下 a.ts', '用户气泡来自视图 userMessage');
 });
 
-test('历史轮次没有块视图时回落原聚合：缺视图必须是零影响，不能清空', () => {
-  const legacy = aggregateRecordsByIdentity(undefined, historyRecords(), HISTORY_SESSION);
-  const emptyViews = aggregateRecordsByIdentity(undefined, historyRecords(), HISTORY_SESSION, {});
+test('视图缺失即无气泡：不再有「回落旧聚合」这条第二链路', () => {
+  const noViews = aggregateRecordsByIdentity(undefined, historyRecords(), HISTORY_SESSION, {});
   const otherTurnOnly = aggregateRecordsByIdentity(undefined, historyRecords(), HISTORY_SESSION, {
-    '999': historyView()
+    '999': { ...historyView(), turnId: '999' }
   });
 
-  assert.deepEqual(emptyViews, legacy, '空视图表必须与不传视图完全等价');
-  assert.deepEqual(otherTurnOnly, legacy, '只覆盖别的轮次时本轮也必须原样');
+  assert.deepEqual(noViews, [], '无视图 = 该轮不展示，不从前端推导');
 
-  const asst = otherTurnOnly.find(m => m.role === 'assistant');
-  assert.equal(asst?.thoughtSteps?.[0].id, `step-${HISTORY_SESSION}-2`, '身份仍是历史派生的 id');
-  assert.equal(asst?.aiMessages?.[0].text, '先读文件');
+  // 只有别的轮次有视图时：只渲染那一轮，原始记录里的 800 轮不得凭前端推导冒出来
+  assert.equal(otherTurnOnly.length, 2, '只渲染 999 轮（用户 + 助手）');
+  assert.deepEqual(
+    otherTurnOnly.map(m => m.turnId),
+    ['999', '999'],
+    '不得出现 800 轮的气泡'
+  );
 });
 
 test('★ 跨页累计：mergeTurnViews 后到覆盖先到，聚合用合并后的视图', () => {
@@ -262,23 +262,41 @@ test('★ 跨页累计：mergeTurnViews 后到覆盖先到，聚合用合并后�
   );
 });
 
-test('投影只作用于「助手气泡 + 该轮有视图」，用户气泡与无 turnId 的旧数据不动', () => {
-  const records: SessionMessageVO[] = [
-    { id: '1', turnId: HISTORY_TURN, type: 'USER', text: '帮我看下 a.ts' },
-    { id: '2', turnId: null, type: 'AI', text: '旧数据的结论' }
-  ];
+test('★ 版本拦截：更旧的视图不再覆盖已接受的更新', () => {
+  const versions = new Map<string, number>();
+  const newer = historyView();          // viewVersion = 7
+  const older: TurnViewVO = { ...historyView(), viewVersion: 3, blocks: [thinking(0)] };
 
-  const messages = aggregateRecordsByIdentity(undefined, records, HISTORY_SESSION, {
-    [HISTORY_TURN]: historyView()
-  });
+  const messages: ChatMessage[] = [];
+  upsertTurnViewIntoMessages(messages, newer, versions);
+  upsertTurnViewIntoMessages(messages, older, versions);
 
-  const user = messages.find(m => m.role === 'user');
-  assert.equal(user?.content, '帮我看下 a.ts', '用户气泡不该被投影改写');
-  assert.equal(user?.turnId, HISTORY_TURN);
+  const asst = messages.find(m => m.role === 'assistant');
+  assert.equal(asst?.content, '结论正文', '旧帧必须被 version 拦截，正文保持新值');
+  assert.equal(versions.get(HISTORY_TURN), 7, '累计版本保持最大值');
+  assert.equal(messages.filter(m => m.role === 'assistant').length, 1, '同一轮只有一个气泡');
+});
 
-  const legacyBubble = messages.find(m => m.role === 'assistant');
-  assert.equal(legacyBubble?.content, '旧数据的结论', 'turnId 为 null 的旧气泡无视图可投影，保持原聚合');
-  assert.equal(legacyBubble?.processTimeline, undefined);
+test('用户气泡与助手气泡成对出现，且用户气泡在助手气泡之前', () => {
+  const messages: ChatMessage[] = [];
+  upsertTurnViewIntoMessages(messages, historyView(), new Map<string, number>());
+
+  assert.equal(messages.length, 2, '一轮 = 用户提问 + 助手回答');
+  assert.equal(messages[0].role, 'user');
+  assert.equal(messages[1].role, 'assistant');
+  assert.equal(messages[0].turnId, HISTORY_TURN);
+  assert.equal(messages[1].turnId, HISTORY_TURN);
+  assert.equal(messages[1].id, `bubble-${HISTORY_SESSION}-${HISTORY_TURN}`, '气泡身份是 bubble-<sessionId>-<turnId>');
+});
+
+test('重复 upsert 同一视图是幂等的，不会重复插入用户消息', () => {
+  const versions = new Map<string, number>();
+  const messages: ChatMessage[] = [];
+  upsertTurnViewIntoMessages(messages, historyView(), versions);
+  upsertTurnViewIntoMessages(messages, historyView(), versions);
+
+  assert.equal(messages.filter(m => m.role === 'user').length, 1, '用户消息不得重复');
+  assert.equal(messages.filter(m => m.role === 'assistant').length, 1, '助手气泡不得重复');
 });
 
 /* ------------------------------------------------------------------ */
@@ -326,7 +344,7 @@ test('★ 分页响应必须透出后端 turnViews，并据此投影单页 messa
   );
 });
 
-test('分页响应缺 turnViews 字段时归一为 {}，不抛错也不影响 messages', async () => {
+test('分页响应缺 turnViews 字段时归一为 {}，且不再凭空造出气泡', async () => {
   await withStubbedPage(
     { records: historyRecords(), turns: {}, nextCursor: null, hasMore: false },
     res => {
@@ -334,9 +352,7 @@ test('分页响应缺 turnViews 字段时归一为 {}，不抛错也不影响 me
       if (!res.ok) return;
 
       assert.deepEqual(res.data.turnViews, {}, '缺失必须归一为空对象（无视图 ≠ 报错）');
-      const asst = res.data.messages.find(m => m.role === 'assistant');
-      assert.equal(asst?.thoughtSteps?.[0].id, `step-${HISTORY_SESSION}-2`, '无视图时回落原聚合');
-      assert.equal(asst?.thoughtSteps?.[0].content, '想一下');
+      assert.deepEqual(res.data.messages, [], '无视图即无气泡：唯一链路是视图 → reducer');
     }
   );
 });

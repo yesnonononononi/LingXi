@@ -1,7 +1,8 @@
 import { ref, computed, type ComputedRef } from 'vue';
 import { chatApi } from '../../services/chat';
 import type { ChatMessage, ChatSession, SubSessionVO } from '../../types/chat';
-import { aggregateRecordsByIdentity, mergeRawRecords, mergeTurns, mergeTurnViews, resolveRootSessionId, synthesizeFailedTurnBubbles } from '../../utils/session';
+import { mergeTurns, mergeTurnViews, resolveRootSessionId, synthesizeFailedTurnBubbles } from '../../utils/session';
+import { upsertTurnViewIntoMessages } from './blockProjection';
 import { toSubItemStatus } from '../../utils/subSessionStatus';
 import type { SubSessionItem } from '../../components/chat/SubAgentSidePanel.vue';
 
@@ -114,17 +115,16 @@ export function useChatSubSession(options: ChatSubSessionOptions) {
       }
       const sub = availableSubSessionItems.value.find(it => String(it.id) === key);
       if (sub?.subSession) {
-        // 与主会话同一口径：累计原始记录后统一聚合，避免同一轮跨页拆成两个助手气泡
-        sub.subSession.rawMessageRecords = mergeRawRecords(undefined, res.data.records);
         // ⚠️ turns 必须先于 messages 落定：合成失败气泡要读 turns 判 FAILED，
         //    反序会让首屏的失败轮拿不到摘要 → 气泡不合成。
         sub.subSession.turns = res.data.turns;
-        // 块视图与原始记录同寿：聚合时必须一并传入，否则子会话的块顺序退回前端自造口径
         sub.subSession.turnViews = res.data.turnViews;
-        sub.subSession.messages = synthesizeFailedTurnBubbles(
-          aggregateRecordsByIdentity(undefined, sub.subSession.rawMessageRecords, subId, sub.subSession.turnViews),
-          sub.subSession.turns
-        );
+        sub.subSession.turnViewVersions = new Map<string, number>();
+        const messages: ChatMessage[] = [];
+        for (const view of Object.values(res.data.turnViews ?? {})) {
+          if (view) upsertTurnViewIntoMessages(messages, view, sub.subSession.turnViewVersions);
+        }
+        sub.subSession.messages = synthesizeFailedTurnBubbles(messages, sub.subSession.turns);
       }
       subSessionPaginationMap.value[key] = { hasMore: res.data.hasMore, nextCursor: res.data.nextCursor };
     } catch (err) {
@@ -152,15 +152,15 @@ export function useChatSubSession(options: ChatSubSessionOptions) {
       }
       const sub = availableSubSessionItems.value.find(it => String(it.id) === key);
       if (sub?.subSession) {
-        // 往前翻页 = 更早的原始记录，必须与已加载记录合页去重后再整体聚合（同主会话口径）
-        sub.subSession.rawMessageRecords = mergeRawRecords(res.data.records, sub.subSession.rawMessageRecords);
-        // 先 union turns 再聚合 + 合成：更早页的摘要可能正好包含某个失败轮
+        // 先 union turns / turnViews 再逐轮 upsert：更早页的摘要可能正好包含某个失败轮。
         sub.subSession.turns = mergeTurns(sub.subSession.turns, res.data.turns);
         sub.subSession.turnViews = mergeTurnViews(sub.subSession.turnViews, res.data.turnViews);
-        sub.subSession.messages = synthesizeFailedTurnBubbles(
-          aggregateRecordsByIdentity(undefined, sub.subSession.rawMessageRecords, subId, sub.subSession.turnViews),
-          sub.subSession.turns
-        );
+        if (!sub.subSession.turnViewVersions) sub.subSession.turnViewVersions = new Map<string, number>();
+        const messages = sub.subSession.messages ?? [];
+        for (const view of Object.values(res.data.turnViews ?? {})) {
+          if (view) upsertTurnViewIntoMessages(messages, view, sub.subSession.turnViewVersions);
+        }
+        sub.subSession.messages = synthesizeFailedTurnBubbles(messages, sub.subSession.turns);
       }
       subSessionPaginationMap.value[key] = { hasMore: res.data.hasMore, nextCursor: res.data.nextCursor };
     } catch (err) {

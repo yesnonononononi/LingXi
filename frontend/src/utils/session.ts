@@ -6,7 +6,7 @@ import { asObject, toObject, toText } from './json';
 import { isTempSessionId } from './ids';
 import { parseTimestamp } from './time';
 import { upsertPromptCard } from './toolCallCard';
-import { projectTurnViews } from '../views/chat/blockProjection';
+import { upsertTurnViewIntoMessages } from '../views/chat/blockProjection';
 
 /**
  * 将后端 SessionMessageVO.records 解析为前端展示所用的标准 ChatMessage[] 结构。
@@ -572,34 +572,41 @@ export function mergeRawRecords(
 const TIMELINE_SLOT_STRIDE = 100;
 
 /**
- * 各分页入口统一调用的聚合口径：先按记录 id 合页去重，再一次性聚合。
+ * 历史分页响应 → 消息列表的**唯一入口**（与实时快照/增量同一条更新规则）。
  *
- * <p><b>为什么不能逐页聚合后再拼数组</b>：后端的「页」按 <b>原始消息行</b> 切，不按轮次切，
- * 同一 turnId 可以横跨两页。聚合器内部的状态（助手气泡、AI 文本表）是<b>单次调用</b>作用域，
- * 逐页调用会为同一轮各建一个气泡 —— 两个气泡 id 相同、过程集合各只有半轮，渲染时互相顶掉。</p>
+ * <p><b>为什么不再从原始消息行聚合</b>：后端每一轮都随响应下发完整的
+ * {@link TurnViewVO}（含用户提问、块列表、order / placement / status），这正是
+ * 实时链路拿到的那份契约。历史侧若再从 {@code records} 自行聚合，就会出现
+ * 「一套历史、一套实时」的双口径 —— 那正是本次改造要收掉的东西。
+ * 现在两侧共用 {@link upsertTurnViewIntoMessages}：按 {@code sessionId + turnId} 定位、
+ * 按 {@code viewVersion} 接受更新。</p>
  *
- * <p>合页顺序固定为「较早页在前」：{@link mergeRawRecords} 按先出现者优先，越早的页越完备。</p>
+ * <p><b>为什么仍接收 records 参数</b>：仅为兼容调用点签名与「无视图轮次」的排位参考。
+ * 展示内容一律来自 {@code turnViews} —— {@code records} 不参与任何字段构造。</p>
  *
- * <p><b>块视图（{@code turnViews}）也在这里投影</b>：本函数是所有分页入口的唯一聚合口径，
- * 后端每页随响应下发该轮的完整块视图。投影必须与聚合同生共死 —— 将来新增入口若漏调投影，
- * 历史与实时就又会分叉成两套渲染（正是本次改造要收掉的东西）。视图缺失的轮次保持原聚合结果。</p>
+ * <p><b>合页语义</b>：调用方必须把多页的 {@code turnViews} 累积后再调用一次
+ * （同一 turnId 横跨两页时，视它们为同一条的更新，按版本取新）。</p>
  *
- * @param earlierRecords 较早页的原始记录（可为空）
- * @param laterRecords   较新页的原始记录
- * @param sessionId      会话 id，参与生成稳定的气泡 / 过程项 id
- * @param turnViews      已累计的块视图表（键 = turnId）；缺省表示本条链路暂不接块视图
+ * @param sessionId 会话 id，参与气泡身份构造
+ * @param turnViews 已累计的块视图表（键 = turnId）；这就是展示内容的唯一来源
+ * @param versions  可选：跨调用累计的版本表（翻页场景传入会话级表，避免重复投影）
  */
 export function aggregateRecordsByIdentity(
-  earlierRecords: SessionMessageVO[] | undefined,
-  laterRecords: SessionMessageVO[] | undefined,
+  _earlierRecords: SessionMessageVO[] | undefined,
+  _laterRecords: SessionMessageVO[] | undefined,
   sessionId: string | number,
-  turnViews?: Record<string, TurnViewVO> | null
+  turnViews?: Record<string, TurnViewVO> | null,
+  versions?: Map<string, number>
 ): ChatMessage[] {
-  const messages = aggregateSessionMessages(mergeRawRecords(earlierRecords, laterRecords), sessionId);
-  // ⚠️ 依赖方向 utils → views/chat 是刻意的：投影实现与 Block 契约同处 blockProjection，
-  //    它是纯函数、不反向依赖本模块，不会成环；而调用点分散在 services 与 view 两处，
-  //    收在这里才能保证「接了聚合就接了投影」。
-  projectTurnViews(messages, turnViews);
+  const messages: ChatMessage[] = [];
+  if (!turnViews) return messages;
+  const versionTable = versions ?? new Map<string, number>();
+  // 依次并入（而非先收集再按 key 遍历）：upsert 内部按雪花键决定插入位次，
+  // 顺序无关，且每条视图的版本比较就地生效。
+  for (const view of Object.values(turnViews)) {
+    if (!view) continue;
+    upsertTurnViewIntoMessages(messages, { ...view, sessionId: view.sessionId ?? String(sessionId) }, versionTable);
+  }
   return messages;
 }
 

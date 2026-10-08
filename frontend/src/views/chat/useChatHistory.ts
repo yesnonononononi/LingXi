@@ -1,9 +1,10 @@
 import { ref, nextTick } from 'vue';
 import type { Ref, ComputedRef } from 'vue';
-import type { ChatSession, ChatTurn, SessionMessageVO } from '../../types/chat';
+import type { ChatSession, ChatTurn } from '../../types/chat';
 import type { TurnViewVO } from '../../types/block';
 import { chatApi } from '../../services/chat';
-import { aggregateRecordsByIdentity, mergeRawRecords, mergeTurns, mergeTurnViews, mergeSubSessionTree, mergeMessagesByTurn, synthesizeFailedTurnBubbles } from '../../utils/session';
+import { mergeTurns, mergeTurnViews, mergeSubSessionTree, synthesizeFailedTurnBubbles } from '../../utils/session';
+import { upsertTurnViewIntoMessages } from './blockProjection';
 import { useChatSessionStore } from '../../stores/chatSessionStore';
 
 /** 加载更多历史时保证加载动画可见的最短展示时长（毫秒） */
@@ -66,20 +67,29 @@ export function useChatHistory(options: ChatHistoryOptions) {
   };
 
   /**
-   * 回读会话权威状态并按分轮规则写回（tree + 消息，尽力而为）。
+   * 保证会话持有「每轮已接受版本」表。
+   *
+   * <p>版本表跨页/跨对账累计：同一轮在两页都出现时，按版本取新（低版本整轮丢弃）。
+   * 它与会话同寿，切换会话时随会话对象自然重建。</p>
+   */
+  const ensureTurnViewVersions = (session: ChatSession): void => {
+    if (!session.turnViewVersions) session.turnViewVersions = new Map<string, number>();
+  };
+
+  /**
+   * 回读会话权威状态并按轮次视图写回（tree + 消息，尽力而为）。
    *
    * <p>三个对齐入口都走这里：<b>进入会话</b>、<b>重连成功后</b>、<b>本轮终结或挂起后</b>。
    * 用户切走时执行仍在跑、跑完时没人收终态事件 —— 「进入会话回查」是这类场景唯一的对齐入口，
    * 因此这里必须无条件执行，不能只在「检测到掉线」时才做。</p>
    *
+   * <p><b>更新规则与实时一致</b>：按 {@code turnId} 定位、按 {@code viewVersion} 接受 ——
+   * 走的正是 {@link upsertTurnViewIntoMessages}（与 {@code TURN_SNAPSHOT} 同一个入口）。
+   * 本地活跃轮（尚未落库、不在任何历史视图里）因此被自然保留，无需整体重建数组。</p>
+   *
    * @param ownerSessionId 回查的会话（根会话 id）
-   * @param terminalTurnIds 已确认终结的轮次；这些轮用权威历史整体替换。
-   *                        未列出的轮次一律保留本地正文，只用历史补齐过程数据。
    */
-  const reconcileSessionAfterStream = async (
-    ownerSessionId: string,
-    terminalTurnIds?: string[] | null,
-  ) => {
+  const reconcileSessionAfterStream = async (ownerSessionId: string) => {
     const version = ++reconcileVersion;
 
     try {
@@ -125,11 +135,8 @@ export function useChatHistory(options: ChatHistoryOptions) {
     try {
       let cursor: string | null = null;
       let hasMore = false;
-      // 逐页累积「原始记录」而非聚合后的消息：后端按原始行分页，同一 turnId 可横跨两页，
-      // 逐页聚合会为同一轮各建一个助手气泡（id 相同、过程各半）。必须合页去重后再聚合一次。
-      const collectedRecords: SessionMessageVO[] = [];
+      // 逐页累积轮次视图：同一 turnId 横跨两页时按版本取新（mergeTurnViews 取高版本）。
       let collectedTurns: Record<string, ChatTurn> = {};
-      // 块视图与 records 同寿：逐页累计，最后与记录一起进唯一聚合点（见 ChatSession.turnViews）。
       let collectedTurnViews: Record<string, TurnViewVO> = {};
 
       for (let pageIdx = 0; pageIdx < RECONCILE_MAX_PAGES; pageIdx++) {
@@ -139,8 +146,6 @@ export function useChatHistory(options: ChatHistoryOptions) {
           console.warn('主流结束消息对账失败:', msgRes.error);
           break;
         }
-        // 本次请求的页更早，故插到已累积记录之前（mergeRawRecords 以先出现者为准）
-        collectedRecords.unshift(...(msgRes.data.records ?? []));
         collectedTurns = mergeTurns(collectedTurns, msgRes.data.turns);
         collectedTurnViews = mergeTurnViews(collectedTurnViews, msgRes.data.turnViews);
 
@@ -149,23 +154,15 @@ export function useChatHistory(options: ChatHistoryOptions) {
         cursor = msgRes.data.nextCursor;
       }
 
-      const collected = aggregateRecordsByIdentity(undefined, collectedRecords, ownerSessionId, collectedTurnViews);
-
       const cur = localSessions.value.find(s => s.id === ownerSessionId);
       if (cur) {
-        // 轮次摘要先 union：合成失败气泡要按 turns 判 FAILED，且本轮可能是「已终结但缺 assistant 行」
         cur.turns = mergeTurns(cur.turns, collectedTurns);
-        // 按轮次合并：未确认终结的轮保留本地实时正文、历史只补过程数据；
-        // 已终结轮用权威历史整体替换。
-        // ⚠️ 合成在 mergeMessagesByTurn **之后**：合并只处理「历史里已经存在的行」，
-        //    而失败轮（如模型接口 400）在 session_message 里根本没有 assistant 行，
-        //    必须等合并定型后按 turns 补 —— 否则刷新后失败提示会消失。
-        const merged = mergeMessagesByTurn({
-          local: cur.messages,
-          history: collected,
-          terminalTurnIds: terminalTurnIds ?? null,
-        });
-        cur.messages = synthesizeFailedTurnBubbles(merged, cur.turns);
+        // 逐轮 upsert 进现有数组：活跃轮不在视图里 → 原样保留；已在的轮按版本更新。
+        ensureTurnViewVersions(cur);
+        for (const view of Object.values(collectedTurnViews)) {
+          if (view) upsertTurnViewIntoMessages(cur.messages, view, cur.turnViewVersions!);
+        }
+        cur.messages = synthesizeFailedTurnBubbles(cur.messages, cur.turns);
         if (!hasMore) {
           cur.hasMoreMessages = false;
           cur.nextMessageCursor = null;
@@ -200,19 +197,17 @@ export function useChatHistory(options: ChatHistoryOptions) {
 
       // 滚动补偿：写入前记录高度与偏移，渲染完成后恢复。
       messagesContainerRef.value?.beforePrepend();
-      // 往前翻页 = 拿到更早的原始记录，必须与已加载记录「合页去重后再整体聚合」：
-      // 直接往 messages 前面拼本页聚合结果，会把横跨两页的那一轮拆成两个同 id 气泡，
-      // 且旧页的正文会被本页（更新）的聚合结果顶掉。
-      session.rawMessageRecords = mergeRawRecords(pageResultRes.data.records, session.rawMessageRecords);
-      // 更早页的轮次摘要 union 进会话表：翻页后组尾工具条仍能拿到权威 token/耗时
+      // 往前翻页 = 拿到更早轮次的完整视图。**只并入本轮返回的轮次**，不重建整个数组 ——
+      // 重建会把当前正在跑的实时气泡一起冲掉（它是本轮本地产生的，不在任何历史页里）。
       session.turns = mergeTurns(session.turns, pageResultRes.data.turns);
-      // 块视图与原始记录同寿：不累计它，重新聚合时那一轮的块顺序会退回前端自造口径
       session.turnViews = mergeTurnViews(session.turnViews, pageResultRes.data.turnViews);
-      // 合成失败气泡必须用**最新的** turns：更早页里可能正好有某个 FAILED 轮
-      session.messages = synthesizeFailedTurnBubbles(
-        aggregateRecordsByIdentity(undefined, session.rawMessageRecords, session.id, session.turnViews),
-        session.turns
-      );
+      // 逐轮 upsert：已存在的轮按版本更新（不新建气泡），新的轮按雪花键插到正确位置。
+      ensureTurnViewVersions(session);
+      for (const view of Object.values(pageResultRes.data.turnViews ?? {})) {
+        if (view) upsertTurnViewIntoMessages(session.messages, view, session.turnViewVersions!);
+      }
+      // 失败轮：后端在 session_message 里没有 assistant 行，但 turns 里有 FAILED 状态 —— 补合成气泡。
+      session.messages = synthesizeFailedTurnBubbles(session.messages, session.turns);
       await nextTick();
       messagesContainerRef.value?.afterPrepend();
 

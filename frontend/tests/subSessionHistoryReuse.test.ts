@@ -28,14 +28,36 @@ const subMessage: ChatMessage = {
   turnId: 't-1'
 };
 
-/** 打桩：让 fetchSessionMessages 返回固定的一页子会话历史，并统计调用次数。 */
+/**
+ * 打桩：让 fetchSessionMessages 返回固定的一页子会话历史（一块视图），并统计调用次数。
+ *
+ * <p>子会话与主会话同一口径：唯一展示链路是「轮次视图 → reducer」，
+ * 因此这里必须下发 turnViews（只给 messages/records 会渲染出空列表）。</p>
+ */
 function stubSessionMessages(message: ChatMessage = subMessage): () => number {
   let calls = 0;
   (chatApi as any).fetchSessionMessages = async () => {
     calls += 1;
     return {
       ok: true,
-      data: { records: [], messages: [message], turns: {}, nextCursor: null, hasMore: false }
+      data: {
+        records: [],
+        messages: [],
+        turns: {},
+        turnViews: {
+          [String(message.turnId)]: {
+            sessionId: 'sub-1',
+            turnId: message.turnId,
+            status: 'COMPLETED',
+            viewVersion: 1,
+            blocks: [
+              { blockId: `text:${message.id}`, type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: message.content },
+            ],
+          },
+        },
+        nextCursor: null,
+        hasMore: false
+      }
     };
   };
   return () => calls;

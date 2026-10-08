@@ -1,7 +1,8 @@
 import { ref, type Ref, type ComputedRef } from 'vue';
 import { chatApi } from '../../services/chat';
 import type { ChatSession, ChatMessage } from '../../types/chat';
-import { buildSessionMarkdown, mergeMessagesByTurn, mergeRawRecords, mergeTurns, mergeTurnViews, synthesizeFailedTurnBubbles } from '../../utils/session';
+import { buildSessionMarkdown, mergeTurns, mergeTurnViews, synthesizeFailedTurnBubbles } from '../../utils/session';
+import { upsertTurnViewIntoMessages } from './blockProjection';
 import { isTempSessionId } from '../../utils/ids';
 
 export interface ChatSessionListOptions {
@@ -84,12 +85,15 @@ export function useChatSessionList(options: ChatSessionListOptions) {
         // 详情请求在途期间，实时流可能已经往这个会话写进了正文（用户点进一个正在跑的会话时必然如此）。
         // 直接用 `...detail` 展开会把 messages 整体换成「请求发起那一刻的快照」，
         // 在途到达的正文随之消失（用户看到内容闪一下又没了）。
-        // 因此 messages 按轮次合并：详情只补齐过程数据，已到达的实时正文保留。
+        // 因此以「上一份 messages」为底、把详情的每个轮次视图逐轮 upsert 进去：
+        // 实时已写入的轮次不会被回退，详情只补齐缺失的轮次与过程数据。
         const mergedTurns = mergeTurns(previous.turns, detail.turns);
-        const mergedMessages = mergeMessagesByTurn({
-          local: previous.messages,
-          history: detail.messages,
-        });
+        const mergedViews = mergeTurnViews(previous.turnViews, detail.turnViews);
+        const versions = previous.turnViewVersions ?? new Map<string, number>();
+        const mergedMessages = previous.messages.slice();
+        for (const view of Object.values(mergedViews)) {
+          if (view) upsertTurnViewIntoMessages(mergedMessages, view, versions);
+        }
         localSessions.value[idx] = {
           ...previous,
           ...detail,
@@ -97,20 +101,20 @@ export function useChatSessionList(options: ChatSessionListOptions) {
           //    失败轮（模型接口 400 这类）在库里只有 USER 行，没有 assistant 行可合并，
           //    只能按 turns 判 FAILED 后补气泡，否则用户点进失败会话什么都看不到。
           messages: synthesizeFailedTurnBubbles(mergedMessages, mergedTurns),
-          // 原始记录同样要合并：详情只带回首屏一页，直接覆盖会让「已经翻开的更早页」在下次聚合时丢失
-          rawMessageRecords: mergeRawRecords(detail.rawMessageRecords, previous.rawMessageRecords),
           turns: mergedTurns,
-          // 块视图同理：不合并就会把「已翻开的更早页」学到的块视图丢掉，
-          // 下次重新聚合时那几轮的顺序会静默退回前端自造口径。
-          turnViews: mergeTurnViews(previous.turnViews, detail.turnViews),
+          // 块视图与版本表跨页累计：不合并就会把「已翻开的更早页」学到的块视图丢掉。
+          turnViews: mergedViews,
+          turnViewVersions: versions,
           hasMoreMessages: !!detail.hasMoreMessages,
           nextMessageCursor: detail.nextMessageCursor ?? null,
         };
       } else {
-        // 首屏走这里（会话列表里第一次点开）：turns 来自 detail（可能缺省，合成器按空表处理）
+        // 首屏走这里（会话列表里第一次点开）：turns 来自 detail（可能缺省，合成器按空表处理）。
+        // 版本表必须此刻建好：后续实时快照与翻页都往同一张表里累计，缺表会让旧帧重新被接受。
         localSessions.value.unshift({
           ...detail,
           messages: synthesizeFailedTurnBubbles(detail.messages, detail.turns ?? {}),
+          turnViewVersions: new Map<string, number>(),
         });
       }
 

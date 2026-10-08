@@ -4,9 +4,10 @@ import { computed, ref } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
 import type { AgentEvent } from '../src/types/Event';
 import type { ChatMessage, ChatSession, SessionMessageVO } from '../src/types/chat';
+import type { Block, TurnViewVO } from '../src/types/block';
 import { chatApi } from '../src/services/chat';
 import { AgentToolName } from '../src/utils/toolNames';
-import { aggregateSessionMessages, buildMessageTurnMap, mergeMessagesByTurn, mergeRawRecords } from '../src/utils/session';
+import { aggregateRecordsByIdentity, aggregateSessionMessages, buildMessageTurnMap, mergeMessagesByTurn, mergeRawRecords, mergeTurnViews } from '../src/utils/session';
 import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
 import { useChatHistory } from '../src/views/chat/useChatHistory';
 import { useChatSessionList } from '../src/views/chat/useChatSessionList';
@@ -20,6 +21,34 @@ function createSession(messages: ChatMessage[] = []): ChatSession {
   return { id: SESSION_ID, title: '诊断会话', createdAt: 0, updatedAt: 0, modelId: '', activeTools: [], messages, runStatus: 'RUNNING' };
 }
 
+/** 一轮的块视图：57 段思考 + 59 个工具（第 8、9 轮各 2 个），与旧 fixture 的能力面一致。 */
+function createTurnView(turnId = TURN_ID, viewVersion = 4): TurnViewVO {
+  const blocks: Block[] = [];
+  let order = 0;
+  let nextCall = 0;
+  for (let round = 0; round < 57; round++) {
+    blocks.push({
+      blockId: `thinking:r${round}`, type: 'THINKING', responseId: `r${round}`,
+      order: order++, status: 'COMPLETE', text: `思考 ${round}`,
+    });
+    const callCount = round === 8 || round === 9 ? 2 : 1;
+    for (let c = 0; c < callCount; c++) {
+      const callId = `call-${nextCall++}`;
+      blocks.push({
+        blockId: `tool:${callId}`, type: 'TOOL', responseId: null,
+        order: order++, status: 'COMPLETED', toolCallId: callId,
+        toolName: AgentToolName.ReadFile, arguments: JSON.stringify({ path: 'example.txt' }),
+        output: JSON.stringify({ outcome: 'SUCCEEDED', output: '完成' }),
+      });
+    }
+  }
+  return {
+    sessionId: SESSION_ID, turnId, status: 'COMPLETED',
+    viewVersion: String(viewVersion), userMessage: '分析消息渲染', blocks,
+  };
+}
+
+/** 兼容旧用例：保留原始消息行 fixture（仅用于 mergeRawRecords 等纯函数用例）。 */
 function createRecords(): SessionMessageVO[] {
   const records: SessionMessageVO[] = [];
   let nextRecordId = 2107364703113184000n;
@@ -58,12 +87,14 @@ async function reconcilePages(messages: ChatMessage[], terminal: boolean): Promi
   const session = createSession(messages);
   const sessions = ref([session]);
   const records = createRecords();
+  const views = { [TURN_ID]: createTurnView() };
   const originalTree = chatApi.fetchSessionTree;
   const originalMessages = chatApi.fetchSessionMessages;
   chatApi.fetchSessionTree = async () => ({ ok: true, data: { rootSessionId: SESSION_ID, root: { id: SESSION_ID, runStatus: 'RUNNING' }, subSessions: [] } });
   chatApi.fetchSessionMessages = async (_id, cursor) => {
     const pageRecords = cursor ? records.slice(0, -100) : records.slice(-100);
-    return { ok: true, data: { records: pageRecords, messages: aggregateSessionMessages(pageRecords, SESSION_ID), turns: {}, hasMore: !cursor, nextCursor: cursor ? null : String(records.at(-100)!.id) } };
+    // 同一轮横跨两页：两页都下发该轮的视图（版本不同 → 按版本取新）
+    return { ok: true, data: { records: pageRecords, messages: [], turns: {}, turnViews: views, hasMore: !cursor, nextCursor: cursor ? null : String(records.at(-100)!.id) } };
   };
   try {
     const history = useChatHistory({ currentActiveSession: computed(() => sessions.value[0]), localSessions: sessions, messagesContainerRef: ref(null), scheduleTimeout: () => 0 });
@@ -75,9 +106,8 @@ async function reconcilePages(messages: ChatMessage[], terminal: boolean): Promi
   }
 }
 
-test('正对照：原始记录先合页，再聚合，只有一个含 59 个工具的助手气泡', () => {
-  const records = createRecords();
-  const messages = aggregateSessionMessages(mergeRawRecords(records.slice(0, -100), records.slice(-100)), SESSION_ID);
+test('正对照：历史视图并入后只有一个含 59 个工具的助手气泡', () => {
+  const messages = aggregateRecordsByIdentity(undefined, undefined, SESSION_ID, { [TURN_ID]: createTurnView() });
   const assistants = messages.filter(message => message.role === 'assistant');
   assert.equal(assistants.length, 1);
   assert.equal(assistants[0].toolCalls?.length, 59);
@@ -250,22 +280,24 @@ test('正对照：仅实时路径连续新增思考时，新过程排在旧工�
   assert.ok(messages[0].thoughtSteps![1].order! > messages[0].toolCalls![0].order!);
 });
 
-test('诊断：往前翻页必须与已加载记录合页，同一轮不能拆成两个气泡', async () => {
+test('诊断：往前翻页时同一轮仍只有一个助手气泡，且补齐全部工具', async () => {
   setActivePinia(createPinia());
   const session = createSession();
-  session.rawMessageRecords = createRecords().slice(-100);
-  session.messages = aggregateSessionMessages(session.rawMessageRecords, SESSION_ID);
+  // 首屏已加载该轮：视图版本较低（模拟后端先落的部分块）
+  session.turnViews = { [TURN_ID]: createTurnView(TURN_ID, 3) };
+  session.messages = aggregateRecordsByIdentity(undefined, undefined, SESSION_ID, session.turnViews);
   session.hasMoreMessages = true;
   session.nextMessageCursor = 'cursor-1';
   const sessions = ref([session]);
   const original = chatApi.fetchSessionMessages;
-  // 更早的一页：同一 turnId 的前 17 条记录（跨页切断同一轮）
+  // 往前翻页：更早的一页也返回**同一轮**的视图（版本更高 → 按版本接受更新，不新建气泡）
   chatApi.fetchSessionMessages = async () => ({
     ok: true,
     data: {
-      records: createRecords().slice(0, -100),
-      messages: aggregateSessionMessages(createRecords().slice(0, -100), SESSION_ID),
+      records: [],
+      messages: [],
       turns: {},
+      turnViews: { [TURN_ID]: createTurnView(TURN_ID, 5) },
       hasMore: false,
       nextCursor: null
     }
@@ -282,7 +314,7 @@ test('诊断：往前翻页必须与已加载记录合页，同一轮不能拆�
     await history.handleLoadMoreHistory();
     const assistants = sessions.value[0].messages.filter(message => message.role === 'assistant');
     assert.equal(assistants.length, 1, summarize(assistants));
-    assert.equal(assistants[0].toolCalls?.length, 59, '合页后必须补齐全部 59 个工具');
+    assert.equal(assistants[0].toolCalls?.length, 59, '同一轮按版本更新后必须含全部 59 个工具');
   } finally {
     chatApi.fetchSessionMessages = original;
   }

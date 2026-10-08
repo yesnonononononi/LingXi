@@ -508,8 +508,6 @@ export const chatApi = {
           lastOutcome: meta?.lastOutcome,
           subSessions: enrichedSubSessions,
           messages: messages,
-          // 首屏的原始记录：翻页 / 对账都以它为唯一累计对象（见 ChatSession.rawMessageRecords）
-          rawMessageRecords: pageResult.records,
           // 上下文用量快照（root 来自 tree.root 的会话表快照）：供指示器在无事件空窗展示
           contextTokenCount: meta?.contextTokenCount ?? null,
           contextMaxTokens: meta?.contextMaxTokens ?? null,
@@ -518,6 +516,8 @@ export const chatApi = {
           turns: pageResult.turns,
           // 首屏块视图表：翻页 / 对账重新聚合时必须一并传入（见 ChatSession.turnViews）
           turnViews: pageResult.turnViews,
+          // 版本表起点：实时快照与后续翻页共用同一张表，缺表会让旧帧重新被接受
+          turnViewVersions: new Map<string, number>(),
           hasMoreMessages: pageResult.hasMore,
           nextMessageCursor: pageResult.nextCursor
         }

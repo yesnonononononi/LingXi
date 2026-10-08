@@ -885,9 +885,20 @@ test('6. 切换会话前发起的旧回查响应必须被版本控制丢弃', as
   (chatApi as any).fetchSessionMessages = async (id: string) => ({
     ok: true,
     data: {
+      // 唯一展示链路是「轮次视图 → reducer」：想让它写出气泡就必须给 turnViews。
       records: [],
-      messages: [{ id: `srv-${id}`, role: 'assistant', content: `权威-${id}`, timestamp: 1, turnId: T1 }],
+      messages: [],
       turns: {},
+      turnViews: {
+        [T1]: {
+          sessionId: String(id),
+          turnId: T1,
+          status: 'COMPLETED',
+          viewVersion: 1,
+          userMessage: '提问',
+          blocks: [{ blockId: `text:${id}`, type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: `权威-${id}` }],
+        },
+      },
       nextCursor: null,
       hasMore: false,
     },
@@ -908,8 +919,8 @@ test('6. 切换会话前发起的旧回查响应必须被版本控制丢弃', as
   history.invalidateReconcile();
   const pendingB = history.reconcileSessionAfterStream(SUB);
   await pendingB;
-  assert.equal(localSessions.value[1].messages.length, 1, 'B 的回查应正常写回');
-  assert.equal(localSessions.value[1].messages[0].content, `权威-${SUB}`);
+  assert.equal(localSessions.value[1].messages.length, 2, 'B 的回查应正常写回（用户提问 + 助手回答）');
+  assert.equal(localSessions.value[1].messages[1].content, `权威-${SUB}`);
 
   // A 的迟到响应现在才回来
   (resolveA as unknown as () => void)();

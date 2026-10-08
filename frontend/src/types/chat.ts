@@ -184,13 +184,12 @@ export interface ChatSession {
    */
   turnViews?: Record<string, TurnViewVO>;
   /**
-   * 本会话已加载的原始服务端消息记录（按时间正序，按记录 id 去重）。
+   * 跨页累计的轮次视图版本表：键 = turnId 字符串，值 = 已接受的最大 viewVersion。
    *
-   * <p>这是「翻页 / 对账」的唯一累计对象：后端的页按原始消息行切、不按轮次切，
-   * 同一 turnId 可横跨两页；必须合页去重后再聚合一次，才能保证每个 (sessionId, turnId)
-   * 只产出一个助手气泡、过程数据不丢不重。</p>
+   * <p>统一更新入口按它拦截过期帧：分页与实时快照都可能送来更旧的版本，
+   * 只有版本不低于当前值的更新才会写入气泡。</p>
    */
-  rawMessageRecords?: SessionMessageVO[];
+  turnViewVersions?: Map<string, number>;
   /** 上下文用量快照（最近一次终结执行回写，随 tree/detail 下发）；详见 SessionVO 同名字段。 */
   contextTokenCount?: number | null;
   contextMaxTokens?: number | null;
@@ -215,11 +214,8 @@ export interface SubSessionVO extends SessionVO {
   turns?: Record<string, ChatTurn>;
   /** 本子会话已加载的块视图表（键 = turnId），逐页合并；语义同 {@link ChatSession.turnViews}。 */
   turnViews?: Record<string, TurnViewVO>;
-  /**
-   * 本子会话已加载的原始服务端消息记录（按时间正序，按记录 id 去重）；语义同
-   * {@link ChatSession.rawMessageRecords} —— 翻页/对账的唯一累计对象，合页去重后再统一聚合。
-   */
-  rawMessageRecords?: SessionMessageVO[];
+  /** 本子会话跨页累计的轮次视图版本表（键 = turnId）；语义同 {@link ChatSession.turnViewVersions}。 */
+  turnViewVersions?: Map<string, number>;
 }
 
 /** 会话树 (对应后端 SessionTreeVO)：平铺列表 + 真正的根会话 id */
