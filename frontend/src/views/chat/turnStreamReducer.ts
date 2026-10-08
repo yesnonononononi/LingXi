@@ -1,5 +1,6 @@
 import type { AgentEvent, TokenInfo } from '../../types/Event';
 import type { BlockEventPayload } from '../../types/block';
+import { parseVersion } from '../../types/block';
 import type { ChatMessage, ContextUsageData, ToolCallTrace, ToolCallVO } from '../../types/chat';
 import { AgentToolName } from '../../utils/toolNames';
 import { resolveToolCategory, resolveToolExecutionStatus, isEditFileTool, extractSubAgentParams } from '../../utils/toolMeta';
@@ -229,11 +230,13 @@ export class TurnStreamReducer {
     const turnId = payload.turnId;
 
     const last = this.turnViewVersions.get(turnId);
-    if (last !== undefined && payload.viewVersion < last) {
+    // ⚠️ 必须转数值再比：线上 viewVersion 是十进制字符串，字典序比较下 "10" < "9" 为真。
+    const incoming = parseVersion(payload.viewVersion);
+    if (last !== undefined && incoming < last) {
       // 乱序到达的旧帧：丢弃，绝不用旧内容覆盖新内容。
       return;
     }
-    this.turnViewVersions.set(turnId, payload.viewVersion);
+    this.turnViewVersions.set(turnId, incoming);
 
     const bubble = this.obtainActiveBubble(turnId);
     projectTurnView(bubble, payload.view);

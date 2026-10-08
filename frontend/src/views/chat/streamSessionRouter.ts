@@ -117,10 +117,14 @@ export class StreamSessionRouter {
   public dispatch(event: AgentEvent): void {
     if (!this.currentRootSession || !this.rootReducer) return;
 
-    const meta = event.metaData;
     const effectiveRootId = String(this.currentRootSession.id);
-    const serverRootId = meta?.rootSessionId ? String(meta.rootSessionId) : undefined;
-    const eventSessionId = meta?.sessionId ? String(meta.sessionId) : undefined;
+
+    // 会话归属的两种来源，按事件类别二选一（见 resolveEventOwnership）：
+    // 框架事件带 metaData（rootSessionId 供路由、sessionId 供归属）；
+    // 块视图事件不带 metaData，归属在载荷顶层的 sessionId。
+    const ownership = this.resolveEventOwnership(event);
+    const serverRootId = ownership.serverRootId;
+    const eventSessionId = ownership.ownerSessionId;
 
     // 判别是否属于根会话的事件
     const isRoot = this.resolveIsRootEvent(effectiveRootId, serverRootId, eventSessionId);
@@ -134,13 +138,47 @@ export class StreamSessionRouter {
     const targetSessionId = eventSessionId || effectiveRootId;
     let subReducer = this.subReducers.get(targetSessionId);
     if (!subReducer) {
-      subReducer = this.registerSubSession(targetSessionId, meta);
+      subReducer = this.registerSubSession(targetSessionId, event.metaData);
     }
 
     if (subReducer) {
       subReducer.consume(event);
       this.syncSubSessionLifecycle(targetSessionId, event);
     }
+  }
+
+  /**
+   * 解析事件的双重会话身份：{@code ownerSessionId} 是块内容的**真实归属**，
+   * {@code serverRootId} 是**传输路由**用的根会话。
+   *
+   * <p><b>为什么分两路</b>：框架事件经 {@code metaData} 携带二者（子执行归父任务，
+   * 故 rootSessionId 是根、sessionId 是子）；而块视图事件（{@code TURN_SNAPSHOT} /
+   * {@code BLOCK_UPSERT}）的载荷里**没有 metaData**，它的归属是载荷顶层的
+   * {@code sessionId}。只读 {@code metaData} 会让子会话的块视图被误判成根会话，
+   * 污染根 reducer。</p>
+   *
+   * <p><b>块视图不返回 serverRootId</b>：它由订阅**根会话**的那条流承载（后端按
+   * {@code executionIdentity.resolveRootSessionId} 投递），路由根就是当前根会话 ——
+   * 传 {@code undefined} 让 {@link resolveIsRootEvent} 只按归属判根/子，
+   * 否则「块的 sessionId 是子会话」会被错当成「路由根也等于它」。</p>
+   */
+  private resolveEventOwnership(event: AgentEvent): {
+    ownerSessionId?: string;
+    serverRootId?: string;
+  } {
+    const meta = event.metaData;
+    if (meta?.sessionId || meta?.rootSessionId) {
+      return {
+        ownerSessionId: meta?.sessionId ? String(meta.sessionId) : undefined,
+        serverRootId: meta?.rootSessionId ? String(meta.rootSessionId) : undefined,
+      };
+    }
+    // 块视图事件：归属在顶层 sessionId；serverRootId 保持 undefined（由当前根会话兜底）。
+    const topLevelSessionId = (event as { sessionId?: unknown }).sessionId;
+    if (topLevelSessionId != null && String(topLevelSessionId) !== '') {
+      return { ownerSessionId: String(topLevelSessionId) };
+    }
+    return {};
   }
 
   /** 判断事件是否归属于根会话 */

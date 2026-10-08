@@ -42,9 +42,11 @@ function upsertEvent(v: TurnViewVO, viewVersion = v.viewVersion): AgentEvent {
   } as unknown as AgentEvent;
 }
 
-const thinking = (): Block => ({ blockId: 'thinking:r1', type: 'THINKING', order: 0, status: 'DONE', text: '想法' });
-const toolRunning = (): Block => ({ blockId: 'tool:c1', type: 'TOOL', order: 2, status: 'STREAMING', toolCallId: 'c1', toolName: 'read_file' });
-const toolDone = (): Block => ({ blockId: 'tool:c1', type: 'TOOL', order: 2, status: 'DONE', toolCallId: 'c1', toolName: 'read_file' });
+// ⚠️ 状态值必须是后端 BlockStatus 的**真实取值**：思考/正文已完整是 COMPLETE、
+// 工具已收尾是 COMPLETED。此处曾误用 'DONE'（后端从不发）——fixture 与实现同错导致全绿。
+const thinking = (): Block => ({ blockId: 'thinking:r1', type: 'THINKING', order: 0, status: 'COMPLETE', text: '想法' });
+const toolRunning = (): Block => ({ blockId: 'tool:c1', type: 'TOOL', order: 2, status: 'STARTED', toolCallId: 'c1', toolName: 'read_file' });
+const toolDone = (): Block => ({ blockId: 'tool:c1', type: 'TOOL', order: 2, status: 'COMPLETED', toolCallId: 'c1', toolName: 'read_file' });
 
 function seededReducer(): { reducer: TurnStreamReducer; messages: ChatMessage[] } {
   const messages: ChatMessage[] = [];

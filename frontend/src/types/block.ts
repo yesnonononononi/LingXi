@@ -22,8 +22,25 @@ export type BlockType = 'THINKING' | 'TEXT' | 'TOOL';
  *
  * <p>⚠️ 这是**块**的生命周期状态，不是工具的业务结论。工具块的结论（成功/失败/被拒/超时）
  * 由后端从框架 {@code ToolCallStatus} 映射进 {@code status}，前端**不得**再自行推断。</p>
+ *
+ * <p><b>取值必须逐字对齐后端 {@code BlockStatus} 常量</b>：思考 / 文本块是
+ * {@code STREAMING}（流式中）/ {@code COMPLETE}（已完整）；工具块是
+ * {@code STARTED} / {@code COMPLETED} / {@code PROMISED} / {@code REJECTED} /
+ * {@code FAILED} / {@code TIMED_OUT} / {@code CANCELLED}。
+ * 这里曾写作 {@code 'DONE'}，而后端**从不发** {@code DONE} —— 真实数据下
+ * 「思考已完成」被判成 failed、「工具已成功收尾」落 default 被当成「仍在调用」。
+ * 测试 fixture 也照抄同一个错值，两边一起错、全绿通过，直到跑真实 SSE 才暴露。</p>
  */
-export type BlockStatus = 'STREAMING' | 'DONE' | 'FAILED' | 'PROMISED' | 'REJECTED' | 'TIMED_OUT' | 'CANCELLED';
+export type BlockStatus =
+  | 'STREAMING'
+  | 'COMPLETE'
+  | 'STARTED'
+  | 'COMPLETED'
+  | 'PROMISED'
+  | 'REJECTED'
+  | 'FAILED'
+  | 'TIMED_OUT'
+  | 'CANCELLED';
 
 /**
  * 正文落点（仅 {@link TextBlock} 有意义）。
@@ -116,8 +133,12 @@ export interface TurnViewVO {
    * <p>前端排序判据：{@code TURN_SNAPSHOT} 拿到**更小**的版本号即丢弃（乱序旧帧）。</p>
    * <p>⚠️ {@code BLOCK_UPSERT} 的版本号可能与前一次相等（工具收尾不改 chat_turn），
    * 因此**增量不做版本比较**，一律按 {@code blockId} 覆盖（天然幂等）。</p>
+   * <p>⚠️ <b>线上是十进制字符串</b>：后端 {@code long} 经统一序列化约定输出为字符串
+   * （同 id 的处理，见 {@code types/Event.ts} 头部说明）。比较前必须显式转数值 ——
+   * 直接对字符串用 {@code <} 会做字典序比较，{@code "10" < "9"} 为真，
+   * 导致第 10 帧之后所有合法新快照被误判成旧帧丢弃。</p>
    */
-  viewVersion: number;
+  viewVersion: string;
   /** 该轮的用户提问；旧数据可能为 null */
   userMessage?: string | null;
   /** 块列表（已按 order 升序）；增量事件时只含变化的那一块 */
@@ -148,10 +169,26 @@ export interface BlockEventPayload {
   sessionId: string;
   /** 业务轮次 id */
   turnId: string;
-  /** 该轮展示的更新批次号 */
-  viewVersion: number;
+  /** 该轮展示的更新批次号（线上为十进制字符串，比较前需转数值） */
+  viewVersion: string;
   /** 该轮视图；{@code BLOCK_UPSERT} 时 {@code blocks} 只含变化的块 */
   view: TurnViewVO;
+}
+
+/**
+ * 把线上「十进制字符串」形式的{long}字段解析成数值。
+ *
+ * <p>后端 {@code long} 一律序列化为字符串（雪花 ID 超 JS 安全整数范围）；
+ * 版本号同样如此。解析失败或缺失时回落到 {@code 0} —— 版本 0 表示「无信息」，
+ * 既不冒充最新（不会误挡合法更新）也不冒充旧帧。</p>
+ */
+export function parseVersion(raw: unknown): number {
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0;
+  if (typeof raw === 'string') {
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
 }
 
 /** SSE 业务事件名（对应后端 {@code BlockEventType}）。 */

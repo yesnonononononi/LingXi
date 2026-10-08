@@ -16,17 +16,15 @@ import { resolveToolCategory } from '../../utils/toolMeta';
 import { toObject } from '../../utils/json';
 import { parseToolDiff } from '../../utils/toolDiff';
 
-/** 块状态 → 思维步骤状态（ThoughtStep 只区分三态）。 */
-function thinkingStatus(status: BlockStatus): ThoughtStep['status'] {
-  if (status === 'DONE') return 'success';
-  if (status === 'STREAMING') return 'running';
-  return 'failed';
-}
+/** 思考 / 文本块的状态取值（后端 {@code BlockStatus} 的响应生命周期两态）。 */
+const RESPONSE_STREAMING = 'STREAMING';
+const RESPONSE_COMPLETE = 'COMPLETE';
 
-/** 块状态 → 工具执行状态（与 {@code utils/toolMeta.ts#resolveToolExecutionStatus} 的四态对齐）。 */
+/** 工具块状态 → {@link ToolCallTrace['status']}（与 {@code utils/toolMeta.ts#resolveToolExecutionStatus} 的四态对齐）。 */
 function toolStatus(status: BlockStatus): ToolCallTrace['status'] {
   switch (status) {
-    case 'DONE':
+    // 已收尾（成功 / 被批准 / 已回答）—— 后端在落库时统一给 COMPLETED
+    case 'COMPLETED':
       return 'success';
     case 'FAILED':
     case 'REJECTED':
@@ -35,11 +33,24 @@ function toolStatus(status: BlockStatus): ToolCallTrace['status'] {
       return 'failed';
     case 'PROMISED':
       return 'pending';
-    case 'STREAMING':
+    case 'STARTED':
+    case RESPONSE_STREAMING:
     default:
       // 未收尾：本地「已请求、等待结果」态。绝不显示成成功或失败。
       return 'calling';
   }
+}
+
+/**
+ * 块状态 → 思维步骤状态（{@link ThoughtStep} 只区分三态）。
+ *
+ * <p>后端对已完整的思考 / 正文块发 {@code COMPLETE}；只有流式中是 {@code STREAMING}。
+ * 其余（工具块的收尾态）在思考 / 正文块上不会出现，一律按「未完成」处理而不臆断成功。</p>
+ */
+function thinkingStatus(status: BlockStatus): ThoughtStep['status'] {
+  if (status === RESPONSE_COMPLETE) return 'success';
+  if (status === RESPONSE_STREAMING) return 'running';
+  return 'failed';
 }
 
 /** 思考块 → 思维步骤。 */

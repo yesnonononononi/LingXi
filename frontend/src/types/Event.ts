@@ -234,8 +234,8 @@ export interface TurnSnapshotEvent extends EventInterface {
   sessionId: string;
   /** 业务轮次 id */
   turnId: string;
-  /** 该轮展示的更新批次号 */
-  viewVersion: number;
+  /** 该轮展示的更新批次号（线上为十进制字符串；比较前用 {@code parseVersion} 转数值） */
+  viewVersion: string;
   /** 该轮完整视图 */
   view: import('./block').TurnViewVO;
 }
@@ -250,7 +250,8 @@ export interface BlockUpsertEvent extends EventInterface {
   type: 'BLOCK_UPSERT';
   sessionId: string;
   turnId: string;
-  viewVersion: number;
+  /** 该轮展示的更新批次号（线上为十进制字符串；增量不做比较） */
+  viewVersion: string;
   /** 只含变化块的视图 */
   view: import('./block').TurnViewVO;
 }

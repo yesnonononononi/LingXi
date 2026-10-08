@@ -38,15 +38,15 @@ function view(blocks: Block[], viewVersion = 1): TurnViewVO {
 }
 
 const thinking = (order: number): Block => ({
-  blockId: 'thinking:r1', type: 'THINKING', order, status: 'DONE', text: '想一下',
+  blockId: 'thinking:r1', type: 'THINKING', order, status: 'COMPLETE', text: '想一下',
 });
 const processText = (order: number): Block => ({
-  blockId: 'text:r1', type: 'TEXT', order, status: 'DONE', placement: 'PROCESS', text: '中途叙述',
+  blockId: 'text:r1', type: 'TEXT', order, status: 'COMPLETE', placement: 'PROCESS', text: '中途叙述',
 });
 const bodyText = (order: number): Block => ({
-  blockId: 'text:r2', type: 'TEXT', order, status: 'DONE', placement: 'BODY', text: '结论正文',
+  blockId: 'text:r2', type: 'TEXT', order, status: 'COMPLETE', placement: 'BODY', text: '结论正文',
 });
-const tool = (order: number, status: Block['status'] = 'DONE'): Block => ({
+const tool = (order: number, status: Block['status'] = 'COMPLETED'): Block => ({
   blockId: 'tool:call-1', type: 'TOOL', order, status, toolCallId: 'call-1', toolName: 'read_file',
 });
 
@@ -71,7 +71,7 @@ test('顺序由后端 order 决定，与传入顺序无关', () => {
 
 test('块状态映射到工具四态：completed≠成功、PROMISED→pending、FAILED→failed', () => {
   const cases: Array<[Block['status'], string]> = [
-    ['DONE', 'success'],
+    ['COMPLETED', 'success'],
     ['FAILED', 'failed'],
     ['REJECTED', 'failed'],
     ['TIMED_OUT', 'failed'],
@@ -104,7 +104,7 @@ test('增量按 blockId 覆盖，即使 viewVersion 未变（工具收尾不改 
   assert.equal(b.toolCalls?.[0].status, 'calling');
 
   // 再增量：同一 blockId、同一 viewVersion（5），状态翻转为完成
-  upsertBlockIntoBubble(b, view([tool(2, 'DONE')], 5));
+  upsertBlockIntoBubble(b, view([tool(2, 'COMPLETED')], 5));
 
   assert.equal(b.toolCalls?.length, 1, '同 blockId 必须替换而非追加');
   assert.equal(b.toolCalls?.[0].status, 'success', '版本号相等也必须采纳增量');
@@ -115,7 +115,7 @@ test('增量按 blockId 覆盖，即使 viewVersion 未变（工具收尾不改 
 test('增量遇到新 blockId 时追加，不改动其它块', () => {
   const b = bubble();
   projectTurnView(b, view([thinking(0)], 5));
-  upsertBlockIntoBubble(b, view([tool(2, 'DONE')], 5));
+  upsertBlockIntoBubble(b, view([tool(2, 'COMPLETED')], 5));
 
   assert.equal(b.thoughtSteps?.length, 1, '原有思考块保留');
   assert.equal(b.toolCalls?.length, 1, '新块追加');

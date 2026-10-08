@@ -1,7 +1,7 @@
 {
   "name": "aether-agent-chat",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "main": "electron/main.cjs",
   "author": "Summit",
@@ -10,18 +10,21 @@
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
-    "test": "npx tsx --test tests/mcpConnect.test.ts tests/mcpConnectComponent.test.ts tests/crossPageTurn.test.ts tests/promiseCard.test.ts tests/reasoningEffort.test.ts tests/sseParse.test.ts tests/streamRendering.test.ts tests/frontendRenderFix.test.ts tests/chatLiveRenderFixes.test.ts tests/cardReadinessAndSessionStream.test.ts tests/singleSessionStream.test.ts tests/qaIndependentVerification.test.ts tests/subSessionHistoryReuse.test.ts && node --test tests/filePreview.native.test.cjs tests/chatProcessCollapse.test.cjs",
+    "check:version": "node scripts/check-version.mjs",
+    "test": "npx tsx --test tests/mcpConnect.test.ts tests/mcpConnectComponent.test.ts tests/crossPageTurn.test.ts tests/promiseCard.test.ts tests/reasoningEffort.test.ts tests/sseParse.test.ts tests/streamRendering.test.ts tests/frontendRenderFix.test.ts tests/chatLiveRenderFixes.test.ts tests/cardReadinessAndSessionStream.test.ts tests/singleSessionStream.test.ts tests/qaIndependentVerification.test.ts tests/subSessionHistoryReuse.test.ts tests/sessionLoadDiagnosis.test.ts tests/failedTurnBubble.test.ts tests/promptCardSinglePath.test.ts tests/blockProjection.test.ts tests/blockEventWiring.test.ts tests/blockTransmissionContract.test.ts && node --test tests/filePreview.native.test.cjs tests/chatProcessCollapse.test.cjs tests/updateSecurity.test.cjs tests/updateSignatureContract.test.cjs",
+    "test:updater": "node --test tests/updateSecurity.test.cjs tests/updateSignatureContract.test.cjs",
     "test:desktop-titlebar": "npm run build && electron tests/electronTitleBar.smoke.cjs",
     "test:file-preview": "electron tests/filePreview.smoke.cjs",
     "app:dev": "node electron/dev.mjs",
     "backend:runtime": "node scripts/build-backend-runtime.mjs",
     "backend:runtime:quick": "node scripts/build-backend-runtime.mjs --skip-jar",
-    "app:build": "npm run build && npm run backend:runtime && electron-builder --win nsis --x64 --publish never",
-    "app:build:dir": "npm run build && npm run backend:runtime && electron-builder --dir",
-    "app:build:setup": "npm run build && npm run backend:runtime && electron-builder --win nsis --x64 --publish never",
-    "app:build:portable": "npm run build && npm run backend:runtime && electron-builder --win portable --x64 --publish never",
-    "app:builder:dir": "npm run build && npm run backend:runtime && electron-builder --win nsis --x64 --publish never",
-    "app:builder:quick": "electron-builder --win nsis --x64 --publish never"
+    "app:build": "npm run check:version && npm run build && npm run backend:runtime && electron-builder --win nsis --x64 --publish never",
+    "app:build:dir": "npm run check:version && npm run build && npm run backend:runtime && electron-builder --dir",
+    "app:build:setup": "npm run check:version && npm run build && npm run backend:runtime && electron-builder --win nsis --x64 --publish never",
+    "app:build:portable": "npm run check:version && npm run build && npm run backend:runtime && electron-builder --win portable --x64 --publish never",
+    "app:builder:dir": "npm run check:version && npm run build && npm run backend:runtime && electron-builder --win nsis --x64 --publish never",
+    "app:builder:quick": "npm run check:version && electron-builder --win nsis --x64 --publish never",
+    "app:release": "npm run check:version && npm run build && npm run backend:runtime && electron-builder --win nsis --x64 --publish always"
   },
   "devDependencies": {
     "@guolao/vue-monaco-editor": "^1.6.0",
@@ -59,7 +62,14 @@
     "directories": {
       "output": "release"
     },
-    "publish": null,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "yesnonononononi",
+        "repo": "LingXi",
+        "releaseType": "release"
+      }
+    ],
     "electronDist": "node_modules/electron/dist",
     "npmRebuild": false,
     "nodeGypRebuild": false,
@@ -76,6 +86,7 @@
     ],
     "win": {
       "icon": "electron/resources/icon.ico",
+      "artifactName": "LX.Setup.${version}.${ext}",
       "target": [
         {
           "target": "nsis",
@@ -103,6 +114,7 @@
     "@tiptap/extension-placeholder": "^3.31.4",
     "@tiptap/starter-kit": "^3.31.4",
     "@tiptap/vue-3": "^3.31.4",
+    "electron-updater": "^6.8.9",
     "tiptap-markdown": "^0.9.0"
   }
 }
