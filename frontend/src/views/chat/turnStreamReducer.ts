@@ -7,7 +7,7 @@ import { isCardToolName, upsertPromptCard } from '../../utils/toolCallCard';
 import { toObject } from '../../utils/json';
 import { parseToolDiff } from '../../utils/toolDiff';
 import { StreamFrameBuffer } from './streamFrameBuffer';
-import { projectTurnView, upsertBlockIntoBubble } from './blockProjection';
+import { nextOrderFor, projectTurnView, upsertBlockIntoBubble } from './blockProjection';
 
 /** 卡片就绪重试上限（次）。 */
 const CARD_RETRY_MAX = 5;
@@ -383,7 +383,7 @@ export class TurnStreamReducer {
         title: '深度思考',
         content: '',
         status: 'running',
-        order: this.allocateOrder(bubble)
+        order: nextOrderFor(bubble)
       });
     }
 
@@ -455,7 +455,7 @@ export class TurnStreamReducer {
       bubble.aiMessages.push({
         id: `ai-${bubble.id}-${bubble.aiMessages.length}`,
         text: bubble.content,
-        order: this.allocateOrder(bubble)
+        order: nextOrderFor(bubble)
       });
       bubble.content = '';
     }
@@ -491,7 +491,7 @@ export class TurnStreamReducer {
         query: rawArgs,
         args: parsedArgs,
         status: 'calling',
-        order: this.allocateOrder(bubble)
+        order: nextOrderFor(bubble)
       };
 
       if (toolName === AgentToolName.CallSubAgent) {
@@ -735,36 +735,6 @@ export class TurnStreamReducer {
     return this.getMessages().find(m => m.id === id);
   }
 
-  /**
-   * 分配时间线顺序：实时新增的思考步、中间文本与工具调用统一取「当前时间线最大 order + 1」。
-   *
-   * <p><b>必须继承已有最大值，不能按项数重新计数</b>：气泡可能来自历史聚合
-   * （order 基准是原始行下标 × {@code TIMELINE_SLOT_STRIDE}），也可能由对账合并而来。
-   * 按项数从 0 重新编号会给新项一个远小于历史 order 的值，渲染层升序排序后
-   * 新思考会插进旧工具中间（用户看到「续写的思考跑到旧过程里」）。</p>
-   *
-   * <p>取「最大值 + 1」而非「最大值 + 步长」：相对顺序才是渲染层的唯一依据，
-   * 连续编号已足够表达先后，也不必关心历史是否用同一套步长。</p>
-   *
-   * <p><b>四类必须全部计入</b>：漏掉任何一类都会让新项与旧项拿到相同 / 更小的 order
-   * （aiMessages 尤其易漏），排序退化成依赖插入顺序，表现为过程项偶发错位。</p>
-   *
-   * <p>必须在 push 新项之前调用。</p>
-   */
-  private allocateOrder(bubble: ChatMessage): number {
-    let maxOrder = -1;
-    const consider = (order?: number): void => {
-      if (typeof order === 'number' && order > maxOrder) maxOrder = order;
-    };
-    (bubble.thoughtSteps ?? []).forEach(step => consider(step.order));
-    (bubble.toolCalls ?? []).forEach(call => consider(call.order));
-    (bubble.aiMessages ?? []).forEach(message => consider(message.order));
-    // promptCards 是 ToolCallVO，契约上没有 order（它是卡片不是时间线项）；这里按可选读取，
-    // 读不到就是 undefined，不参与比较 —— 不要为了「凑齐四类」而给它造一个字段。
-    (bubble.promptCards ?? []).forEach(card => consider((card as { order?: number }).order));
-    (bubble.processTimeline ?? []).forEach(item => consider(item.order));
-    return maxOrder + 1;
-  }
 
   /**
    * 请求一次「卡片就绪」拉取（并发/重复触发按 toolCallId 去重，避免定时器叠加）。

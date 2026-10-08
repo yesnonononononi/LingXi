@@ -594,3 +594,57 @@ test('★ 实时路径: 中间叙述与紧随的工具调用必须拿到不同 o
     `叙述在前、工具在后，order 必须严格递增（否则排序结果不稳定）：text=${textOrder}, tool=${toolOrder}`
   );
 });
+
+/**
+ * ★ 2b：本地新项必须续写在后端千位槽 order **之上**（不能用「最大值 + 1」）。
+ *
+ * <p>接入 Block 契约后块顺序由后端给出，槽步长是
+ * {@code responseOrder * 1000 + slot}（THINKING=0 / TEXT=1 / TOOL=2..）。
+ * 截断快照里最后一个块若落在 {@code 2002}，「最大值 + 1」会给出 2003 —— 看似也排在后面，
+ * 但下一帧增量块（order 仍是 2002 那一槽的兄弟）就会与本地项并列，排序退化成插入序。</p>
+ *
+ * <p>本用例因此断言<b>至少跨一个槽步长</b>，而不是「大于」。只断言「大于」在
+ * step=1 时同样通过，属无效断言。</p>
+ */
+test('★ 2b: 本地新过程项 order 必须跨过整个槽位（严格大于「最大值 + 1」的相邻槽）', () => {
+  const messages: ChatMessage[] = [];
+  const reducer = new TurnStreamReducer(messages, { sessionId: 'test-session-order-2b' });
+
+  reducer.pushUserMessage('跑一遍');
+  reducer.consume({
+    type: 'EXECUTION_STARTED',
+    executionId: 'exec-2b',
+    timestamp: '2026-10-08T09:00:00Z',
+    metaData: { turnId: 'turn-2b', sessionId: 'test-session-order-2b' }
+  });
+  const bubble = messages[1];
+
+  // 模拟 TURN_SNAPSHOT 已投影的后端块：order 是三槽步长，最后一槽在 2002。
+  bubble.toolCalls = [{
+    id: 'call-backend-1',
+    toolName: AgentToolName.ReadFile,
+    category: 'read',
+    query: '{}',
+    args: {},
+    status: 'success',
+    order: 2002
+  }];
+
+  reducer.consume({
+    type: 'TOOL_CALL',
+    toolName: AgentToolName.WebSearch,
+    requestId: 'call-local-2',
+    args: '{"q":"y"}',
+    resultStatus: 'STARTED',
+    executionId: 'exec-2b',
+    timestamp: '2026-10-08T09:00:01Z',
+    metaData: { turnId: 'turn-2b' }
+  });
+
+  const localOrder = bubble.toolCalls?.find(call => call.id === 'call-local-2')?.order;
+  assert.notEqual(localOrder, undefined, '本地新工具必须带 order');
+  assert.ok(
+    Number(localOrder) > 2003,
+    `本地新项必须跨过整个槽位续写（旧「最大值 + 1」会给 2003，与后端同槽兄弟并列）：local=${localOrder}`
+  );
+});

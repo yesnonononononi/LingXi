@@ -216,57 +216,36 @@ interface ProcessItem {
 }
 
 /**
- * 过程项的「内容指纹」：id 之外的第二种身份，只用于**思考与中间正文**。
+ * 合并一组过程项：两侧都按**权威身份 `id`** 去重后取并集，然后按 `order` 升序。
  *
- * <p>实时路径的过程项 id 由「气泡 id + 序号」派生（{@code step-<bubbleId>-<n>}、
- * {@code ai-<bubbleId>-<n>}），历史路径由「记录 id」派生（{@code step-<sid>-<recordId>}），
- * <b>同一段内容两侧 id 必然不同</b>。只按 id 去重会让一段思考 / 中间正文在对账后变成两份
- * （用户看到同一段思考出现两次）。</p>
+ * <p>接入 Block 契约后，两侧的身份同源：历史走 {@code TurnViewAssembler}，
+ * 实时走 {@code TURN_SNAPSHOT}/{@code BLOCK_UPSERT}，块 id 都是
+ * {@code thinking:<responseId>} / {@code text:<responseId>} / {@code tool:<toolCallId>}。
+ * 同一块在两侧**必然同名**，因此单一 `id` 判据即可幂等，不再需要「内容指纹」这条
+ * 只为弥合两侧 id 不同而存在的第二条身份。</p>
  *
- * <p><b>只对「内容即身份」的项使用（思考 / 中间正文）</b>：这两类一个气泡内不会出现两段
- * 完全相同的内容，指纹安全。工具 / 卡片 / 时间线项<b>不能</b>用内容当身份 ——
- * 同一轮连续读多个文件时 {@code toolName} 全等，按内容去重会把 58 个真实调用当成重复项丢掉。</p>
- *
- * <p>指纹带类型前缀：思考与中间正文可以内容完全相同（都是模型输出），
- * 不带前缀会把「一段思考」和「同文的中间正文」误合并成一条。</p>
+ * <p><b>顺序必须由 order 决定，不能靠「本地在前」</b>：合并结果直接喂给渲染层，
+ * 而渲染层按 order 升序排。历史 order 是后端千位槽步长（{@code responseOrder * 1000 + slot}），
+ * 本地 order 由 {@link blockProjection.nextOrderFor} 从气泡最大值续写 —— 两者同一量纲，
+ * 拼接后按 order 排序即与真实发生顺序一致。此前「本地在前」的假设建立在
+ * 「本地 order 恒大于历史 order」之上，一旦某轮历史 order 更高（分页补齐了更晚的块）就会错位。</p>
  */
-function buildProcessFingerprint(kind: string, item: ProcessItem): string {
-  return `${kind}\u0000${item.content ?? item.text ?? ''}`;
-}
-
-/**
- * 合并一组过程项：本地已有项保持不动（更近），历史项按「id，或内容指纹（仅文本类）」去重后补进来。
- *
- * <p>两个判据的分工：<b>id 判据</b>负责同一来源的重复加载（幂等），对所有类型都成立；
- * <b>内容指纹</b>只对 {@code textKinded} 的集合（思考 / 中间正文）生效，用于消除
- * 「实时已渲染 + 历史已落库」这对 id 不同内容相同的项。</p>
- *
- * <p>顺序保持「本地项在前、历史补进来的在后」：实时项 order 已由
- * {@code TurnStreamReducer#allocateOrder} 依当前最大 order 递增，本地在前即与 order 序一致。</p>
- */
-function complementProcessData<T extends ProcessItem>(
-  kind: string,
+function mergeProcessById<T extends ProcessItem>(
   localItems: T[] | undefined,
-  historyItems: T[] | undefined,
-  textKinded: boolean
+  historyItems: T[] | undefined
 ): T[] | undefined {
   if (!historyItems || historyItems.length === 0) return localItems;
-  const merged = [...(localItems ?? [])];
-  const localIds = new Set(merged.map(item => String(item?.id ?? '')));
-  const localFingerprints = textKinded
-    ? new Set(merged.map(item => buildProcessFingerprint(kind, item)))
-    : new Set<string>();
+  if (!localItems || localItems.length === 0) return historyItems;
+  const byId = new Map<string, T>();
+  for (const item of localItems) {
+    byId.set(String(item?.id ?? ''), item);
+  }
   for (const item of historyItems) {
     const id = String(item?.id ?? '');
-    if (id && localIds.has(id)) continue;
-    if (textKinded) {
-      const fingerprint = buildProcessFingerprint(kind, item);
-      if (localFingerprints.has(fingerprint)) continue;
-      localFingerprints.add(fingerprint);
-    }
-    localIds.add(id);
-    merged.push(item);
+    if (!byId.has(id)) byId.set(id, item);
   }
+  const merged = [...byId.values()];
+  merged.sort((a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER));
   return merged;
 }
 
@@ -306,10 +285,10 @@ function complementTurnKeepingLocalBody(
     if (message.role !== 'assistant') return message;
     return {
       ...message,
-      thoughtSteps: complementProcessData('thinking', message.thoughtSteps, thoughtSteps, true),
-      toolCalls: complementProcessData('tool', message.toolCalls, toolCalls, false),
-      aiMessages: complementProcessData('text', message.aiMessages, aiMessages, true),
-      promptCards: complementProcessData('card', message.promptCards, promptCards, false)
+      thoughtSteps: mergeProcessById(message.thoughtSteps, thoughtSteps),
+      toolCalls: mergeProcessById(message.toolCalls, toolCalls),
+      aiMessages: mergeProcessById(message.aiMessages, aiMessages),
+      promptCards: mergeProcessById(message.promptCards, promptCards)
     };
   });
 
