@@ -1,11 +1,13 @@
 import type { AgentEvent, TokenInfo } from '../../types/Event';
+import type { BlockEventPayload } from '../../types/block';
 import type { ChatMessage, ContextUsageData, ToolCallTrace, ToolCallVO } from '../../types/chat';
 import { AgentToolName } from '../../utils/toolNames';
 import { resolveToolCategory, resolveToolExecutionStatus, isEditFileTool, extractSubAgentParams } from '../../utils/toolMeta';
-import { isCardToolName } from '../../utils/toolCallCard';
+import { isCardToolName, upsertPromptCard } from '../../utils/toolCallCard';
 import { toObject } from '../../utils/json';
 import { parseToolDiff } from '../../utils/toolDiff';
 import { StreamFrameBuffer } from './streamFrameBuffer';
+import { projectTurnView, upsertBlockIntoBubble } from './blockProjection';
 
 /** 卡片就绪重试上限（次）。 */
 const CARD_RETRY_MAX = 5;
@@ -66,6 +68,13 @@ export class TurnStreamReducer {
   private cardResolving = new Set<string>();
   /** 已释放标记：释放后不再创建重试。 */
   private disposed = false;
+  /**
+   * 每轮已渲染到的块视图版本号（{@code viewVersion}）。
+   *
+   * <p>只用于 {@code TURN_SNAPSHOT} 的乱序拦截：拿到更小的版本即丢弃。
+   * {@code BLOCK_UPSERT} 刻意**不**参与比较 —— 工具收尾不改 chat_turn，同轮多次增量版本号相等。</p>
+   */
+  private turnViewVersions = new Map<string, number>();
 
   constructor(messages: ChatMessage[] | (() => ChatMessage[]), options: TurnStreamReducerOptions) {
     // 兼容两种入参：裸数组（测试 / 旧调用）与访问器（绑定「当前」数组）
@@ -195,6 +204,99 @@ export class TurnStreamReducer {
         // 传输层全量备份，流式渲染直接作为噪声丢弃
         break;
 
+      case 'TURN_SNAPSHOT':
+        this.handleTurnSnapshot(event);
+        break;
+
+      case 'BLOCK_UPSERT':
+        this.handleBlockUpsert(event);
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  /**
+   * 整轮权威快照：按 {@code viewVersion} 拦截旧帧，命中则整轮重投影。
+   *
+   * <p>快照是「校准」——块的身份 / 顺序 / 状态全部来自后端，前端整体重写过程列，
+   * 不再自己累加。前端只保留「当前已渲染到的版本号」，更小的版本直接丢弃。</p>
+   */
+  private handleTurnSnapshot(raw: unknown): void {
+    const payload = extractBlockPayload(raw);
+    if (!payload) return;
+    const turnId = payload.turnId;
+
+    const last = this.turnViewVersions.get(turnId);
+    if (last !== undefined && payload.viewVersion < last) {
+      // 乱序到达的旧帧：丢弃，绝不用旧内容覆盖新内容。
+      return;
+    }
+    this.turnViewVersions.set(turnId, payload.viewVersion);
+
+    const bubble = this.obtainActiveBubble(turnId);
+    projectTurnView(bubble, payload.view);
+    // 轮次状态是权威的：终态/挂起据此对齐，避免快照到了但气泡还停在「进行中」。
+    this.applyTurnStatus(bubble, payload.view.status);
+    this.onScrollFollow?.();
+  }
+
+  /**
+   * 单块增量：按 {@code blockId} 覆盖，**不做版本比较**。
+   *
+   * <p>⚠️ 增量与快照共用 {@code chat_turn.version} 作批次号，而工具收尾不改 chat_turn ——
+   * 同一轮多次 upsert 的版本号必然相等。按版本丢弃会误杀合法增量，故这里只按 blockId 覆盖。</p>
+   */
+  private handleBlockUpsert(raw: unknown): void {
+    const payload = extractBlockPayload(raw);
+    if (!payload) return;
+    const turnId = payload.turnId;
+
+    // 尚未建立基线（没收到过快照/历史）时，增量无从叠加 —— 交给后续快照或对账补全，
+    // 在此凭空造气泡会让「同一轮两条气泡」复发（历史侧还有一条权威的）。
+    const bubble = this.findBubbleByTurnId(turnId);
+    if (!bubble) return;
+
+    upsertBlockIntoBubble(bubble, payload.view);
+  }
+
+  /** 按 turnId 查已存在的助手气泡（不新建）。 */
+  private findBubbleByTurnId(turnId: string): ChatMessage | null {
+    if (this.activeBubbleId) {
+      const active = this.findMessageById(this.activeBubbleId);
+      if (active && active.turnId === turnId) return active;
+    }
+    return this.getMessages().find(m => m.role === 'assistant' && m.turnId === turnId) ?? null;
+  }
+
+  /** 轮次状态 → 气泡运行态标志（终态/挂起据此对齐）。 */
+  private applyTurnStatus(bubble: ChatMessage, status: string): void {
+    switch (status) {
+      case 'COMPLETED':
+        bubble.isComplete = true;
+        bubble.isThinking = false;
+        bubble.isExploring = false;
+        bubble.isSuspended = false;
+        break;
+      case 'FAILED':
+      case 'CANCELLED':
+        bubble.isComplete = true;
+        bubble.isThinking = false;
+        bubble.isExploring = false;
+        bubble.isSuspended = false;
+        break;
+      case 'WAITING':
+        bubble.isSuspended = true;
+        bubble.isThinking = false;
+        bubble.isExploring = false;
+        break;
+      case 'RUNNING':
+        bubble.isThinking = true;
+        bubble.isSuspended = false;
+        bubble.isComplete = false;
+        break;
+      case 'ACCEPTED':
       default:
         break;
     }
@@ -293,6 +395,10 @@ export class TurnStreamReducer {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
     bubble.isExploring = false;
     bubble.isSuspended = false;
+    // 又吐出新正文 = 这一轮重新进入生成态。上一条工具收尾时推断出的「已终结」必须撤回，
+    // 否则气泡会带着 isComplete=true 继续流式，watch(false→true) 的收起动画不会触发，
+    // 对账也会误以为「本地已完结」而拒绝用权威历史替换该轮。
+    bubble.isComplete = false;
 
     if (bubble.thoughtSteps) {
       bubble.thoughtSteps.forEach(step => {
@@ -448,7 +554,35 @@ export class TurnStreamReducer {
       }
     }
 
+    // 工具结果已写回：若该轮全部工具都已收尾，则这一轮事实上已终结（见 markCompleteIfToolsSettled）
+    this.markCompleteIfToolsSettled(bubble);
+
     this.onScrollFollow?.();
+  }
+
+  /**
+   * 由实时事实推断「本轮已终结」的唯一一处。
+   *
+   * <p>执行结束后气泡只有一个终结信号（EXECUTION_COMPLETED / FAILED / CANCELLED）。若终结事件
+   * 在建立订阅之前就已发生（进入会话晚于执行结束），气泡会永远停在 {@code isComplete: false}，
+   * 使对账把它当成「进行中的本地气泡」而拒绝用权威历史替换 / 补齐该轮过程数据
+   * （表现为「工具调用永远显示运行中、工具条不出现」）。</p>
+   *
+   * <p><b>判据只能是「工具已有结果」——不得用 {@code isThinking}/{@code isExploring} 推断</b>：
+   * 中间叙述帧会把这两者都置为 false（`handlePartialText`），模型往往还要接着调工具，
+   * 据此判终结会把仍在进行的一轮提前钉成完成态。工具结果只在 {@link handleToolCompleted}
+   * 写入，因此判据自包含：**所有已知工具调用都有终态结果，且没有正在流式的思考或正文**。</p>
+   *
+   * <p>终结后照常返回，事件流若仍在继续，后续过程项照旧能被 push 进来 —— 这里只是让对账
+   * 不再把它当「进行中」，不是冻结气泡。</p>
+   */
+  private markCompleteIfToolsSettled(bubble: ChatMessage): void {
+    const toolCalls = bubble.toolCalls;
+    if (!toolCalls || toolCalls.length === 0) return;
+    if (!toolCalls.every(call => typeof call.result === 'string')) return;
+    if (this.frameBuffer.hasPending(bubble.id)) return;
+
+    bubble.isComplete = true;
   }
 
   private handleContextUpdate(event: {
@@ -602,19 +736,34 @@ export class TurnStreamReducer {
   }
 
   /**
-   * 分配时间线顺序：实时路径按「创建先后」给思考步、中间文本与工具调用统一编号，三者严格交错。
+   * 分配时间线顺序：实时新增的思考步、中间文本与工具调用统一取「当前时间线最大 order + 1」。
    *
-   * <p>取「当前时间线项数 × 10」而非各类各自的计数：三者若用不同基准，
-   * 排序后整轮思考会挤到工具之前（同一轮多段思考尤其明显）。必须在 push 新项之前调用。</p>
+   * <p><b>必须继承已有最大值，不能按项数重新计数</b>：气泡可能来自历史聚合
+   * （order 基准是原始行下标 × {@code TIMELINE_SLOT_STRIDE}），也可能由对账合并而来。
+   * 按项数从 0 重新编号会给新项一个远小于历史 order 的值，渲染层升序排序后
+   * 新思考会插进旧工具中间（用户看到「续写的思考跑到旧过程里」）。</p>
    *
-   * <p><b>aiMessages 必须计入</b>：漏掉它会让新落的中间文本与紧随其后的工具调用拿到
-   * 相同 order，排序退化成依赖插入顺序，表现为「文本与工具偶发错位」。</p>
+   * <p>取「最大值 + 1」而非「最大值 + 步长」：相对顺序才是渲染层的唯一依据，
+   * 连续编号已足够表达先后，也不必关心历史是否用同一套步长。</p>
+   *
+   * <p><b>四类必须全部计入</b>：漏掉任何一类都会让新项与旧项拿到相同 / 更小的 order
+   * （aiMessages 尤其易漏），排序退化成依赖插入顺序，表现为过程项偶发错位。</p>
+   *
+   * <p>必须在 push 新项之前调用。</p>
    */
   private allocateOrder(bubble: ChatMessage): number {
-    const used = (bubble.thoughtSteps?.length ?? 0)
-        + (bubble.toolCalls?.length ?? 0)
-        + (bubble.aiMessages?.length ?? 0);
-    return used * 10;
+    let maxOrder = -1;
+    const consider = (order?: number): void => {
+      if (typeof order === 'number' && order > maxOrder) maxOrder = order;
+    };
+    (bubble.thoughtSteps ?? []).forEach(step => consider(step.order));
+    (bubble.toolCalls ?? []).forEach(call => consider(call.order));
+    (bubble.aiMessages ?? []).forEach(message => consider(message.order));
+    // promptCards 是 ToolCallVO，契约上没有 order（它是卡片不是时间线项）；这里按可选读取，
+    // 读不到就是 undefined，不参与比较 —— 不要为了「凑齐四类」而给它造一个字段。
+    (bubble.promptCards ?? []).forEach(card => consider((card as { order?: number }).order));
+    (bubble.processTimeline ?? []).forEach(item => consider(item.order));
+    return maxOrder + 1;
   }
 
   /**
@@ -654,10 +803,9 @@ export class TurnStreamReducer {
     if (card && card.type === 'PROMISE') {
       const bubble = this.findMessageById(bubbleId);
       if (bubble) {
-        if (!bubble.promptCards) bubble.promptCards = [];
-        const idx = bubble.promptCards.findIndex(c => String(c.id) === String(card!.id));
-        if (idx >= 0) bubble.promptCards[idx] = card;
-        else bubble.promptCards.push(card);
+        // ⚠️ 落卡走 upsertPromptCard（历史/实时唯一落点）：本地再写一份「覆盖或追加」
+        // 就会和历史路径漂移，表现为「实时卡已是新状态、刷新后又变回旧的」。
+        upsertPromptCard(bubble, card);
         this.onScrollFollow?.();
       }
       // 就绪或已决：停止重试（已决卡片再拉毫无意义）
@@ -733,4 +881,25 @@ export class TurnStreamReducer {
   public flush(): void {
     this.frameBuffer.flushImmediate();
   }
+}
+
+/**
+ * 从 SSE 业务事件里取出块视图载荷。
+ *
+ * <p>后端把 {@code BlockEventPayload} 直接作为事件体下发（见 {@code SseEventPublisher#sendBusiness}
+ * 的 {@code .data(payload)}），载荷字段平铺在事件 JSON 顶层。这里同时兼容「顶层平铺」（现行）
+ * 与「包一层 payload」（防御未来信封化）两种形状；取不到返回 null，由调用方静默跳过。</p>
+ */
+function extractBlockPayload(raw: unknown): BlockEventPayload | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as Record<string, unknown>;
+  const top = obj as unknown as BlockEventPayload;
+  if (top.view && typeof top.view === 'object' && Array.isArray(top.view.blocks)) {
+    return top;
+  }
+  const nested = obj.payload as BlockEventPayload | undefined;
+  if (nested && nested.view && Array.isArray(nested.view.blocks)) {
+    return nested;
+  }
+  return null;
 }

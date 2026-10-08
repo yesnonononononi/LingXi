@@ -1,4 +1,5 @@
 import type { TokenInfo } from './Event';
+import type { TurnViewVO } from './block';
 
 /** 消息角色定义 */
 export type MessageRole = 'user' | 'assistant' | 'system';
@@ -175,10 +176,13 @@ export interface ChatSession {
    */
   turns?: Record<string, ChatTurn>;
   /**
-   * 本会话已加载的原始服务端消息记录（按时间正序拼接，按记录 id 去重）。
-   * 用于跨分页按 turnId 完整聚合，消除游标分页切断同轮次导致的回答气泡割裂。
+   * 本会话已加载的原始服务端消息记录（按时间正序，按记录 id 去重）。
+   *
+   * <p>这是「翻页 / 对账」的唯一累计对象：后端的页按原始消息行切、不按轮次切，
+   * 同一 turnId 可横跨两页；必须合页去重后再聚合一次，才能保证每个 (sessionId, turnId)
+   * 只产出一个助手气泡、过程数据不丢不重。</p>
    */
-  rawRecords?: SessionMessageVO[];
+  rawMessageRecords?: SessionMessageVO[];
   /** 上下文用量快照（最近一次终结执行回写，随 tree/detail 下发）；详见 SessionVO 同名字段。 */
   contextTokenCount?: number | null;
   contextMaxTokens?: number | null;
@@ -201,6 +205,11 @@ export interface SubSessionVO extends SessionVO {
   messages?: ChatMessage[];
   /** 本子会话已加载的轮次摘要表（键 = turnId），由消息分页接口逐页 union 合并；语义同 {@link ChatSession.turns}。 */
   turns?: Record<string, ChatTurn>;
+  /**
+   * 本子会话已加载的原始服务端消息记录（按时间正序，按记录 id 去重）；语义同
+   * {@link ChatSession.rawMessageRecords} —— 翻页/对账的唯一累计对象，合页去重后再统一聚合。
+   */
+  rawMessageRecords?: SessionMessageVO[];
 }
 
 /** 会话树 (对应后端 SessionTreeVO)：平铺列表 + 真正的根会话 id */
@@ -415,6 +424,14 @@ export interface SessionMessagePageVO {
    * 与 records 同页返回，供前端把持久化的 token / 模型 / 耗时 / 状态绑定到回答组。
    */
   turns?: Record<string, ChatTurn> | null;
+  /**
+   * 本页轮次的**块视图**字典：键 = turnId 字符串。
+   *
+   * <p>与 {@link turns} 分工不同：{@code turns} 管统计/状态元数据，{@code turnViews} 管
+   * **块内容与顺序**（后端装配器给出的权威 order / blockId / status）。
+   * 与实时 SSE 的 {@code TURN_SNAPSHOT} 共用同一形状。</p>
+   */
+  turnViews?: Record<string, TurnViewVO> | null;
   nextCursor?: string | null;
   hasMore?: boolean;
 }

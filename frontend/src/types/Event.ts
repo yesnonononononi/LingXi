@@ -34,8 +34,6 @@ export interface EventMetaData {
   parentTurnId?: string;
   /** 构建时根会话的历史代际快照 */
   historyRevision?: string;
-  /** 响应身份键 */
-  streamKey?: string;
   [key: string]: unknown;
 }
 
@@ -221,6 +219,43 @@ export interface ContextUpdateEvent extends EventInterface {
 }
 
 /* ------------------------------------------------------------------ */
+/* 业务事件（块视图）                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * TURN_SNAPSHOT —— 整轮权威快照（业务事件，非框架事件）。
+ *
+ * <p>块的身份 / 顺序 / 状态由后端唯一确定；前端按 {@code viewVersion} 整轮替换，
+ * 拿到更小的版本号即丢弃。事件体字段平铺（见后端 {@code BlockEventPayload}）。</p>
+ */
+export interface TurnSnapshotEvent extends EventInterface {
+  type: 'TURN_SNAPSHOT';
+  /** 块内容的真实归属会话 */
+  sessionId: string;
+  /** 业务轮次 id */
+  turnId: string;
+  /** 该轮展示的更新批次号 */
+  viewVersion: number;
+  /** 该轮完整视图 */
+  view: import('./block').TurnViewVO;
+}
+
+/**
+ * BLOCK_UPSERT —— 单块增量（业务事件，非框架事件）。
+ *
+ * <p>{@code view.blocks} 只含**变化的那一块**；前端按 {@code blockId} 覆盖。
+ * ⚠️ 增量不做版本比较：工具收尾不改 chat_turn，同轮多次增量版本号可能相等。</p>
+ */
+export interface BlockUpsertEvent extends EventInterface {
+  type: 'BLOCK_UPSERT';
+  sessionId: string;
+  turnId: string;
+  viewVersion: number;
+  /** 只含变化块的视图 */
+  view: import('./block').TurnViewVO;
+}
+
+/* ------------------------------------------------------------------ */
 /* 判别式联合与事件表                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -244,6 +279,14 @@ export interface AgentEventMap {
   TOOL_CALL: ToolCallStartEvent;
   TOOL_COMPLETED: ToolCallEndEvent;
   CONTEXT_UPDATE: ContextUpdateEvent;
+  /**
+   * 业务事件：块视图（整轮快照 / 单块增量）。
+   *
+   * <p>⚠️ 这两个**不是框架事件**：名与形状由后端 {@code com.summit.dp.shared.event.BlockEventType}
+   * 定义，SSE 事件名取自该常量。事件体即 {@link BlockEventPayload}（字段平铺，无外层信封）。</p>
+   */
+  TURN_SNAPSHOT: TurnSnapshotEvent;
+  BLOCK_UPSERT: BlockUpsertEvent;
 }
 
 /** 全部运行时事件类型的字面量联合（派生自 {@link AgentEventMap}，勿手写）。 */
@@ -299,4 +342,7 @@ const AGENT_EVENT_TYPES: Record<RuntimeEventType, true> = {
   TOOL_CALL: true,
   TOOL_COMPLETED: true,
   CONTEXT_UPDATE: true,
+  // 业务事件：后端 BlockEventType 下发。必须在此登记 —— 未登记会被 toAgentEvent 静默丢弃。
+  TURN_SNAPSHOT: true,
+  BLOCK_UPSERT: true,
 };
