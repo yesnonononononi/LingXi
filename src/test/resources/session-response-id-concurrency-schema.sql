@@ -16,14 +16,15 @@ CREATE TABLE session (
 );
 
 CREATE TABLE session_message (
-    id          BIGINT      NOT NULL PRIMARY KEY,
-    response_id VARCHAR(36) NULL,
-    session_id  BIGINT      NOT NULL,
-    turn_id     BIGINT      NULL,
-    type        VARCHAR(16) NOT NULL,
-    content     CLOB        NOT NULL,
-    create_time TIMESTAMP(3) NULL,
-    update_time TIMESTAMP(3) NULL
+    id             BIGINT      NOT NULL PRIMARY KEY,
+    response_id    VARCHAR(36) NULL,
+    session_id     BIGINT      NOT NULL,
+    turn_id        BIGINT      NULL,
+    response_order INT         NULL,
+    type           VARCHAR(16) NOT NULL,
+    content        CLOB        NOT NULL,
+    create_time    TIMESTAMP(3) NULL,
+    update_time    TIMESTAMP(3) NULL
 );
 
 -- 与 init.sql 一致：同一 (session_id, response_id) 只允许一行。

@@ -7,15 +7,16 @@
 DROP TABLE IF EXISTS session_message;
 
 CREATE TABLE session_message (
-    id          BIGINT       NOT NULL PRIMARY KEY,
-    stream_key  VARCHAR(160) NULL,
-    session_id  BIGINT       NOT NULL,
-    turn_id     BIGINT       NULL,
-    type        VARCHAR(16)  NOT NULL,
-    content     CLOB         NOT NULL,
-    create_time TIMESTAMP(3) NULL,
-    update_time TIMESTAMP(3) NULL
+    id             BIGINT       NOT NULL PRIMARY KEY,
+    response_id    VARCHAR(36)  NULL,
+    session_id     BIGINT       NOT NULL,
+    turn_id        BIGINT       NULL,
+    response_order INT          NULL,
+    type           VARCHAR(16)  NOT NULL,
+    content        CLOB         NOT NULL,
+    create_time    TIMESTAMP(3) NULL,
+    update_time    TIMESTAMP(3) NULL
 );
 
--- 与 init.sql 的 uk_session_stream_key 一致：同一响应身份只落一行（重复落库由它拦住）。
-ALTER TABLE session_message ADD CONSTRAINT uk_session_stream_key UNIQUE (session_id, stream_key);
+-- 与 init.sql 的 uk_session_response_id 一致：同一响应身份只落一行（重复落库由它拦住）。
+ALTER TABLE session_message ADD CONSTRAINT uk_session_response_id UNIQUE (session_id, response_id);

@@ -70,9 +70,36 @@ class ConversationTranscriptResponseIdTest {
                 .findFirst().orElseThrow();
         assertEquals(RESPONSE_ID, ai.getResponseId());
 
-        // 工具行不得带身份：同一轮的多个工具行共享一个 responseId，都存会撞唯一索引。
+        // 顺序同样只挂 AI 行：工具行靠「排在所属 AI 行之后」定序，各存一份迟早对不上。
+        // 断言的是记录里的值，而不是「调用过 countAiMessagesInTurn」—— 后者对「算完没写进记录」不敏感。
+        assertEquals(0, ai.getResponseOrder());
         records.stream().filter(r -> r.getType() == SessionMessageType.TOOL)
-                .forEach(r -> assertNull(r.getResponseId()));
+                .forEach(r -> {
+                    // 工具行不得带身份：同一轮的多个工具行共享一个 responseId，都存会撞唯一索引。
+                    assertNull(r.getResponseId());
+                    assertNull(r.getResponseOrder());
+                });
+    }
+
+    /**
+     * 序号必须来自「该轮已有 AI 行数」，而不是写死的 0。
+     *
+     * <p>一轮里可以发生多次模型调用（思考 → 工具 → 再思考），第二次调用的序号必须是 1。
+     * 若实现退化成常量或「插入后自增」，这条用例变红。</p>
+     */
+    @Test
+    void responseOrderCountsAiRowsAlreadyInTurn() {
+        when(messages.countAiMessagesInTurn(SESSION_ID, TURN_ID)).thenReturn(2L);
+
+        service.appendRound(SESSION_ID, null, TURN_ID,
+                AiMessageEntity.builder().text("第三轮思考").build(), List.of(), RESPONSE_ID);
+
+        ArgumentCaptor<List<SessionMessage>> captured = ArgumentCaptor.forClass(List.class);
+        verify(messages).appendAll(eq(SESSION_ID), any(), captured.capture());
+
+        SessionMessage ai = captured.getValue().stream()
+                .filter(r -> r.getType() == SessionMessageType.AI).findFirst().orElseThrow();
+        assertEquals(2, ai.getResponseOrder());
     }
 
     /**

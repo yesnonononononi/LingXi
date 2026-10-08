@@ -62,6 +62,7 @@ public class H2SchemaInitializer {
                 migrateStream(connection);
                 migrateV3(connection);
                 migrateV4(connection);
+                migrateV5(connection);
             }
         };
     }
@@ -92,7 +93,7 @@ public class H2SchemaInitializer {
 
     private void migrateStream(Connection connection) throws Exception {
         String[][] columns = {{"session", "version"}, {"session", "history_revision"},
-                {"chat_turn", "version"}, {"execution", "version"}, {"session_message", "stream_key"}};
+                {"chat_turn", "version"}, {"execution", "version"}, {"session_message", "response_id"}};
         for (String[] column : columns) {
             boolean present = false;
             try (ResultSet metadata = connection.getMetaData().getColumns(null, null, "%", "%")) {
@@ -111,13 +112,13 @@ public class H2SchemaInitializer {
                 try (ResultSet indexes = connection.getMetaData().getIndexInfo(null, null, tables.getString("TABLE_NAME"), false, false)) {
                     while (indexes.next()) {
                         String name = indexes.getString("INDEX_NAME");
-                        if (name != null && name.toLowerCase(Locale.ROOT).startsWith("uk_session_stream_key")) indexPresent = true;
+                        if (name != null && name.toLowerCase(Locale.ROOT).startsWith("uk_session_response_id")) indexPresent = true;
                     }
                 }
             }
         }
         if (!indexPresent) ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
-                "db/migration/V2_stream_key_index.sql"), StandardCharsets.UTF_8));
+                "db/migration/V2_response_id_index.sql"), StandardCharsets.UTF_8));
         ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
                 "db/migration/V2_record.sql"), StandardCharsets.UTF_8));
     }
@@ -180,6 +181,20 @@ public class H2SchemaInitializer {
         }
         ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
                 "db/migration/V4_record.sql"), StandardCharsets.UTF_8));
+    }
+
+    /**
+     * V5：session_message 加 response_order（本轮模型调用序号，只挂 AI 行）。
+     *
+     * <p>逐列判定「缺列才 ALTER」，对「脚本已执行但列被手工删掉」的库同样自愈。</p>
+     */
+    private void migrateV5(Connection connection) throws Exception {
+        if (!hasColumn(connection, "session_message", "response_order")) {
+            ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                    "db/migration/V5_session_message_response_order.sql"), StandardCharsets.UTF_8));
+        }
+        ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                "db/migration/V5_record.sql"), StandardCharsets.UTF_8));
     }
 
     private boolean hasColumn(Connection connection, String table, String column) throws Exception {

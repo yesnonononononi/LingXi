@@ -12,13 +12,24 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /** 序列化必须在写入前完成，后续上下文压缩不能改变已接纳历史。 */
 @Component
 @RequiredArgsConstructor
 public class TranscriptRecordAssembler {
     private final ObjectMapper json;
-    public List<SessionMessage> build(Long sessionId, Long turnId, List<? extends Message> source, String streamKey) {
+
+    public List<SessionMessage> build(Long sessionId, Long turnId, List<? extends Message> source, UUID responseId) {
+        return build(sessionId, turnId, source, responseId, null);
+    }
+
+    /**
+     * @param responseOrder 本轮模型调用在一轮内的序号（0 基）；只挂 AI 行。
+     *                      {@code null} 表示序号未知，落库为 NULL，展示层据此降级。
+     */
+    public List<SessionMessage> build(Long sessionId, Long turnId, List<? extends Message> source,
+                                      UUID responseId, Integer responseOrder) {
         List<SessionMessage> records = new ArrayList<>();
         for (Message message : source) {
             SessionMessageType type = toMessageType(message);
@@ -30,10 +41,15 @@ public class TranscriptRecordAssembler {
             }
             records.add(SessionMessage.builder().id(IdUtil.getSnowflakeNextId()).sessionId(sessionId)
                     .turnId(turnId).type(type).text(content).createTime(Instant.now())
-                    .streamKey(type == SessionMessageType.AI ? streamKey : null).build());
+                    // 身份只挂在 AI 行：一轮里多个工具行共享同一个 responseId，重复值会撞唯一索引。
+                    // 幂等本来就以「轮」为单位判定，不需要工具行各存一份。
+                    .responseId(type == SessionMessageType.AI ? responseId : null)
+                    // 序号同理只挂 AI 行：工具行不参与「响应顺序」这一层排序，它们挂在所属 AI 行之后。
+                    .responseOrder(type == SessionMessageType.AI ? responseOrder : null).build());
         }
         return records;
     }
+
     private static SessionMessageType toMessageType(Message message) {
         if (message instanceof UserMessageEntity) return SessionMessageType.USER;
         if (message instanceof AiMessageEntity) return SessionMessageType.AI;

@@ -56,6 +56,8 @@ public class ConversationTranscriptService {
                             List<ToolMessageEntity> toolMessages, UUID responseId) {
         // 顺序不可动：先锁定会话行使并发落库串行化，再做「查 → 比对 → 插」。
         // 若先查再插（旧实现），两个并发方会同时通过检查，再一起去撞唯一索引 —— 幂等形同虚设。
+        // 锁还兼管 responseOrder 的计算：序号 = 该轮已有 AI 行数，不加锁会读到同一计数、两个响应拿到同一序号。
+        Integer responseOrder = null;
         if (responseId != null) {
             messageRepository.lockSessionForAppend(sessionId);
             Optional<SessionMessage> existing = messageRepository.findByResponseId(sessionId, responseId);
@@ -66,20 +68,21 @@ public class ConversationTranscriptService {
                 }
                 return;
             }
+            responseOrder = (int) messageRepository.countAiMessagesInTurn(sessionId, turnId);
         }
         List<Message> round = new ArrayList<>();
         round.add(aiMessage);
         if (toolMessages != null) round.addAll(toolMessages);
-        append(sessionId, rootSessionId, turnId, round, responseId);
+        append(sessionId, rootSessionId, turnId, round, responseId, responseOrder);
     }
 
     private void append(Long sessionId, Long rootSessionId, Long turnId, List<? extends Message> messages) {
-        append(sessionId, rootSessionId, turnId, messages, null);
+        append(sessionId, rootSessionId, turnId, messages, null, null);
     }
 
     private void append(Long sessionId, Long rootSessionId, Long turnId,
-                        List<? extends Message> messages, UUID responseId) {
-        List<SessionMessage> records = recordAssembler.build(sessionId, turnId, messages, responseId);
+                        List<? extends Message> messages, UUID responseId, Integer responseOrder) {
+        List<SessionMessage> records = recordAssembler.build(sessionId, turnId, messages, responseId, responseOrder);
         messageRepository.appendAll(sessionId, rootSessionId, records);
         for (SessionMessage record : records) {
             if (record.getType() != SessionMessageType.TOOL || record.getText() == null) continue;

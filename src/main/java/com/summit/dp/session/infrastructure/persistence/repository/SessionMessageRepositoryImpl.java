@@ -86,6 +86,7 @@ public class SessionMessageRepositoryImpl
                     .responseId(message.getResponseId())
                     .sessionId(sessionId)
                     .turnId(message.getTurnId())
+                    .responseOrder(message.getResponseOrder())
                     .type(message.getType())
                     .text(message.getText())
                     .createTime(message.getCreateTime())
@@ -109,6 +110,15 @@ public class SessionMessageRepositoryImpl
         if (locked == null) {
             throw new IllegalStateException("落库前锁定会话失败: sessionId=" + sessionId + " 不存在");
         }
+    }
+
+    @Override
+    public long countAiMessagesInTurn(Long sessionId, Long turnId) {
+        if (sessionId == null || turnId == null) return 0L;
+        return messageMapper.selectCount(Wrappers.<SessionMessagePO>lambdaQuery()
+                .eq(SessionMessagePO::getSessionId, sessionId)
+                .eq(SessionMessagePO::getTurnId, turnId)
+                .eq(SessionMessagePO::getType, SessionMessageType.AI.name()));
     }
 
     @Override
@@ -160,6 +170,7 @@ public class SessionMessageRepositoryImpl
         return SessionMessagePO.builder().id(id).sessionId(message.getSessionId())
                 .responseId(message.getResponseId() == null ? null : message.getResponseId().toString())
                 .turnId(message.getTurnId())
+                .responseOrder(message.getResponseOrder())
                 .type(message.getType() == null ? null : message.getType().name())
                 .content(message.getText())
                 .createTime(message.getCreateTime()).build();
@@ -170,6 +181,7 @@ public class SessionMessageRepositoryImpl
         return SessionMessage.builder().id(po.getId()).sessionId(po.getSessionId())
                 .responseId(parseResponseId(po.getResponseId()))
                 .turnId(po.getTurnId())
+                .responseOrder(po.getResponseOrder())
                 .type(po.getType() == null ? null : SessionMessageType.valueOf(po.getType()))
                 .text(po.getContent())
                 .createTime(po.getCreateTime()).build();

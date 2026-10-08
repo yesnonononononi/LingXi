@@ -6,12 +6,22 @@ import lombok.Builder;
 import lombok.Getter;
 
 import java.time.Instant;
+import java.util.UUID;
 
 @Builder
 @Getter
 public class SessionMessage {
     private final Long id;
-    private final String streamKey;
+
+    /**
+     * 本轮模型调用的响应身份，由框架生成并下发（{@code ChatResponseEntity.responseId}）。
+     *
+     * <p><b>只挂在 AI 行上</b>：一轮里多个工具行共享同一身份，若都存会撞
+     * {@code (session_id, response_id)} 唯一索引；幂等以轮为单位，工具行不必各存一份。</p>
+     *
+     * <p>{@code null} 表示框架未下发身份（异常构造的执行、旧数据），此时不参与幂等拦截。</p>
+     */
+    private final UUID responseId;
 
     private final Long sessionId;
     /**
@@ -27,6 +37,17 @@ public class SessionMessage {
      * （定位工具调用）这两个「与框架交互」的边界上，不进入消息归属。</p>
      */
     private final Long turnId;
+    /**
+     * 本轮模型调用在一轮内的序号（0 基），只挂在 AI 行。
+     *
+     * <p>Block 装配的「响应顺序」这一层靠它：同一轮里模型可以多轮
+     * 「思考 → 调工具 → 再思考」，若干 AI 行共享同一 {@code turnId}；没有它就只剩
+     * 消息主键（插入顺序）可排，而插入顺序与模型调用顺序在并发/补写场景下不等价。</p>
+     *
+     * <p>{@code null} 表示序号未知（本次改造之前落库的 AI 行），展示层按未知降级，
+     * **不补一个 0** —— 补 0 会让旧行全排到新一轮前面。</p>
+     */
+    private final Integer responseOrder;
     private final SessionMessageType type;
     private String text;
     private final Instant createTime;
