@@ -58,15 +58,22 @@ export interface BlockBase {
 /** 思考块（对应后端 {@code ThinkingBlock}）。 */
 export interface ThinkingBlock extends BlockBase {
   type: 'THINKING';
-  /** 思考正文 */
-  content: string;
+  /**
+   * 思考正文。
+   *
+   * <p><b>字段名必须与后端一致（{@code text}）</b>：后端三个块 record 一律用
+   * {@code @JsonProperty("text")} 序列化文本载荷。此处曾写作 {@code content}，
+   * 于是运行时读到的永远是 {@code undefined} —— 而测试 fixture 也照抄了同一个错名，
+   * 两边一起错、全绿通过，直到接通真实接口才暴露（投影后正文与思考全被清空）。</p>
+   */
+  text: string;
 }
 
 /** 正文块（对应后端 {@code TextBlock}）。 */
 export interface TextBlock extends BlockBase {
   type: 'TEXT';
-  /** 正文 */
-  content: string;
+  /** 正文；字段名同 {@link ThinkingBlock.text}，必须与后端 {@code text} 对齐 */
+  text: string;
   /** 落点：结论正文 or 中途叙述 */
   placement: Placement;
 }

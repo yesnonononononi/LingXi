@@ -42,7 +42,7 @@ function upsertEvent(v: TurnViewVO, viewVersion = v.viewVersion): AgentEvent {
   } as unknown as AgentEvent;
 }
 
-const thinking = (): Block => ({ blockId: 'thinking:r1', type: 'THINKING', order: 0, status: 'DONE', content: '想法' });
+const thinking = (): Block => ({ blockId: 'thinking:r1', type: 'THINKING', order: 0, status: 'DONE', text: '想法' });
 const toolRunning = (): Block => ({ blockId: 'tool:c1', type: 'TOOL', order: 2, status: 'STREAMING', toolCallId: 'c1', toolName: 'read_file' });
 const toolDone = (): Block => ({ blockId: 'tool:c1', type: 'TOOL', order: 2, status: 'DONE', toolCallId: 'c1', toolName: 'read_file' });
 

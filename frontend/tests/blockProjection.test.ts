@@ -38,13 +38,13 @@ function view(blocks: Block[], viewVersion = 1): TurnViewVO {
 }
 
 const thinking = (order: number): Block => ({
-  blockId: 'thinking:r1', type: 'THINKING', order, status: 'DONE', content: '想一下',
+  blockId: 'thinking:r1', type: 'THINKING', order, status: 'DONE', text: '想一下',
 });
 const processText = (order: number): Block => ({
-  blockId: 'text:r1', type: 'TEXT', order, status: 'DONE', placement: 'PROCESS', content: '中途叙述',
+  blockId: 'text:r1', type: 'TEXT', order, status: 'DONE', placement: 'PROCESS', text: '中途叙述',
 });
 const bodyText = (order: number): Block => ({
-  blockId: 'text:r2', type: 'TEXT', order, status: 'DONE', placement: 'BODY', content: '结论正文',
+  blockId: 'text:r2', type: 'TEXT', order, status: 'DONE', placement: 'BODY', text: '结论正文',
 });
 const tool = (order: number, status: Block['status'] = 'DONE'): Block => ({
   blockId: 'tool:call-1', type: 'TOOL', order, status, toolCallId: 'call-1', toolName: 'read_file',

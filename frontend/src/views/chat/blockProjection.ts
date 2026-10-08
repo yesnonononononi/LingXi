@@ -47,7 +47,7 @@ function toThoughtStep(block: Block): ThoughtStep {
   return {
     id: block.blockId,
     title: '思考',
-    content: block.type === 'THINKING' ? block.content : '',
+    content: block.type === 'THINKING' ? block.text : '',
     status: thinkingStatus(block.status),
     order: block.order,
   };
@@ -57,7 +57,7 @@ function toThoughtStep(block: Block): ThoughtStep {
 function toAiMessage(block: Block): AiMessageItem {
   return {
     id: block.blockId,
-    text: block.type === 'TEXT' ? block.content : '',
+    text: block.type === 'TEXT' ? block.text : '',
     order: block.order,
   };
 }
@@ -143,7 +143,7 @@ export function projectTurnView(bubble: ChatMessage, view: TurnViewVO): void {
 
   for (const block of ordered) {
     if (block.type === 'TEXT' && block.placement === 'BODY') {
-      bodyText = block.content;
+      bodyText = block.text;
       continue;
     }
     timeline.push(toTimelineItem(block));
@@ -207,7 +207,7 @@ export function upsertBlockIntoBubble(bubble: ChatMessage, view: TurnViewVO): vo
     removeById(timeline, rowIds.timeline);
 
     if (block.type === 'TEXT' && block.placement === 'BODY') {
-      bodyText = block.content;
+      bodyText = block.text;
       continue;
     }
     timeline.push(toTimelineItem(block));
