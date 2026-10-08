@@ -50,7 +50,7 @@
       <div v-if="hasProcessContent" class="w-full">
         <button
           type="button"
-          @click="isProcessExpanded = !isProcessExpanded"
+          @click="toggleProcess"
           class="flex items-center gap-1.5 text-xs select-none py-0.5 group transition cursor-pointer"
           :class="isDark ? 'text-zinc-200 hover:text-white' : 'text-gray-500 hover:text-gray-800'"
         >
@@ -89,8 +89,8 @@
                 @click="toggleThoughtStep(item.step.id, item.step)"
                 class="font-medium flex items-center gap-1.5 cursor-pointer transition select-none py-0.5 text-left"
                 :class="item.step.status === 'running'
-                  ? (isDark ? 'text-white text-glow-white animate-glow-pulse' : 'text-blue-600 animate-pulse')
-                  : (isDark ? 'text-zinc-100 text-glow-white hover:text-white' : 'text-indigo-700 hover:text-indigo-900')"
+                  ? (isDark ? 'text-white text-glow-white animate-glow-pulse' : 'text-sky-600 animate-pulse')
+                  : (isDark ? 'text-zinc-100 text-glow-white hover:text-white' : 'text-sky-600 hover:text-sky-700')"
               >
                 <svg
                   :class="['w-3 h-3 transition-transform duration-200 shrink-0', isThoughtStepExpanded(item.step) ? 'rotate-90' : '', isDark ? 'text-zinc-300 drop-shadow-[0_0_4px_rgba(255,255,255,0.4)]' : 'text-gray-400']"
@@ -637,8 +637,51 @@ const emit = defineEmits<{
   (e: 'resume', sessionId?: string | number): void;
 }>();
 
-// 过程折叠状态：已结束会话/消息默认全部折叠；仅未完成的消息在生成时展开以提供实时反馈
-const isProcessExpanded = ref(props.message.isComplete === false);
+/**
+ * 是否还有工具停在「未收尾」态（调用中 / 待定）。
+ *
+ * <p>「未收尾」= 工具已经发起但还没拿到终态。只看这两种状态，不看成功/失败：
+ * 历史行里工具恒为 success/failed，不会命中，因此不会把已完成的历史轮次误判成运行中。</p>
+ */
+function hasPendingTool(toolCalls?: ToolCallTrace[]): boolean {
+  if (!toolCalls || toolCalls.length === 0) return false;
+  return toolCalls.some(call => call != null && (call.status === 'calling' || call.status === 'pending'));
+}
+
+// 过程折叠状态：默认「轮次仍在跑就展开、已终结就收起」。
+//
+// ⚠️ 不能用 `isComplete === false` 作初值：`isComplete` 只表示「这一条已是权威行」
+// （历史重建 / 已落库），不代表轮次终结 —— 对账重建的行恒为 true，而那一刻可能还有工具
+// 停在调用中。用它作初值会让「正在跑的多轮工具调用」一挂载就是收起的（用户截图的现象）。
+// 改由 processInitialExpanded 在挂载时一次性判定，之后交给 watch 处理。
+const isProcessExpanded = ref(processInitialExpanded());
+
+/**
+ * 挂载时过程框是否展开。
+ *
+ * <p>展开 = 「轮次还没结束」：仍在思考 / 已发起但未收尾的工具 / 调用方明确的未完成
+ * 或「发送中且是最新回答」。这些是**事实**，与 `isComplete` 是否已落库无关。</p>
+ *
+ * <p>刻意不复制 isTurnRunning 的全部判据：`turn` 摘要在挂载瞬间可能尚未解析出来，
+ * 拿它判「活跃」会漏掉真正活跃的轮次。这里只认最硬的两条 —— 未收尾工具与显式未完成标记。</p>
+ */
+function processInitialExpanded(): boolean {
+  if (props.message.isComplete === false) return true;
+  if (props.message.isThinking || props.message.isExploring) return true;
+  if (hasPendingTool(props.message.toolCalls)) return true;
+  return props.isSending === true && props.isLastAssistant === true;
+}
+/**
+ * 用户是否手动干预过过程框的展开态。
+ *
+ * <p>一旦用户点过折叠/展开按钮，自动逻辑（终结跳变）就不再覆盖他的选择 ——
+ * 否则「用户刚展开 → 一条迟到的 isComplete 跳变把它收回」会让人觉得按钮失灵。</p>
+ */
+const processToggleOverride = ref(false);
+const toggleProcess = (): void => {
+  processToggleOverride.value = true;
+  isProcessExpanded.value = !isProcessExpanded.value;
+};
 // 复制反馈（消息正文按布尔键控；见 composables/useCopyFeedback.ts）
 const { isCopied: copied, copy: copyContentRaw } = useCopyFeedback();
 
@@ -721,23 +764,6 @@ onUnmounted(() => {
     timerInterval = undefined;
   }
 });
-
-// 监听到 request 结束事件（或 isComplete 转为 true）后，将最后一条 aimessage 的文本展示，其余所有工具 call、thinking 都折叠
-watch(
-  () => props.message.isComplete,
-  (isDone) => {
-    if (isDone) {
-      if (timerInterval) {
-        clearInterval(timerInterval);
-        timerInterval = undefined;
-      }
-      isProcessExpanded.value = false;
-      expandedToolIds.value = {};
-      expandedThoughtStepIds.value = {};
-    }
-  },
-  { immediate: true }
-);
 
 // 中间轮次的 aimessage（与正文同文本的条目不再重复展示，其余中间过程文本归入折叠块）
 //
@@ -1070,33 +1096,54 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
   return { oldText, newText };
 };
 
+/**
+ * 轮次是否**仍在运行**（权威判据，供「过程框展开态」与「工具条出现时机」共用）。
+ *
+ * <p>多轮工具调用期间会出现一个「守卫真空」：`handleToolCall` 清掉了
+ * `isThinking` / `isExploring`（工具调用意味着本轮叙述告一段落），而后台 reconcile
+ * 重建的行 `isComplete` 恒为 true，若此时 `turn.status` 尚未解析出来，所有既有守卫
+ * 全部放行 —— 界面就会在轮次跑到一半时把过程框收起，且不再自动展开。</p>
+ *
+ * <p>这里补一条只看「事实」的判据：<b>只要有工具停在调用中 / 待定，轮次就没结束</b>。
+ * 它不依赖 `isThinking` / `turn` 是否及时到位，因此不存在同样的真空。</p>
+ */
+const isTurnRunning = computed(() => {
+  if (props.message.isThinking || props.message.isExploring) return true;
+  if (props.message.isComplete === false) return true;
+  if (props.isSending && props.isLastAssistant) return true;
+  const status = String(props.turn?.status ?? '').toUpperCase();
+  if (isActiveTurnStatus(status)) return true;
+  return hasPendingTool(props.message.toolCalls);
+});
+
+/**
+ * 是否应该收起过程框。
+ *
+ * <p>用户手动点过之后以用户意见为准（`processToggleOverride`）：否则一条迟到的
+ * `isComplete` 跳变会把用户刚展开的过程框又收回去，等于「展开之后再也留不住」。</p>
+ */
+const shouldCollapseProcess = computed(() => isMessageCompleted.value && !processToggleOverride.value);
+
 /** 该助手回答是否已完成会话生成（会话/响应结束时才展示底栏工具栏与状态） */
 const isMessageCompleted = computed(() => {
-  // 1. 如果正在思考或探索中，尚未结束
-  if (props.message.isThinking || props.message.isExploring) {
+  // 1~4. 权威「仍在运行」判据集中收敛在 isTurnRunning（含思考中 / 显式未完成 /
+  //      全局发送中且为最新回答 / 轮次摘要活跃 / 仍有工具未收尾）。
+  if (isTurnRunning.value) {
     return false;
   }
-  // 2. 如果消息本身显式标记未完成 (流式接收中)
-  if (props.message.isComplete === false) {
-    return false;
-  }
-  // 3. 如果全局仍处于生成发送中且本条是最新助手消息（会话响应尚未结束）
-  if (props.isSending && props.isLastAssistant) {
-    return false;
-  }
-  // 4. 轮次摘要仍在进行中（ACCEPTED/RUNNING/WAITING = 后端尚未下发终结事件）：
-  // 工具条的出现时机在活跃期只跟随后端终结/开始事件 —— 对账重建的历史行 isComplete 恒为 true，
-  // 不加此守卫，「还在跑的轮次」会在后台 reconcile 拉入行后立刻出现工具条（状态点显示执行中）。
-  // 但若气泡已带终结证据（终态事件路径 stopTimer 写入的 durationMs / 回填的 tokenInfo），
-  // 说明本端已收到终结事件 —— 立即出现，不等（也不依赖）对账刷新轮次摘要。
+  // 5. 轮次摘要若存在且仍在活跃态，且没有本端收到的终结证据，则不算完成。
+  //
+  // ⚠️ 只在 **status 明确存在** 时用摘要拦截：status 为空（历史行没有轮次摘要）时不能拦 ——
+  // 那会把「旧数据 / 老会话」整片挡掉（工具条与收起行为全失效）。历史行的完成性由
+  // isTurnRunning 里「已无未收尾工具」放行，不需要在这里再判一次。
   const status = String(props.turn?.status ?? '').toUpperCase();
   const hasTerminalEvidence = props.message.durationMs != null
     || props.message.tokenInfo != null
     || props.message.tokens != null;
-  if (isActiveTurnStatus(status) && !hasTerminalEvidence) {
+  if (status !== '' && isActiveTurnStatus(status) && !hasTerminalEvidence) {
     return false;
   }
-  // 5. 必须有回复内容、工具调用或报错信息之一
+  // 6. 必须有回复内容、工具调用或报错信息之一
   return !!(props.message.content || props.message.toolCalls?.length);
 });
 
@@ -1107,11 +1154,27 @@ const isMessageCompleted = computed(() => {
  * 等于「终结之后再也没法展开」。历史加载的气泡一开始就是 completed，不触发跳变，
  * 其展开态由 {@link isProcessExpanded} 的初值决定。</p>
  */
-watch(isMessageCompleted, (completed, wasCompleted) => {
-  if (completed && !wasCompleted) {
-    isProcessExpanded.value = false;
+/**
+ * 过程框的自动收起：轮次终结（且用户没手动干预过）时收起，并把逐项展开态一并重置。
+ *
+ * <p>⚠️ 判据必须是 {@link shouldCollapseProcess}，不能直接看 `isComplete`。
+ * `isComplete` 只表示「这一条已经是权威行」（历史重建 / 已落库），不代表轮次终结 ——
+ * 后台对账 rebuild 出的行恒为 true，而那一刻轮次可能还在跑（还有工具停在调用中），
+ * 直接看它就会在跑到一半时把过程框收起。再叠加 {@link processToggleOverride}，
+ * 用户手动展开后不再被迟到的跳变收回。</p>
+ *
+ * <p>只在 false→true 这一次跳变上收起：若持续 watch，用户手动展开后会被立刻重新收起。</p>
+ */
+watch(shouldCollapseProcess, (collapse, wasCollapse) => {
+  if (!collapse || wasCollapse) return;
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = undefined;
   }
-});
+  isProcessExpanded.value = false;
+  expandedToolIds.value = {};
+  expandedThoughtStepIds.value = {};
+}, { immediate: true });
 
  
 
