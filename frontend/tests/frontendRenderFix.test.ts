@@ -103,34 +103,50 @@ test('3. 工具条绑定：按 turnId 从会话轮次表解析权威摘要，缺
     { id: 'u1', role: 'user', content: '你好', timestamp: 0, turnId: 't1' },
     { id: 'a1', role: 'assistant', content: '你好！', timestamp: 0, turnId: 't1', isComplete: true }
   ];
+  const user = messages[0];
+  const assistant = messages[1];
 
   const map = buildMessageTurnMap(messages, turns);
-  const binding = map.get('a1');
+  const binding = map.get(assistant);
   assert.ok(binding);
   assert.equal(binding.turn?.totalTokens, 150);
   assert.equal(binding.turn?.elapsedMs, 2500);
   assert.equal(binding.turn?.modelName, 'gpt-4');
   assert.equal(binding.isGroupTail, true, '助手为回答组组尾');
-  assert.equal(map.get('u1')?.turn, binding.turn, '同组消息共享同一轮次摘要');
-  assert.equal(map.get('u1')?.isGroupTail, false);
+  assert.equal(map.get(user)?.turn, binding.turn, '同组消息共享同一轮次摘要');
+  assert.equal(map.get(user)?.isGroupTail, false);
 
   // 轮次表无该 turnId → null（不得回落成会话累计或 0）
-  const missing = buildMessageTurnMap(
-    [{ id: 'a2', role: 'assistant', content: '', timestamp: 0, turnId: 'unknown' }],
-    turns
-  );
-  assert.equal(missing.get('a2')?.turn, null);
+  const missingMessage: ChatMessage = { id: 'a2', role: 'assistant', content: '', timestamp: 0, turnId: 'unknown' };
+  const missing = buildMessageTurnMap([missingMessage], turns);
+  assert.equal(missing.get(missingMessage)?.turn, null);
 
   // 旧数据 turnId 缺失 → null
-  const legacy = buildMessageTurnMap(
-    [{ id: 'a3', role: 'assistant', content: '', timestamp: 0, turnId: null }],
-    turns
-  );
-  assert.equal(legacy.get('a3')?.turn, null);
+  const legacyMessage: ChatMessage = { id: 'a3', role: 'assistant', content: '', timestamp: 0, turnId: null };
+  const legacy = buildMessageTurnMap([legacyMessage], turns);
+  assert.equal(legacy.get(legacyMessage)?.turn, null);
 
   // 无轮次表 → 全部 null
   const empty = buildMessageTurnMap(messages, undefined);
-  assert.equal(empty.get('a1')?.turn, null);
+  assert.equal(empty.get(assistant)?.turn, null);
+});
+
+/**
+ * 缺陷（运行中会话加载）：跨页拆出的两条助手气泡复用了同一个稳定 id
+ * （{@code msg-<sessionId>-turn-<turnId>}）。
+ *
+ * <p>绑定表原先按 {@code m.id} 做键，后者覆盖前者 → 两条都被读成组尾，同一轮渲染出两个工具条。
+ * 键必须是消息对象本身。</p>
+ */
+test('3b. 工具条绑定：同 id 的两条跨页气泡各自绑定，组尾唯一', () => {
+  const turns: Record<string, ChatTurn> = { t1: { turnId: 't1', status: 'CANCELLED', totalTokens: 42 } };
+  const first: ChatMessage = { id: 'same-id', role: 'assistant', content: '', timestamp: 0, turnId: 't1', isComplete: true };
+  const second: ChatMessage = { id: 'same-id', role: 'assistant', content: '', timestamp: 1, turnId: 't1', isComplete: true };
+
+  const map = buildMessageTurnMap([first, second], turns);
+  const tails = [first, second].filter(message => map.get(message)?.isGroupTail);
+  assert.equal(tails.length, 1, '同一轮只能有一处组尾标记');
+  assert.equal(map.get(first)?.turn, map.get(second)?.turn, '同轮两条气泡共享同一轮次摘要');
 });
 
 /** 缺陷 1（对账/分页）：每页下发的 turns 逐页 union 进会话表，键=turnId，后到覆盖先到。 */

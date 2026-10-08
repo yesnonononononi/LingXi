@@ -114,7 +114,7 @@ const props = defineProps<{
    * 子会话消息 → 所属回答组执行摘要 / 是否组尾 映射（与主会话同一分组规则）。
    * 仅组尾展示一次执行元信息；缺失或 execution 为 null 时隐藏，不伪造统计。
    */
-  turnMap?: Map<string, { turn: ChatTurn | null; isGroupTail: boolean }>;
+  turnMap?: Map<ChatMessage, { turn: ChatTurn | null; isGroupTail: boolean }>;
   isLoadingMessages?: boolean;
   messagesError?: string;
   hasMoreSubMessages?: boolean;

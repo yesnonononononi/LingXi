@@ -66,8 +66,8 @@
           :subSessions="subSessions"
           :sessionId="sessionId"
           :isDark="isDark"
-          :turn="turnMap?.get(msg.id)?.turn ?? null"
-          :isGroupTail="turnMap ? (turnMap.get(msg.id)?.isGroupTail ?? false) : undefined"
+          :turn="turnMap?.get(msg)?.turn ?? null"
+          :isGroupTail="turnMap ? (turnMap.get(msg)?.isGroupTail ?? false) : undefined"
           :isLastAssistant="idx === computedLastAssistantIndex"
           :isSending="isSending"
           @selectSubSession="(id) => emit('selectSubSession', id)"
@@ -87,7 +87,7 @@ import ChatMessageItem from './ChatMessageItem.vue';
 
 const props = defineProps<{
   messages: ChatMessage[];
-  turnMap?: Map<string, { turn: ChatTurn | null; isGroupTail: boolean }>;
+  turnMap?: Map<ChatMessage, { turn: ChatTurn | null; isGroupTail: boolean }>;
   sessionId?: string | number;
   subSessions?: SubSessionVO[];
   isDark?: boolean;

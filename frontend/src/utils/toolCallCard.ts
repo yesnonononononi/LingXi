@@ -129,6 +129,38 @@ export function toPromptCardData(card: ToolCallVO): PromptCardData {
   };
 }
 
+/**
+ * ★ 把权威卡片 VO 写入气泡的 `promptCards`（按 id 覆盖 / 追加）—— 历史与实时的**唯一落点**。
+ *
+ * <p>为什么必须收敛成一处：历史路径（`utils/session.ts` 的聚合器，卡片随原始行重建）与
+ * 实时路径（`views/chat/turnStreamReducer.ts` 的 {@code resolvePromptCard}，异步拉权威 VO）
+ * 原本各写了一份「按 id 覆盖否则 push」的逻辑。两份实现的差异是**静默**的 ——
+ * 只有「历史刷新后卡片状态和实时不一致」这种事后才发现的现象，没有任何编译期或测试期的提示。
+ * 历史上已经因为这种漂移出过问题（`toolCallCard.ts` 是后来才补的第三处映射点）。</p>
+ *
+ * <p>幂等语义（两条路径都依赖）：同 id 覆盖而非追加，保证「重试拉取」「对账重放」
+ * 不会在同一气泡里堆出多张同 id 卡片。</p>
+ *
+ * @param bubble 目标气泡（就地修改其 promptCards）
+ * @param card   权威 ToolCallVO
+ * @returns 是否发生写入（`card.type !== 'PROMISE'` 时不写入，调用方可据此判断）
+ */
+export function upsertPromptCard(
+  bubble: { promptCards?: ToolCallVO[] },
+  card: ToolCallVO | null | undefined
+): boolean {
+  // 只有 PROMISE 才是人工在环卡片；其余形态（含 EXECUTE）不入 promptCards
+  if (!card || card.type !== 'PROMISE') return false;
+  if (!bubble.promptCards) bubble.promptCards = [];
+  const idx = bubble.promptCards.findIndex(c => String(c.id) === String(card.id));
+  if (idx >= 0) {
+    bubble.promptCards[idx] = card;
+  } else {
+    bubble.promptCards.push(card);
+  }
+  return true;
+}
+
 /** 卡片类型标签（已决卡片折叠摘要用）。 */
 const CARD_KIND_LABEL: Record<CardKind, string> = {
   PLAN: '计划',
