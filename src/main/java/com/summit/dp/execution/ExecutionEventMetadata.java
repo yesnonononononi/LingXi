@@ -10,7 +10,6 @@ public final class ExecutionEventMetadata {
     public static final String TURN_ID = "turnId";
     public static final String PARENT_TURN_ID = "parentTurnId";
     public static final String HISTORY_REVISION = "historyRevision";
-    public static final String STREAM_KEY = "streamKey";
 
     private ExecutionEventMetadata() {
     }
@@ -64,15 +63,5 @@ public final class ExecutionEventMetadata {
     /** 历史代际；缺失或不可解析返回 {@code null}（旧检查点可能没有该键）。 */
     public static Long parseHistoryRevision(Map<String, Object> metadata) {
         return ExecutionAttributes.readLong(metadata, HISTORY_REVISION);
-    }
-
-    /** 响应身份键（雪花字符串）；缺失或空白返回 {@code null}。 */
-    public static String streamKey(Map<String, Object> metadata) {
-        Object value = metadata == null ? null : metadata.get(STREAM_KEY);
-        if (value == null) {
-            return null;
-        }
-        String text = value.toString();
-        return text.isBlank() ? null : text;
     }
 }

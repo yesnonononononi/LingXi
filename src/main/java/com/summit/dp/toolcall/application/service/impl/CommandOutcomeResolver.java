@@ -50,8 +50,10 @@ public class CommandOutcomeResolver {
         }
         // 工具开始事件必须先于真实执行下发：前端据此把卡片从「等待批准」切到「运行中」，
         // 顺序颠倒会出现「命令已经在跑，卡片还显示等待」的窗口。
+        // 身份沿用发起本次工具调用的模型调用身份：审批恢复不是新的一轮模型调用，
+        // 这里若新造一个 UUID，前端会把同一轮拆成两条来源。
         runtimeEvents.onToolCall(new ToolCallStartEvent(call.getId(), execution.getId(),
-                call.getToolDefinition().name(), call.getArgs()));
+                call.getToolDefinition().name(), call.getArgs(), call.getResponseId()));
         ToolExecuteResult result = call.getToolDefinition().executor().execute(call);
         return new CommandExecution(result, ToolCallOutcome.APPROVED,
                 converter.commandOutcome(ToolCallOutcome.APPROVED, result.getToolOutput(), null));

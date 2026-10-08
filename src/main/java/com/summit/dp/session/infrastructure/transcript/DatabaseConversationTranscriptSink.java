@@ -12,16 +12,22 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 只有接纳提交后才消费响应身份，上下文压缩不能改写历史。
  *
- * <p><b>响应身份直取元数据</b>：{@code streamKey} 由
- * {@code StreamResponseIdentityInterceptor} 在每轮模型调用前写入事件元数据，
- * 本类直接读它、不再经过共享投影预占 —— 于是落库身份与实时身份同源，
- * 重复落库由 {@code (session_id, stream_key)} 幂等拦住，不再需要预留/回滚语义。</p>
+ * <p><b>响应身份取自框架</b>：{@code responseId} 由框架在每次模型调用前生成
+ * （{@code AgentLoopStepRunner#invokeModel} 的 {@code UUID.randomUUID()}），
+ * 随 {@link com.summit.core.conversation.api.ChatResponseEntity} 一路传到本入口 ——
+ * 历史落库、实时事件与工具来源因此共用同一个身份，不再各造一份。
+ * 重复落库由 {@code (session_id, response_id)} 幂等拦住。</p>
  *
- * <p><b>会话归属同样直取元数据</b>：{@code sessionId} 是执行请求的一部分，
+ * <p><b>为什么必须覆写 5 参版本</b>：框架只调 5 参重载。若只覆写 4 参，
+ * 框架的 default 实现会把 {@code responseId} 丢掉再转调 4 参 —— 身份静默消失、
+ * 幂等拦截失效，且不报错。这是本类唯一必须覆写的入口。</p>
+ *
+ * <p><b>会话归属直取元数据</b>：{@code sessionId} 是执行请求的一部分，
  * 由 {@code RequestPreparer} 与 {@code SessionAttributeRestorer} 写入（两者都经
  * {@link ExecutionEventMetadata#of} 构造，恒带该键）。因此正常路径零查库；
  * 仅当元数据缺失（异常构造的执行、历史脏数据）才回退一次执行表查询，避免静默落到错误会话。</p>
@@ -47,6 +53,20 @@ public class DatabaseConversationTranscriptSink implements ConversationTranscrip
     @Transactional
     public void appendRound(String executionId, AiMessageEntity aiMessage,
                             List<ToolMessageEntity> toolMessages, Map<String, Object> eventMetaData) {
+        appendRound(executionId, aiMessage, toolMessages, null, eventMetaData);
+    }
+
+    /**
+     * 框架的**唯一**实际调用入口：接住本轮模型调用身份并落库。
+     *
+     * <p>{@code responseId} 缺省即缺省 —— 不在这里造一个替代身份（那会让幂等键与实时事件
+     * 用的身份分叉，反而比没有更糟）。缺失时 {@code ConversationTranscriptService} 退化为
+     * 无条件追加，与「身份未知」的旧数据口径一致。</p>
+     */
+    @Override
+    @Transactional
+    public void appendRound(String executionId, AiMessageEntity aiMessage, List<ToolMessageEntity> toolMessages,
+                            UUID responseId, Map<String, Object> eventMetaData) {
         // 投递用根、归属用自身会话：子执行的 AI/工具行必须投到根连接，否则前端收不到。
         long sessionId = resolveSessionId(executionId, eventMetaData);
         // 根身份**原样透传**：缺失就是缺失。在这里回落自身会话，等于把观察者的错误回落挪到上游 ——
@@ -55,7 +75,7 @@ public class DatabaseConversationTranscriptSink implements ConversationTranscrip
         Long rootSessionId = ExecutionEventMetadata.parseRootSessionId(eventMetaData);
         transcriptService.appendRound(sessionId, rootSessionId,
                 ExecutionEventMetadata.turnId(eventMetaData),
-                aiMessage, toolMessages, ExecutionEventMetadata.streamKey(eventMetaData));
+                aiMessage, toolMessages, responseId);
     }
 
     /**

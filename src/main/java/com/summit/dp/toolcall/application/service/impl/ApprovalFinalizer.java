@@ -71,6 +71,7 @@ public class ApprovalFinalizer {
             toolCallRepository.updateById(current);
         });
         runtimeEvents.onToolCallOutput(new ToolCallEndEvent(String.valueOf(message.getId()), execution.getId(),
+                call == null ? null : call.getResponseId(),
                 message.getName(), call == null ? "" : call.getArgs(), command.result().getToolOutput(),
                 execution.eventMetaData(),
                 CommandOutcomeResolver.resolveResultStatus(command.outcome(), cancelRequired)));

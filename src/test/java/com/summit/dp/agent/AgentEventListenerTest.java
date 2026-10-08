@@ -28,6 +28,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -57,6 +58,8 @@ class AgentEventListenerTest {
     private static final long SESSION_ID = 2105000000000000002L;
     private static final long ROOT_SESSION_ID = 2105000000000000003L;
     private static final long TURN_ID = 2105000000000000004L;
+    /** 框架下发的本轮模型调用身份；监听器只透传，不解读。 */
+    private static final UUID RESPONSE_ID = UUID.fromString("6f1a1c2e-9b3d-4a5f-8e7c-0d1b2a3c4d5e");
 
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private final SseEventPublisher publisher = mock(SseEventPublisher.class);
@@ -97,7 +100,7 @@ class AgentEventListenerTest {
     @Test
     void partialTextRoutesToRootSession() {
         resolveSession();
-        AgentPartialTextEvent event = new AgentPartialTextEvent("agent", EXECUTION_ID, "你好",
+        AgentPartialTextEvent event = new AgentPartialTextEvent("agent", EXECUTION_ID, RESPONSE_ID, "你好",
                 Map.of("turnId", Long.toString(TURN_ID)), null);
 
         listener.onPartialText(event);
@@ -137,8 +140,8 @@ class AgentEventListenerTest {
                 "sessionId", Long.toString(SESSION_ID),
                 "turnId", Long.toString(TURN_ID));
 
-        listener.onToolCall(new ToolCallStartEvent("call_1", EXECUTION_ID, "read_file", "{}", metadata));
-        listener.onToolCallOutput(new ToolCallEndEvent("call_1", EXECUTION_ID, "read_file", "{}", "内容",
+        listener.onToolCall(new ToolCallStartEvent("call_1", EXECUTION_ID, "read_file", "{}", RESPONSE_ID, metadata));
+        listener.onToolCallOutput(new ToolCallEndEvent("call_1", EXECUTION_ID, RESPONSE_ID, "read_file", "{}", "内容",
                 metadata, ToolCallStatus.COMPLETED));
 
         verify(publisher, org.mockito.Mockito.times(2))

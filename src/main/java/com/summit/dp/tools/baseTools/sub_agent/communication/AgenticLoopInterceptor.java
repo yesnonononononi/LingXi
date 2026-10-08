@@ -27,11 +27,11 @@ public class AgenticLoopInterceptor implements LoopInterceptor {
 
 
     /**
-     * 排在 {@code StreamResponseIdentityInterceptor}（-900）之后，保持业务钩子的显式顺序：
-     * 响应身份先于邮箱注入就位，后续读取元数据的下游拿到的是本轮身份。
+     * 邮箱注入选在业务钩子链路的最前段：注信只改模型上下文、不发布正文增量，
+     * 因此与后续任何读取上下文的钩子之间没有「内容先于注入到达」的竞态。
      *
-     * <p>注意 {@code appendMessage} 只改模型上下文、不直接发布正文增量，因此两者之间
-     * 没有「正文先于身份到达」的竞态 —— 这个顺序是稳定性约定，不是强依赖。</p>
+     * <p>响应身份不在这里产生 —— 它是框架的职责（{@code ChatResponseEntity.responseId}），
+     * 本类不需要知道本轮身份。</p>
      */
     @Override
     public int order() {

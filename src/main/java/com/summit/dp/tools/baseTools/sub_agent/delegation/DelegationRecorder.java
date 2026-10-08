@@ -79,8 +79,8 @@ public class DelegationRecorder {
      * historyRevision 沿用父元数据的同源快照 —— 子执行与父执行属于同一根会话的同一代际，
      * 子执行不得自行推进代际（那属于重发路径）。父元数据缺失代际时回落 1，与根会话默认值一致。</p>
      *
-     * <p><b>不含父响应 streamKey</b>：子执行在下一轮 <code>onBeforeModelInvoke</code> 生成自己的
-     * 响应身份，父的响应归属不得被继承。</p>
+     * <p><b>响应身份不在元数据里</b>：身份由框架每次模型调用生成，随响应实体下发，
+     * 不经过事件元数据，因此不存在「子执行继承了父响应身份」的问题。</p>
      */
     private Map<String, Object> childExecutionMetadata(long rootSessionId, Map<String, Object> parentMetadata,
                                                        long childSessionId, long childTurnId, Long parentTurnId) {
