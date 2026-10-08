@@ -3,6 +3,7 @@ package com.summit.dp.session;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMessageMapper;
+import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionMessagePO;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionMessageRepositoryImpl;
 import org.junit.jupiter.api.DisplayName;
@@ -31,7 +32,8 @@ class SessionMessageTurnIdTest {
     private static final long TURN_ID = 5001L;
 
     private final SessionMessageMapper mapper = mock(SessionMessageMapper.class);
-    private final SessionMessageRepositoryImpl repository = new SessionMessageRepositoryImpl(mapper);
+    private final SessionMessageRepositoryImpl repository =
+            new SessionMessageRepositoryImpl(mapper, mock(SessionMapper.class));
 
     @Test
     @DisplayName("追加消息时把 turnId 写进 PO（而不是只留在领域对象里）")

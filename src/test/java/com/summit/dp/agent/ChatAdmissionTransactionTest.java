@@ -22,11 +22,13 @@ import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.LocalExecutionRepository;
 import com.summit.dp.session.application.convert.TranscriptRecordAssembler;
+import com.summit.dp.session.application.service.TranscriptReplayMatcher;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.application.service.SessionService;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMessageMapper;
+import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionMessagePO;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionMessageRepositoryImpl;
 import com.summit.dp.shared.config.JsonConfig;
@@ -129,8 +131,10 @@ class ChatAdmissionTransactionTest {
                 new JsonConfig().objectMapper());
         ChatTurnServiceImpl chatTurnService = new ChatTurnServiceImpl(new ChatTurnRepositoryImpl(chatTurnMapper));
         ConversationTranscriptService transcriptService = new ConversationTranscriptService(
-                new SessionMessageRepositoryImpl(sessionMessageMapper), mock(ToolCallRepository.class),
-                new TranscriptRecordAssembler(new JsonConfig().objectMapper()));
+                new SessionMessageRepositoryImpl(sessionMessageMapper, mock(SessionMapper.class)),
+                mock(ToolCallRepository.class),
+                new TranscriptRecordAssembler(new JsonConfig().objectMapper()),
+                new TranscriptReplayMatcher(new JsonConfig().objectMapper()));
         // 真实受理器：只替换与本次无关的协作者，落库两条链都是真实现。
         RequestPreparer requestPreparer = new RequestPreparer(mock(SessionService.class),
                 mock(SessionRepository.class), mock(WorkspaceService.class), mock(ModelService.class),

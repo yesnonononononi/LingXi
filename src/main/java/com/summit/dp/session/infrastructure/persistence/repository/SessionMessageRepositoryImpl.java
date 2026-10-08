@@ -10,8 +10,9 @@ import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMessageMapper;
+import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionMessagePO;
-import lombok.RequiredArgsConstructor;
+import com.summit.dp.session.infrastructure.persistence.po.SessionPO;import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Repository;
 
@@ -20,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 @Repository
 @RequiredArgsConstructor
@@ -27,6 +29,7 @@ public class SessionMessageRepositoryImpl
         extends AbstractRepository<SessionMessage, SessionMessagePO, Long>
         implements MessageRepository {
     private final SessionMessageMapper messageMapper;
+    private final SessionMapper sessionMapper;
 
     @Override
     public void save(SessionMessage message) {
@@ -45,9 +48,11 @@ public class SessionMessageRepositoryImpl
     }
 
     @Override
-    public Optional<SessionMessage> findByStreamKey(Long sessionId, String streamKey) {
+    public Optional<SessionMessage> findByResponseId(Long sessionId, UUID responseId) {
+        if (responseId == null) return Optional.empty();
         return Optional.ofNullable(messageMapper.selectOne(Wrappers.<SessionMessagePO>lambdaQuery()
-                .eq(SessionMessagePO::getSessionId, sessionId).eq(SessionMessagePO::getStreamKey, streamKey))).map(this::toModel);
+                .eq(SessionMessagePO::getSessionId, sessionId)
+                .eq(SessionMessagePO::getResponseId, responseId.toString()))).map(this::toModel);
     }
 
     @Override
@@ -78,13 +83,31 @@ public class SessionMessageRepositoryImpl
         for (SessionMessage message : messages) {
             save(SessionMessage.builder()
                     .id(message.getId())
-                    .streamKey(message.getStreamKey())
+                    .responseId(message.getResponseId())
                     .sessionId(sessionId)
                     .turnId(message.getTurnId())
                     .type(message.getType())
                     .text(message.getText())
                     .createTime(message.getCreateTime())
                     .build(), rootSessionId);
+        }
+    }
+
+    /**
+     * 锁定会话行（{@code SELECT ... FOR UPDATE}）。
+     *
+     * <p>走主键等值锁既有行，不带间隙锁。会话在落库期间必然存在 —— 不存在则是真实的调用错误，
+     * 不该被静默吞掉（用 {@code selectOne} 拿到 null 即抛，让上游看到「锁不住就不保证幂等」）。</p>
+     */
+    @Override
+    public void lockSessionForAppend(Long sessionId) {
+        if (sessionId == null) return;
+        SessionPO locked = sessionMapper.selectOne(Wrappers.<SessionPO>lambdaQuery()
+                .select(SessionPO::getId)
+                .eq(SessionPO::getId, sessionId)
+                .last("FOR UPDATE"));
+        if (locked == null) {
+            throw new IllegalStateException("落库前锁定会话失败: sessionId=" + sessionId + " 不存在");
         }
     }
 
@@ -135,7 +158,7 @@ public class SessionMessageRepositoryImpl
         // 雪花主键由应用层统一生成：趋势递增，插入集中在索引最右侧，页分裂概率接近自增
         Long id = message.getId() == null ? IdUtil.getSnowflakeNextId() : message.getId();
         return SessionMessagePO.builder().id(id).sessionId(message.getSessionId())
-                .streamKey(message.getStreamKey())
+                .responseId(message.getResponseId() == null ? null : message.getResponseId().toString())
                 .turnId(message.getTurnId())
                 .type(message.getType() == null ? null : message.getType().name())
                 .content(message.getText())
@@ -145,11 +168,26 @@ public class SessionMessageRepositoryImpl
     @Override
     protected SessionMessage toModel(SessionMessagePO po) {
         return SessionMessage.builder().id(po.getId()).sessionId(po.getSessionId())
-                .streamKey(po.getStreamKey())
+                .responseId(parseResponseId(po.getResponseId()))
                 .turnId(po.getTurnId())
                 .type(po.getType() == null ? null : SessionMessageType.valueOf(po.getType()))
                 .text(po.getContent())
                 .createTime(po.getCreateTime()).build();
+    }
+
+    /**
+     * 反解响应身份。
+     *
+     * <p>旧数据可能存在非 UUID 的历史值；解析失败按「身份未知」处理，
+     * 不让一行脏数据把整页历史打挂。</p>
+     */
+    private static UUID parseResponseId(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return UUID.fromString(raw);
+        } catch (IllegalArgumentException error) {
+            return null;
+        }
     }
 
     @Override
