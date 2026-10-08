@@ -285,7 +285,12 @@ export class StreamSessionRouter {
     }
   }
 
-  /** 强制同步所有会话未提交的缓冲区 */
+  /**
+   * 通知所有会话完成一次同步收尾。
+   *
+   * <p>块视图生效后展示内容即时投影、不再有「未提交的缓冲帧」，故本方法是空实现 ——
+   * 保留公开签名是为了让宿主的生命周期钩子（切流 / 卸载前统一收尾）保持不变。</p>
+   */
   public flushAll(): void {
     this.rootReducer?.flush();
     this.subReducers.forEach(r => r.flush());

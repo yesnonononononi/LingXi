@@ -4,12 +4,12 @@ import { isTempSessionId } from './ids';
 import { upsertTurnViewIntoMessages } from '../views/chat/blockProjection';
 
 /**
- * 将后端 SessionMessageVO.records 解析为前端展示所用的标准 ChatMessage[] 结构。
+ * 会话历史的纯函数工具集（分组 / 摘要 / 树对账 / 视图投影 / 失败轮合成 / 导出）。
  *
- * 契约来源：GET /session/{id}/messages → SessionMessagePageVO.records（已是结构化 VO）。
- * 消息类型收敛为 USER / AI / TOOL / SYSTEM；工具调用状态与卡片载荷来自 TOOL 行携带的
- * 聚合 ToolCallVO（`item.toolCall`），与实时工具事件拉取的 VO 同源、同形状。
- * 执行失败**不再**以 ERROR 行落库，改由同页下发的 turns[turnId].status/errorReason 呈现。
+ * <p><b>展示内容的唯一来源是后端轮次视图</b>：历史分页与实时快照共用
+ * {@link upsertTurnViewIntoMessages}，本模块不再从原始消息行聚合任何字段。
+ * 消息的分组（{@link groupMessagesByTurn}）与轮次摘要绑定（{@link buildMessageTurnMap}）
+ * 仍按 turnId 进行 —— 它们只负责「把已是权威的气泡归组」，不产生内容。</p>
  */
 
 /**
@@ -17,7 +17,7 @@ import { upsertTurnViewIntoMessages } from '../views/chat/blockProjection';
  *
  * <p>null 表示「归属未知」（旧数据），调用方须走降级路径，**不得**据此伪造统计。</p>
  */
-export function normalizeTurnId(value: unknown): string | null {
+function normalizeTurnId(value: unknown): string | null {
   if (value === undefined || value === null) return null;
   const s = String(value).trim();
   return s ? s : null;
