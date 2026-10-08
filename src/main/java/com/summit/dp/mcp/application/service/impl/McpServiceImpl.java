@@ -64,7 +64,7 @@ public class McpServiceImpl implements McpService {
         throwIf(error != null, error);
         Mcp model = toModel(command, Instant.now());
         if (command.getId() != null) {
-            Mcp saved = repository.findById(command.getId()).orElseThrow(ClientException::new);
+            Mcp saved = repository.findById(command.getId()).orElseThrow(()->new ClientException("未找到MCP服务数据: " + command.getId()));
             // 查询结果已脱敏，测试时仅在独立配置中还原凭据，不能修改已保存配置。
             model.changeHeaders(command.getHeaders() == null
                     ? saved.getHeaders() : mergeMaskedValues(command.getHeaders(), saved.getHeaders()));

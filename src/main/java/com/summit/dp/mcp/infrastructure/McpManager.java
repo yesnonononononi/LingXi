@@ -23,7 +23,6 @@ import jakarta.annotation.PreDestroy;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.tomcat.util.threads.VirtualThreadExecutor;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
