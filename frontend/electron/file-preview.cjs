@@ -40,8 +40,31 @@ async function resolveWorkspaceFile(request) {
   const workspaceId = resolveId(session.workspaceId);
   const workspace = await fetchData(base, '/workspace/find/' + workspaceId);
   if (!workspace.hostDir) throw new Error('会话没有可用的本地工作目录');
-  const filePath = await resolveContainedFile(workspace.hostDir, request.path);
+  const filePath = await resolvePreviewFile(workspace.hostDir, request.path);
   return { filePath, sessionId, base };
+}
+
+/**
+ * 解析待预览文件：绝对路径整机放行，相对路径锚定工作区。
+ *
+ * <p>相对路径没有锚点就无从解析（模型给的 target 多是 `src/main/App.java` 这类），所以它必须落在
+ * 工作区内；绝对路径则是用户或模型明确点名的位置，整机只读放行。这是「预览器可读整机代码」的口径：
+ * 放开的是绝对路径，不是相对路径的默认锚点。</p>
+ */
+async function resolvePreviewFile(root, requestedPath) {
+  if (typeof requestedPath !== 'string' || !requestedPath.trim() || requestedPath.includes('\0')) {
+    throw new Error('文件路径不能为空');
+  }
+  if (path.isAbsolute(requestedPath)) return resolveAbsoluteFile(requestedPath);
+  return resolveContainedFile(root, requestedPath);
+}
+
+/** 绝对路径：只要求它确实是一个存在的文件，不对所在目录设限。 */
+async function resolveAbsoluteFile(requestedPath) {
+  const realFile = await fsp.realpath(requestedPath);
+  const stat = await fsp.stat(realFile);
+  if (!stat.isFile()) throw new Error('所选路径不是文件');
+  return realFile;
 }
 
 async function resolveContainedFile(root, requestedPath) {
@@ -176,4 +199,4 @@ function registerFilePreview({ ipcMain, shell, getWindow }) {
   return () => [...watches.keys()].forEach(closeWatch);
 }
 
-module.exports = { registerFilePreview, resolveContainedFile, readTextPreview, resolveLocalBase, MAX_BYTES };
+module.exports = { registerFilePreview, resolveContainedFile, resolvePreviewFile, resolveAbsoluteFile, readTextPreview, resolveLocalBase, MAX_BYTES };

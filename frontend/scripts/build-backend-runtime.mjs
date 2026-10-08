@@ -193,7 +193,15 @@ if (!jarPath) jarPath = findExistingJar();
 if (!jarPath || !fs.existsSync(jarPath)) {
   fail(`未找到可用 jar（${path.join(repoRoot, 'target')} 下没有非 .original 的 .jar）。`);
 }
-fs.copyFileSync(jarPath, path.join(stageDir, 'app.jar'));
+
+// 先删旧 app.jar 再复制：copyFileSync 本身就能覆盖，但万一复制中途失败（源损坏、磁盘满），
+// 覆盖写会留下「上一个版本的完整内容」且毫无报错 —— 结果是一个装着旧后端的安装包。
+// 先删让这种失败变成「app.jar 不存在」的显性错误，而不是静默过期。
+const stagedJar = path.join(stageDir, 'app.jar');
+if (fs.existsSync(stagedJar)) {
+  fs.rmSync(stagedJar, { force: true });
+}
+fs.copyFileSync(jarPath, stagedJar);
 console.log(`[backend-runtime]      ${path.basename(jarPath)} → build/backend/app.jar`);
 
 // ---------------------------------------------------------------- 2. jlink 精简 JRE
@@ -229,6 +237,11 @@ if (!fs.existsSync(javawExe)) fail(`jlink 产物缺少 ${javawExe}`);
 run(javaExe, ['-version']);
 
 console.log('\n[backend-runtime] 完成');
-console.log(`  app.jar    ${(fs.statSync(path.join(stageDir, 'app.jar')).size / 1024 / 1024).toFixed(1)} MB`);
+console.log(`  app.jar    ${(fs.statSync(stagedJar).size / 1024 / 1024).toFixed(1)} MB`);
 console.log(`  runtime/   ${dirSizeMb(runtimeDir)} MB`);
 console.log(`  输出目录   ${stageDir}`);
+// 打印来源与时间戳：安装包里的后端到底是哪一版，只能靠这两行核对，别让「打了旧 jar」变成事后猜谜。
+// 时间取上游 jarPath 而非 app.jar：两者在 copyFileSync 下其实都会保留源 mtime（实测 Windows 亦然），
+// 读 jarPath 的好处是语义直白 —— 这里报的就是「被复制进来的那份东西有多旧」。
+console.log(`  jar 来源   ${path.relative(repoRoot, jarPath)}`);
+console.log(`  jar 时间   ${fs.statSync(jarPath).mtime.toLocaleString('zh-CN')}`);

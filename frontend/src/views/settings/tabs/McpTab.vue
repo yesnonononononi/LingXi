@@ -22,6 +22,7 @@ const {
   isConnectingMcp,
   mcpConnectionResult,
   mcpConnectionError,
+  mcpRowConnections,
   mcpToast,
   mcpForm,
   mcpHeadersPristine,
@@ -32,6 +33,7 @@ const {
   cancelMcpForm,
   handleSaveMcp,
   handleConnectMcp,
+  handleConnectSavedMcp,
   handleDeleteMcp,
   handleToggleMcp,
   countHeaders,
@@ -63,7 +65,7 @@ const {
                 </div>
         <button
           type="button"
-          @click="startAddMcp""
+          @click="startAddMcp"
           class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-medium cursor-pointer shadow-sm transition whitespace-nowrap shrink-0"
         >
           <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -218,8 +220,19 @@ const {
               >
                 删除
               </button>
+              <button
+                type="button"
+                :disabled="mcpRowConnections[item.id]?.loading"
+                :aria-busy="mcpRowConnections[item.id]?.loading || false"
+                @click="handleConnectSavedMcp(item)"
+                class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 transition cursor-pointer disabled:cursor-wait"
+              >
+                <span v-if="mcpRowConnections[item.id]?.loading" class="h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
+                {{ mcpRowConnections[item.id]?.loading ? '正在连接...' : mcpRowConnections[item.id]?.success ? '连接成功' : '测试连接' }}
+              </button>
             </div>
           </div>
+          <p v-if="mcpRowConnections[item.id]?.error" role="alert" class="mt-2 text-xs text-red-500 dark:text-red-400">{{ mcpRowConnections[item.id]?.error }}</p>
         </div>
       </div>
     </div>
@@ -486,12 +499,12 @@ const {
           取消
         </button>
         <button
-          v-if="!editingMcpId"
           type="button"
           :disabled="isConnectingMcp || isSubmittingMcp"
+          :aria-busy="isConnectingMcp"
           @click="handleConnectMcp"
           class="px-4 py-1.5 rounded-xl border text-xs font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
-          :class="isDark ? 'border-white/15 text-zinc-300 hover:bg-white/5' : 'border-gray-200 text-gray-700 hover:bg-gray-50'"
+          :class="isDark ? 'border-emerald-500/30 text-emerald-400 hover:bg-white/5' : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'"
         >
           {{ isConnectingMcp ? '正在连接...' : '测试连接' }}
         </button>

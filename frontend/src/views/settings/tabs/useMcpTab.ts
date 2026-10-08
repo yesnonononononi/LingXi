@@ -21,6 +21,7 @@ export function useMcpTab() {
   const mcpConnectionResult = ref<McpConnectionVO | null>(null);
   const mcpConnectionError = ref('');
   let connectionRequest = 0;
+  const mcpRowConnections = ref<Record<string, { loading: boolean; success: boolean; error: string }>>({});
   const mcpToast = ref('');
   let mcpToastTimer: number | undefined;
 
@@ -72,6 +73,7 @@ export function useMcpTab() {
       const res = await McpAPI.list(1, 100);
       if (isOk(res.code)) {
         mcpList.value = res.data?.records ?? [];
+        mcpRowConnections.value = {};
       } else {
         mcpErrorMsg.value = res.errMsg || '加载 MCP 服务列表失败，请稍后重试';
       }
@@ -286,6 +288,7 @@ export function useMcpTab() {
     if (isConnectingMcp.value || isSubmittingMcp.value) return;
     const payload = buildMcpPayload();
     if (!payload) return;
+    if (editingMcpId.value !== null) payload.id = editingMcpId.value;
     const request = ++connectionRequest;
     mcpConnectionResult.value = null;
     mcpConnectionError.value = '';
@@ -306,6 +309,33 @@ export function useMcpTab() {
       }
     } finally {
       isConnectingMcp.value = false;
+    }
+  };
+
+  const handleConnectSavedMcp = async (item: McpVO) => {
+    const key = String(item.id);
+    if (mcpRowConnections.value[key]?.loading) return;
+    mcpRowConnections.value[key] = { loading: true, success: false, error: '' };
+    const state = mcpRowConnections.value[key]!;
+    try {
+      // 凭据由后端按真实 ID 读取，不能把列表中的脱敏值当作令牌发送。
+      const res = await McpAPI.connect({
+        id: item.id, name: item.name, transport: item.transport,
+        // 非当前传输的空字段也会触发后端校验，因此只提交实际使用的连接参数。
+        ...(item.transport === 'stdio' ? { command: item.command } : { url: item.url }),
+        initializationTimeout: item.initializationTimeout,
+        executionTimeout: item.executionTimeout, maxOutput: item.maxOutput, status: item.status,
+      });
+      if (mcpRowConnections.value[key] !== state) return;
+      state.success = isOk(res.code) && !!res.data;
+      if (!state.success) state.error = res.errMsg || '连接测试失败，请检查 MCP 配置';
+    } catch (error: unknown) {
+      if (mcpRowConnections.value[key] !== state) return;
+      state.error = error instanceof ApiError && error.kind === 'network'
+        ? '连接测试请求失败或超时，请检查后端是否可用'
+        : error instanceof Error ? error.message : '连接测试失败，请稍后重试';
+    } finally {
+      state.loading = false;
     }
   };
 
@@ -408,6 +438,7 @@ export function useMcpTab() {
 
   onBeforeUnmount(() => {
     connectionRequest++;
+    mcpRowConnections.value = {};
     if (mcpToastTimer) window.clearTimeout(mcpToastTimer);
   });
 
@@ -422,6 +453,7 @@ export function useMcpTab() {
     isConnectingMcp,
     mcpConnectionResult,
     mcpConnectionError,
+    mcpRowConnections,
     mcpToast,
     mcpForm,
     mcpHeadersPristine,
@@ -432,6 +464,7 @@ export function useMcpTab() {
     cancelMcpForm,
     handleSaveMcp,
     handleConnectMcp,
+    handleConnectSavedMcp,
     handleDeleteMcp,
     handleToggleMcp,
     countHeaders,

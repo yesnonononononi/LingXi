@@ -89,10 +89,12 @@ test('A. 挂起后卡片未就绪（PREPARING）→ 有界重试直到权威 pen
     sessionId: 'sess-a',
     onResolveCard: async (toolCallId) => {
       callCount += 1;
-      // 前两次仍是后端 PREPARING（尚未 markReady）；第三次才就绪
+      // 前两次仍是后端 PREPARING（尚未 markReady）；第三次才就绪。
+      // ★ pending 必须是 true —— 后端 pending = isUnresolved()（未终结即 true），
+      //   写成 false 会把真实的语义形态测丢，漏掉「pending=true 就误判就绪」这个缺陷。
       if (callCount < 3) {
         return {
-          id: toolCallId, type: 'PROMISE', status: 'preparing', pending: false,
+          id: toolCallId, type: 'PROMISE', status: 'preparing', pending: true,
           content: { kind: 'PLAN', title: '方案', text: '# 正文' }
         } as ToolCallVO;
       }
@@ -126,7 +128,8 @@ test('A. 挂起后卡片未就绪（PREPARING）→ 有界重试直到权威 pen
 
   const bubble = messages[0];
   assert.ok(bubble.promptCards && bubble.promptCards.length === 1, '最终应建出（且只建出一张）卡片');
-  assert.equal(bubble.promptCards![0].pending, true, '就绪后卡片必须为权威 pending=true');
+  // 必须断言权威 status —— 原始 VO 的 `pending` 在 PREPARING 时也是 true，据它断言等于空转
+  assert.equal(bubble.promptCards![0].status, 'pending', '重试必须把卡片推进到权威 pending，而非停在 preparing');
   assert.equal(scheduler.size, 0, '就绪后必须停止重试');
 });
 
@@ -137,7 +140,7 @@ test('A2. 执行终结时取消未决重试，不再空转', async () => {
   const reducer = new TurnStreamReducer(messages, {
     sessionId: 'sess-a2',
     onResolveCard: async (toolCallId) => ({
-      id: toolCallId, type: 'PROMISE', status: 'preparing', pending: false,
+      id: toolCallId, type: 'PROMISE', status: 'preparing', pending: true,
       content: { kind: 'PLAN', text: 'x' }
     } as ToolCallVO),
     scheduleCardRetry: scheduler.schedule,
@@ -155,6 +158,61 @@ test('A2. 执行终结时取消未决重试，不再空转', async () => {
 
   reducer.consume({ type: 'EXECUTION_COMPLETED', executionId: 'e1', timestamp: 't', metaData: { turnId: 't1' } });
   assert.equal(scheduler.size, 0, '执行终结必须取消全部未决重试');
+});
+
+/* ------------------------------------------------------------------ */
+/* 缺陷 C：终端审批只发 TOOL_COMPLETED(PROMISED)，不发 TOOL_CALL        */
+/* ------------------------------------------------------------------ */
+
+test('C. 终端审批无 TOOL_CALL 开始事件：仅凭 TOOL_COMPLETED(PROMISED) 也要建卡且不重复', async () => {
+  const { TurnStreamReducer } = await import('../src/views/chat/turnStreamReducer');
+  const messages: ChatMessage[] = [];
+  const scheduler = makeManualScheduler();
+  let callCount = 0;
+
+  const reducer = new TurnStreamReducer(messages, {
+    sessionId: 'sess-c',
+    onResolveCard: async (toolCallId) => {
+      callCount += 1;
+      // 首次仍是后端 PREPARING（落库与事件存在可见性延迟），重试后才就绪
+      if (callCount < 2) {
+        return {
+          id: toolCallId, type: 'PROMISE', status: 'preparing', pending: true,
+          content: { kind: 'COMMAND', command: 'ls' }
+        } as ToolCallVO;
+      }
+      return {
+        id: toolCallId, type: 'PROMISE', status: 'pending', pending: true,
+        content: { kind: 'COMMAND', command: 'ls', workDir: '/workspace' },
+        allowedActions: ['APPROVE', 'REJECT']
+      } as ToolCallVO;
+    },
+    scheduleCardRetry: scheduler.schedule,
+    cancelCardRetry: scheduler.cancel
+  });
+
+  reducer.consume({ type: 'EXECUTION_STARTED', executionId: 'e1', timestamp: 't', metaData: { turnId: 't1' } });
+  // ★ 关键：不发 TOOL_CALL —— 命令审批在 policy 内短路，框架只发完成事件
+  reducer.consume({
+    type: 'TOOL_COMPLETED', toolName: AgentToolName.ExecuteCommand, requestId: 'call-cmd-1',
+    output: '命令尚未执行，正在等待用户批准：ls', resultStatus: 'PROMISED',
+    executionId: 'e1', timestamp: 't', metaData: { turnId: 't1' }
+  });
+  reducer.consume({ type: 'EXECUTION_SUSPENDED', executionId: 'e1', timestamp: 't', metaData: { turnId: 't1' } });
+  await flushAsync();
+
+  // ★ 撤掉 handleToolCompleted 里的 PROMISED 分支后，此处恒为 0 → 测试变红
+  assert.ok(callCount >= 1, '终端审批必须直接用完成事件自带的 toolCallId 拉权威卡片，而非依赖 TOOL_CALL');
+
+  scheduler.runNext();
+  await flushAsync();
+
+  const bubble = messages[0];
+  assert.ok(bubble.promptCards && bubble.promptCards.length === 1, '应建出且只建出一张审批卡（PREPARING→PENDING 按 id 覆盖，不重复）');
+  assert.equal(String(bubble.promptCards![0].id), 'call-cmd-1', '卡片必须以权威调用 ID 建卡');
+  // 断言权威 status（判别字段）：原始 VO 的 `pending` 在 PREPARING 时也为 true，不可用作就绪证据
+  assert.equal(bubble.promptCards![0].status, 'pending', '重试必须把卡片推进到 pending（可审批），不得停在 preparing');
+  assert.equal(scheduler.size, 0, '就绪后必须停止重试');
 });
 
 /* ------------------------------------------------------------------ */

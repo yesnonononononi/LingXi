@@ -20,12 +20,75 @@ function state() {
   return { value, scope };
 }
 
+test('已保存和编辑中的服务均可测试，凭据由后端还原且不保存', async (t) => {
+  const item = { id: '42', name: 'saved', url: 'http://saved/mcp', status: 0, headers: { Authorization: '******' } };
+  let finish!: (result: Result<McpConnectionVO>) => void;
+  const connect = t.mock.method(McpAPI, 'connect', (_data: McpRequest) => new Promise<Result<McpConnectionVO>>(resolve => { finish = resolve; }));
+  const update = t.mock.method(McpAPI, 'update', async () => ({ code: 1 }));
+  const { value, scope } = state();
+  try {
+    const pending = value.handleConnectSavedMcp(item);
+    assert.equal(value.mcpRowConnections.value['42']?.loading, true);
+    await value.handleConnectSavedMcp(item);
+    assert.equal(connect.mock.callCount(), 1);
+    assert.equal(connect.mock.calls[0]!.arguments[0].id, '42');
+    assert.equal(connect.mock.calls[0]!.arguments[0].headers, undefined);
+    finish(connected);
+    await pending;
+    assert.equal(value.mcpRowConnections.value['42']?.success, true);
+    assert.equal(value.mcpRowConnections.value['42']?.loading, false);
+    value.startEditMcp(item);
+    value.mcpForm.value.url = 'http://edited/mcp';
+    const editing = value.handleConnectMcp();
+    assert.equal(connect.mock.calls[1]!.arguments[0].id, '42');
+    assert.equal(connect.mock.calls[1]!.arguments[0].url, 'http://edited/mcp');
+    assert.equal(connect.mock.calls[1]!.arguments[0].headers, undefined);
+    finish(connected);
+    await editing;
+    assert.equal(update.mock.callCount(), 0);
+    connect.mock.mockImplementation(async () => ({ code: 0, errMsg: '连接失败' }));
+    await value.handleConnectSavedMcp(item);
+    assert.deepEqual(value.mcpRowConnections.value['42'], { loading: false, success: false, error: '连接失败' });
+    connect.mock.mockImplementation(() => new Promise<Result<McpConnectionVO>>(resolve => { finish = resolve; }));
+    t.mock.method(McpAPI, 'list', async () => ({ code: 1, data: { records: [item], total: 1, current: 1, size: 100 } }));
+    const stale = value.handleConnectSavedMcp(item);
+    await value.loadMcp();
+    finish(connected);
+    await stale;
+    assert.equal(value.mcpRowConnections.value['42'], undefined, '列表刷新后不能恢复旧配置的连接结果');
+  } finally { scope.stop(); }
+});
+
 test('连接接口使用当前配置和足够的超时，不调用保存接口', async (t) => {
   let request: unknown[] = [];
   t.mock.method(http, 'post', async (...args: unknown[]) => { request = args; return connected; });
   const payload = { name: 'draft', initializationTimeout: 180_000, executionTimeout: 60_000 };
   assert.deepEqual(await McpAPI.connect(payload), connected);
   assert.deepEqual(request, ['/mcp/connect', payload, { timeout: 430_000 }]);
+});
+
+test('列表测试按传输方式提交参数：HTTP 空 command 不触发 stdio 校验', async (t) => {
+  const requests: McpRequest[] = [];
+  t.mock.method(McpAPI, 'connect', async (payload: McpRequest) => {
+    requests.push(payload);
+    return connected;
+  });
+  const { value, scope } = state();
+  try {
+    for (const transport of ['streamable-http', 'sse']) {
+      await value.handleConnectSavedMcp({
+        id: transport, name: 'http', transport, url: 'https://example.com/mcp', command: [],
+      });
+      const payload = requests.at(-1)!;
+      assert.equal(payload.url, 'https://example.com/mcp');
+      assert.equal(payload.command, undefined, 'HTTP 配置不能提交仓储返回的空 command');
+    }
+    await value.handleConnectSavedMcp({
+      id: 'stdio', name: 'stdio', transport: 'stdio', url: '', command: ['python', 'server.py'],
+    });
+    assert.deepEqual(requests.at(-1)!.command, ['python', 'server.py']);
+    assert.equal(requests.at(-1)!.url, undefined, 'stdio 配置不能提交无效的 HTTP 地址');
+  } finally { scope.stop(); }
 });
 
 test('新增表单测试当前 HTTP 请求头，显示工具数量和耗时', async (t) => {

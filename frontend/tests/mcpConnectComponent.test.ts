@@ -28,6 +28,7 @@ function element(tag: string, text = ''): Element {
 }
 
 function text(node: Element): string {
+  if (node.tag === '#comment') return '';
   return node.text + node.children.map(text).join('');
 }
 
@@ -54,7 +55,7 @@ test('实际新增 MCP 组件：按钮可点击，连接中禁用保存，成功
   const component = (await import(pathToFileURL(modulePath).href)).default as DefineComponent;
   t.after(() => unlinkSync(modulePath));
 
-  t.mock.method(McpAPI, 'list', async () => ({ code: 1, data: { records: [], total: 0, current: 1, size: 100 } }));
+  t.mock.method(McpAPI, 'list', async () => ({ code: 1, data: { records: [{ id: '42', name: 'saved', url: 'http://saved/mcp', status: 0 }], total: 1, current: 1, size: 100 } }));
   let finish!: (result: Result<McpConnectionVO>) => void;
   const connect = t.mock.method(McpAPI, 'connect', () => new Promise<Result<McpConnectionVO>>(resolve => { finish = resolve; }));
   const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
@@ -98,6 +99,24 @@ test('实际新增 MCP 组件：按钮可点击，连接中禁用保存，成功
   t.after(() => app.unmount());
   await nextTick();
   await Promise.resolve();
+  await nextTick();
+  const rowButton = find(root, node => node.tag === 'button' && text(node).includes('测试连接'))!;
+  assert.ok(rowButton, '停用服务也必须能测试连接');
+  assert.match(rowButton.props.class, /text-emerald/);
+  const rowPending = rowButton.props.onClick();
+  await nextTick();
+  assert.equal(rowButton.props.disabled, true);
+  assert.equal(rowButton.props['aria-busy'], true);
+  assert.match(text(rowButton), /正在连接/);
+  finish({ code: 1, data: { toolCount: 0, toolNames: [], elapsedMillis: 10 } });
+  await rowPending;
+  await nextTick();
+  assert.equal(text(rowButton).trim(), '连接成功');
+  find(root, node => node.tag === 'button' && text(node).trim() === '编辑')!.props.onClick();
+  await nextTick();
+  assert.ok(find(root, node => node.tag === 'button' && text(node).includes('测试连接')), '编辑页面必须渲染测试连接按钮');
+  find(root, node => node.tag === 'button' && text(node).trim() === '取消')!.props.onClick();
+  await nextTick();
   find(root, node => node.tag === 'button' && text(node).includes('新建服务'))!.props.onClick();
   await nextTick();
   const name = find(root, node => node.tag === 'input' && node.props.placeholder?.includes('需全局唯一'))!;

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
-const { resolveContainedFile, readTextPreview, resolveLocalBase, registerFilePreview, MAX_BYTES } = require('../electron/file-preview.cjs');
+const { resolveContainedFile, resolvePreviewFile, resolveAbsoluteFile, readTextPreview, resolveLocalBase, registerFilePreview, MAX_BYTES } = require('../electron/file-preview.cjs');
 
 async function fixture(t) {
   const parent = path.resolve(__dirname, '../node_modules/.tmp');
@@ -38,7 +38,7 @@ test('读取中文源码和 UTF-16，超出大小或行数时截断，二进制�
   await assert.rejects(readTextPreview(path.join(root, 'binary.bin')), /二进制/);
 });
 
-test('路径校验拒绝目录穿越、外部绝对路径与目录联接', async t => {
+test('相对路径仍被工作区约束：拒绝目录穿越与目录联接', async t => {
   const { directory, root } = await fixture(t);
   const file = await resolveContainedFile(root, 'sample.java');
   assert.equal(file, await fs.realpath(path.join(root, 'sample.java')));
@@ -46,9 +46,80 @@ test('路径校验拒绝目录穿越、外部绝对路径与目录联接', async
   await fs.mkdir(outside);
   await fs.writeFile(path.join(outside, 'secret.txt'), 'secret');
   await assert.rejects(resolveContainedFile(root, '../outside/secret.txt'), /工作目录/);
-  await assert.rejects(resolveContainedFile(root, path.join(outside, 'secret.txt')), /工作目录/);
   await fs.symlink(outside, path.join(root, 'link'), process.platform === 'win32' ? 'junction' : 'dir');
   await assert.rejects(resolveContainedFile(root, 'link/secret.txt'), /实际位置/);
+});
+
+test('绝对路径整机放行：工作区外的文件可读，目录仍被拒绝', async t => {
+  const { directory, root } = await fixture(t);
+  const outside = path.join(directory, 'outside');
+  await fs.mkdir(outside);
+  const target = path.join(outside, 'secret.txt');
+  await fs.writeFile(target, '整机只读');
+
+  // 这是本次放开的核心：绝对路径不再受工作区约束
+  assert.equal(await resolvePreviewFile(root, target), await fs.realpath(target));
+  assert.equal((await readTextPreview(await resolvePreviewFile(root, target))).content, '整机只读');
+  assert.equal(await resolveAbsoluteFile(target), await fs.realpath(target));
+
+  // 目录不是文件，仍然拒绝
+  await assert.rejects(resolveAbsoluteFile(outside), /不是文件/);
+  // 不存在的绝对路径必须报错，而不是静默放行
+  await assert.rejects(resolveAbsoluteFile(path.join(outside, 'nope.txt')), /ENOENT|不存在/);
+});
+
+test('相对路径锚定工作区，绝对路径走整机放行 —— 两条路的分派点', async t => {
+  const { root } = await fixture(t);
+  // 相对路径：锚在工作区
+  assert.equal(await resolvePreviewFile(root, 'sample.java'), await fs.realpath(path.join(root, 'sample.java')));
+  // 绝对路径：不受 root 影响，即使传入一个与 root 无关的目录
+  const other = path.join(root, '..', 'sample.java');
+  await fs.writeFile(other, 'root 之外的同名文件');
+  assert.equal(await resolvePreviewFile(root, other), await fs.realpath(other));
+  assert.equal((await readTextPreview(await resolvePreviewFile(root, other))).content, 'root 之外的同名文件');
+  // 空路径与 NUL 一律拒绝
+  await assert.rejects(resolvePreviewFile(root, ''), /不能为空/);
+  await assert.rejects(resolvePreviewFile(root, 'a\0b'), /不能为空/);
+});
+
+test('整机放行后仍拒绝用默认程序打开可执行类文件（纵深防御，防 Windows 当脚本执行）', async t => {
+  const { directory, root } = await fixture(t);
+  const outside = path.join(directory, 'outside');
+  await fs.mkdir(outside);
+  const handlers = new Map();
+  const opened = [];
+  const sender = new EventEmitter();
+  sender.isDestroyed = () => false;
+  sender.send = () => {};
+  t.mock.method(global, 'fetch', async url => ({
+    ok: true,
+    json: async () => ({ code: 1, data: String(url).endsWith('/config/current') ? { type: 'LOCAL' }
+      : String(url).includes('/session/') ? { workspaceId: '1234567890123456789' }
+        : { hostDir: root } }),
+  }));
+  const stop = registerFilePreview({
+    ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+    shell: { openPath: async file => { opened.push(file); return ''; }, showItemInFolder: () => {} },
+    getWindow: () => ({ isDestroyed: () => false, webContents: sender }),
+  });
+  t.after(stop);
+  const event = { sender };
+  const open = handlers.get('file-preview:open');
+
+  // 工作区外的脚本文件：路径已被放行，但扩展名白名单必须仍拦住 open
+  const script = path.join(outside, 'payload.js');
+  await fs.writeFile(script, 'alert(1)');
+  const blocked = await open(event, { sessionId: '1234567890123456788', baseUrl: 'http://localhost:8088', path: script });
+  assert.equal(blocked.ok, false, '整机放行的是「读」，不是「交给系统程序执行」');
+  assert.match(blocked.error, /定位/);
+  assert.equal(opened.length, 0);
+
+  // 对照：安全扩展名在工作区外可以打开
+  const java = path.join(outside, 'Sample.java');
+  await fs.writeFile(java, 'class Sample {}');
+  const allowed = await open(event, { sessionId: '1234567890123456788', baseUrl: 'http://localhost:8088', path: java });
+  assert.equal(allowed.ok, true);
+  assert.equal(opened.length, 1);
 });
 
 test('远程服务、URL 凭证和额外路径不会触发本地文件读取', () => {

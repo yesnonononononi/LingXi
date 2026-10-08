@@ -63,6 +63,14 @@ public class McpServiceImpl implements McpService {
         String error = validator.validateForConnection(command);
         throwIf(error != null, error);
         Mcp model = toModel(command, Instant.now());
+        if (command.getId() != null) {
+            Mcp saved = repository.findById(command.getId()).orElseThrow(ClientException::new);
+            // 查询结果已脱敏，测试时仅在独立配置中还原凭据，不能修改已保存配置。
+            model.changeHeaders(command.getHeaders() == null
+                    ? saved.getHeaders() : mergeMaskedValues(command.getHeaders(), saved.getHeaders()));
+            model.changeEnv(command.getEnv() == null
+                    ? saved.getEnv() : mergeMaskedValues(command.getEnv(), saved.getEnv()));
+        }
         model.requireCoherent();
         return Result.success(connections.connect(assembler.toServer(model)));
     }

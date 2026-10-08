@@ -11,6 +11,10 @@ import {
   Tick02Icon
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon, type IconArray } from '@hugeicons/vue';
+import { useEditor, EditorContent } from '@tiptap/vue-3';
+import StarterKit from '@tiptap/starter-kit';
+import Placeholder from '@tiptap/extension-placeholder';
+import { Markdown } from 'tiptap-markdown';
 import DropUpSelect from '../common/DropUpSelect.vue';
 import BorderGlow from '../common/BorderGlow.vue';
 import SparkTrail from '../common/SparkTrail.vue';
@@ -76,22 +80,33 @@ const emit = defineEmits<{
 }>();
 
 // PromptBar 样式常量
-/** 行高（px）：与模板 line-height 一致，用于 textarea 自适应高度换算。 */
-const LINE = 22;
 /** 拖拽缩放手柄的命中区边距（px）。 */
 const EDGE = 11;
 const MUTED = '[color:color-mix(in_srgb,var(--pb-ink)_55%,transparent)]';
+
+const resolveEditorMarkdown = (ed: unknown): string => {
+  const target = ed as { storage?: { markdown?: { getMarkdown?: () => string } }; getText?: () => string } | null | undefined;
+  return target?.storage?.markdown?.getMarkdown?.() ?? target?.getText?.() ?? '';
+};
 const TOOL_BTN =
   'inline-flex h-7 flex-none cursor-pointer touch-manipulation items-center gap-1 rounded-lg border-0 bg-transparent px-2 text-[12px] font-medium outline-none select-none [color:color-mix(in_srgb,var(--pb-ink)_70%,transparent)] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease] data-[on]:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] data-[on]:[color:var(--pb-ink)] [@media(hover:hover)_and_(pointer:fine)]:hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] [@media(hover:hover)_and_(pointer:fine)]:hover:[color:var(--pb-ink)] data-[max]:[color:var(--pb-spark)]!';
 const ICON_BTN =
   'inline-grid h-7 w-7 flex-none cursor-pointer touch-manipulation place-items-center rounded-lg border-0 bg-transparent p-0 outline-none select-none [color:color-mix(in_srgb,var(--pb-ink)_60%,transparent)] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease,transform_160ms_cubic-bezier(0.23,1,0.32,1)] active:[transform:scale(0.94)] data-[on]:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] data-[on]:[color:var(--pb-ink)] motion-reduce:active:[transform:none] [@media(hover:hover)_and_(pointer:fine)]:hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] [@media(hover:hover)_and_(pointer:fine)]:hover:[color:var(--pb-ink)]';
 
 const commandContainerRef = ref<HTMLDivElement | null>(null);
-const textareaRef = ref<HTMLTextAreaElement | null>(null);
+const editorContainerRef = ref<HTMLDivElement | null>(null);
 const sparkRef = ref<InstanceType<typeof SparkTrail> | null>(null);
 
 const inputText = ref('');
 const isPlanMode = ref(false);
+
+const focusEditor = () => {
+  nextTick(() => editor.value?.commands.focus('end'));
+};
+
+// ====== 语音听写 (Mic) 基础状态 ======
+let dictation = 0;
+const listening = ref(false);
 
 // 附件管理
 const attachedImage = ref<File | null>(null);
@@ -103,8 +118,76 @@ const processImageFile = (file: File) => {
   if (attachedImagePreview.value) URL.revokeObjectURL(attachedImagePreview.value);
   attachedImage.value = file;
   attachedImagePreview.value = URL.createObjectURL(file);
-  nextTick(() => textareaRef.value?.focus());
+  focusEditor();
 };
+
+const editor = useEditor({
+  extensions: [
+    StarterKit.configure({
+      heading: { levels: [1, 2, 3] },
+      codeBlock: false
+    }),
+    Placeholder.configure({
+      placeholder: () => {
+        if (listening.value) return '正在倾听…';
+        if (isPlanMode.value) return '描述你的任务以生成计划';
+        return '描述你想要构建的内容，/ 调用指令，@ 文件或对话';
+      }
+    }),
+    Markdown.configure({
+      html: false,
+      tightLists: true,
+      bulletListMarker: '-',
+      linkify: false,
+      breaks: true,
+      transformPastedText: true,
+      transformCopiedText: true
+    })
+  ],
+  onUpdate: ({ editor: ed }) => {
+    sparkRef.value?.ping();
+    const rawText = ed.getText();
+    const mdText = resolveEditorMarkdown(ed);
+    inputText.value = mdText;
+
+    if (rawText.startsWith('/plan ') || rawText === '/plan') {
+      isPlanMode.value = true;
+      ed.commands.setContent(rawText.replace(/^\/plan\s*/, ''));
+      isCommandMenuOpen.value = false;
+      isCommandMenuClickedOpen.value = false;
+      return;
+    }
+    if (rawText.startsWith('/permission ') || rawText === '/permission') {
+      ed.commands.clearContent();
+      isCommandMenuOpen.value = false;
+      isCommandMenuClickedOpen.value = false;
+      emit('openSettings');
+      return;
+    }
+    if (rawText === '/agent' || rawText.startsWith('/agent ') || rawText === '/agent\n') {
+      ed.commands.setContent(rawText.replace(/^\/agent\s*/, ''));
+      isCommandMenuOpen.value = false;
+      isCommandMenuClickedOpen.value = false;
+      openAgentMenu();
+      return;
+    }
+    if (rawText.startsWith('/mcp ') || rawText === '/mcp') {
+      ed.commands.clearContent();
+      isCommandMenuOpen.value = false;
+      isCommandMenuClickedOpen.value = false;
+      emit('openSettingsTab', 'mcp');
+      return;
+    }
+    if (rawText.startsWith('/')) {
+      if (!isAgentMenuOpen.value) {
+        isCommandMenuOpen.value = true;
+        activeCommandIndex.value = 0;
+      }
+    } else if (!isCommandMenuClickedOpen.value) {
+      isCommandMenuOpen.value = false;
+    }
+  }
+});
 
 const handlePaste = (e: ClipboardEvent) => {
   const items = e.clipboardData?.items;
@@ -204,7 +287,7 @@ const onEffortKey = (e: KeyboardEvent) => {
     setEffort(effortList.length - 1);
   } else if (e.key === 'Escape') {
     effortOpen.value = false;
-    textareaRef.value?.focus();
+    focusEditor();
   }
 };
 const stepAt = (i: number) =>
@@ -392,9 +475,7 @@ const closeAgentMenu = () => {
   if (!isAgentMenuOpen.value) return;
   isAgentMenuOpen.value = false;
   agentSearchQuery.value = '';
-  nextTick(() => {
-    textareaRef.value?.focus();
-  });
+  focusEditor();
 };
 
 const navigateAgent = (direction: number) => {
@@ -488,13 +569,7 @@ const contextRingDash = computed<string>(() => {
 /** 仅在鼠标悬停在用量圆环图标上时显示上下文浮层提示 */
 const isContextTooltipVisible = ref(false);
 
-const adjustHeight = () => {
-  if (!textareaRef.value) return;
-  textareaRef.value.style.height = '0px';
-  const max = LINE * 5;
-  textareaRef.value.style.height = `${Math.min(textareaRef.value.scrollHeight, max)}px`;
-  textareaRef.value.style.overflowY = textareaRef.value.scrollHeight > max ? 'auto' : 'hidden';
-};
+
 
 // 快捷指令 (/ 或 + 触发)
 interface CommandItem {
@@ -517,10 +592,9 @@ const allCommands = computed<CommandItem[]>(() => [
     desc: '进入计划模式 (生成分步执行规划)',
     action: () => {
       isPlanMode.value = true;
+      editor.value?.commands.clearContent();
       inputText.value = '';
-      nextTick(() => {
-        textareaRef.value?.focus();
-      });
+      focusEditor();
     }
   },
   {
@@ -627,46 +701,6 @@ watch(
   { flush: 'post' }
 );
 
-watch(inputText, (val) => {
-  nextTick(adjustHeight);
-  if (val.startsWith('/plan ') || val === '/plan') {
-    isPlanMode.value = true;
-    inputText.value = val.replace(/^\/plan\s*/, '');
-    isCommandMenuOpen.value = false;
-    isCommandMenuClickedOpen.value = false;
-    return;
-  }
-  if (val.startsWith('/permission ') || val === '/permission') {
-    inputText.value = '';
-    isCommandMenuOpen.value = false;
-    isCommandMenuClickedOpen.value = false;
-    emit('openSettings');
-    return;
-  }
-  if (val === '/agent' || val.startsWith('/agent ') || val === '/agent\n') {
-    inputText.value = val.replace(/^\/agent\s*/, '');
-    isCommandMenuOpen.value = false;
-    isCommandMenuClickedOpen.value = false;
-    openAgentMenu();
-    return;
-  }
-  if (val.startsWith('/mcp ') || val === '/mcp') {
-    inputText.value = '';
-    isCommandMenuOpen.value = false;
-    isCommandMenuClickedOpen.value = false;
-    emit('openSettingsTab', 'mcp');
-    return;
-  }
-  if (val.startsWith('/')) {
-    if (!isAgentMenuOpen.value) {
-      isCommandMenuOpen.value = true;
-      activeCommandIndex.value = 0;
-    }
-  } else if (!isCommandMenuClickedOpen.value) {
-    isCommandMenuOpen.value = false;
-  }
-});
-
 const handlePlusClick = () => {
   effortOpen.value = false;
   isAgentMenuOpen.value = false;
@@ -680,16 +714,17 @@ const handlePlusClick = () => {
 };
 
 const selectCommand = (cmd: CommandItem) => {
-  if (inputText.value.startsWith('/')) {
+  const text = editor.value ? editor.value.getText() : '';
+  if (text.startsWith('/')) {
+    editor.value?.commands.clearContent();
     inputText.value = '';
-    nextTick(adjustHeight);
   }
   isCommandMenuOpen.value = false;
   isCommandMenuClickedOpen.value = false;
   cmd.action();
   nextTick(() => {
     if (!isAgentMenuOpen.value) {
-      textareaRef.value?.focus();
+      focusEditor();
     }
   });
 };
@@ -701,14 +736,12 @@ const handleClickOutside = (event: MouseEvent) => {
     isCommandMenuClickedOpen.value = false;
     isAgentMenuOpen.value = false;
     effortOpen.value = false;
-  } else if (agentMenuRef.value && !agentMenuRef.value.contains(target) && textareaRef.value?.contains(target)) {
+  } else if (agentMenuRef.value && !agentMenuRef.value.contains(target) && editorContainerRef.value?.contains(target)) {
     isAgentMenuOpen.value = false;
   }
 };
 
 // ====== 语音听写 (Mic) 支撑 ======
-let dictation = 0;
-const listening = ref(false);
 const hasDictate = computed(() => {
   if (typeof window === 'undefined') return false;
   const win = window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown };
@@ -740,11 +773,10 @@ const toggleListen = () => {
       if (seq !== dictation) return;
       const text = e.results?.[0]?.[0]?.transcript;
       if (text) {
-        inputText.value = inputText.value.trim() ? `${inputText.value.trimEnd()} ${text}` : text;
-        nextTick(adjustHeight);
+        editor.value?.commands.insertContent(text);
       }
       listening.value = false;
-      textareaRef.value?.focus();
+      focusEditor();
     };
     recognition.onerror = () => {
       if (seq === dictation) listening.value = false;
@@ -772,7 +804,12 @@ type SpeechRecognitionInstance = {
 };
 
 // ====== Send 按钮 ======
-const canSend = computed(() => !props.reasoningEffortPending && (inputText.value.trim().length > 0 || !!attachedImage.value));
+const canSend = computed(() => {
+  if (props.reasoningEffortPending) return false;
+  if (attachedImage.value) return true;
+  const text = editor.value ? editor.value.getText().trim() : inputText.value.trim();
+  return text.length > 0;
+});
 const armed = computed(() => !!props.isSending || canSend.value);
 const pressed = ref(false);
 
@@ -793,19 +830,14 @@ onMounted(() => {
   document.addEventListener('mousedown', handleClickOutside);
   fetchTeams(1);
   fetchAgents(1);
-  adjustHeight();
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener('mousedown', handleClickOutside);
   dictation += 1;
   if (attachedImagePreview.value) URL.revokeObjectURL(attachedImagePreview.value);
+  editor.value?.destroy();
 });
-
-const onInput = (e: Event) => {
-  inputText.value = (e.target as HTMLTextAreaElement).value;
-  sparkRef.value?.ping();
-};
 
 const handleKeyDown = (e: KeyboardEvent) => {
   if (isAgentMenuOpen.value) {
@@ -843,13 +875,15 @@ const handleKeyDown = (e: KeyboardEvent) => {
     }
   }
 
-  if (e.key === 'Backspace' && isPlanMode.value && !inputText.value) {
+  const isEmpty = editor.value ? editor.value.isEmpty : !inputText.value;
+
+  if (e.key === 'Backspace' && isPlanMode.value && isEmpty) {
     e.preventDefault();
     isPlanMode.value = false;
     return;
   }
 
-  if (e.key === 'Backspace' && localSelectedAgentId.value && !inputText.value) {
+  if (e.key === 'Backspace' && localSelectedAgentId.value && isEmpty) {
     e.preventDefault();
     clearSelectedAgent();
     return;
@@ -862,7 +896,9 @@ const handleKeyDown = (e: KeyboardEvent) => {
 };
 
 const handleSend = () => {
-  const text = inputText.value.trim();
+  const mdText = resolveEditorMarkdown(editor.value).trim();
+  const rawText = editor.value ? editor.value.getText().trim() : '';
+  const text = mdText || rawText;
   const image = attachedImage.value;
   if ((!text && !image) || props.isSending || props.reasoningEffortPending) return;
 
@@ -877,11 +913,11 @@ const handleSend = () => {
     image
   );
 
+  editor.value?.commands.clearContent();
   inputText.value = '';
   if (attachedImagePreview.value) URL.revokeObjectURL(attachedImagePreview.value);
   attachedImage.value = null;
   attachedImagePreview.value = null;
-  nextTick(adjustHeight);
 };
 
 const rootStyle = computed(
@@ -897,11 +933,11 @@ const rootStyle = computed(
 );
 
 defineExpose({
-  focus: () => textareaRef.value?.focus(),
-  focusInput: () => textareaRef.value?.focus(),
+  focus: focusEditor,
+  focusInput: focusEditor,
   setInputText: (text: string) => {
+    editor.value?.commands.setContent(text);
     inputText.value = text;
-    nextTick(adjustHeight);
   },
   setAttachedImage: (file: File | null) => {
     if (file) processImageFile(file);
@@ -1145,7 +1181,7 @@ defineExpose({
         </span>
       </div>
 
-      <!-- 文本输入行 (支持 /plan 与 Agent Token Pill) -->
+      <!-- 文本输入区 (支持 /plan 与 Agent Token Pill 以及 TipTap 所见即所得 Markdown 渲染) -->
       <div class="flex items-start gap-1.5 w-full min-w-0">
         <span
           v-if="isPlanMode"
@@ -1170,22 +1206,20 @@ defineExpose({
           >×</span>
         </span>
 
-        <textarea
-          ref="textareaRef"
-          rows="1"
-          :value="inputText"
-          :placeholder="listening ? '正在倾听…' : (isPlanMode ? '描述你的任务以生成计划' : '描述你想要构建的内容，/ 调用指令，@ 文件或对话')"
-          class="block bg-transparent p-0 placeholder:[color:color-mix(in_srgb,var(--pb-ink)_45%,transparent)] border-0 outline-none w-full text-[14px] text-inherit [@media(pointer:coarse)]:text-[16px] leading-[22px] resize-none [font:inherit] [overflow-wrap:anywhere]"
-          aria-label="Prompt"
-          @input="onInput"
-          @focus="effortOpen = false"
-          @keydown="handleKeyDown"
-        />
+        <!-- TipTap 所见即所得 Markdown 富文本输入框 -->
+        <div ref="editorContainerRef" class="relative w-full min-w-0 flex-1">
+          <EditorContent
+            :editor="editor"
+            class="tiptap-chat-input w-full text-[14px] leading-[22px] [color:var(--pb-ink)] [caret-color:var(--pb-ink)] cursor-text select-text"
+            @focus="effortOpen = false"
+            @keydown="handleKeyDown"
+          />
+        </div>
       </div>
 
       <!-- 底部工具栏行 -->
       <div class="flex items-center justify-between pt-1 flex-nowrap gap-2 min-w-0">
-        <!-- 左侧工具组：+ 按钮、图片附件、团队下拉、Effort 强度 -->
+        <!-- 左侧工具组：+ 按钮、图片附件、团队下拉、Effort 强度、预览按钮 -->
         <div class="flex items-center gap-1 flex-nowrap shrink min-w-0">
           <!-- + 按钮 -->
           <button
@@ -1348,6 +1382,75 @@ defineExpose({
 </template>
 
 <style>
+/* TipTap 所见即所得 Markdown 样式渲染 */
+.tiptap-chat-input .tiptap.ProseMirror {
+  outline: none;
+  min-height: 22px;
+  max-height: 120px;
+  overflow-y: auto;
+  word-break: break-word;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 22px;
+}
+.tiptap-chat-input .tiptap.ProseMirror p {
+  margin: 0;
+  line-height: 22px;
+}
+.tiptap-chat-input .tiptap.ProseMirror code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.85em;
+  padding: 0.15rem 0.35rem;
+  margin: 0 0.15rem;
+  border-radius: 0.35rem;
+  background-color: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f4f4f5;
+}
+html.light .tiptap-chat-input .tiptap.ProseMirror code {
+  background-color: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #1e293b;
+}
+.tiptap-chat-input .tiptap.ProseMirror strong {
+  font-weight: 600;
+}
+.tiptap-chat-input .tiptap.ProseMirror em {
+  font-style: italic;
+}
+.tiptap-chat-input .tiptap.ProseMirror s {
+  text-decoration: line-through;
+}
+.tiptap-chat-input .tiptap.ProseMirror h1,
+.tiptap-chat-input .tiptap.ProseMirror h2,
+.tiptap-chat-input .tiptap.ProseMirror h3 {
+  margin: 0.2rem 0;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.tiptap-chat-input .tiptap.ProseMirror h1 { font-size: 1.25rem; }
+.tiptap-chat-input .tiptap.ProseMirror h2 { font-size: 1.1rem; }
+.tiptap-chat-input .tiptap.ProseMirror h3 { font-size: 1.0rem; }
+.tiptap-chat-input .tiptap.ProseMirror blockquote {
+  margin: 0.25rem 0;
+  padding-left: 0.5rem;
+  border-left: 2px solid rgba(255, 255, 255, 0.3);
+  opacity: 0.85;
+}
+html.light .tiptap-chat-input .tiptap.ProseMirror blockquote {
+  border-left-color: rgba(0, 0, 0, 0.3);
+}
+
+/* TipTap 占位符提示 */
+.tiptap-chat-input .tiptap.ProseMirror p.is-editor-empty:first-child::before {
+  color: color-mix(in srgb, var(--pb-ink) 45%, transparent);
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
 @keyframes prompt-bar-pop {
   from {
     opacity: 0;

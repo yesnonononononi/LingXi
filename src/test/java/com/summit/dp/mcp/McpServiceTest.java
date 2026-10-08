@@ -33,6 +33,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 /**
  * MCP 模块核心能力单测。
@@ -76,6 +78,45 @@ class McpServiceTest {
     }
 
     /* ---------------- 凭据脱敏 ---------------- */
+
+    @Test
+    void connectionRestoresSavedCredentialsWithoutChangingSavedConfiguration() {
+        McpRepository repository = repository();
+        Mcp saved = sampleModel();
+        saved.changeEnabled(false);
+        saved.changeEnv(Map.of("TOKEN", TOKEN));
+        when(repository.findById(1L)).thenReturn(Optional.of(saved));
+        McpConnectionRegistry connections = mock(McpConnectionRegistry.class);
+        McpServiceImpl service = new McpServiceImpl(repository, new McpValidator(repository),
+                new McpConfigAssembler(), connections);
+        McpCommand command = new McpCommand();
+        command.setId(1L);
+        command.setName("edited");
+        command.setUrl("http://edited/mcp");
+        service.connect(command);
+        command.setHeaders(Map.of("Authorization", McpVO.MASKED_VALUE, "X-New", "new-value"));
+        service.connect(command);
+        command.setHeaders(Map.of());
+        service.connect(command);
+        command.setTransport("stdio");
+        command.setCommand(List.of("python", "server.py"));
+        command.setEnv(Map.of("TOKEN", McpVO.MASKED_VALUE, "NEW", "new-value"));
+        service.connect(command);
+
+        ArgumentCaptor<McpConfig.MCP> captor = ArgumentCaptor.forClass(McpConfig.MCP.class);
+        verify(connections, times(4)).connect(captor.capture());
+        McpConfig.StreamableHttp first = (McpConfig.StreamableHttp) captor.getAllValues().get(0).conf();
+        assertEquals(TOKEN, first.headers().get("Authorization"));
+        assertEquals(Map.of("Authorization", TOKEN, "X-New", "new-value"),
+                ((McpConfig.StreamableHttp) captor.getAllValues().get(1).conf()).headers());
+        assertTrue(((McpConfig.StreamableHttp) captor.getAllValues().get(2).conf()).headers().isEmpty());
+        assertEquals(Map.of("TOKEN", TOKEN, "NEW", "new-value"),
+                ((McpConfig.Stdio) captor.getAllValues().get(3).conf()).env());
+        assertEquals("github", saved.getName());
+        assertEquals(Map.of("Authorization", TOKEN), saved.getHeaders());
+        verify(repository, times(4)).findById(1L);
+        verifyNoMoreInteractions(repository, connections);
+    }
 
     @Test
     @DisplayName("查询出口把请求头值替换为掩码，不泄漏令牌")

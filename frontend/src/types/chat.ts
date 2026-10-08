@@ -267,7 +267,11 @@ export interface ToolCallVO {
   rawOutput?: any;
   /** 扩展元数据 _meta */
   metaData?: any;
-  /** ★ 唯一可审批判定：type==='PROMISE' && status==='pending' */
+  /**
+   * 后端 `isUnresolved()`：`type==='PROMISE' && status!=='completed'`（未终结即 true），
+   * **PREPARING / IN_PROGRESS 也是 true** —— 语义是「未终结」，不是「可审批」。
+   * 可审批判定看 {@link PromptCardData.pending}（= `type==='PROMISE' && status==='pending'`）。
+   */
   pending?: boolean;
   createdAt?: string | number;
   updatedAt?: string | number;

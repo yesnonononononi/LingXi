@@ -1,15 +1,5 @@
 
-services:
-  redis:
-    image: redis:8
-    container_name: LingXi-redis
-    ports:
-        - "6379:6379"
-    volumes:
-      - redis-data:/data
-    restart: always
-    networks:
-      - LingXi
+
 #  milvus:
 #    image: milvusdb/milvus:v2.4.6
 #    container_name: LingXi-milvus
@@ -74,8 +64,3 @@ services:
 networks:
   LingXi:
     driver: bridge
-volumes:
-  redis-data:
- # milvus-data:
- # etcd-data:
-  minio-data:

@@ -149,9 +149,25 @@ const CARD_OUTCOME_LABEL: Record<string, string> = {
   TIMED_OUT: '已超时'
 };
 
-/** 已决卡片的单行摘要文案。 */
+/**
+ * 卡片阶段标签（无结论时摘要尾巴）。
+ *
+ * <p>与卡内状态文案同口径。**禁止用「缺 outcome」推断已结束**：后端 PREPARING 时
+ * {@code pending=true}（未终结），前端就绪位为 false → 卡片走折叠摘要，若据此标「已结束」，
+ * 就会出现外层「已结束」、展开后卡内「准备中」的自相矛盾。</p>
+ */
+const CARD_STATUS_LABEL: Record<PromptCardData['status'], string> = {
+  preparing: '准备中',
+  pending: '等待审批',
+  in_progress: '执行中',
+  completed: '已结束'
+};
+
+/** 卡片单行摘要文案：有结论按结论，无结论按生命周期阶段。 */
 export function buildCardSummary(card: PromptCardData): string {
   const kind = CARD_KIND_LABEL[card.kind];
-  const outcome = card.outcome ? (CARD_OUTCOME_LABEL[card.outcome] ?? card.outcome) : '已结束';
-  return `${kind}${card.title ? `：${card.title}` : ''} · ${outcome}`;
+  const tail = card.outcome
+    ? (CARD_OUTCOME_LABEL[card.outcome] ?? card.outcome)
+    : CARD_STATUS_LABEL[card.status];
+  return `${kind}${card.title ? `：${card.title}` : ''} · ${tail}`;
 }

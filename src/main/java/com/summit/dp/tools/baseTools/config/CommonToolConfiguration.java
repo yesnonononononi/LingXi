@@ -37,6 +37,9 @@ public class CommonToolConfiguration {
     @ConditionalOnMissingBean(name = "executeCommandToolDefinition")
     public ToolDefinition<CommandToolDefinitionExecutor> executeCommandToolDefinition(ObjectMapper objectMapper) {
         String name = "execute_command";
+        // SERIAL_MUTATION：终端命令一律串行，不参与并发窗口。
+        // 框架判据是「整批请求全都 allowConcurrent 才并发」（DefaultToolExecutionManager#canExecuteConcurrently），
+        // 故模型在同一轮里发起的多条命令会在同一线程上顺序执行，不会互相抢占工作区。
         return ToolDefinition.<CommandToolDefinitionExecutor>builder()
                 .executor(new CommandToolDefinitionExecutor(objectMapper))
                 .id(name)

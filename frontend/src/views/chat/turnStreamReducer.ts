@@ -418,6 +418,15 @@ export class TurnStreamReducer {
   }): void {
     this.frameBuffer.flushImmediate();
     const bubble = this.obtainActiveBubble(this.currentTurnId);
+
+    // 终端审批（命令审批）在 policy 内短路，框架只发 TOOL_COMPLETED(resultStatus=PROMISED)、
+    // 从不发 TOOL_CALL，因此下方按已有轨迹找不到目标、也建不出卡片。必须用完成事件自带的权威
+    // 调用 ID 直接拉卡，否则实时审批卡要等到刷新后从历史聚合才出现。
+    // requestId 缺失同样不建卡：伪造 ID 会让卡片挂到错误的调用上。
+    if (event.resultStatus === 'PROMISED' && event.requestId) {
+      this.requestPromptCard(bubble.id, event.requestId);
+    }
+
     if (!bubble.toolCalls) return;
 
     const requestId = event.requestId;
@@ -661,11 +670,16 @@ export class TurnStreamReducer {
     this.scheduleCardAttempt(bubbleId, toolCallId, attempt + 1);
   }
 
-  /** 卡片是否已无需再拉：权威 pending=true（就绪）或已进入执行/终结态（已决）。 */
+  /**
+   * 卡片是否已无需再拉：权威 {@code status} 已到「可审批（pending）」或后续态（in_progress / completed）。
+   *
+   * <p><b>不能用 VO 的 {@code pending} 字段判就绪</b>：后端 {@code pending = isUnresolved()}（未终结即 true），
+   * PREPARING 也返回 true —— 据此停查会把卡片永远钉死在首次拉到的「准备中」，用户拿不到审批按钮。
+   * 只有显式 {@code status} 才分得清「准备中」与「等待审批」。</p>
+   */
   private isCardSettled(card: ToolCallVO): boolean {
-    if (card.pending === true) return true;
     const status = String(card.status ?? '').trim().toLowerCase();
-    return status === 'completed' || status === 'in_progress';
+    return status === 'pending' || status === 'in_progress' || status === 'completed';
   }
 
   /**

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { SessionMessageVO, ChatMessage, ToolCallVO } from '../src/types/chat';
 import { aggregateSessionMessages } from '../src/utils/session';
-import { toPromptCardData, resolveCardKind, isApprovableCard, isCardToolName, canDecideCard } from '../src/utils/toolCallCard';
+import { toPromptCardData, resolveCardKind, isApprovableCard, isCardToolName, canDecideCard, buildCardSummary } from '../src/utils/toolCallCard';
 import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
 import { AgentToolName } from '../src/utils/toolNames';
 
@@ -349,4 +349,45 @@ test('8. 按钮门控叠加权威 pending：已决卡即使残留 allowedActions
   } as ToolCallVO);
   assert.equal(canDecideCard(choiceCard, 'ANSWER'), true);
   assert.equal(canDecideCard(choiceCard, 'APPROVE'), false);
+});
+
+/**
+ * A5：无结论 ≠ 已结束。
+ *
+ * <p>后端 PREPARING 时 {@code pending=true}（isUnresolved），而前端就绪位（`PromptCardData.pending`
+ * = {@link isApprovableCard}）为 false → 卡片走「折叠摘要」分支。摘要必须按生命周期状态显示，
+ * 不能用「没有 outcome」推断成「已结束」，否则外层「已结束」与展开后卡内「准备中」自相矛盾。</p>
+ */
+test('9. 折叠摘要按生命周期状态显示，缺 outcome 不得标成「已结束」', () => {
+  // 后端真实形态：PREPARING 且 pending=true（未终结）
+  const preparing = toPromptCardData({
+    id: 'c1', type: 'PROMISE', status: 'preparing', pending: true,
+    content: { kind: 'COMMAND', command: 'ls' }
+  } as ToolCallVO);
+  assert.equal(preparing.pending, false, 'PREPARING 不可审批（就绪位 false）→ 走折叠摘要分支');
+  assert.equal(preparing.status, 'preparing');
+  const preparingSummary = buildCardSummary(preparing);
+  assert.ok(preparingSummary.includes('准备中'), `PREPARING 摘要应为「准备中」，实际=${preparingSummary}`);
+  assert.ok(!preparingSummary.includes('已结束'), '缺 outcome 不得推断成「已结束」');
+
+  // 已放行执行中：同样是「未终结」但摘要应显示「执行中」
+  const running = toPromptCardData({
+    id: 'c2', type: 'PROMISE', status: 'in_progress', pending: true,
+    content: { kind: 'COMMAND', command: 'ls' }
+  } as ToolCallVO);
+  assert.ok(buildCardSummary(running).includes('执行中'), '执行中按状态显示「执行中」');
+
+  // 真正结束且无结论，才显示「已结束」
+  const finished = toPromptCardData({
+    id: 'c3', type: 'PROMISE', status: 'completed', pending: false,
+    content: { kind: 'COMMAND', command: 'ls' }, rawOutput: {}
+  } as ToolCallVO);
+  assert.ok(buildCardSummary(finished).includes('已结束'), 'completed 无结论显示「已结束」');
+
+  // 已决且带结论时结论优先，不被状态文案盖住
+  const approved = toPromptCardData({
+    id: 'c4', type: 'PROMISE', status: 'completed', pending: false,
+    content: { kind: 'COMMAND', command: 'ls' }, rawOutput: { outcome: 'APPROVED' }
+  } as ToolCallVO);
+  assert.ok(buildCardSummary(approved).includes('已批准'), '有结论时摘要显示结论');
 });

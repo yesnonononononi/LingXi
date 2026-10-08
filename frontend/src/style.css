@@ -152,7 +152,11 @@ html.dark .scrollbar-thin {
   display: inline-block;
   color: #4d6bfe;
   margin-left: 2px;
-  animation: blink 0.9s infinite;
+  animation: blink 0.9s ease-in-out infinite;
+}
+
+.dark .typing-cursor::after {
+  color: #60a5fa;
 }
 
 /* 极简流光边框动画 (用于 DeepThink / Logo 高亮) */

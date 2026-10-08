@@ -47,6 +47,7 @@ public final class TeamPromptComposer {
                 # 注意项 :
                  - 不要调用自己，不要为同一任务重复委派，也不要调用下列名单之外的 Agent。
                  - 成员执行失败时,需要反馈给用户,等待用户决策是否重新委派还是自己兜底执行
+                 - 不要相信成员的执行结果，需要自己实际确认
                 %s
                 """, defaultPrompt, teamDescription, roster);
     }

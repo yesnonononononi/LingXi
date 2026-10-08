@@ -1,50 +1,62 @@
 /**
- * 流式文本微模糊出场动效体系 (Token Stream Blur & Fade)
+ * 流式文本平滑出场动效体系 (Token Stream Flow)
  *
- * 方案 A 全局样式抽象：
- * 专为 AI 流式输出 (SSE Stream / Thinking / Markdown) 优化的轻量硬件加速动效。
- * 避免了虚拟 DOM 拆字带来的高频重渲染、闪烁与内存消耗，仅通过 CSS GPU 复合层实现平滑浮现。
+ * 优化说明：
+ * 1. 杜绝在流式 Markdown 的尾部元素 (.markdown-body > *:last-child) 上挂载微模糊 (blur) 或位移动画。
+ *    因 v-html 在每次接收增量 token 时会高频重渲染 innerHTML，对 *:last-child 挂入重启型动画会导致
+ *    整块内容（如表格、长段落）永久停留在 0.2 低透明度与 5px 模糊态，并产生高频闪烁与 3px 纵向抖动。
+ * 2. 流式打字期间保持文本 100% 清晰度（零模糊、满透明度、零位移抖动），通过末尾内联打字光标 (▋)
+ *    自然跟随后续文字流动，不占用独立空行，并在生成完毕后优雅消失。
  */
 
-/* 1. 核心关键帧：微模糊渐显出场 */
+/* 1. 核心关键帧：单次平滑渐显出场（仅限静态容器/卡片，禁止作用于流式重绘子节点） */
 @keyframes stream-blur-in {
   0% {
-    filter: blur(5px);
-    opacity: 0.2;
-    transform: translateY(3px);
-  }
-  50% {
-    filter: blur(2px);
-    opacity: 0.75;
+    opacity: 0;
+    transform: translateY(2px);
   }
   100% {
-    filter: blur(0px);
     opacity: 1;
     transform: translateY(0);
   }
 }
 
-/* 2. 思维链 (Thinking) 流式呼吸渐显 */
+/* 2. 思维链 (Thinking) 流式呼吸渐显：保持文字清晰，微幅淡入 */
 @keyframes stream-thinking-flow {
   0% {
-    filter: blur(3px);
-    opacity: 0.4;
+    opacity: 0.85;
   }
   100% {
-    filter: blur(0px);
     opacity: 1;
   }
 }
 
-/* 3. 通用单次文本模糊入场类 (可任意元素直接使用) */
+/* 3. 通用单次文本渐显入场类 (可供独立静态元素使用) */
 .animate-blur-in {
-  animation: stream-blur-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
-  will-change: filter, opacity, transform;
+  animation: stream-blur-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: opacity, transform;
 }
 
-/* 4. 流式 Markdown 容器：在流式生成中时，最新生成的尾部段落/列表/代码块自动享有平滑模糊出场 */
-.markdown-stream-flow.is-streaming .markdown-body > *:last-child {
-  animation: stream-blur-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+/* 4. 流式 Markdown 容器：保持文字 100% 清晰度，末尾文本块追加自然流动的打字光标 */
+.markdown-stream-flow.is-streaming .markdown-body > p:last-child::after,
+.markdown-stream-flow.is-streaming .markdown-body > blockquote:last-child p:last-child::after,
+.markdown-stream-flow.is-streaming .markdown-body > :is(ul, ol):last-child li:last-child::after,
+.markdown-stream-flow.is-streaming .markdown-body > :is(h1, h2, h3, h4, h5, h6):last-child::after {
+  content: '▋';
+  display: inline-block;
+  color: #4d6bfe;
+  margin-left: 2px;
+  animation: blink 0.9s ease-in-out infinite;
+  vertical-align: baseline;
+  font-size: 0.85em;
+  line-height: 1;
+}
+
+.dark .markdown-stream-flow.is-streaming .markdown-body > p:last-child::after,
+.dark .markdown-stream-flow.is-streaming .markdown-body > blockquote:last-child p:last-child::after,
+.dark .markdown-stream-flow.is-streaming .markdown-body > :is(ul, ol):last-child li:last-child::after,
+.dark .markdown-stream-flow.is-streaming .markdown-body > :is(h1, h2, h3, h4, h5, h6):last-child::after {
+  color: #60a5fa;
 }
 
 /* 5. 思维链流式内容专用类 */
@@ -59,8 +71,11 @@
 /* 用户开启减弱动态效果时自动平滑优雅降级 */
 @media (prefers-reduced-motion: reduce) {
   .animate-blur-in,
-  .markdown-stream-flow.is-streaming .markdown-body > *:last-child,
-  .stream-thinking-content.is-running {
+  .stream-thinking-content.is-running,
+  .markdown-stream-flow.is-streaming .markdown-body > p:last-child::after,
+  .markdown-stream-flow.is-streaming .markdown-body > blockquote:last-child p:last-child::after,
+  .markdown-stream-flow.is-streaming .markdown-body > :is(ul, ol):last-child li:last-child::after,
+  .markdown-stream-flow.is-streaming .markdown-body > :is(h1, h2, h3, h4, h5, h6):last-child::after {
     animation: none !important;
     filter: none !important;
   }

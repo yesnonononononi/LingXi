@@ -78,8 +78,8 @@ const handleContainerClick = async (event: MouseEvent) => {
       v-html="renderedHtml"
     ></div>
     
-    <!-- 打字思考光标 -->
-    <span v-if="props.isThinking" class="typing-cursor inline-block ml-0.5"></span>
+    <!-- 打字思考光标：仅在尚未生成正文时作为占位显示，正文流式生成后由末尾文本伪元素内联跟进，避免孤立空行 -->
+    <span v-if="props.isThinking && !renderedHtml" class="typing-cursor inline-block ml-0.5"></span>
   </div>
 </template>
 

@@ -16,8 +16,12 @@
     "app:dev": "node electron/dev.mjs",
     "backend:runtime": "node scripts/build-backend-runtime.mjs",
     "backend:runtime:quick": "node scripts/build-backend-runtime.mjs --skip-jar",
-    "app:build": "npm run build && npm run backend:runtime && electron-builder --publish never",
-    "app:build:dir": "npm run build && npm run backend:runtime && electron-builder --dir"
+    "app:build": "npm run build && npm run backend:runtime && electron-builder --win nsis --x64 --publish never",
+    "app:build:dir": "npm run build && npm run backend:runtime && electron-builder --dir",
+    "app:build:setup": "npm run build && npm run backend:runtime && electron-builder --win nsis --x64 --publish never",
+    "app:build:portable": "npm run build && npm run backend:runtime && electron-builder --win portable --x64 --publish never",
+    "app:builder:dir": "npm run build && npm run backend:runtime && electron-builder --win nsis --x64 --publish never",
+    "app:builder:quick": "electron-builder --win nsis --x64 --publish never"
   },
   "devDependencies": {
     "@guolao/vue-monaco-editor": "^1.6.0",
@@ -94,5 +98,11 @@
       "createStartMenuShortcut": true,
       "shortcutName": "LX"
     }
+  },
+  "dependencies": {
+    "@tiptap/extension-placeholder": "^3.31.4",
+    "@tiptap/starter-kit": "^3.31.4",
+    "@tiptap/vue-3": "^3.31.4",
+    "tiptap-markdown": "^0.9.0"
   }
 }
