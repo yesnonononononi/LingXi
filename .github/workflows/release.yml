@@ -1,0 +1,222 @@
+name: Release
+
+# 触发方式：手工。不跟随 push/tag，避免"推个 tag 就意外发版"。
+#
+# 为什么不用 tag 触发：本项目的发版事实是「package.json 的 version 是唯一真源」，
+# 而 tag 是需要人去打的。如果让 tag 自动触发构建，就会出现「tag 打了但 package.json 没改」
+# 的情况 —— 这正是历史上已经发生过的事故（tag=0.0.1 / 资产名=LX.Setup.0.0.0.exe）。
+# 改为手工触发 + 工作流内部校验一致性 + 由工作流自己打 tag，可以让 tag 永远由
+# 校验通过的事实推导出来，而不是反过来。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '要发布的版本号（必须与 frontend/package.json 的 version 完全一致，如 0.0.2）'
+        required: true
+        type: string
+      force:
+        description: '是否强制更新（客户端下载完成后立即安装并重启；需要已配置正式签名私钥）'
+        required: false
+        default: false
+        type: boolean
+      min_supported:
+        description: '最低可运行版本（留空表示不限制；低于此版本的客户端必须升级）'
+        required: false
+        default: ''
+        type: string
+      prerelease:
+        description: '是否标记为预发布（预发布不会推送给普通客户端）'
+        required: false
+        default: false
+        type: boolean
+
+# 同版本重复触发时取消进行中的旧任务，避免两个构建同时往同一个 Release 写资产
+concurrency:
+  group: release-${{ github.event.inputs.version }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write # 需要创建 Release 并上传资产
+
+jobs:
+  release:
+    name: Build & Publish
+    # ⚠️ 必须是 Windows：本项目只产出 win 目标（nsis + portable），
+    #    且 backend:runtime 要跑 jlink 生成 Windows 版 JRE。
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 设置 JDK 21（jlink 需要真 JDK，JRE 没有 jmods）
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: npm ci
+
+      # ---------------------------------------------------------------- 版本一致性闸门
+      # 这一步是本次发版流程的核心防线：版本号对不上就直接失败，
+      # 绝不允许产出「标签说 A、文件说 B」的资产（历史事故形态）。
+      - name: 校验版本一致性
+        working-directory: frontend
+        shell: bash
+        run: |
+          node scripts/check-version.mjs --expect-tag="v${{ github.event.inputs.version }}"
+
+      - name: 确认该版本尚未发布（防止覆盖已发出的资产）
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "v${{ github.event.inputs.version }}" >/dev/null 2>&1; then
+            echo "::error::版本 v${{ github.event.inputs.version }} 的 Release 已存在。"
+            echo "发布过的资产不能被覆盖 —— 已安装的客户端可能正在校验它的 sha512。"
+            echo "如果确实要重发，请先手工删除该 Release，并把 package.json 升到新版本号。"
+            exit 1
+          fi
+          echo "版本 v${{ github.event.inputs.version }} 尚未发布，继续。"
+
+      # ---------------------------------------------------------------- 构建
+      # ⚠️ 必须先构建前端产物：dist 是 .gitignore 目录，干净 runner 上不存在，
+      #    而 electron-builder 的 files 里包含 dist/**/*。缺这一步会打出空壳包，
+      #    且因为标签、版本号都对得上，闸门全绿 —— 属于「本地成功」推断不出「runner 成功」的典型。
+      - name: 构建前端产物（vue-tsc + vite build）
+        working-directory: frontend
+        run: npm run build
+
+      - name: 构建后端运行产物（fat jar + jlink 精简 JRE）
+        working-directory: frontend
+        run: npm run backend:runtime
+
+      - name: 构建并打包（产出 nsis + latest.yml，但不发布）
+        working-directory: frontend
+        run: npx electron-builder --win nsis --x64 --publish never
+        env:
+          # electron-builder 在 CI 上不签名代码（无证书），显式关闭
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      # ---------------------------------------------------------------- 生成签名声明
+      - name: 生成 lx-update 签名声明块
+        working-directory: frontend
+        shell: bash
+        env:
+          LX_UPDATE_PRIVATE_KEY: ${{ secrets.LX_UPDATE_PRIVATE_KEY }}
+        run: |
+          if [ -z "$LX_UPDATE_PRIVATE_KEY" ]; then
+            echo "::error::未配置 LX_UPDATE_PRIVATE_KEY secret。"
+            echo "客户端内置了公钥并要求验签，没有签名私钥产出的 Release 会让所有客户端拒绝更新。"
+            echo "请先在本机跑 node scripts/generate-update-key.mjs，把公钥写进 electron/updater.cjs，"
+            echo "再把私钥内容存为仓库 secret LX_UPDATE_PRIVATE_KEY。"
+            exit 1
+          fi
+          # ⚠️ 显式传 --exe 指向本次打包出的安装包：签名载荷里的 sha512 必须与
+          #    latest.yml 中该文件的 sha512 完全一致，否则所有客户端验签失败。
+          EXE_PATH="release/LX.Setup.${{ github.event.inputs.version }}.exe"
+          if [ ! -f "$EXE_PATH" ]; then
+            echo "::error::打包产物不存在: $EXE_PATH"
+            exit 1
+          fi
+          node scripts/sign-update.mjs \
+            --version="${{ github.event.inputs.version }}" \
+            --exe="$EXE_PATH" \
+            --force="${{ github.event.inputs.force }}" \
+            --min-supported="${{ github.event.inputs.min_supported }}" \
+            --out=release/RELEASE_BODY.md
+
+      # ---------------------------------------------------------------- 发布
+      # ⚠️ 用 draft 收口，杜绝「最新 Release 已可见但 latest.yml 还没传」的空窗：
+      #    客户端读的是 latest.yml。若 Release 先公开、资产后传，抢先检查的客户端
+      #    会拿到一个指向 404 的清单 → 更新失败。
+      #    做法：先建 draft → 逐个上传并校验 → 最后一步才 --draft=false 公开。
+      #    这样「公开可见」与「资产完整」是同一个原子时刻。
+      - name: 创建 draft Release（绑定本次构建 commit）
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # ⚠️ --target 必须显式绑定本次构建的 commit：workflow_dispatch 允许
+          #    选择非默认分支，若不指定 target，GitHub 会在默认分支头打 tag，
+          #    导致「源码标签」与「二进制来源」漂移。
+          gh release create "v${{ github.event.inputs.version }}" \
+            --draft \
+            --title "LX ${{ github.event.inputs.version }}" \
+            --notes-file frontend/release/RELEASE_BODY.md \
+            --target "${{ github.sha }}" \
+            ${{ github.event.inputs.prerelease == 'true' && '--prerelease' || '' }}
+
+      - name: 上传全部资产（draft 状态下逐个上传）
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd frontend/release
+          gh release upload "v${{ github.event.inputs.version }}" --clobber \
+            LX.Setup.*.exe LX.Setup.*.exe.blockmap latest.yml
+
+      - name: 校验 draft 资产完整（安装包 / blockmap / latest.yml 齐备且摘要一致）
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          TAG="v${{ github.event.inputs.version }}"
+          echo "--- draft 资产清单 ---"
+          gh release view "$TAG" --json assets --jq '.assets[].name'
+
+          for NAME in "LX.Setup.${{ github.event.inputs.version }}.exe" "latest.yml"; do
+            if ! gh release view "$TAG" --json assets --jq '.assets[].name' | grep -qx "$NAME"; then
+              echo "::error::draft 缺少必需资产: $NAME"
+              exit 1
+            fi
+          done
+
+          # 比对 latest.yml 里的 sha512 与实际文件摘要（base64），防止清单与二进制失配
+          cd frontend/release
+          YML_SHA="$(grep -oE 'sha512: *\S+' latest.yml | head -1 | awk '{print $2}')"
+          FILE_SHA="$(node -e "const c=require('crypto'),f=require('fs');process.stdout.write(c.createHash('sha512').update(f.readFileSync('LX.Setup.${{ github.event.inputs.version }}.exe')).digest('base64'))")"
+          if [ "$YML_SHA" != "$FILE_SHA" ]; then
+            echo "::error::latest.yml 的 sha512 与安装包实际摘要不一致，拒绝公开 Release。"
+            exit 1
+          fi
+          echo "latest.yml 摘要与安装包一致，资产完整。"
+
+      - name: 公开 Release（draft → published，资产已齐备的原子时刻）
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "v${{ github.event.inputs.version }}" --draft=false
+          echo "Release v${{ github.event.inputs.version }} 已公开。"
+
+      # ---------------------------------------------------------------- 回报
+      - name: 汇总
+        shell: bash
+        run: |
+          {
+            echo "## Release v${{ github.event.inputs.version }} 已发布"
+            echo
+            echo "| 项 | 值 |"
+            echo "|---|---|"
+            echo "| 版本 | ${{ github.event.inputs.version }} |"
+            echo "| 强制更新 | ${{ github.event.inputs.force }} |"
+            echo "| 最低支持版本 | ${{ github.event.inputs.min_supported || '(未限制)' }} |"
+            echo "| 预发布 | ${{ github.event.inputs.prerelease }} |"
+            echo "| 绑定 commit | ${{ github.sha }} |"
+            echo
+            echo "流程：先建 draft → 上传全部资产 → 校验摘要 → 再公开。"
+            echo "latest.yml 与安装包在同一时刻可见，不存在空窗。"
+          } >> "$GITHUB_STEP_SUMMARY"

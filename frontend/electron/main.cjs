@@ -1,7 +1,9 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, Notification, nativeTheme } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const backend = require('./backend.cjs');
 const { registerFilePreview } = require('./file-preview.cjs');
+const { createUpdater } = require('./updater.cjs');
 
 // 生产环境下关闭默认冗余的控制台警告
 process.env['ELECTRON_DISABLE_SECURITY_WARNINGS'] = 'true';
@@ -31,6 +33,81 @@ const isDev = process.env.NODE_ENV === 'development' || process.argv.includes('-
 // 后端日志与工作目录都放 userData：安装到 Program Files 后应用目录不可写
 const userDataDir = app.getPath('userData');
 const backendLogPath = path.join(userDataDir, 'logs', 'backend.log');
+
+// ---------------------------------------------------------------- 更新器日志
+
+/**
+ * 更新器日志独立成一个文件。
+ *
+ * 为什么不并进 backend.log：两者生命周期不同（后端每次启动一条新流，更新器在
+ * 应用存活期常驻），且排查「为什么没更新」时需要一份干净、不被后端输出淹没的记录。
+ * 只保留最近一次运行（覆盖写），避免无限增长。
+ */
+const updaterLogPath = path.join(userDataDir, 'logs', 'updater.log');
+let updaterLogStream = null;
+function ensureUpdaterLog() {
+  if (updaterLogStream) return updaterLogStream;
+  try {
+    fs.mkdirSync(path.dirname(updaterLogPath), { recursive: true });
+    updaterLogStream = fs.createWriteStream(updaterLogPath, { flags: 'w' });
+  } catch {
+    // 日志写不了不能影响更新功能本身，退化为只走控制台
+    updaterLogStream = null;
+  }
+  return updaterLogStream;
+}
+
+const updaterLogger = {
+  info(msg) {
+    const line = `[${new Date().toISOString()}] [INFO] ${msg}`;
+    console.log(`[Updater] ${msg}`);
+    ensureUpdaterLog()?.write(`${line}\n`);
+  },
+  warn(msg) {
+    const line = `[${new Date().toISOString()}] [WARN] ${msg}`;
+    console.warn(`[Updater] ${msg}`);
+    ensureUpdaterLog()?.write(`${line}\n`);
+  },
+  error(msg) {
+    const line = `[${new Date().toISOString()}] [ERROR] ${msg}`;
+    console.error(`[Updater] ${msg}`);
+    ensureUpdaterLog()?.write(`${line}\n`);
+  },
+};
+
+/**
+ * 把更新状态推给渲染层。
+ *
+ * 只在窗口存活时推；窗口销毁（用户点了彻底退出）后静默丢弃 ——
+ * 与 SseEventPublisher「无订阅者时静默丢弃」的处理保持一致，不阻塞主进程。
+ */
+function broadcastUpdateState(state) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    mainWindow.webContents.send('update:state', state);
+  } catch {
+    // 窗口正在销毁竞态下 send 会抛，忽略即可
+  }
+}
+
+const updater = createUpdater({
+  app,
+  getWindow: () => mainWindow,
+  broadcast: broadcastUpdateState,
+  logger: updaterLogger,
+});
+
+/**
+ * 所有更新类 IPC 的收发校验。
+ *
+ * ⚠️ 为什么每个 handler 都要查 event.sender：
+ *    本应用 sandbox:false + 页面里可能渲染用户/模型产出的内容（含 iframe、外链）。
+ *    不做来源校验的话，任何一个注入点都能调用更新接口 —— 而更新接口能触发
+ *    「下载并执行一个可执行文件」，是最高的权限。这是本项目里最需要严格把关的入口。
+ */
+function assertTrustedSender(event) {
+  return !!mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents;
+}
 
 /** 启动遮罩：后端就绪前必须给用户反馈，否则首次启动会「点了没反应」好几秒 */
 function createSplash() {
@@ -246,6 +323,76 @@ ipcMain.handle('notify', (event, { title, body }) => {
   return false;
 });
 
+// ---------------------------------------------------------------- 更新 IPC
+
+/** 查询当前更新状态（渲染层挂载时拉一次初值，之后靠 update:state 事件驱动） */
+ipcMain.handle('update:get-state', (event) => {
+  if (!assertTrustedSender(event)) return null;
+  const s = updater.getState();
+  return {
+    currentVersion: s.currentVersion,
+    enabled: updater.isEnabled(),
+    // ⚠️ phase 与 progress 必须一并下发：缺了它们，渲染层重开设置页时
+    //    只能把任何 pending 一律还原成 available（历史缺口）。
+    phase: s.phase,
+    error: s.error ?? null,
+    progress: s.progress ?? { percent: 0, bytesPerSecond: 0, transferred: 0, total: 0 },
+    pending: s.pending
+      ? {
+          version: s.pending.version,
+          releaseNotes: s.pending.changeLog,
+          forceupdate: s.pending.forceupdate,
+          mandatory: s.pending.mandatory,
+          installable: s.pending.installable,
+          rejectReason: s.pending.rejectReason ?? null,
+        }
+      : null,
+  };
+});
+
+/** 手动检查更新 */
+ipcMain.handle('update:check', async (event) => {
+  if (!assertTrustedSender(event)) return { ok: false, error: '来源未授权' };
+  if (!updater.isEnabled()) return { ok: false, error: '当前环境不支持自动更新' };
+  await updater.check({ manual: true });
+  return { ok: true };
+});
+
+/** 下载已发现的更新 */
+ipcMain.handle('update:download', async (event) => {
+  if (!assertTrustedSender(event)) return { ok: false, error: '来源未授权' };
+  try {
+    await updater.startDownload();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err && err.message) || String(err) };
+  }
+});
+
+/**
+ * 安装并重启。
+ *
+ * ⚠️ 强制更新（mandatory=true）时不校验前端传入的意图：
+ *    一旦 pending.mandatory 为真，前端无论如何都必须走到安装。
+ *    这是「强制」的定义。用户唯一的出路是卸载应用。
+ *
+ * ⚠️ 但「是否已下载完成」必须由主进程判定：install() 会拒绝尚未下载的状态，
+ *    并把真实原因回给渲染层（历史缺口：未下载也返回 true，用户点了没反应）。
+ */
+ipcMain.handle('update:install', (event) => {
+  if (!assertTrustedSender(event)) return { ok: false, error: '来源未授权' };
+  return updater.install();
+});
+
+/** 打开更新器日志（排障用：用户报「更新失败」时让 TA 直接把文件发过来） */
+ipcMain.handle('update:open-log', async (event) => {
+  if (!assertTrustedSender(event)) return false;
+  ensureUpdaterLog()?.end();
+  updaterLogStream = null;
+  shell.showItemInFolder(updaterLogPath);
+  return true;
+});
+
 // 第二次启动：不新建窗口，把已有窗口唤到前台（单实例锁的配套处理）
 app.on('second-instance', () => {
   if (!mainWindow) return;
@@ -288,6 +435,14 @@ app.whenReady().then(async () => {
   createWindow();
   setupTray();
 
+  // 更新器在窗口建好之后再起：它的状态要推给渲染层，且首次检查是延时的，
+  // 不影响启动路径（更新失败绝不能让应用起不来）。
+  try {
+    updater.start();
+  } catch (err) {
+    updaterLogger.error(`初始化失败（不影响应用使用）: ${(err && err.message) || err}`);
+  }
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
@@ -301,6 +456,10 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => {
   isQuiting = true;
   closeFilePreviews();
+  // 停掉更新器的定时器，避免退出过程中触发一次检查
+  updater.stop();
+  updaterLogStream?.end();
+  updaterLogStream = null;
 });
 
 // 退出前必须把后端进程收干净：Windows 不会因为父进程退出而带走子进程。

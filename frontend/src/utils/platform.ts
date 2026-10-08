@@ -6,6 +6,7 @@
  */
 
 import type { FilePreviewRequest, FilePreviewData, NativeFileResult } from '../types/filePreview';
+import type { UpdateStatePayload, UpdateLookupResult, UpdateActionResult } from '../types/update';
 
 export interface ElectronAPI {
   previewFile?: (request: FilePreviewRequest) => Promise<NativeFileResult<FilePreviewData>>;
@@ -18,6 +19,24 @@ export interface ElectronAPI {
   platform: string;
   setTitleBarTheme?: (isDark: boolean) => Promise<void>;
   customTitleBar?: boolean;
+  /** 自动更新（桌面端打包态可用）。Web 端为 undefined，调用方需判空。 */
+  updater?: ElectronUpdaterAPI;
+}
+
+/**
+ * 渲染层可用的更新接口。
+ *
+ * ⚠️ 这里刻意只有「读状态」和「发意图」两类方法，没有任何涉及 URL 或文件的方法。
+ *    下载、校验、安装全部在主进程完成 —— 渲染层接触不到，也就无法被注入利用。
+ */
+export interface ElectronUpdaterAPI {
+  getState: () => Promise<UpdateLookupResult | null>;
+  check: () => Promise<UpdateActionResult>;
+  download: () => Promise<UpdateActionResult>;
+  install: () => Promise<UpdateActionResult>;
+  openLog: () => Promise<boolean>;
+  /** 订阅更新状态；返回取消订阅函数 */
+  onState: (callback: (state: UpdateStatePayload) => void) => () => void;
 }
 
 declare global {
