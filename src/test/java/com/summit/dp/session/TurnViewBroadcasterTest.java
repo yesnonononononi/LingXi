@@ -85,7 +85,7 @@ class TurnViewBroadcasterTest {
         SessionMessage row = SessionMessage.builder()
                 .id(11L).sessionId(SESSION_ID).turnId(TURN_ID).responseId(UUID.randomUUID())
                 .responseOrder(0).type(SessionMessageType.AI).text(payload).build();
-        when(messageRepository.findBySessionId(SESSION_ID)).thenReturn(List.of(row));
+        when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(List.of(row));
         when(toolCallRepository.listByIds(any())).thenReturn(List.of());
     }
 

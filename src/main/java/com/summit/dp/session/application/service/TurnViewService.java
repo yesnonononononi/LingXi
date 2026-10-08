@@ -28,6 +28,9 @@ import java.util.stream.Collectors;
  * <p><b>一次 {@code IN} 装载工具调用</b>：先从本轮 AI 行的工具请求收集去重 {@code toolCallId} 集合，
  * 再批量查回建字典。不逐行查。</p>
  *
+ * <p><b>装载范围只限本轮</b>：消息按 {@code turn_id IN (本轮)} 取，不读整个会话 ——
+ * 实时链路每个工具收尾都装配一次，读全会话的代价会随会话长度线性增长。</p>
+ *
  * <p><b>版本号</b>：{@code viewVersion} 是「该轮展示的更新批次号」，由调用方决定（历史查询用
  * 轮次自身的 {@code version}；实时装配由发布侧递增并作废旧请求）。本类只透传。</p>
  */
@@ -56,7 +59,10 @@ public class TurnViewService {
         if (sessionId == null) {
             return Optional.empty();
         }
-        List<SessionMessage> messages = messageRepository.findBySessionId(sessionId);
+        // 只装载本轮的消息：装配器本就只取 turnId 匹配的行，此处把过滤前置到 SQL。
+        // 曾用 findBySessionId（无 LIMIT）读回整个会话再在内存里过滤 —— 代价随会话总长线性增长，
+        // 而实时链路每个工具收尾都要装配一次，长会话下会成为主成本。
+        List<SessionMessage> messages = messageRepository.findByTurnIds(sessionId, List.of(turn.getId()));
         Map<String, ToolCall> toolCalls = loadToolCalls(messages, turn.getId());
         List<Block> blocks = turnViewAssembler.assembleBlocks(turn.getId(), messages, toolCalls);
 
