@@ -3,6 +3,7 @@ package com.summit.dp.session;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
 import com.summit.dp.session.application.service.SessionAggregateService;
 import com.summit.dp.session.application.service.SessionMessageQueryService;
+import com.summit.dp.session.application.service.TurnViewService;
 import com.summit.dp.session.application.service.impl.SessionServiceImpl;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
@@ -46,7 +47,7 @@ class SessionInitializeStatusTest {
         return new SessionServiceImpl(aggregate, mock(WorkspaceService.class),
                 mock(SessionRepository.class), mock(SessionMessageQueryService.class),
                 mock(ExecutionQueryService.class), teamService, mock(AgentRepository.class),
-                mock(ChatTurnService.class), new ChatTurnConverter());
+                mock(ChatTurnService.class), new ChatTurnConverter(), mock(TurnViewService.class));
     }
 
     @Test

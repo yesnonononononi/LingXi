@@ -12,6 +12,7 @@ import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.session.domain.repo.SessionContextRepository;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
+import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -24,8 +25,8 @@ import static org.mockito.Mockito.*;
 class SessionExecutionContextUsageTest {
     private final SessionRepository repository = mock(SessionRepository.class);
     private final SessionAggregateService service = new SessionAggregateService(repository,
-            mock(MessageRepository.class), mock(ToolCallRepository.class), mock(ModelContextService.class),
-            mock(SessionContextRepository.class));
+            mock(MessageRepository.class), mock(ChatTurnRepository.class), mock(ToolCallRepository.class),
+            mock(ModelContextService.class), mock(SessionContextRepository.class));
 
     @Test
     void storesMetricInExecutionSessionInsteadOfRootSession() {

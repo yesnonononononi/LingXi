@@ -14,6 +14,8 @@ import com.summit.dp.session.domain.repo.SessionContextRepository;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.model.CursorResult;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -31,6 +33,8 @@ public class SessionAggregateService {
 
     private final SessionRepository sessionRepository;
     private final MessageRepository messageRepository;
+    /** 历史分页的游标维度：分页单位是完整轮次，轮次仓储是取数与游标的真源。 */
+    private final ChatTurnRepository chatTurnRepository;
     private final ToolCallRepository toolCallRepository;
     private final ModelContextService modelContextService;
     private final SessionContextRepository sessionContextRepository;
@@ -105,31 +109,49 @@ public class SessionAggregateService {
     }
 
     /**
-     * 按雪花主键游标取一页消息：首屏返回最新的一页，向上翻页返回更早的一页。分页下推到 SQL：
-     * 仓储层带 LIMIT 查询，这里只是多取一条（limit+1）用于判断是否还有更早消息，再丢掉多出来的那条，
-     * 不会把整会话消息读进内存。
+     * 按**轮次**游标取一页历史：分页单位是「完整的一轮」而非「一行消息」。
      *
-     * @param cursor 上一页最老一条消息的 id，为空表示从最新一条开始
+     * <p><b>为什么换单位</b>：按消息行切时，同一轮次可横跨两页 —— 前端必须逐页累计再聚合，
+     * 否则同一轮会被建成两个气泡。按轮次切从根上消除这种跨页，前端的对账逻辑随之收敛为一套。</p>
+     *
+     * <p><b>游标是轮次主键</b>：雪花主键单调递增，{@code chat_turn.id} 天然表达先后。
+     * 多取一条（limit+1）判断是否还有更早的一页，再丢掉多出来的那条，不把整会话读进内存。</p>
+     *
+     * <p><b>归属未知的旧行</b>（{@code turn_id IS NULL}）无法进入轮次分页，整批拼在历史最前面
+     * 一次返回 —— 它们按定义早于任何一轮，不与游标边界冲突。</p>
+     *
+     * @param cursor 上一页最老一轮的 id，为空表示从最新一轮开始
      */
     public CursorResult<SessionMessage> messageSlice(Long sessionId, String cursor, Integer size) {
         int pageSize = Math.clamp(size == null || size < 1 ? DEFAULT_MESSAGE_PAGE_SIZE : size, 1,
                 MAX_MESSAGE_PAGE_SIZE);
 
-        Long cursorId = parseCursor(cursor);
+        Long cursorTurnId = parseCursor(cursor);
 
-        List<SessionMessage> fetched = messageRepository.findLatest(sessionId, cursorId, pageSize + 1);
+        // 先取轮次（一页 + 多取一条用于判断 hasMore），再按这批轮次整组取消息。
+        List<ChatTurn> fetchedTurns = chatTurnRepository.findLatest(sessionId, cursorTurnId, pageSize + 1);
 
-        boolean hasMore = fetched.size() > pageSize;
+        boolean hasMore = fetchedTurns.size() > pageSize;
 
-        List<SessionMessage> latest = hasMore ? fetched.subList(0, pageSize) : fetched;
+        List<ChatTurn> pageTurns = hasMore ? fetchedTurns.subList(0, pageSize) : fetchedTurns;
 
-        List<SessionMessage> records = new ArrayList<>(latest);
-        Collections.reverse(records);
+        // 首屏（无游标）才拼旧的无归属行：翻页时它们必然早已随第一页返回，重复拼会翻倍。
+        List<SessionMessage> records = new ArrayList<>();
+        if (cursorTurnId == null) {
+            records.addAll(messageRepository.findOrphanPage(sessionId, MAX_MESSAGE_PAGE_SIZE));
+        }
+        if (!pageTurns.isEmpty()) {
+            List<Long> turnIds = pageTurns.stream().map(ChatTurn::getId).toList();
+            records.addAll(messageRepository.findByTurnIds(sessionId, turnIds));
+            records.sort(Comparator.comparing(SessionMessage::getId, Comparator.nullsLast(Comparator.naturalOrder())));
+        }
 
         if (records.isEmpty()) {
             return CursorResult.empty();
         }
-        return new CursorResult<>(records, hasMore ? String.valueOf(records.getFirst().getId()) : null, hasMore);
+        // 下一页游标 = 本页最老一轮的 id（pageTurns 已按 id 降序，末位即最老）。
+        Long nextCursorTurnId = hasMore ? pageTurns.getLast().getId() : null;
+        return new CursorResult<>(records, nextCursorTurnId == null ? null : String.valueOf(nextCursorTurnId), hasMore);
     }
 
     /** 会话是否存在，用于参数校验；不加载消息。 */
@@ -180,7 +202,7 @@ public class SessionAggregateService {
     public record SessionTree(Long rootSessionId, List<Session> sessions) {
     }
 
-    /** 游标 = 本页最老一条消息的雪花主键；下一页取 id 更小的（更早）消息。 */
+    /** 游标 = 本页最老一轮的 {@code chat_turn.id}；下一页取 id 更小的（更早的）轮次。 */
     private static Long parseCursor(String cursor) {
         if (cursor == null || cursor.isBlank()) return null;
         try {

@@ -139,6 +139,28 @@ public class ChatTurnRepositoryImpl extends AbstractRepository<ChatTurn, ChatTur
                 .stream().map(this::toModel).toList();
     }
 
+    /**
+     * 按主键倒序取一页轮次。
+     *
+     * <p>与 {@link #findFromId} 同为「按主键切轮次」，只是方向相反、带上限：
+     * 历史首屏取最新的一页，向上翻页取更早的一页。雪花主键单调递增，
+     * {@code id < cursorTurnId} 恒等价于「更早的一轮」。</p>
+     */
+    @Override
+    public List<ChatTurn> findLatest(Long sessionId, Long cursorTurnId, int limit) {
+        if (sessionId == null) {
+            return List.of();
+        }
+        LambdaQueryWrapper<ChatTurnPO> wrapper = Wrappers.<ChatTurnPO>lambdaQuery()
+                .eq(ChatTurnPO::getSessionId, sessionId);
+        if (cursorTurnId != null) {
+            wrapper.lt(ChatTurnPO::getId, cursorTurnId);
+        }
+        return chatTurnMapper.selectList(wrapper.orderByDesc(ChatTurnPO::getId)
+                        .last("LIMIT " + Math.max(limit, 1)))
+                .stream().map(this::toModel).toList();
+    }
+
     @Override
     public int deleteFromId(Long sessionId, Long fromTurnId) {
         if (sessionId == null || fromTurnId == null) {

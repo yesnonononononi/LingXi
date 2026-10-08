@@ -78,6 +78,40 @@ public class SessionMessageRepositoryImpl
     }
 
     @Override
+    public List<SessionMessage> findByTurnIds(Long sessionId, Collection<Long> turnIds) {
+        if (sessionId == null || turnIds == null || turnIds.isEmpty()) {
+            return List.of();
+        }
+        // 分页单位是完整轮次：一页给一组 turnId，整轮的行一次取回，不再按主键区间切。
+        return messageMapper.selectList(Wrappers.<SessionMessagePO>lambdaQuery()
+                        .eq(SessionMessagePO::getSessionId, sessionId)
+                        .in(SessionMessagePO::getTurnId, turnIds)
+                        .ne(SessionMessagePO::getType, SessionMessageType.SYSTEM.name())
+                        .orderByAsc(SessionMessagePO::getId))
+                .stream().map(this::toModel).toList();
+    }
+
+    /**
+     * 取归属未知的旧消息（{@code turn_id IS NULL}）。
+     *
+     * <p>这些行早于「归属落到消息行」的改造，无法进入按轮次分页的口径。整批放到历史最前面
+     * 一次性返回，让它们照常可见；按定义它们必然早于任何一轮，不与轮次分页的边界冲突。</p>
+     */
+    @Override
+    public List<SessionMessage> findOrphanPage(Long sessionId, int limit) {
+        if (sessionId == null) {
+            return List.of();
+        }
+        return messageMapper.selectList(Wrappers.<SessionMessagePO>lambdaQuery()
+                        .eq(SessionMessagePO::getSessionId, sessionId)
+                        .isNull(SessionMessagePO::getTurnId)
+                        .ne(SessionMessagePO::getType, SessionMessageType.SYSTEM.name())
+                        .orderByAsc(SessionMessagePO::getId)
+                        .last("LIMIT " + Math.max(limit, 1)))
+                .stream().map(this::toModel).toList();
+    }
+
+    @Override
     public void appendAll(Long sessionId, Long rootSessionId, List<SessionMessage> messages) {
         if (messages == null || messages.isEmpty()) return;
         for (SessionMessage message : messages) {

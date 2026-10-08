@@ -68,6 +68,17 @@ public interface ChatTurnRepository extends RepositoryTemplate<ChatTurn, Long> {
     List<ChatTurn> findFromId(Long sessionId, Long fromTurnId);
 
     /**
+     * 历史分页：按主键倒序取最多 {@code limit} 条轮次（新 → 旧）。
+     *
+     * <p><b>分页单位从「消息行」改为「完整轮次」后的取数入口</b>。同一轮次的 USER / AI / TOOL 行
+     * 必然整组落在同一页，前端不必再处理「同一轮横跨两页、需逐页累计后再聚合」。
+     * 雪花主键单调递增，因此 {@code id < cursorTurnId} 即可靠地表达「更早的一轮」。</p>
+     *
+     * @param cursorTurnId 上一页最老一轮的 id；为空表示从最新一轮开始
+     */
+    List<ChatTurn> findLatest(Long sessionId, Long cursorTurnId, int limit);
+
+    /**
      * 按一批会话 id 批量取**进行中**轮次（ACCEPTED / RUNNING / WAITING），一次 IN 查询。
      *
      * <p>bootstrap 用它补「历史分页取不到的活跃轮次」：已终结轮次走 {@code history.turns}，

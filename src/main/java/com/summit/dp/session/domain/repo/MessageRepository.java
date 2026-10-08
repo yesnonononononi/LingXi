@@ -32,6 +32,31 @@ public interface MessageRepository extends RepositoryTemplate<SessionMessage, Lo
     List<SessionMessage> findLatest(Long sessionId, Long cursorId, int limit);
 
     /**
+     * 按轮次集合取消息，按雪花主键升序（旧 → 新）。
+     *
+     * <p><b>为什么按轮次而非按主键区间取</b>：分页单位从「消息行」改为「完整轮次」后，
+     * 一页的内容由「一组 turnId」确定，而不是「一段主键区间」。这样同一轮次的
+     * USER / AI / TOOL 行必然整组落在同一页，前端不必再处理「同一轮横跨两页」。</p>
+     *
+     * <p>只取 {@code turn_id IN (...)} 的行：归属未知的旧行（{@code turn_id} 为 null）
+     * 不在此列，它们由 {@link #findOrphanPage(Long, int)} 单独兜底。</p>
+     *
+     * @param turnIds 本页轮次 ID 集合；空集合返回空列表
+     */
+    List<SessionMessage> findByTurnIds(Long sessionId, Collection<Long> turnIds);
+
+    /**
+     * 取「归属未知」的历史消息（{@code turn_id IS NULL}），升序返回。
+     *
+     * <p>本次改造之前的旧数据没有轮次归属，无法进入按轮次分页的口径；把它们整批放在
+     * 历史最前面一次性返回，避免「按轮次翻页时旧消息凭空消失」。这些行按定义必然早于
+     * 任何一轮，因此不与轮次分页的边界冲突。</p>
+     *
+     * @param limit 上限，防止历史脏数据把一页撑爆
+     */
+    List<SessionMessage> findOrphanPage(Long sessionId, int limit);
+
+    /**
      * 落库并随通知带上根身份。
      *
      * @param rootSessionId v3 投递目标（根会话）；子会话消息必须传根，否则投错连接桶

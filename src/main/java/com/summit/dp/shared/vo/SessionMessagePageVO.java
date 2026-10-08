@@ -1,5 +1,6 @@
 package com.summit.dp.shared.vo;
 
+import com.summit.dp.shared.vo.block.TurnViewVO;
 import com.summit.dp.turn.application.vo.ChatTurnVO;
 import lombok.Builder;
 import lombok.Data;
@@ -32,4 +33,15 @@ public class SessionMessagePageVO {
      * 没有对应轮次，因此可能为空。</p>
      */
     private Map<String, ChatTurnVO> turns;
+
+    /**
+     * 本页轮次的 Block 视图，键为 {@code turnId} 字符串。
+     *
+     * <p><b>与 {@link #turns} 的关系</b>：{@code turns} 只给轮次的元信息（状态 / 用量 / 历时），
+     * {@code turnViews} 给该轮的**展示内容与顺序**（块列表）。历史与实时共用同一份
+     * {@link TurnViewVO} 形状，前端因此只需一套「按 blockId 更新」的对账逻辑。</p>
+     *
+     * <p>分页单位是完整轮次，所以这里每个 turnId 恒是完整的一轮，不会出现「半轮」。</p>
+     */
+    private Map<String, TurnViewVO> turnViews;
 }

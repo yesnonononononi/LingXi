@@ -1,10 +1,14 @@
 package com.summit.dp.session;
 
 import com.summit.ddd.application.vo.Result;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.agent.domain.repository.AgentRepository;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
+import com.summit.dp.session.application.convert.ToolBlockStatusResolver;
+import com.summit.dp.session.application.convert.TurnViewAssembler;
 import com.summit.dp.session.application.service.SessionAggregateService;
 import com.summit.dp.session.application.service.SessionMessageQueryService;
+import com.summit.dp.session.application.service.TurnViewService;
 import com.summit.dp.session.application.service.impl.SessionServiceImpl;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.Session;
@@ -66,7 +70,11 @@ class SessionMessagePageTurnsTest {
     private final SessionServiceImpl sessionService = new SessionServiceImpl(
             aggregateService, workspaceService, sessionRepository, messageQueryService,
             executionQueryService, teamService, agentRepository,
-            chatTurnService, new ChatTurnConverter());
+            chatTurnService, new ChatTurnConverter(), new TurnViewService(
+                    mock(com.summit.dp.session.domain.repo.MessageRepository.class),
+                    mock(com.summit.dp.turn.domain.repo.ChatTurnRepository.class),
+                    mock(com.summit.dp.toolcall.domain.repo.ToolCallRepository.class),
+                    new TurnViewAssembler(new ObjectMapper(), mock(ToolBlockStatusResolver.class))));
 
     @BeforeEach void ownedSessionHasRevision() {
         when(aggregateService.requireOwned(SESSION_ID)).thenReturn(Session.builder().id(SESSION_ID).rootSessionId(0L).build());

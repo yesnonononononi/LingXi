@@ -9,6 +9,7 @@ import com.summit.dp.execution.application.service.ExecutionQueryService;
 import com.summit.dp.session.application.command.SessionCommand;
 import com.summit.dp.session.application.service.SessionService;
 import com.summit.dp.session.application.service.SessionAggregateService;
+import com.summit.dp.session.application.service.TurnViewService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.repo.SessionRepository;
@@ -20,6 +21,7 @@ import com.summit.dp.shared.vo.SessionMessageVO;
 import com.summit.dp.shared.vo.SessionTreeVO;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.shared.vo.WorkspaceVO;
+import com.summit.dp.shared.vo.block.TurnViewVO;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.turn.application.convert.ChatTurnConverter;
@@ -71,6 +73,8 @@ public class SessionServiceImpl implements SessionService {
     /** 业务轮次读侧：历史接口按 executionId 批量反查轮次（一次 IN，不做 N+1）。 */
     private final ChatTurnService chatTurnService;
     private final ChatTurnConverter chatTurnConverter;
+    /** 轮次 Block 视图装配：历史与实时共用同一口径（见 TurnViewService 类注释）。 */
+    private final TurnViewService turnViewService;
 
     @Override
     public Result<Long> initialize(String input, Long workspaceId, Long teamId) {
@@ -198,11 +202,32 @@ public class SessionServiceImpl implements SessionService {
                 .records(loaded.records())
                 .toolCallCount(loaded.toolCallCount())
                 .turns(buildTurnViews(ownedTurns, now))
+                .turnViews(buildBlockViews(ownedSession, ownedTurns))
                 .historyRevision(revision)
                 .messageCursor(slice.nextCursor())
                 .nextCursor(slice.nextCursor())
                 .hasMore(slice.hasMore())
                 .build());
+    }
+
+    /**
+     * 装配本页轮次的 Block 视图。
+     *
+     * <p><b>复用已装载的轮次字典</b>：{@code ownedTurns} 已做过归属校验与一次 IN 装载，
+     * 这里直接用它调用装配服务，不再回查一遍轮次。历史与实时共用同一装配口径
+     * （{@link TurnViewService}），前端只需一套对账逻辑。</p>
+     *
+     * <p>{@code viewVersion} 用轮次自身的版本（{@code chat_turn.version} 快照）：
+     * 历史是「已落定的批次」，前端拿到更小的批次号（乱序的旧帧）应丢弃。</p>
+     */
+    private Map<String, TurnViewVO> buildBlockViews(Session session, Map<Long, ChatTurn> ownedTurns) {
+        Map<String, TurnViewVO> result = new LinkedHashMap<>();
+        for (ChatTurn turn : ownedTurns.values()) {
+            long viewVersion = turn.getVersion() == null ? 0L : turn.getVersion();
+            turnViewService.assembleTurnView(session, turn, viewVersion)
+                    .ifPresent(view -> result.put(String.valueOf(turn.getId()), view));
+        }
+        return result;
     }
 
     /** 收集本页去重后的轮次 ID，用于一次 IN 批量装配轮次字典。 */

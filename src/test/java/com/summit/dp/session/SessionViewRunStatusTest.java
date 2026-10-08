@@ -7,6 +7,7 @@ import com.summit.core.agent.ExecutionState;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
 import com.summit.dp.session.application.service.SessionAggregateService;
 import com.summit.dp.session.application.service.SessionMessageQueryService;
+import com.summit.dp.session.application.service.TurnViewService;
 import com.summit.dp.session.application.service.impl.SessionServiceImpl;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
@@ -50,7 +51,7 @@ class SessionViewRunStatusTest {
             executionQueryService,
             mock(com.summit.dp.team.application.service.TeamService.class),
             mock(AgentRepository.class),
-            mock(ChatTurnService.class), new ChatTurnConverter());
+            mock(ChatTurnService.class), new ChatTurnConverter(), mock(TurnViewService.class));
 
     @Test
     @DisplayName("tree 出参组合：无执行→IDLE、RUNNING、SUSPENDED、完成后→IDLE+COMPLETED")

@@ -125,6 +125,34 @@ public class SseEventPublisher {
     }
 
     /**
+     * 定向推送一条**业务**事件（块快照 / 块增量）。
+     *
+     * <p><b>与框架事件的差别只在载荷与事件名</b>：框架事件的事件名取自
+     * {@code AgentEvent.type()}，业务事件的事件名由调用方显式给出（{@link BusinessEventEnvelope}
+     * 的 {@code type} / 事件名常量）。两者共用同一套分桶、同一套摘流语义 ——
+     * 传输层不为业务多开一条路。</p>
+     *
+     * <p>与 {@link #publish(long, AgentEvent)} 的失败语义完全一致：无订阅者静默丢弃，
+     * 写失败摘流且不关其它流。</p>
+     *
+     * @param rootSessionId 路由用根会话（子会话的事件也必须用根，否则投错桶）
+     * @param eventName     业务事件名
+     * @param payload       业务载荷；序列化交给 emitter 的转换器
+     */
+    public void publishBusiness(long rootSessionId, String eventName, Object payload) {
+        if (eventName == null || eventName.isBlank() || payload == null) {
+            return;
+        }
+        Set<SseEmitter> bucket = emittersByRootSession.get(rootSessionId);
+        if (bucket == null || bucket.isEmpty()) {
+            return;
+        }
+        for (SseEmitter emitter : bucket) {
+            sendBusiness(rootSessionId, emitter, eventName, payload);
+        }
+    }
+
+    /**
      * 结束一条流的写入：常规结束走 complete，让容器按 SSE 协议收尾。
      *
      * <p>只用于<b>一次性短命流</b> —— 调用方自己 connect 出来、只承载一次动作（命令审批、
@@ -159,6 +187,30 @@ public class SseEventPublisher {
             );
         } catch (Exception e) {
             log.debug("流事件发送失败，摘除该流: error={}", causeSummary(e));
+            remove(rootSessionId, emitter);
+            try {
+                emitter.completeWithError(e);
+            } catch (Exception ignored) {
+                // 收尾本身失败无所谓：连接已经不可用，注册表也已清理。
+            }
+        }
+    }
+
+    /**
+     * 写出一条**业务**事件帧。
+     *
+     * <p>与 {@link #send} 共用摘流语义：写失败即摘掉这一条，不影响其它流。
+     * 但事件名不再取自框架事件 —— 业务事件名由调用方给出
+     * （见 {@link #publishBusiness(long, String, Object)}）。</p>
+     *
+     * <p>为什么写失败只记 DEBUG：SSE 是尽力而为的推送通道，不是可靠投递。会话状态另有
+     * 历史接口兜底，丢一帧不影响正确性；真正的告警交给容器异步错误路径。</p>
+     */
+    private void sendBusiness(long rootSessionId, SseEmitter emitter, String eventName, Object payload) {
+        try {
+            emitter.send(SseEmitter.event().name(eventName).data(payload));
+        } catch (Exception e) {
+            log.debug("业务事件发送失败，摘除该流: event={}, error={}", eventName, causeSummary(e));
             remove(rootSessionId, emitter);
             try {
                 emitter.completeWithError(e);
