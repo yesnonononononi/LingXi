@@ -1,7 +1,7 @@
 import { ref, type Ref, type ComputedRef } from 'vue';
 import { chatApi } from '../../services/chat';
 import type { ChatSession, ChatMessage } from '../../types/chat';
-import { buildSessionMarkdown } from '../../utils/session';
+import { buildSessionMarkdown, mergeMessagesByTurn, mergeRawRecords, mergeTurns, mergeTurnViews, synthesizeFailedTurnBubbles } from '../../utils/session';
 import { isTempSessionId } from '../../utils/ids';
 
 export interface ChatSessionListOptions {
@@ -80,14 +80,38 @@ export function useChatSessionList(options: ChatSessionListOptions) {
       const detail = detailRes.data;
       const idx = localSessions.value.findIndex(s => s.id === id);
       if (idx !== -1) {
+        const previous = localSessions.value[idx];
+        // 详情请求在途期间，实时流可能已经往这个会话写进了正文（用户点进一个正在跑的会话时必然如此）。
+        // 直接用 `...detail` 展开会把 messages 整体换成「请求发起那一刻的快照」，
+        // 在途到达的正文随之消失（用户看到内容闪一下又没了）。
+        // 因此 messages 按轮次合并：详情只补齐过程数据，已到达的实时正文保留。
+        const mergedTurns = mergeTurns(previous.turns, detail.turns);
+        const mergedMessages = mergeMessagesByTurn({
+          local: previous.messages,
+          history: detail.messages,
+        });
         localSessions.value[idx] = {
-          ...localSessions.value[idx],
+          ...previous,
           ...detail,
+          // ⚠️ 合成失败气泡必须在合并**之后**、用**合并后**的 turns：
+          //    失败轮（模型接口 400 这类）在库里只有 USER 行，没有 assistant 行可合并，
+          //    只能按 turns 判 FAILED 后补气泡，否则用户点进失败会话什么都看不到。
+          messages: synthesizeFailedTurnBubbles(mergedMessages, mergedTurns),
+          // 原始记录同样要合并：详情只带回首屏一页，直接覆盖会让「已经翻开的更早页」在下次聚合时丢失
+          rawMessageRecords: mergeRawRecords(detail.rawMessageRecords, previous.rawMessageRecords),
+          turns: mergedTurns,
+          // 块视图同理：不合并就会把「已翻开的更早页」学到的块视图丢掉，
+          // 下次重新聚合时那几轮的顺序会静默退回前端自造口径。
+          turnViews: mergeTurnViews(previous.turnViews, detail.turnViews),
           hasMoreMessages: !!detail.hasMoreMessages,
           nextMessageCursor: detail.nextMessageCursor ?? null,
         };
       } else {
-        localSessions.value.unshift(detail);
+        // 首屏走这里（会话列表里第一次点开）：turns 来自 detail（可能缺省，合成器按空表处理）
+        localSessions.value.unshift({
+          ...detail,
+          messages: synthesizeFailedTurnBubbles(detail.messages, detail.turns ?? {}),
+        });
       }
 
       seedContextUsageFromTree(detail.id, {

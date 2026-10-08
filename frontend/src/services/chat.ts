@@ -5,7 +5,7 @@ import { AgentAPI } from './agent';
 import { TeamAPI } from './team';
 import { ToolCallAPI } from './toolCall';
 import { ApiError, classifyResult } from './interceptor';
-import { aggregateSessionMessages } from '../utils/session';
+import { aggregateRecordsByIdentity } from '../utils/session';
 import { isOk } from '../utils/api';
 import { createLocalId, createTempSessionId } from '../utils/ids';
 import { extractDirName } from '../utils/path';
@@ -31,6 +31,7 @@ import type {
   SessionMessageVO,
   ToolCallDecisionReceipt
 } from '../types/chat';
+import type { TurnViewVO } from '../types/block';
 
 /**
  * fetch* 的判别结果：让调用方能区分「加载失败（可重试）」与「确实为空」。
@@ -302,9 +303,16 @@ export const chatApi = {
    * 按游标分页拉取会话消息历史
    * 对应后端 @GetMapping("/{id}/messages")
    *
+   * <p><b>本页的 {@code messages} 只是「仅本页记录」的派生视图，仅当调用方确实只加载一页时才可用。</b>
+   * 后端的页按原始消息行切、不按轮次切，同一 turnId 可横跨两页；逐页聚合会为同一轮各建一个助手气泡。
+   * 多页入口必须自行累积 {@code records}，再用 {@link aggregateRecordsByIdentity} 一次性聚合。</p>
+   *
    * <p>返回值除 messages 外还透出本页的 turns 摘要字典（键 = turnId）：每条消息的
-   * turnId 已由 {@link aggregateSessionMessages} 落到 ChatMessage 上，调用方据此把
-   * token / 模型 / 耗时 / 状态绑定到回答组。</p>
+   * turnId 已由聚合器落到 ChatMessage 上，调用方据此把 token / 模型 / 耗时 / 状态绑定到回答组。</p>
+   *
+   * <p>同时透出本页的 {@code turnViews} 块视图字典（键 = turnId）：多页入口必须与 records 一样
+   * **逐页累计**再一并传入 {@link aggregateRecordsByIdentity}，否则重新聚合时那一轮的块顺序
+   * 会退回前端自造口径。</p>
    */
   async fetchSessionMessages(
     id: string | number,
@@ -314,6 +322,7 @@ export const chatApi = {
     records: SessionMessageVO[];
     messages: ChatMessage[];
     turns: Record<string, ChatTurn>;
+    turnViews: Record<string, TurnViewVO>;
     nextCursor: string | null;
     hasMore: boolean;
   }>> {
@@ -321,14 +330,18 @@ export const chatApi = {
       const res = await SessionAPI.messages(id, cursor, size);
       if (isOk(res.code) && res.data) {
         const page = res.data;
-        const parsedMsgs = aggregateSessionMessages(page.records, String(id));
+        const pageRecords = page.records ?? [];
+        // 单页入口（首屏详情、子会话抽屉）直接可用 messages；多页入口用 records + turnViews 自聚合。
+        const pageTurnViews = page.turnViews ?? {};
+        const parsedMsgs = aggregateRecordsByIdentity(undefined, pageRecords, String(id), pageTurnViews);
         return {
           ok: true,
           data: {
-            records: page.records ?? [],
+            records: pageRecords,
             messages: parsedMsgs,
             // 无轮次时后端返回 {} 或缺失 —— 统一归一为 {}，调用方按「无摘要」处理（≠ 用量为 0）
             turns: page.turns ?? {},
+            turnViews: pageTurnViews,
             nextCursor: page.nextCursor ?? null,
             hasMore: Boolean(page.hasMore)
           }
@@ -336,7 +349,7 @@ export const chatApi = {
       }
       if (isOk(res.code)) {
         // code 成功但无 data：按空页处理（不是失败）
-        return { ok: true, data: { records: [], messages: [], turns: {}, nextCursor: null, hasMore: false } };
+        return { ok: true, data: { records: [], messages: [], turns: {}, turnViews: {}, nextCursor: null, hasMore: false } };
       }
       return { ok: false, error: describeFetchFailure(classifyResult(res)) };
     } catch (err) {
@@ -495,13 +508,16 @@ export const chatApi = {
           lastOutcome: meta?.lastOutcome,
           subSessions: enrichedSubSessions,
           messages: messages,
-          rawRecords: pageResult.records,
+          // 首屏的原始记录：翻页 / 对账都以它为唯一累计对象（见 ChatSession.rawMessageRecords）
+          rawMessageRecords: pageResult.records,
           // 上下文用量快照（root 来自 tree.root 的会话表快照）：供指示器在无事件空窗展示
           contextTokenCount: meta?.contextTokenCount ?? null,
           contextMaxTokens: meta?.contextMaxTokens ?? null,
           contextRatio: meta?.contextRatio ?? null,
           // 首屏轮次摘要表：回答组的 token/模型/耗时/状态来源
           turns: pageResult.turns,
+          // 首屏块视图表：翻页 / 对账重新聚合时必须一并传入（见 ChatSession.turnViews）
+          turnViews: pageResult.turnViews,
           hasMoreMessages: pageResult.hasMore,
           nextMessageCursor: pageResult.nextCursor
         }

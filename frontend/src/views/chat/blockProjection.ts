@@ -160,6 +160,27 @@ export function projectTurnView(bubble: ChatMessage, view: TurnViewVO): void {
 }
 
 /**
+ * 把一批轮次视图投影到**已聚合的历史消息**上 —— 历史路径的唯一接线点。
+ *
+ * <p>后端按页随分页响应下发 {@code turnViews}（键 = turnId，见 {@code SessionMessagePageVO}），
+ * 每个键的视图是该轮的**完整**块列表（装配器按 turnId 查全部消息，与本页切在哪无关），
+ * 因此整页一次性投影即可，无需像实时那样比 {@code viewVersion}。</p>
+ *
+ * <p><b>只认「助手气泡 + 该轮有视图」</b>：视图缺失的轮次保持聚合器的原样 ——
+ * 旧数据、装配返回空、或后端未下发时，界面回落到原历史聚合结果，不会因为「没有视图」而变空。</p>
+ */
+export function projectTurnViews(messages: ChatMessage[], turnViews?: Record<string, TurnViewVO> | null): void {
+  if (!turnViews) return;
+  for (const message of messages) {
+    if (!message || message.role !== 'assistant') continue;
+    const turnId = message.turnId;
+    if (turnId === null || turnId === undefined) continue;
+    const view = turnViews[String(turnId)];
+    if (view) projectTurnView(message, view);
+  }
+}
+
+/**
  * 把单块增量（{@code BLOCK_UPSERT}）并入现有气泡。
  *
  * <p><b>为什么不重投影整轮</b>：增量事件的 {@code blocks} 只含变化的那一块，无法整体重写。

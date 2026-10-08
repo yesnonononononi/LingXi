@@ -1,8 +1,9 @@
 import { ref, nextTick } from 'vue';
 import type { Ref, ComputedRef } from 'vue';
-import type { ChatMessage, ChatSession, ChatTurn } from '../../types/chat';
+import type { ChatSession, ChatTurn, SessionMessageVO } from '../../types/chat';
+import type { TurnViewVO } from '../../types/block';
 import { chatApi } from '../../services/chat';
-import { mergeTurns, mergeSubSessionTree, mergeMessagesByTurn } from '../../utils/session';
+import { aggregateRecordsByIdentity, mergeRawRecords, mergeTurns, mergeTurnViews, mergeSubSessionTree, mergeMessagesByTurn, synthesizeFailedTurnBubbles } from '../../utils/session';
 import { useChatSessionStore } from '../../stores/chatSessionStore';
 
 /** 加载更多历史时保证加载动画可见的最短展示时长（毫秒） */
@@ -124,9 +125,12 @@ export function useChatHistory(options: ChatHistoryOptions) {
     try {
       let cursor: string | null = null;
       let hasMore = false;
-      // 逐页累积的历史消息：所有页合并完再一次性写回，避免中间态把「局部历史」当成全量覆盖正文
-      const collected: ChatMessage[] = [];
+      // 逐页累积「原始记录」而非聚合后的消息：后端按原始行分页，同一 turnId 可横跨两页，
+      // 逐页聚合会为同一轮各建一个助手气泡（id 相同、过程各半）。必须合页去重后再聚合一次。
+      const collectedRecords: SessionMessageVO[] = [];
       let collectedTurns: Record<string, ChatTurn> = {};
+      // 块视图与 records 同寿：逐页累计，最后与记录一起进唯一聚合点（见 ChatSession.turnViews）。
+      let collectedTurnViews: Record<string, TurnViewVO> = {};
 
       for (let pageIdx = 0; pageIdx < RECONCILE_MAX_PAGES; pageIdx++) {
         const msgRes = await chatApi.fetchSessionMessages(ownerSessionId, cursor, 100);
@@ -135,25 +139,33 @@ export function useChatHistory(options: ChatHistoryOptions) {
           console.warn('主流结束消息对账失败:', msgRes.error);
           break;
         }
-        collected.unshift(...msgRes.data.messages);
+        // 本次请求的页更早，故插到已累积记录之前（mergeRawRecords 以先出现者为准）
+        collectedRecords.unshift(...(msgRes.data.records ?? []));
         collectedTurns = mergeTurns(collectedTurns, msgRes.data.turns);
+        collectedTurnViews = mergeTurnViews(collectedTurnViews, msgRes.data.turnViews);
 
         hasMore = msgRes.data.hasMore;
         if (!msgRes.data.hasMore || !msgRes.data.nextCursor) break;
         cursor = msgRes.data.nextCursor;
       }
 
+      const collected = aggregateRecordsByIdentity(undefined, collectedRecords, ownerSessionId, collectedTurnViews);
+
       const cur = localSessions.value.find(s => s.id === ownerSessionId);
       if (cur) {
+        // 轮次摘要先 union：合成失败气泡要按 turns 判 FAILED，且本轮可能是「已终结但缺 assistant 行」
+        cur.turns = mergeTurns(cur.turns, collectedTurns);
         // 按轮次合并：未确认终结的轮保留本地实时正文、历史只补过程数据；
         // 已终结轮用权威历史整体替换。
-        cur.messages = mergeMessagesByTurn({
+        // ⚠️ 合成在 mergeMessagesByTurn **之后**：合并只处理「历史里已经存在的行」，
+        //    而失败轮（如模型接口 400）在 session_message 里根本没有 assistant 行，
+        //    必须等合并定型后按 turns 补 —— 否则刷新后失败提示会消失。
+        const merged = mergeMessagesByTurn({
           local: cur.messages,
           history: collected,
           terminalTurnIds: terminalTurnIds ?? null,
         });
-        // 轮次摘要逐页 union（键=turnId，后到覆盖先到）：气泡工具条的 token/耗时/模型/状态权威来源
-        cur.turns = mergeTurns(cur.turns, collectedTurns);
+        cur.messages = synthesizeFailedTurnBubbles(merged, cur.turns);
         if (!hasMore) {
           cur.hasMoreMessages = false;
           cur.nextMessageCursor = null;
@@ -188,9 +200,19 @@ export function useChatHistory(options: ChatHistoryOptions) {
 
       // 滚动补偿：写入前记录高度与偏移，渲染完成后恢复。
       messagesContainerRef.value?.beforePrepend();
-      session.messages = [...pageResultRes.data.messages, ...(session.messages || [])];
+      // 往前翻页 = 拿到更早的原始记录，必须与已加载记录「合页去重后再整体聚合」：
+      // 直接往 messages 前面拼本页聚合结果，会把横跨两页的那一轮拆成两个同 id 气泡，
+      // 且旧页的正文会被本页（更新）的聚合结果顶掉。
+      session.rawMessageRecords = mergeRawRecords(pageResultRes.data.records, session.rawMessageRecords);
       // 更早页的轮次摘要 union 进会话表：翻页后组尾工具条仍能拿到权威 token/耗时
       session.turns = mergeTurns(session.turns, pageResultRes.data.turns);
+      // 块视图与原始记录同寿：不累计它，重新聚合时那一轮的块顺序会退回前端自造口径
+      session.turnViews = mergeTurnViews(session.turnViews, pageResultRes.data.turnViews);
+      // 合成失败气泡必须用**最新的** turns：更早页里可能正好有某个 FAILED 轮
+      session.messages = synthesizeFailedTurnBubbles(
+        aggregateRecordsByIdentity(undefined, session.rawMessageRecords, session.id, session.turnViews),
+        session.turns
+      );
       await nextTick();
       messagesContainerRef.value?.afterPrepend();
 

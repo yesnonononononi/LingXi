@@ -176,6 +176,14 @@ export interface ChatSession {
    */
   turns?: Record<string, ChatTurn>;
   /**
+   * 本会话已加载的**块视图**表：键 = turnId 字符串。
+   *
+   * <p>与 {@link turns} 同级、同来源（消息分页接口每页额外返回的 turnViews 字典逐页合并，
+   * 后到的覆盖先到的）：{@code turns} 管统计/状态元数据，本字段管**块内容与顺序**。
+   * 翻页 / 对账重新聚合时必须把它一起传进去，否则同一轮的气泡会退回前端自造顺序。</p>
+   */
+  turnViews?: Record<string, TurnViewVO>;
+  /**
    * 本会话已加载的原始服务端消息记录（按时间正序，按记录 id 去重）。
    *
    * <p>这是「翻页 / 对账」的唯一累计对象：后端的页按原始消息行切、不按轮次切，
@@ -205,6 +213,8 @@ export interface SubSessionVO extends SessionVO {
   messages?: ChatMessage[];
   /** 本子会话已加载的轮次摘要表（键 = turnId），由消息分页接口逐页 union 合并；语义同 {@link ChatSession.turns}。 */
   turns?: Record<string, ChatTurn>;
+  /** 本子会话已加载的块视图表（键 = turnId），逐页合并；语义同 {@link ChatSession.turnViews}。 */
+  turnViews?: Record<string, TurnViewVO>;
   /**
    * 本子会话已加载的原始服务端消息记录（按时间正序，按记录 id 去重）；语义同
    * {@link ChatSession.rawMessageRecords} —— 翻页/对账的唯一累计对象，合页去重后再统一聚合。

@@ -1,9 +1,12 @@
 import type { ChatMessage, ChatSession, ChatTurn, ToolCallVO, SessionMessageVO, SubSessionVO } from '../types/chat';
+import type { TurnViewVO } from '../types/block';
 import type { ToolExecutionState } from './toolMeta';
 import { isEditFileTool, resolveToolCategory, resolveToolMeta } from './toolMeta';
 import { asObject, toObject, toText } from './json';
 import { isTempSessionId } from './ids';
 import { parseTimestamp } from './time';
+import { upsertPromptCard } from './toolCallCard';
+import { projectTurnViews } from '../views/chat/blockProjection';
 
 /**
  * 将后端 SessionMessageVO.records 解析为前端展示所用的标准 ChatMessage[] 结构。
@@ -80,17 +83,22 @@ export interface MessageTurnBinding {
  *
  * <p>回答组的 token / 模型 / 耗时 / 状态是整轮属性，同组消息共享同一 turn。turnId 缺失
  * （旧数据）或轮次表无该键时保持 null —— 不得回落成会话累计用量或 0。</p>
+ *
+ * <p><b>键必须是消息对象引用，不能是 {@code m.id}</b>：聚合器会给同一轮的助手气泡发稳定
+ * id（{@code msg-<sessionId>-turn-<turnId>}），跨页各聚合一次就会产生两条 <b>同 id 不同对象</b>
+ * 的气泡；按 id 做键时后者覆盖前者，两条都被读成 {@code isGroupTail: true}，工具条在同一轮重复出现。
+ * 键用对象引用后两条各自绑定，组尾仍唯一。</p>
  */
 export function buildMessageTurnMap(
   messages: ChatMessage[],
   turns?: Record<string, ChatTurn> | null
-): Map<string, MessageTurnBinding> {
-  const map = new Map<string, MessageTurnBinding>();
+): Map<ChatMessage, MessageTurnBinding> {
+  const map = new Map<ChatMessage, MessageTurnBinding>();
   for (const group of groupMessagesByTurn(messages)) {
     const lastIdx = group.messages.length - 1;
     const turn = group.turnId != null ? turns?.[group.turnId] ?? null : null;
     group.messages.forEach((m, i) => {
-      map.set(m.id, { turn, isGroupTail: i === lastIdx });
+      map.set(m, { turn, isGroupTail: i === lastIdx });
     });
   }
   return map;
@@ -106,6 +114,21 @@ export function mergeTurns(
   base: Record<string, ChatTurn> | null | undefined,
   incoming: Record<string, ChatTurn> | null | undefined
 ): Record<string, ChatTurn> {
+  if (!base && !incoming) return {};
+  return { ...(base ?? {}), ...(incoming ?? {}) };
+}
+
+/**
+ * 合并不同分页的块视图表（键 = turnId）。
+ *
+ * <p><b>后到的覆盖先到的</b>：装配器按 turnId 读该轮的**全部**消息，与「本页切在哪」无关，
+ * 因此任意一页给出的同轮视图都是完整的；而后发起的请求看到的是更新的库状态，故以它为准。
+ * 与 {@link mergeTurns} 同口径，不做版本比较。</p>
+ */
+export function mergeTurnViews(
+  base: Record<string, TurnViewVO> | null | undefined,
+  incoming: Record<string, TurnViewVO> | null | undefined
+): Record<string, TurnViewVO> {
   if (!base && !incoming) return {};
   return { ...(base ?? {}), ...(incoming ?? {}) };
 }
@@ -182,17 +205,66 @@ export interface MergeMessagesByTurnInput {
   terminalTurnIds?: Iterable<string> | null;
 }
 
-/** 合并一条回答组内的过程数据：按 id 补齐本地缺失项，本地已有项保持不动（实时更新更近）。 */
-function complementProcessData<T extends { id?: string }>(
+/** 过程类集合（思考 / 中间正文 / 工具 / 卡片 / 时间线）逐项合并时要读写的键。 */
+interface ProcessItem {
+  id?: string;
+  text?: string;
+  content?: string;
+  title?: string;
+  toolName?: string;
+  order?: number;
+}
+
+/**
+ * 过程项的「内容指纹」：id 之外的第二种身份，只用于**思考与中间正文**。
+ *
+ * <p>实时路径的过程项 id 由「气泡 id + 序号」派生（{@code step-<bubbleId>-<n>}、
+ * {@code ai-<bubbleId>-<n>}），历史路径由「记录 id」派生（{@code step-<sid>-<recordId>}），
+ * <b>同一段内容两侧 id 必然不同</b>。只按 id 去重会让一段思考 / 中间正文在对账后变成两份
+ * （用户看到同一段思考出现两次）。</p>
+ *
+ * <p><b>只对「内容即身份」的项使用（思考 / 中间正文）</b>：这两类一个气泡内不会出现两段
+ * 完全相同的内容，指纹安全。工具 / 卡片 / 时间线项<b>不能</b>用内容当身份 ——
+ * 同一轮连续读多个文件时 {@code toolName} 全等，按内容去重会把 58 个真实调用当成重复项丢掉。</p>
+ *
+ * <p>指纹带类型前缀：思考与中间正文可以内容完全相同（都是模型输出），
+ * 不带前缀会把「一段思考」和「同文的中间正文」误合并成一条。</p>
+ */
+function buildProcessFingerprint(kind: string, item: ProcessItem): string {
+  return `${kind}\u0000${item.content ?? item.text ?? ''}`;
+}
+
+/**
+ * 合并一组过程项：本地已有项保持不动（更近），历史项按「id，或内容指纹（仅文本类）」去重后补进来。
+ *
+ * <p>两个判据的分工：<b>id 判据</b>负责同一来源的重复加载（幂等），对所有类型都成立；
+ * <b>内容指纹</b>只对 {@code textKinded} 的集合（思考 / 中间正文）生效，用于消除
+ * 「实时已渲染 + 历史已落库」这对 id 不同内容相同的项。</p>
+ *
+ * <p>顺序保持「本地项在前、历史补进来的在后」：实时项 order 已由
+ * {@code TurnStreamReducer#allocateOrder} 依当前最大 order 递增，本地在前即与 order 序一致。</p>
+ */
+function complementProcessData<T extends ProcessItem>(
+  kind: string,
   localItems: T[] | undefined,
-  historyItems: T[] | undefined
+  historyItems: T[] | undefined,
+  textKinded: boolean
 ): T[] | undefined {
   if (!historyItems || historyItems.length === 0) return localItems;
   const merged = [...(localItems ?? [])];
   const localIds = new Set(merged.map(item => String(item?.id ?? '')));
+  const localFingerprints = textKinded
+    ? new Set(merged.map(item => buildProcessFingerprint(kind, item)))
+    : new Set<string>();
   for (const item of historyItems) {
     const id = String(item?.id ?? '');
-    if (!id || localIds.has(id)) continue;
+    if (id && localIds.has(id)) continue;
+    if (textKinded) {
+      const fingerprint = buildProcessFingerprint(kind, item);
+      if (localFingerprints.has(fingerprint)) continue;
+      localFingerprints.add(fingerprint);
+    }
+    localIds.add(id);
     merged.push(item);
   }
   return merged;
@@ -222,15 +294,22 @@ function complementTurnKeepingLocalBody(
 ): ChatMessage[] {
   if (localTurn.length === 0) return historyTurn;
 
+  // 必须汇总该轮**全部**历史助手的过程数据，不能只取第一条：分页窗口滑进一轮中间时，
+  // 该轮会在两页各产出一条助手气泡（id 相同、过程各半），只认第一条就会丢掉另一页的工具 /
+  // 思考 —— 表现为「对账后工具数少了一半」。
+  const thoughtSteps = historyTurn.flatMap(item => item.role === 'assistant' ? (item.thoughtSteps ?? []) : []);
+  const toolCalls = historyTurn.flatMap(item => item.role === 'assistant' ? (item.toolCalls ?? []) : []);
+  const aiMessages = historyTurn.flatMap(item => item.role === 'assistant' ? (item.aiMessages ?? []) : []);
+  const promptCards = historyTurn.flatMap(item => item.role === 'assistant' ? (item.promptCards ?? []) : []);
+
   const merged = localTurn.map(message => {
-    const historyAssistant = historyTurn.find(item => item.role === 'assistant');
-    if (message.role !== 'assistant' || !historyAssistant) return message;
+    if (message.role !== 'assistant') return message;
     return {
       ...message,
-      thoughtSteps: complementProcessData(message.thoughtSteps, historyAssistant.thoughtSteps),
-      toolCalls: complementProcessData(message.toolCalls, historyAssistant.toolCalls),
-      aiMessages: complementProcessData(message.aiMessages, historyAssistant.aiMessages),
-      promptCards: complementProcessData(message.promptCards, historyAssistant.promptCards)
+      thoughtSteps: complementProcessData('thinking', message.thoughtSteps, thoughtSteps, true),
+      toolCalls: complementProcessData('tool', message.toolCalls, toolCalls, false),
+      aiMessages: complementProcessData('text', message.aiMessages, aiMessages, true),
+      promptCards: complementProcessData('card', message.promptCards, promptCards, false)
     };
   });
 
@@ -514,6 +593,38 @@ export function mergeRawRecords(
 const TIMELINE_SLOT_STRIDE = 100;
 
 /**
+ * 各分页入口统一调用的聚合口径：先按记录 id 合页去重，再一次性聚合。
+ *
+ * <p><b>为什么不能逐页聚合后再拼数组</b>：后端的「页」按 <b>原始消息行</b> 切，不按轮次切，
+ * 同一 turnId 可以横跨两页。聚合器内部的状态（助手气泡、AI 文本表）是<b>单次调用</b>作用域，
+ * 逐页调用会为同一轮各建一个气泡 —— 两个气泡 id 相同、过程集合各只有半轮，渲染时互相顶掉。</p>
+ *
+ * <p>合页顺序固定为「较早页在前」：{@link mergeRawRecords} 按先出现者优先，越早的页越完备。</p>
+ *
+ * <p><b>块视图（{@code turnViews}）也在这里投影</b>：本函数是所有分页入口的唯一聚合口径，
+ * 后端每页随响应下发该轮的完整块视图。投影必须与聚合同生共死 —— 将来新增入口若漏调投影，
+ * 历史与实时就又会分叉成两套渲染（正是本次改造要收掉的东西）。视图缺失的轮次保持原聚合结果。</p>
+ *
+ * @param earlierRecords 较早页的原始记录（可为空）
+ * @param laterRecords   较新页的原始记录
+ * @param sessionId      会话 id，参与生成稳定的气泡 / 过程项 id
+ * @param turnViews      已累计的块视图表（键 = turnId）；缺省表示本条链路暂不接块视图
+ */
+export function aggregateRecordsByIdentity(
+  earlierRecords: SessionMessageVO[] | undefined,
+  laterRecords: SessionMessageVO[] | undefined,
+  sessionId: string | number,
+  turnViews?: Record<string, TurnViewVO> | null
+): ChatMessage[] {
+  const messages = aggregateSessionMessages(mergeRawRecords(earlierRecords, laterRecords), sessionId);
+  // ⚠️ 依赖方向 utils → views/chat 是刻意的：投影实现与 Block 契约同处 blockProjection，
+  //    它是纯函数、不反向依赖本模块，不会成环；而调用点分散在 services 与 view 两处，
+  //    收在这里才能保证「接了聚合就接了投影」。
+  projectTurnViews(messages, turnViews);
+  return messages;
+}
+
+/**
  * 雪花 ID 文本 → 可比较的 BigInt；不是纯数字（异常数据 / 本地假 ID）返回 null。
  *
  * <p>必须用 BigInt：雪花 ID 已超出 {@code Number.MAX_SAFE_INTEGER}，转 Number 会丢低位，
@@ -655,15 +766,8 @@ export function aggregateSessionMessages(rawMessages: any, sessionId: string | n
       // 2b. 互动卡片（PROMISE）：保留权威 ToolCallVO 供卡片渲染。
       // 卡片是用户可操作项，必须能在历史/刷新后重建（ToolCallTrace 丢弃了 type/status/content 等字段，
       // 故不能只靠 toolCalls 还原）。已决卡片携带 rawOutput.outcome/answer/stdout，同样由此还原。
-      if (toolCall.type === 'PROMISE') {
-        if (!asst.promptCards) asst.promptCards = [];
-        const cardIdx = asst.promptCards.findIndex(c => String(c.id) === String(resolvedCallId));
-        if (cardIdx >= 0) {
-          asst.promptCards[cardIdx] = toolCall;
-        } else {
-          asst.promptCards.push(toolCall);
-        }
-      }
+      // ⚠️ 落卡走 upsertPromptCard（历史/实时唯一落点），不要在本地再写一份「覆盖或追加」。
+      upsertPromptCard(asst, toolCall);
 
       // 2c. 普通工具调用
       const toolName = toolCall.toolName ?? '';
