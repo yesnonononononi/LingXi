@@ -7,7 +7,7 @@ import { StreamSessionRouter } from '../src/views/chat/streamSessionRouter';
 import { StreamFrameBuffer } from '../src/views/chat/streamFrameBuffer';
 import { AgentToolName } from '../src/utils/toolNames';
 
-test('1. 流式渲染状态机: 思考 -> 工具调用 -> 增量正文 -> 终结用量聚合为单一助手气泡', () => {
+test('1. 流式渲染: 原始事件只推进生命周期，内容一律来自块视图', () => {
   const messages: ChatMessage[] = [];
   const reducer = new TurnStreamReducer(messages, { sessionId: 'test-session-1' });
 
@@ -31,7 +31,7 @@ test('1. 流式渲染状态机: 思考 -> 工具调用 -> 增量正文 -> 终结
   assert.equal(bubble.isExploring, true);
   assert.equal(bubble.isComplete, false);
 
-  // 3. 增量思考吐字
+  // 3. 增量思考：只保留「仍在生成」事实，不写思考内容（内容等块视图）
   reducer.consume({
     type: 'PARTIAL_THINKING',
     content: '正在规划查询步骤...',
@@ -40,10 +40,10 @@ test('1. 流式渲染状态机: 思考 -> 工具调用 -> 增量正文 -> 终结
     metaData: { turnId: 'turn-101' }
   });
   reducer.flush();
-  assert.equal(bubble.thoughtSteps?.length, 1);
-  assert.equal(bubble.thoughtSteps?.[0].content, '正在规划查询步骤...');
+  assert.equal(bubble.isThinking, true, '增量思考只推进生命周期');
+  assert.equal(bubble.thoughtSteps?.length, 0, '增量思考不得写思考内容');
 
-  // 4. 工具发起
+  // 4. 工具发起：不建卡、不写工具条（非 PROMISE 类）
   reducer.consume({
     type: 'TOOL_CALL',
     toolName: AgentToolName.WebSearch,
@@ -54,12 +54,10 @@ test('1. 流式渲染状态机: 思考 -> 工具调用 -> 增量正文 -> 终结
     timestamp: '2026-10-06T06:00:02Z',
     metaData: { turnId: 'turn-101' }
   });
-  assert.equal(bubble.isExploring, false);
-  assert.equal(bubble.toolCalls?.length, 1);
-  assert.equal(bubble.toolCalls?.[0].toolName, AgentToolName.WebSearch);
-  assert.equal(bubble.toolCalls?.[0].status, 'calling');
+  assert.equal(bubble.isExploring, false, '工具调用结束「探索中」');
+  assert.equal(bubble.toolCalls?.length, 0, '工具条内容由块视图给出，原始事件不建卡');
 
-  // 5. 工具执行结束
+  // 5. 工具结束：同样不写工具条
   reducer.consume({
     type: 'TOOL_COMPLETED',
     toolName: AgentToolName.WebSearch,
@@ -70,10 +68,9 @@ test('1. 流式渲染状态机: 思考 -> 工具调用 -> 增量正文 -> 终结
     timestamp: '2026-10-06T06:00:03Z',
     metaData: { turnId: 'turn-101' }
   });
-  assert.equal(bubble.toolCalls?.[0].result, '晴，22℃');
-  assert.equal(bubble.toolCalls?.[0].status, 'success');
+  assert.equal(bubble.toolCalls?.length, 0, '工具结果由块视图给出，原始事件不写工具条');
 
-  // 6. 增量正文输出
+  // 6. 增量正文：不写正文
   reducer.consume({
     type: 'PARTIAL_TEXT',
     content: '今天北京的天气是晴天，气温约22℃。',
@@ -82,9 +79,31 @@ test('1. 流式渲染状态机: 思考 -> 工具调用 -> 增量正文 -> 终结
     metaData: { turnId: 'turn-101' }
   });
   reducer.flush();
-  assert.equal(bubble.content, '今天北京的天气是晴天，气温约22℃。');
+  assert.equal(bubble.content, '', '增量正文不得写气泡正文');
 
-  // 7. 终结结算
+  // 7. 权威块视图到达：内容、顺序、状态全部来自后端
+  reducer.consume({
+    type: 'TURN_SNAPSHOT',
+    turnId: 'turn-101',
+    viewVersion: 3,
+    view: {
+      sessionId: 'test-session-1',
+      turnId: 'turn-101',
+      status: 'RUNNING',
+      viewVersion: 3,
+      blocks: [
+        { blockId: 'thinking:1', type: 'THINKING', order: 0, status: 'COMPLETE', text: '正在规划查询步骤...' },
+        { blockId: 'tool:call-weather-1', type: 'TOOL', order: 1, status: 'COMPLETED', toolCallId: 'call-weather-1', toolName: AgentToolName.WebSearch },
+        { blockId: 'text:1', type: 'TEXT', order: 2, status: 'COMPLETE', placement: 'BODY', text: '今天北京的天气是晴天，气温约22℃。' }
+      ]
+    }
+  });
+  assert.equal(bubble.content, '今天北京的天气是晴天，气温约22℃。', '正文来自 BODY 块');
+  assert.equal(bubble.thoughtSteps?.[0].content, '正在规划查询步骤...', '思考来自 THINKING 块');
+  assert.equal(bubble.toolCalls?.[0].status, 'success', '工具状态来自 TOOL 块');
+  assert.equal(bubble.toolCalls?.[0].order, 1, '工具 order 来自后端');
+
+  // 8. 终结结算
   reducer.consume({
     type: 'EXECUTION_COMPLETED',
     tokenInfo: { inputTokenCount: 120, outputTokenCount: 85, totalTokenCount: 205 },
@@ -96,9 +115,10 @@ test('1. 流式渲染状态机: 思考 -> 工具调用 -> 增量正文 -> 终结
   assert.equal(bubble.isThinking, false);
   assert.equal(bubble.isExploring, false);
   assert.equal(bubble.tokenInfo?.totalTokenCount, 205);
+  assert.equal(bubble.content, '今天北京的天气是晴天，气温约22℃。', '终结不得改动块视图内容');
 });
 
-test('2. 降噪与幂等: AI_MESSAGE 冗余包被安全丢弃，COMPLETE_TEXT 正确对齐', () => {
+test('2. 降噪与幂等: 增量正文/COMPLETE_TEXT/AI_MESSAGE 都不改内容，块视图是唯一写入方', () => {
   const messages: ChatMessage[] = [];
   const reducer = new TurnStreamReducer(messages, { sessionId: 'test-session-2' });
 
@@ -123,16 +143,16 @@ test('2. 降噪与幂等: AI_MESSAGE 冗余包被安全丢弃，COMPLETE_TEXT �
     timestamp: '2026-10-06T06:00:02Z'
   });
   reducer.flush();
-  assert.equal(bubble.content, 'Hello, world!');
+  assert.equal(bubble.content, '', '增量正文不得写气泡正文');
 
-  // COMPLETE_TEXT 对齐
+  // COMPLETE_TEXT 与增量同属原始事件：同样不写（正文只认 BODY 块）
   reducer.consume({
     type: 'COMPLETE_TEXT',
     content: 'Hello, world! (aligned)',
     executionId: 'exec-2',
     timestamp: '2026-10-06T06:00:03Z'
   });
-  assert.equal(bubble.content, 'Hello, world! (aligned)');
+  assert.equal(bubble.content, '', 'COMPLETE_TEXT 不再写正文');
 
   // AI_MESSAGE 噪声：内容不应被重复覆盖或篡改
   reducer.consume({
@@ -141,7 +161,7 @@ test('2. 降噪与幂等: AI_MESSAGE 冗余包被安全丢弃，COMPLETE_TEXT �
     executionId: 'exec-2',
     timestamp: '2026-10-06T06:00:04Z'
   });
-  assert.equal(bubble.content, 'Hello, world! (aligned)');
+  assert.equal(bubble.content, '', 'AI_MESSAGE 噪声不得写正文');
 });
 
 test('3. 根会话与多子会话(1:N)事件路由: 主子独立渲染，主会话协同条状态同步', () => {
@@ -187,8 +207,7 @@ test('3. 根会话与多子会话(1:N)事件路由: 主子独立渲染，主会�
   });
 
   const rootBubble = rootSession.messages[1];
-  assert.equal(rootBubble.toolCalls?.[0].toolName, AgentToolName.CallSubAgent);
-  assert.equal(rootBubble.toolCalls?.[0].status, 'calling');
+  assert.equal(rootBubble.toolCalls?.length ?? 0, 0, '工具条内容由块视图给出');
 
   // 2. 子会话事件流入（metaData.sessionId = 'sub-agent-1'）
   router.dispatch({
@@ -198,12 +217,22 @@ test('3. 根会话与多子会话(1:N)事件路由: 主子独立渲染，主会�
     metaData: { turnId: 'turn-sub-1', sessionId: 'sub-agent-1', rootSessionId: 'root-session' }
   });
   router.dispatch({
-    type: 'PARTIAL_TEXT',
-    content: '开始审查 PR #12：第 34 行存在空指针隐患。',
+    type: 'TURN_SNAPSHOT',
+    turnId: 'turn-sub-1',
+    viewVersion: 1,
+    view: {
+      sessionId: 'sub-agent-1',
+      turnId: 'turn-sub-1',
+      status: 'COMPLETED',
+      viewVersion: 1,
+      blocks: [
+        { blockId: 'text:sub-1', type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: '开始审查 PR #12：第 34 行存在空指针隐患。' }
+      ]
+    },
     executionId: 'exec-sub-1',
     timestamp: '2026-10-06T06:00:03Z',
     metaData: { turnId: 'turn-sub-1', sessionId: 'sub-agent-1', rootSessionId: 'root-session' }
-  });
+  } as unknown as AgentEvent);
   router.dispatch({
     type: 'EXECUTION_COMPLETED',
     tokenInfo: { totalTokenCount: 50 },
@@ -220,9 +249,6 @@ test('3. 根会话与多子会话(1:N)事件路由: 主子独立渲染，主会�
   assert.equal(subVO.messages?.[0].content, '开始审查 PR #12：第 34 行存在空指针隐患。');
   assert.equal(subVO.messages?.[0].isComplete, true);
   assert.equal(subVO.lastOutcome, 'COMPLETED');
-
-  // 验证主会话中的委派工具状态自动同步为 success
-  assert.equal(rootBubble.toolCalls?.[0].status, 'success');
 });
 
 test('4. 动态子代理注册: 收到未预注册的子会话事件时自动登记容器并渲染', () => {
@@ -253,12 +279,22 @@ test('4. 动态子代理注册: 收到未预注册的子会话事件时自动登
     metaData: { turnId: 'turn-dyn-1', sessionId: 'sub-999', rootSessionId: 'root-dynamic', agentName: '动态专家' }
   });
   router.dispatch({
-    type: 'PARTIAL_TEXT',
-    content: '动态专家报告生成完毕',
+    type: 'TURN_SNAPSHOT',
+    turnId: 'turn-dyn-1',
+    viewVersion: 1,
+    view: {
+      sessionId: 'sub-999',
+      turnId: 'turn-dyn-1',
+      status: 'COMPLETED',
+      viewVersion: 1,
+      blocks: [
+        { blockId: 'text:dyn-1', type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: '动态专家报告生成完毕' }
+      ]
+    },
     executionId: 'exec-dynamic-1',
     timestamp: '2026-10-06T06:00:01Z',
     metaData: { turnId: 'turn-dyn-1', sessionId: 'sub-999', rootSessionId: 'root-dynamic' }
-  });
+  } as unknown as AgentEvent);
   router.flushAll();
 
   assert.equal(discoveredId, 'sub-999');
@@ -281,7 +317,7 @@ test('5. 暂停与恢复(Human-in-the-Loop): 挂起后不拆分新气泡，恢�
   assert.equal(messages.length, 1);
   const bubble = messages[0];
 
-  // 2. 工具调用需要审批 (PROMISE)
+  // 2. 工具调用需要审批 (PROMISE)：原始事件不建卡（审批卡由 onResolveCard 拉取权威数据）
   reducer.consume({
     type: 'TOOL_CALL',
     toolName: AgentToolName.ExecuteCommand,
@@ -304,7 +340,6 @@ test('5. 暂停与恢复(Human-in-the-Loop): 挂起后不拆分新气泡，恢�
   assert.equal(bubble.isSuspended, true);
   assert.equal(bubble.isComplete, false); // 绝不提前标记为已结束
   assert.equal(bubble.isThinking, false);
-  assert.equal(bubble.toolCalls?.[0].status, 'pending'); // 标记为等待决策
 
   // 4. 用户放行后，后端下发恢复事件
   reducer.consume({
@@ -318,24 +353,25 @@ test('5. 暂停与恢复(Human-in-the-Loop): 挂起后不拆分新气泡，恢�
   assert.equal(bubble.isThinking, true);
   assert.equal(messages.length, 1); // 严格复用同一个气泡，不裂变！
 
-  // 5. 工具执行完成并继续输出正文
+  // 5. 权威块视图补齐内容（工具终态 + 正文），再由终结事件收尾
   reducer.consume({
-    type: 'TOOL_COMPLETED',
-    toolName: AgentToolName.ExecuteCommand,
-    requestId: 'cmd-delete-1',
-    output: 'Removed 120 files.',
-    resultStatus: 'COMPLETED',
+    type: 'TURN_SNAPSHOT',
+    turnId: 'turn-hil-1',
+    viewVersion: 2,
+    view: {
+      sessionId: 'test-session-hil',
+      turnId: 'turn-hil-1',
+      status: 'COMPLETED',
+      viewVersion: 2,
+      blocks: [
+        { blockId: 'tool:cmd-delete-1', type: 'TOOL', order: 0, status: 'COMPLETED', toolCallId: 'cmd-delete-1', toolName: AgentToolName.ExecuteCommand },
+        { blockId: 'text:hil-1', type: 'TEXT', order: 1, status: 'COMPLETE', placement: 'BODY', text: '临时构建文件已成功清理完毕。' }
+      ]
+    },
     executionId: 'exec-hil',
     timestamp: '2026-10-06T06:00:11Z',
     metaData: { turnId: 'turn-hil-1' }
-  });
-  reducer.consume({
-    type: 'PARTIAL_TEXT',
-    content: '临时构建文件已成功清理完毕。',
-    executionId: 'exec-hil',
-    timestamp: '2026-10-06T06:00:12Z',
-    metaData: { turnId: 'turn-hil-1' }
-  });
+  } as unknown as AgentEvent);
   reducer.consume({
     type: 'EXECUTION_COMPLETED',
     tokenInfo: { totalTokenCount: 150 },
@@ -404,10 +440,20 @@ test('7. 服务端雪花 ID 驱动的根会话流式路由: 根会话绑定持�
   // 验证绝未被误注册为子会话！
   assert.equal(rootSession.subSessions?.length, 0);
 
-  // 3. 接下来服务端推送正文
+  // 3. 接下来服务端推送权威块视图
   router.dispatch({
-    type: 'PARTIAL_TEXT',
-    content: '你发送的是「1」，请问有什么可以帮您？',
+    type: 'TURN_SNAPSHOT',
+    turnId: '2107364703113183232',
+    viewVersion: 1,
+    view: {
+      sessionId: '2107364703088017408',
+      turnId: '2107364703113183232',
+      status: 'COMPLETED',
+      viewVersion: 1,
+      blocks: [
+        { blockId: 'text:1', type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: '你发送的是「1」，请问有什么可以帮您？' }
+      ]
+    },
     executionId: '2107364703104794624',
     timestamp: '2026-10-06T06:57:57.000Z',
     metaData: {
@@ -415,7 +461,7 @@ test('7. 服务端雪花 ID 驱动的根会话流式路由: 根会话绑定持�
       rootSessionId: '2107364703088017408',
       turnId: '2107364703113183232'
     }
-  });
+  } as unknown as AgentEvent);
   router.flushAll();
 
   // 验证主消息列表正确渲染出回复气泡
@@ -451,14 +497,24 @@ test('8. CONTEXT_UPDATE 前置到达: 助手气泡稳定复用，不分裂空气
   });
   assert.equal(messages.length, 1);
 
-  // 正文增量到达
+  // 正文经权威块视图到达
   reducer.consume({
-    type: 'PARTIAL_TEXT',
-    content: '测试前置更新成功',
+    type: 'TURN_SNAPSHOT',
+    turnId: 'turn-pre-1',
+    viewVersion: 1,
+    view: {
+      sessionId: '2107364703088017408',
+      turnId: 'turn-pre-1',
+      status: 'COMPLETED',
+      viewVersion: 1,
+      blocks: [
+        { blockId: 'text:pre-1', type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: '测试前置更新成功' }
+      ]
+    },
     executionId: 'exec-pre',
     timestamp: '2026-10-06T06:00:02Z',
     metaData: { turnId: 'turn-pre-1' }
-  });
+  } as unknown as AgentEvent);
   reducer.flush();
 
   assert.equal(messages.length, 1);
@@ -466,185 +522,83 @@ test('8. CONTEXT_UPDATE 前置到达: 助手气泡稳定复用，不分裂空气
 });
 
 /**
- * ★ 实时路径：中间叙述不得留在正文里。
+ * ★ 唯一展示链路：过程项的 order 与分桶全部来自后端块视图。
  *
- * <p>改造前 `handlePartialText` 把所有轮次的文本都累加进 `content`（正文），
- * 只有历史对账才把中间叙述分桶进 `aiMessages` —— 于是流式期间正文堆着全部叙述、
- * 对账后被搬进过程区，用户看到一次跳变。本用例锁住「工具调用即断句」这条判据，
- * 它与历史路径（aggregateSessionMessages）同源。</p>
+ * <p>改造后前端**不再**参与时序与状态推断：没有 `nextOrderFor`、没有「工具调用即断句」、
+ * 没有「工具收尾即终结」。中间叙述（PROCESS）与正文（BODY）的分桶、以及每一项的 order，
+ * 都由后端 placement / order 唯一决定。本用例锁住这条不变量。</p>
  */
-test('★ 实时路径: 工具调用把已累计叙述移出正文，正文只留最后一段', () => {
+test('★ 过程项分桶与 order 完全来自后端块视图，前端不做任何推断', () => {
   const messages: ChatMessage[] = [];
-  const reducer = new TurnStreamReducer(messages, { sessionId: 'test-session-narration' });
+  const reducer = new TurnStreamReducer(messages, { sessionId: 'test-session-order' });
 
   reducer.pushUserMessage('看看这个文件');
   reducer.consume({
     type: 'EXECUTION_STARTED',
-    executionId: 'exec-n1',
-    timestamp: '2026-10-07T09:00:00Z',
-    metaData: { turnId: 'turn-n1', sessionId: 'test-session-narration' }
-  });
-  const bubble = messages[1];
-
-  // 第 1 轮：叙述 -> 工具调用（叙述应当被移出正文）
-  reducer.consume({
-    type: 'PARTIAL_TEXT',
-    content: '先看一下这个文件的实现。',
-    executionId: 'exec-n1',
-    timestamp: '2026-10-07T09:00:01Z',
-    metaData: { turnId: 'turn-n1' }
-  });
-  reducer.flush();
-  assert.equal(bubble.content, '先看一下这个文件的实现。', '工具调用之前，叙述暂时就是正文');
-
-  reducer.consume({
-    type: 'TOOL_CALL',
-    toolName: AgentToolName.ReadFile,
-    requestId: 'call-n1',
-    args: '{"path":"a.ts"}',
-    resultStatus: 'STARTED',
-    executionId: 'exec-n1',
-    timestamp: '2026-10-07T09:00:02Z',
-    metaData: { turnId: 'turn-n1' }
-  });
-
-  assert.equal(bubble.content, '', '★ 工具调用即断句：已累计叙述必须移出正文');
-  assert.equal(bubble.aiMessages?.length, 1, '★ 被移出的叙述必须落进中间叙述集合');
-  assert.equal(bubble.aiMessages?.[0].text, '先看一下这个文件的实现。');
-
-  reducer.consume({
-    type: 'TOOL_COMPLETED',
-    toolName: AgentToolName.ReadFile,
-    requestId: 'call-n1',
-    output: 'file content',
-    resultStatus: 'COMPLETED',
-    executionId: 'exec-n1',
-    timestamp: '2026-10-07T09:00:03Z',
-    metaData: { turnId: 'turn-n1' }
-  });
-
-  // 第 2 轮：无工具调用的终结叙述 -> 这才是正文
-  reducer.consume({
-    type: 'COMPLETE_TEXT',
-    content: '这个文件做了三件事。',
-    executionId: 'exec-n1',
-    timestamp: '2026-10-07T09:00:04Z',
-    metaData: { turnId: 'turn-n1' }
-  });
-  reducer.consume({
-    type: 'EXECUTION_COMPLETED',
-    executionId: 'exec-n1',
-    timestamp: '2026-10-07T09:00:05Z',
-    metaData: { turnId: 'turn-n1' }
-  });
-
-  assert.equal(bubble.content, '这个文件做了三件事。', '正文只能是最后一个无工具调用的轮次');
-  assert.equal(bubble.aiMessages?.length, 1, '中间叙述集合不得被终结事件改写');
-  assert.ok(
-    !String(bubble.content).includes('先看一下'),
-    '★ 中间叙述绝不能留在正文里（这正是改造前的缺陷）'
-  );
-});
-
-/**
- * ★ 顺序基准：实时路径的 order 必须把 aiMessages 计入。
- *
- * <p>`allocateOrder` 原本只数 thoughtSteps + toolCalls。若漏掉 aiMessages，
- * 新落的中间文本与紧随其后的工具调用会拿到相同 order，排序退化成依赖插入顺序，
- * 表现为「文本与工具偶发错位」。本用例断言严格小于，而不是断言「都大于 0」——
- * 后者在两者相等时依然通过，属无效断言。</p>
- */
-test('★ 实时路径: 中间叙述与紧随的工具调用必须拿到不同 order（交错可排序）', () => {
-  const messages: ChatMessage[] = [];
-  const reducer = new TurnStreamReducer(messages, { sessionId: 'test-session-order' });
-
-  reducer.pushUserMessage('查一下');
-  reducer.consume({
-    type: 'EXECUTION_STARTED',
     executionId: 'exec-o1',
-    timestamp: '2026-10-07T09:10:00Z',
+    timestamp: '2026-10-08T09:00:00Z',
     metaData: { turnId: 'turn-o1', sessionId: 'test-session-order' }
   });
   const bubble = messages[1];
 
+  // 后端给出交错的过程项：PROCESS 文本 与 TOOL 拿到的 order 由后端排定（不是前端递增）
   reducer.consume({
-    type: 'COMPLETE_TEXT',
-    content: '我先搜索一下。',
+    type: 'TURN_SNAPSHOT',
+    turnId: 'turn-o1',
+    viewVersion: 1,
+    view: {
+      sessionId: 'test-session-order',
+      turnId: 'turn-o1',
+      status: 'COMPLETED',
+      viewVersion: 1,
+      blocks: [
+        { blockId: 'text:p1', type: 'TEXT', order: 1000, status: 'COMPLETE', placement: 'PROCESS', text: '先看一下这个文件的实现。' },
+        { blockId: 'tool:call-o1', type: 'TOOL', order: 2000, status: 'COMPLETED', toolCallId: 'call-o1', toolName: AgentToolName.ReadFile },
+        { blockId: 'text:b1', type: 'TEXT', order: 3000, status: 'COMPLETE', placement: 'BODY', text: '这个文件做了三件事。' }
+      ]
+    },
     executionId: 'exec-o1',
-    timestamp: '2026-10-07T09:10:01Z',
+    timestamp: '2026-10-08T09:00:02Z',
     metaData: { turnId: 'turn-o1' }
-  });
-  reducer.consume({
-    type: 'TOOL_CALL',
-    toolName: AgentToolName.WebSearch,
-    requestId: 'call-o1',
-    args: '{"q":"x"}',
-    resultStatus: 'STARTED',
-    executionId: 'exec-o1',
-    timestamp: '2026-10-07T09:10:02Z',
-    metaData: { turnId: 'turn-o1' }
-  });
+  } as unknown as AgentEvent);
 
-  const textOrder = bubble.aiMessages?.[0]?.order;
-  const toolOrder = bubble.toolCalls?.[0]?.order;
-  assert.notEqual(textOrder, undefined, '中间叙述必须带 order');
-  assert.notEqual(toolOrder, undefined, '工具调用必须带 order');
+  assert.equal(bubble.content, '这个文件做了三件事。', 'BODY 块进正文');
+  assert.equal(bubble.aiMessages?.length, 1, 'PROCESS 块进中间叙述');
+  assert.equal(bubble.aiMessages?.[0].text, '先看一下这个文件的实现。');
+  assert.equal(bubble.aiMessages?.[0].order, 1000, '中间叙述 order 取后端值');
+  assert.equal(bubble.toolCalls?.[0].order, 2000, '工具 order 取后端值');
   assert.ok(
-    Number(textOrder) < Number(toolOrder),
-    `叙述在前、工具在后，order 必须严格递增（否则排序结果不稳定）：text=${textOrder}, tool=${toolOrder}`
+    !String(bubble.content).includes('先看一下'),
+    '中间叙述绝不能留在正文里（分桶由后端 placement 决定）'
   );
-});
 
-/**
- * ★ 2b：本地新项必须续写在后端千位槽 order **之上**（不能用「最大值 + 1」）。
- *
- * <p>接入 Block 契约后块顺序由后端给出，槽步长是
- * {@code responseOrder * 1000 + slot}（THINKING=0 / TEXT=1 / TOOL=2..）。
- * 截断快照里最后一个块若落在 {@code 2002}，「最大值 + 1」会给出 2003 —— 看似也排在后面，
- * 但下一帧增量块（order 仍是 2002 那一槽的兄弟）就会与本地项并列，排序退化成插入序。</p>
- *
- * <p>本用例因此断言<b>至少跨一个槽步长</b>，而不是「大于」。只断言「大于」在
- * step=1 时同样通过，属无效断言。</p>
- */
-test('★ 2b: 本地新过程项 order 必须跨过整个槽位（严格大于「最大值 + 1」的相邻槽）', () => {
-  const messages: ChatMessage[] = [];
-  const reducer = new TurnStreamReducer(messages, { sessionId: 'test-session-order-2b' });
+  // 时间线顺序 = 后端 order 升序，与传入顺序无关
+  assert.deepEqual(
+    (bubble.processTimeline ?? []).map(item => item.type),
+    ['intermediate_ai', 'tool'],
+    '时间线按后端 order 升序'
+  );
 
-  reducer.pushUserMessage('跑一遍');
-  reducer.consume({
-    type: 'EXECUTION_STARTED',
-    executionId: 'exec-2b',
-    timestamp: '2026-10-08T09:00:00Z',
-    metaData: { turnId: 'turn-2b', sessionId: 'test-session-order-2b' }
-  });
-  const bubble = messages[1];
-
-  // 模拟 TURN_SNAPSHOT 已投影的后端块：order 是三槽步长，最后一槽在 2002。
-  bubble.toolCalls = [{
-    id: 'call-backend-1',
-    toolName: AgentToolName.ReadFile,
-    category: 'read',
-    query: '{}',
-    args: {},
-    status: 'success',
-    order: 2002
-  }];
-
+  // 原始事件之后再到达也不得改变任何过程项（展示内容只认块视图）
   reducer.consume({
     type: 'TOOL_CALL',
     toolName: AgentToolName.WebSearch,
-    requestId: 'call-local-2',
+    requestId: 'call-late',
     args: '{"q":"y"}',
     resultStatus: 'STARTED',
-    executionId: 'exec-2b',
-    timestamp: '2026-10-08T09:00:01Z',
-    metaData: { turnId: 'turn-2b' }
+    executionId: 'exec-o1',
+    timestamp: '2026-10-08T09:00:03Z',
+    metaData: { turnId: 'turn-o1' }
   });
+  reducer.consume({
+    type: 'PARTIAL_TEXT',
+    content: '追加的正文',
+    executionId: 'exec-o1',
+    timestamp: '2026-10-08T09:00:04Z',
+    metaData: { turnId: 'turn-o1' }
+  });
+  reducer.flush();
 
-  const localOrder = bubble.toolCalls?.find(call => call.id === 'call-local-2')?.order;
-  assert.notEqual(localOrder, undefined, '本地新工具必须带 order');
-  assert.ok(
-    Number(localOrder) > 2003,
-    `本地新项必须跨过整个槽位续写（旧「最大值 + 1」会给 2003，与后端同槽兄弟并列）：local=${localOrder}`
-  );
+  assert.equal(bubble.toolCalls?.length, 1, '原始 TOOL_CALL 不得新增工具项');
+  assert.equal(bubble.content, '这个文件做了三件事。', '原始正文增量不得改写正文');
 });

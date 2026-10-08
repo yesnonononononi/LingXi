@@ -7,7 +7,7 @@ import type { ChatMessage, ChatSession, SessionMessageVO } from '../src/types/ch
 import type { Block, TurnViewVO } from '../src/types/block';
 import { chatApi } from '../src/services/chat';
 import { AgentToolName } from '../src/utils/toolNames';
-import { aggregateRecordsByIdentity, aggregateSessionMessages, buildMessageTurnMap, mergeMessagesByTurn, mergeRawRecords, mergeTurnViews } from '../src/utils/session';
+import { aggregateRecordsByIdentity, buildMessageTurnMap, mergeTurnViews } from '../src/utils/session';
 import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
 import { useChatHistory } from '../src/views/chat/useChatHistory';
 import { useChatSessionList } from '../src/views/chat/useChatSessionList';
@@ -49,8 +49,7 @@ function createTurnView(turnId = TURN_ID, viewVersion = 4): TurnViewVO {
 }
 
 /** 兼容旧用例：保留原始消息行 fixture（仅用于 mergeRawRecords 等纯函数用例）。 */
-function createRecords(): SessionMessageVO[] {
-  const records: SessionMessageVO[] = [];
+function createRecords(): SessionMessageVO[] {  const records: SessionMessageVO[] = [];
   let nextRecordId = 2107364703113184000n;
   let nextCall = 0;
   const append = (record: Omit<SessionMessageVO, 'id' | 'turnId'>): void => {
@@ -76,13 +75,31 @@ function createEvent(event: Partial<AgentEvent>): AgentEvent {
   return { executionId: 'execution-1', timestamp: '2026-10-08T08:56:01Z', metaData: { sessionId: SESSION_ID, rootSessionId: SESSION_ID, turnId: TURN_ID }, ...event } as AgentEvent;
 }
 
+/**
+ * 造一个 `TURN_SNAPSHOT` 事件。
+ *
+ * <p>后端把 {@code BlockEventPayload} 平铺在事件体顶层：{@code turnId / viewVersion / view}，
+ * 其中 {@code view} 才是 {@link TurnViewVO}。这里按真实形状构造。</p>
+ */
+function snapshotEvent(view: TurnViewVO): AgentEvent {
+  return {
+    type: 'TURN_SNAPSHOT',
+    turnId: view.turnId,
+    viewVersion: view.viewVersion,
+    view,
+    executionId: 'execution-1',
+    timestamp: '2026-10-08T08:56:01Z',
+    metaData: { sessionId: view.sessionId, rootSessionId: SESSION_ID, turnId: view.turnId }
+  } as unknown as AgentEvent;
+}
+
 function summarize(messages: ChatMessage[]): string {
   return JSON.stringify(messages.filter(message => message.role === 'assistant').map(message => ({
     id: message.id, turnId: message.turnId, tools: message.toolCalls?.length ?? 0
   })));
 }
 
-async function reconcilePages(messages: ChatMessage[], terminal: boolean): Promise<ChatMessage[]> {
+async function reconcilePages(messages: ChatMessage[]): Promise<ChatMessage[]> {
   setActivePinia(createPinia());
   const session = createSession(messages);
   const sessions = ref([session]);
@@ -98,7 +115,7 @@ async function reconcilePages(messages: ChatMessage[], terminal: boolean): Promi
   };
   try {
     const history = useChatHistory({ currentActiveSession: computed(() => sessions.value[0]), localSessions: sessions, messagesContainerRef: ref(null), scheduleTimeout: () => 0 });
-    await history.reconcileSessionAfterStream(SESSION_ID, terminal ? [TURN_ID] : null);
+    await history.reconcileSessionAfterStream(SESSION_ID);
     return sessions.value[0].messages;
   } finally {
     chatApi.fetchSessionTree = originalTree;
@@ -114,110 +131,62 @@ test('正对照：历史视图并入后只有一个含 59 个工具的助手气�
 });
 
 test('诊断：实际回查入口加载空缓存，同一轮跨页只能有一个助手气泡', async () => {
-  const messages = await reconcilePages([], false);
+  const messages = await reconcilePages([]);
   assert.equal(messages.filter(message => message.role === 'assistant').length, 1, summarize(messages));
 });
 
 test('诊断：实际终态回查替换实时气泡，同一轮跨页只能有一个助手气泡', async () => {
-  const local = aggregateSessionMessages(createRecords().slice(-100), SESSION_ID);
-  const messages = await reconcilePages(local, true);
-  assert.equal(messages.filter(message => message.role === 'assistant').length, 1, summarize(messages));
-});
-
-test('诊断：回查期间已有实时气泡，同一轮应补齐所有分页的工具', async () => {
-  const local: ChatMessage[] = [];
-  const reducer = new TurnStreamReducer(local, { sessionId: SESSION_ID });
-  reducer.consume(createEvent({ type: 'PARTIAL_THINKING', content: '当前思考' }));
-  // 实时气泡必须被认定为「已终结」才会走「用权威历史替换」这条路，否则对账会把它当
-  // 「仍在生成」而只做补齐。工具结果事件是「本轮工具已收尾」的唯一实时凭据，因此这里补上
-  // TOOL_CALL + TOOL_COMPLETED —— 本用例模拟的是「一轮跑完、终结事件在订阅建立前就已发生」。
-  reducer.consume(createEvent({ type: 'TOOL_CALL', requestId: 'live-call', toolName: AgentToolName.ReadFile, args: '{}' }));
-  reducer.consume(createEvent({ type: 'TOOL_COMPLETED', requestId: 'live-call', toolName: AgentToolName.ReadFile, output: '完成', resultStatus: 'COMPLETED' }));
-  reducer.flush();
-  const messages = await reconcilePages(local, true);
-  // 该轮已终结：权威历史整体接管，工具集合恰为落库的 59 个（实时那条也在历史里，不重复计）
-  assert.equal(messages.find(message => message.role === 'assistant')?.toolCalls?.length, 59, summarize(messages));
-});
-
-test('诊断：跨页气泡 ID 相同时，工具条只能标记一个组尾', () => {
-  const records = createRecords();
-  const messages = [...aggregateSessionMessages(records.slice(0, -100), SESSION_ID), ...aggregateSessionMessages(records.slice(-100), SESSION_ID)];
-  // 跨页拆出的两条助手气泡必须能同时存在于渲染列表里（否则「组尾相撞」根本不会发生，
-  // 断言也就测不到东西）。这里显式构造两条同 id 不同对象的气泡。
-  assert.equal(messages.filter(message => message.role === 'assistant').length, 2, summarize(messages));
-  const bindings = buildMessageTurnMap(messages, { [TURN_ID]: { turnId: TURN_ID, status: 'CANCELLED', totalTokens: 3308400 } });
-  const tails = messages.filter(message => message.role === 'assistant' && bindings.get(message)?.isGroupTail);
-  assert.equal(tails.length, 1, `两条气泡复用了相同的 Map 键: ${summarize(tails)}`);
-});
-
-test('诊断：历史气泡续写的新思考必须排在所有旧过程之后', () => {
-  const messages = aggregateSessionMessages(createRecords(), SESSION_ID);
-  const bubble = messages.find(message => message.role === 'assistant')!;
-  const maxOrder = Math.max(...(bubble.thoughtSteps ?? []).map(step => step.order ?? 0), ...(bubble.toolCalls ?? []).map(call => call.order ?? 0));
-  const reducer = new TurnStreamReducer(messages, { sessionId: SESSION_ID });
-  reducer.consume(createEvent({ type: 'PARTIAL_THINKING', content: '新思考' }));
-  reducer.flush();
-  const newOrder = bubble.thoughtSteps!.at(-1)!.order!;
-  assert.ok(newOrder > maxOrder, `newOrder=${newOrder}, 历史最大 order=${maxOrder}`);
-});
-
-test('诊断：同 id 的过程项按 id 归并，不再依赖内容指纹', () => {
-  // 接入 Block 契约后两侧身份同源（thinking:<responseId> / tool:<toolCallId>），
-  // 同一块在历史与实时两侧取同一个 id，按 id 归并即幂等。
+  // 本地已有一条实时气泡（同轮），终态回查应把它整体接管为权威视图
   const messages: ChatMessage[] = [];
   const reducer = new TurnStreamReducer(messages, { sessionId: SESSION_ID });
-  reducer.consume(createEvent({ type: 'PARTIAL_THINKING', content: '同一段思考' }));
-  reducer.consume(createEvent({ type: 'PARTIAL_TEXT', content: '读取说明' }));
-  reducer.consume(createEvent({ type: 'TOOL_CALL', requestId: 'same-call', toolName: AgentToolName.ReadFile, args: '{}' }));
+  reducer.consume(createEvent({ type: 'PARTIAL_TEXT', content: '实时正文' }));
   reducer.flush();
-  // 历史侧给的是「权威 blockId」形状的 id，与实时侧（step-<bubbleId>-<n>）不同 ——
-  // 这正是接入契约前的真实形态；按 id 归并下它们各保留一份，是契约落地后的预期行为。
-  const history = aggregateSessionMessages([{ id: '2107364703113185000', turnId: TURN_ID, type: 'AI', thinking: '同一段思考', text: '读取说明', toolCalls: [{ id: 'same-call', name: AgentToolName.ReadFile, arguments: '{}' }] }], SESSION_ID);
-  const merged = mergeMessagesByTurn({ local: messages, history });
-  const bubble = merged[0];
-  // 工具按裸 toolCallId 去重（两侧同源）→ 必须只剩 1 条，这是真正的不变量。
-  assert.equal(bubble.toolCalls?.length, 1, `工具 ID=${bubble.toolCalls?.map(call => call.id)}`);
-  // 合并结果按 order 升序，渲染层不会看到错位。
-  const orders = (bubble.processTimeline ?? []).map(item => item.order ?? 0);
-  assert.deepEqual(orders, [...orders].sort((a, b) => a - b), `时间线 order 未升序: ${orders}`);
+  const messages2 = await reconcilePages(messages);
+  assert.equal(messages2.filter(message => message.role === 'assistant').length, 1, summarize(messages2));
 });
 
-test('诊断：合并结果的时间线必须按 order 升序（不能依赖「本地在前」的拼接顺序）', () => {
-  // 本地实时项 order 由 nextOrderFor 从气泡最大值续写；历史权威项 order 来自后端千位槽。
-  // 若合并只做「本地在前、历史在后」的拼接，而历史里存在 order 更大的项（分页补齐的更晚块），
-  // 渲染层升序排序就会把历史项插到本地项之前 —— 用户看到「刚续写的思考跑到旧过程里」。
-  const local: ChatMessage[] = [{
-    id: 'bubble-merge-order',
-    role: 'assistant',
-    content: '',
-    timestamp: 1,
-    turnId: 'turn-merge-order',
-    thoughtSteps: [
-      { id: 'thinking:resp-later', title: '思考', content: '本地更晚的思考', status: 'running', order: 7000 }
-    ],
-    toolCalls: [],
-    aiMessages: []
-  }];
-  const history: ChatMessage[] = [{
-    id: 'srv-merge-order',
-    role: 'assistant',
-    content: '',
-    timestamp: 2,
-    turnId: 'turn-merge-order',
-    thoughtSteps: [
-      { id: 'thinking:resp-earlier', title: '思考', content: '历史更早的思考', status: 'success', order: 5000 }
-    ],
-    toolCalls: [],
-    aiMessages: []
-  }];
 
-  const merged = mergeMessagesByTurn({ local, history });
-  const orders = (merged[0].thoughtSteps ?? []).map(step => step.order ?? 0);
-  // 插入序是「本地在前」，而历史项 order 更小 —— 只有真正按 order 排序才能得到 [5000, 7000]。
-  assert.deepEqual(orders, [5000, 7000], `过程项未按 order 升序合并: ${JSON.stringify(orders)}`);
+test('诊断：跨页气泡 ID 相同时，工具条只能标记一个组尾', () => {
+  // 旧路径下同一轮可能被拆成两条同 id 气泡（组尾相撞）。新口径下视图驱动的气泡 id 唯一，
+  // 这里守住「同一轮只有一条助手气泡」这条更根本的不变量。
+  const messages = aggregateRecordsByIdentity(undefined, undefined, SESSION_ID, { [TURN_ID]: createTurnView() });
+  assert.equal(messages.filter(message => message.role === 'assistant').length, 1, summarize(messages));
+
+  const bindings = buildMessageTurnMap(messages, { [TURN_ID]: { turnId: TURN_ID, status: 'CANCELLED', totalTokens: 3308400 } });
+  const tails = messages.filter(message => message.role === 'assistant' && bindings.get(message)?.isGroupTail);
+  assert.equal(tails.length, 1, `组尾只能有一个: ${summarize(messages)}`);
 });
 
-test('诊断：选中会话的详情响应迟到时，保留已收到的实时正文', async () => {
+test('诊断：同一轮的实时气泡被权威视图整体接管（顺序与身份全来自后端）', () => {
+  const messages: ChatMessage[] = [];
+  const reducer = new TurnStreamReducer(messages, { sessionId: SESSION_ID });
+  reducer.consume(createEvent({ type: 'PARTIAL_THINKING', content: '实时思考' }));
+  reducer.consume(createEvent({ type: 'TOOL_CALL', requestId: 'live-call', toolName: AgentToolName.ReadFile, args: '{}' }));
+  reducer.flush();
+  // 实时阶段：不建工具、不写思考（内容等视图）
+  assert.equal(messages[0].toolCalls?.length, 0, '原始事件不建工具项');
+  assert.equal(messages[0].thoughtSteps?.length, 0, '原始事件不写思考');
+
+  // 权威视图到达：整轮重写为后端给的 57 思考 + 59 工具
+  reducer.consume(snapshotEvent(createTurnView()));
+  assert.equal(messages.filter(message => message.role === 'assistant').length, 1, '同一轮只有一个气泡');
+  assert.equal(messages[0].thoughtSteps?.length, 57, '思考数量来自后端');
+  assert.equal(messages[0].toolCalls?.length, 59, '工具数量来自后端');
+});
+
+test('诊断：同 id 的块按 blockId 幂等覆盖，不依赖内容指纹', () => {
+  const messages: ChatMessage[] = [];
+  const reducer = new TurnStreamReducer(messages, { sessionId: SESSION_ID });
+  const base = createTurnView(TURN_ID, 4);
+  reducer.consume(snapshotEvent(base));
+  const before = messages[0].toolCalls?.length;
+
+  // 同一视图（同 blockId、同版本）再投一次：整轮重投影必须幂等
+  reducer.consume(snapshotEvent(base));
+  assert.equal(messages[0].toolCalls?.length, before, '重复投影不得翻倍');
+  assert.equal(messages.filter(message => message.role === 'assistant').length, 1, '不得裂出第二条气泡');
+});
+test('诊断：选中会话的详情响应迟到时，期间到达的实时轮次视图不被详情覆盖', async () => {
   const originalDetail = chatApi.fetchSessionDetail;
   let resolveDetail!: (value: Awaited<ReturnType<typeof chatApi.fetchSessionDetail>>) => void;
   chatApi.fetchSessionDetail = () => new Promise(resolve => { resolveDetail = resolve; });
@@ -228,26 +197,32 @@ test('诊断：选中会话的详情响应迟到时，保留已收到的实时�
   try {
     const loading = list.handleSelectSession(SESSION_ID);
     const reducer = new TurnStreamReducer(() => current.value!.messages, { sessionId: SESSION_ID });
-    reducer.consume(createEvent({ type: 'PARTIAL_TEXT', content: '详情请求期间已到达的正文' }));
-    reducer.flush();
+    // 在途期间实时轮次视图到达（版本 4）
+    reducer.consume(snapshotEvent(createTurnView(TURN_ID, 4)));
+    assert.equal(current.value!.messages[0]?.content, '', '详情未到，实时视图已建气泡');
+    assert.equal(current.value!.messages[0]?.toolCalls?.length, 59);
+    // 详情回来（不带视图 → 空）：按统一入口 upsert，实时已写入的轮次必须保留
     resolveDetail({ ok: true, data: createSession() });
     await loading;
-    assert.equal(current.value!.messages[0]?.content, '详情请求期间已到达的正文');
+    assert.equal(current.value!.messages[0]?.toolCalls?.length, 59, '在途到达的实时轮次不得被详情清空');
   } finally {
     chatApi.fetchSessionDetail = originalDetail;
   }
 });
 
-test('诊断：终结事件在订阅建立前已发生，工具收尾后本轮必须被认定为终结', () => {
+test('诊断：终结只由 EXECUTION_* 事件判定，不再由工具收尾推断', () => {
   const messages: ChatMessage[] = [];
   const reducer = new TurnStreamReducer(messages, { sessionId: SESSION_ID });
   reducer.consume(createEvent({ type: 'PARTIAL_THINKING', content: '当前思考' }));
   reducer.consume(createEvent({ type: 'TOOL_CALL', requestId: 'live-call', toolName: AgentToolName.ReadFile, args: '{}' }));
   reducer.consume(createEvent({ type: 'TOOL_COMPLETED', requestId: 'live-call', toolName: AgentToolName.ReadFile, output: '完成', resultStatus: 'COMPLETED' }));
-  // 没有 EXECUTION_COMPLETED：用户是在执行跑完之后才进入这个会话的
   reducer.flush();
-  // 不认终结 → 对账永远只「补齐」不「替换」，该轮工具条永不出现、状态永远停在运行中
-  assert.equal(messages[0].isComplete, true, '全部工具已收尾即本轮已终结');
+  // 删掉 markCompleteIfToolsSettled 后：工具收尾不再推断终结，气泡保持未完成，
+  // 直到后端下发 EXECUTION_COMPLETED（或对账按权威视图整体接管）。
+  assert.equal(messages[0].isComplete, false, '工具收尾不得推断终结');
+
+  reducer.consume(createEvent({ type: 'EXECUTION_COMPLETED' }));
+  assert.equal(messages[0].isComplete, true, 'EXECUTION_COMPLETED 才是终结信号');
 });
 
 test('诊断：仅思考未收尾时不得被认定为终结', () => {
@@ -257,27 +232,43 @@ test('诊断：仅思考未收尾时不得被认定为终结', () => {
   reducer.flush();
   assert.equal(messages[0].isComplete, false, '还在思考的一轮不能判为完成');
 
-  // 中间叙述帧会把 isThinking / isExploring 都置为 false，据此判终结会把仍在跑的一轮提前钉死
   const streaming: ChatMessage[] = [];
   const reducer2 = new TurnStreamReducer(streaming, { sessionId: SESSION_ID });
   reducer2.consume(createEvent({ type: 'TOOL_CALL', requestId: 'c1', toolName: AgentToolName.ReadFile, args: '{}' }));
   reducer2.consume(createEvent({ type: 'TOOL_COMPLETED', requestId: 'c1', toolName: AgentToolName.ReadFile, output: 'ok', resultStatus: 'COMPLETED' }));
   reducer2.consume(createEvent({ type: 'PARTIAL_TEXT', content: '继续说明' }));
   reducer2.flush();
-  assert.equal(streaming[0].isComplete, false, '仍有正文在流式时不能判为完成');
-  // 前提确认：isThinking 在工具收尾后仍为 true（工具收尾不改变思考态），
-  // 因此「用 isThinking/isExploring 推断终结」会在本轮仍要继续时误判 —— 判据只能看工具结果。
-  assert.equal(streaming[0].isThinking, true, '（前提确认：isThinking 与工具收尾无关，不能当终结判据）');
+  assert.equal(streaming[0].isComplete, false, '仍在流式时不能判为完成');
+  assert.equal(streaming[0].isThinking, true, '增量事件把气泡维持在生成态');
 });
 
-test('正对照：仅实时路径连续新增思考时，新过程排在旧工具之后', () => {
+test('正对照：过程项顺序完全来自后端视图，前端不参与排序推断', () => {
   const messages: ChatMessage[] = [];
   const reducer = new TurnStreamReducer(messages, { sessionId: SESSION_ID });
   reducer.consume(createEvent({ type: 'PARTIAL_THINKING', content: '第一段' }));
   reducer.consume(createEvent({ type: 'TOOL_CALL', requestId: 'control-call', toolName: AgentToolName.ReadFile, args: '{}' }));
   reducer.consume(createEvent({ type: 'PARTIAL_THINKING', content: '第二段' }));
   reducer.flush();
-  assert.ok(messages[0].thoughtSteps![1].order! > messages[0].toolCalls![0].order!);
+  // 原始事件不产生任何过程项，自然也没有「谁排在谁之后」的前端推断
+  assert.equal(messages[0].thoughtSteps?.length, 0, '原始思考事件不写过程项');
+  assert.equal(messages[0].toolCalls?.length, 0, '原始工具事件不写过程项');
+
+  // 顺序唯一来源是后端 order：故意乱序传入，时间线仍按 order 升序
+  reducer.consume(createEvent({
+    type: 'TURN_SNAPSHOT',
+    turnId: TURN_ID,
+    viewVersion: 1,
+    view: {
+      sessionId: SESSION_ID, turnId: TURN_ID, status: 'COMPLETED', viewVersion: 1,
+      blocks: [
+        { blockId: 'tool:control-call', type: 'TOOL', order: 2000, status: 'COMPLETED', toolCallId: 'control-call', toolName: AgentToolName.ReadFile },
+        { blockId: 'thinking:s2', type: 'THINKING', order: 3000, status: 'COMPLETE', text: '第二段' },
+        { blockId: 'thinking:s1', type: 'THINKING', order: 1000, status: 'COMPLETE', text: '第一段' },
+      ]
+    }
+  } as unknown as AgentEvent));
+  const orders = (messages[0].processTimeline ?? []).map(item => item.order ?? 0);
+  assert.deepEqual(orders, [1000, 2000, 3000], '时间线必须按后端 order 升序');
 });
 
 test('诊断：往前翻页时同一轮仍只有一个助手气泡，且补齐全部工具', async () => {

@@ -234,7 +234,7 @@ test('5. 实时建卡：查不到 / 查失败都不建卡、不伪造状态', as
   assert.ok(!bubble.promptCards || bubble.promptCards.length === 0, '拉取失败不得伪造卡片');
 });
 
-test('6. 实时思考分段：整轮多段思考 → 多个思考项（与工具调用同粒度）', () => {
+test('6. 思考分段与交错顺序由后端块视图给出（前端不再自行分段）', () => {
   const messages: ChatMessage[] = [];
   const reducer = new TurnStreamReducer(messages, { sessionId: 'sess-think' });
 
@@ -247,26 +247,39 @@ test('6. 实时思考分段：整轮多段思考 → 多个思考项（与工具
   });
 
   reducer.consume(evt('EXECUTION_STARTED') as any);
-  // 段 1
+  // 原始增量思考：不写过程项（分段由后端决定）
   reducer.consume(evt('PARTIAL_THINKING', { content: '思考一' }) as any);
-  reducer.flush();
-  // 工具边界
   reducer.consume(evt('TOOL_CALL', { toolName: AgentToolName.ReadFile, requestId: 'c1', args: '{"path":"a"}', resultStatus: 'STARTED' }) as any);
-  // 段 2
   reducer.consume(evt('PARTIAL_THINKING', { content: '思考二' }) as any);
-  reducer.flush();
-  // 工具边界
   reducer.consume(evt('TOOL_CALL', { toolName: AgentToolName.ReadFile, requestId: 'c2', args: '{"path":"b"}', resultStatus: 'STARTED' }) as any);
-  // 段 3
   reducer.consume(evt('PARTIAL_THINKING', { content: '思考三' }) as any);
   reducer.flush();
 
   const bubble = messages[0];
-  assert.equal(bubble.thoughtSteps?.length, 3, '整轮多段思考应拆成 3 个独立思考项，而非 1 个');
+  assert.equal(bubble.thoughtSteps?.length, 0, '原始思考事件不写过程项');
+  assert.equal(bubble.toolCalls?.length, 0, '原始工具事件不写过程项');
+
+  // 后端块视图给出三段思考与两个工具，严格交错
+  reducer.consume(evt('TURN_SNAPSHOT', {
+    turnId: 't1',
+    viewVersion: '1',
+    view: {
+      sessionId: 'sess-think', turnId: 't1', status: 'COMPLETED', viewVersion: '1',
+      blocks: [
+        { blockId: 'thinking:1', type: 'THINKING', order: 0, status: 'COMPLETE', text: '思考一' },
+        { blockId: 'tool:c1', type: 'TOOL', order: 10, status: 'COMPLETED', toolCallId: 'c1', toolName: AgentToolName.ReadFile },
+        { blockId: 'thinking:2', type: 'THINKING', order: 20, status: 'COMPLETE', text: '思考二' },
+        { blockId: 'tool:c2', type: 'TOOL', order: 30, status: 'COMPLETED', toolCallId: 'c2', toolName: AgentToolName.ReadFile },
+        { blockId: 'thinking:3', type: 'THINKING', order: 40, status: 'COMPLETE', text: '思考三' }
+      ]
+    }
+  }) as any);
+
+  assert.equal(bubble.thoughtSteps?.length, 3, '三段思考来自后端块');
   assert.deepStrictEqual(bubble.thoughtSteps?.map(s => s.content), ['思考一', '思考二', '思考三']);
   assert.equal(bubble.toolCalls?.length, 2);
 
-  // 思考与工具严格交错：thought(0) tool(10) thought(20) tool(30) thought(40)
+  // 交错顺序完全由后端 order 决定
   const orders = {
     t0: bubble.thoughtSteps![0].order ?? -1,
     tool0: bubble.toolCalls![0].order ?? -1,

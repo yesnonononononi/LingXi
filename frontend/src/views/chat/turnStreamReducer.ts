@@ -1,14 +1,9 @@
 import type { AgentEvent, TokenInfo } from '../../types/Event';
 import type { BlockEventPayload } from '../../types/block';
 import { parseVersion } from '../../types/block';
-import type { ChatMessage, ContextUsageData, ToolCallTrace, ToolCallVO } from '../../types/chat';
-import { AgentToolName } from '../../utils/toolNames';
-import { resolveToolCategory, resolveToolExecutionStatus, isEditFileTool, extractSubAgentParams } from '../../utils/toolMeta';
+import type { ChatMessage, ContextUsageData, ToolCallVO } from '../../types/chat';
 import { isCardToolName, upsertPromptCard } from '../../utils/toolCallCard';
-import { toObject } from '../../utils/json';
-import { parseToolDiff } from '../../utils/toolDiff';
-import { StreamFrameBuffer } from './streamFrameBuffer';
-import { nextOrderFor, projectTurnView, upsertBlockIntoBubble } from './blockProjection';
+import { projectTurnView, upsertBlockIntoBubble } from './blockProjection';
 
 /** 卡片就绪重试上限（次）。 */
 const CARD_RETRY_MAX = 5;
@@ -42,8 +37,12 @@ export interface TurnStreamReducerOptions {
 /**
  * 业务轮次流式渲染状态机。
  *
- * <p>将底层离散的运行时事件汇聚为单一 Assistant 回答气泡。
- * 忽略网络分包、心跳与重复广播噪声，维护深度思考、时序工具调用与增量正文。</p>
+ * <p><b>展示内容的唯一来源是块视图</b>：{@code TURN_SNAPSHOT} 整轮重投影、{@code BLOCK_UPSERT}
+ * 按 blockId 增量。原始事件（{@code PARTIAL_*} / {@code TOOL_*}）<b>不再写气泡内容</b> ——
+ * 它们只用于两件事：推进轮次/气泡的生命周期（进行中 / 挂起 / 终结），以及驱动审批卡片拉取。</p>
+ *
+ * <p>这样前端完全不参与「时序与状态推断」：正文、思考分步、工具条顺序与状态全部读后端
+ * 的 {@code order / placement / status}。</p>
  */
 export class TurnStreamReducer {
   private sessionId: string;
@@ -57,7 +56,6 @@ export class TurnStreamReducer {
   private getMessages: () => ChatMessage[];
   private currentTurnId: string | null = null;
   private activeBubbleId: string | null = null;
-  private frameBuffer: StreamFrameBuffer;
   private onScrollFollow?: () => void;
   private onContextUsageUpdate?: (sessionId: string, usage: ContextUsageData) => void;
   private onResolveCard?: (toolCallId: string) => Promise<ToolCallVO | null>;
@@ -86,31 +84,6 @@ export class TurnStreamReducer {
     this.onResolveCard = options.onResolveCard;
     this.scheduleCardRetry = options.scheduleCardRetry;
     this.cancelCardRetry = options.cancelCardRetry;
-
-    this.frameBuffer = new StreamFrameBuffer((textBatch, thinkBatch) => {
-      let hasChanges = false;
-
-      textBatch.forEach((chunk, bubbleId) => {
-        const bubble = this.findMessageById(bubbleId);
-        if (bubble) {
-          bubble.content = (bubble.content || '') + chunk;
-          hasChanges = true;
-        }
-      });
-
-      thinkBatch.forEach((chunk, bubbleId) => {
-        const bubble = this.findMessageById(bubbleId);
-        if (bubble && bubble.thoughtSteps && bubble.thoughtSteps.length > 0) {
-          const step = bubble.thoughtSteps[bubble.thoughtSteps.length - 1];
-          step.content = (step.content || '') + chunk;
-          hasChanges = true;
-        }
-      });
-
-      if (hasChanges) {
-        this.onScrollFollow?.();
-      }
-    });
   }
 
   /** 注入用户乐观提问气泡 */
@@ -157,20 +130,21 @@ export class TurnStreamReducer {
         this.handleExecutionStarted(turnId);
         break;
 
+      // 原始增量不写展示内容：正文 / 思考 / 工具条一律等块视图（TURN_SNAPSHOT / BLOCK_UPSERT）。
+      // 只保留「本轮仍在生成」这一事实，供气泡运行态与滚动跟随使用。
       case 'PARTIAL_THINKING':
-        this.handlePartialThinking(event.content);
-        break;
-
       case 'PARTIAL_TEXT':
-        this.handlePartialText(event.content);
+        this.handleActivity(turnId);
         break;
 
+      // COMPLETE_TEXT 曾是正文的「全量备份」通道；块视图生效后它与 AI_MESSAGE 一样是噪声。
       case 'COMPLETE_TEXT':
-        this.handleCompleteText(event.content);
+      case 'AI_MESSAGE':
         break;
 
+      // 工具开始 / 结束不再建卡、不写工具条；只按权威数据拉审批卡片（PROMISE 类）。
       case 'TOOL_CALL':
-        this.handleToolCall(event);
+        this.handleToolActivity(turnId, event.requestId, event.toolName);
         break;
 
       case 'TOOL_COMPLETED':
@@ -199,10 +173,6 @@ export class TurnStreamReducer {
 
       case 'EXECUTION_CANCELLED':
         this.handleExecutionCancelled();
-        break;
-
-      case 'AI_MESSAGE':
-        // 传输层全量备份，流式渲染直接作为噪声丢弃
         break;
 
       case 'TURN_SNAPSHOT':
@@ -348,10 +318,10 @@ export class TurnStreamReducer {
       isExploring: true,
       isComplete: false,
       isSuspended: false,
+      // 过程列初始为空：内容一律由块视图（TURN_SNAPSHOT / BLOCK_UPSERT）投影写入，
+      // 前端不再自己累加，避免与后端 order 漂移。
       thoughtSteps: [],
       toolCalls: [],
-      // 中间叙述必须从一开始就存在：实时路径原先只写 content，导致流式期间所有轮次的
-      // 文本都堆在正文里、对账后才被搬进过程区（用户看到一次跳变）。见 handleToolCall。
       aiMessages: [],
       processTimeline: []
     };
@@ -370,152 +340,35 @@ export class TurnStreamReducer {
     bubble.isComplete = false;
   }
 
-  private handlePartialThinking(chunk: string): void {
-    if (!chunk) return;
-    const bubble = this.obtainActiveBubble(this.currentTurnId);
+  /**
+   * 原始增量事件（正文 / 思考）：只标记「本轮仍在生成」。
+   *
+   * <p>内容本身不写气泡 —— 后端会通过 {@code TURN_SNAPSHOT}（整轮）与 {@code BLOCK_UPSERT}（单块）
+   * 下发权威块。这里保留气泡并置为进行中，保证终结事件到达前界面有承载对象。</p>
+   */
+  private handleActivity(turnId: string | null): void {
+    const bubble = this.obtainActiveBubble(turnId);
     bubble.isThinking = true;
-    bubble.isSuspended = false;
-
-    // 思考按「与工具调用同粒度」分段：上一段已被工具 / 中间正文边界收尾（status 非 running）时开启新步，
-    // 而不是把整轮思考都追加进同一个步骤（那样整轮思考会挤成一个「深度思考」大框）。
-    const steps = bubble.thoughtSteps ?? (bubble.thoughtSteps = []);
-    const lastStep = steps.length > 0 ? steps[steps.length - 1] : null;
-    if (!lastStep || lastStep.status !== 'running') {
-      steps.push({
-        id: `step-${bubble.id}-${steps.length}`,
-        title: '深度思考',
-        content: '',
-        status: 'running',
-        order: nextOrderFor(bubble)
-      });
-    }
-
-    this.frameBuffer.pushThinking(bubble.id, chunk);
-  }
-
-  private handlePartialText(chunk: string): void {
-    if (!chunk) return;
-    const bubble = this.obtainActiveBubble(this.currentTurnId);
     bubble.isExploring = false;
     bubble.isSuspended = false;
-    // 又吐出新正文 = 这一轮重新进入生成态。上一条工具收尾时推断出的「已终结」必须撤回，
-    // 否则气泡会带着 isComplete=true 继续流式，watch(false→true) 的收起动画不会触发，
-    // 对账也会误以为「本地已完结」而拒绝用权威历史替换该轮。
     bubble.isComplete = false;
-
-    if (bubble.thoughtSteps) {
-      bubble.thoughtSteps.forEach(step => {
-        if (step.status === 'running') {
-          step.status = 'success';
-        }
-      });
-    }
-
-    this.frameBuffer.pushText(bubble.id, chunk);
   }
 
-  private handleCompleteText(fullContent: string): void {
-    this.frameBuffer.flushImmediate();
-    const bubble = this.obtainActiveBubble(this.currentTurnId);
-    if (fullContent) {
-      bubble.content = fullContent;
-    }
-    bubble.isThinking = false;
+  /**
+   * 工具调用开始：不建卡、不写工具条。
+   *
+   * <p>工具条的内容与状态由后端块视图决定（{@code TOOL} 块）。这里只为 PROMISE 类工具
+   * （计划 / 提问 / 命令审批）触发一次权威 {@link ToolCallVO} 拉取 —— 审批卡片是用户必须
+   * 立即看到并操作的东西，不能等块视图。</p>
+   */
+  private handleToolActivity(turnId: string | null, requestId?: string, toolName?: string): void {
+    const bubble = this.obtainActiveBubble(turnId);
     bubble.isExploring = false;
     bubble.isSuspended = false;
 
-    if (bubble.thoughtSteps) {
-      bubble.thoughtSteps.forEach(step => {
-        if (step.status === 'running') {
-          step.status = 'success';
-        }
-      });
-    }
+    if (!requestId || !toolName || !isCardToolName(toolName)) return;
 
-    this.onScrollFollow?.();
-  }
-
-  private handleToolCall(event: { requestId?: string; toolName?: string; args?: string }): void {
-    this.frameBuffer.flushImmediate();
-    const bubble = this.obtainActiveBubble(this.currentTurnId);
-    bubble.isExploring = false;
-    bubble.isSuspended = false;
-
-    if (bubble.thoughtSteps) {
-      bubble.thoughtSteps.forEach(step => {
-        if (step.status === 'running') step.status = 'success';
-      });
-    }
-
-    // 工具调用意味着「本轮叙述到此为止」：把已累计的文本从正文移到中间叙述集合。
-    // 判据与历史路径一致（aggregateSessionMessages：同一轮里文本行后跟工具行 = 中间过程），
-    // 因此对账替换时 intermediateAiMessages 的「等于正文则剔除」判据继续成立、不再跳变。
-    // 放在 requestId 守卫之前：缺 requestId 只是不建卡，工具调用本身已经发生，正文同样该断句。
-    if (bubble.content && bubble.content.trim()) {
-      if (!bubble.aiMessages) {
-        bubble.aiMessages = [];
-      }
-      bubble.aiMessages.push({
-        id: `ai-${bubble.id}-${bubble.aiMessages.length}`,
-        text: bubble.content,
-        order: nextOrderFor(bubble)
-      });
-      bubble.content = '';
-    }
-
-    // requestId 是后端 tool_call 主键，缺失则不建卡：伪造 ID 会让同一次调用的开始/结束事件落到两个气泡上。
-    // 不用 `as string` 绕过 —— types/chat.ts 的 id: string 是编译期约束，让 vue-tsc 报错才是保护。
-    const requestId = event.requestId;
-    if (!requestId) {
-      console.warn('[stream] TOOL_CALL 缺 requestId，该工具调用不建卡: toolName=%s', event.toolName);
-      return;
-    }
-    if (!bubble.toolCalls) {
-      bubble.toolCalls = [];
-    }
-
-    const existingTool = bubble.toolCalls.find(tc => tc.id === requestId);
-    if (!existingTool) {
-      // toolName 同样不兜底：TOOL_CALL 只在框架 invokeTool 内发布（工具已注册且通过审批），
-      // 恒非空。编个 ExecuteCommand 会渲染成「执行命令」卡片，把工具报错伪装成命令执行。
-      const toolName = event.toolName;
-      if (!toolName) {
-        console.warn('[stream] TOOL_CALL 缺 toolName，该工具调用不建卡: id=%s', requestId);
-        return;
-      }
-      const rawArgs = event.args || '';
-      const parsedArgs = toObject(rawArgs, {});
-      const toolCategory = resolveToolCategory(toolName);
-
-      const toolTrace: ToolCallTrace = {
-        id: requestId,
-        toolName,
-        category: toolCategory,
-        query: rawArgs,
-        args: parsedArgs,
-        status: 'calling',
-        order: nextOrderFor(bubble)
-      };
-
-      if (toolName === AgentToolName.CallSubAgent) {
-        const subParams = extractSubAgentParams({ query: rawArgs, subSessionId: parsedArgs.subSessionId });
-        toolTrace.subAgentId = parsedArgs.agentId ?? subParams.agentId;
-        toolTrace.subAgentName = parsedArgs.agentName ?? subParams.agentName;
-        toolTrace.subTask = parsedArgs.task ?? subParams.task;
-        toolTrace.subPrompt = parsedArgs.prompt ?? subParams.prompt;
-        toolTrace.subSessionId = parsedArgs.subSessionId ?? subParams.subSessionId;
-      }
-
-      bubble.toolCalls.push(toolTrace);
-
-      // PROMISE 类工具（计划 / 提问 / 命令审批）：拉权威 ToolCallVO 建卡。
-      // 查不到 / 查失败都不建卡、不伪造状态；此刻后端行可能尚未落库或仍是 PREPARING，
-      // 由 requestPromptCard 的就绪重试（安全网）继续拉直到 pending。
-      if (isCardToolName(toolName)) {
-        this.requestPromptCard(bubble.id, requestId);
-      }
-    }
-
+    this.requestPromptCard(bubble.id, requestId, toolName);
     this.onScrollFollow?.();
   }
 
@@ -525,67 +378,14 @@ export class TurnStreamReducer {
     output?: string;
     resultStatus?: string;
   }): void {
-    this.frameBuffer.flushImmediate();
+    // 工具结果不再写工具条：状态与结果文案来自后端 TOOL 块。
+    // 但终端审批（命令审批）在 policy 内短路，框架只发 TOOL_COMPLETED(resultStatus=PROMISED)、
+    // 从不发 TOOL_CALL，必须用完成事件自带的权威调用 ID 直接拉卡 —— 否则实时审批卡要等到
+    // 刷新后从历史聚合才出现。requestId 缺失同样不建卡：伪造 ID 会让卡片挂到错误的调用上。
+    if (event.resultStatus !== 'PROMISED' || !event.requestId) return;
+
     const bubble = this.obtainActiveBubble(this.currentTurnId);
-
-    // 终端审批（命令审批）在 policy 内短路，框架只发 TOOL_COMPLETED(resultStatus=PROMISED)、
-    // 从不发 TOOL_CALL，因此下方按已有轨迹找不到目标、也建不出卡片。必须用完成事件自带的权威
-    // 调用 ID 直接拉卡，否则实时审批卡要等到刷新后从历史聚合才出现。
-    // requestId 缺失同样不建卡：伪造 ID 会让卡片挂到错误的调用上。
-    if (event.resultStatus === 'PROMISED' && event.requestId) {
-      this.requestPromptCard(bubble.id, event.requestId);
-    }
-
-    if (!bubble.toolCalls) return;
-
-    const requestId = event.requestId;
-    const target = bubble.toolCalls.find(tc => tc.id === requestId);
-    if (target) {
-      const outputText = event.output || '';
-      target.result = outputText;
-      target.status = resolveToolExecutionStatus(event.resultStatus);
-
-      if (isEditFileTool(target.toolName)) {
-        const diffStat = parseToolDiff({
-          toolName: target.toolName,
-          result: outputText
-        });
-        if (diffStat) {
-          target.plusLines = diffStat.plusLines ?? undefined;
-          target.minusLines = diffStat.minusLines ?? undefined;
-        }
-      }
-    }
-
-    // 工具结果已写回：若该轮全部工具都已收尾，则这一轮事实上已终结（见 markCompleteIfToolsSettled）
-    this.markCompleteIfToolsSettled(bubble);
-
-    this.onScrollFollow?.();
-  }
-
-  /**
-   * 由实时事实推断「本轮已终结」的唯一一处。
-   *
-   * <p>执行结束后气泡只有一个终结信号（EXECUTION_COMPLETED / FAILED / CANCELLED）。若终结事件
-   * 在建立订阅之前就已发生（进入会话晚于执行结束），气泡会永远停在 {@code isComplete: false}，
-   * 使对账把它当成「进行中的本地气泡」而拒绝用权威历史替换 / 补齐该轮过程数据
-   * （表现为「工具调用永远显示运行中、工具条不出现」）。</p>
-   *
-   * <p><b>判据只能是「工具已有结果」——不得用 {@code isThinking}/{@code isExploring} 推断</b>：
-   * 中间叙述帧会把这两者都置为 false（`handlePartialText`），模型往往还要接着调工具，
-   * 据此判终结会把仍在进行的一轮提前钉成完成态。工具结果只在 {@link handleToolCompleted}
-   * 写入，因此判据自包含：**所有已知工具调用都有终态结果，且没有正在流式的思考或正文**。</p>
-   *
-   * <p>终结后照常返回，事件流若仍在继续，后续过程项照旧能被 push 进来 —— 这里只是让对账
-   * 不再把它当「进行中」，不是冻结气泡。</p>
-   */
-  private markCompleteIfToolsSettled(bubble: ChatMessage): void {
-    const toolCalls = bubble.toolCalls;
-    if (!toolCalls || toolCalls.length === 0) return;
-    if (!toolCalls.every(call => typeof call.result === 'string')) return;
-    if (this.frameBuffer.hasPending(bubble.id)) return;
-
-    bubble.isComplete = true;
+    this.requestPromptCard(bubble.id, event.requestId, event.toolName);
   }
 
   private handleContextUpdate(event: {
@@ -614,29 +414,16 @@ export class TurnStreamReducer {
   }
 
   private handleExecutionSuspended(): void {
-    this.frameBuffer.flushImmediate();
     const bubble = this.obtainActiveBubble(this.currentTurnId);
     bubble.isThinking = false;
     bubble.isExploring = false;
     bubble.isSuspended = true;
 
-    // 挂起是思考段的边界：收尾当前思考步，避免留下永不结束的 running 步
-    if (bubble.thoughtSteps) {
-      bubble.thoughtSteps.forEach(step => {
-        if (step.status === 'running') step.status = 'success';
-      });
-    }
-
-    // 将进行中的工具调用标记为 pending 待审批状态；PROMISE 类再拉一次权威卡片兜底
+    // 挂起时进行中的工具由后端块视图给出 pending 语义；这里只对 PROMISE 类再拉一次权威卡片兜底。
     if (bubble.toolCalls) {
       bubble.toolCalls.forEach(tc => {
-        if (tc.status === 'calling') {
-          tc.status = 'pending';
-        }
-      });
-      bubble.toolCalls.forEach(tc => {
         if (tc.status === 'pending' && isCardToolName(tc.toolName)) {
-          this.requestPromptCard(bubble.id, tc.id);
+          this.requestPromptCard(bubble.id, tc.id, tc.toolName);
         }
       });
     }
@@ -645,24 +432,14 @@ export class TurnStreamReducer {
   }
 
   private handleExecutionResumed(): void {
-    this.frameBuffer.flushImmediate();
     const bubble = this.obtainActiveBubble(this.currentTurnId);
     bubble.isSuspended = false;
     bubble.isThinking = true;
-
-    if (bubble.toolCalls) {
-      bubble.toolCalls.forEach(tc => {
-        if (tc.status === 'pending') {
-          tc.status = 'calling';
-        }
-      });
-    }
 
     this.onScrollFollow?.();
   }
 
   private handleExecutionCompleted(tokenInfo: TokenInfo | null): void {
-    this.frameBuffer.flushImmediate();
     const bubble = this.obtainActiveBubble(this.currentTurnId);
     bubble.isComplete = true;
     bubble.isThinking = false;
@@ -673,29 +450,11 @@ export class TurnStreamReducer {
     // 执行终结：卡片不会再有就绪机会，取消全部待重试定时器
     this.clearAllCardRetries();
 
-    if (bubble.thoughtSteps) {
-      bubble.thoughtSteps.forEach(step => {
-        if (step.status === 'running') step.status = 'success';
-      });
-    }
-
-    if (bubble.toolCalls) {
-      bubble.toolCalls.forEach(tc => {
-        if (tc.status === 'calling') {
-          // 轮次终结时仍在 calling = 工具结果事件没到。只改状态不编造 result 文案，
-          // 且必须留痕：否则「工具没跑完」与「工具跑了但结果没落库」在界面上无法区分。
-          console.warn('[stream] 轮次终结时工具仍为 calling，置为 unknown: toolName=%s, id=%s', tc.toolName, tc.id);
-          tc.status = 'unknown';
-        }
-      });
-    }
-
     this.activeBubbleId = null;
     this.onScrollFollow?.();
   }
 
   private handleExecutionFailed(errMsg?: string): void {
-    this.frameBuffer.flushImmediate();
     const bubble = this.obtainActiveBubble(this.currentTurnId);
     bubble.isComplete = true;
     bubble.isThinking = false;
@@ -703,16 +462,10 @@ export class TurnStreamReducer {
     bubble.isSuspended = false;
     // 执行终结：卡片不会再有就绪机会，取消全部待重试定时器
     this.clearAllCardRetries();
-    // 失败原因写进 content（正文尾部），不能只写 sendError —— 该字段全仓 0 读取点，写进去等于丢弃。
-    // 与历史路径同形：刷新后从 turn.errorReason 看到，实时阶段从本段正文看到，两处口径一致。
+    // 失败原因写进 content 尾部：该轮不会再有 BODY 块，错误文案只能由实时事件补。
+    // 与历史路径同形（刷新后从 turn.errorReason 看到），两处口径一致。
     if (errMsg) {
       bubble.content = bubble.content ? `${bubble.content}\n\n${errMsg}` : errMsg;
-    }
-
-    if (bubble.thoughtSteps) {
-      bubble.thoughtSteps.forEach(step => {
-        if (step.status === 'running') step.status = 'failed';
-      });
     }
 
     this.activeBubbleId = null;
@@ -720,7 +473,6 @@ export class TurnStreamReducer {
   }
 
   private handleExecutionCancelled(): void {
-    this.frameBuffer.flushImmediate();
     const bubble = this.obtainActiveBubble(this.currentTurnId);
     bubble.isComplete = true;
     bubble.isThinking = false;
@@ -741,11 +493,13 @@ export class TurnStreamReducer {
 
   /**
    * 请求一次「卡片就绪」拉取（并发/重复触发按 toolCallId 去重，避免定时器叠加）。
+   *
+   * @param toolName 事件自带的工具名；仅用于日志留痕，不参与建卡判据
    */
-  private requestPromptCard(bubbleId: string, toolCallId: string): void {
+  private requestPromptCard(bubbleId: string, toolCallId: string, toolName?: string): void {
     if (this.disposed || !toolCallId) return;
     if (this.cardResolving.has(toolCallId) || this.cardRetryTimers.has(toolCallId)) return;
-    void this.resolvePromptCard(bubbleId, toolCallId, 0);
+    void this.resolvePromptCard(bubbleId, toolCallId, toolName, 0);
   }
 
   /**
@@ -756,7 +510,7 @@ export class TurnStreamReducer {
    *
    * <p>气泡按 id 现查而非持引用：会话对账会整体替换 messages，持有旧引用会写到脱离渲染的对象上。</p>
    */
-  private async resolvePromptCard(bubbleId: string, toolCallId: string, attempt: number): Promise<void> {
+  private async resolvePromptCard(bubbleId: string, toolCallId: string, toolName: string | undefined, attempt: number): Promise<void> {
     if (this.disposed || !this.onResolveCard || !toolCallId) return;
     if (this.cardResolving.has(toolCallId)) return;
     this.cardResolving.add(toolCallId);
@@ -766,7 +520,7 @@ export class TurnStreamReducer {
       card = await this.onResolveCard(toolCallId);
     } catch (err) {
       // 查失败同样不建卡；纳入重试（网络抖动不该让卡片永远停在「准备中」）
-      console.warn('[TurnStreamReducer] 拉取互动卡片失败，稍后重试（不伪造状态）:', toolCallId, err);
+      console.warn('[TurnStreamReducer] 拉取互动卡片失败，稍后重试（不伪造状态）:', toolName ?? toolCallId, err);
       card = null;
     } finally {
       this.cardResolving.delete(toolCallId);
@@ -788,7 +542,7 @@ export class TurnStreamReducer {
       }
     }
 
-    this.scheduleCardAttempt(bubbleId, toolCallId, attempt + 1);
+    this.scheduleCardAttempt(bubbleId, toolCallId, toolName, attempt + 1);
   }
 
   /**
@@ -810,15 +564,15 @@ export class TurnStreamReducer {
    * 间隔 {@link CARD_RETRY_DELAY_MS} 毫秒 —— 这是安全网：兜住事件与落库之间的偶发可见性延迟，
    * 正常路径首批拉取即就绪。</p>
    */
-  private scheduleCardAttempt(bubbleId: string, toolCallId: string, nextAttempt: number): void {
+  private scheduleCardAttempt(bubbleId: string, toolCallId: string, toolName: string | undefined, nextAttempt: number): void {
     if (this.disposed || !this.scheduleCardRetry) return;
     if (nextAttempt > CARD_RETRY_MAX) {
-      console.warn('[TurnStreamReducer] 卡片就绪重试已达上限，放弃:', toolCallId);
+      console.warn('[TurnStreamReducer] 卡片就绪重试已达上限，放弃:', toolName ?? toolCallId);
       return;
     }
     const timerId = this.scheduleCardRetry(() => {
       this.cardRetryTimers.delete(toolCallId);
-      void this.resolvePromptCard(bubbleId, toolCallId, nextAttempt);
+      void this.resolvePromptCard(bubbleId, toolCallId, toolName, nextAttempt);
     }, CARD_RETRY_DELAY_MS);
     this.cardRetryTimers.set(toolCallId, timerId);
   }
@@ -844,15 +598,20 @@ export class TurnStreamReducer {
    *
    * <p>组件卸载 / 会话切换时调用，避免回调写到已销毁的对象上。</p>
    */
+  /** 释放：取消全部待重试的建卡定时器，之后不再接受新的重试。 */
   public dispose(): void {
     this.disposed = true;
     this.clearAllCardRetries();
     this.cardResolving.clear();
   }
 
-  /** 强制同步所有缓冲内容 */
+  /**
+   * 空实现，仅为兼容宿主（会话路由在切流 / 释放前统一调用）。
+   *
+   * <p>原始增量已不再进缓冲（内容全部来自块视图），因此没有「待刷新」的帧。</p>
+   */
   public flush(): void {
-    this.frameBuffer.flushImmediate();
+    // no-op
   }
 }
 

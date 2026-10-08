@@ -116,7 +116,14 @@ test('QA-1 缺陷1：首轮发消息——渲染副作用必须由流式写入�
   await sendPromise;
 
   (streamCtl as any).enqueue(enc(frame('EXECUTION_STARTED', { type: 'EXECUTION_STARTED', executionId: 'e1', timestamp: '2026-10-06T06:57:56.135Z', metaData: meta(TID) })));
-  (streamCtl as any).enqueue(enc(frame('PARTIAL_TEXT', { type: 'PARTIAL_TEXT', content: '你发送的是「1」', executionId: 'e1', timestamp: '2026-10-06T06:57:57.000Z', metaData: meta(TID) })));
+  (streamCtl as any).enqueue(enc(frame('TURN_SNAPSHOT', {
+    type: 'TURN_SNAPSHOT', turnId: TID, viewVersion: '1',
+    view: {
+      sessionId: SID, turnId: TID, status: 'RUNNING', viewVersion: '1',
+      blocks: [{ blockId: 'text:1', type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: '你发送的是「1」' }]
+    },
+    executionId: 'e1', timestamp: '2026-10-06T06:57:57.000Z', metaData: meta(TID)
+  })));
   (streamCtl as any).enqueue(enc(frame('EXECUTION_COMPLETED', { type: 'EXECUTION_COMPLETED', executionId: 'e1', timestamp: '2026-10-06T06:57:58.000Z', metaData: meta(TID) })));
   for (let i = 0; i < 20; i++) await tick();
   await nextTick();
@@ -220,7 +227,11 @@ test('QA-5 边界：同一会话内发第 2 条消息——仍实时渲染', asy
   for (let i = 0; i < 50 && !streamCtl; i++) await tick();
   await p1;
   (streamCtl as any).enqueue(enc(frame('EXECUTION_STARTED', { type: 'EXECUTION_STARTED', executionId: 'e1', timestamp: '2026-10-06T06:57:56Z', metaData: meta(TID) })));
-  (streamCtl as any).enqueue(enc(frame('PARTIAL_TEXT', { type: 'PARTIAL_TEXT', content: '回复一', executionId: 'e1', timestamp: '2026-10-06T06:57:57Z', metaData: meta(TID) })));
+  (streamCtl as any).enqueue(enc(frame('TURN_SNAPSHOT', {
+    type: 'TURN_SNAPSHOT', turnId: TID, viewVersion: '1',
+    view: { sessionId: SID, turnId: TID, status: 'RUNNING', viewVersion: '1', blocks: [{ blockId: 'text:r1', type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: '回复一' }] },
+    executionId: 'e1', timestamp: '2026-10-06T06:57:57Z', metaData: meta(TID)
+  })));
   (streamCtl as any).enqueue(enc(frame('EXECUTION_COMPLETED', { type: 'EXECUTION_COMPLETED', executionId: 'e1', timestamp: '2026-10-06T06:57:58Z', metaData: meta(TID) })));
   for (let i = 0; i < 20; i++) await tick();
   await nextTick();
@@ -231,7 +242,11 @@ test('QA-5 边界：同一会话内发第 2 条消息——仍实时渲染', asy
   await p2;
   assert.ok(streamCtl, '第 2 轮应复用同一条会话级流（终态不关流）');
   (streamCtl as any).enqueue(enc(frame('EXECUTION_STARTED', { type: 'EXECUTION_STARTED', executionId: 'e2', timestamp: '2026-10-06T06:58:00Z', metaData: meta(TID2) })));
-  (streamCtl as any).enqueue(enc(frame('PARTIAL_TEXT', { type: 'PARTIAL_TEXT', content: '回复二', executionId: 'e2', timestamp: '2026-10-06T06:58:01Z', metaData: meta(TID2) })));
+  (streamCtl as any).enqueue(enc(frame('TURN_SNAPSHOT', {
+    type: 'TURN_SNAPSHOT', turnId: TID2, viewVersion: '1',
+    view: { sessionId: SID, turnId: TID2, status: 'RUNNING', viewVersion: '1', blocks: [{ blockId: 'text:r2', type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: '回复二' }] },
+    executionId: 'e2', timestamp: '2026-10-06T06:58:01Z', metaData: meta(TID2)
+  })));
   (streamCtl as any).enqueue(enc(frame('EXECUTION_COMPLETED', { type: 'EXECUTION_COMPLETED', executionId: 'e2', timestamp: '2026-10-06T06:58:02Z', metaData: meta(TID2) })));
   for (let i = 0; i < 20; i++) await tick();
   await nextTick();
@@ -278,7 +293,11 @@ const p = view.handleSendMessage('历史会话里发一条', false, null, null, 
   assert.ok(streamCtl, '会话级事件流应已建立');
   await p;
   (streamCtl as any).enqueue(enc(frame('EXECUTION_STARTED', { type: 'EXECUTION_STARTED', executionId: 'e1', timestamp: '2026-10-06T07:00:00Z', metaData: meta(TID) })));
-  (streamCtl as any).enqueue(enc(frame('PARTIAL_TEXT', { type: 'PARTIAL_TEXT', content: '收到', executionId: 'e1', timestamp: '2026-10-06T07:00:01Z', metaData: meta(TID) })));
+  (streamCtl as any).enqueue(enc(frame('TURN_SNAPSHOT', {
+    type: 'TURN_SNAPSHOT', turnId: TID, viewVersion: '1',
+    view: { sessionId: SID, turnId: TID, status: 'RUNNING', viewVersion: '1', blocks: [{ blockId: 'text:h1', type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: '收到' }] },
+    executionId: 'e1', timestamp: '2026-10-06T07:00:01Z', metaData: meta(TID)
+  })));
   (streamCtl as any).enqueue(enc(frame('EXECUTION_COMPLETED', { type: 'EXECUTION_COMPLETED', executionId: 'e1', timestamp: '2026-10-06T07:00:02Z', metaData: meta(TID) })));
   for (let i = 0; i < 20; i++) await tick();
   await nextTick();
