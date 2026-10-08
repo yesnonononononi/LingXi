@@ -4,7 +4,7 @@ import type { ChatMessage, ChatSession } from '../src/types/chat';
 import type { AgentEvent } from '../src/types/Event';
 import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
 import { StreamSessionRouter } from '../src/views/chat/streamSessionRouter';
-import { StreamFrameBuffer } from '../src/views/chat/streamFrameBuffer';
+
 import { AgentToolName } from '../src/utils/toolNames';
 
 test('1. 流式渲染: 原始事件只推进生命周期，内容一律来自块视图', () => {
@@ -387,19 +387,23 @@ test('5. 暂停与恢复(Human-in-the-Loop): 挂起后不拆分新气泡，恢�
   assert.equal(bubble.toolCalls?.[0].status, 'success');
 });
 
-test('6. 帧缓冲器(StreamFrameBuffer): 高频文本片段在同一批次中合并', () => {
-  let flushedText = '';
-  const buffer = new StreamFrameBuffer((textBatch) => {
-    flushedText += textBatch.get('b-1') || '';
+test('6. 原始增量不再进任何缓冲：高频文本片段不产生渲染副作用', () => {
+  const messages: ChatMessage[] = [];
+  const reducer = new TurnStreamReducer(messages, { sessionId: 'test-session-buffer' });
+  reducer.consume({
+    type: 'EXECUTION_STARTED',
+    executionId: 'exec-b1',
+    timestamp: '2026-10-06T06:00:00Z',
+    metaData: { turnId: 'turn-b1' }
   });
+  const bubble = messages[0];
 
-  buffer.pushText('b-1', 'A');
-  buffer.pushText('b-1', 'B');
-  buffer.pushText('b-1', 'C');
+  reducer.consume({ type: 'PARTIAL_TEXT', content: 'A', executionId: 'exec-b1', timestamp: '2026-10-06T06:00:01Z' });
+  reducer.consume({ type: 'PARTIAL_TEXT', content: 'B', executionId: 'exec-b1', timestamp: '2026-10-06T06:00:02Z' });
+  reducer.consume({ type: 'PARTIAL_TEXT', content: 'C', executionId: 'exec-b1', timestamp: '2026-10-06T06:00:03Z' });
+  reducer.flush();
 
-  // 立即刷新
-  buffer.flushImmediate();
-  assert.equal(flushedText, 'ABC');
+  assert.equal(bubble.content, '', '高频增量不写正文');
 });
 
 test('7. 服务端雪花 ID 驱动的根会话流式路由: 根会话绑定持久化雪花 ID，流式事件准确注入根会话气泡，不误判为子会话', () => {

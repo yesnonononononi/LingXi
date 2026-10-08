@@ -288,69 +288,6 @@ function snowflakeKeyOf(raw: unknown): bigint | null {
 }
 
 /**
- * 气泡内已出现过的**最大 order**（无任何过程项时返回 -1）。
- *
- * <p>实时路径的职责边界：块顺序由后端给定，但「尚未被任何快照覆盖」的本地新项
- * （刚推入的思考步 / 工具卡 / 中间叙述）必须被放到已有序列表的**末尾**，
- * 否则渲染层升序排序会把它插进已有块中间。此函数只读不写，供
- * {@link nextOrderFor} 取「当前最大值」。</p>
- *
- * <p>四列必须全部计入，漏掉任何一类都会让新项拿到与旧项相同或更小的 order。
- * {@code promptCards} 是审批卡片不是时间线项，契约上没有 order，读到 undefined 即跳过 ——
- * 不要为了「凑齐四类」给它造字段。</p>
- */
-export function maxOrderInBubble(bubble: ChatMessage): number {
-  let maxOrder = -1;
-  const consider = (order?: number): void => {
-    if (typeof order === 'number' && order > maxOrder) maxOrder = order;
-  };
-  (bubble.thoughtSteps ?? []).forEach(step => consider(step.order));
-  (bubble.toolCalls ?? []).forEach(call => consider(call.order));
-  (bubble.aiMessages ?? []).forEach(message => consider(message.order));
-  (bubble.processTimeline ?? []).forEach(item => consider(item.order));
-  return maxOrder;
-}
-
-/**
- * 本地新项的 order：在气泡当前最大 order 上**跨槽步进一位**。
- *
- * <p>改用「继承后端 order」后不再需要 {@code allocateOrder} 那种「按项数重新编号」——
- * 后者会与后端千位步长的槽位（THINKING=0 / TEXT=1 / TOOL=2..）碰撞：
- * 后端第 N 轮工具 order 是 {@code N*1000+2}，而本地按项数编号会给出 4、5、6，
- * 两者混在一条列表里就会出现「本地工具跑到后端第一轮工具前面」的错位。</p>
- *
- * <p><b>跨槽不跨轮</b>：{@code STEP} 取 {@code RESPONSE_ORDER_STRIDE} 的十分之一，
- * 只用于把本地新项排在「已见过的一切」之后；下一帧快照到达时整轮会被后端 order 重投影覆盖，
- * 本地这个临时值随之作废 —— 它只需保证「在快照到达前不错位」。</p>
- */
-const LOCAL_ORDER_STEP = 100;
-
-export function nextOrderFor(bubble: ChatMessage): number {
-  return maxOrderInBubble(bubble) + LOCAL_ORDER_STEP;
-}
-
-/**
- * 把一批轮次视图投影到**已聚合的历史消息**上 —— 历史路径的唯一接线点。
- *
- * <p>后端按页随分页响应下发 {@code turnViews}（键 = turnId，见 {@code SessionMessagePageVO}），
- * 每个键的视图是该轮的**完整**块列表（装配器按 turnId 查全部消息，与本页切在哪无关），
- * 因此整页一次性投影即可，无需像实时那样比 {@code viewVersion}。</p>
- *
- * <p><b>只认「助手气泡 + 该轮有视图」</b>：视图缺失的轮次保持聚合器的原样 ——
- * 旧数据、装配返回空、或后端未下发时，界面回落到原历史聚合结果，不会因为「没有视图」而变空。</p>
- */
-export function projectTurnViews(messages: ChatMessage[], turnViews?: Record<string, TurnViewVO> | null): void {
-  if (!turnViews) return;
-  for (const message of messages) {
-    if (!message || message.role !== 'assistant') continue;
-    const turnId = message.turnId;
-    if (turnId === null || turnId === undefined) continue;
-    const view = turnViews[String(turnId)];
-    if (view) projectTurnView(message, view);
-  }
-}
-
-/**
  * 把单块增量（{@code BLOCK_UPSERT}）并入现有气泡。
  *
  * <p><b>为什么不重投影整轮</b>：增量事件的 {@code blocks} 只含变化的那一块，无法整体重写。
