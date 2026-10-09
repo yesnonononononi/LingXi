@@ -85,12 +85,18 @@ export function parseToolDiffFromResult(result: unknown, context = 'toolDiff'): 
   if (typeof result !== 'string') return { ...EMPTY_STAT };
 
   // 统一走 utils/json.ts 的 parseJsonSafe：失败时 console.warn，不再 `catch {}` 静默吞掉。
-  const obj = parseJsonSafe<Record<string, any> | null>(result, null, context);
+  const obj = parseJsonSafe<Record<string, unknown> | null>(result, null, context);
   if (!obj || typeof obj !== 'object') return { ...EMPTY_STAT };
 
+  // 历史 rawOutput 把工具原始结果放在 output，实时结果则直接是编辑摘要。
+  if ('outcome' in obj && typeof obj.output === 'string') {
+    return parseToolDiffFromResult(obj.output, context);
+  }
+  const count = (value: unknown): number | null =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
   return {
-    plusLines: obj.plusLines === undefined ? null : (obj.plusLines as number),
-    minusLines: obj.minusLines === undefined ? null : (obj.minusLines as number)
+    plusLines: count(obj.plusLines),
+    minusLines: count(obj.minusLines)
   };
 }
 

@@ -1,8 +1,10 @@
 package com.summit.dp.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.core.conversation.event.AgentEvent;
 import com.summit.core.conversation.event.AgentPartialTextEvent;
+import com.summit.core.conversation.event.AgentPartialThinkingEvent;
 import com.summit.core.conversation.event.ContextUpdateEvent;
 import com.summit.core.conversation.event.ExecutionCancelledEvent;
 import com.summit.core.conversation.event.ExecutionCompleteEvent;
@@ -13,6 +15,8 @@ import com.summit.core.conversation.event.ToolCallEndEvent;
 import com.summit.core.conversation.event.ToolCallStartEvent;
 import com.summit.core.tool.ToolCallStatus;
 import com.summit.dp.agent.infrastructure.listener.AgentEventListener;
+import com.summit.dp.agent.application.service.ResponseStreamState;
+import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.shared.event.SseEventPublisher;
 import org.junit.jupiter.api.AfterEach;
@@ -41,18 +45,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
-/**
- * 框架事件 → 根会话广播的唯一路径。
- *
- * <p>v3 直投与 v2 投影链路已移除，本测试验证三件事：<b>每个事件恰好做一次身份解析</b>、
- * <b>事件原样投递到根会话的桶</b>（序列化由 SSE 传输层负责，监听器不再自己拼 JSON），
- * 以及<b>终态事件照常广播、且会话流仍然连着</b>。</p>
- *
- * <p><b>「流仍然连着」断言的是结果而不是方法</b>：用真实 {@link SseEventPublisher} +
- * mock emitter 挂一条流，走完终态回调后断言 {@code connectedCount()} 没变。
- * 早先写的是 {@code verify(never()).disconnectRoot(...)} —— 那种写法守的是「某个方法没被调用」，
- * 方法一删就失效，且方法改名也会假绿；断言连接数才是契约本身。</p>
- */
+/** 片段偏移、根会话路由及终态后的连接寿命必须同时守住。 */
 class AgentEventListenerTest {
     private static final String EXECUTION_ID = "2105000000000000001";
     private static final long SESSION_ID = 2105000000000000002L;
@@ -64,8 +57,10 @@ class AgentEventListenerTest {
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private final SseEventPublisher publisher = mock(SseEventPublisher.class);
     private final ExecutionIdentity identity = mock(ExecutionIdentity.class);
+    private final MessageRepository messages = mock(MessageRepository.class);
+    private final ResponseStreamState streamState = new ResponseStreamState(messages);
     private final AgentEventListener listener =
-            new AgentEventListener(objectMapper, publisher, identity);
+            new AgentEventListener(objectMapper, publisher, identity, streamState);
 
     /** 「流仍然连着」用的真实传输层：mock emitter 挂在真注册表里，连接数才是可断言的结果。 */
     private final SseEventPublisher livePublisher = new SseEventPublisher() {
@@ -78,7 +73,7 @@ class AgentEventListenerTest {
     };
     private final List<SseEmitter> liveEmitters = new ArrayList<>();
     private final AgentEventListener liveListener =
-            new AgentEventListener(objectMapper, livePublisher, identity);
+            new AgentEventListener(objectMapper, livePublisher, identity, streamState);
 
     @BeforeEach
     void setUp() {
@@ -105,8 +100,42 @@ class AgentEventListenerTest {
 
         listener.onPartialText(event);
 
-        assertSame(event, publishedEvent(AgentPartialTextEvent.class).getValue());
+        ArgumentCaptor<ObjectNode> payload = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(publisher).publishBusiness(eq(ROOT_SESSION_ID), eq("PARTIAL_TEXT"), payload.capture());
+        assertEquals("你好", payload.getValue().get("content").asText());
+        assertEquals(RESPONSE_ID.toString(), payload.getValue().get("responseId").asText());
+        assertEquals(0, payload.getValue().get("offset").asInt());
+        assertEquals("PARTIAL_TEXT", payload.getValue().get("type").asText());
         verifySingleIdentityResolution();
+    }
+
+    @Test
+    void partialTextOffsetsComeFromProducer() {
+        resolveSession();
+        Map<String, Object> metadata = Map.of("turnId", Long.toString(TURN_ID));
+        listener.onPartialText(new AgentPartialTextEvent("agent", EXECUTION_ID, RESPONSE_ID, "🔎", metadata, null));
+        listener.onPartialText(new AgentPartialTextEvent("agent", EXECUTION_ID, RESPONSE_ID, "完成", metadata, null));
+        listener.onPartialText(new AgentPartialTextEvent("agent", EXECUTION_ID, UUID.randomUUID(), "新响应", metadata, null));
+
+        ArgumentCaptor<ObjectNode> payload = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(publisher, times(3)).publishBusiness(eq(ROOT_SESSION_ID), eq("PARTIAL_TEXT"), payload.capture());
+        assertEquals(List.of(0, 2, 0), payload.getAllValues().stream().map(value -> value.get("offset").asInt()).toList());
+    }
+
+    @Test
+    void thinkingOffsetsDoNotConsumeTextOffsets() {
+        resolveSession();
+        Map<String, Object> metadata = Map.of("turnId", Long.toString(TURN_ID));
+        listener.onPartialThinking(new AgentPartialThinkingEvent("agent", EXECUTION_ID, "分析", RESPONSE_ID, metadata, null));
+        listener.onPartialText(new AgentPartialTextEvent("agent", EXECUTION_ID, RESPONSE_ID, "正文", metadata, null));
+        listener.onPartialThinking(new AgentPartialThinkingEvent("agent", EXECUTION_ID, "问题", RESPONSE_ID, metadata, null));
+
+        ArgumentCaptor<ObjectNode> thinking = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(publisher, times(2)).publishBusiness(eq(ROOT_SESSION_ID), eq("PARTIAL_THINKING"), thinking.capture());
+        assertEquals(List.of(0, 2), thinking.getAllValues().stream().map(value -> value.get("offset").asInt()).toList());
+        ArgumentCaptor<ObjectNode> text = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(publisher).publishBusiness(eq(ROOT_SESSION_ID), eq("PARTIAL_TEXT"), text.capture());
+        assertEquals(0, text.getValue().get("offset").asInt());
     }
 
     @Test
@@ -144,8 +173,12 @@ class AgentEventListenerTest {
         listener.onToolCallOutput(new ToolCallEndEvent("call_1", EXECUTION_ID, RESPONSE_ID, "read_file", "{}", "内容",
                 metadata, ToolCallStatus.COMPLETED));
 
-        verify(publisher, org.mockito.Mockito.times(2))
-                .publish(eq(ROOT_SESSION_ID), org.mockito.ArgumentMatchers.any(AgentEvent.class));
+        ArgumentCaptor<ObjectNode> payload = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(publisher, times(2)).publishBusiness(eq(ROOT_SESSION_ID), any(String.class), payload.capture());
+        assertEquals("STARTED", payload.getAllValues().get(0).get("resultStatus").asText());
+        assertEquals("COMPLETED", payload.getAllValues().get(1).get("resultStatus").asText());
+        assertEquals(2, payload.getAllValues().get(0).get("order").asInt());
+        assertEquals(2, payload.getAllValues().get(1).get("order").asInt());
     }
 
     @ParameterizedTest

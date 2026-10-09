@@ -199,17 +199,17 @@ test('6. 思考分段与交错顺序由后端块视图给出（前端不再自�
   });
 
   reducer.consume(evt('EXECUTION_STARTED') as any);
-  // 原始增量思考：不写过程项（分段由后端决定）
-  reducer.consume(evt('PARTIAL_THINKING', { content: '思考一' }) as any);
-  reducer.consume(evt('TOOL_CALL', { toolName: AgentToolName.ReadFile, requestId: 'c1', args: '{"path":"a"}', resultStatus: 'STARTED' }) as any);
-  reducer.consume(evt('PARTIAL_THINKING', { content: '思考二' }) as any);
-  reducer.consume(evt('TOOL_CALL', { toolName: AgentToolName.ReadFile, requestId: 'c2', args: '{"path":"b"}', resultStatus: 'STARTED' }) as any);
-  reducer.consume(evt('PARTIAL_THINKING', { content: '思考三' }) as any);
+  reducer.consume(evt('PARTIAL_THINKING', { responseId: '1', offset: 0, order: 0, content: '思考一' }) as any);
+  reducer.consume(evt('TOOL_CALL', { order: 10, toolName: AgentToolName.ReadFile, requestId: 'c1', args: '{"path":"a"}', resultStatus: 'STARTED' }) as any);
+  reducer.consume(evt('PARTIAL_THINKING', { responseId: '2', offset: 0, order: 20, content: '思考二' }) as any);
+  reducer.consume(evt('TOOL_CALL', { order: 30, toolName: AgentToolName.ReadFile, requestId: 'c2', args: '{"path":"b"}', resultStatus: 'STARTED' }) as any);
+  reducer.consume(evt('PARTIAL_THINKING', { responseId: '3', offset: 0, order: 40, content: '思考三' }) as any);
   reducer.flush();
 
   const bubble = messages[0];
-  assert.equal(bubble.thoughtSteps?.length, 0, '原始思考事件不写过程项');
-  assert.equal(bubble.toolCalls?.length, 0, '原始工具事件不写过程项');
+  assert.equal(bubble.thoughtSteps?.length, 3, '思考即时分段打印');
+  assert.equal(bubble.toolCalls?.length, 2, '工具开始即时展示');
+  assert.deepEqual(bubble.processTimeline?.map(item => item.order), [0, 10, 20, 30, 40]);
 
   // 后端块视图给出三段思考与两个工具，严格交错
   reducer.consume(evt('TURN_SNAPSHOT', {

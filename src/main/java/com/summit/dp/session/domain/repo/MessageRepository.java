@@ -89,8 +89,8 @@ public interface MessageRepository extends RepositoryTemplate<SessionMessage, Lo
     /**
      * 统计某轮已落库的 AI 行数 —— 即「下一轮模型输出的 responseOrder」。
      *
-     * <p>必须在 {@link #lockSessionForAppend} 的锁保护下调用：序号 = 已有 AI 行数，
-     * 并发下若不加锁，两个响应会读到同一个计数、拿到同一个序号，两层顺序的第一层就塌了。</p>
+     * <p>用于持久化分配时必须持有 {@link #lockSessionForAppend} 的锁，防止两个响应拿到同一序号。
+     * 实时流只读预览时由同轮模型调用串行保证顺序，不替代落库分配。</p>
      *
      * @param turnId 业务轮次；{@code null}（归属未知）时返回 0，不参与排序
      */

@@ -9,6 +9,7 @@ import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.shared.vo.block.Block;
+import com.summit.dp.shared.vo.block.BlockOrder;
 import com.summit.dp.shared.vo.block.BlockStatus;
 import com.summit.dp.shared.vo.block.Placement;
 import com.summit.dp.shared.vo.block.TextBlock;
@@ -41,20 +42,6 @@ import java.util.Set;
 @Component
 @RequiredArgsConstructor
 public class TurnViewAssembler {
-
-    /**
-     * 序号步长：一轮里模型调用序号每 +1，块 order 前进一格。
-     *
-     * <p>取 1000 而非 1，是为了给「同一响应内部的块位置」留足空间 —— 思考/正文各占一个位置，
-     * 其后的工具块按请求顺序递增。与前端历史基准 {@code rowIndex * 100} 同量纲意图，
-     * 但**后端是唯一真源**，前端只按相对大小排。</p>
-     */
-    private static final int RESPONSE_ORDER_STRIDE = 1000;
-
-    /** 一个响应内部的位置偏移：思考=0，正文=1，其后工具=2,3,4...。 */
-    private static final int THINKING_SLOT = 0;
-    private static final int TEXT_SLOT = 1;
-    private static final int TOOL_SLOT_BASE = 2;
 
     private final ObjectMapper objectMapper;
     private final ToolBlockStatusResolver toolBlockStatusResolver;
@@ -102,7 +89,7 @@ public class TurnViewAssembler {
      */
     private void appendAiBlocks(List<Block> blocks, SessionMessage aiRow, Map<String, ToolCall> toolCalls) {
         AiMessageEntity aiMessage = parse(aiRow.getText());
-        int base = (aiRow.getResponseOrder() == null ? 0 : aiRow.getResponseOrder()) * RESPONSE_ORDER_STRIDE;
+        int responseOrder = aiRow.getResponseOrder() == null ? 0 : aiRow.getResponseOrder();
         String responseId = aiRow.getResponseId() == null ? null : aiRow.getResponseId().toString();
 
         // 该 AI 行是否有工具请求 —— 这既是 placement 判据，也决定工具块是否展开。
@@ -114,7 +101,7 @@ public class TurnViewAssembler {
         String thinking = aiMessage == null ? null : aiMessage.getThinking();
         if (thinking != null && !thinking.isBlank()) {
             blocks.add(new ThinkingBlock(thinkingIdentity(responseId, aiRow.getId()), responseId,
-                    base + THINKING_SLOT, BlockStatus.COMPLETE, thinking));
+                    BlockOrder.thinking(responseOrder), BlockStatus.COMPLETE, thinking));
         }
 
         // 正文块：placement 由「该行是否含工具请求」唯一判定。
@@ -122,17 +109,17 @@ public class TurnViewAssembler {
         if (text != null && !text.isBlank()) {
             Placement placement = hasToolRequest ? Placement.PROCESS : Placement.BODY;
             blocks.add(new TextBlock(textIdentity(responseId, aiRow.getId()), responseId,
-                    base + TEXT_SLOT, BlockStatus.COMPLETE, placement, text));
+                    BlockOrder.text(responseOrder), BlockStatus.COMPLETE, placement, text));
         }
 
-        int slot = TOOL_SLOT_BASE;
+        int requestIndex = 0;
         for (ToolCallRequest request : requests) {
             if (request == null || request.id() == null || request.id().isBlank()) {
                 continue;
             }
             ToolCall toolCall = toolCalls == null ? null : toolCalls.get(request.id());
-            blocks.add(buildToolBlock(base + slot, request, toolCall));
-            slot++;
+            blocks.add(buildToolBlock(BlockOrder.tool(responseOrder, requestIndex), request, toolCall));
+            requestIndex++;
         }
     }
 

@@ -1,5 +1,8 @@
 package com.summit.dp.agent.application.service.impl;
 
+import com.summit.dp.agent.application.service.ResponseStreamState;
+import com.summit.dp.session.domain.repo.MessageRepository;
+
 import com.summit.dp.execution.ExecutionRepositoryTestFactory;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -93,7 +96,7 @@ class PreparedChatExecutorTest {
 
     {
         AgentEventListener agentEvents = new AgentEventListener(new JsonConfig().objectMapper(),
-                sseEventPublisher, executionIdentity);
+                sseEventPublisher, executionIdentity, new ResponseStreamState(mock(MessageRepository.class)));
         agentEvents.init();
         // 与生产同序：轮次侧监听器（HIGHEST_PRECEDENCE）在前，SSE 广播在后。
         RuntimeEventPublisher publisher = new RuntimeEventPublisher(List.of(
@@ -187,7 +190,7 @@ class PreparedChatExecutorTest {
             live.connect(ROOT_SESSION_ID);
             int connected = live.connectedCount();
             AgentEventListener agentEvents = new AgentEventListener(new JsonConfig().objectMapper(),
-                    live, executionIdentity);
+                    live, executionIdentity, new ResponseStreamState(mock(MessageRepository.class)));
             agentEvents.init();
             RuntimeEventPublisher events = new RuntimeEventPublisher(List.of(
                     new ChatTurnRuntimeListener(chatTurnService), agentEvents));

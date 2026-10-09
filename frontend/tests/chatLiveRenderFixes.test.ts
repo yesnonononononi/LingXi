@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createPinia, setActivePinia } from 'pinia';
 import { ref, effectScope, nextTick, watchEffect } from 'vue';
 import axios from 'axios';
+import { AgentToolName } from '../src/utils/toolNames';
 
 /**
  * 会话实时渲染 / 会话列表加载回归守卫。
@@ -92,7 +93,15 @@ test('缺陷1：首轮发消息时，流式事件必须驱动渲染副作用更�
 
   // 模拟真实模板：渲染副作用订阅 displayedMessages，只有依赖变更才会重跑
   const rendered: number[] = [];
-  scope.run(() => { watchEffect(() => { rendered.push(view.displayedMessages.value.length); }); });
+  const renderedTexts: string[] = [];
+  const renderedProcess: string[][] = [];
+  scope.run(() => { watchEffect(() => {
+    rendered.push(view.displayedMessages.value.length);
+    renderedTexts.push(view.displayedMessages.value.filter((message: any) => message.role === 'assistant').map((message: any) => message.content).join(''));
+    renderedProcess.push(view.displayedMessages.value.filter((message: any) => message.role === 'assistant')
+      .flatMap((message: any) => message.processTimeline ?? [])
+      .map((item: any) => `${item.id}:${item.tool?.status ?? item.step?.content ?? item.message?.text}`));
+  }); });
   // 首屏渲染先读一次，缓存 computed
   assert.equal(view.displayedMessages.value.length, 0);
 
@@ -102,9 +111,29 @@ test('缺陷1：首轮发消息时，流式事件必须驱动渲染副作用更�
   await sendPromise;
 
   (streamCtl as any).enqueue(new TextEncoder().encode(frame('EXECUTION_STARTED', { type: 'EXECUTION_STARTED', executionId: 'e1', timestamp: '2026-10-06T06:57:56.135Z', metaData: { sessionId: SID, rootSessionId: SID, turnId: TID } })));
-  (streamCtl as any).enqueue(new TextEncoder().encode(frame('PARTIAL_TEXT', { type: 'PARTIAL_TEXT', content: '你发送的是「1」', executionId: 'e1', timestamp: '2026-10-06T06:57:57.000Z', metaData: { sessionId: SID, rootSessionId: SID, turnId: TID } })));
+  (streamCtl as any).enqueue(new TextEncoder().encode(frame('PARTIAL_TEXT', { type: 'PARTIAL_TEXT', responseId: 'r-live', offset: 0, content: '你发送的是「1」', executionId: 'e1', timestamp: '2026-10-06T06:57:57.000Z', metaData: { sessionId: SID, rootSessionId: SID, turnId: TID } })));
   for (let i = 0; i < 20; i++) await tick();
   await nextTick();
+  assert.equal(renderedTexts.at(-1), '你发送的是「1」', '首段文本在完成前可见');
+  (streamCtl as any).enqueue(new TextEncoder().encode(frame('PARTIAL_TEXT', { type: 'PARTIAL_TEXT', responseId: 'r-live', offset: 8, content: '，收到', executionId: 'e1', timestamp: '', metaData: { sessionId: SID, rootSessionId: SID, turnId: TID } })));
+  for (let i = 0; i < 20; i++) await tick();
+  await nextTick();
+  assert.equal(renderedTexts.at(-1), '你发送的是「1」，收到', '第二段触发真实 Vue 渲染更新');
+
+  const runtime = { executionId: 'e1', timestamp: '', metaData: { sessionId: SID, rootSessionId: SID, turnId: TID } };
+  (streamCtl as any).enqueue(new TextEncoder().encode(frame('TOOL_CALL', { ...runtime, type: 'TOOL_CALL', responseId: 'r-live',
+    requestId: 'c-live', toolName: AgentToolName.ReadFile, order: 2, args: '{"path":"input.md"}' })));
+  for (let i = 0; i < 20; i++) await tick();
+  await nextTick();
+  assert.ok(renderedProcess.at(-1)?.includes('tool:c-live:calling'), 'SSE 工具开始在快照前触发渲染');
+  (streamCtl as any).enqueue(new TextEncoder().encode(frame('TOOL_COMPLETED', { ...runtime, type: 'TOOL_COMPLETED', responseId: 'r-live',
+    requestId: 'c-live', toolName: AgentToolName.ReadFile, order: 2, resultStatus: 'COMPLETED', output: '读取结果' })));
+  (streamCtl as any).enqueue(new TextEncoder().encode(frame('PARTIAL_THINKING', { ...runtime, type: 'PARTIAL_THINKING',
+    responseId: 'r-next', order: 1000, offset: 0, content: '末尾的新思考' })));
+  for (let i = 0; i < 20; i++) await tick();
+  await nextTick();
+  assert.deepEqual(renderedProcess.at(-1), ['tool:c-live:success', 'thinking:r-next:末尾的新思考'],
+    '后续思考在工具之后打印，收尾更新原工具条');
 
   const lastRendered = rendered[rendered.length - 1];
   assert.ok(lastRendered >= 2, `渲染副作用应看到 user+assistant 两条，实际最后渲染=${lastRendered}，序列=${JSON.stringify(rendered)}`);

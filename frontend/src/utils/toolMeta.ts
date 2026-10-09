@@ -74,7 +74,7 @@ export interface ToolMeta {
   description: string;
   target: string;
   command: string;
-  /** 读文件的行范围文案（L起点-终点，0 基口径与后端一致）；整文件读取为空串。 */
+  /** 行范围沿用后端的 0 基口径；缺省范围明确显示全文。 */
   lineRange: string;
 }
 
@@ -134,12 +134,12 @@ const intArg = (value: unknown): number | null => {
   return null;
 };
 
-/** 读文件行范围文案：L起点-终点；两端都缺（整文件读取）为空串。 */
+/** 未指定的边界按执行器语义显示，避免把未知终点冒充实际行数。 */
 const readLineRange = (args: Record<string, unknown>): string => {
   const start = intArg(args.startLine);
   const end = intArg(args.endLine);
-  if (start === null && end === null) return '';
-  return `L${start ?? ''}-${end ?? ''}`;
+  if (start === null && end === null) return '全文';
+  return `L${start ?? 0}-${end ?? '末尾'}`;
 };
 
 /** 解析工具展示所需的全部元数据 */

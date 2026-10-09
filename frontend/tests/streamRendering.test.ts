@@ -7,7 +7,7 @@ import { StreamSessionRouter } from '../src/views/chat/streamSessionRouter';
 
 import { AgentToolName } from '../src/utils/toolNames';
 
-test('1. 流式渲染: 原始事件只推进生命周期，内容一律来自块视图', () => {
+test('1. 流式渲染: 原始增量即时打印，块视图校准身份和位置', () => {
   const messages: ChatMessage[] = [];
   const reducer = new TurnStreamReducer(messages, { sessionId: 'test-session-1' });
 
@@ -31,23 +31,27 @@ test('1. 流式渲染: 原始事件只推进生命周期，内容一律来自块
   assert.equal(bubble.isExploring, true);
   assert.equal(bubble.isComplete, false);
 
-  // 3. 增量思考：只保留「仍在生成」事实，不写思考内容（内容等块视图）
+  // 思考与正文使用各自的偏移，完整视图到达前也要可见。
   reducer.consume({
     type: 'PARTIAL_THINKING',
+    responseId: '1',
+    offset: 0,
+    order: 0,
     content: '正在规划查询步骤...',
     executionId: 'exec-1',
     timestamp: '2026-10-06T06:00:01Z',
     metaData: { turnId: 'turn-101' }
   });
   reducer.flush();
-  assert.equal(bubble.isThinking, true, '增量思考只推进生命周期');
-  assert.equal(bubble.thoughtSteps?.length, 0, '增量思考不得写思考内容');
+  assert.equal(bubble.isThinking, true, '增量思考维持运行态');
+  assert.equal(bubble.thoughtSteps?.[0]?.content, '正在规划查询步骤...', '增量思考立即打印');
 
-  // 4. 工具发起：不建卡、不写工具条（非 PROMISE 类）
+  // 工具开始即显示，审批卡片仍从权威接口读取。
   reducer.consume({
     type: 'TOOL_CALL',
     toolName: AgentToolName.WebSearch,
     requestId: 'call-weather-1',
+    order: 1,
     args: '{"q":"北京天气"}',
     resultStatus: 'STARTED',
     executionId: 'exec-1',
@@ -55,9 +59,10 @@ test('1. 流式渲染: 原始事件只推进生命周期，内容一律来自块
     metaData: { turnId: 'turn-101' }
   });
   assert.equal(bubble.isExploring, false, '工具调用结束「探索中」');
-  assert.equal(bubble.toolCalls?.length, 0, '工具条内容由块视图给出，原始事件不建卡');
+  assert.equal(bubble.toolCalls?.length, 1, '工具开始即显示');
+  assert.equal(bubble.toolCalls?.[0]?.status, 'calling');
 
-  // 5. 工具结束：同样不写工具条
+  // 收尾更新同一调用。
   reducer.consume({
     type: 'TOOL_COMPLETED',
     toolName: AgentToolName.WebSearch,
@@ -68,18 +73,21 @@ test('1. 流式渲染: 原始事件只推进生命周期，内容一律来自块
     timestamp: '2026-10-06T06:00:03Z',
     metaData: { turnId: 'turn-101' }
   });
-  assert.equal(bubble.toolCalls?.length, 0, '工具结果由块视图给出，原始事件不写工具条');
+  assert.equal(bubble.toolCalls?.length, 1, '收尾不创建第二个工具条');
+  assert.equal(bubble.toolCalls?.[0]?.result, '晴，22℃');
 
-  // 6. 增量正文：不写正文
+  // 正文打印不等待快照或对账。
   reducer.consume({
     type: 'PARTIAL_TEXT',
+    responseId: '1',
+    offset: 0,
     content: '今天北京的天气是晴天，气温约22℃。',
     executionId: 'exec-1',
     timestamp: '2026-10-06T06:00:04Z',
     metaData: { turnId: 'turn-101' }
   });
   reducer.flush();
-  assert.equal(bubble.content, '', '增量正文不得写气泡正文');
+  assert.equal(bubble.content, '今天北京的天气是晴天，气温约22℃。', '增量正文立即打印');
 
   // 7. 权威块视图到达：内容、顺序、状态全部来自后端
   reducer.consume({
@@ -118,7 +126,7 @@ test('1. 流式渲染: 原始事件只推进生命周期，内容一律来自块
   assert.equal(bubble.content, '今天北京的天气是晴天，气温约22℃。', '终结不得改动块视图内容');
 });
 
-test('2. 降噪与幂等: 增量正文/COMPLETE_TEXT/AI_MESSAGE 都不改内容，块视图是唯一写入方', () => {
+test('2. 幂等: 增量与完整文本使用同一响应身份，冲突全文不能覆盖原文', () => {
   const messages: ChatMessage[] = [];
   const reducer = new TurnStreamReducer(messages, { sessionId: 'test-session-2' });
 
@@ -132,36 +140,40 @@ test('2. 降噪与幂等: 增量正文/COMPLETE_TEXT/AI_MESSAGE 都不改内容�
 
   reducer.consume({
     type: 'PARTIAL_TEXT',
+    responseId: 'r2', offset: 0, metaData: { turnId: 'turn-202' },
     content: 'Hello, ',
     executionId: 'exec-2',
     timestamp: '2026-10-06T06:00:01Z'
   });
   reducer.consume({
     type: 'PARTIAL_TEXT',
+    responseId: 'r2', offset: 7, metaData: { turnId: 'turn-202' },
     content: 'world!',
     executionId: 'exec-2',
     timestamp: '2026-10-06T06:00:02Z'
   });
   reducer.flush();
-  assert.equal(bubble.content, '', '增量正文不得写气泡正文');
+  assert.equal(bubble.content, 'Hello, world!', '片段按偏移接续');
 
-  // COMPLETE_TEXT 与增量同属原始事件：同样不写（正文只认 BODY 块）
+  // 全文从零偏移校准，不得在已打印内容后再次追加。
   reducer.consume({
     type: 'COMPLETE_TEXT',
+    responseId: 'r2', metaData: { turnId: 'turn-202' },
     content: 'Hello, world! (aligned)',
     executionId: 'exec-2',
     timestamp: '2026-10-06T06:00:03Z'
   });
-  assert.equal(bubble.content, '', 'COMPLETE_TEXT 不再写正文');
+  assert.equal(bubble.content, 'Hello, world! (aligned)', '完整响应校准而非重复追加');
 
   // AI_MESSAGE 噪声：内容不应被重复覆盖或篡改
   reducer.consume({
     type: 'AI_MESSAGE',
+    responseId: 'r2', metaData: { turnId: 'turn-202' },
     text: 'NOISE CONTENT THAT SHOULD BE IGNORED',
     executionId: 'exec-2',
     timestamp: '2026-10-06T06:00:04Z'
   });
-  assert.equal(bubble.content, '', 'AI_MESSAGE 噪声不得写正文');
+  assert.equal(bubble.content, 'Hello, world! (aligned)', '不一致的全文不得覆盖原文');
 });
 
 test('3. 根会话与多子会话(1:N)事件路由: 主子独立渲染，主会话协同条状态同步', () => {
@@ -207,7 +219,7 @@ test('3. 根会话与多子会话(1:N)事件路由: 主子独立渲染，主会�
   });
 
   const rootBubble = rootSession.messages[1];
-  assert.equal(rootBubble.toolCalls?.length ?? 0, 0, '工具条内容由块视图给出');
+  assert.equal(rootBubble.toolCalls?.length, 1, '主会话的工具开始即显示');
 
   // 2. 子会话事件流入（metaData.sessionId = 'sub-agent-1'）
   router.dispatch({
@@ -387,7 +399,7 @@ test('5. 暂停与恢复(Human-in-the-Loop): 挂起后不拆分新气泡，恢�
   assert.equal(bubble.toolCalls?.[0].status, 'success');
 });
 
-test('6. 原始增量不再进任何缓冲：高频文本片段不产生渲染副作用', () => {
+test('6. 连续原始片段无需 flush 即可打印', () => {
   const messages: ChatMessage[] = [];
   const reducer = new TurnStreamReducer(messages, { sessionId: 'test-session-buffer' });
   reducer.consume({
@@ -398,12 +410,14 @@ test('6. 原始增量不再进任何缓冲：高频文本片段不产生渲染�
   });
   const bubble = messages[0];
 
-  reducer.consume({ type: 'PARTIAL_TEXT', content: 'A', executionId: 'exec-b1', timestamp: '2026-10-06T06:00:01Z' });
-  reducer.consume({ type: 'PARTIAL_TEXT', content: 'B', executionId: 'exec-b1', timestamp: '2026-10-06T06:00:02Z' });
-  reducer.consume({ type: 'PARTIAL_TEXT', content: 'C', executionId: 'exec-b1', timestamp: '2026-10-06T06:00:03Z' });
+  reducer.consume({ type: 'PARTIAL_TEXT', responseId: 'r6', offset: 0, metaData: { turnId: 'turn-b1' }, content: 'A', executionId: 'exec-b1', timestamp: '' });
+  assert.equal(bubble.content, 'A');
+  reducer.consume({ type: 'PARTIAL_TEXT', responseId: 'r6', offset: 1, metaData: { turnId: 'turn-b1' }, content: 'B', executionId: 'exec-b1', timestamp: '' });
+  assert.equal(bubble.content, 'AB');
+  reducer.consume({ type: 'PARTIAL_TEXT', responseId: 'r6', offset: 2, metaData: { turnId: 'turn-b1' }, content: 'C', executionId: 'exec-b1', timestamp: '' });
   reducer.flush();
 
-  assert.equal(bubble.content, '', '高频增量不写正文');
+  assert.equal(bubble.content, 'ABC', '每次写入同步更新正文');
 });
 
 test('7. 服务端雪花 ID 驱动的根会话流式路由: 根会话绑定持久化雪花 ID，流式事件准确注入根会话气泡，不误判为子会话', () => {

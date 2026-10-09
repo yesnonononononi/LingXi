@@ -9,7 +9,7 @@ const { createRenderer, h, ref, reactive, nextTick } = require('vue');
 const previewKey = Symbol('file-preview');
 
 // 编译真实模板，只替换子组件和浏览器依赖，折叠状态与事件使用组件自身逻辑。
-function loadComponent() {
+function loadChatModule(filename) {
   const cache = new Map();
   function load(filename) {
     if (cache.has(filename)) return cache.get(filename).exports;
@@ -46,7 +46,11 @@ function loadComponent() {
     } }).outputText, filename);
     return module.exports;
   }
-  return load(path.resolve(__dirname, '../src/components/chat/ChatMessageItem.vue')).default;
+  return load(filename);
+}
+
+function loadComponent() {
+  return loadChatModule(path.resolve(__dirname, '../src/components/chat/ChatMessageItem.vue')).default;
 }
 
 function element(tag, text = '') {
@@ -114,6 +118,154 @@ function toggleProcess(root) {
   assert.ok(button, '只有中间文本时也必须提供过程折叠入口');
   button.props.onClick();
 }
+
+function streamFixture() {
+  const { TurnStreamReducer } = loadChatModule(path.resolve(__dirname, '../src/views/chat/turnStreamReducer.ts'));
+  const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
+  const messages = reactive([]);
+  const reducer = new TurnStreamReducer(() => messages, { sessionId: '7' });
+  const event = data => ({ executionId: 'e', timestamp: '', metaData: { sessionId: '7', turnId: '900' }, ...data });
+  reducer.consume(event({ type: 'EXECUTION_STARTED' }));
+  return { reducer, event, answer: messages[0], AgentToolName };
+}
+
+test('实测回归：已有历史工具之后，新思考在过程末尾即时追加', async t => {
+  const { reducer, event, answer, AgentToolName } = streamFixture();
+  reducer.consume({ type: 'TURN_SNAPSHOT', sessionId: '7', turnId: '900', viewVersion: '1', view: {
+    sessionId: '7', turnId: '900', viewVersion: '1', status: 'RUNNING', blocks: [
+      { blockId: 'thinking:r1', responseId: 'r1', type: 'THINKING', order: 1000, status: 'COMPLETE', text: '旧思考' },
+      { blockId: 'tool:old-call', type: 'TOOL', order: 1002, status: 'COMPLETED', toolCallId: 'old-call',
+        toolName: AgentToolName.ReadFile, arguments: '{"path":"old-tool.md"}' },
+    ],
+  } });
+  const root = mount(t, answer);
+  reducer.consume(event({ type: 'PARTIAL_THINKING', responseId: 'r2', offset: 0, order: 2000, content: '末尾实时思考' }));
+  await nextTick();
+  let rendered = text(root);
+  assert.ok(rendered.includes('old-tool.md'));
+  assert.ok(rendered.indexOf('末尾实时思考') > rendered.indexOf('old-tool.md'), rendered);
+  reducer.consume(event({ type: 'PARTIAL_THINKING', responseId: 'r2', offset: 6, order: 2000, content: '继续打印' }));
+  await nextTick();
+  rendered = text(root);
+  assert.ok(rendered.indexOf('末尾实时思考继续打印') > rendered.indexOf('old-tool.md'), rendered);
+  assert.equal(answer.thoughtSteps.filter(step => step.id === 'thinking:r2').length, 1);
+});
+
+test('实测回归：没有快照时工具开始即渲染，收尾和重复事件不增行', async t => {
+  const { reducer, event, answer, AgentToolName } = streamFixture();
+  const root = mount(t, answer);
+  const call = { type: 'TOOL_CALL', requestId: 'c1', responseId: 'r1', order: 2,
+    toolName: AgentToolName.ReadFile, args: '{"path":"live-tool.md"}', resultStatus: 'STARTED' };
+  reducer.consume(event(call));
+  await nextTick();
+  assert.match(text(root), /live-tool\.md/, '执行未结束，工具名称与参数已经可见');
+  assert.equal(answer.toolCalls[0].status, 'calling');
+  reducer.consume(event({ ...call, type: 'TOOL_COMPLETED', resultStatus: 'COMPLETED', output: '工具结果' }));
+  reducer.consume(event(call));
+  reducer.consume(event({ type: 'PARTIAL_THINKING', responseId: 'r2', offset: 0, order: 1000, content: '工具后的新思考' }));
+  await nextTick();
+  assert.equal(answer.toolCalls.length, 1);
+  assert.equal(answer.toolCalls[0].status, 'success');
+  assert.equal(answer.toolCalls[0].result, '工具结果');
+  const rendered = text(root);
+  assert.equal(rendered.split('live-tool.md').length - 1, 1);
+  assert.ok(rendered.indexOf('工具后的新思考') > rendered.indexOf('live-tool.md'), rendered);
+});
+
+test('第二版真实组件：工具先到的文本持续追加在过程区，旧快照不搬回正文', async t => {
+  const { reducer, event, answer, AgentToolName } = streamFixture();
+  const root = mount(t, answer);
+  reducer.consume(event({ type: 'TOOL_CALL', requestId: 'c1', responseId: 'r1', order: 2,
+    toolName: AgentToolName.ReadFile, args: '{"path":"a.md"}' }));
+  reducer.consume(event({ type: 'PARTIAL_TEXT', responseId: 'r1', offset: 0, order: 1, content: '先读' }));
+  await nextTick();
+  assert.match(text(root), /先读/);
+  assert.equal(answer.content, '');
+  reducer.consume(event({ type: 'PARTIAL_TEXT', responseId: 'r1', offset: 2, order: 1, content: '文件' }));
+  await nextTick();
+  assert.match(text(root), /先读文件/);
+  reducer.consume(event({ type: 'PARTIAL_TEXT', responseId: 'r2', offset: 0, order: 1001, content: '最终结论' }));
+  reducer.consume({ type: 'TURN_SNAPSHOT', sessionId: '7', turnId: '900', viewVersion: '1', view: {
+    sessionId: '7', turnId: '900', viewVersion: '1', status: 'RUNNING', blocks: [
+      { blockId: 'text:r1', responseId: 'r1', type: 'TEXT', order: 1, status: 'COMPLETE', placement: 'BODY', text: '先读文件' },
+    ],
+  } });
+  await nextTick();
+  assert.equal(answer.content, '最终结论');
+  assert.equal(text(root).split('先读文件').length - 1, 1);
+  assert.match(text(root), /a\.md/);
+  reducer.consume(event({ type: 'TOOL_COMPLETED', requestId: 'c1', responseId: 'r1', order: 2,
+    toolName: AgentToolName.ReadFile, args: '{"path":"a.md"}', output: '文件内容', resultStatus: 'COMPLETED' }));
+  await nextTick();
+  reducer.consume(event({ type: 'EXECUTION_COMPLETED' }));
+  await nextTick();
+  assert.doesNotMatch(text(root), /先读文件/);
+  assert.match(text(root), /最终结论/);
+  toggleProcess(root);
+  await nextTick();
+  assert.match(text(root), /先读文件/);
+});
+
+test('读取摘要：缺省范围显示全文，单边范围按后端默认边界显示', async t => {
+  const { reducer, event, answer, AgentToolName } = streamFixture();
+  const root = mount(t, answer);
+  for (const [index, args] of [
+    { path: 'whole.json' }, { path: 'range.json', startLine: 2, endLine: 5 },
+    { path: 'head.json', endLine: 3 }, { path: 'tail.json', startLine: 4 },
+  ].entries()) {
+    reducer.consume(event({ type: 'TOOL_CALL', requestId: `read-${index}`, responseId: 'r1', order: index + 2,
+      toolName: AgentToolName.ReadFile, args: JSON.stringify(args) }));
+  }
+  await nextTick();
+  const rendered = text(root);
+  assert.match(rendered, /whole\.json\s*全文/);
+  assert.match(rendered, /range\.json\s*L2-5/);
+  assert.match(rendered, /head\.json\s*L0-3/);
+  assert.match(rendered, /tail\.json\s*L4-末尾/);
+});
+
+test('实时编辑摘要：从元数据读取统计，未展开也显示 +N -0，旧快照不得清除统计', async t => {
+  const { reducer, event, answer, AgentToolName } = streamFixture();
+  const root = mount(t, answer);
+  const call = { requestId: 'edit-1', responseId: 'r1', order: 2,
+    toolName: AgentToolName.EditFile, args: '{"path":"memory.md"}' };
+  reducer.consume(event({ ...call, type: 'TOOL_CALL' }));
+  await nextTick();
+  assert.doesNotMatch(text(root), /\+0|-0/, '收尾前统计未知，不冒充零改动');
+  reducer.consume(event({ ...call, type: 'TOOL_COMPLETED', resultStatus: 'COMPLETED', output: '',
+    metaData: { sessionId: '7', turnId: '900', fileEdit: { filePath: 'memory.md', plusLines: 7, minusLines: 0 } } }));
+  await nextTick();
+  assert.match(text(root), /memory\.md\s*\+7-0/);
+  reducer.consume({ type: 'TURN_SNAPSHOT', sessionId: '7', turnId: '900', viewVersion: '1', view: {
+    sessionId: '7', turnId: '900', viewVersion: '1', status: 'RUNNING', blocks: [
+      { blockId: 'tool:edit-1', type: 'TOOL', order: 2, status: 'STARTED', toolCallId: 'edit-1',
+        toolName: AgentToolName.EditFile, arguments: call.args },
+    ],
+  } });
+  await nextTick();
+  assert.match(text(root), /memory\.md\s*\+7-0/);
+});
+
+test('历史编辑摘要：解析持久化结果的 output，工具收起时显示增删行', async t => {
+  const { reducer, answer, AgentToolName } = streamFixture();
+  reducer.consume({ type: 'TURN_SNAPSHOT', sessionId: '7', turnId: '900', viewVersion: '1', view: {
+    sessionId: '7', turnId: '900', viewVersion: '1', status: 'RUNNING', blocks: [
+      { blockId: 'tool:edit-history', type: 'TOOL', order: 2, status: 'COMPLETED', toolCallId: 'edit-history',
+        toolName: AgentToolName.EditFile, arguments: '{"path":"history.md"}',
+        output: JSON.stringify({ outcome: 'SUCCEEDED', output: JSON.stringify({ plusLines: 3, minusLines: 2 }) }) },
+      { blockId: 'tool:create-history', type: 'TOOL', order: 3, status: 'COMPLETED', toolCallId: 'create-history',
+        toolName: AgentToolName.EditFile, arguments: '{"path":"created.md"}',
+        output: JSON.stringify({ plusLines: 5, minusLines: 0 }) },
+    ],
+  } });
+  const root = mount(t, answer);
+  assert.match(text(root), /history\.md\s*\+3-2/);
+  assert.match(text(root), /created\.md\s*\+5-0/);
+  const button = find(root, node => node.tag === 'button' && node.props['aria-label'] === '查看写入详情');
+  button.props.onClick({ stopPropagation() {} });
+  await nextTick();
+  assert.equal(text(root).split('+3-2').length - 1, 2, '展开详情也保留相同统计');
+});
 
 test('中间文本随过程展开与收起，最终正文始终可见', async t => {
   const root = mount(t, message());

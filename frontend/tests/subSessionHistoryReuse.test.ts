@@ -7,6 +7,8 @@ import { mergeSubSessionTree } from '../src/utils/session';
 import { useChatSubSession } from '../src/views/chat/useChatSubSession';
 import { useChatHistory } from '../src/views/chat/useChatHistory';
 import type { ChatMessage, ChatSession, ChatTurn } from '../src/types/chat';
+import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
+import { AgentToolName } from '../src/utils/toolNames';
 
 /**
  * 缺陷：点击子会话卡片不加载 / 不渲染其历史消息。
@@ -160,4 +162,33 @@ test('3. useChatHistory.reconcileSessionAfterStream：树对账不丢子会话�
   assert.equal(sub.messages?.length, 1, '子会话已加载历史必须在对账后保留');
   assert.equal(sub.messages?.[0].content, '子会话历史正文');
   assert.equal(sub.runStatus, 'IDLE', '元数据仍以树为准');
+});
+
+test('第二版：子会话首次历史请求在途时收到的文本和工具不能被替换', async t => {
+  type PageResult = Awaited<ReturnType<typeof chatApi.fetchSessionMessages>>;
+  let resolvePage!: (value: PageResult) => void;
+  t.mock.method(chatApi, 'fetchSessionMessages', () => new Promise<PageResult>(resolve => { resolvePage = resolve; }));
+  const session = ref<any>({ id: 'root-1', messages: [],
+    subSessions: [{ id: 'sub-1', agentName: '产品经理', runStatus: 'RUNNING', messages: [] }] });
+  const sub = useChatSubSession({ currentActiveSession: computed(() => session.value) });
+  const loading = sub.handleSelectSubSessionOption('sub-1');
+  const originalMessages = session.value.subSessions[0].messages;
+  const reducer = new TurnStreamReducer(() => session.value.subSessions[0].messages, { sessionId: 'sub-1' });
+  const metadata = { sessionId: 'sub-1', turnId: '900' };
+  reducer.consume({ type: 'PARTIAL_TEXT', executionId: 'e', timestamp: '', metaData: metadata,
+    responseId: 'r2', order: 1001, offset: 0, content: '实时正文' });
+  reducer.consume({ type: 'TOOL_CALL', executionId: 'e', timestamp: '', metaData: metadata,
+    responseId: 'r1', requestId: 'c1', toolName: AgentToolName.ReadFile, order: 2, args: '{"path":"a.md"}' });
+  const live = originalMessages[0];
+  resolvePage({ ok: true, data: { records: [], messages: [], turns: {}, hasMore: false, nextCursor: null,
+    turnViews: { '900': { sessionId: 'sub-1', turnId: '900', status: 'RUNNING', viewVersion: '1', blocks: [
+      { blockId: 'text:r0', responseId: 'r0', type: 'TEXT', order: 1, status: 'COMPLETE', placement: 'BODY', text: '历史正文' },
+    ] } } } });
+  await loading;
+  assert.equal(sub.activeSubSessionMessages.value.length, 1);
+  assert.equal(sub.activeSubSessionMessages.value[0], live);
+  assert.equal(live.content, '实时正文');
+  assert.equal(live.toolCalls[0].id, 'c1');
+  assert.equal(live.turnState.texts['text:r0'].text, '历史正文');
+  assert.equal(live.turnState.texts['text:r2'].text, '实时正文');
 });

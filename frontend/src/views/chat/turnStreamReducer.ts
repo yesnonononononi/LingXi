@@ -4,6 +4,8 @@ import { parseVersion } from '../../types/block';
 import type { ChatMessage, ContextUsageData, ToolCallVO } from '../../types/chat';
 import { isCardToolName, upsertPromptCard } from '../../utils/toolCallCard';
 import { buildBubbleFromTurnView, buildUserMessageFromTurnView, projectTurnView, upsertBlockIntoBubble } from './blockProjection';
+import { consumeResponseText } from './responseText';
+import { consumeToolEvent } from './toolStream';
 
 /** 卡片就绪重试上限（次）。 */
 const CARD_RETRY_MAX = 5;
@@ -34,16 +36,7 @@ export interface TurnStreamReducerOptions {
   cancelCardRetry?: (timerId: number) => void;
 }
 
-/**
- * 业务轮次流式渲染状态机。
- *
- * <p><b>展示内容的唯一来源是块视图</b>：{@code TURN_SNAPSHOT} 整轮重投影、{@code BLOCK_UPSERT}
- * 按 blockId 增量。原始事件（{@code PARTIAL_*} / {@code TOOL_*}）<b>不再写气泡内容</b> ——
- * 它们只用于两件事：推进轮次/气泡的生命周期（进行中 / 挂起 / 终结），以及驱动审批卡片拉取。</p>
- *
- * <p>这样前端完全不参与「时序与状态推断」：正文、思考分步、工具条顺序与状态全部读后端
- * 的 {@code order / placement / status}。</p>
- */
+/** 增量立即打印；历史与全文按同一响应身份校准，顺序和落点沿用后端数据。 */
 export class TurnStreamReducer {
   private sessionId: string;
   /**
@@ -130,26 +123,38 @@ export class TurnStreamReducer {
         this.handleExecutionStarted(turnId);
         break;
 
-      // 原始增量不写展示内容：正文 / 思考 / 工具条一律等块视图（TURN_SNAPSHOT / BLOCK_UPSERT）。
-      // 只保留「本轮仍在生成」这一事实，供气泡运行态与滚动跟随使用。
       case 'PARTIAL_THINKING':
       case 'PARTIAL_TEXT':
-        this.handleActivity(turnId);
-        break;
-
-      // COMPLETE_TEXT 曾是正文的「全量备份」通道；块视图生效后它与 AI_MESSAGE 一样是噪声。
       case 'COMPLETE_TEXT':
-      case 'AI_MESSAGE':
+      case 'AI_MESSAGE': {
+        if (!turnId || !event.responseId || this.disposed) break;
+        const bubble = this.obtainActiveBubble(turnId);
+        if (bubble.isComplete || bubble.isSuspended) break;
+        if (consumeResponseText(bubble, event)) {
+          bubble.isThinking = true;
+          bubble.isExploring = false;
+          this.onScrollFollow?.();
+        }
         break;
+      }
 
-      // 工具开始 / 结束不再建卡、不写工具条；只按权威数据拉审批卡片（PROMISE 类）。
-      case 'TOOL_CALL':
+      case 'TOOL_CALL': {
+        if (turnId && !this.disposed) {
+          const bubble = this.obtainActiveBubble(turnId);
+          if (!bubble.isComplete && !bubble.isSuspended && consumeToolEvent(bubble, event)) this.onScrollFollow?.();
+        }
         this.handleToolActivity(turnId, event.requestId, event.toolName);
         break;
+      }
 
-      case 'TOOL_COMPLETED':
+      case 'TOOL_COMPLETED': {
+        if (turnId && !this.disposed) {
+          const bubble = this.obtainActiveBubble(turnId);
+          if (consumeToolEvent(bubble, event)) this.onScrollFollow?.();
+        }
         this.handleToolCompleted(event);
         break;
+      }
 
       case 'CONTEXT_UPDATE':
         this.handleContextUpdate(event);
@@ -188,12 +193,7 @@ export class TurnStreamReducer {
     }
   }
 
-  /**
-   * 整轮权威快照：按 {@code viewVersion} 拦截旧帧，命中则整轮重投影。
-   *
-   * <p>快照是「校准」——块的身份 / 顺序 / 状态全部来自后端，前端整体重写过程列，
-   * 不再自己累加。前端只保留「当前已渲染到的版本号」，更小的版本直接丢弃。</p>
-   */
+  /** 版本只拦截旧快照，内容补齐同一份轮次状态。 */
   private handleTurnSnapshot(raw: unknown): void {
     const payload = extractBlockPayload(raw);
     if (!payload) return;
@@ -214,7 +214,7 @@ export class TurnStreamReducer {
     const existing = this.findBubbleByTurnId(turnId);
     let bubble: ChatMessage;
     if (existing) {
-      // 已存在（含 obtainActiveBubble 建出的进行中气泡）→ 就地重投影，身份不变
+      // 原气泡只补齐状态，身份不变。
       bubble = existing;
       projectTurnView(bubble, payload.view);
       // 用户气泡若还没落（首屏从未给过）补上，已存在则不动
@@ -229,8 +229,6 @@ export class TurnStreamReducer {
       messages.splice(messages.length, 0, ...pair);
     }
     this.activeBubbleId = bubble.id;
-    // 轮次状态是权威的：终态/挂起据此对齐，避免快照到了但气泡还停在「进行中」。
-    this.applyTurnStatus(bubble, payload.view.status);
     this.onScrollFollow?.();
   }
 
@@ -260,38 +258,6 @@ export class TurnStreamReducer {
       if (active && active.turnId === turnId) return active;
     }
     return this.getMessages().find(m => m.role === 'assistant' && m.turnId === turnId) ?? null;
-  }
-
-  /** 轮次状态 → 气泡运行态标志（终态/挂起据此对齐）。 */
-  private applyTurnStatus(bubble: ChatMessage, status: string): void {
-    switch (status) {
-      case 'COMPLETED':
-        bubble.isComplete = true;
-        bubble.isThinking = false;
-        bubble.isExploring = false;
-        bubble.isSuspended = false;
-        break;
-      case 'FAILED':
-      case 'CANCELLED':
-        bubble.isComplete = true;
-        bubble.isThinking = false;
-        bubble.isExploring = false;
-        bubble.isSuspended = false;
-        break;
-      case 'WAITING':
-        bubble.isSuspended = true;
-        bubble.isThinking = false;
-        bubble.isExploring = false;
-        break;
-      case 'RUNNING':
-        bubble.isThinking = true;
-        bubble.isSuspended = false;
-        bubble.isComplete = false;
-        break;
-      case 'ACCEPTED':
-      default:
-        break;
-    }
   }
 
   /** 获取或建立当前轮次的聚合助手气泡 */
@@ -337,8 +303,6 @@ export class TurnStreamReducer {
       isExploring: true,
       isComplete: false,
       isSuspended: false,
-      // 过程列初始为空：内容一律由块视图（TURN_SNAPSHOT / BLOCK_UPSERT）投影写入，
-      // 前端不再自己累加，避免与后端 order 漂移。
       thoughtSteps: [],
       toolCalls: [],
       aiMessages: [],
@@ -359,29 +323,10 @@ export class TurnStreamReducer {
     bubble.isComplete = false;
   }
 
-  /**
-   * 原始增量事件（正文 / 思考）：只标记「本轮仍在生成」。
-   *
-   * <p>内容本身不写气泡 —— 后端会通过 {@code TURN_SNAPSHOT}（整轮）与 {@code BLOCK_UPSERT}（单块）
-   * 下发权威块。这里保留气泡并置为进行中，保证终结事件到达前界面有承载对象。</p>
-   */
-  private handleActivity(turnId: string | null): void {
-    const bubble = this.obtainActiveBubble(turnId);
-    bubble.isThinking = true;
-    bubble.isExploring = false;
-    bubble.isSuspended = false;
-    bubble.isComplete = false;
-  }
-
-  /**
-   * 工具调用开始：不建卡、不写工具条。
-   *
-   * <p>工具条的内容与状态由后端块视图决定（{@code TOOL} 块）。这里只为 PROMISE 类工具
-   * （计划 / 提问 / 命令审批）触发一次权威 {@link ToolCallVO} 拉取 —— 审批卡片是用户必须
-   * 立即看到并操作的东西，不能等块视图。</p>
-   */
+  /** 审批内容必须从权威接口读取，不能把工具参数当作可操作卡片。 */
   private handleToolActivity(turnId: string | null, requestId?: string, toolName?: string): void {
     const bubble = this.obtainActiveBubble(turnId);
+    if (bubble.isComplete || bubble.isSuspended) return;
     bubble.isExploring = false;
     bubble.isSuspended = false;
 
@@ -397,8 +342,7 @@ export class TurnStreamReducer {
     output?: string;
     resultStatus?: string;
   }): void {
-    // 工具结果不再写工具条：状态与结果文案来自后端 TOOL 块。
-    // 但终端审批（命令审批）在 policy 内短路，框架只发 TOOL_COMPLETED(resultStatus=PROMISED)、
+    // 终端审批（命令审批）在 policy 内短路，框架只发 TOOL_COMPLETED(resultStatus=PROMISED)、
     // 从不发 TOOL_CALL，必须用完成事件自带的权威调用 ID 直接拉卡 —— 否则实时审批卡要等到
     // 刷新后从历史聚合才出现。requestId 缺失同样不建卡：伪造 ID 会让卡片挂到错误的调用上。
     if (event.resultStatus !== 'PROMISED' || !event.requestId) return;
@@ -484,6 +428,7 @@ export class TurnStreamReducer {
     // 失败原因写进 content 尾部：该轮不会再有 BODY 块，错误文案只能由实时事件补。
     // 与历史路径同形（刷新后从 turn.errorReason 看到），两处口径一致。
     if (errMsg) {
+      bubble.sendError = errMsg;
       bubble.content = bubble.content ? `${bubble.content}\n\n${errMsg}` : errMsg;
     }
 
@@ -624,11 +569,7 @@ export class TurnStreamReducer {
     this.cardResolving.clear();
   }
 
-  /**
-   * 空实现，仅为兼容宿主（会话路由在切流 / 释放前统一调用）。
-   *
-   * <p>原始增量已不再进缓冲（内容全部来自块视图），因此没有「待刷新」的帧。</p>
-   */
+  /** 片段同步写入，宿主无需再等待刷新。 */
   public flush(): void {
     // no-op
   }

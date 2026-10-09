@@ -1,5 +1,5 @@
 import type { TokenInfo } from './Event';
-import type { TurnViewVO } from './block';
+import type { Placement, TurnViewVO } from './block';
 
 /** 消息角色定义 */
 export type MessageRole = 'user' | 'assistant' | 'system';
@@ -104,12 +104,30 @@ export interface ProcessTimelineItem {
   card?: ToolCallVO;
 }
 
+/** 缺口后的片段等待前文，不提前拼出错误文本。 */
+export interface ResponseTextBuffer {
+  kind: 'TEXT' | 'THINKING';
+  text: string;
+  pending: Record<number, string>;
+  complete: boolean;
+  placement?: Placement;
+  order?: number;
+}
+
+/** 输入只更新这份状态，组件使用的数组统一从这里派生。 */
+export interface TurnRenderState {
+  texts: Record<string, ResponseTextBuffer>;
+  tools: Record<string, ToolCallTrace>;
+  activeTextId?: string;
+}
+
 /** 单条消息接口 (支持多分支对话) */
 export interface ChatMessage {
   id: string;
   role: MessageRole;
   content: string;
   timestamp: number;
+  turnState?: TurnRenderState;
 
   /**
    * 产生本条消息的业务轮次 id（字符串；**旧数据为 null = 归属未知**）。

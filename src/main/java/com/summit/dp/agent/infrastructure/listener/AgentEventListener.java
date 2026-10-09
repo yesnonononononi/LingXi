@@ -2,8 +2,10 @@ package com.summit.dp.agent.infrastructure.listener;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.core.conversation.event.*;
 import com.summit.core.runtime.RuntimeListener;
+import com.summit.dp.agent.application.service.ResponseStreamState;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.shared.event.SseEventPublisher;
 import jakarta.annotation.PostConstruct;
@@ -11,14 +13,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-/**
- * 监听 com.summit.core.conversation.event 包中的全部 Agent 运行时事件，把事件序列化后
- * 按根会话定向推送到 SSE。
- *
- * <p>投影协议（v2）与直投协议（v3）已整体移除，本类只保留最基础的「框架事件 → JSON → 根会话广播」。
- * <b>终态事件也只广播、不关流</b>：会话流的存亡跟页面挂载走，不跟某一次执行的生死走
- * （见 {@link #broadcastTerminal}）。</p>
- */
+import java.util.UUID;
+
+/** 实时事件补齐偏移和过程位置后按根会话推送，执行终结不关闭会话流。 */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -26,6 +23,7 @@ public class AgentEventListener implements RuntimeListener {
     private final ObjectMapper objectMapper;
     private final SseEventPublisher sseEventPublisher;
     private final ExecutionIdentity executionIdentity;
+    private final ResponseStreamState responseStreamState;
 
     private interface TypedEventMixIn {
         @JsonProperty("type")
@@ -44,17 +42,17 @@ public class AgentEventListener implements RuntimeListener {
 
     @Override
     public void onToolCall(ToolCallStartEvent event) {
-        broadcast(event);
+        broadcastRenderEvent(event);
     }
 
     @Override
     public void onToolCallOutput(ToolCallEndEvent event) {
-        broadcast(event);
+        broadcastRenderEvent(event);
     }
 
     @Override
     public void onAiMessage(AgentMessageEvent event) {
-        broadcast(event);
+        broadcastRenderEvent(event);
     }
 
     @Override
@@ -84,17 +82,52 @@ public class AgentEventListener implements RuntimeListener {
 
     @Override
     public void onPartialText(AgentPartialTextEvent event) {
-        broadcast(event);
+        broadcastRenderEvent(event);
     }
 
     @Override
     public void onCompleteText(AgentCompleteTextEvent event) {
-        broadcast(event);
+        broadcastRenderEvent(event);
     }
 
     @Override
     public void onPartialThinking(AgentPartialThinkingEvent event) {
-        broadcast(event);
+        broadcastRenderEvent(event);
+    }
+
+    private void broadcastRenderEvent(AgentEvent event) {
+        BroadcastTarget target = resolveTarget(event);
+        if (target == null) return;
+        ObjectNode payload = objectMapper.valueToTree(event);
+        UUID responseId = switch (event) {
+            case AgentPartialTextEvent text -> text.responseId();
+            case AgentPartialThinkingEvent thought -> thought.responseId();
+            case AgentCompleteTextEvent text -> text.responseId();
+            case AgentMessageEvent message -> message.getResponseId();
+            case ToolCallStartEvent tool -> tool.getResponseId();
+            case ToolCallEndEvent tool -> tool.getResponseId();
+            default -> null;
+        };
+        if (responseId != null) {
+            ResponseStreamState.Response position = responseStreamState.resolve(event, responseId, target.sessionId());
+            if (event instanceof AgentPartialTextEvent text && text.content() != null) {
+                payload.put("offset", position.advance(false, text.content()));
+                payload.put("order", position.textOrder());
+            } else if (event instanceof AgentPartialThinkingEvent thought && thought.content() != null) {
+                payload.put("offset", position.advance(true, thought.content()));
+                payload.put("order", position.thinkingOrder());
+            } else if (event instanceof AgentCompleteTextEvent) {
+                payload.put("order", position.textOrder());
+            } else if (event instanceof AgentMessageEvent) {
+                payload.put("order", position.textOrder());
+                payload.put("thinkingOrder", position.thinkingOrder());
+            } else if (event instanceof ToolCallStartEvent tool) {
+                payload.put("order", position.toolOrder(tool.getRequestId()));
+            } else if (event instanceof ToolCallEndEvent tool) {
+                payload.put("order", position.toolOrder(tool.getRequestId()));
+            }
+        }
+        sseEventPublisher.publishBusiness(target.rootSessionId(), event.type(), payload);
     }
 
     @Override
@@ -129,6 +162,7 @@ public class AgentEventListener implements RuntimeListener {
  */
     private void broadcastTerminal(AgentEvent event) {
         broadcast(event);
+        responseStreamState.clearExecution(event.executionId());
     }
 
     /**

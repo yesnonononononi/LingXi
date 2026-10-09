@@ -117,10 +117,11 @@ export function useChatSubSession(options: ChatSubSessionOptions) {
       if (sub?.subSession) {
         // ⚠️ turns 必须先于 messages 落定：合成失败气泡要读 turns 判 FAILED，
         //    反序会让首屏的失败轮拿不到摘要 → 气泡不合成。
-        sub.subSession.turns = res.data.turns;
-        sub.subSession.turnViews = res.data.turnViews;
-        sub.subSession.turnViewVersions = new Map<string, number>();
-        const messages: ChatMessage[] = [];
+        sub.subSession.turns = mergeTurns(sub.subSession.turns, res.data.turns);
+        sub.subSession.turnViews = mergeTurnViews(sub.subSession.turnViews, res.data.turnViews);
+        sub.subSession.turnViewVersions ??= new Map<string, number>();
+        // 请求在途期间可能已有实时内容，历史只补齐原数组中的轮次。
+        const messages: ChatMessage[] = sub.subSession.messages ?? [];
         for (const view of Object.values(res.data.turnViews ?? {})) {
           if (view) upsertTurnViewIntoMessages(messages, view, sub.subSession.turnViewVersions);
         }

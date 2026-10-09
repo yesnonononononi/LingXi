@@ -140,16 +140,16 @@ test('诊断：跨页气泡 ID 相同时，工具条只能标记一个组尾', (
   assert.equal(tails.length, 1, `组尾只能有一个: ${summarize(messages)}`);
 });
 
-test('诊断：同一轮的实时气泡被权威视图整体接管（顺序与身份全来自后端）', () => {
+test('诊断：实时气泡与权威视图按身份合并，已打印过程不会重复', () => {
   const messages: ChatMessage[] = [];
   const reducer = new TurnStreamReducer(messages, { sessionId: SESSION_ID });
-  reducer.consume(createEvent({ type: 'PARTIAL_THINKING', content: '实时思考' }));
-  reducer.consume(createEvent({ type: 'TOOL_CALL', requestId: 'live-call', toolName: AgentToolName.ReadFile, args: '{}' }));
+  reducer.consume(createEvent({ type: 'PARTIAL_THINKING', responseId: 'r0', offset: 0, order: 0, content: '思考 0' }));
+  reducer.consume(createEvent({ type: 'TOOL_CALL', requestId: 'call-0', order: 1, toolName: AgentToolName.ReadFile, args: '{}' }));
   reducer.flush();
-  // 实时阶段：不建工具、不写思考（内容等视图）
+  // 尚无视图时，事件本身就要驱动过程展示。
   const live = messages.find(m => m.role === 'assistant')!;
-  assert.equal(live.toolCalls?.length, 0, '原始事件不建工具项');
-  assert.equal(live.thoughtSteps?.length, 0, '原始事件不写思考');
+  assert.equal(live.toolCalls?.length, 1, '工具开始即显示');
+  assert.equal(live.thoughtSteps?.length, 1, '思考即时打印');
 
   // 权威视图到达：整轮重写为后端给的 57 思考 + 59 工具，并补上用户提问
   reducer.consume(snapshotEvent(createTurnView()));
@@ -206,7 +206,7 @@ test('诊断：选中会话的详情响应迟到时，期间到达的实时轮�
 test('诊断：终结只由 EXECUTION_* 事件判定，不再由工具收尾推断', () => {
   const messages: ChatMessage[] = [];
   const reducer = new TurnStreamReducer(messages, { sessionId: SESSION_ID });
-  reducer.consume(createEvent({ type: 'PARTIAL_THINKING', content: '当前思考' }));
+  reducer.consume(createEvent({ type: 'PARTIAL_THINKING', responseId: 'r-thinking', offset: 0, content: '当前思考' }));
   reducer.consume(createEvent({ type: 'TOOL_CALL', requestId: 'live-call', toolName: AgentToolName.ReadFile, args: '{}' }));
   reducer.consume(createEvent({ type: 'TOOL_COMPLETED', requestId: 'live-call', toolName: AgentToolName.ReadFile, output: '完成', resultStatus: 'COMPLETED' }));
   reducer.flush();
@@ -221,7 +221,7 @@ test('诊断：终结只由 EXECUTION_* 事件判定，不再由工具收尾推�
 test('诊断：仅思考未收尾时不得被认定为终结', () => {
   const messages: ChatMessage[] = [];
   const reducer = new TurnStreamReducer(messages, { sessionId: SESSION_ID });
-  reducer.consume(createEvent({ type: 'PARTIAL_THINKING', content: '当前思考' }));
+  reducer.consume(createEvent({ type: 'PARTIAL_THINKING', responseId: 'r-thinking', offset: 0, content: '当前思考' }));
   reducer.flush();
   assert.equal(messages[0].isComplete, false, '还在思考的一轮不能判为完成');
 
@@ -229,7 +229,7 @@ test('诊断：仅思考未收尾时不得被认定为终结', () => {
   const reducer2 = new TurnStreamReducer(streaming, { sessionId: SESSION_ID });
   reducer2.consume(createEvent({ type: 'TOOL_CALL', requestId: 'c1', toolName: AgentToolName.ReadFile, args: '{}' }));
   reducer2.consume(createEvent({ type: 'TOOL_COMPLETED', requestId: 'c1', toolName: AgentToolName.ReadFile, output: 'ok', resultStatus: 'COMPLETED' }));
-  reducer2.consume(createEvent({ type: 'PARTIAL_TEXT', content: '继续说明' }));
+  reducer2.consume(createEvent({ type: 'PARTIAL_TEXT', responseId: 'r-text', offset: 0, content: '继续说明' }));
   reducer2.flush();
   assert.equal(streaming[0].isComplete, false, '仍在流式时不能判为完成');
   assert.equal(streaming[0].isThinking, true, '增量事件把气泡维持在生成态');
@@ -238,13 +238,13 @@ test('诊断：仅思考未收尾时不得被认定为终结', () => {
 test('正对照：过程项顺序完全来自后端视图，前端不参与排序推断', () => {
   const messages: ChatMessage[] = [];
   const reducer = new TurnStreamReducer(messages, { sessionId: SESSION_ID });
-  reducer.consume(createEvent({ type: 'PARTIAL_THINKING', content: '第一段' }));
-  reducer.consume(createEvent({ type: 'TOOL_CALL', requestId: 'control-call', toolName: AgentToolName.ReadFile, args: '{}' }));
-  reducer.consume(createEvent({ type: 'PARTIAL_THINKING', content: '第二段' }));
+  reducer.consume(createEvent({ type: 'PARTIAL_THINKING', responseId: 's1', offset: 0, order: 1000, content: '第一段' }));
+  reducer.consume(createEvent({ type: 'TOOL_CALL', requestId: 'control-call', order: 2000, toolName: AgentToolName.ReadFile, args: '{}' }));
+  reducer.consume(createEvent({ type: 'PARTIAL_THINKING', responseId: 's2', offset: 0, order: 3000, content: '第二段' }));
   reducer.flush();
-  // 原始事件不产生任何过程项，自然也没有「谁排在谁之后」的前端推断
-  assert.equal(messages[0].thoughtSteps?.length, 0, '原始思考事件不写过程项');
-  assert.equal(messages[0].toolCalls?.length, 0, '原始工具事件不写过程项');
+  assert.equal(messages[0].thoughtSteps?.length, 2, '实时思考按响应分段');
+  assert.equal(messages[0].toolCalls?.length, 1, '工具即时显示');
+  assert.deepEqual(messages[0].processTimeline?.map(item => item.order), [1000, 2000, 3000]);
 
   // 顺序唯一来源是后端 order：故意乱序传入，时间线仍按 order 升序
   reducer.consume(createEvent({

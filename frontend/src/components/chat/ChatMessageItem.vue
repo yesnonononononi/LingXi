@@ -60,7 +60,7 @@
               'font-medium',
               isDark ? 'text-white text-glow-white animate-glow-pulse' : 'text-blue-600 animate-pulse'
             ]"
-          >思考中...</span>
+          >{{ processTitle }}</span>
           <span
             v-else
             class="font-medium"
@@ -281,11 +281,11 @@
                     class="inline-flex items-center gap-1 font-mono text-[12px] font-medium leading-none shrink-0 select-none ml-1"
                   >
                     <span
-                      v-if="getToolDiffStat(item.tool)!.plusLines !== undefined && (getToolDiffStat(item.tool)!.plusLines! > 0 || (getToolDiffStat(item.tool)!.plusLines === 0 && getToolDiffStat(item.tool)!.minusLines === 0))"
+                      v-if="getToolDiffStat(item.tool)!.plusLines !== undefined"
                       class="text-[#088f50] dark:text-emerald-400"
                     >+{{ getToolDiffStat(item.tool)!.plusLines }}</span>
                     <span
-                      v-if="getToolDiffStat(item.tool)!.minusLines !== undefined && (getToolDiffStat(item.tool)!.minusLines! > 0 || (getToolDiffStat(item.tool)!.plusLines === 0 && getToolDiffStat(item.tool)!.minusLines === 0))"
+                      v-if="getToolDiffStat(item.tool)!.minusLines !== undefined"
                       class="text-[#b42c3f] dark:text-rose-400"
                     >-{{ getToolDiffStat(item.tool)!.minusLines }}</span>
                   </span>
@@ -315,11 +315,11 @@
                             class="inline-flex items-center gap-1 font-mono text-[12px] font-medium leading-none shrink-0 select-none ml-1"
                           >
                             <span
-                              v-if="getToolDiffStat(item.tool)!.plusLines !== undefined && (getToolDiffStat(item.tool)!.plusLines! > 0 || (getToolDiffStat(item.tool)!.plusLines === 0 && getToolDiffStat(item.tool)!.minusLines === 0))"
+                              v-if="getToolDiffStat(item.tool)!.plusLines !== undefined"
                               class="text-[#088f50] dark:text-emerald-400"
                             >+{{ getToolDiffStat(item.tool)!.plusLines }}</span>
                             <span
-                              v-if="getToolDiffStat(item.tool)!.minusLines !== undefined && (getToolDiffStat(item.tool)!.minusLines! > 0 || (getToolDiffStat(item.tool)!.plusLines === 0 && getToolDiffStat(item.tool)!.minusLines === 0))"
+                              v-if="getToolDiffStat(item.tool)!.minusLines !== undefined"
                               class="text-[#b42c3f] dark:text-rose-400"
                             >-{{ getToolDiffStat(item.tool)!.minusLines }}</span>
                           </span>
@@ -800,7 +800,7 @@ const hasProcessContent = computed(() => {
 // 折叠栏头部标题文案
 const processTitle = computed(() => {
   if (props.message.isThinking) {
-    return '思考中...';
+    return props.message.content ? '生成中...' : '思考中...';
   }
   const toolCount = props.message.toolCalls?.length || 0;
   const hasThoughts = !!(props.message.thoughtSteps?.length);
@@ -930,7 +930,7 @@ const processTimeline = computed<ProcessTimelineItem[]>(() => {
       items.push({
         id: step.id || `step-${idx}`,
         type: 'thought',
-        order: step.order ?? (idx * 10),
+        order: step.order ?? Infinity,
         step
       });
     });
@@ -942,7 +942,7 @@ const processTimeline = computed<ProcessTimelineItem[]>(() => {
       items.push({
         id: im.id || `im-${idx}`,
         type: 'intermediate_ai',
-        order: im.order ?? (idx * 10 + 1),
+        order: im.order ?? Infinity,
         message: im
       });
     });
@@ -968,7 +968,7 @@ const processTimeline = computed<ProcessTimelineItem[]>(() => {
       items.push({
         id: tc.id || `tool-${idx}`,
         type: 'tool',
-        order: tc.order ?? (idx * 10 + 2),
+        order: tc.order ?? Infinity,
         tool: tc
       });
     });

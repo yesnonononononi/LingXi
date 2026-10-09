@@ -646,15 +646,15 @@ const turnView = (
   };
 };
 
-test('5a. ★ 原始增量事件不再改写正文，正文只等后端视图', () => {
+test('5a. ★ 原始增量在权威响应身份下立即打印正文', () => {
   const messages: ChatMessage[] = [];
   const reducer = new TurnStreamReducer(messages, { sessionId: ROOT });
-  reducer.consume({ type: 'PARTIAL_TEXT', content: '这是正在逐字输出的正文', metaData: { sessionId: ROOT, rootSessionId: ROOT, turnId: T1 } } as unknown as AgentEvent);
+  reducer.consume({ type: 'PARTIAL_TEXT', responseId: T1, offset: 0, content: '这是正在逐字输出的正文', metaData: { sessionId: ROOT, rootSessionId: ROOT, turnId: T1 } } as unknown as AgentEvent);
   reducer.flush();
 
   const assistants = messages.filter(m => m.role === 'assistant');
   assert.equal(assistants.length, 1, `同一轮不得出现两个助手气泡，实际=${messages.map(m => m.id).join(',')}`);
-  assert.equal(assistants[0].content, '', '原始事件不写正文，正文只认后端视图');
+  assert.equal(assistants[0].content, '这是正在逐字输出的正文', '片段到达后即显示');
   assert.equal(assistants[0].toolCalls?.length, 0, '工具轨迹只等视图，原始事件不建工具项');
   assert.equal(assistants[0].isThinking, true, '增量事件把气泡维持在生成态');
 });
@@ -662,7 +662,7 @@ test('5a. ★ 原始增量事件不再改写正文，正文只等后端视图', 
 test('5b. ★ 不产生重复气泡：视图到达后该轮只有一条助手气泡，且正文/工具整体来自视图', () => {
   const messages: ChatMessage[] = [];
   const reducer = new TurnStreamReducer(messages, { sessionId: ROOT });
-  reducer.consume({ type: 'PARTIAL_TEXT', content: '本地半截', metaData: { sessionId: ROOT, rootSessionId: ROOT, turnId: T1 } } as unknown as AgentEvent);
+  reducer.consume({ type: 'PARTIAL_TEXT', responseId: T1, offset: 0, content: '权威', metaData: { sessionId: ROOT, rootSessionId: ROOT, turnId: T1 } } as unknown as AgentEvent);
   reducer.flush();
   assert.equal(messages.filter(m => m.role === 'assistant').length, 1);
 
@@ -721,7 +721,7 @@ test('5e. ★ 视图内块按 blockId 幂等覆盖：重复投递同一视图不
 test('5f. ★ 视图按 turnId 定位：同一轮跨页多次下发只保留一条气泡', () => {
   const messages: ChatMessage[] = [];
   // 第一页：该轮只落了部分块（版本 3）；第二页：同一轮更全（版本 5）
-  upsertTurnViewIntoMessages(messages, turnView(T1, { version: 3, user: '问题', text: '半截', tools: ['c1'] }), new Map());
+  upsertTurnViewIntoMessages(messages, turnView(T1, { version: 3, user: '问题', text: '完整', tools: ['c1'] }), new Map());
   upsertTurnViewIntoMessages(messages, turnView(T1, { version: 5, user: '问题', text: '完整正文', tools: ['c1', 'c2', 'c3'] }), new Map());
 
   const assistants = messages.filter(m => m.role === 'assistant');

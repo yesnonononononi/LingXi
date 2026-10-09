@@ -8,7 +8,7 @@
  * 否则事件被消费侧静默丢弃（按字面量匹配未命中即不处理，不报错）。</p>
  *
  * <p><b>线上形态：</b>SSE 事件名 = {@code event.type()}（见 {@code SseEventPublisher#send}），
- * 事件体 = 事件对象的 JSON。序列化规则（{@code JsonConfig} + {@code ExecutionJson}）：
+ * 事件体 = 事件对象的 JSON，业务监听器补充文本偏移与过程位置。序列化规则（{@code JsonConfig} + {@code ExecutionJson}）：
  * Long → 十进制字符串，Instant → ISO-8601 字符串（未开时间戳数字）。故本文件里 id 与时间
  * 一律是 {@code string}。</p>
  */
@@ -24,6 +24,8 @@
  * 整数范围，必须走字符串）。框架每次执行构造一份不可变快照，事件里的就是当时的值。</p>
  */
 export interface EventMetaData {
+  /** 编辑统计独立于模型结果文本，避免输出截断导致摘要丢失。 */
+  fileEdit?: { filePath?: string; recordId?: string; plusLines?: number; minusLines?: number };
   /** 事件权威归属根会话 id（子执行归父任务） */
   rootSessionId?: string;
   /** 本次执行所属会话 id（子执行取其子会话） */
@@ -86,6 +88,8 @@ export interface ContextUsageMetric {
  * 「收到但不处理」，而不是编译期就拒绝。具体接口各自把它收窄成自己的字面量。</p>
  */
 export interface EventInterface {
+  /** 业务后端提供的过程位置，与历史块 order 一致。 */
+  order?: number;
   /** 事件判别式；SSE 事件名与事件体顶层同值（对应 {@code TypedEvent#type()}） */
   type: string;
   /** 框架执行 id */
@@ -145,6 +149,9 @@ export interface ExecutionResumedEvent extends EventInterface {
 export interface AgentPartialTextEvent extends EventInterface {
   type: 'PARTIAL_TEXT';
   agentId?: string;
+  responseId?: string;
+  /** 发送端累计的 UTF-16 偏移。 */
+  offset?: number;
   /** 本次增量文本 */
   content: string;
 }
@@ -153,8 +160,9 @@ export interface AgentPartialTextEvent extends EventInterface {
 export interface AgentCompleteTextEvent extends EventInterface {
   type: 'COMPLETE_TEXT';
   agentId?: string;
+  responseId?: string;
   /** 本轮完整正文 */
-  content: string;
+  content: string | null;
   meta?: ResponseMeta | null;
 }
 
@@ -162,6 +170,9 @@ export interface AgentCompleteTextEvent extends EventInterface {
 export interface AgentPartialThinkingEvent extends EventInterface {
   type: 'PARTIAL_THINKING';
   agentId?: string;
+  responseId?: string;
+  /** 与正文独立累计的 UTF-16 偏移。 */
+  offset?: number;
   /** 本次增量思考内容 */
   content: string;
 }
@@ -169,10 +180,12 @@ export interface AgentPartialThinkingEvent extends EventInterface {
 /** AI_MESSAGE —— 一轮模型的最终助手消息（对应 {@code AgentMessageEvent}）。 */
 export interface AgentMessageEvent extends EventInterface {
   type: 'AI_MESSAGE';
+  responseId?: string;
+  thinkingOrder?: number;
   /** 正文 */
-  text?: string;
+  text?: string | null;
   /** 结构化思考内容 */
-  thinking?: string;
+  thinking?: string | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -182,6 +195,7 @@ export interface AgentMessageEvent extends EventInterface {
 /** TOOL_CALL —— 工具即将被调用（对应 {@code ToolCallStartEvent}）。 */
 export interface ToolCallStartEvent extends EventInterface {
   type: 'TOOL_CALL';
+  responseId?: string;
   /** 调用 id，与同一 tool_call 行的其他事件关联。框架侧取自 tool_call.id，恒非空 */
   requestId: string;
   /** 工具名。TOOL_CALL 仅在工具已注册且通过审批后发布，恒非空 */
@@ -195,6 +209,7 @@ export interface ToolCallStartEvent extends EventInterface {
 /** TOOL_COMPLETED —— 工具执行结束（对应 {@code ToolCallEndEvent}）。 */
 export interface ToolCallEndEvent extends EventInterface {
   type: 'TOOL_COMPLETED';
+  responseId?: string;
   requestId?: string;
   toolName?: string;
   /** 调用参数（JSON 字符串，非对象） */
