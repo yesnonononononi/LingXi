@@ -98,9 +98,9 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      - name: 验证 Maven wrapper 调用
+      - name: 验证桌面打包依赖
         working-directory: frontend
-        run: node --test tests/backendRuntimeMaven.test.cjs
+        run: node --test tests/backendRuntimeMaven.test.cjs tests/electronPackaging.test.cjs
 
       - name: 构建后端运行产物（fat jar + jlink 精简 JRE）
         working-directory: frontend
