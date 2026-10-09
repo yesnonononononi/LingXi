@@ -33,7 +33,6 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -63,7 +62,7 @@ class TranscriptConcurrencyTest {
 
     private static final long SESSION_ID = 4242L;
     private static final long TURN_ID = 900900L;
-    private static final UUID RESPONSE_ID = UUID.fromString("c0ffee00-1111-2222-3333-444455556666");
+    private static final String RESPONSE_ID = "9007199254740993";
 
     private EmbeddedDatabase database;
     private DataSource dataSource;

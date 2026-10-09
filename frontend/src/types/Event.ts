@@ -17,6 +17,8 @@
 /* 通用载荷                                                             */
 /* ------------------------------------------------------------------ */
 
+import type { Placement } from './block';
+
 /**
  * 事件随行元数据（{@code AgentEvent#eventMetaData()}）。
  *
@@ -88,6 +90,8 @@ export interface ContextUsageMetric {
  * 「收到但不处理」，而不是编译期就拒绝。具体接口各自把它收窄成自己的字面量。</p>
  */
 export interface EventInterface {
+  /** 模型结构确定后由业务后端给出，与历史 placement 同口径。 */
+  placement?: Placement;
   /** 业务后端提供的过程位置，与历史块 order 一致。 */
   order?: number;
   /** 事件判别式；SSE 事件名与事件体顶层同值（对应 {@code TypedEvent#type()}） */
@@ -196,6 +200,8 @@ export interface AgentMessageEvent extends EventInterface {
 export interface ToolCallStartEvent extends EventInterface {
   type: 'TOOL_CALL';
   responseId?: string;
+  /** 框架给出的请求位置；旧事件可能缺失，展示仍使用后端 order。 */
+  requestIndex?: number;
   /** 调用 id，与同一 tool_call 行的其他事件关联。框架侧取自 tool_call.id，恒非空 */
   requestId: string;
   /** 工具名。TOOL_CALL 仅在工具已注册且通过审批后发布，恒非空 */
@@ -210,6 +216,7 @@ export interface ToolCallStartEvent extends EventInterface {
 export interface ToolCallEndEvent extends EventInterface {
   type: 'TOOL_COMPLETED';
   responseId?: string;
+  requestIndex?: number;
   requestId?: string;
   toolName?: string;
   /** 调用参数（JSON 字符串，非对象） */

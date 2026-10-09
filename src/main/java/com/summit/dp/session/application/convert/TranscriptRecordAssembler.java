@@ -12,7 +12,6 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 /** 序列化必须在写入前完成，后续上下文压缩不能改变已接纳历史。 */
 @Component
@@ -20,16 +19,15 @@ import java.util.UUID;
 public class TranscriptRecordAssembler {
     private final ObjectMapper json;
 
-    public List<SessionMessage> build(Long sessionId, Long turnId, List<? extends Message> source, UUID responseId) {
+    public List<SessionMessage> build(Long sessionId, Long turnId, List<? extends Message> source, String responseId) {
         return build(sessionId, turnId, source, responseId, null);
     }
 
     /**
-     * @param responseOrder 本轮模型调用在一轮内的序号（0 基）；只挂 AI 行。
-     *                      {@code null} 表示序号未知，落库为 NULL，展示层据此降级。
+     * @param responseOrder 旧 UUID 响应的序号；新响应按框架身份排序，保持为 null。
      */
     public List<SessionMessage> build(Long sessionId, Long turnId, List<? extends Message> source,
-                                      UUID responseId, Integer responseOrder) {
+                                      String responseId, Integer responseOrder) {
         List<SessionMessage> records = new ArrayList<>();
         for (Message message : source) {
             SessionMessageType type = toMessageType(message);

@@ -16,7 +16,6 @@ import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -39,7 +38,7 @@ import static org.mockito.Mockito.when;
  */
 class ConversationTranscriptResponseIdTest {
 
-    private static final UUID RESPONSE_ID = UUID.fromString("2b8f4d16-7a35-4e92-b1c8-5f0d3a7e9b24");
+    private static final String RESPONSE_ID = "2b8f4d16-7a35-4e92-b1c8-5f0d3a7e9b24";
     private static final long SESSION_ID = 700L;
     private static final long TURN_ID = 800L;
 
@@ -100,6 +99,21 @@ class ConversationTranscriptResponseIdTest {
         SessionMessage ai = captured.getValue().stream()
                 .filter(r -> r.getType() == SessionMessageType.AI).findFirst().orElseThrow();
         assertEquals(2, ai.getResponseOrder());
+    }
+
+    @Test
+    void numericResponseDoesNotAllocateSequenceButStillLocksForIdempotency() {
+        String responseId = "9007199254740993";
+        service.appendRound(SESSION_ID, null, TURN_ID,
+                AiMessageEntity.builder().text("新响应").build(), List.of(), responseId);
+        ArgumentCaptor<List<SessionMessage>> captured = ArgumentCaptor.forClass(List.class);
+        verify(messages).lockSessionForAppend(SESSION_ID);
+        verify(messages).findByResponseId(SESSION_ID, responseId);
+        verify(messages, never()).countAiMessagesInTurn(SESSION_ID, TURN_ID);
+        verify(messages).appendAll(eq(SESSION_ID), any(), captured.capture());
+        SessionMessage ai = captured.getValue().getFirst();
+        assertEquals(responseId, ai.getResponseId());
+        assertNull(ai.getResponseOrder());
     }
 
     /**

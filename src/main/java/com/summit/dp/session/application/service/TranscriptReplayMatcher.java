@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.UUID;
 
 /**
  * 判定「同一 responseId 的第二次落库」是否与已落库那一轮**内容一致**。
@@ -55,7 +54,7 @@ public class TranscriptReplayMatcher {
     }
 
     /** 内容不一致时的统一报错文案（抛给全局异常处理器，作为业务提示暴露）。 */
-    public ClientException driftError(Long sessionId, UUID responseId) {
+    public ClientException driftError(Long sessionId, String responseId) {
         return new ClientException("同一轮模型输出被重复提交但内容不一致，已拒绝落库: sessionId="
                 + sessionId + ", responseId=" + responseId);
     }

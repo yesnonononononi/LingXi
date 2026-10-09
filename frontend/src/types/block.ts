@@ -61,11 +61,11 @@ export interface BlockBase {
   blockId: string;
   /** 判别式，与 {@link BlockType} 对齐 */
   type: BlockType;
-  /** 产生该块的模型响应身份；工具块恒为 null */
+  /** 产生该块的模型响应身份；旧数据可以缺失 */
   responseId?: string | null;
   /**
-   * 块在本轮内的展示序号（升序排序键，后端给出）。
-   * 布局：{@code responseOrder * 1000 + slot}（THINKING=0 / TEXT=1 / TOOL=2..）。
+   * 响应内展示位置（THINKING=0 / TEXT=1 / TOOL=2..），先比较 responseId 再比较此字段。
+   * 旧 UUID 历史保留原 responseOrder * 1000 + slot。
    */
   order: number;
   /** 块状态 */

@@ -52,14 +52,13 @@ public class TurnViewAssembler {
      * @param turnId    目标轮次 ID
      * @param messages  该会话的消息（本方法只取 {@code turnId} 匹配的行）
      * @param toolCalls 本批消息涉及的 {@code tool_call} 行，按 {@code toolCallId} 建索引
-     * @return 按 {@code order} 升序的块列表；无内容返回空列表
+     * @return 按响应身份与响应内位置排序的块列表；无内容返回空列表
      */
     public List<Block> assembleBlocks(Long turnId, List<SessionMessage> messages, Map<String, ToolCall> toolCalls) {
         if (turnId == null || messages == null || messages.isEmpty()) {
             return List.of();
         }
-        // 只取本轮的消息，并按「响应序号 → 行主键」稳定排序：同轮多次模型调用靠 responseOrder 分开，
-        // 序号缺失（旧数据）退化为按主键排 —— 插入顺序，不比这更差，也不伪造一个序号。
+        // 旧 UUID 缺少递增身份，保留历史序号与行主键口径；新响应在展开后统一按框架身份排。
         List<SessionMessage> turnMessages = new ArrayList<>();
         for (SessionMessage message : messages) {
             if (turnId.equals(message.getTurnId())) {
@@ -77,7 +76,7 @@ public class TurnViewAssembler {
             }
             appendAiBlocks(blocks, message, toolCalls);
         }
-        blocks.sort(Comparator.comparingInt(Block::getOrder));
+        blocks.sort(BlockOrder::compare);
         return blocks;
     }
 
@@ -89,27 +88,26 @@ public class TurnViewAssembler {
      */
     private void appendAiBlocks(List<Block> blocks, SessionMessage aiRow, Map<String, ToolCall> toolCalls) {
         AiMessageEntity aiMessage = parse(aiRow.getText());
-        int responseOrder = aiRow.getResponseOrder() == null ? 0 : aiRow.getResponseOrder();
-        String responseId = aiRow.getResponseId() == null ? null : aiRow.getResponseId().toString();
+        Integer responseOrder = aiRow.getResponseOrder();
+        String responseId = aiRow.getResponseId();
 
         // 该 AI 行是否有工具请求 —— 这既是 placement 判据，也决定工具块是否展开。
         List<ToolCallRequest> requests = aiMessage == null || aiMessage.getToolCalls() == null
                 ? List.of() : aiMessage.getToolCalls();
-        boolean hasToolRequest = !requests.isEmpty();
 
         // 思考块：身份 thinking:<responseId>；旧数据用行 ID 兜底。
         String thinking = aiMessage == null ? null : aiMessage.getThinking();
         if (thinking != null && !thinking.isBlank()) {
             blocks.add(new ThinkingBlock(thinkingIdentity(responseId, aiRow.getId()), responseId,
-                    BlockOrder.thinking(responseOrder), BlockStatus.COMPLETE, thinking));
+                    BlockOrder.thinking(responseId, responseOrder), BlockStatus.COMPLETE, thinking));
         }
 
         // 正文块：placement 由「该行是否含工具请求」唯一判定。
         String text = aiMessage == null ? aiRow.getText() : aiMessage.text();
         if (text != null && !text.isBlank()) {
-            Placement placement = hasToolRequest ? Placement.PROCESS : Placement.BODY;
+            Placement placement = Placement.resolve(requests);
             blocks.add(new TextBlock(textIdentity(responseId, aiRow.getId()), responseId,
-                    BlockOrder.text(responseOrder), BlockStatus.COMPLETE, placement, text));
+                    BlockOrder.text(responseId, responseOrder), BlockStatus.COMPLETE, placement, text));
         }
 
         int requestIndex = 0;
@@ -118,7 +116,7 @@ public class TurnViewAssembler {
                 continue;
             }
             ToolCall toolCall = toolCalls == null ? null : toolCalls.get(request.id());
-            blocks.add(buildToolBlock(BlockOrder.tool(responseOrder, requestIndex), request, toolCall));
+            blocks.add(buildToolBlock(responseId, BlockOrder.tool(responseId, responseOrder, requestIndex), request, toolCall));
             requestIndex++;
         }
     }
@@ -126,18 +124,18 @@ public class TurnViewAssembler {
     /**
      * 构造工具块。
      *
-     * <p>{@code responseId} 恒为 {@code null} —— 工具块身份来自 {@code toolCallId}，与模型调用身份无关。
+     * <p>工具块身份来自 {@code toolCallId}，{@code responseId} 用于确定所属模型响应的位置。
      * 状态来自权威工具视图；工具调用行缺失（尚未落库的实时窗口）时按「已开始」展示，
      * 因为此刻它确实已被模型请求、只是还没有结论。</p>
      */
-    private ToolBlock buildToolBlock(int order, ToolCallRequest request, ToolCall toolCall) {
+    private ToolBlock buildToolBlock(String responseId, int order, ToolCallRequest request, ToolCall toolCall) {
         String toolCallId = request.id();
         if (toolCall == null) {
-            return new ToolBlock(ToolBlock.identity(toolCallId), null, order,
+            return new ToolBlock(ToolBlock.identity(toolCallId), responseId, order,
                     BlockStatus.TOOL_STARTED, toolCallId, request.name(), request.arguments(),
                     null, null, null);
         }
-        return new ToolBlock(ToolBlock.identity(toolCallId), null, order,
+        return new ToolBlock(ToolBlock.identity(toolCallId), responseId, order,
                 toolBlockStatusResolver.resolve(toolCall), toolCallId,
                 toolCall.getToolName() == null ? request.name() : toolCall.getToolName(),
                 request.arguments(), toolCall.getRawOutput(), null, null);

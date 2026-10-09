@@ -1,4 +1,6 @@
 import type { ChatMessage, ResponseTextBuffer, ToolCallTrace, TurnRenderState } from '../../types/chat';
+import type { Placement } from '../../types/block';
+import { compareResponsePosition } from '../../utils/responseOrder';
 
 export function getTurnState(bubble: ChatMessage): TurnRenderState {
   return bubble.turnState ??= { texts: {}, tools: {} };
@@ -30,8 +32,14 @@ export function activateText(bubble: ChatMessage, id: string): void {
   const next = state.texts[id];
   const active = state.activeTextId ? state.texts[state.activeTextId] : undefined;
   if (!next || next.kind !== 'TEXT' || next.placement === 'PROCESS') return;
-  if (active?.order !== undefined && next.order !== undefined && next.order < active.order) return;
+  if (active && compareResponsePosition(next, active) < 0) return;
   state.activeTextId = id;
+}
+
+/** 用途只接受后端字段，重复或旧快照不能让同一响应反复搬动。 */
+export function applyTextPlacement(bubble: ChatMessage, id: string, placement?: Placement): void {
+  const buffer = getTurnState(bubble).texts[id];
+  if (buffer && buffer.placement !== 'PROCESS' && placement) buffer.placement = placement;
 }
 
 /** offset 使用 UTF-16 长度；全文和历史都从零写入，缺口补齐后再连续打印。 */
@@ -74,6 +82,7 @@ export function writeToolTrace(bubble: ChatMessage, incoming: ToolCallTrace): vo
     (previous.status === 'pending' && incoming.status === 'calling');
   tools[incoming.id] = { ...previous, ...incoming,
     order: incoming.order ?? previous.order,
+    responseId: incoming.responseId ?? previous.responseId,
     query: incoming.query ?? previous.query,
     args: incoming.query === undefined ? previous.args : incoming.args,
     result: retainResult ? previous.result : incoming.result ?? previous.result,
@@ -87,30 +96,30 @@ export function renderTurnState(bubble: ChatMessage): void {
   const state = getTurnState(bubble);
   bubble.thoughtSteps = [];
   bubble.aiMessages = [];
-  bubble.toolCalls = Object.values(state.tools).sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
+  bubble.toolCalls = Object.values(state.tools).sort(compareResponsePosition);
   bubble.processTimeline = [];
   for (const [id, buffer] of Object.entries(state.texts)) {
     if (!buffer.text) continue;
     if (buffer.kind === 'THINKING') {
       const step = { id, title: '思考', content: buffer.text,
-        status: buffer.complete ? 'success' as const : 'running' as const, order: buffer.order };
+        status: buffer.complete ? 'success' as const : 'running' as const, order: buffer.order, responseId: buffer.responseId };
       bubble.thoughtSteps.push(step);
-      if (buffer.order !== undefined) bubble.processTimeline.push({ id, type: 'thought', order: buffer.order, step });
+      if (buffer.order !== undefined) bubble.processTimeline.push({ id, type: 'thought', order: buffer.order, responseId: buffer.responseId, step });
     } else if (buffer.placement === 'PROCESS') {
-      const message = { id, text: buffer.text, order: buffer.order };
+      const message = { id, text: buffer.text, order: buffer.order, responseId: buffer.responseId };
       bubble.aiMessages.push(message);
-      if (buffer.order !== undefined) bubble.processTimeline.push({ id, type: 'intermediate_ai', order: buffer.order, message });
+      if (buffer.order !== undefined) bubble.processTimeline.push({ id, type: 'intermediate_ai', order: buffer.order, responseId: buffer.responseId, message });
     }
   }
   for (const tool of bubble.toolCalls) {
-    if (tool.order !== undefined) bubble.processTimeline.push({ id: `tool:${tool.id}`, type: 'tool', order: tool.order, tool });
+    if (tool.order !== undefined) bubble.processTimeline.push({ id: `tool:${tool.id}`, type: 'tool', order: tool.order, responseId: tool.responseId, tool });
   }
-  bubble.thoughtSteps.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
-  bubble.aiMessages.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
-  bubble.processTimeline.sort((a, b) => a.order - b.order);
+  bubble.thoughtSteps.sort(compareResponsePosition);
+  bubble.aiMessages.sort(compareResponsePosition);
+  bubble.processTimeline.sort(compareResponsePosition);
   const active = state.activeTextId ? state.texts[state.activeTextId] : undefined;
   const body = Object.values(state.texts).filter(buffer => buffer.kind === 'TEXT' && buffer.placement === 'BODY')
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).at(-1);
+    .sort(compareResponsePosition).at(-1);
   bubble.content = active && active.placement === undefined ? active.text : body?.text ?? '';
   if (bubble.sendError && !bubble.content.endsWith(bubble.sendError)) {
     bubble.content = bubble.content ? `${bubble.content}\n\n${bubble.sendError}` : bubble.sendError;

@@ -5,6 +5,10 @@ import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
+import com.summit.core.conversation.api.ToolCallRequest;
+import com.summit.core.conversation.event.ToolCallStartEvent;
+import com.summit.core.conversation.event.ToolCallEndEvent;
+import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.ToolMessageEntity;
 import com.summit.core.runtime.RuntimeEnvironment;
@@ -16,6 +20,7 @@ import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolRegistry;
+import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.workspace.WorkspaceManager;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.execution.ExecutionAttributes;
@@ -38,11 +43,13 @@ import com.summit.dp.tools.baseTools.terminal.CommandToolDefinitionExecutor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -131,6 +138,36 @@ class CommandApprovalExecutorTest {
                 new ApprovedCommandRestorer(mapper, workspaces, provider(toolRegistry)),
                 modelContextService,
                 resumeCoordinator);
+    }
+
+    @Test
+    void approvedCommandEventsRetainOriginalPositionFromLegacyModelList() throws Exception {
+        ToolCall toolCall = commandCall("call-second", "echo hi", "echo hi");
+        AiMessageEntity original = AiMessageEntity.builder().toolCalls(List.of(
+                ToolCallRequest.builder().id("call-first").name("read").arguments("{}").build(),
+                ToolCallRequest.builder().id("call-second").name("command").arguments("{}").build())).build();
+        Execution execution = execution("3", original,
+                ToolMessageEntity.builder().id("call-second").name("command").text("pending").build());
+        ExecutionControlSignal signal = new ExecutionControlSignal("3");
+        when(toolCallRepository.findById("call-second")).thenReturn(Optional.of(toolCall));
+        when(executionRepository.register("3")).thenReturn(signal);
+        when(executionRepository.findById("3")).thenReturn(Optional.of(execution));
+        doReturn(commandTool()).when(toolRegistry).getTool("command");
+        Workspace approvedWorkspace = workspace("workspace");
+        when(workspaces.acquire(any(WorkspaceSpec.class))).thenReturn(approvedWorkspace);
+        when(commandExecutor.execute(any())).thenReturn(ToolExecuteResult.success("已执行"));
+
+        CountDownLatch finished = new CountDownLatch(1);
+        executor.decide(toolCall, true, null, null, finished::countDown);
+        assertTrue(finished.await(5, TimeUnit.SECONDS));
+        ArgumentCaptor<ToolCallStartEvent> start = ArgumentCaptor.forClass(ToolCallStartEvent.class);
+        ArgumentCaptor<ToolCallEndEvent> end = ArgumentCaptor.forClass(ToolCallEndEvent.class);
+        verify(runtimeEvents).onToolCall(start.capture());
+        verify(runtimeEvents).onToolCallOutput(end.capture());
+        assertEquals(1, start.getValue().getRequestIndex());
+        assertEquals(1, end.getValue().getRequestIndex());
+        assertEquals("call-second", start.getValue().getRequestId());
+        assertEquals("call-second", end.getValue().getRequestId());
     }
 
     @Test
@@ -269,12 +306,19 @@ class CommandApprovalExecutorTest {
     }
 
     private Execution execution(String id, Message... messages) {
+        List<Message> context = new ArrayList<>(List.of(messages));
+        if (context.stream().noneMatch(AiMessageEntity.class::isInstance)) {
+            List<ToolCallRequest> requests = context.stream().filter(ToolMessageEntity.class::isInstance)
+                    .map(ToolMessageEntity.class::cast).map(tool -> ToolCallRequest.builder()
+                            .id(String.valueOf(tool.getId())).name(tool.getName()).arguments("{}").build()).toList();
+            context.addFirst(AiMessageEntity.builder().toolCalls(requests).build());
+        }
         return Execution.builder().id(id).executionState(ExecutionState.SUSPENDED)
                 .agentRequest(AgentRequest.builder().workspaceSpec(mock(WorkspaceSpec.class))
                         .runtimeParameters(com.summit.core.agent.AgentRuntimeParameters.builder()
                                 .attributes(Map.of(ExecutionAttributes.SESSION_ID, "2")).build())
                         .build())
-                .messages(new java.util.ArrayList<>(List.of(messages))).build();
+                .messages(context).build();
     }
 
     private static <T> ObjectProvider<T> provider(T value) {

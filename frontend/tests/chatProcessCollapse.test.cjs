@@ -175,7 +175,7 @@ test('实测回归：没有快照时工具开始即渲染，收尾和重复事�
 test('第二版真实组件：工具先到的文本持续追加在过程区，旧快照不搬回正文', async t => {
   const { reducer, event, answer, AgentToolName } = streamFixture();
   const root = mount(t, answer);
-  reducer.consume(event({ type: 'TOOL_CALL', requestId: 'c1', responseId: 'r1', order: 2,
+  reducer.consume(event({ type: 'TOOL_CALL', requestId: 'c1', responseId: 'r1', order: 2, placement: 'PROCESS',
     toolName: AgentToolName.ReadFile, args: '{"path":"a.md"}' }));
   reducer.consume(event({ type: 'PARTIAL_TEXT', responseId: 'r1', offset: 0, order: 1, content: '先读' }));
   await nextTick();
@@ -204,6 +204,33 @@ test('第二版真实组件：工具先到的文本持续追加在过程区，�
   toggleProcess(root);
   await nextTick();
   assert.match(text(root), /先读文件/);
+});
+
+test('框架位置真实组件：逐段打印、用途确认和并发工具位置无需快照，后续响应排在末尾', async t => {
+  const { reducer, event, answer, AgentToolName } = streamFixture();
+  const root = mount(t, answer);
+  const first = '9007199254740992';
+  const second = '9007199254740993';
+  reducer.consume(event({ type: 'PARTIAL_TEXT', responseId: first, offset: 0, order: 1, content: '先' }));
+  await nextTick();
+  assert.match(text(root), /先/);
+  reducer.consume(event({ type: 'PARTIAL_TEXT', responseId: first, offset: 1, order: 1, content: '读文件' }));
+  await nextTick();
+  assert.match(text(root), /先读文件/);
+  reducer.consume(event({ type: 'AI_MESSAGE', responseId: first, order: 1, text: '先读文件', placement: 'PROCESS' }));
+  await nextTick();
+  assert.equal(answer.content, '');
+  assert.equal(text(root).split('先读文件').length - 1, 1);
+  for (const [id, order, path] of [['c2', 3, 'second.md'], ['c1', 2, 'first.md']]) {
+    reducer.consume(event({ type: 'TOOL_CALL', requestId: id, responseId: first, order, placement: 'PROCESS',
+      toolName: AgentToolName.ReadFile, args: JSON.stringify({ path }) }));
+  }
+  reducer.consume(event({ type: 'AI_MESSAGE', responseId: second, order: 1, text: '再确认', placement: 'PROCESS' }));
+  await nextTick();
+  const rendered = text(root);
+  assert.ok(rendered.indexOf('先读文件') < rendered.indexOf('first.md'), rendered);
+  assert.ok(rendered.indexOf('first.md') < rendered.indexOf('second.md'), rendered);
+  assert.ok(rendered.indexOf('second.md') < rendered.indexOf('再确认'), rendered);
 });
 
 test('读取摘要：缺省范围显示全文，单边范围按后端默认边界显示', async t => {

@@ -1,8 +1,11 @@
 package com.summit.dp.toolcall.application.service.impl;
 
 import com.summit.core.agent.Execution;
+import com.summit.core.conversation.api.ToolCallRequest;
+import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.ToolMessageEntity;
+import com.summit.dp.shared.exception.ClientException;
 
 import java.util.List;
 
@@ -57,5 +60,21 @@ public final class ExecutionToolSlot {
         }
         slot.setText(text);
         return true;
+    }
+
+    /** 旧审批快照不含有效 requestIndex，恢复事件从原模型列表读取位置。 */
+    public static int resolveRequestIndex(Execution execution, String toolCallId) {
+        List<Message> messages = execution.getMessages();
+        if (messages != null) {
+            for (int i = messages.size() - 1; i >= 0; i--) {
+                if (!(messages.get(i) instanceof AiMessageEntity ai) || ai.getToolCalls() == null) continue;
+                List<ToolCallRequest> requests = ai.getToolCalls();
+                for (int index = 0; index < requests.size(); index++) {
+                    ToolCallRequest request = requests.get(index);
+                    if (request != null && toolCallId.equals(request.id())) return index;
+                }
+            }
+        }
+        throw new ClientException("找不到原模型的工具请求，不能恢复审批事件");
     }
 }

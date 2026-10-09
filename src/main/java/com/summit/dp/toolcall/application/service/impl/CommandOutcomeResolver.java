@@ -53,7 +53,8 @@ public class CommandOutcomeResolver {
         // 身份沿用发起本次工具调用的模型调用身份：审批恢复不是新的一轮模型调用，
         // 这里若新造一个 UUID，前端会把同一轮拆成两条来源。
         runtimeEvents.onToolCall(new ToolCallStartEvent(call.getId(), execution.getId(),
-                call.getToolDefinition().name(), call.getArgs(), call.getResponseId()));
+                call.getToolDefinition().name(), call.getArgs(), call.getResponseId(), execution.eventMetaData(),
+                ExecutionToolSlot.resolveRequestIndex(execution, call.getId())));
         ToolExecuteResult result = call.getToolDefinition().executor().execute(call);
         return new CommandExecution(result, ToolCallOutcome.APPROVED,
                 converter.commandOutcome(ToolCallOutcome.APPROVED, result.getToolOutput(), null));

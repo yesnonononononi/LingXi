@@ -1,22 +1,18 @@
 package com.summit.dp.shared.vo.block;
 
-/**
- * 文本 / 思考块在轮次里的落点。
- *
- * <p><b>由后端唯一判定，前端不再自行推断</b>。判据（依据 AI 的输出结构，与历史/实时同一套）：</p>
- * <ul>
- *   <li>流式文本**初始**进 {@link #PROCESS}（此刻还不知道它是不是结论）；</li>
- *   <li>完整响应**包含工具请求**时**保持** {@link #PROCESS} —— 该轮是中途叙述；</li>
- *   <li>**被后端确认用于正文**时才转 {@link #BODY}（即该轮没有工具请求、是循环出口的结论）；</li>
- *   <li>已归入正文后若后端重新判定为过程，同样由后端把状态改回 {@link #PROCESS}。</li>
- * </ul>
- *
- * <p>⚠️ 判据是「这个 AI 行有没有工具请求」，**不是**「它后面有没有 TOOL 行」——
- * 后者在「末轮仍在调工具」「整轮无结论文本（被中断）」两种情况下都会误判。</p>
- */
+import com.summit.core.conversation.api.ToolCallRequest;
+
+import java.util.List;
+
+/** 模型请求结构确定后才能判定用途，实时与历史共用同一规则。 */
 public enum Placement {
     /** 结论正文：展示在回答气泡主体里。 */
     BODY,
     /** 中途叙述：展示在可折叠的过程时间线里。 */
-    PROCESS
+    PROCESS;
+
+    /** 实时与历史只依据模型请求结构，不能依据工具执行结果猜用途。 */
+    public static Placement resolve(List<ToolCallRequest> requests) {
+        return requests == null || requests.isEmpty() ? BODY : PROCESS;
+    }
 }

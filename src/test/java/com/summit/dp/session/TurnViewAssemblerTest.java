@@ -24,7 +24,6 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -40,7 +39,7 @@ class TurnViewAssemblerTest {
 
     private static final long SESSION_ID = 700L;
     private static final long TURN_ID = 800L;
-    private static final UUID RESPONSE_ID = UUID.fromString("1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d");
+    private static final String RESPONSE_ID = "1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d";
 
     private final ObjectMapper json = new ObjectMapper();
     private final ToolCallConverter converter = new ToolCallConverter(json);
@@ -94,8 +93,8 @@ class TurnViewAssemblerTest {
         assertEquals(ThinkingBlock.identity(RESPONSE_ID.toString()), blocks.get(0).getBlockId());
         assertEquals(TextBlock.identity(RESPONSE_ID.toString()), blocks.get(1).getBlockId());
         assertEquals(ToolBlock.identity("call_a"), blocks.get(2).getBlockId());
-        // 工具块 responseId 恒空：身份来自 toolCallId。
-        assertNull(blocks.get(2).getResponseId());
+        // 身份仍来自 toolCallId，responseId 只负责响应位置。
+        assertEquals(RESPONSE_ID, blocks.get(2).getResponseId());
     }
 
     /** 旧数据（无 responseId）身份退化为行 ID，但块仍可稳定定位，且不伪造身份。 */
@@ -151,6 +150,23 @@ class TurnViewAssemblerTest {
                 .mapToInt(Block::getOrder).min().orElseThrow();
         assertTrue(minSecondRound > maxFirstRound,
                 "同一轮第二次模型调用的块必须整体排在第一次之后");
+    }
+
+    @Test
+    void numericResponseIdentityOrdersWholeResponsesWithoutPersistedSequence() {
+        String earlier = "9007199254740992";
+        String later = "9007199254740993";
+        SessionMessage first = SessionMessage.builder().id(200L).turnId(TURN_ID).responseId(earlier)
+                .type(SessionMessageType.AI).text(writeJson(AiMessageEntity.builder().thinking("先思考").text("先读")
+                        .toolCalls(List.of(request("call_1"), request("call_2"))).build())).build();
+        SessionMessage second = SessionMessage.builder().id(100L).turnId(TURN_ID).responseId(later)
+                .type(SessionMessageType.AI).text(writeJson(AiMessageEntity.builder().thinking("再思考").text("结论").build())).build();
+        List<Block> blocks = assembler.assembleBlocks(TURN_ID, List.of(second, first), Map.of());
+        assertEquals(List.of("thinking:" + earlier, "text:" + earlier, "tool:call_1", "tool:call_2",
+                "thinking:" + later, "text:" + later), blocks.stream().map(Block::getBlockId).toList());
+        assertEquals(List.of(0, 1, 2, 3, 0, 1), blocks.stream().map(Block::getOrder).toList());
+        assertEquals(earlier, blocks.get(2).getResponseId());
+        assertEquals(earlier, blocks.get(3).getResponseId());
     }
 
     /** 提问取本轮最早的 USER 行；无 USER 行返回 null。 */

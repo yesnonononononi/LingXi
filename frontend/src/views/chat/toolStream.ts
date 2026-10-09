@@ -3,7 +3,7 @@ import type { ChatMessage, ToolCallTrace } from '../../types/chat';
 import { toObject } from '../../utils/json';
 import { resolveToolCategory, resolveToolExecutionStatus } from '../../utils/toolMeta';
 import { parseToolDiff } from '../../utils/toolDiff';
-import { getTurnState, renderTurnState, writeResponseText, writeToolTrace } from './turnRenderState';
+import { applyTextPlacement, getTurnState, renderTurnState, writeResponseText, writeToolTrace } from './turnRenderState';
 
 /** 调用身份来自框架事件，开始和收尾更新同一份轮次状态。 */
 export function consumeToolEvent(bubble: ChatMessage, event: ToolCallStartEvent | ToolCallEndEvent): boolean {
@@ -13,7 +13,7 @@ export function consumeToolEvent(bubble: ChatMessage, event: ToolCallStartEvent 
   if (!toolName) return false;
   const trace: ToolCallTrace = { id: event.requestId, toolName,
     category: resolveToolCategory(toolName), status: event.type === 'TOOL_CALL' ? 'calling' : resolveToolExecutionStatus(event.resultStatus),
-    order: event.order };
+    order: event.order, responseId: event.responseId };
   if (event.args !== undefined) {
     trace.query = event.args;
     trace.args = toObject(event.args, {});
@@ -27,10 +27,9 @@ export function consumeToolEvent(bubble: ChatMessage, event: ToolCallStartEvent 
     trace.minusLines = diff?.minusLines ?? undefined;
   }
   writeToolTrace(bubble, trace);
-  if (event.responseId) {
-    // 工具事件可能先于文本，先记住用途，后到的文本仍归同一响应。
-    const text = writeResponseText(bubble, `text:${event.responseId}`, 'TEXT', 0, '');
-    if (text) text.placement = 'PROCESS';
+  if (event.responseId && event.placement) {
+    writeResponseText(bubble, `text:${event.responseId}`, 'TEXT', 0, '');
+    applyTextPlacement(bubble, `text:${event.responseId}`, event.placement);
   }
   renderTurnState(bubble);
   return true;

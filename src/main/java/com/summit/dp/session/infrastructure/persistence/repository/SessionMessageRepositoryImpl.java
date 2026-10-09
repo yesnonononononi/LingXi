@@ -21,7 +21,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 
 @Repository
 @RequiredArgsConstructor
@@ -48,11 +47,11 @@ public class SessionMessageRepositoryImpl
     }
 
     @Override
-    public Optional<SessionMessage> findByResponseId(Long sessionId, UUID responseId) {
+    public Optional<SessionMessage> findByResponseId(Long sessionId, String responseId) {
         if (responseId == null) return Optional.empty();
         return Optional.ofNullable(messageMapper.selectOne(Wrappers.<SessionMessagePO>lambdaQuery()
                 .eq(SessionMessagePO::getSessionId, sessionId)
-                .eq(SessionMessagePO::getResponseId, responseId.toString()))).map(this::toModel);
+                .eq(SessionMessagePO::getResponseId, responseId))).map(this::toModel);
     }
 
     @Override
@@ -202,7 +201,7 @@ public class SessionMessageRepositoryImpl
         // 雪花主键由应用层统一生成：趋势递增，插入集中在索引最右侧，页分裂概率接近自增
         Long id = message.getId() == null ? IdUtil.getSnowflakeNextId() : message.getId();
         return SessionMessagePO.builder().id(id).sessionId(message.getSessionId())
-                .responseId(message.getResponseId() == null ? null : message.getResponseId().toString())
+                .responseId(message.getResponseId())
                 .turnId(message.getTurnId())
                 .responseOrder(message.getResponseOrder())
                 .type(message.getType() == null ? null : message.getType().name())
@@ -213,27 +212,12 @@ public class SessionMessageRepositoryImpl
     @Override
     protected SessionMessage toModel(SessionMessagePO po) {
         return SessionMessage.builder().id(po.getId()).sessionId(po.getSessionId())
-                .responseId(parseResponseId(po.getResponseId()))
+                .responseId(po.getResponseId())
                 .turnId(po.getTurnId())
                 .responseOrder(po.getResponseOrder())
                 .type(po.getType() == null ? null : SessionMessageType.valueOf(po.getType()))
                 .text(po.getContent())
                 .createTime(po.getCreateTime()).build();
-    }
-
-    /**
-     * 反解响应身份。
-     *
-     * <p>旧数据可能存在非 UUID 的历史值；解析失败按「身份未知」处理，
-     * 不让一行脏数据把整页历史打挂。</p>
-     */
-    private static UUID parseResponseId(String raw) {
-        if (raw == null || raw.isBlank()) return null;
-        try {
-            return UUID.fromString(raw);
-        } catch (IllegalArgumentException error) {
-            return null;
-        }
     }
 
     @Override

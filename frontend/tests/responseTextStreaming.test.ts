@@ -29,6 +29,97 @@ function snapshot(reducer: TurnStreamReducer, current: TurnViewVO) {
     viewVersion: current.viewVersion, view: current });
 }
 
+test('框架位置：超安全整数的相邻响应按 BigInt 排序，迟到旧响应不能抢占正文', () => {
+  const { reducer, bubble } = setup();
+  const earlier = '9007199254740992';
+  const later = '9007199254740993';
+  reducer.consume({ ...partial('新正文', 0, later), order: 1 });
+  reducer.consume({ ...partial('旧正文', 0, earlier), order: 1 });
+  assert.equal(bubble.content, '新正文');
+  reducer.consume({ ...partial('新思考', 0, later, true), order: 0 });
+  reducer.consume({ ...partial('旧思考', 0, earlier, true), order: 0 });
+  assert.deepEqual(bubble.thoughtSteps?.map(step => step.content), ['旧思考', '新思考']);
+  const blocks: TurnViewVO['blocks'] = [
+    { blockId: `thinking:${later}`, responseId: later, type: 'THINKING', order: 0, status: 'COMPLETE', text: '新思考' },
+    { blockId: `text:${later}`, responseId: later, type: 'TEXT', order: 1, status: 'COMPLETE', placement: 'BODY', text: '新正文' },
+    { blockId: `thinking:${earlier}`, responseId: earlier, type: 'THINKING', order: 0, status: 'COMPLETE', text: '旧思考' },
+    { blockId: `text:${earlier}`, responseId: earlier, type: 'TEXT', order: 1, status: 'COMPLETE', placement: 'PROCESS', text: '旧正文' },
+    { blockId: 'tool:c2', responseId: earlier, type: 'TOOL', toolCallId: 'c2', toolName: AgentToolName.ReadFile,
+      order: 3, status: 'STARTED', arguments: '{"path":"second.md"}' },
+    { blockId: 'tool:c1', responseId: earlier, type: 'TOOL', toolCallId: 'c1', toolName: AgentToolName.ReadFile,
+      order: 2, status: 'STARTED', arguments: '{"path":"first.md"}' },
+  ];
+  snapshot(reducer, { ...view(), blocks });
+  assert.deepEqual(bubble.processTimeline?.map(item => item.id), [
+    `thinking:${earlier}`, `text:${earlier}`, 'tool:c1', 'tool:c2', `thinking:${later}`,
+  ]);
+  const history: ChatMessage[] = [];
+  upsertTurnViewIntoMessages(history, { ...view(), blocks }, new Map());
+  assert.equal(history.at(-1)?.content, bubble.content);
+  assert.deepEqual(history.at(-1)?.processTimeline, bubble.processTimeline);
+});
+
+test('框架位置：旧 UUID 历史仍按序号排列，新响应接在旧历史之后', () => {
+  const { reducer, bubble } = setup();
+  const uuid = '6f1a1c2e-9b3d-4a5f-8e7c-0d1b2a3c4d5e';
+  snapshot(reducer, { ...view(), blocks: [
+    { blockId: `thinking:${uuid}`, responseId: uuid, type: 'THINKING', order: 3000, status: 'COMPLETE', text: '旧思考' },
+  ] });
+  reducer.consume({ ...partial('新思考', 0, '9007199254740993', true), order: 0 });
+  assert.deepEqual(bubble.thoughtSteps?.map(step => step.content), ['旧思考', '新思考']);
+});
+
+test('用途统一：持续打印到完整结构确认，finishReason 不能代替后端 placement', () => {
+  const { reducer, bubble } = setup();
+  reducer.consume({ ...partial('检索', 0), order: 1 });
+  assert.equal(bubble.content, '检索');
+  reducer.consume({ ...partial('完成', 2), order: 1 });
+  assert.equal(bubble.content, '检索完成');
+  reducer.consume({ type: 'COMPLETE_TEXT', responseId: 'r1', content: '检索完成。', order: 1,
+    meta: { finishReason: 'TOOL_EXECUTION' }, executionId: 'e', timestamp: '', metaData: metadata });
+  assert.equal(bubble.turnState?.texts['text:r1']?.placement, undefined);
+  assert.equal(bubble.content, '检索完成。');
+  reducer.consume({ type: 'AI_MESSAGE', responseId: 'r1', text: '检索完成。', placement: 'BODY', order: 1,
+    executionId: 'e', timestamp: '', metaData: metadata });
+  assert.equal(bubble.turnState?.texts['text:r1']?.placement, 'BODY');
+  assert.equal(bubble.content, '检索完成。');
+  assert.equal(bubble.aiMessages?.length, 0);
+});
+
+test('用途统一：完整响应在工具启动前归入过程，重复全文不重复打印', () => {
+  const { reducer, bubble } = setup();
+  reducer.consume({ ...partial('先读文件', 0), order: 1 });
+  const resolved: AgentEvent = { type: 'AI_MESSAGE', responseId: 'r1', text: '先读文件', thinking: '分析',
+    placement: 'PROCESS', order: 1, thinkingOrder: 0, executionId: 'e', timestamp: '', metaData: metadata };
+  reducer.consume(resolved);
+  assert.equal(bubble.content, '');
+  assert.equal(bubble.aiMessages?.[0]?.text, '先读文件');
+  assert.equal(bubble.toolCalls?.length, 0, '用途确认无需等待工具开始或快照');
+  reducer.consume(resolved);
+  assert.equal(bubble.aiMessages?.length, 1);
+  assert.equal(bubble.thoughtSteps?.length, 1);
+  reducer.consume({ ...partial('最终结论', 0, 'r2'), order: 1001 });
+  reducer.consume(resolved);
+  assert.equal(bubble.content, '最终结论');
+  snapshot(reducer, view('先读文件', 'PROCESS'));
+  assert.equal(bubble.aiMessages?.length, 1);
+  assert.equal(bubble.content, '最终结论');
+});
+
+test('用途统一：工具事件只采用明确字段，不通过工具名或调用状态猜用途', () => {
+  const { reducer, bubble } = setup();
+  reducer.consume({ ...partial('未确定用途', 0), order: 1 });
+  const tool: AgentEvent = { type: 'TOOL_CALL', responseId: 'r1', requestId: 'c1', toolName: AgentToolName.ReadFile,
+    order: 2, args: '{"path":"a.md"}', executionId: 'e', timestamp: '', metaData: metadata };
+  reducer.consume(tool);
+  assert.equal(bubble.content, '未确定用途');
+  assert.equal(bubble.turnState?.texts['text:r1']?.placement, undefined);
+  reducer.consume({ ...tool, type: 'TOOL_COMPLETED', resultStatus: 'FAILED', placement: 'PROCESS', output: '读取失败' });
+  assert.equal(bubble.content, '');
+  assert.equal(bubble.aiMessages?.[0]?.text, '未确定用途');
+  assert.equal(bubble.toolCalls?.[0]?.status, 'failed');
+});
+
 test('第二版：快照缺少的历史块与实时块都保留在同一份状态', () => {
   const { reducer, bubble } = setup();
   snapshot(reducer, { ...view(), blocks: [
@@ -46,7 +137,7 @@ test('第二版：快照缺少的历史块与实时块都保留在同一份状�
 test('第二版：工具先于文本时记住用途，迟到的正文快照不能反向归位', () => {
   const { reducer, bubble } = setup();
   reducer.consume({ type: 'TOOL_CALL', responseId: 'r1', requestId: 'c1', toolName: AgentToolName.ReadFile,
-    order: 2, executionId: 'e', timestamp: '', metaData: metadata });
+    order: 2, placement: 'PROCESS', executionId: 'e', timestamp: '', metaData: metadata });
   reducer.consume({ ...partial('先读文件', 0), order: 1 });
   assert.equal(bubble.content, '');
   assert.equal(bubble.aiMessages?.[0]?.text, '先读文件');
@@ -89,12 +180,12 @@ test('第二版：流式、块更新和刷新历史生成相同展示', () => {
   reducer.consume({ ...partial('先读', 0), order: 1 });
   reducer.consume({ ...partial('文件', 2), order: 1 });
   reducer.consume({ type: 'TOOL_CALL', responseId: 'r1', requestId: 'c1', toolName: AgentToolName.EditFile,
-    order: 2, args: '{"path":"a.md"}', executionId: 'e', timestamp: '', metaData: metadata });
+    order: 2, placement: 'PROCESS', args: '{"path":"a.md"}', executionId: 'e', timestamp: '', metaData: metadata });
   reducer.consume({ ...partial('最终结论', 0, 'r2'), order: 1001 });
   const finalView: TurnViewVO = { ...view(), status: 'COMPLETED', blocks: [
     { blockId: 'thinking:r1', responseId: 'r1', type: 'THINKING', order: 0, status: 'COMPLETE', text: '分析' },
     { blockId: 'text:r1', responseId: 'r1', type: 'TEXT', order: 1, status: 'COMPLETE', placement: 'PROCESS', text: '先读文件' },
-    { blockId: 'tool:c1', type: 'TOOL', toolCallId: 'c1', toolName: AgentToolName.EditFile, order: 2, status: 'COMPLETED',
+    { blockId: 'tool:c1', responseId: 'r1', type: 'TOOL', toolCallId: 'c1', toolName: AgentToolName.EditFile, order: 2, status: 'COMPLETED',
       arguments: '{"path":"a.md"}', output: '{"outcome":"SUCCEEDED","output":"{\\"plusLines\\":2,\\"minusLines\\":0}"}' },
     { blockId: 'text:r2', responseId: 'r2', type: 'TEXT', order: 1001, status: 'COMPLETE', placement: 'BODY', text: '最终结论' },
   ] };
@@ -153,7 +244,7 @@ test('思考与正文的偏移独立，新模型响应使用自己的身份', ()
   assert.equal(bubble.thoughtSteps?.[0]?.content, '分析问题');
   assert.equal(bubble.content, '先查资料');
   reducer.consume({ type: 'TOOL_CALL', responseId: 'r1', requestId: 'c1', toolName: AgentToolName.WebSearch,
-    executionId: 'e', timestamp: '', metaData: metadata });
+    placement: 'PROCESS', executionId: 'e', timestamp: '', metaData: metadata });
   assert.equal(bubble.content, '');
   assert.equal(bubble.aiMessages?.[0]?.text, '先查资料');
   reducer.consume(partial('查询结论', 0, 'r2'));

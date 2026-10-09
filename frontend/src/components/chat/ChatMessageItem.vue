@@ -595,6 +595,7 @@ import {
   resolveToolMeta,
   extractSubAgentParams,
 } from '../../utils/toolMeta';
+import { compareResponsePosition } from '../../utils/responseOrder';
 import { toObject } from '../../utils/json';
 import { AgentToolName } from '../../utils/toolNames';
 import { isActiveTurnStatus, isFailedTurnStatus, turnStatusLabel } from '../../utils/turnStatus';
@@ -931,6 +932,7 @@ const processTimeline = computed<ProcessTimelineItem[]>(() => {
         id: step.id || `step-${idx}`,
         type: 'thought',
         order: step.order ?? Infinity,
+        responseId: step.responseId,
         step
       });
     });
@@ -943,6 +945,7 @@ const processTimeline = computed<ProcessTimelineItem[]>(() => {
         id: im.id || `im-${idx}`,
         type: 'intermediate_ai',
         order: im.order ?? Infinity,
+        responseId: im.responseId,
         message: im
       });
     });
@@ -950,14 +953,12 @@ const processTimeline = computed<ProcessTimelineItem[]>(() => {
 
   // 3. SubAgent 协同条（按首个子会话时间线位置插入）
   if (subAgentToolCalls.value.length > 0) {
-    const firstSubOrder = subAgentToolCalls.value.reduce(
-      (min, tc) => Math.min(min, tc.order ?? 9999),
-      subAgentToolCalls.value[0]?.order ?? 5
-    );
+    const firstSubTool = [...subAgentToolCalls.value].sort(compareResponsePosition)[0];
     items.push({
       id: 'sub-agents-banner',
       type: 'sub_agent',
-      order: firstSubOrder,
+      order: firstSubTool?.order ?? Infinity,
+      responseId: firstSubTool?.responseId,
       subAgents: subAgentToolCalls.value
     });
   }
@@ -969,6 +970,7 @@ const processTimeline = computed<ProcessTimelineItem[]>(() => {
         id: tc.id || `tool-${idx}`,
         type: 'tool',
         order: tc.order ?? Infinity,
+        responseId: tc.responseId,
         tool: tc
       });
     });
@@ -988,8 +990,13 @@ const processTimeline = computed<ProcessTimelineItem[]>(() => {
     });
   }
 
-  // 按 order 升序排列，形成真实的时序执行轨迹（新 thinking 步骤在列表底部动态追加）
-  return items.sort((a, b) => a.order - b.order);
+  // 不能按片段或工具的到达时间排，乱序事件会把过程插回中间。
+  return items.sort((a, b) => {
+    if (a.type === 'prompt_card' || b.type === 'prompt_card') {
+      return a.type === b.type ? a.order - b.order : a.type === 'prompt_card' ? 1 : -1;
+    }
+    return compareResponsePosition(a, b);
+  });
 });
 
 /** 过程折叠区内的时序项（剔除互动卡片）。 */

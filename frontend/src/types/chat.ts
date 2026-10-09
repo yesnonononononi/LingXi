@@ -1,4 +1,5 @@
 import type { TokenInfo } from './Event';
+import type { ResponsePosition } from '../utils/responseOrder';
 import type { Placement, TurnViewVO } from './block';
 
 /** 消息角色定义 */
@@ -8,7 +9,7 @@ export type MessageRole = 'user' | 'assistant' | 'system';
 export type ChatMode = 'plan' | 'auto';
 
 /** 思维链步骤接口 */
-export interface ThoughtStep {
+export interface ThoughtStep extends ResponsePosition {
   id: string;
   title: string;          // 步骤名称，如 "检索知识库", "Thought for"
   content: string;        // 步骤详细思考内容
@@ -19,7 +20,7 @@ export interface ThoughtStep {
 }
 
 /** Agent 工具调用日志 */
-export interface ToolCallTrace {
+export interface ToolCallTrace extends ResponsePosition {
   id: string;
   toolName: string;          // 工具名称，如 "execute_command", "web_search", "read_file"
   query?: string;            // 调用输入参数
@@ -76,7 +77,7 @@ export interface ContextUsageData {
   message?: string;
 }
 
-export interface AiMessageItem {
+export interface AiMessageItem extends ResponsePosition {
   id?: string;
   text?: string;
   thinking?: string;
@@ -92,7 +93,7 @@ export interface AiMessageItem {
  * 吞进「已思考并调用 N 个工具」大框里，折叠起来就再也点不到按钮。卡片数据用 {@code ToolCallVO}
  * （卡片唯一权威数据源），渲染时再映射为 {@link PromptCardData}。</p>
  */
-export interface ProcessTimelineItem {
+export interface ProcessTimelineItem extends ResponsePosition {
   id: string;
   type: 'thought' | 'intermediate_ai' | 'tool' | 'sub_agent' | 'prompt_card';
   order: number;
@@ -105,7 +106,7 @@ export interface ProcessTimelineItem {
 }
 
 /** 缺口后的片段等待前文，不提前拼出错误文本。 */
-export interface ResponseTextBuffer {
+export interface ResponseTextBuffer extends ResponsePosition {
   kind: 'TEXT' | 'THINKING';
   text: string;
   pending: Record<number, string>;

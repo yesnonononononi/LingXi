@@ -42,10 +42,10 @@ public interface Block {
     /** 块类型，同时作为 JSON 多态判别键。 */
     String getType();
 
-    /** 本轮模型调用身份（框架 UUID）；工具块为 {@code null}。旧数据恒为 null。 */
+    /** 本轮模型调用身份；思考、文本和工具共享它，旧数据可以缺失。 */
     String getResponseId();
 
-    /** 后端确定的全局顺序：先按响应顺序，再按块在响应内的位置。前端只按它升序排。 */
+    /** 响应内展示位置；新数据先比较 responseId，旧 UUID 历史仍按原序号。 */
     int getOrder();
 
     /** 块自身状态，取自各自权威来源（见各实现类）。 */

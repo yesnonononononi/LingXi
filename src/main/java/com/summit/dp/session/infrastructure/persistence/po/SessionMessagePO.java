@@ -15,7 +15,7 @@ public class SessionMessagePO {
     /** 雪花ID：全局趋势递增，兼作消息排序键与游标分页键 */
     @TableId(type = IdType.INPUT)
     private Long id;
-    /** 本轮模型调用的响应身份（框架下发 UUID）；只挂在 AI 行，null 表示身份未知 */
+    /** 本轮模型调用的响应身份（框架下发 String）；只挂在 AI 行，null 表示身份未知 */
     private String responseId;
 
     private Long sessionId;

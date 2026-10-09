@@ -9,6 +9,7 @@ import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.session.application.convert.TranscriptRecordAssembler;
+import com.summit.dp.shared.vo.block.BlockOrder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -17,7 +18,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 /** 历史独立于可变上下文；TOOL 只存调用身份，内容以工具实体为准。 */
 @Slf4j
@@ -53,10 +53,10 @@ public class ConversationTranscriptService {
      */
     @Transactional
     public void appendRound(Long sessionId, Long rootSessionId, Long turnId, AiMessageEntity aiMessage,
-                            List<ToolMessageEntity> toolMessages, UUID responseId) {
+                            List<ToolMessageEntity> toolMessages, String responseId) {
         // 顺序不可动：先锁定会话行使并发落库串行化，再做「查 → 比对 → 插」。
         // 若先查再插（旧实现），两个并发方会同时通过检查，再一起去撞唯一索引 —— 幂等形同虚设。
-        // 锁还兼管 responseOrder 的计算：序号 = 该轮已有 AI 行数，不加锁会读到同一计数、两个响应拿到同一序号。
+        // 新响应直接按框架身份排序；会话锁仍保护幂等检查与追加，旧 UUID 才保留原序号。
         Integer responseOrder = null;
         if (responseId != null) {
             messageRepository.lockSessionForAppend(sessionId);
@@ -68,7 +68,9 @@ public class ConversationTranscriptService {
                 }
                 return;
             }
-            responseOrder = (int) messageRepository.countAiMessagesInTurn(sessionId, turnId);
+            if (!BlockOrder.isOrderedResponse(responseId)) {
+                responseOrder = Math.toIntExact(messageRepository.countAiMessagesInTurn(sessionId, turnId));
+            }
         }
         List<Message> round = new ArrayList<>();
         round.add(aiMessage);
@@ -81,7 +83,7 @@ public class ConversationTranscriptService {
     }
 
     private void append(Long sessionId, Long rootSessionId, Long turnId,
-                        List<? extends Message> messages, UUID responseId, Integer responseOrder) {
+                        List<? extends Message> messages, String responseId, Integer responseOrder) {
         List<SessionMessage> records = recordAssembler.build(sessionId, turnId, messages, responseId, responseOrder);
         messageRepository.appendAll(sessionId, rootSessionId, records);
         for (SessionMessage record : records) {

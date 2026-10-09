@@ -6,7 +6,7 @@ import type { ChatMessage, ToolCallTrace } from '../../types/chat';
 import { resolveToolCategory } from '../../utils/toolMeta';
 import { toObject } from '../../utils/json';
 import { parseToolDiff } from '../../utils/toolDiff';
-import { activateText, applyTurnStatus, renderTurnState, writeResponseText, writeToolTrace } from './turnRenderState';
+import { activateText, applyTextPlacement, applyTurnStatus, renderTurnState, writeResponseText, writeToolTrace } from './turnRenderState';
 
 
 /** 思考 / 文本块的状态取值（后端 {@code BlockStatus} 的响应生命周期两态）。 */
@@ -49,6 +49,7 @@ function toToolTrace(block: ToolBlock): ToolCallTrace {
     plusLines: block.plusLines ?? diff?.plusLines ?? undefined,
     minusLines: block.minusLines ?? diff?.minusLines ?? undefined,
     order: block.order,
+    responseId: block.responseId,
   };
 }
 
@@ -190,10 +191,10 @@ export function upsertBlockIntoBubble(bubble: ChatMessage, view: TurnViewVO): vo
     const buffer = writeResponseText(bubble, block.blockId, block.type, 0, block.text);
     if (!buffer) continue;
     buffer.order = block.order;
+    buffer.responseId = block.responseId ?? buffer.responseId;
     buffer.complete ||= block.status === RESPONSE_COMPLETE && block.text.length >= buffer.text.length;
     if (block.type === 'TEXT') {
-      // 较短历史尚未包含工具请求，不能把已确定的过程文本搬回正文。
-      if (buffer.placement !== 'PROCESS') buffer.placement = block.placement;
+      applyTextPlacement(bubble, block.blockId, block.placement);
       activateText(bubble, block.blockId);
     }
   }

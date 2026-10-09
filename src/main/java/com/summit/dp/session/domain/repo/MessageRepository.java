@@ -7,7 +7,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 
 /** session_message 表仓储。 */
 public interface MessageRepository extends RepositoryTemplate<SessionMessage, Long> {
@@ -19,7 +18,7 @@ public interface MessageRepository extends RepositoryTemplate<SessionMessage, Lo
      *
      * @param responseId 框架下发的响应身份；{@code null} 表示身份未知，恒返回空
      */
-    Optional<SessionMessage> findByResponseId(Long sessionId, UUID responseId);
+    Optional<SessionMessage> findByResponseId(Long sessionId, String responseId);
 
     /** 会话全部消息，按雪花主键升序（旧 → 新）。 */
     List<SessionMessage> findBySessionId(Long sessionId);
@@ -86,14 +85,7 @@ public interface MessageRepository extends RepositoryTemplate<SessionMessage, Lo
      */
     void lockSessionForAppend(Long sessionId);
 
-    /**
-     * 统计某轮已落库的 AI 行数 —— 即「下一轮模型输出的 responseOrder」。
-     *
-     * <p>用于持久化分配时必须持有 {@link #lockSessionForAppend} 的锁，防止两个响应拿到同一序号。
-     * 实时流只读预览时由同轮模型调用串行保证顺序，不替代落库分配。</p>
-     *
-     * @param turnId 业务轮次；{@code null}（归属未知）时返回 0，不参与排序
-     */
+    /** 仅旧 UUID 响应分配序号时使用；调用前必须持有会话追加锁。 */
     long countAiMessagesInTurn(Long sessionId, Long turnId);
 
     /**

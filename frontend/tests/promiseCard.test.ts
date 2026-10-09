@@ -200,9 +200,9 @@ test('6. 思考分段与交错顺序由后端块视图给出（前端不再自�
 
   reducer.consume(evt('EXECUTION_STARTED') as any);
   reducer.consume(evt('PARTIAL_THINKING', { responseId: '1', offset: 0, order: 0, content: '思考一' }) as any);
-  reducer.consume(evt('TOOL_CALL', { order: 10, toolName: AgentToolName.ReadFile, requestId: 'c1', args: '{"path":"a"}', resultStatus: 'STARTED' }) as any);
+  reducer.consume(evt('TOOL_CALL', { responseId: '1', order: 10, toolName: AgentToolName.ReadFile, requestId: 'c1', args: '{"path":"a"}', resultStatus: 'STARTED' }) as any);
   reducer.consume(evt('PARTIAL_THINKING', { responseId: '2', offset: 0, order: 20, content: '思考二' }) as any);
-  reducer.consume(evt('TOOL_CALL', { order: 30, toolName: AgentToolName.ReadFile, requestId: 'c2', args: '{"path":"b"}', resultStatus: 'STARTED' }) as any);
+  reducer.consume(evt('TOOL_CALL', { responseId: '2', order: 30, toolName: AgentToolName.ReadFile, requestId: 'c2', args: '{"path":"b"}', resultStatus: 'STARTED' }) as any);
   reducer.consume(evt('PARTIAL_THINKING', { responseId: '3', offset: 0, order: 40, content: '思考三' }) as any);
   reducer.flush();
 
@@ -218,11 +218,11 @@ test('6. 思考分段与交错顺序由后端块视图给出（前端不再自�
     view: {
       sessionId: 'sess-think', turnId: 't1', status: 'COMPLETED', viewVersion: '1',
       blocks: [
-        { blockId: 'thinking:1', type: 'THINKING', order: 0, status: 'COMPLETE', text: '思考一' },
-        { blockId: 'tool:c1', type: 'TOOL', order: 10, status: 'COMPLETED', toolCallId: 'c1', toolName: AgentToolName.ReadFile },
-        { blockId: 'thinking:2', type: 'THINKING', order: 20, status: 'COMPLETE', text: '思考二' },
-        { blockId: 'tool:c2', type: 'TOOL', order: 30, status: 'COMPLETED', toolCallId: 'c2', toolName: AgentToolName.ReadFile },
-        { blockId: 'thinking:3', type: 'THINKING', order: 40, status: 'COMPLETE', text: '思考三' }
+        { blockId: 'thinking:1', responseId: '1', type: 'THINKING', order: 0, status: 'COMPLETE', text: '思考一' },
+        { blockId: 'tool:c1', responseId: '1', type: 'TOOL', order: 10, status: 'COMPLETED', toolCallId: 'c1', toolName: AgentToolName.ReadFile },
+        { blockId: 'thinking:2', responseId: '2', type: 'THINKING', order: 20, status: 'COMPLETE', text: '思考二' },
+        { blockId: 'tool:c2', responseId: '2', type: 'TOOL', order: 30, status: 'COMPLETED', toolCallId: 'c2', toolName: AgentToolName.ReadFile },
+        { blockId: 'thinking:3', responseId: '3', type: 'THINKING', order: 40, status: 'COMPLETE', text: '思考三' }
       ]
     }
   }) as any);

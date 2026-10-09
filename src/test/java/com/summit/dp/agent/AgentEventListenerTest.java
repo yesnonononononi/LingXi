@@ -2,6 +2,10 @@ package com.summit.dp.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.summit.core.conversation.api.ChatResponseEntity;
+import com.summit.core.conversation.api.ToolCallRequest;
+import com.summit.core.conversation.event.AgentCompleteTextEvent;
+import com.summit.core.conversation.event.AgentMessageEvent;
 import com.summit.core.conversation.event.AgentEvent;
 import com.summit.core.conversation.event.AgentPartialTextEvent;
 import com.summit.core.conversation.event.AgentPartialThinkingEvent;
@@ -14,9 +18,12 @@ import com.summit.core.conversation.event.ExecutionSuspendedEvent;
 import com.summit.core.conversation.event.ToolCallEndEvent;
 import com.summit.core.conversation.event.ToolCallStartEvent;
 import com.summit.core.tool.ToolCallStatus;
+import com.summit.core.conversation.message.AiMessageEntity;
+import com.summit.dp.session.application.convert.TurnViewAssembler;
+import com.summit.dp.session.domain.model.SessionMessage;
+import com.summit.dp.session.domain.model.SessionMessageType;
+import com.summit.dp.shared.vo.block.TextBlock;
 import com.summit.dp.agent.infrastructure.listener.AgentEventListener;
-import com.summit.dp.agent.application.service.ResponseStreamState;
-import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.shared.event.SseEventPublisher;
 import org.junit.jupiter.api.AfterEach;
@@ -27,6 +34,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.ArrayList;
@@ -36,9 +44,12 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -52,15 +63,13 @@ class AgentEventListenerTest {
     private static final long ROOT_SESSION_ID = 2105000000000000003L;
     private static final long TURN_ID = 2105000000000000004L;
     /** 框架下发的本轮模型调用身份；监听器只透传，不解读。 */
-    private static final UUID RESPONSE_ID = UUID.fromString("6f1a1c2e-9b3d-4a5f-8e7c-0d1b2a3c4d5e");
+    private static final String RESPONSE_ID = "2105000000000000101";
 
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private final SseEventPublisher publisher = mock(SseEventPublisher.class);
     private final ExecutionIdentity identity = mock(ExecutionIdentity.class);
-    private final MessageRepository messages = mock(MessageRepository.class);
-    private final ResponseStreamState streamState = new ResponseStreamState(messages);
     private final AgentEventListener listener =
-            new AgentEventListener(objectMapper, publisher, identity, streamState);
+            new AgentEventListener(objectMapper, publisher, identity);
 
     /** 「流仍然连着」用的真实传输层：mock emitter 挂在真注册表里，连接数才是可断言的结果。 */
     private final SseEventPublisher livePublisher = new SseEventPublisher() {
@@ -73,7 +82,7 @@ class AgentEventListenerTest {
     };
     private final List<SseEmitter> liveEmitters = new ArrayList<>();
     private final AgentEventListener liveListener =
-            new AgentEventListener(objectMapper, livePublisher, identity, streamState);
+            new AgentEventListener(objectMapper, livePublisher, identity);
 
     @BeforeEach
     void setUp() {
@@ -95,7 +104,7 @@ class AgentEventListenerTest {
     @Test
     void partialTextRoutesToRootSession() {
         resolveSession();
-        AgentPartialTextEvent event = new AgentPartialTextEvent("agent", EXECUTION_ID, RESPONSE_ID, "你好",
+        AgentPartialTextEvent event = new AgentPartialTextEvent("agent", EXECUTION_ID, RESPONSE_ID, "你好", 0,
                 Map.of("turnId", Long.toString(TURN_ID)), null);
 
         listener.onPartialText(event);
@@ -113,22 +122,22 @@ class AgentEventListenerTest {
     void partialTextOffsetsComeFromProducer() {
         resolveSession();
         Map<String, Object> metadata = Map.of("turnId", Long.toString(TURN_ID));
-        listener.onPartialText(new AgentPartialTextEvent("agent", EXECUTION_ID, RESPONSE_ID, "🔎", metadata, null));
-        listener.onPartialText(new AgentPartialTextEvent("agent", EXECUTION_ID, RESPONSE_ID, "完成", metadata, null));
-        listener.onPartialText(new AgentPartialTextEvent("agent", EXECUTION_ID, UUID.randomUUID(), "新响应", metadata, null));
+        listener.onPartialText(new AgentPartialTextEvent("agent", EXECUTION_ID, RESPONSE_ID, "🔎", 7, metadata, null));
+        listener.onPartialText(new AgentPartialTextEvent("agent", EXECUTION_ID, RESPONSE_ID, "完成", 0, metadata, null));
+        listener.onPartialText(new AgentPartialTextEvent("agent", EXECUTION_ID, UUID.randomUUID().toString(), "新响应", 0, metadata, null));
 
         ArgumentCaptor<ObjectNode> payload = ArgumentCaptor.forClass(ObjectNode.class);
         verify(publisher, times(3)).publishBusiness(eq(ROOT_SESSION_ID), eq("PARTIAL_TEXT"), payload.capture());
-        assertEquals(List.of(0, 2, 0), payload.getAllValues().stream().map(value -> value.get("offset").asInt()).toList());
+        assertEquals(List.of(7, 0, 0), payload.getAllValues().stream().map(value -> value.get("offset").asInt()).toList());
     }
 
     @Test
     void thinkingOffsetsDoNotConsumeTextOffsets() {
         resolveSession();
         Map<String, Object> metadata = Map.of("turnId", Long.toString(TURN_ID));
-        listener.onPartialThinking(new AgentPartialThinkingEvent("agent", EXECUTION_ID, "分析", RESPONSE_ID, metadata, null));
-        listener.onPartialText(new AgentPartialTextEvent("agent", EXECUTION_ID, RESPONSE_ID, "正文", metadata, null));
-        listener.onPartialThinking(new AgentPartialThinkingEvent("agent", EXECUTION_ID, "问题", RESPONSE_ID, metadata, null));
+        listener.onPartialThinking(new AgentPartialThinkingEvent("agent", EXECUTION_ID, "分析", 0, RESPONSE_ID, metadata, null));
+        listener.onPartialText(new AgentPartialTextEvent("agent", EXECUTION_ID, RESPONSE_ID, "正文", 0, metadata, null));
+        listener.onPartialThinking(new AgentPartialThinkingEvent("agent", EXECUTION_ID, "问题", 2, RESPONSE_ID, metadata, null));
 
         ArgumentCaptor<ObjectNode> thinking = ArgumentCaptor.forClass(ObjectNode.class);
         verify(publisher, times(2)).publishBusiness(eq(ROOT_SESSION_ID), eq("PARTIAL_THINKING"), thinking.capture());
@@ -136,6 +145,61 @@ class AgentEventListenerTest {
         ArgumentCaptor<ObjectNode> text = ArgumentCaptor.forClass(ObjectNode.class);
         verify(publisher).publishBusiness(eq(ROOT_SESSION_ID), eq("PARTIAL_TEXT"), text.capture());
         assertEquals(0, text.getValue().get("offset").asInt());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void fullResponseSuppliesPlacementBeforeToolsAndMatchesHistory(boolean hasTools) throws Exception {
+        resolveSession();
+        Map<String, Object> metadata = Map.of("sessionId", Long.toString(SESSION_ID), "turnId", Long.toString(TURN_ID));
+        List<ToolCallRequest> requests = hasTools ? List.of(new ToolCallRequest("c1", "tool", 0, "{}")) : List.of();
+        AiMessageEntity aiMessage = AiMessageEntity.builder().text("响应正文").thinking("分析").toolCalls(requests).build();
+        ChatResponseEntity response = ChatResponseEntity.builder().responseId(RESPONSE_ID).aiMessageEntity(aiMessage).build();
+        listener.onPartialText(new AgentPartialTextEvent("a", EXECUTION_ID, RESPONSE_ID, "响应", 0, metadata, null));
+        listener.onCompleteText(AgentCompleteTextEvent.builder().executionId(EXECUTION_ID).responseId(RESPONSE_ID)
+                .content("响应正文").metaData(metadata).build());
+        verify(publisher, never()).publishBusiness(eq(ROOT_SESSION_ID), eq("AI_MESSAGE"), any());
+        ArgumentCaptor<ObjectNode> partial = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(publisher).publishBusiness(eq(ROOT_SESSION_ID), eq("PARTIAL_TEXT"), partial.capture());
+        assertNull(partial.getValue().get("placement"));
+
+        listener.onAiMessage(new AgentMessageEvent(response, EXECUTION_ID, RESPONSE_ID, metadata));
+        ArgumentCaptor<ObjectNode> resolved = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(publisher).publishBusiness(eq(ROOT_SESSION_ID), eq("AI_MESSAGE"), resolved.capture());
+        assertEquals(hasTools ? "PROCESS" : "BODY", resolved.getValue().get("placement").asText());
+        assertEquals("响应正文", resolved.getValue().get("text").asText());
+        assertEquals("分析", resolved.getValue().get("thinking").asText());
+        assertEquals(RESPONSE_ID, resolved.getValue().get("responseId").asText());
+        assertEquals(Long.toString(TURN_ID), resolved.getValue().get("metaData").get("turnId").asText());
+        assertNull(resolved.getValue().get("chatResponseEntity"));
+        assertEquals(0, resolved.getValue().get("thinkingOrder").asInt());
+        assertEquals(1, resolved.getValue().get("order").asInt());
+
+        TurnViewAssembler assembler = new TurnViewAssembler(objectMapper, null);
+        SessionMessage row = SessionMessage.builder().id(1L).turnId(TURN_ID).responseId(RESPONSE_ID)
+                .responseOrder(0).type(SessionMessageType.AI).text(objectMapper.writeValueAsString(aiMessage)).build();
+        TextBlock historical = (TextBlock) assembler.assembleBlocks(TURN_ID, List.of(row), Map.of()).stream()
+                .filter(block -> block instanceof TextBlock).findFirst().orElseThrow();
+        assertEquals(historical.placement().name(), resolved.getValue().get("placement").asText());
+        if (hasTools) {
+            listener.onToolCall(new ToolCallStartEvent("c1", EXECUTION_ID, "tool", "{}", RESPONSE_ID, metadata, 0));
+            ArgumentCaptor<ObjectNode> tool = ArgumentCaptor.forClass(ObjectNode.class);
+            verify(publisher).publishBusiness(eq(ROOT_SESSION_ID), eq("TOOL_CALL"), tool.capture());
+            assertEquals(2, tool.getValue().get("order").asInt());
+            InOrder delivery = inOrder(publisher);
+            delivery.verify(publisher).publishBusiness(eq(ROOT_SESSION_ID), eq("AI_MESSAGE"), any());
+            delivery.verify(publisher).publishBusiness(eq(ROOT_SESSION_ID), eq("TOOL_CALL"), any());
+        }
+    }
+    @Test
+    void modelRequestOrderIsVisibleBeforeSnapshotEvenWhenToolsStartInReverseOrder() {
+        resolveSession();
+        Map<String, Object> metadata = Map.of("turnId", Long.toString(TURN_ID));
+        listener.onToolCall(new ToolCallStartEvent("second", EXECUTION_ID, "tool", "{}", RESPONSE_ID, metadata, 1));
+        listener.onToolCall(new ToolCallStartEvent("first", EXECUTION_ID, "tool", "{}", RESPONSE_ID, metadata, 0));
+        ArgumentCaptor<ObjectNode> payload = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(publisher, times(2)).publishBusiness(eq(ROOT_SESSION_ID), eq("TOOL_CALL"), payload.capture());
+        assertEquals(List.of(3, 2), payload.getAllValues().stream().map(item -> item.get("order").asInt()).toList());
     }
 
     @Test
@@ -163,22 +227,24 @@ class AgentEventListenerTest {
 
     /** 工具生命周期事件同样按根会话广播。 */
     @Test
-    void toolLifecycleEventsBroadcastToRootSession() {
+    void toolLifecycleEventsUseFrameworkPositionWithoutRegisteredModelList() {
         resolveSession();
         Map<String, Object> metadata = Map.of(
                 "sessionId", Long.toString(SESSION_ID),
                 "turnId", Long.toString(TURN_ID));
 
-        listener.onToolCall(new ToolCallStartEvent("call_1", EXECUTION_ID, "read_file", "{}", RESPONSE_ID, metadata));
+        listener.onToolCall(new ToolCallStartEvent("call_1", EXECUTION_ID, "read_file", "{}", RESPONSE_ID, metadata, 7));
         listener.onToolCallOutput(new ToolCallEndEvent("call_1", EXECUTION_ID, RESPONSE_ID, "read_file", "{}", "内容",
-                metadata, ToolCallStatus.COMPLETED));
+                metadata, ToolCallStatus.COMPLETED, 7));
 
         ArgumentCaptor<ObjectNode> payload = ArgumentCaptor.forClass(ObjectNode.class);
         verify(publisher, times(2)).publishBusiness(eq(ROOT_SESSION_ID), any(String.class), payload.capture());
         assertEquals("STARTED", payload.getAllValues().get(0).get("resultStatus").asText());
         assertEquals("COMPLETED", payload.getAllValues().get(1).get("resultStatus").asText());
-        assertEquals(2, payload.getAllValues().get(0).get("order").asInt());
-        assertEquals(2, payload.getAllValues().get(1).get("order").asInt());
+        assertEquals(9, payload.getAllValues().get(0).get("order").asInt());
+        assertEquals(9, payload.getAllValues().get(1).get("order").asInt());
+        assertEquals(7, payload.getAllValues().get(0).get("requestIndex").asInt());
+        assertEquals(7, payload.getAllValues().get(1).get("requestIndex").asInt());
     }
 
     @ParameterizedTest

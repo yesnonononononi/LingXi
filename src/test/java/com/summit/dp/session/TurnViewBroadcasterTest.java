@@ -79,11 +79,11 @@ class TurnViewBroadcasterTest {
         AiMessageEntity ai = new AiMessageEntity();
         ai.setText("模型正文");
         ai.setThinking("模型思考");
-        ai.setToolCalls(List.of(new ToolCallRequest("call-1", "read_file", "{}")));
+        ai.setToolCalls(List.of(new ToolCallRequest("call-1", "read_file", 0, "{}")));
         String payload = new ObjectMapper().valueToTree(ai).toString();
 
         SessionMessage row = SessionMessage.builder()
-                .id(11L).sessionId(SESSION_ID).turnId(TURN_ID).responseId(UUID.randomUUID())
+                .id(11L).sessionId(SESSION_ID).turnId(TURN_ID).responseId(UUID.randomUUID().toString())
                 .responseOrder(0).type(SessionMessageType.AI).text(payload).build();
         when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(List.of(row));
         when(toolCallRepository.listByIds(any())).thenReturn(List.of());

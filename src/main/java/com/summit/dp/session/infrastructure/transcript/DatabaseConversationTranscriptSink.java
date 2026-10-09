@@ -12,13 +12,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * 只有接纳提交后才消费响应身份，上下文压缩不能改写历史。
  *
  * <p><b>响应身份取自框架</b>：{@code responseId} 由框架在每次模型调用前生成
- * （{@code AgentLoopStepRunner#invokeModel} 的 {@code UUID.randomUUID()}），
+ * （由框架的 ResponseIdGenerator 分配），
  * 随 {@link com.summit.core.conversation.api.ChatResponseEntity} 一路传到本入口 ——
  * 历史落库、实时事件与工具来源因此共用同一个身份，不再各造一份。
  * 重复落库由 {@code (session_id, response_id)} 幂等拦住。</p>
@@ -66,7 +65,7 @@ public class DatabaseConversationTranscriptSink implements ConversationTranscrip
     @Override
     @Transactional
     public void appendRound(String executionId, AiMessageEntity aiMessage, List<ToolMessageEntity> toolMessages,
-                            UUID responseId, Map<String, Object> eventMetaData) {
+                            String responseId, Map<String, Object> eventMetaData) {
         // 投递用根、归属用自身会话：子执行的 AI/工具行必须投到根连接，否则前端收不到。
         long sessionId = resolveSessionId(executionId, eventMetaData);
         // 根身份**原样透传**：缺失就是缺失。在这里回落自身会话，等于把观察者的错误回落挪到上游 ——

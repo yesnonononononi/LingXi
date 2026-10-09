@@ -3,17 +3,7 @@ package com.summit.dp.shared.vo.block;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-/**
- * 工具块：一次工具调用（粒度 = 一个 toolCall）。
- *
- * <p><b>状态来自权威工具视图</b>（{@code tool_call} 行 + 结果的结论），而不是展示侧的推断。
- * {@link BlockStatus#TOOL_COMPLETED} 只表示**已收尾**，成功/被拒/取消/超时的结论在结果里，
- * 由 {@code ToolCallStatus} 表达（见 {@link BlockStatus} 的说明）。</p>
- *
- * <p>{@code responseId} 恒为 {@code null}：工具块的身份是 {@code toolCallId}，
- * 与模型调用身份无关。{@code order} 取**模型请求顺序**（{@code onAfterModelInvoke} 登记的
- * 工具请求列表），不是工具完成顺序 —— 完成顺序受并发调度影响，无法还原模型原本的意图顺序。</p>
- */
+/** 工具身份来自调用 ID，响应身份与请求位置用于排序，结果以工具视图为准。 */
 public record ToolBlock(
         @JsonProperty("blockId") String blockId,
         @JsonProperty("responseId") String responseId,

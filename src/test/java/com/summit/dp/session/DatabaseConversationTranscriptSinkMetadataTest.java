@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -23,7 +22,7 @@ import static org.mockito.Mockito.when;
  * 传给了下游」—— 只覆写 4 参会编译通过、测试全绿，但身份在 default 方法里被静默丢弃。</p>
  */
 class DatabaseConversationTranscriptSinkMetadataTest {
-    private static final UUID RESPONSE_ID = UUID.fromString("3c9a7e21-5d64-4b18-9f2a-7e6c1b0d4a53");
+    private static final String RESPONSE_ID = "3c9a7e21-5d64-4b18-9f2a-7e6c1b0d4a53";
 
     private final ConversationTranscriptService transcript = mock(ConversationTranscriptService.class);
     private final ExecutionIdentity identity = mock(ExecutionIdentity.class);

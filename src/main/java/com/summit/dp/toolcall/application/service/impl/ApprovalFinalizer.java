@@ -74,7 +74,8 @@ public class ApprovalFinalizer {
                 call == null ? null : call.getResponseId(),
                 message.getName(), call == null ? "" : call.getArgs(), command.result().getToolOutput(),
                 execution.eventMetaData(),
-                CommandOutcomeResolver.resolveResultStatus(command.outcome(), cancelRequired)));
+                CommandOutcomeResolver.resolveResultStatus(command.outcome(), cancelRequired),
+                ExecutionToolSlot.resolveRequestIndex(execution, String.valueOf(message.getId()))));
     }
 
     /**
