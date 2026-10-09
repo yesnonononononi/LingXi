@@ -59,7 +59,7 @@ const UPDATE_FEED = Object.freeze({ owner: 'yesnonononononi', repo: 'LingXi' });
  * 因此换公钥需要保留旧公钥一段时间做双公钥验证（见 VERIFY_KEYS）。
  */
 const UPDATE_PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEA1TDWtzZJQEeH1yDggdeuoBKjqRfXE/qGqJHu1nyziWI=
+MCowBQYDK2VwAyEAS6AFXz8kD4DCOy4IrSSkpF9X/hqkAwtuei+DwLaNrGg=
 -----END PUBLIC KEY-----`;
 
 /**
