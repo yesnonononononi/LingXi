@@ -133,11 +133,22 @@ export function extractUpdateClaimForDisplay(releaseNotes: string | undefined): 
  */
 export function stripUpdateClaim(releaseNotes: string | undefined): string {
   if (!releaseNotes) return '';
-  return releaseNotes
+  const notes = releaseNotes
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/```lx-update\s*\n[\s\S]*?```/gi, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+
+  if (!/<[a-z][\s\S]*>/i.test(notes)) return notes;
+  const document = new DOMParser().parseFromString(notes, 'text/html');
+  for (const block of document.querySelectorAll('pre')) {
+    const code = block.querySelector('code');
+    if (block.getAttribute('lang') === 'lx-update' || code?.classList.contains('language-lx-update')) {
+      // GitHub 的复制容器也带有完整签名，必须连同外壳一起移除。
+      (block.closest('.snippet-clipboard-content') ?? block).remove();
+    }
+  }
+  return document.body.innerHTML.trim();
 }
 
 /** 状态 → 中文文案（集中一处，避免各组件各写一套导致口径不一） */
@@ -150,7 +161,7 @@ export function describeUpdateState(state: UpdateState): string {
     case 'checking':
       return '正在检查更新…';
     case 'not-available':
-      return '已是最新版本';
+      return '当前已是最新版本';
     case 'available':
       return '发现新版本';
     case 'downloading':

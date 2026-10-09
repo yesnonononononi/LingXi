@@ -14,6 +14,7 @@ import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.settings.SettingsProvider;
 import com.summit.dp.shared.skill.SkillRootResolver;
 import com.summit.dp.shared.utils.RequestPreparer;
+import com.summit.dp.shared.utils.ChatImageResolver;
 import com.summit.dp.tools.baseTools.sub_agent.CallSubAgentTool;
 import com.summit.dp.tools.baseTools.sub_agent.delegation.SubAgentRequestFactory;
 import org.junit.jupiter.api.Test;
@@ -67,7 +68,7 @@ class AgentModelConfigurationTest {
 
     @Test void rootResolvesExplicitThenSettingsThenFails() {
         RequestPreparer root = new RequestPreparer(null, null, null, models, null, settings, null,
-                null, null, null, null, null, null, null, new SkillRootResolver(""));
+                null, null, null, null, null, null, null, new SkillRootResolver(""), new ChatImageResolver());
         SettingsView selected = new SettingsView(null, null, null, null, 99L, null, 1234, "high");
         ModelConfig explicit = config("explicit");
         ModelConfig fallback = config("settings");

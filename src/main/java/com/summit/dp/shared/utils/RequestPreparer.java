@@ -1,6 +1,5 @@
 package com.summit.dp.shared.utils;
 
-import cn.hutool.core.codec.Base64;
 import cn.hutool.core.util.IdUtil;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionIdentity;
@@ -49,9 +48,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
 import java.nio.file.Path;
 import java.util.*;
 
@@ -88,6 +85,7 @@ public class RequestPreparer {
     private final McpService mcpService;
     /** Skill 根目录（框架按它渲染 Skill 提示词、read_skill 也按它做越界校验）。 */
     private final SkillRootResolver skillRootResolver;
+    private final ChatImageResolver chatImageResolver;
 
     @Value("${lingxi.system-prompt:}")
     private String SYSTEM_PROMPT;
@@ -133,6 +131,7 @@ public class RequestPreparer {
 
     private RuntimeContext resolve(ChatCommand command, List<Message> baseline) {
         throwIf(command == null || command.input() == null || command.input().isBlank(), "聊天内容不能为空");
+        UserMessageEntity userMessageEntity = buildUserMessage(command);
 
         // 单例设置：档位与模型缺省的唯一来源；查询失败按无设置处理（各项走各自缺省）。
         SettingsView settings = settingsProvider.current().orElse(null);
@@ -181,7 +180,6 @@ public class RequestPreparer {
 
         // 模型上下文是可变的、也可能已被压缩；查不到上下文即视为新会话。
         // 只有展示用的 transcript 是只追加的，它任何时候都不会回喂给模型。
-        UserMessageEntity userMessageEntity = buildUserMessage(effective);
         Long preparedSessionId = session.getId();
         // 重发：基线来自目标轮次的历史快照；常规请求：基线来自当前模型上下文。
         List<Message> messageList = baseline != null
@@ -390,31 +388,12 @@ public class RequestPreparer {
     }
 
     public UserMessageEntity buildUserMessage(ChatCommand chatCommand) {
-        String image = resolveImage(chatCommand.imageFile(), chatCommand.imageUrl());
+        List<Image> images = chatImageResolver.resolve(chatCommand.imageFile(), chatCommand.imageUrl());
         String input = chatCommand.input();
-        boolean hasImage = image != null && !image.isEmpty();
-        if (hasImage) {
-            return UserMessageEntity.from(input, Image.from(image));
+        if (!images.isEmpty()) {
+            return UserMessageEntity.from(input, images);
         }
         return UserMessageEntity.from(input);
-    }
-
-
-    private String resolveImage(MultipartFile image, String imageUrl) {
-        if (image == null || image.isEmpty()) {
-            return imageUrl == null || imageUrl.isBlank() ? null : imageUrl;
-        }
-
-        try {
-            String contentType = image.getContentType();
-            if (contentType == null || !contentType.startsWith("image/")) {
-                throw new ClientException("只支持上传图片文件");
-            }
-            return Base64.encode(image.getBytes());
-        } catch (IOException e) {
-            log.error("Failed to encode image", e);
-            throw new ClientException("读取上传图片失败");
-        }
     }
 
     /**

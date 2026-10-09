@@ -9,10 +9,12 @@ import com.summit.dp.agent.application.service.impl.RuntimeContext;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.model.application.service.ModelService;
+import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.application.service.SessionService;
 import com.summit.dp.shared.utils.RequestPreparer;
+import com.summit.dp.shared.utils.ChatImageResolver;
 import com.summit.dp.shared.context.SettingsView;
 import com.summit.dp.shared.settings.SettingsProvider;
 import com.summit.dp.shared.skill.SkillRootResolver;
@@ -63,7 +65,7 @@ class SessionTeamBindingTest {
             mock(ExecutionIdentity.class),
             mock(com.summit.dp.turn.application.service.ChatTurnService.class),
             agentService, teamService,
-            mock(com.summit.dp.mcp.application.service.McpService.class), new SkillRootResolver(""));
+            mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver());
 
     private static final long SESSION_ID = 500L;
     private static final long TEAM_ID = 3L;

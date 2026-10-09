@@ -40,6 +40,7 @@ import com.summit.dp.shared.settings.SettingsProvider;
 import com.summit.dp.shared.model.ToolCatalog;
 import com.summit.dp.shared.skill.SkillRootResolver;
 import com.summit.dp.shared.utils.RequestPreparer;
+import com.summit.dp.shared.utils.ChatImageResolver;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.application.service.impl.ChatTurnServiceImpl;
@@ -141,7 +142,7 @@ class ChatAdmissionTransactionTest {
                 mock(WorkspaceConverter.class), mock(SettingsProvider.class), mock(ToolCatalog.class),
                 transcriptService, mock(ModelContextService.class), mock(ExecutionIdentity.class),
                 chatTurnService, mock(com.summit.dp.agent.application.service.AgentService.class),
-                mock(TeamService.class), mock(McpService.class), new SkillRootResolver(""));
+                mock(TeamService.class), mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver());
         executor = new PreparedChatExecutor(orchestrator, requestPreparer,
                 mock(ModelContextService.class), mock(SessionExecutionRegistry.class),
                 mock(ExecutionControl.class));

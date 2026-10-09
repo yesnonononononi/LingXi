@@ -10,19 +10,22 @@
         <div
           :class="[
             'rounded-[18px] text-sm leading-relaxed whitespace-pre-wrap transition-colors break-words overflow-hidden',
-            props.message.imageUrl ? 'p-2' : 'px-4 py-2.5',
+            userImageUrls.length ? 'p-2' : 'px-4 py-2.5',
             isDark ? 'bg-zinc-800 text-zinc-100 border border-white/[0.08] shadow-xs' : 'bg-[#edf3fc] text-gray-800'
           ]"
         >
-          <div v-if="props.message.imageUrl" class="mb-2 max-w-sm rounded-xl overflow-hidden border border-black/10 dark:border-white/10">
+          <div v-if="userImageUrls.length" class="mb-2 max-w-sm flex flex-wrap gap-2" data-testid="user-images">
             <img
-              :src="props.message.imageUrl"
-              alt="用户上传图片"
-              class="max-h-64 w-auto object-contain rounded-xl cursor-pointer hover:opacity-95 transition"
-              @click="handleImageClick(props.message.imageUrl)"
+              v-for="(imageUrl, index) in userImageUrls"
+              :key="index"
+              :src="imageUrl"
+              :alt="`用户上传图片 ${index + 1}`"
+              :class="userImageUrls.length > 1 ? 'h-28 w-28' : 'max-h-64 w-auto'"
+              class="object-contain rounded-xl border border-black/10 dark:border-white/10 cursor-pointer hover:opacity-95 transition"
+              @click="handleImageClick(imageUrl)"
             />
           </div>
-          <div :class="props.message.imageUrl ? 'px-2 pb-1' : ''">
+          <div :class="userImageUrls.length ? 'px-2 pb-1' : ''">
             {{ props.message.content }}
           </div>
         </div>
@@ -617,6 +620,7 @@ const props = defineProps<{
 }>();
 
 const { isDark: globalIsDark } = useTheme();
+const userImageUrls = computed(() => props.message.imageUrls ?? (props.message.imageUrl ? [props.message.imageUrl] : []));
 const isDark = computed(() => props.isDark ?? globalIsDark.value);
 const openFilePreview = inject(FILE_PREVIEW_KEY);
 const canPreviewFile = (tool: ToolCallTrace) => !!openFilePreview && (isReadFileTool(tool.toolName) || isEditFileTool(tool.toolName));

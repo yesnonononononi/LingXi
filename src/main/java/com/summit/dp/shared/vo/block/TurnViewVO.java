@@ -26,10 +26,12 @@ public record TurnViewVO(
         @JsonProperty("status") String status,
         @JsonProperty("viewVersion") long viewVersion,
         @JsonProperty("userMessage") String userMessage,
+        @JsonProperty("userImageUrls") List<String> userImageUrls,
         @JsonProperty("blocks") List<Block> blocks,
         @JsonProperty("metric") ContextUsageMetric metric
 ) {
     public TurnViewVO {
+        userImageUrls = userImageUrls == null ? List.of() : List.copyOf(userImageUrls);
         blocks = blocks == null ? List.of() : List.copyOf(blocks);
     }
 }

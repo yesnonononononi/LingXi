@@ -72,6 +72,7 @@ public class TurnViewService {
                 TurnViewAssembler.resolveTurnStatus(turn),
                 viewVersion,
                 turnViewAssembler.resolveUserMessage(turn.getId(), messages),
+                turnViewAssembler.resolveUserImageUrls(turn.getId(), messages),
                 blocks,
                 TurnViewAssembler.resolveMetric(session)
         ));

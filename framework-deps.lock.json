@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "frameworks": {
+    "harness": {
+      "repository": "yesnonononononi/lingxi-harness-starter",
+      "ref": "3397d23200b728c95f26f79f4c4c581d4c6a1058",
+      "version": "1.1.2"
+    },
+    "ddd": {
+      "repository": "yesnonononononi/dev-framework-ddd-starter",
+      "ref": "1d3b003d0d602ac4cc457d7374c74e0049aaf609",
+      "version": "1.0.5"
+    }
+  }
+}

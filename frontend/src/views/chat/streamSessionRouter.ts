@@ -97,9 +97,9 @@ export class StreamSessionRouter {
   }
 
   /** 注入用户乐观提问消息至根会话 */
-  public pushUserMessage(text: string, imageUrl?: string): void {
+  public pushUserMessage(text: string, imageUrls?: string[]): void {
     if (!this.rootReducer) return;
-    this.rootReducer.pushUserMessage(text, imageUrl);
+    this.rootReducer.pushUserMessage(text, imageUrls);
   }
 
   /**

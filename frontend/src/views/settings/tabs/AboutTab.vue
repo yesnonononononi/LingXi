@@ -10,6 +10,7 @@ import { computed } from 'vue';
 import { useAppUpdater } from '../../../composables/useAppUpdater';
 import { useTheme } from '../../../composables/useTheme';
 import { formatBytes } from '../../../types/update';
+import { renderUpdateNotes } from '../../../utils/updateNotes';
 
 defineProps<{
   isDark?: boolean;
@@ -25,6 +26,7 @@ const {
   releaseNotes,
   mandatory,
   installable,
+  rejectReason,
   percent,
   bytesPerSecond,
   statusText,
@@ -79,6 +81,7 @@ async function onPrimary() {
 const hasUpdate = computed(
   () => !!availableVersion.value && (state.value === 'available' || state.value === 'downloading' || state.value === 'downloaded')
 );
+const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
 </script>
 
 <template>
@@ -121,7 +124,7 @@ const hasUpdate = computed(
           <span
             :class="[
               'text-xs',
-              state === 'error' || (!installable && !!availableVersion)
+              state === 'error' || (!installable && !!rejectReason)
                 ? 'text-red-500 dark:text-red-400'
                 : isDark
                   ? 'text-zinc-400'
@@ -184,16 +187,17 @@ const hasUpdate = computed(
     </div>
 
     <!-- 更新说明 -->
-    <div v-if="releaseNotes">
+    <div v-if="renderedNotes">
       <div class="text-xs font-semibold text-gray-800 dark:text-zinc-100 dark:text-glow-subtle mb-2.5 tracking-wide">
         更新内容
       </div>
       <div
         :class="[
-          'rounded-2xl border p-4 text-xs leading-relaxed whitespace-pre-wrap max-h-64 overflow-y-auto scrollbar-thin',
+          'update-notes rounded-2xl border p-4 text-xs leading-relaxed max-h-64 overflow-y-auto scrollbar-thin',
           isDark ? 'bg-white/[0.03] border-white/10 text-zinc-300' : 'bg-gray-50 border-gray-100 text-gray-700',
         ]"
-      >{{ releaseNotes }}</div>
+        v-html="renderedNotes"
+      />
     </div>
 
     <!-- 排障入口：用户报「更新失败」时，让 TA 直接把这个日志发过来 -->
@@ -211,3 +215,53 @@ const hasUpdate = computed(
     </div>
   </div>
 </template>
+
+<style scoped>
+.update-notes {
+  overflow-wrap: anywhere;
+}
+.update-notes :deep(p + p),
+.update-notes :deep(ul),
+.update-notes :deep(ol),
+.update-notes :deep(pre),
+.update-notes :deep(blockquote) {
+  margin-top: 0.75rem;
+}
+.update-notes :deep(h1),
+.update-notes :deep(h2),
+.update-notes :deep(h3),
+.update-notes :deep(h4) {
+  margin: 1rem 0 0.5rem;
+  font-size: 1em;
+  font-weight: 600;
+}
+.update-notes :deep(:first-child) {
+  margin-top: 0;
+}
+.update-notes :deep(ul),
+.update-notes :deep(ol) {
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+.update-notes :deep(ol) {
+  list-style: decimal;
+}
+.update-notes :deep(li + li) {
+  margin-top: 0.35rem;
+}
+.update-notes :deep(a) {
+  color: #3b82f6;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.update-notes :deep(pre) {
+  white-space: pre-wrap;
+}
+.update-notes :deep(code) {
+  font-size: 0.95em;
+}
+.update-notes :deep(blockquote) {
+  padding-left: 0.75rem;
+  border-left: 2px solid #9ca3af;
+}
+</style>

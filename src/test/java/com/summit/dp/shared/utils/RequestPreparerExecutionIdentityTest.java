@@ -79,7 +79,7 @@ class RequestPreparerExecutionIdentityTest {
     private final RequestPreparer preparer = new RequestPreparer(sessionService, sessionRepository,
             workspaceService, modelService, workspaceConverter, settingsProvider, toolCatalog,
             transcriptService, modelContextService, executionIdentity,
-            chatTurnService, agentService, teamService, mcpService, new SkillRootResolver(""));
+            chatTurnService, agentService, teamService, mcpService, new SkillRootResolver(""), new ChatImageResolver());
 
     @BeforeEach
     void stubHappyPath() {

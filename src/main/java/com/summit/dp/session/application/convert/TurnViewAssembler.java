@@ -134,6 +134,18 @@ public class TurnViewAssembler {
      * <p>提问是会话级的「这一轮问了什么」，来自该轮最早的 USER 行；缺省返回 {@code null}。</p>
      */
     public String resolveUserMessage(Long turnId, List<SessionMessage> messages) {
+        SessionMessage earliest = resolveUserRecord(turnId, messages);
+        if (earliest == null) return null;
+        UserMessageEntity user = parseUser(earliest.getText());
+        return user == null ? earliest.getText() : user.text();
+    }
+
+    public List<String> resolveUserImageUrls(Long turnId, List<SessionMessage> messages) {
+        SessionMessage earliest = resolveUserRecord(turnId, messages);
+        return earliest == null ? List.of() : UserImageViewAssembler.resolveImageUrls(parseUser(earliest.getText()));
+    }
+
+    private SessionMessage resolveUserRecord(Long turnId, List<SessionMessage> messages) {
         if (turnId == null || messages == null) {
             return null;
         }
@@ -147,11 +159,7 @@ public class TurnViewAssembler {
                 earliest = message;
             }
         }
-        if (earliest == null) {
-            return null;
-        }
-        UserMessageEntity user = parseUser(earliest.getText());
-        return user == null ? earliest.getText() : user.text();
+        return earliest;
     }
 
     /** 会话级上下文用量快照 → 指标；未采集返回 {@code null}（不显示 0）。 */

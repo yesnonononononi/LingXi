@@ -46,6 +46,7 @@ public class SessionMessageViewAssembler {
             case USER -> {
                 UserMessageEntity message = parse(stored.getText(), UserMessageEntity.class);
                 builder.text(message == null ? stored.getText() : message.text());
+                builder.imageUrls(UserImageViewAssembler.resolveImageUrls(message));
             }
             case SYSTEM -> {
                 SystemMessageEntity message = parse(stored.getText(), SystemMessageEntity.class);

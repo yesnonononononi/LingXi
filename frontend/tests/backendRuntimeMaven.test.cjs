@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { pathToFileURL } = require('node:url');
 
 function createFixture(t, scriptOnly) {
   const temporaryRoot = path.resolve(os.tmpdir());
@@ -20,8 +21,12 @@ function createFixture(t, scriptOnly) {
   const wrapperDir = path.join(repoRoot, '.mvn', 'wrapper');
   fs.mkdirSync(scriptsDir, { recursive: true });
   fs.mkdirSync(wrapperDir, { recursive: true });
-  const scriptPath = path.join(scriptsDir, 'build-backend-runtime.mjs');
-  fs.copyFileSync(path.join(__dirname, '..', 'scripts', 'build-backend-runtime.mjs'), scriptPath);
+  const runtimePath = path.join(scriptsDir, 'maven-runtime.mjs');
+  fs.copyFileSync(path.join(__dirname, '..', 'scripts', 'maven-runtime.mjs'), runtimePath);
+  const scriptPath = path.join(scriptsDir, 'probe-maven.mjs');
+  fs.writeFileSync(scriptPath, `import { resolveMaven, runMaven } from ${JSON.stringify(pathToFileURL(runtimePath).href)};
+try { runMaven(resolveMaven(${JSON.stringify(repoRoot)}), ['-o', '-DskipTests', 'package'], ${JSON.stringify(repoRoot)}); }
+catch (error) { console.error(error.message); process.exitCode = 1; }`);
   fs.writeFileSync(path.join(wrapperDir, 'maven-wrapper.properties'),
     scriptOnly ? 'distributionType=only-script\n' : 'distributionType=bin\n');
   if (!scriptOnly) fs.writeFileSync(path.join(wrapperDir, 'maven-wrapper.jar'), 'wrapper fixture');

@@ -80,14 +80,14 @@ export class TurnStreamReducer {
   }
 
   /** 注入用户乐观提问气泡 */
-  public pushUserMessage(text: string, imageUrl?: string): ChatMessage {
+  public pushUserMessage(text: string, imageUrls?: string[]): ChatMessage {
     const userMessage: ChatMessage = {
       id: `user-${this.sessionId}-${Date.now()}`,
       role: 'user',
       content: text,
       timestamp: Date.now(),
       turnId: null,
-      imageUrl
+      imageUrls
     };
     this.getMessages().push(userMessage);
     this.onScrollFollow?.();

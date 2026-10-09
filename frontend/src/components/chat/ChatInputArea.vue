@@ -3,7 +3,6 @@ import { ref, watch, nextTick, computed, onMounted, onBeforeUnmount, type CSSPro
 import {
   Attachment01Icon,
   Cancel01Icon,
-  File02Icon,
   HelpCircleIcon,
   Mic01Icon,
   PlusSignIcon,
@@ -26,6 +25,7 @@ import { reasoningEffortOptions } from '../../composables/useReasoningEffort';
 import { TeamAPI } from '../../services/team';
 import { AgentAPI } from '../../services/agent';
 import { isOk } from '../../utils/api';
+import { useChatImageAttachments } from '../../composables/useChatImageAttachments';
 
 const props = defineProps<{
   isSending?: boolean;
@@ -61,7 +61,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'openModelEditor'): void;
   (e: 'openTeamModal'): void;
-  (e: 'sendMessage', text: string, requirePlan: boolean, teamId?: string | number | null, agentId?: string | number | null, imageFile?: File | null): void;
+  (e: 'sendMessage', text: string, requirePlan: boolean, teamId?: string | number | null, agentId?: string | number | null, imageFiles?: File[]): void;
   (e: 'stopGeneration'): void;
   (e: 'updateMode', mode: ChatMode): void;
   (e: 'updateModel', modelId: string | number): void;
@@ -99,9 +99,11 @@ const sparkRef = ref<InstanceType<typeof SparkTrail> | null>(null);
 
 const inputText = ref('');
 const isPlanMode = ref(false);
+let inputDisposed = false;
 
 const focusEditor = () => {
-  nextTick(() => editor.value?.commands.focus('end'));
+  // 附件选择后的聚焦会排队，卸载后不能再触碰已销毁的编辑器。
+  nextTick(() => { if (!inputDisposed) editor.value?.commands.focus('end'); });
 };
 
 // ====== 语音听写 (Mic) 基础状态 ======
@@ -109,15 +111,12 @@ let dictation = 0;
 const listening = ref(false);
 
 // 附件管理
-const attachedImage = ref<File | null>(null);
-const attachedImagePreview = ref<string | null>(null);
+const { attachments, maxImages, limitsLoading, limitsError, attachmentError, canAttach,
+  loadLimits, addImages, removeImage, clearImages } = useChatImageAttachments();
 const fileInputRef = ref<HTMLInputElement | null>(null);
 
-const processImageFile = (file: File) => {
-  if (!file || !file.type.startsWith('image/')) return;
-  if (attachedImagePreview.value) URL.revokeObjectURL(attachedImagePreview.value);
-  attachedImage.value = file;
-  attachedImagePreview.value = URL.createObjectURL(file);
+const processImageFiles = (files: File[]) => {
+  addImages(files);
   focusEditor();
 };
 
@@ -192,36 +191,22 @@ const editor = useEditor({
 const handlePaste = (e: ClipboardEvent) => {
   const items = e.clipboardData?.items;
   if (!items || items.length === 0) return;
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    if (item.type.startsWith('image/')) {
-      e.preventDefault();
-      const file = item.getAsFile();
-      if (file) {
-        processImageFile(file);
-      }
-      break;
-    }
+  const files = Array.from(items).filter(item => item.type.startsWith('image/'))
+    .map(item => item.getAsFile()).filter((file): file is File => file !== null);
+  if (files.length > 0) {
+    e.preventDefault();
+    processImageFiles(files);
   }
 };
 
 const handleFileChange = (e: Event) => {
   const target = e.target as HTMLInputElement;
-  const file = target.files?.[0];
-  if (file) {
-    processImageFile(file);
-  }
+  processImageFiles(Array.from(target.files ?? []));
   target.value = '';
 };
 
 const triggerUpload = () => {
-  fileInputRef.value?.click();
-};
-
-const removeAttachedImage = () => {
-  if (attachedImagePreview.value) URL.revokeObjectURL(attachedImagePreview.value);
-  attachedImage.value = null;
-  attachedImagePreview.value = null;
+  if (canAttach.value) fileInputRef.value?.click();
 };
 
 // 仅在没有任何消息记录的新会话中允许切换项目目录
@@ -806,7 +791,7 @@ type SpeechRecognitionInstance = {
 // ====== Send 按钮 ======
 const canSend = computed(() => {
   if (props.reasoningEffortPending) return false;
-  if (attachedImage.value) return true;
+  if (attachments.value.length > 0) return true;
   const text = editor.value ? editor.value.getText().trim() : inputText.value.trim();
   return text.length > 0;
 });
@@ -827,15 +812,17 @@ const onSendClick = () => {
 };
 
 onMounted(() => {
+  void loadLimits();
   document.addEventListener('mousedown', handleClickOutside);
   fetchTeams(1);
   fetchAgents(1);
 });
 
 onBeforeUnmount(() => {
+  inputDisposed = true;
   document.removeEventListener('mousedown', handleClickOutside);
   dictation += 1;
-  if (attachedImagePreview.value) URL.revokeObjectURL(attachedImagePreview.value);
+  clearImages();
   editor.value?.destroy();
 });
 
@@ -899,10 +886,10 @@ const handleSend = () => {
   const mdText = resolveEditorMarkdown(editor.value).trim();
   const rawText = editor.value ? editor.value.getText().trim() : '';
   const text = mdText || rawText;
-  const image = attachedImage.value;
-  if ((!text && !image) || props.isSending || props.reasoningEffortPending) return;
+  const images = attachments.value.map(attachment => attachment.file);
+  if ((!text && images.length === 0) || props.isSending || props.reasoningEffortPending) return;
 
-  const effectiveText = text || '请分析并描述该图片';
+  const effectiveText = text || '请分析并描述这些图片';
 
   emit(
     'sendMessage',
@@ -910,14 +897,12 @@ const handleSend = () => {
     isPlanMode.value,
     localSelectedTeamId.value ? localSelectedTeamId.value : null,
     localSelectedAgentId.value ? localSelectedAgentId.value : null,
-    image
+    images
   );
 
   editor.value?.commands.clearContent();
   inputText.value = '';
-  if (attachedImagePreview.value) URL.revokeObjectURL(attachedImagePreview.value);
-  attachedImage.value = null;
-  attachedImagePreview.value = null;
+  clearImages();
 };
 
 const rootStyle = computed(
@@ -940,9 +925,10 @@ defineExpose({
     inputText.value = text;
   },
   setAttachedImage: (file: File | null) => {
-    if (file) processImageFile(file);
-    else removeAttachedImage();
+    if (file) processImageFiles([file]);
+    else clearImages();
   },
+  setAttachedImages: processImageFiles,
   fetchTeams,
   selectTeam: (id: string | number | null) => {
     localSelectedTeamId.value = id ?? '';
@@ -1158,27 +1144,36 @@ defineExpose({
       </p>
 
       <!-- 图片与附件 Chips 栏 -->
-      <div v-if="attachedImage" class="flex flex-wrap gap-1.5 pb-0.5">
+      <div v-if="attachments.length" class="flex flex-wrap gap-1.5 pb-0.5" data-testid="image-attachments">
         <span
+          v-for="(attachment, index) in attachments"
+          :key="attachment.preview"
           class="inline-flex items-center gap-1.5 pr-1.5 [background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] pl-2 rounded-lg h-[28px] text-[12px] motion-reduce:[animation:none] [animation:prompt-bar-pop_200ms_cubic-bezier(0.23,1,0.32,1)_both] border border-white/5"
         >
           <img
-            v-if="attachedImagePreview"
-            :src="attachedImagePreview"
-            alt="Preview"
+            :src="attachment.preview"
+            :alt="attachment.file.name"
             class="w-4 h-4 rounded object-cover flex-none"
           />
-          <HugeiconsIcon v-else :icon="File02Icon as IconArray" :size="12" :stroke-width="2" />
-          <span class="max-w-[150px] truncate text-xs">{{ attachedImage.name || '图片附件' }}</span>
+          <span class="max-w-[150px] truncate text-xs">{{ attachment.file.name || '图片附件' }}</span>
           <button
             type="button"
             class="inline-grid place-items-center bg-transparent opacity-60 hover:opacity-100 p-0 hover:[background:color-mix(in_srgb,var(--pb-ink)_10%,transparent)] border-0 rounded-[5px] outline-none w-[18px] h-[18px] text-inherit cursor-pointer [transition:opacity_120ms_ease,background-color_120ms_ease]"
             title="移除附件"
-            @click.stop="removeAttachedImage"
+            :aria-label="`移除 ${attachment.file.name}`"
+            @click.stop="removeImage(index)"
           >
             <HugeiconsIcon :icon="Cancel01Icon as IconArray" :size="10" :stroke-width="2.5" />
           </button>
         </span>
+      </div>
+      <div class="text-xs text-gray-500 dark:text-zinc-400" aria-live="polite">
+        <span v-if="limitsLoading">正在读取图片数量限制…</span>
+        <span v-else-if="limitsError" class="text-red-500">{{ limitsError }}
+          <button type="button" class="ml-2 underline" @click="loadLimits">重试</button>
+        </span>
+        <span v-else-if="attachments.length">已选择 {{ attachments.length }} / {{ maxImages }} 张图片</span>
+        <p v-if="attachmentError" class="text-red-500" role="alert">{{ attachmentError }}</p>
       </div>
 
       <!-- 文本输入区 (支持 /plan 与 Agent Token Pill 以及 TipTap 所见即所得 Markdown 渲染) -->
@@ -1240,14 +1235,16 @@ defineExpose({
             ref="fileInputRef"
             type="file"
             accept="image/*"
+            multiple
             class="hidden"
             @change="handleFileChange"
           />
           <button
             type="button"
             :class="ICON_BTN"
-            :data-on="attachedImage ? '' : undefined"
-            title="上传图片 (可直接粘贴图片到输入框)"
+            :data-on="attachments.length ? '' : undefined"
+            :disabled="!canAttach"
+            :title="maxImages ? `上传图片（每条消息最多 ${maxImages} 张，支持多选和粘贴）` : '正在读取图片数量限制'"
             @mousedown.prevent
             @click="triggerUpload"
           >

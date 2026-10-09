@@ -19,6 +19,7 @@ import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { buildBackend } from './build-backend.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const frontendRoot = path.resolve(__dirname, '..');
@@ -110,55 +111,6 @@ function resolveJdk() {
 
 const jdk = resolveJdk();
 
-/**
- * 定位 maven。
- * only-script wrapper 不需要 jar；优先使用它才能遵循仓库固定的 Maven 版本。
- * 本地 Maven 保留直接启动 Launcher 的方式，避免 Git Bash 转换 Windows 路径。
- */
-function resolveMaven() {
-  const wrapperCommand = path.join(repoRoot, isWin ? 'mvnw.cmd' : 'mvnw');
-  const wrapperJar = path.join(repoRoot, '.mvn', 'wrapper', 'maven-wrapper.jar');
-  const wrapperProperties = path.join(repoRoot, '.mvn', 'wrapper', 'maven-wrapper.properties');
-  const scriptOnly = fs.existsSync(wrapperProperties)
-    && /^\s*distributionType\s*=\s*only-script\s*$/m.test(fs.readFileSync(wrapperProperties, 'utf8'));
-  if (fs.existsSync(wrapperCommand) && (scriptOnly || fs.existsSync(wrapperJar))) {
-    return { label: 'mvnw', command: wrapperCommand, prefix: [] };
-  }
-
-  const homes = [
-    process.env.MAVEN_HOME,
-    process.env.M2_HOME,
-    process.env.MAVEN_USER_HOME,
-    'D:\\languages\\mvn',
-  ].filter(Boolean);
-
-  for (const home of homes) {
-    const bootDir = path.join(home, 'boot');
-    const m2Conf = path.join(home, 'bin', 'm2.conf');
-    if (!fs.existsSync(bootDir) || !fs.existsSync(m2Conf)) continue;
-    const classworlds = fs
-      .readdirSync(bootDir)
-      .find((name) => /^plexus-classworlds-.*\.jar$/.test(name));
-    if (!classworlds) continue;
-    const javaExe = jdk.home
-      ? path.join(jdk.home, 'bin', isWin ? 'java.exe' : 'java')
-      : 'java';
-    return {
-      label: `classworlds Launcher (${home})`,
-      command: javaExe,
-      prefix: [
-        '-classpath',
-        path.join(bootDir, classworlds),
-        `-Dclassworlds.conf=${m2Conf}`,
-        `-Dmaven.home=${home}`,
-        `-Dmaven.multiModuleProjectDirectory=${repoRoot}`,
-        'org.codehaus.plexus.classworlds.launcher.Launcher',
-      ],
-    };
-  }
-  return null;
-}
-
 // ---------------------------------------------------------------- 1. 打后端 jar
 
 fs.mkdirSync(stageDir, { recursive: true });
@@ -177,16 +129,12 @@ function findExistingJar() {
 let jarPath = explicitJar ? path.resolve(repoRoot, explicitJar) : null;
 
 if (!jarPath && !skipJar) {
-  const maven = resolveMaven();
-  if (!maven) {
-    fail(
-      '找不到可用的 Maven，请检查仓库 wrapper 或 MAVEN_HOME / M2_HOME 配置。\n' +
-        '请自行 `mvn -DskipTests package` 后加 --skip-jar 重跑，或用 --jar=<path> 指定 jar。'
-    );
+  console.log('[backend-runtime] 1/3 构建锁定框架与后端 jar...');
+  try {
+    buildBackend(repoRoot, 'package', { offline });
+  } catch (error) {
+    fail(error.message);
   }
-  console.log(`[backend-runtime] 1/3 打包后端 jar（${maven.label}）...`);
-  const mvnArgs = [...maven.prefix, ...(offline ? ['-o'] : []), '-DskipTests', 'package'];
-  run(maven.command, mvnArgs, { cwd: repoRoot });
 } else {
   console.log('[backend-runtime] 1/3 跳过 maven，复用已有 jar');
 }

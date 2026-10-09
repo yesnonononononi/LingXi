@@ -1,0 +1,67 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - 'src/**'
+      - 'pom.xml'
+      - 'init.sql'
+      - 'framework-deps.lock.json'
+      - 'frontend/scripts/**'
+      - 'frontend/package.json'
+      - 'frontend/package-lock.json'
+      - 'frontend/tests/frameworkDependencies.test.cjs'
+      - 'frontend/tests/backendRuntimeMaven.test.cjs'
+      - '.mvn/**'
+      - 'mvnw*'
+      - '.github/workflows/backend-ci.yml'
+      - '.github/workflows/release.yml'
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - 'src/**'
+      - 'pom.xml'
+      - 'init.sql'
+      - 'framework-deps.lock.json'
+      - 'frontend/scripts/**'
+      - 'frontend/package.json'
+      - 'frontend/package-lock.json'
+      - 'frontend/tests/frameworkDependencies.test.cjs'
+      - 'frontend/tests/backendRuntimeMaven.test.cjs'
+      - '.mvn/**'
+      - 'mvnw*'
+      - '.github/workflows/backend-ci.yml'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: 安装构建测试依赖
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+      - name: 验证源码锁定与 Maven 调用
+        working-directory: frontend
+        run: npm run test:framework-deps
+      - name: 构建锁定框架并验证业务
+        working-directory: frontend
+        run: npm run backend:verify

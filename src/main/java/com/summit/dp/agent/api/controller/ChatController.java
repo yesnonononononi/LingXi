@@ -5,6 +5,8 @@ import com.summit.dp.agent.api.request.ChatRequest;
 import com.summit.dp.agent.application.command.ChatCommand;
 import com.summit.dp.agent.application.service.ChatService;
 import com.summit.dp.agent.application.vo.ChatAcceptanceVO;
+import com.summit.dp.agent.application.vo.ChatLimitsVO;
+import com.summit.dp.session.domain.model.SessionMessage;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.MediaType;
@@ -21,6 +23,11 @@ public class ChatController {
 
     public ChatController(ChatService chatService) {
         this.chatService = chatService;
+    }
+
+    @GetMapping("/completion/limits")
+    public Result<ChatLimitsVO> limits() {
+        return Result.success(new ChatLimitsVO(SessionMessage.MAX_IMAGE_COUNT));
     }
 
     @Operation(summary = "文本交流")

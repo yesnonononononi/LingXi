@@ -279,7 +279,8 @@ function createUpdater({ app, getWindow, broadcast, logger }) {
         changeLog: sec.normalizeReleaseNotes(info.releaseNotes),
         forceupdate: false,
         installable: false,
-        rejectReason: gate.reason,
+        // 同版是正常检查结果；仍禁止安装，但不作为故障提示。
+        rejectReason: sec.compareVersions(info.version, app.getVersion()) === 0 ? null : gate.reason,
       };
       emit('not-available');
       return;
@@ -535,7 +536,7 @@ function createUpdater({ app, getWindow, broadcast, logger }) {
       phase,
       error: lastError || null,
       progress: { ...downloadProgress },
-      pending,
+      pending: pending ? { ...pending, releaseNotes: pending.changeLog } : null,
     }),
     isEnabled: () => !!updater,
   };

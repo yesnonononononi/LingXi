@@ -76,6 +76,7 @@ jobs:
         shell: bash
         run: |
           node scripts/check-version.mjs --expect-tag="v${{ github.event.inputs.version }}"
+          test -s "release-notes/${{ github.event.inputs.version }}.md"
 
       - name: 确认该版本尚未发布（防止覆盖已发出的资产）
         shell: bash
@@ -100,9 +101,9 @@ jobs:
 
       - name: 验证桌面打包依赖
         working-directory: frontend
-        run: node --test tests/backendRuntimeMaven.test.cjs tests/electronPackaging.test.cjs
+        run: node --test tests/backendRuntimeMaven.test.cjs tests/frameworkDependencies.test.cjs tests/electronPackaging.test.cjs
 
-      - name: 构建后端运行产物（fat jar + jlink 精简 JRE）
+      - name: 构建锁定框架与后端运行产物（fat jar + jlink 精简 JRE）
         working-directory: frontend
         run: npm run backend:runtime
 
@@ -137,6 +138,7 @@ jobs:
           node scripts/sign-update.mjs \
             --version="${{ github.event.inputs.version }}" \
             --exe="$EXE_PATH" \
+            --notes="release-notes/${{ github.event.inputs.version }}.md" \
             --force="${{ github.event.inputs.force }}" \
             --min-supported="${{ github.event.inputs.min_supported }}" \
             --out=release/RELEASE_BODY.md

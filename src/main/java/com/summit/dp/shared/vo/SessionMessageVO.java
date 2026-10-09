@@ -44,6 +44,7 @@ public class SessionMessageVO {
     private String type;
     /** USER、SYSTEM、ERROR 的正文；AI 的回复正文 */
     private String text;
+    private List<String> imageUrls;
     /** AI 的思维链 */
     private String thinking;
     /** AI 发起的工具调用（模型请求视图，非结果来源） */

@@ -44,6 +44,7 @@ class BlockSerializationTest {
                 ToolBlock.identity("call_1"), null, 2, BlockStatus.TOOL_COMPLETED,
                 "call_1", "read_file", "{\"path\":\"a\"}", "文件内容", 3, 0);
         return new TurnViewVO(700L, 800L, BlockStatus.TURN_COMPLETED, 5L, "用户提问",
+                List.of(),
                 List.of(thinking, body, tool), null);
     }
 

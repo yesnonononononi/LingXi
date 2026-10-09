@@ -45,14 +45,18 @@ const toChatForm = (command: ChatCommand): FormData => {
   appendFormValue(form, 'modelId', command.modelId);
   appendFormValue(form, 'agentId', toPositiveInt(command.agentId, 0) || null);
   appendFormValue(form, 'requirePlan', command.requirePlan === true);
-  if (command.image) form.append('image', command.image, command.image.name);
-  appendFormValue(form, 'imageUrl', command.imageUrl);
+  for (const image of command.image ?? []) form.append('image', image, image.name);
+  for (const url of command.imageUrl ?? []) appendFormValue(form, 'imageUrl', url);
   return form;
 };
 
 
 /** 6. Agent 对话 API (对应后端 Agent/Chat Controller: /a/completion) */
 export class AgentAPI {
+  static async chatLimits(): Promise<Result<{ maxImages: number }>> {
+    return http.get<any, Result<{ maxImages: number }>>('/a/completion/limits');
+  }
+
   static async stop(sessionId: string | number): Promise<void> {
     await http.post(`/a/completion/${sessionId}/stop`);
   }

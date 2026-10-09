@@ -255,7 +255,7 @@ class CollaborationToolExposureTest {
                 mock(SettingsProvider.class), catalog, mock(ConversationTranscriptService.class),
                 mock(ModelContextService.class),                 mock(ExecutionIdentity.class),
                 mock(com.summit.dp.turn.application.service.ChatTurnService.class),
-                mock(AgentService.class), mock(TeamService.class), mcpService, skillRootResolver);
+                mock(AgentService.class), mock(TeamService.class), mcpService, skillRootResolver, new ChatImageResolver());
 
         // executionId 必须非空：buildRequest 不再自造身份，缺身份即视为「prepare 没跑」并直接报错。
         ExecutionContext executionContext = ExecutionContext.root(500L, "2105000000000000001", null, null,

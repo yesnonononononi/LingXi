@@ -14,6 +14,7 @@ import { useChatSubSession } from './useChatSubSession';
 import { StreamSessionRouter } from './streamSessionRouter';
 import { SessionEventStream, type StreamHealthState } from './sessionEventStream';
 import type { ChatCommand } from '../../services/dto/chat_command';
+import { readImagePreviews } from '../../composables/useChatImageAttachments';
 
 import { useChatSessionStore } from '../../stores/chatSessionStore';
 import { useUserConfigStore } from '../../stores/userConfigStore';
@@ -366,7 +367,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   const buildCommand = (
     input: string,
     requirePlan: boolean,
-    imageFile: File | null,
+    imageFiles: File[],
   ): ChatCommand => {
     return {
       input,
@@ -376,7 +377,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
       workspaceId: Number(localActiveWorkspaceId.value ?? 0),
       agentId: Number(userConfig.agentId ?? 0),
       requirePlan: requirePlan === true,
-      image: imageFile ?? undefined,
+      image: imageFiles,
     };
   };
 
@@ -443,23 +444,20 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     requirePlan: boolean,
     _teamId?: string | number | null,
     agentId?: string | number | null,
-    imageFile?: File | null,
+    imageFiles: File[] | null = [],
   ): Promise<void> => {
     if (agentId != null) handleUpdateAgent(agentId);
-    let imageUrl: string | undefined;
-    if (imageFile) {
-      imageUrl = URL.createObjectURL(imageFile);
-    }
-
     try {
+      const files = imageFiles ?? [];
+      const imageUrls = await readImagePreviews(files);
       // 1. 若当前会话未绑定，调用后端新建会话接口先建立会话（拿权威雪花 id）
       const session = await ensureBoundSession(text);
       streamRouter.bindRootSession(session);
-      streamRouter.pushUserMessage(text, imageUrl);
+      streamRouter.pushUserMessage(text, imageUrls);
 
       // 2. 同步受理：先等该根会话订阅就绪（READY），再 POST /a/completion/commands。
       //    受理返回的 sessionId / turnId 是权威值，后续事件与历史都按 turnId 对齐。
-      const command = buildCommand(text, requirePlan, imageFile ?? null);
+      const command = buildCommand(text, requirePlan, files);
       command.sessionId = session.id;
       const acceptance = await sending.handleSendMessage(command);
       if (!acceptance) return;

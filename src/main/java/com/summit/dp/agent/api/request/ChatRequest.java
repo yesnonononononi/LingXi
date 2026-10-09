@@ -2,6 +2,8 @@ package com.summit.dp.agent.api.request;
 
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
+
 /**
  * 聊天请求入参。
  *
@@ -21,8 +23,8 @@ public record ChatRequest(
         /* 本次请求是否要计划能力：true 才把计划工具随请求下发给模型。 */
         Boolean requirePlan,
         /* 前端以 multipart/form-data 上传的原始图片。 */
-        MultipartFile image,
+        List<MultipartFile> image,
         /* 兼容已有的 URL/Data URL 调用方；新前端优先传 image。 */
-        String imageUrl
+        List<String> imageUrl
 ) {
 }

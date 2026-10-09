@@ -99,11 +99,12 @@ export function buildUserMessageFromTurnView(
   fallbackTimestamp = Date.now()
 ): ChatMessage | null {
   const text = view.userMessage;
-  if (!text) return null;
+  if (!text && !view.userImageUrls?.length) return null;
   return {
     id: `user-${view.sessionId}-turn-${view.turnId}`,
     role: 'user',
-    content: text,
+    content: text ?? '',
+    imageUrls: view.userImageUrls ? [...view.userImageUrls] : [],
     timestamp: fallbackTimestamp,
     turnId: view.turnId,
   };
@@ -122,12 +123,15 @@ export function upsertTurnViewIntoMessages(
   if (current !== undefined && incoming < current) return;
   versions.set(turnKey, incoming);
 
+  const existingUser = messages.find(message => message.role === 'user' && message.turnId === view.turnId);
+  if (existingUser && view.userImageUrls !== undefined) existingUser.imageUrls = [...view.userImageUrls];
+
   // 原气泡只补齐状态，避免替换对象导致 DOM 重建。
   const existing = messages.find(m => m.role === 'assistant' && m.turnId === view.turnId);
   if (existing) {
     projectTurnView(existing, view);
     // 用户气泡文本若在历史里出现（首屏从未给过），补上；已存在则不动。
-    if (view.userMessage && !messages.some(m => m.role === 'user' && m.turnId === view.turnId)) {
+    if ((view.userMessage || view.userImageUrls?.length) && !messages.some(m => m.role === 'user' && m.turnId === view.turnId)) {
       const userMessage = buildUserMessageFromTurnView(view, fallbackTimestamp);
       if (userMessage) messages.splice(messages.indexOf(existing), 0, userMessage);
     }
@@ -137,7 +141,7 @@ export function upsertTurnViewIntoMessages(
   // 空块 + 失败态：不建空气泡，交给 synthesizeFailedTurnBubbles 用 turns.errorReason 合成。
   // 但用户提问仍要落（否则该轮在界面上完全没有痕迹）。
   if (view.blocks.length === 0 && isFailedStatus(view.status)) {
-    if (view.userMessage && !messages.some(m => m.role === 'user' && m.turnId === view.turnId)) {
+    if ((view.userMessage || view.userImageUrls?.length) && !messages.some(m => m.role === 'user' && m.turnId === view.turnId)) {
       const userMessage = buildUserMessageFromTurnView(view, fallbackTimestamp);
       if (userMessage) {
         messages.splice(resolveTurnInsertIndex(messages, view.turnId), 0, userMessage);
@@ -150,7 +154,7 @@ export function upsertTurnViewIntoMessages(
   const insertAt = resolveTurnInsertIndex(messages, view.turnId);
   const bubble = buildBubbleFromTurnView(view, fallbackTimestamp);
   const userMessage = buildUserMessageFromTurnView(view, fallbackTimestamp);
-  const pair = userMessage ? [userMessage, bubble] : [bubble];
+  const pair = userMessage && !existingUser ? [userMessage, bubble] : [bubble];
   messages.splice(insertAt, 0, ...pair);
 }
 

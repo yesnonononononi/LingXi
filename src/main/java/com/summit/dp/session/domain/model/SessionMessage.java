@@ -10,6 +10,9 @@ import java.time.Instant;
 @Builder
 @Getter
 public class SessionMessage {
+    /** 单条用户消息的图片上限，所有入口和界面均以此为准。 */
+    public static final int MAX_IMAGE_COUNT = 9;
+
     private final Long id;
 
     /** 框架响应身份只挂 AI 行，幂等判定以整轮为单位。 */

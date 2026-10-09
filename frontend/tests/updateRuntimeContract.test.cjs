@@ -45,7 +45,7 @@ const publicPem = keyPair.publicKey.export({ type: 'spki', format: 'pem' });
  *   - electron-updater 的 autoUpdater：一个 EventEmitter，netSession 指向 updaterSession
  *   - 公钥被替换成测试密钥对，以便构造「有效签名」的正对照
  */
-function setup(releaseNotes) {
+function setup(releaseNotes, currentVersion = '0.0.1') {
   const defaultSession = { webRequest: { onBeforeRequest(fn) { this.handler = fn; } } };
   const updaterSession = { webRequest: { onBeforeRequest(fn) { this.handler = fn; } } };
   const engine = new EventEmitter();
@@ -92,7 +92,7 @@ function setup(releaseNotes) {
 
   const states = [];
   const controller = sandbox.module.exports.createUpdater({
-    app: { getVersion: () => '0.0.1' },
+    app: { getVersion: () => currentVersion },
     getWindow: () => null,
     broadcast: (state) => states.push(state),
   });
@@ -132,6 +132,30 @@ test('正对照：有效 Markdown 声明的更新可安装（证明控制器链�
   const probe = setup(signedNotes(false, ''));
   await probe.controller.check();
   assert.equal(probe.controller.getState().pending.installable, true);
+});
+
+test('同版检查是正常结果，但下载与安装仍被禁止', async () => {
+  const probe = setup('同版更新说明', '0.0.2');
+  await probe.controller.check();
+  const snapshot = probe.controller.getState();
+  assert.equal(snapshot.phase, 'not-available');
+  assert.equal(snapshot.pending.rejectReason, null);
+  assert.equal(snapshot.pending.installable, false);
+  assert.equal(probe.states.at(-1).rejectReason, null);
+  await assert.rejects(probe.controller.startDownload(), /当前没有可安装的更新/);
+  assert.equal(probe.controller.install().ok, false);
+});
+
+test('设置重开时查询到的更新正文与广播一致', async () => {
+  const probe = setup('<h2>修复</h2><p>优化更新界面</p>');
+  await probe.controller.check();
+  assert.equal(probe.controller.getState().pending.releaseNotes, probe.states.at(-1).releaseNotes);
+});
+
+test('降级拒绝仍保留具体故障原因', async () => {
+  const probe = setup('旧版本', '0.0.3');
+  await probe.controller.check();
+  assert.match(probe.controller.getState().pending.rejectReason, /拒绝降级/);
 });
 
 // ================================================================ 2. feed 真源

@@ -164,6 +164,7 @@ export interface ChatMessage {
   tokens?: number;                   // 消耗 token 数
   tokenInfo?: TokenInfo;             // 真实 token 计数明细
   imageUrl?: string;                 // 用户上传/携带的图片 URL 或 Base64 Data URL
+  imageUrls?: string[];
 }
 
 /** 聊天会话接口 */
@@ -417,6 +418,7 @@ export interface ChatTurn {
 
 /** 后端会话消息 VO（对应 SessionMessageVO） */
 export interface SessionMessageVO {
+  imageUrls?: string[];
   id?: number | string;
   /**
    * 产生本条消息的业务轮次 id（字符串；**旧数据为 null = 归属未知**）。
