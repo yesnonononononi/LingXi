@@ -39,6 +39,8 @@ class H2SchemaMigrationTest {
             H2SchemaInitializer initializer = new H2SchemaInitializer();
             initializer.h2SchemaBootstrap(database).run(new DefaultApplicationArguments());
             assertEquals("旧数据必须保留", tools.selectById("call_legacy").getTitle());
+            assertTrue(hasColumn(database, "session_message", "response_id"), "正对照：能定位新建消息表的列");
+            assertFalse(hasColumn(database, "session_message", "response_order"), "不应重新创建已废弃的响应序号");
             assertEquals(1L, tools.selectById("call_legacy").getVersion());
             assertEquals(0L, session.getMapper(ExecutionMapper.class).selectCount(null));
             initializer.h2SchemaBootstrap(database).run(new DefaultApplicationArguments());

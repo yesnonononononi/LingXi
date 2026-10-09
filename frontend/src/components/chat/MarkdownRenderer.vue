@@ -9,19 +9,17 @@ const props = withDefaults(
     content?: string;
     isDark?: boolean;
     isThinking?: boolean;
-    /**
-     * 弱化档：中间叙述（过程文本）用它，字号与颜色都降一级，与正文明确分层。
-     *
-     * <p><b>必须由本组件承担</b>：{@code .markdown-body} 的 {@code font-size} 是绝对值，
-     * 父级加 {@code text-xs} 压不下去；颜色虽可继承，但本容器默认写死了正文色。</p>
-     */
-    muted?: boolean;
+    /** 过程文本需要独立样式，避免影响最终正文。 */
+    processText?: boolean;
+    /** 思考内容独立弱化，正文与过程叙述保持各自样式。 */
+    thinkingText?: boolean;
   }>(),
   {
     content: '',
     isDark: undefined,
     isThinking: false,
-    muted: false
+    processText: false,
+    thinkingText: false
   }
 );
 
@@ -65,16 +63,15 @@ const handleContainerClick = async (event: MouseEvent) => {
   <div
     class="markdown-container markdown-stream-flow select-text"
     :class="[
-      isDark ? 'text-zinc-100' : 'text-gray-800',
-      { 'is-streaming': props.isThinking },
-      props.muted && (isDark ? 'text-zinc-400' : 'text-slate-600')
+      props.thinkingText ? (isDark ? 'text-zinc-400' : 'text-[#888888]') : props.processText ? (isDark ? 'text-zinc-100' : 'text-black') : (isDark ? 'text-zinc-100' : 'text-gray-800'),
+      { 'is-streaming': props.isThinking }
     ]"
     @click="handleContainerClick"
   >
     <div
       v-if="renderedHtml"
       class="markdown-body"
-      :class="{ 'markdown-body--muted': props.muted }"
+      :class="{ 'markdown-body--process': props.processText, 'markdown-body--thinking': props.thinkingText }"
       v-html="renderedHtml"
     ></div>
     

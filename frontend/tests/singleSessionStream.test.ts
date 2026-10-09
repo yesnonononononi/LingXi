@@ -646,7 +646,7 @@ const turnView = (
   };
 };
 
-test('5a. ★ 原始增量在权威响应身份下立即打印正文', () => {
+test('5a. ★ 原始增量在权威响应身份下立即在过程区打印', () => {
   const messages: ChatMessage[] = [];
   const reducer = new TurnStreamReducer(messages, { sessionId: ROOT });
   reducer.consume({ type: 'PARTIAL_TEXT', responseId: T1, offset: 0, content: '这是正在逐字输出的正文', metaData: { sessionId: ROOT, rootSessionId: ROOT, turnId: T1 } } as unknown as AgentEvent);
@@ -654,7 +654,8 @@ test('5a. ★ 原始增量在权威响应身份下立即打印正文', () => {
 
   const assistants = messages.filter(m => m.role === 'assistant');
   assert.equal(assistants.length, 1, `同一轮不得出现两个助手气泡，实际=${messages.map(m => m.id).join(',')}`);
-  assert.equal(assistants[0].content, '这是正在逐字输出的正文', '片段到达后即显示');
+  assert.equal(assistants[0].content, '', '用途未确认不能进入正文');
+  assert.equal(assistants[0].aiMessages?.find(item => item.id === `text:${T1}`)?.text, '这是正在逐字输出的正文', '片段到达后即显示');
   assert.equal(assistants[0].toolCalls?.length, 0, '工具轨迹只等视图，原始事件不建工具项');
   assert.equal(assistants[0].isThinking, true, '增量事件把气泡维持在生成态');
 });

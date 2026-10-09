@@ -18,11 +18,21 @@ function loadChatModule(filename) {
     module.filename = filename;
     module.paths = Module._nodeModulePaths(path.dirname(filename));
     module.require = request => {
+      if (request === 'vue') {
+        return { ...require('vue'), Transition: { setup: (_props, { slots }) => () => slots.default?.() } };
+      }
       if (!request.startsWith('.')) return require(request);
       const resolved = path.resolve(path.dirname(filename), request);
       if (request.endsWith('.vue')) {
+        if (request.endsWith('CardHeader.vue')) return load(resolved);
+        if (request.endsWith('GradientText.vue')) {
+          return { __esModule: true, default: {
+            props: ['colors', 'animationSpeed', 'showBorder'],
+            setup: (props, { slots }) => () => h('gradient-text', { ...props }, slots.default?.()),
+          } };
+        }
         if (request.endsWith('MarkdownRenderer.vue')) {
-          return { __esModule: true, default: { props: ['content'], setup: props => () => h('markdown', props.content) } };
+          return { __esModule: true, default: { props: ['content', 'thinkingText', 'processText'], setup: props => () => h('markdown', { thinkingText: props.thinkingText, processText: props.processText }, props.content) } };
         }
         if (request.endsWith('PromptCard.vue')) {
           return { __esModule: true, default: { setup: () => () => h('prompt-card', '审批卡片') } };
@@ -69,7 +79,11 @@ function find(node, predicate) {
   }
 }
 
-function mount(t, message) {
+function mount(t, message, props = {}) {
+  return mountComponent(t, loadComponent(), { message, isDark: true, ...props });
+}
+
+function mountComponent(t, component, props) {
   const renderer = createRenderer({
     createElement: tag => element(tag),
     createText: value => element('#text', value),
@@ -93,7 +107,7 @@ function mount(t, message) {
   const previousWindow = global.window;
   global.window = { setInterval };
   const root = element('root');
-  const app = renderer.createApp(loadComponent(), { message, isDark: true });
+  const app = renderer.createApp(component, props);
   app.provide(previewKey, undefined);
   app.mount(root);
   t.after(() => {
@@ -129,32 +143,246 @@ function streamFixture() {
   return { reducer, event, answer: messages[0], AgentToolName };
 }
 
+test('终端描述样式：与深度思考标题字号和颜色一致，明暗主题及结束状态保持一致', async t => {
+  const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
+  for (const isDark of [false, true]) {
+    const answer = message({ isComplete: false, aiMessages: [], thoughtSteps: [
+      { id: 'thinking-size', title: '思考', content: '检查当前目录', status: 'running', order: 0 },
+    ], toolCalls: [
+      { id: 'command-size', toolName: AgentToolName.ExecuteCommand, status: 'calling',
+        query: JSON.stringify({ command: 'git status', intention: '检查工作目录' }), order: 1 },
+    ] });
+    const root = mount(t, answer, { isDark });
+    for (const status of ['calling', 'success']) {
+      answer.toolCalls[0].status = status;
+      answer.thoughtSteps[0].status = status === 'calling' ? 'running' : 'success';
+      await nextTick();
+      const description = find(root, node => node.tag === 'button' && text(node) === '检查工作目录');
+      const thinking = find(root, node => node.tag === 'button' && text(node) === '深度思考');
+      assert.ok(description);
+      assert.ok(thinking);
+      assert.match(description.props.class, /\btext-xs\b/, '终端描述使用与思考相同的字号');
+      assert.match(thinking.parent.props.class, /\btext-xs\b/);
+      const colors = isDark ? ['text-zinc-400', 'hover:text-zinc-200'] : ['text-zinc-500', 'hover:text-zinc-700'];
+      for (const color of colors) {
+        assert.equal(description.props.class.split(' ').includes(color), true, `终端描述颜色应与思考一致：${color}`);
+        assert.equal(thinking.props.class.split(' ').includes(color), true);
+      }
+      assert.equal(description.props.class.split(' ').includes('[text-shadow:none]'), true, '终端描述不继承工具行的发光');
+    }
+  }
+});
+
+test('工具执行提示：仅显示静态灰字，结束后替换为真实输出', async t => {
+  const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
+  const answer = message({ isComplete: false, aiMessages: [], toolCalls: [
+    { id: 'command-running', toolName: AgentToolName.ExecuteCommand, status: 'calling',
+      query: JSON.stringify({ command: 'git status' }), order: 0 },
+  ] });
+  const root = mount(t, answer);
+  const toggle = find(root, node => node.tag === 'button' && /查看.*详情/.test(node.props['aria-label'] ?? ''));
+  assert.ok(toggle);
+  toggle.props.onClick({ stopPropagation() {} });
+  await nextTick();
+  const hint = find(root, node => node.tag === 'div' && String(node.props.class ?? '').includes('font-mono') && text(node).trim() === '正在执行中...');
+  assert.ok(hint);
+  assert.match(hint.props.class, /text-gray-400/);
+  assert.doesNotMatch(hint.props.class, /animate-|text-amber/);
+  assert.equal(Boolean(find(hint, node => String(node.props.class ?? '').includes('rounded-full'))), false);
+
+  answer.toolCalls[0].status = 'success';
+  answer.toolCalls[0].result = '执行完成';
+  await nextTick();
+  assert.doesNotMatch(text(root), /正在执行中/);
+  assert.match(text(root), /执行完成/);
+});
+
+test('深度思考标题：只在运行时加载渐变，结束后静态标题仍可折叠正文', async t => {
+  const answer = message({ isComplete: false, aiMessages: [], thoughtSteps: [
+    { id: 'thinking-gradient', title: '思考', content: '思考正文', status: 'running', order: 0 },
+  ] });
+  const root = mount(t, answer);
+  const title = find(root, node => node.tag === 'gradient-text' && text(node) === '深度思考');
+  assert.ok(title, '思考标题应使用 GradientText 组件');
+  assert.equal(title.props.animationSpeed, 3);
+  assert.equal(title.props.showBorder, false);
+  const header = find(root, node => node.tag === 'button' && text(node).includes('深度思考'));
+  assert.equal(Boolean(find(header, node => String(node.props.class ?? '').includes('animate-ping'))), false);
+  assert.match(text(root), /思考正文/);
+
+  answer.thoughtSteps[0].status = 'success';
+  await nextTick();
+  assert.doesNotMatch(text(root), /思考正文/);
+  const toggle = find(root, node => node.tag === 'button' && text(node).includes('深度思考'));
+  assert.ok(toggle);
+  toggle.props.onClick();
+  await nextTick();
+  assert.match(text(root), /思考正文/);
+  assert.equal(Boolean(find(root, node => node.tag === 'gradient-text' && text(node) === '深度思考')), false);
+  toggle.props.onClick();
+  await nextTick();
+  assert.doesNotMatch(text(root), /思考正文/);
+});
+
+test('深度思考动效：挂起、终态和历史不加载，运行中的对账消息仍可加载', async t => {
+  const answer = message({ isComplete: false, aiMessages: [], thoughtSteps: [
+    { id: 'thinking-current', title: '思考', content: '当前思考', status: 'running', order: 0 },
+    { id: 'thinking-old', title: '旧思考', content: '历史思考', status: 'success', order: 1 },
+  ] });
+  const turn = reactive({ status: 'RUNNING' });
+  const root = mount(t, answer, { turn });
+  const resolveAnimation = () => find(root, node => node.tag === 'gradient-text' && text(node) === '深度思考');
+  assert.ok(resolveAnimation());
+  assert.equal(Boolean(find(root, node => node.tag === 'gradient-text' && text(node) === '旧思考')), false);
+
+  answer.isSuspended = true;
+  await nextTick();
+  assert.equal(Boolean(resolveAnimation()), false);
+  answer.isSuspended = false;
+  answer.isComplete = true;
+  await nextTick();
+  assert.ok(resolveAnimation(), '对账行已完整不等于运行轮次已结束');
+
+  for (const status of ['WAITING', 'COMPLETED', 'FAILED', 'CANCELLED']) {
+    turn.status = status;
+    await nextTick();
+    assert.equal(Boolean(resolveAnimation()), false, status);
+  }
+  turn.status = 'RUNNING';
+  answer.isComplete = false;
+  await nextTick();
+  toggleProcess(root);
+  await nextTick();
+  assert.ok(resolveAnimation());
+
+  const history = mount(t, message({ aiMessages: [], thoughtSteps: [
+    { id: 'history-step', title: '思考', content: '旧记录', status: 'running', order: 0 },
+  ] }));
+  toggleProcess(history);
+  await nextTick();
+  assert.match(text(history), /深度思考/);
+  assert.equal(Boolean(find(history, node => node.tag === 'gradient-text')), false);
+});
+
+test('思考正文：引用块内使用 Markdown，逐段追加保留完整内容', async t => {
+  const answer = message({ isComplete: false, aiMessages: [], thoughtSteps: [
+    { id: 'thinking-markdown', title: '思考', content: '**原因**\n\n- 第一条', status: 'running', order: 0 },
+  ] });
+  const root = mount(t, answer, { isDark: false });
+  const resolveBody = () => find(root, node => node.tag === 'markdown' && node.props.thinkingText === true);
+  assert.ok(resolveBody(), '思考内容使用独立 Markdown 样式');
+  assert.equal(text(resolveBody()), answer.thoughtSteps[0].content);
+  const box = find(root, node => String(node.props.class ?? '').includes('thinking-content'));
+  assert.ok(box);
+  assert.match(box.props.class, /border-l-\[3px\]/);
+  answer.thoughtSteps[0].content += '\n- 第二条';
+  await nextTick();
+  assert.equal(text(resolveBody()), answer.thoughtSteps[0].content);
+});
+
+test('委派审批提醒：父会话隐藏挂起恢复条，自身审批入口仍保留', async t => {
+  const answer = message({ isSuspended: true, isComplete: false, aiMessages: [] });
+  const root = mount(t, answer);
+  assert.match(text(root), /当前轮次已挂起/);
+  assert.ok(find(root, node => node.tag === 'button' && text(node).trim() === '恢复执行'));
+
+  answer.promptCards = [{ id: 'delegate-1', type: 'PROMISE', status: 'pending',
+    content: { kind: 'DELEGATION', text: '委派任务', subSessionId: '8' } }];
+  await nextTick();
+  assert.doesNotMatch(text(root), /当前轮次已挂起|恢复执行/);
+  assert.ok(find(root, node => node.tag === 'prompt-card'), '委派任务卡仍保留');
+
+  answer.promptCards.push({ id: 'command-1', type: 'PROMISE', status: 'pending',
+    content: { kind: 'COMMAND', command: 'git status' }, allowedActions: ['APPROVE', 'REJECT'] });
+  await nextTick();
+  assert.match(text(root), /当前轮次已挂起/);
+  assert.ok(find(root, node => node.tag === 'prompt-card'));
+
+  answer.promptCards.splice(0, 1);
+  await nextTick();
+  assert.match(text(root), /当前轮次已挂起/, '子会话内的审批与恢复入口不受影响');
+});
+
+test('委派审批提醒：任务正文保留，等待说明隐藏，终态结果仍展示', async t => {
+  const component = loadChatModule(path.resolve(__dirname, '../src/components/chat/DelegationWaitCard.vue')).default;
+  const promptCard = reactive({ kind: 'DELEGATION', toolCallId: 'delegate-1', title: '工程师',
+    content: '委派任务正文', status: 'completed', pending: false, outcome: 'SUCCEEDED' });
+  const root = mountComponent(t, component, { promptCard, isDark: true });
+  assert.match(text(root), /子代理已完成，结果已回填/);
+
+  promptCard.status = 'pending';
+  promptCard.pending = true;
+  promptCard.outcome = undefined;
+  await nextTick();
+  const toggle = find(root, node => node.tag === 'button' && node.props['aria-expanded'] !== undefined);
+  toggle.props.onClick();
+  await nextTick();
+  assert.match(text(root), /委派任务正文/);
+  assert.doesNotMatch(text(root), /子代理已完成|子代理执行失败|人工审批/);
+
+  promptCard.status = 'completed';
+  promptCard.pending = false;
+  promptCard.outcome = 'FAILED';
+  await nextTick();
+  assert.match(text(root), /子代理执行失败/);
+});
+
+test('委派任务：默认折叠，点击标题展开 Markdown，内容更新不重置展开状态', async t => {
+  const component = loadChatModule(path.resolve(__dirname, '../src/components/chat/DelegationWaitCard.vue')).default;
+  const promptCard = reactive({ kind: 'DELEGATION', toolCallId: 'delegate-1', title: '工程师',
+    content: '## 目标\n\n- **导出** `model.fbx`', status: 'pending', pending: true });
+  const root = mountComponent(t, component, { promptCard, isDark: false });
+  const toggle = find(root, node => node.tag === 'button' && node.props['aria-expanded'] !== undefined);
+  assert.ok(toggle);
+  assert.match(text(toggle), /子代理委派.*工程师/);
+  assert.equal(toggle.props['aria-expanded'], false);
+  assert.equal(find(root, node => node.tag === 'markdown'), undefined);
+
+  toggle.props.onClick();
+  await nextTick();
+  assert.equal(toggle.props['aria-expanded'], true);
+  const body = find(root, node => node.tag === 'markdown');
+  assert.ok(body, '委派任务必须交给 Markdown 组件渲染');
+  assert.equal(text(body), promptCard.content);
+
+  promptCard.content += '\n- 检查结果';
+  await nextTick();
+  assert.equal(toggle.props['aria-expanded'], true);
+  assert.equal(text(find(root, node => node.tag === 'markdown')), promptCard.content);
+
+  toggle.props.onClick();
+  await nextTick();
+  assert.equal(toggle.props['aria-expanded'], false);
+  assert.equal(find(root, node => node.tag === 'markdown'), undefined);
+  assert.match(text(root), /工程师/);
+});
+
 test('实测回归：已有历史工具之后，新思考在过程末尾即时追加', async t => {
   const { reducer, event, answer, AgentToolName } = streamFixture();
   reducer.consume({ type: 'TURN_SNAPSHOT', sessionId: '7', turnId: '900', viewVersion: '1', view: {
     sessionId: '7', turnId: '900', viewVersion: '1', status: 'RUNNING', blocks: [
-      { blockId: 'thinking:r1', responseId: 'r1', type: 'THINKING', order: 1000, status: 'COMPLETE', text: '旧思考' },
+      { blockId: 'thinking:101', responseId: '101', type: 'THINKING', order: 1000, status: 'COMPLETE', text: '旧思考' },
       { blockId: 'tool:old-call', type: 'TOOL', order: 1002, status: 'COMPLETED', toolCallId: 'old-call',
         toolName: AgentToolName.ReadFile, arguments: '{"path":"old-tool.md"}' },
     ],
   } });
   const root = mount(t, answer);
-  reducer.consume(event({ type: 'PARTIAL_THINKING', responseId: 'r2', offset: 0, order: 2000, content: '末尾实时思考' }));
+  reducer.consume(event({ type: 'PARTIAL_THINKING', responseId: '102', offset: 0, order: 2000, content: '末尾实时思考' }));
   await nextTick();
   let rendered = text(root);
   assert.ok(rendered.includes('old-tool.md'));
   assert.ok(rendered.indexOf('末尾实时思考') > rendered.indexOf('old-tool.md'), rendered);
-  reducer.consume(event({ type: 'PARTIAL_THINKING', responseId: 'r2', offset: 6, order: 2000, content: '继续打印' }));
+  reducer.consume(event({ type: 'PARTIAL_THINKING', responseId: '102', offset: 6, order: 2000, content: '继续打印' }));
   await nextTick();
   rendered = text(root);
   assert.ok(rendered.indexOf('末尾实时思考继续打印') > rendered.indexOf('old-tool.md'), rendered);
-  assert.equal(answer.thoughtSteps.filter(step => step.id === 'thinking:r2').length, 1);
+  assert.equal(answer.thoughtSteps.filter(step => step.id === 'thinking:102').length, 1);
 });
 
 test('实测回归：没有快照时工具开始即渲染，收尾和重复事件不增行', async t => {
   const { reducer, event, answer, AgentToolName } = streamFixture();
   const root = mount(t, answer);
-  const call = { type: 'TOOL_CALL', requestId: 'c1', responseId: 'r1', order: 2,
+  const call = { type: 'TOOL_CALL', requestId: 'c1', responseId: '101', order: 2,
     toolName: AgentToolName.ReadFile, args: '{"path":"live-tool.md"}', resultStatus: 'STARTED' };
   reducer.consume(event(call));
   await nextTick();
@@ -162,7 +390,7 @@ test('实测回归：没有快照时工具开始即渲染，收尾和重复事�
   assert.equal(answer.toolCalls[0].status, 'calling');
   reducer.consume(event({ ...call, type: 'TOOL_COMPLETED', resultStatus: 'COMPLETED', output: '工具结果' }));
   reducer.consume(event(call));
-  reducer.consume(event({ type: 'PARTIAL_THINKING', responseId: 'r2', offset: 0, order: 1000, content: '工具后的新思考' }));
+  reducer.consume(event({ type: 'PARTIAL_THINKING', responseId: '102', offset: 0, order: 1000, content: '工具后的新思考' }));
   await nextTick();
   assert.equal(answer.toolCalls.length, 1);
   assert.equal(answer.toolCalls[0].status, 'success');
@@ -172,29 +400,69 @@ test('实测回归：没有快照时工具开始即渲染，收尾和重复事�
   assert.ok(rendered.indexOf('工具后的新思考') > rendered.indexOf('live-tool.md'), rendered);
 });
 
+test('过程文本不跳正文：首片段即时打印，用途确认和工具开始保持同一过程节点', async t => {
+  const { reducer, event, answer, AgentToolName } = streamFixture();
+  const root = mount(t, answer);
+  const resolveProcessText = () => find(root, node => node.tag === 'markdown' && node.props.processText === true);
+  for (const [offset, content, expected] of [[0, '检索', '检索'], [2, '完成', '检索完成'], [4, '。', '检索完成。']]) {
+    reducer.consume(event({ type: 'PARTIAL_TEXT', responseId: '101', offset, order: 1, content }));
+    await nextTick();
+    assert.equal(answer.content, '', '用途未确认的文本不能先进入正文');
+    assert.ok(resolveProcessText(), '每个片段都必须在过程区即时可见');
+    assert.equal(text(resolveProcessText()), expected);
+    assert.equal(answer.turnState.texts['text:101'].placement, undefined, '展示位置不伪造后端用途');
+  }
+  const initialNode = resolveProcessText();
+  reducer.consume(event({ type: 'COMPLETE_TEXT', responseId: '101', order: 1, content: '检索完成。' }));
+  await nextTick();
+  assert.equal(answer.content, '');
+  assert.equal(resolveProcessText() === initialNode, true);
+  reducer.consume(event({ type: 'AI_MESSAGE', responseId: '101', order: 1, text: '检索完成。', placement: 'PROCESS' }));
+  reducer.consume(event({ type: 'TOOL_CALL', requestId: 'c1', responseId: '101', order: 2,
+    toolName: AgentToolName.ReadFile, args: '{"path":"a.md"}' }));
+  await nextTick();
+  assert.equal(answer.content, '');
+  assert.equal(resolveProcessText() === initialNode, true, '确认 PROCESS 后不搬动或重建文本节点');
+  assert.equal(text(root).split('检索完成。').length - 1, 1);
+
+  reducer.consume(event({ type: 'PARTIAL_TEXT', responseId: '102', offset: 0, order: 1, content: '最终结论' }));
+  await nextTick();
+  assert.equal(answer.content, '');
+  assert.equal(text(root).split('最终结论').length - 1, 1);
+  reducer.consume(event({ type: 'AI_MESSAGE', responseId: '102', order: 1, text: '最终结论', placement: 'BODY' }));
+  await nextTick();
+  assert.equal(answer.content, '最终结论');
+  assert.deepEqual(answer.aiMessages.map(item => item.id), ['text:101']);
+  assert.equal(text(root).split('最终结论').length - 1, 1, '正文归位后不能在过程区重复显示');
+});
+
 test('第二版真实组件：工具先到的文本持续追加在过程区，旧快照不搬回正文', async t => {
   const { reducer, event, answer, AgentToolName } = streamFixture();
   const root = mount(t, answer);
-  reducer.consume(event({ type: 'TOOL_CALL', requestId: 'c1', responseId: 'r1', order: 2, placement: 'PROCESS',
+  reducer.consume(event({ type: 'TOOL_CALL', requestId: 'c1', responseId: '101', order: 2, placement: 'PROCESS',
     toolName: AgentToolName.ReadFile, args: '{"path":"a.md"}' }));
-  reducer.consume(event({ type: 'PARTIAL_TEXT', responseId: 'r1', offset: 0, order: 1, content: '先读' }));
+  reducer.consume(event({ type: 'PARTIAL_TEXT', responseId: '101', offset: 0, order: 1, content: '先读' }));
   await nextTick();
   assert.match(text(root), /先读/);
   assert.equal(answer.content, '');
-  reducer.consume(event({ type: 'PARTIAL_TEXT', responseId: 'r1', offset: 2, order: 1, content: '文件' }));
+  reducer.consume(event({ type: 'PARTIAL_TEXT', responseId: '101', offset: 2, order: 1, content: '文件' }));
   await nextTick();
   assert.match(text(root), /先读文件/);
-  reducer.consume(event({ type: 'PARTIAL_TEXT', responseId: 'r2', offset: 0, order: 1001, content: '最终结论' }));
+  reducer.consume(event({ type: 'PARTIAL_TEXT', responseId: '102', offset: 0, order: 1001, content: '最终结论' }));
   reducer.consume({ type: 'TURN_SNAPSHOT', sessionId: '7', turnId: '900', viewVersion: '1', view: {
     sessionId: '7', turnId: '900', viewVersion: '1', status: 'RUNNING', blocks: [
-      { blockId: 'text:r1', responseId: 'r1', type: 'TEXT', order: 1, status: 'COMPLETE', placement: 'BODY', text: '先读文件' },
+      { blockId: 'text:101', responseId: '101', type: 'TEXT', order: 1, status: 'COMPLETE', placement: 'BODY', text: '先读文件' },
     ],
   } });
+  await nextTick();
+  assert.equal(answer.content, '', '新响应用途未确认时仍在过程区打印');
+  assert.match(text(root), /最终结论/);
+  reducer.consume(event({ type: 'AI_MESSAGE', responseId: '102', order: 1001, text: '最终结论', placement: 'BODY' }));
   await nextTick();
   assert.equal(answer.content, '最终结论');
   assert.equal(text(root).split('先读文件').length - 1, 1);
   assert.match(text(root), /a\.md/);
-  reducer.consume(event({ type: 'TOOL_COMPLETED', requestId: 'c1', responseId: 'r1', order: 2,
+  reducer.consume(event({ type: 'TOOL_COMPLETED', requestId: 'c1', responseId: '101', order: 2,
     toolName: AgentToolName.ReadFile, args: '{"path":"a.md"}', output: '文件内容', resultStatus: 'COMPLETED' }));
   await nextTick();
   reducer.consume(event({ type: 'EXECUTION_COMPLETED' }));
@@ -240,7 +508,7 @@ test('读取摘要：缺省范围显示全文，单边范围按后端默认边�
     { path: 'whole.json' }, { path: 'range.json', startLine: 2, endLine: 5 },
     { path: 'head.json', endLine: 3 }, { path: 'tail.json', startLine: 4 },
   ].entries()) {
-    reducer.consume(event({ type: 'TOOL_CALL', requestId: `read-${index}`, responseId: 'r1', order: index + 2,
+    reducer.consume(event({ type: 'TOOL_CALL', requestId: `read-${index}`, responseId: '101', order: index + 2,
       toolName: AgentToolName.ReadFile, args: JSON.stringify(args) }));
   }
   await nextTick();
@@ -254,7 +522,7 @@ test('读取摘要：缺省范围显示全文，单边范围按后端默认边�
 test('实时编辑摘要：从元数据读取统计，未展开也显示 +N -0，旧快照不得清除统计', async t => {
   const { reducer, event, answer, AgentToolName } = streamFixture();
   const root = mount(t, answer);
-  const call = { requestId: 'edit-1', responseId: 'r1', order: 2,
+  const call = { requestId: 'edit-1', responseId: '101', order: 2,
     toolName: AgentToolName.EditFile, args: '{"path":"memory.md"}' };
   reducer.consume(event({ ...call, type: 'TOOL_CALL' }));
   await nextTick();

@@ -62,7 +62,6 @@ public class H2SchemaInitializer {
                 migrateStream(connection);
                 migrateV3(connection);
                 migrateV4(connection);
-                migrateV5(connection);
             }
         };
     }
@@ -181,20 +180,6 @@ public class H2SchemaInitializer {
         }
         ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
                 "db/migration/V4_record.sql"), StandardCharsets.UTF_8));
-    }
-
-    /**
-     * V5：session_message 加 response_order（本轮模型调用序号，只挂 AI 行）。
-     *
-     * <p>逐列判定「缺列才 ALTER」，对「脚本已执行但列被手工删掉」的库同样自愈。</p>
-     */
-    private void migrateV5(Connection connection) throws Exception {
-        if (!hasColumn(connection, "session_message", "response_order")) {
-            ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
-                    "db/migration/V5_session_message_response_order.sql"), StandardCharsets.UTF_8));
-        }
-        ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
-                "db/migration/V5_record.sql"), StandardCharsets.UTF_8));
     }
 
     private boolean hasColumn(Connection connection, String table, String column) throws Exception {

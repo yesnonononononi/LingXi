@@ -11,7 +11,6 @@ CREATE TABLE session_message (
     response_id    VARCHAR(36)  NULL,
     session_id     BIGINT       NOT NULL,
     turn_id        BIGINT       NULL,
-    response_order INT          NULL,
     type           VARCHAR(16)  NOT NULL,
     content        CLOB         NOT NULL,
     create_time    TIMESTAMP(3) NULL,

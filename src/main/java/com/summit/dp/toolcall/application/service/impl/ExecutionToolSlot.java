@@ -62,16 +62,14 @@ public final class ExecutionToolSlot {
         return true;
     }
 
-    /** 旧审批快照不含有效 requestIndex，恢复事件从原模型列表读取位置。 */
+    /** 审批恢复仍消费原请求的位置，不能按当前消息列表重新计数。 */
     public static int resolveRequestIndex(Execution execution, String toolCallId) {
         List<Message> messages = execution.getMessages();
         if (messages != null) {
             for (int i = messages.size() - 1; i >= 0; i--) {
                 if (!(messages.get(i) instanceof AiMessageEntity ai) || ai.getToolCalls() == null) continue;
-                List<ToolCallRequest> requests = ai.getToolCalls();
-                for (int index = 0; index < requests.size(); index++) {
-                    ToolCallRequest request = requests.get(index);
-                    if (request != null && toolCallId.equals(request.id())) return index;
+                for (ToolCallRequest request : ai.getToolCalls()) {
+                    if (request != null && toolCallId.equals(request.id())) return request.requestIndex();
                 }
             }
         }

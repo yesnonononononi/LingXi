@@ -9,6 +9,7 @@ import { parseToolDiff } from '../../utils/toolDiff';
 import { shouldShowToolArguments, resolveToolCategory } from '../../utils/toolMeta';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
 import MarkdownRenderer from './MarkdownRenderer.vue';
+import GradientText from '../common/GradientText.vue';
 import { useTheme } from '../../composables/useTheme';
 
 const props = defineProps<{
@@ -277,33 +278,39 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
               </div>
 
               <!-- 思考过程折叠 (CoT) -->
-              <div v-if="msg.thoughtSteps?.length" class="pl-3 border-l-2 border-indigo-400/40 space-y-1.5 my-1">
+              <div v-if="msg.thoughtSteps?.length" class="space-y-1.5 my-1">
                 <button
                   type="button"
                   @click="toggleThought(msg.id)"
-                  class="text-xs text-indigo-400 font-medium flex items-center gap-1.5 cursor-pointer hover:text-indigo-300 transition select-none"
+                  class="text-xs font-medium flex items-center gap-1.5 cursor-pointer transition select-none"
+                  :class="isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-500 hover:text-zinc-700'"
                 >
                   <svg :class="['w-3 h-3 text-zinc-300 transition-transform duration-200', expandedThoughtMsgIds[msg.id] ? 'rotate-90' : '']" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                   </svg>
-                  <span :class="isDark ? 'text-zinc-100 text-glow-white' : 'text-gray-700'">深度思考</span>
+                  <GradientText
+                    v-if="!msg.isComplete && !msg.isSuspended && msg.thoughtSteps.some(step => step.status === 'running')"
+                    :colors="['#40ffaa', '#4079ff', '#40ffaa', '#4079ff', '#40ffaa']"
+                    :animation-speed="3"
+                    :show-border="false"
+                    class="!p-0"
+                  >深度思考</GradientText>
+                  <span v-else>深度思考</span>
                 </button>
                 <div
                   v-if="expandedThoughtMsgIds[msg.id]"
                   :class="[
-                    'my-1.5 ml-4 rounded-xl border p-3 max-h-60 overflow-y-auto scrollbar-thin transition-colors select-text',
-                    isDark
-                      ? 'bg-zinc-900/60 border-white/10 text-zinc-200'
-                      : 'bg-gray-50/90 border-gray-200 text-gray-800'
+                    'my-2 ml-1 border-l-[3px] pl-4 pr-2 max-h-72 overflow-y-auto scrollbar-thin select-text space-y-3',
+                    isDark ? 'border-zinc-700' : 'border-zinc-200'
                   ]"
                 >
-                  <div
+                  <MarkdownRenderer
                     v-for="step in msg.thoughtSteps"
                     :key="step.id"
-                    class="text-xs font-mono whitespace-pre-wrap leading-relaxed text-gray-800 dark:text-zinc-200"
-                  >
-                    {{ step.content }}
-                  </div>
+                    :content="step.content"
+                    :is-dark="isDark"
+                    :thinking-text="true"
+                  />
                 </div>
               </div>
 

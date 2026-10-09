@@ -9,6 +9,7 @@ import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.shared.vo.block.Block;
+import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.vo.block.BlockOrder;
 import com.summit.dp.shared.vo.block.BlockStatus;
 import com.summit.dp.shared.vo.block.Placement;
@@ -22,7 +23,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -58,66 +58,53 @@ public class TurnViewAssembler {
         if (turnId == null || messages == null || messages.isEmpty()) {
             return List.of();
         }
-        // 旧 UUID 缺少递增身份，保留历史序号与行主键口径；新响应在展开后统一按框架身份排。
-        List<SessionMessage> turnMessages = new ArrayList<>();
-        for (SessionMessage message : messages) {
-            if (turnId.equals(message.getTurnId())) {
-                turnMessages.add(message);
-            }
-        }
-        turnMessages.sort(Comparator
-                .comparing(SessionMessage::getResponseOrder, Comparator.nullsLast(Comparator.naturalOrder()))
-                .thenComparing(SessionMessage::getId));
-
         List<Block> blocks = new ArrayList<>();
-        for (SessionMessage message : turnMessages) {
-            if (message.getType() != SessionMessageType.AI) {
-                continue;   // USER 行承载提问、TOOL 行由所属 AI 行的 toolCalls 展开，均不单独成块
+        for (SessionMessage message : messages) {
+            if (turnId.equals(message.getTurnId()) && message.getType() == SessionMessageType.AI) {
+                appendAiBlocks(blocks, message, toolCalls);
             }
-            appendAiBlocks(blocks, message, toolCalls);
         }
         blocks.sort(BlockOrder::compare);
         return blocks;
     }
 
     /**
-     * 展开一条 AI 行：思考块 → 正文块 →（按其工具请求列表顺序）工具块。
+     * 展开一条 AI 行：思考块 → 正文块 →（按框架请求位置）工具块。
      *
-     * <p><b>工具块顺序取自 {@code toolCalls} 列表下标</b>，不是完成顺序 —— 完成顺序受并发调度
+     * <p><b>工具块顺序取自框架的 {@code requestIndex}</b>，不是完成顺序 —— 完成顺序受并发调度
      * 影响，还原不出模型意图。工具结果则从批量装载的 {@code tool_call} 字典取。</p>
      */
     private void appendAiBlocks(List<Block> blocks, SessionMessage aiRow, Map<String, ToolCall> toolCalls) {
         AiMessageEntity aiMessage = parse(aiRow.getText());
-        Integer responseOrder = aiRow.getResponseOrder();
         String responseId = aiRow.getResponseId();
+        if (responseId == null || !responseId.matches("[0-9]+")) {
+            throw new ClientException("历史模型响应缺少框架身份，请重新开始会话");
+        }
 
         // 该 AI 行是否有工具请求 —— 这既是 placement 判据，也决定工具块是否展开。
         List<ToolCallRequest> requests = aiMessage == null || aiMessage.getToolCalls() == null
                 ? List.of() : aiMessage.getToolCalls();
 
-        // 思考块：身份 thinking:<responseId>；旧数据用行 ID 兜底。
         String thinking = aiMessage == null ? null : aiMessage.getThinking();
         if (thinking != null && !thinking.isBlank()) {
-            blocks.add(new ThinkingBlock(thinkingIdentity(responseId, aiRow.getId()), responseId,
-                    BlockOrder.thinking(responseId, responseOrder), BlockStatus.COMPLETE, thinking));
+            blocks.add(new ThinkingBlock(ThinkingBlock.identity(responseId), responseId,
+                    BlockOrder.thinking(), BlockStatus.COMPLETE, thinking));
         }
 
         // 正文块：placement 由「该行是否含工具请求」唯一判定。
         String text = aiMessage == null ? aiRow.getText() : aiMessage.text();
         if (text != null && !text.isBlank()) {
             Placement placement = Placement.resolve(requests);
-            blocks.add(new TextBlock(textIdentity(responseId, aiRow.getId()), responseId,
-                    BlockOrder.text(responseId, responseOrder), BlockStatus.COMPLETE, placement, text));
+            blocks.add(new TextBlock(TextBlock.identity(responseId), responseId,
+                    BlockOrder.text(), BlockStatus.COMPLETE, placement, text));
         }
 
-        int requestIndex = 0;
         for (ToolCallRequest request : requests) {
             if (request == null || request.id() == null || request.id().isBlank()) {
                 continue;
             }
             ToolCall toolCall = toolCalls == null ? null : toolCalls.get(request.id());
-            blocks.add(buildToolBlock(responseId, BlockOrder.tool(responseId, responseOrder, requestIndex), request, toolCall));
-            requestIndex++;
+            blocks.add(buildToolBlock(responseId, BlockOrder.tool(request.requestIndex()), request, toolCall));
         }
     }
 
@@ -217,15 +204,6 @@ public class TurnViewAssembler {
             }
         }
         return ids;
-    }
-
-    /** 思考块身份：有身份用 {@code thinking:<responseId>}，旧数据用行 ID 兜底（不伪造身份）。 */
-    private static String thinkingIdentity(String responseId, Long rowId) {
-        return responseId == null ? ThinkingBlock.legacyIdentity(rowId) : ThinkingBlock.identity(responseId);
-    }
-
-    private static String textIdentity(String responseId, Long rowId) {
-        return responseId == null ? TextBlock.legacyIdentity(rowId) : TextBlock.identity(responseId);
     }
 
     /** 解析 AI 行载荷；失败降级为空（正文回退为原始文本）。 */

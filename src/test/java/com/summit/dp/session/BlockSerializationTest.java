@@ -37,9 +37,9 @@ class BlockSerializationTest {
 
     private TurnViewVO sampleView() {
         ThinkingBlock thinking = new ThinkingBlock(
-                ThinkingBlock.identity("resp-1"), "resp-1", 0, BlockStatus.COMPLETE, "思考内容");
+                ThinkingBlock.identity("9007199254740993"), "9007199254740993", 0, BlockStatus.COMPLETE, "思考内容");
         TextBlock body = new TextBlock(
-                TextBlock.identity("resp-1"), "resp-1", 1, BlockStatus.COMPLETE, Placement.BODY, "正文");
+                TextBlock.identity("9007199254740993"), "9007199254740993", 1, BlockStatus.COMPLETE, Placement.BODY, "正文");
         ToolBlock tool = new ToolBlock(
                 ToolBlock.identity("call_1"), null, 2, BlockStatus.TOOL_COMPLETED,
                 "call_1", "read_file", "{\"path\":\"a\"}", "文件内容", 3, 0);
@@ -92,20 +92,6 @@ class BlockSerializationTest {
         String bad = "{\"sessionId\":1,\"turnId\":2,\"status\":\"RUNNING\",\"viewVersion\":1,"
                 + "\"blocks\":[{\"type\":\"MYSTERY\",\"blockId\":\"x\"}]}";
         assertThrows(Exception.class, () -> json.readValue(bad, TurnViewVO.class));
-    }
-
-    /** 旧数据身份：没有 responseId 时块仍可稳定定位（用持久化行 ID，不伪造身份）。 */
-    @Test
-    @DisplayName("旧数据：responseId 为 null 但 blockId 稳定")
-    void legacyBlockKeepsStableIdentity() throws Exception {
-        ThinkingBlock legacy = new ThinkingBlock(
-                ThinkingBlock.legacyIdentity(12345L), null, 0, BlockStatus.COMPLETE, "旧思考");
-        String text = json.writeValueAsString(legacy);
-
-        assertTrue(text.contains("thinking:message:12345"), "旧数据身份应为 thinking:message:<id>: " + text);
-        ThinkingBlock restored = (ThinkingBlock) json.readValue(text, Block.class);
-        assertNull(restored.responseId(), "旧数据不得伪造响应身份");
-        assertEquals("thinking:message:12345", restored.blockId());
     }
 
     private static int countOccurrences(String haystack, String needle) {

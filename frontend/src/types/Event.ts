@@ -200,7 +200,7 @@ export interface AgentMessageEvent extends EventInterface {
 export interface ToolCallStartEvent extends EventInterface {
   type: 'TOOL_CALL';
   responseId?: string;
-  /** 框架给出的请求位置；旧事件可能缺失，展示仍使用后端 order。 */
+  /** 框架给出的请求位置，展示使用后端 order。 */
   requestIndex?: number;
   /** 调用 id，与同一 tool_call 行的其他事件关联。框架侧取自 tool_call.id，恒非空 */
   requestId: string;

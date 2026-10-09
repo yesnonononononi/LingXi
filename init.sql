@@ -84,12 +84,11 @@ CREATE TABLE IF NOT EXISTS session (
 --    旧数据为 NULL 表示归属未知，前端降级展示，不按位置或时间戳猜测归属。
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS session_message (
-    response_id     VARCHAR(36) NULL COMMENT '本轮模型调用的响应身份(框架下发UUID); 只挂在AI行',
+    response_id     VARCHAR(36) NULL COMMENT '本轮模型调用的响应身份(框架下发数字字符串); 只挂在AI行',
     UNIQUE KEY uk_session_response_id (session_id, response_id),
     id              BIGINT NOT NULL PRIMARY KEY COMMENT '雪花ID(消息排序键与游标分页键, 全局趋势递增)',
     session_id      BIGINT NOT NULL COMMENT '关联会话ID',
     turn_id         BIGINT NULL COMMENT '消息所属的业务轮次ID(关联chat_turn.id); 旧数据为NULL表示归属未知',
-    response_order  INT NULL COMMENT '本轮模型调用在一轮内的序号(0基); 只挂在AI行; 旧数据为NULL表示未知',
     type            VARCHAR(16) NOT NULL COMMENT '消息类型: USER/AI/TOOL/SYSTEM',
     content         LONGTEXT NOT NULL COMMENT '消息内容: USER/SYSTEM 存正文原文; AI 存 JSON {thinking,text,toolCalls}; TOOL 只存 call_id(call_xxx)',
     create_time     DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间(仅用于展示, 不参与排序)',

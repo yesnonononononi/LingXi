@@ -65,7 +65,8 @@ class TurnViewServiceLoadScopeTest {
         Optional<TurnViewVO> view = service.assembleTurnView(session(), turn(TURN_ID), 3L);
 
         assertTrue(view.isPresent(), "本轮有消息时应装出视图");
-        assertEquals(1, view.get().blocks().size(), "本轮应恰好装出 1 个块");
+        assertEquals(List.of("thinking:" + ai.getResponseId(), "text:" + ai.getResponseId()),
+                view.get().blocks().stream().map(Block::getBlockId).toList(), "本轮思考与正文必须按响应身份装配");
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Collection<Long>> turnIds = ArgumentCaptor.forClass(Collection.class);
@@ -93,7 +94,7 @@ class TurnViewServiceLoadScopeTest {
         List<Block> blocks = view.get().blocks();
         assertFalse(blocks.isEmpty(), "本轮块不应为空");
         // AI 行同时产出思考块与正文块，故断言「每个块的身份都指向本轮那行」，而非固定块数。
-        String ownRowSuffix = "message:" + mine.getId();
+        String ownRowSuffix = mine.getResponseId();
         for (Block block : blocks) {
             assertTrue(block.getBlockId().endsWith(ownRowSuffix),
                     "只应有本轮那行(" + mine.getId() + ")的块，实际: " + block.getBlockId());
@@ -113,9 +114,9 @@ class TurnViewServiceLoadScopeTest {
                 .id(turnId * 10)
                 .sessionId(SESSION_ID)
                 .turnId(turnId)
-                .responseOrder(0)
+                .responseId(Long.toString(turnId * 10))
                 .type(SessionMessageType.AI)
-                .text("{\"thinking\":\"想一下\",\"text\":\"" + text + "\"}")
+                .text("{\"type\":\"AI\",\"thinking\":\"想一下\",\"text\":\"" + text + "\"}")
                 .createTime(Instant.now())
                 .build();
     }

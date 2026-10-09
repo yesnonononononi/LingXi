@@ -110,11 +110,11 @@ public class AgentEventListener implements RuntimeListener {
         };
         if (responseId != null) {
             if (event instanceof AgentPartialTextEvent text && text.content() != null) {
-                payload.put("order", BlockOrder.text(responseId, null));
+                payload.put("order", BlockOrder.text());
             } else if (event instanceof AgentPartialThinkingEvent thought && thought.content() != null) {
-                payload.put("order", BlockOrder.thinking(responseId, null));
+                payload.put("order", BlockOrder.thinking());
             } else if (event instanceof AgentCompleteTextEvent) {
-                payload.put("order", BlockOrder.text(responseId, null));
+                payload.put("order", BlockOrder.text());
             } else if (event instanceof AgentMessageEvent message) {
                 AiMessageEntity aiMessage = message.getChatResponseEntity().getAiMessageEntity();
                 // 保留展示契约，完整模型结构只用来确认用途，不再额外缓存。
@@ -122,12 +122,12 @@ public class AgentEventListener implements RuntimeListener {
                 payload.set("text", objectMapper.valueToTree(aiMessage.text()));
                 payload.set("thinking", objectMapper.valueToTree(aiMessage.getThinking()));
                 payload.put("placement", Placement.resolve(aiMessage.getToolCalls()).name());
-                payload.put("order", BlockOrder.text(responseId, null));
-                payload.put("thinkingOrder", BlockOrder.thinking(responseId, null));
+                payload.put("order", BlockOrder.text());
+                payload.put("thinkingOrder", BlockOrder.thinking());
             } else if (event instanceof ToolCallStartEvent tool) {
-                payload.put("order", BlockOrder.tool(responseId, null, tool.getRequestIndex()));
+                payload.put("order", BlockOrder.tool(tool.getRequestIndex()));
             } else if (event instanceof ToolCallEndEvent tool) {
-                payload.put("order", BlockOrder.tool(responseId, null, tool.getRequestIndex()));
+                payload.put("order", BlockOrder.tool(tool.getRequestIndex()));
             }
         }
         sseEventPublisher.publishBusiness(target.rootSessionId(), event.type(), payload);

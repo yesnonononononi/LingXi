@@ -1,18 +1,16 @@
 import type { ChatMessage } from '../../types/chat';
 import type { AgentEvent } from '../../types/Event';
-import { activateText, applyTextPlacement, getTurnState, renderTurnState, writeResponseText } from './turnRenderState';
+import { applyTextPlacement, getTurnState, renderTurnState, writeResponseText } from './turnRenderState';
 
 /** 全文也从零偏移写入，重复的完成通知不会再次追加。 */
 export function consumeResponseText(bubble: ChatMessage, event: AgentEvent): boolean {
   if (!('responseId' in event) || !event.responseId) return false;
   const responseId = event.responseId;
-  const state = getTurnState(bubble);
-  const hasText = !!state.texts[`text:${responseId}`];
   if (event.type === 'PARTIAL_TEXT' || event.type === 'PARTIAL_THINKING') {
     if (event.offset === undefined) return false;
     const kind = event.type === 'PARTIAL_TEXT' ? 'TEXT' : 'THINKING';
     const id = `${kind === 'TEXT' ? 'text' : 'thinking'}:${responseId}`;
-    if (state.texts[id]?.complete) return false;
+    if (getTurnState(bubble).texts[id]?.complete) return false;
     const buffer = writeResponseText(bubble, id, kind, event.offset, event.content);
     if (!buffer) return false;
     buffer.responseId = responseId;
@@ -37,10 +35,6 @@ export function consumeResponseText(bubble: ChatMessage, event: AgentEvent): boo
     }
   } else return false;
   applyTextPlacement(bubble, `text:${responseId}`, event.placement);
-  if (event.type === 'PARTIAL_TEXT' || !state.activeTextId || (!hasText &&
-    (event.type === 'COMPLETE_TEXT' || (event.type === 'AI_MESSAGE' && typeof event.text === 'string')))) {
-    activateText(bubble, `text:${responseId}`);
-  }
   renderTurnState(bubble);
   return true;
 }

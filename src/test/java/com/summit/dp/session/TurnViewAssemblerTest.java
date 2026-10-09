@@ -9,6 +9,7 @@ import com.summit.dp.session.application.convert.TurnViewAssembler;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.shared.vo.block.Block;
+import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.vo.block.BlockStatus;
 import com.summit.dp.shared.vo.block.Placement;
 import com.summit.dp.shared.vo.block.TextBlock;
@@ -26,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -39,7 +41,7 @@ class TurnViewAssemblerTest {
 
     private static final long SESSION_ID = 700L;
     private static final long TURN_ID = 800L;
-    private static final String RESPONSE_ID = "1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d";
+    private static final String RESPONSE_ID = "9007199254740992";
 
     private final ObjectMapper json = new ObjectMapper();
     private final ToolCallConverter converter = new ToolCallConverter(json);
@@ -49,7 +51,7 @@ class TurnViewAssemblerTest {
     /** 思考 → 正文 → 工具块按此顺序，工具块 order 递增且跟在正文之后。 */
     @Test
     void blocksAreOrderedThinkingThenTextThenTools() {
-        SessionMessage ai = aiRow(0, "为什么", "结论前的中途叙述", request("call_a"), request("call_b"));
+        SessionMessage ai = aiRow(0, "为什么", "结论前的中途叙述", request("call_a"), request("call_b", 1));
 
         List<Block> blocks = assembler.assembleBlocks(TURN_ID, List.of(ai), Map.of());
 
@@ -97,22 +99,25 @@ class TurnViewAssemblerTest {
         assertEquals(RESPONSE_ID, blocks.get(2).getResponseId());
     }
 
-    /** 旧数据（无 responseId）身份退化为行 ID，但块仍可稳定定位，且不伪造身份。 */
     @Test
-    void legacyRowWithoutResponseIdKeepsStableIdentity() {
-        SessionMessage ai = legacyAiRow(42L, "旧思考", "旧正文");
+    void missingResponseIdentityIsRejectedInsteadOfUsingRowIdentity() {
+        SessionMessage invalid = SessionMessage.builder().id(42L).turnId(TURN_ID)
+                .type(SessionMessageType.AI).text(writeJson(AiMessageEntity.builder().text("正文").build())).build();
+        assertThrows(ClientException.class, () -> assembler.assembleBlocks(TURN_ID, List.of(invalid), Map.of()));
+    }
 
+    @Test
+    void historicalToolsUseProducerIndexEvenWhenStoredListIsReordered() {
+        SessionMessage ai = aiRow(0, null, null, request("second", 1), request("first", 0));
         List<Block> blocks = assembler.assembleBlocks(TURN_ID, List.of(ai), Map.of());
-
-        assertEquals(ThinkingBlock.legacyIdentity(42L), blocks.get(0).getBlockId());
-        assertEquals(TextBlock.legacyIdentity(42L), blocks.get(1).getBlockId());
-        assertNull(blocks.get(0).getResponseId());
+        assertEquals(List.of("tool:first", "tool:second"), blocks.stream().map(Block::getBlockId).toList());
+        assertEquals(List.of(2, 3), blocks.stream().map(Block::getOrder).toList());
     }
 
     /** 工具块状态取权威工具视图：completed + SUCCEEDED → COMPLETED；completed + REJECTED → REJECTED。 */
     @Test
     void toolStatusComesFromAuthoritativeOutcomeNotLifecycle() {
-        SessionMessage ai = aiRow(0, null, null, request("call_ok"), request("call_no"));
+        SessionMessage ai = aiRow(0, null, null, request("call_ok"), request("call_no", 1));
 
         ToolCall succeeded = toolCall("call_ok", ToolCallStatus.COMPLETED, ToolCallOutcome.SUCCEEDED);
         ToolCall rejected = toolCall("call_no", ToolCallStatus.COMPLETED, ToolCallOutcome.REJECTED);
@@ -135,30 +140,13 @@ class TurnViewAssemblerTest {
         assertEquals(BlockStatus.TOOL_STARTED, blocks.get(0).getStatus());
     }
 
-    /** 同轮多次模型调用：靠 responseOrder 分层，第 2 次调用的块排在第 1 次之后。 */
-    @Test
-    void multipleResponsesInOneTurnAreLayeredByResponseOrder() {
-        SessionMessage first = aiRow(0, null, "第一轮叙述", request("call_1"));
-        SessionMessage second = aiRow(1, null, "第二轮叙述", request("call_2"));
-
-        List<Block> blocks = assembler.assembleBlocks(TURN_ID, List.of(first, second), Map.of());
-
-        // 第二轮的所有块 order 必须都大于第一轮。
-        int maxFirstRound = blocks.stream().filter(b -> b.getBlockId().contains("call_1"))
-                .mapToInt(Block::getOrder).max().orElseThrow();
-        int minSecondRound = blocks.stream().filter(b -> b.getBlockId().contains("call_2"))
-                .mapToInt(Block::getOrder).min().orElseThrow();
-        assertTrue(minSecondRound > maxFirstRound,
-                "同一轮第二次模型调用的块必须整体排在第一次之后");
-    }
-
     @Test
     void numericResponseIdentityOrdersWholeResponsesWithoutPersistedSequence() {
         String earlier = "9007199254740992";
         String later = "9007199254740993";
         SessionMessage first = SessionMessage.builder().id(200L).turnId(TURN_ID).responseId(earlier)
                 .type(SessionMessageType.AI).text(writeJson(AiMessageEntity.builder().thinking("先思考").text("先读")
-                        .toolCalls(List.of(request("call_1"), request("call_2"))).build())).build();
+                        .toolCalls(List.of(request("call_1"), request("call_2", 1))).build())).build();
         SessionMessage second = SessionMessage.builder().id(100L).turnId(TURN_ID).responseId(later)
                 .type(SessionMessageType.AI).text(writeJson(AiMessageEntity.builder().thinking("再思考").text("结论").build())).build();
         List<Block> blocks = assembler.assembleBlocks(TURN_ID, List.of(second, first), Map.of());
@@ -181,24 +169,16 @@ class TurnViewAssemblerTest {
 
     // ── 构造助手 ──
 
-    private SessionMessage aiRow(int responseOrder, String thinking, String text, ToolCallRequest... requests) {
+    private SessionMessage aiRow(int round, String thinking, String text, ToolCallRequest... requests) {
         AiMessageEntity message = AiMessageEntity.builder()
                 .thinking(thinking)
                 .text(text)
                 .toolCalls(List.of(requests))
                 .build();
         return SessionMessage.builder()
-                .id((long) (100 + responseOrder))
-                .sessionId(SESSION_ID).turnId(TURN_ID).responseId(RESPONSE_ID)
-                .responseOrder(responseOrder).type(SessionMessageType.AI)
-                .text(writeJson(message)).createTime(Instant.now()).build();
-    }
-
-    private SessionMessage legacyAiRow(long rowId, String thinking, String text) {
-        AiMessageEntity message = AiMessageEntity.builder().thinking(thinking).text(text).build();
-        return SessionMessage.builder()
-                .id(rowId).sessionId(SESSION_ID).turnId(TURN_ID).responseId(null)
-                .responseOrder(null).type(SessionMessageType.AI)
+                .id((long) (100 + round))
+                .sessionId(SESSION_ID).turnId(TURN_ID).responseId(Long.toString(Long.parseLong(RESPONSE_ID) + round))
+                .type(SessionMessageType.AI)
                 .text(writeJson(message)).createTime(Instant.now()).build();
     }
 
@@ -210,7 +190,11 @@ class TurnViewAssemblerTest {
     }
 
     private static ToolCallRequest request(String id) {
-        return ToolCallRequest.builder().id(id).name("read_file").arguments("{}").build();
+        return request(id, 0);
+    }
+
+    private static ToolCallRequest request(String id, int requestIndex) {
+        return ToolCallRequest.builder().id(id).name("read_file").requestIndex(requestIndex).arguments("{}").build();
     }
 
     private static ToolCall toolCall(String id, ToolCallStatus status, ToolCallOutcome outcome) {

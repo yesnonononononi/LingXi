@@ -24,19 +24,19 @@ function createSession(messages: ChatMessage[] = []): ChatSession {
 /** 一轮的块视图：57 段思考 + 59 个工具（第 8、9 轮各 2 个），与旧 fixture 的能力面一致。 */
 function createTurnView(turnId = TURN_ID, viewVersion = 4): TurnViewVO {
   const blocks: Block[] = [];
-  let order = 0;
   let nextCall = 0;
   for (let round = 0; round < 57; round++) {
+    const responseId = String(100 + round);
     blocks.push({
-      blockId: `thinking:r${round}`, type: 'THINKING', responseId: `r${round}`,
-      order: order++, status: 'COMPLETE', text: `思考 ${round}`,
+      blockId: `thinking:${responseId}`, type: 'THINKING', responseId,
+      order: 0, status: 'COMPLETE', text: `思考 ${round}`,
     });
     const callCount = round === 8 || round === 9 ? 2 : 1;
     for (let c = 0; c < callCount; c++) {
       const callId = `call-${nextCall++}`;
       blocks.push({
-        blockId: `tool:${callId}`, type: 'TOOL', responseId: null,
-        order: order++, status: 'COMPLETED', toolCallId: callId,
+        blockId: `tool:${callId}`, type: 'TOOL', responseId,
+        order: 2 + c, status: 'COMPLETED', toolCallId: callId,
         toolName: AgentToolName.ReadFile, arguments: JSON.stringify({ path: 'example.txt' }),
         output: JSON.stringify({ outcome: 'SUCCEEDED', output: '完成' }),
       });
@@ -143,8 +143,8 @@ test('诊断：跨页气泡 ID 相同时，工具条只能标记一个组尾', (
 test('诊断：实时气泡与权威视图按身份合并，已打印过程不会重复', () => {
   const messages: ChatMessage[] = [];
   const reducer = new TurnStreamReducer(messages, { sessionId: SESSION_ID });
-  reducer.consume(createEvent({ type: 'PARTIAL_THINKING', responseId: 'r0', offset: 0, order: 0, content: '思考 0' }));
-  reducer.consume(createEvent({ type: 'TOOL_CALL', requestId: 'call-0', order: 1, toolName: AgentToolName.ReadFile, args: '{}' }));
+  reducer.consume(createEvent({ type: 'PARTIAL_THINKING', responseId: '100', offset: 0, order: 0, content: '思考 0' }));
+  reducer.consume(createEvent({ type: 'TOOL_CALL', requestId: 'call-0', responseId: '100', order: 2, toolName: AgentToolName.ReadFile, args: '{}' }));
   reducer.flush();
   // 尚无视图时，事件本身就要驱动过程展示。
   const live = messages.find(m => m.role === 'assistant')!;
@@ -235,18 +235,18 @@ test('诊断：仅思考未收尾时不得被认定为终结', () => {
   assert.equal(streaming[0].isThinking, true, '增量事件把气泡维持在生成态');
 });
 
-test('正对照：过程项顺序完全来自后端视图，前端不参与排序推断', () => {
+test('正对照：过程项按框架响应身份和后端块内位置排列', () => {
   const messages: ChatMessage[] = [];
   const reducer = new TurnStreamReducer(messages, { sessionId: SESSION_ID });
-  reducer.consume(createEvent({ type: 'PARTIAL_THINKING', responseId: 's1', offset: 0, order: 1000, content: '第一段' }));
-  reducer.consume(createEvent({ type: 'TOOL_CALL', requestId: 'control-call', order: 2000, toolName: AgentToolName.ReadFile, args: '{}' }));
-  reducer.consume(createEvent({ type: 'PARTIAL_THINKING', responseId: 's2', offset: 0, order: 3000, content: '第二段' }));
+  reducer.consume(createEvent({ type: 'PARTIAL_THINKING', responseId: '201', offset: 0, order: 0, content: '第一段' }));
+  reducer.consume(createEvent({ type: 'TOOL_CALL', requestId: 'control-call', responseId: '201', order: 2, toolName: AgentToolName.ReadFile, args: '{}' }));
+  reducer.consume(createEvent({ type: 'PARTIAL_THINKING', responseId: '202', offset: 0, order: 0, content: '第二段' }));
   reducer.flush();
   assert.equal(messages[0].thoughtSteps?.length, 2, '实时思考按响应分段');
   assert.equal(messages[0].toolCalls?.length, 1, '工具即时显示');
-  assert.deepEqual(messages[0].processTimeline?.map(item => item.order), [1000, 2000, 3000]);
+  assert.deepEqual(messages[0].processTimeline?.map(item => item.order), [0, 2, 0]);
 
-  // 顺序唯一来源是后端 order：故意乱序传入，时间线仍按 order 升序
+  // 故意乱序传入，响应身份优先于响应内位置
   reducer.consume(createEvent({
     type: 'TURN_SNAPSHOT',
     turnId: TURN_ID,
@@ -254,14 +254,14 @@ test('正对照：过程项顺序完全来自后端视图，前端不参与排�
     view: {
       sessionId: SESSION_ID, turnId: TURN_ID, status: 'COMPLETED', viewVersion: 1,
       blocks: [
-        { blockId: 'tool:control-call', type: 'TOOL', order: 2000, status: 'COMPLETED', toolCallId: 'control-call', toolName: AgentToolName.ReadFile },
-        { blockId: 'thinking:s2', type: 'THINKING', order: 3000, status: 'COMPLETE', text: '第二段' },
-        { blockId: 'thinking:s1', type: 'THINKING', order: 1000, status: 'COMPLETE', text: '第一段' },
+        { blockId: 'tool:control-call', type: 'TOOL', responseId: '201', order: 2, status: 'COMPLETED', toolCallId: 'control-call', toolName: AgentToolName.ReadFile },
+        { blockId: 'thinking:202', type: 'THINKING', responseId: '202', order: 0, status: 'COMPLETE', text: '第二段' },
+        { blockId: 'thinking:201', type: 'THINKING', responseId: '201', order: 0, status: 'COMPLETE', text: '第一段' },
       ]
     }
   } as unknown as AgentEvent));
   const orders = (messages[0].processTimeline ?? []).map(item => item.order ?? 0);
-  assert.deepEqual(orders, [1000, 2000, 3000], '时间线必须按后端 order 升序');
+  assert.deepEqual(orders, [0, 2, 0], '时间线必须先按响应身份再按块内位置排列');
 });
 
 test('诊断：往前翻页时同一轮仍只有一个助手气泡，且补齐全部工具', async () => {

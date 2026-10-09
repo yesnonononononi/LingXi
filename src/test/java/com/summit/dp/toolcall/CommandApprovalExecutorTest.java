@@ -2,6 +2,7 @@ package com.summit.dp.toolcall;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
+import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
@@ -141,11 +142,11 @@ class CommandApprovalExecutorTest {
     }
 
     @Test
-    void approvedCommandEventsRetainOriginalPositionFromLegacyModelList() throws Exception {
+    void approvedCommandEventsRetainProducerIdentityAndPosition() throws Exception {
         ToolCall toolCall = commandCall("call-second", "echo hi", "echo hi");
         AiMessageEntity original = AiMessageEntity.builder().toolCalls(List.of(
-                ToolCallRequest.builder().id("call-first").name("read").arguments("{}").build(),
-                ToolCallRequest.builder().id("call-second").name("command").arguments("{}").build())).build();
+                ToolCallRequest.builder().id("call-first").name("read").requestIndex(4).arguments("{}").build(),
+                ToolCallRequest.builder().id("call-second").name("command").requestIndex(7).arguments("{}").build())).build();
         Execution execution = execution("3", original,
                 ToolMessageEntity.builder().id("call-second").name("command").text("pending").build());
         ExecutionControlSignal signal = new ExecutionControlSignal("3");
@@ -164,8 +165,10 @@ class CommandApprovalExecutorTest {
         ArgumentCaptor<ToolCallEndEvent> end = ArgumentCaptor.forClass(ToolCallEndEvent.class);
         verify(runtimeEvents).onToolCall(start.capture());
         verify(runtimeEvents).onToolCallOutput(end.capture());
-        assertEquals(1, start.getValue().getRequestIndex());
-        assertEquals(1, end.getValue().getRequestIndex());
+        assertEquals(7, start.getValue().getRequestIndex());
+        assertEquals(7, end.getValue().getRequestIndex());
+        assertEquals("9007199254740993", start.getValue().getResponseId());
+        assertEquals("9007199254740993", end.getValue().getResponseId());
         assertEquals("call-second", start.getValue().getRequestId());
         assertEquals("call-second", end.getValue().getRequestId());
     }
@@ -313,9 +316,9 @@ class CommandApprovalExecutorTest {
                             .id(String.valueOf(tool.getId())).name(tool.getName()).arguments("{}").build()).toList();
             context.addFirst(AiMessageEntity.builder().toolCalls(requests).build());
         }
-        return Execution.builder().id(id).executionState(ExecutionState.SUSPENDED)
+        return Execution.builder().id(id).lastResponseId("9007199254740993").executionState(ExecutionState.SUSPENDED)
                 .agentRequest(AgentRequest.builder().workspaceSpec(mock(WorkspaceSpec.class))
-                        .runtimeParameters(com.summit.core.agent.AgentRuntimeParameters.builder()
+                        .runtimeParameters(AgentRuntimeParameters.builder()
                                 .attributes(Map.of(ExecutionAttributes.SESSION_ID, "2")).build())
                         .build())
                 .messages(context).build();

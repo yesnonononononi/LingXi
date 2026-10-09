@@ -176,19 +176,23 @@ test('第二版：子会话首次历史请求在途时收到的文本和工具�
   const reducer = new TurnStreamReducer(() => session.value.subSessions[0].messages, { sessionId: 'sub-1' });
   const metadata = { sessionId: 'sub-1', turnId: '900' };
   reducer.consume({ type: 'PARTIAL_TEXT', executionId: 'e', timestamp: '', metaData: metadata,
-    responseId: 'r2', order: 1001, offset: 0, content: '实时正文' });
+    responseId: '102', order: 1001, offset: 0, content: '实时正文' });
   reducer.consume({ type: 'TOOL_CALL', executionId: 'e', timestamp: '', metaData: metadata,
-    responseId: 'r1', requestId: 'c1', toolName: AgentToolName.ReadFile, order: 2, args: '{"path":"a.md"}' });
+    responseId: '101', requestId: 'c1', toolName: AgentToolName.ReadFile, order: 2, args: '{"path":"a.md"}' });
   const live = originalMessages[0];
   resolvePage({ ok: true, data: { records: [], messages: [], turns: {}, hasMore: false, nextCursor: null,
     turnViews: { '900': { sessionId: 'sub-1', turnId: '900', status: 'RUNNING', viewVersion: '1', blocks: [
-      { blockId: 'text:r0', responseId: 'r0', type: 'TEXT', order: 1, status: 'COMPLETE', placement: 'BODY', text: '历史正文' },
+      { blockId: 'text:100', responseId: '100', type: 'TEXT', order: 1, status: 'COMPLETE', placement: 'BODY', text: '历史正文' },
     ] } } } });
   await loading;
   assert.equal(sub.activeSubSessionMessages.value.length, 1);
   assert.equal(sub.activeSubSessionMessages.value[0], live);
-  assert.equal(live.content, '实时正文');
+  assert.equal(live.content, '历史正文', '历史已确认正文保留，新响应尚未确认用途');
+  assert.equal(live.aiMessages.find(item => item.id === 'text:102')?.text, '实时正文', '在途历史不能抹掉实时过程文本');
   assert.equal(live.toolCalls[0].id, 'c1');
-  assert.equal(live.turnState.texts['text:r0'].text, '历史正文');
-  assert.equal(live.turnState.texts['text:r2'].text, '实时正文');
+  assert.equal(live.turnState.texts['text:100'].text, '历史正文');
+  assert.equal(live.turnState.texts['text:102'].text, '实时正文');
+  reducer.consume({ type: 'AI_MESSAGE', executionId: 'e', timestamp: '', metaData: metadata,
+    responseId: '102', order: 1, text: '实时正文', placement: 'BODY' });
+  assert.equal(live.content, '实时正文', '确认用途后按响应身份归位到正文');
 });

@@ -20,14 +20,6 @@ public class TranscriptRecordAssembler {
     private final ObjectMapper json;
 
     public List<SessionMessage> build(Long sessionId, Long turnId, List<? extends Message> source, String responseId) {
-        return build(sessionId, turnId, source, responseId, null);
-    }
-
-    /**
-     * @param responseOrder 旧 UUID 响应的序号；新响应按框架身份排序，保持为 null。
-     */
-    public List<SessionMessage> build(Long sessionId, Long turnId, List<? extends Message> source,
-                                      String responseId, Integer responseOrder) {
         List<SessionMessage> records = new ArrayList<>();
         for (Message message : source) {
             SessionMessageType type = toMessageType(message);
@@ -41,9 +33,7 @@ public class TranscriptRecordAssembler {
                     .turnId(turnId).type(type).text(content).createTime(Instant.now())
                     // 身份只挂在 AI 行：一轮里多个工具行共享同一个 responseId，重复值会撞唯一索引。
                     // 幂等本来就以「轮」为单位判定，不需要工具行各存一份。
-                    .responseId(type == SessionMessageType.AI ? responseId : null)
-                    // 序号同理只挂 AI 行：工具行不参与「响应顺序」这一层排序，它们挂在所属 AI 行之后。
-                    .responseOrder(type == SessionMessageType.AI ? responseOrder : null).build());
+                    .responseId(type == SessionMessageType.AI ? responseId : null).build());
         }
         return records;
     }

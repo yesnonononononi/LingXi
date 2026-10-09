@@ -24,7 +24,6 @@ import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -83,8 +82,8 @@ class TurnViewBroadcasterTest {
         String payload = new ObjectMapper().valueToTree(ai).toString();
 
         SessionMessage row = SessionMessage.builder()
-                .id(11L).sessionId(SESSION_ID).turnId(TURN_ID).responseId(UUID.randomUUID().toString())
-                .responseOrder(0).type(SessionMessageType.AI).text(payload).build();
+                .id(11L).sessionId(SESSION_ID).turnId(TURN_ID).responseId("9007199254740993")
+                .type(SessionMessageType.AI).text(payload).build();
         when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(List.of(row));
         when(toolCallRepository.listByIds(any())).thenReturn(List.of());
     }

@@ -119,7 +119,6 @@ export interface ResponseTextBuffer extends ResponsePosition {
 export interface TurnRenderState {
   texts: Record<string, ResponseTextBuffer>;
   tools: Record<string, ToolCallTrace>;
-  activeTextId?: string;
 }
 
 /** 单条消息接口 (支持多分支对话) */

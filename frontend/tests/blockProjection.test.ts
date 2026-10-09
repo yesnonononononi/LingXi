@@ -38,13 +38,13 @@ function view(blocks: Block[], viewVersion = 1): TurnViewVO {
 }
 
 const thinking = (order: number): Block => ({
-  blockId: 'thinking:r1', type: 'THINKING', order, status: 'COMPLETE', text: '想一下',
+  blockId: 'thinking:101', type: 'THINKING', order, status: 'COMPLETE', text: '想一下',
 });
 const processText = (order: number): Block => ({
-  blockId: 'text:r1', type: 'TEXT', order, status: 'COMPLETE', placement: 'PROCESS', text: '中途叙述',
+  blockId: 'text:101', type: 'TEXT', order, status: 'COMPLETE', placement: 'PROCESS', text: '中途叙述',
 });
 const bodyText = (order: number): Block => ({
-  blockId: 'text:r2', type: 'TEXT', order, status: 'COMPLETE', placement: 'BODY', text: '结论正文',
+  blockId: 'text:102', type: 'TEXT', order, status: 'COMPLETE', placement: 'BODY', text: '结论正文',
 });
 const tool = (order: number, status: Block['status'] = 'COMPLETED'): Block => ({
   blockId: 'tool:call-1', type: 'TOOL', order, status, toolCallId: 'call-1', toolName: 'read_file',
@@ -195,7 +195,7 @@ test('★ 历史轮次只走视图：整轮按后端 order / 落点重写（不�
   // 正文来自 BODY 块、顺序与身份全来自后端 —— 前端不再从原始记录推导任何 order
   assert.equal(asst?.content, '结论正文', 'BODY 块必须落到气泡正文');
   assert.equal(asst?.thoughtSteps?.[0].order, 0, '思考 order 取后端值，不是 rowIndex*100');
-  assert.equal(asst?.thoughtSteps?.[0].id, 'thinking:r1', '块身份是 blockId');
+  assert.equal(asst?.thoughtSteps?.[0].id, 'thinking:101', '块身份是 blockId');
   assert.equal(asst?.aiMessages?.[0].order, 1, 'PROCESS 文本 order 也取后端值');
   assert.equal(asst?.toolCalls?.[0].order, 2, '工具 order 取后端值（旧口径是 102）');
   assert.equal(asst?.toolCalls?.[0].status, 'success');

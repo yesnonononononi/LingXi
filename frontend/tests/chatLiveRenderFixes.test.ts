@@ -111,28 +111,33 @@ test('缺陷1：首轮发消息时，流式事件必须驱动渲染副作用更�
   await sendPromise;
 
   (streamCtl as any).enqueue(new TextEncoder().encode(frame('EXECUTION_STARTED', { type: 'EXECUTION_STARTED', executionId: 'e1', timestamp: '2026-10-06T06:57:56.135Z', metaData: { sessionId: SID, rootSessionId: SID, turnId: TID } })));
-  (streamCtl as any).enqueue(new TextEncoder().encode(frame('PARTIAL_TEXT', { type: 'PARTIAL_TEXT', responseId: 'r-live', offset: 0, content: '你发送的是「1」', executionId: 'e1', timestamp: '2026-10-06T06:57:57.000Z', metaData: { sessionId: SID, rootSessionId: SID, turnId: TID } })));
+  (streamCtl as any).enqueue(new TextEncoder().encode(frame('PARTIAL_TEXT', { type: 'PARTIAL_TEXT', responseId: '101', order: 1, offset: 0, content: '你发送的是「1」', executionId: 'e1', timestamp: '2026-10-06T06:57:57.000Z', metaData: { sessionId: SID, rootSessionId: SID, turnId: TID } })));
   for (let i = 0; i < 20; i++) await tick();
   await nextTick();
-  assert.equal(renderedTexts.at(-1), '你发送的是「1」', '首段文本在完成前可见');
-  (streamCtl as any).enqueue(new TextEncoder().encode(frame('PARTIAL_TEXT', { type: 'PARTIAL_TEXT', responseId: 'r-live', offset: 8, content: '，收到', executionId: 'e1', timestamp: '', metaData: { sessionId: SID, rootSessionId: SID, turnId: TID } })));
+  assert.equal(renderedTexts.at(-1), '', '未确认用途不能进入正文');
+  assert.deepEqual(renderedProcess.at(-1), ['text:101:你发送的是「1」'], '首段文本在完成前可见');
+  (streamCtl as any).enqueue(new TextEncoder().encode(frame('PARTIAL_TEXT', { type: 'PARTIAL_TEXT', responseId: '101', order: 1, offset: 8, content: '，收到', executionId: 'e1', timestamp: '', metaData: { sessionId: SID, rootSessionId: SID, turnId: TID } })));
   for (let i = 0; i < 20; i++) await tick();
   await nextTick();
-  assert.equal(renderedTexts.at(-1), '你发送的是「1」，收到', '第二段触发真实 Vue 渲染更新');
+  assert.equal(renderedTexts.at(-1), '');
+  assert.deepEqual(renderedProcess.at(-1), ['text:101:你发送的是「1」，收到'], '第二段触发真实 Vue 渲染更新');
 
   const runtime = { executionId: 'e1', timestamp: '', metaData: { sessionId: SID, rootSessionId: SID, turnId: TID } };
-  (streamCtl as any).enqueue(new TextEncoder().encode(frame('TOOL_CALL', { ...runtime, type: 'TOOL_CALL', responseId: 'r-live',
+  (streamCtl as any).enqueue(new TextEncoder().encode(frame('AI_MESSAGE', { ...runtime, type: 'AI_MESSAGE', responseId: '101',
+    order: 1, placement: 'PROCESS', text: '你发送的是「1」，收到' })));
+  (streamCtl as any).enqueue(new TextEncoder().encode(frame('TOOL_CALL', { ...runtime, type: 'TOOL_CALL', responseId: '101',
     requestId: 'c-live', toolName: AgentToolName.ReadFile, order: 2, args: '{"path":"input.md"}' })));
   for (let i = 0; i < 20; i++) await tick();
   await nextTick();
   assert.ok(renderedProcess.at(-1)?.includes('tool:c-live:calling'), 'SSE 工具开始在快照前触发渲染');
-  (streamCtl as any).enqueue(new TextEncoder().encode(frame('TOOL_COMPLETED', { ...runtime, type: 'TOOL_COMPLETED', responseId: 'r-live',
+  (streamCtl as any).enqueue(new TextEncoder().encode(frame('TOOL_COMPLETED', { ...runtime, type: 'TOOL_COMPLETED', responseId: '101',
     requestId: 'c-live', toolName: AgentToolName.ReadFile, order: 2, resultStatus: 'COMPLETED', output: '读取结果' })));
   (streamCtl as any).enqueue(new TextEncoder().encode(frame('PARTIAL_THINKING', { ...runtime, type: 'PARTIAL_THINKING',
-    responseId: 'r-next', order: 1000, offset: 0, content: '末尾的新思考' })));
+    responseId: '102', order: 1000, offset: 0, content: '末尾的新思考' })));
   for (let i = 0; i < 20; i++) await tick();
   await nextTick();
-  assert.deepEqual(renderedProcess.at(-1), ['tool:c-live:success', 'thinking:r-next:末尾的新思考'],
+  assert.equal(renderedTexts.at(-1), '', '过程用途确认后仍不进入正文');
+  assert.deepEqual(renderedProcess.at(-1), ['text:101:你发送的是「1」，收到', 'tool:c-live:success', 'thinking:102:末尾的新思考'],
     '后续思考在工具之后打印，收尾更新原工具条');
 
   const lastRendered = rendered[rendered.length - 1];

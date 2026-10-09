@@ -12,14 +12,7 @@ import java.time.Instant;
 public class SessionMessage {
     private final Long id;
 
-    /**
-     * 本轮模型调用的响应身份，由框架生成并下发（{@code ChatResponseEntity.responseId}）。
-     *
-     * <p><b>只挂在 AI 行上</b>：一轮里多个工具行共享同一身份，若都存会撞
-     * {@code (session_id, response_id)} 唯一索引；幂等以轮为单位，工具行不必各存一份。</p>
-     *
-     * <p>{@code null} 表示框架未下发身份（异常构造的执行、旧数据），此时不参与幂等拦截。</p>
-     */
+    /** 框架响应身份只挂 AI 行，幂等判定以整轮为单位。 */
     private final String responseId;
 
     private final Long sessionId;
@@ -36,8 +29,6 @@ public class SessionMessage {
      * （定位工具调用）这两个「与框架交互」的边界上，不进入消息归属。</p>
      */
     private final Long turnId;
-    /** 仅保留旧 UUID 数据的响应序号，新响应直接按框架身份排序。 */
-    private final Integer responseOrder;
     private final SessionMessageType type;
     private String text;
     private final Instant createTime;

@@ -177,7 +177,7 @@ class AgentEventListenerTest {
 
         TurnViewAssembler assembler = new TurnViewAssembler(objectMapper, null);
         SessionMessage row = SessionMessage.builder().id(1L).turnId(TURN_ID).responseId(RESPONSE_ID)
-                .responseOrder(0).type(SessionMessageType.AI).text(objectMapper.writeValueAsString(aiMessage)).build();
+                .type(SessionMessageType.AI).text(objectMapper.writeValueAsString(aiMessage)).build();
         TextBlock historical = (TextBlock) assembler.assembleBlocks(TURN_ID, List.of(row), Map.of()).stream()
                 .filter(block -> block instanceof TextBlock).findFirst().orElseThrow();
         assertEquals(historical.placement().name(), resolved.getValue().get("placement").asText());

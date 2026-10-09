@@ -2,6 +2,8 @@ package com.summit.dp.session;
 
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.shared.exception.ClientException;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.infrastructure.transcript.DatabaseConversationTranscriptSink;
 import org.junit.jupiter.api.Test;
@@ -22,7 +24,7 @@ import static org.mockito.Mockito.when;
  * 传给了下游」—— 只覆写 4 参会编译通过、测试全绿，但身份在 default 方法里被静默丢弃。</p>
  */
 class DatabaseConversationTranscriptSinkMetadataTest {
-    private static final String RESPONSE_ID = "3c9a7e21-5d64-4b18-9f2a-7e6c1b0d4a53";
+    private static final String RESPONSE_ID = "9007199254740993";
 
     private final ConversationTranscriptService transcript = mock(ConversationTranscriptService.class);
     private final ExecutionIdentity identity = mock(ExecutionIdentity.class);
@@ -54,10 +56,10 @@ class DatabaseConversationTranscriptSinkMetadataTest {
     void outputUsesMetadataSessionIdentityWithoutLookup() {
         AiMessageEntity ai = AiMessageEntity.builder().text("answer").build();
 
-        sink.appendRound("execution", ai, List.of(),
+        sink.appendRound("execution", ai, List.of(), RESPONSE_ID,
                 Map.of("turnId", "9007199254740995", "sessionId", "777"));
 
-        verify(transcript).appendRound(777L, null, 9007199254740995L, ai, List.of(), null);
+        verify(transcript).appendRound(777L, null, 9007199254740995L, ai, List.of(), RESPONSE_ID);
         verifyNoInteractions(identity);
     }
 
@@ -72,24 +74,11 @@ class DatabaseConversationTranscriptSinkMetadataTest {
         verify(transcript).appendRound(500L, null, null, ai, List.of(), RESPONSE_ID);
     }
 
-    /** 完全无元数据（框架旧签名入口）同样走回退，轮次与响应身份保持未知。 */
     @Test
-    void legacyOutputKeepsTurnAndResponseIdUnknownWithoutLookup() {
-        when(identity.sessionId("legacy")).thenReturn(500L);
+    void entryWithoutResponseIdentityIsRejected() {
         AiMessageEntity ai = AiMessageEntity.builder().text("answer").build();
-
-        sink.appendRound("legacy", ai, List.of());
-
-        verify(transcript).appendRound(500L, null, null, ai, List.of(), null);
-    }
-
-    /** 4 参入口（无身份）不得伪造一个身份出来：缺就是缺。 */
-    @Test
-    void fourArgEntryKeepsResponseIdUnknown() {
-        AiMessageEntity ai = AiMessageEntity.builder().text("answer").build();
-
-        sink.appendRound("execution", ai, List.of(), Map.of("sessionId", "777"));
-
-        verify(transcript).appendRound(777L, null, null, ai, List.of(), null);
+        assertThrows(ClientException.class, () -> sink.appendRound("execution", ai, List.of()));
+        assertThrows(ClientException.class, () -> sink.appendRound("execution", ai, List.of(), Map.of("sessionId", "777")));
+        verifyNoInteractions(transcript, identity);
     }
 }

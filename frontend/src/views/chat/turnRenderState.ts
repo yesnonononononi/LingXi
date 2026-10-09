@@ -26,16 +26,6 @@ export function applyTurnStatus(bubble: ChatMessage, status: string): void {
   }
 }
 
-/** 活跃正文按后端顺序推进，较早响应的迟到事件不能抢占它。 */
-export function activateText(bubble: ChatMessage, id: string): void {
-  const state = getTurnState(bubble);
-  const next = state.texts[id];
-  const active = state.activeTextId ? state.texts[state.activeTextId] : undefined;
-  if (!next || next.kind !== 'TEXT' || next.placement === 'PROCESS') return;
-  if (active && compareResponsePosition(next, active) < 0) return;
-  state.activeTextId = id;
-}
-
 /** 用途只接受后端字段，重复或旧快照不能让同一响应反复搬动。 */
 export function applyTextPlacement(bubble: ChatMessage, id: string, placement?: Placement): void {
   const buffer = getTurnState(bubble).texts[id];
@@ -105,7 +95,7 @@ export function renderTurnState(bubble: ChatMessage): void {
         status: buffer.complete ? 'success' as const : 'running' as const, order: buffer.order, responseId: buffer.responseId };
       bubble.thoughtSteps.push(step);
       if (buffer.order !== undefined) bubble.processTimeline.push({ id, type: 'thought', order: buffer.order, responseId: buffer.responseId, step });
-    } else if (buffer.placement === 'PROCESS') {
+    } else if (buffer.placement !== 'BODY') {
       const message = { id, text: buffer.text, order: buffer.order, responseId: buffer.responseId };
       bubble.aiMessages.push(message);
       if (buffer.order !== undefined) bubble.processTimeline.push({ id, type: 'intermediate_ai', order: buffer.order, responseId: buffer.responseId, message });
@@ -117,10 +107,10 @@ export function renderTurnState(bubble: ChatMessage): void {
   bubble.thoughtSteps.sort(compareResponsePosition);
   bubble.aiMessages.sort(compareResponsePosition);
   bubble.processTimeline.sort(compareResponsePosition);
-  const active = state.activeTextId ? state.texts[state.activeTextId] : undefined;
+  // 未确认用途先在过程区打印，只有后端明确 BODY 才归入正文。
   const body = Object.values(state.texts).filter(buffer => buffer.kind === 'TEXT' && buffer.placement === 'BODY')
     .sort(compareResponsePosition).at(-1);
-  bubble.content = active && active.placement === undefined ? active.text : body?.text ?? '';
+  bubble.content = body?.text ?? '';
   if (bubble.sendError && !bubble.content.endsWith(bubble.sendError)) {
     bubble.content = bubble.content ? `${bubble.content}\n\n${bubble.sendError}` : bubble.sendError;
   }

@@ -7,6 +7,12 @@ import { StreamSessionRouter } from '../src/views/chat/streamSessionRouter';
 
 import { AgentToolName } from '../src/utils/toolNames';
 
+function assertPendingText(bubble: ChatMessage, responseId: string, text: string): void {
+  assert.equal(bubble.content, '', '用途未确认不能进入正文');
+  assert.equal(bubble.aiMessages?.find(item => item.id === `text:${responseId}`)?.text, text, '每次写入同步更新过程文本');
+  assert.equal(bubble.turnState?.texts[`text:${responseId}`]?.placement, undefined);
+}
+
 test('1. 流式渲染: 原始增量即时打印，块视图校准身份和位置', () => {
   const messages: ChatMessage[] = [];
   const reducer = new TurnStreamReducer(messages, { sessionId: 'test-session-1' });
@@ -76,7 +82,7 @@ test('1. 流式渲染: 原始增量即时打印，块视图校准身份和位置
   assert.equal(bubble.toolCalls?.length, 1, '收尾不创建第二个工具条');
   assert.equal(bubble.toolCalls?.[0]?.result, '晴，22℃');
 
-  // 正文打印不等待快照或对账。
+  // 未确认用途的文本打印不等待快照或对账。
   reducer.consume({
     type: 'PARTIAL_TEXT',
     responseId: '1',
@@ -87,7 +93,7 @@ test('1. 流式渲染: 原始增量即时打印，块视图校准身份和位置
     metaData: { turnId: 'turn-101' }
   });
   reducer.flush();
-  assert.equal(bubble.content, '今天北京的天气是晴天，气温约22℃。', '增量正文立即打印');
+  assertPendingText(bubble, '1', '今天北京的天气是晴天，气温约22℃。');
 
   // 7. 权威块视图到达：内容、顺序、状态全部来自后端
   reducer.consume({
@@ -140,40 +146,40 @@ test('2. 幂等: 增量与完整文本使用同一响应身份，冲突全文不
 
   reducer.consume({
     type: 'PARTIAL_TEXT',
-    responseId: 'r2', offset: 0, metaData: { turnId: 'turn-202' },
+    responseId: '102', offset: 0, metaData: { turnId: 'turn-202' },
     content: 'Hello, ',
     executionId: 'exec-2',
     timestamp: '2026-10-06T06:00:01Z'
   });
   reducer.consume({
     type: 'PARTIAL_TEXT',
-    responseId: 'r2', offset: 7, metaData: { turnId: 'turn-202' },
+    responseId: '102', offset: 7, metaData: { turnId: 'turn-202' },
     content: 'world!',
     executionId: 'exec-2',
     timestamp: '2026-10-06T06:00:02Z'
   });
   reducer.flush();
-  assert.equal(bubble.content, 'Hello, world!', '片段按偏移接续');
+  assertPendingText(bubble, '102', 'Hello, world!');
 
   // 全文从零偏移校准，不得在已打印内容后再次追加。
   reducer.consume({
     type: 'COMPLETE_TEXT',
-    responseId: 'r2', metaData: { turnId: 'turn-202' },
+    responseId: '102', metaData: { turnId: 'turn-202' },
     content: 'Hello, world! (aligned)',
     executionId: 'exec-2',
     timestamp: '2026-10-06T06:00:03Z'
   });
-  assert.equal(bubble.content, 'Hello, world! (aligned)', '完整响应校准而非重复追加');
+  assertPendingText(bubble, '102', 'Hello, world! (aligned)');
 
   // AI_MESSAGE 噪声：内容不应被重复覆盖或篡改
   reducer.consume({
     type: 'AI_MESSAGE',
-    responseId: 'r2', metaData: { turnId: 'turn-202' },
+    responseId: '102', metaData: { turnId: 'turn-202' },
     text: 'NOISE CONTENT THAT SHOULD BE IGNORED',
     executionId: 'exec-2',
     timestamp: '2026-10-06T06:00:04Z'
   });
-  assert.equal(bubble.content, 'Hello, world! (aligned)', '不一致的全文不得覆盖原文');
+  assertPendingText(bubble, '102', 'Hello, world! (aligned)');
 });
 
 test('3. 根会话与多子会话(1:N)事件路由: 主子独立渲染，主会话协同条状态同步', () => {
@@ -410,14 +416,14 @@ test('6. 连续原始片段无需 flush 即可打印', () => {
   });
   const bubble = messages[0];
 
-  reducer.consume({ type: 'PARTIAL_TEXT', responseId: 'r6', offset: 0, metaData: { turnId: 'turn-b1' }, content: 'A', executionId: 'exec-b1', timestamp: '' });
-  assert.equal(bubble.content, 'A');
-  reducer.consume({ type: 'PARTIAL_TEXT', responseId: 'r6', offset: 1, metaData: { turnId: 'turn-b1' }, content: 'B', executionId: 'exec-b1', timestamp: '' });
-  assert.equal(bubble.content, 'AB');
-  reducer.consume({ type: 'PARTIAL_TEXT', responseId: 'r6', offset: 2, metaData: { turnId: 'turn-b1' }, content: 'C', executionId: 'exec-b1', timestamp: '' });
+  reducer.consume({ type: 'PARTIAL_TEXT', responseId: '106', offset: 0, metaData: { turnId: 'turn-b1' }, content: 'A', executionId: 'exec-b1', timestamp: '' });
+  assertPendingText(bubble, '106', 'A');
+  reducer.consume({ type: 'PARTIAL_TEXT', responseId: '106', offset: 1, metaData: { turnId: 'turn-b1' }, content: 'B', executionId: 'exec-b1', timestamp: '' });
+  assertPendingText(bubble, '106', 'AB');
+  reducer.consume({ type: 'PARTIAL_TEXT', responseId: '106', offset: 2, metaData: { turnId: 'turn-b1' }, content: 'C', executionId: 'exec-b1', timestamp: '' });
   reducer.flush();
 
-  assert.equal(bubble.content, 'ABC', '每次写入同步更新正文');
+  assertPendingText(bubble, '106', 'ABC');
 });
 
 test('7. 服务端雪花 ID 驱动的根会话流式路由: 根会话绑定持久化雪花 ID，流式事件准确注入根会话气泡，不误判为子会话', () => {

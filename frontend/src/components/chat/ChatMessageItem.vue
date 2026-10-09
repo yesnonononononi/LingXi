@@ -82,15 +82,13 @@
             <div :class="['mt-2 pl-3 space-y-2.5', processTimeline.length > 0 ? (isDark ? 'border-l border-white/10' : 'border-l border-gray-200') : '']">
           <!-- 统一时序时间线：按执行先后顺序交替展示思维链 (深度思考)、中间文本与工具调用 -->
           <template v-for="item in processItems" :key="item.id">
-            <!-- 1. 思维链思考内容 (深度思考 可折叠，亮白发光) -->
+            <!-- 思考标题和正文共用原有折叠状态。 -->
             <div v-if="item.type === 'thought' && item.step" class="text-xs space-y-1">
               <button
                 type="button"
                 @click="toggleThoughtStep(item.step.id, item.step)"
                 class="font-medium flex items-center gap-1.5 cursor-pointer transition select-none py-0.5 text-left"
-                :class="item.step.status === 'running'
-                  ? (isDark ? 'text-white text-glow-white animate-glow-pulse' : 'text-sky-600 animate-pulse')
-                  : (isDark ? 'text-zinc-100 text-glow-white hover:text-white' : 'text-sky-600 hover:text-sky-700')"
+                :class="isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-500 hover:text-zinc-700'"
               >
                 <svg
                   :class="['w-3 h-3 transition-transform duration-200 shrink-0', isThoughtStepExpanded(item.step) ? 'rotate-90' : '', isDark ? 'text-zinc-300 drop-shadow-[0_0_4px_rgba(255,255,255,0.4)]' : 'text-gray-400']"
@@ -100,37 +98,27 @@
                 >
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                 </svg>
-                <span class="tracking-wide">{{ formatThoughtTitle(item.step.title) }}</span>
-                <span
-                  v-if="item.step.status === 'running'"
-                  :class="[
-                    'w-1.5 h-1.5 rounded-full animate-ping',
-                    isDark ? 'bg-white shadow-[0_0_8px_#ffffff]' : 'bg-blue-600 shadow-[0_0_6px_rgba(37,99,235,0.4)]'
-                  ]"
-                ></span>
+                <GradientText
+                  v-if="isThoughtAnimating(item.step)"
+                  :colors="['#40ffaa', '#4079ff', '#40ffaa', '#4079ff', '#40ffaa']"
+                  :animation-speed="3"
+                  :show-border="false"
+                  class="tracking-wide !p-0"
+                >{{ formatThoughtTitle(item.step.title) }}</GradientText>
+                <span v-else class="tracking-wide">{{ formatThoughtTitle(item.step.title) }}</span>
               </button>
 
-              <!-- 思考内容正文：带固定高度上限与滚动条限制的思考框，防止无限制向下叠加覆盖页面视图 -->
+              <!-- 长思考保留滚动上限，避免撑满会话。 -->
               <CollapseTransition>
                 <div v-if="isThoughtStepExpanded(item.step) && item.step.content">
                   <div
                     :ref="(el) => item.step && setThinkingBoxRef(item.step.id, el)"
                     :class="[
-                      'my-1.5 ml-4.5 rounded-xl border p-3 max-h-60 overflow-y-auto scrollbar-thin transition-colors select-text',
-                      isDark
-                        ? 'bg-zinc-900/60 border-white/10 text-zinc-100 shadow-inner'
-                        : 'bg-indigo-50/40 border-indigo-100 text-slate-700'
+                      'thinking-content my-2 ml-1 border-l-[3px] pl-4 pr-2 max-h-72 overflow-y-auto scrollbar-thin select-text',
+                      isDark ? 'border-zinc-700' : 'border-zinc-200'
                     ]"
                   >
-                    <div
-                      class="stream-thinking-content thinking-text whitespace-pre-wrap"
-                      :class="[
-                        isDark ? 'text-zinc-300' : 'text-slate-600',
-                        { 'is-running': item.step.status === 'running' }
-                      ]"
-                    >
-                      {{ item.step.content }}
-                    </div>
+                    <MarkdownRenderer :content="item.step.content" :is-dark="isDark" :thinking-text="true" />
                   </div>
                 </div>
               </CollapseTransition>
@@ -139,7 +127,6 @@
             <!-- 中间叙述只在展开过程时展示，避免与正文混淆。 -->
             <div
               v-else-if="item.type === 'intermediate_ai' && item.message"
-              class="text-xs"
             >
               <div
                 v-if="item.message.text"
@@ -148,7 +135,7 @@
                 <MarkdownRenderer
                   :content="item.message.text"
                   :is-dark="isDark"
-                  :muted="true"
+                  :process-text="true"
                 />
               </div>
             </div>
@@ -268,8 +255,12 @@
                       :disabled="!canExpandTool(item.tool)"
                       :aria-expanded="!!expandedToolIds[item.tool.id]"
                       @click.stop="toggleToolCall(item.tool.id)"
-                      class="transition-colors text-[13px] truncate min-w-0"
-                      :class="isDark ? 'text-zinc-100 text-glow-white font-medium' : 'text-gray-700 font-medium'"
+                      class="transition-colors truncate min-w-0 font-medium"
+                      :class="[
+                        item.tool.toolName === AgentToolName.ExecuteCommand
+                          ? (isDark ? 'text-xs text-zinc-400 hover:text-zinc-200 [text-shadow:none]' : 'text-xs text-zinc-500 hover:text-zinc-700 [text-shadow:none]')
+                          : (isDark ? 'text-[13px] text-zinc-100 text-glow-white' : 'text-[13px] text-gray-700')
+                      ]"
                     >
                       {{ cleanDisplayPath(getToolDescription(item.tool)) || getToolCategory(item.tool) }}
                     </button>
@@ -359,10 +350,7 @@
                           <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
                           <span>等待人工决策（审批卡片在过程区之外）</span>
                         </div>
-                        <div v-else-if="isToolInProgress(item.tool.status)" class="font-mono text-xs text-amber-500/80 animate-pulse flex items-center gap-2">
-                          <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
-                          <span>正在执行中...</span>
-                        </div>
+                        <div v-else-if="isToolInProgress(item.tool.status)" class="font-mono text-xs text-gray-400">正在执行中...</div>
                         <pre
                           v-else-if="shouldShowToolArguments(item.tool.toolName) && item.tool.query"
                           :class="['font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto select-text', isDark ? 'text-gray-400' : 'text-gray-600']"
@@ -484,7 +472,7 @@
       <!-- 协作式暂停 / 挂起等待提示条 -->
       <transition name="context-compact-fade">
         <div
-          v-if="props.message.isSuspended"
+          v-if="showSuspendedPrompt"
           class="w-full my-2.5 px-3.5 py-2.5 rounded-2xl border flex items-center justify-between gap-3 text-xs select-none transition-colors"
           :class="isDark ? 'bg-amber-950/40 border-amber-800/60 text-amber-200' : 'bg-amber-50 border-amber-200 text-amber-800'"
         >
@@ -693,6 +681,11 @@ const { copiedKey: toolCopiedId, copy: copyToolContentRaw } = useCopyFeedback();
 
 // 思考步骤 (Thought for) 独立展开/折叠状态
 const expandedThoughtStepIds = ref<Record<string, boolean>>({});
+
+// 挂起和终态立即卸载动效，历史思考不保留动画帧回调。
+const isThoughtAnimating = (step: ThoughtStep): boolean =>
+  step.status === 'running' && !props.message.isSuspended
+  && (props.turn ? props.turn.status === 'RUNNING' : props.message.isComplete !== true);
 
 const isThoughtStepExpanded = (step: ThoughtStep) => {
   if (expandedThoughtStepIds.value[step.id] !== undefined) {
@@ -1011,6 +1004,14 @@ const cardItems = computed<Array<{ id: string; card: PromptCardData }>>(() =>
     .map(item => ({ id: item.id, card: toPromptCardData(item.card as NonNullable<ProcessTimelineItem['card']>) }))
 );
 
+// 委派等待由子会话审批推进，父会话不再重复提示或提供恢复按钮。
+const showSuspendedPrompt = computed(() => {
+  if (!props.message.isSuspended) return false;
+  const pendingCards = cardItems.value.filter(item => item.card.pending);
+  return !pendingCards.some(item => item.card.kind === 'DELEGATION')
+    || pendingCards.some(item => item.card.kind !== 'DELEGATION');
+});
+
 /** 已决卡片默认收成一行（避免大卡片常驻页底占位），细节按需展开；待决策卡片整卡展开。 */
 const expandedCardIds = ref<Record<string, boolean>>({});
 const toggleCard = (id: string) => {
@@ -1286,16 +1287,6 @@ const handleImageClick = (url?: string) => {
 </script>
 
 <style scoped>
-.thinking-text {
-  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 1.85;
-  letter-spacing: 0.01em;
-  overflow-wrap: anywhere;
-  text-shadow: none;
-}
-
 /* 淡入淡出过渡 */
 .context-compact-fade-enter-active,
 .context-compact-fade-leave-active {

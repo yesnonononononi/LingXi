@@ -22,11 +22,6 @@ public record TextBlock(
         return "text:" + responseId;
     }
 
-    /** 旧数据身份规则：无响应身份时用持久化行 ID 稳定定位（不伪造身份）。 */
-    public static String legacyIdentity(long messageRowId) {
-        return "text:message:" + messageRowId;
-    }
-
     @Override
     public String getBlockId() {
         return blockId;

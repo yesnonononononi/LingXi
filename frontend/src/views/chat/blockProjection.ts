@@ -6,7 +6,7 @@ import type { ChatMessage, ToolCallTrace } from '../../types/chat';
 import { resolveToolCategory } from '../../utils/toolMeta';
 import { toObject } from '../../utils/json';
 import { parseToolDiff } from '../../utils/toolDiff';
-import { activateText, applyTextPlacement, applyTurnStatus, renderTurnState, writeResponseText, writeToolTrace } from './turnRenderState';
+import { applyTextPlacement, applyTurnStatus, renderTurnState, writeResponseText, writeToolTrace } from './turnRenderState';
 
 
 /** 思考 / 文本块的状态取值（后端 {@code BlockStatus} 的响应生命周期两态）。 */
@@ -195,7 +195,6 @@ export function upsertBlockIntoBubble(bubble: ChatMessage, view: TurnViewVO): vo
     buffer.complete ||= block.status === RESPONSE_COMPLETE && block.text.length >= buffer.text.length;
     if (block.type === 'TEXT') {
       applyTextPlacement(bubble, block.blockId, block.placement);
-      activateText(bubble, block.blockId);
     }
   }
   renderTurnState(bubble);

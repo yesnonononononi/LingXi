@@ -85,9 +85,6 @@ public interface MessageRepository extends RepositoryTemplate<SessionMessage, Lo
      */
     void lockSessionForAppend(Long sessionId);
 
-    /** 仅旧 UUID 响应分配序号时使用；调用前必须持有会话追加锁。 */
-    long countAiMessagesInTurn(Long sessionId, Long turnId);
-
     /**
      * 删除目标轮次及其之后的全部消息，返回删除行数。
      *

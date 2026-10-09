@@ -151,6 +151,8 @@ class McpManagerTest {
         client(healthy, "inspect");
         when(repository.findEnabled()).thenReturn(List.of(broken, healthy));
         assertDoesNotThrow(() -> { manager.connect(); });
+        // 启动连接在后台执行，先等待任务落定再检查连接池。
+        manager.disconnect();
         try (McpToolScope scope = manager.openScope(config(broken, healthy))) {
             assertEquals(List.of("healthy"), scope.serverNames());
         }

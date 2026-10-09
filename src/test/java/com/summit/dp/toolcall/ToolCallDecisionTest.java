@@ -7,6 +7,8 @@ import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.event.ToolCallEndEvent;
+import com.summit.core.conversation.api.ToolCallRequest;
+import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.ToolMessageEntity;
 import com.summit.core.runtime.RuntimeEnvironment;
@@ -401,13 +403,22 @@ class ToolCallDecisionTest {
     }
 
     private Execution execution(String id, ExecutionState state, Message... messages) {
-        return Execution.builder().id(id).executionState(state)
+        List<Message> context = new ArrayList<>(List.of(messages));
+        List<ToolCallRequest> requests = new ArrayList<>();
+        for (Message message : context) {
+            if (message instanceof ToolMessageEntity tool) {
+                requests.add(ToolCallRequest.builder().id(String.valueOf(tool.getId())).name(tool.getName())
+                        .requestIndex(requests.size()).arguments("{}").build());
+            }
+        }
+        if (!requests.isEmpty()) context.addFirst(AiMessageEntity.builder().toolCalls(requests).build());
+        return Execution.builder().id(id).lastResponseId("9007199254740993").executionState(state)
                 .agentRequest(AgentRequest.builder().workspaceSpec(mock(WorkspaceSpec.class))
                         .runtimeParameters(AgentRuntimeParameters.builder()
                                 .eventMetaData(Map.of("turnId", "9001"))
                                 .attributes(Map.of(ExecutionAttributes.SESSION_ID, "2")).build())
                         .build())
-                .messages(new ArrayList<>(List.of(messages))).build();
+                .messages(context).build();
     }
 
     private static <T> ObjectProvider<T> provider(T value) {

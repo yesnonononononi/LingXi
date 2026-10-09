@@ -7,14 +7,20 @@
   word-break: break-word;
 }
 
-/*
- * 弱化档：中间叙述（过程文本）专用。
- * 字号必须在这里压 —— .markdown-body 的 font-size 是绝对值，父级 text-xs 继承不下来；
- * 颜色由 MarkdownRenderer 容器给出（.markdown-body 不设 color，可继承）。
- */
-.markdown-body--muted {
-  font-size: 0.75rem;
-  line-height: 1.6;
+/* 字号需直接覆盖 Markdown 容器，父级字号无法改变它的固定值。 */
+.markdown-body--process {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.7;
+}
+
+.markdown-body--thinking {
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.85;
+  overflow-wrap: anywhere;
+  text-shadow: none;
 }
 
 /* Headings */

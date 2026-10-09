@@ -61,9 +61,11 @@ public class ApprovedCommandRestorer {
         } catch (JsonProcessingException e) {
             throw new ClientException("命令审批参数无效");
         }
+        // 工具槽位全部落定前不会再次调用模型，审批沿用暂停时的响应身份。
         return ToolExecution.builder()
                 .id(toolCall.getId())
                 .executionId(execution.getId())
+                .responseId(execution.getLastResponseId())
                 .toolDefinition(tool)
                 .args(args)
                 .workspace(workspace)

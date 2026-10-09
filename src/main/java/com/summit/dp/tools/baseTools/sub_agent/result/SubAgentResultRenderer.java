@@ -44,13 +44,13 @@ public class SubAgentResultRenderer {
             return renderSuspended(execution);
         }
         if (ExecutionState.CANCELLED.equals(state)) {
-            return "子代理执行已被取消（用户已停止），无结果: " + taskOf(execution);
+            return "子代理执行已被取消（用户已停止），无结果: " + resolveTask(execution);
         }
         String errorMessage = execution.getErrorMessage();
         if (errorMessage != null && !errorMessage.isBlank()) {
             return errorMessage;
         }
-        return "agent的任务未能执行成功: " + taskOf(execution);
+        return "agent的任务未能执行成功: " + resolveTask(execution);
     }
 
     /**
@@ -60,7 +60,7 @@ public class SubAgentResultRenderer {
      * 父级这条工具结果已经定稿，不能给出「稍后会收到结果」的虚假承诺。</p>
      */
     private String renderSuspended(Execution execution) {
-        return "子代理已暂停，正在等待人工审批，任务尚未完成（不是失败）: " + taskOf(execution)
+        return "子代理已暂停，正在等待人工审批，任务尚未完成（不是失败）: " + resolveTask(execution)
                 + "。审批处理完后它会自行继续，但本次调用不会返回它的最终结果 —— 请勿重复执行同一任务。";
     }
 
@@ -71,9 +71,9 @@ public class SubAgentResultRenderer {
      * 因此必须显式判空 —— 用 {@code Objects.toString(error, "..." + request.getTask())} 这种写法，
      * 兜底串会被<b>提前求值</b>，即使 error 非空也照样 NPE，把「有错误信息」这条正常路径一起炸掉。</p>
      */
-    private String taskOf(Execution execution) {
+    private String resolveTask(Execution execution) {
         AgentRequest request = execution.getAgentRequest();
-        if (request.getTask() == null) {
+        if (request == null || request.getTask() == null) {
             return "未提供任务描述";
         }
         return String.valueOf(request.getTask());

@@ -12,6 +12,9 @@ import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 import java.util.List;
@@ -38,7 +41,7 @@ import static org.mockito.Mockito.when;
  */
 class ConversationTranscriptResponseIdTest {
 
-    private static final String RESPONSE_ID = "2b8f4d16-7a35-4e92-b1c8-5f0d3a7e9b24";
+    private static final String RESPONSE_ID = "9007199254740993";
     private static final long SESSION_ID = 700L;
     private static final long TURN_ID = 800L;
 
@@ -69,36 +72,8 @@ class ConversationTranscriptResponseIdTest {
                 .findFirst().orElseThrow();
         assertEquals(RESPONSE_ID, ai.getResponseId());
 
-        // 顺序同样只挂 AI 行：工具行靠「排在所属 AI 行之后」定序，各存一份迟早对不上。
-        // 断言的是记录里的值，而不是「调用过 countAiMessagesInTurn」—— 后者对「算完没写进记录」不敏感。
-        assertEquals(0, ai.getResponseOrder());
         records.stream().filter(r -> r.getType() == SessionMessageType.TOOL)
-                .forEach(r -> {
-                    // 工具行不得带身份：同一轮的多个工具行共享一个 responseId，都存会撞唯一索引。
-                    assertNull(r.getResponseId());
-                    assertNull(r.getResponseOrder());
-                });
-    }
-
-    /**
-     * 序号必须来自「该轮已有 AI 行数」，而不是写死的 0。
-     *
-     * <p>一轮里可以发生多次模型调用（思考 → 工具 → 再思考），第二次调用的序号必须是 1。
-     * 若实现退化成常量或「插入后自增」，这条用例变红。</p>
-     */
-    @Test
-    void responseOrderCountsAiRowsAlreadyInTurn() {
-        when(messages.countAiMessagesInTurn(SESSION_ID, TURN_ID)).thenReturn(2L);
-
-        service.appendRound(SESSION_ID, null, TURN_ID,
-                AiMessageEntity.builder().text("第三轮思考").build(), List.of(), RESPONSE_ID);
-
-        ArgumentCaptor<List<SessionMessage>> captured = ArgumentCaptor.forClass(List.class);
-        verify(messages).appendAll(eq(SESSION_ID), any(), captured.capture());
-
-        SessionMessage ai = captured.getValue().stream()
-                .filter(r -> r.getType() == SessionMessageType.AI).findFirst().orElseThrow();
-        assertEquals(2, ai.getResponseOrder());
+                .forEach(r -> assertNull(r.getResponseId()));
     }
 
     @Test
@@ -109,11 +84,9 @@ class ConversationTranscriptResponseIdTest {
         ArgumentCaptor<List<SessionMessage>> captured = ArgumentCaptor.forClass(List.class);
         verify(messages).lockSessionForAppend(SESSION_ID);
         verify(messages).findByResponseId(SESSION_ID, responseId);
-        verify(messages, never()).countAiMessagesInTurn(SESSION_ID, TURN_ID);
         verify(messages).appendAll(eq(SESSION_ID), any(), captured.capture());
         SessionMessage ai = captured.getValue().getFirst();
         assertEquals(responseId, ai.getResponseId());
-        assertNull(ai.getResponseOrder());
     }
 
     /**
@@ -190,14 +163,12 @@ class ConversationTranscriptResponseIdTest {
                 service.appendRound(SESSION_ID, null, TURN_ID, ai, List.of(), RESPONSE_ID));
     }
 
-    /** 身份未知（框架没下发）时不参与去重、不加锁，照常追加 —— 与旧数据口径一致。 */
-    @Test
-    void unknownResponseIdAlwaysAppends() {
-        service.appendRound(SESSION_ID, null, TURN_ID,
-                AiMessageEntity.builder().text("answer").build(), List.of());
-
-        verify(messages).appendAll(eq(SESSION_ID), any(), any());
-        verify(messages, never()).lockSessionForAppend(anyLong());
-        verifyNoInteractions(toolCalls);
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {" ", "legacy-uuid", "-1"})
+    void invalidResponseIdentityIsRejectedBeforePersistence(String responseId) {
+        assertThrows(ClientException.class, () -> service.appendRound(SESSION_ID, null, TURN_ID,
+                AiMessageEntity.builder().text("answer").build(), List.of(), responseId));
+        verifyNoInteractions(messages, toolCalls);
     }
 }

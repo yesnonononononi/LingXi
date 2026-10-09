@@ -229,7 +229,7 @@ test('QA-5 边界：同一会话内发第 2 条消息——仍实时渲染', asy
   (streamCtl as any).enqueue(enc(frame('EXECUTION_STARTED', { type: 'EXECUTION_STARTED', executionId: 'e1', timestamp: '2026-10-06T06:57:56Z', metaData: meta(TID) })));
   (streamCtl as any).enqueue(enc(frame('TURN_SNAPSHOT', {
     type: 'TURN_SNAPSHOT', turnId: TID, viewVersion: '1',
-    view: { sessionId: SID, turnId: TID, status: 'RUNNING', viewVersion: '1', blocks: [{ blockId: 'text:r1', type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: '回复一' }] },
+    view: { sessionId: SID, turnId: TID, status: 'RUNNING', viewVersion: '1', blocks: [{ blockId: 'text:101', type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: '回复一' }] },
     executionId: 'e1', timestamp: '2026-10-06T06:57:57Z', metaData: meta(TID)
   })));
   (streamCtl as any).enqueue(enc(frame('EXECUTION_COMPLETED', { type: 'EXECUTION_COMPLETED', executionId: 'e1', timestamp: '2026-10-06T06:57:58Z', metaData: meta(TID) })));
@@ -244,7 +244,7 @@ test('QA-5 边界：同一会话内发第 2 条消息——仍实时渲染', asy
   (streamCtl as any).enqueue(enc(frame('EXECUTION_STARTED', { type: 'EXECUTION_STARTED', executionId: 'e2', timestamp: '2026-10-06T06:58:00Z', metaData: meta(TID2) })));
   (streamCtl as any).enqueue(enc(frame('TURN_SNAPSHOT', {
     type: 'TURN_SNAPSHOT', turnId: TID2, viewVersion: '1',
-    view: { sessionId: SID, turnId: TID2, status: 'RUNNING', viewVersion: '1', blocks: [{ blockId: 'text:r2', type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: '回复二' }] },
+    view: { sessionId: SID, turnId: TID2, status: 'RUNNING', viewVersion: '1', blocks: [{ blockId: 'text:102', type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: '回复二' }] },
     executionId: 'e2', timestamp: '2026-10-06T06:58:01Z', metaData: meta(TID2)
   })));
   (streamCtl as any).enqueue(enc(frame('EXECUTION_COMPLETED', { type: 'EXECUTION_COMPLETED', executionId: 'e2', timestamp: '2026-10-06T06:58:02Z', metaData: meta(TID2) })));

@@ -6,6 +6,9 @@ import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
+import com.summit.core.conversation.api.ToolCallRequest;
+import com.summit.core.conversation.message.AiMessageEntity;
+import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.ToolMessageEntity;
 import com.summit.core.runtime.RuntimeEnvironment;
 import com.summit.core.runtime.loop.ExecutionControl;
@@ -602,14 +605,21 @@ class VersionedToolCallDecisionTest {
     }
 
     private Execution execution(ExecutionState state, ToolMessageEntity... messages) {
-        return Execution.builder().id(EXECUTION_ID_TEXT).executionState(state)
+        List<Message> context = new ArrayList<>(List.of(messages));
+        List<ToolCallRequest> requests = new ArrayList<>();
+        for (ToolMessageEntity tool : messages) {
+            requests.add(ToolCallRequest.builder().id(String.valueOf(tool.getId())).name(tool.getName())
+                    .requestIndex(requests.size()).arguments("{}").build());
+        }
+        if (!requests.isEmpty()) context.addFirst(AiMessageEntity.builder().toolCalls(requests).build());
+        return Execution.builder().id(EXECUTION_ID_TEXT).lastResponseId("9007199254740993").executionState(state)
                 .agentRequest(AgentRequest.builder()
                         .workspaceSpec(mock(WorkspaceSpec.class))
                         .runtimeParameters(AgentRuntimeParameters.builder()
                                 .attributes(Map.of(ExecutionAttributes.SESSION_ID, String.valueOf(CONVERSATION_ID)))
                                 .build())
                         .build())
-                .messages(new ArrayList<>(List.of(messages))).build();
+                .messages(context).build();
     }
 
     @SuppressWarnings("unchecked")
