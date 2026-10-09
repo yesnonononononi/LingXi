@@ -112,15 +112,17 @@ const jdk = resolveJdk();
 
 /**
  * 定位 maven。
- * 本机 `./mvnw` 是坏的（`.mvn/wrapper` 只有 properties、缺 jar），
- * 而 `mvn` 经 Git Bash 会把 POSIX 路径喂给 Windows java，报
- * `ClassNotFoundException: org.codehaus.plexus.classworlds.launcher.Launcher`。
- * 因此退路是绕开 shell、自己拼 java 命令行直接起 classworlds Launcher。
+ * only-script wrapper 不需要 jar；优先使用它才能遵循仓库固定的 Maven 版本。
+ * 本地 Maven 保留直接启动 Launcher 的方式，避免 Git Bash 转换 Windows 路径。
  */
 function resolveMaven() {
+  const wrapperCommand = path.join(repoRoot, isWin ? 'mvnw.cmd' : 'mvnw');
   const wrapperJar = path.join(repoRoot, '.mvn', 'wrapper', 'maven-wrapper.jar');
-  if (fs.existsSync(wrapperJar)) {
-    return { label: 'mvnw', command: path.join(repoRoot, isWin ? 'mvnw.cmd' : 'mvnw'), prefix: [] };
+  const wrapperProperties = path.join(repoRoot, '.mvn', 'wrapper', 'maven-wrapper.properties');
+  const scriptOnly = fs.existsSync(wrapperProperties)
+    && /^\s*distributionType\s*=\s*only-script\s*$/m.test(fs.readFileSync(wrapperProperties, 'utf8'));
+  if (fs.existsSync(wrapperCommand) && (scriptOnly || fs.existsSync(wrapperJar))) {
+    return { label: 'mvnw', command: wrapperCommand, prefix: [] };
   }
 
   const homes = [
@@ -178,7 +180,7 @@ if (!jarPath && !skipJar) {
   const maven = resolveMaven();
   if (!maven) {
     fail(
-      '找不到可用的 maven（./mvnw 缺 wrapper jar，也没找到 classworlds Launcher）。\n' +
+      '找不到可用的 Maven，请检查仓库 wrapper 或 MAVEN_HOME / M2_HOME 配置。\n' +
         '请自行 `mvn -DskipTests package` 后加 --skip-jar 重跑，或用 --jar=<path> 指定 jar。'
     );
   }

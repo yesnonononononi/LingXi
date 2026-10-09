@@ -98,6 +98,10 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      - name: 验证 Maven wrapper 调用
+        working-directory: frontend
+        run: node --test tests/backendRuntimeMaven.test.cjs
+
       - name: 构建后端运行产物（fat jar + jlink 精简 JRE）
         working-directory: frontend
         run: npm run backend:runtime
