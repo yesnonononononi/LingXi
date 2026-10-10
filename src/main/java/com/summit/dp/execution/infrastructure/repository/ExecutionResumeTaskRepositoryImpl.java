@@ -11,6 +11,7 @@ import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionResume
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionResumeTaskPO;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -122,6 +123,9 @@ public class ExecutionResumeTaskRepositoryImpl
      *
      * <p>同执行同代际只允许一条：先查已有行，命中就复用（不新建）——「重复落定同一张卡片」
      * 和「审批重试」都会走到这里，重建一条新请求会让两次派发互相作废。</p>
+     *
+     * <p><b>并发窗口也要兜住</b>：先查后插之间另一路可能已插入并提交，此时本次插入会撞唯一键
+     * 抛 {@code DuplicateKeyException}。它和「插入命中 0 行」是同一件事，都改读既有行。</p>
      */
     @Override
     public ExecutionResumeTask enqueue(long executionId, long generation, Instant now) {
@@ -136,13 +140,18 @@ public class ExecutionResumeTaskRepositoryImpl
         row.setVersion(1L);
         row.setCreatedAt(toLocalDateTime(now));
         row.setUpdatedAt(toLocalDateTime(now));
-        if (taskMapper.insert(row) != 1) {
-            // 唯一键冲突说明并发下另一路已插入：改读既有行，不把幂等冲突报成业务失败。
-            return findByExecutionAndGeneration(executionId, generation).orElseThrow(
-                    () -> new IllegalStateException("恢复请求受理失败: executionId=" + executionId
-                            + ", generation=" + generation));
+        try {
+            if (taskMapper.insert(row) == 1) {
+                return toModel(row);
+            }
+        } catch (DuplicateKeyException duplicate) {
+            // 并发下另一路已插入同一 (executionId, generation)：唯一键冲突是「已存在」的另一种表达，
+            // 与插入命中 0 行同义。这里不能让它冒泡成业务失败，否则幂等的重复受理会报错。
         }
-        return toModel(row);
+        // 命中 0 行或撞唯一键都表示该请求已存在：改读既有行，不重建、不报错。
+        return findByExecutionAndGeneration(executionId, generation).orElseThrow(
+                () -> new IllegalStateException("恢复请求受理失败: executionId=" + executionId
+                        + ", generation=" + generation));
     }
 
     @Override

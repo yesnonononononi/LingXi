@@ -116,6 +116,27 @@ class TurnViewBroadcasterTest {
     }
 
     @Test
+    @DisplayName("整轮快照即便还没有 AI 块也要下发：accepted/waiting 轮次的 status 必须送达")
+    void fullSnapshotWithoutBlocksStillPublishesStatus() {
+        // 用户刚提问、模型尚未产出：本轮还没有任何 AI 行，块列表为空。
+        when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(List.of());
+        ChatTurn accepted = ChatTurn.accept(TURN_ID, SESSION_ID, null, "deepseek-chat", "deepseek");
+        when(chatTurnRepository.findById(TURN_ID)).thenReturn(Optional.of(accepted));
+        when(sessionRepository.findById(SESSION_ID))
+                .thenReturn(Optional.of(Session.builder().id(SESSION_ID).rootSessionId(0L).build()));
+        when(executionIdentity.resolveRootSessionIdOrNull(SESSION_ID)).thenReturn(ROOT_SESSION_ID);
+
+        broadcaster.broadcastSnapshot(TURN_ID);
+
+        ArgumentCaptor<Object> payload = ArgumentCaptor.forClass(Object.class);
+        verify(sseEventPublisher).publishBusiness(eq(ROOT_SESSION_ID), eq(BlockEventType.TURN_SNAPSHOT),
+                payload.capture());
+        BlockEventType.BlockEventPayload event = (BlockEventType.BlockEventPayload) payload.getValue();
+        assertTrue(event.view().blocks().isEmpty(), "前提：本用例的整轮快照确实没有块");
+        assertEquals("ACCEPTED", event.view().status(), "空块整轮快照必须把状态送达，否则该轮状态永远推不出去");
+    }
+
+    @Test
     @DisplayName("轮次查不到时静默跳过，绝不推送也绝不抛异常")
     void missingTurnIsSilentlySkipped() {
         when(chatTurnRepository.findById(TURN_ID)).thenReturn(Optional.empty());

@@ -226,6 +226,10 @@ public class ToolCallRepositoryImpl
                 .rawInput(po.getRawInput())
                 .rawOutput(po.getRawOutput())
                 .metaData(po.getMetaData())
+                // 决策命令身份必须回填：versioned 决策路径靠它判「同命令重放」，
+                // 漏读会让一次点击被当成新命令再执行一遍外部副作用。
+                .decisionCommandId(po.getDecisionCommandId())
+                .decisionDigest(po.getDecisionDigest())
                 .version(po.getVersion())
                 .createdAt(po.getCreatedAt())
                 .updatedAt(po.getUpdatedAt())

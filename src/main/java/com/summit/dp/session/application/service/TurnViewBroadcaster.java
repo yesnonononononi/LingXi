@@ -78,9 +78,11 @@ public class TurnViewBroadcaster {
             return;
         }
         TurnViewVO payloadView = filterBlocks(view.get(), blockIdFilter);
-        if (payloadView.blocks().isEmpty()) {
-            // 增量请求过滤后为空：说明那个块此刻还不存在（尚未落库的实时窗口），
-            // 推一帧空块毫无意义 —— 前端会以为「该块被清空了」。整轮快照不受此影响。
+        if (blockIdFilter != null && payloadView.blocks().isEmpty()) {
+            // 只有「按 blockId 过滤的增量」才允许空则跳过：过滤后为空说明那个块此刻还不存在
+            // （尚未落库的实时窗口），推一帧空块会被前端读成「该块被清空了」。
+            // 整轮快照（blockIdFilter == null）绝不能走这个短路：accepted/waiting 这类尚未产出
+            // AI 块的轮次块列表本就为空，跳过会让它的 status 永远推不出去。
             return;
         }
         sseEventPublisher.publishBusiness(rootSessionId, eventName,

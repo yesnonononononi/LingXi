@@ -18,11 +18,21 @@ import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -229,6 +239,73 @@ class ExecutionResumeTaskRepositoryTest {
         assertTrue(missing.isEmpty());
         assertTrue(repository.findByExecutionAndGeneration(EXECUTION_ID, 99L).isEmpty());
         assertNull(repository.findById(null).orElse(null));
+    }
+
+    @Test
+    @DisplayName("并发受理同一 execution/generation：唯一键冲突走恢复分支，不泄漏异常且最终只一行")
+    void concurrentEnqueueOnSameGenerationAbsorbsDuplicateKey() throws Exception {
+        int threads = 6;
+        long generation = 7L;
+        // 所有线程都读完、到达插入点后才放行 —— 保证每个线程的读都发生在任一插入提交之前，
+        // 从而确定性地制造唯一键冲突（不靠 sleep 赌竞态，也不让 mock 假装插入命中 0 行）。
+        CyclicBarrier insertGate = new CyclicBarrier(threads);
+        ExecutionResumeTaskRepository racing =
+                new ExecutionResumeTaskRepositoryImpl(gateInsert(taskMapper, insertGate));
+
+        AtomicInteger leaked = new AtomicInteger();
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        List<ExecutionResumeTask> results = new ArrayList<>();
+        try {
+            List<Future<ExecutionResumeTask>> futures = new ArrayList<>();
+            for (int i = 0; i < threads; i++) {
+                futures.add(pool.submit(() -> {
+                    start.await();
+                    try {
+                        return racing.enqueue(EXECUTION_ID, generation, Instant.now());
+                    } catch (RuntimeException error) {
+                        leaked.incrementAndGet();
+                        throw error;
+                    }
+                }));
+            }
+            start.countDown();
+            for (Future<ExecutionResumeTask> future : futures) {
+                results.add(future.get(30, TimeUnit.SECONDS));
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertEquals(0, leaked.get(), "唯一键冲突必须被恢复分支吸收，不得向调用方泄漏异常");
+        Long firstId = results.getFirst().getId();
+        assertNotNull(firstId);
+        assertTrue(results.stream().allMatch(task -> firstId.equals(task.getId())),
+                "并发受理必须复用同一行，而不是各插一条");
+        assertEquals(1L, (long) taskMapper.selectCount(null), "同一 execution/generation 只能有一行");
+    }
+
+    /**
+     * 包一层 Mapper 代理：拦下 {@code insert}，等所有参赛线程都到齐后才真正插入。
+     *
+     * <p>这样「先查后插」的并发窗口被固定在确定的点 —— 每个线程都先读取（必然读空），再一起
+     * 撞唯一键。用它来走<b>真正的数据库异常路径</b>，而不是让 mock 返回 0 冒充。</p>
+     */
+    private static ExecutionResumeTaskMapper gateInsert(ExecutionResumeTaskMapper delegate, CyclicBarrier gate) {
+        return (ExecutionResumeTaskMapper) Proxy.newProxyInstance(
+                ExecutionResumeTaskMapper.class.getClassLoader(),
+                new Class<?>[]{ExecutionResumeTaskMapper.class},
+                (proxy, method, args) -> {
+                    if ("insert".equals(method.getName())) {
+                        gate.await(30, TimeUnit.SECONDS);
+                    }
+                    try {
+                        return method.invoke(delegate, args);
+                    } catch (InvocationTargetException wrapped) {
+                        // 还原目标方法的原始异常，否则 enqueue 的 DuplicateKeyException 兜底会落空。
+                        throw wrapped.getCause();
+                    }
+                });
     }
 
     /** 直插一行指定状态与更新时刻的请求，返回其 ID。 */

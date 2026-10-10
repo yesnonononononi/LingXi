@@ -199,6 +199,29 @@ class ToolCallPersistenceTest {
         assertEquals(3L, current.getVersion());
     }
 
+    /**
+     * 决策幂等字段（{@code decisionCommandId} / {@code decisionDigest}）必须走完真实读路径仍保留。
+     *
+     * <p>versioned 决策路径靠这两列判「同命令重放」：读回时漏掉任一列，同一次点击都会被当成
+     * 新命令再执行一遍外部副作用 —— 这正是本用例要钉死的读映射缺口。任一 read 映射被删，
+     * 对应断言即变红。</p>
+     */
+    @Test
+    void decisionIdempotencyFieldsSurviveRoundTrip() {
+        ToolCall decided = pending("call_idem", 21L, 210L);
+        decided.attachDecision("cmd-idem", "digest-idem");
+        decided.complete("{\"outcome\":\"APPROVED\"}");
+        repository.save(decided);
+
+        ToolCall loaded = repository.findById("call_idem").orElseThrow();
+
+        assertEquals("cmd-idem", loaded.getDecisionCommandId(), "决策命令 ID 必须在读路径保留");
+        assertEquals("digest-idem", loaded.getDecisionDigest(), "决策摘要必须在读路径保留");
+        // 重放判据成立：读回后必须仍能被识别为「同命令已决」。versioned 路径据此返回首次结论、
+        // 不再二次执行；read 映射一旦丢失，这里退回 false，同一次点击就会跑两遍副作用。
+        assertTrue(loaded.isDecidedBy("cmd-idem"), "读回后必须仍能识别同命令重放，否则幂等去重失效");
+    }
+
     /** 仓储的形态判定依赖卡片可用性策略；单测只关心持久化，策略给最简实现。 */
     static CardAvailabilityPolicy buildCardAvailabilityPolicy() {
         return new CardAvailabilityPolicy(provider(), provider());
