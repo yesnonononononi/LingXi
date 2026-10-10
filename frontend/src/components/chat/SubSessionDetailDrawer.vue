@@ -7,6 +7,8 @@ import { synthesizeFailedTurnBubbles } from '../../utils/session';
 import { upsertTurnViewIntoMessages } from '../../views/chat/blockProjection';
 import { parseToolDiff } from '../../utils/toolDiff';
 import { shouldShowToolArguments, resolveToolCategory } from '../../utils/toolMeta';
+import { toSubItemStatus } from '../../utils/subSessionStatus';
+import { subItemStatusDotClass, subItemStatusLabel } from '../../utils/asyncDelegation';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
 import MarkdownRenderer from './MarkdownRenderer.vue';
 import GradientText from '../common/GradientText.vue';
@@ -101,6 +103,15 @@ watch(
 const displayAgentName = computed(() => {
   return props.subSession?.agentName || (props.subSession?.agentId ? `Agent #${props.subSession.agentId}` : '子代理');
 });
+
+/**
+ * 状态栏展示态：权威来源是 {@code subSession.runStatus} + {@code lastOutcome}，
+ * 复用 {@link toSubItemStatus}（唯一定义处），不硬编码、不二次猜测。
+ * 子代理可能还在跑（协作式委派下工具早已 COMPLETED），因此绝不能写死「执行完成」。
+ */
+const subStatus = computed(() => toSubItemStatus(props.subSession?.runStatus, props.subSession?.lastOutcome));
+const subStatusText = computed(() => subItemStatusLabel(subStatus.value));
+const subStatusDot = computed(() => subItemStatusDotClass(subStatus.value));
 
 const copyAllContent = () => {
   const text = messages.value
@@ -218,8 +229,8 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
         <div :class="['px-6 py-2.5 border-b text-xs flex items-center justify-between gap-4 flex-wrap select-none', isDark ? 'border-white/10 bg-black/40 text-zinc-400' : 'border-gray-100 bg-gray-50/40 text-gray-500']">
           <div class="flex items-center gap-4">
             <span class="flex items-center gap-1.5">
-              <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span>执行完成</span>
+              <span :class="['w-2 h-2 rounded-full', subStatusDot]"></span>
+              <span>{{ subStatusText }}</span>
             </span>
           </div>
           <div v-if="subSession?.createTime" class="font-mono opacity-80 text-[11px]">

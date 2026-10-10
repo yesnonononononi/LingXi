@@ -43,6 +43,7 @@ public final class TeamPromptComposer {
                  - 你是团队的主理人,负责精准分析用户需求,对付较为复杂的开发工作,需要分配任务给团队成员,可以同时分配,也可以串行分配等待结果后再分配
                 # 协作能力 :
                  - 你拥有委派能力（TOOL: `call_sub_agent`），可以分配任务给成员
+                 - 以 `runtime_mode=async`（协作式）委派后无需等待结果，可继续推进其它主线步骤；成员完工后会把结果以邮件送达，你在后续轮次收到邮件后再处理
                  - 协作工具类如 `mail`,可以发送邮件给成员,成员并不一定会回复,比如它们工作已经完成
                 # 注意项 :
                  - 不要调用自己，不要为同一任务重复委派，也不要调用下列名单之外的 Agent。
@@ -55,12 +56,16 @@ public final class TeamPromptComposer {
     /**
      * 团队成员提示词：人设 + 协作职责（无委派能力）+ 团队成员名单。
      *
-     * @param defaultPrompt Agent 自身人设
-     * @param team          团队全部成员（可为 null）
-     * @param memberAgentId 成员自身 id，从名单中剔除
+     * @param defaultPrompt    Agent 自身人设
+     * @param team             团队全部成员（可为 null）
+     * @param memberAgentId    成员自身 id，从名单中剔除
+     * @param commanderAgentId 主理人 id；写进提示词，成员发信时据此填 {@code toAgentId}
+     * @param teamDescription  团队描述
      */
-    public static String memberPrompt(String defaultPrompt, List<AgentVO> team, Long memberAgentId,String teamDescription) {
+    public static String memberPrompt(String defaultPrompt, List<AgentVO> team, Long memberAgentId,
+                                      Long commanderAgentId, String teamDescription) {
         String roster = roster(team, memberAgentId, "（暂无其他团队成员）");
+        String commander = commanderAgentId == null ? "未提供" : String.valueOf(commanderAgentId);
         return String.format("""
                 %s
                 #### **团队协作模式(TEAM COORDINATION MODE)**
@@ -74,10 +79,11 @@ public final class TeamPromptComposer {
                  - 你也可能在执行过程中收到其它成员的消息,你可以选择性的回复,当然也可能会被忽视(它们的任务可能已经结束),可以稳妥交给主理人裁决
                 # 注意项 :
                  - 你没有委派能力（没有 call_sub_agent），不要尝试把任务转派给其他 Agent；也不要调用下列名单之外的 Agent。
+                 - 若被以异步（协作）方式委派：完成工作后**必须**用 `send_mail_to_agent` 把最终交付**只发一次**给主理人；主理人的 agentId 是 %s（角色邮箱由委派链的 (workflowExecutionId, recipientAgentId) 决定，模型无需手填地址）
                  - 只需要将结果交付给主理人
                  - 不要越过职责范围执行其他成员的工作,保持上下文干净
                 %s
-                """,defaultPrompt,teamDescription, roster);
+                """, defaultPrompt, teamDescription, commander, roster);
     }
 
     /**

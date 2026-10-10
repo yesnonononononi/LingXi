@@ -54,7 +54,11 @@ public class ToolConfig {
                 .id(ToolCatalog.CALL_SUB_AGENT)
                 .name(ToolCatalog.CALL_SUB_AGENT)
                 .executor(executor)
-                .description("Delegate one well-scoped task to a configured teammate and return its final result.")
+                .description("""
+                        Delegate one well-scoped task to a configured teammate.
+                        By default (runtime_mode=blocking) the teammate runs synchronously and its final result is returned as the tool result.
+                        With runtime_mode=async the delegation is accepted immediately so you keep working on the rest of the round; the teammate delivers its result back to you by email (send_mail_to_agent) later, so do not wait for it in this round.
+                        """)
                 .parametersJsonSchema("""
                         {
                           "type": "object",
@@ -63,7 +67,8 @@ public class ToolConfig {
                             "task": {"type": "string", "description": "A concrete, self-contained task for the teammate."},
                             "prompt": {"type": "string", "description": "Relevant context, constraints and expected output format."},
                             "workDir": {"type": "string", "description": "Current workspace directory."},
-                            "agentName": {"type": "string", "description": "The name of the target agent."}
+                            "agentName": {"type": "string", "description": "The name of the target agent."},
+                            "runtime_mode": {"type": "string", "enum": ["blocking", "async"], "default": "blocking", "description": "blocking: run the teammate synchronously and return its final result. async: accept the delegation immediately and continue your own work; the teammate delivers its result back to you by email (send_mail_to_agent) later."}
                           },
                           "required": ["agentId", "task"],
                           "additionalProperties": false
@@ -84,6 +89,9 @@ public class ToolConfig {
      *
      * <p>文案还刻意点明这是<b>编码协作</b>用途而非即时聊天：本工具没有回执通道，
      * 不该被用于「一问一答」的往返等待。措辞保持英文以与其余工具定义一致。</p>
+     *
+     * <p><b>双向用途</b>：这条描述对主理人（发给成员）与成员（把结果发回主理人）都要成立 ——
+     * 协作式（{@code runtime_mode=async}）委派下，成员完成工作后必须用它把最终交付发回主理人。</p>
      */
     @Bean
     public ToolDefinition<SendMailToAgentTool> sendMailToAgentToolToolDefinition(ObjectMapper objectMapper, EmailService emailService){
@@ -92,7 +100,8 @@ public class ToolConfig {
                 .name(ToolCatalog.SEND_MAIL_TO_AGENT)
                 .executor(new SendMailToAgentTool(objectMapper,emailService))
                 .description("""
-                        Send an asynchronous mail to a teammate agent.
+                        Send an asynchronous mail to a teammate agent or to the commander.
+                        Use it to deliver your final result back to the commander when you were delegated in async (collaboration) mode.
                         Delivery is asynchronous: the recipient reads this mail at the start of ITS next model round,
                         not immediately. There is no reply channel on this call, so sending does not return an answer.
                         After a successful send, continue with your own work, or if you have nothing left to do,
@@ -104,7 +113,7 @@ public class ToolConfig {
                         {
                           "type": "object",
                           "properties": {
-                            "toAgentId": {"type": "integer", "description": "Agent id from the commander's teammate list."},
+                            "toAgentId": {"type": "integer", "description": "Agent id of the recipient: a teammate, or the commander when a member sends its result back."},
                             "mailContent": {"type": "string", "description": "The mail body. Write it as a complete, self-contained message; the recipient cannot ask clarifying questions synchronously."}
                           },
                           "required": ["toAgentId", "mailContent"],

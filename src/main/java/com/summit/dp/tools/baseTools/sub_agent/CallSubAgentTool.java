@@ -21,9 +21,12 @@ import com.summit.dp.shared.context.SessionContextEntity;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.tools.baseTools.arguments.CallSubAgentToolArgument;
+import com.summit.dp.tools.baseTools.sub_agent.delegation.AsyncDelegationSubmitter;
+import com.summit.dp.tools.baseTools.sub_agent.delegation.AsyncDelegationTask;
 import com.summit.dp.tools.baseTools.sub_agent.delegation.DelegationRecorder;
 import com.summit.dp.tools.baseTools.sub_agent.delegation.DelegationSuspensionCard;
 import com.summit.dp.tools.baseTools.sub_agent.delegation.SubAgentRequestFactory;
+import com.summit.dp.tools.baseTools.sub_agent.result.AsyncDelegationResultRenderer;
 import com.summit.dp.tools.baseTools.sub_agent.result.SubAgentResultRenderer;
 import com.summit.dp.tools.baseTools.sub_agent.session.SubSessionResolver;
 import com.summit.dp.tools.baseTools.sub_agent.session.SubSessionTarget;
@@ -47,6 +50,10 @@ import java.util.Objects;
  *
  * <p>编排顺序里有两处不能调换：<b>建会话行必须晚于取消校验</b>（否则被取消的委派会留下孤儿会话）；
  * <b>落账必须先建轮次再写消息</b>（消息要带 turn_id）。</p>
+ *
+ * <p>两种运行模式在 {@code executeDelegation} 处分叉：<b>blocking</b>（默认）走上面这条同步路径；
+ * <b>async</b>（协作式）只提交异步任务并立即返回结构化 JSON，子 loop 与落库交给
+ * {@link AsyncDelegationSubmitter} 独立完成。</p>
  */
 @AllArgsConstructor
 @Component
@@ -64,6 +71,10 @@ public class CallSubAgentTool implements ToolExecutor {
     private final SessionRepository sessionRepository;
     private final DelegationSuspensionCard delegationSuspensionCard;
     private final DelegationRecorder delegationRecorder;
+    /** 协作式（异步）提交：子执行专用，独立于阻塞路径。 */
+    private final AsyncDelegationSubmitter asyncDelegationSubmitter;
+    /** 协作式结果渲染：结构化 JSON（英文键，禁含子代理正文）。 */
+    private final AsyncDelegationResultRenderer asyncResultRenderer;
 
     @Override
     public @NonNull ToolExecuteResult execute(ToolExecution toolExecution) {
@@ -111,7 +122,35 @@ public class CallSubAgentTool implements ToolExecutor {
             return membershipError;
         }
 
+        // 按运行模式分叉：未传 / blocking 走原阻塞路径（一行不改），async 走协作式提交路径。
+        if (argument.isAsyncMode()) {
+            return executeChildAsync(toolExecution, argument, agent, team, workDir);
+        }
         return executeChild(toolExecution, argument, agent, team, workDir);
+    }
+
+    /**
+     * 协作式（异步）委派：只做「解析子会话 → 组装请求 → 提交」三步即返回，<b>不跑子 loop</b>。
+     *
+     * <p>请求组装仍在<b>请求线程内</b>完成（只读解析，可失败即返回错误），失败时尚未提交，不产生任何孤儿。
+     * 真正的落库与开跑由 {@link AsyncDelegationSubmitter} 在异步线程内完成。返回结构化 JSON，
+     * 让指挥者立即拿回控制权继续本轮其它工作。</p>
+     */
+    private ToolExecuteResult executeChildAsync(ToolExecution toolExecution, CallSubAgentToolArgument argument,
+                                                AgentVO agent, TeamVO team, String workDir) {
+        Long rootSessionId = sessionIdOf(toolExecution);
+        Long parentWorkspaceId = parentWorkspaceIdOf(rootSessionId);
+
+        SubSessionTarget target = subSessionResolver.resolve(rootSessionId, agent);
+        Long numericSubSessionId = target.numericSubSessionId();
+
+        AgentRequest request = requestFactory.build(argument, agent, team, toolExecution, workDir,
+                target.subSessionId(), parentWorkspaceId, target.priorMessages());
+        argument.setSubSessionId(target.subSessionId());
+
+        asyncDelegationSubmitter.submit(new AsyncDelegationTask(rootSessionId, numericSubSessionId, parentWorkspaceId,
+                target, agent, argument, toolExecution, request));
+        return asyncResultRenderer.render(target.subSessionId(), agent.getId(), agent.getName());
     }
 
     private static ToolExecuteResult validateArgument(CallSubAgentToolArgument argument) {

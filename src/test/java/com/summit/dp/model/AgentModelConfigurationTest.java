@@ -30,7 +30,7 @@ class AgentModelConfigurationTest {
     private final AgentService agents = mock(AgentService.class);
     private final CallSubAgentTool child = new CallSubAgentTool(new ObjectMapper(), agents, null, null,
             new SubAgentRequestFactory(null, models, settings, null, new SkillRootResolver("")), null, null, null, null, null,
-            null, null);
+            null, null, null, null);
     /** 子模型解析已下沉到请求组装器，这里直接打它，避免再经工具入口绕行。 */
     private final SubAgentRequestFactory childModels = new SubAgentRequestFactory(null, models, settings, null,
             new SkillRootResolver(""));

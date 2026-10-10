@@ -21,26 +21,32 @@ const isPending = computed(() => props.promptCard.pending === true);
 const outcome = computed(() => String(props.promptCard.outcome ?? '').trim().toUpperCase());
 
 const resolvedStatus = computed<'success' | 'failed' | 'cancelled' | null>(() => {
+  // 仍等待子执行落定：以后端下发 pending 为准，状态未知（中性，不臆断）。
   if (isPending.value) return null;
   if (outcome.value === 'SUCCEEDED' || outcome.value === 'APPROVED') return 'success';
   if (outcome.value === 'CANCELLED') return 'cancelled';
-  return 'failed';
+  // 仅在 outcome 明确为失败类时才判 failed。协作式（异步）委派会让工具立刻 COMPLETED、
+  // 而结果由子代理后续邮件回填，此刻没有 outcome —— 不得再默认判 failed，改判未知。
+  if (outcome.value === 'FAILED' || outcome.value === 'REJECTED' || outcome.value === 'TIMED_OUT') {
+    return 'failed';
+  }
+  return null;
 });
 
-/** header 状态点语义色（与其余三类卡片同一套 CardTone） */
+/** header 状态点语义色（与其余三类卡片同一套 CardTone）；未知 / 进行中给中性色，不误报为失败。 */
 const headerTone = computed<CardTone>(() => {
   if (isPending.value) return 'pending';
   if (resolvedStatus.value === 'success') return 'approved';
-  if (resolvedStatus.value === 'cancelled') return 'unknown';
-  return 'rejected';
+  if (resolvedStatus.value === 'failed') return 'rejected';
+  return 'unknown';
 });
 
 const statusText = computed(() => {
-  return resolvedStatus.value === 'success'
-    ? '子代理已完成，结果已回填'
-    : resolvedStatus.value === 'cancelled'
-    ? '子代理执行已取消'
-    : '子代理执行失败';
+  if (resolvedStatus.value === 'success') return '子代理已完成，结果已回填';
+  if (resolvedStatus.value === 'cancelled') return '子代理执行已取消';
+  if (resolvedStatus.value === 'failed') return '子代理执行失败';
+  // 无明确结果：中性提示，避免把「仍在跑 / 结果待回填」误显示成失败。
+  return '子代理执行进行中 / 状态未知';
 });
 </script>
 

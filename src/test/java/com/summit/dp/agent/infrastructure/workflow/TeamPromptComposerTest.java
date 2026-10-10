@@ -44,7 +44,7 @@ class TeamPromptComposerTest {
         assertTrue(TeamPromptComposer.commanderPrompt("人设", TEAM, 5L, TEAM_DESCRIPTION)
                         .contains(commanderRoster),
                 "指挥者提示词里嵌的就是这份渲染");
-        assertTrue(TeamPromptComposer.memberPrompt("人设", TEAM, 6L, TEAM_DESCRIPTION)
+        assertTrue(TeamPromptComposer.memberPrompt("人设", TEAM, 6L, 5L, TEAM_DESCRIPTION)
                         .contains(memberRoster),
                 "成员提示词里嵌的也是这份渲染");
     }
@@ -59,7 +59,7 @@ class TeamPromptComposerTest {
         assertTrue(commander.contains(TEAM_DESCRIPTION), "团队描述随提示词下发");
         assertFalse(commander.contains("### 成员职责"), "指挥者不叫「团队成员」");
 
-        String member = TeamPromptComposer.memberPrompt("人设", TEAM, 6L, TEAM_DESCRIPTION);
+        String member = TeamPromptComposer.memberPrompt("人设", TEAM, 6L, 5L, TEAM_DESCRIPTION);
         assertTrue(member.contains("### 成员职责"), "成员职责段");
         assertTrue(member.contains("你没有委派能力"), "明确成员不能转派任务");
         assertTrue(member.contains(TEAM_DESCRIPTION), "团队描述随提示词下发");
@@ -67,16 +67,28 @@ class TeamPromptComposerTest {
     }
 
     @Test
+    @DisplayName("成员提示词显式带出主理人 agentId：成员发信填 toAgentId，不必猜 id")
+    void memberPromptCarriesCommanderAgentId() {
+        String member = TeamPromptComposer.memberPrompt("人设", TEAM, 6L, 5L, TEAM_DESCRIPTION);
+        assertTrue(member.contains("send_mail_to_agent"), "异步委派下成员必须知道用邮件交付");
+        assertTrue(member.contains("主理人的 agentId 是 5"),
+                "必须显式写出主理人 agentId，否则成员只能猜（send_mail_to_agent 的 toAgentId 是必填入参）");
+
+        String memberWithoutCommander = TeamPromptComposer.memberPrompt("人设", TEAM, 6L, null, TEAM_DESCRIPTION);
+        assertTrue(memberWithoutCommander.contains("主理人的 agentId 是 未提供"), "缺主理人 id 时用占位文案，不产生 null 字面量");
+    }
+
+    @Test
     @DisplayName("人设保留、名单为空时有占位文案、null 团队不炸")
     void handlesEdgeCases() {
         assertTrue(TeamPromptComposer.commanderPrompt("我是人设", TEAM, 5L, TEAM_DESCRIPTION)
                 .startsWith("我是人设"));
-        assertTrue(TeamPromptComposer.memberPrompt("我是人设", TEAM, 6L, TEAM_DESCRIPTION)
+        assertTrue(TeamPromptComposer.memberPrompt("我是人设", TEAM, 6L, 5L, TEAM_DESCRIPTION)
                 .startsWith("我是人设"));
 
         assertTrue(TeamPromptComposer.commanderPrompt(null, List.of(), 5L, TEAM_DESCRIPTION)
                 .contains("（无可委派队友；请自行完成任务）"));
-        assertTrue(TeamPromptComposer.memberPrompt(null, null, 6L, TEAM_DESCRIPTION)
+        assertTrue(TeamPromptComposer.memberPrompt(null, null, 6L, 5L, TEAM_DESCRIPTION)
                 .contains("（暂无其他团队成员）"));
     }
 

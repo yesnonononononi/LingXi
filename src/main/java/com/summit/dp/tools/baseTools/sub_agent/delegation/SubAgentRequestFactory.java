@@ -219,6 +219,7 @@ public class SubAgentRequestFactory {
                 agent.getPrompt(),
                 team == null ? null : team.getAgents(),
                 agent.getId(),
+                team == null ? null : team.getCommanderAgentId(),
                 team == null ? null : team.getDescription()
         );
         return String.format("""

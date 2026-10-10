@@ -25,7 +25,9 @@ import com.summit.dp.shared.settings.SettingsProvider;
 import com.summit.dp.shared.skill.SkillRootResolver;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.tools.baseTools.arguments.CallSubAgentToolArgument;
+import com.summit.dp.tools.baseTools.sub_agent.delegation.AsyncDelegationSubmitter;
 import com.summit.dp.tools.baseTools.sub_agent.delegation.SubAgentRequestFactory;
+import com.summit.dp.tools.baseTools.sub_agent.result.AsyncDelegationResultRenderer;
 import com.summit.dp.tools.baseTools.sub_agent.result.SubAgentResultRenderer;
 import com.summit.dp.tools.baseTools.sub_agent.session.SubSessionResolver;
 import org.junit.jupiter.api.DisplayName;
@@ -98,7 +100,8 @@ class CallSubAgentSessionReuseTest {
         this.tool = new CallSubAgentTool(new ObjectMapper(), null, null, subAgent,
                 requestFactory, subSessionResolver, new SubAgentResultRenderer(),
                 registry, modelContextService, sessionRepository,
-                suspensionCard, recorder);
+                suspensionCard, recorder,
+                mock(AsyncDelegationSubmitter.class), new AsyncDelegationResultRenderer(new ObjectMapper()));
     }
 
     private ToolExecution toolExecution() {

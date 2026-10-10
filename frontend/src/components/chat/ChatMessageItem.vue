@@ -198,9 +198,9 @@
                     'px-2.5 py-1 rounded-xl text-xs font-medium border flex items-center gap-1.5 transition cursor-pointer shrink-0',
                     props.isDark ? 'border-blue-500/30 bg-blue-600/15 hover:bg-blue-600/25 text-blue-300' : 'border-blue-200 bg-white hover:bg-blue-100 text-blue-700'
                   ]"
-                  :title="`切换查看 ${tc.subAgentName || `Agent #${tc.displayIndex || idx + 1}`} 的独立会话轨迹`"
+                  :title="subAgentMemberTitle(tc, idx)"
                 >
-                  <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="toolStatusDotClass(tc.status)"></span>
+                  <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="subAgentMemberDotClass(tc)"></span>
                   <span class="truncate max-w-28">{{ tc.subAgentName || `Agent #${tc.displayIndex || idx + 1}` }}</span>
                   <span class="text-[10px] opacity-60 shrink-0">#{{ tc.displayIndex ?? (idx + 1) }}</span>
                 </button>
@@ -594,7 +594,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, inject } from 'vue';
 import { FILE_PREVIEW_KEY } from '../../types/filePreview';
-import type { ChatMessage, ThoughtStep, ToolCallTrace, SubSessionVO, ProcessTimelineItem, ChatTurn, PromptCardData } from '../../types/chat';
+import type { ChatMessage, ThoughtStep, ToolCallTrace, SubSessionVO, ProcessTimelineItem, ChatTurn, PromptCardData, SubItemStatus } from '../../types/chat';
 import { toPromptCardData, buildCardSummary } from '../../utils/toolCallCard';
 import { cardDotClass, cardKindIconPath, resolveCardTone } from '../../utils/cardUi';
 import {
@@ -607,6 +607,7 @@ import {
 } from '../../utils/toolMeta';
 import { compareResponsePosition } from '../../utils/responseOrder';
 import { toObject } from '../../utils/json';
+import { isAsyncDelegation, asyncSubSessionStatus, subItemStatusDotClass } from '../../utils/asyncDelegation';
 import { AgentToolName } from '../../utils/toolNames';
 import { isActiveTurnStatus, isFailedTurnStatus, turnStatusLabel } from '../../utils/turnStatus';
 import { formatDurationOrPlaceholder } from '../../utils/format';
@@ -927,6 +928,34 @@ const subAgentToolCalls = computed<ToolCallTrace[]>(() => {
 const regularToolCalls = computed<ToolCallTrace[]>(() => {
   return props.message.toolCalls?.filter(tc => !isSubAgentToolCall(tc)) || [];
 });
+
+/**
+ * 协同条成员行的展示态：改由<b>子会话权威态</b>驱动。
+ *
+ * <p>协作式委派下工具会立即 COMPLETED，但子代理可能还在跑；继续读 `tc.status` 会把
+ * 「执行中」误显示成「已完成」（P0-6 误判点之一）。这里优先用匹配到的子会话 `runStatus/lastOutcome`
+ * 派生展示态（复用 {@link asyncSubSessionStatus}），子会话缺省时才回落工具状态。</p>
+ */
+const subAgentMemberStatus = (tc: ToolCallTrace): SubItemStatus => {
+  const params = extractSubAgentParams(tc);
+  const agentId = params.agentId ?? tc.subAgentId;
+  const subSessionId = tc.subSessionId ?? params.subSessionId;
+  const matchedSub = (subSessionId
+    ? props.subSessions?.find(s => String(s.id) === String(subSessionId))
+    : undefined)
+    || (agentId ? props.subSessions?.find(s => String(s.agentId) === String(agentId)) : undefined);
+  return asyncSubSessionStatus(matchedSub, tc);
+};
+
+const subAgentMemberDotClass = (tc: ToolCallTrace): string => subItemStatusDotClass(subAgentMemberStatus(tc));
+
+/** 成员行 title：协作式委派说明结果以邮件送达（阻塞式保持原提示）。 */
+const subAgentMemberTitle = (tc: ToolCallTrace, idx: number): string => {
+  const name = tc.subAgentName || `Agent #${tc.displayIndex || idx + 1}`;
+  return isAsyncDelegation(tc)
+    ? `协作式委派 ${name}：结果将以邮件送达，可继续其它工作`
+    : `切换查看 ${name} 的独立会话轨迹`;
+};
 
 /** 卡片无对应工具行时的排序基准（大于任何 rowIndex 派生的工具 order，保证卡片排在过程项之后） */
 const CARD_ORDER_BASE = 1_000_000;

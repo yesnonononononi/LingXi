@@ -68,7 +68,7 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public Result<String> chat(ChatCommand command) {
         RuntimeContext context = requestPreparer.prepare(command);
-        ensureSessionTreeIsIdle(context.executionContext().rootSessionId());
+        ensureRootExecutionIdle(context.executionContext().rootSessionId());
         // 单飞校验前置到请求线程，且**先于用户消息落库**：冲突时执行尚未开始，
         // 用户消息也还没写进历史，不会留下「有提问、无执行、无错误」的孤行。
         sessionExecutionRegistry.beginRoot(context.executionContext().rootSessionId());
@@ -105,7 +105,7 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public Result<ChatAcceptanceVO> acceptCommand(ChatCommand command) {
         RuntimeContext context = requestPreparer.prepare(command);
-        ensureSessionTreeIsIdle(context.executionContext().rootSessionId());
+        ensureRootExecutionIdle(context.executionContext().rootSessionId());
         sessionExecutionRegistry.beginRoot(context.executionContext().rootSessionId());
         return Result.success(commitAndSubmit(context));
     }
@@ -127,7 +127,7 @@ public class ChatServiceImpl implements ChatService {
 
         long rootSessionId = context.executionContext().rootSessionId();
 
-        ensureSessionTreeIsIdle(rootSessionId);
+        ensureRootExecutionIdle(rootSessionId);
 
         sessionExecutionRegistry.beginRoot(rootSessionId);
 
@@ -257,8 +257,15 @@ public class ChatServiceImpl implements ChatService {
     }
 
     /**
-     * 会话空闲防护：会话下任一执行尚未终结（{@code CREATED} / {@code RUNNING} / {@code SUSPENDED}）
-     * 就拒绝开新一轮。恢复入口是审批卡片与 {@code /resume}，不是再发一条消息。
+     * 根执行空闲防护：<b>只看根会话自身的执行</b>是否尚未终结（{@code CREATED} / {@code RUNNING} / {@code SUSPENDED}），
+     * 非终态就拒绝开新一轮。恢复入口是审批卡片与 {@code /resume}，不是再发一条消息。
+     *
+     * <p><b>作用域是「根执行」而不是「整棵会话树」</b>：判定数据来自
+     * {@code ExecutionQueryService.latestStatesBySession(List.of(rootSessionId))}，其 SQL 是
+     * {@code session_id IN (rootSessionId)}。而执行行的 {@code session_id} 取自请求属性
+     * {@code ExecutionAttributes.SESSION_ID}——<b>子执行</b>的该属性是<b>子会话 id</b>
+     * （见 {@code SubAgentRequestFactory#childAttributes}），因此异步子执行天然不在判定范围内：
+     * 协作模式下「子代理仍在跑」不会拦住用户开新一轮。这是 P0-4 要的语义。</p>
      *
      * <p><b>三个状态都要拦，缺一不可</b>：{@code SUSPENDED}（等待审批 / 子代理回填）自不必说；
      * {@code CREATED} / {@code RUNNING} 是<b>恢复执行</b>在跑 —— 恢复由
@@ -267,7 +274,7 @@ public class ChatServiceImpl implements ChatService {
      * 会漏掉「挂起 → 子代理回填 → 已恢复并正在跑」这段窗口，用户于是能在同一会话里开出第二个
      * 根执行：线上事故里两条「继续推进」各跑出一份交付总结，前端两个气泡同时收事件。</p>
      */
-    private void ensureSessionTreeIsIdle(long rootSessionId) {
+    private void ensureRootExecutionIdle(long rootSessionId) {
         List<ExecutionState> states = executionQueryService.latestStatesBySession(List.of(rootSessionId))
                 .get(rootSessionId);
         if (states == null || states.isEmpty()) {
