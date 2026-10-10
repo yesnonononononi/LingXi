@@ -9,7 +9,7 @@ const { createRenderer, h, ref, reactive, nextTick } = require('vue');
 const previewKey = Symbol('file-preview');
 
 // 编译真实模板，只替换子组件和浏览器依赖，折叠状态与事件使用组件自身逻辑。
-function loadChatModule(filename) {
+function loadChatModule(filename, realPlanCards = false) {
   const cache = new Map();
   function load(filename) {
     if (cache.has(filename)) return cache.get(filename).exports;
@@ -25,6 +25,7 @@ function loadChatModule(filename) {
       const resolved = path.resolve(path.dirname(filename), request);
       if (request.endsWith('.vue')) {
         if (request.endsWith('CardHeader.vue')) return load(resolved);
+        if (realPlanCards && /(?:PromptCard|PlanCard|CardActionButton)\.vue$/.test(request)) return load(resolved);
         if (request.endsWith('GradientText.vue')) {
           return { __esModule: true, default: {
             props: ['colors', 'animationSpeed', 'showBorder'],
@@ -156,6 +157,33 @@ function streamFixture() {
   reducer.consume(event({ type: 'EXECUTION_STARTED' }));
   return { reducer, event, answer: messages[0], AgentToolName };
 }
+
+test('历史计划书：权威卡片经真实消息和计划组件显示完整正文与审批按钮', t => {
+  const load = filename => loadChatModule(path.resolve(__dirname, filename), true);
+  const { AgentToolName } = load('../src/utils/toolNames.ts');
+  const { aggregateRecordsByIdentity } = load('../src/utils/session.ts');
+  const { attachPromptCards } = load('../src/utils/toolCallCard.ts');
+  const body = '## 目标\n\n核验真实产物。\n\n## 任务\n\n新增统计能力并独立验收。';
+  const callId = 'call-render-plan';
+  const messages = aggregateRecordsByIdentity('2108854642652921856', { '2108854643462422528': {
+    sessionId: '2108854642652921856', turnId: '2108854643462422528', status: 'WAITING', viewVersion: '4',
+    blocks: [{ blockId: `tool:${callId}`, responseId: '896693207532830720', order: 1,
+      type: 'TOOL', status: 'PROMISED', toolCallId: callId, toolName: AgentToolName.CreatePlan,
+      arguments: JSON.stringify({ title: '参数标题', text: '参数不能替代权威正文' }) }],
+  } });
+  attachPromptCards(messages, [{ id: callId, conversationId: '2108854642652921856',
+    type: 'PROMISE', status: 'pending', version: '4', pending: true, allowedActions: ['APPROVE', 'REJECT'],
+    content: { kind: 'PLAN', title: '协作式演示计划', text: body }, toolName: AgentToolName.CreatePlan }]);
+  const component = load('../src/components/chat/ChatMessageItem.vue').default;
+  for (const isDark of [false, true]) {
+    const root = mountComponent(t, component, { message: reactive(messages.find(item => item.role === 'assistant')),
+      sessionId: '2108854642652921856', isDark, isSuspended: true });
+    assert.ok(text(root).includes(body), '完整正文应显示在真正的计划组件中');
+    assert.ok(find(root, node => node.tag === 'button' && text(node).includes('批准')));
+    assert.ok(find(root, node => node.tag === 'button' && text(node).includes('拒绝执行')));
+    assert.doesNotMatch(text(root), /恢复执行|当前轮次已挂起/);
+  }
+});
 
 test('终端描述样式：与深度思考标题字号和颜色一致，明暗主题及结束状态保持一致', async t => {
   const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
@@ -294,81 +322,31 @@ test('思考正文：引用块内使用 Markdown，逐段追加保留完整内�
   assert.equal(text(resolveBody()), answer.thoughtSteps[0].content);
 });
 
-test('委派审批提醒：父会话隐藏挂起恢复条，自身审批入口仍保留', async t => {
-  const answer = message({ isSuspended: true, isComplete: false, aiMessages: [] });
-  const root = mount(t, answer);
-  assert.match(text(root), /当前轮次已挂起/);
-  assert.ok(find(root, node => node.tag === 'button' && text(node).trim() === '恢复执行'));
+test('挂起消息不显示黄色恢复条，计划与命令审批卡仍保留', async t => {
+  for (const isDark of [false, true]) {
+    const answer = message({ isSuspended: true, isComplete: false, aiMessages: [] });
+    const root = mount(t, answer, { isDark });
+    const assertNoResumeBar = () => {
+      assert.doesNotMatch(text(root), /当前轮次已挂起|等待人工决策或继续操作|恢复执行/);
+      assert.equal(Boolean(find(root, node => node.tag === 'button' && text(node).trim() === '恢复执行')), false);
+    };
+    assertNoResumeBar();
 
-  answer.promptCards = [{ id: 'delegate-1', type: 'PROMISE', status: 'pending',
-    content: { kind: 'DELEGATION', text: '委派任务', subSessionId: '8' } }];
-  await nextTick();
-  assert.doesNotMatch(text(root), /当前轮次已挂起|恢复执行/);
-  assert.ok(find(root, node => node.tag === 'prompt-card'), '委派任务卡仍保留');
+    for (const kind of ['PLAN', 'COMMAND']) {
+      answer.promptCards = [{ id: `card-${kind}`, type: 'PROMISE', status: 'pending',
+        content: { kind, text: '任务正文', command: 'git status', subSessionId: '8' },
+        allowedActions: ['APPROVE', 'REJECT'] }];
+      await nextTick();
+      assertNoResumeBar();
+      assert.ok(find(root, node => node.tag === 'prompt-card'), `${kind} 审批卡仍保留`);
+    }
 
-  answer.promptCards.push({ id: 'command-1', type: 'PROMISE', status: 'pending',
-    content: { kind: 'COMMAND', command: 'git status' }, allowedActions: ['APPROVE', 'REJECT'] });
-  await nextTick();
-  assert.match(text(root), /当前轮次已挂起/);
-  assert.ok(find(root, node => node.tag === 'prompt-card'));
-
-  answer.promptCards.splice(0, 1);
-  await nextTick();
-  assert.match(text(root), /当前轮次已挂起/, '子会话内的审批与恢复入口不受影响');
-});
-
-test('委派审批提醒：任务正文保留，等待说明隐藏，终态结果仍展示', async t => {
-  const component = loadChatModule(path.resolve(__dirname, '../src/components/chat/DelegationWaitCard.vue')).default;
-  const promptCard = reactive({ kind: 'DELEGATION', toolCallId: 'delegate-1', title: '工程师',
-    content: '委派任务正文', status: 'completed', pending: false, outcome: 'SUCCEEDED' });
-  const root = mountComponent(t, component, { promptCard, isDark: true });
-  assert.match(text(root), /子代理已完成，结果已回填/);
-
-  promptCard.status = 'pending';
-  promptCard.pending = true;
-  promptCard.outcome = undefined;
-  await nextTick();
-  const toggle = find(root, node => node.tag === 'button' && node.props['aria-expanded'] !== undefined);
-  toggle.props.onClick();
-  await nextTick();
-  assert.match(text(root), /委派任务正文/);
-  assert.doesNotMatch(text(root), /子代理已完成|子代理执行失败|人工审批/);
-
-  promptCard.status = 'completed';
-  promptCard.pending = false;
-  promptCard.outcome = 'FAILED';
-  await nextTick();
-  assert.match(text(root), /子代理执行失败/);
-});
-
-test('委派任务：默认折叠，点击标题展开 Markdown，内容更新不重置展开状态', async t => {
-  const component = loadChatModule(path.resolve(__dirname, '../src/components/chat/DelegationWaitCard.vue')).default;
-  const promptCard = reactive({ kind: 'DELEGATION', toolCallId: 'delegate-1', title: '工程师',
-    content: '## 目标\n\n- **导出** `model.fbx`', status: 'pending', pending: true });
-  const root = mountComponent(t, component, { promptCard, isDark: false });
-  const toggle = find(root, node => node.tag === 'button' && node.props['aria-expanded'] !== undefined);
-  assert.ok(toggle);
-  assert.match(text(toggle), /子代理委派.*工程师/);
-  assert.equal(toggle.props['aria-expanded'], false);
-  assert.equal(find(root, node => node.tag === 'markdown'), undefined);
-
-  toggle.props.onClick();
-  await nextTick();
-  assert.equal(toggle.props['aria-expanded'], true);
-  const body = find(root, node => node.tag === 'markdown');
-  assert.ok(body, '委派任务必须交给 Markdown 组件渲染');
-  assert.equal(text(body), promptCard.content);
-
-  promptCard.content += '\n- 检查结果';
-  await nextTick();
-  assert.equal(toggle.props['aria-expanded'], true);
-  assert.equal(text(find(root, node => node.tag === 'markdown')), promptCard.content);
-
-  toggle.props.onClick();
-  await nextTick();
-  assert.equal(toggle.props['aria-expanded'], false);
-  assert.equal(find(root, node => node.tag === 'markdown'), undefined);
-  assert.match(text(root), /工程师/);
+    answer.isSuspended = false;
+    answer.isComplete = true;
+    await nextTick();
+    assertNoResumeBar();
+    assert.match(text(root), /最终正文/);
+  }
 });
 
 test('实测回归：已有历史工具之后，新思考在过程末尾即时追加', async t => {
@@ -424,14 +402,14 @@ test('过程文本不跳正文：首片段即时打印，用途确认和工具�
     assert.equal(answer.content, '', '用途未确认的文本不能先进入正文');
     assert.ok(resolveProcessText(), '每个片段都必须在过程区即时可见');
     assert.equal(text(resolveProcessText()), expected);
-    assert.equal(answer.turnState.texts['text:101'].placement, undefined, '展示位置不伪造后端用途');
+    assert.equal(answer.turnState.texts['text:101'].isBody, undefined, '展示位置不伪造后端用途');
   }
   const initialNode = resolveProcessText();
   reducer.consume(event({ type: 'COMPLETE_TEXT', responseId: '101', order: 1, content: '检索完成。' }));
   await nextTick();
   assert.equal(answer.content, '');
   assert.equal(resolveProcessText() === initialNode, true);
-  reducer.consume(event({ type: 'AI_MESSAGE', responseId: '101', order: 1, text: '检索完成。', placement: 'PROCESS' }));
+  reducer.consume(event({ type: 'AI_MESSAGE', responseId: '101', order: 1, text: '检索完成。', isBody: false }));
   reducer.consume(event({ type: 'TOOL_CALL', requestId: 'c1', responseId: '101', order: 2,
     toolName: AgentToolName.ReadFile, args: '{"path":"a.md"}' }));
   await nextTick();
@@ -443,17 +421,17 @@ test('过程文本不跳正文：首片段即时打印，用途确认和工具�
   await nextTick();
   assert.equal(answer.content, '');
   assert.equal(text(root).split('最终结论').length - 1, 1);
-  reducer.consume(event({ type: 'AI_MESSAGE', responseId: '102', order: 1, text: '最终结论', placement: 'BODY' }));
+  reducer.consume(event({ type: 'AI_MESSAGE', responseId: '102', order: 1, text: '最终结论', isBody: true }));
   await nextTick();
   assert.equal(answer.content, '最终结论');
   assert.deepEqual(answer.aiMessages.map(item => item.id), ['text:101']);
   assert.equal(text(root).split('最终结论').length - 1, 1, '正文归位后不能在过程区重复显示');
 });
 
-test('第二版真实组件：工具先到的文本持续追加在过程区，旧快照不搬回正文', async t => {
+test('第二版真实组件：工具先到的文本持续追加在过程区，isBody:false 的快照把它留在过程区', async t => {
   const { reducer, event, answer, AgentToolName } = streamFixture();
   const root = mount(t, answer);
-  reducer.consume(event({ type: 'TOOL_CALL', requestId: 'c1', responseId: '101', order: 2, placement: 'PROCESS',
+  reducer.consume(event({ type: 'TOOL_CALL', requestId: 'c1', responseId: '101', order: 2, isBody: false,
     toolName: AgentToolName.ReadFile, args: '{"path":"a.md"}' }));
   reducer.consume(event({ type: 'PARTIAL_TEXT', responseId: '101', offset: 0, order: 1, content: '先读' }));
   await nextTick();
@@ -465,13 +443,18 @@ test('第二版真实组件：工具先到的文本持续追加在过程区，�
   reducer.consume(event({ type: 'PARTIAL_TEXT', responseId: '102', offset: 0, order: 1001, content: '最终结论' }));
   reducer.consume({ type: 'TURN_SNAPSHOT', sessionId: '7', turnId: '900', viewVersion: '1', view: {
     sessionId: '7', turnId: '900', viewVersion: '1', status: 'RUNNING', blocks: [
-      { blockId: 'text:101', responseId: '101', type: 'TEXT', order: 1, status: 'COMPLETE', placement: 'BODY', text: '先读文件' },
+      { blockId: 'text:101', responseId: '101', type: 'TEXT', order: 1, status: 'COMPLETE', isBody: false, text: '先读文件' },
     ],
   } });
   await nextTick();
-  assert.equal(answer.content, '', '新响应用途未确认时仍在过程区打印');
+  assert.equal(answer.content, '', '快照标过程：该文本不得进入正文');
+  // 这条才是本步的不变量：false 的快照必须把该文本留在过程投影里。
+  // 只断言 content === '' 是平凡的（TOOL_CALL 事件早已把该响应定为 false），掉出过程区同样会让它成立 —— 那等于内容静默丢失。
+  // 注意 text:102 此刻也在过程区：它的用途尚未由后端确认（PARTIAL_TEXT 不带 isBody），故只断言 101 的归属。
+  assert.ok(answer.aiMessages.some(item => item.id === 'text:101' && item.text === '先读文件'),
+    'isBody:false 的快照必须留在过程区，不能从过程投影里掉出');
   assert.match(text(root), /最终结论/);
-  reducer.consume(event({ type: 'AI_MESSAGE', responseId: '102', order: 1001, text: '最终结论', placement: 'BODY' }));
+  reducer.consume(event({ type: 'AI_MESSAGE', responseId: '102', order: 1001, text: '最终结论', isBody: true }));
   await nextTick();
   assert.equal(answer.content, '最终结论');
   assert.equal(text(root).split('先读文件').length - 1, 1);
@@ -499,15 +482,15 @@ test('框架位置真实组件：逐段打印、用途确认和并发工具位�
   reducer.consume(event({ type: 'PARTIAL_TEXT', responseId: first, offset: 1, order: 1, content: '读文件' }));
   await nextTick();
   assert.match(text(root), /先读文件/);
-  reducer.consume(event({ type: 'AI_MESSAGE', responseId: first, order: 1, text: '先读文件', placement: 'PROCESS' }));
+  reducer.consume(event({ type: 'AI_MESSAGE', responseId: first, order: 1, text: '先读文件', isBody: false }));
   await nextTick();
   assert.equal(answer.content, '');
   assert.equal(text(root).split('先读文件').length - 1, 1);
   for (const [id, order, path] of [['c2', 3, 'second.md'], ['c1', 2, 'first.md']]) {
-    reducer.consume(event({ type: 'TOOL_CALL', requestId: id, responseId: first, order, placement: 'PROCESS',
+    reducer.consume(event({ type: 'TOOL_CALL', requestId: id, responseId: first, order, isBody: false,
       toolName: AgentToolName.ReadFile, args: JSON.stringify({ path }) }));
   }
-  reducer.consume(event({ type: 'AI_MESSAGE', responseId: second, order: 1, text: '再确认', placement: 'PROCESS' }));
+  reducer.consume(event({ type: 'AI_MESSAGE', responseId: second, order: 1, text: '再确认', isBody: false }));
   await nextTick();
   const rendered = text(root);
   assert.ok(rendered.indexOf('先读文件') < rendered.indexOf('first.md'), rendered);

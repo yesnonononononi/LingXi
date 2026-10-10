@@ -70,12 +70,39 @@ class TeamPromptComposerTest {
     @DisplayName("成员提示词显式带出主理人 agentId：成员发信填 toAgentId，不必猜 id")
     void memberPromptCarriesCommanderAgentId() {
         String member = TeamPromptComposer.memberPrompt("人设", TEAM, 6L, 5L, TEAM_DESCRIPTION);
-        assertTrue(member.contains("send_mail_to_agent"), "异步委派下成员必须知道用邮件交付");
+        assertTrue(member.contains("send_mail_to_agent"), "成员可通过邮件补充通知");
         assertTrue(member.contains("主理人的 agentId 是 5"),
                 "必须显式写出主理人 agentId，否则成员只能猜（send_mail_to_agent 的 toAgentId 是必填入参）");
 
         String memberWithoutCommander = TeamPromptComposer.memberPrompt("人设", TEAM, 6L, null, TEAM_DESCRIPTION);
         assertTrue(memberWithoutCommander.contains("主理人的 agentId 是 未提供"), "缺主理人 id 时用占位文案，不产生 null 字面量");
+    }
+
+    @Test
+    @DisplayName("主理人按阻塞返回值与协作产物收口，内部交付故障自行处理")
+    void commanderOwnsDeliveryWithoutMemberMail() {
+        String prompt = TeamPromptComposer.commanderPrompt("人设", TEAM, 5L, TEAM_DESCRIPTION);
+
+        assertTrue(prompt.contains("委派为协作式") && prompt.contains("受理后你继续推进其它主线步骤"));
+        assertTrue(prompt.contains("交付说明与邮件都不是验收依据")
+                && prompt.contains("核验成员工作目录中的实际产物与验证记录"));
+        assertTrue(prompt.contains("改动文件清单、自检结论（实际执行的命令与结果）、未决项"));
+        assertTrue(prompt.contains("先自行读文件、跑验证"));
+        assertTrue(prompt.contains("由你补做或重新委派"));
+        assertTrue(prompt.contains("回退能让回归用例变红"));
+        assertFalse(prompt.contains("等待用户决策是否重新委派"));
+    }
+
+    @Test
+    @DisplayName("成员以落盘产物和验证记录交付，邮件仅补充通知")
+    void memberDeliversArtifactsAndExplicitValidation() {
+        String prompt = TeamPromptComposer.memberPrompt("人设", TEAM, 6L, 5L, TEAM_DESCRIPTION);
+
+        assertTrue(prompt.contains("改动文件清单、自检结论（实际执行的命令与结果）、未决项"));
+        assertTrue(prompt.contains("主理人会核验产物"));
+        assertTrue(prompt.contains("把产物和验证记录写入工作目录"));
+        assertTrue(prompt.contains("邮件只是补充通道"));
+        assertTrue(prompt.contains("未运行的检查必须如实说明"));
     }
 
     @Test

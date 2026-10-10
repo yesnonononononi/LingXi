@@ -5,6 +5,7 @@ import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.dp.agent.infrastructure.agent.SubAgent;
 import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
+import com.summit.dp.agent.infrastructure.runtime.SubExecutionLifecycle;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.shared.context.SessionContextEntity;
 import com.summit.dp.tools.baseTools.sub_agent.session.SubSessionResolver;
@@ -22,13 +23,14 @@ import java.util.concurrent.Executors;
  *
  * <p><b>为什么不复用 {@code PreparedChatExecutor.run}</b>：它的 finally 会 {@code finishRoot}（释放根运行资格）。
  * 异步子执行若借它执行，就会在子执行结束时误释放根资格 —— 根可能还在跑，或已完工而子执行仍在跑。
- * 本类只做子执行该做的事：<b>注册 → 建行 / 落账 / 建执行 → 跑 loop → 回写上下文 → 注销</b>，
+ * 本类只做子执行该做的事：<b>绑定运行线程 → 建行 / 落账 / 建执行 → 跑 loop → 回写上下文</b>，
  * 全程不碰 {@code beginRoot} / {@code finishRoot}，也不走受理链、不建流。</p>
  *
- * <p><b>注册时机</b>：子执行比工具调用活得久，注册必须跟着子执行自身的生命周期，而不是工具调用的 try/finally。
- * 因此注册落在 {@link #runChild} 的方法体内、子 loop 开跑<b>之前</b>，注册对象是<b>该异步线程自身</b>
- * （{@code Thread.currentThread()} 才是 {@code interrupt} 打得到的那根线程），注销挂在它的 finally。
- * 「先注册成功、再做其余全部落库 / 开跑动作」保证「提交后、开跑前被取消」这一窗口不产生任何孤儿。</p>
+ * <p><b>登记与注销都在子执行自身生命周期上</b>：「待启动」登记由提交方（{@code CallSubAgentTool}）
+ * 在提交前完成，本类在子 loop 开跑<b>之前</b>把登记绑定到该异步线程自身（{@code Thread.currentThread()}
+ * 才是 {@code interrupt} 打得到的那根线程）；注销<b>不再</b>挂在异步线程的 finally —— 挂起的子执行
+ * 仍算「未结束」，只有真正终态才由结束事实链（{@code SubExecutionLifecycle}）移除，避免根在子执行
+ * 等待人工审批期间被误判为「无子执行」而提前收尾。</p>
  */
 @Slf4j
 @Component
@@ -41,6 +43,8 @@ public class AsyncDelegationSubmitter {
     private final DelegationRecorder delegationRecorder;
     private final ModelContextService modelContextService;
     private final ExecutionControl executionControl;
+    /** 子执行从未建立执行（落库前失败）时的兜底结束事实协作器。 */
+    private final SubExecutionLifecycle subExecutionLifecycle;
     private final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
 
     /** 提交一次协作式子执行：立即返回，真正的落库与开跑在虚拟线程内进行。 */
@@ -49,15 +53,16 @@ public class AsyncDelegationSubmitter {
     }
 
     /**
-     * 子执行体：与阻塞路径同构且同序 —— 先注册，再落库，最后开跑。
+     * 子执行体：先绑定运行线程，再落库，最后开跑。
      *
-     * <p>注册失败意味着根已停止：此时<b>不建任何行、不开跑</b>，直接结束（无孤儿）。</p>
+     * <p>绑定失败意味着根已取消：此时<b>不建任何行、不开跑</b>，撤销未开跑登记后直接结束（无孤儿）。</p>
      */
     private void runChild(AsyncDelegationTask task) {
         Long rootSessionId = task.rootSessionId();
         Long childSessionId = task.numericSubSessionId();
 
-        if (!sessionExecutionRegistry.registerChild(rootSessionId, childSessionId, Thread.currentThread())) {
+        if (!sessionExecutionRegistry.bindRunningChild(rootSessionId, childSessionId, Thread.currentThread())) {
+            sessionExecutionRegistry.revokeChild(rootSessionId, childSessionId);
             log.info("子执行未开跑（根已取消）: rootSessionId={}, subSessionId={}", rootSessionId, childSessionId);
             return;
         }
@@ -75,15 +80,12 @@ public class AsyncDelegationSubmitter {
                     () -> createAndRun(task));
 
             modelContextService.replace(childSessionId, execution.getMessages());
-
-            // 二期预留点：此处投递交付邮件，并判定收件方（主理人）是否已完工 → 已完工则新建执行唤醒。
-            // 一期不实现（PRD P2-1 / P2-3），只留位置。
         } catch (RuntimeException e) {
             log.warn("异步子执行失败: rootSessionId={}, subSessionId={}, cause={}",
                     rootSessionId, childSessionId, e.toString());
-            // 二期预留点：失败也走邮件投递（P2-3）。一期不实现。
-        } finally {
-            sessionExecutionRegistry.unregisterChild(rootSessionId, childSessionId);
+            // 子执行从未建立执行（无生命周期通知）时的结束事实：移除登记 + 唤醒根；已开跑的失败走框架
+            // notifyFinished 链，二者幂等。
+            subExecutionLifecycle.abandonChild(rootSessionId, childSessionId, task.rootExecutionId());
         }
     }
 

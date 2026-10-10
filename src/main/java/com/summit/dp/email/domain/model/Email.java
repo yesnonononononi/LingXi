@@ -25,7 +25,7 @@ public class Email {
 
     private final Long id;
 
-    /** 协作根执行 ID：根执行取自身 ID，子执行继承根执行 ID；仅用于隔离不同协作轮次。 */
+    /** 协作根会话 ID：根执行取自身会话，子执行取其 {@code ROOT_SESSION_ID}。同一根会话的各轮执行共享同一把邮箱键，故键在会话级而非执行级。 */
     private final Long workflowExecutionId;
 
     /** 收件 Agent ID：只表示收件角色，不绑定任何执行实例。 */

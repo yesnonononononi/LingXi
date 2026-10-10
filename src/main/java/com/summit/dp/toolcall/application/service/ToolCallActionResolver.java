@@ -27,7 +27,6 @@ public class ToolCallActionResolver {
         if (!policy.isUnresolved(tool)) return new Availability(List.of(), null);
         if (tool.getStatus() == ToolCallStatus.PREPARING) return new Availability(List.of(), "互动正在准备，请稍候");
         if (tool.getStatus() == ToolCallStatus.IN_PROGRESS) return new Availability(List.of(), "互动正在处理中");
-        if (kind == ToolCallKind.DELEGATION) return new Availability(List.of(), "等待子代理执行结果");
         if (tool.getExecutionId() == null || kind == null || content == null
                 || kind == ToolCallKind.EXECUTE) return new Availability(List.of(), "互动数据不可用，请刷新状态");
 
@@ -54,7 +53,6 @@ public class ToolCallActionResolver {
         if (!policy.isUnresolved(tool)) return new Availability(List.of(), null);
         if (tool.getStatus() == ToolCallStatus.PREPARING) return new Availability(List.of(), "互动正在准备，请稍候");
         if (tool.getStatus() == ToolCallStatus.IN_PROGRESS) return new Availability(List.of(), "互动正在处理中");
-        if (kind == ToolCallKind.DELEGATION) return new Availability(List.of(), "等待子代理执行结果");
         if (kind == null || content == null || kind == ToolCallKind.EXECUTE) {
             return new Availability(List.of(), "互动数据不可用，请刷新状态");
         }

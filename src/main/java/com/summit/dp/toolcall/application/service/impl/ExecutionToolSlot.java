@@ -12,16 +12,16 @@ import java.util.List;
 /**
  * 执行内「待回填工具槽位」的定位与写入。
  *
- * <p>PROMISE 工具（PLAN / CHOICE / COMMAND / DELEGATION）挂起时，框架会在执行消息里留下
+ * <p>PROMISE 工具（PLAN / CHOICE / COMMAND）挂起时，框架会在执行消息里留下
  * 一条占位 {@link ToolMessageEntity}；恢复前由决策方（{@code decide} / 委派回填）把真实结论
- * 写进这条消息。四类卡片的定位与写入规则完全一致，收敛到本类避免各决策方各写一份遍历。</p>
+ * 写进这条消息。各类卡片的定位与写入规则完全一致，收敛到本类避免各决策方各写一份遍历。</p>
  *
  * <p><b>定位规则</b>：主键（call id，即消息 id）命中优先；退化为按工具名取最后一条——
  * 兜底的是「快照反序列化后 id 缺失」的历史数据。两者都未命中返回 {@code null}，
  * 由调用方决定抛错还是降级（不同决策方的失败语义不同）。</p>
  *
  * <p>public 但仅限 toolcall 模块内使用：应用侧决策（{@code ToolCallServiceImpl} /
- * {@code CommandApprovalExecutor}）与基础设施侧回填（{@code DelegationSettleService}）共用。</p>
+ * {@code CommandApprovalExecutor}）共用。</p>
  */
 public final class ExecutionToolSlot {
 

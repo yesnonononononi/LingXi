@@ -3,6 +3,7 @@ import { chatApi } from '../../services/chat';
 import type { ChatSession, ChatMessage } from '../../types/chat';
 import { buildSessionMarkdown, mergeTurns, mergeTurnViews, synthesizeFailedTurnBubbles } from '../../utils/session';
 import { upsertTurnViewIntoMessages } from './blockProjection';
+import { attachPromptCards } from '../../utils/toolCallCard';
 import { isTempSessionId } from '../../utils/ids';
 
 export interface ChatSessionListOptions {
@@ -94,6 +95,7 @@ export function useChatSessionList(options: ChatSessionListOptions) {
         for (const view of Object.values(mergedViews)) {
           if (view) upsertTurnViewIntoMessages(mergedMessages, view, versions);
         }
+        attachPromptCards(mergedMessages, detail.messages.flatMap(message => message.promptCards ?? []));
         localSessions.value[idx] = {
           ...previous,
           ...detail,

@@ -229,6 +229,7 @@ export class TurnStreamReducer {
       messages.splice(messages.length, 0, ...pair);
     }
     this.activeBubbleId = bubble.id;
+    this.requestBlockCards(bubble);
     this.onScrollFollow?.();
   }
 
@@ -249,6 +250,19 @@ export class TurnStreamReducer {
     if (!bubble) return;
 
     upsertBlockIntoBubble(bubble, payload.view);
+    this.requestBlockCards(bubble);
+  }
+
+  /** 快照和增量也会带来待审批工具，不能只靠已错过的框架工具事件建卡。 */
+  private requestBlockCards(bubble: ChatMessage): void {
+    for (const tool of bubble.toolCalls ?? []) {
+      if (!isCardToolName(tool.toolName)) continue;
+      const card = bubble.promptCards?.find(item => String(item.id) === tool.id);
+      const needsCard = tool.status === 'pending'
+        ? !card || !this.isCardSettled(card)
+        : card && card.status !== 'completed';
+      if (needsCard) this.requestPromptCard(bubble.id, tool.id, tool.toolName);
+    }
   }
 
   /** 按 turnId 查已存在的助手气泡（不新建）。 */

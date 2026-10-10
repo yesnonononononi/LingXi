@@ -67,12 +67,11 @@ public class CardAvailabilityPolicy {
             case PLAN -> new KindRule(ToolCallKeys.TEXT, approveOrReject());
             case CHOICE -> new KindRule(ToolCallKeys.QUESTION, List.of(ToolCallAction.ANSWER.wireValue()));
             case COMMAND -> new KindRule(ToolCallKeys.COMMAND, approveOrReject());
-            // 委派等待等的是子执行结果，不是人工审批，永远不出按钮。
-            case DELEGATION, EXECUTE -> new KindRule(null, List.of());
+            case EXECUTE -> new KindRule(null, List.of());
         };
     }
 
-    /** 是否人工可决策的形态（DELEGATION 等自动回填的形态不算）。 */
+    /** 是否人工可决策的形态（自动回填 / 无卡片载荷的形态不算）。 */
     public boolean isHumanDecision(ToolCallKind kind) {
         return kind == ToolCallKind.PLAN || kind == ToolCallKind.CHOICE || kind == ToolCallKind.COMMAND;
     }

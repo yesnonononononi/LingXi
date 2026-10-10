@@ -3,7 +3,7 @@
  *
  * <p>钉住三条不变量：</p>
  * <ol>
- *   <li><b>块 → 气泡的落点由后端 type/placement 唯一决定</b>：THINKING→thoughtSteps、
+ *   <li><b>块 → 气泡的落点由后端 type/isBody 唯一决定</b>：THINKING→thoughtSteps、
  *       TEXT+PROCESS→aiMessages、TEXT+BODY→content、TOOL→toolCalls；顺序全来自 {@code order}。</li>
  *   <li><b>增量按 blockId 覆盖而非版本比较</b>：同一 blockId 的第二次 upsert 必须替换掉第一次，
  *       即使 viewVersion 未变（工具收尾不改 chat_turn，版本号相等是合法情形）。</li>
@@ -41,10 +41,10 @@ const thinking = (order: number): Block => ({
   blockId: 'thinking:101', type: 'THINKING', order, status: 'COMPLETE', text: '想一下',
 });
 const processText = (order: number): Block => ({
-  blockId: 'text:101', type: 'TEXT', order, status: 'COMPLETE', placement: 'PROCESS', text: '中途叙述',
+  blockId: 'text:101', type: 'TEXT', order, status: 'COMPLETE', isBody: false, text: '中途叙述',
 });
 const bodyText = (order: number): Block => ({
-  blockId: 'text:102', type: 'TEXT', order, status: 'COMPLETE', placement: 'BODY', text: '结论正文',
+  blockId: 'text:102', type: 'TEXT', order, status: 'COMPLETE', isBody: true, text: '结论正文',
 });
 const tool = (order: number, status: Block['status'] = 'COMPLETED'): Block => ({
   blockId: 'tool:call-1', type: 'TOOL', order, status, toolCallId: 'call-1', toolName: 'read_file',

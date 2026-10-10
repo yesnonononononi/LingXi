@@ -1,5 +1,4 @@
 import type { ChatMessage, ResponseTextBuffer, ToolCallTrace, TurnRenderState } from '../../types/chat';
-import type { Placement } from '../../types/block';
 import { compareResponsePosition } from '../../utils/responseOrder';
 
 export function getTurnState(bubble: ChatMessage): TurnRenderState {
@@ -26,10 +25,12 @@ export function applyTurnStatus(bubble: ChatMessage, status: string): void {
   }
 }
 
-/** 用途只接受后端字段，重复或旧快照不能让同一响应反复搬动。 */
-export function applyTextPlacement(bubble: ChatMessage, id: string, placement?: Placement): void {
+/** 正文归属只接受后端字段；只允许 false → true 升级，一旦定正文就不接受降级（迟到的旧帧不得把它拉回过程区）。 */
+export function applyTextPlacement(bubble: ChatMessage, id: string, isBody?: boolean): void {
   const buffer = getTurnState(bubble).texts[id];
-  if (buffer && buffer.placement !== 'PROCESS' && placement) buffer.placement = placement;
+  if (!buffer || isBody === undefined) return;
+  if (buffer.isBody === true) return;
+  buffer.isBody = isBody;
 }
 
 /** offset 使用 UTF-16 长度；全文和历史都从零写入，缺口补齐后再连续打印。 */
@@ -95,7 +96,7 @@ export function renderTurnState(bubble: ChatMessage): void {
         status: buffer.complete ? 'success' as const : 'running' as const, order: buffer.order, responseId: buffer.responseId };
       bubble.thoughtSteps.push(step);
       if (buffer.order !== undefined) bubble.processTimeline.push({ id, type: 'thought', order: buffer.order, responseId: buffer.responseId, step });
-    } else if (buffer.placement !== 'BODY') {
+    } else if (buffer.isBody !== true) {
       const message = { id, text: buffer.text, order: buffer.order, responseId: buffer.responseId };
       bubble.aiMessages.push(message);
       if (buffer.order !== undefined) bubble.processTimeline.push({ id, type: 'intermediate_ai', order: buffer.order, responseId: buffer.responseId, message });
@@ -107,8 +108,8 @@ export function renderTurnState(bubble: ChatMessage): void {
   bubble.thoughtSteps.sort(compareResponsePosition);
   bubble.aiMessages.sort(compareResponsePosition);
   bubble.processTimeline.sort(compareResponsePosition);
-  // 未确认用途先在过程区打印，只有后端明确 BODY 才归入正文。
-  const body = Object.values(state.texts).filter(buffer => buffer.kind === 'TEXT' && buffer.placement === 'BODY')
+  // 正文只由后端 isBody === true 决定，前端不猜工具调用是否出现。
+  const body = Object.values(state.texts).filter(buffer => buffer.kind === 'TEXT' && buffer.isBody === true)
     .sort(compareResponsePosition).at(-1);
   bubble.content = body?.text ?? '';
   if (bubble.sendError && !bubble.content.endsWith(bubble.sendError)) {

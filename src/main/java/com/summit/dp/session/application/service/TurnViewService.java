@@ -64,7 +64,7 @@ public class TurnViewService {
         // 而实时链路每个工具收尾都要装配一次，长会话下会成为主成本。
         List<SessionMessage> messages = messageRepository.findByTurnIds(sessionId, List.of(turn.getId()));
         Map<String, ToolCall> toolCalls = loadToolCalls(messages, turn.getId());
-        List<Block> blocks = turnViewAssembler.assembleBlocks(turn.getId(), messages, toolCalls);
+        List<Block> blocks = turnViewAssembler.assembleBlocks(turn.getId(), messages, toolCalls, turn.getStatus());
 
         return Optional.of(new TurnViewVO(
                 sessionId,

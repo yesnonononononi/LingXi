@@ -27,9 +27,9 @@ export function consumeToolEvent(bubble: ChatMessage, event: ToolCallStartEvent 
     trace.minusLines = diff?.minusLines ?? undefined;
   }
   writeToolTrace(bubble, trace);
-  if (event.responseId && event.placement) {
+  if (event.responseId && event.isBody !== undefined) {
     writeResponseText(bubble, `text:${event.responseId}`, 'TEXT', 0, '');
-    applyTextPlacement(bubble, `text:${event.responseId}`, event.placement);
+    applyTextPlacement(bubble, `text:${event.responseId}`, event.isBody);
   }
   renderTurnState(bubble);
   return true;

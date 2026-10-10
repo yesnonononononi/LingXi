@@ -37,11 +37,11 @@ function thinking(text: string, order = nextOrder()): Block {
 }
 
 function bodyText(text: string, order = nextOrder()): Block {
-  return { blockId: `text:${order}`, type: 'TEXT', order, status: 'COMPLETE', placement: 'BODY', text };
+  return { blockId: `text:${order}`, type: 'TEXT', order, status: 'COMPLETE', isBody: true, text };
 }
 
 function processText(text: string, order = nextOrder()): Block {
-  return { blockId: `text-p:${order}`, type: 'TEXT', order, status: 'COMPLETE', placement: 'PROCESS', text };
+  return { blockId: `text-p:${order}`, type: 'TEXT', order, status: 'COMPLETE', isBody: false, text };
 }
 
 function toolBlock(callId: string, toolName: string, order = nextOrder(), output = 'ok'): Block {

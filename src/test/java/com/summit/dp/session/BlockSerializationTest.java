@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.shared.config.JsonConfig;
 import com.summit.dp.shared.vo.block.Block;
 import com.summit.dp.shared.vo.block.BlockStatus;
-import com.summit.dp.shared.vo.block.Placement;
 import com.summit.dp.shared.vo.block.TextBlock;
 import com.summit.dp.shared.vo.block.ThinkingBlock;
 import com.summit.dp.shared.vo.block.ToolBlock;
@@ -39,7 +38,7 @@ class BlockSerializationTest {
         ThinkingBlock thinking = new ThinkingBlock(
                 ThinkingBlock.identity("9007199254740993"), "9007199254740993", 0, BlockStatus.COMPLETE, "思考内容");
         TextBlock body = new TextBlock(
-                TextBlock.identity("9007199254740993"), "9007199254740993", 1, BlockStatus.COMPLETE, Placement.BODY, "正文");
+                TextBlock.identity("9007199254740993"), "9007199254740993", 1, BlockStatus.COMPLETE, true, "正文");
         ToolBlock tool = new ToolBlock(
                 ToolBlock.identity("call_1"), null, 2, BlockStatus.TOOL_COMPLETED,
                 "call_1", "read_file", "{\"path\":\"a\"}", "文件内容", 3, 0);
@@ -70,18 +69,21 @@ class BlockSerializationTest {
         assertInstanceOf(TextBlock.class, restored.blocks().get(1));
         assertInstanceOf(ToolBlock.class, restored.blocks().get(2));
         assertEquals("思考内容", ((ThinkingBlock) restored.blocks().get(0)).text());
-        assertEquals(Placement.BODY, ((TextBlock) restored.blocks().get(1)).placement());
+        assertTrue(((TextBlock) restored.blocks().get(1)).isBody(), "布尔字段 isBody 必须能往返");
     }
 
     /** 字段可见性：所有契约字段真的出现在 JSON 里（不是只在对象上）。 */
     @Test
-    @DisplayName("序列化：契约字段全部落到 JSON")
+    @DisplayName("序列化：契约字段全部落到 JSON，布尔键名是 isBody 而非 body")
     void contractFieldsAreVisible() throws Exception {
         String text = json.writeValueAsString(sampleView());
         for (String field : List.of("sessionId", "turnId", "status", "viewVersion",
-                "blockId", "responseId", "order", "placement", "toolCallId", "toolName")) {
+                "blockId", "responseId", "order", "isBody", "toolCallId", "toolName")) {
             assertTrue(text.contains("\"" + field + "\""), "字段缺失: " + field + " in " + text);
         }
+        // 契约键名必须是 isBody。实测（Jackson 2.19.2）record 组件名已直接生效，去掉 @JsonProperty 也不会
+        // 被推断成 "body" —— 该注解是显式防御，不依赖特定版本的推断行为；本断言守住的是对外契约本身。
+        assertFalse(text.contains("\"body\""), "布尔键名变成了 body（对外契约破裂）: " + text);
         // Long 走 ToStringSerializer：turnId 必须是字符串，避免前端大整数精度丢失。
         assertTrue(text.contains("\"turnId\":\"800\""), "turnId 应为字符串: " + text);
     }

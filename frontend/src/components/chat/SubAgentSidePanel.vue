@@ -334,6 +334,7 @@ defineExpose({
           ref="subScrollLoaderRef"
           :messages="subMessages || []"
           :turnMap="turnMap"
+          :taskRecipientName="activeSubSession?.name"
           :sessionId="activeSubSession?.id || activeItem.id"
           :isDark="isDark"
           :isLoading="isLoadingMessages"

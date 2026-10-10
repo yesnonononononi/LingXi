@@ -631,7 +631,7 @@ const turnView = (
   const blocks: Block[] = [];
   let order = 0;
   if (opts.text !== undefined) {
-    blocks.push({ blockId: `text:${turnId}`, type: 'TEXT', order: order++, status: 'COMPLETE', placement: 'BODY', text: opts.text });
+    blocks.push({ blockId: `text:${turnId}`, type: 'TEXT', order: order++, status: 'COMPLETE', isBody: true, text: opts.text });
   }
   for (const callId of opts.tools ?? []) {
     blocks.push({
@@ -781,7 +781,7 @@ test('6. 切换会话前发起的旧回查响应必须被版本控制丢弃', as
           status: 'COMPLETED',
           viewVersion: 1,
           userMessage: '提问',
-          blocks: [{ blockId: `text:${id}`, type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: `权威-${id}` }],
+          blocks: [{ blockId: `text:${id}`, type: 'TEXT', order: 0, status: 'COMPLETE', isBody: true, text: `权威-${id}` }],
         },
       },
       nextCursor: null,

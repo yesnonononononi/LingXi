@@ -190,7 +190,7 @@ public class ToolCall {
         this.updatedAt = Instant.now();
     }
 
-    /** 仅表示未决槽位，DELEGATION 不开放人工操作。 */
+    /** 仅表示未决槽位，不代表人工可操作。 */
     public boolean isPending() {
         return status == ToolCallStatus.PENDING;
     }

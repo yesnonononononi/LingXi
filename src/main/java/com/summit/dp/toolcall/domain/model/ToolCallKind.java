@@ -12,14 +12,6 @@ public enum ToolCallKind {
     PLAN,
     CHOICE,
     COMMAND,
-    /**
-     * 委派等待：{@code call_sub_agent} 的子执行挂起后，父执行的占位槽位。
-     *
-     * <p><b>不是人工审批卡</b>：它等的是子会话的审批落定（COMMAND / PLAN / CHOICE），
-     * 子执行终态后由 {@code DelegationSettleService} 自动回填结果并恢复父执行；
-     * {@code decide} 对它显式拒绝。前端渲染为「等待中」状态卡，不出批准 / 拒绝按钮。</p>
-     */
-    DELEGATION,
     EXECUTE;
 
     /** 宽松解析；识别不了返回 {@code null}（降级为「状态不可用」，不抛异常）。 */

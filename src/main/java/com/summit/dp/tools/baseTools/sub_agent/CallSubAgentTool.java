@@ -3,18 +3,14 @@ package com.summit.dp.tools.baseTools.sub_agent;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
-import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecutor;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.agent.infrastructure.agent.SubAgent;
 import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionIdentity;
-import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.context.SessionContextEntity;
@@ -23,11 +19,8 @@ import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.tools.baseTools.arguments.CallSubAgentToolArgument;
 import com.summit.dp.tools.baseTools.sub_agent.delegation.AsyncDelegationSubmitter;
 import com.summit.dp.tools.baseTools.sub_agent.delegation.AsyncDelegationTask;
-import com.summit.dp.tools.baseTools.sub_agent.delegation.DelegationRecorder;
-import com.summit.dp.tools.baseTools.sub_agent.delegation.DelegationSuspensionCard;
 import com.summit.dp.tools.baseTools.sub_agent.delegation.SubAgentRequestFactory;
 import com.summit.dp.tools.baseTools.sub_agent.result.AsyncDelegationResultRenderer;
-import com.summit.dp.tools.baseTools.sub_agent.result.SubAgentResultRenderer;
 import com.summit.dp.tools.baseTools.sub_agent.session.SubSessionResolver;
 import com.summit.dp.tools.baseTools.sub_agent.session.SubSessionTarget;
 import lombok.AllArgsConstructor;
@@ -39,21 +32,17 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * 委派工具：把一段任务交给团队里的另一个 Agent，并把它的最终结果回传给指挥者。
+ * 委派工具：把一段任务交给团队里的另一个 Agent 并<b>立即受理</b>，让指挥者继续推进本轮其它工作。
  *
- * <p>本类只做<b>编排</b>：校验参数与成员资格 → 解析目标子会话 → 组装请求 → 登记子执行 →
- * 落账 → 执行 → 渲染结果（子执行挂起时改为登记 PROMISE 槽位，让父执行同步挂起等待子代理
- * 终态）。各块可独立理解的逻辑都落在协作者上：请求组装见 {@link SubAgentRequestFactory}，
- * 复用与建行见 {@link SubSessionResolver}，可见事实落账（映射事件 / 子轮次 / transcript）
- * 见 {@link DelegationRecorder}，挂起槽位登记见 {@link DelegationSuspensionCard}，
- * 结果渲染见 {@link SubAgentResultRenderer}。改动其中任一块都不必再读懂其余几块。</p>
+ * <p>本类只做<b>请求线程内的编排</b>：校验参数与成员资格 → 解析目标子会话 → 组装请求 →
+ * <b>提交前登记</b>子执行 → 提交异步任务 → 渲染受理回执。真正的建行 / 落账 / 跑子 loop 由
+ * {@link AsyncDelegationSubmitter} 在异步线程内独立完成。各块可独立理解的逻辑都落在协作者上：
+ * 请求组装见 {@link SubAgentRequestFactory}，复用与建行见 {@link SubSessionResolver}。</p>
  *
- * <p>编排顺序里有两处不能调换：<b>建会话行必须晚于取消校验</b>（否则被取消的委派会留下孤儿会话）；
- * <b>落账必须先建轮次再写消息</b>（消息要带 turn_id）。</p>
- *
- * <p>两种运行模式在 {@code executeDelegation} 处分叉：<b>blocking</b>（默认）走上面这条同步路径；
- * <b>async</b>（协作式）只提交异步任务并立即返回结构化 JSON，子 loop 与落库交给
- * {@link AsyncDelegationSubmitter} 独立完成。</p>
+ * <p>只有一种运行模式（协作式异步）：委派是「先受理、后核验」——回执只是受理，交付以成员工作
+ * 目录里的实际产物与验证记录为准。编排顺序里有两处不能调换：<b>组装请求必须早于登记</b>
+ * （组装失败即返回错误，不产生任何登记残留）；<b>登记必须早于提交</b>（提交失败要能撤销登记，
+ * 不留孤儿）。</p>
  */
 @AllArgsConstructor
 @Component
@@ -62,18 +51,13 @@ public class CallSubAgentTool implements ToolExecutor {
     private final ObjectMapper objectMapper;
     private final AgentService agentService;
     private final TeamService teamService;
-    private final SubAgent subAgent;
     private final SubAgentRequestFactory requestFactory;
     private final SubSessionResolver subSessionResolver;
-    private final SubAgentResultRenderer resultRenderer;
     private final SessionExecutionRegistry sessionExecutionRegistry;
-    private final ModelContextService modelContextService;
     private final SessionRepository sessionRepository;
-    private final DelegationSuspensionCard delegationSuspensionCard;
-    private final DelegationRecorder delegationRecorder;
-    /** 协作式（异步）提交：子执行专用，独立于阻塞路径。 */
+    /** 协作式提交：子执行专用，独立于工具线程。 */
     private final AsyncDelegationSubmitter asyncDelegationSubmitter;
-    /** 协作式结果渲染：结构化 JSON（英文键，禁含子代理正文）。 */
+    /** 受理回执渲染：结构化 JSON（英文键，禁含子代理正文）。 */
     private final AsyncDelegationResultRenderer asyncResultRenderer;
 
     @Override
@@ -122,19 +106,16 @@ public class CallSubAgentTool implements ToolExecutor {
             return membershipError;
         }
 
-        // 按运行模式分叉：未传 / blocking 走原阻塞路径（一行不改），async 走协作式提交路径。
-        if (argument.isAsyncMode()) {
-            return executeChildAsync(toolExecution, argument, agent, team, workDir);
-        }
-        return executeChild(toolExecution, argument, agent, team, workDir);
+        return executeChildAsync(toolExecution, argument, agent, team, workDir);
     }
 
     /**
-     * 协作式（异步）委派：只做「解析子会话 → 组装请求 → 提交」三步即返回，<b>不跑子 loop</b>。
+     * 协作式（异步）委派：只做「解析子会话 → 组装请求 → 提交前登记 → 提交」四步即返回，
+     * <b>不跑子 loop</b>。
      *
-     * <p>请求组装仍在<b>请求线程内</b>完成（只读解析，可失败即返回错误），失败时尚未提交，不产生任何孤儿。
-     * 真正的落库与开跑由 {@link AsyncDelegationSubmitter} 在异步线程内完成。返回结构化 JSON，
-     * 让指挥者立即拿回控制权继续本轮其它工作。</p>
+     * <p>请求组装与登记都在<b>请求线程内</b>完成（只读解析，可失败即返回错误）：组装失败时尚无登记，
+     * 不产生任何痕迹；登记成功而提交失败（线程池拒绝）时撤销登记，绝不留下永不结束的幽灵条目。
+     * 返回结构化 JSON，让指挥者立即拿回控制权继续本轮其它工作。</p>
      */
     private ToolExecuteResult executeChildAsync(ToolExecution toolExecution, CallSubAgentToolArgument argument,
                                                 AgentVO agent, TeamVO team, String workDir) {
@@ -148,8 +129,20 @@ public class CallSubAgentTool implements ToolExecutor {
                 target.subSessionId(), parentWorkspaceId, target.priorMessages());
         argument.setSubSessionId(target.subSessionId());
 
-        asyncDelegationSubmitter.submit(new AsyncDelegationTask(rootSessionId, numericSubSessionId, parentWorkspaceId,
-                target, agent, argument, toolExecution, request));
+        // 提交前登记「待启动」：把「已受理但尚未开跑」这段窗口也计入「未结束」。
+        if (!sessionExecutionRegistry.registerPendingChild(rootSessionId, numericSubSessionId)) {
+            return ToolExecuteResult.err("主会话已停止，取消启动子Agent");
+        }
+        Long rootExecutionId = ExecutionAttributes.workflowExecutionId(
+                toolExecution.getAttributes(), toolExecution.getExecutionId());
+        try {
+            asyncDelegationSubmitter.submit(new AsyncDelegationTask(rootSessionId, numericSubSessionId, parentWorkspaceId,
+                    rootExecutionId, target, agent, argument, toolExecution, request));
+        } catch (RuntimeException e) {
+            // 线程池拒绝等提交失败：撤销登记，绝不谎报已委派（否则模型以为已委派而漏做）。
+            sessionExecutionRegistry.revokeChild(rootSessionId, numericSubSessionId);
+            return ToolExecuteResult.err("委派提交失败: " + e.getMessage());
+        }
         return asyncResultRenderer.render(target.subSessionId(), agent.getId(), agent.getName());
     }
 
@@ -175,55 +168,6 @@ public class CallSubAgentTool implements ToolExecutor {
         boolean memberExists = team.getAgents() != null && team.getAgents().stream()
                 .anyMatch(agent -> agent != null && Objects.equals(agent.getId(), agentId));
         return memberExists ? null : ToolExecuteResult.err("指定的团队中不包含该Agent: " + agentId);
-    }
-
-    /**
-     * 启动子执行并把结果渲染回调用方。
-     *
-     * <p>「优先复用」的编排落点：先解析目标子会话（命中则连历史一起拿到），只有在
-     * {@link #sessionExecutionRegistry} 确认未被取消之后，才为首派创建会话行。</p>
-     */
-    private ToolExecuteResult executeChild(ToolExecution toolExecution, CallSubAgentToolArgument argument,
-                                           AgentVO agent, TeamVO team, String workDir) {
-        Long rootSessionId = sessionIdOf(toolExecution);
-        Long parentWorkspaceId = parentWorkspaceIdOf(rootSessionId);
-
-        SubSessionTarget target = subSessionResolver.resolve(rootSessionId, agent);
-        Long numericSubSessionId = target.numericSubSessionId();
-
-        AgentRequest request = requestFactory.build(argument, agent, team, toolExecution, workDir,
-                target.subSessionId(), parentWorkspaceId, target.priorMessages());
-        argument.setSubSessionId(target.subSessionId());
-
-        if (!sessionExecutionRegistry.registerChild(rootSessionId, numericSubSessionId, Thread.currentThread())) {
-            return ToolExecuteResult.err("主会话已停止，取消启动子Agent");
-        }
-        try {
-            // 首次委派才建会话行；复用会话行已存在
-            if (!target.reused()) {
-                subSessionResolver.createSubSession(numericSubSessionId, rootSessionId, parentWorkspaceId, agent,
-                        argument.getTask());
-            }
-
-            delegationRecorder.record(rootSessionId, toolExecution, request,
-                    numericSubSessionId, target.subSessionId(), agent, argument.getTask());
-
-            Execution execution = SessionContextEntity.runWithSubSession(rootSessionId, agent.getId(),
-                    () -> subAgent.execute(request));
-
-            modelContextService.replace(numericSubSessionId, execution.getMessages());
-
-            // 子执行挂起（等人工审批）→ 父执行以 PROMISE 槽位**同步挂起**：挂起沿委派链传播，
-            // 根会话不提前收尾。子执行终态后由 DelegationSettleService 回填结果并恢复父执行。
-            if (execution.getExecutionState() == ExecutionState.SUSPENDED) {
-                return delegationSuspensionCard.suspendAsPromise(toolExecution, target.subSessionId(), execution.getId(),
-                        agent.getName(), argument.getTask());
-            }
-
-            return ToolExecuteResult.success(resultRenderer.render(execution));
-        } finally {
-            sessionExecutionRegistry.unregisterChild(rootSessionId, numericSubSessionId);
-        }
     }
 
     /** 父会话绑定的工作空间：子执行在 workDir 落空时回落到它，保证不静默放行无工作空间的子执行。 */

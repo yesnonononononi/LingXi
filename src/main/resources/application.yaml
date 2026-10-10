@@ -3,9 +3,6 @@ server:
 spring:
   application:
     name: LingXi
-  config:
-    import:
-      - optional:file:.env[.properties]
   servlet:
     multipart:
       max-file-size: 10MB
@@ -49,6 +46,8 @@ lingxi:
   # 置空（skill.dir: ""）即关闭 Skill 能力，此时不再下发 read_skill 工具。
   skill:
     dir: ${user.home}/.lingxi/skill
+  # 运行期用户配置真源：三个 YAML 由设置页读写，一律落在安装目录之外，故更新（NSIS 会 RMDir /r $INSTDIR）不会覆盖。
+  # 改路径用 -Dlingxi.config.<key>.path=... 或环境变量 LINGXI_CONFIG_<KEY>_PATH 覆盖。
   config:
     user-configs:
       path: ${user.home}/.lingxi/config/user-configs.yaml
@@ -141,7 +140,7 @@ lingxi:
           model-name: ""
           timeout: 120s
           max-iterations: 1000
-          max-tokens: 393200
+          max-tokens: 258000
           reasoning-effort: medium
           # 连续压缩轮次上限：连续这么多轮都在压缩（compact_context）就直接结束本次执行，
           # 避免把预算烧在「压缩—又被填满—再压缩」的循环里。

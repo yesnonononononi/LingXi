@@ -4,9 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
-import com.summit.core.conversation.message.Message;
-import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.ddd.application.vo.Result;
@@ -23,15 +20,11 @@ import com.summit.dp.shared.settings.SettingsProvider;
 import com.summit.dp.shared.skill.SkillRootResolver;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
-import com.summit.dp.toolcall.application.convert.ToolCallConverter;
-import com.summit.dp.toolcall.application.service.ToolCallRegistrar;
 import com.summit.dp.tools.baseTools.sub_agent.delegation.AsyncDelegationSubmitter;
 import com.summit.dp.tools.baseTools.sub_agent.delegation.AsyncDelegationTask;
 import com.summit.dp.tools.baseTools.sub_agent.delegation.DelegationRecorder;
-import com.summit.dp.tools.baseTools.sub_agent.delegation.DelegationSuspensionCard;
 import com.summit.dp.tools.baseTools.sub_agent.delegation.SubAgentRequestFactory;
 import com.summit.dp.tools.baseTools.sub_agent.result.AsyncDelegationResultRenderer;
-import com.summit.dp.tools.baseTools.sub_agent.result.SubAgentResultRenderer;
 import com.summit.dp.tools.baseTools.sub_agent.session.SubSessionResolver;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.service.WorkspaceService;
@@ -60,15 +53,16 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 协作式委派的编排守卫（AC-1 / AC-2 / AC-3）。
+ * 协作式委派的编排守卫。
  *
- * <p>盯三件事：① async 调用<b>立即</b>返回结构化 JSON（键集合固定、不含子代理正文、非 PROMISE）；
- * ② 工具线程<b>不跑子 loop</b>（提交给异步体即返回，主理人可继续本轮）；③ 未传 / blocking
- * 时行为与改造前一致（同步跑完、正文作为结果回传）。</p>
+ * <p>盯三件事：① 调用<b>立即</b>返回结构化受理 JSON（键集合固定、不含子代理正文、非 PROMISE）；
+ * ② 工具线程<b>不跑子 loop</b>（提交给异步体即返回，主理人可继续本轮）；③ 提交失败与登记失败
+ * 都必须 fail-closed（不谎报已委派、不产生孤儿）。</p>
  */
 class CallSubAgentAsyncDelegationTest {
 
     private static final long ROOT_SESSION_ID = 800L;
+    private static final long ROOT_EXECUTION_ID = 900L;
     private static final long CHILD_AGENT_ID = 7L;
     private static final long TEAM_ID = 3L;
 
@@ -101,13 +95,10 @@ class CallSubAgentAsyncDelegationTest {
         SubAgentRequestFactory requestFactory = new SubAgentRequestFactory(workspaceService, modelService,
                 settingsProvider, mock(WorkspaceConverter.class), new SkillRootResolver(""));
         SubSessionResolver subSessionResolver = new SubSessionResolver(sessionRepository, modelContextService);
-        DelegationSuspensionCard suspensionCard = new DelegationSuspensionCard(
-                mock(ToolCallRegistrar.class), new ToolCallConverter(objectMapper));
         DelegationRecorder recorder = new DelegationRecorder(chatTurnService, transcriptService);
 
-        this.tool = new CallSubAgentTool(objectMapper, agentService, teamService, subAgent,
-                requestFactory, subSessionResolver, new SubAgentResultRenderer(), registry, modelContextService,
-                sessionRepository, suspensionCard, recorder, asyncSubmitter,
+        this.tool = new CallSubAgentTool(objectMapper, agentService, teamService, requestFactory,
+                subSessionResolver, registry, sessionRepository, asyncSubmitter,
                 new AsyncDelegationResultRenderer(objectMapper));
     }
 
@@ -126,7 +117,7 @@ class CallSubAgentAsyncDelegationTest {
 
     private ToolExecution toolExecution(String args) {
         ToolExecution execution = mock(ToolExecution.class);
-        lenient().when(execution.getExecutionId()).thenReturn("900");
+        lenient().when(execution.getExecutionId()).thenReturn(String.valueOf(ROOT_EXECUTION_ID));
         lenient().when(execution.getId()).thenReturn("call-1");
         lenient().when(execution.getArgs()).thenReturn(args);
         lenient().when(execution.getAttributes()).thenReturn(Map.of(
@@ -137,15 +128,12 @@ class CallSubAgentAsyncDelegationTest {
         return execution;
     }
 
-    private String args(String runtimeMode) {
+    private String args() {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("agentId", CHILD_AGENT_ID);
         payload.put("task", "复现并定位主流程抖动");
         payload.put("prompt", "上下文");
         payload.put("workDir", "wd-a");
-        if (runtimeMode != null) {
-            payload.put("runtime_mode", runtimeMode);
-        }
         try {
             return objectMapper.writeValueAsString(payload);
         } catch (Exception e) {
@@ -158,37 +146,32 @@ class CallSubAgentAsyncDelegationTest {
         when(teamService.findById(TEAM_ID)).thenReturn(Result.success(team()));
     }
 
-    private Execution completed(String text) {
-        Execution execution = mock(Execution.class);
-        when(execution.getExecutionState()).thenReturn(ExecutionState.COMPLETED);
-        when(execution.getMessages()).thenReturn(List.of(UserMessageEntity.from(text)));
-        return execution;
-    }
-
     @Test
-    @DisplayName("AC-1/AC-2 协作式：立即返回结构化 JSON（键固定、无正文、非 PROMISE），且不跑子 loop")
+    @DisplayName("协作式：立即返回结构化 JSON（键固定、无正文、非 PROMISE），且工具线程不跑子 loop")
     void asyncDelegationReturnsStructuredJsonImmediately() throws Exception {
         stubAgentAndTeam();
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID)).thenReturn(Optional.empty());
+        when(registry.registerPendingChild(eq(ROOT_SESSION_ID), anyLong())).thenReturn(true);
 
         long startedAt = System.currentTimeMillis();
-        ToolExecuteResult result = tool.execute(toolExecution(args("async")));
+        ToolExecuteResult result = tool.execute(toolExecution(args()));
         long elapsed = System.currentTimeMillis() - startedAt;
 
         assertTrue(result.isSuccess(), "协作式必须成功返回");
         assertFalse(result.isPromise(), "协作式不得返回 PROMISE，否则父执行会永挂");
         assertTrue(elapsed <= 5_000L, "必须在 5 秒内返回，实际=" + elapsed);
 
-        // 工具线程不跑子 loop：提交给异步体即返回（AC-2 的机械判据）。
+        // 工具线程不跑子 loop：提交给异步体即返回。
         verify(subAgent, never()).execute(any(AgentRequest.class));
         verify(subAgent, never()).execute(any(Execution.class));
-        verify(registry, never()).registerChild(any(), any(), any());
         verify(subAgent, never()).createExecution(any(AgentRequest.class));
 
+        // 提交前登记「待启动」，登记成功才提交。
         ArgumentCaptor<AsyncDelegationTask> taskCaptor = ArgumentCaptor.forClass(AsyncDelegationTask.class);
         verify(asyncSubmitter).submit(taskCaptor.capture());
         AsyncDelegationTask task = taskCaptor.getValue();
         assertEquals(ROOT_SESSION_ID, task.rootSessionId());
+        assertEquals(ROOT_EXECUTION_ID, task.rootExecutionId(), "根执行 id 由请求线程解析一次带过去（用于兜底唤醒）");
         assertNotNull(task.numericSubSessionId());
         assertNotNull(task.request());
         assertEquals(CHILD_AGENT_ID, task.agent().getId());
@@ -200,9 +183,10 @@ class CallSubAgentAsyncDelegationTest {
         assertEquals(task.target().subSessionId(), json.get("subSessionId").asText());
         assertEquals(CHILD_AGENT_ID, json.get("agentId").asLong());
         assertEquals("架构师", json.get("agentName").asText());
-        assertTrue(json.get("note").asText().toLowerCase().contains("email"), "note 必须说明结果经邮件送达");
+        assertTrue(json.get("note").asText().contains("核验工作目录中的产物和验证记录"), "受理回执须引导主理人验收产物");
+        assertTrue(json.get("note").asText().contains("没有邮件也应自行验收"), "缺邮件不能阻断收口");
 
-        // 键集合固定：多一个键都可能把子代理正文漏给主理人。金丝雀由键集合与正文断言共同覆盖。
+        // 键集合固定：多一个键都可能把子代理正文漏给主理人。
         Set<String> keys = new java.util.TreeSet<>();
         json.fieldNames().forEachRemaining(keys::add);
         assertEquals(Set.of("runtimeMode", "delegated", "subSessionId", "agentId", "agentName", "note"),
@@ -211,57 +195,51 @@ class CallSubAgentAsyncDelegationTest {
     }
 
     @Test
-    @DisplayName("AC-3 阻塞回归：未传 runtime_mode 时同步跑完、正文作为工具结果回传")
-    void blockingDelegationIsUnchangedWhenModeAbsent() {
+    @DisplayName("根已停止：登记失败即返回错误、不提交异步任务（无孤儿）")
+    void cancelledRootFailsClosedWithoutSubmit() {
         stubAgentAndTeam();
-        when(registry.registerChild(anyLong(), anyLong(), any())).thenReturn(true);
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID)).thenReturn(Optional.empty());
-        when(modelContextService.find(anyLong())).thenReturn(Optional.empty());
-        when(chatTurnService.acceptTurn(anyLong(), any(), any(), any(), any(), any())).thenReturn(9002L);
-        // 先算好桩对象再 when(...)：把 completed() 塞进 thenReturn 参数会触发 UnfinishedStubbing
-        Execution done = completed("最终答复：方案是 A");
-        when(subAgent.execute(any(AgentRequest.class))).thenReturn(done);
+        when(registry.registerPendingChild(eq(ROOT_SESSION_ID), anyLong())).thenReturn(false);
 
-        ToolExecuteResult result = tool.execute(toolExecution(args(null)));
+        ToolExecuteResult result = tool.execute(toolExecution(args()));
 
-        assertTrue(result.isSuccess());
-        assertTrue(result.getToolOutput().contains("最终答复：方案是 A"), "阻塞式正文必须原样回传");
-        assertFalse(result.getToolOutput().contains("runtimeMode"), "阻塞式返回形态不变，不得是协作式 JSON");
+        assertFalse(result.isSuccess(), "主会话已停止时必须返回错误而不是静默成功");
+        assertTrue(result.getToolOutput().contains("主会话已停止"));
         verify(asyncSubmitter, never()).submit(any(AsyncDelegationTask.class));
-        verify(registry).registerChild(eq(ROOT_SESSION_ID), anyLong(), any());
+        verify(subAgent, never()).execute(any(AgentRequest.class));
     }
 
     @Test
-    @DisplayName("AC-3 阻塞回归：显式 runtime_mode=blocking 同样走同步路径")
-    void blockingDelegationIsUnchangedWhenModeExplicit() {
+    @DisplayName("提交被拒（线程池拒绝）：撤销登记并 fail-closed，不谎报已委派")
+    void rejectedSubmissionRevokesRegistration() {
         stubAgentAndTeam();
-        when(registry.registerChild(anyLong(), anyLong(), any())).thenReturn(true);
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID)).thenReturn(Optional.empty());
-        when(modelContextService.find(anyLong())).thenReturn(Optional.empty());
-        when(chatTurnService.acceptTurn(anyLong(), any(), any(), any(), any(), any())).thenReturn(9002L);
-        Execution done = completed("最终答复：方案是 B");
-        when(subAgent.execute(any(AgentRequest.class))).thenReturn(done);
+        when(registry.registerPendingChild(eq(ROOT_SESSION_ID), anyLong())).thenReturn(true);
+        org.mockito.Mockito.doThrow(new java.util.concurrent.RejectedExecutionException("qa: rejected"))
+                .when(asyncSubmitter).submit(any(AsyncDelegationTask.class));
 
-        ToolExecuteResult result = tool.execute(toolExecution(args("blocking")));
+        ToolExecuteResult result = tool.execute(toolExecution(args()));
 
-        assertTrue(result.isSuccess());
-        assertTrue(result.getToolOutput().contains("最终答复：方案是 B"));
-        verify(asyncSubmitter, never()).submit(any(AsyncDelegationTask.class));
-        verify(registry).registerChild(eq(ROOT_SESSION_ID), anyLong(), any());
+        assertFalse(result.isSuccess(), "提交未成功时不得谎报成功（否则模型以为已委派）");
+        assertTrue(result.getToolOutput().contains("委派提交失败"));
+        ArgumentCaptor<Long> childCaptor = ArgumentCaptor.forClass(Long.class);
+        verify(registry).revokeChild(eq(ROOT_SESSION_ID), childCaptor.capture());
+        assertNotNull(childCaptor.getValue(), "撤销的是本次登记的子会话");
     }
 
     @Test
-    @DisplayName("协作式请求组装失败即返回错误，且不提交任何异步任务（不产生孤儿）")
-    void asyncDelegationFailsClosedWhenAgentMissingModel() {
+    @DisplayName("请求组装失败即返回错误，且不登记、不提交任何异步任务（不产生孤儿）")
+    void assemblyFailureFailsClosed() {
         AgentVO agentWithoutModel = childAgent();
         agentWithoutModel.setModelId(null);
         when(agentService.findById(CHILD_AGENT_ID)).thenReturn(Result.success(agentWithoutModel));
         when(teamService.findById(TEAM_ID)).thenReturn(Result.success(team()));
 
-        ToolExecuteResult result = tool.execute(toolExecution(args("async")));
+        ToolExecuteResult result = tool.execute(toolExecution(args()));
 
         assertFalse(result.isSuccess(), "缺模型必须失败");
         verify(asyncSubmitter, never()).submit(any(AsyncDelegationTask.class));
+        verify(registry, never()).registerPendingChild(any(), any());
         verify(subAgent, never()).execute(any(AgentRequest.class));
     }
 }

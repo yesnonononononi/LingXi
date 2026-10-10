@@ -23,6 +23,7 @@ import com.summit.dp.session.application.convert.TurnViewAssembler;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.shared.vo.block.TextBlock;
+import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.dp.agent.infrastructure.listener.AgentEventListener;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.shared.event.SseEventPublisher;
@@ -43,6 +44,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
@@ -149,7 +151,7 @@ class AgentEventListenerTest {
 
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void fullResponseSuppliesPlacementBeforeToolsAndMatchesHistory(boolean hasTools) throws Exception {
+    void fullResponseSuppliesIsBodyBeforeToolsAndMatchesHistory(boolean hasTools) throws Exception {
         resolveSession();
         Map<String, Object> metadata = Map.of("sessionId", Long.toString(SESSION_ID), "turnId", Long.toString(TURN_ID));
         List<ToolCallRequest> requests = hasTools ? List.of(new ToolCallRequest("c1", "tool", 0, "{}")) : List.of();
@@ -161,12 +163,13 @@ class AgentEventListenerTest {
         verify(publisher, never()).publishBusiness(eq(ROOT_SESSION_ID), eq("AI_MESSAGE"), any());
         ArgumentCaptor<ObjectNode> partial = ArgumentCaptor.forClass(ObjectNode.class);
         verify(publisher).publishBusiness(eq(ROOT_SESSION_ID), eq("PARTIAL_TEXT"), partial.capture());
-        assertNull(partial.getValue().get("placement"));
+        assertNull(partial.getValue().get("isBody"), "片段事件不下发 isBody");
 
         listener.onAiMessage(new AgentMessageEvent(response, EXECUTION_ID, RESPONSE_ID, metadata));
         ArgumentCaptor<ObjectNode> resolved = ArgumentCaptor.forClass(ObjectNode.class);
         verify(publisher).publishBusiness(eq(ROOT_SESSION_ID), eq("AI_MESSAGE"), resolved.capture());
-        assertEquals(hasTools ? "PROCESS" : "BODY", resolved.getValue().get("placement").asText());
+        // 实时通道在响应下发时执行尚未终结，无法判断「是否随后挂起」—— 结构上恒为非正文。
+        assertFalse(resolved.getValue().get("isBody").asBoolean(), "实时 AI_MESSAGE 事件恒 isBody=false");
         assertEquals("响应正文", resolved.getValue().get("text").asText());
         assertEquals("分析", resolved.getValue().get("thinking").asText());
         assertEquals(RESPONSE_ID, resolved.getValue().get("responseId").asText());
@@ -175,12 +178,15 @@ class AgentEventListenerTest {
         assertEquals(0, resolved.getValue().get("thinkingOrder").asInt());
         assertEquals(1, resolved.getValue().get("order").asInt());
 
+        // 历史/快照通道走装配器的完整规则：同一行只有在 COMPLETED 且为本轮收尾、且无工具请求时才是正文。
         TurnViewAssembler assembler = new TurnViewAssembler(objectMapper, null);
         SessionMessage row = SessionMessage.builder().id(1L).turnId(TURN_ID).responseId(RESPONSE_ID)
                 .type(SessionMessageType.AI).text(objectMapper.writeValueAsString(aiMessage)).build();
-        TextBlock historical = (TextBlock) assembler.assembleBlocks(TURN_ID, List.of(row), Map.of()).stream()
+        TextBlock historical = (TextBlock) assembler
+                .assembleBlocks(TURN_ID, List.of(row), Map.of(), ChatTurnStatus.COMPLETED).stream()
                 .filter(block -> block instanceof TextBlock).findFirst().orElseThrow();
-        assertEquals(historical.placement().name(), resolved.getValue().get("placement").asText());
+        assertEquals(!hasTools, historical.isBody(),
+                "历史通道：无工具请求的收尾响应在 COMPLETED 时才是正文");
         if (hasTools) {
             listener.onToolCall(new ToolCallStartEvent("c1", EXECUTION_ID, "tool", "{}", RESPONSE_ID, metadata, 0));
             ArgumentCaptor<ObjectNode> tool = ArgumentCaptor.forClass(ObjectNode.class);

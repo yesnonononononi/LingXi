@@ -36,11 +36,11 @@ class SessionExecutionRegistryTest {
     void cancelRootMarksCancelledAndBlocksNewChildren() {
         SessionExecutionRegistry registry = new SessionExecutionRegistry();
         registry.beginRoot(7L);
-        assertTrue(registry.registerChild(7L, 8L, Thread.currentThread()));
+        assertTrue(registry.bindRunningChild(7L, 8L, Thread.currentThread()));
         registry.cancelRoot(7L);
         assertTrue(registry.isCancelled(7L));
         // 根已取消后，新的子任务不允许再启动。
-        assertFalse(registry.registerChild(7L, 9L, Thread.currentThread()));
+        assertFalse(registry.bindRunningChild(7L, 9L, Thread.currentThread()));
     }
 
     /** 单飞：同一会话已有执行在跑时，重入 beginRoot 必须抛 ClientException。 */
@@ -71,19 +71,19 @@ class SessionExecutionRegistryTest {
         registry.beginRoot(31L);
 
         // stop 之前：未取消，子任务可注册。
-        assertTrue(registry.registerChild(31L, 32L, Thread.currentThread()));
+        assertTrue(registry.bindRunningChild(31L, 32L, Thread.currentThread()));
         assertFalse(registry.isCancelled(31L));
 
         registry.cancelRoot(31L);
 
         // stop 语义回归：已取消 → 新子任务被拒。
         assertTrue(registry.isCancelled(31L));
-        assertFalse(registry.registerChild(31L, 33L, Thread.currentThread()));
+        assertFalse(registry.bindRunningChild(31L, 33L, Thread.currentThread()));
 
         // stop 后必须能立即重新发起：cancelRoot 已清 rootRunning，新的 beginRoot 又复位 cancelled。
         assertDoesNotThrow(() -> registry.beginRoot(31L), "stop 之后应可重新发起");
         assertFalse(registry.isCancelled(31L), "重新发起后取消标志应复位");
-        assertTrue(registry.registerChild(31L, 34L, Thread.currentThread()),
+        assertTrue(registry.bindRunningChild(31L, 34L, Thread.currentThread()),
                 "重新发起后子任务应可注册");
     }
 

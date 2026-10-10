@@ -81,7 +81,7 @@ const realTextDone = (): Block => ({
   order: 2001,
   status: 'COMPLETE',
   text: '当前目录的前三个文件是…',
-  placement: 'BODY',
+  isBody: true,
 });
 
 /** 建一个绑定到根会话的路由 + 根消息数组。 */

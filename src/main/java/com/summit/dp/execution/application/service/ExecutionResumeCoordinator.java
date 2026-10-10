@@ -20,9 +20,11 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -73,6 +75,14 @@ public class ExecutionResumeCoordinator {
     private final ExecutorService workers = Executors.newVirtualThreadPerTaskExecutor();
     /** 同执行已在派发中的标记；只防「同一瞬间重复唤醒」，真正的单飞靠 claim 条件更新。 */
     private final Map<String, AtomicBoolean> dispatching = new ConcurrentHashMap<>();
+    /**
+     * 保留唤醒：键为根执行 id。
+     *
+     * <p>唤醒在「根仍持有控制槽位」时到达（子执行终结 / 邮件投递 / 输入驱动挂起）时，不能丢弃 ——
+     * 根随后在其检查点挂起，若这里不保留，之后将再无事件唤醒它。保留的唤醒在控制槽位释放后由
+     * {@link #flushPendingWake(long)} 重放（若此刻根又活跃，重放的 {@code accept} 会再次保留）。</p>
+     */
+    private final Set<Long> pendingWakes = ConcurrentHashMap.newKeySet();
 
     public ExecutionResumeCoordinator(ExecutionResumeTaskRepository taskRepository,
                                       com.summit.dp.execution.domain.repository.ExecutionRepository executions,
@@ -95,6 +105,12 @@ public class ExecutionResumeCoordinator {
      * 「决策已落库但恢复请求没落库」的窗口。真正派发排在事务提交之后 ——
      * 它走独立线程，不会读到未提交的槽位状态。</p>
      *
+     * <p><b>「活跃时保留唤醒」必须早于代际判定</b>：首轮执行的恢复代际为 0（从未转入 SUSPENDED），
+     * 若先判代际会把它当成「无恢复边界」丢弃 —— 而子执行终结 / 邮件到达恰恰常发生在首轮，
+     * 丢弃后根一旦挂起就再无事件唤醒。故这里把 {@code isActive} 分支提到代际判定之前，
+     * 活跃时登记保留唤醒（{@link #pendingWakes}），待根挂起释放控制槽位后由
+     * {@link #flushPendingWake(long)} 重放。</p>
+     *
      * @param executionId 执行 ID；0 表示没有可用执行（如命令卡片未挂执行）
      * @return 本次决策的恢复处置结论，供回执直接下发
      */
@@ -110,20 +126,39 @@ public class ExecutionResumeCoordinator {
             // 还有槽位：不派发、不落请求。最后一个槽位落定时它自己的决策会再走一遍 accept。
             return ResumeDisposition.WAITING_OTHER_TOOLS;
         }
+        if (isActive(executionId)) {
+            // 已有 loop 持有控制槽位：本次唤醒不丢弃，登记为保留唤醒，待其挂起释放后重放。
+            pendingWakes.add(executionId);
+            return ResumeDisposition.RUNNING;
+        }
         long generation = executions.findResumeGeneration(executionId);
         // 代际为 0 说明这次执行从未真正转入过 SUSPENDED（不应发生），按「无恢复边界」处理：
         // 硬派发会让 loop 拿到一个没有落定槽位的检查点。
         if (generation <= 0L) {
             return ResumeDisposition.ENDED;
         }
-        if (isActive(executionId)) {
-            // 已有 loop 持有控制槽位：本次决策不重复启动。
-            return ResumeDisposition.RUNNING;
-        }
         taskRepository.enqueue(executionId, generation, Instant.now());
         // 请求先随决策事务提交，派发动作排到提交之后；无事务同步时立即执行（单测与直调路径）。
         frameworkExecutions.getObject().afterCommit(() -> dispatch(executionId));
         return ResumeDisposition.QUEUED;
+    }
+
+    /**
+     * 重放先前保留的唤醒。
+     *
+     * <p>调用点是「执行进入 SUSPENDED 且控制槽位已释放」之后（见 {@code LocalExecutionRepository}
+     * 的挂起通知链）。此刻重走 {@link #accept(long)}：若已可恢复则正常入队派发；若此刻又变活跃，
+     * {@code accept} 会再次登记保留。无保留唤醒时是 no-op。</p>
+     */
+    public void flushPendingWake(long executionId) {
+        if (pendingWakes.remove(executionId)) {
+            accept(executionId);
+        }
+    }
+
+    /** 终态清理保留唤醒，防止唤醒悬挂在一个已终结、再也不会挂起的执行上。 */
+    public void clearPendingWake(long executionId) {
+        pendingWakes.remove(executionId);
     }
 
     /**
@@ -138,26 +173,59 @@ public class ExecutionResumeCoordinator {
         if (!gate.compareAndSet(false, true)) {
             return;
         }
-        workers.execute(() -> {
-            try {
-                for (ExecutionResumeTask task : taskRepository.findByExecutionId(executionId)) {
-                    if (isFinished(task)) {
-                        continue;
+        try {
+            workers.execute(() -> {
+                try {
+                    for (ExecutionResumeTask task : taskRepository.findByExecutionId(executionId)) {
+                        if (isFinished(task)) {
+                            continue;
+                        }
+                        // 领取失败说明已被另一 worker 领走或已作废：让位，不重复跑 loop。
+                        if (!taskRepository.claim(task)) {
+                            continue;
+                        }
+                        runOnce(executionId, task);
                     }
-                    // 领取失败说明已被另一 worker 领走或已作废：让位，不重复跑 loop。
-                    if (!taskRepository.claim(task)) {
-                        continue;
+                } catch (RuntimeException error) {
+                    log.error("恢复请求派发失败: executionId={}, error={}", executionId, error.toString());
+                } finally {
+                    releaseGate(key, gate);
+                    // 退出前复查：worker 运行期间新入队的请求可能因门闩 CAS 失败被挡掉，
+                    // 此处门闩已释放，重新派发即可领到它（CAS 成功）。只认仍 READY 的请求，
+                    // 已被他人领取 / 已收口的请求不再触发，避免空转。
+                    if (hasReadyTask(executionId)) {
+                        dispatch(executionId);
                     }
-                    runOnce(executionId, task);
                 }
-            } catch (RuntimeException error) {
-                log.error("恢复请求派发失败: executionId={}, error={}", executionId, error.toString());
-            } finally {
-                gate.set(false);
-                // 门闩条目必须回收：否则并发执行的量级会让这张 map 随历史线性增长。
-                dispatching.remove(key, gate);
+            });
+        } catch (RejectedExecutionException rejected) {
+            // 提交被拒（线程池正在关闭）：lambda 永不运行，其 finally 也不会执行 ——
+            // 必须在这里同款回收闸门，否则该执行的重试会被 CAS 永久挡住。
+            releaseGate(key, gate);
+            log.warn("恢复派发提交被拒，已回收派发闸门: executionId={}", executionId);
+        }
+    }
+
+    /**
+     * 释放派发闸门（置回未占用并回收条目）。
+     *
+     * <p>闸门与被提交的 lambda 是两处生命周期：lambda 未运行（提交被拒）时其 {@code finally}
+     * 不会执行，必须由提交侧兜底回收，否则该执行后续的重试会被 CAS 永久挡在门外。</p>
+     */
+    private void releaseGate(String key, AtomicBoolean gate) {
+        gate.set(false);
+        // 门闩条目必须回收：否则并发执行的量级会让这张 map 随历史线性增长。
+        dispatching.remove(key, gate);
+    }
+
+    /** 该执行下是否还有仍处于 READY 的恢复请求（新入队、尚未被任何 worker 领取）。 */
+    private boolean hasReadyTask(long executionId) {
+        for (ExecutionResumeTask live : taskRepository.listLiveByExecution(executionId)) {
+            if (live.getState() == ResumeTaskState.READY) {
+                return true;
             }
-        });
+        }
+        return false;
     }
 
     /**
@@ -185,6 +253,8 @@ public class ExecutionResumeCoordinator {
         }
         if (isActive(executionId)) {
             // 已有 loop 持有控制槽位：让位。竞争失败不是执行失败，绝不改判。
+            // 本次恢复意图不丢弃——登记保留唤醒，待该运行自行挂起释放控制槽位后重放。
+            pendingWakes.add(executionId);
             markSuperseded(task, "执行已有运行持有控制槽位，恢复请求作废");
             return;
         }

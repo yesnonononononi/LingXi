@@ -8,6 +8,7 @@ import com.summit.core.tool.ToolExecution;
 import com.summit.dp.email.application.command.MailSendContext;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
 import com.summit.dp.shared.model.ToolCatalog;
 import com.summit.dp.tools.baseTools.arguments.SendMailArgument;
 import com.summit.dp.tools.baseTools.config.ToolConfig;
@@ -29,8 +30,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 /**
- * 发信工具回归：Schema 与参数类字段名必须一致，且发送者 / 协作根执行 / 团队快照
- * 一律由服务端从受控上下文解析（模型只能给 {@code toAgentId} 与 {@code mailContent}）。
+ * 发信工具回归：Schema 与参数类字段名必须一致，且发送者 / 协作根会话（邮箱业务键）/ 根执行
+ * （唤醒目标）/ 团队快照一律由服务端从受控上下文解析（模型只能给 {@code toAgentId} 与 {@code mailContent}）。
  *
  * <p>历史缺陷正是这三处不一致：Schema 用 {@code agentId/subject/content}、
  * {@code SendMailArgument} 用别的字段名、工具又把 attributes 里的发送者 ID 直接强转 {@code Long}
@@ -40,13 +41,15 @@ class SendMailToAgentToolTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final EmailService emailService = mock(EmailService.class);
-    private final SendMailToAgentTool tool = new SendMailToAgentTool(objectMapper, emailService);
+    private final ExecutionResumeCoordinator resumeCoordinator = mock(ExecutionResumeCoordinator.class);
+    private final SendMailToAgentTool tool = new SendMailToAgentTool(objectMapper, emailService,
+            resumeCoordinator);
 
     @Test
     @DisplayName("注册的 JSON Schema 与 SendMailArgument 字段名严格一致，且只有这两个必填项")
     void registeredSchemaMatchesArgumentFields() throws Exception {
         ToolDefinition<SendMailToAgentTool> definition =
-                new ToolConfig().sendMailToAgentToolToolDefinition(objectMapper, emailService);
+                new ToolConfig().sendMailToAgentToolToolDefinition(objectMapper, emailService, mock(ExecutionResumeCoordinator.class));
 
         assertEquals(ToolCatalog.SEND_MAIL_TO_AGENT, definition.name());
 
@@ -72,27 +75,31 @@ class SendMailToAgentToolTest {
     }
 
     @Test
-    @DisplayName("根执行发信：发送者取 AGENT_ID，workflowExecutionId 回落到自身 executionId")
-    void rootExecutionResolvesSenderAndWorkflowFromControlledContext() {
+    @DisplayName("根执行发信：邮箱业务键取 SESSION_ID（根会话），唤醒目标回落到自身 executionId")
+    void rootExecutionResolvesSenderAndMailboxFromControlledContext() {
         ToolExecuteResult result = tool.execute(execution("900",
-                Map.of(ExecutionAttributes.AGENT_ID, "100"),
+                Map.of(ExecutionAttributes.AGENT_ID, "100",
+                        ExecutionAttributes.SESSION_ID, "405"),
                 "{\"toAgentId\":7,\"mailContent\":\"你好\"}"));
 
         assertTrue(result.isSuccess(), result.getToolOutput());
-        verify(emailService).sendMail(7L, "你好", new MailSendContext(900L, 100L, null));
+        verify(emailService).sendMail(7L, "你好", new MailSendContext(405L, 100L, null));
+        verify(resumeCoordinator).accept(900L);
     }
 
     @Test
-    @DisplayName("子执行发信：workflowExecutionId 取 ROOT_EXECUTION_ID，团队快照随属性下行")
-    void childExecutionResolvesRootExecutionAndTeam() {
+    @DisplayName("子执行发信：邮箱业务键取 ROOT_SESSION_ID，唤醒目标取 ROOT_EXECUTION_ID，团队快照随属性下行")
+    void childExecutionResolvesRootSessionAndTeam() {
         ToolExecuteResult result = tool.execute(execution("1234",
                 Map.of(ExecutionAttributes.AGENT_ID, "8",
+                        ExecutionAttributes.ROOT_SESSION_ID, "405",
                         ExecutionAttributes.ROOT_EXECUTION_ID, "900",
                         ExecutionAttributes.TEAM_ID, "3"),
                 "{\"toAgentId\":7,\"mailContent\":\"子代理发的\"}"));
 
         assertTrue(result.isSuccess(), result.getToolOutput());
-        verify(emailService).sendMail(7L, "子代理发的", new MailSendContext(900L, 8L, 3L));
+        verify(emailService).sendMail(7L, "子代理发的", new MailSendContext(405L, 8L, 3L));
+        verify(resumeCoordinator).accept(900L);
     }
 
     @Test
@@ -104,17 +111,19 @@ class SendMailToAgentToolTest {
         // AGENT_ID 是脏值（历史缺陷：直接强转 Long 会 CCE）
         assertFalse(tool.execute(execution("900", Map.of(ExecutionAttributes.AGENT_ID, "not-a-number"),
                 "{\"toAgentId\":7,\"mailContent\":\"x\"}")).isSuccess());
-        // executionId 与 ROOT_EXECUTION_ID 都不可解析
-        assertFalse(tool.execute(execution("abc", Map.of(ExecutionAttributes.AGENT_ID, "100"),
+        // 缺 SESSION_ID 且不解析 ROOT_SESSION_ID：算不出邮箱业务键
+        assertFalse(tool.execute(execution("900", Map.of(ExecutionAttributes.AGENT_ID, "100"),
                 "{\"toAgentId\":7,\"mailContent\":\"x\"}")).isSuccess());
 
         verifyNoInteractions(emailService);
+        verifyNoInteractions(resumeCoordinator);
     }
 
     @Test
     @DisplayName("参数校验：toAgentId 缺失、正文空白都拒绝，不调用服务")
     void rejectsIncompleteArguments() {
-        Map<String, Object> attributes = Map.of(ExecutionAttributes.AGENT_ID, "100");
+        Map<String, Object> attributes = Map.of(ExecutionAttributes.AGENT_ID, "100",
+                ExecutionAttributes.SESSION_ID, "405");
 
         ToolExecuteResult noTarget = tool.execute(execution("900", attributes, "{\"mailContent\":\"x\"}"));
         assertFalse(noTarget.isSuccess());
@@ -130,7 +139,7 @@ class SendMailToAgentToolTest {
     @DisplayName("注册的工具描述必须讲清投递是异步的、且无回复通道")
     void registeredDescriptionExplainsAsynchronousDelivery() throws Exception {
         ToolDefinition<SendMailToAgentTool> definition =
-                new ToolConfig().sendMailToAgentToolToolDefinition(objectMapper, emailService);
+                new ToolConfig().sendMailToAgentToolToolDefinition(objectMapper, emailService, mock(ExecutionResumeCoordinator.class));
 
         String description = definition.description();
         assertTrue(description.contains("asynchronous"),
@@ -147,7 +156,8 @@ class SendMailToAgentToolTest {
     @DisplayName("成功回执必须与描述同口径：已投递 + 对方下一轮读到 + 不要重发")
     void successAckStatesDeliveryAndAdvisesWaiting() {
         ToolExecuteResult result = tool.execute(execution("900",
-                Map.of(ExecutionAttributes.AGENT_ID, "100"),
+                Map.of(ExecutionAttributes.AGENT_ID, "100",
+                        ExecutionAttributes.SESSION_ID, "405"),
                 "{\"toAgentId\":7,\"mailContent\":\"开场立论\"}"));
 
         String ack = result.getToolOutput();

@@ -1,9 +1,15 @@
 
 <template>
-  <div :class="['w-full py-3 px-2 sm:px-4 transition-colors', props.message.role === 'user' ? 'flex justify-end' : 'flex justify-start']">
+  <div :class="['w-full py-3 px-2 sm:px-4 transition-colors', props.message.role === 'user' && !isDelegatedTask ? 'flex justify-end' : 'flex justify-start']">
+    <DelegatedTaskMessage
+      v-if="isDelegatedTask"
+      :content="props.message.content"
+      :recipientName="props.taskRecipientName"
+      :isDark="isDark"
+    />
     
     <!-- 1. 用户消息展示样式 (匹配左图：无头像，柔和浅蓝背景圆角气泡，下方展示时间与复制图标) -->
-    <div v-if="props.message.role === 'user'" class="flex flex-col items-end max-w-2xl group">
+    <div v-else-if="props.message.role === 'user'" class="flex flex-col items-end max-w-2xl group">
       <!-- 气泡内容 -->
       <div class="relative flex items-center gap-2">
         <!-- 报错标识已移除：失败是轮次的属性，由回答组统一渲染（turn.status=FAILED + errorReason） -->
@@ -407,7 +413,7 @@
         <div v-if="!props.message.isExploring" class="border-b border-gray-200/70 dark:border-gray-800/80 w-full mt-2 mb-2.5"></div>
       </div>
 
-      <!-- 统一互动卡片：PLAN / CHOICE / COMMAND 三类 PROMISE 卡片（含 DELEGATION / UNAVAILABLE）。
+      <!-- 统一互动卡片：PLAN / CHOICE / COMMAND 三类 PROMISE 卡片（含 UNAVAILABLE）。
            渲染在过程折叠区之外，作为一等时间线项，确保用户可操作项不会被吞进折叠框。 -->
       <template v-for="entry in cardItems" :key="entry.id">
         <!-- 待决策卡片整卡展开（要按键）；已决卡片默认收成一行，细节按需展开 -->
@@ -488,30 +494,6 @@
           <div class="pointer-events-none absolute inset-0 overflow-hidden">
             <div class="context-compact-beam"></div>
           </div>
-        </div>
-      </transition>
-
-      <!-- 协作式暂停 / 挂起等待提示条 -->
-      <transition name="context-compact-fade">
-        <div
-          v-if="showSuspendedPrompt"
-          class="w-full my-2.5 px-3.5 py-2.5 rounded-2xl border flex items-center justify-between gap-3 text-xs select-none transition-colors"
-          :class="isDark ? 'bg-amber-950/40 border-amber-800/60 text-amber-200' : 'bg-amber-50 border-amber-200 text-amber-800'"
-        >
-          <div class="flex items-center gap-2">
-            <span class="relative flex h-2 w-2">
-              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-              <span class="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-            </span>
-            <span class="font-medium">当前轮次已挂起，等待人工决策或继续操作</span>
-          </div>
-          <button
-            type="button"
-            @click="emit('resume', props.sessionId)"
-            class="px-3 py-1 rounded-xl text-xs font-medium bg-amber-600 hover:bg-amber-500 text-white transition cursor-pointer shadow-xs shrink-0"
-          >
-            恢复执行
-          </button>
         </div>
       </transition>
 
@@ -617,11 +599,13 @@ import { useStreamStickyScroll } from '../../composables/useStreamStickyScroll';
 import { useTheme } from '../../composables/useTheme';
 import GradientText from '../common/GradientText.vue';
 import MarkdownRenderer from './MarkdownRenderer.vue';
+import DelegatedTaskMessage from './DelegatedTaskMessage.vue';
 import PromptCard from './PromptCard.vue';
 import CollapseTransition from '../common/CollapseTransition.vue';
 
 const props = defineProps<{
   message: ChatMessage;
+  taskRecipientName?: string;
   subSessions?: SubSessionVO[];
   isDark?: boolean;
   /** 消息所属会话 id：互动卡片的决策接口据此定位 */
@@ -643,12 +627,13 @@ const props = defineProps<{
 const { isDark: globalIsDark } = useTheme();
 const userImageUrls = computed(() => props.message.imageUrls ?? (props.message.imageUrl ? [props.message.imageUrl] : []));
 const isDark = computed(() => props.isDark ?? globalIsDark.value);
+// 委派身份由后端父轮次声明，不能从任务文本或会话位置猜测。
+const isDelegatedTask = computed(() => props.message.role === 'user' && !!props.turn?.parentTurnId);
 const openFilePreview = inject(FILE_PREVIEW_KEY);
 const canPreviewFile = (tool: ToolCallTrace) => !!openFilePreview && (isReadFileTool(tool.toolName) || isEditFileTool(tool.toolName));
 
 const emit = defineEmits<{
   (e: 'selectSubSession', id: string | number): void;
-  (e: 'resume', sessionId?: string | number): void;
 }>();
 
 /**
@@ -1049,14 +1034,6 @@ const cardItems = computed<Array<{ id: string; card: PromptCardData }>>(() =>
     .filter(item => item.type === 'prompt_card' && !!item.card)
     .map(item => ({ id: item.id, card: toPromptCardData(item.card as NonNullable<ProcessTimelineItem['card']>) }))
 );
-
-// 委派等待由子会话审批推进，父会话不再重复提示或提供恢复按钮。
-const showSuspendedPrompt = computed(() => {
-  if (!props.message.isSuspended) return false;
-  const pendingCards = cardItems.value.filter(item => item.card.pending);
-  return !pendingCards.some(item => item.card.kind === 'DELEGATION')
-    || pendingCards.some(item => item.card.kind !== 'DELEGATION');
-});
 
 /** 已决卡片默认收成一行（避免大卡片常驻页底占位），细节按需展开；待决策卡片整卡展开。 */
 const expandedCardIds = ref<Record<string, boolean>>({});

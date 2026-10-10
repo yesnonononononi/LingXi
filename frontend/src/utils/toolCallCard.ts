@@ -1,4 +1,4 @@
-import type { PromptCardData, ToolCallVO } from '../types/chat';
+import type { ChatMessage, PromptCardData, ToolCallVO } from '../types/chat';
 import { asObject, toText } from './json';
 import { AgentToolName } from './toolNames';
 
@@ -11,7 +11,7 @@ import { AgentToolName } from './toolNames';
  */
 
 /** 后端可识别的卡片形态（{@code content.kind} 的合法取值）。 */
-const KNOWN_CARD_KINDS = ['PLAN', 'CHOICE', 'COMMAND', 'DELEGATION'] as const;
+const KNOWN_CARD_KINDS = ['PLAN', 'CHOICE', 'COMMAND'] as const;
 
 type CardKind = PromptCardData['kind'];
 
@@ -25,12 +25,19 @@ export function resolveCardKind(content: unknown): CardKind {
   return (KNOWN_CARD_KINDS as readonly string[]).includes(raw) ? (raw as CardKind) : 'UNAVAILABLE';
 }
 
-/** 工具名是否可能承载互动卡片（后端 PROMISE 形态的四种工具：计划 / 提问 / 命令审批 / 子代理委派）。 */
+/**
+ * 工具名是否可能承载互动卡片（后端 PROMISE 形态的三种工具：计划 / 提问 / 命令审批）。
+ *
+ * <p>**不包含** {@code call_sub_agent}：异步委派下该工具**不再产生 PROMISE 槽位**
+ * （{@code AsyncDelegationResultRenderer} 返回受理即完成的普通 {@code success}）。
+ * 若保留该判断，前端会为一个**永远不会存在**的卡片触发 {@code requestPromptCard}，
+ * 进而按 {@code CARD_RETRY_MAX} 做 5 次 × 400ms 的无效重试与请求。
+ * 去掉后 {@code call_sub_agent} 的工具块照常渲染（它走工具轨迹，不走卡片）。</p>
+ */
 export function isCardToolName(toolName?: string | null): boolean {
   return toolName === AgentToolName.CreatePlan
     || toolName === AgentToolName.RequireChoice
-    || toolName === AgentToolName.ExecuteCommand
-    || toolName === AgentToolName.CallSubAgent;
+    || toolName === AgentToolName.ExecuteCommand;
 }
 
 /**
@@ -69,7 +76,7 @@ function resolveCardStatus(status?: string): PromptCardData['status'] {
   }
 }
 
-/** 按形态取卡片正文（PLAN 计划书 / CHOICE 问题 / COMMAND 命令 / DELEGATION 委派任务）。 */
+/** 按形态取卡片正文（PLAN 计划书 / CHOICE 问题 / COMMAND 命令）。 */
 function resolveCardContent(kind: CardKind, content: Record<string, any> | null): string {
   if (!content) return '';
   switch (kind) {
@@ -79,8 +86,6 @@ function resolveCardContent(kind: CardKind, content: Record<string, any> | null)
       return content.question != null ? toText(content.question) : '';
     case 'COMMAND':
       return content.command != null ? toText(content.command) : '';
-    case 'DELEGATION':
-      return content.text != null ? toText(content.text) : '';
     default:
       return '';
   }
@@ -115,7 +120,6 @@ export function toPromptCardData(card: ToolCallVO): PromptCardData {
     shell: content && content.shell != null ? toText(content.shell) : undefined,
     command: content && content.command != null ? toText(content.command) : undefined,
     intention: content && content.intention != null ? toText(content.intention) : undefined,
-    subSessionId: content && content.subSessionId != null ? String(content.subSessionId) : undefined,
     status: resolveCardStatus(card.status),
     version: card.version != null ? String(card.version) : undefined,
     allowedActions: card.allowedActions,
@@ -161,12 +165,24 @@ export function upsertPromptCard(
   return true;
 }
 
+/** 只给块视图已确认的工具调用补齐权威卡片，不从原始消息重建气泡或审批内容。 */
+export function attachPromptCards(messages: ChatMessage[], cards: readonly ToolCallVO[]): void {
+  const owners = new Map<string, ChatMessage>();
+  for (const message of messages) {
+    if (message.role !== 'assistant') continue;
+    for (const tool of message.toolCalls ?? []) owners.set(String(tool.id), message);
+  }
+  for (const card of cards) {
+    const owner = owners.get(String(card.id));
+    if (owner) upsertPromptCard(owner, card);
+  }
+}
+
 /** 卡片类型标签（已决卡片折叠摘要用）。 */
 const CARD_KIND_LABEL: Record<CardKind, string> = {
   PLAN: '计划',
   CHOICE: '提问',
   COMMAND: '命令审批',
-  DELEGATION: '子代理委派',
   UNAVAILABLE: '互动卡片'
 };
 

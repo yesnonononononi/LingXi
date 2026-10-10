@@ -6,22 +6,22 @@ import com.summit.core.tool.ToolExecuteResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
-
 /**
- * 协作式委派的工具结果渲染：把「已受理」这件事渲染成结构化 JSON（英文键）。
+ * 受理回执不代表子任务完成，主理人须按产物和验证记录验收。
+ * 返回普通成功结果，避免协作式委派变成阻塞等待。
  *
- * <p>只做「事实 → JSON」的翻译，不碰任何状态。刻意<b>不含</b>子代理正文 / 最终结果 ——
- * 协作式的结果由子代理事后用邮件送达；这里若带上正文，指挥者会以为子任务已完结而重复处理。</p>
- *
- * <p>必须返回普通成功结果，<b>不得</b>返回 PROMISE：后者会让父执行同步挂起等待一个永远不会回传的终态。</p>
+ * <p>回执是模型消费的结构化 JSON，按项目约定用 record + Jackson 构建（禁手工 {@code Map.put} 拼装），
+ * 使键名与类型在同一处声明、可被编译器校验。</p>
  */
 @Component
 @RequiredArgsConstructor
 public class AsyncDelegationResultRenderer {
 
-    private static final String NOTE = "Delegation accepted. The teammate will deliver its result to you by email.";
+    /** 受理回执里的运行模式键值。前端 {@code frontend/src/utils/asyncDelegation.ts} 依赖该键识别委派，保留。 */
+    private static final String RUNTIME_MODE_ASYNC = "ASYNC";
+
+    private static final String NOTE = "委派已受理，子任务尚未完成。请继续独立工作，并核验工作目录中的产物和验证记录；"
+            + "交付说明与邮件都不是验收依据，没有邮件也应自行验收，没有可用成果就重新委派。";
 
     private final ObjectMapper objectMapper;
 
@@ -33,17 +33,17 @@ public class AsyncDelegationResultRenderer {
      * @param agentName    目标 Agent 名称
      */
     public ToolExecuteResult render(String subSessionId, Long agentId, String agentName) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("runtimeMode", "ASYNC");
-        payload.put("delegated", true);
-        payload.put("subSessionId", subSessionId);
-        payload.put("agentId", agentId);
-        payload.put("agentName", agentName);
-        payload.put("note", NOTE);
+        AcceptanceReceipt receipt = new AcceptanceReceipt(
+                RUNTIME_MODE_ASYNC, true, subSessionId, agentId, agentName, NOTE);
         try {
-            return ToolExecuteResult.success(objectMapper.writeValueAsString(payload));
+            return ToolExecuteResult.success(objectMapper.writeValueAsString(receipt));
         } catch (JsonProcessingException e) {
             return ToolExecuteResult.err("协作式委派结果序列化失败: " + e.getMessage());
         }
+    }
+
+    /** 受理回执载荷：字段声明即键名与顺序，写读同源。 */
+    private record AcceptanceReceipt(String runtimeMode, boolean delegated, String subSessionId,
+                                     Long agentId, String agentName, String note) {
     }
 }

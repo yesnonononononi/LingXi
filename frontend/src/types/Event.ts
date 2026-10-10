@@ -17,8 +17,6 @@
 /* 通用载荷                                                             */
 /* ------------------------------------------------------------------ */
 
-import type { Placement } from './block';
-
 /**
  * 事件随行元数据（{@code AgentEvent#eventMetaData()}）。
  *
@@ -96,8 +94,11 @@ export interface ContextUsageMetric {
  * 「收到但不处理」，而不是编译期就拒绝。具体接口各自把它收窄成自己的字面量。</p>
  */
 export interface EventInterface {
-  /** 模型结构确定后由业务后端给出，与历史 placement 同口径。 */
-  placement?: Placement;
+  /**
+   * 正文归属：模型响应完整结构确定后由业务后端给出；流式增量阶段缺失，
+   * 缺失即「尚未确定」。true=正文区，false=过程区。
+   */
+  isBody?: boolean;
   /** 业务后端提供的过程位置，与历史块 order 一致。 */
   order?: number;
   /** 事件判别式；SSE 事件名与事件体顶层同值（对应 {@code TypedEvent#type()}） */

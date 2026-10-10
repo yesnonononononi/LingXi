@@ -10,8 +10,9 @@ import java.util.List;
  * Email 视图对象。
  * <p>{@code messageVOList} 仅在 {@code findById} 单查路径装载（分页列表不装载，避免 N+1）；
  * 未装载时为 {@code null}。</p>
- * <p>路由字段与领域模型同名：{@code workflowExecutionId} 是协作轮次隔离键，
- * {@code recipientAgentId} 是收件 Agent；旧模型中的 {@code targetExecutionId} 已删除。</p>
+ * <p>路由字段与领域模型同名：{@code workflowExecutionId} 是协作根会话隔离键（同一根会话的各轮
+ * 执行共享同一把邮箱键），{@code recipientAgentId} 是收件 Agent；旧模型中的
+ * {@code targetExecutionId} 已删除。</p>
  */
 @Data
 @Builder

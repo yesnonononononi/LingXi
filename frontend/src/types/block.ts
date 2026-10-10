@@ -42,14 +42,6 @@ export type BlockStatus =
   | 'TIMED_OUT'
   | 'CANCELLED';
 
-/**
- * 正文落点（仅 {@link TextBlock} 有意义）。
- *
- * <p>{@code BODY} = 本轮结论正文，{@code PROCESS} = 中途叙述（该模型响应还带工具请求）。
- * 判据由后端唯一确定，前端只据此决定渲染位置。</p>
- */
-export type Placement = 'BODY' | 'PROCESS';
-
 /** 所有块的公共字段（对应后端 {@code Block} 接口）。 */
 export interface BlockBase {
   /**
@@ -91,8 +83,8 @@ export interface TextBlock extends BlockBase {
   type: 'TEXT';
   /** 正文；字段名同 {@link ThinkingBlock.text}，必须与后端 {@code text} 对齐 */
   text: string;
-  /** 落点：结论正文 or 中途叙述 */
-  placement: Placement;
+  /** 正文归属：true=正文区，false=过程区；由后端唯一判定 */
+  isBody: boolean;
 }
 
 /** 工具块（对应后端 {@code ToolBlock}）。 */

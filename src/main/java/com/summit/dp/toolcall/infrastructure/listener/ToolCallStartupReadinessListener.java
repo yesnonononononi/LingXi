@@ -24,23 +24,22 @@ public class ToolCallStartupReadinessListener {
     private final ExecutionRepository executions;
     private final ToolCallReadinessService readiness;
     private final ToolCallService service;
-    private final DelegationSettleService delegation;
 
     @EventListener(ApplicationReadyEvent.class)
     @Order(300)
     public void reconcile() {
         List<Long> ids = tools.listUnresolvedExecutionIds();
-        if (ids.isEmpty()) return;
-        for (Execution execution : executions.findList(ids)) {
-            try {
-                if (Integer.valueOf(2).equals(execution.getStatus())) {
-                    readiness.markReady(String.valueOf(execution.getId()));
-                    delegation.reconcileSuspendedExecution(String.valueOf(execution.getId()));
-                } else if (execution.getStatus() != null && execution.getStatus() >= 3) {
-                    service.cancelPendingToolCalls(String.valueOf(execution.getId()));
+        if (!ids.isEmpty()) {
+            for (Execution execution : executions.findList(ids)) {
+                try {
+                    if (ExecutionStatusCodes.isSuspended(execution.getStatus())) {
+                        readiness.markReady(String.valueOf(execution.getId()));
+                    } else if (ExecutionStatusCodes.isTerminal(execution.getStatus())) {
+                        service.cancelPendingToolCalls(String.valueOf(execution.getId()));
+                    }
+                } catch (RuntimeException error) {
+                    log.error("启动槽位校准失败: executionId={}", execution.getId(), error);
                 }
-            } catch (RuntimeException error) {
-                log.error("启动槽位校准失败: executionId={}", execution.getId(), error);
             }
         }
     }

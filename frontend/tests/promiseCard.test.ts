@@ -25,7 +25,7 @@ test('1. 轮次视图 + 权威卡片 VO：PLAN / CHOICE / COMMAND 三类 PROMISE
       { blockId: 'tool:call-plan', type: 'TOOL', order: 0, status: 'PROMISED', toolCallId: 'call-plan', toolName: 'create_plan' },
       { blockId: 'tool:call-choice', type: 'TOOL', order: 10, status: 'PROMISED', toolCallId: 'call-choice', toolName: 'require_choice' },
       { blockId: 'tool:call-cmd', type: 'TOOL', order: 20, status: 'COMPLETED', toolCallId: 'call-cmd', toolName: 'execute_command' },
-      { blockId: 'text:end', type: 'TEXT', order: 30, status: 'COMPLETE', placement: 'BODY', text: '已完成' },
+      { blockId: 'text:end', type: 'TEXT', order: 30, status: 'COMPLETE', isBody: true, text: '已完成' },
     ],
   }, new Map());
 
@@ -90,8 +90,9 @@ test('3. 唯一可审批判定 + allowedActions 驱动按钮集合', () => {
   assert.equal(isCardToolName(AgentToolName.CreatePlan), true);
   assert.equal(isCardToolName(AgentToolName.RequireChoice), true);
   assert.equal(isCardToolName(AgentToolName.ExecuteCommand), true);
-  // A4：子代理委派工具也承载 DELEGATION 卡片，实时路径据此建卡
-  assert.equal(isCardToolName(AgentToolName.CallSubAgent), true);
+  // 异步委派下 call_sub_agent 不再产生 PROMISE 槽位（AsyncDelegationResultRenderer 返回受理即完成的
+  // 普通 success），故它不是建卡工具；保留该判断会为永不存在的卡片触发无效重试（CARD_RETRY_MAX × 400ms）。
+  assert.equal(isCardToolName(AgentToolName.CallSubAgent), false);
   assert.equal(isCardToolName(AgentToolName.ReadFile), false);
 
   // 按钮集合来自后端 allowedActions：CHOICE 只有 ANSWER，PLAN/COMMAND 是 APPROVE|REJECT

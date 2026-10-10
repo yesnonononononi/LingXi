@@ -180,7 +180,7 @@ export function resolveRootSessionId(session: ChatSession | null | undefined): s
  * 历史分页响应 → 消息列表的**唯一入口**（与实时快照/增量同一条更新规则）。
  *
  * <p><b>为什么不做「从原始消息行聚合」</b>：后端每一轮都随响应下发完整的
- * {@link TurnViewVO}（含用户提问、块列表、order / placement / status），这正是
+ * {@link TurnViewVO}（含用户提问、块列表、order / isBody / status），这正是
  * 实时链路拿到的那份契约。现在两侧共用 {@link upsertTurnViewIntoMessages}：
  * 按 {@code sessionId + turnId} 定位、按 {@code viewVersion} 接受更新。</p>
  *

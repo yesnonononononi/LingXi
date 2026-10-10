@@ -32,7 +32,7 @@ class CallSubAgentTeamResolutionTest {
     /** 入口编排只依赖 agentService + teamService，其余构造参数可空。 */
     private CallSubAgentTool tool() {
         return new CallSubAgentTool(new ObjectMapper(), agents, teams, null,
-                null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null);
     }
 
     private ToolExecution execution(Map<String, Object> attributes) {

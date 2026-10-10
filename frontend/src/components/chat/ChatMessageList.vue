@@ -63,6 +63,7 @@
           v-for="(msg, idx) in messages"
           :key="msg.id"
           :message="msg"
+          :taskRecipientName="taskRecipientName"
           :subSessions="subSessions"
           :sessionId="sessionId"
           :isDark="isDark"
@@ -71,7 +72,6 @@
           :isLastAssistant="idx === computedLastAssistantIndex"
           :isSending="isSending"
           @selectSubSession="(id) => emit('selectSubSession', id)"
-          @resume="(sid) => emit('resume', sid)"
         />
       </template>
     </div>
@@ -87,6 +87,7 @@ import ChatMessageItem from './ChatMessageItem.vue';
 
 const props = defineProps<{
   messages: ChatMessage[];
+  taskRecipientName?: string;
   turnMap?: Map<ChatMessage, { turn: ChatTurn | null; isGroupTail: boolean }>;
   sessionId?: string | number;
   subSessions?: SubSessionVO[];
@@ -108,7 +109,6 @@ const emit = defineEmits<{
   (e: 'retryInitialLoad'): void;
   (e: 'scroll', event: Event): void;
   (e: 'selectSubSession', id: string | number): void;
-  (e: 'resume', sessionId?: string | number): void;
 }>();
 
 const scrollLoaderRef = ref<InstanceType<typeof ScrollCursorLoader> | null>(null);

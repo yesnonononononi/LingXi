@@ -63,7 +63,7 @@ export function projectTurnView(bubble: ChatMessage, view: TurnViewVO): void {
  * 由后端轮次视图**直接构造**助手气泡（历史与实时共用的唯一落点）。
  *
  * <p><b>为什么需要它</b>：这是「只保留一条展示链路」的入口 —— 后端 {@link TurnViewVO}
- * 已完整给出该轮的用户提问、块列表（含 order / placement / status），前端无需再从原始
+ * 已完整给出该轮的用户提问、块列表（含 order / isBody / status），前端无需再从原始
  * 消息行聚合。历史分页与实时快照走同一函数，产出的气泡必然同形状。</p>
  *
  * <p><b>身份</b>：气泡 id 取自 {@code sessionId + turnId}（与实时
@@ -198,7 +198,7 @@ export function upsertBlockIntoBubble(bubble: ChatMessage, view: TurnViewVO): vo
     buffer.responseId = block.responseId ?? buffer.responseId;
     buffer.complete ||= block.status === RESPONSE_COMPLETE && block.text.length >= buffer.text.length;
     if (block.type === 'TEXT') {
-      applyTextPlacement(bubble, block.blockId, block.placement);
+      applyTextPlacement(bubble, block.blockId, block.isBody);
     }
   }
   renderTurnState(bubble);

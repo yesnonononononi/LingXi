@@ -110,7 +110,7 @@ public class EmailServiceImpl implements EmailService {
             throw new ClientException("senderAgentId is null");
         }
 
-        // 1) 获取或创建收件 Agent 的角色邮箱（业务键 = 协作根执行 + 收件 Agent）
+        // 1) 获取或创建收件 Agent 的角色邮箱（业务键 = 协作根会话 + 收件 Agent）
         Email mailbox = obtainMailbox(workflowExecutionId, toAgentId, context.teamId());
 
         // 2) 同一事务内写入一条 PENDING 消息
@@ -191,6 +191,19 @@ public class EmailServiceImpl implements EmailService {
             return repository.findByBusinessKeyForUpdate(workflowExecutionId, recipientAgentId)
                     .orElseThrow(() -> new ClientException("邮箱并发创建后回查失败"));
         }
+    }
+
+    @Override
+    public boolean hasPending(Long workflowExecutionId, Long recipientAgentId) {
+        // 只读判据：复用与消费同一把业务键与同一条 PENDING 查询，绝不调用 consumePending。
+        if (workflowExecutionId == null || recipientAgentId == null) {
+            return false;
+        }
+        Optional<Email> mailbox = repository.findByBusinessKey(workflowExecutionId, recipientAgentId);
+        if (mailbox.isEmpty()) {
+            return false;
+        }
+        return !messageRepository.findPendingByEmailIds(List.of(mailbox.get().getId())).isEmpty();
     }
 
     @Override

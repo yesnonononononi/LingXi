@@ -268,8 +268,9 @@ public class ChatServiceImpl implements ChatService {
      * 协作模式下「子代理仍在跑」不会拦住用户开新一轮。这是 P0-4 要的语义。</p>
      *
      * <p><b>三个状态都要拦，缺一不可</b>：{@code SUSPENDED}（等待审批 / 子代理回填）自不必说；
-     * {@code CREATED} / {@code RUNNING} 是<b>恢复执行</b>在跑 —— 恢复由
-     * {@code DelegationSettleService} 与 {@code /resume} 直接交给 loop，不经过请求线程，
+     * {@code CREATED} / {@code RUNNING} 是<b>恢复执行</b>在跑 —— 恢复由结束事实协作器
+     * （{@code SubExecutionLifecycle} → {@code ExecutionResumeCoordinator}）与 {@code /resume}
+     * 直接交给 loop，不经过请求线程，
      * {@link SessionExecutionRegistry#beginRoot} 那把单飞锁在挂起时就已释放。只查 SUSPENDED
      * 会漏掉「挂起 → 子代理回填 → 已恢复并正在跑」这段窗口，用户于是能在同一会话里开出第二个
      * 根执行：线上事故里两条「继续推进」各跑出一份交付总结，前端两个气泡同时收事件。</p>

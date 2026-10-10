@@ -5,6 +5,8 @@ import java.util.Map;
 /** Business identity carried through the framework as opaque request attributes. */
 public final class ExecutionAttributes {
     public static final String SESSION_ID = "lingxi.session_id";
+    /** 协作根会话 id：子执行由委派方下行写入，根执行没有该属性（其 SESSION_ID 即根会话 id）。 */
+    public static final String ROOT_SESSION_ID = "lingxi.root_session_id";
     public static final String AGENT_ID = "lingxi.agent_id";
     public static final String MODEL_CONFIG_ID = "lingxi.model_config_id";
     public static final String WORKSPACE_ID = "lingxi.workspace_id";
@@ -47,6 +49,24 @@ public final class ExecutionAttributes {
     public static Long workflowExecutionId(Map<String, Object> attributes, String currentExecutionId) {
         Long root = readLong(attributes, ROOT_EXECUTION_ID);
         return root != null ? root : parseLong(currentExecutionId);
+    }
+
+    /**
+     * 邮箱业务键：本次协作的根<b>会话</b> id。
+     *
+     * <p><b>为什么键是根会话而不是根执行</b>：根执行会随每轮 {@code beginRoot} 换一个新 id，
+     * 邮箱若按旧的根执行 id 存，下一轮执行永远查不到它 —— 邮件会永久停在 {@code PENDING}。
+     * 提升到根会话 id 后，同一会话下的各轮执行共享同一把邮箱键，投递与消费天然对齐。</p>
+     *
+     * <p>子执行由委派方下行写入 {@link #ROOT_SESSION_ID}，取其即为根会话 id；根执行没有该属性，
+     * 回落 {@link #SESSION_ID}（根执行的会话就是根会话）。因此解析只读属性、不查库。</p>
+     *
+     * @param attributes 请求/工具执行携带的不透明属性
+     * @return 根会话 id；无法解析返回 {@code null}
+     */
+    public static Long mailboxSessionId(Map<String, Object> attributes) {
+        Long root = readLong(attributes, ROOT_SESSION_ID);
+        return root != null ? root : readLong(attributes, SESSION_ID);
     }
 
     /** 宽松解析：非数字（含 null、空白、雪花 ID 之外的脏值）一律返回 null，不抛异常。 */

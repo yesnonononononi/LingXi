@@ -1,5 +1,6 @@
 package com.summit.dp.tools.baseTools.sub_agent.communication;
 
+import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.InterceptorResult;
 import com.summit.core.runtime.loop.LoopContext;
@@ -53,23 +54,26 @@ public class AgenticLoopInterceptor implements LoopInterceptor {
     public InterceptorResult onBeforeModelInvoke(LoopContext context) {
 
         // 1, 未绑定 Agent 的裸模型没有邮箱可言，直接跳过
-        Map<String, Object> attributes = context.attributes();
-        String executionId = context.execution().getId();
+        // 框架已把 LoopContext 由 record 改为 class：attributes/execution 不再直接暴露，
+        // 一律经 LoopMessages 取执行，再顺着 agentRequest 的 runtimeParameters 取属性。
+        Execution execution = context.getLoopMessages().getExecution();
+        Map<String, Object> attributes = execution.getAgentRequest().runtimeParametersOrDefault().getAttributes();
+        String executionId = execution.getId();
         Long recipientAgentId = ExecutionAttributes.readLong(attributes, ExecutionAttributes.AGENT_ID);
         if (recipientAgentId == null) {
             log.debug("执行 {} 未绑定 Agent，跳过邮箱注入", executionId);
             return InterceptorResult.NONE;
         }
 
-        // 2, 与发信侧同一规则算出协作根执行 ID：根执行取自身，子执行取 ROOT_EXECUTION_ID 属性
-        Long workflowExecutionId = ExecutionAttributes.workflowExecutionId(attributes, executionId);
-        if (workflowExecutionId == null) {
-            log.debug("执行 {} 无法解析协作根执行 ID，跳过邮箱注入", executionId);
+        // 2, 与发信侧同一规则算出邮箱业务键：协作根会话 ID（子执行取 ROOT_SESSION_ID，根执行回落自身 SESSION_ID）
+        Long mailboxSessionId = ExecutionAttributes.mailboxSessionId(attributes);
+        if (mailboxSessionId == null) {
+            log.debug("执行 {} 无法解析协作根会话 ID，跳过邮箱注入", executionId);
             return InterceptorResult.NONE;
         }
 
         // 3, 只消费该业务键下的待处理消息
-        List<EmailMessageVO> data = emailService.consumePending(workflowExecutionId, recipientAgentId).getData();
+        List<EmailMessageVO> data = emailService.consumePending(mailboxSessionId, recipientAgentId).getData();
 
         // 4, 空收件箱不发任何消息
         if (data == null || data.isEmpty()) {

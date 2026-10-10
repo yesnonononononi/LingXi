@@ -142,8 +142,9 @@ class ToolCallReadinessTest {
     }
 
     @Test
-    void mixedUnresolvedSlotsIncludeDelegationAndInProgress() {
+    void mixedUnresolvedSlotsIncludeUnrecognizedKindAndInProgress() {
         tools.save(preparing("call_plan", "PLAN"));
+        // 改造前遗留的 DELEGATION 槽位：枚举已删、kind 不可识别，但它仍是未决、且非人工可决策的槽位。
         tools.save(preparing("call_delegate", "DELEGATION").toBuilder().status(ToolCallStatus.PENDING).build());
         tools.save(preparing("call_command", "COMMAND").toBuilder().status(ToolCallStatus.IN_PROGRESS).build());
         tools.save(preparing("call_done", "CHOICE").toBuilder().status(ToolCallStatus.COMPLETED).build());

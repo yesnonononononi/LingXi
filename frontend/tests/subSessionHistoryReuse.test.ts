@@ -53,7 +53,7 @@ function stubSessionMessages(message: ChatMessage = subMessage): () => number {
             status: 'COMPLETED',
             viewVersion: 1,
             blocks: [
-              { blockId: `text:${message.id}`, type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: message.content },
+              { blockId: `text:${message.id}`, type: 'TEXT', order: 0, status: 'COMPLETE', isBody: true, text: message.content },
             ],
           },
         },
@@ -182,7 +182,7 @@ test('第二版：子会话首次历史请求在途时收到的文本和工具�
   const live = originalMessages[0];
   resolvePage({ ok: true, data: { records: [], messages: [], turns: {}, hasMore: false, nextCursor: null,
     turnViews: { '900': { sessionId: 'sub-1', turnId: '900', status: 'RUNNING', viewVersion: '1', blocks: [
-      { blockId: 'text:100', responseId: '100', type: 'TEXT', order: 1, status: 'COMPLETE', placement: 'BODY', text: '历史正文' },
+      { blockId: 'text:100', responseId: '100', type: 'TEXT', order: 1, status: 'COMPLETE', isBody: true, text: '历史正文' },
     ] } } } });
   await loading;
   assert.equal(sub.activeSubSessionMessages.value.length, 1);
@@ -193,6 +193,6 @@ test('第二版：子会话首次历史请求在途时收到的文本和工具�
   assert.equal(live.turnState.texts['text:100'].text, '历史正文');
   assert.equal(live.turnState.texts['text:102'].text, '实时正文');
   reducer.consume({ type: 'AI_MESSAGE', executionId: 'e', timestamp: '', metaData: metadata,
-    responseId: '102', order: 1, text: '实时正文', placement: 'BODY' });
+    responseId: '102', order: 1, text: '实时正文', isBody: true });
   assert.equal(live.content, '实时正文', '确认用途后按响应身份归位到正文');
 });

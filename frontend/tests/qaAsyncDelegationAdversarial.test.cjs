@@ -157,17 +157,6 @@ test('AC-5 对抗：子会话 IDLE 且无 outcome 时也不得显示完成/失�
   assert.doesNotMatch(text(root), /执行失败/, 'IDLE 无结果不得臆断为失败');
 });
 
-test('AC-5 对抗：委派等待卡仍 pending 且无 outcome 时不得显示失败/完成', async t => {
-  const promptCard = reactive({
-    kind: 'DELEGATION', toolCallId: 'd2', title: '工程师', content: '任务正文',
-    status: 'running', pending: true, outcome: undefined,
-  });
-  const root = mountComponent(t, component('components/chat/DelegationWaitCard.vue'), { promptCard, isDark: true });
-
-  assert.doesNotMatch(text(root), /子代理执行失败/, 'pending 不得判失败');
-  assert.doesNotMatch(text(root), /子代理已完成/, 'pending 不得判完成');
-});
-
 test('AC-5 对抗：协同条色点——子会话进行中即便工具 calling 也必须是执行中', async t => {
   const { AgentToolName } = util('utils/toolNames.ts');
   const subSessions = reactive([{ id: '77', agentId: '5', agentName: '工程师', runStatus: 'RUNNING' }]);

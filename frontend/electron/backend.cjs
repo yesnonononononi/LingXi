@@ -136,8 +136,8 @@ async function start({ frontendRoot, isPackaged, resourcesPath, userDataDir, log
 
   logFn(`启动后端: ${layout.javaExe} ${args.join(' ')}`);
   child = spawn(layout.javaExe, args, {
-    // cwd 必须是可写目录：application.yaml 的 `optional:file:.env` 按 cwd 解析，
-    // 而装到 Program Files 后 jar 旁边不可写。用户把自己的 .env 放进这个目录即可。
+    // cwd 必须是可写目录：装到 Program Files 后 jar 旁边不可写，
+    // 而 JVM 崩溃转储、相对路径配置等都会落在 cwd。不设 cwd 会继承安装目录 → 静默写失败。
     cwd: userDataDir,
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],

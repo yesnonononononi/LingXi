@@ -1,6 +1,6 @@
 import type { TokenInfo } from './Event';
 import type { ResponsePosition } from '../utils/responseOrder';
-import type { Placement, TurnViewVO } from './block';
+import type { TurnViewVO } from './block';
 
 /** 消息角色定义 */
 export type MessageRole = 'user' | 'assistant' | 'system';
@@ -111,7 +111,8 @@ export interface ResponseTextBuffer extends ResponsePosition {
   text: string;
   pending: Record<number, string>;
   complete: boolean;
-  placement?: Placement;
+  /** 正文归属：true=正文区，false=过程区；由后端唯一判定，缺失表示尚未确定 */
+  isBody?: boolean;
   order?: number;
 }
 
@@ -320,19 +321,18 @@ export interface ToolCallVO {
  */
 export interface PromptCardData {
   /**
-   * 卡片形态：`PLAN` / `CHOICE` / `COMMAND` / `DELEGATION`（= `toolCall.content.kind`）。
-   * `DELEGATION` 是委派等待卡：等的是子会话里的审批落定，**不是人工审批卡** ——
-   * 不渲染批准/拒绝按钮。`UNAVAILABLE` 表示 `content.kind` 缺失/非法（后端 `fromName()` 识别不了返回 `null`），
+   * 卡片形态：`PLAN` / `CHOICE` / `COMMAND`（= `toolCall.content.kind`）。
+   * `UNAVAILABLE` 表示 `content.kind` 缺失/非法（后端 `fromName()` 识别不了返回 `null`），
    * 渲染为「状态不可用」，**绝不**回落成 `COMMAND`（否则语义未知的卡片会被渲染成带「批准并执行」按钮的命令审批卡）。
    */
-  kind: 'PLAN' | 'CHOICE' | 'COMMAND' | 'DELEGATION' | 'UNAVAILABLE';
+  kind: 'PLAN' | 'CHOICE' | 'COMMAND' | 'UNAVAILABLE';
   /** 决策锚点：tool_call.id / 模型 call_id */
   toolCallId: string;
   /** 归属会话（= session.id）；提交决策时回传 */
   conversationId?: string;
-  /** 卡片标题（PLAN 计划标题 / CHOICE 问题 / COMMAND 命令审批 / DELEGATION 子代理名） */
+  /** 卡片标题（PLAN 计划标题 / CHOICE 问题 / COMMAND 命令审批） */
   title: string;
-  /** 卡片正文：PLAN 为计划书 Markdown；CHOICE 为问题正文；COMMAND 为命令；DELEGATION 为委派任务 */
+  /** 卡片正文：PLAN 为计划书 Markdown；CHOICE 为问题正文；COMMAND 为命令 */
   content: string;
   /** CHOICE：候选答案；空数组表示只需自由输入 */
   options?: string[];
@@ -342,8 +342,6 @@ export interface PromptCardData {
   command?: string;
   /** COMMAND：模型声明的命令意图（content.intention，后端从 args 提取；缺失时无此键） */
   intention?: string;
-  /** DELEGATION：目标子会话 id（点击可跳转子会话视图；可空） */
-  subSessionId?: string;
   /** 生命周期：pending / in_progress / completed */
   status: 'preparing' | 'pending' | 'in_progress' | 'completed';
   version?: string;

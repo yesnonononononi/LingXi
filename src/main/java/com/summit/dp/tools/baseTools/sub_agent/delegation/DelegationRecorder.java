@@ -45,7 +45,8 @@ public class DelegationRecorder {
                        Long numericSubSessionId, String subSessionId, AgentVO agent, String task) {
         // 子会话身份不再单独发映射事件：前端从子执行自己的事件元数据认出子会话（sessionId 是子会话、
         // rootSessionId 是根），因此元数据必须带 agent 身份，否则那份「我是谁」只能退化成编出来的序号。
-        // 委派关联则由 DELEGATION 卡片的 content.subSessionId 表达，前端据此建立导航。
+        // 委派关联（子会话 → 根会话）同样由子执行事件元数据里的 rootSessionId 表达，前端据此建立导航，
+        // 不再需要额外的映射事件或卡片承载这层归属。
 
         // 子轮次：与子会话的 USER 行同源归属。parentTurnId 指向**发起本次委派的主轮次**，
         // 从父工具执行的事件元数据读取，不反查执行对应的轮次。

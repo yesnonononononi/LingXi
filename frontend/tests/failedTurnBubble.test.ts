@@ -182,7 +182,7 @@ test('★ 接线：成功轮次不受影响（不产生多余气泡）', () => {
     ...viewsOfUserMessages(['T-OK']),
     {
       sessionId: SESSION_ID, turnId: 'T-OK', status: 'COMPLETED', viewVersion: '1', userMessage: '你好',
-      blocks: [{ blockId: 'text:T-OK', type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: '这是回答' }],
+      blocks: [{ blockId: 'text:T-OK', type: 'TEXT', order: 0, status: 'COMPLETE', isBody: true, text: '这是回答' }],
     },
   ];
   const turns: Record<string, ChatTurn> = { 'T-OK': { turnId: 'T-OK', status: 'COMPLETED' } as ChatTurn };
@@ -198,7 +198,7 @@ test('★ 接线：一次失败一轮成功时，只在失败轮插入', () => {
   const views: TurnViewVO[] = [
     {
       sessionId: SESSION_ID, turnId: 'T-OK', status: 'COMPLETED', viewVersion: '1', userMessage: '你好',
-      blocks: [{ blockId: 'text:T-OK', type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: '正常回答' }],
+      blocks: [{ blockId: 'text:T-OK', type: 'TEXT', order: 0, status: 'COMPLETE', isBody: true, text: '正常回答' }],
     },
     { sessionId: SESSION_ID, turnId: 'T-FAILED', status: 'FAILED', viewVersion: '1', userMessage: '这一轮会失败', blocks: [] },
   ];

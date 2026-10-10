@@ -6,6 +6,7 @@ import com.summit.core.tool.ToolDefinition;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.agent.infrastructure.workflow.TeamPromptComposer;
 import com.summit.dp.email.application.service.EmailService;
+import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
 import com.summit.dp.shared.model.ToolCatalog;
 import com.summit.dp.tools.baseTools.sub_agent.CallSubAgentTool;
 import com.summit.dp.tools.baseTools.sub_agent.communication.SendMailToAgentTool;
@@ -52,7 +53,7 @@ class QaToolDefinitionAndPromptTest {
 
         assertTrue(Pattern.compile("主理人的 agentId 是 77").matcher(prompt).find(),
                 "必须显式渲染出主理人 agentId 整句，否则成员只能从名单猜 id");
-        assertTrue(prompt.contains("send_mail_to_agent"), "成员须知道用邮件交付");
+        assertTrue(prompt.contains("send_mail_to_agent"), "成员须知道补充通知的工具");
         assertTrue(prompt.contains("只发一次"), "须约束只发一次，避免重复投递");
     }
 
@@ -65,54 +66,52 @@ class QaToolDefinitionAndPromptTest {
     }
 
     @Test
-    @DisplayName("T02 call_sub_agent schema：新增 runtime_mode（enum + default blocking），必填仍为 agentId/task")
-    void callSubAgentSchemaCarriesRuntimeMode() throws Exception {
+    @DisplayName("T02 call_sub_agent schema：不再有 runtime_mode（收敛为单一异步口径），必填仍为 agentId/task")
+    void callSubAgentSchemaHasNoRuntimeMode() throws Exception {
         ToolDefinition<CallSubAgentTool> definition =
                 new ToolConfig().callSubAgentToolDefinition(mock(CallSubAgentTool.class));
 
         assertEquals(ToolCatalog.CALL_SUB_AGENT, definition.name());
         JsonNode schema = objectMapper.readTree(definition.parametersJsonSchema());
 
-        JsonNode runtimeMode = schema.get("properties").get("runtime_mode");
-        assertTrue(runtimeMode != null, "schema 必须包含 runtime_mode");
-        Set<String> enumValues = new TreeSet<>();
-        runtimeMode.get("enum").forEach(node -> enumValues.add(node.asText()));
-        assertEquals(Set.of("blocking", "async"), enumValues);
-        assertEquals("blocking", runtimeMode.get("default").asText(), "默认必须是阻塞式");
+        assertTrue(schema.get("properties").get("runtime_mode") == null,
+                "双模式已收敛为单一异步口径，schema 不得再暴露 runtime_mode");
+        assertFalse(definition.description().contains("runtime_mode"));
+        assertTrue(definition.description().contains("blocking") == false, "不得再暴露 blocking 分叉");
 
         Set<String> required = new TreeSet<>();
         schema.get("required").forEach(node -> required.add(node.asText()));
-        assertEquals(Set.of("agentId", "task"), required, "runtime_mode 不得变成必填");
+        assertEquals(Set.of("agentId", "task"), required);
         assertFalse(schema.get("additionalProperties").asBoolean(true));
     }
 
     @Test
-    @DisplayName("T02 call_sub_agent description：区分两种模式，且不再是误导性的单句「return its final result」")
-    void callSubAgentDescriptionDistinguishesModes() {
+    @DisplayName("T02 call_sub_agent description：单一异步口径，且验收以产物与验证记录为准、内部故障自行处理")
+    void callSubAgentDescriptionDescribesSingleAsyncMode() {
         String description = new ToolConfig().callSubAgentToolDefinition(mock(CallSubAgentTool.class)).description();
 
-        assertTrue(description.contains("blocking"), "须说明 blocking 语义");
-        assertTrue(description.contains("async"), "须说明 async 语义");
-        assertTrue(description.toLowerCase().contains("email") || description.contains("send_mail_to_agent"),
-                "须说明 async 下结果经邮件送达");
-        assertFalse(description.trim().equals(
-                "Delegate one well-scoped task to a configured teammate and return its final result."),
-                "旧的误导性单句必须被替换");
+        assertFalse(description.contains("blocking"), "阻塞式委派已删除，描述不得再提 blocking");
+        assertFalse(description.contains("runtime_mode"), "描述不得再提 runtime_mode");
+        assertTrue(description.toLowerCase().contains("asynchron"), "须说明委派是异步协作式");
+        assertTrue(description.contains("email (send_mail_to_agent) is supplementary"));
+        assertTrue(description.contains("Verify workspace artifacts and validation records"));
+        assertTrue(description.contains("Handle these internal failures yourself"));
     }
 
     @Test
     @DisplayName("T02 send_mail_to_agent：description 与 toAgentId 描述均为双向措辞")
     void sendMailDefinitionIsBidirectional() throws Exception {
         ToolDefinition<SendMailToAgentTool> definition =
-                new ToolConfig().sendMailToAgentToolToolDefinition(objectMapper, emailService);
+                new ToolConfig().sendMailToAgentToolToolDefinition(objectMapper, emailService, mock(ExecutionResumeCoordinator.class));
 
         String description = definition.description();
         assertTrue(description.toLowerCase().contains("commander"),
                 "description 须承认「发给主理人」这一方向");
         assertTrue(description.toLowerCase().contains("teammate"),
                 "description 须承认「发给队友」这一方向");
-        assertTrue(description.contains("async (collaboration) mode"),
-                "须点明 async 协作模式下成员用它回传结果");
+        assertTrue(description.contains("asynchronous"),
+                "须点明投递是异步的，否则模型会以为发完就能同步拿到回复");
+        assertTrue(description.contains("even without email"));
 
         JsonNode schema = objectMapper.readTree(definition.parametersJsonSchema());
         String toAgentId = schema.get("properties").get("toAgentId").get("description").asText();

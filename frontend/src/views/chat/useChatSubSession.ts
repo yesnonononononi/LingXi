@@ -3,6 +3,7 @@ import { chatApi } from '../../services/chat';
 import type { ChatMessage, ChatSession, SubSessionVO } from '../../types/chat';
 import { mergeTurns, mergeTurnViews, resolveRootSessionId, synthesizeFailedTurnBubbles } from '../../utils/session';
 import { upsertTurnViewIntoMessages } from './blockProjection';
+import { attachPromptCards } from '../../utils/toolCallCard';
 import { toSubItemStatus } from '../../utils/subSessionStatus';
 import type { SubSessionItem } from '../../components/chat/SubAgentSidePanel.vue';
 
@@ -125,6 +126,7 @@ export function useChatSubSession(options: ChatSubSessionOptions) {
         for (const view of Object.values(res.data.turnViews ?? {})) {
           if (view) upsertTurnViewIntoMessages(messages, view, sub.subSession.turnViewVersions);
         }
+        attachPromptCards(messages, res.data.records.flatMap(record => record.toolCall ? [record.toolCall] : []));
         sub.subSession.messages = synthesizeFailedTurnBubbles(messages, sub.subSession.turns);
       }
       subSessionPaginationMap.value[key] = { hasMore: res.data.hasMore, nextCursor: res.data.nextCursor };
@@ -161,6 +163,7 @@ export function useChatSubSession(options: ChatSubSessionOptions) {
         for (const view of Object.values(res.data.turnViews ?? {})) {
           if (view) upsertTurnViewIntoMessages(messages, view, sub.subSession.turnViewVersions);
         }
+        attachPromptCards(messages, res.data.records.flatMap(record => record.toolCall ? [record.toolCall] : []));
         sub.subSession.messages = synthesizeFailedTurnBubbles(messages, sub.subSession.turns);
       }
       subSessionPaginationMap.value[key] = { hasMore: res.data.hasMore, nextCursor: res.data.nextCursor };

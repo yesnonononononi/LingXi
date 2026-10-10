@@ -7,6 +7,7 @@ import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.domain.lifecycle.ExecutionActivity;
+import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.CardAvailabilityPolicy;
 import com.summit.dp.toolcall.application.service.ToolCallActionResolver;
 import com.summit.dp.toolcall.domain.model.ToolCall;
@@ -29,12 +30,17 @@ class ToolCallActionResolverTest {
             new CardAvailabilityPolicy(provider(executions), provider(activity));
     private final ToolCallActionResolver resolver = new ToolCallActionResolver(policy);
     private final ObjectMapper json = new ObjectMapper();
+    private final ToolCallConverter converter = new ToolCallConverter(json);
 
     @Test
-    void preparingDelegationAndUnknownContentNeverExposeActions() throws Exception {
+    void preparingLegacyDelegationAndUnknownContentNeverExposeActions() throws Exception {
         JsonNode content = json.readTree("{\"text\":\"计划\"}");
         assertTrue(resolver.resolveActions(tool(ToolCallStatus.PREPARING), ToolCallKind.PLAN, content).allowedActions().isEmpty());
-        assertTrue(resolver.resolveActions(tool(ToolCallStatus.PENDING), ToolCallKind.DELEGATION, content).allowedActions().isEmpty());
+        // 新现实：改造前遗留的 DELEGATION 行 kind 已不可识别，解析为 null 且不抛异常；
+        // 该 null 形态落进「未知形态」降级分支，同样不开放任何动作。
+        ToolCallKind legacyKind = converter.resolveKind("{\"kind\":\"DELEGATION\",\"text\":\"写代码\"}");
+        assertNull(legacyKind);
+        assertTrue(resolver.resolveActions(tool(ToolCallStatus.PENDING), legacyKind, content).allowedActions().isEmpty());
         assertTrue(resolver.resolveActions(tool(ToolCallStatus.PENDING), null, content).allowedActions().isEmpty());
         assertTrue(resolver.resolveActions(tool(ToolCallStatus.PENDING), ToolCallKind.PLAN, json.createObjectNode()).allowedActions().isEmpty());
         verifyNoInteractions(executions, activity);

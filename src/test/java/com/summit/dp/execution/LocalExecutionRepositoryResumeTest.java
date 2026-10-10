@@ -9,7 +9,7 @@ import com.summit.dp.execution.domain.lifecycle.ExecutionCoordination;
 import com.summit.dp.session.application.service.SessionAggregateService;
 import com.summit.dp.toolcall.application.service.ToolCallReadinessService;
 import com.summit.dp.toolcall.application.service.ToolCallService;
-import com.summit.dp.toolcall.infrastructure.listener.DelegationSettleService;
+import com.summit.dp.agent.infrastructure.runtime.SubExecutionLifecycle;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
@@ -40,7 +40,7 @@ class LocalExecutionRepositoryResumeTest {
     private final ExecutionMapper persistence = mock(ExecutionMapper.class);
     private final ToolCallReadinessService readiness = mock(ToolCallReadinessService.class);
     private final ToolCallService tools = mock(ToolCallService.class);
-    private final DelegationSettleService delegation = mock(DelegationSettleService.class);
+    private final SubExecutionLifecycle subExecutionLifecycle = mock(SubExecutionLifecycle.class);
     private final SessionAggregateService sessions = mock(SessionAggregateService.class);
     private final ChatTurnService turns = mock(ChatTurnService.class);
     private final List<String> suspended = new ArrayList<>();
@@ -56,7 +56,7 @@ class LocalExecutionRepositoryResumeTest {
     }
     private final LocalExecutionRepository repository =
             new LocalExecutionRepository(persistence, mapper, provider(readiness), provider(tools),
-                    provider(delegation), provider(sessions), provider(turns));
+                    provider(subExecutionLifecycle), provider(sessions), provider(turns));
 
     private static Execution execution() {
         List<Message> history = List.of(UserMessageEntity.from("hi"),
@@ -274,7 +274,7 @@ class LocalExecutionRepositoryResumeTest {
     void releasedSignalIsVisibleAndServiceFailureDoesNotBlockFollowingService() {
         ToolCallReadinessService failing = mock(ToolCallReadinessService.class);
         LocalExecutionRepository isolated = new LocalExecutionRepository(persistence, mapper,
-                provider(failing), provider(tools), provider(delegation), provider(sessions), provider(turns));
+                provider(failing), provider(tools), provider(subExecutionLifecycle), provider(sessions), provider(turns));
         doAnswer(invocation -> {
             assertFalse(Thread.holdsLock(ExecutionCoordination.monitor("305")));
             assertFalse(isolated.isActive("305"));
@@ -286,7 +286,7 @@ class LocalExecutionRepositoryResumeTest {
         assertDoesNotThrow(() -> isolated.unregister(signal));
         assertFalse(isolated.isActive("305"));
         assertEquals(List.of("305"), suspended);
-        verify(delegation).reconcileSuspendedExecution("305");
+        verify(subExecutionLifecycle).onSuspended(any());
         verify(tools, never()).cancelPendingToolCalls(any());
         verify(sessions, never()).saveExecutionContextUsage(any());
     }
@@ -299,11 +299,11 @@ class LocalExecutionRepositoryResumeTest {
         try {
             repository.unregister(signal);
             assertFalse(repository.isActive("305"));
-            verifyNoInteractions(readiness, delegation, turns, tools, sessions);
+            verifyNoInteractions(readiness, subExecutionLifecycle, turns, tools, sessions);
             for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
                 synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
             }
-            verifyNoInteractions(readiness, delegation, turns, tools, sessions);
+            verifyNoInteractions(readiness, subExecutionLifecycle, turns, tools, sessions);
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
@@ -312,12 +312,12 @@ class LocalExecutionRepositoryResumeTest {
         TransactionSynchronizationManager.initSynchronization();
         try {
             repository.unregister(signal);
-            verifyNoInteractions(readiness, delegation, turns, tools, sessions);
+            verifyNoInteractions(readiness, subExecutionLifecycle, turns, tools, sessions);
             for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
                 synchronization.afterCommit();
             }
             verify(readiness).markReady("305");
-            verify(delegation).reconcileSuspendedExecution("305");
+            verify(subExecutionLifecycle).onSuspended(any());
             assertEquals(List.of("305"), suspended);
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
@@ -328,13 +328,13 @@ class LocalExecutionRepositoryResumeTest {
     void terminalServiceFailuresDoNotBlockMetricsAndTurnClosure() {
         repository.save(execution());
         doThrow(new IllegalStateException("工具收口失败")).when(tools).cancelPendingToolCalls("305");
-        doThrow(new IllegalStateException("委派回填失败")).when(delegation).backfillFinishedExecution(any());
+        doThrow(new IllegalStateException("委派回填失败")).when(subExecutionLifecycle).onFinished(any());
         doThrow(new IllegalStateException("会话用量保存失败")).when(sessions).saveExecutionContextUsage(any());
 
         assertDoesNotThrow(() -> repository.requireCancel("305"));
 
         ArgumentCaptor<Execution> checkpoint = ArgumentCaptor.forClass(Execution.class);
-        verify(delegation).backfillFinishedExecution(checkpoint.capture());
+        verify(subExecutionLifecycle).onFinished(checkpoint.capture());
         assertEquals(ExecutionState.CANCELLED, checkpoint.getValue().getExecutionState());
         verify(sessions).saveExecutionContextUsage(same(checkpoint.getValue()));
         verify(turns).finishExecution(same(checkpoint.getValue()));
@@ -350,12 +350,12 @@ class LocalExecutionRepositoryResumeTest {
         TransactionSynchronizationManager.initSynchronization();
         try {
             repository.save(failed);
-            verifyNoInteractions(readiness, delegation, turns, tools, sessions);
+            verifyNoInteractions(readiness, subExecutionLifecycle, turns, tools, sessions);
             for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
                 synchronization.afterCommit();
             }
             verify(tools).cancelPendingToolCalls("305");
-            verify(delegation).backfillFinishedExecution(same(failed));
+            verify(subExecutionLifecycle).onFinished(same(failed));
             verify(sessions).saveExecutionContextUsage(same(failed));
             verify(turns).finishExecution(same(failed));
             assertEquals(List.of("305"), finished);

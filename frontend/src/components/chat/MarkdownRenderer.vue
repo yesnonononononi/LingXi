@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { renderMarkdown } from '../../utils/markdown';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
 import { useTheme } from '../../composables/useTheme';
+import GradientText from '../common/GradientText.vue';
 
 const props = withDefaults(
   defineProps<{
@@ -75,8 +76,19 @@ const handleContainerClick = async (event: MouseEvent) => {
       v-html="renderedHtml"
     ></div>
     
-    <!-- 打字思考光标：仅在尚未生成正文时作为占位显示，正文流式生成后由末尾文本伪元素内联跟进，避免孤立空行 -->
-    <span v-if="props.isThinking && !renderedHtml" class="typing-cursor inline-block ml-0.5"></span>
+    <!-- 空正文时用文字提示工作状态，避免光条难以辨认。 -->
+    <div
+      v-if="props.isThinking && !renderedHtml"
+      class="flex items-center select-none"
+      role="status"
+    >
+      <GradientText
+        :colors="['#3b82f6', '#6366f1', '#a855f7', '#38bdf8', '#3b82f6']"
+        :animation-speed="2.5"
+        :show-border="false"
+        class="text-sm font-medium tracking-wide !mx-0 !ml-0"
+      >正在探索中</GradientText>
+    </div>
   </div>
 </template>
 

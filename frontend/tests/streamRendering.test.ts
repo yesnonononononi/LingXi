@@ -10,7 +10,7 @@ import { AgentToolName } from '../src/utils/toolNames';
 function assertPendingText(bubble: ChatMessage, responseId: string, text: string): void {
   assert.equal(bubble.content, '', '用途未确认不能进入正文');
   assert.equal(bubble.aiMessages?.find(item => item.id === `text:${responseId}`)?.text, text, '每次写入同步更新过程文本');
-  assert.equal(bubble.turnState?.texts[`text:${responseId}`]?.placement, undefined);
+  assert.equal(bubble.turnState?.texts[`text:${responseId}`]?.isBody, undefined);
 }
 
 test('1. 流式渲染: 原始增量即时打印，块视图校准身份和位置', () => {
@@ -108,7 +108,7 @@ test('1. 流式渲染: 原始增量即时打印，块视图校准身份和位置
       blocks: [
         { blockId: 'thinking:1', type: 'THINKING', order: 0, status: 'COMPLETE', text: '正在规划查询步骤...' },
         { blockId: 'tool:call-weather-1', type: 'TOOL', order: 1, status: 'COMPLETED', toolCallId: 'call-weather-1', toolName: AgentToolName.WebSearch },
-        { blockId: 'text:1', type: 'TEXT', order: 2, status: 'COMPLETE', placement: 'BODY', text: '今天北京的天气是晴天，气温约22℃。' }
+        { blockId: 'text:1', type: 'TEXT', order: 2, status: 'COMPLETE', isBody: true, text: '今天北京的天气是晴天，气温约22℃。' }
       ]
     }
   });
@@ -244,7 +244,7 @@ test('3. 根会话与多子会话(1:N)事件路由: 主子独立渲染，主会�
       status: 'COMPLETED',
       viewVersion: 1,
       blocks: [
-        { blockId: 'text:sub-1', type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: '开始审查 PR #12：第 34 行存在空指针隐患。' }
+        { blockId: 'text:sub-1', type: 'TEXT', order: 0, status: 'COMPLETE', isBody: true, text: '开始审查 PR #12：第 34 行存在空指针隐患。' }
       ]
     },
     executionId: 'exec-sub-1',
@@ -306,7 +306,7 @@ test('4. 动态子代理注册: 收到未预注册的子会话事件时自动登
       status: 'COMPLETED',
       viewVersion: 1,
       blocks: [
-        { blockId: 'text:dyn-1', type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: '动态专家报告生成完毕' }
+        { blockId: 'text:dyn-1', type: 'TEXT', order: 0, status: 'COMPLETE', isBody: true, text: '动态专家报告生成完毕' }
       ]
     },
     executionId: 'exec-dynamic-1',
@@ -383,7 +383,7 @@ test('5. 暂停与恢复(Human-in-the-Loop): 挂起后不拆分新气泡，恢�
       viewVersion: 2,
       blocks: [
         { blockId: 'tool:cmd-delete-1', type: 'TOOL', order: 0, status: 'COMPLETED', toolCallId: 'cmd-delete-1', toolName: AgentToolName.ExecuteCommand },
-        { blockId: 'text:hil-1', type: 'TEXT', order: 1, status: 'COMPLETE', placement: 'BODY', text: '临时构建文件已成功清理完毕。' }
+        { blockId: 'text:hil-1', type: 'TEXT', order: 1, status: 'COMPLETE', isBody: true, text: '临时构建文件已成功清理完毕。' }
       ]
     },
     executionId: 'exec-hil',
@@ -475,7 +475,7 @@ test('7. 服务端雪花 ID 驱动的根会话流式路由: 根会话绑定持�
       status: 'COMPLETED',
       viewVersion: 1,
       blocks: [
-        { blockId: 'text:1', type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: '你发送的是「1」，请问有什么可以帮您？' }
+        { blockId: 'text:1', type: 'TEXT', order: 0, status: 'COMPLETE', isBody: true, text: '你发送的是「1」，请问有什么可以帮您？' }
       ]
     },
     executionId: '2107364703104794624',
@@ -532,7 +532,7 @@ test('8. CONTEXT_UPDATE 前置到达: 助手气泡稳定复用，不分裂空气
       status: 'COMPLETED',
       viewVersion: 1,
       blocks: [
-        { blockId: 'text:pre-1', type: 'TEXT', order: 0, status: 'COMPLETE', placement: 'BODY', text: '测试前置更新成功' }
+        { blockId: 'text:pre-1', type: 'TEXT', order: 0, status: 'COMPLETE', isBody: true, text: '测试前置更新成功' }
       ]
     },
     executionId: 'exec-pre',
@@ -550,7 +550,7 @@ test('8. CONTEXT_UPDATE 前置到达: 助手气泡稳定复用，不分裂空气
  *
  * <p>改造后前端**不再**参与时序与状态推断：没有 `nextOrderFor`、没有「工具调用即断句」、
  * 没有「工具收尾即终结」。中间叙述（PROCESS）与正文（BODY）的分桶、以及每一项的 order，
- * 都由后端 placement / order 唯一决定。本用例锁住这条不变量。</p>
+ * 都由后端 isBody / order 唯一决定。本用例锁住这条不变量。</p>
  */
 test('★ 过程项分桶与 order 完全来自后端块视图，前端不做任何推断', () => {
   const messages: ChatMessage[] = [];
@@ -576,9 +576,9 @@ test('★ 过程项分桶与 order 完全来自后端块视图，前端不做任
       status: 'COMPLETED',
       viewVersion: 1,
       blocks: [
-        { blockId: 'text:p1', type: 'TEXT', order: 1000, status: 'COMPLETE', placement: 'PROCESS', text: '先看一下这个文件的实现。' },
+        { blockId: 'text:p1', type: 'TEXT', order: 1000, status: 'COMPLETE', isBody: false, text: '先看一下这个文件的实现。' },
         { blockId: 'tool:call-o1', type: 'TOOL', order: 2000, status: 'COMPLETED', toolCallId: 'call-o1', toolName: AgentToolName.ReadFile },
-        { blockId: 'text:b1', type: 'TEXT', order: 3000, status: 'COMPLETE', placement: 'BODY', text: '这个文件做了三件事。' }
+        { blockId: 'text:b1', type: 'TEXT', order: 3000, status: 'COMPLETE', isBody: true, text: '这个文件做了三件事。' }
       ]
     },
     executionId: 'exec-o1',
@@ -593,7 +593,7 @@ test('★ 过程项分桶与 order 完全来自后端块视图，前端不做任
   assert.equal(bubble.toolCalls?.[0].order, 2000, '工具 order 取后端值');
   assert.ok(
     !String(bubble.content).includes('先看一下'),
-    '中间叙述绝不能留在正文里（分桶由后端 placement 决定）'
+    '中间叙述绝不能留在正文里（分桶由后端 isBody 决定）'
   );
 
   // 时间线顺序 = 后端 order 升序，与传入顺序无关

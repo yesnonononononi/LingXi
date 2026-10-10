@@ -284,7 +284,7 @@ CREATE TABLE IF NOT EXISTS execution_resume_task (
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS email (
     id                    BIGINT      NOT NULL PRIMARY KEY COMMENT '应用生成的雪花 ID',
-    workflow_execution_id BIGINT      NOT NULL COMMENT '协作根执行 ID：根执行取自身，子执行继承根执行；本轮协作的隔离键',
+    workflow_execution_id BIGINT      NOT NULL COMMENT '协作根会话 ID：根执行取自身会话，子执行取 ROOT_SESSION_ID；同一根会话的各轮执行共享同一把邮箱键（列名保持历史命名）',
     recipient_agent_id    BIGINT      NOT NULL COMMENT '收件 Agent ID（角色，不绑定执行实例）',
     team_id               BIGINT      NULL COMMENT '创建时的团队快照，不参与投递路由，创建后不可修改',
     status                INT         NOT NULL DEFAULT 1 COMMENT '1 有效，0 无效',

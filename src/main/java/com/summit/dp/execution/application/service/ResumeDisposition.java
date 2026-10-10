@@ -13,7 +13,7 @@ public enum ResumeDisposition {
     WAITING_OTHER_TOOLS("WAITING_OTHER_TOOLS"),
     /** 无未决槽位且仍挂起：恢复意图已入队，等待 worker 领取。 */
     QUEUED("QUEUED"),
-    /** 本次调用期间执行已进入运行态。 */
+    /** 本次调用期间执行已进入运行态；此刻的唤醒<b>未丢弃</b>，已登记为保留唤醒，待其挂起释放后重放。 */
     RUNNING("RUNNING"),
     /** 恢复意图已受理但派发失败（worker 领取后模型调用起不来）。 */
     FAILED("FAILED"),

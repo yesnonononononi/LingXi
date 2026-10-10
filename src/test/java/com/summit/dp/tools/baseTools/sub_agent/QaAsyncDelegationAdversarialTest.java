@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.tool.ToolExecuteResult;
@@ -14,6 +13,7 @@ import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.agent.infrastructure.agent.SubAgent;
 import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
+import com.summit.dp.agent.infrastructure.runtime.SubExecutionLifecycle;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
@@ -23,14 +23,10 @@ import com.summit.dp.shared.settings.SettingsProvider;
 import com.summit.dp.shared.skill.SkillRootResolver;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
-import com.summit.dp.toolcall.application.convert.ToolCallConverter;
-import com.summit.dp.toolcall.application.service.ToolCallRegistrar;
 import com.summit.dp.tools.baseTools.sub_agent.delegation.AsyncDelegationSubmitter;
 import com.summit.dp.tools.baseTools.sub_agent.delegation.DelegationRecorder;
-import com.summit.dp.tools.baseTools.sub_agent.delegation.DelegationSuspensionCard;
 import com.summit.dp.tools.baseTools.sub_agent.delegation.SubAgentRequestFactory;
 import com.summit.dp.tools.baseTools.sub_agent.result.AsyncDelegationResultRenderer;
-import com.summit.dp.tools.baseTools.sub_agent.result.SubAgentResultRenderer;
 import com.summit.dp.tools.baseTools.sub_agent.session.SubSessionResolver;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.service.WorkspaceService;
@@ -54,6 +50,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -61,14 +58,15 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 交付总监独立验证（QA 严过关）—— AC-1 / AC-3 / 异步提交被拒路径 的<b>对抗性</b>用例。
+ * 交付总监独立验证（QA 严过关）—— 协作式受理结果与异步提交被拒路径的<b>对抗性</b>用例。
  *
- * <p>与工程师用例的差异：用一条独特哨兵串贯穿两条路径，证明「协作式不含正文」不是因为
- * 「两条路径都没产出正文」这种假绿，而是真的分叉；并补上工程师未覆盖的「提交器拒绝提交」路径。</p>
+ * <p>用一条独特哨兵串证明「协作式不含正文」不是因为「没有产出正文」这种假绿，而是工具线程
+ * 真的不跑子 loop；并补上「提交器拒绝提交」路径的 fail-closed 断言。</p>
  */
 class QaAsyncDelegationAdversarialTest {
 
     private static final long ROOT_SESSION_ID = 800L;
+    private static final long ROOT_EXECUTION_ID = 900L;
     private static final long CHILD_AGENT_ID = 7L;
     private static final long TEAM_ID = 3L;
     /** 独特哨兵：出现在子代理最终正文里，协作式结果中绝不应出现。 */
@@ -102,12 +100,9 @@ class QaAsyncDelegationAdversarialTest {
         SubAgentRequestFactory requestFactory = new SubAgentRequestFactory(workspaceService, modelService,
                 settingsProvider, mock(WorkspaceConverter.class), new SkillRootResolver(""));
         SubSessionResolver subSessionResolver = new SubSessionResolver(sessionRepository, modelContextService);
-        DelegationSuspensionCard suspensionCard = new DelegationSuspensionCard(
-                mock(ToolCallRegistrar.class), new ToolCallConverter(objectMapper));
         DelegationRecorder recorder = new DelegationRecorder(chatTurnService, transcriptService);
-        return new CallSubAgentTool(objectMapper, agentService, teamService, subAgent,
-                requestFactory, subSessionResolver, new SubAgentResultRenderer(), registry, modelContextService,
-                sessionRepository, suspensionCard, recorder, submitter,
+        return new CallSubAgentTool(objectMapper, agentService, teamService, requestFactory,
+                subSessionResolver, registry, sessionRepository, submitter,
                 new AsyncDelegationResultRenderer(objectMapper));
     }
 
@@ -124,11 +119,11 @@ class QaAsyncDelegationAdversarialTest {
         return TeamVO.builder().id(TEAM_ID).commanderAgentId(5L).agents(List.of(childAgent())).build();
     }
 
-    private ToolExecution toolExecution(String args) {
+    private ToolExecution toolExecution() {
         ToolExecution execution = mock(ToolExecution.class);
-        lenient().when(execution.getExecutionId()).thenReturn("900");
+        lenient().when(execution.getExecutionId()).thenReturn(String.valueOf(ROOT_EXECUTION_ID));
         lenient().when(execution.getId()).thenReturn("call-1");
-        lenient().when(execution.getArgs()).thenReturn(args);
+        lenient().when(execution.getArgs()).thenReturn(args());
         lenient().when(execution.getAttributes()).thenReturn(Map.of(
                 ExecutionAttributes.AGENT_ID, String.valueOf(CHILD_AGENT_ID),
                 ExecutionAttributes.TEAM_ID, String.valueOf(TEAM_ID),
@@ -137,15 +132,12 @@ class QaAsyncDelegationAdversarialTest {
         return execution;
     }
 
-    private String args(String runtimeMode) {
+    private String args() {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("agentId", CHILD_AGENT_ID);
         payload.put("task", "复现并定位主流程抖动");
         payload.put("prompt", "上下文");
         payload.put("workDir", "wd-a");
-        if (runtimeMode != null) {
-            payload.put("runtime_mode", runtimeMode);
-        }
         try {
             return objectMapper.writeValueAsString(payload);
         } catch (Exception e) {
@@ -160,24 +152,22 @@ class QaAsyncDelegationAdversarialTest {
 
     private Execution completedWithSentinel() {
         Execution execution = mock(Execution.class);
-        when(execution.getExecutionState()).thenReturn(ExecutionState.COMPLETED);
         when(execution.getMessages()).thenReturn(List.of(UserMessageEntity.from(SENTINEL)));
         return execution;
     }
 
     @Test
-    @DisplayName("AC-1 对抗：协作式结果键集合恰好 6 个、非 PROMISE、≤5s、且不含子代理正文哨兵")
+    @DisplayName("对抗：协作式结果键集合恰好 6 个、非 PROMISE、≤5s、且不含子代理正文哨兵")
     void asyncResultIsExactStructuredJsonWithoutBody() throws Exception {
         stubAgentAndTeam();
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID)).thenReturn(Optional.empty());
+        when(registry.registerPendingChild(anyLong(), anyLong())).thenReturn(true);
         // 子代理若真被执行，正文会带哨兵；协作式不得把这份正文漏出去。
-        // 先算好桩对象再 when(...)：塞进 thenReturn 参数会触发 UnfinishedStubbing。
         Execution sentinelExecution = completedWithSentinel();
         when(subAgent.execute(any(AgentRequest.class))).thenReturn(sentinelExecution);
 
         long startedAt = System.currentTimeMillis();
-        ToolExecuteResult result = toolWith(mock(AsyncDelegationSubmitter.class))
-                .execute(toolExecution(args("async")));
+        ToolExecuteResult result = toolWith(mock(AsyncDelegationSubmitter.class)).execute(toolExecution());
         long elapsed = System.currentTimeMillis() - startedAt;
 
         assertTrue(result.isSuccess());
@@ -195,9 +185,10 @@ class QaAsyncDelegationAdversarialTest {
         assertFalse(json.get("subSessionId").asText().isBlank());
         assertEquals(CHILD_AGENT_ID, json.get("agentId").asLong());
         assertFalse(json.get("agentName").asText().isBlank());
-        // 英文说明：必须点明结果经邮件送达。
-        assertTrue(json.get("note").asText().toLowerCase().contains("email"),
-                "note 必须说明结果经邮件（email）送达");
+        // 回执仅表示受理，缺邮件不能成为主理人放弃验收的理由。
+        assertTrue(json.get("note").asText().contains("核验工作目录中的产物和验证记录"),
+                "受理回执须引导主理人验收产物");
+        assertTrue(json.get("note").asText().contains("没有邮件也应自行验收"), "缺邮件不能阻断收口");
 
         String output = result.getToolOutput();
         assertFalse(output.contains(SENTINEL), "协作式结果严禁包含子代理正文");
@@ -206,44 +197,25 @@ class QaAsyncDelegationAdversarialTest {
     }
 
     @Test
-    @DisplayName("AC-3 对抗：同一哨兵走阻塞路径必须能被找到 —— 证明两条路径真的分叉")
-    void blockingPathCarriesSentinelSoPathsTrulyDiverge() {
-        stubAgentAndTeam();
-        when(registry.registerChild(anyLong(), anyLong(), any())).thenReturn(true);
-        when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID)).thenReturn(Optional.empty());
-        when(modelContextService.find(anyLong())).thenReturn(Optional.empty());
-        when(chatTurnService.acceptTurn(anyLong(), any(), any(), any(), any(), any())).thenReturn(9002L);
-        Execution sentinelExecution = completedWithSentinel();
-        when(subAgent.execute(any(AgentRequest.class))).thenReturn(sentinelExecution);
-
-        ToolExecuteResult result = toolWith(mock(AsyncDelegationSubmitter.class))
-                .execute(toolExecution(args(null)));
-
-        assertTrue(result.isSuccess());
-        assertTrue(result.getToolOutput().contains(SENTINEL),
-                "阻塞式必须把子代理正文（含哨兵）原样回传，否则与协作式的对照不成立");
-        assertFalse(result.getToolOutput().contains("runtimeMode"));
-    }
-
-    @Test
-    @DisplayName("异步提交被拒（线程池拒绝）：工具必须 fail-closed 返回错误，且不产生任何落库副作用")
+    @DisplayName("异步提交被拒（线程池拒绝）：工具必须 fail-closed 返回错误，撤销登记且不产生任何落库副作用")
     void rejectedSubmissionFailsClosedWithoutSideEffects() {
         stubAgentAndTeam();
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, CHILD_AGENT_ID)).thenReturn(Optional.empty());
+        when(registry.registerPendingChild(anyLong(), anyLong())).thenReturn(true);
 
         // 真提交器 + 拒绝执行的线程池：走真实 submit() 逻辑。
         AsyncDelegationSubmitter rejecting = new AsyncDelegationSubmitter(subAgent, registry,
                 mock(SubSessionResolver.class), mock(DelegationRecorder.class),
-                modelContextService, mock(ExecutionControl.class));
+                modelContextService, mock(ExecutionControl.class), mock(SubExecutionLifecycle.class));
         org.springframework.test.util.ReflectionTestUtils.setField(rejecting, "executorService",
                 new RejectingExecutorService());
 
-        ToolExecuteResult result = toolWith(rejecting).execute(toolExecution(args("async")));
+        ToolExecuteResult result = toolWith(rejecting).execute(toolExecution());
 
         assertNotNull(result);
         assertFalse(result.isSuccess(), "提交未成功时不得谎报成功（否则模型以为已委派）");
-        // 未提交成功 → 异步体从未运行 → 不建会话行 / 不落账 / 不建执行 / 不注册子执行。
-        verify(registry, never()).registerChild(any(), any(), any());
+        // 提交失败 → 撤销待启动登记；异步体从未运行 → 不建会话行 / 不落账 / 不建执行。
+        verify(registry).revokeChild(eq(ROOT_SESSION_ID), anyLong());
         verify(subAgent, never()).createExecution(any());
         verify(subAgent, never()).execute(any(Execution.class));
         verify(subAgent, never()).execute(any(AgentRequest.class));

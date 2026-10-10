@@ -76,7 +76,8 @@ class SubAgentRequestFactoryTest {
                 .agents(List.of(commander, member)).build();
         ToolExecution toolExecution = ToolExecution.builder()
                 .executionId("900")
-                .attributes(Map.of(ExecutionAttributes.AGENT_ID, "5", ExecutionAttributes.TEAM_ID, "3"))
+                .attributes(Map.of(ExecutionAttributes.AGENT_ID, "5", ExecutionAttributes.TEAM_ID, "3",
+                        ExecutionAttributes.SESSION_ID, "777"))
                 .build();
 
         AgentRequest request = build(member, team, toolExecution);
@@ -87,6 +88,8 @@ class SubAgentRequestFactoryTest {
         assertEquals("6", attributes.get(ExecutionAttributes.AGENT_ID));
         assertEquals("1234", attributes.get(ExecutionAttributes.SESSION_ID));
         assertEquals("900", attributes.get(ExecutionAttributes.ROOT_EXECUTION_ID));
+        assertEquals("777", attributes.get(ExecutionAttributes.ROOT_SESSION_ID),
+                "邮箱业务键是协作根会话 id，子执行必须带上父执行的根会话 id");
 
         // 2) 工具清单：给发信，绝不给委派
         List<String> tools = request.getToolList();
@@ -119,6 +122,8 @@ class SubAgentRequestFactoryTest {
                 .agents(List.of(member)).build(), toolExecution);
 
         assertNull(request.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.TEAM_ID));
+        assertNull(request.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.ROOT_SESSION_ID),
+                "父执行没有根会话归属时不凭空写邮箱键");
     }
 
     @Test

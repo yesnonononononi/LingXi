@@ -21,11 +21,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 
+import java.lang.reflect.Field;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -405,6 +409,96 @@ class ExecutionResumeCoordinatorTest {
         verify(executionControl, times(3)).resume(any(Execution.class));
     }
 
+    @Test
+    @DisplayName("闸门已占但提交被拒：回收闸门，重试必须能再次进入（否则该执行被永久挡住）")
+    void rejectedSubmissionReleasesGateSoRetryCanEnter() throws Exception {
+        stubStatus(ExecutionState.SUSPENDED);
+        when(frameworkExecutions.findById(String.valueOf(EXECUTION_ID)))
+                .thenReturn(Optional.of(execution(ExecutionState.SUSPENDED)));
+        when(executionControl.resume(any(Execution.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        // 首次提交被拒、之后改内联执行：把「闸门已占 + 提交被拒」钉在确定的位置，不靠 sleep 赌。
+        injectWorkers(new RejectOnceThenInlineExecutor());
+
+        // 第一次派发：先 CAS 占住闸门，随后 workers.execute 抛 RejectedExecutionException。
+        coordinator.dispatch(EXECUTION_ID);
+        assertEquals(0, dispatchReads.get(), "提交被拒时 worker 根本不会运行");
+
+        // 第二次派发：若拒绝路径没有回收闸门，这里会被 CAS 挡下、永远不再进入。
+        coordinator.dispatch(EXECUTION_ID);
+
+        assertEquals(ResumeTaskState.SUCCEEDED, awaitStateWritten().state(),
+                "提交被拒后必须回收闸门，重试才能重新派发并恢复");
+        verify(executionControl).resume(any(Execution.class));
+    }
+
+    @Test
+    @DisplayName("accept：执行仍活跃时登记保留唤醒、不落请求；挂起后 flushPendingWake 重放并恢复")
+    void acceptWhileActiveRetainsWakeUntilSuspend() {
+        stubStatus(ExecutionState.SUSPENDED);
+        when(activity.isActive(String.valueOf(EXECUTION_ID))).thenReturn(true);
+        when(tasks.enqueue(anyLong(), anyLong(), any())).thenReturn(task.get());
+        when(frameworkExecutions.findById(String.valueOf(EXECUTION_ID)))
+                .thenReturn(Optional.of(execution(ExecutionState.SUSPENDED)));
+        when(executionControl.resume(any(Execution.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        doAnswer(invocation -> {
+            ((Runnable) invocation.getArgument(0)).run();
+            return null;
+        }).when(frameworkExecutions).afterCommit(any());
+
+        // 首轮执行期间唤醒到达（控制槽位仍被持有）：不能丢弃，登记为保留唤醒。
+        assertEquals(ResumeDisposition.RUNNING, coordinator.accept(EXECUTION_ID));
+        verify(tasks, never()).enqueue(anyLong(), anyLong(), any());
+        assertNull(stateWritten.get(), "活跃期不得派发");
+
+        // 根随后挂起、控制槽位释放：重放保留唤醒 → 入队 + 派发 + 恢复。
+        when(activity.isActive(String.valueOf(EXECUTION_ID))).thenReturn(false);
+        coordinator.flushPendingWake(EXECUTION_ID);
+
+        assertEquals(ResumeTaskState.SUCCEEDED, awaitStateWritten().state());
+        verify(tasks).enqueue(eq(EXECUTION_ID), eq(GENERATION), any());
+        verify(executionControl).resume(any(Execution.class));
+    }
+
+    @Test
+    @DisplayName("clearPendingWake：丢弃保留唤醒，之后 flush 是 no-op")
+    void clearPendingWakeDropsRetainedWake() {
+        stubStatus(ExecutionState.SUSPENDED);
+        when(activity.isActive(String.valueOf(EXECUTION_ID))).thenReturn(true);
+        assertEquals(ResumeDisposition.RUNNING, coordinator.accept(EXECUTION_ID));
+
+        coordinator.clearPendingWake(EXECUTION_ID);
+        when(activity.isActive(String.valueOf(EXECUTION_ID))).thenReturn(false);
+        coordinator.flushPendingWake(EXECUTION_ID);
+
+        verify(tasks, never()).enqueue(anyLong(), anyLong(), any());
+        verify(executionControl, never()).resume(any(Execution.class));
+    }
+
+    @Test
+    @DisplayName("worker 退出前复查：运行期间出现新的 READY 请求会被再次派发")
+    void rechecksForReadyTaskBeforeWorkerExit() {
+        stubStatus(ExecutionState.SUSPENDED);
+        when(frameworkExecutions.findById(String.valueOf(EXECUTION_ID)))
+                .thenReturn(Optional.of(execution(ExecutionState.SUSPENDED)));
+        when(executionControl.resume(any(Execution.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        // 首次复查报告一个仍 READY 的请求，之后清空 —— 避免无谓自旋。
+        AtomicBoolean firstRecheck = new AtomicBoolean(true);
+        when(tasks.listLiveByExecution(EXECUTION_ID)).thenAnswer(invocation ->
+                firstRecheck.getAndSet(false) ? List.of(newTask(9)) : List.of());
+
+        coordinator.dispatch(EXECUTION_ID);
+
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(AWAIT_TIMEOUT_SECONDS);
+        while (dispatchReads.get() < 2 && System.nanoTime() < deadline) {
+            Thread.onSpinWait();
+        }
+        assertTrue(dispatchReads.get() >= 2,
+                "退出前发现新的 READY 请求应再次派发，实际读次数=" + dispatchReads.get());
+    }
+
     private ExecutionResumeTask newTask(long seq) {
         return ExecutionResumeTask.builder().id(seq + 1).executionId(EXECUTION_ID)
                 .generation(GENERATION).state(ResumeTaskState.READY).version(1L)
@@ -501,6 +595,56 @@ class ExecutionResumeCoordinatorTest {
         ObjectProvider<T> provider = mock(ObjectProvider.class);
         when(provider.getObject()).thenReturn(value);
         return provider;
+    }
+
+    /**
+     * 把协调器的派发线程池换成替身，用来在确定的位置构造「闸门已占 + 提交被拒」。
+     *
+     * <p>生产里 {@code workers} 由字段内联创建，无法从构造器注入；这里用反射替换该私有 final
+     * 字段，仅为测试提供接缝，不触碰任何生产签名。</p>
+     */
+    private void injectWorkers(ExecutorService executor) throws Exception {
+        Field field = ExecutionResumeCoordinator.class.getDeclaredField("workers");
+        field.setAccessible(true);
+        field.set(coordinator, executor);
+    }
+
+    /** 第一次提交抛 {@link RejectedExecutionException}，之后内联执行 —— 用来暴露闸门泄漏。 */
+    private static final class RejectOnceThenInlineExecutor extends AbstractExecutorService {
+
+        private final AtomicInteger submissions = new AtomicInteger();
+
+        @Override
+        public void execute(Runnable command) {
+            if (submissions.incrementAndGet() == 1) {
+                throw new RejectedExecutionException("模拟：首次提交被拒（线程池关闭中）");
+            }
+            command.run();
+        }
+
+        @Override
+        public void shutdown() {
+        }
+
+        @Override
+        public List<Runnable> shutdownNow() {
+            return List.of();
+        }
+
+        @Override
+        public boolean isShutdown() {
+            return false;
+        }
+
+        @Override
+        public boolean isTerminated() {
+            return false;
+        }
+
+        @Override
+        public boolean awaitTermination(long timeout, TimeUnit unit) {
+            return true;
+        }
     }
 
     /** 一次状态落库的快照：断言需要状态与失败原因两者。 */

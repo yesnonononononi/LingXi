@@ -52,7 +52,7 @@ public interface EmailService {
      *
      * @param toAgentId 收件 Agent ID（必填）
      * @param content   邮件正文（必填、非空白）
-     * @param context   受控发信上下文（协作根执行、发送者、团队快照）
+     * @param context   受控发信上下文（协作根会话、发送者、团队快照）
      * @return 新写入的消息
      */
     Result<EmailMessageVO> sendMail(Long toAgentId, String content, MailSendContext context);
@@ -64,11 +64,24 @@ public interface EmailService {
      * （仅 PENDING 可置 CONSUMED）消除 check-then-act 竞态，并核对生效行数；
      * 并发窗口内有消息被抢先消费时整体回滚并抛 ClientException，重试只取仍 PENDING 的消息。</p>
      *
-     * @param workflowExecutionId 协作根执行 ID
+     * @param workflowExecutionId 协作根会话 ID（邮箱业务键的一半；列名保持历史命名）
      * @param recipientAgentId    收件 Agent ID
      * @return 本次成功消费的消息（按 createAt, id 升序）
      */
     Result<List<EmailMessageVO>> consumePending(Long workflowExecutionId, Long recipientAgentId);
+
+    /**
+     * 是否还有未处理的协作输入（只读，<b>不消费</b>）。
+     *
+     * <p>供「根代理收尾前驻留」判定使用：收尾判定只允许读、不允许消费，消费只发生在
+     * {@code AgenticLoopInterceptor.onBeforeModelInvoke}（新一轮模型调用前）。两者合并会让邮件
+     * 在还没进入模型上下文前就被判定掉。</p>
+     *
+     * @param workflowExecutionId 协作根会话 ID（邮箱业务键的一半）
+     * @param recipientAgentId    收件 Agent ID
+     * @return 存在 PENDING 消息返回 {@code true}；邮箱不存在 / 参数缺失返回 {@code false}
+     */
+    boolean hasPending(Long workflowExecutionId, Long recipientAgentId);
 
     /**
      * 低层受控操作：向已存在的邮箱追加一条 PENDING 消息（校验邮箱存在，避免悬挂消息）。

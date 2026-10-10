@@ -35,7 +35,7 @@ public interface EmailRepository extends RepositoryTemplate<Email, Long> {
      * 旧写法下同一个执行 ID 命中任一列就会放行整封邮箱的待处理消息，无法说明消息到底
      * 发给某个 Agent、某次执行还是某个协作轮次。</p>
      *
-     * @param workflowExecutionId 协作根执行 ID
+     * @param workflowExecutionId 协作根会话 ID（列名保持历史命名，语义已是根会话）
      * @param recipientAgentId    收件 Agent ID
      * @return 邮箱；任一参数为 null 或无命中返回 {@link Optional#empty()}
      */

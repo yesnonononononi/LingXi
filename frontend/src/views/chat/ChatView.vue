@@ -94,7 +94,6 @@
             @touchstart.passive="handleTouchStart"
             @touchmove.passive="handleTouchMove"
             @selectSubSession="handleSelectSubSessionOption"
-            @resume="handleResumeGeneration"
           />
 
           <!-- 悬浮“回到底部” / “新内容” 提示按钮 -->
@@ -435,7 +434,6 @@ const {
   handleToggleTheme,
   handleSendMessage,
   handleStopGeneration,
-  handleResumeGeneration,
   decideToolCall,
   handleSelectPrompt,
   handleQuickStart,

@@ -12,16 +12,18 @@ import com.summit.dp.shared.vo.block.Block;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.vo.block.BlockOrder;
 import com.summit.dp.shared.vo.block.BlockStatus;
-import com.summit.dp.shared.vo.block.Placement;
+import com.summit.dp.shared.vo.block.BodyPlacement;
 import com.summit.dp.shared.vo.block.TextBlock;
 import com.summit.dp.shared.vo.block.ThinkingBlock;
 import com.summit.dp.shared.vo.block.ToolBlock;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -49,19 +51,24 @@ public class TurnViewAssembler {
     /**
      * 装配一个轮次的块列表。
      *
-     * @param turnId    目标轮次 ID
-     * @param messages  该会话的消息（本方法只取 {@code turnId} 匹配的行）
-     * @param toolCalls 本批消息涉及的 {@code tool_call} 行，按 {@code toolCallId} 建索引
+     * @param turnId     目标轮次 ID
+     * @param messages   该会话的消息（本方法只取 {@code turnId} 匹配的行）
+     * @param toolCalls  本批消息涉及的 {@code tool_call} 行，按 {@code toolCallId} 建索引
+     * @param turnStatus 本轮业务状态（决定终态；{@code null} 视为未知／未完成）
      * @return 按响应身份与响应内位置排序的块列表；无内容返回空列表
      */
-    public List<Block> assembleBlocks(Long turnId, List<SessionMessage> messages, Map<String, ToolCall> toolCalls) {
+    public List<Block> assembleBlocks(Long turnId, List<SessionMessage> messages,
+                                      Map<String, ToolCall> toolCalls, ChatTurnStatus turnStatus) {
         if (turnId == null || messages == null || messages.isEmpty()) {
             return List.of();
         }
+        // 「是否收尾响应」是本轮所有 AI 行的相对关系：先算出本轮最后一条模型响应的身份。
+        String concludingResponseId = resolveConcludingResponseId(turnId, messages);
+        boolean executionCompleted = turnStatus == ChatTurnStatus.COMPLETED;
         List<Block> blocks = new ArrayList<>();
         for (SessionMessage message : messages) {
             if (turnId.equals(message.getTurnId()) && message.getType() == SessionMessageType.AI) {
-                appendAiBlocks(blocks, message, toolCalls);
+                appendAiBlocks(blocks, message, toolCalls, concludingResponseId, executionCompleted);
             }
         }
         blocks.sort(BlockOrder::compare);
@@ -69,19 +76,59 @@ public class TurnViewAssembler {
     }
 
     /**
+     * 求本轮「收尾响应」的身份：本轮所有 AI 行 {@code responseId} 中可解析为纯数字的最大值。
+     *
+     * <p><b>为什么按数值最大而非行序</b>：响应身份来自框架，是全局单调递增的大整数；
+     * 行序受落库时序影响并不可靠。这里与 {@link BlockOrder#compare} 同口径（{@link BigInteger} 比较），
+     * 保证「排序的末位」与「判定的收尾」是同一个。</p>
+     *
+     * <p><b>为什么要区分收尾</b>：根执行可能在「无工具调用的响应」之后因等待子任务而挂起
+     * （框架 {@code LoopInterceptor.onBeforeComplete} 返回 {@code suspended}），
+     * 挂起响应后面还会继续产出，不是正文。挂起后恢复并完成时，DB 里会有
+     * {@code R1(无工具请求, 曾挂起)} 与 {@code R2(无工具请求, 收尾)} 两行，此时轮次已是
+     * {@code COMPLETED} —— 只有靠「是否为该轮最后一条模型响应」才能把 {@code R1} 排除。</p>
+     *
+     * <p>不可解析为纯数字的行<b>跳过</b>：非数字身份的拒绝由 {@link #appendAiBlocks} 现有的
+     * {@link ClientException} 负责，本方法不越权抛异常。</p>
+     */
+    private String resolveConcludingResponseId(Long turnId, List<SessionMessage> messages) {
+        String concluding = null;
+        BigInteger concludingValue = null;
+        for (SessionMessage message : messages) {
+            if (!turnId.equals(message.getTurnId()) || message.getType() != SessionMessageType.AI) {
+                continue;
+            }
+            String responseId = message.getResponseId();
+            if (responseId == null || !responseId.matches("[0-9]+")) {
+                continue;
+            }
+            BigInteger value = new BigInteger(responseId);
+            if (concludingValue == null || value.compareTo(concludingValue) > 0) {
+                concludingValue = value;
+                concluding = responseId;
+            }
+        }
+        return concluding;
+    }
+
+    /**
      * 展开一条 AI 行：思考块 → 正文块 →（按框架请求位置）工具块。
      *
      * <p><b>工具块顺序取自框架的 {@code requestIndex}</b>，不是完成顺序 —— 完成顺序受并发调度
      * 影响，还原不出模型意图。工具结果则从批量装载的 {@code tool_call} 字典取。</p>
+     *
+     * @param concludingResponseId 本轮收尾响应的身份；{@code null} 表示无从判定（无收尾）
+     * @param executionCompleted   本轮是否正常完成（{@code COMPLETED}）
      */
-    private void appendAiBlocks(List<Block> blocks, SessionMessage aiRow, Map<String, ToolCall> toolCalls) {
+    private void appendAiBlocks(List<Block> blocks, SessionMessage aiRow, Map<String, ToolCall> toolCalls,
+                                String concludingResponseId, boolean executionCompleted) {
         AiMessageEntity aiMessage = parse(aiRow.getText());
         String responseId = aiRow.getResponseId();
         if (responseId == null || !responseId.matches("[0-9]+")) {
             throw new ClientException("历史模型响应缺少框架身份，请重新开始会话");
         }
 
-        // 该 AI 行是否有工具请求 —— 这既是 placement 判据，也决定工具块是否展开。
+        // 该 AI 行是否有工具请求 —— 这既是 isBody 判据之一，也决定工具块是否展开。
         List<ToolCallRequest> requests = aiMessage == null || aiMessage.getToolCalls() == null
                 ? List.of() : aiMessage.getToolCalls();
 
@@ -91,12 +138,13 @@ public class TurnViewAssembler {
                     BlockOrder.thinking(), BlockStatus.COMPLETE, thinking));
         }
 
-        // 正文块：placement 由「该行是否含工具请求」唯一判定。
+        // 正文块：isBody 由「无工具请求 + 本轮收尾 + 轮次完成」三者共同判定（唯一规则见 BodyPlacement）。
         String text = aiMessage == null ? aiRow.getText() : aiMessage.text();
         if (text != null && !text.isBlank()) {
-            Placement placement = Placement.resolve(requests);
+            boolean isBody = BodyPlacement.resolve(requests, responseId.equals(concludingResponseId),
+                    executionCompleted);
             blocks.add(new TextBlock(TextBlock.identity(responseId), responseId,
-                    BlockOrder.text(), BlockStatus.COMPLETE, placement, text));
+                    BlockOrder.text(), BlockStatus.COMPLETE, isBody, text));
         }
 
         for (ToolCallRequest request : requests) {

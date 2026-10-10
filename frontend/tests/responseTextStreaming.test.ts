@@ -5,7 +5,7 @@ import type { ChatMessage } from '../src/types/chat';
 import type { TurnViewVO } from '../src/types/block';
 import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
 import { upsertBlockIntoBubble, upsertTurnViewIntoMessages } from '../src/views/chat/blockProjection';
-import { writeResponseText } from '../src/views/chat/turnRenderState';
+import { applyTextPlacement, getTurnState, writeResponseText } from '../src/views/chat/turnRenderState';
 import { AgentToolName } from '../src/utils/toolNames';
 import { compareResponsePosition } from '../src/utils/responseOrder';
 
@@ -20,9 +20,9 @@ function partial(content: string, offset: number, responseId = '101', thinking =
   return { type: thinking ? 'PARTIAL_THINKING' : 'PARTIAL_TEXT', executionId: 'e', timestamp: '',
     metaData: metadata, responseId, content, offset };
 }
-function view(text?: string, placement: 'BODY' | 'PROCESS' = 'BODY', responseId = '101'): TurnViewVO {
+function view(text?: string, isBody = true, responseId = '101'): TurnViewVO {
   return { sessionId: '7', turnId: '900', status: 'RUNNING', viewVersion: '2', blocks: text === undefined ? [] : [
-    { blockId: `text:${responseId}`, responseId, type: 'TEXT', order: 1, status: 'COMPLETE', placement, text },
+    { blockId: `text:${responseId}`, responseId, type: 'TEXT', order: 1, status: 'COMPLETE', isBody, text },
   ] };
 }
 function snapshot(reducer: TurnStreamReducer, current: TurnViewVO) {
@@ -33,7 +33,7 @@ function snapshot(reducer: TurnStreamReducer, current: TurnViewVO) {
 function assertPendingText(bubble: ChatMessage, text: string, responseId = '101'): void {
   assert.equal(bubble.content, '', '用途未确认时不能进入正文');
   assert.equal(bubble.aiMessages?.find(item => item.id === `text:${responseId}`)?.text, text);
-  assert.equal(bubble.turnState?.texts[`text:${responseId}`]?.placement, undefined);
+  assert.equal(bubble.turnState?.texts[`text:${responseId}`]?.isBody, undefined);
 }
 
 test('框架位置：超安全整数的相邻响应按 BigInt 排序，迟到旧响应不能抢占正文', () => {
@@ -49,9 +49,9 @@ test('框架位置：超安全整数的相邻响应按 BigInt 排序，迟到旧
   assert.deepEqual(bubble.thoughtSteps?.map(step => step.content), ['旧思考', '新思考']);
   const blocks: TurnViewVO['blocks'] = [
     { blockId: `thinking:${later}`, responseId: later, type: 'THINKING', order: 0, status: 'COMPLETE', text: '新思考' },
-    { blockId: `text:${later}`, responseId: later, type: 'TEXT', order: 1, status: 'COMPLETE', placement: 'BODY', text: '新正文' },
+    { blockId: `text:${later}`, responseId: later, type: 'TEXT', order: 1, status: 'COMPLETE', isBody: true, text: '新正文' },
     { blockId: `thinking:${earlier}`, responseId: earlier, type: 'THINKING', order: 0, status: 'COMPLETE', text: '旧思考' },
-    { blockId: `text:${earlier}`, responseId: earlier, type: 'TEXT', order: 1, status: 'COMPLETE', placement: 'PROCESS', text: '旧正文' },
+    { blockId: `text:${earlier}`, responseId: earlier, type: 'TEXT', order: 1, status: 'COMPLETE', isBody: false, text: '旧正文' },
     { blockId: 'tool:c2', responseId: earlier, type: 'TOOL', toolCallId: 'c2', toolName: AgentToolName.ReadFile,
       order: 3, status: 'STARTED', arguments: '{"path":"second.md"}' },
     { blockId: 'tool:c1', responseId: earlier, type: 'TOOL', toolCallId: 'c1', toolName: AgentToolName.ReadFile,
@@ -73,7 +73,7 @@ test('响应身份不是数字时明确失败，不能用本地序号兼容旧 U
     { responseId: '9007199254740993', order: 1 }), SyntaxError);
 });
 
-test('用途统一：持续打印到完整结构确认，finishReason 不能代替后端 placement', () => {
+test('用途统一：持续打印到完整结构确认，finishReason 不能代替后端 isBody', () => {
   const { reducer, bubble } = setup();
   reducer.consume({ ...partial('检索', 0), order: 1 });
   assertPendingText(bubble, '检索');
@@ -81,11 +81,11 @@ test('用途统一：持续打印到完整结构确认，finishReason 不能代�
   assertPendingText(bubble, '检索完成');
   reducer.consume({ type: 'COMPLETE_TEXT', responseId: '101', content: '检索完成。', order: 1,
     meta: { finishReason: 'TOOL_EXECUTION' }, executionId: 'e', timestamp: '', metaData: metadata });
-  assert.equal(bubble.turnState?.texts['text:101']?.placement, undefined);
+  assert.equal(bubble.turnState?.texts['text:101']?.isBody, undefined);
   assertPendingText(bubble, '检索完成。');
-  reducer.consume({ type: 'AI_MESSAGE', responseId: '101', text: '检索完成。', placement: 'BODY', order: 1,
+  reducer.consume({ type: 'AI_MESSAGE', responseId: '101', text: '检索完成。', isBody: true, order: 1,
     executionId: 'e', timestamp: '', metaData: metadata });
-  assert.equal(bubble.turnState?.texts['text:101']?.placement, 'BODY');
+  assert.equal(bubble.turnState?.texts['text:101']?.isBody, true);
   assert.equal(bubble.content, '检索完成。');
   assert.equal(bubble.aiMessages?.length, 0);
 });
@@ -95,7 +95,7 @@ test('用途统一：完整响应在工具启动前归入过程，重复全文�
   reducer.consume({ ...partial('先读文件', 0), order: 1 });
   assertPendingText(bubble, '先读文件');
   const resolved: AgentEvent = { type: 'AI_MESSAGE', responseId: '101', text: '先读文件', thinking: '分析',
-    placement: 'PROCESS', order: 1, thinkingOrder: 0, executionId: 'e', timestamp: '', metaData: metadata };
+    isBody: false, order: 1, thinkingOrder: 0, executionId: 'e', timestamp: '', metaData: metadata };
   reducer.consume(resolved);
   assert.equal(bubble.content, '');
   assert.equal(bubble.aiMessages?.[0]?.text, '先读文件');
@@ -106,10 +106,10 @@ test('用途统一：完整响应在工具启动前归入过程，重复全文�
   reducer.consume({ ...partial('最终结论', 0, '102'), order: 1001 });
   reducer.consume(resolved);
   assertPendingText(bubble, '最终结论', '102');
-  snapshot(reducer, view('先读文件', 'PROCESS'));
+  snapshot(reducer, view('先读文件', false));
   assert.equal(bubble.aiMessages?.length, 2);
   assertPendingText(bubble, '最终结论', '102');
-  reducer.consume({ type: 'AI_MESSAGE', responseId: '102', order: 1001, text: '最终结论', placement: 'BODY',
+  reducer.consume({ type: 'AI_MESSAGE', responseId: '102', order: 1001, text: '最终结论', isBody: true,
     executionId: 'e', timestamp: '', metaData: metadata });
   assert.equal(bubble.content, '最终结论');
   assert.equal(bubble.aiMessages?.length, 1);
@@ -122,8 +122,8 @@ test('用途统一：工具事件只采用明确字段，不通过工具名或�
     order: 2, args: '{"path":"a.md"}', executionId: 'e', timestamp: '', metaData: metadata };
   reducer.consume(tool);
   assertPendingText(bubble, '未确定用途');
-  assert.equal(bubble.turnState?.texts['text:101']?.placement, undefined);
-  reducer.consume({ ...tool, type: 'TOOL_COMPLETED', resultStatus: 'FAILED', placement: 'PROCESS', output: '读取失败' });
+  assert.equal(bubble.turnState?.texts['text:101']?.isBody, undefined);
+  reducer.consume({ ...tool, type: 'TOOL_COMPLETED', resultStatus: 'FAILED', isBody: false, output: '读取失败' });
   assert.equal(bubble.content, '');
   assert.equal(bubble.aiMessages?.[0]?.text, '未确定用途');
   assert.equal(bubble.toolCalls?.[0]?.status, 'failed');
@@ -143,17 +143,16 @@ test('第二版：快照缺少的历史块与实时块都保留在同一份状�
   assert.equal(Object.keys(bubble.turnState!.tools).length, 1);
 });
 
-test('第二版：工具先于文本时记住用途，迟到的正文快照不能反向归位', () => {
+test('第二版：工具先于文本先归过程，终态快照 isBody:true 升级为正文', () => {
   const { reducer, bubble } = setup();
   reducer.consume({ type: 'TOOL_CALL', responseId: '101', requestId: 'c1', toolName: AgentToolName.ReadFile,
-    order: 2, placement: 'PROCESS', executionId: 'e', timestamp: '', metaData: metadata });
+    order: 2, isBody: false, executionId: 'e', timestamp: '', metaData: metadata });
   reducer.consume({ ...partial('先读文件', 0), order: 1 });
   assert.equal(bubble.content, '');
   assert.equal(bubble.aiMessages?.[0]?.text, '先读文件');
-  snapshot(reducer, view('先读文件', 'BODY'));
-  assert.equal(bubble.content, '');
-  assert.equal(bubble.aiMessages?.length, 1);
-  assert.equal(bubble.aiMessages?.[0]?.text, '先读文件');
+  snapshot(reducer, view('先读文件', true));
+  assert.equal(bubble.content, '先读文件', 'false → true 升级：终态快照把过程文本提升为正文');
+  assert.equal(bubble.aiMessages?.length, 0, '升级后必须从过程区移出');
 });
 
 test('第二版：较早响应的迟到增量不能抢占较新正文', () => {
@@ -163,7 +162,7 @@ test('第二版：较早响应的迟到增量不能抢占较新正文', () => {
   reducer.consume({ ...partial('响应', 1), order: 1 });
   assertPendingText(bubble, '新正文', '102');
   assert.equal(bubble.turnState?.texts['text:101']?.text, '旧响应');
-  reducer.consume({ type: 'AI_MESSAGE', responseId: '102', order: 1001, text: '新正文', placement: 'BODY',
+  reducer.consume({ type: 'AI_MESSAGE', responseId: '102', order: 1001, text: '新正文', isBody: true,
     executionId: 'e', timestamp: '', metaData: metadata });
   reducer.consume({ ...partial('迟到', 3), order: 1 });
   assert.equal(bubble.content, '新正文', '旧响应的迟到片段不能覆盖已确认正文');
@@ -194,14 +193,14 @@ test('第二版：流式、块更新和刷新历史生成相同展示', () => {
   reducer.consume({ ...partial('先读', 0), order: 1 });
   reducer.consume({ ...partial('文件', 2), order: 1 });
   reducer.consume({ type: 'TOOL_CALL', responseId: '101', requestId: 'c1', toolName: AgentToolName.EditFile,
-    order: 2, placement: 'PROCESS', args: '{"path":"a.md"}', executionId: 'e', timestamp: '', metaData: metadata });
+    order: 2, isBody: false, args: '{"path":"a.md"}', executionId: 'e', timestamp: '', metaData: metadata });
   reducer.consume({ ...partial('最终结论', 0, '102'), order: 1001 });
   const finalView: TurnViewVO = { ...view(), status: 'COMPLETED', blocks: [
     { blockId: 'thinking:101', responseId: '101', type: 'THINKING', order: 0, status: 'COMPLETE', text: '分析' },
-    { blockId: 'text:101', responseId: '101', type: 'TEXT', order: 1, status: 'COMPLETE', placement: 'PROCESS', text: '先读文件' },
+    { blockId: 'text:101', responseId: '101', type: 'TEXT', order: 1, status: 'COMPLETE', isBody: false, text: '先读文件' },
     { blockId: 'tool:c1', responseId: '101', type: 'TOOL', toolCallId: 'c1', toolName: AgentToolName.EditFile, order: 2, status: 'COMPLETED',
       arguments: '{"path":"a.md"}', output: '{"outcome":"SUCCEEDED","output":"{\\"plusLines\\":2,\\"minusLines\\":0}"}' },
-    { blockId: 'text:102', responseId: '102', type: 'TEXT', order: 1001, status: 'COMPLETE', placement: 'BODY', text: '最终结论' },
+    { blockId: 'text:102', responseId: '102', type: 'TEXT', order: 1001, status: 'COMPLETE', isBody: true, text: '最终结论' },
   ] };
   upsertBlockIntoBubble(bubble, finalView);
   const history: ChatMessage[] = [];
@@ -258,7 +257,7 @@ test('思考与正文的偏移独立，新模型响应使用自己的身份', ()
   assert.equal(bubble.thoughtSteps?.[0]?.content, '分析问题');
   assertPendingText(bubble, '先查资料');
   reducer.consume({ type: 'TOOL_CALL', responseId: '101', requestId: 'c1', toolName: AgentToolName.WebSearch,
-    placement: 'PROCESS', executionId: 'e', timestamp: '', metaData: metadata });
+    isBody: false, executionId: 'e', timestamp: '', metaData: metadata });
   assert.equal(bubble.content, '');
   assert.equal(bubble.aiMessages?.[0]?.text, '先查资料');
   reducer.consume(partial('查询结论', 0, '102'));
@@ -322,7 +321,7 @@ test('较早响应的迟到全文不能抢占当前正在打印的正文', () =>
   const { reducer, bubble } = setup();
   reducer.consume(partial('先查资料', 0));
   reducer.consume(partial('查询结论', 0, '102'));
-  reducer.consume({ type: 'AI_MESSAGE', responseId: '102', order: 1, text: '查询结论', placement: 'BODY',
+  reducer.consume({ type: 'AI_MESSAGE', responseId: '102', order: 1, text: '查询结论', isBody: true,
     executionId: 'e', timestamp: '', metaData: metadata });
   reducer.consume({ type: 'AI_MESSAGE', responseId: '101', text: '先查资料',
     executionId: 'e', timestamp: '', metaData: metadata });
@@ -335,7 +334,7 @@ test('未提供增量的下一响应也能通过全文显示', () => {
     reducer.consume({ type: 'COMPLETE_TEXT', responseId, content: responseId,
       executionId: 'e', timestamp: '', metaData: metadata });
     assert.equal(bubble.aiMessages?.find(item => item.id === `text:${responseId}`)?.text, responseId);
-    reducer.consume({ type: 'AI_MESSAGE', responseId, text: responseId, placement: 'BODY',
+    reducer.consume({ type: 'AI_MESSAGE', responseId, text: responseId, isBody: true,
       executionId: 'e', timestamp: '', metaData: metadata });
     assert.equal(bubble.content, responseId);
   }
@@ -382,4 +381,87 @@ test('仅有收尾事件也显示真实调用，PROMISED 和未知状态不冒�
       assert.equal(bubble.toolCalls?.[0]?.status, 'pending');
     }
   }
+});
+
+/**
+ * ★ 语义翻转护栏 1：正文黏性 —— 只允许 false → true 升级，一旦定正文（true）不接受任何降级。
+ *
+ * <p>true 只在终态快照时由后端给出；迟到的 / 乱序的 false 帧绝不能把已定正文拉回过程区。
+ * 这条正是从旧的「PROCESS 黏性」翻转过来的核心不变量。</p>
+ */
+test('★ 正文黏性：isBody:true 一旦确定不接受任何降级（迟到的旧帧不得拉回过程区）', () => {
+  const { reducer, bubble } = setup();
+  reducer.consume({ ...partial('正文', 0), order: 1 });
+  const resolved: AgentEvent = { type: 'AI_MESSAGE', responseId: '101', text: '正文', isBody: true,
+    order: 1, executionId: 'e', timestamp: '', metaData: metadata };
+  reducer.consume(resolved);
+  assert.equal(bubble.turnState?.texts['text:101']?.isBody, true);
+  assert.equal(bubble.content, '正文');
+
+  // 迟到 / 乱序的同 responseId false 帧到达：绝不降级
+  reducer.consume({ type: 'AI_MESSAGE', responseId: '101', text: '正文', isBody: false,
+    order: 1, executionId: 'e', timestamp: '', metaData: metadata });
+  assert.equal(bubble.turnState?.texts['text:101']?.isBody, true, 'true 不可降级');
+  assert.equal(bubble.content, '正文', '正文保持');
+  assert.equal(bubble.aiMessages?.length, 0, '正文不得回落到过程区');
+
+  // 即便经过快照整轮重放（含 false）也不降级
+  snapshot(reducer, view('正文', false));
+  assert.equal(bubble.turnState?.texts['text:101']?.isBody, true, '快照携带 false 也不得降级');
+  assert.equal(bubble.content, '正文');
+});
+
+/**
+ * ★ 语义翻转护栏 2：false → true 可升级 —— 终态快照把过程文本提升为正文。
+ */
+test('★ 正文升级：false → true 允许（终态快照把过程文本提升为正文）', () => {
+  const { reducer, bubble } = setup();
+  reducer.consume({ ...partial('过程文本', 0), order: 1 });
+  reducer.consume({ type: 'AI_MESSAGE', responseId: '101', text: '过程文本', isBody: false,
+    order: 1, executionId: 'e', timestamp: '', metaData: metadata });
+  assert.equal(bubble.content, '');
+  assert.equal(bubble.aiMessages?.[0]?.text, '过程文本');
+  assert.ok((bubble.processTimeline ?? []).some(item => item.id === 'text:101'), '升级前在过程时间线');
+
+  snapshot(reducer, view('过程文本', true));
+  assert.equal(bubble.turnState?.texts['text:101']?.isBody, true);
+  assert.equal(bubble.content, '过程文本', '升级后进入正文');
+  assert.equal(bubble.aiMessages?.length, 0, '升级后从过程区移出');
+  assert.ok(!(bubble.processTimeline ?? []).some(item => item.id === 'text:101'), '升级后从过程时间线移出');
+});
+
+/**
+ * ★ 反向保障：isBody 缺失（undefined）时不写字段 —— 不伪造后端用途。
+ */
+test('★ 不伪造后端用途：isBody 缺失时不写字段（保持 undefined）', () => {
+  const { reducer, bubble } = setup();
+  reducer.consume({ ...partial('未确定', 0), order: 1 });
+  const buffer = bubble.turnState?.texts['text:101'];
+  assert.ok(buffer);
+  assert.equal('isBody' in buffer, false, '缺失即尚未确定，绝不写入字段');
+  reducer.consume({ type: 'COMPLETE_TEXT', responseId: '101', content: '未确定', order: 1,
+    meta: { finishReason: 'TOOL_EXECUTION' }, executionId: 'e', timestamp: '', metaData: metadata });
+  assert.equal('isBody' in (bubble.turnState?.texts['text:101'] ?? {}), false);
+  assert.equal(bubble.content, '', '未确定用途仍在过程区');
+});
+
+/**
+ * ★ applyTextPlacement 直接单测：true 不可降级、false 可升级、undefined 不写。
+ */
+test('★ applyTextPlacement 直接单测：true 不可降级，false 可升级，undefined 不写', () => {
+  const bubble: ChatMessage = { id: 'b', role: 'assistant', content: '', timestamp: 0 };
+  writeResponseText(bubble, 'text:101', 'TEXT', 0, '正文');
+  applyTextPlacement(bubble, 'text:101', true);
+  applyTextPlacement(bubble, 'text:101', false);
+  assert.equal(getTurnState(bubble).texts['text:101']?.isBody, true, 'true 不接受降级');
+  applyTextPlacement(bubble, 'text:101', undefined);
+  assert.equal(getTurnState(bubble).texts['text:101']?.isBody, true, 'undefined 不覆盖已确定值');
+
+  writeResponseText(bubble, 'text:202', 'TEXT', 0, '待定');
+  applyTextPlacement(bubble, 'text:202', undefined);
+  assert.equal('isBody' in getTurnState(bubble).texts['text:202']!, false, '缺失不写字段');
+  applyTextPlacement(bubble, 'text:202', false);
+  assert.equal(getTurnState(bubble).texts['text:202']?.isBody, false);
+  applyTextPlacement(bubble, 'text:202', true);
+  assert.equal(getTurnState(bubble).texts['text:202']?.isBody, true, 'false → true 可升级');
 });

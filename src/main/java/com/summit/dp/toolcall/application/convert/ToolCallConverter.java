@@ -238,23 +238,6 @@ public class ToolCallConverter {
         }
     }
 
-    /**
-     * {@code content.kind=DELEGATION}：{@code {kind,subSessionId,text}}。
-     * {@code subSessionId} 是子执行终态回填时匹配父执行槽位的依据，必须写字符串。
-     */
-    public String delegationContent(String subSessionId, String task) {
-        return delegationContent(subSessionId, null, task);
-    }
-
-    public String delegationContent(String subSessionId, String subExecutionId, String task) {
-        ObjectNode node = objectMapper.createObjectNode();
-        node.put(ToolCallKeys.KIND, ToolCallKind.DELEGATION.name());
-        node.put(ToolCallKeys.SUB_SESSION_ID, subSessionId);
-        if (subExecutionId != null) node.put(ToolCallKeys.SUB_EXECUTION_ID, subExecutionId);
-        node.put(ToolCallKeys.TEXT, task);
-        return node.toString();
-    }
-
     /** {@code raw_output}（PROMISE 结论）：{@code {outcome,answer?,decidedAt?}}。 */
     public String decisionOutcome(ToolCallOutcome outcome, String answer, boolean withDecidedAt) {
         ObjectNode node = objectMapper.createObjectNode();

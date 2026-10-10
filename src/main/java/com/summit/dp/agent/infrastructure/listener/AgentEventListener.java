@@ -9,7 +9,6 @@ import com.summit.core.runtime.RuntimeListener;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.shared.event.SseEventPublisher;
 import com.summit.dp.shared.vo.block.BlockOrder;
-import com.summit.dp.shared.vo.block.Placement;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -121,7 +120,10 @@ public class AgentEventListener implements RuntimeListener {
                 payload.remove("chatResponseEntity");
                 payload.set("text", objectMapper.valueToTree(aiMessage.text()));
                 payload.set("thinking", objectMapper.valueToTree(aiMessage.getThinking()));
-                payload.put("placement", Placement.resolve(aiMessage.getToolCalls()).name());
+                // 本通道在响应下发时执行尚未终结，无法判断「是否随后挂起」（框架可在此后返回 suspended），
+                // 因此结构上恒为非正文。正文归属由轮次终态快照（TurnViewSnapshot → TurnViewAssembler，
+                // 同一规则 BodyPlacement.resolve）在轮次 COMPLETED 时升级为 true。
+                payload.put("isBody", false);
                 payload.put("order", BlockOrder.text());
                 payload.put("thinkingOrder", BlockOrder.thinking());
             } else if (event instanceof ToolCallStartEvent tool) {

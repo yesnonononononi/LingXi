@@ -1,10 +1,11 @@
 import { ref, nextTick } from 'vue';
 import type { Ref, ComputedRef } from 'vue';
-import type { ChatSession, ChatTurn } from '../../types/chat';
+import type { ChatSession, ChatTurn, ToolCallVO } from '../../types/chat';
 import type { TurnViewVO } from '../../types/block';
 import { chatApi } from '../../services/chat';
 import { mergeTurns, mergeTurnViews, mergeSubSessionTree, synthesizeFailedTurnBubbles } from '../../utils/session';
 import { upsertTurnViewIntoMessages } from './blockProjection';
+import { attachPromptCards } from '../../utils/toolCallCard';
 import { useChatSessionStore } from '../../stores/chatSessionStore';
 
 /** 加载更多历史时保证加载动画可见的最短展示时长（毫秒） */
@@ -138,6 +139,7 @@ export function useChatHistory(options: ChatHistoryOptions) {
       // 逐页累积轮次视图：同一 turnId 横跨两页时按版本取新（mergeTurnViews 取高版本）。
       let collectedTurns: Record<string, ChatTurn> = {};
       let collectedTurnViews: Record<string, TurnViewVO> = {};
+      const collectedCards: ToolCallVO[] = [];
 
       for (let pageIdx = 0; pageIdx < RECONCILE_MAX_PAGES; pageIdx++) {
         const msgRes = await chatApi.fetchSessionMessages(ownerSessionId, cursor, 100);
@@ -148,6 +150,7 @@ export function useChatHistory(options: ChatHistoryOptions) {
         }
         collectedTurns = mergeTurns(collectedTurns, msgRes.data.turns);
         collectedTurnViews = mergeTurnViews(collectedTurnViews, msgRes.data.turnViews);
+        collectedCards.push(...msgRes.data.records.flatMap(record => record.toolCall ? [record.toolCall] : []));
 
         hasMore = msgRes.data.hasMore;
         if (!msgRes.data.hasMore || !msgRes.data.nextCursor) break;
@@ -162,6 +165,7 @@ export function useChatHistory(options: ChatHistoryOptions) {
         for (const view of Object.values(collectedTurnViews)) {
           if (view) upsertTurnViewIntoMessages(cur.messages, view, cur.turnViewVersions!);
         }
+        attachPromptCards(cur.messages, collectedCards);
         cur.messages = synthesizeFailedTurnBubbles(cur.messages, cur.turns);
         if (!hasMore) {
           cur.hasMoreMessages = false;
@@ -206,6 +210,7 @@ export function useChatHistory(options: ChatHistoryOptions) {
       for (const view of Object.values(pageResultRes.data.turnViews ?? {})) {
         if (view) upsertTurnViewIntoMessages(session.messages, view, session.turnViewVersions!);
       }
+      attachPromptCards(session.messages, pageResultRes.data.records.flatMap(record => record.toolCall ? [record.toolCall] : []));
       // 失败轮：后端在 session_message 里没有 assistant 行，但 turns 里有 FAILED 状态 —— 补合成气泡。
       session.messages = synthesizeFailedTurnBubbles(session.messages, session.turns);
       await nextTick();

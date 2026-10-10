@@ -6,6 +6,7 @@ import { TeamAPI } from './team';
 import { ToolCallAPI } from './toolCall';
 import { ApiError, classifyResult } from './interceptor';
 import { aggregateRecordsByIdentity } from '../utils/session';
+import { attachPromptCards } from '../utils/toolCallCard';
 import { isOk } from '../utils/api';
 import { createLocalId, createTempSessionId } from '../utils/ids';
 import { extractDirName } from '../utils/path';
@@ -333,6 +334,7 @@ export const chatApi = {
         // 单页入口（首屏详情、子会话抽屉）直接可用 messages；多页入口用累积的 turnViews 自聚合。
         const pageTurnViews = page.turnViews ?? {};
         const parsedMsgs = aggregateRecordsByIdentity(String(id), pageTurnViews);
+        attachPromptCards(parsedMsgs, pageRecords.flatMap(record => record.toolCall ? [record.toolCall] : []));
         return {
           ok: true,
           data: {

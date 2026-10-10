@@ -124,7 +124,7 @@ test('缺陷1：首轮发消息时，流式事件必须驱动渲染副作用更�
 
   const runtime = { executionId: 'e1', timestamp: '', metaData: { sessionId: SID, rootSessionId: SID, turnId: TID } };
   (streamCtl as any).enqueue(new TextEncoder().encode(frame('AI_MESSAGE', { ...runtime, type: 'AI_MESSAGE', responseId: '101',
-    order: 1, placement: 'PROCESS', text: '你发送的是「1」，收到' })));
+    order: 1, isBody: false, text: '你发送的是「1」，收到' })));
   (streamCtl as any).enqueue(new TextEncoder().encode(frame('TOOL_CALL', { ...runtime, type: 'TOOL_CALL', responseId: '101',
     requestId: 'c-live', toolName: AgentToolName.ReadFile, order: 2, args: '{"path":"input.md"}' })));
   for (let i = 0; i < 20; i++) await tick();

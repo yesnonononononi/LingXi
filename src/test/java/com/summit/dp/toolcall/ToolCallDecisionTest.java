@@ -308,14 +308,16 @@ class ToolCallDecisionTest {
     }
 
     @Test
-    void remainingPreparingAndDelegationSlotsPreventEarlyResume() throws Exception {
+    void remainingPreparingAndUnrecognizedSlotsPreventEarlyResume() throws Exception {
         ToolCall plan = promiseCall("call-plan", "create_plan", "{\"kind\":\"PLAN\",\"text\":\"计划\"}");
         ToolCall preparing = commandCall("call-preparing").toBuilder().status(ToolCallStatus.PREPARING).build();
-        ToolCall delegation = promiseCall("call-child", "call_sub_agent", "{\"kind\":\"DELEGATION\"}");
+        // 改造前遗留的 DELEGATION 槽位：枚举已删、kind 不可识别，但它仍是未决槽位，
+        // 因此决定完计划后父执行不得提前恢复（未决槽位仍走就绪闸门）。
+        ToolCall legacySlot = promiseCall("call-child", "call_sub_agent", "{\"kind\":\"DELEGATION\"}");
         ToolMessageEntity slot = ToolMessageEntity.builder().id(plan.getId()).name(plan.getToolName()).text("pending").build();
         Execution execution = execution("3", ExecutionState.SUSPENDED, slot);
         when(toolCallRepository.findById(plan.getId())).thenReturn(Optional.of(plan));
-        when(toolCallRepository.listUnresolvedByExecutionId(3L)).thenReturn(List.of(preparing, delegation));
+        when(toolCallRepository.listUnresolvedByExecutionId(3L)).thenReturn(List.of(preparing, legacySlot));
         when(executionRepository.findById("3")).thenReturn(Optional.of(execution));
 
         service.decide(2L, plan.getId(), true, "可以");

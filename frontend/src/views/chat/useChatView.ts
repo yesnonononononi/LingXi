@@ -470,17 +470,6 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     }
   };
 
-  /** 恢复会话执行 */
-  const handleResumeGeneration = async (sessionId?: string | number): Promise<void> => {
-    const sid = sessionId ?? currentActiveSession.value?.id;
-    if (!sid) return;
-    try {
-      await chatApi.resumeGeneration(sid);
-    } catch (err) {
-      console.error('恢复会话执行失败:', err);
-    }
-  };
-
   /** 协作式暂停会话执行 */
   const handleSuspendGeneration = async (sessionId?: string | number): Promise<void> => {
     const sid = sessionId ?? currentActiveSession.value?.id;
@@ -783,7 +772,6 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     // 发送与生命周期控制
     handleSendMessage,
     handleStopGeneration: sending.handleStopGeneration,
-    handleResumeGeneration,
     handleSuspendGeneration,
     decideToolCall,
     handleSelectPrompt,

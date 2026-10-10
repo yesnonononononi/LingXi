@@ -128,6 +128,9 @@ public class SubAgentRequestFactory {
      * 而发信要带上本次协作轮次的团队快照；不下行，成员发出的信就丢了团队归属。父执行没有该属性时
      * 不写入，不凭空制造团队身份。</p>
      *
+     * <p>{@code ROOT_SESSION_ID} 也随委派下行：邮箱业务键是协作根会话 id，子执行发信 / 收信都靠它
+     * 算出与根同一把邮箱键。与会话表回查相比，属性下行免去拦截器里的 SessionRepository IO。</p>
+     *
      * <p>注意：子执行拿到 {@code TEAM_ID} 之后，「靠属性缺失拦住二次委派」这层保险就不存在了 ——
      * 真正的守卫是 {@link #memberTools} 把 {@code call_sub_agent} 从子执行工具清单里剔除。</p>
      */
@@ -136,6 +139,10 @@ public class SubAgentRequestFactory {
         attributes.put(ExecutionAttributes.SESSION_ID, subSessionId);
         attributes.put(ExecutionAttributes.AGENT_ID, subAgent.getId().toString());
         attributes.put(ExecutionAttributes.ROOT_EXECUTION_ID, toolExecution.getExecutionId());
+        Long rootSessionId = ExecutionAttributes.readLong(toolExecution.getAttributes(), ExecutionAttributes.SESSION_ID);
+        if (rootSessionId != null) {
+            attributes.put(ExecutionAttributes.ROOT_SESSION_ID, rootSessionId.toString());
+        }
         Long teamId = ExecutionAttributes.readLong(toolExecution.getAttributes(), ExecutionAttributes.TEAM_ID);
         if (teamId != null) {
             attributes.put(ExecutionAttributes.TEAM_ID, teamId.toString());

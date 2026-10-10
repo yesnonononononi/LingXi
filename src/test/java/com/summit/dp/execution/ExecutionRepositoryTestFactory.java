@@ -6,7 +6,7 @@ import com.summit.dp.execution.infrastructure.repository.LocalExecutionRepositor
 import com.summit.dp.session.application.service.SessionAggregateService;
 import com.summit.dp.toolcall.application.service.ToolCallReadinessService;
 import com.summit.dp.toolcall.application.service.ToolCallService;
-import com.summit.dp.toolcall.infrastructure.listener.DelegationSettleService;
+import com.summit.dp.agent.infrastructure.runtime.SubExecutionLifecycle;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import org.springframework.beans.factory.ObjectProvider;
 
@@ -26,7 +26,7 @@ public final class ExecutionRepositoryTestFactory {
                                                  ChatTurnService chatTurnService) {
         return new LocalExecutionRepository(mapper, objectMapper,
                 provider(mock(ToolCallReadinessService.class)), provider(mock(ToolCallService.class)),
-                provider(mock(DelegationSettleService.class)), provider(mock(SessionAggregateService.class)),
+                provider(mock(SubExecutionLifecycle.class)), provider(mock(SessionAggregateService.class)),
                 provider(chatTurnService));
     }
 

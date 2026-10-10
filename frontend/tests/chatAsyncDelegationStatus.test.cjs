@@ -225,29 +225,6 @@ test('AC-5 子会话详情状态栏：不再硬编码「执行完成」，由权
   assert.doesNotMatch(text(root), /执行完成/);
 });
 
-test('AC-5 委派等待卡：无 outcome 不再默认判失败（协作式委派工具已 COMPLETED）', async t => {
-  const promptCard = reactive({
-    kind: 'DELEGATION', toolCallId: 'd1', title: '工程师', content: '任务正文',
-    status: 'completed', pending: false, outcome: undefined,
-  });
-  const root = mountComponent(t, component('components/chat/DelegationWaitCard.vue'), { promptCard, isDark: true });
-
-  assert.doesNotMatch(text(root), /子代理执行失败/, '无 outcome 不得默认判失败');
-  assert.match(text(root), /状态未知/, '未知/进行中应给中性提示');
-
-  promptCard.outcome = 'SUCCEEDED';
-  await nextTick();
-  assert.match(text(root), /子代理已完成，结果已回填/, '成功分支保持');
-
-  promptCard.outcome = 'CANCELLED';
-  await nextTick();
-  assert.match(text(root), /子代理执行已取消/, '取消分支保持');
-
-  promptCard.outcome = 'FAILED';
-  await nextTick();
-  assert.match(text(root), /子代理执行失败/, '仅明确失败才判失败');
-});
-
 test('asyncDelegation：协作式子会话未出现 → 进行中（不回落 success）；阻塞式 success → 完成', () => {
   const { asyncSubSessionStatus } = util('utils/asyncDelegation.ts');
   // 协作式：工具已立即 success，但子代理定义上仍在跑 —— 子会话未出现时必须判「进行中」。

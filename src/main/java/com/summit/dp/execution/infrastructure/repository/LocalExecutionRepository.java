@@ -14,10 +14,10 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
+import com.summit.dp.agent.infrastructure.runtime.SubExecutionLifecycle;
 import com.summit.dp.session.application.service.SessionAggregateService;
 import com.summit.dp.toolcall.application.service.ToolCallReadinessService;
 import com.summit.dp.toolcall.application.service.ToolCallService;
-import com.summit.dp.toolcall.infrastructure.listener.DelegationSettleService;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,7 +45,8 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     /** 延迟取服务，避免生命周期处理与执行仓储形成构造期闭环。 */
     private final ObjectProvider<ToolCallReadinessService> readinessService;
     private final ObjectProvider<ToolCallService> toolCallService;
-    private final ObjectProvider<DelegationSettleService> delegationService;
+    /** 子执行「结束事实」协作器；经 ObjectProvider 断开与执行仓储的构造期闭环。 */
+    private final ObjectProvider<SubExecutionLifecycle> subExecutionLifecycle;
     private final ObjectProvider<SessionAggregateService> sessionService;
     private final ObjectProvider<ChatTurnService> chatTurnService;
 
@@ -303,17 +304,17 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
         }
     }
 
-    /** 控制槽位释放且检查点提交后，才能开放卡片并校准委派结果。 */
+    /** 控制槽位释放且检查点提交后，才能开放卡片并处理结束事实（子执行挂起 / 根重放保留唤醒）。 */
     private void notifySuspended(Execution execution) {
         invokeLifecycle("开放工具卡片", execution, () -> readinessService.getObject().markReady(execution.getId()));
-        invokeLifecycle("校准委派结果", execution, () -> delegationService.getObject().reconcileSuspendedExecution(execution.getId()));
+        invokeLifecycle("结束事实-挂起", execution, () -> subExecutionLifecycle.getObject().onSuspended(execution));
         invokeLifecycle("更新等待轮次", execution, () -> chatTurnService.getObject().markExecutionWaiting(execution));
     }
 
     /** 传递已提交对象，避免订阅方重复解码检查点。 */
     private void notifyFinished(Execution execution) {
         invokeLifecycle("收口工具卡片", execution, () -> toolCallService.getObject().cancelPendingToolCalls(execution.getId()));
-        invokeLifecycle("回填委派结果", execution, () -> delegationService.getObject().backfillFinishedExecution(execution));
+        invokeLifecycle("结束事实-终结", execution, () -> subExecutionLifecycle.getObject().onFinished(execution));
         invokeLifecycle("保存会话用量", execution, () -> sessionService.getObject().saveExecutionContextUsage(execution));
         invokeLifecycle("收口业务轮次", execution, () -> chatTurnService.getObject().finishExecution(execution));
     }

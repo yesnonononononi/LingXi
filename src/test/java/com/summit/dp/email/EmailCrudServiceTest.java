@@ -42,6 +42,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -50,10 +51,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Email 聚合回归（H2 手工装配，镜像 init.sql 的 email / email_message 两表，含业务键唯一约束）。
  *
- * <p>邮箱语义：一次协作轮次里、一个收件 Agent 的角色邮箱，业务键
- * {@code (workflow_execution_id, recipient_agent_id)}。覆盖：sendMail 取邮箱 + 落 PENDING 消息
- * → findById（装载消息）→ findPage 过滤分页（不装载）→ del 事务内级联；
- * message add/list/updateContent/consume；consumePending 精确消费与隔离；
+ * <p>邮箱语义：协作根会话里、一个收件 Agent 的角色邮箱，业务键
+ * {@code (workflow_execution_id, recipient_agent_id)}，其中 {@code workflow_execution_id} 是
+ * <b>协作根会话 id</b>（列名保持历史命名），使同一根会话的各轮执行共享同一把邮箱键。覆盖：
+ * sendMail 取邮箱 + 落 PENDING 消息 → findById（装载消息）→ findPage 过滤分页（不装载）→ del 事务内级联；
+ * message add/list/updateContent/consume；consumePending 精确消费与隔离；hasPending 只读判定；
  * 并发首次建箱只建一条、并发消费只交付一次。校验失败一律抛 ClientException；
  * 业务数据准备一律走 Mapper/仓储。</p>
  */
@@ -225,6 +227,30 @@ class EmailCrudServiceTest {
         Result<List<EmailMessageVO>> second = service.consumePending(900L, 7L);
         assertEquals(1, second.getCode());
         assertTrue(second.getData().isEmpty());
+    }
+
+    @Test
+    @DisplayName("hasPending 只读判定：不改任何消息状态；消费后转空；空邮箱/参数缺失返回 false")
+    void hasPendingIsReadOnlyAndDefensive() {
+        service.sendMail(7L, "待处理", new MailSendContext(900L, 100L, null));
+        Long messageId = service.sendMail(7L, "第二封", new MailSendContext(900L, 100L, null)).getData().getId();
+
+        assertTrue(service.hasPending(900L, 7L), "有 PENDING 消息应返回 true");
+
+        // 判定不得改变任何消息状态：连判两次结论一致，且消息仍是 PENDING（收尾判定只读、不消费）。
+        assertTrue(service.hasPending(900L, 7L));
+        assertEquals(EmailMessage.EMStatus.PENDING,
+                messageRepository.findById(messageId).orElseThrow().getStatus(),
+                "只读判定不得把消息判成已消费");
+
+        // 消费之后不再有待处理输入。
+        service.consumePending(900L, 7L);
+        assertFalse(service.hasPending(900L, 7L), "消费后无 PENDING，返回 false");
+
+        // 空邮箱 / 参数缺失：不报错，返回 false（收尾判定要能安全地空转）。
+        assertFalse(service.hasPending(999L, 7L), "邮箱不存在返回 false 而非报错");
+        assertFalse(service.hasPending(null, 7L), "参数为 null 返回 false");
+        assertFalse(service.hasPending(900L, null), "参数为 null 返回 false");
     }
 
     // ---------------------------------------------------------------- 并发
@@ -497,7 +523,7 @@ class EmailCrudServiceTest {
 
     // ---------------------------------------------------------------- 测试数据
 
-    /** 测试数据准备：角色邮箱（业务键 = workflowExecutionId + recipientAgentId，状态默认有效）。 */
+    /** 测试数据准备：角色邮箱（业务键 = 协作根会话 id + recipientAgentId，状态默认有效）。 */
     private static Email newEmail(Long workflowExecutionId, Long recipientAgentId, Long teamId) {
         return Email.builder()
                 .id(IdUtil.getSnowflakeNextId())

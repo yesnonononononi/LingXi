@@ -34,7 +34,7 @@ export function consumeResponseText(bubble: ChatMessage, event: AgentEvent): boo
       }
     }
   } else return false;
-  applyTextPlacement(bubble, `text:${responseId}`, event.placement);
+  applyTextPlacement(bubble, `text:${responseId}`, event.isBody);
   renderTurnState(bubble);
   return true;
 }
