@@ -183,14 +183,16 @@ class CallSubAgentSessionReuseTest {
         assertEquals(2, delivered.size(), "应为「既有历史 + 本次任务」");
         assertTrue(delivered.get(0).text().contains("上次的任务"));
         assertTrue(delivered.get(1).text().contains("再评估一下上次的方案"));
-        // 子执行继承父的根会话（800）与代际（父元数据缺失代际，回落 1），替换会话/轮次/父轮次。
+        // 子执行继承父的根会话（800）与代际（父元数据缺失代际，回落 1），替换会话/轮次/父轮次，
+        // 并带上被委派的 Agent 身份：前端在会话树到达前只有事件可依，缺了它成员名只能退化成「子代理 #N」。
         assertEquals(Map.of("rootSessionId", String.valueOf(ROOT_SESSION_ID), "sessionId", "555",
-                        "turnId", "9002", "parentTurnId", "9001", "historyRevision", "1"),
+                        "turnId", "9002", "parentTurnId", "9001", "historyRevision", "1",
+                        "agentId", String.valueOf(CHILD_AGENT_ID), "agentName", "架构师"),
                 requestCaptor.getValue().runtimeParametersOrDefault().getEventMetaData());
         verify(chatTurnService).acceptTurn(eq(EXISTING_SUB_SESSION_ID), eq(ROOT_SESSION_ID), eq(9001L), any(), any(), any());
         verify(chatTurnService, never()).findByExecutionId(any());
 
-        // 4) 子会话身份改由 v3 SESSION_UPDATED + DELEGATION 卡片承载，不再单独发映射事件。
+        // 4) 子会话身份由子执行的事件元数据（含 agent 身份）+ DELEGATION 卡片承载，不再单独发映射事件。
         // 5) 新任务落 transcript
         verify(transcriptService).appendUser(eq(EXISTING_SUB_SESSION_ID), eq(ROOT_SESSION_ID), any(), any());
         // 6) 收尾仍要把上下文快照写回子会话

@@ -113,16 +113,35 @@
 
               <!-- 长思考保留滚动上限，避免撑满会话。 -->
               <CollapseTransition>
-                <div v-if="isThoughtStepExpanded(item.step) && item.step.content">
+                <div v-if="isThoughtStepExpanded(item.step) && item.step.content" class="relative">
                   <div
                     :ref="(el) => item.step && setThinkingBoxRef(item.step.id, el)"
                     :class="[
                       'thinking-content my-2 ml-1 border-l-[3px] pl-4 pr-2 max-h-72 overflow-y-auto scrollbar-thin select-text',
                       isDark ? 'border-zinc-700' : 'border-zinc-200'
                     ]"
+                    @scroll="handleThinkingScroll(item.step.id, $event)"
                   >
                     <MarkdownRenderer :content="item.step.content" :is-dark="isDark" :thinking-text="true" />
                   </div>
+                  <!-- 用户上滑看前文后，新分片不再抢滚动位置；给一个一键回到底部的入口。
+                       只在仍在流式的思考上出现 —— 已定型的内容停在顶部是正常的，不该催人回底部。 -->
+                  <button
+                    v-if="item.step.status === 'running' && !isThinkingFollowing(item.step.id)"
+                    type="button"
+                    @click="handleScrollThinkingToBottom(item.step.id)"
+                    :class="[
+                      'absolute bottom-2 right-2 flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] leading-none shadow-sm transition-colors cursor-pointer',
+                      isDark
+                        ? 'border-white/15 bg-[#1b2130]/90 text-zinc-300 hover:text-zinc-100'
+                        : 'border-gray-200 bg-white/95 text-gray-500 hover:text-gray-800'
+                    ]"
+                  >
+                    <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v13M6 12l6 6 6-6" />
+                    </svg>
+                    回到底部
+                  </button>
                 </div>
               </CollapseTransition>
             </div>
@@ -593,6 +612,7 @@ import { isActiveTurnStatus, isFailedTurnStatus, turnStatusLabel } from '../../u
 import { formatDurationOrPlaceholder } from '../../utils/format';
 import { parseToolDiff } from '../../utils/toolDiff';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
+import { useStreamStickyScroll } from '../../composables/useStreamStickyScroll';
 import { useTheme } from '../../composables/useTheme';
 import GradientText from '../common/GradientText.vue';
 import MarkdownRenderer from './MarkdownRenderer.vue';
@@ -712,37 +732,30 @@ const formatThoughtTitle = (title?: string): string => {
   return t;
 };
 
-// 思考内容展开框 DOM 引用与流式输出自动贴底滚动
-const thinkingBoxRefs = ref<Record<string, HTMLElement | null>>({});
-const setThinkingBoxRef = (stepId: string, el: unknown) => {
-  if (el) {
-    thinkingBoxRefs.value[stepId] = el as HTMLElement;
-  } else {
-    delete thinkingBoxRefs.value[stepId];
-  }
-};
-
-const runningThoughtState = computed(() => {
-  if (props.message.isComplete) return '';
-  const runningStep = props.message.thoughtSteps?.find(s => s.status === 'running');
-  if (!runningStep) return '';
-  return `${runningStep.id}:${runningStep.content?.length || 0}`;
-});
-
-watch(
-  runningThoughtState,
-  () => {
-    const runningStep = props.message.thoughtSteps?.find(s => s.status === 'running');
-    if (!runningStep) return;
-    const box = thinkingBoxRefs.value[runningStep.id];
-    if (!box) return;
-    const isNearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
-    if (isNearBottom) {
-      box.scrollTop = box.scrollHeight;
-    }
+// 思考内容展开框的流式贴底：判定规则与实现见 composables/useStreamStickyScroll.ts。
+// 指纹覆盖**全部**思考步骤 —— 只盯「当前 running 的那一段」会漏：上一段没收到完成通知时
+// 会一直占着 running，新一段的增量就再也触发不了贴底。
+const {
+  setBoxRef: setThinkingBoxRef,
+  handleScroll: handleThinkingScroll,
+  isFollowing: isThinkingFollowing,
+  scrollToBottom: handleScrollThinkingToBottom
+} = useStreamStickyScroll({
+  streamSignature: () => {
+    const steps = props.message.thoughtSteps;
+    if (!steps || steps.length === 0) return '';
+    return steps.map((step) => `${step.id}:${step.content?.length ?? 0}`).join('|');
   },
-  { flush: 'post' }
-);
+  boxIds: () => {
+    const steps = props.message.thoughtSteps;
+    if (!steps || steps.length === 0) return [];
+    return steps.map((step) => String(step.id));
+  },
+  // 只有还在跑的思考才从贴底开始：已定型的思考一旦展开，应当从头读，
+  // 也不能被别处的增量顶到底部。
+  shouldStickOnMount: (id) =>
+    props.message.thoughtSteps?.some((step) => String(step.id) === id && step.status === 'running') ?? false
+});
 
 // 计时器（按秒计算）
 const now = ref(Date.now());

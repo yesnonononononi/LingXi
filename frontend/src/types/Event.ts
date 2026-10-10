@@ -36,6 +36,12 @@ export interface EventMetaData {
   turnId?: string;
   /** 发起本次子委派的主轮次 id；普通用户提问为 null */
   parentTurnId?: string;
+  /**
+   * 子执行被委派的 Agent 身份（对应后端 ExecutionEventMetadata 的 agentId / agentName）。
+   * 只有子执行事件带；前端在会话树到达之前靠它显示成员名，缺失时不得编造序号冒充。
+   */
+  agentId?: string;
+  agentName?: string;
   /** 构建时根会话的历史代际快照 */
   historyRevision?: string;
   [key: string]: unknown;

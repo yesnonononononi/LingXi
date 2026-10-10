@@ -35,22 +35,26 @@ import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.dp.turn.infrastructure.listener.ChatTurnRuntimeListener;
 import com.summit.runtime.loop.DefaultExecutionController;
 import com.summit.runtime.loop.DefaultRuntimeLifeStyleManager;
+import jakarta.annotation.PreDestroy;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -258,5 +262,25 @@ class PreparedChatExecutorTest {
 
         verify(registry).finishRoot(ROOT_SESSION_ID);
         verify(frameworkFail, never()).fail(any(Execution.class), any());
+    }
+
+    /**
+     * 关停契约：执行线程池必须由 {@code @PreDestroy} 钩子停掉。
+     *
+     * <p>漏写这个钩子不会报错、不会打日志、不会有任何用例变红 —— 只在 Spring 关闭上下文时
+     * 悄悄留下一批没人管的线程。所以这里把两半都钉住：<b>钩子本身注册了</b>（少了注解就红），
+     * 且 <b>close() 真的停池</b>（方法被掏空也会红）。</p>
+     */
+    @Test
+    @DisplayName("关停：close() 停掉执行线程池，且必须注册为 @PreDestroy 钩子")
+    void closeStopsExecutorAsLifecycleHook() throws NoSuchMethodException {
+        assertNotNull(PreparedChatExecutor.class.getMethod("close").getAnnotation(PreDestroy.class),
+                "close() 必须带 @PreDestroy，否则上下文关闭时无人关停线程池");
+
+        guardedExecutor.close();
+
+        ExecutorService pool = (ExecutorService) ReflectionTestUtils.getField(guardedExecutor, "executorService");
+        assertNotNull(pool);
+        assertTrue(pool.isShutdown(), "close() 必须真的停掉线程池");
     }
 }

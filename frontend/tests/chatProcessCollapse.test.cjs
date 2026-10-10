@@ -79,6 +79,20 @@ function find(node, predicate) {
   }
 }
 
+/** 按内容定位某个思考步骤的滚动框（一个消息里可能同时有多段思考）。 */
+function resolveThinkingBox(root, marker) {
+  return find(root, node =>
+    String(node.props?.class ?? '').includes('thinking-content') && text(node).includes(marker));
+}
+
+/** 伪元素没有布局，手动给出滚动几何：`overflow` 为内容高度超出可视高度的部分。 */
+function layoutThinkingBox(box, contentHeight, viewportHeight, scrollTop = 0) {
+  box.scrollHeight = contentHeight;
+  box.clientHeight = viewportHeight;
+  box.scrollTop = scrollTop;
+  return box;
+}
+
 function mount(t, message, props = {}) {
   return mountComponent(t, loadComponent(), { message, isDark: true, ...props });
 }
@@ -710,5 +724,105 @@ test('★ turn 摘要缺失但仍在发送中的最新回答，过程框不得�
   });
 
   assert.match(text(root), /先检查是否已安装/, '发送中的最新回答必须是展开的');
+});
+
+/**
+ * ★ 实测回归：思考框首屏就超出一屏时，流式增量必须继续贴底。
+ *
+ * <p>旧实现用「此刻是否贴近底部（< 80px）」决定要不要贴底。思考框是首个分片落地才挂载的，
+ * 那一刻 scrollTop 还是 0；只要首屏内容就超出 max-h-72，距离直接判定为「用户已经滚走了」，
+ * 之后每个分片只会让距离更大 —— 贴底动作永久失效，用户只能不断手动往底部拖。</p>
+ *
+ * <p>不变量：只要用户没有自己上滑，流式增量必须把内容钉在底部。</p>
+ */
+test('★ 思考框首屏超出一屏后，流式增量继续贴底', async t => {
+  const answer = message({ isComplete: false, aiMessages: [], thoughtSteps: [
+    { id: 'thinking-stick', title: '思考', content: '首屏思考', status: 'running', order: 0 },
+  ] });
+  const root = mount(t, answer);
+  const box = resolveThinkingBox(root, '首屏思考');
+  assert.ok(box, '运行中的思考框必须展开渲染');
+  // 内容 1000、可视 288：首屏就已经溢出 712px，远超「贴近底部」阈值。
+  layoutThinkingBox(box, 1000, 288);
+
+  answer.thoughtSteps[0].content += '继续打印'.repeat(50);
+  box.scrollHeight = 1600;
+  await nextTick();
+  assert.equal(box.scrollTop, 1600 - 288, '流式增量必须贴底，不能因为首屏已溢出就停止跟随');
+});
+
+/**
+ * ★ 用户主动上滑后，新分片不得再抢滚动位置；滚回底部即恢复跟随。
+ *
+ * <p>这条锁的是另一半：修复「必须贴底」不能退化成「永远贴底」，否则用户回看前文时会被
+ * 每个分片顶回底部。判据只能是用户自己往下滚这一动作，而不是「此刻离底部多远」。</p>
+ */
+test('★ 用户上滑后新分片不抢位置，滚回底部即恢复跟随', async t => {
+  const answer = message({ isComplete: false, aiMessages: [], thoughtSteps: [
+    { id: 'thinking-hold', title: '思考', content: '长思考', status: 'running', order: 0 },
+  ] });
+  const root = mount(t, answer);
+  const box = resolveThinkingBox(root, '长思考');
+  layoutThinkingBox(box, 1000, 288);
+  const resolveBackToBottom = () => find(root, node => node.tag === 'button' && text(node).trim() === '回到底部');
+
+  // 先来一个分片：程序贴底一次，记录下「我们自己滚到哪里」。
+  answer.thoughtSteps[0].content += '首个分片'.repeat(50);
+  box.scrollHeight = 1600;
+  await nextTick();
+  assert.equal(box.scrollTop, 1600 - 288, '跟随状态下首个分片必须贴底');
+  assert.equal(resolveBackToBottom(), undefined, '跟随中不该出现回到底部的入口');
+
+  // 用户上滑：scrollTop 低于程序上一次贴底写入的位置。
+  box.scrollTop = 120;
+  box.props.onScroll({ target: box });
+  await nextTick();
+  assert.ok(resolveBackToBottom(), '停止跟随后必须给出回到底部的入口');
+
+  answer.thoughtSteps[0].content += '新分片'.repeat(50);
+  box.scrollHeight = 2000;
+  await nextTick();
+  assert.equal(box.scrollTop, 120, '用户已经上滑，新分片不得抢走滚动位置');
+
+  // 用户自己滚回底部：恢复跟随，后续分片继续贴底。
+  box.scrollTop = 2000 - 288;
+  box.props.onScroll({ target: box });
+  await nextTick();
+  assert.equal(resolveBackToBottom(), undefined, '恢复跟随后入口应收起');
+  answer.thoughtSteps[0].content += '后续分片'.repeat(50);
+  box.scrollHeight = 2400;
+  await nextTick();
+  assert.equal(box.scrollTop, 2400 - 288, '滚回底部后必须恢复自动贴底');
+});
+
+/**
+ * ★ 已定型的思考展开后停在顶部，且不被别处的增量顶到底部。
+ *
+ * <p>贴底只对「还在流式增长」的内容成立。历史思考展开时应当从头读，也不该被同一消息里
+ * 另一段仍在增长的思考顺手顶到底部。</p>
+ */
+test('★ 已定型的思考展开后停在顶部，不被别处增量顶走', async t => {
+  const answer = message({ isComplete: false, aiMessages: [], thoughtSteps: [
+    { id: 'thinking-done', title: '旧思考', content: '旧思考正文', status: 'success', order: 0 },
+    { id: 'thinking-live', title: '思考', content: '实时思考正文', status: 'running', order: 1000 },
+  ] });
+  const root = mount(t, answer);
+  assert.equal(resolveThinkingBox(root, '旧思考正文'), undefined, '已定型的思考默认折叠');
+
+  find(root, node => node.tag === 'button' && text(node) === '旧思考').props.onClick();
+  await nextTick();
+  const finished = resolveThinkingBox(root, '旧思考正文');
+  assert.ok(finished, '点击标题必须展开已定型的思考');
+  layoutThinkingBox(finished, 1000, 288);
+
+  const live = resolveThinkingBox(root, '实时思考正文');
+  assert.ok(live, '运行中的思考保持展开');
+  layoutThinkingBox(live, 1000, 288);
+
+  answer.thoughtSteps[1].content += '增量'.repeat(50);
+  live.scrollHeight = 1600;
+  await nextTick();
+  assert.equal(live.scrollTop, 1600 - 288, '运行中的思考必须继续贴底');
+  assert.equal(finished.scrollTop, 0, '已定型的思考不得被别处的增量顶到底部');
 });
 

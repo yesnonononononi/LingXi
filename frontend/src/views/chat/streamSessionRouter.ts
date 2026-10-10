@@ -1,4 +1,4 @@
-import type { AgentEvent } from '../../types/Event';
+import type { AgentEvent, EventMetaData } from '../../types/Event';
 import type { ChatMessage, ChatSession, ContextUsageData, SubSessionVO, ToolCallVO } from '../../types/chat';
 import { TurnStreamReducer } from './turnStreamReducer';
 import { AgentToolName } from '../../utils/toolNames';
@@ -195,7 +195,7 @@ export class StreamSessionRouter {
   }
 
   /** 动态发现并注册新的子代理会话容器 */
-  private registerSubSession(subSessionId: string, meta?: any): TurnStreamReducer {
+  private registerSubSession(subSessionId: string, meta?: EventMetaData): TurnStreamReducer {
     const root = this.currentRootSession;
     if (!root) throw new Error('根会话未绑定');
 
@@ -205,12 +205,15 @@ export class StreamSessionRouter {
 
     let subVO = root.subSessions.find(s => String(s.id) === subSessionId);
     if (!subVO) {
+      // 名称与 agent 身份来自子执行事件元数据（后端 ExecutionEventMetadata 随事件下发）；
+      // 会话树尚未到达时它是唯一权威来源，拿不到才退化成占位名。
+      const agentName = meta?.agentName;
       subVO = {
         id: subSessionId,
         rootSessionId: root.id,
-        name: meta?.agentName || `子代理 #${root.subSessions.length + 1}`,
+        name: agentName || `子代理 #${root.subSessions.length + 1}`,
         agentId: meta?.agentId,
-        agentName: meta?.agentName,
+        agentName,
         runStatus: 'RUNNING',
         messages: []
       };

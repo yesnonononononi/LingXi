@@ -38,6 +38,10 @@
       <!-- 左侧：根会话工作区 (包含消息列表与底部输入框，被右侧子代理面板向左挤压) -->
       <div class="relative flex-1 min-w-0 h-full flex flex-col overflow-hidden">
 
+        <!-- 文件预览入口：必须挂**在消息区容器内**做绝对定位。挂到右侧同级容器上时会按整个容器
+             右缘对齐，而子代理面板可见时那个右缘属于面板本身 —— 按钮就会盖住面板头部的「收起」。 -->
+        <button v-if="fileTabs.length && !filePreviewOpen" type="button" class="absolute right-4 top-3 z-30 rounded-lg border border-zinc-400/20 bg-white px-3 py-1.5 text-xs shadow-sm dark:bg-zinc-900" @click="filePreviewOpen = true">文件预览 · {{ fileTabs.length }}</button>
+
         <!-- 初始化数据加载失败：可见失败态（区别于「确实为空」，避免后端宕机时静默显示为空） -->
         <div
           v-if="initLoadError"
@@ -257,8 +261,6 @@
         @open="runFileAction('open')"
         @reveal="runFileAction('reveal')"
       />
-
-      <button v-if="fileTabs.length && !filePreviewOpen" type="button" class="absolute right-4 top-3 z-30 rounded-lg border border-zinc-400/20 bg-white px-3 py-1.5 text-xs shadow-sm dark:bg-zinc-900" @click="filePreviewOpen = true">文件预览 · {{ fileTabs.length }}</button>
 
       <!-- 右侧：子 Agent 会话轨迹和标签面板 -->
       <SubAgentSidePanel

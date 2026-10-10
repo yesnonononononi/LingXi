@@ -43,7 +43,8 @@ public class DelegationRecorder {
      */
     public long record(Long rootSessionId, ToolExecution toolExecution, AgentRequest request,
                        Long numericSubSessionId, String subSessionId, AgentVO agent, String task) {
-        // 子会话身份不再单独发映射事件：子会话行落库时后端就发 v3 SESSION_UPDATED（带 rootSessionId），
+        // 子会话身份不再单独发映射事件：前端从子执行自己的事件元数据认出子会话（sessionId 是子会话、
+        // rootSessionId 是根），因此元数据必须带 agent 身份，否则那份「我是谁」只能退化成编出来的序号。
         // 委派关联则由 DELEGATION 卡片的 content.subSessionId 表达，前端据此建立导航。
 
         // 子轮次：与子会话的 USER 行同源归属。parentTurnId 指向**发起本次委派的主轮次**，
@@ -55,7 +56,7 @@ public class DelegationRecorder {
                 request.getModelConfig() == null ? null : request.getModelConfig().getModelName(),
                 request.getModelConfig() == null ? null : request.getModelConfig().getProvider());
         request.runtimeParametersOrDefault().setEventMetaData(
-                childExecutionMetadata(rootSessionId, toolExecution.getEventMetaData(),
+                childExecutionMetadata(agent, rootSessionId, toolExecution.getEventMetaData(),
                         numericSubSessionId, childTurnId, parentTurnId));
 
         try {
@@ -73,7 +74,7 @@ public class DelegationRecorder {
     }
 
     /**
-     * 子执行自己的事件归属：<b>继承父的根会话与历史代际，替换会话、轮次与父轮次</b>。
+     * 子执行自己的事件归属：<b>继承父的根会话与历史代际，替换会话、轮次与父轮次</b>，并带上被委派的 Agent 身份。
      *
      * <p>{@code rootSessionId} 由调用方显式传入（委派链路已经知道根会话），不反查、不猜测；
      * historyRevision 沿用父元数据的同源快照 —— 子执行与父执行属于同一根会话的同一代际，
@@ -82,11 +83,12 @@ public class DelegationRecorder {
      * <p><b>响应身份不在元数据里</b>：身份由框架每次模型调用生成，随响应实体下发，
      * 不经过事件元数据，因此不存在「子执行继承了父响应身份」的问题。</p>
      */
-    private Map<String, Object> childExecutionMetadata(long rootSessionId, Map<String, Object> parentMetadata,
+    private Map<String, Object> childExecutionMetadata(AgentVO agent, long rootSessionId, Map<String, Object> parentMetadata,
                                                        long childSessionId, long childTurnId, Long parentTurnId) {
         Long parentRevision = ExecutionEventMetadata.parseHistoryRevision(parentMetadata);
         long historyRevision = parentRevision == null || parentRevision <= 0L ? 1L : parentRevision;
-        return ExecutionEventMetadata.of(rootSessionId, childSessionId, childTurnId, parentTurnId, historyRevision);
+        return ExecutionEventMetadata.ofSubAgent(rootSessionId, childSessionId, childTurnId, parentTurnId, historyRevision,
+                agent == null ? null : agent.getId(), agent == null ? null : agent.getName());
     }
 
     /**

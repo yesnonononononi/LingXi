@@ -9,12 +9,15 @@ import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.shared.utils.RequestPreparer;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * 受理与执行协作：受理把轮次、用户消息与执行行一次提交；执行阶段只跑模型。
@@ -36,6 +39,7 @@ public class PreparedChatExecutor {
     private final ModelContextService modelContextService;
     private final SessionExecutionRegistry sessionExecutionRegistry;
     private final ExecutionControl executionControl;
+    private final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
 
     /**
      * 受理：把业务轮次、用户消息与框架执行行放进同一个事务提交。
@@ -70,7 +74,7 @@ public class PreparedChatExecutor {
      */
     public void submitAsync(RuntimeContext context) {
         try {
-            CompletableFuture.runAsync(() -> run(context));
+            CompletableFuture.runAsync(() -> run(context),executorService);
         } catch (RuntimeException submitFailure) {
             failSubmit(context, submitFailure);
             throw submitFailure;
@@ -150,5 +154,11 @@ public class PreparedChatExecutor {
             log.warn("收口启动失败的执行时出错: executionId={}, cause={}, 收口失败原因={}",
                     execution.getId(), cause.toString(), failFailure.toString());
         }
+    }
+
+    /** 关闭时停掉执行线程，避免非托管场景下的线程泄漏。 */
+    @PreDestroy
+    public void close() {
+        executorService.shutdownNow();
     }
 }

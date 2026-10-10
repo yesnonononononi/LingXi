@@ -10,6 +10,8 @@ public final class ExecutionEventMetadata {
     public static final String TURN_ID = "turnId";
     public static final String PARENT_TURN_ID = "parentTurnId";
     public static final String HISTORY_REVISION = "historyRevision";
+    public static final String AGENT_ID = "agentId";
+    public static final String AGENT_NAME = "agentName";
 
     private ExecutionEventMetadata() {
     }
@@ -42,6 +44,29 @@ public final class ExecutionEventMetadata {
             metadata.put(PARENT_TURN_ID, parentTurnId.toString());
         }
         metadata.put(HISTORY_REVISION, Long.toString(historyRevision));
+        return Map.copyOf(metadata);
+    }
+
+    /**
+     * 子执行的归属元数据：在通用归属之上追加被委派的 Agent 身份。
+     *
+     * <p>子会话行虽然落了库，但前端在收到会话树之前只能靠事件认出「这条子执行是谁」：
+     * 不带 agentId/agentName 时，左侧成员名只能退化成「子代理 #N」这种凭空编的序号。</p>
+     *
+     * @param agentId   Agent ID；写成十进制字符串，避免雪花 ID 被 JS 精度截断
+     * @param agentName Agent 名称；为空时不占该键
+     */
+    public static Map<String, Object> ofSubAgent(long rootSessionId, long sessionId, Long turnId,
+                                                 Long parentTurnId, long historyRevision,
+                                                 Long agentId, String agentName) {
+        Map<String, Object> metadata =
+                new HashMap<>(of(rootSessionId, sessionId, turnId, parentTurnId, historyRevision));
+        if (agentId != null) {
+            metadata.put(AGENT_ID, Long.toString(agentId));
+        }
+        if (agentName != null && !agentName.isBlank()) {
+            metadata.put(AGENT_NAME, agentName);
+        }
         return Map.copyOf(metadata);
     }
 

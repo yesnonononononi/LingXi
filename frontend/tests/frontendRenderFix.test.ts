@@ -83,6 +83,50 @@ test('2. 子会话对账替换 subSessions 后：子 reducer 仍写入当前子�
 });
 
 /**
+ * 子会话发现的权威身份：成员名与 agentId 必须取自子执行事件元数据。
+ *
+ * 根因：后端 {@code ExecutionEventMetadata} 原先只带 root/session/turn/parentTurn/historyRevision，
+ * 子会话的 agent 身份根本没随事件下发 —— 前端只能拿「子代理 #N」这种序号当名字（截图现象：
+ * 面板标题与副标题两行都是同一个编号）。身份补进元数据后，从发现的第一帧起名字就是真的。
+ *
+ * 这条守卫锁的是**键名契约**（agentId / agentName 与后端常量同名同形），
+ * 键名被改掉或不再读取时它会直接变红，而不是等用户看到编号才发现。
+ */
+test('2b. 子会话发现：成员名与 agentId 取自事件元数据，不再退化成「子代理 #N」', () => {
+  const session: ChatSession = {
+    id: 'root-3',
+    title: '会话',
+    createdAt: 0,
+    updatedAt: 0,
+    modelId: 'm',
+    activeTools: [],
+    messages: [],
+    subSessions: []
+  };
+  const router = new StreamSessionRouter();
+  router.bindRootSession(session);
+
+  router.dispatch({
+    type: 'EXECUTION_STARTED',
+    executionId: 'e3',
+    timestamp: '2026-10-10T04:00:00Z',
+    metaData: {
+      turnId: 'st3',
+      sessionId: 'sub-3',
+      rootSessionId: 'root-3',
+      agentId: '1234567890123456789',
+      agentName: '工程师'
+    }
+  });
+  router.flushAll();
+
+  const discovered = session.subSessions?.[0];
+  assert.equal(discovered?.name, '工程师', '成员名必须用元数据里的真实 agentName');
+  assert.equal(discovered?.agentName, '工程师');
+  assert.equal(discovered?.agentId, '1234567890123456789', 'agentId 保持十进制字符串，不被 JS 精度截断');
+});
+
+/**
  * 缺陷 1：回答气泡底部工具条（token / 耗时 / 模型 / 状态）不显示。
  *
  * 根因：buildTurnMap 把每条消息的 turn 硬编码为 null，从未按 turnId 从 session.turns 解析。
