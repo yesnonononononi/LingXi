@@ -3,6 +3,7 @@ package com.summit.dp.agent.infrastructure.runtime;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
+import com.summit.dp.agent.infrastructure.runtime.SubAgentCompleteNotifier;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
@@ -16,6 +17,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.doThrow;
+import org.mockito.InOrder;
 
 /**
  * {@link SubExecutionLifecycle} 的结束事实翻译契约。
@@ -33,9 +37,10 @@ class SubExecutionLifecycleTest {
     private final SessionExecutionRegistry registry = mock(SessionExecutionRegistry.class);
     private final ExecutionResumeCoordinator resumeCoordinator = mock(ExecutionResumeCoordinator.class);
     private final ExecutionIdentity executionIdentity = mock(ExecutionIdentity.class);
+    private final SubAgentCompleteNotifier notifier = mock(SubAgentCompleteNotifier.class);
 
     private final SubExecutionLifecycle lifecycle =
-            new SubExecutionLifecycle(registry, resumeCoordinator, executionIdentity);
+            new SubExecutionLifecycle(registry, resumeCoordinator, executionIdentity, notifier);
 
     @Test
     @DisplayName("子执行挂起：保留登记（markChildSuspended），不唤醒根")
@@ -55,8 +60,22 @@ class SubExecutionLifecycleTest {
         when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
         when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(true);
 
-        lifecycle.onFinished(childExecution());
+        Execution child = childExecution();
+        lifecycle.onFinished(child);
 
+        InOrder order = inOrder(notifier, registry, resumeCoordinator);
+        order.verify(notifier).notifyCommander(child);
+        order.verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        order.verify(resumeCoordinator).accept(ROOT_EXECUTION_ID);
+    }
+
+    @Test
+    void failedNoticeStillReleasesRegistrationAndWakesRoot() {
+        when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
+        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(true);
+        Execution child = childExecution();
+        doThrow(new IllegalStateException("模拟投递失败")).when(notifier).notifyCommander(child);
+        lifecycle.onFinished(child);
         verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
         verify(resumeCoordinator).accept(ROOT_EXECUTION_ID);
     }

@@ -22,6 +22,7 @@ import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
 import com.summit.dp.agent.infrastructure.runtime.SubExecutionLifecycle;
 import com.summit.dp.email.application.service.EmailService;
+import com.summit.dp.agent.infrastructure.runtime.SubAgentCompleteNotifier;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.SessionAttributeRestorer;
@@ -116,7 +117,7 @@ class QaIndependentDelegationLifecycleTest {
                 new SuspendedExecutionResumer(toolCallRepository, sessionAttributeRestorer,
                         modelContextService, provider(executionControl)),
                 executionControl, provider(frameworkExecutions), provider(activity));
-        lifecycle = new SubExecutionLifecycle(registry, coordinator, executionIdentity);
+        lifecycle = new SubExecutionLifecycle(registry, coordinator, executionIdentity, mock(SubAgentCompleteNotifier.class));
         waitInterceptor = new SubAgentWaitInterceptor(registry, emailService, coordinator);
 
         when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);

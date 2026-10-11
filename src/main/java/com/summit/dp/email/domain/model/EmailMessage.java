@@ -13,6 +13,7 @@ import java.time.Instant;
 @Builder
 @Getter
 public class EmailMessage {
+    public static final int MAX_DEDUP_KEY_LENGTH = 160;
     public enum EMStatus {
         PENDING,
         CONSUMED
@@ -21,6 +22,7 @@ public class EmailMessage {
     private final Long id;
     private final Long emailId;
     private final Long senderId;
+    private final String dedupKey;
     private String content;
     private EMStatus status;
     private final Instant createAt;

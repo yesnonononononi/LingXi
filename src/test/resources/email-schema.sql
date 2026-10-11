@@ -20,10 +20,12 @@ CREATE TABLE email_message (
     id        BIGINT      PRIMARY KEY,
     email_id  BIGINT      NOT NULL,
     sender_id BIGINT      NOT NULL,
+    dedup_key VARCHAR(160),
     content   CLOB        NOT NULL,
     status    VARCHAR(16),
     create_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    update_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    update_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_email_message_dedup UNIQUE (dedup_key)
 );
 
 CREATE INDEX idx_email_message_inbox ON email_message (email_id, status, create_at, id);

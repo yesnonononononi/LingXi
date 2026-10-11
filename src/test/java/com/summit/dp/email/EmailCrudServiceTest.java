@@ -1,6 +1,18 @@
 package com.summit.dp.email;
 
 import cn.hutool.core.util.IdUtil;
+import com.summit.core.agent.AgentRequest;
+import com.summit.core.agent.AgentRuntimeParameters;
+import com.summit.core.agent.Execution;
+import com.summit.core.agent.ExecutionState;
+import com.summit.core.conversation.message.Message;
+import com.summit.core.runtime.loop.ExecutionControlSignal;
+import com.summit.core.runtime.loop.ExecutionRepository;
+import com.summit.core.runtime.loop.LoopContext;
+import com.summit.core.runtime.loop.LoopMessages;
+import com.summit.dp.agent.infrastructure.runtime.SubAgentCompleteNotifier;
+import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.tools.baseTools.sub_agent.communication.AgenticLoopInterceptor;
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
@@ -27,6 +39,16 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
+import org.springframework.aop.framework.ProxyFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
+import org.springframework.transaction.interceptor.TransactionInterceptor;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
@@ -34,12 +56,17 @@ import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -47,6 +74,12 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
 
 /**
  * Email 聚合回归（H2 手工装配，镜像 init.sql 的 email / email_message 两表，含业务键唯一约束）。
@@ -89,7 +122,153 @@ class EmailCrudServiceTest {
         messageMapper = session.getMapper(EmailMessageMapper.class);
         emailRepository = new EmailRepositoryImpl(emailMapper);
         messageRepository = new EmailMessageRepositoryImpl(messageMapper);
-        service = new EmailServiceImpl(emailRepository, messageRepository);
+        service = transactionalService(messageRepository);
+    }
+
+    private EmailServiceImpl transactionalService(EmailMessageRepository messages) {
+        ProxyFactory factory = new ProxyFactory(new EmailServiceImpl(emailRepository, messages));
+        factory.setProxyTargetClass(true);
+        factory.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(database),
+                new AnnotationTransactionAttributeSource()));
+        return (EmailServiceImpl) factory.getProxy();
+    }
+
+    @Test
+    void completedChildWithoutMailToolReachesRootContextExactlyOnce() {
+        Execution root = Execution.builder().id("900").agentId("")
+                .agentRequest(AgentRequest.builder().runtimeParameters(AgentRuntimeParameters.builder()
+                        .attributes(Map.of(ExecutionAttributes.SESSION_ID, "800", ExecutionAttributes.AGENT_ID, "7"))
+                        .build()).build()).build();
+        Execution child = Execution.builder().id("1234").agentId("").executionState(ExecutionState.COMPLETED)
+                .agentRequest(AgentRequest.builder().runtimeParameters(AgentRuntimeParameters.builder()
+                        .attributes(Map.of(ExecutionAttributes.SESSION_ID, "555", ExecutionAttributes.AGENT_ID, "8",
+                                ExecutionAttributes.ROOT_SESSION_ID, "800", ExecutionAttributes.ROOT_EXECUTION_ID, "900",
+                                ExecutionAttributes.TEAM_ID, "2")).build()).build()).build();
+        ExecutionRepository executions = mock(ExecutionRepository.class);
+        ObjectProvider<ExecutionRepository> provider = mock(ObjectProvider.class);
+        when(provider.getObject()).thenReturn(executions);
+        when(executions.findById("900")).thenReturn(Optional.of(root));
+        SubAgentCompleteNotifier notifier = new SubAgentCompleteNotifier(provider, service);
+        notifier.notifyCommander(child);
+        notifier.notifyCommander(child);
+        List<Message> appended = new ArrayList<>();
+        LoopContext context = new LoopContext(LoopMessages.builder().execution(root).build(),
+                new ExecutionControlSignal("900"), 0, appended::addAll);
+        AgenticLoopInterceptor interceptor = new AgenticLoopInterceptor(service);
+        interceptor.onBeforeModelInvoke(context);
+        assertEquals(1, appended.size());
+        assertTrue(appended.getFirst().text().contains("成员 @8 的子任务已完成"));
+        assertTrue(appended.getFirst().text().contains("协作消息"));
+        notifier.notifyCommander(child);
+        interceptor.onBeforeModelInvoke(context);
+        assertEquals(1, appended.size());
+        assertEquals(1L, messageMapper.selectCount(null));
+    }
+
+    @Test
+    void duplicateNoticeSurvivesConsumptionAndServiceRecreation() {
+        MailSendContext context = new MailSendContext(800L, 8L, 2L);
+        String key = "sub-agent-finished:1234:7";
+        EmailMessageVO first = service.sendMailOnce(7L, "完成提醒", context, key).getData();
+        assertEquals(first.getId(), service.sendMailOnce(7L, "重复提醒", context, key).getData().getId());
+        service.consumePending(800L, 7L);
+        EmailServiceImpl recreated = transactionalService(messageRepository);
+        EmailMessageVO repeated = recreated.sendMailOnce(7L, "再次提醒", context, key).getData();
+        assertEquals(first.getId(), repeated.getId());
+        assertEquals("完成提醒", repeated.getContent());
+        assertEquals(EmailMessage.EMStatus.CONSUMED, repeated.getStatus());
+        assertEquals(1L, messageMapper.selectCount(null));
+        assertTrue(recreated.consumePending(800L, 7L).getData().isEmpty());
+        recreated.sendMailOnce(7L, "新执行提醒", context, "sub-agent-finished:1235:7");
+        assertEquals(2L, messageMapper.selectCount(null));
+        assertEquals(1, recreated.consumePending(800L, 7L).getData().size());
+    }
+
+    @Test
+    void concurrentNoticeCreatesOneMessageAndReturnsSameId() throws Exception {
+        int threads = 6;
+        CountDownLatch ready = new CountDownLatch(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        List<Future<Long>> futures = new ArrayList<>();
+        Set<Long> ids = new HashSet<>();
+        try {
+            for (int i = 0; i < threads; i++) {
+                futures.add(pool.submit(() -> {
+                    ready.countDown();
+                    assertTrue(start.await(10, TimeUnit.SECONDS));
+                    return service.sendMailOnce(7L, "完成提醒", new MailSendContext(800L, 8L, 2L),
+                            "sub-agent-finished:1234:7").getData().getId();
+                }));
+            }
+            assertTrue(ready.await(10, TimeUnit.SECONDS));
+            start.countDown();
+            for (Future<Long> future : futures) ids.add(future.get(30, TimeUnit.SECONDS));
+        } finally {
+            pool.shutdownNow();
+        }
+        assertEquals(1, ids.size());
+        assertEquals(1L, emailMapper.selectCount(null));
+        assertEquals(1L, messageMapper.selectCount(null));
+    }
+
+    @Test
+    void noticeCommitsFromAfterCommitAndIndependentlyOfOuterRollback() {
+        TransactionTemplate outer = new TransactionTemplate(new DataSourceTransactionManager(database));
+        outer.executeWithoutResult(status -> TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        service.sendMailOnce(7L, "提交后提醒", new MailSendContext(800L, 8L, 2L), "finished:1234:7");
+                    }
+                }));
+        assertEquals(1L, messageMapper.selectCount(null));
+        outer.executeWithoutResult(status -> {
+            service.sendMailOnce(7L, "独立事务提醒", new MailSendContext(800L, 8L, 2L), "finished:1235:7");
+            status.setRollbackOnly();
+        });
+        assertEquals(2L, messageMapper.selectCount(null));
+    }
+
+    @Test
+    void failedInsertRollsBackDedupKeyAndCanRetry() {
+        EmailMessageRepository failing = spy(messageRepository);
+        AtomicBoolean failOnce = new AtomicBoolean(true);
+        doAnswer(invocation -> {
+            invocation.callRealMethod();
+            if (failOnce.getAndSet(false)) throw new DataAccessResourceFailureException("模拟写入后故障");
+            return null;
+        }).when(failing).save(any(EmailMessage.class));
+        EmailServiceImpl sender = transactionalService(failing);
+        MailSendContext context = new MailSendContext(800L, 8L, 2L);
+        assertThrows(DataAccessResourceFailureException.class,
+                () -> sender.sendMailOnce(7L, "完成提醒", context, "finished:1234:7"));
+        assertEquals(0L, messageMapper.selectCount(null));
+        assertEquals(0L, emailMapper.selectCount(null));
+        sender.sendMailOnce(7L, "完成提醒", context, "finished:1234:7");
+        assertEquals(1L, messageMapper.selectCount(null));
+    }
+
+    @Test
+    void unrelatedDuplicateKeyIsNotReportedAsSuccessfulDelivery() {
+        EmailMessageRepository failing = spy(messageRepository);
+        doThrow(new DuplicateKeyException("其他唯一键冲突")).when(failing).save(any(EmailMessage.class));
+        assertThrows(DuplicateKeyException.class, () -> transactionalService(failing)
+                .sendMailOnce(7L, "完成提醒", new MailSendContext(800L, 8L, 2L), "finished:1234:7"));
+        assertEquals(0L, emailMapper.selectCount(null));
+    }
+
+    @Test
+    void duplicateKeyCannotBeReusedForAnotherSenderOrMailbox() {
+        service.sendMailOnce(7L, "完成提醒", new MailSendContext(800L, 8L, 2L), "finished:1234:7");
+        assertThrows(ClientException.class, () -> service.sendMailOnce(7L, "错发",
+                new MailSendContext(801L, 8L, 2L), "finished:1234:7"));
+        assertThrows(ClientException.class, () -> service.sendMailOnce(7L, "错发",
+                new MailSendContext(800L, 9L, 2L), "finished:1234:7"));
+        assertEquals(1L, emailMapper.selectCount(null));
+        assertEquals(1L, messageMapper.selectCount(null));
+        assertThrows(ClientException.class, () -> service.sendMailOnce(7L, "提醒",
+                new MailSendContext(800L, 8L, 2L), " "));
     }
 
     @AfterEach

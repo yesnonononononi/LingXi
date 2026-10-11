@@ -5,11 +5,15 @@ import com.summit.dp.email.domain.model.EmailMessage;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * EmailMessage 领域仓储。
  */
 public interface EmailMessageRepository extends RepositoryTemplate<EmailMessage, Long> {
+
+    /** 唯一键冲突后使用当前读，避免事务快照漏掉竞争方已提交的通知。 */
+    Optional<EmailMessage> findByDedupKeyForUpdate(String dedupKey);
 
     /**
      * 查询某封邮件下的全部消息，按 createAt, id 升序（与写入顺序一致）。

@@ -20,6 +20,7 @@ public class EmailMessagePO {
     private Long id;
     private Long emailId;
     private Long senderId;
+    private String dedupKey;
     private String content;
     private String status;
     private Instant createAt;

@@ -83,7 +83,7 @@ public class AgenticLoopInterceptor implements LoopInterceptor {
 
         // 5, 作为 UserMessage 追加到本次模型上下文末尾
         List<UserMessageEntity> list = data.stream().map(vo -> UserMessageEntity.from(String.format("""
-                @%s 给你发送了一个新需求: \n
+                @%s 发来协作消息: \n
                 %s
                 收件对象: @%s
                 """, vo.getSenderId(),

@@ -57,6 +57,9 @@ public interface EmailService {
      */
     Result<EmailMessageVO> sendMail(Long toAgentId, String content, MailSendContext context);
 
+    /** 同一业务键只投递一次；重复调用保留原消息及消费状态。 */
+    Result<EmailMessageVO> sendMailOnce(Long toAgentId, String content, MailSendContext context, String dedupKey);
+
     /**
      * 按业务键精确消费待处理消息：{@code workflow_execution_id = ? AND recipient_agent_id = ?}。
      *

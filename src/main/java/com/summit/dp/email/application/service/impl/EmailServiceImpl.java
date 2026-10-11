@@ -19,6 +19,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 
 import java.time.Instant;
 import java.util.Collection;
@@ -92,23 +93,9 @@ public class EmailServiceImpl implements EmailService {
     @Override
     @Transactional
     public Result<EmailMessageVO> sendMail(Long toAgentId, String content, MailSendContext context) {
-        if (context == null) {
-            throw new ClientException("mail send context is null");
-        }
-        if (toAgentId == null) {
-            throw new ClientException("toAgentId is null");
-        }
-        if (content == null || content.isBlank()) {
-            throw new ClientException("content is null");
-        }
+        validateMail(toAgentId, content, context);
         Long workflowExecutionId = context.workflowExecutionId();
-        if (workflowExecutionId == null) {
-            throw new ClientException("workflowExecutionId is null");
-        }
         Long senderAgentId = context.senderAgentId();
-        if (senderAgentId == null) {
-            throw new ClientException("senderAgentId is null");
-        }
 
         // 1) 获取或创建收件 Agent 的角色邮箱（业务键 = 协作根会话 + 收件 Agent）
         Email mailbox = obtainMailbox(workflowExecutionId, toAgentId, context.teamId());
@@ -124,6 +111,43 @@ public class EmailServiceImpl implements EmailService {
                 .build();
         messageRepository.save(message);
         return Result.success(toMessageVO(message));
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Result<EmailMessageVO> sendMailOnce(Long toAgentId, String content, MailSendContext context,
+                                              String dedupKey) {
+        validateMail(toAgentId, content, context);
+        throwIf(dedupKey == null || dedupKey.isBlank(), "通知去重键不能为空");
+        throwIf(dedupKey.length() > EmailMessage.MAX_DEDUP_KEY_LENGTH, "通知去重键不能超过160个字符");
+        Email mailbox = obtainMailbox(context.workflowExecutionId(), toAgentId, context.teamId());
+        EmailMessage message = EmailMessage.builder()
+                .id(IdUtil.getSnowflakeNextId()).emailId(mailbox.getId()).senderId(context.senderAgentId())
+                .dedupKey(dedupKey).content(content).status(EmailMessage.EMStatus.PENDING)
+                .createAt(Instant.now()).build();
+
+        // 提交后回调需要独立事务；去重键与消息一起插入，失败回滚不会提前占用去重键。
+        try {
+            messageRepository.save(message);
+            return Result.success(toMessageVO(message));
+        } catch (DuplicateKeyException error) {
+            EmailMessage existing = messageRepository.findByDedupKeyForUpdate(dedupKey).orElseThrow(() -> error);
+            throwIf(!mailbox.getId().equals(existing.getEmailId())
+                    || !context.senderAgentId().equals(existing.getSenderId()), "通知去重键已用于其他收发对象");
+            return Result.success(toMessageVO(existing));
+        }
+    }
+
+    private void validateMail(Long toAgentId, String content, MailSendContext context) {
+        throwIf(context == null, "发信上下文不能为空");
+        throwIf(toAgentId == null, "收件成员不能为空");
+        throwIf(content == null || content.isBlank(), "邮件内容不能为空");
+        throwIf(context.workflowExecutionId() == null, "协作根会话不能为空");
+        throwIf(context.senderAgentId() == null, "发件成员不能为空");
+    }
+
+    private void throwIf(boolean condition, String err) {
+        if (condition) throw new ClientException(err);
     }
 
     @Override

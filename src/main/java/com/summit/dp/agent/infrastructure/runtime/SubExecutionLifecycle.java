@@ -21,12 +21,14 @@ import java.util.Map;
 @Component
 @RequiredArgsConstructor
 public class SubExecutionLifecycle {
-
     private final SessionExecutionRegistry registry;
     private final ExecutionResumeCoordinator resumeCoordinator;
     private final ExecutionIdentity executionIdentity;
+    private final SubAgentCompleteNotifier subAgentCompleteNotifier;
 
-    /** 子执行挂起 → 保留登记；根执行挂起 → 重放保留唤醒。 */
+    /**
+     * 子执行挂起 → 保留登记；根执行挂起 → 重放保留唤醒。
+     */
     public void onSuspended(Execution execution) {
         Long rootExecutionId = rootExecutionIdOf(execution);
         if (rootExecutionId == null) {
@@ -46,7 +48,9 @@ public class SubExecutionLifecycle {
                 rootSessionId, childSessionId, rootExecutionId);
     }
 
-    /** 子执行终态 → 移除登记（成为空则唤醒根）；根执行终态 → 清理保留唤醒。 */
+    /**
+     * 子执行终态 → 移除登记（成为空则唤醒根）；根执行终态 → 清理保留唤醒。
+     */
     public void onFinished(Execution execution) {
         Long rootExecutionId = rootExecutionIdOf(execution);
         if (rootExecutionId == null) {
@@ -58,13 +62,24 @@ public class SubExecutionLifecycle {
         }
         Long childSessionId = childSessionIdOrNull(execution);
         Long rootSessionId = rootSessionIdOf(childSessionId);
+
+
         if (rootSessionId == null) {
             return;
         }
+
+        // 先投递再注销，避免根执行在子登记清空后、提醒落库前提前收尾；通知失败仍保留既有唤醒路径。
+        try {
+            subAgentCompleteNotifier.notifyCommander(execution);
+        } catch (RuntimeException error) {
+            log.error("投递子执行终结提醒失败: executionId={}, rootExecutionId={}", execution.getId(), rootExecutionId, error);
+        }
+
+
         boolean becameEmpty = registry.unregisterChild(rootSessionId, childSessionId);
+
         if (becameEmpty) {
-            log.info("子执行终结唤醒根: rootExecutionId={}, childSessionId={}, becameEmpty=true",
-                    rootExecutionId, childSessionId);
+            log.info("子执行终结唤醒根: rootExecutionId={}, childSessionId={}, becameEmpty=true", rootExecutionId, childSessionId);
             resumeCoordinator.accept(rootExecutionId);
         }
     }
@@ -113,4 +128,6 @@ public class SubExecutionLifecycle {
         }
         return executionIdentity.resolveRootSessionIdOrNull(childSessionId);
     }
+
+
 }

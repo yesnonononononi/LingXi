@@ -13,6 +13,7 @@ import org.springframework.stereotype.Repository;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * EmailMessage 仓储实现。
@@ -35,6 +36,14 @@ public class EmailMessageRepositoryImpl extends AbstractRepository<EmailMessage,
     @Override
     public Collection<EmailMessage> findList(Collection<Long> ids) {
         return super.findList(ids);
+    }
+
+    @Override
+    public Optional<EmailMessage> findByDedupKeyForUpdate(String dedupKey) {
+        EmailMessagePO po = mapper.selectOne(Wrappers.<EmailMessagePO>lambdaQuery()
+                .eq(EmailMessagePO::getDedupKey, dedupKey)
+                .last("FOR UPDATE"));
+        return po == null ? Optional.empty() : Optional.of(toModel(po));
     }
 
     @Override
@@ -97,6 +106,7 @@ public class EmailMessageRepositoryImpl extends AbstractRepository<EmailMessage,
                 .id(po.getId())
                 .emailId(po.getEmailId())
                 .senderId(po.getSenderId())
+                .dedupKey(po.getDedupKey())
                 .content(po.getContent())
                 .status(po.getStatus() == null ? null : EmailMessage.EMStatus.valueOf(po.getStatus()))
                 .createAt(po.getCreateAt())
@@ -110,6 +120,7 @@ public class EmailMessageRepositoryImpl extends AbstractRepository<EmailMessage,
                 .id(model.getId())
                 .emailId(model.getEmailId())
                 .senderId(model.getSenderId())
+                .dedupKey(model.getDedupKey())
                 .content(model.getContent())
                 .status(model.getStatus() == null ? null : model.getStatus().name())
                 .createAt(model.getCreateAt())

@@ -299,10 +299,12 @@ CREATE TABLE IF NOT EXISTS email_message (
     id        BIGINT      NOT NULL PRIMARY KEY COMMENT '应用生成的雪花 ID',
     email_id  BIGINT      NOT NULL COMMENT '所属邮箱 ID',
     sender_id BIGINT      NOT NULL COMMENT '发件 Agent ID',
+    dedup_key VARCHAR(160) NULL COMMENT '通知业务去重键，普通邮件为空',
     content   TEXT        NOT NULL COMMENT '消息内容',
     status    ENUM('PENDING','CONSUMED') NOT NULL DEFAULT 'PENDING' COMMENT '消息状态',
     create_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
     update_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
     KEY idx_email_message_inbox (email_id, status, create_at, id),
-    KEY idx_email_message_sender_id (sender_id)
+    KEY idx_email_message_sender_id (sender_id),
+    UNIQUE KEY uk_email_message_dedup (dedup_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='邮箱消息';
