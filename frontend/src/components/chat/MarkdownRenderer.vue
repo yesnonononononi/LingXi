@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { renderMarkdown } from '../../utils/markdown';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
 import { useTheme } from '../../composables/useTheme';
+import { t } from '../../i18n';
 import GradientText from '../common/GradientText.vue';
 
 const props = withDefaults(
@@ -50,7 +51,7 @@ const handleContainerClick = async (event: MouseEvent) => {
   const textSpan = btn.querySelector('.copy-text') as HTMLElement;
   if (textSpan) {
     const originalText = textSpan.textContent;
-    textSpan.textContent = '已复制';
+    textSpan.textContent = t('common.copied');
     btn.classList.add('!text-emerald-400');
     setTimeout(() => {
       textSpan.textContent = originalText;
@@ -87,7 +88,7 @@ const handleContainerClick = async (event: MouseEvent) => {
         :animation-speed="2.5"
         :show-border="false"
         class="text-sm font-medium tracking-wide !mx-0 !ml-0"
-      >正在探索中</GradientText>
+      >{{ t('chat.message.exploringShort') }}</GradientText>
     </div>
   </div>
 </template>

@@ -5,6 +5,7 @@ import { CARD_SHELL_CLASS } from '../../utils/cardUi';
 import PlanCard from './PlanCard.vue';
 import RequireChoiceCard from './RequireChoiceCard.vue';
 import ApprovalCard from './ApprovalCard.vue';
+import { useI18n } from '../../i18n';
 
 const props = defineProps<{
   /** 统一卡片数据（历史与实时同一形状） */
@@ -13,6 +14,8 @@ const props = defineProps<{
   sessionId?: string | number;
   isDark?: boolean;
 }>();
+
+const { t } = useI18n();
 
 /** 渲染分派依据：content.kind（唯一判别字段）；缺失/非法降级为 UNAVAILABLE */
 const kind = computed(() => props.promptCard.kind);
@@ -29,7 +32,7 @@ const isUnavailable = computed(() => props.promptCard.unavailable === true || ki
       isDark ? 'bg-[#151b26] border-gray-800 text-gray-400' : 'bg-white border-gray-200/90 text-gray-500'
     ]"
   >
-    卡片状态不可用（工具调用数据缺失、解析失败或形态不可识别），已保留消息记录。
+        {{ t('chat.prompt.unavailable') }}
   </div>
 
   <PlanCard

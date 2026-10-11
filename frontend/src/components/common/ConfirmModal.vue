@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useConfirm } from '../../composables/useConfirm'
+import { t } from '../../i18n'
 
 const { state, handleConfirm, handleCancel } = useConfirm()
 
@@ -135,7 +136,7 @@ onUnmounted(() => {
             <!-- Title & Description -->
             <div class="flex-1 min-w-0 pt-0.5">
               <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">
-                {{ state.options.title || '操作确认' }}
+                {{ state.options.title || t('common.confirmTitle') }}
               </h3>
               <p class="mt-1 text-xs sm:text-sm text-gray-500 dark:text-gray-400 leading-relaxed break-words whitespace-pre-line">
                 {{ state.options.content }}
@@ -151,7 +152,7 @@ onUnmounted(() => {
               class="px-3.5 py-1.5 text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white bg-gray-100 hover:bg-gray-200/80 dark:bg-white/5 dark:hover:bg-white/10 rounded-xl border border-gray-200/80 dark:border-white/10 transition-colors focus:outline-none cursor-pointer active:scale-95"
               @click="handleCancel"
             >
-              {{ state.options.cancelText || '取消' }}
+              {{ state.options.cancelText || t('common.cancel') }}
             </button>
 
             <button
@@ -160,7 +161,7 @@ onUnmounted(() => {
               :class="typeConfig.confirmBtn"
               @click="handleConfirm"
             >
-              {{ state.options.confirmText || '确定' }}
+              {{ state.options.confirmText || t('common.confirm') }}
             </button>
           </div>
         </div>

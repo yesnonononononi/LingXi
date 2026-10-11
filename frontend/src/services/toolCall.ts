@@ -2,6 +2,7 @@ import http from './interceptor';
 import type { Result } from './types';
 import { isOk } from '../utils/api';
 import type { ToolCallAction, ToolCallDecisionReceipt, ToolCallVO } from '../types/chat';
+import { t } from '../i18n';
 
 /** 提交工具调用决策的载荷（对应后端 ToolCallDecisionCommand）。 */
 export interface ToolCallDecisionPayload {
@@ -50,7 +51,7 @@ export class ToolCallAPI {
     });
     if (!isOk(res.code) || !res.data) {
       // 后端把「卡片不存在 / 版本冲突」等业务拒绝放在 Result 里，文案直接透出给用户。
-      throw new Error(res.errMsg || '提交决策失败');
+      throw new Error(res.errMsg || t('chat.toolCall.submitFailed'));
     }
     return res.data;
   }

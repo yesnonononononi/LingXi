@@ -7,6 +7,7 @@ import { canDecideCard } from '../../utils/toolCallCard';
 import CardHeader from './CardHeader.vue';
 import CardActionButton from './CardActionButton.vue';
 import CollapseTransition from '../common/CollapseTransition.vue';
+import { useI18n } from '../../i18n';
 
 const props = defineProps<{
   /** 统一卡片数据（CHOICE 澄清提问） */
@@ -15,6 +16,8 @@ const props = defineProps<{
   sessionId?: string | number;
   isDark?: boolean;
 }>();
+
+const { t } = useI18n();
 
 /**
  * 由视图层注入的决策提交：走 JSON 回执，**不再消费请求级流**。
@@ -34,7 +37,7 @@ const isSubmitting = ref(false);
 const errorMsg = ref('');
 const inputRef = ref<HTMLInputElement | null>(null);
 
-const questionText = computed(() => props.promptCard.content || props.promptCard.title || '需要您的进一步确认：');
+const questionText = computed(() => props.promptCard.content || props.promptCard.title || t('chat.choice.defaultQuestion'));
 
 /** 候选项：后端 options 为空数组时只保留自由输入，不伪造“方案 N”占位 */
 const options = computed<string[]>(() =>
@@ -94,7 +97,7 @@ const canSubmit = computed(() => {
 /** 提交按钮禁用原因（明确提示，避免「点了没反应」） */
 const disabledReason = computed(() => {
   if (isResolved.value || isSubmitting.value) return '';
-  return canSubmit.value ? '' : '请选择一个选项，或输入你的答案后再提交';
+  return canSubmit.value ? '' : t('chat.choice.disabledReason');
 });
 
 /**
@@ -106,17 +109,17 @@ const disabledReason = computed(() => {
 const submit = async (answer: string) => {
   const conversationId = props.promptCard.conversationId
     ?? (props.sessionId != null && props.sessionId !== '' ? String(props.sessionId) : '');
-  if (!conversationId) {
-    errorMsg.value = '提问卡片缺少所属会话，无法提交回答';
+    if (!conversationId) {
+    errorMsg.value = t('chat.choice.missingConversation');
     return;
   }
   const toolCallId = props.promptCard.toolCallId;
   if (!toolCallId) {
-    errorMsg.value = '提问卡片缺少互动状态ID，无法提交回答';
+    errorMsg.value = t('chat.choice.missingToolCallId');
     return;
   }
   if (!decideToolCall) {
-    errorMsg.value = '当前视图未接入决策通道，无法提交回答';
+    errorMsg.value = t('chat.choice.noDecisionChannel');
     return;
   }
 
@@ -131,7 +134,7 @@ const submit = async (answer: string) => {
       expectedVersion: props.promptCard.version ?? null
     });
   } catch (err: any) {
-    errorMsg.value = err?.message || '提交回答失败，请重试';
+    errorMsg.value = err?.message || t('chat.choice.submitFailed');
   } finally {
     isSubmitting.value = false;
   }
@@ -157,7 +160,7 @@ const handleSubmit = () => {
   >
     <div :class="CARD_BODY_CLASS">
       <!-- 1. 统一 header：状态点 + 类型标签；右侧折叠/关闭（关闭仅在已决态出现） -->
-      <CardHeader :tone="headerTone" type-label="提问" :is-dark="isDark">
+      <CardHeader :tone="headerTone" :type-label="t('chat.choice.typeLabel')" :is-dark="isDark">
         <template #actions>
           <!-- ★ 待决策态不得移除操作入口：折叠 / 关闭均只在已决态出现 -->
           <button
@@ -165,8 +168,8 @@ const handleSubmit = () => {
             type="button"
             @click="isCollapsed = !isCollapsed"
             class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition rounded-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50"
-            :title="isCollapsed ? '展开' : '收起'"
-            :aria-label="isCollapsed ? '展开卡片' : '收起卡片'"
+                        :title="isCollapsed ? t('common.expand') : t('common.collapse')"
+                        :aria-label="isCollapsed ? t('chat.approval.expandCard') : t('chat.approval.collapseCard')"
           >
             <svg :class="['w-4 h-4 transition-transform duration-200', isCollapsed ? '-rotate-90' : '']" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -178,8 +181,8 @@ const handleSubmit = () => {
             type="button"
             @click="isDismissed = true"
             class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition rounded-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50"
-            title="关闭"
-            aria-label="关闭卡片"
+                        :title="t('common.close')"
+            :aria-label="t('chat.approval.closeCard')"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -208,8 +211,8 @@ const handleSubmit = () => {
               <svg v-else class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <span v-if="isUnknownOutcome">{{ promptCard.status === 'preparing' ? '准备中' : promptCard.unavailableReason || '状态未知（未获取到该提问的结论）' }}</span>
-              <span v-else>已确认决策：<span class="font-semibold">{{ resolvedAnswer }}</span></span>
+                            <span v-if="isUnknownOutcome">{{ promptCard.status === 'preparing' ? t('chat.approval.preparing') : promptCard.unavailableReason || t('chat.choice.unknownOutcome') }}</span>
+              <span v-else>{{ t('chat.choice.confirmedDecision') }}<span class="font-semibold">{{ resolvedAnswer }}</span></span>
             </div>
 
             <div v-if="!isResolved" class="space-y-2">
@@ -272,7 +275,7 @@ const handleSubmit = () => {
                   @focus="onCustomFocus"
                   @keydown.enter.prevent="handleSubmit"
                   type="text"
-                  placeholder="输入你的答案"
+                  :placeholder="t('chat.choice.customAnswerPlaceholder')"
                   :class="[
                     'w-full text-[13px] bg-transparent outline-none placeholder:text-gray-400',
                     isDark ? 'text-gray-100' : 'text-gray-800'
@@ -300,7 +303,7 @@ const handleSubmit = () => {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                   </svg>
                 </template>
-                提交回答
+                                {{ t('chat.choice.submitAnswer') }}
               </CardActionButton>
             </div>
           </div>

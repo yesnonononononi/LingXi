@@ -24,6 +24,7 @@ import {
   synthesizeFailedTurnBubbles,
 } from '../src/utils/session';
 import { upsertTurnViewIntoMessages } from '../src/views/chat/blockProjection';
+import { t } from '../src/i18n';
 import type { ChatMessage, ChatTurn } from '../src/types/chat';
 import type { TurnViewVO } from '../src/types/block';
 
@@ -90,10 +91,13 @@ test('合成：errorReason 缺失时回落为「执行失败」而不是空串',
   const messages: ChatMessage[] = [];
   const turns: Record<string, ChatTurn> = { 'T-FAILED': failedTurn(undefined) };
 
-  const out = synthesizeFailedTurnBubbles(messages, turns);
+    const out = synthesizeFailedTurnBubbles(messages, turns);
   const synth = out.find(m => m.id === 'synthetic-failed-T-FAILED');
   assert.ok(synth);
-  assert.equal(synth!.content, '执行失败', '空原因必须有兜底文案，不能是空白气泡');
+  // 兜底文案已 i18n 化：断言等于当前语言的 turn.status.failed，既锁定「非空白」，
+  // 又不把文案硬编码成某一语言（文案真值以字典为准）。
+  assert.equal(synth!.content, t('turn.status.failed'), '空原因必须有兜底文案，不能是空白气泡');
+  assert.ok(synth!.content.length > 0, '兜底文案不得为空串');
 });
 
 test('合成：轮次已有 assistant 行时不合成（幂等）', () => {

@@ -2,11 +2,13 @@
 import { computed } from 'vue';
 import { useTeamsTab } from './useTeamsTab';
 import { useTheme } from '../../../composables/useTheme';
+import { useI18n } from '../../../i18n';
 
 const props = defineProps<{
   isDark?: boolean;
 }>();
 
+const { t } = useI18n();
 const { isDark: themeIsDark } = useTheme();
 const isDark = computed(() => props.isDark ?? themeIsDark.value);
 
@@ -51,11 +53,11 @@ const {
     <div v-if="!isEditingOrAddingTeam" class="space-y-4">
       <div class="flex items-center justify-between">
         <div>
-          <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
-            团队协同
+                    <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
+            {{ t('settings.teams.title') }}
           </h4>
           <p class="text-xs text-gray-500 dark:text-gray-400 dark:text-glow-subtle mt-0.5">
-            组织多个智能体协同分工，指定管理者分配任务与调度成员。
+            {{ t('settings.teams.subtitle') }}
           </p>
         </div>
         <button
@@ -66,13 +68,13 @@ const {
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
-          <span>新建团队</span>
+                    <span>{{ t('settings.teams.add') }}</span>
         </button>
       </div>
 
       <!-- 加载中 -->
-      <div v-if="isTeamsLoading" class="py-8 text-center text-xs text-gray-400">
-        正在加载团队列表...
+            <div v-if="isTeamsLoading" class="py-8 text-center text-xs text-gray-400">
+        {{ t('settings.teams.loading') }}
       </div>
 
       <!-- 加载失败 -->
@@ -81,9 +83,9 @@ const {
         <button
           type="button"
           @click="loadTeams"
-          class="px-3 py-1 text-xs border border-red-500/30 text-red-400 hover:bg-red-500/10 rounded-lg cursor-pointer"
+                    class="px-3 py-1 text-xs border border-red-500/30 text-red-400 hover:bg-red-500/10 rounded-lg cursor-pointer"
         >
-          重试
+          {{ t('common.retry') }}
         </button>
       </div>
 
@@ -91,9 +93,9 @@ const {
       <div
         v-else-if="teamsList.length === 0"
         class="py-12 text-center text-xs text-gray-400 dark:text-gray-500 border border-dashed rounded-2xl"
-        :class="isDark ? 'border-white/10' : 'border-gray-200'"
+                :class="isDark ? 'border-white/10' : 'border-gray-200'"
       >
-        暂无配置的协同团队，请点击上方「新建团队」进行添加。
+        {{ t('settings.teams.empty') }}
       </div>
 
       <!-- 团队卡片列表 -->
@@ -126,7 +128,7 @@ const {
                   <svg class="w-3 h-3 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                   </svg>
-                  <span>管理者: {{ team.commanderName || getAgentName(team.commanderAgentId) || '未指定' }}</span>
+                  <span>{{ t('settings.teams.commanderPrefix', { name: team.commanderName || getAgentName(team.commanderAgentId) || t('settings.teams.unassigned') }) }}</span>
                 </span>
                 <!-- 成员总数徽章 -->
                 <span
@@ -137,19 +139,19 @@ const {
                       : 'bg-purple-50 border-purple-200 text-purple-700'
                   ]"
                 >
-                  {{ team.agents?.length || 0 }} 位成员
+                  {{ t('settings.teams.memberCount', { count: team.agents?.length || 0 }) }}
                 </span>
               </div>
 
               <!-- 团队描述展示 -->
-              <p class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
-                {{ team.description || '暂无团队描述' }}
+                            <p class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
+                {{ team.description || t('settings.teams.noDescription') }}
               </p>
 
               <!-- 团队成员标签列表 -->
               <div class="pt-1">
                 <div class="text-[11px] font-medium text-gray-600 dark:text-gray-400 mb-1 flex items-center gap-1.5">
-                  <span>团队成员:</span>
+                  <span>{{ t('settings.teams.membersLabel') }}</span>
                 </div>
                 <div v-if="team.agents && team.agents.length > 0" class="flex flex-wrap gap-1.5">
                   <span
@@ -163,15 +165,15 @@ const {
                     ]"
                   >
                     <span>{{ agent.name }}</span>
-                    <span v-if="agent.id === team.commanderAgentId" class="text-[9px] px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-normal">
-                      管理者
+                                        <span v-if="agent.id === team.commanderAgentId" class="text-[9px] px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-normal">
+                      {{ t('settings.teams.commander') }}
                     </span>
                     <span v-if="agent.toolList?.length" class="text-[9px] text-zinc-400">
-                      ({{ agent.toolList.length }}工具)
+                      {{ t('settings.teams.toolCount', { count: agent.toolList.length }) }}
                     </span>
                   </span>
                 </div>
-                <span v-else class="text-[11px] text-gray-400 italic">暂无成员详情</span>
+                <span v-else class="text-[11px] text-gray-400 italic">{{ t('settings.teams.noMemberDetail') }}</span>
               </div>
             </div>
 
@@ -181,7 +183,7 @@ const {
                 type="button"
                 @click="startEditTeam(team)"
                 class="p-1.5 rounded-lg text-gray-400 hover:text-cyan-400 dark:hover:text-cyan-300 hover:bg-white/5 transition cursor-pointer"
-                title="编辑团队"
+                :title="t('settings.teams.editAction')"
               >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -191,7 +193,7 @@ const {
                 type="button"
                 @click="handleDeleteTeam(team)"
                 class="p-1.5 rounded-lg text-gray-400 hover:text-red-400 dark:hover:text-red-400 hover:bg-white/5 transition cursor-pointer"
-                title="删除团队"
+                :title="t('settings.teams.deleteAction')"
               >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -208,10 +210,10 @@ const {
       <div class="flex items-center justify-between border-b pb-3" :class="isDark ? 'border-white/10' : 'border-gray-200'">
         <div>
           <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
-            {{ editingTeamId ? `编辑团队「${teamForm.name || '未命名团队'}」` : '新建团队' }}
+                        {{ editingTeamId ? t('settings.teams.editHeading', { name: teamForm.name || t('settings.teams.unnamedTeam') }) : t('settings.teams.addHeading') }}
           </h4>
           <p class="text-xs text-gray-500 dark:text-gray-400 dark:text-glow-subtle mt-0.5">
-            设置团队成员与团队管理者，明确团队分工与职责定位。
+            {{ t('settings.teams.formSubtitle') }}
           </p>
         </div>
         <button
@@ -219,7 +221,7 @@ const {
           @click="cancelTeamForm"
           class="px-2.5 py-1 text-xs rounded-lg text-gray-400 hover:text-zinc-200 cursor-pointer"
         >
-          返回列表
+                    {{ t('common.backToList') }}
         </button>
       </div>
 
@@ -232,11 +234,11 @@ const {
         <!-- 团队名称 -->
         <div>
           <label class="block text-gray-700 dark:text-gray-300 font-medium mb-1">
-            团队名称 <span class="text-red-500">*</span>
+                        {{ t('settings.teams.nameLabel') }} <span class="text-red-500">*</span>
           </label>
           <input
             v-model="teamForm.name"
-            placeholder="例如: 全栈开发组 / 算法重构协同团队"
+            :placeholder="t('settings.teams.namePlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
               isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
@@ -247,12 +249,12 @@ const {
         <!-- 团队描述 (编辑团队描述) -->
         <div>
           <label class="block text-gray-700 dark:text-gray-300 font-medium mb-1">
-            团队描述
+                        {{ t('settings.teams.descriptionLabel') }}
           </label>
           <textarea
             v-model="teamForm.description"
             rows="2"
-            placeholder="简要说明团队的业务职责与协同目标..."
+            :placeholder="t('settings.teams.descriptionPlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs resize-none transition',
               isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
@@ -264,9 +266,9 @@ const {
         <div>
           <div class="flex items-center justify-between mb-1.5">
             <label class="block text-gray-700 dark:text-gray-300 font-medium">
-              团队成员 Agent <span class="text-red-500">*</span>
+                            {{ t('settings.teams.membersSelectLabel') }} <span class="text-red-500">*</span>
               <span class="text-gray-400 font-normal ml-1">
-                (已选 {{ teamForm.agentIds.length }} 个，上限 10 个)
+                {{ t('settings.teams.membersSelectCount', { selected: teamForm.agentIds.length }) }}
               </span>
             </label>
           </div>
@@ -277,8 +279,8 @@ const {
               isDark ? 'border-white/15 divide-white/10 bg-black/90' : 'border-gray-200 divide-gray-100 bg-gray-50'
             ]"
           >
-            <div v-if="agentsList.length === 0" class="p-4 text-center text-xs text-gray-400">
-              暂无可用 Agent，请先在「智能体」设置中新建。
+                        <div v-if="agentsList.length === 0" class="p-4 text-center text-xs text-gray-400">
+              {{ t('settings.teams.noAgents') }}
             </div>
             <div
               v-else
@@ -307,11 +309,11 @@ const {
                       v-if="agent.toolList && agent.toolList.length > 0"
                       class="px-1.5 py-0.2 text-[9px] rounded bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/20"
                     >
-                      {{ agent.toolList.length }} 个工具
+                                            {{ t('settings.teams.agentToolCount', { count: agent.toolList.length }) }}
                     </span>
                   </div>
                   <div class="text-[11px] text-gray-400 truncate">
-                    {{ agent.description || '暂无描述' }}
+                    {{ agent.description || t('settings.agents.noDescription') }}
                   </div>
                 </div>
               </div>
@@ -321,7 +323,7 @@ const {
                   v-if="teamForm.commanderAgentId === agent.id"
                   class="px-2 py-0.5 text-[10px] rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-medium"
                 >
-                  管理者
+                                    {{ t('settings.teams.commander') }}
                 </span>
                 <button
                   v-else-if="teamForm.agentIds.includes(agent.id)"
@@ -329,7 +331,7 @@ const {
                   @click.stop="teamForm.commanderAgentId = agent.id"
                   class="px-1.5 py-0.5 text-[10px] rounded text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/10 cursor-pointer transition"
                 >
-                  设为管理者
+                                    {{ t('settings.teams.setAsCommander') }}
                 </button>
               </div>
             </div>
@@ -339,14 +341,14 @@ const {
         <!-- 团队管理者选择 -->
         <div>
           <label class="block text-gray-700 dark:text-gray-300 font-medium mb-1">
-            团队管理者 (Manager) <span class="text-red-500">*</span>
+                        {{ t('settings.teams.commanderLabel') }} <span class="text-red-500">*</span>
             <span class="text-gray-400 font-normal ml-1">
-              (必须是已选团队成员之一)
+              {{ t('settings.teams.commanderHint') }}
             </span>
           </label>
 
           <div v-if="selectedTeamAgents.length === 0" class="text-xs text-amber-500 dark:text-amber-400 p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5">
-            请先勾选上方团队成员，才能指定团队管理者。
+                        {{ t('settings.teams.selectMembersFirst') }}
           </div>
 
           <select
@@ -375,7 +377,7 @@ const {
                 : 'border-gray-200 hover:bg-gray-50 text-gray-700'
             ]"
           >
-            取消
+                        {{ t('common.cancel') }}
           </button>
           <button
             type="button"
@@ -386,7 +388,7 @@ const {
               isSubmittingTeam ? 'bg-cyan-600/50 cursor-not-allowed' : 'bg-cyan-600 hover:bg-cyan-500 shadow-[0_0_15px_rgba(8,145,178,0.4)]'
             ]"
           >
-            {{ isSubmittingTeam ? '正在保存...' : '保存' }}
+            {{ isSubmittingTeam ? t('common.saving') : t('common.save') }}
           </button>
         </div>
       </div>

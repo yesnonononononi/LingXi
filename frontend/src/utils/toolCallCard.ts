@@ -1,6 +1,7 @@
 import type { ChatMessage, PromptCardData, ToolCallVO } from '../types/chat';
 import { asObject, toText } from './json';
 import { AgentToolName } from './toolNames';
+import { t } from '../i18n';
 
 /**
  * {@link ToolCallVO} → {@link PromptCardData} 的唯一映射点（历史与实时共用）。
@@ -178,44 +179,47 @@ export function attachPromptCards(messages: ChatMessage[], cards: readonly ToolC
   }
 }
 
-/** 卡片类型标签（已决卡片折叠摘要用）。 */
-const CARD_KIND_LABEL: Record<CardKind, string> = {
-  PLAN: '计划',
-  CHOICE: '提问',
-  COMMAND: '命令审批',
-  UNAVAILABLE: '互动卡片'
+/** 卡片类型标签 key（已决卡片折叠摘要用）。 */
+const CARD_KIND_LABEL_KEY: Record<CardKind, string> = {
+  PLAN: 'card.kind.plan',
+  CHOICE: 'card.kind.choice',
+  COMMAND: 'card.kind.command',
+  UNAVAILABLE: 'card.kind.unavailable'
 };
 
-/** 结论标签（已决卡片折叠摘要用）。 */
-const CARD_OUTCOME_LABEL: Record<string, string> = {
-  APPROVED: '已批准',
-  REJECTED: '已拒绝',
-  ANSWERED: '已答复',
-  CANCELLED: '已取消',
-  SUCCEEDED: '已执行',
-  FAILED: '已失败',
-  TIMED_OUT: '已超时'
+/** 结论标签 key（已决卡片折叠摘要用）。 */
+const CARD_OUTCOME_LABEL_KEY: Record<string, string> = {
+  APPROVED: 'card.outcome.approved',
+  REJECTED: 'card.outcome.rejected',
+  ANSWERED: 'card.outcome.answered',
+  CANCELLED: 'card.outcome.cancelled',
+  SUCCEEDED: 'card.outcome.succeeded',
+  FAILED: 'card.outcome.failed',
+  TIMED_OUT: 'card.outcome.timedOut'
 };
 
 /**
- * 卡片阶段标签（无结论时摘要尾巴）。
+ * 卡片阶段标签 key（无结论时摘要尾巴）。
  *
  * <p>与卡内状态文案同口径。**禁止用「缺 outcome」推断已结束**：后端 PREPARING 时
  * {@code pending=true}（未终结），前端就绪位为 false → 卡片走折叠摘要，若据此标「已结束」，
  * 就会出现外层「已结束」、展开后卡内「准备中」的自相矛盾。</p>
  */
-const CARD_STATUS_LABEL: Record<PromptCardData['status'], string> = {
-  preparing: '准备中',
-  pending: '等待审批',
-  in_progress: '执行中',
-  completed: '已结束'
+const CARD_STATUS_LABEL_KEY: Record<PromptCardData['status'], string> = {
+  preparing: 'card.status.preparing',
+  pending: 'card.status.pending',
+  in_progress: 'card.status.inProgress',
+  completed: 'card.status.completed'
 };
 
 /** 卡片单行摘要文案：有结论按结论，无结论按生命周期阶段。 */
 export function buildCardSummary(card: PromptCardData): string {
-  const kind = CARD_KIND_LABEL[card.kind];
+  const kind = t(CARD_KIND_LABEL_KEY[card.kind]);
   const tail = card.outcome
-    ? (CARD_OUTCOME_LABEL[card.outcome] ?? card.outcome)
-    : CARD_STATUS_LABEL[card.status];
-  return `${kind}${card.title ? `：${card.title}` : ''} · ${tail}`;
+    ? t(CARD_OUTCOME_LABEL_KEY[card.outcome] ?? '')
+      || card.outcome
+    : t(CARD_STATUS_LABEL_KEY[card.status]);
+  return card.title
+    ? t('card.summaryWithTitle', { kind, title: card.title, tail })
+    : t('card.summaryPlain', { kind, tail });
 }

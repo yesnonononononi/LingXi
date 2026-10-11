@@ -4,6 +4,7 @@ import type { WorkspaceRequest } from '../../types/chat';
 import { extractDirName } from '../../utils/path';
 import { isElectron, openDirectoryPicker } from '../../utils/platform';
 import { useTheme } from '../../composables/useTheme';
+import { t } from '../../i18n';
 
 const props = defineProps<{
   isOpen: boolean;
@@ -25,7 +26,7 @@ const showManualInput = ref(false);
 
 const detectedProjectName = computed(() => {
   const trimmed = pathInput.value.trim();
-  return extractDirName(trimmed) || (trimmed ? '未命名项目' : '');
+  return extractDirName(trimmed) || (trimmed ? t('chat.workspace.unnamedProject') : '');
 });
 
 const pickFolder = async () => {
@@ -86,11 +87,11 @@ const handleSave = () => {
   errorMsg.value = '';
   const trimmedPath = pathInput.value.trim();
   if (!trimmedPath) {
-    errorMsg.value = '请先选择项目目录';
+    errorMsg.value = t('chat.workspace.errNoDir');
     return;
   }
   const folderName = extractDirName(trimmedPath);
-  const finalName = folderName || '工作空间';
+  const finalName = folderName || t('session.workspace');
 
   emit('save', {
     name: finalName,
@@ -126,7 +127,7 @@ const handleSave = () => {
           >
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
           </svg>
-          <span :class="isDark ? 'text-white text-glow-white tracking-wide' : 'text-zinc-900'">新建项目 (New Project)</span>
+          <span :class="isDark ? 'text-white text-glow-white tracking-wide' : 'text-zinc-900'">{{ t('chat.workspace.title') }}</span>
         </h3>
         <button
           @click="emit('close')"
@@ -170,10 +171,10 @@ const handleSave = () => {
               class="text-sm font-medium transition"
               :class="isDark ? 'text-white text-glow-white' : 'text-zinc-900'"
             >
-              点击选择本地项目目录
+              {{ t('chat.workspace.clickSelect') }}
             </span>
             <span class="mt-1 text-xs text-zinc-400">
-              自动识别项目名称，无需手动输入路径
+              {{ t('chat.workspace.autoDetect') }}
             </span>
           </button>
         </div>
@@ -195,7 +196,7 @@ const handleSave = () => {
                   </svg>
                 </div>
                 <div class="truncate min-w-0">
-                  <div class="text-[11px] text-zinc-400">已识别项目名称</div>
+                  <div class="text-[11px] text-zinc-400">{{ t('chat.workspace.detectedName') }}</div>
                   <div class="font-semibold text-sm truncate mt-0.5" :class="isDark ? 'text-white text-glow-white' : 'text-zinc-900'">
                     {{ detectedProjectName }}
                   </div>
@@ -210,7 +211,7 @@ const handleSave = () => {
                 class="px-2.5 py-1.5 text-xs rounded-xl border shrink-0 transition cursor-pointer"
                 :class="isDark ? 'border-white/20 text-zinc-300 hover:text-white hover:bg-white/10' : 'border-zinc-300 text-zinc-700 hover:bg-zinc-100'"
               >
-                更换
+                {{ t('chat.workspace.change') }}
               </button>
             </div>
           </div>
@@ -223,7 +224,7 @@ const handleSave = () => {
             @click="showManualInput = !showManualInput"
             class="text-xs text-zinc-400 hover:text-zinc-200 inline-flex items-center gap-1 transition cursor-pointer"
           >
-            <span>{{ showManualInput ? '收起路径微调' : '高级：手动调整路径' }}</span>
+            <span>{{ showManualInput ? t('chat.workspace.collapsePath') : t('chat.workspace.adjustPath') }}</span>
             <svg
               class="w-3.5 h-3.5 transition-transform duration-200"
               :class="showManualInput ? 'rotate-180' : ''"
@@ -237,7 +238,7 @@ const handleSave = () => {
             <input
               v-model="pathInput"
               @keyup.enter="handleSave"
-              placeholder="例如: D:/Code/my-project 或 /workspace"
+              :placeholder="t('chat.workspace.pathPlaceholder')"
               :class="[
                 'w-full px-3 py-2 rounded-xl border text-xs font-mono outline-none transition',
                 isDark
@@ -260,7 +261,7 @@ const handleSave = () => {
               isDark ? 'border-white/15 text-zinc-300 hover:bg-white/5' : 'border-zinc-300 text-zinc-600 hover:bg-zinc-100'
             ]"
           >
-            取消
+            {{ t('common.cancel') }}
           </button>
           <button
             type="button"
@@ -273,7 +274,7 @@ const handleSave = () => {
                 : 'bg-zinc-900 text-white hover:bg-zinc-800 disabled:opacity-40 disabled:pointer-events-none'
             ]"
           >
-            创建项目
+            {{ t('chat.workspace.createProject') }}
           </button>
         </div>
       </div>

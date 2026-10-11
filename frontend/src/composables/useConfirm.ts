@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { t } from '../i18n'
 
 export type ConfirmType = 'info' | 'warning' | 'danger' | 'success'
 
@@ -22,19 +23,22 @@ interface ConfirmState {
   resolve: ((value: boolean) => void) | null
 }
 
+// 与语言相关的默认文案在 confirm() 调用时按当前语言组装，保证切换语言后新弹窗即时生效。
 const defaultOptions: ConfirmOptions = {
-  title: '提示',
-  content: '',
   type: 'info',
-  confirmText: '确定',
-  cancelText: '取消',
+  content: '',
   showCancel: true,
   borderRadius: 20
 }
 
 const state = ref<ConfirmState>({
   isOpen: false,
-  options: { ...defaultOptions },
+  options: {
+    ...defaultOptions,
+    title: t('common.tip'),
+    confirmText: t('common.confirm'),
+    cancelText: t('common.cancel')
+  },
   resolve: null
 })
 
@@ -52,6 +56,9 @@ export function useConfirm() {
         isOpen: true,
         options: {
           ...defaultOptions,
+          title: t('common.tip'),
+          confirmText: t('common.confirm'),
+          cancelText: t('common.cancel'),
           ...opts,
           content: opts.content || opts.message || ''
         },

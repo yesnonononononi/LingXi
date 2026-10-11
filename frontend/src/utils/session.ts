@@ -2,6 +2,7 @@ import type { ChatMessage, ChatSession, ChatTurn, SubSessionVO } from '../types/
 import type { TurnViewVO } from '../types/block';
 import { isTempSessionId } from './ids';
 import { upsertTurnViewIntoMessages } from '../views/chat/blockProjection';
+import { t } from '../i18n';
 
 /**
  * 会话历史的纯函数工具集（分组 / 摘要 / 树对账 / 视图投影 / 失败轮合成 / 导出）。
@@ -227,7 +228,7 @@ export function synthesizeFailedTurnBubbles(
     const synthetic: ChatMessage = {
       id: `synthetic-failed-${turnId}`,
       role: 'assistant',
-      content: (turn.errorReason || '').trim() || '执行失败',
+      content: (turn.errorReason || '').trim() || t('turn.status.failed'),
       turnId,
       timestamp: Date.now(),
       isComplete: true,
@@ -252,12 +253,12 @@ export function synthesizeFailedTurnBubbles(
  * @param messages v3 派生消息数组（导出时原样传入，不做过滤）
  */
 export function buildSessionMarkdown(title: string | undefined, messages: ChatMessage[]): string {
-  const lines = [
-    `# ${title || '灵犀会话记录'}`,
-    `> 导出时间: ${new Date().toLocaleString()}`,
+    const lines = [
+    `# ${title || t('chatExport.defaultTitle')}`,
+    `> ${t('chatExport.exportedAt', { time: new Date().toLocaleString() })}`,
     '',
     ...messages.map(message => {
-      const sender = message.role === 'user' ? '👤 用户' : '🤖 灵犀';
+      const sender = message.role === 'user' ? t('chatExport.user') : t('chatExport.assistant');
       return `### ${sender}\n\n${message.content}\n`;
     }),
   ];

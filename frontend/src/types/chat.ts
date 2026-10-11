@@ -719,19 +719,6 @@ export interface ChatAcceptance {
 export const MCP_TRANSPORTS = ['streamable-http', 'sse', 'stdio'] as const;
 
 /**
- * stdio 传输的环境限制提示。
- *
- * stdio 由宿主进程直接 spawn 子进程，不做 shell 解析：argv 逐段传给 `ProcessBuilder`/`CreateProcess`，
- * 因此宿主 PATH 里没有对应的可执行文件时子进程起不来，该服务的工具会静默消失（后端只 warn 降级）。
- * Windows 上尤其要注意 `npx` 是无扩展名的 sh 脚本，只有 `npx.cmd` 能被直接启动 —— 这是最常见的踩坑点。
- *
- * 列表卡片与编辑表单共用同一份文案，避免两处漂移。
- */
-export const MCP_STDIO_ENV_HINT =
-  'stdio 由宿主进程直接启动子进程（不做 shell 解析），要求当前机器的 PATH 中存在对应可执行文件，否则该服务将无法连接、其工具会静默丢失。'
-  + 'Windows 上注意：`npx` 是无扩展名的脚本无法直接启动，启动命令请写 `npx.cmd`。';
-
-/**
  * 请求头脱敏掩码。
  * 契约来源：com.summit.dp.mcp.application.vo.McpVO.MASKED_VALUE。
  * 视图层返回的每个 header 值都是它；原样回传即表示「不改动」，后端会保留库中原值。
@@ -790,3 +777,9 @@ export interface McpRequest {
   status?: number;
 }
 
+
+/** 本地 Skill 清单条目（对应后端 SkillVO，不含宿主机路径） */
+export interface SkillVO {
+  name: string;
+  description: string;
+}

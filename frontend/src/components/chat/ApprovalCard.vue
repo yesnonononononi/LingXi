@@ -9,6 +9,7 @@ import { CARD_SHELL_CLASS, CARD_BODY_CLASS, CARD_ERROR_TEXT_CLASS, cardToneClass
 import CardHeader from './CardHeader.vue';
 import CardActionButton from './CardActionButton.vue';
 import CollapseTransition from '../common/CollapseTransition.vue';
+import { useI18n } from '../../i18n';
 
 const props = defineProps<{
   /** 统一卡片数据（COMMAND 命令审批） */
@@ -16,6 +17,8 @@ const props = defineProps<{
   sessionId?: string | number;
   isDark?: boolean;
 }>();
+
+const { t } = useI18n();
 
 /**
  * 由视图层注入的决策提交：走 JSON 回执，**不再消费请求级流**。
@@ -79,7 +82,7 @@ const submit = async (approved: boolean) => {
     ?? (props.sessionId != null && props.sessionId !== '' ? String(props.sessionId) : '');
   const toolCallId = props.promptCard.toolCallId;
   if (!conversationId || !toolCallId || !decideToolCall) {
-    errorMsg.value = '审批信息不完整，请刷新会话后重试';
+    errorMsg.value = t('chat.approval.infoIncomplete');
     return;
   }
   isSubmitting.value = true;
@@ -95,7 +98,7 @@ const submit = async (approved: boolean) => {
     });
     // 卡片状态一律以回执携带的工具实体与后续 v3 事件为准，不在此自行改写。
   } catch (err: any) {
-    errorMsg.value = err?.message || '提交审批失败，请重试';
+    errorMsg.value = err?.message || t('chat.approval.submitFailed');
   } finally {
     isSubmitting.value = false;
     submittingAction.value = null;
@@ -113,7 +116,7 @@ const handleReject = () => submit(false);
   >
     <div :class="CARD_BODY_CLASS">
       <!-- 1. 统一 header：状态点 + 类型标签；右侧折叠/关闭（关闭仅在已决态出现） -->
-      <CardHeader :tone="headerTone" type-label="命令审批" :is-dark="isDark">
+      <CardHeader :tone="headerTone" :type-label="t('chat.approval.typeLabel')" :is-dark="isDark">
         <template #actions>
           <!-- ★ 待决策态不得移除操作入口：折叠 / 关闭均只在已决态出现 -->
           <button
@@ -121,8 +124,8 @@ const handleReject = () => submit(false);
             type="button"
             @click="isCollapsed = !isCollapsed"
             class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50"
-            :title="isCollapsed ? '展开' : '收起'"
-            :aria-label="isCollapsed ? '展开卡片' : '收起卡片'"
+                        :title="isCollapsed ? t('common.expand') : t('common.collapse')"
+                        :aria-label="isCollapsed ? t('chat.approval.expandCard') : t('chat.approval.collapseCard')"
           >
             <svg :class="['w-3.5 h-3.5 transition-transform duration-200', isCollapsed ? '-rotate-90' : '']" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -134,8 +137,8 @@ const handleReject = () => submit(false);
             type="button"
             @click="isDismissed = true"
             class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50"
-            title="关闭"
-            aria-label="关闭卡片"
+                        :title="t('common.close')"
+            :aria-label="t('chat.approval.closeCard')"
           >
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -161,7 +164,7 @@ const handleReject = () => submit(false);
                 <button
                   type="button"
                   @click="copyCommand"
-                  aria-label="复制命令"
+                  :aria-label="t('chat.approval.copyCommand')"
                   :class="[
                     'text-[11px] px-2 py-0.5 rounded-md transition flex items-center gap-1 cursor-pointer select-none border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50',
                     isDark
@@ -173,21 +176,21 @@ const handleReject = () => submit(false);
                     <svg class="w-3 h-3 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                     </svg>
-                    <span class="text-emerald-600 dark:text-emerald-400 font-medium">已复制</span>
+                    <span class="text-emerald-600 dark:text-emerald-400 font-medium">{{ t('common.copied') }}</span>
                   </template>
                   <template v-else>
                     <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
                     </svg>
-                    <span>复制</span>
+                    <span>{{ t('common.copy') }}</span>
                   </template>
                 </button>
               </div>
 
               <div v-if="commandIntention" class="px-3 pt-2 pr-16 text-xs break-all" :class="isDark ? 'text-gray-300' : 'text-gray-600'">
-                <span class="font-medium">意图：</span>{{ commandIntention }}
+                                <span class="font-medium">{{ t('chat.approval.intention') }}</span>{{ commandIntention }}
               </div>
-              <div v-if="commandWorkDir" class="px-3 pt-2 pr-16 text-xs text-gray-500 break-all">工作目录：{{ commandWorkDir }}</div>
+              <div v-if="commandWorkDir" class="px-3 pt-2 pr-16 text-xs text-gray-500 break-all">{{ t('chat.approval.workDir') }}{{ commandWorkDir }}</div>
               <!-- 命令正文 -->
               <div class="p-3 pr-16 font-mono text-[12px] leading-relaxed break-all select-text flex items-start gap-2">
                 <span class="text-blue-500/80 font-bold select-none">$</span>
@@ -209,7 +212,7 @@ const handleReject = () => submit(false);
               <svg v-else class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <span>{{ isUnavailable ? '审批已结束或状态不可用' : resolvedStatus === 'approved' ? '已批准执行该命令' : resolvedStatus === 'rejected' ? '已拒绝执行该命令' : promptCard.status === 'preparing' ? '准备中' : promptCard.unavailableReason || '状态未知' }}</span>
+              <span>{{ isUnavailable ? t('chat.approval.resolvedUnavailable') : resolvedStatus === 'approved' ? t('chat.approval.approved') : resolvedStatus === 'rejected' ? t('chat.approval.rejected') : promptCard.status === 'preparing' ? t('chat.approval.preparing') : promptCard.unavailableReason || t('chat.approval.statusUnknown') }}</span>
             </div>
 
             <!-- 错误提示 -->
@@ -232,7 +235,7 @@ const handleReject = () => submit(false);
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </template>
-                拒绝执行
+                                {{ t('chat.approval.rejectAction') }}
               </CardActionButton>
 
               <CardActionButton
@@ -247,7 +250,7 @@ const handleReject = () => submit(false);
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M5 13l4 4L19 7" />
                   </svg>
                 </template>
-                批准并执行
+                                {{ t('chat.approval.approveAction') }}
               </CardActionButton>
             </div>
           </div>

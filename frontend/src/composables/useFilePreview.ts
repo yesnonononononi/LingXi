@@ -1,6 +1,7 @@
 import { computed, onBeforeUnmount, ref } from 'vue';
 import { getApiBaseUrl } from '../utils/apiConfig';
 import { createLocalId } from '../utils/ids';
+import { t } from '../i18n';
 import type { FilePreviewTab } from '../types/filePreview';
 
 export function useFilePreview() {
@@ -20,7 +21,7 @@ export function useFilePreview() {
     tab.error = '';
     try {
       const api = window.electronAPI;
-      if (!api?.previewFile) throw new Error('文件预览需要使用桌面客户端，请启动或更新桌面应用');
+      if (!api?.previewFile) throw new Error(t('filePreview.desktopRequired'));
       const result = await api.previewFile({ ...tab.request });
       if (!result.ok) throw new Error(result.error);
       // 关闭标签后到达的读取结果必须释放监听，不能重新打开已关闭的文件。
@@ -31,7 +32,7 @@ export function useFilePreview() {
       if (tab.data?.watchId && tab.data.watchId !== result.data.watchId) void api.unwatchFile?.(tab.data.watchId);
       tab.data = result.data;
     } catch (error) {
-      tab.error = error instanceof Error ? error.message : '文件读取失败，请重试';
+      tab.error = error instanceof Error ? error.message : t('filePreview.readFailed');
     } finally {
       tab.loading = false;
       if (pendingRefreshes.delete(tab.request.watchKey) && fileTabs.value.includes(tab)) void refreshFile(tab);
@@ -78,12 +79,12 @@ export function useFilePreview() {
     if (!tab) return;
     try {
       const handler = action === 'open' ? window.electronAPI?.openFile : window.electronAPI?.revealFile;
-      if (!handler) throw new Error('该操作需要使用桌面客户端');
+      if (!handler) throw new Error(t('filePreview.operationDesktopRequired'));
       const result = await handler({ ...tab.request });
       if (!result.ok) throw new Error(result.error);
       tab.error = '';
     } catch (error) {
-      tab.error = error instanceof Error ? error.message : '文件操作失败，请重试';
+      tab.error = error instanceof Error ? error.message : t('filePreview.operationFailed');
     }
   };
 

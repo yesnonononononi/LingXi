@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { useGeneralTab } from './useGeneralTab';
 import { useTheme } from '../../../composables/useTheme';
+import { useI18n } from '../../../i18n';
 import SpecularButton from '../../../components/common/SpecularButton.vue';
 
 defineProps<{
   isDark?: boolean;
 }>();
 
+const { t, preference } = useI18n();
 const { isDark } = useTheme();
 
 const emit = defineEmits<{
@@ -15,10 +17,12 @@ const emit = defineEmits<{
 
 const {
   themeMode,
-  language,
   isLanguageOpen,
   languageOptions,
+  currentLanguageLabel,
+  handleSelectLanguage,
   executionEnv,
+  executionEnvValue,
   isExecutionEnvOpen,
   executionEnvOptions,
   accessMode,
@@ -49,7 +53,7 @@ const {
   <div class="space-y-5" @click="closeGeneralDropdowns">
     <!-- 主题选项 -->
     <div>
-      <div class="text-xs font-semibold text-gray-800 dark:text-zinc-100 dark:text-glow-subtle mb-2.5 tracking-wide">主题</div>
+      <div class="text-xs font-semibold text-gray-800 dark:text-zinc-100 dark:text-glow-subtle mb-2.5 tracking-wide">{{ t('settings.general.theme') }}</div>
       <div class="grid grid-cols-3 gap-3">
         <!-- 浅色 -->
         <button
@@ -65,7 +69,7 @@ const {
           <svg class="w-5 h-5 text-gray-600 dark:text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
           </svg>
-          <span class="text-xs">浅色</span>
+          <span class="text-xs">{{ t('settings.general.themeLight') }}</span>
         </button>
 
         <!-- 深色 -->
@@ -82,7 +86,7 @@ const {
           <svg class="w-5 h-5 text-gray-600 dark:text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
           </svg>
-          <span class="text-xs">深色</span>
+          <span class="text-xs">{{ t('settings.general.themeDark') }}</span>
         </button>
 
         <!-- 跟随系统 -->
@@ -99,14 +103,14 @@ const {
           <svg class="w-5 h-5 text-gray-600 dark:text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
           </svg>
-          <span class="text-xs">跟随系统</span>
+          <span class="text-xs">{{ t('settings.general.themeSystem') }}</span>
         </button>
       </div>
     </div>
 
     <!-- 语言 -->
     <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-white/10">
-      <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">语言</span>
+            <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.language') }}</span>
       <div class="relative language-dropdown-container" @click.stop>
         <SpecularButton
           size="sm"
@@ -120,7 +124,7 @@ const {
           :thickness="1"
           @click="toggleLanguageDropdown"
         >
-          <span class="text-xs font-normal">{{ language }}</span>
+          <span class="text-xs font-normal">{{ currentLanguageLabel }}</span>
           <svg
             class="w-3 h-3 text-gray-400 dark:text-zinc-300 transition-transform duration-200"
             :class="{ 'rotate-180': isLanguageOpen }"
@@ -139,19 +143,19 @@ const {
               isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.9)]' : 'bg-white border-gray-200 text-gray-800'
             ]"
           >
-            <div
+                        <div
               v-for="opt in languageOptions"
-              :key="opt"
-              @click="language = opt; isLanguageOpen = false"
+              :key="opt.value"
+              @click="handleSelectLanguage(opt.value)"
               :class="[
                 'px-3 py-1.5 cursor-pointer flex items-center justify-between transition-colors',
-                language === opt
+                preference === opt.value
                   ? (isDark ? 'text-sky-400 text-glow-cyan font-medium bg-white/10' : 'text-blue-500 font-medium bg-blue-50')
                   : (isDark ? 'text-zinc-200 hover:bg-white/10 hover:text-white' : 'text-gray-700 hover:bg-gray-100')
               ]"
             >
-              <span>{{ opt }}</span>
-              <svg v-if="language === opt" class="w-3.5 h-3.5 text-blue-500 dark:text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <span>{{ opt.label }}</span>
+              <svg v-if="preference === opt.value" class="w-3.5 h-3.5 text-blue-500 dark:text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
               </svg>
             </div>
@@ -162,7 +166,7 @@ const {
 
     <!-- 执行环境 -->
     <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-white/10">
-      <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">执行环境</span>
+            <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.executionEnv') }}</span>
       <div class="relative execution-env-dropdown-container" @click.stop>
         <SpecularButton
           size="sm"
@@ -195,19 +199,19 @@ const {
               isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.9)]' : 'bg-white border-gray-200 text-gray-800'
             ]"
           >
-            <div
+                        <div
               v-for="opt in executionEnvOptions"
-              :key="opt"
-              @click="handleSelectExecutionEnv(opt)"
+              :key="opt.value"
+              @click="handleSelectExecutionEnv(opt.value)"
               :class="[
                 'px-3 py-1.5 cursor-pointer flex items-center justify-between transition-colors',
-                executionEnv === opt
+                executionEnvValue === opt.value
                   ? (isDark ? 'text-sky-400 text-glow-cyan font-medium bg-white/10' : 'text-blue-500 font-medium bg-blue-50')
                   : (isDark ? 'text-zinc-200 hover:bg-white/10 hover:text-white' : 'text-gray-700 hover:bg-gray-100')
               ]"
             >
-              <span>{{ opt }}</span>
-              <svg v-if="executionEnv === opt" class="w-3.5 h-3.5 text-blue-500 dark:text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <span>{{ opt.label }}</span>
+              <svg v-if="executionEnvValue === opt.value" class="w-3.5 h-3.5 text-blue-500 dark:text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
               </svg>
             </div>
@@ -219,8 +223,8 @@ const {
     <!-- 工作空间权限 -->
     <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-white/10">
       <div class="flex flex-col">
-        <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">工作空间权限</span>
-        <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">控制 Agent 访问与读写文件的边界</span>
+                <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.accessMode') }}</span>
+        <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.accessModeDesc') }}</span>
       </div>
       <div class="relative access-mode-dropdown-container" @click.stop>
         <SpecularButton
@@ -286,8 +290,8 @@ const {
     <!-- 工具权限 -->
     <div class="flex items-center justify-between py-3">
       <div class="flex flex-col">
-        <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">工具权限</span>
-        <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">控制执行工具与终端命令的确认策略</span>
+                <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.toolPermission') }}</span>
+        <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.toolPermissionDesc') }}</span>
       </div>
       <div class="relative command-policy-dropdown-container" @click.stop>
         <SpecularButton
@@ -354,15 +358,15 @@ const {
     <div class="pt-3 border-t border-gray-100 dark:border-white/10">
       <div class="flex items-center justify-between mb-2">
         <div class="flex flex-col">
-          <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">后端服务地址</span>
-          <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">桌面客户端或远程直连的 API 根地址 (默认: http://localhost:8088)</span>
+                    <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.apiBaseUrl') }}</span>
+          <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.apiBaseUrlDesc') }}</span>
         </div>
         <button
           type="button"
           @click="handleResetApiUrl"
           class="text-[11px] text-gray-500 hover:text-blue-500 dark:text-zinc-400 dark:hover:text-cyan-300 dark:hover:text-glow-cyan cursor-pointer transition"
         >
-          恢复默认
+          {{ t('settings.general.resetApiUrl') }}
         </button>
       </div>
       <div class="flex items-center gap-2">
@@ -386,7 +390,7 @@ const {
           <svg v-if="isApiUrlSaved" class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
           </svg>
-          <span class="text-xs font-medium tracking-wide">{{ isApiUrlSaved ? '已保存' : '保存地址' }}</span>
+          <span class="text-xs font-medium tracking-wide">{{ isApiUrlSaved ? t('settings.general.apiUrlSaved') : t('settings.general.apiUrlSave') }}</span>
         </SpecularButton>
       </div>
     </div>

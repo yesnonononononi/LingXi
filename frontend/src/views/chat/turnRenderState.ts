@@ -1,5 +1,6 @@
 import type { ChatMessage, ResponseTextBuffer, ToolCallTrace, TurnRenderState } from '../../types/chat';
 import { compareResponsePosition } from '../../utils/responseOrder';
+import { t } from '../../i18n';
 
 export function getTurnState(bubble: ChatMessage): TurnRenderState {
   return bubble.turnState ??= { texts: {}, tools: {} };
@@ -92,7 +93,7 @@ export function renderTurnState(bubble: ChatMessage): void {
   for (const [id, buffer] of Object.entries(state.texts)) {
     if (!buffer.text) continue;
     if (buffer.kind === 'THINKING') {
-      const step = { id, title: '思考', content: buffer.text,
+      const step = { id, title: t('tool.category.think'), content: buffer.text,
         status: buffer.complete ? 'success' as const : 'running' as const, order: buffer.order, responseId: buffer.responseId };
       bubble.thoughtSteps.push(step);
       if (buffer.order !== undefined) bubble.processTimeline.push({ id, type: 'thought', order: buffer.order, responseId: buffer.responseId, step });

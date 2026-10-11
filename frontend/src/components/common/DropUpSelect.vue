@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { SelectOption } from '../../types/ui';
 import { useTheme } from '../../composables/useTheme';
+import { t } from '../../i18n';
 
 const props = defineProps<{
   /** 当前选中值 (配合 v-model 使用) */
@@ -63,7 +64,7 @@ const isSelected = (option: SelectOption<T>): boolean => toKey(option.value) ===
 const selectedOption = computed<SelectOption<T> | null>(
   () => props.options.find(isSelected) ?? null
 );
-const displayLabel = computed(() => selectedOption.value?.label ?? props.placeholder ?? '请选择');
+const displayLabel = computed(() => selectedOption.value?.label ?? props.placeholder ?? t('common.pleaseSelect'));
 
 // 实时搜索过滤
 const filteredOptions = computed(() => {
@@ -226,7 +227,7 @@ defineExpose({
             ref="searchInputRef"
             v-model="searchQuery"
             type="text"
-            :placeholder="searchPlaceholder ?? '搜索...'"
+            :placeholder="searchPlaceholder ?? t('common.searchPlaceholder')"
             class="w-full px-2 py-1 text-xs border rounded-lg outline-none select-text transition"
             :class="isDark ? 'bg-white/[0.06] border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/60' : 'bg-transparent border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'"
             @keydown.stop
@@ -249,7 +250,7 @@ defineExpose({
             v-if="filteredOptions.length === 0"
             class="px-3 py-2 text-xs text-gray-400 dark:text-gray-500 text-center"
           >
-            无匹配选项
+            {{ t('common.noOptions') }}
           </div>
 
           <template v-for="(option, idx) in filteredOptions" :key="option.value">

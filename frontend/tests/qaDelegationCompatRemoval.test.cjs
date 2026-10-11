@@ -39,7 +39,10 @@ function loadModule(filename) {
         if (marker) return { __esModule: true, default: { setup: () => () => h(marker) } };
         return load(resolved);
       }
-      return load(resolved.endsWith('.ts') ? resolved : resolved + '.ts');
+      // 相对依赖解析：优先 <path>.ts，其次目录模块 <path>/index.ts（如 ../i18n）。
+      if (resolved.endsWith('.ts')) return load(resolved);
+      if (fs.existsSync(resolved + '.ts')) return load(resolved + '.ts');
+      return load(path.join(resolved, 'index.ts'));
     };
     let source = fs.readFileSync(file, 'utf8');
     if (file.endsWith('.vue')) {

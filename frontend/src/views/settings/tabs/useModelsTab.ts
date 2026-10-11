@@ -4,8 +4,10 @@ import type { ModelConfigVO, OpenAIModelItem } from '../../../types/chat';
 import { isOk } from '../../../utils/api';
 import { extractOpenAIError, parseOpenAIModelList } from '../../../utils/openaiModels';
 import { useConfirm } from '../../../composables/useConfirm';
+import { useI18n } from '../../../i18n';
 
 export function useModelsTab(emit: (e: 'modelUpdated') => void) {
+  const { t } = useI18n();
   const modelsList = ref<ModelConfigVO[]>([]);
   const isModelLoading = ref(false);
   const modelErrorMsg = ref('');
@@ -39,10 +41,10 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
       if (isOk(res.code)) {
         modelsList.value = res.data?.records ?? [];
       } else {
-        modelErrorMsg.value = res.errMsg || '加载模型列表失败，请稍后重试';
+                modelErrorMsg.value = res.errMsg || t('settings.models.errLoadList');
       }
     } catch {
-      modelErrorMsg.value = '加载模型配置失败，请稍后重试';
+      modelErrorMsg.value = t('settings.models.errLoadConfig');
     } finally {
       isModelLoading.value = false;
     }
@@ -122,7 +124,7 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
   const handleFetchRemoteModels = async (e?: Event) => {
     e?.stopPropagation();
     if (!modelForm.value.baseUrl?.trim()) {
-      modelFormError.value = '请先填写 API Base URL';
+      modelFormError.value = t('settings.models.errBaseUrlRequired');
       return;
     }
 
@@ -165,12 +167,12 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
       const validItems: OpenAIModelItem[] = parseOpenAIModelList(json);
 
       remoteModelList.value = validItems;
-      if (validItems.length === 0) {
-        fetchRemoteModelError.value = '未获取到任何可用模型';
+            if (validItems.length === 0) {
+        fetchRemoteModelError.value = t('settings.models.errNoRemote');
       }
     } catch (err: any) {
       console.error('获取模型列表失败:', err);
-      fetchRemoteModelError.value = err.message || '获取模型列表失败，请检查 Base URL 与 API Key 或网络跨域';
+      fetchRemoteModelError.value = err.message || t('settings.models.errFetchRemote');
     } finally {
       isFetchingRemoteModels.value = false;
     }
@@ -194,16 +196,16 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
   };
 
   const validateModelForm = () => {
-    if (!modelForm.value.modelName.trim()) {
-      modelFormError.value = '请输入模型名称';
+        if (!modelForm.value.modelName.trim()) {
+      modelFormError.value = t('settings.models.errNameRequired');
       return false;
     }
     if (!modelForm.value.baseUrl.trim()) {
-      modelFormError.value = '请输入 API Base URL';
+      modelFormError.value = t('settings.models.errBaseUrlInput');
       return false;
     }
     if (editingModelId.value === null && !modelForm.value.apiKey.trim()) {
-      modelFormError.value = '请输入 API Key';
+      modelFormError.value = t('settings.models.errApiKeyRequired');
       return false;
     }
     return true;
@@ -221,27 +223,27 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
       };
       if (editingModelId.value !== null) {
         const res = await ModelAPI.update({ id: editingModelId.value, ...payload });
-        if (isOk(res.code)) {
-          showModelToast('模型更新成功');
+                if (isOk(res.code)) {
+          showModelToast(t('settings.models.toastUpdated'));
           cancelModelForm();
           await loadModels();
           emit('modelUpdated');
         } else {
-          modelFormError.value = '保存失败，请稍后重试';
+          modelFormError.value = t('settings.models.errSave');
         }
       } else {
         const res = await ModelAPI.add(payload);
         if (isOk(res.code)) {
-          showModelToast('模型添加成功');
+          showModelToast(t('settings.models.toastAdded'));
           cancelModelForm();
           await loadModels();
           emit('modelUpdated');
         } else {
-          modelFormError.value = '添加失败，请稍后重试';
+          modelFormError.value = t('settings.models.errAdd');
         }
       }
     } catch {
-      modelFormError.value = '网络请求异常，请稍后重试';
+      modelFormError.value = t('settings.models.errNetwork');
     } finally {
       isSubmittingModel.value = false;
     }
@@ -251,11 +253,11 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
 
   const handleDeleteModel = async (item: ModelConfigVO) => {
     if (!item.id) return;
-    const ok = await confirm({
-      title: '删除模型',
-      content: `确定要删除模型「${item.modelName || '未命名模型'}」吗？删除后不可恢复。`,
+        const ok = await confirm({
+      title: t('settings.models.confirmDeleteTitle'),
+      content: t('settings.models.confirmDeleteContent', { name: item.modelName || t('settings.models.unnamed') }),
       type: 'danger',
-      confirmText: '删除'
+      confirmText: t('common.remove')
     });
     if (!ok) {
       return;
@@ -263,14 +265,14 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
     try {
       const res = await ModelAPI.deleteById(item.id);
       if (isOk(res.code)) {
-        showModelToast('模型已删除');
+        showModelToast(t('settings.models.toastDeleted'));
         await loadModels();
         emit('modelUpdated');
       } else {
-        window.alert('删除失败，请稍后重试');
+        window.alert(t('settings.models.errDelete'));
       }
     } catch {
-      window.alert('删除失败，请重试');
+      window.alert(t('settings.models.errDeleteRetry'));
     }
   };
 

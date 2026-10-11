@@ -6,6 +6,7 @@ import type { AgentAccessMode, ChatSession, ModelConfig, WorkspaceRequest, Works
 import { normalizeSettingsTab, type SettingsTabKey } from '../../utils/enum';
 import { isElectron, openDirectoryPicker } from '../../utils/platform';
 import { extractDirName } from '../../utils/path';
+import { t } from '../../i18n';
 
 export interface ChatWorkspaceOptions {
   localSessions: Ref<ChatSession[]>;
@@ -65,7 +66,7 @@ export function useChatWorkspace(options: ChatWorkspaceOptions) {
         isWorkspaceModalOpen.value = false;
       }
     } catch (err: any) {
-      window.alert(err?.message || '创建项目失败，请检查工作目录及后端连接');
+      window.alert(err?.message || t('chat.view.createProjectFailed'));
     }
   };
 
@@ -75,7 +76,7 @@ export function useChatWorkspace(options: ChatWorkspaceOptions) {
       try {
         const selectedPath = await openDirectoryPicker();
         if (selectedPath) {
-          const folderName = extractDirName(selectedPath) || '工作空间';
+          const folderName = extractDirName(selectedPath) || t('session.workspace');
           await handleSaveWorkspace({ name: folderName, hostDir: selectedPath });
         }
         return;
@@ -151,7 +152,7 @@ export function useChatWorkspace(options: ChatWorkspaceOptions) {
       const configOk = await userConfig.load();
 
       if (!sessionsRes.ok || !modelsRes.ok || !configOk) {
-        initLoadError.value = '会话数据加载失败，请检查后端服务';
+        initLoadError.value = t('chat.view.sessionDataLoadFailed');
       }
 
       if (localWorkspaces.value.length > 0 && !localActiveWorkspaceId.value) {
@@ -160,7 +161,7 @@ export function useChatWorkspace(options: ChatWorkspaceOptions) {
       onInitialized?.();
     } catch (err) {
       console.error('初始化会话与推断默认选中模型失败:', err);
-      initLoadError.value = '初始化数据加载失败，请稍后刷新页面';
+      initLoadError.value = t('chat.view.initLoadFailed');
     }
   };
 

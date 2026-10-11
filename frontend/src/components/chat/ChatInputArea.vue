@@ -26,6 +26,8 @@ import { TeamAPI } from '../../services/team';
 import { AgentAPI } from '../../services/agent';
 import { isOk } from '../../utils/api';
 import { useChatImageAttachments } from '../../composables/useChatImageAttachments';
+import { useSkillMenu } from '../../composables/useSkillMenu';
+import { t } from '../../i18n';
 
 const props = defineProps<{
   isSending?: boolean;
@@ -127,10 +129,10 @@ const editor = useEditor({
       codeBlock: false
     }),
     Placeholder.configure({
-      placeholder: () => {
-        if (listening.value) return '正在倾听…';
-        if (isPlanMode.value) return '描述你的任务以生成计划';
-        return '描述你想要构建的内容，/ 调用指令，@ 文件或对话';
+            placeholder: () => {
+        if (listening.value) return t('chat.input.placeholderListening');
+        if (isPlanMode.value) return t('chat.input.placeholderPlan');
+        return t('chat.input.placeholderDefault');
       }
     }),
     Markdown.configure({
@@ -175,6 +177,13 @@ const editor = useEditor({
       isCommandMenuOpen.value = false;
       isCommandMenuClickedOpen.value = false;
       emit('openSettingsTab', 'mcp');
+      return;
+    }
+    if (rawText === '/skill' || rawText.startsWith('/skill ') || rawText === '/skill\n') {
+      ed.commands.clearContent();
+      isCommandMenuOpen.value = false;
+      isCommandMenuClickedOpen.value = false;
+      openSkillMenu();
       return;
     }
     if (rawText.startsWith('/')) {
@@ -290,6 +299,7 @@ const toggleEffort = () => {
   isCommandMenuOpen.value = false;
   isCommandMenuClickedOpen.value = false;
   isAgentMenuOpen.value = false;
+  skillMenu.close();
   effortOpen.value = !effortOpen.value;
 };
 
@@ -420,11 +430,11 @@ interface AgentItem {
 const allAgentsList = computed<AgentItem[]>(() => {
   const list = props.agents && props.agents.length > 0 ? props.agents : localAgents.value;
   return [
-    { id: '', name: '默认agent', description: '使用全局系统提示词' },
+        { id: '', name: t('chat.input.defaultAgentName'), description: t('chat.input.defaultAgentDesc') },
     ...list.map(a => ({
       id: a.id,
       name: a.name || `Agent #${a.id}`,
-      description: a.description || (a.modelId ? `模型 #${a.modelId}` : ''),
+      description: a.description || (a.modelId ? t('session.modelFallback', { id: a.modelId }) : ''),
       modelId: a.modelId
     }))
   ];
@@ -448,6 +458,7 @@ const openAgentMenu = () => {
   isCommandMenuOpen.value = false;
   isCommandMenuClickedOpen.value = false;
   effortOpen.value = false;
+  skillMenu.close();
   agentSearchQuery.value = '';
   const currentIdx = filteredAgentList.value.findIndex(a => String(a.id) === String(selectedAgent.value));
   activeAgentIndex.value = currentIdx >= 0 ? currentIdx : 0;
@@ -483,6 +494,28 @@ const selectAgentItem = (agent: AgentItem) => {
   closeAgentMenu();
 };
 
+// ====== /skill 触发的本地 Skill 清单浮层（只读展示，供用户查看可用 Skill） ======
+const skillMenu = useSkillMenu();
+const isSkillMenuOpen = skillMenu.isOpen;
+const skillSearchInputRef = ref<HTMLInputElement | null>(null);
+
+const openSkillMenu = () => {
+  isCommandMenuOpen.value = false;
+  isCommandMenuClickedOpen.value = false;
+  isAgentMenuOpen.value = false;
+  effortOpen.value = false;
+  skillMenu.open();
+  nextTick(() => {
+    skillSearchInputRef.value?.focus();
+  });
+};
+
+const closeSkillMenu = () => {
+  if (!isSkillMenuOpen.value) return;
+  skillMenu.close();
+  focusEditor();
+};
+
 watch(
   [isAgentMenuOpen, activeAgentIndex, filteredAgentList],
   () => {
@@ -502,24 +535,24 @@ watch(
 
 const teamOptions = computed<SelectOption<string | number>[]>(() => {
   const list = props.teams && props.teams.length > 0 ? props.teams : localTeams.value;
-  return [
-    { label: '未指定', value: '' },
-    ...list.map(t => ({
-      label: t.name || `团队 #${t.id}`,
-      value: t.id,
+    return [
+    { label: t('chat.input.teamUnspecified'), value: '' },
+    ...list.map(team => ({
+      label: team.name || t('chat.input.teamFallback', { id: team.id }),
+      value: team.id,
     })),
-    { label: '+ 添加团队', value: ADD_TEAM_OPTION }
+    { label: t('chat.input.addTeam'), value: ADD_TEAM_OPTION }
   ];
 });
 
 // 基座模型
 const ADD_CUSTOM_MODEL = '__add_custom_model__';
 const modelOptions = computed<SelectOption<string | number>[]>(() => [
-  ...(props.models ?? []).map(m => ({
-    label: m.name || m.modelName || `模型 #${m.id}`,
+    ...(props.models ?? []).map(m => ({
+    label: m.name || m.modelName || t('session.modelFallback', { id: m.id }),
     value: m.id,
   })),
-  { label: '添加自定义模型', value: ADD_CUSTOM_MODEL }
+  { label: t('chat.input.addCustomModel'), value: ADD_CUSTOM_MODEL }
 ]);
 const selectedModel = computed<string | number>({
   get: () => props.selectedModelId ?? '',
@@ -537,7 +570,7 @@ const contextUsageText = computed<string>(() => {
   const ratio = usage?.ratio ?? (max && max > 0 ? used / max : null);
   const pct = ratio != null && ratio >= 0 ? `${(ratio * 100).toFixed(1)}%` : null;
   const amount = `${formatContextTokens(used)}${max && max > 0 ? ` / ${formatContextTokens(max)}` : ''}`;
-  const label = usage?.phase === 'SQUEEZE_STARTED' ? '上下文压缩中' : '上下文已使用';
+  const label = usage?.phase === 'SQUEEZE_STARTED' ? t('chat.input.contextCompressing') : t('chat.input.contextUsed');
   return pct ? `${pct} · ${amount} ${label}` : `${amount} ${label}`;
 });
 
@@ -574,7 +607,7 @@ const allCommands = computed<CommandItem[]>(() => [
   {
     id: 'plan',
     name: 'plan',
-    desc: '进入计划模式 (生成分步执行规划)',
+    desc: t('chat.command.plan'),
     action: () => {
       isPlanMode.value = true;
       editor.value?.commands.clearContent();
@@ -585,7 +618,7 @@ const allCommands = computed<CommandItem[]>(() => [
   {
     id: 'model',
     name: 'model',
-    desc: '选择或配置本会话使用的模型',
+    desc: t('chat.command.model'),
     action: () => {
       emit('openModelEditor');
     }
@@ -593,7 +626,7 @@ const allCommands = computed<CommandItem[]>(() => [
   {
     id: 'workspace',
     name: 'workspace',
-    desc: '切换或新建工作空间 (Workspace)',
+    desc: t('chat.command.workspace'),
     action: () => {
       emit('newProject');
     }
@@ -601,7 +634,7 @@ const allCommands = computed<CommandItem[]>(() => [
   {
     id: 'export',
     name: 'export',
-    desc: '将当前会话内容导出为 Markdown 文件',
+    desc: t('chat.command.export'),
     action: () => {
       emit('exportSession');
     }
@@ -609,7 +642,7 @@ const allCommands = computed<CommandItem[]>(() => [
   {
     id: 'team',
     name: 'team',
-    desc: '指定 Team 团队 (协同多 Agent 执行)',
+    desc: t('chat.command.team'),
     action: () => {
       teamSelectRef.value?.open();
     }
@@ -617,7 +650,7 @@ const allCommands = computed<CommandItem[]>(() => [
   {
     id: 'add-team',
     name: 'add-team',
-    desc: '创建并配置新的多 Agent 协同团队',
+    desc: t('chat.command.addTeam'),
     action: () => {
       emit('openTeamModal');
     }
@@ -625,7 +658,7 @@ const allCommands = computed<CommandItem[]>(() => [
   {
     id: 'agent',
     name: 'agent',
-    desc: '指定单个 Agent 直聊 (使用其人设与工具清单)',
+    desc: t('chat.command.agent'),
     action: () => {
       openAgentMenu();
     }
@@ -633,7 +666,7 @@ const allCommands = computed<CommandItem[]>(() => [
   {
     id: 'permission',
     name: 'permission',
-    desc: '打开权限预设设置 (工作区内修改 / 只读 / 完全访问)',
+    desc: t('chat.command.permission'),
     action: () => {
       emit('openSettings');
     }
@@ -641,15 +674,23 @@ const allCommands = computed<CommandItem[]>(() => [
   {
     id: 'mcp',
     name: 'mcp',
-    desc: '管理 MCP 服务 (接入外部工具，执行时注入模型)',
+    desc: t('chat.command.mcp'),
     action: () => {
       emit('openSettingsTab', 'mcp');
     }
   },
   {
+    id: 'skill',
+    name: 'skill',
+    desc: t('chat.command.skill'),
+    action: () => {
+      openSkillMenu();
+    }
+  },
+  {
     id: 'settings',
     name: 'settings',
-    desc: '打开系统全局设置与偏好配置',
+    desc: t('chat.command.settings'),
     action: () => {
       emit('openSettings');
     }
@@ -689,6 +730,7 @@ watch(
 const handlePlusClick = () => {
   effortOpen.value = false;
   isAgentMenuOpen.value = false;
+  skillMenu.close();
   isCommandMenuOpen.value = !isCommandMenuOpen.value;
   if (isCommandMenuOpen.value) {
     isCommandMenuClickedOpen.value = true;
@@ -721,6 +763,7 @@ const handleClickOutside = (event: MouseEvent) => {
     isCommandMenuClickedOpen.value = false;
     isAgentMenuOpen.value = false;
     effortOpen.value = false;
+    skillMenu.close();
   } else if (agentMenuRef.value && !agentMenuRef.value.contains(target) && editorContainerRef.value?.contains(target)) {
     isAgentMenuOpen.value = false;
   }
@@ -827,6 +870,13 @@ onBeforeUnmount(() => {
 });
 
 const handleKeyDown = (e: KeyboardEvent) => {
+  if (isSkillMenuOpen.value) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeSkillMenu();
+      return;
+    }
+  }
   if (isAgentMenuOpen.value) {
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -889,7 +939,7 @@ const handleSend = () => {
   const images = attachments.value.map(attachment => attachment.file);
   if ((!text && images.length === 0) || props.isSending || props.reasoningEffortPending) return;
 
-  const effectiveText = text || '请分析并描述这些图片';
+  const effectiveText = text || t('chat.input.analyzeImagesPrompt');
 
   emit(
     'sendMessage',
@@ -939,7 +989,8 @@ defineExpose({
     localSelectedAgentId.value = id ?? '';
     emit('updateAgent', id ?? null);
   },
-  openAgentMenu
+  openAgentMenu,
+  openSkillMenu
 });
 </script>
 
@@ -1000,7 +1051,7 @@ defineExpose({
         class="bottom-[calc(100%+8px)] z-40 absolute inset-x-0 shadow-[0_12px_40px_-10px_rgba(0,0,0,0.7),0_1px_2px_rgba(0,0,0,0.08)] p-1.5 [background:var(--pb-menu)] rounded-xl border border-white/[0.08] backdrop-blur-md [animation:prompt-bar-pop_180ms_cubic-bezier(0.23,1,0.32,1)_both]"
       >
         <div class="px-2.5 pt-1 pb-1.5 text-xs font-medium select-none" :class="MUTED">
-          快捷指令
+                    {{ t('chat.input.quickCommands') }}
         </div>
         <div class="relative max-h-60 overflow-y-auto scrollbar-thin space-y-0.5">
           <span
@@ -1039,7 +1090,7 @@ defineExpose({
             ref="agentSearchInputRef"
             v-model="agentSearchQuery"
             type="text"
-            placeholder="搜索 Agent..."
+            :placeholder="t('chat.input.searchAgent')"
             class="w-full px-1 py-0.5 text-xs bg-transparent border-none outline-none focus:outline-none focus:ring-0 select-text [color:var(--pb-ink)] placeholder:[color:color-mix(in_srgb,var(--pb-ink)_45%,transparent)]"
             @keydown.down.prevent="navigateAgent(1)"
             @keydown.up.prevent="navigateAgent(-1)"
@@ -1054,7 +1105,7 @@ defineExpose({
             class="px-3 py-3 text-xs text-center"
             :class="MUTED"
           >
-            无匹配的 Agent
+                        {{ t('chat.input.noMatchedAgent') }}
           </div>
 
           <span
@@ -1091,6 +1142,62 @@ defineExpose({
         </div>
       </div>
 
+      <!-- Skill 清单菜单 (/skill 触发，只读展示) -->
+      <div
+        v-if="isSkillMenuOpen"
+        class="bottom-[calc(100%+8px)] z-50 absolute inset-x-0 shadow-[0_16px_40px_rgba(0,0,0,0.7)] p-1.5 rounded-xl border backdrop-blur-md [background:color-mix(in_srgb,var(--pb-menu)_95%,transparent)] [animation:prompt-bar-pop_180ms_cubic-bezier(0.23,1,0.32,1)_both]"
+        :class="isDark !== false ? 'border-white/[0.08] text-zinc-200' : 'border-zinc-200 text-gray-800'"
+      >
+        <div class="px-2.5 pt-1.5 pb-1.5 shrink-0 border-b border-black/5 dark:border-white/5">
+          <input
+            ref="skillSearchInputRef"
+            v-model="skillMenu.searchQuery.value"
+            type="text"
+            :placeholder="t('chat.input.searchSkill')"
+            class="w-full px-1 py-0.5 text-xs bg-transparent border-none outline-none focus:outline-none focus:ring-0 select-text [color:var(--pb-ink)] placeholder:[color:color-mix(in_srgb,var(--pb-ink)_45%,transparent)]"
+            @keydown.esc.prevent="closeSkillMenu"
+          />
+        </div>
+
+        <div class="relative max-h-60 overflow-y-auto scrollbar-thin space-y-0.5 pt-1">
+          <div
+            v-if="skillMenu.isLoading.value"
+            class="px-3 py-3 text-xs text-center"
+            :class="MUTED"
+          >
+            {{ t('chat.input.skillLoading') }}
+          </div>
+          <div
+            v-else-if="skillMenu.loadError.value"
+            class="px-3 py-3 text-xs text-center"
+            :class="MUTED"
+          >
+            <span class="text-red-500">{{ t('chat.input.skillLoadFailed') }}</span>
+            <button type="button" class="ml-2 underline" @click="skillMenu.open()">{{ t('common.retry') }}</button>
+          </div>
+          <div
+            v-else-if="skillMenu.filteredSkills.value.length === 0"
+            class="px-3 py-3 text-xs text-center"
+            :class="MUTED"
+          >
+            {{ skillMenu.skills.value.length === 0 ? t('chat.input.skillEmpty') : t('chat.input.noMatchedSkill') }}
+          </div>
+
+          <div
+            v-for="skill in skillMenu.filteredSkills.value"
+            :key="skill.name"
+            class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-xs select-none w-full"
+          >
+            <span class="font-medium truncate shrink-0 max-w-[45%] [color:var(--pb-ink)]">
+              {{ skill.name }}
+            </span>
+            <span class="text-xs truncate text-right flex-1 min-w-0" :class="MUTED">
+              {{ skill.description }}
+            </span>
+          </div>
+        </div>
+      </div>
+
       <!-- Effort 思考强度调节弹层 -->
       <div
         v-if="effortOpen"
@@ -1099,10 +1206,10 @@ defineExpose({
         aria-label="Effort"
       >
         <div class="flex items-center gap-2 text-[13px] leading-[18px]">
-          <span :class="MUTED">思考强度</span>
+                    <span :class="MUTED">{{ t('chat.input.reasoningEffort') }}</span>
           <span class="font-medium">{{ level }}</span>
-          <span v-if="reasoningEffortPending" role="status" class="text-xs" :class="MUTED">同步中…</span>
-          <span class="inline-flex ml-auto cursor-help" :class="MUTED" title="更高思考强度会在作答前深度思考更长时间">
+          <span v-if="reasoningEffortPending" role="status" class="text-xs" :class="MUTED">{{ t('chat.input.syncing') }}</span>
+          <span class="inline-flex ml-auto cursor-help" :class="MUTED" :title="t('chat.input.effortTip')">
             <HugeiconsIcon :icon="HelpCircleIcon as IconArray" :size="14" :stroke-width="1.8" />
           </span>
         </div>
@@ -1155,24 +1262,25 @@ defineExpose({
             :alt="attachment.file.name"
             class="w-4 h-4 rounded object-cover flex-none"
           />
-          <span class="max-w-[150px] truncate text-xs">{{ attachment.file.name || '图片附件' }}</span>
+                    <span class="max-w-[150px] truncate text-xs">{{ attachment.file.name || t('chat.input.imageAttachment') }}</span>
           <button
             type="button"
             class="inline-grid place-items-center bg-transparent opacity-60 hover:opacity-100 p-0 hover:[background:color-mix(in_srgb,var(--pb-ink)_10%,transparent)] border-0 rounded-[5px] outline-none w-[18px] h-[18px] text-inherit cursor-pointer [transition:opacity_120ms_ease,background-color_120ms_ease]"
-            title="移除附件"
-            :aria-label="`移除 ${attachment.file.name}`"
-            @click.stop="removeImage(index)"
+            :title="t('chat.input.removeAttachment')"
+                        :aria-label="t('chat.input.removeAttachmentNamed', { name: attachment.file.name })"
+                        @click.stop="removeImage(index)"
           >
+
             <HugeiconsIcon :icon="Cancel01Icon as IconArray" :size="10" :stroke-width="2.5" />
           </button>
         </span>
       </div>
       <div class="text-xs text-gray-500 dark:text-zinc-400" aria-live="polite">
-        <span v-if="limitsLoading">正在读取图片数量限制…</span>
+                <span v-if="limitsLoading">{{ t('chat.input.readingImageLimit') }}</span>
         <span v-else-if="limitsError" class="text-red-500">{{ limitsError }}
-          <button type="button" class="ml-2 underline" @click="loadLimits">重试</button>
+          <button type="button" class="ml-2 underline" @click="loadLimits">{{ t('common.retry') }}</button>
         </span>
-        <span v-else-if="attachments.length">已选择 {{ attachments.length }} / {{ maxImages }} 张图片</span>
+        <span v-else-if="attachments.length">{{ t('chat.input.selectedImages', { count: attachments.length, max: maxImages ?? 0 }) }}</span>
         <p v-if="attachmentError" class="text-red-500" role="alert">{{ attachmentError }}</p>
       </div>
 
@@ -1181,7 +1289,7 @@ defineExpose({
         <span
           v-if="isPlanMode"
           class="text-amber-500 font-medium text-xs leading-[22px] shrink-0 select-none cursor-pointer hover:opacity-80 px-1.5 rounded bg-amber-500/10 whitespace-nowrap"
-          title="点击退出 Plan 模式"
+          :title="t('chat.input.exitPlanTip')"
           @click.stop="isPlanMode = false"
         >
           /plan
@@ -1190,13 +1298,13 @@ defineExpose({
         <span
           v-if="currentAgentName"
           class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-lg bg-blue-500/15 text-blue-400 select-none cursor-pointer hover:opacity-90 shrink-0 transition whitespace-nowrap leading-tight"
-          title="点击切换 Agent，或点击 × 清除"
+          :title="t('chat.input.switchAgentTip')"
           @click.stop="openAgentMenu"
         >
           <span>🤖 {{ currentAgentName }}</span>
           <span
             class="hover:text-red-400 hover:bg-black/10 dark:hover:bg-white/10 rounded-full w-3.5 h-3.5 flex items-center justify-center text-xs leading-none transition"
-            title="退出 Agent 直聊"
+            :title="t('chat.input.exitAgentTip')"
             @click.stop="clearSelectedAgent"
           >×</span>
         </span>
@@ -1220,10 +1328,10 @@ defineExpose({
           <button
             type="button"
             :class="ICON_BTN"
-            aria-label="快捷指令 (/)"
+                        :aria-label="t('chat.input.quickCommandsTip')"
             :aria-expanded="isCommandMenuOpen"
             :data-on="isCommandMenuOpen ? '' : undefined"
-            title="快捷指令 (/)"
+            :title="t('chat.input.quickCommandsTip')"
             @mousedown.prevent
             @click="handlePlusClick"
           >
@@ -1244,7 +1352,7 @@ defineExpose({
             :class="ICON_BTN"
             :data-on="attachments.length ? '' : undefined"
             :disabled="!canAttach"
-            :title="maxImages ? `上传图片（每条消息最多 ${maxImages} 张，支持多选和粘贴）` : '正在读取图片数量限制'"
+            :title="maxImages ? t('chat.input.uploadImageTip', { max: maxImages }) : t('chat.input.readingImageLimitShort')"
             @mousedown.prevent
             @click="triggerUpload"
           >
@@ -1258,7 +1366,7 @@ defineExpose({
             :options="teamOptions"
             :isDark="isDark"
             size="sm"
-            placeholder="指定团队"
+            :placeholder="t('chat.input.selectTeam')"
             trigger-class="inline-flex h-7 flex-none cursor-pointer touch-manipulation items-center gap-1 rounded-lg border-0 bg-transparent px-2 text-[12px] font-medium outline-none select-none [color:color-mix(in_srgb,var(--pb-ink)_70%,transparent)] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease] hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] hover:[color:var(--pb-ink)] whitespace-nowrap"
           />
 
@@ -1266,11 +1374,11 @@ defineExpose({
           <button
             type="button"
             :class="TOOL_BTN"
-            aria-label="选择思考强度"
+            :aria-label="t('chat.input.selectEffort')"
             :aria-expanded="effortOpen"
             :data-on="effortOpen ? '' : undefined"
             :data-max="maxed ? '' : undefined"
-            title="选择思考强度 (Effort)"
+            :title="t('chat.input.selectEffortTip')"
             @mousedown.prevent
             @click="toggleEffort"
           >
@@ -1325,7 +1433,7 @@ defineExpose({
             :options="modelOptions"
             :isDark="isDark"
             size="sm"
-            placeholder="选择模型"
+            :placeholder="t('chat.input.selectModel')"
             trigger-class="inline-flex h-7 flex-none cursor-pointer touch-manipulation items-center gap-1 rounded-lg border-0 bg-transparent px-2 text-[12px] font-medium outline-none select-none [color:color-mix(in_srgb,var(--pb-ink)_70%,transparent)] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease] hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] hover:[color:var(--pb-ink)] whitespace-nowrap"
           />
 
@@ -1334,10 +1442,10 @@ defineExpose({
             v-if="hasDictate"
             type="button"
             :class="ICON_BTN"
-            :aria-label="listening ? '停止录音' : '语音输入'"
+                        :aria-label="listening ? t('chat.input.stopRecording') : t('chat.input.voiceInput')"
             :aria-pressed="listening"
             :data-on="listening ? '' : undefined"
-            title="语音输入"
+            :title="t('chat.input.voiceInput')"
             @mousedown.prevent
             @click="toggleListen"
           >
@@ -1358,10 +1466,10 @@ defineExpose({
             type="button"
             class="inline-grid relative flex-none place-items-center p-0 [background:color-mix(in_srgb,var(--pb-ink)_12%,var(--pb-bg))] [color:color-mix(in_srgb,var(--pb-ink)_55%,var(--pb-bg))] data-[armed]:[background:var(--pb-ink)] data-[armed]:[color:var(--pb-bg)] data-[pressed]:[transform:scale(var(--pb-press))] border-0 rounded-lg outline-none w-7 h-7 touch-manipulation cursor-pointer disabled:cursor-default select-none motion-reduce:data-[pressed]:[transform:none] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_200ms_ease,color_200ms_ease,transform_160ms_cubic-bezier(0.23,1,0.32,1)]"
             :disabled="!armed"
-            :aria-label="isSending ? '停止' : '发送'"
+                        :aria-label="isSending ? t('chat.input.stop') : t('chat.input.send')"
             :data-armed="armed ? '' : undefined"
             :data-pressed="pressed ? '' : undefined"
-            title="发送消息 (Enter)"
+            :title="t('chat.input.sendTip')"
             @mousedown.prevent
             @pointerdown="down"
             @pointerup="up"

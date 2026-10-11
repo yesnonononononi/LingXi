@@ -19,6 +19,7 @@ import { readImagePreviews } from '../../composables/useChatImageAttachments';
 import { useChatSessionStore } from '../../stores/chatSessionStore';
 import { useUserConfigStore } from '../../stores/userConfigStore';
 import { useTheme } from '../../composables/useTheme';
+import { t } from '../../i18n';
 import { useReasoningEffort } from '../../composables/useReasoningEffort';
 import { isPersistedSessionId, toServerSessionId } from '../../utils/ids';
 import { toPositiveInt, isOk } from '../../utils/api';
@@ -405,7 +406,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     }
 
     // 会话未绑定：直接调用后端新建接口创建真实实体，彻底杜绝本地临时实体
-    const sessionName = titleSeed.slice(0, 20).trim() || '新对话';
+    const sessionName = titleSeed.slice(0, 20).trim() || t('session.newConversation');
     const createRes = await SessionAPI.create({
       name: sessionName,
       workspaceId: localActiveWorkspaceId.value ? Number(localActiveWorkspaceId.value) : null,
@@ -413,7 +414,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     });
 
     if (!isOk(createRes.code) || !createRes.data) {
-      throw new Error(createRes.errMsg || '新建会话失败');
+      throw new Error(createRes.errMsg || t('chat.view.createSessionFailed'));
     }
 
     const serverSessionId = String(createRes.data);
@@ -466,7 +467,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
       streamRouter.bindUserMessageTurn(acceptance.turnId);
     } catch (err) {
       console.error('发送消息失败:', err);
-      window.alert(err instanceof Error ? err.message : '创建会话失败，请稍后重试');
+      window.alert(err instanceof Error ? err.message : t('chat.view.createSessionFailedRetry'));
     }
   };
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, unlinkSync, existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { parse, compileScript } from '@vue/compiler-sfc';
@@ -45,8 +45,12 @@ test('实际新增 MCP 组件：按钮可点击，连接中禁用保存，成功
   const componentPath = resolve(directory, '../src/views/settings/tabs/McpTab.vue');
   const descriptor = parse(readFileSync(componentPath, 'utf8'), { filename: componentPath }).descriptor;
   const script = compileScript(descriptor, { id: 'mcp-connect-test', inlineTemplate: true });
-  const source = script.content.replace(/from ['"](\.[^'"]+)['"]/g, (_match, path: string) =>
-    `from '${pathToFileURL(resolve(dirname(componentPath), path + '.ts')).href}'`);
+  // 相对依赖一律解析到磁盘上的真实 .ts 模块；目录式模块（如 ../i18n → i18n/index.ts）也要支持。
+  const source = script.content.replace(/from ['"](\.[^'"]+)['"]/g, (_match, path: string) => {
+    const base = resolve(dirname(componentPath), path);
+    const target = existsSync(base + '.ts') ? base + '.ts' : resolve(base, 'index.ts');
+    return `from '${pathToFileURL(target).href}'`;
+  });
   const modulePath = resolve(directory, '../node_modules/.tmp/mcp-connect-component.mjs');
   mkdirSync(dirname(modulePath), { recursive: true });
   writeFileSync(modulePath, ts.transpileModule(source, { compilerOptions: {

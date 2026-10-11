@@ -3,55 +3,80 @@ import { useTheme, THEME_STORAGE_KEY } from '../../../composables/useTheme';
 import { useUserConfigStore } from '../../../stores/userConfigStore';
 import type { AgentAccessMode, CommandApprovalPolicyType, WorkspaceEnvType } from '../../../types/chat';
 import { getApiBaseUrl, setApiBaseUrl, resetApiBaseUrl } from '../../../utils/apiConfig';
+import { useI18n } from '../../../i18n';
+import type { LocalePreference } from '../../../i18n';
 
 export function useGeneralTab(emit: (e: 'modelUpdated') => void) {
   const userConfig = useUserConfigStore();
+  const { t, preference, setPreference } = useI18n();
 
   // 主题设置：内存态在 useTheme，落库走 userConfigStore
   const { setTheme } = useTheme();
   const themeMode = ref<'light' | 'dark' | 'system'>('system');
 
-  // 语言与通用配置
-  const language = ref('跟随系统');
+  // 语言设置：偏好与持久化在 i18n 单例，此处仅提供下拉所需的响应式选项
   const isLanguageOpen = ref(false);
-  const languageOptions = ['跟随系统', '简体中文', 'English'];
+  const languageOptions = computed<{ value: LocalePreference; label: string }[]>(() => [
+    { value: 'system', label: t('settings.general.langSystem') },
+    { value: 'zh-CN', label: t('settings.general.langZh') },
+    { value: 'en-US', label: t('settings.general.langEn') },
+  ]);
+  const currentLanguageLabel = computed(
+    () => languageOptions.value.find(o => o.value === preference.value)?.label
+      ?? t('settings.general.langSystem'),
+  );
+
+  const handleSelectLanguage = (value: LocalePreference) => {
+    isLanguageOpen.value = false;
+    setPreference(value);
+  };
 
   // 执行环境：后端 NONE 表示未设置，语义上不同于沙箱，界面显示「未知」而非兜底成沙箱
-  const executionEnv = computed<'本地' | '沙箱' | '未知'>(() => {
+  const executionEnvValue = computed<'LOCAL' | 'SAND_BOX' | 'UNKNOWN'>(() => {
     const type = userConfig.envType;
-    if (type === 'LOCAL') return '本地';
-    if (type === 'SAND_BOX') return '沙箱';
-    return '未知';
+    if (type === 'LOCAL') return 'LOCAL';
+    if (type === 'SAND_BOX') return 'SAND_BOX';
+    return 'UNKNOWN';
+  });
+  const executionEnv = computed<string>(() => {
+    if (executionEnvValue.value === 'LOCAL') return t('settings.general.envLocal');
+    if (executionEnvValue.value === 'SAND_BOX') return t('settings.general.envSandbox');
+    return t('settings.general.envUnknown');
   });
   const isExecutionEnvOpen = ref(false);
-  const executionEnvOptions: ('本地' | '沙箱')[] = ['本地', '沙箱'];
+  const executionEnvOptions = computed<{ value: 'LOCAL' | 'SAND_BOX'; label: string }[]>(() => [
+    { value: 'LOCAL', label: t('settings.general.envLocal') },
+    { value: 'SAND_BOX', label: t('settings.general.envSandbox') },
+  ]);
 
   // 1. 工作空间权限 (对应 UserConfigVO.accessMode)
   const accessMode = computed<AgentAccessMode>(() => userConfig.accessMode);
   const isAccessModeOpen = ref(false);
-  const accessModeOptions: { label: string; value: AgentAccessMode; desc: string }[] = [
-    { label: '工作区内修改', value: 'IN_WORKSPACE', desc: '仅限在工作区根目录下读写 (推荐)' },
-    { label: '只读模式', value: 'READ_ONLY_IN_WORKSPACE', desc: '仅分析与建议，不修改文件' },
-    { label: '完全访问', value: 'OUT_OF_WORKSPACE', desc: '允许访问工作区外部系统资源' }
-  ];
+  const accessModeOptions = computed<{ label: string; value: AgentAccessMode; desc: string }[]>(() => [
+    { label: t('settings.general.accessInWorkspace'), value: 'IN_WORKSPACE', desc: t('settings.general.accessInWorkspaceDesc') },
+    { label: t('settings.general.accessReadOnly'), value: 'READ_ONLY_IN_WORKSPACE', desc: t('settings.general.accessReadOnlyDesc') },
+    { label: t('settings.general.accessFull'), value: 'OUT_OF_WORKSPACE', desc: t('settings.general.accessFullDesc') },
+  ]);
 
   // 2. 工具权限 (对应 UserConfigVO.commandApprovalPolicy)
   const commandApprovalPolicy = computed<CommandApprovalPolicyType>(
     () => userConfig.commandApprovalPolicy ?? 'DANGEROUS_BLOCK',
   );
   const isCommandApprovalPolicyOpen = ref(false);
-  const commandApprovalPolicyOptions: { label: string; value: CommandApprovalPolicyType; desc: string }[] = [
-    { label: '危险拦截', value: 'DANGEROUS_BLOCK', desc: '高危敏感命令需人工确认 (推荐)' },
-    { label: '逐条确认', value: 'PRE_EXEC_CONFIRM', desc: '所有工具与命令执行前逐条确认' },
-    { label: '完全放行', value: 'FULL_ACCESS', desc: '自主执行所有命令，不弹窗询问' }
-  ];
+  const commandApprovalPolicyOptions = computed<{ label: string; value: CommandApprovalPolicyType; desc: string }[]>(() => [
+    { label: t('settings.general.policyDangerBlock'), value: 'DANGEROUS_BLOCK', desc: t('settings.general.policyDangerBlockDesc') },
+    { label: t('settings.general.policyPreConfirm'), value: 'PRE_EXEC_CONFIRM', desc: t('settings.general.policyPreConfirmDesc') },
+    { label: t('settings.general.policyFullAccess'), value: 'FULL_ACCESS', desc: t('settings.general.policyFullAccessDesc') },
+  ]);
 
   const currentAccessModeLabel = computed(() => {
-    return accessModeOptions.find(o => o.value === accessMode.value)?.label || '工作区内修改';
+    return accessModeOptions.value.find(o => o.value === accessMode.value)?.label
+      ?? t('settings.general.accessInWorkspace');
   });
 
   const currentCommandApprovalPolicyLabel = computed(() => {
-    return commandApprovalPolicyOptions.find(o => o.value === commandApprovalPolicy.value)?.label || '危险拦截';
+    return commandApprovalPolicyOptions.value.find(o => o.value === commandApprovalPolicy.value)?.label
+      ?? t('settings.general.policyDangerBlock');
   });
 
   const toggleLanguageDropdown = (e?: Event) => {
@@ -94,9 +119,9 @@ export function useGeneralTab(emit: (e: 'modelUpdated') => void) {
     }
   };
 
-  const handleSelectExecutionEnv = async (opt: '本地' | '沙箱') => {
+    const handleSelectExecutionEnv = async (value: 'LOCAL' | 'SAND_BOX') => {
     isExecutionEnvOpen.value = false;
-    const type: WorkspaceEnvType = opt === '本地' ? 'LOCAL' : 'SAND_BOX';
+    const type: WorkspaceEnvType = value;
     // 后端入参用 code（sandbox/local）而非枚举名，WorkspaceType.fromCode 按 code 解析
     const ok = await userConfig.patch('envType', type, { type: type === 'LOCAL' ? 'local' : 'sandbox' });
     if (ok) emit('modelUpdated');
@@ -191,12 +216,14 @@ export function useGeneralTab(emit: (e: 'modelUpdated') => void) {
     apiBaseUrl.value = getApiBaseUrl() || 'http://localhost:8088';
   };
 
-  return {
+    return {
     themeMode,
-    language,
     isLanguageOpen,
     languageOptions,
+    currentLanguageLabel,
+    handleSelectLanguage,
     executionEnv,
+    executionEnvValue,
     isExecutionEnvOpen,
     executionEnvOptions,
     accessMode,

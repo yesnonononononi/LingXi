@@ -5,6 +5,7 @@ import { isTempSessionId, isPersistedSessionId } from '../../utils/ids';
 import { isSessionRunning } from '../../utils/session';
 import { isOk } from '../../utils/api';
 import type { ChatCommand } from '../../services/dto/chat_command';
+import { t } from '../../i18n';
 
 export interface ChatSendingOptions {
   /** 当前活动会话（用于停止生成时定位 sessionId）。 */
@@ -100,12 +101,12 @@ export function useChatSending(options: ChatSendingOptions) {
         ready = await ensureSubscribed(sessionId);
       }
       if (!ready) {
-        throw new Error('实时通道未就绪，请稍后重试');
+        throw new Error(t('chat.view.channelNotReady'));
       }
 
       const result = await AgentAPI.acceptCommand(command, controller.signal);
       if (!isOk(result.code) || !result.data?.sessionId || !result.data?.turnId) {
-        throw new Error(result.errMsg || '发送失败');
+        throw new Error(result.errMsg || t('chat.view.sendFailed'));
       }
 
       const acceptance: ChatAcceptance = {
@@ -123,7 +124,7 @@ export function useChatSending(options: ChatSendingOptions) {
       // 用户点「停止生成」导致的 abort 是预期行为，不弹提示。
       if (isAbortError(error)) return null;
 
-      const message = error instanceof Error ? error.message : '发送失败';
+      const message = error instanceof Error ? error.message : t('chat.view.sendFailed');
       sendFailureNotice.value = { sessionId, message };
       onSendFailure?.(sessionId, message);
       // 受理被拒（例如会话还有挂起执行）时，本地乐观写下的 RUNNING 必须按权威状态纠正，

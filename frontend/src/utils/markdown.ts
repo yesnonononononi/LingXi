@@ -1,6 +1,7 @@
 import MarkdownIt from 'markdown-it';
 import hljs from 'highlight.js';
 import DOMPurify from 'dompurify';
+import { t } from '../i18n';
 
 const md = new MarkdownIt({
   html: false,
@@ -26,11 +27,11 @@ const md = new MarkdownIt({
     return `<div class="code-block-wrapper">` +
       `<div class="code-block-header">` +
         `<span class="lang-badge">${md.utils.escapeHtml(displayLang)}</span>` +
-        `<button type="button" class="copy-code-btn" data-code="${encoded}" title="复制代码">` +
+        `<button type="button" class="copy-code-btn" data-code="${encoded}" title="${md.utils.escapeHtml(t('markdown.copyCode'))}">` +
           `<svg class="copy-icon w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">` +
             `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />` +
           `</svg>` +
-          `<span class="copy-text">复制</span>` +
+          `<span class="copy-text">${md.utils.escapeHtml(t('markdown.copy'))}</span>` +
         `</button>` +
       `</div>` +
       `<pre><code class="hljs ${md.utils.escapeHtml(validLang)}">${highlighted}</code></pre>` +

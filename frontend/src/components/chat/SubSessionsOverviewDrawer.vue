@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import type { SubSessionVO } from '../../types/chat';
 import { formatClockTime } from '../../utils/format';
 import { useTheme } from '../../composables/useTheme';
+import { t } from '../../i18n';
 
 const props = defineProps<{
   isOpen: boolean;
@@ -64,13 +65,13 @@ const emit = defineEmits<{
             </div>
             <div>
               <div class="flex items-center gap-2">
-                <h3 class="font-semibold text-sm dark:text-white dark:text-glow-white">子代理协作会话列表</h3>
+                <h3 class="font-semibold text-sm dark:text-white dark:text-glow-white">{{ t('chat.subSessions.title') }}</h3>
                 <span :class="['text-[11px] px-2 py-0.5 rounded-full font-mono font-medium', isDark ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30' : 'bg-blue-50 text-blue-600 border border-blue-200']">
-                  共 {{ subSessions.length }} 个子会话
+                  {{ t('chat.subSessions.count', { count: subSessions.length }) }}
                 </span>
               </div>
               <p class="text-xs text-gray-400 dark:text-zinc-400 dark:text-glow-subtle mt-0.5">
-                当前主会话在团队协同中派生并持久化的全部专业代理 Session
+                {{ t('chat.subSessions.desc') }}
               </p>
             </div>
           </div>
@@ -78,7 +79,7 @@ const emit = defineEmits<{
           <button
             @click="emit('close')"
             :class="['p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200 hover:bg-white/5 transition cursor-pointer']"
-            title="关闭概览"
+            :title="t('chat.subSessions.closeTip')"
           >
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -89,7 +90,7 @@ const emit = defineEmits<{
         <!-- 查看提示 -->
         <div :class="['px-6 py-2.5 border-b text-xs flex items-center justify-between gap-4 select-none', isDark ? 'border-white/10 bg-black/40 text-zinc-400' : 'border-gray-100 bg-gray-50/40 text-gray-500']">
 
-          <span class="text-[11px] opacity-70">点击卡片即可调出该代理的独立执行轨迹</span>
+          <span class="text-[11px] opacity-70">{{ t('chat.subSessions.cardHint') }}</span>
         </div>
 
         <!-- 子会话列表 -->
@@ -101,7 +102,7 @@ const emit = defineEmits<{
             <svg class="w-10 h-10 text-gray-500/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
             </svg>
-            <span>当前会话暂无委派产生的子代理 Session</span>
+            <span>{{ t('chat.subSessions.empty') }}</span>
           </div>
 
           <div
@@ -123,14 +124,14 @@ const emit = defineEmits<{
                 <div class="min-w-0">
                   <div class="flex items-center gap-2">
                     <h4 class="font-semibold text-sm truncate group-hover:text-cyan-400 transition-colors">
-                      {{ sub.agentName || (sub.agentId ? `Agent #${sub.agentId}` : '子代理') }}
+                      {{ sub.agentName || (sub.agentId ? `Agent #${sub.agentId}` : t('chat.subSessions.fallbackName')) }}
                     </h4>
                     <span :class="['text-[10px] px-1.5 py-0.2 rounded-full font-mono', isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600']">
                       #{{ sub.id }}
                     </span>
                   </div>
                   <p class="text-xs text-gray-500 dark:text-gray-400 line-clamp-1 mt-0.5">
-                    {{ sub.name || sub.task || '执行委派计算与处理任务' }}
+                    {{ sub.name || sub.task || t('chat.subSessions.defaultTask') }}
                   </p>
                 </div>
               </div>
@@ -140,7 +141,7 @@ const emit = defineEmits<{
                 <button
                   type="button"
                   class="p-1 rounded-lg text-blue-500 group-hover:bg-blue-500/10 transition"
-                  title="查看详情"
+                  :title="t('chat.subSessions.viewDetail')"
                 >
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
@@ -151,7 +152,7 @@ const emit = defineEmits<{
 
             <div class="mt-3 pt-2.5 border-t border-gray-500/15 flex items-center justify-between text-[11px] text-gray-400">
               <span>
-                {{ sub.messageCount ? `${sub.messageCount} 条会话消息` : '已归档' }}
+                {{ sub.messageCount ? t('chat.subSessions.messageCount', { count: sub.messageCount }) : t('chat.subSessions.archived') }}
               </span>
               <span v-if="sub.createTime" class="font-mono">
                 {{ formatClockTime(sub.createTime) }}

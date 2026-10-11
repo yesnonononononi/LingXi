@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue';
 import { useUserConfigStore } from '../stores/userConfigStore';
+import { t } from '../i18n';
 import type { ReasoningEffort } from '../types/chat';
 
 export const reasoningEffortOptions = [
@@ -29,7 +30,7 @@ export function useReasoningEffort() {
   const handleUpdateReasoningEffort = async (value: ReasoningEffort): Promise<void> => {
     reasoningEffortError.value = '';
     const ok = await userConfig.setReasoningEffort(value);
-    if (!ok) reasoningEffortError.value = '思考强度保存失败，已恢复原值，请重新选择';
+    if (!ok) reasoningEffortError.value = t('reasoning.saveFailed');
   };
 
   return {

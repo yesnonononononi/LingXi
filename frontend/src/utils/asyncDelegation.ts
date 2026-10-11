@@ -11,6 +11,7 @@
 import type { SubItemStatus, SubSessionVO, ToolCallTrace } from '../types/chat';
 import { toSubItemStatus } from './subSessionStatus';
 import { toObject } from './json';
+import { t } from '../i18n';
 
 /** 协作式工具结果里 `runtimeMode` 的固定取值（与后端 AsyncDelegationResultRenderer 对齐）。 */
 const RUNTIME_MODE_ASYNC = 'ASYNC';
@@ -79,20 +80,20 @@ export function subItemStatusDotClass(status: SubItemStatus): string {
   }
 }
 
-/** 展示态 → 中文文案（子会话详情状态栏用）。 */
+/** 展示态 → 文案（子会话详情状态栏用）。 */
 export function subItemStatusLabel(status: SubItemStatus): string {
   switch (status) {
     case 'running':
-      return '执行中';
+      return t('delegation.status.running');
     case 'suspended':
-      return '等待审批';
+      return t('delegation.status.suspended');
     case 'completed':
-      return '执行完成';
+      return t('delegation.status.completed');
     case 'failed':
-      return '执行失败';
+      return t('delegation.status.failed');
     case 'cancelled':
-      return '已取消';
+      return t('delegation.status.cancelled');
     default:
-      return '—';
+      return t('delegation.status.unknown');
   }
 }

@@ -2,21 +2,26 @@
 
 import { toObject } from './json';
 import { AgentToolName } from './toolNames';
+import { t } from '../i18n';
 
+/**
+ * 工具分类（稳定判别码）。**不是展示文案** —— 界面展示一律经 {@link toolCategoryLabel}
+ * 取当前语言的文案；这里的取值同时用作分类比对（如 toolDiff 判写入）。
+ */
 export const TOOL_CATEGORY = {
-  COMMAND: '执行命令',
-  READ: '读取',
-  WRITE: '写入',
-  CHOICE: '选择',
-  SUB_AGENT: '子代理',
-  THINK: '思考',
-  PLAN: '计划',
-  MAIL: '发送邮件',
-  COMPACT: '压缩上下文',
-  TOOL_SEARCH: '检索工具',
-  MCP_LIST: '列举可用工具',
-  SKILL: '读取技能',
-  DEFAULT: '工具',
+  COMMAND: 'COMMAND',
+  READ: 'READ',
+  WRITE: 'WRITE',
+  CHOICE: 'CHOICE',
+  SUB_AGENT: 'SUB_AGENT',
+  THINK: 'THINK',
+  PLAN: 'PLAN',
+  MAIL: 'MAIL',
+  COMPACT: 'COMPACT',
+  TOOL_SEARCH: 'TOOL_SEARCH',
+  MCP_LIST: 'MCP_LIST',
+  SKILL: 'SKILL',
+  DEFAULT: 'DEFAULT',
 } as const;
 
 /** 稳定分类用于逻辑判定，工具名称统一从 toolDisplayNames 读取。 */
@@ -45,8 +50,31 @@ const KNOWN_TOOL_CATEGORY: Partial<Record<AgentToolName, string>> = {
   [AgentToolName.ReadSkill]: TOOL_CATEGORY.SKILL,
 };
 
-/** 未登记工具的统一兜底文案（绝不裸显原生英文名）。 */
+/** 未登记工具的统一兜底分类码（绝不裸显原生英文名）。 */
 export const UNKNOWN_TOOL_LABEL = TOOL_CATEGORY.DEFAULT;
+
+/** 分类码 → i18n key。 */
+const TOOL_CATEGORY_LABEL_KEY: Record<string, string> = {
+  [TOOL_CATEGORY.COMMAND]: 'tool.category.command',
+  [TOOL_CATEGORY.READ]: 'tool.category.read',
+  [TOOL_CATEGORY.WRITE]: 'tool.category.write',
+  [TOOL_CATEGORY.CHOICE]: 'tool.category.choice',
+  [TOOL_CATEGORY.SUB_AGENT]: 'tool.category.subAgent',
+  [TOOL_CATEGORY.THINK]: 'tool.category.think',
+  [TOOL_CATEGORY.PLAN]: 'tool.category.plan',
+  [TOOL_CATEGORY.MAIL]: 'tool.category.mail',
+  [TOOL_CATEGORY.COMPACT]: 'tool.category.compact',
+  [TOOL_CATEGORY.TOOL_SEARCH]: 'tool.category.toolSearch',
+  [TOOL_CATEGORY.MCP_LIST]: 'tool.category.mcpList',
+  [TOOL_CATEGORY.SKILL]: 'tool.category.skill',
+  [TOOL_CATEGORY.DEFAULT]: 'tool.category.default',
+};
+
+/** 分类码 → 当前语言的用户可见文案；未知码原样回显（不臆断）。 */
+export function toolCategoryLabel(category: string): string {
+  const key = TOOL_CATEGORY_LABEL_KEY[category];
+  return key ? t(key) : category;
+}
 
 /** MCP 工具名前缀（远端下发的动态集合，无法逐一枚举）。 */
 const MCP_TOOL_PREFIX = 'mcp_';
@@ -119,8 +147,8 @@ const intArg = (value: unknown): number | null => {
 const readLineRange = (args: Record<string, unknown>): string => {
   const start = intArg(args.startLine);
   const end = intArg(args.endLine);
-  if (start === null && end === null) return '全文';
-  return `L${start ?? 0}-${end ?? '末尾'}`;
+  if (start === null && end === null) return t('tool.lineRange.all');
+  return `L${start ?? 0}-${end ?? t('tool.lineRange.end')}`;
 };
 
 /** 解析工具展示所需的全部元数据 */

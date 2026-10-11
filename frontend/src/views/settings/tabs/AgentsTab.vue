@@ -3,11 +3,13 @@ import { computed } from 'vue';
 import { useAgentsTab } from './useAgentsTab';
 import { resolveToolFullName } from '../../../utils/toolDisplayNames';
 import { useTheme } from '../../../composables/useTheme';
+import { useI18n } from '../../../i18n';
 
 const props = defineProps<{
   isDark?: boolean;
 }>();
 
+const { t } = useI18n();
 const { isDark: globalIsDark } = useTheme();
 const isDark = computed(() => props.isDark ?? globalIsDark.value);
 
@@ -53,11 +55,11 @@ const {
     <div v-if="!isEditingOrAddingAgent" class="space-y-4">
       <div class="flex items-center justify-between">
         <div>
-          <h4 class="text-base font-bold tracking-tight" :class="isDark ? 'text-white text-glow-white' : 'text-gray-900'">
-            智能体
+                    <h4 class="text-base font-bold tracking-tight" :class="isDark ? 'text-white text-glow-white' : 'text-gray-900'">
+            {{ t('settings.agents.title') }}
           </h4>
           <p class="text-xs mt-0.5" :class="isDark ? 'text-zinc-400 text-glow-subtle' : 'text-gray-500'">
-            配置智能体角色，为其绑定基座模型并分配专属执行工具。
+            {{ t('settings.agents.subtitle') }}
           </p>
         </div>
         <button
@@ -68,13 +70,13 @@ const {
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
-          <span>新建智能体</span>
+                    <span>{{ t('settings.agents.add') }}</span>
         </button>
       </div>
 
       <!-- 加载中 -->
-      <div v-if="isAgentsLoading" class="py-8 text-center text-xs" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">
-        正在加载智能体列表...
+            <div v-if="isAgentsLoading" class="py-8 text-center text-xs" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">
+        {{ t('settings.agents.loading') }}
       </div>
 
       <!-- 加载失败 -->
@@ -83,9 +85,9 @@ const {
         <button
           type="button"
           @click="loadAgents"
-          class="px-3 py-1 text-xs border border-red-500/30 text-red-400 hover:bg-red-500/10 rounded-lg cursor-pointer"
+                    class="px-3 py-1 text-xs border border-red-500/30 text-red-400 hover:bg-red-500/10 rounded-lg cursor-pointer"
         >
-          重试
+          {{ t('common.retry') }}
         </button>
       </div>
 
@@ -93,9 +95,9 @@ const {
       <div
         v-else-if="agentsList.length === 0"
         class="py-12 text-center text-xs border border-dashed rounded-2xl"
-        :class="isDark ? 'border-white/10 text-zinc-500' : 'border-gray-200 text-gray-400'"
+                :class="isDark ? 'border-white/10 text-zinc-500' : 'border-gray-200 text-gray-400'"
       >
-        暂无配置的智能体，请点击上方「新建智能体」进行添加。
+        {{ t('settings.agents.empty') }}
       </div>
 
       <!-- 智能体卡片列表 -->
@@ -127,13 +129,13 @@ const {
                   {{ getModelName(agent.modelId) }}
                 </span>
               </div>
-              <p class="text-xs line-clamp-2" :class="isDark ? 'text-zinc-400' : 'text-gray-500'">
-                {{ agent.description || '暂无描述' }}
+                            <p class="text-xs line-clamp-2" :class="isDark ? 'text-zinc-400' : 'text-gray-500'">
+                {{ agent.description || t('settings.agents.noDescription') }}
               </p>
               <!-- 已分配工具展示 -->
               <div class="pt-1">
                 <div class="text-[11px] font-medium mb-1 flex items-center gap-1.5" :class="isDark ? 'text-zinc-300' : 'text-gray-600'">
-                  <span>已分配工具:</span>
+                  <span>{{ t('settings.agents.assignedTools') }}</span>
                   <span class="text-xs font-normal" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">
                     ({{ agent.toolList?.length || 0 }})
                   </span>
@@ -152,7 +154,7 @@ const {
                     {{ resolveToolFullName(toolName) }}
                   </span>
                 </div>
-                <span v-else class="text-[11px] italic" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">未配置任何工具</span>
+                <span v-else class="text-[11px] italic" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">{{ t('settings.agents.noTools') }}</span>
               </div>
             </div>
 
@@ -162,7 +164,7 @@ const {
                 type="button"
                 @click="startEditAgent(agent)"
                 class="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 transition cursor-pointer"
-                title="编辑智能体"
+                :title="t('settings.agents.editAction')"
               >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -172,7 +174,7 @@ const {
                 type="button"
                 @click="handleDeleteAgent(agent)"
                 class="p-1.5 rounded-lg text-gray-400 hover:text-red-500 transition cursor-pointer"
-                title="删除智能体"
+                :title="t('settings.agents.deleteAction')"
               >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -188,11 +190,11 @@ const {
     <div v-else class="space-y-4">
       <div class="flex items-center justify-between border-b pb-3" :class="isDark ? 'border-gray-800' : 'border-gray-200'">
         <div>
-          <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white">
-            {{ editingAgentId ? '编辑智能体' : '新建智能体' }}
+                    <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white">
+            {{ editingAgentId ? t('settings.agents.editHeading') : t('settings.agents.addHeading') }}
           </h4>
           <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            设定智能体身份设定，并配置其可调用的后端工具能力。
+            {{ t('settings.agents.formSubtitle') }}
           </p>
         </div>
         <button
@@ -200,7 +202,7 @@ const {
           @click="cancelAgentForm"
           class="px-2.5 py-1 text-xs rounded-lg text-gray-400 hover:text-gray-200 cursor-pointer"
         >
-          返回列表
+                    {{ t('common.backToList') }}
         </button>
       </div>
 
@@ -211,12 +213,12 @@ const {
       <div class="space-y-3 text-xs">
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
-              智能体名称 <span class="text-red-500">*</span>
+                        <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
+              {{ t('settings.agents.nameLabel') }} <span class="text-red-500">*</span>
             </label>
             <input
               v-model="agentForm.name"
-              placeholder="例如: CodeReviewer"
+                            :placeholder="t('settings.agents.namePlaceholder')"
               :class="[
                 'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
                 isDark ? 'bg-black/90 border-white/20 text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
@@ -224,8 +226,8 @@ const {
             />
           </div>
           <div>
-            <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
-              基座模型 <span class="text-red-500">*</span>
+                        <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
+              {{ t('settings.agents.modelLabel') }} <span class="text-red-500">*</span>
             </label>
             <select
               v-model="agentForm.modelId"
@@ -235,7 +237,7 @@ const {
               ]"
             >
               <option v-for="m in modelsList" :key="m.id" :value="m.id" class="dark:bg-black dark:text-zinc-100">
-                {{ m.modelName || `模型 #${m.id}` }}
+                {{ m.modelName || t('settings.agents.modelFallback', { id: m.id ?? '' }) }}
               </option>
             </select>
           </div>
@@ -243,11 +245,11 @@ const {
 
         <div>
           <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
-            描述信息
+                        {{ t('settings.agents.descriptionLabel') }}
           </label>
           <input
             v-model="agentForm.description"
-            placeholder="简短描述该 Agent 的能力或分工定位..."
+            :placeholder="t('settings.agents.descriptionPlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
               isDark ? 'bg-black/90 border-white/20 text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
@@ -257,12 +259,12 @@ const {
 
         <div>
           <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
-            角色设定 / 提示词 <span class="text-red-500">*</span>
+                        {{ t('settings.agents.promptLabel') }} <span class="text-red-500">*</span>
           </label>
           <textarea
             v-model="agentForm.prompt"
             rows="3"
-            placeholder="例如: 你是一位资深代码评审专家，善于发现代码坏味道与潜在缺陷..."
+            :placeholder="t('settings.agents.promptPlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs resize-none transition',
               isDark ? 'bg-black/90 border-white/20 text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
@@ -274,9 +276,9 @@ const {
         <div class="pt-1">
           <div class="flex items-center justify-between mb-1.5">
             <label class="block font-medium" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
-              分配工具
+                            {{ t('settings.agents.toolsLabel') }}
               <span class="font-normal ml-1" :class="isDark ? 'text-zinc-400' : 'text-gray-500'">
-                (已选 {{ agentForm.toolList.length }} / {{ availableTools.length }})
+                {{ t('settings.agents.toolsCount', { selected: agentForm.toolList.length, total: availableTools.length }) }}
               </span>
             </label>
             <div class="flex items-center gap-2">
@@ -286,7 +288,7 @@ const {
                 class="cursor-pointer"
                 :class="isDark ? 'text-sky-400 hover:text-sky-300 text-glow-cyan' : 'text-blue-500 hover:text-blue-400'"
               >
-                全选
+                                {{ t('settings.agents.selectAll') }}
               </button>
               <span :class="isDark ? 'text-zinc-600' : 'text-gray-400'">|</span>
               <button
@@ -295,7 +297,7 @@ const {
                 class="cursor-pointer"
                 :class="isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-gray-500 hover:text-gray-400'"
               >
-                清空
+                                {{ t('settings.agents.clear') }}
               </button>
             </div>
           </div>
@@ -305,7 +307,7 @@ const {
             class="p-3 text-center border border-dashed rounded-xl"
             :class="isDark ? 'border-white/10 text-zinc-500' : 'border-gray-200 text-gray-400'"
           >
-            正在加载工具列表...
+                        {{ t('settings.agents.toolsLoading') }}
           </div>
           <div
             v-else-if="toolsErrorMsg"
@@ -316,9 +318,9 @@ const {
             <button
               type="button"
               @click="loadTools"
-              class="text-blue-500 hover:text-blue-400 cursor-pointer"
+                            class="text-blue-500 hover:text-blue-400 cursor-pointer"
             >
-              重试
+              {{ t('common.retry') }}
             </button>
           </div>
           <div
@@ -326,7 +328,7 @@ const {
             class="p-3 text-center border border-dashed rounded-xl"
             :class="isDark ? 'border-white/10 text-zinc-500' : 'border-gray-200 text-gray-400'"
           >
-            后端未注册任何可用工具
+            {{ t('settings.agents.noToolsRegistered') }}
           </div>
           <div
             v-else
@@ -357,7 +359,7 @@ const {
                   class="text-[9px] px-1.5 py-0.5 rounded font-normal shrink-0"
                   :class="tool.readOnly ? (isDark ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-100 text-emerald-700') : (isDark ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-700')"
                 >
-                  {{ tool.readOnly ? '只读' : '读写' }}
+                  {{ tool.readOnly ? t('settings.agents.readOnly') : t('settings.agents.readWrite') }}
                 </span>
               </div>
               <div v-if="tool.description" class="text-[11px] truncate mt-1" :class="isDark ? 'text-zinc-400' : 'text-gray-400'" :title="tool.description">
@@ -374,7 +376,7 @@ const {
             class="px-3 py-1.5 rounded-xl border text-xs cursor-pointer transition"
             :class="isDark ? 'border-white/20 hover:bg-white/10 text-zinc-200 text-glow-subtle' : 'border-gray-300 text-gray-500 hover:text-gray-700'"
           >
-            取消
+                        {{ t('common.cancel') }}
           </button>
           <button
             type="button"
@@ -385,7 +387,7 @@ const {
               isSubmittingAgent ? 'bg-blue-400 cursor-not-allowed' : (isDark ? 'bg-sky-600 hover:bg-sky-500 text-glow-white shadow-[0_0_15px_rgba(56,189,248,0.4)]' : 'bg-blue-600 hover:bg-blue-500')
             ]"
           >
-            {{ isSubmittingAgent ? '正在保存...' : '保存' }}
+            {{ isSubmittingAgent ? t('common.saving') : t('common.save') }}
           </button>
         </div>
       </div>

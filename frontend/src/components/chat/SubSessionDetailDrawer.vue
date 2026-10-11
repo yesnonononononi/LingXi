@@ -14,12 +14,15 @@ import { useCopyFeedback } from '../../composables/useCopyFeedback';
 import MarkdownRenderer from './MarkdownRenderer.vue';
 import GradientText from '../common/GradientText.vue';
 import { useTheme } from '../../composables/useTheme';
+import { useI18n } from '../../i18n';
 
 const props = defineProps<{
   isOpen: boolean;
   subSession: SubSessionVO | null;
   isDark?: boolean;
 }>();
+
+const { t } = useI18n();
 
 const { isDark: themeIsDark } = useTheme();
 const isDark = computed(() => props.isDark ?? themeIsDark.value);
@@ -101,8 +104,9 @@ watch(
   { immediate: true }
 );
 
+
 const displayAgentName = computed(() => {
-  return props.subSession?.agentName || (props.subSession?.agentId ? `Agent #${props.subSession.agentId}` : '子代理');
+  return props.subSession?.agentName || (props.subSession?.agentId ? t('chat.subSession.agentIdFallback', { id: props.subSession.agentId }) : t('chat.subSession.agentFallback'));
 });
 
 /**
@@ -116,7 +120,7 @@ const subStatusDot = computed(() => subItemStatusDotClass(subStatus.value));
 
 const copyAllContent = () => {
   const text = messages.value
-    .map(m => `${m.role === 'user' ? '【委派任务】' : '【子代理回复】'}:\n${m.content}`)
+    .map(m => `${m.role === 'user' ? t('chat.subSession.delegatedTaskPrefix') : t('chat.subSession.subAgentReplyPrefix')}:\n${m.content}`)
     .join('\n\n');
   void copyRaw(text);
 };
@@ -190,11 +194,11 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
               <div class="flex items-center gap-2">
                 <h3 class="font-semibold text-sm truncate dark:text-white dark:text-glow-white">{{ displayAgentName }}</h3>
                 <span :class="['text-[11px] px-2 py-0.5 rounded-full font-mono font-medium', isDark ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30' : 'bg-blue-50 text-blue-600 border border-blue-200']">
-                  子会话 #{{ subSession?.id }}
+                  {{ t('chat.subSession.sessionLabel', { id: subSession?.id ?? '' }) }}
                 </span>
               </div>
               <p class="text-xs text-gray-400 dark:text-zinc-400 dark:text-glow-subtle truncate mt-0.5">
-                {{ subSession?.name || subSession?.task || '子代理执行会话' }}
+                {{ subSession?.name || subSession?.task || t('chat.subSession.fallbackName') }}
               </p>
             </div>
           </div>
@@ -205,19 +209,19 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
               v-if="messages.length > 0"
               @click="copyAllContent"
               :class="['px-2.5 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition cursor-pointer', isDark ? 'border-white/15 hover:bg-white/5 text-zinc-300' : 'border-gray-200 hover:bg-gray-100 text-gray-600']"
-              :title="copied ? '已复制全部对话' : '复制全部对话'"
+              :title="copied ? t('chat.subSession.copyAllDone') : t('chat.subSession.copyAll')"
             >
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
               </svg>
-              <span>{{ copied ? '已复制' : '复制对话' }}</span>
+              <span>{{ copied ? t('chat.subSession.copied') : t('chat.subSession.copyConversation') }}</span>
             </button>
 
             <!-- 关闭按钮 -->
             <button
               @click="emit('close')"
               :class="['p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200 hover:bg-white/5 transition cursor-pointer']"
-              title="关闭详情"
+              :title="t('chat.subSession.closeDetail')"
             >
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -235,7 +239,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
             </span>
           </div>
           <div v-if="subSession?.createTime" class="font-mono opacity-80 text-[11px]">
-            创建于 {{ new Date(subSession.createTime).toLocaleString() }}
+            {{ t('chat.subSession.createdAt', { time: new Date(subSession.createTime).toLocaleString() }) }}
           </div>
         </div>
 
@@ -244,7 +248,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
           <!-- 加载中骨架屏 -->
           <div v-if="isLoading" class="py-12 flex flex-col items-center justify-center gap-3 text-gray-400">
             <div class="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-            <span class="text-xs font-medium">正在拉取子代理会话轨迹...</span>
+            <span class="text-xs font-medium">{{ t('chat.subSession.loadingTrajectory') }}</span>
           </div>
 
           <!-- 加载失败状态（区别于「确实为空」，可重试） -->
@@ -254,13 +258,13 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
             </div>
-            <span>子会话消息加载失败</span>
+                        <span>{{ t('chat.subSession.loadFailed') }}</span>
             <button
               type="button"
               @click="loadMessages"
               :class="['px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer', isDark ? 'border-[#2c374d] hover:bg-[#1f2838] text-gray-300' : 'border-gray-200 hover:bg-gray-100 text-gray-600']"
             >
-              重试
+              {{ t('common.retry') }}
             </button>
           </div>
 
@@ -271,7 +275,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
             </div>
-            <span>该子会话暂无独立消息记录</span>
+            <span>{{ t('chat.subSession.empty') }}</span>
           </div>
 
           <!-- 消息时序气泡 -->
@@ -284,7 +288,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
               <!-- 角色标识与时间 -->
               <div class="flex items-center gap-2 text-xs text-gray-400 select-none">
                 <span :class="['font-medium px-2 py-0.5 rounded text-[11px]', msg.role === 'user' ? (isDark ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-50 text-blue-700') : (isDark ? 'bg-purple-900/30 text-purple-300' : 'bg-purple-50 text-purple-700')]">
-                  {{ msg.role === 'user' ? '管理者指令 (Manager)' : displayAgentName }}
+                  {{ msg.role === 'user' ? t('chat.subSession.managerInstruction') : displayAgentName }}
                 </span>
                 <span class="font-mono text-[11px]">{{ formatClockTime(msg.timestamp) }}</span>
               </div>
@@ -305,9 +309,9 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                     :colors="['#40ffaa', '#4079ff', '#40ffaa', '#4079ff', '#40ffaa']"
                     :animation-speed="3"
                     :show-border="false"
-                    class="!p-0"
-                  >深度思考</GradientText>
-                  <span v-else>深度思考</span>
+                                        class="!p-0"
+                  >{{ t('chat.subSession.deepThinking') }}</GradientText>
+                  <span v-else>{{ t('chat.subSession.deepThinking') }}</span>
                 </button>
                 <div
                   v-if="expandedThoughtMsgIds[msg.id]"

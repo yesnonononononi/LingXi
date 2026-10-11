@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useMcpTab } from './useMcpTab';
-import { MCP_TRANSPORTS, MCP_STDIO_ENV_HINT } from '../../../types/chat';
+import { MCP_TRANSPORTS } from '../../../types/chat';
 import { useTheme } from '../../../composables/useTheme';
+import { useI18n } from '../../../i18n';
 
 const props = defineProps<{
   isDark?: boolean;
 }>();
 
+const { t } = useI18n();
 const { isDark: themeIsDark } = useTheme();
 const isDark = computed(() => props.isDark ?? themeIsDark.value);
 
@@ -56,11 +58,11 @@ const {
     <div v-if="!isEditingOrAddingMcp" class="space-y-4">
       <div class="flex items-center justify-between">
         <div>
-          <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
-            MCP 服务
+                    <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
+            {{ t('settings.mcp.title') }}
           </h4>
           <p class="text-xs text-gray-500 dark:text-gray-400 dark:text-glow-subtle mt-0.5">
-            接入 Model Context Protocol 服务，其工具将在每次执行时注入模型可见的工具集。
+            {{ t('settings.mcp.subtitle') }}
           </p>
                 </div>
         <button
@@ -71,13 +73,13 @@ const {
           <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
-          <span class="whitespace-nowrap">新建服务</span>
+          <span class="whitespace-nowrap">{{ t('settings.mcp.add') }}</span>
         </button>
       </div>
 
       <!-- 加载中 -->
-      <div v-if="isMcpLoading" class="py-8 text-center text-xs text-gray-400">
-        正在加载 MCP 服务列表...
+            <div v-if="isMcpLoading" class="py-8 text-center text-xs text-gray-400">
+        {{ t('settings.mcp.loading') }}
       </div>
 
       <!-- 加载失败 -->
@@ -86,9 +88,9 @@ const {
         <button
           type="button"
           @click="loadMcp"
-          class="px-3 py-1 text-xs border border-red-500/30 text-red-400 hover:bg-red-500/10 rounded-lg cursor-pointer"
+                    class="px-3 py-1 text-xs border border-red-500/30 text-red-400 hover:bg-red-500/10 rounded-lg cursor-pointer"
         >
-          重试
+          {{ t('common.retry') }}
         </button>
       </div>
 
@@ -96,9 +98,9 @@ const {
       <div
         v-else-if="mcpList.length === 0"
         class="py-12 text-center text-xs text-gray-400 dark:text-gray-500 border border-dashed rounded-2xl"
-        :class="isDark ? 'border-white/10' : 'border-gray-200'"
+                :class="isDark ? 'border-white/10' : 'border-gray-200'"
       >
-        暂无配置的 MCP 服务，请点击上方「新建服务」进行添加。
+        {{ t('settings.mcp.empty') }}
       </div>
 
       <!-- 服务卡片列表 -->
@@ -126,7 +128,7 @@ const {
                     ? (isDark ? 'bg-white/5 border-white/10 text-zinc-400' : 'bg-gray-200 border-gray-300 text-gray-500')
                     : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'"
                 >
-                  {{ item.status === 0 ? '已停用' : '已启用' }}
+                  {{ item.status === 0 ? t('settings.mcp.disabled') : t('settings.mcp.enabled') }}
                 </span>
                 <!-- 传输方式 -->
                 <span
@@ -136,10 +138,10 @@ const {
                   {{ item.transport || 'streamable-http' }}
                 </span>
                 <!-- stdio 环境依赖提示：黄圈白底感叹号，hover 说明 npx/PATH 限制 -->
-                <span
+                                <span
                   v-if="item.transport === 'stdio'"
                   class="inline-flex shrink-0 cursor-help"
-                  :title="MCP_STDIO_ENV_HINT"
+                  :title="t('settings.mcp.stdioHintTitle')"
                 >
                   <svg
                     class="w-3.5 h-3.5"
@@ -167,17 +169,17 @@ const {
               </p>
 
               <div class="flex items-center gap-3 mt-1.5 text-[11px] text-gray-400 dark:text-gray-500">
-                <span v-if="countHeaders(item) > 0">
-                  {{ countHeaders(item) }} 个请求头
+                                <span v-if="countHeaders(item) > 0">
+                  {{ t('settings.mcp.headersCount', { count: countHeaders(item) }) }}
                 </span>
                 <span v-if="countEnvVars(item) > 0">
-                  {{ countEnvVars(item) }} 个环境变量
+                  {{ t('settings.mcp.envCount', { count: countEnvVars(item) }) }}
                 </span>
                 <span v-if="item.executionTimeout">
-                  超时 {{ Math.round(item.executionTimeout / 1000) }}s
+                  {{ t('settings.mcp.timeoutSeconds', { seconds: Math.round(item.executionTimeout / 1000) }) }}
                 </span>
                 <span v-if="item.maxOutput">
-                  输出上限 {{ item.maxOutput }}
+                  {{ t('settings.mcp.maxOutputValue', { value: item.maxOutput }) }}
                 </span>
               </div>
             </div>
@@ -194,7 +196,7 @@ const {
                     : 'text-gray-600 hover:bg-black/5'
                 ]"
               >
-                {{ item.status === 0 ? '启用' : '停用' }}
+                {{ item.status === 0 ? t('settings.mcp.enable') : t('settings.mcp.disable') }}
               </button>
               <button
                 type="button"
@@ -205,8 +207,8 @@ const {
                     ? 'text-cyan-400 hover:bg-white/5'
                     : 'text-blue-600 hover:bg-black/5'
                 ]"
-              >
-                编辑
+                            >
+                {{ t('common.edit') }}
               </button>
               <button
                 type="button"
@@ -217,8 +219,8 @@ const {
                     ? 'text-red-400 hover:bg-white/5'
                     : 'text-red-500 hover:bg-black/5'
                 ]"
-              >
-                删除
+                            >
+                {{ t('common.remove') }}
               </button>
               <button
                 type="button"
@@ -228,7 +230,7 @@ const {
                 class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 transition cursor-pointer disabled:cursor-wait"
               >
                 <span v-if="mcpRowConnections[item.id]?.loading" class="h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
-                {{ mcpRowConnections[item.id]?.loading ? '正在连接...' : mcpRowConnections[item.id]?.success ? '连接成功' : '测试连接' }}
+                {{ mcpRowConnections[item.id]?.loading ? t('settings.mcp.connecting') : mcpRowConnections[item.id]?.success ? t('settings.mcp.connected') : t('settings.mcp.testConnection') }}
               </button>
             </div>
           </div>
@@ -240,16 +242,16 @@ const {
     <!-- 编辑 / 新增表单 -->
     <div v-else class="space-y-4">
       <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
-        {{ editingMcpId ? '编辑 MCP 服务' : '新建 MCP 服务' }}
+                {{ editingMcpId ? t('settings.mcp.editHeading') : t('settings.mcp.addHeading') }}
       </h4>
 
       <!-- 服务名称 -->
       <div class="space-y-1.5">
-        <label class="text-xs font-medium text-gray-700 dark:text-gray-300">服务名称</label>
+        <label class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ t('settings.mcp.nameLabel') }}</label>
         <input
           v-model="mcpForm.name"
           type="text"
-          placeholder="如 github、filesystem、shadcn，需全局唯一"
+          :placeholder="t('settings.mcp.namePlaceholder')"
           :class="[
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
             isDark
@@ -262,12 +264,12 @@ const {
       <!-- 传输方式 -->
       <div class="space-y-1.5">
         <label class="text-xs font-medium text-gray-700 dark:text-gray-300 inline-flex items-center gap-1.5">
-          传输方式
+                    {{ t('settings.mcp.transportLabel') }}
           <!-- stdio 环境依赖提示：黄圈白底感叹号，hover 说明 npx/PATH 限制 -->
           <span
             v-if="mcpForm.transport === 'stdio'"
             class="inline-flex cursor-help"
-            :title="MCP_STDIO_ENV_HINT"
+            :title="t('settings.mcp.stdioHintTitle')"
           >
             <svg
               class="w-3.5 h-3.5"
@@ -301,18 +303,18 @@ const {
             {{ t }}
           </button>
         </div>
-        <p v-if="mcpForm.transport === 'stdio'" class="text-[11px] text-gray-400 dark:text-gray-500">
-          stdio 通过子进程的标准输入/输出通信，本机需已安装对应 CLI（如 npx）。
+                <p v-if="mcpForm.transport === 'stdio'" class="text-[11px] text-gray-400 dark:text-gray-500">
+          {{ t('settings.mcp.stdioHintText') }}
         </p>
       </div>
 
       <!-- 服务地址（http 系传输） -->
       <div v-if="mcpForm.transport !== 'stdio'" class="space-y-1.5">
-        <label class="text-xs font-medium text-gray-700 dark:text-gray-300">服务地址</label>
+        <label class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ t('settings.mcp.urlLabel') }}</label>
         <input
           v-model="mcpForm.url"
           type="text"
-          placeholder="https://example.com/mcp/"
+          :placeholder="t('settings.mcp.urlPlaceholder')"
           :class="[
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
             isDark
@@ -324,14 +326,14 @@ const {
 
       <!-- stdio 启动命令 -->
       <div v-if="mcpForm.transport === 'stdio'" class="space-y-1.5">
-        <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
-          启动命令
-          <span class="text-gray-400 dark:text-gray-500 font-normal">（一行一段 argv，段内空格无需转义）</span>
+                <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
+          {{ t('settings.mcp.commandLabel') }}
+          <span class="text-gray-400 dark:text-gray-500 font-normal">{{ t('settings.mcp.commandHint') }}</span>
         </label>
         <textarea
           v-model="mcpForm.commandLines"
           rows="3"
-          placeholder="npx&#10;shadcn@latest&#10;mcp"
+          :placeholder="t('settings.mcp.commandPlaceholder')"
           :class="[
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
             isDark
@@ -343,15 +345,15 @@ const {
 
       <!-- stdio 环境变量 -->
       <div v-if="mcpForm.transport === 'stdio'" class="space-y-1.5">
-        <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
-          环境变量
-          <span class="text-gray-400 dark:text-gray-500 font-normal">（一行一个，格式 KEY=VALUE）</span>
+                <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
+          {{ t('settings.mcp.envLabel') }}
+          <span class="text-gray-400 dark:text-gray-500 font-normal">{{ t('settings.mcp.envHint') }}</span>
         </label>
         <textarea
           v-model="mcpForm.envLines"
           @input="mcpEnvPristine = false"
           rows="3"
-          placeholder="GITHUB_TOKEN=your-token"
+          :placeholder="t('settings.mcp.envPlaceholder')"
           :class="[
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
             isDark
@@ -363,21 +365,21 @@ const {
           v-if="mcpEnvPristine && mcpForm.envLines"
           class="text-[11px] text-gray-400 dark:text-gray-500"
         >
-          已配置的环境变量值已脱敏显示；不作修改即保持原值不变。
+                    {{ t('settings.mcp.envPristineHint') }}
         </p>
       </div>
 
       <!-- 请求头（http 系传输） -->
       <div v-if="mcpForm.transport !== 'stdio'" class="space-y-1.5">
-        <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
-          请求头
-          <span class="text-gray-400 dark:text-gray-500 font-normal">（一行一个，格式 名称: 值）</span>
+                <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
+          {{ t('settings.mcp.headersLabel') }}
+          <span class="text-gray-400 dark:text-gray-500 font-normal">{{ t('settings.mcp.headersHint') }}</span>
         </label>
         <textarea
           v-model="mcpForm.headerLines"
           @input="mcpHeadersPristine = false"
           rows="3"
-          placeholder="Authorization: Bearer your-token"
+          :placeholder="t('settings.mcp.headersPlaceholder')"
           :class="[
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
             isDark
@@ -389,21 +391,21 @@ const {
           v-if="mcpHeadersPristine && mcpForm.headerLines"
           class="text-[11px] text-gray-400 dark:text-gray-500"
         >
-          已配置的请求头值已脱敏显示；不作修改即保持原值不变。
+                    {{ t('settings.mcp.headersPristineHint') }}
         </p>
       </div>
 
       <!-- 服务描述：随提示词下发给模型（每服务一行），由业务用户填写 -->
       <div class="space-y-1.5">
-        <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
-          服务描述
-          <span class="text-gray-400 dark:text-gray-500 font-normal">（可选，最多 200 字；会随提示词下发给模型）</span>
+                <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
+          {{ t('settings.mcp.descriptionLabel') }}
+          <span class="text-gray-400 dark:text-gray-500 font-normal">{{ t('settings.mcp.descriptionHint') }}</span>
         </label>
         <input
           v-model="mcpForm.description"
           type="text"
           maxlength="200"
-          placeholder="如：GitHub 仓库、Issue 与 PR 的读写工具"
+          :placeholder="t('settings.mcp.descriptionPlaceholder')"
           :class="[
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
             isDark
@@ -416,7 +418,7 @@ const {
       <!-- 超时与输出上限 -->
       <div class="grid grid-cols-3 gap-3">
         <div class="space-y-1.5">
-          <label class="text-xs font-medium text-gray-700 dark:text-gray-300">初始化超时(ms)</label>
+          <label class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ t('settings.mcp.initTimeoutLabel') }}</label>
           <input
             v-model.number="mcpForm.initializationTimeout"
             type="number"
@@ -430,7 +432,7 @@ const {
           />
         </div>
         <div class="space-y-1.5">
-          <label class="text-xs font-medium text-gray-700 dark:text-gray-300">执行超时(ms)</label>
+          <label class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ t('settings.mcp.execTimeoutLabel') }}</label>
           <input
             v-model.number="mcpForm.executionTimeout"
             type="number"
@@ -444,7 +446,7 @@ const {
           />
         </div>
         <div class="space-y-1.5">
-          <label class="text-xs font-medium text-gray-700 dark:text-gray-300">输出上限</label>
+          <label class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ t('settings.mcp.maxOutputLabel') }}</label>
           <input
             v-model.number="mcpForm.maxOutput"
             type="number"
@@ -462,7 +464,7 @@ const {
       <!-- 启用开关 -->
       <label class="flex items-center gap-2 cursor-pointer select-none">
         <input v-model="mcpForm.enabled" type="checkbox" class="w-3.5 h-3.5 cursor-pointer accent-cyan-500" />
-        <span class="text-xs text-gray-700 dark:text-gray-300">启用该服务</span>
+        <span class="text-xs text-gray-700 dark:text-gray-300">{{ t('settings.mcp.enableService') }}</span>
       </label>
 
       <!-- 表单错误 -->
@@ -479,9 +481,9 @@ const {
       </div>
       <div v-if="mcpConnectionResult" role="status"
         class="p-2.5 rounded-xl text-xs bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 space-y-1">
-        <p>连接成功，发现 {{ mcpConnectionResult.toolCount }} 个工具，耗时 {{ mcpConnectionResult.elapsedMillis }} ms。</p>
-        <p v-if="mcpConnectionResult.toolNames.length" class="break-words">{{ mcpConnectionResult.toolNames.join('、') }}</p>
-        <p>测试结果仅针对当前配置，保存并启用后可在后续执行中使用。</p>
+                <p>{{ t('settings.mcp.connectionSuccess', { count: mcpConnectionResult.toolCount, ms: mcpConnectionResult.elapsedMillis }) }}</p>
+        <p v-if="mcpConnectionResult.toolNames.length" class="break-words">{{ mcpConnectionResult.toolNames.join(t('common.listSeparator')) }}</p>
+        <p>{{ t('settings.mcp.connectionNote') }}</p>
       </div>
 
       <!-- 底部操作按钮 -->
@@ -496,7 +498,7 @@ const {
               : 'border-gray-200 hover:bg-gray-50 text-gray-700'
           ]"
         >
-          取消
+                    {{ t('common.cancel') }}
         </button>
         <button
           type="button"
@@ -506,7 +508,7 @@ const {
           class="px-4 py-1.5 rounded-xl border text-xs font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
           :class="isDark ? 'border-emerald-500/30 text-emerald-400 hover:bg-white/5' : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'"
         >
-          {{ isConnectingMcp ? '正在连接...' : '测试连接' }}
+          {{ isConnectingMcp ? t('settings.mcp.connecting') : t('settings.mcp.testConnection') }}
         </button>
         <button
           type="button"
@@ -517,7 +519,7 @@ const {
             isSubmittingMcp || isConnectingMcp ? 'bg-cyan-600/50 cursor-not-allowed' : 'bg-cyan-600 hover:bg-cyan-500 shadow-[0_0_15px_rgba(8,145,178,0.4)]'
           ]"
         >
-          {{ isSubmittingMcp ? '正在保存...' : '保存' }}
+                    {{ isSubmittingMcp ? t('common.saving') : t('common.save') }}
         </button>
       </div>
     </div>

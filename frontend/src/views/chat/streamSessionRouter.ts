@@ -2,6 +2,7 @@ import type { AgentEvent, EventMetaData } from '../../types/Event';
 import type { ChatMessage, ChatSession, ContextUsageData, SubSessionVO, ToolCallVO } from '../../types/chat';
 import { TurnStreamReducer } from './turnStreamReducer';
 import { AgentToolName } from '../../utils/toolNames';
+import { t } from '../../i18n';
 
 export interface StreamSessionRouterOptions {
   onScrollFollow?: () => void;
@@ -197,7 +198,7 @@ export class StreamSessionRouter {
   /** 动态发现并注册新的子代理会话容器 */
   private registerSubSession(subSessionId: string, meta?: EventMetaData): TurnStreamReducer {
     const root = this.currentRootSession;
-    if (!root) throw new Error('根会话未绑定');
+    if (!root) throw new Error(t('chat.view.rootSessionNotBound'));
 
     if (!root.subSessions) {
       root.subSessions = [];
@@ -211,7 +212,7 @@ export class StreamSessionRouter {
       subVO = {
         id: subSessionId,
         rootSessionId: root.id,
-        name: agentName || `子代理 #${root.subSessions.length + 1}`,
+        name: agentName || t('chat.message.subAgentIndex', { index: root.subSessions.length + 1 }),
         agentId: meta?.agentId,
         agentName,
         runStatus: 'RUNNING',

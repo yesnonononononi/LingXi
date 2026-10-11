@@ -11,7 +11,8 @@
     :threshold="80"
     :hasMore="!isLoading && !!hasMore"
     :loading="isLoadingMore"
-    loadingText="正在加载历史消息..."
+        loadingText=""
+"
     @load="emit('load')"
     @scroll="handleScroll"
   >
@@ -27,7 +28,7 @@
           @click="emit('retryHistoryLoad')"
           :class="['px-2.5 py-1 rounded-lg border text-xs font-medium transition cursor-pointer shrink-0', isDark ? 'border-red-800 text-red-300 hover:bg-red-900/30' : 'border-red-300 text-red-600 hover:bg-red-100']"
         >
-          重试
+                    {{ t('common.retry') }}
         </button>
       </div>
 
@@ -37,7 +38,7 @@
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
         </svg>
-        <span class="tracking-wide">{{ loadingText || '正在加载对话历史...' }}</span>
+        <span class="tracking-wide">{{ loadingText || t('chat.message.loadingConversation') }}</span>
       </div>
 
       <!-- 首次加载错误 -->
@@ -48,13 +49,13 @@
           @click="emit('retryInitialLoad')"
           :class="['px-2.5 py-1 rounded-lg border text-xs cursor-pointer', isDark ? 'border-gray-700 hover:bg-gray-800 text-gray-300' : 'border-gray-300 hover:bg-gray-100 text-gray-600']"
         >
-          重试
+                    {{ t('common.retry') }}
         </button>
       </div>
 
       <!-- 空消息提示 -->
       <div v-else-if="!messages || messages.length === 0" class="py-12 text-center text-xs text-gray-400 select-none">
-        暂无消息
+        {{ t('chat.message.noMessages') }}
       </div>
 
       <!-- 消息列表渲染 -->
@@ -81,6 +82,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
+import { t } from '../../i18n';
 import type { ChatMessage, ChatTurn, SubSessionVO } from '../../types/chat';
 import ScrollCursorLoader from '../common/ScrollCursorLoader.vue';
 import ChatMessageItem from './ChatMessageItem.vue';

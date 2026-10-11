@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { watch } from 'vue';
 import { useTheme } from '../../composables/useTheme';
+import { t } from '../../i18n';
 import logoUrl from '../../assets/lingxi-agent-logo.png';
 
 const { isDark } = useTheme();
@@ -19,7 +20,7 @@ watch(isDark, value => {
       <img :src="logoUrl" alt="" class="titlebar-logo" draggable="false" />
       <span class="titlebar-name">LX</span>
       <span class="titlebar-divider" aria-hidden="true"></span>
-      <span class="titlebar-caption">灵犀 · 智能体工作台</span>
+      <span class="titlebar-caption">{{ t('app.titlebar') }}</span>
     </div>
   </header>
 </template>

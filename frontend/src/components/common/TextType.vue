@@ -163,6 +163,27 @@ watch(
   { immediate: true }
 );
 
+// 外部文本变化（如语言切换）必须重置打字机重放：打完即 isFinished，不重置就永远停在旧文案上。
+// 旧文案为空时依赖 watcher 不会因重置而触发，须自行排程，否则卡死在空串。
+watch(
+  () => props.text,
+  (next, prev) => {
+    if (next === prev) return;
+    clearTimeoutIfNeeded();
+    const wasEmpty = displayedText.value === '';
+    displayedText.value = '';
+    currentCharIndex.value = 0;
+    isDeleting.value = false;
+    currentTextIndex.value = 0;
+    isFinished.value = false;
+    if (isVisible.value && wasEmpty) {
+      timeout = setTimeout(() => {
+        executeTypingAnimation();
+      }, props.initialDelay);
+    }
+  }
+);
+
 onMounted(() => {
   if (props.showCursor && cursorRef.value) {
     gsap.set(cursorRef.value, { opacity: 1 });

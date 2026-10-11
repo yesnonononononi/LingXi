@@ -13,12 +13,14 @@ import DataTab from './tabs/DataTab.vue';
 import TermsTab from './tabs/TermsTab.vue';
 import AboutTab from './tabs/AboutTab.vue';
 import { useTheme } from '../../composables/useTheme';
+import { useI18n } from '../../i18n';
 
 const props = defineProps<{
   isDark?: boolean;
   initialTab?: string;
 }>();
 
+const { t } = useI18n();
 const personalizationCopy = usePersonalizationCopy();
 
 const { isDark: themeIsDark } = useTheme();
@@ -68,7 +70,7 @@ onBeforeUnmount(() => {
     >
       <!-- Header -->
       <div :class="['flex items-center justify-between pb-4 border-b shrink-0', isDark ? 'border-white/10' : 'border-gray-100']">
-        <h3 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">设置</h3>
+        <h3 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">{{ t('settings.title') }}</h3>
         <button
           type="button"
           @click="emit('close')"
@@ -83,7 +85,7 @@ onBeforeUnmount(() => {
       <!-- Main Layout: Left Sidebar + Right Content -->
       <div class="flex flex-col sm:flex-row gap-4 sm:gap-6 pt-4 flex-1 min-h-0">
         <!-- Left Sidebar Navigation -->
-        <div <div class="flex sm:block w-full sm:w-36 shrink-0 gap-1 sm:space-y-1 overflow-x-auto sm:overflow-visible">>
+        <div class="flex sm:block w-full sm:w-36 shrink-0 gap-1 sm:space-y-1 overflow-x-auto sm:overflow-visible">
           <!-- 1. 通用设置 -->
           <button
             @click="activeTab = 'general'"
@@ -98,7 +100,7 @@ onBeforeUnmount(() => {
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
-            <span>通用设置</span>
+            <span>{{ t('settings.nav.general') }}</span>
           </button>
 
           <button
@@ -131,7 +133,7 @@ onBeforeUnmount(() => {
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 7v10c0 1.657 3.582 3 8 3s8-1.343 8-3V7" />
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 12c0 1.657 3.582 3 8 3s8-1.343 8-3" />
             </svg>
-            <span>模型</span>
+            <span>{{ t('settings.nav.models') }}</span>
           </button>
 
           <!-- 3. 智能体 -->
@@ -147,7 +149,7 @@ onBeforeUnmount(() => {
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
-            <span>智能体</span>
+            <span>{{ t('settings.nav.agents') }}</span>
           </button>
 
           <!-- 4. 团队协同 -->
@@ -163,7 +165,7 @@ onBeforeUnmount(() => {
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
             </svg>
-            <span>团队协同</span>
+            <span>{{ t('settings.nav.teams') }}</span>
           </button>
 
           <!-- 5. MCP 服务 -->
@@ -179,7 +181,7 @@ onBeforeUnmount(() => {
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M5 12h14M5 12a7 7 0 0114 0M5 12a7 7 0 0014 0M12 5V3m0 18v-2m7-7h2M3 12h2" />
             </svg>
-            <span>MCP 服务</span>
+            <span>{{ t('settings.nav.mcp') }}</span>
                     </button>
 
           <!-- 6. 数据管理 -->
@@ -195,7 +197,7 @@ onBeforeUnmount(() => {
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
             </svg>
-            <span>数据管理</span>
+            <span>{{ t('settings.nav.data') }}</span>
           </button>
 
           <!-- 7. 服务协议 -->
@@ -211,7 +213,7 @@ onBeforeUnmount(() => {
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
-            <span>服务协议</span>
+            <span>{{ t('settings.nav.terms') }}</span>
           </button>
 
           <!-- 8. 关于与更新 -->
@@ -227,7 +229,7 @@ onBeforeUnmount(() => {
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            <span>关于与更新</span>
+            <span>{{ t('settings.nav.about') }}</span>
           </button>
         </div>
 

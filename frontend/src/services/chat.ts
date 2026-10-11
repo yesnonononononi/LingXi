@@ -10,6 +10,7 @@ import { attachPromptCards } from '../utils/toolCallCard';
 import { isOk } from '../utils/api';
 import { createLocalId, createTempSessionId } from '../utils/ids';
 import { extractDirName } from '../utils/path';
+import { t } from '../i18n';
 import {
   extractSubAgentParams,
   isSubAgentTool,
@@ -46,21 +47,21 @@ export type FetchResult<T> =
 
 /** 把加载失败统一转为产品化文案（不直接暴露后端原始 errMsg）。 */
 function describeFetchFailure(err: unknown): string {
-  if (err instanceof ApiError) {
+    if (err instanceof ApiError) {
     switch (err.kind) {
       case 'forbidden':
-        return '无权限访问该资源';
+        return t('error.noPermission');
       case 'notFound':
-        return '请求的资源不存在';
+        return t('error.notFound');
       case 'server':
-        return '服务端异常，请稍后重试';
+        return t('error.serverError');
       case 'network':
-        return '无法连接后端服务，请确认服务已启动';
+        return t('error.backendUnreachable');
       default:
-        return '加载失败，请稍后重试';
+        return t('error.loadFailed');
     }
   }
-  return '加载失败，请稍后重试';
+  return t('error.loadFailed');
 }
 
 /** 7. 统一 chatApi 导出，供 UI 层直接调用 */
@@ -111,7 +112,7 @@ export const chatApi = {
   async resumeGeneration(sessionId: string | number): Promise<string> {
     const res = await AgentAPI.resume(sessionId);
     if (!isOk(res.code)) {
-      throw new Error(res.errMsg || '恢复执行失败');
+      throw new Error(res.errMsg || t('session.resumeFailed'));
     }
     return res.data ?? '';
   },
@@ -129,14 +130,14 @@ export const chatApi = {
     workspaceId?: string | number | null,
     teamId?: string | number | null
   ): Promise<string> {
-    const trimmedName = name.trim() || '新对话';
+    const trimmedName = name.trim() || t('session.newConversation');
     const res = await SessionAPI.create({
       name: trimmedName,
       workspaceId,
       teamId,
     });
     if (!isOk(res.code) || res.data === undefined || res.data === null) {
-      throw new Error(res.errMsg || '创建会话失败');
+      throw new Error(res.errMsg || t('session.createFailed'));
     }
     return String(res.data);
   },
@@ -163,9 +164,9 @@ export const chatApi = {
           ok: true,
           data: records.map((item: any) => ({
             id: item.id,
-            name: item.modelName || `模型 #${item.id}`,
+                        name: item.modelName || t('session.modelFallback', { id: item.id }),
             modelName: item.modelName,
-            description: item.baseUrl ? `接口: ${item.baseUrl}` : '系统内置模型',
+            description: item.baseUrl ? t('session.interfaceDesc', { url: item.baseUrl }) : t('session.builtinModel'),
             baseUrl: item.baseUrl,
             apiKey: item.apiKey
           }))
@@ -218,7 +219,7 @@ export const chatApi = {
         }
         const hostDir = data.hostDir || '';
         const folderName = extractDirName(hostDir);
-        const derivedName = data.name || folderName || '工作空间';
+        const derivedName = data.name || folderName || t('session.workspace');
         // 契约 §5：WorkspaceVO 不含 type（环境类型来源是 user_configs）；此处仅据其推导 workDir。
         return {
           id: res.data,
@@ -227,7 +228,7 @@ export const chatApi = {
           hostDir: hostDir
         };
       }
-      throw new Error(res.errMsg || '创建工作空间失败');
+      throw new Error(res.errMsg || t('session.createWorkspaceFailed'));
     } catch (err) {
       console.error('Failed to create workspace:', err);
       throw err;
@@ -258,7 +259,7 @@ export const chatApi = {
             const createdAt = parseTimestampOr(item.createTime, Date.now());
             return {
               id: String(item.id),
-              title: item.name || '新对话',
+              title: item.name || t('session.newConversation'),
               workspaceId: item.workspaceId ? String(item.workspaceId) : undefined,
               workDir: item.workDir || undefined,
               createdAt,
@@ -291,7 +292,7 @@ export const chatApi = {
       }
       if (isOk(res.code)) {
         // code 成功但无数据：按「查不到」处理（区别于请求失败）
-        return { ok: false, error: '未查询到会话' };
+        return { ok: false, error: t('session.noSession') };
       }
       return { ok: false, error: describeFetchFailure(classifyResult(res)) };
     } catch (err) {
@@ -397,7 +398,7 @@ export const chatApi = {
         };
       }
       if (isOk(res.code)) {
-        return { ok: false, error: '会话树数据不完整' };
+        return { ok: false, error: t('session.incompleteTree') };
       }
       return { ok: false, error: describeFetchFailure(classifyResult(res)) };
     } catch (err) {
@@ -492,7 +493,7 @@ export const chatApi = {
         ok: true,
         data: {
           id: String(id),
-          title: meta?.name || '对话',
+          title: meta?.name || t('session.conversation'),
           createdAt: parseTimestampOr(meta?.createTime, Date.now()),
           // 列表、详情与会话树共用 SessionVO，优先使用更新时间
           updatedAt: parseTimestampOr(meta?.updateTime ?? meta?.createTime, Date.now()),
@@ -536,8 +537,8 @@ export const chatApi = {
     workDir?: string
   ): Promise<ChatSession> {
     return {
-      id: createTempSessionId(),
-      title: '新对话',
+            id: createTempSessionId(),
+      title: t('session.newConversation'),
       createdAt: Date.now(),
       updatedAt: Date.now(),
       modelId,

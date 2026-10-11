@@ -9,6 +9,8 @@
  * 与「用哪种方式建立流」无关，故保留。</p>
  */
 
+import { t } from '../i18n';
+
 /**
  * 一条已解析的 SSE 事件（传输层原始形态）。
  *
@@ -60,7 +62,7 @@ export async function readSseStream(
   const { onEvent, signal, onDone, onError } = options;
 
   if (!response.body) {
-    onError?.(new Error('响应没有可读的 body，无法读取 SSE 流'));
+    onError?.(new Error(t('sse.noReadableBody')));
     return;
   }
 

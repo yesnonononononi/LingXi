@@ -9,6 +9,7 @@
 import { computed } from 'vue';
 import { useAppUpdater } from '../../../composables/useAppUpdater';
 import { useTheme } from '../../../composables/useTheme';
+import { useI18n } from '../../../i18n';
 import { formatBytes } from '../../../types/update';
 import { renderUpdateNotes } from '../../../utils/updateNotes';
 
@@ -16,6 +17,7 @@ defineProps<{
   isDark?: boolean;
 }>();
 
+const { t } = useI18n();
 const { isDark } = useTheme();
 
 const {
@@ -48,17 +50,17 @@ const {
 const primary = computed(() => {
   switch (state.value) {
     case 'checking':
-      return { label: '检查中…', action: 'none' as const };
+      return { label: t('settings.about.labelChecking'), action: 'none' as const };
     case 'available':
-      return { label: mandatory.value ? '立即更新' : '下载更新', action: 'download' as const };
+      return { label: mandatory.value ? t('settings.about.labelForceUpdate') : t('settings.about.labelDownload'), action: 'download' as const };
     case 'downloading':
-      return { label: `下载中 ${percent.value}%`, action: 'none' as const };
+      return { label: t('settings.about.labelDownloading', { percent: percent.value }), action: 'none' as const };
     case 'downloaded':
-      return { label: '安装并重启', action: 'install' as const };
+      return { label: t('settings.about.labelInstallRestart'), action: 'install' as const };
     case 'installing':
-      return { label: '正在安装…', action: 'none' as const };
+      return { label: t('settings.about.labelInstalling'), action: 'none' as const };
     default:
-      return { label: '检查更新', action: 'check' as const };
+      return { label: t('settings.about.labelCheck'), action: 'check' as const };
   }
 });
 
@@ -88,8 +90,8 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
   <div class="space-y-5">
     <!-- 当前版本 -->
     <div>
-      <div class="text-xs font-semibold text-gray-800 dark:text-zinc-100 dark:text-glow-subtle mb-2.5 tracking-wide">
-        版本信息
+            <div class="text-xs font-semibold text-gray-800 dark:text-zinc-100 dark:text-glow-subtle mb-2.5 tracking-wide">
+        {{ t('settings.about.versionInfo') }}
       </div>
       <div
         :class="[
@@ -98,20 +100,20 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
         ]"
       >
         <div class="flex items-center justify-between">
-          <span :class="['text-xs', isDark ? 'text-zinc-400' : 'text-gray-500']">当前版本</span>
+          <span :class="['text-xs', isDark ? 'text-zinc-400' : 'text-gray-500']">{{ t('settings.about.currentVersion') }}</span>
           <span :class="['text-xs font-mono font-semibold', isDark ? 'text-zinc-100' : 'text-gray-900']">
             {{ currentVersion || '—' }}
           </span>
         </div>
 
         <div v-if="hasUpdate" class="flex items-center justify-between">
-          <span :class="['text-xs', isDark ? 'text-zinc-400' : 'text-gray-500']">可用版本</span>
+          <span :class="['text-xs', isDark ? 'text-zinc-400' : 'text-gray-500']">{{ t('settings.about.availableVersion') }}</span>
           <span class="flex items-center gap-1.5">
             <span
               v-if="mandatory"
               class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-500/15 text-red-500 dark:text-red-400"
-            >
-              强制
+                        >
+              {{ t('settings.about.mandatory') }}
             </span>
             <span class="text-xs font-mono font-semibold text-blue-500 dark:text-blue-400">
               {{ availableVersion }}
@@ -180,7 +182,7 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
             class="px-3 py-2 rounded-xl text-xs font-medium bg-transparent cursor-not-allowed"
             :class="isDark ? 'text-zinc-600' : 'text-gray-400'"
           >
-            仅桌面客户端可用
+                        {{ t('settings.about.desktopOnly') }}
           </button>
         </div>
       </div>
@@ -188,8 +190,8 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
 
     <!-- 更新说明 -->
     <div v-if="renderedNotes">
-      <div class="text-xs font-semibold text-gray-800 dark:text-zinc-100 dark:text-glow-subtle mb-2.5 tracking-wide">
-        更新内容
+            <div class="text-xs font-semibold text-gray-800 dark:text-zinc-100 dark:text-glow-subtle mb-2.5 tracking-wide">
+        {{ t('settings.about.updateContent') }}
       </div>
       <div
         :class="[
@@ -210,7 +212,7 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
           isDark ? 'text-zinc-500 hover:text-zinc-300' : 'text-gray-400 hover:text-gray-600',
         ]"
       >
-        查看更新日志
+                {{ t('settings.about.viewLog') }}
       </button>
     </div>
   </div>

@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, onBeforeUnmount, ref } from 'vue';
 import type { FilePreviewTab } from '../../types/filePreview';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
+import { t } from '../../i18n';
 
 const props = defineProps<{
   tabs: FilePreviewTab[];
@@ -50,25 +51,25 @@ onBeforeUnmount(stopResize);
     class="file-preview-panel"
     :class="{ 'is-dark': isDark, 'is-maximized': maximized }"
     :style="{ width: maximized ? undefined : `${panelWidth}px` }"
-    aria-label="文件预览"
+    :aria-label="t('filePreview.title')"
     @keydown.esc="!$event.defaultPrevented && (maximized ? maximized = false : emit('close'))"
   >
-    <div v-if="!maximized" class="resize-handle" role="separator" aria-label="调整文件预览宽度" aria-orientation="vertical" tabindex="0"
+    <div v-if="!maximized" class="resize-handle" role="separator" :aria-label="t('filePreview.resizeAria')" aria-orientation="vertical" tabindex="0"
       @pointerdown="startResize" @keydown.left.prevent="panelWidth = Math.min(panelWidth + 32, 1000)" @keydown.right.prevent="panelWidth = Math.max(panelWidth - 32, 320)" />
     <header class="preview-topbar">
-      <span class="panel-title">文件预览</span>
+      <span class="panel-title">{{ t('filePreview.title') }}</span>
       <div class="topbar-actions">
-        <button type="button" :title="maximized ? '还原面板' : '最大化预览'" :aria-label="maximized ? '还原面板' : '最大化预览'" @click="maximized = !maximized">{{ maximized ? '还原' : '展开' }}</button>
-        <button type="button" aria-label="关闭文件预览" title="关闭文件预览" @click="emit('close')">✕</button>
+        <button type="button" :title="maximized ? t('filePreview.restorePanel') : t('filePreview.maximize')" :aria-label="maximized ? t('filePreview.restorePanel') : t('filePreview.maximize')" @click="maximized = !maximized">{{ maximized ? t('filePreview.restore') : t('common.expand') }}</button>
+        <button type="button" :aria-label="t('filePreview.closePreview')" :title="t('filePreview.closePreview')" @click="emit('close')">✕</button>
       </div>
     </header>
-    <div class="file-tabs" role="tablist" aria-label="已打开的文件">
+    <div class="file-tabs" role="tablist" :aria-label="t('filePreview.openedFiles')">
       <div v-for="tab in tabs" :key="tab.id" class="file-tab" :class="{ selected: tab.id === activeId }">
         <button type="button" role="tab" :aria-selected="tab.id === activeId" :title="tab.request.path" @click="emit('activate', tab.id)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5" /></svg>
           <span>{{ tab.name }}</span>
         </button>
-        <button type="button" :aria-label="`关闭 ${tab.name}`" @click="emit('closeTab', tab.id)">×</button>
+        <button type="button" :aria-label="t('filePreview.closeNamed', { name: tab.name })" @click="emit('closeTab', tab.id)">×</button>
       </div>
     </div>
     <template v-if="active">
@@ -78,26 +79,26 @@ onBeforeUnmount(stopResize);
           <span>{{ active.data?.path ?? active.request.path }}</span>
         </div>
         <div class="toolbar-actions">
-          <button type="button" :disabled="!active.data" @click="copy(active.data?.content ?? '')">{{ isCopied ? '已复制' : '复制' }}</button>
-          <button type="button" :disabled="active.loading" @click="emit('refresh', active)">刷新</button>
-          <button type="button" title="用系统默认程序打开" @click="emit('open')">打开</button>
-          <button type="button" title="在文件夹中显示" @click="emit('reveal')">定位</button>
+          <button type="button" :disabled="!active.data" @click="copy(active.data?.content ?? '')">{{ isCopied ? t('common.copied') : t('common.copy') }}</button>
+          <button type="button" :disabled="active.loading" @click="emit('refresh', active)">{{ t('common.refresh') }}</button>
+          <button type="button" :title="t('filePreview.openWithSystem')" @click="emit('open')">{{ t('common.open') }}</button>
+          <button type="button" :title="t('filePreview.revealInFolder')" @click="emit('reveal')">{{ t('filePreview.reveal') }}</button>
         </div>
       </div>
       <div v-if="active.error" class="preview-error" role="alert">
         <span>{{ active.error }}</span>
-        <button type="button" :disabled="active.loading" @click="emit('refresh', active)">重试</button>
+        <button type="button" :disabled="active.loading" @click="emit('refresh', active)">{{ t('common.retry') }}</button>
       </div>
-      <div class="code-preview" role="tabpanel" aria-label="文件代码">
+      <div class="code-preview" role="tabpanel" :aria-label="t('filePreview.codeAria')">
         <CodePreview v-show="!!active.data" :tabs="tabs" :activeId="activeId" :isDark="isDark" />
-        <div v-if="active.loading && !active.data" class="preview-placeholder" role="status">正在读取文件…</div>
-        <div v-else-if="!active.data" class="preview-placeholder">暂无可预览的内容</div>
+        <div v-if="active.loading && !active.data" class="preview-placeholder" role="status">{{ t('filePreview.reading') }}</div>
+        <div v-else-if="!active.data" class="preview-placeholder">{{ t('filePreview.noContent') }}</div>
       </div>
       <footer class="preview-status">
-        <span>{{ active.loading ? '正在刷新…' : active.error && active.data ? '显示上次读取的内容' : active.data?.watchId ? '文件变化时自动刷新' : '只读预览' }}</span>
+        <span>{{ active.loading ? t('filePreview.refreshing') : active.error && active.data ? t('filePreview.showLastContent') : active.data?.watchId ? t('filePreview.autoRefresh') : t('filePreview.readOnly') }}</span>
         <span v-if="active.data">{{ active.data.encoding }} · {{ Math.ceil(active.data.size / 1024) }} KB</span>
       </footer>
-      <div v-if="active.data?.truncated" class="preview-truncated">文件较大，仅显示前 256 KB 或 3000 行，可用外部编辑器查看完整内容。</div>
+      <div v-if="active.data?.truncated" class="preview-truncated">{{ t('filePreview.truncated') }}</div>
     </template>
   </aside>
 </template>

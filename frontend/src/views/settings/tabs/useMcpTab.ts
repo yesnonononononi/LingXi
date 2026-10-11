@@ -4,12 +4,14 @@ import { ApiError } from '../../../services/interceptor';
 import type { McpVO, McpRequest, McpConnectionVO } from '../../../types/chat';
 import { isOk } from '../../../utils/api';
 import { useConfirm } from '../../../composables/useConfirm';
+import { useI18n } from '../../../i18n';
 
 const MCP_DEFAULT_INIT_TIMEOUT = 30_000;
 const MCP_DEFAULT_EXEC_TIMEOUT = 60_000;
 const MCP_DEFAULT_MAX_OUTPUT = 20_000;
 
 export function useMcpTab() {
+  const { t } = useI18n();
   const mcpList = ref<McpVO[]>([]);
   const isMcpLoading = ref(false);
   const mcpErrorMsg = ref('');
@@ -74,11 +76,11 @@ export function useMcpTab() {
       if (isOk(res.code)) {
         mcpList.value = res.data?.records ?? [];
         mcpRowConnections.value = {};
-      } else {
-        mcpErrorMsg.value = res.errMsg || '加载 MCP 服务列表失败，请稍后重试';
+            } else {
+        mcpErrorMsg.value = res.errMsg || t('settings.mcp.errLoadList');
       }
     } catch {
-      mcpErrorMsg.value = '加载 MCP 服务列表失败，请稍后重试';
+      mcpErrorMsg.value = t('settings.mcp.errLoadList');
     } finally {
       isMcpLoading.value = false;
     }
@@ -99,11 +101,11 @@ export function useMcpTab() {
       const line = rawLine.trim();
       if (!line) continue;
       const sep = line.indexOf(':');
-      if (sep <= 0) throw new Error(`请求头格式应为 "名称: 值"，无法解析: ${line}`);
+            if (sep <= 0) throw new Error(t('settings.mcp.errHeaderLineFormat', { line }));
       const key = line.slice(0, sep).trim();
       const value = line.slice(sep + 1).trim();
-      if (!key) throw new Error(`请求头名称不能为空: ${line}`);
-      if (!value) throw new Error(`请求头 ${key} 的值不能为空`);
+      if (!key) throw new Error(t('settings.mcp.errHeaderKeyEmpty', { line }));
+      if (!value) throw new Error(t('settings.mcp.errHeaderValueEmpty', { key }));
       result[key] = value;
     }
     return result;
@@ -124,9 +126,9 @@ export function useMcpTab() {
       const line = rawLine.trim();
       if (!line) continue;
       const sep = line.indexOf('=');
-      if (sep <= 0) throw new Error(`环境变量格式应为 "KEY=VALUE"，无法解析: ${line}`);
+            if (sep <= 0) throw new Error(t('settings.mcp.errEnvLineFormat', { line }));
       const key = line.slice(0, sep).trim();
-      if (!key) throw new Error(`环境变量名不能为空: ${line}`);
+      if (!key) throw new Error(t('settings.mcp.errEnvKeyEmpty', { line }));
       result[key] = line.slice(sep + 1).trim();
     }
     return result;
@@ -198,12 +200,12 @@ export function useMcpTab() {
     const trimmedName = mcpForm.value.name.trim();
     const isStdio = mcpForm.value.transport === 'stdio';
 
-    if (!trimmedName) {
-      mcpFormError.value = '请填写服务名称';
+        if (!trimmedName) {
+      mcpFormError.value = t('settings.mcp.errNameRequired');
       return null;
     }
     if (trimmedName.length > 64) {
-      mcpFormError.value = '服务名称长度不能超过 64 个字符';
+      mcpFormError.value = t('settings.mcp.errNameTooLong');
       return null;
     }
 
@@ -215,8 +217,8 @@ export function useMcpTab() {
 
     if (isStdio) {
       command = linesToCommand(mcpForm.value.commandLines);
-      if (command.length === 0) {
-        mcpFormError.value = '请填写 stdio 启动命令（一行一段，如 npx）';
+            if (command.length === 0) {
+        mcpFormError.value = t('settings.mcp.errCommandRequired');
         return null;
       }
       // 仅在用户改动过环境变量时才提交该字段，否则后端保留库中原值
@@ -224,18 +226,18 @@ export function useMcpTab() {
         try {
           env = linesToEnv(mcpForm.value.envLines);
         } catch (e: any) {
-          mcpFormError.value = e?.message || '环境变量格式不正确';
+          mcpFormError.value = e?.message || t('settings.mcp.errEnvFormat');
           return null;
         }
       }
     } else {
       const trimmedUrl = mcpForm.value.url.trim();
-      if (!trimmedUrl) {
-        mcpFormError.value = '请填写服务地址';
+            if (!trimmedUrl) {
+        mcpFormError.value = t('settings.mcp.errUrlRequired');
         return null;
       }
       if (!/^https?:\/\/.+/i.test(trimmedUrl)) {
-        mcpFormError.value = '服务地址必须以 http:// 或 https:// 开头';
+        mcpFormError.value = t('settings.mcp.errUrlScheme');
         return null;
       }
       url = trimmedUrl;
@@ -244,26 +246,26 @@ export function useMcpTab() {
         try {
           headers = linesToHeaders(mcpForm.value.headerLines);
         } catch (e: any) {
-          mcpFormError.value = e?.message || '请求头格式不正确';
+          mcpFormError.value = e?.message || t('settings.mcp.errHeadersFormat');
           return null;
         }
       }
     }
 
-    if (mcpForm.value.description && mcpForm.value.description.length > 200) {
-      mcpFormError.value = '服务描述长度不能超过 200 个字符';
+        if (mcpForm.value.description && mcpForm.value.description.length > 200) {
+      mcpFormError.value = t('settings.mcp.errDescriptionTooLong');
       return null;
     }
     if (mcpForm.value.initializationTimeout !== null && mcpForm.value.initializationTimeout <= 0) {
-      mcpFormError.value = '初始化超时必须大于 0';
+      mcpFormError.value = t('settings.mcp.errInitTimeout');
       return null;
     }
     if (mcpForm.value.executionTimeout !== null && mcpForm.value.executionTimeout <= 0) {
-      mcpFormError.value = '执行超时必须大于 0';
+      mcpFormError.value = t('settings.mcp.errExecTimeout');
       return null;
     }
     if (mcpForm.value.maxOutput !== null && mcpForm.value.maxOutput <= 0) {
-      mcpFormError.value = '输出上限必须大于 0';
+      mcpFormError.value = t('settings.mcp.errMaxOutput');
       return null;
     }
 
@@ -299,13 +301,13 @@ export function useMcpTab() {
       if (isOk(res.code) && res.data) {
         mcpConnectionResult.value = res.data;
       } else {
-        mcpConnectionError.value = res.errMsg || '连接测试失败，请检查 MCP 配置';
+                mcpConnectionError.value = res.errMsg || t('settings.mcp.errConnectFailed');
       }
     } catch (error: unknown) {
       if (request === connectionRequest) {
         mcpConnectionError.value = error instanceof ApiError && error.kind === 'network'
-          ? '连接测试请求失败或超时，请检查后端是否可用'
-          : error instanceof Error ? error.message : '连接测试失败，请稍后重试';
+          ? t('settings.mcp.errConnectNetwork')
+          : error instanceof Error ? error.message : t('settings.mcp.errConnectGeneric');
       }
     } finally {
       isConnectingMcp.value = false;
@@ -328,12 +330,12 @@ export function useMcpTab() {
       });
       if (mcpRowConnections.value[key] !== state) return;
       state.success = isOk(res.code) && !!res.data;
-      if (!state.success) state.error = res.errMsg || '连接测试失败，请检查 MCP 配置';
+            if (!state.success) state.error = res.errMsg || t('settings.mcp.errConnectFailed');
     } catch (error: unknown) {
       if (mcpRowConnections.value[key] !== state) return;
       state.error = error instanceof ApiError && error.kind === 'network'
-        ? '连接测试请求失败或超时，请检查后端是否可用'
-        : error instanceof Error ? error.message : '连接测试失败，请稍后重试';
+        ? t('settings.mcp.errConnectNetwork')
+        : error instanceof Error ? error.message : t('settings.mcp.errConnectGeneric');
     } finally {
       state.loading = false;
     }
@@ -348,25 +350,25 @@ export function useMcpTab() {
     try {
       if (editingMcpId.value) {
         const res = await McpAPI.update({ id: editingMcpId.value, ...payload });
-        if (isOk(res.code)) {
-          showMcpToast('MCP 服务已成功更新');
+                if (isOk(res.code)) {
+          showMcpToast(t('settings.mcp.toastUpdated'));
           isEditingOrAddingMcp.value = false;
           await loadMcp();
         } else {
-          mcpFormError.value = res.errMsg || '更新 MCP 服务失败，请稍后重试';
+          mcpFormError.value = res.errMsg || t('settings.mcp.errUpdate');
         }
       } else {
         const res = await McpAPI.add(payload);
-        if (isOk(res.code)) {
-          showMcpToast('MCP 服务已成功创建');
+                if (isOk(res.code)) {
+          showMcpToast(t('settings.mcp.toastCreated'));
           isEditingOrAddingMcp.value = false;
           await loadMcp();
         } else {
-          mcpFormError.value = res.errMsg || '创建 MCP 服务失败，请稍后重试';
+          mcpFormError.value = res.errMsg || t('settings.mcp.errCreate');
         }
       }
     } catch (e: any) {
-      mcpFormError.value = e?.message || '保存 MCP 服务失败，请稍后重试';
+      mcpFormError.value = e?.message || t('settings.mcp.errSave');
     } finally {
       isSubmittingMcp.value = false;
     }
@@ -375,25 +377,25 @@ export function useMcpTab() {
   const { confirm } = useConfirm();
 
   const handleDeleteMcp = async (item: McpVO) => {
-    const confirmed = await confirm({
-      title: '删除 MCP 服务',
-      content: `确定要删除 MCP 服务「${item.name}」吗？此操作无法撤销。`,
+        const confirmed = await confirm({
+      title: t('settings.mcp.confirmDeleteTitle'),
+      content: t('settings.mcp.confirmDeleteContent', { name: item.name }),
       type: 'danger',
-      confirmText: '确认删除',
-      cancelText: '取消',
+      confirmText: t('common.confirmDelete'),
+      cancelText: t('common.cancel'),
     });
     if (!confirmed) return;
 
     try {
       const res = await McpAPI.delById(item.id);
       if (isOk(res.code)) {
-        showMcpToast('MCP 服务已删除');
+        showMcpToast(t('settings.mcp.toastDeleted'));
         await loadMcp();
       } else {
-        showMcpToast(res.errMsg || '删除 MCP 服务失败，请稍后重试');
+        showMcpToast(res.errMsg || t('settings.mcp.errDelete'));
       }
     } catch {
-      showMcpToast('删除 MCP 服务异常');
+      showMcpToast(t('settings.mcp.errDeleteException'));
     }
   };
 
@@ -409,14 +411,14 @@ export function useMcpTab() {
         id: item.id,
         status: nextEnabled ? 1 : 0,
       });
-      if (isOk(res.code)) {
-        showMcpToast(nextEnabled ? '已启用' : '已停用');
+            if (isOk(res.code)) {
+        showMcpToast(nextEnabled ? t('settings.mcp.toastEnabled') : t('settings.mcp.toastDisabled'));
         await loadMcp();
       } else {
-        showMcpToast(res.errMsg || '状态更新失败，请稍后重试');
+        showMcpToast(res.errMsg || t('settings.mcp.toastStatusFailed'));
       }
     } catch {
-      showMcpToast('状态更新异常');
+      showMcpToast(t('settings.mcp.toastStatusException'));
     }
   };
 

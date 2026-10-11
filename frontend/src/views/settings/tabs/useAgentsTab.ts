@@ -3,8 +3,10 @@ import { AgentAPI, ToolAPI, ModelAPI } from '../../../services/api';
 import type { AgentVO, ToolVO, ModelConfigVO } from '../../../types/chat';
 import { isOk } from '../../../utils/api';
 import { useConfirm } from '../../../composables/useConfirm';
+import { useI18n } from '../../../i18n';
 
 export function useAgentsTab() {
+  const { t } = useI18n();
   const agentsList = ref<AgentVO[]>([]);
   const isAgentsLoading = ref(false);
   const agentsErrorMsg = ref('');
@@ -43,10 +45,10 @@ export function useAgentsTab() {
       if (isOk(res.code)) {
         agentsList.value = res.data?.records ?? [];
       } else {
-        agentsErrorMsg.value = '加载智能体列表失败，请稍后重试';
+                agentsErrorMsg.value = t('settings.agents.errLoadList');
       }
     } catch {
-      agentsErrorMsg.value = '加载智能体失败，请稍后重试';
+      agentsErrorMsg.value = t('settings.agents.errLoad');
     } finally {
       isAgentsLoading.value = false;
     }
@@ -59,12 +61,12 @@ export function useAgentsTab() {
       const res = await ToolAPI.list();
       if (isOk(res.code) && res.data) {
         availableTools.value = res.data;
-      } else {
-        toolsErrorMsg.value = '加载工具列表失败，请稍后重试';
+            } else {
+        toolsErrorMsg.value = t('settings.agents.errLoadTools');
       }
     } catch (e) {
       console.error('加载工具失败:', e);
-      toolsErrorMsg.value = '加载工具列表失败，请稍后重试';
+      toolsErrorMsg.value = t('settings.agents.errLoadTools');
     } finally {
       isToolsLoading.value = false;
     }
@@ -81,10 +83,10 @@ export function useAgentsTab() {
     }
   };
 
-  const getModelName = (modelId?: number | string) => {
-    if (!modelId) return '未绑定模型';
+    const getModelName = (modelId?: number | string) => {
+    if (!modelId) return t('settings.agents.unboundModel');
     const found = modelsList.value.find(m => String(m.id) === String(modelId));
-    return found?.modelName || `模型 #${modelId}`;
+    return found?.modelName || t('settings.agents.modelFallback', { id: modelId });
   };
 
   const startAddAgent = () => {
@@ -138,16 +140,16 @@ export function useAgentsTab() {
 
   const handleSaveAgent = async () => {
     agentFormError.value = '';
-    if (!agentForm.value.name.trim()) {
-      agentFormError.value = '请填写智能体名称';
+        if (!agentForm.value.name.trim()) {
+      agentFormError.value = t('settings.agents.errNameRequired');
       return;
     }
     if (!agentForm.value.modelId) {
-      agentFormError.value = '请选择绑定的模型';
+      agentFormError.value = t('settings.agents.errModelRequired');
       return;
     }
     if (!agentForm.value.prompt.trim()) {
-      agentFormError.value = '请填写提示词设定';
+      agentFormError.value = t('settings.agents.errPromptRequired');
       return;
     }
 
@@ -162,12 +164,12 @@ export function useAgentsTab() {
           prompt: agentForm.value.prompt.trim(),
           toolList: [...agentForm.value.toolList],
         });
-        if (isOk(res.code)) {
-          showAgentToast('智能体已成功更新');
+                if (isOk(res.code)) {
+          showAgentToast(t('settings.agents.toastUpdated'));
           isEditingOrAddingAgent.value = false;
           await loadAgents();
         } else {
-          agentFormError.value = '更新失败，请稍后重试';
+          agentFormError.value = t('settings.agents.errUpdate');
         }
       } else {
         const res = await AgentAPI.add({
@@ -177,16 +179,16 @@ export function useAgentsTab() {
           prompt: agentForm.value.prompt.trim(),
           toolList: agentForm.value.toolList.length > 0 ? [...agentForm.value.toolList] : undefined,
         });
-        if (isOk(res.code)) {
-          showAgentToast('智能体已成功创建');
+                if (isOk(res.code)) {
+          showAgentToast(t('settings.agents.toastCreated'));
           isEditingOrAddingAgent.value = false;
           await loadAgents();
         } else {
-          agentFormError.value = '创建失败，请稍后重试';
+          agentFormError.value = t('settings.agents.errCreate');
         }
       }
     } catch {
-      agentFormError.value = '保存智能体失败，请稍后重试';
+      agentFormError.value = t('settings.agents.errSave');
     } finally {
       isSubmittingAgent.value = false;
     }
@@ -195,11 +197,11 @@ export function useAgentsTab() {
   const { confirm } = useConfirm();
 
   const handleDeleteAgent = async (agent: AgentVO) => {
-    const confirmed = await confirm({
-      title: '删除智能体',
-      message: `确定要删除智能体「${agent.name}」吗？此操作无法撤销。`,
-      confirmText: '确认删除',
-      cancelText: '取消',
+        const confirmed = await confirm({
+      title: t('settings.agents.confirmDeleteTitle'),
+      message: t('settings.agents.confirmDeleteContent', { name: agent.name }),
+      confirmText: t('common.confirmDelete'),
+      cancelText: t('common.cancel'),
       type: 'danger',
     });
     if (!confirmed) return;
@@ -207,13 +209,13 @@ export function useAgentsTab() {
     try {
       const res = await AgentAPI.delById(agent.id);
       if (isOk(res.code)) {
-        showAgentToast('智能体已删除');
+        showAgentToast(t('settings.agents.toastDeleted'));
         await loadAgents();
       } else {
-        showAgentToast('删除失败，请稍后重试');
+        showAgentToast(t('settings.agents.errDelete'));
       }
     } catch {
-      showAgentToast('删除智能体异常');
+      showAgentToast(t('settings.agents.errDeleteException'));
     }
   };
 

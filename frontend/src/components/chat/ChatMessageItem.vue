@@ -25,7 +25,7 @@
               v-for="(imageUrl, index) in userImageUrls"
               :key="index"
               :src="imageUrl"
-              :alt="`用户上传图片 ${index + 1}`"
+              :alt="t('chat.message.userUploadIndex', { index: index + 1 })"
               :class="userImageUrls.length > 1 ? 'h-28 w-28' : 'max-h-64 w-auto'"
               class="object-contain rounded-xl border border-black/10 dark:border-white/10 cursor-pointer hover:opacity-95 transition"
               @click="handleImageClick(imageUrl)"
@@ -43,7 +43,7 @@
         <button
           @click="copyContent"
           class="hover:text-gray-600 dark:hover:text-zinc-200 transition p-0.5"
-          :title="copied ? '已复制' : '复制内容'"
+          :title="copied ? t('common.copied') : t('chat.message.copyContent')"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -146,7 +146,7 @@
                     <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v13M6 12l6 6 6-6" />
                     </svg>
-                    回到底部
+                                        {{ t('chat.message.backToBottom') }}
                   </button>
                 </div>
               </CollapseTransition>
@@ -185,12 +185,12 @@
                 </div>
                 <div class="flex flex-col shrink-0">
                   <div class="flex items-center gap-1.5 whitespace-nowrap">
-                    <span class="font-medium">团队协作</span>
+                                        <span class="font-medium">{{ t('chat.message.teamCollab') }}</span>
                     <span :class="['px-1.5 py-0.5 rounded-full text-[10px] font-mono whitespace-nowrap', props.isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-700']">
-                      {{ item.subAgents.length }} 成员正在协作
+                      {{ t('chat.message.membersWorking', { count: item.subAgents.length }) }}
                     </span>
                   </div>
-                  <p class="text-[11px] text-gray-400 whitespace-nowrap">轨迹与标签已在右侧图示面板铺开</p>
+                  <p class="text-[11px] text-gray-400 whitespace-nowrap">{{ t('chat.message.trajectoryOnRight') }}</p>
                 </div>
               </div>
 
@@ -222,9 +222,9 @@
                   @click="canExpandTool(item.tool) && toggleToolCall(item.tool.id)"
                   class="flex items-center gap-1.5 text-[13px] py-0.5 transition group select-none w-full max-w-full min-w-0 overflow-hidden text-left"
                   :class="toolRowHeaderClass(item.tool, isDark)"
-                  :title="cleanDisplayPath(getToolDescription(item.tool)) || resolveToolRenderName(item.tool.toolName)"
+                                    :title="cleanDisplayPath(getToolDescription(item.tool)) || resolveToolRenderName(item.tool.toolName)"
                 >
-                  <button v-if="canExpandTool(item.tool)" type="button" class="shrink-0 cursor-pointer" :aria-expanded="!!expandedToolIds[item.tool.id]" :aria-label="`查看${resolveToolRenderName(item.tool.toolName)}详情`" @click.stop="toggleToolCall(item.tool.id)">
+                  <button v-if="canExpandTool(item.tool)" type="button" class="shrink-0 cursor-pointer" :aria-expanded="!!expandedToolIds[item.tool.id]" :aria-label="t('chat.message.viewToolDetail', { category: resolveToolRenderName(item.tool.toolName) })" @click.stop="toggleToolCall(item.tool.id)">
                   <svg
                     :class="['w-3.5 h-3.5 transition-transform duration-200 shrink-0', expandedToolIds[item.tool.id] ? 'rotate-90' : '', isDark ? 'text-zinc-300 drop-shadow-[0_0_4px_rgba(255,255,255,0.4)]' : 'text-gray-400']"
                     fill="none"
@@ -235,15 +235,15 @@
                   </svg>
                   </button>
                   <div class="flex-shrink-0 flex items-center">
-                    <svg v-if="getToolCategory(item.tool) === '读取' || resolveToolRenderName(item.tool.toolName) === '写入'" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <svg v-if="getToolCategory(item.tool) === TOOL_CATEGORY.READ || getToolCategory(item.tool) === TOOL_CATEGORY.WRITE" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                       <rect x="4" y="3" width="16" height="18" rx="2" />
                       <path stroke-linecap="round" d="M8 8h8M8 12h8M8 16h4" />
                     </svg>
-                    <svg v-else-if="getToolCategory(item.tool) === '执行命令'" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <svg v-else-if="getToolCategory(item.tool) === TOOL_CATEGORY.COMMAND" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                       <rect x="3" y="4" width="18" height="16" rx="3" />
                       <path stroke-linecap="round" stroke-linejoin="round" d="M7 9l3 3-3 3M13 15h4" />
                     </svg>
-                    <svg v-else-if="getToolCategory(item.tool) === '思考'" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <svg v-else-if="getToolCategory(item.tool) === TOOL_CATEGORY.THINK" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                       <circle cx="9" cy="9" r="3.5" />
                       <circle cx="15" cy="9" r="3.5" />
                       <circle cx="9" cy="15" r="3.5" />
@@ -260,7 +260,7 @@
                     <button
                       type="button"
                       :disabled="!canPreviewFile(item.tool)"
-                      :title="canPreviewFile(item.tool) ? '预览文件' : undefined"
+                      :title="canPreviewFile(item.tool) ? t('chat.message.previewFile') : undefined"
                       @click.stop="openFilePreview?.(props.sessionId, getToolTarget(item.tool))"
                       class="border-b border-dotted font-mono text-[12.5px] pb-px transition-colors truncate min-w-0"
                       :class="isDark ? 'border-white/30 text-zinc-200 text-glow-subtle' : 'border-gray-400 text-gray-700'"
@@ -290,7 +290,7 @@
                           : (isDark ? 'text-[13px] text-zinc-100 text-glow-white' : 'text-[13px] text-gray-700')
                       ]"
                     >
-                      {{ cleanDisplayPath(getToolDescription(item.tool)) || resolveToolRenderName(item.tool.toolName) }}
+                                            {{ cleanDisplayPath(getToolDescription(item.tool)) || resolveToolRenderName(item.tool.toolName) }}
                     </button>
                   </template>
 
@@ -348,7 +348,7 @@
                           @click.stop="copyToolContent(item.tool.result ?? '', item.tool.id)"
                           class="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition px-1 py-0.5 select-none flex-shrink-0 cursor-pointer"
                         >
-                          {{ toolCopiedId === item.tool.id ? '已复制' : '复制' }}
+                          {{ toolCopiedId === item.tool.id ? t('common.copied') : t('common.copy') }}
                         </button>
                       </div>
 
@@ -358,14 +358,14 @@
                           <div v-if="getEditFileDiffChunks(item.tool)!.oldText" class="rounded-xl bg-red-500/10 border border-red-500/20 p-3 text-[#b42c3f] dark:text-rose-300 whitespace-pre-wrap overflow-x-auto max-h-48 scrollbar-thin">
                             <div class="text-[11px] font-sans font-medium text-red-500/80 dark:text-red-400/80 mb-1.5 select-none flex items-center gap-1.5">
                               <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                              <span>- 变更前 (oldText)</span>
+                              <span>{{ t('chat.message.diffBefore') }}</span>
                             </div>
                             {{ getEditFileDiffChunks(item.tool)!.oldText }}
                           </div>
                           <div v-if="getEditFileDiffChunks(item.tool)!.newText" class="rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-3 text-[#088f50] dark:text-emerald-300 whitespace-pre-wrap overflow-x-auto max-h-48 scrollbar-thin">
                             <div class="text-[11px] font-sans font-medium text-emerald-600/80 dark:text-emerald-400/80 mb-1.5 select-none flex items-center gap-1.5">
                               <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                              <span>+ 变更后 (newText)</span>
+                              <span>{{ t('chat.message.diffAfter') }}</span>
                             </div>
                             {{ getEditFileDiffChunks(item.tool)!.newText }}
                           </div>
@@ -376,15 +376,15 @@
                         >{{ item.tool.result }}</pre>
                         <div v-else-if="item.tool.status === 'pending'" class="font-mono text-xs text-amber-500/90 flex items-center gap-2">
                           <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
-                          <span>等待人工决策（审批卡片在过程区之外）</span>
+                                                    <span>{{ t('chat.message.awaitingDecision') }}</span>
                         </div>
-                        <div v-else-if="isToolInProgress(item.tool.status)" class="font-mono text-xs text-gray-400">正在执行中...</div>
+                        <div v-else-if="isToolInProgress(item.tool.status)" class="font-mono text-xs text-gray-400">{{ t('chat.message.toolInProgress') }}</div>
                         <pre
                           v-else-if="shouldShowToolArguments(item.tool.toolName) && item.tool.query"
                           :class="['font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto select-text', isDark ? 'text-gray-400' : 'text-gray-600']"
                         >{{ item.tool.query }}</pre>
                         <div v-else class="text-xs text-gray-400 font-mono">
-                          (暂无输出)
+                                                    {{ t('chat.message.noOutput') }}
                         </div>
                       </div>
                     </div>
@@ -402,7 +402,7 @@
               :show-border="false"
               class="text-sm font-medium tracking-wide !mx-0 !ml-0"
             >
-              正在探索中...
+                            {{ t('chat.message.exploring') }}
             </GradientText>
           </div>
         </div>
@@ -469,7 +469,7 @@
         <div
           v-if="props.message.isCompressingContext"
           class="w-full my-3 py-1 flex items-center gap-3 select-none relative overflow-hidden context-compact-bar"
-          :title="props.message.contextUsage?.tokenCount ? `当前上下文：${props.message.contextUsage.tokenCount} / ${props.message.contextUsage.maxTokens || 0} tokens` : '正在压缩上下文'"
+          :title="props.message.contextUsage?.tokenCount ? t('chat.message.contextTitle', { used: props.message.contextUsage.tokenCount, max: props.message.contextUsage.maxTokens || 0 }) : t('chat.message.compressing')"
         >
           <!-- 左侧水平细线 (自动撑满左侧) -->
           <div class="flex-1 h-[1px] bg-gray-200 dark:bg-gray-700/60"></div>
@@ -484,7 +484,7 @@
               <line x1="16" y1="17" x2="8" y2="17"></line>
               <polyline points="10 9 9 9 8 9"></polyline>
             </svg>
-            <span class="context-compact-shimmer-text">正在压缩上下文</span>
+            <span class="context-compact-shimmer-text">{{ t('chat.message.compressing') }}</span>
           </div>
 
           <!-- 右侧水平细线 (左长右短精确对齐截图) -->
@@ -517,7 +517,7 @@
         <button
           @click="copyContent"
           class="hover:text-gray-600 dark:hover:text-gray-200 transition p-0.5"
-          :title="copied ? '已复制' : '复制回答'"
+          :title="copied ? t('common.copied') : t('chat.message.copyAnswer')"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -538,11 +538,11 @@
             v-if="execStatusMeta.errorReason"
             class="text-red-500/90 truncate max-w-[24rem] cursor-help"
             :title="execStatusMeta.errorReason"
-          >：{{ execStatusMeta.errorReason }}</span>
+          >{{ t('common.colon') }}{{ execStatusMeta.errorReason }}</span>
         </div>
 
         <!-- 模型（模型名为空时隐藏该整项） -->
-        <div v-if="execModelLabel" class="flex flex-1 whitespace-nowrap items-center gap-1" :title="`执行模型：${execModelLabel}`">
+        <div v-if="execModelLabel" class="flex flex-1 whitespace-nowrap items-center gap-1" :title="t('chat.message.execModel', { label: execModelLabel })">
           <svg class="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
           </svg>
@@ -554,7 +554,7 @@
           <svg class="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
           </svg>
-          <span>用量 {{ displayTokens }}</span>
+          <span>{{ t('chat.message.usageTokens', { tokens: displayTokens }) }}</span>
         </div>
 
         <!-- 耗时统计（组尾展示一次；标注「总历时包含等待时间」） -->
@@ -562,7 +562,7 @@
           <svg class="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <span>用时 {{ displayDuration }}</span>
+          <span>{{ t('chat.message.usageDuration', { duration: displayDuration }) }}</span>
         </div>
 
         <!-- 时间戳 -->
@@ -584,8 +584,9 @@ import {
   isReadFileTool,
   shouldShowToolArguments,
   isSubAgentTool,
-  resolveToolMeta,
+    resolveToolMeta,
   extractSubAgentParams,
+  TOOL_CATEGORY,
 } from '../../utils/toolMeta';
 import { compareResponsePosition } from '../../utils/responseOrder';
 import { toObject } from '../../utils/json';
@@ -598,6 +599,7 @@ import { parseToolDiff } from '../../utils/toolDiff';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
 import { useStreamStickyScroll } from '../../composables/useStreamStickyScroll';
 import { useTheme } from '../../composables/useTheme';
+import { t } from '../../i18n';
 import GradientText from '../common/GradientText.vue';
 import MarkdownRenderer from './MarkdownRenderer.vue';
 import DelegatedTaskMessage from './DelegatedTaskMessage.vue';
@@ -711,12 +713,12 @@ const toggleThoughtStep = (stepId: string, step: ThoughtStep) => {
 };
 
 const formatThoughtTitle = (title?: string): string => {
-  if (!title) return '深度思考';
-  const t = title.trim();
-  if (t === 'Thought for' || t === 'Thought' || t === '思考过程' || t === '思考' || t.toLowerCase() === 'thought for') {
-    return '深度思考';
+  if (!title) return t('chat.message.deepThought');
+  const trimmed = title.trim();
+  if (trimmed === 'Thought for' || trimmed === 'Thought' || trimmed === '思考过程' || trimmed === '思考' || trimmed.toLowerCase() === 'thought for') {
+    return t('chat.message.deepThought');
   }
-  return t;
+  return trimmed;
 };
 
 // 思考内容展开框的流式贴底：判定规则与实现见 composables/useStreamStickyScroll.ts。
@@ -798,21 +800,21 @@ const hasProcessContent = computed(() => {
 // 折叠栏头部标题文案
 const processTitle = computed(() => {
   if (props.message.isThinking) {
-    return props.message.content ? '生成中...' : '思考中...';
+    return props.message.content ? t('chat.message.generating') : t('chat.message.thinking');
   }
   const toolCount = props.message.toolCalls?.length || 0;
   const hasThoughts = !!(props.message.thoughtSteps?.length);
 
   if (hasThoughts && toolCount > 0) {
-    return `已思考并调用 ${toolCount} 个工具`;
+    return t('chat.message.thoughtAndTools', { count: toolCount });
   }
   if (toolCount > 0) {
-    return `已调用 ${toolCount} 个工具`;
+    return t('chat.message.tools', { count: toolCount });
   }
   if (hasThoughts) {
-    return '已思考';
+    return t('chat.message.thought');
   }
-  return '执行过程';
+  return t('chat.message.process');
 });
 
 const toggleToolCall = (id: string) => {
@@ -881,7 +883,7 @@ const subAgentToolCalls = computed<ToolCallTrace[]>(() => {
       || matchedSub?.name
       || params.agentName
       || tc.subAgentName
-      || (agentId ? `Agent #${agentId}` : `子代理 #${displayIndex}`);
+      || (agentId ? `Agent #${agentId}` : t('chat.message.subAgentIndex', { index: displayIndex }));
 
     const resolvedSubSessionId = subSessionId || matchedSub?.id || tc.subSessionId;
     const resolvedAgentId = agentId || matchedSub?.agentId;
@@ -938,9 +940,9 @@ const subAgentMemberDotClass = (tc: ToolCallTrace): string => subItemStatusDotCl
 /** 成员行 title：协作式委派说明结果以邮件送达（阻塞式保持原提示）。 */
 const subAgentMemberTitle = (tc: ToolCallTrace, idx: number): string => {
   const name = tc.subAgentName || `Agent #${tc.displayIndex || idx + 1}`;
-  return isAsyncDelegation(tc)
-    ? `协作式委派 ${name}：结果将以邮件送达，可继续其它工作`
-    : `切换查看 ${name} 的独立会话轨迹`;
+    return isAsyncDelegation(tc)
+    ? t('chat.message.asyncDelegationTip', { name })
+    : t('chat.message.viewSubSessionTip', { name });
 };
 
 /** 卡片无对应工具行时的排序基准（大于任何 rowIndex 派生的工具 order，保证卡片排在过程项之后） */
@@ -1247,27 +1249,27 @@ const displayTokens = computed(() => {
     const total = e.totalTokens != null
       ? e.totalTokens
       : (e.inputTokens != null && e.outputTokens != null ? e.inputTokens + e.outputTokens : null);
-    return total == null ? '暂无统计' : formatTokenCount(total);
+        return total == null ? t('format.noStats') : formatTokenCount(total);
   }
   // 实时流：气泡自带统计（本组摘要尚未写入会话表时的即时展示）
   const own = props.message.tokenInfo?.totalTokenCount ?? props.message.tokens;
-  return own != null ? formatTokenCount(own) : '暂无统计';
+  return own != null ? formatTokenCount(own) : t('format.noStats');
 });
 
 const tokenTooltip = computed(() => {
   const e = execSummary.value;
   if (e) {
-    const fmt = (n?: number | null) => (n == null ? '暂无' : String(n));
-    if (e.inputTokens == null && e.outputTokens == null && e.totalTokens == null) return '暂无统计';
-    return `输入: ${fmt(e.inputTokens)} | 输出: ${fmt(e.outputTokens)} | 总计: ${fmt(e.totalTokens)}`;
+    const fmt = (n?: number | null) => (n == null ? t('format.none') : String(n));
+    if (e.inputTokens == null && e.outputTokens == null && e.totalTokens == null) return t('format.noStats');
+    return t('chat.message.tokenStats', { input: fmt(e.inputTokens), output: fmt(e.outputTokens), total: fmt(e.totalTokens) });
   }
   const info = props.message.tokenInfo;
   if (info) {
-    const fmt = (n?: number | null) => (n == null ? '暂无' : String(n));
-    return `输入: ${fmt(info.inputTokenCount)} | 输出: ${fmt(info.outputTokenCount)} | 总计: ${fmt(info.totalTokenCount)}`;
+    const fmt = (n?: number | null) => (n == null ? t('format.none') : String(n));
+    return t('chat.message.tokenStats', { input: fmt(info.inputTokenCount), output: fmt(info.outputTokenCount), total: fmt(info.totalTokenCount) });
   }
-  const t = props.message.tokens;
-  return t != null ? `总用量: ${t} tokens` : '暂无统计';
+  const totalTokens = props.message.tokens;
+  return totalTokens != null ? t('chat.message.totalUsage', { t: totalTokens }) : t('format.noStats');
 });
 
 /** 执行状态展示（仅摘要存在时展示）；进行中/失败/终态用不同配色，失败附带原因全文。 */

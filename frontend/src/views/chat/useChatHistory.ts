@@ -7,6 +7,7 @@ import { mergeTurns, mergeTurnViews, mergeSubSessionTree, synthesizeFailedTurnBu
 import { upsertTurnViewIntoMessages } from './blockProjection';
 import { attachPromptCards } from '../../utils/toolCallCard';
 import { useChatSessionStore } from '../../stores/chatSessionStore';
+import { t } from '../../i18n';
 
 /** 加载更多历史时保证加载动画可见的最短展示时长（毫秒） */
 const HISTORY_PREPEND_SETTLE_MS = 350;
@@ -104,7 +105,7 @@ export function useChatHistory(options: ChatHistoryOptions) {
         if (!cur && tree.root) {
           cur = {
             id: String(tree.root.id),
-            title: tree.root.name || '新会话',
+            title: tree.root.name || t('chat.sidebar.newSession'),
             messages: [],
             subSessions: tree.subSessions || [],
             runStatus: tree.root.runStatus || 'IDLE',
@@ -221,7 +222,7 @@ export function useChatHistory(options: ChatHistoryOptions) {
     } catch (err) {
       // 失败不再静默：转圈消失会让用户误以为「已到底」，这里保留可见失败态并可重试
       console.error('加载更多历史消息失败:', err);
-      historyLoadError.value = '加载历史消息失败，请重试';
+      historyLoadError.value = t('chat.view.historyLoadFailed');
     } finally {
       await nextTick();
       scheduleTimeout(() => {

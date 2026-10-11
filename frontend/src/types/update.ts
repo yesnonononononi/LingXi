@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+
 /**
  * 自动更新的类型契约（渲染层）。
  *
@@ -155,23 +157,23 @@ export function stripUpdateClaim(releaseNotes: string | undefined): string {
 export function describeUpdateState(state: UpdateState): string {
   switch (state) {
     case 'disabled':
-      return '当前环境不支持自动更新';
+      return t('update.disabled');
     case 'idle':
-      return '已是最新版本';
+      return t('update.idle');
     case 'checking':
-      return '正在检查更新…';
+      return t('update.checking');
     case 'not-available':
-      return '当前已是最新版本';
+      return t('update.notAvailable');
     case 'available':
-      return '发现新版本';
+      return t('update.available');
     case 'downloading':
-      return '正在下载…';
+      return t('update.downloading');
     case 'downloaded':
-      return '下载完成，可以安装';
+      return t('update.downloaded');
     case 'installing':
-      return '正在安装并重启…';
+      return t('update.installing');
     case 'error':
-      return '检查更新失败';
+      return t('update.error');
     default:
       return '';
   }

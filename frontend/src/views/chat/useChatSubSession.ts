@@ -6,6 +6,7 @@ import { upsertTurnViewIntoMessages } from './blockProjection';
 import { attachPromptCards } from '../../utils/toolCallCard';
 import { toSubItemStatus } from '../../utils/subSessionStatus';
 import type { SubSessionItem } from '../../components/chat/SubAgentSidePanel.vue';
+import { t } from '../../i18n';
 
 export interface ChatSubSessionOptions {
   currentActiveSession: ComputedRef<ChatSession | null | undefined>;
@@ -45,7 +46,7 @@ export function useChatSubSession(options: ChatSubSessionOptions) {
       map.set(id, {
         id: vo.id,
         agentId: vo.agentId,
-        agentName: vo.name || (vo.agentId ? `Agent #${vo.agentId}` : '子代理'),
+        agentName: vo.name || (vo.agentId ? `Agent #${vo.agentId}` : t('chat.subSessions.fallbackName')),
         task: vo.name || '',
         status: toSubItemStatus(vo.runStatus, vo.lastOutcome),
         subSession: vo,
@@ -132,7 +133,7 @@ export function useChatSubSession(options: ChatSubSessionOptions) {
       subSessionPaginationMap.value[key] = { hasMore: res.data.hasMore, nextCursor: res.data.nextCursor };
     } catch (err) {
       console.error('加载子会话消息失败:', err);
-      subMessagesError.value = '加载子代理消息失败，请重试';
+      subMessagesError.value = t('chat.view.subMessagesLoadFailed');
     } finally {
       isLoadingSubMessages.value = false;
     }
@@ -169,7 +170,7 @@ export function useChatSubSession(options: ChatSubSessionOptions) {
       subSessionPaginationMap.value[key] = { hasMore: res.data.hasMore, nextCursor: res.data.nextCursor };
     } catch (err) {
       console.error('加载更多子会话消息失败:', err);
-      subHistoryLoadError.value = '加载历史消息失败，请重试';
+      subHistoryLoadError.value = t('chat.view.historyLoadFailed');
     } finally {
       isLoadingMoreSubMessages.value = false;
     }

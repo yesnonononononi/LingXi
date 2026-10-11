@@ -8,6 +8,7 @@ import { canDecideCard } from '../../utils/toolCallCard';
 import CardHeader from './CardHeader.vue';
 import CardActionButton from './CardActionButton.vue';
 import MarkdownRenderer from './MarkdownRenderer.vue';
+import { useI18n } from '../../i18n';
 
 const props = defineProps<{
   /** 统一卡片数据（PLAN 计划审批） */
@@ -16,6 +17,8 @@ const props = defineProps<{
   sessionId?: string | number;
   isDark?: boolean;
 }>();
+
+const { t } = useI18n();
 
 /**
  * 由视图层注入的决策提交：走 JSON 回执，**不再消费请求级流**。
@@ -47,7 +50,7 @@ const isPending = computed(() => canDecideCard(props.promptCard, 'APPROVE'));
 
 /** 计划书正文：Markdown 正文 */
 const planBody = computed(() => props.promptCard.content || '');
-const planTitle = computed(() => props.promptCard.title || '任务计划');
+const planTitle = computed(() => props.promptCard.title || t('chat.plan.defaultTitle'));
 
 /** 结论：raw_output.outcome（APPROVED / REJECTED / ...） */
 const outcome = computed(() => String(props.promptCard.outcome ?? '').trim().toUpperCase());
@@ -61,13 +64,13 @@ const statusTone = computed<CardTone>(() => {
 });
 
 const statusLabel = computed(() => {
-  if (outcome.value === 'APPROVED') return '✓ 计划已批准，正在实施';
-  if (outcome.value === 'REJECTED') return '✕ 计划已被否决';
-  if (isPending.value) return '计划待审';
-  if (props.promptCard.status === 'preparing') return '准备中';
-  if (props.promptCard.status === 'in_progress') return '处理中';
-  if (props.promptCard.status === 'pending') return props.promptCard.unavailableReason || '正在同步状态';
-  return '状态未知';
+  if (outcome.value === 'APPROVED') return t('chat.plan.statusApproved');
+  if (outcome.value === 'REJECTED') return t('chat.plan.statusRejected');
+  if (isPending.value) return t('chat.plan.statusPendingReview');
+  if (props.promptCard.status === 'preparing') return t('chat.plan.statusPreparing');
+  if (props.promptCard.status === 'in_progress') return t('chat.plan.statusInProgress');
+  if (props.promptCard.status === 'pending') return props.promptCard.unavailableReason || t('chat.plan.statusSyncing');
+  return t('chat.plan.statusUnknown');
 });
 
 const toggleTipInput = () => {
@@ -80,20 +83,20 @@ const decide = async (approved: boolean) => {
 
   const conversationId = props.promptCard.conversationId
     ?? (props.sessionId != null && props.sessionId !== '' ? String(props.sessionId) : '');
-  if (!conversationId) {
-    errorMsg.value = '计划书缺少所属会话，无法提交审批';
+    if (!conversationId) {
+    errorMsg.value = t('chat.plan.missingConversation');
     return;
   }
 
   // 决策锚点是 toolCallId：历史卡片由 TOOL 行 toolCall 提供、实时卡片由 CARD_PENDING 拉取，
   // 两条路径都落在同一个字段上。
   const toolCallId = props.promptCard.toolCallId;
-  if (!toolCallId) {
-    errorMsg.value = '计划书缺少互动状态ID，无法提交审批';
+    if (!toolCallId) {
+    errorMsg.value = t('chat.plan.missingToolCallId');
     return;
   }
   if (!decideToolCall) {
-    errorMsg.value = '当前视图未接入事件流，无法提交审批';
+    errorMsg.value = t('chat.plan.noEventStream');
     return;
   }
 
@@ -108,7 +111,7 @@ const decide = async (approved: boolean) => {
       expectedVersion: props.promptCard.version ?? null
     });
   } catch (err: any) {
-    errorMsg.value = err?.message || (approved ? '批准计划失败，请重试' : '拒绝计划失败，请重试');
+    errorMsg.value = err?.message || (approved ? t('chat.plan.approveFailed') : t('chat.plan.rejectFailed'));
   } finally {
     isSubmitting.value = false;
   }
@@ -120,7 +123,7 @@ const decide = async (approved: boolean) => {
     <div :class="CARD_BODY_CLASS">
 
       <!-- 1. 统一 header：状态点 + 类型标签 + 标题 -->
-      <CardHeader :tone="statusTone" type-label="计划" :title="planTitle" :is-dark="isDark" />
+      <CardHeader :tone="statusTone" :type-label="t('chat.plan.typeLabel')" :title="planTitle" :is-dark="isDark" />
 
       <!-- 2. 计划书正文（Markdown；长文限高可滚动） -->
       <div
@@ -140,20 +143,20 @@ const decide = async (approved: boolean) => {
             <svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
             </svg>
-            <span class="font-medium text-gray-700 dark:text-gray-300">补充 Tip / 修改建议</span>
+            <span class="font-medium text-gray-700 dark:text-gray-300">{{ t('chat.plan.tipHeader') }}</span>
           </div>
           <button
             type="button"
             @click="isAddingTip = false"
             class="text-[11px] text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50"
           >
-            收起
+                        {{ t('common.collapse') }}
           </button>
         </div>
         <textarea
           v-model="tipText"
           rows="2"
-          placeholder="输入补充建议、指导意见或调整要求（选填，点批准或拒绝时会自动带上）..."
+          :placeholder="t('chat.plan.tipPlaceholder')"
           :class="[
             'w-full text-xs sm:text-sm px-3 py-2 rounded-xl border outline-none transition resize-none',
             isDark
@@ -184,7 +187,7 @@ const decide = async (approved: boolean) => {
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
           </svg>
-          <span>去聊天里说</span>
+          <span>{{ t('chat.plan.goToChat') }}</span>
         </button>
         <div v-else></div>
 
@@ -203,7 +206,7 @@ const decide = async (approved: boolean) => {
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
             </svg>
-            <span>{{ isAddingTip ? '收起 Tip' : '增加 Tip' }}</span>
+            <span>{{ isAddingTip ? t('chat.plan.collapseTip') : t('chat.plan.addTip') }}</span>
           </button>
 
           <CardActionButton
@@ -218,7 +221,7 @@ const decide = async (approved: boolean) => {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </template>
-            拒绝执行
+                        {{ t('chat.plan.rejectAction') }}
           </CardActionButton>
 
           <CardActionButton
@@ -232,7 +235,7 @@ const decide = async (approved: boolean) => {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
               </svg>
             </template>
-            批准
+                        {{ t('chat.plan.approveAction') }}
           </CardActionButton>
         </div>
 

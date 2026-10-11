@@ -5,6 +5,7 @@ import { buildSessionMarkdown, mergeTurns, mergeTurnViews, synthesizeFailedTurnB
 import { upsertTurnViewIntoMessages } from './blockProjection';
 import { attachPromptCards } from '../../utils/toolCallCard';
 import { isTempSessionId } from '../../utils/ids';
+import { t } from '../../i18n';
 
 export interface ChatSessionListOptions {
   localSessions: Ref<ChatSession[]>;
@@ -133,7 +134,7 @@ export function useChatSessionList(options: ChatSessionListOptions) {
       }
     } catch (err) {
       console.error('获取会话详情及消息列表失败:', err);
-      sessionLoadError.value = '会话加载失败，请稍后重试';
+      sessionLoadError.value = t('chat.view.sessionLoadFailed');
     } finally {
       isLoadingCurrentSession.value = false;
       scrollToBottomForce();
@@ -167,7 +168,7 @@ export function useChatSessionList(options: ChatSessionListOptions) {
       localSessions.value = localSessions.value.filter(s => s.id !== id);
       if (localActiveId.value === id) localActiveId.value = null;
     } else {
-      window.alert('删除会话失败，请重试');
+      window.alert(t('chat.view.deleteSessionFailed'));
     }
   };
 
@@ -195,9 +196,9 @@ export function useChatSessionList(options: ChatSessionListOptions) {
       localActiveId.value = null;
     }
     if (failedIds.size === 0) {
-      window.alert(`已清空全部对话（${okCount} 条）`);
+            window.alert(t('chat.view.clearedAll', { count: okCount }));
     } else {
-      window.alert(`已清空 ${okCount} 条，${failedIds.size} 条失败，请重试`);
+      window.alert(t('chat.view.partialCleared', { ok: okCount, fail: failedIds.size }));
     }
   };
 
@@ -211,7 +212,7 @@ export function useChatSessionList(options: ChatSessionListOptions) {
     const session = currentActiveSession.value;
     const exported = displayedMessages.value;
     if (!session || exported.length === 0) {
-      window.alert('当前会话暂无消息内容可导出');
+      window.alert(t('chat.view.nothingToExport'));
       return;
     }
     const blob = new Blob([buildSessionMarkdown(session.title, exported)], { type: 'text/markdown;charset=utf-8' });

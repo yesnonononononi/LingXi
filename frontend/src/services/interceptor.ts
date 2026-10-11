@@ -2,6 +2,7 @@ import axios from 'axios';
 import type { AxiosError } from 'axios';
 import { isOk } from '../utils/api';
 import { getApiBaseUrl } from '../utils/apiConfig';
+import { t } from '../i18n';
 
 /**
  * 可区分的 API 错误类型。
@@ -73,17 +74,17 @@ export function classifyResult(
 export function describeKind(kind: ApiErrorKind): string {
   switch (kind) {
     case 'forbidden':
-      return '无权限访问该资源';
+      return t('error.noPermission');
     case 'notFound':
-      return '接口不存在';
+      return t('error.apiNotExist');
     case 'server':
-      return '服务繁忙，请稍后重试';
+      return t('error.serverBusy');
     case 'network':
-      return '网络连接失败，请稍后重试';
+      return t('error.networkFailed');
     case 'business':
-      return '操作失败，请稍后重试';
+      return t('error.defaultUserFacing');
     default:
-      return '请求失败，请稍后重试';
+      return t('error.requestFailed');
   }
 }
 
@@ -92,7 +93,7 @@ function toApiError(error: unknown): ApiError {
   const axiosError = error as AxiosError<{ errMsg?: string }> | undefined;
   const response = axiosError?.response;
   if (!response) {
-    const message = error instanceof Error && error.message ? error.message : '网络连接失败，请稍后重试';
+    const message = error instanceof Error && error.message ? error.message : t('error.networkFailed');
     return new ApiError('network', message);
   }
   const kind = classifyHttpStatus(response.status);

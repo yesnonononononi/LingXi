@@ -3,6 +3,7 @@ import { TeamAPI, AgentAPI } from '../../../services/api';
 import type { TeamVO, AgentVO } from '../../../types/chat';
 import { isOk } from '../../../utils/api';
 import { useConfirm } from '../../../composables/useConfirm';
+import { useI18n } from '../../../i18n';
 
 /**
  * 团队描述上限。**必须与后端 `Team.MAX_DESCRIPTION_LENGTH` 及 `init.sql` 里
@@ -13,6 +14,7 @@ import { useConfirm } from '../../../composables/useConfirm';
 const TEAM_DESCRIPTION_MAX_LENGTH = 1000;
 
 export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
+  const { t } = useI18n();
   const teamsList = ref<TeamVO[]>([]);
   const isTeamsLoading = ref(false);
   const teamsErrorMsg = ref('');
@@ -46,11 +48,11 @@ export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
       const res = await TeamAPI.list(1, 100);
       if (isOk(res.code)) {
         teamsList.value = res.data?.records ?? [];
-      } else {
-        teamsErrorMsg.value = '加载团队列表失败，请稍后重试';
+            } else {
+        teamsErrorMsg.value = t('settings.teams.errLoadList');
       }
     } catch {
-      teamsErrorMsg.value = '加载团队列表失败，请稍后重试';
+      teamsErrorMsg.value = t('settings.teams.errLoadList');
     } finally {
       isTeamsLoading.value = false;
     }
@@ -67,10 +69,10 @@ export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
     }
   };
 
-  const getAgentName = (agentId?: number | string) => {
+    const getAgentName = (agentId?: number | string) => {
     if (!agentId) return '';
     const found = agentsList.value.find(a => String(a.id) === String(agentId));
-    return found?.name || `Agent #${agentId}`;
+    return found?.name || t('settings.teams.agentFallback', { id: agentId });
   };
 
   const startAddTeam = () => {
@@ -127,33 +129,33 @@ export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
   const handleSaveTeam = async () => {
     teamFormError.value = '';
     const trimmedName = teamForm.value.name.trim();
-    if (!trimmedName) {
-      teamFormError.value = '请填写团队名称';
+        if (!trimmedName) {
+      teamFormError.value = t('settings.teams.errNameRequired');
       return;
     }
     if (trimmedName.length > 100) {
-      teamFormError.value = '团队名称长度不能超过 100 个字符';
+      teamFormError.value = t('settings.teams.errNameTooLong');
       return;
     }
     if (teamForm.value.description
       && teamForm.value.description.trim().length > TEAM_DESCRIPTION_MAX_LENGTH) {
-      teamFormError.value = `团队描述长度不能超过 ${TEAM_DESCRIPTION_MAX_LENGTH} 个字符`;
+      teamFormError.value = t('settings.teams.errDescTooLong', { max: TEAM_DESCRIPTION_MAX_LENGTH });
       return;
     }
     if (teamForm.value.agentIds.length === 0) {
-      teamFormError.value = '请至少选择一个团队成员 Agent';
+      teamFormError.value = t('settings.teams.errMembersRequired');
       return;
     }
     if (teamForm.value.agentIds.length > 10) {
-      teamFormError.value = '团队成员数量不能超过 10 个';
+      teamFormError.value = t('settings.teams.errTooManyMembers');
       return;
     }
     if (!teamForm.value.commanderAgentId) {
-      teamFormError.value = '请指定团队管理者 Agent';
+      teamFormError.value = t('settings.teams.errCommanderRequired');
       return;
     }
     if (!teamForm.value.agentIds.includes(teamForm.value.commanderAgentId)) {
-      teamFormError.value = '团队管理者必须属于团队成员';
+      teamFormError.value = t('settings.teams.errCommanderNotMember');
       return;
     }
 
@@ -167,13 +169,13 @@ export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
           commanderAgentId: teamForm.value.commanderAgentId,
           agentIds: [...teamForm.value.agentIds],
         });
-        if (isOk(res.code)) {
-          showTeamToast('团队已成功更新');
+                if (isOk(res.code)) {
+          showTeamToast(t('settings.teams.toastUpdated'));
           isEditingOrAddingTeam.value = false;
           await loadTeams();
           emit('modelUpdated');
         } else {
-          teamFormError.value = res.errMsg || '更新团队失败，请稍后重试';
+          teamFormError.value = res.errMsg || t('settings.teams.errUpdate');
         }
       } else {
         const res = await TeamAPI.add({
@@ -182,17 +184,17 @@ export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
           commanderAgentId: teamForm.value.commanderAgentId,
           agentIds: [...teamForm.value.agentIds],
         });
-        if (isOk(res.code)) {
-          showTeamToast('团队已成功创建');
+                if (isOk(res.code)) {
+          showTeamToast(t('settings.teams.toastCreated'));
           isEditingOrAddingTeam.value = false;
           await loadTeams();
           emit('modelUpdated');
         } else {
-          teamFormError.value = res.errMsg || '创建团队失败，请稍后重试';
+          teamFormError.value = res.errMsg || t('settings.teams.errCreate');
         }
       }
     } catch (e: any) {
-      teamFormError.value = e?.message || '保存团队失败，请稍后重试';
+      teamFormError.value = e?.message || t('settings.teams.errSave');
     } finally {
       isSubmittingTeam.value = false;
     }
@@ -201,26 +203,26 @@ export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
   const { confirm } = useConfirm();
 
   const handleDeleteTeam = async (team: TeamVO) => {
-    const confirmed = await confirm({
-      title: '删除团队',
-      content: `确定要删除团队「${team.name}」吗？此操作无法撤销。`,
+        const confirmed = await confirm({
+      title: t('settings.teams.confirmDeleteTitle'),
+      content: t('settings.teams.confirmDeleteContent', { name: team.name }),
       type: 'danger',
-      confirmText: '确认删除',
-      cancelText: '取消',
+      confirmText: t('common.confirmDelete'),
+      cancelText: t('common.cancel'),
     });
     if (!confirmed) return;
 
     try {
       const res = await TeamAPI.delById(team.id);
       if (isOk(res.code)) {
-        showTeamToast('团队已删除');
+        showTeamToast(t('settings.teams.toastDeleted'));
         await loadTeams();
         emit('modelUpdated');
       } else {
-        showTeamToast(res.errMsg || '删除团队失败，请稍后重试');
+        showTeamToast(res.errMsg || t('settings.teams.errDelete'));
       }
     } catch {
-      showTeamToast('删除团队异常');
+      showTeamToast(t('settings.teams.errDeleteException'));
     }
   };
 

@@ -40,7 +40,7 @@
 
         <!-- 文件预览入口：必须挂**在消息区容器内**做绝对定位。挂到右侧同级容器上时会按整个容器
              右缘对齐，而子代理面板可见时那个右缘属于面板本身 —— 按钮就会盖住面板头部的「收起」。 -->
-        <button v-if="fileTabs.length && !filePreviewOpen" type="button" class="absolute right-4 top-3 z-30 rounded-lg border border-zinc-400/20 bg-white px-3 py-1.5 text-xs shadow-sm dark:bg-zinc-900" @click="filePreviewOpen = true">文件预览 · {{ fileTabs.length }}</button>
+        <button v-if="fileTabs.length && !filePreviewOpen" type="button" class="absolute right-4 top-3 z-30 rounded-lg border border-zinc-400/20 bg-white px-3 py-1.5 text-xs shadow-sm dark:bg-zinc-900" @click="filePreviewOpen = true">{{ t('chat.view.filePreview', { count: fileTabs.length }) }}</button>
 
         <!-- 初始化数据加载失败：可见失败态（区别于「确实为空」，避免后端宕机时静默显示为空） -->
         <div
@@ -58,10 +58,10 @@
           <span>{{ sessionLoadError }}</span>
           <button
             type="button"
-            @click="handleRetrySessionLoad"
+                        @click="handleRetrySessionLoad"
             :class="['px-2.5 py-1 rounded-lg border text-xs font-medium transition cursor-pointer shrink-0', displayIsDark ? 'border-red-800 text-red-300 hover:bg-red-900/30' : 'border-red-300 text-red-600 hover:bg-red-100']"
           >
-            重试
+            {{ t('common.retry') }}
           </button>
         </div>
 
@@ -118,7 +118,7 @@
                     ? 'bg-zinc-900/90 border-white/10 text-zinc-200 hover:bg-zinc-800 shadow-black/50 hover:text-white'
                     : 'bg-white/95 border-blue-200/80 text-blue-600 hover:bg-blue-50/80 shadow-blue-500/10'
                 ]"
-                title="回到底部"
+                :title="t('chat.message.backToBottom')"
               >
                 <!-- 若正在流式输出中，显示动态微光波纹点 -->
                 <span v-if="isSending" class="relative flex h-2 w-2">
@@ -130,7 +130,7 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7" />
                   </svg>
                 </span>
-                <span>{{ isSending ? '有新内容，回到底部' : '回到底部' }}</span>
+                <span>{{ isSending ? t('chat.message.newContentBackToBottom') : t('chat.message.backToBottom') }}</span>
               </button>
             </div>
           </transition>
@@ -174,7 +174,7 @@
               class="shrink-0 rounded-md px-2 py-1 text-xs opacity-70 hover:opacity-100 transition-opacity"
               @click="dismissSendFailure"
             >
-              知道了
+                            {{ t('common.gotIt') }}
             </button>
           </div>
 
@@ -185,13 +185,13 @@
             class="w-full shrink-0 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-600 dark:text-amber-400 flex items-center gap-3"
             role="alert"
           >
-            <span class="flex-1">实时连接已断开，生成结果可能有延迟。可重新连接并同步最新进度。</span>
+                        <span class="flex-1">{{ t('chat.view.disconnected') }}</span>
             <button
               type="button"
               class="shrink-0 rounded-md border border-current px-2 py-1 text-xs opacity-80 hover:opacity-100 transition-opacity"
               @click="handleReconnectStream"
             >
-              重新连接
+              {{ t('chat.view.reconnect') }}
             </button>
           </div>
           <div
@@ -335,6 +335,7 @@
 
 <script setup lang="ts">
 import { ref, provide } from 'vue';
+import { t } from '../../i18n';
 import { useFilePreview } from '../../composables/useFilePreview';
 import { FILE_PREVIEW_KEY } from '../../types/filePreview';
 import { DECIDE_TOOL_CALL_KEY } from '../../types/toolDecision';

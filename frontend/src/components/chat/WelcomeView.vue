@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import TextType from '../common/TextType.vue';
+import { t } from '../../i18n';
 
 withDefaults(
   defineProps<{
@@ -7,7 +8,7 @@ withDefaults(
     text?: string | string[];
   }>(),
   {
-    text: '今天想构建什么？'
+    text: ''
   }
 );
 
@@ -23,7 +24,7 @@ const emit = defineEmits<{
       <h1 class="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100 flex items-center min-h-[36px]">
         <TextType
           as="span"
-          :text="text"
+          :text="text || t('chat.welcome.title')"
           :loop="false"
           :typing-speed="75"
           :pause-duration="1500"

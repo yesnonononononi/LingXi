@@ -5,6 +5,7 @@ import { ModelAPI } from '../../services/api';
 import { useTheme } from '../../composables/useTheme';
 import type { ModelConfigVO } from '../../types/chat';
 import { isOk, toPositiveInt } from '../../utils/api';
+import { t } from '../../i18n';
 
 const router = useRouter();
 
@@ -42,11 +43,11 @@ const load = async () => {
       pageSize.value = toPositiveInt(res.data?.pageSize, pageSize.value);
       total.value = toPositiveInt(res.data?.total, 0);
     } else {
-      errorMsg.value = '加载失败，请稍后重试';
+            errorMsg.value = t('model.loadFailed');
     }
   } catch (err) {
     console.error('[ModelListView] 加载模型列表失败:', err);
-    errorMsg.value = '加载失败，请稍后重试';
+    errorMsg.value = t('model.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -112,15 +113,15 @@ const confirmDelete = async () => {
     const res = await ModelAPI.deleteById(id);
     if (isOk(res.code)) {
       deletingId.value = null;
-      showToast('删除成功');
+            showToast(t('model.deleteSuccess'));
       if (records.value.length === 1 && current.value > 1) current.value -= 1;
       await load();
     } else {
-      showToast('删除失败，请稍后重试', 'error');
+      showToast(t('model.deleteFailed'), 'error');
       deletingId.value = null;
     }
   } catch {
-    showToast('删除失败，请稍后重试', 'error');
+    showToast(t('model.deleteFailed'), 'error');
     deletingId.value = null;
   }
 };
@@ -133,18 +134,18 @@ onMounted(load);
   <div :class='rootClass'>
     <header :class='headerClass'>
       <div class='flex items-center gap-3'>
-        <button @click='goBack' :class='btnClass'>← 返回对话</button>
-        <h1 class='text-sm font-bold tracking-wide'>模型管理</h1>
+                <button @click='goBack' :class='btnClass'>{{ t('model.backToChat') }}</button>
+        <h1 class='text-sm font-bold tracking-wide'>{{ t('model.title') }}</h1>
       </div>
       <button @click='toggleTheme' :class='themeBtnClass'>{{ isDark ? '☀️' : '🌙' }}</button>
     </header>
 
     <main class='max-w-5xl mx-auto px-4 py-6'>
       <div class='flex items-center justify-between mb-4'>
-        <div :class='mutedText'>共 {{ total }} 个模型配置</div>
+                <div :class='mutedText'>{{ t('model.totalConfigs', { count: total }) }}</div>
         <div class='flex items-center gap-2'>
-          <button @click='load' :class='btnClass'>刷新</button>
-          <button @click='goAdd' class='px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white transition'>＋ 新增模型</button>
+          <button @click='load' :class='btnClass'>{{ t('common.refresh') }}</button>
+          <button @click='goAdd' class='px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white transition'>{{ t('model.add') }}</button>
         </div>
       </div>
 
@@ -155,27 +156,27 @@ onMounted(load);
           <thead :class='theadClass'>
             <tr>
               <th class='text-left px-4 py-3 font-medium w-16'>ID</th>
-              <th class='text-left px-4 py-3 font-medium'>模型名称</th>
+                            <th class='text-left px-4 py-3 font-medium'>{{ t('model.colName') }}</th>
               <th class='text-left px-4 py-3 font-medium'>Base URL</th>
               <th class='text-left px-4 py-3 font-medium'>API Key</th>
-              <th class='text-right px-4 py-3 font-medium w-24'>操作</th>
+              <th class='text-right px-4 py-3 font-medium w-24'>{{ t('model.colActions') }}</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-if='loading'><td :colspan='5' class='px-4 py-8 text-center text-xs opacity-60'>加载中...</td></tr>
-            <tr v-else-if='!records.length'><td :colspan='5' class='px-4 py-8 text-center text-xs opacity-60'>暂无数据</td></tr>
+                        <tr v-if='loading'><td :colspan='5' class='px-4 py-8 text-center text-xs opacity-60'>{{ t('common.loading') }}</td></tr>
+            <tr v-else-if='!records.length'><td :colspan='5' class='px-4 py-8 text-center text-xs opacity-60'>{{ t('common.noData') }}</td></tr>
             <tr v-for='row in records' :key='row.id' :class='rowClass'>
               <td class='px-4 py-3 opacity-70'>{{ row.id }}</td>
               <td class='px-4 py-3 font-medium'>{{ row.modelName }}</td>
               <td class='px-4 py-3 text-xs break-all opacity-90'>{{ row.baseUrl }}</td>
               <td class='px-4 py-3 text-xs'>
-                <span v-if='row.credentialConfigured' class='inline-flex items-center px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 font-medium'>已配置</span>
-                <span v-else class='inline-flex items-center px-2 py-0.5 rounded-full bg-gray-500/10 text-gray-400'>未配置</span>
+                                <span v-if='row.credentialConfigured' class='inline-flex items-center px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 font-medium'>{{ t('model.configured') }}</span>
+                <span v-else class='inline-flex items-center px-2 py-0.5 rounded-full bg-gray-500/10 text-gray-400'>{{ t('model.notConfigured') }}</span>
               </td>
               <td class='px-4 py-3 text-right'>
                 <div class='flex items-center justify-end gap-2'>
-                  <button @click='goEdit(row.id!)' :class='btnClass'>编辑</button>
-                  <button @click='askDelete(row.id!)' class='px-2.5 py-1 rounded-lg text-xs border border-red-500/40 text-red-400 hover:bg-red-500/10 transition'>删除</button>
+                                    <button @click='goEdit(row.id!)' :class='btnClass'>{{ t('common.edit') }}</button>
+                  <button @click='askDelete(row.id!)' class='px-2.5 py-1 rounded-lg text-xs border border-red-500/40 text-red-400 hover:bg-red-500/10 transition'>{{ t('common.remove') }}</button>
                 </div>
               </td>
             </tr>
@@ -184,10 +185,10 @@ onMounted(load);
       </div>
 
       <div class='flex items-center justify-between mt-4'>
-        <div :class='mutedText'>第 {{ current }} / {{ totalPages }} 页</div>
+                <div :class='mutedText'>{{ t('model.page', { current, total: totalPages }) }}</div>
         <div class='flex gap-2'>
-          <button :disabled='current <= 1' @click='goPrev' :class='btnClass'>上一页</button>
-          <button :disabled='current >= totalPages' @click='goNext' :class='btnClass'>下一页</button>
+          <button :disabled='current <= 1' @click='goPrev' :class='btnClass'>{{ t('model.prevPage') }}</button>
+          <button :disabled='current >= totalPages' @click='goNext' :class='btnClass'>{{ t('model.nextPage') }}</button>
         </div>
       </div>
     </main>
@@ -195,11 +196,11 @@ onMounted(load);
     <div v-if='deletingId !== null' class='fixed inset-0 z-40 flex items-center justify-center p-4'>
       <div class='absolute inset-0 bg-black/40' @click='cancelDelete'></div>
       <div :class='delCardClass'>
-        <h3 class='text-sm font-bold mb-2'>确认删除</h3>
-        <p :class='mutedText'>确定要删除该模型配置吗？此操作不可撤销。</p>
+                <h3 class='text-sm font-bold mb-2'>{{ t('model.confirmDeleteTitle') }}</h3>
+        <p :class='mutedText'>{{ t('model.confirmDeleteContent') }}</p>
         <div class='flex justify-end gap-2 mt-5'>
-          <button @click='cancelDelete' :class='btnClass'>取消</button>
-          <button @click='confirmDelete' class='px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-500 text-white transition'>删除</button>
+          <button @click='cancelDelete' :class='btnClass'>{{ t('common.cancel') }}</button>
+          <button @click='confirmDelete' class='px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-500 text-white transition'>{{ t('common.remove') }}</button>
         </div>
       </div>
     </div>

@@ -2,6 +2,7 @@
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
 import type { SubSessionVO, SubItemStatus, ToolCallTrace, ChatMessage, ChatTurn } from '../../types/chat';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
+import { t } from '../../i18n';
 import ChatMessageList from './ChatMessageList.vue';
 
 /** 默认及最小宽度配置 */
@@ -96,13 +97,13 @@ export interface SubSessionItem {
 
 /** 状态文案：7 态如实显示；idle/unknown 不再伪装成"完成" */
 const statusLabel = (status: SubItemStatus, long = false): string => {
-  if (status === 'running') return long ? '正在执行...' : '执行中';
-  if (status === 'suspended') return long ? '等待恢复' : '待恢复';
-  if (status === 'failed') return long ? '执行异常' : '失败';
-  if (status === 'cancelled') return long ? '已取消' : '取消';
-  if (status === 'completed') return long ? '协同完成' : '完成';
-  if (status === 'idle') return long ? '空闲' : '空闲';
-  return long ? '状态未知' : '未知';
+  if (status === 'running') return long ? t('chat.subAgent.statusRunningLong') : t('chat.subAgent.statusRunningShort');
+  if (status === 'suspended') return long ? t('chat.subAgent.statusSuspendedLong') : t('chat.subAgent.statusSuspendedShort');
+  if (status === 'failed') return long ? t('chat.subAgent.statusFailedLong') : t('chat.subAgent.statusFailedShort');
+  if (status === 'cancelled') return long ? t('chat.subAgent.statusCancelledLong') : t('chat.subAgent.statusCancelledShort');
+  if (status === 'completed') return long ? t('chat.subAgent.statusCompletedLong') : t('chat.subAgent.statusCompletedShort');
+  if (status === 'idle') return long ? t('chat.subAgent.statusIdleLong') : t('chat.subAgent.statusIdleShort');
+  return long ? t('chat.subAgent.statusUnknownLong') : t('chat.subAgent.statusUnknownShort');
 };
 
 const props = defineProps<{
@@ -240,13 +241,13 @@ defineExpose({
           ? 'bg-[#151c28]/95 border-[#28364f] text-blue-300 hover:bg-[#1c2637]'
           : 'bg-blue-50/95 border-blue-200 text-blue-700 hover:bg-blue-100'
       ]"
-      title="展开子代理协作轨迹与选项"
+      :title="t('chat.subAgent.expandTip')"
     >
       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
       </svg>
       <div class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-      <span>子代理 ({{ items.length }})</span>
+      <span>{{ t('chat.subAgent.title', { count: items.length }) }}</span>
     </button>
   </div>
   </Transition>
@@ -269,7 +270,7 @@ defineExpose({
     <!-- 左边缘拖拽分割条 (Resize Handle) -->
     <div
       class="absolute -left-1.5 top-0 bottom-0 w-3 cursor-col-resize z-40 group flex items-center justify-center select-none"
-      title="拖拽调节主会话与子会话宽度（双击复原）"
+      :title="t('chat.subAgent.resizeTip')"
       @mousedown="startResize"
       @dblclick="handleResetWidth"
     >
@@ -301,17 +302,17 @@ defineExpose({
           <button
             @click="emit('selectOption', null)"
             :class="['p-1.5 rounded-lg border transition cursor-pointer text-gray-400 hover:text-blue-500', isDark ? 'border-white/[0.08] hover:bg-white/[0.06]' : 'border-gray-200 hover:bg-blue-50']"
-            title="返回成员列表"
+            :title="t('chat.subAgent.backToList')"
           >
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <!-- 收起整个侧边面板按钮 -->
+                    <!-- 收起整个侧边面板按钮 -->
           <button
             @click="emit('toggleOpen')"
             :class="['p-1.5 rounded-lg border transition cursor-pointer text-gray-400 hover:text-gray-200', isDark ? 'border-white/[0.08] hover:bg-white/[0.06]' : 'border-gray-200 hover:bg-gray-100']"
-            title="收起侧边面板"
+            :title="t('chat.subAgent.collapsePanel')"
           >
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
@@ -338,7 +339,7 @@ defineExpose({
           :sessionId="activeSubSession?.id || activeItem.id"
           :isDark="isDark"
           :isLoading="isLoadingMessages"
-          loadingText="正在加载子代理会话轨迹..."
+          :loadingText="t('chat.subAgent.loadingTrajectory')"
           :loadError="messagesError"
           :hasMore="hasMoreSubMessages"
           :isLoadingMore="isLoadingMoreSubMessages"
@@ -363,20 +364,20 @@ defineExpose({
           </div>
           <div class="min-w-0">
             <div class="flex items-center gap-1.5">
-              <h3 class="text-xs font-semibold truncate">团队协同成员</h3>
+              <h3 class="text-xs font-semibold truncate">{{ t('chat.subAgent.members') }}</h3>
               <span :class="['px-1.5 py-0.2 rounded-full text-[10px] font-mono font-medium', isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-700']">
                 {{ items.length }}
               </span>
             </div>
-            <p class="text-[11px] text-gray-400 dark:text-zinc-500 truncate">点击成员卡片展开独立执行轨迹</p>
+            <p class="text-[11px] text-gray-400 dark:text-zinc-500 truncate">{{ t('chat.subAgent.membersHint') }}</p>
           </div>
         </div>
 
-        <!-- 折叠面板按钮 -->
+                <!-- 折叠面板按钮 -->
         <button
           @click="emit('toggleOpen')"
           :class="['p-1.5 rounded-lg border transition cursor-pointer text-gray-400 hover:text-gray-200', isDark ? 'border-white/[0.08] hover:bg-white/[0.06]' : 'border-gray-200 hover:bg-gray-100']"
-          title="收起侧边面板"
+          :title="t('chat.subAgent.collapsePanel')"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
@@ -438,11 +439,11 @@ defineExpose({
           <div
             @click.stop="toggleTaskExpand(it.id)"
             :class="['p-2 rounded-xl text-xs space-y-1 cursor-pointer', isDark ? 'bg-[#0d121a]' : 'bg-gray-50']"
-            title="点击展开/收起完整任务"
+            :title="t('chat.subAgent.expandTaskTip')"
           >
             <div class="flex items-center justify-between">
               <span class="px-1.5 py-0.2 rounded text-[10px] font-medium bg-blue-500/15 text-blue-500">
-                指派任务
+                                {{ t('chat.subAgent.assignedTask') }}
               </span>
             </div>
             <p :class="['text-xs text-gray-500 dark:text-gray-400 leading-relaxed', !expandedTaskId[String(it.id)] ? 'line-clamp-2' : 'whitespace-pre-wrap']">
@@ -460,13 +461,13 @@ defineExpose({
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
                 </svg>
-                右侧已展开详情
+                                {{ t('chat.subAgent.detailOnRight') }}
               </span>
               <span
                 v-else
                 class="text-[11px] text-gray-400 hover:text-blue-500 flex items-center gap-1"
               >
-                <span>点击展开独立轨迹</span>
+                <span>{{ t('chat.subAgent.expandTrajectory') }}</span>
                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                 </svg>
@@ -478,7 +479,7 @@ defineExpose({
               v-if="it.result"
               @click.stop="handleCopyResult(it.result, it.id)"
               :class="['p-1 rounded-lg border text-gray-400 hover:text-gray-200 transition cursor-pointer', isDark ? 'border-[#29354d] hover:bg-[#1d273a]' : 'border-gray-200 hover:bg-gray-100']"
-              :title="copiedId === it.id ? '已复制产出文本' : '复制产出'"
+              :title="copiedId === it.id ? t('chat.subAgent.copiedOutput') : t('chat.subAgent.copyOutput')"
             >
               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />

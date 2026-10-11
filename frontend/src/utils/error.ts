@@ -5,12 +5,15 @@
  *   - REST：com.summit.ddd.application.vo.Result 的错误文案恒在 `errMsg`。
  *   - SSE ：com.summit.core.conversation.event.ExecutionErrorEvent 的文案在 `errMsg`（补充在 `extraDes`）。
  *   - 前端本地：JS 原生 Error 使用 `message`（axios/fetch 抛出的对象亦然）。
- * 因此只认这两个字段，其余历史别名（error/err/msg）后端从不产生，已移除。
+  * 因此只认这两个字段，其余历史别名（error/err/msg）后端从不产生，已移除。
  */
+
+import { t } from '../i18n';
 
 const ERROR_FIELD_KEYS = ['errMsg', 'message'] as const;
 const MAX_UNWRAP_DEPTH = 5;
-const FALLBACK_MESSAGE = '执行异常';
+/** 兜底错误文案（随语言切换，故在调用时取值）。 */
+const fallbackMessage = (): string => t('error.fallbackExecution');
 
 /** 按别名清单取出第一个非空错误字段 */
 function pickErrorField(source: Record<string, any>): unknown {
@@ -24,7 +27,7 @@ function pickErrorField(source: Record<string, any>): unknown {
 
 export function extractErrorMessage(rawError: any): string {
   if (rawError === null || rawError === undefined) {
-    return FALLBACK_MESSAGE;
+    return fallbackMessage();
   }
 
   // 对象形态：继续向下找第一个错误字段
@@ -40,8 +43,8 @@ export function extractErrorMessage(rawError: any): string {
     }
   }
 
-  let text = String(rawError).trim();
-  if (!text) return FALLBACK_MESSAGE;
+    let text = String(rawError).trim();
+  if (!text) return fallbackMessage();
 
   for (let depth = 0; depth < MAX_UNWRAP_DEPTH; depth++) {
     const trimmed = text.trim();
@@ -72,10 +75,10 @@ export function extractErrorMessage(rawError: any): string {
     break;
   }
 
-  return text.trim() || FALLBACK_MESSAGE;
+    return text.trim() || fallbackMessage();
 }
 
-const DEFAULT_USER_FACING_ERROR = '操作失败，请稍后重试';
+const DEFAULT_USER_FACING_ERROR_KEY = 'error.defaultUserFacing';
 
 /**
  * 把后端原始错误文案（`Result.errMsg` 等）转换为产品化文案。
@@ -86,7 +89,7 @@ const DEFAULT_USER_FACING_ERROR = '操作失败，请稍后重试';
  * 说明：本函数**不**解析原始文案内容，只做「吞掉原文 + 返回兜底」。错误分类应由调用方依据
  * 真实 HTTP 状态码 / `Result.code` 决定（§7），并在 `fallback` 中给出对应文案。
  */
-export function toUserFacingError(rawError: unknown, fallback: string = DEFAULT_USER_FACING_ERROR): string {
+export function toUserFacingError(rawError: unknown, fallback: string = t(DEFAULT_USER_FACING_ERROR_KEY)): string {
   if (rawError !== null && rawError !== undefined && String(rawError).trim() !== '') {
     console.warn('[后端错误] 原始错误文案不直接展示给用户，仅记录用于诊断:', rawError);
   }

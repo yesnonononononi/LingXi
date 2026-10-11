@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
+import { t } from '../../i18n';
 
 const props = withDefaults(defineProps<{
   /** 是否还有更多历史数据可以加载 */
@@ -26,8 +27,8 @@ const props = withDefaults(defineProps<{
   direction: 'top',
   threshold: 60,
   preserveScroll: true,
-  loadingText: '正在加载历史消息...',
-  finishedText: '已加载全部消息',
+  loadingText: '',
+  finishedText: '',
   showFinished: false,
   disabled: false
 });
@@ -199,7 +200,7 @@ defineExpose({
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
             </svg>
-            <span class="text-xs font-medium tracking-wide">{{ loadingText }}</span>
+            <span class="text-xs font-medium tracking-wide">{{ loadingText || t('chat.message.loadingHistory') }}</span>
           </div>
         </slot>
       </div>
@@ -211,7 +212,7 @@ defineExpose({
       class="w-full flex items-center justify-center py-2 text-[11px] text-gray-400 dark:text-gray-500 select-none shrink-0"
     >
       <slot name="finished">
-        <span>{{ finishedText }}</span>
+        <span>{{ finishedText || t('chat.message.allLoaded') }}</span>
       </slot>
     </div>
 
@@ -230,7 +231,7 @@ defineExpose({
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
         </svg>
-        <span class="text-xs font-medium">{{ loadingText }}</span>
+        <span class="text-xs font-medium">{{ loadingText || t('chat.message.loadingHistory') }}</span>
       </slot>
     </div>
 
@@ -240,7 +241,7 @@ defineExpose({
       class="w-full flex items-center justify-center py-2 text-[11px] text-gray-400 dark:text-gray-500 select-none shrink-0"
     >
       <slot name="finished">
-        <span>{{ finishedText }}</span>
+        <span>{{ finishedText || t('chat.message.allLoaded') }}</span>
       </slot>
     </div>
   </div>

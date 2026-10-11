@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { UserConfigAPI } from '../services/userConfig';
 import { isOk } from '../utils/api';
+import { t } from '../i18n';
 import {
   normalizeAccessMode,
   normalizeCommandApprovalPolicy,
@@ -92,13 +93,13 @@ export const useUserConfigStore = defineStore('userConfig', () => {
       loadError.value = '';
       try {
         const result = await UserConfigAPI.current();
-        if (!isOk(result.code)) throw new Error('读取全局配置失败');
+                if (!isOk(result.code)) throw new Error(t('config.readFailed'));
         applyConfig(result.data);
         loaded.value = true;
         return true;
       } catch (error) {
         console.error('载入全局配置失败:', error);
-        loadError.value = '全局配置加载失败，请检查后端服务';
+        loadError.value = t('config.loadFailed');
         return false;
       } finally {
         loading = null;
@@ -178,7 +179,7 @@ export const useUserConfigStore = defineStore('userConfig', () => {
       while (reasoningEffort.value !== persistedEffort) {
         const target = reasoningEffort.value;
         const result = await UserConfigAPI.updateCurrent({ reasoningEffort: target });
-        if (!isOk(result.code)) throw new Error('思考强度保存失败');
+        if (!isOk(result.code)) throw new Error(t('config.effortSaveFailed'));
         persistedEffort = target;
       }
     } catch (error) {
@@ -220,7 +221,7 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     savingKeys.value = new Set(savingKeys.value).add(field);
     try {
       const result = await UserConfigAPI.updateCurrent(payload);
-      if (!isOk(result.code)) throw new Error('保存全局配置失败');
+      if (!isOk(result.code)) throw new Error(t('config.saveFailed'));
       return true;
     } catch (error) {
       console.error(`保存全局配置失败(${field}):`, error);

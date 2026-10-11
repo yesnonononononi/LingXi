@@ -8,6 +8,7 @@ import { resolveToolFullName } from '../../utils/toolDisplayNames';
 import { isOk } from '../../utils/api';
 import { toUserFacingError } from '../../utils/error';
 import { useTheme } from '../../composables/useTheme';
+import { t } from '../../i18n';
 
 const props = defineProps<{
   isOpen: boolean;
@@ -65,7 +66,7 @@ const loadAgents = async () => {
     }
   } catch (err: any) {
     console.error('加载 Agent 列表失败:', err);
-    errorMsg.value = '加载 Agent 列表失败，请检查网络或后端服务';
+    errorMsg.value = t('chat.team.errLoadAgents');
   } finally {
     isLoadingAgents.value = false;
   }
@@ -79,11 +80,11 @@ const loadTools = async () => {
     if (isOk(res.code) && res.data) {
       availableTools.value = res.data || [];
     } else {
-      toolsError.value = '工具列表加载失败';
+      toolsError.value = t('chat.team.errLoadTools');
     }
   } catch (err: any) {
     console.error('加载工具列表失败:', err);
-    toolsError.value = '工具列表加载失败，请检查网络或后端服务';
+    toolsError.value = t('chat.team.errLoadToolsHint');
   } finally {
     isLoadingTools.value = false;
   }
@@ -200,12 +201,12 @@ const openEditAgent = async (agent: AgentVO) => {
         }
       } else if (editingAgentId.value === agent.id) {
         // 详情未取到：禁用保存，避免用户看到空 prompt 保存后覆盖原有设定
-        agentDetailError.value = 'Agent 详情加载失败，已禁用保存以避免覆盖原有提示词';
+        agentDetailError.value = t('chat.team.errAgentDetail');
       }
     } catch (e) {
       console.error('获取 Agent 详情失败:', e);
       if (editingAgentId.value === agent.id) {
-        agentDetailError.value = 'Agent 详情加载失败，已禁用保存以避免覆盖原有提示词';
+        agentDetailError.value = t('chat.team.errAgentDetail');
       }
     }
   }
@@ -248,15 +249,15 @@ const handleSaveAgent = async () => {
     return;
   }
   if (!agentFormName.value.trim()) {
-    errorMsg.value = '请填写 Agent 名称';
+    errorMsg.value = t('chat.team.errAgentName');
     return;
   }
   if (!agentFormPrompt.value.trim()) {
-    errorMsg.value = '请填写 Agent 提示词/工作设定';
+    errorMsg.value = t('chat.team.errAgentPrompt');
     return;
   }
   if (!agentFormModelId.value) {
-    errorMsg.value = '请选择绑定的基座模型';
+    errorMsg.value = t('chat.team.errAgentModel');
     return;
   }
 
@@ -277,7 +278,7 @@ const handleSaveAgent = async () => {
         await loadAgents();
         closeAgentForm();
       } else {
-        errorMsg.value = toUserFacingError(res.errMsg, '更新 Agent 失败，请稍后重试');
+        errorMsg.value = toUserFacingError(res.errMsg, t('chat.team.errUpdateAgent'));
       }
     } else {
       // 新建 Agent
@@ -302,11 +303,11 @@ const handleSaveAgent = async () => {
         }
         closeAgentForm();
       } else {
-        errorMsg.value = toUserFacingError(res.errMsg, '创建 Agent 失败，请稍后重试');
+        errorMsg.value = toUserFacingError(res.errMsg, t('chat.team.errCreateAgent'));
       }
     }
   } catch (err: any) {
-    errorMsg.value = err?.message || '保存 Agent 发生异常';
+    errorMsg.value = err?.message || t('chat.team.errSaveAgentException');
   } finally {
     isSavingAgent.value = false;
   }
@@ -323,15 +324,15 @@ const handleSaveTeam = async () => {
   errorMsg.value = '';
   const trimmedName = teamName.value.trim();
   if (!trimmedName) {
-    errorMsg.value = '请填写团队名称';
+    errorMsg.value = t('chat.team.errTeamName');
     return;
   }
   if (selectedAgentIds.value.length === 0) {
-    errorMsg.value = '请至少选择一个团队成员 Agent';
+    errorMsg.value = t('chat.team.errTeamMembers');
     return;
   }
   if (!commanderAgentId.value) {
-    errorMsg.value = '请指定团队管理者 Agent';
+    errorMsg.value = t('chat.team.errTeamManager');
     return;
   }
 
@@ -348,10 +349,10 @@ const handleSaveTeam = async () => {
       emit('created');
       emit('close');
     } else {
-      errorMsg.value = toUserFacingError(res.errMsg, '创建团队失败，请稍后重试');
+      errorMsg.value = toUserFacingError(res.errMsg, t('chat.team.errCreateTeam'));
     }
   } catch (err: any) {
-    errorMsg.value = err?.message || '创建团队异常';
+    errorMsg.value = err?.message || t('chat.team.errCreateTeamException');
   } finally {
     isSubmitting.value = false;
   }
@@ -376,7 +377,7 @@ const handleSaveTeam = async () => {
           <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
           </svg>
-          <span class="dark:text-white dark:text-glow-white">创建团队 (Create Team)</span>
+          <span class="dark:text-white dark:text-glow-white">{{ t('chat.team.title') }}</span>
         </h3>
         <button
           @click="emit('close')"
@@ -397,12 +398,12 @@ const handleSaveTeam = async () => {
         <!-- 团队名称 -->
         <div>
           <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-            团队名称 <span class="text-red-500">*</span>
+            {{ t('chat.team.nameLabel') }} <span class="text-red-500">*</span>
           </label>
           <input
             v-model="teamName"
             autoFocus
-            placeholder="例如: 全栈开发组 / 算法重构协同团队"
+            :placeholder="t('chat.team.namePlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border text-sm outline-none transition',
               isDark
@@ -415,12 +416,12 @@ const handleSaveTeam = async () => {
         <!-- 团队描述 -->
         <div>
           <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-            团队描述
+            {{ t('chat.team.descLabel') }}
           </label>
           <textarea
             v-model="teamDescription"
             rows="2"
-            placeholder="例如: 负责全栈架构开发、代码重构与业务交付协同"
+            :placeholder="t('chat.team.descPlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border text-sm outline-none resize-none transition',
               isDark
@@ -434,9 +435,9 @@ const handleSaveTeam = async () => {
         <div>
           <div class="flex items-center justify-between mb-1.5">
             <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
-              团队成员 Agent <span class="text-red-500">*</span>
+              {{ t('chat.team.membersLabel') }} <span class="text-red-500">*</span>
               <span class="text-[11px] font-normal text-gray-500 ml-1">
-                (已选 {{ selectedAgentIds.length }} 个)
+                {{ t('chat.team.selectedCount', { count: selectedAgentIds.length }) }}
               </span>
             </label>
             <button
@@ -447,7 +448,7 @@ const handleSaveTeam = async () => {
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
               </svg>
-              <span>{{ showAgentForm && editingAgentId === null ? '收起新建' : '新建 Agent' }}</span>
+              <span>{{ showAgentForm && editingAgentId === null ? t('chat.team.collapseNew') : t('chat.team.newAgent') }}</span>
             </button>
           </div>
 
@@ -461,7 +462,7 @@ const handleSaveTeam = async () => {
                 <svg v-if="editingAgentId" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                 </svg>
-                <span>{{ editingAgentId ? `修改 Agent「${agentFormName || '未命名'}」` : '新建 Agent 成员' }}</span>
+                <span>{{ editingAgentId ? t('chat.team.editAgent', { name: agentFormName || t('chat.team.unnamed') }) : t('chat.team.newAgentMember') }}</span>
               </div>
               <button
                 type="button"
@@ -485,10 +486,10 @@ const handleSaveTeam = async () => {
 
             <div class="grid grid-cols-2 gap-2">
               <div>
-                <label class="block text-gray-600 dark:text-gray-400 mb-0.5">Agent 名称 *</label>
+                <label class="block text-gray-600 dark:text-gray-400 mb-0.5">{{ t('chat.team.agentNameLabel') }}</label>
                 <input
                   v-model="agentFormName"
-                  placeholder="例如: MathSpecialist"
+                  :placeholder="t('chat.team.agentNamePlaceholder')"
                   :class="[
                     'w-full px-2.5 py-1.5 rounded-lg border outline-none',
                     isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-gray-300 text-gray-900'
@@ -496,7 +497,7 @@ const handleSaveTeam = async () => {
                 />
               </div>
               <div>
-                <label class="block text-gray-600 dark:text-gray-400 mb-0.5">基座模型 *</label>
+                <label class="block text-gray-600 dark:text-gray-400 mb-0.5">{{ t('chat.team.agentModelLabel') }}</label>
                 <select
                   v-model="agentFormModelId"
                   :class="[
@@ -505,17 +506,17 @@ const handleSaveTeam = async () => {
                   ]"
                 >
                   <option v-for="m in (models || [])" :key="m.id" :value="m.id" class="bg-black text-white">
-                    {{ m.name || m.modelName || `模型 #${m.id}` }}
+                    {{ m.name || m.modelName || t('session.modelFallback', { id: m.id }) }}
                   </option>
                 </select>
               </div>
             </div>
 
             <div>
-              <label class="block text-gray-600 dark:text-gray-400 mb-0.5">描述信息</label>
+              <label class="block text-gray-600 dark:text-gray-400 mb-0.5">{{ t('chat.team.agentDescLabel') }}</label>
               <input
                 v-model="agentFormDesc"
-                placeholder="例如: 负责高精度数学运算与推导"
+                :placeholder="t('chat.team.agentDescPlaceholder')"
                 :class="[
                   'w-full px-2.5 py-1.5 rounded-lg border outline-none',
                   isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-gray-300 text-gray-900'
@@ -524,11 +525,11 @@ const handleSaveTeam = async () => {
             </div>
 
             <div>
-              <label class="block text-gray-600 dark:text-gray-400 mb-0.5">提示词设定 *</label>
+              <label class="block text-gray-600 dark:text-gray-400 mb-0.5">{{ t('chat.team.agentPromptLabel') }}</label>
               <textarea
                 v-model="agentFormPrompt"
                 rows="2"
-                placeholder="设定该 Agent 的角色定位与职责规范..."
+                :placeholder="t('chat.team.agentPromptPlaceholder')"
                 :class="[
                   'w-full px-2.5 py-1.5 rounded-lg border outline-none resize-none',
                   isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-gray-300 text-gray-900'
@@ -540,9 +541,9 @@ const handleSaveTeam = async () => {
             <div>
               <div class="flex items-center justify-between mb-1">
                 <label class="block text-gray-600 dark:text-gray-400 font-medium">
-                  分配工具
+                  {{ t('chat.team.assignTools') }}
                   <span class="text-[11px] font-normal text-gray-500 ml-1">
-                    (已选 {{ agentFormToolList.length }} / {{ availableTools.length }})
+                    {{ t('chat.team.assignedCount', { selected: agentFormToolList.length, total: availableTools.length }) }}
                   </span>
                 </label>
                 <div class="flex items-center gap-2 text-[11px]">
@@ -551,7 +552,7 @@ const handleSaveTeam = async () => {
                     @click="selectAllTools"
                     class="text-blue-500 hover:text-blue-400 cursor-pointer"
                   >
-                    全选
+                    {{ t('chat.team.selectAll') }}
                   </button>
                   <span class="text-gray-400">|</span>
                   <button
@@ -559,7 +560,7 @@ const handleSaveTeam = async () => {
                     @click="clearTools"
                     class="text-gray-500 hover:text-gray-400 cursor-pointer"
                   >
-                    清空
+                    {{ t('chat.team.clear') }}
                   </button>
                 </div>
               </div>
@@ -570,7 +571,7 @@ const handleSaveTeam = async () => {
                 class="p-2 text-center text-gray-400 text-xs rounded-lg border border-dashed"
                 :class="isDark ? 'border-gray-700 bg-gray-900/30' : 'border-gray-300 bg-gray-50/50'"
               >
-                加载工具列表中...
+                {{ t('chat.team.loadingTools') }}
               </div>
               <div
                 v-else-if="toolsError"
@@ -583,7 +584,7 @@ const handleSaveTeam = async () => {
                   @click="loadTools"
                   class="underline hover:no-underline cursor-pointer"
                 >
-                  重试
+                  {{ t('common.retry') }}
                 </button>
               </div>
               <div
@@ -591,7 +592,7 @@ const handleSaveTeam = async () => {
                 class="p-2 text-center text-gray-400 text-xs rounded-lg border border-dashed"
                 :class="isDark ? 'border-white/10 bg-black/60' : 'border-gray-300 bg-gray-50/50'"
               >
-                暂无可分配工具
+                {{ t('chat.team.noTools') }}
               </div>
               <div
                 v-else
@@ -622,7 +623,7 @@ const handleSaveTeam = async () => {
                       class="text-[9px] px-1 py-0.2 rounded font-normal shrink-0 border"
                       :class="tool.readOnly ? (isDark ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300' : 'bg-emerald-100 border-emerald-200 text-emerald-700') : (isDark ? 'bg-amber-500/20 border-amber-500/30 text-amber-300' : 'bg-amber-100 border-amber-200 text-amber-700')"
                     >
-                      {{ tool.readOnly ? '只读' : '读写' }}
+                      {{ tool.readOnly ? t('chat.team.readOnly') : t('chat.team.readWrite') }}
                     </span>
                   </div>
                   <div v-if="tool.description" class="text-[10px] text-gray-400 dark:text-gray-500 truncate mt-0.5" :title="tool.description">
@@ -638,7 +639,7 @@ const handleSaveTeam = async () => {
                 @click="closeAgentForm"
                 class="px-2.5 py-1 text-gray-500 hover:text-gray-700 dark:hover:text-zinc-200 rounded-lg cursor-pointer"
               >
-                取消
+                {{ t('common.cancel') }}
               </button>
               <button
                 type="button"
@@ -646,7 +647,7 @@ const handleSaveTeam = async () => {
                 @click="handleSaveAgent"
                 class="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-lg cursor-pointer shadow-sm transition"
               >
-                {{ isSavingAgent ? '保存中...' : (editingAgentId ? '保存修改' : '保存并加入') }}
+                {{ isSavingAgent ? t('common.saving') : (editingAgentId ? t('common.save') : t('chat.team.saveAndJoin')) }}
               </button>
             </div>
           </div>
@@ -659,10 +660,10 @@ const handleSaveTeam = async () => {
             ]"
           >
             <div v-if="isLoadingAgents" class="p-4 text-center text-xs text-gray-500">
-              加载 Agent 列表中...
+              {{ t('chat.team.loadingAgents') }}
             </div>
             <div v-else-if="availableAgents.length === 0" class="p-4 text-center text-xs text-gray-500">
-              暂无可用 Agent，请点击上方“新建 Agent”添加。
+              {{ t('chat.team.noAgents') }}
             </div>
             <div
               v-else
@@ -691,19 +692,19 @@ const handleSaveTeam = async () => {
                     <span
                       v-if="agent.toolList && agent.toolList.length > 0"
                       class="px-1.5 py-0.5 text-[10px] rounded bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/20"
-                      :title="agent.toolList.map(name => resolveToolFullName(name)).join('、')"
+                      :title="agent.toolList.map(name => resolveToolFullName(name)).join(t('common.listSeparator'))"
                     >
-                      {{ agent.toolList.length }} 个工具
+                      {{ t('chat.team.toolCount', { count: agent.toolList.length }) }}
                     </span>
                     <span
                       v-else
                       class="px-1.5 py-0.5 text-[10px] rounded bg-gray-500/10 text-gray-400 dark:text-gray-500"
                     >
-                      无工具
+                      {{ t('chat.team.noTool') }}
                     </span>
                   </div>
                   <div class="text-[11px] text-gray-500 dark:text-gray-400 truncate">
-                    {{ agent.description || '暂无描述' }}
+                    {{ agent.description || t('chat.team.noDescription') }}
                   </div>
                 </div>
               </div>
@@ -715,7 +716,7 @@ const handleSaveTeam = async () => {
                   type="button"
                   @click.stop="openEditAgent(agent)"
                   class="p-1 rounded-md text-gray-400 hover:text-blue-500 hover:bg-blue-500/10 transition-colors cursor-pointer"
-                  title="修改此 Agent"
+                  :title="t('chat.team.editAgentTip')"
                 >
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -727,16 +728,16 @@ const handleSaveTeam = async () => {
                   v-if="commanderAgentId === agent.id"
                   class="shrink-0 px-2 py-0.5 text-[10px] rounded-full bg-blue-500/20 text-blue-500 border border-blue-500/30 font-medium"
                 >
-                  管理者
+                  {{ t('chat.team.manager') }}
                 </span>
                 <button
                   v-else-if="selectedAgentIds.includes(agent.id)"
                   type="button"
                   @click.stop="commanderAgentId = agent.id"
                   class="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 text-[10px] rounded text-gray-400 hover:text-blue-500 hover:bg-blue-500/10 transition-all cursor-pointer"
-                  title="设为团队管理者"
+                  :title="t('chat.team.setManagerTip')"
                 >
-                  设为管理者
+                  {{ t('chat.team.setManager') }}
                 </button>
               </div>
             </div>
@@ -746,9 +747,9 @@ const handleSaveTeam = async () => {
         <!-- 团队管理者选择 (Custom Dropdown) -->
         <div v-if="selectedAgents.length > 0" ref="commanderSelectRef" class="relative">
           <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-            团队管理者 (Manager) <span class="text-red-500">*</span>
+            {{ t('chat.team.managerLabel') }} <span class="text-red-500">*</span>
             <span class="text-[11px] font-normal text-gray-500 ml-1">
-              (必须是团队成员之一，负责协调与分派子任务)
+              {{ t('chat.team.managerHint') }}
             </span>
           </label>
 
@@ -772,15 +773,15 @@ const handleSaveTeam = async () => {
               <div class="truncate">
                 <div class="flex items-center gap-1.5">
                   <span class="text-xs font-semibold text-gray-900 dark:text-zinc-100 truncate">{{ currentCommander.name }}</span>
-                  <span class="px-1.5 py-0.2 text-[9px] rounded-full bg-cyan-500/20 text-cyan-300 font-medium">管理者</span>
+                  <span class="px-1.5 py-0.2 text-[9px] rounded-full bg-cyan-500/20 text-cyan-300 font-medium">{{ t('chat.team.manager') }}</span>
                 </div>
                 <div class="text-[11px] text-gray-500 dark:text-zinc-400 truncate max-w-[320px]">
-                  {{ currentCommander.description || '负责协调团队成员分工与分派子任务' }}
+                  {{ currentCommander.description || t('chat.team.managerDefaultDesc') }}
                 </div>
               </div>
             </div>
             <div v-else class="text-xs text-gray-400">
-              请点击选择团队管理者
+              {{ t('chat.team.managerPlaceholder') }}
             </div>
 
             <svg
@@ -832,7 +833,7 @@ const handleSaveTeam = async () => {
                   <div class="flex items-center gap-1.5">
                     <span class="truncate font-medium">{{ agent.name }}</span>
                     <span v-if="agent.toolList?.length" class="text-[10px] text-zinc-400">
-                      ({{ agent.toolList.length }}个工具)
+                      {{ t('chat.team.toolCountShort', { count: agent.toolList.length }) }}
                     </span>
                   </div>
                   <div v-if="agent.description" class="text-[10px] text-zinc-400 truncate max-w-[280px]">
@@ -845,7 +846,7 @@ const handleSaveTeam = async () => {
                 v-if="commanderAgentId === agent.id"
                 class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-medium shrink-0 ml-2"
               >
-                当前管理者
+                {{ t('chat.team.currentManager') }}
               </span>
             </div>
           </div>
@@ -863,7 +864,7 @@ const handleSaveTeam = async () => {
               isDark ? 'border-white/15 text-zinc-300 hover:bg-white/5' : 'border-gray-300 text-gray-600 hover:bg-gray-100'
             ]"
           >
-            取消
+            {{ t('common.cancel') }}
           </button>
           <button
             type="button"
@@ -872,7 +873,7 @@ const handleSaveTeam = async () => {
             class="px-4 py-1.5 text-xs rounded-xl text-white font-medium shadow-md transition cursor-pointer"
             :class="isDark ? 'bg-cyan-600 hover:bg-cyan-500 shadow-[0_0_15px_rgba(8,145,178,0.4)]' : 'bg-blue-600 hover:bg-blue-500 disabled:opacity-50'"
           >
-            {{ isSubmitting ? '创建中...' : '创建团队' }}
+            {{ isSubmitting ? t('chat.team.creating') : t('chat.team.createTeam') }}
           </button>
         </div>
       </div>

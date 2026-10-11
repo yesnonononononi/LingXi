@@ -6,6 +6,7 @@ import logoUrl from '../../assets/lingxi-agent-logo.png';
 import BranchedMenu, { type BranchedMenuItem, type BranchedMenuChild } from '../common/BranchedMenu.vue';
 import { Comment01Icon } from '@hugeicons/core-free-icons';
 import { useTheme } from '../../composables/useTheme';
+import { t } from '../../i18n';
 import CollapseTransition from '../common/CollapseTransition.vue';
 
 const props = defineProps<{
@@ -44,14 +45,18 @@ const isSortAsc = ref(false);
 const expandedWorkspaces = ref<Record<string, boolean>>({});
 const activeMenuWorkspaceId = ref<string | null>(null);
 
-// 默认展开所有工作空间
+// 会话列表默认不展开；展开时每组最多直接展示 5 条，超出走「展开显示」
+const SESSION_VISIBLE_LIMIT = 5;
+const fullyExpandedWorkspaces = ref<Record<string, boolean>>({});
+
+// 默认不展开所有工作空间
 watch(
   () => props.workspaces,
   (list) => {
     if (list) {
       for (const ws of list) {
         if (ws.id && expandedWorkspaces.value[String(ws.id)] === undefined) {
-          expandedWorkspaces.value[String(ws.id)] = true;
+          expandedWorkspaces.value[String(ws.id)] = false;
         }
       }
     }
@@ -71,6 +76,18 @@ watch(
           (!session.workspaceId && session.workDir && ws.workDir && session.workDir === ws.workDir);
         if (isMatch && ws.id) {
           expandedWorkspaces.value[String(ws.id)] = true;
+          // 激活会话可能排在第 5 条之后，完整展开保证可见
+          const key = String(ws.id);
+          const sessions = props.sessions.filter(s => {
+            if (s.workspaceId !== undefined && s.workspaceId !== null && String(s.workspaceId).trim() !== '') {
+              return String(s.workspaceId) === String(ws.id);
+            }
+            return !s.workspaceId && !s.workDir ? true : s.workDir && ws.workDir && s.workDir.trim() === ws.workDir.trim();
+          });
+          const idx = sessions.findIndex(s => s.id === sessionId);
+          if (idx >= SESSION_VISIBLE_LIMIT) {
+            fullyExpandedWorkspaces.value[key] = true;
+          }
           break;
         }
       }
@@ -136,8 +153,19 @@ const unassignedSessions = computed<ChatSession[]>(() => {
   });
 });
 
-const isWorkspaceActive = (ws: WorkspaceVO) => {
-  if (props.activeWorkspaceId !== undefined && props.activeWorkspaceId !== null && String(props.activeWorkspaceId) === String(ws.id)) {
+const isFullyExpanded = (key: string) => fullyExpandedWorkspaces.value[key] === true;
+
+const toggleFullyExpanded = (key: string) => {
+  fullyExpandedWorkspaces.value[key] = !fullyExpandedWorkspaces.value[key];
+};
+
+// 按限制截断会话列表；超出时返回前 5 条，由「展开显示」控制全量
+const limitSessions = (key: string, sessions: ChatSession[]): ChatSession[] => {
+  if (sessions.length <= SESSION_VISIBLE_LIMIT || isFullyExpanded(key)) return sessions;
+  return sessions.slice(0, SESSION_VISIBLE_LIMIT);
+};
+
+const isWorkspaceActive = (ws: WorkspaceVO) => {  if (props.activeWorkspaceId !== undefined && props.activeWorkspaceId !== null && String(props.activeWorkspaceId) === String(ws.id)) {
     return true;
   }
   if (props.activeSessionId) {
@@ -186,11 +214,11 @@ const handleDeleteProject = async (ws: WorkspaceVO, event: Event) => {
   event.stopPropagation();
   activeMenuWorkspaceId.value = null;
   if (!ws.id) return;
-  const ok = await confirm({
-    title: '删除工作空间',
-    content: `确定要删除工作空间 “${ws.name || ws.workDir}” 吗？此操作无法撤销。`,
+    const ok = await confirm({
+    title: t('chat.sidebar.deleteWorkspace'),
+    content: t('chat.sidebar.deleteWorkspaceConfirm', { name: ws.name || ws.workDir || '' }),
     type: 'danger',
-    confirmText: '删除'
+    confirmText: t('common.remove')
   });
   if (ok) {
     emit('deleteWorkspace', ws.id);
@@ -211,35 +239,44 @@ const saveEdit = (session: ChatSession, event: Event) => {
   editingSessionId.value = null;
 };
 
+// 计算供 BranchedMenu 消费的孩子列表：截断 + 「展开显示」伪条目
+const buildBranchedChildren = (key: string, sessions: ChatSession[]): BranchedMenuChild[] => {
+  const children: BranchedMenuChild[] = limitSessions(key, sessions).map(s => ({
+    value: String(s.id),
+    label: s.title || t('session.newConversation'),
+    icon: Comment01Icon,
+    raw: s
+  }));
+  if (sessions.length > SESSION_VISIBLE_LIMIT) {
+    children.push({
+      value: `more-${key}`,
+      label: isFullyExpanded(key) ? t('chat.sidebar.collapseDisplay') : t('chat.sidebar.expandDisplay', { count: sessions.length }),
+      icon: undefined,
+      raw: null
+    });
+  }
+  return children;
+};
+
 // 构造供 BranchedMenu 树形组件消费的分支数据
 const branchedMenuItems = computed<BranchedMenuItem[]>(() => {
   const items: BranchedMenuItem[] = [];
 
   for (const group of projectGroups.value) {
     items.push({
-      label: group.workspace.name || group.workspace.workDir || '工作空间',
+      label: group.workspace.name || group.workspace.workDir || t('session.workspace'),
       value: `ws-${group.workspace.id}`,
       raw: group.workspace,
-      children: group.sessions.map(s => ({
-        value: String(s.id),
-        label: s.title || '新对话',
-        icon: Comment01Icon,
-        raw: s
-      }))
+      children: buildBranchedChildren(String(group.workspace.id), group.sessions)
     });
   }
 
   if (unassignedSessions.value.length > 0) {
     items.push({
-      label: '历史对话',
+      label: t('chat.sidebar.history'),
       value: 'ws-unassigned',
       raw: null,
-      children: unassignedSessions.value.map(s => ({
-        value: String(s.id),
-        label: s.title || '新对话',
-        icon: Comment01Icon,
-        raw: s
-      }))
+      children: buildBranchedChildren('ws-unassigned', unassignedSessions.value)
     });
   }
 
@@ -262,6 +299,10 @@ const branchedOpenIndices = computed<number[]>(() => {
 });
 
 const handleBranchedSelect = (value: string, item: BranchedMenuChild | BranchedMenuItem) => {
+  if (value.startsWith('more-')) {
+    toggleFullyExpanded(value.slice(5));
+    return;
+  }
   if (item.raw) {
     if ('title' in item.raw) {
       const session = item.raw as ChatSession;
@@ -326,7 +367,7 @@ onBeforeUnmount(() => {
       <!-- Collapse / Expand Icon Button [|] -->
       <button
         @click="emit('toggleCollapse')"
-        title="收起/展开侧边栏"
+        :title="t('chat.sidebar.toggleSidebar')"
         :class="[
           'p-1.5 rounded-lg transition-colors cursor-pointer',
           isDark
@@ -354,13 +395,13 @@ onBeforeUnmount(() => {
             ? 'bg-zinc-900/90 border-white/[0.08] hover:bg-zinc-800 hover:border-white/[0.16] text-zinc-200 hover:text-white'
             : 'bg-white border-gray-200 hover:border-gray-300 hover:bg-white text-gray-800'
         ]"
-        title="新建对话"
+        :title="t('chat.sidebar.newChat')"
       >
         <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
           <circle cx="12" cy="12" r="9" stroke-width="1.8"/>
           <path d="M12 8v8M8 12h8" stroke-width="1.8" stroke-linecap="round"/>
         </svg>
-        <span>新会话</span>
+        <span>{{ t('chat.sidebar.newSession') }}</span>
       </button>
 
       <!-- Collapsed New Chat Icon -->
@@ -373,7 +414,7 @@ onBeforeUnmount(() => {
             ? 'bg-zinc-900/90 border-white/[0.08] hover:bg-zinc-800 hover:border-white/[0.16] text-zinc-200 hover:text-white'
             : 'bg-white border-gray-200 hover:border-gray-300 text-gray-800'
         ]"
-        title="新建会话"
+        :title="t('chat.sidebar.newSession')"
       >
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
           <path d="M12 5v14M5 12h14" stroke-width="2" stroke-linecap="round"/>
@@ -383,7 +424,7 @@ onBeforeUnmount(() => {
 
     <!-- Workspaces Section Header -->
     <div v-if="!isCollapsed" class="px-4 pt-3 pb-1 flex items-center justify-between shrink-0 text-gray-500 dark:text-zinc-400">
-      <span class="font-medium text-xs tracking-tight">工作区</span>
+      <span class="font-medium text-xs tracking-tight">{{ t('chat.sidebar.workspace') }}</span>
       <div class="flex items-center gap-1">
         <!-- Search / Filter Icon -->
         <button
@@ -394,7 +435,7 @@ onBeforeUnmount(() => {
               ? 'text-blue-500'
               : 'text-gray-400 hover:text-gray-700 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-gray-200/70 dark:hover:bg-white/[0.06]'
           ]"
-          title="搜索工作区"
+          :title="t('chat.sidebar.searchWorkspace')"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
@@ -405,7 +446,7 @@ onBeforeUnmount(() => {
         <button
           @click="isSortAsc = !isSortAsc"
           class="p-1 rounded-md text-gray-400 hover:text-gray-700 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-gray-200/70 dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
-          :title="isSortAsc ? '默认排序' : '按名称字母排序'"
+          :title="isSortAsc ? t('chat.sidebar.sortDefault') : t('chat.sidebar.sortByName')"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4"/>
@@ -416,7 +457,7 @@ onBeforeUnmount(() => {
         <button
           @click="emit('newWorkspace')"
           class="p-1 rounded-md text-gray-400 hover:text-gray-700 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-gray-200/70 dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
-          title="新建工作区"
+          :title="t('chat.sidebar.newWorkspace')"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -430,7 +471,7 @@ onBeforeUnmount(() => {
       <div v-if="!isCollapsed && isFilterOpen" class="px-3 pb-1.5 shrink-0">
         <input
           v-model="filterQuery"
-          placeholder="搜索工作区名称..."
+          :placeholder="t('chat.sidebar.searchWorkspacePlaceholder')"
           class="w-full px-2.5 py-1 text-xs rounded-lg border outline-none bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-800 focus:border-blue-500 dark:focus:border-zinc-600 text-gray-800 dark:text-zinc-200 placeholder:text-gray-400 dark:placeholder:text-zinc-500"
           autoFocus
         />
@@ -463,7 +504,7 @@ onBeforeUnmount(() => {
       <div v-else class="space-y-0.5">
         <!-- Empty State if no workspaces and no unassigned sessions -->
         <div v-if="projectGroups.length === 0 && unassignedSessions.length === 0" class="px-2 py-6 text-center text-xs text-gray-400 dark:text-gray-500 select-none">
-          暂未指定工作区
+                    {{ t('chat.sidebar.noWorkspace') }}
         </div>
 
         <!-- Dark Mode: 使用 BranchedMenu 树形分支结构渲染 -->
@@ -512,10 +553,10 @@ onBeforeUnmount(() => {
             <template #header-actions="{ item }">
               <div v-if="item.raw" class="flex items-center gap-1 shrink-0">
                 <div class="relative">
-                  <button
+                                    <button
                     @click="toggleProjectMenu(item.raw.id, $event)"
                     class="p-0.5 rounded opacity-0 group-hover/head:opacity-80 hover:opacity-100 hover:text-zinc-100 transition cursor-pointer"
-                    title="工作区操作"
+                    :title="t('chat.sidebar.workspaceActions')"
                   >
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
@@ -536,22 +577,22 @@ onBeforeUnmount(() => {
                       class="absolute right-0 top-6 w-32 py-1 rounded-xl shadow-2xl border border-white/[0.08] bg-zinc-900 text-zinc-200 z-50 text-xs backdrop-blur-md"
                     >
                       <button
-                        @click="handleDeleteProject(item.raw, $event)"
+                                                @click="handleDeleteProject(item.raw, $event)"
                         class="w-full text-left px-3 py-1.5 hover:bg-red-500/10 text-red-400 transition-colors flex items-center gap-1.5 cursor-pointer"
                       >
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
-                        <span>删除工作区</span>
+                        <span>{{ t('chat.sidebar.deleteWorkspaceLabel') }}</span>
                       </button>
                     </div>
                   </Transition>
                 </div>
 
                 <button
-                  @click="handleNewSessionInProject(item.raw, $event)"
+                                    @click="handleNewSessionInProject(item.raw, $event)"
                   class="p-0.5 rounded opacity-0 group-hover/head:opacity-80 hover:opacity-100 hover:text-white transition cursor-pointer"
-                  title="在该工作区新建会话"
+                  :title="t('chat.sidebar.newSessionInWorkspace')"
                 >
                   <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -583,19 +624,19 @@ onBeforeUnmount(() => {
                 class="hidden group-hover/kid:flex items-center gap-1 opacity-70 shrink-0"
                 @click.stop
               >
-                <button
+                                <button
                   @click.stop="startEdit(item.raw, $event)"
                   class="p-0.5 hover:text-white transition cursor-pointer"
-                  title="重命名"
+                  :title="t('chat.sidebar.rename')"
                 >
                   <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                   </svg>
                 </button>
-                <button
+                                <button
                   @click.stop="emit('deleteSession', item.value)"
                   class="p-0.5 hover:text-red-400 transition cursor-pointer"
-                  title="删除"
+                  :title="t('common.remove')"
                 >
                   <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -652,12 +693,12 @@ onBeforeUnmount(() => {
                 <div class="relative">
                   <button
                     @click="toggleProjectMenu(group.workspace.id!, $event)"
-                    :class="[
+                                        :class="[
                       'p-0.5 rounded transition-opacity cursor-pointer',
                       isWorkspaceActive(group.workspace) ? 'opacity-80 hover:opacity-100' : 'opacity-0 group-hover:opacity-80 hover:opacity-100',
                       'hover:text-gray-900'
                     ]"
-                    title="工作区操作"
+                    :title="t('chat.sidebar.workspaceActions')"
                   >
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
@@ -678,13 +719,13 @@ onBeforeUnmount(() => {
                       class="absolute right-0 top-6 w-32 py-1 rounded-xl shadow-xl border z-50 text-xs bg-white border-gray-200 text-gray-700 backdrop-blur-md"
                     >
                       <button
-                        @click="handleDeleteProject(group.workspace, $event)"
+                                                @click="handleDeleteProject(group.workspace, $event)"
                         class="w-full text-left px-3 py-1.5 hover:bg-red-500/10 text-red-500 transition-colors flex items-center gap-1.5 cursor-pointer"
                       >
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
-                        <span>删除工作区</span>
+                        <span>{{ t('chat.sidebar.deleteWorkspaceLabel') }}</span>
                       </button>
                     </div>
                   </Transition>
@@ -692,13 +733,13 @@ onBeforeUnmount(() => {
 
                 <!-- + New Chat in this Workspace -->
                 <button
-                  @click="handleNewSessionInProject(group.workspace, $event)"
+                                    @click="handleNewSessionInProject(group.workspace, $event)"
                   :class="[
                     'p-0.5 rounded transition-opacity cursor-pointer',
                     isWorkspaceActive(group.workspace) ? 'opacity-80 hover:opacity-100' : 'opacity-0 group-hover:opacity-80 hover:opacity-100',
                     'hover:text-blue-500'
                   ]"
-                  title="在该工作区新建会话"
+                  :title="t('chat.sidebar.newSessionInWorkspace')"
                 >
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -712,7 +753,7 @@ onBeforeUnmount(() => {
               <div v-if="expandedWorkspaces[String(group.workspace.id)] && group.sessions.length > 0">
                 <div class="pl-4 pr-1 py-0.5 space-y-0.5">
                   <div
-                    v-for="session in group.sessions"
+                    v-for="session in limitSessions(String(group.workspace.id), group.sessions)"
                     :key="session.id"
                     @click="emit('selectSession', session.id)"
                     :class="[
@@ -737,23 +778,33 @@ onBeforeUnmount(() => {
                         class="w-full bg-transparent border-b border-blue-500 outline-none text-xs px-0.5 text-inherit"
                         autoFocus
                       />
-                      <span v-else class="block truncate" :title="session.title || '新对话'">{{ session.title || '新对话' }}</span>
+                      <span v-else class="block truncate" :title="session.title || t('session.newConversation')">{{ session.title || t('session.newConversation') }}</span>
                     </div>
 
                     <!-- Action Controls: Rename & Delete -->
                     <div v-if="editingSessionId !== session.id" class="hidden group-hover/session:flex items-center gap-1 opacity-70 shrink-0">
-                      <button @click="startEdit(session, $event)" class="p-0.5 hover:text-blue-500 transition cursor-pointer" title="重命名">
+                      <button @click="startEdit(session, $event)" class="p-0.5 hover:text-blue-500 transition cursor-pointer" :title="t('chat.sidebar.rename')">
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
                       </button>
-                      <button @click.stop="emit('deleteSession', session.id)" class="p-0.5 hover:text-red-500 transition cursor-pointer" title="删除">
+                      <button @click.stop="emit('deleteSession', session.id)" class="p-0.5 hover:text-red-500 transition cursor-pointer" :title="t('common.remove')">
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
                       </button>
                     </div>
                   </div>
+
+                  <!-- 展开显示 / 收起 -->
+                  <button
+                    v-if="group.sessions.length > SESSION_VISIBLE_LIMIT"
+                    @click.stop="toggleFullyExpanded(String(group.workspace.id))"
+                    class="w-full text-left px-2 py-1.5 rounded-lg text-xs transition-colors cursor-pointer"
+                    :class="isDark ? 'text-zinc-500 hover:text-zinc-300' : 'text-gray-400 hover:text-gray-600'"
+                  >
+                    {{ isFullyExpanded(String(group.workspace.id)) ? t('chat.sidebar.collapseDisplay') : t('chat.sidebar.expandDisplay', { count: group.sessions.length }) }}
+                  </button>
                 </div>
               </div>
             </CollapseTransition>
@@ -761,12 +812,12 @@ onBeforeUnmount(() => {
 
           <!-- Unassigned Sessions Section (if any) -->
           <div v-if="unassignedSessions.length > 0" class="pt-2">
-            <div class="px-2 py-1 text-[11px] font-medium text-gray-400 tracking-wider">
-              历史对话
+                        <div class="px-2 py-1 text-[11px] font-medium text-gray-400 tracking-wider">
+              {{ t('chat.sidebar.history') }}
             </div>
             <div class="space-y-0.5">
               <div
-                v-for="session in unassignedSessions"
+                v-for="session in limitSessions('ws-unassigned', unassignedSessions)"
                 :key="session.id"
                 @click="emit('selectSession', session.id)"
                 :class="[
@@ -788,21 +839,29 @@ onBeforeUnmount(() => {
                     class="w-full bg-transparent border-b border-blue-500 outline-none text-xs px-0.5 text-inherit"
                     autoFocus
                   />
-                  <span v-else class="block truncate">{{ session.title || '新对话' }}</span>
+                  <span v-else class="block truncate">{{ session.title || t('session.newConversation') }}</span>
                 </div>
                 <div v-if="editingSessionId !== session.id" class="hidden group-hover/session:flex items-center gap-1 opacity-70 shrink-0">
-                  <button @click="startEdit(session, $event)" class="p-0.5 hover:text-blue-500 transition cursor-pointer" title="重命名">
+                  <button @click="startEdit(session, $event)" class="p-0.5 hover:text-blue-500 transition cursor-pointer" :title="t('chat.sidebar.rename')">
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                     </svg>
                   </button>
-                  <button @click.stop="emit('deleteSession', session.id)" class="p-0.5 hover:text-red-500 transition cursor-pointer" title="删除">
+                  <button @click.stop="emit('deleteSession', session.id)" class="p-0.5 hover:text-red-500 transition cursor-pointer" :title="t('common.remove')">
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                     </svg>
                   </button>
                 </div>
               </div>
+              <button
+                v-if="unassignedSessions.length > SESSION_VISIBLE_LIMIT"
+                @click.stop="toggleFullyExpanded('ws-unassigned')"
+                class="w-full text-left px-2 py-1.5 rounded-lg text-xs transition-colors cursor-pointer"
+                :class="isDark ? 'text-zinc-500 hover:text-zinc-300' : 'text-gray-400 hover:text-gray-600'"
+              >
+                {{ isFullyExpanded('ws-unassigned') ? t('chat.sidebar.collapseDisplay') : t('chat.sidebar.expandDisplay', { count: unassignedSessions.length }) }}
+              </button>
             </div>
           </div>
         </div>
@@ -819,13 +878,13 @@ onBeforeUnmount(() => {
             'flex items-center gap-2 text-xs font-medium transition-colors cursor-pointer py-1.5 px-2 rounded-lg',
             isDark ? 'text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.05]' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/60'
           ]"
-          title="系统设置"
+          :title="t('chat.sidebar.systemSettings')"
         >
           <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
-          <span v-if="!isCollapsed">设置</span>
+          <span v-if="!isCollapsed">{{ t('chat.sidebar.settings') }}</span>
         </button>
       </div>
     </div>

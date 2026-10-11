@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue';
 import { AgentAPI } from '../services/agent';
 import { isOk } from '../utils/api';
+import { t } from '../i18n';
 
 export function useChatImageAttachments() {
   const attachments = ref<Array<{ file: File; preview: string }>>([]);
@@ -17,12 +18,12 @@ export function useChatImageAttachments() {
       const result = await AgentAPI.chatLimits();
       const limit = result.data?.maxImages;
       if (!isOk(result.code) || !Number.isSafeInteger(limit) || limit == null || limit < 1) {
-        throw new Error(result.errMsg || '图片数量限制读取失败');
+        throw new Error(result.errMsg || t('attachment.limitsReadFailed'));
       }
       maxImages.value = limit;
     } catch (error) {
       maxImages.value = null;
-      limitsError.value = error instanceof Error ? error.message : '图片数量限制读取失败';
+      limitsError.value = error instanceof Error ? error.message : t('attachment.limitsReadFailed');
     } finally {
       limitsLoading.value = false;
     }
@@ -31,16 +32,16 @@ export function useChatImageAttachments() {
   const addImages = (files: File[]) => {
     attachmentError.value = '';
     if (!canAttach.value) {
-      attachmentError.value = '图片上传暂不可用，请重试读取数量限制';
+      attachmentError.value = t('attachment.uploadUnavailable');
       return;
     }
     const images = files.filter(file => file.type.startsWith('image/'));
     if (images.length !== files.length) {
-      attachmentError.value = '只支持上传图片文件';
+      attachmentError.value = t('attachment.imagesOnly');
       return;
     }
     if (attachments.value.length + images.length > maxImages.value!) {
-      attachmentError.value = `每条消息最多上传 ${maxImages.value} 张图片，请减少选择数量`;
+      attachmentError.value = t('attachment.tooMany', { max: maxImages.value! });
       return;
     }
     attachments.value.push(...images.map(file => ({ file, preview: URL.createObjectURL(file) })));
@@ -66,7 +67,7 @@ export function readImagePreviews(files: File[]): Promise<string[]> {
   return Promise.all(files.map(file => new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error('图片预览读取失败'));
+    reader.onerror = () => reject(new Error(t('attachment.previewFailed')));
     reader.readAsDataURL(file);
   })));
 }

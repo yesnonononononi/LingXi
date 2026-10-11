@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, shallowRef, watch } from 'vue';
+import { t } from '../../i18n';
 import { loader, VueMonacoEditor } from '@guolao/vue-monaco-editor';
 import * as monaco from 'monaco-editor/editor/editor.api.js';
 import 'monaco-editor/features/register.all.js';
@@ -33,7 +34,7 @@ const language = computed(() => {
     || language.extensions?.some(extension => name.endsWith(extension.toLowerCase()))
   )?.id ?? 'plaintext';
 });
-const options: monaco.editor.IStandaloneEditorConstructionOptions = {
+const options = computed<monaco.editor.IStandaloneEditorConstructionOptions>(() => ({
   readOnly: true,
   domReadOnly: true,
   automaticLayout: true,
@@ -43,8 +44,8 @@ const options: monaco.editor.IStandaloneEditorConstructionOptions = {
   scrollBeyondLastLine: false,
   renderValidationDecorations: 'off',
   padding: { top: 8, bottom: 16 },
-  ariaLabel: '文件代码',
-};
+  ariaLabel: t('filePreview.codeAria'),
+}));
 
 const disposeModel = (path: string) => monaco.editor.getModel(monaco.Uri.parse(path))?.dispose();
 // 后台刷新的标签也要更新模型；保留当前视图，避免内容变化把阅读位置重置。
@@ -79,7 +80,7 @@ onUnmounted(() => ownedModels.forEach(disposeModel));
     height="100%"
     @mount="editor = $event"
   >
-    <span role="status">正在加载代码预览…</span>
-    <template #failure>代码预览加载失败，请重新打开面板</template>
+    <span role="status">{{ t('filePreview.loadingCode') }}</span>
+    <template #failure>{{ t('filePreview.loadFailed') }}</template>
   </VueMonacoEditor>
 </template>

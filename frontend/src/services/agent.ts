@@ -9,6 +9,7 @@ import type {
 import { toPositiveInt } from '../utils/api';
 import { toServerSessionId } from '../utils/ids';
 import { getApiBaseUrl } from '../utils/apiConfig';
+import { t } from '../i18n';
 import type { ChatCommand } from './dto/chat_command';
 
 const appendFormValue = (form: FormData, key: string, value: string | number | boolean | null | undefined) => {
@@ -87,7 +88,7 @@ export class AgentAPI {
       signal,
     });
     if (!response.ok) {
-      throw new Error(`受理请求失败：HTTP ${response.status}`);
+      throw new Error(t('accept.failed', { status: response.status }));
     }
     return response.json() as Promise<Result<ChatAcceptance>>;
   }

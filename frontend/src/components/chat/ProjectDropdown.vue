@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import type { WorkspaceVO } from '../../types/chat';
 import { useTheme } from '../../composables/useTheme';
+import { t } from '../../i18n';
 
 const props = defineProps<{
   workspaces: WorkspaceVO[];
@@ -97,7 +98,7 @@ onBeforeUnmount(() => {
               ? 'bg-zinc-800/80 border-zinc-700/60 text-zinc-300 hover:bg-zinc-800 hover:text-white hover:border-zinc-600'
               : 'bg-white/90 border-zinc-200/90 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 hover:border-zinc-300')
       ]"
-      title="选择项目 / 工作空间"
+      :title="t('chat.project.selectTip')"
     >
       <!-- Folder Icon -->
       <svg

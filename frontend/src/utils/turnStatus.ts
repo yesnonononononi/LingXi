@@ -1,4 +1,5 @@
 import type { ChatTurn } from '../types/chat';
+import { t } from '../i18n';
 
 /**
  * 轮次业务状态判定（唯一定义处）。
@@ -14,14 +15,14 @@ import type { ChatTurn } from '../types/chat';
 /** 「进行中」三态：已受理未开始 / 执行中 / 挂起等审批。后端尚未下发终结事件。 */
 export const ACTIVE_TURN_STATUSES = ['ACCEPTED', 'RUNNING', 'WAITING'] as const;
 
-/** 轮次状态 → 用户可见文案。`Record` 而非 Map：键集合由 `TurnVO['status']` 约束，漏词编译即报错。 */
-const TURN_STATUS_LABELS: Record<ChatTurn['status'], string> = {
-  ACCEPTED: '已受理',
-  RUNNING: '执行中',
-  WAITING: '等待审批',
-  COMPLETED: '已完成',
-  FAILED: '已失败',
-  CANCELLED: '已取消'
+/** 轮次状态 → i18n key。`Record` 而非 Map：键集合由 `TurnVO['status']` 约束，漏词编译即报错。 */
+const TURN_STATUS_KEYS: Record<ChatTurn['status'], string> = {
+  ACCEPTED: 'turn.status.accepted',
+  RUNNING: 'turn.status.running',
+  WAITING: 'turn.status.waiting',
+  COMPLETED: 'turn.status.completed',
+  FAILED: 'turn.status.failed',
+  CANCELLED: 'turn.status.cancelled'
 };
 
 /** 该轮次是否处于「后端尚未下发终结事件」的活跃期。 */
@@ -32,5 +33,7 @@ export const isActiveTurnStatus = (status: string): boolean =>
 export const isFailedTurnStatus = (status: string): boolean => status === 'FAILED';
 
 /** 轮次状态文案；未收录的未知状态原样回显，不臆断。 */
-export const turnStatusLabel = (status: ChatTurn['status']): string =>
-  TURN_STATUS_LABELS[status] ?? status;
+export const turnStatusLabel = (status: ChatTurn['status']): string => {
+  const key = TURN_STATUS_KEYS[status];
+  return key ? t(key) : status;
+};

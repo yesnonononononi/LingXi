@@ -11,23 +11,25 @@
  *                      （两处均为无参 `new Date(x).toLocaleTimeString()`，格式一致）
  *
  * 说明：ChatMessageItem 的 displayTime 使用 `toLocaleTimeString([], {hour,minute})`
- *       （两位时分，格式与上面两处不同），为避免改变 UI 输出，**未**纳入本模块。
+  *       （两位时分，格式与上面两处不同），为避免改变 UI 输出，**未**纳入本模块。
  *
  * Token 数量格式化**不在本模块**：ChatMessageItem.vue:1114 的 formatTokenCount 才是在用的
  * 那份（缺省显示「暂无统计」，不把 0 与缺省混为一谈）。曾经的 formatTokens 把三者都显示成
  * `0 tok`，违反「缺省不等于 0」约定，且已零引用，于 10-06 删除。
  */
 
+import { t } from '../i18n';
+
 /**
  * 耗时展示：<1s 或缺省显示 `1秒`；<60s 显示 `12秒`；否则 `1分5秒`。
  */
 export function formatDuration(ms: number): string {
-  if (!ms || ms <= 0) return '1秒';
+  if (!ms || ms <= 0) return t('format.oneSecond');
   const totalSec = Math.round(ms / 1000);
-  if (totalSec < 60) return `${totalSec}秒`;
+  if (totalSec < 60) return t('format.seconds', { n: totalSec });
   const mins = Math.floor(totalSec / 60);
   const secs = totalSec % 60;
-  return `${mins}分${secs}秒`;
+  return t('format.minutesSeconds', { m: mins, s: secs });
 }
 
 /**
@@ -38,7 +40,7 @@ export function formatDuration(ms: number): string {
  * 收敛于此以保证所有分支都返回字符串（历史缺陷：兜底分支缺失会渲染出 undefined）。</p>
  */
 export function formatDurationOrPlaceholder(ms?: number | null): string {
-  return ms == null ? '暂无统计' : formatDuration(ms);
+  return ms == null ? t('format.noStats') : formatDuration(ms);
 }
 
 /**
