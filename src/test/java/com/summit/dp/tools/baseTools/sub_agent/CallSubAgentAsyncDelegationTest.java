@@ -1,5 +1,6 @@
 package com.summit.dp.tools.baseTools.sub_agent;
 
+import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -95,7 +96,7 @@ class CallSubAgentAsyncDelegationTest {
         lenient().when(workspaceService.findByDir(anyString())).thenReturn(Result.success(null));
 
         SubAgentRequestFactory requestFactory = new SubAgentRequestFactory(workspaceService, modelService,
-                settingsProvider, mock(WorkspaceConverter.class), new SkillRootResolver(""));
+                settingsProvider, mock(WorkspaceConverter.class), new SkillRootResolver(""), new BusinessSystemPromptBuilder(""));
         SubSessionResolver subSessionResolver = new SubSessionResolver(sessionRepository, modelContextService);
         DelegationRecorder recorder = new DelegationRecorder(chatTurnService, transcriptService);
 

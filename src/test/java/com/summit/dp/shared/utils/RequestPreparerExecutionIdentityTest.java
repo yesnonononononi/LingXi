@@ -1,5 +1,6 @@
 package com.summit.dp.shared.utils;
 
+import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.workflow.application.chat.ChatImageResolver;
 
 import com.summit.dp.workflow.application.chat.RequestPreparer;
@@ -21,7 +22,6 @@ import com.summit.dp.shared.vo.SessionVO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Map;
@@ -81,12 +81,10 @@ class RequestPreparerExecutionIdentityTest {
     private final RequestPreparer preparer = new RequestPreparer(sessionService, sessionRepository,
             workspaceService, modelService, workspaceConverter, settingsProvider, toolCatalog,
             transcriptService, modelContextService,
-            chatTurnService, agentService, teamService, mcpService, new SkillRootResolver(""), new ChatImageResolver());
+            chatTurnService, agentService, teamService, mcpService, new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder("全局规则"));
 
     @BeforeEach
     void stubHappyPath() {
-        // SYSTEM_PROMPT 字段为 @Value 注入，单测中显式置空，避免 NPE。
-        ReflectionTestUtils.setField(preparer, "SYSTEM_PROMPT", "");
         when(settingsProvider.current()).thenReturn(Optional.empty());
         when(sessionService.findById(SESSION_ID))
                 .thenReturn(Result.success(SessionVO.builder().id(SESSION_ID).build()));
@@ -137,6 +135,7 @@ class RequestPreparerExecutionIdentityTest {
         Long acceptedTurnId = preparer.commitUserMessage(context);
         assertEquals(turnId, acceptedTurnId);
         AgentRequest request = preparer.buildRequest("prompt", context.withTurnId(acceptedTurnId), List.of());
+        assertEquals("全局规则\n\nprompt", request.getSystemPrompt());
         // 完整身份：根会话、会话、轮次与历史代际；来源是 prepare 阶段的一次冷路径读，不含 parentTurnId。
         assertEquals(Map.of(
                         "rootSessionId", Long.toString(SESSION_ID),

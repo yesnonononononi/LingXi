@@ -1,5 +1,6 @@
 package com.summit.dp.session;
 
+import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.agent.AgentRequest;
 import com.summit.dp.execution.ExecutionAttributes;
@@ -24,7 +25,6 @@ import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
 
@@ -63,7 +63,7 @@ class SessionTeamBindingTest {
             mock(com.summit.dp.tools.application.port.ToolCatalog.class), transcriptService, modelContextService,
             mock(com.summit.dp.turn.application.service.ChatTurnService.class),
             agentService, teamService,
-            mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver());
+            mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""));
 
     private static final long SESSION_ID = 500L;
     private static final long TEAM_ID = 3L;
@@ -88,8 +88,6 @@ class SessionTeamBindingTest {
     }
 
     private RequestPreparer preparer() {
-        // SYSTEM_PROMPT 字段为 @Value 注入，单测中显式置空，避免 NPE。
-        ReflectionTestUtils.setField(preparer, "SYSTEM_PROMPT", "");
         return preparer;
     }
 

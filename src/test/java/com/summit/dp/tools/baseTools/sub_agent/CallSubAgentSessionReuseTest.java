@@ -1,5 +1,6 @@
 package com.summit.dp.tools.baseTools.sub_agent;
 
+import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -88,7 +89,7 @@ class CallSubAgentSessionReuseTest {
 
         SubSessionResolver subSessionResolver = new SubSessionResolver(sessionRepository, modelContextService);
         SubAgentRequestFactory requestFactory = new SubAgentRequestFactory(workspaceService, modelService,
-                settingsProvider, null, new SkillRootResolver(""));
+                settingsProvider, null, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""));
         this.tool = new CallSubAgentTool(new ObjectMapper(), agentService, teamService, requestFactory,
                 subSessionResolver, registry, sessionRepository, asyncSubmitter,
                 new AsyncDelegationResultRenderer(new ObjectMapper()));

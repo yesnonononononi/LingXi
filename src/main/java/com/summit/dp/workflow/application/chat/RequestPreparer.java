@@ -42,7 +42,6 @@ import com.summit.dp.workspace.application.service.WorkspaceService;
 import jakarta.annotation.Nullable;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -83,8 +82,7 @@ public class RequestPreparer {
     private final SkillRootResolver skillRootResolver;
     private final ChatImageResolver chatImageResolver;
 
-    @Value("${lingxi.system-prompt:}")
-    private String SYSTEM_PROMPT;
+    private final BusinessSystemPromptBuilder systemPromptBuilder;
 
     /**
      * 解析本轮生效的模型：显式 modelId → 单例设置 {@code user_configs.model_id} → 无则报错。
@@ -338,7 +336,7 @@ public class RequestPreparer {
                 .builder()
                 .executionId(executionId)
                 .messages(context.messageList())
-                .systemPrompt(mergeSystemPrompt(agentPrompt))
+                .systemPrompt(systemPromptBuilder.buildRootPrompt(agentPrompt))
                 .workspaceSpec(context.workspace())
                 .toolList(resolveToolList(toolList, context, mcpConfig, skillRoot))
                 .modelConfig(context.modelConfig())
@@ -491,14 +489,6 @@ public class RequestPreparer {
             attributes.put(ExecutionAttributes.TEAM_ID, context.teamId().toString());
         }
         return Map.copyOf(attributes);
-    }
-
-    private String mergeSystemPrompt(String agentPrompt) {
-        String globalPrompt = SYSTEM_PROMPT == null ? "" : SYSTEM_PROMPT.trim();
-        String rolePrompt = agentPrompt == null ? "" : agentPrompt.trim();
-        if (globalPrompt.isEmpty()) return rolePrompt;
-        if (rolePrompt.isEmpty()) return globalPrompt;
-        return globalPrompt + "\n\n" + rolePrompt;
     }
 
     private void throwIf(boolean condition, String err) {

@@ -11,7 +11,7 @@ import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.workflow.application.delegation.TeamPromptComposer;
+import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.user_configs.application.vo.SettingsView;
@@ -52,6 +52,7 @@ public class SubAgentRequestFactory {
     private final WorkspaceConverter workspaceConverter;
     /** Skill 根目录：子执行的 skillConfig 与 read_skill 都由它决定是否下发。 */
     private final SkillRootResolver skillRootResolver;
+    private final BusinessSystemPromptBuilder systemPromptBuilder;
 
     /**
      * 组装子执行请求。
@@ -98,7 +99,7 @@ public class SubAgentRequestFactory {
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(childAttributes(subAgent, toolExecution, subSessionId))
                         .build())
-                .systemPrompt(buildSubAgentPrompt(subAgent, team, argument.getPrompt()))
+                .systemPrompt(systemPromptBuilder.buildMemberPrompt(subAgent, team, argument.getPrompt()))
                 .toolList(memberTools(subAgent.getToolList(), skillRoot))
                 .skillConfig(skillRoot == null ? null : new SkillConfig(skillRoot))
                 .task(List.of(task))
@@ -217,23 +218,4 @@ public class SubAgentRequestFactory {
         return tools;
     }
 
-    /**
-     * 子 Agent 的系统提示词：Agent 自身人设 + 团队协作话术（与指挥者共用同一份成员名单）
-     * + 本次委派的上下文。
-     */
-    private String buildSubAgentPrompt(AgentVO agent, TeamVO team, String callerPrompt) {
-        String role = TeamPromptComposer.memberPrompt(
-                agent.getPrompt(),
-                team == null ? null : team.getAgents(),
-                agent.getId(),
-                team == null ? null : team.getCommanderAgentId(),
-                team == null ? null : team.getDescription()
-        );
-        return String.format("""
-                %s
-
-                # Commander 提供的任务上下文
-                %s
-                """, role, Objects.toString(callerPrompt, "").trim());
-    }
 }

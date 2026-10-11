@@ -1,5 +1,6 @@
 package com.summit.dp.model;
 
+import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.tool.ToolExecuteResult;
@@ -29,11 +30,11 @@ class AgentModelConfigurationTest {
     private final SettingsProvider settings = mock(SettingsProvider.class);
     private final AgentService agents = mock(AgentService.class);
     private final CallSubAgentTool child = new CallSubAgentTool(new ObjectMapper(), agents, null,
-            new SubAgentRequestFactory(null, models, settings, null, new SkillRootResolver("")),
+            new SubAgentRequestFactory(null, models, settings, null, new SkillRootResolver(""), new BusinessSystemPromptBuilder("")),
             null, null, null, null, null);
     /** 子模型解析已下沉到请求组装器，这里直接打它，避免再经工具入口绕行。 */
     private final SubAgentRequestFactory childModels = new SubAgentRequestFactory(null, models, settings, null,
-            new SkillRootResolver(""));
+            new SkillRootResolver(""), new BusinessSystemPromptBuilder(""));
 
     @Test void unconfiguredChildFailsBeforeCreatingSessionOrInvokingModel() {
         AgentVO agent = new AgentVO();
@@ -68,7 +69,7 @@ class AgentModelConfigurationTest {
 
     @Test void rootResolvesExplicitThenSettingsThenFails() {
         RequestPreparer root = new RequestPreparer(null, null, null, models, null, settings, null,
-                null, null, null, null, null, null, new SkillRootResolver(""), new ChatImageResolver());
+                null, null, null, null, null, null, new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""));
         SettingsView selected = new SettingsView(null, null, null, null, 99L, null, 1234, "high");
         ModelConfig explicit = config("explicit");
         ModelConfig fallback = config("settings");

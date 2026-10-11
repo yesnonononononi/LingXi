@@ -101,7 +101,7 @@ public class AgentWorkflowOrchestratorImpl implements AgentWorkflowOrchestrator 
     }
 
     /**
-     * 裸模型档位的角色提示词：沿用既有行为，把本轮用户输入交给 mergeSystemPrompt。
+     * 裸模型档位的角色提示词：沿用既有行为，把本轮用户输入作为业务人设提示词。
      * 输入正文取自 prepare 追加的最后一条用户消息。
      */
     private static String resolveUserText(RuntimeContext context) {

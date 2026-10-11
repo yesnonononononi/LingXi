@@ -1,5 +1,6 @@
 package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
+import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
 
 import com.summit.core.agent.AgentRequest;
@@ -56,7 +57,7 @@ class SubAgentRequestFactoryTest {
 
     /** Skill 关闭（空配置）时的组装器：本类多数用例的基线。 */
     private final SubAgentRequestFactory factory = new SubAgentRequestFactory(
-            workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""));
+            workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""));
 
     @TempDir
     Path skillDir;
@@ -64,7 +65,7 @@ class SubAgentRequestFactoryTest {
     /** Skill 开启时的组装器：根目录指向一个真实存在的临时目录。 */
     private SubAgentRequestFactory factoryWithSkills() {
         return new SubAgentRequestFactory(workspaceService, modelService, settingsProvider,
-                workspaceConverter, new SkillRootResolver(skillDir.toString()));
+                workspaceConverter, new SkillRootResolver(skillDir.toString()), new BusinessSystemPromptBuilder(""));
     }
 
     @Test
