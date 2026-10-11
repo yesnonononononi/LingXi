@@ -3,7 +3,6 @@ package com.summit.dp.skill.application.service;
 import com.summit.core.conf.SkillConfig;
 import com.summit.core.skill.SkillLoader;
 import com.summit.dp.skill.application.vo.SkillVO;
-import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -21,7 +20,7 @@ import java.util.List;
 public class SkillQueryService {
 
     private final SkillLoader skillLoader;
-    private final SkillRootResolver skillRootResolver;
+    private final SkillDirectoryProvider skillDirectoryProvider;
 
     /**
      * 列出当前生效的全部 Skill。
@@ -30,7 +29,7 @@ public class SkillQueryService {
      * Skill 是可选能力，前端据此隐藏入口，不能因为一个开关让面板 500。</p>
      */
     public List<SkillVO> listSkills() {
-        Path root = skillRootResolver.root();
+        Path root = skillDirectoryProvider.root();
         if (root == null) {
             return List.of();
         }

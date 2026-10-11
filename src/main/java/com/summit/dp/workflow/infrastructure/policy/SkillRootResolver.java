@@ -1,5 +1,6 @@
 package com.summit.dp.workflow.infrastructure.policy;
 
+import com.summit.dp.skill.application.service.SkillDirectoryProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -22,7 +23,7 @@ import java.nio.file.Path;
  */
 @Slf4j
 @Component
-public class SkillRootResolver {
+public class SkillRootResolver implements SkillDirectoryProvider {
 
     /** 就绪的 Skill 根目录；为 {@code null} 表示本次运行不提供 Skill。 */
     private final Path root;
@@ -32,6 +33,7 @@ public class SkillRootResolver {
     }
 
     /** Skill 根目录；{@code null} 表示未启用。调用方据此决定是否下发 skillConfig 与 read_skill。 */
+    @Override
     public Path root() {
         return root;
     }
