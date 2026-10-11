@@ -151,7 +151,7 @@ function closeSplash() {
 }
 
 function createWindow() {
-  const iconPath = path.join(__dirname, 'resources/icon.ico');
+  const iconPath = path.join(__dirname, 'resources/icon.png');
   nativeTheme.themeSource = 'dark';
 
   mainWindow = new BrowserWindow({

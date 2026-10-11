@@ -11,6 +11,37 @@ const electronGet = require('app-builder-lib/out/util/electronGet');
 const packageConfig = require('../package.json');
 const electronVersion = require('electron/package.json').version;
 
+test('Windows 产品 ICO 各条目尺寸与 PNG 一致，覆盖任务栏和安装包尺寸', () => {
+  const icon = fs.readFileSync(path.join(__dirname, '../electron/resources/icon.ico'));
+  assert.equal(icon.readUInt16LE(0), 0);
+  assert.equal(icon.readUInt16LE(2), 1);
+  const count = icon.readUInt16LE(4);
+  const sizes = [];
+  for (let index = 0; index < count; index++) {
+    const entry = 6 + index * 16;
+    const width = icon[entry] || 256;
+    const height = icon[entry + 1] || 256;
+    const length = icon.readUInt32LE(entry + 8);
+    const offset = icon.readUInt32LE(entry + 12);
+    const png = icon.subarray(offset, offset + length);
+    assert.equal(png.length, length);
+    assert.equal(png.subarray(1, 4).toString(), 'PNG');
+    assert.equal(png.readUInt32BE(16), width);
+    assert.equal(png.readUInt32BE(20), height);
+    sizes.push(width);
+  }
+  assert.deepEqual(sizes, [16, 24, 32, 48, 64, 128, 256]);
+  assert.deepEqual(fs.readFileSync(path.join(__dirname, '../electron/resources/icon.png')),
+    fs.readFileSync(path.join(__dirname, '../src/assets/lingxi-agent-logo.png')));
+});
+
+test('桌面窗口直接使用产品 PNG，避免运行时依赖 ICO 解码', () => {
+  const main = fs.readFileSync(path.join(__dirname, '../electron/main.cjs'), 'utf8');
+  assert.match(main, /const iconPath = path\.join\(__dirname, 'resources\/icon\.png'\)/);
+  assert.match(main, /icon: iconPath/);
+  assert.equal(packageConfig.build.win.icon, 'electron/resources/icon.ico');
+});
+
 async function createProbe(t, overrides = {}) {
   const temporaryRoot = path.resolve(os.tmpdir());
   const projectDir = fs.mkdtempSync(path.join(temporaryRoot, 'lingxi-electron-'));
