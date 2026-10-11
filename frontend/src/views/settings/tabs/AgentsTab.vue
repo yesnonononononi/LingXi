@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useAgentsTab } from './useAgentsTab';
+import { resolveToolCategory, toolCategoryLabel } from '../../../utils/toolMeta';
 import { useTheme } from '../../../composables/useTheme';
 
 const props = defineProps<{
@@ -141,14 +142,14 @@ const {
                   <span
                     v-for="toolName in agent.toolList"
                     :key="toolName"
-                    class="px-2 py-0.5 rounded-md text-[10px] font-mono border"
+                    class="px-2 py-0.5 rounded-md text-[10px] border"
                     :class="[
                       isDark
                         ? 'bg-white/5 border-white/15 text-emerald-400'
                         : 'bg-white border-gray-200 text-emerald-700 shadow-2xs'
                     ]"
                   >
-                    {{ toolName }}
+                    {{ toolCategoryLabel(resolveToolCategory(toolName)) }}
                   </span>
                 </div>
                 <span v-else class="text-[11px] italic" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">未配置任何工具</span>
@@ -350,7 +351,7 @@ const {
                     :checked="agentForm.toolList.includes(tool.name)"
                     class="rounded text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 pointer-events-none"
                   />
-                  <span class="font-medium truncate font-mono">{{ tool.name }}</span>
+                  <span class="font-medium truncate">{{ toolCategoryLabel(resolveToolCategory(tool.name)) }}</span>
                 </div>
                 <span
                   class="text-[9px] px-1.5 py-0.5 rounded font-normal shrink-0"
