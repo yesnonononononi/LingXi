@@ -3,6 +3,8 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { normalizeSettingsTab } from '../../utils/enum';
 import type { SettingsTabKey } from '../../utils/enum';
 import GeneralTab from './tabs/GeneralTab.vue';
+import PersonalizationTab from './tabs/PersonalizationTab.vue';
+import { usePersonalizationCopy } from './tabs/personalizationCopy';
 import ModelsTab from './tabs/ModelsTab.vue';
 import AgentsTab from './tabs/AgentsTab.vue';
 import TeamsTab from './tabs/TeamsTab.vue';
@@ -16,6 +18,8 @@ const props = defineProps<{
   isDark?: boolean;
   initialTab?: string;
 }>();
+
+const personalizationCopy = usePersonalizationCopy();
 
 const { isDark: themeIsDark } = useTheme();
 const isDark = computed(() => themeIsDark.value);
@@ -77,14 +81,14 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- Main Layout: Left Sidebar + Right Content -->
-      <div class="flex gap-6 pt-4 flex-1 min-h-0">
+      <div class="flex flex-col sm:flex-row gap-4 sm:gap-6 pt-4 flex-1 min-h-0">
         <!-- Left Sidebar Navigation -->
-        <div class="w-36 shrink-0 space-y-1">
+        <div <div class="flex sm:block w-full sm:w-36 shrink-0 gap-1 sm:space-y-1 overflow-x-auto sm:overflow-visible">>
           <!-- 1. 通用设置 -->
           <button
             @click="activeTab = 'general'"
             :class="[
-              'w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
+              'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
               activeTab === 'general'
                 ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
                 : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]' : 'text-gray-600 hover:text-gray-900 hover:bg-black/5')
@@ -97,11 +101,26 @@ onBeforeUnmount(() => {
             <span>通用设置</span>
           </button>
 
+          <button
+            @click="activeTab = 'personalization'"
+            :class="[
+              'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
+              activeTab === 'personalization'
+                ? (isDark ? 'bg-white/10 text-white border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
+                : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]' : 'text-gray-600 hover:text-gray-900 hover:bg-black/5')
+            ]"
+          >
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8a3 3 0 110-6 3 3 0 010 6zM5 20v-2a7 7 0 0114 0v2M18 7l1 1 3-3" />
+            </svg>
+            <span>{{ personalizationCopy.page }}</span>
+          </button>
+
           <!-- 2. 模型 -->
           <button
             @click="activeTab = 'models'"
             :class="[
-              'w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
+              'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
               activeTab === 'models'
                 ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
                 : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]' : 'text-gray-600 hover:text-gray-900 hover:bg-black/5')
@@ -119,7 +138,7 @@ onBeforeUnmount(() => {
           <button
             @click="activeTab = 'agents'"
             :class="[
-              'w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
+              'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
               activeTab === 'agents'
                 ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
                 : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]' : 'text-gray-600 hover:text-gray-900 hover:bg-black/5')
@@ -135,7 +154,7 @@ onBeforeUnmount(() => {
           <button
             @click="activeTab = 'teams'"
             :class="[
-              'w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
+              'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
               activeTab === 'teams'
                 ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
                 : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]' : 'text-gray-600 hover:text-gray-900 hover:bg-black/5')
@@ -151,7 +170,7 @@ onBeforeUnmount(() => {
           <button
             @click="activeTab = 'mcp'"
             :class="[
-              'w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
+              'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
               activeTab === 'mcp'
                 ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
                 : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]' : 'text-gray-600 hover:text-gray-900 hover:bg-black/5')
@@ -167,7 +186,7 @@ onBeforeUnmount(() => {
           <button
             @click="activeTab = 'data'"
             :class="[
-              'w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
+              'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
               activeTab === 'data'
                 ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
                 : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]' : 'text-gray-600 hover:text-gray-900 hover:bg-black/5')
@@ -183,7 +202,7 @@ onBeforeUnmount(() => {
           <button
             @click="activeTab = 'terms'"
             :class="[
-              'w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
+              'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
               activeTab === 'terms'
                 ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
                 : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]' : 'text-gray-600 hover:text-gray-900 hover:bg-black/5')
@@ -199,7 +218,7 @@ onBeforeUnmount(() => {
           <button
             @click="activeTab = 'about'"
             :class="[
-              'w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
+              'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
               activeTab === 'about'
                 ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
                 : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]' : 'text-gray-600 hover:text-gray-900 hover:bg-black/5')
@@ -218,6 +237,7 @@ onBeforeUnmount(() => {
           class="flex-1 min-w-0 pr-1 text-sm h-full overflow-y-auto [scrollbar-gutter:stable]"
         >
           <GeneralTab v-if="activeTab === 'general'" :is-dark="isDark" @model-updated="emit('modelUpdated')" />
+          <PersonalizationTab v-else-if="activeTab === 'personalization'" />
           <ModelsTab v-else-if="activeTab === 'models'" :is-dark="isDark" @model-updated="emit('modelUpdated')" />
           <AgentsTab v-else-if="activeTab === 'agents'" :is-dark="isDark" />
           <TeamsTab v-else-if="activeTab === 'teams'" :is-dark="isDark" @model-updated="emit('modelUpdated')" />
