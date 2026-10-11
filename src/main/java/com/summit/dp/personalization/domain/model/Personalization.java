@@ -27,19 +27,19 @@ public class Personalization {
 
 
     public void changeTitle(String title) {
-        throwIf(title == null || title.isEmpty(), "称呼不能为空");
+        throwIf(title == null, "称呼不能为 null，清除称呼请传空字符串");
         this.title = title;
         this.updateAt = Instant.now();
     }
 
     public void changeCommonAgentName(String commonAgentName) {
-        throwIf(commonAgentName == null || commonAgentName.isEmpty(), "agent通用名字不能为空");
+        throwIf(commonAgentName == null, "助手名字不能为 null，清除名字请传空字符串");
         this.commonAgentName = commonAgentName;
         this.updateAt = Instant.now();
     }
 
     public void changeCustomInstruction(String customInstruction) {
-        throwIf(customInstruction == null || customInstruction.isEmpty(), "自定义指令不能为空");
+        throwIf(customInstruction == null, "自定义指令不能为 null，清除指令请传空字符串");
         this.customInstruction = customInstruction;
         this.updateAt = Instant.now();
     }

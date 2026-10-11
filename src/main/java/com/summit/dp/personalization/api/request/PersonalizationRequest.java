@@ -2,13 +2,10 @@ package com.summit.dp.personalization.api.request;
 
 import lombok.Data;
 
-/**
- * Personalization 接口层入参（生成骨架）
- * <p>骨架仅承载聚合标识，业务字段按需在生成后补充。</p>
- */
+/** 未传字段保持原值，空字符串表示清除可选设置。 */
 @Data
 public class PersonalizationRequest {
-    private final Long id;
+    private Long id;
     private String replyStyle;
     // agent对用户的称呼
     private String title;

@@ -6,6 +6,7 @@ import com.summit.dp.personalization.api.request.PersonalizationRequest;
 import com.summit.dp.personalization.application.command.PersonalizationCommand;
 import com.summit.dp.personalization.application.service.PersonalizationService;
 import com.summit.dp.personalization.application.vo.PersonalizationVO;
+import com.summit.dp.personalization.application.vo.ReplyStyleVO;
 
 import lombok.RequiredArgsConstructor;
 
@@ -27,6 +28,11 @@ import java.util.List;
 public class PersonalizationController {
     private final PersonalizationService service;
 
+    @GetMapping("/current")
+    public Result<PersonalizationVO> current() {
+        return service.current();
+    }
+
     @GetMapping("/find/{id}")
     public Result<PersonalizationVO> findById(@PathVariable Long id) {
         return service.findById(id);
@@ -37,7 +43,8 @@ public class PersonalizationController {
         return service.update(toCommand(request));
     }
 
-    public Result<List<String>> listReplyStyles() {
+    @GetMapping("/reply-styles")
+    public Result<List<ReplyStyleVO>> listReplyStyles() {
         return service.listReplyStyles();
     }
 
