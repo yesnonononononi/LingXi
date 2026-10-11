@@ -1,4 +1,4 @@
-import { ref, nextTick, onBeforeUnmount } from 'vue';
+import { ref, nextTick, watch, onBeforeUnmount } from 'vue';
 import type { Ref } from 'vue';
 
 const AUTO_SCROLL_THRESHOLD = 96; // px，距底部小于此值视为在底部
@@ -31,6 +31,8 @@ export function useChatScroll(options: ChatScrollOptions) {
   let isProgrammaticScrolling = false; // 是否为程序触发的滚动，避免误识别为用户主动上滑
   let programmaticScrollTimer: number | null = null;
   let scrollRafId: number | null = null;
+  let resizeObserver: ResizeObserver | null = null;
+  let isSmoothScrolling = false;
 
   const getScrollElement = (): HTMLElement | null => {
     const host = messagesContainerRef.value;
@@ -116,6 +118,7 @@ export function useChatScroll(options: ChatScrollOptions) {
     if (!el) return;
 
     isProgrammaticScrolling = true;
+    isSmoothScrolling = behavior === 'smooth';
     if (programmaticScrollTimer !== null) {
       window.clearTimeout(programmaticScrollTimer);
       programmaticScrollTimer = null;
@@ -132,6 +135,7 @@ export function useChatScroll(options: ChatScrollOptions) {
     const duration = behavior === 'smooth' ? 350 : 50;
     programmaticScrollTimer = window.setTimeout(() => {
       isProgrammaticScrolling = false;
+      isSmoothScrolling = false;
       programmaticScrollTimer = null;
       updateScrollMetrics();
     }, duration);
@@ -182,7 +186,29 @@ export function useChatScroll(options: ChatScrollOptions) {
     scrollToBottomForce('smooth');
   };
 
+  // 折叠动画在下一帧后仍会改高度，必须在绘制前继续吸底；手动上滑后只更新距离。
+  const stopWatchingScrollElement = watch(getScrollElement, (el) => {
+    resizeObserver?.disconnect();
+    resizeObserver = null;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    resizeObserver = new ResizeObserver(() => {
+      if (shouldAutoScroll.value && !isSmoothScrolling) {
+        performScrollToBottom('auto');
+      } else {
+        updateScrollMetrics();
+      }
+    });
+    resizeObserver.observe(el);
+    // 外层视口高度固定，内容子容器才能反映消息与折叠动画的高度变化。
+    for (const child of Array.from(el.children)) {
+      resizeObserver.observe(child);
+    }
+  }, { flush: 'post', immediate: true });
+
   const cleanupScroll = () => {
+    stopWatchingScrollElement();
+    resizeObserver?.disconnect();
+    resizeObserver = null;
     if (programmaticScrollTimer !== null) {
       window.clearTimeout(programmaticScrollTimer);
       programmaticScrollTimer = null;
