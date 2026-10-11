@@ -13,7 +13,6 @@ import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
 import lombok.RequiredArgsConstructor;
-import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
@@ -31,7 +30,7 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
     public void save(Session session) { saveAndReturnId(session); }
 
     @Override
-    public void updateById(@NotNull Session session) {
+    public void updateById(Session session) {
         SessionPO row = toPO(session);
         long expected = session.getVersion();
         row.setVersion(expected + 1);
@@ -140,7 +139,7 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
     }
 
     @Override
-    protected @NotNull BaseMapper<SessionPO> mapper() {
+    protected BaseMapper<SessionPO> mapper() {
         return sessionMapper;
     }
 }

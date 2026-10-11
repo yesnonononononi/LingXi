@@ -11,7 +11,6 @@ import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.turn.infrastructure.persistence.mapper.ChatTurnMapper;
 import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
 import lombok.RequiredArgsConstructor;
-import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -39,13 +38,13 @@ public class ChatTurnRepositoryImpl extends AbstractRepository<ChatTurn, ChatTur
     }
 
     @Override
-    public void updateById(@NotNull ChatTurn turn) {
+    public void updateById(ChatTurn turn) {
         mutate(turn);
     }
 
     /** 更新并保留根身份入参；协议渲染移除后该参数不再参与投递。 */
     @Override
-    public void updateById(@NotNull ChatTurn turn, Long rootSessionId) {
+    public void updateById(ChatTurn turn, Long rootSessionId) {
         mutate(turn);
     }
 
@@ -219,7 +218,7 @@ public class ChatTurnRepositoryImpl extends AbstractRepository<ChatTurn, ChatTur
     }
 
     @Override
-    protected @NotNull BaseMapper<ChatTurnPO> mapper() {
+    protected BaseMapper<ChatTurnPO> mapper() {
         return chatTurnMapper;
     }
 }

@@ -6,7 +6,6 @@ import com.summit.dp.execution.domain.model.Execution;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
-import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Repository;
 
@@ -33,7 +32,7 @@ public class ExecutionRepositoryImpl extends AbstractRepository<Execution, Execu
     }
 
     @Override
-    protected @NotNull BaseMapper<ExecutionPO> mapper() {
+    protected BaseMapper<ExecutionPO> mapper() {
         return this.mapper;
     }
 

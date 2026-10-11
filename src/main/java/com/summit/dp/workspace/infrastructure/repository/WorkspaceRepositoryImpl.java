@@ -8,13 +8,11 @@ import com.summit.dp.workspace.domain.model.Workspace;
 import com.summit.dp.workspace.domain.repository.WorkspaceRepository;
 import com.summit.dp.workspace.infrastructure.persistence.mapper.WorkspaceMapper;
 import com.summit.dp.workspace.infrastructure.persistence.po.WorkspacePO;
-import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-import java.util.Optional;
 
 /** 工作空间仓储实现：业务实体（枚举判别）与 PO（字符串落库）的双向映射 + MyBatis-Plus 读写。 */
 @Repository
@@ -28,7 +26,7 @@ public class WorkspaceRepositoryImpl extends AbstractRepository<Workspace, Works
     }
 
     @Override
-    protected @NotNull BaseMapper<WorkspacePO> mapper() {
+    protected BaseMapper<WorkspacePO> mapper() {
         return this.mapper;
     }
 

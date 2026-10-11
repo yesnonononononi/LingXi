@@ -10,11 +10,9 @@ import com.summit.dp.email.domain.model.Email;
 import com.summit.dp.email.domain.repository.EmailRepository;
 import com.summit.dp.email.infrastructure.persistence.mapper.EmailMapper;
 import com.summit.dp.email.infrastructure.persistence.po.EmailPO;
-import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
-import java.util.List;
 import java.util.Optional;
 
 /**
@@ -33,7 +31,7 @@ public class EmailRepositoryImpl extends AbstractRepository<Email, EmailPO, Long
     }
 
     @Override
-    protected @NotNull BaseMapper<EmailPO> mapper() {
+    protected BaseMapper<EmailPO> mapper() {
         return this.mapper;
     }
 

@@ -10,7 +10,6 @@ import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionResumeTaskMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionResumeTaskPO;
 import lombok.RequiredArgsConstructor;
-import org.jetbrains.annotations.NotNull;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Repository;
 
@@ -163,7 +162,7 @@ public class ExecutionResumeTaskRepositoryImpl
     }
 
     @Override
-    public void updateById(@NotNull ExecutionResumeTask model) {
+    public void updateById(ExecutionResumeTask model) {
         // 刻意不走整行覆盖：状态写入必须带 version 条件，见类注释。
         if (!updateState(model)) {
             throw new IllegalStateException("恢复请求状态已变化，请重新读取: taskId=" + model.getId());
@@ -214,7 +213,7 @@ public class ExecutionResumeTaskRepositoryImpl
     }
 
     @Override
-    protected @NotNull BaseMapper<ExecutionResumeTaskPO> mapper() {
+    protected BaseMapper<ExecutionResumeTaskPO> mapper() {
         return taskMapper;
     }
 }

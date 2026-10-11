@@ -7,7 +7,6 @@ import com.summit.dp.email.domain.model.EmailMessage;
 import com.summit.dp.email.domain.repository.EmailMessageRepository;
 import com.summit.dp.email.infrastructure.persistence.mapper.EmailMessageMapper;
 import com.summit.dp.email.infrastructure.persistence.po.EmailMessagePO;
-import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -29,7 +28,7 @@ public class EmailMessageRepositoryImpl extends AbstractRepository<EmailMessage,
     }
 
     @Override
-    protected @NotNull BaseMapper<EmailMessagePO> mapper() {
+    protected BaseMapper<EmailMessagePO> mapper() {
         return this.mapper;
     }
 

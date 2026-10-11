@@ -13,7 +13,7 @@ import com.summit.dp.session.infrastructure.persistence.mapper.SessionMessageMap
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionMessagePO;
 import com.summit.dp.session.infrastructure.persistence.po.SessionPO;import lombok.RequiredArgsConstructor;
-import org.jetbrains.annotations.NotNull;
+
 import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
@@ -209,7 +209,7 @@ public class SessionMessageRepositoryImpl
     }
 
     @Override
-    protected @NotNull BaseMapper<SessionMessagePO> mapper() {
+    protected BaseMapper<SessionMessagePO> mapper() {
         return messageMapper;
     }
 }

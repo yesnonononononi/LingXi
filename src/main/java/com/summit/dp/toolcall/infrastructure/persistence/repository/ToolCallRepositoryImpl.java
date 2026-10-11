@@ -17,7 +17,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.toolcall.domain.model.ToolCallKind;
 import com.summit.dp.toolcall.domain.model.ToolCallKeys;
 import lombok.RequiredArgsConstructor;
-import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
@@ -85,7 +84,7 @@ public class ToolCallRepositoryImpl
     }
 
     @Override
-    public void updateById(@NotNull ToolCall model) {
+    public void updateById(ToolCall model) {
         ToolCallPO update = toPO(model);
         long expectedVersion = model.getVersion();
         update.setVersion(VersionedUpdate.nextVersion(expectedVersion));
@@ -247,7 +246,7 @@ public class ToolCallRepositoryImpl
     }
 
     @Override
-    protected @NotNull BaseMapper<ToolCallPO> mapper() {
+    protected BaseMapper<ToolCallPO> mapper() {
         return toolCallMapper;
     }
 }

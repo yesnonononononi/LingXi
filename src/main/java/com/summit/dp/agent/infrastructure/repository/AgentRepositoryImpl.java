@@ -9,8 +9,6 @@ import com.summit.dp.agent.domain.repository.AgentRepository;
 import com.summit.dp.agent.infrastructure.persistence.mapper.AgentMapper;
 import com.summit.dp.agent.infrastructure.persistence.po.AgentPO;
 import lombok.extern.slf4j.Slf4j;
-import org.jetbrains.annotations.NotNull;
-import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Repository;
 
 import java.util.Arrays;
@@ -34,7 +32,7 @@ public class AgentRepositoryImpl extends AbstractRepository<Agent, AgentPO, Long
     }
 
     @Override
-    protected @NotNull BaseMapper<AgentPO> mapper() {
+    protected BaseMapper<AgentPO> mapper() {
         return this.mapper;
     }
 

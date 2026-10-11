@@ -8,7 +8,6 @@ import com.summit.dp.session.domain.repo.SessionContextRepository;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionContextMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionContextPO;
 import lombok.RequiredArgsConstructor;
-import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -43,7 +42,7 @@ public class SessionContextRepositoryImpl extends AbstractRepository<SessionCont
     }
 
     @Override
-    protected @NotNull BaseMapper<SessionContextPO> mapper() {
+    protected BaseMapper<SessionContextPO> mapper() {
         return sessionContextMapper;
     }
 

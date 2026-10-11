@@ -6,8 +6,6 @@ import com.summit.dp.team.domain.model.Team;
 import com.summit.dp.team.domain.repository.TeamRepository;
 import com.summit.dp.team.infrastructure.persistence.mapper.TeamMapper;
 import com.summit.dp.team.infrastructure.persistence.po.TeamPO;
-import org.jetbrains.annotations.NotNull;
-import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Repository;
 
 import java.util.Arrays;
@@ -29,7 +27,7 @@ public class TeamRepositoryImpl extends AbstractRepository<Team, TeamPO, Long>
     }
 
     @Override
-    protected @NotNull BaseMapper<TeamPO> mapper() {
+    protected BaseMapper<TeamPO> mapper() {
         return this.mapper;
     }
 
