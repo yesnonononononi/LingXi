@@ -1,5 +1,6 @@
 package com.summit.dp.context;
 
+import com.summit.ddd.infrastructure.repository.json.AbstractJsonRepository;
 import com.summit.core.runtime.loop.LoopInterceptor;
 import com.summit.adapter.langchain4j.mcp.McpClientFactory;
 import com.summit.core.runtime.loop.LoopInterceptorProcessor;
@@ -18,6 +19,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -28,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <ul>
  *   <li>{@code webEnvironment=NONE}：不绑定端口，绝不与运行中的实例抢 8088。</li>
  *   <li>数据源改内存 H2：不去打开实例正在使用的 {@code ~/.lingxi/data/lingxi.mv.db} 文件库。</li>
- *   <li>{@code lingxi.data.dir} / 三个 config 路径指向 {@code .run/tmp}，不写用户真实配置。</li>
+ *   <li>{@code lingxi.data.dir} / 四个 config 路径指向 {@code .run/tmp}，不写用户真实配置。</li>
  *   <li>MCP 关闭、API Key 置为占位符值，避免联网与未解析占位符导致的环境噪声。</li>
  * </ul>
  */
@@ -40,9 +42,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
         "lingxi.data.dir=D:/Code/LingXi/.run/tmp/ctx-verify/data",
         "lingxi.skill.dir=",
         "lingxi.mcp.enabled=false",
-        "lingxi.config.user-configs.path=D:/Code/LingXi/.run/tmp/ctx-verify/user-configs.yaml",
-        "lingxi.config.mcp.path=D:/Code/LingXi/.run/tmp/ctx-verify/mcp.yaml",
-        "lingxi.config.model.path=D:/Code/LingXi/.run/tmp/ctx-verify/models.yaml",
+        "lingxi.config.user-configs.path=D:/Code/LingXi/.run/tmp/ctx-verify/user-configs.json",
+        "lingxi.config.mcp.path=D:/Code/LingXi/.run/tmp/ctx-verify/mcp.json",
+        "lingxi.config.model.path=D:/Code/LingXi/.run/tmp/ctx-verify/models.json",
+        "lingxi.config.personalization.path=D:/Code/LingXi/.run/tmp/ctx-verify/personalization.json",
         "TAVILY_APIKEY=ctx-verify-placeholder",
         "DEEPSEEK_APIKEY=ctx-verify-placeholder"
 })
@@ -54,6 +57,11 @@ class ApplicationContextAssemblyTest {
 
     @Autowired
     private ApplicationContext context;
+
+    @Test
+    void allConfigurationRepositoriesUseJsonStorage() {
+        assertEquals(4, context.getBeansOfType(AbstractJsonRepository.class).size());
+    }
 
     @Test
     @DisplayName("① SendMailToAgentTool 能装配：新增依赖 ExecutionResumeCoordinator 可解析")

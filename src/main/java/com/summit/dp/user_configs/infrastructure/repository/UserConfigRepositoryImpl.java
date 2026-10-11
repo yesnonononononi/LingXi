@@ -1,11 +1,8 @@
 package com.summit.dp.user_configs.infrastructure.repository;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.summit.ddd.infrastructure.repository.yaml.AbstractYamlRepository;
-import com.summit.ddd.infrastructure.repository.yaml.YamlListStore;
+import com.summit.ddd.infrastructure.repository.json.AbstractJsonRepository;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.shared.model.WorkspaceType;
-import com.summit.dp.shared.utils.YamlSerializer;
 import com.summit.dp.user_configs.domain.model.ReasoningEffort;
 import com.summit.dp.user_configs.domain.model.UserConfig;
 import com.summit.dp.user_configs.domain.repository.UserConfigRepository;
@@ -17,19 +14,17 @@ import org.springframework.stereotype.Repository;
 
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
 /** UserConfig 仓储实现 */
 @Repository
-public class UserConfigRepositoryImpl extends AbstractYamlRepository<UserConfig, UserConfigPO>
+public class UserConfigRepositoryImpl extends AbstractJsonRepository<UserConfig, UserConfigPO>
         implements UserConfigRepository {
 
-    public UserConfigRepositoryImpl(UserConfigMapper mapper, YamlSerializer serializer,
-                                    @Value("${lingxi.config.user-configs.path:${user.home}/.lingxi/config/user-configs.yaml}") String path) {
-        super(new YamlListStore<>(Path.of(path), serializer.listCodec(new TypeReference<List<UserConfigPO>>() {}),
-                () -> mapper.selectList(null)));
+    public UserConfigRepositoryImpl(UserConfigMapper mapper,
+                                    @Value("${lingxi.config.user-configs.path:${user.home}/.lingxi/config/user-configs.json}") String path) {
+        super(Path.of(path), UserConfigPO.class, () -> mapper.selectList(null));
     }
 
     @Override

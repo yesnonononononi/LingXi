@@ -31,7 +31,7 @@
         <lingxi.build.directory>${project.basedir}/target</lingxi.build.directory>
         <mybatis-plus>3.5.9</mybatis-plus>
         <lingxi-starter>1.1.3</lingxi-starter>
-        <ddd-starter>1.0.5</ddd-starter>
+        <ddd-starter>1.0.6-SNAPSHOT</ddd-starter>
     </properties>
     <dependencies>
         <dependency>
@@ -42,10 +42,6 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.dataformat</groupId>
-            <artifactId>jackson-dataformat-yaml</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

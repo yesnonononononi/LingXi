@@ -1,14 +1,11 @@
 package com.summit.dp.model.Infrastructure.repo;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.summit.dp.model.Infrastructure.persistence.mapper.ModelConfigMapper;
 import com.summit.dp.model.Infrastructure.persistence.po.ModelConfigPO;
 import com.summit.dp.model.domain.model.ModelConfig;
 import com.summit.dp.model.domain.repo.ModelConfigRepository;
-import com.summit.ddd.infrastructure.repository.yaml.AbstractYamlRepository;
-import com.summit.ddd.infrastructure.repository.yaml.YamlListStore;
-import com.summit.dp.shared.utils.YamlSerializer;
+import com.summit.ddd.infrastructure.repository.json.AbstractJsonRepository;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -19,16 +16,14 @@ import org.springframework.stereotype.Repository;
 
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 
 @Repository
 @Slf4j
-public class ModelConfigRepositoryImpl extends AbstractYamlRepository<ModelConfig, ModelConfigPO> implements ModelConfigRepository {
-    public ModelConfigRepositoryImpl(ModelConfigMapper mapper, YamlSerializer serializer,
-                                     @Value("${lingxi.config.model.path:${user.home}/.lingxi/config/models.yaml}") String path) {
-        super(new YamlListStore<>(Path.of(path), serializer.listCodec(new TypeReference<List<ModelConfigPO>>() {}),
-                () -> mapper.selectList(null)));
+public class ModelConfigRepositoryImpl extends AbstractJsonRepository<ModelConfig, ModelConfigPO> implements ModelConfigRepository {
+    public ModelConfigRepositoryImpl(ModelConfigMapper mapper,
+                                     @Value("${lingxi.config.model.path:${user.home}/.lingxi/config/models.json}") String path) {
+        super(Path.of(path), ModelConfigPO.class, () -> mapper.selectList(null));
     }
 
     @Override

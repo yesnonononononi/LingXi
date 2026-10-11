@@ -6,9 +6,7 @@ import com.summit.dp.mcp.domain.model.Mcp;
 import com.summit.dp.mcp.domain.repository.McpRepository;
 import com.summit.dp.mcp.infrastructure.persistence.mapper.McpMapper;
 import com.summit.dp.mcp.infrastructure.persistence.po.McpPO;
-import com.summit.ddd.infrastructure.repository.yaml.AbstractYamlRepository;
-import com.summit.ddd.infrastructure.repository.yaml.YamlListStore;
-import com.summit.dp.shared.utils.YamlSerializer;
+import com.summit.ddd.infrastructure.repository.json.AbstractJsonRepository;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -26,18 +24,17 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
-/** 沿用既有 PO 字段，首次从 H2 迁移后以 YAML 为准。 */
+/** 沿用既有 PO 字段，首次从 H2 迁移后以 JSON 为准。 */
 @Repository
 @Slf4j
-public class McpRepositoryImpl extends AbstractYamlRepository<Mcp, McpPO>
+public class McpRepositoryImpl extends AbstractJsonRepository<Mcp, McpPO>
         implements McpRepository {
 
     private final ObjectMapper objectMapper;
 
-    public McpRepositoryImpl(McpMapper mapper, ObjectMapper objectMapper, YamlSerializer serializer,
-                             @Value("${lingxi.config.mcp.path:${user.home}/.lingxi/config/mcp.yaml}") String path) {
-        super(new YamlListStore<>(Path.of(path), serializer.listCodec(new TypeReference<List<McpPO>>() {}),
-                () -> mapper.selectList(null)));
+    public McpRepositoryImpl(McpMapper mapper, ObjectMapper objectMapper,
+                             @Value("${lingxi.config.mcp.path:${user.home}/.lingxi/config/mcp.json}") String path) {
+        super(Path.of(path), McpPO.class, () -> mapper.selectList(null));
         this.objectMapper = objectMapper;
     }
 
