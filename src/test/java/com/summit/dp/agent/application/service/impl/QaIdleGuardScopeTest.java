@@ -3,7 +3,7 @@ package com.summit.dp.agent.application.service.impl;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.SessionAttributeRestorer;
 import com.summit.dp.execution.application.service.impl.ExecutionQueryServiceImpl;
 import com.summit.dp.execution.domain.model.Execution;
@@ -74,7 +74,7 @@ class QaIdleGuardScopeTest {
                 mock(SessionRepository.class),
                 mock(SessionExecutionRegistry.class),
                 mock(ModelContextService.class),
-                mock(ExecutionIdentity.class),
+                mock(ExecutionLocator.class),
                 mock(ToolCallRepository.class),
                 mock(SessionAttributeRestorer.class),
                 mock(PreparedChatExecutor.class),

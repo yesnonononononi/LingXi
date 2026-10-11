@@ -19,7 +19,7 @@ import com.summit.dp.agent.infrastructure.runtime.SubExecutionLifecycle;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.agent.infrastructure.runtime.SubAgentCompleteNotifier;
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.SessionAttributeRestorer;
 import com.summit.dp.execution.SuspendedExecutionResumer;
@@ -83,7 +83,7 @@ class QaDelegationLifecycleInterleavingTest {
     private final com.summit.dp.execution.domain.repository.ExecutionRepository executions =
             mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class);
     private final ExecutionResumeTaskRepository tasks = mock(ExecutionResumeTaskRepository.class);
-    private final ExecutionIdentity executionIdentity = mock(ExecutionIdentity.class);
+    private final ExecutionLocator executionIdentity = mock(ExecutionLocator.class);
     private final EmailService emailService = mock(EmailService.class);
 
     /** 根执行是否仍持有控制槽位（决定唤醒是被保留还是立即派发）。 */

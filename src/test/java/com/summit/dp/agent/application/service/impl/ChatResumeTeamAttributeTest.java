@@ -10,7 +10,7 @@ import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
 import com.summit.dp.agent.infrastructure.workflow.AgentWorkflowOrchestrator;
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.SessionAttributeRestorer;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.session.application.service.ConversationRollbackService;
@@ -58,7 +58,7 @@ class ChatResumeTeamAttributeTest {
     private final SessionRepository sessionRepository = mock(SessionRepository.class);
     private final SessionExecutionRegistry sessionExecutionRegistry = mock(SessionExecutionRegistry.class);
     private final ModelContextService modelContextService = mock(ModelContextService.class);
-    private final ExecutionIdentity executionIdentity = mock(ExecutionIdentity.class);
+    private final ExecutionLocator executionIdentity = mock(ExecutionLocator.class);
     private final ToolCallRepository toolCallRepository = mock(ToolCallRepository.class);
 
     private ChatServiceImpl service() {

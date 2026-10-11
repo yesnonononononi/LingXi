@@ -4,7 +4,7 @@ import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.SessionAttributeRestorer;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
 import com.summit.dp.session.application.service.ConversationRollbackService;
@@ -59,7 +59,7 @@ class ChatServiceImplIdleGuardTest {
             mock(SessionRepository.class),
             mock(SessionExecutionRegistry.class),
             mock(ModelContextService.class),
-            mock(ExecutionIdentity.class),
+            mock(ExecutionLocator.class),
             mock(ToolCallRepository.class),
             mock(SessionAttributeRestorer.class),
             mock(PreparedChatExecutor.class),

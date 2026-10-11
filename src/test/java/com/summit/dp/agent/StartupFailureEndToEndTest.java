@@ -19,9 +19,10 @@ import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
 import com.summit.dp.agent.infrastructure.workflow.AgentWorkflowOrchestrator;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionEventMetadata;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
+import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.execution.infrastructure.repository.LocalExecutionRepository;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.Session;
@@ -133,7 +134,7 @@ class StartupFailureEndToEndTest {
         SessionRepository sessionRepository = mock(SessionRepository.class);
         when(sessionRepository.findById(ROOT_SESSION_ID)).thenReturn(Optional.of(
                 Session.builder().id(ROOT_SESSION_ID).rootSessionId(Session.ROOT_SESSION_ID).build()));
-        ExecutionIdentity identity = new ExecutionIdentity(executionMapper, sessionRepository);
+        ExecutionLocator identity = new ExecutionLocator(new ExecutionRepositoryImpl(executionMapper), sessionRepository);
 
         ChatTurnService chatTurnService = new ChatTurnServiceImpl(new ChatTurnRepositoryImpl(chatTurnMapper));
 

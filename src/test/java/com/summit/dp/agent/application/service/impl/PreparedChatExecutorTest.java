@@ -18,7 +18,7 @@ import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
 import com.summit.dp.agent.infrastructure.workflow.AgentWorkflowOrchestrator;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionEventMetadata;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.LocalExecutionRepository;
@@ -88,7 +88,7 @@ class PreparedChatExecutorTest {
     private final RequestPreparer requestPreparer = mock(RequestPreparer.class);
     private final ChatTurnService chatTurnService = mock(ChatTurnService.class);
     private final SseEventPublisher sseEventPublisher = mock(SseEventPublisher.class);
-    private final ExecutionIdentity executionIdentity = mock(ExecutionIdentity.class);
+    private final ExecutionLocator executionIdentity = mock(ExecutionLocator.class);
     private final ExecutionMapper executionMapper = mock(ExecutionMapper.class);
     /** 守卫用例专用：只关心「有没有调 fail」，不需要真实收口链。 */
     private final ExecutionControl frameworkFail = mock(ExecutionControl.class);

@@ -4,7 +4,7 @@ import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
 import com.summit.dp.agent.infrastructure.workflow.AgentWorkflowOrchestrator;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.SessionAttributeRestorer;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
 import com.summit.dp.session.application.service.ConversationRollbackService;
@@ -30,7 +30,7 @@ import static org.mockito.Mockito.when;
  * {@code GET /a/completion/{sessionId}/events} 的入口校验与根会话解析。
  *
  * <p>{@code 0} 是「自身即根」的哨兵值（{@code Session.ROOT_SESSION_ID}），不是合法会话主键。
- * 客户端传 0 时若直接落到 {@code ExecutionIdentity.resolveRootSessionId} 会抛
+ * 客户端传 0 时若直接落到 {@code ExecutionLocator.resolveRootSessionId} 会抛
  * {@code IllegalStateException("Unknown session: 0")}，被兜底 handler 顶成 HTTP 500
  * 「系统繁忙，请稍后再试」。入口必须先把非正数拒绝为业务错误。</p>
  */
@@ -46,7 +46,7 @@ class ChatSubscribeSessionIdTest {
     private final SessionRepository sessionRepository = mock(SessionRepository.class);
     private final SessionExecutionRegistry sessionExecutionRegistry = mock(SessionExecutionRegistry.class);
     private final ModelContextService modelContextService = mock(ModelContextService.class);
-    private final ExecutionIdentity executionIdentity = mock(ExecutionIdentity.class);
+    private final ExecutionLocator executionIdentity = mock(ExecutionLocator.class);
     private final ToolCallRepository toolCallRepository = mock(ToolCallRepository.class);
 
     private ChatServiceImpl service() {

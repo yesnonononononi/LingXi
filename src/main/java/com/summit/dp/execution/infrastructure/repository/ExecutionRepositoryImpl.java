@@ -10,11 +10,14 @@ import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Repository;
 
-import java.util.Collection;
-import java.util.List;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.shared.exception.ClientException;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
 
 /**
  * Execution 仓储实现（生成骨架）
@@ -22,11 +25,6 @@ import com.summit.dp.shared.exception.ClientException;
 @Repository
 public class ExecutionRepositoryImpl extends AbstractRepository<Execution, ExecutionPO, Long>
         implements ExecutionRepository {
-
-    /** execution.status 终态/过程态常量，与框架 {@code ExecutionState} 序号一一对应。 */
-    private static final int STATUS_CREATED = 0;
-    private static final int STATUS_RUNNING = 1;
-    private static final int STATUS_FAILED = 4;
 
     private final ExecutionMapper mapper;
 
@@ -69,17 +67,40 @@ public class ExecutionRepositoryImpl extends AbstractRepository<Execution, Execu
 
     @Override
     public List<Execution> findUnfinishedBySessions(Collection<Long> sessionIds) {
-        if (sessionIds.isEmpty()) return List.of();
+        if (sessionIds == null || sessionIds.isEmpty()) return List.of();
         return mapper.selectList(new LambdaQueryWrapper<ExecutionPO>()
                 .select(ExecutionPO::getId, ExecutionPO::getSessionId, ExecutionPO::getStatus,
                         ExecutionPO::getVersion, ExecutionPO::getStartedAt, ExecutionPO::getCompletedAt)
-                .in(ExecutionPO::getSessionId, sessionIds).in(ExecutionPO::getStatus, 0, 1, 2))
+                .in(ExecutionPO::getSessionId, sessionIds)
+                .in(ExecutionPO::getStatus,
+                        ExecutionStatusCodes.CREATED, ExecutionStatusCodes.RUNNING, ExecutionStatusCodes.SUSPENDED))
                 .stream().map(this::toModel).toList();
+    }
+
+    /** 只取 session_id 一列：归属判定不该为了一个外键把 LONGTEXT 检查点读进内存。 */
+    @Override
+    public Optional<Long> findSessionId(long executionId) {
+        ExecutionPO row = mapper.selectOne(new LambdaQueryWrapper<ExecutionPO>()
+                .select(ExecutionPO::getSessionId)
+                .eq(ExecutionPO::getId, executionId));
+        return row == null ? Optional.empty() : Optional.ofNullable(row.getSessionId());
+    }
+
+    @Override
+    public Optional<Long> findLatestSuspendedId(long sessionId) {
+        ExecutionPO row = mapper.selectOne(new LambdaQueryWrapper<ExecutionPO>()
+                .select(ExecutionPO::getId)
+                .eq(ExecutionPO::getSessionId, sessionId)
+                .eq(ExecutionPO::getStatus, ExecutionStatusCodes.SUSPENDED)
+                .orderByDesc(ExecutionPO::getId)
+                .last("LIMIT 1"));
+        return row == null ? Optional.empty() : Optional.ofNullable(row.getId());
     }
 
     @Override
     public int markOrphanRunsFailed() {
-        return mapper.markOrphanRunsFailed(STATUS_FAILED, STATUS_CREATED, STATUS_RUNNING);
+        return mapper.markOrphanRunsFailed(ExecutionStatusCodes.FAILED,
+                ExecutionStatusCodes.CREATED, ExecutionStatusCodes.RUNNING);
     }
 
     @Override

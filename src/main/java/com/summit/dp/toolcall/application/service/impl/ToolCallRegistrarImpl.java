@@ -1,6 +1,6 @@
 package com.summit.dp.toolcall.application.service.impl;
 
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.toolcall.application.command.ToolCallRegisterCommand;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.ToolCallRegistrar;
@@ -26,7 +26,7 @@ public class ToolCallRegistrarImpl implements ToolCallRegistrar {
 
     private final ToolCallRepository toolCallRepository;
     private final ToolCallConverter converter;
-    private final ExecutionIdentity executionIdentity;
+    private final ExecutionLocator executionLocator;
 
     @Override
     @Transactional
@@ -141,7 +141,7 @@ public class ToolCallRegistrarImpl implements ToolCallRegistrar {
     /** 纯仓储回查会话 id；解析失败返回 {@code null}（降级，不抛异常）。 */
     private Long resolveConversationId(long executionId) {
         try {
-            return executionIdentity.sessionId(String.valueOf(executionId));
+            return executionLocator.sessionId(String.valueOf(executionId));
         } catch (RuntimeException e) {
             return null;
         }

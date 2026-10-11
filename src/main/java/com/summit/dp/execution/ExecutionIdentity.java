@@ -1,129 +1,26 @@
 package com.summit.dp.execution;
 
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.Execution;
 import com.summit.core.tool.ToolExecution;
-import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
-import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
-import com.summit.dp.session.domain.model.Session;
-import com.summit.dp.session.domain.repo.SessionRepository;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
 
-import java.util.List;
 import java.util.Map;
 
-/** Resolves the stable conversation identity independently from a single run. */
-@Component
-@RequiredArgsConstructor
-public class ExecutionIdentity {
+/**
+ * 从执行请求携带的不透明属性解析业务身份。
+ *
+ * <p><b>只解析属性，不查库</b>：执行快照里的 {@code attributes} 已带齐会话归属，
+ * 手上已有执行对象时读属性即可。需要「由执行标识回查归属」的调用方走
+ * {@code ExecutionLocator}（应用层，读领域仓储）—— 两者的区别是「手上有没有执行对象」，
+ * 不是「谁能访问数据库」。</p>
+ */
+public final class ExecutionIdentity {
 
-    /** execution.status 取值，与框架 ExecutionState 的序号一一对应。 */
-    private static final int STATUS_CREATED = ExecutionStatusCodes.CREATED;
-    private static final int STATUS_RUNNING = ExecutionStatusCodes.RUNNING;
-    private static final int STATUS_SUSPENDED = ExecutionStatusCodes.SUSPENDED;
+    private ExecutionIdentity() { }
 
-    private final ExecutionMapper executionMapper;
-    private final SessionRepository sessionRepository;
+    private static final String SESSION_ID = ExecutionAttributes.SESSION_ID;
 
-
-
-    /**
-     * 解析执行标识所属会话。
-     *
-     * <p>直接回查 execution 表：execution 主键即请求标识，session_id 在创建时写入，
-     * 一次主键查询即可确定归属。</p>
-     */
-    public long sessionId(String executionId) {
-        ExecutionPO po = executionMapper.selectById(numeric(executionId));
-        if (po == null || po.getSessionId() == null) {
-            throw new IllegalStateException("Unknown execution: " + executionId);
-        }
-        return po.getSessionId();
-    }
-
-    /**
-     * 解析执行标识所属的根会话：先回查 execution 表拿会话，再解析该会话的根
-     * （{@code root_session_id == 0} 表示自身即根）。供 T06 的 SSE 根会话路由使用。
-     */
-    public long rootSessionId(String executionId) {
-        return resolveRootSessionId(sessionId(executionId));
-    }
-
-    /** 解析会话的根会话 id，无需执行标识（子会话回指根，根会话返回自身）。 */
-    public long resolveRootSessionId(long sessionId) {
-        Session session = sessionRepository.findById(sessionId)
-                .orElseThrow(() -> new IllegalStateException("Unknown session: " + sessionId));
-        return session.isSubSession() ? session.getRootSessionId() : sessionId;
-    }
-
-    /**
-     * 同 {@link #resolveRootSessionId(long)}，但会话查不到时返回 {@code null} 而不抛异常。
-     *
-     * <p><b>两种失败语义并存是有意的</b>：用户显式点名的入口（订阅自己的会话）
-     * 查不到就是业务失败，必须报错；而投影与自动恢复这类**旁路**动作查不到只说明
-     * 实体尚未落库或已被清理，静默跳过即可，抛异常会把「开始一次模型调用」变成 500。</p>
-     */
-    public Long resolveRootSessionIdOrNull(Long sessionId) {
-        if (sessionId == null) {
-            return null;
-        }
-        Session session = sessionRepository.findById(sessionId).orElse(null);
-        if (session == null) {
-            return null;
-        }
-        return session.isSubSession() ? session.getRootSessionId() : session.getId();
-    }
-
-    /**
-     * 会话下最近一次被暂停的执行标识，用于恢复入口；没有挂起执行返回 {@code null}。
-     *
-     * <p>「无可恢复的执行」是正常业务状态（用户对空闲会话点了恢复），不是系统错误 ——
-     * 返回 null 交由调用方决定呈现方式，不在这里抛异常把业务失败顶成 500。</p>
-     */
-    public String latestSuspendedExecutionId(long sessionId) {
-        List<ExecutionPO> list = executionMapper.selectList(Wrappers.<ExecutionPO>lambdaQuery()
-                .eq(ExecutionPO::getSessionId, sessionId)
-                .eq(ExecutionPO::getStatus, STATUS_SUSPENDED)
-                .orderByDesc(ExecutionPO::getId)
-                .last("LIMIT 1"));
-        return list.isEmpty() ? null : String.valueOf(list.getFirst().getId());
-    }
-
-    /** 会话下仍在生命周期内（创建/运行/暂停）的执行标识，用于取消与中断。 */
-    public List<String> activeExecutionIds(long sessionId) {
-        List<ExecutionPO> list = executionMapper.selectList(Wrappers.<ExecutionPO>lambdaQuery()
-                .eq(ExecutionPO::getSessionId, sessionId)
-                .in(ExecutionPO::getStatus, STATUS_CREATED, STATUS_RUNNING, STATUS_SUSPENDED));
-        return list.stream().map(po -> String.valueOf(po.getId())).toList();
-    }
-
-    private static Long numeric(String executionId) {
-        try {
-            return Long.parseLong(executionId);
-        } catch (NumberFormatException e) {
-            throw new IllegalStateException("Execution ID must be numeric: " + executionId, e);
-        }
-    }
-
-    /**
-     * 执行标识 → 数值主键；无法解析（框架在 executionId 缺省时回落 UUID）返回 {@code null}。
-     *
-     * <p>与 {@link #numeric(String)} 的差别是失败语义：这里把「不是数字」当成「归属未知」，
-     * 用于**观测落库**这类不得拖垮主链路的场景 —— 拿不到归属就写 NULL，绝不抛异常。</p>
-     */
-    public static Long numericOrNull(String executionId) {
-        if (executionId == null || executionId.isBlank()) {
-            return null;
-        }
-        try {
-            return Long.parseLong(executionId.trim());
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
+    /** 执行携带的会话标识；属性缺失说明受理链路已坏，直接抛错而不是猜一个值。 */
     public static long sessionId(Execution execution) {
         return sessionId(execution.getAgentRequest());
     }
@@ -137,8 +34,25 @@ public class ExecutionIdentity {
     }
 
     public static long sessionId(Map<String, Object> attributes) {
-        Object value = attributes == null ? null : attributes.get(ExecutionAttributes.SESSION_ID);
-        if (value == null) throw new IllegalArgumentException("Missing session ID in execution attributes");
+        Object value = attributes == null ? null : attributes.get(SESSION_ID);
+        if (value == null) throw new IllegalArgumentException("执行请求缺少会话 ID");
         return Long.parseLong(value.toString());
+    }
+
+    /**
+     * 执行标识 → 数值主键；无法解析（框架在 executionId 缺省时回落 UUID）返回 {@code null}。
+     *
+     * <p>把「不是数字」当成「归属未知」，用于**观测落库**这类不得拖垮主链路的场景 ——
+     * 拿不到归属就写 NULL，绝不抛异常。</p>
+     */
+    public static Long numericOrNull(String executionId) {
+        if (executionId == null || executionId.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(executionId.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 }

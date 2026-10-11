@@ -7,7 +7,6 @@ import com.summit.core.agent.Execution;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.domain.lifecycle.ExecutionActivity;
 import com.summit.dp.execution.domain.lifecycle.ExecutionCoordination;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
@@ -67,8 +66,6 @@ class ToolCallReadinessTest {
         tools = new ToolCallRepositoryImpl(
                 new SqlSessionTemplate(factory.getObject()).getMapper(ToolCallMapper.class),
                 new ObjectMapper(), ToolCallPersistenceTest.buildCardAvailabilityPolicy());
-        ExecutionIdentity identity = mock(ExecutionIdentity.class);
-        when(identity.resolveRootSessionId(1L)).thenReturn(1L);
         when(executions.findById("11")).thenReturn(Optional.of(execution));
         doAnswer(invocation -> {
             Runnable notification = invocation.getArgument(0);
@@ -77,7 +74,7 @@ class ToolCallReadinessTest {
             });
             return null;
         }).when(executions).afterCommit(any());
-        readiness = new ToolCallReadinessService(tools, new ToolCallConverter(new ObjectMapper()), identity,
+        readiness = new ToolCallReadinessService(tools, new ToolCallConverter(new ObjectMapper()),
                 new TransactionTemplate(new DataSourceTransactionManager(database)), provider(executions), provider(activity));
     }
 

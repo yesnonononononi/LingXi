@@ -5,7 +5,7 @@ import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.dp.agent.infrastructure.runtime.SubAgentCompleteNotifier;
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,7 +36,7 @@ class SubExecutionLifecycleTest {
 
     private final SessionExecutionRegistry registry = mock(SessionExecutionRegistry.class);
     private final ExecutionResumeCoordinator resumeCoordinator = mock(ExecutionResumeCoordinator.class);
-    private final ExecutionIdentity executionIdentity = mock(ExecutionIdentity.class);
+    private final ExecutionLocator executionIdentity = mock(ExecutionLocator.class);
     private final SubAgentCompleteNotifier notifier = mock(SubAgentCompleteNotifier.class);
 
     private final SubExecutionLifecycle lifecycle =

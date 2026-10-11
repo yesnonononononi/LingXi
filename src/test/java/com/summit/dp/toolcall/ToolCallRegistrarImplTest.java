@@ -1,7 +1,7 @@
 package com.summit.dp.toolcall;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.toolcall.application.command.ToolCallRegisterCommand;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.impl.ToolCallRegistrarImpl;
@@ -43,13 +43,13 @@ import static org.mockito.Mockito.when;
 class ToolCallRegistrarImplTest {
 
     private FakeToolCallRepository repository;
-    private ExecutionIdentity identity;
+    private ExecutionLocator identity;
     private ToolCallRegistrarImpl registrar;
 
     @BeforeEach
     void setup() {
         repository = new FakeToolCallRepository();
-        identity = mock(ExecutionIdentity.class);
+        identity = mock(ExecutionLocator.class);
         registrar = new ToolCallRegistrarImpl(repository, new ToolCallConverter(new ObjectMapper()), identity);
     }
 

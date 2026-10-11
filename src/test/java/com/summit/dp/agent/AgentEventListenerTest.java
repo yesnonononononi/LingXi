@@ -25,7 +25,7 @@ import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.shared.vo.block.TextBlock;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.dp.agent.infrastructure.listener.AgentEventListener;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.shared.event.SseEventPublisher;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -69,7 +69,7 @@ class AgentEventListenerTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private final SseEventPublisher publisher = mock(SseEventPublisher.class);
-    private final ExecutionIdentity identity = mock(ExecutionIdentity.class);
+    private final ExecutionLocator identity = mock(ExecutionLocator.class);
     private final AgentEventListener listener =
             new AgentEventListener(objectMapper, publisher, identity);
 

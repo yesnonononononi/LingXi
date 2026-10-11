@@ -10,7 +10,7 @@ import com.summit.dp.agent.application.service.impl.ResendTargetResolver;
 import com.summit.dp.agent.application.service.impl.RuntimeContext;
 import com.summit.dp.agent.application.vo.ChatAcceptanceVO;
 import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.SessionAttributeRestorer;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
 import com.summit.dp.session.application.service.ConversationRollbackService;
@@ -71,7 +71,7 @@ class ChatAcceptanceEndpointTest {
             sseEventPublisher, requestPreparer,
             mock(ExecutionControl.class), mock(ExecutionRepository.class),
             mock(SessionRepository.class), registry, mock(ModelContextService.class),
-            mock(ExecutionIdentity.class), mock(ToolCallRepository.class),
+            mock(ExecutionLocator.class), mock(ToolCallRepository.class),
             mock(SessionAttributeRestorer.class), chatExecutor,
             mock(ChatTurnService.class), executionQueryService,
             mock(ResendTargetResolver.class), mock(ConversationRollbackService.class));

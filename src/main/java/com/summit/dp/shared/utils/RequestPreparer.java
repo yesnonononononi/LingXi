@@ -78,7 +78,6 @@ public class RequestPreparer {
     private final ToolCatalog toolCatalog;
     private final ConversationTranscriptService transcriptService;
     private final ModelContextService modelContextService;
-    private final ExecutionIdentity executionIdentity;
     private final ChatTurnService chatTurnService;
     private final AgentService agentService;
     private final TeamService teamService;

@@ -22,7 +22,7 @@ import com.summit.core.tool.ToolRegistry;
 import com.summit.core.workspace.WorkspaceManager;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.SessionAttributeRestorer;
 import com.summit.dp.execution.SuspendedExecutionResumer;
 import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
@@ -110,7 +110,7 @@ class VersionedToolCallDecisionTest {
     private final ExecutionRepository executionRepository = mock(ExecutionRepository.class);
     private final ExecutionControl executionControl = mock(ExecutionControl.class);
     private final ModelContextService modelContextService = mock(ModelContextService.class);
-    private final ExecutionIdentity executionIdentity = mock(ExecutionIdentity.class);
+    private final ExecutionLocator executionIdentity = mock(ExecutionLocator.class);
     private final SseEventPublisher sseEventPublisher = mock(SseEventPublisher.class);
     private final ExecutionResumeCoordinator resumeCoordinator = mock(ExecutionResumeCoordinator.class);
     private final RuntimeEventPublisher runtimeEvents = mock(RuntimeEventPublisher.class);

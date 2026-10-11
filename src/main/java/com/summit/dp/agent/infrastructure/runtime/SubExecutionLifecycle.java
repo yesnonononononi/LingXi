@@ -3,6 +3,7 @@ package com.summit.dp.agent.infrastructure.runtime;
 import com.summit.core.agent.Execution;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,7 +24,7 @@ import java.util.Map;
 public class SubExecutionLifecycle {
     private final SessionExecutionRegistry registry;
     private final ExecutionResumeCoordinator resumeCoordinator;
-    private final ExecutionIdentity executionIdentity;
+    private final ExecutionLocator executionLocator;
     private final SubAgentCompleteNotifier subAgentCompleteNotifier;
 
     /**
@@ -126,7 +127,7 @@ public class SubExecutionLifecycle {
         if (childSessionId == null) {
             return null;
         }
-        return executionIdentity.resolveRootSessionIdOrNull(childSessionId);
+        return executionLocator.resolveRootSessionIdOrNull(childSessionId);
     }
 
 

@@ -4,14 +4,32 @@ import com.summit.ddd.domain.repository.RepositoryTemplate;
 import com.summit.dp.execution.domain.model.Execution;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 public interface ExecutionRepository extends RepositoryTemplate<Execution, Long> {
     Collection<Execution> findList(Collection<Long> ids);
     List<Execution> findRecentBySession(Long sessionId, int limit);
-    default List<Execution> findUnfinishedBySessions(Collection<Long> sessionIds) {
-        return sessionIds.stream().flatMap(id -> findRecentBySession(id, 100).stream())
-                .filter(execution -> execution.getStatus() != null && execution.getStatus() < 3).toList();
-    }
+
+    /**
+     * 批量取会话下未终结（CREATED / RUNNING / SUSPENDED）的执行投影。
+     *
+     * <p>一次 {@code IN} 查询，不逐会话查；不加载 snapshot —— 调用方只判「还有没有在跑的」，
+     * 把 LONGTEXT 检查点读进内存是不可接受的。</p>
+     *
+     * @param sessionIds 会话 id 集合；空入参由实现短路返回空列表
+     */
+    List<Execution> findUnfinishedBySessions(Collection<Long> sessionIds);
+
+    /**
+     * 读执行归属的会话 id。
+     *
+     * <p>只取 {@code session_id} 一列：归属判定不该为了一个外键把 LONGTEXT 检查点读进内存。
+     * 行不存在、或行上没写会话，都返回空。</p>
+     */
+    Optional<Long> findSessionId(long executionId);
+
+    /** 会话下最近一次被暂停（SUSPENDED）的执行 id；没有挂起执行返回空。 */
+    Optional<Long> findLatestSuspendedId(long sessionId);
 
     /**
      * 收口孤儿执行：把进程崩溃后遗留的 CREATED / RUNNING 执行条件更新为 FAILED 终态。

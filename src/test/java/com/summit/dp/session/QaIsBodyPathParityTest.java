@@ -2,7 +2,7 @@ package com.summit.dp.session;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.conversation.message.AiMessageEntity;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.session.application.convert.ToolBlockStatusResolver;
 import com.summit.dp.session.application.convert.TurnViewAssembler;
 import com.summit.dp.session.application.service.TurnViewBroadcaster;
@@ -74,7 +74,7 @@ class QaIsBodyPathParityTest {
     private final ToolCallRepository toolCallRepository = mock(ToolCallRepository.class);
     private final SessionRepository sessionRepository = mock(SessionRepository.class);
     private final SseEventPublisher sseEventPublisher = mock(SseEventPublisher.class);
-    private final ExecutionIdentity executionIdentity = mock(ExecutionIdentity.class);
+    private final ExecutionLocator executionIdentity = mock(ExecutionLocator.class);
 
     private final TurnViewService turnViewService =
             new TurnViewService(messageRepository, chatTurnRepository, toolCallRepository, assembler);

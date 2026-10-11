@@ -3,7 +3,7 @@ package com.summit.dp.toolcall.application.service.impl;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.SuspendedExecutionResumer;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.shared.event.SseEventPublisher;
@@ -29,7 +29,7 @@ import java.util.concurrent.CompletableFuture;
 public class ToolCallDecisionService {
     private final ToolCallRepository toolCallRepository;
     private final ToolCallConverter converter;
-    private final ExecutionIdentity executionIdentity;
+    private final ExecutionLocator executionLocator;
     private final ModelContextService modelContextService;
     private final SseEventPublisher sseEventPublisher;
     private final TransactionTemplate transactions;
@@ -64,7 +64,7 @@ public class ToolCallDecisionService {
         });
 
         boolean pending = resumer.hasUnresolvedSlot(toolCall.getExecutionId());
-        long rootId = executionIdentity.resolveRootSessionId(conversationId);
+        long rootId = executionLocator.resolveRootSessionId(conversationId);
         SseEmitter emitter = sseEventPublisher.connect(rootId);
         CompletableFuture.runAsync(() -> {
             try {

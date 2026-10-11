@@ -16,7 +16,7 @@ import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.event.SseEventPublisher;
 import com.summit.dp.shared.utils.RequestPreparer;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.SessionAttributeRestorer;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
 import com.summit.dp.turn.application.service.ChatTurnService;
@@ -53,7 +53,7 @@ public class ChatServiceImpl implements ChatService {
     private final SessionRepository sessionRepository;
     private final SessionExecutionRegistry sessionExecutionRegistry;
     private final ModelContextService modelContextService;
-    private final ExecutionIdentity executionIdentity;
+    private final ExecutionLocator executionLocator;
     private final ToolCallRepository toolCallRepository;
     private final SessionAttributeRestorer sessionAttributeRestorer;
     /** 已受理上下文的执行协作：模型调用与运行资格收尾都在它那里。 */
@@ -90,7 +90,7 @@ public class ChatServiceImpl implements ChatService {
         // 非正数必须在这里拒成业务错误，否则会落进 resolveRootSessionId 抛
         // IllegalStateException → 兜底 handler 报 HTTP 500「系统繁忙」。
         throwIf(sessionId == null || sessionId <= 0, "会话标识不合法");
-        long rootSessionId = executionIdentity.resolveRootSessionId(sessionId);
+        long rootSessionId = executionLocator.resolveRootSessionId(sessionId);
         return sseEventPublisher.connect(rootSessionId);
     }
 
@@ -202,7 +202,7 @@ public class ChatServiceImpl implements ChatService {
 
         List<SessionExecutionRegistry.ChildExecution> liveChildren = sessionExecutionRegistry.cancelRoot(rootSessionId);
         liveChildren.stream().map(SessionExecutionRegistry.ChildExecution::sessionId).forEach(ids::add);
-        ids.stream().flatMap(id -> executionIdentity.activeExecutionIds(id).stream())
+        ids.stream().flatMap(id -> executionLocator.activeExecutionIds(id).stream())
                 .forEach(this::requestCancel);
 
         liveChildren.forEach(child -> {
@@ -217,12 +217,12 @@ public class ChatServiceImpl implements ChatService {
     @Override
     public void suspend(Long sessionId) {
         if (sessionId == null) return;
-        executionIdentity.activeExecutionIds(sessionId).forEach(executionControl::suspend);
+        executionLocator.activeExecutionIds(sessionId).forEach(executionControl::suspend);
     }
 
     @Override
     public synchronized Result<String> resume(Long sessionId) {
-        String id = executionIdentity.latestSuspendedExecutionId(sessionId);
+        String id = executionLocator.latestSuspendedExecutionId(sessionId);
         if (id == null) {
             throw new ClientException("该会话没有可恢复的执行");
         }

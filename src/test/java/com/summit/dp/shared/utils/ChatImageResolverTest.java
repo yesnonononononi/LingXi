@@ -62,7 +62,7 @@ class ChatImageResolverTest {
 
     @Test
     void requestPreparerBuildsOneUserMessageContainingAllImages() {
-        RequestPreparer preparer = new RequestPreparer(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, resolver);
+        RequestPreparer preparer = new RequestPreparer(null, null, null, null, null, null, null, null, null, null, null, null, null, null, resolver);
         ChatCommand command = new ChatCommand("比较两张图片", null, null, null, null, null, false,
                 List.of(file("first.png", "image/png", "png"), file("second.jpg", "image/jpeg", "jpeg")), null);
         UserMessageEntity message = preparer.buildUserMessage(command);
@@ -94,7 +94,7 @@ class ChatImageResolverTest {
         when(upload.isEmpty()).thenReturn(false);
         List<MultipartFile> files = IntStream.rangeClosed(0, SessionMessage.MAX_IMAGE_COUNT)
                 .mapToObj(index -> upload).toList();
-        RequestPreparer preparer = new RequestPreparer(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, resolver);
+        RequestPreparer preparer = new RequestPreparer(null, null, null, null, null, null, null, null, null, null, null, null, null, null, resolver);
         ChatCommand command = new ChatCommand("分析图片", 42L, null, null, null, null, false, files, null);
         String expected = "每条消息最多上传 " + SessionMessage.MAX_IMAGE_COUNT + " 张图片";
         assertEquals(expected, assertThrows(ClientException.class, () -> preparer.prepare(command)).getMessage());

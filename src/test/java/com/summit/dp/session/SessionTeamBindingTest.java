@@ -7,7 +7,6 @@ import com.summit.dp.agent.application.command.ChatCommand;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.service.impl.RuntimeContext;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
@@ -62,7 +61,6 @@ class SessionTeamBindingTest {
     private final RequestPreparer preparer = new RequestPreparer(sessionService, sessionRepository,
             workspaceService, modelService, workspaceConverter, settingsProvider,
             mock(com.summit.dp.shared.model.ToolCatalog.class), transcriptService, modelContextService,
-            mock(ExecutionIdentity.class),
             mock(com.summit.dp.turn.application.service.ChatTurnService.class),
             agentService, teamService,
             mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver());

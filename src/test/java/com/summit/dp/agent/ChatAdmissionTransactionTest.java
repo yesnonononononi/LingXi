@@ -17,7 +17,6 @@ import com.summit.dp.agent.application.vo.ChatAcceptanceVO;
 import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
 import com.summit.dp.agent.infrastructure.workflow.AgentWorkflowOrchestrator;
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.LocalExecutionRepository;
@@ -140,7 +139,7 @@ class ChatAdmissionTransactionTest {
         RequestPreparer requestPreparer = new RequestPreparer(mock(SessionService.class),
                 mock(SessionRepository.class), mock(WorkspaceService.class), mock(ModelService.class),
                 mock(WorkspaceConverter.class), mock(SettingsProvider.class), mock(ToolCatalog.class),
-                transcriptService, mock(ModelContextService.class), mock(ExecutionIdentity.class),
+                transcriptService, mock(ModelContextService.class),
                 chatTurnService, mock(com.summit.dp.agent.application.service.AgentService.class),
                 mock(TeamService.class), mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver());
         executor = new PreparedChatExecutor(orchestrator, requestPreparer,

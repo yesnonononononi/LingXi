@@ -6,7 +6,6 @@ import com.summit.core.conf.McpTransport;
 import com.summit.core.conf.ModelConfig;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.service.impl.RuntimeContext;
-import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
@@ -253,7 +252,7 @@ class CollaborationToolExposureTest {
                 mock(com.summit.dp.session.domain.repo.SessionRepository.class),
                 mock(WorkspaceService.class), mock(ModelService.class), mock(WorkspaceConverter.class),
                 mock(SettingsProvider.class), catalog, mock(ConversationTranscriptService.class),
-                mock(ModelContextService.class),                 mock(ExecutionIdentity.class),
+                mock(ModelContextService.class),
                 mock(com.summit.dp.turn.application.service.ChatTurnService.class),
                 mock(AgentService.class), mock(TeamService.class), mcpService, skillRootResolver, new ChatImageResolver());
 

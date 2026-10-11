@@ -1,6 +1,6 @@
 package com.summit.dp.toolcall.application.service.impl;
 
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.domain.lifecycle.ExecutionCoordination;
 import com.summit.dp.shared.event.SseEventPublisher;
 import com.summit.dp.toolcall.application.service.CardAvailabilityPolicy;
@@ -42,7 +42,7 @@ public class ToolCallServiceImpl implements ToolCallService {
 
     /** v1 请求级 SSE：命令审批在提交前先建流，恢复期事件与命令输出经它下发。 */
     private final SseEventPublisher sseEventPublisher;
-    private final ExecutionIdentity executionIdentity;
+    private final ExecutionLocator executionLocator;
 
     // ------------------------------------------------------------------
     // 读侧
@@ -91,7 +91,7 @@ public class ToolCallServiceImpl implements ToolCallService {
             if (kind == ToolCallKind.COMMAND) {
                 // v1 请求级 SSE：先建流再提交，恢复期事件才接得住；收尾由回调关流。
                 SseEmitter emitter = sseEventPublisher.connect(
-                        executionIdentity.resolveRootSessionId(toolCall.getConversationId()));
+                        executionLocator.resolveRootSessionId(toolCall.getConversationId()));
                 try {
                     commandApprovalExecutor.decide(toolCall, approved, null, null,
                             () -> sseEventPublisher.finish(emitter));

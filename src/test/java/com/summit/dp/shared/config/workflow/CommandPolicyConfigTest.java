@@ -8,7 +8,6 @@ import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecutionPolicy;
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.CommandApprovalRegistrar;
 import com.summit.dp.toolcall.application.service.ToolCallRegistrar;
@@ -26,7 +25,6 @@ import static org.mockito.Mockito.*;
 class CommandPolicyConfigTest {
     private final ObjectMapper mapper = new ObjectMapper();
     private final ToolCallRegistrar registrar = mock(ToolCallRegistrar.class);
-    private final ExecutionIdentity identity = mock(ExecutionIdentity.class);
     private final ToolCallConverter converter = new ToolCallConverter(mapper);
     private final CommandApprovalRegistrar approvalRegistrar =
             new CommandApprovalRegistrar(registrar, converter);

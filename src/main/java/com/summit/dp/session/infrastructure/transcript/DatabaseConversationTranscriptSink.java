@@ -4,7 +4,7 @@ import com.summit.core.conversation.api.ConversationTranscriptSink;
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.ToolMessageEntity;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.shared.exception.ClientException;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +19,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class DatabaseConversationTranscriptSink implements ConversationTranscriptSink {
     private final ConversationTranscriptService transcriptService;
-    private final ExecutionIdentity executionIdentity;
+    private final ExecutionLocator executionLocator;
 
     @Override
     public void appendRound(String executionId, AiMessageEntity aiMessage, List<ToolMessageEntity> toolMessages) {
@@ -45,6 +45,6 @@ public class DatabaseConversationTranscriptSink implements ConversationTranscrip
         if (sessionId != null) {
             return sessionId;
         }
-        return executionIdentity.sessionId(executionId);
+        return executionLocator.sessionId(executionId);
     }
 }

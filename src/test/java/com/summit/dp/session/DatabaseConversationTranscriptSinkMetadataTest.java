@@ -1,7 +1,7 @@
 package com.summit.dp.session;
 
 import com.summit.core.conversation.message.AiMessageEntity;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.shared.exception.ClientException;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
@@ -27,7 +27,7 @@ class DatabaseConversationTranscriptSinkMetadataTest {
     private static final String RESPONSE_ID = "9007199254740993";
 
     private final ConversationTranscriptService transcript = mock(ConversationTranscriptService.class);
-    private final ExecutionIdentity identity = mock(ExecutionIdentity.class);
+    private final ExecutionLocator identity = mock(ExecutionLocator.class);
     private final DatabaseConversationTranscriptSink sink = new DatabaseConversationTranscriptSink(transcript, identity);
 
     /**

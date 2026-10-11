@@ -5,7 +5,6 @@ import com.summit.core.conf.ModelConfig;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.command.ChatCommand;
 import com.summit.dp.agent.application.service.impl.RuntimeContext;
-import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.shared.config.workflow.AgentAccessMode;
@@ -63,7 +62,6 @@ class RequestPreparerExecutionIdentityTest {
     private final ToolCatalog toolCatalog = mock(ToolCatalog.class);
     private final ConversationTranscriptService transcriptService = mock(ConversationTranscriptService.class);
     private final ModelContextService modelContextService = mock(ModelContextService.class);
-    private final ExecutionIdentity executionIdentity = mock(ExecutionIdentity.class);
     private final com.summit.dp.turn.application.service.ChatTurnService chatTurnService =
             mock(com.summit.dp.turn.application.service.ChatTurnService.class);
     private final com.summit.dp.agent.application.service.AgentService agentService =
@@ -78,7 +76,7 @@ class RequestPreparerExecutionIdentityTest {
 
     private final RequestPreparer preparer = new RequestPreparer(sessionService, sessionRepository,
             workspaceService, modelService, workspaceConverter, settingsProvider, toolCatalog,
-            transcriptService, modelContextService, executionIdentity,
+            transcriptService, modelContextService,
             chatTurnService, agentService, teamService, mcpService, new SkillRootResolver(""), new ChatImageResolver());
 
     @BeforeEach

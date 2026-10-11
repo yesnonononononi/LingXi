@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.core.conversation.event.*;
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.runtime.RuntimeListener;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.shared.event.SseEventPublisher;
 import com.summit.dp.shared.vo.block.BlockOrder;
 import jakarta.annotation.PostConstruct;
@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component;
 public class AgentEventListener implements RuntimeListener {
     private final ObjectMapper objectMapper;
     private final SseEventPublisher sseEventPublisher;
-    private final ExecutionIdentity executionIdentity;
+    private final ExecutionLocator executionLocator;
 
     private interface TypedEventMixIn {
         @JsonProperty("type")
@@ -158,8 +158,8 @@ public class AgentEventListener implements RuntimeListener {
         }
         try {
             // 复用会话解析结果，避免 rootSessionId(executionId) 再次查询执行表。
-            long sessionId = executionIdentity.sessionId(executionId);
-            long rootSessionId = executionIdentity.resolveRootSessionId(sessionId);
+            long sessionId = executionLocator.sessionId(executionId);
+            long rootSessionId = executionLocator.resolveRootSessionId(sessionId);
             return new BroadcastTarget(sessionId, rootSessionId);
         } catch (IllegalStateException | NumberFormatException e) {
             log.warn("丢弃无法定位根会话的事件: reason={}", e.getMessage());

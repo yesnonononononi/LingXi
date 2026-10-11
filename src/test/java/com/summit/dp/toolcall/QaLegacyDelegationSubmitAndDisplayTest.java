@@ -2,7 +2,7 @@ package com.summit.dp.toolcall;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.domain.lifecycle.ExecutionActivity;
 import com.summit.dp.shared.event.SseEventPublisher;
 import com.summit.dp.shared.exception.ClientException;
@@ -67,7 +67,7 @@ class QaLegacyDelegationSubmitAndDisplayTest {
         CommandApprovalExecutor commandExecutor = mock(CommandApprovalExecutor.class);
         ToolCallDecisionService decisionService = mock(ToolCallDecisionService.class);
         SseEventPublisher sse = mock(SseEventPublisher.class);
-        ExecutionIdentity identity = mock(ExecutionIdentity.class);
+        ExecutionLocator identity = mock(ExecutionLocator.class);
         ToolCallConverter converter = new ToolCallConverter(json);
 
         ToolCall legacy = legacyRow();

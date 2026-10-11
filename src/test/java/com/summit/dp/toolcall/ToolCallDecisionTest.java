@@ -24,7 +24,7 @@ import com.summit.core.tool.ToolRegistry;
 import com.summit.core.workspace.WorkspaceManager;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.SessionAttributeRestorer;
 import com.summit.dp.execution.SuspendedExecutionResumer;
@@ -91,7 +91,7 @@ class ToolCallDecisionTest {
     private final SseEventPublisher sseEventPublisher = mock(SseEventPublisher.class);
     private final RuntimeEventPublisher runtimeEvents = mock(RuntimeEventPublisher.class);
     private final ModelContextService modelContextService = mock(ModelContextService.class);
-    private final ExecutionIdentity executionIdentity = mock(ExecutionIdentity.class);
+    private final ExecutionLocator executionIdentity = mock(ExecutionLocator.class);
     private final SseEmitter emitter = mock(SseEmitter.class);
     private final CommandToolDefinitionExecutor commandExecutor = mock(CommandToolDefinitionExecutor.class);
     private final CountDownLatch finished = new CountDownLatch(1);

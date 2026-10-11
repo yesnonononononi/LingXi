@@ -1,6 +1,7 @@
 package com.summit.dp.session.application.service;
 
 import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.event.BlockEventType;
@@ -44,7 +45,7 @@ public class TurnViewBroadcaster {
     private final ChatTurnRepository chatTurnRepository;
     private final SessionRepository sessionRepository;
     private final SseEventPublisher sseEventPublisher;
-    private final ExecutionIdentity executionIdentity;
+    private final ExecutionLocator executionLocator;
 
     /**
      * 按轮次推送一帧业务事件。
@@ -66,7 +67,7 @@ public class TurnViewBroadcaster {
             log.debug("推送块视图跳过：轮次或归属缺失: turnId={}", turnId);
             return;
         }
-        Long rootSessionId = executionIdentity.resolveRootSessionIdOrNull(turn.getSessionId());
+        Long rootSessionId = executionLocator.resolveRootSessionIdOrNull(turn.getSessionId());
         if (rootSessionId == null) {
             log.debug("推送块视图跳过：根会话无法解析: sessionId={}", turn.getSessionId());
             return;

@@ -4,7 +4,6 @@ import cn.hutool.core.util.IdUtil;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.dp.execution.ExecutionIdentity;
 import com.summit.dp.execution.domain.lifecycle.ExecutionActivity;
 import com.summit.dp.execution.domain.lifecycle.ExecutionCoordination;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
@@ -27,7 +26,6 @@ import java.util.List;
 public class ToolCallReadinessService {
     private final ToolCallRepository tools;
     private final ToolCallConverter converter;
-    private final ExecutionIdentity identity;
     private final TransactionTemplate transactions;
     private final ObjectProvider<ExecutionRepository> executions;
     private final ObjectProvider<ExecutionActivity> activity;
