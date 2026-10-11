@@ -2,6 +2,10 @@ package com.summit.dp.workflow.application.chat;
 
 import cn.hutool.core.util.IdUtil;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.personalization.application.convert.PersonalizationConvert;
+import com.summit.dp.personalization.application.vo.PersonalizationVO;
+import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
+import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.turn.application.service.ChatTurnService;
@@ -83,6 +87,7 @@ public class RequestPreparer {
     private final ChatImageResolver chatImageResolver;
 
     private final BusinessSystemPromptBuilder systemPromptBuilder;
+    private final PersonalizationRepository personalizationRepository;
 
     /**
      * 解析本轮生效的模型：显式 modelId → 单例设置 {@code user_configs.model_id} → 无则报错。
@@ -332,11 +337,15 @@ public class RequestPreparer {
         // 框架据此跳过 Skill 提示词段，read_skill 也不再下发。
         Path skillRoot = skillRootResolver.root();
 
+        // 每轮读最新偏好；未设置时不创建配置，也不向提示词插入空段。
+        PersonalizationVO personalization = personalizationRepository.findById(LocalInstance.SETTINGS_ROW_ID)
+                .map(PersonalizationConvert::toVO).orElse(null);
+
         return AgentRequest
                 .builder()
                 .executionId(executionId)
                 .messages(context.messageList())
-                .systemPrompt(systemPromptBuilder.buildRootPrompt(agentPrompt))
+                .systemPrompt(systemPromptBuilder.buildRootPrompt(agentPrompt, personalization))
                 .workspaceSpec(context.workspace())
                 .toolList(resolveToolList(toolList, context, mcpConfig, skillRoot))
                 .modelConfig(context.modelConfig())

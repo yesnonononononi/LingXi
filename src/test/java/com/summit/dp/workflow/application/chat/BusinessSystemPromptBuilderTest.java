@@ -1,6 +1,8 @@
 package com.summit.dp.workflow.application.chat;
 
 import com.summit.dp.agent.application.vo.AgentVO;
+import com.summit.dp.personalization.application.vo.PersonalizationVO;
+import com.summit.dp.personalization.domain.model.ReplyStyle;
 import com.summit.dp.team.application.vo.TeamVO;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
@@ -14,6 +16,35 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BusinessSystemPromptBuilderTest {
+
+    @Test
+    void preferencesSitBetweenDefaultsAndTeamWithoutLosingMultilineInstructions() {
+        PersonalizationVO preferences = new PersonalizationVO();
+        preferences.setCommonAgentName(" 灵犀 ");
+        preferences.setTitle(" 小林 ");
+        preferences.setReplyStyle("DIRECT");
+        preferences.setCustomInstruction(" 先给结论\n再说明证据 ");
+        String prompt = new BusinessSystemPromptBuilder("默认规则").buildRootPrompt("团队模式", preferences);
+        assertEquals("默认规则\n\n# 用户个性化偏好\n\n"
+                + "## 助手名字\n与用户交流时，使用用户指定的助手名字：\n灵犀\n\n"
+                + "## 用户称呼\n称呼用户时，使用以下称呼：\n小林\n\n"
+                + "## 回复风格\n" + ReplyStyle.DIRECT.getContent() + "\n\n"
+                + "## 用户偏好与自定义指令\n先给结论\n再说明证据\n\n团队模式", prompt);
+    }
+
+    @Test
+    void emptyPreferencesAndDefaultStyleDoNotAddHeadingsOrSeparators() {
+        PersonalizationVO preferences = new PersonalizationVO();
+        preferences.setCommonAgentName(" \n ");
+        preferences.setTitle("");
+        preferences.setReplyStyle("DEFAULT");
+        BusinessSystemPromptBuilder builder = new BusinessSystemPromptBuilder("默认规则");
+        assertEquals("默认规则\n\n团队模式", builder.buildRootPrompt("团队模式", preferences));
+        assertEquals("", new BusinessSystemPromptBuilder("").buildRootPrompt(null, preferences));
+        preferences.setCustomInstruction("只输出必要信息");
+        assertEquals("# 用户个性化偏好\n\n## 用户偏好与自定义指令\n只输出必要信息",
+                new BusinessSystemPromptBuilder("").buildRootPrompt(null, preferences));
+    }
 
     @Test
     void rootKeepsGlobalRulesBeforeRoleAndPreservesInternalNewlines() {

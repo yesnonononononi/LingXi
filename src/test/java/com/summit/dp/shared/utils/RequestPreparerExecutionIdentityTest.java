@@ -1,5 +1,9 @@
 package com.summit.dp.shared.utils;
 
+import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
+import com.summit.dp.personalization.domain.model.Personalization;
+import com.summit.dp.personalization.domain.model.ReplyStyle;
+import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.workflow.application.chat.ChatImageResolver;
 
@@ -28,6 +32,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -78,10 +83,29 @@ class RequestPreparerExecutionIdentityTest {
     private final com.summit.dp.session.domain.repo.SessionRepository sessionRepository =
             mock(com.summit.dp.session.domain.repo.SessionRepository.class);
 
+    private final PersonalizationRepository personalizationRepository = mock(PersonalizationRepository.class);
     private final RequestPreparer preparer = new RequestPreparer(sessionService, sessionRepository,
             workspaceService, modelService, workspaceConverter, settingsProvider, toolCatalog,
             transcriptService, modelContextService,
-            chatTurnService, agentService, teamService, mcpService, new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder("全局规则"));
+            chatTurnService, agentService, teamService, mcpService, new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder("全局规则"), personalizationRepository);
+
+    @Test
+    void requestReadsLatestPreferencesAndKeepsThemBeforeTeamPrompt() {
+        when(personalizationRepository.findById(LocalInstance.SETTINGS_ROW_ID)).thenReturn(
+                Optional.of(Personalization.builder().id(LocalInstance.SETTINGS_ROW_ID).title("小林")
+                        .commonAgentName("灵犀").replyStyle(ReplyStyle.DIRECT).customInstruction("先给结论").build()),
+                Optional.of(Personalization.builder().id(LocalInstance.SETTINGS_ROW_ID).title("")
+                        .commonAgentName("").replyStyle(ReplyStyle.DEFAULT).customInstruction("").build()));
+        RuntimeContext context = preparer.prepare(command());
+        String first = preparer.buildRequest("团队模式", context, List.of()).getSystemPrompt();
+        assertTrue(first.startsWith("全局规则\n\n# 用户个性化偏好"));
+        assertTrue(first.contains("\n灵犀\n"));
+        assertTrue(first.contains("\n小林\n"));
+        assertTrue(first.contains(ReplyStyle.DIRECT.getContent()));
+        assertTrue(first.endsWith("先给结论\n\n团队模式"));
+        assertEquals("全局规则\n\n团队模式", preparer.buildRequest("团队模式", context, List.of()).getSystemPrompt());
+        verify(personalizationRepository, never()).save(any());
+    }
 
     @BeforeEach
     void stubHappyPath() {

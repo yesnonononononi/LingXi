@@ -1,5 +1,6 @@
 package com.summit.dp.session;
 
+import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.agent.AgentRequest;
@@ -63,7 +64,7 @@ class SessionTeamBindingTest {
             mock(com.summit.dp.tools.application.port.ToolCatalog.class), transcriptService, modelContextService,
             mock(com.summit.dp.turn.application.service.ChatTurnService.class),
             agentService, teamService,
-            mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""));
+            mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class));
 
     private static final long SESSION_ID = 500L;
     private static final long TEAM_ID = 3L;

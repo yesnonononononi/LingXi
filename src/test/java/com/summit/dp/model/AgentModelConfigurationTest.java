@@ -1,5 +1,6 @@
 package com.summit.dp.model;
 
+import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.conf.ModelConfig;
@@ -69,7 +70,7 @@ class AgentModelConfigurationTest {
 
     @Test void rootResolvesExplicitThenSettingsThenFails() {
         RequestPreparer root = new RequestPreparer(null, null, null, models, null, settings, null,
-                null, null, null, null, null, null, new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""));
+                null, null, null, null, null, null, new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class));
         SettingsView selected = new SettingsView(null, null, null, null, 99L, null, 1234, "high");
         ModelConfig explicit = config("explicit");
         ModelConfig fallback = config("settings");
