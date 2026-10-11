@@ -1,12 +1,14 @@
 package com.summit.dp.tools.baseTools.sub_agent.communication;
 
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.dp.email.application.command.MailSendContext;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

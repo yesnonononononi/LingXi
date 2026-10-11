@@ -1,7 +1,7 @@
 package com.summit.dp.session;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.dp.shared.config.JsonConfig;
+import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.shared.vo.block.Block;
 import com.summit.dp.shared.vo.block.BlockStatus;
 import com.summit.dp.shared.vo.block.TextBlock;

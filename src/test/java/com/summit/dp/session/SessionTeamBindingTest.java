@@ -14,9 +14,9 @@ import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.application.service.SessionService;
 import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.workflow.application.chat.ChatImageResolver;
-import com.summit.dp.shared.context.SettingsView;
-import com.summit.dp.shared.settings.SettingsProvider;
-import com.summit.dp.shared.skill.SkillRootResolver;
+import com.summit.dp.user_configs.application.vo.SettingsView;
+import com.summit.dp.user_configs.application.service.SettingsProvider;
+import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
@@ -60,7 +60,7 @@ class SessionTeamBindingTest {
 
     private final RequestPreparer preparer = new RequestPreparer(sessionService, sessionRepository,
             workspaceService, modelService, workspaceConverter, settingsProvider,
-            mock(com.summit.dp.shared.model.ToolCatalog.class), transcriptService, modelContextService,
+            mock(com.summit.dp.tools.application.port.ToolCatalog.class), transcriptService, modelContextService,
             mock(com.summit.dp.turn.application.service.ChatTurnService.class),
             agentService, teamService,
             mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver());

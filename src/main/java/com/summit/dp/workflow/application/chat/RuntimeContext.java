@@ -5,9 +5,8 @@ import com.summit.core.conf.ModelConfig;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.workspace.WorkspaceSpec;
-import com.summit.dp.shared.config.workflow.AgentAccessMode;
-import com.summit.dp.shared.config.workflow.CommandApprovalPolicy;
-import com.summit.dp.shared.context.ExecutionContext;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
 import com.summit.dp.shared.vo.SessionVO;
 
 import java.util.List;

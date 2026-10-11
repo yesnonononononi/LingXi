@@ -1,5 +1,7 @@
 package com.summit.dp.agent.infrastructure.runtime;
 
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

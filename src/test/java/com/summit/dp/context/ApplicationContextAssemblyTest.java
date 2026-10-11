@@ -1,17 +1,19 @@
 package com.summit.dp.context;
 
 import com.summit.core.runtime.loop.LoopInterceptor;
+import com.summit.adapter.langchain4j.mcp.McpClientFactory;
 import com.summit.core.runtime.loop.LoopInterceptorProcessor;
 import com.summit.dp.email.application.service.EmailService;
-import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
-import com.summit.dp.tools.baseTools.sub_agent.communication.SendMailToAgentTool;
-import com.summit.dp.tools.baseTools.sub_agent.delegation.SubAgentWaitInterceptor;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.util.List;
 import java.util.Map;
@@ -32,6 +34,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, properties = {
         "spring.datasource.url=jdbc:h2:mem:ctxverify;MODE=MySQL;DB_CLOSE_DELAY=-1",
+        "spring.sql.init.mode=always",
+        "spring.sql.init.schema-locations=classpath:init.sql",
+        "spring.sql.init.encoding=UTF-8",
         "lingxi.data.dir=D:/Code/LingXi/.run/tmp/ctx-verify/data",
         "lingxi.skill.dir=",
         "lingxi.mcp.enabled=false",
@@ -42,6 +47,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
         "DEEPSEEK_APIKEY=ctx-verify-placeholder"
 })
 class ApplicationContextAssemblyTest {
+
+    /** 关闭 MCP 自动配置后仍需满足管理器依赖，测试不能建立外部连接。 */
+    @MockitoBean
+    private McpClientFactory clientFactory;
 
     @Autowired
     private ApplicationContext context;

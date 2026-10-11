@@ -10,7 +10,7 @@ import com.summit.dp.toolcall.domain.model.ToolCallKeys;
 import com.summit.dp.toolcall.domain.model.ToolCallKind;
 import com.summit.dp.toolcall.domain.model.ToolCallOutcome;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
-import com.summit.dp.shared.model.ToolCatalog;
+import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.shared.vo.ModelToolCallVO;
 import com.summit.dp.shared.vo.ToolCallVO;
 import com.summit.dp.toolcall.application.service.CardAvailabilityPolicy;

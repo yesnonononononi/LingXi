@@ -2,7 +2,7 @@ package com.summit.dp.execution;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
-import com.summit.core.agent.ExecutionState;
+import com.summit.dp.execution.domain.model.ExecutionStatus;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
 import com.summit.dp.execution.application.service.impl.ExecutionQueryServiceImpl;
 import com.summit.dp.execution.domain.model.Execution;
@@ -95,11 +95,11 @@ class ExecutionQueryServiceTest {
         }
         insert(3L, 1);
 
-        Map<Long, List<ExecutionState>> states = service.latestStatesBySession(List.of(1L, 2L, 99L));
+        Map<Long, List<ExecutionStatus>> states = service.latestStatesBySession(List.of(1L, 2L, 99L));
 
         assertEquals(2, states.size());
-        assertEquals(List.of(ExecutionState.SUSPENDED, ExecutionState.COMPLETED), states.get(1L));
-        assertEquals(List.of(ExecutionState.COMPLETED, ExecutionState.SUSPENDED), states.get(2L));
+        assertEquals(List.of(ExecutionStatus.SUSPENDED, ExecutionStatus.COMPLETED), states.get(1L));
+        assertEquals(List.of(ExecutionStatus.COMPLETED, ExecutionStatus.SUSPENDED), states.get(2L));
     }
 
     @Test
@@ -119,8 +119,8 @@ class ExecutionQueryServiceTest {
             assertNull(execution.getSnapshot());
             assertNull(execution.getUpdatedAt());
         }
-        assertEquals(List.of(ExecutionState.RUNNING, ExecutionState.CANCELLED, ExecutionState.FAILED,
-                ExecutionState.COMPLETED, ExecutionState.SUSPENDED, ExecutionState.CREATED),
+        assertEquals(List.of(ExecutionStatus.RUNNING, ExecutionStatus.CANCELLED, ExecutionStatus.FAILED,
+                ExecutionStatus.COMPLETED, ExecutionStatus.SUSPENDED, ExecutionStatus.CREATED),
                 service.latestStatesBySession(List.of(1L)).get(1L));
     }
 
@@ -129,7 +129,7 @@ class ExecutionQueryServiceTest {
         TransactionTemplate transaction = new TransactionTemplate(new DataSourceTransactionManager(database));
         transaction.executeWithoutResult(status -> {
             insert(1L, 1);
-            assertEquals(List.of(ExecutionState.RUNNING), service.latestStatesBySession(List.of(1L)).get(1L));
+            assertEquals(List.of(ExecutionStatus.RUNNING), service.latestStatesBySession(List.of(1L)).get(1L));
             status.setRollbackOnly();
         });
         assertTrue(service.latestStatesBySession(List.of(1L)).isEmpty());

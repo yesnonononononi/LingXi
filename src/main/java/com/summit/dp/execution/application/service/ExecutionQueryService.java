@@ -1,6 +1,6 @@
 package com.summit.dp.execution.application.service;
 
-import com.summit.core.agent.ExecutionState;
+import com.summit.dp.execution.domain.model.ExecutionStatus;
 
 import java.time.Instant;
 import java.util.Collection;
@@ -11,7 +11,7 @@ import java.util.Map;
  * 跨模块读应用的执行查询服务（读侧唯一入口）。
  *
  * <p>session 模块经此服务读取执行过程状态用于展示组合，**不得**直接接触
- * {@code ExecutionMapper} / {@code ExecutionPO}。返回框架已有的执行状态枚举。</p>
+ * {@code ExecutionMapper} / {@code ExecutionPO}。返回执行领域的查询状态。</p>
  */
 public interface ExecutionQueryService {
 
@@ -24,7 +24,7 @@ public interface ExecutionQueryService {
      * @param sessionIds 会话 id 集合
      * @return sessionId -> 执行状态列表（仅含有执行事实的会话）
      */
-    Map<Long, List<ExecutionState>> latestStatesBySession(Collection<Long> sessionIds);
+    Map<Long, List<ExecutionStatus>> latestStatesBySession(Collection<Long> sessionIds);
 
     /**
      * 按执行 id 批量取查询摘要（状态 / 开始结束时间）。
@@ -43,7 +43,7 @@ public interface ExecutionQueryService {
      * 批量取「进行中或挂起」的执行（带执行身份），用于 v3 bootstrap（§8.2）。
      *
      * <p><b>为什么要这个方法而不是复用 {@link #latestStatesBySession}</b>：后者只回
-     * {@link ExecutionState}，<b>不带执行 ID</b>，而 bootstrap 的 {@code executions[].executionId}
+     * {@link ExecutionStatus}，<b>不带执行 ID</b>，而 bootstrap 的 {@code executions[].executionId}
      * 是前端判 §8.1「退出路径 2（所属执行终结 / 挂起）」的依据 —— 只有状态没有身份，
      * 前端无法把「哪个执行结束了」对应到接续片段。本方法一次 {@code IN} 查询返回
      * 身份 + 状态 + 起止时间，不做 N+1。</p>
@@ -59,7 +59,7 @@ public interface ExecutionQueryService {
     /**
      * 「进行中或挂起」执行的身份化视图（读侧）。
      *
-     * <p>{@code status} 是框架 {@link ExecutionState} 枚举名，与实时
+     * <p>{@code status} 是业务 {@link ExecutionStatus} 枚举名，与实时
      * {@code EXECUTION_UPDATED.data.state} 同字面量集合；{@code startedAt}/{@code completedAt}
      * 未采到为 {@code null}（未终结执行通常 {@code completedAt} 为空）。</p>
      */

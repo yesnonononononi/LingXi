@@ -1,5 +1,7 @@
 package com.summit.dp.execution;
 
+import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import com.summit.core.agent.*;
@@ -7,7 +9,7 @@ import com.summit.core.conf.ModelConfig;
 import com.summit.core.conf.SkillConfig;
 import com.summit.core.conversation.message.*;
 import com.summit.core.workspace.WorkspaceSpec;
-import com.summit.dp.shared.config.JsonConfig;
+import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.workspace.application.convert.LingXiWorkspaceSpec;
 import com.summit.sandbox.docker.DockerWorkspaceSpec;

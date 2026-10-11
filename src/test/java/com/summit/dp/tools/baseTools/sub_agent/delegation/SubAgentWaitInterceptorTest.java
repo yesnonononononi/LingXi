@@ -1,5 +1,7 @@
 package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
+
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
@@ -10,10 +12,10 @@ import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopMessages;
 import com.summit.core.runtime.loop.LoopResult;
 import com.summit.core.workspace.WorkspaceSpec;
-import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

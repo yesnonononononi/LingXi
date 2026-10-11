@@ -42,6 +42,16 @@ public class ExecutionRepositoryImpl extends AbstractRepository<Execution, Execu
         return super.findList(ids);
     }
 
+    @Override
+    public Optional<Execution> findCheckpointSummary(long executionId) {
+        return Optional.ofNullable(mapper.selectOne(Wrappers.<ExecutionPO>lambdaQuery()
+                .select(ExecutionPO::getId, ExecutionPO::getStatus, ExecutionPO::getVersion,
+                        ExecutionPO::getResumeGeneration)
+                .eq(ExecutionPO::getId, executionId)))
+                .map(row -> Execution.restoreCheckpointSummary(row.getId(), row.getVersion(),
+                        row.getStatus(), row.getResumeGeneration()));
+    }
+
     @Override public void save(Execution model) {
         super.save(model);
     }

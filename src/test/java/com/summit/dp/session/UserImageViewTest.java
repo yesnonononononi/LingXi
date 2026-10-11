@@ -7,7 +7,7 @@ import com.summit.dp.session.application.convert.SessionMessageViewAssembler;
 import com.summit.dp.session.application.convert.TurnViewAssembler;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
-import com.summit.dp.shared.config.JsonConfig;
+import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.shared.vo.SessionMessageVO;
 import com.summit.dp.shared.vo.block.TurnViewVO;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;

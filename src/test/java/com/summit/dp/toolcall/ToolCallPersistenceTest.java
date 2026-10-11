@@ -1,5 +1,7 @@
 package com.summit.dp.toolcall;
 
+import com.summit.dp.workflow.infrastructure.harness.HarnessExecutionGate;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -224,7 +226,7 @@ class ToolCallPersistenceTest {
 
     /** 仓储的形态判定依赖卡片可用性策略；单测只关心持久化，策略给最简实现。 */
     static CardAvailabilityPolicy buildCardAvailabilityPolicy() {
-        return new CardAvailabilityPolicy(provider(), provider());
+        return new CardAvailabilityPolicy(new HarnessExecutionGate(provider(), provider()));
     }
 
     @SuppressWarnings("unchecked")

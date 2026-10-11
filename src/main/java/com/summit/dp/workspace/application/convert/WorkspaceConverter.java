@@ -1,10 +1,10 @@
 package com.summit.dp.workspace.application.convert;
 
 import com.summit.core.workspace.WorkspaceSpec;
-import com.summit.dp.shared.context.SettingsView;
+import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.shared.model.WorkspaceType;
-import com.summit.dp.shared.settings.SettingsProvider;
+import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.shared.vo.WorkspaceVO;
 import com.summit.dp.workspace.domain.model.Workspace;
 import com.summit.sandbox.docker.DockerWorkspaceSpec;

@@ -3,7 +3,7 @@ package com.summit.dp.toolcall;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
-import com.summit.dp.tools.baseTools.arguments.ExecuteCommandRequest;
+import com.summit.dp.workflow.infrastructure.tools.arguments.ExecuteCommandRequest;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

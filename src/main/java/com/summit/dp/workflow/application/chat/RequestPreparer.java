@@ -2,7 +2,7 @@ package com.summit.dp.workflow.application.chat;
 
 import cn.hutool.core.util.IdUtil;
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.core.agent.AgentRequest;
@@ -11,28 +11,25 @@ import com.summit.core.agent.Image;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.ddd.application.vo.Result;
-import com.summit.dp.workflow.application.chat.ChatCommand;
 import com.summit.dp.agent.application.service.AgentService;
-import com.summit.dp.workflow.application.chat.RuntimeContext;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.mcp.application.service.McpService;
-import com.summit.dp.shared.model.ToolCatalog;
+import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.core.conf.McpConfig;
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.conf.SkillConfig;
-import com.summit.dp.shared.settings.SettingsProvider;
-import com.summit.dp.shared.skill.SkillRootResolver;
+import com.summit.dp.user_configs.application.service.SettingsProvider;
+import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.application.service.SessionService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.shared.config.workflow.AgentAccessMode;
-import com.summit.dp.shared.config.workflow.CommandApprovalPolicy;
-import com.summit.dp.shared.context.ExecutionContext;
-import com.summit.dp.shared.context.SettingsView;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.shared.model.WorkspaceType;
 import com.summit.dp.shared.exception.AccessDeniedException;
 import com.summit.dp.shared.exception.ClientException;
@@ -138,7 +135,6 @@ public class RequestPreparer {
         // 会话自带 workspaceId / teamId：workspaceId 创建后不可变（改写会把会话引到另一个宿主机目录），
         // teamId 可变但只经 /session/{id}/team 变更 —— 两条路径都只读取，聊天请求不回写。
         SessionVO session = requireSession(command.sessionId());
-
 
         // 新会话（session == null）此刻还没有绑定，由前端在建会话时或随后经 /session/{id}/team 写入。
         Long effectiveTeamId = session == null ? null : session.getTeamId();
@@ -344,7 +340,7 @@ public class RequestPreparer {
                 .messages(context.messageList())
                 .systemPrompt(mergeSystemPrompt(agentPrompt))
                 .workspaceSpec(context.workspace())
-                .toolList(toolListOf(toolList, context, mcpConfig, skillRoot))
+                .toolList(resolveToolList(toolList, context, mcpConfig, skillRoot))
                 .modelConfig(context.modelConfig())
                 .mcpConfig(mcpConfig)
                 .skillConfig(skillRoot == null ? null : new SkillConfig(skillRoot))
@@ -412,7 +408,7 @@ public class RequestPreparer {
      * 只读滤网必须最后执行，否则 requirePlan 追加的工具会绕过滤网。补进去的 {@code read_skill}
      * 自带 {@code ConcurrentPolicy.READ_ONLY}，能通过只读滤网。</p>
      */
-    private List<String> toolListOf(List<String> tools, RuntimeContext context, McpConfig mcpConfig, Path skillRoot) {
+    private List<String> resolveToolList(List<String> tools, RuntimeContext context, McpConfig mcpConfig, Path skillRoot) {
         final boolean readOnly = !context.accessMode().allowsWriteTools();
 
         List<String> result = new ArrayList<>(tools == null ? List.of() : tools);
@@ -478,7 +474,6 @@ public class RequestPreparer {
                 })
                 .toList();
     }
-
 
     /**
      * 随请求下行的不透明属性：框架只搬运，由业务侧的准入策略与循环钩子解释。

@@ -1,12 +1,16 @@
 package com.summit.dp.execution;
 
+import com.summit.dp.execution.application.service.ExecutionCheckpointService;
+import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
-import com.summit.dp.execution.infrastructure.repository.LocalExecutionRepository;
-import com.summit.dp.session.application.service.SessionAggregateService;
-import com.summit.dp.toolcall.application.service.ToolCallReadinessService;
+import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
+import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
+import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
+import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
 import com.summit.dp.toolcall.application.service.ToolCallService;
-import com.summit.dp.agent.infrastructure.runtime.SubExecutionLifecycle;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import org.springframework.beans.factory.ObjectProvider;
 
@@ -24,10 +28,10 @@ public final class ExecutionRepositoryTestFactory {
 
     public static LocalExecutionRepository create(ExecutionMapper mapper, ObjectMapper objectMapper,
                                                  ChatTurnService chatTurnService) {
-        return new LocalExecutionRepository(mapper, objectMapper,
+        return new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(mapper)), objectMapper,
                 provider(mock(ToolCallReadinessService.class)), provider(mock(ToolCallService.class)),
-                provider(mock(SubExecutionLifecycle.class)), provider(mock(SessionAggregateService.class)),
-                provider(chatTurnService));
+                provider(mock(SubExecutionLifecycle.class)), provider(mock(SessionContextUsageProjector.class)),
+                provider(new ChatTurnLifecycleProjector(chatTurnService)));
     }
 
     @SuppressWarnings("unchecked")

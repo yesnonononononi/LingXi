@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
-import com.summit.dp.workflow.application.chat.ChatCommand;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
 import com.summit.dp.session.application.service.SessionMessageQueryService;
 import com.summit.dp.session.domain.model.SessionMessageType;

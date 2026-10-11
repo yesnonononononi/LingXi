@@ -12,7 +12,7 @@ import com.summit.dp.model.Infrastructure.persistence.mapper.ModelConfigMapper;
 import com.summit.dp.model.Infrastructure.persistence.po.ModelConfigPO;
 import com.summit.dp.model.Infrastructure.repo.ModelConfigRepositoryImpl;
 import com.summit.dp.model.domain.model.ModelConfig;
-import com.summit.dp.shared.config.JsonConfig;
+import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.shared.config.YamlConfig;
 import com.summit.dp.shared.utils.YamlSerializer;
 import com.summit.dp.user_configs.domain.model.UserConfig;

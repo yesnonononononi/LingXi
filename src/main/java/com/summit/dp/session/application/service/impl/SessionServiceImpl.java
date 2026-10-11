@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import cn.hutool.core.util.IdUtil;
 import com.summit.ddd.application.vo.PageResult;
 import com.summit.ddd.application.vo.Result;
-import com.summit.core.agent.ExecutionState;
+import com.summit.dp.execution.domain.model.ExecutionStatus;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
 import com.summit.dp.session.application.command.SessionCommand;
 import com.summit.dp.session.application.service.SessionService;
@@ -144,7 +144,7 @@ public class SessionServiceImpl implements SessionService {
         int size = pageSize == null || pageSize < 1 ? 10 : Math.min(pageSize, 100);
         Page<Session> source = sessionAggregateService.page(current, size);
         // 一次 IN 批量取执行状态列表，逐会话组合展示状态（避免逐条查询）。
-        Map<Long, List<ExecutionState>> statesBySession = executionQueryService.latestStatesBySession(
+        Map<Long, List<ExecutionStatus>> statesBySession = executionQueryService.latestStatesBySession(
                 source.getRecords().stream().map(Session::getId).toList());
         List<Long> agentIds = source.getRecords().stream().map(Session::getAgentId).filter(Objects::nonNull).distinct().toList();
         Map<Long, String> agentNames = agentIds.isEmpty() ? Collections.emptyMap() :
@@ -288,7 +288,7 @@ public class SessionServiceImpl implements SessionService {
         List<Long> ids = sessions.stream().map(Session::getId).toList();
         Map<Long, Long> counts = sessionAggregateService.countMessages(ids);
         // 执行状态列表与消息条数同为「一次 IN 批量取」，逐会话组合。
-        Map<Long, List<ExecutionState>> statesBySession = executionQueryService.latestStatesBySession(ids);
+        Map<Long, List<ExecutionStatus>> statesBySession = executionQueryService.latestStatesBySession(ids);
         List<Long> agentIds = sessions.stream().map(Session::getAgentId).filter(Objects::nonNull).distinct().toList();
         Map<Long, String> agentNames = agentIds.isEmpty() ? Collections.emptyMap() :
                 agentRepository.findList(agentIds).stream().collect(Collectors.toMap(Agent::getId, Agent::getName, (a, b) -> a));
@@ -323,12 +323,12 @@ public class SessionServiceImpl implements SessionService {
      * <p>展示状态（{@code runStatus}/{@code lastOutcome}）由执行状态列表组合而来，
      * 而非会话自身字段——会话不持有执行状态。</p>
      */
-    private SessionVO toVO(Session session, List<ExecutionState> states, Long messageCount, String agentName) {
+    private SessionVO toVO(Session session, List<ExecutionStatus> states, Long messageCount, String agentName) {
         WorkspaceVO workspace = workspaceOrDefault(session.getWorkspaceId());
         return SessionVO.builder().id(session.getId()).name(session.getName())
                 .version(session.getVersion()).historyRevision(session.getHistoryRevision())
-                .runStatus(runStatusOf(states))
-                .lastOutcome(lastOutcomeOf(states))
+                .runStatus(resolveRunStatus(states))
+                .lastOutcome(resolveLastOutcome(states))
                 .agentId(session.getAgentId())
                 .agentName(agentName)
                 .rootSessionId(session.getRootSessionId()).createTime(session.getCreateTime())
@@ -350,9 +350,9 @@ public class SessionServiceImpl implements SessionService {
      * <p>缺省（无执行 / 状态列表缺失 / 无进行中状态）输出 {@code IDLE}，前端免判空。
      * {@code CREATED} 归并入 {@code RUNNING}：对展示层无区分意义。</p>
      */
-    private static String runStatusOf(List<ExecutionState> states) {
+    private static String resolveRunStatus(List<ExecutionStatus> states) {
         if (states == null) return "IDLE";
-        for (ExecutionState state : states) {
+        for (ExecutionStatus state : states) {
             switch (state) {
                 case CREATED, RUNNING: return "RUNNING";
                 case SUSPENDED: return "SUSPENDED";
@@ -363,9 +363,9 @@ public class SessionServiceImpl implements SessionService {
     }
 
     /** 最近终态与进行态独立选择，二者可以同时存在。 */
-    private static String lastOutcomeOf(List<ExecutionState> states) {
+    private static String resolveLastOutcome(List<ExecutionStatus> states) {
         if (states == null) return null;
-        for (ExecutionState state : states) {
+        for (ExecutionStatus state : states) {
             switch (state) {
                 case COMPLETED, FAILED, CANCELLED: return state.name();
                 case CREATED, RUNNING, SUSPENDED: break;

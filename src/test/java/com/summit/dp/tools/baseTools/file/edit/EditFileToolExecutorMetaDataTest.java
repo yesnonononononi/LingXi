@@ -1,5 +1,9 @@
 package com.summit.dp.tools.baseTools.file.edit;
 
+import com.summit.dp.workflow.infrastructure.tools.file.edit.EditFileToolExecutor;
+
+import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.RuntimeEnvironment;
 import com.summit.core.runtime.workspace.ShellType;
@@ -8,12 +12,12 @@ import com.summit.core.runtime.workspace.WorkspaceBridge;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecuteResult;
-import com.summit.dp.tools.baseTools.file.record.DefaultFileRecordManager;
-import com.summit.dp.tools.baseTools.file.record.DefaultFileRecordStore;
-import com.summit.dp.tools.baseTools.file.record.DefaultFileHasher;
-import com.summit.dp.tools.baseTools.file.record.Differ;
-import com.summit.dp.tools.baseTools.file.record.FileRecordManager;
-import com.summit.dp.tools.baseTools.file.record.FileRecordRestorer;
+import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordManager;
+import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordStore;
+import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileHasher;
+import com.summit.dp.workflow.infrastructure.tools.file.record.Differ;
+import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecordManager;
+import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecordRestorer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

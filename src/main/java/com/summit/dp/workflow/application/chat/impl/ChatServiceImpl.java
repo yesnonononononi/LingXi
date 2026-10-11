@@ -12,16 +12,17 @@ import com.summit.dp.workflow.application.chat.ResendTargetResolver.ResendTarget
 import com.summit.dp.workflow.application.chat.ChatAcceptanceVO;
 import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
 import com.summit.dp.workflow.application.chat.RuntimeContext;
-import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
-import com.summit.dp.session.application.service.ConversationRollbackService;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.application.chat.ConversationRollbackService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.shared.event.SseEventPublisher;
+import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.execution.SessionAttributeRestorer;
+import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
+import com.summit.dp.execution.domain.model.ExecutionStatus;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.shared.exception.ClientException;
@@ -239,7 +240,6 @@ public class ChatServiceImpl implements ChatService {
 
         throwIf(execution.getExecutionState() != ExecutionState.SUSPENDED, "执行不可以恢复");
 
-
         // 恢复不经过 RequestPreparer，会话级业务属性不会被重新下发，必须先补齐再交给 loop。
         sessionAttributeRestorer.restore(execution, sessionId);
 
@@ -279,13 +279,13 @@ public class ChatServiceImpl implements ChatService {
      * 根执行：线上事故里两条「继续推进」各跑出一份交付总结，前端两个气泡同时收事件。</p>
      */
     private void ensureRootExecutionIdle(long rootSessionId) {
-        List<ExecutionState> states = executionQueryService.latestStatesBySession(List.of(rootSessionId))
+        List<ExecutionStatus> states = executionQueryService.latestStatesBySession(List.of(rootSessionId))
                 .get(rootSessionId);
         if (states == null || states.isEmpty()) {
             return;
         }
 
-        throwIf(states.contains(ExecutionState.SUSPENDED), "会话有等待恢复的执行，请先处理待审批事项或恢复执行");
+        throwIf(states.contains(ExecutionStatus.SUSPENDED), "会话有等待恢复的执行，请先处理待审批事项或恢复执行");
         throwIf(states.stream().anyMatch(state -> !state.isTerminal()),
                 "该会话正在执行中，请等待本轮结束或先停止");
     }

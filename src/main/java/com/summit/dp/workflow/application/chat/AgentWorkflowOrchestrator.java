@@ -1,6 +1,5 @@
 package com.summit.dp.workflow.application.chat;
 
-
 import com.summit.core.agent.Execution;
 
 /**

@@ -1,5 +1,7 @@
 package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
+
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.conversation.message.Message;
@@ -9,11 +11,11 @@ import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.model.application.service.ModelService;
-import com.summit.dp.shared.model.ToolCatalog;
-import com.summit.dp.shared.settings.SettingsProvider;
-import com.summit.dp.shared.skill.SkillRootResolver;
+import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.dp.user_configs.application.service.SettingsProvider;
+import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.team.application.vo.TeamVO;
-import com.summit.dp.tools.baseTools.arguments.CallSubAgentToolArgument;
+import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.junit.jupiter.api.DisplayName;

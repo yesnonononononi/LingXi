@@ -1,14 +1,20 @@
 package com.summit.dp.execution;
 
+import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
+
+import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
+
+import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
+
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.execution.application.service.ResumeDisposition;
-import com.summit.dp.execution.domain.lifecycle.ExecutionActivity;
+import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
@@ -514,7 +520,7 @@ class ExecutionResumeCoordinatorTest {
                 new com.summit.dp.execution.domain.model.Execution();
         summary.setId(EXECUTION_ID);
         summary.setSessionId(SESSION_ID);
-        summary.setStatus(ExecutionStatusCodes.encode(state));
+        summary.setStatus(ExecutionStateCodec.encode(state));
         summary.setResumeGeneration(GENERATION);
         when(executions.findSummariesByIds(any())).thenReturn(List.of(summary));
     }

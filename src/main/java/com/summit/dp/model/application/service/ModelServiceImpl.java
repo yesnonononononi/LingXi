@@ -8,7 +8,7 @@ import com.summit.dp.model.application.vo.ModelConfigVO;
 import com.summit.dp.model.domain.ModelNoFoundException;
 import com.summit.dp.model.domain.model.ModelConfig;
 import com.summit.dp.model.domain.repo.ModelConfigRepository;
-import com.summit.dp.shared.context.SettingsView;
+import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.shared.exception.ClientException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

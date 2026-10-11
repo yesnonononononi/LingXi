@@ -3,7 +3,7 @@ package com.summit.dp.team.application.service.impl;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.agent.domain.model.Agent;
-import com.summit.dp.shared.model.ToolCatalog;
+import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.team.application.command.TeamCommand;
 import com.summit.dp.team.domain.model.Team;
 import lombok.RequiredArgsConstructor;

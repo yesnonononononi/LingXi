@@ -1,5 +1,11 @@
 package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
+
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
+
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationSubmitter;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -19,16 +25,16 @@ import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
-import com.summit.dp.agent.infrastructure.runtime.SubExecutionLifecycle;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import com.summit.dp.email.application.service.EmailService;
-import com.summit.dp.agent.infrastructure.runtime.SubAgentCompleteNotifier;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.execution.SessionAttributeRestorer;
-import com.summit.dp.execution.SuspendedExecutionResumer;
-import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
-import com.summit.dp.execution.domain.lifecycle.ExecutionActivity;
+import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
+import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
@@ -37,11 +43,11 @@ import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
-import com.summit.dp.tools.baseTools.arguments.CallSubAgentToolArgument;
-import com.summit.dp.tools.baseTools.sub_agent.CallSubAgentTool;
-import com.summit.dp.tools.baseTools.sub_agent.result.AsyncDelegationResultRenderer;
-import com.summit.dp.tools.baseTools.sub_agent.session.SubSessionResolver;
-import com.summit.dp.tools.baseTools.sub_agent.session.SubSessionTarget;
+import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.result.AsyncDelegationResultRenderer;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionResolver;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionTarget;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

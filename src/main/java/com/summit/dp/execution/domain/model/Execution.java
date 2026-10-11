@@ -1,6 +1,7 @@
 package com.summit.dp.execution.domain.model;
 
 import lombok.Data;
+import com.summit.dp.execution.ExecutionStatusCodes;
 import java.time.LocalDateTime;
 
 /**
@@ -33,5 +34,47 @@ public class Execution {
     private String snapshot;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    /** 更新投影不携带归属和创建时间，检查点保存不能重写这些事实。 */
+    public static Execution restoreCheckpointSummary(Long id, Long version, Integer status, Long generation) {
+        Execution execution = new Execution();
+        execution.id = id;
+        execution.version = version == null ? 1L : version;
+        execution.status = status;
+        execution.resumeGeneration = generation;
+        return execution;
+    }
+
+    public static Execution createCheckpoint(long id, long sessionId, int status, String snapshot,
+                                             LocalDateTime createdAt, LocalDateTime startedAt,
+                                             LocalDateTime completedAt) {
+        Execution execution = new Execution();
+        execution.id = id;
+        execution.sessionId = sessionId;
+        execution.status = status;
+        execution.snapshot = snapshot;
+        execution.createdAt = createdAt;
+        execution.startedAt = startedAt;
+        execution.completedAt = completedAt;
+        return execution;
+    }
+
+    /** 同态挂起保存不产生新代际，已终结的执行不能被旧检查点重新开放。 */
+    public void changeCheckpoint(int nextStatus, String snapshot, LocalDateTime startedAt,
+                                 LocalDateTime completedAt) {
+        if (ExecutionStatusCodes.isTerminal(status) && status != nextStatus) {
+            throw new IllegalStateException("执行已结束，不能覆盖为运行状态: executionId=" + id);
+        }
+        long generation = resumeGeneration == null ? 0L : resumeGeneration;
+        if (nextStatus == ExecutionStatusCodes.SUSPENDED && !ExecutionStatusCodes.isSuspended(status)) {
+            generation++;
+        }
+        this.resumeGeneration = generation;
+        this.status = nextStatus;
+        this.snapshot = snapshot;
+        if (startedAt != null) this.startedAt = startedAt;
+        if (completedAt != null) this.completedAt = completedAt;
+    }
+
     public void acceptPersistedVersion(long persistedVersion) { this.version = persistedVersion; }
 }

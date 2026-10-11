@@ -43,7 +43,7 @@ public interface ChatService {
     /** 协作式暂停当前正在运行的 loop；已结束的执行不接受暂停。 */
     void suspend(Long sessionId);
 
-    /** Resume the latest suspended execution of this session from its checkpoint. */
+    /** 恢复必须读取已提交的挂起检查点，不能重建执行身份。 */
     Result<String> resume(Long sessionId);
 
 }

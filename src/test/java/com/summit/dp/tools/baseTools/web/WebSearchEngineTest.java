@@ -1,7 +1,13 @@
 package com.summit.dp.tools.baseTools.web;
 
+import com.summit.dp.workflow.infrastructure.tools.web.WebSearchEngine;
+
+import com.summit.dp.workflow.infrastructure.tools.web.WebSearchConfig;
+
+import com.summit.dp.workflow.infrastructure.tools.web.WebResultSummarizer;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.dp.tools.baseTools.arguments.WebSearchArguments;
+import com.summit.dp.workflow.infrastructure.tools.arguments.WebSearchArguments;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

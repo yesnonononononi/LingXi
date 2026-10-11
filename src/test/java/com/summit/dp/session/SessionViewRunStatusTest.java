@@ -3,7 +3,7 @@ package com.summit.dp.session;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.core.agent.ExecutionState;
+import com.summit.dp.execution.domain.model.ExecutionStatus;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
 import com.summit.dp.session.application.service.SessionAggregateService;
 import com.summit.dp.session.application.service.SessionMessageQueryService;
@@ -65,9 +65,9 @@ class SessionViewRunStatusTest {
         when(aggregate.countMessages(ArgumentMatchers.<Collection<Long>>any()))
                 .thenReturn(Map.of(11L, 0L, 12L, 1L, 13L, 2L, 14L, 3L));
         when(executionQueryService.latestStatesBySession(any())).thenReturn(Map.of(
-                12L, List.of(ExecutionState.RUNNING),
-                13L, List.of(ExecutionState.SUSPENDED),
-                14L, List.of(ExecutionState.COMPLETED)));
+                12L, List.of(ExecutionStatus.RUNNING),
+                13L, List.of(ExecutionStatus.SUSPENDED),
+                14L, List.of(ExecutionStatus.COMPLETED)));
 
         List<SessionVO> nodes = service.tree(10L).getData().getSessions();
 
@@ -88,7 +88,7 @@ class SessionViewRunStatusTest {
         when(aggregate.sessionTree(20L)).thenReturn(new SessionAggregateService.SessionTree(20L, List.of(session)));
         when(aggregate.countMessages(ArgumentMatchers.<Collection<Long>>any())).thenReturn(Map.of(21L, 0L));
         when(executionQueryService.latestStatesBySession(any())).thenReturn(Map.of(
-                21L, List.of(ExecutionState.RUNNING, ExecutionState.FAILED)));
+                21L, List.of(ExecutionStatus.RUNNING, ExecutionStatus.FAILED)));
 
         SessionVO node = service.tree(20L).getData().getSessions().get(0);
 
@@ -105,7 +105,7 @@ class SessionViewRunStatusTest {
         page.setRecords(List.of(fresh, running));
         when(aggregate.page(1, 10)).thenReturn(page);
         when(executionQueryService.latestStatesBySession(any())).thenReturn(Map.of(
-                2L, List.of(ExecutionState.RUNNING, ExecutionState.CANCELLED)));
+                2L, List.of(ExecutionStatus.RUNNING, ExecutionStatus.CANCELLED)));
 
         List<SessionVO> records = List.copyOf(service.list(1, 10).getData().getRecords());
 
@@ -135,7 +135,7 @@ class SessionViewRunStatusTest {
 
     @ParameterizedTest
     @MethodSource("detailStates")
-    void detailSelectsLatestActiveAndTerminalIndependently(List<ExecutionState> states,
+    void detailSelectsLatestActiveAndTerminalIndependently(List<ExecutionStatus> states,
                                                          String expectedRunStatus, String expectedOutcome) {
         when(aggregate.requireOwned(1L)).thenReturn(newSession(1L));
         when(executionQueryService.latestStatesBySession(List.of(1L))).thenReturn(Map.of(1L, states));
@@ -178,13 +178,13 @@ class SessionViewRunStatusTest {
     private static Object[][] detailStates() {
         return new Object[][]{
                 {List.of(), "IDLE", null},
-                {List.of(ExecutionState.CREATED), "RUNNING", null},
-                {List.of(ExecutionState.FAILED), "IDLE", "FAILED"},
-                {List.of(ExecutionState.CANCELLED), "IDLE", "CANCELLED"},
-                {List.of(ExecutionState.SUSPENDED, ExecutionState.RUNNING, ExecutionState.COMPLETED,
-                        ExecutionState.FAILED), "SUSPENDED", "COMPLETED"},
-                {List.of(ExecutionState.FAILED, ExecutionState.CREATED, ExecutionState.CANCELLED,
-                        ExecutionState.SUSPENDED), "RUNNING", "FAILED"}
+                {List.of(ExecutionStatus.CREATED), "RUNNING", null},
+                {List.of(ExecutionStatus.FAILED), "IDLE", "FAILED"},
+                {List.of(ExecutionStatus.CANCELLED), "IDLE", "CANCELLED"},
+                {List.of(ExecutionStatus.SUSPENDED, ExecutionStatus.RUNNING, ExecutionStatus.COMPLETED,
+                        ExecutionStatus.FAILED), "SUSPENDED", "COMPLETED"},
+                {List.of(ExecutionStatus.FAILED, ExecutionStatus.CREATED, ExecutionStatus.CANCELLED,
+                        ExecutionStatus.SUSPENDED), "RUNNING", "FAILED"}
         };
     }
 

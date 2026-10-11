@@ -1,5 +1,9 @@
 package com.summit.dp.toolcall;
 
+import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
+
+import com.summit.dp.workflow.infrastructure.harness.HarnessExecutionGate;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -26,30 +30,30 @@ import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.ExecutionStatusCodes;
-import com.summit.dp.execution.SessionAttributeRestorer;
-import com.summit.dp.execution.SuspendedExecutionResumer;
-import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
-import com.summit.dp.execution.domain.lifecycle.ExecutionActivity;
+import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
+import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.CardAvailabilityPolicy;
-import com.summit.dp.toolcall.application.service.impl.ApprovalFinalizer;
-import com.summit.dp.toolcall.application.service.impl.CommandApprovalExecutor;
-import com.summit.dp.toolcall.application.service.impl.CommandOutcomeResolver;
-import com.summit.dp.toolcall.application.service.impl.ApprovedCommandRestorer;
-import com.summit.dp.toolcall.application.service.impl.ToolCallServiceImpl;
-import com.summit.dp.toolcall.application.service.impl.ToolCallDecisionService;
+import com.summit.dp.workflow.application.approval.ApprovalFinalizer;
+import com.summit.dp.workflow.application.approval.CommandApprovalExecutor;
+import com.summit.dp.workflow.application.approval.CommandOutcomeResolver;
+import com.summit.dp.workflow.application.approval.ApprovedCommandRestorer;
+import com.summit.dp.workflow.application.approval.ToolCallWorkflowService;
+import com.summit.dp.workflow.application.approval.ToolCallDecisionService;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.shared.event.SseEventPublisher;
+import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.tools.baseTools.terminal.CommandToolDefinitionExecutor;
+import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -106,7 +110,7 @@ class ToolCallDecisionTest {
     private final com.summit.dp.execution.domain.repository.ExecutionRepository resumeExecutions =
             mock(com.summit.dp.execution.domain.repository.ExecutionRepository.class);
 
-    private ToolCallServiceImpl service;
+    private ToolCallWorkflowService service;
     private final List<ExecutionResumeCoordinator> coordinators = new ArrayList<>();
 
     @BeforeEach
@@ -141,12 +145,12 @@ class ToolCallDecisionTest {
                 new ApprovedCommandRestorer(mapper, workspaces, provider(toolRegistry)),
                 modelContextService,
                 coordinator(resumer));
-        service = new ToolCallServiceImpl(toolCallRepository,
-                converter, transactions, commandApprovalExecutor,
+        service = new ToolCallWorkflowService(toolCallRepository,
+                converter, commandApprovalExecutor,
                 new ToolCallDecisionService(toolCallRepository, converter, executionIdentity,
                         modelContextService, sseEventPublisher, transactions,
                         provider(executionRepository), resumer),
-                new CardAvailabilityPolicy(provider(executionRepository), provider(activity)),
+                new CardAvailabilityPolicy(new HarnessExecutionGate(provider(executionRepository), provider(activity))),
                 sseEventPublisher, executionIdentity);
         // 恢复协调器异步派发：任务行桩成「已入队可领取」，让命令 T2 真的走到 executionControl.resume。
         when(resumeTaskRepository.enqueue(anyLong(), anyLong(), any())).thenReturn(resumeTask());
@@ -186,7 +190,7 @@ class ToolCallDecisionTest {
                 new com.summit.dp.execution.domain.model.Execution();
         summary.setId(3L);
         summary.setSessionId(2L);
-        summary.setStatus(ExecutionStatusCodes.encode(state));
+        summary.setStatus(ExecutionStateCodec.encode(state));
         summary.setResumeGeneration(1L);
         return summary;
     }

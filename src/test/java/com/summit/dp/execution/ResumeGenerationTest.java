@@ -9,7 +9,7 @@ import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
-import com.summit.dp.execution.infrastructure.repository.LocalExecutionRepository;
+import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

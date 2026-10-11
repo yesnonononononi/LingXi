@@ -1,21 +1,26 @@
 package com.summit.dp.execution;
 
+import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
+
+import com.summit.dp.execution.application.service.ExecutionCheckpointService;
+import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.*;
 import com.summit.core.conversation.message.*;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.agent.Execution;
-import com.summit.dp.execution.domain.lifecycle.ExecutionCoordination;
-import com.summit.dp.session.application.service.SessionAggregateService;
-import com.summit.dp.toolcall.application.service.ToolCallReadinessService;
+import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
+import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
+import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
 import com.summit.dp.toolcall.application.service.ToolCallService;
-import com.summit.dp.agent.infrastructure.runtime.SubExecutionLifecycle;
-import com.summit.dp.turn.application.service.ChatTurnService;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
+import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
 import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
-import com.summit.dp.execution.infrastructure.repository.LocalExecutionRepository;
-import com.summit.dp.shared.config.JsonConfig;
+import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
+import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import org.junit.jupiter.api.Test;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -41,21 +46,22 @@ class LocalExecutionRepositoryResumeTest {
     private final ToolCallReadinessService readiness = mock(ToolCallReadinessService.class);
     private final ToolCallService tools = mock(ToolCallService.class);
     private final SubExecutionLifecycle subExecutionLifecycle = mock(SubExecutionLifecycle.class);
-    private final SessionAggregateService sessions = mock(SessionAggregateService.class);
-    private final ChatTurnService turns = mock(ChatTurnService.class);
+    private final SessionContextUsageProjector sessions = mock(SessionContextUsageProjector.class);
+    private final ChatTurnLifecycleProjector turns = mock(ChatTurnLifecycleProjector.class);
     private final List<String> suspended = new ArrayList<>();
     private final List<String> finished = new ArrayList<>();
     @org.junit.jupiter.api.BeforeEach
     void allowCheckpointUpdates() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "test"), ExecutionPO.class);
         when(persistence.update(any(ExecutionPO.class), any())).thenReturn(1);
+        when(persistence.selectOne(any())).thenReturn(statusRow(ExecutionStatusCodes.RUNNING, 1L));
         doAnswer(invocation -> { suspended.add(invocation.<Execution>getArgument(0).getId()); return null; })
                 .when(turns).markExecutionWaiting(any());
         doAnswer(invocation -> { finished.add(invocation.<Execution>getArgument(0).getId()); return null; })
                 .when(turns).finishExecution(any());
     }
     private final LocalExecutionRepository repository =
-            new LocalExecutionRepository(persistence, mapper, provider(readiness), provider(tools),
+            new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(persistence)), mapper, provider(readiness), provider(tools),
                     provider(subExecutionLifecycle), provider(sessions), provider(turns));
 
     private static Execution execution() {
@@ -273,7 +279,7 @@ class LocalExecutionRepositoryResumeTest {
     @Test
     void releasedSignalIsVisibleAndServiceFailureDoesNotBlockFollowingService() {
         ToolCallReadinessService failing = mock(ToolCallReadinessService.class);
-        LocalExecutionRepository isolated = new LocalExecutionRepository(persistence, mapper,
+        LocalExecutionRepository isolated = new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(persistence)), mapper,
                 provider(failing), provider(tools), provider(subExecutionLifecycle), provider(sessions), provider(turns));
         doAnswer(invocation -> {
             assertFalse(Thread.holdsLock(ExecutionCoordination.monitor("305")));

@@ -1,7 +1,7 @@
 package com.summit.dp.toolcall;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.dp.shared.model.ToolCatalog;
+import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.shared.vo.ToolCallVO;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCall;

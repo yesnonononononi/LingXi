@@ -1,5 +1,7 @@
 package com.summit.dp.tools.baseTools.sub_agent;
 
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
@@ -8,22 +10,22 @@ import com.summit.core.tool.ToolExecution;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.shared.settings.SettingsProvider;
-import com.summit.dp.shared.skill.SkillRootResolver;
+import com.summit.dp.user_configs.application.service.SettingsProvider;
+import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
-import com.summit.dp.tools.baseTools.sub_agent.delegation.AsyncDelegationSubmitter;
-import com.summit.dp.tools.baseTools.sub_agent.delegation.AsyncDelegationTask;
-import com.summit.dp.tools.baseTools.sub_agent.delegation.SubAgentRequestFactory;
-import com.summit.dp.tools.baseTools.sub_agent.result.AsyncDelegationResultRenderer;
-import com.summit.dp.tools.baseTools.sub_agent.session.SubSessionResolver;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationSubmitter;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationTask;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.result.AsyncDelegationResultRenderer;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionResolver;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

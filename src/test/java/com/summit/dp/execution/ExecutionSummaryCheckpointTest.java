@@ -8,8 +8,8 @@ import com.summit.core.conf.ModelConfig;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
-import com.summit.dp.execution.infrastructure.repository.LocalExecutionRepository;
-import com.summit.dp.shared.config.JsonConfig;
+import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
+import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import org.junit.jupiter.api.BeforeEach;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -24,6 +24,7 @@ import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -63,8 +64,17 @@ class ExecutionSummaryCheckpointTest {
     @BeforeEach
     void allowCheckpointWrites() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "test"), ExecutionPO.class);
-        when(persistence.update(any(ExecutionPO.class), any())).thenReturn(1);
-        when(persistence.insert(any(ExecutionPO.class))).thenReturn(1);
+        AtomicReference<ExecutionPO> stored = new AtomicReference<>();
+        when(persistence.selectById(EXECUTION_ID)).thenAnswer(invocation -> stored.get());
+        when(persistence.selectOne(any())).thenAnswer(invocation -> stored.get());
+        when(persistence.insert(any(ExecutionPO.class))).thenAnswer(invocation -> {
+            stored.set(invocation.getArgument(0, ExecutionPO.class));
+            return 1;
+        });
+        when(persistence.update(any(ExecutionPO.class), any())).thenAnswer(invocation -> {
+            stored.set(invocation.getArgument(0, ExecutionPO.class));
+            return 1;
+        });
     }
 
     /** 一次请求：带模型配置（含连接凭据）与可选的根执行属性。 */

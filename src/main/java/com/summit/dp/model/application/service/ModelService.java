@@ -8,7 +8,7 @@ import com.summit.dp.model.application.vo.ModelConfigVO;
 
 public interface ModelService {
     /** Internal runtime configuration with the original credential; never return it from an API. */
-    com.summit.core.conf.ModelConfig runtimeConfig(Long id, com.summit.dp.shared.context.SettingsView settings);
+    com.summit.core.conf.ModelConfig runtimeConfig(Long id, com.summit.dp.user_configs.application.vo.SettingsView settings);
     Result<Void> add(ModelConfigCommand command);
     Result<Void> update(ModelConfigCommand command);
     Result<Void> del(Long id);

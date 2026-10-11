@@ -2,11 +2,11 @@ package com.summit.dp.execution;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
-import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
-import com.summit.dp.execution.infrastructure.config.ExecutionStartupReaper;
+import com.summit.dp.workflow.infrastructure.lifecycle.startup.ExecutionStartupReaper;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;

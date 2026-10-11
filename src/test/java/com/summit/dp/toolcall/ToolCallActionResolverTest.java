@@ -1,12 +1,14 @@
 package com.summit.dp.toolcall;
 
+import com.summit.dp.workflow.infrastructure.harness.HarnessExecutionGate;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.dp.execution.domain.lifecycle.ExecutionActivity;
+import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.CardAvailabilityPolicy;
 import com.summit.dp.toolcall.application.service.ToolCallActionResolver;
@@ -27,7 +29,7 @@ class ToolCallActionResolverTest {
     private final ExecutionRepository executions = mock(ExecutionRepository.class);
     private final ExecutionActivity activity = mock(ExecutionActivity.class);
     private final CardAvailabilityPolicy policy =
-            new CardAvailabilityPolicy(provider(executions), provider(activity));
+            new CardAvailabilityPolicy(new HarnessExecutionGate(provider(executions), provider(activity)));
     private final ToolCallActionResolver resolver = new ToolCallActionResolver(policy);
     private final ObjectMapper json = new ObjectMapper();
     private final ToolCallConverter converter = new ToolCallConverter(json);

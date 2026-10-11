@@ -6,17 +6,17 @@ import com.summit.dp.workflow.application.chat.ResendTargetResolver;
 
 import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
 
-import com.summit.core.agent.ExecutionState;
+import com.summit.dp.execution.domain.model.ExecutionStatus;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.execution.SessionAttributeRestorer;
+import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
-import com.summit.dp.session.application.service.ConversationRollbackService;
+import com.summit.dp.workflow.application.chat.ConversationRollbackService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.shared.event.SseEventPublisher;
+import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
@@ -74,7 +74,7 @@ class ChatServiceImplIdleGuardTest {
             mock(ResendTargetResolver.class),
             mock(ConversationRollbackService.class));
 
-    private void stubStates(List<ExecutionState> states) {
+    private void stubStates(List<ExecutionStatus> states) {
         when(executionQueryService.latestStatesBySession(any()))
                 .thenReturn(states == null ? Map.of() : Map.of(ROOT_SESSION_ID, states));
     }
@@ -99,7 +99,7 @@ class ChatServiceImplIdleGuardTest {
     @DisplayName("作用域 = 单个根会话 id：子代理在跑（不在判定范围）不拦用户开新一轮")
     void queriesOnlyRootSessionScopeAndChildRunningDoesNotBlock() {
         // 根执行已终结；子代理的 RUNNING 因 session_id=子会话，不在本次查询结果里。
-        stubStates(List.of(ExecutionState.COMPLETED));
+        stubStates(List.of(ExecutionStatus.COMPLETED));
 
         assertDoesNotThrow(this::invokeEnsureRootExecutionIdle,
                 "子代理在跑不得拦住新一轮（协作模式 P0-4）");
@@ -114,21 +114,21 @@ class ChatServiceImplIdleGuardTest {
     @Test
     @DisplayName("根执行 RUNNING：仍被拒绝（单飞约束对根执行保持不变）")
     void rootRunningStillBlocks() {
-        stubStates(List.of(ExecutionState.RUNNING));
+        stubStates(List.of(ExecutionStatus.RUNNING));
         assertThrows(ClientException.class, this::invokeEnsureRootExecutionIdle);
     }
 
     @Test
     @DisplayName("根执行 CREATED（恢复态在跑）：仍被拒绝")
     void rootCreatedStillBlocks() {
-        stubStates(List.of(ExecutionState.CREATED));
+        stubStates(List.of(ExecutionStatus.CREATED));
         assertThrows(ClientException.class, this::invokeEnsureRootExecutionIdle);
     }
 
     @Test
     @DisplayName("根执行 SUSPENDED：仍被拒绝（先处理待审批事项 / 恢复）")
     void rootSuspendedStillBlocks() {
-        stubStates(List.of(ExecutionState.SUSPENDED));
+        stubStates(List.of(ExecutionStatus.SUSPENDED));
         assertThrows(ClientException.class, this::invokeEnsureRootExecutionIdle);
     }
 

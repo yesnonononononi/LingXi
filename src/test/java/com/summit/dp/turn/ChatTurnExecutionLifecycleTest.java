@@ -9,6 +9,7 @@ import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import org.junit.jupiter.api.Test;
+import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
 
 import java.time.Instant;
 import java.util.Map;
@@ -25,6 +26,8 @@ class ChatTurnExecutionLifecycleTest {
     private final ChatTurnRepository repository = mock(ChatTurnRepository.class);
     private final ChatTurnServiceImpl service = new ChatTurnServiceImpl(repository);
 
+    private final ChatTurnLifecycleProjector projector = new ChatTurnLifecycleProjector(service);
+
     @Test
     void mapsAllTerminalStatesAndPreservesKnownUsage() {
         Instant completedAt = Instant.parse("2026-10-07T01:00:00Z");
@@ -34,7 +37,7 @@ class ChatTurnExecutionLifecycleTest {
             turn.refreshUsage(100L, 50L, 150L);
             when(repository.findByExecutionId(9001L)).thenReturn(Optional.of(turn));
 
-            service.finishExecution(execution(state, completedAt));
+            projector.finishExecution(execution(state, completedAt));
 
             assertEquals(ChatTurnStatus.valueOf(state.name()), turn.getStatus());
             assertEquals(completedAt, turn.getCompletedAt());
@@ -48,7 +51,7 @@ class ChatTurnExecutionLifecycleTest {
         ChatTurn turn = ChatTurn.accept(7001L, 200L, null, "model", "provider");
         when(repository.findByExecutionId(9001L)).thenReturn(Optional.of(turn));
 
-        service.markExecutionWaiting(execution(ExecutionState.SUSPENDED, null));
+        projector.markExecutionWaiting(execution(ExecutionState.SUSPENDED, null));
 
         assertEquals(ChatTurnStatus.WAITING, turn.getStatus());
         assertNull(turn.getCompletedAt());
@@ -57,9 +60,9 @@ class ChatTurnExecutionLifecycleTest {
 
     @Test
     void ignoresMissingAndNonTerminalExecutions() {
-        service.finishExecution(null);
-        service.finishExecution(execution(ExecutionState.SUSPENDED, null));
-        service.finishExecution(execution(ExecutionState.RUNNING, null));
+        projector.finishExecution(null);
+        projector.finishExecution(execution(ExecutionState.SUSPENDED, null));
+        projector.finishExecution(execution(ExecutionState.RUNNING, null));
         verifyNoInteractions(repository);
     }
 
@@ -69,9 +72,9 @@ class ChatTurnExecutionLifecycleTest {
                 Optional.of(ChatTurn.accept(7001L, 200L, null, "model", "provider")));
         doThrow(new IllegalStateException("轮次保存失败")).when(repository).updateById(any(ChatTurn.class), eq(100L));
         assertThrows(IllegalStateException.class,
-                () -> service.finishExecution(execution(ExecutionState.COMPLETED, Instant.now())));
+                () -> projector.finishExecution(execution(ExecutionState.COMPLETED, Instant.now())));
         assertThrows(IllegalStateException.class,
-                () -> service.markExecutionWaiting(execution(ExecutionState.SUSPENDED, null)));
+                () -> projector.markExecutionWaiting(execution(ExecutionState.SUSPENDED, null)));
     }
 
     private static Execution execution(ExecutionState state, Instant completedAt) {

@@ -5,7 +5,7 @@ import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.shared.exception.ClientException;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
-import com.summit.dp.session.infrastructure.transcript.DatabaseConversationTranscriptSink;
+import com.summit.dp.workflow.infrastructure.harness.transcript.DatabaseConversationTranscriptSink;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

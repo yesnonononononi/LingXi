@@ -1,6 +1,5 @@
 package com.summit.dp.workflow.application.chat;
 
-
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;

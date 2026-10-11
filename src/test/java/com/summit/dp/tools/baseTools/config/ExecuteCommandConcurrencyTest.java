@@ -1,9 +1,11 @@
 package com.summit.dp.tools.baseTools.config;
 
+import com.summit.dp.workflow.infrastructure.tools.config.CommonToolConfiguration;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolDefinition;
-import com.summit.dp.tools.baseTools.terminal.CommandToolDefinitionExecutor;
+import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

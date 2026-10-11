@@ -1,12 +1,16 @@
 package com.summit.dp.agent.infrastructure.runtime;
 
+import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
+
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
-import com.summit.dp.agent.infrastructure.runtime.SubAgentCompleteNotifier;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

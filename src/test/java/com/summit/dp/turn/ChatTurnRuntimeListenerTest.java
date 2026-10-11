@@ -5,7 +5,7 @@ import com.summit.core.conversation.event.ExecutionCompleteEvent;
 import com.summit.core.conversation.event.ExecutionErrorEvent;
 import com.summit.core.conversation.event.TokenInfo;
 import com.summit.dp.turn.application.service.ChatTurnService;
-import com.summit.dp.turn.infrastructure.listener.ChatTurnRuntimeListener;
+import com.summit.dp.workflow.infrastructure.listener.turn.ChatTurnRuntimeListener;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

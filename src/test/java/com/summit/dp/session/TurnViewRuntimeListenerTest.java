@@ -4,8 +4,8 @@ import com.summit.core.compact.ContextUsageMetric;
 import com.summit.core.conversation.event.ContextUpdateEvent;
 import com.summit.core.conversation.event.ExecutionStartEvent;
 import com.summit.core.conversation.event.ExecutionSuspendedEvent;
-import com.summit.dp.session.application.service.TurnViewBroadcaster;
-import com.summit.dp.session.infrastructure.listener.TurnViewRuntimeListener;
+import com.summit.dp.workflow.application.projection.TurnViewBroadcaster;
+import com.summit.dp.workflow.infrastructure.listener.session.TurnViewRuntimeListener;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

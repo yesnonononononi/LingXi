@@ -1,5 +1,7 @@
 package com.summit.dp.tools.baseTools.sub_agent.communication;
 
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.AgenticLoopInterceptor;
+
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;

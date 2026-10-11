@@ -1,5 +1,9 @@
 package com.summit.dp.shared.config.workflow;
 
+import com.summit.dp.workflow.infrastructure.policy.CommandPolicyConfig;
+
+import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.RuntimeEnvironment;
 import com.summit.core.runtime.workspace.ShellType;
@@ -9,10 +13,10 @@ import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecutionPolicy;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
-import com.summit.dp.toolcall.application.service.CommandApprovalRegistrar;
+import com.summit.dp.workflow.application.approval.CommandApprovalRegistrar;
 import com.summit.dp.toolcall.application.service.ToolCallRegistrar;
 import com.summit.dp.toolcall.domain.model.ToolCallKind;
-import com.summit.dp.tools.baseTools.terminal.CommandToolDefinitionExecutor;
+import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -74,11 +78,11 @@ class CommandPolicyConfigTest {
 
     @Test
     void destructiveCommandsAreBlockedForUnixAndUnknownShell() {
-        assertEquals(com.summit.dp.tools.baseTools.terminal.CommandGuard.Verdict.DESTRUCTIVE,
-                com.summit.dp.tools.baseTools.terminal.CommandGuard.assess("rm -rf /tmp/approval-audit",
+        assertEquals(com.summit.dp.workflow.infrastructure.tools.terminal.CommandGuard.Verdict.DESTRUCTIVE,
+                com.summit.dp.workflow.infrastructure.tools.terminal.CommandGuard.assess("rm -rf /tmp/approval-audit",
                         com.summit.core.runtime.workspace.ShellType.BASH));
-        assertEquals(com.summit.dp.tools.baseTools.terminal.CommandGuard.Verdict.DESTRUCTIVE,
-                com.summit.dp.tools.baseTools.terminal.CommandGuard.assess("Clear-Disk -Number 99", null));
+        assertEquals(com.summit.dp.workflow.infrastructure.tools.terminal.CommandGuard.Verdict.DESTRUCTIVE,
+                com.summit.dp.workflow.infrastructure.tools.terminal.CommandGuard.assess("Clear-Disk -Number 99", null));
     }
 
     @Test

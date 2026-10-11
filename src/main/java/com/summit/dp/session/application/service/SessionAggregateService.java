@@ -2,9 +2,6 @@ package com.summit.dp.session.application.service;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.summit.core.agent.Execution;
-import com.summit.core.compact.ContextUsageMetric;
-import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.session.domain.exception.SessionNoFoundException;
 import com.summit.dp.session.domain.model.Session;
@@ -55,18 +52,9 @@ public class SessionAggregateService {
 
     /** 终结执行未采集用量时保留旧值，不能把缺失数据写成零。 */
     @Transactional
-    public void saveExecutionContextUsage(Execution execution) {
-        ContextUsageMetric metric = execution == null ? null : execution.getContextUsageMetric();
-        if (metric == null) return;
-        Map<String, Object> attributes = execution.getAgentRequest() == null
-                ? Map.of() : execution.getAgentRequest().runtimeParametersOrDefault().getAttributes();
-        Long sessionId = ExecutionAttributes.readLong(attributes, ExecutionAttributes.SESSION_ID);
-        if (sessionId == null) {
-            log.warn("终结执行缺少会话归属，用量快照丢弃: executionId={}", execution.getId());
-            return;
-        }
+    public void saveContextUsage(Long sessionId, Long tokenCount, Integer maxTokens, Double ratio) {
         Session session = sessionRepository.findById(sessionId).orElseThrow(ClientException::new);
-        session.changeContextUsage((long) metric.tokenCount(), metric.maxTokens(), metric.ratio());
+        session.changeContextUsage(tokenCount, maxTokens, ratio);
         sessionRepository.updateById(session);
     }
 

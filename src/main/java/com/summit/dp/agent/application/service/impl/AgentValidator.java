@@ -2,7 +2,7 @@ package com.summit.dp.agent.application.service.impl;
 
 import com.summit.dp.agent.application.command.AgentCommand;
 import com.summit.dp.agent.domain.model.Agent;
-import com.summit.dp.shared.model.ToolCatalog;
+import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.model.application.vo.ModelConfigVO;
 import com.summit.dp.model.domain.ModelNoFoundException;

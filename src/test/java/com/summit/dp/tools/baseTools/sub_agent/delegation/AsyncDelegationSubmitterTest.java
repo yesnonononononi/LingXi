@@ -1,5 +1,11 @@
 package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.DelegationRecorder;
+
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationTask;
+
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationSubmitter;
+
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
@@ -8,13 +14,13 @@ import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.tool.ToolExecution;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.agent.infrastructure.agent.SubAgent;
-import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
-import com.summit.dp.agent.infrastructure.runtime.SubExecutionLifecycle;
+import com.summit.dp.workflow.infrastructure.harness.agent.SubAgent;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import com.summit.dp.session.application.service.ModelContextService;
-import com.summit.dp.tools.baseTools.arguments.CallSubAgentToolArgument;
-import com.summit.dp.tools.baseTools.sub_agent.session.SubSessionResolver;
-import com.summit.dp.tools.baseTools.sub_agent.session.SubSessionTarget;
+import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionResolver;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionTarget;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;

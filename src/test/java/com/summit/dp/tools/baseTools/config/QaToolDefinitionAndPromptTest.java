@@ -1,15 +1,17 @@
 package com.summit.dp.tools.baseTools.config;
 
+import com.summit.dp.workflow.infrastructure.tools.config.ToolConfig;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.agent.application.service.TeamPromptComposer;
+import com.summit.dp.workflow.application.delegation.TeamPromptComposer;
 import com.summit.dp.email.application.service.EmailService;
-import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
-import com.summit.dp.shared.model.ToolCatalog;
-import com.summit.dp.tools.baseTools.sub_agent.CallSubAgentTool;
-import com.summit.dp.tools.baseTools.sub_agent.communication.SendMailToAgentTool;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

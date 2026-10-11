@@ -1,18 +1,20 @@
 package com.summit.dp.toolcall;
 
+import com.summit.dp.workflow.infrastructure.harness.HarnessExecutionGate;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.execution.domain.lifecycle.ExecutionActivity;
-import com.summit.dp.shared.event.SseEventPublisher;
+import com.summit.dp.execution.application.port.ExecutionActivity;
+import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.vo.ToolCallVO;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.CardAvailabilityPolicy;
 import com.summit.dp.toolcall.application.service.ToolCallActionResolver;
-import com.summit.dp.toolcall.application.service.impl.CommandApprovalExecutor;
-import com.summit.dp.toolcall.application.service.impl.ToolCallDecisionService;
-import com.summit.dp.toolcall.application.service.impl.ToolCallServiceImpl;
+import com.summit.dp.workflow.application.approval.CommandApprovalExecutor;
+import com.summit.dp.workflow.application.approval.ToolCallDecisionService;
+import com.summit.dp.workflow.application.approval.ToolCallWorkflowService;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
@@ -45,7 +47,7 @@ import static org.mockito.Mockito.when;
  * 枚举常量删除后，读侧（{@link ToolCallConverter#resolveKind}）对该取值返回 {@code null}。
  * 本类断言这个 {@code null} 不会：
  * <ul>
- *   <li>让提交决策（{@link ToolCallServiceImpl#decide}）抛 {@code NullPointerException} 或写坏状态；</li>
+ *   <li>让提交决策（{@link ToolCallWorkflowService#decide}）抛 {@code NullPointerException} 或写坏状态；</li>
  *   <li>让卡片装配（{@link ToolCallConverter#toVO}）抛异常而非降级为「不可用」。</li>
  * </ul>
  * 断言必须判到<b>具体文案 / 动作</b>与「无写操作」，不能只判 {@code assertDoesNotThrow}。</p>
@@ -73,10 +75,10 @@ class QaLegacyDelegationSubmitAndDisplayTest {
         ToolCall legacy = legacyRow();
         when(repository.findById(legacy.getId())).thenReturn(Optional.of(legacy));
 
-        ToolCallServiceImpl service = new ToolCallServiceImpl(repository, converter,
-                mock(TransactionTemplate.class), commandExecutor, decisionService,
-                new CardAvailabilityPolicy(provider(mock(ExecutionRepository.class)),
-                        provider(mock(ExecutionActivity.class))),
+        ToolCallWorkflowService service = new ToolCallWorkflowService(repository, converter,
+                commandExecutor, decisionService,
+                new CardAvailabilityPolicy(new HarnessExecutionGate(provider(mock(ExecutionRepository.class)),
+                        provider(mock(ExecutionActivity.class)))),
                 sse, identity);
 
         ClientException failure = assertThrows(ClientException.class,
@@ -93,8 +95,8 @@ class QaLegacyDelegationSubmitAndDisplayTest {
     @DisplayName("B3 遗留 DELEGATION 行经卡片装配：不抛，降级为「互动数据不可用」，无动作")
     void legacyDelegationRowDegradesToUnavailableOnCardAssembly() {
         ToolCallConverter converter = new ToolCallConverter(json);
-        CardAvailabilityPolicy policy = new CardAvailabilityPolicy(
-                provider(mock(ExecutionRepository.class)), provider(mock(ExecutionActivity.class)));
+        CardAvailabilityPolicy policy = new CardAvailabilityPolicy(new HarnessExecutionGate(
+                provider(mock(ExecutionRepository.class)), provider(mock(ExecutionActivity.class))));
         ReflectionTestUtils.setField(converter, "actionResolver", new ToolCallActionResolver(policy));
 
         ToolCallVO vo = converter.toVO(legacyRow());

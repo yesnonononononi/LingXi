@@ -14,6 +14,7 @@ import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import org.junit.jupiter.api.Test;
+import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
 
 import java.util.Map;
 import java.util.Optional;
@@ -28,6 +29,8 @@ class SessionExecutionContextUsageTest {
             mock(MessageRepository.class), mock(ChatTurnRepository.class), mock(ToolCallRepository.class),
             mock(ModelContextService.class), mock(SessionContextRepository.class));
 
+    private final SessionContextUsageProjector projector = new SessionContextUsageProjector(service);
+
     @Test
     void storesMetricInExecutionSessionInsteadOfRootSession() {
         Session session = Session.builder().id(200L).rootSessionId(100L).build();
@@ -35,7 +38,7 @@ class SessionExecutionContextUsageTest {
         Execution execution = execution(Map.of(ExecutionAttributes.SESSION_ID, "200"),
                 new ContextUsageMetric(300, 1000, 0.3));
 
-        service.saveExecutionContextUsage(execution);
+        projector.saveExecutionContextUsage(execution);
 
         assertEquals(300L, session.getContextTokenCount());
         assertEquals(1000, session.getContextMaxTokens());
@@ -47,9 +50,9 @@ class SessionExecutionContextUsageTest {
 
     @Test
     void missingMetricOrSessionDoesNotWriteFabricatedUsage() {
-        service.saveExecutionContextUsage(null);
-        service.saveExecutionContextUsage(execution(Map.of(ExecutionAttributes.SESSION_ID, "200"), null));
-        service.saveExecutionContextUsage(execution(Map.of(), new ContextUsageMetric(300, 1000, 0.3)));
+        projector.saveExecutionContextUsage(null);
+        projector.saveExecutionContextUsage(execution(Map.of(ExecutionAttributes.SESSION_ID, "200"), null));
+        projector.saveExecutionContextUsage(execution(Map.of(), new ContextUsageMetric(300, 1000, 0.3)));
         verifyNoInteractions(repository);
     }
 

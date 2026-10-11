@@ -1,10 +1,12 @@
 package com.summit.dp.workflow.application.chat;
 
+import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
+
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionControl;
-import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
-import com.summit.dp.execution.ExecutionIdentity;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.session.application.service.ModelContextService;
 import jakarta.annotation.PreDestroy;
@@ -144,7 +146,7 @@ public class PreparedChatExecutor {
         }
         try {
             ExecutionState state = execution.getExecutionState();
-            if (ExecutionStatusCodes.isTerminalState(state) || state == ExecutionState.SUSPENDED) {
+            if (ExecutionStateCodec.isTerminalState(state) || state == ExecutionState.SUSPENDED) {
                 return;
             }
             executionControl.fail(execution, cause).run();

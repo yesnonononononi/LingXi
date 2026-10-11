@@ -5,7 +5,7 @@ import com.summit.core.conversation.message.*;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.SessionContext;
 import com.summit.dp.session.domain.repo.SessionContextRepository;
-import com.summit.dp.shared.config.JsonConfig;
+import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 

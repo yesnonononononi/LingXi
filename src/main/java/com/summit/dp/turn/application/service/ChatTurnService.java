@@ -1,6 +1,5 @@
 package com.summit.dp.turn.application.service;
 
-import com.summit.core.agent.Execution;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
 
@@ -63,12 +62,6 @@ public interface ChatTurnService {
 
     /** 框架挂起（SUSPENDED）：→ WAITING。挂起不是终态，不写结束时间。 */
     void markWaiting(String executionId, Long rootSessionId);
-
-    /** 已提交的挂起执行只推进等待状态，不写结束时间。 */
-    void markExecutionWaiting(Execution execution);
-
-    /** 终态和结束时间取已提交执行，用量仍由运行事件独立更新。 */
-    void finishExecution(Execution execution);
 
     /**
      * 进入终态：COMPLETED / FAILED / CANCELLED，写入结束时间。

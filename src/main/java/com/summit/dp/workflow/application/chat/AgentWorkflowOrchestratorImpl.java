@@ -1,16 +1,15 @@
 package com.summit.dp.workflow.application.chat;
 
-
 import com.summit.core.agent.Agent;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.Message;
 import com.summit.dp.agent.application.service.AgentService;
-import com.summit.dp.agent.application.service.TeamPromptComposer;
-import com.summit.dp.agent.infrastructure.agent.IChatAgent;
+import com.summit.dp.workflow.application.delegation.TeamPromptComposer;
+import com.summit.dp.workflow.infrastructure.harness.agent.IChatAgent;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.shared.model.ToolCatalog;
-import com.summit.dp.agent.infrastructure.agent.SubAgent;
+import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.dp.workflow.infrastructure.harness.agent.SubAgent;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
@@ -98,14 +97,14 @@ public class AgentWorkflowOrchestratorImpl implements AgentWorkflowOrchestrator 
             if (single == null) throw new ClientException("未找到指定的 Agent: " + context.agentId());
             return requestPreparer.buildRequest(single.getPrompt(), context, single.getToolList());
         }
-        return requestPreparer.buildRequest(userTextOf(context), context, ToolCatalog.DEFAULT_AGENT_TOOLS);
+        return requestPreparer.buildRequest(resolveUserText(context), context, ToolCatalog.DEFAULT_AGENT_TOOLS);
     }
 
     /**
      * 裸模型档位的角色提示词：沿用既有行为，把本轮用户输入交给 mergeSystemPrompt。
      * 输入正文取自 prepare 追加的最后一条用户消息。
      */
-    private static String userTextOf(RuntimeContext context) {
+    private static String resolveUserText(RuntimeContext context) {
         List<Message> messages = context.messageList();
         if (messages == null || messages.isEmpty()) return "";
         Message last = messages.getLast();

@@ -1,5 +1,7 @@
 package com.summit.dp.tools.baseTools.terminal;
 
+import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.RuntimeEnvironment;
 import com.summit.core.runtime.workspace.ShellType;
@@ -7,7 +9,7 @@ import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecuteResult;
-import com.summit.dp.tools.baseTools.arguments.ExecuteCommandRequest;
+import com.summit.dp.workflow.infrastructure.tools.arguments.ExecuteCommandRequest;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;

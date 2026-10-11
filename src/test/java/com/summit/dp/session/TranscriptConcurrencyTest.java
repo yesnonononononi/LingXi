@@ -13,7 +13,7 @@ import com.summit.dp.session.infrastructure.persistence.mapper.SessionMessageMap
 import com.summit.dp.session.infrastructure.persistence.po.SessionMessagePO;
 import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionMessageRepositoryImpl;
-import com.summit.dp.shared.config.JsonConfig;
+import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.apache.ibatis.session.SqlSessionFactory;

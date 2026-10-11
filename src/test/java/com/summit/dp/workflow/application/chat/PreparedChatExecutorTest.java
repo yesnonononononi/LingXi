@@ -12,31 +12,33 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
+import java.time.Instant;
+import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.event.AgentEvent;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
-import com.summit.dp.agent.infrastructure.listener.AgentEventListener;
-import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.listener.agent.AgentEventListener;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.application.chat.AgentWorkflowOrchestrator;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
-import com.summit.dp.execution.infrastructure.repository.LocalExecutionRepository;
+import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
 import com.summit.dp.session.application.service.ModelContextService;
-import com.summit.dp.shared.config.JsonConfig;
-import com.summit.dp.shared.config.workflow.AgentAccessMode;
-import com.summit.dp.shared.config.workflow.CommandApprovalPolicy;
-import com.summit.dp.shared.context.ExecutionContext;
-import com.summit.dp.shared.event.SseEventPublisher;
+import com.summit.dp.workflow.infrastructure.config.JsonConfig;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.workflow.application.chat.ExecutionContext;
+import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
-import com.summit.dp.turn.infrastructure.listener.ChatTurnRuntimeListener;
+import com.summit.dp.workflow.infrastructure.listener.turn.ChatTurnRuntimeListener;
 import com.summit.runtime.loop.DefaultExecutionController;
 import com.summit.runtime.loop.DefaultRuntimeLifeStyleManager;
 import jakarta.annotation.PreDestroy;
@@ -120,6 +122,11 @@ class PreparedChatExecutorTest {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "test"),
                 ExecutionPO.class);
         when(executionMapper.update(any(ExecutionPO.class), any())).thenReturn(1);
+        ExecutionPO accepted = new ExecutionPO();
+        accepted.setId(Long.valueOf(EXECUTION_ID));
+        accepted.setStatus(0);
+        accepted.setVersion(1L);
+        when(executionMapper.selectOne(any())).thenReturn(accepted);
         when(executionIdentity.sessionId(EXECUTION_ID)).thenReturn(ROOT_SESSION_ID);
         when(executionIdentity.resolveRootSessionId(ROOT_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
         when(frameworkFail.fail(any(Execution.class), any())).thenReturn(() -> { });
@@ -159,11 +166,10 @@ class PreparedChatExecutorTest {
 
         // 顺序即不变量：轮次终态 → 失败原因 → 事件广播。
         InOrder order = inOrder(chatTurnService, sseEventPublisher);
-        ArgumentCaptor<Execution> failedCheckpoint = ArgumentCaptor.forClass(Execution.class);
-        order.verify(chatTurnService).finishExecution(failedCheckpoint.capture());
-        assertEquals(EXECUTION_ID, failedCheckpoint.getValue().getId());
-        assertEquals(ExecutionState.FAILED, failedCheckpoint.getValue().getExecutionState());
-        assertNotNull(failedCheckpoint.getValue().getCompletedAt());
+        ArgumentCaptor<Instant> completedAt = ArgumentCaptor.forClass(Instant.class);
+        order.verify(chatTurnService).markTerminal(eq(EXECUTION_ID), eq(ChatTurnStatus.FAILED),
+                isNull(), isNull(), isNull(), completedAt.capture(), eq(ROOT_SESSION_ID));
+        assertNotNull(completedAt.getValue());
         order.verify(chatTurnService).recordFailureReason(EXECUTION_ID, "模型不可用", ROOT_SESSION_ID);
         order.verify(sseEventPublisher).publish(eq(ROOT_SESSION_ID), any(AgentEvent.class));
 
@@ -256,7 +262,7 @@ class PreparedChatExecutorTest {
         assertThrows(IllegalStateException.class, () -> guardedExecutor.run(context(execution)));
 
         verify(frameworkFail, never()).fail(any(Execution.class), any());
-        verify(chatTurnService, never()).finishExecution(any());
+        verify(chatTurnService, never()).markTerminal(any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test

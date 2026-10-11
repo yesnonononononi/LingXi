@@ -1,5 +1,9 @@
 package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
+import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
+
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
+
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
@@ -14,23 +18,23 @@ import com.summit.core.runtime.loop.LoopMessages;
 import com.summit.core.runtime.loop.LoopResult;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.ddd.application.vo.Result;
-import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
-import com.summit.dp.agent.infrastructure.runtime.SubExecutionLifecycle;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import com.summit.dp.email.application.service.EmailService;
-import com.summit.dp.agent.infrastructure.runtime.SubAgentCompleteNotifier;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.ExecutionStatusCodes;
-import com.summit.dp.execution.SessionAttributeRestorer;
-import com.summit.dp.execution.SuspendedExecutionResumer;
-import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
-import com.summit.dp.execution.domain.lifecycle.ExecutionActivity;
+import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
+import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
-import com.summit.dp.tools.baseTools.sub_agent.communication.AgenticLoopInterceptor;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.AgenticLoopInterceptor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -370,7 +374,7 @@ class QaDelegationLifecycleInterleavingTest {
                 new com.summit.dp.execution.domain.model.Execution();
         summary.setId(ROOT_EXECUTION_ID);
         summary.setSessionId(ROOT_SESSION_ID);
-        summary.setStatus(ExecutionStatusCodes.encode(state));
+        summary.setStatus(ExecutionStateCodec.encode(state));
         summary.setResumeGeneration(GENERATION);
         when(executions.findSummariesByIds(any())).thenReturn(List.of(summary));
     }

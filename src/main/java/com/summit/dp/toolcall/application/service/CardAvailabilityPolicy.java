@@ -1,16 +1,12 @@
 package com.summit.dp.toolcall.application.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
-import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.dp.execution.domain.lifecycle.ExecutionActivity;
+import com.summit.dp.toolcall.application.port.ExecutionGateQuery;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallAction;
 import com.summit.dp.toolcall.domain.model.ToolCallKind;
 import com.summit.dp.toolcall.domain.model.ToolCallKeys;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -30,12 +26,11 @@ import java.util.List;
 @RequiredArgsConstructor
 public class CardAvailabilityPolicy {
 
-    private final ObjectProvider<ExecutionRepository> executions;
-    private final ObjectProvider<ExecutionActivity> activity;
+    private final ExecutionGateQuery executions;
 
     /** 执行是否仍在进程内活跃（跑着或正在退出）；活跃期间不接受任何人工决策。 */
     public boolean isExecutionActive(String executionId) {
-        return activity.getObject().isActive(executionId);
+        return executions.isActive(executionId);
     }
 
     /**
@@ -44,15 +39,7 @@ public class CardAvailabilityPolicy {
      * @return {@link ExecutionGate#SUSPENDED} 表示可决策；{@code UNKNOWN} 表示执行数据查不到
      */
     public ExecutionGate resolveExecutionGate(String executionId) {
-        if (isExecutionActive(executionId)) {
-            return ExecutionGate.ACTIVE;
-        }
-        Execution execution = executions.getObject().findById(executionId).orElse(null);
-        if (execution == null) {
-            return ExecutionGate.UNKNOWN;
-        }
-        return execution.getExecutionState() == ExecutionState.SUSPENDED
-                ? ExecutionGate.SUSPENDED : ExecutionGate.NOT_SUSPENDED;
+        return executions.resolveGate(executionId);
     }
 
     /**

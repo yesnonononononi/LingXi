@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Optional;
 
 public interface ExecutionRepository extends RepositoryTemplate<Execution, Long> {
+    /** 保存前只读并发判据，避免再次加载完整快照。 */
+    Optional<Execution> findCheckpointSummary(long executionId);
     Collection<Execution> findList(Collection<Long> ids);
     List<Execution> findRecentBySession(Long sessionId, int limit);
 
