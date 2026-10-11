@@ -50,7 +50,8 @@ export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 /** 归一化思考深度：后端可能下发大写或带空格，识别不了回落缺省 low */
 export function normalizeReasoningEffort(raw: unknown, fallback?: ReasoningEffort): ReasoningEffort | undefined {
   if (typeof raw !== 'string') return fallback;
-  return normalizeEnum(raw.trim().toLowerCase(), REASONING_EFFORTS, fallback);
+  const normalized = raw.trim().toLowerCase() as ReasoningEffort;
+  return REASONING_EFFORTS.includes(normalized) ? normalized : fallback;
 }
 
 /**
