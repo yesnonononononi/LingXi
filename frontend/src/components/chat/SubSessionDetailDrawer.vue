@@ -6,7 +6,8 @@ import { formatClockTime } from '../../utils/format';
 import { synthesizeFailedTurnBubbles } from '../../utils/session';
 import { upsertTurnViewIntoMessages } from '../../views/chat/blockProjection';
 import { parseToolDiff } from '../../utils/toolDiff';
-import { shouldShowToolArguments, resolveToolCategory } from '../../utils/toolMeta';
+import { shouldShowToolArguments } from '../../utils/toolMeta';
+import { resolveToolRenderName } from '../../utils/toolDisplayNames';
 import { toSubItemStatus } from '../../utils/subSessionStatus';
 import { subItemStatusDotClass, subItemStatusLabel } from '../../utils/asyncDelegation';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
@@ -350,7 +351,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                       </svg>
                       <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="tc.status === 'failed' ? 'bg-rose-500' : tc.status === 'calling' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'"></span>
-                      <span class="font-semibold text-gray-300 dark:text-zinc-100 truncate">{{ resolveToolCategory(tc.toolName) }}</span>
+                      <span class="font-semibold text-gray-300 dark:text-zinc-100 truncate">{{ resolveToolRenderName(tc.toolName) }}</span>
                       <span
                         v-if="getToolDiffStat(tc)"
                         class="inline-flex items-center gap-1 font-mono text-[11px] font-medium leading-none shrink-0 select-none ml-1"

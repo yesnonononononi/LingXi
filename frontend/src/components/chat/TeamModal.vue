@@ -4,7 +4,7 @@ import type { AgentVO, ModelConfig, ToolVO } from '../../types/chat';
 import { TeamAPI } from '../../services/team';
 import { AgentAPI } from '../../services/agent';
 import { ToolAPI } from '../../services/tool';
-import { resolveToolCategory, toolCategoryLabel } from '../../utils/toolMeta';
+import { resolveToolFullName } from '../../utils/toolDisplayNames';
 import { isOk } from '../../utils/api';
 import { toUserFacingError } from '../../utils/error';
 import { useTheme } from '../../composables/useTheme';
@@ -616,7 +616,7 @@ const handleSaveTeam = async () => {
                         :checked="agentFormToolList.includes(tool.name)"
                         class="rounded text-blue-600 focus:ring-blue-500 h-3 w-3 pointer-events-none accent-cyan-500"
                       />
-                      <span class="font-medium truncate text-[11px]">{{ toolCategoryLabel(resolveToolCategory(tool.name)) }}</span>
+                      <span class="font-medium truncate text-[11px]">{{ resolveToolFullName(tool.name) }}</span>
                     </div>
                     <span
                       class="text-[9px] px-1 py-0.2 rounded font-normal shrink-0 border"
@@ -691,7 +691,7 @@ const handleSaveTeam = async () => {
                     <span
                       v-if="agent.toolList && agent.toolList.length > 0"
                       class="px-1.5 py-0.5 text-[10px] rounded bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/20"
-                      :title="agent.toolList.map(name => toolCategoryLabel(resolveToolCategory(name))).join('、')"
+                      :title="agent.toolList.map(name => resolveToolFullName(name)).join('、')"
                     >
                       {{ agent.toolList.length }} 个工具
                     </span>

@@ -77,12 +77,13 @@ function prepare(context: test.TestContext) {
     }
   });
   setPreference('zh-CN');
-  const agent = { id: '9', name: '测试助手', modelId: '7', prompt: '认真回答', toolList: [AgentToolName.ExecuteCommand] };
+  const agent = { id: '9', name: '测试助手', modelId: '7', prompt: '认真回答', toolList: [AgentToolName.ExecuteCommand, AgentToolName.ReadFile] };
   context.mock.method(AgentAPI, 'list', async () => ({ code: 1, data: { records: [agent], total: 1 } }));
   context.mock.method(AgentAPI, 'findById', async () => ({ code: 1, data: agent }));
   context.mock.method(ModelAPI, 'list', async () => ({ code: 1, data: { records: [{ id: '7', modelName: '测试模型' }] } }));
   context.mock.method(ToolAPI, 'list', async () => ({ code: 1, data: [
     { name: AgentToolName.ExecuteCommand, readOnly: false }, { name: AgentToolName.ReadSkill, readOnly: true },
+    { name: AgentToolName.ReadFile, readOnly: true }, { name: AgentToolName.WebSearch, readOnly: true },
   ] }));
   return context.mock.method(AgentAPI, 'update', async () => ({ code: 1 }));
 }
@@ -93,10 +94,11 @@ for (const mode of ['settings', 'team'] as const) {
     const root = await mount(context, mode === 'settings' ? 'views/settings/tabs/AgentsTab.vue' : 'components/chat/TeamModal.vue',
       { isDark: true, isOpen: true, models: [{ id: '7', modelName: '测试模型' }] });
     if (mode === 'settings') assert.ok(text(root).includes('执行命令'));
-    else assert.ok(find(root, item => item.props.title === '执行命令'), '工具数量悬浮提示也必须映射名称');
+    else assert.ok(find(root, item => item.props.title === '执行命令、读取文件'), '工具数量悬浮提示也必须映射完整名');
     const edit = find(root, item => item.tag === 'button' && item.props.title === translate(mode === 'settings' ? 'settings.agents.editAction' : 'chat.team.editAgentTip'));
     assert.ok(edit); await edit.props.onClick({ stopPropagation() {} }); await settle();
     assert.ok(text(root).includes('执行命令')); assert.ok(text(root).includes('读取技能'));
+    assert.ok(text(root).includes('读取文件')); assert.ok(text(root).includes('网页搜索'));
     for (const name of [AgentToolName.ExecuteCommand, AgentToolName.ReadSkill]) assert.ok(!text(root).includes(name));
     const option = find(root, item => item.tag === 'div' && typeof item.props.onClick === 'function' && text(item).includes('读取技能') && !text(item).includes('执行命令') && find(item, child => child.tag === 'input' && child.props.type === 'checkbox') !== undefined);
     assert.ok(option); option.props.onClick(); await nextTick();
@@ -105,6 +107,6 @@ for (const mode of ['settings', 'team'] as const) {
     const save = find(root, item => item.tag === 'button' && text(item).trim() === translate('common.save'));
     assert.ok(save); await save.props.onClick(); await settle();
     assert.equal(update.mock.callCount(), 1);
-    assert.deepEqual(update.mock.calls[0]?.arguments[0].toolList, [AgentToolName.ExecuteCommand, AgentToolName.ReadSkill]);
+    assert.deepEqual(update.mock.calls[0]?.arguments[0].toolList, [AgentToolName.ExecuteCommand, AgentToolName.ReadFile, AgentToolName.ReadSkill]);
   });
 }

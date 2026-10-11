@@ -19,18 +19,7 @@ export const TOOL_CATEGORY = {
   DEFAULT: '工具',
 } as const;
 
-/**
- * 已知工具名 → 展示分类。键为后端注册名（见 {@link AgentToolName}），仅精确匹配。
- *
- * <p><b>这是「工具名 → 用户可见中文名」的唯一映射表</b>：后端下发的是机器名
- * （{@code execute_command}、{@code list_mcp_tools}…），直接展示等于把实现细节抛给用户。
- * 新增后端工具时**必须**在此登记 —— 未登记的会走 {@link UNKNOWN_TOOL_LABEL} 兜底，
- * 绝不把原生英文名裸显到界面上。终端命令等工具若当次调用带了 {@code description}，
- * 调用处优先展示 description（更具体），本表作无 description 时的回落。</p>
- *
- * <p>MCP 工具是远端下发的动态集合（{@code mcp_} 前缀，名字不可枚举），
- * 由 {@link resolveToolCategory} 按前缀统一归到 {@code DEFAULT}。</p>
- */
+/** 稳定分类用于逻辑判定，工具名称统一从 toolDisplayNames 读取。 */
 const KNOWN_TOOL_CATEGORY: Partial<Record<AgentToolName, string>> = {
   // 终端命令
   [AgentToolName.ExecuteCommand]: TOOL_CATEGORY.COMMAND,
@@ -83,15 +72,7 @@ export function normalizeToolName(toolName?: string | null): string {
   return toolName ?? '';
 }
 
-/**
- * 按后端固定工具名映射用户可见中文名。
- *
- * <p><b>绝不回落原生工具名</b>：未登记的固定工具走 {@link UNKNOWN_TOOL_LABEL} 兜底，
- * MCP 工具（{@code mcp_} 前缀）同样是远端动态名，一并归兜底 —— 界面上不出现
- * {@code list_mcp_tools} 这类机器名。已知工具见 {@link KNOWN_TOOL_CATEGORY}。</p>
- *
- * <p>空工具名返回空串（调用方据此判断「无可用信息」，而不是把它显示成兜底文案）。</p>
- */
+/** 分类只认后端标识；未知工具归入默认分类，空标识保持为空。 */
 export function resolveToolCategory(toolName?: string | null): string {
   const key = normalizeToolName(toolName);
   if (!key) return '';

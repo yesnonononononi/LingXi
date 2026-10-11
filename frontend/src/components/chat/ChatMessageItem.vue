@@ -222,9 +222,9 @@
                   @click="canExpandTool(item.tool) && toggleToolCall(item.tool.id)"
                   class="flex items-center gap-1.5 text-[13px] py-0.5 transition group select-none w-full max-w-full min-w-0 overflow-hidden text-left"
                   :class="toolRowHeaderClass(item.tool, isDark)"
-                  :title="cleanDisplayPath(getToolDescription(item.tool)) || getToolCategory(item.tool)"
+                  :title="cleanDisplayPath(getToolDescription(item.tool)) || resolveToolRenderName(item.tool.toolName)"
                 >
-                  <button v-if="canExpandTool(item.tool)" type="button" class="shrink-0 cursor-pointer" :aria-expanded="!!expandedToolIds[item.tool.id]" :aria-label="`查看${getToolCategory(item.tool)}详情`" @click.stop="toggleToolCall(item.tool.id)">
+                  <button v-if="canExpandTool(item.tool)" type="button" class="shrink-0 cursor-pointer" :aria-expanded="!!expandedToolIds[item.tool.id]" :aria-label="`查看${resolveToolRenderName(item.tool.toolName)}详情`" @click.stop="toggleToolCall(item.tool.id)">
                   <svg
                     :class="['w-3.5 h-3.5 transition-transform duration-200 shrink-0', expandedToolIds[item.tool.id] ? 'rotate-90' : '', isDark ? 'text-zinc-300 drop-shadow-[0_0_4px_rgba(255,255,255,0.4)]' : 'text-gray-400']"
                     fill="none"
@@ -235,7 +235,7 @@
                   </svg>
                   </button>
                   <div class="flex-shrink-0 flex items-center">
-                    <svg v-if="getToolCategory(item.tool) === '读取' || getToolCategory(item.tool) === '写入'" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <svg v-if="getToolCategory(item.tool) === '读取' || resolveToolRenderName(item.tool.toolName) === '写入'" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                       <rect x="4" y="3" width="16" height="18" rx="2" />
                       <path stroke-linecap="round" d="M8 8h8M8 12h8M8 16h4" />
                     </svg>
@@ -256,7 +256,7 @@
                   </div>
                   <!-- 有目标路径/对象时（如读取/写入）：分类名 + 目标路径（读文件附行范围） -->
                   <template v-if="getToolTarget(item.tool)">
-                    <span class="font-normal shrink-0" :class="isDark ? 'text-zinc-100 text-glow-white font-medium' : 'text-gray-700'">{{ getToolCategory(item.tool) }}</span>
+                    <span class="font-normal shrink-0" :class="isDark ? 'text-zinc-100 text-glow-white font-medium' : 'text-gray-700'">{{ resolveToolRenderName(item.tool.toolName) }}</span>
                     <button
                       type="button"
                       :disabled="!canPreviewFile(item.tool)"
@@ -290,7 +290,7 @@
                           : (isDark ? 'text-[13px] text-zinc-100 text-glow-white' : 'text-[13px] text-gray-700')
                       ]"
                     >
-                      {{ cleanDisplayPath(getToolDescription(item.tool)) || getToolCategory(item.tool) }}
+                      {{ cleanDisplayPath(getToolDescription(item.tool)) || resolveToolRenderName(item.tool.toolName) }}
                     </button>
                   </template>
 
@@ -591,6 +591,7 @@ import { compareResponsePosition } from '../../utils/responseOrder';
 import { toObject } from '../../utils/json';
 import { isAsyncDelegation, asyncSubSessionStatus, subItemStatusDotClass } from '../../utils/asyncDelegation';
 import { AgentToolName } from '../../utils/toolNames';
+import { resolveToolRenderName } from '../../utils/toolDisplayNames';
 import { isActiveTurnStatus, isFailedTurnStatus, turnStatusLabel } from '../../utils/turnStatus';
 import { formatDurationOrPlaceholder } from '../../utils/format';
 import { parseToolDiff } from '../../utils/toolDiff';
