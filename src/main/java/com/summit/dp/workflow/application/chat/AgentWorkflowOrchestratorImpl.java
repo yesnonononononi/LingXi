@@ -1,4 +1,4 @@
-package com.summit.dp.agent.infrastructure.workflow;
+package com.summit.dp.workflow.application.chat;
 
 
 import com.summit.core.agent.Agent;
@@ -6,9 +6,8 @@ import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.Message;
 import com.summit.dp.agent.application.service.AgentService;
-import com.summit.dp.agent.application.service.impl.RuntimeContext;
+import com.summit.dp.agent.application.service.TeamPromptComposer;
 import com.summit.dp.agent.infrastructure.agent.IChatAgent;
-import com.summit.dp.shared.utils.RequestPreparer;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.shared.model.ToolCatalog;
 import com.summit.dp.agent.infrastructure.agent.SubAgent;

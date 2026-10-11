@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.agent.infrastructure.workflow.TeamPromptComposer;
+import com.summit.dp.agent.application.service.TeamPromptComposer;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.execution.application.service.ExecutionResumeCoordinator;
 import com.summit.dp.shared.model.ToolCatalog;

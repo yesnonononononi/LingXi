@@ -1,10 +1,14 @@
 package com.summit.dp.shared.utils;
 
+import com.summit.dp.workflow.application.chat.ChatImageResolver;
+
+import com.summit.dp.workflow.application.chat.RequestPreparer;
+
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.conf.ModelConfig;
 import com.summit.ddd.application.vo.Result;
-import com.summit.dp.agent.application.command.ChatCommand;
-import com.summit.dp.agent.application.service.impl.RuntimeContext;
+import com.summit.dp.workflow.application.chat.ChatCommand;
+import com.summit.dp.workflow.application.chat.RuntimeContext;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.shared.config.workflow.AgentAccessMode;

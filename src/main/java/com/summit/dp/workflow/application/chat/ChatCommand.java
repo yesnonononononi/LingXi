@@ -1,4 +1,4 @@
-package com.summit.dp.agent.application.command;
+package com.summit.dp.workflow.application.chat;
 
 
 import org.springframework.web.multipart.MultipartFile;

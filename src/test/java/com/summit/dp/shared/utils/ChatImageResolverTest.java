@@ -1,8 +1,12 @@
 package com.summit.dp.shared.utils;
 
+import com.summit.dp.workflow.application.chat.ChatImageResolver;
+
+import com.summit.dp.workflow.application.chat.RequestPreparer;
+
 import com.summit.core.agent.Image;
 import com.summit.core.conversation.message.UserMessageEntity;
-import com.summit.dp.agent.application.command.ChatCommand;
+import com.summit.dp.workflow.application.chat.ChatCommand;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.session.domain.model.SessionMessage;
 import org.junit.jupiter.api.Test;

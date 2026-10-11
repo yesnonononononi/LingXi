@@ -1,4 +1,4 @@
-package com.summit.dp.shared.utils;
+package com.summit.dp.workflow.application.chat;
 
 import cn.hutool.core.util.IdUtil;
 import com.summit.dp.execution.ExecutionAttributes;
@@ -11,9 +11,9 @@ import com.summit.core.agent.Image;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.ddd.application.vo.Result;
-import com.summit.dp.agent.application.command.ChatCommand;
+import com.summit.dp.workflow.application.chat.ChatCommand;
 import com.summit.dp.agent.application.service.AgentService;
-import com.summit.dp.agent.application.service.impl.RuntimeContext;
+import com.summit.dp.workflow.application.chat.RuntimeContext;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.shared.model.ToolCatalog;

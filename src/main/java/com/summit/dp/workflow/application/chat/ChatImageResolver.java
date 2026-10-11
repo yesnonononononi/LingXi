@@ -1,4 +1,4 @@
-package com.summit.dp.shared.utils;
+package com.summit.dp.workflow.application.chat;
 
 import cn.hutool.core.codec.Base64;
 import com.summit.core.agent.Image;

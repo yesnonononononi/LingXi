@@ -1,11 +1,11 @@
-package com.summit.dp.agent.api.controller;
+package com.summit.dp.workflow.api.controller;
 
 import com.summit.ddd.application.vo.Result;
-import com.summit.dp.agent.api.request.ChatRequest;
-import com.summit.dp.agent.application.command.ChatCommand;
-import com.summit.dp.agent.application.service.ChatService;
-import com.summit.dp.agent.application.vo.ChatAcceptanceVO;
-import com.summit.dp.agent.application.vo.ChatLimitsVO;
+import com.summit.dp.workflow.api.request.ChatRequest;
+import com.summit.dp.workflow.application.chat.ChatCommand;
+import com.summit.dp.workflow.application.chat.ChatService;
+import com.summit.dp.workflow.application.chat.ChatAcceptanceVO;
+import com.summit.dp.workflow.application.chat.ChatLimitsVO;
 import com.summit.dp.session.domain.model.SessionMessage;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;

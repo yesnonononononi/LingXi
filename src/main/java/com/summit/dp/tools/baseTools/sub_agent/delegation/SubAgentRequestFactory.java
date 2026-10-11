@@ -11,7 +11,7 @@ import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.agent.infrastructure.workflow.TeamPromptComposer;
+import com.summit.dp.agent.application.service.TeamPromptComposer;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.shared.context.SettingsView;

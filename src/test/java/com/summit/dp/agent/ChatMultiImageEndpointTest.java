@@ -1,10 +1,10 @@
 package com.summit.dp.agent;
 
 import com.summit.ddd.application.vo.Result;
-import com.summit.dp.agent.api.controller.ChatController;
-import com.summit.dp.agent.application.command.ChatCommand;
-import com.summit.dp.agent.application.service.ChatService;
-import com.summit.dp.agent.application.vo.ChatAcceptanceVO;
+import com.summit.dp.workflow.api.controller.ChatController;
+import com.summit.dp.workflow.application.chat.ChatCommand;
+import com.summit.dp.workflow.application.chat.ChatService;
+import com.summit.dp.workflow.application.chat.ChatAcceptanceVO;
 import com.summit.dp.session.domain.model.SessionMessage;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;

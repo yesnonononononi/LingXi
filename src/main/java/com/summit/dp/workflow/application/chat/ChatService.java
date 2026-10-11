@@ -1,9 +1,7 @@
-package com.summit.dp.agent.application.service;
+package com.summit.dp.workflow.application.chat;
 
 import com.summit.ddd.application.vo.Result;
-import com.summit.dp.agent.application.command.ChatCommand;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.agent.application.vo.ChatAcceptanceVO;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 public interface ChatService {

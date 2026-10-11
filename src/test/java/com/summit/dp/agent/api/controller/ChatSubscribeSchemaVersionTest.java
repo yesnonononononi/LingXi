@@ -1,6 +1,8 @@
 package com.summit.dp.agent.api.controller;
 
-import com.summit.dp.agent.application.service.ChatService;
+import com.summit.dp.workflow.api.controller.ChatController;
+
+import com.summit.dp.workflow.application.chat.ChatService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;

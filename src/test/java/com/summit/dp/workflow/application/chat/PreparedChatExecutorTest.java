@@ -1,4 +1,8 @@
-package com.summit.dp.agent.application.service.impl;
+package com.summit.dp.workflow.application.chat;
+
+import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
+
+import com.summit.dp.workflow.application.chat.RuntimeContext;
 
 import com.summit.dp.session.domain.repo.MessageRepository;
 
@@ -15,7 +19,7 @@ import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.dp.agent.infrastructure.listener.AgentEventListener;
 import com.summit.dp.agent.infrastructure.runtime.SessionExecutionRegistry;
-import com.summit.dp.agent.infrastructure.workflow.AgentWorkflowOrchestrator;
+import com.summit.dp.workflow.application.chat.AgentWorkflowOrchestrator;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.execution.application.service.ExecutionLocator;
@@ -28,7 +32,7 @@ import com.summit.dp.shared.config.workflow.AgentAccessMode;
 import com.summit.dp.shared.config.workflow.CommandApprovalPolicy;
 import com.summit.dp.shared.context.ExecutionContext;
 import com.summit.dp.shared.event.SseEventPublisher;
-import com.summit.dp.shared.utils.RequestPreparer;
+import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
