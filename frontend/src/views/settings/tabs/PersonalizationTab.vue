@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { nextTick, ref } from 'vue';
+import { computed, nextTick, ref } from 'vue';
+import SettingsSelect from '../../../components/common/SettingsSelect.vue';
 import { usePersonalizationTab } from './usePersonalizationTab';
 
 const { copy, config, styles, draft, loading, saving, error, saved, dirty, load, save } = usePersonalizationTab();
+const styleOptions = computed(() => styles.value.map(style => ({ value: style.value, label: copy.value.styles[style.value] || style.label })));
 const editing = ref<'title' | 'commonAgentName' | null>(null);
 const identityInput = ref<HTMLInputElement | null>(null);
 const instructionInput = ref<HTMLTextAreaElement | null>(null);
@@ -60,9 +62,10 @@ async function submit() {
             <label for="personalization-style" class="text-xs font-semibold text-gray-800 dark:text-zinc-100">{{ copy.style }}</label>
             <p class="mt-1.5 text-xs leading-relaxed text-gray-500 dark:text-zinc-400">{{ copy.styleHint }}</p>
           </div>
-          <select id="personalization-style" v-model="draft.replyStyle" class="personalization-input identity-control cursor-pointer">
-            <option v-for="style in styles" :key="style.value" :value="style.value">{{ copy.styles[style.value] || style.label }}</option>
-          </select>
+          <div class="identity-control">
+            <SettingsSelect id="personalization-style" v-model="draft.replyStyle" :label="copy.style"
+              :options="styleOptions" :disabled="saving || loading" class="w-full" />
+          </div>
         </section>
 
         <section class="personalization-card">
