@@ -135,7 +135,8 @@ public class ChatTurnRuntimeListener implements RuntimeListener {
         guard("refreshUsage", executionId,
                 () -> chatTurnService.refreshUsage(executionId,
                         toLong(usage.inputTokenCount()), toLong(usage.outputTokenCount()),
-                        toLong(usage.totalTokenCount()), rootSessionId));
+                        toLong(usage.totalTokenCount()), toLong(usage.cacheTokens()),
+                        toLong(usage.reasoningTokens()), rootSessionId));
     }
 
     /**

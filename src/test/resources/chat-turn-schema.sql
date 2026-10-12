@@ -18,6 +18,8 @@ CREATE TABLE chat_turn (
     input_token_count  BIGINT       NULL,
     output_token_count BIGINT       NULL,
     total_token_count  BIGINT       NULL,
+    cache_tokens      BIGINT       NULL,
+    reasoning_tokens  BIGINT       NULL,
     started_at         TIMESTAMP(3) NULL,
     completed_at       TIMESTAMP(3) NULL,
     error_reason       VARCHAR(1000) NULL,

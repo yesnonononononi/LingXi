@@ -31,6 +31,8 @@ public class ChatTurnConverter {
                 .inputTokens(turn.getInputTokenCount())
                 .outputTokens(turn.getOutputTokenCount())
                 .totalTokens(turn.getTotalTokenCount())
+                .cacheTokens(turn.getCacheTokens())
+                .reasoningTokens(turn.getReasoningTokens())
                 .startedAt(turn.getStartedAt())
                 .completedAt(turn.getCompletedAt())
                 .errorReason(turn.getErrorReason())

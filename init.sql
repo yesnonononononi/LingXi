@@ -209,6 +209,8 @@ CREATE TABLE IF NOT EXISTS chat_turn (
     input_token_count  BIGINT       NULL COMMENT '本轮已采集输入token；NULL表示未知(区别于已知的0)',
     output_token_count BIGINT       NULL COMMENT '本轮已采集输出token；NULL表示未知(区别于已知的0)',
     total_token_count  BIGINT       NULL COMMENT '本轮已采集总token；NULL表示未知(区别于已知的0)',
+    cache_tokens      BIGINT       NULL COMMENT '输入中的缓存命中token；NULL表示未知',
+    reasoning_tokens  BIGINT       NULL COMMENT '输出中的推理token；NULL表示未知',
     started_at         DATETIME(3)  NULL COMMENT '本轮开始执行的时间(取框架onStart时刻)；未真正开始为NULL',
     completed_at       DATETIME(3)  NULL COMMENT '本轮完成、失败或取消的时间；未结束为NULL',
     error_reason       VARCHAR(1000) NULL COMMENT '本轮失败的面向用户原因；仅 status=FAILED 时渲染；未失败为NULL',

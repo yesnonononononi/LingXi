@@ -9,6 +9,8 @@ import com.summit.dp.shared.config.H2SchemaInitializer;
 import com.summit.dp.toolcall.infrastructure.persistence.mapper.ToolCallMapper;
 import com.summit.dp.toolcall.infrastructure.persistence.po.ToolCallPO;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
+import com.summit.dp.turn.infrastructure.persistence.mapper.ChatTurnMapper;
+import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.boot.DefaultApplicationArguments;
@@ -25,6 +27,35 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 class H2SchemaMigrationTest {
+    @Test
+    void tokenDetailColumnsAreAvailableAfterRepeatedBootstrap() throws Exception {
+        EmbeddedDatabase database = new EmbeddedDatabaseBuilder().setType(EmbeddedDatabaseType.H2)
+                .setName(UUID.randomUUID() + ";MODE=MySQL")
+                .addScript("stream-legacy-schema.sql").build();
+        try {
+            assertTrue(hasColumn(database, "chat_turn", "total_token_count"));
+            assertFalse(hasColumn(database, "chat_turn", "cache_tokens"));
+            assertFalse(hasColumn(database, "chat_turn", "reasoning_tokens"));
+            H2SchemaInitializer initializer = new H2SchemaInitializer();
+            initializer.h2SchemaBootstrap(database).run(new DefaultApplicationArguments());
+            initializer.h2SchemaBootstrap(database).run(new DefaultApplicationArguments());
+            MybatisConfiguration configuration = new MybatisConfiguration();
+            configuration.addMapper(ChatTurnMapper.class);
+            MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
+            factory.setDataSource(database);
+            factory.setConfiguration(configuration);
+            ChatTurnMapper turns = new SqlSessionTemplate(factory.getObject()).getMapper(ChatTurnMapper.class);
+            assertNull(turns.selectById(7L).getCacheTokens());
+            assertNull(turns.selectById(7L).getReasoningTokens());
+            ChatTurnPO row = ChatTurnPO.builder().id(7L).cacheTokens(12L).reasoningTokens(0L).build();
+            turns.updateById(row);
+            assertEquals(12L, turns.selectById(7L).getCacheTokens());
+            assertEquals(0L, turns.selectById(7L).getReasoningTokens());
+        } finally {
+            database.shutdown();
+        }
+    }
+
     @Test
     void partialLegacyDatabaseKeepsDataAndMigrationRunsTwice() throws Exception {
         EmbeddedDatabase database = new EmbeddedDatabaseBuilder().setType(EmbeddedDatabaseType.H2)

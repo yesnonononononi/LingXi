@@ -58,6 +58,10 @@ class ExecutionJsonTest {
             assertEquals(Duration.ofMillis(1250), restored.getAgentRequest().getModelConfig().getTimeout());
             assertEquals(original.getCreateAt(), restored.getCreateAt());
             assertEquals(12, restored.getTokenUsage().getTotalTokens());
+            assertEquals(8, restored.getTokenUsage().getInputTokens().getInputTokens());
+            assertEquals(3, restored.getTokenUsage().getInputTokens().getCacheHitTokens());
+            assertEquals(4, restored.getTokenUsage().getOutputTokens().getOutputTokens());
+            assertEquals(2, restored.getTokenUsage().getOutputTokens().getReasoningTokens());
             assertInstanceOf(SystemMessageEntity.class, restored.getMessages().get(0));
             assertInstanceOf(UserMessageEntity.class, restored.getMessages().get(1));
             assertInstanceOf(AiMessageEntity.class, restored.getMessages().get(2));
@@ -140,7 +144,8 @@ class ExecutionJsonTest {
                         .allowOutsideWorkspace(true).build()).build();
         return Execution.builder().id("101").agentId("chatAgent").agentRequest(request)
                 .executionState(ExecutionState.SUSPENDED).createAt(Instant.parse("2026-09-27T01:02:03.123456789Z"))
-                .messages(history).aiMessage(ai).tokenUsage(TokenUsageEntity.of(12, 8, 4))
+                .messages(history).aiMessage(ai).tokenUsage(new TokenUsageEntity(12, new TokenUsageEntity.InputTokens(8, 3),
+                        new TokenUsageEntity.OutputTokens(4, 2)))
                 .thinking(true).streaming(true).maxSteps(10).build();
     }
 }

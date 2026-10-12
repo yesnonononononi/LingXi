@@ -62,8 +62,21 @@ public class H2SchemaInitializer {
                 migrateStream(connection);
                 migrateV3(connection);
                 migrateV4(connection);
+                migrateV5(connection);
             }
         };
+    }
+
+    /** 必须先补齐用量列，启动后的轮次查询才不会因缺列失败。 */
+    private void migrateV5(Connection connection) throws Exception {
+        for (String column : List.of("cache_tokens", "reasoning_tokens")) {
+            if (!hasColumn(connection, "chat_turn", column)) {
+                ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                        "db/migration/V5_chat_turn_" + column + ".sql"), StandardCharsets.UTF_8));
+            }
+        }
+        ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                "db/migration/V5_record.sql"), StandardCharsets.UTF_8));
     }
 
     private String readScript(ClassPathResource script) throws Exception {

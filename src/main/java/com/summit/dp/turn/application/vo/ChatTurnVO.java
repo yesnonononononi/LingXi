@@ -55,6 +55,14 @@ public class ChatTurnVO {
     @JsonSerialize(using = PlainLongSerializer.class)
     private Long totalTokens;
 
+    /** 输入中的缓存命中 token；null 表示未知。 */
+    @JsonSerialize(using = PlainLongSerializer.class)
+    private Long cacheTokens;
+
+    /** 输出中的推理 token；null 表示未知。 */
+    @JsonSerialize(using = PlainLongSerializer.class)
+    private Long reasoningTokens;
+
     /** 首次开始执行时间（框架 onStart 时刻）；未真正开始为 null。 */
     private Instant startedAt;
 

@@ -44,6 +44,10 @@ public class ChatTurn {
     private Long inputTokenCount;
     private Long outputTokenCount;
     private Long totalTokenCount;
+    /** 缓存命中属于输入明细，不额外计入总量；null 表示未知。 */
+    private Long cacheTokens;
+    /** 推理属于输出明细，不额外计入总量；null 表示未知。 */
+    private Long reasoningTokens;
     /** 首次开始执行时间（取框架 onStart 时刻）；未真正开始为 {@code null}。 */
     private Instant startedAt;
     /** 进入终态的时间；未结束为 {@code null}。 */
@@ -198,7 +202,8 @@ public class ChatTurn {
      *
      * <p>{@code null} 不覆盖已知值：未采集到 ≠ 0，也绝不能用「未知」把已经采集到的数字抹掉。</p>
      */
-    public void refreshUsage(Long inputTokens, Long outputTokens, Long totalTokens) {
+    public void refreshUsage(Long inputTokens, Long outputTokens, Long totalTokens,
+                             Long cacheTokens, Long reasoningTokens) {
         if (inputTokens != null) {
             this.inputTokenCount = inputTokens;
         }
@@ -208,6 +213,12 @@ public class ChatTurn {
         if (totalTokens != null) {
             this.totalTokenCount = totalTokens;
         }
+        if (cacheTokens != null) {
+            this.cacheTokens = cacheTokens;
+        }
+        if (reasoningTokens != null) {
+            this.reasoningTokens = reasoningTokens;
+        }
     }
 
     private void finish(ChatTurnStatus target, Long inputTokens, Long outputTokens,
@@ -215,7 +226,7 @@ public class ChatTurn {
         if (status != null && status.isTerminal()) {
             if (status == target) {
                 // 幂等：重复的终态通知只补齐用量，绝不改写状态与结束时间。
-                refreshUsage(inputTokens, outputTokens, totalTokens);
+                refreshUsage(inputTokens, outputTokens, totalTokens, null, null);
                 return;
             }
             throw new IllegalStateException("轮次已是终态 " + status + "，不允许改写为 " + target
@@ -225,7 +236,7 @@ public class ChatTurn {
         if (completedAt != null) {
             this.completedAt = completedAt;
         }
-        refreshUsage(inputTokens, outputTokens, totalTokens);
+        refreshUsage(inputTokens, outputTokens, totalTokens, null, null);
     }
 
     private void requireNotTerminal(String action) {

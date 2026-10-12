@@ -45,11 +45,11 @@ class ChatTurnRuntimeListenerTest {
     }
 
     @Test
-    @DisplayName("完成事件的用量覆盖写入轮次：Integer → Long，三列原样透传")
+    @DisplayName("完成事件的用量覆盖写入轮次：Integer → Long，五项原样透传")
     void writesUsageFromCompletionEvent() {
         listener.onExecutionCompleted(new ExecutionCompleteEvent("3001", usage(120, 30, 150)));
 
-        verify(chatTurnService).refreshUsage("3001", 120L, 30L, 150L, null);
+        verify(chatTurnService).refreshUsage("3001", 120L, 30L, 150L, 7L, 4L, null);
     }
 
     @Test
@@ -58,7 +58,7 @@ class ChatTurnRuntimeListenerTest {
         listener.onExecutionError(new ExecutionErrorEvent("boom", null, "3002", usage(80, 20, 100), null));
 
         verify(chatTurnService).recordFailureReason("3002", "boom", null);
-        verify(chatTurnService).refreshUsage("3002", 80L, 20L, 100L, null);
+        verify(chatTurnService).refreshUsage("3002", 80L, 20L, 100L, 7L, 4L, null);
     }
 
     @Test
@@ -66,7 +66,7 @@ class ChatTurnRuntimeListenerTest {
     void writesUsageFromCancelEvent() {
         listener.onExecutionCancelled(new ExecutionCancelledEvent("3003", usage(50, 10, 60), null));
 
-        verify(chatTurnService).refreshUsage("3003", 50L, 10L, 60L, null);
+        verify(chatTurnService).refreshUsage("3003", 50L, 10L, 60L, 7L, 4L, null);
     }
 
     @Test
@@ -83,7 +83,7 @@ class ChatTurnRuntimeListenerTest {
         // 没有执行标识（框架兜底 UUID 路径）也跳过。
         listener.onExecutionCompleted(new ExecutionCompleteEvent(null, usage(1, 2, 3)));
 
-        verify(chatTurnService, never()).refreshUsage(anyString(), any(), any(), any(), any());
+        verify(chatTurnService, never()).refreshUsage(anyString(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -92,14 +92,14 @@ class ChatTurnRuntimeListenerTest {
         listener.onExecutionCompleted(new ExecutionCompleteEvent("3007",
                 TokenInfo.builder().totalTokenCount(150).build()));
 
-        verify(chatTurnService).refreshUsage("3007", null, null, 150L, null);
+        verify(chatTurnService).refreshUsage("3007", null, null, 150L, null, null, null);
     }
 
     @Test
     @DisplayName("入账失败只吞掉，不向外抛（观测链路不得拖垮主执行流）")
     void swallowsUsageFailures() {
         doThrow(new IllegalStateException("db down")).when(chatTurnService)
-                .refreshUsage(anyString(), nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class));
+                .refreshUsage(anyString(), nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class));
 
         assertDoesNotThrow(() -> listener.onExecutionCompleted(
                 new ExecutionCompleteEvent("3008", usage(1, 1, 2))));
@@ -144,7 +144,7 @@ class ChatTurnRuntimeListenerTest {
 
         assertDoesNotThrow(() -> listener.onExecutionError(
                 new ExecutionErrorEvent("boom", null, "3011", usage(1, 1, 2), null)));
-        verify(chatTurnService).refreshUsage("3011", 1L, 1L, 2L, null);
+        verify(chatTurnService).refreshUsage("3011", 1L, 1L, 2L, 7L, 4L, null);
     }
 
     @Test
@@ -178,6 +178,6 @@ class ChatTurnRuntimeListenerTest {
 
     private static TokenInfo usage(int input, int output, int total) {
         return TokenInfo.builder()
-                .inputTokenCount(input).outputTokenCount(output).totalTokenCount(total).build();
+                .inputTokenCount(input).outputTokenCount(output).totalTokenCount(total).cacheTokens(7).reasoningTokens(4).build();
     }
 }

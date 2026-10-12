@@ -83,7 +83,7 @@ class ChatTurnLifecycleTest {
         void waitingIsNotTerminal() {
             ChatTurn turn = accepted();
             turn.markRunning(Instant.now());
-            turn.refreshUsage(100L, 50L, 150L);
+            turn.refreshUsage(100L, 50L, 150L, null, null);
 
             turn.markWaiting();
 
@@ -147,19 +147,19 @@ class ChatTurnLifecycleTest {
         @DisplayName("用量覆盖而非累加；null 不覆盖已知值（未采集到 ≠ 0）")
         void usageIsOverwrittenAndNullNeverClobbers() {
             ChatTurn turn = accepted();
-            turn.refreshUsage(100L, 50L, 150L);
+            turn.refreshUsage(100L, 50L, 150L, null, null);
 
             // 同一累计值重复写入：不得翻倍。
-            turn.refreshUsage(100L, 50L, 150L);
+            turn.refreshUsage(100L, 50L, 150L, null, null);
             assertEquals(150L, turn.getTotalTokenCount(), "覆盖语义，不得累加");
 
             // 未采集到（null）不得把已知值抹成 null，也不得写成 0。
-            turn.refreshUsage(null, null, null);
+            turn.refreshUsage(null, null, null, null, null);
             assertEquals(100L, turn.getInputTokenCount());
             assertEquals(150L, turn.getTotalTokenCount());
 
             // 确实为 0 是合法值，要如实写入。
-            turn.refreshUsage(0L, 0L, 0L);
+            turn.refreshUsage(0L, 0L, 0L, null, null);
             assertEquals(0L, turn.getTotalTokenCount(), "已知为 0 与未知必须可区分");
         }
 
@@ -230,7 +230,7 @@ class ChatTurnLifecycleTest {
 
             service.markRunning(String.valueOf(EXECUTION_ID), Instant.now(), SESSION_ID);
             service.markWaiting(String.valueOf(EXECUTION_ID), SESSION_ID);
-            service.refreshUsage(String.valueOf(EXECUTION_ID), 1L, 2L, 3L, SESSION_ID);
+            service.refreshUsage(String.valueOf(EXECUTION_ID), 1L, 2L, 3L, null, null, SESSION_ID);
 
             verify(repository, never()).updateById(any(), any());
         }

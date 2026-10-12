@@ -88,7 +88,7 @@ public interface ChatTurnService {
      * 重复触发不得把同一执行算两遍；{@code null} 表示未采集到，不覆盖已知值。</p>
      */
     void refreshUsage(String executionId, Long inputTokens, Long outputTokens, Long totalTokens,
-                      Long rootSessionId);
+                      Long cacheTokens, Long reasoningTokens, Long rootSessionId);
 
     /**
      * 记下**面向用户的失败原因**（不改状态）。

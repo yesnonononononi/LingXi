@@ -125,12 +125,13 @@ public class ChatTurnServiceImpl implements ChatTurnService {
     @Override
     @Transactional
     public void refreshUsage(String executionId, Long inputTokens, Long outputTokens, Long totalTokens,
-                             Long rootSessionId) {
-        if (inputTokens == null && outputTokens == null && totalTokens == null) {
+                             Long cacheTokens, Long reasoningTokens, Long rootSessionId) {
+        if (inputTokens == null && outputTokens == null && totalTokens == null
+                && cacheTokens == null && reasoningTokens == null) {
             return;
         }
         mutate(executionId, "refreshUsage", rootSessionId,
-                turn -> turn.refreshUsage(inputTokens, outputTokens, totalTokens));
+                turn -> turn.refreshUsage(inputTokens, outputTokens, totalTokens, cacheTokens, reasoningTokens));
     }
 
     @Override

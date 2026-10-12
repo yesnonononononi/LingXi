@@ -17,7 +17,7 @@ import java.time.Instant;
  * <p>业务轮次是「用户单次请求」的权威记录，独立于框架 {@code execution}（后者是运行时快照）。
  * {@code execution_id} 可空：受理时框架执行可能还不存在；启动前就失败时永远为空。</p>
  *
- * <p>token 三列 {@code null} = 未采集到，{@code 0} = 确实为 0 —— 两者必须可区分，
+ * <p>token 用量列 {@code null} = 未采集到，{@code 0} = 确实为 0 —— 两者必须可区分，
  * 配合 MyBatis-Plus 默认的 NOT_NULL 更新策略，未赋值的列不会进入 UPDATE，
  * 因此「写 null」等价于「不改动已知值」。</p>
  */
@@ -62,6 +62,12 @@ public class ChatTurnPO {
 
     @TableField("total_token_count")
     private Long totalTokenCount;
+
+    @TableField("cache_tokens")
+    private Long cacheTokens;
+
+    @TableField("reasoning_tokens")
+    private Long reasoningTokens;
 
     @TableField("started_at")
     private Instant startedAt;

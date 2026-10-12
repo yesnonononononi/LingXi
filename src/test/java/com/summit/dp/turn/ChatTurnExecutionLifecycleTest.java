@@ -34,7 +34,7 @@ class ChatTurnExecutionLifecycleTest {
         for (ExecutionState state : new ExecutionState[]{ExecutionState.COMPLETED, ExecutionState.FAILED, ExecutionState.CANCELLED}) {
             ChatTurn turn = ChatTurn.accept(7001L, 200L, null, "model", "provider");
             turn.attachExecution(9001L);
-            turn.refreshUsage(100L, 50L, 150L);
+            turn.refreshUsage(100L, 50L, 150L, null, null);
             when(repository.findByExecutionId(9001L)).thenReturn(Optional.of(turn));
 
             projector.finishExecution(execution(state, completedAt));

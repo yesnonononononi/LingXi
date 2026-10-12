@@ -4,6 +4,11 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
+import com.summit.dp.turn.application.convert.ChatTurnConverter;
+import com.summit.dp.turn.application.service.impl.ChatTurnServiceImpl;
+import com.summit.dp.turn.application.vo.ChatTurnVO;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.turn.infrastructure.persistence.mapper.ChatTurnMapper;
 import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
 import com.summit.dp.turn.infrastructure.persistence.repository.ChatTurnRepositoryImpl;
@@ -16,10 +21,19 @@ import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -107,6 +121,95 @@ class ChatTurnRepositoryTest {
         ChatTurn reloaded = repository.findById(7002L).orElseThrow();
         assertNull(reloaded.getTotalTokenCount(), "未知用量读回仍是 null");
         assertNull(reloaded.getExecutionId(), "受理时未知执行 ID 的轮次，该列为空是合法状态");
+    }
+
+    @Test
+    void usageViewKeepsNumericDetailsAndUnknownValues() throws Exception {
+        ChatTurn turn = ChatTurn.accept(7090L, SESSION_ID, null, "model", "provider");
+        turn.refreshUsage(100L, 50L, 150L, 70L, 0L);
+        ChatTurnVO view = new ChatTurnConverter().toVO(turn, Instant.now());
+        ObjectMapper json = new ObjectMapper().findAndRegisterModules();
+        assertEquals(70L, json.readTree(json.writeValueAsString(view)).get("cacheTokens").longValue());
+        assertEquals(0L, json.readTree(json.writeValueAsString(view)).get("reasoningTokens").longValue());
+        assertTrue(json.readTree(json.writeValueAsString(view)).get("reasoningTokens").isNumber());
+        ChatTurnVO unknown = new ChatTurnConverter().toVO(
+                ChatTurn.accept(7099L, SESSION_ID, null, "model", "provider"), Instant.now());
+        assertNull(unknown.getCacheTokens());
+        assertNull(unknown.getReasoningTokens());
+    }
+
+    @Test
+    void usageDetailsRoundTripWithoutDoubleCountingOrNullClobbering() throws Exception {
+        ChatTurn turn = save(7091L, ChatTurnStatus.COMPLETED, EXECUTION_ID);
+        ChatTurnServiceImpl service = new ChatTurnServiceImpl(repository);
+        TransactionTemplate transaction = new TransactionTemplate(new DataSourceTransactionManager(database));
+        transaction.executeWithoutResult(status -> service.refreshUsage("9001", 100L, 50L, 150L, 70L, 20L, SESSION_ID));
+        transaction.executeWithoutResult(status -> service.refreshUsage("9001", 100L, 50L, 150L, 70L, 20L, SESSION_ID));
+        ChatTurn loaded = repository.findById(turn.getId()).orElseThrow();
+        assertEquals(70L, loaded.getCacheTokens());
+        assertEquals(20L, loaded.getReasoningTokens());
+        assertEquals(150L, loaded.getTotalTokenCount());
+
+        transaction.executeWithoutResult(status -> service.refreshUsage("9001", null, null, null, null, 0L, SESSION_ID));
+        loaded = repository.findById(turn.getId()).orElseThrow();
+        assertEquals(70L, loaded.getCacheTokens());
+        assertEquals(0L, loaded.getReasoningTokens());
+        assertEquals(ChatTurnStatus.COMPLETED, loaded.getStatus());
+        assertEquals(turn.getCompletedAt().toEpochMilli(), loaded.getCompletedAt().toEpochMilli());
+
+        ChatTurnVO view = new ChatTurnConverter().toVO(loaded, Instant.now());
+        ObjectMapper json = new ObjectMapper().findAndRegisterModules();
+        assertTrue(json.readTree(json.writeValueAsString(view)).get("cacheTokens").isNumber());
+        assertEquals(70L, view.getCacheTokens());
+        assertEquals(0L, view.getReasoningTokens());
+
+        transaction.executeWithoutResult(status -> {
+            service.refreshUsage("9001", null, null, null, 9L, 8L, SESSION_ID);
+            status.setRollbackOnly();
+        });
+        assertEquals(70L, repository.findById(turn.getId()).orElseThrow().getCacheTokens());
+        assertEquals(0L, repository.findById(turn.getId()).orElseThrow().getReasoningTokens());
+    }
+
+    @Test
+    void concurrentUsageUpdateRejectsStaleVersion() throws Exception {
+        save(7092L, ChatTurnStatus.RUNNING, EXECUTION_ID);
+        ChatTurn first = repository.findById(7092L).orElseThrow();
+        ChatTurn stale = repository.findById(7092L).orElseThrow();
+        first.refreshUsage(100L, 50L, 150L, 70L, 20L);
+        stale.refreshUsage(1L, 2L, 3L, 1L, 1L);
+        CountDownLatch start = new CountDownLatch(1);
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            List<Future<Boolean>> writes = new ArrayList<>();
+            for (ChatTurn snapshot : List.of(first, stale)) {
+                Callable<Boolean> write = () -> {
+                    start.await();
+                    try {
+                        repository.updateById(snapshot);
+                        return true;
+                    } catch (ClientException conflict) {
+                        return false;
+                    }
+                };
+                writes.add(executor.submit(write));
+            }
+            start.countDown();
+            int succeeded = 0;
+            for (Future<Boolean> write : writes) {
+                if (write.get(10, TimeUnit.SECONDS)) succeeded++;
+            }
+            assertEquals(1, succeeded);
+        }
+        ChatTurn loaded = repository.findById(7092L).orElseThrow();
+        assertEquals(2L, loaded.getVersion());
+        if (loaded.getCacheTokens() == 70L) {
+            assertEquals(20L, loaded.getReasoningTokens());
+            assertEquals(150L, loaded.getTotalTokenCount());
+        } else {
+            assertEquals(1L, loaded.getCacheTokens());
+            assertEquals(1L, loaded.getReasoningTokens());
+            assertEquals(3L, loaded.getTotalTokenCount());
+        }
     }
 
     @Test
