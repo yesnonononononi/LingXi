@@ -141,6 +141,10 @@ lingxi:
           max-iterations: 1000
           max-tokens: 258000
           reasoning-effort: medium
+          # Anthropic 提示前缀缓存：开启后 system prompt 与工具定义会带上 cache_control，
+          # 重复请求可直接从服务端缓存读取（写 1.25x、读 0.1x，第二次共享同一前缀就回本）。
+          # 关掉则 cache_read_input_tokens 恒为 0；对 OpenAI 协议无影响。
+          prompt-cache: true
           # 连续压缩轮次上限：连续这么多轮都在压缩（compact_context）就直接结束本次执行，
           # 避免把预算烧在「压缩—又被填满—再压缩」的循环里。
           max-consecutive-compactions: 3
