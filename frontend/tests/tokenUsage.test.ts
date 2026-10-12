@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolveTokenUsage, resolveTotalTokens } from '../src/utils/tokenUsage';
+import { resolveCacheHitRate, resolveTokenUsage, resolveTotalTokens, resolveUncachedInputTokens } from '../src/utils/tokenUsage';
 import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
 import type { ChatMessage, ChatTurn } from '../src/types/chat';
 import { createServer } from 'vite';
@@ -34,6 +34,20 @@ test('权威轮次的未知值不被气泡覆盖，真实 0 与未知可区分',
   assert.equal(resolveTotalTokens(usage), null);
   assert.equal(resolveTotalTokens({ totalTokenCount: 0 }), 0);
   assert.equal(resolveTokenUsage(null, { ...message, tokenInfo: undefined }), null);
+});
+
+test('缓存命中率以总输入量为分母，未缓存输入为输入减缓存读取', () => {
+  const usage = { inputTokenCount: 320577, outputTokenCount: 11580, totalTokenCount: 332157, cacheTokens: 312320 };
+  assert.equal(resolveCacheHitRate(usage), 312320 / 320577);
+  assert.equal((resolveCacheHitRate(usage)! * 100).toFixed(1), '97.4');
+  assert.equal(resolveUncachedInputTokens(usage), 8257);
+  assert.equal(resolveCacheHitRate({ inputTokenCount: 100, cacheTokens: 0 }), 0);
+  assert.equal(resolveUncachedInputTokens({ inputTokenCount: 100, cacheTokens: 0 }), 100);
+  for (const unknown of [null, {}, { inputTokenCount: 0, cacheTokens: 0 }, { inputTokenCount: 100 }, { cacheTokens: 20 }]) {
+    assert.equal(resolveCacheHitRate(unknown), null);
+  }
+  assert.equal(resolveUncachedInputTokens(null), null);
+  assert.equal(resolveUncachedInputTokens({ inputTokenCount: 100 }), null);
 });
 
 for (const type of ['EXECUTION_COMPLETED', 'EXECUTION_FAILED', 'EXECUTION_CANCELLED'] as const) {
@@ -71,23 +85,23 @@ test('实际消息组件同时展示历史和实时明细，仅在组尾展示',
     i18n.useI18n().locale.value = 'en-US';
     const props = { message: { ...message, content: '回答内容', isComplete: true }, isGroupTail: true };
     const live = await renderToString(createSSRApp(component, props));
-    for (const text of ['Input 100', 'Output 40', 'Cached 70', 'Reasoning 20']) {
+    for (const text of ['Round usage', 'Uncached input', '30 tok', 'Cache read', '70 tok', '70.0%', '40 tok', 'including reasoning 20 tok', 'popover="auto"']) {
       assert.ok(live.includes(text), `${text}: ${live}`);
     }
-    assert.ok(live.includes('cached: 70'));
-    assert.ok(live.includes('reasoning: 20'));
     const turn: ChatTurn = { turnId: 'turn-1', status: 'FAILED', inputTokens: 80,
-      outputTokens: 30, totalTokens: 110, cacheTokens: 0, reasoningTokens: null };
+      outputTokens: 30, totalTokens: 110, cacheTokens: 0, reasoningTokens: null,
+      modelName: 'model-1', modelProvider: 'provider-1' };
     const history = await renderToString(createSSRApp(component, { ...props, turn }));
-    assert.ok(history.includes('Input 80'));
-    assert.ok(history.includes('Cached 0'));
-    assert.ok(history.includes('Reasoning None'));
-    assert.ok(!history.includes('Cached 70'));
+    assert.ok(history.includes('80 tok'));
+    assert.ok(history.includes('0.0%'));
+    assert.ok(history.includes('including reasoning None'));
+    assert.ok(history.includes('provider-1/model-1'));
+    assert.ok(!history.includes('70 tok'));
     const head = await renderToString(createSSRApp(component, { ...props, isGroupTail: false }));
-    assert.ok(!head.includes('Cached 70'));
+    assert.ok(!head.includes('Round usage'));
     i18n.useI18n().locale.value = 'zh-CN';
     const chinese = await renderToString(createSSRApp(component, props));
-    for (const text of ['输入 100', '输出 40', '缓存命中 70', '推理 20', '其中缓存命中: 70', '其中推理: 20']) {
+    for (const text of ['本轮用量', '提供方 / 模型', '缓存命中', '未缓存输入', '缓存读取', '70.0%', '其中推理 20 tok']) {
       assert.ok(chinese.includes(text), text);
     }
   } finally {

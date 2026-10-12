@@ -23,3 +23,14 @@ export function resolveTotalTokens(usage: TokenInfo | null): number | null {
   }
   return null;
 }
+
+/** 分母必须是输入量；输入为 0 时命中率没有定义。 */
+export function resolveCacheHitRate(usage: TokenInfo | null): number | null {
+  if (usage?.cacheTokens == null || usage.inputTokenCount == null || usage.inputTokenCount <= 0) return null;
+  return usage.cacheTokens / usage.inputTokenCount;
+}
+
+export function resolveUncachedInputTokens(usage: TokenInfo | null): number | null {
+  if (usage?.inputTokenCount == null || usage.cacheTokens == null) return null;
+  return usage.inputTokenCount - usage.cacheTokens;
+}

@@ -541,22 +541,8 @@
           >{{ t('common.colon') }}{{ execStatusMeta.errorReason }}</span>
         </div>
 
-        <!-- 模型（模型名为空时隐藏该整项） -->
-        <div v-if="execModelLabel" class="flex flex-1 whitespace-nowrap items-center gap-1" :title="t('chat.message.execModel', { label: execModelLabel })">
-          <svg class="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-          </svg>
-          <span>{{ execModelLabel }}</span>
-        </div>
-
-        <!-- 用量统计（组尾展示一次；无摘要且无自带统计时隐藏，绝不显示成 0） -->
-        <div v-if="showExecutionMeta" class="flex flex-wrap items-center gap-x-2 gap-y-1 cursor-help" :title="tokenTooltip">
-          <svg class="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
-          </svg>
-          <span>{{ t('chat.message.usageTokens', { tokens: displayTokens }) }}</span>
-          <span v-if="tokenBreakdown" class="opacity-80">{{ tokenBreakdown }}</span>
-        </div>
+        <TokenUsagePopover v-if="showExecutionMeta" :usage="tokenUsage" :model-name="turn?.modelName"
+          :model-provider="turn?.modelProvider" :is-dark="isDark" />
 
         <!-- 耗时统计（组尾展示一次；标注「总历时包含等待时间」） -->
         <div v-if="showExecutionMeta" class="flex flex-1 whitespace-nowrap items-center gap-1">
@@ -596,7 +582,8 @@ import { AgentToolName } from '../../utils/toolNames';
 import { resolveToolRenderName } from '../../utils/toolDisplayNames';
 import { isActiveTurnStatus, isFailedTurnStatus, turnStatusLabel } from '../../utils/turnStatus';
 import { formatDurationOrPlaceholder } from '../../utils/format';
-import { resolveTokenUsage, resolveTotalTokens } from '../../utils/tokenUsage';
+import { resolveTokenUsage } from '../../utils/tokenUsage';
+import TokenUsagePopover from './TokenUsagePopover.vue';
 import { parseToolDiff } from '../../utils/toolDiff';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
 import { useStreamStickyScroll } from '../../composables/useStreamStickyScroll';
@@ -1219,9 +1206,6 @@ watch(shouldCollapseProcess, (collapse, wasCollapse) => {
 /** 本条消息所属回答组的轮次信息（权威来源）；null = 无轮次，不伪造统计。 */
 const execSummary = computed(() => props.turn ?? null);
 
-/** token 数量展示：≥1000 显示 `1.2K tok`，否则 `123 tok`。 */
-const formatTokenCount = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}K ` : `${n} `);
-
 /**
  * 是否展示本组的执行元信息（用量/耗时）。
  * 仅组尾展示一次；实时流在摘要尚未写入会话表时，用气泡自带统计即时展示。
@@ -1245,31 +1229,6 @@ const displayDuration = computed(() => {
 
 
 const tokenUsage = computed(() => resolveTokenUsage(execSummary.value, props.message));
-const hasTokenUsage = computed(() => tokenUsage.value != null
-  && Object.values(tokenUsage.value).some(value => value != null));
-
-const displayTokens = computed(() => {
-  const total = resolveTotalTokens(tokenUsage.value);
-  return total == null ? t('format.noStats') : formatTokenCount(total);
-});
-
-const tokenStatsParams = computed(() => {
-  const usage = tokenUsage.value;
-  const fmt = (n?: number | null) => n == null ? t('format.none') : String(n);
-  return {
-    input: fmt(usage?.inputTokenCount),
-    output: fmt(usage?.outputTokenCount),
-    total: fmt(resolveTotalTokens(usage)),
-    cache: fmt(usage?.cacheTokens),
-    reasoning: fmt(usage?.reasoningTokens),
-  };
-});
-
-const tokenBreakdown = computed(() => hasTokenUsage.value
-  ? t('chat.message.tokenBreakdown', tokenStatsParams.value) : '');
-const tokenTooltip = computed(() => hasTokenUsage.value
-  ? t('chat.message.tokenStats', tokenStatsParams.value) : t('format.noStats'));
-
 /** 执行状态展示（仅摘要存在时展示）；进行中/失败/终态用不同配色，失败附带原因全文。 */
 const execStatusMeta = computed(() => {
   const e = execSummary.value;
@@ -1282,16 +1241,6 @@ const execStatusMeta = computed(() => {
     failed,
     errorReason: failed ? (e.errorReason || '').trim() : ''
   };
-});
-
-/** 模型展示（模型名为空时隐藏模型项；提供方可选）。 */
-const execModelLabel = computed(() => {
-  const e = execSummary.value;
-  if (!e) return '';
-  const name = (e.modelName || '').trim();
-  if (!name) return '';
-  const provider = (e.modelProvider || '').trim();
-  return provider ? `${name} · ${provider}` : name;
 });
 
 const displayTime = computed(() => {
