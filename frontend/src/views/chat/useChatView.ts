@@ -374,7 +374,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
       input,
       sessionId: toServerSessionId(localActiveId.value),
       workDir: '',
-      modelId: Number(workspace.selectedModelId.value ?? 0),
+      modelId: workspace.selectedModelId.value ?? '',
       workspaceId: Number(localActiveWorkspaceId.value ?? 0),
       agentId: Number(userConfig.agentId ?? 0),
       requirePlan: requirePlan === true,

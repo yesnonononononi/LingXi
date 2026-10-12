@@ -8,6 +8,13 @@
 
 const TEMP_SESSION_PREFIX = 'temp-';
 
+/** 雪花 ID 必须保留字符串；已经不安全的数字无法恢复，拒绝继续传递。 */
+export function toServerId(value: string | number | null | undefined): string | null {
+  if (value == null || (typeof value === 'number' && !Number.isSafeInteger(value))) return null;
+  const text = String(value).trim();
+  return /^[1-9]\d*$/.test(text) ? text : null;
+}
+
 /** 创建一个本地临时会话 ID（尚未在后端落库） */
 export function createTempSessionId(): string {
   // 复用 createLocalId 的自增种子，避免同一毫秒内创建多个会话时 ID 碰撞；

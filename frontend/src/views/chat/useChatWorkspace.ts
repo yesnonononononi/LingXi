@@ -1,6 +1,6 @@
 import { ref, onMounted, computed, type Ref } from 'vue';
 import { chatApi } from '../../services/api';
-import { toPositiveInt } from '../../utils/api';
+import { toServerId } from '../../utils/ids';
 import { useUserConfigStore } from '../../stores/userConfigStore';
 import type { AgentAccessMode, ChatSession, ModelConfig, WorkspaceRequest, WorkspaceVO } from '../../types/chat';
 import { normalizeSettingsTab, type SettingsTabKey } from '../../utils/enum';
@@ -109,9 +109,9 @@ export function useChatWorkspace(options: ChatWorkspaceOptions) {
 
   /** 切换选中的模型：写全局配置（乐观更新，失败由 store 回滚）。 */
   const handleUpdateModel = (modelId: string | number) => {
-    const id = toPositiveInt(modelId, 0);
+    const id = toServerId(modelId);
     if (!id) return;
-    void userConfig.patch('modelId', id, { modelId: id });
+    return userConfig.patch('modelId', id, { modelId: id });
   };
 
   /** 切换会话访问档位：写全局配置。 */
