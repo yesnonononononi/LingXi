@@ -173,11 +173,11 @@ export class TurnStreamReducer {
         break;
 
       case 'EXECUTION_FAILED':
-        this.handleExecutionFailed(event.errMsg);
+        this.handleExecutionFailed(event.errMsg, event.tokenInfo ?? null);
         break;
 
       case 'EXECUTION_CANCELLED':
-        this.handleExecutionCancelled();
+        this.handleExecutionCancelled(event.tokenInfo ?? null);
         break;
 
       case 'TURN_SNAPSHOT':
@@ -431,12 +431,13 @@ export class TurnStreamReducer {
     this.onScrollFollow?.();
   }
 
-  private handleExecutionFailed(errMsg?: string): void {
+  private handleExecutionFailed(errMsg: string | undefined, tokenInfo: TokenInfo | null): void {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
     bubble.isComplete = true;
     bubble.isThinking = false;
     bubble.isExploring = false;
     bubble.isSuspended = false;
+    bubble.tokenInfo = tokenInfo ?? undefined;
     // 执行终结：卡片不会再有就绪机会，取消全部待重试定时器
     this.clearAllCardRetries();
     // 失败原因写进 content 尾部：该轮不会再有 BODY 块，错误文案只能由实时事件补。
@@ -450,12 +451,13 @@ export class TurnStreamReducer {
     this.onScrollFollow?.();
   }
 
-  private handleExecutionCancelled(): void {
+  private handleExecutionCancelled(tokenInfo: TokenInfo | null): void {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
     bubble.isComplete = true;
     bubble.isThinking = false;
     bubble.isExploring = false;
     bubble.isSuspended = false;
+    bubble.tokenInfo = tokenInfo ?? undefined;
 
     // 执行终结：卡片不会再有就绪机会，取消全部待重试定时器
     this.clearAllCardRetries();

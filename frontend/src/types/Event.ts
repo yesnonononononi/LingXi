@@ -50,6 +50,8 @@ export interface TokenInfo {
   inputTokenCount?: number | null;
   outputTokenCount?: number | null;
   totalTokenCount?: number | null;
+  cacheTokens?: number | null;
+  reasoningTokens?: number | null;
 }
 
 /** 模型结束原因（对应 {@code ChatResponseEntity.FinishReason}）。 */

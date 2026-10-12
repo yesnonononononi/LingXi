@@ -550,11 +550,12 @@
         </div>
 
         <!-- 用量统计（组尾展示一次；无摘要且无自带统计时隐藏，绝不显示成 0） -->
-        <div v-if="showExecutionMeta" class="flex flex-1 whitespace-nowrap items-center gap-1 cursor-help" :title="tokenTooltip">
+        <div v-if="showExecutionMeta" class="flex flex-wrap items-center gap-x-2 gap-y-1 cursor-help" :title="tokenTooltip">
           <svg class="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
           </svg>
           <span>{{ t('chat.message.usageTokens', { tokens: displayTokens }) }}</span>
+          <span v-if="tokenBreakdown" class="opacity-80">{{ tokenBreakdown }}</span>
         </div>
 
         <!-- 耗时统计（组尾展示一次；标注「总历时包含等待时间」） -->
@@ -595,6 +596,7 @@ import { AgentToolName } from '../../utils/toolNames';
 import { resolveToolRenderName } from '../../utils/toolDisplayNames';
 import { isActiveTurnStatus, isFailedTurnStatus, turnStatusLabel } from '../../utils/turnStatus';
 import { formatDurationOrPlaceholder } from '../../utils/format';
+import { resolveTokenUsage, resolveTotalTokens } from '../../utils/tokenUsage';
 import { parseToolDiff } from '../../utils/toolDiff';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
 import { useStreamStickyScroll } from '../../composables/useStreamStickyScroll';
@@ -1242,35 +1244,31 @@ const displayDuration = computed(() => {
 });
 
 
+const tokenUsage = computed(() => resolveTokenUsage(execSummary.value, props.message));
+const hasTokenUsage = computed(() => tokenUsage.value != null
+  && Object.values(tokenUsage.value).some(value => value != null));
+
 const displayTokens = computed(() => {
-  const e = execSummary.value;
-  if (e) {
-    // totalTokens 缺失时用 input+output 兜底（两者都非 null 才相加）；仍为 null → 暂无统计
-    const total = e.totalTokens != null
-      ? e.totalTokens
-      : (e.inputTokens != null && e.outputTokens != null ? e.inputTokens + e.outputTokens : null);
-        return total == null ? t('format.noStats') : formatTokenCount(total);
-  }
-  // 实时流：气泡自带统计（本组摘要尚未写入会话表时的即时展示）
-  const own = props.message.tokenInfo?.totalTokenCount ?? props.message.tokens;
-  return own != null ? formatTokenCount(own) : t('format.noStats');
+  const total = resolveTotalTokens(tokenUsage.value);
+  return total == null ? t('format.noStats') : formatTokenCount(total);
 });
 
-const tokenTooltip = computed(() => {
-  const e = execSummary.value;
-  if (e) {
-    const fmt = (n?: number | null) => (n == null ? t('format.none') : String(n));
-    if (e.inputTokens == null && e.outputTokens == null && e.totalTokens == null) return t('format.noStats');
-    return t('chat.message.tokenStats', { input: fmt(e.inputTokens), output: fmt(e.outputTokens), total: fmt(e.totalTokens) });
-  }
-  const info = props.message.tokenInfo;
-  if (info) {
-    const fmt = (n?: number | null) => (n == null ? t('format.none') : String(n));
-    return t('chat.message.tokenStats', { input: fmt(info.inputTokenCount), output: fmt(info.outputTokenCount), total: fmt(info.totalTokenCount) });
-  }
-  const totalTokens = props.message.tokens;
-  return totalTokens != null ? t('chat.message.totalUsage', { t: totalTokens }) : t('format.noStats');
+const tokenStatsParams = computed(() => {
+  const usage = tokenUsage.value;
+  const fmt = (n?: number | null) => n == null ? t('format.none') : String(n);
+  return {
+    input: fmt(usage?.inputTokenCount),
+    output: fmt(usage?.outputTokenCount),
+    total: fmt(resolveTotalTokens(usage)),
+    cache: fmt(usage?.cacheTokens),
+    reasoning: fmt(usage?.reasoningTokens),
+  };
 });
+
+const tokenBreakdown = computed(() => hasTokenUsage.value
+  ? t('chat.message.tokenBreakdown', tokenStatsParams.value) : '');
+const tokenTooltip = computed(() => hasTokenUsage.value
+  ? t('chat.message.tokenStats', tokenStatsParams.value) : t('format.noStats'));
 
 /** 执行状态展示（仅摘要存在时展示）；进行中/失败/终态用不同配色，失败附带原因全文。 */
 const execStatusMeta = computed(() => {

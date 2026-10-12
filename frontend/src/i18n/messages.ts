@@ -371,7 +371,8 @@ export const messages: MessageSchema = {
         noMessages: '暂无消息',
         allLoaded: '已加载全部消息',
         subSessionFallback: '子代理',
-        tokenStats: '输入: {input} | 输出: {output} | 总计: {total}',
+        tokenStats: '输入: {input}（其中缓存命中: {cache}） | 输出: {output}（其中推理: {reasoning}） | 总计: {total}',
+        tokenBreakdown: '输入 {input} · 输出 {output} · 缓存命中 {cache} · 推理 {reasoning}',
         totalUsage: '总用量: {t} tokens',
       },
       view: {
@@ -1289,7 +1290,8 @@ export const messages: MessageSchema = {
         noMessages: 'No messages',
         allLoaded: 'All messages loaded',
         subSessionFallback: 'Sub-agent',
-        tokenStats: 'Input: {input} | Output: {output} | Total: {total}',
+        tokenStats: 'Input: {input} (cached: {cache}) | Output: {output} (reasoning: {reasoning}) | Total: {total}',
+        tokenBreakdown: 'Input {input} · Output {output} · Cached {cache} · Reasoning {reasoning}',
         totalUsage: 'Total usage: {t} tokens',
       },
       view: {

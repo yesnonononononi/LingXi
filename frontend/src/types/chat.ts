@@ -403,6 +403,10 @@ export interface ChatTurn {
   outputTokens?: number | null;
   /** 总 token；null = 未采集到（≠ 0） */
   totalTokens?: number | null;
+  /** 输入中的缓存命中 token；null = 未采集到 */
+  cacheTokens?: number | null;
+  /** 输出中的推理 token；null = 未采集到 */
+  reasoningTokens?: number | null;
   /** 开始时间；可能为 null */
   startedAt?: string | null;
   /** 完成时间；null = 尚未结束 */
