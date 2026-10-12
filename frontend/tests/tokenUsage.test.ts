@@ -7,11 +7,30 @@ import { createServer } from 'vite';
 import { createSSRApp } from 'vue';
 import { renderToString } from '@vue/server-renderer';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { parse as parseSfc } from '@vue/compiler-sfc';
+import postcss from 'postcss';
 
 const message: ChatMessage = {
   id: 'message-1', role: 'assistant', content: '', timestamp: 0,
   tokenInfo: { inputTokenCount: 100, outputTokenCount: 40, totalTokenCount: 140, cacheTokens: 70, reasoningTokens: 20 },
 };
+
+test('用量入口默认透明，只有 hover 和键盘聚焦才高亮', () => {
+  const source = readFileSync(new URL('../src/components/chat/TokenUsagePopover.vue', import.meta.url), 'utf8');
+  const { descriptor } = parseSfc(source);
+  const css = postcss.parse(descriptor.styles.map(style => style.content).join('\n'));
+  const backgrounds = new Map<string, string>();
+  css.walkRules(rule => {
+    rule.walkDecls('background', declaration => backgrounds.set(rule.selector, declaration.value));
+  });
+  assert.equal(backgrounds.get('.usage-trigger'), 'transparent');
+  assert.equal(backgrounds.get('.usage-trigger.dark'), 'transparent');
+  for (const selector of ['.usage-trigger:hover, .usage-trigger:focus-visible', '.usage-trigger.dark:hover, .usage-trigger.dark:focus-visible']) {
+    assert.ok(backgrounds.has(selector));
+    assert.notEqual(backgrounds.get(selector), 'transparent');
+  }
+});
 
 test('历史与实时用量保持同一明细，缓存和推理不重复计入总量', () => {
   const turn: ChatTurn = {
@@ -85,23 +104,24 @@ test('实际消息组件同时展示历史和实时明细，仅在组尾展示',
     i18n.useI18n().locale.value = 'en-US';
     const props = { message: { ...message, content: '回答内容', isComplete: true }, isGroupTail: true };
     const live = await renderToString(createSSRApp(component, props));
-    for (const text of ['Round usage', 'Uncached input', '30 tok', 'Cache read', '70 tok', '70.0%', '40 tok', 'including reasoning 20 tok', 'popover="auto"']) {
+    assert.ok(!/\btok\b/.test(live));
+    for (const text of ['Round usage', 'Uncached input', '30 token', 'Cache read', '70 token', '70.0%', '40 token', 'including reasoning 20 token', 'popover="auto"']) {
       assert.ok(live.includes(text), `${text}: ${live}`);
     }
     const turn: ChatTurn = { turnId: 'turn-1', status: 'FAILED', inputTokens: 80,
       outputTokens: 30, totalTokens: 110, cacheTokens: 0, reasoningTokens: null,
       modelName: 'model-1', modelProvider: 'provider-1' };
     const history = await renderToString(createSSRApp(component, { ...props, turn }));
-    assert.ok(history.includes('80 tok'));
+    assert.ok(history.includes('80 token'));
     assert.ok(history.includes('0.0%'));
     assert.ok(history.includes('including reasoning None'));
     assert.ok(history.includes('provider-1/model-1'));
-    assert.ok(!history.includes('70 tok'));
+    assert.ok(!history.includes('70 token'));
     const head = await renderToString(createSSRApp(component, { ...props, isGroupTail: false }));
     assert.ok(!head.includes('Round usage'));
     i18n.useI18n().locale.value = 'zh-CN';
     const chinese = await renderToString(createSSRApp(component, props));
-    for (const text of ['本轮用量', '提供方 / 模型', '缓存命中', '未缓存输入', '缓存读取', '70.0%', '其中推理 20 tok']) {
+    for (const text of ['本轮用量', '提供方 / 模型', '缓存命中', '未缓存输入', '缓存读取', '70.0%', '其中推理 20 token']) {
       assert.ok(chinese.includes(text), text);
     }
   } finally {
