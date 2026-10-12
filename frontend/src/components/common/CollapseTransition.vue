@@ -87,12 +87,18 @@ const onAfterLeave = (el: Element) => {
 </template>
 
 <style>
+/* 裁剪一律用 clip-path 而不是 overflow: hidden。
+   overflow: hidden 会让折叠块在动画期间变成 BFC，块内子元素的上下 margin 不再塌陷：
+   onEnter 量到的 scrollHeight 因此比展开结束后的稳态高度多出这些 margin（实测多 16px），
+   动画走完、Transition 类被移除的瞬间高度回落 —— 展开等于先撑高再缩回，就是那个「弹跳」；
+   leave 方向同理，收起开始时块内内容会先整体下移一次。
+   clip-path 只裁剪绘制、不建立 BFC，动画期间与稳态的盒模型完全一致，两个方向都不再有跳变。 */
 .collapse-transition-enter-active {
   transition: height 260ms cubic-bezier(0.25, 0.1, 0.25, 1),
               opacity 220ms ease,
               padding-top 260ms ease,
               padding-bottom 260ms ease !important;
-  overflow: hidden !important;
+  clip-path: inset(0) !important;
 }
 
 .collapse-transition-leave-active {
@@ -100,6 +106,6 @@ const onAfterLeave = (el: Element) => {
               opacity 180ms ease,
               padding-top 230ms ease,
               padding-bottom 230ms ease !important;
-  overflow: hidden !important;
+  clip-path: inset(0) !important;
 }
 </style>
