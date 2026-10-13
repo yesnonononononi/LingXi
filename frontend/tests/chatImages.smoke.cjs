@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, clipboard, ClipboardItem } = require('electron');
 
 const output = path.resolve(__dirname, '../node_modules/.tmp/chat-images');
 app.setPath('userData', path.join(output, 'profile'));
@@ -59,7 +59,7 @@ window.selectImages = async (names, paste=false) => {
     const bytes=Uint8Array.from(atob(canvas.toDataURL('image/png').split(',')[1]),char=>char.charCodeAt(0));
     transfer.items.add(new File([bytes],name,{type:'image/png'}));
   });
-  if(paste) document.querySelector('[contenteditable]').dispatchEvent(new ClipboardEvent('paste',{clipboardData:transfer,bubbles:true,cancelable:true}));
+  if(paste) document.querySelector('textarea').dispatchEvent(new ClipboardEvent('paste',{clipboardData:transfer,bubbles:true,cancelable:true}));
   else { const input = document.querySelector('input[type=file]'); input.files=transfer.files; input.dispatchEvent(new Event('change',{bubbles:true})); }
   await window.flush();
 };
@@ -77,6 +77,38 @@ await window.flush(); window.ready = true;`);
     await new Promise(resolve => setTimeout(resolve, 50));
   }
   assert.equal(await evaluate('window.ready'), true);
+  const rawText = '# 标题\n**粗体** 与 `code`\n- 列表\n\n<div>原样文本</div>';
+  await evaluate(`window.setText(${JSON.stringify(rawText)}); window.flush()`);
+  assert.equal(await evaluate('document.querySelector("textarea").value'), rawText);
+  assert.equal(await evaluate('document.querySelector("textarea").placeholder.length > 0'), true);
+  await evaluate('window.setText(""); window.flush(); document.querySelector("textarea").focus()');
+  const previousClipboard = await Promise.all((await clipboard.read()).map(async item =>
+    new ClipboardItem(Object.fromEntries(await Promise.all(item.types.map(async type => [type, await item.getType(type)]))))));
+  try {
+    await clipboard.write([new ClipboardItem({ 'text/plain': rawText, 'text/html': '<h1>标题</h1><p><strong>粗体</strong></p>' })]);
+    window.webContents.paste();
+    await evaluate('window.flush()');
+    assert.equal(await evaluate('document.querySelector("textarea").value'), rawText);
+  } finally {
+    await clipboard.write(previousClipboard);
+  }
+  await evaluate('window.setText(Array(30).fill("长文本").join("\\n")); window.flush()');
+  assert.equal(await evaluate('document.querySelector("textarea").style.height'), '120px');
+
+  // 直接输入也必须原样发送，不能经 Markdown 或 HTML 转换。
+  await evaluate(`(() => { const input = document.querySelector('textarea'); input.value = ${JSON.stringify(rawText)}; input.dispatchEvent(new Event('input', { bubbles:true })); })(); window.flush()`);
+  await evaluate('document.querySelector("textarea").dispatchEvent(new KeyboardEvent("keydown", { key:"Enter", bubbles:true, cancelable:true })); window.flush()');
+  assert.equal(await evaluate('window.sent.text'), rawText);
+  assert.equal(await evaluate('document.querySelector("textarea").value'), '');
+  assert.equal(await evaluate('document.querySelector("textarea").style.height'), '22px');
+  await evaluate('window.setText("**仍在编辑**"); window.flush()');
+  assert.equal(await evaluate('document.querySelector("textarea").dispatchEvent(new KeyboardEvent("keydown", { key:"Enter", shiftKey:true, bubbles:true, cancelable:true }))'), true);
+  assert.equal(await evaluate('document.querySelector("textarea").dispatchEvent(new KeyboardEvent("keydown", { key:"Enter", isComposing:true, bubbles:true, cancelable:true }))'), true);
+  assert.equal(await evaluate('document.querySelector("textarea").value'), '**仍在编辑**');
+  await evaluate('window.setText("/plan **计划正文**"); window.flush()');
+  assert.equal(await evaluate('document.querySelector("textarea").value'), '**计划正文**');
+  await evaluate('window.setText(""); window.flush(); document.querySelector("textarea").dispatchEvent(new KeyboardEvent("keydown", { key:"Backspace", bubbles:true, cancelable:true })); window.flush()');
+
   assert.equal(await evaluate('document.querySelector("input[type=file]").multiple'), true);
   assert.equal(await evaluate('document.querySelector("button[title=\\"正在读取图片数量限制\\"]").disabled'), true);
   await evaluate('window.limitsFail=false; [...document.querySelectorAll("button")].find(button => button.textContent.trim() === "重试").click(); window.flush()');
@@ -110,7 +142,7 @@ await window.flush(); window.ready = true;`);
   assert.equal(await evaluate('window.revoked.length'), 5);
   await evaluate('window.flush()');
   assert.deepEqual(await evaluate('window.runtimeErrors'), []);
-  console.log('实际输入与消息组件：限制失败/重试、多选、批量粘贴、超限、移除、发送、历史多图及预览释放通过。');
+  console.log('实际输入与消息组件：Markdown 原文输入/粘贴/回填/发送、输入高度、快捷键、计划命令及多图回归通过。');
   clearTimeout(deadline);
   window.destroy();
   app.exit(0);
