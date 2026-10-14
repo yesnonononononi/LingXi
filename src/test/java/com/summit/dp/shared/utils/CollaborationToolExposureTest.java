@@ -137,13 +137,13 @@ class CollaborationToolExposureTest {
     }
 
     @Test
-    @DisplayName("只读档位：基础工具集自动收敛成只读的那一半")
-    void readOnlyModeTrimsTheBasicToolsToTheirReadOnlyHalf() {
+    @DisplayName("只读档位：禁用编辑工具，保留终端及只读工具")
+    void readOnlyModeDisablesEditingAndKeepsTerminal() {
         AgentRequest request = request(null, null, ToolCatalog.DEFAULT_AGENT_TOOLS, REGISTERED, false,
                 AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of("read_file", "web_search"));
 
-        assertEquals(List.of("read_file", "web_search"), request.getToolList(),
-                "写工具（execute_command / edit_file）被只读滤网剔除，其余原样保留");
+        assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.READ_FILE, ToolCatalog.WEB_SEARCH),
+                request.getToolList(), "只读档禁用 edit_file，终端不按并发策略被剔除");
     }
 
     // --- 身份剔除：模型看不到它用不了的能力 ----------------------------------------------

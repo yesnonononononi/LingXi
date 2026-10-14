@@ -38,7 +38,7 @@ public interface ToolCatalog {
      * 要么需要发件人身份（{@code send_mail_to_agent}），给了也只会一调用就报错。</p>
      *
      * <p>只读档位不必在这里分叉：{@code RequestPreparer.resolveToolList} 会按注册表的只读标记剔除写工具，
-     * 这个清单在只读模式下自动收敛成 {@code read_file + web_search}。</p>
+     * 只读模式保留终端，禁用编辑工具；终端写入副作用不由档位保证。</p>
      */
     List<String> DEFAULT_AGENT_TOOLS =
             List.of(EXECUTE_COMMAND, READ_FILE, EDIT_FILE, WEB_SEARCH);

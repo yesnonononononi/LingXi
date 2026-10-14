@@ -3,8 +3,12 @@ package com.summit.dp.workspace;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceBridge.CommandResult;
+import com.summit.core.tool.ToolDefinition;
+import com.summit.core.tool.ToolExecuteResult;
+import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.dp.workflow.infrastructure.tools.arguments.ExecuteCommandRequest;
+import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import com.summit.dp.shared.model.WorkspaceType;
-import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.vo.WorkspaceVO;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
@@ -80,10 +84,7 @@ class SandboxWorkspaceIntegrationTest {
     void fullAccessWritesOutsideProjectThroughFilesAndCommandsAndProtectsFrameworkDirectories() throws Exception {
         Fixture fixture = createFixture();
         Path outside = Files.writeString((fixture.windows() ? outsideVolume : temporary).resolve("outside-project.txt"), "original");
-        if (fixture.windows()) {
-            assertThrows(ClientException.class, () -> fixture.provider().resolve(fixture.converter().toSpec(fixture.view(),
-                    WorkspaceType.SAND_BOX, AgentAccessMode.IN_WORKSPACE)));
-        } else {
+        if (!fixture.windows()) {
             Workspace restricted = fixture.provider().resolve(fixture.converter().toSpec(fixture.view(),
                     WorkspaceType.SAND_BOX, AgentAccessMode.IN_WORKSPACE));
             assertThrows(IOException.class, () -> restricted.bridge().writeString(outside, "changed", StandardCharsets.UTF_8));
@@ -113,29 +114,13 @@ class SandboxWorkspaceIntegrationTest {
     }
 
     @Test
-    void restrictedModesEitherEnforceWritesOrFailBeforeLaunching() throws Exception {
+    void writableAndReadOnlyModesStartAndApplyExplicitProjectPermissions() throws Exception {
         Fixture fixture = createFixture();
         boolean windows = fixture.windows();
         Path root = fixture.root();
         ConfiguredSandboxWorkspaceProvider provider = fixture.provider();
         WorkspaceConverter converter = fixture.converter();
         WorkspaceVO view = fixture.view();
-
-        if (windows) {
-            Path canary = Files.writeString(temporary.resolve("another-project.txt"), "HOST-CANARY");
-            for (AgentAccessMode mode : List.of(AgentAccessMode.IN_WORKSPACE, AgentAccessMode.READ_ONLY_IN_WORKSPACE)) {
-                ClientException failure = assertThrows(ClientException.class,
-                        () -> provider.resolve(converter.toSpec(view, WorkspaceType.SAND_BOX, mode)));
-                assertTrue(failure.getMessage().contains("不能保证项目外禁止写入"));
-                assertInstanceOf(UnsupportedOperationException.class, failure.getCause());
-            }
-            assertEquals("HOST-CANARY", Files.readString(canary));
-            assertFalse(Files.exists(temporary.resolve("resources")));
-            try (java.util.stream.Stream<Path> files = Files.list(state)) {
-                assertEquals(0, files.count());
-            }
-            return;
-        }
 
         Workspace writable = provider.resolve(converter.toSpec(view, WorkspaceType.SAND_BOX, AgentAccessMode.IN_WORKSPACE));
         Path file = writable.resolve("content.txt");
@@ -149,6 +134,14 @@ class SandboxWorkspaceIntegrationTest {
         Workspace readOnly = provider.resolve(converter.toSpec(view, WorkspaceType.SAND_BOX, AgentAccessMode.READ_ONLY_IN_WORKSPACE));
         assertEquals(writable.id(), readOnly.id());
         assertEquals("original", readOnly.bridge().readString(file, StandardCharsets.UTF_8));
+        CommandToolDefinitionExecutor terminal = new CommandToolDefinitionExecutor(new ObjectMapper());
+        ToolDefinition<?> definition = ToolDefinition.builder().id(ToolCatalog.EXECUTE_COMMAND)
+                .name(ToolCatalog.EXECUTE_COMMAND).executor(terminal).timeout(30L).maxOutput(4096).build();
+        String readCommand = windows
+                ? "[Console]::Write([IO.File]::ReadAllText('content.txt'))" : "cat content.txt";
+        ToolExecuteResult terminalRead = terminal.process(ExecuteCommandRequest.builder().command(readCommand).build(),
+                readOnly, definition);
+        assertTrue(terminalRead.isSuccess(), terminalRead.toString());
         assertThrows(IOException.class, () -> readOnly.bridge().writeString(file, "changed", StandardCharsets.UTF_8));
         assertThrows(IOException.class, () -> readOnly.bridge().createDirectories(root.resolve("forbidden")));
         assertThrows(IOException.class, () -> readOnly.bridge().deleteFile(file));
@@ -161,6 +154,8 @@ class SandboxWorkspaceIntegrationTest {
         assertEquals("original", Files.readString(file));
         assertFalse(Files.exists(root.resolve("forbidden")));
 
+        // Windows 的追加 ACL 不保证项目外默认拒绝；仅在具备该边界的后端断言。
+        if (windows) return;
         Path outsideFile = Files.writeString(temporary.resolve("another-project.txt"), "outside");
         String outsideWrite = windows
                 ? "$ErrorActionPreference='Stop'; [IO.File]::WriteAllText('" + outsideFile.toString().replace("'", "''") + "', 'changed')"

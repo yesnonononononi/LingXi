@@ -13,6 +13,7 @@ import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.team.application.vo.TeamVO;
@@ -66,6 +67,23 @@ class SubAgentRequestFactoryTest {
     private SubAgentRequestFactory factoryWithSkills() {
         return new SubAgentRequestFactory(workspaceService, modelService, settingsProvider,
                 workspaceConverter, new SkillRootResolver(skillDir.toString()), new BusinessSystemPromptBuilder(""));
+    }
+
+    @Test
+    @DisplayName("子执行继承只读档：禁用编辑工具，保留终端")
+    void readOnlyChildCannotRegainEditingThroughItsOwnToolConfiguration() {
+        stubModel();
+        AgentVO member = agent(6L, "架构师", "你是架构师");
+        member.setToolList(ToolCatalog.DEFAULT_AGENT_TOOLS);
+        for (AgentAccessMode mode : List.of(AgentAccessMode.READ_ONLY_IN_WORKSPACE, AgentAccessMode.IN_WORKSPACE)) {
+            ToolExecution parent = ToolExecution.builder().executionId("900")
+                    .attributes(AgentAccessMode.toAttributes(mode)).build();
+            AgentRequest request = build(member, teamOf(member), parent);
+            assertEquals(mode, AgentAccessMode.from(request.runtimeParametersOrDefault().getAttributes()));
+            assertEquals(mode.allowsWriteTools(), request.getToolList().contains(ToolCatalog.EDIT_FILE));
+            assertTrue(request.getToolList().contains(ToolCatalog.EXECUTE_COMMAND));
+            assertTrue(request.getToolList().contains(ToolCatalog.READ_FILE));
+        }
     }
 
     @Test

@@ -5,7 +5,7 @@ import java.util.Map;
 /** 会话的访问边界（读写范围）—— 属于业务侧。 */
 public enum AgentAccessMode {
 
-    /** 只读模式：读系统任意文件 + 无副作用终端命令 + 产出计划。 */
+    /** 只读模式禁用编辑工具；终端写入副作用不由档位保证。 */
     READ_ONLY_IN_WORKSPACE,
 
     /** 工作区内修改模式：允许读写工作区，工作区外只读。 */
@@ -20,12 +20,12 @@ public enum AgentAccessMode {
     /** 请求未指定时的默认档位。 */
     public static final AgentAccessMode DEFAULT = IN_WORKSPACE;
 
-    /** 是否允许使用会产生副作用的工具（编辑文件、写文件等）。 */
+    /** 是否允许使用文件编辑工具；终端授权单独处理。 */
     public boolean allowsWriteTools() {
         return this != READ_ONLY_IN_WORKSPACE;
     }
 
-    /** 是否允许在工作区之外产生写副作用。 */
+    /** 是否为沙箱策略额外授予项目外写入路径。 */
     public boolean allowsOutsideWrite() {
         return this == OUT_OF_WORKSPACE;
     }

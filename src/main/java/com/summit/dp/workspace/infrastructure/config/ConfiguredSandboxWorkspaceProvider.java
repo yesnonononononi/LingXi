@@ -37,10 +37,6 @@ public final class ConfiguredSandboxWorkspaceProvider implements WorkspaceProvid
                     .nodeExe(properties.nodeExe()).srtCli(properties.srtCli()).stateDirectory(properties.stateDirectory())
                     .objectMapper(mapper).timeout(new CommandTimeoutConfig(properties.timeout().toMillis(), TimeUnit.MILLISECONDS))
                     .build().resolve(spec);
-        } catch (UnsupportedOperationException failure) {
-            ClientException error = new ClientException("当前沙箱后端不能保证项目外禁止写入，无法启用工作区修改或只读档；请使用支持写入隔离的后端");
-            error.initCause(failure);
-            throw error;
         } catch (RuntimeException failure) {
             ClientException error = new ClientException("沙箱初始化失败，请检查运行资源和权限策略：" + failure.getMessage());
             error.initCause(failure);

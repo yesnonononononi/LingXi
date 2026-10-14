@@ -104,7 +104,7 @@ public class SubAgentRequestFactory {
                         .attributes(childAttributes(subAgent, toolExecution, subSessionId))
                         .build())
                 .systemPrompt(systemPromptBuilder.buildMemberPrompt(subAgent, team, argument.getPrompt()))
-                .toolList(memberTools(subAgent.getToolList(), skillRoot))
+                .toolList(memberTools(subAgent.getToolList(), skillRoot, accessMode))
                 .skillConfig(skillRoot == null ? null : new SkillConfig(skillRoot))
                 .task(List.of(task))
                 .build();
@@ -201,13 +201,14 @@ public class SubAgentRequestFactory {
      * <p>{@code read_skill} 与 {@code send_mail_to_agent} 同属「不写进 Agent 配置、由这里补」：
      * 名单即授权，不补则子执行拿到 Skill 提示词也调不动读它的工具。</p>
      */
-    private List<String> memberTools(List<String> configured, Path skillRoot) {
+    private List<String> memberTools(List<String> configured, Path skillRoot, AgentAccessMode accessMode) {
         List<String> tools = configured == null
                 ? new ArrayList<>()
                 : configured.stream()
                 .filter(tool -> tool != null && !tool.isBlank())
                 .map(String::trim)
                 .filter(tool -> !ToolCatalog.CALL_SUB_AGENT.equals(tool))
+                .filter(tool -> accessMode.allowsWriteTools() || !ToolCatalog.EDIT_FILE.equals(tool))
                 .distinct()
                 .collect(Collectors.toCollection(ArrayList::new));
         if (!tools.contains(ToolCatalog.SEND_MAIL_TO_AGENT)) {

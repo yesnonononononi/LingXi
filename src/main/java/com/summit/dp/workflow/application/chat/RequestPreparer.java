@@ -437,10 +437,11 @@ public class RequestPreparer {
             result.add(ToolCatalog.CREATE_PLAN);
         }
 
-        // 只读滤网放最后：无论清单来自配置还是被 requirePlan 追加过，一律在此收口
+        // 只读档禁用编辑工具；终端保留，命令的写入副作用不在此档位保证范围内。
         if (readOnly) {
             Set<String> permitted = toolCatalog.readOnlyNames();
-            result.removeIf(name -> name == null || !permitted.contains(name.trim()));
+            result.removeIf(name -> name == null || (!ToolCatalog.EXECUTE_COMMAND.equals(name.trim())
+                    && !permitted.contains(name.trim())));
         }
         return withoutUnusableCollaborationTools(result, context);
     }

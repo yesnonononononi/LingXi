@@ -34,7 +34,7 @@ public final class SandboxPolicyFactory {
             for (Path root : fileSystem.getRootDirectories()) roots.add(root.toAbsolutePath().normalize().toString());
             writes = List.copyOf(roots);
         }
-        return SandboxPolicy.builder().restrictWrites(!effective.allowsOutsideWrite()).allowedDomains(allowedDomains).allowRead(project)
+        return SandboxPolicy.builder().allowedDomains(allowedDomains).allowRead(project)
                 .allowWrite(effective.allowsWriteTools() ? writes : List.of())
                 .denyWrite(effective.allowsWriteTools() ? List.of() : project).build();
     }
