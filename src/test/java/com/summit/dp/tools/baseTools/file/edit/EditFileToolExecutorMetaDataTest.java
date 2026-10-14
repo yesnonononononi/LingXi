@@ -23,6 +23,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
+import java.util.concurrent.TimeUnit;
 import java.nio.file.Path;
 import java.util.Map;
 
@@ -128,11 +129,6 @@ class EditFileToolExecutorMetaDataTest {
         }
 
         @Override
-        public void createFile(Path path) throws IOException {
-            java.nio.file.Files.createFile(path);
-        }
-
-        @Override
         public void deleteFile(Path path) throws IOException {
             java.nio.file.Files.deleteIfExists(path);
         }
@@ -153,8 +149,8 @@ class EditFileToolExecutorMetaDataTest {
         }
 
         @Override
-        public CommandResult execute(java.util.List<String> command, String workDir, Charset charset,
-                                     long timeoutSeconds, long maxOutputChars) {
+        public CommandResult execute(String command, String workDir, Charset charset,
+                                     long timeoutSeconds, TimeUnit unit, long maxOutputChars) {
             throw new UnsupportedOperationException("not needed in this test");
         }
     }

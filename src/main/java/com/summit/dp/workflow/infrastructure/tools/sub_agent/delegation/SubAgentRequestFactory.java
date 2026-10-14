@@ -8,8 +8,11 @@ import com.summit.core.conf.SkillConfig;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.workspace.Workspace;
+import com.summit.core.runtime.RuntimeEnvironment;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.workspace.WorkspaceSpec;
+import com.summit.dp.shared.model.WorkspaceType;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.execution.ExecutionAttributes;
@@ -76,7 +79,8 @@ public class SubAgentRequestFactory {
                               List<Message> priorMessages) {
         ModelConfig childModel = resolveChildModel(subAgent.getModelId());
         Workspace parentWorkspace = toolExecution == null ? null : toolExecution.getWorkspace();
-        WorkspaceSpec workspaceSpec = resolveWorkspaceSpec(workDir, parentWorkspace, parentWorkspaceId);
+        AgentAccessMode accessMode = AgentAccessMode.from(toolExecution == null ? null : toolExecution.getAttributes());
+        WorkspaceSpec workspaceSpec = resolveWorkspaceSpec(workDir, parentWorkspace, parentWorkspaceId, accessMode);
         if (parentWorkspace != null && workspaceSpec == null) {
             throw new IllegalStateException("子执行缺少工作区配置，无法恢复工作目录: " + workDir);
         }
@@ -154,30 +158,26 @@ public class SubAgentRequestFactory {
     /**
      * 为子执行解析可用的 {@link WorkspaceSpec}。
      *
-     * <p>优先按模型显式给出的 {@code workDir} 精确回查已登记工作空间（local 模式下 workDir 即宿主目录，
-     * 可命中）。<b>缺陷B根因</b>：sandbox 模式下模型回传的 workDir 是「容器内路径」（如 {@code /t05_ws}），
-     * 与 {@code workspace.host_dir}（宿主绝对路径）永远不相等，{@code findByDir} 必然落空 ——
-     * 原实现随即抛 {@code IllegalStateException}，委派必失败。这里补一条回落：父执行已有运行时工作空间时，
-     * 改用父会话绑定的工作空间解析同源 spec，让子执行复用父工作空间。</p>
-     *
-     * <p>不做「放宽断言」式掩盖：只有当父执行确实没有工作空间（{@code parentWorkspace == null}）时，
-     * 才返回 {@code null}（子执行无工作空间）；若有父工作空间却解析不出 spec，仍由 {@link #build}
-     * 抛错，保证不静默放行一个没有工作空间的子执行。</p>
+     * 优先匹配登记目录，未匹配时沿用父工作空间；访问档位继承父请求快照，避免委派时放宽权限。
      */
     private WorkspaceSpec resolveWorkspaceSpec(String workDir,
                                                Workspace parentWorkspace,
-                                               Long parentWorkspaceId) {
+                                               Long parentWorkspaceId, AgentAccessMode accessMode) {
+        RuntimeEnvironment parentEnvironment = parentWorkspace == null ? null : parentWorkspace.runtimeEnvironment();
+        // 已开始的执行沿用父环境，设置页切换运行类型不能把子执行带出父沙箱。
+        WorkspaceType type = parentEnvironment == null ? workspaceConverter.resolveType()
+                : parentEnvironment.isolated() ? WorkspaceType.SAND_BOX : WorkspaceType.LOCAL;
         if (workDir != null && !workDir.isBlank()) {
             WorkspaceVO workspace = workspaceService.findByDir(workDir).getData();
             if (workspace != null) {
-                return workspaceConverter.toSpec(workspace, workspaceConverter.resolveType());
+                return workspaceConverter.toSpec(workspace, type, accessMode);
             }
         }
         if (parentWorkspace == null || parentWorkspaceId == null) {
             return null;
         }
         WorkspaceVO parent = workspaceService.findById(parentWorkspaceId).getData();
-        return parent == null ? null : workspaceConverter.toSpec(parent, workspaceConverter.resolveType());
+        return parent == null ? null : workspaceConverter.toSpec(parent, type, accessMode);
     }
 
     /** 子 Agent 必须显式绑定模型，不继承父任务或单例设置中的模型。 */

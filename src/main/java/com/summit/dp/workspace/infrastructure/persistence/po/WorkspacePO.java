@@ -26,7 +26,7 @@ public class WorkspacePO {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String name;
-    /** 项目宿主机/本地绝对路径; sandbox类型作为容器挂载源, local类型直接作为运行工作目录 */
+    /** 宿主目录是本地模式和 SRT 沙箱共同使用的真实工作路径。 */
     private String hostDir;
     private Instant createTime;
     private Instant updateTime;

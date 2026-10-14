@@ -8,7 +8,7 @@ import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolRegistry;
-import com.summit.core.workspace.WorkspaceManager;
+import com.summit.core.workspace.WorkspaceResolver;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallKeys;
@@ -36,7 +36,7 @@ import java.util.Objects;
 public class ApprovedCommandRestorer {
 
     private final ObjectMapper objectMapper;
-    private final WorkspaceManager workspaces;
+    private final WorkspaceResolver workspaces;
     private final ObjectProvider<ToolRegistry> toolRegistry;
 
     /** 重建审批通过时待执行的命令调用；环境或参数与快照不一致即抛 {@link ClientException}。 */
@@ -46,7 +46,7 @@ public class ApprovedCommandRestorer {
         if (tool == null || !(tool.executor() instanceof CommandToolDefinitionExecutor)) {
             throw new ClientException("审批命令工具不可用");
         }
-        Workspace workspace = workspaces.acquire(execution.getAgentRequest().getWorkspaceSpec());
+        Workspace workspace = workspaces.resolve(execution.getAgentRequest().getWorkspaceSpec());
         if (!Objects.equals(snapshot.workspaceId(), workspace.id())
                 || !Objects.equals(snapshot.workDir(), workspace.workDir())
                 || !Objects.equals(snapshot.shell(), workspace.runtimeEnvironment().shellType().name())) {

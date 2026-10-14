@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.jsontype.NamedType;
 import com.summit.core.json.ExecutionJson;
 import com.summit.dp.workspace.application.convert.LingXiWorkspaceSpec;
-import com.summit.sandbox.docker.DockerWorkspaceSpec;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilderCustomizer;
@@ -26,9 +25,7 @@ public class JsonConfig {
         simpleModule.addSerializer(Long.TYPE, ToStringSerializer.instance);
         simpleModule.addSerializer(BigInteger.class, ToStringSerializer.instance);
 
-        ObjectMapper objectMapper = ExecutionJson.newObjectMapper(
-                new NamedType(LingXiWorkspaceSpec.class, "local"),
-                new NamedType(DockerWorkspaceSpec.class, "docker"));
+        ObjectMapper objectMapper = ExecutionJson.newObjectMapper(new NamedType(LingXiWorkspaceSpec.class, "local"));
         // 多态反序列化的失败边界必须显式：未知子类型要**明确失败**，不得静默转成某个默认子类型。
         // 该开关本就默认开启；显式声明是把它钉成不变量 —— 一旦有人引入 defaultImpl 或关掉它，
         // 契约里「未知类型失败」的承诺就会悄悄失效。

@@ -12,7 +12,8 @@ import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.workspace.application.convert.LingXiWorkspaceSpec;
-import com.summit.sandbox.docker.DockerWorkspaceSpec;
+import com.summit.sandbox.SandboxWorkspaceSpec;
+import com.summit.sandbox.SandboxPolicy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -41,11 +42,11 @@ class ExecutionJsonTest {
     }
 
     @Test
-    void roundTripsCompleteExecutionForLocalAndDockerWorkspaces() throws Exception {
+    void roundTripsCompleteExecutionForLocalAndSandboxWorkspaces() throws Exception {
         LingXiWorkspaceSpec local = new LingXiWorkspaceSpec("local", "D:/workspace", LocalInstance.ID, Map.of());
-        DockerWorkspaceSpec docker = DockerWorkspaceSpec.builder().workDir("/workspace").hostDir("D:/workspace")
-                .principal(LocalInstance.ID).reuseByHostDirectory(true).build();
-        for (WorkspaceSpec spec : List.of(local, docker)) {
+        WorkspaceSpec sandbox = SandboxWorkspaceSpec.of("D:/workspace", LocalInstance.ID,
+                SandboxPolicy.builder().denyWrite(List.of("D:/workspace")).build());
+        for (WorkspaceSpec spec : List.of(local, sandbox)) {
             Execution original = execution(spec, Map.of(ExecutionAttributes.SESSION_ID, "201",
                     ExecutionAttributes.MODEL_CONFIG_ID, "301"));
             String json = mapper.writeValueAsString(original);

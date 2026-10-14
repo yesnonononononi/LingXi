@@ -121,7 +121,7 @@ class RequestPreparerExecutionIdentityTest {
         when(modelContextService.find(SESSION_ID)).thenReturn(Optional.empty());
         when(mcpService.currentConfig()).thenReturn(null);
         when(workspaceConverter.toSpec(any(com.summit.dp.shared.vo.WorkspaceVO.class),
-                any(com.summit.dp.shared.model.WorkspaceType.class))).thenReturn(null);
+                any(com.summit.dp.shared.model.WorkspaceType.class), any(AgentAccessMode.class))).thenReturn(null);
         when(toolCatalog.names()).thenReturn(java.util.Set.of());
         when(toolCatalog.readOnlyNames()).thenReturn(java.util.Set.of());
     }

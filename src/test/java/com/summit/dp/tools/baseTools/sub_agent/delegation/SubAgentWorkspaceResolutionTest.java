@@ -5,6 +5,7 @@ import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgent
 
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.runtime.workspace.Workspace;
+import com.summit.core.runtime.RuntimeEnvironment;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.ddd.application.vo.Result;
@@ -12,6 +13,7 @@ import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.shared.model.WorkspaceType;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.shared.vo.WorkspaceVO;
@@ -69,7 +71,7 @@ class SubAgentWorkspaceResolutionTest {
         when(workspaceService.findByDir("/t05_ws")).thenReturn(Result.success(null));
         when(workspaceService.findById(1L)).thenReturn(Result.success(parentVo));
         when(workspaceConverter.resolveType()).thenReturn(WorkspaceType.SAND_BOX);
-        when(workspaceConverter.toSpec(any(WorkspaceVO.class), any(WorkspaceType.class))).thenReturn(spec);
+        when(workspaceConverter.toSpec(any(WorkspaceVO.class), any(WorkspaceType.class), any(AgentAccessMode.class))).thenReturn(spec);
 
         WorkspaceSpec resolved = buildWithWorkDir("/t05_ws", parent, 1L);
 
@@ -87,13 +89,27 @@ class SubAgentWorkspaceResolutionTest {
 
         when(workspaceService.findByDir("/host/dir")).thenReturn(Result.success(matched));
         when(workspaceConverter.resolveType()).thenReturn(WorkspaceType.LOCAL);
-        when(workspaceConverter.toSpec(any(WorkspaceVO.class), any(WorkspaceType.class))).thenReturn(spec);
+        when(workspaceConverter.toSpec(any(WorkspaceVO.class), any(WorkspaceType.class), any(AgentAccessMode.class))).thenReturn(spec);
 
         WorkspaceSpec resolved = buildWithWorkDir("/host/dir", parent, 1L);
 
         assertSame(spec, resolved);
         verify(workspaceService).findByDir("/host/dir");
         verify(workspaceService, never()).findById(any());
+    }
+
+    @Test
+    void childInheritsParentSandboxAndReadOnlySnapshotAfterGlobalSettingsChange() {
+        WorkspaceSpec spec = mock(WorkspaceSpec.class);
+        WorkspaceVO parentVo = WorkspaceVO.builder().id(1L).name("project").hostDir("/project").workDir("/project").build();
+        Workspace parent = mock(Workspace.class);
+        when(parent.runtimeEnvironment()).thenReturn(RuntimeEnvironment.builder().isolated(true).build());
+        when(workspaceService.findById(1L)).thenReturn(Result.success(parentVo));
+        when(workspaceConverter.resolveType()).thenReturn(WorkspaceType.LOCAL);
+        when(workspaceConverter.toSpec(parentVo, WorkspaceType.SAND_BOX, AgentAccessMode.READ_ONLY_IN_WORKSPACE)).thenReturn(spec);
+        WorkspaceSpec resolved = buildWithWorkDir(null, parent, 1L, AgentAccessMode.READ_ONLY_IN_WORKSPACE);
+        assertSame(spec, resolved);
+        verify(workspaceConverter).toSpec(parentVo, WorkspaceType.SAND_BOX, AgentAccessMode.READ_ONLY_IN_WORKSPACE);
     }
 
     @Test
@@ -108,6 +124,10 @@ class SubAgentWorkspaceResolutionTest {
 
     /** 经 build 走完整链路，断言最终落到请求上的 workspaceSpec。 */
     private WorkspaceSpec buildWithWorkDir(String workDir, Workspace parentWorkspace, Long parentWorkspaceId) {
+        return buildWithWorkDir(workDir, parentWorkspace, parentWorkspaceId, AgentAccessMode.IN_WORKSPACE);
+    }
+
+    private WorkspaceSpec buildWithWorkDir(String workDir, Workspace parentWorkspace, Long parentWorkspaceId, AgentAccessMode accessMode) {
         AgentVO member = new AgentVO();
         member.setId(6L);
         member.setName("架构师");
@@ -122,7 +142,8 @@ class SubAgentWorkspaceResolutionTest {
         ToolExecution toolExecution = ToolExecution.builder()
                 .executionId("900")
                 .workspace(parentWorkspace)
-                .attributes(Map.of(ExecutionAttributes.AGENT_ID, "5", ExecutionAttributes.TEAM_ID, "3"))
+                .attributes(Map.of(ExecutionAttributes.AGENT_ID, "5", ExecutionAttributes.TEAM_ID, "3",
+                        AgentAccessMode.ATTRIBUTE_KEY, accessMode.name()))
                 .build();
 
         return factory.build(argument, member, TeamVO.builder().id(3L).commanderAgentId(5L)

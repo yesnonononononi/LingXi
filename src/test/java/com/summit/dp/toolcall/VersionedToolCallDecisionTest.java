@@ -19,7 +19,7 @@ import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolRegistry;
-import com.summit.core.workspace.WorkspaceManager;
+import com.summit.core.workspace.WorkspaceResolver;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.service.ExecutionLocator;
@@ -115,7 +115,7 @@ class VersionedToolCallDecisionTest {
     private final ExecutionResumeCoordinator resumeCoordinator = mock(ExecutionResumeCoordinator.class);
     private final RuntimeEventPublisher runtimeEvents = mock(RuntimeEventPublisher.class);
     private final ToolRegistry toolRegistry = mock(ToolRegistry.class);
-    private final WorkspaceManager workspaces = mock(WorkspaceManager.class);
+    private final WorkspaceResolver workspaces = mock(WorkspaceResolver.class);
     private final CommandToolDefinitionExecutor commandExecutor = mock(CommandToolDefinitionExecutor.class);
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -425,7 +425,7 @@ class VersionedToolCallDecisionTest {
         when(executionRepository.register(EXECUTION_ID_TEXT)).thenReturn(signal);
         doReturn(commandTool()).when(toolRegistry).getTool("command");
         Workspace approvedWorkspace = workspace();
-        when(workspaces.acquire(any(WorkspaceSpec.class))).thenReturn(approvedWorkspace);
+        when(workspaces.resolve(any(WorkspaceSpec.class))).thenReturn(approvedWorkspace);
 
         // 命令卡在执行中：第一次点击已受理，第二次点击在输出落库前到达。
         CountDownLatch running = new CountDownLatch(1);
@@ -548,7 +548,7 @@ class VersionedToolCallDecisionTest {
         when(executionRepository.register(EXECUTION_ID_TEXT)).thenReturn(signal);
         doReturn(commandTool()).when(toolRegistry).getTool("command");
         Workspace approvedWorkspace = workspace();
-        when(workspaces.acquire(any(WorkspaceSpec.class))).thenReturn(approvedWorkspace);
+        when(workspaces.resolve(any(WorkspaceSpec.class))).thenReturn(approvedWorkspace);
         when(commandExecutor.execute(any())).thenReturn(result);
     }
 

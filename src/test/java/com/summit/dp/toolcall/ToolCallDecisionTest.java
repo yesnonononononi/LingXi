@@ -25,7 +25,7 @@ import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolRegistry;
-import com.summit.core.workspace.WorkspaceManager;
+import com.summit.core.workspace.WorkspaceResolver;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.service.ExecutionLocator;
@@ -91,7 +91,7 @@ class ToolCallDecisionTest {
     private final ExecutionControl executionControl = mock(ExecutionControl.class);
     private final ExecutionActivity activity = mock(ExecutionActivity.class);
     private final ToolRegistry toolRegistry = mock(ToolRegistry.class);
-    private final WorkspaceManager workspaces = mock(WorkspaceManager.class);
+    private final WorkspaceResolver workspaces = mock(WorkspaceResolver.class);
     private final SseEventPublisher sseEventPublisher = mock(SseEventPublisher.class);
     private final RuntimeEventPublisher runtimeEvents = mock(RuntimeEventPublisher.class);
     private final ModelContextService modelContextService = mock(ModelContextService.class);
@@ -237,7 +237,7 @@ class ToolCallDecisionTest {
         when(executionRepository.register("3")).thenReturn(signal);
         when(executionRepository.findById("3")).thenReturn(Optional.of(execution));
         doReturn(commandTool()).when(toolRegistry).getTool("command");
-        when(workspaces.acquire(any(WorkspaceSpec.class))).thenReturn(workspace);
+        when(workspaces.resolve(any(WorkspaceSpec.class))).thenReturn(workspace);
         when(commandExecutor.execute(any())).thenReturn(ToolExecuteResult.success("real output"));
         when(executionControl.resume(any(Execution.class))).thenAnswer(invocation -> {
             resumed.countDown();

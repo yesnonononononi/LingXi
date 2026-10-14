@@ -35,6 +35,13 @@ spring:
       # 连接在池中保持空闲而不被回收的最小时间
       min-evictable-idle-time-millis: 300000
 lingxi:
+  # 运行资源由部署方通过 lingxi.sandbox.application-directory / node-exe / srt-cli 指定绝对路径。
+  # state-directory 可单独指向可写目录；缺资源时仅沙箱请求失败，不影响本地模式启动。
+  sandbox:
+    timeout: 60s
+    allowed-domains: ["*"]
+    deny-read: []
+    deny-write: []
   mcp:
     enabled: true
   # 数据存储目录：H2 库文件落在 <dir>/lingxi.mv.db；/config/current 的 dataStorage 原样回显此值。

@@ -22,7 +22,7 @@ import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolRegistry;
 import com.summit.core.tool.ToolExecuteResult;
-import com.summit.core.workspace.WorkspaceManager;
+import com.summit.core.workspace.WorkspaceResolver;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
@@ -84,7 +84,7 @@ class CommandApprovalExecutorTest {
     private final ExecutionRepository executionRepository = mock(ExecutionRepository.class);
     private final ExecutionControl executionControl = mock(ExecutionControl.class);
     private final ToolRegistry toolRegistry = mock(ToolRegistry.class);
-    private final WorkspaceManager workspaces = mock(WorkspaceManager.class);
+    private final WorkspaceResolver workspaces = mock(WorkspaceResolver.class);
     private final RuntimeEventPublisher runtimeEvents = mock(RuntimeEventPublisher.class);
     private final ModelContextService modelContextService = mock(ModelContextService.class);
     private final CommandToolDefinitionExecutor commandExecutor = mock(CommandToolDefinitionExecutor.class);
@@ -155,7 +155,7 @@ class CommandApprovalExecutorTest {
         when(executionRepository.findById("3")).thenReturn(Optional.of(execution));
         doReturn(commandTool()).when(toolRegistry).getTool("command");
         Workspace approvedWorkspace = workspace("workspace");
-        when(workspaces.acquire(any(WorkspaceSpec.class))).thenReturn(approvedWorkspace);
+        when(workspaces.resolve(any(WorkspaceSpec.class))).thenReturn(approvedWorkspace);
         when(commandExecutor.execute(any())).thenReturn(ToolExecuteResult.success("已执行"));
 
         CountDownLatch finished = new CountDownLatch(1);
@@ -185,7 +185,7 @@ class CommandApprovalExecutorTest {
         doReturn(commandTool()).when(toolRegistry).getTool("command");
         // 审批期间工作空间被换成了另一个 id
         Workspace otherWorkspace = workspace("other");
-        when(workspaces.acquire(any(WorkspaceSpec.class))).thenReturn(otherWorkspace);
+        when(workspaces.resolve(any(WorkspaceSpec.class))).thenReturn(otherWorkspace);
 
         ClientException ex = assertThrows(ClientException.class, () -> executor.decide(toolCall, true, null, null, null));
 
@@ -204,7 +204,7 @@ class CommandApprovalExecutorTest {
         when(executionRepository.findById("3")).thenReturn(Optional.of(execution));
         doReturn(commandTool()).when(toolRegistry).getTool("command");
         Workspace matchedWorkspace = workspace("workspace");
-        when(workspaces.acquire(any(WorkspaceSpec.class))).thenReturn(matchedWorkspace);
+        when(workspaces.resolve(any(WorkspaceSpec.class))).thenReturn(matchedWorkspace);
 
         ClientException ex = assertThrows(ClientException.class, () -> executor.decide(toolCall, true, null, null, null));
 
@@ -226,7 +226,7 @@ class CommandApprovalExecutorTest {
         when(executionRepository.findById("3")).thenReturn(Optional.of(execution));
         doReturn(commandTool()).when(toolRegistry).getTool("command");
         Workspace approvedWorkspace = workspace("workspace");
-        when(workspaces.acquire(any(WorkspaceSpec.class))).thenReturn(approvedWorkspace);
+        when(workspaces.resolve(any(WorkspaceSpec.class))).thenReturn(approvedWorkspace);
 
         CountDownLatch finished = new CountDownLatch(1);
         executor.decide(toolCall, true, null, null, finished::countDown);
@@ -251,7 +251,7 @@ class CommandApprovalExecutorTest {
         when(executionRepository.findById("3")).thenReturn(Optional.of(execution));
         doReturn(commandTool()).when(toolRegistry).getTool("command");
         Workspace approvedWorkspace = workspace("workspace");
-        when(workspaces.acquire(any(WorkspaceSpec.class))).thenReturn(approvedWorkspace);
+        when(workspaces.resolve(any(WorkspaceSpec.class))).thenReturn(approvedWorkspace);
 
         // 派发线程池不可用：T1 已提交，收尾永远起不来。
         CommandApprovalExecutor failing = new CommandApprovalExecutor(toolCallRepository,

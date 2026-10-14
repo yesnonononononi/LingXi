@@ -6,14 +6,13 @@ import com.summit.core.model.RequestModelInvokerFactory;
 import com.summit.core.runtime.RuntimeFactory;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.core.workspace.WorkspaceManager;
+import com.summit.core.workspace.WorkspaceResolver;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.context.annotation.Primary;
 
 import com.summit.runtime.agent.ChatAgent;
-import com.summit.runtime.workspace.WorkspaceDestroyer;
 
 @Component
 @Primary
@@ -28,12 +27,12 @@ public class IChatAgent extends ChatAgent {
      */
     public IChatAgent(RuntimeFactory defaultRuntimeFactory,
                       RequestModelInvokerFactory modelInvokerFactory,
-                      WorkspaceManager workspaceManager,
+                      WorkspaceResolver workspaceResolver,
                       @Qualifier("chatModelConfig") ModelConfig modelConfig,
                       ScopeMcpProvider scopeMcpProvider,
                       ExecutionRepository executionRepository,
                       ExecutionControl executionControl) {
-        super(defaultRuntimeFactory, modelInvokerFactory, workspaceManager, modelConfig, scopeMcpProvider,
+        super(defaultRuntimeFactory, modelInvokerFactory, workspaceResolver, modelConfig, scopeMcpProvider,
                 executionRepository, executionControl);
     }
 

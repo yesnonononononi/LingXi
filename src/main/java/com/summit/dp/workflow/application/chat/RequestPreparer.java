@@ -168,9 +168,8 @@ public class RequestPreparer {
         WorkspaceType workspaceType = workspace == null
                 ? WorkspaceType.NONE
                 : workspaceConverter.resolveType();
-        WorkspaceSpec spec = workspaceConverter.toSpec(workspace, workspaceType);
-
         AgentAccessMode mode = AgentAccessMode.effective(settings == null ? null : settings.accessMode(), workspaceType);
+        WorkspaceSpec spec = workspaceConverter.toSpec(workspace, workspaceType, mode);
 
         CommandApprovalPolicy policy = CommandApprovalPolicy.parse(
                 settings == null ? null : settings.commandApprovalPolicy());

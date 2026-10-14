@@ -89,7 +89,7 @@
         </dependency>
         <dependency>
             <groupId>io.github.yesnonononononi</groupId>
-            <artifactId>harness-sandbox-docker</artifactId>
+            <artifactId>harness-local-sandbox</artifactId>
             <version>${lingxi-starter}</version>
         </dependency>
         <dependency>
