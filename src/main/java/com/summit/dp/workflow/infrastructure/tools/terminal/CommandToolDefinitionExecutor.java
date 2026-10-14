@@ -14,6 +14,7 @@ import org.jspecify.annotations.NonNull;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Getter
@@ -51,17 +52,13 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
 
     public ToolExecuteResult process(ExecuteCommandRequest request, Workspace workspace, ToolDefinition<?> toolDefinition) throws IOException, InterruptedException {
 
-        ShellType shellType = workspace.runtimeEnvironment().shellType();
-
-        if (shellType == null) throw new IllegalStateException("无法识别当前操作系统，不能执行终端命令");
-
-        // The shell wrapper depends on the target environment; the bridge decides
-        // where the command actually runs (host process vs. sandbox).
+        // 原始命令交给框架，shell 的选择和启动由工作空间负责。
         WorkspaceBridge.CommandResult result = workspace.bridge().execute(
-                shellType.buildCommand(request.getCommand()),
+                request.getCommand(),
                 workspace.workDir(),
                 workspace.runtimeEnvironment().charset(),
                 toolDefinition.timeout(),
+                TimeUnit.SECONDS,
                 toolDefinition.maxOutput()
         );
 

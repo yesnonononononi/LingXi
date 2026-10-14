@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.RuntimeEnvironment;
 import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.runtime.workspace.Workspace;
+import com.summit.core.runtime.workspace.WorkspaceBridge;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecuteResult;
@@ -13,11 +14,18 @@ import com.summit.dp.workflow.infrastructure.tools.arguments.ExecuteCommandReque
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * 终端执行器的所有返回路径都必须把模型声明的 {@code intention} 放进 toolMetaData
@@ -27,6 +35,28 @@ class CommandToolDefinitionExecutorTest {
 
     private final CommandToolDefinitionExecutor executor =
             new CommandToolDefinitionExecutor(new ObjectMapper());
+
+    @Test
+    void rawModelCommandIsPassedToBridgeWithoutBusinessShellWrapping() throws Exception {
+        String command = "$value = 'A B'; Write-Output $value | Select-Object -First 1";
+        Workspace workspace = mock(Workspace.class);
+        WorkspaceBridge bridge = mock(WorkspaceBridge.class);
+        // 自定义 Bridge 负责 shell，业务执行路径只需要输出编码。
+        when(workspace.runtimeEnvironment()).thenReturn(RuntimeEnvironment.builder()
+                .charset(StandardCharsets.UTF_8).build());
+        when(workspace.bridge()).thenReturn(bridge);
+        when(workspace.workDir()).thenReturn(".");
+        when(bridge.execute(anyString(), eq("."), eq(StandardCharsets.UTF_8), eq(1L), eq(TimeUnit.SECONDS), eq(100L)))
+                .thenReturn(new WorkspaceBridge.CommandResult(0, "A B", false, false));
+        ToolDefinition<?> definition = ToolDefinition.builder().id("execute_command").name("execute_command")
+                .timeout(1L).maxOutput(100).executor(executor).build();
+
+        ToolExecuteResult result = executor.process(ExecuteCommandRequest.builder().command(command).build(),
+                workspace, definition);
+
+        assertTrue(result.isSuccess());
+        verify(bridge).execute(command, ".", StandardCharsets.UTF_8, 1L, TimeUnit.SECONDS, 100L);
+    }
 
     @Test
     void destructiveRefusalCarriesIntention() {
