@@ -41,6 +41,8 @@ class ExecutionJsonTest {
                 AgentAccessMode.from(restored.getAgentRequest().runtimeParametersOrDefault().getAttributes()));
         assertFalse(mapper.readTree(restored.getAgentRequest().getWorkspaceSpec().configuration()
                 .get("sandbox.policy")).path("allowWrite").isEmpty());
+        assertFalse(mapper.readTree(restored.getAgentRequest().getWorkspaceSpec().configuration()
+                .get("sandbox.policy")).path("restrictWrites").asBoolean(true));
     }
 
     @Test

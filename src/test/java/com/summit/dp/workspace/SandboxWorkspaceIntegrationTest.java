@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceBridge.CommandResult;
 import com.summit.dp.shared.model.WorkspaceType;
+import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.vo.WorkspaceVO;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
@@ -78,10 +79,15 @@ class SandboxWorkspaceIntegrationTest {
     @Test
     void fullAccessWritesOutsideProjectThroughFilesAndCommandsAndProtectsFrameworkDirectories() throws Exception {
         Fixture fixture = createFixture();
-        Path outside = Files.writeString(outsideVolume.resolve("outside-project.txt"), "original");
-        Workspace restricted = fixture.provider().resolve(fixture.converter().toSpec(fixture.view(),
-                WorkspaceType.SAND_BOX, AgentAccessMode.IN_WORKSPACE));
-        assertThrows(IOException.class, () -> restricted.bridge().writeString(outside, "changed", StandardCharsets.UTF_8));
+        Path outside = Files.writeString((fixture.windows() ? outsideVolume : temporary).resolve("outside-project.txt"), "original");
+        if (fixture.windows()) {
+            assertThrows(ClientException.class, () -> fixture.provider().resolve(fixture.converter().toSpec(fixture.view(),
+                    WorkspaceType.SAND_BOX, AgentAccessMode.IN_WORKSPACE)));
+        } else {
+            Workspace restricted = fixture.provider().resolve(fixture.converter().toSpec(fixture.view(),
+                    WorkspaceType.SAND_BOX, AgentAccessMode.IN_WORKSPACE));
+            assertThrows(IOException.class, () -> restricted.bridge().writeString(outside, "changed", StandardCharsets.UTF_8));
+        }
         assertEquals("original", Files.readString(outside));
         Workspace workspace = fixture.provider().resolve(fixture.converter().toSpec(fixture.view(),
                 WorkspaceType.SAND_BOX, AgentAccessMode.OUT_OF_WORKSPACE));
@@ -107,13 +113,29 @@ class SandboxWorkspaceIntegrationTest {
     }
 
     @Test
-    void businessModesSupportWorkspaceWritesAndEnforceReadOnlyThroughFilesAndCommands() throws Exception {
+    void restrictedModesEitherEnforceWritesOrFailBeforeLaunching() throws Exception {
         Fixture fixture = createFixture();
         boolean windows = fixture.windows();
         Path root = fixture.root();
         ConfiguredSandboxWorkspaceProvider provider = fixture.provider();
         WorkspaceConverter converter = fixture.converter();
         WorkspaceVO view = fixture.view();
+
+        if (windows) {
+            Path canary = Files.writeString(temporary.resolve("another-project.txt"), "HOST-CANARY");
+            for (AgentAccessMode mode : List.of(AgentAccessMode.IN_WORKSPACE, AgentAccessMode.READ_ONLY_IN_WORKSPACE)) {
+                ClientException failure = assertThrows(ClientException.class,
+                        () -> provider.resolve(converter.toSpec(view, WorkspaceType.SAND_BOX, mode)));
+                assertTrue(failure.getMessage().contains("不能保证项目外禁止写入"));
+                assertInstanceOf(UnsupportedOperationException.class, failure.getCause());
+            }
+            assertEquals("HOST-CANARY", Files.readString(canary));
+            assertFalse(Files.exists(temporary.resolve("resources")));
+            try (java.util.stream.Stream<Path> files = Files.list(state)) {
+                assertEquals(0, files.count());
+            }
+            return;
+        }
 
         Workspace writable = provider.resolve(converter.toSpec(view, WorkspaceType.SAND_BOX, AgentAccessMode.IN_WORKSPACE));
         Path file = writable.resolve("content.txt");

@@ -42,6 +42,7 @@ class WorkspaceConverterTest {
         assertEquals(List.of(temporary.toString()), new ObjectMapper().convertValue(policy.path("denyWrite"), List.class));
         assertTrue(policy.path("allowWrite").isEmpty());
         assertTrue(policy.path("denyRead").isEmpty());
+        assertTrue(policy.path("restrictWrites").asBoolean());
         assertEquals(temporary.toString(), policy.path("allowRead").get(0).asText());
         assertEquals("api.example.test", policy.path("allowedDomains").get(0).asText());
         assertEquals(spec, converter.toSpec(new Workspace(1L, "project", temporary.toString()),
@@ -58,6 +59,7 @@ class WorkspaceConverterTest {
         assertEquals("sandbox", spec.provider());
         assertEquals(roots, new ObjectMapper().convertValue(policy(spec).path("allowWrite"), List.class));
         assertTrue(policy(spec).path("denyWrite").isEmpty());
+        assertFalse(policy(spec).path("restrictWrites").asBoolean(true));
     }
 
     @Test
@@ -86,6 +88,8 @@ class WorkspaceConverterTest {
         assertTrue(policy(readOnly).path("allowWrite").isEmpty());
         assertEquals(List.of(second.getHostDir()), new ObjectMapper().convertValue(policy(secondWritable).path("allowWrite"), List.class));
         assertTrue(policy(secondWritable).path("denyWrite").isEmpty());
+        assertTrue(policy(writable).path("restrictWrites").asBoolean());
+        assertTrue(policy(readOnly).path("restrictWrites").asBoolean());
         assertEquals(List.of(first.getHostDir()), new ObjectMapper().convertValue(policy(writable).path("allowWrite"), List.class));
     }
 
