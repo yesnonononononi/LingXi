@@ -1,0 +1,2 @@
+org.springframework.boot.env.EnvironmentPostProcessor=\
+com.summit.dp.user_configs.infrastructure.config.UserConfigDataDirPostProcessor

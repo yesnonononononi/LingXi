@@ -13,7 +13,10 @@ public record UserConfigCommand(
         String workspaceType,
         Integer maxTokens,
         String reasoningEffort,
-        String renderTheme
+        String renderTheme,
+        String dataDir,
+        String skillDir,
+        Integer teamSize
 )  {
 
 }

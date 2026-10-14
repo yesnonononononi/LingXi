@@ -4,6 +4,7 @@ import type { TeamVO, AgentVO } from '../../../types/chat';
 import { isOk } from '../../../utils/api';
 import { useConfirm } from '../../../composables/useConfirm';
 import { useI18n } from '../../../i18n';
+import { useUserConfigStore } from '../../../stores/userConfigStore';
 
 /**
  * 团队描述上限。**必须与后端 `Team.MAX_DESCRIPTION_LENGTH` 及 `init.sql` 里
@@ -13,8 +14,19 @@ import { useI18n } from '../../../i18n';
  */
 const TEAM_DESCRIPTION_MAX_LENGTH = 1000;
 
+/**
+ * 团队规模上限的兜底值。真源是设置页的 {@code teamSize}（后端已解析 yaml 缺省），
+ * 这里只在配置尚未载入时兜住 —— 与后端 `UserConfig.DEFAULT_TEAM_SIZE` 保持一致。
+ */
+const TEAM_MEMBER_SIZE_FALLBACK = 10;
+
+/** 团队规模上限的合法区间，与后端 `UserConfig.MIN_TEAM_SIZE / MAX_TEAM_SIZE` 一致。 */
+export const TEAM_SIZE_MIN = 1;
+export const TEAM_SIZE_MAX = 50;
+
 export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
   const { t } = useI18n();
+  const userConfig = useUserConfigStore();
   const teamsList = ref<TeamVO[]>([]);
   const isTeamsLoading = ref(false);
   const teamsErrorMsg = ref('');
@@ -32,6 +44,40 @@ export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
   let teamToastTimer: number | undefined;
 
   const agentsList = ref<AgentVO[]>([]);
+
+  /** 规模上限的唯一来源：store（后端权威值）。界面与本地拦截都用它，不再各写一个 10。 */
+  const maxMemberSize = computed(() => userConfig.teamSize ?? TEAM_MEMBER_SIZE_FALLBACK);
+
+  /** 设置表单里的规模上限草稿值；保存后由 store 回读真值。 */
+  const teamSizeInput = ref<number>(TEAM_MEMBER_SIZE_FALLBACK);
+  const isSavingTeamSize = ref(false);
+  const syncTeamSizeInput = () => {
+    teamSizeInput.value = maxMemberSize.value;
+  };
+
+  const saveTeamSize = async () => {
+    teamSizeInput.value = Math.floor(Number(teamSizeInput.value));
+    if (!Number.isFinite(teamSizeInput.value)
+      || teamSizeInput.value < TEAM_SIZE_MIN
+      || teamSizeInput.value > TEAM_SIZE_MAX) {
+      teamFormError.value = t('settings.teams.errMaxMemberSizeRange', {
+        min: TEAM_SIZE_MIN, max: TEAM_SIZE_MAX,
+      });
+      syncTeamSizeInput();
+      return;
+    }
+    if (teamSizeInput.value === maxMemberSize.value) return;
+    isSavingTeamSize.value = true;
+    // 配置写失败会回滚到旧值，回读后把输入框拉回真值，避免界面停留在一个没保存的数字上。
+    const ok = await userConfig.patch('teamSize', teamSizeInput.value, { teamSize: teamSizeInput.value });
+    if (!ok) {
+      teamFormError.value = t('settings.teams.errMaxMemberSizeSave');
+    } else {
+      showTeamToast(t('settings.teams.maxMemberSizeSaved'));
+    }
+    syncTeamSizeInput();
+    isSavingTeamSize.value = false;
+  };
 
   const showTeamToast = (msg: string) => {
     teamToast.value = msg;
@@ -146,8 +192,8 @@ export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
       teamFormError.value = t('settings.teams.errMembersRequired');
       return;
     }
-    if (teamForm.value.agentIds.length > 10) {
-      teamFormError.value = t('settings.teams.errTooManyMembers');
+    if (teamForm.value.agentIds.length > maxMemberSize.value) {
+      teamFormError.value = t('settings.teams.errTooManyMembers', { max: maxMemberSize.value });
       return;
     }
     if (!teamForm.value.commanderAgentId) {
@@ -227,6 +273,9 @@ export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
   };
 
   onMounted(() => {
+    // 规模上限的真值在 store 里（后端 user_configs.team_size）；未载入时先用兜底值渲染。
+    userConfig.load().then(syncTeamSizeInput);
+    syncTeamSizeInput();
     loadTeams();
     loadAgents();
   });
@@ -246,6 +295,10 @@ export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
     isSubmittingTeam,
     teamToast,
     agentsList,
+    maxMemberSize,
+    teamSizeInput,
+    isSavingTeamSize,
+    saveTeamSize,
     getAgentName,
     loadTeams,
     startAddTeam,

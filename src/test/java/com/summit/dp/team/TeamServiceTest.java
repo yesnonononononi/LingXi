@@ -15,11 +15,12 @@ import com.summit.dp.team.application.service.impl.TeamValidator;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.team.domain.model.Team;
 import com.summit.dp.team.domain.repository.TeamRepository;
+import com.summit.dp.user_configs.application.service.SettingsProvider;
+import com.summit.dp.user_configs.application.vo.SettingsView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
@@ -50,10 +51,16 @@ class TeamServiceTest {
     void setUp() {
         repository = mock(TeamRepository.class);
         agentService = mock(AgentService.class);
-        validator = new TeamValidator(agentService);
-        ReflectionTestUtils.setField(validator, "maxMemberSize", 10);
+        SettingsProvider settingsProvider = mock(SettingsProvider.class);
+        when(settingsProvider.current()).thenReturn(Optional.of(settingsWithTeamSize(10)));
+        validator = new TeamValidator(agentService, settingsProvider);
         service = new TeamServiceImpl(repository, validator, agentService);
         controller = new TeamController(service);
+    }
+
+    /** 团队规模上限来自设置行（teamSize），测试里直接给一条只有该项有值的投影。 */
+    private static SettingsView settingsWithTeamSize(int teamSize) {
+        return new SettingsView(null, null, null, null, null, null, null, null, null, teamSize);
     }
 
     private AgentVO createAgent(Long id, String name) {

@@ -3,11 +3,14 @@ package com.summit.dp.user_configs.application.service.impl;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.user_configs.application.command.UserConfigCommand;
+import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.service.UserConfigService;
+import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.user_configs.application.vo.UserConfigVO;
 import com.summit.dp.user_configs.domain.model.UserConfig;
 import com.summit.dp.user_configs.domain.model.ReasoningEffort;
 import com.summit.dp.user_configs.domain.repository.UserConfigRepository;
+import com.summit.dp.user_configs.infrastructure.fs.SettingsDirectoryMigrator;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.model.WorkspaceType;
@@ -16,6 +19,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -34,13 +38,17 @@ public class UserConfigServiceImpl implements UserConfigService {
      * 校验 modelId 存在性：模型业务在 model 模块，这里只借它的断言，不复制规则。
      */
     private final ModelService modelService;
+    /** skillDir / teamSize 的生效值来源（已含 yaml 缺省），避免本类再写一遍回落判断。 */
+    private final SettingsProvider settingsProvider;
+    /** 改目录时负责把现有内容搬到新目录；搬成功才允许落库。 */
+    private final SettingsDirectoryMigrator directoryMigrator;
 
     /**
-     * 数据存储目录：普通配置项（{@code lingxi.data.dir}），H2 库文件即落在该目录。
-     * 它不再是库内字段，这里只负责把它原样回显给前端。
+     * 本进程实际打开的库目录：启动时绑定一次，且启动前已由 bootstrap 用设置行的值覆盖配置项，
+     * 所以它天然是「本次运行真正生效的目录」—— 改设置后两者不等，就是「待重启」。
      */
     @Value("${lingxi.data.dir}")
-    private String dataDir;
+    private String activeDataDir;
 
     @Override
     public Result<UserConfigVO> current() {
@@ -51,26 +59,32 @@ public class UserConfigServiceImpl implements UserConfigService {
             config = UserConfig.defaultConfig();
             repository.save(config);
         }
-        return Result.success(toVO(config));
+        return Result.success(toVO(config, settingsProvider.current().orElse(null)));
     }
 
     @Override
     public Result<Void> update(UserConfigCommand command) {
         if (command == null)
-            throw new ClientException("command is null");
+            throw new ClientException("配置更新参数不能为空");
         // 设置模型前先校验存在性：否则可以把 model_id 指向不存在的模型，
         // 后续聊天链路会拿着无效的模型配置发起调用。
         assertModelAccessible(command.modelId());
         // INSERT/UPDATE 按「行是否存在」判断，不能按 id 是否为 null 判断：
         // 默认配置自带主键 1，若按 id 判空会误走 UPDATE，在无行时静默影响 0 行。
         Optional<UserConfig> existing = repository.findSingleton();
-        UserConfig newC = update(command, existing.orElseGet(UserConfig::defaultConfig));
+        UserConfig newC = apply(command, existing.orElseGet(UserConfig::defaultConfig));
         if (existing.isPresent()) {
             repository.updateById(newC);
         } else {
             repository.save(newC);
         }
         return Result.success();
+    }
+
+    private void throwIf(boolean condition, String err) {
+        if (condition) {
+            throw new ClientException(err);
+        }
     }
 
     /**
@@ -87,50 +101,95 @@ public class UserConfigServiceImpl implements UserConfigService {
     }
 
 
-    private UserConfig update(UserConfigCommand userConfigCommand, UserConfig model) {
-        String accessMode = userConfigCommand.accessMode();
+    private UserConfig apply(UserConfigCommand command, UserConfig model) {
+        String accessMode = command.accessMode();
         if (accessMode != null)
             model.changeAccessMode(UserConfig.AccessMode.fromString(accessMode));
 
-        String commandApprovalPolicy = userConfigCommand.commandApprovalPolicy();
+        String commandApprovalPolicy = command.commandApprovalPolicy();
         if (commandApprovalPolicy != null)
             model.changeCommandPolicy(UserConfig.CommandPolicy.fromString(commandApprovalPolicy));
 
-        Integer planMaxReminders = userConfigCommand.planMaxReminders();
+        Integer planMaxReminders = command.planMaxReminders();
         if (planMaxReminders != null)
             model.changePlanMaxReminders(planMaxReminders);
 
-        Long modelId = userConfigCommand.modelId();
+        Long modelId = command.modelId();
         if (modelId != null) model.changeModel(modelId);
 
         // agentId 允许显式为 null（取消绑定），与 modelId 的「非 null 才改」规则相反：
         // 必须按 command 上的出现标记判断，光判值会把「解绑」当成「没传」。
-        if (userConfigCommand.agentIdPresent()) model.changeAgent(userConfigCommand.agentId());
+        if (command.agentIdPresent()) model.changeAgent(command.agentId());
 
-        String workspaceType = userConfigCommand.workspaceType();
+        String workspaceType = command.workspaceType();
         if (workspaceType != null)
             model.changeWorkspace(new UserConfig.WorkSpaceConfig(WorkspaceType.fromCode(workspaceType)));
 
-        Integer maxTokens = userConfigCommand.maxTokens();
+        Integer maxTokens = command.maxTokens();
         if (maxTokens != null)
             model.changeMaxTokens(maxTokens);
 
-        String reasoningEffort = userConfigCommand.reasoningEffort();
+        String reasoningEffort = command.reasoningEffort();
         if (reasoningEffort != null)
             model.changeReasoningEffort(Objects.requireNonNull(ReasoningEffort.fromValue(reasoningEffort)));
 
-        String renderTheme = userConfigCommand.renderTheme();
+        String renderTheme = command.renderTheme();
         if (renderTheme != null)
             model.changeRenderTheme(renderTheme);
+
+        // 目录类字段的顺序不能反：先把现有内容搬到新目录（搬失败即抛错、配置保持原样），
+        // 再记新位置。反过来的话，一旦搬迁失败，配置已经指向一个空目录，用户看到的是「数据没了」。
+        String requestedDataDir = command.dataDir();
+        if (requestedDataDir != null) {
+            String targetDataDir = normalizeDirectory(requestedDataDir, "数据存储目录");
+            directoryMigrator.migrateDataDir(effectiveDataDir(model), targetDataDir);
+            model.changeDataDir(targetDataDir);
+            log.info("数据存储目录已改为: dir={}", targetDataDir);
+        }
+
+        String requestedSkillDir = command.skillDir();
+        if (requestedSkillDir != null) {
+            String targetSkillDir = normalizeDirectory(requestedSkillDir, "技能目录");
+            directoryMigrator.migrateSkillDir(effectiveSkillDir(), targetSkillDir);
+            model.changeSkillDir(targetSkillDir);
+            log.info("技能目录已改为: dir={}", targetSkillDir);
+        }
+
+        Integer teamSize = command.teamSize();
+        if (teamSize != null) {
+            throwIf(teamSize < UserConfig.MIN_TEAM_SIZE || teamSize > UserConfig.MAX_TEAM_SIZE,
+                    "团队规模上限必须在 " + UserConfig.MIN_TEAM_SIZE + "~" + UserConfig.MAX_TEAM_SIZE + " 之间");
+            model.changeTeamSize(teamSize);
+        }
 
         return model;
     }
 
-    private UserConfigVO toVO(UserConfig model) {
+    /** 目录类入参的统一校验：说清哪里不对，别让它变成落库时的列宽截断。 */
+    private String normalizeDirectory(String raw, String label) {
+        String trimmed = raw == null ? null : raw.trim();
+        throwIf(trimmed == null || trimmed.isEmpty(), label + "不能为空");
+        throwIf(trimmed.length() > UserConfig.MAX_DIRECTORY_LENGTH,
+                label + "长度不能超过 " + UserConfig.MAX_DIRECTORY_LENGTH);
+        return trimmed;
+    }
+
+    /** 当前生效的数据目录：设置行写了就用它，没写就是本进程实际打开的目录。 */
+    private String effectiveDataDir(UserConfig model) {
+        return model.getDataDir() == null ? activeDataDir : model.getDataDir();
+    }
+
+    /** 当前生效的技能目录；未启用 Skill 时为 null，由搬迁方按「无内容可搬」处理。 */
+    private String effectiveSkillDir() {
+        return settingsProvider.current().map(SettingsView::skillDir).orElse(null);
+    }
+
+    private UserConfigVO toVO(UserConfig model, SettingsView settings) {
         UserConfig.WorkSpaceConfig workSpaceConfig = model.getWorkSpaceConfig();
         UserConfig.CommandPolicy commandApprovalPolicy = model.getCommandApprovalPolicy();
         UserConfig.AccessMode accessMode = model.getAccessMode();
         ReasoningEffort reasoningEffort = model.getReasoningEffort();
+        String dataDir = effectiveDataDir(model);
         return UserConfigVO.builder()
                 .id(model.getId())
                 .modelId(model.getModelId())
@@ -142,8 +201,20 @@ public class UserConfigServiceImpl implements UserConfigService {
                 .maxTokens(model.getMaxTokens())
                 .reasoningEffort(reasoningEffort == null ? null : reasoningEffort.getValue())
                 .renderTheme(model.getRenderTheme() == null ? null : model.getRenderTheme().toString())
-                .dataStorage(dataDir)
+                .dataDir(dataDir)
+                .skillDir(settings == null ? null : settings.skillDir())
+                .teamSize(settings == null ? null : settings.teamSize())
+                .dataDirRestartRequired(isDataDirRestartRequired(dataDir))
                 .build();
+    }
+
+    /** 生效目录 ≠ 本进程打开的目录 ⇒ 库文件还在旧目录上写，必须重启才切得过去。 */
+    private boolean isDataDirRestartRequired(String dataDir) {
+        return !normalizePath(dataDir).equals(normalizePath(activeDataDir));
+    }
+
+    private Path normalizePath(String directory) {
+        return Path.of(directory.trim()).toAbsolutePath().normalize();
     }
 
 

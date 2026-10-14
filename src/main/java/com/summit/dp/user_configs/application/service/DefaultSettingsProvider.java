@@ -8,7 +8,7 @@ import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.shared.model.WorkspaceType;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
@@ -19,22 +19,38 @@ import java.util.Optional;
  *
  * <p>无设置行时返回与 {@link UserConfig#defaultConfig()} 同源的默认视图，
  * 保证全新环境「启动即可用」，而不是把缺省判断摊给每个使用方。</p>
+ *
+ * <p>{@code skillDir}/{@code teamSize} 是「yaml 只作缺省、设置行才是真源」的两项，
+ * 回落判断统一收在这里 —— 否则每个使用方各写一遍，改一处必漏一处。</p>
  */
 @Component
-@RequiredArgsConstructor
 public class DefaultSettingsProvider implements SettingsProvider {
 
     private final UserConfigRepository userConfigRepository;
 
+    /** Skill 根目录的 yaml 缺省；置空即关闭该能力，故保留原始串、投影时再转成 null。 */
+    private final String defaultSkillDir;
+
+    /** 团队规模上限的 yaml 缺省。 */
+    private final int defaultTeamSize;
+
+    public DefaultSettingsProvider(UserConfigRepository userConfigRepository,
+                                   @Value("${lingxi.skill.dir:}") String defaultSkillDir,
+                                   @Value("${lingxi.team.max-member-size:10}") int defaultTeamSize) {
+        this.userConfigRepository = userConfigRepository;
+        this.defaultSkillDir = defaultSkillDir;
+        this.defaultTeamSize = defaultTeamSize;
+    }
+
     @Override
     public Optional<SettingsView> current() {
         return Optional.of(userConfigRepository.findSingleton()
-                .map(DefaultSettingsProvider::toView)
-                .orElseGet(DefaultSettingsProvider::defaultView));
+                .map(this::toView)
+                .orElseGet(this::defaultView));
     }
 
-    /** 领域模型 → 只读投影；档位枚举做跨包同名义转换。 */
-    static SettingsView toView(UserConfig config) {
+    /** 领域模型 → 只读投影；档位枚举做跨包同名义转换，未配置的两项回落到 yaml 缺省。 */
+    SettingsView toView(UserConfig config) {
         if (config == null) {
             return defaultView();
         }
@@ -53,11 +69,13 @@ public class DefaultSettingsProvider implements SettingsProvider {
                 config.getModelId(),
                 config.getAgentId(),
                 config.getMaxTokens(),
-                effort == null ? null : effort.getValue());
+                effort == null ? null : effort.getValue(),
+                effectiveSkillDir(config.getSkillDir()),
+                config.getTeamSize() == null ? defaultTeamSize : config.getTeamSize());
     }
 
     /** 与 {@link UserConfig#defaultConfig()} 同源的缺省值；仅在设置行不存在时使用。 */
-    static SettingsView defaultView() {
+    SettingsView defaultView() {
         return new SettingsView(
                 WorkspaceType.SAND_BOX,
                 AgentAccessMode.IN_WORKSPACE,
@@ -66,6 +84,14 @@ public class DefaultSettingsProvider implements SettingsProvider {
                 null,
                 null,
                 UserConfig.DEFAULT_MAX_TOKENS,
-                ReasoningEffort.LOW.getValue());
+                ReasoningEffort.LOW.getValue(),
+                effectiveSkillDir(null),
+                defaultTeamSize);
+    }
+
+    /** 设置行未指定时用 yaml 缺省；缺省为空串即「不提供 Skill」，投影成 null 交给使用方判断。 */
+    private String effectiveSkillDir(String configured) {
+        String effective = configured == null ? defaultSkillDir : configured;
+        return effective == null || effective.isBlank() ? null : effective.trim();
     }
 }

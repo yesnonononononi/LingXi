@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { useTeamsTab } from './useTeamsTab';
+import { useTeamsTab, TEAM_SIZE_MIN, TEAM_SIZE_MAX } from './useTeamsTab';
 import { useTheme } from '../../../composables/useTheme';
 import { useI18n } from '../../../i18n';
 
@@ -27,6 +27,10 @@ const {
   isSubmittingTeam,
   teamToast,
   agentsList,
+  maxMemberSize,
+  teamSizeInput,
+  isSavingTeamSize,
+  saveTeamSize,
   getAgentName,
   loadTeams,
   startAddTeam,
@@ -51,6 +55,40 @@ const {
 
     <!-- 列表视图 -->
     <div v-if="!isEditingOrAddingTeam" class="space-y-4">
+      <!-- 团队规模上限：真值在设置行（team_size），改完即时生效，不需要重启 -->
+      <div
+        class="flex items-center justify-between pb-3 border-b"
+        :class="isDark ? 'border-white/10' : 'border-gray-100'"
+      >
+        <div class="flex flex-col">
+          <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">
+            {{ t('settings.teams.maxMemberSizeLabel') }}
+          </span>
+          <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">
+            {{ t('settings.teams.maxMemberSizeDesc', { min: TEAM_SIZE_MIN, max: TEAM_SIZE_MAX }) }}
+          </span>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <span
+            v-if="isSavingTeamSize"
+            class="text-[11px] text-gray-400 dark:text-zinc-400"
+          >{{ t('common.saving') }}</span>
+          <input
+            v-model.number="teamSizeInput"
+            type="number"
+            :min="TEAM_SIZE_MIN"
+            :max="TEAM_SIZE_MAX"
+            :disabled="isSavingTeamSize"
+            :title="t('settings.teams.maxMemberSizeDesc', { min: TEAM_SIZE_MIN, max: TEAM_SIZE_MAX })"
+            @change="saveTeamSize"
+            :class="[
+              'w-16 px-2 py-1 rounded-xl border outline-none text-xs text-center transition [color-scheme:light] dark:[color-scheme:dark]',
+              isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+            ]"
+          />
+        </div>
+      </div>
+
       <div class="flex items-center justify-between">
         <div>
                     <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
@@ -268,7 +306,7 @@ const {
             <label class="block text-gray-700 dark:text-gray-300 font-medium">
                             {{ t('settings.teams.membersSelectLabel') }} <span class="text-red-500">*</span>
               <span class="text-gray-400 font-normal ml-1">
-                {{ t('settings.teams.membersSelectCount', { selected: teamForm.agentIds.length }) }}
+                {{ t('settings.teams.membersSelectCount', { selected: teamForm.agentIds.length, max: maxMemberSize }) }}
               </span>
             </label>
           </div>

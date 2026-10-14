@@ -603,6 +603,19 @@ export interface UserConfigVO {
   reasoningEffort?: ReasoningEffort;
   /** 界面渲染主题：LIGHT / DARK */
   renderTheme?: 'LIGHT' | 'DARK' | string;
+  /** 数据存储目录（后端已把「设置行/yaml 缺省」解析成生效值）；库文件就在这个目录下 */
+  dataDir?: string;
+  /** 技能根目录（同上，已是生效值）；空表示未启用 Skill */
+  skillDir?: string;
+  /** 团队最大成员数（同上，已是生效值） */
+  teamSize?: number;
+  /**
+   * 数据目录变更是否待重启生效。
+   *
+   * <p>库文件在进程启动时打开，改目录只能「落库 + 搬文件」，本进程仍写在旧目录上；
+   * 为 true 时前端必须提示重启并拦住继续对话，否则这段对话的数据不在新目录的副本里。</p>
+   */
+  dataDirRestartRequired?: boolean;
 }
 
 /** 工作空间请求体 (对应后端 WorkspaceRequest) */

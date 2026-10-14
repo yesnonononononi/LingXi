@@ -49,6 +49,11 @@ public class UserConfig {
 
     public static final int DEFAULT_PLAN_MAX_REMINDERS = 10;
     public static final int DEFAULT_MAX_TOKENS = 102400;
+    /** 目录类字段的最大长度，与 user_configs.data_dir / skill_dir 的列宽一致。 */
+    public static final int MAX_DIRECTORY_LENGTH = 500;
+    /** 团队规模上限的合法区间：0 人团队没有意义，无上限则等于没设防。 */
+    public static final int MIN_TEAM_SIZE = 1;
+    public static final int MAX_TEAM_SIZE = 50;
 
     private final Long id;
 
@@ -82,6 +87,21 @@ public class UserConfig {
      * 前端界面主题
      */
     private RenderTheme renderTheme;
+
+    /**
+     * 会话数据存放目录
+     */
+    private String dataDir;
+    /**
+     * skills存放目录
+     */
+    private String skillDir;
+
+    /**
+     * 最大团队规模
+     */
+    private Integer teamSize;
+
 
     private Integer status;
 
@@ -162,6 +182,38 @@ public class UserConfig {
     public void changeCommandPolicy(@NonNull CommandPolicy commandPolicy) {
         this.commandApprovalPolicy = commandPolicy;
         update();
+    }
+
+    /** 数据存储目录；落库前必须先把库文件搬到该目录，这里只负责「记住新位置」。 */
+    public void changeDataDir(@NonNull String dataDir) {
+        this.dataDir = requireDirectory(dataDir);
+        update();
+    }
+
+    /** 技能根目录；与 {@link #changeDataDir} 同理，先搬内容再落库。 */
+    public void changeSkillDir(@NonNull String skillDir) {
+        this.skillDir = requireDirectory(skillDir);
+        update();
+    }
+
+    public void changeTeamSize(@NonNull Integer teamSize) {
+        if (teamSize < MIN_TEAM_SIZE || teamSize > MAX_TEAM_SIZE) {
+            throw new IllegalArgumentException("团队规模上限必须在 " + MIN_TEAM_SIZE + "~" + MAX_TEAM_SIZE + " 之间");
+        }
+        this.teamSize = teamSize;
+        update();
+    }
+
+    /** 目录字段统一校验：trim 后非空且不超列宽，避免落库时才被数据库截断。 */
+    private static String requireDirectory(String directory) {
+        String trimmed = directory == null ? null : directory.trim();
+        if (trimmed == null || trimmed.isEmpty()) {
+            throw new IllegalArgumentException("目录不能为空");
+        }
+        if (trimmed.length() > MAX_DIRECTORY_LENGTH) {
+            throw new IllegalArgumentException("目录长度不能超过 " + MAX_DIRECTORY_LENGTH);
+        }
+        return trimmed;
     }
 
 

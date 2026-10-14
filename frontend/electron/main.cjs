@@ -25,6 +25,13 @@ let splashWindow = null;
 let tray = null;
 let isQuiting = false;
 let backendStopped = false;
+/**
+ * 主动重启（数据目录变更后切换生效）标记。
+ *
+ * <p>重启时要先停后端，而停后端会触发 onCrash —— 那是「意外退出」的告警路径，
+ * 这里必须能被识别成主动行为，否则用户会先看到一句「后端服务已停止」的错误框。</p>
+ */
+let relaunching = false;
 const closeFilePreviews = registerFilePreview({ ipcMain, shell, getWindow: () => mainWindow });
 
 // 开发态判定（与 createWindow 内保持一致）：开发态允许缺后端产物，由开发者在 IDE 里起后端
@@ -393,6 +400,25 @@ ipcMain.handle('update:open-log', async (event) => {
   return true;
 });
 
+/**
+ * IPC 处理器：重启应用。
+ *
+ * <p>数据目录（H2 库位置）在进程启动时就定死了，改目录必须重启才切得过去。
+ * 这里不能只调 app.relaunch —— Windows 不会随父进程带走子进程，残留的 JVM
+ * 会继续占着旧目录，新进程再启动就被端口探测判为「后端已就绪」而直接复用。
+ * 因此必须先停后端、确认停干净，再重启。</p>
+ */
+ipcMain.handle('app:relaunch', async (event) => {
+  if (!assertTrustedSender(event)) return false;
+  relaunching = true;
+  isQuiting = true;
+  await backend.stop().catch(() => {});
+  backendStopped = true;
+  app.relaunch();
+  app.exit(0);
+  return true;
+});
+
 // 第二次启动：不新建窗口，把已有窗口唤到前台（单实例锁的配套处理）
 app.on('second-instance', () => {
   if (!mainWindow) return;
@@ -416,6 +442,8 @@ app.whenReady().then(async () => {
       logPath: backendLogPath,
       isDev,
       onCrash: (code, signal) => {
+        // 主动重启时后端是被我们自己停掉的，不是崩溃。
+        if (relaunching) return;
         // 运行期后端挂掉不能静默吞掉，明确告诉用户去哪看日志
         dialog.showErrorBox(
           'LX 后端服务已停止',

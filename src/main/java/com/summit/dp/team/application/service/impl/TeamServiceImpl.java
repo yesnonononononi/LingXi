@@ -97,7 +97,7 @@ public class TeamServiceImpl implements TeamService {
 
 
     public Team update(TeamCommand command,Team team){
-        if(command.getAgentIds() != null && !command.getAgentIds().isEmpty()) team.changeAgentIds(command.getAgentIds());
+        if(command.getAgentIds() != null && !command.getAgentIds().isEmpty()) team.changeAgentIds(command.getAgentIds(), validator.resolveMaxMemberSize());
         if(command.getCommanderAgentId() != null) team.changeCommanderAgentId(command.getCommanderAgentId());
         if(command.getName() != null) team.changeName(command.getName());
         if(command.getDescription() != null) team.changeDescription(command.getDescription());

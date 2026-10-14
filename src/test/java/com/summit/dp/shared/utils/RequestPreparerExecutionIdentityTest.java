@@ -137,7 +137,7 @@ class RequestPreparerExecutionIdentityTest {
     void sandboxFullAccessSurvivesPreparationAndRequestAttributes() {
         WorkspaceVO workspace = WorkspaceVO.builder().id(9L).name("project").hostDir("/project").workDir("/project").build();
         when(settingsProvider.current()).thenReturn(Optional.of(new SettingsView(WorkspaceType.SAND_BOX,
-                AgentAccessMode.OUT_OF_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS, null, null, null, null, null)));
+                AgentAccessMode.OUT_OF_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS, null, null, null, null, null, null, 10)));
         when(sessionService.findById(SESSION_ID)).thenReturn(Result.success(SessionVO.builder().id(SESSION_ID).workspaceId(9L).build()));
         when(workspaceService.findById(9L)).thenReturn(Result.success(workspace));
         when(workspaceConverter.resolveType()).thenReturn(WorkspaceType.SAND_BOX);

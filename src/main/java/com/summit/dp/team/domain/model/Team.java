@@ -14,7 +14,7 @@ public class Team {
 
     /** 名称最大长度 */
     public static final int NAME_MAX_LENGTH = 100;
-    /** 默认成员数量上限，可由 {@code lingxi.team.max-member-size} 覆盖 */
+    /** 成员数量上限的缺省值；实际上限由设置页的 {@code teamSize} 决定，这里只作兜底 */
     public static final int MAX_MEMBER_SIZE = 10;
 
     public static final int MAX_DESCRIPTION_LENGTH = 1000;
@@ -52,18 +52,19 @@ public class Team {
         this.commanderAgentId = commanderAgentId;
         update();
     }
-    public void changeAgentIds(List<Long> agentIds){
+    /** 上限由调用方传入（设置行的 teamSize），不能在域内写死 —— 写死会让「设置改大了」在更新路径上被拒。 */
+    public void changeAgentIds(List<Long> agentIds, int maxMemberSize){
         if(agentIds == null) throw new IllegalArgumentException("Agent ids is null");
-        if(agentIds.size() > MAX_MEMBER_SIZE) throw new IllegalArgumentException("Team member size exceeds the limit: " + MAX_MEMBER_SIZE);
+        if(agentIds.size() > maxMemberSize) throw new IllegalArgumentException("Team member size exceeds the limit: " + maxMemberSize);
         this.agentIds = agentIds;
         update();
     }
 
 
-    public void addTeammate(Long agentId){
+    public void addTeammate(Long agentId, int maxMemberSize){
         if(agentId == null) throw new IllegalArgumentException("Agent id is null");
         if(this.agentIds.contains(agentId)) throw new IllegalArgumentException("Agent id already exists: " + agentId);
-        if(this.agentIds.size() >= MAX_MEMBER_SIZE) throw new IllegalArgumentException("Team member size exceeds the limit: " + MAX_MEMBER_SIZE);
+        if(this.agentIds.size() >= maxMemberSize) throw new IllegalArgumentException("Team member size exceeds the limit: " + maxMemberSize);
         this.agentIds.add(agentId);
         update();
     }

@@ -45,6 +45,14 @@ export const useUserConfigStore = defineStore('userConfig', () => {
   const planMaxReminders = ref<number>(3);
   const envType = ref<WorkspaceEnvType>('SAND_BOX');
   const renderTheme = ref<'LIGHT' | 'DARK'>('LIGHT');
+  /** 数据存储目录（后端已解析成生效值，直接展示即可）。 */
+  const dataDir = ref<string>('');
+  /** 技能根目录（同上）；空表示未启用 Skill。 */
+  const skillDir = ref<string>('');
+  /** 团队最大成员数（同上）。 */
+  const teamSize = ref<number | null>(null);
+  /** 数据目录已改但本进程还没重启：为 true 时界面必须提示重启并拦住继续对话。 */
+  const dataDirRestartRequired = ref(false);
 
   /**
    * 已落库的思考强度（与 {@link reasoningEffort} 区分）。
@@ -82,6 +90,10 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     // NONE = 未设置，语义上不同于沙箱，界面据此显示「未知」而不是假装沙箱
     envType.value = normalizeWorkspaceEnvType(config?.type) ?? 'NONE';
     renderTheme.value = String(config?.renderTheme).toUpperCase() === 'DARK' ? 'DARK' : 'LIGHT';
+    dataDir.value = config?.dataDir ?? '';
+    skillDir.value = config?.skillDir ?? '';
+    teamSize.value = config?.teamSize ?? null;
+    dataDirRestartRequired.value = config?.dataDirRestartRequired === true;
   };
 
   /** 从后端拉一次全量配置。同一时刻只允许一个在途请求，避免重复回表。 */
@@ -123,7 +135,10 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     | 'commandApprovalPolicy'
     | 'planMaxReminders'
     | 'envType'
-    | 'renderTheme';
+    | 'renderTheme'
+    | 'dataDir'
+    | 'skillDir'
+    | 'teamSize';
 
   /** 读某字段的当前值（回滚快照用）。 */
   const readField = (field: PatchableField): unknown => {
@@ -137,6 +152,9 @@ export const useUserConfigStore = defineStore('userConfig', () => {
       case 'planMaxReminders': return planMaxReminders.value;
       case 'envType': return envType.value;
       case 'renderTheme': return renderTheme.value;
+      case 'dataDir': return dataDir.value;
+      case 'skillDir': return skillDir.value;
+      case 'teamSize': return teamSize.value;
     }
   };
 
@@ -152,8 +170,20 @@ export const useUserConfigStore = defineStore('userConfig', () => {
       case 'planMaxReminders': planMaxReminders.value = value as number; break;
       case 'envType': envType.value = value as WorkspaceEnvType; break;
       case 'renderTheme': renderTheme.value = value as 'LIGHT' | 'DARK'; break;
+      case 'dataDir': dataDir.value = value as string; break;
+      case 'skillDir': skillDir.value = value as string; break;
+      case 'teamSize': teamSize.value = value as number | null; break;
     }
   };
+
+  /**
+   * 落库后需要回读的字段。
+   *
+   * <p>目录类字段后端会做搬迁与路径归一（还可能带回「待重启」标记），本地乐观值
+   * 与真值不一定一致，必须回读一次，否则界面会继续显示一个并不生效的路径。</p>
+   */
+  const reloadAfterSave: ReadonlySet<PatchableField> = new Set<PatchableField>(['dataDir', 'skillDir', 'teamSize']);
+
 
   /**
    * 思考强度的连续调整（拖动滑块）。
@@ -222,6 +252,10 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     try {
       const result = await UserConfigAPI.updateCurrent(payload);
       if (!isOk(result.code)) throw new Error(t('config.saveFailed'));
+      // 目录类字段的真值由后端裁剪/归一（搬迁后的生效路径、待重启标记），必须回读一次。
+      if (reloadAfterSave.has(field)) {
+        await load(true);
+      }
       return true;
     } catch (error) {
       console.error(`保存全局配置失败(${field}):`, error);
@@ -248,6 +282,10 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     planMaxReminders,
     envType,
     renderTheme,
+    dataDir,
+    skillDir,
+    teamSize,
+    dataDirRestartRequired,
     // 派生
     reasoningEffortPending,
     // 行为

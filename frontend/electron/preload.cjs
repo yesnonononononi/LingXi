@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   /** 调起系统原生目录选择器，返回所选文件夹绝对物理路径 */
   selectDirectory: () => ipcRenderer.invoke('dialog:select-directory'),
+  /** 重启应用（数据目录变更后需要重启才生效）；主进程会校验调用来源 */
+  relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
   /** 发送系统原生通知 (Windows 10/11 横幅通知) */
   notify: (options) => ipcRenderer.invoke('notify', options),
   setTitleBarTheme: (isDark) => ipcRenderer.invoke('window:set-titlebar-theme', isDark),

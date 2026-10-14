@@ -1,16 +1,21 @@
 package com.summit.dp.workflow.infrastructure.policy;
 
+import com.summit.dp.user_configs.application.service.SettingsProvider;
+import com.summit.dp.user_configs.application.vo.SettingsView;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Skill 根目录的解析与降级边界。
@@ -60,5 +65,41 @@ class SkillRootResolverTest {
 
         assertNull(new SkillRootResolver(occupied.toString()).root(),
                 "建不出目录只应降级：Skill 是可选能力，不能因为它让每一次执行都在装配提示词时失败");
+    }
+
+    @Test
+    @DisplayName("设置行优先于 yaml 缺省")
+    void settingsRowWinsOverConfiguredDefault() {
+        Path fromSettings = tempDir.resolve("from-settings");
+        Path fromYaml = tempDir.resolve("from-yaml");
+
+        SkillRootResolver resolver = new SkillRootResolver(fromYaml.toString(), settingsWith(fromSettings.toString()));
+
+        assertEquals(fromSettings.toAbsolutePath().normalize(), resolver.root());
+    }
+
+    @Test
+    @DisplayName("改设置立刻生效：下一轮就用新目录，不需要重启")
+    void settingsChangeTakesEffectOnNextResolution() {
+        Path first = tempDir.resolve("first");
+        Path second = tempDir.resolve("second");
+        SettingsProvider settings = settingsWith(first.toString());
+
+        SkillRootResolver resolver = new SkillRootResolver("", settings);
+        assertEquals(first.toAbsolutePath().normalize(), resolver.root());
+
+        when(settings.current()).thenReturn(Optional.of(view(second.toString())));
+        assertEquals(second.toAbsolutePath().normalize(), resolver.root());
+        assertTrue(Files.isDirectory(second), "切换后要保证新目录在，否则框架加载器直接抛错");
+    }
+
+    private static SettingsProvider settingsWith(String skillDir) {
+        SettingsProvider settings = mock(SettingsProvider.class);
+        when(settings.current()).thenReturn(Optional.of(view(skillDir)));
+        return settings;
+    }
+
+    private static SettingsView view(String skillDir) {
+        return new SettingsView(null, null, null, null, null, null, null, null, skillDir, 10);
     }
 }

@@ -27,6 +27,10 @@ public record SettingsView(
         /* 模型最大 Token 数；null 表示沿用模型/框架缺省。 */
         Integer maxTokens,
         /* 思考深度/推理等级；null 表示沿用模型/框架缺省。 */
-        String reasoningEffort
+        String reasoningEffort,
+        /* 技能根目录的生效值（已由设置行/yaml 缺省解析过）；null 表示未启用 Skill。 */
+        String skillDir,
+        /* 团队规模上限的生效值（已由设置行/yaml 缺省解析过）；不会为 null。 */
+        Integer teamSize
 ) {
 }

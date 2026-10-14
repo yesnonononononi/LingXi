@@ -6,6 +6,7 @@ import { isSessionRunning } from '../../utils/session';
 import { isOk } from '../../utils/api';
 import type { ChatCommand } from '../../services/dto/chat_command';
 import { t } from '../../i18n';
+import { useUserConfigStore } from '../../stores/userConfigStore';
 
 export interface ChatSendingOptions {
   /** 当前活动会话（用于停止生成时定位 sessionId）。 */
@@ -89,6 +90,16 @@ export function useChatSending(options: ChatSendingOptions) {
     if (!command.input.trim()) return null;
 
     const sessionId = command.sessionId != null ? String(command.sessionId) : '';
+
+    // 数据目录已改但本进程还没重启：本轮的库文件仍写在旧目录，重启后新目录里没有这一段。
+    // 必须拦住并说明原因 —— 让消息发出去再丢失，比当场发不出去糟糕得多。
+    if (useUserConfigStore().dataDirRestartRequired) {
+      const message = t('chat.view.dataDirRestartRequired');
+      sendFailureNotice.value = { sessionId, message };
+      onSendFailure?.(sessionId, message);
+      return null;
+    }
+
     const controller = new AbortController();
     currentAbortController.value = controller;
     isSubmitting.value = true;

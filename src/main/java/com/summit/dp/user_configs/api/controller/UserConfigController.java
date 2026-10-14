@@ -49,7 +49,10 @@ public class UserConfigController {
                 request.getType(),
                 request.getMaxTokens(),
                 request.getReasoningEffort(),
-                request.getRenderTheme()
+                request.getRenderTheme(),
+                request.getDataDir(),
+                request.getSkillDir(),
+                request.getTeamSize()
         );
     }
 }

@@ -29,9 +29,17 @@ public class UserConfigVO {
     private String reasoningEffort;
     /** 渲染主题：light/dark */
     private String renderTheme;
+    /** 数据存储目录（H2 库文件所在目录）；已是「设置行覆盖配置项」后的生效值，前端只读展示。 */
+    private String dataDir;
+    /** 技能根目录；同样是生效值。 */
+    private String skillDir;
+    /** 团队最大成员数；空值表示沿用配置项缺省。 */
+    private Integer teamSize;
     /**
-     * 数据存储目录（绝对路径，H2 库文件所在目录）。
-     * <p>直接回显配置项 {@code lingxi.data.dir}；只读：客户端改它不会移动库文件，因此不接受写入。</p>
+     * 数据目录变更是否待重启生效。
+     *
+     * <p>库文件在进程启动时打开，改目录只能落库 + 搬运文件，本进程仍写在旧目录上，
+     * 必须重启才切得过去。前端据此提示并拦住继续对话 —— 否则这些新数据不在新目录的副本里。</p>
      */
-    private String dataStorage;
+    private Boolean dataDirRestartRequired;
 }

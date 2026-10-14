@@ -37,6 +37,12 @@ public class UserConfigPO {
     private String reasoningEffort;
     /** 渲染主题 */
     private String renderTheme;
+    /** 数据存储目录（H2 库文件所在目录；空则由配置项 lingxi.data.dir 兜底） */
+    private String dataDir;
+    /** 技能根目录（递归查找 SKILL.md 的根；空则由配置项 lingxi.skill.dir 兜底） */
+    private String skillDir;
+    /** 团队最大成员数（空则由配置项 lingxi.team.max-member-size 兜底） */
+    private Integer teamSize;
 
     private Integer status;
     private Instant createTime;

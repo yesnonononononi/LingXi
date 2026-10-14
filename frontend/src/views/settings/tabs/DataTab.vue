@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue';
 import { useConfirm } from '../../../composables/useConfirm';
 import { useI18n } from '../../../i18n';
+import { useUserConfigStore } from '../../../stores/userConfigStore';
+import { openDirectoryPicker, relaunchApp } from '../../../utils/platform';
 
-defineProps<{
+const props = defineProps<{
   isDark?: boolean;
 }>();
 
@@ -13,6 +16,47 @@ const emit = defineEmits<{
 }>();
 
 const { confirm } = useConfirm();
+const userConfig = useUserConfigStore();
+
+const isDark = computed(() => props.isDark === true);
+
+/** 正在搬迁的字段：搬迁要搬几十上百 MB，必须有反馈并挡住重复点击。 */
+const busyField = ref<'' | 'dataDir' | 'skillDir'>('');
+const errorMsg = ref('');
+const isRestarting = ref(false);
+
+/**
+ * 选目录并落库。
+ *
+ * <p>只走 store 的 patch（组件禁直调 UserConfigAPI）：搬迁、路径归一、待重启标记
+ * 都由后端负责，前端只管把用户选的路径交上去。</p>
+ */
+const changeDirectory = async (field: 'dataDir' | 'skillDir'): Promise<void> => {
+  if (busyField.value) return;
+  errorMsg.value = '';
+  const picked = await openDirectoryPicker();
+  // 取消选择，或运行在浏览器里（没有原生选择器）：什么都不做，也不伪造路径。
+  if (!picked) return;
+  busyField.value = field;
+  const ok = await userConfig.patch(field, picked, { [field]: picked });
+  if (!ok) {
+    errorMsg.value = field === 'dataDir'
+      ? t('settings.data.errDataDirSave')
+      : t('settings.data.errSkillDirSave');
+  }
+  busyField.value = '';
+};
+
+const restartNow = async (): Promise<void> => {
+  if (isRestarting.value) return;
+  errorMsg.value = '';
+  isRestarting.value = true;
+  const ok = await relaunchApp();
+  if (!ok) {
+    errorMsg.value = t('settings.data.restartUnsupported');
+    isRestarting.value = false;
+  }
+};
 
 const handleClearSessions = async () => {
   const ok = await confirm({
@@ -29,11 +73,106 @@ const handleClearSessions = async () => {
 
 <template>
   <div class="space-y-4 text-xs">
+    <!-- 存储目录：真能力（改了会搬迁现有内容），因此放在最前面 -->
+    <div class="space-y-3">
+      <div>
+        <div class="text-xs font-semibold text-gray-800 dark:text-zinc-100 dark:text-glow-subtle tracking-wide">
+          {{ t('settings.data.storageTitle') }}
+        </div>
+        <p class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">
+          {{ t('settings.data.storageDesc') }}
+        </p>
+      </div>
+
+      <!-- 数据目录 -->
+      <div class="flex items-center justify-between gap-3 py-2">
+        <div class="flex flex-col min-w-0">
+          <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">
+            {{ t('settings.data.dataDirLabel') }}
+          </span>
+          <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">
+            {{ t('settings.data.dataDirDesc') }}
+          </span>
+          <span
+            class="text-[11px] mt-0.5 truncate font-mono"
+            :class="isDark ? 'text-zinc-300' : 'text-gray-600'"
+            :title="userConfig.dataDir"
+          >{{ userConfig.dataDir || '—' }}</span>
+        </div>
+        <button
+          type="button"
+          :disabled="busyField !== ''"
+          @click="changeDirectory('dataDir')"
+          class="shrink-0 px-3 py-1 rounded-full border text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          :class="isDark
+            ? 'border-white/20 text-zinc-200 hover:bg-white/5'
+            : 'border-gray-300 text-gray-700 hover:bg-gray-50'"
+        >
+          {{ busyField === 'dataDir' ? t('settings.data.migrating') : t('settings.data.change') }}
+        </button>
+      </div>
+
+      <!-- 技能目录 -->
+      <div class="flex items-center justify-between gap-3 py-2 border-t" :class="isDark ? 'border-white/10' : 'border-gray-100'">
+        <div class="flex flex-col min-w-0">
+          <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">
+            {{ t('settings.data.skillDirLabel') }}
+          </span>
+          <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">
+            {{ t('settings.data.skillDirDesc') }}
+          </span>
+          <span
+            class="text-[11px] mt-0.5 truncate font-mono"
+            :class="isDark ? 'text-zinc-300' : 'text-gray-600'"
+            :title="userConfig.skillDir"
+          >{{ userConfig.skillDir || t('settings.data.skillDisabled') }}</span>
+        </div>
+        <button
+          type="button"
+          :disabled="busyField !== ''"
+          @click="changeDirectory('skillDir')"
+          class="shrink-0 px-3 py-1 rounded-full border text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          :class="isDark
+            ? 'border-white/20 text-zinc-200 hover:bg-white/5'
+            : 'border-gray-300 text-gray-700 hover:bg-gray-50'"
+        >
+          {{ busyField === 'skillDir' ? t('settings.data.migrating') : t('settings.data.change') }}
+        </button>
+      </div>
+
+      <!-- 待重启：进程还握着旧目录，此时继续对话写进去的数据不在新目录的副本里 -->
+      <div
+        v-if="userConfig.dataDirRestartRequired"
+        class="p-3 rounded-xl border space-y-2"
+        :class="isDark ? 'bg-amber-500/10 border-amber-500/30' : 'bg-amber-50 border-amber-200'"
+      >
+        <div class="text-xs font-semibold text-amber-600 dark:text-amber-400">
+          {{ t('settings.data.restartTitle') }}
+        </div>
+        <p class="text-[11px] text-amber-600/90 dark:text-amber-400/90 leading-snug">
+          {{ t('settings.data.restartDesc') }}
+        </p>
+        <button
+          type="button"
+          :disabled="isRestarting"
+          @click="restartNow"
+          class="px-3 py-1 rounded-full text-xs font-medium text-white bg-amber-600 hover:bg-amber-500 transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {{ isRestarting ? t('settings.data.restarting') : t('settings.data.restartNow') }}
+        </button>
+      </div>
+
+      <div v-if="errorMsg" class="p-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500 text-xs">
+        {{ errorMsg }}
+      </div>
+    </div>
+
     <!--
       原「数据用于优化体验 / 我共享的链接 / 导出所有历史对话」入口仅弹 window.alert 文案
       （数据开关也不落库、不生效），会让用户误以为功能存在，故隐藏。待后端/产品实现后再恢复。
     -->
-        <div class="py-6 text-center text-gray-400 dark:text-gray-500">
+    <div class="h-px bg-gray-100 dark:bg-white/10"></div>
+    <div class="py-3 text-center text-gray-400 dark:text-gray-500">
       {{ t('settings.data.unavailable') }}
     </div>
 

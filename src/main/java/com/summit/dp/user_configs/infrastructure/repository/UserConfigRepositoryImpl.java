@@ -65,6 +65,9 @@ public class UserConfigRepositoryImpl extends AbstractJsonRepository<UserConfig,
                 .reasoningEffort(ReasoningEffort.fromValue(po.getReasoningEffort()))
                 .workSpaceConfig(new UserConfig.WorkSpaceConfig(WorkspaceType.fromCode(po.getWorkspaceType())))
                 .renderTheme(renderTheme == null ? null :UserConfig.RenderTheme.valueOf(renderTheme))
+                .dataDir(po.getDataDir())
+                .skillDir(po.getSkillDir())
+                .teamSize(po.getTeamSize())
                 .createAt(po.getCreateTime())
                 .updateAt(po.getUpdateTime())
                 .build();
@@ -91,6 +94,9 @@ public class UserConfigRepositoryImpl extends AbstractJsonRepository<UserConfig,
                 .reasoningEffort(model.getReasoningEffort() == null ? null : model.getReasoningEffort().getValue())
                 .workspaceType(type == null ? null :type.code())
                 .renderTheme(model.getRenderTheme() == null ? null : model.getRenderTheme().name())
+                .dataDir(model.getDataDir())
+                .skillDir(model.getSkillDir())
+                .teamSize(model.getTeamSize())
                 .createTime(model.getCreateAt())
                 .updateTime(model.getUpdateAt())
                 .build();

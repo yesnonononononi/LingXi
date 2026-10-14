@@ -36,4 +36,10 @@ public class UserConfigRequest {
     /** 思考深度/推理等级（空值表示沿用模型/框架缺省）。 */
     private String reasoningEffort;
     private String renderTheme;
+    /** 数据存储目录；空值表示保持原值（改它会搬运库文件，因此不接受空串「清空」） */
+    private String dataDir;
+    /** 技能根目录；空值表示保持原值 */
+    private String skillDir;
+    /** 团队最大成员数；空值表示沿用配置项缺省 */
+    private Integer teamSize;
 }

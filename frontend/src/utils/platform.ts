@@ -15,6 +15,8 @@ export interface ElectronAPI {
   unwatchFile?: (watchId: string) => Promise<NativeFileResult<void>>;
   onFileChanged?: (callback: (change: { watchId: string }) => void) => () => void;
   selectDirectory: () => Promise<string | null>;
+  /** 重启应用（仅桌面端；主进程会先停后端再重启）。Web 端为 undefined。 */
+  relaunchApp?: () => Promise<boolean>;
   notify: (options: { title: string; body: string }) => Promise<boolean>;
   platform: string;
   setTitleBarTheme?: (isDark: boolean) => Promise<void>;
@@ -67,6 +69,27 @@ export async function openDirectoryPicker(): Promise<string | null> {
     }
   }
   return null;
+}
+
+/**
+ * 重启应用（数据目录改完必须重启才切得过去）。
+ *
+ * <p>桌面端由主进程先停后端、再 relaunch；Web 端没有可重启的进程，返回 false
+ * 交给调用方提示用户手动重启 —— 这里不做任何「假装重启成功」的降级。</p>
+ *
+ * @returns 是否真的把重启意图交给了桌面端
+ */
+export async function relaunchApp(): Promise<boolean> {
+  if (isElectron() && window.electronAPI?.relaunchApp) {
+    try {
+      await window.electronAPI.relaunchApp();
+      return true;
+    } catch (err) {
+      console.error('[relaunchApp] 重启失败:', err);
+      return false;
+    }
+  }
+  return false;
 }
 
 /** 判定当前应用是否处于后台、最小化或失焦状态（用于在用户未查看窗口时触发系统提醒） */

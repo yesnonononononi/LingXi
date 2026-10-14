@@ -6,9 +6,10 @@ import com.summit.dp.agent.domain.model.Agent;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.team.application.command.TeamCommand;
 import com.summit.dp.team.domain.model.Team;
+import com.summit.dp.user_configs.application.service.SettingsProvider;
+import com.summit.dp.user_configs.application.vo.SettingsView;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -25,9 +26,16 @@ public class TeamValidator {
 
     private final AgentService agentService;
 
-    /** 团队容量上限，默认与 {@link Team#MAX_MEMBER_SIZE} 一致 */
-    @Value("${lingxi.team.max-member-size:10}")
-    private int maxMemberSize;
+    /** 团队规模上限的来源：设置页的 teamSize（已含 yaml 缺省），这里不再自己读配置项。 */
+    private final SettingsProvider settingsProvider;
+
+
+    /** 当前生效的团队规模上限：设置页的 teamSize（含 yaml 缺省）；域模型与校验器共用同一口径。 */
+    public int resolveMaxMemberSize() {
+        return settingsProvider.current()
+                .map(SettingsView::teamSize)
+                .orElse(Team.MAX_MEMBER_SIZE);
+    }
 
     /** @return null 表示校验通过，否则为错误提示 */
     public String validateForCreate(TeamCommand command) {
@@ -83,6 +91,7 @@ public class TeamValidator {
         List<Long> distinct = agentIds.stream().filter(Objects::nonNull).distinct().toList();
         if (distinct.size() != agentIds.size()) return "团队成员不允许重复";
         if (distinct.isEmpty()) return "团队必须指定成员 Agent";
+        int maxMemberSize = resolveMaxMemberSize();
         if (distinct.size() > maxMemberSize)
             return "团队成员数量不能超过 " + maxMemberSize + " 个，当前 " + distinct.size() + " 个";
         if (!distinct.contains(commanderAgentId)) return "指挥者必须属于团队成员";
