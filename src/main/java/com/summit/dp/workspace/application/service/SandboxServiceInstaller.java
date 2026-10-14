@@ -26,7 +26,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * 所以「装不装、什么时候装、装不上怎么跟用户说」都归业务侧。</p>
  *
  * <p><b>安装会弹 UAC</b>，因此进程内自动尝试一次为限：第一次探测不过才装；装不上就改成提示用户
- * 到设置页手动装，不会每轮请求都弹一次。</p>
+ * 到设置页手动装，不会每轮请求都弹一次。设置页的显式安装走同一套，但**允许失败后重试**，
+ * 只挡并发（{@link #installing}）不挡重试。</p>
+ *
+ * <p><b>失败文案只有两档，且都不带框架原文</b>：Windows 前置依赖装不上 →「沙箱前置依赖安装失败，
+ * 详情见错误日志」；其余初始化类失败 →「沙箱初始化失败，具体原因见日志」。exit code、SRT 原文
+ * 与堆栈一律只进日志。</p>
  */
 @Slf4j
 public class SandboxServiceInstaller {
@@ -49,6 +54,15 @@ public class SandboxServiceInstaller {
     /** 本进程内已自动装过一次：装不上不再自动重试（UAC 不能每轮弹），改为提示手动安装。 */
     private final AtomicBoolean installAttempted = new AtomicBoolean(false);
 
+    /**
+     * 本进程内正在安装。
+     *
+     * <p>与 {@link #installAttempted} 的职责不同：那个只保证**自动路径不重复触发**，挡不住
+     * 「设置页点了安装」与「某次执行解析工作区」交叉并发 —— 两边都进了安装就会弹两次 UAC。
+     * 真正的互斥归这个 CAS，且**只挡并发、不挡重试**（失败后用户再点一次是合法动作）。</p>
+     */
+    private final AtomicBoolean installing = new AtomicBoolean(false);
+
     public SandboxServiceInstaller(SandboxProperties properties) {
         this(properties, SandboxInitializer::new);
     }
@@ -70,7 +84,13 @@ public class SandboxServiceInstaller {
         return new SandboxServiceStatus(true, true, false, "沙箱资源已就位；如需重新注册 Windows 沙箱组件，可执行安装");
     }
 
-    /** 显式安装（设置页按钮）：检测 srt 包，Windows 上执行安装并随后探测。 */
+    /**
+     * 显式安装（设置页按钮）：检测 srt 包，Windows 上执行安装并随后探测。
+     *
+     * <p>与自动路径的区别：**允许失败后重试**（用户可能刚处理完权限问题又点了一次），
+     * 所以这里不检查 {@link #installAttempted}，只用 {@link #installing} 挡并发 ——
+     * 连点两次按钮不能弹两次 UAC。</p>
+     */
     public SandboxServiceStatus install() {
         requirePackage();
         if (!isWindows()) {
@@ -79,7 +99,7 @@ public class SandboxServiceInstaller {
         }
         // 先记账再执行：安装会抛异常，把置位写在后面等于「装失败 = 没装过」，下一次请求又会弹一遍 UAC。
         installAttempted.set(true);
-        installWindows();
+        runInstallOnce();
         ensured.set(true);
         return new SandboxServiceStatus(true, true, true, "沙箱服务安装完成");
     }
@@ -109,7 +129,7 @@ public class SandboxServiceInstaller {
         if (!installAttempted.compareAndSet(false, true)) {
             throw new ClientException("沙箱服务不可用，请在设置中执行「安装沙箱服务」后重试");
         }
-        installWindows();
+        runInstallOnce();
         ensured.set(true);
         return new SandboxServiceStatus(true, true, true, "已完成 Windows 沙箱组件安装");
     }
@@ -153,6 +173,23 @@ public class SandboxServiceInstaller {
     }
 
     /**
+     * 真正执行一次安装，并用 {@link #installing} 把并发挡在外面。
+     *
+     * <p>放在这里而不是 {@link #installWindows()} 里面，是为了让**安装**这件事整体互斥：
+     * 两条路径（自动 / 显式）都会经过它，只有一方能进。</p>
+     */
+    private void runInstallOnce() {
+        if (!installing.compareAndSet(false, true)) {
+            throw new ClientException("沙箱服务正在安装中，请稍候");
+        }
+        try {
+            installWindows();
+        } finally {
+            installing.set(false);
+        }
+    }
+
+    /**
      * 执行 Windows 组件安装。失败（<b>含用户主动取消 UAC</b>）一律同一条路：
      *
      * <ul>
@@ -168,11 +205,11 @@ public class SandboxServiceInstaller {
         try {
             initializer().installWindows(properties.srtCli(), properties.nodeExe());
         } catch (IOException | IllegalStateException failure) {
-            // 这条 error 就是「具体原因见日志」所指的东西：格式固定、可 grep「沙箱初始化失败」定位。
-            log.error("沙箱初始化失败：Windows 沙箱组件安装未成功（srt-cli={}, node-exe={}；"
+            // 这条 error 就是「详情见错误日志」所指的东西：格式固定、可 grep「沙箱前置依赖安装失败」定位。
+            log.error("沙箱前置依赖安装失败：Windows 沙箱组件安装未成功（srt-cli={}, node-exe={}；"
                     + "用户主动取消 UAC 也走这里，exit code 2 即取消）",
                     properties.srtCli(), properties.nodeExe(), failure);
-            throw new ClientException("沙箱初始化失败，具体原因见日志");
+            throw new ClientException("沙箱前置依赖安装失败，详情见错误日志");
         }
     }
 

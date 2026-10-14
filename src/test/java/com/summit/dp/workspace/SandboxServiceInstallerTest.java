@@ -121,7 +121,7 @@ class SandboxServiceInstallerTest {
         try {
             ClientException failure = assertThrows(ClientException.class, () -> fixture.installer().ensureReady());
 
-            assertEquals("沙箱初始化失败，具体原因见日志", failure.getMessage(),
+            assertEquals("沙箱前置依赖安装失败，详情见错误日志", failure.getMessage(),
                     "界面文案必须稳定，不能因为 SRT 改了措辞就跟着变：" + failure.getMessage());
             assertEquals(List.of("init", "installWindows"), fixture.recorder().calls);
 
@@ -216,7 +216,62 @@ class SandboxServiceInstallerTest {
 
     @Test
     @EnabledOnOs(OS.WINDOWS)
-    @DisplayName("并发解析工作区（团队模式）：自动安装只能被触发一次，不会两个线程各弹一次 UAC")
+    @DisplayName("Windows：自动安装失败后，设置页的显式安装仍然可以重试")
+    void explicitInstallIsNotBlockedByTheAutomaticOneShotFlag() {
+        Fixture fixture = fixture(null, null, false, false);
+
+        assertThrows(ClientException.class, () -> fixture.installer().ensureReady());
+        // 上一次失败不该把入口焊死：用户刚处理完权限问题，再点一次必须真的再跑一遍安装。
+        assertThrows(ClientException.class, () -> fixture.installer().install());
+
+        assertEquals(2, fixture.recorder().calls.stream().filter("installWindows"::equals).count(),
+                "显式安装必须真的重试，不能被自动路径的一次性标志挡住：" + fixture.recorder().calls);
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    @DisplayName("Windows：设置页连点两次安装，只跑一次（不会两个 UAC）")
+    void concurrentExplicitInstallsTriggerInstallOnlyOnce() throws Exception {
+        Fixture fixture = fixture(null, null, true, true);
+        CountDownLatch installEntered = new CountDownLatch(1);
+        CountDownLatch releaseInstall = new CountDownLatch(1);
+        AtomicInteger installs = new AtomicInteger();
+        SandboxInitializer blocking = new SandboxInitializer(
+                new CommandTimeoutConfig(5, TimeUnit.SECONDS),
+                new LocalWorkspace("sandbox-service-test", temp.toString())) {
+            @Override
+            public void installWindows(Path cli, Path nodeExe) {
+                installs.incrementAndGet();
+                installEntered.countDown();
+                try {
+                    releaseInstall.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        SandboxServiceInstaller installer = new SandboxServiceInstaller(
+                fixture.properties(), (timeout, workspace) -> blocking);
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<SandboxServiceStatus> first = pool.submit(installer::install);
+            assertTrue(installEntered.await(5, TimeUnit.SECONDS), "第一次安装应已开始");
+
+            ClientException busy = assertThrows(ClientException.class, installer::install);
+            assertEquals("沙箱服务正在安装中，请稍候", busy.getMessage());
+
+            releaseInstall.countDown();
+            first.get(5, TimeUnit.SECONDS);
+            assertEquals(1, installs.get(), "并发安装必须只跑一次，否则会弹两个 UAC");
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    @DisplayName("Windows：并发解析工作区（团队模式）：自动安装只能被触发一次，不会两个线程各弹一次 UAC")
     void concurrentEnsureTriggersInstallOnlyOnce() throws Exception {
         Path srtCli = Files.createFile(Files.createDirectories(temp.resolve("resources")).resolve("cli.js"));
         Path node = Files.createFile(temp.resolve("node.exe"));
