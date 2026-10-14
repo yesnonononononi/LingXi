@@ -134,23 +134,45 @@ public class SandboxServiceInstaller {
         }
     }
 
-    /** 就绪探测：框架内部会跑 node --version / srt --version / 一条真实沙箱命令。 */
+    /**
+     * 就绪探测：框架内部会跑 node --version / srt --version / 一条真实沙箱命令。
+     *
+     * <p>失败只记日志、不抛：这时候还没到「安装失败」那一步，下一步是尝试安装。</p>
+     */
     private boolean probe() {
         try {
             initializer().init(properties.srtCli(), properties.nodeExe());
             return true;
         } catch (IOException | IllegalStateException failure) {
-            log.info("沙箱就绪探测未通过，将尝试安装: {}", failure.getMessage());
+            // 带上 throwable 而不是只取 getMessage()：「为什么探测不过」是判断该不该装、装没装对的第一手证据。
+            // 框架抛的消息本身已含 exit code 与 SRT 原文（requireSuccess 拼的），堆栈能进一步指出卡在
+            // node --version / srt --version / srt -c whoami 哪一步。
+            log.warn("沙箱就绪探测未通过，将尝试安装 Windows 沙箱组件", failure);
             return false;
         }
     }
 
+    /**
+     * 执行 Windows 组件安装。失败（<b>含用户主动取消 UAC</b>）一律同一条路：
+     *
+     * <ul>
+     *   <li>面向界面只抛一句可读结论，不把英文原文和堆栈甩给用户；</li>
+     *   <li>完整诊断（框架拼的 exit code + SRT 原文 + 堆栈）写日志，供排查。</li>
+     * </ul>
+     *
+     * <p><b>用户取消 UAC 不做特例</b>：要区分它和真实失败，看日志里的 exit code
+     * （SRT 约定 2 = UAC 取消，其余归 1）即可；而在界面层去猜「是不是用户取消」只能匹配文案，
+     * SRT 与框架都明说文案随版本变，所以这里刻意不猜。</p>
+     */
     private void installWindows() {
         try {
             initializer().installWindows(properties.srtCli(), properties.nodeExe());
         } catch (IOException | IllegalStateException failure) {
-            // 用户取消 UAC 也走这里：把框架给的诊断原样带上，否则用户无从判断是取消还是真失败。
-            throw new ClientException("沙箱服务安装失败：" + failure.getMessage());
+            // 这条 error 就是「具体原因见日志」所指的东西：格式固定、可 grep「沙箱初始化失败」定位。
+            log.error("沙箱初始化失败：Windows 沙箱组件安装未成功（srt-cli={}, node-exe={}；"
+                    + "用户主动取消 UAC 也走这里，exit code 2 即取消）",
+                    properties.srtCli(), properties.nodeExe(), failure);
+            throw new ClientException("沙箱初始化失败，具体原因见日志");
         }
     }
 

@@ -1,5 +1,8 @@
 package com.summit.dp.workspace;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.workspace.application.service.SandboxServiceInstaller;
@@ -14,6 +17,7 @@ import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -27,6 +31,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -36,8 +41,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 沙箱服务检测与安装的行为守卫。
  *
- * <p>这里最要紧的两条：**缺 srt 包时一次命令都不许跑**（否则用户拿到的是英文异常而不是「缺哪个文件」），
- * 以及 **自动安装最多一次**（安装会弹 UAC，每轮请求重弹无法接受）。</p>
+ * <p>这里最要紧的三条：**缺 srt 包时一次命令都不许跑**（否则用户拿到的是英文异常而不是「缺哪个文件」）、
+ * **自动安装最多一次**（安装会弹 UAC，每轮请求重弹无法接受）、以及 **安装失败的界面文案恒定为一句
+ * 结论，exit code / SRT 原文 / 堆栈一律进日志**（文案不跟着 SRT 措辞漂移，排查靠日志）。</p>
  *
  * <p>平台相关的用例按 OS 分流：非 Windows 上不存在安装这一步，Windows 上才谈得上装。</p>
  */
@@ -108,14 +114,39 @@ class SandboxServiceInstallerTest {
 
     @Test
     @EnabledOnOs(OS.WINDOWS)
-    @DisplayName("Windows：安装失败（例如 UAC 被取消）要把框架诊断带出来，不能只说「失败」")
-    void windowsInstallFailureKeepsDiagnostics() {
+    @DisplayName("Windows：安装失败（含 UAC 被取消）界面只给结论，exit code、SRT 原文与堆栈进日志")
+    void windowsInstallFailureKeepsDiagnosticsInTheLogNotInTheMessage() {
+        Fixture fixture = fixture(null, null, false, false);
+        ListAppender<ILoggingEvent> logs = captureLogs();
+        try {
+            ClientException failure = assertThrows(ClientException.class, () -> fixture.installer().ensureReady());
+
+            assertEquals("沙箱初始化失败，具体原因见日志", failure.getMessage(),
+                    "界面文案必须稳定，不能因为 SRT 改了措辞就跟着变：" + failure.getMessage());
+            assertEquals(List.of("init", "installWindows"), fixture.recorder().calls);
+
+            String logged = loggedText(logs);
+            assertTrue(logged.contains("WFP fence is missing"),
+                    "探测失败的原因要进日志，否则无从判断当初为什么决定装：" + logged);
+            assertTrue(logged.contains("exit code 2"), "框架拼的 exit code 要进日志：" + logged);
+            assertTrue(logged.contains("UAC"), "用户取消 UAC 的原文也要进日志：" + logged);
+            assertTrue(logs.list.stream().anyMatch(e -> e.getThrowableProxy() != null),
+                    "日志要带堆栈，不能只有一行消息：" + logged);
+        } finally {
+            releaseLogs(logs);
+        }
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    @DisplayName("Windows：安装失败后界面不出现英文原文与 exit code（排查靠日志，不靠弹窗）")
+    void windowsInstallFailureNeverLeaksFrameworkProseToTheUi() {
         Fixture fixture = fixture(null, null, false, false);
 
         ClientException failure = assertThrows(ClientException.class, () -> fixture.installer().ensureReady());
 
-        assertTrue(failure.getMessage().contains("UAC"), failure.getMessage());
-        assertEquals(List.of("init", "installWindows"), fixture.recorder().calls);
+        assertFalse(failure.getMessage().contains("exit code"), failure.getMessage());
+        assertFalse(failure.getMessage().contains("SRT"), failure.getMessage());
     }
 
     @Test
@@ -232,6 +263,37 @@ class SandboxServiceInstallerTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+
+    /**
+     * 挂一个内存 appender 抓这个类的日志。
+     *
+     * <p>必须程序化挂载，不能靠 {@code OutputCaptureExtension} 抓 System.out：logback 的
+     * ConsoleAppender 在启动时就解析并缓存了输出流，事后替换 System.out 抓不到东西。</p>
+     */
+    private static ListAppender<ILoggingEvent> captureLogs() {
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        installerLogger().addAppender(appender);
+        return appender;
+    }
+
+    private static void releaseLogs(ListAppender<ILoggingEvent> appender) {
+        installerLogger().detachAppender(appender);
+        appender.stop();
+    }
+
+    private static Logger installerLogger() {
+        return (Logger) LoggerFactory.getLogger(SandboxServiceInstaller.class);
+    }
+
+    /** 把「消息 + 异常摘要」拼平，便于一次性断言日志里到底有没有诊断。 */
+    private static String loggedText(ListAppender<ILoggingEvent> appender) {
+        return appender.list.stream()
+                .map(event -> event.getFormattedMessage()
+                        + " | " + (event.getThrowableProxy() == null
+                        ? "(无堆栈)" : event.getThrowableProxy().getMessage()))
+                .collect(Collectors.joining("\n"));
     }
 
     private record Fixture(SandboxProperties properties, RecordingInitializer recorder,
