@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  日志落盘：只把 WARN / ERROR 单独写一份文件，给界面「点击跳转到文件预览」用。
+
+  为什么单独成文件、而不是复用控制台那份：
+  - 桌面端已经把子进程 stdout/stderr 收进 <userData>/logs/backend.log，但那是全量流（INFO 占绝大多数），
+    预览面板里翻到真正出错的那几行很费劲；这里用 ThresholdFilter 只留 WARN 及以上。
+  - 目录由 `lingxi.log.dir` 决定：桌面端会传「应用安装目录/logs」，独立起进程时回落到 ~/.lingxi/logs。
+
+  未配 logback-spring.xml 之前走的是 Spring Boot 默认配置，这里显式 include 它的 defaults 与
+  console-appender，保持控制台输出格式不变。
+-->
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <springProperty scope="context" name="LOG_DIR" source="lingxi.log.dir"
+                    defaultValue="${user.home}/.lingxi/logs"/>
+
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <!-- 文件名固定，前端拼 <logDir>/warn-error.log 就能打开；滚动文件另计。 -->
+    <appender name="WARN_ERROR_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/warn-error.log</file>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>WARN</level>
+        </filter>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/warn-error.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>5MB</maxFileSize>
+            <maxHistory>7</maxHistory>
+            <totalSizeCap>50MB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{40} : %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="WARN_ERROR_FILE"/>
+    </root>
+</configuration>
