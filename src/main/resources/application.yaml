@@ -42,11 +42,13 @@ lingxi:
     allowed-domains: ["*"]
   mcp:
     enabled: true
-  # 数据存储目录：H2 库文件落在 <dir>/lingxi.mv.db；/config/current 的 dataStorage 原样回显此值。
-  # 换位置改这里即可，也可用 -Dlingxi.data.dir=... 或环境变量 LINGXI_DATA_DIR 覆盖。
+  # 数据存储目录的缺省值：真源在设置页（user_configs.data_dir），这里只在设置页没写时生效。
+  # H2 库文件落在 <dir>/lingxi.mv.db；设置页改目录会自动把库文件搬迁过去，但需要重启才切得过去。
+  # 也可用 -Dlingxi.data.dir=... 或环境变量 LINGXI_DATA_DIR 覆盖，但设置页一旦写了值就以它为准。
   data:
     dir: ${user.home}/.lingxi/data
-  # Skill 根目录：框架递归查找其下的 SKILL.md，把 name/description/入口路径渲染进系统提示词，
+  # Skill 根目录的缺省值：真源在设置页（user_configs.skill_dir），改完立即生效（不需要重启）。
+  # 框架递归查找其下的 SKILL.md，把 name/description/入口路径渲染进系统提示词，
   # 模型再用 read_skill 读取正文与引用资源。启动时目录不存在会被自动创建。
   # 置空（skill.dir: ""）即关闭 Skill 能力，此时不再下发 read_skill 工具。
   skill:
@@ -111,6 +113,7 @@ lingxi:
     # skill
     - 技能描述,位于`/.lingxi/skill`
 
+  # 团队规模上限的缺省值：真源在设置页（user_configs.team_size，取值 1~50），改完立即生效。
   team:
     max-member-size: 10
   agent:
