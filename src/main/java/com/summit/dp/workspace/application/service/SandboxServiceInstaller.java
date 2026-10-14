@@ -201,6 +201,10 @@ public class SandboxServiceInstaller {
     }
 
     /** 安装预算：取配置值与 {@link #INSTALL_BUDGET_FLOOR} 的较大者，别被探测那档的 60s 卡住。 */
+    private CommandTimeoutConfig installBudgetConfig() {
+        return new CommandTimeoutConfig(installBudget().toMillis(), TimeUnit.MILLISECONDS);
+    }
+
     private Duration installBudget() {
         Duration configured = properties.timeout();
         return configured.compareTo(INSTALL_BUDGET_FLOOR) > 0 ? configured : INSTALL_BUDGET_FLOOR;
@@ -231,25 +235,15 @@ public class SandboxServiceInstaller {
      *   <li>完整诊断（框架拼的 exit code + SRT 原文 + 堆栈）写日志，供排查。</li>
      * </ul>
      *
-     * <p><b>用户取消 UAC 不做特例</b>：要区分它和真实失败，看日志里的 exit code
-     * （SRT 约定 2 = UAC 取消，其余归 1）即可；而在界面层去猜「是不是用户取消」只能匹配文案，
-     * SRT 与框架都明说文案随版本变，所以这里刻意不猜。</p>
-     */
-    /**
-     * 执行 Windows 组件安装。失败（<b>含用户主动取消 UAC</b>）一律同一条路：
-     *
-     * <ul>
-     *   <li>面向界面只抛一句可读结论，不把英文原文和堆栈甩给用户；</li>
-     *   <li>完整诊断（框架拼的 exit code + SRT 原文 + 堆栈）写日志，供排查。</li>
-     * </ul>
-     *
      * <p><b>用户取消 UAC 不做特例</b>：要区分它和真实失败，看日志里的 exit code 即可
      * （SRT 约定 2 = UAC 取消；-1 = 预算内没跑完、被框架杀掉，见 {@link #INSTALL_BUDGET_FLOOR}）。
      * 在界面层去猜「是不是用户取消」只能匹配文案，SRT 与框架都明说文案随版本变，所以这里刻意不猜。</p>
      */
     private void installWindows() {
         try {
-            initializer(installBudget()).installWindows(properties.srtCli(), properties.nodeExe());
+            // 组件检查（node/srt --version）沿用探测预算；安装命令与它之后的探测走独立预算。
+            initializer(properties.timeout())
+                    .installWindows(properties.srtCli(), properties.nodeExe(), installBudgetConfig());
         } catch (IOException | IllegalStateException failure) {
             // 这条 error 就是「详情见错误日志」所指的东西：格式固定、可 grep「沙箱前置依赖安装失败」定位。
             log.error("沙箱前置依赖安装失败：Windows 沙箱组件安装未成功（srt-cli={}, node-exe={}；"

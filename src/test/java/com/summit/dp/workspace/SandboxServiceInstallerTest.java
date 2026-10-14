@@ -173,7 +173,7 @@ class SandboxServiceInstallerTest {
             }
 
             @Override
-            public void installWindows(Path cli, Path nodeExe) {
+            public void installWindows(Path cli, Path nodeExe, CommandTimeoutConfig budget) {
                 throw new IllegalStateException(
                         "Windows sandbox installation failed (exit code -1): Installed.");
             }
@@ -189,17 +189,22 @@ class SandboxServiceInstallerTest {
 
     @Test
     @EnabledOnOs(OS.WINDOWS)
-    @DisplayName("Windows：安装预算不得被探测那档超时卡住（SRT 自己的安装预算是 120s，还要留时间给 UAC）")
+    @DisplayName("Windows：安装走独立预算（下限 3 分钟），不被探测那档超时卡住")
     void installBudgetIsNotCappedByTheProbeTimeout() {
         Fixture fixture = fixture(null, null, false, true);
 
         fixture.installer().ensureReady();
 
-        List<Long> millis = fixture.budgets().stream()
-                .map(budget -> budget.timeUnit().toMillis(budget.timeout()))
-                .toList();
-        assertEquals(List.of(5_000L, Duration.ofMinutes(3).toMillis()), millis,
-                "探测沿用配置值（测试里是 5s），安装必须抬到下限，否则会在 SRT 收工前把进程杀掉：" + millis);
+        // 初始化器本身只带探测预算（组件检查用它）：探测与安装各建一个，都是 5s。
+        assertEquals(List.of(5_000L, 5_000L), toMillis(fixture.budgets()),
+                "交给框架的初始化器只该带探测预算：" + fixture.budgets());
+        // 安装命令必须单独拿到抬高的预算（SRT 自己是 120s，还要留时间给 UAC），否则会被提前杀掉。
+        assertEquals(List.of(Duration.ofMinutes(3).toMillis()), toMillis(fixture.recorder().installBudgets),
+                "安装预算没被抬高：" + fixture.recorder().installBudgets);
+    }
+
+    private static List<Long> toMillis(List<CommandTimeoutConfig> budgets) {
+        return budgets.stream().map(budget -> budget.timeUnit().toMillis(budget.timeout())).toList();
     }
 
     @Test
@@ -293,7 +298,7 @@ class SandboxServiceInstallerTest {
                 new CommandTimeoutConfig(5, TimeUnit.SECONDS),
                 new LocalWorkspace("sandbox-service-test", temp.toString())) {
             @Override
-            public void installWindows(Path cli, Path nodeExe) {
+            public void installWindows(Path cli, Path nodeExe, CommandTimeoutConfig budget) {
                 installs.incrementAndGet();
                 installEntered.countDown();
                 try {
@@ -344,7 +349,7 @@ class SandboxServiceInstallerTest {
             }
 
             @Override
-            public void installWindows(Path cli, Path nodeExe) {
+            public void installWindows(Path cli, Path nodeExe, CommandTimeoutConfig budget) {
                 installs.incrementAndGet();
                 installEntered.countDown();
                 try {
@@ -439,6 +444,8 @@ class SandboxServiceInstallerTest {
         private final boolean probeSucceeds;
         private final boolean installSucceeds;
         final List<String> calls = new ArrayList<>();
+        /** 每次安装命令实际拿到的预算（契约：必须 ≥ SRT 自己的 120s）。 */
+        final List<CommandTimeoutConfig> installBudgets = new ArrayList<>();
 
         RecordingInitializer(CommandTimeoutConfig timeout, Workspace workspace,
                              boolean probeSucceeds, boolean installSucceeds) {
@@ -455,9 +462,11 @@ class SandboxServiceInstallerTest {
             }
         }
 
+        /** 业务侧走的是带独立预算的重载，覆写必须落在这里，否则会落到真实现上起子进程。 */
         @Override
-        public void installWindows(Path srtCli, Path node) {
+        public void installWindows(Path srtCli, Path node, CommandTimeoutConfig budget) {
             calls.add("installWindows");
+            installBudgets.add(budget);
             if (!installSucceeds) {
                 throw new IllegalStateException(
                         "Windows sandbox installation failed (exit code 2): Install cancelled at the UAC prompt");
