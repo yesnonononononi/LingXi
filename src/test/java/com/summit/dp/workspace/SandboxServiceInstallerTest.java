@@ -123,7 +123,8 @@ class SandboxServiceInstallerTest {
 
             assertEquals("沙箱前置依赖安装失败，详情见错误日志", failure.getMessage(),
                     "界面文案必须稳定，不能因为 SRT 改了措辞就跟着变：" + failure.getMessage());
-            assertEquals(List.of("init", "installWindows"), fixture.recorder().calls);
+            // 安装后的那次 init 是「复查」：被杀掉 ≠ 没装成，必须再探一次才敢说失败（见 installedAfterAll）。
+            assertEquals(List.of("init", "installWindows", "init"), fixture.recorder().calls);
 
             String logged = loggedText(logs);
             assertTrue(logged.contains("WFP fence is missing"),
@@ -147,6 +148,58 @@ class SandboxServiceInstallerTest {
 
         assertFalse(failure.getMessage().contains("exit code"), failure.getMessage());
         assertFalse(failure.getMessage().contains("SRT"), failure.getMessage());
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    @DisplayName("Windows：安装命令被杀、但机器其实已装好时，按成功处理而不报失败")
+    void installCountedAsSuccessWhenTheMachineTurnedOutProvisioned() throws IOException {
+        Path srtCli = Files.createFile(Files.createDirectories(temp.resolve("resources")).resolve("cli.js"));
+        Path node = Files.createFile(temp.resolve("node.exe"));
+        SandboxProperties properties = new SandboxProperties(temp, node, srtCli,
+                temp.resolve("state"), Duration.ofSeconds(5), List.of(), null);
+
+        AtomicInteger probes = new AtomicInteger();
+        SandboxInitializer killedButInstalled = new SandboxInitializer(
+                new CommandTimeoutConfig(5, TimeUnit.SECONDS),
+                new LocalWorkspace("sandbox-service-test", temp.toString())) {
+            @Override
+            public void init(Path cli, Path nodeExe) {
+                // 第一次（安装前探测）确实没装过；安装命令被预算杀掉后复查时，SRT 早已打完收工。
+                if (probes.incrementAndGet() == 1) {
+                    throw new IllegalStateException(
+                            "SRT sandbox probe failed (exit code 1): Sandbox user is not provisioned");
+                }
+            }
+
+            @Override
+            public void installWindows(Path cli, Path nodeExe) {
+                throw new IllegalStateException(
+                        "Windows sandbox installation failed (exit code -1): Installed.");
+            }
+        };
+        SandboxServiceInstaller installer = new SandboxServiceInstaller(
+                properties, (timeout, workspace) -> killedButInstalled);
+
+        SandboxServiceStatus status = installer.ensureReady();
+
+        assertEquals(2, probes.get(), "安装失败后必须复查一次");
+        assertTrue(status.installedThisCall(), "复查通过就按「本次已安装」返回，别把已经能用的沙箱报成失败");
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    @DisplayName("Windows：安装预算不得被探测那档超时卡住（SRT 自己的安装预算是 120s，还要留时间给 UAC）")
+    void installBudgetIsNotCappedByTheProbeTimeout() {
+        Fixture fixture = fixture(null, null, false, true);
+
+        fixture.installer().ensureReady();
+
+        List<Long> millis = fixture.budgets().stream()
+                .map(budget -> budget.timeUnit().toMillis(budget.timeout()))
+                .toList();
+        assertEquals(List.of(5_000L, Duration.ofMinutes(3).toMillis()), millis,
+                "探测沿用配置值（测试里是 5s），安装必须抬到下限，否则会在 SRT 收工前把进程杀掉：" + millis);
     }
 
     @Test
@@ -352,7 +405,7 @@ class SandboxServiceInstallerTest {
     }
 
     private record Fixture(SandboxProperties properties, RecordingInitializer recorder,
-                           SandboxServiceInstaller installer) {}
+                           SandboxServiceInstaller installer, List<CommandTimeoutConfig> budgets) {}
 
     /**
      * @param srtCli null 表示在临时目录造一个真实存在的 cli.js
@@ -369,7 +422,13 @@ class SandboxServiceInstallerTest {
             RecordingInitializer recorder = new RecordingInitializer(
                     new CommandTimeoutConfig(5, TimeUnit.SECONDS),
                     new LocalWorkspace("sandbox-service-test", temp.toString()), probeSucceeds, installSucceeds);
-            return new Fixture(properties, recorder, new SandboxServiceInstaller(properties, (timeout, workspace) -> recorder));
+            // 记下每次交给框架的超时预算：探测与安装用的是两档，这是个必须守住的契约。
+            List<CommandTimeoutConfig> budgets = new ArrayList<>();
+            SandboxServiceInstaller installer = new SandboxServiceInstaller(properties, (timeout, workspace) -> {
+                budgets.add(timeout);
+                return recorder;
+            });
+            return new Fixture(properties, recorder, installer, budgets);
         } catch (IOException e) {
             throw new IllegalStateException("准备测试沙箱资源失败", e);
         }

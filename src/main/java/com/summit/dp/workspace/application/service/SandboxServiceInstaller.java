@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -44,6 +45,16 @@ public class SandboxServiceInstaller {
 
     /** 宿主 OS 从 Workspace 的运行时环境读，与框架内部口径一致，不另写一份 os.name 解析。 */
     private static final String WORKSPACE_ID = "sandbox-service";
+
+    /**
+     * 安装预算的下限。
+     *
+     * <p><b>不能沿用探测的预算</b>：SRT 自己的安装预算是 120s（{@code INSTALL_TIMEOUT_MS}），且安装是
+     * <b>自提权 + 模态 UAC</b> —— 用户要时间点确认框。预算一旦小于 120s，框架会在 SRT 还没收工前杀掉
+     * 子进程，于是「装成了」被报成「失败」（实测：exit code -1，SRT 原文却是 {@code Installed.}，
+     * 事后 {@code provisioned} 已是 true）。取 3 分钟 = SRT 的 120s 再留一倍余量给 UAC 应答。</p>
+     */
+    private static final Duration INSTALL_BUDGET_FLOOR = Duration.ofMinutes(3);
 
     private final SandboxProperties properties;
     private final InitializerFactory initializerFactory;
@@ -161,7 +172,7 @@ public class SandboxServiceInstaller {
      */
     private boolean probe() {
         try {
-            initializer().init(properties.srtCli(), properties.nodeExe());
+            initializer(properties.timeout()).init(properties.srtCli(), properties.nodeExe());
             return true;
         } catch (IOException | IllegalStateException failure) {
             // 带上 throwable 而不是只取 getMessage()：「为什么探测不过」是判断该不该装、装没装对的第一手证据。
@@ -170,6 +181,29 @@ public class SandboxServiceInstaller {
             log.warn("沙箱就绪探测未通过，将尝试安装 Windows 沙箱组件", failure);
             return false;
         }
+    }
+
+    /**
+     * 安装失败后的复查：安装这件事「被杀掉」和「没装成」是两回事。
+     *
+     * <p>SRT 的安装是自提权的一次性子进程，框架一旦把预算用尽就会杀进程，但 SRT 往往已经打完收工。
+     * 所以失败后必须再探一次：探过了就当安装成功 —— 否则 {@link #installAttempted} 白白烧掉，
+     * 用户被指引去「设置页手动安装」，而机器其实已经就绪。</p>
+     */
+    private boolean installedAfterAll() {
+        try {
+            initializer(installBudget()).init(properties.srtCli(), properties.nodeExe());
+            return true;
+        } catch (IOException | IllegalStateException stillFailing) {
+            log.info("安装失败后的复查仍未通过，确认为安装失败", stillFailing);
+            return false;
+        }
+    }
+
+    /** 安装预算：取配置值与 {@link #INSTALL_BUDGET_FLOOR} 的较大者，别被探测那档的 60s 卡住。 */
+    private Duration installBudget() {
+        Duration configured = properties.timeout();
+        return configured.compareTo(INSTALL_BUDGET_FLOOR) > 0 ? configured : INSTALL_BUDGET_FLOOR;
     }
 
     /**
@@ -201,14 +235,31 @@ public class SandboxServiceInstaller {
      * （SRT 约定 2 = UAC 取消，其余归 1）即可；而在界面层去猜「是不是用户取消」只能匹配文案，
      * SRT 与框架都明说文案随版本变，所以这里刻意不猜。</p>
      */
+    /**
+     * 执行 Windows 组件安装。失败（<b>含用户主动取消 UAC</b>）一律同一条路：
+     *
+     * <ul>
+     *   <li>面向界面只抛一句可读结论，不把英文原文和堆栈甩给用户；</li>
+     *   <li>完整诊断（框架拼的 exit code + SRT 原文 + 堆栈）写日志，供排查。</li>
+     * </ul>
+     *
+     * <p><b>用户取消 UAC 不做特例</b>：要区分它和真实失败，看日志里的 exit code 即可
+     * （SRT 约定 2 = UAC 取消；-1 = 预算内没跑完、被框架杀掉，见 {@link #INSTALL_BUDGET_FLOOR}）。
+     * 在界面层去猜「是不是用户取消」只能匹配文案，SRT 与框架都明说文案随版本变，所以这里刻意不猜。</p>
+     */
     private void installWindows() {
         try {
-            initializer().installWindows(properties.srtCli(), properties.nodeExe());
+            initializer(installBudget()).installWindows(properties.srtCli(), properties.nodeExe());
         } catch (IOException | IllegalStateException failure) {
             // 这条 error 就是「详情见错误日志」所指的东西：格式固定、可 grep「沙箱前置依赖安装失败」定位。
             log.error("沙箱前置依赖安装失败：Windows 沙箱组件安装未成功（srt-cli={}, node-exe={}；"
-                    + "用户主动取消 UAC 也走这里，exit code 2 即取消）",
+                    + "exit code 2 = 用户取消 UAC，-1 = 预算内没跑完被框架杀掉）",
                     properties.srtCli(), properties.nodeExe(), failure);
+            // 被杀掉 ≠ 没装成：先复查一次，机器已就绪就别把「能用的沙箱」报成失败。
+            if (installedAfterAll()) {
+                log.warn("沙箱组件安装命令未正常结束，但随后探测通过，按安装成功处理");
+                return;
+            }
             throw new ClientException("沙箱前置依赖安装失败，详情见错误日志");
         }
     }
@@ -225,9 +276,8 @@ public class SandboxServiceInstaller {
         return localWorkspace().runtimeEnvironment().osType() == OsType.WINDOWS;
     }
 
-    private SandboxInitializer initializer() {
-        CommandTimeoutConfig timeout = new CommandTimeoutConfig(
-                properties.timeout().toMillis(), TimeUnit.MILLISECONDS);
+    private SandboxInitializer initializer(Duration budget) {
+        CommandTimeoutConfig timeout = new CommandTimeoutConfig(budget.toMillis(), TimeUnit.MILLISECONDS);
         return initializerFactory.create(timeout, localWorkspace());
     }
 
