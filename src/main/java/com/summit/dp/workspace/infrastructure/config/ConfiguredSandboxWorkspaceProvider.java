@@ -5,6 +5,7 @@ import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.workspace.WorkspaceProvider;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.workspace.application.service.SandboxServiceInstaller;
 import com.summit.sandbox.CommandTimeoutConfig;
 import com.summit.sandbox.SandboxWorkspaceProvider;
 
@@ -15,10 +16,13 @@ import java.util.Objects;
 public final class ConfiguredSandboxWorkspaceProvider implements WorkspaceProvider {
     private final SandboxProperties properties;
     private final ObjectMapper mapper;
+    private final SandboxServiceInstaller serviceInstaller;
 
-    public ConfiguredSandboxWorkspaceProvider(SandboxProperties properties, ObjectMapper mapper) {
+    public ConfiguredSandboxWorkspaceProvider(SandboxProperties properties, ObjectMapper mapper,
+                                             SandboxServiceInstaller serviceInstaller) {
         this.properties = properties;
         this.mapper = mapper;
+        this.serviceInstaller = serviceInstaller;
     }
 
     @Override
@@ -32,6 +36,9 @@ public final class ConfiguredSandboxWorkspaceProvider implements WorkspaceProvid
                         || Objects.toString(properties.nodeExe(), "").isBlank() || Objects.toString(properties.srtCli(), "").isBlank(),
                 "沙箱运行资源未配置，请设置 lingxi.sandbox 的 application-directory、node-exe 和 srt-cli");
         throwIf(properties.timeout().isNegative() || properties.timeout().isZero(), "沙箱执行超时必须大于零");
+        // 启动沙箱模式前的就绪检查：Windows 上 SRT 要先注册系统组件，否则下面那次就绪探测必定失败。
+        // 刻意放在 try 之外 —— 它抛的是已经说清问题的中文提示，再包一层「沙箱初始化失败」只会把原因埋掉。
+        serviceInstaller.ensureReady();
         try {
             return SandboxWorkspaceProvider.builder().applicationDirectory(properties.applicationDirectory())
                     .nodeExe(properties.nodeExe()).srtCli(properties.srtCli()).bashExe(properties.bashExe())

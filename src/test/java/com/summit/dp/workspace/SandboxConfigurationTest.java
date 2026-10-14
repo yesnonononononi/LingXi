@@ -50,4 +50,19 @@ class SandboxConfigurationTest {
             assertEquals("api.example.test", properties.allowedDomains().getFirst());
         });
     }
+
+    @Test
+    void sandboxResolutionChecksSandboxResourcesBeforeBuildingTheWorkspace() {
+        // 资源路径都已配置但文件不存在：若解析前没跑就绪检查，这里拿到的会是框架那句
+        // 「SRT JavaScript CLI is missing」；拿到的必须是业务侧说清缺哪个文件的提示。
+        contexts.withPropertyValues("lingxi.sandbox.application-directory=" + temporary,
+                "lingxi.sandbox.node-exe=" + temporary.resolve("missing/node.exe"),
+                "lingxi.sandbox.srt-cli=" + temporary.resolve("missing/dist/cli.js")).run(context -> {
+            assertNull(context.getStartupFailure());
+            WorkspaceResolver resolver = context.getBean(WorkspaceResolver.class);
+            ClientException failure = assertThrows(ClientException.class,
+                    () -> resolver.resolve(SandboxWorkspaceSpec.of(temporary.toString(), null)));
+            assertTrue(failure.getMessage().contains("srt-cli 不存在"), failure.getMessage());
+        });
+    }
 }

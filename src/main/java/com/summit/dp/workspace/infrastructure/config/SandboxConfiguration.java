@@ -2,6 +2,7 @@ package com.summit.dp.workspace.infrastructure.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.workspace.application.policy.SandboxPolicyFactory;
+import com.summit.dp.workspace.application.service.SandboxServiceInstaller;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -11,8 +12,14 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties(SandboxProperties.class)
 public class SandboxConfiguration {
     @Bean
-    public ConfiguredSandboxWorkspaceProvider sandboxWorkspaceProvider(SandboxProperties properties, ObjectMapper mapper) {
-        return new ConfiguredSandboxWorkspaceProvider(properties, mapper);
+    public ConfiguredSandboxWorkspaceProvider sandboxWorkspaceProvider(SandboxProperties properties, ObjectMapper mapper,
+                                                                      SandboxServiceInstaller serviceInstaller) {
+        return new ConfiguredSandboxWorkspaceProvider(properties, mapper, serviceInstaller);
+    }
+
+    @Bean
+    public SandboxServiceInstaller sandboxServiceInstaller(SandboxProperties properties) {
+        return new SandboxServiceInstaller(properties);
     }
 
     @Bean

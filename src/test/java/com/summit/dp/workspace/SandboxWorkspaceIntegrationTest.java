@@ -15,8 +15,10 @@ import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.policy.SandboxPolicyFactory;
+import com.summit.dp.workspace.application.service.SandboxServiceInstaller;
 import com.summit.dp.workspace.infrastructure.config.ConfiguredSandboxWorkspaceProvider;
 import com.summit.dp.workspace.infrastructure.config.SandboxProperties;
+import com.summit.sandbox.SandboxInitializer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.extension.AnnotatedElementContext;
@@ -75,7 +77,19 @@ class SandboxWorkspaceIntegrationTest {
         Path root = Files.createDirectories(temporary.resolve("workspace with spaces"));
         SandboxProperties properties = new SandboxProperties(temporary, node, Path.of(System.getProperty("sandbox.srt.cli")),
                 state, Duration.ofSeconds(60), List.of(), bash);
-        ConfiguredSandboxWorkspaceProvider provider = new ConfiguredSandboxWorkspaceProvider(properties, new ObjectMapper());
+        // 这个用例验的是「业务档位确实落到沙箱文件权限」，安装动作有自己的单测；这里换成假初始化器，
+        // 免得在测试机上真的执行 windows-install（会弹 UAC）。
+        SandboxServiceInstaller installer = new SandboxServiceInstaller(properties,
+                (timeout, workspace) -> new SandboxInitializer(timeout, workspace) {
+                    @Override
+                    public void init(Path srtCli, Path node) {
+                    }
+
+                    @Override
+                    public void installWindows(Path srtCli, Path node) {
+                    }
+                });
+        ConfiguredSandboxWorkspaceProvider provider = new ConfiguredSandboxWorkspaceProvider(properties, new ObjectMapper(), installer);
         // 隔离测试的挂载范围，避免集成测试对宿主整盘施加临时 ACL。
         FileSystem fileSystem = mock(FileSystem.class);
         when(fileSystem.getRootDirectories()).thenReturn(List.of(temporary, outsideVolume));
