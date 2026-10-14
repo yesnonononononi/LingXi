@@ -8,19 +8,62 @@
 状态目录自动使用 `<userData>/sandbox-state/`，项目路径来自用户选择的 workspace。
 `LINGXI_SANDBOX_APPLICATION_DIRECTORY` 和 `LINGXI_SANDBOX_STATE_DIRECTORY` 可显式覆盖自动目录。
 
-Node 和完整 SRT 运行资源仍由部署方提供，可用 JVM 参数或对应环境变量注入：
+运行资源由构建输入提供；启动器自动使用打包态 `process.resourcesPath/runtime/`，
+开发态使用 `frontend/build/runtime/`。也可用 JVM 参数或对应环境变量覆盖：
 
 ```text
 lingxi.sandbox.node-exe=<Node 可执行文件>
 lingxi.sandbox.srt-cli=<完整 sandbox-runtime 安装中的 dist/cli.js>
+lingxi.sandbox.bash-exe=<完整 Git 包中的 bin/bash.exe>
 ```
 
 框架会把 helper 提取到安装目录的 `resources/sandbox-helpers/`。
-安装目录只读时应在安装阶段提前提取 helper。独立启动 Java 时还需配置安装目录和可写状态目录。
-当前桌面打包脚本只打包 JRE 和后端 jar，尚未包含 Node、SRT 及 helper 预提取步骤。
+后端构建会从本次 Boot jar 中提前提取 helper，随安装包部署，首次运行无需写安装目录。
+独立启动 Java 时仍需配置安装目录和可写状态目录。
+桌面包通过 `extraResources` 带入完整运行资源和 helper，均位于 ASAR 外。
 沙箱需要读取 helper、Node 和请求目录；provider 会生成对应策略并禁止修改 helper 和请求内容。
 不使用开发机的全局 npm 路径，也不会自动安装需要管理员权限的 Windows 沙箱组件。
 缺少资源或启动检查失败时明确报错，不退回宿主执行；未配置这些路径仍可启动并使用本地模式。
+
+## 准备与构建
+
+将与构建机器平台、架构一致的发行包解压到以下目录（Windows x64 示例）：
+
+```text
+frontend/vendor/runtime/win32-x64/
+  node/node.exe
+  srt/node_modules/@anthropic-ai/sandbox-runtime/dist/cli.js
+  git/bin/bash.exe
+  git/cmd/git.exe
+  git/usr/bin/msys-2.0.dll
+```
+
+Node 使用[官方完整发行包](https://nodejs.org/en/download)，Git 使用[完整 PortableGit](https://git-scm.com/install/windows)，保留其 DLL、工具和许可证。
+SRT 保留整个 npm 安装目录，包括依赖、vendor 及原生组件。已验证的 SRT 版本为 0.0.79，
+可在 frontend 中准备：
+
+```powershell
+npm install --prefix vendor/runtime/win32-x64/srt --ignore-scripts --omit=dev --no-audit --no-fund --save-exact @anthropic-ai/sandbox-runtime@0.0.79
+npm run sandbox:runtime
+npm run app:build:dir
+```
+
+发行包目录不入 Git。CI 同样需要提供这个目录，可由构建资产解压得到；
+`LINGXI_RUNTIME_SOURCE` 或 `sandbox:runtime -- --source=<目录>` 可指定另一份包含 node、srt、git 的源目录。
+重复构建复用源目录的 package.json/package-lock.json，并通过 npm ci 准备 SRT，避免依赖漂移。
+构建校验 Node 版本和架构、SRT 依赖/CLI、Git/Bash 运行能力；缺资源时拒绝打包。
+`beforePack` 覆盖快速构建及直接调用 electron-builder 的入口，避免静默漏包。
+构建只执行版本和 Bash 检查，不安装 Windows 系统组件。
+锁定的框架提交须先推送到源码仓库，CI 和干净环境才能取得对应实现。
+
+Windows 首次使用还需显式安装 SRT 账户和 WFP 组件（可能触发 UAC），运行一次：
+
+```powershell
+& "<资源目录>/runtime/node/node.exe" "<资源目录>/runtime/srt/node_modules/@anthropic-ai/sandbox-runtime/dist/cli.js" windows-install
+```
+
+框架接收 Bash 路径后自动选择 Bash；业务执行器仍只传原始命令。
+启动器仅给应用子进程补充 Node/Git 的 PATH，不修改系统全局环境。
 
 每次请求以当前项目绝对路径和访问档位生成策略快照，文件权限不在 YAML 中配置。
 `IN_WORKSPACE` 将当前项目加入 `allowRead` 和 `allowWrite`；

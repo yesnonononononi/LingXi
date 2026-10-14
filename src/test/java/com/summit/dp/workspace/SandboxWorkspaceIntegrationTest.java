@@ -2,6 +2,7 @@ package com.summit.dp.workspace;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.workspace.Workspace;
+import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.runtime.workspace.WorkspaceBridge.CommandResult;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecuteResult;
@@ -58,6 +59,10 @@ class SandboxWorkspaceIntegrationTest {
                            WorkspaceConverter converter, WorkspaceVO view) {}
 
     private Fixture createFixture() throws IOException {
+        return createFixture(null);
+    }
+
+    private Fixture createFixture(Path bash) throws IOException {
         boolean windows = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
         Path nodeSource = Path.of(System.getProperty("sandbox.node.exe", windows ? "node.exe" : "node"));
         if (!Files.isRegularFile(nodeSource)) {
@@ -69,7 +74,7 @@ class SandboxWorkspaceIntegrationTest {
         Path node = Files.copy(nodeSource, runtime.resolve(windows ? "node.exe" : "node"));
         Path root = Files.createDirectories(temporary.resolve("workspace with spaces"));
         SandboxProperties properties = new SandboxProperties(temporary, node, Path.of(System.getProperty("sandbox.srt.cli")),
-                state, Duration.ofSeconds(60), List.of());
+                state, Duration.ofSeconds(60), List.of(), bash);
         ConfiguredSandboxWorkspaceProvider provider = new ConfiguredSandboxWorkspaceProvider(properties, new ObjectMapper());
         // 隔离测试的挂载范围，避免集成测试对宿主整盘施加临时 ACL。
         FileSystem fileSystem = mock(FileSystem.class);
@@ -78,6 +83,23 @@ class SandboxWorkspaceIntegrationTest {
                 new SandboxPolicyFactory(properties.allowedDomains(), fileSystem));
         WorkspaceVO view = WorkspaceVO.builder().id(1L).name("project").hostDir(root.toString()).workDir(root.toString()).build();
         return new Fixture(windows, root, provider, converter, view);
+    }
+
+    @Test
+    @EnabledIfSystemProperty(named = "sandbox.bash.exe", matches = ".+")
+    void bundledBashWorksThroughBusinessConfigurationAndTerminalExecutor() throws Exception {
+        Path bash = Path.of(System.getProperty("sandbox.bash.exe"));
+        Fixture fixture = createFixture(bash);
+        Workspace workspace = fixture.provider().resolve(fixture.converter().toSpec(fixture.view(),
+                WorkspaceType.SAND_BOX, AgentAccessMode.IN_WORKSPACE));
+        assertEquals(ShellType.BASH, workspace.runtimeEnvironment().shellType());
+        assertEquals(bash.toString(), workspace.runtimeEnvironment().shellExecutable());
+        CommandToolDefinitionExecutor terminal = new CommandToolDefinitionExecutor(new ObjectMapper());
+        ToolDefinition<?> definition = ToolDefinition.builder().id(ToolCatalog.EXECUTE_COMMAND)
+                .name(ToolCatalog.EXECUTE_COMMAND).executor(terminal).timeout(30L).maxOutput(4096).build();
+        ToolExecuteResult result = terminal.process(ExecuteCommandRequest.builder()
+                .command("value='A B'; test \"$value\" = 'A B' && node --version && git --version").build(), workspace, definition);
+        assertTrue(result.isSuccess(), result.toString());
     }
 
     @Test

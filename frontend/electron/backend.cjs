@@ -94,6 +94,11 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
   const layout = resolveLayout(frontendRoot, isPackaged, resourcesPath);
   // 安装位置来自 Electron，不能用 JVM 的可写工作目录反推；开发态使用项目根目录。
   const applicationDirectory = isPackaged ? path.dirname(executablePath) : path.resolve(frontendRoot, '..');
+  const toolsDirectory = isPackaged ? path.join(resourcesPath, 'runtime') : path.join(frontendRoot, 'build', 'runtime');
+  const windows = process.platform === 'win32';
+  const nodeExe = process.env.LINGXI_SANDBOX_NODE_EXE || path.join(toolsDirectory, 'node', ...(windows ? ['node.exe'] : ['bin', 'node']));
+  const srtCli = process.env.LINGXI_SANDBOX_SRT_CLI || path.join(toolsDirectory, 'srt', 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
+  const bashExe = process.env.LINGXI_SANDBOX_BASH_EXE || path.join(toolsDirectory, 'git', 'bin', windows ? 'bash.exe' : 'bash');
 
   // 端口已占用：可能是用户在 IDE 里跑着后端，也可能是上次崩溃残留的孤儿 JVM。
   // 两种都直接复用 —— 既不会「端口占用」启动失败，也不会去杀不属于自己的进程。
@@ -131,6 +136,9 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
     `--server.port=${BACKEND_PORT}`,
     `--lingxi.sandbox.application-directory=${process.env.LINGXI_SANDBOX_APPLICATION_DIRECTORY || applicationDirectory}`,
     `--lingxi.sandbox.state-directory=${process.env.LINGXI_SANDBOX_STATE_DIRECTORY || path.join(userDataDir, 'sandbox-state')}`,
+    `--lingxi.sandbox.node-exe=${nodeExe}`,
+    `--lingxi.sandbox.srt-cli=${srtCli}`,
+    `--lingxi.sandbox.bash-exe=${bashExe}`,
   ];
   // 数据库内置（H2 文件库，用户机器不需要装任何数据库）。
   // 传 LX_SPRING_PROFILE 环境变量可覆盖为其他 Spring profile（默认不传，走主配置）。
@@ -139,13 +147,16 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
   }
 
   logFn(`启动后端: ${layout.javaExe} ${args.join(' ')}`);
+  // 只给应用子进程补充工具路径，避免修改用户的全局环境。
+  const pathKey = Object.keys(process.env).find(key => key.toUpperCase() === 'PATH') || 'PATH';
+  const toolPath = [path.dirname(nodeExe), path.dirname(bashExe), process.env[pathKey] || ''].join(path.delimiter);
   child = spawn(layout.javaExe, args, {
     // cwd 必须是可写目录：装到 Program Files 后 jar 旁边不可写，
     // 而 JVM 崩溃转储、相对路径配置等都会落在 cwd。不设 cwd 会继承安装目录 → 静默写失败。
     cwd: userDataDir,
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, JAVA_HOME: layout.runtimeDir },
+    env: { ...process.env, JAVA_HOME: layout.runtimeDir, [pathKey]: toolPath },
   });
   ownsProcess = true;
 

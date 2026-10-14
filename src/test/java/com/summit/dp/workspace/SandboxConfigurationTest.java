@@ -40,11 +40,13 @@ class SandboxConfigurationTest {
         contexts.withPropertyValues("lingxi.sandbox.application-directory=" + temporary,
                 "lingxi.sandbox.node-exe=" + temporary.resolve("node.exe"),
                 "lingxi.sandbox.srt-cli=" + temporary.resolve("dist/cli.js"),
+                "lingxi.sandbox.bash-exe=" + temporary.resolve("git/bin/bash.exe"),
                 "lingxi.sandbox.allowed-domains[0]=api.example.test").run(context -> {
             assertNull(context.getStartupFailure());
             SandboxProperties properties = context.getBean(SandboxProperties.class);
             assertEquals(temporary, properties.applicationDirectory());
             assertEquals(temporary.resolve("node.exe"), properties.nodeExe());
+            assertEquals(temporary.resolve("git/bin/bash.exe"), properties.bashExe());
             assertEquals("api.example.test", properties.allowedDomains().getFirst());
         });
     }

@@ -27,6 +27,7 @@ dist-ssr
 
 # 桌面端后端运行产物暂存区（jlink 出的 JRE + fat jar，由 npm run backend:runtime 生成）
 /build/
+/vendor/runtime/
 
 # electron-builder 打包输出（安装包 + 免安装目录）
 /release/

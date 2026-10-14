@@ -34,7 +34,8 @@ public final class ConfiguredSandboxWorkspaceProvider implements WorkspaceProvid
         throwIf(properties.timeout().isNegative() || properties.timeout().isZero(), "沙箱执行超时必须大于零");
         try {
             return SandboxWorkspaceProvider.builder().applicationDirectory(properties.applicationDirectory())
-                    .nodeExe(properties.nodeExe()).srtCli(properties.srtCli()).stateDirectory(properties.stateDirectory())
+                    .nodeExe(properties.nodeExe()).srtCli(properties.srtCli()).bashExe(properties.bashExe())
+                    .stateDirectory(properties.stateDirectory())
                     .objectMapper(mapper).timeout(new CommandTimeoutConfig(properties.timeout().toMillis(), TimeUnit.MILLISECONDS))
                     .build().resolve(spec);
         } catch (RuntimeException failure) {
