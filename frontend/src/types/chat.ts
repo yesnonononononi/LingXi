@@ -593,6 +593,21 @@ export interface SandboxServiceStatus {
   message: string;
 }
 
+/**
+ * 日志文件位置（对应后端 LogLocationVO）。
+ *
+ * <p>位置由后端进程自己报告 —— 桌面端可能复用一个已在跑的实例，那种实例的日志目录不是
+ * 本次启动器算出来的，前端照自己的值拼就会指错。</p>
+ */
+export interface LogLocationVO {
+  /** 日志目录（绝对路径） */
+  dir: string;
+  /** WARN/ERROR 日志文件的绝对路径，文件预览面板直接打开它 */
+  warnError: string;
+  /** 该文件此刻是否存在（刚启动、还没出过 WARN 时为 false） */
+  exists: boolean;
+}
+
 /** 会话访问档位：对应后端 UserConfig.AccessMode */
 export type AgentAccessMode = 'IN_WORKSPACE' | 'READ_ONLY_IN_WORKSPACE' | 'OUT_OF_WORKSPACE';
 

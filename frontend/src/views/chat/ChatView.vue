@@ -169,6 +169,15 @@
             role="alert"
           >
             <span class="flex-1">{{ sendFailureNotice.message }}</span>
+            <!-- 文件预览要拿 sessionId 去解析工作区，新建会话受理失败时还没有会话，这个入口就别给了 -->
+            <button
+              v-if="sendFailureNotice.sessionId"
+              type="button"
+              class="shrink-0 rounded-md px-2 py-1 text-xs underline decoration-dotted underline-offset-2 opacity-80 hover:opacity-100 transition-opacity"
+              @click="openErrorLog"
+            >
+              {{ logOpening ? t('chat.view.logOpening') : t('chat.view.openErrorLog') }}
+            </button>
             <button
               type="button"
               class="shrink-0 rounded-md px-2 py-1 text-xs opacity-70 hover:opacity-100 transition-opacity"
@@ -336,6 +345,8 @@
 <script setup lang="ts">
 import { ref, provide } from 'vue';
 import { t } from '../../i18n';
+import { isOk } from '../../utils/api';
+import { LogAPI } from '../../services/log';
 import { useFilePreview } from '../../composables/useFilePreview';
 import { FILE_PREVIEW_KEY } from '../../types/filePreview';
 import { DECIDE_TOOL_CALL_KEY } from '../../types/toolDecision';
@@ -356,6 +367,28 @@ const inputAreaRef = ref<InstanceType<typeof ChatInputArea> | null>(null);
 const messagesContainerRef = ref<InstanceType<typeof ChatMessageList> | null>(null);
 const { fileTabs, activeFileId, filePreviewOpen, openFilePreview, closeFileTab, refreshFile, runFileAction } = useFilePreview();
 provide(FILE_PREVIEW_KEY, openFilePreview);
+
+const logOpening = ref(false);
+
+/**
+ * 在文件预览面板里打开 WARN/ERROR 日志。
+ *
+ * <p>日志位置由后端进程自己报告（<code>/log/location</code>），前端不自行拼接 —— 桌面端可能复用一个
+ * 已在跑的实例，那种实例的日志目录不是本次启动器算出来的。失败横幅的 sessionId 就是本轮受理的会话，
+ * 文件预览需要拿它去解析工作区，所以横幅没给出会话时这个入口不显示。</p>
+ */
+const openErrorLog = async (): Promise<void> => {
+  const sessionId = sendFailureNotice.value?.sessionId;
+  if (!sessionId || logOpening.value) return;
+  logOpening.value = true;
+  try {
+    const result = await LogAPI.location();
+    if (!isOk(result.code) || !result.data?.warnError) return;
+    openFilePreview(sessionId, result.data.warnError);
+  } finally {
+    logOpening.value = false;
+  }
+};
 
 const {
   isSidebarCollapsed,

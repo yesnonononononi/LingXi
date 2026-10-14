@@ -71,6 +71,23 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** 目录能建且能写才算数：装到 Program Files 时 mkdir 就可能失败。 */
+function ensureWritableDirectory(directory) {
+  try {
+    fs.mkdirSync(directory, { recursive: true });
+    fs.accessSync(directory, fs.constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolveLogDirectory(preferred, fallback) {
+  if (ensureWritableDirectory(preferred)) return preferred;
+  ensureWritableDirectory(fallback);
+  return fallback;
+}
+
 function execFileAsync(file, args) {
   return new Promise((resolve) => {
     execFile(file, args, { windowsHide: true }, () => resolve());
@@ -94,6 +111,10 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
   const layout = resolveLayout(frontendRoot, isPackaged, resourcesPath);
   // 安装位置来自 Electron，不能用 JVM 的可写工作目录反推；开发态使用项目根目录。
   const applicationDirectory = isPackaged ? path.dirname(executablePath) : path.resolve(frontendRoot, '..');
+  // 日志目录固定为「应用安装目录/logs」，界面据此拼路径去开文件预览。
+  // 装到 Program Files 之类不可写的位置时回落 userData —— 否则 logback 的文件 appender 起不来，
+  // 「点击查看日志」会指向一个永远不存在的文件。回落结果同样回传给渲染层，两边始终看同一个目录。
+  const logDir = resolveLogDirectory(path.resolve(applicationDirectory, 'logs'), path.join(userDataDir, 'logs'));
   const toolsDirectory = isPackaged ? path.join(resourcesPath, 'runtime') : path.join(frontendRoot, 'build', 'runtime');
   const windows = process.platform === 'win32';
   const nodeExe = process.env.LINGXI_SANDBOX_NODE_EXE || path.join(toolsDirectory, 'node', ...(windows ? ['node.exe'] : ['bin', 'node']));
@@ -135,6 +156,7 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
     layout.jar,
     `--server.port=${BACKEND_PORT}`,
     `--lingxi.sandbox.application-directory=${process.env.LINGXI_SANDBOX_APPLICATION_DIRECTORY || applicationDirectory}`,
+    `--lingxi.log.dir=${process.env.LINGXI_LOG_DIR || logDir}`,
     `--lingxi.sandbox.state-directory=${process.env.LINGXI_SANDBOX_STATE_DIRECTORY || path.join(userDataDir, 'sandbox-state')}`,
     `--lingxi.sandbox.node-exe=${nodeExe}`,
     `--lingxi.sandbox.srt-cli=${srtCli}`,
@@ -147,6 +169,7 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
   }
 
   logFn(`启动后端: ${layout.javaExe} ${args.join(' ')}`);
+  logFn(`WARN/ERROR 日志目录: ${process.env.LINGXI_LOG_DIR || logDir}`);
   // 只给应用子进程补充工具路径，避免修改用户的全局环境。
   const pathKey = Object.keys(process.env).find(key => key.toUpperCase() === 'PATH') || 'PATH';
   const toolPath = [path.dirname(nodeExe), path.dirname(bashExe), process.env[pathKey] || ''].join(path.delimiter);
