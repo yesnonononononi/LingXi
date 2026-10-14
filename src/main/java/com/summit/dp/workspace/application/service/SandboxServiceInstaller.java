@@ -102,11 +102,13 @@ public class SandboxServiceInstaller {
             return new SandboxServiceStatus(true, true, false, "沙箱服务已就绪");
         }
         // 探测不过，多半是 Windows 组件没注册：装一次再探测；装不上就不再自动重试。
-        if (installAttempted.get()) {
+        //
+        // 必须是 CAS 占坑，不能「先 get 再 set」：团队模式下根执行与各子代理的执行会并发解析工作区
+        // （框架每次执行开始都调 resolve），先读后写会让两个线程同时判定「没装过」，各弹一次 UAC。
+        // 先占坑再执行，顺带把「安装失败」也记成已尝试 —— 否则失败会被当成没装过，每轮请求重弹。
+        if (!installAttempted.compareAndSet(false, true)) {
             throw new ClientException("沙箱服务不可用，请在设置中执行「安装沙箱服务」后重试");
         }
-        // 同上：先记账再执行，否则安装失败会被当成「没装过」，每轮请求重弹 UAC。
-        installAttempted.set(true);
         installWindows();
         ensured.set(true);
         return new SandboxServiceStatus(true, true, true, "已完成 Windows 沙箱组件安装");

@@ -21,7 +21,12 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -176,6 +181,57 @@ class SandboxServiceInstallerTest {
 
         assertFalse(status.installedThisCall());
         assertTrue(fixture.recorder().calls.isEmpty());
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    @DisplayName("并发解析工作区（团队模式）：自动安装只能被触发一次，不会两个线程各弹一次 UAC")
+    void concurrentEnsureTriggersInstallOnlyOnce() throws Exception {
+        Path srtCli = Files.createFile(Files.createDirectories(temp.resolve("resources")).resolve("cli.js"));
+        Path node = Files.createFile(temp.resolve("node.exe"));
+        SandboxProperties properties = new SandboxProperties(temp, node, srtCli,
+                temp.resolve("state"), Duration.ofSeconds(5), List.of(), null);
+
+        CountDownLatch installEntered = new CountDownLatch(1);
+        CountDownLatch releaseInstall = new CountDownLatch(1);
+        AtomicInteger installs = new AtomicInteger();
+        // 探测恒失败（模拟「Windows 组件没注册」），安装卡在门后，便于把两个线程压到同一个竞态窗口上。
+        SandboxInitializer blocking = new SandboxInitializer(
+                new CommandTimeoutConfig(5, TimeUnit.SECONDS),
+                new LocalWorkspace("sandbox-service-test", temp.toString())) {
+            @Override
+            public void init(Path cli, Path nodeExe) {
+                throw new IllegalStateException("SRT sandbox probe failed (exit code 1): WFP fence is missing");
+            }
+
+            @Override
+            public void installWindows(Path cli, Path nodeExe) {
+                installs.incrementAndGet();
+                installEntered.countDown();
+                try {
+                    releaseInstall.await(5, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+        SandboxServiceInstaller installer = new SandboxServiceInstaller(properties, (timeout, workspace) -> blocking);
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<SandboxServiceStatus> first = pool.submit(installer::ensureReady);
+            assertTrue(installEntered.await(5, TimeUnit.SECONDS), "第一个线程应已进入安装");
+
+            // 此刻第一个线程正卡在安装里：第二个线程必须被「已尝试过」挡住，而不是再弹一次 UAC。
+            ClientException blocked = assertThrows(ClientException.class, installer::ensureReady);
+            assertTrue(blocked.getMessage().contains("设置"), blocked.getMessage());
+
+            releaseInstall.countDown();
+            first.get(5, TimeUnit.SECONDS);
+            assertEquals(1, installs.get(), "同一进程内自动安装只能触发一次");
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     private record Fixture(SandboxProperties properties, RecordingInitializer recorder,
