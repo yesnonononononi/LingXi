@@ -17,6 +17,6 @@ public class SandboxConfiguration {
 
     @Bean
     public SandboxPolicyFactory sandboxPolicyFactory(SandboxProperties properties) {
-        return new SandboxPolicyFactory(properties.allowedDomains(), properties.denyRead(), properties.denyWrite());
+        return new SandboxPolicyFactory(properties.allowedDomains());
     }
 }

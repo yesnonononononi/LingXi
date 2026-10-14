@@ -410,6 +410,7 @@ app.whenReady().then(async () => {
     await backend.start({
       frontendRoot: path.resolve(__dirname, '..'),
       isPackaged: app.isPackaged,
+      executablePath: app.getPath('exe'),
       resourcesPath: process.resourcesPath,
       userDataDir,
       logPath: backendLogPath,

@@ -84,7 +84,7 @@ function execFileAsync(file, args) {
  *   reused=true 表示 8088 上本来就有服务（IDE 里跑的后端，或上次残留），直接复用；
  *   skipped=true 表示开发态缺产物、按约定跳过（由开发者自己起后端）。
  */
-async function start({ frontendRoot, isPackaged, resourcesPath, userDataDir, logPath, isDev, onCrash }) {
+async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, userDataDir, logPath, isDev, onCrash }) {
   logFn = (msg) => {
     const line = `[${new Date().toISOString()}] ${msg}`;
     console.log(`[Backend] ${msg}`);
@@ -92,6 +92,8 @@ async function start({ frontendRoot, isPackaged, resourcesPath, userDataDir, log
   };
 
   const layout = resolveLayout(frontendRoot, isPackaged, resourcesPath);
+  // 安装位置来自 Electron，不能用 JVM 的可写工作目录反推；开发态使用项目根目录。
+  const applicationDirectory = isPackaged ? path.dirname(executablePath) : path.resolve(frontendRoot, '..');
 
   // 端口已占用：可能是用户在 IDE 里跑着后端，也可能是上次崩溃残留的孤儿 JVM。
   // 两种都直接复用 —— 既不会「端口占用」启动失败，也不会去杀不属于自己的进程。
@@ -127,6 +129,8 @@ async function start({ frontendRoot, isPackaged, resourcesPath, userDataDir, log
     '-jar',
     layout.jar,
     `--server.port=${BACKEND_PORT}`,
+    `--lingxi.sandbox.application-directory=${process.env.LINGXI_SANDBOX_APPLICATION_DIRECTORY || applicationDirectory}`,
+    `--lingxi.sandbox.state-directory=${process.env.LINGXI_SANDBOX_STATE_DIRECTORY || path.join(userDataDir, 'sandbox-state')}`,
   ];
   // 数据库内置（H2 文件库，用户机器不需要装任何数据库）。
   // 传 LX_SPRING_PROFILE 环境变量可覆盖为其他 Spring profile（默认不传，走主配置）。

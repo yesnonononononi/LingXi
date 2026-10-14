@@ -23,7 +23,7 @@ import static org.mockito.Mockito.mock;
 class WorkspaceConverterTest {
     @TempDir Path temporary;
     private final WorkspaceConverter converter = new WorkspaceConverter(mock(SettingsProvider.class),
-            new SandboxPolicyFactory(List.of("api.example.test"), List.of("secrets"), List.of("readonly")));
+            new SandboxPolicyFactory(List.of("api.example.test")));
 
     @Test
     void sandboxUsesHostDirectoryAndKeepsTheRequestedReadOnlyPolicy() throws Exception {
@@ -34,10 +34,10 @@ class WorkspaceConverterTest {
         assertEquals(temporary.toString(), spec.workDir());
         assertEquals(LocalInstance.ID, spec.scope());
         JsonNode policy = policy(spec);
-        assertEquals(2, policy.path("denyWrite").size());
-        assertEquals(temporary.toString(), policy.path("denyWrite").get(1).asText());
-        assertEquals("readonly", policy.path("denyWrite").get(0).asText());
-        assertEquals("secrets", policy.path("denyRead").get(0).asText());
+        assertEquals(List.of(temporary.toString()), new ObjectMapper().convertValue(policy.path("denyWrite"), List.class));
+        assertTrue(policy.path("allowWrite").isEmpty());
+        assertTrue(policy.path("denyRead").isEmpty());
+        assertEquals(temporary.toString(), policy.path("allowRead").get(0).asText());
         assertEquals("api.example.test", policy.path("allowedDomains").get(0).asText());
         assertEquals(spec, converter.toSpec(new Workspace(1L, "project", temporary.toString()),
                 WorkspaceType.SAND_BOX, AgentAccessMode.READ_ONLY_IN_WORKSPACE));
@@ -48,8 +48,23 @@ class WorkspaceConverterTest {
     void sandboxFullAccessIsStillLimitedToWorkspaceWrites() throws Exception {
         WorkspaceSpec spec = converter.toSpec(new Workspace(1L, "project", temporary.toString()),
                 WorkspaceType.SAND_BOX, AgentAccessMode.OUT_OF_WORKSPACE);
-        assertTrue(policy(spec).path("allowWrite").isEmpty());
-        assertEquals(List.of("readonly"), new ObjectMapper().convertValue(policy(spec).path("denyWrite"), List.class));
+        assertEquals(List.of(temporary.toString()), new ObjectMapper().convertValue(policy(spec).path("allowWrite"), List.class));
+        assertTrue(policy(spec).path("denyWrite").isEmpty());
+    }
+
+    @Test
+    void changingProjectsAndModesCreatesIndependentPolicySnapshots() throws Exception {
+        Workspace first = new Workspace(1L, "first", temporary.resolve("first").toString());
+        Workspace second = new Workspace(2L, "second", temporary.resolve("second").toString());
+        WorkspaceSpec writable = converter.toSpec(first, WorkspaceType.SAND_BOX, AgentAccessMode.IN_WORKSPACE);
+        WorkspaceSpec readOnly = converter.toSpec(second, WorkspaceType.SAND_BOX, AgentAccessMode.READ_ONLY_IN_WORKSPACE);
+        WorkspaceSpec secondWritable = converter.toSpec(second, WorkspaceType.SAND_BOX, AgentAccessMode.IN_WORKSPACE);
+        assertEquals(List.of(first.getHostDir()), new ObjectMapper().convertValue(policy(writable).path("allowWrite"), List.class));
+        assertEquals(List.of(second.getHostDir()), new ObjectMapper().convertValue(policy(readOnly).path("denyWrite"), List.class));
+        assertTrue(policy(readOnly).path("allowWrite").isEmpty());
+        assertEquals(List.of(second.getHostDir()), new ObjectMapper().convertValue(policy(secondWritable).path("allowWrite"), List.class));
+        assertTrue(policy(secondWritable).path("denyWrite").isEmpty());
+        assertEquals(List.of(first.getHostDir()), new ObjectMapper().convertValue(policy(writable).path("allowWrite"), List.class));
     }
 
     @Test

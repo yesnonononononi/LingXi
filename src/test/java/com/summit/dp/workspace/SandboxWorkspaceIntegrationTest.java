@@ -36,6 +36,7 @@ import static org.mockito.Mockito.mock;
 @EnabledIfSystemProperty(named = "sandbox.srt.cli", matches = ".+")
 class SandboxWorkspaceIntegrationTest {
     @TempDir(factory = InstallationDirectoryFactory.class) Path temporary;
+    @TempDir Path state;
 
     public static class InstallationDirectoryFactory implements TempDirFactory {
         @Override
@@ -58,10 +59,10 @@ class SandboxWorkspaceIntegrationTest {
         Path node = Files.copy(nodeSource, runtime.resolve(windows ? "node.exe" : "node"));
         Path root = Files.createDirectories(temporary.resolve("workspace with spaces"));
         SandboxProperties properties = new SandboxProperties(temporary, node, Path.of(System.getProperty("sandbox.srt.cli")),
-                null, Duration.ofSeconds(60), List.of(), List.of(), List.of());
+                state, Duration.ofSeconds(60), List.of());
         ConfiguredSandboxWorkspaceProvider provider = new ConfiguredSandboxWorkspaceProvider(properties, new ObjectMapper());
         WorkspaceConverter converter = new WorkspaceConverter(mock(SettingsProvider.class),
-                new SandboxPolicyFactory(properties.allowedDomains(), properties.denyRead(), properties.denyWrite()));
+                new SandboxPolicyFactory(properties.allowedDomains()));
         WorkspaceVO view = WorkspaceVO.builder().id(1L).name("project").hostDir(root.toString()).workDir(root.toString()).build();
 
         Workspace writable = provider.resolve(converter.toSpec(view, WorkspaceType.SAND_BOX, AgentAccessMode.IN_WORKSPACE));
@@ -87,5 +88,16 @@ class SandboxWorkspaceIntegrationTest {
         assertFalse(denied.isSuccess(), denied.output());
         assertEquals("original", Files.readString(file));
         assertFalse(Files.exists(root.resolve("forbidden")));
+
+        Path outsideFile = Files.writeString(temporary.resolve("another-project.txt"), "outside");
+        String outsideWrite = windows
+                ? "$ErrorActionPreference='Stop'; [IO.File]::WriteAllText('" + outsideFile.toString().replace("'", "''") + "', 'changed')"
+                : "printf changed > '" + outsideFile.toString().replace("'", "'\"'\"'") + "'";
+        CommandResult outsideDenied = writable.bridge().execute(outsideWrite, writable.workDir(), StandardCharsets.UTF_8,
+                30, TimeUnit.SECONDS, 4096);
+        assertAll("项目外写入必须被文件工具和原始命令共同拒绝",
+                () -> assertThrows(IOException.class, () -> writable.bridge().writeString(outsideFile, "changed", StandardCharsets.UTF_8)),
+                () -> assertFalse(outsideDenied.isSuccess(), outsideDenied.output()),
+                () -> assertEquals("outside", Files.readString(outsideFile)));
     }
 }
