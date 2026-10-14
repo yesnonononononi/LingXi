@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.FileSystem;
 import java.io.File;
 import java.time.Duration;
 import java.util.List;
@@ -31,12 +32,14 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /** 使用部署方提供的标准 SRT，验证业务档位确实落到沙箱文件权限。 */
 @EnabledIfSystemProperty(named = "sandbox.srt.cli", matches = ".+")
 class SandboxWorkspaceIntegrationTest {
     @TempDir(factory = InstallationDirectoryFactory.class) Path temporary;
     @TempDir Path state;
+    @TempDir Path outsideVolume;
 
     public static class InstallationDirectoryFactory implements TempDirFactory {
         @Override
@@ -46,8 +49,10 @@ class SandboxWorkspaceIntegrationTest {
         }
     }
 
-    @Test
-    void businessModesSupportWorkspaceWritesAndEnforceReadOnlyThroughFilesAndCommands() throws Exception {
+    private record Fixture(boolean windows, Path root, ConfiguredSandboxWorkspaceProvider provider,
+                           WorkspaceConverter converter, WorkspaceVO view) {}
+
+    private Fixture createFixture() throws IOException {
         boolean windows = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win");
         Path nodeSource = Path.of(System.getProperty("sandbox.node.exe", windows ? "node.exe" : "node"));
         if (!Files.isRegularFile(nodeSource)) {
@@ -61,9 +66,54 @@ class SandboxWorkspaceIntegrationTest {
         SandboxProperties properties = new SandboxProperties(temporary, node, Path.of(System.getProperty("sandbox.srt.cli")),
                 state, Duration.ofSeconds(60), List.of());
         ConfiguredSandboxWorkspaceProvider provider = new ConfiguredSandboxWorkspaceProvider(properties, new ObjectMapper());
+        // 隔离测试的挂载范围，避免集成测试对宿主整盘施加临时 ACL。
+        FileSystem fileSystem = mock(FileSystem.class);
+        when(fileSystem.getRootDirectories()).thenReturn(List.of(temporary, outsideVolume));
         WorkspaceConverter converter = new WorkspaceConverter(mock(SettingsProvider.class),
-                new SandboxPolicyFactory(properties.allowedDomains()));
+                new SandboxPolicyFactory(properties.allowedDomains(), fileSystem));
         WorkspaceVO view = WorkspaceVO.builder().id(1L).name("project").hostDir(root.toString()).workDir(root.toString()).build();
+        return new Fixture(windows, root, provider, converter, view);
+    }
+
+    @Test
+    void fullAccessWritesOutsideProjectThroughFilesAndCommandsAndProtectsFrameworkDirectories() throws Exception {
+        Fixture fixture = createFixture();
+        Path outside = Files.writeString(outsideVolume.resolve("outside-project.txt"), "original");
+        Workspace restricted = fixture.provider().resolve(fixture.converter().toSpec(fixture.view(),
+                WorkspaceType.SAND_BOX, AgentAccessMode.IN_WORKSPACE));
+        assertThrows(IOException.class, () -> restricted.bridge().writeString(outside, "changed", StandardCharsets.UTF_8));
+        assertEquals("original", Files.readString(outside));
+        Workspace workspace = fixture.provider().resolve(fixture.converter().toSpec(fixture.view(),
+                WorkspaceType.SAND_BOX, AgentAccessMode.OUT_OF_WORKSPACE));
+        assertTrue(workspace.runtimeEnvironment().isolated());
+        workspace.bridge().writeString(outside, "from-file-tool", StandardCharsets.UTF_8);
+        assertEquals("from-file-tool", Files.readString(outside));
+        String command = fixture.windows()
+                ? "$ErrorActionPreference='Stop'; [IO.File]::WriteAllText('" + outside.toString().replace("'", "''") + "', 'from-command')"
+                : "printf from-command > '" + outside.toString().replace("'", "'\"'\"'") + "'";
+        CommandResult allowed = workspace.bridge().execute(command, workspace.workDir(), StandardCharsets.UTF_8,
+                30, TimeUnit.SECONDS, 4096);
+        assertTrue(allowed.isSuccess(), allowed.output());
+        assertEquals("from-command", Files.readString(outside));
+        Path forbidden = temporary.resolve("resources/sandbox-helpers/forbidden.txt");
+        assertThrows(IOException.class, () -> workspace.bridge().writeString(forbidden, "changed", StandardCharsets.UTF_8));
+        String protectedWrite = fixture.windows()
+                ? "$ErrorActionPreference='Stop'; [IO.File]::WriteAllText('" + forbidden.toString().replace("'", "''") + "', 'changed')"
+                : "printf changed > '" + forbidden.toString().replace("'", "'\"'\"'") + "'";
+        CommandResult denied = workspace.bridge().execute(protectedWrite, workspace.workDir(), StandardCharsets.UTF_8,
+                30, TimeUnit.SECONDS, 4096);
+        assertFalse(denied.isSuccess(), denied.output());
+        assertFalse(Files.exists(forbidden));
+    }
+
+    @Test
+    void businessModesSupportWorkspaceWritesAndEnforceReadOnlyThroughFilesAndCommands() throws Exception {
+        Fixture fixture = createFixture();
+        boolean windows = fixture.windows();
+        Path root = fixture.root();
+        ConfiguredSandboxWorkspaceProvider provider = fixture.provider();
+        WorkspaceConverter converter = fixture.converter();
+        WorkspaceVO view = fixture.view();
 
         Workspace writable = provider.resolve(converter.toSpec(view, WorkspaceType.SAND_BOX, AgentAccessMode.IN_WORKSPACE));
         Path file = writable.resolve("content.txt");

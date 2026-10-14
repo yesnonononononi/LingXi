@@ -30,7 +30,7 @@ public class WorkspaceConverter {
     }
 
     public WorkspaceSpec toSpec(Workspace workspace, WorkspaceType type) {
-        return toSpec(workspace, type, resolveAccessMode(type));
+        return toSpec(workspace, type, resolveAccessMode());
     }
 
     public WorkspaceSpec toSpec(Workspace workspace, WorkspaceType type, AgentAccessMode mode) {
@@ -38,7 +38,7 @@ public class WorkspaceConverter {
     }
 
     public WorkspaceSpec toSpec(WorkspaceVO workspace, WorkspaceType type) {
-        return toSpec(workspace, type, resolveAccessMode(type));
+        return toSpec(workspace, type, resolveAccessMode());
     }
 
     public WorkspaceSpec toSpec(WorkspaceVO workspace, WorkspaceType type, AgentAccessMode mode) {
@@ -53,9 +53,8 @@ public class WorkspaceConverter {
         return workspace == null ? null : workspace.getHostDir();
     }
 
-    private AgentAccessMode resolveAccessMode(WorkspaceType type) {
-        return AgentAccessMode.effective(settingsProvider.current().map(SettingsView::accessMode).orElse(null),
-                type == null ? DEFAULT_TYPE : type);
+    private AgentAccessMode resolveAccessMode() {
+        return AgentAccessMode.parse(settingsProvider.current().map(SettingsView::accessMode).orElse(null));
     }
 
     private WorkspaceSpec buildSpec(String hostDir, WorkspaceType type, AgentAccessMode mode) {

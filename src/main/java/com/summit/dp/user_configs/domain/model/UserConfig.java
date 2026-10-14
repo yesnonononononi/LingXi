@@ -155,8 +155,6 @@ public class UserConfig {
     }
 
     public void changeAccessMode(@NonNull AccessMode accessMode) {
-        // 沙箱模式下,完全访问无意义
-        if (this.workSpaceConfig.type == WorkspaceType.SAND_BOX && accessMode == AccessMode.OUT_OF_WORKSPACE) return;
         this.accessMode = accessMode;
         update();
     }

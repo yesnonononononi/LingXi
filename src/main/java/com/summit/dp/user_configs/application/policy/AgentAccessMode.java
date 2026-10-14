@@ -1,7 +1,5 @@
 package com.summit.dp.user_configs.application.policy;
 
-import com.summit.dp.shared.model.WorkspaceType;
-
 import java.util.Map;
 
 /** 会话的访问边界（读写范围）—— 属于业务侧。 */
@@ -13,7 +11,7 @@ public enum AgentAccessMode {
     /** 工作区内修改模式：允许读写工作区，工作区外只读。 */
     IN_WORKSPACE,
 
-    /** 完全访问：读写任意文件。仅 local 环境可选。 */
+    /** 完全访问：允许项目外读写，执行环境仍由 workspace 类型决定。 */
     OUT_OF_WORKSPACE;
 
     /** 本业务在不透明 attributes 中使用的键。 */
@@ -21,15 +19,6 @@ public enum AgentAccessMode {
 
     /** 请求未指定时的默认档位。 */
     public static final AgentAccessMode DEFAULT = IN_WORKSPACE;
-
-    /** 解析请求档位并按工作区类型校正：沙箱下 OUT_OF_WORKSPACE 降级为 IN_WORKSPACE。 */
-    public static AgentAccessMode effective(Object raw, WorkspaceType workspaceType) {
-        AgentAccessMode mode = parse(raw);
-        if (mode == OUT_OF_WORKSPACE && workspaceType == WorkspaceType.SAND_BOX) {
-            return IN_WORKSPACE;
-        }
-        return mode;
-    }
 
     /** 是否允许使用会产生副作用的工具（编辑文件、写文件等）。 */
     public boolean allowsWriteTools() {

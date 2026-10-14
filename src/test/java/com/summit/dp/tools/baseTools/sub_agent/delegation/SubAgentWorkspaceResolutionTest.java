@@ -4,6 +4,7 @@ import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
 
 import com.summit.core.conf.ModelConfig;
+import com.summit.core.agent.AgentRequest;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.RuntimeEnvironment;
 import com.summit.core.tool.ToolExecution;
@@ -30,6 +31,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -113,6 +115,19 @@ class SubAgentWorkspaceResolutionTest {
     }
 
     @Test
+    void childInheritsParentSandboxFullAccessAfterGlobalSettingsChange() {
+        WorkspaceSpec spec = mock(WorkspaceSpec.class);
+        WorkspaceVO parentVo = WorkspaceVO.builder().id(1L).name("project").hostDir("/project").workDir("/project").build();
+        Workspace parent = mock(Workspace.class);
+        when(parent.runtimeEnvironment()).thenReturn(RuntimeEnvironment.builder().isolated(true).build());
+        when(workspaceService.findById(1L)).thenReturn(Result.success(parentVo));
+        when(workspaceConverter.resolveType()).thenReturn(WorkspaceType.LOCAL);
+        when(workspaceConverter.toSpec(parentVo, WorkspaceType.SAND_BOX, AgentAccessMode.OUT_OF_WORKSPACE)).thenReturn(spec);
+        assertSame(spec, buildWithWorkDir(null, parent, 1L, AgentAccessMode.OUT_OF_WORKSPACE));
+        verify(workspaceConverter).toSpec(parentVo, WorkspaceType.SAND_BOX, AgentAccessMode.OUT_OF_WORKSPACE);
+    }
+
+    @Test
     void noParentWorkspaceYieldsNullSpec() {
         when(workspaceService.findByDir(anyString())).thenReturn(Result.success(null));
 
@@ -146,8 +161,9 @@ class SubAgentWorkspaceResolutionTest {
                         AgentAccessMode.ATTRIBUTE_KEY, accessMode.name()))
                 .build();
 
-        return factory.build(argument, member, TeamVO.builder().id(3L).commanderAgentId(5L)
-                .agents(List.of(member)).build(), toolExecution, workDir, "1234", parentWorkspaceId, List.of())
-                .getWorkspaceSpec();
+        AgentRequest request = factory.build(argument, member, TeamVO.builder().id(3L).commanderAgentId(5L)
+                .agents(List.of(member)).build(), toolExecution, workDir, "1234", parentWorkspaceId, List.of());
+        assertEquals(accessMode, AgentAccessMode.from(request.runtimeParametersOrDefault().getAttributes()));
+        return request.getWorkspaceSpec();
     }
 }

@@ -11,14 +11,19 @@ import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.policy.SandboxPolicyFactory;
 import com.summit.dp.workspace.domain.model.Workspace;
+import com.summit.sandbox.SandboxPolicy;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.nio.file.FileSystems;
+import java.nio.file.FileSystem;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class WorkspaceConverterTest {
     @TempDir Path temporary;
@@ -45,11 +50,28 @@ class WorkspaceConverterTest {
     }
 
     @Test
-    void sandboxFullAccessIsStillLimitedToWorkspaceWrites() throws Exception {
+    void sandboxFullAccessGrantsCurrentFileSystemRootsAndKeepsTheSandboxProvider() throws Exception {
         WorkspaceSpec spec = converter.toSpec(new Workspace(1L, "project", temporary.toString()),
                 WorkspaceType.SAND_BOX, AgentAccessMode.OUT_OF_WORKSPACE);
-        assertEquals(List.of(temporary.toString()), new ObjectMapper().convertValue(policy(spec).path("allowWrite"), List.class));
+        List<String> roots = new ArrayList<>();
+        for (Path root : FileSystems.getDefault().getRootDirectories()) roots.add(root.toAbsolutePath().normalize().toString());
+        assertEquals("sandbox", spec.provider());
+        assertEquals(roots, new ObjectMapper().convertValue(policy(spec).path("allowWrite"), List.class));
         assertTrue(policy(spec).path("denyWrite").isEmpty());
+    }
+
+    @Test
+    void fullAccessRechecksMountedRootsWithoutMutatingAnEarlierPolicy() {
+        FileSystem fileSystem = mock(FileSystem.class);
+        Path first = temporary.resolve("first-volume");
+        Path second = temporary.resolve("second-volume");
+        when(fileSystem.getRootDirectories()).thenReturn(List.of(first), List.of(first, second));
+        SandboxPolicyFactory policies = new SandboxPolicyFactory(List.of(), fileSystem);
+        SandboxPolicy original = policies.build(temporary.toString(), AgentAccessMode.OUT_OF_WORKSPACE);
+        assertEquals(List.of(first.toString()), original.allowWrite());
+        assertEquals(List.of(first.toString(), second.toString()),
+                policies.build(temporary.toString(), AgentAccessMode.OUT_OF_WORKSPACE).allowWrite());
+        assertEquals(List.of(first.toString()), original.allowWrite());
     }
 
     @Test

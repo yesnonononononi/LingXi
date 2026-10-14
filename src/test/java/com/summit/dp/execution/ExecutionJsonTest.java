@@ -14,6 +14,8 @@ import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.workspace.application.convert.LingXiWorkspaceSpec;
 import com.summit.sandbox.SandboxWorkspaceSpec;
 import com.summit.sandbox.SandboxPolicy;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.workspace.application.policy.SandboxPolicyFactory;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -27,6 +29,19 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ExecutionJsonTest {
     private final ObjectMapper mapper = new JsonConfig().objectMapper();
+
+    @Test
+    void sandboxFullAccessPolicyAndAttributesSurviveExecutionSnapshot() throws Exception {
+        WorkspaceSpec spec = SandboxWorkspaceSpec.of(Path.of("project").toAbsolutePath().toString(),
+                new SandboxPolicyFactory(List.of()).build(Path.of("project").toAbsolutePath().toString(), AgentAccessMode.OUT_OF_WORKSPACE));
+        Execution original = execution(spec, AgentAccessMode.toAttributes(AgentAccessMode.OUT_OF_WORKSPACE));
+        Execution restored = mapper.readValue(mapper.writeValueAsBytes(original), Execution.class);
+        assertEquals(spec, restored.getAgentRequest().getWorkspaceSpec());
+        assertEquals(AgentAccessMode.OUT_OF_WORKSPACE,
+                AgentAccessMode.from(restored.getAgentRequest().runtimeParametersOrDefault().getAttributes()));
+        assertFalse(mapper.readTree(restored.getAgentRequest().getWorkspaceSpec().configuration()
+                .get("sandbox.policy")).path("allowWrite").isEmpty());
+    }
 
     @Test
     void selectedEventMetadataSurvivesSnapshotWithoutPublishingInternalAttributes() throws Exception {

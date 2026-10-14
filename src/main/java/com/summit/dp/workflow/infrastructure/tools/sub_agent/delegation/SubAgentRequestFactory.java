@@ -141,6 +141,7 @@ public class SubAgentRequestFactory {
      */
     private Map<String, Object> childAttributes(AgentVO subAgent, ToolExecution toolExecution, String subSessionId) {
         Map<String, Object> attributes = new HashMap<>();
+        attributes.putAll(AgentAccessMode.toAttributes(AgentAccessMode.from(toolExecution.getAttributes())));
         attributes.put(ExecutionAttributes.SESSION_ID, subSessionId);
         attributes.put(ExecutionAttributes.AGENT_ID, subAgent.getId().toString());
         attributes.put(ExecutionAttributes.ROOT_EXECUTION_ID, toolExecution.getExecutionId());

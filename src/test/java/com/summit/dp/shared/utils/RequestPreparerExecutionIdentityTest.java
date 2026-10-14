@@ -21,6 +21,9 @@ import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
 import com.summit.dp.workflow.application.chat.ExecutionContext;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
+import com.summit.dp.user_configs.application.vo.SettingsView;
+import com.summit.dp.shared.model.WorkspaceType;
+import com.summit.dp.shared.vo.WorkspaceVO;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.shared.vo.SessionVO;
 import org.junit.jupiter.api.BeforeEach;
@@ -128,6 +131,22 @@ class RequestPreparerExecutionIdentityTest {
 
     private static ChatCommand command() {
         return new ChatCommand("你好", SESSION_ID, MODEL_ID, null, null, null, false, null, null);
+    }
+
+    @Test
+    void sandboxFullAccessSurvivesPreparationAndRequestAttributes() {
+        WorkspaceVO workspace = WorkspaceVO.builder().id(9L).name("project").hostDir("/project").workDir("/project").build();
+        when(settingsProvider.current()).thenReturn(Optional.of(new SettingsView(WorkspaceType.SAND_BOX,
+                AgentAccessMode.OUT_OF_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS, null, null, null, null, null)));
+        when(sessionService.findById(SESSION_ID)).thenReturn(Result.success(SessionVO.builder().id(SESSION_ID).workspaceId(9L).build()));
+        when(workspaceService.findById(9L)).thenReturn(Result.success(workspace));
+        when(workspaceConverter.resolveType()).thenReturn(WorkspaceType.SAND_BOX);
+        RuntimeContext context = preparer.prepare(command());
+        assertEquals(AgentAccessMode.OUT_OF_WORKSPACE, context.accessMode());
+        assertEquals(AgentAccessMode.OUT_OF_WORKSPACE, context.executionContext().accessMode());
+        verify(workspaceConverter).toSpec(workspace, WorkspaceType.SAND_BOX, AgentAccessMode.OUT_OF_WORKSPACE);
+        assertEquals(AgentAccessMode.OUT_OF_WORKSPACE,
+                AgentAccessMode.from(preparer.buildRequest("prompt", context, List.of()).runtimeParametersOrDefault().getAttributes()));
     }
 
     @Test

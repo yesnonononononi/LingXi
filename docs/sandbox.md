@@ -26,7 +26,8 @@ lingxi.sandbox.srt-cli=<完整 sandbox-runtime 安装中的 dist/cli.js>
 `IN_WORKSPACE` 将当前项目加入 `allowRead` 和 `allowWrite`；
 `READ_ONLY_IN_WORKSPACE` 将项目加入 `allowRead` 和 `denyWrite`。
 切换项目或档位会生成独立策略，既有请求和审批快照保持原权限。
-沙箱下 `OUT_OF_WORKSPACE` 暂时沿用原规则降级为 `IN_WORKSPACE`；本地模式保留完全访问。
+`OUT_OF_WORKSPACE` 在沙箱中同样允许项目外写入，每次请求枚举当前文件系统的挂载根目录加入 `allowWrite`，
+不固化盘符或切换为宿主执行。操作系统自身的访问限制仍然有效；helper 和状态目录继续禁止沙箱写入。
 文件工具和 shell 命令共同受沙箱权限约束。
 只读启动检查验证读取和拒绝写入，不要求向只读工作区创建文件。
 子 Agent 沿用父请求快照中的访问档位，审批恢复按快照重新解析 workspace。
@@ -36,5 +37,7 @@ lingxi.sandbox.srt-cli=<完整 sandbox-runtime 安装中的 dist/cli.js>
 
 可通过 `-Dsandbox.srt.cli=<dist/cli.js>` 和可选的 `-Dsandbox.node.exe=<node>`
 运行 `SandboxWorkspaceIntegrationTest`，验证真实文件操作及原始命令的只读限制。
-该测试还检查项目外文件写入：当前 Windows SRT 0.0.79 在可由沙箱账户写入的目录中未通过此检查。
+完全访问用例在隔离测试目录中验证项目外文件工具和命令写入，以及 helper 目录的拒绝写入；
+测试替换挂载根枚举来源，不对宿主整盘施加 ACL。真实挂载根的动态枚举由单元测试验证。
+工作区修改档还检查项目外写入拒绝：当前 Windows SRT 0.0.79 在可由沙箱账户写入的目录中未通过此检查。
 因此生成 `allowWrite` 名单不能替代实际隔离验证，目前不能据此宣称项目外写入已被可靠阻止。
