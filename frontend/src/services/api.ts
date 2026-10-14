@@ -13,3 +13,4 @@ export * from './chat';
 export * from './team';
 export * from './tool';
 export * from './mcp';
+export * from './sandbox';

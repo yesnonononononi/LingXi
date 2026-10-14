@@ -25,6 +25,11 @@ const {
   executionEnvValue,
   isExecutionEnvOpen,
   executionEnvOptions,
+  sandboxStatus,
+  isInstallingSandbox,
+  sandboxError,
+  sandboxNotice,
+  installSandboxService,
   accessMode,
   isAccessModeOpen,
   accessModeOptions,
@@ -218,6 +223,55 @@ const {
           </div>
         </transition>
       </div>
+    </div>
+
+    <!--
+      沙箱服务：只有 Windows 才有这一项（其它平台不存在安装步骤）。
+      选「沙箱」后若组件没注册，每次执行都会失败，而错误提示只会说「详情见错误日志」——
+      这里就是那句提示所指的入口。
+    -->
+    <div
+      v-if="sandboxStatus?.windows"
+      class="py-3 border-b border-gray-100 dark:border-white/10 space-y-2"
+    >
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex flex-col min-w-0">
+          <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">
+            {{ t('settings.general.sandboxService') }}
+          </span>
+          <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">
+            {{ sandboxStatus?.srtPackagePresent
+              ? t('settings.general.sandboxServiceDesc')
+              : t('settings.general.sandboxPackageMissing') }}
+          </span>
+        </div>
+        <button
+          type="button"
+          :disabled="isInstallingSandbox"
+          @click.stop="installSandboxService"
+          class="shrink-0 px-3 py-1 rounded-full border text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          :class="isDark
+            ? 'border-white/20 text-zinc-200 hover:bg-white/5'
+            : 'border-gray-300 text-gray-700 hover:bg-gray-50'"
+        >
+          {{ isInstallingSandbox ? t('settings.general.sandboxInstalling') : t('settings.general.sandboxInstall') }}
+        </button>
+      </div>
+
+      <p
+        v-if="isInstallingSandbox"
+        class="text-[11px] text-gray-400 dark:text-zinc-400 leading-snug"
+      >{{ t('settings.general.sandboxInstallingHint') }}</p>
+
+      <div
+        v-if="sandboxNotice"
+        class="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs"
+      >{{ sandboxNotice }}</div>
+
+      <div
+        v-if="sandboxError"
+        class="p-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500 text-xs"
+      >{{ sandboxError }}</div>
     </div>
 
     <!-- 工作空间权限 -->

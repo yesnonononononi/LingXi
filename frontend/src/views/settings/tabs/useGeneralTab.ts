@@ -1,7 +1,14 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useTheme, THEME_STORAGE_KEY } from '../../../composables/useTheme';
 import { useUserConfigStore } from '../../../stores/userConfigStore';
-import type { AgentAccessMode, CommandApprovalPolicyType, WorkspaceEnvType } from '../../../types/chat';
+import { SandboxAPI } from '../../../services/sandbox';
+import type {
+  AgentAccessMode,
+  CommandApprovalPolicyType,
+  SandboxServiceStatus,
+  WorkspaceEnvType,
+} from '../../../types/chat';
+import { isOk } from '../../../utils/api';
 import { getApiBaseUrl, setApiBaseUrl, resetApiBaseUrl } from '../../../utils/apiConfig';
 import { useI18n } from '../../../i18n';
 import type { LocalePreference } from '../../../i18n';
@@ -48,6 +55,46 @@ export function useGeneralTab(emit: (e: 'modelUpdated') => void) {
     { value: 'LOCAL', label: t('settings.general.envLocal') },
     { value: 'SAND_BOX', label: t('settings.general.envSandbox') },
   ]);
+
+  // 沙箱服务（仅 Windows 有意义）：SRT 要先注册系统组件才能跑起沙箱，这里给显式的安装入口。
+  // 状态查询只做文件与平台检测、不跑命令，所以进页面直接查，拿不到就当没这一项 ——
+  // 它是个辅助入口，不该因为查询失败在设置页报错。
+  const sandboxStatus = ref<SandboxServiceStatus | null>(null);
+  const isInstallingSandbox = ref(false);
+  const sandboxError = ref('');
+  const sandboxNotice = ref('');
+
+  const loadSandboxStatus = async (): Promise<void> => {
+    try {
+      const res = await SandboxAPI.status();
+      sandboxStatus.value = isOk(res.code) ? (res.data ?? null) : null;
+    } catch {
+      sandboxStatus.value = null;
+    }
+  };
+
+  const installSandboxService = async (): Promise<void> => {
+    if (isInstallingSandbox.value) return;
+    isInstallingSandbox.value = true;
+    sandboxError.value = '';
+    sandboxNotice.value = '';
+    try {
+      const res = await SandboxAPI.install();
+      if (isOk(res.code)) {
+        sandboxNotice.value = res.data?.message || t('settings.general.sandboxInstalled');
+        await loadSandboxStatus();
+      } else {
+        // 后端已把失败收成一句可读文案（不含 exit code / SRT 原文），直接呈现；细节在错误日志里。
+        sandboxError.value = res.errMsg || t('settings.general.sandboxInstallFailed');
+      }
+    } catch (error) {
+      sandboxError.value = error instanceof Error && error.message
+        ? error.message
+        : t('settings.general.sandboxInstallFailed');
+    } finally {
+      isInstallingSandbox.value = false;
+    }
+  };
 
   // 1. 工作空间权限 (对应 UserConfigVO.accessMode)
   const accessMode = computed<AgentAccessMode>(() => userConfig.accessMode);
@@ -174,6 +221,9 @@ export function useGeneralTab(emit: (e: 'modelUpdated') => void) {
   };
 
   onMounted(async () => {
+    // 与主题/配置无关，先发出去别挡首屏渲染。
+    void loadSandboxStatus();
+
     const saved = localStorage.getItem(THEME_STORAGE_KEY);
     if (saved === 'light' || saved === 'dark') {
       themeMode.value = saved;
@@ -226,6 +276,11 @@ export function useGeneralTab(emit: (e: 'modelUpdated') => void) {
     executionEnvValue,
     isExecutionEnvOpen,
     executionEnvOptions,
+    sandboxStatus,
+    isInstallingSandbox,
+    sandboxError,
+    sandboxNotice,
+    installSandboxService,
     accessMode,
     isAccessModeOpen,
     accessModeOptions,
