@@ -10,6 +10,7 @@ import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
 
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -78,11 +79,23 @@ public class UserConfigDataDirPostProcessor implements EnvironmentPostProcessor,
             return rows.stream()
                     .filter(row -> row != null && row.getDataDir() != null && !row.getDataDir().isBlank())
                     .map(row -> row.getDataDir().trim())
+                    .filter(this::isUsablePath)
                     .findFirst()
                     .orElse(null);
         } catch (RuntimeException e) {
             log.warn("读取设置行里的数据目录失败，回落到配置项: path={}", configPath, e);
             return null;
+        }
+    }
+
+    /** 非法路径当作「没配置」：启动期不该因为一行坏配置就把应用带崩。 */
+    private boolean isUsablePath(String value) {
+        try {
+            Path.of(value);
+            return true;
+        } catch (InvalidPathException e) {
+            log.warn("设置行里的数据目录不是合法路径，已忽略: dir={}", value);
+            return false;
         }
     }
 

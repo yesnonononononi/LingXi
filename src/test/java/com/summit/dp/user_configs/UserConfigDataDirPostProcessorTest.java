@@ -87,4 +87,20 @@ class UserConfigDataDirPostProcessorTest {
         environment.setProperty("lingxi.data.dir", tempDir.resolve("default-data").toString());
         return environment;
     }
+
+    @Test
+    @DisplayName("设置行里是非法路径：忽略它并回落 yaml，启动不能因此失败")
+    void illegalDataDirInSettingsRowIsIgnored() throws IOException {
+        Path configPath = tempDir.resolve("user-configs.json");
+        // Windows 下 '<' 是非法路径字符：Path.of 会抛 InvalidPathException，
+        // 若不在这一层吞掉，EnvironmentPostProcessor 失败会直接让应用起不来。
+        Files.writeString(configPath, "[ { \"id\": 1, \"dataDir\": \"D:/bad<dir>/data\" } ]");
+        MockEnvironment environment = new MockEnvironment();
+        environment.setProperty("lingxi.config.user-configs.path", configPath.toString());
+        environment.setProperty("lingxi.data.dir", tempDir.resolve("default-data").toString());
+
+        postProcessor.postProcessEnvironment(environment, new SpringApplication(Object.class));
+
+        assertEquals(tempDir.resolve("default-data").toString(), environment.getProperty("lingxi.data.dir"));
+    }
 }
