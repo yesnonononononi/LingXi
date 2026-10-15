@@ -12,7 +12,8 @@ public class SandboxConfiguration {
     @Bean public ConfiguredSandboxWorkspaceProvider sandboxWorkspaceProvider(SandboxProperties properties) {
         return new ConfiguredSandboxWorkspaceProvider(properties);
     }
-    @Bean public SandboxPolicyFactory sandboxPolicyFactory(SandboxProperties properties) {
-        return new SandboxPolicyFactory(properties.readonlyPaths(), properties.readwritePaths(), properties.environment());
+    @Bean
+    public SandboxPolicyFactory sandboxPolicyFactory(SandboxProperties properties) {
+        return new SandboxPolicyFactory(properties.environment());
     }
 }

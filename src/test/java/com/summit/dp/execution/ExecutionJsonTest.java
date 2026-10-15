@@ -30,15 +30,19 @@ class ExecutionJsonTest {
     private final ObjectMapper mapper = new JsonConfig().objectMapper();
 
     @Test
-    void sandboxFullAccessPolicyAndAttributesSurviveExecutionSnapshot() throws Exception {
-        WorkspaceSpec spec = new SandboxPolicyFactory(List.of(), List.of("/approved-cache"), Map.of())
-                .build(Path.of("project").toAbsolutePath().toString(), AgentAccessMode.OUT_OF_WORKSPACE);
-        Execution original = execution(spec, AgentAccessMode.toAttributes(AgentAccessMode.OUT_OF_WORKSPACE));
-        Execution restored = mapper.readValue(mapper.writeValueAsBytes(original), Execution.class);
-        assertEquals(spec, restored.getAgentRequest().getWorkspaceSpec());
-        assertEquals(AgentAccessMode.OUT_OF_WORKSPACE,
-                AgentAccessMode.from(restored.getAgentRequest().runtimeParametersOrDefault().getAttributes()));
-        assertEquals(List.of("/approved-cache"), ((MxcWorkspaceSpec) restored.getAgentRequest().getWorkspaceSpec()).readwritePaths());
+    void supportedSandboxPoliciesAndAttributesSurviveExecutionSnapshot() throws Exception {
+        for (AgentAccessMode mode : new AgentAccessMode[]{AgentAccessMode.IN_WORKSPACE, AgentAccessMode.READ_ONLY_IN_WORKSPACE}) {
+            MxcWorkspaceSpec spec = new SandboxPolicyFactory(Map.of())
+                    .build(Path.of("project").toAbsolutePath().toString(), mode);
+            Execution original = execution(spec, AgentAccessMode.toAttributes(mode));
+            Execution restored = mapper.readValue(mapper.writeValueAsBytes(original), Execution.class);
+            MxcWorkspaceSpec restoredSpec = (MxcWorkspaceSpec) restored.getAgentRequest().getWorkspaceSpec();
+            assertEquals(spec, restoredSpec);
+            assertEquals(mode, AgentAccessMode.from(restored.getAgentRequest().runtimeParametersOrDefault().getAttributes()));
+            assertEquals(mode == AgentAccessMode.IN_WORKSPACE, restoredSpec.writable());
+            assertTrue(restoredSpec.readonlyPaths().isEmpty());
+            assertTrue(restoredSpec.readwritePaths().isEmpty());
+        }
     }
 
     @Test

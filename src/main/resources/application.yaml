@@ -43,8 +43,6 @@ lingxi:
     sdk-directory: ${LINGXI_SANDBOX_SDK_DIRECTORY:}
     startup-timeout: 30s
     file-timeout: 30s
-    readonly-paths: []
-    readwrite-paths: []
     environment: {}
   mcp:
     enabled: true

@@ -10,21 +10,38 @@ import java.util.Map;
 
 /** 项目外授权由部署提供，不能把“完全访问”扩大为整个磁盘。 */
 public final class SandboxPolicyFactory {
-    private final List<String> readonlyPaths;
-    private final List<String> readwritePaths;
     private final Map<String, String> environment;
-    public SandboxPolicyFactory(List<String> readonlyPaths, List<String> readwritePaths, Map<String, String> environment) {
-        this.readonlyPaths = List.copyOf(readonlyPaths);
-        this.readwritePaths = List.copyOf(readwritePaths);
+
+    public SandboxPolicyFactory( Map<String, String> environment) {
         this.environment = Map.copyOf(environment);
     }
+
+    /**
+     * case READ_ONLY_IN_WORKSPACE: readPaths: [workdir],
+     * case IN_WORKSPACE: readWritePaths: [workdir]
+     */
     public MxcWorkspaceSpec build(String workDir, AgentAccessMode accessMode) {
+        List<String> readonlyPaths = new ArrayList<>();
+        List<String> readwritePaths = new ArrayList<>();
+
         AgentAccessMode effective = accessMode == null ? AgentAccessMode.DEFAULT : accessMode;
-        throwIf(effective.allowsOutsideWrite() && readwritePaths.isEmpty(), "当前沙箱未配置项目外可写目录，请配置 readwrite-paths 或选择工作区内修改");
-        List<String> reads = new ArrayList<>(readonlyPaths);
-        if (!effective.allowsOutsideWrite()) reads.addAll(readwritePaths);
-        return new MxcWorkspaceSpec(workDir, LocalInstance.ID, reads,
-                effective.allowsOutsideWrite() ? readwritePaths : List.of(), environment, effective.allowsWriteTools());
+
+        throwIf(effective.allowsOutsideWrite(), "当前沙箱不支持完全访问，请使用本地模式");
+
+        if(accessMode == AgentAccessMode.IN_WORKSPACE){
+            readwritePaths = List.of(workDir);
+        }
+        else if(accessMode == AgentAccessMode.READ_ONLY_IN_WORKSPACE){
+            readonlyPaths = List.of();
+        }
+        return new MxcWorkspaceSpec(
+                workDir,
+                LocalInstance.ID,
+                readonlyPaths,
+                effective.allowsOutsideWrite() ? readwritePaths : List.of(),
+                environment,
+                effective.allowsWriteTools()
+        );
     }
     private void throwIf(boolean condition, String message) { if (condition) throw new ClientException(message); }
 }

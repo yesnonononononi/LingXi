@@ -8,6 +8,8 @@ import com.summit.dp.workflow.infrastructure.config.SandboxProperties;
 import com.summit.dp.workspace.application.service.SandboxService;
 import com.summit.harness.springbootautoconfigure.config.WorkspaceAutoConfiguration;
 import com.summit.sandbox.mxc.MxcWorkspaceSpec;
+import com.summit.dp.workspace.application.policy.SandboxPolicyFactory;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -65,17 +67,24 @@ class SandboxConfigurationTest {
             assertThrows(ClientException.class, () -> context.getBean(SandboxService.class).check());
         });
     }
-    @Test void nativeDeploymentPathsAndExtraGrantsBindWithoutRuntimeDiscovery() {
+    @Test void nativeDeploymentResourcesAndEnvironmentBindWithoutExtraDirectoryGrants() {
         String node = temporary.resolve("node.exe").toString();
         contexts.withPropertyValues("lingxi.sandbox.application-directory=" + temporary,
                 "lingxi.sandbox.node-executable=" + node,
                 "lingxi.sandbox.sdk-directory=" + temporary.resolve("sdk"),
-                "lingxi.sandbox.readonly-paths[0]=/tools", "lingxi.sandbox.readwrite-paths[0]=/cache").run(context -> {
+                "lingxi.sandbox.environment.LANG=C.UTF-8").run(context -> {
             assertNull(context.getStartupFailure());
             SandboxProperties properties = context.getBean(SandboxProperties.class);
             assertEquals(node, properties.nodeExecutable());
             assertTrue(properties.environment().get("PATH").startsWith(temporary.toString()));
-            assertEquals("/cache", properties.readwritePaths().getFirst());
+            SandboxPolicyFactory factory = context.getBean(SandboxPolicyFactory.class);
+            MxcWorkspaceSpec spec = factory.build(temporary.resolve("project").toString(), AgentAccessMode.IN_WORKSPACE);
+            assertEquals(properties.environment(), spec.environment());
+            assertEquals("C.UTF-8", spec.environment().get("LANG"));
+            assertTrue(spec.readonlyPaths().isEmpty());
+            assertTrue(spec.readwritePaths().isEmpty());
+            assertFalse(factory.build(spec.workDir(), AgentAccessMode.READ_ONLY_IN_WORKSPACE).writable());
+            assertThrows(ClientException.class, () -> factory.build(spec.workDir(), AgentAccessMode.OUT_OF_WORKSPACE));
             assertTrue(context.getBean(SandboxService.class).inspect().configured());
             assertFalse(context.getBean(SandboxService.class).inspect().ready());
         });
