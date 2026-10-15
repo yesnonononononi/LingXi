@@ -13,12 +13,28 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import java.nio.file.Path;
+import java.nio.file.Files;
+import java.util.stream.Stream;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SandboxConfigurationTest {
     @TempDir Path temporary;
     private final ApplicationContextRunner contexts = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(WorkspaceAutoConfiguration.class)).withUserConfiguration(SandboxConfiguration.class);
+
+    @Test void capabilityCheckDoesNotCreateTheConfiguredApplicationDirectory() throws Exception {
+        String node = System.getProperty("mxc.node");
+        String sdk = System.getProperty("mxc.sdk");
+        assumeTrue(node != null && sdk != null, "需要宿主 MXC 运行资源");
+        Path absent = temporary.resolve("no-workspace-probe");
+        contexts.withPropertyValues("lingxi.sandbox.application-directory=" + absent,
+                "lingxi.sandbox.node-executable=" + node, "lingxi.sandbox.sdk-directory=" + sdk).run(context -> {
+            assertTrue(context.getBean(SandboxService.class).check().ready());
+            assertFalse(Files.exists(absent));
+        });
+        try (Stream<Path> files = Files.list(temporary)) { assertEquals(0, files.count()); }
+    }
     @Test void missingResourcesKeepLocalModeWorkingAndSandboxResolutionFailsClosed() {
         contexts.run(context -> {
             assertNull(context.getStartupFailure());

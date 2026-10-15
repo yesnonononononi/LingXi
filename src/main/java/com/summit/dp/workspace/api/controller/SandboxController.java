@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 状态查询不启动进程，真实检查由用户显式触发。
+ * 状态查询不启动进程，基础能力检查由用户显式触发。
  */
 @RestController
 @RequestMapping("/sandbox")
@@ -25,7 +25,7 @@ public class SandboxController {
         return Result.success(sandboxService.inspect());
     }
 
-    /** 检查真实命令和文件隔离，不安装系统组件。 */
+    /** 只检查依赖加载和平台能力，不创建工作区或执行沙箱命令。 */
     @PostMapping("/service/check")
     public Result<SandboxServiceStatus> checkService() {
         return Result.success(sandboxService.check());

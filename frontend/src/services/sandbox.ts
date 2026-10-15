@@ -2,7 +2,7 @@ import http from './interceptor';
 import type { Result } from './types';
 import type { SandboxServiceStatus } from '../types/chat';
 
-/** 资源查询不执行命令，检查接口会实际验证隔离。 */
+/** 查询配置并检查基础运行能力，不探测项目目录。 */
 export class SandboxAPI {
   static async status(): Promise<Result<SandboxServiceStatus>> {
     return http.get<any, Result<SandboxServiceStatus>>('/sandbox/service/status');

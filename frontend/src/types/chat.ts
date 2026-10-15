@@ -576,7 +576,7 @@ export interface WorkspaceVO {
 /** 沙箱/本地：用户级配置，不由单个工作空间指定；取值为后端 WorkspaceType 枚举名 */
 export type WorkspaceEnvType = 'SAND_BOX' | 'LOCAL' | 'NONE';
 
-/** 沙箱资源配置状态与本次运行检查结果。 */
+/** 沙箱资源配置状态与本次基础能力检查结果。 */
 export interface SandboxServiceStatus {
   configured: boolean;
   ready: boolean;

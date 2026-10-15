@@ -35,12 +35,14 @@ Linux 使用 `backend=bubblewrap` 及 POSIX 路径。构建会拒绝平台后端
 ## 业务探测与权限
 
 `GET /sandbox/service/status` 仅查询配置，返回 `ready=false`。它不执行命令。
-`POST /sandbox/service/check` 使用应用状态目录下的 UUID 临时工作区，实际检查命令、文件写读删、区外访问拒绝；不使用真实项目目录，也不证明任意项目工具都兼容。
+`POST /sandbox/service/check` 启动一个 Node 进程，检查 Node/SDK 版本、SDK 原生库加载和宿主隔离能力。Windows 要求 BaseContainer 且不需要 DACL 回退；Linux 要求发现 Bubblewrap，忽略与当前禁网模式无关的可选代理告警。
+
+检查不创建状态目录、临时工作区或探针文件，不启动沙箱，不验证具体目录权限、命令启动或工具兼容性。`ready=true` 只表示基础能力可用；实际工作区解析和命令、文件操作仍保留原有校验。
 
 本机检查返回：
 
 ```json
-{"configured":true,"ready":true,"backend":"BaseContainer","message":"沙箱可用：命令执行和文件读写通过，工作区外读写已拒绝"}
+{"configured":true,"ready":true,"backend":"BaseContainer","message":"沙箱基础能力可用，项目执行时仍会校验实际权限"}
 ```
 
 | 模式 | 项目目录 | 额外部署授权 |
@@ -68,11 +70,14 @@ Linux 使用 `backend=bubblewrap` 及 POSIX 路径。构建会拒绝平台后端
 
 - Windows 全模块 Maven 构建通过；原生适配集成 **8 项通过**。
 - Linux 原生 Java 回归通过；MXC 模块 **18 项，16 通过、2 跳过**，跳过项为未配置真实构建和宿主监听参数的用例。Linux 验证宿主使用现有 Ubuntu 环境，不代表产品仍有 Windows 到 Linux 的路由。
-- 业务定向 **21 项全部通过**：策略转换、Spring 配置、真实原生沙箱集成、快照 JSON 和分层检查。
+- 本轮业务定向 **22 项全部通过**：策略转换、Spring 配置、真实原生沙箱集成、快照 JSON 和分层检查；新增断言确认能力检查不会创建配置的状态目录。
 - 桌面脚本 **6 项通过**；TypeScript/Vite 构建及后端 JAR 打包通过。
 - 只读权限及桌面平台选择做过非等价变异，预期回归变红，正常实现通过。
 - 当前后端：`http://127.0.0.1:18088`，独立数据库及沙箱状态位于 `D:/LingXiMxcNativeValidation`。未操作原 8088 服务，原先的 Linux 传输验证进程已停止。
 - 运行 JAR、进程信息和证据在 `.run/mxc-native-adaptation/`，包括 `business-tests.log`、`desktop-tests.log`、`frontend-build.log`、`backend-package.log`、`http-check.json` 以及后端 stdout/stderr。
+
+轻量检查版本的运行包、进程与记录位于 `.run/mxc-health-adaptation/`。Windows 和 Linux 的轻量探测各 2 项通过；将业务检查恢复成旧目录探针后，“状态目录不能被创建”断言按预期失败。前端构建通过。
+本机 HTTP 连续 5 次检查为 377、282、316、335、307ms，均返回基础能力可用；期间沙箱状态目录清单及文件修改时间未变化。该测量不包含 JVM 冷启动，也不代表项目执行就绪。
 
 全新的 `final-build` 目录执行 21 项定向测试与打包，见 `verified-package-final.log`；补充代码页修复后再次验证真实集成并强制生成薄 JAR，见 `final-artifact-package.log`。不能依赖 Spring Boot 对已有重打包 JAR 自动刷新本地同版本依赖。`artifact-audit.json` 核对运行包内新模块与已验证框架 JAR 的字节一致，并检查旧模块不存在。
 

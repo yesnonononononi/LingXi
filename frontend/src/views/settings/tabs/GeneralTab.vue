@@ -225,7 +225,7 @@ const {
       </div>
     </div>
 
-    <!-- 检查命令执行和文件隔离，不触发组件安装。 -->
+    <!-- 检查基础运行能力，不探测项目目录。 -->
     <div
       v-if="sandboxStatus"
       class="py-3 border-b border-gray-100 dark:border-white/10 space-y-2"

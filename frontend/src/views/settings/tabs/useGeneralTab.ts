@@ -56,7 +56,7 @@ export function useGeneralTab(emit: (e: 'modelUpdated') => void) {
     { value: 'SAND_BOX', label: t('settings.general.envSandbox') },
   ]);
 
-  // 状态查询不执行命令，真实隔离检查由用户显式发起。
+  // 状态查询不执行命令，基础能力检查由用户显式发起。
   const sandboxStatus = ref<SandboxServiceStatus | null>(null);
   const isCheckingSandbox = ref(false);
   const sandboxError = ref('');
