@@ -89,7 +89,9 @@ export function prepareFrameworks(repoRoot, maven, options = {}) {
   fs.mkdirSync(repository, { recursive: true });
   for (const source of sources) {
     console.log(`准备锁定框架: framework=${source.id}, version=${source.entry.version}, ref=${source.entry.ref}`);
-    (options.runMaven ?? runMaven)(maven, ['-B', '-ntp', ...(options.offline ? ['-o'] : []), `-Dmaven.repo.local=${repository}`, '-f', path.join(source.directory, 'pom.xml'), '-Dgpg.skip=true', '-Dmaven.javadoc.skip=true', 'clean', 'install'], repoRoot);
+    // ⚠️ -DskipTests：框架按锁定 ref 以依赖身份被消费，测试属框架仓 CI 的职责（且只在 Linux 覆盖）；
+    // 在干净 Windows runner 上重跑它们会被宿主编码类环境差异卡死（ProcessRunnerTest 实测），与产物无关。
+    (options.runMaven ?? runMaven)(maven, ['-B', '-ntp', ...(options.offline ? ['-o'] : []), `-Dmaven.repo.local=${repository}`, '-f', path.join(source.directory, 'pom.xml'), '-Dgpg.skip=true', '-Dmaven.javadoc.skip=true', '-DskipTests', 'clean', 'install'], repoRoot);
   }
   if (process.env.GITHUB_STEP_SUMMARY) {
     const rows = sources.map(({ id, entry }) => `| ${id} | ${entry.version} | ${entry.ref} |`).join('\n');
