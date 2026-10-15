@@ -56,11 +56,9 @@ export function useGeneralTab(emit: (e: 'modelUpdated') => void) {
     { value: 'SAND_BOX', label: t('settings.general.envSandbox') },
   ]);
 
-  // 沙箱服务（仅 Windows 有意义）：SRT 要先注册系统组件才能跑起沙箱，这里给显式的安装入口。
-  // 状态查询只做文件与平台检测、不跑命令，所以进页面直接查，拿不到就当没这一项 ——
-  // 它是个辅助入口，不该因为查询失败在设置页报错。
+  // 状态查询不执行命令，真实隔离检查由用户显式发起。
   const sandboxStatus = ref<SandboxServiceStatus | null>(null);
-  const isInstallingSandbox = ref(false);
+  const isCheckingSandbox = ref(false);
   const sandboxError = ref('');
   const sandboxNotice = ref('');
 
@@ -73,26 +71,26 @@ export function useGeneralTab(emit: (e: 'modelUpdated') => void) {
     }
   };
 
-  const installSandboxService = async (): Promise<void> => {
-    if (isInstallingSandbox.value) return;
-    isInstallingSandbox.value = true;
+  const checkSandboxService = async (): Promise<void> => {
+    if (isCheckingSandbox.value) return;
+    isCheckingSandbox.value = true;
     sandboxError.value = '';
     sandboxNotice.value = '';
     try {
-      const res = await SandboxAPI.install();
+      const res = await SandboxAPI.check();
       if (isOk(res.code)) {
-        sandboxNotice.value = res.data?.message || t('settings.general.sandboxInstalled');
-        await loadSandboxStatus();
+        sandboxNotice.value = res.data?.message || t('settings.general.sandboxChecked');
+        sandboxStatus.value = res.data ?? null;
       } else {
-        // 后端已把失败收成一句可读文案（不含 exit code / SRT 原文），直接呈现；细节在错误日志里。
-        sandboxError.value = res.errMsg || t('settings.general.sandboxInstallFailed');
+        // 详细运行诊断仅写入后端日志。
+        sandboxError.value = res.errMsg || t('settings.general.sandboxCheckFailed');
       }
     } catch (error) {
       sandboxError.value = error instanceof Error && error.message
         ? error.message
-        : t('settings.general.sandboxInstallFailed');
+        : t('settings.general.sandboxCheckFailed');
     } finally {
-      isInstallingSandbox.value = false;
+      isCheckingSandbox.value = false;
     }
   };
 
@@ -277,10 +275,10 @@ export function useGeneralTab(emit: (e: 'modelUpdated') => void) {
     isExecutionEnvOpen,
     executionEnvOptions,
     sandboxStatus,
-    isInstallingSandbox,
+    isCheckingSandbox,
     sandboxError,
     sandboxNotice,
-    installSandboxService,
+    checkSandboxService,
     accessMode,
     isAccessModeOpen,
     accessModeOptions,

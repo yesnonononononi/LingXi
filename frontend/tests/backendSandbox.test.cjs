@@ -20,7 +20,7 @@ async function launch({ platform = 'win32', packaged = true, env = {} } = {}) {
   child.exitCode = null;
   const dependencies = {
     child_process: { spawn(file, args, options) { invocation = { file, args, options }; return child; } },
-    fs: { existsSync: () => true, mkdirSync() {}, createWriteStream: () => ({ write() {} }) },
+    fs: { existsSync: () => true, readFileSync: () => JSON.stringify({ schemaVersion: 1, backend: 'bubblewrap', sdkVersion: '1.0.0', distribution: 'Ubuntu', nodeExecutable: '/opt/node/bin/node', sdkDirectory: '/opt/mxc/node_modules/@microsoft/mxc-sdk' }), mkdirSync() {}, createWriteStream: () => ({ write() {} }) },
     path: paths,
     net: { connect() {
       const socket = new EventEmitter();
@@ -40,37 +40,23 @@ async function launch({ platform = 'win32', packaged = true, env = {} } = {}) {
 }
 
 for (const platform of ['win32', 'linux']) {
-  test(`${platform} 安装路径含空格时原样传递给 Java，状态目录使用用户数据目录`, async () => {
-    const { invocation, root, userDataDir, paths } = await launch({ platform });
-    assert.ok(invocation.args.includes(`--lingxi.sandbox.application-directory=${root}`));
-    assert.ok(invocation.args.includes(`--lingxi.sandbox.state-directory=${paths.join(userDataDir, 'sandbox-state')}`));
+  test(`${platform} 启动器传递 Linux 运行资源，状态目录保持可写`, async () => {
+    const { invocation, userDataDir, paths } = await launch({ platform });
+    assert.ok(invocation.args.includes(`--lingxi.sandbox.application-directory=${paths.join(userDataDir, 'sandbox')}`));
     assert.equal(invocation.options.cwd, userDataDir);
-    assert.notEqual(root, invocation.options.cwd);
-    const runtime = paths.join(root, 'resources', 'runtime');
-    assert.ok(invocation.args.includes(`--lingxi.sandbox.node-exe=${paths.join(runtime, 'node', ...(platform === 'win32' ? ['node.exe'] : ['bin', 'node']))}`));
-    assert.ok(invocation.args.includes(`--lingxi.sandbox.srt-cli=${paths.join(runtime, 'srt', 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js')}`));
-    assert.ok(invocation.args.includes(`--lingxi.sandbox.bash-exe=${paths.join(runtime, 'git', 'bin', platform === 'win32' ? 'bash.exe' : 'bash')}`));
-    assert.ok(invocation.options.env.PATH.startsWith(paths.join(runtime, 'node', ...(platform === 'win32' ? [] : ['bin'])) + paths.delimiter));
+    assert.ok(invocation.args.includes('--lingxi.sandbox.node-executable=/opt/node/bin/node'));
+    assert.ok(invocation.args.includes('--lingxi.sandbox.sdk-directory=/opt/mxc/node_modules/@microsoft/mxc-sdk'));
+    assert.ok(invocation.args.includes('--lingxi.sandbox.distribution=Ubuntu'));
+    assert.ok(invocation.args.every(arg => !arg.includes('srt-cli=') && !arg.includes('node-exe=') && !arg.includes('state-directory=')));
   });
 }
-
-test('开发态使用项目目录，不使用 Electron 开发运行时所在目录', async () => {
-  const { invocation, frontendRoot, paths } = await launch({ packaged: false });
-  assert.ok(invocation.args.includes(`--lingxi.sandbox.application-directory=${paths.resolve(frontendRoot, '..')}`));
-  assert.ok(invocation.args.includes(`--lingxi.sandbox.node-exe=${paths.join(frontendRoot, 'build', 'runtime', 'node', 'node.exe')}`));
-});
-
-test('显式部署环境变量覆盖自动目录，Node 和 SRT 配置随进程继承', async () => {
-  const env = { LINGXI_SANDBOX_APPLICATION_DIRECTORY: 'E:\\Deployment',
-    LINGXI_SANDBOX_STATE_DIRECTORY: 'E:\\Writable State',
-    LINGXI_SANDBOX_NODE_EXE: 'E:\\Tools\\node.exe', LINGXI_SANDBOX_SRT_CLI: 'E:\\Tools\\dist\\cli.js',
-    LINGXI_SANDBOX_BASH_EXE: 'E:\\Tools\\git\\bin\\bash.exe' };
+test('部署环境覆盖说明文件，Linux 路径不加入 Windows PATH', async () => {
+  const env = { LINGXI_SANDBOX_APPLICATION_DIRECTORY: 'E:/Writable State',
+    LINGXI_SANDBOX_NODE_EXECUTABLE: '/opt/custom node/bin/node', LINGXI_SANDBOX_SDK_DIRECTORY: '/opt/custom sdk/node_modules/@microsoft/mxc-sdk',
+    LINGXI_SANDBOX_DISTRIBUTION: 'Custom-Ubuntu', PATH: 'C:/Windows' };
   const { invocation } = await launch({ env });
-  assert.ok(invocation.args.includes('--lingxi.sandbox.application-directory=E:\\Deployment'));
-  assert.ok(invocation.args.includes('--lingxi.sandbox.state-directory=E:\\Writable State'));
-  assert.equal(invocation.options.env.LINGXI_SANDBOX_NODE_EXE, env.LINGXI_SANDBOX_NODE_EXE);
-  assert.equal(invocation.options.env.LINGXI_SANDBOX_SRT_CLI, env.LINGXI_SANDBOX_SRT_CLI);
-  assert.ok(invocation.args.includes(`--lingxi.sandbox.node-exe=${env.LINGXI_SANDBOX_NODE_EXE}`));
-  assert.ok(invocation.args.includes(`--lingxi.sandbox.srt-cli=${env.LINGXI_SANDBOX_SRT_CLI}`));
-  assert.ok(invocation.args.includes(`--lingxi.sandbox.bash-exe=${env.LINGXI_SANDBOX_BASH_EXE}`));
+  assert.ok(invocation.args.includes('--lingxi.sandbox.application-directory=E:/Writable State'));
+  assert.ok(invocation.args.includes('--lingxi.sandbox.node-executable=/opt/custom node/bin/node'));
+  assert.ok(invocation.args.includes('--lingxi.sandbox.distribution=Custom-Ubuntu'));
+  assert.equal(invocation.options.env.PATH, env.PATH);
 });

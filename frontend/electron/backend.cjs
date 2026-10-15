@@ -116,10 +116,11 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
   // 「点击查看日志」会指向一个永远不存在的文件。回落结果同样回传给渲染层，两边始终看同一个目录。
   const logDir = resolveLogDirectory(path.resolve(applicationDirectory, 'logs'), path.join(userDataDir, 'logs'));
   const toolsDirectory = isPackaged ? path.join(resourcesPath, 'runtime') : path.join(frontendRoot, 'build', 'runtime');
-  const windows = process.platform === 'win32';
-  const nodeExe = process.env.LINGXI_SANDBOX_NODE_EXE || path.join(toolsDirectory, 'node', ...(windows ? ['node.exe'] : ['bin', 'node']));
-  const srtCli = process.env.LINGXI_SANDBOX_SRT_CLI || path.join(toolsDirectory, 'srt', 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'cli.js');
-  const bashExe = process.env.LINGXI_SANDBOX_BASH_EXE || path.join(toolsDirectory, 'git', 'bin', windows ? 'bash.exe' : 'bash');
+  const descriptor = path.join(toolsDirectory, 'mxc-deployment.json');
+  const deployment = fs.existsSync(descriptor) ? JSON.parse(fs.readFileSync(descriptor, 'utf8')) : {};
+  const distribution = process.env.LINGXI_SANDBOX_DISTRIBUTION || deployment.distribution || '';
+  const nodeExecutable = process.env.LINGXI_SANDBOX_NODE_EXECUTABLE || deployment.nodeExecutable || '';
+  const sdkDirectory = process.env.LINGXI_SANDBOX_SDK_DIRECTORY || deployment.sdkDirectory || '';
 
   // 端口已占用：可能是用户在 IDE 里跑着后端，也可能是上次崩溃残留的孤儿 JVM。
   // 两种都直接复用 —— 既不会「端口占用」启动失败，也不会去杀不属于自己的进程。
@@ -155,12 +156,11 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
     '-jar',
     layout.jar,
     `--server.port=${BACKEND_PORT}`,
-    `--lingxi.sandbox.application-directory=${process.env.LINGXI_SANDBOX_APPLICATION_DIRECTORY || applicationDirectory}`,
+    `--lingxi.sandbox.application-directory=${process.env.LINGXI_SANDBOX_APPLICATION_DIRECTORY || path.join(userDataDir, 'sandbox')}`,
     `--lingxi.log.dir=${process.env.LINGXI_LOG_DIR || logDir}`,
-    `--lingxi.sandbox.state-directory=${process.env.LINGXI_SANDBOX_STATE_DIRECTORY || path.join(userDataDir, 'sandbox-state')}`,
-    `--lingxi.sandbox.node-exe=${nodeExe}`,
-    `--lingxi.sandbox.srt-cli=${srtCli}`,
-    `--lingxi.sandbox.bash-exe=${bashExe}`,
+    `--lingxi.sandbox.distribution=${distribution}`,
+    `--lingxi.sandbox.node-executable=${nodeExecutable}`,
+    `--lingxi.sandbox.sdk-directory=${sdkDirectory}`,
   ];
   // 数据库内置（H2 文件库，用户机器不需要装任何数据库）。
   // 传 LX_SPRING_PROFILE 环境变量可覆盖为其他 Spring profile（默认不传，走主配置）。
@@ -170,16 +170,13 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
 
   logFn(`启动后端: ${layout.javaExe} ${args.join(' ')}`);
   logFn(`WARN/ERROR 日志目录: ${process.env.LINGXI_LOG_DIR || logDir}`);
-  // 只给应用子进程补充工具路径，避免修改用户的全局环境。
-  const pathKey = Object.keys(process.env).find(key => key.toUpperCase() === 'PATH') || 'PATH';
-  const toolPath = [path.dirname(nodeExe), path.dirname(bashExe), process.env[pathKey] || ''].join(path.delimiter);
   child = spawn(layout.javaExe, args, {
     // cwd 必须是可写目录：装到 Program Files 后 jar 旁边不可写，
     // 而 JVM 崩溃转储、相对路径配置等都会落在 cwd。不设 cwd 会继承安装目录 → 静默写失败。
     cwd: userDataDir,
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, JAVA_HOME: layout.runtimeDir, [pathKey]: toolPath },
+    env: { ...process.env, JAVA_HOME: layout.runtimeDir },
   });
   ownsProcess = true;
 

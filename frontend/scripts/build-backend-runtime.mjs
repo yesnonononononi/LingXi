@@ -20,7 +20,6 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { buildBackend } from './build-backend.mjs';
-import { extractSandboxHelpers } from './build-sandbox-runtime.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const frontendRoot = path.resolve(__dirname, '..');
@@ -153,7 +152,6 @@ if (fs.existsSync(stagedJar)) {
   fs.rmSync(stagedJar, { force: true });
 }
 fs.copyFileSync(jarPath, stagedJar);
-extractSandboxHelpers(stagedJar, frontendRoot, jdk.home ? path.join(jdk.home, 'bin', isWin ? 'jar.exe' : 'jar') : 'jar');
 console.log(`[backend-runtime]      ${path.basename(jarPath)} → build/backend/app.jar`);
 
 // ---------------------------------------------------------------- 2. jlink 精简 JRE

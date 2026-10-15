@@ -576,20 +576,11 @@ export interface WorkspaceVO {
 /** 沙箱/本地：用户级配置，不由单个工作空间指定；取值为后端 WorkspaceType 枚举名 */
 export type WorkspaceEnvType = 'SAND_BOX' | 'LOCAL' | 'NONE';
 
-/**
- * 沙箱服务状态（对应后端 SandboxServiceStatus）。
- *
- * <p>Windows 上 SRT 要先注册系统组件才能跑起沙箱，这个对象就是「要不要给用户一个安装入口」的依据。
- * 状态查询只做文件与平台检测、不跑任何命令，因此可以进设置页就查。</p>
- */
+/** 沙箱资源配置状态与本次运行检查结果。 */
 export interface SandboxServiceStatus {
-  /** 当前平台是否 Windows（非 Windows 不存在安装这一步，界面据此隐藏入口） */
-  windows: boolean;
-  /** srt 包（cli.js + node）是否都在位；缺了就不是「装一下」能解决的 */
-  srtPackagePresent: boolean;
-  /** 本次调用是否真的执行了安装 */
-  installedThisCall: boolean;
-  /** 面向用户的一句话说明 */
+  configured: boolean;
+  ready: boolean;
+  backend: string;
   message: string;
 }
 

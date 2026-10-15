@@ -26,10 +26,10 @@ const {
   isExecutionEnvOpen,
   executionEnvOptions,
   sandboxStatus,
-  isInstallingSandbox,
+  isCheckingSandbox,
   sandboxError,
   sandboxNotice,
-  installSandboxService,
+  checkSandboxService,
   accessMode,
   isAccessModeOpen,
   accessModeOptions,
@@ -225,13 +225,9 @@ const {
       </div>
     </div>
 
-    <!--
-      沙箱服务：只有 Windows 才有这一项（其它平台不存在安装步骤）。
-      选「沙箱」后若组件没注册，每次执行都会失败，而错误提示只会说「详情见错误日志」——
-      这里就是那句提示所指的入口。
-    -->
+    <!-- 检查命令执行和文件隔离，不触发组件安装。 -->
     <div
-      v-if="sandboxStatus?.windows"
+      v-if="sandboxStatus"
       class="py-3 border-b border-gray-100 dark:border-white/10 space-y-2"
     >
       <div class="flex items-center justify-between gap-3">
@@ -240,28 +236,26 @@ const {
             {{ t('settings.general.sandboxService') }}
           </span>
           <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">
-            {{ sandboxStatus?.srtPackagePresent
-              ? t('settings.general.sandboxServiceDesc')
-              : t('settings.general.sandboxPackageMissing') }}
+            {{ sandboxStatus.message }}
           </span>
         </div>
         <button
           type="button"
-          :disabled="isInstallingSandbox"
-          @click.stop="installSandboxService"
+          :disabled="isCheckingSandbox"
+          @click.stop="checkSandboxService"
           class="shrink-0 px-3 py-1 rounded-full border text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           :class="isDark
             ? 'border-white/20 text-zinc-200 hover:bg-white/5'
             : 'border-gray-300 text-gray-700 hover:bg-gray-50'"
         >
-          {{ isInstallingSandbox ? t('settings.general.sandboxInstalling') : t('settings.general.sandboxInstall') }}
+          {{ isCheckingSandbox ? t('settings.general.sandboxChecking') : t('settings.general.sandboxCheck') }}
         </button>
       </div>
 
       <p
-        v-if="isInstallingSandbox"
+        v-if="isCheckingSandbox"
         class="text-[11px] text-gray-400 dark:text-zinc-400 leading-snug"
-      >{{ t('settings.general.sandboxInstallingHint') }}</p>
+      >{{ t('settings.general.sandboxCheckingHint') }}</p>
 
       <div
         v-if="sandboxNotice"

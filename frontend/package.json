@@ -98,10 +98,6 @@
       {
         "from": "build/runtime",
         "to": "runtime"
-      },
-      {
-        "from": "build/sandbox-helpers",
-        "to": "sandbox-helpers"
       }
     ],
     "beforePack": "scripts/verify-sandbox-bundle.cjs",
