@@ -96,6 +96,22 @@ class TeamPromptComposerTest {
     }
 
     @Test
+    @DisplayName("主理人的唤醒手段唯一锁定 call_sub_agent，禁止把邮件当唤醒/催办通道")
+    void commanderWakesTeammatesOnlyThroughDelegation() {
+        String prompt = TeamPromptComposer.commanderPrompt("人设", TEAM, 5L, TEAM_DESCRIPTION);
+
+        assertTrue(prompt.contains("派活与唤醒一律只用 `call_sub_agent`"),
+                "唤醒手段必须唯一锁定在 call_sub_agent");
+        assertTrue(prompt.contains("不要用 `send_mail_to_agent` 叫队员干活或催办"),
+                "必须显式禁止把邮件当唤醒通道");
+        assertTrue(prompt.contains("队员一旦结束就再也不会读信"),
+                "禁令要连原因一起写：队员终结后邮件永久停在待处理，只给禁令模型会绕道");
+        assertFalse(TeamPromptComposer.memberPrompt("人设", TEAM, 6L, 5L, TEAM_DESCRIPTION)
+                        .contains("派活与唤醒一律只用"),
+                "这条约束属于主理人职责，不得串到成员提示词里");
+    }
+
+    @Test
     @DisplayName("成员以落盘产物和验证记录交付，邮件仅补充通知")
     void memberDeliversArtifactsAndExplicitValidation() {
         String prompt = TeamPromptComposer.memberPrompt("人设", TEAM, 6L, 5L, TEAM_DESCRIPTION);
