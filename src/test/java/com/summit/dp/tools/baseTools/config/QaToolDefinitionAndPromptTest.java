@@ -11,6 +11,7 @@ import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailWakeMisuseDetector;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -104,7 +105,8 @@ class QaToolDefinitionAndPromptTest {
     @DisplayName("T02 send_mail_to_agent：description 与 toAgentId 描述均为双向措辞")
     void sendMailDefinitionIsBidirectional() throws Exception {
         ToolDefinition<SendMailToAgentTool> definition =
-                new ToolConfig().sendMailToAgentToolToolDefinition(objectMapper, emailService, mock(ExecutionResumeCoordinator.class));
+                new ToolConfig().sendMailToAgentToolToolDefinition(objectMapper, emailService,
+                        mock(ExecutionResumeCoordinator.class), mock(MailWakeMisuseDetector.class));
 
         String description = definition.description();
         assertTrue(description.toLowerCase().contains("commander"),

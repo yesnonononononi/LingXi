@@ -16,6 +16,7 @@ import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.infrastructure.tools.plan.CreatePlanTool;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
 import com.summit.dp.workflow.infrastructure.tools.require_choice.RequireChoiceToolExecutor;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailWakeMisuseDetector;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
 import lombok.Builder;
 import org.springframework.context.annotation.Bean;
@@ -92,15 +93,19 @@ public class ToolConfig {
      *
      * <p><b>双向用途</b>：这条描述对主理人（发给成员）与成员（把结果发回主理人）都要成立 ——
      * 邮件仅补充交付通知，主理人仍须核验产物与验证记录。</p>
+     *
+     * <p>主理人若拿它当唤醒/催办通道（收件成员当前没有在跑的），成功回执会追加一条纠正提醒，
+     * 见 {@code MailWakeMisuseDetector}。</p>
      */
     @Bean
     public ToolDefinition<SendMailToAgentTool> sendMailToAgentToolToolDefinition(ObjectMapper objectMapper,
                                                                                 EmailService emailService,
-                                                                                ExecutionResumeCoordinator resumeCoordinator) {
+                                                                                ExecutionResumeCoordinator resumeCoordinator,
+                                                                                MailWakeMisuseDetector wakeMisuseDetector) {
         return ToolDefinition.<SendMailToAgentTool>builder()
                 .id(ToolCatalog.SEND_MAIL_TO_AGENT)
                 .name(ToolCatalog.SEND_MAIL_TO_AGENT)
-                .executor(new SendMailToAgentTool(objectMapper, emailService, resumeCoordinator))
+                .executor(new SendMailToAgentTool(objectMapper, emailService, resumeCoordinator, wakeMisuseDetector))
                 .description("""
                         Send an asynchronous mail to a teammate agent or to the commander.
                         Use it for supplementary delivery notifications; the commander assesses workspace artifacts and validation records even without email, and email is not the basis for acceptance.

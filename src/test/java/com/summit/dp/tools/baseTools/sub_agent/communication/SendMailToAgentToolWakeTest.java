@@ -1,5 +1,6 @@
 package com.summit.dp.tools.baseTools.sub_agent.communication;
 
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailWakeMisuseDetector;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -40,7 +41,7 @@ class SendMailToAgentToolWakeTest {
     private final EmailService emailService = mock(EmailService.class);
     private final ExecutionResumeCoordinator resumeCoordinator = mock(ExecutionResumeCoordinator.class);
     private final SendMailToAgentTool tool =
-            new SendMailToAgentTool(objectMapper, emailService, resumeCoordinator);
+            new SendMailToAgentTool(objectMapper, emailService, resumeCoordinator, mock(MailWakeMisuseDetector.class));
 
     @Test
     @DisplayName("根执行发信成功：投递一次并恰好唤醒一次 accept（邮箱键=根会话，唤醒目标=自身 executionId）")

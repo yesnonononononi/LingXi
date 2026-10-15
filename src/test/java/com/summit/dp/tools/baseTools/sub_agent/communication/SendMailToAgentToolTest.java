@@ -1,5 +1,6 @@
 package com.summit.dp.tools.baseTools.sub_agent.communication;
 
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailWakeMisuseDetector;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -21,15 +22,19 @@ import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 /**
  * 发信工具回归：Schema 与参数类字段名必须一致，且发送者 / 协作根会话（邮箱业务键）/ 根执行
@@ -44,14 +49,17 @@ class SendMailToAgentToolTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final EmailService emailService = mock(EmailService.class);
     private final ExecutionResumeCoordinator resumeCoordinator = mock(ExecutionResumeCoordinator.class);
+    /** 唤醒误用判定默认不触发（Mockito 对 Optional 返回值给空）：本类只验投递侧解析与回执口径。 */
+    private final MailWakeMisuseDetector wakeMisuseDetector = mock(MailWakeMisuseDetector.class);
     private final SendMailToAgentTool tool = new SendMailToAgentTool(objectMapper, emailService,
-            resumeCoordinator);
+            resumeCoordinator, wakeMisuseDetector);
 
     @Test
     @DisplayName("注册的 JSON Schema 与 SendMailArgument 字段名严格一致，且只有这两个必填项")
     void registeredSchemaMatchesArgumentFields() throws Exception {
         ToolDefinition<SendMailToAgentTool> definition =
-                new ToolConfig().sendMailToAgentToolToolDefinition(objectMapper, emailService, mock(ExecutionResumeCoordinator.class));
+                new ToolConfig().sendMailToAgentToolToolDefinition(objectMapper, emailService,
+                        mock(ExecutionResumeCoordinator.class), mock(MailWakeMisuseDetector.class));
 
         assertEquals(ToolCatalog.SEND_MAIL_TO_AGENT, definition.name());
 
@@ -141,7 +149,8 @@ class SendMailToAgentToolTest {
     @DisplayName("注册的工具描述必须讲清投递是异步的、且无回复通道")
     void registeredDescriptionExplainsAsynchronousDelivery() throws Exception {
         ToolDefinition<SendMailToAgentTool> definition =
-                new ToolConfig().sendMailToAgentToolToolDefinition(objectMapper, emailService, mock(ExecutionResumeCoordinator.class));
+                new ToolConfig().sendMailToAgentToolToolDefinition(objectMapper, emailService,
+                        mock(ExecutionResumeCoordinator.class), mock(MailWakeMisuseDetector.class));
 
         String description = definition.description();
         assertTrue(description.contains("asynchronous"),
@@ -171,8 +180,30 @@ class SendMailToAgentToolTest {
                 "必须给出「别重发」的行动指引，掐断「怀疑没发出去 → 重发」的循环");
     }
 
-    private static ToolExecution execution(String executionId, Map<String, Object> attributes, String args) {
-        return ToolExecution.builder()
+    @Test
+    @DisplayName("唤醒误用提醒接进回执：判定命中时追加，未命中时回执口径不变")
+    void wakeMisuseReminderIsAppendedToReceipt() {
+        when(wakeMisuseDetector.detect(anyMap(), eq(7L), eq(405L)))
+                .thenReturn(Optional.of("注意：你正在尝试以不正确的方式委派并唤醒成员"));
+
+        ToolExecuteResult warned = tool.execute(execution("900",
+                Map.of(ExecutionAttributes.AGENT_ID, "100",
+                        ExecutionAttributes.SESSION_ID, "405"),
+                "{\"toAgentId\":7,\"mailContent\":\"继续做\"}"));
+
+        assertTrue(warned.getToolOutput().contains("你正在尝试以不正确的方式委派并唤醒成员"),
+                "命中误用时必须把提醒追加进回执，否则模型以为任务已经安排下去了");
+        assertTrue(warned.getToolOutput().contains("delivered"), "提醒是追加项，不得顶掉原有的投递口径");
+
+        when(wakeMisuseDetector.detect(anyMap(), eq(7L), eq(405L))).thenReturn(Optional.empty());
+        ToolExecuteResult plain = tool.execute(execution("900",
+                Map.of(ExecutionAttributes.AGENT_ID, "100",
+                        ExecutionAttributes.SESSION_ID, "405"),
+                "{\"toAgentId\":7,\"mailContent\":\"再发一次\"}"));
+        assertFalse(plain.getToolOutput().contains("不正确的方式"), "未命中不得追加提醒");
+    }
+
+    private static ToolExecution execution(String executionId, Map<String, Object> attributes, String args) {        return ToolExecution.builder()
                 .executionId(executionId)
                 .attributes(attributes)
                 .args(args)

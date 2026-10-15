@@ -3,6 +3,7 @@ package com.summit.dp.tools.baseTools.sub_agent.communication;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
 
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.AgenticLoopInterceptor;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailWakeMisuseDetector;
 
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -117,7 +118,8 @@ class QaMailboxSessionKeyEndToEndTest {
     @Test
     @DisplayName("投递侧同键：根执行取自身会话、子执行取 ROOT_SESSION_ID —— 都落到协作根会话这一把邮箱键")
     void rootAndChildProducersShareRootSessionMailboxKey() {
-        SendMailToAgentTool tool = new SendMailToAgentTool(objectMapper, service, resumeCoordinator);
+        SendMailToAgentTool tool = new SendMailToAgentTool(objectMapper, service, resumeCoordinator,
+                mock(MailWakeMisuseDetector.class));
 
         // 根执行发信：只有 SESSION_ID（= 根会话），没有 ROOT_SESSION_ID。
         assertTrue(tool.execute(execution("900", Map.of(
@@ -151,7 +153,8 @@ class QaMailboxSessionKeyEndToEndTest {
     @Test
     @DisplayName("【核心风险】停止后迟到邮件：根会话键落箱，下一轮全新根执行（新执行 id）仍被消费；三处同键")
     void lateMailAfterRootStopIsConsumedByNextRoundUnderRootSessionKey() {
-        SendMailToAgentTool tool = new SendMailToAgentTool(objectMapper, service, resumeCoordinator);
+        SendMailToAgentTool tool = new SendMailToAgentTool(objectMapper, service, resumeCoordinator,
+                mock(MailWakeMisuseDetector.class));
 
         // 1) 根执行 E1 已停止（不再消费）。子执行此刻发来迟到邮件 —— 键 = 根会话；唤醒目标 = 根执行 E1。
         assertTrue(tool.execute(execution("1234", Map.of(
@@ -191,7 +194,8 @@ class QaMailboxSessionKeyEndToEndTest {
     @Test
     @DisplayName("消费侧真正取回正文：下一轮模型上下文被追加该邮件的用户消息")
     void nextRoundActuallyReceivesTheMailContent() {
-        SendMailToAgentTool tool = new SendMailToAgentTool(objectMapper, service, resumeCoordinator);
+        SendMailToAgentTool tool = new SendMailToAgentTool(objectMapper, service, resumeCoordinator,
+                mock(MailWakeMisuseDetector.class));
         assertTrue(tool.execute(execution("1234", Map.of(
                 ExecutionAttributes.AGENT_ID, String.valueOf(CHILD_AGENT_ID),
                 ExecutionAttributes.SESSION_ID, String.valueOf(CHILD_SESSION_ID),

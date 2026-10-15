@@ -41,6 +41,13 @@ public class SendMailToAgentTool implements ToolExecutor {
      * {@code accept} 自身幂等：收件方未挂起（运行中 / 已终态 / 无恢复边界）时一律让位，不会重复启动 loop。</p>
      */
     private final ExecutionResumeCoordinator resumeCoordinator;
+    /**
+     * 唤醒误用判定：主理人拿邮件叫一个没有在跑的队员时，在回执里当场点出来。
+     *
+     * <p>提示词已经禁止这种用法，但那是软约束。回执里那句「对方会在它自己的下一轮读到」在这种
+     * 情况下是假话 —— 模型看不到投递结果，只会以为自己已经安排下去了。</p>
+     */
+    private final MailWakeMisuseDetector wakeMisuseDetector;
 
     @Override
     public @NonNull ToolExecuteResult execute(ToolExecution toolExecution) {
@@ -75,10 +82,14 @@ public class SendMailToAgentTool implements ToolExecutor {
 
             // 回执必须与工具 description 同口径：讲明「已投递 + 对方下一轮才读到 + 无回复通道 + 别重发」。
             // 模型看不到投递结果，含糊的回执会让它怀疑没发出去而重发同一封
-            return ToolExecuteResult.success(String.format(
+            String receipt = String.format(
                     "Mail delivered to agent %d. It will be read at the start of that agent's next model round. "
                             + "This call returns no reply, so continue your own work or end your turn; do not resend the same content.",
-                    toAgentId));
+                    toAgentId);
+            // 主理人用邮件叫一个没有在跑的队员时，上面「对方下一轮读到」是假话 —— 追加提醒纠正，
+            // 否则模型会以为任务已经安排下去（提示词里的禁令是软约束，这里给运行期反馈）。
+            String reminder = wakeMisuseDetector.detect(attributes, toAgentId, mailboxSessionId).orElse(null);
+            return ToolExecuteResult.success(reminder == null ? receipt : receipt + "\n" + reminder);
 
         } catch (JsonProcessingException e) {
             throw new RuntimeException(e);
