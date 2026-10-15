@@ -308,6 +308,9 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     // 受理被拒时必须回读权威 runStatus：受理失败后本地无从得知真实状态，
     // 不回读就会让界面停留在错误的执行态（卡在「生成中」或误显示空闲）。
     onSendFailure: (sessionId) => {
+      // 受理被拒 ⇒ 本地那条乐观气泡后端并不存在（没进 transcript、也没进模型上下文），
+      // 必须打上「未发送」，否则界面会把一条幽灵呈现成已发送。
+      streamRouter.markUserMessageUnsent();
       if (isPersistedSessionId(sessionId)) {
         void reconcileSessionAfterStream(sessionId);
       }
@@ -364,6 +367,12 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
    *
    * <p>界面层不知道 sessionId/workspaceId 这些上下文，由这里补齐；团队身份走会话绑定，
    * 不作为请求参数下发。</p>
+   *
+   * <p>模型选择规则（与后端 effectiveCommand 对齐）：没指定 Agent 的<b>非协作</b>会话，发
+   * user_configs 绑定的模型（输入栏选择器的真源就是它）；<b>选了 Agent 或处于团队（协作）
+   * 会话就不带 modelId</b> —— 前者由该 Agent 的预设模型驱动（后端对未绑/已删除硬报错），
+   * 后者强制由指挥者的预设驱动（协作模式下指挥者预设 otherwise 悬空）；协作模式里每个成员
+   * 子执行各用自己的预设（委派链路负责）。</p>
    */
   const buildCommand = (
     input: string,
@@ -374,7 +383,9 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
       input,
       sessionId: toServerSessionId(localActiveId.value),
       workDir: '',
-      modelId: workspace.selectedModelId.value ?? '',
+      modelId: userConfig.agentId || localSelectedTeamId.value
+        ? ''
+        : workspace.selectedModelId.value ?? '',
       workspaceId: Number(localActiveWorkspaceId.value ?? 0),
       agentId: Number(userConfig.agentId ?? 0),
       requirePlan: requirePlan === true,
@@ -471,6 +482,22 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     }
   };
 
+  /**
+   * 重发一条「未发送」的提问。
+   *
+   * <p>先移除那条幽灵气泡，再走完整发送链路：新气泡由发送链路自己 push，受理成功后
+   * 绑定权威 turnId。不复用旧气泡 —— 复用会让「未发送」标记跟着进历史，与后端事实冲突。</p>
+   *
+   * <p>只重发文本：被拒的那次请求带不走附件（文件随上一次 multipart 一起消失）。</p>
+   */
+  const handleResendUnsent = async (messageId: string): Promise<void> => {
+    const target = currentActiveSession.value?.messages?.find(message => message.id === messageId);
+    if (!target || target.unsent !== true) return;
+    const text = target.content;
+    streamRouter.removeUnsentUserMessage(messageId);
+    await handleSendMessage(text, false);
+  };
+
   /** 协作式暂停会话执行 */
   const handleSuspendGeneration = async (sessionId?: string | number): Promise<void> => {
     const sid = sessionId ?? currentActiveSession.value?.id;
@@ -544,11 +571,13 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   });
 
   // ---------- 展示层派生（续） ----------
-  /** 上下文用量指示器数据（输入框模型选择器左侧展示）。 */
+  /** 上下文用量指示器数据（输入框模型选择器左侧展示）。phase/band 供「压缩中」标签按档位消费。 */
   const contextUsageIndicator = computed<{
     usedTokens: number;
     maxTokens: number | null;
     ratio: number | null;
+    phase?: string;
+    band?: string;
   }>(() => {
     const session = currentActiveSession.value;
     const usage = session ? chatSessionStore.getContextUsage(session.id) : null;
@@ -557,7 +586,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     // 分母只认上下文窗口，第三级 userConfig.maxTokens 是「输出上限」，语义不同（详见报告 BE-7）。
     const maxTokens = usage?.maxTokens ?? session?.contextMaxTokens ?? null;
     const ratio = usage?.ratio ?? (maxTokens && maxTokens > 0 ? usedTokens / maxTokens : (session?.contextRatio ?? null));
-    return { usedTokens, maxTokens, ratio };
+    return { usedTokens, maxTokens, ratio, phase: usage?.phase, band: usage?.band };
   });
 
   const lastAssistantIndex = computed(() => {
@@ -673,6 +702,18 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     pendingTimers.clear();
   });
 
+  /**
+   * 配置类展示字段必须是 computed，不能在 setup 里直接读一次值。
+   *
+   * <p>Pinia setup store 的 ref 只在**响应式上下文**（模板 / computed / watch）里读取才建立依赖；
+   * 在 setup 顶层直接读拿到的是**取值快照**，而配置是挂载后才异步载入的 —— 直接读会把
+   * 「载入前」的 null 永久固化。症状：请求按活值走（`buildCommand` 在发送时才读 store 的
+   * agentId），界面却按死值为 null 渲染，于是 Agent 明明选中、请求里也带着，但 🤖 芯片永不出现，
+   * 模型被 Agent 预设接管而用户完全看不出来。</p>
+   */
+  const selectedAgentId = computed(() => userConfig.agentId);
+  const accessMode = computed(() => userConfig.accessMode);
+
   return {
     // 布局与设置
     isSidebarCollapsed: workspace.isSidebarCollapsed,
@@ -716,10 +757,10 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     isLoadingMoreSubMessages: subSession.isLoadingMoreSubMessages,
     subHistoryLoadError: subSession.subHistoryLoadError,
     handleLoadMoreSubSessionHistory: subSession.handleLoadMoreSubSessionHistory,
-    // 配置类展示字段：真值在 userConfigStore / workspace 模块，模板直接消费
+    // 配置类展示字段：真值在 userConfigStore / workspace 模块，模板直接消费（见上方 computed 说明）
     selectedModelId: workspace.selectedModelId,
-    accessMode: userConfig.accessMode,
-    selectedAgentId: userConfig.agentId,
+    accessMode,
+    selectedAgentId,
     reasoningEffort,
     reasoningEffortPending,
     reasoningEffortError,
@@ -776,6 +817,8 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     handleSuspendGeneration,
     decideToolCall,
     handleSelectPrompt,
+    /** 重发一条「未发送」的提问（受理被拒留下的幽灵气泡）。 */
+    handleResendUnsent,
     // 历史
     handleLoadMoreHistory,
     handleRetryLoadMoreHistory,

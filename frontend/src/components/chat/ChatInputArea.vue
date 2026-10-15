@@ -23,6 +23,7 @@ import { AgentAPI } from '../../services/agent';
 import { isOk } from '../../utils/api';
 import { useChatImageAttachments } from '../../composables/useChatImageAttachments';
 import { useSkillMenu } from '../../composables/useSkillMenu';
+import { isImageAvatar } from '../../utils/avatar';
 import { t } from '../../i18n';
 
 const props = defineProps<{
@@ -52,6 +53,8 @@ const props = defineProps<{
     maxTokens?: number | null;
     ratio?: number | null;
     phase?: string;
+    /** 产生该事件的压缩档位：MANUAL=本地截断（毫秒级），SUMMARY=模型深度压缩 */
+    band?: string;
     message?: string;
   } | null;
 }>();
@@ -408,6 +411,7 @@ interface AgentItem {
   name: string;
   description: string;
   modelId?: string | number;
+  avatar?: string;
 }
 
 const allAgentsList = computed<AgentItem[]>(() => {
@@ -418,7 +422,8 @@ const allAgentsList = computed<AgentItem[]>(() => {
       id: a.id,
       name: a.name || `Agent #${a.id}`,
       description: a.description || (a.modelId ? t('session.modelFallback', { id: a.modelId }) : ''),
-      modelId: a.modelId
+      modelId: a.modelId,
+      avatar: a.avatar
     }))
   ];
 });
@@ -477,7 +482,7 @@ const selectAgentItem = (agent: AgentItem) => {
   closeAgentMenu();
 };
 
-// ====== /skill 触发的本地 Skill 清单浮层（只读展示，供用户查看可用 Skill） ======
+// ====== /skill 触发的本地 Skill 清单浮层（点击清单项把「使用{skill}完成工作」填进输入框） ======
 const skillMenu = useSkillMenu();
 const isSkillMenuOpen = skillMenu.isOpen;
 const skillSearchInputRef = ref<HTMLInputElement | null>(null);
@@ -495,6 +500,20 @@ const openSkillMenu = () => {
 
 const closeSkillMenu = () => {
   if (!isSkillMenuOpen.value) return;
+  skillMenu.close();
+  focusInput();
+};
+
+/**
+ * 点击清单项：把「使用{skill}完成工作」填进输入框。
+ *
+ * <p>输入框已有内容时**追加**而非覆盖——用户可能正打到一半，替写掉就是毁数据；
+ * 空白输入才整句填入。填完收起浮层并把焦点还回输入框，让用户直接改后半句或发送。</p>
+ */
+const selectSkill = (skill: { name: string }) => {
+  const sentence = t('chat.input.skillFillTemplate', { name: skill.name });
+  const existing = inputText.value.trim();
+  inputText.value = existing ? `${existing} ${sentence}` : sentence;
   skillMenu.close();
   focusInput();
 };
@@ -523,6 +542,7 @@ const teamOptions = computed<SelectOption<string | number>[]>(() => {
     ...list.map(team => ({
       label: team.name || t('chat.input.teamFallback', { id: team.id }),
       value: team.id,
+      avatar: team.avatar,
     })),
     { label: t('chat.input.addTeam'), value: ADD_TEAM_OPTION }
   ];
@@ -542,6 +562,52 @@ const selectedModel = computed<string | number>({
   set: (value) => { if (value === ADD_CUSTOM_MODEL) { emit('openModelEditor'); return; } emit('updateModel', value); }
 });
 
+/**
+ * 本轮实际生效的模型（Agent/团队预设驱动时）。
+ *
+ * <p>输入栏的模型选择器只映 {@code user_configs.model_id}，与 Agent/指挥者预设无关；而
+ * Agent 选中或会话绑团队时，本轮模型由预设决定、显式 modelId 不参与（后端
+ * {@code RequestPreparer#effectiveCommand}）。这个错位在界面上原本完全看不出来 ——
+ * 「选了 deepseek-flash 却用 claude」只能靠事后翻轮次记录才能发现，所以这里把实际生效模型
+ * 与来源显式呈现；点击可直接跳到「智能体」设置改预设。</p>
+ *
+ * <p>返回 null 表示没有 Agent/团队在驱动，此时选择器就是权威，照常显示下拉框。</p>
+ */
+const drivenModel = computed<{ text: string; tip: string; missing: boolean } | null>(() => {
+  const modelNameOf = (modelId: string | number | null | undefined): string => {
+    if (modelId == null || modelId === '') return '';
+    const found = (props.models ?? []).find(m => String(m.id) === String(modelId));
+    return found?.name || found?.modelName || t('session.modelFallback', { id: modelId });
+  };
+  const describe = (agentName: string, presetModelId: string | number | null | undefined, source: string) => {
+    const unbound = presetModelId == null || presetModelId === '';
+    return {
+      text: unbound ? t('chat.input.modelDrivenUnbound', { name: agentName }) : `${modelNameOf(presetModelId)} · ${source}`,
+      tip: t('chat.input.modelDrivenTip', { name: agentName, source }),
+      missing: unbound,
+    };
+  };
+
+  // 1) 会话绑定的团队：后端强制指挥者预设（成员子执行各用各的预设，不在此展示）
+  const teamList = props.teams && props.teams.length > 0 ? props.teams : localTeams.value;
+  const team = teamList.find(item => String(item.id) === String(props.selectedTeamId ?? ''));
+  if (team && String(props.selectedTeamId ?? '') !== '') {
+    const commander = (team.agents ?? []).find(a => String(a.id) === String(team.commanderAgentId));
+    const commanderName = commander?.name || t('chat.input.commanderFallback');
+    return describe(commanderName, commander?.modelId, t('chat.input.modelSourceCommander'));
+  }
+
+  // 2) 显式选中的单 Agent：用它自己的预设
+  const agentId = props.selectedAgentId;
+  if (agentId != null && agentId !== '') {
+    const agentList = props.agents && props.agents.length > 0 ? props.agents : localAgents.value;
+    const agent = agentList.find(a => String(a.id) === String(agentId));
+    const agentName = agent?.name || t('chat.input.modelAgentFallback');
+    return describe(agentName, agent?.modelId, t('chat.input.modelSourceAgent'));
+  }
+  return null;
+});
+
 /** ≥1000 显示 `216.7K` */
 const formatContextTokens = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : `${n}`);
 
@@ -553,7 +619,10 @@ const contextUsageText = computed<string>(() => {
   const ratio = usage?.ratio ?? (max && max > 0 ? used / max : null);
   const pct = ratio != null && ratio >= 0 ? `${(ratio * 100).toFixed(1)}%` : null;
   const amount = `${formatContextTokens(used)}${max && max > 0 ? ` / ${formatContextTokens(max)}` : ''}`;
-  const label = usage?.phase === 'SQUEEZE_STARTED' ? t('chat.input.contextCompressing') : t('chat.input.contextUsed');
+  // 「压缩中」只由 SUMMARY（模型深度压缩）档位点亮；MANUAL 是毫秒级本地截断，每个 checkpoint
+  // 都会跑一对 SQUEEZE 事件，照旧渲染会让指示器反复跳变。旧数据不带档位时保持原行为。
+  const compressing = usage?.phase === 'SQUEEZE_STARTED' && usage?.band !== 'MANUAL';
+  const label = compressing ? t('chat.input.contextCompressing') : t('chat.input.contextUsed');
   return pct ? `${pct} · ${amount} ${label}` : `${amount} ${label}`;
 });
 
@@ -1102,8 +1171,21 @@ defineExpose({
             @mouseenter="activeAgentIndex = idx"
             @click="selectAgentItem(agent)"
           >
-            <span class="font-medium truncate shrink-0 max-w-[45%] [color:var(--pb-ink)]">
-              {{ agent.name }}
+            <span class="flex items-center gap-2 min-w-0 shrink-0 max-w-[45%]">
+              <!-- 头像：URL 走 <img>，其余按 Emoji 文本渲染 -->
+              <img
+                v-if="agent.avatar && isImageAvatar(agent.avatar)"
+                :src="agent.avatar"
+                :alt="agent.name"
+                class="w-4 h-4 rounded-full object-cover shrink-0"
+              />
+              <span
+                v-else-if="agent.avatar"
+                class="w-4 h-4 rounded-full flex items-center justify-center text-[10px] leading-none shrink-0 select-none [background:color-mix(in_srgb,var(--pb-ink)_10%,transparent)]"
+              >{{ agent.avatar }}</span>
+              <span class="font-medium truncate [color:var(--pb-ink)]">
+                {{ agent.name }}
+              </span>
             </span>
             <div class="flex items-center gap-2 overflow-hidden justify-end flex-1 min-w-0">
               <span class="text-xs truncate text-right" :class="MUTED">
@@ -1121,7 +1203,7 @@ defineExpose({
         </div>
       </div>
 
-      <!-- Skill 清单菜单 (/skill 触发，只读展示) -->
+      <!-- Skill 清单菜单 (/skill 触发，点击清单项自动填充指令句) -->
       <div
         v-if="isSkillMenuOpen"
         class="bottom-[calc(100%+8px)] z-50 absolute inset-x-0 shadow-[0_16px_40px_rgba(0,0,0,0.7)] p-1.5 rounded-xl border backdrop-blur-md [background:color-mix(in_srgb,var(--pb-menu)_95%,transparent)] [animation:prompt-bar-pop_180ms_cubic-bezier(0.23,1,0.32,1)_both]"
@@ -1162,10 +1244,13 @@ defineExpose({
             {{ skillMenu.skills.value.length === 0 ? t('chat.input.skillEmpty') : t('chat.input.noMatchedSkill') }}
           </div>
 
-          <div
+          <button
             v-for="skill in skillMenu.filteredSkills.value"
             :key="skill.name"
-            class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-xs select-none w-full"
+            type="button"
+            class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-xs select-none w-full text-left bg-transparent border-0 outline-none cursor-pointer transition-colors hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)]"
+            :title="t('chat.input.skillFillTemplate', { name: skill.name })"
+            @click="selectSkill(skill)"
           >
             <span class="font-medium truncate shrink-0 max-w-[45%] [color:var(--pb-ink)]">
               {{ skill.name }}
@@ -1173,7 +1258,7 @@ defineExpose({
             <span class="text-xs truncate text-right flex-1 min-w-0" :class="MUTED">
               {{ skill.description }}
             </span>
-          </div>
+          </button>
         </div>
       </div>
 
@@ -1409,8 +1494,33 @@ defineExpose({
             </Transition>
           </div>
 
-          <!-- 模型选择下拉 -->
+          <!-- 模型：Agent/团队预设驱动时选择器不参与本轮，改显实际生效模型与来源（点击去改预设） -->
+          <button
+            v-if="drivenModel"
+            type="button"
+            class="inline-flex h-7 max-w-[230px] flex-none cursor-pointer items-center gap-1 rounded-lg border px-2 text-[12px] font-medium whitespace-nowrap transition"
+            :class="drivenModel.missing
+              ? (isDark !== false
+                ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                : 'border-amber-300 bg-amber-50 text-amber-700')
+              : (isDark !== false
+                ? 'border-white/15 text-zinc-300 hover:bg-white/10 hover:text-zinc-100'
+                : 'border-gray-200 text-gray-600 hover:bg-black/5 hover:text-gray-900')"
+            :title="drivenModel.tip"
+            :aria-label="drivenModel.tip"
+            @mousedown.prevent
+            @click="emit('openSettingsTab', 'agents')"
+          >
+            <svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <rect x="5" y="11" width="14" height="9" rx="2" />
+              <path stroke-linecap="round" d="M8 11V8a4 4 0 018 0v3" />
+            </svg>
+            <span class="truncate">{{ drivenModel.text }}</span>
+          </button>
+
+          <!-- 模型选择下拉（无 Agent/团队驱动时，选择器即权威） -->
           <DropUpSelect
+            v-else
             v-model="selectedModel"
             :options="modelOptions"
             :isDark="isDark"
@@ -1443,13 +1553,14 @@ defineExpose({
             <HugeiconsIcon v-else :icon="Mic01Icon as IconArray" :size="15" :stroke-width="2" />
           </button>
 
-          <!-- PromptBar 经典 Morphing 发送 / 停止按钮 -->
+          <!-- PromptBar Morphing 发送 / 停止按钮：armed 青蓝渐变+光晕，sending 玫红（停止语义） -->
           <button
             type="button"
-            class="inline-grid relative flex-none place-items-center p-0 [background:color-mix(in_srgb,var(--pb-ink)_12%,var(--pb-bg))] [color:color-mix(in_srgb,var(--pb-ink)_55%,var(--pb-bg))] data-[armed]:[background:var(--pb-ink)] data-[armed]:[color:var(--pb-bg)] data-[pressed]:[transform:scale(var(--pb-press))] border-0 rounded-lg outline-none w-7 h-7 touch-manipulation cursor-pointer disabled:cursor-default select-none motion-reduce:data-[pressed]:[transform:none] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_200ms_ease,color_200ms_ease,transform_160ms_cubic-bezier(0.23,1,0.32,1)]"
+            class="inline-grid relative flex-none place-items-center p-0 border-0 rounded-full outline-none w-7 h-7 touch-manipulation cursor-pointer select-none [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background_200ms_ease,color_200ms_ease,transform_160ms_cubic-bezier(0.23,1,0.32,1),box-shadow_200ms_ease,filter_160ms_ease] [background:color-mix(in_srgb,var(--pb-ink)_12%,var(--pb-bg))] [color:color-mix(in_srgb,var(--pb-ink)_55%,var(--pb-bg))] data-[armed]:[background:linear-gradient(135deg,#22d3ee_0%,#3b82f6_100%)] data-[armed]:[color:#fff] data-[armed]:shadow-[0_0_0_1px_rgba(34,211,238,0.25),0_3px_12px_-1px_rgba(37,99,235,0.55)] data-[armed]:hover:[filter:brightness(1.12)] data-[armed]:hover:shadow-[0_0_0_1px_rgba(34,211,238,0.4),0_4px_16px_-1px_rgba(37,99,235,0.7)] data-[sending]:[background:linear-gradient(135deg,#fb7185_0%,#e11d48_100%)] data-[sending]:[color:#fff] data-[sending]:shadow-[0_0_0_1px_rgba(251,113,133,0.3),0_3px_12px_-1px_rgba(225,29,72,0.55)] data-[pressed]:[transform:scale(var(--pb-press))] focus-visible:ring-2 focus-visible:ring-cyan-400/60 disabled:cursor-default disabled:data-[armed]:[filter:none] motion-reduce:data-[pressed]:[transform:none] motion-reduce:[transition:background-color_200ms_ease,color_200ms_ease]"
             :disabled="!armed"
                         :aria-label="isSending ? t('chat.input.stop') : t('chat.input.send')"
             :data-armed="armed ? '' : undefined"
+            :data-sending="isSending ? '' : undefined"
             :data-pressed="pressed ? '' : undefined"
             :title="t('chat.input.sendTip')"
             @mousedown.prevent

@@ -77,6 +77,9 @@ export type ToolCallStatus =
 /** 上下文压缩阶段（对应 {@code ContextUpdateEvent.Phase}）。 */
 export type ContextUpdatePhase = 'UPDATE' | 'SQUEEZE_STARTED' | 'SQUEEZE_COMPLETED';
 
+/** 产生压缩事件的档位：MANUAL=本地轮次截断（毫秒级），SUMMARY=模型深度压缩（上下文重建）。 */
+export type ContextUpdateBand = 'MANUAL' | 'SUMMARY';
+
 /** 上下文用量指标（对应 {@code ContextUsageMetric}）；maxTokens 为 0 表示未配置上限。 */
 export interface ContextUsageMetric {
   tokenCount: number;
@@ -243,6 +246,8 @@ export interface ToolCallEndEvent extends EventInterface {
 export interface ContextUpdateEvent extends EventInterface {
   type: 'CONTEXT_UPDATE';
   phase?: ContextUpdatePhase;
+  /** 产生该事件的压缩档位；纯用量遥测（UPDATE）不带。消费方据此决定是否当作「压缩中」渲染 */
+  band?: ContextUpdateBand;
   /** 用量指标；未配置上下文上限时为 null */
   usage?: ContextUsageMetric | null;
   /** 面向 UI 的进度文案（可选） */

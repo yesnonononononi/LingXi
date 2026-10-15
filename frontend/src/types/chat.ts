@@ -71,6 +71,8 @@ export interface FileEditRecord {
 /** 上下文窗口用量及压缩指标 (对应后端 ContextUpdateEvent) */
 export interface ContextUsageData {
   phase?: 'UPDATE' | 'SQUEEZE_STARTED' | 'SQUEEZE_COMPLETED' | string;
+  /** 产生该事件的压缩档位；SNAPSHOT 快照与纯用量遥测（UPDATE）不带 */
+  band?: 'MANUAL' | 'SUMMARY' | string;
   tokenCount?: number;
   maxTokens?: number;
   ratio?: number;
@@ -138,6 +140,15 @@ export interface ChatMessage {
    * 且**不得伪造任何统计**。</p>
    */
   turnId?: string | null;
+
+  /**
+   * 「未发送」标记：受理被拒（单飞校验 / 前置校验 / 网络失败等）的本地乐观气泡。
+   *
+   * <p>这类消息**后端根本不存在**（不在 transcript、也不在模型上下文），turnId 恒为 null。
+   * 标记出来是为了不把一条幽灵呈现成「已发送」——界面必须恒定基于权威事实；
+   * 用户可据此重发，或刷新页面让它消失。</p>
+   */
+  unsent?: boolean;
 
   // 消息模型标识
   model?: string;
@@ -685,6 +696,8 @@ export interface AgentVO {
   toolList?: string[];
   prompt?: string;
   description?: string;
+  /** 头像（Emoji 或图片 URL），可空 */
+  avatar?: string;
   status?: number;
 }
 
@@ -695,6 +708,8 @@ export interface TeamVO {
   commanderAgentId?: number | string;
   commanderName?: string;
   description?: string;
+  /** 头像（Emoji 或图片 URL），可空 */
+  avatar?: string;
   agents?: AgentVO[];
 }
 
@@ -704,6 +719,7 @@ export interface CreateTeamRequest {
   commanderAgentId: number | string;
   agentIds: (number | string)[];
   description?: string;
+  avatar?: string;
 }
 
 
@@ -714,6 +730,7 @@ export interface UpdateTeamRequest {
   commanderAgentId?: number | string;
   agentIds?: (number | string)[];
   description?: string;
+  avatar?: string;
 }
 
 /** Agent 创建请求 */
@@ -722,6 +739,8 @@ export interface CreateAgentRequest {
   modelId: number | string;
   prompt: string;
   description?: string;
+  /** 头像（Emoji 或图片 URL），可空 */
+  avatar?: string;
   toolList?: string[];
   status?: number;
 }

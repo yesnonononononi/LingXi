@@ -111,6 +111,40 @@ export class TurnStreamReducer {
     }
   }
 
+  /**
+   * 标记最新一条尚未绑定轮次的用户气泡为「未发送」。
+   *
+   * <p>受理被拒（单飞校验、前置校验、通道未就绪、网络失败）时调用：那条消息**后端根本不存在**，
+   * 只是本地乐观气泡。标记而不是静默留着 —— 一条没有 turnId、也不在 transcript 里的提问，
+   * 不得呈现成「已发送」（界面必须恒定基于权威事实）。</p>
+   *
+   * <p>已有 turnId 的气泡不动：受理成功的轮次由执行事件与对账驱动，不归本方法管。</p>
+   */
+  public markUserMessageUnsent(): void {
+    const messages = this.getMessages();
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      if (message.role !== 'user') continue;
+      if (message.turnId == null) message.unsent = true;
+      return;
+    }
+  }
+
+  /**
+   * 移除一条未发送的幽灵气泡（重发前清理，避免与新气泡并存）。
+   *
+   * <p>只允许移除「未绑定轮次」的用户气泡：已受理的消息由后端权威数据负责，
+   * 本地不得删除（否则与 transcript 不一致）。</p>
+   */
+  public removeUnsentUserMessage(id: string): void {
+    const messages = this.getMessages();
+    const index = messages.findIndex(message => message.id === id);
+    if (index < 0) return;
+    const message = messages[index];
+    if (message.role !== 'user' || message.turnId != null) return;
+    messages.splice(index, 1);
+  }
+
   /** 消费运行时事件驱动气泡演进 */
   public consume(event: AgentEvent): void {
     const turnId = event.metaData?.turnId ? String(event.metaData.turnId) : null;
@@ -367,19 +401,26 @@ export class TurnStreamReducer {
 
   private handleContextUpdate(event: {
     phase?: string;
+    band?: string;
     usage?: { tokenCount: number; maxTokens: number; ratio: number } | null;
     message?: string;
   }): void {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
-    if (event.phase === 'SQUEEZE_STARTED') {
-      bubble.isCompressingContext = true;
-    } else if (event.phase === 'SQUEEZE_COMPLETED') {
-      bubble.isCompressingContext = false;
+    // 「压缩中」样式的消费权按档位决定：MANUAL 是毫秒级本地截断，每个 checkpoint 都会跑一对
+    // SQUEEZE_STARTED/COMPLETED，照旧渲染会让指示器反复跳变；只有 SUMMARY（深度压缩）才置位。
+    // 事件不带档位时保持原行为（!== 'MANUAL' 视为可消费），透传链路丢字段不至于让样式失效。
+    if (event.band !== 'MANUAL') {
+      if (event.phase === 'SQUEEZE_STARTED') {
+        bubble.isCompressingContext = true;
+      } else if (event.phase === 'SQUEEZE_COMPLETED') {
+        bubble.isCompressingContext = false;
+      }
     }
 
     if (event.usage) {
       const usageData: ContextUsageData = {
         phase: event.phase,
+        band: event.band,
         tokenCount: event.usage.tokenCount,
         maxTokens: event.usage.maxTokens,
         ratio: event.usage.ratio,
