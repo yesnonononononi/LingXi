@@ -1,5 +1,7 @@
 # MXC 原生平台接入与验证
 
+> 2026-10-15 安全复核：Windows 当前接入存在通用应用包 ACL 带来的额外读取权限，不能作为严格读取白名单验收。原有 30 项定向测试不包含该情形。新增安全回归用于暴露此缺口，详情见[读取边界复核](mxc-windows-read-boundary-audit.zh-CN.md)。本次尚未修复。
+
 当前统一规则：**Windows 使用原生 BaseContainer；Linux 使用 Bubblewrap**。不提供 Windows 到 Linux 的执行路径，不允许 DACL 回退或宿主本地执行降级。
 
 ## 部署配置
@@ -61,7 +63,7 @@ Linux 使用 `backend=bubblewrap` 及 POSIX 路径。构建会拒绝平台后端
 
 业务 factory 只接收命令环境，项目权限由 `workDir + writable` 生成，不再接收额外目录清单。档位缺省按工作区内修改处理；“完全访问”不会自动降级成本地执行。网络固定拒绝，包括宿主回环。文件操作还校验规范化目标和 junction/符号链接。Linux 的私有临时层写入不等于宿主可写，文件 API 会拒绝未授权的此类操作。
 
-Windows 还会显式开放运行所需目录的只读访问，包括 Node、助手和系统目录。因此 System32 文件可能可读；编码异常不能作为拒绝访问的证据。当前 ASCII 对照已确认：`System32/drivers/etc/networks` 的终端和文件工具读取成功；未授权的项目外 ASCII 金丝雀两种方式均失败，且没有解码异常。该结果不代表任意宿主目录都可读。
+Windows 还会显式开放运行所需目录的只读访问，包括 Node、助手和整个 `SystemRoot`，并非仅 System32。因此 Windows 目录中的文件可能可读；编码异常不能作为拒绝访问的证据。原有 ASCII 对照只确认普通 ACL 的项目外金丝雀被拒绝；新增复核发现，带 `ALL APPLICATION PACKAGES` 只读 ACL 的项目外金丝雀可被文件工具和终端读取。
 
 本次 factory 调整后定向回归 30 项通过、0 跳过，覆盖缺省档位、不同项目路径、只读与可写、Spring 配置、执行快照及原生终端/文件操作。证据见 `.run/mxc-factory-tests/verification.log`。独立源码副本中的三项非等价变异均被回归拦截：将只读变成可写、移除完全访问拦截、恢复项目只读与可写重叠；最后一项重现原生启动错误。记录见同目录 `mutation-results.json`，业务工作树未受变异影响。
 
