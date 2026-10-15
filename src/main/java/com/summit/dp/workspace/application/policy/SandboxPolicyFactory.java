@@ -1,41 +1,30 @@
 package com.summit.dp.workspace.application.policy;
 
+import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.sandbox.SandboxPolicy;
-
-import java.nio.file.FileSystem;
-import java.nio.file.FileSystems;
-import java.nio.file.Path;
+import com.summit.sandbox.mxc.MxcWorkspaceSpec;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
+import java.util.Map;
 
-/** 权限档位只在这里转换成沙箱策略，工具执行器不感知 SRT。 */
+/** 项目外授权由部署提供，不能把“完全访问”扩大为整个磁盘。 */
 public final class SandboxPolicyFactory {
-    private final List<String> allowedDomains;
-    private final FileSystem fileSystem;
-
-    public SandboxPolicyFactory(List<String> allowedDomains) {
-        this(allowedDomains, FileSystems.getDefault());
+    private final List<String> readonlyPaths;
+    private final List<String> readwritePaths;
+    private final Map<String, String> environment;
+    public SandboxPolicyFactory(List<String> readonlyPaths, List<String> readwritePaths, Map<String, String> environment) {
+        this.readonlyPaths = List.copyOf(readonlyPaths);
+        this.readwritePaths = List.copyOf(readwritePaths);
+        this.environment = Map.copyOf(environment);
     }
-
-    public SandboxPolicyFactory(List<String> allowedDomains, FileSystem fileSystem) {
-        this.allowedDomains = List.copyOf(allowedDomains);
-        this.fileSystem = Objects.requireNonNull(fileSystem);
-    }
-
-    public SandboxPolicy build(String workDir, AgentAccessMode accessMode) {
+    public MxcWorkspaceSpec build(String workDir, AgentAccessMode accessMode) {
         AgentAccessMode effective = accessMode == null ? AgentAccessMode.DEFAULT : accessMode;
-        List<String> project = List.of(workDir);
-        List<String> writes = project;
-        if (effective.allowsOutsideWrite()) {
-            // 每次请求重新枚举挂载根目录，不固化盘符或部署机器路径。
-            List<String> roots = new ArrayList<>();
-            for (Path root : fileSystem.getRootDirectories()) roots.add(root.toAbsolutePath().normalize().toString());
-            writes = List.copyOf(roots);
-        }
-        return SandboxPolicy.builder().allowedDomains(allowedDomains).allowRead(project)
-                .allowWrite(effective.allowsWriteTools() ? writes : List.of())
-                .denyWrite(effective.allowsWriteTools() ? List.of() : project).build();
+        throwIf(effective.allowsOutsideWrite() && readwritePaths.isEmpty(), "当前沙箱未配置项目外可写目录，请配置 readwrite-paths 或选择工作区内修改");
+        List<String> reads = new ArrayList<>(readonlyPaths);
+        if (!effective.allowsOutsideWrite()) reads.addAll(readwritePaths);
+        return new MxcWorkspaceSpec(workDir, LocalInstance.ID, reads,
+                effective.allowsOutsideWrite() ? readwritePaths : List.of(), environment, effective.allowsWriteTools());
     }
+    private void throwIf(boolean condition, String message) { if (condition) throw new ClientException(message); }
 }

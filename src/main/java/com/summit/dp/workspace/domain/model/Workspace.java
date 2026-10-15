@@ -17,7 +17,7 @@ import lombok.Getter;
 public class Workspace {
     private Long id;
     private String name;
-    /** 宿主目录是本地模式和 SRT 沙箱共同使用的真实工作路径。 */
+    /** 宿主目录是本地模式和 MXC 沙箱共同使用的真实工作路径。 */
     private String hostDir;
 
     /** 由仓储回填自增主键；仅在新增持久化后立即调用一次。 */

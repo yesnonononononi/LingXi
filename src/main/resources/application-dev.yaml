@@ -1,0 +1,4 @@
+lingxi:
+  sandbox:
+    # Linux Node / SDK 地址通过环境变量或命令行提供，不能填写 Windows node.exe。
+    distribution: ${LINGXI_SANDBOX_DISTRIBUTION:Ubuntu}

@@ -1,68 +1,46 @@
 package com.summit.dp.workspace;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.workspace.BasicWorkspaceSpec;
 import com.summit.core.workspace.WorkspaceResolver;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.workspace.infrastructure.config.SandboxConfiguration;
-import com.summit.dp.workspace.infrastructure.config.SandboxProperties;
+import com.summit.dp.workflow.infrastructure.config.SandboxConfiguration;
+import com.summit.dp.workflow.infrastructure.config.SandboxProperties;
+import com.summit.dp.workspace.application.service.SandboxService;
 import com.summit.harness.springbootautoconfigure.config.WorkspaceAutoConfiguration;
-import com.summit.sandbox.SandboxWorkspaceSpec;
+import com.summit.sandbox.mxc.MxcWorkspaceSpec;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-
 import java.nio.file.Path;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 class SandboxConfigurationTest {
     @TempDir Path temporary;
     private final ApplicationContextRunner contexts = new ApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(WorkspaceAutoConfiguration.class))
-            .withUserConfiguration(SandboxConfiguration.class).withBean(ObjectMapper.class, ObjectMapper::new);
-
-    @Test
-    void missingSandboxResourcesDoNotBreakLocalModeAndNeverFallBackForSandboxRequests() {
+            .withConfiguration(AutoConfigurations.of(WorkspaceAutoConfiguration.class)).withUserConfiguration(SandboxConfiguration.class);
+    @Test void missingResourcesKeepLocalModeWorkingAndSandboxResolutionFailsClosed() {
         contexts.run(context -> {
             assertNull(context.getStartupFailure());
             WorkspaceResolver resolver = context.getBean(WorkspaceResolver.class);
             assertEquals(temporary.toString(), resolver.resolve(new BasicWorkspaceSpec("local", temporary.toString())).workDir());
-            ClientException failure = assertThrows(ClientException.class,
-                    () -> resolver.resolve(SandboxWorkspaceSpec.of(temporary.toString(), null)));
-            assertTrue(failure.getMessage().contains("沙箱运行资源未配置"));
+            assertThrows(ClientException.class, () -> resolver.resolve(new MxcWorkspaceSpec(temporary.toString())));
+            assertFalse(context.getBean(SandboxService.class).inspect().configured());
+            assertThrows(ClientException.class, () -> context.getBean(SandboxService.class).check());
         });
     }
-
-    @Test
-    void deploymentPathsAndDomainRulesAreBoundWithoutHostInstallationDiscovery() {
+    @Test void linuxDeploymentPathsAndExtraGrantsBindWithoutRuntimeDiscovery() {
         contexts.withPropertyValues("lingxi.sandbox.application-directory=" + temporary,
-                "lingxi.sandbox.node-exe=" + temporary.resolve("node.exe"),
-                "lingxi.sandbox.srt-cli=" + temporary.resolve("dist/cli.js"),
-                "lingxi.sandbox.bash-exe=" + temporary.resolve("git/bin/bash.exe"),
-                "lingxi.sandbox.allowed-domains[0]=api.example.test").run(context -> {
+                "lingxi.sandbox.distribution=Ubuntu", "lingxi.sandbox.node-executable=/opt/node/bin/node",
+                "lingxi.sandbox.sdk-directory=/opt/mxc/node_modules/@microsoft/mxc-sdk",
+                "lingxi.sandbox.readonly-paths[0]=/tools", "lingxi.sandbox.readwrite-paths[0]=/cache").run(context -> {
             assertNull(context.getStartupFailure());
             SandboxProperties properties = context.getBean(SandboxProperties.class);
-            assertEquals(temporary, properties.applicationDirectory());
-            assertEquals(temporary.resolve("node.exe"), properties.nodeExe());
-            assertEquals(temporary.resolve("git/bin/bash.exe"), properties.bashExe());
-            assertEquals("api.example.test", properties.allowedDomains().getFirst());
-        });
-    }
-
-    @Test
-    void sandboxResolutionChecksSandboxResourcesBeforeBuildingTheWorkspace() {
-        // 资源路径都已配置但文件不存在：若解析前没跑就绪检查，这里拿到的会是框架那句
-        // 「SRT JavaScript CLI is missing」；拿到的必须是业务侧说清缺哪个文件的提示。
-        contexts.withPropertyValues("lingxi.sandbox.application-directory=" + temporary,
-                "lingxi.sandbox.node-exe=" + temporary.resolve("missing/node.exe"),
-                "lingxi.sandbox.srt-cli=" + temporary.resolve("missing/dist/cli.js")).run(context -> {
-            assertNull(context.getStartupFailure());
-            WorkspaceResolver resolver = context.getBean(WorkspaceResolver.class);
-            ClientException failure = assertThrows(ClientException.class,
-                    () -> resolver.resolve(SandboxWorkspaceSpec.of(temporary.toString(), null)));
-            assertTrue(failure.getMessage().contains("srt-cli 不存在"), failure.getMessage());
+            assertEquals("/opt/node/bin/node", properties.nodeExecutable());
+            assertEquals("/opt/node/bin:/usr/bin:/bin", properties.environment().get("PATH"));
+            assertEquals("/cache", properties.readwritePaths().getFirst());
+            assertTrue(context.getBean(SandboxService.class).inspect().configured());
+            assertFalse(context.getBean(SandboxService.class).inspect().ready());
         });
     }
 }

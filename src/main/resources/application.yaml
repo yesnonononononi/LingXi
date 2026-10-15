@@ -35,11 +35,18 @@ spring:
       # 连接在池中保持空闲而不被回收的最小时间
       min-evictable-idle-time-millis: 300000
 lingxi:
-  # 桌面启动器注入安装目录和可写状态目录；Node / SRT 路径由部署方配置。
+  # 桌面启动器注入安装目录和可写状态目录；Node / MXC 路径由部署方配置。
   # 项目文件权限随请求档位生成；缺资源时仅沙箱请求失败，不影响本地模式启动。
   sandbox:
-    timeout: 60s
-    allowed-domains: ["*"]
+    application-directory: ${LINGXI_SANDBOX_APPLICATION_DIRECTORY:${user.home}/.lingxi/sandbox}
+    distribution: ${LINGXI_SANDBOX_DISTRIBUTION:}
+    node-executable: ${LINGXI_SANDBOX_NODE_EXECUTABLE:}
+    sdk-directory: ${LINGXI_SANDBOX_SDK_DIRECTORY:}
+    startup-timeout: 30s
+    file-timeout: 30s
+    readonly-paths: []
+    readwrite-paths: []
+    environment: {}
   mcp:
     enabled: true
   # 数据存储目录的缺省值：真源在设置页（user_configs.data_dir），这里只在设置页没写时生效。

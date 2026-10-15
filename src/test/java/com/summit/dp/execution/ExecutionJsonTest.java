@@ -12,8 +12,7 @@ import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.workspace.application.convert.LingXiWorkspaceSpec;
-import com.summit.sandbox.SandboxWorkspaceSpec;
-import com.summit.sandbox.SandboxPolicy;
+import com.summit.sandbox.mxc.MxcWorkspaceSpec;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.workspace.application.policy.SandboxPolicyFactory;
 import org.junit.jupiter.api.DisplayName;
@@ -32,15 +31,14 @@ class ExecutionJsonTest {
 
     @Test
     void sandboxFullAccessPolicyAndAttributesSurviveExecutionSnapshot() throws Exception {
-        WorkspaceSpec spec = SandboxWorkspaceSpec.of(Path.of("project").toAbsolutePath().toString(),
-                new SandboxPolicyFactory(List.of()).build(Path.of("project").toAbsolutePath().toString(), AgentAccessMode.OUT_OF_WORKSPACE));
+        WorkspaceSpec spec = new SandboxPolicyFactory(List.of(), List.of("/approved-cache"), Map.of())
+                .build(Path.of("project").toAbsolutePath().toString(), AgentAccessMode.OUT_OF_WORKSPACE);
         Execution original = execution(spec, AgentAccessMode.toAttributes(AgentAccessMode.OUT_OF_WORKSPACE));
         Execution restored = mapper.readValue(mapper.writeValueAsBytes(original), Execution.class);
         assertEquals(spec, restored.getAgentRequest().getWorkspaceSpec());
         assertEquals(AgentAccessMode.OUT_OF_WORKSPACE,
                 AgentAccessMode.from(restored.getAgentRequest().runtimeParametersOrDefault().getAttributes()));
-        assertFalse(mapper.readTree(restored.getAgentRequest().getWorkspaceSpec().configuration()
-                .get("sandbox.policy")).path("allowWrite").isEmpty());
+        assertEquals(List.of("/approved-cache"), ((MxcWorkspaceSpec) restored.getAgentRequest().getWorkspaceSpec()).readwritePaths());
     }
 
     @Test
@@ -59,8 +57,7 @@ class ExecutionJsonTest {
     @Test
     void roundTripsCompleteExecutionForLocalAndSandboxWorkspaces() throws Exception {
         LingXiWorkspaceSpec local = new LingXiWorkspaceSpec("local", "D:/workspace", LocalInstance.ID, Map.of());
-        WorkspaceSpec sandbox = SandboxWorkspaceSpec.of("D:/workspace", LocalInstance.ID,
-                SandboxPolicy.builder().denyWrite(List.of("D:/workspace")).build());
+        WorkspaceSpec sandbox = new MxcWorkspaceSpec("D:/workspace", LocalInstance.ID, List.of(), List.of(), Map.of(), false);
         for (WorkspaceSpec spec : List.of(local, sandbox)) {
             Execution original = execution(spec, Map.of(ExecutionAttributes.SESSION_ID, "201",
                     ExecutionAttributes.MODEL_CONFIG_ID, "301"));

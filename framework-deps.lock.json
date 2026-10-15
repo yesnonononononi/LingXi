@@ -3,7 +3,7 @@
   "frameworks": {
     "harness": {
       "repository": "yesnonononononi/lingxi-harness-starter",
-      "ref": "3078593b6d89925f46c083b45f505934a86c74f1",
+      "ref": "06f249bbfaa52cf755237f72c2e7ffda903368fb",
       "version": "1.1.6"
     },
     "ddd": {

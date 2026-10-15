@@ -10,7 +10,6 @@ import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.workspace.application.policy.SandboxPolicyFactory;
 import com.summit.dp.workspace.domain.model.Workspace;
-import com.summit.sandbox.SandboxWorkspaceSpec;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -62,7 +61,7 @@ public class WorkspaceConverter {
         String workDir = Path.of(hostDir).toAbsolutePath().normalize().toString();
         WorkspaceType effective = type == null ? DEFAULT_TYPE : type;
         if (effective == WorkspaceType.SAND_BOX) {
-            return SandboxWorkspaceSpec.of(workDir, LocalInstance.ID, sandboxPolicyFactory.build(workDir, mode));
+            return sandboxPolicyFactory.build(hostDir.startsWith("/") ? hostDir : workDir, mode);
         }
         return new LingXiWorkspaceSpec("local", workDir, LocalInstance.ID, Map.of());
     }

@@ -26,7 +26,7 @@ public class WorkspacePO {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String name;
-    /** 宿主目录是本地模式和 SRT 沙箱共同使用的真实工作路径。 */
+    /** 宿主目录是本地模式和 MXC 沙箱共同使用的真实工作路径。 */
     private String hostDir;
     private Instant createTime;
     private Instant updateTime;
