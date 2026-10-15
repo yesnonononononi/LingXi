@@ -31,7 +31,7 @@ class WorkspaceConverterTest {
         MxcWorkspaceSpec writable = (MxcWorkspaceSpec) converter.toSpec(project, WorkspaceType.SAND_BOX, AgentAccessMode.IN_WORKSPACE);
         MxcWorkspaceSpec readonly = (MxcWorkspaceSpec) converter.toSpec(project, WorkspaceType.SAND_BOX, AgentAccessMode.READ_ONLY_IN_WORKSPACE);
         MxcWorkspaceSpec outside = (MxcWorkspaceSpec) converter.toSpec(project, WorkspaceType.SAND_BOX, AgentAccessMode.OUT_OF_WORKSPACE);
-        assertEquals("mxc", writable.provider());
+        assertEquals("sandbox", writable.provider());
         assertEquals(LocalInstance.ID, writable.scope());
         assertTrue(writable.writable());
         assertFalse(readonly.writable());

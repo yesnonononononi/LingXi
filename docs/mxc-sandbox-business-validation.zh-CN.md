@@ -55,7 +55,7 @@ Linux 使用 `backend=bubblewrap` 及 POSIX 路径。构建会拒绝平台后端
 
 ## 工具兼容结论
 
-- **CMD：** Windows 默认终端；已验证目录、命令、退出码和中文输出。无控制台时 chcp 不可靠，运行环境按系统 OEM 代码页报告终端编码。外部工具采用其他输出编码时需显式匹配。
+- **CMD：** Windows 默认终端；已验证目录、命令、退出码和中文输出。无控制台时 chcp 不可靠，运行环境按系统 OEM 代码页报告终端编码，UTF-8 区域设置的 cp65001 映射为 UTF-8。外部工具采用其他输出编码时需显式匹配。
 - **Node：** 默认提供 preserve-symlinks-main 与 preserve-symlinks，避开入口解析对盘根的依赖。文件助手不接受命令环境中的预加载选项。尚不能据此认定任意 npm 项目构建兼容。
 - **PowerShell：** 最小授权下可能无法初始化项目位置，Set-Location 也受限；不能把直接启动成功当作相对路径命令可用。因此当前默认使用 CMD。
 - **Maven：** 3.9.16 初始化时真实路径解析失败，递归访问祖先直到空父路径，再被日志未初始化的异常遮盖。不能通过开放整个盘符读取来修复。
@@ -70,9 +70,11 @@ Linux 使用 `backend=bubblewrap` 及 POSIX 路径。构建会拒绝平台后端
 - Linux 原生 Java 回归通过；MXC 模块 **18 项，16 通过、2 跳过**，跳过项为未配置真实构建和宿主监听参数的用例。Linux 验证宿主使用现有 Ubuntu 环境，不代表产品仍有 Windows 到 Linux 的路由。
 - 业务定向 **21 项全部通过**：策略转换、Spring 配置、真实原生沙箱集成、快照 JSON 和分层检查。
 - 桌面脚本 **6 项通过**；TypeScript/Vite 构建及后端 JAR 打包通过。
-- 只读权限做过非等价变异，预期断言变红，恢复后通过。
-- 当前后端：`http://127.0.0.1:18088`，独立数据库及沙箱状态位于 `D:/LingXiMxcNativeValidation`。原 8088 服务保留，原先的 Linux 传输验证进程已停止。
+- 只读权限及桌面平台选择做过非等价变异，预期回归变红，正常实现通过。
+- 当前后端：`http://127.0.0.1:18088`，独立数据库及沙箱状态位于 `D:/LingXiMxcNativeValidation`。未操作原 8088 服务，原先的 Linux 传输验证进程已停止。
 - 运行 JAR、进程信息和证据在 `.run/mxc-native-adaptation/`，包括 `business-tests.log`、`desktop-tests.log`、`frontend-build.log`、`backend-package.log`、`http-check.json` 以及后端 stdout/stderr。
+
+全新的 `final-build` 目录执行 21 项定向测试与打包，见 `verified-package-final.log`；补充代码页修复后再次验证真实集成并强制生成薄 JAR，见 `final-artifact-package.log`。不能依赖 Spring Boot 对已有重打包 JAR 自动刷新本地同版本依赖。`artifact-audit.json` 核对运行包内新模块与已验证框架 JAR 的字节一致，并检查旧模块不存在。
 
 ```powershell
 Invoke-RestMethod -Method Post http://127.0.0.1:18088/sandbox/service/check
