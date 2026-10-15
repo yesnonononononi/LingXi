@@ -63,6 +63,8 @@ public class H2SchemaInitializer {
                 migrateV3(connection);
                 migrateV4(connection);
                 migrateV5(connection);
+                migrateV7(connection);
+                migrateV8(connection);
             }
         };
     }
@@ -193,6 +195,62 @@ public class H2SchemaInitializer {
         }
         ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
                 "db/migration/V4_record.sql"), StandardCharsets.UTF_8));
+    }
+
+    /**
+     * V7：email_message 补通知去重键（列 + 唯一索引）。
+     *
+     * <p>这一处的症状是「主对话一切正常，一发生协作委派就整条邮件链路报
+     * {@code Column "DEDUP_KEY" not found}」：委派的子执行终结时要投一条去重通知邮件，
+     * 而旧库的 email_message 建于该列之前，查询待消费消息与插入通知都会命中缺列。</p>
+     *
+     * <p><b>列与索引必须一起补</b>：唯一索引才是「通知只投一次」的裁决点
+     * （{@code EmailServiceImpl#sendMailOnce} 靠唯一键冲突判定重复投递），
+     * 只补列会让去重静默失效。顺序也不能反 —— 索引引用的列不存在时建索引会失败。</p>
+     */
+    private void migrateV7(Connection connection) throws Exception {
+        if (!hasColumn(connection, "email_message", "dedup_key")) {
+            ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                    "db/migration/V7_email_message_dedup_key.sql"), StandardCharsets.UTF_8));
+        }
+        if (!hasIndexNamed(connection, "email_message", "uk_email_message_dedup")) {
+            ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                    "db/migration/V7_email_message_dedup_index.sql"), StandardCharsets.UTF_8));
+        }
+        ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                "db/migration/V7_record.sql"), StandardCharsets.UTF_8));
+    }
+
+    /**
+     * V8：补齐历史上「改过 init.sql 却没配迁移」而漏掉的全部列。
+     *
+     * <p>这 16 列共同的历史欠账：它们是在各自表**建表之后**才加进 {@code init.sql} 的，
+     * 而 {@code CREATE TABLE IF NOT EXISTS} 对已有库是空操作 ⇒ 只建过这些表的老库永远缺列，
+     * 首次读该表就在运行期报 {@code Column "X" not found}。逐列 {@code hasColumn} 判定，
+     * 新库天然空操作。</p>
+     *
+     * <p>V7 修的是同一类缺陷的一个实例，V8 是把审计出来的剩余实例一次结清；
+     * 「以后再加列必须同时加迁移」由 {@code InitSqlMigrationCoverageTest} 守住。</p>
+     */
+    private void migrateV8(Connection connection) throws Exception {
+        String[][] columns = {
+                {"mcp", "command"}, {"session", "agent_id"},
+                {"session", "context_token_count"}, {"session", "context_max_tokens"},
+                {"session", "context_ratio"}, {"session_message", "turn_id"},
+                {"mcp", "headers"}, {"mcp", "env"},
+                {"tool_call", "content"}, {"tool_call", "raw_input"},
+                {"tool_call", "raw_output"}, {"tool_call", "meta_data"},
+                {"user_configs", "render_theme"}, {"user_configs", "data_dir"},
+                {"user_configs", "skill_dir"}, {"user_configs", "team_size"},
+        };
+        for (String[] column : columns) {
+            if (!hasColumn(connection, column[0], column[1])) {
+                ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                        "db/migration/V8_" + column[0] + "_" + column[1] + ".sql"), StandardCharsets.UTF_8));
+            }
+        }
+        ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                "db/migration/V8_record.sql"), StandardCharsets.UTF_8));
     }
 
     private boolean hasColumn(Connection connection, String table, String column) throws Exception {
