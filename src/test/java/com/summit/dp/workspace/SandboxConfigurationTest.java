@@ -12,6 +12,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.io.FileSystemResource;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Files;
 import java.util.stream.Stream;
@@ -22,6 +25,23 @@ class SandboxConfigurationTest {
     @TempDir Path temporary;
     private final ApplicationContextRunner contexts = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(WorkspaceAutoConfiguration.class)).withUserConfiguration(SandboxConfiguration.class);
+
+    @Test void developmentProfileLoadsPreparedRuntimeWithoutCommandLinePaths() throws Exception {
+        assumeTrue(Boolean.getBoolean("mxc.development"), "需要准备本机开发运行资源");
+        contexts.withInitializer(context -> {
+            try {
+                new YamlPropertySourceLoader().load("development-sandbox",
+                        new FileSystemResource(System.getProperty("mxc.development.config", "src/main/resources/application-dev.yaml")))
+                        .forEach(source -> context.getEnvironment().getPropertySources().addLast(source));
+            } catch (IOException failure) { throw new IllegalStateException(failure); }
+        }).run(context -> {
+            assertNull(context.getStartupFailure());
+            SandboxProperties properties = context.getBean(SandboxProperties.class);
+            assertTrue(Files.isRegularFile(Path.of(properties.nodeExecutable())), "开发配置必须指向 Node 可执行文件");
+            assertTrue(Files.isRegularFile(Path.of(properties.sdkDirectory(), "package.json")), "开发配置必须指向实际 SDK");
+            assertTrue(context.getBean(SandboxService.class).check().ready());
+        });
+    }
 
     @Test void capabilityCheckDoesNotCreateTheConfiguredApplicationDirectory() throws Exception {
         String node = System.getProperty("mxc.node");

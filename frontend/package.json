@@ -22,6 +22,7 @@
     "app:dev": "node electron/dev.mjs",
     "backend:runtime": "node scripts/build-sandbox-runtime.mjs && node scripts/build-backend-runtime.mjs",
     "sandbox:runtime": "node scripts/build-sandbox-runtime.mjs",
+    "sandbox:dev": "node scripts/prepare-sandbox-dev.mjs",
     "backend:test": "node scripts/build-backend.mjs test",
     "backend:verify": "node scripts/build-backend.mjs verify",
     "framework:prepare": "node scripts/framework-deps.mjs prepare",

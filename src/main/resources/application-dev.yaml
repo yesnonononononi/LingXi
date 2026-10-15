@@ -1,4 +1,8 @@
 lingxi:
   sandbox:
-    # Node 和 SDK 使用宿主原生版本，由部署环境变量提供。
+    # 本机开发资源由 npm run sandbox:dev 准备，部署时可用环境变量覆盖。
+    application-directory: ${LINGXI_SANDBOX_APPLICATION_DIRECTORY:${user.home}/.lingxi/sandbox}
     startup-timeout: 30s
+    file-timeout: 30s
+    node-executable: ${LINGXI_SANDBOX_NODE_EXECUTABLE:D:/Code/LingXi/frontend/build/runtime/node/node.exe}
+    sdk-directory: ${LINGXI_SANDBOX_SDK_DIRECTORY:D:/Code/LingXi/frontend/build/runtime/node_modules/@microsoft/mxc-sdk}

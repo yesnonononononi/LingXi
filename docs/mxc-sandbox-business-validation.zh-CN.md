@@ -4,6 +4,14 @@
 
 ## 部署配置
 
+本机开发资源使用 `cd frontend; npm run sandbox:dev` 准备。该命令保留 `build/runtime` 中已有工具，用锁文件安装 SDK 及依赖到 `build/runtime/node_modules`，并加载原生库检查基础能力；已有 Node 必须为 24 及以上，缺少时复制执行该命令的宿主 Node。
+
+`application-dev.yaml` 默认指向 `D:/Code/LingXi/frontend/build/runtime/node/node.exe` 和 `D:/Code/LingXi/frontend/build/runtime/node_modules/@microsoft/mxc-sdk`，环境变量仍可覆盖。状态目录保持在 `${user.home}/.lingxi/sandbox`，位于项目之外。该默认路径用于当前 Windows 开发机，其他 checkout 或 Linux 开发机需覆盖环境变量。
+
+`sandbox:dev` 用于本机开发；现有 `sandbox:runtime` 仍要求显式部署说明，不代表可移植安装包已经完成。
+
+开发资源补齐后，使用该目录的 Node 和 SDK 运行配置及真实隔离测试，5 项通过；其中直接加载 `application-dev.yaml`，不通过命令行补充 Node/SDK 路径。把 Node 路径恢复成目录后，该配置回归按预期失败。桌面启动与部署说明测试另 6 项通过。记录见 `.run/mxc-dev-resources/verified-test.log` 和 `mutation-test.log`。
+
 两侧都需要 Java 21、宿主原生 Node 24 及以上、固定版本 `@microsoft/mxc-sdk@1.0.0`。SDK 与 Node 由部署提供，自有脚本随框架 JAR 发布；业务不自动安装系统组件。
 
 Windows 需要支持 BaseContainer 的系统版本。本机为 **25H2 / 26200.9278**，精确请求探测确认 `tier=base-container`、`needsDaclAugmentation=false`。执行策略同时设置 `fallback.allowDaclMutation=false`。
