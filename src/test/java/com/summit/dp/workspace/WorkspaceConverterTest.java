@@ -46,11 +46,11 @@ class WorkspaceConverterTest {
         assertThrows(ClientException.class, () -> converter(List.of()).toSpec(new Workspace(1L,"project",temporary.toString()),
                 WorkspaceType.SAND_BOX, AgentAccessMode.OUT_OF_WORKSPACE));
     }
-    @Test void localModeAndLinuxSandboxPathsKeepTheirOwnPathSemantics() {
+    @Test void localAndSandboxModesUseNativeHostPaths() {
         WorkspaceSpec local = converter(List.of()).toSpec(new Workspace(1L,"project",temporary.toString()), WorkspaceType.LOCAL, AgentAccessMode.OUT_OF_WORKSPACE);
         assertEquals("local", local.provider());
         assertEquals(temporary.toString(), local.workDir());
-        assertEquals("/home/agent/project", converter(List.of()).toSpec(new Workspace(2L,"linux","/home/agent/project"),
+        assertEquals(temporary.toString(), converter(List.of()).toSpec(new Workspace(2L,"native",temporary.toString()),
                 WorkspaceType.SAND_BOX, AgentAccessMode.IN_WORKSPACE).workDir());
     }
     @Test void businessSnapshotMapperRestoresMxcPolicyAndItsReadOnlyFlag() throws Exception {

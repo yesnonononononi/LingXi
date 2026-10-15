@@ -1,4 +1,4 @@
 lingxi:
   sandbox:
-    # Linux Node / SDK 地址通过环境变量或命令行提供，不能填写 Windows node.exe。
-    distribution: ${LINGXI_SANDBOX_DISTRIBUTION:Ubuntu}
+    # Node 和 SDK 使用宿主原生版本，由部署环境变量提供。
+    startup-timeout: 30s

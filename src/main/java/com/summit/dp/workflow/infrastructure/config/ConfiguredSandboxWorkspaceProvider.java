@@ -31,28 +31,26 @@ public final class ConfiguredSandboxWorkspaceProvider implements WorkspaceProvid
         throwIf(!status.configured(), status.message());
         throwIf(!(spec instanceof MxcWorkspaceSpec), "沙箱工作区规格无效，请重新选择工作空间");
         try {
-            boolean windows = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
-            MxcRuntime runtime = new MxcRuntime(windows ? properties.distribution() : null, properties.nodeExecutable(),
+            MxcRuntime runtime = new MxcRuntime(properties.nodeExecutable(),
                     properties.sdkDirectory(), properties.applicationDirectory().resolve("helpers"),
                     properties.startupTimeout(), properties.fileTimeout());
             return new MxcWorkspaceProvider(runtime).resolve(spec);
         } catch (RuntimeException failure) {
-            log.error("沙箱初始化失败: distribution={}, directory={}", properties.distribution(), properties.applicationDirectory(), failure);
-            throw new ClientException("沙箱初始化失败，请检查 Linux Node、MXC SDK 和 Bubblewrap 配置，详情见日志");
+            log.error("沙箱初始化失败: backend={}, directory={}", status.backend(), properties.applicationDirectory(), failure);
+            throw new ClientException("沙箱初始化失败，请检查宿主 Node、MXC SDK 及原生隔离能力，详情见日志");
         }
     }
 
     @Override public SandboxServiceStatus inspect() {
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        String backend = os.contains("win") ? "WSL/Bubblewrap" : "Bubblewrap";
+        String backend = os.contains("win") ? "BaseContainer" : "Bubblewrap";
         boolean configured = (os.contains("win") || os.contains("linux")) && properties.applicationDirectory() != null
                 && properties.nodeExecutable() != null && !properties.nodeExecutable().isBlank()
                 && properties.sdkDirectory() != null && !properties.sdkDirectory().isBlank()
-                && (!os.contains("win") || properties.distribution() != null && !properties.distribution().isBlank())
                 && !properties.startupTimeout().isNegative() && !properties.startupTimeout().isZero()
                 && !properties.fileTimeout().isNegative() && !properties.fileTimeout().isZero();
         return new SandboxServiceStatus(configured, false, backend, configured ? "沙箱资源已配置，请运行检查确认可用"
-                : "沙箱运行资源未配置，请配置 application-directory、Linux node-executable、sdk-directory；Windows 还需指定 distribution");
+                : "沙箱运行资源未配置，请配置 application-directory、宿主 node-executable 和 sdk-directory");
     }
 
     @Override public SandboxServiceStatus check() {
@@ -75,9 +73,11 @@ public final class ConfiguredSandboxWorkspaceProvider implements WorkspaceProvid
             try { workspace.bridge().writeString(outside, "changed", StandardCharsets.UTF_8); } catch (IOException expected) { writeBlocked = true; }
             log.info("沙箱边界检查: readBlocked={}, writeBlocked={}, directory={}", readBlocked, writeBlocked, directory);
             throwIf(!readBlocked || !writeBlocked || !"protected".equals(Files.readString(outside)), "沙箱未拒绝工作区外的文件访问");
-            WorkspaceBridge.CommandResult command = workspace.bridge().execute("printf mxc-backend-ok", workspace.workDir(),
+            String commandText = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("windows")
+                    ? "echo mxc-backend-ok" : "printf mxc-backend-ok";
+            WorkspaceBridge.CommandResult command = workspace.bridge().execute(commandText, workspace.workDir(),
                     StandardCharsets.UTF_8, 10, TimeUnit.SECONDS, 4096);
-            throwIf(command.timedOut() || command.exitCode() != 0 || !command.output().equals("mxc-backend-ok"), "沙箱终端命令检查失败");
+            throwIf(command.timedOut() || command.exitCode() != 0 || !command.output().strip().equals("mxc-backend-ok"), "沙箱终端命令检查失败");
             log.info("沙箱检查通过: backend={}, directory={}", inspect().backend(), directory);
             return new SandboxServiceStatus(true, true, inspect().backend(), "沙箱可用：命令执行和文件读写通过，工作区外读写已拒绝");
         } catch (IOException | InterruptedException failure) {

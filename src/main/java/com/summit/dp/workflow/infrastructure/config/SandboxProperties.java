@@ -6,10 +6,11 @@ import java.time.Duration;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Locale;
 
-/** Linux 运行资源由部署提供，Windows 使用指定 WSL 发行版。 */
+/** 运行资源按宿主平台部署，Windows 使用原生 BaseContainer。 */
 @ConfigurationProperties("lingxi.sandbox")
-public record SandboxProperties(Path applicationDirectory, String distribution, String nodeExecutable, String sdkDirectory,
+public record SandboxProperties(Path applicationDirectory, String nodeExecutable, String sdkDirectory,
                                 Duration startupTimeout, Duration fileTimeout, List<String> readonlyPaths,
                                 List<String> readwritePaths, Map<String, String> environment) {
     public SandboxProperties {
@@ -20,6 +21,9 @@ public record SandboxProperties(Path applicationDirectory, String distribution, 
         Map<String, String> commandEnvironment = new LinkedHashMap<>(environment == null ? Map.of() : environment);
         if (nodeExecutable != null && nodeExecutable.startsWith("/") && nodeExecutable.lastIndexOf('/') > 0) {
             commandEnvironment.putIfAbsent("PATH", nodeExecutable.substring(0, nodeExecutable.lastIndexOf('/')) + ":/usr/bin:/bin");
+        } else if (nodeExecutable != null && System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("windows")
+                && Path.of(nodeExecutable).isAbsolute()) {
+            commandEnvironment.putIfAbsent("PATH", Path.of(nodeExecutable).getParent() + ";" + System.getenv("SystemRoot") + "\\System32");
         }
         environment = Map.copyOf(commandEnvironment);
     }

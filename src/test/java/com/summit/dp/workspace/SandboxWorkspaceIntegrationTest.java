@@ -37,7 +37,7 @@ class SandboxWorkspaceIntegrationTest {
         Path outside = Files.createDirectories(directory.resolve("outside"));
         Path secret = Files.writeString(directory.resolve("secret"), "protected");
         Path input = Files.writeString(project.resolve("input"), "original");
-        SandboxProperties properties = new SandboxProperties(directory.resolve("runtime"), System.getProperty("mxc.wsl.distribution"),
+        SandboxProperties properties = new SandboxProperties(directory.resolve("runtime"),
                 node, sdk, Duration.ofSeconds(30), Duration.ofSeconds(30), List.of(), List.of(outside.toString()), Map.of());
         ConfiguredSandboxWorkspaceProvider provider = new ConfiguredSandboxWorkspaceProvider(properties);
         WorkspaceConverter converter = new WorkspaceConverter(mock(SettingsProvider.class),
@@ -50,11 +50,14 @@ class SandboxWorkspaceIntegrationTest {
         assertThrows(IOException.class, () -> writable.bridge().writeString(outside.resolve("blocked"), "bad", StandardCharsets.UTF_8));
         CommandToolDefinitionExecutor terminal = new CommandToolDefinitionExecutor(new ObjectMapper());
         ToolDefinition<?> definition = ToolDefinition.builder().id("sandbox-test").name("sandbox-test").executor(terminal).timeout(10L).maxOutput(4096).build();
-        assertTrue(terminal.process(ExecuteCommandRequest.builder().command("node --version && git --version && printf business-terminal-ok > from-terminal && cat from-terminal").build(), writable, definition).isSuccess());
-        assertEquals("business-terminal-ok", Files.readString(project.resolve("from-terminal")));
+        boolean windows = System.getProperty("os.name").toLowerCase().contains("windows");
+        String command = windows ? "node --version && echo business-terminal-ok>from-terminal && type from-terminal"
+                : "node --version && git --version && printf business-terminal-ok > from-terminal && cat from-terminal";
+        assertTrue(terminal.process(ExecuteCommandRequest.builder().command(command).build(), writable, definition).isSuccess());
+        assertEquals("business-terminal-ok", Files.readString(project.resolve("from-terminal")).strip());
         Workspace readonly = provider.resolve(converter.toSpec(business, WorkspaceType.SAND_BOX, AgentAccessMode.READ_ONLY_IN_WORKSPACE));
         assertThrows(IOException.class, () -> readonly.bridge().writeString(readonly.resolve("input"), "bad", StandardCharsets.UTF_8));
-        assertFalse(terminal.process(ExecuteCommandRequest.builder().command("printf bad > input").build(), readonly, definition).isSuccess());
+        assertFalse(terminal.process(ExecuteCommandRequest.builder().command(windows ? "echo bad > input" : "printf bad > input").build(), readonly, definition).isSuccess());
         assertEquals("original", Files.readString(input));
         Workspace extra = provider.resolve(converter.toSpec(business, WorkspaceType.SAND_BOX, AgentAccessMode.OUT_OF_WORKSPACE));
         extra.bridge().writeString(outside.resolve("allowed"), "explicit-grant", StandardCharsets.UTF_8);

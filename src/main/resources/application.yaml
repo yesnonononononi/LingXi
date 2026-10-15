@@ -39,7 +39,6 @@ lingxi:
   # 项目文件权限随请求档位生成；缺资源时仅沙箱请求失败，不影响本地模式启动。
   sandbox:
     application-directory: ${LINGXI_SANDBOX_APPLICATION_DIRECTORY:${user.home}/.lingxi/sandbox}
-    distribution: ${LINGXI_SANDBOX_DISTRIBUTION:}
     node-executable: ${LINGXI_SANDBOX_NODE_EXECUTABLE:}
     sdk-directory: ${LINGXI_SANDBOX_SDK_DIRECTORY:}
     startup-timeout: 30s

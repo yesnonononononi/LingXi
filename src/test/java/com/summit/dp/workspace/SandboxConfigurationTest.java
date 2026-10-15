@@ -29,15 +29,16 @@ class SandboxConfigurationTest {
             assertThrows(ClientException.class, () -> context.getBean(SandboxService.class).check());
         });
     }
-    @Test void linuxDeploymentPathsAndExtraGrantsBindWithoutRuntimeDiscovery() {
+    @Test void nativeDeploymentPathsAndExtraGrantsBindWithoutRuntimeDiscovery() {
+        String node = temporary.resolve("node.exe").toString();
         contexts.withPropertyValues("lingxi.sandbox.application-directory=" + temporary,
-                "lingxi.sandbox.distribution=Ubuntu", "lingxi.sandbox.node-executable=/opt/node/bin/node",
-                "lingxi.sandbox.sdk-directory=/opt/mxc/node_modules/@microsoft/mxc-sdk",
+                "lingxi.sandbox.node-executable=" + node,
+                "lingxi.sandbox.sdk-directory=" + temporary.resolve("sdk"),
                 "lingxi.sandbox.readonly-paths[0]=/tools", "lingxi.sandbox.readwrite-paths[0]=/cache").run(context -> {
             assertNull(context.getStartupFailure());
             SandboxProperties properties = context.getBean(SandboxProperties.class);
-            assertEquals("/opt/node/bin/node", properties.nodeExecutable());
-            assertEquals("/opt/node/bin:/usr/bin:/bin", properties.environment().get("PATH"));
+            assertEquals(node, properties.nodeExecutable());
+            assertTrue(properties.environment().get("PATH").startsWith(temporary.toString()));
             assertEquals("/cache", properties.readwritePaths().getFirst());
             assertTrue(context.getBean(SandboxService.class).inspect().configured());
             assertFalse(context.getBean(SandboxService.class).inspect().ready());

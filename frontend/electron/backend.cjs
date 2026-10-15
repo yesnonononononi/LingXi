@@ -118,7 +118,6 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
   const toolsDirectory = isPackaged ? path.join(resourcesPath, 'runtime') : path.join(frontendRoot, 'build', 'runtime');
   const descriptor = path.join(toolsDirectory, 'mxc-deployment.json');
   const deployment = fs.existsSync(descriptor) ? JSON.parse(fs.readFileSync(descriptor, 'utf8')) : {};
-  const distribution = process.env.LINGXI_SANDBOX_DISTRIBUTION || deployment.distribution || '';
   const nodeExecutable = process.env.LINGXI_SANDBOX_NODE_EXECUTABLE || deployment.nodeExecutable || '';
   const sdkDirectory = process.env.LINGXI_SANDBOX_SDK_DIRECTORY || deployment.sdkDirectory || '';
 
@@ -158,7 +157,6 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
     `--server.port=${BACKEND_PORT}`,
     `--lingxi.sandbox.application-directory=${process.env.LINGXI_SANDBOX_APPLICATION_DIRECTORY || path.join(userDataDir, 'sandbox')}`,
     `--lingxi.log.dir=${process.env.LINGXI_LOG_DIR || logDir}`,
-    `--lingxi.sandbox.distribution=${distribution}`,
     `--lingxi.sandbox.node-executable=${nodeExecutable}`,
     `--lingxi.sandbox.sdk-directory=${sdkDirectory}`,
   ];

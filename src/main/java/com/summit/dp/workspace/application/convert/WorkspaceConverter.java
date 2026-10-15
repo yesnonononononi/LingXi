@@ -61,7 +61,7 @@ public class WorkspaceConverter {
         String workDir = Path.of(hostDir).toAbsolutePath().normalize().toString();
         WorkspaceType effective = type == null ? DEFAULT_TYPE : type;
         if (effective == WorkspaceType.SAND_BOX) {
-            return sandboxPolicyFactory.build(hostDir.startsWith("/") ? hostDir : workDir, mode);
+            return sandboxPolicyFactory.build(workDir, mode);
         }
         return new LingXiWorkspaceSpec("local", workDir, LocalInstance.ID, Map.of());
     }

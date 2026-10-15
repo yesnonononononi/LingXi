@@ -2,21 +2,23 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** 描述目标 Linux 运行资源，不能把 Windows npm 原生模块当作 WSL SDK。 */
+/** 部署说明必须匹配宿主后端，禁止跨平台回退。 */
 export function verifyRuntime(directory, platform = process.platform) {
   const file = path.join(directory, 'mxc-deployment.json');
   if (!fs.existsSync(file)) throw new Error(`缺少 MXC 部署说明: ${file}`);
   const value = JSON.parse(fs.readFileSync(file, 'utf8'));
-  if (value.schemaVersion !== 1 || value.backend !== 'bubblewrap' || value.sdkVersion !== '1.0.0') {
+  const backend = platform === 'win32' ? 'processcontainer' : 'bubblewrap';
+  if (value.schemaVersion !== 1 || value.backend !== backend || value.sdkVersion !== '1.0.0' || 'distribution' in value) {
     throw new Error('MXC 部署说明的版本或后端不正确');
   }
   if (!['linux', 'win32'].includes(platform)) throw new Error('当前平台尚未支持 MXC');
   for (const name of ['nodeExecutable', 'sdkDirectory']) {
-    if (typeof value[name] !== 'string' || !value[name].startsWith('/') || /[\\\r\n\0]/.test(value[name])) {
-      throw new Error(`MXC ${name} 必须是 Linux 绝对路径`);
+    const nativePath = typeof value[name] === 'string' && (platform === 'win32'
+      ? /^[A-Za-z]:[\\/]/.test(value[name]) : value[name].startsWith('/') && !value[name].startsWith('//') && !value[name].includes('\\'));
+    if (!nativePath || /[\r\n\0]/.test(value[name])) {
+      throw new Error(`MXC ${name} 必须是宿主绝对路径`);
     }
   }
-  if (platform === 'win32' && !/^[A-Za-z0-9_.-]+$/.test(value.distribution ?? '')) throw new Error('Windows MXC 需要明确的 WSL 发行版');
   return value;
 }
 
