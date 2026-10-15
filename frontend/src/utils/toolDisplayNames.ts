@@ -21,7 +21,8 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = n
   [AgentToolName.ReadFile, defineToolName('读取文件', 'Read file', 'tool.category.read')],
   [AgentToolName.EditFile, defineToolName('编辑文件', 'Edit file', 'tool.category.write')],
   [AgentToolName.ExecuteCommand, defineToolName('执行命令', 'Execute command', 'tool.category.command')],
-  [AgentToolName.WebSearch, defineToolName('网页搜索', 'Web search', 'tool.category.read')],
+  // web_search 的渲染名不再复用 READ 分类文案（「读取」会让人以为是读文件），独立成「检索网络资源」
+  [AgentToolName.WebSearch, defineToolName('网页搜索', 'Web search', 'tool.category.webSearch')],
   [AgentToolName.RequireChoice, defineToolName('请求用户选择', 'Request user choice', 'tool.category.choice')],
   [AgentToolName.CreatePlan, defineToolName('创建计划', 'Create plan', 'tool.category.plan')],
   [AgentToolName.CallSubAgent, defineToolName('调用子 Agent', 'Call sub-agent', 'tool.category.subAgent')],
@@ -38,8 +39,32 @@ const unknownToolName: ToolDisplayName = {
 };
 const emptyToolName: ToolDisplayName = { fullName: '', renderName: '' };
 
+/** MCP 工具名前缀（框架转换器拼接，业务侧服务名接在其后） */
+const MCP_TOOL_PREFIX = 'mcp_';
+
+/**
+ * MCP 动态工具名解析：线上名为 {@code mcp_<服务名>_<原生名>}，渲染成「服务名 原生名」。
+ *
+ * <p>不裸显机器名，但也不能全部压成「工具」——服务名段就是区分度。旧格式
+ * （{@code mcp_<原生名>}，前缀后无服务名段）与解析不出服务名段的，退化为显示原生名。
+ * 服务名与原生名本身是数据，不走 i18n。</p>
+ */
+export function resolveMcpToolDisplayName(toolName: string): ToolDisplayName | null {
+  if (!toolName.startsWith(MCP_TOOL_PREFIX)) return null;
+  const rest = toolName.slice(MCP_TOOL_PREFIX.length);
+  const separator = rest.indexOf('_');
+  if (separator <= 0) return { fullName: rest, renderName: rest };
+  const server = rest.slice(0, separator);
+  const raw = rest.slice(separator + 1);
+  if (!raw) return { fullName: server, renderName: server };
+  return { fullName: `${server} ${raw}`, renderName: `${server} ${raw}` };
+}
+
 export function resolveToolDisplayName(toolName?: string | null): ToolDisplayName {
-  return toolName ? TOOL_DISPLAY_NAMES.get(toolName as AgentToolName) ?? unknownToolName : emptyToolName;
+  if (!toolName) return emptyToolName;
+  const known = TOOL_DISPLAY_NAMES.get(toolName as AgentToolName);
+  if (known) return known;
+  return resolveMcpToolDisplayName(toolName) ?? unknownToolName;
 }
 
 export function resolveToolFullName(toolName?: string | null): string {

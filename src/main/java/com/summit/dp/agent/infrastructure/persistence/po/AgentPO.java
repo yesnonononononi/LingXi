@@ -24,6 +24,7 @@ public class AgentPO {
     private String toolList;
     private String prompt;
     private String description;
+    private String avatar;
     private Integer status;
     private Instant createTime;
     private Instant updateTime;

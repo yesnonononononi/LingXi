@@ -12,6 +12,8 @@ public class TeamRequest {
     private String name;
     /** 团队描述 */
     private String description;
+    /** 头像（Emoji 或图片 URL），可空 */
+    private String avatar;
     /** 指挥者 Agent ID（必填，且必须是团队成员之一） */
     private Long commanderAgentId;
     /** 团队成员 Agent ID 列表（含指挥者） */

@@ -101,7 +101,22 @@ jobs:
 
       - name: 验证桌面打包依赖
         working-directory: frontend
-        run: node --test tests/backendRuntimeMaven.test.cjs tests/frameworkDependencies.test.cjs tests/electronPackaging.test.cjs
+        run: node --test tests/backendRuntimeMaven.test.cjs tests/frameworkDependencies.test.cjs tests/electronPackaging.test.cjs tests/sandboxRuntime.test.cjs tests/sandboxRuntimeFetch.test.cjs tests/backendSandbox.test.cjs
+
+      # ---------------------------------------------------------------- 随包沙箱运行资源
+      # ⚠️ frontend/vendor/runtime/ 不入 Git（见 frontend/.gitignore），干净 runner 上不存在。
+      #    而 backend:runtime → build-sandbox-runtime.mjs 会校验这棵目录，
+      #    缺了就直接报「缺少运行资源目录」并中断发版 —— 这是本地成功推不出 runner 成功的又一例。
+      #    版本号固定在 frontend/vendor/runtime.lock.json，来源是公开的固定 URL。
+      - name: 缓存随包沙箱运行资源
+        uses: actions/cache@v4
+        with:
+          path: frontend/vendor/runtime
+          key: sandbox-runtime-${{ runner.os }}-${{ hashFiles('frontend/vendor/runtime.lock.json') }}
+
+      - name: 准备随包沙箱运行资源（Node + PortableGit + SRT）
+        working-directory: frontend
+        run: npm run sandbox:fetch
 
       - name: 构建锁定框架与后端运行产物（fat jar + jlink 精简 JRE）
         working-directory: frontend

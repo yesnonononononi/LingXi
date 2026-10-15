@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, Notification, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, Notification, nativeTheme, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const backend = require('./backend.cjs');
@@ -132,19 +132,19 @@ function createSplash() {
   });
 
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-    html,body{margin:0;height:100%;background:#0f172a;color:#e2e8f0;
+    html,body{margin:0;height:100%;background:white;color:#e2e8f0;
       font-family:"Segoe UI","Microsoft YaHei",sans-serif;display:flex;
       align-items:center;justify-content:center;flex-direction:column;gap:14px;user-select:none}
-    .title{font-size:15px;font-weight:600;letter-spacing:.5px}
-    .tip{font-size:12px;color:#64748b}
-    .bar{width:180px;height:3px;border-radius:2px;background:#1e293b;overflow:hidden}
+    .title{font-size:15px;font-weight:600;letter-spacing:.5px;color:black}
+    .tip{font-size:12px;color:black}
+    .bar{width:180px;height:3px;border-radius:2px;background:blue;overflow:hidden}
     .bar::after{content:"";display:block;width:40%;height:100%;border-radius:2px;
       background:linear-gradient(90deg,#3b82f6,#6366f1);animation:slide 1.1s ease-in-out infinite}
     @keyframes slide{0%{transform:translateX(-110%)}100%{transform:translateX(280%)}}
   </style></head><body>
     <div class="title">LX</div>
     <div class="bar"></div>
-    <div class="tip">正在启动本地服务…</div>
+    <div class="tip">奋力加载中…</div>
   </body></html>`;
 
   splashWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
@@ -158,9 +158,9 @@ function closeSplash() {
 }
 
 function createWindow() {
-  const iconPath = path.join(__dirname, 'resources/icon.png');
+ const iconPath = process.platform === 'win32'  ? path.join(__dirname, 'resources/icon.ico')   : path.join(__dirname, 'resources/icon.png')  // 其他平台用 PNG
   nativeTheme.themeSource = 'dark';
-
+  const icon = nativeImage.createFromPath(iconPath);
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -174,7 +174,7 @@ function createWindow() {
     ...(process.platform !== 'darwin' ? {
       titleBarOverlay: { color: '#09090b', symbolColor: '#a1a1aa', height: 36 },
     } : {}),
-    icon: iconPath,
+    icon: icon,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -236,11 +236,11 @@ function createWindow() {
 function setupTray() {
   const iconPath = path.join(__dirname, 'resources/icon.ico');
   tray = new Tray(iconPath);
-  tray.setToolTip('LX - 智能体交互控制台');
+  tray.setToolTip('LX ');
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: '显示 LX 界面',
+      label: '显示界面',
       click: () => {
         if (mainWindow) {
           if (mainWindow.isMinimized()) mainWindow.restore();
@@ -281,7 +281,7 @@ function setupTray() {
 // 原生按钮与页面主题同步，避免深色页面顶部仍出现浅色背景。
 ipcMain.handle('window:set-titlebar-theme', (event, isDark) => {
   if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents
-      || typeof isDark !== 'boolean') return;
+    || typeof isDark !== 'boolean') return;
   nativeTheme.themeSource = isDark ? 'dark' : 'light';
   if (process.platform === 'darwin') return;
   mainWindow.setTitleBarOverlay({
@@ -346,13 +346,13 @@ ipcMain.handle('update:get-state', (event) => {
     progress: s.progress ?? { percent: 0, bytesPerSecond: 0, transferred: 0, total: 0 },
     pending: s.pending
       ? {
-          version: s.pending.version,
-          releaseNotes: s.pending.changeLog,
-          forceupdate: s.pending.forceupdate,
-          mandatory: s.pending.mandatory,
-          installable: s.pending.installable,
-          rejectReason: s.pending.rejectReason ?? null,
-        }
+        version: s.pending.version,
+        releaseNotes: s.pending.changeLog,
+        forceupdate: s.pending.forceupdate,
+        mandatory: s.pending.mandatory,
+        installable: s.pending.installable,
+        rejectReason: s.pending.rejectReason ?? null,
+      }
       : null,
   };
 });
@@ -412,7 +412,7 @@ ipcMain.handle('app:relaunch', async (event) => {
   if (!assertTrustedSender(event)) return false;
   relaunching = true;
   isQuiting = true;
-  await backend.stop().catch(() => {});
+  await backend.stop().catch(() => { });
   backendStopped = true;
   app.relaunch();
   app.exit(0);
@@ -498,7 +498,7 @@ app.on('will-quit', (event) => {
   event.preventDefault();
   backend
     .stop()
-    .catch(() => {})
+    .catch(() => { })
     .finally(() => {
       backendStopped = true;
       app.quit();

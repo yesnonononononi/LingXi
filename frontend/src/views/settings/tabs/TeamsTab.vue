@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { useTeamsTab, TEAM_SIZE_MIN, TEAM_SIZE_MAX } from './useTeamsTab';
 import { useTheme } from '../../../composables/useTheme';
 import { useI18n } from '../../../i18n';
+import { isImageAvatar, avatarOptionPrefix } from '../../../utils/avatar';
 
 const props = defineProps<{
   isDark?: boolean;
@@ -151,6 +152,18 @@ const {
           <div class="flex items-start justify-between gap-3">
             <div class="space-y-1.5 min-w-0 flex-1">
               <div class="flex items-center gap-2 flex-wrap">
+                <!-- 头像：URL 走 <img>，其余按 Emoji 文本渲染 -->
+                <img
+                  v-if="isImageAvatar(team.avatar)"
+                  :src="team.avatar"
+                  :alt="team.name"
+                  class="w-5 h-5 rounded-full object-cover shrink-0"
+                />
+                <span
+                  v-else-if="team.avatar"
+                  class="w-5 h-5 rounded-full flex items-center justify-center text-xs leading-none shrink-0 select-none"
+                  :class="isDark ? 'bg-white/10' : 'bg-gray-200/80'"
+                >{{ team.avatar }}</span>
                 <span class="text-sm font-semibold text-gray-900 dark:text-white dark:text-glow-subtle">
                   {{ team.name }}
                 </span>
@@ -202,6 +215,14 @@ const {
                         : (isDark ? 'bg-white/[0.04] border-white/10 text-zinc-300' : 'bg-white border-gray-200 text-gray-700 shadow-2xs')
                     ]"
                   >
+                    <!-- 成员小头像：URL 走 <img>，其余按 Emoji 文本渲染 -->
+                    <img
+                      v-if="isImageAvatar(agent.avatar)"
+                      :src="agent.avatar"
+                      :alt="agent.name"
+                      class="w-3.5 h-3.5 rounded-full object-cover shrink-0"
+                    />
+                    <span v-else-if="agent.avatar" class="leading-none shrink-0 select-none">{{ agent.avatar }}</span>
                     <span>{{ agent.name }}</span>
                                         <span v-if="agent.id === team.commanderAgentId" class="text-[9px] px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-normal">
                       {{ t('settings.teams.commander') }}
@@ -300,6 +321,21 @@ const {
           ></textarea>
         </div>
 
+        <!-- 团队头像 -->
+        <div>
+          <label class="block text-gray-700 dark:text-gray-300 font-medium mb-1">
+            {{ t('settings.teams.avatarLabel') }}
+          </label>
+          <input
+            v-model="teamForm.avatar"
+            :placeholder="t('settings.teams.avatarPlaceholder')"
+            :class="[
+              'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
+              isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+            ]"
+          />
+        </div>
+
         <!-- 团队成员选择 -->
         <div>
           <div class="flex items-center justify-between mb-1.5">
@@ -339,10 +375,21 @@ const {
                   class="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 pointer-events-none"
                 />
                 <div class="truncate">
-                  <div class="flex items-center gap-1.5">
-                    <span class="font-medium text-gray-800 dark:text-gray-200 truncate">
-                      {{ agent.name }}
-                    </span>
+                <div class="flex items-center gap-1.5">
+                  <!-- 成员小头像：URL 走 <img>，其余按 Emoji 文本渲染 -->
+                  <img
+                    v-if="isImageAvatar(agent.avatar)"
+                    :src="agent.avatar"
+                    :alt="agent.name"
+                    class="w-3.5 h-3.5 rounded-full object-cover shrink-0"
+                  />
+                  <span
+                    v-else-if="agent.avatar"
+                    class="text-[10px] leading-none shrink-0 select-none"
+                  >{{ agent.avatar }}</span>
+                  <span class="font-medium text-gray-800 dark:text-gray-200 truncate">
+                    {{ agent.name }}
+                  </span>
                     <span
                       v-if="agent.toolList && agent.toolList.length > 0"
                       class="px-1.5 py-0.2 text-[9px] rounded bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/20"
@@ -398,7 +445,7 @@ const {
             ]"
           >
             <option v-for="agent in selectedTeamAgents" :key="agent.id" :value="agent.id" class="bg-black text-white">
-              {{ agent.name }} {{ agent.description ? `(${agent.description})` : '' }}
+              {{ avatarOptionPrefix(agent.avatar) }}{{ agent.name }} {{ agent.description ? `(${agent.description})` : '' }}
             </option>
           </select>
         </div>

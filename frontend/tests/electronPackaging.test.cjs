@@ -35,10 +35,12 @@ test('Windows 产品 ICO 各条目尺寸与 PNG 一致，覆盖任务栏和安�
     fs.readFileSync(path.join(__dirname, '../src/assets/lingxi-agent-logo.png')));
 });
 
-test('桌面窗口直接使用产品 PNG，避免运行时依赖 ICO 解码', () => {
+test('桌面窗口在 Windows 用 ICO（经 nativeImage 解码），其余平台用产品 PNG', () => {
   const main = fs.readFileSync(path.join(__dirname, '../electron/main.cjs'), 'utf8');
-  assert.match(main, /const iconPath = path\.join\(__dirname, 'resources\/icon\.png'\)/);
-  assert.match(main, /icon: iconPath/);
+  assert.match(main,
+    /iconPath = process\.platform === 'win32'\s*\?\s*path\.join\(__dirname, 'resources\/icon\.ico'\)\s*:\s*path\.join\(__dirname, 'resources\/icon\.png'\)/);
+  assert.match(main, /const icon = nativeImage\.createFromPath\(iconPath\)/);
+  assert.match(main, /icon: icon,/);
   assert.equal(packageConfig.build.win.icon, 'electron/resources/icon.ico');
 });
 

@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { SelectOption } from '../../types/ui';
 import { useTheme } from '../../composables/useTheme';
 import { t } from '../../i18n';
+import { isImageAvatar } from '../../utils/avatar';
 
 const props = defineProps<{
   /** 当前选中值 (配合 v-model 使用) */
@@ -272,6 +273,17 @@ defineExpose({
               ]"
               @click="select(option)"
             >
+              <!-- 头像：URL 走 <img>，其余按 Emoji 文本渲染 -->
+              <img
+                v-if="option.avatar && isImageAvatar(option.avatar)"
+                :src="option.avatar"
+                :alt="option.label"
+                class="w-4 h-4 rounded-full object-cover shrink-0"
+              />
+              <span
+                v-else-if="option.avatar"
+                class="shrink-0 text-xs leading-none select-none"
+              >{{ option.avatar }}</span>
               <span class="truncate pr-2 font-normal leading-normal py-0.5">{{ option.label }}</span>
               <!-- 对勾图标 (完全对齐 media_1789910619342.png 右侧 checkmark) -->
               <svg

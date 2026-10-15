@@ -11,6 +11,7 @@ import java.util.Map;
 /** 项目外授权由部署提供，不能把“完全访问”扩大为整个磁盘。 */
 public final class SandboxPolicyFactory {
     private final Map<String, String> environment;
+    private final String PATH_VARIABLE = System.getProperty("user.home") + "/.lingxi";
 
     public SandboxPolicyFactory( Map<String, String> environment) {
         this.environment = Map.copyOf(environment);
@@ -29,16 +30,16 @@ public final class SandboxPolicyFactory {
         throwIf(effective.allowsOutsideWrite(), "当前沙箱不支持完全访问，请使用本地模式");
 
         if(accessMode == AgentAccessMode.IN_WORKSPACE){
-            readwritePaths = List.of(workDir);
+            readwritePaths = List.of(workDir,PATH_VARIABLE);
         }
         else if(accessMode == AgentAccessMode.READ_ONLY_IN_WORKSPACE){
-            readonlyPaths = List.of();
+            readonlyPaths = List.of(workDir,PATH_VARIABLE);
         }
         return new MxcWorkspaceSpec(
                 workDir,
                 LocalInstance.ID,
                 readonlyPaths,
-                effective.allowsOutsideWrite() ? readwritePaths : List.of(),
+                readwritePaths,
                 environment,
                 effective.allowsWriteTools()
         );

@@ -1,5 +1,10 @@
 # SRT 沙箱接入
 
+> 遗留文档。`workspaceType=sandbox` 当前由 MXC 提供（Windows BaseContainer / Linux Bubblewrap），
+> 见 [MXC 原生平台接入与验证](mxc-sandbox-business-validation.zh-CN.md)。本文保留供回溯 SRT 时期的接入细节。
+> 其中「把 node/srt/git 从发行包目录拷进 `build/runtime`」的动作仍然成立，
+> 但已由 `scripts/build-sandbox-runtime.mjs` 统一承担，并额外随包 MXC SDK。
+
 业务设置中的 `workspaceType=sandbox` 选择 SRT provider，`accessMode` 决定工作区是否可写。
 本地模式继续使用原有 local provider，文件和命令工具均通过 WorkspaceBridge 执行。
 

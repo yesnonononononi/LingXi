@@ -18,6 +18,7 @@ import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.mcp.application.service.McpService;
+import com.summit.dp.model.domain.ModelNoFoundException;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.core.conf.McpConfig;
@@ -61,8 +62,8 @@ import java.util.*;
  *
  * <p><b>档位与模型缺省</b>：本地单实例下统一取自 {@link SettingsProvider}（user_configs 单例行），
  * 不再有「当前用户的配置」这一维度。Agent 绑定与模型回落在本类内完成（team → 指挥者；
- * 单 Agent → 显式请求或单例设置；
- * model → agent 配置 → 单例设置），编排器拿到的是已生效的上下文。</p>
+ * 单 Agent → 显式请求或单例设置；model：协作模式强制指挥者预设，单 Agent 直聊由其预设驱动
+ * 且硬校验、显式请求可覆盖，未指定 Agent 的非协作会话走单例设置），编排器拿到的是已生效的上下文。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -267,28 +268,38 @@ public class RequestPreparer {
     /**
      * 绑定有效 Agent 并回落模型：
      * <ul>
-     *   <li>team 模式（会话绑定了团队且未显式指定 agent）：会话与执行都挂在指挥者名下，与首轮行为一致。
+     *   <li>协作模式（会话绑定了团队且未显式指定 agent）：会话与执行都挂在指挥者名下，与首轮行为一致。
      *       入参是会话的团队绑定——聊天请求已不携带 teamId，因此「二次进入团队会话」
-     *       必然走同一条指挥者回落链路；</li>
-     *   <li>modelId 未指定：按「Agent 自带模型 → 单例设置」逐级回落，仍为 null 时
-     *       由模型查询自行报错（与旧行为一致）。</li>
+     *       必然走同一条指挥者回落链路。<b>模型强制指挥者预设</b>（agent 驱动，显式 modelId
+     *       不参与）：否则指挥者的预设模型在协作链路上没有任何消费点（成员子执行各用各的预设、
+     *       指挥者不能委派给自己），字段悬空误导用户；成员子执行仍各用各的预设
+     *       （{@code SubAgentRequestFactory#resolveChildModel}）；</li>
+     *   <li>单 Agent 直聊：显式 modelId 仍可覆盖 Agent 预设；未带 modelId 时用 Agent 预设。
+     *       Agent 驱动的预设是硬约束：Agent 不存在、未绑定模型、绑定的模型已被删除都直接报错，
+     *       不回落单例设置 —— 静默回落只会掩盖已经跑不起来的 Agent 配置；</li>
+     *   <li>没指定 Agent 的非协作会话：模型用单例设置（user_configs.model_id），
+     *       缺失由模型查询自行报错。</li>
      * </ul>
      */
     private ChatCommand effectiveCommand(ChatCommand command, SettingsView settings, Long effectiveTeamId) {
         Long agentId = command.agentId();
+        boolean teamDriven = false;
         if (agentId == null && effectiveTeamId != null) {
             TeamVO team = teamService.findById(effectiveTeamId).getData();
             if (team == null) throw new ClientException("未找到指定的团队: " + effectiveTeamId);
             agentId = team.getCommanderAgentId();
+            teamDriven = true;
         } else if (agentId == null && settings != null) {
+            // 单例默认 Agent 只是协作身份：决定人设，不决定模型
             agentId = settings.agentId();
         }
+
         Long modelId = command.modelId();
-        if (modelId == null && agentId != null) {
-            AgentVO agent = agentService.findById(agentId).getData();
-            if (agent != null) modelId = agent.getModelId();
-        }
-        if (modelId == null && settings != null) {
+        if (teamDriven) {
+            modelId = requireAgentPresetModel(agentId);
+        } else if (modelId == null && command.agentId() != null) {
+            modelId = requireAgentPresetModel(command.agentId());
+        } else if (modelId == null && settings != null) {
             modelId = settings.modelId();
         }
         if (Objects.equals(agentId, command.agentId()) && Objects.equals(modelId, command.modelId())) {
@@ -299,6 +310,33 @@ public class RequestPreparer {
                 // 漏掉它这一路回落到「重发但不知道该重发哪条」，报错却是「消息标识不能为空」。
                 command.messageId(),
                 agentId, command.requirePlan(), command.imageFile(), command.imageUrl());
+    }
+
+    /**
+     * Agent 驱动的预设模型解析（协作模式指挥者 / 显式选择的 Agent）。
+     *
+     * <p>agent.model_id 没有外键：删除模型不会级联清空引用，预设指向已删除模型是常态可能。
+     * 三种坏形状（Agent 不存在 / 未绑定模型 / 预设已被删除）都直接报错 —— Agent 驱动模式下
+     * 静默回落单例设置，等于用另一个模型冒充用户的 Agent 配置。</p>
+     */
+    private Long requireAgentPresetModel(Long agentId) {
+        AgentVO agent = agentService.findById(agentId).getData();
+        if (agent == null) throw new ClientException("未找到指定的 Agent: " + agentId);
+        if (agent.getModelId() == null) {
+            throw new ClientException("Agent「" + agent.getName() + "」未绑定基座模型，请先在「智能体」设置中为其选择模型");
+        }
+        try {
+            if (modelService.findById(agent.getModelId()).getData() == null) {
+                throw presetModelDeleted(agent);
+            }
+        } catch (ModelNoFoundException e) {
+            throw presetModelDeleted(agent);
+        }
+        return agent.getModelId();
+    }
+
+    private static ClientException presetModelDeleted(AgentVO agent) {
+        return new ClientException("Agent「" + agent.getName() + "」绑定的模型已被删除，请重新为其选择基座模型");
     }
 
     /**

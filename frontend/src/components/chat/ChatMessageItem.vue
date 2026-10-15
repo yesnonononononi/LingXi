@@ -37,9 +37,23 @@
         </div>
       </div>
 
-      <!-- 气泡下方时间与复制图标 (完全匹配左图) -->
+      <!-- 气泡下方时间与复制图标 (完全匹配左图)；受理被拒的气泡额外标「未发送」并给重发入口 -->
       <div class="flex items-center gap-2 mt-1.5 text-xs text-gray-400 dark:text-zinc-500 pr-1 select-none">
         <span>{{ displayTime }}</span>
+        <!-- 受理被拒：这条消息后端不存在（未进 transcript / 未进模型上下文），绝不呈现成已发送 -->
+        <template v-if="props.message.unsent">
+          <span class="text-amber-500 dark:text-amber-400 font-medium" data-testid="unsent-badge">
+            {{ t('chat.message.unsent') }}
+          </span>
+          <button
+            type="button"
+            @click="emit('resendUnsent', props.message.id)"
+            class="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 transition p-0.5"
+            :title="t('chat.message.resendTip')"
+          >
+            {{ t('chat.message.resend') }}
+          </button>
+        </template>
         <button
           @click="copyContent"
           class="hover:text-gray-600 dark:hover:text-zinc-200 transition p-0.5"
@@ -345,7 +359,7 @@
                         </div>
                         <button
                           type="button"
-                          @click.stop="copyToolContent(item.tool.result ?? '', item.tool.id)"
+                          @click.stop="copyToolContent(unwrapToolResultEnvelope(item.tool.result), item.tool.id)"
                           class="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition px-1 py-0.5 select-none flex-shrink-0 cursor-pointer"
                         >
                           {{ toolCopiedId === item.tool.id ? t('common.copied') : t('common.copy') }}
@@ -373,7 +387,7 @@
                         <pre
                           v-else-if="item.tool.result"
                           :class="['font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto max-h-[380px] scrollbar-thin select-text', isDark ? 'text-gray-200' : 'text-gray-800']"
-                        >{{ item.tool.result }}</pre>
+                        >{{ unwrapToolResultEnvelope(item.tool.result) }}</pre>
                         <div v-else-if="item.tool.status === 'pending'" class="font-mono text-xs text-amber-500/90 flex items-center gap-2">
                           <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
                                                     <span>{{ t('chat.message.awaitingDecision') }}</span>
@@ -573,6 +587,7 @@ import {
   isSubAgentTool,
     resolveToolMeta,
   extractSubAgentParams,
+  unwrapToolResultEnvelope,
   TOOL_CATEGORY,
 } from '../../utils/toolMeta';
 import { compareResponsePosition } from '../../utils/responseOrder';
@@ -626,6 +641,8 @@ const canPreviewFile = (tool: ToolCallTrace) => !!openFilePreview && (isReadFile
 
 const emit = defineEmits<{
   (e: 'selectSubSession', id: string | number): void;
+  /** 重发一条「未发送」的提问（受理被拒留下的本地气泡）。 */
+  (e: 'resendUnsent', messageId: string): void;
 }>();
 
 /**

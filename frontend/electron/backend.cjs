@@ -52,6 +52,20 @@ function resolveLayout(frontendRoot, isPackaged, resourcesPath) {
   };
 }
 
+/**
+ * 把部署说明里的路径解析成宿主绝对路径。
+ * 说明文件写的是**包内相对路径**（如 node/node.exe），按安装目录下的 resources/runtime 拼接；
+ * 已经是绝对路径的（自定义部署）原样规范化，便于本机替换。
+ *
+ * @param value 部署说明中的值
+ * @param toolsDirectory 安装目录下的 resources/runtime（开发态为 frontend/build/runtime）
+ */
+function resolveRuntimePath(value, toolsDirectory) {
+  if (typeof value !== 'string' || value.length === 0) return '';
+  if (path.isAbsolute(value)) return path.normalize(value);
+  return path.join(toolsDirectory, ...value.split('/'));
+}
+
 /** 探测端口是否已被监听（连上即视为有服务） */
 function isPortOpen(port, timeoutMs = 800) {
   return new Promise((resolve) => {
@@ -118,8 +132,8 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
   const toolsDirectory = isPackaged ? path.join(resourcesPath, 'runtime') : path.join(frontendRoot, 'build', 'runtime');
   const descriptor = path.join(toolsDirectory, 'mxc-deployment.json');
   const deployment = fs.existsSync(descriptor) ? JSON.parse(fs.readFileSync(descriptor, 'utf8')) : {};
-  const nodeExecutable = process.env.LINGXI_SANDBOX_NODE_EXECUTABLE || deployment.nodeExecutable || '';
-  const sdkDirectory = process.env.LINGXI_SANDBOX_SDK_DIRECTORY || deployment.sdkDirectory || '';
+  const nodeExecutable = process.env.LINGXI_SANDBOX_NODE_EXECUTABLE || resolveRuntimePath(deployment.nodeExecutable, toolsDirectory);
+  const sdkDirectory = process.env.LINGXI_SANDBOX_SDK_DIRECTORY || resolveRuntimePath(deployment.sdkDirectory, toolsDirectory);
 
   // 端口已占用：可能是用户在 IDE 里跑着后端，也可能是上次崩溃残留的孤儿 JVM。
   // 两种都直接复用 —— 既不会「端口占用」启动失败，也不会去杀不属于自己的进程。

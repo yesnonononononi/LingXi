@@ -167,15 +167,6 @@ const handleClearSessions = async () => {
       </div>
     </div>
 
-    <!--
-      原「数据用于优化体验 / 我共享的链接 / 导出所有历史对话」入口仅弹 window.alert 文案
-      （数据开关也不落库、不生效），会让用户误以为功能存在，故隐藏。待后端/产品实现后再恢复。
-    -->
-    <div class="h-px bg-gray-100 dark:bg-white/10"></div>
-    <div class="py-3 text-center text-gray-400 dark:text-gray-500">
-      {{ t('settings.data.unavailable') }}
-    </div>
-
     <!-- 删除所有对话：真实能力（清空全部会话），保留并带二次确认 -->
     <div class="h-px bg-gray-100 dark:bg-white/10"></div>
     <div class="flex items-center justify-between py-1.5">

@@ -18,4 +18,6 @@ public class AgentRequest {
     private String prompt;
     /** Agent 描述 */
     private String description;
+    /** 头像（Emoji 或图片 URL），可空 */
+    private String avatar;
 }

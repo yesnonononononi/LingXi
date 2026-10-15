@@ -5,6 +5,9 @@ import { isOk } from '../../../utils/api';
 import { useConfirm } from '../../../composables/useConfirm';
 import { useI18n } from '../../../i18n';
 
+/** 头像长度上限，与后端 `Agent.AVATAR_MAX_LENGTH` 一致 */
+const AGENT_AVATAR_MAX_LENGTH = 255;
+
 export function useAgentsTab() {
   const { t } = useI18n();
   const agentsList = ref<AgentVO[]>([]);
@@ -21,6 +24,7 @@ export function useAgentsTab() {
     name: '',
     modelId: '' as number | string,
     description: '',
+    avatar: '',
     prompt: '',
     toolList: [] as string[],
   });
@@ -95,6 +99,7 @@ export function useAgentsTab() {
       name: '',
       modelId: modelsList.value[0]?.id ?? '',
       description: '',
+      avatar: '',
       prompt: '',
       toolList: [],
     };
@@ -108,6 +113,7 @@ export function useAgentsTab() {
       name: agent.name || '',
       modelId: agent.modelId ?? modelsList.value[0]?.id ?? '',
       description: agent.description || '',
+      avatar: agent.avatar || '',
       prompt: agent.prompt || '',
       toolList: agent.toolList ? [...agent.toolList] : [],
     };
@@ -152,6 +158,11 @@ export function useAgentsTab() {
       agentFormError.value = t('settings.agents.errPromptRequired');
       return;
     }
+    // 与后端 Agent.AVATAR_MAX_LENGTH 一致（init.sql 列宽同为 255）
+    if (agentForm.value.avatar.trim().length > AGENT_AVATAR_MAX_LENGTH) {
+      agentFormError.value = t('settings.agents.errAvatarTooLong', { max: AGENT_AVATAR_MAX_LENGTH });
+      return;
+    }
 
     isSubmittingAgent.value = true;
     try {
@@ -161,6 +172,8 @@ export function useAgentsTab() {
           name: agentForm.value.name.trim(),
           modelId: agentForm.value.modelId,
           description: agentForm.value.description.trim() || undefined,
+          // 更新时始终传字符串：空串 = 清除头像；不传 = 不修改
+          avatar: agentForm.value.avatar.trim(),
           prompt: agentForm.value.prompt.trim(),
           toolList: [...agentForm.value.toolList],
         });
@@ -176,6 +189,7 @@ export function useAgentsTab() {
           name: agentForm.value.name.trim(),
           modelId: agentForm.value.modelId,
           description: agentForm.value.description.trim() || undefined,
+          avatar: agentForm.value.avatar.trim() || undefined,
           prompt: agentForm.value.prompt.trim(),
           toolList: agentForm.value.toolList.length > 0 ? [...agentForm.value.toolList] : undefined,
         });

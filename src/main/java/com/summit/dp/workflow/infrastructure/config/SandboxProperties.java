@@ -31,9 +31,13 @@ public record SandboxProperties(
         if (nodeExecutable != null && nodeExecutable.startsWith("/") && nodeExecutable.lastIndexOf('/') > 0) {
             commandEnvironment.putIfAbsent("PATH", nodeExecutable.substring(0, nodeExecutable.lastIndexOf('/')) + ":/usr/bin:/bin");
 
-        } else if (nodeExecutable != null && System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("windows")
-                && Path.of(nodeExecutable).isAbsolute()) {
-            commandEnvironment.putIfAbsent("PATH", Path.of(nodeExecutable).getParent() + ";" + System.getenv("SystemRoot") + "\\System32");
+        } else {
+            if (nodeExecutable != null && System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("windows")) {
+                Path path = Path.of(nodeExecutable);
+                if (path.isAbsolute()) {
+                    commandEnvironment.putIfAbsent("PATH", path.getParent() + ";" + System.getenv("SystemRoot") + "\\System32");
+                }
+            }
         }
 
         environment = Map.copyOf(commandEnvironment);

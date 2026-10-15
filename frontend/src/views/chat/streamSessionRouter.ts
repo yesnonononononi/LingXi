@@ -103,6 +103,18 @@ export class StreamSessionRouter {
     this.rootReducer.pushUserMessage(text, imageUrls);
   }
 
+  /** 受理被拒：把最新乐观气泡标成「未发送」（该消息后端不存在，不得呈现成已发送）。 */
+  public markUserMessageUnsent(): void {
+    if (!this.rootReducer) return;
+    this.rootReducer.markUserMessageUnsent();
+  }
+
+  /** 重发前清掉那条未发送的幽灵气泡（新气泡由发送链路自己 push）。 */
+  public removeUnsentUserMessage(id: string): void {
+    if (!this.rootReducer) return;
+    this.rootReducer.removeUnsentUserMessage(id);
+  }
+
   /**
    * 把最后一条用户乐观气泡绑定到权威 turnId（受理回执返回后调用）。
    *

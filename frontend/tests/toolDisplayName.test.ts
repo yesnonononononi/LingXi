@@ -9,7 +9,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { nextTick } from 'vue';
-import { resolveToolCategory, toolCategoryLabel, TOOL_CATEGORY, UNKNOWN_TOOL_LABEL } from '../src/utils/toolMeta';
+import { resolveToolCategory, toolCategoryLabel, TOOL_CATEGORY, UNKNOWN_TOOL_LABEL, unwrapToolResultEnvelope } from '../src/utils/toolMeta';
 import { AgentToolName } from '../src/utils/toolNames';
 import { setPreference } from '../src/i18n';
 
@@ -68,6 +68,29 @@ test('空工具名返回空串（区别于「未知工具」）', () => {
   assert.equal(resolveToolCategory(''), '');
   assert.equal(resolveToolCategory(null), '');
   assert.equal(resolveToolCategory(undefined), '');
+});
+
+test('EXECUTE 信封解包：{outcome,output}/{outcome,reason} 解出正文，非信封原样返回', () => {
+  // 标准成功信封 → 解出 output
+  assert.equal(
+    unwrapToolResultEnvelope('{"outcome":"SUCCEEDED","output":"# Summary\\n正文"}'),
+    '# Summary\n正文'
+  );
+  // 失败信封（无 output 有 reason）→ 解出 reason
+  assert.equal(
+    unwrapToolResultEnvelope('{"outcome":"FAILED","reason":"连接超时"}'),
+    '连接超时'
+  );
+  // 空 output 不吞掉原文
+  assert.equal(unwrapToolResultEnvelope('{"outcome":"SUCCEEDED","output":""}'),
+    '{"outcome":"SUCCEEDED","output":""}');
+  // 非信封 JSON / 普通文本 / 非法 JSON 原样返回
+  assert.equal(unwrapToolResultEnvelope('{"answer":42}'), '{"answer":42}');
+  assert.equal(unwrapToolResultEnvelope('普通文本结果'), '普通文本结果');
+  assert.equal(unwrapToolResultEnvelope('{not json'), '{not json');
+  // 空值返回空串
+  assert.equal(unwrapToolResultEnvelope(null), '');
+  assert.equal(unwrapToolResultEnvelope(undefined), '');
 });
 
 test('分类常量为稳定机器码，展示名经 toolCategoryLabel 取用', () => {

@@ -73,6 +73,7 @@
           :isLastAssistant="idx === computedLastAssistantIndex"
           :isSending="isSending"
           @selectSubSession="(id) => emit('selectSubSession', id)"
+          @resendUnsent="(id) => emit('resendUnsent', id)"
         />
       </template>
     </div>
@@ -111,6 +112,8 @@ const emit = defineEmits<{
   (e: 'retryInitialLoad'): void;
   (e: 'scroll', event: Event): void;
   (e: 'selectSubSession', id: string | number): void;
+  /** 透传「未发送」气泡的重发请求（宿主负责清理本地气泡并重走发送链路）。 */
+  (e: 'resendUnsent', messageId: string): void;
 }>();
 
 const scrollLoaderRef = ref<InstanceType<typeof ScrollCursorLoader> | null>(null);

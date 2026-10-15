@@ -3,6 +3,9 @@ server:
 spring:
   application:
     name: LingXi
+  profiles:
+    active:
+      - dev
   servlet:
     multipart:
       max-file-size: 10MB
@@ -34,6 +37,7 @@ spring:
       time-between-eviction-runs-millis: 60000
       # 连接在池中保持空闲而不被回收的最小时间
       min-evictable-idle-time-millis: 300000
+
 lingxi:
   # 桌面启动器注入安装目录和可写状态目录；Node / MXC 路径由部署方配置。
   # 项目文件权限随请求档位生成；缺资源时仅沙箱请求失败，不影响本地模式启动。
@@ -139,16 +143,13 @@ lingxi:
         # 达到 model-threshold 就让模型把历史总结掉。model-threshold 必须大于 truncate-threshold，
         # 反了会让本地截断那一档永远进不去。
         context-compact:
-          truncate-threshold: 0.7
+          truncate-threshold: 0.6
           model-threshold: 0.85
           truncate-rounds: 5
 
     model:
       conf:
         chat:
-          base-url: https://api.deepseek.com
-          api-key: ""
-          model-name: ""
           timeout: 120s
           max-iterations: 1000
           max-tokens: 258000

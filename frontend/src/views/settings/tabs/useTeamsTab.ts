@@ -24,6 +24,9 @@ const TEAM_MEMBER_SIZE_FALLBACK = 10;
 export const TEAM_SIZE_MIN = 1;
 export const TEAM_SIZE_MAX = 50;
 
+/** 头像长度上限，与后端 `Team.MAX_AVATAR_LENGTH` 一致 */
+const TEAM_AVATAR_MAX_LENGTH = 255;
+
 export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
   const { t } = useI18n();
   const userConfig = useUserConfigStore();
@@ -35,6 +38,7 @@ export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
   const teamForm = ref({
     name: '',
     description: '',
+    avatar: '',
     commanderAgentId: '' as number | string,
     agentIds: [] as (number | string)[],
   });
@@ -126,6 +130,7 @@ export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
     teamForm.value = {
       name: '',
       description: '',
+      avatar: '',
       commanderAgentId: '',
       agentIds: [],
     };
@@ -140,6 +145,7 @@ export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
     teamForm.value = {
       name: team.name || '',
       description: team.description || '',
+      avatar: team.avatar || '',
       commanderAgentId: team.commanderAgentId ?? (allIds[0] ?? ''),
       agentIds: allIds,
     };
@@ -188,6 +194,11 @@ export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
       teamFormError.value = t('settings.teams.errDescTooLong', { max: TEAM_DESCRIPTION_MAX_LENGTH });
       return;
     }
+    // 与后端 Team.MAX_AVATAR_LENGTH 一致（init.sql 列宽同为 255）
+    if (teamForm.value.avatar.trim().length > TEAM_AVATAR_MAX_LENGTH) {
+      teamFormError.value = t('settings.teams.errAvatarTooLong', { max: TEAM_AVATAR_MAX_LENGTH });
+      return;
+    }
     if (teamForm.value.agentIds.length === 0) {
       teamFormError.value = t('settings.teams.errMembersRequired');
       return;
@@ -212,6 +223,8 @@ export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
           id: editingTeamId.value,
           name: trimmedName,
           description: teamForm.value.description.trim(),
+          // 更新时始终传字符串：空串 = 清除头像；不传 = 不修改
+          avatar: teamForm.value.avatar.trim(),
           commanderAgentId: teamForm.value.commanderAgentId,
           agentIds: [...teamForm.value.agentIds],
         });
@@ -227,6 +240,7 @@ export function useTeamsTab(emit: (e: 'modelUpdated') => void) {
         const res = await TeamAPI.add({
           name: trimmedName,
           description: teamForm.value.description.trim() || undefined,
+          avatar: teamForm.value.avatar.trim() || undefined,
           commanderAgentId: teamForm.value.commanderAgentId,
           agentIds: [...teamForm.value.agentIds],
         });

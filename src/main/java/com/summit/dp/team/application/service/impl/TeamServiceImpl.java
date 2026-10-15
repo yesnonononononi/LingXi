@@ -101,6 +101,7 @@ public class TeamServiceImpl implements TeamService {
         if(command.getCommanderAgentId() != null) team.changeCommanderAgentId(command.getCommanderAgentId());
         if(command.getName() != null) team.changeName(command.getName());
         if(command.getDescription() != null) team.changeDescription(command.getDescription());
+        if(command.getAvatar() != null) team.changeAvatar(command.getAvatar());
         return team;
     }
 
@@ -135,6 +136,7 @@ public class TeamServiceImpl implements TeamService {
                         .filter(Objects::nonNull)
                         .toList())
                 .description(model.getDescription())
+                .avatar(model.getAvatar())
                 .build();
     }
 
@@ -143,6 +145,7 @@ public class TeamServiceImpl implements TeamService {
                 .id(command.getId())
                 .name(command.getName())
                  .description(command.getDescription())
+                 .avatar(command.getAvatar())
                 .commanderAgentId(command.getCommanderAgentId())
                 .agentIds(command.getAgentIds())
                 .build();

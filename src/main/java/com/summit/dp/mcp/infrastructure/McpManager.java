@@ -100,7 +100,7 @@ public class McpManager implements ScopeMcpProvider, McpConnectionRegistry {
                     + RUNTIME_TIMEOUT_GRACE_SECONDS;
             candidate = Langchain4jMcpSession.connect(server.name(), server.description(),
                     clientFactory.create(server.name(), server),
-                    new MCPToolConverter(server.maxOutput(), runtimeTimeout, "mcp_"), McpSessionType.REUSE);
+                    new MCPToolConverter(server.maxOutput(), runtimeTimeout, toolNamePrefix(server.name())), McpSessionType.REUSE);
             PooledSession ready = new PooledSession(server, candidate, List.copyOf(candidate.tools()));
             PooledSession previous = sessions.put(id, ready);
             closeQuietly(previous);
@@ -134,6 +134,17 @@ public class McpManager implements ScopeMcpProvider, McpConnectionRegistry {
     public synchronized void close() {
         sessions.values().forEach(this::closeQuietly);
         sessions.clear();
+    }
+
+    /**
+     * MCP 工具线上名前缀：{@code mcp_<服务名>_}，前端据此渲染「服务名 原生名」。
+     *
+     * <p>服务名会进 LLM 函数调用名，只保留工具名合法字符（字母数字下划线连字符），
+     * 其余替换为下划线；服务名为空时退回裸 {@code mcp_} 前缀（旧格式）。</p>
+     */
+    private String toolNamePrefix(String serverName) {
+        String sanitized = serverName == null ? "" : serverName.replaceAll("[^A-Za-z0-9_-]", "_");
+        return sanitized.isEmpty() ? "mcp_" : "mcp_" + sanitized + "_";
     }
 
     private void closeQuietly(McpSession session) {

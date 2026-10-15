@@ -11,6 +11,7 @@ import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.model.application.service.ModelService;
+import com.summit.dp.model.domain.ModelNoFoundException;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
@@ -63,9 +64,26 @@ class AgentModelConfigurationTest {
         ModelConfig configured = config("child");
         when(settings.current()).thenReturn(Optional.of(selected));
         when(models.runtimeConfig(7L, selected)).thenReturn(configured);
-        assertSame(configured, ReflectionTestUtils.invokeMethod(childModels, "resolveChildModel", 7L));
+        AgentVO agent = new AgentVO();
+        agent.setId(7L);
+        agent.setModelId(7L);
+        assertSame(configured, ReflectionTestUtils.invokeMethod(childModels, "resolveChildModel", agent));
         verify(models).runtimeConfig(7L, selected);
         verifyNoMoreInteractions(models);
+    }
+
+    @Test void deletedChildPresetModelFailsWithActionableMessage() {
+        AgentVO agent = new AgentVO();
+        agent.setId(7L);
+        agent.setName("评审员");
+        agent.setModelId(7L);
+        when(settings.current()).thenReturn(Optional.empty());
+        when(models.runtimeConfig(7L, null)).thenThrow(new ModelNoFoundException());
+
+        ClientException error = assertThrows(ClientException.class,
+                () -> ReflectionTestUtils.invokeMethod(childModels, "resolveChildModel", agent));
+        assertTrue(error.getMessage().contains("已被删除"));
+        assertTrue(error.getMessage().contains("评审员"));
     }
 
     @Test void rootResolvesExplicitThenSettingsThenFails() {

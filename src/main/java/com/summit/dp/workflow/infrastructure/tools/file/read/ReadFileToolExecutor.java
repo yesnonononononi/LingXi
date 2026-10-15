@@ -33,7 +33,9 @@ public class ReadFileToolExecutor implements ToolExecutor {
             log.info("【ToolCall】 read_file :{}", request.getPath());
 
             WorkspaceBridge bridge = toolExecution.getWorkspace().bridge();
+
             Path path = Path.of(request.getPath());
+
             String content = read(bridge, path,
                     toolExecution.getWorkspace().runtimeEnvironment().charset(),
                     request.getStartLine(), request.getEndLine());
@@ -50,6 +52,7 @@ public class ReadFileToolExecutor implements ToolExecutor {
             return bridge.readString(path, charset);
         }
         List<String> lines = bridge.readLines(path, charset);
+
         int start = Objects.requireNonNullElse(startLine, 0);
         int end = Math.min(Objects.requireNonNullElse(endLine, Integer.MAX_VALUE), lines.size() - 1);
         List<String> result = new ArrayList<>();

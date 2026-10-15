@@ -17,19 +17,22 @@ export function prepareDevelopmentRuntime(frontendRoot) {
   fs.mkdirSync(path.dirname(node), { recursive: true });
   if (!fs.existsSync(node)) fs.copyFileSync(source, node);
   const manifest = path.join(frontendRoot, 'vendor/mxc-dev');
+  // 与打包态同构：SDK 放在 mxc/ 子目录，避免资源根部的 node_modules 被打包工具默认排除。
+  const prefix = path.join(directory, 'mxc');
+  fs.mkdirSync(prefix, { recursive: true });
   for (const name of ['package.json', 'package-lock.json']) {
-    fs.copyFileSync(path.join(manifest, name), path.join(directory, name));
+    fs.copyFileSync(path.join(manifest, name), path.join(prefix, name));
   }
   const installEnvironment = { ...process.env, PATH: path.dirname(node) + path.delimiter + (process.env.PATH ?? '') };
   // npm 11 将配置文件策略重复导出后又当成非法命令行策略；子进程直接读取原配置文件。
   for (const name of Object.keys(installEnvironment)) {
     if (/^npm_config_allow[_-]scripts$/i.test(name)) delete installEnvironment[name];
   }
-  execFileSync(node, [npmCli, 'ci', '--prefix', directory, '--omit=dev', '--no-audit', '--no-fund'], {
+  execFileSync(node, [npmCli, 'ci', '--prefix', prefix, '--omit=dev', '--no-audit', '--no-fund'], {
     stdio: 'inherit', windowsHide: true,
     env: installEnvironment,
   });
-  const sdkDirectory = path.join(directory, 'node_modules/@microsoft/mxc-sdk');
+  const sdkDirectory = path.join(prefix, 'node_modules/@microsoft/mxc-sdk');
   // 仅加载原生库和查询宿主能力，不创建沙箱或探测项目目录。
   const check = `import {pathToFileURL} from 'node:url';
     const sdk = await import(pathToFileURL(process.argv[1] + '/dist/v1/index.js').href);

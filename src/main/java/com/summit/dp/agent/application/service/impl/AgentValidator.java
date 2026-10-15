@@ -33,6 +33,9 @@ public class AgentValidator {
         String descriptionError = checkDescription(command.getDescription());
         if (descriptionError != null) return descriptionError;
 
+        String avatarError = checkAvatar(command.getAvatar());
+        if (avatarError != null) return avatarError;
+
         String promptError = checkPrompt(command.getPrompt());
         if (promptError != null) return promptError;
 
@@ -54,6 +57,10 @@ public class AgentValidator {
         if (command.getDescription() != null) {
             String descriptionError = checkDescription(command.getDescription());
             if (descriptionError != null) return descriptionError;
+        }
+        if (command.getAvatar() != null) {
+            String avatarError = checkAvatar(command.getAvatar());
+            if (avatarError != null) return avatarError;
         }
         if (command.getPrompt() != null) {
             String promptError = checkPrompt(command.getPrompt());
@@ -80,6 +87,13 @@ public class AgentValidator {
     private String checkDescription(String description) {
         if (description != null && description.length() > Agent.DESCRIPTION_MAX_LENGTH)
             return "Agent描述长度不能超过" + Agent.DESCRIPTION_MAX_LENGTH;
+        return null;
+    }
+
+    /** 头像可空，传了就只查长度（内容本身是 Emoji 或 URL，不做格式强校验）。 */
+    private String checkAvatar(String avatar) {
+        if (avatar != null && avatar.length() > Agent.AVATAR_MAX_LENGTH)
+            return "Agent头像长度不能超过" + Agent.AVATAR_MAX_LENGTH;
         return null;
     }
 

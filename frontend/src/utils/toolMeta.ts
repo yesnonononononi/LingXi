@@ -136,8 +136,30 @@ export function shouldShowToolArguments(toolName?: string | null): boolean {
   return normalizeToolName(toolName) === AgentToolName.ExecuteCommand || isEditFileTool(toolName);
 }
 
-/** 参数里的整数（容忍数字字符串，模型下发的 args 偶有字符串数字） */
-const intArg = (value: unknown): number | null => {
+/**
+ * 通用工具结果信封解包。
+ *
+ * <p>EXECUTE 直通链路落库的 {@code raw_output} 是 {@code {outcome,output}}（失败为
+ * {@code {outcome,reason}}）信封，直接展示就是一坨带转义的 JSON。成功/失败状态已由
+ * 状态点表达，展示与复制只关心正文：解出 {@code output}（缺省退 {@code reason}）；
+ * 非信封形状（普通文本、其它 JSON）一律原样返回，绝不臆断。</p>
+ */
+export function unwrapToolResultEnvelope(raw?: string | null): string {
+  const text = raw ?? '';
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('{')) return text;
+  try {
+    const parsed = JSON.parse(trimmed) as { outcome?: unknown; output?: unknown; reason?: unknown };
+    if (typeof parsed !== 'object' || parsed === null) return text;
+    if (typeof parsed.output === 'string' && parsed.output.trim() !== '') return parsed.output;
+    if (typeof parsed.reason === 'string' && parsed.reason.trim() !== '') return parsed.reason;
+    return text;
+  } catch {
+    return text;
+  }
+}
+
+/** 参数里的整数（容忍数字字符串，模型下发的 args 偶有字符串数字） */const intArg = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) return Number(value);
   return null;

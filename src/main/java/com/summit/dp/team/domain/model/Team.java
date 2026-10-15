@@ -19,6 +19,9 @@ public class Team {
 
     public static final int MAX_DESCRIPTION_LENGTH = 1000;
 
+    /** 头像最大长度（Emoji 或图片 URL） */
+    public static final int MAX_AVATAR_LENGTH = 255;
+
     private final Long id;
     private final Long uid;
     private String name;
@@ -30,6 +33,9 @@ public class Team {
     private final Instant createAt;
 
     private String description;
+
+    /** 头像（Emoji 或图片 URL），可空 */
+    private String avatar;
 
     private Instant updateAt;
 
@@ -44,6 +50,14 @@ public class Team {
     public void changeName(String name){
         if(name == null || name.length() > NAME_MAX_LENGTH) throw new IllegalArgumentException("Invalid team name: " + name);
         this.name = name;
+        update();
+    }
+
+    /** 头像允许清空（传空串即清除），口径与 {@link #changeDescription} 一致（违规抛异常）。 */
+    public void changeAvatar(String avatar){
+        if(avatar == null) throw new IllegalArgumentException("Avatar is null");
+        if(avatar.length() > MAX_AVATAR_LENGTH) throw new IllegalArgumentException("Avatar is too long");
+        this.avatar = avatar.isEmpty() ? null : avatar;
         update();
     }
 

@@ -10,6 +10,7 @@ import com.summit.sandbox.mxc.MxcRuntime;
 import com.summit.sandbox.mxc.MxcPlatformProbe;
 import com.summit.sandbox.mxc.MxcWorkspaceProvider;
 import com.summit.sandbox.mxc.MxcWorkspaceSpec;
+import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 import java.util.Locale;
@@ -26,9 +27,12 @@ public final class ConfiguredSandboxWorkspaceProvider implements WorkspaceProvid
         throwIf(!status.configured(), status.message());
         throwIf(!(spec instanceof MxcWorkspaceSpec), "沙箱工作区规格无效，请重新选择工作空间");
         try {
-            MxcRuntime runtime = new MxcRuntime(properties.nodeExecutable(),
-                    properties.sdkDirectory(), properties.applicationDirectory().resolve("helpers"),
-                    properties.startupTimeout(), properties.fileTimeout());
+            MxcRuntime runtime = new MxcRuntime(
+                    properties.nodeExecutable(),
+                    properties.sdkDirectory(),
+                    properties.applicationDirectory().resolve("helpers"),
+                    properties.startupTimeout(),
+                    properties.fileTimeout());
             return new MxcWorkspaceProvider(runtime).resolve(spec);
         } catch (RuntimeException failure) {
             log.error("沙箱初始化失败: backend={}, directory={}", status.backend(), properties.applicationDirectory(), failure);
@@ -38,7 +42,9 @@ public final class ConfiguredSandboxWorkspaceProvider implements WorkspaceProvid
 
     @Override public SandboxServiceStatus inspect() {
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+
         String backend = os.contains("win") ? "BaseContainer" : "Bubblewrap";
+
         boolean configured = (os.contains("win") || os.contains("linux")) && properties.applicationDirectory() != null
                 && properties.nodeExecutable() != null && !properties.nodeExecutable().isBlank()
                 && properties.sdkDirectory() != null && !properties.sdkDirectory().isBlank()
@@ -47,7 +53,6 @@ public final class ConfiguredSandboxWorkspaceProvider implements WorkspaceProvid
         return new SandboxServiceStatus(configured, false, backend, configured ? "沙箱资源已配置，请运行检查确认可用"
                 : "沙箱运行资源未配置，请配置 application-directory、宿主 node-executable 和 sdk-directory");
     }
-
     @Override public SandboxServiceStatus check() {
         SandboxServiceStatus status = inspect();
         throwIf(!status.configured(), status.message());

@@ -17,6 +17,7 @@ import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.model.application.service.ModelService;
+import com.summit.dp.model.domain.ModelNoFoundException;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.tools.application.port.ToolCatalog;
@@ -77,22 +78,27 @@ public class SubAgentRequestFactory {
                               String subSessionId,
                               Long parentWorkspaceId,
                               List<Message> priorMessages) {
-        ModelConfig childModel = resolveChildModel(subAgent.getModelId());
+        ModelConfig childModel = resolveChildModel(subAgent);
+
         Workspace parentWorkspace = toolExecution == null ? null : toolExecution.getWorkspace();
+
         AgentAccessMode accessMode = AgentAccessMode.from(toolExecution == null ? null : toolExecution.getAttributes());
+
         WorkspaceSpec workspaceSpec = resolveWorkspaceSpec(workDir, parentWorkspace, parentWorkspaceId, accessMode);
+
         if (parentWorkspace != null && workspaceSpec == null) {
             throw new IllegalStateException("子执行缺少工作区配置，无法恢复工作目录: " + workDir);
         }
 
         String task = argument.getTask();
+
         AgentRequest.AgentRequestBuilder builder = AgentRequest.builder();
+
         if (workspaceSpec != null) {
             builder.workspaceSpec(workspaceSpec);
         }
 
         // Skill 能力随委派下行：框架按请求级 skillConfig 渲染 Skill 提示词，read_skill 也按它做
-        // 越界校验。子执行是真正干活的一方，不给它就等于「成员看不到任何技能」。
         Path skillRoot = skillRootResolver.root();
 
         Objects.requireNonNull(toolExecution);
@@ -140,19 +146,26 @@ public class SubAgentRequestFactory {
      * 真正的守卫是 {@link #memberTools} 把 {@code call_sub_agent} 从子执行工具清单里剔除。</p>
      */
     private Map<String, Object> childAttributes(AgentVO subAgent, ToolExecution toolExecution, String subSessionId) {
-        Map<String, Object> attributes = new HashMap<>();
-        attributes.putAll(AgentAccessMode.toAttributes(AgentAccessMode.from(toolExecution.getAttributes())));
+        Map<String, Object> attributes = new HashMap<>(AgentAccessMode.toAttributes(AgentAccessMode.from(toolExecution.getAttributes())));
+
         attributes.put(ExecutionAttributes.SESSION_ID, subSessionId);
+
         attributes.put(ExecutionAttributes.AGENT_ID, subAgent.getId().toString());
+
         attributes.put(ExecutionAttributes.ROOT_EXECUTION_ID, toolExecution.getExecutionId());
+
         Long rootSessionId = ExecutionAttributes.readLong(toolExecution.getAttributes(), ExecutionAttributes.SESSION_ID);
+
         if (rootSessionId != null) {
             attributes.put(ExecutionAttributes.ROOT_SESSION_ID, rootSessionId.toString());
         }
+
         Long teamId = ExecutionAttributes.readLong(toolExecution.getAttributes(), ExecutionAttributes.TEAM_ID);
+
         if (teamId != null) {
             attributes.put(ExecutionAttributes.TEAM_ID, teamId.toString());
         }
+
         return Map.copyOf(attributes);
     }
 
@@ -163,7 +176,9 @@ public class SubAgentRequestFactory {
      */
     private WorkspaceSpec resolveWorkspaceSpec(String workDir,
                                                Workspace parentWorkspace,
-                                               Long parentWorkspaceId, AgentAccessMode accessMode) {
+                                               Long parentWorkspaceId,
+                                               AgentAccessMode accessMode
+    ) {
         RuntimeEnvironment parentEnvironment = parentWorkspace == null ? null : parentWorkspace.runtimeEnvironment();
         // 已开始的执行沿用父环境，设置页切换运行类型不能把子执行带出父沙箱。
         WorkspaceType type = parentEnvironment == null ? workspaceConverter.resolveType()
@@ -181,13 +196,24 @@ public class SubAgentRequestFactory {
         return parent == null ? null : workspaceConverter.toSpec(parent, type, accessMode);
     }
 
-    /** 子 Agent 必须显式绑定模型，不继承父任务或单例设置中的模型。 */
-    private ModelConfig resolveChildModel(Long childModelId) {
+    /**
+     * 子 Agent 必须显式绑定模型，不继承父任务或单例设置中的模型 —— 每个成员用自己的预设跑。
+     *
+     * <p>agent.model_id 无外键：删除模型不会级联清空引用，「预设已被删除」要把
+     * {@code 未找到模型} 翻译成带成员名的可行动提示，否则指挥者只看到一句天书。</p>
+     */
+    private ModelConfig resolveChildModel(AgentVO subAgent) {
+        Long childModelId = subAgent == null ? null : subAgent.getModelId();
         if (childModelId == null) {
             throw new ClientException("子 Agent 未配置模型，请先为该 Agent 绑定模型");
         }
         SettingsView settings = settingsProvider.current().orElse(null);
-        return modelService.runtimeConfig(childModelId, settings);
+        try {
+            return modelService.runtimeConfig(childModelId, settings);
+        } catch (ModelNoFoundException e) {
+            throw new ClientException("子 Agent「" + subAgent.getName()
+                    + "」绑定的模型已被删除，请重新为其选择基座模型");
+        }
     }
 
     /**

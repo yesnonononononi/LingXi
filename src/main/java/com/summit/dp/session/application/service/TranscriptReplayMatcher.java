@@ -50,6 +50,8 @@ public class TranscriptReplayMatcher {
         if (stored == null) return false;
         if (!Objects.equals(trimToNull(stored.getText()), trimToNull(aiMessage.getText()))) return false;
         if (!Objects.equals(trimToNull(stored.getThinking()), trimToNull(aiMessage.getThinking()))) return false;
+        // 思考签名参与下一轮请求，重复输出不能静默替换协议数据。
+        if (!Objects.equals(stored.getAttributes(), aiMessage.getAttributes())) return false;
         return toolIdsOf(stored).equals(toolIdsOf(aiMessage));
     }
 

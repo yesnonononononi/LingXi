@@ -139,6 +139,7 @@ CREATE TABLE IF NOT EXISTS agent (
     tool_list   VARCHAR(1000) COMMENT '工具列表(JSON或逗号分隔)',
     prompt      TEXT COMMENT '系统提示词/设定',
     description VARCHAR(500) COMMENT 'Agent描述',
+    avatar      VARCHAR(255) COMMENT '头像(Emoji或图片URL, 可空)',
     status      TINYINT DEFAULT 1 COMMENT '状态: 1正常 0禁用',
     create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'
@@ -153,6 +154,7 @@ CREATE TABLE IF NOT EXISTS team (
     commander_agent_id BIGINT COMMENT '指挥者AgentID(关联agent.id, 必填)',
     agent_ids          VARCHAR(500) COMMENT '成员AgentID列表(逗号分隔, 含指挥者)',
     description        VARCHAR(1000) COMMENT '团队描述',
+    avatar             VARCHAR(255) COMMENT '头像(Emoji或图片URL, 可空)',
     status             TINYINT DEFAULT 1 COMMENT '状态: 1正常 0删除',
     create_time        DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time        DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'

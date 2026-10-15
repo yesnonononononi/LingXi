@@ -50,6 +50,7 @@ public class AgentRepositoryImpl extends AbstractRepository<Agent, AgentPO, Long
                 .toolList(parseToolList(po.getToolList()))
                 .prompt(po.getPrompt())
                 .description(po.getDescription())
+                .avatar(po.getAvatar())
                 .status(po.getStatus())
                 .build();
     }
@@ -63,6 +64,7 @@ public class AgentRepositoryImpl extends AbstractRepository<Agent, AgentPO, Long
                .toolList(writeToolList(model.getToolList()))
                .prompt(model.getPrompt())
                .description(model.getDescription())
+               .avatar(model.getAvatar())
                .status(model.getStatus())
                .build();
     }

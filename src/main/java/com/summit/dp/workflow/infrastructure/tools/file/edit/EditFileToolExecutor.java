@@ -59,7 +59,9 @@ public class EditFileToolExecutor implements ToolExecutor {
 
         boolean existed = bridge.exists(target);
         String oldContent = existed ? bridge.readString(target, charset) : null;
+
         FileEditorResult editRes = FileEditor.edit(request, oldContent == null ? "" : oldContent, charset, DEFAULT_AROUND_LINE);
+
         if (!editRes.isSuccess()) {
             return EditOutcome.failure(editRes.getErrMsg());
         }

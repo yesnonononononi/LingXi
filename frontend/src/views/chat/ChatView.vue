@@ -94,6 +94,7 @@
             @touchstart.passive="handleTouchStart"
             @touchmove.passive="handleTouchMove"
             @selectSubSession="handleSelectSubSessionOption"
+            @resendUnsent="handleResendUnsent"
           />
 
           <!-- 悬浮“回到底部” / “新内容” 提示按钮 -->
@@ -414,6 +415,7 @@ const {
   selectedModelId,
   accessMode,
   selectedAgentId,
+  handleResendUnsent,
   reasoningEffort,
   reasoningEffortPending,
   reasoningEffortError,

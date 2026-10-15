@@ -4,6 +4,7 @@ import { useAgentsTab } from './useAgentsTab';
 import { resolveToolFullName } from '../../../utils/toolDisplayNames';
 import { useTheme } from '../../../composables/useTheme';
 import { useI18n } from '../../../i18n';
+import { isImageAvatar } from '../../../utils/avatar';
 
 const props = defineProps<{
   isDark?: boolean;
@@ -115,6 +116,18 @@ const {
           <div class="flex items-start justify-between gap-3">
             <div class="space-y-1.5 min-w-0 flex-1">
               <div class="flex items-center gap-2 flex-wrap">
+                <!-- 头像：URL 走 <img>，其余按 Emoji 文本渲染 -->
+                <img
+                  v-if="isImageAvatar(agent.avatar)"
+                  :src="agent.avatar"
+                  :alt="agent.name"
+                  class="w-5 h-5 rounded-full object-cover shrink-0"
+                />
+                <span
+                  v-else-if="agent.avatar"
+                  class="w-5 h-5 rounded-full flex items-center justify-center text-xs leading-none shrink-0 select-none"
+                  :class="isDark ? 'bg-white/10' : 'bg-gray-200/80'"
+                >{{ agent.avatar }}</span>
                 <span class="text-sm font-semibold truncate" :class="isDark ? 'text-white text-glow-white' : 'text-gray-900'">
                   {{ agent.name }}
                 </span>
@@ -245,11 +258,25 @@ const {
 
         <div>
           <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
-                        {{ t('settings.agents.descriptionLabel') }}
+            {{ t('settings.agents.descriptionLabel') }}
           </label>
           <input
             v-model="agentForm.description"
             :placeholder="t('settings.agents.descriptionPlaceholder')"
+            :class="[
+              'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
+              isDark ? 'bg-black/90 border-white/20 text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+            ]"
+          />
+        </div>
+
+        <div>
+          <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
+            {{ t('settings.agents.avatarLabel') }}
+          </label>
+          <input
+            v-model="agentForm.avatar"
+            :placeholder="t('settings.agents.avatarPlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
               isDark ? 'bg-black/90 border-white/20 text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'

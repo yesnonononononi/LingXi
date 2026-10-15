@@ -63,6 +63,7 @@ public class H2SchemaInitializer {
                 migrateV3(connection);
                 migrateV4(connection);
                 migrateV5(connection);
+                migrateV6(connection);
                 migrateV7(connection);
                 migrateV8(connection);
             }
@@ -195,6 +196,24 @@ public class H2SchemaInitializer {
         }
         ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
                 "db/migration/V4_record.sql"), StandardCharsets.UTF_8));
+    }
+
+    /**
+     * V6：agent / team 补头像列。
+     *
+     * <p>加列是「缺列」，沿用 {@code hasColumn} 判定后显式 ALTER 的既有口径；
+     * 新库由 init.sql 直接带上该列，迁移对它天然空操作。</p>
+     */
+    private void migrateV6(Connection connection) throws Exception {
+        String[][] columns = {{"agent", "avatar"}, {"team", "avatar"}};
+        for (String[] column : columns) {
+            if (!hasColumn(connection, column[0], column[1])) {
+                ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                        "db/migration/V6_" + column[0] + "_avatar.sql"), StandardCharsets.UTF_8));
+            }
+        }
+        ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                "db/migration/V6_record.sql"), StandardCharsets.UTF_8));
     }
 
     /**

@@ -21,6 +21,7 @@ public class TeamPO {
     private String agentIds;
     private Integer status;
     private String description;
+    private String avatar;
     private Instant createTime;
     private Instant updateTime;
 }

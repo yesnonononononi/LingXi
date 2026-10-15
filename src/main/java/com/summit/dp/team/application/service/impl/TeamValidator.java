@@ -47,6 +47,9 @@ public class TeamValidator {
         String descError = checkDescription(command.getDescription());
         if (descError != null) return descError;
 
+        String avatarError = checkAvatar(command.getAvatar());
+        if (avatarError != null) return avatarError;
+
         return checkMembers(command.getCommanderAgentId(), command.getAgentIds());
     }
 
@@ -62,6 +65,10 @@ public class TeamValidator {
         if (command.getDescription() != null) {
             String descError = checkDescription(command.getDescription());
             if (descError != null) return descError;
+        }
+        if (command.getAvatar() != null) {
+            String avatarError = checkAvatar(command.getAvatar());
+            if (avatarError != null) return avatarError;
         }
         if (command.getCommanderAgentId() != null || command.getAgentIds() != null) {
             return checkMembers(command.getCommanderAgentId(), command.getAgentIds());
@@ -79,6 +86,14 @@ public class TeamValidator {
     private String checkDescription(String description) {
         if (description != null && description.trim().length() > Team.MAX_DESCRIPTION_LENGTH) {
             return "团队描述长度不能超过" + Team.MAX_DESCRIPTION_LENGTH;
+        }
+        return null;
+    }
+
+    /** 头像可空，传了就只查长度（内容本身是 Emoji 或 URL，不做格式强校验）。 */
+    private String checkAvatar(String avatar) {
+        if (avatar != null && avatar.length() > Team.MAX_AVATAR_LENGTH) {
+            return "团队头像长度不能超过" + Team.MAX_AVATAR_LENGTH;
         }
         return null;
     }

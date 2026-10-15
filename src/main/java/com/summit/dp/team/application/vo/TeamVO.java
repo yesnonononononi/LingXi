@@ -16,5 +16,7 @@ public class TeamVO {
     private String commanderName;
     private Long commanderAgentId;
     private String description;
+    /** 头像（Emoji 或图片 URL），可空 */
+    private String avatar;
     private List<AgentVO> agents;
 }

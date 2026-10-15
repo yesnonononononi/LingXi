@@ -141,16 +141,21 @@ class H2SchemaMigrationTest {
             // 金丝雀：先证明列宽扫描器本身有效，否则下面的 500 可能是「扫不到 → 恒返回 0」的假绿
             assertEquals(500, columnSize(database, "team", "description"),
                     "前置条件：旧库的团队描述列宽确实是 500（扫描器有效性对照）");
+            assertFalse(hasColumn(database, "team", "avatar"),
+                    "前置条件：旧库的 team 表没有头像列");
 
             new H2SchemaInitializer().h2SchemaBootstrap(database).run(new DefaultApplicationArguments());
 
             assertEquals(1000, columnSize(database, "team", "description"),
                     "init.sql 改列宽对已有库无效，必须由迁移显式 ALTER 加宽");
+            assertTrue(hasColumn(database, "team", "avatar"),
+                    "V6 迁移必须给旧库的 team 表补上头像列");
             assertEquals(1L, countRows(database, "team"), "加宽列不得丢数据");
 
             // 幂等：第二次启动不得再 ALTER（对已是 1000 的列应当直接跳过）
             new H2SchemaInitializer().h2SchemaBootstrap(database).run(new DefaultApplicationArguments());
             assertEquals(1000, columnSize(database, "team", "description"));
+            assertTrue(hasColumn(database, "team", "avatar"));
             assertEquals(1L, countRows(database, "team"));
         } finally {
             database.shutdown();

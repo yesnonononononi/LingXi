@@ -44,6 +44,7 @@ public class TeamRepositoryImpl extends AbstractRepository<Team, TeamPO, Long>
                 .commanderAgentId(po.getCommanderAgentId())
                 .agentIds(parseAgentIds(po.getAgentIds()))
                 .description(po.getDescription())
+                .avatar(po.getAvatar())
                 .createAt(po.getCreateTime())
                 .updateAt(po.getUpdateTime())
                 .build();
@@ -57,6 +58,7 @@ public class TeamRepositoryImpl extends AbstractRepository<Team, TeamPO, Long>
                 .commanderAgentId(model.getCommanderAgentId())
                 .agentIds(writeAgentIds(model.getAgentIds()))
                 .description(model.getDescription())
+                .avatar(model.getAvatar())
                 .createTime(model.getCreateAt())
                 .updateTime(model.getUpdateAt())
                 .build();

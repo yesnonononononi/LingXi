@@ -69,4 +69,4 @@ deliverables/
 
 # H2 内置库文件（应用启动目录下 ./data/lingxi.mv.db 等），不入库。
 /data/
-AGENTS.md
+AGENTS.md.lingxi/

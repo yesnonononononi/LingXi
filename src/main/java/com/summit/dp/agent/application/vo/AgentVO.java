@@ -11,6 +11,8 @@ public class AgentVO {
     private Long id;
     private String name;
     private String description;
+    /** 头像（Emoji 或图片 URL），可空 */
+    private String avatar;
     private List<String> toolList;
     private String prompt;
     /** 状态: 1正常 0禁用 */
