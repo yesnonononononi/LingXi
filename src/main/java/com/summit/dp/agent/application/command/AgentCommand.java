@@ -13,4 +13,6 @@ public class AgentCommand {
     private List<String> toolList;
     private String prompt;
     private String description;
+    /** 头像（Emoji 或图片 URL），可空 */
+    private String avatar;
 }

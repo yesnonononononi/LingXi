@@ -26,12 +26,11 @@ public class AgentServiceImpl implements AgentService {
     private final AgentRepository repository;
     private final AgentValidator validator;
 
-    @Override
+        @Override
     public Result<AgentVO> findById(Long id) {
-        if (id == null)
-            throw new ClientException("id is null");
+        throwIf(id == null, "Agent标识不能为空");
         Agent model = repository.findById(id)
-                .orElseThrow(() -> new ClientException("id 对应数据不存在: " + id));
+                .orElseThrow(() -> new ClientException("Agent不存在: " + id));
         return Result.success(toVO(model));
     }
 
@@ -55,21 +54,19 @@ public class AgentServiceImpl implements AgentService {
         return Result.success();
     }
 
-    @Override
+        @Override
     public Result<Void> update(AgentCommand command) {
         String error = validator.validateForUpdate(command);
         if (error != null) throw new ClientException(error);
         Agent agent = repository.findById(command.getId())
-                .orElseThrow(() -> new ClientException("id 对应数据不存在: " + command.getId()));
-        Agent model = update(command, agent);
-        repository.updateById(model);
+                .orElseThrow(() -> new ClientException("Agent不存在: " + command.getId()));
+        repository.updateById(applyChanges(command, agent));
         return Result.success();
     }
 
     @Override
     public Result<Void> delById(Long id) {
-        if (id == null)
-            throw new ClientException("id is null");
+        throwIf(id == null, "Agent标识不能为空");
         repository.findById(id).ifPresent(repository::delete);
         return Result.success();
     }
@@ -80,13 +77,20 @@ public class AgentServiceImpl implements AgentService {
             return Result.success(List.of());
         return Result.success(repository.findList(ids).stream().map(this::toVO).toList());
     }
-    public Agent update(AgentCommand agentCommand,Agent agent){
-        if(agentCommand.getDescription() != null) agent.changeDescription(agentCommand.getDescription());
-        if(agentCommand.getName() != null) agent.changName(agentCommand.getName());
-        if(agentCommand.getModelId() != null) agent.changeModelId(agentCommand.getModelId());
-        if(agentCommand.getToolList() != null) agent.changeTools(agentCommand.getToolList());
-        if(agentCommand.getPrompt() != null) agent.changePrompt(agentCommand.getPrompt());
+        /** 只应用本次传入（非 null）的字段；未传入表示不修改。 */
+    private Agent applyChanges(AgentCommand command, Agent agent) {
+        if (command.getDescription() != null) agent.changeDescription(command.getDescription());
+        if (command.getName() != null) agent.changeName(command.getName());
+        if (command.getModelId() != null) agent.changeModelId(command.getModelId());
+        if (command.getToolList() != null) agent.changeTools(command.getToolList());
+        if (command.getPrompt() != null) agent.changePrompt(command.getPrompt());
+        if (command.getAvatar() != null) agent.changeAvatar(command.getAvatar());
         return agent;
+    }
+
+    /** 入口校验：不满足即抛业务异常，统一走全局异常处理器返回。 */
+    private void throwIf(boolean condition, String error) {
+        if (condition) throw new ClientException(error);
     }
 
     private AgentVO toVO(Agent model) {
@@ -96,13 +100,14 @@ public class AgentServiceImpl implements AgentService {
     }
 
     private Agent toModel(AgentCommand command) {
-         return Agent.builder()
-                 .id(command.getId())
-                 .name(command.getName())
-                 .modelId(command.getModelId())
-                 .toolList(command.getToolList())
-                 .prompt(command.getPrompt())
-                 .description(command.getDescription())
-                 .build();
+        return Agent.builder()
+                .id(command.getId())
+                .name(command.getName())
+                .modelId(command.getModelId())
+                .toolList(command.getToolList())
+                .prompt(command.getPrompt())
+                .description(command.getDescription())
+                .avatar(command.getAvatar())
+                .build();
     }
 }

@@ -1,7 +1,7 @@
 package com.summit.dp.agent.domain.model;
 
+import com.summit.dp.shared.exception.ClientException;
 import lombok.Builder;
-import lombok.Data;
 import lombok.Getter;
 
 import java.time.Instant;
@@ -20,6 +20,8 @@ public class Agent {
     public static final int DESCRIPTION_MAX_LENGTH = 500;
     /** 提示词最大长度 */
     public static final int PROMPT_MAX_LENGTH = 20_000;
+    /** 头像最大长度（Emoji 或图片 URL） */
+    public static final int AVATAR_MAX_LENGTH = 255;
     /** 单个 Agent 允许配置的工具数量上限 */
     public static final int TOOL_MAX_SIZE = 30;
     /** 状态：正常 */
@@ -28,52 +30,88 @@ public class Agent {
     private final Long id;
     private final Long uid;
     private String name;
-    private  Long modelId;
+    private Long modelId;
     private List<String> toolList;
     private String prompt;
     private String description;
+    /** 头像（Emoji 或图片 URL），可空 */
+    private String avatar;
     /** 状态: 1正常 0禁用 */
     private Integer status;
     private Instant updateAt;
-    private Instant createAt;
+        private Instant createAt;
 
-    public void changName(String name){
-        if(name == null || name.length() > NAME_MAX_LENGTH || name.isEmpty())return;
+    /** 名称必填；空白或超长一律拒绝，不静默丢弃（静默丢弃会让调用方误判为已生效）。 */
+    public void changeName(String name) {
+        if (name == null || name.isBlank()) throw new ClientException("Agent名称不能为空");
+        if (name.trim().length() > NAME_MAX_LENGTH)
+            throw new ClientException("Agent名称长度不能超过" + NAME_MAX_LENGTH);
         this.name = name;
         update();
     }
-    public void changeModelId(Long modelId){
+
+    public void changeModelId(Long modelId) {
+        if (modelId == null) throw new ClientException("必须指定模型");
         this.modelId = modelId;
         update();
     }
-    public void changeStatus(int status){
+
+    public void changeStatus(int status) {
         this.status = status;
         update();
     }
 
-    public void changePrompt(String prompt){
-        if(prompt == null || prompt.length() > PROMPT_MAX_LENGTH) return;
+    /** 提示词必填。 */
+    public void changePrompt(String prompt) {
+        if (prompt == null || prompt.isBlank()) throw new ClientException("提示词不能为空");
+        if (prompt.trim().length() > PROMPT_MAX_LENGTH)
+            throw new ClientException("提示词长度不能超过" + PROMPT_MAX_LENGTH);
         this.prompt = prompt;
         update();
     }
 
-    public void addTool(String toolName){
-        if(toolName == null || toolName.isEmpty()) return;
-        if(toolList == null) toolList = new ArrayList<>();
-        if(toolList.size() >= TOOL_MAX_SIZE) return;
-        if(toolList.contains(toolName)) return;
-        toolList.add(toolName);
+    /** 追加单个工具；空名、超量或重复一律拒绝。 */
+    public void addTool(String toolName) {
+        if (toolName == null || toolName.isBlank()) throw new ClientException("工具名称不能为空");
+        if (toolList == null) toolList = new ArrayList<>();
+        if (toolList.size() >= TOOL_MAX_SIZE)
+            throw new ClientException("工具数量不能超过" + TOOL_MAX_SIZE);
+        String name = toolName.trim();
+        if (toolList.contains(name)) throw new ClientException("工具不允许重复: " + name);
+        toolList.add(name);
         update();
     }
 
-    public void changeTools(Collection<String> tools){
-        if(tools == null) return;
+    /**
+     * 整体替换工具清单；null 视为非法调用，超量或含空白项一律拒绝。
+     *
+     * <p>重复项与「是否已注册」属入口校验（{@code AgentValidator}）的职责，本方法只守住结构不变量。</p>
+     */
+    public void changeTools(Collection<String> tools) {
+        if (tools == null) throw new ClientException("工具列表不能为空");
+        if (tools.size() > TOOL_MAX_SIZE)
+            throw new ClientException("工具数量不能超过" + TOOL_MAX_SIZE);
+        for (String tool : tools) {
+            if (tool == null || tool.isBlank()) throw new ClientException("工具名称不能为空");
+        }
         this.toolList = new ArrayList<>(tools);
         update();
     }
-    public void changeDescription(String description){
-        if(description == null || description.length() > DESCRIPTION_MAX_LENGTH) return;
+
+    public void changeDescription(String description) {
+        if (description == null) throw new ClientException("Agent描述不能为空");
+        if (description.length() > DESCRIPTION_MAX_LENGTH)
+            throw new ClientException("Agent描述长度不能超过" + DESCRIPTION_MAX_LENGTH);
         this.description = description;
+        update();
+    }
+
+    /** 头像允许清空（传空串即清除）；超长拒绝，与本类其它变更方法口径一致。 */
+    public void changeAvatar(String avatar) {
+        if (avatar == null) throw new ClientException("Agent头像不能为空");
+        if (avatar.length() > AVATAR_MAX_LENGTH)
+            throw new ClientException("Agent头像长度不能超过" + AVATAR_MAX_LENGTH);
+        this.avatar = avatar.isEmpty() ? null : avatar;
         update();
     }
 
