@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Objects;
 
@@ -18,7 +19,7 @@ public class FileRecordRestorer {
     /** 还原前检查当前内容，不能覆盖编辑后产生的新修改。 */
     public void restore(FileRecord record, Workspace workspace) throws FileModificationException {
         WorkspaceBridge bridge = workspace.bridge();
-        Charset charset = workspace.runtimeEnvironment().charset();
+        Charset charset = StandardCharsets.UTF_8;
         Path path = workspace.resolve(record.filePath());
         try {
             // 无旧内容表示本次新建，拒绝时要删除文件。

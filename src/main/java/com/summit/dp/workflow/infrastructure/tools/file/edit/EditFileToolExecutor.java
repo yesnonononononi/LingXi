@@ -16,6 +16,7 @@ import org.jspecify.annotations.NonNull;
 import java.io.IOException;
 import java.io.Serializable;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -54,7 +55,7 @@ public class EditFileToolExecutor implements ToolExecutor {
 
     private EditOutcome applyEdit(EditFileRequest request, Workspace workspace) throws IOException {
         WorkspaceBridge bridge = workspace.bridge();
-        Charset charset = workspace.runtimeEnvironment().charset();
+        Charset charset = StandardCharsets.UTF_8;
         Path target = workspace.resolve(request.getPath());
 
         boolean existed = bridge.exists(target);

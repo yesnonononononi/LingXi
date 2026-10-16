@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -36,9 +37,7 @@ public class ReadFileToolExecutor implements ToolExecutor {
 
             Path path = Path.of(request.getPath());
 
-            String content = read(bridge, path,
-                    toolExecution.getWorkspace().runtimeEnvironment().charset(),
-                    request.getStartLine(), request.getEndLine());
+            String content = read(bridge, path, request.getStartLine(), request.getEndLine());
 
             return ToolExecuteResult.success(content);
         } catch (Exception e) {
@@ -46,12 +45,12 @@ public class ReadFileToolExecutor implements ToolExecutor {
         }
     }
 
-    private String read(WorkspaceBridge bridge, Path path, java.nio.charset.Charset charset,
-                        Integer startLine, Integer endLine) throws IOException {
+    private String read(WorkspaceBridge bridge, Path path, Integer startLine, Integer endLine) throws IOException {
+        // 文件统一使用 UTF-8，不能沿用 Windows 终端的 OEM 编码。
         if (startLine == null && endLine == null) {
-            return bridge.readString(path, charset);
+            return bridge.readString(path, StandardCharsets.UTF_8);
         }
-        List<String> lines = bridge.readLines(path, charset);
+        List<String> lines = bridge.readLines(path, StandardCharsets.UTF_8);
 
         int start = Objects.requireNonNullElse(startLine, 0);
         int end = Math.min(Objects.requireNonNullElse(endLine, Integer.MAX_VALUE), lines.size() - 1);
