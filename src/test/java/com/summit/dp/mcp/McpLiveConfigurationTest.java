@@ -87,7 +87,7 @@ class McpLiveConfigurationTest {
         Mcp saved = records.values().iterator().next();
         assertNotNull(saved.getId());
         try (McpToolScope scope = manager.openScope(service.currentConfig())) {
-            assertNotNull(scope.getTool("mcp_inspect"));
+            assertNotNull(scope.getTool("mcp_test-server_inspect"));
         }
         verify(repository).save(saved);
         verify(client).listTools();
@@ -108,8 +108,8 @@ class McpLiveConfigurationTest {
         service.update(update);
         verify(original).close();
         try (McpToolScope scope = manager.openScope(service.currentConfig())) {
-            assertNull(scope.getTool("mcp_original"));
-            assertNotNull(scope.getTool("mcp_replacement"));
+            assertNull(scope.getTool("mcp_test-server_original"));
+            assertNotNull(scope.getTool("mcp_renamed_replacement"));
             assertEquals(List.of("renamed"), scope.serverNames());
         }
 
@@ -126,7 +126,7 @@ class McpLiveConfigurationTest {
         enable.setStatus(Mcp.STATUS_ENABLED);
         service.update(enable);
         try (McpToolScope scope = manager.openScope(service.currentConfig())) {
-            assertNotNull(scope.getTool("mcp_enabled"));
+            assertNotNull(scope.getTool("mcp_renamed_enabled"));
         }
         McpConfig beforeDeletion = service.currentConfig();
         service.delById(id);
@@ -148,7 +148,7 @@ class McpLiveConfigurationTest {
         retry.setId(records.keySet().iterator().next());
         service.update(retry);
         try (McpToolScope scope = manager.openScope(service.currentConfig())) {
-            assertNotNull(scope.getTool("mcp_recovered"));
+            assertNotNull(scope.getTool("mcp_test-server_recovered"));
         }
         manager.close();
     }

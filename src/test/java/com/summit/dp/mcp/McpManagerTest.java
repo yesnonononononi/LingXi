@@ -63,11 +63,11 @@ class McpManagerTest {
         manager.register(1L);
 
         try (McpToolScope scope = manager.openScope(config(model))) {
-            assertNotNull(scope.getTool("mcp_inspect"));
+            assertNotNull(scope.getTool("mcp_first_inspect"));
             assertEquals(List.of("first"), scope.serverNames());
         }
         try (McpToolScope scope = manager.openScope(config(model))) {
-            assertNotNull(scope.getTool("mcp_inspect"));
+            assertNotNull(scope.getTool("mcp_first_inspect"));
         }
         verify(client, times(1)).listTools();
         verify(factory, times(1)).create(anyString(), any());
@@ -100,8 +100,8 @@ class McpManagerTest {
 
         assertTrue(manager.openScope(config(original)).isEmpty());
         try (McpToolScope scope = manager.openScope(config(changed))) {
-            assertNull(scope.getTool("mcp_old_tool"));
-            assertNotNull(scope.getTool("mcp_new_tool"));
+            assertNull(scope.getTool("mcp_first_old_tool"));
+            assertNotNull(scope.getTool("mcp_renamed_new_tool"));
             assertEquals(List.of("renamed"), scope.serverNames());
         }
         verify(oldClient).close();
@@ -169,8 +169,8 @@ class McpManagerTest {
         manager.register(2L);
 
         try (McpToolScope scope = manager.openScope(config(second))) {
-            assertNull(scope.getTool("mcp_first_tool"));
-            assertNotNull(scope.getTool("mcp_second_tool"));
+            assertNull(scope.getTool("mcp_first_first_tool"));
+            assertNotNull(scope.getTool("mcp_second_second_tool"));
         }
         assertTrue(manager.openScope(config()).isEmpty());
         manager.close();
@@ -197,8 +197,8 @@ class McpManagerTest {
                 assertTrue(entered.await(2, TimeUnit.SECONDS));
                 Future<McpToolScope> request = executor.submit(() -> manager.openScope(config(ready, slow)));
                 try (McpToolScope scope = request.get(1, TimeUnit.SECONDS)) {
-                    assertNotNull(scope.getTool("mcp_ready_tool"));
-                    assertNull(scope.getTool("mcp_slow_tool"));
+                    assertNotNull(scope.getTool("mcp_ready_ready_tool"));
+                    assertNull(scope.getTool("mcp_slow_slow_tool"));
                 }
             } finally {
                 release.countDown();
@@ -206,7 +206,7 @@ class McpManagerTest {
             registration.get(2, TimeUnit.SECONDS);
         }
         try (McpToolScope scope = manager.openScope(config(ready, slow))) {
-            assertNotNull(scope.getTool("mcp_slow_tool"));
+            assertNotNull(scope.getTool("mcp_slow_slow_tool"));
         }
         manager.close();
     }

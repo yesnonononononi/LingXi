@@ -8,6 +8,7 @@ import com.summit.core.mcp.McpSession;
 import com.summit.core.mcp.McpSessionType;
 import com.summit.core.mcp.McpToolScope;
 import com.summit.core.mcp.ScopeMcpProvider;
+import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecutor;
 import com.summit.dp.mcp.application.service.McpConfigAssembler;
@@ -30,7 +31,7 @@ import java.util.Map;
 import java.util.concurrent.*;
 
 /**
- * 连接和工具发现提前完成，请求只装配已就绪的进程级连接。
+ * 本地请求复用已就绪连接，沙箱请求独立创建受限会话。
  */
 @Slf4j
 @Component
@@ -100,7 +101,7 @@ public class McpManager implements ScopeMcpProvider, McpConnectionRegistry {
                     + RUNTIME_TIMEOUT_GRACE_SECONDS;
             candidate = Langchain4jMcpSession.connect(server.name(), server.description(),
                     clientFactory.create(server.name(), server),
-                    new MCPToolConverter(server.maxOutput(), runtimeTimeout, toolNamePrefix(server.name())), McpSessionType.REUSE);
+                    new MCPToolConverter(server.maxOutput(), runtimeTimeout, McpToolNaming.buildPrefix(server.name())), McpSessionType.REUSE);
             PooledSession ready = new PooledSession(server, candidate, List.copyOf(candidate.tools()));
             PooledSession previous = sessions.put(id, ready);
             closeQuietly(previous);
@@ -130,21 +131,24 @@ public class McpManager implements ScopeMcpProvider, McpConnectionRegistry {
         return McpToolScope.of(available);
     }
 
+    @Override
+    public McpToolScope openScope(@NonNull McpConfig mcpConfig, Workspace workspace) {
+        if (workspace == null || !workspace.runtimeEnvironment().isolated()) return openScope(mcpConfig);
+        IsolatedMcpScopeProvider provider = new IsolatedMcpScopeProvider(clientFactory);
+        provider.validate(mcpConfig, workspace);
+        if (mcpConfig.getMcp() == null || mcpConfig.getMcp().isEmpty()) return McpToolScope.EMPTY;
+        // 旧请求快照不能重新开启已停用或已替换的服务。
+        List<McpConfig.MCP> available = repository.findEnabled().stream()
+                .map(assembler::toServer)
+                .filter(mcpConfig.getMcp()::contains)
+                .toList();
+        return provider.openScope(available, workspace);
+    }
+
     @PreDestroy
     public synchronized void close() {
         sessions.values().forEach(this::closeQuietly);
         sessions.clear();
-    }
-
-    /**
-     * MCP 工具线上名前缀：{@code mcp_<服务名>_}，前端据此渲染「服务名 原生名」。
-     *
-     * <p>服务名会进 LLM 函数调用名，只保留工具名合法字符（字母数字下划线连字符），
-     * 其余替换为下划线；服务名为空时退回裸 {@code mcp_} 前缀（旧格式）。</p>
-     */
-    private String toolNamePrefix(String serverName) {
-        String sanitized = serverName == null ? "" : serverName.replaceAll("[^A-Za-z0-9_-]", "_");
-        return sanitized.isEmpty() ? "mcp_" : "mcp_" + sanitized + "_";
     }
 
     private void closeQuietly(McpSession session) {
