@@ -8,7 +8,7 @@ public enum AgentAccessMode {
     /** 只读模式禁用编辑工具；终端写入副作用不由档位保证。 */
     READ_ONLY_IN_WORKSPACE,
 
-    /** 工作区内修改模式：允许读写工作区，工作区外只读。 */
+    /** 工作区内修改模式：沙箱仅授权工作区及安全中心指定的目录。 */
     IN_WORKSPACE,
 
     /** 完全访问：允许项目外读写，执行环境仍由 workspace 类型决定。 */
@@ -28,11 +28,6 @@ public enum AgentAccessMode {
     /** 是否为沙箱策略额外授予项目外写入路径。 */
     public boolean allowsOutsideWrite() {
         return this == OUT_OF_WORKSPACE;
-    }
-
-    /** 是否允许在工作区之外读取。三档皆可，保留此方法用于显式表达语义。 */
-    public boolean allowsOutsideRead() {
-        return true;
     }
 
     public static Map<String, Object> toAttributes(AgentAccessMode mode) {
