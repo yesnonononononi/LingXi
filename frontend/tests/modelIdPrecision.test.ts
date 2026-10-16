@@ -56,10 +56,14 @@ test('真实视图命令构造和聊天表单同样保留选中的模型 ID', as
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
   }).outputText;
   const id = '2109664456480034818';
-  const build = new Function('workspace', 'localActiveId', 'localActiveWorkspaceId', 'userConfig', 'toServerSessionId',
-    `${compiled}\nreturn buildCommand;`)({ selectedModelId: ref(id) }, ref('100'), ref(null), { agentId: null }, (value: string) => value);
+  const selectedTeamId = ref<string | null>(null);
+  const build = new Function('workspace', 'localActiveId', 'localActiveWorkspaceId', 'userConfig', 'toServerSessionId', 'localSelectedTeamId',
+    `${compiled}\nreturn buildCommand;`)({ selectedModelId: ref(id) }, ref('100'), ref(null), { agentId: null }, (value: string) => value, selectedTeamId);
   const command: ChatCommand = build('测试模型', false, []);
   assert.equal(command.modelId, id);
+  selectedTeamId.value = '77';
+  assert.equal(build('团队模型', false, []).modelId, '', '选中团队时模型由团队决定');
+  selectedTeamId.value = null;
   let sent: FormData | undefined;
   t.mock.method(globalThis, 'fetch', async (_url, init) => {
     sent = init?.body as FormData;
