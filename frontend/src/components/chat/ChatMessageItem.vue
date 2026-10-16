@@ -9,13 +9,14 @@
     />
     
     <!-- 1. 用户消息展示样式 (匹配左图：无头像，柔和浅蓝背景圆角气泡，下方展示时间与复制图标) -->
-    <div v-else-if="props.message.role === 'user'" class="flex flex-col items-end max-w-2xl group">
+    <div v-else-if="props.message.role === 'user'" class="flex min-w-0 max-w-full flex-col items-end sm:max-w-2xl group" data-testid="user-message">
       <!-- 气泡内容 -->
-      <div class="relative flex items-center gap-2">
+      <div class="relative flex min-w-0 max-w-full items-center gap-2">
         <!-- 报错标识已移除：失败是轮次的属性，由回答组统一渲染（turn.status=FAILED + errorReason） -->
         <div
+          data-testid="user-message-bubble"
           :class="[
-            'rounded-[18px] text-sm leading-relaxed whitespace-pre-wrap transition-colors break-words overflow-hidden',
+            'min-w-0 max-w-full rounded-[18px] text-sm leading-relaxed whitespace-pre-wrap transition-colors [overflow-wrap:anywhere] overflow-hidden',
             userImageUrls.length ? 'p-2' : 'px-4 py-2.5',
             isDark ? 'bg-zinc-800 text-zinc-100 border border-white/[0.08] shadow-xs' : 'bg-[#edf3fc] text-gray-800'
           ]"
@@ -31,7 +32,7 @@
               @click="handleImageClick(imageUrl)"
             />
           </div>
-          <div :class="userImageUrls.length ? 'px-2 pb-1' : ''">
+          <div :class="userImageUrls.length ? 'px-2 pb-1' : ''" data-testid="user-message-text">
             {{ props.message.content }}
           </div>
         </div>
