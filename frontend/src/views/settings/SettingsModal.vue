@@ -249,14 +249,14 @@ onBeforeUnmount(() => {
         <div
           class="flex-1 min-w-0 pr-1 text-sm h-full overflow-y-auto [scrollbar-gutter:stable]"
         >
-          <GeneralTab v-if="activeTab === 'general'" :is-dark="isDark" @model-updated="emit('modelUpdated')" />
+          <GeneralTab v-if="activeTab === 'general'" :is-dark="isDark" />
           <PersonalizationTab v-else-if="activeTab === 'personalization'" />
           <ModelsTab v-else-if="activeTab === 'models'" :is-dark="isDark" @model-updated="emit('modelUpdated')" />
           <AgentsTab v-else-if="activeTab === 'agents'" :is-dark="isDark" />
           <TeamsTab v-else-if="activeTab === 'teams'" :is-dark="isDark" @model-updated="emit('modelUpdated')" />
                     <McpTab v-else-if="activeTab === 'mcp'" :is-dark="isDark" />
           <DataTab v-else-if="activeTab === 'data'" :is-dark="isDark" @clear-sessions="emit('clearSessions')" />
-          <SecurityTab v-else-if="activeTab === 'security'" />
+          <SecurityTab v-else-if="activeTab === 'security'" @model-updated="emit('modelUpdated')" />
           <TermsTab v-else-if="activeTab === 'terms'" :is-dark="isDark" />
           <AboutTab v-else-if="activeTab === 'about'" :is-dark="isDark" />
         </div>

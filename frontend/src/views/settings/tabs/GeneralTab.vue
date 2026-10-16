@@ -11,47 +11,20 @@ defineProps<{
 const { t, preference } = useI18n();
 const { isDark } = useTheme();
 
-const emit = defineEmits<{
-  (e: 'modelUpdated'): void;
-}>();
-
 const {
   themeMode,
   isLanguageOpen,
   languageOptions,
   currentLanguageLabel,
   handleSelectLanguage,
-  executionEnv,
-  executionEnvValue,
-  isExecutionEnvOpen,
-  executionEnvOptions,
-  sandboxStatus,
-  isCheckingSandbox,
-  sandboxError,
-  sandboxNotice,
-  checkSandboxService,
-  accessMode,
-  isAccessModeOpen,
-  accessModeOptions,
-  currentAccessModeLabel,
-  commandApprovalPolicy,
-  isCommandApprovalPolicyOpen,
-  commandApprovalPolicyOptions,
-  currentCommandApprovalPolicyLabel,
-  toggleLanguageDropdown,
-  toggleExecutionEnvDropdown,
-  toggleAccessModeDropdown,
-  toggleCommandApprovalPolicyDropdown,
-  handleSelectExecutionEnv,
-  handleSelectAccessMode,
-  handleSelectCommandApprovalPolicy,
-  closeGeneralDropdowns,
-  handleSelectTheme,
   apiBaseUrl,
   isApiUrlSaved,
   handleSaveApiUrl,
   handleResetApiUrl,
-} = useGeneralTab(() => emit('modelUpdated'));
+  toggleLanguageDropdown,
+  closeGeneralDropdowns,
+  handleSelectTheme,
+} = useGeneralTab();
 </script>
 
 <template>
@@ -169,239 +142,6 @@ const {
       </div>
     </div>
 
-    <!-- 执行环境 -->
-    <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-white/10">
-            <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.executionEnv') }}</span>
-      <div class="relative execution-env-dropdown-container" @click.stop>
-        <SpecularButton
-          size="sm"
-          :radius="14"
-          :tint="isDark ? '#ffffff' : '#f0f2f5'"
-          :tint-opacity="isDark ? 0.04 : 1"
-          :text-color="isDark ? '#f4f4f5' : '#374151'"
-          line-color="#ffffff"
-          base-color="#525252"
-          :intensity="1"
-          :thickness="1"
-          @click="toggleExecutionEnvDropdown"
-        >
-          <span class="text-xs font-normal">{{ executionEnv }}</span>
-          <svg
-            class="w-3 h-3 text-gray-400 dark:text-zinc-300 transition-transform duration-200"
-            :class="{ 'rotate-180': isExecutionEnvOpen }"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
-        </SpecularButton>
-        <transition name="dropdown-down">
-          <div
-            v-if="isExecutionEnvOpen"
-            :class="[
-              'absolute right-0 mt-1.5 w-32 rounded-xl border shadow-2xl py-1 z-30 text-xs origin-top backdrop-blur-xl',
-              isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.9)]' : 'bg-white border-gray-200 text-gray-800'
-            ]"
-          >
-                        <div
-              v-for="opt in executionEnvOptions"
-              :key="opt.value"
-              @click="handleSelectExecutionEnv(opt.value)"
-              :class="[
-                'px-3 py-1.5 cursor-pointer flex items-center justify-between transition-colors',
-                executionEnvValue === opt.value
-                  ? (isDark ? 'text-sky-400 text-glow-cyan font-medium bg-white/10' : 'text-blue-500 font-medium bg-blue-50')
-                  : (isDark ? 'text-zinc-200 hover:bg-white/10 hover:text-white' : 'text-gray-700 hover:bg-gray-100')
-              ]"
-            >
-              <span>{{ opt.label }}</span>
-              <svg v-if="executionEnvValue === opt.value" class="w-3.5 h-3.5 text-blue-500 dark:text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-          </div>
-        </transition>
-      </div>
-    </div>
-
-    <!-- 检查基础运行能力，不探测项目目录。 -->
-    <div
-      v-if="sandboxStatus"
-      class="py-3 border-b border-gray-100 dark:border-white/10 space-y-2"
-    >
-      <div class="flex items-center justify-between gap-3">
-        <div class="flex flex-col min-w-0">
-          <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">
-            {{ t('settings.general.sandboxService') }}
-          </span>
-          <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">
-            {{ sandboxStatus.message }}
-          </span>
-        </div>
-        <button
-          type="button"
-          :disabled="isCheckingSandbox"
-          @click.stop="checkSandboxService"
-          class="shrink-0 px-3 py-1 rounded-full border text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          :class="isDark
-            ? 'border-white/20 text-zinc-200 hover:bg-white/5'
-            : 'border-gray-300 text-gray-700 hover:bg-gray-50'"
-        >
-          {{ isCheckingSandbox ? t('settings.general.sandboxChecking') : t('settings.general.sandboxCheck') }}
-        </button>
-      </div>
-
-      <p
-        v-if="isCheckingSandbox"
-        class="text-[11px] text-gray-400 dark:text-zinc-400 leading-snug"
-      >{{ t('settings.general.sandboxCheckingHint') }}</p>
-
-      <div
-        v-if="sandboxNotice"
-        class="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs"
-      >{{ sandboxNotice }}</div>
-
-      <div
-        v-if="sandboxError"
-        class="p-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500 text-xs"
-      >{{ sandboxError }}</div>
-    </div>
-
-    <!-- 工作空间权限 -->
-    <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-white/10">
-      <div class="flex flex-col">
-                <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.accessMode') }}</span>
-        <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.accessModeDesc') }}</span>
-      </div>
-      <div class="relative access-mode-dropdown-container" @click.stop>
-        <SpecularButton
-          size="sm"
-          :radius="14"
-          :tint="isDark ? '#ffffff' : '#f0f2f5'"
-          :tint-opacity="isDark ? 0.04 : 1"
-          :text-color="isDark ? '#f4f4f5' : '#374151'"
-          line-color="#ffffff"
-          base-color="#525252"
-          :intensity="1"
-          :thickness="1"
-          @click="toggleAccessModeDropdown"
-        >
-          <span class="text-xs font-normal">{{ currentAccessModeLabel }}</span>
-          <svg
-            class="w-3 h-3 text-gray-400 dark:text-zinc-300 transition-transform duration-200"
-            :class="{ 'rotate-180': isAccessModeOpen }"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
-        </SpecularButton>
-        <transition name="dropdown-down">
-          <div
-            v-if="isAccessModeOpen"
-            :class="[
-              'absolute right-0 mt-1.5 w-72 rounded-2xl border shadow-2xl py-1.5 z-30 text-xs origin-top backdrop-blur-xl',
-              isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.9)]' : 'bg-white border-gray-200 text-gray-800'
-            ]"
-          >
-            <div
-              v-for="opt in accessModeOptions"
-              :key="opt.value"
-              @click="handleSelectAccessMode(opt.value)"
-              :class="[
-                'px-3.5 py-2 cursor-pointer flex items-center justify-between gap-3 transition-colors',
-                accessMode === opt.value
-                  ? (isDark ? 'bg-white/10' : 'bg-blue-50/60')
-                  : (isDark ? 'hover:bg-white/5' : 'hover:bg-gray-100')
-              ]"
-            >
-              <div class="flex flex-col flex-1 min-w-0">
-                <span
-                  class="font-medium"
-                  :class="accessMode === opt.value
-                    ? (isDark ? 'text-sky-400 text-glow-cyan font-semibold' : 'text-blue-500 font-semibold')
-                    : (isDark ? 'text-zinc-200' : 'text-gray-800')"
-                >{{ opt.label }}</span>
-                <span class="text-[11px] mt-0.5 leading-snug" :class="isDark ? 'text-zinc-400' : 'text-gray-400'">{{ opt.desc }}</span>
-              </div>
-              <svg v-if="accessMode === opt.value" class="w-4 h-4 text-blue-500 dark:text-sky-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-          </div>
-        </transition>
-      </div>
-    </div>
-
-    <!-- 工具权限 -->
-    <div class="flex items-center justify-between py-3">
-      <div class="flex flex-col">
-                <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.toolPermission') }}</span>
-        <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.toolPermissionDesc') }}</span>
-      </div>
-      <div class="relative command-policy-dropdown-container" @click.stop>
-        <SpecularButton
-          size="sm"
-          :radius="14"
-          :tint="isDark ? '#ffffff' : '#f0f2f5'"
-          :tint-opacity="isDark ? 0.04 : 1"
-          :text-color="isDark ? '#f4f4f5' : '#374151'"
-          line-color="#ffffff"
-          base-color="#525252"
-          :intensity="1"
-          :thickness="1"
-          @click="toggleCommandApprovalPolicyDropdown"
-        >
-          <span class="text-xs font-normal">{{ currentCommandApprovalPolicyLabel }}</span>
-          <svg
-            class="w-3 h-3 text-gray-400 dark:text-zinc-300 transition-transform duration-200"
-            :class="{ 'rotate-180': isCommandApprovalPolicyOpen }"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
-        </SpecularButton>
-        <transition name="dropdown-up">
-          <div
-            v-if="isCommandApprovalPolicyOpen"
-            :class="[
-              'absolute right-0 bottom-full mb-1.5 w-72 rounded-2xl border shadow-2xl py-1.5 z-30 text-xs origin-bottom-right backdrop-blur-xl',
-              isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.9)]' : 'bg-white border-gray-200 text-gray-800'
-            ]"
-          >
-            <div
-              v-for="opt in commandApprovalPolicyOptions"
-              :key="opt.value"
-              @click="handleSelectCommandApprovalPolicy(opt.value)"
-              :class="[
-                'px-3.5 py-2 cursor-pointer flex items-center justify-between gap-3 transition-colors',
-                commandApprovalPolicy === opt.value
-                  ? (isDark ? 'bg-white/10' : 'bg-blue-50/60')
-                  : (isDark ? 'hover:bg-white/5' : 'hover:bg-gray-100')
-              ]"
-            >
-              <div class="flex flex-col flex-1 min-w-0">
-                <span
-                  class="font-medium"
-                  :class="commandApprovalPolicy === opt.value
-                    ? (isDark ? 'text-sky-400 text-glow-cyan font-semibold' : 'text-blue-500 font-semibold')
-                    : (isDark ? 'text-zinc-200' : 'text-gray-800')"
-                >{{ opt.label }}</span>
-                <span class="text-[11px] mt-0.5 leading-snug" :class="isDark ? 'text-zinc-400' : 'text-gray-400'">{{ opt.desc }}</span>
-              </div>
-              <svg v-if="commandApprovalPolicy === opt.value" class="w-4 h-4 text-blue-500 dark:text-sky-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-          </div>
-        </transition>
-      </div>
-    </div>
-
     <!-- 后端服务地址配置 (桌面客户端 / 局域网服务) -->
     <div class="pt-3 border-t border-gray-100 dark:border-white/10">
       <div class="flex items-center justify-between mb-2">
@@ -475,36 +215,5 @@ const {
 .dropdown-down-leave-to {
   opacity: 0;
   transform: translateY(-6px) scaleY(0.9);
-}
-
-/* 下拉菜单向上展开动画 (右下角对齐触发器) */
-.dropdown-up-enter-active {
-  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  transform-origin: bottom right;
-}
-
-.dropdown-up-leave-active {
-  transition: opacity 0.15s ease-in, transform 0.15s ease-in;
-  transform-origin: bottom right;
-}
-
-.dropdown-up-enter-from {
-  opacity: 0;
-  transform: translateY(8px) scaleY(0.85);
-}
-
-.dropdown-up-enter-to {
-  opacity: 1;
-  transform: translateY(0) scaleY(1);
-}
-
-.dropdown-up-leave-from {
-  opacity: 1;
-  transform: translateY(0) scaleY(1);
-}
-
-.dropdown-up-leave-to {
-  opacity: 0;
-  transform: translateY(6px) scaleY(0.9);
 }
 </style>

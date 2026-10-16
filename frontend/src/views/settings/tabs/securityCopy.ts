@@ -4,6 +4,9 @@ const messages = {
   'zh-CN': {
     scope: '保护范围与限制', fileLimits: '读取、写入、删除统一允许或禁止。普通目录可跨项目访问；卷根及运行资源上层的单个文件保守只读。应用配置与运行资源固定保护；MCP 暂不在本轮隐私隔离范围内。', access: '访问（读 / 写 / 删除）', fileActive: '新建执行生效；运行中的任务保留原策略。', terminalActive: '命令规则保存后用于后续调用，批准后执行也会重新检查禁止规则。未命中时沿用通用设置的命令权限。', mcpScope: 'MCP 第一版沿用宿主连接，尚不受文件隐私拒绝约束。',
     page: '安全中心', files: '文件安全', terminal: '命令安全', net: '网络安全',
+    sandboxTitle: '沙箱安全', sandboxDesc: 'AI 运行于隔离沙箱，并配置文件、命令、网络访问策略。',
+    sandboxOn: '已启用', sandboxOff: '已关闭', sandboxUnset: '未设置', back: '返回',
+    filesDesc: '按优先级控制文件路径的读取、写入和删除', terminalDesc: '按优先级控制命令前缀的放行或询问', netDesc: '普通出站访问默认允许，暂不启用域名过滤',
     preset: '预设', custom: '自定义', allow: '允许', ask: '询问', deny: '禁止', read: '读取', write: '写入', delete: '删除',
     add: '添加', remove: '移除规则', up: '上移', down: '下移', enabled: '启用规则', defaults: '恢复默认',
     save: '保存更改', saving: '保存中…', saved: '已保存', dirty: '有未保存的更改', loading: '正在读取规则…', retry: '重新加载',
@@ -21,6 +24,9 @@ const messages = {
   'en-US': {
     scope: 'Protection scope and limits', fileLimits: 'Read, write and delete share one action. Ordinary directories allow cross-project access. Flat files at volume roots and runtime ancestors remain read-only. Configuration and runtime files stay protected. Host MCP is outside this privacy boundary.', access: 'Access (read / write / delete)', fileActive: 'Applies to new execution sandboxes. Running tasks retain their policy.', terminalActive: 'Command rules apply to subsequent calls. Approved commands are checked again for new denials. Unmatched commands use the general command setting.', mcpScope: 'MCP uses host connections in v1 and is outside native file privacy protection.',
     page: 'Security', files: 'File security', terminal: 'Command security', net: 'Network security',
+    sandboxTitle: 'Sandbox security', sandboxDesc: 'AI runs in an isolated sandbox that governs file, command and network policy.',
+    sandboxOn: 'Enabled', sandboxOff: 'Disabled', sandboxUnset: 'Not set', back: 'Back',
+    filesDesc: 'Control file path read, write and delete by priority', terminalDesc: 'Control command prefix allow or ask decisions by priority', netDesc: 'Outbound access is allowed by default; domain filtering is not available yet',
     preset: 'Preset', custom: 'Custom', allow: 'Allow', ask: 'Ask', deny: 'Deny', read: 'Read', write: 'Write', delete: 'Delete',
     add: 'Add', remove: 'Remove rule', up: 'Move up', down: 'Move down', enabled: 'Enable rule', defaults: 'Reset defaults',
     save: 'Save changes', saving: 'Saving…', saved: 'Saved', dirty: 'Unsaved changes', loading: 'Loading rules…', retry: 'Reload',

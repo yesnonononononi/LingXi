@@ -6,7 +6,7 @@ const props = defineProps<{
   id: string;
   label: string;
   modelValue: string;
-  options: { value: string; label: string }[];
+  options: { value: string; label: string; desc?: string }[];
   disabled?: boolean;
 }>();
 const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>();
@@ -110,10 +110,14 @@ onBeforeUnmount(() => {
       <div v-if="open" :id="`${id}-menu`" ref="panel" role="listbox" :aria-label="label"
         class="settings-select-menu" :class="{ 'opens-up': upward }" :style="position" @pointerdown.prevent>
         <div v-for="(option, index) in options" :id="optionId(index)" :key="option.value" role="option"
-          :aria-selected="option.value === modelValue" class="settings-select-option"
+          :aria-selected="option.value === modelValue" class="settings-select-option" :data-value="option.value"
           :class="{ 'is-active': index === active, 'is-selected': option.value === modelValue }"
           @pointermove="active = index" @click="select(index)">
-          <span class="truncate">{{ option.label }}</span>
+          <span class="flex min-w-0 flex-col">
+            <span :class="option.desc ? 'leading-snug' : 'truncate'">{{ option.label }}</span>
+            <!-- 有 desc 的选项（如工作空间权限的三种模式）必须把取舍一并渲染出来，否则用户只看到档位名 -->
+            <span v-if="option.desc" class="settings-select-option-desc">{{ option.desc }}</span>
+          </span>
           <svg v-if="option.value === modelValue" class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
             <path d="m5 12 4 4L19 6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
@@ -125,7 +129,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 @reference "../../style.css";
-.settings-select-trigger { @apply flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2 text-left text-xs text-gray-800 outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed dark:border-white/15 dark:bg-black/30 dark:text-zinc-100; transition: background-color 160ms, border-color 160ms, box-shadow 160ms; }
+.settings-select-trigger { @apply flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2 text-left text-xs text-gray-800 outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed dark:border-white/15 dark:bg-black/30 dark:text-zinc-100; transition: background-color 160ms, border-color 160ms, box-shadow 160ms; }
 .settings-select-trigger:hover { @apply border-gray-300 bg-gray-50 dark:border-white/30 dark:bg-white/5; }
 .settings-select-trigger:focus-visible, .settings-select-trigger.is-open { @apply border-gray-400 ring-2 ring-gray-200/60 dark:border-white/40 dark:ring-white/10; }
 .settings-select-chevron { @apply h-3.5 w-3.5 shrink-0 text-gray-500 dark:text-zinc-400; transition: transform 180ms ease; }
@@ -135,6 +139,7 @@ onBeforeUnmount(() => {
 .settings-select-option { @apply flex min-h-9 items-center justify-between gap-3 rounded-lg px-3 py-2 cursor-pointer select-none; transition: background-color 120ms, color 120ms; }
 .settings-select-option.is-active { @apply bg-gray-100 text-gray-900 dark:bg-white/10 dark:text-white; }
 .settings-select-option.is-selected { @apply font-medium text-gray-900 dark:text-white; }
+.settings-select-option-desc { @apply mt-0.5 text-[11px] font-normal leading-snug text-gray-400 dark:text-zinc-500; }
 .settings-select-enter-active { transition: opacity 160ms ease-out, transform 160ms ease-out; }
 .settings-select-leave-active { transition: opacity 120ms ease-in, transform 120ms ease-in; pointer-events: none; }
 .settings-select-enter-from, .settings-select-leave-to { opacity: 0; transform: translateY(-4px) scale(0.97); }
