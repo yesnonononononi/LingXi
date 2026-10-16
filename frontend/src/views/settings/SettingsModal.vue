@@ -10,6 +10,8 @@ import AgentsTab from './tabs/AgentsTab.vue';
 import TeamsTab from './tabs/TeamsTab.vue';
 import McpTab from './tabs/McpTab.vue';
 import DataTab from './tabs/DataTab.vue';
+import SecurityTab from './tabs/SecurityTab.vue';
+import { useSecurityCopy } from './tabs/securityCopy';
 import TermsTab from './tabs/TermsTab.vue';
 import AboutTab from './tabs/AboutTab.vue';
 import { useTheme } from '../../composables/useTheme';
@@ -22,6 +24,7 @@ const props = defineProps<{
 
 const { t } = useI18n();
 const personalizationCopy = usePersonalizationCopy();
+const securityCopy = useSecurityCopy();
 
 const { isDark: themeIsDark } = useTheme();
 const isDark = computed(() => themeIsDark.value);
@@ -184,6 +187,14 @@ onBeforeUnmount(() => {
             <span>{{ t('settings.nav.mcp') }}</span>
                     </button>
 
+          <button @click="activeTab = 'security'" type="button"
+            :class="['shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
+              activeTab === 'security' ? (isDark ? 'bg-white/10 text-white border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
+              : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]' : 'text-gray-600 hover:text-gray-900 hover:bg-black/5') ]">
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 3l8 4v5c0 5-8 9-8 9s-8-4-8-9V7l8-4zM8 12l3 3 5-6" /></svg>
+            <span>{{ securityCopy.page }}</span>
+          </button>
+
           <!-- 6. 数据管理 -->
           <button
             @click="activeTab = 'data'"
@@ -245,6 +256,7 @@ onBeforeUnmount(() => {
           <TeamsTab v-else-if="activeTab === 'teams'" :is-dark="isDark" @model-updated="emit('modelUpdated')" />
                     <McpTab v-else-if="activeTab === 'mcp'" :is-dark="isDark" />
           <DataTab v-else-if="activeTab === 'data'" :is-dark="isDark" @clear-sessions="emit('clearSessions')" />
+          <SecurityTab v-else-if="activeTab === 'security'" />
           <TermsTab v-else-if="activeTab === 'terms'" :is-dark="isDark" />
           <AboutTab v-else-if="activeTab === 'about'" :is-dark="isDark" />
         </div>

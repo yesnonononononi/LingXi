@@ -76,7 +76,7 @@ export function normalizeWorkspaceEnvType(raw: unknown): 'SAND_BOX' | 'LOCAL' | 
 }
 
 /** 设置弹窗 Tab */
-export const SETTINGS_TABS = ['general', 'personalization', 'models', 'agents', 'mcp', 'teams', 'data', 'terms', 'about'] as const;
+export const SETTINGS_TABS = ['general', 'personalization', 'models', 'agents', 'mcp', 'teams', 'data', 'security', 'terms', 'about'] as const;
 export type SettingsTabKey = (typeof SETTINGS_TABS)[number];
 
 export function normalizeSettingsTab(raw: unknown, fallback: SettingsTabKey = 'general'): SettingsTabKey {

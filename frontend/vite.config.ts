@@ -20,6 +20,7 @@ const API_PREFIXES = [
   '/interaction',
   '/mcp',
   '/model',
+  '/sandbox',
   '/session',
   '/settings',
   '/team',

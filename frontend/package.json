@@ -40,7 +40,8 @@
     "app:release": "node scripts/release-guard.mjs",
     "test:chat-images": "npx tsx --test tests/chatImages.test.ts",
     "test:chat-images:ui": "electron tests/chatImages.smoke.cjs",
-    "test:chat-message-layout": "electron tests/chatMessageWrapping.smoke.cjs"
+    "test:chat-message-layout": "electron tests/chatMessageWrapping.smoke.cjs",
+    "test:security-ui": "electron tests/securityRules.smoke.cjs"
   },
   "devDependencies": {
     "@guolao/vue-monaco-editor": "^1.6.0",
