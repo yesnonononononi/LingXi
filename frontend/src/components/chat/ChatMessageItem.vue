@@ -485,8 +485,8 @@
           class="w-full my-3 py-1 flex items-center gap-3 select-none relative overflow-hidden context-compact-bar"
           :title="props.message.contextUsage?.tokenCount ? t('chat.message.contextTitle', { used: props.message.contextUsage.tokenCount, max: props.message.contextUsage.maxTokens || 0 }) : t('chat.message.compressing')"
         >
-          <!-- 左侧水平细线 (自动撑满左侧) -->
-          <div class="flex-1 h-[1px] bg-gray-200 dark:bg-gray-700/60"></div>
+          <!-- 两侧等分剩余空间，保证提示始终居中。 -->
+          <div class="flex-1 min-w-0 h-[1px] bg-gray-200 dark:bg-gray-700/60"></div>
 
           <!-- 中间指示内容：带折角便签图标 + 正在压缩上下文 -->
           <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-normal shrink-0">
@@ -501,8 +501,7 @@
             <span class="context-compact-shimmer-text">{{ t('chat.message.compressing') }}</span>
           </div>
 
-          <!-- 右侧水平细线 (左长右短精确对齐截图) -->
-          <div class="w-16 sm:w-28 h-[1px] bg-gray-200 dark:bg-gray-700/60"></div>
+          <div class="flex-1 min-w-0 h-[1px] bg-gray-200 dark:bg-gray-700/60"></div>
 
           <!-- 从左到右扫光光斑层 (Light beam sweep) -->
           <div class="pointer-events-none absolute inset-0 overflow-hidden">
