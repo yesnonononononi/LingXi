@@ -132,7 +132,10 @@ function probeNodeVersion(node) {
  */
 export function ensureMxcSdk(source, frontendRoot, platform = process.platform) {
   const sdkDirectory = path.join(source, ...RUNTIME_LAYOUT.mxcSdk.split('/'));
-  if (fs.existsSync(path.join(sdkDirectory, 'package.json'))) return sdkDirectory;
+  if (fs.existsSync(path.join(sdkDirectory, 'package.json'))) {
+    console.log(`复用随包 MXC SDK: directory=${sdkDirectory}`);
+    return sdkDirectory;
+  }
 
   // npm 把依赖装到 <prefix>/node_modules，因此 prefix 取 mxc 子目录（见 RUNTIME_LAYOUT 说明）。
   const prefix = path.join(source, RUNTIME_LAYOUT.mxc);
@@ -152,9 +155,10 @@ export function ensureMxcSdk(source, frontendRoot, platform = process.platform) 
   for (const key of Object.keys(env)) {
     if (/^npm_config_allow[_-]scripts$/i.test(key)) delete env[key];
   }
+  console.log(`安装随包 MXC SDK: node=${node}, prefix=${prefix}`);
   const result = spawnSync(node, [npmCli, 'ci', '--prefix', prefix, '--omit=dev', '--no-audit', '--no-fund'],
     { stdio: 'inherit', env, windowsHide: true });
-  if (result.status !== 0) throw new Error('MXC SDK 安装失败，请检查网络与 npm 缓存');
+  if (result.error || result.status !== 0) throw new Error(`MXC SDK 安装失败: status=${result.status}, signal=${result.signal}, error=${result.error?.message ?? ''}`);
   if (!fs.existsSync(path.join(sdkDirectory, 'package.json'))) throw new Error('MXC SDK 安装后仍缺失');
   return sdkDirectory;
 }
@@ -197,6 +201,7 @@ export function verifyRuntime(directory, platform = process.platform, options = 
 export function buildSandboxRuntime(frontendRoot, sourceDirectory, options = {}) {
   const platform = options.platform ?? process.platform;
   const source = path.resolve(sourceDirectory ?? process.env[RUNTIME_SOURCE_ENV] ?? runtimeSourceDirectory(frontendRoot, platform));
+  console.log(`校验随包运行资源: source=${source}, hostNode=${process.version}`);
   verifySource(source, platform, options);
   ensureMxcSdk(source, frontendRoot, platform);
 
@@ -212,6 +217,7 @@ export function buildSandboxRuntime(frontendRoot, sourceDirectory, options = {})
     fs.rmSync(existing, { recursive: true, force: true });
   }
   fs.mkdirSync(destination);
+  console.log(`暂存随包运行资源: destination=${destination}`);
 
   // 暂存清单来自 node/srt/git 的安装过程，不属于随包资源。
   const transient = new Set(['package.json', 'package-lock.json', 'mxc-deployment.json']);
@@ -230,5 +236,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
     const source = process.argv.slice(2).find(arg => arg.startsWith('--source='))?.slice(9);
     console.log(`随包运行资源已暂存: ${buildSandboxRuntime(frontendRoot, source)}`);
-  } catch (error) { console.error(error.message); process.exitCode = 1; }
+  } catch (error) { console.error(error.stack ?? error.message); process.exitCode = 1; }
 }
