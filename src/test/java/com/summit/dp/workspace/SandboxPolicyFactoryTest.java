@@ -23,7 +23,8 @@ class SandboxPolicyFactoryTest {
             assertEquals(project, spec.workDir());
             assertEquals(LocalInstance.ID, spec.scope());
             assertEquals(mode == AgentAccessMode.IN_WORKSPACE, spec.writable());
-            assertTrue(spec.readonlyPaths().isEmpty(), "项目根目录由 writable 标志授权，不能再叠加只读授权");
+            assertTrue(spec.securityPolicy().deniedPaths().stream().anyMatch(path -> path.endsWith("/.ssh")), "隐私预设必须进入原生拒绝策略");
+            assertTrue(spec.securityPolicy().allowOutboundNetwork());
             assertTrue(spec.readwritePaths().isEmpty(), "沙箱不开放额外项目外目录");
         }
     }
@@ -57,10 +58,12 @@ class SandboxPolicyFactoryTest {
         assertThrows(UnsupportedOperationException.class, () -> spec.environment().put("LANG", "changed"));
     }
 
-    @Test void fullAccessIsRejectedBeforeAnySandboxPolicyCanBeReturned() {
+    @Test void writableModesBothKeepNativePrivacyDenials() {
         SandboxPolicyFactory factory = new SandboxPolicyFactory(Map.of());
-        ClientException failure = assertThrows(ClientException.class,
-                () -> factory.build(temporary.toString(), AgentAccessMode.OUT_OF_WORKSPACE));
-        assertEquals("当前沙箱不支持完全访问，请使用本地模式", failure.getMessage());
+        MxcWorkspaceSpec ordinary = factory.build(temporary.toString(), AgentAccessMode.IN_WORKSPACE);
+        MxcWorkspaceSpec full = factory.build(temporary.toString(), AgentAccessMode.OUT_OF_WORKSPACE);
+        assertEquals(ordinary.securityPolicy(), full.securityPolicy());
+        assertFalse(full.securityPolicy().deniedPaths().isEmpty());
+        assertTrue(full.writable());
     }
 }

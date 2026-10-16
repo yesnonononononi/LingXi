@@ -2,7 +2,6 @@ package com.summit.dp.workspace;
 
 import com.summit.core.workspace.WorkspaceSpec;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.shared.model.WorkspaceType;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
@@ -35,15 +34,16 @@ class WorkspaceConverterTest {
         assertFalse(readonly.writable());
         assertTrue(readonly.readwritePaths().isEmpty());
         assertTrue(writable.readwritePaths().isEmpty());
-        assertTrue(writable.readonlyPaths().isEmpty());
-        assertTrue(readonly.readonlyPaths().isEmpty());
+        assertFalse(writable.readonlyPaths().contains(temporary.toString()));
+        assertEquals(writable.readonlyPaths(), readonly.readonlyPaths());
         assertEquals(temporary.toString(), readonly.workDir());
         assertEquals(writable.environment(), readonly.environment());
     }
-    @Test void fullAccessRequiresExplicitLocalEnvironmentSelection() {
-        ClientException failure = assertThrows(ClientException.class, () -> converter().toSpec(new Workspace(1L,"project",temporary.toString()),
-                WorkspaceType.SAND_BOX, AgentAccessMode.OUT_OF_WORKSPACE));
-        assertEquals("当前沙箱不支持完全访问，请使用本地模式", failure.getMessage());
+    @Test void projectOutsideModeStillKeepsPrivacyDenials() {
+        MxcWorkspaceSpec spec = (MxcWorkspaceSpec) converter().toSpec(new Workspace(1L,"project",temporary.toString()),
+                WorkspaceType.SAND_BOX, AgentAccessMode.OUT_OF_WORKSPACE);
+        assertTrue(spec.writable());
+        assertFalse(spec.securityPolicy().deniedPaths().isEmpty());
     }
     @Test void localAndSandboxModesUseNativeHostPaths() {
         WorkspaceSpec local = converter().toSpec(new Workspace(1L,"project",temporary.toString()), WorkspaceType.LOCAL, AgentAccessMode.OUT_OF_WORKSPACE);
@@ -60,13 +60,13 @@ class WorkspaceConverterTest {
         assertEquals(spec, mapper.readValue(json, WorkspaceSpec.class));
     }
 
-    @Test void projectPathIsNormalizedBeforeItBecomesTheOnlySandboxGrant() {
+    @Test void projectPathIsNormalizedWhileNativePrivacyPolicyIsRetained() {
         Path project = temporary.resolve("项目 workspace");
         Workspace workspace = new Workspace(1L, "project", project.resolve("nested/..").toString());
         MxcWorkspaceSpec spec = (MxcWorkspaceSpec) converter().toSpec(workspace, WorkspaceType.SAND_BOX, null);
         assertEquals(project.toString(), spec.workDir());
         assertTrue(spec.writable());
-        assertTrue(spec.readonlyPaths().isEmpty());
+        assertFalse(spec.securityPolicy().deniedPaths().isEmpty());
         assertTrue(spec.readwritePaths().isEmpty());
     }
 }

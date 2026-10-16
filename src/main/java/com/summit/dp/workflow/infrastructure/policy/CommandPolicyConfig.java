@@ -1,6 +1,9 @@
 package com.summit.dp.workflow.infrastructure.policy;
 
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.sandbox_security.domain.model.SecurityAction;
+import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
+import com.summit.dp.sandbox_security.application.TerminalSecurityPolicy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.workspace.ShellType;
@@ -25,15 +28,19 @@ import org.springframework.context.annotation.Configuration;
  * <p><b>职责边界（评审 P1-④）：</b>本类只做装配；「读命令 → 判定 → 登记 → 发事件」的业务编排
  * 由 {@link CommandApprovalRegistrar} 承担，可脱离 Spring 上下文测试。</p>
  */
-@Configuration
+@Configuration(proxyBeanMethods = false)
 public class CommandPolicyConfig {
 
     /** 本业务的挂起话题：框架不知道它的含义，前端按它渲染审批卡片。 */
     public static final String APPROVAL_TOPIC = "command.approval";
 
+    public ToolExecutionPolicy commandApprovalPolicy(ObjectMapper mapper, CommandApprovalRegistrar approvalRegistrar) {
+        return commandApprovalPolicy(mapper, approvalRegistrar, null);
+    }
     @Bean
     public ToolExecutionPolicy commandApprovalPolicy(ObjectMapper mapper,
-                                                     CommandApprovalRegistrar approvalRegistrar) {
+                                                     CommandApprovalRegistrar approvalRegistrar,
+                                                     TerminalSecurityPolicy security) {
         return execution -> {
             if (execution.getToolDefinition() == null
                     || !(execution.getToolDefinition().executor() instanceof CommandToolDefinitionExecutor)) {
@@ -60,7 +67,13 @@ public class CommandPolicyConfig {
                         + "不允许审批放行，请改写命令或由用户自行执行。");
             }
 
-            if (!requiresApproval(CommandApprovalPolicy.from(execution.getAttributes()), verdict)) {
+            SecurityDecision decision = security == null ? null : security.evaluate(command);
+            if (decision != null && decision.action() == SecurityAction.DENY) {
+                return ToolExecuteResult.err("命令被安全规则禁止：" + decision.matchedRule());
+            }
+            boolean ask = decision == null ? requiresApproval(CommandApprovalPolicy.from(execution.getAttributes()), verdict)
+                    : decision.action() == SecurityAction.ASK;
+            if (!ask) {
                 return null;
             }
 

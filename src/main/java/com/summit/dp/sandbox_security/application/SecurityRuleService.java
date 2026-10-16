@@ -1,6 +1,6 @@
 package com.summit.dp.sandbox_security.application;
 
-import com.summit.core.runtime.security.SecurityAction;
+import com.summit.dp.sandbox_security.domain.model.SecurityAction;
 import com.summit.dp.sandbox_security.domain.model.SecurityCategory;
 import com.summit.dp.sandbox_security.domain.model.SecurityRule;
 import com.summit.dp.sandbox_security.domain.model.SecurityRuleSet;
@@ -33,6 +33,7 @@ public class SecurityRuleService {
         SecurityCategory selected = parseCategory(category);
         return view(selected, repositories.get(selected).current());
     }
+    public List<SecurityRule> rules(SecurityCategory category) { return validate(category, repositories.get(category).current().getRules()); }
     public List<SecurityRule> defaults(String category) { return SecurityRulePresets.defaults(parseCategory(category)); }
     public SecurityRuleView save(String category, SaveRules request) {
         SecurityCategory selected = parseCategory(category);
@@ -65,6 +66,8 @@ public class SecurityRuleService {
                     throwIf(rule.read() == null || rule.write() == null || rule.delete() == null, "请分别设置读取、写入和删除权限");
                     throwIf(rule.read() == SecurityAction.ASK || rule.write() == SecurityAction.ASK || rule.delete() == SecurityAction.ASK,
                             "第一版尚未实现文件审批，请选择允许或禁止");
+                    throwIf(rule.read() != rule.write() || rule.read() != rule.delete(), "原生隐私拒绝会同时禁止读取、写入和删除，请统一选择允许或禁止");
+                    throwIf(pattern.equals("**") && rule.read() == SecurityAction.DENY, "不能禁止整个文件系统，否则沙箱运行资源也无法读取");
                     throwIf(rule.action() != null, "文件规则应使用独立的读取、写入和删除权限");
                     throwIf(!keys.add(key), "保护路径重复");
                 }
@@ -109,7 +112,8 @@ public class SecurityRuleService {
             case NET -> List.of(SecurityAction.ALLOW);
         };
         return new SecurityRuleView(category.name().toLowerCase(Locale.ROOT), model.getRevision(), model.getRules(), supported,
-                category == SecurityCategory.TERMINAL ? SecurityAction.ASK : SecurityAction.ALLOW, "CONFIGURATION_ONLY");
+                category == SecurityCategory.TERMINAL ? SecurityAction.ASK : SecurityAction.ALLOW,
+                category == SecurityCategory.FILES ? "NATIVE_NEXT_WORKSPACE" : category == SecurityCategory.TERMINAL ? "IMMEDIATE" : "OUTBOUND_OPEN");
     }
     private void throwIf(boolean condition, String message) { if (condition) throw new ClientException(message); }
     public record SaveRules(long revision, List<SecurityRule> rules) { }

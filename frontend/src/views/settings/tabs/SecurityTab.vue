@@ -15,13 +15,12 @@ const pattern = ref('');
 const matchType = ref<'PROGRAM' | 'PREFIX'>('PREFIX');
 const current = computed(() => tables[category.value]);
 const categories: SecurityCategory[] = ['files', 'terminal', 'net'];
-const operations = ['read', 'write', 'delete'] as const;
 const panel = 'rounded-2xl border border-gray-200 dark:border-white/10 bg-gray-50/70 dark:bg-white/[0.025] p-4';
 const control = 'rounded-lg border border-gray-200 dark:border-white/15 bg-white dark:bg-zinc-950 text-gray-700 dark:text-zinc-200 px-2 py-1.5 text-xs';
 const button = 'rounded-lg border border-gray-200 dark:border-white/15 px-2.5 py-1.5 text-xs hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed';
 function label(action: SecurityAction) { return copy.value[action === 'ALLOW' ? 'allow' : action === 'ASK' ? 'ask' : 'deny']; }
 function validate(view: SecurityRuleView | undefined, selected: SecurityCategory): asserts view is SecurityRuleView {
-  if (!view || view.activation !== 'CONFIGURATION_ONLY' || view.category !== selected || !Number.isSafeInteger(view.revision) || view.revision < 0
+  if (!view || !['NATIVE_NEXT_WORKSPACE', 'IMMEDIATE', 'OUTBOUND_OPEN'].includes(view.activation) || view.category !== selected || typeof view.revision !== 'string' || !/^(0|[1-9]\d*)$/.test(view.revision)
     || !Array.isArray(view.rules) || !Array.isArray(view.supportedActions) || !view.supportedActions.length
     || view.supportedActions.some(action => !['ALLOW', 'ASK', 'DENY'].includes(action))
     || view.rules.some(rule => typeof rule.pattern !== 'string' || typeof rule.enabled !== 'boolean')) throw new Error(copy.value.contractError);
@@ -41,6 +40,7 @@ async function select(selected: SecurityCategory) {
   if (!tables[selected]) await load(selected);
 }
 function change() { dirty[category.value] = true; notice.value = ''; error.value = ''; }
+function changeFile(rule: SecurityRule) { rule.write = rule.read; rule.delete = rule.read; change(); }
 function add() {
   if (!pattern.value.trim()) { error.value = copy.value.invalidPattern; return; }
   if (!current.value || category.value === 'net') return;
@@ -89,12 +89,13 @@ onMounted(() => load());
       <div class="flex flex-wrap items-center justify-between gap-2"><h4 class="text-xs font-semibold">{{ copy[category] }}</h4>
         <button v-if="category !== 'net' && current" type="button" :class="button" :disabled="busy" @click="reset" data-testid="security-reset">{{ copy.defaults }}</button></div>
       <p class="mt-2 text-xs leading-6 text-gray-500 dark:text-zinc-400">{{ copy[category === 'files' ? 'fileHint' : category === 'terminal' ? 'terminalHint' : 'netHint'] }}</p>
+      <details v-if="category === 'files'" class="mt-2 text-[11px] leading-5 text-gray-500 dark:text-zinc-400"><summary class="cursor-pointer">{{ copy.scope }}</summary><p class="mt-2">{{ copy.fileLimits }}</p></details>
     </section>
     <div v-if="error" role="alert" class="text-xs leading-5 text-red-600 dark:text-red-400" data-testid="security-error">{{ error }}
       <button type="button" :class="[button, 'ml-2']" :disabled="busy" @click="load()">{{ copy.retry }}</button></div>
     <p v-if="busy" role="status" class="text-xs text-gray-500">{{ copy.loading }}</p>
     <template v-if="current">
-      <p v-if="current.activation === 'CONFIGURATION_ONLY'" role="status" class="rounded-xl border border-amber-200 dark:border-amber-900/60 p-3 text-xs leading-6 text-amber-800 dark:text-amber-300">{{ copy.pending }}</p>
+      <p role="status" class="text-xs leading-6 text-gray-500 dark:text-zinc-400">{{ copy[category === 'files' ? 'fileActive' : category === 'terminal' ? 'terminalActive' : 'mcpScope'] }}</p>
       <section v-if="category === 'net'" :class="panel" data-testid="security-net-allow">
         <div class="flex items-center gap-2 text-xs font-semibold"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500" />{{ copy.netStatus }}</div>
         <p class="mt-2 text-xs leading-6 text-gray-500 dark:text-zinc-400">{{ copy.netDetail }}</p>
@@ -118,9 +119,9 @@ onMounted(() => load());
             <button type="button" :class="button" :aria-label="copy.remove" @click="remove(index)">×</button>
           </div>
           <div class="flex justify-end flex-wrap gap-2">
-            <template v-if="category === 'files'"><label v-for="operation in operations" :key="operation" class="flex items-center gap-1 text-[11px] text-gray-500 dark:text-zinc-400">{{ copy[operation] }}
-              <select v-model="rule[operation]" @change="change" :class="control" :aria-label="`${rule.pattern} ${copy[operation]}`"><option v-for="action in current.supportedActions" :key="action" :value="action">{{ label(action) }}</option></select>
-            </label></template>
+            <label v-if="category === 'files'" class="flex items-center gap-2 text-[11px] text-gray-500 dark:text-zinc-400">{{ copy.access }}
+              <select v-model="rule.read" @change="changeFile(rule)" :class="control" :aria-label="`${rule.pattern} ${copy.access}`"><option v-for="action in current.supportedActions" :key="action" :value="action">{{ label(action) }}</option></select>
+            </label>
             <select v-else v-model="rule.action" @change="change" :class="control" :aria-label="rule.pattern"><option v-for="action in current.supportedActions" :key="action" :value="action">{{ label(action) }}</option></select>
           </div>
         </div>

@@ -1,6 +1,9 @@
 package com.summit.dp.workspace;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.dp.sandbox_security.domain.model.SecurityAction;
+import com.summit.dp.sandbox_security.domain.model.SecurityRule;
+import java.util.List;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecuteResult;
@@ -23,11 +26,11 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-/** 现有宿主 ACL 不能成为绕过项目读取边界的额外授权来源。 */
+/** 宿主通用 ACL 可以开放普通路径，但不能覆盖原生隐私拒绝。 */
 class SandboxAmbientReadBoundaryTest {
     @TempDir Path temporary;
 
-    @Test void ungrantedAsciiFileMustRemainUnreadableWhenItsHostAclAllowsApplicationPackages() throws Exception {
+    @Test void privateAsciiFileRemainsUnreadableEvenWhenHostAclAllowsApplicationPackages() throws Exception {
         assumeTrue(System.getProperty("os.name").toLowerCase().contains("windows"), "仅验证 Windows 宿主 ACL");
         String node = System.getProperty("mxc.node");
         String sdk = System.getProperty("mxc.sdk");
@@ -46,14 +49,17 @@ class SandboxAmbientReadBoundaryTest {
         SandboxProperties properties = new SandboxProperties(temporary.resolve("runtime"), node, sdk,
                 Duration.ofSeconds(30), Duration.ofSeconds(30), Map.of());
         Workspace workspace = new ConfiguredSandboxWorkspaceProvider(properties).resolve(
-                new SandboxPolicyFactory(properties.environment()).build(project.toString(), AgentAccessMode.IN_WORKSPACE));
+                new SandboxPolicyFactory(properties.environment(),
+                        () -> List.of(new SecurityRule(sharedDirectory.toString(), "PATH", SecurityAction.DENY,
+                                SecurityAction.DENY, SecurityAction.DENY, null, true, null)),
+                        temporary.resolve("config"), properties.applicationDirectory()).build(project.toString(), AgentAccessMode.IN_WORKSPACE));
         ObjectMapper mapper = new ObjectMapper();
         ReadFileToolExecutor reader = new ReadFileToolExecutor(mapper);
         ToolExecuteResult insideRead = read(reader, mapper, workspace, inside);
         assertTrue(insideRead.isSuccess(), insideRead.getToolOutput());
         assertEquals("project-canary", insideRead.getToolOutput());
         ToolExecuteResult ordinaryRead = read(reader, mapper, workspace, ordinary);
-        assertFalse(ordinaryRead.isSuccess(), ordinaryRead.getToolOutput());
+        assertTrue(ordinaryRead.isSuccess(), ordinaryRead.getToolOutput());
         assertFalse(ordinaryRead.getToolOutput().contains("MalformedInputException"));
         ToolExecuteResult sharedRead = read(reader, mapper, workspace, shared);
         CommandToolDefinitionExecutor terminal = new CommandToolDefinitionExecutor(mapper);

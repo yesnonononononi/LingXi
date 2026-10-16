@@ -42,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
         "lingxi.data.dir=D:/Code/LingXi/.run/tmp/ctx-verify/data",
         "lingxi.skill.dir=",
         "lingxi.mcp.enabled=false",
+        "lingxi.config.sandbox-security.directory=.run/tmp/ctx-verify/security",
         "lingxi.config.user-configs.path=D:/Code/LingXi/.run/tmp/ctx-verify/user-configs.json",
         "lingxi.config.mcp.path=D:/Code/LingXi/.run/tmp/ctx-verify/mcp.json",
         "lingxi.config.model.path=D:/Code/LingXi/.run/tmp/ctx-verify/models.json",
@@ -60,7 +61,10 @@ class ApplicationContextAssemblyTest {
 
     @Test
     void allConfigurationRepositoriesUseJsonStorage() {
-        assertEquals(4, context.getBeansOfType(AbstractJsonRepository.class).size());
+        assertEquals(7, context.getBeansOfType(AbstractJsonRepository.class).size());
+        assertTrue(context.getBean("securityFilesRepository") instanceof AbstractJsonRepository);
+        assertTrue(context.getBean("securityTerminalRepository") instanceof AbstractJsonRepository);
+        assertTrue(context.getBean("securityNetRepository") instanceof AbstractJsonRepository);
     }
 
     @Test

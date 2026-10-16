@@ -40,7 +40,7 @@ class ExecutionJsonTest {
             assertEquals(spec, restoredSpec);
             assertEquals(mode, AgentAccessMode.from(restored.getAgentRequest().runtimeParametersOrDefault().getAttributes()));
             assertEquals(mode == AgentAccessMode.IN_WORKSPACE, restoredSpec.writable());
-            assertTrue(restoredSpec.readonlyPaths().isEmpty());
+            assertFalse(restoredSpec.securityPolicy().deniedPaths().isEmpty());
             assertTrue(restoredSpec.readwritePaths().isEmpty());
         }
     }

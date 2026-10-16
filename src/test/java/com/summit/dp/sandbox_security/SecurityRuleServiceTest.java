@@ -1,6 +1,6 @@
 package com.summit.dp.sandbox_security;
 
-import com.summit.core.runtime.security.SecurityAction;
+import com.summit.dp.sandbox_security.domain.model.SecurityAction;
 import com.summit.dp.sandbox_security.application.SecurityRulePresets;
 import com.summit.dp.sandbox_security.application.SecurityRuleService;
 import com.summit.dp.sandbox_security.application.SecurityRuleService.SaveRules;
@@ -37,7 +37,7 @@ class SecurityRuleServiceTest {
     @Test void seedsThreeSeparateTablesAndRoundTripsCustomRules() throws Exception {
         SecurityRuleService service = service();
         assertEquals(8, service.current("files").rules().size());
-        assertEquals("CONFIGURATION_ONLY", service.current("files").activation());
+        assertEquals("NATIVE_NEXT_WORKSPACE", service.current("files").activation());
         assertEquals(6, service.current("terminal").rules().size());
         assertEquals(SecurityAction.ALLOW, service.current("net").rules().getFirst().action());
         SecurityRule custom = file(directory.resolve("中文隐私").toString(), SecurityAction.DENY);
@@ -77,6 +77,11 @@ class SecurityRuleServiceTest {
         SecurityRuleService service = service();
         SecurityRule catchAll = file("**", SecurityAction.ALLOW);
         assertEquals(List.of(catchAll), service.save("files", new SaveRules(0, List.of(catchAll))).rules());
+    }
+    @Test void mixedFileActionsCannotPretendToProvideIndependentNativePermissions() {
+        SecurityRule mixed = new SecurityRule(directory.toString(), "PATH", SecurityAction.DENY,
+                SecurityAction.ALLOW, SecurityAction.ALLOW, null, true, null);
+        assertThrows(ClientException.class, () -> service().save("files", new SaveRules(0, List.of(mixed))));
     }
     @Test void defaultsAreADraftAndDoNotOverwriteSavedRules() {
         SecurityRuleService service = service();

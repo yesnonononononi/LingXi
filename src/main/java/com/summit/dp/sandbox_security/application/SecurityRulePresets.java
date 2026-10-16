@@ -1,6 +1,6 @@
 package com.summit.dp.sandbox_security.application;
 
-import com.summit.core.runtime.security.SecurityAction;
+import com.summit.dp.sandbox_security.domain.model.SecurityAction;
 import com.summit.dp.sandbox_security.domain.model.SecurityCategory;
 import com.summit.dp.sandbox_security.domain.model.SecurityRule;
 import java.util.ArrayList;

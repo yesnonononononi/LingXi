@@ -1,26 +1,53 @@
 package com.summit.dp.workspace.application.policy;
 
-import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.sandbox_security.domain.model.SecurityAction;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.sandbox_security.application.SecurityRulePresets;
+import com.summit.dp.sandbox_security.application.SecurityRuleService;
+import com.summit.dp.sandbox_security.domain.model.SecurityCategory;
+import com.summit.dp.sandbox_security.domain.model.SecurityRule;
 import com.summit.sandbox.mxc.MxcWorkspaceSpec;
+import com.summit.sandbox.mxc.MxcSecurityPolicy;
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
-/** 项目外授权由部署提供，不能把“完全访问”扩大为整个磁盘。 */
+/** 隐私拒绝下沉到原生策略；Windows 普通路径不再按项目围栏。 */
 public final class SandboxPolicyFactory {
     private final Map<String, String> environment;
-
-    public SandboxPolicyFactory( Map<String, String> environment) {
-        this.environment = Map.copyOf(environment);
+    private final Supplier<List<SecurityRule>> fileRules;
+    private final Path configDirectory;
+    private final Path applicationDirectory;
+    public SandboxPolicyFactory(Map<String, String> environment) {
+        this(environment, () -> SecurityRulePresets.defaults(SecurityCategory.FILES),
+                Path.of(System.getProperty("user.home"), ".lingxi", "config"), null);
     }
-
-    /** 工作区授权只声明一次，额外目录交给安全中心显式配置。 */
+    public SandboxPolicyFactory(Map<String, String> environment, Supplier<List<SecurityRule>> fileRules,
+                                Path configDirectory, Path applicationDirectory) {
+        this.environment = Map.copyOf(environment);
+        this.fileRules = fileRules;
+        this.configDirectory = configDirectory.toAbsolutePath().normalize();
+        this.applicationDirectory = applicationDirectory;
+    }
     public MxcWorkspaceSpec build(String workDir, AgentAccessMode accessMode) {
         AgentAccessMode effective = accessMode == null ? AgentAccessMode.DEFAULT : accessMode;
-        throwIf(effective.allowsOutsideWrite(), "当前沙箱不支持完全访问，请使用本地模式");
-        return new MxcWorkspaceSpec(workDir, LocalInstance.ID, List.of(), List.of(),
-                environment, effective.allowsWriteTools());
+        List<String> denied = new ArrayList<>(fileRules.get().stream()
+                .filter(rule -> rule.enabled() && rule.read() == SecurityAction.DENY)
+                .map(rule -> SecurityRuleService.expandPath(rule.pattern())).toList());
+        denied.add(configDirectory.toString());
+        List<String> readonly = new ArrayList<>();
+        if (applicationDirectory != null && Files.isDirectory(applicationDirectory)) readonly.add(applicationDirectory.toString());
+        Path stateDirectory = Path.of(System.getProperty("user.home"), ".lingxi");
+        if (Files.isDirectory(stateDirectory)) readonly.add(stateDirectory.toString());
+        boolean windows = File.separatorChar == '\\';
+        List<String> volumes = windows ? Arrays.stream(File.listRoots()).map(File::getAbsolutePath).toList() : List.of();
+        return new MxcWorkspaceSpec(workDir, LocalInstance.ID, readonly, List.of(), environment,
+                effective.allowsWriteTools(), new MxcSecurityPolicy(denied, volumes, true));
     }
-    private void throwIf(boolean condition, String message) { if (condition) throw new ClientException(message); }
 }

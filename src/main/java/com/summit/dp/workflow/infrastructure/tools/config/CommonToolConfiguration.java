@@ -1,6 +1,7 @@
 package com.summit.dp.workflow.infrastructure.tools.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.dp.sandbox_security.application.TerminalSecurityPolicy;
 
 import com.summit.dp.workflow.infrastructure.tools.config.properties.WebSearchToolProperties;
 import com.summit.core.conf.ModelConfig;
@@ -35,13 +36,13 @@ import java.net.http.HttpClient;
 public class CommonToolConfiguration {
     @Bean
     @ConditionalOnMissingBean(name = "executeCommandToolDefinition")
-    public ToolDefinition<CommandToolDefinitionExecutor> executeCommandToolDefinition(ObjectMapper objectMapper) {
+    public ToolDefinition<CommandToolDefinitionExecutor> executeCommandToolDefinition(ObjectMapper objectMapper, TerminalSecurityPolicy security) {
         String name = "execute_command";
         // SERIAL_MUTATION：终端命令一律串行，不参与并发窗口。
         // 框架判据是「整批请求全都 allowConcurrent 才并发」（DefaultToolExecutionManager#canExecuteConcurrently），
         // 故模型在同一轮里发起的多条命令会在同一线程上顺序执行，不会互相抢占工作区。
         return ToolDefinition.<CommandToolDefinitionExecutor>builder()
-                .executor(new CommandToolDefinitionExecutor(objectMapper))
+                .executor(new CommandToolDefinitionExecutor(objectMapper, security))
                 .id(name)
                 .concurrentPolicy(ConcurrentPolicy.SERIAL_MUTATION)
                 .name(name)

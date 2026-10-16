@@ -7,12 +7,11 @@ import com.summit.core.conf.McpConfig;
 import com.summit.core.mcp.McpSession;
 import com.summit.core.mcp.McpSessionType;
 import com.summit.core.mcp.McpToolScope;
-import com.summit.core.mcp.ScopeMcpProvider;
-import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecutor;
 import com.summit.dp.mcp.application.service.McpConfigAssembler;
 import com.summit.dp.mcp.application.service.McpConnectionRegistry;
+import com.summit.dp.mcp.application.service.McpSessionRegistry;
 import com.summit.dp.mcp.application.vo.McpConnectionVO;
 import com.summit.dp.mcp.domain.model.Mcp;
 import com.summit.dp.mcp.domain.repository.McpRepository;
@@ -36,7 +35,7 @@ import java.util.concurrent.*;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class McpManager implements ScopeMcpProvider, McpConnectionRegistry {
+public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
 
     private static final long RUNTIME_TIMEOUT_GRACE_SECONDS = 5L;
     private final McpRepository repository;
@@ -129,12 +128,6 @@ public class McpManager implements ScopeMcpProvider, McpConnectionRegistry {
                 .map(session -> (McpSession) session)
                 .toList();
         return McpToolScope.of(available);
-    }
-
-    @Override
-    public McpToolScope openScope(@NonNull McpConfig mcpConfig, Workspace workspace) {
-        // 沙箱适配完善前保留宿主 MCP 能力，文件与命令工具仍使用原工作区隔离。
-        return openScope(mcpConfig);
     }
 
     @PreDestroy

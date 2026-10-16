@@ -1,6 +1,9 @@
 package com.summit.dp.workflow.infrastructure.tools.terminal;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.summit.dp.sandbox_security.domain.model.SecurityAction;
+import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
+import com.summit.dp.sandbox_security.application.TerminalSecurityPolicy;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.runtime.workspace.Workspace;
@@ -21,6 +24,8 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class CommandToolDefinitionExecutor implements ToolExecutor {
     private final ObjectMapper objectMapper;
+    private final TerminalSecurityPolicy security;
+    public CommandToolDefinitionExecutor(ObjectMapper mapper) { this(mapper, null); }
 
     @Override
     public @NonNull ToolExecuteResult execute(ToolExecution toolExecution) {
@@ -42,6 +47,11 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
                         + "rephrase it or ask the user to run it themselves", ToolResultType.NORMAL, buildMetadata(request));
             }
 
+            // 审批后再次执行也走这里，最新禁止规则不能被旧审批绕过。
+            SecurityDecision decision = security == null ? null : security.evaluate(request.getCommand());
+            if (decision != null && decision.action() == SecurityAction.DENY) {
+                return ToolExecuteResult.err("命令被安全规则禁止：" + decision.matchedRule());
+            }
             // execute
             return process(request, toolExecution.getWorkspace(), toolExecution.getToolDefinition());
 

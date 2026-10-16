@@ -15,17 +15,17 @@ export interface SecurityRule {
 }
 export interface SecurityRuleView {
   category: SecurityCategory;
-  revision: number;
+  revision: string;
   rules: SecurityRule[];
   supportedActions: SecurityAction[];
   defaultAction: SecurityAction;
-  activation: 'CONFIGURATION_ONLY';
+  activation: 'NATIVE_NEXT_WORKSPACE' | 'IMMEDIATE' | 'OUTBOUND_OPEN';
 }
 export class SecurityRulesAPI {
   static current(category: SecurityCategory): Promise<Result<SecurityRuleView>> {
     return http.get(`/sandbox/security/${category}`);
   }
-  static save(category: SecurityCategory, revision: number, rules: SecurityRule[]): Promise<Result<SecurityRuleView>> {
+  static save(category: SecurityCategory, revision: string, rules: SecurityRule[]): Promise<Result<SecurityRuleView>> {
     return http.put(`/sandbox/security/${category}`, { revision, rules });
   }
   static defaults(category: SecurityCategory): Promise<Result<SecurityRule[]>> {

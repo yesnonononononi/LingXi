@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { app, BrowserWindow } = require('electron');
+app.disableHardwareAcceleration();
 const output = path.resolve(__dirname, '../node_modules/.tmp/security-rules');
 app.setPath('userData', path.join(output, 'profile'));
 app.on('window-all-closed', () => {});
@@ -17,9 +18,9 @@ import '../../../src/style.css';
 const file = {pattern:'%USERPROFILE%/.ssh', matchType:'PATH', read:'DENY', write:'DENY', delete:'DENY', action:null, enabled:true, preset:'.ssh'};
 const terminal = {pattern:'reg', matchType:'PROGRAM', read:null, write:null, delete:null, action:'DENY', enabled:true, preset:'reg'};
 const backend = {
- files:{activation:'CONFIGURATION_ONLY',category:'files',revision:4,rules:[file],supportedActions:['ALLOW','DENY'],defaultAction:'ALLOW'},
- terminal:{activation:'CONFIGURATION_ONLY',category:'terminal',revision:2,rules:[terminal],supportedActions:['ALLOW','ASK','DENY'],defaultAction:'ASK'},
- net:{activation:'CONFIGURATION_ONLY',category:'net',revision:0,rules:[{pattern:'**',matchType:'ANY',action:'ALLOW',enabled:true,preset:'default-allow'}],supportedActions:['ALLOW'],defaultAction:'ALLOW'}
+ files:{activation:'NATIVE_NEXT_WORKSPACE',category:'files',revision:'4',rules:[file],supportedActions:['ALLOW','DENY'],defaultAction:'ALLOW'},
+ terminal:{activation:'IMMEDIATE',category:'terminal',revision:'2',rules:[terminal],supportedActions:['ALLOW','ASK','DENY'],defaultAction:'ASK'},
+ net:{activation:'OUTBOUND_OPEN',category:'net',revision:'0',rules:[{pattern:'**',matchType:'ANY',action:'ALLOW',enabled:true,preset:'default-allow'}],supportedActions:['ALLOW'],defaultAction:'ALLOW'}
 };
 window.fixture = { fail:false, saves:[], backend };
 SecurityRulesAPI.current = async category => ({code:1,data:structuredClone(backend[category])});
@@ -27,7 +28,7 @@ SecurityRulesAPI.defaults = async category => ({code:1,data:structuredClone(cate
 SecurityRulesAPI.save = async (category,revision,rules) => {
  window.fixture.saves.push({category,revision,rules:structuredClone(rules.map(r=>({...r})))});
  if(window.fixture.fail) throw new Error('fixture failure');
- backend[category] = {...backend[category],revision:revision+1,rules:rules.map(r=>({...r}))};
+ backend[category] = {...backend[category],revision:String(BigInt(revision)+1n),rules:rules.map(r=>({...r}))};
  return {code:1,data:structuredClone(backend[category])};
 };
 const {setTheme} = useTheme(); window.setDark = value => setTheme(value ? 'dark' : 'light');
@@ -54,12 +55,15 @@ setTheme('light');
   assert.equal(await evaluate('[...document.querySelectorAll("[data-testid=security-rule] select option")].some(o=>o.value==="ASK")'),true);
   await click('[data-testid=security-tab-files]');
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=security-rule]").length'),2,'切页保留未保存草稿');
+  await evaluate('const select=document.querySelector("[data-testid=security-rule] select");select.value="ALLOW";select.dispatchEvent(new Event("change",{bubbles:true}))');
+  await settle();
   await evaluate('window.fixture.fail=true'); await click('[data-testid=security-save]');
   assert.ok(await evaluate('!!document.querySelector("[data-testid=security-error]")'));
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=security-rule]").length'),2);
-  assert.equal(await evaluate('window.fixture.saves[0].revision'),4);
+  assert.equal(await evaluate('window.fixture.saves[0].revision'),'4');
+  assert.equal(await evaluate('JSON.stringify([window.fixture.saves[0].rules[0].read,window.fixture.saves[0].rules[0].write,window.fixture.saves[0].rules[0].delete])'),'["ALLOW","ALLOW","ALLOW"]','原生访问动作必须统一保存读写删除');
   await evaluate('window.fixture.fail=false'); await click('[data-testid=security-save]');
-  assert.equal(await evaluate('window.fixture.backend.files.revision'),5);
+  assert.equal(await evaluate('window.fixture.backend.files.revision'),'5');
   assert.equal(await evaluate('document.querySelector("[data-testid=security-save]").disabled'),true);
   await click('[data-testid=security-reset]');
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=security-rule]").length'),1);

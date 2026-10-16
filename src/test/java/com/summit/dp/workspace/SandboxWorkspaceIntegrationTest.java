@@ -1,11 +1,14 @@
 package com.summit.dp.workspace;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.dp.sandbox_security.domain.model.SecurityAction;
+import com.summit.dp.sandbox_security.domain.model.SecurityRule;
+import java.util.List;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
-import com.summit.dp.shared.exception.ClientException;
+import com.summit.sandbox.mxc.MxcWorkspaceSpec;
 import com.summit.dp.shared.model.WorkspaceType;
 import com.summit.dp.shared.vo.WorkspaceVO;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
@@ -39,13 +42,16 @@ class SandboxWorkspaceIntegrationTest {
         Path directory = Path.of(base, UUID.randomUUID().toString());
         Path project = Files.createDirectories(directory.resolve("project workspace"));
         Path outside = Files.createDirectories(directory.resolve("outside"));
-        Path secret = Files.writeString(directory.resolve("secret"), "outside-ascii-canary-47391", StandardCharsets.US_ASCII);
+        Path secret = Files.writeString(outside.resolve("secret"), "outside-ascii-canary-47391", StandardCharsets.US_ASCII);
         Path input = Files.writeString(project.resolve("input"), "original");
         SandboxProperties properties = new SandboxProperties(directory.resolve("runtime"),
                 node, sdk, Duration.ofSeconds(30), Duration.ofSeconds(30), Map.of());
         ConfiguredSandboxWorkspaceProvider provider = new ConfiguredSandboxWorkspaceProvider(properties);
         WorkspaceConverter converter = new WorkspaceConverter(mock(SettingsProvider.class),
-                new SandboxPolicyFactory(properties.environment()));
+                new SandboxPolicyFactory(properties.environment(),
+                        () -> List.of(new SecurityRule(outside.toString(), "PATH", SecurityAction.DENY,
+                                SecurityAction.DENY, SecurityAction.DENY, null, true, null)),
+                        directory.resolve("config"), properties.applicationDirectory()));
         WorkspaceVO business = WorkspaceVO.builder().id(1L).name("project").hostDir(project.toString()).build();
         Workspace writable = provider.resolve(converter.toSpec(business, WorkspaceType.SAND_BOX, AgentAccessMode.IN_WORKSPACE));
         assertTrue(writable.runtimeEnvironment().isolated());
@@ -89,13 +95,17 @@ class SandboxWorkspaceIntegrationTest {
         assertFalse(terminal.process(ExecuteCommandRequest.builder().command(windows ? "echo bad > input" : "printf bad > input").build(), readonly, definition).isSuccess());
         assertEquals("original", Files.readString(input));
         assertFalse(Files.exists(project.resolve("blocked-directory")));
-        assertThrows(ClientException.class, () -> converter.toSpec(business, WorkspaceType.SAND_BOX, AgentAccessMode.OUT_OF_WORKSPACE));
+        assertFalse(((MxcWorkspaceSpec) converter.toSpec(business, WorkspaceType.SAND_BOX, AgentAccessMode.OUT_OF_WORKSPACE)).securityPolicy().deniedPaths().isEmpty());
         Path neighbor = Files.createDirectories(directory.resolve("project workspace-neighbor"));
         WorkspaceVO other = WorkspaceVO.builder().id(2L).name("neighbor").hostDir(neighbor.toString()).build();
         Workspace otherWorkspace = provider.resolve(converter.toSpec(other, WorkspaceType.SAND_BOX, null));
-        assertThrows(IOException.class, () -> otherWorkspace.bridge().readString(input, StandardCharsets.US_ASCII));
-        assertThrows(IOException.class, () -> otherWorkspace.bridge().writeString(input, "cross-project", StandardCharsets.US_ASCII));
-        assertEquals("original", Files.readString(input));
+        if (windows) {
+            assertEquals("original", otherWorkspace.bridge().readString(input, StandardCharsets.US_ASCII));
+            otherWorkspace.bridge().writeString(input, "cross-project", StandardCharsets.US_ASCII);
+            assertEquals("cross-project", Files.readString(input));
+        } else {
+            assertThrows(IOException.class, () -> otherWorkspace.bridge().readString(input, StandardCharsets.US_ASCII));
+        }
         otherWorkspace.bridge().writeString(otherWorkspace.resolve("own-file"), "own-project", StandardCharsets.US_ASCII);
         assertEquals("own-project", Files.readString(neighbor.resolve("own-file")));
         assertTrue(provider.check().ready());

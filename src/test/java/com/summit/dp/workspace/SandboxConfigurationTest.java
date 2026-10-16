@@ -3,6 +3,10 @@ package com.summit.dp.workspace;
 import com.summit.core.workspace.BasicWorkspaceSpec;
 import com.summit.core.workspace.WorkspaceResolver;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.sandbox_security.application.SecurityRuleService;
+import com.summit.dp.sandbox_security.application.SecurityRulePresets;
+import com.summit.dp.sandbox_security.domain.model.SecurityCategory;
+import static org.mockito.Mockito.*;
 import com.summit.dp.workflow.infrastructure.config.SandboxConfiguration;
 import com.summit.dp.workflow.infrastructure.config.SandboxProperties;
 import com.summit.dp.workspace.application.service.SandboxService;
@@ -26,7 +30,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class SandboxConfigurationTest {
     @TempDir Path temporary;
     private final ApplicationContextRunner contexts = new ApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(WorkspaceAutoConfiguration.class)).withUserConfiguration(SandboxConfiguration.class);
+            .withBean(SecurityRuleService.class, () -> {
+                SecurityRuleService service = mock(SecurityRuleService.class);
+                when(service.rules(SecurityCategory.FILES)).thenReturn(SecurityRulePresets.defaults(SecurityCategory.FILES));
+                return service;
+            }).withConfiguration(AutoConfigurations.of(WorkspaceAutoConfiguration.class)).withUserConfiguration(SandboxConfiguration.class);
 
     @Test void developmentProfileLoadsPreparedRuntimeWithoutCommandLinePaths() throws Exception {
         assumeTrue(Boolean.getBoolean("mxc.development"), "需要准备本机开发运行资源");
@@ -81,10 +89,10 @@ class SandboxConfigurationTest {
             MxcWorkspaceSpec spec = factory.build(temporary.resolve("project").toString(), AgentAccessMode.IN_WORKSPACE);
             assertEquals(properties.environment(), spec.environment());
             assertEquals("C.UTF-8", spec.environment().get("LANG"));
-            assertTrue(spec.readonlyPaths().isEmpty());
+            assertFalse(spec.securityPolicy().deniedPaths().isEmpty());
             assertTrue(spec.readwritePaths().isEmpty());
             assertFalse(factory.build(spec.workDir(), AgentAccessMode.READ_ONLY_IN_WORKSPACE).writable());
-            assertThrows(ClientException.class, () -> factory.build(spec.workDir(), AgentAccessMode.OUT_OF_WORKSPACE));
+            assertFalse(factory.build(spec.workDir(), AgentAccessMode.OUT_OF_WORKSPACE).securityPolicy().deniedPaths().isEmpty());
             assertTrue(context.getBean(SandboxService.class).inspect().configured());
             assertFalse(context.getBean(SandboxService.class).inspect().ready());
         });

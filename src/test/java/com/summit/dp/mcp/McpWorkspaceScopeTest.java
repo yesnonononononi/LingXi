@@ -1,5 +1,7 @@
 package com.summit.dp.mcp;
 
+import com.summit.dp.workflow.infrastructure.mcp.HostMcpScopeProvider;
+
 import com.summit.adapter.langchain4j.mcp.McpClientFactory;
 import com.summit.core.conf.McpConfig;
 import com.summit.core.mcp.McpToolScope;
@@ -35,7 +37,7 @@ class McpWorkspaceScopeTest {
         Mcp stdio = model(1, "stdio"), http = httpModel();
         McpClient hostStdio = register(stdio), hostHttp = register(http);
         for (int i = 0; i < 2; i++) {
-            try (McpToolScope scope = manager.openScope(config(stdio, http), workspace)) {
+            try (McpToolScope scope = new HostMcpScopeProvider(manager).openScope(config(stdio, http), workspace)) {
                 assertNotNull(scope.getTool("mcp_stdio_inspect"));
                 assertNotNull(scope.getTool("mcp_http_inspect"));
                 assertEquals(List.of("http", "stdio"), scope.serverNames());
@@ -51,7 +53,7 @@ class McpWorkspaceScopeTest {
     @Test void providerDoesNotRequireAnyWorkspaceCapability() {
         Mcp stdio = model(1, "stdio");
         register(stdio);
-        try (McpToolScope scope = manager.openScope(config(stdio), workspace)) {
+        try (McpToolScope scope = new HostMcpScopeProvider(manager).openScope(config(stdio), workspace)) {
             assertNotNull(scope.getTool("mcp_stdio_inspect"));
         }
         verifyNoInteractions(workspace);
@@ -63,7 +65,7 @@ class McpWorkspaceScopeTest {
         McpConfig old = config(model);
         model.changeEnabled(false);
         manager.register(model.getId());
-        assertTrue(manager.openScope(old, workspace).isEmpty());
+        assertTrue(new HostMcpScopeProvider(manager).openScope(old, workspace).isEmpty());
         verify(shared).close();
         verify(factory, times(1)).create(anyString(), any());
         verify(factory, never()).create(anyString(), any(), any());
@@ -72,21 +74,21 @@ class McpWorkspaceScopeTest {
     @Test void workspaceStillReceivesOnlyRequestedServices() {
         Mcp first = model(1, "first"), second = model(2, "second");
         register(first); register(second);
-        try (McpToolScope scope = manager.openScope(config(second), workspace)) {
+        try (McpToolScope scope = new HostMcpScopeProvider(manager).openScope(config(second), workspace)) {
             assertNull(scope.getTool("mcp_first_inspect"));
             assertNotNull(scope.getTool("mcp_second_inspect"));
         }
     }
 
     @Test void missingPooledConnectionDoesNotStartAnotherProcess() {
-        assertTrue(manager.openScope(config(model(1, "stdio")), workspace).isEmpty());
+        assertTrue(new HostMcpScopeProvider(manager).openScope(config(model(1, "stdio")), workspace).isEmpty());
         verifyNoInteractions(factory);
     }
 
     @Test void nullWorkspaceUsesTheSamePool() {
         Mcp model = model(1, "stdio");
         register(model);
-        try (McpToolScope scope = manager.openScope(config(model), null)) {
+        try (McpToolScope scope = new HostMcpScopeProvider(manager).openScope(config(model), null)) {
             assertNotNull(scope.getTool("mcp_stdio_inspect"));
         }
     }

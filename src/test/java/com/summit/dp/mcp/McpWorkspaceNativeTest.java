@@ -1,5 +1,7 @@
 package com.summit.dp.mcp;
 
+import com.summit.dp.workflow.infrastructure.mcp.HostMcpScopeProvider;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.adapter.langchain4j.mcp.McpClientFactory;
 import com.summit.core.conf.McpConfig;
@@ -51,7 +53,7 @@ class McpWorkspaceNativeTest {
         Workspace workspace = workspace(root);
         try {
             manager.register(1L);
-            try (McpToolScope scope = manager.openScope(config(model), workspace)) {
+            try (McpToolScope scope = new HostMcpScopeProvider(manager).openScope(config(model), workspace)) {
                 ToolDefinition<?> tool = scope.getTool("mcp_business_inspect");
                 assertNotNull(tool);
                 assertEquals("中文参数", call(tool, workspace, Map.of("value", "中文参数")));
@@ -61,7 +63,7 @@ class McpWorkspaceNativeTest {
             assertTrue(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false));
             model.changeEnabled(false);
             manager.register(1L);
-            assertTrue(manager.openScope(config(model), workspace).isEmpty());
+            assertTrue(new HostMcpScopeProvider(manager).openScope(config(model), workspace).isEmpty());
             for (int i = 0; i < 100 && ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false); i++) Thread.sleep(20);
             assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false));
         } finally { manager.close(); manager.disconnect(); }
@@ -81,11 +83,11 @@ class McpWorkspaceNativeTest {
             Workspace workspace = workspace(directory);
             try {
                 manager.register(2L);
-                try (McpToolScope scope = manager.openScope(config(model), workspace)) {
+                try (McpToolScope scope = new HostMcpScopeProvider(manager).openScope(config(model), workspace)) {
                     assertNotNull(scope.getTool("mcp_remote_http_echo"));
                 }
                 manager.remove(2L);
-                assertTrue(manager.openScope(config(model), workspace).isEmpty());
+                assertTrue(new HostMcpScopeProvider(manager).openScope(config(model), workspace).isEmpty());
             } finally { manager.close(); manager.disconnect(); }
             verify(workspace, never()).bridge();
         }
