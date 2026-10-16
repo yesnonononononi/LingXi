@@ -35,8 +35,8 @@ public class ToolConfig {
     public ToolDefinition<RequireChoiceToolExecutor> requireChoiceTool(
             RequireChoiceToolExecutor executor) {
         return ToolDefinition.<RequireChoiceToolExecutor>builder()
-                .id("require_choice")
-                .name("require_choice")
+                .id(ToolCatalog.REQUIRE_CHOICE)
+                .name(ToolCatalog.REQUIRE_CHOICE)
                 .executor(executor)
                 .concurrentPolicy(ConcurrentPolicy.READ_ONLY)
                 .description("Ask the user a question and wait for an explicit answer.")

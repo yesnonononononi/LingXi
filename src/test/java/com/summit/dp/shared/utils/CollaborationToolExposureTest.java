@@ -121,10 +121,10 @@ class CollaborationToolExposureTest {
     void defaultAgentGetsTheBasicTools() {
         AgentRequest request = request(null, null, ToolCatalog.DEFAULT_AGENT_TOOLS, REGISTERED, true);
 
-        assertEquals(List.of("execute_command", "read_file", "edit_file", "web_search",
+        assertEquals(List.of("execute_command", "read_file", "edit_file", "web_search", "require_choice",
                         ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.SEARCH_TOOL),
                 request.getToolList(),
-                "终端 + 文件读写 + 联网检索，外加两级 MCP 发现入口；协作工具不该出现（这里给了也调不动）");
+                "基础工具包含用户确认，外加两级 MCP 发现入口；协作工具不该出现");
     }
 
     @Test
@@ -132,7 +132,7 @@ class CollaborationToolExposureTest {
     void defaultAgentWithoutMcpGetsExactlyTheBasicTools() {
         AgentRequest request = request(null, null, ToolCatalog.DEFAULT_AGENT_TOOLS, REGISTERED, false);
 
-        assertEquals(List.of("execute_command", "read_file", "edit_file", "web_search"),
+        assertEquals(List.of("execute_command", "read_file", "edit_file", "web_search", "require_choice"),
                 request.getToolList());
     }
 
@@ -140,9 +140,10 @@ class CollaborationToolExposureTest {
     @DisplayName("只读档位：禁用编辑工具，保留终端及只读工具")
     void readOnlyModeDisablesEditingAndKeepsTerminal() {
         AgentRequest request = request(null, null, ToolCatalog.DEFAULT_AGENT_TOOLS, REGISTERED, false,
-                AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of("read_file", "web_search"));
+                AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of("read_file", "web_search", "require_choice"));
 
-        assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.READ_FILE, ToolCatalog.WEB_SEARCH),
+        assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.READ_FILE, ToolCatalog.WEB_SEARCH,
+                        ToolCatalog.REQUIRE_CHOICE),
                 request.getToolList(), "只读档禁用 edit_file，终端不按并发策略被剔除");
     }
 

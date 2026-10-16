@@ -30,10 +30,12 @@ public interface ToolCatalog {
     /** 联网检索工具名 */
     String WEB_SEARCH = "web_search";
 
+    String REQUIRE_CHOICE = "require_choice";
+
     /**
-     * 默认 Agent（不指定团队、也不指定具体 Agent）的基础工具清单：终端 + 文件读写 + 联网检索。
+     * 默认 Agent 的基础工具无需团队或 Agent 身份，用户确认工具也应随基础能力提供。
      *
-     * <p>这四项是「能干活」的最小集合，且都不带身份前置条件——不需要团队、不需要 Agent 绑定，
+     * <p>这些工具都不带身份前置条件——不需要团队、不需要 Agent 绑定，
      * 所以裸模型档位给了就能用。协作类工具刻意不在列：它们要么需要团队（{@code call_sub_agent}），
      * 要么需要发件人身份（{@code send_mail_to_agent}），给了也只会一调用就报错。</p>
      *
@@ -41,7 +43,7 @@ public interface ToolCatalog {
      * 只读模式保留终端，禁用编辑工具；终端写入副作用不由档位保证。</p>
      */
     List<String> DEFAULT_AGENT_TOOLS =
-            List.of(EXECUTE_COMMAND, READ_FILE, EDIT_FILE, WEB_SEARCH);
+            List.of(EXECUTE_COMMAND, READ_FILE, EDIT_FILE, WEB_SEARCH, REQUIRE_CHOICE);
 
     /**
      * 工具检索工具名。实现归框架侧（{@code harness-kernel-tools} 的 {@link SearchToolExecutor}），
