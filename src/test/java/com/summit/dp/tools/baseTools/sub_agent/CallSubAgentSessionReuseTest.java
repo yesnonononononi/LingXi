@@ -28,6 +28,7 @@ import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgent
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.result.AsyncDelegationResultRenderer;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionResolver;
 import com.summit.dp.workspace.application.service.WorkspaceService;
+import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -89,7 +90,7 @@ class CallSubAgentSessionReuseTest {
 
         SubSessionResolver subSessionResolver = new SubSessionResolver(sessionRepository, modelContextService);
         SubAgentRequestFactory requestFactory = new SubAgentRequestFactory(workspaceService, modelService,
-                settingsProvider, null, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""));
+                settingsProvider, mock(WorkspaceConverter.class), new SkillRootResolver(""), new BusinessSystemPromptBuilder(""));
         this.tool = new CallSubAgentTool(new ObjectMapper(), agentService, teamService, requestFactory,
                 subSessionResolver, registry, sessionRepository, asyncSubmitter,
                 new AsyncDelegationResultRenderer(new ObjectMapper()));
@@ -148,7 +149,7 @@ class CallSubAgentSessionReuseTest {
 
         ToolExecuteResult result = tool.execute(toolExecution());
 
-        assertTrue(result.isSuccess(), "复用路径不应失败");
+        assertTrue(result.isSuccess(), result.getToolOutput());
         AsyncDelegationTask task = captureSubmittedTask();
         assertTrue(task.target().reused(), "命中已有子会话必须标记复用");
         assertEquals(EXISTING_SUB_SESSION_ID, task.numericSubSessionId(), "复用同一子会话 id");
@@ -167,7 +168,7 @@ class CallSubAgentSessionReuseTest {
 
         ToolExecuteResult result = tool.execute(toolExecution());
 
-        assertTrue(result.isSuccess());
+        assertTrue(result.isSuccess(), result.getToolOutput());
         AsyncDelegationTask task = captureSubmittedTask();
         assertFalse(task.target().reused(), "未命中必须标记首派");
         assertNotNull(task.numericSubSessionId());
@@ -187,7 +188,7 @@ class CallSubAgentSessionReuseTest {
 
         ToolExecuteResult result = tool.execute(toolExecution());
 
-        assertTrue(result.isSuccess());
+        assertTrue(result.isSuccess(), result.getToolOutput());
         AsyncDelegationTask task = captureSubmittedTask();
         assertTrue(task.target().reused(), "上下文缺失也必须复用同一子会话，不得另派生");
         assertEquals(EXISTING_SUB_SESSION_ID, task.numericSubSessionId());

@@ -1,5 +1,8 @@
 package com.summit.dp.session;
 
+import com.summit.ddd.application.vo.Result;
+import com.summit.dp.model.application.vo.ModelConfigVO;
+
 import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.core.conf.ModelConfig;
@@ -82,6 +85,8 @@ class SessionTeamBindingTest {
     }
 
     private void stubPrepareHappyPath() {
+        when(modelService.findById(anyLong())).thenAnswer(invocation -> Result.success(
+                ModelConfigVO.builder().id(invocation.getArgument(0, Long.class)).build()));
         when(modelContextService.find(SESSION_ID)).thenReturn(Optional.empty());
         when(modelService.runtimeConfig(anyLong(), any())).thenReturn(
                 ModelConfig.builder().baseUrl("https://example.invalid").apiKey("test-key")
@@ -231,6 +236,6 @@ class SessionTeamBindingTest {
     }
 
     private static SettingsView settingsWithAgent(Long agentId) {
-        return new SettingsView(null, null, null, null, null, agentId, null, null, null, 10);
+        return new SettingsView(null, null, null, null, 99L, agentId, null, null, null, 10);
     }
 }

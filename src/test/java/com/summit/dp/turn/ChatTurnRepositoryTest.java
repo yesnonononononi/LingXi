@@ -141,6 +141,7 @@ class ChatTurnRepositoryTest {
     @Test
     void usageDetailsRoundTripWithoutDoubleCountingOrNullClobbering() throws Exception {
         ChatTurn turn = save(7091L, ChatTurnStatus.COMPLETED, EXECUTION_ID);
+        Instant persistedCompletedAt = repository.findById(turn.getId()).orElseThrow().getCompletedAt();
         ChatTurnServiceImpl service = new ChatTurnServiceImpl(repository);
         TransactionTemplate transaction = new TransactionTemplate(new DataSourceTransactionManager(database));
         transaction.executeWithoutResult(status -> service.refreshUsage("9001", 100L, 50L, 150L, 70L, 20L, SESSION_ID));
@@ -155,7 +156,7 @@ class ChatTurnRepositoryTest {
         assertEquals(70L, loaded.getCacheTokens());
         assertEquals(0L, loaded.getReasoningTokens());
         assertEquals(ChatTurnStatus.COMPLETED, loaded.getStatus());
-        assertEquals(turn.getCompletedAt().toEpochMilli(), loaded.getCompletedAt().toEpochMilli());
+        assertEquals(persistedCompletedAt, loaded.getCompletedAt());
 
         ChatTurnVO view = new ChatTurnConverter().toVO(loaded, Instant.now());
         ObjectMapper json = new ObjectMapper().findAndRegisterModules();
