@@ -128,7 +128,9 @@ setTheme('light');
 
   // 深浅色与窄屏：两档都不许横向溢出
   for(const [name,width,dark] of [['light',1000,false],['dark',1000,true],['compact',400,false],['compact-dark',400,true]]) {
-    window.setContentSize(width,800);await evaluate(`window.setDark(${dark})`);await settle();
+    // DOM 帧完成不代表离屏窗口已完成缩放，立即截图会触发 UnknownVizError。
+    window.setContentSize(width,800);await evaluate(`window.setDark(${dark})`);await settle();await wait(300);
+    assert.equal(await evaluate('innerWidth'),width,'截图前渲染视口必须完成尺寸切换');
     const bounds=await evaluate('({width:document.documentElement.scrollWidth,viewport:innerWidth,center:document.querySelector("[data-testid=security-center]").getBoundingClientRect().width})');
     assert.ok(bounds.width<=bounds.viewport+1,JSON.stringify(bounds));assert.ok(bounds.center>200,JSON.stringify(bounds));
     await fs.writeFile(path.join(output,name+'.png'),(await window.webContents.capturePage()).toPNG());
