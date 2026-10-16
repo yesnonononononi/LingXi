@@ -73,7 +73,24 @@ public final class TextNormalizer {
             }
             norm++;
         }
+        // 规范化把起点落在行首空白后的第一个保留字符上；调用方是字面拼接，
+        // 若此处不消费掉原缩进，文件缩进会与 newText 自带缩进叠加成翻倍，故左扩过同一行的前导空白。
+        if (start > 0) {
+            int left = start;
+            while (left > 0 && isIndentWhitespace(content.charAt(left - 1))) {
+                left--;
+            }
+            start = left;
+        }
         return new Match(start, end);
+    }
+
+    /**
+     * 行内缩进空白：与 {@code normalize} 判空白口径一致，但显式排除换行符，
+     * 以免左扩时越过行界、吞掉上一行的实际内容。
+     */
+    private static boolean isIndentWhitespace(char c) {
+        return Character.isWhitespace(c) && c != '\n' && c != '\r';
     }
 
     private static boolean isKept(char c) {
