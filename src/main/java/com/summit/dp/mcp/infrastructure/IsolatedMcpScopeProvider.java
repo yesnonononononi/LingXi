@@ -44,7 +44,7 @@ final class IsolatedMcpScopeProvider {
                         try { client.close(); }
                         catch (Exception cleanup) { failure.addSuppressed(cleanup); }
                     }
-                    log.warn("创建沙箱 MCP 会话失败: name={}, error={}", server.name(), failure.getClass().getSimpleName());
+                    log.warn("创建沙箱 MCP 会话失败: name={}, error={}", server.name(), failure.getMessage());
                 }
             }
             return McpToolScope.of(sessions);
