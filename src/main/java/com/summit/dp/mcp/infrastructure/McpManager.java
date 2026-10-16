@@ -31,7 +31,7 @@ import java.util.Map;
 import java.util.concurrent.*;
 
 /**
- * 本地请求复用已就绪连接，沙箱请求独立创建受限会话。
+ * MCP 暂不进入工作区沙箱，请求统一复用进程级连接。
  */
 @Slf4j
 @Component
@@ -133,16 +133,8 @@ public class McpManager implements ScopeMcpProvider, McpConnectionRegistry {
 
     @Override
     public McpToolScope openScope(@NonNull McpConfig mcpConfig, Workspace workspace) {
-        if (workspace == null || !workspace.runtimeEnvironment().isolated()) return openScope(mcpConfig);
-        IsolatedMcpScopeProvider provider = new IsolatedMcpScopeProvider(clientFactory);
-        provider.validate(mcpConfig, workspace);
-        if (mcpConfig.getMcp() == null || mcpConfig.getMcp().isEmpty()) return McpToolScope.EMPTY;
-        // 旧请求快照不能重新开启已停用或已替换的服务。
-        List<McpConfig.MCP> available = repository.findEnabled().stream()
-                .map(assembler::toServer)
-                .filter(mcpConfig.getMcp()::contains)
-                .toList();
-        return provider.openScope(available, workspace);
+        // 沙箱适配完善前保留宿主 MCP 能力，文件与命令工具仍使用原工作区隔离。
+        return openScope(mcpConfig);
     }
 
     @PreDestroy

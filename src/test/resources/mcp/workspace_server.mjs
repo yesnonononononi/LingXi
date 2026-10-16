@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import readline from 'node:readline';
 
-fs.writeFileSync('server.pid', String(process.pid));
+fs.writeFileSync(process.env.MCP_TEST_PID_FILE ?? 'server.pid', String(process.pid));
 for await (const line of readline.createInterface({input: process.stdin})) {
   const message = JSON.parse(line);
   if (!Object.hasOwn(message, 'id')) continue;
