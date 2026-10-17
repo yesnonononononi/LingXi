@@ -6,6 +6,7 @@ import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.RuntimeEnvironment;
+import com.summit.core.runtime.workspace.LocalWorkspaceBridge;
 import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceBridge;
@@ -21,9 +22,6 @@ import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecordRestore
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.IOException;
-import java.nio.charset.Charset;
-import java.util.concurrent.TimeUnit;
 import java.nio.file.Path;
 import java.util.Map;
 
@@ -103,7 +101,7 @@ class EditFileToolExecutorMetaDataTest {
 
             @Override
             public WorkspaceBridge bridge() {
-                return new LocalBridge();
+                return new LocalWorkspaceBridge(ShellType.BASH);
             }
         };
         return ToolExecution.builder()
@@ -116,42 +114,4 @@ class EditFileToolExecutorMetaDataTest {
                 .build();
     }
 
-    /** 直通本地文件系统（@TempDir）的最小桥：入参路径已经过 Workspace.resolve，直接使用。 */
-    private static final class LocalBridge implements WorkspaceBridge {
-        @Override
-        public boolean exists(Path path) {
-            return java.nio.file.Files.exists(path);
-        }
-
-        @Override
-        public void createDirectories(Path path) throws IOException {
-            java.nio.file.Files.createDirectories(path);
-        }
-
-        @Override
-        public void deleteFile(Path path) throws IOException {
-            java.nio.file.Files.deleteIfExists(path);
-        }
-
-        @Override
-        public String readString(Path path, Charset charset) throws IOException {
-            return java.nio.file.Files.readString(path, charset);
-        }
-
-        @Override
-        public java.util.List<String> readLines(Path path, Charset charset) throws IOException {
-            return java.nio.file.Files.readAllLines(path, charset);
-        }
-
-        @Override
-        public void writeString(Path path, String content, Charset charset) throws IOException {
-            java.nio.file.Files.writeString(path, content, charset);
-        }
-
-        @Override
-        public CommandResult execute(String command, String workDir, Charset charset,
-                                     long timeoutSeconds, TimeUnit unit, long maxOutputChars) {
-            throw new UnsupportedOperationException("not needed in this test");
-        }
-    }
 }

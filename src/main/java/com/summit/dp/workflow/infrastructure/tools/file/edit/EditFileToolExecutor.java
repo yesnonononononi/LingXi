@@ -3,7 +3,7 @@ package com.summit.dp.workflow.infrastructure.tools.file.edit;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.workspace.Workspace;
-import com.summit.core.runtime.workspace.WorkspaceBridge;
+import com.summit.core.runtime.workspace.WorkspaceFiles;
 import com.summit.core.tool.*;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DiffResult;
 import com.summit.dp.workflow.infrastructure.tools.file.record.Differ;
@@ -54,12 +54,12 @@ public class EditFileToolExecutor implements ToolExecutor {
     }
 
     private EditOutcome applyEdit(EditFileRequest request, Workspace workspace) throws IOException {
-        WorkspaceBridge bridge = workspace.bridge();
+        WorkspaceFiles files = workspace.bridge().files();
         Charset charset = StandardCharsets.UTF_8;
         Path target = workspace.resolve(request.getPath());
 
-        boolean existed = bridge.exists(target);
-        String oldContent = existed ? bridge.readString(target, charset) : null;
+        boolean existed = files.exists(target);
+        String oldContent = existed ? files.readString(target, charset) : null;
 
         FileEditorResult editRes = FileEditor.edit(request, oldContent == null ? "" : oldContent, charset, DEFAULT_AROUND_LINE);
 
@@ -68,10 +68,10 @@ public class EditFileToolExecutor implements ToolExecutor {
         }
 
         Path parent = target.getParent();
-        if (parent != null && !bridge.exists(parent)) {
-            bridge.createDirectories(parent);
+        if (parent != null && !files.exists(parent)) {
+            files.createDirectories(parent);
         }
-        bridge.writeString(target, editRes.getData().newContent(), charset);
+        files.writeString(target, editRes.getData().newContent(), charset);
 
         return EditOutcome.success(request.getPath(), existed, oldContent,
                 editRes.getData().newContent(), differ.diff(request.getPath(), oldContent == null ? "" : oldContent, editRes.getData().newContent()));

@@ -6,6 +6,8 @@ import com.summit.core.runtime.workspace.LocalWorkspaceBridge;
 import com.summit.core.runtime.workspace.OsType;
 import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.runtime.workspace.Workspace;
+import com.summit.core.runtime.workspace.WorkspaceBridge;
+import com.summit.core.runtime.workspace.WorkspaceFiles;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.dp.workflow.infrastructure.tools.arguments.EditFileRequest;
@@ -52,6 +54,27 @@ class FileToolEncodingTest {
         assertReads(gbkWorkspace(), 1, 2, "\n末行🙂");
     }
 
+    @Test void readUsesTheSelectedFileCapabilityWithoutRequiringAHostFile() throws Exception {
+        Path remote = root.resolve("remote-only.txt");
+        Workspace workspace = mock(Workspace.class);
+        WorkspaceBridge bridge = mock(WorkspaceBridge.class);
+        WorkspaceFiles files = mock(WorkspaceFiles.class);
+        when(workspace.resolve("remote-only.txt")).thenReturn(remote);
+        when(workspace.bridge()).thenReturn(bridge);
+        when(bridge.files()).thenReturn(files);
+        when(files.readString(remote, StandardCharsets.UTF_8)).thenReturn(ORIGINAL);
+        ReadFileRequest request = ReadFileRequest.builder().path("remote-only.txt").build();
+
+        ToolExecuteResult result = new ReadFileToolExecutor(mapper).execute(ToolExecution.builder()
+                .workspace(workspace).args(mapper.writeValueAsString(request)).build());
+
+        assertTrue(result.isSuccess(), result.getToolOutput());
+        assertEquals(ORIGINAL, result.getToolOutput());
+        assertFalse(Files.exists(remote));
+        verify(files).readString(remote, StandardCharsets.UTF_8);
+        verify(bridge, never()).commands();
+    }
+
     @Test void editingExistingFileKeepsUtf8Bytes() throws Exception {
         assertEdits(gbkWorkspace(), true);
     }
@@ -76,7 +99,7 @@ class FileToolEncodingTest {
         assertTrue(workspace.runtimeEnvironment().isolated());
         System.out.println("沙箱终端编码: " + workspace.runtimeEnvironment().charset());
         if (runtime.windows()) {
-            assertTrue(workspace.bridge().execute("echo 中文", workspace.workDir(), workspace.runtimeEnvironment().charset(),
+            assertTrue(workspace.bridge().commands().execute("echo 中文", workspace.workDir(), workspace.runtimeEnvironment().charset(),
                     10, TimeUnit.SECONDS, 4096).output().contains("中文"));
         }
         assertReads(workspace, null, null, ORIGINAL);

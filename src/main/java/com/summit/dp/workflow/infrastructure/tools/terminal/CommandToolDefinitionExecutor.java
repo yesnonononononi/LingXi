@@ -7,7 +7,7 @@ import com.summit.dp.sandbox_security.application.TerminalSecurityPolicy;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.runtime.workspace.Workspace;
-import com.summit.core.runtime.workspace.WorkspaceBridge;
+import com.summit.core.runtime.workspace.WorkspaceCommands;
 import com.summit.core.tool.*;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ExecuteCommandRequest;
 import lombok.Getter;
@@ -63,7 +63,7 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
     public ToolExecuteResult process(ExecuteCommandRequest request, Workspace workspace, ToolDefinition<?> toolDefinition) throws IOException, InterruptedException {
 
         // 原始命令交给框架，shell 的选择和启动由工作空间负责。
-        WorkspaceBridge.CommandResult result = workspace.bridge().execute(
+        WorkspaceCommands.CommandResult result = workspace.bridge().commands().execute(
                 request.getCommand(),
                 workspace.workDir(),
                 workspace.runtimeEnvironment().charset(),

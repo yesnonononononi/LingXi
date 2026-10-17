@@ -30,7 +30,7 @@
         <java.version>21</java.version>
         <lingxi.build.directory>${project.basedir}/target</lingxi.build.directory>
         <mybatis-plus>3.5.9</mybatis-plus>
-        <lingxi-starter>1.1.7</lingxi-starter>
+        <lingxi-starter>1.1.8-SNAPSHOT</lingxi-starter>
         <ddd-starter>1.0.7</ddd-starter>
     </properties>
     <dependencies>

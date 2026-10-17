@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.RuntimeEnvironment;
 import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.runtime.workspace.Workspace;
+import com.summit.core.runtime.workspace.WorkspaceCommands;
 import com.summit.core.runtime.workspace.WorkspaceBridge;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecution;
@@ -41,13 +42,15 @@ class CommandToolDefinitionExecutorTest {
         String command = "$value = 'A B'; Write-Output $value | Select-Object -First 1";
         Workspace workspace = mock(Workspace.class);
         WorkspaceBridge bridge = mock(WorkspaceBridge.class);
+        WorkspaceCommands commands = mock(WorkspaceCommands.class);
         // 自定义 Bridge 负责 shell，业务执行路径只需要输出编码。
         when(workspace.runtimeEnvironment()).thenReturn(RuntimeEnvironment.builder()
                 .charset(StandardCharsets.UTF_8).build());
         when(workspace.bridge()).thenReturn(bridge);
+        when(bridge.commands()).thenReturn(commands);
         when(workspace.workDir()).thenReturn(".");
-        when(bridge.execute(anyString(), eq("."), eq(StandardCharsets.UTF_8), eq(1L), eq(TimeUnit.SECONDS), eq(100L)))
-                .thenReturn(new WorkspaceBridge.CommandResult(0, "A B", false, false));
+        when(commands.execute(anyString(), eq("."), eq(StandardCharsets.UTF_8), eq(1L), eq(TimeUnit.SECONDS), eq(100L)))
+                .thenReturn(new WorkspaceCommands.CommandResult(0, "A B", false, false));
         ToolDefinition<?> definition = ToolDefinition.builder().id("execute_command").name("execute_command")
                 .timeout(1L).maxOutput(100).executor(executor).build();
 
@@ -55,7 +58,7 @@ class CommandToolDefinitionExecutorTest {
                 workspace, definition);
 
         assertTrue(result.isSuccess());
-        verify(bridge).execute(command, ".", StandardCharsets.UTF_8, 1L, TimeUnit.SECONDS, 100L);
+        verify(commands).execute(command, ".", StandardCharsets.UTF_8, 1L, TimeUnit.SECONDS, 100L);
     }
 
     @Test

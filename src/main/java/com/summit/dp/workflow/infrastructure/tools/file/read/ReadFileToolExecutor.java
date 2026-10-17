@@ -2,7 +2,7 @@ package com.summit.dp.workflow.infrastructure.tools.file.read;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.core.runtime.workspace.WorkspaceBridge;
+import com.summit.core.runtime.workspace.WorkspaceFiles;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecutor;
@@ -33,11 +33,11 @@ public class ReadFileToolExecutor implements ToolExecutor {
 
             log.info("【ToolCall】 read_file :{}", request.getPath());
 
-            WorkspaceBridge bridge = toolExecution.getWorkspace().bridge();
+            WorkspaceFiles files = toolExecution.getWorkspace().bridge().files();
 
             Path path = Path.of(request.getPath());
 
-            String content = read(bridge, path, request.getStartLine(), request.getEndLine());
+            String content = read(files, path, request.getStartLine(), request.getEndLine());
 
             return ToolExecuteResult.success(content);
         } catch (Exception e) {
@@ -45,12 +45,12 @@ public class ReadFileToolExecutor implements ToolExecutor {
         }
     }
 
-    private String read(WorkspaceBridge bridge, Path path, Integer startLine, Integer endLine) throws IOException {
+    private String read(WorkspaceFiles files, Path path, Integer startLine, Integer endLine) throws IOException {
         // 文件统一使用 UTF-8，不能沿用 Windows 终端的 OEM 编码。
         if (startLine == null && endLine == null) {
-            return bridge.readString(path, StandardCharsets.UTF_8);
+            return files.readString(path, StandardCharsets.UTF_8);
         }
-        List<String> lines = bridge.readLines(path, StandardCharsets.UTF_8);
+        List<String> lines = files.readLines(path, StandardCharsets.UTF_8);
 
         int start = Objects.requireNonNullElse(startLine, 0);
         int end = Math.min(Objects.requireNonNullElse(endLine, Integer.MAX_VALUE), lines.size() - 1);

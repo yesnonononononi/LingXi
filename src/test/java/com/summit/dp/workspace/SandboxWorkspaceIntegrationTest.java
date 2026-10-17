@@ -55,15 +55,15 @@ class SandboxWorkspaceIntegrationTest {
         Workspace writable = provider.resolve(converter.toSpec(business, WorkspaceType.SAND_BOX, AgentAccessMode.IN_WORKSPACE));
         assertTrue(writable.runtimeEnvironment().isolated());
         assertTrue(Files.isDirectory(properties.stateDirectory().resolve("helpers")));
-        writable.bridge().writeString(writable.resolve("from-file"), "业务文件工具", StandardCharsets.UTF_8);
-        assertEquals("业务文件工具", writable.bridge().readString(writable.resolve("from-file"), StandardCharsets.UTF_8));
-        writable.bridge().createDirectories(writable.resolve("nested"));
-        writable.bridge().writeString(writable.resolve("nested/deleted"), "temporary", StandardCharsets.US_ASCII);
-        writable.bridge().deleteFile(writable.resolve("nested/deleted"));
+        writable.bridge().files().writeString(writable.resolve("from-file"), "业务文件工具", StandardCharsets.UTF_8);
+        assertEquals("业务文件工具", writable.bridge().files().readString(writable.resolve("from-file"), StandardCharsets.UTF_8));
+        writable.bridge().files().createDirectories(writable.resolve("nested"));
+        writable.bridge().files().writeString(writable.resolve("nested/deleted"), "temporary", StandardCharsets.US_ASCII);
+        writable.bridge().files().deleteFile(writable.resolve("nested/deleted"));
         assertTrue(Files.isDirectory(project.resolve("nested")));
         assertFalse(Files.exists(project.resolve("nested/deleted")));
-        assertThrows(IOException.class, () -> writable.bridge().readString(secret, StandardCharsets.UTF_8));
-        assertThrows(IOException.class, () -> writable.bridge().writeString(outside.resolve("blocked"), "bad", StandardCharsets.UTF_8));
+        assertThrows(IOException.class, () -> writable.bridge().files().readString(secret, StandardCharsets.UTF_8));
+        assertThrows(IOException.class, () -> writable.bridge().files().writeString(outside.resolve("blocked"), "bad", StandardCharsets.UTF_8));
         CommandToolDefinitionExecutor terminal = new CommandToolDefinitionExecutor(new ObjectMapper());
         ToolDefinition<?> definition = ToolDefinition.builder().id("sandbox-test").name("sandbox-test").executor(terminal).timeout(10L).maxOutput(4096).build();
         boolean windows = System.getProperty("os.name").toLowerCase().contains("windows");
@@ -92,9 +92,9 @@ class SandboxWorkspaceIntegrationTest {
         assertTrue(deniedWrite.getToolOutput().matches("(?s).*Exiting code :[1-9][0-9]*$"), deniedWrite.getToolOutput());
         assertFalse(Files.exists(blocked));
         Workspace readonly = provider.resolve(converter.toSpec(business, WorkspaceType.SAND_BOX, AgentAccessMode.READ_ONLY_IN_WORKSPACE));
-        assertThrows(IOException.class, () -> readonly.bridge().writeString(readonly.resolve("input"), "bad", StandardCharsets.UTF_8));
-        assertThrows(IOException.class, () -> readonly.bridge().deleteFile(readonly.resolve("input")));
-        assertThrows(IOException.class, () -> readonly.bridge().createDirectories(readonly.resolve("blocked-directory")));
+        assertThrows(IOException.class, () -> readonly.bridge().files().writeString(readonly.resolve("input"), "bad", StandardCharsets.UTF_8));
+        assertThrows(IOException.class, () -> readonly.bridge().files().deleteFile(readonly.resolve("input")));
+        assertThrows(IOException.class, () -> readonly.bridge().files().createDirectories(readonly.resolve("blocked-directory")));
         assertFalse(terminal.process(ExecuteCommandRequest.builder().command(windows ? "echo bad > input" : "printf bad > input").build(), readonly, definition).isSuccess());
         assertEquals("original", Files.readString(input));
         assertFalse(Files.exists(project.resolve("blocked-directory")));
@@ -103,13 +103,13 @@ class SandboxWorkspaceIntegrationTest {
         WorkspaceVO other = WorkspaceVO.builder().id(2L).name("neighbor").hostDir(neighbor.toString()).build();
         Workspace otherWorkspace = provider.resolve(converter.toSpec(other, WorkspaceType.SAND_BOX, null));
         if (windows) {
-            assertEquals("original", otherWorkspace.bridge().readString(input, StandardCharsets.US_ASCII));
-            otherWorkspace.bridge().writeString(input, "cross-project", StandardCharsets.US_ASCII);
+            assertEquals("original", otherWorkspace.bridge().files().readString(input, StandardCharsets.US_ASCII));
+            otherWorkspace.bridge().files().writeString(input, "cross-project", StandardCharsets.US_ASCII);
             assertEquals("cross-project", Files.readString(input));
         } else {
-            assertThrows(IOException.class, () -> otherWorkspace.bridge().readString(input, StandardCharsets.US_ASCII));
+            assertThrows(IOException.class, () -> otherWorkspace.bridge().files().readString(input, StandardCharsets.US_ASCII));
         }
-        otherWorkspace.bridge().writeString(otherWorkspace.resolve("own-file"), "own-project", StandardCharsets.US_ASCII);
+        otherWorkspace.bridge().files().writeString(otherWorkspace.resolve("own-file"), "own-project", StandardCharsets.US_ASCII);
         assertEquals("own-project", Files.readString(neighbor.resolve("own-file")));
         assertTrue(provider.check().ready());
     }
