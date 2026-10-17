@@ -223,7 +223,9 @@ export function buildSandboxRuntime(frontendRoot, sourceDirectory, options = {})
   const transient = new Set(['package.json', 'package-lock.json', 'mxc-deployment.json']);
   for (const entry of fs.readdirSync(source)) {
     if (transient.has(entry)) continue;
+    console.log(`复制随包运行组件: name=${entry}`);
     fs.cpSync(path.join(source, entry), path.join(destination, entry), { recursive: true, force: true });
+    console.log(`复制随包运行组件完成: name=${entry}`);
   }
   fs.writeFileSync(path.join(destination, 'mxc-deployment.json'),
     JSON.stringify(deploymentDescriptor(platform), null, 2) + '\n');
@@ -236,5 +238,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
     const source = process.argv.slice(2).find(arg => arg.startsWith('--source='))?.slice(9);
     console.log(`随包运行资源已暂存: ${buildSandboxRuntime(frontendRoot, source)}`);
-  } catch (error) { console.error(error.stack ?? error.message); process.exitCode = 1; }
+  } catch (error) {
+    // Windows 子进程退出前同步写出异常，避免管道缓冲丢失构建失败原因。
+    fs.writeSync(2, `${error.stack ?? error.message}\n`);
+    process.exitCode = 1;
+  }
 }
