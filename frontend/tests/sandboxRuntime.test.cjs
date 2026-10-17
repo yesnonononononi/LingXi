@@ -151,3 +151,32 @@ test('Windows 复制受限子目录时返回可捕获异常，不得在原生层
       execFileSync('icacls', [blocked, '/remove:d', account], { windowsHide: true });
     }
   });
+
+test('发布缓存覆盖 Node 和 npm 组件，但不归档 PortableGit 的 MSYS 特殊链接', t => {
+  const f = fixture(t, 'win32');
+  const cacheRoot = 'frontend/vendor/runtime/win32-x64';
+  for (const relative of ['node/node.exe', 'mxc/node_modules/sdk/package.json',
+    'srt/node_modules/srt/package.json', 'git/bin/bash.exe', 'git/etc/mtab']) {
+    writeFile(f.root, `${cacheRoot}/${relative}`);
+  }
+  const yaml = require('../node_modules/js-yaml');
+  const glob = require('glob');
+  const workflow = yaml.load(fs.readFileSync(path.resolve(__dirname, '../../.github/workflows/release.yml'), 'utf8'));
+  const cache = workflow.jobs.release.steps.find(step => step.uses?.startsWith('actions/cache@'));
+  const selected = cache.with.path.split(/\r?\n/).filter(Boolean)
+    .flatMap(pattern => glob.sync(pattern, { cwd: f.root, absolute: true }));
+  const covers = (directories, relative) => directories.some(directory => {
+    const remaining = path.relative(directory, path.join(f.root, relative));
+    return !remaining.startsWith('..') && !path.isAbsolute(remaining);
+  });
+  assert.equal(covers([path.join(f.root, 'frontend/vendor/runtime')], `${cacheRoot}/git/etc/mtab`), true,
+    '整棵目录缓存必须命中特殊链接，避免缓存范围断言假绿');
+  for (const component of ['node', 'mxc', 'srt']) {
+    assert.equal(covers(selected, `${cacheRoot}/${component}`), true, `缺少缓存组件: ${component}`);
+  }
+  assert.equal(covers(selected, `${cacheRoot}/git/etc/mtab`), false, 'MSYS 特殊链接不得经 tar 缓存恢复');
+  const steps = workflow.jobs.release.steps;
+  const fetchIndex = steps.findIndex(step => /npm run sandbox:fetch/.test(step.run ?? ''));
+  const buildIndex = steps.findIndex(step => /npm run backend:runtime/.test(step.run ?? ''));
+  assert.ok(fetchIndex >= 0 && fetchIndex < buildIndex, '暂存之前必须从固定发行包补齐 Git');
+});

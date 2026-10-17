@@ -111,8 +111,12 @@ jobs:
       - name: 缓存随包沙箱运行资源
         uses: actions/cache@v4
         with:
-          path: frontend/vendor/runtime
-          key: sandbox-runtime-${{ runner.os }}-${{ hashFiles('frontend/vendor/runtime.lock.json') }}
+          # PortableGit 的 MSYS 特殊链接经 tar 恢复后可能不可读，必须从固定发行包重新解压。
+          path: |
+            frontend/vendor/runtime/*/node
+            frontend/vendor/runtime/*/mxc
+            frontend/vendor/runtime/*/srt
+          key: sandbox-runtime-components-v2-${{ runner.os }}-${{ hashFiles('frontend/vendor/runtime.lock.json', 'frontend/vendor/mxc-dev/package-lock.json') }}
 
       - name: 准备随包沙箱运行资源（Node + PortableGit + SRT）
         working-directory: frontend
