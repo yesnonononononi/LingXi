@@ -53,13 +53,12 @@ class SandboxConfigurationTest {
         });
     }
 
-    @Test void capabilityCheckDoesNotCreateTheConfiguredApplicationDirectory() throws Exception {
-        String node = System.getProperty("mxc.node");
-        String sdk = System.getProperty("mxc.sdk");
-        assumeTrue(node != null && sdk != null, "需要宿主 MXC 运行资源");
+    @Test void capabilityCheckDoesNotCreateTheConfiguredStateDirectory() throws Exception {
+        String application = System.getProperty("mxc.application.directory");
+        assumeTrue(application != null, "需要应用根目录及随包 MXC 运行资源");
         Path absent = temporary.resolve("no-workspace-probe");
-        contexts.withPropertyValues("lingxi.sandbox.application-directory=" + absent,
-                "lingxi.sandbox.node-executable=" + node, "lingxi.sandbox.sdk-directory=" + sdk).run(context -> {
+        contexts.withPropertyValues("lingxi.sandbox.application-directory=" + application,
+                "lingxi.sandbox.state-directory=" + absent).run(context -> {
             assertTrue(context.getBean(SandboxService.class).check().ready());
             assertFalse(Files.exists(absent));
         });
@@ -75,22 +74,32 @@ class SandboxConfigurationTest {
             assertThrows(ClientException.class, () -> context.getBean(SandboxService.class).check());
         });
     }
-    @Test void nativeDeploymentResourcesAndEnvironmentBindWithoutExtraDirectoryGrants() {
-        String node = temporary.resolve("node.exe").toString();
-        contexts.withPropertyValues("lingxi.sandbox.application-directory=" + temporary,
-                "lingxi.sandbox.node-executable=" + node,
-                "lingxi.sandbox.sdk-directory=" + temporary.resolve("sdk"),
+    @Test void nativeDeploymentResourcesAndEnvironmentBindWithoutExtraDirectoryGrants() throws Exception {
+        Path application = temporary.resolve("Installed LX");
+        Path state = temporary.resolve("Writable State");
+        Path runtime = application.resolve("resources/runtime");
+        Files.createDirectories(runtime);
+        Files.createDirectories(state);
+        contexts.withPropertyValues("lingxi.sandbox.application-directory=" + application,
+                "lingxi.sandbox.state-directory=" + state,
                 "lingxi.sandbox.environment.LANG=C.UTF-8").run(context -> {
             assertNull(context.getStartupFailure());
             SandboxProperties properties = context.getBean(SandboxProperties.class);
-            assertEquals(node, properties.nodeExecutable());
-            assertTrue(properties.environment().get("PATH").startsWith(temporary.toString()));
+            assertEquals(state, properties.stateDirectory());
+            boolean windows = System.getProperty("os.name").toLowerCase().contains("windows");
+            assertEquals(runtime.resolve(windows ? "node/node.exe" : "node/node").toString(), properties.nodeExecutable());
+            assertEquals(runtime.resolve("mxc/node_modules/@microsoft/mxc-sdk").toString(), properties.sdkDirectory());
+            assertTrue(properties.environment().get("PATH").startsWith(runtime.resolve("node").toString()));
+            if (windows) assertTrue(properties.environment().get("PATH").contains(runtime.resolve("git/cmd").toString()));
             SandboxPolicyFactory factory = context.getBean(SandboxPolicyFactory.class);
             MxcWorkspaceSpec spec = factory.build(temporary.resolve("project").toString(), AgentAccessMode.IN_WORKSPACE);
             assertEquals(properties.environment(), spec.environment());
             assertEquals("C.UTF-8", spec.environment().get("LANG"));
             assertFalse(spec.securityPolicy().deniedPaths().isEmpty());
             assertTrue(spec.readwritePaths().isEmpty());
+            assertTrue(spec.readonlyPaths().contains(runtime.toString()));
+            assertTrue(spec.readonlyPaths().contains(state.toString()));
+            assertFalse(spec.readonlyPaths().contains(application.toString()));
             assertFalse(factory.build(spec.workDir(), AgentAccessMode.READ_ONLY_IN_WORKSPACE).writable());
             assertFalse(factory.build(spec.workDir(), AgentAccessMode.OUT_OF_WORKSPACE).securityPolicy().deniedPaths().isEmpty());
             assertTrue(context.getBean(SandboxService.class).inspect().configured());

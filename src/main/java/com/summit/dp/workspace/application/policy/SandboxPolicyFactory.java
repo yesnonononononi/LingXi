@@ -23,17 +23,17 @@ public final class SandboxPolicyFactory {
     private final Map<String, String> environment;
     private final Supplier<List<SecurityRule>> fileRules;
     private final Path configDirectory;
-    private final Path applicationDirectory;
+    private final List<Path> protectedDirectories;
     public SandboxPolicyFactory(Map<String, String> environment) {
         this(environment, () -> SecurityRulePresets.defaults(SecurityCategory.FILES),
-                Path.of(System.getProperty("user.home"), ".lingxi", "config"), null);
+                Path.of(System.getProperty("user.home"), ".lingxi", "config"));
     }
     public SandboxPolicyFactory(Map<String, String> environment, Supplier<List<SecurityRule>> fileRules,
-                                Path configDirectory, Path applicationDirectory) {
+                                Path configDirectory, Path... protectedDirectories) {
         this.environment = Map.copyOf(environment);
         this.fileRules = fileRules;
         this.configDirectory = configDirectory.toAbsolutePath().normalize();
-        this.applicationDirectory = applicationDirectory;
+        this.protectedDirectories = Arrays.stream(protectedDirectories).filter(directory -> directory != null).toList();
     }
     public MxcWorkspaceSpec build(String workDir, AgentAccessMode accessMode) {
         AgentAccessMode effective = accessMode == null ? AgentAccessMode.DEFAULT : accessMode;
@@ -42,7 +42,9 @@ public final class SandboxPolicyFactory {
                 .map(rule -> SecurityRuleService.expandPath(rule.pattern())).toList());
         denied.add(configDirectory.toString());
         List<String> readonly = new ArrayList<>();
-        if (applicationDirectory != null && Files.isDirectory(applicationDirectory)) readonly.add(applicationDirectory.toString());
+        for (Path directory : protectedDirectories) {
+            if (Files.isDirectory(directory)) readonly.add(directory.toString());
+        }
         Path stateDirectory = Path.of(System.getProperty("user.home"), ".lingxi");
         if (Files.isDirectory(stateDirectory)) readonly.add(stateDirectory.toString());
         boolean windows = File.separatorChar == '\\';

@@ -23,6 +23,6 @@ public class SandboxConfiguration {
                     rules.rules(SecurityCategory.NET);
                     return rules.rules(SecurityCategory.FILES);
                 },
-                Path.of(directory), properties.applicationDirectory());
+                Path.of(directory), properties.runtimeDirectory(), properties.stateDirectory());
     }
 }

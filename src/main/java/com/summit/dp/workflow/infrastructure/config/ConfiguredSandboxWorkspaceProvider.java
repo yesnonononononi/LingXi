@@ -10,7 +10,6 @@ import com.summit.sandbox.mxc.MxcRuntime;
 import com.summit.sandbox.mxc.MxcPlatformProbe;
 import com.summit.sandbox.mxc.MxcWorkspaceProvider;
 import com.summit.sandbox.mxc.MxcWorkspaceSpec;
-import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import java.io.IOException;
 import java.util.Locale;
@@ -30,7 +29,7 @@ public final class ConfiguredSandboxWorkspaceProvider implements WorkspaceProvid
             MxcRuntime runtime = new MxcRuntime(
                     properties.nodeExecutable(),
                     properties.sdkDirectory(),
-                    properties.applicationDirectory().resolve("helpers"),
+                    properties.stateDirectory().resolve("helpers"),
                     properties.startupTimeout(),
                     properties.fileTimeout());
             return new MxcWorkspaceProvider(runtime).resolve(spec);
@@ -51,7 +50,7 @@ public final class ConfiguredSandboxWorkspaceProvider implements WorkspaceProvid
                 && !properties.startupTimeout().isNegative() && !properties.startupTimeout().isZero()
                 && !properties.fileTimeout().isNegative() && !properties.fileTimeout().isZero();
         return new SandboxServiceStatus(configured, false, backend, configured ? "沙箱资源已配置，请运行检查确认可用"
-                : "沙箱运行资源未配置，请配置 application-directory、宿主 node-executable 和 sdk-directory");
+                : "沙箱运行资源未配置，请配置应用安装根目录 application-directory 和有效的超时时间");
     }
     @Override public SandboxServiceStatus check() {
         SandboxServiceStatus status = inspect();
@@ -59,7 +58,7 @@ public final class ConfiguredSandboxWorkspaceProvider implements WorkspaceProvid
         MxcPlatformProbe.Result capability;
         try {
             MxcRuntime runtime = new MxcRuntime(properties.nodeExecutable(), properties.sdkDirectory(),
-                    properties.applicationDirectory().resolve("helpers"), properties.startupTimeout(), properties.fileTimeout());
+                    properties.stateDirectory().resolve("helpers"), properties.startupTimeout(), properties.fileTimeout());
             capability = MxcPlatformProbe.check(runtime);
         } catch (IOException | InterruptedException | RuntimeException failure) {
             if (failure instanceof InterruptedException) Thread.currentThread().interrupt();

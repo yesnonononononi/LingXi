@@ -8,7 +8,7 @@
 
 本机开发资源使用 `cd frontend; npm run sandbox:dev` 准备。该命令保留 `build/runtime` 中已有工具，用锁文件安装 SDK 及依赖到 `build/runtime/mxc/node_modules`（与打包态同构），并加载原生库检查基础能力；已有 Node 必须为 24 及以上，缺少时复制执行该命令的宿主 Node。
 
-`application-dev.yaml` 默认指向 `D:/Code/LingXi/frontend/build/runtime/node/node.exe` 和 `D:/Code/LingXi/frontend/build/runtime/mxc/node_modules/@microsoft/mxc-sdk`，环境变量仍可覆盖。状态目录保持在 `${user.home}/.lingxi/sandbox`，位于项目之外。该默认路径用于当前 Windows 开发机，其他 checkout 或 Linux 开发机需覆盖环境变量。
+后端只接收 `application-directory`（应用安装根目录）和 `state-directory`（可写沙箱状态目录）。开发配置默认以 `${user.dir}` 为仓库根目录，不再写死本机 checkout 或逐项配置 Node、Git、MXC SDK。状态目录默认位于 `${user.home}/.lingxi/sandbox`。
 
 `sandbox:dev` 用于本机开发；`sandbox:runtime` 负责打包：把发行包目录 `frontend/vendor/runtime/<platform>-<arch>/`（Node、Git Bash、SRT、MXC SDK）整棵暂存到 `build/runtime`，写入**包内相对路径**的部署说明，并在打包前（`beforePack`）校验组件齐全，缺资源时拒绝出包。安装包因此自带运行资源，与安装位置无关。
 
@@ -19,14 +19,15 @@
 Windows 需要支持 BaseContainer 的系统版本。本机为 **25H2 / 26200.9278**，精确请求探测确认 `tier=base-container`、`needsDaclAugmentation=false`。执行策略同时设置 `fallback.allowDaclMutation=false`。
 
 ```powershell
-$env:LINGXI_SANDBOX_APPLICATION_DIRECTORY = 'D:/LingXiRuntime/sandbox'
-$env:LINGXI_SANDBOX_NODE_EXECUTABLE = 'D:/tools/node/node.exe'
-$env:LINGXI_SANDBOX_SDK_DIRECTORY = 'D:/tools/mxc/node_modules/@microsoft/mxc-sdk'
+$env:LINGXI_SANDBOX_APPLICATION_DIRECTORY = 'D:/Apps/LX'
+$env:LINGXI_SANDBOX_STATE_DIRECTORY = 'D:/LingXiState/sandbox'
 ```
 
-以上是部署示例。Linux 使用相同配置名，填写 Linux Node、SDK 与状态目录的绝对路径，并保留 Bubblewrap、Bash 和非特权命名空间条件。
+Linux 使用相同目录配置，并保留 Bubblewrap、系统 Bash 和非特权命名空间条件。
 
-`application-directory` 必须位于可写项目目录之外，避免脚本和控制文件暴露为项目可写资源。启动与文件操作预算默认 `30s`，可以配置覆盖。旧 `distribution` 配置已移除。
+后端从安装根目录解析 `resources/runtime`；根目录存在 `frontend/package.json` 时使用开发布局 `frontend/build/runtime`，无需等待运行资源准备完才识别开发环境。Node、Git、Bash 和 MXC SDK 路径由后端统一拼接；Windows 默认子进程 PATH 包含随包 Node、`git/cmd`、`git/bin` 和系统 System32，显式配置的 PATH 仍优先。宿主进程 PATH 不被修改。
+
+helpers 写入 `state-directory/helpers`，状态目录应位于项目之外。运行资源目录和状态目录在沙箱策略中保持只读，不把整个开发仓库设为只读。启动与文件操作预算默认 `30s`，可以配置覆盖。
 
 打包产物 `build/runtime/mxc-deployment.json` 写的是**包内相对路径**（相对安装目录的 `resources/runtime`），因此安装包与安装位置无关：
 
@@ -36,18 +37,11 @@ $env:LINGXI_SANDBOX_SDK_DIRECTORY = 'D:/tools/mxc/node_modules/@microsoft/mxc-sd
   "backend": "processcontainer",
   "sdkVersion": "1.0.0",
   "nodeExecutable": "node/node.exe",
-  "sdkDirectory": "node_modules/@microsoft/mxc-sdk"
+  "sdkDirectory": "mxc/node_modules/@microsoft/mxc-sdk"
 }
 ```
 
-`electron/backend.cjs` 以 `process.resourcesPath/runtime` 为基准把相对路径拼成宿主绝对路径，再经 `--lingxi.sandbox.node-executable` / `--lingxi.sandbox.sdk-directory` 传给后端；说明里出现宿主绝对路径会被构建与打包校验拒绝。安装后的 `resources/runtime` 同时带 Git Bash（`git/bin/bash.exe`，当前 MXC 链路不消费，仅随包）与 SRT（`srt/node_modules/@anthropic-ai/sandbox-runtime/dist/cli.js`）。
-
-部署方仍可用环境变量覆盖为别处的绝对路径（绝对路径原样使用）：
-
-```powershell
-$env:LINGXI_SANDBOX_NODE_EXECUTABLE = 'D:/tools/node/node.exe'
-$env:LINGXI_SANDBOX_SDK_DIRECTORY = 'D:/tools/mxc/node_modules/@microsoft/mxc-sdk'
-```
+`electron/backend.cjs` 只传可执行文件所在的安装根目录和 `<userData>/sandbox` 状态目录，开发态传仓库根目录；不再读取部署说明或注入组件路径。部署说明保留用于构建和打包校验，宿主绝对路径会被拒绝。安装后的 `resources/runtime` 同时带 Git Bash（`git/bin/bash.exe`）与 SRT（`srt/node_modules/@anthropic-ai/sandbox-runtime/dist/cli.js`）；Windows MXC 仍使用原生 shell，未切换为 SRT 或 Bash 执行。
 
 Linux 使用 `backend=bubblewrap` 与 `node/node`，并保留 Bubblewrap、Bash 和非特权命名空间条件。
 

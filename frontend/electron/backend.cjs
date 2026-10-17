@@ -52,20 +52,6 @@ function resolveLayout(frontendRoot, isPackaged, resourcesPath) {
   };
 }
 
-/**
- * 把部署说明里的路径解析成宿主绝对路径。
- * 说明文件写的是**包内相对路径**（如 node/node.exe），按安装目录下的 resources/runtime 拼接；
- * 已经是绝对路径的（自定义部署）原样规范化，便于本机替换。
- *
- * @param value 部署说明中的值
- * @param toolsDirectory 安装目录下的 resources/runtime（开发态为 frontend/build/runtime）
- */
-function resolveRuntimePath(value, toolsDirectory) {
-  if (typeof value !== 'string' || value.length === 0) return '';
-  if (path.isAbsolute(value)) return path.normalize(value);
-  return path.join(toolsDirectory, ...value.split('/'));
-}
-
 /** 探测端口是否已被监听（连上即视为有服务） */
 function isPortOpen(port, timeoutMs = 800) {
   return new Promise((resolve) => {
@@ -124,16 +110,12 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
 
   const layout = resolveLayout(frontendRoot, isPackaged, resourcesPath);
   // 安装位置来自 Electron，不能用 JVM 的可写工作目录反推；开发态使用项目根目录。
-  const applicationDirectory = isPackaged ? path.dirname(executablePath) : path.resolve(frontendRoot, '..');
+  const applicationDirectory = process.env.LINGXI_SANDBOX_APPLICATION_DIRECTORY
+    || (isPackaged ? path.dirname(executablePath) : path.resolve(frontendRoot, '..'));
   // 日志目录固定为「应用安装目录/logs」，界面据此拼路径去开文件预览。
   // 装到 Program Files 之类不可写的位置时回落 userData —— 否则 logback 的文件 appender 起不来，
   // 「点击查看日志」会指向一个永远不存在的文件。回落结果同样回传给渲染层，两边始终看同一个目录。
   const logDir = resolveLogDirectory(path.resolve(applicationDirectory, 'logs'), path.join(userDataDir, 'logs'));
-  const toolsDirectory = isPackaged ? path.join(resourcesPath, 'runtime') : path.join(frontendRoot, 'build', 'runtime');
-  const descriptor = path.join(toolsDirectory, 'mxc-deployment.json');
-  const deployment = fs.existsSync(descriptor) ? JSON.parse(fs.readFileSync(descriptor, 'utf8')) : {};
-  const nodeExecutable = process.env.LINGXI_SANDBOX_NODE_EXECUTABLE || resolveRuntimePath(deployment.nodeExecutable, toolsDirectory);
-  const sdkDirectory = process.env.LINGXI_SANDBOX_SDK_DIRECTORY || resolveRuntimePath(deployment.sdkDirectory, toolsDirectory);
 
   // 端口已占用：可能是用户在 IDE 里跑着后端，也可能是上次崩溃残留的孤儿 JVM。
   // 两种都直接复用 —— 既不会「端口占用」启动失败，也不会去杀不属于自己的进程。
@@ -169,10 +151,9 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
     '-jar',
     layout.jar,
     `--server.port=${BACKEND_PORT}`,
-    `--lingxi.sandbox.application-directory=${process.env.LINGXI_SANDBOX_APPLICATION_DIRECTORY || path.join(userDataDir, 'sandbox')}`,
+    `--lingxi.sandbox.application-directory=${applicationDirectory}`,
+    `--lingxi.sandbox.state-directory=${process.env.LINGXI_SANDBOX_STATE_DIRECTORY || path.join(userDataDir, 'sandbox')}`,
     `--lingxi.log.dir=${process.env.LINGXI_LOG_DIR || logDir}`,
-    `--lingxi.sandbox.node-executable=${nodeExecutable}`,
-    `--lingxi.sandbox.sdk-directory=${sdkDirectory}`,
   ];
   // 数据库内置（H2 文件库，用户机器不需要装任何数据库）。
   // 传 LX_SPRING_PROFILE 环境变量可覆盖为其他 Spring profile（默认不传，走主配置）。

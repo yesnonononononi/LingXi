@@ -39,12 +39,11 @@ spring:
       min-evictable-idle-time-millis: 300000
 
 lingxi:
-  # 桌面启动器注入安装目录和可写状态目录；Node / MXC 路径由部署方配置。
+  # 启动器只传安装根目录和可写状态目录，组件路径由后端统一解析。
   # 项目文件权限随请求档位生成；缺资源时仅沙箱请求失败，不影响本地模式启动。
   sandbox:
-    application-directory: ${LINGXI_SANDBOX_APPLICATION_DIRECTORY:${user.home}/.lingxi/sandbox}
-    node-executable: ${LINGXI_SANDBOX_NODE_EXECUTABLE:}
-    sdk-directory: ${LINGXI_SANDBOX_SDK_DIRECTORY:}
+    application-directory: ${LINGXI_SANDBOX_APPLICATION_DIRECTORY:${user.dir}}
+    state-directory: ${LINGXI_SANDBOX_STATE_DIRECTORY:${user.home}/.lingxi/sandbox}
     startup-timeout: 30s
     file-timeout: 30s
     environment: {}

@@ -32,9 +32,8 @@ class SandboxAmbientReadBoundaryTest {
 
     @Test void privateAsciiFileRemainsUnreadableEvenWhenHostAclAllowsApplicationPackages() throws Exception {
         assumeTrue(System.getProperty("os.name").toLowerCase().contains("windows"), "仅验证 Windows 宿主 ACL");
-        String node = System.getProperty("mxc.node");
-        String sdk = System.getProperty("mxc.sdk");
-        assumeTrue(node != null && sdk != null, "需要显式 MXC 运行资源");
+        String application = System.getProperty("mxc.application.directory");
+        assumeTrue(application != null, "需要应用根目录及随包 MXC 运行资源");
         Path project = Files.createDirectories(temporary.resolve("project"));
         Path outside = Files.createDirectories(temporary.resolve("outside"));
         Path sharedDirectory = Files.createDirectories(temporary.resolve("application-packages-public"));
@@ -46,13 +45,13 @@ class SandboxAmbientReadBoundaryTest {
                 sharedDirectory.toString(), "/grant", "*S-1-15-2-1:(OI)(CI)(RX)").redirectErrorStream(true).start();
         byte[] diagnostics = acl.getInputStream().readAllBytes();
         assertEquals(0, acl.waitFor(), () -> new String(diagnostics, StandardCharsets.UTF_8));
-        SandboxProperties properties = new SandboxProperties(temporary.resolve("runtime"), node, sdk,
+        SandboxProperties properties = new SandboxProperties(Path.of(application), temporary.resolve("state"),
                 Duration.ofSeconds(30), Duration.ofSeconds(30), Map.of());
         Workspace workspace = new ConfiguredSandboxWorkspaceProvider(properties).resolve(
                 new SandboxPolicyFactory(properties.environment(),
                         () -> List.of(new SecurityRule(sharedDirectory.toString(), "PATH", SecurityAction.DENY,
                                 SecurityAction.DENY, SecurityAction.DENY, null, true, null)),
-                        temporary.resolve("config"), properties.applicationDirectory()).build(project.toString(), AgentAccessMode.IN_WORKSPACE));
+                        temporary.resolve("config"), properties.runtimeDirectory(), properties.stateDirectory()).build(project.toString(), AgentAccessMode.IN_WORKSPACE));
         ObjectMapper mapper = new ObjectMapper();
         ReadFileToolExecutor reader = new ReadFileToolExecutor(mapper);
         ToolExecuteResult insideRead = read(reader, mapper, workspace, inside);

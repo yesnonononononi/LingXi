@@ -7,22 +7,12 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { EventEmitter } = require('node:events');
 
-/**
- * 执行真实启动逻辑，替换进程和端口，避免测试占用用户后端。
- * 部署说明按新约定写**包内相对路径**，由启动器按安装目录拼成宿主绝对路径。
- */
-async function launch({ platform = 'win32', packaged = true, env = {}, deployment } = {}) {
+/** 替换进程和端口，只检查真实启动器交给 JVM 的参数。 */
+async function launch({ platform = 'win32', packaged = true, env = {}, root: customRoot } = {}) {
   const paths = platform === 'win32' ? path.win32 : path.posix;
-  const root = platform === 'win32' ? 'D:\\Custom Apps\\LX' : '/opt/custom apps/LX';
+  const root = customRoot ?? (platform === 'win32' ? 'D:\\Custom Apps\\LX' : '/opt/custom apps/LX');
   const userDataDir = paths.join(root, 'user data');
   const frontendRoot = paths.join(root, 'source', 'frontend');
-  const descriptor = deployment ?? {
-    schemaVersion: 1,
-    backend: platform === 'win32' ? 'processcontainer' : 'bubblewrap',
-    sdkVersion: '1.0.0',
-    nodeExecutable: platform === 'win32' ? 'node/node.exe' : 'node/node',
-    sdkDirectory: 'mxc/node_modules/@microsoft/mxc-sdk',
-  };
   let invocation;
   let checks = 0;
   const child = new EventEmitter();
@@ -30,7 +20,8 @@ async function launch({ platform = 'win32', packaged = true, env = {}, deploymen
   child.exitCode = null;
   const dependencies = {
     child_process: { spawn(file, args, options) { invocation = { file, args, options }; return child; } },
-    fs: { existsSync: () => true, readFileSync: () => JSON.stringify(descriptor), mkdirSync() {}, createWriteStream: () => ({ write() {} }) },
+    fs: { existsSync: () => true, readFileSync() { throw new Error('启动器不应读取组件部署说明'); },
+      mkdirSync() {}, accessSync() {}, constants: { W_OK: 2 }, createWriteStream: () => ({ write() {} }) },
     path: paths,
     net: { connect() {
       const socket = new EventEmitter();
@@ -46,45 +37,31 @@ async function launch({ platform = 'win32', packaged = true, env = {}, deploymen
   await module.exports.start({ frontendRoot, isPackaged: packaged,
     executablePath: paths.join(root, 'LX.exe'), resourcesPath: paths.join(root, 'resources'),
     userDataDir, logPath: paths.join(userDataDir, 'backend.log'), isDev: !packaged });
-  return { invocation, root, userDataDir, frontendRoot, paths,
-    runtime: packaged ? paths.join(root, 'resources', 'runtime') : paths.join(frontendRoot, 'build', 'runtime') };
+  return { invocation, root, userDataDir, frontendRoot, paths };
 }
 
 for (const platform of ['win32', 'linux']) {
-  test(`${platform} 启动器把包内相对路径解析成安装目录下的宿主绝对路径`, async () => {
-    const { invocation, userDataDir, paths, runtime } = await launch({ platform });
-    assert.ok(invocation.args.includes(`--lingxi.sandbox.application-directory=${paths.join(userDataDir, 'sandbox')}`));
+  test(`${platform} 启动器只传安装根目录和独立状态目录，组件路径留给后端解析`, async () => {
+    const { invocation, root, userDataDir, paths } = await launch({ platform });
+    assert.ok(invocation.args.includes(`--lingxi.sandbox.application-directory=${root}`));
+    assert.ok(invocation.args.includes(`--lingxi.sandbox.state-directory=${paths.join(userDataDir, 'sandbox')}`));
     assert.equal(invocation.options.cwd, userDataDir);
-    assert.ok(invocation.args.includes('--lingxi.sandbox.node-executable='
-      + paths.join(runtime, 'node', platform === 'win32' ? 'node.exe' : 'node')));
-    assert.ok(invocation.args.includes('--lingxi.sandbox.sdk-directory='
-      + paths.join(runtime, 'mxc', 'node_modules', '@microsoft', 'mxc-sdk')));
-    assert.ok(invocation.args.every(arg => !arg.includes('distribution=')));
-    assert.ok(invocation.args.every(arg => !arg.includes('srt-cli=') && !arg.includes('node-exe=') && !arg.includes('state-directory=')));
+    const isComponentArgument = argument => /--lingxi\.sandbox\.(node-executable|sdk-directory|git-executable|bash-executable)=/.test(argument);
+    assert.equal(isComponentArgument('--lingxi.sandbox.node-executable=canary'), true);
+    assert.equal(invocation.args.some(isComponentArgument), false);
   });
 }
 
-test('开发态从未打包的 build/runtime 解析，不指向 resources', async () => {
-  const { invocation, frontendRoot, paths } = await launch({ packaged: false });
-  assert.ok(invocation.args.includes('--lingxi.sandbox.node-executable='
-    + paths.join(frontendRoot, 'build', 'runtime', 'node', 'node.exe')));
+test('开发态传仓库根目录，移动 checkout 后仍不注入组件路径', async () => {
+  const { invocation, frontendRoot, paths } = await launch({ packaged: false, root: 'E:\\Moved Checkout' });
+  assert.ok(invocation.args.includes(`--lingxi.sandbox.application-directory=${paths.dirname(frontendRoot)}`));
 });
 
-test('部署说明已是绝对路径时原样使用', async () => {
-  const { invocation } = await launch({ deployment: { schemaVersion: 1, backend: 'processcontainer', sdkVersion: '1.0.0',
-    nodeExecutable: 'D:/tools/node/node.exe', sdkDirectory: 'D:/tools/mxc/node_modules/@microsoft/mxc-sdk' } });
-  assert.ok(invocation.args.includes('--lingxi.sandbox.node-executable=D:\\tools\\node\\node.exe'));
-  assert.ok(invocation.args.includes('--lingxi.sandbox.sdk-directory='
-    + path.win32.join('D:\\tools\\mxc', 'node_modules', '@microsoft', 'mxc-sdk')));
-});
-
-test('部署环境覆盖说明文件，宿主 PATH 不被改写', async () => {
-  const env = { LINGXI_SANDBOX_APPLICATION_DIRECTORY: 'E:/Writable State',
-    LINGXI_SANDBOX_NODE_EXECUTABLE: 'E:/custom node/node.exe', LINGXI_SANDBOX_SDK_DIRECTORY: 'E:/custom sdk/node_modules/@microsoft/mxc-sdk',
-    PATH: 'C:/Windows' };
+test('安装目录与状态目录可分别覆盖，宿主 PATH 保持原值', async () => {
+  const env = { LINGXI_SANDBOX_APPLICATION_DIRECTORY: 'E:/Installed LX',
+    LINGXI_SANDBOX_STATE_DIRECTORY: 'F:/Writable State', PATH: 'C:/Windows' };
   const { invocation } = await launch({ env });
-  assert.ok(invocation.args.includes('--lingxi.sandbox.application-directory=E:/Writable State'));
-  assert.ok(invocation.args.includes('--lingxi.sandbox.node-executable=E:/custom node/node.exe'));
-  assert.ok(invocation.args.every(arg => !arg.includes('distribution=')));
+  assert.ok(invocation.args.includes('--lingxi.sandbox.application-directory=E:/Installed LX'));
+  assert.ok(invocation.args.includes('--lingxi.sandbox.state-directory=F:/Writable State'));
   assert.equal(invocation.options.env.PATH, env.PATH);
 });
