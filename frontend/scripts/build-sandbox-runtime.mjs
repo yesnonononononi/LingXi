@@ -224,7 +224,9 @@ export function buildSandboxRuntime(frontendRoot, sourceDirectory, options = {})
   for (const entry of fs.readdirSync(source)) {
     if (transient.has(entry)) continue;
     console.log(`复制随包运行组件: name=${entry}`);
-    fs.cpSync(path.join(source, entry), path.join(destination, entry), { recursive: true, force: true });
+    // filter 让 Node 绕过遇到文件系统错误会崩溃的原生复制路径（nodejs/node#63970）。
+    fs.cpSync(path.join(source, entry), path.join(destination, entry),
+      { recursive: true, force: true, filter: () => true });
     console.log(`复制随包运行组件完成: name=${entry}`);
   }
   fs.writeFileSync(path.join(destination, 'mxc-deployment.json'),

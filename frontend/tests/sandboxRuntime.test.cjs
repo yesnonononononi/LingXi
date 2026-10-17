@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const { execFileSync, spawnSync } = require('node:child_process');
 const runtime = import('../scripts/build-sandbox-runtime.mjs');
 
 const ARCH = process.arch;
@@ -121,3 +122,32 @@ test('部署说明写宿主绝对路径时被拒绝', async t => {
   const { verifyRuntime } = await runtime;
   assert.throws(() => verifyRuntime(destination, 'win32', { nodeVersion: NODE_VERSION }), /必须是包内相对路径/);
 });
+
+test('Windows 复制受限子目录时返回可捕获异常，不得在原生层终止进程',
+  { skip: process.platform !== 'win32' }, t => {
+    const f = fixture(t, 'win32');
+    const blocked = path.join(f.source, 'git', 'restricted');
+    writeFile(blocked, 'blocked.txt');
+    const account = execFileSync('whoami', [], { encoding: 'utf8', windowsHide: true }).trim();
+    const scriptUrl = require('node:url').pathToFileURL(path.resolve(__dirname, '../scripts/build-sandbox-runtime.mjs')).href;
+    const script = `
+      import { buildSandboxRuntime } from ${JSON.stringify(scriptUrl)};
+      try {
+        buildSandboxRuntime(${JSON.stringify(f.root)}, ${JSON.stringify(f.source)},
+          { platform: 'win32', nodeVersion: ${JSON.stringify(NODE_VERSION)} });
+        process.exitCode = 2;
+      } catch (error) {
+        console.error(error.code);
+        process.exitCode = /^(EACCES|EPERM)$/.test(error.code) ? 0 : 3;
+      }
+    `;
+    try {
+      execFileSync('icacls', [blocked, '/deny', `${account}:(OI)(CI)(RX)`], { windowsHide: true });
+      const result = spawnSync(process.execPath, ['--input-type=module', '-e', script],
+        { encoding: 'utf8', windowsHide: true });
+      assert.equal(result.status, 0, `复制异常未被捕获: status=${result.status}, stderr=${result.stderr}`);
+      assert.match(result.stderr, /EACCES|EPERM/);
+    } finally {
+      execFileSync('icacls', [blocked, '/remove:d', account], { windowsHide: true });
+    }
+  });
