@@ -70,3 +70,12 @@ deliverables/
 # H2 内置库文件（应用启动目录下 ./data/lingxi.mv.db 等），不入库。
 /data/
 AGENTS.md.lingxi/
+
+# 运行时提取的脚本与临时验证产物不是源码。
+/helpers/
+/resources/sandbox-helpers/
+/frontend/tests/.probe-*.mts
+/frontend/tests/_scan_*.mts
+/frontend/i18n-verification-report.md
+*.swp
+*~
