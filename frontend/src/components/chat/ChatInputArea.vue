@@ -942,7 +942,7 @@ const slingColors = computed(() => {
     return {
       padColor: '#f5f5f5',
       iconColor: '#18181b',
-      accentColor: '#38bdf8',
+      accentColor: '#f5f5f5',
       wellColor: '#27272a',
       bandColor: '#52525b',
     };
@@ -950,7 +950,7 @@ const slingColors = computed(() => {
   return {
     padColor: '#18181b',
     iconColor: '#ffffff',
-    accentColor: '#0284c7',
+    accentColor: '#18181b',
     wellColor: '#e4e4e7',
     bandColor: '#71717a',
   };
@@ -1632,7 +1632,7 @@ defineExpose({
             :well-color="slingColors.wellColor"
             :band-color="slingColors.bandColor"
             :size="32"
-            :stroke-width="2.5"
+            :stroke-width="2"
             :arm-at="32"
             :max-pull="90"
             :launch-speed="2400"
