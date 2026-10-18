@@ -3,7 +3,6 @@ package com.summit.dp.workflow.application.chat;
 import com.summit.core.agent.Agent;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.Execution;
-import com.summit.core.conversation.message.Message;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.workflow.application.delegation.TeamPromptComposer;
 import com.summit.dp.workflow.infrastructure.harness.agent.IChatAgent;
@@ -97,18 +96,8 @@ public class AgentWorkflowOrchestratorImpl implements AgentWorkflowOrchestrator 
             if (single == null) throw new ClientException("未找到指定的 Agent: " + context.agentId());
             return requestPreparer.buildRequest(single.getPrompt(), context, single.getToolList());
         }
-        return requestPreparer.buildRequest(resolveUserText(context), context, ToolCatalog.DEFAULT_AGENT_TOOLS);
-    }
-
-    /**
-     * 裸模型档位的角色提示词：沿用既有行为，把本轮用户输入作为业务人设提示词。
-     * 输入正文取自 prepare 追加的最后一条用户消息。
-     */
-    private static String resolveUserText(RuntimeContext context) {
-        List<Message> messages = context.messageList();
-        if (messages == null || messages.isEmpty()) return "";
-        Message last = messages.getLast();
-        return last == null ? "" : Objects.toString(last.text(), "");
+        // 用户输入只留在用户消息中，不能提升为系统人设。
+        return requestPreparer.buildRequest("", context, ToolCatalog.DEFAULT_AGENT_TOOLS);
     }
 
     /**
