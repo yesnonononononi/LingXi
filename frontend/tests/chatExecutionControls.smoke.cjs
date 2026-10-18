@@ -19,9 +19,10 @@ import ChatResendDialog from '../../../src/components/chat/ChatResendDialog.vue'
 import { useChatExecutionControls } from '../../../src/views/chat/useChatExecutionControls';
 import { SessionAPI } from '../../../src/services/session';
 import { upsertTurnViewIntoMessages } from '../../../src/views/chat/blockProjection';
+import { StreamSessionRouter } from '../../../src/views/chat/streamSessionRouter';
 import '../../../src/style.css';
 const session = ref({ id:'500', title:'控制验证', runStatus:'RUNNING', modelId:'7', createdAt:1, updatedAt:1, activeTools:[],
-  messages:[{id:'user-display',serverMessageId:'9007199254740993',role:'user',turnId:'101',content:'先分析问题，再给出修改方案。',timestamp:1},
+  messages:[{id:'user-display',role:'user',turnId:'101',content:'先分析问题，再给出修改方案。',timestamp:1},
     {id:'answer',role:'assistant',turnId:'101',content:'已完成第一轮分析。',timestamp:2},
     {id:'second-user',serverMessageId:'9007199254740995',role:'user',turnId:'102',content:'补充第二轮问题。',timestamp:3}] });
 async function reconcile(id) {
@@ -34,6 +35,9 @@ const controls=useChatExecutionControls({session:computed(()=>session.value),isS
   ensureSubscribed:async()=>true,reconcile,buildCommand:input=>({input,modelId:'7',workspaceId:0,agentId:0,workDir:'',requirePlan:false}),
   onResendAccepted:()=>{} });
 window.visibleMessages=()=>session.value.messages;
+const router=new StreamSessionRouter();router.bindRootSession(session.value);
+window.syncUserMessage=()=>router.dispatch({type:'TURN_SNAPSHOT',timestamp:'',executionId:'901',sessionId:'500',turnId:'101',viewVersion:'2',
+  view:{sessionId:'500',turnId:'101',viewVersion:'2',status:'COMPLETED',userMessage:'先分析问题，再给出修改方案。',userMessageId:'9007199254740993',blocks:[]}});
 </script><template><main class="mx-auto flex max-w-3xl flex-col gap-3 p-6 h-screen">
 <ChatMessageList :messages="session.messages" session-id="500" :is-dark="false" :is-sending="session.runStatus!=='IDLE'"
   :allow-resend="controls.canResend.value" @edit-resend="controls.edit" />
@@ -82,7 +86,7 @@ await window.flush();window.ready=true;`);
   const evaluate=async source=>{try{return await window.webContents.executeJavaScript(source);}catch(error){console.error('组件步骤失败: '+source);throw error;}};
   for(let attempt=0;attempt<100&&!await evaluate('window.ready===true');attempt++) await new Promise(resolve=>setTimeout(resolve,50));
   assert.equal(await evaluate('window.ready'),true);
-  assert.equal(await evaluate('document.querySelector("[data-testid=edit-resend]")'),null);
+  assert.equal(await evaluate('document.querySelector("[data-testid=edit-resend]").disabled'),true);
   await evaluate('document.querySelector("[data-testid=pause-generation]").click();window.flush()');
   assert.equal(await evaluate('document.querySelector("[data-testid=resume-generation]")!==null'),true);
   assert.ok((await evaluate('window.requests')).includes('/a/completion/500/suspend'));
@@ -92,6 +96,17 @@ await window.flush();window.ready=true;`);
   assert.equal(await evaluate('document.querySelector("[data-testid=pause-generation]")!==null'),true);
   assert.equal(await evaluate('document.body.textContent.includes("不可作为聊天正文展示")'),false);
   await evaluate('window.backendStatus="IDLE";window.refreshSession();window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=edit-resend]").disabled'),true);
+  assert.match(await evaluate('document.querySelector("[data-testid=edit-resend]").title'),/消息信息尚未同步/);
+  await evaluate('document.querySelector("[data-testid=edit-resend]").click();window.flush()');
+  assert.equal(await evaluate('document.querySelector("[role=dialog]")'),null);
+  await evaluate('window.syncUserMessage();window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=edit-resend]").disabled'),false);
+  assert.equal(await evaluate('document.querySelector("[data-testid=edit-resend]").getAttribute("aria-label")'),'编辑并重发');
+  assert.equal(await evaluate('document.querySelector("[data-testid=edit-resend]").textContent.trim()'),'');
+  assert.equal(await evaluate('document.querySelector("[data-testid=edit-resend]").previousElementSibling.title'),'复制内容');
+  await new Promise(resolve=>setTimeout(resolve,250));
+  await fs.writeFile(path.join(output,'edit-icon.png'),(await window.webContents.capturePage()).toPNG());
   await evaluate('document.querySelector("[data-testid=edit-resend]").click();window.flush()');
   assert.equal(await evaluate('document.querySelector("[role=dialog] textarea").value'),'先分析问题，再给出修改方案。');
   await new Promise(resolve=>setTimeout(resolve,250));

@@ -70,6 +70,26 @@ test('视图补入真实消息 ID，更新已有乐观气泡而不把展示 ID �
   assert.equal(messages[0]!.serverMessageId, '9007199254740993');
 });
 
+test('实时快照给已有用户气泡补齐真实消息 ID，首个回答到达时也不重复用户气泡', () => {
+  for (const hasAnswer of [false, true]) {
+    const current = session();
+    current.messages = [{ ...original, serverMessageId: undefined }];
+    if (hasAnswer) current.messages.push({ id: 'answer', role: 'assistant', turnId: '101', content: '', timestamp: 2 });
+    const router = new StreamSessionRouter();
+    router.bindRootSession(current);
+    const user = current.messages[0]!;
+    const snapshot: AgentEvent = { type: 'TURN_SNAPSHOT', timestamp: '', executionId: '901', sessionId: '500',
+      turnId: '101', viewVersion: '2', view: { sessionId: '500', turnId: '101', viewVersion: '2', status: 'COMPLETED',
+        userMessage: '原问题', userMessageId: original.serverMessageId, blocks: [] } };
+    router.dispatch(snapshot);
+    assert.equal(user.serverMessageId, original.serverMessageId);
+    assert.deepEqual(current.messages.filter(message => message.role === 'user'), [user]);
+    router.dispatch({ ...snapshot, viewVersion: '1', view: { ...snapshot.view, userMessageId: '1' } });
+    assert.equal(user.serverMessageId, original.serverMessageId);
+    router.dispose();
+  }
+});
+
 test('暂停和恢复等待权威事件，不伪造执行状态，恢复前先等订阅就绪', async t => {
   t.mock.method(AgentAPI, 'suspend', async () => {});
   const resume = t.mock.method(AgentAPI, 'resume', async () => ({ code: 1, data: '不是消息正文' }));

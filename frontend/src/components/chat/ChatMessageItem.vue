@@ -55,10 +55,6 @@
             {{ t('chat.message.resend') }}
           </button>
         </template>
-        <button v-if="props.canResend && !props.message.unsent && props.message.serverMessageId && props.message.turnId"
-          type="button" data-testid="edit-resend" @click="emit('editResend', props.message)"
-          class="text-gray-500 hover:text-blue-600 dark:text-zinc-400 dark:hover:text-blue-400 cursor-pointer"
-          :title="t('chat.controls.editResend')">{{ t('chat.controls.editResend') }}</button>
         <button
           @click="copyContent"
           class="hover:text-gray-600 dark:hover:text-zinc-200 transition p-0.5"
@@ -66,6 +62,14 @@
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+        </button>
+        <button v-if="!props.message.unsent && props.message.turnId"
+          type="button" data-testid="edit-resend" :disabled="!props.canResend || !props.message.serverMessageId"
+          :aria-label="t('chat.controls.editResend')" :title="resendTitle" @click="emit('editResend', props.message)"
+          class="hover:text-gray-600 dark:hover:text-zinc-200 transition p-0.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+          <svg class="w-3.5 h-3.5" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="m16 4 4 4M4 20l4.5-1 12-12a2.8 2.8 0 0 0-4-4l-12 12L4 20Z" />
           </svg>
         </button>
       </div>
@@ -638,6 +642,8 @@ const props = defineProps<{
 
 const { isDark: globalIsDark } = useTheme();
 const userImageUrls = computed(() => props.message.imageUrls ?? (props.message.imageUrl ? [props.message.imageUrl] : []));
+const resendTitle = computed(() => !props.message.serverMessageId ? t('chat.controls.messageSyncPending')
+  : !props.canResend ? t('chat.controls.waitUntilIdle') : t('chat.controls.editResend'));
 const isDark = computed(() => props.isDark ?? globalIsDark.value);
 // 委派身份由后端父轮次声明，不能从任务文本或会话位置猜测。
 const isDelegatedTask = computed(() => props.message.role === 'user' && !!props.turn?.parentTurnId);

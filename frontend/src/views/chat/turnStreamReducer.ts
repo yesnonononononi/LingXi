@@ -245,6 +245,9 @@ export class TurnStreamReducer {
     // 与历史侧共用同一更新入口：按 sessionId + turnId 定位、按版本接受更新，
     // 用户气泡与助手气泡成对写入。这样「实时到达」与「历史回查」走的是同一条规则。
     const messages = this.getMessages();
+    const existingUser = messages.find(message => message.role === 'user' && message.turnId === turnId);
+    // 已有用户气泡仍需补齐服务端标识，编辑入口依赖它。
+    if (existingUser && payload.view.userMessageId != null) existingUser.serverMessageId = payload.view.userMessageId;
     const existing = this.findBubbleByTurnId(turnId);
     let bubble: ChatMessage;
     if (existing) {
@@ -259,7 +262,7 @@ export class TurnStreamReducer {
     } else {
       bubble = buildBubbleFromTurnView(payload.view);
       const userMessage = buildUserMessageFromTurnView(payload.view);
-      const pair = userMessage ? [userMessage, bubble] : [bubble];
+      const pair = userMessage && !existingUser ? [userMessage, bubble] : [bubble];
       messages.splice(messages.length, 0, ...pair);
     }
     this.activeBubbleId = bubble.id;
