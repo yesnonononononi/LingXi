@@ -1,4 +1,4 @@
-package com.summit.dp.workflow.infrastructure.tools.terminal;
+package com.summit.dp.workflow.infrastructure.tools.terminal.backend;
 
 import com.summit.core.runtime.CommandHandler;
 import com.summit.core.runtime.workspace.WorkspaceCommands.CommandResult;
@@ -67,22 +67,47 @@ public class BackendProcessManager implements TaskRuntimeService {
         });
     }
 
-    public TaskVO readTask(Long sessionId, Long taskId) {
+
+
+
+
+    public void notifyTaskChanged(Task task) { broadcaster.publishChanged(task); }
+
+
+    @Override
+    public TaskVO read(Long sessionId, Long taskId, boolean join) {
         throwIf(sessionId == null || taskId == null, "会话标识和任务标识不能为空");
         BackendProcess process = processes.get(taskId);
         if (process != null) {
+            Task task = process.getTask();
             synchronized (process) {
-                Task task = process.getTask();
                 throwIf(!sessionId.equals(task.getSessionId()), "任务不属于当前会话");
-                return toView(task, task.getStatus().isTerminal() ? task.getOutput() : process.getHandle().outputSnapshot());
+                if (task.getStatus().isTerminal()) return toView(task, task.getOutput());
+                if (!join) return toView(task, process.getHandle().outputSnapshot());
+            }
+            CommandResult result;
+            // 等待时释放任务锁，停止请求和完成线程才能正常收口。
+            try { result = process.getHandle().await(); }
+            catch (InterruptedException failure) {
+                Thread.currentThread().interrupt();
+                throw new ClientException("等待后台任务结果时被中断，任务仍可查询或停止");
+            } catch (IOException failure) {
+                throw new ClientException("读取后台任务结果失败：" + failure.getMessage());
+            }
+            synchronized (process) {
+                // 完成线程可能尚未落定；返回的输出、状态和退出码必须来自同一个结果。
+                if (!task.getStatus().isTerminal()) {
+                    task.finish(result.timedOut() ? TaskStatus.TIMEOUT : result.isSuccess() ? TaskStatus.SUCCESS : TaskStatus.FAILED,
+                            result.output(), result.exitCode(), result.truncated());
+                }
+                persistAndRemove(process);
+                return toView(task, task.getOutput());
             }
         }
         Task task = repository.findById(taskId).orElseThrow(ClientException::new);
         throwIf(!sessionId.equals(task.getSessionId()), "任务不属于当前会话");
         return toView(task, task.getOutput());
     }
-
-    public void notifyTaskChanged(Task task) { broadcaster.publishChanged(task); }
 
     public List<TaskVO> listTasks(Long sessionId) {
         throwIf(sessionId == null, "会话标识不能为空");
@@ -106,7 +131,7 @@ public class BackendProcessManager implements TaskRuntimeService {
         throwIf(sessionId == null || taskId == null, "会话标识和任务标识不能为空");
         BackendProcess process = processes.get(taskId);
         if (process == null) {
-            TaskVO current = readTask(sessionId, taskId);
+            TaskVO current = read(sessionId, taskId, false);
             throwIf("RUNNING".equals(current.getStatus()) || "PENDING".equals(current.getStatus()), "任务当前没有可控制的进程，请刷新状态");
             return current;
         }
@@ -159,13 +184,19 @@ public class BackendProcessManager implements TaskRuntimeService {
     }
 
     private TaskVO toView(Task task, String output) {
-        TaskVO view = new TaskVO();
-        view.setId(task.getId()); view.setSessionId(task.getSessionId()); view.setTurnId(task.getTurnId());
-        view.setCommand(task.getCommand()); view.setStatus(task.getStatus().name()); view.setOutput(output);
-        view.setIntention(task.getIntention());
-        view.setExitCode(task.getExitCode()); view.setTruncated(task.isTruncated());
-        view.setCreateAt(task.getCreateAt()); view.setCompleteAt(task.getCompleteAt());
-        return view;
+        return TaskVO.builder()
+                .id(task.getId())
+                .sessionId(task.getSessionId())
+                .turnId(task.getTurnId())
+                .command(task.getCommand())
+                .status(task.getStatus().name())
+                .output(output)
+                .intention(task.getIntention())
+                .exitCode(task.getExitCode())
+                .truncated(task.isTruncated())
+                .createAt(task.getCreateAt())
+                .completeAt(task.getCompleteAt())
+                .build();
     }
     private void throwIf(boolean condition, String err) { if (condition) throw new ClientException(err); }
 }

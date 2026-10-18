@@ -1,4 +1,4 @@
-package com.summit.dp.workflow.infrastructure.tools.terminal;
+package com.summit.dp.workflow.infrastructure.tools.terminal.backend;
 
 import com.summit.core.runtime.CommandHandler;
 import com.summit.dp.task.domain.model.Task;

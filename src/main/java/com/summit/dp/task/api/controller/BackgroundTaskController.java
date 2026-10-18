@@ -26,7 +26,7 @@ public class BackgroundTaskController {
 
     @GetMapping("/{id}")
     public Result<TaskVO> read(@RequestParam Long sessionId, @PathVariable Long id) {
-        return Result.success(manager.readTask(sessionId, id));
+        return Result.success(manager.read(sessionId, id, false));
     }
 
     @PostMapping("/{id}/stop")

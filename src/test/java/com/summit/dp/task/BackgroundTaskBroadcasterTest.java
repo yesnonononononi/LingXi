@@ -3,7 +3,7 @@ package com.summit.dp.task;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.task.domain.model.Task;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
-import com.summit.dp.workflow.infrastructure.tools.terminal.BackgroundTaskBroadcaster;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskBroadcaster;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.*;

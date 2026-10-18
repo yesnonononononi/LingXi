@@ -12,9 +12,9 @@ import com.summit.core.model.ModelProviderRegistry;
 import com.summit.core.model.chat.ChatModel;
 import com.summit.core.tool.*;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
-import com.summit.dp.workflow.infrastructure.tools.terminal.BackendProcesser;
-import com.summit.dp.workflow.infrastructure.tools.terminal.BackendProcessManager;
-import com.summit.dp.workflow.infrastructure.tools.terminal.ManageCommandToolExecutor;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcesser;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcessManager;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.ManageCommandToolExecutor;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.infrastructure.tools.web.WebResultSummarizer;
 import com.summit.dp.workflow.infrastructure.tools.web.WebSearchConfig;
@@ -79,11 +79,11 @@ public class CommonToolConfiguration {
                 .id(ToolCatalog.MANAGE_COMMAND).name(ToolCatalog.MANAGE_COMMAND)
                 .executor(new ManageCommandToolExecutor(mapper, manager))
                 .concurrentPolicy(ConcurrentPolicy.SERIAL_MUTATION)
-                .description("List, read or stop background commands in the current session. Read returns retained output and the final exit code. Stop waits for confirmed termination.")
+                .description("Manage background commands in the current session. List returns task summaries. Snapshot returns current output immediately. Read waits for completion up to the tool timeout and returns the final status, output and exit code; interrupting the wait does not stop the task. Stop waits for confirmed termination.")
                 .parametersJsonSchema("""
                         {"type":"object","properties":{
-                          "action":{"type":"string","enum":["list","read","stop"]},
-                          "taskId":{"type":"string","description":"Exact taskId returned by execute_command; required for read and stop."}
+                          "action":{"type":"string","enum":["list","read","stop","snapshot"]},
+                          "taskId":{"type":"string","description":"Exact taskId returned by execute_command; required for read, snapshot and stop."}
                         },"required":["action"]}
                         """)
                 .timeout(30L).maxOutput(55_000).build();

@@ -14,7 +14,7 @@ import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.workflow.infrastructure.tools.config.CommonToolConfiguration;
 import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
-import com.summit.dp.workflow.infrastructure.tools.terminal.BackendProcesser;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcesser;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;

@@ -1,4 +1,4 @@
-package com.summit.dp.workflow.infrastructure.tools.terminal;
+package com.summit.dp.workflow.infrastructure.tools.terminal.backend;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.tool.ToolExecuteResult;
@@ -27,9 +27,10 @@ public class ManageCommandToolExecutor implements ToolExecutor {
             else {
                 throwIf(request.taskId() == null || request.taskId() <= 0, "任务标识不能为空且必须为正数");
                 result = switch (request.action()) {
-                    case "read" -> manager.readTask(sessionId, request.taskId());
+                    case "snapshot" -> manager.read(sessionId, request.taskId(), false);
                     case "stop" -> manager.stop(sessionId, request.taskId());
-                    default -> throw new ClientException("后台任务操作只支持 list、read 或 stop");
+                    case "read" -> manager.read(sessionId, request.taskId(), true);
+                    default -> throw new ClientException("后台任务操作只支持 list、read、snapshot 或 stop");
                 };
             }
             return ToolExecuteResult.success(mapper.writeValueAsString(result));

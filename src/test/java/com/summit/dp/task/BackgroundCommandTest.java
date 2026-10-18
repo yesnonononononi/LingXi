@@ -33,12 +33,12 @@ import com.summit.dp.task.infrastructure.repository.TaskRepositoryImpl;
 import com.summit.dp.shared.config.H2SchemaInitializer;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
-import com.summit.dp.workflow.infrastructure.tools.terminal.BackendProcess;
-import com.summit.dp.workflow.infrastructure.tools.terminal.BackgroundTaskBroadcaster;
-import com.summit.dp.workflow.infrastructure.tools.terminal.BackendProcessManager;
-import com.summit.dp.workflow.infrastructure.tools.terminal.BackendProcesser;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcess;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskBroadcaster;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcessManager;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcesser;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
-import com.summit.dp.workflow.infrastructure.tools.terminal.ManageCommandToolExecutor;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.ManageCommandToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.config.CommonToolConfiguration;
 import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
 import com.summit.dp.tools.application.port.ToolCatalog;
@@ -141,13 +141,13 @@ class BackgroundCommandTest {
         assertEquals(command(1200, 7), registered.getCommand());
         assertEquals("验证后台输出", registered.getIntention());
         assertNull(registered.getCompleteAt());
-        await(() -> manager.readTask(10L, id).getOutput().contains("ready:"));
-        assertEquals("RUNNING", manager.readTask(10L, id).getStatus());
+        await(() -> manager.read(10L, id, false).getOutput().contains("ready:"));
+        assertEquals("RUNNING", manager.read(10L, id, false).getStatus());
         await(() -> "FAILED".equals(repository.findById(id).orElseThrow().getStatus().name()));
         Task completed = repository.findById(id).orElseThrow();
         assertEquals(7, completed.getExitCode()); assertTrue(completed.getOutput().endsWith("done"));
         assertNotNull(completed.getCompleteAt()); assertNotNull(completed.getCreateAt());
-        assertEquals(completed.getOutput(), manager.readTask(10L, id).getOutput());
+        assertEquals(completed.getOutput(), manager.read(10L, id, false).getOutput());
         assertEquals(7, manager.stop(10L, id).getExitCode());
         assertEquals(1, manager.listTasks(10L).size()); assertTrue(manager.listTasks(99L).isEmpty());
         await(() -> changedStatuses.contains("FAILED"));
@@ -156,9 +156,9 @@ class BackgroundCommandTest {
 
     @Test void stopConfirmsProcessExitAndDoesNotAllowAnotherSessionToControlIt() throws Exception {
         Long id = submitter.submit(command(60_000, 0), 10L, 20L, workspace, 80, 4096);
-        await(() -> manager.readTask(10L, id).getOutput().contains("ready:"));
-        long pid = Long.parseLong(manager.readTask(10L, id).getOutput().strip().substring("ready:".length()));
-        assertThrows(ClientException.class, () -> manager.readTask(99L, id));
+        await(() -> manager.read(10L, id, false).getOutput().contains("ready:"));
+        long pid = Long.parseLong(manager.read(10L, id, false).getOutput().strip().substring("ready:".length()));
+        assertThrows(ClientException.class, () -> manager.read(99L, id, false));
         assertThrows(ClientException.class, () -> manager.stop(99L, id));
         assertTrue(ProcessHandle.of(pid).orElseThrow().isAlive());
         TaskVO stopped = manager.stop(10L, id);
@@ -248,7 +248,7 @@ class BackgroundCommandTest {
         try {
             retrying.registerBackendProcess(new BackendProcess(task, handle));
             await(() -> failures.get() > 0);
-            assertEquals("actual failure", retrying.readTask(10L, 103L).getOutput());
+            assertEquals("actual failure", retrying.read(10L, 103L, false).getOutput());
             await(() -> repository.findById(103L).orElseThrow().getStatus().isTerminal());
             assertEquals(7, repository.findById(103L).orElseThrow().getExitCode());
         } finally { retrying.close(); }
@@ -294,7 +294,7 @@ class BackgroundCommandTest {
         Long id = submitter.submit("echo test", 10L, 20L, controlled, 10, 100);
         await(() -> repository.findById(id).orElseThrow().getStatus().isTerminal());
         assertEquals(8, repository.findById(id).orElseThrow().getExitCode());
-        assertEquals("already exited", manager.readTask(10L, id).getOutput());
+        assertEquals("already exited", manager.read(10L, id, false).getOutput());
         verify(commands, never()).execute(anyString(), anyString(), any(), anyLong(), any(), anyLong());
     }
 

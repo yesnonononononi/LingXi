@@ -5,7 +5,7 @@ import java.util.List;
 
 /** 任务控制由运行时实现，接口层只依赖业务契约。 */
 public interface TaskRuntimeService {
-    TaskVO readTask(Long sessionId, Long taskId);
+    TaskVO read(Long sessionId, Long taskId,boolean join);
     List<TaskVO> listTasks(Long sessionId);
     TaskVO stop(Long sessionId, Long taskId);
 }
