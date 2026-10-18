@@ -14,6 +14,7 @@ import DropUpSelect from '../common/DropUpSelect.vue';
 import BorderGlow from '../common/BorderGlow.vue';
 import SparkTrail from '../common/SparkTrail.vue';
 import MorphingSendIcon from '../common/MorphingSendIcon.vue';
+import SlingButton from '../common/SlingButton.vue';
 import ProjectDropdown from './ProjectDropdown.vue';
 import type { SelectOption } from '../../types/ui';
 import type { ChatMode, ModelConfig, WorkspaceVO, AgentAccessMode, TeamVO, AgentVO, ReasoningEffort } from '../../types/chat';
@@ -908,7 +909,7 @@ type SpeechRecognitionInstance = {
   start: () => void;
 };
 
-// ====== Send 按钮 ======
+// ====== Send 按钮与 Vue Bits SlingButton 状态映射 ======
 const canSend = computed(() => {
   if (props.reasoningEffortPending) return false;
   if (attachments.value.length > 0) return true;
@@ -916,15 +917,44 @@ const canSend = computed(() => {
   return text.length > 0;
 });
 const armed = computed(() => !!props.isSending || canSend.value);
-const pressed = ref(false);
 
-const down = (e: PointerEvent) => {
-  if (e.button !== 0 || !armed.value) return;
-  pressed.value = true;
-};
-const up = () => {
-  pressed.value = false;
-};
+const slingColors = computed(() => {
+  const isDark = props.isDark !== false;
+  if (props.isSending) {
+    return {
+      padColor: '#e11d48',
+      iconColor: '#ffffff',
+      accentColor: '#fb7185',
+      wellColor: isDark ? '#4c0519' : '#ffe4e6',
+      bandColor: '#f43f5e',
+    };
+  }
+  if (!canSend.value) {
+    return {
+      padColor: isDark ? '#27272a' : '#e4e4e7',
+      iconColor: isDark ? '#71717a' : '#a1a1aa',
+      accentColor: isDark ? '#3f3f46' : '#d4d4d8',
+      wellColor: isDark ? '#18181b' : '#f4f4f5',
+      bandColor: isDark ? '#3f3f46' : '#d4d4d8',
+    };
+  }
+  if (isDark) {
+    return {
+      padColor: '#f5f5f5',
+      iconColor: '#18181b',
+      accentColor: '#38bdf8',
+      wellColor: '#27272a',
+      bandColor: '#52525b',
+    };
+  }
+  return {
+    padColor: '#18181b',
+    iconColor: '#ffffff',
+    accentColor: '#0284c7',
+    wellColor: '#e4e4e7',
+    bandColor: '#71717a',
+  };
+});
 
 const onSendClick = () => {
   if (props.isSending) emit('stopGeneration');
@@ -1594,25 +1624,31 @@ defineExpose({
             <HugeiconsIcon v-else :icon="Mic01Icon as IconArray" :size="15" :stroke-width="2" />
           </button>
 
-          <!-- PromptBar Morphing 发送 / 停止按钮：armed 青蓝渐变+光晕，sending 玫红（停止语义） -->
-          <button
-            type="button"
-            class="inline-grid relative flex-none place-items-center p-0 border-0 rounded-full outline-none w-7 h-7 touch-manipulation cursor-pointer select-none [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background_200ms_ease,color_200ms_ease,transform_160ms_cubic-bezier(0.23,1,0.32,1),box-shadow_200ms_ease,filter_160ms_ease] [background:color-mix(in_srgb,var(--pb-ink)_12%,var(--pb-bg))] [color:color-mix(in_srgb,var(--pb-ink)_55%,var(--pb-bg))] data-[armed]:[background:linear-gradient(135deg,#22d3ee_0%,#3b82f6_100%)] data-[armed]:[color:#fff] data-[armed]:shadow-[0_0_0_1px_rgba(34,211,238,0.25),0_3px_12px_-1px_rgba(37,99,235,0.55)] data-[armed]:hover:[filter:brightness(1.12)] data-[armed]:hover:shadow-[0_0_0_1px_rgba(34,211,238,0.4),0_4px_16px_-1px_rgba(37,99,235,0.7)] data-[sending]:[background:linear-gradient(135deg,#fb7185_0%,#e11d48_100%)] data-[sending]:[color:#fff] data-[sending]:shadow-[0_0_0_1px_rgba(251,113,133,0.3),0_3px_12px_-1px_rgba(225,29,72,0.55)] data-[pressed]:[transform:scale(var(--pb-press))] focus-visible:ring-2 focus-visible:ring-cyan-400/60 disabled:cursor-default disabled:data-[armed]:[filter:none] motion-reduce:data-[pressed]:[transform:none] motion-reduce:[transition:background-color_200ms_ease,color_200ms_ease]"
+          <!-- Vue Bits 弹弓发送 / 停止按钮：支持拖拽弹射与点击发送，带发射粒子与弹力回弹 -->
+          <SlingButton
+            :pad-color="slingColors.padColor"
+            :icon-color="slingColors.iconColor"
+            :accent-color="slingColors.accentColor"
+            :well-color="slingColors.wellColor"
+            :band-color="slingColors.bandColor"
+            :size="32"
+            :stroke-width="2.5"
+            :arm-at="32"
+            :max-pull="90"
+            :launch-speed="2400"
+            :recoil="0.2"
+            :flight="80"
+            :particles="12"
+            :spread="60"
+            axis="any"
+            tap-sends
             :disabled="!armed"
-                        :aria-label="isSending ? t('chat.input.stop') : t('chat.input.send')"
-            :data-armed="armed ? '' : undefined"
-            :data-sending="isSending ? '' : undefined"
-            :data-pressed="pressed ? '' : undefined"
-            :title="t('chat.input.sendTip')"
-            @mousedown.prevent
-            @pointerdown="down"
-            @pointerup="up"
-            @pointercancel="up"
-            @pointerleave="up"
-            @click="onSendClick"
+            :aria-label="isSending ? t('chat.input.stop') : t('chat.input.send')"
+            :title="isSending ? t('chat.input.stop') : t('chat.input.sendTip')"
+            @send="onSendClick"
           >
-            <MorphingSendIcon :is-sending="!!isSending" class="w-4 h-4" />
-          </button>
+            <MorphingSendIcon :is-sending="!!isSending" class="w-3.5 h-3.5" />
+          </SlingButton>
         </div>
       </div>
     </div>
