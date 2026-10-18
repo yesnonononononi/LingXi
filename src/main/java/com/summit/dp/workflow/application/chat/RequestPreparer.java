@@ -479,6 +479,7 @@ public class RequestPreparer {
         if (readOnly) {
             Set<String> permitted = toolCatalog.readOnlyNames();
             result.removeIf(name -> name == null || (!ToolCatalog.EXECUTE_COMMAND.equals(name.trim())
+                    && !ToolCatalog.MANAGE_COMMAND.equals(name.trim())
                     && !permitted.contains(name.trim())));
         }
         return withoutUnusableCollaborationTools(result, context);

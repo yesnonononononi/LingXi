@@ -1,6 +1,9 @@
 package com.summit.dp.workflow.infrastructure.tools.terminal;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.execution.ExecutionEventMetadata;
+import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.sandbox_security.domain.model.SecurityAction;
 import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
 import com.summit.dp.sandbox_security.application.TerminalSecurityPolicy;
@@ -25,7 +28,9 @@ import java.util.concurrent.TimeUnit;
 public class CommandToolDefinitionExecutor implements ToolExecutor {
     private final ObjectMapper objectMapper;
     private final TerminalSecurityPolicy security;
-    public CommandToolDefinitionExecutor(ObjectMapper mapper) { this(mapper, null); }
+    private final BackendProcesser background;
+    public CommandToolDefinitionExecutor(ObjectMapper mapper) { this(mapper, null, null); }
+    public CommandToolDefinitionExecutor(ObjectMapper mapper, TerminalSecurityPolicy security) { this(mapper, security, null); }
 
     @Override
     public @NonNull ToolExecuteResult execute(ToolExecution toolExecution) {
@@ -52,10 +57,20 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
             if (decision != null && decision.action() == SecurityAction.DENY) {
                 return ToolExecuteResult.err("命令被安全规则禁止：" + decision.matchedRule());
             }
-            // execute
+            if (request.isBackground()) {
+                throwIf(background == null, "后台命令服务尚未装配");
+                Long sessionId = ExecutionAttributes.readLong(toolExecution.getAttributes(), ExecutionAttributes.SESSION_ID);
+                Long turnId = ExecutionEventMetadata.turnId(toolExecution.getEventMetaData());
+                throwIf(turnId == null, "后台任务缺少所属轮次");
+                Long taskId = background.submit(request.getCommand(), sessionId, turnId,
+                        workspace, toolExecution.getToolDefinition().timeout(), toolExecution.getToolDefinition().maxOutput());
+                return ToolExecuteResult.success(objectMapper.writeValueAsString(Map.of("taskId", taskId.toString(),
+                        "message", "后台任务已登记，使用 manage_command 读取状态或停止")), ToolResultType.NORMAL, buildMetadata(request));
+            }
             return process(request, toolExecution.getWorkspace(), toolExecution.getToolDefinition());
 
         } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             return ToolExecuteResult.err("tool execute failed : " + e);
         }
     }
@@ -106,5 +121,7 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
         String args = toolExecution.getArgs();
         return objectMapper.readValue(args, ExecuteCommandRequest.class);
     }
+
+    private void throwIf(boolean condition, String err) { if (condition) throw new ClientException(err); }
 
 }

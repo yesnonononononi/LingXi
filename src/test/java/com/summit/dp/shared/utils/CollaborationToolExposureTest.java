@@ -121,7 +121,8 @@ class CollaborationToolExposureTest {
     void defaultAgentGetsTheBasicTools() {
         AgentRequest request = request(null, null, ToolCatalog.DEFAULT_AGENT_TOOLS, REGISTERED, true);
 
-        assertEquals(List.of("execute_command", "read_file", "edit_file", "web_search", "require_choice",
+        assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE,
+                        ToolCatalog.EDIT_FILE, ToolCatalog.WEB_SEARCH, ToolCatalog.REQUIRE_CHOICE,
                         ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.SEARCH_TOOL),
                 request.getToolList(),
                 "基础工具包含用户确认，外加两级 MCP 发现入口；协作工具不该出现");
@@ -132,7 +133,8 @@ class CollaborationToolExposureTest {
     void defaultAgentWithoutMcpGetsExactlyTheBasicTools() {
         AgentRequest request = request(null, null, ToolCatalog.DEFAULT_AGENT_TOOLS, REGISTERED, false);
 
-        assertEquals(List.of("execute_command", "read_file", "edit_file", "web_search", "require_choice"),
+        assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE,
+                        ToolCatalog.EDIT_FILE, ToolCatalog.WEB_SEARCH, ToolCatalog.REQUIRE_CHOICE),
                 request.getToolList());
     }
 
@@ -142,7 +144,7 @@ class CollaborationToolExposureTest {
         AgentRequest request = request(null, null, ToolCatalog.DEFAULT_AGENT_TOOLS, REGISTERED, false,
                 AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of("read_file", "web_search", "require_choice"));
 
-        assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.READ_FILE, ToolCatalog.WEB_SEARCH,
+        assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE, ToolCatalog.WEB_SEARCH,
                         ToolCatalog.REQUIRE_CHOICE),
                 request.getToolList(), "只读档禁用 edit_file，终端不按并发策略被剔除");
     }

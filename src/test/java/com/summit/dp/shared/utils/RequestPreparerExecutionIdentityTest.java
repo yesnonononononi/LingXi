@@ -134,6 +134,17 @@ class RequestPreparerExecutionIdentityTest {
     }
 
     @Test
+    void readOnlyModeRetainsBackgroundControlAlongsideTerminalExecution() {
+        when(settingsProvider.current()).thenReturn(Optional.of(new SettingsView(WorkspaceType.LOCAL,
+                AgentAccessMode.READ_ONLY_IN_WORKSPACE, CommandApprovalPolicy.FULL_ACCESS, null, null, null, null, null, null, 10)));
+        RuntimeContext context = preparer.prepare(command());
+        List<String> tools = preparer.buildRequest("prompt", context, ToolCatalog.DEFAULT_AGENT_TOOLS).getToolList();
+        assertTrue(tools.contains(ToolCatalog.EXECUTE_COMMAND));
+        assertTrue(tools.contains(ToolCatalog.MANAGE_COMMAND));
+        assertTrue(!tools.contains(ToolCatalog.EDIT_FILE));
+    }
+
+    @Test
     void sandboxFullAccessSurvivesPreparationAndRequestAttributes() {
         WorkspaceVO workspace = WorkspaceVO.builder().id(9L).name("project").hostDir("/project").workDir("/project").build();
         when(settingsProvider.current()).thenReturn(Optional.of(new SettingsView(WorkspaceType.SAND_BOX,

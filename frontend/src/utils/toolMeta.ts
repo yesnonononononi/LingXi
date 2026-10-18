@@ -28,6 +28,7 @@ export const TOOL_CATEGORY = {
 const KNOWN_TOOL_CATEGORY: Partial<Record<AgentToolName, string>> = {
   // 终端命令
   [AgentToolName.ExecuteCommand]: TOOL_CATEGORY.COMMAND,
+  [AgentToolName.ManageCommand]: TOOL_CATEGORY.COMMAND,
   // 读取
   [AgentToolName.ReadFile]: TOOL_CATEGORY.READ,
   [AgentToolName.WebSearch]: TOOL_CATEGORY.READ,

@@ -11,6 +11,10 @@ import com.summit.core.model.ModelProviderRegistry;
 import com.summit.core.model.chat.ChatModel;
 import com.summit.core.tool.*;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
+import com.summit.dp.workflow.infrastructure.tools.terminal.BackendProcesser;
+import com.summit.dp.workflow.infrastructure.tools.terminal.BackendProcessManager;
+import com.summit.dp.workflow.infrastructure.tools.terminal.ManageCommandToolExecutor;
+import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.infrastructure.tools.web.WebResultSummarizer;
 import com.summit.dp.workflow.infrastructure.tools.web.WebSearchConfig;
 import com.summit.dp.workflow.infrastructure.tools.web.WebSearchEngine;
@@ -36,19 +40,20 @@ import java.net.http.HttpClient;
 public class CommonToolConfiguration {
     @Bean
     @ConditionalOnMissingBean(name = "executeCommandToolDefinition")
-    public ToolDefinition<CommandToolDefinitionExecutor> executeCommandToolDefinition(ObjectMapper objectMapper, TerminalSecurityPolicy security) {
-        String name = "execute_command";
+    public ToolDefinition<CommandToolDefinitionExecutor> executeCommandToolDefinition(ObjectMapper objectMapper, TerminalSecurityPolicy security, BackendProcesser background) {
+        String name = ToolCatalog.EXECUTE_COMMAND;
         // SERIAL_MUTATION：终端命令一律串行，不参与并发窗口。
         // 框架判据是「整批请求全都 allowConcurrent 才并发」（DefaultToolExecutionManager#canExecuteConcurrently），
         // 故模型在同一轮里发起的多条命令会在同一线程上顺序执行，不会互相抢占工作区。
         return ToolDefinition.<CommandToolDefinitionExecutor>builder()
-                .executor(new CommandToolDefinitionExecutor(objectMapper, security))
+                .executor(new CommandToolDefinitionExecutor(objectMapper, security, background))
                 .id(name)
                 .concurrentPolicy(ConcurrentPolicy.SERIAL_MUTATION)
                 .name(name)
                 .description("""
                         Execute a terminal command in the assigned workspace environment.
                         Output may be truncated according to the configured maximum.
+                        Set background=true to return a persisted taskId immediately; use manage_command to list, read or stop it.
                         Always state in `intention` what the command is for; it is displayed to the user.
                         """)
                 .parametersJsonSchema("""
@@ -56,7 +61,8 @@ public class CommonToolConfiguration {
                           "type": "object",
                           "properties": {
                             "command": {"type": "string", "description": "Raw command text using the shell reported by the assigned workspace. The workspace selects and starts the shell automatically; do not add a shell launcher prefix or probe other shells."},
-                            "intention": {"type": "string", "description": "One short sentence stating what this command is intended to achieve. It is shown to the user in the UI next to the command, so make it specific and human-readable."}
+                            "intention": {"type": "string", "description": "One short sentence stating what this command is intended to achieve. It is shown to the user in the UI next to the command, so make it specific and human-readable."},
+                            "background": {"type": "boolean", "default": false, "description": "Return a taskId immediately while the command runs in the background. The same command timeout and output limit apply."}
                           },
                           "required": ["command", "intention"]
                         }
@@ -64,6 +70,23 @@ public class CommonToolConfiguration {
                 .maxOutput(5_000)
                 .timeout(240L)
                 .build();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(name = "manageCommandToolDefinition")
+    public ToolDefinition<ManageCommandToolExecutor> manageCommandToolDefinition(ObjectMapper mapper, BackendProcessManager manager) {
+        return ToolDefinition.<ManageCommandToolExecutor>builder()
+                .id(ToolCatalog.MANAGE_COMMAND).name(ToolCatalog.MANAGE_COMMAND)
+                .executor(new ManageCommandToolExecutor(mapper, manager))
+                .concurrentPolicy(ConcurrentPolicy.SERIAL_MUTATION)
+                .description("List, read or stop background commands in the current session. Read returns retained output and the final exit code. Stop waits for confirmed termination.")
+                .parametersJsonSchema("""
+                        {"type":"object","properties":{
+                          "action":{"type":"string","enum":["list","read","stop"]},
+                          "taskId":{"type":"string","description":"Exact taskId returned by execute_command; required for read and stop."}
+                        },"required":["action"]}
+                        """)
+                .timeout(30L).maxOutput(55_000).build();
     }
 
     @Bean

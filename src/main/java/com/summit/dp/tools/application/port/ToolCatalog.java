@@ -20,6 +20,7 @@ public interface ToolCatalog {
 
     /** 终端命令工具名 */
     String EXECUTE_COMMAND = "execute_command";
+    String MANAGE_COMMAND = "manage_command";
 
     /** 读文件工具名 */
     String READ_FILE = "read_file";
@@ -43,7 +44,7 @@ public interface ToolCatalog {
      * 只读模式保留终端，禁用编辑工具；终端写入副作用不由档位保证。</p>
      */
     List<String> DEFAULT_AGENT_TOOLS =
-            List.of(EXECUTE_COMMAND, READ_FILE, EDIT_FILE, WEB_SEARCH, REQUIRE_CHOICE);
+            List.of(EXECUTE_COMMAND, MANAGE_COMMAND, READ_FILE, EDIT_FILE, WEB_SEARCH, REQUIRE_CHOICE);
 
     /**
      * 工具检索工具名。实现归框架侧（{@code harness-kernel-tools} 的 {@link SearchToolExecutor}），

@@ -25,6 +25,8 @@ export const AgentToolName = {
   EditFile: 'edit_file',
   /** 终端命令 */
   ExecuteCommand: 'execute_command',
+  /** 后台命令的查询与停止 */
+  ManageCommand: 'manage_command',
   /** 联网检索 */
   WebSearch: 'web_search',
   /** 人工选择（PROMISE 卡片） */

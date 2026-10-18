@@ -23,6 +23,7 @@ const API_PREFIXES = [
   '/sandbox',
   '/session',
   '/settings',
+  '/task',
   '/team',
   '/tool-call',
   '/tools',

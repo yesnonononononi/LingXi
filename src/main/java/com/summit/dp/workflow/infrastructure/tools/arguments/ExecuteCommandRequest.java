@@ -15,4 +15,5 @@ public class ExecuteCommandRequest  {
 
     private String command;
     private String intention;
+    private boolean background;
 }

@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 class ExecuteCommandConcurrencyTest {
 
     private final ToolDefinition<CommandToolDefinitionExecutor> definition =
-            new CommonToolConfiguration().executeCommandToolDefinition(new ObjectMapper(), null);
+            new CommonToolConfiguration().executeCommandToolDefinition(new ObjectMapper(), null, null);
 
     @Test
     @DisplayName("execute_command 声明 SERIAL_MUTATION，整批命令退化为串行执行")

@@ -315,3 +315,17 @@ CREATE TABLE IF NOT EXISTS email_message (
     KEY idx_email_message_sender_id (sender_id),
     UNIQUE KEY uk_email_message_dedup (dedup_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='邮箱消息';
+
+CREATE TABLE IF NOT EXISTS task (
+    id BIGINT PRIMARY KEY,
+    session_id BIGINT NOT NULL,
+    turn_id BIGINT NOT NULL,
+    command_text LONGTEXT NOT NULL,
+    output LONGTEXT,
+    status VARCHAR(32) NOT NULL,
+    exit_code INTEGER,
+    truncated BOOLEAN NOT NULL DEFAULT FALSE,
+    create_at TIMESTAMP NOT NULL,
+    complete_at TIMESTAMP,
+    KEY idx_task_session (session_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='后台命令任务';
