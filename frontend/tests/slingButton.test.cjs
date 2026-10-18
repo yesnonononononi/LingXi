@@ -38,9 +38,13 @@ test('ChatInputArea 正确集成 SlingButton 并映射发送/停止/禁用与主
   assert.match(source, /@send="onSendClick"/, 'SlingButton 未绑定 send 事件到 onSendClick');
   assert.match(source, /<MorphingSendIcon :is-sending="!!isSending"/, 'SlingButton 插槽未嵌入 MorphingSendIcon');
 
-  // 验证状态色彩映射（发送中为红粉停止色，可用状态为白灰弹弓色，禁用为暗灰）
+  // 验证状态色彩映射（发送中为红粉停止色，亮暗模式均为浅色边线，无突兀高亮蓝）
   assert.match(source, /slingColors = computed/, '缺少 slingColors 状态色彩映射');
   assert.match(source, /#e11d48/, '发送中/停止状态未配置玫瑰红 padColor');
   assert.match(source, /#f5f5f5/, '暗色就绪状态未配置亮白 padColor');
   assert.match(source, /#27272a/, '暗色就绪状态未配置深灰底座 wellColor');
+  assert.match(source, /#94a3b8/, '浅色就绪状态未配置浅灰/浅石板边线 accentColor');
+  assert.match(source, /#e4e4e7/, '暗色就绪状态未配置浅白灰边线 accentColor');
+  assert.doesNotMatch(source, /#0284c7/, '浅色模式不得残留高饱和度蓝色边线');
+  assert.doesNotMatch(source, /#38bdf8/, '暗色模式不得残留高饱和度蓝色边线');
 });

@@ -942,7 +942,7 @@ const slingColors = computed(() => {
     return {
       padColor: '#f5f5f5',
       iconColor: '#18181b',
-      accentColor: '#f5f5f5',
+      accentColor: '#e4e4e7',
       wellColor: '#27272a',
       bandColor: '#52525b',
     };
@@ -950,9 +950,9 @@ const slingColors = computed(() => {
   return {
     padColor: '#18181b',
     iconColor: '#ffffff',
-    accentColor: '#18181b',
-    wellColor: '#e4e4e7',
-    bandColor: '#71717a',
+    accentColor: '#94a3b8',
+    wellColor: '#f1f5f9',
+    bandColor: '#cbd5e1',
   };
 });
 
