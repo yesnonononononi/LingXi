@@ -1,9 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useConfirm } from '../../composables/useConfirm'
 import { t } from '../../i18n'
 
 const { state, handleConfirm, handleCancel } = useConfirm()
+const cancelButton = ref<HTMLButtonElement | null>(null)
+watch(() => state.value.isOpen, async open => {
+  if (open && state.value.options.preview !== undefined) {
+    await nextTick()
+    cancelButton.value?.focus()
+  }
+})
 
 const typeConfig = computed(() => {
   const t = state.value.options.type || 'info'
@@ -59,7 +66,11 @@ onUnmounted(() => {
         @click.self="handleCancel"
       >
         <div
-          class="w-full max-w-[360px] bg-white dark:bg-[#1a1c23] rounded-2xl shadow-xl shadow-black/10 border border-gray-100 dark:border-white/10 p-5 sm:p-5.5 flex flex-col gap-4 transform transition-all duration-200"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="state.options.title || t('common.confirmTitle')"
+          class="w-full max-h-[90vh] bg-white dark:bg-[#1a1c23] rounded-2xl shadow-xl shadow-black/10 border border-gray-100 dark:border-white/10 p-5 sm:p-5.5 flex flex-col gap-4 transform transition-all duration-200"
+          :class="state.options.preview !== undefined ? 'max-w-[640px]' : 'max-w-[360px]'"
         >
           <!-- Top: Icon & Text content -->
           <div class="flex items-start gap-3.5">
@@ -144,10 +155,17 @@ onUnmounted(() => {
             </div>
           </div>
 
+          <pre
+            v-if="state.options.preview !== undefined"
+            data-testid="confirm-preview"
+            class="min-h-0 overflow-y-auto max-h-[55vh] whitespace-pre-wrap break-words [overflow-wrap:anywhere] select-text rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-black/20 p-4 text-sm leading-relaxed font-sans text-gray-800 dark:text-gray-200"
+          >{{ state.options.preview }}</pre>
+
           <!-- Bottom Action Buttons -->
           <div class="flex items-center justify-end gap-2.5 pt-1">
             <button
               v-if="state.options.showCancel"
+              ref="cancelButton"
               type="button"
               class="px-3.5 py-1.5 text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white bg-gray-100 hover:bg-gray-200/80 dark:bg-white/5 dark:hover:bg-white/10 rounded-xl border border-gray-200/80 dark:border-white/10 transition-colors focus:outline-none cursor-pointer active:scale-95"
               @click="handleCancel"

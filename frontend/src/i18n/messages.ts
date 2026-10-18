@@ -329,6 +329,7 @@ export const messages: MessageSchema = {
         sendTip: '发送消息 (Enter)',
       },
       command: {
+        optimizePrompt: '优化当前提示词，预览后选择是否替换',
         plan: '进入计划模式 (生成分步执行规划)',
         model: '选择或配置本会话使用的模型',
         workspace: '切换或新建工作空间 (Workspace)',
@@ -340,6 +341,18 @@ export const messages: MessageSchema = {
         mcp: '管理 MCP 服务 (接入外部工具，执行时注入模型)',
         skill: '查看本地已加载的 Skill 清单 (SKILL.md)',
         settings: '打开系统全局设置与偏好配置',
+      },
+      optimizePrompt: {
+        empty: '请先输入需要优化的提示词，或使用 /optimize-prompt 提示词',
+        tooLong: '提示词不能超过 20000 个字符，请缩短后重试',
+        loading: '正在优化提示词，请稍候…',
+        title: '替换为优化后的提示词？',
+        description: '请核对优化结果。替换只更新输入框，不会发送消息。',
+        replace: '替换输入',
+        keep: '保留原文',
+        changed: '草稿已发生变化，本次优化结果未替换输入，请重新优化。',
+        confirmBusy: '请先处理当前确认框，再重新优化提示词。',
+        failed: '提示词优化失败，请检查模型配置和连接后重试，原文已保留。',
       },
       message: {
         userUploadIndex: '用户上传图片 {index}',
@@ -1302,6 +1315,7 @@ export const messages: MessageSchema = {
         sendTip: 'Send message (Enter)',
       },
       command: {
+        optimizePrompt: 'Optimize the current prompt and preview before replacing',
         plan: 'Enter plan mode (generate a step-by-step plan)',
         model: 'Choose or configure the model for this conversation',
         workspace: 'Switch or create a workspace',
@@ -1313,6 +1327,18 @@ export const messages: MessageSchema = {
         mcp: 'Manage MCP services (connect external tools, injected at run time)',
         skill: 'List locally loaded skills (SKILL.md)',
         settings: 'Open global settings and preferences',
+      },
+      optimizePrompt: {
+        empty: 'Enter a prompt first, or use /optimize-prompt followed by your prompt',
+        tooLong: 'Prompts must be no longer than 20000 characters',
+        loading: 'Optimizing your prompt…',
+        title: 'Replace with the optimized prompt?',
+        description: 'Review the result. Replacing only updates the draft; it does not send a message.',
+        replace: 'Replace draft',
+        keep: 'Keep original',
+        changed: 'The draft changed. The optimization was not applied; please try again.',
+        confirmBusy: 'Close the current confirmation before optimizing again.',
+        failed: 'Prompt optimization failed. Check your model configuration and connection, then retry. Your draft was kept.',
       },
       message: {
         userUploadIndex: 'User-uploaded image {index}',

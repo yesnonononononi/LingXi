@@ -7,6 +7,7 @@ export interface ConfirmOptions {
   title?: string
   content?: string
   message?: string
+  preview?: string
   type?: ConfirmType
   confirmText?: string
   cancelText?: string

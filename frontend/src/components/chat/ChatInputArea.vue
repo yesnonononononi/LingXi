@@ -23,6 +23,8 @@ import { AgentAPI } from '../../services/agent';
 import { isOk } from '../../utils/api';
 import { useChatImageAttachments } from '../../composables/useChatImageAttachments';
 import { useSkillMenu } from '../../composables/useSkillMenu';
+import { isPromptOptimizationCommand, usePromptOptimization } from '../../composables/usePromptOptimization';
+import { useConfirm } from '../../composables/useConfirm';
 import { isImageAvatar } from '../../utils/avatar';
 import { t } from '../../i18n';
 
@@ -95,6 +97,7 @@ const inputContainerRef = ref<HTMLDivElement | null>(null);
 const sparkRef = ref<InstanceType<typeof SparkTrail> | null>(null);
 
 const inputText = ref('');
+let optimizedDraft: string | null = null;
 const inputRef = ref<HTMLTextAreaElement | null>(null);
 const inputPlaceholder = computed(() => {
   if (listening.value) return t('chat.input.placeholderListening');
@@ -113,6 +116,12 @@ const focusInput = () => {
   });
 };
 
+const promptOptimization = usePromptOptimization(inputText, () => props.selectedModelId, focusInput, text => {
+  optimizedDraft = text;
+  inputText.value = text;
+});
+const { state: confirmationState } = useConfirm();
+
 // ====== 语音听写 (Mic) 基础状态 ======
 let dictation = 0;
 const listening = ref(false);
@@ -129,6 +138,15 @@ const processImageFiles = (files: File[]) => {
 
 watch(inputText, (rawText) => {
   sparkRef.value?.ping();
+
+  // 模型返回的草稿按原文回填，不能触发其中看起来像斜杠命令的文本。
+  const isOptimizedDraft = rawText === optimizedDraft;
+  optimizedDraft = null;
+  if (isOptimizedDraft) {
+    isCommandMenuOpen.value = false;
+    isCommandMenuClickedOpen.value = false;
+    return;
+  }
 
   if (rawText.startsWith('/plan ') || rawText === '/plan') {
     isPlanMode.value = true;
@@ -739,6 +757,12 @@ const allCommands = computed<CommandItem[]>(() => [
     }
   },
   {
+    id: 'optimize-prompt',
+    name: 'optimize-prompt',
+    desc: t('chat.command.optimizePrompt'),
+    action: () => { void promptOptimization.optimize(); }
+  },
+  {
     id: 'settings',
     name: 'settings',
     desc: t('chat.command.settings'),
@@ -793,7 +817,7 @@ const handlePlusClick = () => {
 
 const selectCommand = (cmd: CommandItem) => {
   const text = inputText.value;
-  if (text.startsWith('/')) {
+  if (text.startsWith('/') && (cmd.id !== 'optimize-prompt' || !isPromptOptimizationCommand(text))) {
     inputText.value = '';
   }
   isCommandMenuOpen.value = false;
@@ -922,6 +946,10 @@ onBeforeUnmount(() => {
 });
 
 const handleKeyDown = (e: KeyboardEvent) => {
+  if (confirmationState.value.isOpen) {
+    if (e.key === 'Enter') e.preventDefault();
+    return;
+  }
   if (isSkillMenuOpen.value) {
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -985,6 +1013,13 @@ const handleKeyDown = (e: KeyboardEvent) => {
 };
 
 const handleSend = () => {
+  if (confirmationState.value.isOpen) return;
+  if (isPromptOptimizationCommand(inputText.value)) {
+    isCommandMenuOpen.value = false;
+    isCommandMenuClickedOpen.value = false;
+    void promptOptimization.optimize();
+    return;
+  }
   const text = inputText.value.trim();
   const images = attachments.value.map(attachment => attachment.file);
   if ((!text && images.length === 0) || props.isSending || props.reasoningEffortPending) return;
@@ -1312,6 +1347,12 @@ defineExpose({
 
       <p v-if="reasoningEffortError" role="alert" class="text-xs text-red-500">
         {{ reasoningEffortError }}
+      </p>
+      <p v-if="promptOptimization.isOptimizing.value" role="status" class="text-xs text-gray-500 dark:text-zinc-400">
+        {{ t('chat.optimizePrompt.loading') }}
+      </p>
+      <p v-if="promptOptimization.error.value" role="alert" class="text-xs text-red-500">
+        {{ promptOptimization.error.value }}
       </p>
 
       <!-- 图片与附件 Chips 栏 -->
