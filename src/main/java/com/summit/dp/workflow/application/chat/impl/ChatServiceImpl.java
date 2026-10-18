@@ -14,6 +14,7 @@ import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
 import com.summit.dp.workflow.application.chat.RuntimeContext;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.application.chat.ConversationRollbackService;
+import com.summit.dp.workflow.application.chat.ConversationRollbackService.ResendAdmission;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
@@ -135,16 +136,22 @@ public class ChatServiceImpl implements ChatService {
 
         sessionExecutionRegistry.beginRoot(rootSessionId);
 
+        ResendAdmission admitted;
         try {
-            conversationRollbackService.rollbackBefore(context.executionContext().sessionId(),
-                    target.turnId(), target.baseline());
+            admitted = conversationRollbackService.rollbackAndAdmit(context, target);
         } catch (RuntimeException e) {
             // 回滚没成功就绝不能往下跑：否则新一轮会接在一段本该消失的历史之上。
             sessionExecutionRegistry.finishRoot(rootSessionId);
             throw e;
         }
 
-        return Result.success(commitAndSubmit(context));
+        // 异步执行晚于整个受理事务提交，避免模型读取到尚未提交的轮次或检查点。
+        chatExecutor.submitAsync(admitted.context());
+        return Result.success(ChatAcceptanceVO.builder()
+                .sessionId(admitted.context().executionContext().sessionId()).turnId(admitted.context().turnId())
+                .historyRevision(admitted.rollback().historyRevision())
+                .invalidatedTurnIds(admitted.rollback().invalidatedTurnIds())
+                .invalidatedExecutionIds(admitted.rollback().invalidatedExecutionIds()).build());
     }
 
     /**
@@ -163,8 +170,8 @@ public class ChatServiceImpl implements ChatService {
     /**
      * 共同受理入口：在请求线程同事务提交轮次、用户消息与执行行，返回带上 turnId 与执行对象的上下文。
      *
-     * <p>三个入口（{@code chat} / {@code acceptCommand} / {@code resend}）都经这里，
-     * 受理流程只在这一处收口。事务边界在被调方（{@code PreparedChatExecutor#admit}）—— 本方法是
+     * <p>普通发送经这里；重发由 {@code rollbackAndAdmit} 将历史作废一起纳入事务。
+     * 登记动作统一由 {@code PreparedChatExecutor#admit} 完成 —— 本方法是
      * 私有自调用，事务注解挂在这里不会生效。</p>
      *
      * <p><b>提交失败必须自己释放运行资格</b>：{@code chatExecutor} 的收尾只在它被调用之后生效，
@@ -220,8 +227,17 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public void suspend(Long sessionId) {
-        if (sessionId == null) return;
-        executionLocator.activeExecutionIds(sessionId).forEach(executionControl::suspend);
+        throwIf(sessionId == null || sessionId <= 0, "会话标识不合法");
+        for (String executionId : executionLocator.activeExecutionIds(sessionId)) {
+            Execution snapshot = executionRepository.findById(executionId).orElse(null);
+            if (snapshot != null && snapshot.getExecutionState() == ExecutionState.SUSPENDED) continue;
+            try {
+                executionControl.suspend(executionId);
+            } catch (IllegalStateException error) {
+                // 查询与发信号之间执行可能已结束，不能把这个正常竞争报成服务器故障。
+                log.debug("暂停时执行已退出: executionId={}", executionId);
+            }
+        }
     }
 
     @Override

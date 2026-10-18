@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.workflow.application.chat.ResendTargetResolver.ResendTarget;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -36,8 +37,20 @@ public class ConversationRollbackService {
     private final ToolCallRepository toolCallRepository;
     private final ChatTurnService chatTurnService;
     private final ModelContextService modelContextService;
+    private final PreparedChatExecutor chatExecutor;
     @Autowired(required = false)
     private SessionRepository sessions;
+
+    /** 作废历史与登记新执行必须同事务，受理失败时原对话才能完整保留。 */
+    @Transactional
+    public ResendAdmission rollbackAndAdmit(RuntimeContext context, ResendTarget target) {
+        RollbackResult rollback = rollbackBefore(context.executionContext().sessionId(), target.turnId(), target.baseline());
+        RuntimeContext admitted = chatExecutor.admit(context);
+        return new ResendAdmission(admitted, rollback);
+    }
+
+    public record ResendAdmission(RuntimeContext context, RollbackResult rollback) {
+    }
 
     /**
      * 回滚到目标轮次之前。

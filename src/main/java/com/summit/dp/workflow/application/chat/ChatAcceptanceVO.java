@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Builder;
 import lombok.Data;
+import java.util.Set;
 
 /**
  * 一次聊天请求的受理回执。
@@ -24,4 +25,10 @@ public class ChatAcceptanceVO {
     /** 本次受理创建的业务轮次 ID；与落库轮次一致，是前端对齐事件与历史的键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long turnId;
+
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long historyRevision;
+    /** 重发只按服务端确认的范围清理界面，避免旧轮次被历史合并重新带回。 */
+    private Set<String> invalidatedTurnIds;
+    private Set<String> invalidatedExecutionIds;
 }

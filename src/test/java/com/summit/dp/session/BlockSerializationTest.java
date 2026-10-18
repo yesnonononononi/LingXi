@@ -44,7 +44,7 @@ class BlockSerializationTest {
                 "call_1", "read_file", "{\"path\":\"a\"}", "文件内容", 3, 0);
         return new TurnViewVO(700L, 800L, BlockStatus.TURN_COMPLETED, 5L, "用户提问",
                 List.of(),
-                List.of(thinking, body, tool), null);
+                List.of(thinking, body, tool), null, 9007199254740993L);
     }
 
     /** 多态声明①：type 判别键只出现一次，不得既有显式字段又有包裹式类型信息。 */

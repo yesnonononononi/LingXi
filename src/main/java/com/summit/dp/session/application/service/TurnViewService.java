@@ -3,6 +3,7 @@ package com.summit.dp.session.application.service;
 import com.summit.dp.session.application.convert.TurnViewAssembler;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.SessionMessage;
+import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.shared.vo.block.Block;
 import com.summit.dp.shared.vo.block.TurnViewVO;
@@ -74,7 +75,9 @@ public class TurnViewService {
                 turnViewAssembler.resolveUserMessage(turn.getId(), messages),
                 turnViewAssembler.resolveUserImageUrls(turn.getId(), messages),
                 blocks,
-                TurnViewAssembler.resolveMetric(session)
+                TurnViewAssembler.resolveMetric(session),
+                messages.stream().filter(message -> turn.getId().equals(message.getTurnId())
+                        && message.getType() == SessionMessageType.USER).map(SessionMessage::getId).findFirst().orElse(null)
         ));
     }
 

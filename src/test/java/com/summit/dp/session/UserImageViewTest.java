@@ -38,14 +38,14 @@ class UserImageViewTest {
         TurnViewAssembler turns = new TurnViewAssembler(json, null);
         assertEquals(expected, turns.resolveUserImageUrls(43L, List.of(otherTurn, stored)));
         assertEquals(List.of(), turns.resolveUserImageUrls(45L, List.of(otherTurn, stored)));
-        TurnViewVO view = new TurnViewVO(42L, 43L, "COMPLETED", 1L, "比较图片", expected, List.of(), null);
+        TurnViewVO view = new TurnViewVO(42L, 43L, "COMPLETED", 1L, "比较图片", expected, List.of(), null, 44L);
         assertEquals(expected, json.readValue(json.writeValueAsString(view), TurnViewVO.class).userImageUrls());
     }
 
     @Test
     void imageListsCannotBeChangedThroughTheCallerAfterViewCreation() {
         List<String> source = new ArrayList<>(expected);
-        TurnViewVO view = new TurnViewVO(42L, 43L, "COMPLETED", 1L, "比较图片", source, List.of(), null);
+        TurnViewVO view = new TurnViewVO(42L, 43L, "COMPLETED", 1L, "比较图片", source, List.of(), null, 44L);
         source.clear();
         assertEquals(expected, view.userImageUrls());
     }
