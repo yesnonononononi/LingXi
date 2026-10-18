@@ -9,7 +9,6 @@ import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
-import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
@@ -74,7 +73,7 @@ class ToolCallReadinessTest {
             });
             return null;
         }).when(executions).afterCommit(any());
-        readiness = new ToolCallReadinessService(tools, new ToolCallConverter(new ObjectMapper()),
+        readiness = new ToolCallReadinessService(tools,
                 new TransactionTemplate(new DataSourceTransactionManager(database)), provider(executions), provider(activity));
     }
 

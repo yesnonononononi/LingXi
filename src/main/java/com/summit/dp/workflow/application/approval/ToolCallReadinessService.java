@@ -1,12 +1,10 @@
 package com.summit.dp.workflow.application.approval;
 
-import cn.hutool.core.util.IdUtil;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
-import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import lombok.RequiredArgsConstructor;
@@ -25,7 +23,6 @@ import java.util.List;
 @Slf4j
 public class ToolCallReadinessService {
     private final ToolCallRepository tools;
-    private final ToolCallConverter converter;
     private final TransactionTemplate transactions;
     private final ObjectProvider<ExecutionRepository> executions;
     private final ObjectProvider<ExecutionActivity> activity;
