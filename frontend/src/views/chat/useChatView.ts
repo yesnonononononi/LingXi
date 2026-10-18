@@ -397,7 +397,9 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   const handleUpdateAgent = (agentId: string | number | null) => {
     const id = toPositiveInt(agentId, 0);
     if (!id) {
-      void userConfig.patch('agentId', null, {});
+      // 解绑必须显式带 agentId: null —— 后端靠「这个键有没有出现」区分「解绑」与「没传」，
+      // 发空对象会被当成没传，服务端保留旧值，于是每次进页面旧 Agent 又被灌回来。
+      void userConfig.patch('agentId', null, { agentId: null });
       return;
     }
     void userConfig.patch('agentId', id, { agentId: id });

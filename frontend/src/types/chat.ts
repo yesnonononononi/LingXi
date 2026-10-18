@@ -623,8 +623,13 @@ export interface UserConfigVO {
   id?: number | string;
   type?: WorkspaceEnvType | string;
   modelId?: number | string;
-  /** 本实例全局选中的 Agent（关联 agent.id；空表示未选择） */
-  agentId?: number | string;
+  /**
+   * 本实例全局选中的 Agent（关联 agent.id；空表示未选择）。
+   *
+   * <p>后端只在「请求体显式带 null」时才解绑，因此这里必须允许 null：
+   * 类型收窄成 `number | string` 会让解绑请求体无法表达，退化成漏发该键。</p>
+   */
+  agentId?: number | string | null;
   /** 命令放行档位：FULL_ACCESS / PRE_EXEC_CONFIRM / DANGEROUS_BLOCK（空值表示沿用缺省） */
   commandApprovalPolicy?: CommandApprovalPolicyType | string;
   /** 会话访问档位：IN_WORKSPACE / READ_ONLY_IN_WORKSPACE / OUT_OF_WORKSPACE（空值表示沿用缺省） */
