@@ -277,6 +277,15 @@ export const messages: MessageSchema = {
       noReadableBody: '响应没有可读的 body，无法读取 SSE 流',
     },
     chat: {
+      backgroundTasks: {
+        title: '后台任务', running: '{count} 个后台任务运行中', pending: '{count} 个后台任务等待执行',
+        finished: '{count} 个后台任务已结束', expand: '展开后台任务', elapsed: '已运行 {seconds}s',
+        stop: '停止', stopNamed: '停止任务：{name}', stopping: '停止中…', output: '任务输出', exitCode: '退出码 {code}',
+        noOutput: '暂无输出', truncated: '输出已按任务预算截断', loadFailed: '后台任务加载失败，请重试',
+        invalidData: '后台任务数据不完整，请刷新重试',
+        status: { PENDING: '等待执行', RUNNING: '运行中', SUCCESS: '已完成', FAILED: '执行失败',
+          TIMEOUT: '已超时', CANCELLED: '已停止', LOST: '状态未知' },
+      },
       input: {
         placeholderListening: '正在倾听…',
         placeholderPlan: '描述你的任务以生成计划',
@@ -1275,6 +1284,15 @@ export const messages: MessageSchema = {
       noReadableBody: 'The response has no readable body; cannot read the SSE stream',
     },
     chat: {
+      backgroundTasks: {
+        title: 'Background tasks', running: '{count} background tasks running', pending: '{count} background tasks waiting',
+        finished: '{count} background tasks finished', expand: 'Expand background tasks', elapsed: 'Running for {seconds}s',
+        stop: 'Stop', stopNamed: 'Stop task: {name}', stopping: 'Stopping…', output: 'Task output', exitCode: 'Exit code {code}',
+        noOutput: 'No output yet', truncated: 'Output was truncated at the task limit', loadFailed: 'Could not load background tasks. Please retry.',
+        invalidData: 'Background task data is incomplete. Please refresh.',
+        status: { PENDING: 'Waiting', RUNNING: 'Running', SUCCESS: 'Completed', FAILED: 'Failed',
+          TIMEOUT: 'Timed out', CANCELLED: 'Stopped', LOST: 'Status unknown' },
+      },
       input: {
         placeholderListening: 'Listening…',
         placeholderPlan: 'Describe your task to generate a plan',

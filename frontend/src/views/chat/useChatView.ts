@@ -9,6 +9,7 @@ import { useChatScroll } from './useChatScroll';
 import { useChatHistory } from './useChatHistory';
 import { useChatSending } from './useChatSending';
 import { useChatExecutionControls } from './useChatExecutionControls';
+import { useBackgroundTasks } from './useBackgroundTasks';
 import { acceptsChatEvent } from './chatExecutionState';
 import { useChatSessionList } from './useChatSessionList';
 import { useChatWorkspace } from './useChatWorkspace';
@@ -104,6 +105,10 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   const currentActiveSession = computed(
     () => localSessions.value.find(s => s.id === localActiveId.value) || null,
   );
+  const backgroundTasks = useBackgroundTasks(computed(() => {
+    const id = currentActiveSession.value?.id;
+    return id && isPersistedSessionId(id) ? String(id) : null;
+  }));
 
   // ---------- 滚动 ----------
   const messagesContainerRef = templateRefs?.messagesContainerRef ?? ref<any>(null);
@@ -249,6 +254,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
    * 对同一根开两条连接会让同一事件双投、正文增量双写。</p>
    */
   const sessionEventStream = new SessionEventStream({
+    onBackgroundTaskChanged: backgroundTasks.onTaskChanged,
     onEvent: (event) => {
       if (!acceptsChatEvent(currentActiveSession.value, event)) return;
       streamRouter.dispatch(event);
@@ -270,6 +276,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
       void reconcileSessionAfterStream(sessionId);
     },
     onResubscribed: (rootSessionId) => {
+      void backgroundTasks.refresh();
       // 断线期间服务端不补发：重连成功是唯一能对齐缺口的时机。
       console.info('[chat] 会话级流重连成功，回查历史对齐:', rootSessionId);
       void reconcileSessionAfterStream(rootSessionId);
@@ -736,6 +743,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     /** 生成中（受理在途 或 会话运行中），界面唯一判据。 */
     isSending: computed(() => sending.isSending.value || executionControls.resending.value),
     executionControls,
+    backgroundTasks,
     currentAbortController: sending.currentAbortController,
     sendFailureNotice: sending.sendFailureNotice,
     dismissSendFailure: sending.dismissSendFailure,

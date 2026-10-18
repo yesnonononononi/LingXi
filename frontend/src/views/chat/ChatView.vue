@@ -213,6 +213,7 @@
             :hasUnresolved="executionControls.hasUnresolved.value" :error="executionControls.error.value"
             @pause="executionControls.pause" @resume="executionControls.resume"
           />
+          <BackgroundTaskPanel :feed="backgroundTasks" :isDark="displayIsDark" />
           <div
             class="w-full transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]"
             :style="{
@@ -373,6 +374,7 @@ import WelcomeView from '../../components/chat/WelcomeView.vue';
 import ChatMessageList from '../../components/chat/ChatMessageList.vue';
 import ChatInputArea from '../../components/chat/ChatInputArea.vue';
 import ChatExecutionControls from '../../components/chat/ChatExecutionControls.vue';
+import BackgroundTaskPanel from '../../components/chat/BackgroundTaskPanel.vue';
 import ChatResendDialog from '../../components/chat/ChatResendDialog.vue';
 import SettingsModal from '../settings/SettingsModal.vue';
 import WorkspaceModal from '../../components/chat/WorkspaceModal.vue';
@@ -434,6 +436,7 @@ const {
   selectedAgentId,
   handleResendUnsent,
   executionControls,
+  backgroundTasks,
   reasoningEffort,
   reasoningEffortPending,
   reasoningEffortError,

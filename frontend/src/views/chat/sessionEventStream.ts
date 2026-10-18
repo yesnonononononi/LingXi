@@ -2,6 +2,7 @@ import type { AgentEvent } from '../../types/Event';
 import { AgentAPI } from '../../services/agent';
 import { readSseStream } from '../../services/sse';
 import { toAgentEvent } from './agentEventNarrowing';
+import { BACKGROUND_TASK_CHANGED, isBackgroundTaskChanged, type BackgroundTaskChanged } from '../../types/backgroundTask';
 
 /** 掉线后重挂的最大尝试次数（有界，避免无限重连）。 */
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -29,6 +30,7 @@ const SIGNAL_HEARTBEAT = 'HEARTBEAT';
 export type StreamHealthState = 'IDLE' | 'CONNECTING' | 'READY' | 'UNHEALTHY' | 'FAILED';
 
 export interface SessionEventStreamOptions {
+  onBackgroundTaskChanged?: (event: BackgroundTaskChanged) => void;
   /** 收窄后的业务事件出口（已排除 READY / HEARTBEAT 等传输层信号）。 */
   onEvent: (event: AgentEvent) => void;
   /** 连接结束（正常关闭 / 掉线）后回读会话权威状态：用于终结对账与「仍挂起则重挂」。 */
@@ -330,6 +332,13 @@ export class SessionEventStream {
       return;
     }
     if (eventName === SIGNAL_HEARTBEAT) {
+      return;
+    }
+
+    if (eventName === BACKGROUND_TASK_CHANGED) {
+      if (isBackgroundTaskChanged(data) && data.rootSessionId === connection.rootSessionId) {
+        this.options.onBackgroundTaskChanged?.(data);
+      }
       return;
     }
 
