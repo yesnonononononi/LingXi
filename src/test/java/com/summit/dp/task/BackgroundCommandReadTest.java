@@ -12,6 +12,7 @@ import com.summit.dp.task.api.controller.BackgroundTaskController;
 import com.summit.dp.task.application.service.TaskRuntimeService;
 import com.summit.dp.task.application.vo.TaskVO;
 import com.summit.dp.task.domain.model.Task;
+import com.summit.dp.task.application.service.TaskDeletionPolicy;
 import com.summit.dp.task.domain.repository.TaskRepository;
 import com.summit.dp.workflow.infrastructure.tools.config.CommonToolConfiguration;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcess;
@@ -38,7 +39,7 @@ import static org.mockito.Mockito.*;
 
 class BackgroundCommandReadTest {
     private final TaskRepository repository = mock(TaskRepository.class);
-    private final BackendProcessManager manager = new BackendProcessManager(repository, mock(BackgroundTaskBroadcaster.class), new BackgroundTaskCompletion(repository, mock(ExecutionResumeCoordinator.class)));
+    private final BackendProcessManager manager = new BackendProcessManager(repository, mock(BackgroundTaskBroadcaster.class), new BackgroundTaskCompletion(repository, mock(ExecutionResumeCoordinator.class)), mock(TaskDeletionPolicy.class));
     private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
 
     @AfterEach void close() { manager.close(); }

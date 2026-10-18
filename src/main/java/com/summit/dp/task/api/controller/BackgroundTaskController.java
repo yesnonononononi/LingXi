@@ -4,6 +4,7 @@ import com.summit.ddd.application.vo.Result;
 import com.summit.dp.task.application.vo.TaskVO;
 import com.summit.dp.task.application.service.TaskRuntimeService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,5 +33,11 @@ public class BackgroundTaskController {
     @PostMapping("/{id}/stop")
     public Result<TaskVO> stop(@RequestParam Long sessionId, @PathVariable Long id) {
         return Result.success(manager.stop(sessionId, id));
+    }
+
+    @DeleteMapping("/{id}")
+    public Result<Void> delete(@RequestParam Long sessionId, @PathVariable Long id) {
+        manager.deleteTask(sessionId, id);
+        return Result.success();
     }
 }

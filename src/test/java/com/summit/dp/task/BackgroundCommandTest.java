@@ -35,6 +35,7 @@ import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.task.application.vo.TaskVO;
 import com.summit.dp.task.api.controller.BackgroundTaskController;
 import com.summit.dp.task.domain.model.Task;
+import com.summit.dp.task.application.service.TaskDeletionPolicy;
 import com.summit.dp.task.domain.model.Task.TaskStatus;
 import com.summit.dp.task.domain.repository.TaskRepository;
 import com.summit.dp.task.infrastructure.persistence.mapper.TaskMapper;
@@ -124,7 +125,7 @@ class BackgroundCommandTest {
             changedStatuses.add(task.getStatus().name());
             return null;
         }).when(broadcaster).publishChanged(any(Task.class));
-        manager = new BackendProcessManager(repository, broadcaster, new BackgroundTaskCompletion(repository, coordinator));
+        manager = new BackendProcessManager(repository, broadcaster, new BackgroundTaskCompletion(repository, coordinator), mock(TaskDeletionPolicy.class));
         ChatTurnRepository turns = mock(ChatTurnRepository.class);
         when(turns.findById(20L)).thenReturn(Optional.of(ChatTurn.builder().id(20L).sessionId(10L).build()));
         submitter = new BackendProcesser(repository, turns, manager, new BackgroundTaskCompletion(repository, coordinator));
@@ -265,7 +266,7 @@ class BackgroundCommandTest {
             if (task.getStatus().isTerminal() && failures.getAndIncrement() == 0) throw new IllegalStateException("db unavailable");
             return invocation.callRealMethod();
         }).when(flaky).updateById(any(Task.class));
-        BackendProcessManager retrying = new BackendProcessManager(flaky, mock(BackgroundTaskBroadcaster.class), new BackgroundTaskCompletion(flaky, mock(ExecutionResumeCoordinator.class)));
+        BackendProcessManager retrying = new BackendProcessManager(flaky, mock(BackgroundTaskBroadcaster.class), new BackgroundTaskCompletion(flaky, mock(ExecutionResumeCoordinator.class)), mock(TaskDeletionPolicy.class));
         CommandHandler handle = mock(CommandHandler.class);
         when(handle.await()).thenReturn(new CommandResult(7, "actual failure", false, false));
         Task task = Task.builder().id(103L).sessionId(10L).turnId(20L).command("completed").build(); repository.save(task);
@@ -359,7 +360,7 @@ class BackgroundCommandTest {
 
     @Test void completionWorkerDoesNotWriteAgainAfterStopAlreadyPersistedTheFinalResult() throws Exception {
         TaskRepository tracked = spy(repository);
-        BackendProcessManager coordinated = new BackendProcessManager(tracked, mock(BackgroundTaskBroadcaster.class), new BackgroundTaskCompletion(tracked, mock(ExecutionResumeCoordinator.class)));
+        BackendProcessManager coordinated = new BackendProcessManager(tracked, mock(BackgroundTaskBroadcaster.class), new BackgroundTaskCompletion(tracked, mock(ExecutionResumeCoordinator.class)), mock(TaskDeletionPolicy.class));
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         AtomicReference<Thread> worker = new AtomicReference<>();

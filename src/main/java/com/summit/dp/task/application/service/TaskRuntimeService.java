@@ -8,4 +8,5 @@ public interface TaskRuntimeService {
     TaskVO read(Long sessionId, Long taskId,boolean join);
     List<TaskVO> listTasks(Long sessionId);
     TaskVO stop(Long sessionId, Long taskId);
+    void deleteTask(Long sessionId, Long taskId);
 }

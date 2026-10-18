@@ -5,6 +5,7 @@ import com.summit.core.runtime.workspace.WorkspaceCommands.CommandResult;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.task.application.vo.TaskVO;
 import com.summit.dp.task.application.service.TaskRuntimeService;
+import com.summit.dp.task.application.service.TaskDeletionPolicy;
 import com.summit.dp.task.domain.model.Task;
 import com.summit.dp.task.domain.model.Task.TaskStatus;
 import com.summit.dp.task.domain.repository.TaskRepository;
@@ -29,6 +30,7 @@ public class BackendProcessManager implements TaskRuntimeService {
     private final TaskRepository repository;
     private final BackgroundTaskBroadcaster broadcaster;
     private final BackgroundTaskCompletion completion;
+    private final TaskDeletionPolicy deletionPolicy;
     private final ConcurrentHashMap<Long, BackendProcess> processes = new ConcurrentHashMap<>();
     private volatile boolean closed;
 
@@ -155,6 +157,26 @@ public class BackendProcessManager implements TaskRuntimeService {
                 throw new ClientException("等待后台任务停止时被中断，尚未确认停止");
             }
         }
+    }
+
+    /**
+     * 只删已结束的任务：运行中的行还挂着进程句柄，先删记录就再没有收口依据了。
+     */
+    public void deleteTask(Long sessionId, Long taskId) {
+        throwIf(sessionId == null || taskId == null, "会话标识和任务标识不能为空");
+        BackendProcess process = processes.get(taskId);
+        if (process != null) {
+            synchronized (process) {
+                Task running = process.getTask();
+                throwIf(!sessionId.equals(running.getSessionId()), "任务不属于当前会话");
+                throwIf(!running.getStatus().isTerminal(), "任务仍在运行，请先停止再删除");
+            }
+        }
+        Task task = repository.findById(taskId).orElseThrow(ClientException::new);
+        throwIf(!sessionId.equals(task.getSessionId()), "任务不属于当前会话");
+        deletionPolicy.validate(task);
+        repository.delete(task);
+        notifyTaskChanged(task);
     }
 
     @EventListener(ApplicationReadyEvent.class)
