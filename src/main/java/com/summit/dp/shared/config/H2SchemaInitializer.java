@@ -68,8 +68,21 @@ public class H2SchemaInitializer {
                 migrateV8(connection);
                 ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
                         "db/migration/V9_task_intention.sql"), StandardCharsets.UTF_8));
+                migrateV10(connection);
             }
         };
+    }
+
+    /**
+     * V10：task.command 改名为 command_text。
+     *
+     * <p>必须在启动收尸钩子之前完成：它要查 task 表，列名对不上就整条查询失败、进程直接退出。</p>
+     */
+    private void migrateV10(Connection connection) throws Exception {
+        if (hasColumn(connection, "task", "command") && !hasColumn(connection, "task", "command_text")) {
+            ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                    "db/migration/V10_task_command_text.sql"), StandardCharsets.UTF_8));
+        }
     }
 
     /** 必须先补齐用量列，启动后的轮次查询才不会因缺列失败。 */

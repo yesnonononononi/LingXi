@@ -397,6 +397,23 @@ class BackgroundCommandTest {
         } finally { legacy.shutdown(); }
     }
 
+    @Test void legacyTaskTableWithCommandColumnIsRenamedWithoutLosingDataAndMigrationIsRepeatable() throws Exception {
+        EmbeddedDatabase legacy = new EmbeddedDatabaseBuilder().setType(EmbeddedDatabaseType.H2)
+                .setName("task-rename-" + UUID.randomUUID() + ";MODE=MySQL")
+                .addScript("file:./init.sql").addScript("background-task-command-column.sql").build();
+        try {
+            MybatisConfiguration configuration = new MybatisConfiguration();
+            configuration.setMapUnderscoreToCamelCase(true); configuration.addMapper(TaskMapper.class);
+            MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
+            factory.setDataSource(legacy); factory.setConfiguration(configuration);
+            TaskMapper tasks = new SqlSessionTemplate(factory.getObject()).getMapper(TaskMapper.class);
+            H2SchemaInitializer initializer = new H2SchemaInitializer();
+            initializer.h2SchemaBootstrap(legacy).run(new DefaultApplicationArguments());
+            initializer.h2SchemaBootstrap(legacy).run(new DefaultApplicationArguments());
+            assertEquals("原始命令", tasks.selectById(10L).getCommand());
+        } finally { legacy.shutdown(); }
+    }
+
     private ToolExecution call(ToolExecutor executor, Map<String, Object> args, long timeout) throws Exception {
         return ToolExecution.builder().id("call").executionId("1").turnId("1").workspace(workspace)
                 .eventMetaData(Map.of(ExecutionEventMetadata.TURN_ID, "20"))
