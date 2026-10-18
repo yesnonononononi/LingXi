@@ -8,6 +8,7 @@ import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskLoopInterceptor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -96,6 +97,8 @@ class ApplicationContextAssemblyTest {
         assertNotNull(collected, "处理器内部拦列表不可为空");
         assertTrue(collected.stream().anyMatch(i -> i instanceof SubAgentWaitInterceptor),
                 "SubAgentWaitInterceptor 必须被 DefaultLoopInterceptorProcessor 收集，实际=" + collected);
+        assertTrue(collected.stream().anyMatch(i -> i instanceof BackgroundTaskLoopInterceptor),
+                "后台终端通知拦截器必须进入实际执行链");
     }
 
     @Test

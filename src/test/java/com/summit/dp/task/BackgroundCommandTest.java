@@ -7,6 +7,16 @@ import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerIntercept
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.CommandHandler;
+import com.summit.core.agent.AgentRequest;
+import com.summit.core.agent.AgentRuntimeParameters;
+import com.summit.core.agent.Execution;
+import com.summit.core.conversation.message.Message;
+import com.summit.core.runtime.loop.ExecutionControlSignal;
+import com.summit.core.runtime.loop.LoopContext;
+import com.summit.core.runtime.loop.LoopMessages;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskLoopInterceptor;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskNotifications;
+import java.util.ArrayList;
 import com.summit.core.runtime.RuntimeEnvironment;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceBridge;
@@ -36,6 +46,8 @@ import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcess;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskBroadcaster;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcessManager;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskCompletion;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcesser;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.ManageCommandToolExecutor;
@@ -88,6 +100,7 @@ class BackgroundCommandTest {
     private BackendProcesser submitter;
     private final List<String> changedStatuses = new CopyOnWriteArrayList<>();
     private Workspace workspace;
+    private final ExecutionResumeCoordinator coordinator = mock(ExecutionResumeCoordinator.class);
     private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
 
     @BeforeEach void setup() throws Exception {
@@ -111,10 +124,10 @@ class BackgroundCommandTest {
             changedStatuses.add(task.getStatus().name());
             return null;
         }).when(broadcaster).publishChanged(any(Task.class));
-        manager = new BackendProcessManager(repository, broadcaster);
+        manager = new BackendProcessManager(repository, broadcaster, new BackgroundTaskCompletion(repository, coordinator));
         ChatTurnRepository turns = mock(ChatTurnRepository.class);
         when(turns.findById(20L)).thenReturn(Optional.of(ChatTurn.builder().id(20L).sessionId(10L).build()));
-        submitter = new BackendProcesser(repository, turns, manager);
+        submitter = new BackendProcesser(repository, turns, manager, new BackgroundTaskCompletion(repository, coordinator));
         workspace = new LocalWorkspace("background-test", temporary.toString());
         Files.writeString(temporary.resolve("Child.java"), """
                 public class Child {
@@ -138,6 +151,7 @@ class BackgroundCommandTest {
         Long id = Long.valueOf(data.get("taskId").asText());
         Task registered = repository.findById(id).orElseThrow();
         assertEquals(10L, registered.getSessionId()); assertEquals(20L, registered.getTurnId());
+        assertEquals(1L, registered.getExecutionId());
         assertEquals(command(1200, 7), registered.getCommand());
         assertEquals("验证后台输出", registered.getIntention());
         assertNull(registered.getCompleteAt());
@@ -152,10 +166,20 @@ class BackgroundCommandTest {
         assertEquals(1, manager.listTasks(10L).size()); assertTrue(manager.listTasks(99L).isEmpty());
         await(() -> changedStatuses.contains("FAILED"));
         assertEquals(List.of("PENDING", "RUNNING", "FAILED"), changedStatuses);
+        verify(coordinator).accept(1L);
+        Execution execution = Execution.builder().id("1").messages(new ArrayList<Message>())
+                .agentRequest(AgentRequest.builder().runtimeParameters(AgentRuntimeParameters.builder()
+                        .attributes(Map.of(ExecutionAttributes.SESSION_ID, "10")).build()).build()).build();
+        BackgroundTaskLoopInterceptor notifications = new BackgroundTaskLoopInterceptor(repository, new BackgroundTaskNotifications(), coordinator);
+        notifications.onBeforeModelInvoke(new LoopContext(LoopMessages.builder().execution(execution).build(),
+                new ExecutionControlSignal("1"), 0, execution.getMessages()::addAll));
+        assertEquals(1, execution.getMessages().size());
+        assertTrue(execution.getMessages().getFirst().text().contains("status=FAILED, exitCode=7"));
+        assertTrue(execution.getMessages().getFirst().text().contains("done"));
     }
 
     @Test void stopConfirmsProcessExitAndDoesNotAllowAnotherSessionToControlIt() throws Exception {
-        Long id = submitter.submit(command(60_000, 0), 10L, 20L, workspace, 80, 4096);
+        Long id = submitter.submit(command(60_000, 0), 10L, 20L, 100L, workspace, 80, 4096);
         await(() -> manager.read(10L, id, false).getOutput().contains("ready:"));
         long pid = Long.parseLong(manager.read(10L, id, false).getOutput().strip().substring("ready:".length()));
         assertThrows(ClientException.class, () -> manager.read(99L, id, false));
@@ -170,7 +194,7 @@ class BackgroundCommandTest {
     }
 
     @Test void timeoutSettlesWithoutPollingOrAwaitingAndCapsRetainedOutput() throws Exception {
-        Long id = submitter.submit(command(60_000, 0), 10L, 20L, workspace, 2, 5);
+        Long id = submitter.submit(command(60_000, 0), 10L, 20L, 100L, workspace, 2, 5);
         Thread.sleep(3500);
         Task task = repository.findById(id).orElseThrow();
         assertEquals(TaskStatus.TIMEOUT, task.getStatus());
@@ -197,9 +221,9 @@ class BackgroundCommandTest {
         when(failing.workDir()).thenReturn(temporary.toString());
         when(failing.runtimeEnvironment()).thenReturn(RuntimeEnvironment.builder().charset(StandardCharsets.UTF_8).build());
         when(commands.startCommand(anyString(), anyString(), any(), anyLong(), any(), anyLong())).thenThrow(new IOException("spawn failed"));
-        assertThrows(ClientException.class, () -> submitter.submit("echo test", 99L, 20L, failing, 10, 100));
+        assertThrows(ClientException.class, () -> submitter.submit("echo test", 99L, 20L, 100L, failing, 10, 100));
         verifyNoInteractions(commands);
-        assertThrows(IOException.class, () -> submitter.submit("echo test", 10L, 20L, failing, 10, 100));
+        assertThrows(IOException.class, () -> submitter.submit("echo test", 10L, 20L, 100L, failing, 10, 100));
         List<TaskPO> rows = mapper.selectList(null);
         assertEquals(1, rows.size()); assertEquals("FAILED", rows.getFirst().getStatus());
         assertNotNull(rows.getFirst().getCompleteAt()); assertTrue(rows.getFirst().getOutput().contains("spawn failed"));
@@ -241,7 +265,7 @@ class BackgroundCommandTest {
             if (task.getStatus().isTerminal() && failures.getAndIncrement() == 0) throw new IllegalStateException("db unavailable");
             return invocation.callRealMethod();
         }).when(flaky).updateById(any(Task.class));
-        BackendProcessManager retrying = new BackendProcessManager(flaky, mock(BackgroundTaskBroadcaster.class));
+        BackendProcessManager retrying = new BackendProcessManager(flaky, mock(BackgroundTaskBroadcaster.class), new BackgroundTaskCompletion(flaky, mock(ExecutionResumeCoordinator.class)));
         CommandHandler handle = mock(CommandHandler.class);
         when(handle.await()).thenReturn(new CommandResult(7, "actual failure", false, false));
         Task task = Task.builder().id(103L).sessionId(10L).turnId(20L).command("completed").build(); repository.save(task);
@@ -291,7 +315,7 @@ class BackgroundCommandTest {
             assertEquals(1, rows.size()); assertEquals("PENDING", rows.getFirst().getStatus());
             assertNotNull(rows.getFirst().getId()); return handle;
         });
-        Long id = submitter.submit("echo test", 10L, 20L, controlled, 10, 100);
+        Long id = submitter.submit("echo test", 10L, 20L, 100L, controlled, 10, 100);
         await(() -> repository.findById(id).orElseThrow().getStatus().isTerminal());
         assertEquals(8, repository.findById(id).orElseThrow().getExitCode());
         assertEquals("already exited", manager.read(10L, id, false).getOutput());
@@ -335,7 +359,7 @@ class BackgroundCommandTest {
 
     @Test void completionWorkerDoesNotWriteAgainAfterStopAlreadyPersistedTheFinalResult() throws Exception {
         TaskRepository tracked = spy(repository);
-        BackendProcessManager coordinated = new BackendProcessManager(tracked, mock(BackgroundTaskBroadcaster.class));
+        BackendProcessManager coordinated = new BackendProcessManager(tracked, mock(BackgroundTaskBroadcaster.class), new BackgroundTaskCompletion(tracked, mock(ExecutionResumeCoordinator.class)));
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         AtomicReference<Thread> worker = new AtomicReference<>();
@@ -368,7 +392,7 @@ class BackgroundCommandTest {
         when(commands.startCommand(anyString(), anyString(), any(), anyLong(), any(), anyLong()))
                 .thenThrow(new InterruptedException("interrupted startup"));
         try {
-            assertThrows(InterruptedException.class, () -> submitter.submit("echo test", 10L, 20L, controlled, 10, 100));
+            assertThrows(InterruptedException.class, () -> submitter.submit("echo test", 10L, 20L, 100L, controlled, 10, 100));
             assertTrue(Thread.interrupted());
             List<TaskPO> tasks = mapper.selectList(null);
             assertEquals(1, tasks.size()); assertEquals("FAILED", tasks.getFirst().getStatus());
@@ -386,6 +410,20 @@ class BackgroundCommandTest {
         assertEquals(51, tasks.size());
         assertTrue(tasks.stream().anyMatch(task -> task.getId() == 1L && "PENDING".equals(task.getStatus())));
         assertTrue(tasks.stream().allMatch(task -> task.getOutput() == null));
+    }
+
+    @Test void executionTaskQueryChecksBothOwnersAndKeepsAllResultsBeyondTheHistoryPage() {
+        for (long id = 1; id <= 55; id++) {
+            Task task = Task.builder().id(id).sessionId(10L).turnId(20L).executionId(100L).command("finished").build();
+            task.finish(TaskStatus.SUCCESS, "done", 0, false);
+            repository.save(task);
+        }
+        repository.save(Task.builder().id(56L).sessionId(10L).turnId(21L).executionId(101L).command("other execution").build());
+        repository.save(Task.builder().id(57L).sessionId(11L).turnId(22L).executionId(100L).command("other session").build());
+        assertEquals(55, repository.findByExecutionId(10L, 100L).size());
+        assertEquals(List.of(56L), repository.findByExecutionId(10L, 101L).stream().map(Task::getId).toList());
+        assertEquals(List.of(57L), repository.findByExecutionId(11L, 100L).stream().map(Task::getId).toList());
+        assertEquals(100L, repository.findById(1L).orElseThrow().getExecutionId());
     }
 
     @Test void existingTaskTableGainsItsLabelWithoutLosingDataAndMigrationIsRepeatable() throws Exception {
@@ -407,6 +445,8 @@ class BackgroundCommandTest {
             assertEquals("original", assertDoesNotThrow(() -> tasks.selectById(10L)).getCommand());
             row.setIntention("后台执行全量编译"); tasks.updateById(row);
             assertEquals("后台执行全量编译", tasks.selectById(10L).getIntention());
+            row.setExecutionId(100L); tasks.updateById(row);
+            assertEquals(100L, tasks.selectById(10L).getExecutionId());
         } finally { legacy.shutdown(); }
     }
 

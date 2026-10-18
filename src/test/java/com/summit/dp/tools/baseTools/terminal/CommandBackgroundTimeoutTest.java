@@ -86,7 +86,7 @@ class CommandBackgroundTimeoutTest {
         when(workspace.workDir()).thenReturn(".");
         when(workspace.bridge()).thenReturn(bridge);
         when(bridge.commands()).thenReturn(commands);
-        when(background.submit("echo test", "验证时限", 10L, 20L, workspace, expectedSeconds, 5000L)).thenReturn(123L);
+        when(background.submit("echo test", "验证时限", 10L, 20L, 100L, workspace, expectedSeconds, 5000L)).thenReturn(123L);
         when(commands.execute("echo test", ".", StandardCharsets.UTF_8, 240L, TimeUnit.SECONDS, 5000L))
                 .thenReturn(new WorkspaceCommands.CommandResult(0, "test", false, false));
         CommonToolConfiguration configuration = new CommonToolConfiguration();
@@ -95,14 +95,14 @@ class CommandBackgroundTimeoutTest {
         assertEquals(240L, definition.timeout());
         assertEquals(30L, configuration.manageCommandToolDefinition(new ObjectMapper(), null).timeout());
 
-        ToolExecution call = ToolExecution.builder().id("call").executionId("execution").turnId("execution")
+        ToolExecution call = ToolExecution.builder().id("call").executionId("100").turnId("execution")
                 .toolDefinition(definition).workspace(workspace)
                 .attributes(Map.of(ExecutionAttributes.SESSION_ID, 10L))
                 .eventMetaData(Map.of(ExecutionEventMetadata.TURN_ID, "20"))
                 .args("{\"command\":\"echo test\",\"intention\":\"验证时限\",\"background\":true}").build();
         ToolExecuteResult result = definition.executor().execute(call);
         assertTrue(result.isSuccess(), result.getToolOutput());
-        verify(background).submit("echo test", "验证时限", 10L, 20L, workspace, expectedSeconds, 5000L);
+        verify(background).submit("echo test", "验证时限", 10L, 20L, 100L, workspace, expectedSeconds, 5000L);
         verifyNoInteractions(commands);
 
         call.setArgs("{\"command\":\"echo test\",\"intention\":\"验证时限\",\"background\":false}");

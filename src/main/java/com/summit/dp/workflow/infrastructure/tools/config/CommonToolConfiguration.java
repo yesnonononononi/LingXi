@@ -53,7 +53,7 @@ public class CommonToolConfiguration {
                 .description("""
                         Execute a terminal command in the assigned workspace environment.
                         Output may be truncated according to the configured maximum.
-                        Set background=true to return a persisted taskId immediately; use manage_command to list, read or stop it.
+                        Set background=true to return a persisted taskId immediately. Completion is reported to this execution automatically; use manage_command to inspect or stop tasks.
                         Always state in `intention` what the command is for; it is displayed to the user.
                         """)
                 .parametersJsonSchema("""
@@ -62,7 +62,7 @@ public class CommonToolConfiguration {
                           "properties": {
                             "command": {"type": "string", "description": "Raw command text using the shell reported by the assigned workspace. The workspace selects and starts the shell automatically; do not add a shell launcher prefix or probe other shells."},
                             "intention": {"type": "string", "description": "One short sentence stating what this command is intended to achieve. It is shown to the user in the UI next to the command, so make it specific and human-readable."},
-                            "background": {"type": "boolean", "default": false, "description": "Return a taskId immediately while the command runs in the background. The configured background timeout and the same output limit apply."}
+                            "background": {"type": "boolean", "default": false, "description": "Return a taskId immediately while the command runs in the background. Completion is injected into this execution automatically, so continue other work without polling. Natural completion waits for this execution's tasks. The configured background timeout and the same output limit apply."}
                           },
                           "required": ["command", "intention"]
                         }

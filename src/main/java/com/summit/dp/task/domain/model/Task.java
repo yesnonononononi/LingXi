@@ -18,6 +18,7 @@ public class Task {
     private final Long id;
     private final Long sessionId;
     private final Long turnId;
+    private final Long executionId;
     private final String command;
     private final String intention;
     @Builder.Default private String output = "";

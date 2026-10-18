@@ -320,6 +320,7 @@ CREATE TABLE IF NOT EXISTS task (
     id BIGINT PRIMARY KEY,
     session_id BIGINT NOT NULL,
     turn_id BIGINT NOT NULL,
+    execution_id BIGINT,
     command_text LONGTEXT NOT NULL,
     intention VARCHAR(500),
     output LONGTEXT,
@@ -328,5 +329,6 @@ CREATE TABLE IF NOT EXISTS task (
     truncated BOOLEAN NOT NULL DEFAULT FALSE,
     create_at TIMESTAMP NOT NULL,
     complete_at TIMESTAMP,
-    KEY idx_task_session (session_id, id)
+    KEY idx_task_session (session_id, id),
+    KEY idx_task_execution (session_id, execution_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='后台命令任务';

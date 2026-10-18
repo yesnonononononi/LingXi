@@ -51,6 +51,7 @@ public class TaskRepositoryImpl extends AbstractRepository<Task, TaskPO, Long>
                .id(po.getId())
                .sessionId(po.getSessionId())
                .turnId(po.getTurnId())
+               .executionId(po.getExecutionId())
                .command(po.getCommand())
                .intention(po.getIntention())
                .status(Task.TaskStatus.valueOf(po.getStatus()))
@@ -76,6 +77,13 @@ public class TaskRepositoryImpl extends AbstractRepository<Task, TaskPO, Long>
     public List<Task> findActiveBySessionId(long sessionId) {
         return mapper.selectList(new LambdaQueryWrapper<TaskPO>().eq(TaskPO::getSessionId, sessionId)
                 .in(TaskPO::getStatus, "PENDING", "RUNNING").orderByDesc(TaskPO::getId))
+                .stream().map(this::toModel).toList();
+    }
+
+    @Override
+    public List<Task> findByExecutionId(long sessionId, long executionId) {
+        return mapper.selectList(new LambdaQueryWrapper<TaskPO>().eq(TaskPO::getSessionId, sessionId)
+                        .eq(TaskPO::getExecutionId, executionId).orderByAsc(TaskPO::getId))
                 .stream().map(this::toModel).toList();
     }
 }

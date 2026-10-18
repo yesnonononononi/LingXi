@@ -28,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class BackendProcessManager implements TaskRuntimeService {
     private final TaskRepository repository;
     private final BackgroundTaskBroadcaster broadcaster;
+    private final BackgroundTaskCompletion completion;
     private final ConcurrentHashMap<Long, BackendProcess> processes = new ConcurrentHashMap<>();
     private volatile boolean closed;
 
@@ -161,7 +162,7 @@ public class BackendProcessManager implements TaskRuntimeService {
         for (Task task : repository.findUnfinished()) {
             if (processes.containsKey(task.getId())) continue;
             task.finish(TaskStatus.LOST, "应用已重启，原任务的执行状态无法确认，未自动重放命令", null, false);
-            repository.updateById(task);
+            completion.save(task);
             notifyTaskChanged(task);
         }
     }
@@ -177,7 +178,7 @@ public class BackendProcessManager implements TaskRuntimeService {
     private void persistAndRemove(BackendProcess process) {
         synchronized (process) {
             if (processes.get(process.getTask().getId()) != process) return;
-            repository.updateById(process.getTask());
+            completion.save(process.getTask());
             processes.remove(process.getTask().getId(), process);
             notifyTaskChanged(process.getTask());
         }

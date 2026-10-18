@@ -16,6 +16,8 @@ import com.summit.dp.task.domain.repository.TaskRepository;
 import com.summit.dp.workflow.infrastructure.tools.config.CommonToolConfiguration;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcess;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcessManager;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskCompletion;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskBroadcaster;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.ManageCommandToolExecutor;
 import org.junit.jupiter.api.AfterEach;
@@ -36,7 +38,7 @@ import static org.mockito.Mockito.*;
 
 class BackgroundCommandReadTest {
     private final TaskRepository repository = mock(TaskRepository.class);
-    private final BackendProcessManager manager = new BackendProcessManager(repository, mock(BackgroundTaskBroadcaster.class));
+    private final BackendProcessManager manager = new BackendProcessManager(repository, mock(BackgroundTaskBroadcaster.class), new BackgroundTaskCompletion(repository, mock(ExecutionResumeCoordinator.class)));
     private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
 
     @AfterEach void close() { manager.close(); }

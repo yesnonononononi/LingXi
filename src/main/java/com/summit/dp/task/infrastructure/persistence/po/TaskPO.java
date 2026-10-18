@@ -18,6 +18,7 @@ public class TaskPO {
     private Long id;
     private Long sessionId;
     private Long turnId;
+    private Long executionId;
     @TableField("command_text")
     private String command;
     private String intention;

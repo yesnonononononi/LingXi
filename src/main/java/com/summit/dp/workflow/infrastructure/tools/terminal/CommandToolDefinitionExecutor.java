@@ -2,6 +2,7 @@ package com.summit.dp.workflow.infrastructure.tools.terminal;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.sandbox_security.domain.model.SecurityAction;
@@ -68,10 +69,12 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
                 Long sessionId = ExecutionAttributes.readLong(toolExecution.getAttributes(), ExecutionAttributes.SESSION_ID);
                 Long turnId = ExecutionEventMetadata.turnId(toolExecution.getEventMetaData());
                 throwIf(turnId == null, "后台任务缺少所属轮次");
+                Long executionId = ExecutionIdentity.numericOrNull(toolExecution.getExecutionId());
+                throwIf(executionId == null || executionId <= 0, "后台任务缺少有效执行标识");
                 Long taskId = background.submit(request.getCommand(), request.getIntention(), sessionId, turnId,
-                        workspace, properties.getBackgroundTimeout().toSeconds(), toolExecution.getToolDefinition().maxOutput());
+                        executionId, workspace, properties.getBackgroundTimeout().toSeconds(), toolExecution.getToolDefinition().maxOutput());
                 return ToolExecuteResult.success(objectMapper.writeValueAsString(Map.of("taskId", taskId.toString(),
-                        "message", "后台任务已登记，使用 manage_command 读取状态或停止")), ToolResultType.NORMAL, buildMetadata(request));
+                        "message", "后台任务已登记，完成后会通知当前执行；可使用 manage_command 查询或停止")), ToolResultType.NORMAL, buildMetadata(request));
             }
             return process(request, toolExecution.getWorkspace(), toolExecution.getToolDefinition());
 
