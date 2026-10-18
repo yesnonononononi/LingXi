@@ -21,6 +21,8 @@ public class TaskPO {
     @TableField("command_text")
     private String command;
     private String intention;
+    /** 反引号只为过 jsqlparser：OUTPUT 是它的关键字，裸写会让分页的 count 优化解析失败。 */
+    @TableField("`output`")
     private String output;
     private String status;
     private Integer exitCode;

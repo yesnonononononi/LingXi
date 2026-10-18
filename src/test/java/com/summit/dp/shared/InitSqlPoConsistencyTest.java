@@ -147,7 +147,8 @@ class InitSqlPoConsistencyTest {
                 }
                 String explicit = tableField.value();
                 if (explicit != null && !explicit.isBlank()) {
-                    fields.put(field.getName(), explicit.trim());
+                    // 反引号只用于躲 jsqlparser 关键字（如 `output`），列身份与裸名相同。
+                    fields.put(field.getName(), explicit.replace("`", "").trim());
                     continue;
                 }
             }
