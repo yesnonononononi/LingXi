@@ -25,7 +25,7 @@ class ModelContextServiceTest {
         when(repository.findById(201L)).thenReturn(Optional.empty());
         service.replace(201L, List.of(SystemMessageEntity.builder().text("system").build(),
                 UserMessageEntity.from("hello"), AiMessageEntity.builder().text("answer").build(),
-                ToolMessageEntity.builder().id("call").text("result").build()));
+                ToolMessageEntity.builder().id("call").toolOutput("result").build()));
         ArgumentCaptor<SessionContext> saved = ArgumentCaptor.forClass(SessionContext.class);
         verify(repository).save(saved.capture());
         assertTrue(mapper.readTree(saved.getValue().getContent()).isArray());

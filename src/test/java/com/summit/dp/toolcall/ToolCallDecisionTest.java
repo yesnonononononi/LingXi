@@ -205,7 +205,7 @@ class ToolCallDecisionTest {
     void planApprovalCompletesCardWritesAnswerAndResumesInOneTransaction() throws Exception {
         ToolCall toolCall = promiseCall("call-plan", "create_plan",
                 "{\"kind\":\"PLAN\",\"title\":\"T\",\"text\":\"body\"}");
-        ToolMessageEntity toolMessage = ToolMessageEntity.builder().id("call-plan").name("create_plan").text("pending").build();
+        ToolMessageEntity toolMessage = ToolMessageEntity.builder().id("call-plan").name("create_plan").toolOutput("pending").build();
         Execution execution = execution("3", ExecutionState.SUSPENDED, toolMessage);
 
         when(toolCallRepository.findById("call-plan")).thenReturn(Optional.of(toolCall));
@@ -217,7 +217,7 @@ class ToolCallDecisionTest {
 
         assertEquals(ToolCallStatus.COMPLETED, toolCall.getStatus());
         assertTrue(toolCall.getRawOutput().contains("APPROVED"));
-        assertEquals("可以", toolMessage.getText());
+        assertEquals("可以", toolMessage.getToolOutput());
         verify(toolCallRepository).updateById(toolCall);
         verify(executionRepository).save(execution);
         // 上下文在事务内先写一次（结论落库），恢复后再写一次（loop 可能继续追加消息）。
@@ -228,7 +228,7 @@ class ToolCallDecisionTest {
     @Test
     void commandApprovalExecutesExactlyOnceThenResumes() throws Exception {
         ToolCall toolCall = commandCall("call-cmd");
-        ToolMessageEntity toolMessage = ToolMessageEntity.builder().id("call-cmd").name("command").text("pending").build();
+        ToolMessageEntity toolMessage = ToolMessageEntity.builder().id("call-cmd").name("command").toolOutput("pending").build();
         Workspace workspace = workspace();
         Execution execution = execution("3", ExecutionState.SUSPENDED, toolMessage);
         ExecutionControlSignal signal = new ExecutionControlSignal("3");
@@ -254,7 +254,7 @@ class ToolCallDecisionTest {
         ArgumentCaptor<ToolCallEndEvent> replayedEvent = ArgumentCaptor.forClass(ToolCallEndEvent.class);
         verify(runtimeEvents).onToolCallOutput(replayedEvent.capture());
         assertEquals(Map.of("turnId", "9001"), replayedEvent.getValue().eventMetaData());
-        assertTrue(toolMessage.getText().contains("real output"));
+        assertTrue(toolMessage.getToolOutput().contains("real output"));
         assertEquals(ToolCallStatus.COMPLETED, toolCall.getStatus());
         assertTrue(toolCall.getRawOutput().contains("APPROVED"));
         verify(executionRepository).unregister(signal);
@@ -264,7 +264,7 @@ class ToolCallDecisionTest {
     @Test
     void commandRejectionNeverExecutesButResumes() throws Exception {
         ToolCall toolCall = commandCall("call-rej");
-        ToolMessageEntity toolMessage = ToolMessageEntity.builder().id("call-rej").name("command").text("pending").build();
+        ToolMessageEntity toolMessage = ToolMessageEntity.builder().id("call-rej").name("command").toolOutput("pending").build();
         Execution execution = execution("3", ExecutionState.SUSPENDED, toolMessage);
         ExecutionControlSignal signal = new ExecutionControlSignal("3");
 
@@ -280,7 +280,7 @@ class ToolCallDecisionTest {
         awaitResume();
 
         verifyNoInteractions(commandExecutor, workspaces, toolRegistry);
-        assertTrue(toolMessage.getText().contains("拒绝"));
+        assertTrue(toolMessage.getToolOutput().contains("拒绝"));
         assertTrue(toolCall.getRawOutput().contains("REJECTED"));
         verify(executionControl).resume(execution);
     }
@@ -318,7 +318,7 @@ class ToolCallDecisionTest {
         // 改造前遗留的 DELEGATION 槽位：枚举已删、kind 不可识别，但它仍是未决槽位，
         // 因此决定完计划后父执行不得提前恢复（未决槽位仍走就绪闸门）。
         ToolCall legacySlot = promiseCall("call-child", "call_sub_agent", "{\"kind\":\"DELEGATION\"}");
-        ToolMessageEntity slot = ToolMessageEntity.builder().id(plan.getId()).name(plan.getToolName()).text("pending").build();
+        ToolMessageEntity slot = ToolMessageEntity.builder().id(plan.getId()).name(plan.getToolName()).toolOutput("pending").build();
         Execution execution = execution("3", ExecutionState.SUSPENDED, slot);
         when(toolCallRepository.findById(plan.getId())).thenReturn(Optional.of(plan));
         when(toolCallRepository.listUnresolvedByExecutionId(3L)).thenReturn(List.of(preparing, legacySlot));
@@ -333,7 +333,7 @@ class ToolCallDecisionTest {
     @Test
     void publicationFailureDoesNotUndoCommittedDecision() throws Exception {
         ToolCall plan = promiseCall("call-plan", "create_plan", "{\"kind\":\"PLAN\",\"text\":\"计划\"}");
-        ToolMessageEntity slot = ToolMessageEntity.builder().id(plan.getId()).name(plan.getToolName()).text("pending").build();
+        ToolMessageEntity slot = ToolMessageEntity.builder().id(plan.getId()).name(plan.getToolName()).toolOutput("pending").build();
         Execution execution = execution("3", ExecutionState.SUSPENDED, slot);
         when(toolCallRepository.findById(plan.getId())).thenReturn(Optional.of(plan));
         when(executionRepository.findById("3")).thenReturn(Optional.of(execution));

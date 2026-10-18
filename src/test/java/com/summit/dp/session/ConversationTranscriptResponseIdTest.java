@@ -61,7 +61,7 @@ class ConversationTranscriptResponseIdTest {
     void responseIdLandsOnTheAiRecord() {
         service.appendRound(SESSION_ID, null, TURN_ID,
                 AiMessageEntity.builder().text("answer").build(),
-                List.of(ToolMessageEntity.builder().id("call_1").name("read_file").text("内容").build()),
+                List.of(ToolMessageEntity.builder().id("call_1").name("read_file").toolOutput("内容").build()),
                 RESPONSE_ID);
 
         ArgumentCaptor<List<SessionMessage>> captured = ArgumentCaptor.forClass(List.class);

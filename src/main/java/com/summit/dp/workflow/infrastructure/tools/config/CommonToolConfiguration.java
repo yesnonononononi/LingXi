@@ -6,8 +6,6 @@ import com.summit.dp.sandbox_security.application.TerminalSecurityPolicy;
 import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
 import com.summit.dp.workflow.infrastructure.tools.config.properties.WebSearchToolProperties;
 import com.summit.core.conf.ModelConfig;
-import com.summit.core.conversation.event.RuntimeEventPublisher;
-import com.summit.core.interceptor.InterceptorProcessor;
 import com.summit.core.model.ModelProviderRegistry;
 import com.summit.core.model.chat.ChatModel;
 import com.summit.core.tool.*;
@@ -86,7 +84,9 @@ public class CommonToolConfiguration {
                           "taskId":{"type":"string","description":"Exact taskId returned by execute_command; required for read, snapshot and stop."}
                         },"required":["action"]}
                         """)
-                .timeout(30L).maxOutput(55_000).build();
+                .timeout(30L)
+                .maxOutput(55_000)
+                .build();
     }
 
     @Bean
@@ -132,16 +132,7 @@ public class CommonToolConfiguration {
         );
     }
 
-    /**
-     * 工具检索入口（{@code search_tool}）已归框架侧：{@code harness-kernel-tools} 模块的
-     * {@code SearchToolAutoConfiguration} 默认注册，应用侧不再重复声明——重复声明只会让
-     * 「哪个实现生效」取决于装配顺序。
-     *
-     * <p>要替换实现时，在本类声明同名 {@code searchToolDefinition} bean 即可，框架的
-     * {@code @ConditionalOnMissingBean} 会让位；工具名必须保持
-     * {@link com.summit.kernel.tools.search.SearchToolExecutor#NAME}，因为系统提示词与框架的披露账本
-     * 都按这个名字引用它。</p>
-     */
+
 
     /** 压缩模型直接使用框架提供的 compact 配置。 */
     @Bean

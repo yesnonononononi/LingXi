@@ -128,7 +128,7 @@ class TranscriptConcurrencyTest {
                         // 每个线程独立事务：并发性来自「各自开事务、各自走 锁→查→插」的完整临界区。
                         tx.executeWithoutResult(status -> service.appendRound(SESSION_ID, null, TURN_ID,
                                 AiMessageEntity.builder().text("相同答案").build(),
-                                List.of(ToolMessageEntity.builder().id("call_x").name("read_file").text("内容").build()),
+                                List.of(ToolMessageEntity.builder().id("call_x").name("read_file").toolOutput("内容").build()),
                                 RESPONSE_ID));
                     } catch (Exception error) {
                         leakedErrors.incrementAndGet();

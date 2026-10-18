@@ -336,7 +336,7 @@ class VersionedToolCallDecisionTest {
         when(toolCallRepository.findById("call-choice")).thenReturn(Optional.of(card));
         when(executionRepository.findById(EXECUTION_ID_TEXT)).thenReturn(Optional.of(execution(
                 ExecutionState.SUSPENDED,
-                ToolMessageEntity.builder().id("call-choice").name("require_choice").text("pending").build())));
+                ToolMessageEntity.builder().id("call-choice").name("require_choice").toolOutput("pending").build())));
 
         ToolCallDecisionReceipt receipt = service.decide(
                 new ToolCallDecisionCommand(CONVERSATION_ID, "call-choice", "cmd-1", 1L,
@@ -365,7 +365,7 @@ class VersionedToolCallDecisionTest {
     @DisplayName("命令批准：命令恰好执行一次，回执确认决策已应用")
     void commandApproveExecutesExactlyOnce() throws Exception {
         ToolCall card = commandCall("call-cmd");
-        ToolMessageEntity slot = ToolMessageEntity.builder().id("call-cmd").name("command").text("pending").build();
+        ToolMessageEntity slot = ToolMessageEntity.builder().id("call-cmd").name("command").toolOutput("pending").build();
         Execution execution = execution(ExecutionState.SUSPENDED, slot);
         ExecutionControlSignal signal = new ExecutionControlSignal(EXECUTION_ID_TEXT);
         CountDownLatch completed = new CountDownLatch(1);
@@ -386,14 +386,14 @@ class VersionedToolCallDecisionTest {
         assertTrue(completed.await(5, TimeUnit.SECONDS), "命令应被异步执行并收尾");
         verify(commandExecutor, times(1)).execute(any());
         assertEquals(ToolCallStatus.COMPLETED, card.getStatus());
-        assertTrue(slot.getText().contains("done"), "工具结果应写回真实命令输出");
+        assertTrue(slot.getToolOutput().contains("done"), "工具结果应写回真实命令输出");
     }
 
     @Test
     @DisplayName("命令拒绝：命令一次都不执行，工具结果为「用户拒绝，命令未执行」")
     void commandRejectNeverExecutesAndWritesRejectText() {
         ToolCall card = commandCall("call-rej");
-        ToolMessageEntity slot = ToolMessageEntity.builder().id("call-rej").name("command").text("pending").build();
+        ToolMessageEntity slot = ToolMessageEntity.builder().id("call-rej").name("command").toolOutput("pending").build();
         Execution execution = execution(ExecutionState.SUSPENDED, slot);
 
         when(toolCallRepository.findById("call-rej")).thenReturn(Optional.of(card));
@@ -407,7 +407,7 @@ class VersionedToolCallDecisionTest {
         verify(commandExecutor, never()).execute(any());
         // 拒绝不得依赖命令环境可重建：restore 需要的工作空间 / 注册表一次都不能碰
         verifyNoInteractions(workspaces, toolRegistry);
-        assertEquals("用户拒绝，命令未执行", slot.getText());
+        assertEquals("用户拒绝，命令未执行", slot.getToolOutput());
         assertEquals(ToolCallStatus.COMPLETED, card.getStatus());
         assertTrue(card.getRawOutput().contains("REJECTED"));
     }
@@ -416,7 +416,7 @@ class VersionedToolCallDecisionTest {
     @DisplayName("命令执行中重试同 commandId+摘要：返回已受理的在途回执，不二次执行，结论仍是 APPROVED")
     void inflightDuplicateReturnsAcceptedReceiptWithoutReexecution() throws Exception {
         ToolCall card = commandCall("call-cmd");
-        ToolMessageEntity slot = ToolMessageEntity.builder().id("call-cmd").name("command").text("pending").build();
+        ToolMessageEntity slot = ToolMessageEntity.builder().id("call-cmd").name("command").toolOutput("pending").build();
         Execution execution = execution(ExecutionState.SUSPENDED, slot);
         ExecutionControlSignal signal = new ExecutionControlSignal(EXECUTION_ID_TEXT);
 
@@ -501,8 +501,8 @@ class VersionedToolCallDecisionTest {
         // 两张卡片挂在同一个执行的检查点上，基于同一旧状态并发决策
         ToolCall first = planCall("call-a");
         ToolCall second = planCall("call-b");
-        ToolMessageEntity slotA = ToolMessageEntity.builder().id("call-a").name("create_plan").text("pending").build();
-        ToolMessageEntity slotB = ToolMessageEntity.builder().id("call-b").name("create_plan").text("pending").build();
+        ToolMessageEntity slotA = ToolMessageEntity.builder().id("call-a").name("create_plan").toolOutput("pending").build();
+        ToolMessageEntity slotB = ToolMessageEntity.builder().id("call-b").name("create_plan").toolOutput("pending").build();
         Execution shared = execution(ExecutionState.SUSPENDED, slotA, slotB);
         when(toolCallRepository.findById("call-a")).thenReturn(Optional.of(first));
         when(toolCallRepository.findById("call-b")).thenReturn(Optional.of(second));
@@ -519,8 +519,8 @@ class VersionedToolCallDecisionTest {
             pool.shutdownNow();
         }
 
-        assertEquals("可以", slotA.getText(), "第一张卡片的槽位不能被并发决策覆盖丢失");
-        assertEquals("同意", slotB.getText(), "第二张卡片的槽位不能被并发决策覆盖丢失");
+        assertEquals("可以", slotA.getToolOutput(), "第一张卡片的槽位不能被并发决策覆盖丢失");
+        assertEquals("同意", slotB.getToolOutput(), "第二张卡片的槽位不能被并发决策覆盖丢失");
         assertEquals(ToolCallStatus.COMPLETED, first.getStatus());
         assertEquals(ToolCallStatus.COMPLETED, second.getStatus());
         // 两张卡片都落库：后到的一方不能因为「同 execution 串行」而吃掉先到的一方的结论

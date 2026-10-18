@@ -77,6 +77,41 @@ class CommandToolDefinitionExecutorTest {
         assertTrue(result.getToolMetaData() == null || result.getToolMetaData().isEmpty());
     }
 
+    @Test
+    void interruptIsReportedAsInterruptedAndKeepsItsMark() throws Exception {
+        Workspace workspace = mock(Workspace.class);
+        WorkspaceBridge bridge = mock(WorkspaceBridge.class);
+        WorkspaceCommands commands = mock(WorkspaceCommands.class);
+        when(workspace.runtimeEnvironment()).thenReturn(RuntimeEnvironment.builder()
+                .shellType(ShellType.BASH).charset(StandardCharsets.UTF_8).build());
+        when(workspace.bridge()).thenReturn(bridge);
+        when(bridge.commands()).thenReturn(commands);
+        when(workspace.workDir()).thenReturn(".");
+        when(commands.execute(anyString(), eq("."), eq(StandardCharsets.UTF_8), eq(240L), eq(TimeUnit.SECONDS), eq(100L)))
+                .thenThrow(new InterruptedException("stop requested"));
+
+        ToolExecuteResult result = executor.execute(execution("sleep 600", "长时间等待", workspace));
+
+        assertFalse(result.isSuccess());
+        assertTrue(Thread.currentThread().isInterrupted(), "打断标记必须保留，否则上层看不到取消");
+        Thread.interrupted();
+        assertEquals("command interrupted before it completed", result.getToolOutput());
+    }
+
+    private ToolExecution execution(String command, String intention, Workspace workspace) {
+        ExecuteCommandRequest request = ExecuteCommandRequest.builder().command(command).intention(intention).build();
+        ToolDefinition<?> definition = ToolDefinition.builder().id("execute_command").name("execute_command")
+                .maxOutput(100).timeout(240L).executor(executor).build();
+        return ToolExecution.builder()
+                .id("call-1")
+                .toolDefinition(definition)
+                .executionId("1")
+                .turnId("1")
+                .workspace(workspace)
+                .args(toJson(request))
+                .build();
+    }
+
     private ToolExecution execution(String command, String intention) {
         ExecuteCommandRequest request = ExecuteCommandRequest.builder().command(command).intention(intention).build();
         ToolDefinition<?> definition = ToolDefinition.builder().id("execute_command").name("execute_command")

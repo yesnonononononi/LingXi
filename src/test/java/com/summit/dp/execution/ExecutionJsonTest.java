@@ -151,7 +151,7 @@ class ExecutionJsonTest {
         AiMessageEntity ai = AiMessageEntity.builder().text("answer").thinking("reason").build();
         List<Message> history = List.of(SystemMessageEntity.builder().text("system").build(),
                 UserMessageEntity.from("hello"), ai,
-                ToolMessageEntity.builder().id("call-1").name("search").text("result").build());
+                ToolMessageEntity.builder().id("call-1").name("search").toolOutput("result").build());
         ModelConfig model = ModelConfig.builder().baseUrl("https://example.invalid")
                 .apiKey("test-original-key").modelName("test-model").provider("default")
                 .timeout(Duration.ofMillis(1250)).maxTokens(1024).reasoningEffort("high")

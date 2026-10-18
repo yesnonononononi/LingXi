@@ -179,7 +179,7 @@ public class CommandApprovalExecutor {
         try {
             CommandOutcomeResolver.CommandExecution command =
                     outcomeResolver.run(call, execution, signal.isCancelRequired());
-            message.setText(command.result().getToolOutput());
+            message.setToolOutput(command.result().getToolOutput());
 
             synchronized (ExecutionCoordination.monitor(executionId)) {
                 finalizer.commitOutcome(toolCall, execution, message, call, command,

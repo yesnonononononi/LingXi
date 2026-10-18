@@ -58,7 +58,7 @@ public final class ExecutionToolSlot {
         if (slot == null) {
             return false;
         }
-        slot.setText(text);
+        slot.setToolOutput(text);
         return true;
     }
 

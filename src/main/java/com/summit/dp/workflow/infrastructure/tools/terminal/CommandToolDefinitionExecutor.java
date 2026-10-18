@@ -14,8 +14,8 @@ import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceCommands;
 import com.summit.core.tool.*;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ExecuteCommandRequest;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcesser;
 import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcesser;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,9 +41,10 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
 
     @Override
     public @NonNull ToolExecuteResult execute(ToolExecution toolExecution) {
+        ExecuteCommandRequest request = null;
         try {
             // resolve args
-            ExecuteCommandRequest request = resolveArgs(toolExecution);
+            request = resolveArgs(toolExecution);
 
             if (request.getCommand() == null || request.getCommand().isBlank())
                 return ToolExecuteResult.err("instruction is empty", ToolResultType.NORMAL, buildMetadata(request));
@@ -78,8 +79,14 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
             }
             return process(request, toolExecution.getWorkspace(), toolExecution.getToolDefinition());
 
+        } catch (InterruptedException e) {
+            // 打断来自框架的停止执行（或工具超时后的 future.cancel）：进程已由 ProcessCoordinator
+            // 强杀回收。这里必须保留打断标记并给出「已中断」的明确回执，不能伪装成普通执行失败，
+            // 否则上层会把「用户主动停的命令」当成模型该重试的故障。
+            Thread.currentThread().interrupt();
+            return ToolExecuteResult.err("command interrupted before it completed",
+                    ToolResultType.NORMAL, buildMetadata(request));
         } catch (Exception e) {
-            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             return ToolExecuteResult.err("tool execute failed : " + e);
         }
     }

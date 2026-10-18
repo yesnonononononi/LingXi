@@ -148,7 +148,7 @@ class CommandApprovalExecutorTest {
                 ToolCallRequest.builder().id("call-first").name("read").requestIndex(4).arguments("{}").build(),
                 ToolCallRequest.builder().id("call-second").name("command").requestIndex(7).arguments("{}").build())).build();
         Execution execution = execution("3", original,
-                ToolMessageEntity.builder().id("call-second").name("command").text("pending").build());
+                ToolMessageEntity.builder().id("call-second").name("command").toolOutput("pending").build());
         ExecutionControlSignal signal = new ExecutionControlSignal("3");
         when(toolCallRepository.findById("call-second")).thenReturn(Optional.of(toolCall));
         when(executionRepository.register("3")).thenReturn(signal);
@@ -176,7 +176,7 @@ class CommandApprovalExecutorTest {
     @Test
     void rejectsReplayWhenWorkspaceChangedSinceApproval() {
         ToolCall toolCall = commandCall("call-ws", "echo hi", "echo hi");
-        Execution execution = execution("3", ToolMessageEntity.builder().id("call-ws").name("command").text("pending").build());
+        Execution execution = execution("3", ToolMessageEntity.builder().id("call-ws").name("command").toolOutput("pending").build());
         ExecutionControlSignal signal = new ExecutionControlSignal("3");
 
         when(toolCallRepository.findById("call-ws")).thenReturn(Optional.of(toolCall));
@@ -196,7 +196,7 @@ class CommandApprovalExecutorTest {
     @Test
     void rejectsReplayWhenApprovedCommandDiffersFromSnapshot() {
         ToolCall toolCall = commandCall("call-args", "echo hi", "echo bye");
-        Execution execution = execution("3", ToolMessageEntity.builder().id("call-args").name("command").text("pending").build());
+        Execution execution = execution("3", ToolMessageEntity.builder().id("call-args").name("command").toolOutput("pending").build());
         ExecutionControlSignal signal = new ExecutionControlSignal("3");
 
         when(toolCallRepository.findById("call-args")).thenReturn(Optional.of(toolCall));
@@ -216,7 +216,7 @@ class CommandApprovalExecutorTest {
     @DisplayName("命令执行期间被取消：命令不执行，执行收成 CANCELLED，控制槽位被释放")
     void cancelDuringCommandApprovalSkipsCommandAndReleasesSlot() throws Exception {
         ToolCall toolCall = commandCall("call-cancel", "echo hi", "echo hi");
-        Execution execution = execution("3", ToolMessageEntity.builder().id("call-cancel").name("command").text("pending").build());
+        Execution execution = execution("3", ToolMessageEntity.builder().id("call-cancel").name("command").toolOutput("pending").build());
         // 控制信号在收尾前被异步置成「要求取消」：命令尚未执行，必须就地取消。
         ExecutionControlSignal signal = new ExecutionControlSignal("3");
         signal.requireCancel();
@@ -243,7 +243,7 @@ class CommandApprovalExecutorTest {
     @DisplayName("异步派发失败：执行被收成失败且控制槽位被释放，不留 RUNNING 泄漏")
     void dispatchFailureStillSettlesExecutionAndReleasesSlot() {
         ToolCall toolCall = commandCall("call-dispatch", "echo hi", "echo hi");
-        Execution execution = execution("3", ToolMessageEntity.builder().id("call-dispatch").name("command").text("pending").build());
+        Execution execution = execution("3", ToolMessageEntity.builder().id("call-dispatch").name("command").toolOutput("pending").build());
         ExecutionControlSignal signal = new ExecutionControlSignal("3");
 
         when(toolCallRepository.findById("call-dispatch")).thenReturn(Optional.of(toolCall));

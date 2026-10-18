@@ -88,8 +88,7 @@ public class SkillRootResolver implements SkillDirectoryProvider {
                 return configured.trim();
             }
         }
-        String fallback = configuredDir == null ? "" : configuredDir.trim();
-        return fallback;
+        return configuredDir == null ? "" : configuredDir.trim();
     }
 
     private Path prepare(String configured) {

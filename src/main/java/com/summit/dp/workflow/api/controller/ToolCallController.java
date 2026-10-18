@@ -57,7 +57,7 @@ public class ToolCallController {
      * （APPROVE / REJECT / ANSWER）而不是 {@code approved} 布尔，并带 {@code expectedVersion}
      * 与 {@code commandId}，因此两套接口不能对同一张卡片混用。</p>
      */
-    @Operation(summary = "提交工具调用决策（v2 版本化回执）")
+    @Operation(summary = "提交工具调用决策")
     @PostMapping("/decisions")
     public Result<ToolCallDecisionReceipt> decideCommand(@RequestBody ToolCallDecisionCommand request) {
         return Result.success(versionedDecisionService.decide(request));

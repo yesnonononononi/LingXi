@@ -20,8 +20,7 @@ public class SessionContextUsageProjector {
     public void saveExecutionContextUsage(Execution execution) {
         ContextUsageMetric metric = execution == null ? null : execution.getContextUsageMetric();
         if (metric == null) return;
-        Map<String, Object> attributes = execution.getAgentRequest() == null
-                ? Map.of() : execution.getAgentRequest().runtimeParametersOrDefault().getAttributes();
+        Map<String, Object> attributes = execution.getAgentRequest().runtimeParametersOrDefault().getAttributes();
         Long sessionId = ExecutionAttributes.readLong(attributes, ExecutionAttributes.SESSION_ID);
         if (sessionId == null) {
             log.warn("保存上下文用量跳过: executionId={}, reason=缺少会话归属", execution.getId());
