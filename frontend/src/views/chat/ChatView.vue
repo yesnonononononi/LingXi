@@ -208,10 +208,9 @@
           </div>
           <ChatExecutionControls
             :status="currentActiveSession?.runStatus"
-            :canPause="executionControls.canPause.value" :canResume="executionControls.canResume.value"
-            :pausing="executionControls.isPausing.value" :resuming="executionControls.isResuming.value"
+            :canResume="executionControls.canResume.value" :resuming="executionControls.isResuming.value"
             :hasUnresolved="executionControls.hasUnresolved.value" :error="executionControls.error.value"
-            @pause="executionControls.pause" @resume="executionControls.resume"
+            @resume="executionControls.resume"
           />
           <BackgroundTaskPanel :feed="backgroundTasks" :isDark="displayIsDark" />
           <div

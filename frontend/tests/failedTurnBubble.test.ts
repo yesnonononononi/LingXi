@@ -1,17 +1,18 @@
 /**
- * 失败轮次错误气泡的合成与接线测试。
+ * 失败轮错误气泡的合成与接线测试。
  *
  * 背景（这是一条真实缺陷，别把测试删了）：
- *   `session.ts` 的 `synthesizeFailedTurnBubbles` 早就写好了，但**没有任何调用点** ——
- *   结果是：模型接口报错（如 400）导致一轮里只有 USER 行、没有 assistant 行时，
- *   FAILED 徽标无处可挂（它挂在 assistant 气泡即回答组组尾上），用户刷新后
- *   完全看不到「这一轮失败了」。实时路径正常（EXECUTION_FAILED 会写进气泡），
- *   只有历史路径有这个缺口，所以表现为「刷新后失败提示消失」。
+ *   「空块 + FAILED」的轮次在库里常常只有 USER 行、没有 assistant 行，FAILED 提示无处可挂。
+ *   曾经的做法是把 `turn.errorReason` 拼进合成气泡的 content —— 但正文每次投影都由块重算，
+ *   下一次投影（对账 / 翻页 / 快照）会把拼进去的原因抹成空串，失败轮又变回不可见。
+ *
+ *   现在的契约：**投影负责建行**（空块终态也建，见 `upsertTurnViewIntoMessages`），
+ *   渲染层按气泡的 `failed` 标记 + `turn.errorReason` 展示；`synthesizeFailedTurnBubbles`
+ *   只保留为「连 turnView 都没有」的旧数据兜底。
  *
  * 本测试同时覆盖两层：
- *   ① 纯函数语义（合成本身对不对、幂等性、幂等插位）
- *   ② 接线（历史管线的聚合结果里必须真的出现合成气泡）
- *      ← 这一层才是关键：函数再对，没接线也是白搭。
+ *   ① 合成函数语义（对没有视图的轮次仍然有效、幂等、插位）
+ *   ② 接线（聚合产物里必须有可渲染的 assistant 行，且状态不被重投影抹掉）
  */
 
 import test from 'node:test';
@@ -165,20 +166,32 @@ test('合成：插入位置紧跟该轮最后一行之后（在其回答组位�
 
 // ================================================================ ② 接线验证
 
-test('★ 接线：聚合产物里必须已包含失败轮的合成气泡（核心回归）', () => {
-  // 这条是本次缺陷的直接守卫：
-  // 只有 USER 行 + 该轮 FAILED → 历史路径必须能渲染出失败气泡。
-  // 变异：把 useChatHistory/useChatSubSession 里的 synthesize 调用删掉 → 本测试红
+test('★ 接线：空失败轮必须留下可渲染的 assistant 行（原因由轮次摘要提供）', () => {
+  // 这条是「失败轮不可见」缺陷的直接守卫：
+  // 失败原因**不得**写进 content —— 正文每次投影都由块重算，写进去会被下一次投影抹掉。
+  // 变异：把「空块终态也建行」删掉 → 这里只剩 1 条 user，界面回到空白。
   const views = viewsOfUserMessages(['T-FAILED']);
   const turns: Record<string, ChatTurn> = { 'T-FAILED': failedTurn('模型接口返回 400：invalid api key') };
 
   const projected = projectViews(views);
-  // 接线点：历史管线在逐轮 upsert 之后、turns 已知时调用
-  const wired = synthesizeFailedTurnBubbles(projected, turns);
+  const bubbles = projected.filter(m => m.role === 'assistant' && m.turnId === 'T-FAILED');
+  assert.equal(bubbles.length, 1, '失败轮必须有一个可挂「已失败」的 assistant 行');
+  assert.equal(bubbles[0].failed, true);
+  assert.equal(bubbles[0].content, '', '失败原因不进正文');
 
-  const bubbles = wired.filter(m => m.role === 'assistant' && m.turnId === 'T-FAILED');
-  assert.equal(bubbles.length, 1, '失败轮必须有一个可挂 FAILED 徽标的 assistant 气泡');
-  assert.match(bubbles[0].content, /invalid api key/, '失败原因必须展示给用户');
+  // 已有行时合成器不得再补一条（幂等），原因留在权威轮次摘要里供渲染层展示
+  assert.equal(synthesizeFailedTurnBubbles(projected, turns).length, projected.length);
+  assert.match(String(turns['T-FAILED'].errorReason), /invalid api key/);
+});
+
+test('★ 接线：再投影一次不会抹掉失败轮（正文重算不得吞掉状态）', () => {
+  const views = viewsOfUserMessages(['T-FAILED']);
+  const projected = projectViews(views);
+  projectViews(views);
+
+  const bubble = projected.find(m => m.role === 'assistant' && m.turnId === 'T-FAILED');
+  assert.ok(bubble, '重投影后行必须还在');
+  assert.equal(bubble!.failed, true, '重投影必须保留失败标记');
 });
 
 test('★ 接线：成功轮次不受影响（不产生多余气泡）', () => {
@@ -198,7 +211,7 @@ test('★ 接线：成功轮次不受影响（不产生多余气泡）', () => {
   assert.ok(!wired.some(m => String(m.id).startsWith('synthetic-failed-')), '不得出现合成气泡');
 });
 
-test('★ 接线：一次失败一轮成功时，只在失败轮插入', () => {
+test('★ 接线：一次失败一轮成功时，只给失败轮建行', () => {
   const views: TurnViewVO[] = [
     {
       sessionId: SESSION_ID, turnId: 'T-OK', status: 'COMPLETED', viewVersion: '1', userMessage: '你好',
@@ -214,9 +227,11 @@ test('★ 接线：一次失败一轮成功时，只在失败轮插入', () => {
   const projected = projectViews(views);
   const wired = synthesizeFailedTurnBubbles(projected, turns);
 
-  const synth = wired.filter(m => String(m.id).startsWith('synthetic-failed-'));
-  assert.equal(synth.length, 1, '只应给失败轮补气泡');
-  assert.equal(synth[0].turnId, 'T-FAILED');
+  assert.equal(wired.filter(m => String(m.id).startsWith('synthetic-failed-')).length, 0,
+    '投影已建行，合成器不应再插');
+  const failedRows = wired.filter(m => m.role === 'assistant' && m.turnId === 'T-FAILED');
+  assert.equal(failedRows.length, 1);
+  assert.equal(failedRows[0].failed, true);
 });
 
 // ================================================================ ③ 生产接线守卫

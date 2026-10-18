@@ -5,7 +5,7 @@ import { isTaskActive, type BackgroundTask } from '../../types/backgroundTask';
 import { t } from '../../i18n';
 const props = defineProps<{ feed: BackgroundTasksState; isDark?: boolean }>();
 const { tasks, error, loading, now, runningCount, pendingCount, sessionId, selectedId, detail, detailError,
-  reading, stoppingId, stopError, refresh, read, stop, closeOutput } = props.feed;
+  reading, stoppingId, stopError, deletingId, deleteError, refresh, read, stop, removeTask, closeOutput } = props.feed;
 const expanded = ref(false);
 const visible = computed(() => tasks.value.length > 0 || !!error.value);
 const summary = computed(() => runningCount.value > 0
@@ -42,6 +42,7 @@ watch(sessionId, () => { expanded.value = false; });
       </header>
       <p v-if="error" role="alert" class="task-error">{{ error }}</p>
       <p v-if="stopError" role="alert" class="task-error" data-testid="background-stop-error">{{ stopError }}</p>
+      <p v-if="deleteError" role="alert" class="task-error" data-testid="background-delete-error">{{ deleteError }}</p>
       <ul class="task-list">
         <li v-for="task in ordered" :key="task.id" class="task-row" :data-status="task.status" :data-task-id="task.id">
           <button type="button" class="task-open" :title="task.command" @click="read(task.id)">
@@ -52,6 +53,11 @@ watch(sessionId, () => { expanded.value = false; });
           <button v-if="task.status === 'RUNNING'" type="button" class="task-stop" data-testid="background-task-stop"
             :disabled="!!stoppingId" :aria-label="t('chat.backgroundTasks.stopNamed', { name: title(task) })" @click="stop(task.id)">
             {{ stoppingId === task.id ? t('chat.backgroundTasks.stopping') : t('chat.backgroundTasks.stop') }}
+          </button>
+          <button v-if="!isTaskActive(task)" type="button" class="task-delete" data-testid="background-task-delete"
+            :disabled="!!deletingId" :title="t('chat.backgroundTasks.delete')"
+            :aria-label="t('chat.backgroundTasks.deleteNamed', { name: title(task) })" @click="removeTask(task.id)">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6.2h12"/><path d="M8.2 6.2V4.7c0-.66.54-1.2 1.2-1.2h1.2c.66 0 1.2.54 1.2 1.2v1.5"/><path d="m5.8 6.2.7 9.4c.06.9.81 1.6 1.71 1.6h3.58c.9 0 1.65-.7 1.71-1.6l.7-9.4"/><path d="M9 9.4v4.4m2-4.4v4.4"/></svg>
           </button>
         </li>
       </ul>
@@ -72,8 +78,8 @@ watch(sessionId, () => { expanded.value = false; });
 </template>
 
 <style scoped>
-.background-tasks { --task-bg: #fff; --task-border: #c9dfcc; --task-ink: #3d5146; --task-muted: #819087; --task-hover: #f4f7f3; margin-bottom: 12px; color: var(--task-ink); font-size: 13px; line-height: 20px; }
-.background-tasks[data-theme='dark'] { --task-bg: #111713; --task-border: #344c3c; --task-ink: #d2e0d5; --task-muted: #91a398; --task-hover: #1b271f; }
+.background-tasks { --task-bg: #fff; --task-border: #c9dfcc; --task-ink: #3d5146; --task-muted: #819087; --task-hover: #f4f7f3; --task-delete: #b6c0ba; --task-delete-hover: #e2321d; margin-bottom: 12px; color: var(--task-ink); font-size: 13px; line-height: 20px; }
+.background-tasks[data-theme='dark'] { --task-bg: #111713; --task-border: #344c3c; --task-ink: #d2e0d5; --task-muted: #91a398; --task-hover: #1b271f; --task-delete: #6d7d73; --task-delete-hover: #ff6153; }
 button { cursor: pointer; font: inherit; }
 button:focus-visible { outline: 2px solid var(--task-muted); outline-offset: 3px; }
 button:disabled { cursor: wait; opacity: .5; }
@@ -92,6 +98,8 @@ svg { flex: none; width: 15px; height: 15px; fill: none; stroke: currentColor; s
 .task-state { flex: none; font-size: 12px; color: var(--task-muted); }
 .task-stop { flex: none; padding: 1px 7px; border: 1px solid var(--task-border); border-radius: 6px; background: transparent; color: var(--task-muted); font-size: 11px; }
 .task-stop:hover { color: var(--task-ink); background: var(--task-bg); }
+.task-delete { display: inline-grid; place-items: center; flex: none; width: 22px; height: 22px; border: 0; border-radius: 6px; background: transparent; color: var(--task-delete); transition: color .15s ease; }
+.task-delete:hover:not(:disabled) { color: var(--task-delete-hover); }
 .task-row[data-status='FAILED'] .task-state, .task-row[data-status='TIMEOUT'] .task-state, .task-error, .task-error-indicator { color: #bd5e50; }
 .task-error { margin: 5px 0 9px; font-size: 12px; overflow-wrap: anywhere; }
 .task-output { border-top: 1px solid var(--task-border); margin-top: 10px; padding-top: 9px; }

@@ -12,4 +12,7 @@ export const BackgroundTaskAPI = {
   stop(sessionId: string, taskId: string, signal?: AbortSignal): Promise<Result<BackgroundTask>> {
     return http.post(`/task/runtime/${encodeURIComponent(taskId)}/stop`, null, { params: { sessionId }, signal, timeout: 30_000 });
   },
+  remove(sessionId: string, taskId: string, signal?: AbortSignal): Promise<Result<void>> {
+    return http.delete(`/task/runtime/${encodeURIComponent(taskId)}`, { params: { sessionId }, signal });
+  },
 };

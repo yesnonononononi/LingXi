@@ -24,18 +24,40 @@ function fixture(api: typeof BackgroundTaskAPI, id: string | null = ROOT) {
   return { session, scope, feed };
 }
 function api(list = async (_owner: string): Promise<Result<BackgroundTask[]>> => ok([task()])): typeof BackgroundTaskAPI {
-  return { list, read: async (owner, id) => ok(task('RUNNING', owner, id)), stop: async (owner, id) => ok(task('CANCELLED', owner, id)) };
+  return { list, read: async (owner, id) => ok(task('RUNNING', owner, id)), stop: async (owner, id) => ok(task('CANCELLED', owner, id)),
+    remove: async () => ok(undefined) };
 }
 
 test('任务 API 全程保留雪花字符串和取消信号', async context => {
   const get = context.mock.method(http, 'get', async () => ok([]));
   const post = context.mock.method(http, 'post', async () => ok(task('CANCELLED')));
+  const remove = context.mock.method(http, 'delete', async () => ok(undefined));
   const signal = new AbortController().signal;
   await BackgroundTaskAPI.list(ROOT, signal); await BackgroundTaskAPI.read(ROOT, ID, signal);
   await BackgroundTaskAPI.stop(ROOT, ID, signal);
+  await BackgroundTaskAPI.remove(ROOT, ID, signal);
   assert.deepEqual(get.mock.calls[0]!.arguments, ['/task/runtime/list', { params: { sessionId: ROOT }, signal }]);
   assert.deepEqual(get.mock.calls[1]!.arguments, [`/task/runtime/${ID}`, { params: { sessionId: ROOT }, signal }]);
   assert.deepEqual(post.mock.calls[0]!.arguments, [`/task/runtime/${ID}/stop`, null, { params: { sessionId: ROOT }, signal, timeout: 30_000 }]);
+  assert.deepEqual(remove.mock.calls[0]!.arguments, [`/task/runtime/${ID}`, { params: { sessionId: ROOT }, signal }]);
+});
+
+test('删除成功后只移除该行并关掉它的输出，失败则保留原行', async context => {
+  const backend = api(async () => ok([task('SUCCESS')]));
+  const f = fixture(backend); context.after(() => f.scope.stop()); await tick();
+  await f.feed.read(ID); assert.equal(f.feed.selectedId.value, ID);
+  await f.feed.removeTask(ID);
+  assert.deepEqual(f.feed.tasks.value, []); assert.equal(f.feed.selectedId.value, null);
+  assert.equal(f.feed.deletingId.value, null); assert.equal(f.feed.deleteError.value, '');
+});
+
+test('删除被拒绝时保留原行并给出服务端原因', async context => {
+  const backend = api(async () => ok([task('RUNNING')]));
+  backend.remove = async () => ({ code: 0, errMsg: '任务仍在运行，请先停止再删除' });
+  const f = fixture(backend); context.after(() => f.scope.stop()); await tick();
+  await f.feed.removeTask(ID);
+  assert.equal(f.feed.tasks.value.length, 1); assert.match(f.feed.deleteError.value, /任务仍在运行/);
+  assert.equal(f.feed.deletingId.value, null);
 });
 
 test('任务计数区分运行、等待和终态，不跟随模型结束清空', async context => {
@@ -127,4 +149,29 @@ test('后台任务事件经过真实 SSE 入口独立路由，根身份不符和
   controller.enqueue(frame(BACKGROUND_TASK_CHANGED, { ...event, rootSessionId: OTHER }));
   controller.enqueue(frame(BACKGROUND_TASK_CHANGED, { ...event, taskId: Number(ID) }));
   await tick(); assert.deepEqual(tasks, [event]); assert.deepEqual(chat, []);
+});
+
+test('空闲 15 秒才兜底回查，有活跃任务回到 5 秒', async context => {
+  // 事件（backgroundTaskChanged）是主路径，轮询只是漏事件时的兜底 —— 所以没有任何任务时
+  // 不该按活跃节奏打请求。变异：把空闲间隔也写成 5 → 第二条断言变红。
+  context.mock.timers.enable({ apis: ['setInterval'] });
+  let calls = 0;
+  let payload: BackgroundTask[] = [];
+  const f = fixture(api(async () => { calls++; return ok(payload); }));
+  context.after(() => f.scope.stop());
+  await tick();
+  assert.equal(calls, 1, '挂载即回查一次');
+
+  context.mock.timers.tick(14_000); await tick();
+  assert.equal(calls, 1, '空闲期 14 秒内不得回查');
+
+  context.mock.timers.tick(1_000); await tick();
+  assert.equal(calls, 2, '空闲 15 秒兜底一次');
+
+  payload = [task('RUNNING')];
+  context.mock.timers.tick(15_000); await tick();
+  assert.equal(calls, 3, '下一次兜底要把活跃任务拉上来');
+
+  context.mock.timers.tick(5_000); await tick();
+  assert.equal(calls, 4, '有活跃任务时按 5 秒回查');
 });

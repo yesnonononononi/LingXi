@@ -548,26 +548,28 @@
 
 
         <!-- 执行状态（仅回答组有摘要时展示；进行中/失败/终态不同配色，失败附带原因全文 title） -->
-        <div v-if="execStatusMeta" class="flex flex-1 whitespace-nowrap items-center gap-1" :title="execStatusMeta.errorReason">
+        <!-- min-w-0 + 原因单独限宽：whitespace-nowrap 的 flex 子项默认按内容撑开，
+             长异常串会把用量/耗时挤到下一行。压不下来就永远「底部状态栏被吃掉」。 -->
+        <div v-if="execStatusMeta" class="flex min-w-0 flex-1 items-center gap-1 whitespace-nowrap" :title="execStatusMeta.errorReason">
           <span
             :class="[
               'w-1.5 h-1.5 rounded-full shrink-0',
               execStatusMeta.failed ? 'bg-red-500' : execStatusMeta.running ? 'bg-amber-400 animate-pulse' : 'bg-gray-500'
             ]"
           ></span>
-          <span :class="execStatusMeta.failed ? (isDark ? 'text-red-400' : 'text-red-600') : ''">{{ execStatusMeta.text }}</span>
+          <span class="shrink-0" :class="execStatusMeta.failed ? (isDark ? 'text-red-400' : 'text-red-600') : ''">{{ execStatusMeta.text }}</span>
           <span
             v-if="execStatusMeta.errorReason"
-            class="text-red-500/90 truncate max-w-[24rem] cursor-help"
+            class="min-w-0 max-w-[16rem] truncate cursor-help text-red-500/90"
             :title="execStatusMeta.errorReason"
           >{{ t('common.colon') }}{{ execStatusMeta.errorReason }}</span>
         </div>
 
-        <TokenUsagePopover v-if="showExecutionMeta" :usage="tokenUsage" :model-name="turn?.modelName"
+        <TokenUsagePopover v-if="showExecutionMeta" class="shrink-0" :usage="tokenUsage" :model-name="turn?.modelName"
           :model-provider="turn?.modelProvider" :is-dark="isDark" />
 
         <!-- 耗时统计（组尾展示一次；标注「总历时包含等待时间」） -->
-        <div v-if="showExecutionMeta" class="flex flex-1 whitespace-nowrap items-center gap-1">
+        <div v-if="showExecutionMeta" class="flex shrink-0 whitespace-nowrap items-center gap-1">
           <svg class="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
@@ -575,7 +577,7 @@
         </div>
 
         <!-- 时间戳 -->
-        <span>{{ displayTime }}</span>
+        <span class="shrink-0">{{ displayTime }}</span>
       </div>
     </div>
 
@@ -1176,6 +1178,22 @@ const isTurnRunning = computed(() => {
  */
 const shouldCollapseProcess = computed(() => isMessageCompleted.value && !processToggleOverride.value);
 
+/**
+ * 空终态组：这一轮没有任何正文 / 工具 / 卡片就结束了（被停止或失败）。
+ *
+ * <p>这类轮次**同样走普通轮的底栏**（状态 + 用量 + 耗时 + 开始时间），不再单独画一行提示：
+ * 样式与普通轮保持一致，量化的东西都在底栏里。底座标记仍由投影/事件写入，
+ * 用来放开 {@link isMessageCompleted} 的「必须有内容」限制。</p>
+ *
+ * <p>⚠️ 必须定义在 {@link isMessageCompleted} **之前**：后者的 computed 在 setup 阶段就会被
+ * {@link shouldCollapseProcess} 的 watch（immediate）求值，声明在后会撞 TDZ。</p>
+ */
+const isEmptyTerminalTurn = computed(() => (props.message.cancelled === true || props.message.failed === true)
+  && !props.message.content
+  && !props.message.toolCalls?.length
+  && !props.message.thoughtSteps?.length
+  && !props.message.promptCards?.length);
+
 /** 该助手回答是否已完成会话生成（会话/响应结束时才展示底栏工具栏与状态） */
 const isMessageCompleted = computed(() => {
   // 1~4. 权威「仍在运行」判据集中收敛在 isTurnRunning（含思考中 / 显式未完成 /
@@ -1195,7 +1213,12 @@ const isMessageCompleted = computed(() => {
   if (status !== '' && isActiveTurnStatus(status) && !hasTerminalEvidence) {
     return false;
   }
-  // 6. 必须有回复内容、工具调用或报错信息之一
+  // 6. 空终态（被停止 / 失败）即使没有任何输出，也要出底栏 —— 用量、耗时、开始时间
+  //    都在底栏，样式与普通轮完全一致；靠气泡标记判，不依赖轮次摘要是否已到。
+  if (isEmptyTerminalTurn.value) {
+    return true;
+  }
+  // 7. 其余必须真有内容或工具，否则底栏没有可挂的语义
   return !!(props.message.content || props.message.toolCalls?.length);
 });
 
@@ -1256,7 +1279,6 @@ const displayDuration = computed(() => {
   return formatDurationOrPlaceholder(props.message.durationMs);
 });
 
-
 const tokenUsage = computed(() => resolveTokenUsage(execSummary.value, props.message));
 /** 执行状态展示（仅摘要存在时展示）；进行中/失败/终态用不同配色，失败附带原因全文。 */
 const execStatusMeta = computed(() => {
@@ -1273,7 +1295,11 @@ const execStatusMeta = computed(() => {
 });
 
 const displayTime = computed(() => {
-  return new Date(props.message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // 「开始时间」取轮次摘要的 startedAt：历史投影给气泡的 timestamp 是 Date.now() 兜底，
+  // 不是真实发送时间；有摘要就一律用权威值，用户气泡与底栏因此显示同一个时刻。
+  const startedAt = props.turn?.startedAt;
+  const value = startedAt ? new Date(startedAt) : new Date(props.message.timestamp);
+  return Number.isNaN(value.getTime()) ? '' : value.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 });
 
 

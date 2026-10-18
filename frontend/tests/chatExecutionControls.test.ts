@@ -90,14 +90,9 @@ test('实时快照给已有用户气泡补齐真实消息 ID，首个回答到�
   }
 });
 
-test('暂停和恢复等待权威事件，不伪造执行状态，恢复前先等订阅就绪', async t => {
-  t.mock.method(AgentAPI, 'suspend', async () => {});
+test('恢复等待权威事件，不伪造执行状态，恢复前先等订阅就绪', async t => {
   const resume = t.mock.method(AgentAPI, 'resume', async () => ({ code: 1, data: '不是消息正文' }));
   const f = fixture(); t.after(() => f.scope.stop());
-  f.current.value.runStatus = 'RUNNING';
-  await f.controls.pause();
-  assert.equal(f.current.value.runStatus, 'RUNNING');
-  assert.deepEqual(f.reconciled, ['500']);
   f.current.value.runStatus = 'SUSPENDED';
   f.setReady(async () => false);
   await f.controls.resume();

@@ -172,6 +172,20 @@ export interface ChatMessage {
   isExploring?: boolean;             // 是否正在探索中（发送消息到第一个工具调用之间）
   isComplete?: boolean;              // 会话/轮次是否已结束
   isSuspended?: boolean;             // 是否处于协作式暂停/挂起等待中
+  /**
+   * 本组被用户停止（EXECUTION_CANCELLED / 快照 status=CANCELLED）。
+   *
+   * <p>停止发生在模型首个 token 之前时，这一组既没有正文也没有工具 —— 若不做标记，
+   * 界面上用户气泡下面空无一物，看起来像回答丢了。由渲染层据此给出「已取消」行。</p>
+   */
+  cancelled?: boolean;
+  /**
+   * 本组以失败结束（快照 status=FAILED / EXECUTION_FAILED）。
+   *
+   * <p>失败原因在 {@code turn.errorReason}，**不写进 content**：空失败轮没有正文块，
+   * 一旦后续投影重算正文就会把拼进去的原因抹掉（历史缺陷）。渲染层据此给出「已失败」行。</p>
+   */
+  failed?: boolean;
   durationMs?: number;               // 轮次总耗时毫秒
   /** 失败标记：传输层/建流前失败或 EXECUTION_FAILED 已把原因写进 content 时置位。 */
   sendError?: string;

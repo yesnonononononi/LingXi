@@ -832,7 +832,6 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     // 发送与生命周期控制
     handleSendMessage,
     handleStopGeneration: sending.handleStopGeneration,
-    handleSuspendGeneration: executionControls.pause,
     decideToolCall,
     handleSelectPrompt,
     /** 重发一条「未发送」的提问（受理被拒留下的幽灵气泡）。 */

@@ -456,6 +456,9 @@ export class TurnStreamReducer {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
     bubble.isSuspended = false;
     bubble.isThinking = true;
+    // 恢复后这一轮不再是「被取消 / 已失败」，否则空内容气泡会一直顶着终态提示行。
+    bubble.cancelled = false;
+    bubble.failed = false;
 
     this.onScrollFollow?.();
   }
@@ -482,10 +485,12 @@ export class TurnStreamReducer {
     bubble.isExploring = false;
     bubble.isSuspended = false;
     bubble.tokenInfo = tokenInfo ?? undefined;
+    // 失败也是轮次属性：空失败轮（没有任何输出）由渲染层按此标记出「已失败」行。
+    bubble.failed = true;
+    bubble.cancelled = false;
     // 执行终结：卡片不会再有就绪机会，取消全部待重试定时器
     this.clearAllCardRetries();
-    // 失败原因写进 content 尾部：该轮不会再有 BODY 块，错误文案只能由实时事件补。
-    // 与历史路径同形（刷新后从 turn.errorReason 看到），两处口径一致。
+    // 有原因就照旧写进正文（该轮不会再有正文块）；为空时由渲染层用 failed 标记兜底。
     if (errMsg) {
       bubble.sendError = errMsg;
       bubble.content = bubble.content ? `${bubble.content}\n\n${errMsg}` : errMsg;
@@ -501,6 +506,13 @@ export class TurnStreamReducer {
     bubble.isThinking = false;
     bubble.isExploring = false;
     bubble.isSuspended = false;
+    // 首个 token 之前就停止时，这一组没有任何内容 —— 标记出来，渲染层才有「已取消」可挂。
+    // 只在已知归属轮次时标记：turnId 未知时这条是临时气泡，权威快照会另建一条，
+    // 标在这里等于把提示挂到一条随后被丢弃的行上。
+    if (this.currentTurnId) {
+      bubble.cancelled = true;
+      bubble.failed = false;
+    }
     bubble.tokenInfo = tokenInfo ?? undefined;
 
     // 执行终结：卡片不会再有就绪机会，取消全部待重试定时器

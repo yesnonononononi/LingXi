@@ -41,9 +41,9 @@ window.syncUserMessage=()=>router.dispatch({type:'TURN_SNAPSHOT',timestamp:'',ex
 </script><template><main class="mx-auto flex max-w-3xl flex-col gap-3 p-6 h-screen">
 <ChatMessageList :messages="session.messages" session-id="500" :is-dark="false" :is-sending="session.runStatus!=='IDLE'"
   :allow-resend="controls.canResend.value" @edit-resend="controls.edit" />
-<ChatExecutionControls :status="session.runStatus" :can-pause="controls.canPause.value" :can-resume="controls.canResume.value"
-  :pausing="controls.isPausing.value" :resuming="controls.isResuming.value" :has-unresolved="controls.hasUnresolved.value"
-  :error="controls.error.value" @pause="controls.pause" @resume="controls.resume" />
+<ChatExecutionControls :status="session.runStatus" :can-resume="controls.canResume.value"
+  :resuming="controls.isResuming.value" :has-unresolved="controls.hasUnresolved.value"
+  :error="controls.error.value" @resume="controls.resume" />
 <ChatInputArea :is-dark="false" :is-sending="session.runStatus!=='IDLE'" />
 <ChatResendDialog :open="!!controls.editTarget.value" v-model="controls.draft.value" :busy="controls.resending.value"
   :error="controls.error.value" :image-count="0" @cancel="controls.cancelEdit" @submit="controls.resend" />
@@ -87,13 +87,13 @@ await window.flush();window.ready=true;`);
   for(let attempt=0;attempt<100&&!await evaluate('window.ready===true');attempt++) await new Promise(resolve=>setTimeout(resolve,50));
   assert.equal(await evaluate('window.ready'),true);
   assert.equal(await evaluate('document.querySelector("[data-testid=edit-resend]").disabled'),true);
-  await evaluate('document.querySelector("[data-testid=pause-generation]").click();window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=pause-generation]")!==null'),false);
+  await evaluate('window.backendStatus="SUSPENDED";window.refreshSession();window.flush()');
   assert.equal(await evaluate('document.querySelector("[data-testid=resume-generation]")!==null'),true);
-  assert.ok((await evaluate('window.requests')).includes('/a/completion/500/suspend'));
   await new Promise(resolve=>setTimeout(resolve,250));
-  await fs.writeFile(path.join(output,'paused.png'),(await window.webContents.capturePage()).toPNG());
+  await fs.writeFile(path.join(output,'suspended.png'),(await window.webContents.capturePage()).toPNG());
   await evaluate('document.querySelector("[data-testid=resume-generation]").click();window.flush()');
-  assert.equal(await evaluate('document.querySelector("[data-testid=pause-generation]")!==null'),true);
+  assert.ok((await evaluate('window.requests')).includes('/a/completion/500/resume'));
   assert.equal(await evaluate('document.body.textContent.includes("不可作为聊天正文展示")'),false);
   await evaluate('window.backendStatus="IDLE";window.refreshSession();window.flush()');
   assert.equal(await evaluate('document.querySelector("[data-testid=edit-resend]").disabled'),true);

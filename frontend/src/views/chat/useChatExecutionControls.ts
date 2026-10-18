@@ -17,7 +17,6 @@ interface Options {
 
 export function useChatExecutionControls(options: Options) {
   const error = ref('');
-  const pausingSessionId = ref<string | null>(null);
   const resumingSessionId = ref<string | null>(null);
   const resending = ref(false);
   const editTarget = ref<ChatMessage | null>(null);
@@ -25,11 +24,9 @@ export function useChatExecutionControls(options: Options) {
   const draft = ref('');
   let disposed = false;
   let controller: AbortController | undefined;
-  const isPausing = computed(() => pausingSessionId.value === options.session.value?.id);
   const isResuming = computed(() => resumingSessionId.value === options.session.value?.id);
   const hasUnresolved = computed(() => options.session.value?.messages.some(message =>
     message.promptCards?.some(card => card.type === 'PROMISE' && card.status !== 'completed')) ?? false);
-  const canPause = computed(() => options.session.value?.runStatus === 'RUNNING' && !isPausing.value);
   const canResume = computed(() => options.session.value?.runStatus === 'SUSPENDED'
     && !hasUnresolved.value && !isResuming.value);
   const canResend = computed(() => options.session.value?.runStatus === 'IDLE'
@@ -44,18 +41,6 @@ export function useChatExecutionControls(options: Options) {
     if (!disposed && options.session.value?.id === sessionId) {
       error.value = problem instanceof Error ? problem.message : t('chat.controls.failed');
     }
-  };
-
-  const pause = async () => {
-    const session = options.session.value;
-    if (!session || !canPause.value) return;
-    pausingSessionId.value = session.id;
-    error.value = '';
-    try {
-      await AgentAPI.suspend(session.id);
-      if (!disposed) await options.reconcile(session.id);
-    } catch (problem) { report(session.id, problem); }
-    finally { pausingSessionId.value = null; }
   };
 
   const resume = async () => {
@@ -110,6 +95,6 @@ export function useChatExecutionControls(options: Options) {
   };
 
   onScopeDispose(() => { disposed = true; controller?.abort(); });
-  return { error, isPausing, isResuming, resending, canPause, canResume, canResend, hasUnresolved,
-    editTarget, draft, pause, resume, edit, cancelEdit, resend };
+  return { error, isResuming, resending, canResume, canResend, hasUnresolved,
+    editTarget, draft, resume, edit, cancelEdit, resend };
 }

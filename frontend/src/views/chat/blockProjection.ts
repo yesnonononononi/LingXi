@@ -57,6 +57,10 @@ function toToolTrace(block: ToolBlock): ToolCallTrace {
 export function projectTurnView(bubble: ChatMessage, view: TurnViewVO): void {
   upsertBlockIntoBubble(bubble, view);
   applyTurnStatus(bubble, view.status);
+  // 终态标记由快照（唯一权威源）直接给出：空组的提示由渲染层按 `turn.errorReason` / 状态生成，
+  // 不往 content 里拼字 —— 正文每次投影都会重算，拼进去的文字会被下一次投影抹掉。
+  bubble.cancelled = view.status === 'CANCELLED';
+  bubble.failed = view.status === 'FAILED';
 }
 
 /**
@@ -111,7 +115,7 @@ export function buildUserMessageFromTurnView(
   };
 }
 
-/** 按权威轮次与版本补齐状态；空失败轮保留给错误气泡合成。 */
+/** 按权威轮次与版本补齐状态；每个轮次（含空块终态）都会落到一条 assistant 行。 */
 export function upsertTurnViewIntoMessages(
   messages: ChatMessage[],
   view: TurnViewVO,
@@ -140,29 +144,15 @@ export function upsertTurnViewIntoMessages(
     return;
   }
 
-  // 空块 + 失败态：不建空气泡，交给 synthesizeFailedTurnBubbles 用 turns.errorReason 合成。
-  // 但用户提问仍要落（否则该轮在界面上完全没有痕迹）。
-  if (view.blocks.length === 0 && isFailedStatus(view.status)) {
-    if ((view.userMessage || view.userImageUrls?.length) && !messages.some(m => m.role === 'user' && m.turnId === view.turnId)) {
-      const userMessage = buildUserMessageFromTurnView(view, fallbackTimestamp);
-      if (userMessage) {
-        messages.splice(resolveTurnInsertIndex(messages, view.turnId), 0, userMessage);
-      }
-    }
-    return;
-  }
-
-  // 新轮次：按雪花键插到正确位置（不能一律追加，否则翻旧页会把旧轮次塞到末尾）
+  // 终态（含空块的 FAILED / CANCELLED）也照常建气泡：空组的提示由渲染层按 `turn.errorReason`
+  // 与状态生成。**不能**往 content 里拼失败原因 —— 正文每次投影都会由块重算，
+  // 拼进去的文字会被下一次投影（对账 / 翻页 / 快照）抹掉，失败轮就彻底看不见了。
+  // 没有 turnView 的旧数据仍由 synthesizeFailedTurnBubbles 兜底（它只在缺 assistant 行时补）。
   const insertAt = resolveTurnInsertIndex(messages, view.turnId);
   const bubble = buildBubbleFromTurnView(view, fallbackTimestamp);
   const userMessage = buildUserMessageFromTurnView(view, fallbackTimestamp);
   const pair = userMessage && !existingUser ? [userMessage, bubble] : [bubble];
   messages.splice(insertAt, 0, ...pair);
-}
-
-/** 该轮是否为「失败但可能无内容」的终态（无块时不该建空气泡）。 */
-function isFailedStatus(status: string | null | undefined): boolean {
-  return status === 'FAILED' || status === 'CANCELLED';
 }
 
 /**
