@@ -25,13 +25,7 @@ import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.doThrow;
 import org.mockito.InOrder;
 
-/**
- * {@link SubExecutionLifecycle} 的结束事实翻译契约。
- *
- * <p>根/子共用一条通知链：子挂起保留登记、子终态移除并在「最后一个子终结」上唤醒根；
- * 根挂起重放保留唤醒、根终态清理保留唤醒。唤醒目标一律是<b>协作根执行 id</b>（子执行取
- * {@code ROOT_EXECUTION_ID}，根执行回落自身执行 id）。</p>
- */
+/** 子执行自身的保留唤醒与协作根的结束提醒分别处理，不能把两者的执行身份混用。 */
 class SubExecutionLifecycleTest {
 
     private static final long ROOT_SESSION_ID = 800L;
@@ -53,9 +47,10 @@ class SubExecutionLifecycleTest {
 
         lifecycle.onSuspended(childExecution());
 
-        verify(registry).markChildSuspended(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        InOrder order = inOrder(registry, resumeCoordinator);
+        order.verify(registry).markChildSuspended(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        order.verify(resumeCoordinator).flushPendingWake(1234L);
         verify(resumeCoordinator, never()).accept(anyLong());
-        verify(resumeCoordinator, never()).flushPendingWake(anyLong());
     }
 
     @Test
@@ -66,6 +61,8 @@ class SubExecutionLifecycleTest {
 
         Execution child = childExecution();
         lifecycle.onFinished(child);
+
+        verify(resumeCoordinator).clearPendingWake(1234L);
 
         InOrder order = inOrder(notifier, registry, resumeCoordinator);
         order.verify(notifier).notifyCommander(child);
@@ -112,6 +109,13 @@ class SubExecutionLifecycleTest {
 
         verify(resumeCoordinator).clearPendingWake(ROOT_EXECUTION_ID);
         verify(registry, never()).unregisterChild(anyLong(), anyLong());
+    }
+
+    @Test void childWithoutCollaborationRoutingStillFlushesItsOwnWake() {
+        when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(null);
+        lifecycle.onSuspended(childExecution());
+        verify(resumeCoordinator).flushPendingWake(1234L);
+        verify(registry, never()).markChildSuspended(anyLong(), anyLong());
     }
 
     @Test

@@ -15,7 +15,7 @@ import java.util.Map;
  * 子执行「结束事实」协作器：把执行仓储的生命周期通知翻译成「注册表登记变更 + 唤醒根」。
  *
  * <p>根与子共用同一条通知链：子执行进入 SUSPENDED 时保留登记（父侧仍算「未结束」），真正终态时
- * 移除登记并在「最后一个子执行终结」这一原子跃迁上唤醒根；根执行自身进入 SUSPENDED 时重放保留
+ * 移除登记并在「最后一个子执行终结」这一原子跃迁上唤醒根；所有执行进入 SUSPENDED 时重放保留
  * 唤醒（此时控制槽位已释放、检查点已提交，正是「释放后」的唯一时点），进入终态时清理保留唤醒。</p>
  */
 @Slf4j
@@ -27,40 +27,30 @@ public class SubExecutionLifecycle {
     private final ExecutionLocator executionLocator;
     private final SubAgentCompleteNotifier subAgentCompleteNotifier;
 
-    /**
-     * 子执行挂起 → 保留登记；根执行挂起 → 重放保留唤醒。
-     */
+    /** 子登记先落定再重放唤醒，避免新运行被迟到的挂起登记覆盖。 */
     public void onSuspended(Execution execution) {
         Long rootExecutionId = resolveRootExecutionId(execution);
-        if (rootExecutionId == null) {
-            Long executionId = ExecutionIdentity.numericOrNull(execution.getId());
-            if (executionId != null) {
-                resumeCoordinator.flushPendingWake(executionId);
+        if (rootExecutionId != null) {
+            Long childSessionId = childSessionIdOrNull(execution);
+            Long rootSessionId = resolveRootSessionId(childSessionId);
+            if (rootSessionId != null) {
+                registry.markChildSuspended(rootSessionId, childSessionId);
+                log.info("子执行挂起保留登记: rootSessionId={}, childSessionId={}, rootExecutionId={}",
+                        rootSessionId, childSessionId, rootExecutionId);
             }
-            return;
         }
-        Long childSessionId = childSessionIdOrNull(execution);
-        Long rootSessionId = resolveRootSessionId(childSessionId);
-        if (rootSessionId == null) {
-            return;
-        }
-        registry.markChildSuspended(rootSessionId, childSessionId);
-        log.info("子执行挂起保留登记: rootSessionId={}, childSessionId={}, rootExecutionId={}",
-                rootSessionId, childSessionId, rootExecutionId);
+        Long executionId = ExecutionIdentity.numericOrNull(execution.getId());
+        if (executionId != null) resumeCoordinator.flushPendingWake(executionId);
     }
 
     /**
      * 子执行终态 → 移除登记（成为空则唤醒根）；根执行终态 → 清理保留唤醒。
      */
     public void onFinished(Execution execution) {
+        Long executionId = ExecutionIdentity.numericOrNull(execution.getId());
+        if (executionId != null) resumeCoordinator.clearPendingWake(executionId);
         Long rootExecutionId = resolveRootExecutionId(execution);
-        if (rootExecutionId == null) {
-            Long executionId = ExecutionIdentity.numericOrNull(execution.getId());
-            if (executionId != null) {
-                resumeCoordinator.clearPendingWake(executionId);
-            }
-            return;
-        }
+        if (rootExecutionId == null) return;
         Long childSessionId = childSessionIdOrNull(execution);
         Long rootSessionId = resolveRootSessionId(childSessionId);
 
