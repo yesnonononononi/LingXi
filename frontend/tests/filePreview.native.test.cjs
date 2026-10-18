@@ -135,12 +135,11 @@ test('原生接口校验会话环境，文件替换后通知刷新，关闭标�
   sender.isDestroyed = () => false;
   sender.send = (channel, data) => sender.emit(channel, data);
   const handlers = new Map();
-  let type = 'LOCAL';
+  let hostDir = root;
   t.mock.method(global, 'fetch', async url => ({
     ok: true,
-    json: async () => ({ code: 1, data: String(url).endsWith('/config/current') ? { type }
-      : String(url).includes('/session/') ? { workspaceId: '1234567890123456789' }
-        : { hostDir: root } }),
+    json: async () => ({ code: 1, data: String(url).includes('/session/')
+      ? { workspaceId: '1234567890123456789' } : { hostDir } }),
   }));
   const opened = [];
   const revealed = [];
@@ -173,8 +172,13 @@ test('原生接口校验会话环境，文件替换后通知刷新，关闭标�
   await fs.writeFile(path.join(root, 'script.js'), 'alert(1)');
   assert.equal((await handlers.get('file-preview:open')(event, { ...request, path: 'script.js' })).ok, false);
   assert.equal(opened.length, 1);
-  type = 'SAND_BOX';
-  assert.match((await read(event, request)).error, /沙箱/);
+  // 沙箱只是执行环境，不等于「文件在别处」：同一个宿主目录照样可读可 watch。
+  // 变异：把 `resolveWorkspaceFile` 里按 config.type 分流的分支加回去 → 这里会红。
+  assert.equal((await read(event, request)).ok, true, '沙箱会话也必须能预览宿主文件');
+  // 真正的前置条件是「有宿主目录」；缺失才拒绝
+  hostDir = '';
+  assert.match((await read(event, request)).error, /工作目录/);
+  hostDir = root;
   assert.equal((await read({ sender: {} }, request)).ok, false);
   assert.equal((await handlers.get('file-preview:unwatch')(event, first.data.watchId)).ok, true);
   let notifications = 0;

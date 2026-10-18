@@ -44,6 +44,12 @@ class SandboxRuntimeLayoutTest {
         assertEquals(runtime.resolve("node").toString(), directories[0]);
         assertEquals(runtime.resolve("git/cmd").toString(), directories[1]);
         assertEquals(runtime.resolve("git/bin").toString(), directories[2]);
+        // 宿主 PATH 追加在末尾：否则 docker / python / java 这类宿主安装的 CLI 在沙箱里
+        // 一律 not recognized（自带 node/git 仍优先）。变异：删掉追加 → 本断言红。
+        String inherited = System.getenv("PATH");
+        if (inherited != null && !inherited.isBlank()) {
+            assertTrue(configured.endsWith(inherited), "宿主 PATH 必须被追加，沙箱才能发现宿主 CLI");
+        }
         assertEquals("C.UTF-8", layout.commandEnvironment(Map.of("LANG", "C.UTF-8")).get("LANG"));
         assertEquals(Map.of("Path", "custom"), layout.commandEnvironment(Map.of("Path", "custom")));
     }

@@ -34,8 +34,10 @@ function resolveId(value) {
 async function resolveWorkspaceFile(request) {
   const base = resolveLocalBase(request?.baseUrl);
   const sessionId = resolveId(request?.sessionId);
-  const config = await fetchData(base, '/config/current');
-  if (config.type !== 'LOCAL') throw new Error('沙箱文件暂不支持本地预览，请切换到本地工作空间');
+  // 不按执行环境（local / sandbox）分流：沙箱工作空间的 workDir 就是宿主目录
+  // （MXC 的路径映射在 Windows 上是恒等的），预览由主进程用宿主权限直接读盘，
+  // 沙箱只约束 agent 的子进程。真正的前置条件是「这个工作空间有宿主目录」。
+  // 注意：预览内容只回给渲染进程，不进模型上下文，agent 不会因此「同步收到」。
   const session = await fetchData(base, '/session/' + sessionId);
   const workspaceId = resolveId(session.workspaceId);
   const workspace = await fetchData(base, '/workspace/find/' + workspaceId);
