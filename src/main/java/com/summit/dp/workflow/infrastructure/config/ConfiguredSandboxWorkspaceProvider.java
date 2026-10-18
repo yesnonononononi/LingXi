@@ -32,7 +32,7 @@ public final class ConfiguredSandboxWorkspaceProvider implements WorkspaceProvid
                     properties.stateDirectory().resolve("helpers"),
                     properties.startupTimeout(),
                     properties.fileTimeout());
-            return new MxcWorkspaceProvider(runtime).resolve(SandboxHostEnvironment.inherit((MxcWorkspaceSpec) spec));
+            return new MxcWorkspaceProvider(runtime).resolve(spec);
         } catch (RuntimeException failure) {
             log.error("沙箱初始化失败: backend={}, directory={}", status.backend(), properties.applicationDirectory(), failure);
             throw new ClientException("沙箱初始化失败，请检查宿主 Node、MXC SDK 及原生隔离能力，详情见日志");
