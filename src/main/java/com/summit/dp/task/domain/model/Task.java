@@ -10,6 +10,7 @@ import java.time.Instant;
 @Builder
 public class Task {
     public static final int MAX_OUTPUT = 50_000;
+    public static final int MAX_INTENTION = 500;
     public enum TaskStatus {
         PENDING, RUNNING, FAILED, SUCCESS, TIMEOUT, CANCELLED, LOST;
         public boolean isTerminal() { return this != PENDING && this != RUNNING; }
@@ -18,6 +19,7 @@ public class Task {
     private final Long sessionId;
     private final Long turnId;
     private final String command;
+    private final String intention;
     @Builder.Default private String output = "";
     @Builder.Default private TaskStatus status = TaskStatus.PENDING;
     private Integer exitCode;

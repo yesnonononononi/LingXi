@@ -30,9 +30,11 @@ import com.summit.dp.task.domain.repository.TaskRepository;
 import com.summit.dp.task.infrastructure.persistence.mapper.TaskMapper;
 import com.summit.dp.task.infrastructure.persistence.po.TaskPO;
 import com.summit.dp.task.infrastructure.repository.TaskRepositoryImpl;
+import com.summit.dp.shared.config.H2SchemaInitializer;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.infrastructure.tools.terminal.BackendProcess;
+import com.summit.dp.workflow.infrastructure.tools.terminal.BackgroundTaskBroadcaster;
 import com.summit.dp.workflow.infrastructure.tools.terminal.BackendProcessManager;
 import com.summit.dp.workflow.infrastructure.tools.terminal.BackendProcesser;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
@@ -51,11 +53,13 @@ import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.boot.DefaultApplicationArguments;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -65,6 +69,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -80,6 +85,7 @@ class BackgroundCommandTest {
     private TaskRepository repository;
     private BackendProcessManager manager;
     private BackendProcesser submitter;
+    private final List<String> changedStatuses = new CopyOnWriteArrayList<>();
     private Workspace workspace;
     private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
 
@@ -97,7 +103,14 @@ class BackgroundCommandTest {
         SqlSessionFactory sessionFactory = factory.getObject();
         mapper = new SqlSessionTemplate(sessionFactory).getMapper(TaskMapper.class);
         repository = new TaskRepositoryImpl(mapper);
-        manager = new BackendProcessManager(repository);
+        BackgroundTaskBroadcaster broadcaster = mock(BackgroundTaskBroadcaster.class);
+        doAnswer(invocation -> {
+            Task task = invocation.getArgument(0);
+            assertEquals(task.getStatus(), repository.findById(task.getId()).orElseThrow().getStatus());
+            changedStatuses.add(task.getStatus().name());
+            return null;
+        }).when(broadcaster).publishChanged(any(Task.class));
+        manager = new BackendProcessManager(repository, broadcaster);
         ChatTurnRepository turns = mock(ChatTurnRepository.class);
         when(turns.findById(20L)).thenReturn(Optional.of(ChatTurn.builder().id(20L).sessionId(10L).build()));
         submitter = new BackendProcesser(repository, turns, manager);
@@ -125,6 +138,7 @@ class BackgroundCommandTest {
         Task registered = repository.findById(id).orElseThrow();
         assertEquals(10L, registered.getSessionId()); assertEquals(20L, registered.getTurnId());
         assertEquals(command(1200, 7), registered.getCommand());
+        assertEquals("验证后台输出", registered.getIntention());
         assertNull(registered.getCompleteAt());
         await(() -> manager.readTask(10L, id).getOutput().contains("ready:"));
         assertEquals("RUNNING", manager.readTask(10L, id).getStatus());
@@ -135,6 +149,8 @@ class BackgroundCommandTest {
         assertEquals(completed.getOutput(), manager.readTask(10L, id).getOutput());
         assertEquals(7, manager.stop(10L, id).getExitCode());
         assertEquals(1, manager.listTasks(10L).size()); assertTrue(manager.listTasks(99L).isEmpty());
+        await(() -> changedStatuses.contains("FAILED"));
+        assertEquals(List.of("PENDING", "RUNNING", "FAILED"), changedStatuses);
     }
 
     @Test void stopConfirmsProcessExitAndDoesNotAllowAnotherSessionToControlIt() throws Exception {
@@ -212,7 +228,7 @@ class BackgroundCommandTest {
             if (task.getStatus().isTerminal() && failures.getAndIncrement() == 0) throw new IllegalStateException("db unavailable");
             return invocation.callRealMethod();
         }).when(flaky).updateById(any(Task.class));
-        BackendProcessManager retrying = new BackendProcessManager(flaky);
+        BackendProcessManager retrying = new BackendProcessManager(flaky, mock(BackgroundTaskBroadcaster.class));
         CommandHandler handle = mock(CommandHandler.class);
         when(handle.await()).thenReturn(new CommandResult(7, "actual failure", false, false));
         Task task = Task.builder().id(103L).sessionId(10L).turnId(20L).command("completed").build(); repository.save(task);
@@ -306,7 +322,7 @@ class BackgroundCommandTest {
 
     @Test void completionWorkerDoesNotWriteAgainAfterStopAlreadyPersistedTheFinalResult() throws Exception {
         TaskRepository tracked = spy(repository);
-        BackendProcessManager coordinated = new BackendProcessManager(tracked);
+        BackendProcessManager coordinated = new BackendProcessManager(tracked, mock(BackgroundTaskBroadcaster.class));
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         AtomicReference<Thread> worker = new AtomicReference<>();
@@ -345,6 +361,40 @@ class BackgroundCommandTest {
             assertEquals(1, tasks.size()); assertEquals("FAILED", tasks.getFirst().getStatus());
             assertNotNull(tasks.getFirst().getCompleteAt());
         } finally { Thread.interrupted(); }
+    }
+
+    @Test void oldRunningTasksRemainListedEvenAfterFiftyNewerCompletedTasks() {
+        repository.save(Task.builder().id(1L).sessionId(10L).turnId(20L).command("long running").build());
+        for (long id = 2; id <= 52; id++) {
+            Task task = Task.builder().id(id).sessionId(10L).turnId(20L).command("finished").build();
+            task.finish(TaskStatus.SUCCESS, "", 0, false); repository.save(task);
+        }
+        List<TaskVO> tasks = manager.listTasks(10L);
+        assertEquals(51, tasks.size());
+        assertTrue(tasks.stream().anyMatch(task -> task.getId() == 1L && "PENDING".equals(task.getStatus())));
+        assertTrue(tasks.stream().allMatch(task -> task.getOutput() == null));
+    }
+
+    @Test void existingTaskTableGainsItsLabelWithoutLosingDataAndMigrationIsRepeatable() throws Exception {
+        EmbeddedDatabase legacy = new EmbeddedDatabaseBuilder().setType(EmbeddedDatabaseType.H2)
+                .setName("task-label-" + UUID.randomUUID() + ";MODE=MySQL")
+                .addScript("file:./init.sql").addScript("background-task-legacy.sql").build();
+        try {
+            MybatisConfiguration configuration = new MybatisConfiguration();
+            configuration.setMapUnderscoreToCamelCase(true); configuration.addMapper(TaskMapper.class);
+            MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
+            factory.setDataSource(legacy); factory.setConfiguration(configuration);
+            TaskMapper tasks = new SqlSessionTemplate(factory.getObject()).getMapper(TaskMapper.class);
+            TaskPO row = new TaskPO(); row.setId(10L); row.setSessionId(10L); row.setTurnId(20L);
+            row.setCommand("original"); row.setStatus("SUCCESS"); row.setCreateAt(Instant.now());
+            tasks.insert(row);
+            H2SchemaInitializer initializer = new H2SchemaInitializer();
+            initializer.h2SchemaBootstrap(legacy).run(new DefaultApplicationArguments());
+            initializer.h2SchemaBootstrap(legacy).run(new DefaultApplicationArguments());
+            assertEquals("original", assertDoesNotThrow(() -> tasks.selectById(10L)).getCommand());
+            row.setIntention("后台执行全量编译"); tasks.updateById(row);
+            assertEquals("后台执行全量编译", tasks.selectById(10L).getIntention());
+        } finally { legacy.shutdown(); }
     }
 
     private ToolExecution call(ToolExecutor executor, Map<String, Object> args, long timeout) throws Exception {

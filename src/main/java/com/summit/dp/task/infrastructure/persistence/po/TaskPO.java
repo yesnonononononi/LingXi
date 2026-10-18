@@ -20,6 +20,7 @@ public class TaskPO {
     private Long turnId;
     @TableField("command_text")
     private String command;
+    private String intention;
     private String output;
     private String status;
     private Integer exitCode;

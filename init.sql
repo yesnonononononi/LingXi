@@ -321,6 +321,7 @@ CREATE TABLE IF NOT EXISTS task (
     session_id BIGINT NOT NULL,
     turn_id BIGINT NOT NULL,
     command_text LONGTEXT NOT NULL,
+    intention VARCHAR(500),
     output LONGTEXT,
     status VARCHAR(32) NOT NULL,
     exit_code INTEGER,

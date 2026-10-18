@@ -24,12 +24,20 @@ public class BackendProcesser {
 
     public Long submit(String command, Long sessionId, Long turnId, Workspace workspace, long timeout, long maxChars)
             throws IOException, InterruptedException {
+        return submit(command, null, sessionId, turnId, workspace, timeout, maxChars);
+    }
+
+    public Long submit(String command, String intention, Long sessionId, Long turnId, Workspace workspace, long timeout, long maxChars)
+            throws IOException, InterruptedException {
         throwIf(command == null || command.isBlank(), "后台命令不能为空");
+        throwIf(intention != null && intention.length() > Task.MAX_INTENTION, "后台任务用途不能超过 " + Task.MAX_INTENTION + " 字符");
         throwIf(sessionId == null || turnId == null || workspace == null, "后台任务缺少会话、轮次或执行环境");
         ChatTurn turn = turns.findById(turnId).orElseThrow(ClientException::new);
         throwIf(!sessionId.equals(turn.getSessionId()), "轮次不属于当前会话");
-        Task task = Task.builder().id(IdUtil.getSnowflakeNextId()).sessionId(sessionId).turnId(turnId).command(command).build();
+        Task task = Task.builder().id(IdUtil.getSnowflakeNextId()).sessionId(sessionId).turnId(turnId)
+                .command(command).intention(intention).build();
         repository.save(task);
+        manager.notifyTaskChanged(task);
         CommandHandler handle = null;
         try {
             handle = workspace.bridge().commands().startCommand(command, workspace.workDir(), workspace.runtimeEnvironment().charset(),
@@ -48,6 +56,7 @@ public class BackendProcesser {
             }
             task.finish(stopped ? TaskStatus.FAILED : TaskStatus.LOST, "后台任务启动登记失败：" + failure.getMessage(), null, false);
             repository.updateById(task);
+            manager.notifyTaskChanged(task);
             if (failure instanceof InterruptedException) Thread.currentThread().interrupt();
             throw failure;
         }

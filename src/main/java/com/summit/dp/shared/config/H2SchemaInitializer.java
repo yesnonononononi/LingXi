@@ -66,6 +66,8 @@ public class H2SchemaInitializer {
                 migrateV6(connection);
                 migrateV7(connection);
                 migrateV8(connection);
+                ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                        "db/migration/V9_task_intention.sql"), StandardCharsets.UTF_8));
             }
         };
     }

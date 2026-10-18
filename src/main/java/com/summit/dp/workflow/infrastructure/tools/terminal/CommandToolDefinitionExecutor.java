@@ -62,7 +62,7 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
                 Long sessionId = ExecutionAttributes.readLong(toolExecution.getAttributes(), ExecutionAttributes.SESSION_ID);
                 Long turnId = ExecutionEventMetadata.turnId(toolExecution.getEventMetaData());
                 throwIf(turnId == null, "后台任务缺少所属轮次");
-                Long taskId = background.submit(request.getCommand(), sessionId, turnId,
+                Long taskId = background.submit(request.getCommand(), request.getIntention(), sessionId, turnId,
                         workspace, toolExecution.getToolDefinition().timeout(), toolExecution.getToolDefinition().maxOutput());
                 return ToolExecuteResult.success(objectMapper.writeValueAsString(Map.of("taskId", taskId.toString(),
                         "message", "后台任务已登记，使用 manage_command 读取状态或停止")), ToolResultType.NORMAL, buildMetadata(request));

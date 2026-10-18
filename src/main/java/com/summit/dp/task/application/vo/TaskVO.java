@@ -11,6 +11,7 @@ public class TaskVO {
     private Long sessionId;
     private Long turnId;
     private String command;
+    private String intention;
     private String status;
     private String output;
     private Integer exitCode;

@@ -14,4 +14,5 @@ public interface TaskRepository extends RepositoryTemplate<Task, Long> {
 
     TaskPage queryPageBySessionId(int current, int size, long sessionId);
     List<Task> findUnfinished();
+    List<Task> findActiveBySessionId(long sessionId);
 }

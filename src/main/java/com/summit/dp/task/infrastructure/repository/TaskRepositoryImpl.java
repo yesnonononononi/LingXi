@@ -52,6 +52,7 @@ public class TaskRepositoryImpl extends AbstractRepository<Task, TaskPO, Long>
                .sessionId(po.getSessionId())
                .turnId(po.getTurnId())
                .command(po.getCommand())
+               .intention(po.getIntention())
                .status(Task.TaskStatus.valueOf(po.getStatus()))
                .output(po.getOutput()).exitCode(po.getExitCode()).truncated(po.isTruncated())
                .createAt(po.getCreateAt()).completeAt(po.getCompleteAt())
@@ -68,6 +69,13 @@ public class TaskRepositoryImpl extends AbstractRepository<Task, TaskPO, Long>
     @Override
     public List<Task> findUnfinished() {
         return mapper.selectList(new LambdaQueryWrapper<TaskPO>().in(TaskPO::getStatus, "PENDING", "RUNNING"))
+                .stream().map(this::toModel).toList();
+    }
+
+    @Override
+    public List<Task> findActiveBySessionId(long sessionId) {
+        return mapper.selectList(new LambdaQueryWrapper<TaskPO>().eq(TaskPO::getSessionId, sessionId)
+                .in(TaskPO::getStatus, "PENDING", "RUNNING").orderByDesc(TaskPO::getId))
                 .stream().map(this::toModel).toList();
     }
 }

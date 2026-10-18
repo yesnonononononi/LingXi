@@ -16,6 +16,9 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /** 进程输出由框架读取，业务只登记句柄并持久化一次终态。 */
@@ -24,6 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 public class BackendProcessManager implements TaskRuntimeService {
     private final TaskRepository repository;
+    private final BackgroundTaskBroadcaster broadcaster;
     private final ConcurrentHashMap<Long, BackendProcess> processes = new ConcurrentHashMap<>();
     private volatile boolean closed;
 
@@ -34,6 +38,7 @@ public class BackendProcessManager implements TaskRuntimeService {
         try {
             task.transferTo(TaskStatus.RUNNING);
             repository.updateById(task);
+            notifyTaskChanged(task);
         } catch (RuntimeException failure) { processes.remove(task.getId(), process); throw failure; }
         Thread.ofVirtual().start(() -> {
             CommandResult result = null;
@@ -77,15 +82,24 @@ public class BackendProcessManager implements TaskRuntimeService {
         return toView(task, task.getOutput());
     }
 
+    public void notifyTaskChanged(Task task) { broadcaster.publishChanged(task); }
+
     public List<TaskVO> listTasks(Long sessionId) {
         throwIf(sessionId == null, "会话标识不能为空");
-        return repository.queryPageBySessionId(1, 50, sessionId).records().stream()
-                .map(task -> {
-                    TaskVO summary = readTask(sessionId, task.getId());
-                    summary.setOutput(null);
-                    if (summary.getCommand().length() > 256) summary.setCommand(summary.getCommand().substring(0, 256) + "…");
-                    return summary;
-                }).toList();
+        Map<Long, Task> tasks = new LinkedHashMap<>();
+        repository.queryPageBySessionId(1, 50, sessionId).records().forEach(task -> tasks.put(task.getId(), task));
+        // 旧的长任务不能被最近 50 条历史挤掉，否则界面运行计数会漏报。
+        repository.findActiveBySessionId(sessionId).forEach(task -> tasks.put(task.getId(), task));
+        List<TaskVO> result = new ArrayList<>();
+        for (Task task : tasks.values()) {
+            BackendProcess process = processes.get(task.getId());
+            TaskVO summary;
+            if (process == null) summary = toView(task, null);
+            else synchronized (process) { summary = toView(process.getTask(), null); }
+            if (summary.getCommand().length() > 256) summary.setCommand(summary.getCommand().substring(0, 256) + "…");
+            result.add(summary);
+        }
+        return result;
     }
 
     public TaskVO stop(Long sessionId, Long taskId) {
@@ -123,6 +137,7 @@ public class BackendProcessManager implements TaskRuntimeService {
             if (processes.containsKey(task.getId())) continue;
             task.finish(TaskStatus.LOST, "应用已重启，原任务的执行状态无法确认，未自动重放命令", null, false);
             repository.updateById(task);
+            notifyTaskChanged(task);
         }
     }
 
@@ -139,6 +154,7 @@ public class BackendProcessManager implements TaskRuntimeService {
             if (processes.get(process.getTask().getId()) != process) return;
             repository.updateById(process.getTask());
             processes.remove(process.getTask().getId(), process);
+            notifyTaskChanged(process.getTask());
         }
     }
 
@@ -146,6 +162,7 @@ public class BackendProcessManager implements TaskRuntimeService {
         TaskVO view = new TaskVO();
         view.setId(task.getId()); view.setSessionId(task.getSessionId()); view.setTurnId(task.getTurnId());
         view.setCommand(task.getCommand()); view.setStatus(task.getStatus().name()); view.setOutput(output);
+        view.setIntention(task.getIntention());
         view.setExitCode(task.getExitCode()); view.setTruncated(task.isTruncated());
         view.setCreateAt(task.getCreateAt()); view.setCompleteAt(task.getCompleteAt());
         return view;
