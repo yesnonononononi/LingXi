@@ -39,6 +39,10 @@ spring:
       min-evictable-idle-time-millis: 300000
 
 lingxi:
+  tools:
+    command:
+      # 后台进程独立计时，避免长任务继承前台命令的短时限。
+      background-timeout: 30m
   # 启动器只传安装根目录和可写状态目录，组件路径由后端统一解析。
   # 项目文件权限随请求档位生成；缺资源时仅沙箱请求失败，不影响本地模式启动。
   sandbox:

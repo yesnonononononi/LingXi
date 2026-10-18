@@ -2,6 +2,17 @@
 
 `execute_command` 增加可选参数 `background`，默认仍同步执行。设为 `true` 时先保存真实的任务、会话和轮次身份，再启动工作空间命令，立即返回字符串 `taskId`。安全检查、审批、沙箱、超时与输出预算仍然生效。
 
+后台进程的运行时限使用独立配置，默认 30 分钟，最小 1 秒；修改后重启应用生效：
+
+```yaml
+lingxi:
+  tools:
+    command:
+      background-timeout: 30m
+```
+
+`execute_command` 的 240 秒仍用于前台执行和后台提交操作；后台启动后使用上述运行时限。`manage_command` 的 30 秒只限制管理调用，不会重置后台进程的计时。
+
 使用 `manage_command` 操作当前会话的任务：
 
 - `{"action":"list"}`：返回最近 50 项摘要，并补齐更早的全部在途任务。

@@ -40,6 +40,7 @@ import com.summit.dp.workflow.infrastructure.tools.terminal.BackendProcesser;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import com.summit.dp.workflow.infrastructure.tools.terminal.ManageCommandToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.config.CommonToolConfiguration;
+import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.runtime.workspace.LocalWorkspace;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -176,6 +177,18 @@ class BackgroundCommandTest {
         assertEquals(5, task.getOutput().length()); assertTrue(task.isTruncated());
     }
 
+    @Test void configuredBackgroundTimeoutTerminatesBeforeTheForegroundToolDeadline() throws Exception {
+        CommandToolProperties properties = new CommandToolProperties();
+        properties.setBackgroundTimeout(Duration.ofSeconds(2));
+        CommandToolDefinitionExecutor executor = new CommandToolDefinitionExecutor(json, null, submitter, properties);
+        ToolExecuteResult receipt = executor.execute(call(executor,
+                Map.of("command", command(60_000, 0), "background", true), 30));
+        assertTrue(receipt.isSuccess(), receipt.getToolOutput());
+        Long taskId = Long.valueOf(json.readTree(receipt.getToolOutput()).get("taskId").asText());
+        await(() -> repository.findById(taskId).orElseThrow().getStatus() == TaskStatus.TIMEOUT);
+        assertNotNull(repository.findById(taskId).orElseThrow().getCompleteAt());
+    }
+
     @Test void startupFailureIsDurableAndTurnOwnershipIsCheckedBeforeLaunching() throws Exception {
         Workspace failing = mock(Workspace.class);
         WorkspaceBridge bridge = mock(WorkspaceBridge.class);
@@ -309,7 +322,7 @@ class BackgroundCommandTest {
         mvc.perform(post("/task/runtime/107/stop").param("sessionId", "10"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("FAILED"));
         CommonToolConfiguration configuration = new CommonToolConfiguration();
-        ToolDefinition<?> execute = configuration.executeCommandToolDefinition(json, null, submitter);
+        ToolDefinition<?> execute = configuration.executeCommandToolDefinition(json, null, submitter, new CommandToolProperties());
         assertTrue(json.readTree(execute.parametersJsonSchema()).path("properties").has("background"));
         assertEquals(ToolCatalog.MANAGE_COMMAND, configuration.manageCommandToolDefinition(json, manager).name());
         assertTrue(ToolCatalog.DEFAULT_AGENT_TOOLS.contains(ToolCatalog.MANAGE_COMMAND));

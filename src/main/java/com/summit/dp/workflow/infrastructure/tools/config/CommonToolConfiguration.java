@@ -3,6 +3,7 @@ package com.summit.dp.workflow.infrastructure.tools.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.sandbox_security.application.TerminalSecurityPolicy;
 
+import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
 import com.summit.dp.workflow.infrastructure.tools.config.properties.WebSearchToolProperties;
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
@@ -31,22 +32,21 @@ import java.net.http.HttpClient;
  * 基础工具的装配入口。
  *
  * <p>这些工具不再有 yaml {@code enabled} 开关。装配由代码决定，不由某个部署恰好写没写一个键决定；
- * 要停用某个工具，从 Agent 的工具清单里去掉它即可（框架侧名单即授权）。保留的 yaml 键只剩工具真正
- * 需要的连接参数（web-search 的 baseUrl / apiKey / maxResult）。</p>
+ * 要停用某个工具，从 Agent 的工具清单里去掉它即可（框架侧名单即授权）。yaml 只配置工具的连接参数与执行限制。</p>
  */
 @Slf4j
-@EnableConfigurationProperties(WebSearchToolProperties.class)
+@EnableConfigurationProperties({WebSearchToolProperties.class, CommandToolProperties.class})
 @org.springframework.context.annotation.Configuration(proxyBeanMethods = false)
 public class CommonToolConfiguration {
     @Bean
     @ConditionalOnMissingBean(name = "executeCommandToolDefinition")
-    public ToolDefinition<CommandToolDefinitionExecutor> executeCommandToolDefinition(ObjectMapper objectMapper, TerminalSecurityPolicy security, BackendProcesser background) {
+    public ToolDefinition<CommandToolDefinitionExecutor> executeCommandToolDefinition(ObjectMapper objectMapper, TerminalSecurityPolicy security, BackendProcesser background, CommandToolProperties properties) {
         String name = ToolCatalog.EXECUTE_COMMAND;
         // SERIAL_MUTATION：终端命令一律串行，不参与并发窗口。
         // 框架判据是「整批请求全都 allowConcurrent 才并发」（DefaultToolExecutionManager#canExecuteConcurrently），
         // 故模型在同一轮里发起的多条命令会在同一线程上顺序执行，不会互相抢占工作区。
         return ToolDefinition.<CommandToolDefinitionExecutor>builder()
-                .executor(new CommandToolDefinitionExecutor(objectMapper, security, background))
+                .executor(new CommandToolDefinitionExecutor(objectMapper, security, background, properties))
                 .id(name)
                 .concurrentPolicy(ConcurrentPolicy.SERIAL_MUTATION)
                 .name(name)
@@ -62,7 +62,7 @@ public class CommonToolConfiguration {
                           "properties": {
                             "command": {"type": "string", "description": "Raw command text using the shell reported by the assigned workspace. The workspace selects and starts the shell automatically; do not add a shell launcher prefix or probe other shells."},
                             "intention": {"type": "string", "description": "One short sentence stating what this command is intended to achieve. It is shown to the user in the UI next to the command, so make it specific and human-readable."},
-                            "background": {"type": "boolean", "default": false, "description": "Return a taskId immediately while the command runs in the background. The same command timeout and output limit apply."}
+                            "background": {"type": "boolean", "default": false, "description": "Return a taskId immediately while the command runs in the background. The configured background timeout and the same output limit apply."}
                           },
                           "required": ["command", "intention"]
                         }

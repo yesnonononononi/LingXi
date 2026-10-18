@@ -13,6 +13,7 @@ import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceCommands;
 import com.summit.core.tool.*;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ExecuteCommandRequest;
+import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +30,10 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
     private final ObjectMapper objectMapper;
     private final TerminalSecurityPolicy security;
     private final BackendProcesser background;
+    private final CommandToolProperties properties;
+    public CommandToolDefinitionExecutor(ObjectMapper mapper, TerminalSecurityPolicy security, BackendProcesser background) {
+        this(mapper, security, background, new CommandToolProperties());
+    }
     public CommandToolDefinitionExecutor(ObjectMapper mapper) { this(mapper, null, null); }
     public CommandToolDefinitionExecutor(ObjectMapper mapper, TerminalSecurityPolicy security) { this(mapper, security, null); }
 
@@ -63,7 +68,7 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
                 Long turnId = ExecutionEventMetadata.turnId(toolExecution.getEventMetaData());
                 throwIf(turnId == null, "后台任务缺少所属轮次");
                 Long taskId = background.submit(request.getCommand(), request.getIntention(), sessionId, turnId,
-                        workspace, toolExecution.getToolDefinition().timeout(), toolExecution.getToolDefinition().maxOutput());
+                        workspace, properties.getBackgroundTimeout().toSeconds(), toolExecution.getToolDefinition().maxOutput());
                 return ToolExecuteResult.success(objectMapper.writeValueAsString(Map.of("taskId", taskId.toString(),
                         "message", "后台任务已登记，使用 manage_command 读取状态或停止")), ToolResultType.NORMAL, buildMetadata(request));
             }
