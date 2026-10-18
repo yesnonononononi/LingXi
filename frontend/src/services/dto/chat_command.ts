@@ -1,5 +1,6 @@
 export interface ChatCommand {
   input: string;
+  messageId?: string;
   sessionId?: number | string | null;
   workDir: string,
   modelId: string | number,

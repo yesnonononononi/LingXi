@@ -133,6 +133,7 @@ export interface TurnViewVO {
   viewVersion: string;
   /** 该轮的用户提问；旧数据可能为 null */
   userMessage?: string | null;
+  userMessageId?: string | null;
   userImageUrls?: string[];
   /** 块列表（已按 order 升序）；增量事件时只含变化的那一块 */
   blocks: Block[];

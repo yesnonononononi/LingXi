@@ -182,6 +182,7 @@ export function useChatHistory(options: ChatHistoryOptions) {
     if (!currentActiveSession.value || isLoadingMoreHistory.value) return;
     const session = currentActiveSession.value;
     if (!session.hasMoreMessages || !session.nextMessageCursor) return;
+    const historyRevision = session.historyRevision;
 
     isLoadingMoreHistory.value = true;
     historyLoadError.value = '';
@@ -194,6 +195,7 @@ export function useChatHistory(options: ChatHistoryOptions) {
       if (elapsed < HISTORY_PREPEND_SETTLE_MS) {
         await new Promise<void>(resolve => scheduleTimeout(resolve, HISTORY_PREPEND_SETTLE_MS - elapsed));
       }
+      if (historyRevision !== session.historyRevision) return;
 
       if (!pageResultRes.ok) {
         historyLoadError.value = pageResultRes.error;

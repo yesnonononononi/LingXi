@@ -55,6 +55,10 @@
             {{ t('chat.message.resend') }}
           </button>
         </template>
+        <button v-if="props.canResend && !props.message.unsent && props.message.serverMessageId && props.message.turnId"
+          type="button" data-testid="edit-resend" @click="emit('editResend', props.message)"
+          class="text-gray-500 hover:text-blue-600 dark:text-zinc-400 dark:hover:text-blue-400 cursor-pointer"
+          :title="t('chat.controls.editResend')">{{ t('chat.controls.editResend') }}</button>
         <button
           @click="copyContent"
           class="hover:text-gray-600 dark:hover:text-zinc-200 transition p-0.5"
@@ -629,6 +633,7 @@ const props = defineProps<{
   isGroupTail?: boolean;
   isLastAssistant?: boolean;
   isSending?: boolean;
+  canResend?: boolean;
 }>();
 
 const { isDark: globalIsDark } = useTheme();
@@ -643,6 +648,7 @@ const emit = defineEmits<{
   (e: 'selectSubSession', id: string | number): void;
   /** 重发一条「未发送」的提问（受理被拒留下的本地气泡）。 */
   (e: 'resendUnsent', messageId: string): void;
+  (e: 'editResend', message: ChatMessage): void;
 }>();
 
 /**

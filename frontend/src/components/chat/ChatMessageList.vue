@@ -72,8 +72,10 @@
           :isGroupTail="turnMap ? (turnMap.get(msg)?.isGroupTail ?? false) : undefined"
           :isLastAssistant="idx === computedLastAssistantIndex"
           :isSending="isSending"
+          :canResend="allowResend && !isSending"
           @selectSubSession="(id) => emit('selectSubSession', id)"
           @resendUnsent="(id) => emit('resendUnsent', id)"
+          @editResend="message => emit('editResend', message)"
         />
       </template>
     </div>
@@ -96,6 +98,7 @@ const props = defineProps<{
   subSessions?: SubSessionVO[];
   isDark?: boolean;
   isSending?: boolean;
+  allowResend?: boolean;
   isLoading?: boolean;
   loadingText?: string;
   loadError?: string | null;
@@ -114,6 +117,7 @@ const emit = defineEmits<{
   (e: 'selectSubSession', id: string | number): void;
   /** 透传「未发送」气泡的重发请求（宿主负责清理本地气泡并重走发送链路）。 */
   (e: 'resendUnsent', messageId: string): void;
+  (e: 'editResend', message: ChatMessage): void;
 }>();
 
 const scrollLoaderRef = ref<InstanceType<typeof ScrollCursorLoader> | null>(null);

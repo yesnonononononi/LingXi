@@ -127,6 +127,8 @@ export interface TurnRenderState {
 /** 单条消息接口 (支持多分支对话) */
 export interface ChatMessage {
   id: string;
+  /** 服务端用户消息主键；展示气泡 ID 不可用于历史重发。 */
+  serverMessageId?: string | null;
   role: MessageRole;
   content: string;
   timestamp: number;
@@ -182,6 +184,8 @@ export interface ChatMessage {
 /** 聊天会话接口 */
 export interface ChatSession {
   id: string;
+  historyRevision?: string;
+  invalidatedTurnIds?: Set<string>;
   title: string;
   createdAt: number;
   updatedAt: number;
@@ -769,6 +773,9 @@ export interface ChatAcceptance {
   sessionId: string;
   /** 本次受理创建的业务轮次 id；与落库轮次一致，是前端对齐事件与历史的键。 */
   turnId: string;
+  historyRevision?: string | null;
+  invalidatedTurnIds?: string[] | null;
+  invalidatedExecutionIds?: string[] | null;
 }
 
 /* ------------------------------------------------------------------ */

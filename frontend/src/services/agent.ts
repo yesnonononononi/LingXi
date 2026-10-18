@@ -6,7 +6,7 @@ import type {
   CreateAgentRequest,
   PageResult,
 } from '../types/chat';
-import { toPositiveInt } from '../utils/api';
+import { toPositiveInt, isOk } from '../utils/api';
 import { toServerSessionId } from '../utils/ids';
 import { getApiBaseUrl } from '../utils/apiConfig';
 import { t } from '../i18n';
@@ -37,6 +37,7 @@ export const isAbortError = (error: unknown): boolean =>
 const toChatForm = (command: ChatCommand): FormData => {
   const form = new FormData();
   appendFormValue(form, 'input', command.input);
+  appendFormValue(form, 'messageId', command.messageId);
   const serverSessionId = toServerSessionId(command.sessionId);
   if (serverSessionId !== null && serverSessionId !== undefined) {
     appendFormValue(form, 'sessionId', serverSessionId);
@@ -63,11 +64,21 @@ export class AgentAPI {
   }
 
   static async suspend(sessionId: string | number): Promise<void> {
-    await http.post(`/a/completion/${sessionId}/suspend`);
+    const result = await http.post<unknown, Result<void> | undefined>(`/a/completion/${sessionId}/suspend`);
+    if (result && !isOk(result.code)) throw new Error(result.errMsg || t('chat.controls.pauseFailed'));
   }
 
   static async resume(sessionId: string | number): Promise<Result<string>> {
-    return http.post<any, Result<string>>(`/a/completion/${sessionId}/resume`);
+    // 恢复接口同步运行到本次挂起或终态，不能沿用普通请求的 10 秒超时。
+    return http.post<any, Result<string>>(`/a/completion/${sessionId}/resume`, undefined, { timeout: 0 });
+  }
+
+  static async resendCommand(command: ChatCommand, signal?: AbortSignal): Promise<Result<ChatAcceptance>> {
+    const response = await fetch(`${getApiBaseUrl()}/a/completion/resend`, {
+      method: 'POST', headers: { Accept: 'application/json' }, body: toChatForm(command), signal,
+    });
+    if (!response.ok) throw new Error(t('chat.controls.resendFailed'));
+    return response.json() as Promise<Result<ChatAcceptance>>;
   }
 
   /**

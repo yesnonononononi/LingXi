@@ -3,6 +3,7 @@ import type { ChatMessage, ChatSession, ContextUsageData, SubSessionVO, ToolCall
 import { TurnStreamReducer } from './turnStreamReducer';
 import { AgentToolName } from '../../utils/toolNames';
 import { t } from '../../i18n';
+import { acceptsChatEvent } from './chatExecutionState';
 
 export interface StreamSessionRouterOptions {
   onScrollFollow?: () => void;
@@ -129,6 +130,7 @@ export class StreamSessionRouter {
   /** 派发业务事件至目标会话 */
   public dispatch(event: AgentEvent): void {
     if (!this.currentRootSession || !this.rootReducer) return;
+    if (!acceptsChatEvent(this.currentRootSession, event)) return;
 
     const effectiveRootId = String(this.currentRootSession.id);
 

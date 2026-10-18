@@ -8,6 +8,8 @@ import { buildMessageTurnMap, isSessionRunning, resolveRootSessionId } from '../
 import { useChatScroll } from './useChatScroll';
 import { useChatHistory } from './useChatHistory';
 import { useChatSending } from './useChatSending';
+import { useChatExecutionControls } from './useChatExecutionControls';
+import { acceptsChatEvent } from './chatExecutionState';
 import { useChatSessionList } from './useChatSessionList';
 import { useChatWorkspace } from './useChatWorkspace';
 import { useChatSubSession } from './useChatSubSession';
@@ -248,6 +250,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
    */
   const sessionEventStream = new SessionEventStream({
     onEvent: (event) => {
+      if (!acceptsChatEvent(currentActiveSession.value, event)) return;
       streamRouter.dispatch(event);
       if (isRunStatusEvent(event.type)) {
         applyRunStatusFromEvent(event);
@@ -393,6 +396,20 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     };
   };
 
+  const executionControls = useChatExecutionControls({
+    session: currentActiveSession,
+    isSubmitting: computed(() => sending.isSubmitting.value),
+    ensureSubscribed,
+    reconcile: reconcileSessionAfterStream,
+    buildCommand: text => buildCommand(text, false, []),
+    onResendAccepted: session => {
+      if (currentActiveSession.value?.id !== session.id) return;
+      invalidateReconcile();
+      streamRouter.bindRootSession(null);
+      streamRouter.bindRootSession(session);
+    },
+  });
+
   /** 切换选中的 Agent：写全局配置（user_configs.agent_id 是「本实例选中的 Agent」）。 */
   const handleUpdateAgent = (agentId: string | number | null) => {
     const id = toPositiveInt(agentId, 0);
@@ -460,6 +477,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     agentId?: string | number | null,
     imageFiles: File[] | null = [],
   ): Promise<void> => {
+    if (executionControls.resending.value || executionControls.editTarget.value) return;
     if (agentId != null) handleUpdateAgent(agentId);
     try {
       const files = imageFiles ?? [];
@@ -498,17 +516,6 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     const text = target.content;
     streamRouter.removeUnsentUserMessage(messageId);
     await handleSendMessage(text, false);
-  };
-
-  /** 协作式暂停会话执行 */
-  const handleSuspendGeneration = async (sessionId?: string | number): Promise<void> => {
-    const sid = sessionId ?? currentActiveSession.value?.id;
-    if (!sid) return;
-    try {
-      await chatApi.suspendGeneration(sid);
-    } catch (err) {
-      console.error('暂停会话执行失败:', err);
-    }
   };
 
   /**
@@ -727,7 +734,8 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     /** 受理 POST 是否在途：用于「POST 未返回期间禁止重复点击」。 */
     isSubmitting: sending.isSubmitting,
     /** 生成中（受理在途 或 会话运行中），界面唯一判据。 */
-    isSending: sending.isSending,
+    isSending: computed(() => sending.isSending.value || executionControls.resending.value),
+    executionControls,
     currentAbortController: sending.currentAbortController,
     sendFailureNotice: sending.sendFailureNotice,
     dismissSendFailure: sending.dismissSendFailure,
@@ -816,7 +824,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     // 发送与生命周期控制
     handleSendMessage,
     handleStopGeneration: sending.handleStopGeneration,
-    handleSuspendGeneration,
+    handleSuspendGeneration: executionControls.pause,
     decideToolCall,
     handleSelectPrompt,
     /** 重发一条「未发送」的提问（受理被拒留下的幽灵气泡）。 */

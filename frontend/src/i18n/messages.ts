@@ -354,6 +354,16 @@ export const messages: MessageSchema = {
         confirmBusy: '请先处理当前确认框，再重新优化提示词。',
         failed: '提示词优化失败，请检查模型配置和连接后重试，原文已保留。',
       },
+      controls: {
+        running: '正在执行', paused: '当前执行已暂停，可继续恢复', waitingApproval: '请先处理待审批或待回答的卡片',
+        pause: '暂停', pausing: '正在请求暂停…', resume: '恢复执行', resuming: '正在恢复…',
+        pauseFailed: '暂停失败，请重试', resumeFailed: '恢复失败，请重试', resendFailed: '重发失败，请重试',
+        failed: '操作失败，请刷新会话后重试', receiptInvalid: '重发回执缺少作废范围，请刷新会话',
+        editResend: '编辑并重发', editedPrompt: '修改后的提问',
+        resendWarning: '将替换这条提问及之后的对话记录。已执行的文件修改和命令不会撤销。',
+        keepImages: '保留原提问中的 {count} 张图片', confirmResend: '确认重发', resending: '正在受理重发…',
+        empty: '修改后的提问不能为空',
+      },
       message: {
         userUploadIndex: '用户上传图片 {index}',
         copyContent: '复制内容',
@@ -1339,6 +1349,16 @@ export const messages: MessageSchema = {
         changed: 'The draft changed. The optimization was not applied; please try again.',
         confirmBusy: 'Close the current confirmation before optimizing again.',
         failed: 'Prompt optimization failed. Check your model configuration and connection, then retry. Your draft was kept.',
+      },
+      controls: {
+        running: 'Running', paused: 'Execution paused. You can resume it.', waitingApproval: 'Resolve pending approval or question cards first',
+        pause: 'Pause', pausing: 'Requesting pause…', resume: 'Resume', resuming: 'Resuming…',
+        pauseFailed: 'Pause failed. Please retry.', resumeFailed: 'Resume failed. Please retry.', resendFailed: 'Resend failed. Please retry.',
+        failed: 'Operation failed. Refresh the conversation and retry.', receiptInvalid: 'Resend receipt is missing invalidation details. Refresh the conversation.',
+        editResend: 'Edit and resend', editedPrompt: 'Edited question',
+        resendWarning: 'This replaces this question and all following conversation records. File changes and commands already executed will not be undone.',
+        keepImages: 'Keep the {count} images from the original question', confirmResend: 'Confirm resend', resending: 'Submitting resend…',
+        empty: 'The edited question cannot be empty',
       },
       message: {
         userUploadIndex: 'User-uploaded image {index}',

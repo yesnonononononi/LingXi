@@ -82,6 +82,7 @@
             :subSessions="currentActiveSession?.subSessions"
             :isDark="displayIsDark"
             :isSending="isSending"
+            :allowResend="executionControls.canResend.value"
             :isLoading="isLoadingCurrentSession"
             :historyLoadError="historyLoadError"
             :hasMore="!isLoadingCurrentSession && !!currentActiveSession?.hasMoreMessages"
@@ -95,6 +96,7 @@
             @touchmove.passive="handleTouchMove"
             @selectSubSession="handleSelectSubSessionOption"
             @resendUnsent="handleResendUnsent"
+            @editResend="executionControls.edit"
           />
 
           <!-- 悬浮“回到底部” / “新内容” 提示按钮 -->
@@ -204,6 +206,13 @@
               {{ t('chat.view.reconnect') }}
             </button>
           </div>
+          <ChatExecutionControls
+            :status="currentActiveSession?.runStatus"
+            :canPause="executionControls.canPause.value" :canResume="executionControls.canResume.value"
+            :pausing="executionControls.isPausing.value" :resuming="executionControls.isResuming.value"
+            :hasUnresolved="executionControls.hasUnresolved.value" :error="executionControls.error.value"
+            @pause="executionControls.pause" @resume="executionControls.resume"
+          />
           <div
             class="w-full transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]"
             :style="{
@@ -294,6 +303,12 @@
     </div>
 
     <!-- 设置悬浮框（Teleport 到 body，避免被 overflow/层叠上下文裁剪） -->
+    <ChatResendDialog
+      :open="!!executionControls.editTarget.value" v-model="executionControls.draft.value"
+      :busy="executionControls.resending.value" :error="executionControls.error.value"
+      :imageCount="executionControls.editTarget.value?.imageUrls?.length ?? (executionControls.editTarget.value?.imageUrl ? 1 : 0)"
+      @cancel="executionControls.cancelEdit" @submit="executionControls.resend"
+    />
     <Teleport to="body">
       <SettingsModal
         v-if="isSettingsOpen"
@@ -357,6 +372,8 @@ import Sidebar from '../../components/chat/Sidebar.vue';
 import WelcomeView from '../../components/chat/WelcomeView.vue';
 import ChatMessageList from '../../components/chat/ChatMessageList.vue';
 import ChatInputArea from '../../components/chat/ChatInputArea.vue';
+import ChatExecutionControls from '../../components/chat/ChatExecutionControls.vue';
+import ChatResendDialog from '../../components/chat/ChatResendDialog.vue';
 import SettingsModal from '../settings/SettingsModal.vue';
 import WorkspaceModal from '../../components/chat/WorkspaceModal.vue';
 import TeamModal from '../../components/chat/TeamModal.vue';
@@ -416,6 +433,7 @@ const {
   accessMode,
   selectedAgentId,
   handleResendUnsent,
+  executionControls,
   reasoningEffort,
   reasoningEffortPending,
   reasoningEffortError,
