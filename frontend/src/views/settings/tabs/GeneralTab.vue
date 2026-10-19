@@ -93,8 +93,8 @@ const {
     </div>
 
     <!-- 语言 -->
-    <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-white/10">
-            <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.language') }}</span>
+    <div class="flex items-center justify-between py-3">
+      <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.language') }}</span>
       <div class="relative general-dropdown-container" @click.stop>
         <SpecularButton
           size="sm"
@@ -149,7 +149,7 @@ const {
     </div>
 
     <!-- 后端服务地址配置 (桌面客户端 / 局域网服务) -->
-    <div class="pt-3 border-t border-gray-100 dark:border-white/10">
+    <div class="pt-3">
       <div class="flex items-center justify-between mb-2">
         <div class="flex flex-col">
                     <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.apiBaseUrl') }}</span>
@@ -190,7 +190,7 @@ const {
     </div>
 
     <!-- 通知提示音：只影响自绘通知卡片，Web 端没有桌面通知所以选了也不会响 -->
-    <div class="pt-3 border-t border-gray-100 dark:border-white/10">
+    <div class="pt-3">
       <div class="flex items-center justify-between">
         <div class="flex flex-col">
           <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.notifySound') }}</span>
