@@ -137,7 +137,7 @@ class ReadImageToolExecutorTest {
     void exhaustedBudgetStopsBeforeImageDecoding() throws Exception {
         ToolExecution execution = execution(localWorkspace(), "unused.png", true);
         Map<String, Object> attributes = new HashMap<>(execution.getAttributes());
-        attributes.put(ReadImageToolExecutor.KEY_CONSUMED, 4);
+        attributes.put(ReadImageToolExecutor.KEY_CONSUMED, 10);
         execution.setAttributes(attributes);
         assertEquals("BUDGET_EXHAUSTED", reason(executor().execute(execution)));
     }

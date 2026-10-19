@@ -52,10 +52,10 @@ class ImageInjectionInterceptorTest {
     void capsImagesFromOneConcurrentToolBatchAndPersistsTheBudget() throws Exception {
         Execution execution = execution();
         List<ToolExecuteResult> results = new ArrayList<>();
-        for (int index = 0; index < 5; index++) {
+        for (int index = 0; index < 11; index++) {
             String name = "image-" + index + ".png";
             prepareImage(name);
-            // 改一个像素，确保五张图的内容哈希不同，否则只是在验证去重。
+            // 改一个像素，确保每张图的内容哈希不同，否则只是在验证去重。
             BufferedImage image = ImageIO.read(workspaceRoot.resolve(name).toFile());
             image.setRGB(0, 0, index);
             ImageIO.write(image, "png", workspaceRoot.resolve(name).toFile());
@@ -68,10 +68,10 @@ class ImageInjectionInterceptorTest {
         List<Message> appended = new ArrayList<>();
         interceptor.onBeforeModelInvoke(context(restored, appended));
         UserMessageEntity message = assertInstanceOf(UserMessageEntity.class, appended.getFirst());
-        assertEquals(4, message.getContent().stream().filter(ImageContent.class::isInstance).count());
+        assertEquals(10, message.getContent().stream().filter(ImageContent.class::isInstance).count());
         assertTrue(message.text().contains("上限"));
-        assertEquals(4, restored.getAgentRequest().runtimeParametersOrDefault().getAttributes().get(ReadImageToolExecutor.KEY_CONSUMED));
-        assertEquals(5, results.stream().map(result -> result.getToolMetaData().get("imageId")).distinct().count());
+        assertEquals(10, restored.getAgentRequest().runtimeParametersOrDefault().getAttributes().get(ReadImageToolExecutor.KEY_CONSUMED));
+        assertEquals(11, results.stream().map(result -> result.getToolMetaData().get("imageId")).distinct().count());
         assertEquals("BUDGET_EXHAUSTED", mapper.readTree(read("image-0.png", restored).getToolOutput()).path("reason").asText());
         interceptor.onBeforeModelInvoke(context(restored, appended));
         assertEquals(1, appended.size());
