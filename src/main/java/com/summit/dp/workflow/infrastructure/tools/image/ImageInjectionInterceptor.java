@@ -180,7 +180,6 @@ public class ImageInjectionInterceptor implements LoopInterceptor {
      */
     private static void writeAttributes(Execution execution, Consumer<Map<String, Object>> mutation) {
         AgentRequest request = execution.getAgentRequest();
-        if (request == null) return;
         AgentRuntimeParameters parameters = request.runtimeParametersOrDefault();
         Map<String, Object> next = new HashMap<>(parameters.getAttributes());
         mutation.accept(next);
