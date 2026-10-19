@@ -32,7 +32,11 @@ http.defaults.adapter=async config=>{
  const payload=typeof config.data==='string'?JSON.parse(config.data):config.data;
  let data={code:1};
  if(config.url.startsWith('/model/list')) data.data={records:window.models};
- else if(config.url.startsWith('/model/find/')) data.data=window.models[0];
+ else if(config.url.startsWith('/model/find/')) {
+  const selected={...window.models[0]};
+  if(window.holdDetails) await new Promise(resolve=>window.releaseDetails=resolve);
+  data.data=selected;
+ }
  else if(['/model/add','/model/update'].includes(config.url)){
   window.writes.push({url:config.url,payload});
   window.models=[{id:'9007199254740993',...payload,apiKey:'***',credentialConfigured:true}];
@@ -77,6 +81,18 @@ window.ready=true;`);
   assert.equal(await evaluate(`document.querySelector('[data-testid=model-vision]').checked`), false);
   await evaluate(`document.querySelector('[data-testid=model-vision]').click();window.clickText('保存修改');window.flush()`);
   assert.equal(await evaluate('window.writes.at(-1).payload.vision'), true);
+  await evaluate(`window.setMode('settings');window.flush()`);
+  await evaluate(`window.go('/models/add');window.flush()`);
+  assert.equal(await evaluate(`document.querySelector('[data-testid=model-vision]').checked`), false);
+  await evaluate(`window.fill(['another-custom-model','https://example.invalid','key']);document.querySelector('[data-testid=model-vision]').click();window.clickText('确认新增');window.flush()`);
+  assert.equal(await evaluate('window.writes.at(-1).url'), '/model/add');
+  assert.equal(await evaluate('window.writes.at(-1).payload.vision'), true);
+  await evaluate(`new Promise(resolve=>setTimeout(resolve,700))`);
+  await evaluate(`window.holdDetails=true;window.go('/models/9007199254740993');window.flush()`);
+  await evaluate(`window.go('/models/add');window.flush()`);
+  await evaluate(`window.holdDetails=false;window.releaseDetails();window.flush()`);
+  assert.equal(await evaluate(`document.querySelector('[data-testid=model-vision]').checked`), false);
+  assert.equal(await evaluate(`document.querySelector('input:not([type=checkbox])').value`), '');
   assert.deepEqual(await evaluate('window.errors'), []);
   console.log('PASS: settings/custom/preset/edit/standalone, explicit true/false payloads, snowflake ID, warning and light/dark previews.');
   console.log(output);

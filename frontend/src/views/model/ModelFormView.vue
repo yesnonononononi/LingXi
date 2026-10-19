@@ -1,5 +1,5 @@
 <script setup lang='ts'>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ModelAPI } from '../../services/api';
 import { useTheme } from '../../composables/useTheme';
@@ -40,13 +40,20 @@ const showToast = (text: string, type: 'success' | 'error' = 'success') => {
   }, 2500);
 };
 
-// 更新模式：进入页面时按 id 回填
+let detailRevision = 0;
+
+// 路由复用表单时必须清空能力声明，旧详情响应不能覆盖新模型。
 const loadDetail = async () => {
-  if (!isEdit.value) return;
-  loading.value = true;
+  const revision = ++detailRevision;
+  form.value = { modelName: '', baseUrl: '', apiKey: '', vision: false };
+  credentialConfigured.value = false;
   formError.value = '';
+  loading.value = isEdit.value;
+  if (!isEdit.value) return;
+  const selectedId = modelId.value;
   try {
-    const res = await ModelAPI.findById(modelId.value);
+    const res = await ModelAPI.findById(selectedId);
+    if (revision !== detailRevision) return;
     if (isOk(res.code) && res.data) {
       form.value = {
         vision: res.data.vision,
@@ -60,11 +67,13 @@ const loadDetail = async () => {
             formError.value = t('model.loadFailed');
     }
   } catch {
-    formError.value = t('model.loadFailed');
+    if (revision === detailRevision) formError.value = t('model.loadFailed');
   } finally {
-    loading.value = false;
+    if (revision === detailRevision) loading.value = false;
   }
 };
+
+watch(modelId, loadDetail, { immediate: true });
 
 const validate = () => {
   if (!form.value.modelName.trim() || !form.value.baseUrl.trim()) {
@@ -250,7 +259,6 @@ const handleDocumentClick = (e: MouseEvent) => {
 };
 
 onMounted(() => {
-  loadDetail();
   window.addEventListener('click', handleDocumentClick);
 });
 
