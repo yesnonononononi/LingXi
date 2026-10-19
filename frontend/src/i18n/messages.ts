@@ -378,6 +378,9 @@ export const messages: MessageSchema = {
       },
       message: {
         userUploadIndex: '用户上传图片 {index}',
+        viewedImages: '已查看 {count} 张图像',
+        previewImage: '预览图片 {path}',
+        imageUnavailable: '图片不可用',
         copyContent: '复制内容',
         unsent: '未发送',
         resend: '重发',
@@ -1389,6 +1392,9 @@ export const messages: MessageSchema = {
       },
       message: {
         userUploadIndex: 'User-uploaded image {index}',
+        viewedImages: 'Viewed {count} images',
+        previewImage: 'Preview image {path}',
+        imageUnavailable: 'Image unavailable',
         copyContent: 'Copy content',
         unsent: 'Not sent',
         resend: 'Resend',

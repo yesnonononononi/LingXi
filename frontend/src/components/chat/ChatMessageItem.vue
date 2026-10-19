@@ -236,6 +236,13 @@
               </div>
             </div>
 
+            <ReadImageToolGroup
+              v-else-if="item.images?.length && props.sessionId"
+              :images="item.images"
+              :session-id="props.sessionId"
+              :is-dark="isDark"
+            />
+
             <!-- 4. 普通 Agent 工具调用展示 -->
             <div v-else-if="item.type === 'tool' && item.tool" class="w-full my-0.5">
               <!-- 普通工具调用 -->
@@ -619,6 +626,8 @@ import MarkdownRenderer from './MarkdownRenderer.vue';
 import DelegatedTaskMessage from './DelegatedTaskMessage.vue';
 import PromptCard from './PromptCard.vue';
 import CollapseTransition from '../common/CollapseTransition.vue';
+import ReadImageToolGroup from './ReadImageToolGroup.vue';
+import { groupReadImageTools } from '../../utils/readImageTools';
 
 const props = defineProps<{
   message: ChatMessage;
@@ -1047,8 +1056,8 @@ const processTimeline = computed<ProcessTimelineItem[]>(() => {
 });
 
 /** 过程折叠区内的时序项（剔除互动卡片）。 */
-const processItems = computed<ProcessTimelineItem[]>(() =>
-  processTimeline.value.filter(item => item.type !== 'prompt_card')
+const processItems = computed(() =>
+  groupReadImageTools(processTimeline.value.filter(item => item.type !== 'prompt_card'), props.sessionId)
 );
 
 /** 过程折叠区之外的互动卡片（映射为卡片展示数据）。 */
