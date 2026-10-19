@@ -1,6 +1,7 @@
 package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
-import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
+import com.summit.dp.tools.ToolListProcessorTestSupport;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
 
@@ -54,13 +55,13 @@ class SubAgentWorkspaceResolutionTest {
     private final WorkspaceConverter workspaceConverter = mock(WorkspaceConverter.class);
 
     private final SubAgentRequestFactory factory = new SubAgentRequestFactory(
-            workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), new VisionCapabilityResolver(""));
+            workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create());
 
     @BeforeEach
     void stubModel() {
         when(settingsProvider.current()).thenReturn(Optional.empty());
-        when(modelService.runtimeConfig(anyLong(), any())).thenReturn(ModelConfig.builder()
-                .baseUrl("https://example.invalid").apiKey("k").modelName("m").build());
+        when(modelService.resolveRuntimeConfig(anyLong(), any())).thenReturn(new RuntimeModel(ModelConfig.builder()
+                .baseUrl("https://example.invalid").apiKey("k").modelName("m").build(), false));
     }
 
     @Test

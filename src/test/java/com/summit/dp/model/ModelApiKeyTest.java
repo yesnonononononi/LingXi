@@ -7,6 +7,7 @@ import com.summit.dp.model.application.service.ModelServiceImpl;
 import com.summit.dp.model.domain.model.ModelConfig;
 import com.summit.dp.model.domain.repo.ModelConfigRepository;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -18,6 +19,19 @@ import static org.mockito.Mockito.*;
 class ModelApiKeyTest {
     private final ModelConfigRepository repository = mock(ModelConfigRepository.class);
     private final ModelServiceImpl service = new ModelServiceImpl(repository);
+
+    @Test void runtimeSelectionKeepsTheConnectionAndVisionInOneSnapshot() {
+        ModelConfig existing = model("key");
+        existing.changeVision(true);
+        when(repository.findById(1L)).thenReturn(Optional.of(existing));
+        RuntimeModel snapshot = service.resolveRuntimeConfig(1L, null);
+        verify(repository).findById(1L);
+        existing.changeVision(false);
+        existing.changeModelName("gpt-4o");
+        assertTrue(snapshot.vision());
+        assertEquals("test", snapshot.config().getModelName());
+        assertFalse(service.resolveRuntimeConfig(1L, null).vision());
+    }
 
     @Test void visionIsExplicitOnAddAndCanBeDisabledOnEdit() {
         assertThrows(ClientException.class, () -> service.add(new ModelConfigCommand(null, "custom-model", "https://example.invalid", "key", null)));
@@ -93,13 +107,13 @@ class ModelApiKeyTest {
     }
 
     @Test void runtimeConfigRejectsMissingAndIncompleteModels() {
-        assertThrows(com.summit.dp.shared.exception.ClientException.class,
+        assertThrows(ClientException.class,
                 () -> service.runtimeConfig(null, null));
         when(repository.findById(99L)).thenReturn(Optional.empty());
-        assertThrows(com.summit.dp.model.domain.ModelNoFoundException.class,
+        assertThrows(ClientException.class,
                 () -> service.runtimeConfig(99L, null));
         when(repository.findById(1L)).thenReturn(Optional.of(model("")));
-        assertThrows(com.summit.dp.shared.exception.ClientException.class,
+        assertThrows(ClientException.class,
                 () -> service.runtimeConfig(1L, null));
     }
 

@@ -1,5 +1,6 @@
 package com.summit.dp.agent;
 
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -104,8 +105,8 @@ class ChatControllerLifecycleTest {
         }).when(executor).run(any());
         SettingsView view = new SettingsView(null, null, null, null, 7L, null, 64000, "low", null, 10);
         when(settings.current()).thenReturn(Optional.of(view));
-        when(models.runtimeConfig(any(), any())).thenReturn(ModelConfig.builder().modelName("controlled-model")
-                .baseUrl("https://example.invalid").apiKey("controlled-key").provider("default").build());
+        when(models.resolveRuntimeConfig(any(), any())).thenReturn(new RuntimeModel(ModelConfig.builder().modelName("controlled-model")
+                .baseUrl("https://example.invalid").apiKey("controlled-key").provider("default").build(), false));
         when(modelFactory.select(any(ModelConfig.class))).thenReturn(new RequestModelInvokerFactory.Selection(
                 "default", this::invoke, false));
     }

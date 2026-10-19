@@ -1,6 +1,7 @@
 package com.summit.dp.model;
 
-import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
+import com.summit.dp.tools.ToolListProcessorTestSupport;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -33,11 +34,11 @@ class AgentModelConfigurationTest {
     private final SettingsProvider settings = mock(SettingsProvider.class);
     private final AgentService agents = mock(AgentService.class);
     private final CallSubAgentTool child = new CallSubAgentTool(new ObjectMapper(), agents, null,
-            new SubAgentRequestFactory(null, models, settings, null, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), new VisionCapabilityResolver("")),
+            new SubAgentRequestFactory(null, models, settings, null, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create()),
             null, null, null, null, null);
     /** 子模型解析已下沉到请求组装器，这里直接打它，避免再经工具入口绕行。 */
     private final SubAgentRequestFactory childModels = new SubAgentRequestFactory(null, models, settings, null,
-            new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), new VisionCapabilityResolver(""));
+            new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create());
 
     @Test void unconfiguredChildFailsBeforeCreatingSessionOrInvokingModel() {
         AgentVO agent = new AgentVO();
@@ -64,12 +65,12 @@ class AgentModelConfigurationTest {
         SettingsView selected = new SettingsView(null, null, null, null, 99L, null, 1234, "high", null, 10);
         ModelConfig configured = config("child");
         when(settings.current()).thenReturn(Optional.of(selected));
-        when(models.runtimeConfig(7L, selected)).thenReturn(configured);
+        when(models.resolveRuntimeConfig(7L, selected)).thenReturn(new RuntimeModel(configured, false));
         AgentVO agent = new AgentVO();
         agent.setId(7L);
         agent.setModelId(7L);
-        assertSame(configured, ReflectionTestUtils.invokeMethod(childModels, "resolveChildModel", agent));
-        verify(models).runtimeConfig(7L, selected);
+        assertSame(configured, ((RuntimeModel) ReflectionTestUtils.invokeMethod(childModels, "resolveChildModel", agent)).config());
+        verify(models).resolveRuntimeConfig(7L, selected);
         verifyNoMoreInteractions(models);
     }
 
@@ -79,7 +80,7 @@ class AgentModelConfigurationTest {
         agent.setName("评审员");
         agent.setModelId(7L);
         when(settings.current()).thenReturn(Optional.empty());
-        when(models.runtimeConfig(7L, null)).thenThrow(new ModelNoFoundException());
+        when(models.resolveRuntimeConfig(7L, null)).thenThrow(new ModelNoFoundException());
 
         ClientException error = assertThrows(ClientException.class,
                 () -> ReflectionTestUtils.invokeMethod(childModels, "resolveChildModel", agent));
@@ -88,16 +89,16 @@ class AgentModelConfigurationTest {
     }
 
     @Test void rootResolvesExplicitThenSettingsThenFails() {
-        RequestPreparer root = new RequestPreparer(null, null, null, models, null, settings, null,
-                null, null, null, null, null, null, new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class), new VisionCapabilityResolver(""));
+        RequestPreparer root = new RequestPreparer(null, null, null, models, null, settings, ToolListProcessorTestSupport.create(),
+                null, null, null, null, null, null, new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class));
         SettingsView selected = new SettingsView(null, null, null, null, 99L, null, 1234, "high", null, 10);
         ModelConfig explicit = config("explicit");
         ModelConfig fallback = config("settings");
-        when(models.runtimeConfig(7L, selected)).thenReturn(explicit);
-        when(models.runtimeConfig(99L, selected)).thenReturn(fallback);
+        when(models.resolveRuntimeConfig(7L, selected)).thenReturn(new RuntimeModel(explicit, false));
+        when(models.resolveRuntimeConfig(99L, selected)).thenReturn(new RuntimeModel(fallback, false));
         // 显式 modelId 优先；未指定时回落单例设置（user_configs.model_id）。
-        assertSame(explicit, ReflectionTestUtils.invokeMethod(root, "rootModel", 7L, selected));
-        assertSame(fallback, ReflectionTestUtils.invokeMethod(root, "rootModel", null, selected));
+        assertSame(explicit, ((RuntimeModel) ReflectionTestUtils.invokeMethod(root, "rootModel", 7L, selected)).config());
+        assertSame(fallback, ((RuntimeModel) ReflectionTestUtils.invokeMethod(root, "rootModel", null, selected)).config());
         // 无显式、无设置：业务侧不再读 lingxi.agent.model.conf.*，直接报「未配置可用的模型连接」。
         SettingsView unconfigured = new SettingsView(null, null, null, null, null, null, 1000, "low", null, 10);
         ClientException error = assertThrows(ClientException.class,

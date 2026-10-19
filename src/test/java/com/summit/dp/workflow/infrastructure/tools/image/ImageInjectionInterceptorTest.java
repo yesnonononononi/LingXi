@@ -176,7 +176,7 @@ class ImageInjectionInterceptorTest {
 
     private ToolExecuteResult read(String path, Execution execution) throws Exception {
         ReadImageToolExecutor executor = new ReadImageToolExecutor(
-                mapper, new ImageNormalizer(), cache(), new VisionCapabilityResolver("claude-*"));
+                mapper, new ImageNormalizer(), cache());
         ToolExecuteResult result = executor.execute(ToolExecution.builder()
                 .workspace(new LocalWorkspace("test", workspaceRoot.toString()))
                 .args(mapper.writeValueAsString(ReadImageRequest.builder().path(path).build()))
@@ -188,7 +188,7 @@ class ImageInjectionInterceptorTest {
 
     private ToolDefinition<ReadImageToolExecutor> definition(String name) {
         return ToolDefinition.<ReadImageToolExecutor>builder().name(name).id(name).maxOutput(400).timeout(20L)
-                .executor(new ReadImageToolExecutor(mapper, new ImageNormalizer(), cache(), new VisionCapabilityResolver("claude-*")))
+                .executor(new ReadImageToolExecutor(mapper, new ImageNormalizer(), cache()))
                 .build();
     }
 
@@ -203,7 +203,7 @@ class ImageInjectionInterceptorTest {
     private Execution execution() {
         Map<String, Object> attributes = new HashMap<>();
         attributes.put(ExecutionAttributes.SESSION_ID, String.valueOf(SESSION_ID));
-        attributes.put(ExecutionAttributes.MODEL_NAME, "claude-opus-4-7");
+        attributes.put(ExecutionAttributes.MODEL_VISION, true);
         AgentRequest request = AgentRequest.builder()
                 .runtimeParameters(AgentRuntimeParameters.builder().attributes(Map.copyOf(attributes)).build())
                 .build();

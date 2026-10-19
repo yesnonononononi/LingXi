@@ -1,6 +1,6 @@
 package com.summit.dp.agent;
 
-import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
+import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.execution.ExecutionRepositoryTestFactory;
@@ -141,10 +141,10 @@ class ChatAdmissionTransactionTest {
         // 真实受理器：只替换与本次无关的协作者，落库两条链都是真实现。
         RequestPreparer requestPreparer = new RequestPreparer(mock(SessionService.class),
                 mock(SessionRepository.class), mock(WorkspaceService.class), mock(ModelService.class),
-                mock(WorkspaceConverter.class), mock(SettingsProvider.class), mock(ToolCatalog.class),
+                mock(WorkspaceConverter.class), mock(SettingsProvider.class), ToolListProcessorTestSupport.create(),
                 transcriptService, mock(ModelContextService.class),
                 chatTurnService, mock(com.summit.dp.agent.application.service.AgentService.class),
-                mock(TeamService.class), mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class), new VisionCapabilityResolver(""));
+                mock(TeamService.class), mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class));
         executor = new PreparedChatExecutor(orchestrator, requestPreparer,
                 mock(ModelContextService.class), mock(SessionExecutionRegistry.class),
                 mock(ExecutionControl.class));

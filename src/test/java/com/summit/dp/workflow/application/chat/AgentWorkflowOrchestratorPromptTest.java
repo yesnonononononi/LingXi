@@ -1,7 +1,7 @@
 package com.summit.dp.workflow.application.chat;
 
-import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
 
+import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.Message;
@@ -57,11 +57,10 @@ class AgentWorkflowOrchestratorPromptTest {
     private final PersonalizationRepository personalizationRepository = mock(PersonalizationRepository.class);
     private final RequestPreparer preparer = new RequestPreparer(
             mock(SessionService.class), mock(SessionRepository.class), mock(WorkspaceService.class),
-            mock(ModelService.class), mock(WorkspaceConverter.class), mock(SettingsProvider.class),
-            mock(ToolCatalog.class), mock(ConversationTranscriptService.class), mock(ModelContextService.class),
+            mock(ModelService.class), mock(WorkspaceConverter.class), mock(SettingsProvider.class), ToolListProcessorTestSupport.create(), mock(ConversationTranscriptService.class), mock(ModelContextService.class),
             mock(ChatTurnService.class), agentService, teamService, mock(McpService.class),
             new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder("全局规则"),
-            personalizationRepository, new VisionCapabilityResolver(""));
+            personalizationRepository);
     private final AgentWorkflowOrchestratorImpl orchestrator = new AgentWorkflowOrchestratorImpl(
             subAgent, teamService, preparer, agentService, chatAgent);
 

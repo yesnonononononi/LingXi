@@ -1,7 +1,8 @@
 package com.summit.dp.shared.utils;
 
-import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
 
+import com.summit.dp.tools.application.service.ToolListProcessor;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.personalization.domain.model.Personalization;
 import com.summit.dp.personalization.domain.model.ReplyStyle;
@@ -90,9 +91,9 @@ class RequestPreparerExecutionIdentityTest {
 
     private final PersonalizationRepository personalizationRepository = mock(PersonalizationRepository.class);
     private final RequestPreparer preparer = new RequestPreparer(sessionService, sessionRepository,
-            workspaceService, modelService, workspaceConverter, settingsProvider, toolCatalog,
+            workspaceService, modelService, workspaceConverter, settingsProvider, new ToolListProcessor(toolCatalog),
             transcriptService, modelContextService,
-            chatTurnService, agentService, teamService, mcpService, new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder("全局规则"), personalizationRepository, new VisionCapabilityResolver(""));
+            chatTurnService, agentService, teamService, mcpService, new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder("全局规则"), personalizationRepository);
 
     @Test
     void requestReadsLatestPreferencesAndKeepsThemBeforeTeamPrompt() {
@@ -120,9 +121,9 @@ class RequestPreparerExecutionIdentityTest {
         // 根会话行用于取历史代际；当前会话即根会话。
         when(sessionRepository.findById(SESSION_ID)).thenReturn(Optional.of(com.summit.dp.session.domain.model.Session
                 .builder().id(SESSION_ID).rootSessionId(0L).historyRevision(3L).build()));
-        when(modelService.runtimeConfig(eq(MODEL_ID), any())).thenReturn(ModelConfig.builder()
+        when(modelService.resolveRuntimeConfig(eq(MODEL_ID), any())).thenReturn(new RuntimeModel(ModelConfig.builder()
                 .baseUrl("https://example.invalid").apiKey("secret-key")
-                .modelName("deepseek-chat").provider("deepseek").build());
+                .modelName("deepseek-chat").provider("deepseek").build(), false));
         when(modelContextService.find(SESSION_ID)).thenReturn(Optional.empty());
         when(mcpService.currentConfig()).thenReturn(null);
         when(workspaceConverter.toSpec(any(com.summit.dp.shared.vo.WorkspaceVO.class),

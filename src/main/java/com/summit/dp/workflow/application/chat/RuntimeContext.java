@@ -40,7 +40,8 @@ public record RuntimeContext(
         boolean requirePlan,
         UserMessageEntity pendingUserMessage,
         Long turnId,
-        Execution execution
+        Execution execution,
+        boolean vision
 ) {
     /** 受理前的便捷构造器：turnId 与 execution 都还没有。 */
     public RuntimeContext(ExecutionContext executionContext, Long agentId, Long teamId,
@@ -49,18 +50,27 @@ public record RuntimeContext(
                           CommandApprovalPolicy commandApprovalPolicy, boolean requirePlan,
                           UserMessageEntity pendingUserMessage) {
         this(executionContext, agentId, teamId, session, messageList, workspace, modelConfig,
-                accessMode, commandApprovalPolicy, requirePlan, pendingUserMessage, null, null);
+                accessMode, commandApprovalPolicy, requirePlan, pendingUserMessage, null, null, false);
+    }
+
+    public RuntimeContext(ExecutionContext executionContext, Long agentId, Long teamId,
+                          SessionVO session, List<Message> messageList, WorkspaceSpec workspace,
+                          ModelConfig modelConfig, AgentAccessMode accessMode,
+                          CommandApprovalPolicy commandApprovalPolicy, boolean requirePlan,
+                          UserMessageEntity pendingUserMessage, boolean vision) {
+        this(executionContext, agentId, teamId, session, messageList, workspace, modelConfig,
+                accessMode, commandApprovalPolicy, requirePlan, pendingUserMessage, null, null, vision);
     }
 
     public RuntimeContext withTurnId(Long turnId) {
         return new RuntimeContext(executionContext, agentId, teamId, session, messageList,
                 workspace, modelConfig, accessMode, commandApprovalPolicy, requirePlan,
-                pendingUserMessage, turnId, execution);
+                pendingUserMessage, turnId, execution, vision);
     }
 
     public RuntimeContext withExecution(Execution execution) {
         return new RuntimeContext(executionContext, agentId, teamId, session, messageList,
                 workspace, modelConfig, accessMode, commandApprovalPolicy, requirePlan,
-                pendingUserMessage, turnId, execution);
+                pendingUserMessage, turnId, execution, vision);
     }
 }

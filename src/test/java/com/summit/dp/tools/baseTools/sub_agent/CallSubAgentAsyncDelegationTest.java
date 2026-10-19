@@ -1,6 +1,7 @@
 package com.summit.dp.tools.baseTools.sub_agent;
 
-import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
+import com.summit.dp.tools.ToolListProcessorTestSupport;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
 
@@ -90,14 +91,14 @@ class CallSubAgentAsyncDelegationTest {
 
     CallSubAgentAsyncDelegationTest() {
         lenient().when(settingsProvider.current()).thenReturn(Optional.empty());
-        lenient().when(modelService.runtimeConfig(anyLong(), any())).thenReturn(
+        lenient().when(modelService.resolveRuntimeConfig(anyLong(), any())).thenReturn(new RuntimeModel(
                 com.summit.core.conf.ModelConfig.builder()
-                        .baseUrl("https://example.invalid").apiKey("k").modelName("m").build());
+                        .baseUrl("https://example.invalid").apiKey("k").modelName("m").build(), false));
         // 工作目录解析不到已登记工作空间：回落为「无工作空间」，不静默放行也不炸。
         lenient().when(workspaceService.findByDir(anyString())).thenReturn(Result.success(null));
 
         SubAgentRequestFactory requestFactory = new SubAgentRequestFactory(workspaceService, modelService,
-                settingsProvider, mock(WorkspaceConverter.class), new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), new VisionCapabilityResolver(""));
+                settingsProvider, mock(WorkspaceConverter.class), new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create());
         SubSessionResolver subSessionResolver = new SubSessionResolver(sessionRepository, modelContextService);
         DelegationRecorder recorder = new DelegationRecorder(chatTurnService, transcriptService);
 

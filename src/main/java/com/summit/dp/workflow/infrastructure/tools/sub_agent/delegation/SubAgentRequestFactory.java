@@ -3,7 +3,6 @@ package com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation;
 import cn.hutool.core.util.IdUtil;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
-import com.summit.core.conf.ModelConfig;
 import com.summit.core.conf.SkillConfig;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
@@ -17,16 +16,16 @@ import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.model.application.service.ModelService;
-import com.summit.dp.model.domain.ModelNoFoundException;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.shared.vo.WorkspaceVO;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
-import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
+import com.summit.dp.tools.application.service.ToolListProcessor;
+import com.summit.dp.tools.application.service.ToolProcessingContext;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import lombok.RequiredArgsConstructor;
@@ -38,7 +37,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 /**
  * 把一次委派组装成子执行可用的 {@link AgentRequest}。
@@ -58,7 +56,7 @@ public class SubAgentRequestFactory {
     /** Skill 根目录：子执行的 skillConfig 与 read_skill 都由它决定是否下发。 */
     private final SkillRootResolver skillRootResolver;
     private final BusinessSystemPromptBuilder systemPromptBuilder;
-    private final VisionCapabilityResolver visionCapabilityResolver;
+    private final ToolListProcessor toolListProcessor;
 
     /**
      * 组装子执行请求。
@@ -80,7 +78,7 @@ public class SubAgentRequestFactory {
                               String subSessionId,
                               Long parentWorkspaceId,
                               List<Message> priorMessages) {
-        ModelConfig childModel = resolveChildModel(subAgent);
+        RuntimeModel childModel = resolveChildModel(subAgent);
 
         Workspace parentWorkspace = toolExecution == null ? null : toolExecution.getWorkspace();
 
@@ -106,14 +104,16 @@ public class SubAgentRequestFactory {
         Objects.requireNonNull(toolExecution);
         return builder
                 .messages(buildContext(priorMessages, task))
-                .modelConfig(childModel)
+                .modelConfig(childModel.config())
                 .executionId(String.valueOf(IdUtil.getSnowflakeNextId()))
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(childAttributes(subAgent, toolExecution, subSessionId, childModel))
                         .build())
                 .systemPrompt(systemPromptBuilder.buildMemberPrompt(subAgent, team, argument.getPrompt()))
-                .toolList(visionCapabilityResolver.filterTools(
-                        memberTools(subAgent.getToolList(), skillRoot, accessMode), childModel.getModelName()))
+                .toolList(toolListProcessor.process(subAgent.getToolList(), ToolProcessingContext.builder()
+                        .member(true).agentId(subAgent.getId())
+                        .teamId(ExecutionAttributes.readLong(toolExecution.getAttributes(), ExecutionAttributes.TEAM_ID))
+                        .vision(childModel.vision()).accessMode(accessMode).skillRoot(skillRoot).build()))
                 .skillConfig(skillRoot == null ? null : new SkillConfig(skillRoot))
                 .task(List.of(task))
                 .build();
@@ -146,17 +146,14 @@ public class SubAgentRequestFactory {
      * 算出与根同一把邮箱键。与会话表回查相比，属性下行免去拦截器里的 SessionRepository IO。</p>
      *
      * <p>注意：子执行拿到 {@code TEAM_ID} 之后，「靠属性缺失拦住二次委派」这层保险就不存在了 ——
-     * 真正的守卫是 {@link #memberTools} 把 {@code call_sub_agent} 从子执行工具清单里剔除。</p>
+     * 真正的守卫是工具加工层把 {@code call_sub_agent} 从子执行工具清单里剔除。</p>
      */
     private Map<String, Object> childAttributes(AgentVO subAgent, ToolExecution toolExecution, String subSessionId,
-                                               ModelConfig childModel) {
+                                               RuntimeModel childModel) {
         Map<String, Object> attributes = new HashMap<>(AgentAccessMode.toAttributes(AgentAccessMode.from(toolExecution.getAttributes())));
 
         attributes.put(ExecutionAttributes.SESSION_ID, subSessionId);
-        // 子执行独立选模型，不能继承指挥者的视觉能力判断。
-        if (childModel.getModelName() != null) {
-            attributes.put(ExecutionAttributes.MODEL_NAME, childModel.getModelName());
-        }
+        attributes.put(ExecutionAttributes.MODEL_VISION, childModel.vision());
 
         attributes.put(ExecutionAttributes.AGENT_ID, subAgent.getId().toString());
 
@@ -204,54 +201,19 @@ public class SubAgentRequestFactory {
         return parent == null ? null : workspaceConverter.toSpec(parent, type, accessMode);
     }
 
-    /**
-     * 子 Agent 必须显式绑定模型，不继承父任务或单例设置中的模型 —— 每个成员用自己的预设跑。
-     *
-     * <p>agent.model_id 无外键：删除模型不会级联清空引用，「预设已被删除」要把
-     * {@code 未找到模型} 翻译成带成员名的可行动提示，否则指挥者只看到一句天书。</p>
-     */
-    private ModelConfig resolveChildModel(AgentVO subAgent) {
+    /** 子模型不继承父配置；预设不可用时保留成员名与业务原因，方便定位。 */
+    private RuntimeModel resolveChildModel(AgentVO subAgent) {
         Long childModelId = subAgent == null ? null : subAgent.getModelId();
         if (childModelId == null) {
             throw new ClientException("子 Agent 未配置模型，请先为该 Agent 绑定模型");
         }
         SettingsView settings = settingsProvider.current().orElse(null);
         try {
-            return modelService.runtimeConfig(childModelId, settings);
-        } catch (ModelNoFoundException e) {
+            return modelService.resolveRuntimeConfig(childModelId, settings);
+        } catch (ClientException e) {
             throw new ClientException("子 Agent「" + subAgent.getName()
-                    + "」绑定的模型已被删除，请重新为其选择基座模型");
+                    + "」绑定的模型不可用，请检查预设是否已被删除或连接配置是否完整: " + e.getMessage());
         }
-    }
-
-    /**
-     * 团队成员的工具清单：剔除委派工具（{@code call_sub_agent} 只发生在指挥者这一层），
-     * 并补上 {@code send_mail_to_agent} —— 成员要能和队友同步信息、反馈阻塞。
-     *
-     * <p>两个协作工具都不写进 Agent 配置，而是由委派方按角色显式授予，与指挥者侧的
-     * {@code AgentWorkflowOrchestratorImpl#commanderTools} 对称。未配置清单的 Agent 原本
-     * 一个工具都拿不到，这里同样至少给出发信能力，避免成员完全失联。</p>
-     *
-     * <p>{@code read_skill} 与 {@code send_mail_to_agent} 同属「不写进 Agent 配置、由这里补」：
-     * 名单即授权，不补则子执行拿到 Skill 提示词也调不动读它的工具。</p>
-     */
-    private List<String> memberTools(List<String> configured, Path skillRoot, AgentAccessMode accessMode) {
-        List<String> tools = configured == null
-                ? new ArrayList<>()
-                : configured.stream()
-                .filter(tool -> tool != null && !tool.isBlank())
-                .map(String::trim)
-                .filter(tool -> !ToolCatalog.CALL_SUB_AGENT.equals(tool))
-                .filter(tool -> accessMode.allowsWriteTools() || !ToolCatalog.EDIT_FILE.equals(tool))
-                .distinct()
-                .collect(Collectors.toCollection(ArrayList::new));
-        if (!tools.contains(ToolCatalog.SEND_MAIL_TO_AGENT)) {
-            tools.add(ToolCatalog.SEND_MAIL_TO_AGENT);
-        }
-        if (skillRoot != null && !tools.contains(ToolCatalog.READ_SKILL)) {
-            tools.add(ToolCatalog.READ_SKILL);
-        }
-        return tools;
     }
 
 }

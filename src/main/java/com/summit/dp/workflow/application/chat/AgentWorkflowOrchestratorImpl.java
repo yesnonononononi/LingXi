@@ -7,7 +7,6 @@ import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.workflow.application.delegation.TeamPromptComposer;
 import com.summit.dp.workflow.infrastructure.harness.agent.IChatAgent;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.infrastructure.harness.agent.SubAgent;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.team.application.service.TeamService;
@@ -15,10 +14,7 @@ import com.summit.dp.team.application.vo.TeamVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 /**
  * 执行编排器：Agent 绑定与模型回落已在 RequestPreparer.prepare 内完成（HC-1/HC-2 的身份前置），
@@ -88,7 +84,7 @@ public class AgentWorkflowOrchestratorImpl implements AgentWorkflowOrchestrator 
                             team.getDescription()
                     ),
                     context,
-                    commanderTools(commander.getToolList())
+                    commander.getToolList()
             );
         }
         if (context.agentId() != null) {
@@ -97,27 +93,7 @@ public class AgentWorkflowOrchestratorImpl implements AgentWorkflowOrchestrator 
             return requestPreparer.buildRequest(single.getPrompt(), context, single.getToolList());
         }
         // 用户输入只留在用户消息中，不能提升为系统人设。
-        return requestPreparer.buildRequest("", context, ToolCatalog.DEFAULT_AGENT_TOOLS);
+        return requestPreparer.buildRequest("", context, null, true);
     }
 
-    /**
-     * 协作工具不在 Agent 配置中下发，而是在协作开始时显式授予指挥者：这样除指挥者外的成员
-     * 永远拿不到 {@code call_sub_agent}，不会出现多层委派。
-     *
-     * <p>{@code send_mail_to_agent} 同理一并授予 —— 它同样只在协作场景成立（收件人是团队成员），
-     * 而没有任何 Agent 配置里会写上它；不在这里补，团队里就没人发得出信。</p>
-     */
-    private List<String> commanderTools(List<String> configuredTools) {
-        List<String> tools = configuredTools == null
-                ? new ArrayList<>()
-                : configuredTools.stream()
-                .filter(Objects::nonNull)
-                .map(String::trim)
-                .filter(tool -> !tool.isEmpty())
-                .distinct()
-                .collect(Collectors.toCollection(ArrayList::new));
-        if (!tools.contains(ToolCatalog.CALL_SUB_AGENT)) tools.add(ToolCatalog.CALL_SUB_AGENT);
-        if (!tools.contains(ToolCatalog.SEND_MAIL_TO_AGENT)) tools.add(ToolCatalog.SEND_MAIL_TO_AGENT);
-        return tools;
-    }
 }

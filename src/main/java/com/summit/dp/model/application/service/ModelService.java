@@ -4,11 +4,14 @@ import com.summit.ddd.application.vo.PageResult;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.model.application.command.ModelConfigCommand;
 import com.summit.dp.model.application.vo.ModelConfigVO;
+import com.summit.dp.model.application.vo.RuntimeModel;
+import com.summit.dp.user_configs.application.vo.SettingsView;
 
 
 public interface ModelService {
-    /** Internal runtime configuration with the original credential; never return it from an API. */
-    com.summit.core.conf.ModelConfig runtimeConfig(Long id, com.summit.dp.user_configs.application.vo.SettingsView settings);
+    /** 运行期保留原始凭据，不得从接口返回。 */
+    com.summit.core.conf.ModelConfig runtimeConfig(Long id, SettingsView settings);
+    RuntimeModel resolveRuntimeConfig(Long id, SettingsView settings);
     Result<Void> add(ModelConfigCommand command);
     Result<Void> update(ModelConfigCommand command);
     Result<Void> del(Long id);

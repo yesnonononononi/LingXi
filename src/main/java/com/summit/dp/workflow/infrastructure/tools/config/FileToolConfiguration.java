@@ -17,7 +17,6 @@ import com.summit.dp.workflow.infrastructure.tools.file.read.ReadFileToolExecuto
 import com.summit.dp.workflow.infrastructure.tools.image.ImageCacheDirectory;
 import com.summit.dp.workflow.infrastructure.tools.image.ImageNormalizer;
 import com.summit.dp.workflow.infrastructure.tools.image.ReadImageToolExecutor;
-import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 
@@ -87,11 +86,10 @@ public class FileToolConfiguration {
     public ToolDefinition<ReadImageToolExecutor> readImageToolDefinition(
             ObjectMapper objectMapper,
             ImageNormalizer imageNormalizer,
-            ImageCacheDirectory imageCacheDirectory,
-            VisionCapabilityResolver visionCapabilityResolver) {
+            ImageCacheDirectory imageCacheDirectory) {
         String name = ToolCatalog.READ_IMAGE;
         return ToolDefinition.<ReadImageToolExecutor>builder()
-                .executor(new ReadImageToolExecutor(objectMapper, imageNormalizer, imageCacheDirectory, visionCapabilityResolver))
+                .executor(new ReadImageToolExecutor(objectMapper, imageNormalizer, imageCacheDirectory))
                 .id(name)
                 .name(name)
                 // 只读：解码与落盘都在工作区/缓存目录内完成，不改动用户文件。

@@ -66,7 +66,7 @@ class ReadImageLoopIntegrationTest {
             try (exchange) {
                 requests.add(mapper.readTree(exchange.getRequestBody()));
                 ObjectNode response = mapper.createObjectNode().put("id", "local-response")
-                        .put("object", "chat.completion").put("model", "gpt-4o");
+                        .put("object", "chat.completion").put("model", "arbitrary-vision-model");
                 ObjectNode choice = response.putArray("choices").addObject().put("index", 0);
                 ObjectNode message = choice.putObject("message").put("role", "assistant");
                 if (requests.size() == 1) {
@@ -88,14 +88,14 @@ class ReadImageLoopIntegrationTest {
         try {
             ImageCacheDirectory cache = new ImageCacheDirectory(dataDir.toString());
             ToolDefinition<ReadImageToolExecutor> definition = new FileToolConfiguration().readImageToolDefinition(
-                    mapper, new ImageNormalizer(), cache, new VisionCapabilityResolver("gpt-4o*"));
+                    mapper, new ImageNormalizer(), cache);
             RuntimeEventPublisher events = new RuntimeEventPublisher(List.of());
             ChatModelAdapter model = new ChatModelAdapter(OpenAiChatModel.builder()
                     .baseUrl("http://127.0.0.1:" + server.getAddress().getPort() + "/v1")
-                    .apiKey("local-test-key").modelName("gpt-4o").timeout(Duration.ofSeconds(5)).maxRetries(0).build());
+                    .apiKey("local-test-key").modelName("arbitrary-vision-model").timeout(Duration.ofSeconds(5)).maxRetries(0).build());
             AgentRequest request = AgentRequest.builder().toolList(List.of(ToolCatalog.READ_IMAGE))
                     .runtimeParameters(AgentRuntimeParameters.builder().attributes(Map.of(
-                            ExecutionAttributes.SESSION_ID, "42", ExecutionAttributes.MODEL_NAME, "gpt-4o")).build())
+                            ExecutionAttributes.SESSION_ID, "42", ExecutionAttributes.MODEL_VISION, true)).build())
                     .messages(List.of(UserMessageEntity.from("inspect sample.bmp"))).build();
             Execution execution = Execution.builder().id("image-loop").agentId("test")
                     .agentRequest(request).messages(new ArrayList<>(request.getMessages())).tokenUsage(TokenUsageEntity.empty()).build();

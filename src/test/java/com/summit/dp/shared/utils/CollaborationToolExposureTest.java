@@ -1,6 +1,6 @@
 package com.summit.dp.shared.utils;
 
-import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
+import com.summit.dp.tools.application.service.ToolListProcessor;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
@@ -71,24 +71,24 @@ class CollaborationToolExposureTest {
     // --- 授权边界：名单即授权 ------------------------------------------------------------
 
     @Test
-    void imageToolFollowsTheActualModelAndExplicitToolSelection() {
+    void imageToolFollowsTheVisionDeclarationRatherThanTheName() {
         AgentRequest supported = request(null, null, List.of(ToolCatalog.READ_FILE, ToolCatalog.READ_IMAGE),
-                REGISTERED, false, AgentAccessMode.IN_WORKSPACE, Set.of(), new SkillRootResolver(""), "gpt-4o");
+                REGISTERED, false, AgentAccessMode.IN_WORKSPACE, Set.of(), new SkillRootResolver(""), "arbitrary-model", true);
         assertTrue(supported.getToolList().contains(ToolCatalog.READ_IMAGE));
-        assertEquals("gpt-4o", supported.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.MODEL_NAME));
+        assertEquals(true, supported.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.MODEL_VISION));
 
         AgentRequest unsupported = request(null, null, List.of(ToolCatalog.READ_FILE, ToolCatalog.READ_IMAGE),
-                REGISTERED, false, AgentAccessMode.IN_WORKSPACE, Set.of(), new SkillRootResolver(""), "deepseek-flash");
+                REGISTERED, false, AgentAccessMode.IN_WORKSPACE, Set.of(), new SkillRootResolver(""), "claude-opus", false);
         assertEquals(List.of(ToolCatalog.READ_FILE), unsupported.getToolList());
-        assertEquals("deepseek-flash", unsupported.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.MODEL_NAME));
+        assertEquals(false, unsupported.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.MODEL_VISION));
 
         AgentRequest explicitlySelected = request(7L, null, List.of(ToolCatalog.READ_FILE),
-                REGISTERED, false, AgentAccessMode.IN_WORKSPACE, Set.of(), new SkillRootResolver(""), "gpt-4o");
-        assertEquals(List.of(ToolCatalog.READ_FILE), explicitlySelected.getToolList());
+                REGISTERED, false, AgentAccessMode.IN_WORKSPACE, Set.of(), new SkillRootResolver(""), "arbitrary-model", true);
+        assertEquals(List.of(ToolCatalog.READ_FILE, ToolCatalog.READ_IMAGE), explicitlySelected.getToolList());
 
         AgentRequest readOnly = request(null, null, List.of(ToolCatalog.READ_IMAGE, ToolCatalog.EDIT_FILE),
                 REGISTERED, false, AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of(ToolCatalog.READ_IMAGE),
-                new SkillRootResolver(""), "gpt-4o");
+                new SkillRootResolver(""), "arbitrary-model", true);
         assertEquals(List.of(ToolCatalog.READ_IMAGE), readOnly.getToolList());
     }
 
@@ -275,12 +275,12 @@ class CollaborationToolExposureTest {
                                  Set<String> registered, boolean withMcp,
                                  AgentAccessMode mode, Set<String> readOnlyNames,
                                  SkillRootResolver skillRootResolver) {
-        return request(agentId, teamId, configuredTools, registered, withMcp, mode, readOnlyNames, skillRootResolver, "m");
+        return request(agentId, teamId, configuredTools, registered, withMcp, mode, readOnlyNames, skillRootResolver, "m", false);
     }
 
     private AgentRequest request(Long agentId, Long teamId, List<String> configuredTools,
                                  Set<String> registered, boolean withMcp, AgentAccessMode mode,
-                                 Set<String> readOnlyNames, SkillRootResolver skillRootResolver, String modelName) {
+                                 Set<String> readOnlyNames, SkillRootResolver skillRootResolver, String modelName, boolean vision) {
         ToolCatalog catalog = mock(ToolCatalog.class);
         when(catalog.names()).thenReturn(registered);
         when(catalog.readOnlyNames()).thenReturn(readOnlyNames);
@@ -290,10 +290,10 @@ class CollaborationToolExposureTest {
         RequestPreparer preparer = new RequestPreparer(mock(SessionService.class),
                 mock(com.summit.dp.session.domain.repo.SessionRepository.class),
                 mock(WorkspaceService.class), mock(ModelService.class), mock(WorkspaceConverter.class),
-                mock(SettingsProvider.class), catalog, mock(ConversationTranscriptService.class),
+                mock(SettingsProvider.class), new ToolListProcessor(catalog), mock(ConversationTranscriptService.class),
                 mock(ModelContextService.class),
                 mock(com.summit.dp.turn.application.service.ChatTurnService.class),
-                mock(AgentService.class), mock(TeamService.class), mcpService, skillRootResolver, new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class), new VisionCapabilityResolver("gpt-4o*"));
+                mock(AgentService.class), mock(TeamService.class), mcpService, skillRootResolver, new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class));
 
         // executionId 必须非空：buildRequest 不再自造身份，缺身份即视为「prepare 没跑」并直接报错。
         ExecutionContext executionContext = ExecutionContext.root(500L, "2105000000000000001", null, null,
@@ -301,7 +301,7 @@ class CollaborationToolExposureTest {
         RuntimeContext context = new RuntimeContext(executionContext, agentId, teamId,
                 SessionVO.builder().id(500L).build(), List.of(), null,
                 ModelConfig.builder().baseUrl("https://example.invalid").apiKey("k").modelName(modelName).build(),
-                mode, CommandApprovalPolicy.FULL_ACCESS, false, null);
+                mode, CommandApprovalPolicy.FULL_ACCESS, false, null, vision);
 
         return preparer.buildRequest("prompt", context, configuredTools);
     }

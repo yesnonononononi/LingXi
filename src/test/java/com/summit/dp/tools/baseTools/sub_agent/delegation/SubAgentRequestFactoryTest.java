@@ -1,6 +1,7 @@
 package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
-import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
+import com.summit.dp.tools.ToolListProcessorTestSupport;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
 
@@ -59,7 +60,7 @@ class SubAgentRequestFactoryTest {
 
     /** Skill 关闭（空配置）时的组装器：本类多数用例的基线。 */
     private final SubAgentRequestFactory factory = new SubAgentRequestFactory(
-            workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), new VisionCapabilityResolver(""));
+            workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create());
 
     @TempDir
     Path skillDir;
@@ -67,29 +68,28 @@ class SubAgentRequestFactoryTest {
     /** Skill 开启时的组装器：根目录指向一个真实存在的临时目录。 */
     private SubAgentRequestFactory factoryWithSkills() {
         return new SubAgentRequestFactory(workspaceService, modelService, settingsProvider,
-                workspaceConverter, new SkillRootResolver(skillDir.toString()), new BusinessSystemPromptBuilder(""), new VisionCapabilityResolver(""));
+                workspaceConverter, new SkillRootResolver(skillDir.toString()), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create());
     }
 
     @Test
     void imageCapabilityUsesTheChildModelRatherThanTheParentModel() {
         stubModel();
         SubAgentRequestFactory target = new SubAgentRequestFactory(workspaceService, modelService, settingsProvider,
-                workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""),
-                new VisionCapabilityResolver("gpt-4o*"));
+                workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create());
         AgentVO member = agent(6L, "图片评审员", "检查图片");
-        member.setToolList(List.of(ToolCatalog.READ_IMAGE));
+        member.setToolList(List.of(ToolCatalog.READ_FILE));
         ToolExecution parent = ToolExecution.builder().executionId("900")
-                .attributes(Map.of(ExecutionAttributes.MODEL_NAME, "deepseek-flash")).build();
-        when(modelService.runtimeConfig(anyLong(), any())).thenReturn(ModelConfig.builder().modelName("gpt-4o").build());
+                .attributes(Map.of(ExecutionAttributes.MODEL_VISION, false)).build();
+        when(modelService.resolveRuntimeConfig(anyLong(), any())).thenReturn(new RuntimeModel(ModelConfig.builder().modelName("arbitrary-model").build(), true));
         AgentRequest supported = build(target, member, buildTeam(member), parent, List.of());
         assertTrue(supported.getToolList().contains(ToolCatalog.READ_IMAGE));
-        assertEquals("gpt-4o", supported.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.MODEL_NAME));
+        assertEquals(true, supported.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.MODEL_VISION));
 
-        when(modelService.runtimeConfig(anyLong(), any())).thenReturn(ModelConfig.builder().modelName("deepseek-flash").build());
+        when(modelService.resolveRuntimeConfig(anyLong(), any())).thenReturn(new RuntimeModel(ModelConfig.builder().modelName("claude-opus").build(), false));
         AgentRequest unsupported = build(target, member, buildTeam(member), ToolExecution.builder().executionId("900")
-                .attributes(Map.of(ExecutionAttributes.MODEL_NAME, "gpt-4o")).build(), List.of());
+                .attributes(Map.of(ExecutionAttributes.MODEL_VISION, true)).build(), List.of());
         assertFalse(unsupported.getToolList().contains(ToolCatalog.READ_IMAGE));
-        assertEquals("deepseek-flash", unsupported.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.MODEL_NAME));
+        assertEquals(false, unsupported.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.MODEL_VISION));
     }
 
     @Test
@@ -282,8 +282,8 @@ class SubAgentRequestFactoryTest {
 
     private void stubModel() {
         when(settingsProvider.current()).thenReturn(Optional.empty());
-        when(modelService.runtimeConfig(anyLong(), any())).thenReturn(ModelConfig.builder()
-                .baseUrl("https://example.invalid").apiKey("k").modelName("m").build());
+        when(modelService.resolveRuntimeConfig(anyLong(), any())).thenReturn(new RuntimeModel(ModelConfig.builder()
+                .baseUrl("https://example.invalid").apiKey("k").modelName("m").build(), false));
         when(workspaceService.findByDir(anyString())).thenReturn(Result.success(null));
     }
 

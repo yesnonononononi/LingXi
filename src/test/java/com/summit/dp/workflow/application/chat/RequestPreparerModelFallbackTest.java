@@ -1,6 +1,12 @@
 package com.summit.dp.workflow.application.chat;
 
-import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
+import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.core.agent.Execution;
+import com.summit.core.agent.AgentRequest;
+import java.util.List;
+
+import com.summit.dp.tools.ToolListProcessorTestSupport;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.mcp.application.service.McpService;
@@ -73,10 +79,10 @@ class RequestPreparerModelFallbackTest {
     private final RequestPreparer preparer = new RequestPreparer(sessionService, sessionRepository,
             mock(com.summit.dp.workspace.application.service.WorkspaceService.class), modelService,
             mock(com.summit.dp.workspace.application.convert.WorkspaceConverter.class),
-            settingsProvider, mock(ToolCatalog.class),
+            settingsProvider, ToolListProcessorTestSupport.create(),
             transcriptService, modelContextService,
             chatTurnService, agentService, teamService, mcpService, new SkillRootResolver(""),
-            new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class), new VisionCapabilityResolver(""));
+            new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class));
 
     @BeforeEach
     void stubCommonPath() {
@@ -91,8 +97,8 @@ class RequestPreparerModelFallbackTest {
         when(modelContextService.find(SESSION_ID)).thenReturn(Optional.empty());
         when(mcpService.currentConfig()).thenReturn(null);
         // 每个模型 ID 一个可区分的实例，断言「实际用的是哪个模型」才不依赖桩的调用次数
-        when(modelService.runtimeConfig(anyLong(), any()))
-                .thenAnswer(inv -> modelConfig(inv.getArgument(0)));
+        when(modelService.resolveRuntimeConfig(anyLong(), any()))
+                .thenAnswer(inv -> new RuntimeModel(modelConfig(inv.getArgument(0)), false));
     }
 
     private static ModelConfig modelConfig(Long modelId) {
@@ -101,6 +107,20 @@ class RequestPreparerModelFallbackTest {
 
     private static ChatCommand command(Long modelId, Long agentId) {
         return new ChatCommand("你好", SESSION_ID, modelId, null, null, agentId, false, null, null);
+    }
+
+    @Test
+    void rootVisionSurvivesAdmissionCopiesAndReachesTheToolGate() {
+        ModelConfig connection = ModelConfig.builder().modelName("arbitrary-model").build();
+        when(modelService.resolveRuntimeConfig(eq(SETTINGS_MODEL_ID), any())).thenReturn(new RuntimeModel(connection, true));
+        RuntimeContext prepared = preparer.prepare(command(null, null));
+        assertTrue(prepared.vision());
+        RuntimeContext admitted = prepared.withTurnId(77L).withExecution(Execution.builder().id("execution")
+                .agentId("test").agentRequest(AgentRequest.builder().build()).build());
+        assertTrue(admitted.vision());
+        AgentRequest request = preparer.buildRequest("", admitted, List.of(ToolCatalog.READ_FILE));
+        assertTrue(request.getToolList().contains(ToolCatalog.READ_IMAGE));
+        assertEquals(true, request.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.MODEL_VISION));
     }
 
     private void stubAgent(Long agentId, Long presetModelId) {
@@ -131,7 +151,7 @@ class RequestPreparerModelFallbackTest {
         assertEquals(AGENT_MODEL_ID, withoutExplicit.executionContext().modelConfigId());
         RuntimeContext withExplicit = preparer.prepare(command(SETTINGS_MODEL_ID, null));
         assertEquals("model-" + AGENT_MODEL_ID, withExplicit.modelConfig().getModelName());
-        verify(modelService, never()).runtimeConfig(eq(SETTINGS_MODEL_ID), any());
+        verify(modelService, never()).resolveRuntimeConfig(eq(SETTINGS_MODEL_ID), any());
     }
 
     @Test
@@ -174,7 +194,7 @@ class RequestPreparerModelFallbackTest {
         RuntimeContext context = preparer.prepare(command(null, null));
 
         assertEquals("model-" + SETTINGS_MODEL_ID, context.modelConfig().getModelName());
-        verify(modelService, never()).runtimeConfig(eq(AGENT_MODEL_ID), any());
+        verify(modelService, never()).resolveRuntimeConfig(eq(AGENT_MODEL_ID), any());
     }
 
     @Test
@@ -186,7 +206,7 @@ class RequestPreparerModelFallbackTest {
 
         assertEquals("model-" + AGENT_MODEL_ID, context.modelConfig().getModelName());
         assertEquals(AGENT_MODEL_ID, context.executionContext().modelConfigId());
-        verify(modelService, never()).runtimeConfig(eq(SETTINGS_MODEL_ID), any());
+        verify(modelService, never()).resolveRuntimeConfig(eq(SETTINGS_MODEL_ID), any());
     }
 
     @Test
@@ -218,6 +238,6 @@ class RequestPreparerModelFallbackTest {
         RuntimeContext context = preparer.prepare(command(SETTINGS_MODEL_ID, AGENT_ID));
 
         assertEquals("model-" + SETTINGS_MODEL_ID, context.modelConfig().getModelName());
-        verify(modelService).runtimeConfig(eq(SETTINGS_MODEL_ID), any());
+        verify(modelService).resolveRuntimeConfig(eq(SETTINGS_MODEL_ID), any());
     }
 }

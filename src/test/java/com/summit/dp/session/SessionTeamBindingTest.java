@@ -1,6 +1,7 @@
 package com.summit.dp.session;
 
-import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
+import com.summit.dp.tools.ToolListProcessorTestSupport;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.model.application.vo.ModelConfigVO;
 
@@ -64,11 +65,10 @@ class SessionTeamBindingTest {
             mock(com.summit.dp.session.domain.repo.SessionRepository.class);
 
     private final RequestPreparer preparer = new RequestPreparer(sessionService, sessionRepository,
-            workspaceService, modelService, workspaceConverter, settingsProvider,
-            mock(com.summit.dp.tools.application.port.ToolCatalog.class), transcriptService, modelContextService,
+            workspaceService, modelService, workspaceConverter, settingsProvider, ToolListProcessorTestSupport.create(), transcriptService, modelContextService,
             mock(com.summit.dp.turn.application.service.ChatTurnService.class),
             agentService, teamService,
-            mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class), new VisionCapabilityResolver(""));
+            mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class));
 
     private static final long SESSION_ID = 500L;
     private static final long TEAM_ID = 3L;
@@ -89,9 +89,9 @@ class SessionTeamBindingTest {
         when(modelService.findById(anyLong())).thenAnswer(invocation -> Result.success(
                 ModelConfigVO.builder().id(invocation.getArgument(0, Long.class)).build()));
         when(modelContextService.find(SESSION_ID)).thenReturn(Optional.empty());
-        when(modelService.runtimeConfig(anyLong(), any())).thenReturn(
+        when(modelService.resolveRuntimeConfig(anyLong(), any())).thenReturn(new RuntimeModel(
                 ModelConfig.builder().baseUrl("https://example.invalid").apiKey("test-key")
-                        .modelName("test-model").build());
+                        .modelName("test-model").build(), false));
     }
 
     private RequestPreparer preparer() {

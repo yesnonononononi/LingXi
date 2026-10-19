@@ -1,6 +1,7 @@
 package com.summit.dp.tools.baseTools.sub_agent;
 
-import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
+import com.summit.dp.tools.ToolListProcessorTestSupport;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
 
@@ -93,16 +94,16 @@ class QaAsyncDelegationAdversarialTest {
 
     QaAsyncDelegationAdversarialTest() {
         lenient().when(settingsProvider.current()).thenReturn(Optional.empty());
-        lenient().when(modelService.runtimeConfig(anyLong(), any())).thenReturn(
+        lenient().when(modelService.resolveRuntimeConfig(anyLong(), any())).thenReturn(new RuntimeModel(
                 com.summit.core.conf.ModelConfig.builder()
-                        .baseUrl("https://example.invalid").apiKey("k").modelName("m").build());
+                        .baseUrl("https://example.invalid").apiKey("k").modelName("m").build(), false));
         lenient().when(workspaceService.findByDir(anyString())).thenReturn(Result.success(null));
     }
 
     /** 用「可注入提交器」构造工具：便于分别验证正常提交与「提交被拒」两条路径。 */
     private CallSubAgentTool toolWith(AsyncDelegationSubmitter submitter) {
         SubAgentRequestFactory requestFactory = new SubAgentRequestFactory(workspaceService, modelService,
-                settingsProvider, mock(WorkspaceConverter.class), new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), new VisionCapabilityResolver(""));
+                settingsProvider, mock(WorkspaceConverter.class), new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create());
         SubSessionResolver subSessionResolver = new SubSessionResolver(sessionRepository, modelContextService);
         DelegationRecorder recorder = new DelegationRecorder(chatTurnService, transcriptService);
         return new CallSubAgentTool(objectMapper, agentService, teamService, requestFactory,

@@ -37,19 +37,15 @@ public class ReadImageToolExecutor implements ToolExecutor {
     /** 已注入计数键，与注入拦截器共用。 */
     public static final String KEY_CONSUMED = "lingxi.image.consumed";
 
-    private static final String KEY_MODEL_NAME = ExecutionAttributes.MODEL_NAME;
-
     private final ObjectMapper objectMapper;
     private final ImageNormalizer normalizer;
     private final ImageCacheDirectory cache;
-    private final VisionCapabilityResolver vision;
 
     public ReadImageToolExecutor(ObjectMapper objectMapper, ImageNormalizer normalizer,
-                                 ImageCacheDirectory cache, VisionCapabilityResolver vision) {
+                                 ImageCacheDirectory cache) {
         this.objectMapper = objectMapper;
         this.normalizer = normalizer;
         this.cache = cache;
-        this.vision = vision;
     }
 
     @Override
@@ -81,7 +77,7 @@ public class ReadImageToolExecutor implements ToolExecutor {
         }
 
         Map<String, Object> attributes = toolExecution.getAttributes() == null ? Map.of() : toolExecution.getAttributes();
-        if (!vision.supports(asText(attributes.get(KEY_MODEL_NAME)))) {
+        if (!Boolean.TRUE.equals(attributes.get(ExecutionAttributes.MODEL_VISION))) {
             return failure("VISION_UNAVAILABLE", "当前模型不支持直接读取图片，请改用文字描述或换用视觉模型");
         }
         Long sessionId = ExecutionAttributes.readLong(attributes, ExecutionAttributes.SESSION_ID);
@@ -199,7 +195,4 @@ public class ReadImageToolExecutor implements ToolExecutor {
         return value == null ? 0 : value.intValue();
     }
 
-    private static String asText(Object value) {
-        return value == null ? "" : String.valueOf(value);
-    }
 }

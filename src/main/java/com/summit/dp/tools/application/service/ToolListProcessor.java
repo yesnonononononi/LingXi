@@ -1,0 +1,47 @@
+package com.summit.dp.tools.application.service;
+
+import com.summit.dp.tools.application.port.ToolCatalog;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
+/** 所有补充规则先执行，权限限制最后执行，避免后补工具绕过只读与身份约束。 */
+@Component
+@RequiredArgsConstructor
+public class ToolListProcessor {
+    private final ToolCatalog toolCatalog;
+
+    public List<String> process(List<String> configured, ToolProcessingContext context) {
+        Set<String> tools = new LinkedHashSet<>();
+        if (context.defaultAgent()) tools.addAll(ToolCatalog.DEFAULT_AGENT_TOOLS);
+        if (configured != null) {
+            configured.stream().filter(name -> name != null && !name.isBlank()).map(String::trim).forEach(tools::add);
+        }
+        if (context.member()) {
+            tools.add(ToolCatalog.SEND_MAIL_TO_AGENT);
+        } else if (context.teamId() != null && context.agentId() != null) {
+            tools.add(ToolCatalog.CALL_SUB_AGENT);
+            tools.add(ToolCatalog.SEND_MAIL_TO_AGENT);
+        }
+        if (context.mcpConfig() != null && context.mcpConfig().getMcp() != null && !context.mcpConfig().getMcp().isEmpty()) {
+            tools.add(ToolCatalog.LIST_MCP_TOOLS);
+            tools.add(ToolCatalog.SEARCH_TOOL);
+        }
+        if (context.skillRoot() != null) tools.add(ToolCatalog.READ_SKILL);
+        if (context.requirePlan()) tools.add(ToolCatalog.CREATE_PLAN);
+        if (context.vision()) tools.add(ToolCatalog.READ_IMAGE);
+        else tools.remove(ToolCatalog.READ_IMAGE);
+
+        if (!context.accessMode().allowsWriteTools()) {
+            Set<String> readOnly = toolCatalog.readOnlyNames();
+            tools.removeIf(name -> !ToolCatalog.EXECUTE_COMMAND.equals(name) && !ToolCatalog.MANAGE_COMMAND.equals(name)
+                    && !readOnly.contains(name));
+        }
+        if (context.member() || context.teamId() == null) tools.remove(ToolCatalog.CALL_SUB_AGENT);
+        if (!context.member() && context.agentId() == null) tools.remove(ToolCatalog.SEND_MAIL_TO_AGENT);
+        return List.copyOf(tools);
+    }
+}

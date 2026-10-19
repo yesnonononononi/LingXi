@@ -1,6 +1,7 @@
 package com.summit.dp.tools.baseTools.sub_agent;
 
-import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
+import com.summit.dp.tools.ToolListProcessorTestSupport;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
 
@@ -83,15 +84,15 @@ class CallSubAgentSessionReuseTest {
 
     CallSubAgentSessionReuseTest() {
         lenient().when(settingsProvider.current()).thenReturn(Optional.empty());
-        lenient().when(modelService.runtimeConfig(anyLong(), any())).thenReturn(
+        lenient().when(modelService.resolveRuntimeConfig(anyLong(), any())).thenReturn(new RuntimeModel(
                 com.summit.core.conf.ModelConfig.builder()
-                        .baseUrl("https://example.invalid").apiKey("k").modelName("m").build());
+                        .baseUrl("https://example.invalid").apiKey("k").modelName("m").build(), false));
         // 未登记的工作目录：请求组装器回落父执行时无父工作空间，解析为「无工作空间」而非失败。
         lenient().when(workspaceService.findByDir(any())).thenReturn(Result.success(null));
 
         SubSessionResolver subSessionResolver = new SubSessionResolver(sessionRepository, modelContextService);
         SubAgentRequestFactory requestFactory = new SubAgentRequestFactory(workspaceService, modelService,
-                settingsProvider, mock(WorkspaceConverter.class), new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), new VisionCapabilityResolver(""));
+                settingsProvider, mock(WorkspaceConverter.class), new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create());
         this.tool = new CallSubAgentTool(new ObjectMapper(), agentService, teamService, requestFactory,
                 subSessionResolver, registry, sessionRepository, asyncSubmitter,
                 new AsyncDelegationResultRenderer(new ObjectMapper()));

@@ -6,7 +6,9 @@ import com.summit.dp.personalization.application.convert.PersonalizationConvert;
 import com.summit.dp.personalization.application.vo.PersonalizationVO;
 import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.shared.local.LocalInstance;
-import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
+import com.summit.dp.tools.application.service.ToolListProcessor;
+import com.summit.dp.tools.application.service.ToolProcessingContext;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.turn.application.service.ChatTurnService;
@@ -20,7 +22,6 @@ import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.model.domain.ModelNoFoundException;
-import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.core.conf.McpConfig;
 import com.summit.core.conf.ModelConfig;
@@ -77,7 +78,7 @@ public class RequestPreparer {
     private final ModelService modelService;
     private final WorkspaceConverter workspaceConverter;
     private final SettingsProvider settingsProvider;
-    private final ToolCatalog toolCatalog;
+    private final ToolListProcessor toolListProcessor;
     private final ConversationTranscriptService transcriptService;
     private final ModelContextService modelContextService;
     private final ChatTurnService chatTurnService;
@@ -90,8 +91,6 @@ public class RequestPreparer {
 
     private final BusinessSystemPromptBuilder systemPromptBuilder;
     private final PersonalizationRepository personalizationRepository;
-    /** 暂按部署名单限制读图，后续由业务模型配置声明能力。 */
-    private final VisionCapabilityResolver visionCapabilityResolver;
 
     /**
      * 解析本轮生效的模型：显式 modelId → 单例设置 {@code user_configs.model_id} → 无则报错。
@@ -99,9 +98,9 @@ public class RequestPreparer {
      * <p>{@code lingxi.agent.model.conf.*} 已归框架侧（生产 {@code chatModelConfig} 等 bean），
      * 业务侧不再读取，因此取消 YAML 兜底分支。</p>
      */
-    private ModelConfig rootModel(Long modelId, SettingsView settings) {
+    private RuntimeModel rootModel(Long modelId, SettingsView settings) {
         Long selected = modelId != null ? modelId : settings == null ? null : settings.modelId();
-        if (selected != null) return modelService.runtimeConfig(selected, settings);
+        if (selected != null) return modelService.resolveRuntimeConfig(selected, settings);
         throw new ClientException("未配置可用的模型连接");
     }
 
@@ -194,6 +193,7 @@ public class RequestPreparer {
         ExecutionContext executionContext = ExecutionContext.root(
                 preparedSessionId, executionId, workspaceId, effective.modelId(), mode, policy);
 
+        RuntimeModel runtimeModel = rootModel(effective.modelId(), settings);
         return new RuntimeContext(
                 executionContext,
                 effective.agentId(),
@@ -203,13 +203,14 @@ public class RequestPreparer {
                 session,
                 messageList,
                 spec,
-                // 根任务保留显式模型、设置模型和 YAML 缺省的优先级。
-                rootModel(effective.modelId(), settings),
+                // 模型连接与识图声明来自同一份配置快照。
+                runtimeModel.config(),
                 mode,
                 policy,
                 effective.requirePlan(),
                 // 用户消息此刻**还没有落库**：调用方先取运行资格，再调 commitUserMessage。
-                userMessageEntity
+                userMessageEntity,
+                runtimeModel.vision()
         );
     }
 
@@ -362,6 +363,10 @@ public class RequestPreparer {
     }
 
     public AgentRequest buildRequest(String agentPrompt, RuntimeContext context, List<String> toolList) {
+        return buildRequest(agentPrompt, context, toolList, false);
+    }
+
+    public AgentRequest buildRequest(String agentPrompt, RuntimeContext context, List<String> toolList, boolean defaultAgent) {
         // 执行身份在 prepare 阶段已生成（HC-2 执行链身份闭环）：用户消息、执行记录、
         // 框架执行实例共用同一个 executionId，不再在这里另生成一个。
         String executionId = context.executionContext().executionId();
@@ -387,7 +392,11 @@ public class RequestPreparer {
                 .messages(context.messageList())
                 .systemPrompt(systemPromptBuilder.buildRootPrompt(agentPrompt, personalization))
                 .workspaceSpec(context.workspace())
-                .toolList(resolveToolList(toolList, context, mcpConfig, skillRoot))
+                .toolList(toolListProcessor.process(toolList, ToolProcessingContext.builder()
+                        .defaultAgent(defaultAgent)
+                        .agentId(context.agentId()).teamId(context.teamId()).vision(context.vision())
+                        .accessMode(context.accessMode()).requirePlan(context.requirePlan())
+                        .mcpConfig(mcpConfig).skillRoot(skillRoot).build()))
                 .modelConfig(context.modelConfig())
                 .mcpConfig(mcpConfig)
                 .skillConfig(skillRoot == null ? null : new SkillConfig(skillRoot))
@@ -438,94 +447,6 @@ public class RequestPreparer {
     }
 
     /**
-     * 请求级工具白名单。
-     *
-     * <p>框架语义：名单即授权，{@code null} 与空清单等价，都表示不暴露任何静态工具。</p>
-     *
-     * <p>业务语义：带了 {@code mcpConfig} 就兜底 {@link ToolCatalog#LIST_MCP_TOOLS} 与
-     * {@link ToolCatalog#SEARCH_TOOL}。MCP 工具名要等握手后才存在，无法预先进清单；模型先用清单入口
-     * 按服务名看清有哪些工具（不含 schema），再用检索入口取回 schema，取回后框架才把该工具放进
-     * 下一轮可见清单（披露账本在框架侧 {@code McpToolScope}）。</p>
-     *
-     * <p>Skill 正文同理兜底 {@link ToolCatalog#READ_SKILL}：框架渲染的「## Skill Prompt」只给出
-     * 名称、描述与入口路径，读正文与引用资源全靠这个工具；名单即授权，不补就等于提示词里说了
-     * 一件模型做不到的事。</p>
-     *
-     * <p>顺序固定为「收敛原清单 → 补 MCP 两级入口与 requirePlan 与 read_skill → 只读过滤 → 身份剔除」；
-     * 只读滤网必须最后执行，否则 requirePlan 追加的工具会绕过滤网。补进去的 {@code read_skill}
-     * 自带 {@code ConcurrentPolicy.READ_ONLY}，能通过只读滤网。</p>
-     */
-    private List<String> resolveToolList(List<String> tools, RuntimeContext context, McpConfig mcpConfig, Path skillRoot) {
-        final boolean readOnly = !context.accessMode().allowsWriteTools();
-
-        List<String> result = new ArrayList<>(tools == null ? List.of() : tools);
-
-        // MCP 在场时兜底两级入口：先按服务名清单（不带 schema），再按关键字检索（带 schema 并揭露）。
-        if (mcpConfigured(mcpConfig)) {
-            if (!result.contains(ToolCatalog.LIST_MCP_TOOLS)) {
-                result.add(ToolCatalog.LIST_MCP_TOOLS);
-            }
-            if (!result.contains(ToolCatalog.SEARCH_TOOL)) {
-                result.add(ToolCatalog.SEARCH_TOOL);
-            }
-        }
-
-        if (skillRoot != null && !result.contains(ToolCatalog.READ_SKILL)) {
-            result.add(ToolCatalog.READ_SKILL);
-        }
-
-        if (context.requirePlan() && !result.contains(ToolCatalog.CREATE_PLAN)) {
-            result.add(ToolCatalog.CREATE_PLAN);
-        }
-
-        // 只读档禁用编辑工具；终端保留，命令的写入副作用不在此档位保证范围内。
-        if (readOnly) {
-            Set<String> permitted = toolCatalog.readOnlyNames();
-            result.removeIf(name -> name == null || (!ToolCatalog.EXECUTE_COMMAND.equals(name.trim())
-                    && !ToolCatalog.MANAGE_COMMAND.equals(name.trim())
-                    && !permitted.contains(name.trim())));
-        }
-        String modelName = context.modelConfig() == null ? null : context.modelConfig().getModelName();
-        return withoutUnusableCollaborationTools(visionCapabilityResolver.filterTools(result, modelName), context);
-    }
-
-    /** 本次请求是否声明了可用的 MCP 服务；空配置与无配置一视同仁。 */
-    private static boolean mcpConfigured(McpConfig mcpConfig) {
-        return mcpConfig != null && mcpConfig.getMcp() != null && !mcpConfig.getMcp().isEmpty();
-    }
-
-    /**
-     * 剔除当前执行身份用不了的协作工具：{@code call_sub_agent} 需 TEAM_ID、{@code send_mail_to_agent}
-     * 需 AGENT_ID，不满足时调用必然失败。与其让模型看到后在运行时收到「未绑定」报错、白白消耗轮次，
-     * 不如直接从可见清单里去掉。
-     */
-    private List<String> withoutUnusableCollaborationTools(List<String> tools, RuntimeContext context) {
-        if (tools == null || tools.isEmpty()) {
-            return tools;
-        }
-        boolean teamBound = context.teamId() != null;
-        boolean agentBound = context.agentId() != null;
-        if (teamBound && agentBound) {
-            return tools;
-        }
-        return tools.stream()
-                .filter(name -> {
-                    if (name == null) {
-                        return false;
-                    }
-                    String trimmed = name.trim();
-                    if (ToolCatalog.CALL_SUB_AGENT.equals(trimmed)) {
-                        return teamBound;
-                    }
-                    if (ToolCatalog.SEND_MAIL_TO_AGENT.equals(trimmed)) {
-                        return agentBound;
-                    }
-                    return true;
-                })
-                .toList();
-    }
-
-    /**
      * 随请求下行的不透明属性：框架只搬运，由业务侧的准入策略与循环钩子解释。
      *
      * <p>执行身份（SESSION_ID / ROOT_EXECUTION_ID / WORKSPACE_ID / MODEL_CONFIG_ID / 两个档位）
@@ -540,10 +461,7 @@ public class RequestPreparer {
         if (context.teamId() != null) {
             attributes.put(ExecutionAttributes.TEAM_ID, context.teamId().toString());
         }
-        // 暴露与执行使用同一模型快照，不能从全局默认模型反推。
-        if (context.modelConfig() != null && context.modelConfig().getModelName() != null) {
-            attributes.put(ExecutionAttributes.MODEL_NAME, context.modelConfig().getModelName());
-        }
+        attributes.put(ExecutionAttributes.MODEL_VISION, context.vision());
         return Map.copyOf(attributes);
     }
 

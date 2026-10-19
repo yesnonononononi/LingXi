@@ -5,6 +5,7 @@ import com.summit.ddd.application.vo.PageResult;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.model.application.command.ModelConfigCommand;
 import com.summit.dp.model.application.vo.ModelConfigVO;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.model.domain.ModelNoFoundException;
 import com.summit.dp.model.domain.model.ModelConfig;
 import com.summit.dp.model.domain.repo.ModelConfigRepository;
@@ -89,30 +90,19 @@ public class ModelServiceImpl implements ModelService {
 
     @Override
     public com.summit.core.conf.ModelConfig runtimeConfig(Long id,SettingsView settings) {
-        if (id == null) throw new ClientException("未配置可用的模型连接");
+        return resolveRuntimeConfig(id, settings).config();
+    }
 
-        ModelConfig model = modelConfigRepository.findById(id).orElseThrow(ModelNoFoundException::new);
+    @Override
+    public RuntimeModel resolveRuntimeConfig(Long id, SettingsView settings) {
+        throwIf(id == null, "未配置可用的模型连接");
 
-        if (model.getBaseUrl() == null || model.getBaseUrl().isBlank()
+        ModelConfig model = modelConfigRepository.findById(id).orElseThrow(ClientException::new);
+
+        throwIf(model.getBaseUrl() == null || model.getBaseUrl().isBlank()
                 || model.getApiKey() == null || model.getApiKey().isBlank()
-                || model.getModelName() == null || model.getModelName().isBlank()) {
-            throw new ClientException("模型连接配置不完整: " + id);
-        }
-        // 思考开关未显式配置时走 ModelConfig 缺省（false）；如需用户级控制，后续在 SettingsView 增字段。
-        com.summit.core.conf.ModelConfig.ModelConfigBuilder builder = com.summit.core.conf.ModelConfig.builder()
-                .baseUrl(model.getBaseUrl())
-                .apiKey(model.getApiKey())
-                .modelName(model.getModelName())
-                .returnThinking(true)
-                .sendThinking(true)
-                .provider(model.getProvider());
-
-
-        if (settings != null) {
-            builder.maxTokens(settings.maxTokens())
-                    .reasoningEffort(settings.reasoningEffort());
-        }
-        return builder.build();
+                || model.getModelName() == null || model.getModelName().isBlank(), "模型连接配置不完整: " + id);
+        return RuntimeModel.create(model.getBaseUrl(), model.getApiKey(), model.getModelName(), model.getProvider(), model.isVision(), settings);
     }
 
     /** 接口固定返回前 20% + *** + 后 20%，配置状态依据数据库原值。 */

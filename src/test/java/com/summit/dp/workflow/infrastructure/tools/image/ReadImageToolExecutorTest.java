@@ -42,13 +42,23 @@ import static org.mockito.Mockito.verify;
 /** {@code read_image} 的边界、格式判定与字节读取口径。 */
 class ReadImageToolExecutorTest {
 
-    private static final String VISION_MODEL = "claude-opus-4-7";
     private static final long SESSION_ID = 42L;
 
     private final ObjectMapper mapper = new ObjectMapper();
     private final ImageNormalizer normalizer = new ImageNormalizer();
     @TempDir Path dataDir;
     @TempDir Path workspaceRoot;
+
+    @Test
+    void missingOrStringVisionDeclarationsDoNotAuthorizeImageInput() throws Exception {
+        ToolExecution execution = execution(localWorkspace(), "shot.png", true);
+        Map<String, Object> attributes = new HashMap<>(execution.getAttributes());
+        attributes.remove(ExecutionAttributes.MODEL_VISION);
+        execution.setAttributes(attributes);
+        assertEquals("VISION_UNAVAILABLE", reason(executor().execute(execution)));
+        attributes.put(ExecutionAttributes.MODEL_VISION, "true");
+        assertEquals("VISION_UNAVAILABLE", reason(executor().execute(execution)));
+    }
 
     @Test
     void invalidArgumentsReturnFailures() throws Exception {
@@ -68,7 +78,7 @@ class ReadImageToolExecutorTest {
         linkDirectory(link, outside);
         try {
             assertEquals("OUTSIDE_WORKSPACE", reason(executor().execute(
-                    execution(localWorkspace(), "linked/secret.png", VISION_MODEL))));
+                    execution(localWorkspace(), "linked/secret.png", true))));
         } finally {
             Files.delete(link);
         }
@@ -80,7 +90,7 @@ class ReadImageToolExecutorTest {
         Path alias = dataDir.resolve("workspace-alias");
         linkDirectory(alias, workspaceRoot);
         try {
-            ToolExecuteResult result = executor().execute(execution(new LocalWorkspace("alias", alias.toString()), "shot.png", VISION_MODEL));
+            ToolExecuteResult result = executor().execute(execution(new LocalWorkspace("alias", alias.toString()), "shot.png", true));
             assertTrue(result.isSuccess(), result.getToolOutput());
         } finally {
             Files.delete(alias);
@@ -105,7 +115,7 @@ class ReadImageToolExecutorTest {
         byte[] truncated = Arrays.copyOf(png(8, 8), 33);
         assertEquals(new ImageNormalizer.ImageSize(8, 8), normalizer.probe(truncated));
         Files.write(workspaceRoot.resolve("broken.png"), truncated);
-        assertEquals("READ_FAILED", reason(executor().execute(execution(localWorkspace(), "broken.png", VISION_MODEL))));
+        assertEquals("READ_FAILED", reason(executor().execute(execution(localWorkspace(), "broken.png", true))));
     }
 
     @Test
@@ -120,12 +130,12 @@ class ReadImageToolExecutorTest {
         when(workspace.bridge()).thenReturn(bridge);
         when(bridge.files()).thenReturn(files);
         when(files.readBytes(image)).thenReturn(new byte[(int) ReadImageToolExecutor.MAX_BYTES + 1]);
-        assertEquals("FILE_TOO_LARGE", reason(executor().execute(execution(workspace, "growing.png", VISION_MODEL))));
+        assertEquals("FILE_TOO_LARGE", reason(executor().execute(execution(workspace, "growing.png", true))));
     }
 
     @Test
     void exhaustedBudgetStopsBeforeImageDecoding() throws Exception {
-        ToolExecution execution = execution(localWorkspace(), "unused.png", VISION_MODEL);
+        ToolExecution execution = execution(localWorkspace(), "unused.png", true);
         Map<String, Object> attributes = new HashMap<>(execution.getAttributes());
         attributes.put(ReadImageToolExecutor.KEY_CONSUMED, 4);
         execution.setAttributes(attributes);
@@ -139,7 +149,7 @@ class ReadImageToolExecutorTest {
         // 金丝雀：这份素材确实是二进制，按字符集读会直接失败 —— 否则本用例证明不了任何事。
         assertThrows(IOException.class, () -> Files.readString(image, StandardCharsets.UTF_8));
 
-        ToolExecuteResult result = executor().execute(execution(localWorkspace(), "shot.png", VISION_MODEL));
+        ToolExecuteResult result = executor().execute(execution(localWorkspace(), "shot.png", true));
 
         assertTrue(result.isSuccess(), () -> result.getToolOutput());
         JsonNode receipt = mapper.readTree(result.getToolOutput());
@@ -157,7 +167,7 @@ class ReadImageToolExecutorTest {
         when(workspace.resolve("../outside.png")).thenReturn(outside);
         when(workspace.encloses(outside)).thenReturn(false);
 
-        ToolExecuteResult result = executor().execute(execution(workspace, "../outside.png", VISION_MODEL));
+        ToolExecuteResult result = executor().execute(execution(workspace, "../outside.png", true));
 
         assertFalse(result.isSuccess());
         assertEquals("OUTSIDE_WORKSPACE", reason(result));
@@ -167,7 +177,7 @@ class ReadImageToolExecutorTest {
     void sniffsMagicInsteadOfExtension() throws Exception {
         Files.writeString(workspaceRoot.resolve("fake.png"), "not an image at all", StandardCharsets.UTF_8);
 
-        ToolExecuteResult result = executor().execute(execution(localWorkspace(), "fake.png", VISION_MODEL));
+        ToolExecuteResult result = executor().execute(execution(localWorkspace(), "fake.png", true));
 
         assertFalse(result.isSuccess());
         assertEquals("NOT_AN_IMAGE", reason(result));
@@ -180,7 +190,7 @@ class ReadImageToolExecutorTest {
         System.arraycopy("WEBP".getBytes(StandardCharsets.US_ASCII), 0, webp, 8, 4);
         Files.write(workspaceRoot.resolve("photo.webp"), webp);
 
-        ToolExecuteResult result = executor().execute(execution(localWorkspace(), "photo.webp", VISION_MODEL));
+        ToolExecuteResult result = executor().execute(execution(localWorkspace(), "photo.webp", true));
 
         assertFalse(result.isSuccess());
         assertEquals("UNSUPPORTED_FORMAT", reason(result));
@@ -192,9 +202,9 @@ class ReadImageToolExecutorTest {
         ImageNormalizer oversized = mock(ImageNormalizer.class);
         when(oversized.probe(any())).thenReturn(new ImageNormalizer.ImageSize(30_000, 30_000));
         ReadImageToolExecutor executor = new ReadImageToolExecutor(
-                mapper, oversized, new ImageCacheDirectory(dataDir.toString()), vision());
+                mapper, oversized, new ImageCacheDirectory(dataDir.toString()));
 
-        ToolExecuteResult result = executor.execute(execution(localWorkspace(), "huge.png", VISION_MODEL));
+        ToolExecuteResult result = executor.execute(execution(localWorkspace(), "huge.png", true));
 
         assertFalse(result.isSuccess());
         assertEquals("PIXEL_BOMB", reason(result));
@@ -205,7 +215,7 @@ class ReadImageToolExecutorTest {
     void refusesNonVisionModel() throws Exception {
         Files.write(workspaceRoot.resolve("shot.png"), png(8, 8));
 
-        ToolExecuteResult result = executor().execute(execution(localWorkspace(), "shot.png", "deepseek-flash"));
+        ToolExecuteResult result = executor().execute(execution(localWorkspace(), "shot.png", false));
 
         assertFalse(result.isSuccess());
         assertEquals("VISION_UNAVAILABLE", reason(result));
@@ -225,7 +235,7 @@ class ReadImageToolExecutorTest {
         when(bridge.files()).thenReturn(files);
         when(files.readBytes(image)).thenThrow(new IOException("MXC file operation failed"));
 
-        ToolExecuteResult result = executor().execute(execution(workspace, "remote.png", VISION_MODEL));
+        ToolExecuteResult result = executor().execute(execution(workspace, "remote.png", true));
 
         assertFalse(result.isSuccess());
         assertEquals("SANDBOX_UNREADABLE", reason(result));
@@ -241,7 +251,7 @@ class ReadImageToolExecutorTest {
     }
 
     private ReadImageToolExecutor executor() {
-        return new ReadImageToolExecutor(mapper, normalizer, new ImageCacheDirectory(dataDir.toString()), vision());
+        return new ReadImageToolExecutor(mapper, normalizer, new ImageCacheDirectory(dataDir.toString()));
     }
 
     private void linkDirectory(Path link, Path target) throws Exception {
@@ -255,18 +265,14 @@ class ReadImageToolExecutorTest {
         }
     }
 
-    private VisionCapabilityResolver vision() {
-        return new VisionCapabilityResolver("claude-*");
-    }
-
     private Workspace localWorkspace() {
         return new LocalWorkspace("test-workspace", workspaceRoot.toString());
     }
 
-    private ToolExecution execution(Workspace workspace, String path, String modelName) throws Exception {
+    private ToolExecution execution(Workspace workspace, String path, boolean vision) throws Exception {
         Map<String, Object> attributes = new HashMap<>();
         attributes.put(ExecutionAttributes.SESSION_ID, String.valueOf(SESSION_ID));
-        attributes.put(ExecutionAttributes.MODEL_NAME, modelName);
+        attributes.put(ExecutionAttributes.MODEL_VISION, vision);
         return ToolExecution.builder()
                 .workspace(workspace)
                 .args(mapper.writeValueAsString(ReadImageRequest.builder().path(path).build()))
