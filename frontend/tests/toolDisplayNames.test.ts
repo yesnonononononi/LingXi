@@ -14,6 +14,7 @@ test('每个固定工具都有完整名与渲染名', async () => {
     assert.notEqual(entry.fullName, name);
   }
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.ReadFile) }, { fullName: '读取文件', renderName: '读取' });
+  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.ReadImage) }, { fullName: '读取图片', renderName: '读取' });
   // web_search 渲染名独立成「检索网络资源」，不再复用 READ 分类文案（「读取」会让人以为是读文件）
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.WebSearch) }, { fullName: '网页搜索', renderName: '检索网络资源' });
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.EditFile) }, { fullName: '编辑文件', renderName: '写入' });

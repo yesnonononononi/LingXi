@@ -26,6 +26,7 @@ import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.shared.vo.WorkspaceVO;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
+import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import lombok.RequiredArgsConstructor;
@@ -57,6 +58,7 @@ public class SubAgentRequestFactory {
     /** Skill 根目录：子执行的 skillConfig 与 read_skill 都由它决定是否下发。 */
     private final SkillRootResolver skillRootResolver;
     private final BusinessSystemPromptBuilder systemPromptBuilder;
+    private final VisionCapabilityResolver visionCapabilityResolver;
 
     /**
      * 组装子执行请求。
@@ -107,10 +109,11 @@ public class SubAgentRequestFactory {
                 .modelConfig(childModel)
                 .executionId(String.valueOf(IdUtil.getSnowflakeNextId()))
                 .runtimeParameters(AgentRuntimeParameters.builder()
-                        .attributes(childAttributes(subAgent, toolExecution, subSessionId))
+                        .attributes(childAttributes(subAgent, toolExecution, subSessionId, childModel))
                         .build())
                 .systemPrompt(systemPromptBuilder.buildMemberPrompt(subAgent, team, argument.getPrompt()))
-                .toolList(memberTools(subAgent.getToolList(), skillRoot, accessMode))
+                .toolList(visionCapabilityResolver.filterTools(
+                        memberTools(subAgent.getToolList(), skillRoot, accessMode), childModel.getModelName()))
                 .skillConfig(skillRoot == null ? null : new SkillConfig(skillRoot))
                 .task(List.of(task))
                 .build();
@@ -145,10 +148,15 @@ public class SubAgentRequestFactory {
      * <p>注意：子执行拿到 {@code TEAM_ID} 之后，「靠属性缺失拦住二次委派」这层保险就不存在了 ——
      * 真正的守卫是 {@link #memberTools} 把 {@code call_sub_agent} 从子执行工具清单里剔除。</p>
      */
-    private Map<String, Object> childAttributes(AgentVO subAgent, ToolExecution toolExecution, String subSessionId) {
+    private Map<String, Object> childAttributes(AgentVO subAgent, ToolExecution toolExecution, String subSessionId,
+                                               ModelConfig childModel) {
         Map<String, Object> attributes = new HashMap<>(AgentAccessMode.toAttributes(AgentAccessMode.from(toolExecution.getAttributes())));
 
         attributes.put(ExecutionAttributes.SESSION_ID, subSessionId);
+        // 子执行独立选模型，不能继承指挥者的视觉能力判断。
+        if (childModel.getModelName() != null) {
+            attributes.put(ExecutionAttributes.MODEL_NAME, childModel.getModelName());
+        }
 
         attributes.put(ExecutionAttributes.AGENT_ID, subAgent.getId().toString());
 

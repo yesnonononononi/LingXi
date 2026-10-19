@@ -6,6 +6,7 @@ import com.summit.dp.personalization.application.convert.PersonalizationConvert;
 import com.summit.dp.personalization.application.vo.PersonalizationVO;
 import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.shared.local.LocalInstance;
+import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.turn.application.service.ChatTurnService;
@@ -89,6 +90,8 @@ public class RequestPreparer {
 
     private final BusinessSystemPromptBuilder systemPromptBuilder;
     private final PersonalizationRepository personalizationRepository;
+    /** 暂按部署名单限制读图，后续由业务模型配置声明能力。 */
+    private final VisionCapabilityResolver visionCapabilityResolver;
 
     /**
      * 解析本轮生效的模型：显式 modelId → 单例设置 {@code user_configs.model_id} → 无则报错。
@@ -482,7 +485,8 @@ public class RequestPreparer {
                     && !ToolCatalog.MANAGE_COMMAND.equals(name.trim())
                     && !permitted.contains(name.trim())));
         }
-        return withoutUnusableCollaborationTools(result, context);
+        String modelName = context.modelConfig() == null ? null : context.modelConfig().getModelName();
+        return withoutUnusableCollaborationTools(visionCapabilityResolver.filterTools(result, modelName), context);
     }
 
     /** 本次请求是否声明了可用的 MCP 服务；空配置与无配置一视同仁。 */
@@ -535,6 +539,10 @@ public class RequestPreparer {
         }
         if (context.teamId() != null) {
             attributes.put(ExecutionAttributes.TEAM_ID, context.teamId().toString());
+        }
+        // 暴露与执行使用同一模型快照，不能从全局默认模型反推。
+        if (context.modelConfig() != null && context.modelConfig().getModelName() != null) {
+            attributes.put(ExecutionAttributes.MODEL_NAME, context.modelConfig().getModelName());
         }
         return Map.copyOf(attributes);
     }

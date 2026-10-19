@@ -1,5 +1,6 @@
 package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
+import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
 
@@ -53,7 +54,7 @@ class SubAgentWorkspaceResolutionTest {
     private final WorkspaceConverter workspaceConverter = mock(WorkspaceConverter.class);
 
     private final SubAgentRequestFactory factory = new SubAgentRequestFactory(
-            workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""));
+            workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), new VisionCapabilityResolver(""));
 
     @BeforeEach
     void stubModel() {

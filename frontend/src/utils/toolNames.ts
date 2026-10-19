@@ -21,6 +21,8 @@
 export const AgentToolName = {
   /** 读文件（可带 startLine / endLine 行范围） */
   ReadFile: 'read_file',
+  /** 读取工作区图片 */
+  ReadImage: 'read_image',
   /** 编辑文件（结果携带 plusLines / minusLines） */
   EditFile: 'edit_file',
   /** 终端命令 */

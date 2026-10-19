@@ -1,5 +1,6 @@
 package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
+import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
 
@@ -58,7 +59,7 @@ class SubAgentRequestFactoryTest {
 
     /** Skill 关闭（空配置）时的组装器：本类多数用例的基线。 */
     private final SubAgentRequestFactory factory = new SubAgentRequestFactory(
-            workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""));
+            workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), new VisionCapabilityResolver(""));
 
     @TempDir
     Path skillDir;
@@ -66,7 +67,29 @@ class SubAgentRequestFactoryTest {
     /** Skill 开启时的组装器：根目录指向一个真实存在的临时目录。 */
     private SubAgentRequestFactory factoryWithSkills() {
         return new SubAgentRequestFactory(workspaceService, modelService, settingsProvider,
-                workspaceConverter, new SkillRootResolver(skillDir.toString()), new BusinessSystemPromptBuilder(""));
+                workspaceConverter, new SkillRootResolver(skillDir.toString()), new BusinessSystemPromptBuilder(""), new VisionCapabilityResolver(""));
+    }
+
+    @Test
+    void imageCapabilityUsesTheChildModelRatherThanTheParentModel() {
+        stubModel();
+        SubAgentRequestFactory target = new SubAgentRequestFactory(workspaceService, modelService, settingsProvider,
+                workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""),
+                new VisionCapabilityResolver("gpt-4o*"));
+        AgentVO member = agent(6L, "图片评审员", "检查图片");
+        member.setToolList(List.of(ToolCatalog.READ_IMAGE));
+        ToolExecution parent = ToolExecution.builder().executionId("900")
+                .attributes(Map.of(ExecutionAttributes.MODEL_NAME, "deepseek-flash")).build();
+        when(modelService.runtimeConfig(anyLong(), any())).thenReturn(ModelConfig.builder().modelName("gpt-4o").build());
+        AgentRequest supported = build(target, member, buildTeam(member), parent, List.of());
+        assertTrue(supported.getToolList().contains(ToolCatalog.READ_IMAGE));
+        assertEquals("gpt-4o", supported.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.MODEL_NAME));
+
+        when(modelService.runtimeConfig(anyLong(), any())).thenReturn(ModelConfig.builder().modelName("deepseek-flash").build());
+        AgentRequest unsupported = build(target, member, buildTeam(member), ToolExecution.builder().executionId("900")
+                .attributes(Map.of(ExecutionAttributes.MODEL_NAME, "gpt-4o")).build(), List.of());
+        assertFalse(unsupported.getToolList().contains(ToolCatalog.READ_IMAGE));
+        assertEquals("deepseek-flash", unsupported.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.MODEL_NAME));
     }
 
     @Test
@@ -78,7 +101,7 @@ class SubAgentRequestFactoryTest {
         for (AgentAccessMode mode : List.of(AgentAccessMode.READ_ONLY_IN_WORKSPACE, AgentAccessMode.IN_WORKSPACE)) {
             ToolExecution parent = ToolExecution.builder().executionId("900")
                     .attributes(AgentAccessMode.toAttributes(mode)).build();
-            AgentRequest request = build(member, teamOf(member), parent);
+            AgentRequest request = build(member, buildTeam(member), parent);
             assertEquals(mode, AgentAccessMode.from(request.runtimeParametersOrDefault().getAttributes()));
             assertEquals(mode.allowsWriteTools(), request.getToolList().contains(ToolCatalog.EDIT_FILE));
             assertTrue(request.getToolList().contains(ToolCatalog.EXECUTE_COMMAND));
@@ -170,7 +193,7 @@ class SubAgentRequestFactoryTest {
         stubModel();
 
         AgentVO member = agent(6L, "架构师", "你是架构师");
-        AgentRequest request = build(member, teamOf(member), parentToolExecution(), List.of());
+        AgentRequest request = build(member, buildTeam(member), parentToolExecution(), List.of());
 
         List<Message> messages = request.getMessages();
         assertEquals(1, messages.size());
@@ -187,7 +210,7 @@ class SubAgentRequestFactoryTest {
                 UserMessageEntity.from("上次的任务"),
                 UserMessageEntity.from("上次的追问"));
 
-        AgentRequest request = build(member, teamOf(member), parentToolExecution(), prior);
+        AgentRequest request = build(member, buildTeam(member), parentToolExecution(), prior);
 
         List<Message> messages = request.getMessages();
         assertEquals(3, messages.size(), "历史两条 + 本次任务一条");
@@ -203,7 +226,7 @@ class SubAgentRequestFactoryTest {
         member.setModelId(null);
 
         org.junit.jupiter.api.Assertions.assertThrows(com.summit.dp.shared.exception.ClientException.class,
-                () -> build(member, teamOf(member), parentToolExecution(), List.of()));
+                () -> build(member, buildTeam(member), parentToolExecution(), List.of()));
     }
 
     @Test
@@ -212,7 +235,7 @@ class SubAgentRequestFactoryTest {
         stubModel();
 
         AgentVO member = agent(6L, "架构师", "你是架构师");
-        TeamVO team = teamOf(member);
+        TeamVO team = buildTeam(member);
 
         // 开启：框架按请求级 skillConfig 渲染 Skill 提示词，正文只能靠 read_skill 取回 ——
         // 名单即授权，不补工具就等于提示词里说了件模型做不到的事。
@@ -246,7 +269,7 @@ class SubAgentRequestFactoryTest {
         return target.build(argument, member, team, toolExecution, null, "1234", null, priorMessages);
     }
 
-    private static TeamVO teamOf(AgentVO member) {
+    private static TeamVO buildTeam(AgentVO member) {
         return TeamVO.builder().id(3L).commanderAgentId(5L).agents(List.of(member)).build();
     }
 

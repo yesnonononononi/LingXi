@@ -1,5 +1,7 @@
 package com.summit.dp.shared.utils;
 
+import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
+
 import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.personalization.domain.model.Personalization;
 import com.summit.dp.personalization.domain.model.ReplyStyle;
@@ -90,7 +92,7 @@ class RequestPreparerExecutionIdentityTest {
     private final RequestPreparer preparer = new RequestPreparer(sessionService, sessionRepository,
             workspaceService, modelService, workspaceConverter, settingsProvider, toolCatalog,
             transcriptService, modelContextService,
-            chatTurnService, agentService, teamService, mcpService, new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder("全局规则"), personalizationRepository);
+            chatTurnService, agentService, teamService, mcpService, new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder("全局规则"), personalizationRepository, new VisionCapabilityResolver(""));
 
     @Test
     void requestReadsLatestPreferencesAndKeepsThemBeforeTeamPrompt() {

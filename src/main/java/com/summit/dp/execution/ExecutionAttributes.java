@@ -9,6 +9,8 @@ public final class ExecutionAttributes {
     public static final String ROOT_SESSION_ID = "lingxi.root_session_id";
     public static final String AGENT_ID = "lingxi.agent_id";
     public static final String MODEL_CONFIG_ID = "lingxi.model_config_id";
+    /** 本次生效的模型名，供读图工具复核部署名单。 */
+    public static final String MODEL_NAME = "lingxi.model_name";
     public static final String WORKSPACE_ID = "lingxi.workspace_id";
     public static final String ROOT_EXECUTION_ID = "lingxi.root_execution_id";
     public static final String TEAM_ID = "lingxi.team_id";

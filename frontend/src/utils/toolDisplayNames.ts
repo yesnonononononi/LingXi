@@ -19,6 +19,7 @@ function defineToolName(chinese: string, english: string, renderKey: string): To
 /** 完整名用于工具配置，短渲染名用于流式调用展示；键始终是后端工具标识。 */
 export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = new Map([
   [AgentToolName.ReadFile, defineToolName('读取文件', 'Read file', 'tool.category.read')],
+  [AgentToolName.ReadImage, defineToolName('读取图片', 'Read image', 'tool.category.read')],
   [AgentToolName.EditFile, defineToolName('编辑文件', 'Edit file', 'tool.category.write')],
   [AgentToolName.ExecuteCommand, defineToolName('执行命令', 'Execute command', 'tool.category.command')],
   [AgentToolName.ManageCommand, defineToolName('管理后台命令', 'Manage background commands', 'tool.category.backgroundCommand')],

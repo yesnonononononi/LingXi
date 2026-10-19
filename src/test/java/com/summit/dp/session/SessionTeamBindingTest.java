@@ -1,5 +1,6 @@
 package com.summit.dp.session;
 
+import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.model.application.vo.ModelConfigVO;
 
@@ -67,7 +68,7 @@ class SessionTeamBindingTest {
             mock(com.summit.dp.tools.application.port.ToolCatalog.class), transcriptService, modelContextService,
             mock(com.summit.dp.turn.application.service.ChatTurnService.class),
             agentService, teamService,
-            mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class));
+            mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class), new VisionCapabilityResolver(""));
 
     private static final long SESSION_ID = 500L;
     private static final long TEAM_ID = 3L;

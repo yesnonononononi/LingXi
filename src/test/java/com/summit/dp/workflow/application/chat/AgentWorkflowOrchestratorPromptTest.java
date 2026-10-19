@@ -1,5 +1,7 @@
 package com.summit.dp.workflow.application.chat;
 
+import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
+
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.Message;
@@ -59,7 +61,7 @@ class AgentWorkflowOrchestratorPromptTest {
             mock(ToolCatalog.class), mock(ConversationTranscriptService.class), mock(ModelContextService.class),
             mock(ChatTurnService.class), agentService, teamService, mock(McpService.class),
             new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder("全局规则"),
-            personalizationRepository);
+            personalizationRepository, new VisionCapabilityResolver(""));
     private final AgentWorkflowOrchestratorImpl orchestrator = new AgentWorkflowOrchestratorImpl(
             subAgent, teamService, preparer, agentService, chatAgent);
 
@@ -82,7 +84,8 @@ class AgentWorkflowOrchestratorPromptTest {
         assertSame(context.pendingUserMessage(), request.getMessages().getLast());
         assertEquals(input, request.getMessages().getLast().text());
         assertEquals(1L, request.getMessages().stream().filter(message -> input.equals(message.text())).count());
-        assertEquals(ToolCatalog.DEFAULT_AGENT_TOOLS, request.getToolList());
+        assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE,
+                ToolCatalog.EDIT_FILE, ToolCatalog.WEB_SEARCH, ToolCatalog.REQUIRE_CHOICE), request.getToolList());
         verifyNoInteractions(subAgent, agentService, teamService);
     }
 

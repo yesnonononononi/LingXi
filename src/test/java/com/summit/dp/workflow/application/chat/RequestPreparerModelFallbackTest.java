@@ -1,5 +1,6 @@
 package com.summit.dp.workflow.application.chat;
 
+import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.mcp.application.service.McpService;
@@ -75,7 +76,7 @@ class RequestPreparerModelFallbackTest {
             settingsProvider, mock(ToolCatalog.class),
             transcriptService, modelContextService,
             chatTurnService, agentService, teamService, mcpService, new SkillRootResolver(""),
-            new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class));
+            new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class), new VisionCapabilityResolver(""));
 
     @BeforeEach
     void stubCommonPath() {

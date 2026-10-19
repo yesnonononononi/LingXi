@@ -6,6 +6,7 @@ import com.summit.dp.workflow.infrastructure.tools.file.record.FileHasher;
 import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecordManager;
 import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecordStore;
 import com.summit.core.tool.*;
+import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileHasher;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordManager;
 import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordStore;
@@ -13,6 +14,10 @@ import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecordRestore
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditFileToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.file.read.ReadFileToolExecutor;
+import com.summit.dp.workflow.infrastructure.tools.image.ImageCacheDirectory;
+import com.summit.dp.workflow.infrastructure.tools.image.ImageNormalizer;
+import com.summit.dp.workflow.infrastructure.tools.image.ReadImageToolExecutor;
+import com.summit.dp.workflow.infrastructure.tools.image.VisionCapabilityResolver;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 
@@ -75,6 +80,47 @@ public class FileToolConfiguration {
                 .maxOutput(3_000)
                 .timeout(30L)
                 .build();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(name = "readImageToolDefinition")
+    public ToolDefinition<ReadImageToolExecutor> readImageToolDefinition(
+            ObjectMapper objectMapper,
+            ImageNormalizer imageNormalizer,
+            ImageCacheDirectory imageCacheDirectory,
+            VisionCapabilityResolver visionCapabilityResolver) {
+        String name = ToolCatalog.READ_IMAGE;
+        return ToolDefinition.<ReadImageToolExecutor>builder()
+                .executor(new ReadImageToolExecutor(objectMapper, imageNormalizer, imageCacheDirectory, visionCapabilityResolver))
+                .id(name)
+                .name(name)
+                // 只读：解码与落盘都在工作区/缓存目录内完成，不改动用户文件。
+                .concurrentPolicy(ConcurrentPolicy.READ_ONLY)
+                .description("""
+                        Load one image from the workspace into your context so you can actually see it.
+                        The pixels are not inside this result: you get image metadata now, and the image itself
+                        arrives as a separate user message on your next turn, still within this same task.
+                        Images consume model input tokens; one execution may receive at most 4 distinct images.
+                        Only PNG/JPEG/GIF/BMP are accepted; the path must stay inside the workspace.
+                        """)
+                .parametersJsonSchema("""
+                        {
+                          "type": "object",
+                          "properties": {
+                            "path": {"type": "string", "description": "Image path inside the workspace. Relative paths are resolved against the workspace root."}
+                          },
+                          "required": ["path"]
+                        }
+                        """)
+                .maxOutput(400)
+                .timeout(20L)
+                .build();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ImageNormalizer imageNormalizer() {
+        return new ImageNormalizer();
     }
 
     @Bean

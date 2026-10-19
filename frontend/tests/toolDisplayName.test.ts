@@ -9,7 +9,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { nextTick } from 'vue';
-import { resolveToolCategory, toolCategoryLabel, TOOL_CATEGORY, UNKNOWN_TOOL_LABEL, unwrapToolResultEnvelope } from '../src/utils/toolMeta';
+import { resolveToolCategory, resolveToolMeta, toolCategoryLabel, TOOL_CATEGORY, UNKNOWN_TOOL_LABEL, unwrapToolResultEnvelope } from '../src/utils/toolMeta';
 import { AgentToolName } from '../src/utils/toolNames';
 import { setPreference } from '../src/i18n';
 
@@ -24,6 +24,7 @@ test('已知固定工具全部映射为中文展示名，且不含英文下划�
   const expected: Array<[string, string]> = [
     [AgentToolName.ExecuteCommand, '执行命令'],
     [AgentToolName.ReadFile, '读取'],
+    [AgentToolName.ReadImage, '读取'],
     [AgentToolName.WebSearch, '读取'],
     [AgentToolName.EditFile, '写入'],
     [AgentToolName.RequireChoice, '选择'],
@@ -38,6 +39,13 @@ test('已知固定工具全部映射为中文展示名，且不含英文下划�
   for (const [tool, expectedLabel] of expected) {
     assert.equal(label(tool), expectedLabel, `${tool} 应映射为「${expectedLabel}」`);
   }
+});
+
+test('读图工具以真实路径展示目标', () => {
+  const meta = resolveToolMeta({ toolName: AgentToolName.ReadImage, args: { path: 'shots/example.png' } });
+  assert.equal(meta.category, TOOL_CATEGORY.READ);
+  assert.equal(meta.target, 'shots/example.png');
+  assert.equal(meta.description, 'shots/example.png');
 });
 
 test('原生工具名绝不出现在展示名里（全量枚举扫描）', () => {

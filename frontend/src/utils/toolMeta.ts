@@ -31,6 +31,7 @@ const KNOWN_TOOL_CATEGORY: Partial<Record<AgentToolName, string>> = {
   [AgentToolName.ManageCommand]: TOOL_CATEGORY.COMMAND,
   // 读取
   [AgentToolName.ReadFile]: TOOL_CATEGORY.READ,
+  [AgentToolName.ReadImage]: TOOL_CATEGORY.READ,
   [AgentToolName.WebSearch]: TOOL_CATEGORY.READ,
   // 写入
   [AgentToolName.EditFile]: TOOL_CATEGORY.WRITE,
@@ -195,6 +196,7 @@ export function resolveToolMeta(input: ToolMetaInput): ToolMeta {
       lineRange = readLineRange(args);
       break;
 
+    case AgentToolName.ReadImage:
     case AgentToolName.EditFile:
       target = field('path');
       description = target;
