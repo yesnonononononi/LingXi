@@ -196,7 +196,9 @@ const handleSubmit = () => {
         <div v-if="!isCollapsed">
           <div class="space-y-3.5">
 
-            <h3 :class="['text-[15px] sm:text-base font-bold leading-relaxed', isDark ? 'text-gray-100' : 'text-gray-900']">
+            <!-- 问题正文按纯文本渲染：后端 question 常带多行（选项说明、补充材料），
+                 必须显式保留换行，否则 HTML 空白折叠会把 \n 吞成空格、全部挤成一段。 -->
+            <h3 :class="['text-[13.5px] sm:text-base font-semibold leading-relaxed whitespace-pre-wrap break-words', isDark ? 'text-gray-100' : 'text-gray-900']">
               {{ questionText }}
             </h3>
 
@@ -222,7 +224,7 @@ const handleSubmit = () => {
                 :key="idx"
                 @click="selectChoice(idx)"
                 :class="[
-                  'flex items-start sm:items-center gap-3 p-2.5 rounded-xl border transition-all cursor-pointer select-none group',
+                  'flex items-start sm:items-center gap-2 p-2.5 rounded-xl border transition-all cursor-pointer select-none group',
                   selectedIndex === idx
                     ? (isDark ? 'bg-blue-950/30 border-blue-500/60' : 'bg-blue-50/80 border-blue-400/80 shadow-xs')
                     : (isDark ? 'border-transparent hover:bg-gray-800/40 hover:border-gray-700' : 'border-transparent hover:bg-gray-50/80 hover:border-gray-200')
@@ -240,7 +242,7 @@ const handleSubmit = () => {
                 </div>
 
                 <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 flex-1 min-w-0">
-                  <span :class="['text-[13.5px] font-semibold transition-colors', isDark ? 'text-gray-100' : 'text-gray-900']">
+                  <span :class="['text-[13.5px] font-semibold transition-colors whitespace-pre-wrap break-words', isDark ? 'text-gray-100' : 'text-gray-900']">
                     {{ item }}
                   </span>
                 </div>
