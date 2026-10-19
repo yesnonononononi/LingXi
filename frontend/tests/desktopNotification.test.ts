@@ -45,7 +45,7 @@ test('非法 duration 不落成 NaN 或负数', () => {
 
 test('null / 非对象输入不炸，直接给一份可用的默认值', () => {
   assert.deepEqual(normalizePayload(null), {
-    title: 'LX', body: '', sessionId: null, kind: 'completed', duration: undefined, theme: 'dark',
+    title: 'LX', body: '', sessionId: null, kind: 'completed', duration: undefined, theme: 'dark', sound: null,
   });
   assert.equal(normalizePayload('boom').title, 'LX');
 });

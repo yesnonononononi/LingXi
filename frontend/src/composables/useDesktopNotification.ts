@@ -1,5 +1,6 @@
 import { onScopeDispose } from 'vue';
 import { t } from '../i18n';
+import { readSoundPreference } from '../notification/sound';
 import { useTheme } from './useTheme';
 import {
   isAppInactive,
@@ -133,12 +134,16 @@ export function useDesktopNotification(options: DesktopNotificationOptions = {})
     if (!gate.accept(sessionId == null ? null : String(sessionId), kind, Date.now())) return false;
 
     const title = (sessionTitle ?? '').trim() || t('notify.titleFallback');
+    // 每次现读设置：用户刚在设置里改完音效，下一条通知就该生效，不重启、不缓存
+    const sound = readSoundPreference();
     return sendDesktopNotification({
       title,
       body: buildBody(kind, detail),
       sessionId: sessionId == null ? null : String(sessionId),
       kind,
       theme: theme.value,
+      // 静音就干脆不塞字段：主进程无须理解「关掉」这个状态
+      sound: sound === 'none' ? undefined : sound,
     });
   }
 

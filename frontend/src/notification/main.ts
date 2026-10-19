@@ -9,6 +9,7 @@
  * 渲染进程里，通知窗口另起一份 i18n 实例必然与其漂移。</p>
  */
 import './notification.css';
+import { normalizeSoundId, playNotificationSound } from './sound';
 
 /** 通知类别：决定图标与配色。 */
 type NotifyKind = 'completed' | 'failed' | 'cancelled' | 'suspended';
@@ -21,6 +22,8 @@ interface NotificationData {
   kind?: NotifyKind;
   /** 主应用当前主题；缺省时回退到 localStorage。 */
   theme?: 'dark' | 'light';
+  /** 本条通知要播的提示音；缺省或非法值时不出声。 */
+  sound?: string;
   duration?: number;
 }
 
@@ -142,6 +145,8 @@ function boot(): void {
   api.onData((data) => {
     if (consumed) return;
     consumed = true;
+    // 与卡片渲染同帧播放：看到卡片的瞬间听到提示音，才是一条完整的通知
+    if (typeof data.sound === 'string') playNotificationSound(normalizeSoundId(data.sound));
     render(data);
   });
 }

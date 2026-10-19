@@ -22,6 +22,8 @@ export interface NotifyRequest {
   duration?: number;
   /** 主应用当前主题，通知卡片据此配色（不传则通知窗口自行回退）。 */
   theme?: 'dark' | 'light';
+  /** 提示音 id；不传则该条通知不出声（静音由调用方决定，主进程不做默认填充）。 */
+  sound?: string;
 }
 
 /** 用户点击通知后主进程回传的信息。 */

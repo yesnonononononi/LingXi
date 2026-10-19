@@ -41,6 +41,14 @@ const BODY_MAX = 240;
 const KNOWN_KINDS = ['completed', 'failed', 'cancelled', 'suspended'];
 
 /**
+ * 允许的提示音 id。
+ *
+ * <p>必须与渲染层 `src/notification/sound.ts` 的 `SOUND_IDS` 一致 —— 少一项的表现是
+ * 「设置里能选、真通知不出声」，测试里有专门一条盯两端一致。</p>
+ */
+const KNOWN_SOUNDS = ['none', 'chime', 'marimba', 'bell', 'pop'];
+
+/**
  * 归一化一条通知请求。
  *
  * <p>内容最终来自模型/用户产出，不能信任：长度、类型、枚举全部在这里收口一次，
@@ -57,7 +65,9 @@ function normalizePayload(data) {
   const kind = KNOWN_KINDS.includes(source.kind) ? source.kind : 'completed';
   const duration = Number.isFinite(source.duration) && source.duration > 0 ? source.duration : undefined;
   const theme = source.theme === 'light' ? 'light' : 'dark';
-  return { title, body, sessionId, kind, duration, theme };
+  // null 表示「这条通知不出声」：静音由渲染层决定要不要发，主进程不理解「关掉」这个状态
+  const sound = KNOWN_SOUNDS.includes(source.sound) ? source.sound : null;
+  return { title, body, sessionId, kind, duration, theme, sound };
 }
 
 /** 通知窗口的入口页面：开发态走 Vite 服务，打包态走 dist 内的多入口产物。 */
@@ -201,6 +211,9 @@ function registerNotificationWindow({ ipcMain, getWindow, isDev, frontendRoot })
         sandbox: false,
         // 卡片有入场动画，节流会让动画在小窗里卡顿
         backgroundThrottling: false,
+        // 新窗口没有用户手势，沿用默认策略会让 AudioContext 停在 suspended：
+        // 症状是「设置里能试听、真通知没声」，极难定位，所以显式放行自动播放
+        autoplayPolicy: 'no-user-gesture-required',
       },
     });
 
@@ -312,6 +325,7 @@ function registerNotificationWindow({ ipcMain, getWindow, isDev, frontendRoot })
 module.exports = {
   registerNotificationWindow,
   normalizePayload,
+  KNOWN_SOUNDS,
   WIDTH,
   HEIGHT,
   GLOW_PAD,
