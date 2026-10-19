@@ -1196,21 +1196,8 @@ const isTurnRunning = computed(() => {
  */
 const shouldCollapseProcess = computed(() => isMessageCompleted.value && !processToggleOverride.value);
 
-/**
- * 空终态组：这一轮没有任何正文 / 工具 / 卡片就结束了（被停止或失败）。
- *
- * <p>这类轮次**同样走普通轮的底栏**（状态 + 用量 + 耗时 + 开始时间），不再单独画一行提示：
- * 样式与普通轮保持一致，量化的东西都在底栏里。底座标记仍由投影/事件写入，
- * 用来放开 {@link isMessageCompleted} 的「必须有内容」限制。</p>
- *
- * <p>⚠️ 必须定义在 {@link isMessageCompleted} **之前**：后者的 computed 在 setup 阶段就会被
- * {@link shouldCollapseProcess} 的 watch（immediate）求值，声明在后会撞 TDZ。</p>
- */
-const isEmptyTerminalTurn = computed(() => (props.message.cancelled === true || props.message.failed === true)
-  && !props.message.content
-  && !props.message.toolCalls?.length
-  && !props.message.thoughtSteps?.length
-  && !props.message.promptCards?.length);
+/** 终态底栏不依赖正文，只有思考内容也必须展示；须在完成判据首次求值前声明。 */
+const isTerminalTurn = computed(() => props.message.cancelled === true || props.message.failed === true);
 
 /** 该助手回答是否已完成会话生成（会话/响应结束时才展示底栏工具栏与状态） */
 const isMessageCompleted = computed(() => {
@@ -1231,9 +1218,8 @@ const isMessageCompleted = computed(() => {
   if (status !== '' && isActiveTurnStatus(status) && !hasTerminalEvidence) {
     return false;
   }
-  // 6. 空终态（被停止 / 失败）即使没有任何输出，也要出底栏 —— 用量、耗时、开始时间
-  //    都在底栏，样式与普通轮完全一致；靠气泡标记判，不依赖轮次摘要是否已到。
-  if (isEmptyTerminalTurn.value) {
+  // 终态标记不依赖正文或轮次摘要是否已到，运行中的守卫仍须先判断。
+  if (isTerminalTurn.value) {
     return true;
   }
   // 7. 其余必须真有内容或工具，否则底栏没有可挂的语义

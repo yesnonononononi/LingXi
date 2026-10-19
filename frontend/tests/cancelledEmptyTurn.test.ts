@@ -7,7 +7,7 @@
  * ⇒ 一条 assistant 行都没有 ⇒ 用户气泡下面纯空白，看起来像回答丢了。
  *
  * 修法：**每个轮次都建 assistant 行**（含空块终态），并让空终态走**普通轮的底栏**
- * （状态 / 用量 / 耗时 / 开始时间）——不要再单独画一行提示：`isEmptyTerminalTurn`
+ * （状态 / 用量 / 耗时 / 开始时间）——不要再单独画一行提示：`isTerminalTurn`
  * 只负责放开 `isMessageCompleted` 的「必须有内容」闸门。终态原因由 `turn.errorReason` 提供，
  * 不往 content 里拼字（正文每次投影都会重算，拼进去会被抹掉）。
  * 本测试覆盖 ① 投影语义 ② 状态复位 ③ 渲染接线（源级，防止闸门被改回去）。
@@ -92,8 +92,8 @@ test('★ 渲染接线：空终态轮必须走普通轮的底栏（状态 / 用�
   const src = fs.readFileSync(path.join(PROJECT_ROOT, 'src/components/chat/ChatMessageItem.vue'), 'utf8');
 
   // 底栏的闸门：空终态必须有内容以外的放行条件，否则这轮什么都不显示
-  assert.match(src, /isEmptyTerminalTurn/, '缺少空终态判据 ⇒ 底栏不渲染，整轮不可见');
-  assert.match(src, /if \(isEmptyTerminalTurn\.value\) \{\s*return true;/, '空终态必须放行 isMessageCompleted');
+  assert.match(src, /isTerminalTurn/, '缺少终态判据 ⇒ 底栏不渲染，整轮不可见');
+  assert.match(src, /if \(isTerminalTurn\.value\) \{\s*return true;/, '终态必须放行 isMessageCompleted');
   assert.match(src, /props\.message\.cancelled === true \|\| props\.message\.failed === true/,
     '判据必须读气泡标记（轮次摘要可能尚未到达）');
   // 不再单独画一行提示：样式与普通轮统一，量化的东西交给底栏

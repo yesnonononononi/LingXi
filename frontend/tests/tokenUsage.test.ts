@@ -124,6 +124,23 @@ test('实际消息组件同时展示历史和实时明细，仅在组尾展示',
     for (const text of ['本轮用量', '提供方 / 模型', '缓存命中', '未缓存输入', '缓存读取', '70.0%', '其中推理 20 token']) {
       assert.ok(chinese.includes(text), text);
     }
+    for (const status of ['CANCELLED', 'FAILED'] as const) {
+      const terminalProps = {
+        ...props,
+        turn: { ...turn, status },
+        message: { ...message, isComplete: true, cancelled: status === 'CANCELLED', failed: status === 'FAILED',
+          thoughtSteps: [{ id: 'thought-1', title: '思考', content: '尚未产出正文', status: 'success' as const }] },
+      };
+      const terminal = await renderToString(createSSRApp(component, terminalProps));
+      assert.ok(terminal.includes('本轮用量'), `${status} 只有思考内容也必须展示用量`);
+      assert.ok(terminal.includes('110 token'), '必须展示轮次的真实累计用量');
+      const terminalHead = await renderToString(createSSRApp(component, { ...terminalProps, isGroupTail: false }));
+      assert.ok(!terminalHead.includes('本轮用量'), '终态仍然只在组尾展示');
+      const running = await renderToString(createSSRApp(component, {
+        ...terminalProps, turn: { ...turn, status: 'RUNNING' },
+      }));
+      assert.ok(!running.includes('本轮用量'), '运行态守卫不能被终态气泡标记绕过');
+    }
   } finally {
     await server.close();
   }
