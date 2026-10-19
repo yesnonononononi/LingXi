@@ -93,7 +93,7 @@ class CommandBackgroundTimeoutTest {
         ToolDefinition<CommandToolDefinitionExecutor> definition = configuration.executeCommandToolDefinition(
                 new ObjectMapper(), null, background, properties);
         assertEquals(240L, definition.timeout());
-        assertEquals(30L, configuration.manageCommandToolDefinition(new ObjectMapper(), null).timeout());
+        assertEquals(300L, configuration.manageCommandToolDefinition(new ObjectMapper(), null).timeout());
 
         ToolExecution call = ToolExecution.builder().id("call").executionId("100").turnId("execution")
                 .toolDefinition(definition).workspace(workspace)
