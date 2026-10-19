@@ -24,6 +24,9 @@ const {
   toggleLanguageDropdown,
   closeGeneralDropdowns,
   handleSelectTheme,
+  soundPref,
+  soundOptions,
+  handleSelectSound,
 } = useGeneralTab();
 </script>
 
@@ -180,6 +183,31 @@ const {
           </svg>
           <span class="text-xs font-medium tracking-wide">{{ isApiUrlSaved ? t('settings.general.apiUrlSaved') : t('settings.general.apiUrlSave') }}</span>
         </SpecularButton>
+      </div>
+    </div>
+
+    <!-- 通知提示音：只影响自绘通知卡片，Web 端没有桌面通知所以选了也不会响 -->
+    <div class="pt-3 border-t border-gray-100 dark:border-white/10">
+      <div class="flex flex-col mb-2">
+        <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.notifySound') }}</span>
+        <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.notifySoundDesc') }}</span>
+      </div>
+      <div class="grid grid-cols-3 sm:grid-cols-5 gap-2">
+        <button
+          v-for="option in soundOptions"
+          :key="option.id"
+          type="button"
+          @click="handleSelectSound(option.id)"
+          :aria-pressed="soundPref === option.id"
+          :class="[
+            'px-2 py-2 rounded-xl border text-center transition cursor-pointer',
+            soundPref === option.id
+              ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_15px_rgba(255,255,255,0.1)] text-white font-semibold dark:text-glow-white' : 'bg-gray-100 border-gray-300 text-gray-900 font-semibold shadow-sm')
+              : (isDark ? 'border-white/10 text-zinc-400 bg-black/40 hover:border-white/20 hover:bg-white/[0.04]' : 'border-gray-200 text-gray-600 hover:bg-gray-50')
+          ]"
+        >
+          <span class="text-xs">{{ t(option.labelKey) }}</span>
+        </button>
       </div>
     </div>
   </div>

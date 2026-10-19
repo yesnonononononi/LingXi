@@ -4,6 +4,21 @@ import { useUserConfigStore } from '../../../stores/userConfigStore';
 import { getApiBaseUrl, setApiBaseUrl, resetApiBaseUrl } from '../../../utils/apiConfig';
 import { useI18n } from '../../../i18n';
 import type { LocalePreference } from '../../../i18n';
+import {
+  playNotificationSound,
+  readSoundPreference,
+  writeSoundPreference,
+  type SoundId,
+} from '../../../notification/sound';
+
+/** 音效 id 与文案键的映射；顺序即设置页里的展示顺序（静音在最前）。 */
+const SOUND_LABEL_KEYS: { id: SoundId; labelKey: string }[] = [
+  { id: 'none', labelKey: 'settings.general.soundNone' },
+  { id: 'chime', labelKey: 'settings.general.soundChime' },
+  { id: 'marimba', labelKey: 'settings.general.soundMarimba' },
+  { id: 'bell', labelKey: 'settings.general.soundBell' },
+  { id: 'pop', labelKey: 'settings.general.soundPop' },
+];
 
 /**
  * 通用设置页。
@@ -108,6 +123,17 @@ export function useGeneralTab() {
     apiBaseUrl.value = getApiBaseUrl() || 'http://localhost:8088';
   };
 
+  // 通知提示音：偏好只在本机，不进后端配置（与主题、语言同属「这台机器的听感」）
+  const soundPref = ref<SoundId>(readSoundPreference());
+  const soundOptions = SOUND_LABEL_KEYS;
+
+  const handleSelectSound = (id: SoundId) => {
+    soundPref.value = id;
+    writeSoundPreference(id);
+    // 选中即试听：改完不用等到真的跑一轮任务才知道是什么声
+    playNotificationSound(id);
+  };
+
   return {
     themeMode,
     isLanguageOpen,
@@ -121,5 +147,8 @@ export function useGeneralTab() {
     toggleLanguageDropdown,
     closeGeneralDropdowns,
     handleSelectTheme,
+    soundPref,
+    soundOptions,
+    handleSelectSound,
   };
 }
