@@ -2,6 +2,9 @@ package com.summit.dp.workflow.infrastructure.harness;
 
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
+import com.summit.core.conversation.event.ExecutionCancelledEvent;
+import com.summit.core.conversation.event.RuntimeEventPublisher;
+import com.summit.core.conversation.event.TokenInfo;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.ExecutionAttributes;
@@ -48,6 +51,7 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     private final ObjectProvider<SubExecutionLifecycle> subExecutionLifecycle;
     private final ObjectProvider<SessionContextUsageProjector> sessionService;
     private final ObjectProvider<ChatTurnLifecycleProjector> chatTurnService;
+    private final ObjectProvider<RuntimeEventPublisher> runtimeEvents;
 
     /** 进程内活跃执行的控制信号；与框架 InMemoryActiveExecutionRegistry 语义一致。 */
     private final Map<String, ExecutionControlSignal> active = new ConcurrentHashMap<>();
@@ -180,24 +184,25 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     public void unregister(ExecutionControlSignal signal) {
         if (signal == null) throw new IllegalArgumentException("执行控制信号不能为空");
         Execution execution;
+        boolean cancelledOnRelease;
         synchronized (ExecutionCoordination.monitor(signal.getExecutionId())) {
             if (!active.remove(signal.getExecutionId(), signal)) {
                 throw new IllegalArgumentException("执行控制信号已释放");
             }
-            if (signal.isCancelRequired()) {
-                Execution cancelled = findById(signal.getExecutionId()).orElse(null);
-                if (cancelled != null && cancelled.getExecutionState() == ExecutionState.SUSPENDED) {
-                    cancelled.cancelChecked();
-                    save(cancelled);
-                }
-            }
             execution = findById(signal.getExecutionId()).orElse(null);
+            cancelledOnRelease = signal.isCancelRequired() && execution != null
+                    && execution.getExecutionState() == ExecutionState.SUSPENDED;
+            if (cancelledOnRelease) {
+                execution.cancelChecked();
+                save(execution);
+            }
         }
         if (execution != null) afterCommit(() -> {
             if (execution.getExecutionState() == ExecutionState.SUSPENDED) {
                 notifySuspended(execution);
             } else if (ExecutionStateCodec.isTerminalState(execution.getExecutionState())) {
-                notifyFinished(execution);
+                if (cancelledOnRelease) notifyCancelled(execution);
+                else notifyFinished(execution);
             }
         });
     }
@@ -225,7 +230,7 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
             if (execution.getExecutionState() != ExecutionState.SUSPENDED) return;
             execution.cancelChecked();
             save(execution);
-            afterCommit(() -> notifyFinished(execution));
+            afterCommit(() -> notifyCancelled(execution));
         }
     }
 
@@ -242,6 +247,14 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
         invokeLifecycle("结束事实-终结", execution, () -> subExecutionLifecycle.getObject().onFinished(execution));
         invokeLifecycle("保存会话用量", execution, () -> sessionService.getObject().saveExecutionContextUsage(execution));
         invokeLifecycle("收口业务轮次", execution, () -> chatTurnService.getObject().finishExecution(execution));
+    }
+
+    /** 挂起取消没有活跃循环发布终态事件，须在检查点提交与轮次收口后补发用量。 */
+    private void notifyCancelled(Execution execution) {
+        notifyFinished(execution);
+        invokeLifecycle("发布挂起取消", execution, () -> runtimeEvents.getObject().onExecutionCancelled(
+                new ExecutionCancelledEvent(execution.getId(), TokenInfo.from(execution.getTokenUsage()),
+                        execution.eventMetaData())));
     }
 
     /** 各模块独立隔离失败，不能让一项失败阻止其余终结处理。 */

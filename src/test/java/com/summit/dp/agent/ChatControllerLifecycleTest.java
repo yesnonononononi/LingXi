@@ -25,6 +25,7 @@ import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
+import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import org.junit.jupiter.api.BeforeEach;
@@ -151,12 +152,14 @@ class ChatControllerLifecycleTest {
     void unresolvedChoiceBlocksManualResume() throws Exception {
         Long sessionId = sessions.initialize("审批恢复验证", null, null).getData();
         ChatResponseEntity choice = reply("");
+        choice.setTokenUsage(new TokenUsageEntity(150, new TokenUsageEntity.InputTokens(100, 70),
+                new TokenUsageEntity.OutputTokens(50, 20)));
         choice.getAiMessageEntity().setToolCalls(List.of(new ToolCallRequest("choice-control", ToolCatalog.REQUIRE_CHOICE, 0,
                 "{\"question\":\"是否继续\",\"options\":[\"继续\",\"停止\"]}")));
         Gate gate = new Gate(choice);
         gate.release.countDown();
         gates.add(gate);
-        accept(sessionId, "需要选择");
+        Long turnId = Long.valueOf(accept(sessionId, "需要选择").path("turnId").asText());
         waitForState(sessionId, 2);
         mvc.perform(post("/a/completion/{id}/resume", sessionId))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(0))
@@ -164,6 +167,15 @@ class ChatControllerLifecycleTest {
         assertEquals(1, modelCalls.get());
         mvc.perform(post("/a/completion/{id}/stop", sessionId)).andExpect(status().isOk());
         waitForState(sessionId, 5);
+        ChatTurn cancelled = turns.findById(turnId).orElseThrow();
+        assertEquals("CANCELLED", cancelled.getStatus().name());
+        assertEquals(100L, cancelled.getInputTokenCount());
+        assertEquals(50L, cancelled.getOutputTokenCount());
+        assertEquals(150L, cancelled.getTotalTokenCount());
+        assertEquals(70L, cancelled.getCacheTokens());
+        assertEquals(20L, cancelled.getReasoningTokens());
+        mvc.perform(post("/a/completion/{id}/stop", sessionId)).andExpect(status().isOk());
+        assertEquals(150L, turns.findById(turnId).orElseThrow().getTotalTokenCount());
     }
 
     @Test

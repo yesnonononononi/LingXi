@@ -99,7 +99,7 @@ public class ChatTurnRuntimeListener implements RuntimeListener {
         writeUsage(event.executionId(), event.getTokenInfo(), resolveRootSessionId(event));
     }
 
-    /** 取消同理。注意「不活跃的挂起执行被取消」那条路框架不发事件，只有端口 —— 该轮用量保持 null。 */
+    /** 挂起取消由执行仓储补发同形事件，用量仍走统一覆盖入口。 */
     @Override
     public void onExecutionCancelled(ExecutionCancelledEvent event) {
         if (event == null) {

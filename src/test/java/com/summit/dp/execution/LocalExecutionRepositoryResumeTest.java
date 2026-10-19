@@ -16,6 +16,12 @@ import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
 import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
+import com.summit.core.conversation.event.ExecutionCancelledEvent;
+import com.summit.core.conversation.event.RuntimeEventPublisher;
+import com.summit.core.conversation.event.TokenInfo;
+import com.summit.core.conversation.message.TokenUsageEntity;
+import com.summit.dp.turn.application.service.ChatTurnService;
+import com.summit.dp.workflow.infrastructure.listener.turn.ChatTurnRuntimeListener;
 import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
@@ -26,6 +32,7 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -48,6 +55,7 @@ class LocalExecutionRepositoryResumeTest {
     private final SubExecutionLifecycle subExecutionLifecycle = mock(SubExecutionLifecycle.class);
     private final SessionContextUsageProjector sessions = mock(SessionContextUsageProjector.class);
     private final ChatTurnLifecycleProjector turns = mock(ChatTurnLifecycleProjector.class);
+    private final RuntimeEventPublisher runtimeEvents = mock(RuntimeEventPublisher.class);
     private final List<String> suspended = new ArrayList<>();
     private final List<String> finished = new ArrayList<>();
     @org.junit.jupiter.api.BeforeEach
@@ -62,7 +70,7 @@ class LocalExecutionRepositoryResumeTest {
     }
     private final LocalExecutionRepository repository =
             new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(persistence)), mapper, provider(readiness), provider(tools),
-                    provider(subExecutionLifecycle), provider(sessions), provider(turns));
+                    provider(subExecutionLifecycle), provider(sessions), provider(turns), provider(runtimeEvents));
 
     private static Execution execution() {
         List<Message> history = List.of(UserMessageEntity.from("hi"),
@@ -254,6 +262,116 @@ class LocalExecutionRepositoryResumeTest {
     }
 
     @Test
+    void suspendedCancellationPublishesAccumulatedUsageOnceAfterClosure() {
+        Execution source = execution();
+        source.getAgentRequest().runtimeParametersOrDefault().setEventMetaData(
+                Map.of("rootSessionId", "405", "sessionId", "405", "turnId", "7001"));
+        source.setTokenUsage(new TokenUsageEntity(150, new TokenUsageEntity.InputTokens(100, 70),
+                new TokenUsageEntity.OutputTokens(50, 20)));
+        repository.save(source);
+        doAnswer(invocation -> {
+            ExecutionPO row = invocation.getArgument(0);
+            when(persistence.selectById(305L)).thenReturn(row);
+            return 1;
+        }).when(persistence).update(any(ExecutionPO.class), any());
+        ChatTurnService usageService = mock(ChatTurnService.class);
+        ChatTurnRuntimeListener listener = new ChatTurnRuntimeListener(usageService);
+        doAnswer(invocation -> {
+            listener.onExecutionCancelled(invocation.getArgument(0));
+            return null;
+        }).when(runtimeEvents).onExecutionCancelled(any());
+
+        repository.requireCancel("305");
+        repository.requireCancel("305");
+
+        ArgumentCaptor<ExecutionCancelledEvent> event = ArgumentCaptor.forClass(ExecutionCancelledEvent.class);
+        InOrder order = inOrder(turns, runtimeEvents);
+        order.verify(turns).finishExecution(any());
+        order.verify(runtimeEvents).onExecutionCancelled(event.capture());
+        assertEquals("305", event.getValue().executionId());
+        assertEquals(new TokenInfo(100, 50, 150, 20, 70), event.getValue().getTokenInfo());
+        assertEquals(source.eventMetaData(), event.getValue().eventMetaData());
+        verify(usageService).refreshUsage("305", 100L, 50L, 150L, 70L, 20L, 405L);
+        verify(runtimeEvents, times(1)).onExecutionCancelled(any());
+    }
+
+    @Test
+    void suspendedCancellationPublishesOnlyAfterCommitAndNotAfterRollback() {
+        for (boolean commit : new boolean[]{false, true}) {
+            repository.save(execution());
+            clearInvocations(runtimeEvents, turns);
+            TransactionSynchronizationManager.initSynchronization();
+            try {
+                repository.requireCancel("305");
+                verifyNoInteractions(runtimeEvents, turns);
+                for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
+                    if (commit) synchronization.afterCommit();
+                    else synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+                }
+                if (commit) {
+                    verify(turns).finishExecution(any());
+                    ArgumentCaptor<ExecutionCancelledEvent> event = ArgumentCaptor.forClass(ExecutionCancelledEvent.class);
+                    verify(runtimeEvents).onExecutionCancelled(event.capture());
+                    assertNull(event.getValue().getTokenInfo(), "未采集用量不能补零");
+                } else {
+                    verifyNoInteractions(runtimeEvents, turns);
+                    assertEquals(ExecutionState.SUSPENDED, repository.findById("305").orElseThrow().getExecutionState());
+                }
+            } finally {
+                TransactionSynchronizationManager.clearSynchronization();
+            }
+        }
+    }
+
+    @Test
+    void cancellationAtSuspendedSlotReleasePublishesUsageAfterCommit() {
+        Execution source = execution();
+        source.setTokenUsage(TokenUsageEntity.of(150, 100, 50));
+        repository.save(source);
+        ExecutionControlSignal signal = repository.register("305");
+        repository.requireCancel("305");
+        verifyNoInteractions(runtimeEvents);
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            repository.unregister(signal);
+            verifyNoInteractions(runtimeEvents, turns);
+            for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
+                synchronization.afterCommit();
+            }
+            ArgumentCaptor<Execution> closed = ArgumentCaptor.forClass(Execution.class);
+            verify(turns).finishExecution(closed.capture());
+            assertEquals(ExecutionState.CANCELLED, closed.getValue().getExecutionState());
+            ArgumentCaptor<ExecutionCancelledEvent> event = ArgumentCaptor.forClass(ExecutionCancelledEvent.class);
+            verify(runtimeEvents).onExecutionCancelled(event.capture());
+            assertEquals(new TokenInfo(100, 50, 150, 0, 0), event.getValue().getTokenInfo());
+            assertEquals(List.of(), suspended);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    void activeLoopCancellationKeepsEventOwnershipInFramework() {
+        repository.save(execution());
+        ExecutionControlSignal signal = repository.register("305");
+        repository.requireCancel("305");
+        assertTrue(signal.isCancelRequired());
+        verifyNoInteractions(runtimeEvents);
+
+        Execution cancelled = execution();
+        cancelled.cancelChecked();
+        repository.save(cancelled);
+        ArgumentCaptor<ExecutionPO> saved = ArgumentCaptor.forClass(ExecutionPO.class);
+        verify(persistence, times(2)).update(saved.capture(), any());
+        when(persistence.selectById(305L)).thenReturn(saved.getValue());
+        repository.unregister(signal);
+
+        verify(turns).finishExecution(any());
+        verifyNoInteractions(runtimeEvents);
+    }
+
+    @Test
     void concurrentRegistrationHasExactlyOneOwner() throws Exception {
         CountDownLatch start = new CountDownLatch(1);
         try (ExecutorService workers = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -280,7 +398,7 @@ class LocalExecutionRepositoryResumeTest {
     void releasedSignalIsVisibleAndServiceFailureDoesNotBlockFollowingService() {
         ToolCallReadinessService failing = mock(ToolCallReadinessService.class);
         LocalExecutionRepository isolated = new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(persistence)), mapper,
-                provider(failing), provider(tools), provider(subExecutionLifecycle), provider(sessions), provider(turns));
+                provider(failing), provider(tools), provider(subExecutionLifecycle), provider(sessions), provider(turns), provider(runtimeEvents));
         doAnswer(invocation -> {
             assertFalse(Thread.holdsLock(ExecutionCoordination.monitor("305")));
             assertFalse(isolated.isActive("305"));
