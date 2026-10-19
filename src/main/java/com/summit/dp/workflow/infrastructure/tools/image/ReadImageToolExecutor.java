@@ -33,7 +33,7 @@ public class ReadImageToolExecutor implements ToolExecutor {
     /** 单图字节上限：再大就不是「看一眼」的场景了。 */
     static final long MAX_BYTES = 10L * 1024 * 1024;
     /** 单次执行可注入的图片张数上限：base64 会随执行快照每轮重写，必须有闸门。 */
-    static final int MAX_IMAGE_BUDGET = 4;
+    static final int MAX_IMAGE_BUDGET = 10;
     /** 已注入计数键，与注入拦截器共用。 */
     public static final String KEY_CONSUMED = "lingxi.image.consumed";
 
