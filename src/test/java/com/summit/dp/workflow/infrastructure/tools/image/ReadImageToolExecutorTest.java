@@ -230,7 +230,9 @@ class ReadImageToolExecutorTest {
         WorkspaceBridge bridge = mock(WorkspaceBridge.class);
         WorkspaceFiles files = mock(WorkspaceFiles.class);
         when(workspace.resolve("remote.png")).thenReturn(image);
-        when(workspace.encloses(image)).thenReturn(true);
+        // CI 的临时目录常带 8.3 短名（RUNNER~1），toRealPath 展开后与这里的 Path 不相等，
+        // 用精确参数打桩会在 CI 上假红；本用例只关心「桥接读不动」，归属判定一律放行。
+        when(workspace.encloses(any())).thenReturn(true);
         when(workspace.bridge()).thenReturn(bridge);
         when(bridge.files()).thenReturn(files);
         when(files.readBytes(image)).thenThrow(new IOException("MXC file operation failed"));
