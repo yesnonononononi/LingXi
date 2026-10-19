@@ -23,20 +23,29 @@ public class ModelServiceImpl implements ModelService {
 
     @Override
     public Result<Void> add(ModelConfigCommand command) {
-        ModelConfig modelConfig = new ModelConfig(null, command.baseUrl(),
-                command.apiKey() == null ? "" : command.apiKey().trim(), command.modelName(), null);
+        throwIf(command == null, "模型配置不能为空");
+        throwIf(command.vision() == null, "请明确选择模型是否支持图片输入");
+        ModelConfig modelConfig = new ModelConfig();
+        modelConfig.changeModelName(command.modelName());
+        modelConfig.changeBaseUrl(command.baseUrl());
+        modelConfig.changeApiKey(command.apiKey() == null ? "" : command.apiKey().trim());
+        modelConfig.changeVision(command.vision());
         modelConfigRepository.save(modelConfig);
         return Result.success();
     }
 
     @Override
     public Result<Void> update(ModelConfigCommand command) {
-        ModelConfig modelConfig = modelConfigRepository.findById(command.id()).orElseThrow(ModelNoFoundException::new);
+        throwIf(command == null || command.id() == null, "修改模型必须提供模型标识");
+        ModelConfig modelConfig = modelConfigRepository.findById(command.id()).orElseThrow(ClientException::new);
         // 编辑留空保留原值，清除仍走独立接口。
         String apiKey = hasCredential(command) ? command.apiKey().trim() : modelConfig.getApiKey();
         // 客户端回传展示值时不能把掩码写成实际密钥。
         if (apiKey != null && apiKey.equals(modelConfig.getMaskedApiKey())) apiKey = modelConfig.getApiKey();
-        modelConfig.update(command.modelName(), command.baseUrl(), apiKey);
+        if (command.modelName() != null) modelConfig.changeModelName(command.modelName());
+        if (command.baseUrl() != null) modelConfig.changeBaseUrl(command.baseUrl());
+        if (command.apiKey() != null) modelConfig.changeApiKey(apiKey);
+        if (command.vision() != null) modelConfig.changeVision(command.vision());
         modelConfigRepository.updateById(modelConfig);
         return Result.success();
     }
@@ -73,7 +82,7 @@ public class ModelServiceImpl implements ModelService {
     public Result<Void> clearCredential(Long id) {
         // 模型必须存在：清除不存在模型的凭据要报错而不是静默成功（设计要求）。
         ModelConfig modelConfig = modelConfigRepository.findById(id).orElseThrow(ModelNoFoundException::new);
-        modelConfig.update(modelConfig.getModelName(), modelConfig.getBaseUrl(), "");
+        modelConfig.changeApiKey("");
         modelConfigRepository.updateById(modelConfig);
         return Result.success();
     }
@@ -115,6 +124,7 @@ public class ModelServiceImpl implements ModelService {
                 .baseUrl(modelConfig.getBaseUrl())
                 .apiKey(modelConfig.getMaskedApiKey())
                 .provider(modelConfig.getProvider())
+                .vision(modelConfig.isVision())
                 .credentialConfigured(configured)
                 .build();
     }
@@ -122,5 +132,9 @@ public class ModelServiceImpl implements ModelService {
     /** 请求带了可用的 API Key（三态判断：带 = 替换，不带 = 保留）。 */
     private static boolean hasCredential(ModelConfigCommand command) {
         return command.apiKey() != null && !command.apiKey().isBlank();
+    }
+
+    private void throwIf(boolean condition, String err) {
+        if (condition) throw new ClientException(err);
     }
 }

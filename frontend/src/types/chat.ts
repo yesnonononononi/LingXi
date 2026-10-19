@@ -285,6 +285,7 @@ export interface ModelConfig {
 
 /** 后端 ModelConfigVO 领域实体 */
 export interface ModelConfigVO {
+  vision: boolean;
   id?: number | string;
   modelName?: string;
   baseUrl?: string;
@@ -691,6 +692,7 @@ export interface PageResult<T> {
 
 /** 模型配置读写载荷 (对齐后端 ModelConfigRequest) */
 export interface ModelConfigPayload {
+  vision: boolean;
   id?: number | string;
   modelName: string;
   baseUrl: string;

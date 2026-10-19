@@ -4,7 +4,8 @@ import { useRoute, useRouter } from 'vue-router';
 import { ModelAPI } from '../../services/api';
 import { useTheme } from '../../composables/useTheme';
 import { useConfirm } from '../../composables/useConfirm';
-import type { OpenAIModelItem } from '../../types/chat';
+import type { OpenAIModelItem, ModelConfigPayload } from '../../types/chat';
+import ModelVisionField from '../../components/model/ModelVisionField.vue';
 import { extractOpenAIError, parseOpenAIModelList } from '../../utils/openaiModels';
 import { isOk } from '../../utils/api';
 import { t } from '../../i18n';
@@ -20,7 +21,7 @@ const { isDark, toggleTheme } = useTheme();
 const modelId = computed(() => String(route.params.id ?? ''));
 const isEdit = computed(() => modelId.value !== '');
 
-const form = ref({ modelName: '', baseUrl: '', apiKey: '' });
+const form = ref({ modelName: '', baseUrl: '', apiKey: '', vision: false });
 const formError = ref('');
 const loading = ref(false);
 const submitting = ref(false);
@@ -48,6 +49,7 @@ const loadDetail = async () => {
     const res = await ModelAPI.findById(modelId.value);
     if (isOk(res.code) && res.data) {
       form.value = {
+        vision: res.data.vision,
         modelName: res.data.modelName ?? '',
         baseUrl: res.data.baseUrl ?? '',
         // 掩码值不回填输入框：留空 = 保留（三态语义），避免把掩码当成新密钥提交
@@ -84,7 +86,8 @@ const submit = async () => {
   try {
     const key = form.value.apiKey.trim();
     // apiKey 留空时不携带该字段（「保留」），带值即替换（「新增/替换」）；清除走 clearKey
-    const payload: { modelName: string; baseUrl: string; apiKey?: string } = {
+    const payload: ModelConfigPayload = {
+      vision: form.value.vision,
       modelName: form.value.modelName.trim(),
       baseUrl: form.value.baseUrl.trim()
     };
@@ -390,6 +393,7 @@ onBeforeUnmount(() => {
             >{{ clearing ? t('model.clearing') : t('model.clearKey') }}</button>
           </div>
 
+          <ModelVisionField v-model="form.vision" :is-dark="isDark" />
           <p v-if='formError' class='text-[11px] text-red-400'>{{ formError }}</p>
 
                     <div class='flex justify-end gap-2 pt-2'>

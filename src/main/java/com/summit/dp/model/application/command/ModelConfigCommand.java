@@ -5,6 +5,7 @@ public record  ModelConfigCommand (
         Long id,
         String modelName,
         String baseUrl,
-        String apiKey
+        String apiKey,
+        Boolean vision
 ){
 }

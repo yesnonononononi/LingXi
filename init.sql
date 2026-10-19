@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS model_config (
     base_url         VARCHAR(500) NOT NULL COMMENT 'OpenAI兼容接口base地址',
     api_key          VARCHAR(500) COMMENT 'API密钥',
     provider         VARCHAR(50) COMMENT '模型供应商',
+    vision           BOOLEAN NOT NULL DEFAULT FALSE COMMENT '是否支持图片输入，由用户明确配置',
     create_time      DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     UNIQUE KEY uk_model_name_base_url (model_name, base_url)

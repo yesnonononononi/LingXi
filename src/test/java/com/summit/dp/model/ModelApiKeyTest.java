@@ -6,6 +6,7 @@ import com.summit.dp.model.application.command.ModelConfigCommand;
 import com.summit.dp.model.application.service.ModelServiceImpl;
 import com.summit.dp.model.domain.model.ModelConfig;
 import com.summit.dp.model.domain.repo.ModelConfigRepository;
+import com.summit.dp.shared.exception.ClientException;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -18,6 +19,23 @@ class ModelApiKeyTest {
     private final ModelConfigRepository repository = mock(ModelConfigRepository.class);
     private final ModelServiceImpl service = new ModelServiceImpl(repository);
 
+    @Test void visionIsExplicitOnAddAndCanBeDisabledOnEdit() {
+        assertThrows(ClientException.class, () -> service.add(new ModelConfigCommand(null, "custom-model", "https://example.invalid", "key", null)));
+        service.add(new ModelConfigCommand(null, "custom-model", "https://example.invalid", "key", true));
+        ArgumentCaptor<ModelConfig> saved = ArgumentCaptor.forClass(ModelConfig.class);
+        verify(repository).save(saved.capture());
+        assertTrue(saved.getValue().isVision());
+
+        ModelConfig existing = new ModelConfig(1L, "https://example.invalid", "key", "custom-model", null, true);
+        when(repository.findById(1L)).thenReturn(Optional.of(existing));
+        assertTrue(service.findById(1L).getData().isVision());
+        service.update(new ModelConfigCommand(1L, null, null, null, false));
+        assertFalse(existing.isVision());
+        assertEquals("custom-model", existing.getModelName());
+        assertEquals("key", existing.getApiKey());
+        assertFalse(service.findById(1L).getData().isVision());
+    }
+
     @Test void masksTwentyPercentAtEachEndAndHandlesShortValues() {
         assertEquals("01***89", model("0123456789").getMaskedApiKey());
         assertEquals("0***6", model("0123456").getMaskedApiKey());
@@ -28,7 +46,7 @@ class ModelApiKeyTest {
     }
 
     @Test void addPersistsOriginalValue() {
-        service.add(new ModelConfigCommand(null, "test", "https://example.invalid", "0123456789"));
+        service.add(new ModelConfigCommand(null, "test", "https://example.invalid", "0123456789", false));
         ArgumentCaptor<ModelConfig> saved = ArgumentCaptor.forClass(ModelConfig.class);
         verify(repository).save(saved.capture());
         assertEquals("0123456789", saved.getValue().getApiKey());
@@ -37,11 +55,11 @@ class ModelApiKeyTest {
     @Test void editPreservesOmittedOrMaskedValuesAndReplacesNewValues() {
         ModelConfig model = model("0123456789");
         when(repository.findById(1L)).thenReturn(Optional.of(model));
-        service.update(new ModelConfigCommand(1L, "test", "https://example.invalid", null));
+        service.update(new ModelConfigCommand(1L, "test", "https://example.invalid", null, false));
         assertEquals("0123456789", model.getApiKey());
-        service.update(new ModelConfigCommand(1L, "test", "https://example.invalid", "01***89"));
+        service.update(new ModelConfigCommand(1L, "test", "https://example.invalid", "01***89", false));
         assertEquals("0123456789", model.getApiKey());
-        service.update(new ModelConfigCommand(1L, "test", "https://example.invalid", "new-key"));
+        service.update(new ModelConfigCommand(1L, "test", "https://example.invalid", "new-key", false));
         assertEquals("new-key", model.getApiKey());
     }
 
@@ -86,6 +104,6 @@ class ModelApiKeyTest {
     }
 
     private ModelConfig model(String key) {
-        return new ModelConfig(1L, "https://example.invalid", key, "test", null);
+        return new ModelConfig(1L, "https://example.invalid", key, "test", null, false);
     }
 }

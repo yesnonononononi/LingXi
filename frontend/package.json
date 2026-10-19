@@ -43,6 +43,7 @@
     "app:builder:quick": "npm run check:version && electron-builder --win nsis --x64 --publish never",
     "app:release": "node scripts/release-guard.mjs",
     "test:chat-images": "npx tsx --test tests/chatImages.test.ts",
+    "test:model-vision:ui": "electron tests/modelVision.smoke.cjs",
     "test:chat-images:ui": "electron tests/chatImages.smoke.cjs",
     "test:chat-message-layout": "electron tests/chatMessageWrapping.smoke.cjs",
     "test:security-ui": "electron tests/securityRules.smoke.cjs",

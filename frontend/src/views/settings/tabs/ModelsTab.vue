@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { useModelsTab } from './useModelsTab';
 import { useTheme } from '../../../composables/useTheme';
 import { useI18n } from '../../../i18n';
+import ModelVisionField from '../../../components/model/ModelVisionField.vue';
 
 const props = defineProps<{
   isDark?: boolean;
@@ -456,6 +457,8 @@ const {
             </button>
           </div>
         </div>
+
+        <ModelVisionField v-model="modelForm.vision" :is-dark="isDark" />
 
         <!-- 错误提示 -->
         <div v-if="modelFormError" class="text-xs text-red-500 font-medium">

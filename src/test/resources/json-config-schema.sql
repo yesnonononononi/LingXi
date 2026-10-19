@@ -6,7 +6,7 @@ CREATE TABLE mcp (
 );
 CREATE TABLE model_config (
  id BIGINT PRIMARY KEY, base_url VARCHAR(500), api_key VARCHAR(500), model_name VARCHAR(100),
- provider VARCHAR(50), create_time TIMESTAMP, update_time TIMESTAMP
+ provider VARCHAR(50), vision BOOLEAN NOT NULL DEFAULT FALSE, create_time TIMESTAMP, update_time TIMESTAMP
 );
 CREATE TABLE user_configs (
  id BIGINT PRIMARY KEY, workspace_type VARCHAR(20), command_approval_policy VARCHAR(30),

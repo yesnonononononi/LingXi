@@ -15,6 +15,7 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
   const addType = ref<'preset' | 'custom'>('preset');
   const editingModelId = ref<number | string | null>(null);
   const modelForm = ref({
+    vision: false,
     modelName: '',
     baseUrl: '',
     apiKey: '',
@@ -75,6 +76,7 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
     if (type === 'preset') {
       selectedProvider.value = 'DeepSeek';
       modelForm.value = {
+        vision: false,
         modelName: '',
         baseUrl: 'https://api.deepseek.com/v1',
         apiKey: '',
@@ -82,6 +84,7 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
     } else {
       selectedProvider.value = '';
       modelForm.value = {
+        vision: false,
         modelName: '',
         baseUrl: '',
         apiKey: '',
@@ -98,6 +101,7 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
     const matched = providerPresets.find(p => p.baseUrl === item.baseUrl);
     selectedProvider.value = matched ? matched.name : '';
     modelForm.value = {
+      vision: item.vision,
       modelName: item.modelName ?? '',
       baseUrl: item.baseUrl ?? '',
       apiKey: '', // 展示掩码不回填；编辑留空保留数据库中的原值。
@@ -187,7 +191,7 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
   const cancelModelForm = () => {
     isEditingOrAdding.value = false;
     editingModelId.value = null;
-    modelForm.value = { modelName: '', baseUrl: '', apiKey: '' };
+    modelForm.value = { modelName: '', baseUrl: '', apiKey: '', vision: false };
     modelFormError.value = '';
     isRemoteModelDropdownOpen.value = false;
     isProviderDropdownOpen.value = false;
@@ -217,6 +221,7 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
     isSubmittingModel.value = true;
     try {
       const payload = {
+        vision: modelForm.value.vision,
         modelName: modelForm.value.modelName.trim(),
         baseUrl: modelForm.value.baseUrl.trim(),
         apiKey: modelForm.value.apiKey.trim() || undefined,

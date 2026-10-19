@@ -4,6 +4,7 @@ package com.summit.dp.model.domain.model;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import com.summit.dp.shared.exception.ClientException;
 
 @AllArgsConstructor
 @Getter
@@ -14,6 +15,25 @@ public class ModelConfig {
     private String apiKey;
     private String modelName;
     private String provider;
+    private boolean vision;
+
+    public void changeModelName(String modelName) {
+        throwIf(modelName == null || modelName.isBlank(), "模型名称不能为空");
+        this.modelName = modelName.trim();
+    }
+
+    public void changeBaseUrl(String baseUrl) {
+        throwIf(baseUrl == null || baseUrl.isBlank(), "模型 API Base URL 不能为空");
+        this.baseUrl = baseUrl.trim();
+    }
+
+    public void changeApiKey(String apiKey) {
+        this.apiKey = apiKey;
+    }
+
+    public void changeVision(boolean vision) {
+        this.vision = vision;
+    }
 
     public String getMaskedApiKey() {
         if (apiKey == null || apiKey.isEmpty()) return apiKey;
@@ -23,10 +43,8 @@ public class ModelConfig {
         int suffixStart = apiKey.offsetByCodePoints(0, length - visible);
         return apiKey.substring(0, prefixEnd) + "***" + apiKey.substring(suffixStart);
     }
-    public void update(String modelName, String baseUrl, String apiKey) {
-        this.modelName = modelName;
-        this.baseUrl = baseUrl;
-        this.apiKey = apiKey;
+    private void throwIf(boolean condition, String err) {
+        if (condition) throw new ClientException(err);
     }
 
 }

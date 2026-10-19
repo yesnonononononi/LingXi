@@ -12,7 +12,7 @@ export class ModelAPI {
     return http.get<any, Result<PageResult<ModelConfigVO>>>(`/model/list?page=${page}&pageSize=${pageSize}`);
   }
 
-  static async add(data: { modelName: string; baseUrl: string; apiKey?: string }): Promise<Result<void>> {
+  static async add(data: ModelConfigPayload): Promise<Result<void>> {
     return http.post<any, Result<void>>('/model/add', data);
   }
 

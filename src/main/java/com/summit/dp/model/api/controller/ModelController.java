@@ -22,13 +22,13 @@ public class ModelController {
     }
     @PostMapping("/add")
     public Result<Void> add(@RequestBody ModelConfigRequest request){
-        ModelConfigCommand command = new ModelConfigCommand(request.id(),request.modelName(), request.baseUrl(), request.apiKey());
+        ModelConfigCommand command = new ModelConfigCommand(request.id(), request.modelName(), request.baseUrl(), request.apiKey(), request.vision());
         return modelService.add(command);
     }
 
     @PostMapping("/update")
     public Result<Void> update(@RequestBody ModelConfigRequest request){
-        ModelConfigCommand command = new ModelConfigCommand(request.id(), request.modelName(), request.baseUrl(), request.apiKey());
+        ModelConfigCommand command = new ModelConfigCommand(request.id(), request.modelName(), request.baseUrl(), request.apiKey(), request.vision());
         return modelService.update(command);
     }
 

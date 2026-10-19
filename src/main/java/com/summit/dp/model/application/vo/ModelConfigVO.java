@@ -13,6 +13,7 @@ public class ModelConfigVO {
     private String apiKey;
     private String modelName;
     private String provider;
+    private boolean vision;
     private Duration timeout;
     private boolean returnThinking;
     private boolean sendThinking;

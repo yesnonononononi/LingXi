@@ -22,6 +22,7 @@ public class ModelConfigPO {
     private String apiKey;
     private String modelName;
     private String provider;
+    private boolean vision;
     private Instant createTime;
     private Instant updateTime;
 }

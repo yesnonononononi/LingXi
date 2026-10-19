@@ -88,6 +88,26 @@ class JsonRepositoriesTest {
     private Path path(String name) { return directory.resolve(name + ".json"); }
 
     @Test
+    void visionSurvivesImportReopenAndTransactionRollback() {
+        modelMapper.insert(ModelConfigPO.builder().id(43L).modelName("custom-name").baseUrl("http://localhost")
+                .apiKey("key").vision(true).build());
+        ModelConfig imported = models.findById(43L).orElseThrow();
+        assertTrue(imported.isVision());
+        ModelConfigRepositoryImpl reopened = new ModelConfigRepositoryImpl(modelMapper, path("models").toString());
+        assertTrue(reopened.findById(43L).orElseThrow().isVision());
+        transaction.executeWithoutResult(status -> {
+            ModelConfig pending = models.findById(43L).orElseThrow();
+            pending.changeVision(false);
+            models.updateById(pending);
+            status.setRollbackOnly();
+        });
+        assertTrue(reopened.findById(43L).orElseThrow().isVision());
+        imported.changeVision(false);
+        models.updateById(imported);
+        assertFalse(reopened.findById(43L).orElseThrow().isVision());
+    }
+
+    @Test
     void migratePreservesIdsCredentialsAndTimestamps() {
         Instant now = Instant.parse("2026-10-03T01:02:03Z");
         modelMapper.insert(ModelConfigPO.builder().id(42L).modelName("模型甲").baseUrl("http://localhost")
@@ -109,18 +129,20 @@ class JsonRepositoriesTest {
 
     @Test
     void crudPaginationAndClearingFieldsWork() {
-        Long id = models.saveAndReturnId(new ModelConfig(null, "http://localhost", "secret", "甲", "provider"));
-        models.save(new ModelConfig(null, "http://localhost", "other", "乙", null));
+        Long id = models.saveAndReturnId(new ModelConfig(null, "http://localhost", "secret", "甲", "provider", false));
+        models.save(new ModelConfig(null, "http://localhost", "other", "乙", null, false));
         assertEquals(2, models.page(1, 1).getTotal());
         assertEquals(1, models.queryByPage(0, 0).getRecords().size());
         assertTrue(models.page(Integer.MAX_VALUE, 10).getRecords().isEmpty());
         ModelConfig config = models.findById(id).orElseThrow();
-        config.update("修改", "http://localhost/new", "");
+        config.changeModelName("修改");
+        config.changeBaseUrl("http://localhost/new");
+        config.changeApiKey("");
         models.updateById(config);
         assertEquals("", models.findById(id).orElseThrow().getApiKey());
         models.delete(config);
         assertFalse(models.findById(id).isPresent());
-        assertNotEquals(id, models.saveAndReturnId(new ModelConfig(null, "http://localhost", "", "丙", null)));
+        assertNotEquals(id, models.saveAndReturnId(new ModelConfig(null, "http://localhost", "", "丙", null, false)));
         assertThrows(IllegalStateException.class, () -> models.updateById(config));
     }
 
@@ -157,7 +179,7 @@ class JsonRepositoriesTest {
             UserConfig config = users.findSingleton().orElseThrow();
             config.changeAgent(5L);
             users.updateById(config);
-            models.save(new ModelConfig(null, "http://localhost", "", "rollback", null));
+            models.save(new ModelConfig(null, "http://localhost", "", "rollback", null, false));
             mcps.save(Mcp.builder().id(5L).name("回滚").transport(Mcp.Transport.STDIO).status(1).build());
             assertEquals(5L, users.findSingleton().orElseThrow().getAgentId());
             status.setRollbackOnly();
@@ -183,7 +205,7 @@ class JsonRepositoriesTest {
             for (int i = 0; i < 30; i++) {
                 int index = i;
                 operations.add(() -> transaction.execute(status -> models.saveAndReturnId(
-                        new ModelConfig(null, "http://localhost", "", "模型" + index, null))));
+                        new ModelConfig(null, "http://localhost", "", "模型" + index, null, false))));
             }
             List<Future<Long>> futures = executor.invokeAll(operations);
             List<Long> ids = new ArrayList<>();
@@ -210,7 +232,7 @@ class JsonRepositoriesTest {
                 JsonConfig.class)) {
             String json = context.getBean(ObjectMapper.class).writeValueAsString(Map.of("id", 42L));
             assertEquals("{\"id\":\"42\"}", json);
-            models.save(new ModelConfig(42L, "http://localhost", "", "模型", null));
+            models.save(new ModelConfig(42L, "http://localhost", "", "模型", null, false));
             assertTrue(new ObjectMapper().readTree(Files.readString(path("models"))).get(0).get("id").isIntegralNumber());
         }
     }
@@ -218,7 +240,7 @@ class JsonRepositoriesTest {
     @Test
     void allFourFilesAreStrictJsonArraysAndIgnoreOldYaml() throws Exception {
         Files.writeString(directory.resolve("models.yaml"), "- id: 99\n  modelName: 旧模型\n");
-        models.save(new ModelConfig(42L, "http://localhost", "secret", "新模型", null));
+        models.save(new ModelConfig(42L, "http://localhost", "secret", "新模型", null, false));
         mcps.save(Mcp.builder().id(8L).name("服务").transport(Mcp.Transport.STDIO).status(1).build());
         users.save(UserConfig.defaultConfig());
         personalizations.save(Personalization.builder().id(3L).replyStyle(ReplyStyle.FRIENDLY)
@@ -281,13 +303,13 @@ class JsonRepositoriesTest {
     @Test
     void firstMigrationIsDiscardedOnRollbackAndReadOnlyRejectsWrites() {
         transaction.executeWithoutResult(status -> {
-            models.save(new ModelConfig(null, "http://localhost", "", "取消", null));
+            models.save(new ModelConfig(null, "http://localhost", "", "取消", null, false));
             status.setRollbackOnly();
         });
         assertFalse(Files.exists(path("models")));
         TransactionTemplate readOnly = new TransactionTemplate(new DataSourceTransactionManager(database));
         readOnly.setReadOnly(true);
         assertThrows(IllegalStateException.class, () -> readOnly.executeWithoutResult(status ->
-                models.save(new ModelConfig(null, "http://localhost", "", "禁止", null))));
+                models.save(new ModelConfig(null, "http://localhost", "", "禁止", null, false))));
     }
 }
