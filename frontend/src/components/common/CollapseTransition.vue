@@ -101,11 +101,21 @@ const onAfterLeave = (el: Element) => {
   clip-path: inset(0) !important;
 }
 
+/* leave 方向在 clip-path 之外还必须加 overflow: clip。
+   只靠 clip-path 时，动画把元素高度缩到 0，但子树仍是自然高度 —— clip-path 只裁绘制、
+   不参与祖先的滚动溢出计算，子树会一直撑着滚动容器的 scrollHeight；等 Transition 结束、
+   Vue 摘掉元素的那一刻，这份溢出瞬间消失（实测单帧掉 128px），吸底逻辑同帧跟着拽
+   scrollTop，整条消息列表就是「瞬一下」。overflow: clip 把子树挡进元素的溢出裁剪区，
+   scrollHeight 跟着动画平滑下降，摘元素时不再有突降。
+   ⚠️ 必须是 clip 而不是 hidden：hidden 会建 BFC，块内 margin 不再塌陷（实测内部溢出
+   从 244px 变 252px），收起开始时内容会先位移、底部还被裁掉一截；clip 不建 BFC，
+   实测内部溢出与不写 overflow 完全一致。 */
 .collapse-transition-leave-active {
   transition: height 230ms cubic-bezier(0.25, 0.1, 0.25, 1),
               opacity 180ms ease,
               padding-top 230ms ease,
               padding-bottom 230ms ease !important;
   clip-path: inset(0) !important;
+  overflow: clip;
 }
 </style>
