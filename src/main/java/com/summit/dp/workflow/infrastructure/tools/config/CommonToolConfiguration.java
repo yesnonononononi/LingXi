@@ -84,7 +84,7 @@ public class CommonToolConfiguration {
                           "taskId":{"type":"string","description":"Exact taskId returned by execute_command; required for read, snapshot and stop."}
                         },"required":["action"]}
                         """)
-                .timeout(30L)
+                .timeout(300L)
                 .maxOutput(55_000)
                 .build();
     }
