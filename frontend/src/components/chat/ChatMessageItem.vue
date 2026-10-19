@@ -445,9 +445,15 @@
 
       <!-- 统一互动卡片：PLAN / CHOICE / COMMAND 三类 PROMISE 卡片（含 UNAVAILABLE）。
            渲染在过程折叠区之外，作为一等时间线项，确保用户可操作项不会被吞进折叠框。 -->
-      <template v-for="entry in cardItems" :key="entry.id">
+      <template v-for="entry in groupedCardItems" :key="entry.id">
+        <CommandApprovalGroup
+          v-if="entry.commands"
+          :entries="entry.commands"
+          :session-id="props.sessionId"
+          :is-dark="isDark"
+        />
         <!-- 待决策卡片整卡展开（要按键）；已决卡片默认收成一行，细节按需展开 -->
-        <div v-if="!entry.card.pending" class="w-full">
+        <div v-else-if="!entry.card.pending" class="w-full">
           <button
             type="button"
             @click="toggleCard(entry.id)"
@@ -625,6 +631,8 @@ import GradientText from '../common/GradientText.vue';
 import MarkdownRenderer from './MarkdownRenderer.vue';
 import DelegatedTaskMessage from './DelegatedTaskMessage.vue';
 import PromptCard from './PromptCard.vue';
+import CommandApprovalGroup from './CommandApprovalGroup.vue';
+import { groupCommandApprovals } from '../../utils/promptCardGroups';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import ReadImageToolGroup from './ReadImageToolGroup.vue';
 import { groupReadImageTools } from '../../utils/readImageTools';
@@ -1066,6 +1074,7 @@ const cardItems = computed<Array<{ id: string; card: PromptCardData }>>(() =>
     .filter(item => item.type === 'prompt_card' && !!item.card)
     .map(item => ({ id: item.id, card: toPromptCardData(item.card as NonNullable<ProcessTimelineItem['card']>) }))
 );
+const groupedCardItems = computed(() => groupCommandApprovals(cardItems.value));
 
 /** 已决卡片默认收成一行（避免大卡片常驻页底占位），细节按需展开；待决策卡片整卡展开。 */
 const expandedCardIds = ref<Record<string, boolean>>({});

@@ -1,0 +1,86 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const { app, BrowserWindow } = require('electron');
+
+const output = path.resolve(__dirname, '../node_modules/.tmp/command-approval-group');
+app.setPath('userData', path.join(output, 'profile'));
+app.on('window-all-closed', () => {});
+let window;
+const deadline = setTimeout(() => { console.error('审批分组验证超时'); app.exit(1); }, 90000);
+
+app.whenReady().then(async () => {
+  await fs.mkdir(output, { recursive: true });
+  await fs.writeFile(path.join(output, 'App.vue'), `<script setup>
+import { ref, provide } from 'vue';
+import ChatMessageItem from '../../../src/components/chat/ChatMessageItem.vue';
+import { DECIDE_TOOL_CALL_KEY } from '../../../src/types/toolDecision';
+import '../../../src/style.css';
+const dark = ref(false);
+const createCard = (id, pending=false) => ({id,conversationId:'42',type:'PROMISE',status:pending?'pending':'completed',version:'7',allowedActions:pending?['APPROVE','REJECT']:[],content:{kind:'COMMAND',command:'git status --short '+id,intention:'检查工作目录 '+id,workDir:'D:/Code/LingXi'},rawOutput:pending?null:{outcome:Number(id.split('-')[1])%3?'APPROVED':'CANCELLED'}});
+const message = ref({id:'answer',turnId:'43',role:'assistant',timestamp:0,content:'本轮命令审批记录。',isComplete:true,toolCalls:[],promptCards:Array.from({length:60},(_,i)=>createCard('command-'+i))});
+window.decisions=[];
+provide(DECIDE_TOOL_CALL_KEY, async decision=>{
+  window.decisions.push(decision);
+  await new Promise(resolve=>{window.finishDecision=()=>{const card=message.value.promptCards.find(card=>card.id===decision.toolCallId);card.status='completed';card.allowedActions=[];card.rawOutput={outcome:decision.action==='APPROVE'?'APPROVED':'REJECTED'};resolve();};});
+});
+window.addPending = id => message.value.promptCards.push(createCard(id,true));
+window.addChoice = () => message.value.promptCards.push({id:'choice-1',conversationId:'42',type:'PROMISE',status:'pending',version:'2',allowedActions:['ANSWER'],content:{kind:'CHOICE',question:'选择交付方式',options:['源码','安装包']}});
+window.setDark = value=>{dark.value=value;document.documentElement.classList.toggle('dark',value);document.body.style.background=value?'#18181b':'white';};
+</script><template><main style="max-width:720px;margin:24px auto;padding:0 12px"><ChatMessageItem :message="message" session-id="42" :is-dark="dark" /></main></template>`);
+  await fs.writeFile(path.join(output, 'entry.js'), `import {createApp,nextTick} from 'vue';
+localStorage.setItem('lingxi-locale','zh-CN');window.runtimeErrors=[];
+window.addEventListener('error',event=>window.runtimeErrors.push(event.message));
+window.addEventListener('unhandledrejection',event=>window.runtimeErrors.push(String(event.reason)));
+window.flush=async()=>{await nextTick();await new Promise(resolve=>setTimeout(resolve,220));};
+const {default:App}=await import('./App.vue');createApp(App).mount('#app');window.ready=true;`);
+  await fs.writeFile(path.join(output, 'index.html'), '<!doctype html><html><head><meta charset="utf-8"></head><body><div id="app"></div><script type="module" src="./entry.js"></script></body></html>');
+  const { build } = await import('vite');
+  const { default: vue } = await import('@vitejs/plugin-vue');
+  await build({configFile:false,root:output,base:'./',plugins:[vue()],logLevel:'error',build:{target:'esnext',outDir:path.join(output,'dist'),emptyOutDir:true}});
+  window = new BrowserWindow({width:860,height:660,show:false,webPreferences:{contextIsolation:true,offscreen:true,backgroundThrottling:false}});
+  await window.loadFile(path.join(output, 'dist/index.html'));
+  const evaluate = source => window.webContents.executeJavaScript(source);
+  for(let attempt=0;attempt<100;attempt++) {if(await evaluate('window.ready===true'))break;await new Promise(resolve=>setTimeout(resolve,50));}
+  await evaluate('window.flush()');
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=command-approval-group]").length'),1);
+  assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-toggle]").getAttribute("aria-expanded")'),'false');
+  assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-group]").getBoundingClientRect().height<50'),true);
+  await fs.writeFile(path.join(output, 'collapsed.png'), (await window.webContents.capturePage()).toPNG());
+  await evaluate('document.querySelector("[data-testid=command-approval-toggle]").click();window.flush()');
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=command-approval-entry-toggle]").length'),60);
+  assert.equal(await evaluate('(()=>{const list=document.querySelector("[data-testid=command-approval-list]");return list.scrollHeight>list.clientHeight&&list.clientHeight<=320;})()'),true,'审批列表必须限高并在组内滚动');
+  await fs.writeFile(path.join(output, 'expanded.png'), (await window.webContents.capturePage()).toPNG());
+  const bounds = await evaluate(`(() => {const rect=document.querySelector('[data-testid=command-approval-group]').getBoundingClientRect();return {x:Math.floor(rect.left)-4,y:Math.floor(rect.top)-4,width:Math.ceil(rect.width)+8,height:Math.ceil(rect.height)+8};})()`);
+  await fs.writeFile(path.join(output, 'group.png'), (await window.webContents.capturePage(bounds)).toPNG());
+  await evaluate('document.querySelector("[data-testid=command-approval-entry-toggle]").click();window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-list]").textContent.includes("git status --short command-0")'),true);
+  assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-list]").clientHeight<=320'),true);
+  // 手动收起后到来的待审批，必须重新展开；待审批不能被组内历史淹没。
+  await evaluate('document.querySelector("[data-testid=command-approval-toggle]").click();window.addPending("command-60");window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-toggle]").getAttribute("aria-expanded")'),'true','新待审批必须展开分组');
+  assert.equal(await evaluate('document.querySelector("[data-approval-id]").dataset.approvalId'),'command-60');
+  assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-toggle]").textContent.includes("1 条待审批")'),true);
+  const clickAction = async label => evaluate(`[...document.querySelectorAll('[data-approval-id="command-60"] button')].find(button=>button.textContent.includes(${JSON.stringify(label)})).click();window.flush()`);
+  await clickAction('批准并执行');
+  assert.deepEqual(await evaluate('window.decisions'),[{conversationId:'42',toolCallId:'command-60',action:'APPROVE',expectedVersion:'7'}]);
+  await evaluate('document.querySelector("[data-testid=command-approval-toggle]").click();document.querySelector("[data-testid=command-approval-toggle]").click();window.flush()');
+  assert.equal(await evaluate('[...document.querySelectorAll(\'[data-approval-id="command-60"] button\')].filter(button=>button.textContent.includes("批准")).every(button=>button.disabled)'),true);
+  await evaluate('window.finishDecision();window.flush()');
+  assert.equal(await evaluate('document.querySelector(\'[data-approval-id="command-60"]\').textContent.includes("已批准")'),true);
+  await evaluate('window.addPending("command-61");window.flush()');
+  await evaluate('[...document.querySelectorAll(\'[data-approval-id="command-61"] button\')].find(button=>button.textContent.includes("拒绝")).click();window.flush()');
+  assert.deepEqual(await evaluate('window.decisions[1]'),{conversationId:'42',toolCallId:'command-61',action:'REJECT',expectedVersion:'7'});
+  await evaluate('window.finishDecision();window.setDark(true);window.flush()');
+  await fs.writeFile(path.join(output, 'dark.png'), (await window.webContents.capturePage()).toPNG());
+  await window.setSize(360,660);
+  await evaluate('window.flush()');
+  assert.equal(await evaluate('document.documentElement.scrollWidth<=window.innerWidth'),true);
+  await fs.writeFile(path.join(output, 'narrow.png'), (await window.webContents.capturePage()).toPNG());
+  await evaluate('window.addChoice();window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-list]").textContent.includes("选择交付方式")'),false);
+  assert.equal(await evaluate('document.body.textContent.includes("选择交付方式")'),true);
+  assert.deepEqual(await evaluate('window.runtimeErrors'),[]);
+  console.log('真实组件通过：60 条记录单组、默认折叠、320px 限高滚动、逐项详情、新审批自动露出、权威逐条批准/拒绝、防重复提交、其他卡片独立、深浅主题与窄屏。');
+  clearTimeout(deadline);window.destroy();app.exit(0);
+}).catch(error=>{console.error(error);clearTimeout(deadline);if(window)window.destroy();app.exit(1);});

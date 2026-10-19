@@ -212,13 +212,18 @@ const CARD_STATUS_LABEL_KEY: Record<PromptCardData['status'], string> = {
   completed: 'card.status.completed'
 };
 
-/** 卡片单行摘要文案：有结论按结论，无结论按生命周期阶段。 */
-export function buildCardSummary(card: PromptCardData): string {
-  const kind = t(CARD_KIND_LABEL_KEY[card.kind]);
-  const tail = card.outcome
+/** 分组列表与卡片摘要共用状态口径，缺少结论时保留真实生命周期。 */
+export function resolveCardStatusLabel(card: PromptCardData): string {
+  return card.outcome
     ? t(CARD_OUTCOME_LABEL_KEY[card.outcome] ?? '')
       || card.outcome
     : t(CARD_STATUS_LABEL_KEY[card.status]);
+}
+
+/** 卡片单行摘要文案：有结论按结论，无结论按生命周期阶段。 */
+export function buildCardSummary(card: PromptCardData): string {
+  const kind = t(CARD_KIND_LABEL_KEY[card.kind]);
+  const tail = resolveCardStatusLabel(card);
   return card.title
     ? t('card.summaryWithTitle', { kind, title: card.title, tail })
     : t('card.summaryPlain', { kind, tail });

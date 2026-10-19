@@ -24,6 +24,7 @@ function loadChatModule(filename, realPlanCards = false) {
       if (!request.startsWith('.')) return require(request);
       const resolved = path.resolve(path.dirname(filename), request);
       if (request.endsWith('.vue')) {
+        if (request.endsWith('CommandApprovalGroup.vue')) return load(resolved);
         if (request.endsWith('CardHeader.vue')) return load(resolved);
         if (realPlanCards && /(?:PromptCard|PlanCard|CardActionButton)\.vue$/.test(request)) return load(resolved);
         if (request.endsWith('GradientText.vue')) {
@@ -68,7 +69,7 @@ function loadComponent() {
 }
 
 function element(tag, text = '') {
-  return { tag, text, props: {}, children: [], parent: null };
+  return { tag, text, props: {}, style: {}, children: [], parent: null };
 }
 
 function text(node) {

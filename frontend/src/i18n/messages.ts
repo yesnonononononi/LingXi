@@ -646,6 +646,9 @@ export const messages: MessageSchema = {
         submitAnswer: '提交回答',
       },
       approval: {
+        groupTitle: '命令审批',
+        groupCount: '{count} 条',
+        groupPending: '{count} 条待审批',
         typeLabel: '命令审批',
         expandCard: '展开卡片',
         collapseCard: '收起卡片',
@@ -1660,6 +1663,9 @@ export const messages: MessageSchema = {
         submitAnswer: 'Submit answer',
       },
       approval: {
+        groupTitle: 'Command approvals',
+        groupCount: '{count} commands',
+        groupPending: '{count} awaiting approval',
         typeLabel: 'Command approval',
         expandCard: 'Expand card',
         collapseCard: 'Collapse card',
