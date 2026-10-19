@@ -17,6 +17,19 @@ export type MessageSchema = Record<'zh-CN' | 'en-US', MessageDict>;
 
 export const messages: MessageSchema = {
   'zh-CN': {
+
+    notify: {
+      // 会话没有标题时的兜底标题（会话标题正常都会作为通知标题使用）
+      titleFallback: '灵犀',
+      body: {
+        completed: '任务已完成',
+        failed: '任务执行失败',
+        cancelled: '任务已停止',
+        // 挂起＝在等用户审批/做选择，比「跑完了」更值得打扰
+        suspended: '等待你的确认',
+      },
+    },
+
     app: {
       titlebar: '灵犀 · 智能体工作台',
     },
@@ -1034,6 +1047,16 @@ export const messages: MessageSchema = {
     },
   },
   'en-US': {
+    notify: {
+      titleFallback: 'LingXi',
+      body: {
+        completed: 'Task completed',
+        failed: 'Task failed',
+        cancelled: 'Task stopped',
+        suspended: 'Waiting for your input',
+      },
+    },
+
     app: {
       titlebar: 'LingXi · Agent Workspace',
     },

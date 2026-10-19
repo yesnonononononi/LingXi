@@ -3,6 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const backend = require('./backend.cjs');
 const { registerFilePreview } = require('./file-preview.cjs');
+const { registerNotificationWindow, normalizePayload } = require('./notification-window.cjs');
+
 const { createUpdater } = require('./updater.cjs');
 
 // 生产环境下关闭默认冗余的控制台警告
@@ -36,6 +38,23 @@ const closeFilePreviews = registerFilePreview({ ipcMain, shell, getWindow: () =>
 
 // 开发态判定（与 createWindow 内保持一致）：开发态允许缺后端产物，由开发者在 IDE 里起后端
 const isDev = process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
+
+/** 应用根目录（打包后为 resources/app）；通知窗口按它解析 dist/notification.html。 */
+const frontendRoot = path.resolve(__dirname, '..');
+
+/**
+ * 自绘通知窗口管理器。
+ *
+ * <p>放在这里（而不是 main 顶部）是因为它需要 isDev 与 frontendRoot 才能解析入口页面，
+ * 且必须在任何 notify IPC 之前完成注册。</p>
+ */
+const notifications = registerNotificationWindow({
+  ipcMain,
+  getWindow: () => mainWindow,
+  isDev,
+  frontendRoot,
+});
+
 
 // 后端日志与工作目录都放 userData：安装到 Program Files 后应用目录不可写
 const userDataDir = app.getPath('userData');
@@ -305,30 +324,42 @@ ipcMain.handle('dialog:select-directory', async (event) => {
   return result.filePaths[0];
 });
 
-// IPC 处理器：发送 Windows 原生横幅通知
-ipcMain.handle('notify', (event, { title, body }) => {
-  if (Notification.isSupported()) {
-    const iconPath = path.join(__dirname, 'resources/icon.ico');
-    const notification = new Notification({
-      title: title || 'LX',
-      body: body || '',
-      icon: iconPath,
-    });
+// IPC 处理器：推送一条任务通知（自绘云母卡片，失败时退回系统原生横幅）
+ipcMain.handle('notify', (event, payload) => {
+  // 与更新类 IPC 同一口径：本应用 sandbox:false 且页面会渲染用户/模型产出的内容，
+  // 不校验来源的话任何注入点都能弹任意文案。
+  if (!assertTrustedSender(event)) return false;
+  // 长度、类型、枚举在模块内统一收口，自绘与原生两条路径共用同一份结果
+  const request = normalizePayload(payload);
 
-    // 用户点击系统横幅通知时，自动打开并激活 LX 窗口
-    notification.on('click', () => {
-      if (mainWindow) {
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.show();
-        mainWindow.focus();
-      }
-    });
-
-    notification.show();
-    return true;
-  }
-  return false;
+  if (notifications.show(request)) return true;
+  return showNativeNotification(request.title, request.body);
 });
+
+/**
+ * 系统原生通知：仅在自绘窗口建不出来时兜底。
+ *
+ * <p>原生 Toast 的样式由 Explorer 决定，做不出云母半透明，所以它只是「宁可难看也别没提醒」
+ * 的退路，不是主路径。</p>
+ */
+function showNativeNotification(title, body) {
+  if (!Notification.isSupported()) return false;
+  const iconPath = path.join(__dirname, 'resources/icon.ico');
+  const notification = new Notification({ title: title || 'LX', body: body || '', icon: iconPath });
+
+  // 用户点击系统横幅通知时，自动打开并激活 LX 窗口
+  notification.on('click', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  notification.show();
+  return true;
+}
+
 
 // ---------------------------------------------------------------- 更新 IPC
 
@@ -485,6 +516,9 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => {
   isQuiting = true;
   closeFilePreviews();
+  // 通知卡片不进任务栏，退出后没人能关掉它们，必须在这里主动收干净
+  notifications.closeAll();
+
   // 停掉更新器的定时器，避免退出过程中触发一次检查
   updater.stop();
   updaterLogStream?.end();

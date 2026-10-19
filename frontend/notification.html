@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LX</title>
+    <style>
+      /* 首帧就定死透明底：等 CSS 加载完再变透明会闪一下纯白/纯黑，
+         而通知窗口的存活时间只有几秒，一次闪烁就毁掉整个观感。 */
+      html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <div id="notification-root"></div>
+    <script type="module" src="/src/notification/main.ts"></script>
+  </body>
+</html>
+  

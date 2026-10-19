@@ -14,8 +14,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectDirectory: () => ipcRenderer.invoke('dialog:select-directory'),
   /** 重启应用（数据目录变更后需要重启才生效）；主进程会校验调用来源 */
   relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
-  /** 发送系统原生通知 (Windows 10/11 横幅通知) */
+  /** 发送任务通知（自绘云母卡片，系统不支持时退回原生横幅） */
   notify: (options) => ipcRenderer.invoke('notify', options),
+  /**
+   * 订阅「用户点了通知」事件。返回取消订阅函数。
+   *
+   * 回调收到 { sessionId, kind }：主进程负责唤起窗口，渲染层负责切到对应会话。
+   */
+  onNotificationActivate: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('notification:activate', listener);
+    return () => ipcRenderer.removeListener('notification:activate', listener);
+  },
+
   setTitleBarTheme: (isDark) => ipcRenderer.invoke('window:set-titlebar-theme', isDark),
   // 窗口创建参数不会随页面热更新，不能凭接口存在就展示第二层标题栏。
   customTitleBar: process.argv.includes('--lingxi-custom-titlebar'),

@@ -1,0 +1,210 @@
+/*
+ * 自绘通知卡片的样式。
+ *
+ * 这里刻意不引 Tailwind：通知窗口只有一张卡片，手写 CSS 才能精确控制
+ * 「云母底色 + 半透明 + 描边」这三层叠加关系，Tailwind 的工具类反而会把它搅浑。
+ *
+ * 材质分两档（由主进程按系统版本判定后写进 <html> 的 class）：
+ *   .material-mica  → Windows 11 22H2+，DWM 已经画了云母底，网页层只需薄薄一层色罩
+ *   .material-solid → 旧系统，没有系统材质，只能把色罩加厚到接近不透明
+ */
+
+:root {
+  --card-radius: 10px;
+  --fg: #f4f4f5;
+  --fg-dim: #a1a1aa;
+  --line: rgba(255, 255, 255, 0.10);
+  --accent: #60a5fa;
+  --accent-warn: #fbbf24;
+  --accent-danger: #f87171;
+  --accent-ok: #4ade80;
+}
+
+html.theme-light {
+  --fg: #18181b;
+  --fg-dim: #52525b;
+  --line: rgba(0, 0, 0, 0.10);
+  --accent: #2563eb;
+  --accent-warn: #b45309;
+  --accent-danger: #dc2626;
+  --accent-ok: #15803d;
+}
+
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+/*
+ * 必须把根节点撑满窗口。
+ *
+ * 少了这一条，`.card` 的 height:100% 会解析成 auto（父级高度未定），
+ * 卡片只裹住文字那么高，窗口剩余部分露出窗口底色的空白 —— 这是实测踩到的坑。
+ */
+#notification-root {
+  height: 100%;
+}
+
+.card {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 100%;
+  padding: 12px 12px 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  overflow: hidden;
+  /* 入场动画：从下方轻轻推上来，别做弹跳，通知不应该抢戏 */
+  transform: translateY(10px);
+  opacity: 0;
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease,
+              background-color 160ms ease, border-color 160ms ease;
+}
+
+.card.entered {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.card.leaving {
+  transform: translateY(6px);
+  opacity: 0;
+  transition-duration: 140ms;
+}
+
+/* 云母档：系统材质在底下，这里只叠一层很薄的冷调色罩，保留「透出壁纸」的观感。
+   实测 dark Mica 底约 #22201D，0.32 的色罩既能压住壁纸的杂色，又留得住材质层次；
+   再往上加就会变成一张普通深色卡片，云母白搭。 */
+html.material-mica .card {
+  background-color: rgba(24, 24, 27, 0.32);
+}
+
+html.material-mica.theme-light .card {
+  background-color: rgba(250, 250, 252, 0.38);
+}
+
+/* 无材质档：没有 DWM 云母可透，色罩必须加厚，否则文字压在壁纸上完全看不清 */
+html.material-solid .card {
+  background-color: rgba(24, 24, 27, 0.94);
+}
+
+html.material-solid.theme-light .card {
+  background-color: rgba(250, 250, 252, 0.96);
+}
+
+.card:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+html.theme-light .card:hover {
+  border-color: rgba(0, 0, 0, 0.16);
+}
+
+/* 顶部一道极细的高光，模拟材质受光边，让卡片「浮」起来 */
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.16), transparent);
+  pointer-events: none;
+}
+
+html.theme-light .card::before {
+  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.08), transparent);
+}
+
+.icon {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  margin-top: 1px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  background: rgba(96, 165, 250, 0.16);
+  color: var(--accent);
+}
+
+.is-failed .icon,
+.is-cancelled .icon {
+  background: rgba(248, 113, 113, 0.16);
+  color: var(--accent-danger);
+}
+
+.is-suspended .icon {
+  background: rgba(251, 191, 36, 0.18);
+  color: var(--accent-warn);
+}
+
+.is-completed .icon {
+  background: rgba(74, 222, 128, 0.16);
+  color: var(--accent-ok);
+}
+
+.content {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.body {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fg-dim);
+  /* 最多两行，超出省略：通知不是日志，塞不下就截断 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.close {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin-top: -1px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-dim);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 140ms ease, background-color 140ms ease;
+}
+
+.card:hover .close {
+  opacity: 1;
+}
+
+.close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--fg);
+}
+
+html.theme-light .close:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+ 

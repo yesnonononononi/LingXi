@@ -8,7 +8,30 @@
 import type { FilePreviewRequest, FilePreviewData, NativeFileResult } from '../types/filePreview';
 import type { UpdateStatePayload, UpdateLookupResult, UpdateActionResult } from '../types/update';
 
+/** 通知类别：决定通知卡片的图标与配色。 */
+export type NotifyKind = 'completed' | 'failed' | 'cancelled' | 'suspended';
+
+/** 一条任务通知的请求体（与主进程 `notification-window.cjs` 的 payload 一致）。 */
+export interface NotifyRequest {
+  title: string;
+  body: string;
+  /** 归属会话；用户点通知时据此跳转。 */
+  sessionId?: string | number | null;
+  kind?: NotifyKind;
+  /** 停留时长（毫秒）；不传由主进程取默认值。 */
+  duration?: number;
+  /** 主应用当前主题，通知卡片据此配色（不传则通知窗口自行回退）。 */
+  theme?: 'dark' | 'light';
+}
+
+/** 用户点击通知后主进程回传的信息。 */
+export interface NotifyActivation {
+  sessionId: string | null;
+  kind: string | null;
+}
+
 export interface ElectronAPI {
+
   previewFile?: (request: FilePreviewRequest) => Promise<NativeFileResult<FilePreviewData>>;
   openFile?: (request: FilePreviewRequest) => Promise<NativeFileResult<void>>;
   revealFile?: (request: FilePreviewRequest) => Promise<NativeFileResult<void>>;
@@ -17,7 +40,11 @@ export interface ElectronAPI {
   selectDirectory: () => Promise<string | null>;
   /** 重启应用（仅桌面端；主进程会先停后端再重启）。Web 端为 undefined。 */
   relaunchApp?: () => Promise<boolean>;
-  notify: (options: { title: string; body: string }) => Promise<boolean>;
+  /** 发送任务通知（自绘云母卡片，系统不支持时退回原生横幅） */
+  notify: (options: NotifyRequest) => Promise<boolean>;
+  /** 订阅「用户点了通知」事件；返回取消订阅函数。Web 端为 undefined。 */
+  onNotificationActivate?: (callback: (payload: NotifyActivation) => void) => () => void;
+
   platform: string;
   setTitleBarTheme?: (isDark: boolean) => Promise<void>;
   customTitleBar?: boolean;
@@ -99,26 +126,25 @@ export function isAppInactive(): boolean {
 }
 
 /**
- * 发送系统原生通知 (Windows 10/11 悬浮横幅)。
+ * 发送一条任务通知（桌面端自绘云母卡片，Web 端降级为浏览器通知）。
  *
- * 优先调用桌面端原生 Notification API；若在 Web 端且支持 Notification 权限则降级使用 Web Notification。
- * @param title 通知标题
- * @param body 通知主体内容
+ * @param request 通知内容与归属会话
  * @param onlyWhenInactive 若为 true，则仅在应用处于后台/未聚焦时弹出
+ * @returns 是否成功弹出
  */
 export async function sendDesktopNotification(
-  title: string,
-  body: string,
+  request: NotifyRequest,
   onlyWhenInactive: boolean = false
 ): Promise<boolean> {
   if (onlyWhenInactive && !isAppInactive()) {
     return false;
   }
+  const { title, body } = request;
 
-  // 1. Electron 桌面端原生通知
+  // 1. Electron 桌面端：主进程建自绘云母窗口，建不出来时它自己退回原生横幅
   if (isElectron() && window.electronAPI?.notify) {
     try {
-      return await window.electronAPI.notify({ title, body });
+      return await window.electronAPI.notify(request);
     } catch (err) {
       console.warn('[sendDesktopNotification] 桌面通知发送失败:', err);
     }
@@ -134,4 +160,18 @@ export async function sendDesktopNotification(
 
   return false;
 }
+
+/**
+ * 订阅「用户点击了通知」。
+ *
+ * @param handler 收到归属会话后由调用方负责切会话
+ * @returns 取消订阅函数；非桌面端返回空实现
+ */
+export function onNotificationActivate(handler: (payload: NotifyActivation) => void): () => void {
+  if (!isElectron() || !window.electronAPI?.onNotificationActivate) {
+    return () => {};
+  }
+  return window.electronAPI.onNotificationActivate(handler);
+}
+
 

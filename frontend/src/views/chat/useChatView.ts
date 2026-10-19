@@ -24,6 +24,8 @@ import { useUserConfigStore } from '../../stores/userConfigStore';
 import { useTheme } from '../../composables/useTheme';
 import { t } from '../../i18n';
 import { useReasoningEffort } from '../../composables/useReasoningEffort';
+import { useDesktopNotification } from '../../composables/useDesktopNotification';
+
 import { isPersistedSessionId, toServerSessionId } from '../../utils/ids';
 import { toPositiveInt, isOk } from '../../utils/api';
 
@@ -248,10 +250,55 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   };
 
   /**
+   * 通知点击后的会话跳转入口。
+   *
+   * <p>{@link useChatSessionList} 在本函数更靠下的位置才创建，所以这里先留一个可变量，
+   * 等它建好再回填 —— 用闭包引用会撞上 TDZ。</p>
+   */
+  let navigateToSession: ((sessionId: string) => void) | null = null;
+
+  /** 任务结果通知（只在窗口不在前台时真正弹出，闸门由 composable 内部管）。 */
+  const desktopNotify = useDesktopNotification({
+    onActivate: (payload) => {
+      if (payload.sessionId) navigateToSession?.(payload.sessionId);
+    },
+  });
+
+  /** 终态 / 挂起事件 → 通知种类；其余事件返回 null。 */
+  const notifyKindOf = (type: string): 'completed' | 'failed' | 'cancelled' | 'suspended' | null => {
+    switch (type) {
+      case 'EXECUTION_COMPLETED': return 'completed';
+      case 'EXECUTION_FAILED': return 'failed';
+      case 'EXECUTION_CANCELLED': return 'cancelled';
+      case 'EXECUTION_SUSPENDED': return 'suspended';
+      default: return null;
+    }
+  };
+
+  /**
+   * 用户不在前台时，把本轮结果推成一条桌面通知。
+   *
+   * <p><b>只认根会话的事件</b>：子代理/委派子会话跑完同样会发 EXECUTION_COMPLETED，
+   * 但那时根任务还没结束，凭它弹「任务已完成」是彻底的假消息。</p>
+   */
+  const notifyIfUserAway = (event: AgentEvent): void => {
+    const kind = notifyKindOf(event.type);
+    if (!kind) return;
+    const session = currentActiveSession.value;
+    if (!session) return;
+    const eventSessionId = event.metaData?.sessionId ? String(event.metaData.sessionId) : null;
+    const rootId = String(resolveRootSessionId(session) ?? session.id);
+    if (eventSessionId && eventSessionId !== rootId) return;
+    const detail = event.type === 'EXECUTION_FAILED' ? event.errMsg : undefined;
+    void desktopNotify.notifyOutcome(session.id, kind, session.title, detail);
+  };
+
+  /**
    * 会话级流：发送只做同步受理、不带流，正文与工具轨迹全部由这条流下发。
    *
    * <p>连接按<b>根会话</b>共享并计数：主视图与子会话抽屉可能同时看同一会话，
    * 对同一根开两条连接会让同一事件双投、正文增量双写。</p>
+
    */
   const sessionEventStream = new SessionEventStream({
     onBackgroundTaskChanged: backgroundTasks.onTaskChanged,
@@ -270,7 +317,9 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
           void reconcileSessionAfterStream(String(owner));
         }
       }
+      notifyIfUserAway(event);
     },
+
     onConnectionClosed: (sessionId) => {
       // 掉线也可能意味着「终态事件没收到」：回读权威状态并对齐历史。
       void reconcileSessionAfterStream(sessionId);
@@ -585,6 +634,10 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     resetScrollAnchors,
     onNewSession: () => { subSession.activeViewingSubSessionId.value = null; },
   });
+
+  // 会话列表就绪后回填通知跳转入口：用户点通知 → 切到产生该通知的会话
+  navigateToSession = (sessionId: string) => { void sessionList.handleSelectSession(sessionId); };
+
 
   // ---------- 展示层派生（续） ----------
   /** 上下文用量指示器数据（输入框模型选择器左侧展示）。phase/band 供「压缩中」标签按档位消费。 */
