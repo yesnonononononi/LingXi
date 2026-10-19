@@ -8,6 +8,7 @@ import {
   playNotificationSound,
   readSoundPreference,
   writeSoundPreference,
+  DEFAULT_SOUND_ID,
   type SoundId,
 } from '../../../notification/sound';
 
@@ -36,6 +37,8 @@ export function useGeneralTab() {
 
   // 语言设置：偏好与持久化在 i18n 单例，此处仅提供下拉所需的响应式选项
   const isLanguageOpen = ref(false);
+  // 提示音下拉的展开态与语言下拉同层管理，点空白处一起收起
+  const isSoundOpen = ref(false);
   const languageOptions = computed<{ value: LocalePreference; label: string }[]>(() => [
     { value: 'system', label: t('settings.general.langSystem') },
     { value: 'zh-CN', label: t('settings.general.langZh') },
@@ -54,16 +57,19 @@ export function useGeneralTab() {
   const toggleLanguageDropdown = (e?: Event) => {
     e?.stopPropagation();
     isLanguageOpen.value = !isLanguageOpen.value;
+    if (isLanguageOpen.value) isSoundOpen.value = false;
   };
 
   const closeGeneralDropdowns = () => {
     isLanguageOpen.value = false;
+    isSoundOpen.value = false;
   };
 
   const handleDocumentClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement | null;
-    if (!target?.closest('.language-dropdown-container')) {
-      isLanguageOpen.value = false;
+    // 本页的下拉都挂这个类名：点在任一触发器/面板内就不收起，点别处统一关掉
+    if (!target?.closest('.general-dropdown-container')) {
+      closeGeneralDropdowns();
     }
   };
 
@@ -126,9 +132,20 @@ export function useGeneralTab() {
   // 通知提示音：偏好只在本机，不进后端配置（与主题、语言同属「这台机器的听感」）
   const soundPref = ref<SoundId>(readSoundPreference());
   const soundOptions = SOUND_LABEL_KEYS;
+  const currentSoundLabel = computed(
+    () => t(SOUND_LABEL_KEYS.find(o => o.id === soundPref.value)?.labelKey
+      ?? SOUND_LABEL_KEYS.find(o => o.id === DEFAULT_SOUND_ID)!.labelKey),
+  );
+
+  const toggleSoundDropdown = (e?: Event) => {
+    e?.stopPropagation();
+    isSoundOpen.value = !isSoundOpen.value;
+    if (isSoundOpen.value) isLanguageOpen.value = false;
+  };
 
   const handleSelectSound = (id: SoundId) => {
     soundPref.value = id;
+    isSoundOpen.value = false;
     writeSoundPreference(id);
     // 选中即试听：改完不用等到真的跑一轮任务才知道是什么声
     playNotificationSound(id);
@@ -149,6 +166,9 @@ export function useGeneralTab() {
     handleSelectTheme,
     soundPref,
     soundOptions,
+    currentSoundLabel,
+    isSoundOpen,
+    toggleSoundDropdown,
     handleSelectSound,
   };
 }

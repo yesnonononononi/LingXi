@@ -26,6 +26,9 @@ const {
   handleSelectTheme,
   soundPref,
   soundOptions,
+  currentSoundLabel,
+  isSoundOpen,
+  toggleSoundDropdown,
   handleSelectSound,
 } = useGeneralTab();
 </script>
@@ -92,7 +95,7 @@ const {
     <!-- 语言 -->
     <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-white/10">
             <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.language') }}</span>
-      <div class="relative language-dropdown-container" @click.stop>
+      <div class="relative general-dropdown-container" @click.stop>
         <SpecularButton
           size="sm"
           :radius="14"
@@ -188,26 +191,62 @@ const {
 
     <!-- 通知提示音：只影响自绘通知卡片，Web 端没有桌面通知所以选了也不会响 -->
     <div class="pt-3 border-t border-gray-100 dark:border-white/10">
-      <div class="flex flex-col mb-2">
-        <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.notifySound') }}</span>
-        <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.notifySoundDesc') }}</span>
-      </div>
-      <div class="grid grid-cols-3 sm:grid-cols-5 gap-2">
-        <button
-          v-for="option in soundOptions"
-          :key="option.id"
-          type="button"
-          @click="handleSelectSound(option.id)"
-          :aria-pressed="soundPref === option.id"
-          :class="[
-            'px-2 py-2 rounded-xl border text-center transition cursor-pointer',
-            soundPref === option.id
-              ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_15px_rgba(255,255,255,0.1)] text-white font-semibold dark:text-glow-white' : 'bg-gray-100 border-gray-300 text-gray-900 font-semibold shadow-sm')
-              : (isDark ? 'border-white/10 text-zinc-400 bg-black/40 hover:border-white/20 hover:bg-white/[0.04]' : 'border-gray-200 text-gray-600 hover:bg-gray-50')
-          ]"
-        >
-          <span class="text-xs">{{ t(option.labelKey) }}</span>
-        </button>
+      <div class="flex items-center justify-between">
+        <div class="flex flex-col">
+          <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.notifySound') }}</span>
+          <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.notifySoundDesc') }}</span>
+        </div>
+        <div class="relative general-dropdown-container" @click.stop>
+          <SpecularButton
+            size="sm"
+            :radius="14"
+            :tint="isDark ? '#ffffff' : '#f0f2f5'"
+            :tint-opacity="isDark ? 0.04 : 1"
+            :text-color="isDark ? '#f4f4f5' : '#374151'"
+            line-color="#ffffff"
+            base-color="#525252"
+            :intensity="1"
+            :thickness="1"
+            @click="toggleSoundDropdown"
+          >
+            <span class="text-xs font-normal">{{ currentSoundLabel }}</span>
+            <svg
+              class="w-3 h-3 text-gray-400 dark:text-zinc-300 transition-transform duration-200"
+              :class="{ 'rotate-180': isSoundOpen }"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </SpecularButton>
+          <transition name="dropdown-up">
+            <div
+              v-if="isSoundOpen"
+              :class="[
+                'absolute right-0 bottom-full mb-1.5 w-36 rounded-xl border shadow-2xl py-1 z-30 text-xs origin-bottom backdrop-blur-xl',
+                isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.9)]' : 'bg-white border-gray-200 text-gray-800'
+              ]"
+            >
+              <div
+                v-for="option in soundOptions"
+                :key="option.id"
+                @click="handleSelectSound(option.id)"
+                :class="[
+                  'px-3 py-1.5 cursor-pointer flex items-center justify-between transition-colors',
+                  soundPref === option.id
+                    ? (isDark ? 'text-sky-400 text-glow-cyan font-medium bg-white/10' : 'text-blue-500 font-medium bg-blue-50')
+                    : (isDark ? 'text-zinc-200 hover:bg-white/10 hover:text-white' : 'text-gray-700 hover:bg-gray-100')
+                ]"
+              >
+                <span>{{ t(option.labelKey) }}</span>
+                <svg v-if="soundPref === option.id" class="w-3.5 h-3.5 text-blue-500 dark:text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            </div>
+          </transition>
+        </div>
       </div>
     </div>
   </div>
@@ -243,5 +282,36 @@ const {
 .dropdown-down-leave-to {
   opacity: 0;
   transform: translateY(-6px) scaleY(0.9);
+}
+
+/* 向上展开（底部靠近滚动区边缘的控件用，否则面板会被内容区裁掉） */
+.dropdown-up-enter-active {
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: bottom right;
+}
+
+.dropdown-up-leave-active {
+  transition: opacity 0.15s ease-in, transform 0.15s ease-in;
+  transform-origin: bottom right;
+}
+
+.dropdown-up-enter-from {
+  opacity: 0;
+  transform: translateY(8px) scaleY(0.85);
+}
+
+.dropdown-up-enter-to {
+  opacity: 1;
+  transform: translateY(0) scaleY(1);
+}
+
+.dropdown-up-leave-from {
+  opacity: 1;
+  transform: translateY(0) scaleY(1);
+}
+
+.dropdown-up-leave-to {
+  opacity: 0;
+  transform: translateY(6px) scaleY(0.9);
 }
 </style>
