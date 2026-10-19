@@ -211,8 +211,8 @@ function registerNotificationWindow({ ipcMain, getWindow, isDev, frontendRoot })
         sandbox: false,
         // 卡片有入场动画，节流会让动画在小窗里卡顿
         backgroundThrottling: false,
-        // 新窗口没有用户手势，沿用默认策略会让 AudioContext 停在 suspended：
-        // 症状是「设置里能试听、真通知没声」，极难定位，所以显式放行自动播放
+        // 提示音走 Web Audio，这里显式声明依赖而不是吃默认值：
+        // 音频栈被挂起时的表现是「设置里能试听、真通知没声」，极难定位
         autoplayPolicy: 'no-user-gesture-required',
       },
     });

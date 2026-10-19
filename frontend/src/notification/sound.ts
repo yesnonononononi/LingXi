@@ -138,6 +138,8 @@ export function playNotificationSound(id: SoundId): boolean {
     if (!ctx) return false;
 
     // 通知窗口没有用户手势，AudioContext 可能停在 suspended，必须催一次。
+    // 实测 Electron 默认策略下新建窗口就是 running（见 .lingxi/tmp/audio-probe.cjs），
+    // 这里只是兜底：别的环境/策略组合不该让提示音整体哑掉。
     // resume 失败也无所谓：这次就静音，不影响卡片本身。
     if (ctx.state === 'suspended') void ctx.resume().catch(() => {});
 
