@@ -22,8 +22,11 @@ import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolRegistry;
 import com.summit.core.tool.ToolExecuteResult;
+import com.summit.core.workspace.BasicWorkspaceSpec;
 import com.summit.core.workspace.WorkspaceResolver;
 import com.summit.core.workspace.WorkspaceSpec;
+import com.summit.runtime.workspace.DefaultWorkspaceResolver;
+import com.summit.runtime.workspace.LocalWorkspaceProvider;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
 import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
@@ -129,6 +132,10 @@ class CommandApprovalExecutorTest {
     }
 
     private CommandApprovalExecutor buildExecutor() {
+        return buildExecutor(workspaces);
+    }
+
+    private CommandApprovalExecutor buildExecutor(WorkspaceResolver resolver) {
         return new CommandApprovalExecutor(toolCallRepository,
                 new ToolCallConverter(mapper), transactions,
                 provider(executionControl), provider(executionRepository),
@@ -136,7 +143,7 @@ class CommandApprovalExecutorTest {
                 new ApprovalFinalizer(toolCallRepository, new ToolCallConverter(mapper), modelContextService,
                         runtimeEvents, transactions, provider(executionControl), resumer, resumeCoordinator),
                 resumer,
-                new ApprovedCommandRestorer(mapper, workspaces, provider(toolRegistry)),
+                new ApprovedCommandRestorer(mapper, resolver, provider(toolRegistry)),
                 modelContextService,
                 resumeCoordinator);
     }
@@ -280,16 +287,57 @@ class CommandApprovalExecutorTest {
         assertTrue(toolCall.getRawOutput().contains("FAILED"));
     }
 
+    @Test
+    @DisplayName("会话未绑定工作空间：审批回落本地进程目录照常执行，不能变成 500「系统繁忙」")
+    void approvesCommandWithoutWorkspaceSpecUsingLocalWorkingDirectory() throws Exception {
+        // 真实解析器：规格为 null 时它会当场 NPE（线上就表现为 500 + 页面「服务繁忙」），回落一缺即红。
+        WorkspaceResolver resolver = new DefaultWorkspaceResolver(List.of(new LocalWorkspaceProvider()));
+        Workspace fallback = resolver.resolve(new BasicWorkspaceSpec(LocalWorkspaceProvider.TYPE,
+                System.getProperty("user.dir")));
+        // 快照即签发审批卡时框架解析出来的环境：id / workDir / shell 均取自同一回落。
+        ToolCall toolCall = commandCall("call-no-workspace", "echo hi", "echo hi", fallback.workDir(),
+                fallback.runtimeEnvironment().shellType().name(), fallback.id());
+        Execution execution = execution(AgentRequest.builder()
+                        .runtimeParameters(AgentRuntimeParameters.builder()
+                                .attributes(Map.of(ExecutionAttributes.SESSION_ID, "2")).build())
+                        .build(), "3",
+                ToolMessageEntity.builder().id("call-no-workspace").name("command").toolOutput("pending").build());
+        ExecutionControlSignal signal = new ExecutionControlSignal("3");
+
+        when(toolCallRepository.findById("call-no-workspace")).thenReturn(Optional.of(toolCall));
+        when(executionRepository.register("3")).thenReturn(signal);
+        when(executionRepository.findById("3")).thenReturn(Optional.of(execution));
+        doReturn(commandTool()).when(toolRegistry).getTool("command");
+        when(commandExecutor.execute(any())).thenReturn(ToolExecuteResult.success("已执行"));
+
+        CountDownLatch finished = new CountDownLatch(1);
+        buildExecutor(resolver).decide(toolCall, true, null, null, finished::countDown);
+
+        assertTrue(finished.await(5, TimeUnit.SECONDS), "审批必须走完异步收尾，而不是在恢复阶段抛异常");
+        verify(commandExecutor).execute(any());
+    }
+
     private ToolCall commandCall(String id, String snapshotCommand, String argsCommand) {
+        return commandCall(id, snapshotCommand, argsCommand, "/project", "BASH", "workspace");
+    }
+
+    private ToolCall commandCall(String id, String snapshotCommand, String argsCommand,
+                                 String workDir, String shell, String workspaceId) {
         String approvedArgs = "{\"command\":\"" + argsCommand + "\"}";
         String escapedArgs = approvedArgs.replace("\"", "\\\"");
-        String content = "{\"kind\":\"COMMAND\",\"command\":\"" + snapshotCommand + "\","
-                + "\"workDir\":\"/project\",\"shell\":\"BASH\",\"workspaceId\":\"workspace\","
+        // Windows 宿主目录带反斜杠，快照是 JSON 文本，必须先转义再拼
+        String content = "{\"kind\":\"COMMAND\",\"command\":\"" + jsonText(snapshotCommand) + "\","
+                + "\"workDir\":\"" + jsonText(workDir) + "\",\"shell\":\"" + jsonText(shell) + "\","
+                + "\"workspaceId\":\"" + jsonText(workspaceId) + "\","
                 + "\"args\":\"" + escapedArgs + "\"}";
         return ToolCall.builder().id(id).conversationId(2L).executionId(3L).toolName("command")
                 .type(ToolCallType.PROMISE).status(ToolCallStatus.PENDING)
                 .title("命令审批").content(content).rawInput("{\"args\":{\"command\":\"" + argsCommand + "\"}}")
                 .createdAt(Instant.now()).updatedAt(Instant.now()).build();
+    }
+
+    private static String jsonText(String value) {
+        return value == null ? "" : value.replace("\\", "\\\\");
     }
 
     private Workspace workspace(String id) {
@@ -309,6 +357,13 @@ class CommandApprovalExecutorTest {
     }
 
     private Execution execution(String id, Message... messages) {
+        return execution(AgentRequest.builder().workspaceSpec(mock(WorkspaceSpec.class))
+                .runtimeParameters(AgentRuntimeParameters.builder()
+                        .attributes(Map.of(ExecutionAttributes.SESSION_ID, "2")).build())
+                .build(), id, messages);
+    }
+
+    private Execution execution(AgentRequest request, String id, Message... messages) {
         List<Message> context = new ArrayList<>(List.of(messages));
         if (context.stream().noneMatch(AiMessageEntity.class::isInstance)) {
             List<ToolCallRequest> requests = context.stream().filter(ToolMessageEntity.class::isInstance)
@@ -317,10 +372,7 @@ class CommandApprovalExecutorTest {
             context.addFirst(AiMessageEntity.builder().toolCalls(requests).build());
         }
         return Execution.builder().id(id).lastResponseId("9007199254740993").executionState(ExecutionState.SUSPENDED)
-                .agentRequest(AgentRequest.builder().workspaceSpec(mock(WorkspaceSpec.class))
-                        .runtimeParameters(AgentRuntimeParameters.builder()
-                                .attributes(Map.of(ExecutionAttributes.SESSION_ID, "2")).build())
-                        .build())
+                .agentRequest(request)
                 .messages(context).build();
     }
 
