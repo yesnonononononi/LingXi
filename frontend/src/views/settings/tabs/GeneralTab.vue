@@ -179,11 +179,11 @@ const {
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
             </svg>
           </SpecularButton>
-          <transition name="dropdown-up">
+          <transition name="dropdown-down">
             <div
               v-if="isSoundOpen"
               :class="[
-                'absolute right-0 bottom-full mb-1.5 w-36 rounded-xl border shadow-2xl py-1 z-30 text-xs origin-bottom backdrop-blur-xl',
+                'absolute right-0 mt-1.5 w-36 rounded-xl border shadow-2xl py-1 z-30 text-xs origin-top backdrop-blur-xl',
                 isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.9)]' : 'bg-white border-gray-200 text-gray-800'
               ]"
             >
@@ -282,36 +282,5 @@ const {
 .dropdown-down-leave-to {
   opacity: 0;
   transform: translateY(-6px) scaleY(0.9);
-}
-
-/* 向上展开（底部靠近滚动区边缘的控件用，否则面板会被内容区裁掉） */
-.dropdown-up-enter-active {
-  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  transform-origin: bottom right;
-}
-
-.dropdown-up-leave-active {
-  transition: opacity 0.15s ease-in, transform 0.15s ease-in;
-  transform-origin: bottom right;
-}
-
-.dropdown-up-enter-from {
-  opacity: 0;
-  transform: translateY(8px) scaleY(0.85);
-}
-
-.dropdown-up-enter-to {
-  opacity: 1;
-  transform: translateY(0) scaleY(1);
-}
-
-.dropdown-up-leave-from {
-  opacity: 1;
-  transform: translateY(0) scaleY(1);
-}
-
-.dropdown-up-leave-to {
-  opacity: 0;
-  transform: translateY(6px) scaleY(0.9);
 }
 </style>
