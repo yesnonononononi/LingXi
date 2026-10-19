@@ -6,32 +6,10 @@ import {
   SESSION_COOLDOWN_MS,
 } from '../src/composables/useDesktopNotification';
 import {
-  micaSupportedFor,
   normalizePayload,
   TITLE_MAX,
   BODY_MAX,
 } from '../electron/notification-window.cjs';
-
-/* ---------------------------------------------------------------- 材质判定 */
-
-test('Mica 只在 Windows 11 22H2（build 22621）及以上启用', () => {
-  assert.equal(micaSupportedFor('win32', '10.0.22621'), true);
-  assert.equal(micaSupportedFor('win32', '10.0.26200'), true);
-  // 21H2（22000）不支持 Mica，是最容易被「Windows 11」四个字骗过去的边界
-  assert.equal(micaSupportedFor('win32', '10.0.22000'), false);
-  assert.equal(micaSupportedFor('win32', '10.0.19045'), false);
-});
-
-test('非 Windows 平台一律不启用 Mica', () => {
-  assert.equal(micaSupportedFor('darwin', '23.0.0'), false);
-  assert.equal(micaSupportedFor('linux', '6.5.0'), false);
-});
-
-test('版本号残缺时按不支持处理，不能把 NaN 当通过', () => {
-  assert.equal(micaSupportedFor('win32', ''), false);
-  assert.equal(micaSupportedFor('win32', '10.0'), false);
-  assert.equal(micaSupportedFor('win32', '10.0.abc'), false);
-});
 
 /* ---------------------------------------------------------------- 请求归一化 */
 

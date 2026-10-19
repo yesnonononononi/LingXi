@@ -1,12 +1,10 @@
 const path = require('node:path');
-const os = require('node:os');
 
 /**
  * 延迟取 electron 运行时。
  *
  * <p>本模块里只有建窗口与取屏幕才真正需要 electron；把 require 提到顶层会让这个文件
- * 在纯 node 下（单元测试）直接崩掉，而其中的 {@link micaSupportedFor} /
- * {@link normalizePayload} 是纯函数，最值得被测。</p>
+ * 在纯 node 下（单元测试）直接崩掉，而其中的 {@link normalizePayload} 是纯函数，最值得被测。</p>
  */
 function electron() {
   return require('electron');
@@ -17,9 +15,18 @@ function electron() {
 /** 通知卡片尺寸：宽度取 Windows 原生 Toast 的观感（略宽一点以容纳中文标题）。 */
 const WIDTH = 384;
 const HEIGHT = 116;
+/**
+ * 卡片四周留给「光晕 / 投影」的余量。
+ *
+ * <p>没有这一圈，卡片铺满整个窗口，CSS 的外发光与投影会被窗口边缘直接裁掉 ——
+ * 浅色主题下白玻璃贴在白色背景上就彻底消失了（实测踩过）。窗口因此比卡片大一圈。</p>
+ *
+ * <p><b>必须与 `notification.css` 里 body 的 padding 保持一致。</b></p>
+ */
+const GLOW_PAD = 22;
 /** 卡片间距与距工作区边缘的留白。 */
-const GAP = 10;
-const MARGIN = 18;
+const GAP = 8;
+const MARGIN = 14;
 /** 同屏最多堆叠数量，超出后最旧的一条立即让位。 */
 const MAX_VISIBLE = 4;
 /** 默认停留时长；鼠标悬停期间暂停计时。 */
@@ -32,29 +39,6 @@ const TITLE_MAX = 120;
 const BODY_MAX = 240;
 /** 允许的结果种类；非法值一律按「已完成」处理，避免渲染层拿到未知 class。 */
 const KNOWN_KINDS = ['completed', 'failed', 'cancelled', 'suspended'];
-
-/**
- * 判定某个系统版本是否支持 DWM Mica 材质。
- *
- * <p>Mica 需要 Windows 11 22H2（build 22621）及以上。低于该版本时
- * {@code backgroundMaterial} 在 Electron 里等同于 {@code none}，窗口会露出
- * 纯黑底 —— 因此必须显式探测，退回「半透明深色 + 无模糊」的兜底观感。</p>
- *
- * <p>参数化是为了可测：真机只有一个 build 号，写死就没法验证边界。</p>
- *
- * @param platform {@code process.platform} 的取值
- * @param release {@code os.release()} 的取值，形如 {@code 10.0.26200}
- */
-function micaSupportedFor(platform, release) {
-  if (platform !== 'win32') return false;
-  const build = Number(String(release).split('.')[2] || 0);
-  return Number.isFinite(build) && build >= 22621;
-}
-
-/** 当前系统是否支持 DWM Mica 材质。 */
-function supportsMica() {
-  return micaSupportedFor(process.platform, os.release());
-}
 
 /**
  * 归一化一条通知请求。
@@ -89,9 +73,8 @@ function resolveEntry(isDev, frontendRoot) {
  * 自绘通知窗口管理器。
  *
  * <p><b>为什么不用系统原生 Notification：</b>Windows Toast 的视觉完全由 Explorer 的 XAML
- * 定义，应用连背景色都改不了，「云母半透明」在原生通知里无解。所以这里自建一个无边框、
- * 置顶、不进任务栏的窗口，用 {@code backgroundMaterial: 'mica'} 取系统材质、再叠一层
- * 半透明卡片，才拿得到要的效果。</p>
+ * 定义，应用连背景色都改不了，想要「纯黑 + 发光边框」或「毛玻璃」在原生通知里无解。
+ * 所以这里自建一个无边框、置顶、不进任务栏的窗口，样式全由页面 CSS 决定。</p>
  *
  * <p><b>代价（必须明确）：</b>自绘窗口不进 Windows 通知中心、不受专注助手拦截、也没有
  * 系统级的通知音与优先级。这是用「样式自由」换来的，属于产品层面的取舍。</p>
@@ -100,8 +83,6 @@ function registerNotificationWindow({ ipcMain, getWindow, isDev, frontendRoot })
   /** 活动通知，索引 0 是最新的一条（贴右下角），其余依次上移。 */
   const active = [];
   let seq = 0;
-
-  const isWin = () => supportsMica();
 
   /** 定位基准：跟随主窗口所在显示器，主窗口没了就用主显示器。 */
   function workArea() {
@@ -116,10 +97,16 @@ function registerNotificationWindow({ ipcMain, getWindow, isDev, frontendRoot })
   /** 按数组顺序重新摆放：0 号贴底，往上依次堆叠。 */
   function layout() {
     const area = workArea();
+    // 窗口尺寸 = 卡片 + 两侧光晕余量
+    const windowWidth = WIDTH + GLOW_PAD * 2;
+    const windowHeight = HEIGHT + GLOW_PAD * 2;
+    // 相邻两条窗口的垂直步长：卡片高 + 上下光晕 + 视觉间距
+    const step = windowHeight + GAP;
     active.forEach((item, index) => {
       if (!item.win || item.win.isDestroyed()) return;
-      const x = area.x + area.width - WIDTH - MARGIN;
-      const y = area.y + area.height - MARGIN - HEIGHT - index * (HEIGHT + GAP);
+      // 让「卡片」的右边缘与底边缘各自距工作区 MARGIN；窗口本身多出来的一圈是透明光晕区
+      const x = area.x + area.width - MARGIN - windowWidth + GLOW_PAD;
+      const y = area.y + area.height - MARGIN - windowHeight + GLOW_PAD - index * step;
       item.win.setPosition(Math.round(x), Math.round(y), false);
     });
   }
@@ -187,16 +174,17 @@ function registerNotificationWindow({ ipcMain, getWindow, isDev, frontendRoot })
   function create(payload) {
     const entry = resolveEntry(isDev, frontendRoot);
     const { BrowserWindow } = electron();
+    // 一律用透明窗口：卡片四周要留出光晕/投影的余量，那一圈必须是透的，
+    // 否则深色主题下会是黑框、浅色主题下会是白框，比没有还难看。
+    // 代价是丢掉 DWM 系统投影 —— 投影改由 CSS 自己画，反而更可控。
     const win = new BrowserWindow({
-      width: WIDTH,
-      height: HEIGHT,
+      width: WIDTH + GLOW_PAD * 2,
+      height: HEIGHT + GLOW_PAD * 2,
       show: false,
       frame: false,
-      // 不用 transparent: 它与 backgroundMaterial 在 Windows 上会互相压制，
-      // 结果是材质不生效且窗口发灰。改用全透明 backgroundColor + 页面自身透明背景。
-      // 无材质的旧系统没有 DWM 云母可透，必须给一个实色底，否则会露出窗口的默认白底。
-      backgroundColor: isWin() ? '#00000000' : '#18181b',
-      ...(isWin() ? { backgroundMaterial: 'mica' } : {}),
+      transparent: true,
+      backgroundColor: '#00000000',
+      hasShadow: false,
       resizable: false,
       movable: false,
       minimizable: false,
@@ -206,7 +194,6 @@ function registerNotificationWindow({ ipcMain, getWindow, isDev, frontendRoot })
       alwaysOnTop: true,
       // 不抢焦点：用户正在别的应用里打字时，通知不该把光标抢走
       focusable: false,
-      hasShadow: true,
       webPreferences: {
         preload: path.join(__dirname, 'notification-preload.cjs'),
         nodeIntegration: false,
@@ -239,7 +226,6 @@ function registerNotificationWindow({ ipcMain, getWindow, isDev, frontendRoot })
       win.webContents.send('notification:data', {
         ...payload,
         id: item.id,
-        mica: isWin(),
       });
     });
 
@@ -325,11 +311,10 @@ function registerNotificationWindow({ ipcMain, getWindow, isDev, frontendRoot })
 
 module.exports = {
   registerNotificationWindow,
-  supportsMica,
-  micaSupportedFor,
   normalizePayload,
   WIDTH,
   HEIGHT,
+  GLOW_PAD,
   MAX_VISIBLE,
   TITLE_MAX,
   BODY_MAX,

@@ -2,18 +2,16 @@
  * 自绘通知卡片的样式。
  *
  * 这里刻意不引 Tailwind：通知窗口只有一张卡片，手写 CSS 才能精确控制
- * 「云母底色 + 半透明 + 描边」这三层叠加关系，Tailwind 的工具类反而会把它搅浑。
+ * 「底色 + 光晕 + 描边」这几层叠加关系，Tailwind 的工具类反而会把它搅浑。
  *
- * 材质分两档（由主进程按系统版本判定后写进 <html> 的 class）：
- *   .material-mica  → Windows 11 22H2+，DWM 已经画了云母底，网页层只需薄薄一层色罩
- *   .material-solid → 旧系统，没有系统材质，只能把色罩加厚到接近不透明
+ * 两套观感由 <html> 上的 class 切换（主题由主应用随通知一起传进来）：
+ *   .theme-light  → 毛玻璃（半透明白 + 模糊 + 冷调投影）
+ *   无该 class     → 纯黑卡片 + 发光边框（参照 ChatInputArea 的 BorderGlow）
  */
 
 :root {
-  --card-radius: 10px;
   --fg: #f4f4f5;
   --fg-dim: #a1a1aa;
-  --line: rgba(255, 255, 255, 0.10);
   --accent: #60a5fa;
   --accent-warn: #fbbf24;
   --accent-danger: #f87171;
@@ -23,14 +21,19 @@
 html.theme-light {
   --fg: #18181b;
   --fg-dim: #52525b;
-  --line: rgba(0, 0, 0, 0.10);
   --accent: #2563eb;
   --accent-warn: #b45309;
   --accent-danger: #dc2626;
   --accent-ok: #15803d;
 }
 
+/*
+ * 光晕余量：窗口比卡片大一圈（与 notification-window.cjs 的 GLOW_PAD 严格一致）。
+ * 这一圈必须是透明的，外发光和投影才有地方画出来。
+ */
 body {
+  box-sizing: border-box;
+  padding: 22px;
   font-family: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
   color: var(--fg);
   -webkit-font-smoothing: antialiased;
@@ -57,13 +60,14 @@ body {
   height: 100%;
   padding: 12px 12px 12px 14px;
   border-radius: 8px;
-  border: 1px solid var(--line);
+  /* 边框由各主题自己决定：深色是渐变辉光边，浅色是白色玻璃边 */
+  border: 1px solid transparent;
   overflow: hidden;
   /* 入场动画：从下方轻轻推上来，别做弹跳，通知不应该抢戏 */
   transform: translateY(10px);
   opacity: 0;
   transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease,
-              background-color 160ms ease, border-color 160ms ease;
+              box-shadow 160ms ease, border-color 160ms ease;
 }
 
 .card.entered {
@@ -77,51 +81,89 @@ body {
   transition-duration: 140ms;
 }
 
-/* 云母档：系统材质在底下，网页层只做「提亮 + 薄雾」，不能再用深色去压。
-   教训：Win11 深色 Mica 底实测约 #22201D，本身已接近黑；早先压了一层 32% 的深色，
-   叠出来是 #1B1B1C —— 视觉上就是一块纯黑卡片，材质全被吃掉了。
-   改成极淡的冷白渐变后，顶边约 #40、底边约 #2B，才看得出「有东西透出来」。 */
-html.material-mica .card {
-  background-color: rgba(20, 20, 24, 0.10);
-  background-image: linear-gradient(180deg, rgba(232, 236, 244, 0.22), rgba(232, 236, 244, 0.08));
-  /* 玻璃边：深色场景下没有这道边，卡片就融进背景、只剩一块「黑方块」 */
-  border-color: rgba(255, 255, 255, 0.16);
+/*
+ * 两套观感，跟主应用主题走：
+ *
+ *   深色 —— 纯黑卡片 + 发光边框。参照 ChatInputArea 的 BorderGlow
+ *           （backgroundColor #000、白色渐变边、glowRadius 36 / intensity 1.1）。
+ *           这里做成静态版：那条边框的辉光本来靠指针位置驱动，而通知窗口
+ *           focusable:false、只活几秒，跟踪指针既没意义又白白多一层合成。
+ *
+ *   浅色 —— 毛玻璃。半透明白 + 高斯模糊，让下层内容隐约透出来。
+ *           注意 Electron 的 backdrop-filter 只能模糊「窗口内」的内容，
+ *           模糊不到桌面，所以这里靠低透明度的白去换取真实透视感。
+ */
+
+/* 深色：纯黑，不透明。黑色卡片底下用透明没意义，反而会露出桌面噪点 */
+html:not(.theme-light) .card {
+  /* 边框本身做成渐变：左上更亮、右下收敛，模拟 BorderGlow 那一圈方向性辉光 */
+  background:
+    linear-gradient(#000000, #000000) padding-box,
+    linear-gradient(
+      152deg,
+      rgba(255, 255, 255, 0.55) 0%,
+      rgba(255, 255, 255, 0.08) 32%,
+      rgba(255, 255, 255, 0.10) 68%,
+      rgba(255, 255, 255, 0.46) 100%
+    ) border-box;
+  box-shadow:
+    /* 外发光：边框外圈那一层晕开的白光，这才是「发光」的观感来源 */
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 0 22px rgba(255, 255, 255, 0.13),
+    0 0 44px rgba(255, 255, 255, 0.05),
+    /* 落影：与主应用的深色浮层一致，让卡片离开背景 */
+    0 10px 28px rgba(0, 0, 0, 0.55),
+    /* inset 辉光：贴在边框内侧的一圈白光 */
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+    inset 0 0 18px rgba(255, 255, 255, 0.08),
+    inset 0 0 44px rgba(255, 255, 255, 0.035);
 }
 
-html.material-mica.theme-light .card {
-  background-color: rgba(255, 255, 255, 0.10);
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.25));
+/* 深色悬停：只把辉光调亮，不动边框 —— 改 border-color 会把那条渐变边糊掉 */
+html:not(.theme-light) .card:hover {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.10),
+    0 0 26px rgba(255, 255, 255, 0.18),
+    0 0 52px rgba(255, 255, 255, 0.07),
+    0 12px 32px rgba(0, 0, 0, 0.60),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.09),
+    inset 0 0 22px rgba(255, 255, 255, 0.11),
+    inset 0 0 52px rgba(255, 255, 255, 0.05);
 }
 
-/* 无材质档：没有 DWM 云母可透，色罩必须加厚，否则文字压在壁纸上完全看不清 */
-html.material-solid .card {
-  background-color: rgba(24, 24, 27, 0.94);
-}
-
-html.material-solid.theme-light .card {
-  background-color: rgba(250, 250, 252, 0.96);
-}
-
-.card:hover {
-  border-color: rgba(255, 255, 255, 0.18);
+/* 浅色：毛玻璃 */
+html.theme-light .card {
+  background-color: rgba(255, 255, 255, 0.74);
+  border-color: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(20px) saturate(1.6);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  box-shadow:
+    /* 玻璃在浅背景上会「隐形」，靠这道冷调投影与细边框把它从背景里拉出来 */
+    0 6px 16px rgba(15, 23, 42, 0.16),
+    0 2px 4px rgba(15, 23, 42, 0.10),
+    0 0 0 1px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 0 32px rgba(255, 255, 255, 0.45);
 }
 
 html.theme-light .card:hover {
-  border-color: rgba(0, 0, 0, 0.16);
+  border-color: rgba(15, 23, 42, 0.12);
+  box-shadow:
+    0 8px 22px rgba(15, 23, 42, 0.20),
+    0 2px 4px rgba(15, 23, 42, 0.12),
+    0 0 0 1px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 0 32px rgba(255, 255, 255, 0.45);
 }
 
-/* 顶部一道极细的高光，模拟材质受光边，让卡片「浮」起来 */
-.card::before {
+/* 顶部一道极细的高光，模拟玻璃受光边；深色已经有渐变边，再加就重复了 */
+html.theme-light .card::before {
   content: '';
   position: absolute;
   inset: 0 0 auto 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.16), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.95), transparent);
   pointer-events: none;
-}
-
-html.theme-light .card::before {
-  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.08), transparent);
 }
 
 .icon {

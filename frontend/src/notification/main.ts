@@ -19,8 +19,6 @@ interface NotificationData {
   title?: string;
   body?: string;
   kind?: NotifyKind;
-  /** 本机是否取到了 DWM 云母材质，决定色罩厚薄。 */
-  mica?: boolean;
   /** 主应用当前主题；缺省时回退到 localStorage。 */
   theme?: 'dark' | 'light';
   duration?: number;
@@ -90,8 +88,6 @@ function render(data: NotificationData): void {
 
   const html = document.documentElement;
   applyTheme(html, data.theme);
-  html.classList.toggle('material-mica', data.mica === true);
-  html.classList.toggle('material-solid', data.mica !== true);
 
   const card = document.createElement('div');
   card.className = `card is-${kind}`;
