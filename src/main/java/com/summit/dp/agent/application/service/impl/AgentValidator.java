@@ -1,5 +1,6 @@
 package com.summit.dp.agent.application.service.impl;
 
+import com.summit.dp.agent.application.command.AgentBatchModelCommand;
 import com.summit.dp.agent.application.command.AgentCommand;
 import com.summit.dp.agent.domain.model.Agent;
 import com.summit.dp.tools.application.port.ToolCatalog;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 /** Agent 新增/更新的业务校验。 */
@@ -102,6 +104,14 @@ public class AgentValidator {
         if (prompt.trim().length() > Agent.PROMPT_MAX_LENGTH)
             return "提示词长度不能超过" + Agent.PROMPT_MAX_LENGTH;
         return null;
+    }
+
+    /** 批量改模型只关心「选了谁」与「换成哪个模型」，不碰其余字段。 */
+    public String validateForBatchChangeModel(AgentBatchModelCommand command) {
+        if (command == null) return "批量设置参数不能为空";
+        if (command.getIds() == null || command.getIds().isEmpty()) return "请先选择要设置模型的智能体";
+        if (command.getIds().stream().anyMatch(Objects::isNull)) return "智能体标识不能为空";
+        return checkModel(command.getModelId());
     }
 
     /** 模型必须存在 */

@@ -34,6 +34,41 @@ export function useAgentsTab() {
   const agentToast = ref('');
   let agentToastTimer: number | undefined;
 
+  /** 批量操作：勾选的智能体标识，按字符串比较（后端 id 可能是字符串） */
+  const selectedAgentIds = ref<Array<number | string>>([]);
+  /** 批量操作：待统一绑定的模型，空串表示还没选 */
+  const batchModelId = ref<number | string>('');
+  const isApplyingBatchModel = ref(false);
+
+  /** 同一性判定统一按字符串，避免 `5` 与 `"5"` 判不等。 */
+  const isSameId = (left: number | string, right: number | string): boolean => String(left) === String(right);
+
+  const isAgentSelected = (id: number | string): boolean =>
+    selectedAgentIds.value.some(selected => isSameId(selected, id));
+
+  const isAllAgentsSelected = computed(
+    () => agentsList.value.length > 0 && agentsList.value.every(agent => isAgentSelected(agent.id))
+  );
+
+  const toggleAgentSelection = (id: number | string) => {
+    if (isAgentSelected(id)) {
+      selectedAgentIds.value = selectedAgentIds.value.filter(selected => !isSameId(selected, id));
+    } else {
+      selectedAgentIds.value = [...selectedAgentIds.value, id];
+    }
+  };
+
+  /** 全选 / 取消全选：以当前列表为准，不残留已下架项的标识。 */
+  const toggleAllAgents = () => {
+    selectedAgentIds.value = isAllAgentsSelected.value ? [] : agentsList.value.map(agent => agent.id);
+  };
+
+  /** 退出批量操作：清空勾选与待应用模型，避免下次进来带着上次的状态。 */
+  const clearBatchSelection = () => {
+    selectedAgentIds.value = [];
+    batchModelId.value = '';
+  };
+
   const showAgentToast = (msg: string) => {
     agentToast.value = msg;
     if (agentToastTimer) window.clearTimeout(agentToastTimer);
@@ -49,6 +84,10 @@ export function useAgentsTab() {
       const res = await AgentAPI.list(1, 100);
       if (isOk(res.code)) {
         agentsList.value = res.data?.records ?? [];
+        // 列表刷新后剔除已不存在的勾选项，否则「已选择 N 个」会越来越虚。
+        selectedAgentIds.value = selectedAgentIds.value.filter(selected =>
+          agentsList.value.some(agent => isSameId(agent.id, selected))
+        );
       } else {
                 agentsErrorMsg.value = t('settings.agents.errLoadList');
       }
@@ -102,11 +141,19 @@ export function useAgentsTab() {
       }));
   });
 
-  /** DropUpSelect 的 v-model 只收 string | number，表单里未选时是空串。 */
+  /** DropUpSelect 的 v-model 只收 string | number，未选时为空串。 */
   const selectedModelValue = computed<string | number>({
     get: () => agentForm.value.modelId,
     set: (value) => {
       agentForm.value.modelId = value;
+    },
+  });
+
+  /** 批量栏的模型下拉，与表单里的下拉共用同一批选项。 */
+  const batchModelValue = computed<string | number>({
+    get: () => batchModelId.value,
+    set: (value) => {
+      batchModelId.value = value;
     },
   });
 
@@ -256,6 +303,40 @@ export function useAgentsTab() {
     }
   };
 
+  /** 把勾选的智能体统一绑定到批量栏选中的模型。 */
+  const handleApplyBatchModel = async () => {
+    if (selectedAgentIds.value.length === 0) {
+      showAgentToast(t('settings.agents.errBatchNoSelection'));
+      return;
+    }
+    if (!batchModelId.value) {
+      showAgentToast(t('settings.agents.errBatchNoModel'));
+      return;
+    }
+
+    isApplyingBatchModel.value = true;
+    try {
+      const res = await AgentAPI.changeModelBatch({
+        ids: [...selectedAgentIds.value],
+        modelId: batchModelId.value,
+      });
+      if (isOk(res.code)) {
+        showAgentToast(
+          t('settings.agents.toastBatchModelApplied', { count: res.data ?? selectedAgentIds.value.length })
+        );
+        clearBatchSelection();
+        await loadAgents();
+      } else {
+        // 业务错误是 HTTP 200 + code 非成功：必须把后端文案上屏，否则用户只知道「失败了」。
+        showAgentToast(res.errMsg || t('settings.agents.errBatchModel'));
+      }
+    } catch {
+      showAgentToast(t('settings.agents.errBatchModelException'));
+    } finally {
+      isApplyingBatchModel.value = false;
+    }
+  };
+
   onMounted(async () => {
     await Promise.all([loadAgents(), loadTools(), loadModels()]);
   });
@@ -280,6 +361,16 @@ export function useAgentsTab() {
     agentFormError,
     isSubmittingAgent,
     agentToast,
+    selectedAgentIds,
+    batchModelId,
+    batchModelValue,
+    isApplyingBatchModel,
+    isAllAgentsSelected,
+    isAgentSelected,
+    toggleAgentSelection,
+    toggleAllAgents,
+    clearBatchSelection,
+    handleApplyBatchModel,
     loadAgents,
     loadTools,
     getModelName,

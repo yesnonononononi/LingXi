@@ -3,6 +3,7 @@ package com.summit.dp.agent.application.service.impl;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.summit.ddd.application.vo.PageResult;
 import com.summit.ddd.application.vo.Result;
+import com.summit.dp.agent.application.command.AgentBatchModelCommand;
 import com.summit.dp.agent.application.command.AgentCommand;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
@@ -13,7 +14,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
@@ -22,6 +25,9 @@ import java.util.List;
 @RequiredArgsConstructor
 @Slf4j
 public class AgentServiceImpl implements AgentService {
+
+    /** 与前端 {@code isOk} 对齐的成功业务码 */
+    private static final int SUCCESS_CODE = 1;
 
     private final AgentRepository repository;
     private final AgentValidator validator;
@@ -62,6 +68,32 @@ public class AgentServiceImpl implements AgentService {
                 .orElseThrow(() -> new ClientException("Agent不存在: " + command.getId()));
         repository.updateById(applyChanges(command, agent));
         return Result.success();
+    }
+
+    /**
+     * 批量改基座模型。
+     *
+     * <p>先按 id 全量取回再逐条走领域方法：只要有一个 id 取不到就整体失败 ——
+     * 部分成功会让用户以为「都改了」，回头发现有人还是旧模型，比直接报错更难排查。</p>
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Result<Integer> changeModelBatch(AgentBatchModelCommand command) {
+        String error = validator.validateForBatchChangeModel(command);
+        if (error != null) throw new ClientException(error);
+
+        List<Long> ids = command.getIds().stream().distinct().toList();
+        List<Agent> agents = new ArrayList<>(repository.findList(ids));
+        throwIf(agents.size() != ids.size(), "部分智能体不存在，请刷新列表后重试");
+
+        for (Agent agent : agents) {
+            agent.changeModelId(command.getModelId());
+        }
+        repository.update(agents);
+        log.info("批量设置智能体模型: count={}, modelId={}", agents.size(), command.getModelId());
+        // 必须走两参重载：`success(Integer)` 是「只设业务码」的版本，
+        // 写成 `success(agents.size())` 会让条数落进 code、data 恒为 null。
+        return Result.success(SUCCESS_CODE, agents.size());
     }
 
     @Override

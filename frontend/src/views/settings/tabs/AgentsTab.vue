@@ -30,6 +30,15 @@ const {
   agentFormError,
   isSubmittingAgent,
   agentToast,
+  selectedAgentIds,
+  batchModelValue,
+  isApplyingBatchModel,
+  isAllAgentsSelected,
+  isAgentSelected,
+  toggleAgentSelection,
+  toggleAllAgents,
+  clearBatchSelection,
+  handleApplyBatchModel,
   loadAgents,
   loadTools,
   getModelName,
@@ -103,102 +112,168 @@ const {
         {{ t('settings.agents.empty') }}
       </div>
 
-      <!-- 智能体卡片列表 -->
-      <div v-else class="space-y-3">
+      <template v-else>
+        <!-- 批量操作栏：勾选智能体后统一改基座模型 -->
         <div
-          v-for="agent in agentsList"
-          :key="agent.id"
-          class="px-4 py-3.5 rounded-2xl border transition-all"
-          :class="[
-            isDark
-              ? 'bg-black/90 border-white/15 hover:border-white/30 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
-              : 'bg-gray-50/70 border-gray-200 hover:border-gray-300'
-          ]"
+          class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-2xl border"
+          :class="isDark ? 'bg-white/[0.03] border-white/10' : 'bg-white border-gray-200'"
         >
-          <div class="flex items-start justify-between gap-3">
-            <div class="space-y-1.5 min-w-0 flex-1">
-              <div class="flex items-center gap-2 flex-wrap">
-                <!-- 头像：URL 走 <img>，其余按 Emoji 文本渲染 -->
-                <img
-                  v-if="isImageAvatar(agent.avatar)"
-                  :src="agent.avatar"
-                  :alt="agent.name"
-                  class="w-5 h-5 rounded-full object-cover shrink-0"
-                />
-                <span
-                  v-else-if="agent.avatar"
-                  class="w-5 h-5 rounded-full flex items-center justify-center text-xs leading-none shrink-0 select-none"
-                  :class="isDark ? 'bg-white/10' : 'bg-gray-200/80'"
-                >{{ agent.avatar }}</span>
-                <span class="text-sm font-semibold truncate" :class="isDark ? 'text-white text-glow-white' : 'text-gray-900'">
-                  {{ agent.name }}
-                </span>
-                <span
-                  class="px-2 py-0.5 rounded-full text-[10px] font-medium border"
-                  :class="[
-                    isDark
-                      ? 'bg-white/5 border-white/15 text-sky-400 text-glow-cyan'
-                      : 'bg-blue-50 border-blue-200 text-blue-700'
-                  ]"
-                >
-                  {{ getModelName(agent.modelId) }}
-                </span>
-              </div>
-                            <p class="text-xs line-clamp-2" :class="isDark ? 'text-zinc-400' : 'text-gray-500'">
-                {{ agent.description || t('settings.agents.noDescription') }}
-              </p>
-              <!-- 已分配工具展示 -->
-              <div class="pt-1">
-                <div class="text-[11px] font-medium mb-1 flex items-center gap-1.5" :class="isDark ? 'text-zinc-300' : 'text-gray-600'">
-                  <span>{{ t('settings.agents.assignedTools') }}</span>
-                  <span class="text-xs font-normal" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">
-                    ({{ agent.toolList?.length || 0 }})
-                  </span>
-                </div>
-                <div v-if="agent.toolList && agent.toolList.length > 0" class="flex flex-wrap gap-1.5">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              :checked="isAllAgentsSelected"
+              class="rounded text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
+              @change="toggleAllAgents"
+            />
+            <span class="text-xs" :class="isDark ? 'text-zinc-300' : 'text-gray-600'">
+              {{ t('settings.agents.selectedCount', { count: selectedAgentIds.length }) }}
+            </span>
+          </label>
+
+          <div class="flex items-center gap-2">
+            <span class="text-xs" :class="isDark ? 'text-zinc-400' : 'text-gray-500'">
+              {{ t('settings.agents.batchLabel') }}
+            </span>
+            <DropUpSelect
+              v-model="batchModelValue"
+              :options="modelOptions"
+              :isDark="isDark"
+              :searchable="true"
+              :placeholder="t('settings.agents.batchModelPlaceholder')"
+              trigger-class="h-[30px] px-2.5 rounded-lg text-xs border flex items-center justify-between gap-2 cursor-pointer min-w-[9rem]"
+            />
+            <button
+              type="button"
+              :disabled="isApplyingBatchModel || selectedAgentIds.length === 0"
+              @click="handleApplyBatchModel"
+              class="px-3 py-1.5 rounded-lg text-xs font-medium text-white transition shadow-sm"
+              :class="
+                isApplyingBatchModel || selectedAgentIds.length === 0
+                  ? 'bg-blue-400 cursor-not-allowed'
+                  : (isDark ? 'bg-sky-600 hover:bg-sky-500 text-glow-white' : 'bg-blue-600 hover:bg-blue-500')
+              "
+            >
+              {{ t('settings.agents.applyBatch') }}
+            </button>
+            <button
+              type="button"
+              @click="clearBatchSelection"
+              class="px-3 py-1.5 rounded-lg border text-xs transition cursor-pointer"
+              :class="isDark ? 'border-white/20 hover:bg-white/10 text-zinc-200' : 'border-gray-300 text-gray-500 hover:text-gray-700'"
+            >
+              {{ t('settings.agents.clearSelection') }}
+            </button>
+          </div>
+        </div>
+
+        <!-- 智能体卡片列表 -->
+        <div class="space-y-3">
+          <div
+            v-for="agent in agentsList"
+            :key="agent.id"
+            class="px-4 py-3.5 rounded-2xl border transition-all"
+            :class="[
+              isAgentSelected(agent.id)
+                ? (isDark
+                    ? 'bg-sky-500/[0.08] border-sky-500/50 shadow-[0_0_20px_rgba(56,189,248,0.18)]'
+                    : 'bg-blue-50/60 border-blue-400 shadow-sm')
+                : (isDark
+                    ? 'bg-black/90 border-white/15 hover:border-white/30 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
+                    : 'bg-gray-50/70 border-gray-200 hover:border-gray-300')
+            ]"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <!-- 勾选列与卡片内容并排；批量改模型只认这一列 -->
+              <input
+                type="checkbox"
+                :checked="isAgentSelected(agent.id)"
+                class="mt-1 h-3.5 w-3.5 shrink-0 cursor-pointer rounded text-blue-600 focus:ring-blue-500"
+                @change="toggleAgentSelection(agent.id)"
+              />
+              <div class="space-y-1.5 min-w-0 flex-1">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <!-- 头像：URL 走 <img>，其余按 Emoji 文本渲染 -->
+                  <img
+                    v-if="isImageAvatar(agent.avatar)"
+                    :src="agent.avatar"
+                    :alt="agent.name"
+                    class="w-5 h-5 rounded-full object-cover shrink-0"
+                  />
                   <span
-                    v-for="toolName in agent.toolList"
-                    :key="toolName"
-                    class="px-2 py-0.5 rounded-md text-[10px] border"
+                    v-else-if="agent.avatar"
+                    class="w-5 h-5 rounded-full flex items-center justify-center text-xs leading-none shrink-0 select-none"
+                    :class="isDark ? 'bg-white/10' : 'bg-gray-200/80'"
+                  >{{ agent.avatar }}</span>
+                  <span class="text-sm font-semibold truncate" :class="isDark ? 'text-white text-glow-white' : 'text-gray-900'">
+                    {{ agent.name }}
+                  </span>
+                  <span
+                    class="px-2 py-0.5 rounded-full text-[10px] font-medium border"
                     :class="[
                       isDark
-                        ? 'bg-white/5 border-white/15 text-emerald-400'
-                        : 'bg-white border-gray-200 text-emerald-700 shadow-2xs'
+                        ? 'bg-white/5 border-white/15 text-sky-400 text-glow-cyan'
+                        : 'bg-blue-50 border-blue-200 text-blue-700'
                     ]"
                   >
-                    {{ resolveToolFullName(toolName) }}
+                    {{ getModelName(agent.modelId) }}
                   </span>
                 </div>
-                <span v-else class="text-[11px] italic" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">{{ t('settings.agents.noTools') }}</span>
+                              <p class="text-xs line-clamp-2" :class="isDark ? 'text-zinc-400' : 'text-gray-500'">
+                  {{ agent.description || t('settings.agents.noDescription') }}
+                </p>
+                <!-- 已分配工具展示 -->
+                <div class="pt-1">
+                  <div class="text-[11px] font-medium mb-1 flex items-center gap-1.5" :class="isDark ? 'text-zinc-300' : 'text-gray-600'">
+                    <span>{{ t('settings.agents.assignedTools') }}</span>
+                    <span class="text-xs font-normal" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">
+                      ({{ agent.toolList?.length || 0 }})
+                    </span>
+                  </div>
+                  <div v-if="agent.toolList && agent.toolList.length > 0" class="flex flex-wrap gap-1.5">
+                    <span
+                      v-for="toolName in agent.toolList"
+                      :key="toolName"
+                      class="px-2 py-0.5 rounded-md text-[10px] border"
+                      :class="[
+                        isDark
+                          ? 'bg-white/5 border-white/15 text-emerald-400'
+                          : 'bg-white border-gray-200 text-emerald-700 shadow-2xs'
+                      ]"
+                    >
+                      {{ resolveToolFullName(toolName) }}
+                    </span>
+                  </div>
+                  <span v-else class="text-[11px] italic" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">{{ t('settings.agents.noTools') }}</span>
+                </div>
               </div>
-            </div>
 
-            <!-- 操作按键 -->
-            <div class="flex items-center gap-1 shrink-0">
-              <button
-                type="button"
-                @click="startEditAgent(agent)"
-                class="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 transition cursor-pointer"
-                :title="t('settings.agents.editAction')"
-              >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                @click="handleDeleteAgent(agent)"
-                class="p-1.5 rounded-lg text-gray-400 hover:text-red-500 transition cursor-pointer"
-                :title="t('settings.agents.deleteAction')"
-              >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
+              <!-- 操作按键 -->
+              <div class="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  @click="startEditAgent(agent)"
+                  class="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 transition cursor-pointer"
+                  :title="t('settings.agents.editAction')"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  @click="handleDeleteAgent(agent)"
+                  class="p-1.5 rounded-lg text-gray-400 hover:text-red-500 transition cursor-pointer"
+                  :title="t('settings.agents.deleteAction')"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </template>
     </div>
 
     <!-- 新增 / 编辑表单模式 -->

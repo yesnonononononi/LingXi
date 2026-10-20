@@ -2,6 +2,7 @@ package com.summit.dp.agent.application.service.impl;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.summit.ddd.application.vo.Result;
+import com.summit.dp.agent.application.command.AgentBatchModelCommand;
 import com.summit.dp.agent.application.command.AgentCommand;
 import com.summit.dp.agent.domain.model.Agent;
 import com.summit.dp.agent.domain.repository.AgentRepository;
@@ -13,13 +14,16 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -118,6 +122,60 @@ class AgentServiceTest {
     @DisplayName("删除：id 为空拒成业务错误")
     void delByIdRejectsNull() {
         assertThrows(ClientException.class, () -> service.delById(null));
+    }
+
+    @Test
+    @DisplayName("批量改模型：勾选的智能体全部改成同一个模型，返回更新条数")
+    void changeModelBatchAppliesSameModelToAll() {
+        stubValidDependencies();
+        Agent first = Agent.builder().id(1L).name("甲").modelId(9L).prompt("p").build();
+        Agent second = Agent.builder().id(2L).name("乙").modelId(9L).prompt("p").build();
+        when(repository.findList(any())).thenReturn(List.of(first, second));
+
+        Result<Integer> result = service.changeModelBatch(batchCommand(List.of(1L, 2L), 42L));
+
+        assertEquals(1, result.getCode(), "成功码必须是 1，否则前端 isOk 判失败");
+        assertEquals(2, result.getData(), "条数必须落在 data 上，不能被 success(Integer) 重载吞成业务码");
+        ArgumentCaptor<Collection<Agent>> updated = ArgumentCaptor.forClass(Collection.class);
+        verify(repository).update(updated.capture());
+        assertTrue(updated.getValue().stream().allMatch(agent -> Long.valueOf(42L).equals(agent.getModelId())),
+                "批量改模型必须把每个勾选项都换成目标模型");
+    }
+
+    @Test
+    @DisplayName("批量改模型：有一个标识查不到就整体失败，不得落库半个批次")
+    void changeModelBatchRejectsPartialMissing() {
+        stubValidDependencies();
+        Agent existing = Agent.builder().id(1L).name("甲").modelId(9L).prompt("p").build();
+        when(repository.findList(any())).thenReturn(List.of(existing));
+
+        assertThrows(ClientException.class, () -> service.changeModelBatch(batchCommand(List.of(1L, 2L), 42L)));
+        verify(repository, never()).update(anyCollection());
+    }
+
+    @Test
+    @DisplayName("批量改模型：未勾选任何智能体直接拒成业务错误")
+    void changeModelBatchRejectsEmptySelection() {
+        stubValidDependencies();
+
+        assertThrows(ClientException.class, () -> service.changeModelBatch(batchCommand(List.of(), 42L)));
+        verify(repository, never()).update(anyCollection());
+    }
+
+    @Test
+    @DisplayName("批量改模型：未指定模型直接拒成业务错误")
+    void changeModelBatchRejectsMissingModel() {
+        stubValidDependencies();
+
+        assertThrows(ClientException.class, () -> service.changeModelBatch(batchCommand(List.of(1L), null)));
+        verify(repository, never()).update(anyCollection());
+    }
+
+    private AgentBatchModelCommand batchCommand(List<Long> ids, Long modelId) {
+        AgentBatchModelCommand command = new AgentBatchModelCommand();
+        command.setIds(ids);
+        command.setModelId(modelId);
+        return command;
     }
 
     @Test

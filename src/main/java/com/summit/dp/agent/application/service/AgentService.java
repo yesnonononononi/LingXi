@@ -2,6 +2,7 @@ package com.summit.dp.agent.application.service;
 
 import com.summit.ddd.application.vo.PageResult;
 import com.summit.ddd.application.vo.Result;
+import com.summit.dp.agent.application.command.AgentBatchModelCommand;
 import com.summit.dp.agent.application.command.AgentCommand;
 import com.summit.dp.agent.application.vo.AgentVO;
 
@@ -17,6 +18,9 @@ public interface AgentService {
     Result<Void> add(AgentCommand command);
 
     Result<Void> update(AgentCommand command);
+
+    /** 批量把多个智能体的基座模型改成同一个，返回实际更新条数。 */
+    Result<Integer> changeModelBatch(AgentBatchModelCommand command);
 
 
     Result<Void> delById(Long id);

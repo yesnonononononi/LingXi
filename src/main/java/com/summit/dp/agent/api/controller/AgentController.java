@@ -3,7 +3,9 @@ package com.summit.dp.agent.api.controller;
 import com.summit.ddd.DddCodeGenerator;
 import com.summit.ddd.application.vo.PageResult;
 import com.summit.ddd.application.vo.Result;
+import com.summit.dp.agent.application.command.AgentBatchModelCommand;
 import com.summit.dp.agent.application.command.AgentCommand;
+import com.summit.dp.agent.api.request.AgentBatchModelRequest;
 import com.summit.dp.agent.api.request.AgentRequest;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
@@ -52,6 +54,14 @@ public class AgentController {
     @GetMapping("/del/{id}")
     public Result<Void> delById(@PathVariable Long id) {
         return service.delById(id);
+    }
+
+    /** 批量把多个智能体的基座模型统一改成同一个，返回实际更新条数。 */
+    @PostMapping("/batch/model")
+    public Result<Integer> changeModelBatch(@RequestBody AgentBatchModelRequest request) {
+        AgentBatchModelCommand command = new AgentBatchModelCommand();
+        BeanUtils.copyProperties(request, command);
+        return service.changeModelBatch(command);
     }
 
     private AgentCommand toCommand(AgentRequest request) {

@@ -816,6 +816,14 @@ export interface CreateAgentRequest {
   status?: number;
 }
 
+/** Agent 批量设置基座模型请求 (对应后端 AgentBatchModelRequest) */
+export interface AgentBatchModelRequest {
+  /** 目标智能体标识集合 */
+  ids: (number | string)[];
+  /** 统一绑定的模型标识 */
+  modelId: number | string;
+}
+
 /** 工具视图对象 (对应后端 ToolVO) */
 export interface ToolVO {
   name: string;

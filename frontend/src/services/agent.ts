@@ -1,6 +1,7 @@
 import http from './interceptor';
 import type { Result } from './types';
 import type {
+  AgentBatchModelRequest,
   AgentVO,
   ChatAcceptance,
   CreateAgentRequest,
@@ -148,5 +149,10 @@ export class AgentAPI {
   /** 删除 Agent (GET /agent/del/{id}) */
   static async delById(id: number | string): Promise<Result<void>> {
     return http.get<any, Result<void>>(`/agent/del/${id}`);
+  }
+
+  /** 批量设置基座模型 (POST /agent/batch/model)，返回实际更新条数 */
+  static async changeModelBatch(payload: AgentBatchModelRequest): Promise<Result<number>> {
+    return http.post<any, Result<number>>('/agent/batch/model', payload);
   }
 }
