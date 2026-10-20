@@ -41,11 +41,63 @@ const SID = '2107364703088017408';
 const TID = '2107364703113183232';
 const TID2 = '2107364703113183999';
 
-let mode: 'normal' | 'emptyList' | 'listFail' = 'normal';
+let mode: 'normal' | 'emptyList' | 'listFail' | 'configFail' | 'modelFail' = 'normal';
 let listCalls = 0;
+let configCalls = 0;
+let modelCalls = 0;
 
 const ok = (data: any, config: any) => ({ data: { code: 1, data, errMsg: null }, status: 200, statusText: 'OK', headers: {}, config });
 const bizFail = (config: any) => ({ data: { code: 0, data: null, errMsg: 'boom' }, status: 200, statusText: 'OK', headers: {}, config });
+
+/**
+ * 合法的 UserConfigVO 桩（字段取自 `src/types/chat.ts:685` 的真实定义）。
+ *
+ * <p>早先桩里没有这个分支，`/config/current` 落到兜底 `ok({records:[],total:0})`，
+ * 配置拿到分页结构后解析不出配置项 ⇒ 初始化失败被判为「配置读取失败」。</p>
+ */
+const userConfigVO = {
+  id: 1,
+  type: 'LOCAL',
+  modelId: 1001,
+  agentId: null,
+  commandApprovalPolicy: 'PRE_EXEC_CONFIRM',
+  accessMode: 'IN_WORKSPACE',
+  planMaxReminders: 3,
+  maxTokens: 8192,
+  reasoningEffort: 'medium',
+  renderTheme: 'LIGHT',
+  dataDir: 'C:/data/lingxi',
+  skillDir: 'C:/data/lingxi/skills',
+  teamSize: 5,
+  dataDirRestartRequired: false,
+};
+
+/**
+ * 合法的 ProviderModelGroupVO[] 桩（字段取自 `src/types/chat.ts:327`）。
+ *
+ * <p>{@code chatApi.fetchModels} 实际打的是 {@code GET /model/catalog}（不是 /model/list），
+ * 且对返回值直接做 `for (const group of groups)` 遍历 —— 兜底的 `{records,total}` 对象
+ * 会抛 {@code TypeError: groups is not iterable}，被 catch 成 modelsRes.ok=false。</p>
+ */
+const modelCatalog = [
+  {
+    providerConfigId: 'p1',
+    providerName: 'DeepSeek',
+    providerIcon: 'deepseek',
+    baseUrl: 'https://api.deepseek.com',
+    modelCount: 1,
+    models: [
+      {
+        id: 1001,
+        modelName: 'deepseek-chat',
+        baseUrl: 'https://api.deepseek.com',
+        apiKey: 'sk-te***1234',
+        vision: false,
+        provider: 'DEEPSEEK',
+      },
+    ],
+  },
+];
 
 axios.defaults.adapter = (async (config: any) => {
   const url = String(config.url || '');
@@ -58,6 +110,18 @@ axios.defaults.adapter = (async (config: any) => {
   if (url.includes('/session/create')) return ok(SID, config);
   if (url.includes('/tree')) return ok({ rootSessionId: SID, sessions: [{ id: SID, name: '新对话', runStatus: 'IDLE', lastOutcome: null, createTime: null, updateTime: null, workspaceId: null }] }, config);
   if (url.includes('/messages')) return ok({ records: [], turns: {}, nextCursor: null, hasMore: false }, config);
+  // 现状契约：loadInitialData 会额外依赖用户配置与模型目录，二者失败都会置 initLoadError。
+  if (url.includes('/config/current')) {
+    configCalls += 1;
+    if (mode === 'configFail') return bizFail(config);
+    return ok(userConfigVO, config);
+  }
+  if (url.includes('/model/catalog')) {
+    modelCalls += 1;
+    if (mode === 'modelFail') return bizFail(config);
+    return ok(modelCatalog, config);
+  }
+  if (url.includes('/workspace/list')) return ok({ records: [], total: 0 }, config);
   return ok({ records: [], total: 0 }, config);
 }) as any;
 
@@ -141,6 +205,8 @@ test('QA-2 缺陷2：loadInitialData 必须把 /session/list 结果写回 localS
   setActivePinia(createPinia());
   mode = 'normal';
   listCalls = 0;
+  configCalls = 0;
+  modelCalls = 0;
   const { useChatWorkspace } = await import('../src/views/chat/useChatWorkspace');
 
   const localSessions = ref<any[]>([]);
@@ -152,7 +218,13 @@ test('QA-2 缺陷2：loadInitialData 必须把 /session/list 结果写回 localS
   });
 
   await ws.loadInitialData();
-  console.log('[QA-2] listCalls=', listCalls, 'len=', localSessions.value.length, 'id=', localSessions.value[0]?.id, 'err=', JSON.stringify(ws.initLoadError.value));
+  console.log('[QA-2] listCalls=', listCalls, 'configCalls=', configCalls, 'modelCalls=', modelCalls, 'len=', localSessions.value.length, 'id=', localSessions.value[0]?.id, 'err=', JSON.stringify(ws.initLoadError.value));
+
+  // 桩覆盖度守卫：初始化依赖的每个接口都必须被桩命中。
+  // 漏桩时请求会落到兜底 {records,total}，症状是「数据对了但错误文案被置」——
+  // 这里直接钉住命中次数，桩再陈旧会立刻红，不必等到断言文案对不上。
+  assert.ok(configCalls >= 1, '桩未覆盖 /config/current —— loadInitialData 依赖它');
+  assert.ok(modelCalls >= 1, '桩未覆盖 /model/catalog —— loadInitialData 依赖它');
 
   assert.ok(listCalls >= 1, '初始化必须请求 /session/list');
   assert.equal(localSessions.value.length, 1, 'localSessions 应写入 1 条');
@@ -202,6 +274,62 @@ test('QA-4 边界：列表请求失败（code!=1）——保留旧数据、给�
   assert.equal(localSessions.value.length, 1, '失败时不得清空旧列表');
   assert.equal(localSessions.value[0].id, 'keep-me');
   assert.equal(ws.initLoadError.value, '会话数据加载失败，请检查后端服务', '应给出可见失败态（与「确实为空」区分）');
+});
+
+test('QA-4b 契约守卫：/config/current 业务失败时必须置 initLoadError（configOk 不是摆设）', async () => {
+  setActivePinia(createPinia());
+  mode = 'configFail';
+  listCalls = 0;
+  configCalls = 0;
+  const { useChatWorkspace } = await import('../src/views/chat/useChatWorkspace');
+
+  const localSessions = ref<any[]>([]);
+  const ws = useChatWorkspace({
+    localSessions: localSessions as any,
+    localModels: ref([]) as any,
+    localWorkspaces: ref([]) as any,
+    localActiveWorkspaceId: ref(null),
+  });
+
+  await ws.loadInitialData();
+  console.log('[QA-4b] listCalls=', listCalls, 'configCalls=', configCalls, 'err=', JSON.stringify(ws.initLoadError.value));
+
+  // 前置：确实走到了配置接口（否则「报错」可能是别的分支给的，断言不成立）
+  assert.ok(configCalls >= 1, '初始化必须请求 /config/current——否则下面的断言与配置无关');
+  // 核心契约：配置失败 ⇒ 可见错误。若未来源码删掉 configOk 判定，本用例必须变红。
+  assert.equal(
+    ws.initLoadError.value,
+    '会话数据加载失败，请检查后端服务',
+    '配置读取失败必须置 initLoadError（证明 configOk 参与了成功判定，不是摆设）'
+  );
+  // 同时证明：此时会话本身是成功的，错误只可能来自配置或模型
+  assert.equal(listCalls, 1, '会话列表应只请求一次');
+});
+
+test('QA-4c 契约守卫：/model/catalog 业务失败时必须置 initLoadError，且不得抛出', async () => {
+  setActivePinia(createPinia());
+  mode = 'modelFail';
+  listCalls = 0;
+  modelCalls = 0;
+  const { useChatWorkspace } = await import('../src/views/chat/useChatWorkspace');
+
+  const localSessions = ref<any[]>([]);
+  const ws = useChatWorkspace({
+    localSessions: localSessions as any,
+    localModels: ref([]) as any,
+    localWorkspaces: ref([]) as any,
+    localActiveWorkspaceId: ref(null),
+  });
+
+  await ws.loadInitialData(); // 不得抛出
+  console.log('[QA-4c] listCalls=', listCalls, 'modelCalls=', modelCalls, 'err=', JSON.stringify(ws.initLoadError.value));
+
+  assert.ok(modelCalls >= 1, '初始化必须请求 /model/catalog（fetchModels 的真实路径）');
+  assert.equal(
+    ws.initLoadError.value,
+    '会话数据加载失败，请检查后端服务',
+    '模型目录读取失败必须置 initLoadError（modelsRes.ok 参与了成功判定）'
+  );
 });
 
 test('QA-5 边界：同一会话内发第 2 条消息——仍实时渲染', async () => {

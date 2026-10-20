@@ -29,18 +29,100 @@ async function settle() { await new Promise(resolve => setImmediate(resolve)); a
 let activeApp: App | null = null;
 const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
+const tmpDir = resolve(frontendRoot, 'node_modules/.tmp');
+
+/**
+ * 源文件绝对路径 → 编译产出的临时 .mjs 路径。
+ *
+ * <p>两个作用：①同一组件被多处引用时只编译一次；②**打断循环引用** ——
+ * 必须先登记再递归编译，否则 A → B → A 会无限递归。</p>
+ */
+const compiledModules = new Map<string, string>();
+
+/**
+ * 把一条相对导入解析成可直接 import 的 file:// URL。
+ *
+ * <p>三条分支对应源码里真实存在的三类导入：</p>
+ * <ul>
+ *   <li><b>{@code .vue} 结尾</b> —— 单文件组件。**绝不能拼 {@code /index.ts}**：
+ *       它是文件不是目录。必须递归编译成临时 .mjs。
+ *       （{@code AgentsTab.vue:4} → {@code DropUpSelect.vue} → {@code ProviderIcon.vue}
+ *       就是这种链，只编译单层会继续崩在下一层。）</li>
+ *   <li><b>{@code .ts/.js/.mjs/.cjs/.json} 结尾</b> —— 已带真实扩展名，原样指向。</li>
+ *   <li><b>无扩展名</b> —— 依次试 {@code base+.ts} / {@code base+.js} /
+ *       {@code base/index.ts} / {@code base/index.js}；全都不存在时**抛错**并列出所有
+ *       尝试过的路径。绝不能静默拼出一个必然不存在的路径 —— 否则错误信息会指向
+ *       {@code Foo.vue/index.ts} 这种假路径，排查成本极高。</li>
+ * </ul>
+ */
+function resolveImportUrl(componentPath: string, relative: string, context: test.TestContext): string {
+  const base = resolve(dirname(componentPath), relative);
+
+  if (/\.vue$/i.test(base)) {
+    if (!existsSync(base)) {
+      throw new Error(`无法解析导入 '${relative}'（来自 ${componentPath}）：.vue 文件不存在于 ${base}`);
+    }
+    return pathToFileURL(compileVueModule(base, context)).href;
+  }
+
+  if (/\.(ts|js|mjs|cjs|json)$/i.test(base)) {
+    if (!existsSync(base)) {
+      throw new Error(`无法解析导入 '${relative}'（来自 ${componentPath}）：文件不存在于 ${base}`);
+    }
+    return pathToFileURL(base).href;
+  }
+
+  const candidates = [base + '.ts', base + '.js', resolve(base, 'index.ts'), resolve(base, 'index.js')];
+  const hit = candidates.find(candidate => existsSync(candidate));
+  if (!hit) {
+    throw new Error(
+      `无法解析导入 '${relative}'（来自 ${componentPath}）：` +
+        `已尝试 ${candidates.join(' / ')} 均不存在。` +
+        '若目标是 .vue 单文件组件，请在导入语句里显式写出 .vue 扩展名。'
+    );
+  }
+  return pathToFileURL(hit).href;
+}
+
+/** 重写编译产物里的全部相对导入，使其指向真实可加载的模块。 */
+function rewriteRelativeImports(source: string, componentPath: string, context: test.TestContext): string {
+  return source.replace(/from ['"](\.[^'"]+)['"]/g, (_match, relative: string) =>
+    `from '${resolveImportUrl(componentPath, relative, context)}'`
+  );
+}
+
+/** 把 .vue 编译成临时 .mjs 并返回其路径；同一源文件只编译一次。 */
+function compileVueModule(sourcePath: string, context: test.TestContext): string {
+  const cached = compiledModules.get(sourcePath);
+  if (cached) return cached;
+
+  const temporary = resolve(
+    tmpDir,
+    sourcePath.replace(frontendRoot, '').replace(/[\\/]+/g, '-').replace(/^-/, '') + '.mjs'
+  );
+  // 先登记再递归：A → B → A 时 B 能拿到 A 已登记的产物路径，不会无限递归。
+  compiledModules.set(sourcePath, temporary);
+
+  const descriptor = parse(readFileSync(sourcePath, 'utf8'), { filename: sourcePath }).descriptor;
+  const script = compileScript(descriptor, { id: sourcePath, inlineTemplate: true });
+  const source = rewriteRelativeImports(script.content, sourcePath, context);
+  mkdirSync(dirname(temporary), { recursive: true });
+  writeFileSync(
+    temporary,
+    ts.transpileModule(source, {
+      compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+    }).outputText
+  );
+  context.after(() => {
+    compiledModules.delete(sourcePath);
+    if (existsSync(temporary)) unlinkSync(temporary);
+  });
+  return temporary;
+}
+
 async function mount(context: test.TestContext, path: string, props: Record<string, unknown>) {
   const componentPath = resolve(frontendRoot, 'src', path);
-  const descriptor = parse(readFileSync(componentPath, 'utf8'), { filename: componentPath }).descriptor;
-  const script = compileScript(descriptor, { id: path, inlineTemplate: true });
-  const source = script.content.replace(/from ['"](\.[^'"]+)['"]/g, (_match, relative: string) => {
-    const base = resolve(dirname(componentPath), relative);
-    return `from '${pathToFileURL(existsSync(base + '.ts') ? base + '.ts' : resolve(base, 'index.ts')).href}'`;
-  });
-  const temporary = resolve(frontendRoot, 'node_modules/.tmp', path.replaceAll('/', '-') + '.mjs');
-  mkdirSync(dirname(temporary), { recursive: true });
-  writeFileSync(temporary, ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText);
-  context.after(() => unlinkSync(temporary));
+  const temporary = compileVueModule(componentPath, context);
   const renderer = createRenderer<Node, Node>({
     createElement: tag => node(tag), createText: value => node('#text', value), createComment: value => node('#comment', value),
     setText: (item, value) => { item.text = value; }, setElementText: (item, value) => { item.text = value; item.children = []; },
@@ -52,6 +134,10 @@ async function mount(context: test.TestContext, path: string, props: Record<stri
       if (index < 0) parent.children.push(item); else parent.children.splice(index, 0, item);
     },
     remove: item => { if (item.parent) item.parent.children.splice(item.parent.children.indexOf(item), 1); item.parent = null; },
+    // DropUpSelect 用 Teleport to="body" 建浮层。提供 querySelector 让它挂到根节点上，
+    // 否则 Vue 会告警 "Current renderer does not support string target for Teleports"
+    // 并丢弃浮层内容（对被测断言无影响，但告警会淹没真实失败）。
+    querySelector: () => root,
   });
   const component = (await import(pathToFileURL(temporary).href)).default;
   const state = reactive({ ...props, isOpen: false });
@@ -62,9 +148,30 @@ async function mount(context: test.TestContext, path: string, props: Record<stri
 
 function prepare(context: test.TestContext) {
   const previousGlobals = new Map<string, PropertyDescriptor | undefined>();
+  /**
+   * 环境桩。
+   *
+   * <p>材料到「真实子组件的最小 DOM 面」：被测组件会引入 DropUpSelect.vue
+   * （{@code AgentsTab.vue:4} 的模型下拉），它在 onMounted 里注册 window/document 的
+   * resize、scroll、mousedown、keydown 监听，计算定位时读 innerWidth/innerHeight；
+   * 而 useTheme 在模块加载期就会写 {@code document.documentElement} 与 {@code document.body} 的
+   * classList。桩缺一项就会在挂载期抛 TypeError，看起来像组件缺陷，实则是桩不足。</p>
+   */
   for (const [key, value] of Object.entries({
-    document: { activeElement: null, documentElement: { classList: { toggle() {} }, dataset: {}, style: {} }, addEventListener() {}, removeEventListener() {} },
-    window: { setTimeout, clearTimeout }, Document: class {}, ShadowRoot: class {},
+    document: {
+      activeElement: null,
+      body: { classList: { toggle() {}, add() {}, remove() {} }, appendChild() {}, removeChild() {} },
+      documentElement: { classList: { toggle() {}, add() {}, remove() {} }, dataset: {}, style: {} },
+      addEventListener() {}, removeEventListener() {},
+      createElement() { return { style: {}, setAttribute() {}, appendChild() {} }; },
+      querySelector() { return null; },
+    },
+    window: {
+      setTimeout, clearTimeout,
+      addEventListener() {}, removeEventListener() {},
+      innerWidth: 1280, innerHeight: 800,
+    },
+    Document: class {}, ShadowRoot: class {},
   })) {
     const previous = Object.getOwnPropertyDescriptor(globalThis, key);
     previousGlobals.set(key, previous);
