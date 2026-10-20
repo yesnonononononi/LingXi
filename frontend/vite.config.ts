@@ -58,5 +58,12 @@ export default defineConfig({
   server: {
     port: 5174,
     proxy,
+    /**
+     * 关闭热更新：改文件不再自动热替换或整页刷新，必须手动 Ctrl+R 才能看到新代码。
+     *
+     * <p>Vite 的 full-reload 也走 HMR 通道，所以 {@code hmr: false} 会把两者一起停掉；
+     * 生产构建不受影响。</p>
+     */
+    hmr: false,
   },
 })
