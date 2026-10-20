@@ -254,6 +254,7 @@
                   :class="toolRowHeaderClass(item.tool, isDark)"
                                     :title="cleanDisplayPath(getToolDescription(item.tool)) || resolveToolRenderName(item.tool.toolName)"
                 >
+                  <!-- 箭头列恒定占位：读文件没有详情不渲染箭头，缺了这格图标会左移一格，与可展开行的图标列对不齐 -->
                   <button v-if="canExpandTool(item.tool)" type="button" class="shrink-0 cursor-pointer" :aria-expanded="!!expandedToolIds[item.tool.id]" :aria-label="t('chat.message.viewToolDetail', { category: resolveToolRenderName(item.tool.toolName) })" @click.stop="toggleToolCall(item.tool.id)">
                   <svg
                     :class="['w-3.5 h-3.5 transition-transform duration-200 shrink-0', expandedToolIds[item.tool.id] ? 'rotate-90' : '', isDark ? 'text-zinc-300 drop-shadow-[0_0_4px_rgba(255,255,255,0.4)]' : 'text-gray-400']"
@@ -264,6 +265,7 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                   </svg>
                   </button>
+                  <span v-else class="w-3.5 h-3.5 shrink-0" aria-hidden="true"></span>
                   <div class="flex-shrink-0 flex items-center">
                     <svg v-if="getToolCategory(item.tool) === TOOL_CATEGORY.READ || getToolCategory(item.tool) === TOOL_CATEGORY.WRITE" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                       <rect x="4" y="3" width="16" height="18" rx="2" />
