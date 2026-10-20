@@ -109,8 +109,30 @@ test('B1-2 workDir 在多个 workspace 中重复时，无 workspaceId 的会话�
     sessions: [makeSession('s2', '歧义会话', { workDir: shared })],
   });
   await renderSidebar(props, html => {
-    assert.ok(html.includes('歧义会话'), '会话仍须可见（未被丢弃）');
-    assert.ok(html.includes('历史会话') || html.includes('历史'), '应出现未分组区段（历史）');
+    // 关键：不能用「是否包含标题」判定 —— BranchedMenu 折叠只做视觉隐藏，
+    // 子节点仍会输出到 SSR HTML，那样断言恒真、抓不到归属错误。
+    // 改为位置判定：未分组区段在树中最后渲染，正确归属时会话必须排在「历史对话」之后。
+    assert.ok(html.includes('历史对话'), '应出现未分组区段（历史对话）');
+    assert.ok(
+      html.indexOf('歧义会话') > html.indexOf('历史对话'),
+      `歧义会话应落在未分组区段内（排在「历史对话」之后），实际位置=${html.indexOf(
+        '歧义会话'
+      )}，历史区段位置=${html.indexOf('历史对话')}`
+    );
+  });
+});
+
+test('B1-2b 归属错误可被检出：workDir 唯一时同一会话应归入 workspace（排在历史区段之前）', async () => {
+  const unique = '/work/solo';
+  const props = baseProps({
+    workspaces: [{ id: '1', name: '独占项目', workDir: unique }],
+    sessions: [makeSession('s2b', '独占会话', { workDir: unique })],
+  });
+  await renderSidebar(props, html => {
+    assert.ok(
+      html.indexOf('独占会话') < html.indexOf('历史对话') || !html.includes('历史对话'),
+      'workDir 唯一时应归入 workspace 组，不应出现在未分组区段'
+    );
   });
 });
 
@@ -180,6 +202,60 @@ test('B3-1 默认所有 workspace 折叠，未分组区段默认展开', async (
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// B5 激活态判定（isWorkspaceActive）
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 折叠视图用 `bg-blue-600/15` 标记激活的 workspace，是 SSR 可观测的稳定锚点。
+ * 这里专测「由 activeSessionId 反查 + workDir 唯一性」这条路径 ——
+ * 它是唯一性语义的第二个使用点，此前无覆盖，导致变异可逃逸。
+ */
+const ACTIVE_CLASS = 'bg-blue-600/15';
+
+test('B5-1 activeSessionId 指向 workDir 重复的会话时，两个 workspace 都不显示为激活', async () => {
+  const shared = '/work/amb';
+  const props = baseProps({
+    isCollapsed: true,
+    workspaces: [
+      { id: '1', name: '歧义甲', workDir: shared },
+      { id: '2', name: '歧义乙', workDir: shared },
+    ],
+    sessions: [makeSession('s5', '歧义激活', { workDir: shared })],
+    activeSessionId: 's5',
+  });
+  await renderSidebar(props, html => {
+    assert.ok(!html.includes(ACTIVE_CLASS), `workDir 不唯一时不应有任何 workspace 被标为激活，实际 HTML 含 ${ACTIVE_CLASS}`);
+  });
+});
+
+test('B5-2 activeSessionId 指向 workDir 唯一的会话时，对应 workspace 显示为激活', async () => {
+  const unique = '/work/only';
+  const props = baseProps({
+    isCollapsed: true,
+    workspaces: [{ id: '1', name: '唯一激活', workDir: unique }],
+    sessions: [makeSession('s5b', '唯一激活会话', { workDir: unique })],
+    activeSessionId: 's5b',
+  });
+  await renderSidebar(props, html => {
+    assert.ok(html.includes(ACTIVE_CLASS), `workDir 唯一时应标为激活，实际 HTML 不含 ${ACTIVE_CLASS}`);
+  });
+});
+
+test('B5-3 activeWorkspaceId 直配时优先于 activeSessionId 生效', async () => {
+  const props = baseProps({
+    isCollapsed: true,
+    workspaces: [{ id: '7', name: '直配项目', workDir: '/work/direct' }],
+    sessions: [],
+    activeWorkspaceId: '7',
+  });
+  await renderSidebar(props, html => {
+    assert.ok(html.includes(ACTIVE_CLASS), `activeWorkspaceId 命中时应标为激活`);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B4 空态
+// ─────────────────────────────────────────────────────────────────────────────// ─────────────────────────────────────────────────────────────────────────────
 // B4 空态
 // ─────────────────────────────────────────────────────────────────────────────
 

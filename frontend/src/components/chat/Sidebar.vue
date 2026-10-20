@@ -8,6 +8,7 @@ import { Comment01Icon } from '@hugeicons/core-free-icons';
 import { useTheme } from '../../composables/useTheme';
 import { t } from '../../i18n';
 import CollapseTransition from '../common/CollapseTransition.vue';
+import { useSessionGrouping } from '../../composables/sidebar/useSessionGrouping';
 
 const props = defineProps<{
   sessions: ChatSession[];
@@ -96,62 +97,19 @@ watch(
   { immediate: true }
 );
 
-// 按照后端 workspace 的 ID（及兼容 workDir）收敛会话
-interface ProjectGroup {
-  workspace: WorkspaceVO;
-  sessions: ChatSession[];
-}
+// 按照后端 workspace 的 ID（及兼容 workDir）收敛会话。纯计算逻辑已下沉至：
+// composables/sidebar/useSessionGrouping.ts（保持 workDir 唯一性语义，勿与 watch 内联谓词合并）。
 
-const projectGroups = computed<ProjectGroup[]>(() => {
-  const wsList = [...(props.workspaces || [])];
-  if (isSortAsc.value) {
-    wsList.sort((a, b) => (a.name || a.workDir || '').localeCompare(b.name || b.workDir || ''));
-  }
-  const groups: ProjectGroup[] = [];
-
-  for (const ws of wsList) {
-    if (filterQuery.value.trim()) {
-      const q = filterQuery.value.toLowerCase();
-      const matchName = (ws.name || '').toLowerCase().includes(q);
-      const matchDir = (ws.workDir || '').toLowerCase().includes(q);
-      if (!matchName && !matchDir) continue;
-    }
-
-    // 会话精确按 workspaceId 归类；仅当未绑定 workspaceId 时才回退到唯一 workDir 匹配
-    const matchedSessions = props.sessions.filter(s => {
-      if (s.workspaceId !== undefined && s.workspaceId !== null && String(s.workspaceId).trim() !== '') {
-        return String(s.workspaceId) === String(ws.id);
-      }
-      if (s.workDir && ws.workDir && s.workDir.trim() === ws.workDir.trim()) {
-        const sameDirCount = wsList.filter(w => w.workDir && w.workDir.trim() === s.workDir!.trim()).length;
-        return sameDirCount === 1;
-      }
-      return false;
-    });
-
-    groups.push({
-      workspace: ws,
-      sessions: matchedSessions
-    });
-  }
-
-  return groups;
+const { projectGroups, unassignedSessions, isWorkspaceActive: isWorkspaceActivePure } = useSessionGrouping({
+  sessions: computed(() => props.sessions),
+  workspaces: computed(() => props.workspaces),
+  filterQuery,
+  isSortAsc
 });
 
-// 未绑定到已注册工作空间的会话
-const unassignedSessions = computed<ChatSession[]>(() => {
-  const wsList = props.workspaces || [];
-  return props.sessions.filter(s => {
-    if (s.workspaceId !== undefined && s.workspaceId !== null && String(s.workspaceId).trim() !== '') {
-      return !wsList.some(ws => String(ws.id) === String(s.workspaceId));
-    }
-    if (s.workDir) {
-      const sameDirCount = wsList.filter(w => w.workDir && w.workDir.trim() === s.workDir!.trim()).length;
-      if (sameDirCount === 1) return false;
-    }
-    return true;
-  });
-});
+// 模板 6 处调用点的薄包装：签名保持 (ws) => boolean，模板零改动
+const isWorkspaceActive = (ws: WorkspaceVO) =>
+  isWorkspaceActivePure(ws, props.activeWorkspaceId, props.activeSessionId);
 
 const isFullyExpanded = (key: string) => fullyExpandedWorkspaces.value[key] === true;
 
@@ -163,25 +121,6 @@ const toggleFullyExpanded = (key: string) => {
 const limitSessions = (key: string, sessions: ChatSession[]): ChatSession[] => {
   if (sessions.length <= SESSION_VISIBLE_LIMIT || isFullyExpanded(key)) return sessions;
   return sessions.slice(0, SESSION_VISIBLE_LIMIT);
-};
-
-const isWorkspaceActive = (ws: WorkspaceVO) => {  if (props.activeWorkspaceId !== undefined && props.activeWorkspaceId !== null && String(props.activeWorkspaceId) === String(ws.id)) {
-    return true;
-  }
-  if (props.activeSessionId) {
-    const session = props.sessions.find(s => s.id === props.activeSessionId);
-    if (session) {
-      if (session.workspaceId !== undefined && session.workspaceId !== null && String(session.workspaceId).trim() !== '') {
-        return String(session.workspaceId) === String(ws.id);
-      }
-      if (session.workDir && ws.workDir && session.workDir === ws.workDir) {
-        const wsList = props.workspaces || [];
-        const sameDirCount = wsList.filter(w => w.workDir && w.workDir.trim() === session.workDir!.trim()).length;
-        return sameDirCount === 1;
-      }
-    }
-  }
-  return false;
 };
 
 const toggleWorkspaceExpand = (wsId: string | number) => {
