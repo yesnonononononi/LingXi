@@ -165,7 +165,21 @@ test('B2-1 单组会话超过 5 条时只展示 5 条，并出现「展开显示
     assert.ok(html.includes('会话4'), '第 5 条应可见');
     assert.ok(!html.includes('会话5'), '第 6 条应被截断');
     assert.ok(!html.includes('会话6'), '第 7 条应被截断');
-    assert.ok(html.includes('展开显示') || html.includes('7'), '应出现展开入口并带总数');
+    assert.ok(html.includes('展开显示'), '应出现「展开显示」入口');
+  });
+});
+
+test('B2-3 默认（未展开）时伪条目文案为「展开显示」，不得是「收起显示」', async () => {
+  const sessions = Array.from({ length: 7 }, (_, index) =>
+    makeSession(`s${index}`, `文案${index}`, { workspaceId: '1' })
+  );
+  const props = baseProps({
+    workspaces: [{ id: '1', name: '文案项目', workDir: '/work/label' }],
+    sessions,
+  });
+  await renderSidebar(props, html => {
+    assert.ok(html.includes('展开显示'), '默认应显示「展开显示」');
+    assert.ok(!html.includes('收起显示'), '未展开时不得显示「收起显示」');
   });
 });
 

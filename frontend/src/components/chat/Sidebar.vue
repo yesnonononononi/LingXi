@@ -4,11 +4,13 @@ import { useConfirm } from '../../composables/useConfirm';
 import type { ChatSession, WorkspaceVO } from '../../types/chat';
 import logoUrl from '../../assets/lingxi-agent-logo.png';
 import BranchedMenu, { type BranchedMenuItem, type BranchedMenuChild } from '../common/BranchedMenu.vue';
-import { Comment01Icon } from '@hugeicons/core-free-icons';
+
 import { useTheme } from '../../composables/useTheme';
 import { t } from '../../i18n';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import { useSessionGrouping } from '../../composables/sidebar/useSessionGrouping';
+import { useSessionVisibility, SESSION_VISIBLE_LIMIT } from '../../composables/sidebar/useSessionVisibility';
+
 
 const props = defineProps<{
   sessions: ChatSession[];
@@ -46,9 +48,25 @@ const isSortAsc = ref(false);
 const expandedWorkspaces = ref<Record<string, boolean>>({});
 const activeMenuWorkspaceId = ref<string | null>(null);
 
-// 会话列表默认不展开；展开时每组最多直接展示 5 条，超出走「展开显示」
-const SESSION_VISIBLE_LIMIT = 5;
-const fullyExpandedWorkspaces = ref<Record<string, boolean>>({});
+// 会话分组（纯计算）与可见性（截断 / 展开态 / BranchedMenu 数据）已下沉为 composable：
+// composables/sidebar/useSessionGrouping.ts、composables/sidebar/useSessionVisibility.ts。
+// 必须在下面两个 immediate watch 之前实例化：activeSessionId watch 会写 fullyExpandedWorkspaces。
+const { projectGroups, unassignedSessions, isWorkspaceActive: isWorkspaceActivePure } = useSessionGrouping({
+  sessions: computed(() => props.sessions),
+  workspaces: computed(() => props.workspaces),
+  filterQuery,
+  isSortAsc
+});
+
+const {
+  fullyExpandedWorkspaces,
+  isFullyExpanded,
+  toggleFullyExpanded,
+  limitSessions,
+  branchedMenuItems,
+  branchedOpenIndices
+} = useSessionVisibility({ projectGroups, unassignedSessions, expandedWorkspaces });
+
 
 // 默认不展开所有工作空间
 watch(
@@ -97,31 +115,12 @@ watch(
   { immediate: true }
 );
 
-// 按照后端 workspace 的 ID（及兼容 workDir）收敛会话。纯计算逻辑已下沉至：
+// 按照后端 workspace 的 ID（及兼容 workDir）收敛会话。纯计算逻辑已下沉至
 // composables/sidebar/useSessionGrouping.ts（保持 workDir 唯一性语义，勿与 watch 内联谓词合并）。
-
-const { projectGroups, unassignedSessions, isWorkspaceActive: isWorkspaceActivePure } = useSessionGrouping({
-  sessions: computed(() => props.sessions),
-  workspaces: computed(() => props.workspaces),
-  filterQuery,
-  isSortAsc
-});
-
 // 模板 6 处调用点的薄包装：签名保持 (ws) => boolean，模板零改动
 const isWorkspaceActive = (ws: WorkspaceVO) =>
   isWorkspaceActivePure(ws, props.activeWorkspaceId, props.activeSessionId);
 
-const isFullyExpanded = (key: string) => fullyExpandedWorkspaces.value[key] === true;
-
-const toggleFullyExpanded = (key: string) => {
-  fullyExpandedWorkspaces.value[key] = !fullyExpandedWorkspaces.value[key];
-};
-
-// 按限制截断会话列表；超出时返回前 5 条，由「展开显示」控制全量
-const limitSessions = (key: string, sessions: ChatSession[]): ChatSession[] => {
-  if (sessions.length <= SESSION_VISIBLE_LIMIT || isFullyExpanded(key)) return sessions;
-  return sessions.slice(0, SESSION_VISIBLE_LIMIT);
-};
 
 const toggleWorkspaceExpand = (wsId: string | number) => {
   const key = String(wsId);
@@ -178,66 +177,8 @@ const saveEdit = (session: ChatSession, event: Event) => {
   editingSessionId.value = null;
 };
 
-// 计算供 BranchedMenu 消费的孩子列表：截断 + 「展开显示」伪条目
-const buildBranchedChildren = (key: string, sessions: ChatSession[]): BranchedMenuChild[] => {
-  const children: BranchedMenuChild[] = limitSessions(key, sessions).map(s => ({
-    value: String(s.id),
-    label: s.title || t('session.newConversation'),
-    icon: Comment01Icon,
-    raw: s
-  }));
-  if (sessions.length > SESSION_VISIBLE_LIMIT) {
-    children.push({
-      value: `more-${key}`,
-      label: isFullyExpanded(key) ? t('chat.sidebar.collapseDisplay') : t('chat.sidebar.expandDisplay', { count: sessions.length }),
-      icon: undefined,
-      raw: null
-    });
-  }
-  return children;
-};
-
-// 构造供 BranchedMenu 树形组件消费的分支数据
-const branchedMenuItems = computed<BranchedMenuItem[]>(() => {
-  const items: BranchedMenuItem[] = [];
-
-  for (const group of projectGroups.value) {
-    items.push({
-      label: group.workspace.name || group.workspace.workDir || t('session.workspace'),
-      value: `ws-${group.workspace.id}`,
-      raw: group.workspace,
-      children: buildBranchedChildren(String(group.workspace.id), group.sessions)
-    });
-  }
-
-  if (unassignedSessions.value.length > 0) {
-    items.push({
-      label: t('chat.sidebar.history'),
-      value: 'ws-unassigned',
-      raw: null,
-      children: buildBranchedChildren('ws-unassigned', unassignedSessions.value)
-    });
-  }
-
-  return items;
-});
-
-// 计算当前展开的区段索引
-const branchedOpenIndices = computed<number[]>(() => {
-  const indices: number[] = [];
-  branchedMenuItems.value.forEach((item, idx) => {
-    if (item.raw && item.raw.id) {
-      if (expandedWorkspaces.value[String(item.raw.id)] !== false) {
-        indices.push(idx);
-      }
-    } else {
-      indices.push(idx);
-    }
-  });
-  return indices;
-});
-
 const handleBranchedSelect = (value: string, item: BranchedMenuChild | BranchedMenuItem) => {
+
   if (value.startsWith('more-')) {
     toggleFullyExpanded(value.slice(5));
     return;
