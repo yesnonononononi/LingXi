@@ -120,24 +120,24 @@ const groupedOptions = computed<OptionGroup<T>[]>(() => {
 });
 
 /**
- * 折叠状态：key = 组名。
+ * 展开状态：key = 组名。
  *
- * <p>搜索时一律展开 —— 否则用户搜到了模型，却因为那一组是折叠的而看不到结果，
- * 会误以为「没有匹配」。</p>
+ * <p>默认全部折叠，只记录用户手动展开的组 —— 提供商多时一屏先看清单，再按需展开。
+ * 搜索时一律展开，否则用户搜到了模型却因为组折叠看不到结果，会误以为「没有匹配」。</p>
  */
-const collapsedGroups = ref<Set<string>>(new Set());
+const expandedGroups = ref<Set<string>>(new Set());
 
 const isGroupCollapsed = (group: OptionGroup<T>): boolean => {
   if (!group.name || searchQuery.value.trim()) return false;
-  return collapsedGroups.value.has(group.name);
+  return !expandedGroups.value.has(group.name);
 };
 
 const toggleGroup = (group: OptionGroup<T>) => {
   if (!group.name) return;
-  const next = new Set(collapsedGroups.value);
+  const next = new Set(expandedGroups.value);
   if (next.has(group.name)) next.delete(group.name);
   else next.add(group.name);
-  collapsedGroups.value = next;
+  expandedGroups.value = next;
 };
 
 // 面板移到 body，避免输入框的隔离层和祖先裁剪遮挡菜单。
@@ -341,8 +341,8 @@ defineExpose({
                 :size="12"
               />
               <span
-                class="flex-1 min-w-0 text-[10px] font-semibold uppercase tracking-wider truncate"
-                :class="isDark ? 'text-zinc-400' : 'text-gray-500'"
+                class="flex-1 min-w-0 text-[10px] font-bold uppercase tracking-wider truncate"
+                :class="isDark ? 'text-zinc-200' : 'text-gray-700'"
               >{{ group.name }}</span>
               <span
                 class="shrink-0 px-1.5 py-px rounded-md text-[10px] leading-none"
