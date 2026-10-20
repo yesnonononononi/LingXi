@@ -18,6 +18,8 @@ test('每个固定工具都有完整名与渲染名', async () => {
   // web_search 渲染名独立成「检索网络资源」，不再复用 READ 分类文案（「读取」会让人以为是读文件）
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.WebSearch) }, { fullName: '网页搜索', renderName: '检索网络资源' });
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.EditFile) }, { fullName: '编辑文件', renderName: '写入' });
+  // 「查看队员状态」自带名字，渲染名不再落到泛化的「工具」
+  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.PeekTeammateState) }, { fullName: '查看队员状态', renderName: '查看队员状态' });
 });
 
 test('同一映射实体跟随语言变化，未知与空标识不裸显机器名', async () => {

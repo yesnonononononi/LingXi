@@ -29,6 +29,7 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = n
   [AgentToolName.CreatePlan, defineToolName('创建计划', 'Create plan', 'tool.category.plan')],
   [AgentToolName.CallSubAgent, defineToolName('调用子 Agent', 'Call sub-agent', 'tool.category.subAgent')],
   [AgentToolName.SendMailToAgent, defineToolName('发送 Agent 邮件', 'Send agent mail', 'tool.category.mail')],
+  [AgentToolName.PeekTeammateState, defineToolName('查看队员状态', 'View teammate state', 'tool.category.peek')],
   [AgentToolName.CompactContext, defineToolName('压缩上下文', 'Compact context', 'tool.category.compact')],
   [AgentToolName.SearchTool, defineToolName('检索工具', 'Search tools', 'tool.category.toolSearch')],
   [AgentToolName.ListMcpTools, defineToolName('列举 MCP 工具', 'List MCP tools', 'tool.category.mcpList')],

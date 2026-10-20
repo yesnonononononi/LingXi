@@ -31,6 +31,7 @@ test('已知固定工具全部映射为中文展示名，且不含英文下划�
     [AgentToolName.CreatePlan, '计划'],
     [AgentToolName.CallSubAgent, '子代理'],
     [AgentToolName.SendMailToAgent, '发送邮件'],
+    [AgentToolName.PeekTeammateState, '查看队员状态'],
     [AgentToolName.CompactContext, '压缩上下文'],
     [AgentToolName.SearchTool, '检索工具'],
     [AgentToolName.ListMcpTools, '列举可用工具'],
@@ -39,6 +40,24 @@ test('已知固定工具全部映射为中文展示名，且不含英文下划�
   for (const [tool, expectedLabel] of expected) {
     assert.equal(label(tool), expectedLabel, `${tool} 应映射为「${expectedLabel}」`);
   }
+});
+
+test('查看队员状态的工具行显示「查看<队员名>状态」，缺名兜底「队员」且绝不暴露 agentId', () => {
+  const named = resolveToolMeta({
+    toolName: AgentToolName.PeekTeammateState,
+    args: { agentId: 211549880609832960, agentName: '开智码-开发工程师' },
+  });
+  assert.equal(named.category, TOOL_CATEGORY.PEEK);
+  assert.equal(named.description, '查看开智码-开发工程师状态');
+
+  // 模型没带 agentName：兜底「队员」，而不是退回泛化的「工具」
+  const anonymous = resolveToolMeta({ toolName: AgentToolName.PeekTeammateState, args: { agentId: 211549880609832960 } });
+  assert.equal(anonymous.description, '查看队员状态');
+
+  // 空串 / 纯空白同样兜底（模型偶尔下发空字符串）
+  const blank = resolveToolMeta({ toolName: AgentToolName.PeekTeammateState, args: { agentId: 12, agentName: '  ' } });
+  assert.equal(blank.description, '查看队员状态');
+  assert.ok(!blank.description.includes('12'), '不得把 agentId 当队员名');
 });
 
 test('读图工具以真实路径展示目标', () => {

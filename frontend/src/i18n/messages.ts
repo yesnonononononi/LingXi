@@ -158,6 +158,7 @@ export const messages: MessageSchema = {
         webSearch: '检索网络资源',
         choice: '选择',
         subAgent: '子代理',
+        peek: '查看队员状态',
         think: '思考',
         plan: '计划',
         mail: '发送邮件',
@@ -167,6 +168,9 @@ export const messages: MessageSchema = {
         skill: '读取技能',
         default: '工具',
       },
+      /** 查看队员状态的工具行标题：队员名缺失时用 peekMember 兜底。 */
+      peekState: '查看{name}状态',
+      peekMember: '队员',
       lineRange: {
         all: '全文',
         end: '末尾',
@@ -1239,6 +1243,7 @@ export const messages: MessageSchema = {
         webSearch: 'Search the web',
         choice: 'Choice',
         subAgent: 'Sub-agent',
+        peek: 'View teammate state',
         think: 'Thinking',
         plan: 'Plan',
         mail: 'Send mail',
@@ -1248,6 +1253,9 @@ export const messages: MessageSchema = {
         skill: 'Read skill',
         default: 'Tool',
       },
+      /** Tool-row title for the teammate-state tool; falls back to peekMember without a name. */
+      peekState: 'View {name} state',
+      peekMember: 'teammate',
       lineRange: {
         all: 'Full text',
         end: 'end',

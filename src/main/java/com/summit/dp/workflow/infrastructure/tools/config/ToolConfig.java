@@ -102,7 +102,8 @@ public class ToolConfig {
                         {
                           "type": "object",
                           "properties": {
-                            "agentId": {"type": "integer", "description": "Agent id from the commander's teammate list."}
+                            "agentId": {"type": "integer", "description": "Agent id from the commander's teammate list."},
+                            "agentName": {"type": "string", "description": "That teammate's name from the same list. Display only: it never affects which agent is read."}
                           },
                           "required": ["agentId"],
                           "additionalProperties": false

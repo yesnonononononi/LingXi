@@ -14,6 +14,7 @@ export const TOOL_CATEGORY = {
   WRITE: 'WRITE',
   CHOICE: 'CHOICE',
   SUB_AGENT: 'SUB_AGENT',
+  PEEK: 'PEEK',
   THINK: 'THINK',
   PLAN: 'PLAN',
   MAIL: 'MAIL',
@@ -41,6 +42,8 @@ const KNOWN_TOOL_CATEGORY: Partial<Record<AgentToolName, string>> = {
   [AgentToolName.CreatePlan]: TOOL_CATEGORY.PLAN,
   // 子代理
   [AgentToolName.CallSubAgent]: TOOL_CATEGORY.SUB_AGENT,
+  // 查看队员状态（只读观测，与委派分属两类）
+  [AgentToolName.PeekTeammateState]: TOOL_CATEGORY.PEEK,
   // Agent 间邮件
   [AgentToolName.SendMailToAgent]: TOOL_CATEGORY.MAIL,
   // 上下文压缩
@@ -62,6 +65,7 @@ const TOOL_CATEGORY_LABEL_KEY: Record<string, string> = {
   [TOOL_CATEGORY.WRITE]: 'tool.category.write',
   [TOOL_CATEGORY.CHOICE]: 'tool.category.choice',
   [TOOL_CATEGORY.SUB_AGENT]: 'tool.category.subAgent',
+  [TOOL_CATEGORY.PEEK]: 'tool.category.peek',
   [TOOL_CATEGORY.THINK]: 'tool.category.think',
   [TOOL_CATEGORY.PLAN]: 'tool.category.plan',
   [TOOL_CATEGORY.MAIL]: 'tool.category.mail',
@@ -208,6 +212,11 @@ export function resolveToolMeta(input: ToolMetaInput): ToolMeta {
 
     case AgentToolName.CallSubAgent:
       description = field('task');
+      break;
+
+    case AgentToolName.PeekTeammateState:
+      // 队员名是模型随参数下发的展示字段，可能缺失 ⇒ 兜底「队员」；绝不把 agentId 当名字显示。
+      description = t('tool.peekState', { name: field('agentName').trim() || t('tool.peekMember') });
       break;
 
     case AgentToolName.CreatePlan:
