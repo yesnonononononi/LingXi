@@ -27,12 +27,6 @@ const props = defineProps<{
   triggerClass?: string;
   /** 触发器尺寸：md 默认，sm 更小巧 */
   size?: 'md' | 'sm';
-  /**
-   * 分组默认展开。
-   *
-   * <p>输入框里的模型下拉默认收起（先看提供商清单），表单里的选择器默认展开（用户是来挑一项的）。</p>
-   */
-  defaultExpanded?: boolean;
 }>();
 
 const { isDark: themeIsDark } = useTheme();
@@ -126,29 +120,24 @@ const groupedOptions = computed<OptionGroup<T>[]>(() => {
 });
 
 /**
- * 分组展开/折叠状态：key = 组名。
+ * 分组展开状态：key = 组名。
  *
- * <p>两套集合按 {@link props.defaultExpanded} 二选一：默认收起时记「手动展开的组」，
- * 默认展开时记「手动收起的组」。搜索时一律展开，否则用户搜到了模型却因为组折叠看不到结果，
- * 会误以为「没有匹配」。</p>
+ * <p>只记录「手动展开过的组」，默认全部收起 —— 提供商多时一屏先看清单，再按需展开。
+ * 搜索时一律展开，否则用户搜到了模型却因为组折叠看不到结果，会误以为「没有匹配」。</p>
  */
 const expandedGroups = ref<Set<string>>(new Set());
-const collapsedGroups = ref<Set<string>>(new Set());
 
 const isGroupCollapsed = (group: OptionGroup<T>): boolean => {
   if (!group.name || searchQuery.value.trim()) return false;
-  return props.defaultExpanded
-    ? collapsedGroups.value.has(group.name)
-    : !expandedGroups.value.has(group.name);
+  return !expandedGroups.value.has(group.name);
 };
 
 const toggleGroup = (group: OptionGroup<T>) => {
   if (!group.name) return;
-  const target = props.defaultExpanded ? collapsedGroups : expandedGroups;
-  const next = new Set(target.value);
+  const next = new Set(expandedGroups.value);
   if (next.has(group.name)) next.delete(group.name);
   else next.add(group.name);
-  target.value = next;
+  expandedGroups.value = next;
 };
 
 // 面板移到 body，避免输入框的隔离层和祖先裁剪遮挡菜单。
@@ -256,6 +245,8 @@ defineExpose({
       :class="[
         !triggerExtraClass ? (isSmall ? 'h-8 px-2.5 py-1.5' : 'h-9 px-3 py-2') : '',
         disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer',
+        // 边框颜色随主题：调用方只写 `border` 宽度时，Tailwind 默认用 currentColor 会画出深色粗边。
+        isDark ? 'border-white/20' : 'border-gray-300',
         isDark ? 'hover:bg-white/5' : 'hover:bg-black/5',
         triggerExtraClass
       ]"
@@ -362,11 +353,11 @@ defineExpose({
                 class="shrink-0 px-1.5 py-px rounded-md text-[10px] leading-none"
                 :class="isDark ? 'bg-white/10 text-zinc-400' : 'bg-gray-100 text-gray-500'"
               >{{ group.count }}</span>
-              <!-- 折叠箭头：展开朝上，折叠朝下 -->
+              <!-- 折叠箭头：收起朝右（可展开），展开朝下（内容已铺开） -->
               <svg
                 class="w-2.5 h-2.5 shrink-0 transition-transform duration-200"
                 :class="[
-                  isGroupCollapsed(group) ? '-rotate-90' : 'rotate-0',
+                  isGroupCollapsed(group) ? 'rotate-90' : 'rotate-180',
                   isDark ? 'text-zinc-500' : 'text-gray-400'
                 ]"
                 viewBox="0 0 1024 1024"

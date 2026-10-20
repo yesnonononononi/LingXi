@@ -250,7 +250,6 @@ const {
               :options="modelOptions"
               :isDark="isDark"
               :searchable="true"
-              :default-expanded="true"
               :placeholder="t('settings.agents.modelPlaceholder')"
               class="w-full"
               trigger-class="w-full h-[34px] px-3 rounded-xl text-xs border flex items-center justify-between gap-2 cursor-pointer"
