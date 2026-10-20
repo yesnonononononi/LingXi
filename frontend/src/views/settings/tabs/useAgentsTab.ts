@@ -34,6 +34,19 @@ export function useAgentsTab() {
   const agentToast = ref('');
   let agentToastTimer: number | undefined;
 
+  /** 列表区搜索词：只过滤展示，不影响已勾选项。 */
+  const agentSearchQuery = ref('');
+
+  /** 搜索命中「名称 + 描述」；Agent 没有标签字段，别硬造一个。 */
+  const filteredAgents = computed(() => {
+    const keyword = agentSearchQuery.value.trim().toLowerCase();
+    if (!keyword) return agentsList.value;
+    return agentsList.value.filter(agent =>
+      (agent.name ?? '').toLowerCase().includes(keyword)
+      || (agent.description ?? '').toLowerCase().includes(keyword)
+    );
+  });
+
   /** 批量操作：勾选的智能体标识，按字符串比较（后端 id 可能是字符串） */
   const selectedAgentIds = ref<Array<number | string>>([]);
   /** 批量操作：待统一绑定的模型，空串表示还没选 */
@@ -47,7 +60,7 @@ export function useAgentsTab() {
     selectedAgentIds.value.some(selected => isSameId(selected, id));
 
   const isAllAgentsSelected = computed(
-    () => agentsList.value.length > 0 && agentsList.value.every(agent => isAgentSelected(agent.id))
+    () => filteredAgents.value.length > 0 && filteredAgents.value.every(agent => isAgentSelected(agent.id))
   );
 
   const toggleAgentSelection = (id: number | string) => {
@@ -58,9 +71,20 @@ export function useAgentsTab() {
     }
   };
 
-  /** 全选 / 取消全选：以当前列表为准，不残留已下架项的标识。 */
+  /** 全选 / 取消全选：只作用于当前搜索结果，用户搜出来的意图就是「这一批」。 */
   const toggleAllAgents = () => {
-    selectedAgentIds.value = isAllAgentsSelected.value ? [] : agentsList.value.map(agent => agent.id);
+    if (isAllAgentsSelected.value) {
+      selectedAgentIds.value = selectedAgentIds.value.filter(
+        selected => !filteredAgents.value.some(agent => isSameId(agent.id, selected))
+      );
+      return;
+    }
+    const visibleIds = filteredAgents.value.map(agent => agent.id);
+    const merged = [...selectedAgentIds.value];
+    for (const id of visibleIds) {
+      if (!merged.some(selected => isSameId(selected, id))) merged.push(id);
+    }
+    selectedAgentIds.value = merged;
   };
 
   /** 退出批量操作：清空勾选与待应用模型，避免下次进来带着上次的状态。 */
@@ -361,6 +385,8 @@ export function useAgentsTab() {
     agentFormError,
     isSubmittingAgent,
     agentToast,
+    agentSearchQuery,
+    filteredAgents,
     selectedAgentIds,
     batchModelId,
     batchModelValue,

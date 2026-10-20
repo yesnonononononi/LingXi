@@ -30,6 +30,8 @@ const {
   agentFormError,
   isSubmittingAgent,
   agentToast,
+  agentSearchQuery,
+  filteredAgents,
   selectedAgentIds,
   batchModelValue,
   isApplyingBatchModel,
@@ -37,7 +39,6 @@ const {
   isAgentSelected,
   toggleAgentSelection,
   toggleAllAgents,
-  clearBatchSelection,
   handleApplyBatchModel,
   loadAgents,
   loadTools,
@@ -113,12 +114,45 @@ const {
       </div>
 
       <template v-else>
-        <!-- 批量操作栏：勾选智能体后统一改基座模型 -->
-        <div
-          class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-2xl border"
-          :class="isDark ? 'bg-white/[0.03] border-white/10' : 'bg-white border-gray-200'"
-        >
-          <label class="flex items-center gap-2 cursor-pointer select-none">
+        <!-- 工具条：搜索 + 勾选 + 批量改模型，与卡片区同宽一行排布 -->
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- 搜索框：只过滤展示，不动已勾选项（勾了再搜不会丢选择） -->
+          <div class="relative flex-1 min-w-[7rem]">
+            <svg
+              class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none"
+              :class="isDark ? 'text-zinc-500' : 'text-gray-400'"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+            </svg>
+            <input
+              v-model="agentSearchQuery"
+              type="text"
+              :placeholder="t('settings.agents.searchPlaceholder')"
+              :class="[
+                'w-full h-[30px] pl-8 pr-7 rounded-lg border outline-none text-xs transition',
+                isDark
+                  ? 'bg-black/90 border-white/20 text-zinc-100 placeholder-zinc-500 focus:border-cyan-400'
+                  : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500'
+              ]"
+            />
+            <button
+              v-if="agentSearchQuery"
+              type="button"
+              :title="t('settings.agents.clearSearch')"
+              class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded cursor-pointer"
+              :class="isDark ? 'text-zinc-500 hover:text-zinc-300' : 'text-gray-400 hover:text-gray-600'"
+              @click="agentSearchQuery = ''"
+            >
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4" d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+          </div>
+
+          <label class="flex items-center gap-2 shrink-0 cursor-pointer select-none px-1">
             <input
               type="checkbox"
               :checked="isAllAgentsSelected"
@@ -130,7 +164,7 @@ const {
             </span>
           </label>
 
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-2 shrink-0">
             <span class="text-xs" :class="isDark ? 'text-zinc-400' : 'text-gray-500'">
               {{ t('settings.agents.batchLabel') }}
             </span>
@@ -140,7 +174,7 @@ const {
               :isDark="isDark"
               :searchable="true"
               :placeholder="t('settings.agents.batchModelPlaceholder')"
-              trigger-class="h-[30px] px-2.5 rounded-lg text-xs border flex items-center justify-between gap-2 cursor-pointer min-w-[9rem]"
+              trigger-class="h-[30px] px-2.5 rounded-lg text-xs border flex items-center justify-between gap-2 cursor-pointer min-w-[8rem]"
             />
             <button
               type="button"
@@ -155,21 +189,22 @@ const {
             >
               {{ t('settings.agents.applyBatch') }}
             </button>
-            <button
-              type="button"
-              @click="clearBatchSelection"
-              class="px-3 py-1.5 rounded-lg border text-xs transition cursor-pointer"
-              :class="isDark ? 'border-white/20 hover:bg-white/10 text-zinc-200' : 'border-gray-300 text-gray-500 hover:text-gray-700'"
-            >
-              {{ t('settings.agents.clearSelection') }}
-            </button>
           </div>
         </div>
 
+        <!-- 搜索无结果：与「一个智能体都没有」区分开，否则用户以为数据丢了 -->
+        <div
+          v-if="filteredAgents.length === 0"
+          class="py-10 text-center text-xs border border-dashed rounded-2xl"
+          :class="isDark ? 'border-white/10 text-zinc-500' : 'border-gray-200 text-gray-400'"
+        >
+          {{ t('settings.agents.emptySearch') }}
+        </div>
+
         <!-- 智能体卡片列表 -->
-        <div class="space-y-3">
+        <div v-else class="space-y-3">
           <div
-            v-for="agent in agentsList"
+            v-for="agent in filteredAgents"
             :key="agent.id"
             class="px-4 py-3.5 rounded-2xl border transition-all"
             :class="[
