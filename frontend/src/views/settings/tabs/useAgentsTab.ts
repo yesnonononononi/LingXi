@@ -1,6 +1,7 @@
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue';
 import { AgentAPI, ToolAPI, ModelAPI } from '../../../services/api';
 import type { AgentVO, ToolVO, ModelConfigVO } from '../../../types/chat';
+import type { SelectOption } from '../../../types/ui';
 import { isOk } from '../../../utils/api';
 import { useConfirm } from '../../../composables/useConfirm';
 import { useI18n } from '../../../i18n';
@@ -78,14 +79,36 @@ export function useAgentsTab() {
 
   const loadModels = async () => {
     try {
-      const res = await ModelAPI.list(1, 100);
+      // 聚合接口一次带出「提供商 → 模型」：同名模型来自不同提供商时，下拉里能分清来源。
+      const res = await ModelAPI.catalog();
       if (isOk(res.code)) {
-        modelsList.value = res.data?.records ?? [];
+        modelsList.value = (res.data ?? []).flatMap(group => group.models ?? []);
       }
     } catch (e) {
       console.error('加载模型列表失败:', e);
     }
   };
+
+  /** 基座模型下拉：按提供商分组，选中值仍是 model id。 */
+  const modelOptions = computed<SelectOption<string | number>[]>(() => {
+    const ungrouped = t('settings.models.ungrouped');
+    return modelsList.value
+      .filter(model => model.id !== undefined && model.id !== null)
+      .map(model => ({
+        label: model.modelName || t('settings.agents.modelFallback', { id: model.id ?? '' }),
+        value: model.id as string | number,
+        group: model.providerName || ungrouped,
+        groupIcon: model.providerIcon ?? undefined,
+      }));
+  });
+
+  /** DropUpSelect 的 v-model 只收 string | number，表单里未选时是空串。 */
+  const selectedModelValue = computed<string | number>({
+    get: () => agentForm.value.modelId,
+    set: (value) => {
+      agentForm.value.modelId = value;
+    },
+  });
 
     const getModelName = (modelId?: number | string) => {
     if (!modelId) return t('settings.agents.unboundModel');
@@ -249,6 +272,8 @@ export function useAgentsTab() {
     isToolsLoading,
     toolsErrorMsg,
     modelsList,
+    modelOptions,
+    selectedModelValue,
     isEditingOrAddingAgent,
     editingAgentId,
     agentForm,

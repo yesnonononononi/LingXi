@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useAgentsTab } from './useAgentsTab';
+import DropUpSelect from '../../../components/common/DropUpSelect.vue';
 import { resolveToolFullName } from '../../../utils/toolDisplayNames';
 import { useTheme } from '../../../composables/useTheme';
 import { useI18n } from '../../../i18n';
@@ -21,7 +22,8 @@ const {
   availableTools,
   isToolsLoading,
   toolsErrorMsg,
-  modelsList,
+  modelOptions,
+  selectedModelValue,
   isEditingOrAddingAgent,
   editingAgentId,
   agentForm,
@@ -242,17 +244,17 @@ const {
                         <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
               {{ t('settings.agents.modelLabel') }} <span class="text-red-500">*</span>
             </label>
-            <select
-              v-model="agentForm.modelId"
-              :class="[
-                'w-full px-3 py-2 rounded-xl border outline-none text-xs cursor-pointer transition',
-                isDark ? 'bg-black/90 border-white/20 text-zinc-100 focus:border-cyan-400' : 'bg-white border-gray-300 text-gray-900'
-              ]"
-            >
-              <option v-for="m in modelsList" :key="m.id" :value="m.id" class="dark:bg-black dark:text-zinc-100">
-                {{ m.modelName || t('settings.agents.modelFallback', { id: m.id ?? '' }) }}
-              </option>
-            </select>
+            <!-- 基座模型：与输入框共用同一套分组下拉，替代原生 select 的系统外观 -->
+            <DropUpSelect
+              v-model="selectedModelValue"
+              :options="modelOptions"
+              :isDark="isDark"
+              :searchable="true"
+              :default-expanded="true"
+              :placeholder="t('settings.agents.modelPlaceholder')"
+              class="w-full"
+              trigger-class="w-full h-[34px] px-3 rounded-xl text-xs border flex items-center justify-between gap-2 cursor-pointer"
+            />
           </div>
         </div>
 

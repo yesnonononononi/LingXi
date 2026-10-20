@@ -27,6 +27,12 @@ const props = defineProps<{
   triggerClass?: string;
   /** 触发器尺寸：md 默认，sm 更小巧 */
   size?: 'md' | 'sm';
+  /**
+   * 分组默认展开。
+   *
+   * <p>输入框里的模型下拉默认收起（先看提供商清单），表单里的选择器默认展开（用户是来挑一项的）。</p>
+   */
+  defaultExpanded?: boolean;
 }>();
 
 const { isDark: themeIsDark } = useTheme();
@@ -120,24 +126,29 @@ const groupedOptions = computed<OptionGroup<T>[]>(() => {
 });
 
 /**
- * 展开状态：key = 组名。
+ * 分组展开/折叠状态：key = 组名。
  *
- * <p>默认全部折叠，只记录用户手动展开的组 —— 提供商多时一屏先看清单，再按需展开。
- * 搜索时一律展开，否则用户搜到了模型却因为组折叠看不到结果，会误以为「没有匹配」。</p>
+ * <p>两套集合按 {@link props.defaultExpanded} 二选一：默认收起时记「手动展开的组」，
+ * 默认展开时记「手动收起的组」。搜索时一律展开，否则用户搜到了模型却因为组折叠看不到结果，
+ * 会误以为「没有匹配」。</p>
  */
 const expandedGroups = ref<Set<string>>(new Set());
+const collapsedGroups = ref<Set<string>>(new Set());
 
 const isGroupCollapsed = (group: OptionGroup<T>): boolean => {
   if (!group.name || searchQuery.value.trim()) return false;
-  return !expandedGroups.value.has(group.name);
+  return props.defaultExpanded
+    ? collapsedGroups.value.has(group.name)
+    : !expandedGroups.value.has(group.name);
 };
 
 const toggleGroup = (group: OptionGroup<T>) => {
   if (!group.name) return;
-  const next = new Set(expandedGroups.value);
+  const target = props.defaultExpanded ? collapsedGroups : expandedGroups;
+  const next = new Set(target.value);
   if (next.has(group.name)) next.delete(group.name);
   else next.add(group.name);
-  expandedGroups.value = next;
+  target.value = next;
 };
 
 // 面板移到 body，避免输入框的隔离层和祖先裁剪遮挡菜单。
@@ -151,7 +162,10 @@ const updatePosition = () => {
   const rect = rootRef.value.getBoundingClientRect();
   const margin = 8;
   const gap = 10;
-  const width = Math.min(panelRef.value.offsetWidth, window.innerWidth - margin * 2);
+  const available = window.innerWidth - margin * 2;
+  // 触发器比面板更宽时（表单里的整行选择器）让面板跟着同宽，避免「宽输入框 + 窄下拉」的错位。
+  const minWidth = Math.min(Math.max(PANEL_MIN_WIDTH, rect.width), available);
+  const width = Math.min(Math.max(panelRef.value.offsetWidth, minWidth), available);
   const left = panelAlign.value === 'left' ? rect.left : rect.right - width;
   const above = Math.max(0, rect.top - gap - margin);
   const below = Math.max(0, window.innerHeight - rect.bottom - gap - margin);
@@ -161,8 +175,8 @@ const updatePosition = () => {
     ...(upward ? { bottom: `${window.innerHeight - rect.top + gap}px` } : { top: `${rect.bottom + gap}px` }),
     maxHeight: `${Math.min(PANEL_MAX_HEIGHT, upward ? above : below)}px`,
     // 内联样式优先级高于 class：这里必须同步收紧，否则 max-w-[14rem] 会被顶掉。
-    maxWidth: `${Math.min(PANEL_MAX_WIDTH, window.innerWidth - margin * 2)}px`,
-    minWidth: `${Math.min(PANEL_MIN_WIDTH, window.innerWidth - margin * 2)}px`,
+    maxWidth: `${Math.min(PANEL_MAX_WIDTH, available)}px`,
+    minWidth: `${minWidth}px`,
   };
 };
 
@@ -238,7 +252,7 @@ defineExpose({
     <button
       type="button"
       :disabled="disabled"
-      class="flex items-center justify-center gap-1.5 rounded-lg transition outline-none"
+      class="flex items-center justify-between gap-1.5 rounded-lg transition outline-none"
       :class="[
         !triggerExtraClass ? (isSmall ? 'h-8 px-2.5 py-1.5' : 'h-9 px-3 py-2') : '',
         disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer',
