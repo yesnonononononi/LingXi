@@ -1,6 +1,6 @@
 import http from './interceptor';
 import type { Result } from './types';
-import type { PageResult, ModelConfigVO, ModelConfigPayload } from '../types/chat';
+import type { PageResult, ModelConfigVO, ModelConfigPayload, ProviderModelGroupVO } from '../types/chat';
 
 /** 2. 模型配置 API (对应后端 ModelController) */
 export class ModelAPI {
@@ -10,6 +10,14 @@ export class ModelAPI {
 
   static async list(page = 1, pageSize = 10): Promise<Result<PageResult<ModelConfigVO>>> {
     return http.get<any, Result<PageResult<ModelConfigVO>>>(`/model/list?page=${page}&pageSize=${pageSize}`);
+  }
+
+  /**
+   * 提供商 + 模型的聚合分组（后端注入 provider 模块 service 拼装）。
+   * 模型配置页与输入框上拉框共用同一份数据，避免两边分组口径漂移。
+   */
+  static async catalog(): Promise<Result<ProviderModelGroupVO[]>> {
+    return http.get<any, Result<ProviderModelGroupVO[]>>('/model/catalog');
   }
 
   static async add(data: ModelConfigPayload): Promise<Result<void>> {

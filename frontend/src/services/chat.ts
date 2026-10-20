@@ -157,20 +157,27 @@ export const chatApi = {
   },
   async fetchModels(): Promise<FetchResult<ModelConfig[]>> {
     try {
-      const res = await ModelAPI.list(1, 100);
+      // 聚合接口一次带出「提供商 → 模型」，上拉框按 provider 分组；选中值仍是 model id。
+      const res = await ModelAPI.catalog();
       if (isOk(res.code)) {
-        const records = res.data?.records ?? [];
-        return {
-          ok: true,
-          data: records.map((item: any) => ({
-            id: item.id,
-                        name: item.modelName || t('session.modelFallback', { id: item.id }),
-            modelName: item.modelName,
-            description: item.baseUrl ? t('session.interfaceDesc', { url: item.baseUrl }) : t('session.builtinModel'),
-            baseUrl: item.baseUrl,
-            apiKey: item.apiKey
-          }))
-        };
+        const groups = res.data ?? [];
+        const models: ModelConfig[] = [];
+        for (const group of groups) {
+          for (const item of group.models ?? []) {
+            models.push({
+              id: item.id as string | number,
+              name: item.modelName || t('session.modelFallback', { id: item.id ?? '' }),
+              modelName: item.modelName,
+              description: item.baseUrl ? t('session.interfaceDesc', { url: item.baseUrl }) : t('session.builtinModel'),
+              baseUrl: item.baseUrl,
+              apiKey: item.apiKey,
+              providerConfigId: group.providerConfigId ?? null,
+              providerName: group.providerName ?? null,
+              providerIcon: group.providerIcon ?? null,
+            });
+          }
+        }
+        return { ok: true, data: models };
       }
       return { ok: false, error: describeFetchFailure(classifyResult(res)) };
     } catch (err) {

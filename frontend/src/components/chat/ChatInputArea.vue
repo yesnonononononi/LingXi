@@ -16,6 +16,7 @@ import SparkTrail from '../common/SparkTrail.vue';
 import MorphingSendIcon from '../common/MorphingSendIcon.vue';
 import SlingButton from '../common/SlingButton.vue';
 import ProjectDropdown from './ProjectDropdown.vue';
+import ProviderIcon from '../model/ProviderIcon.vue';
 import type { SelectOption } from '../../types/ui';
 import type { ChatMode, ModelConfig, WorkspaceVO, AgentAccessMode, TeamVO, AgentVO, ReasoningEffort } from '../../types/chat';
 import { reasoningEffortOptions } from '../../composables/useReasoningEffort';
@@ -567,15 +568,21 @@ const teamOptions = computed<SelectOption<string | number>[]>(() => {
   ];
 });
 
-// 基座模型
+// 基座模型：按提供商分组展示（同一模型名可能来自不同提供商），选中值仍是 model id。
 const ADD_CUSTOM_MODEL = '__add_custom_model__';
-const modelOptions = computed<SelectOption<string | number>[]>(() => [
-    ...(props.models ?? []).map(m => ({
+const modelOptions = computed<SelectOption<string | number>[]>(() => {
+  const ungroupedLabel = t('chat.input.ungroupedProvider');
+  const options: SelectOption<string | number>[] = (props.models ?? []).map(m => ({
     label: m.name || m.modelName || t('session.modelFallback', { id: m.id }),
     value: m.id,
-  })),
-  { label: t('chat.input.addCustomModel'), value: ADD_CUSTOM_MODEL }
-]);
+    group: m.providerName || ungroupedLabel,
+    groupIcon: m.providerIcon ?? undefined,
+    avatar: m.providerIcon ?? undefined,
+  }));
+  // 不给 group：「+ 添加自定义模型」落在末尾的无名块，不会混进上面任一提供商组。
+  options.push({ label: t('chat.input.addCustomModel'), value: ADD_CUSTOM_MODEL });
+  return options;
+});
 const selectedModel = computed<string | number>({
   get: () => props.selectedModelId ?? '',
   set: (value) => { if (value === ADD_CUSTOM_MODEL) { emit('openModelEditor'); return; } emit('updateModel', value); }
@@ -1598,7 +1605,29 @@ defineExpose({
             size="sm"
             :placeholder="t('chat.input.selectModel')"
             trigger-class="inline-flex h-7 flex-none cursor-pointer touch-manipulation items-center gap-1 rounded-lg border-0 bg-transparent px-2 text-[12px] font-medium outline-none select-none [color:color-mix(in_srgb,var(--pb-ink)_70%,transparent)] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease] hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] hover:[color:var(--pb-ink)] whitespace-nowrap"
-          />
+          >
+            <template #trigger="{ selected, isOpen: menuOpen }">
+              <ProviderIcon
+                v-if="selected?.avatar"
+                :icon="selected.avatar"
+                :name="selected.label"
+                :size="14"
+              />
+              <span class="truncate max-w-[220px] leading-none">
+                <template v-if="selected?.group">{{ selected.group }} / </template>{{ selected?.label ?? t('chat.input.selectModel') }}
+              </span>
+              <svg
+                class="w-2.5 h-2.5 shrink-0 origin-center transition-transform duration-300 ease-out"
+                :class="menuOpen ? 'rotate-180' : 'rotate-0'"
+                viewBox="0 0 1024 1024"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path d="M838.116 732.779 877.7 693.195 511.979 327.549 146.3 693.195 185.883 732.779 512.003 406.652Z" />
+              </svg>
+            </template>
+          </DropUpSelect>
 
           <!-- 语音录入 (Mic) 按钮 -->
           <button

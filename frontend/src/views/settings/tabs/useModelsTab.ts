@@ -1,30 +1,72 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
-import { ModelAPI } from '../../../services/api';
-import type { ModelConfigVO, OpenAIModelItem } from '../../../types/chat';
+import { ModelAPI, ProviderAPI } from '../../../services/api';
+import type {
+  ModelConfigVO,
+  ProviderConfigVO,
+  ProviderModelGroupVO,
+  OpenAIModelItem,
+} from '../../../types/chat';
 import { isOk } from '../../../utils/api';
 import { extractOpenAIError, parseOpenAIModelList } from '../../../utils/openaiModels';
 import { useConfirm } from '../../../composables/useConfirm';
 import { useI18n } from '../../../i18n';
 
+/** 设置页「模型」tab 的三种视图：列表 / 提供商表单 / 模型表单。 */
+export type ModelsTabMode = 'list' | 'provider-form' | 'model-form';
+
+/** 提供商只要三样：名称、图标 URL、通用 API Key（Base URL 由模型自己填）。 */
+interface ProviderForm {
+  id: string | number | null;
+  name: string;
+  icon: string;
+  apiKey: string;
+}
+
+interface ModelForm {
+  id: string | number | null;
+  providerConfigId: string | number | null;
+  modelName: string;
+  baseUrl: string;
+  apiKey: string;
+  vision: boolean;
+  /** 勾选后保存时把提供商预设的密钥复制到本模型，之后与提供方解耦 */
+  useProviderApiKey: boolean;
+}
+
 export function useModelsTab(emit: (e: 'modelUpdated') => void) {
   const { t } = useI18n();
-  const modelsList = ref<ModelConfigVO[]>([]);
+  const { confirm } = useConfirm();
+
+  const catalogGroups = ref<ProviderModelGroupVO[]>([]);
+  const providers = ref<ProviderConfigVO[]>([]);
   const isModelLoading = ref(false);
   const modelErrorMsg = ref('');
-  const isEditingOrAdding = ref(false);
-  const addType = ref<'preset' | 'custom'>('preset');
-  const editingModelId = ref<number | string | null>(null);
-  const modelForm = ref({
-    vision: false,
-    modelName: '',
-    baseUrl: '',
-    apiKey: '',
-  });
-  const modelFormError = ref('');
-  const isSubmittingModel = ref(false);
+  const mode = ref<ModelsTabMode>('list');
+  const isSubmitting = ref(false);
   const showApiKey = ref(false);
   const modelToast = ref('');
   let modelToastTimer: number | undefined;
+
+  const providerForm = ref<ProviderForm>(emptyProviderForm());
+  const providerFormError = ref('');
+  const modelForm = ref<ModelForm>(emptyModelForm());
+  const modelFormError = ref('');
+
+  function emptyProviderForm(): ProviderForm {
+    return { id: null, name: '', icon: '', apiKey: '' };
+  }
+
+  function emptyModelForm(): ModelForm {
+    return {
+      id: null,
+      providerConfigId: null,
+      modelName: '',
+      baseUrl: '',
+      apiKey: '',
+      vision: false,
+      useProviderApiKey: false,
+    };
+  }
 
   const showModelToast = (msg: string) => {
     modelToast.value = msg;
@@ -34,15 +76,23 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
     }, 2500);
   };
 
-  const loadModels = async () => {
+  const loadAll = async () => {
     isModelLoading.value = true;
     modelErrorMsg.value = '';
     try {
-      const res = await ModelAPI.list(1, 100);
-      if (isOk(res.code)) {
-        modelsList.value = res.data?.records ?? [];
+      const [catalogRes, providerRes] = await Promise.all([
+        ModelAPI.catalog(),
+        ProviderAPI.list(),
+      ]);
+      if (isOk(catalogRes.code)) {
+        catalogGroups.value = catalogRes.data ?? [];
       } else {
-                modelErrorMsg.value = res.errMsg || t('settings.models.errLoadList');
+        modelErrorMsg.value = catalogRes.errMsg || t('settings.models.errLoadList');
+      }
+      if (isOk(providerRes.code)) {
+        providers.value = providerRes.data ?? [];
+      } else if (!modelErrorMsg.value) {
+        modelErrorMsg.value = providerRes.errMsg || t('settings.models.errLoadList');
       }
     } catch {
       modelErrorMsg.value = t('settings.models.errLoadConfig');
@@ -51,65 +101,232 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
     }
   };
 
-  const providerPresets = [
-    { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1' },
-    { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
-    { name: 'qwen', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
-    { name: 'Kimi', baseUrl: 'https://api.moonshot.cn/v1' },
-    { name: 'Ollama', baseUrl: 'http://localhost:11434/v1' },
-  ];
-
-  const selectedProvider = ref('DeepSeek');
-  const isProviderDropdownOpen = ref(false);
-
-  const handleApplyPreset = (preset: typeof providerPresets[0]) => {
-    selectedProvider.value = preset.name;
-    modelForm.value.baseUrl = preset.baseUrl;
-    modelFormError.value = '';
-    isProviderDropdownOpen.value = false;
+  const refreshAfterChange = async () => {
+    await loadAll();
+    emit('modelUpdated');
   };
 
-  const startAddModel = (type: 'preset' | 'custom' = 'preset') => {
-    editingModelId.value = null;
-    addType.value = type;
-    isProviderDropdownOpen.value = false;
-    if (type === 'preset') {
-      selectedProvider.value = 'DeepSeek';
-      modelForm.value = {
-        vision: false,
-        modelName: '',
-        baseUrl: 'https://api.deepseek.com/v1',
-        apiKey: '',
-      };
-    } else {
-      selectedProvider.value = '';
-      modelForm.value = {
-        vision: false,
-        modelName: '',
-        baseUrl: '',
-        apiKey: '',
-      };
-    }
-    modelFormError.value = '';
+  // ---------------------------------------------------------------- 提供商
+
+  /** 只有一个入口：名称 / 图标 URL / 通用 API Key 全部由用户填写，不再套内置预设。 */
+  const startAddProvider = () => {
+    providerForm.value = emptyProviderForm();
+    providerFormError.value = '';
     showApiKey.value = false;
-    isEditingOrAdding.value = true;
+    mode.value = 'provider-form';
   };
 
-  const startEditModel = (item: ModelConfigVO) => {
-    editingModelId.value = item.id ?? null;
-    isProviderDropdownOpen.value = false;
-    const matched = providerPresets.find(p => p.baseUrl === item.baseUrl);
-    selectedProvider.value = matched ? matched.name : '';
+  const startEditProvider = (provider: ProviderConfigVO) => {
+    providerForm.value = {
+      id: provider.id,
+      name: provider.name ?? '',
+      icon: provider.icon ?? '',
+      apiKey: '',
+    };
+    providerFormError.value = '';
+    showApiKey.value = false;
+    mode.value = 'provider-form';
+  };
+
+  const saveProviderForm = async () => {
+    providerFormError.value = '';
+    const form = providerForm.value;
+    if (!form.name.trim()) {
+      providerFormError.value = t('settings.models.errProviderNameRequired');
+      return;
+    }
+    isSubmitting.value = true;
+    try {
+      const payload = {
+        name: form.name.trim(),
+        // 始终回传：空串表示清除图标（后端把 blank 归一成 null），传 null 会被判为「不修改」。
+        icon: form.icon.trim(),
+        apiKey: form.apiKey.trim() || undefined,
+      };
+      const res = form.id === null
+        ? await ProviderAPI.add(payload)
+        : await ProviderAPI.update({ id: form.id, ...payload });
+      if (isOk(res.code)) {
+        showModelToast(form.id === null
+          ? t('settings.models.toastProviderAdded')
+          : t('settings.models.toastProviderUpdated'));
+        mode.value = 'list';
+        await refreshAfterChange();
+      } else {
+        providerFormError.value = res.errMsg || t('settings.models.errSave');
+      }
+    } catch {
+      providerFormError.value = t('settings.models.errNetwork');
+    } finally {
+      isSubmitting.value = false;
+    }
+  };
+
+  const deleteProvider = async (provider: { id: string | number; name: string }) => {
+    const ok = await confirm({
+      title: t('settings.models.confirmDeleteProviderTitle'),
+      content: t('settings.models.confirmDeleteProviderContent', { name: provider.name }),
+      type: 'danger',
+      confirmText: t('common.remove'),
+    });
+    if (!ok) return;
+    try {
+      const res = await ProviderAPI.deleteById(provider.id);
+      if (isOk(res.code)) {
+        showModelToast(t('settings.models.toastProviderDeleted'));
+        await refreshAfterChange();
+      } else {
+        window.alert(res.errMsg || t('settings.models.errDelete'));
+      }
+    } catch {
+      window.alert(t('settings.models.errDeleteRetry'));
+    }
+  };
+
+  // ---------------------------------------------------------------- 模型
+
+  const startAddModel = (providerConfigId?: string | number | null) => {
     modelForm.value = {
-      vision: item.vision,
-      modelName: item.modelName ?? '',
-      baseUrl: item.baseUrl ?? '',
-      apiKey: '', // 展示掩码不回填；编辑留空保留数据库中的原值。
+      ...emptyModelForm(),
+      providerConfigId: providerConfigId ?? null,
+      baseUrl: providerBaseUrl(providerConfigId),
     };
     modelFormError.value = '';
     showApiKey.value = false;
-    isEditingOrAdding.value = true;
+    isRemoteModelDropdownOpen.value = false;
+    remoteModelList.value = [];
+    mode.value = 'model-form';
   };
+
+  const startEditModel = (item: ModelConfigVO) => {
+    modelForm.value = {
+      id: item.id ?? null,
+      providerConfigId: item.providerConfigId ?? null,
+      modelName: item.modelName ?? '',
+      baseUrl: item.baseUrl ?? '',
+      apiKey: '', // 展示掩码不回填；编辑留空保留数据库中的原值。
+      vision: item.vision,
+      useProviderApiKey: false,
+    };
+    modelFormError.value = '';
+    showApiKey.value = false;
+    isRemoteModelDropdownOpen.value = false;
+    remoteModelList.value = [];
+    mode.value = 'model-form';
+  };
+
+  const providerBaseUrl = (providerConfigId?: string | number | null): string => {
+    if (providerConfigId === null || providerConfigId === undefined) return '';
+    const provider = providers.value.find(p => String(p.id) === String(providerConfigId));
+    return provider?.baseUrl ?? '';
+  };
+
+  /** 该提供商是否已配置通用密钥：没有密钥时「复用提供方密钥」没有意义。 */
+  const providerHasCredential = (providerConfigId?: string | number | null): boolean => {
+    if (providerConfigId === null || providerConfigId === undefined) return false;
+    const provider = providers.value.find(p => String(p.id) === String(providerConfigId));
+    return !!provider?.credentialConfigured;
+  };
+
+  /** 切换提供方时，Base URL 还是空或仍是旧提供方的值就跟着换，用户手改过的不动。 */
+  const handleProviderChange = (value: string | number | null) => {
+    const previousBaseUrl = providerBaseUrl(modelForm.value.providerConfigId);
+    modelForm.value.providerConfigId = value;
+    const nextBaseUrl = providerBaseUrl(value);
+    const current = modelForm.value.baseUrl.trim();
+    if (!current || current === previousBaseUrl) {
+      modelForm.value.baseUrl = nextBaseUrl;
+    }
+    // 新提供方没有通用密钥，勾选态必须一起撤销，避免提交一个必然失败的请求。
+    if (!providerHasCredential(value)) modelForm.value.useProviderApiKey = false;
+  };
+
+  const cancelForm = () => {
+    mode.value = 'list';
+    providerForm.value = emptyProviderForm();
+    providerFormError.value = '';
+    modelForm.value = emptyModelForm();
+    modelFormError.value = '';
+    isRemoteModelDropdownOpen.value = false;
+    remoteModelList.value = [];
+    fetchRemoteModelError.value = '';
+  };
+
+  const saveModelForm = async () => {
+    modelFormError.value = '';
+    const form = modelForm.value;
+    if (!form.modelName.trim()) {
+      modelFormError.value = t('settings.models.errNameRequired');
+      return;
+    }
+    if (!form.baseUrl.trim()) {
+      modelFormError.value = t('settings.models.errBaseUrlInput');
+      return;
+    }
+    const reusesProviderKey = form.useProviderApiKey && providerHasCredential(form.providerConfigId);
+    if (form.id === null && !form.apiKey.trim() && !reusesProviderKey) {
+      modelFormError.value = t('settings.models.errApiKeyRequired');
+      return;
+    }
+    isSubmitting.value = true;
+    try {
+      // 归属「未分组」时显式传 0：后端按键「是否出现」判定，null 会被当成「不修改」。
+      const providerConfigId = form.providerConfigId === null
+        ? null
+        : Number(form.providerConfigId) > 0 ? form.providerConfigId : 0;
+      const payload = {
+        vision: form.vision,
+        modelName: form.modelName.trim(),
+        baseUrl: form.baseUrl.trim(),
+        // 复用提供方密钥时不带 apiKey，由后端在落库前复制明文。
+        apiKey: reusesProviderKey ? undefined : (form.apiKey.trim() || undefined),
+        providerConfigId,
+        useProviderApiKey: form.useProviderApiKey || undefined,
+      };
+      const res = form.id === null
+        ? await ModelAPI.add(payload)
+        : await ModelAPI.update({ id: form.id, ...payload });
+      if (isOk(res.code)) {
+        showModelToast(form.id === null
+          ? t('settings.models.toastAdded')
+          : t('settings.models.toastUpdated'));
+        mode.value = 'list';
+        await refreshAfterChange();
+      } else {
+        modelFormError.value = res.errMsg || (form.id === null
+          ? t('settings.models.errAdd')
+          : t('settings.models.errSave'));
+      }
+    } catch {
+      modelFormError.value = t('settings.models.errNetwork');
+    } finally {
+      isSubmitting.value = false;
+    }
+  };
+
+  const handleDeleteModel = async (item: ModelConfigVO) => {
+    if (!item.id) return;
+    const ok = await confirm({
+      title: t('settings.models.confirmDeleteTitle'),
+      content: t('settings.models.confirmDeleteContent', { name: item.modelName || t('settings.models.unnamed') }),
+      type: 'danger',
+      confirmText: t('common.remove'),
+    });
+    if (!ok) return;
+    try {
+      const res = await ModelAPI.deleteById(item.id);
+      if (isOk(res.code)) {
+        showModelToast(t('settings.models.toastDeleted'));
+        await refreshAfterChange();
+      } else {
+        window.alert(res.errMsg || t('settings.models.errDelete'));
+      }
+    } catch {
+      window.alert(t('settings.models.errDeleteRetry'));
+    }
+  };
+
+  // ---------------------------------------------------------- 远程 /models
 
   const isFetchingRemoteModels = ref(false);
   const remoteModelList = ref<OpenAIModelItem[]>([]);
@@ -171,7 +388,7 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
       const validItems: OpenAIModelItem[] = parseOpenAIModelList(json);
 
       remoteModelList.value = validItems;
-            if (validItems.length === 0) {
+      if (validItems.length === 0) {
         fetchRemoteModelError.value = t('settings.models.errNoRemote');
       }
     } catch (err: any) {
@@ -188,111 +405,15 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
     modelFormError.value = '';
   };
 
-  const cancelModelForm = () => {
-    isEditingOrAdding.value = false;
-    editingModelId.value = null;
-    modelForm.value = { modelName: '', baseUrl: '', apiKey: '', vision: false };
-    modelFormError.value = '';
-    isRemoteModelDropdownOpen.value = false;
-    isProviderDropdownOpen.value = false;
-    remoteModelList.value = [];
-    fetchRemoteModelError.value = '';
-  };
-
-  const validateModelForm = () => {
-        if (!modelForm.value.modelName.trim()) {
-      modelFormError.value = t('settings.models.errNameRequired');
-      return false;
-    }
-    if (!modelForm.value.baseUrl.trim()) {
-      modelFormError.value = t('settings.models.errBaseUrlInput');
-      return false;
-    }
-    if (editingModelId.value === null && !modelForm.value.apiKey.trim()) {
-      modelFormError.value = t('settings.models.errApiKeyRequired');
-      return false;
-    }
-    return true;
-  };
-
-  const saveModelForm = async () => {
-    modelFormError.value = '';
-    if (!validateModelForm()) return;
-    isSubmittingModel.value = true;
-    try {
-      const payload = {
-        vision: modelForm.value.vision,
-        modelName: modelForm.value.modelName.trim(),
-        baseUrl: modelForm.value.baseUrl.trim(),
-        apiKey: modelForm.value.apiKey.trim() || undefined,
-      };
-      if (editingModelId.value !== null) {
-        const res = await ModelAPI.update({ id: editingModelId.value, ...payload });
-                if (isOk(res.code)) {
-          showModelToast(t('settings.models.toastUpdated'));
-          cancelModelForm();
-          await loadModels();
-          emit('modelUpdated');
-        } else {
-          modelFormError.value = t('settings.models.errSave');
-        }
-      } else {
-        const res = await ModelAPI.add(payload);
-        if (isOk(res.code)) {
-          showModelToast(t('settings.models.toastAdded'));
-          cancelModelForm();
-          await loadModels();
-          emit('modelUpdated');
-        } else {
-          modelFormError.value = t('settings.models.errAdd');
-        }
-      }
-    } catch {
-      modelFormError.value = t('settings.models.errNetwork');
-    } finally {
-      isSubmittingModel.value = false;
-    }
-  };
-
-  const { confirm } = useConfirm();
-
-  const handleDeleteModel = async (item: ModelConfigVO) => {
-    if (!item.id) return;
-        const ok = await confirm({
-      title: t('settings.models.confirmDeleteTitle'),
-      content: t('settings.models.confirmDeleteContent', { name: item.modelName || t('settings.models.unnamed') }),
-      type: 'danger',
-      confirmText: t('common.remove')
-    });
-    if (!ok) {
-      return;
-    }
-    try {
-      const res = await ModelAPI.deleteById(item.id);
-      if (isOk(res.code)) {
-        showModelToast(t('settings.models.toastDeleted'));
-        await loadModels();
-        emit('modelUpdated');
-      } else {
-        window.alert(t('settings.models.errDelete'));
-      }
-    } catch {
-      window.alert(t('settings.models.errDeleteRetry'));
-    }
-  };
-
   const handleDocumentClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement | null;
     if (!target?.closest('.model-dropdown-container')) {
       isRemoteModelDropdownOpen.value = false;
     }
-    if (!target?.closest('.provider-dropdown-container')) {
-      isProviderDropdownOpen.value = false;
-    }
   };
 
   onMounted(() => {
-    loadModels();
+    loadAll();
     window.addEventListener('click', handleDocumentClick);
   });
 
@@ -302,31 +423,36 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
   });
 
   return {
-    modelsList,
+    catalogGroups,
+    providers,
     isModelLoading,
     modelErrorMsg,
-    isEditingOrAdding,
-    addType,
-    editingModelId,
-    modelForm,
-    modelFormError,
-    isSubmittingModel,
+    mode,
+    isSubmitting,
     showApiKey,
     modelToast,
-    providerPresets,
-    selectedProvider,
-    isProviderDropdownOpen,
+    providerForm,
+    providerFormError,
+    modelForm,
+    modelFormError,
     isFetchingRemoteModels,
     remoteModelList,
     isRemoteModelDropdownOpen,
     remoteModelSearch,
     fetchRemoteModelError,
     filteredRemoteModels,
-    loadModels,
-    handleApplyPreset,
+    loadAll,
+    loadModels: loadAll,
+    startAddProvider,
+    startEditProvider,
+    saveProviderForm,
+    deleteProvider,
     startAddModel,
     startEditModel,
-    cancelModelForm,
+    handleProviderChange,
+    providerHasCredential,
+    cancelForm,
+    cancelModelForm: cancelForm,
     saveModelForm,
     handleDeleteModel,
     handleFetchRemoteModels,

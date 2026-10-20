@@ -5,6 +5,7 @@
 
 export * from './types';
 export * from './model';
+export * from './provider';
 export * from './session';
 export * from './workspace';
 export * from './userConfig';

@@ -4,6 +4,8 @@ import type { SelectOption } from '../../types/ui';
 import { useTheme } from '../../composables/useTheme';
 import { t } from '../../i18n';
 import { isImageAvatar } from '../../utils/avatar';
+import { isBuiltInProviderIcon } from '../../utils/providerIcons';
+import ProviderIcon from '../model/ProviderIcon.vue';
 
 const props = defineProps<{
   /** 当前选中值 (配合 v-model 使用) */
@@ -75,6 +77,40 @@ const filteredOptions = computed(() => {
     String(o.label).toLowerCase().includes(q) ||
     (o.description && String(o.description).toLowerCase().includes(q))
   );
+});
+
+interface OptionGroup<T extends string | number> {
+  key: string;
+  name: string;
+  icon?: string;
+  count: number;
+  options: SelectOption<T>[];
+}
+
+/**
+ * 按 {@link SelectOption.group} 聚成组，保持选项原始出现顺序。
+ *
+ * <p>没有 group 的选项归入无名组（不渲染标题），因此既有调用方的渲染结果不变。
+ * 数量徽标取组内首个显式 {@code groupCount}，否则用当前可见选项数（搜索后即匹配数）。</p>
+ */
+const groupedOptions = computed<OptionGroup<T>[]>(() => {
+  const groups: OptionGroup<T>[] = [];
+  const index = new Map<string, OptionGroup<T>>();
+  for (const option of filteredOptions.value) {
+    const name = (option.group ?? '').trim();
+    let group = index.get(name);
+    if (!group) {
+      group = { key: name, name, icon: option.groupIcon, count: 0, options: [] };
+      index.set(name, group);
+      groups.push(group);
+    }
+    group.options.push(option);
+    group.count += 1;
+    if (group.options.length === 1 && typeof option.groupCount === 'number') {
+      group.count = option.groupCount;
+    }
+  }
+  return groups;
 });
 
 // 面板移到 body，避免输入框的隔离层和祖先裁剪遮挡菜单。
@@ -254,49 +290,79 @@ defineExpose({
             {{ t('common.noOptions') }}
           </div>
 
-          <template v-for="(option, idx) in filteredOptions" :key="option.value">
-            <!-- 针对 '+ 添加团队' 等操作项的分隔线 -->
+          <template v-for="(group, groupIdx) in groupedOptions" :key="group.key || `__ungrouped_${groupIdx}`">
+            <!-- 组标题：图标 + 名称 + 数量徽标（未设置 group 的选项不渲染） -->
             <div
-              v-if="String(option.value).startsWith('__add_') && idx > 0"
-              class="h-px my-1 bg-gray-100 dark:bg-gray-800/80"
-            ></div>
-
-            <div
-              role="option"
-              :aria-selected="isSelected(option)"
-              :class="[
-                'px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors select-none',
-                option.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer',
-                isSelected(option)
-                  ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-gray-100 text-gray-900 font-normal')
-                  : (!option.disabled ? (isDark ? 'hover:bg-white/10 text-zinc-300' : 'hover:bg-gray-50 text-gray-700') : '')
-              ]"
-              @click="select(option)"
+              v-if="group.name"
+              class="px-2.5 pt-1.5 pb-0.5 flex items-center gap-1.5 select-none"
             >
-              <!-- 头像：URL 走 <img>，其余按 Emoji 文本渲染 -->
-              <img
-                v-if="option.avatar && isImageAvatar(option.avatar)"
-                :src="option.avatar"
-                :alt="option.label"
-                class="w-4 h-4 rounded-full object-cover shrink-0"
+              <ProviderIcon
+                v-if="group.icon"
+                :icon="group.icon"
+                :name="group.name"
+                :size="12"
               />
               <span
-                v-else-if="option.avatar"
-                class="shrink-0 text-xs leading-none select-none"
-              >{{ option.avatar }}</span>
-              <span class="truncate pr-2 font-normal leading-normal py-0.5">{{ option.label }}</span>
-              <!-- 对勾图标 (完全对齐 media_1789910619342.png 右侧 checkmark) -->
-              <svg
-                v-if="isSelected(option)"
-                class="w-4 h-4 shrink-0"
-                :class="isDark ? 'text-cyan-400' : 'text-gray-900'"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-              </svg>
+                class="text-[10px] font-semibold uppercase tracking-wider truncate"
+                :class="isDark ? 'text-zinc-400' : 'text-gray-500'"
+              >{{ group.name }}</span>
+              <span
+                class="ml-auto shrink-0 px-1.5 py-px rounded-md text-[10px] leading-none"
+                :class="isDark ? 'bg-white/10 text-zinc-400' : 'bg-gray-100 text-gray-500'"
+              >{{ group.count }}</span>
             </div>
+
+            <template v-for="(option, idx) in group.options" :key="option.value">
+              <!-- 针对 '+ 添加团队' 等操作项的分隔线 -->
+              <div
+                v-if="String(option.value).startsWith('__add_') && idx > 0"
+                class="h-px my-1 bg-gray-100 dark:bg-gray-800/80"
+              ></div>
+
+              <div
+                role="option"
+                :aria-selected="isSelected(option)"
+                :class="[
+                  'px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors select-none',
+                  option.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer',
+                  isSelected(option)
+                    ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-gray-100 text-gray-900 font-normal')
+                    : (!option.disabled ? (isDark ? 'hover:bg-white/10 text-zinc-300' : 'hover:bg-gray-50 text-gray-700') : '')
+                ]"
+                @click="select(option)"
+              >
+                <!-- 内置提供商图标走 SVG，其余仍按 URL / Emoji 渲染 -->
+                <ProviderIcon
+                  v-if="option.avatar && isBuiltInProviderIcon(option.avatar)"
+                  :icon="option.avatar"
+                  :name="option.label"
+                  :size="16"
+                />
+                <!-- 头像：URL 走 <img>，其余按 Emoji 文本渲染 -->
+                <img
+                  v-else-if="option.avatar && isImageAvatar(option.avatar)"
+                  :src="option.avatar"
+                  :alt="option.label"
+                  class="w-4 h-4 rounded-full object-cover shrink-0"
+                />
+                <span
+                  v-else-if="option.avatar"
+                  class="shrink-0 text-xs leading-none select-none"
+                >{{ option.avatar }}</span>
+                <span class="truncate pr-2 font-normal leading-normal py-0.5">{{ option.label }}</span>
+                <!-- 对勾图标 (完全对齐 media_1789910619342.png 右侧 checkmark) -->
+                <svg
+                  v-if="isSelected(option)"
+                  class="w-4 h-4 shrink-0"
+                  :class="isDark ? 'text-cyan-400' : 'text-gray-900'"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            </template>
           </template>
         </div>
       </div>

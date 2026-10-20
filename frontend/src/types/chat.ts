@@ -281,6 +281,10 @@ export interface ModelConfig {
   description?: string;
   baseUrl?: string;
   apiKey?: string;
+  /** 所属提供商预设（聚合自 provider_config）；上拉框按它分组 */
+  providerConfigId?: string | number | null;
+  providerName?: string | null;
+  providerIcon?: string | null;
 }
 
 /** 后端 ModelConfigVO 领域实体 */
@@ -295,10 +299,50 @@ export interface ModelConfigVO {
   credentialConfigured?: boolean;
   /** 模型提供方标识（如 DEEPSEEK / OPENAI / CUSTOM）；后端 ModelConfigVO 已下发该字段 */
   provider?: string;
+  /** 所属提供商预设 ID；空 = 未分组（含预设已删除的悬空引用） */
+  providerConfigId?: string | number | null;
+  /** 聚合自 provider_config 的展示名/图标，分组与徽章都用它 */
+  providerName?: string | null;
+  providerIcon?: string | null;
   /** 请求超时时间；后端为 Duration，序列化形态由后端决定 */
   timeout?: string | number;
   returnThinking?: boolean;
   sendThinking?: boolean;
+}
+
+/** 提供商配置预设（后端 ProviderConfigVO） */
+export interface ProviderConfigVO {
+  id: string | number;
+  name: string;
+  /** 内置图标 key、emoji 或图片 URL */
+  icon?: string | null;
+  baseUrl?: string | null;
+  /** 掩码展示值，不可作为新密钥提交 */
+  apiKey?: string | null;
+  sortOrder?: number | null;
+  credentialConfigured?: boolean;
+}
+
+/** 提供商 + 模型聚合分组（后端 ProviderModelGroupVO） */
+export interface ProviderModelGroupVO {
+  /** 空 = 未分组 */
+  providerConfigId?: string | number | null;
+  providerName?: string | null;
+  providerIcon?: string | null;
+  baseUrl?: string | null;
+  modelCount: number;
+  models: ModelConfigVO[];
+}
+
+/** 提供商新增/更新载荷 */
+export interface ProviderConfigPayload {
+  id?: number | string;
+  name: string;
+  icon?: string | null;
+  baseUrl?: string | null;
+  /** 留空 = 保留已有密钥 */
+  apiKey?: string | null;
+  sortOrder?: number | null;
 }
 
 /**
@@ -701,6 +745,8 @@ export interface ModelConfigPayload {
    * 清除走独立端点 DELETE /settings/model/credential，禁用空串/null 表达清除。
    */
   apiKey?: string;
+  /** 归属的提供商预设；0 = 显式解除归属，不传 = 不修改 */
+  providerConfigId?: string | number | null;
 }
 
 /** OpenAI 单个模型元数据对象 (对齐标准 /models 响应格式) */
