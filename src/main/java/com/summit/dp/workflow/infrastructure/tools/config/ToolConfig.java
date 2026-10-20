@@ -15,6 +15,7 @@ import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.infrastructure.tools.plan.CreatePlanTool;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.PeekTeammateStateTool;
 import com.summit.dp.workflow.infrastructure.tools.require_choice.RequireChoiceToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailWakeMisuseDetector;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
@@ -80,6 +81,39 @@ public class ToolConfig {
                 .timeout(36_000L)
                 .build();
     }
+    /**
+     * 队员状态查询工具：只读观测，<b>不唤醒</b>任何执行。
+     *
+     * <p>description 必须写明这一点：它和 {@code call_sub_agent} 是两件事，模型曾把「看一眼」当成
+     * 「催一下」，而队员结束后不会再被任何消息唤醒。</p>
+     */
+    @Bean
+    public ToolDefinition<PeekTeammateStateTool> peekTeammateStateToolDefinition(PeekTeammateStateTool executor) {
+        return ToolDefinition.<PeekTeammateStateTool>builder()
+                .id(ToolCatalog.PEEK_TEAMMATE_STATE)
+                .name(ToolCatalog.PEEK_TEAMMATE_STATE)
+                .executor(executor)
+                .description("""
+                        Read one teammate's current run state in this collaboration session. Commander only: members cannot see each other.
+                        Returns RUNNING / SUSPENDED / IDLE plus the last outcome, or reports that the teammate has not been woken yet.
+                        This is read-only observation: it never wakes, resumes or delegates. Use call_sub_agent to give a teammate work.
+                        """)
+                .parametersJsonSchema("""
+                        {
+                          "type": "object",
+                          "properties": {
+                            "agentId": {"type": "integer", "description": "Agent id from the commander's teammate list."}
+                          },
+                          "required": ["agentId"],
+                          "additionalProperties": false
+                        }
+                        """)
+                .concurrentPolicy(ConcurrentPolicy.READ_ONLY)
+                .maxOutput(2_000)
+                .timeout(10L)
+                .build();
+    }
+
     /**
      * 发信工具定义。
      *

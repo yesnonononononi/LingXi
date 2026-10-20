@@ -24,6 +24,8 @@ public class ToolListProcessor {
             tools.add(ToolCatalog.SEND_MAIL_TO_AGENT);
         } else if (context.teamId() != null && context.agentId() != null) {
             tools.add(ToolCatalog.CALL_SUB_AGENT);
+            // 指挥者专属、固定下发：不依赖 Agent 配置里写没写它。
+            tools.add(ToolCatalog.PEEK_TEAMMATE_STATE);
             tools.add(ToolCatalog.SEND_MAIL_TO_AGENT);
         }
         if (context.mcpConfig() != null && context.mcpConfig().getMcp() != null && !context.mcpConfig().getMcp().isEmpty()) {
@@ -40,7 +42,10 @@ public class ToolListProcessor {
             tools.removeIf(name -> !ToolCatalog.EXECUTE_COMMAND.equals(name) && !ToolCatalog.MANAGE_COMMAND.equals(name)
                     && !readOnly.contains(name));
         }
-        if (context.member() || context.teamId() == null) tools.remove(ToolCatalog.CALL_SUB_AGENT);
+        if (context.member() || context.teamId() == null) {
+            tools.remove(ToolCatalog.CALL_SUB_AGENT);
+            tools.remove(ToolCatalog.PEEK_TEAMMATE_STATE);
+        }
         if (!context.member() && context.agentId() == null) tools.remove(ToolCatalog.SEND_MAIL_TO_AGENT);
         return List.copyOf(tools);
     }

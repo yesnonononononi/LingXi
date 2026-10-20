@@ -18,6 +18,9 @@ public interface ToolCatalog {
 
     String SEND_MAIL_TO_AGENT = "send_mail_to_agent";
 
+    /** 查看队员运行状态：只读，不唤醒任何执行 */
+    String PEEK_TEAMMATE_STATE = "peek_teammate_state";
+
     /** 终端命令工具名 */
     String EXECUTE_COMMAND = "execute_command";
     String MANAGE_COMMAND = "manage_command";

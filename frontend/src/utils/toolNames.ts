@@ -4,7 +4,7 @@
  * <p>契约来源（改名时两边一起改）：</p>
  * <ul>
  *   <li>业务常量 {@code com.summit.dp.shared.model.ToolCatalog}：call_sub_agent / create_plan /
- *       send_mail_to_agent / execute_command / read_file / edit_file / web_search / search_tool / list_mcp_tools；</li>
+ *       send_mail_to_agent / peek_teammate_state / execute_command / read_file / edit_file / web_search / search_tool / list_mcp_tools；</li>
  *   <li>各 {@code ToolDefinition} 注册名：{@code FileToolConfiguration}（read_file / edit_file）、
  *       {@code CommonToolConfiguration}（execute_command / web_search）、{@code ToolConfig}（require_choice）；</li>
  *   <li>框架内核工具：{@code search_tool} / {@code list_mcp_tools}（harness-kernel-tools）、
@@ -39,6 +39,8 @@ export const AgentToolName = {
   CallSubAgent: 'call_sub_agent',
   /** Agent 间邮件 */
   SendMailToAgent: 'send_mail_to_agent',
+  /** 查看队员运行状态（只读观测，不唤醒） */
+  PeekTeammateState: 'peek_teammate_state',
   /** 上下文压缩 */
   CompactContext: 'compact_context',
   /** 工具检索（渐进披露第二级） */
