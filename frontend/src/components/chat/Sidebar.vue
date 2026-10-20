@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
-import { useConfirm } from '../../composables/useConfirm';
 import type { ChatSession, WorkspaceVO } from '../../types/chat';
 import logoUrl from '../../assets/lingxi-agent-logo.png';
-import BranchedMenu, { type BranchedMenuItem, type BranchedMenuChild } from '../common/BranchedMenu.vue';
+import BranchedMenu from '../common/BranchedMenu.vue';
+
 
 import { useTheme } from '../../composables/useTheme';
 import { t } from '../../i18n';
@@ -11,6 +11,7 @@ import CollapseTransition from '../common/CollapseTransition.vue';
 import { useSessionGrouping } from '../../composables/sidebar/useSessionGrouping';
 import { useSessionVisibility, SESSION_VISIBLE_LIMIT } from '../../composables/sidebar/useSessionVisibility';
 import { useWorkspaceExpansion } from '../../composables/sidebar/useWorkspaceExpansion';
+import { useSidebarActions } from '../../composables/sidebar/useSidebarActions';
 
 
 const props = defineProps<{
@@ -39,14 +40,11 @@ const emit = defineEmits<{
 const { isDark: themeIsDark } = useTheme();
 const isDark = computed(() => themeIsDark.value);
 
-const editingSessionId = ref<string | null>(null);
-const editingTitle = ref('');
-
-// 搜索过滤与项目折叠状态
+// 搜索过滤状态
 const isFilterOpen = ref(false);
 const filterQuery = ref('');
 const isSortAsc = ref(false);
-const activeMenuWorkspaceId = ref<string | null>(null);
+
 
 // 会话分组（纯计算）、工作空间展开态、可见性（截断 / 展开态 / BranchedMenu 数据）均已下沉为 composable。
 // 顺序不可调换：展开态持有 fullyExpandedWorkspaces（activeSessionId 的 immediate watch 会写它），
@@ -80,101 +78,38 @@ const {
 const isWorkspaceActive = (ws: WorkspaceVO) =>
   isWorkspaceActivePure(ws, props.activeWorkspaceId, props.activeSessionId);
 
-
-const handleSelectWorkspace = (ws: WorkspaceVO) => {
-
-  emit('selectWorkspace', ws);
-  if (ws.id != null) {
-    toggleWorkspaceExpand(ws.id);
-  }
-};
-
-const handleNewSessionInProject = (ws: WorkspaceVO, event: Event) => {
-  event.stopPropagation();
-  emit('selectWorkspace', ws);
-  emit('newSession', ws.id);
-};
-
-const toggleProjectMenu = (wsId: string | number, event: Event) => {
-  event.stopPropagation();
-  const key = String(wsId);
-  activeMenuWorkspaceId.value = activeMenuWorkspaceId.value === key ? null : key;
-};
-
-const { confirm } = useConfirm();
-
-const handleDeleteProject = async (ws: WorkspaceVO, event: Event) => {
-  event.stopPropagation();
-  activeMenuWorkspaceId.value = null;
-  if (!ws.id) return;
-    const ok = await confirm({
-    title: t('chat.sidebar.deleteWorkspace'),
-    content: t('chat.sidebar.deleteWorkspaceConfirm', { name: ws.name || ws.workDir || '' }),
-    type: 'danger',
-    confirmText: t('common.remove')
-  });
-  if (ok) {
-    emit('deleteWorkspace', ws.id);
-  }
-};
-
-const startEdit = (session: ChatSession, event: Event) => {
-  event.stopPropagation();
-  editingSessionId.value = session.id;
-  editingTitle.value = session.title;
-};
-
-const saveEdit = (session: ChatSession, event: Event) => {
-  event.stopPropagation();
-  if (editingTitle.value.trim()) {
-    emit('renameSession', session.id, editingTitle.value.trim());
-  }
-  editingSessionId.value = null;
-};
-
-const handleBranchedSelect = (value: string, item: BranchedMenuChild | BranchedMenuItem) => {
-
-  if (value.startsWith('more-')) {
-    toggleFullyExpanded(value.slice(5));
-    return;
-  }
-  if (item.raw) {
-    if ('title' in item.raw) {
-      const session = item.raw as ChatSession;
-      emit('selectSession', session.id);
-      if (session.workspaceId && props.workspaces) {
-        const ws = props.workspaces.find(w => String(w.id) === String(session.workspaceId));
-        if (ws) emit('selectWorkspace', ws);
-      }
-    } else {
-      const ws = item.raw as WorkspaceVO;
-      handleSelectWorkspace(ws);
-    }
-  } else {
-    emit('selectSession', value);
-  }
-};
-
-const handleBranchedToggle = (index: number, isOpen: boolean) => {
-  const item = branchedMenuItems.value[index];
-  if (item && item.raw && item.raw.id) {
-    expandedWorkspaces.value[String(item.raw.id)] = isOpen;
-  }
-};
-
-const handleClickOutside = () => {
-  if (activeMenuWorkspaceId.value) {
-    activeMenuWorkspaceId.value = null;
-  }
-};
+// 交互动作层（重命名编辑态、项目菜单、删除确认、BranchedMenu 选择、点击外部关闭）
+const {
+  editingSessionId,
+  editingTitle,
+  activeMenuWorkspaceId,
+  handleSelectWorkspace,
+  handleNewSessionInProject,
+  toggleProjectMenu,
+  handleDeleteProject,
+  startEdit,
+  saveEdit,
+  handleBranchedSelect,
+  handleBranchedToggle,
+  installClickOutside,
+  disposeClickOutside
+} = useSidebarActions({
+  emit,
+  workspaces: computed(() => props.workspaces),
+  expandedWorkspaces,
+  branchedMenuItems,
+  toggleWorkspaceExpand,
+  toggleFullyExpanded
+});
 
 onMounted(() => {
-  document.addEventListener('click', handleClickOutside);
+  installClickOutside();
 });
 
 onBeforeUnmount(() => {
-  document.removeEventListener('click', handleClickOutside);
+  disposeClickOutside();
 });
+
 </script>
 
 <template>

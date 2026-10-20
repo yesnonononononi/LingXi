@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'vite';
-import { createSSRApp } from 'vue';
+import { createSSRApp, computed, ref } from 'vue';
 import { renderToString } from '@vue/server-renderer';
 import { fileURLToPath } from 'node:url';
+import { useSidebarActions } from '../src/composables/sidebar/useSidebarActions';
 
 /**
  * Sidebar 行为基线（M1 等价性判据）。
@@ -297,3 +298,120 @@ test('B4-1 无会话无 workspace 时不崩溃、不渲染未分组区段', asyn
     assert.ok(!html.includes('历史会话'), '无未分组会话时不应出现历史区段');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C 动作层（useSidebarActions）纯单元用例
+//
+// SSR 只能断言渲染结果，点不到事件；这组用例直接实例化 composable，用假的 emit 与
+// 依赖 ref 钉死事件回调契约（伪条目 key 偏移、重命名空标题、菜单开关、监听幂等）。
+// ─────────────────────────────────────────────────────────────────────────────
+
+type Emitted = Array<{ event: string; args: unknown[] }>;
+
+const makeActions = (overrides: Record<string, unknown> = {}) => {
+  const emitted: Emitted = [];
+  const emit = (event: string, ...args: unknown[]) => {
+    emitted.push({ event, args });
+  };
+  const expandedWorkspaces = ref<Record<string, boolean>>({});
+  const fullyExpandedKeys: string[] = [];
+  const toggledWorkspaceIds: Array<string | number> = [];
+  const branchedMenuItems = computed(() => [
+    { label: '项目', value: 'ws-1', raw: { id: '1', name: '项目', workDir: '/w' }, children: [] }
+  ]);
+  const actions = useSidebarActions({
+    emit: emit as any,
+    workspaces: computed(() => [{ id: '1', name: '项目', workDir: '/w' }] as any),
+    expandedWorkspaces,
+    branchedMenuItems: branchedMenuItems as any,
+    toggleWorkspaceExpand: (id: string | number) => { toggledWorkspaceIds.push(id); },
+    toggleFullyExpanded: (key: string) => { fullyExpandedKeys.push(key); },
+    ...overrides
+  });
+  return { actions, emitted, expandedWorkspaces, fullyExpandedKeys, toggledWorkspaceIds };
+};
+
+const fakeEvent = () => ({ stopPropagation: () => undefined } as unknown as Event);
+
+test('C1-1 伪条目 more-<key> 触发完整展开时，key 偏移正确（截掉 more- 前缀）', () => {
+  const { actions, fullyExpandedKeys } = makeActions();
+  actions.handleBranchedSelect('more-1', { value: 'more-1', label: '展开显示', raw: null } as any);
+  assert.deepEqual(fullyExpandedKeys, ['1'], '应把 more- 之后的 key 传给 toggleFullyExpanded');
+});
+
+test('C1-2 选中会话节点时 emit selectSession，并联动 emit selectWorkspace', () => {
+  const { actions, emitted } = makeActions();
+  actions.handleBranchedSelect('s1', {
+    value: 's1',
+    label: '会话',
+    raw: { id: 's1', title: '会话', workspaceId: '1' }
+  } as any);
+  assert.deepEqual(emitted.map(e => e.event), ['selectSession', 'selectWorkspace']);
+  assert.deepEqual(emitted[0].args, ['s1']);
+});
+
+test('C1-3 选中 workspace 节点时 emit selectWorkspace 并切换该组展开态', () => {
+  const { actions, emitted, toggledWorkspaceIds } = makeActions();
+  actions.handleBranchedSelect('ws-1', {
+    value: 'ws-1',
+    label: '项目',
+    raw: { id: '1', name: '项目', workDir: '/w' }
+  } as any);
+  assert.deepEqual(emitted.map(e => e.event), ['selectWorkspace']);
+  assert.deepEqual(toggledWorkspaceIds, ['1'], '应切换 workspace 1 的展开态（id 原样透传）');
+});
+
+test('C1-4 重命名为空白标题时不 emit renameSession，但退出编辑态', () => {
+  const { actions, emitted } = makeActions();
+  actions.startEdit({ id: 's1', title: '旧标题' } as any, fakeEvent());
+  assert.equal(actions.editingSessionId.value, 's1');
+  actions.editingTitle.value = '   ';
+  actions.saveEdit({ id: 's1', title: '旧标题' } as any, fakeEvent());
+  assert.deepEqual(emitted, [], '空白标题不得提交改名');
+  assert.equal(actions.editingSessionId.value, null, '编辑态应关闭');
+});
+
+test('C1-5 项目菜单二次点击同一项时关闭', () => {
+  const { actions } = makeActions();
+  actions.toggleProjectMenu('1', fakeEvent());
+  assert.equal(actions.activeMenuWorkspaceId.value, '1');
+  actions.toggleProjectMenu('1', fakeEvent());
+  assert.equal(actions.activeMenuWorkspaceId.value, null);
+});
+
+test('C1-6 点击外部关闭菜单；installClickOutside 幂等，dispose 后不再监听', () => {
+  const { actions } = makeActions();
+  let added = 0;
+  let removed = 0;
+  // 用 Set 模拟真实 DOM 语义：同一 (type, listener, capture) 重复 add 只保留一份。
+  // 因此「去掉 install 里的 removeEventListener」属于等价变异（行为不可观测），
+  // 这条用例钉的是 install 幂等 + dispose 清理，而不是 remove 那一行本身。
+  const listeners = new Set<unknown>();
+  const fakeDocument = {
+    addEventListener: (_t: string, fn: unknown) => { listeners.add(fn); added++; },
+    removeEventListener: (_t: string, fn: unknown) => { listeners.delete(fn); removed++; }
+  };
+  const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  Object.defineProperty(globalThis, 'document', { value: fakeDocument, configurable: true, writable: true });
+  try {
+    actions.installClickOutside();
+    actions.installClickOutside();
+    assert.equal(listeners.size, 1, '重复 install 后监听器应只有 1 个');
+    assert.ok(added >= 2, 'install 每次都先 remove 再 add（幂等实现）');
+
+    actions.activeMenuWorkspaceId.value = '1';
+    [...listeners].forEach(fn => (fn as () => void)());
+    assert.equal(actions.activeMenuWorkspaceId.value, null, '点击外部应关闭菜单');
+
+    actions.disposeClickOutside();
+    assert.equal(listeners.size, 0, 'dispose 后监听器应清空');
+    assert.ok(removed >= 1);
+  } finally {
+    if (originalDescriptor) {
+      Object.defineProperty(globalThis, 'document', originalDescriptor);
+    } else {
+      delete (globalThis as any).document;
+    }
+  }
+});
+
