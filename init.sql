@@ -29,16 +29,32 @@ CREATE TABLE IF NOT EXISTS mcp (
     KEY idx_mcp_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP服务配置表';
 
+-- 提供商配置预设：同一模型名可来自多个提供商，靠本表区分来源（图标/基地址/密钥缺省值）。
+-- 与 model_config 一样由 JSON 文件持有运行期真源，本表只承担「建库即有表」与历史导入。
+CREATE TABLE IF NOT EXISTS provider_config (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
+    name        VARCHAR(100) NOT NULL COMMENT '提供商名称，用于区分不同来源的同名模型',
+    icon        VARCHAR(200) COMMENT '图标标识：内置图标 key 或 emoji/图片URL',
+    base_url    VARCHAR(500) COMMENT '该提供商 API Base URL 的缺省值',
+    api_key     VARCHAR(500) COMMENT '该提供商 API 密钥的缺省值',
+    sort_order  INT NOT NULL DEFAULT 0 COMMENT '展示排序，小的在前',
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY uk_provider_config_name (name)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '模型提供商配置预设表';
+
 CREATE TABLE IF NOT EXISTS model_config (
     id               BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
     model_name       VARCHAR(100) NOT NULL COMMENT '模型名称',
     base_url         VARCHAR(500) NOT NULL COMMENT 'OpenAI兼容接口base地址',
     api_key          VARCHAR(500) COMMENT 'API密钥',
     provider         VARCHAR(50) COMMENT '模型供应商',
+    provider_config_id BIGINT COMMENT '所属提供商配置(provider_config.id)；空=未归属任何提供商',
     vision           BOOLEAN NOT NULL DEFAULT FALSE COMMENT '是否支持图片输入，由用户明确配置',
     create_time      DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    UNIQUE KEY uk_model_name_base_url (model_name, base_url)
+    UNIQUE KEY uk_model_name_base_url (model_name, base_url),
+    KEY idx_model_config_provider (provider_config_id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '模型配置表';
 
 -- ------------------------------------------------------------

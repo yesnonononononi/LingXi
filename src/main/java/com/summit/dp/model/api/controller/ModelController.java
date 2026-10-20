@@ -6,9 +6,12 @@ import com.summit.dp.model.api.dto.ModelConfigRequest;
 import com.summit.dp.model.application.command.ModelConfigCommand;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.model.application.vo.ModelConfigVO;
+import com.summit.dp.model.application.vo.ProviderModelGroupVO;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RequiredArgsConstructor
 @RestController
@@ -20,16 +23,21 @@ public class ModelController {
     public Result<PageResult<ModelConfigVO>> list(Integer page, Integer pageSize){
         return modelService.list(page,pageSize);
     }
+
+    /** 提供商 + 模型聚合分组；模型选中值仍是 model id。 */
+    @GetMapping("/catalog")
+    public Result<List<ProviderModelGroupVO>> catalog(){
+        return modelService.catalog();
+    }
+
     @PostMapping("/add")
     public Result<Void> add(@RequestBody ModelConfigRequest request){
-        ModelConfigCommand command = new ModelConfigCommand(request.id(), request.modelName(), request.baseUrl(), request.apiKey(), request.vision());
-        return modelService.add(command);
+        return modelService.add(toCommand(request));
     }
 
     @PostMapping("/update")
     public Result<Void> update(@RequestBody ModelConfigRequest request){
-        ModelConfigCommand command = new ModelConfigCommand(request.id(), request.modelName(), request.baseUrl(), request.apiKey(), request.vision());
-        return modelService.update(command);
+        return modelService.update(toCommand(request));
     }
 
     @GetMapping("/find/{id}")
@@ -42,4 +50,8 @@ public class ModelController {
         return modelService.del(id);
     }
 
+    private ModelConfigCommand toCommand(ModelConfigRequest request) {
+        return new ModelConfigCommand(request.id(), request.modelName(), request.baseUrl(),
+                request.apiKey(), request.vision(), request.providerConfigId(), request.useProviderApiKey());
+    }
 }

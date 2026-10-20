@@ -8,6 +8,7 @@ import com.summit.dp.model.domain.model.ModelConfig;
 import com.summit.dp.model.domain.repo.ModelConfigRepository;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.model.application.vo.RuntimeModel;
+import com.summit.dp.provider.application.service.ProviderConfigService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -18,7 +19,7 @@ import static org.mockito.Mockito.*;
 
 class ModelApiKeyTest {
     private final ModelConfigRepository repository = mock(ModelConfigRepository.class);
-    private final ModelServiceImpl service = new ModelServiceImpl(repository);
+    private final ModelServiceImpl service = new ModelServiceImpl(repository, mock(ProviderConfigService.class));
 
     @Test void runtimeSelectionKeepsTheConnectionAndVisionInOneSnapshot() {
         ModelConfig existing = model("key");

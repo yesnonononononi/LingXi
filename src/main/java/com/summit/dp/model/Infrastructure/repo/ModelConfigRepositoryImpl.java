@@ -16,6 +16,8 @@ import org.springframework.stereotype.Repository;
 
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -59,6 +61,7 @@ public class ModelConfigRepositoryImpl extends AbstractJsonRepository<ModelConfi
                 modelConfigPO.getApiKey(),
                 modelConfigPO.getModelName(),
                 modelConfigPO.getProvider(),
+                modelConfigPO.getProviderConfigId(),
                 modelConfigPO.isVision()
         );
         BeanUtils.copyProperties(modelConfigPO, modelConfig);
@@ -68,6 +71,13 @@ public class ModelConfigRepositoryImpl extends AbstractJsonRepository<ModelConfi
     @Override
     public IPage<ModelConfig> page(Integer page, Integer pageSize) {
        return   queryByPage(page,pageSize);
+    }
+
+    @Override
+    public List<ModelConfig> findAll() {
+        return store.access(false, records -> records.stream()
+                .sorted(Comparator.comparing(ModelConfigPO::getId, Comparator.nullsLast(Long::compareTo)))
+                .map(this::toModel).toList());
     }
 
     @Override

@@ -64,7 +64,7 @@ lingxi:
   # 置空（skill.dir: ""）即关闭 Skill 能力，此时不再下发 read_skill 工具。
   skill:
     dir: ${user.home}/.lingxi/skill
-  # 运行期用户配置真源：四个 JSON 由设置页读写，一律落在安装目录之外，故更新（NSIS 会 RMDir /r $INSTDIR）不会覆盖。
+  # 运行期用户配置真源：五个 JSON 由设置页读写，一律落在安装目录之外，故更新（NSIS 会 RMDir /r $INSTDIR）不会覆盖。
   # 改路径用 -Dlingxi.config.<key>.path=... 或环境变量 LINGXI_CONFIG_<KEY>_PATH 覆盖。
   config:
     user-configs:
@@ -73,6 +73,8 @@ lingxi:
       path: ${user.home}/.lingxi/config/mcp.json
     model:
       path: ${user.home}/.lingxi/config/models.json
+    provider:
+      path: ${user.home}/.lingxi/config/providers.json
     personalization:
       path: ${user.home}/.lingxi/config/personalization.json
   tool:

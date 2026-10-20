@@ -6,6 +6,8 @@ public record ModelConfigRequest(
         String baseUrl,
         String apiKey,
         String provider,
-        Boolean vision
+        Boolean vision,
+        Long providerConfigId,
+        Boolean useProviderApiKey
 ) {
 }

@@ -53,6 +53,7 @@ class InitSqlPoConsistencyTest {
             com.summit.dp.user_configs.infrastructure.persistence.po.UserConfigPO.class,
             com.summit.dp.toolcall.infrastructure.persistence.po.ToolCallPO.class,
             com.summit.dp.model.Infrastructure.persistence.po.ModelConfigPO.class,
+            com.summit.dp.provider.infrastructure.persistence.po.ProviderConfigPO.class,
             com.summit.dp.workspace.infrastructure.persistence.po.WorkspacePO.class,
             com.summit.dp.agent.infrastructure.persistence.po.AgentPO.class,
             com.summit.dp.team.infrastructure.persistence.po.TeamPO.class,

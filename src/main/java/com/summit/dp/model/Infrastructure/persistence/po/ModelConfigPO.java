@@ -22,6 +22,8 @@ public class ModelConfigPO {
     private String apiKey;
     private String modelName;
     private String provider;
+    /** 所属提供商预设(provider_config.id)；空=未归属，聚合时归入「未分组」。 */
+    private Long providerConfigId;
     private boolean vision;
     private Instant createTime;
     private Instant updateTime;

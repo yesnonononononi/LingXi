@@ -4,6 +4,7 @@ import com.summit.dp.model.api.controller.ModelController;
 import com.summit.dp.model.application.service.ModelServiceImpl;
 import com.summit.dp.model.domain.model.ModelConfig;
 import com.summit.dp.model.domain.repo.ModelConfigRepository;
+import com.summit.dp.provider.application.service.ProviderConfigService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
@@ -25,7 +26,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class ModelVisionEndpointTest {
     private final ModelConfigRepository repository = mock(ModelConfigRepository.class);
-    private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new ModelController(new ModelServiceImpl(repository))).build();
+    private final MockMvc mvc = MockMvcBuilders.standaloneSetup(
+            new ModelController(new ModelServiceImpl(repository, mock(ProviderConfigService.class)))).build();
 
     @Test
     void requestAndResponseCarryTheExplicitBooleanInBothDirections() throws Exception {
