@@ -1,0 +1,140 @@
+/**
+ * LingXi 主题令牌层 · 定义文件
+ *
+ * 只放变量定义，不放 Tailwind 映射（映射在 src/style.css 的 @theme inline 块）。
+ * 命名规范见 .lingxi/plan/plugin-frontend-arch.md §5.1.1：--lx-<语义角色>[-层级/状态]，
+ * 禁止出现 blue / zinc / -500 这类颜色名或色阶 —— 换肤时要能整体替换色相而不改引用点。
+ *
+ * 主题切换选择器：:root 即暗色默认（应用默认暗色，避免首帧闪烁）；
+ * html.light 与 html[data-theme="light"] 双选择器覆盖为亮色
+ * （useTheme.ts 与 index.html 的首帧脚本都是「class 与 dataset 双写」，故两路都要接住）。
+ *
+ * ⚠️ 本文件当前为「纯新增」：没有任何既有组件消费 --lx-*，
+ * 因此引入它对现有渲染结果零影响（等价性由此保证，而非靠肉眼比对）。
+ */
+
+/* ========== 1) 暗色（默认） ========== */
+:root {
+  /* 表面 Surface */
+  --lx-canvas:                #000000;
+  --lx-canvas-subtle:         #050505;
+  --lx-surface:               #080808;
+  --lx-surface-elevated:      #121216;
+  --lx-surface-sunken:        #030304;
+  --lx-surface-hover:         rgba(255, 255, 255, 0.06);
+  --lx-surface-active:        rgba(255, 255, 255, 0.10);
+  --lx-surface-selected:      rgba(255, 255, 255, 0.08);
+  --lx-overlay:               rgba(0, 0, 0, 0.60);
+
+  /* 文字 Text */
+  --lx-text-primary:          #f4f4f5;
+  --lx-text-secondary:        #d4d4d8;
+  --lx-text-tertiary:         #a1a1aa;
+  --lx-text-muted:            #71717a;
+  --lx-text-disabled:         #52525b;
+  --lx-text-inverse:          #18181b;
+  --lx-text-on-accent:        #ffffff;
+
+  /* 边框 Border */
+  --lx-border-subtle:         rgba(255, 255, 255, 0.08);
+  --lx-border-default:        rgba(255, 255, 255, 0.14);
+  --lx-border-strong:         rgba(255, 255, 255, 0.24);
+  --lx-border-focus:          #38bdf8;
+
+  /* 强调 Accent（对齐既有 --accent-blue / --pb-spark） */
+  --lx-accent:                #38bdf8;
+  --lx-accent-hover:          #0284c7;
+  --lx-accent-pressed:        #0369a1;
+  --lx-accent-soft:           rgba(56, 189, 248, 0.12);
+  --lx-accent-spark:          #ffffff;
+
+  /* 状态 Status（4 态 × 常规/柔和/边框） */
+  --lx-info:                  #38bdf8;
+  --lx-info-soft:             rgba(56, 189, 248, 0.12);
+  --lx-success:               #22c55e;
+  --lx-success-soft:          rgba(34, 197, 94, 0.12);
+  --lx-warning:               #f59e0b;
+  --lx-warning-soft:          rgba(245, 158, 11, 0.12);
+  --lx-danger:                #ef4444;
+  --lx-danger-soft:           rgba(239, 68, 68, 0.12);
+  --lx-danger-border:         #7f1d1d;
+
+  /* 代码 / Markdown */
+  --lx-code-bg:               #08080a;
+  --lx-code-text:             #e4e4e7;
+  --lx-inline-code-bg:        rgba(255, 255, 255, 0.08);
+  --lx-diff-add-bg:           rgba(34, 197, 94, 0.12);
+  --lx-diff-del-bg:           rgba(239, 68, 68, 0.12);
+
+  /* 形态 / 效果（用户不可覆盖：改圆角/阴影容易把界面撑坏，产品价值低） */
+  --lx-radius-sm:             8px;
+  --lx-radius-md:             12px;
+  --lx-radius-lg:             18px;
+  --lx-radius-full:           9999px;
+  --lx-shadow-1:              0 1px 2px rgba(0, 0, 0, 0.40);
+  --lx-shadow-2:              0 8px 24px -8px rgba(0, 0, 0, 0.60);
+  --lx-shadow-3:              0 12px 40px -10px rgba(0, 0, 0, 0.70);
+  --lx-ring:                  0 0 0 2px rgba(56, 189, 248, 0.45);
+  --lx-blur-panel:            12px;
+
+  /* 滚动条（取值与 style.css 现有硬编码一致，供后续批次收口使用） */
+  --lx-scrollbar-thumb:       rgba(255, 255, 255, 0.16);
+  --lx-scrollbar-thumb-hover: rgba(255, 255, 255, 0.32);
+}
+
+/* ========== 2) 亮色覆盖 ========== */
+html.light,
+html[data-theme="light"] {
+  --lx-canvas:                #ffffff;
+  --lx-canvas-subtle:         #fafafa;
+  --lx-surface:               #ffffff;
+  --lx-surface-elevated:      #ffffff;
+  --lx-surface-sunken:        #f4f4f5;
+  --lx-surface-hover:         rgba(0, 0, 0, 0.04);
+  --lx-surface-active:        rgba(0, 0, 0, 0.07);
+  --lx-surface-selected:      rgba(0, 0, 0, 0.05);
+  --lx-overlay:               rgba(0, 0, 0, 0.32);
+
+  --lx-text-primary:          #18181b;
+  --lx-text-secondary:        #3f3f46;
+  --lx-text-tertiary:         #52525b;
+  --lx-text-muted:            #71717a;
+  --lx-text-disabled:         #a1a1aa;
+  --lx-text-inverse:          #fafafa;
+  --lx-text-on-accent:        #ffffff;
+
+  --lx-border-subtle:         rgba(0, 0, 0, 0.08);
+  --lx-border-default:        rgba(0, 0, 0, 0.14);
+  --lx-border-strong:         rgba(0, 0, 0, 0.26);
+  --lx-border-focus:          #0284c7;
+
+  --lx-accent:                #0284c7;
+  --lx-accent-hover:          #0369a1;
+  --lx-accent-pressed:        #075985;
+  --lx-accent-soft:           rgba(2, 132, 199, 0.10);
+  --lx-accent-spark:          #10b981;
+
+  --lx-info:                  #0284c7;
+  --lx-info-soft:             rgba(2, 132, 199, 0.10);
+  --lx-success:               #16a34a;
+  --lx-success-soft:          rgba(22, 163, 74, 0.10);
+  --lx-warning:               #d97706;
+  --lx-warning-soft:          rgba(217, 119, 6, 0.10);
+  --lx-danger:                #dc2626;
+  --lx-danger-soft:           rgba(220, 38, 38, 0.08);
+  --lx-danger-border:         #fecaca;
+
+  --lx-code-bg:               #f4f4f5;
+  --lx-code-text:             #27272a;
+  --lx-inline-code-bg:        rgba(0, 0, 0, 0.06);
+  --lx-diff-add-bg:           rgba(22, 163, 74, 0.10);
+  --lx-diff-del-bg:           rgba(220, 38, 38, 0.10);
+
+  --lx-shadow-1:              0 1px 2px rgba(16, 24, 40, 0.06);
+  --lx-shadow-2:              0 8px 24px -8px rgba(16, 24, 40, 0.14);
+  --lx-shadow-3:              0 12px 40px -10px rgba(16, 24, 40, 0.18);
+  --lx-ring:                  0 0 0 2px rgba(2, 132, 199, 0.35);
+
+  --lx-scrollbar-thumb:       rgba(161, 161, 170, 0.25);
+  --lx-scrollbar-thumb-hover: rgba(161, 161, 170, 0.45);
+}

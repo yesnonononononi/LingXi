@@ -1,12 +1,77 @@
 @import "tailwindcss";
+@import "./theme/tokens.css";
 @import "./styles/markdown.css";
 @import "./styles/stream-animation.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * Tailwind v4 主题映射：--color-lx-* 生成 bg-/text-/border- 等工具类。
+ * 用 inline 形式，让工具类直接产出 var(--lx-xxx)，换主题时实时生效。
+ * 映射与定义必须分开：定义在 theme/tokens.css（纯 CSS 变量），映射在这里（Tailwind 编译期）。
+ * 加令牌的流程：tokens.css 两套值 + 本块映射 + theme/tokens.ts 元数据，三处缺一，themeTokens.test.ts 会红。
+ */
+@theme inline {
+  --color-lx-canvas:           var(--lx-canvas);
+  --color-lx-canvas-subtle:    var(--lx-canvas-subtle);
+  --color-lx-surface:          var(--lx-surface);
+  --color-lx-surface-elevated: var(--lx-surface-elevated);
+  --color-lx-surface-sunken:   var(--lx-surface-sunken);
+  --color-lx-surface-hover:    var(--lx-surface-hover);
+  --color-lx-surface-active:   var(--lx-surface-active);
+  --color-lx-surface-selected: var(--lx-surface-selected);
+  --color-lx-overlay:          var(--lx-overlay);
+
+  --color-lx-primary:          var(--lx-text-primary);
+  --color-lx-secondary:        var(--lx-text-secondary);
+  --color-lx-tertiary:         var(--lx-text-tertiary);
+  --color-lx-muted:            var(--lx-text-muted);
+  --color-lx-disabled:         var(--lx-text-disabled);
+  --color-lx-inverse:          var(--lx-text-inverse);
+  --color-lx-on-accent:        var(--lx-text-on-accent);
+
+  --color-lx-border-subtle:    var(--lx-border-subtle);
+  --color-lx-border:           var(--lx-border-default);
+  --color-lx-border-strong:    var(--lx-border-strong);
+  --color-lx-border-focus:     var(--lx-border-focus);
+
+  --color-lx-accent:           var(--lx-accent);
+  --color-lx-accent-hover:     var(--lx-accent-hover);
+  --color-lx-accent-pressed:   var(--lx-accent-pressed);
+  --color-lx-accent-soft:      var(--lx-accent-soft);
+  --color-lx-accent-spark:     var(--lx-accent-spark);
+
+  --color-lx-info:             var(--lx-info);
+  --color-lx-info-soft:        var(--lx-info-soft);
+  --color-lx-success:          var(--lx-success);
+  --color-lx-success-soft:     var(--lx-success-soft);
+  --color-lx-warning:          var(--lx-warning);
+  --color-lx-warning-soft:     var(--lx-warning-soft);
+  --color-lx-danger:           var(--lx-danger);
+  --color-lx-danger-soft:      var(--lx-danger-soft);
+  --color-lx-danger-border:    var(--lx-danger-border);
+
+  --color-lx-code-bg:          var(--lx-code-bg);
+  --color-lx-code-text:        var(--lx-code-text);
+  --color-lx-inline-code-bg:   var(--lx-inline-code-bg);
+  --color-lx-diff-add-bg:      var(--lx-diff-add-bg);
+  --color-lx-diff-del-bg:      var(--lx-diff-del-bg);
+
+  --radius-lx-sm:              var(--lx-radius-sm);
+  --radius-lx-md:              var(--lx-radius-md);
+  --radius-lx-lg:              var(--lx-radius-lg);
+  --radius-lx-full:            var(--lx-radius-full);
+  --shadow-lx-1:               var(--lx-shadow-1);
+  --shadow-lx-2:               var(--lx-shadow-2);
+  --shadow-lx-3:               var(--lx-shadow-3);
+  --blur-lx-panel:             var(--lx-blur-panel);
+}
+
 /* Vue Bits 纯黑风格亮/暗模式 CSS 变量与主题拓展 */
 :root {
   color-scheme: dark;
+  /* 以下 7 个变量为历史遗留：全仓已无任何引用（已核实），保留仅为避免外部样式表引用时无声失效，
+     迁移到 --lx-* 的计划见 .lingxi/plan/plugin-frontend-milestones.md（不在此批次清理，避免混入行为变更） */
   --bg-main-dark: #000000;
   --bg-sidebar-dark: #000000;
   --bg-card-dark: #080808;
@@ -15,6 +80,7 @@
   --accent-blue-hover: #0284c7;
   --text-muted-dark: #a1a1aa;
 }
+
 
 html.dark, body.dark {
   color-scheme: dark;
