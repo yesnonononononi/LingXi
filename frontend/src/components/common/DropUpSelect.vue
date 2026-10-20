@@ -52,7 +52,13 @@ const triggerExtraClass = computed(() => props.triggerClass ?? '');
 const isSmall = computed(() => props.size === 'sm');
 const labelSizeClass = computed(() => (isSmall.value ? 'text-xs' : 'text-xs'));
 const iconSizeClass = computed(() => (isSmall.value ? 'w-2.5 h-2.5' : 'w-3 h-3'));
-const isSearchable = computed(() => props.searchable !== false);
+/**
+ * 是否显示顶部搜索框。
+ *
+ * <p>注意：Vue 会把「未传的 Boolean prop」cast 成 {@code false}，所以这里不能用
+ * {@code !== false} 判默认开启（那样永远不渲染），必须显式传 {@code true} 才开。</p>
+ */
+const isSearchable = computed(() => props.searchable === true);
 
 /**
  * 选项与当前值的同一性判定。
@@ -113,7 +119,33 @@ const groupedOptions = computed<OptionGroup<T>[]>(() => {
   return groups;
 });
 
+/**
+ * 折叠状态：key = 组名。
+ *
+ * <p>搜索时一律展开 —— 否则用户搜到了模型，却因为那一组是折叠的而看不到结果，
+ * 会误以为「没有匹配」。</p>
+ */
+const collapsedGroups = ref<Set<string>>(new Set());
+
+const isGroupCollapsed = (group: OptionGroup<T>): boolean => {
+  if (!group.name || searchQuery.value.trim()) return false;
+  return collapsedGroups.value.has(group.name);
+};
+
+const toggleGroup = (group: OptionGroup<T>) => {
+  if (!group.name) return;
+  const next = new Set(collapsedGroups.value);
+  if (next.has(group.name)) next.delete(group.name);
+  else next.add(group.name);
+  collapsedGroups.value = next;
+};
+
 // 面板移到 body，避免输入框的隔离层和祖先裁剪遮挡菜单。
+/** 面板尺寸上限：更窄更高，长模型名靠截断收口，不撑破面板。 */
+const PANEL_MAX_HEIGHT = 384;
+const PANEL_MAX_WIDTH = 224;
+const PANEL_MIN_WIDTH = 168;
+
 const updatePosition = () => {
   if (!isOpen.value || !rootRef.value || !panelRef.value) return;
   const rect = rootRef.value.getBoundingClientRect();
@@ -123,13 +155,14 @@ const updatePosition = () => {
   const left = panelAlign.value === 'left' ? rect.left : rect.right - width;
   const above = Math.max(0, rect.top - gap - margin);
   const below = Math.max(0, window.innerHeight - rect.bottom - gap - margin);
-  const upward = above >= 288 || above >= below;
+  const upward = above >= PANEL_MAX_HEIGHT || above >= below;
   panelStyle.value = {
     left: `${Math.max(margin, Math.min(left, window.innerWidth - width - margin))}px`,
     ...(upward ? { bottom: `${window.innerHeight - rect.top + gap}px` } : { top: `${rect.bottom + gap}px` }),
-    maxHeight: `${Math.min(288, upward ? above : below)}px`,
-    maxWidth: `${window.innerWidth - margin * 2}px`,
-    minWidth: `${Math.min(184, window.innerWidth - margin * 2)}px`,
+    maxHeight: `${Math.min(PANEL_MAX_HEIGHT, upward ? above : below)}px`,
+    // 内联样式优先级高于 class：这里必须同步收紧，否则 max-w-[14rem] 会被顶掉。
+    maxWidth: `${Math.min(PANEL_MAX_WIDTH, window.innerWidth - margin * 2)}px`,
+    minWidth: `${Math.min(PANEL_MIN_WIDTH, window.innerWidth - margin * 2)}px`,
   };
 };
 
@@ -250,7 +283,7 @@ defineExpose({
         ref="panelRef"
         :style="panelStyle"
         role="listbox"
-        class="fixed min-w-[11.5rem] max-w-[16rem] max-h-72 overflow-hidden flex flex-col rounded-2xl border shadow-2xl p-1.5 z-[1000] backdrop-blur-2xl"
+        class="fixed min-w-[10.5rem] max-w-[14rem] max-h-96 overflow-hidden flex flex-col rounded-2xl border shadow-2xl p-1.5 z-[1000] backdrop-blur-2xl"
         :class="[
           isDark ? 'dark' : 'light',
           isDark
@@ -282,7 +315,7 @@ defineExpose({
         </div>
 
         <!-- 选项列表可滚动区 -->
-        <div class="min-h-0 overflow-y-auto scrollbar-thin space-y-0.5 max-h-56">
+        <div class="min-h-0 overflow-y-auto scrollbar-thin space-y-0.5 max-h-80">
           <div
             v-if="filteredOptions.length === 0"
             class="px-3 py-2 text-xs text-gray-400 dark:text-gray-500 text-center"
@@ -291,10 +324,15 @@ defineExpose({
           </div>
 
           <template v-for="(group, groupIdx) in groupedOptions" :key="group.key || `__ungrouped_${groupIdx}`">
-            <!-- 组标题：图标 + 名称 + 数量徽标（未设置 group 的选项不渲染） -->
-            <div
+            <!-- 组标题：图标 + 名称 + 数量徽标 + 折叠箭头（未设置 group 的选项不渲染） -->
+            <button
               v-if="group.name"
-              class="px-2.5 pt-1.5 pb-0.5 flex items-center gap-1.5 select-none"
+              type="button"
+              :aria-expanded="!isGroupCollapsed(group)"
+              :title="isGroupCollapsed(group) ? t('common.expand') : t('common.collapse')"
+              class="w-full px-2.5 pt-1.5 pb-0.5 flex items-center gap-1.5 select-none cursor-pointer rounded-lg bg-transparent border-0 text-left transition-colors"
+              :class="isDark ? 'hover:bg-white/[0.06]' : 'hover:bg-black/[0.04]'"
+              @click.stop="toggleGroup(group)"
             >
               <ProviderIcon
                 v-if="group.icon"
@@ -303,34 +341,48 @@ defineExpose({
                 :size="12"
               />
               <span
-                class="text-[10px] font-semibold uppercase tracking-wider truncate"
+                class="flex-1 min-w-0 text-[10px] font-semibold uppercase tracking-wider truncate"
                 :class="isDark ? 'text-zinc-400' : 'text-gray-500'"
               >{{ group.name }}</span>
               <span
-                class="ml-auto shrink-0 px-1.5 py-px rounded-md text-[10px] leading-none"
+                class="shrink-0 px-1.5 py-px rounded-md text-[10px] leading-none"
                 :class="isDark ? 'bg-white/10 text-zinc-400' : 'bg-gray-100 text-gray-500'"
               >{{ group.count }}</span>
-            </div>
-
-            <template v-for="(option, idx) in group.options" :key="option.value">
-              <!-- 针对 '+ 添加团队' 等操作项的分隔线 -->
-              <div
-                v-if="String(option.value).startsWith('__add_') && idx > 0"
-                class="h-px my-1 bg-gray-100 dark:bg-gray-800/80"
-              ></div>
-
-              <div
-                role="option"
-                :aria-selected="isSelected(option)"
+              <!-- 折叠箭头：展开朝上，折叠朝下 -->
+              <svg
+                class="w-2.5 h-2.5 shrink-0 transition-transform duration-200"
                 :class="[
-                  'px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors select-none',
-                  option.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer',
-                  isSelected(option)
-                    ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-gray-100 text-gray-900 font-normal')
-                    : (!option.disabled ? (isDark ? 'hover:bg-white/10 text-zinc-300' : 'hover:bg-gray-50 text-gray-700') : '')
+                  isGroupCollapsed(group) ? '-rotate-90' : 'rotate-0',
+                  isDark ? 'text-zinc-500' : 'text-gray-400'
                 ]"
-                @click="select(option)"
+                viewBox="0 0 1024 1024"
+                fill="currentColor"
+                aria-hidden="true"
               >
+                <path d="M838.116 732.779 877.7 693.195 511.979 327.549 146.3 693.195 185.883 732.779 512.003 406.652Z" />
+              </svg>
+            </button>
+
+            <template v-if="!isGroupCollapsed(group)">
+              <template v-for="(option, idx) in group.options" :key="option.value">
+                <!-- 针对 '+ 添加团队' 等操作项的分隔线 -->
+                <div
+                  v-if="String(option.value).startsWith('__add_') && idx > 0"
+                  class="h-px my-1 bg-gray-100 dark:bg-gray-800/80"
+                ></div>
+
+                <div
+                  role="option"
+                  :aria-selected="isSelected(option)"
+                  :class="[
+                    'px-3 py-2 rounded-xl text-xs flex items-center gap-2 transition-colors select-none',
+                    option.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer',
+                    isSelected(option)
+                      ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-gray-100 text-gray-900 font-normal')
+                      : (!option.disabled ? (isDark ? 'hover:bg-white/10 text-zinc-300' : 'hover:bg-gray-50 text-gray-700') : '')
+                  ]"
+                  @click="select(option)"
+                >
                 <!-- 内置提供商图标走 SVG，其余仍按 URL / Emoji 渲染 -->
                 <ProviderIcon
                   v-if="option.avatar && isBuiltInProviderIcon(option.avatar)"
@@ -349,11 +401,12 @@ defineExpose({
                   v-else-if="option.avatar"
                   class="shrink-0 text-xs leading-none select-none"
                 >{{ option.avatar }}</span>
-                <span class="truncate pr-2 font-normal leading-normal py-0.5">{{ option.label }}</span>
+                <!-- flex-1 + min-w-0 + truncate：长模型名截断，绝不撑破面板宽度 -->
+                <span class="flex-1 min-w-0 truncate text-left font-normal leading-[18px]">{{ option.label }}</span>
                 <!-- 对勾图标 (完全对齐 media_1789910619342.png 右侧 checkmark) -->
                 <svg
                   v-if="isSelected(option)"
-                  class="w-4 h-4 shrink-0"
+                  class="w-4 h-4 shrink-0 ml-auto"
                   :class="isDark ? 'text-cyan-400' : 'text-gray-900'"
                   fill="none"
                   stroke="currentColor"
@@ -362,6 +415,7 @@ defineExpose({
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                 </svg>
               </div>
+              </template>
             </template>
           </template>
         </div>

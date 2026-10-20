@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { isBuiltInProviderIcon, isImageProviderIcon } from '../../utils/providerIcons';
 
 const props = withDefaults(defineProps<{
@@ -18,6 +18,12 @@ const props = withDefaults(defineProps<{
 const trimmed = computed(() => (props.icon ?? '').trim());
 const builtInKey = computed(() => (isBuiltInProviderIcon(trimmed.value) ? trimmed.value.toLowerCase() : ''));
 const isImage = computed(() => isImageProviderIcon(trimmed.value));
+/** 图标 URL 打不开时降级为首字占位，避免列表里出现破图。 */
+const imageFailed = ref(false);
+watch(trimmed, () => {
+  imageFailed.value = false;
+});
+const showImage = computed(() => isImage.value && !imageFailed.value);
 /** 非内置、非 URL 的短文本按 emoji 渲染 */
 const textIcon = computed(() => (builtInKey.value || isImage.value ? '' : trimmed.value));
 const fallbackLetter = computed(() => {
@@ -29,12 +35,13 @@ const boxStyle = computed(() => ({ width: `${props.size}px`, height: `${props.si
 
 <template>
   <img
-    v-if="isImage"
+    v-if="showImage"
     :src="trimmed"
     :alt="name ?? ''"
     :style="boxStyle"
     class="rounded-[22%] object-cover shrink-0 select-none"
     draggable="false"
+    @error="imageFailed = true"
   />
   <span
     v-else-if="textIcon"

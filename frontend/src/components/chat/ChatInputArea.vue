@@ -576,8 +576,8 @@ const modelOptions = computed<SelectOption<string | number>[]>(() => {
     label: m.name || m.modelName || t('session.modelFallback', { id: m.id }),
     value: m.id,
     group: m.providerName || ungroupedLabel,
+    // 图标只挂在组标题上：同一提供商下的模型重复渲染 logo 只会挤占名称宽度。
     groupIcon: m.providerIcon ?? undefined,
-    avatar: m.providerIcon ?? undefined,
   }));
   // 不给 group：「+ 添加自定义模型」落在末尾的无名块，不会混进上面任一提供商组。
   options.push({ label: t('chat.input.addCustomModel'), value: ADD_CUSTOM_MODEL });
@@ -1603,14 +1603,15 @@ defineExpose({
             :options="modelOptions"
             :isDark="isDark"
             size="sm"
+            :searchable="true"
             :placeholder="t('chat.input.selectModel')"
             trigger-class="inline-flex h-7 flex-none cursor-pointer touch-manipulation items-center gap-1 rounded-lg border-0 bg-transparent px-2 text-[12px] font-medium outline-none select-none [color:color-mix(in_srgb,var(--pb-ink)_70%,transparent)] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease] hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] hover:[color:var(--pb-ink)] whitespace-nowrap"
           >
             <template #trigger="{ selected, isOpen: menuOpen }">
               <ProviderIcon
-                v-if="selected?.avatar"
-                :icon="selected.avatar"
-                :name="selected.label"
+                v-if="selected?.groupIcon"
+                :icon="selected.groupIcon"
+                :name="selected.group ?? selected.label"
                 :size="14"
               />
               <span class="truncate max-w-[220px] text-[12px] leading-[18px]">
