@@ -616,6 +616,12 @@ export const messages: MessageSchema = {
       },
       welcome: {
         title: '今天想构建什么？',
+        greetingMorning: '早上好，今天想构建什么？',
+        greetingMorningNamed: '早上好，{name}，今天想构建什么？',
+        greetingAfternoon: '下午好，开始你的创作吧。',
+        greetingAfternoonNamed: '下午好，{name}，开始你的创作吧。',
+        greetingLateNight: '夜深了，适合来点灵感。',
+        greetingLateNightNamed: '夜深了，{name}，适合来点灵感。',
       },
       toolCall: {
         submitFailed: '提交决策失败',
@@ -1678,6 +1684,12 @@ export const messages: MessageSchema = {
       },
       welcome: {
         title: 'What do you want to build today?',
+        greetingMorning: 'Good morning. What do you want to build today?',
+        greetingMorningNamed: 'Good morning, {name}. What do you want to build today?',
+        greetingAfternoon: "Good afternoon. Let's start creating.",
+        greetingAfternoonNamed: "Good afternoon, {name}. Let's start creating.",
+        greetingLateNight: "It's late. Time for some inspiration.",
+        greetingLateNightNamed: "It's late, {name}. Time for some inspiration.",
       },
       toolCall: {
         submitFailed: 'Failed to submit the decision',

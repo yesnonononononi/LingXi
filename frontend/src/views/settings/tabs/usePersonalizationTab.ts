@@ -2,6 +2,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { PersonalizationAPI } from '../../../services/personalization';
 import type { PersonalizationDraft, PersonalizationVO, ReplyStyleOption } from '../../../services/personalization';
 import { extractErrorMessage } from '../../../utils/error';
+import { setGreetingUserName } from '../../../composables/useGreeting';
 import { usePersonalizationCopy } from './personalizationCopy';
 
 export function usePersonalizationTab() {
@@ -52,6 +53,8 @@ export function usePersonalizationTab() {
       const result = await PersonalizationAPI.update({ id: config.value.id, ...draft });
       if (request !== generation) return;
       if (result.code !== 1) throw new Error(result.errMsg || copy.value.loadError);
+      // 称呼即时生效：欢迎语的模块级缓存不等下一次刷新。
+      setGreetingUserName(draft.title);
       await load();
       if (!error.value && request + 1 === generation) saved.value = true;
     } catch (cause) {
