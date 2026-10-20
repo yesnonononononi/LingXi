@@ -10,10 +10,7 @@ import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
-import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.workflow.application.chat.SessionContextEntity;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
@@ -27,8 +24,6 @@ import lombok.AllArgsConstructor;
 import lombok.NonNull;
 import org.springframework.stereotype.Component;
 
-import java.io.Serializable;
-import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -46,7 +41,7 @@ import java.util.Objects;
  */
 @AllArgsConstructor
 @Component
-public class CallSubAgentTool implements ToolExecutor {
+public class CallSubAgentTool extends AbstractSubAgentTool implements ToolExecutor {
 
     private final ObjectMapper objectMapper;
     private final AgentService agentService;
@@ -146,6 +141,8 @@ public class CallSubAgentTool implements ToolExecutor {
         return asyncResultRenderer.render(target.subSessionId(), agent.getId(), agent.getName());
     }
 
+
+
     private static ToolExecuteResult validateArgument(CallSubAgentToolArgument argument) {
         if (argument.getAgentId() == null) {
             return ToolExecuteResult.err("未说明唤醒的Agent角色信息");
@@ -156,49 +153,22 @@ public class CallSubAgentTool implements ToolExecutor {
         return null;
     }
 
+    @Override
+    public ToolExecuteResult validateMembership(Long agentId, TeamVO team) {
+        if (Objects.equals(agentId, team.getCommanderAgentId())) {
+            return ToolExecuteResult.err("不能委派任务给自己");
+        }
+        return super.validateMembership(agentId, team);
+    }
+
     private static String resolveWorkDir(CallSubAgentToolArgument argument, ToolExecution toolExecution) {
         String workDir = argument.getWorkDir();
         return workDir == null || workDir.isBlank() ? toolExecution.getWorkspace().workDir() : workDir;
     }
 
-    private static ToolExecuteResult validateMembership(Long agentId, TeamVO team) {
-        if (Objects.equals(agentId, team.getCommanderAgentId())) {
-            return ToolExecuteResult.err("不能委派任务给自己");
-        }
-        boolean memberExists = team.getAgents() != null && team.getAgents().stream()
-                .anyMatch(agent -> agent != null && Objects.equals(agent.getId(), agentId));
-        return memberExists ? null : ToolExecuteResult.err("指定的团队中不包含该Agent: " + agentId);
-    }
 
-    /** 父会话绑定的工作空间：子执行在 workDir 落空时回落到它，保证不静默放行无工作空间的子执行。 */
-    private Long resolveParentWorkspaceId(Long rootSessionId) {
-        if (rootSessionId == null) {
-            return null;
-        }
-        return sessionRepository.findById(rootSessionId)
-                .map(Session::getWorkspaceId)
-                .orElse(null);
-    }
-
-    /**
-     * 团队 ID 随 AgentRequest attributes 流动（框架序列化进执行快照，恢复后原样回来），
-     * 这里从工具执行上下文读取；{@code toString} 转换兼容快照 JSON 往返后的 String/数值形态。
-     */
-    private Long resolveTeamId(ToolExecution toolExecution) {
-        Map<String, Object> attributes = toolExecution == null ? null : toolExecution.getAttributes();
-        return ExecutionAttributes.readLong(attributes, ExecutionAttributes.TEAM_ID);
-    }
-
-    /** 工具执行上下文里的会话 ID：委派工具由此得知自己属于哪个根会话。 */
-    private static Long resolveSessionId(ToolExecution toolExecution) {
-        Serializable sessionId = toolExecution == null ? null : ExecutionIdentity.sessionId(toolExecution);
-        if (sessionId == null) {
-            return null;
-        }
-        try {
-            return Long.valueOf(sessionId.toString());
-        } catch (NumberFormatException e) {
-            return null;
-        }
+    @Override
+    public SessionRepository sessionRepository() {
+        return this.sessionRepository;
     }
 }
