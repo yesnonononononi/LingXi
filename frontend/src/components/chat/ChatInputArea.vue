@@ -1613,7 +1613,7 @@ defineExpose({
                 :name="selected.label"
                 :size="14"
               />
-              <span class="truncate max-w-[220px] leading-none">
+              <span class="truncate max-w-[220px] text-[12px] leading-[18px]">
                 <template v-if="selected?.group">{{ selected.group }} / </template>{{ selected?.label ?? t('chat.input.selectModel') }}
               </span>
               <svg
