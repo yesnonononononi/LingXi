@@ -98,7 +98,7 @@ public class FileToolConfiguration {
                         Load one image from the workspace into your context so you can actually see it.
                         The pixels are not inside this result: you get image metadata now, and the image itself
                         arrives as a separate user message on your next turn, still within this same task.
-                        Images consume model input tokens; one execution may receive at most 10 distinct images.
+                        Images consume model input tokens; one execution may receive at most 15 distinct images.
                         Only PNG/JPEG/GIF/BMP are accepted; the path must stay inside the workspace.
                         """)
                 .parametersJsonSchema("""
