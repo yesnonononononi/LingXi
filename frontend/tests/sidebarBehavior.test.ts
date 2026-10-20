@@ -215,6 +215,24 @@ test('B3-1 默认所有 workspace 折叠，未分组区段默认展开', async (
   });
 });
 
+test('B3-2 激活会话位于组内第 6 位（超过可见上限）时，该组自动完整展开', async () => {
+  const dir = '/work/deep';
+  const sessions = Array.from({ length: 7 }, (_, index) =>
+    makeSession(`s${index}`, `深${index}`, { workDir: dir })
+  );
+  const props = baseProps({
+    workspaces: [{ id: '1', name: '深项目', workDir: dir }],
+    sessions,
+    activeSessionId: 's5',
+  });
+  await renderSidebar(props, html => {
+    assert.ok(html.includes('深5'), '第 6 条（被激活）应完整展开可见');
+    assert.ok(html.includes('深6'), '第 7 条应完整展开可见');
+    assert.ok(!html.includes('展开显示'), '已完整展开时不应再出现「展开显示」');
+    assert.ok(html.includes('收起显示'), '已完整展开时应显示「收起显示」');
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // B5 激活态判定（isWorkspaceActive）
 // ─────────────────────────────────────────────────────────────────────────────

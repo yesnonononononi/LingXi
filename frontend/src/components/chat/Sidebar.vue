@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useConfirm } from '../../composables/useConfirm';
 import type { ChatSession, WorkspaceVO } from '../../types/chat';
 import logoUrl from '../../assets/lingxi-agent-logo.png';
@@ -10,6 +10,7 @@ import { t } from '../../i18n';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import { useSessionGrouping } from '../../composables/sidebar/useSessionGrouping';
 import { useSessionVisibility, SESSION_VISIBLE_LIMIT } from '../../composables/sidebar/useSessionVisibility';
+import { useWorkspaceExpansion } from '../../composables/sidebar/useWorkspaceExpansion';
 
 
 const props = defineProps<{
@@ -45,12 +46,11 @@ const editingTitle = ref('');
 const isFilterOpen = ref(false);
 const filterQuery = ref('');
 const isSortAsc = ref(false);
-const expandedWorkspaces = ref<Record<string, boolean>>({});
 const activeMenuWorkspaceId = ref<string | null>(null);
 
-// 会话分组（纯计算）与可见性（截断 / 展开态 / BranchedMenu 数据）已下沉为 composable：
-// composables/sidebar/useSessionGrouping.ts、composables/sidebar/useSessionVisibility.ts。
-// 必须在下面两个 immediate watch 之前实例化：activeSessionId watch 会写 fullyExpandedWorkspaces。
+// 会话分组（纯计算）、工作空间展开态、可见性（截断 / 展开态 / BranchedMenu 数据）均已下沉为 composable。
+// 顺序不可调换：展开态持有 fullyExpandedWorkspaces（activeSessionId 的 immediate watch 会写它），
+// 可见性只能在其之后实例化。
 const { projectGroups, unassignedSessions, isWorkspaceActive: isWorkspaceActivePure } = useSessionGrouping({
   sessions: computed(() => props.sessions),
   workspaces: computed(() => props.workspaces),
@@ -58,62 +58,21 @@ const { projectGroups, unassignedSessions, isWorkspaceActive: isWorkspaceActiveP
   isSortAsc
 });
 
+const { expandedWorkspaces, fullyExpandedWorkspaces, toggleWorkspaceExpand } = useWorkspaceExpansion({
+  workspaces: computed(() => props.workspaces),
+  activeSessionId: computed(() => props.activeSessionId),
+  sessions: computed(() => props.sessions),
+  sessionVisibleLimit: SESSION_VISIBLE_LIMIT
+});
+
 const {
-  fullyExpandedWorkspaces,
   isFullyExpanded,
   toggleFullyExpanded,
   limitSessions,
   branchedMenuItems,
   branchedOpenIndices
-} = useSessionVisibility({ projectGroups, unassignedSessions, expandedWorkspaces });
+} = useSessionVisibility({ projectGroups, unassignedSessions, expandedWorkspaces, fullyExpandedWorkspaces });
 
-
-// 默认不展开所有工作空间
-watch(
-  () => props.workspaces,
-  (list) => {
-    if (list) {
-      for (const ws of list) {
-        if (ws.id && expandedWorkspaces.value[String(ws.id)] === undefined) {
-          expandedWorkspaces.value[String(ws.id)] = false;
-        }
-      }
-    }
-  },
-  { immediate: true }
-);
-
-// 当激活某个会话时，自动展开对应的工作空间
-watch(
-  () => props.activeSessionId,
-  (sessionId) => {
-    if (!sessionId) return;
-    const session = props.sessions.find(s => s.id === sessionId);
-    if (session && props.workspaces) {
-      for (const ws of props.workspaces) {
-        const isMatch = (session.workspaceId !== undefined && session.workspaceId !== null && String(session.workspaceId) === String(ws.id)) ||
-          (!session.workspaceId && session.workDir && ws.workDir && session.workDir === ws.workDir);
-        if (isMatch && ws.id) {
-          expandedWorkspaces.value[String(ws.id)] = true;
-          // 激活会话可能排在第 5 条之后，完整展开保证可见
-          const key = String(ws.id);
-          const sessions = props.sessions.filter(s => {
-            if (s.workspaceId !== undefined && s.workspaceId !== null && String(s.workspaceId).trim() !== '') {
-              return String(s.workspaceId) === String(ws.id);
-            }
-            return !s.workspaceId && !s.workDir ? true : s.workDir && ws.workDir && s.workDir.trim() === ws.workDir.trim();
-          });
-          const idx = sessions.findIndex(s => s.id === sessionId);
-          if (idx >= SESSION_VISIBLE_LIMIT) {
-            fullyExpandedWorkspaces.value[key] = true;
-          }
-          break;
-        }
-      }
-    }
-  },
-  { immediate: true }
-);
 
 // 按照后端 workspace 的 ID（及兼容 workDir）收敛会话。纯计算逻辑已下沉至
 // composables/sidebar/useSessionGrouping.ts（保持 workDir 唯一性语义，勿与 watch 内联谓词合并）。
@@ -122,12 +81,8 @@ const isWorkspaceActive = (ws: WorkspaceVO) =>
   isWorkspaceActivePure(ws, props.activeWorkspaceId, props.activeSessionId);
 
 
-const toggleWorkspaceExpand = (wsId: string | number) => {
-  const key = String(wsId);
-  expandedWorkspaces.value[key] = !expandedWorkspaces.value[key];
-};
-
 const handleSelectWorkspace = (ws: WorkspaceVO) => {
+
   emit('selectWorkspace', ws);
   if (ws.id != null) {
     toggleWorkspaceExpand(ws.id);

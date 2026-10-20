@@ -1,4 +1,4 @@
-import { computed, ref, type ComputedRef, type Ref } from 'vue';
+import { computed, type ComputedRef, type Ref } from 'vue';
 import { Comment01Icon } from '@hugeicons/core-free-icons';
 import type { BranchedMenuChild, BranchedMenuItem } from '../../components/common/BranchedMenu.vue';
 import type { ChatSession } from '../../types/chat';
@@ -19,10 +19,11 @@ export interface SessionVisibilitySources {
   projectGroups: ComputedRef<ProjectGroup[]>;
   unassignedSessions: ComputedRef<ChatSession[]>;
   expandedWorkspaces: Ref<Record<string, boolean>>;
+  /** 由 {@link useWorkspaceExpansion} 提供（activeSessionId watch 也会写它，故不由本 composable 创建） */
+  fullyExpandedWorkspaces: Ref<Record<string, boolean>>;
 }
 
 export function useSessionVisibility(sources: SessionVisibilitySources): {
-  fullyExpandedWorkspaces: Ref<Record<string, boolean>>;
   isFullyExpanded: (key: string) => boolean;
   toggleFullyExpanded: (key: string) => void;
   limitSessions: (key: string, sessions: ChatSession[]) => ChatSession[];
@@ -30,10 +31,7 @@ export function useSessionVisibility(sources: SessionVisibilitySources): {
   branchedMenuItems: ComputedRef<BranchedMenuItem[]>;
   branchedOpenIndices: ComputedRef<number[]>;
 } {
-  const { projectGroups, unassignedSessions, expandedWorkspaces } = sources;
-
-  // 记录哪些分组被「展开显示」过（超阈值时展示全量）
-  const fullyExpandedWorkspaces = ref<Record<string, boolean>>({});
+  const { projectGroups, unassignedSessions, expandedWorkspaces, fullyExpandedWorkspaces } = sources;
 
   const isFullyExpanded = (key: string) => fullyExpandedWorkspaces.value[key] === true;
 
@@ -110,7 +108,6 @@ export function useSessionVisibility(sources: SessionVisibilitySources): {
   });
 
   return {
-    fullyExpandedWorkspaces,
     isFullyExpanded,
     toggleFullyExpanded,
     limitSessions,
