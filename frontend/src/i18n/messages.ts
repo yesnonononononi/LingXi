@@ -152,7 +152,7 @@ export const messages: MessageSchema = {
     tool: {
       category: {
         command: '执行命令',
-        backgroundCommand: '管理后台命令',
+        backgroundCommand: '确认后台任务状态',
         read: '读取',
         write: '写入',
         webSearch: '检索网络资源',
@@ -1246,7 +1246,7 @@ export const messages: MessageSchema = {
     tool: {
       category: {
         command: 'Command',
-        backgroundCommand: 'Manage background commands',
+        backgroundCommand: 'Check background task status',
         read: 'Read',
         write: 'Write',
         webSearch: 'Search the web',
