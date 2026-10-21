@@ -7,6 +7,7 @@ import com.summit.core.conversation.event.*;
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.runtime.RuntimeListener;
 import com.summit.dp.execution.application.service.ExecutionLocator;
+import com.summit.dp.workflow.application.chat.ExecutionErrorText;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import com.summit.dp.shared.vo.block.BlockOrder;
 import jakarta.annotation.PostConstruct;
@@ -55,7 +56,11 @@ public class AgentEventListener implements RuntimeListener {
 
     @Override
     public void onExecutionError(ExecutionErrorEvent event) {
-        broadcast(event);
+        BroadcastTarget target = resolveTarget(event);
+        if (target == null) return;
+        ObjectNode payload = objectMapper.valueToTree(event);
+        payload.put("errMsg", ExecutionErrorText.resolve(event));
+        sseEventPublisher.publishBusiness(target.rootSessionId(), event.type(), payload);
     }
 
     @Override

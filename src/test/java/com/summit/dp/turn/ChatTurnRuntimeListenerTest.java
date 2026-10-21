@@ -118,6 +118,18 @@ class ChatTurnRuntimeListenerTest {
     }
 
     @Test
+    @DisplayName("轮次保存可读原因，框架原始异常文本保持不变")
+    void stripsExceptionPrefixesBeforeRecordingReason() {
+        String original = "dev.langchain4j.exception.TimeoutException: java.net.http.HttpTimeoutException: request timed out";
+        ExecutionErrorEvent event = new ExecutionErrorEvent(original, null, "1001");
+
+        listener.onExecutionError(event);
+
+        verify(chatTurnService).recordFailureReason("1001", "request timed out", null);
+        assertEquals(original, event.getErrMsg());
+    }
+
+    @Test
     @DisplayName("文案兜底：errMsg 缺失取 extraDes，两者皆空取常量，绝不写空原因")
     void fallsBackToExtraDesThenConstant() {
         listener.onExecutionError(new ExecutionErrorEvent(null, "命令审批执行失败", "1002"));

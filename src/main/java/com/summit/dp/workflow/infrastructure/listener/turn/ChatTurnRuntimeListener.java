@@ -10,6 +10,7 @@ import com.summit.core.conversation.event.TokenInfo;
 import com.summit.core.runtime.RuntimeListener;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.turn.application.service.ChatTurnService;
+import com.summit.dp.workflow.application.chat.ExecutionErrorText;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.Ordered;
@@ -52,9 +53,6 @@ import org.springframework.stereotype.Component;
 public class ChatTurnRuntimeListener implements RuntimeListener {
 
     private static final String LOG_PREFIX = "【chat-turn】";
-    /** 两个文案字段都为空时的兜底：宁可写一句模糊的失败，也不让失败不可见。 */
-    private static final String FALLBACK_TEXT = "执行异常";
-
     private final ChatTurnService chatTurnService;
 
     @Override
@@ -114,17 +112,7 @@ public class ChatTurnRuntimeListener implements RuntimeListener {
             return;
         }
         guard("recordFailureReason", event.executionId(),
-                () -> chatTurnService.recordFailureReason(event.executionId(), resolveErrorText(event), resolveRootSessionId(event)));
-    }
-
-    /** 主文案取 {@code errMsg}（与前端契约一致），缺失时退 {@code extraDes}，仍为空用兜底常量。 */
-    private static String resolveErrorText(ExecutionErrorEvent event) {
-        String primary = event.getErrMsg() == null ? "" : event.getErrMsg().trim();
-        if (!primary.isEmpty()) {
-            return primary;
-        }
-        String supplementary = event.getExtraDes() == null ? "" : event.getExtraDes().trim();
-        return supplementary.isEmpty() ? FALLBACK_TEXT : supplementary;
+                () -> chatTurnService.recordFailureReason(event.executionId(), ExecutionErrorText.resolve(event), resolveRootSessionId(event)));
     }
 
     /** 三个终态事件的统一用量入口；未采集到（{@code tokenInfo} 为 null）即跳过，不补 0。 */

@@ -15,7 +15,7 @@ import com.summit.core.agent.Execution;
 import java.time.Instant;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.core.agent.ExecutionState;
-import com.summit.core.conversation.event.AgentEvent;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
@@ -171,13 +171,13 @@ class PreparedChatExecutorTest {
                 isNull(), isNull(), isNull(), completedAt.capture(), eq(ROOT_SESSION_ID));
         assertNotNull(completedAt.getValue());
         order.verify(chatTurnService).recordFailureReason(EXECUTION_ID, "模型不可用", ROOT_SESSION_ID);
-        order.verify(sseEventPublisher).publish(eq(ROOT_SESSION_ID), any(AgentEvent.class));
+        order.verify(sseEventPublisher).publishBusiness(eq(ROOT_SESSION_ID), eq("EXECUTION_FAILED"), any(ObjectNode.class));
 
         // 事件只发一次（行前态判据 + version 条件共同保证）。
-        ArgumentCaptor<AgentEvent> event = ArgumentCaptor.forClass(AgentEvent.class);
-        verify(sseEventPublisher, times(1)).publish(eq(ROOT_SESSION_ID), event.capture());
-        assertEquals("EXECUTION_FAILED", event.getValue().type(), "必须是前端可据以收口的失败终态");
-        assertEquals(EXECUTION_ID, event.getValue().executionId(), "归属用已固化的 executionId");
+        ArgumentCaptor<ObjectNode> event = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(sseEventPublisher, times(1)).publishBusiness(eq(ROOT_SESSION_ID), eq("EXECUTION_FAILED"), event.capture());
+        assertEquals("EXECUTION_FAILED", event.getValue().path("type").asText(), "必须是前端可据以收口的失败终态");
+        assertEquals(EXECUTION_ID, event.getValue().path("executionId").asText(), "归属用已固化的 executionId");
 
         // 运行资格必须释放，否则会话被锁死，用户再也发不出下一条。
         verify(registry).finishRoot(ROOT_SESSION_ID);

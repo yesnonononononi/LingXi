@@ -302,6 +302,25 @@ class AgentEventListenerTest {
         verify(publisher).publish(ROOT_SESSION_ID, event);
     }
 
+    @Test
+    @DisplayName("失败推送去掉异常类名前缀，保留事件身份和原始事件")
+    void stripsExceptionPrefixesBeforeBroadcast() {
+        resolveRootExecution();
+        String original = "dev.langchain4j.exception.TimeoutException: java.net.http.HttpTimeoutException: request timed out";
+        ExecutionErrorEvent event = new ExecutionErrorEvent(original, null, EXECUTION_ID,
+                Map.of("turnId", Long.toString(TURN_ID)));
+
+        listener.onExecutionError(event);
+
+        ArgumentCaptor<ObjectNode> payload = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(publisher).publishBusiness(eq(ROOT_SESSION_ID), eq("EXECUTION_FAILED"), payload.capture());
+        assertEquals("request timed out", payload.getValue().path("errMsg").asText());
+        assertEquals(EXECUTION_ID, payload.getValue().path("executionId").asText());
+        assertEquals(Long.toString(TURN_ID), payload.getValue().path("metaData").path("turnId").asText());
+        assertEquals(objectMapper.valueToTree(event).get("timestamp"), payload.getValue().get("timestamp"));
+        assertEquals(original, event.getErrMsg());
+    }
+
     /** 失败 / 取消与完成同口径：都只广播。 */
     @Test
     @DisplayName("根执行失败 / 取消：照常广播到根会话")
@@ -313,7 +332,9 @@ class AgentEventListenerTest {
         listener.onExecutionError(failure);
         listener.onExecutionCancelled(cancelled);
 
-        verify(publisher).publish(ROOT_SESSION_ID, failure);
+        ArgumentCaptor<ObjectNode> payload = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(publisher).publishBusiness(eq(ROOT_SESSION_ID), eq("EXECUTION_FAILED"), payload.capture());
+        assertEquals("boom", payload.getValue().path("errMsg").asText());
         verify(publisher).publish(ROOT_SESSION_ID, cancelled);
     }
 
