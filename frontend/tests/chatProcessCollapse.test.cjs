@@ -189,7 +189,7 @@ test('历史计划书：权威卡片经真实消息和计划组件显示完整�
   }
 });
 
-test('终端描述样式：与深度思考标题字号和颜色一致，明暗主题及结束状态保持一致', async t => {
+test('过程区行字号统一：终端描述与深度思考标题同为 13px，颜色仍保持终端更暗', async t => {
   const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
   for (const isDark of [false, true]) {
     const answer = message({ isComplete: false, aiMessages: [], thoughtSteps: [
@@ -207,8 +207,11 @@ test('终端描述样式：与深度思考标题字号和颜色一致，明暗�
       const thinking = find(root, node => node.tag === 'button' && text(node) === '深度思考');
       assert.ok(description);
       assert.ok(thinking);
-      assert.match(description.props.class, /\btext-xs\b/, '终端描述使用与思考相同的字号');
-      assert.match(thinking.parent.props.class, /\btext-xs\b/);
+      // 过程区同一层级的行必须同字号：13px 是工具行与思考标题的共同取值（2026-10-21 统一）。
+      assert.match(description.props.class, /text-\[13px\]/, '终端描述必须与工具行/思考标题同为 13px');
+      assert.match(thinking.parent.props.class, /text-\[13px\]/, '思考标题行必须同为 13px');
+      // 工具行容器是"读取/查看"这类工具标题的唯一字号来源（标题本身不带字号类），一并锁住。
+      assert.match(description.parent.props.class, /text-\[13px\]/, '工具行容器必须为 13px');
       const colors = isDark ? ['text-zinc-400', 'hover:text-zinc-200'] : ['text-zinc-500', 'hover:text-zinc-700'];
       for (const color of colors) {
         assert.equal(description.props.class.split(' ').includes(color), true, `终端描述颜色应与思考一致：${color}`);

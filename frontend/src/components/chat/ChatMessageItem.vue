@@ -115,7 +115,7 @@
           <!-- 统一时序时间线：按执行先后顺序交替展示思维链 (深度思考)、中间文本与工具调用 -->
           <template v-for="item in processItems" :key="item.id">
             <!-- 思考标题和正文共用原有折叠状态。 -->
-            <div v-if="item.type === 'thought' && item.step" class="text-xs space-y-1">
+            <div v-if="item.type === 'thought' && item.step" class="text-[13px] space-y-1">
               <button
                 type="button"
                 @click="toggleThoughtStep(item.step.id, item.step)"
@@ -317,8 +317,10 @@
                       @click.stop="toggleToolCall(item.tool.id)"
                       class="transition-colors truncate min-w-0 font-medium"
                       :class="[
+                        // 与其它工具行、思考标题统一 13px：过程区里同一层级的行必须一样大，
+                        // 只有颜色差别（终端描述更暗，不抢工具行的发光）。
                         item.tool.toolName === AgentToolName.ExecuteCommand
-                          ? (isDark ? 'text-xs text-zinc-400 hover:text-zinc-200 [text-shadow:none]' : 'text-xs text-zinc-500 hover:text-zinc-700 [text-shadow:none]')
+                          ? (isDark ? 'text-[13px] text-zinc-400 hover:text-zinc-200 [text-shadow:none]' : 'text-[13px] text-zinc-500 hover:text-zinc-700 [text-shadow:none]')
                           : (isDark ? 'text-[13px] text-zinc-100 text-glow-white' : 'text-[13px] text-gray-700')
                       ]"
                     >
