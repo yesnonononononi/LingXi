@@ -99,22 +99,48 @@ test('T2-3 除形态类（明暗共用一套值）外，每个令牌都必须在
   assert.deepEqual(missing, [], '以下令牌在亮色块里缺少覆盖值，切到亮色会残留暗色');
 });
 
+/**
+ * 「明暗刻意同值」豁免集：形态类（radius/shadow 等）+ 反色白字。
+ * 提升到模块级，供 T2-4（正向：非豁免不得同值）与 T2-5（反向：豁免必须真的同值）共用。
+ * ⚠️ 两个方向都必须有，只留正向会让豁免集静默腐化（加进来的项永远不会被回收检查）。
+ */
+const SAME_BY_DESIGN: ReadonlySet<string> = new Set(
+  THEME_TOKEN_META.filter(token => token.group === 'shape').map(token => token.name).concat([
+    'text-on-accent' // 强调色之上的文字，明暗都必须白
+  ])
+);
+
 test('T2-4 明暗取值相同只允许出现在豁免集（反色白字 + 形态类）', () => {
   const valueOf = (body: string, name: string) => {
     const match = body.match(new RegExp(`--lx-${name}\\s*:\\s*([^;]+);`));
     assert.ok(match, `未取到 --lx-${name} 的值`);
     return match[1].trim();
   };
-  const sameByDesign = new Set(
-    THEME_TOKEN_META.filter(token => token.group === 'shape').map(token => token.name).concat([
-      'text-on-accent', // 强调色之上的文字，明暗都必须白
-      'text-muted'      // 中性中灰 #71717a，在黑底与白底上对比度都够（4.8:1 / 4.6:1），刻意共用一值
-    ])
-  );
   const identical = lightNames
-    .filter(name => !sameByDesign.has(name) && valueOf(darkBlock, name) === valueOf(lightBlock, name));
+    .filter(name => !SAME_BY_DESIGN.has(name) && valueOf(darkBlock, name) === valueOf(lightBlock, name));
   assert.deepEqual(identical, [], '以下令牌明暗取值相同，疑似复制粘贴后忘改色');
 });
+
+test('T2-5 豁免集反向断言：白名单里非形态类的令牌必须真的明暗同值（防止豁免腐化）', () => {
+  const valueOf = (body: string, name: string) => {
+    const match = body.match(new RegExp(`--lx-${name}\\s*:\\s*([^;]+);`));
+    assert.ok(match, `未取到 --lx-${name} 的值`);
+    return match[1].trim();
+  };
+  // 遍历豁免集本身，而不是另写一份清单——否则新增豁免项逃过反向检查
+  const shapeNames = new Set(
+    THEME_TOKEN_META.filter(token => token.group === 'shape').map(token => token.name)
+  );
+  for (const name of SAME_BY_DESIGN) {
+    if (shapeNames.has(name)) continue;
+    assert.equal(
+      valueOf(darkBlock, name),
+      valueOf(lightBlock, name),
+      `豁免集里的 ${name} 明暗已不同值，应从 SAME_BY_DESIGN 里删除`
+    );
+  }
+});
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // T3 映射完整性：@theme 块必须覆盖每个令牌，且值指向对应 var()
@@ -143,6 +169,7 @@ const THEME_KEY_OF_TOKEN: Readonly<Record<string, string | null>> = {
   'text-inverse': '--color-lx-inverse',
   'text-on-accent': '--color-lx-on-accent',
   'border-subtle': '--color-lx-border-subtle',
+  'border-faint': '--color-lx-border-faint',
   'border-default': '--color-lx-border',
   'border-strong': '--color-lx-border-strong',
   'border-focus': '--color-lx-border-focus',

@@ -19,33 +19,34 @@
   --lx-canvas:                #000000;
   --lx-canvas-subtle:         #050505;
   --lx-surface:               #080808;
-  --lx-surface-elevated:      #121216;
+  --lx-surface-elevated:      rgba(0, 0, 0, 0.902);
   --lx-surface-sunken:        #030304;
-  --lx-surface-hover:         rgba(255, 255, 255, 0.06);
+  --lx-surface-hover:         rgba(255, 255, 255, 0.039);
   --lx-surface-active:        rgba(255, 255, 255, 0.10);
-  --lx-surface-selected:      rgba(255, 255, 255, 0.08);
+  --lx-surface-selected:      rgba(255, 255, 255, 0.102);
   --lx-overlay:               rgba(0, 0, 0, 0.60);
 
   /* 文字 Text */
-  --lx-text-primary:          #f4f4f5;
-  --lx-text-secondary:        #d4d4d8;
-  --lx-text-tertiary:         #a1a1aa;
-  --lx-text-muted:            #71717a;
-  --lx-text-disabled:         #52525b;
+  --lx-text-primary:          #ffffff;
+  --lx-text-secondary:        #e4e4e7;
+  --lx-text-tertiary:         #d4d4d8;
+  --lx-text-muted:            #9f9fa9;
+  --lx-text-disabled:         #71717b;
   --lx-text-inverse:          #18181b;
   --lx-text-on-accent:        #ffffff;
 
   /* 边框 Border */
-  --lx-border-subtle:         rgba(255, 255, 255, 0.08);
-  --lx-border-default:        rgba(255, 255, 255, 0.14);
-  --lx-border-strong:         rgba(255, 255, 255, 0.24);
-  --lx-border-focus:          #38bdf8;
+  --lx-border-subtle:         rgba(255, 255, 255, 0.102);
+  --lx-border-default:        rgba(255, 255, 255, 0.149);
+  --lx-border-strong:         rgba(255, 255, 255, 0.200);
+  --lx-border-focus:          rgba(0, 210, 239, 0.800);
+  --lx-border-faint:          rgba(255, 255, 255, 0.102);   /* = border-white/10 */
 
   /* 强调 Accent（对齐既有 --accent-blue / --pb-spark） */
-  --lx-accent:                #38bdf8;
-  --lx-accent-hover:          #0284c7;
+  --lx-accent:                #0084d1;
+  --lx-accent-hover:          #00a6f4;
   --lx-accent-pressed:        #0369a1;
-  --lx-accent-soft:           rgba(56, 189, 248, 0.12);
+  --lx-accent-soft:           rgba(0, 183, 215, 0.149);
   --lx-accent-spark:          #ffffff;
 
   /* 状态 Status（4 态 × 常规/柔和/边框） */
@@ -54,10 +55,10 @@
   --lx-success:               #22c55e;
   --lx-success-soft:          rgba(34, 197, 94, 0.12);
   --lx-warning:               #f59e0b;
-  --lx-warning-soft:          rgba(245, 158, 11, 0.12);
-  --lx-danger:                #ef4444;
+  --lx-warning-soft:          rgba(249, 156, 0, 0.102);
+  --lx-danger:                #ffa2a2;
   --lx-danger-soft:           rgba(239, 68, 68, 0.12);
-  --lx-danger-border:         #7f1d1d;
+  --lx-danger-border:         rgba(130, 24, 26, 0.600);
 
   /* 代码 / Markdown */
   --lx-code-bg:               #08080a;
@@ -90,28 +91,29 @@ html[data-theme="light"] {
   --lx-surface:               #ffffff;
   --lx-surface-elevated:      #ffffff;
   --lx-surface-sunken:        #f4f4f5;
-  --lx-surface-hover:         rgba(0, 0, 0, 0.04);
+  --lx-surface-hover:         rgba(0, 0, 0, 0.051);
   --lx-surface-active:        rgba(0, 0, 0, 0.07);
-  --lx-surface-selected:      rgba(0, 0, 0, 0.05);
+  --lx-surface-selected:      #f3f4f6;
   --lx-overlay:               rgba(0, 0, 0, 0.32);
 
-  --lx-text-primary:          #18181b;
-  --lx-text-secondary:        #3f3f46;
-  --lx-text-tertiary:         #52525b;
-  --lx-text-muted:            #71717a;
-  --lx-text-disabled:         #a1a1aa;
+  --lx-text-primary:          #101828;
+  --lx-text-secondary:        #364153;
+  --lx-text-tertiary:         #4a5565;
+  --lx-text-muted:            #6a7282;
+  --lx-text-disabled:         #99a1af;
   --lx-text-inverse:          #fafafa;
   --lx-text-on-accent:        #ffffff;
 
-  --lx-border-subtle:         rgba(0, 0, 0, 0.08);
-  --lx-border-default:        rgba(0, 0, 0, 0.14);
-  --lx-border-strong:         rgba(0, 0, 0, 0.26);
-  --lx-border-focus:          #0284c7;
+  --lx-border-subtle:         #e5e7eb;
+  --lx-border-default:        #e5e7eb;
+  --lx-border-strong:         #d1d5dc;
+  --lx-border-focus:          #2b7fff;
+  --lx-border-faint:          #f3f4f6;   /* = border-gray-100 */
 
-  --lx-accent:                #0284c7;
-  --lx-accent-hover:          #0369a1;
+  --lx-accent:                #155dfc;
+  --lx-accent-hover:          #2b7fff;
   --lx-accent-pressed:        #075985;
-  --lx-accent-soft:           rgba(2, 132, 199, 0.10);
+  --lx-accent-soft:           #eff6ff;
   --lx-accent-spark:          #10b981;
 
   --lx-info:                  #0284c7;
@@ -119,10 +121,10 @@ html[data-theme="light"] {
   --lx-success:               #16a34a;
   --lx-success-soft:          rgba(22, 163, 74, 0.10);
   --lx-warning:               #d97706;
-  --lx-warning-soft:          rgba(217, 119, 6, 0.10);
-  --lx-danger:                #dc2626;
+  --lx-warning-soft:          #fffbeb;
+  --lx-danger:                #e7000b;
   --lx-danger-soft:           rgba(220, 38, 38, 0.08);
-  --lx-danger-border:         #fecaca;
+  --lx-danger-border:         #ffc9c9;
 
   --lx-code-bg:               #f4f4f5;
   --lx-code-text:             #27272a;

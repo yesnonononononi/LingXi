@@ -31,6 +31,7 @@
   --color-lx-on-accent:        var(--lx-text-on-accent);
 
   --color-lx-border-subtle:    var(--lx-border-subtle);
+  --color-lx-border-faint:     var(--lx-border-faint);
   --color-lx-border:           var(--lx-border-default);
   --color-lx-border-strong:    var(--lx-border-strong);
   --color-lx-border-focus:     var(--lx-border-focus);

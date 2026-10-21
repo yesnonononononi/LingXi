@@ -30,7 +30,7 @@ export type TextTone =
   | 'inverse'
   | 'on-accent';
 
-export type BorderTone = 'subtle' | 'default' | 'strong' | 'focus';
+export type BorderTone = 'faint' | 'subtle' | 'default' | 'strong' | 'focus';
 
 export type StatusTone = 'info' | 'success' | 'warning' | 'danger';
 
@@ -64,6 +64,7 @@ export const TEXT_FG: Readonly<Record<TextTone, string>> = Object.freeze({
 
 /** 边框色（注意 default 那一档的类名是 border-lx-border，不是 border-lx-default） */
 export const BORDER_LINE: Readonly<Record<BorderTone, string>> = Object.freeze({
+  'faint': 'border-lx-border-faint',
   'subtle': 'border-lx-border-subtle',
   'default': 'border-lx-border',
   'strong': 'border-lx-border-strong',

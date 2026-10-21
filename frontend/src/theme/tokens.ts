@@ -51,6 +51,7 @@ export const THEME_TOKEN_META: readonly ThemeTokenMeta[] = Object.freeze([
 
   // 边框
   def('border-subtle', 'border', true, '最弱分隔线'),
+  def('border-faint', 'border', true, '最淡边框（分隔/描边下限）'),
   def('border-default', 'border', true, '常规边框'),
   def('border-strong', 'border', true, '强边框/聚焦外框'),
   def('border-focus', 'border', true, '聚焦描边色'),
