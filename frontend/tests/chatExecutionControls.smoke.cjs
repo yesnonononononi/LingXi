@@ -45,6 +45,10 @@ window.syncUserMessage=()=>router.dispatch({type:'TURN_SNAPSHOT',timestamp:'',ex
   :resuming="controls.isResuming.value" :has-unresolved="controls.hasUnresolved.value"
   :error="controls.error.value" @resume="controls.resume" />
 <ChatInputArea :is-dark="false" :is-sending="session.runStatus!=='IDLE'" />
+<!-- 隔离副本：只用来断言「有待答卡片时暂停条整块让位」，不参与会话状态流转 -->
+<div data-testid="isolated-controls">
+<ChatExecutionControls status="SUSPENDED" :can-resume="false" :resuming="false" :has-unresolved="true" error="" />
+</div>
 <ChatResendDialog :open="!!controls.editTarget.value" v-model="controls.draft.value" :busy="controls.resending.value"
   :error="controls.error.value" :image-count="0" @cancel="controls.cancelEdit" @submit="controls.resend" />
 </main></template>`);
@@ -86,6 +90,10 @@ await window.flush();window.ready=true;`);
   const evaluate=async source=>{try{return await window.webContents.executeJavaScript(source);}catch(error){console.error('组件步骤失败: '+source);throw error;}};
   for(let attempt=0;attempt<100&&!await evaluate('window.ready===true');attempt++) await new Promise(resolve=>setTimeout(resolve,50));
   assert.equal(await evaluate('window.ready'),true);
+  // 有待答卡片时，暂停条（提示 + 恢复按钮）必须整块不渲染：此时 resume 必被 canResume 挡掉，
+  // 留着只是一行禁用按钮占据输入框让出来的位置。
+  assert.equal(await evaluate('document.querySelector("[data-testid=isolated-controls] [data-testid=resume-generation]")'),null,'有待答卡片时不得出现恢复按钮');
+  assert.equal(await evaluate('document.querySelector("[data-testid=isolated-controls]").textContent.trim()'),'','有待答卡片时暂停条必须整块让位');
   assert.equal(await evaluate('document.querySelector("[data-testid=edit-resend]").disabled'),true);
   assert.equal(await evaluate('document.querySelector("[data-testid=pause-generation]")!==null'),false);
   await evaluate('window.backendStatus="SUSPENDED";window.refreshSession();window.flush()');

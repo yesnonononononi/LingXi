@@ -134,8 +134,8 @@ async function submit() {
             :aria-checked="!draft.useCustom && draft.selected === index" :disabled="!editable"
             class="group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-sm transition disabled:opacity-60 cursor-pointer disabled:cursor-default"
             :class="!draft.useCustom && draft.selected === index
-              ? (isDark ? 'border-blue-500/60 bg-blue-500/15 shadow-[0_0_20px_-8px_rgba(59,130,246,0.9)]' : 'border-blue-200 bg-blue-50')
-              : (isDark ? 'border-white/10 hover:border-blue-500/40 hover:bg-white/5' : 'border-gray-100 hover:border-blue-200 hover:bg-blue-50/50')"
+              ? (isDark ? 'border-white/85 bg-blue-500/15 shadow-[0_0_16px_rgba(255,255,255,0.30)]' : 'border-blue-200 bg-blue-50')
+              : (isDark ? 'border-white/10 hover:border-white/40 hover:bg-white/5' : 'border-gray-100 hover:border-blue-200 hover:bg-blue-50/50')"
             :data-choice-option="index" @click="selectOption(index)">
             <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold tabular-nums transition-colors"
               :class="!draft.useCustom && draft.selected === index
@@ -150,8 +150,8 @@ async function submit() {
         <!-- 其他补充 = 与选项同形的整行输入：点行即键入，不再另开输入框 -->
         <div class="mt-1.5 flex items-center gap-3 rounded-xl border px-3 py-2.5 transition"
           :class="draft.useCustom
-            ? (isDark ? 'border-blue-500/60 bg-blue-500/15 shadow-[0_0_20px_-8px_rgba(59,130,246,0.9)]' : 'border-blue-200 bg-blue-50')
-            : (isDark ? 'border-white/10 hover:border-blue-500/40 hover:bg-white/5' : 'border-gray-100 hover:border-blue-200 hover:bg-blue-50/50')"
+            ? (isDark ? 'border-white/85 bg-blue-500/15 shadow-[0_0_16px_rgba(255,255,255,0.30)]' : 'border-blue-200 bg-blue-50')
+            : (isDark ? 'border-white/10 hover:border-white/40 hover:bg-white/5' : 'border-gray-100 hover:border-blue-200 hover:bg-blue-50/50')"
           role="presentation" data-testid="choice-custom-toggle" @click="activateCustom">
           <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md transition-colors"
             :class="draft.useCustom ? 'bg-blue-500 text-white shadow-[0_0_12px_rgba(59,130,246,0.7)]' : (isDark ? 'bg-white/10 text-gray-300' : 'bg-gray-100 text-gray-400')">

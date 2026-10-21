@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { computed, effectScope, nextTick, ref } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { AgentAPI } from '../src/services/agent';
@@ -13,6 +16,9 @@ import { chatApi } from '../src/services/chat';
 import type { ChatAcceptance, ChatMessage, ChatSession, ToolCallVO } from '../src/types/chat';
 import type { AgentEvent } from '../src/types/Event';
 import type { TurnViewVO } from '../src/types/block';
+
+/** tsx 以 ESM 运行本文件：__dirname 不存在，锚定测试文件所在目录。 */
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 const original: ChatMessage = { id: 'display-user-1', serverMessageId: '9007199254740993',
   role: 'user', turnId: '101', content: '原问题', timestamp: 1, imageUrls: ['data:image/png;base64,cHJvYmU='] };
@@ -112,6 +118,18 @@ test('未决卡片禁止普通恢复，必须走原卡片决策链路', async t 
   assert.equal(f.controls.canResume.value, false);
   await f.controls.resume();
   assert.equal(resume.mock.calls.length, 0);
+});
+
+test('未决卡片存在时输入区整块让位，暂停条不重复喊一遍', () => {
+  // 装配级断言：这两处接线没有便宜的渲染入口（ChatView 依赖整棵会话树），
+  // 但拿掉任何一处，用户就会在「卡片已经占住输入位」时又看到一排禁用按钮。金丝雀：正则确实命中两处。
+  const view = fs.readFileSync(path.join(HERE, '../src/views/chat/ChatView.vue'), 'utf8');
+  assert.match(view, /v-show="!executionControls\.hasUnresolved\.value"[\s\S]{0,400}<ChatInputArea/,
+    'ChatView 必须在待答卡片存在时隐藏输入区（v-show：卸载会把用户敲了一半的草稿丢掉）');
+
+  const controls = fs.readFileSync(path.join(HERE, '../src/components/chat/ChatExecutionControls.vue'), 'utf8');
+  assert.match(controls, /v-if="status === 'SUSPENDED' && !hasUnresolved"/,
+    '有待答卡片时暂停条（提示 + 恢复按钮）必须整块不渲染：此时 resume 必被 canResume 挡掉');
 });
 
 test('取消编辑不调用接口，缺少真实消息 ID 时不提供历史重发', async t => {

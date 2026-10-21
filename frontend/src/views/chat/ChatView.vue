@@ -213,7 +213,10 @@
             @resume="executionControls.resume"
           />
           <BackgroundTaskPanel :feed="backgroundTasks" :isDark="displayIsDark" />
+          <!-- 待审批/待回答卡片存在时整块让位：此时输入框必然是禁用态，留着它只是把卡片往下挤，
+               用户真正的下一步动作在卡片里。v-show 而非 v-if —— 组件不卸载，已经敲了一半的草稿不会丢。 -->
           <div
+            v-show="!executionControls.hasUnresolved.value"
             class="w-full transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]"
             :style="{
               paddingBottom: hasMessages ? '16px' : '0px'
