@@ -60,6 +60,10 @@ function selectOption(index: number) {
   if (!draft.value || !editable.value) return;
   draft.value.selected = index;
   draft.value.useCustom = false;
+  // 单选即进位：一题一答的顺序最省事，省掉再点「下一题」这一手。
+  // 最后一题没有下家就不动（不回绕到第 1 题），否则用户以为还有题没答。
+  // 「其他补充」不走这里——打字时把人送到下一题是灾难。
+  navigate(1);
 }
 
 /** 点「其他补充」整行即可输入：不弹第二块输入框，光标直接落到行内。 */

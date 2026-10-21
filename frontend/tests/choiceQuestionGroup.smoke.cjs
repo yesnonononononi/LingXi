@@ -73,10 +73,14 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
     true,
     '点「其他补充」整行后光标必须直接落进行内输入'
   );
-  for(let index=0;index<3;index++){
-    await click('[data-choice-option="1"]');
-    if(index<2)await click('[data-testid=choice-next]');
-  }
+  // 单选即进位：点一次选项自动跳下一题，不必再点「下一题」；最后一题不再进位
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-question]").textContent.includes("选择交付方式")'),true,'首题必须是第一问');
+  await click('[data-choice-option="1"]');
+  assert.equal(await evaluate('document.querySelector("[role=status]").textContent.trim()'),'2 / 4','选中后必须自动跳到下一题');
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-question]").textContent.includes("选择部署环境")'),true,'第二题必须已就位');
+  await click('[data-choice-option="1"]');
+  await click('[data-choice-option="1"]');
+  assert.equal(await evaluate('document.querySelector("[role=status]").textContent.trim()'),'3 / 4','最后一题不该再进位（没有下一题）');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]").disabled'),true,'缺少第四张卡片时不能提交');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-dismiss]")'),null,'待答题时不得提供关闭入口，否则等于藏掉唯一的作答口');
   assert.equal(await evaluate('document.querySelector("[data-choice-option=\\"1\\"]").className.includes("bg-blue-50")'),true,'选中项必须带浅蓝高亮');
@@ -120,6 +124,6 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-confirmed-answer]").textContent.includes("安装包")'),true,'重新挂载使用权威已答结果');
   assert.deepEqual(await evaluate('window.singleSubmissions'),[]);
   assert.deepEqual(await evaluate('window.runtimeErrors'),[]);
-  console.log('选择组真实组件通过：四卡分组、缺题禁交、前后切换、答案保留、自定义原文、统一提交、重试幂等、防重复操作、历史已答回显、深浅主题和360px窄屏。');
+  console.log('选择组真实组件通过：四卡分组、选中即进位、缺题禁交、前后切换、答案保留、自定义原文、统一提交、重试幂等、防重复操作、历史已答回显、深浅主题和360px窄屏。');
   clearTimeout(deadline);window.destroy();app.exit(0);
 }).catch(error=>{console.error(error);clearTimeout(deadline);if(window)window.destroy();app.exit(1);});
