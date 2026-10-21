@@ -19,7 +19,7 @@ import {AgentToolName} from '../../../src/utils/toolNames';
 import '../../../src/style.css';
 const dark=ref(false),mount=ref(0);
 const questions=['选择交付方式？\\n\\n可以在提交前返回修改。','选择部署环境？','选择验证方式？','还有哪些补充要求？'];
-const options=[['源码','安装包'],['Windows','Linux'],['单元测试','完整回归'],[]];
+const options=[['源码','安装包','Docker 镜像','离线安装包','源码 + Docker 镜像一起给','只给说明文档，不要产物'],['Windows','Linux'],['单元测试','完整回归'],[]];
 const card=index=>({id:'choice-'+index,conversationId:'42',executionId:'100',type:'PROMISE',status:'pending',version:'2',allowedActions:['ANSWER'],content:{kind:'CHOICE',question:questions[index],options:options[index]}});
 const message=ref({id:'answer',turnId:'43',role:'assistant',timestamp:0,content:'请确认以下四个问题。',isComplete:false,isSuspended:true,
 toolCalls:Array.from({length:4},(_,index)=>({id:'choice-'+index,toolName:AgentToolName.RequireChoice,status:'pending',order:index+2,responseId:'200'})),
@@ -55,6 +55,24 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   await evaluate('window.flush()');
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-question-group]").length'),1);
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]").disabled'),true);
+  // 卡片尺寸契约：选项框高度恒定，选项超量只滚动（六选项不许把卡片撑大）
+  assert.deepEqual(
+    await evaluate('(()=>{const box=document.querySelector("[role=radiogroup]");return [box.clientHeight, box.scrollHeight>box.clientHeight];})()'),
+    [200,true],
+    '选项框必须固定 200px 且超出时内部滚动'
+  );
+  // 「其他补充」是选项行本身的输入：不得在行外再挂一块独立输入框
+  assert.equal(
+    await evaluate('document.querySelector("[data-testid=choice-custom-toggle]").contains(document.querySelector("[data-testid=choice-custom-input]"))'),
+    true,
+    '其他补充输入框必须在选项行内'
+  );
+  await click('[data-testid=choice-custom-toggle]');
+  assert.equal(
+    await evaluate('document.activeElement===document.querySelector("[data-testid=choice-custom-input]")'),
+    true,
+    '点「其他补充」整行后光标必须直接落进行内输入'
+  );
   for(let index=0;index<3;index++){
     await click('[data-choice-option="1"]');
     if(index<2)await click('[data-testid=choice-next]');
@@ -73,6 +91,11 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]").disabled'),false);
   await fs.writeFile(path.join(output,'light.png'),(await window.webContents.capturePage()).toPNG());
   await evaluate('window.setDark(true);window.flush()');
+  // 回到首题（有选项）验证暗色契约：纯黑底 + 发光文字
+  for(let index=0;index<3;index++)await click('[data-testid=choice-previous]');
+  assert.equal(await evaluate('getComputedStyle(document.querySelector("[data-testid=choice-question-group]")).backgroundColor'),'rgb(0, 0, 0)','暗色卡片底必须是纯黑');
+  assert.notEqual(await evaluate('getComputedStyle(document.querySelector("[data-testid=choice-question]")).textShadow'),'none','暗色题干必须带发光');
+  assert.notEqual(await evaluate('getComputedStyle(document.querySelector("[data-choice-option] [class*=text-glow]")).textShadow'),'none','暗色选项文字必须带发光');
   await fs.writeFile(path.join(output,'dark.png'),(await window.webContents.capturePage()).toPNG());
   await window.setSize(360,720);
   await evaluate('window.flush()');
