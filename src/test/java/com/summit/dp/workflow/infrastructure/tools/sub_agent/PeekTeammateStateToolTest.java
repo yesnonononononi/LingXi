@@ -14,12 +14,15 @@ import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -44,20 +47,21 @@ class PeekTeammateStateToolTest {
     private final PeekTeammateStateTool tool = new PeekTeammateStateTool(
             new ObjectMapper(), sessionService, sessionRepository, teamService);
 
-    @Test
-    @DisplayName("参数是 {\"agentId\":12} 形态的 JSON，能解析出 agentId 并带回队员状态")
-    void readsRunStatusFromJsonArguments() {
+    @ParameterizedTest
+    @ValueSource(strings = {"{\"agentId\":12}", "{\"agentId\":12,\"agentName\":\"展示名\"}"})
+    @DisplayName("携带或省略展示名均能按 agentId 查询，回执名称取自团队名单")
+    void readsRunStatusFromJsonArguments(String args) {
         when(teamService.findById(TEAM_ID)).thenReturn(Result.success(team()));
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, AGENT_ID))
                 .thenReturn(Optional.of(Session.builder().id(SUB_SESSION_ID).build()));
         when(sessionService.findById(SUB_SESSION_ID)).thenReturn(Result.success(SessionVO.builder()
                 .id(SUB_SESSION_ID).runStatus("RUNNING").lastOutcome("COMPLETED").build()));
 
-        ToolExecuteResult result = tool.execute(toolExecution("{\"agentId\":12}", sessionAttributes()));
+        ToolExecuteResult result = tool.execute(toolExecution(args, sessionAttributes()));
 
         assertTrue(result.isSuccess(), result.getToolOutput());
-        assertTrue(result.getToolOutput().contains("RUNNING"), result.getToolOutput());
-        assertTrue(result.getToolOutput().contains("编码"), result.getToolOutput());
+        assertEquals("队员 编码 当前状态: RUNNING, 最近结果: COMPLETED, 子会话: 555", result.getToolOutput());
+        verify(sessionRepository).findByRootAndAgent(ROOT_SESSION_ID, AGENT_ID);
     }
 
     @Test
