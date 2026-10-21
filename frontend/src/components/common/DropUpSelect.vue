@@ -383,7 +383,7 @@ defineExpose({
                     'px-3 py-2 rounded-xl text-xs flex items-center gap-2 transition-colors select-none',
                     option.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer',
                     isSelected(option)
-                      ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-gray-100 text-gray-900 font-normal')
+                      ? (isDark ? 'border border-white/85 bg-white/[0.12] text-white font-medium shadow-[0_0_14px_rgba(255,255,255,0.22)]' : 'bg-gray-100 text-gray-900 font-normal')
                       : (!option.disabled ? (isDark ? 'hover:bg-white/10 text-zinc-300' : 'hover:bg-gray-50 text-gray-700') : '')
                   ]"
                   @click="select(option)"
@@ -412,7 +412,7 @@ defineExpose({
                 <svg
                   v-if="isSelected(option)"
                   class="w-4 h-4 shrink-0 ml-auto"
-                  :class="isDark ? 'text-cyan-400' : 'text-gray-900'"
+                  :class="isDark ? 'text-white' : 'text-gray-900'"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"

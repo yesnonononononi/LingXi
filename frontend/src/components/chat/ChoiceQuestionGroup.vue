@@ -134,27 +134,27 @@ async function submit() {
             :aria-checked="!draft.useCustom && draft.selected === index" :disabled="!editable"
             class="group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-sm transition disabled:opacity-60 cursor-pointer disabled:cursor-default"
             :class="!draft.useCustom && draft.selected === index
-              ? (isDark ? 'border-white/85 bg-blue-500/15 shadow-[0_0_16px_rgba(255,255,255,0.30)]' : 'border-blue-200 bg-blue-50')
+              ? (isDark ? 'border-white/85 bg-white/10 shadow-[0_0_16px_rgba(255,255,255,0.30)]' : 'border-blue-200 bg-blue-50')
               : (isDark ? 'border-white/10 hover:border-white/40 hover:bg-white/5' : 'border-gray-100 hover:border-blue-200 hover:bg-blue-50/50')"
             :data-choice-option="index" @click="selectOption(index)">
             <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold tabular-nums transition-colors"
               :class="!draft.useCustom && draft.selected === index
-                ? 'bg-blue-500 text-white shadow-[0_0_12px_rgba(59,130,246,0.7)]'
+                ? 'bg-white text-gray-900 shadow-[0_0_12px_rgba(255,255,255,0.60)]'
                 : (isDark ? 'bg-white/10 text-gray-300' : 'bg-gray-100 text-gray-500')">{{ index + 1 }}</span>
             <span class="min-w-0 flex-1 whitespace-pre-wrap break-words"
               :class="isDark ? (draft.selected === index && !draft.useCustom ? 'text-white text-glow-white' : 'text-gray-200 text-glow-subtle') : ''">{{ option }}</span>
-            <svg class="h-3.5 w-3.5 shrink-0 transition-colors" :class="!draft.useCustom && draft.selected === index ? 'text-blue-500' : (isDark ? 'text-gray-600' : 'text-gray-300')"
+            <svg class="h-3.5 w-3.5 shrink-0 transition-colors" :class="!draft.useCustom && draft.selected === index ? (isDark ? 'text-white' : 'text-blue-500') : (isDark ? 'text-gray-600' : 'text-gray-300')"
               fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 5 7 7-7 7" /></svg>
           </button>
         </div>
         <!-- 其他补充 = 与选项同形的整行输入：点行即键入，不再另开输入框 -->
         <div class="mt-1.5 flex items-center gap-3 rounded-xl border px-3 py-2.5 transition"
           :class="draft.useCustom
-            ? (isDark ? 'border-white/85 bg-blue-500/15 shadow-[0_0_16px_rgba(255,255,255,0.30)]' : 'border-blue-200 bg-blue-50')
+            ? (isDark ? 'border-white/85 bg-white/10 shadow-[0_0_16px_rgba(255,255,255,0.30)]' : 'border-blue-200 bg-blue-50')
             : (isDark ? 'border-white/10 hover:border-white/40 hover:bg-white/5' : 'border-gray-100 hover:border-blue-200 hover:bg-blue-50/50')"
           role="presentation" data-testid="choice-custom-toggle" @click="activateCustom">
           <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md transition-colors"
-            :class="draft.useCustom ? 'bg-blue-500 text-white shadow-[0_0_12px_rgba(59,130,246,0.7)]' : (isDark ? 'bg-white/10 text-gray-300' : 'bg-gray-100 text-gray-400')">
+            :class="draft.useCustom ? 'bg-white text-gray-900 shadow-[0_0_12px_rgba(255,255,255,0.60)]' : (isDark ? 'bg-white/10 text-gray-300' : 'bg-gray-100 text-gray-400')">
             <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
           </span>
           <!-- rows=1 + resize-none：外观是输入行，粘贴多行仍原样保留 -->
