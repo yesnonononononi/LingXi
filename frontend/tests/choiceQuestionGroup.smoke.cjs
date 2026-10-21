@@ -56,12 +56,14 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-question-group]").length'),1);
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]").disabled'),true);
   for(let index=0;index<3;index++){
-    await click(`[data-choice-tab="${index}"]`);
     await click('[data-choice-option="1"]');
+    if(index<2)await click('[data-testid=choice-next]');
   }
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]").disabled'),true,'缺少第四张卡片时不能提交');
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-dismiss]")'),null,'待答题时不得提供关闭入口，否则等于藏掉唯一的作答口');
+  assert.equal(await evaluate('document.querySelector("[data-choice-option=\\"1\\"]").className.includes("bg-blue-50")'),true,'选中项必须带浅蓝高亮');
   await evaluate('window.addLastQuestion();window.flush()');
-  await click('[data-choice-tab="3"]');
+  await click('[data-testid=choice-next]');
   await click('[data-testid=choice-custom-toggle]');
   await evaluate(`(()=>{const input=document.querySelector('[data-testid=choice-custom-input]');input.value='  保留原始输入\\n以及换行  ';input.dispatchEvent(new Event('input',{bubbles:true}));})();window.flush()`);
   await click('[data-testid=choice-previous]');
@@ -89,6 +91,8 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   assert.deepEqual(await evaluate('window.submissions[1]'),first,'未修改答案的重试必须沿用命令身份');
   await evaluate('window.finishBatch();window.flush()');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]")'),null);
+  await evaluate('document.querySelector("[data-testid=choice-dismiss]").click();window.flush()');
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-question-group]").length'),0,'全部答完后允许整卡关闭');
   await evaluate('window.remount();window.flush()');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-confirmed-answer]").textContent.includes("安装包")'),true,'重新挂载使用权威已答结果');
   assert.deepEqual(await evaluate('window.singleSubmissions'),[]);

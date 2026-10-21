@@ -675,6 +675,7 @@ export const messages: MessageSchema = {
         unknownOutcome: '状态未知（未获取到该提问的结论）',
         confirmedDecision: '已确认决策：',
         customAnswerPlaceholder: '输入你的答案',
+        customRowLabel: '其他补充…',
         submitAnswer: '提交回答',
       },
       approval: {
@@ -1768,6 +1769,7 @@ export const messages: MessageSchema = {
         unknownOutcome: 'Status unknown (no conclusion was received for this question)',
         confirmedDecision: 'Decision confirmed: ',
         customAnswerPlaceholder: 'Enter your answer',
+        customRowLabel: 'Other (custom)…',
         submitAnswer: 'Submit answer',
       },
       approval: {
