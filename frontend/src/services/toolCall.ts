@@ -3,6 +3,7 @@ import type { Result } from './types';
 import { isOk } from '../utils/api';
 import type { ToolCallAction, ToolCallDecisionReceipt, ToolCallVO } from '../types/chat';
 import { t } from '../i18n';
+import type { ChoiceAnswersPayload, ChoiceAnswersReceipt } from '../types/toolDecision';
 
 /** 提交工具调用决策的载荷（对应后端 ToolCallDecisionCommand）。 */
 export interface ToolCallDecisionPayload {
@@ -34,6 +35,12 @@ export interface ToolCallDecisionPayload {
  * </ul>
  */
 export class ToolCallAPI {
+  static async answerChoices(payload: ChoiceAnswersPayload): Promise<ChoiceAnswersReceipt> {
+    const res = await http.post<any, Result<ChoiceAnswersReceipt>>('/tool-call/choice-answers', payload);
+    if (!isOk(res.code) || !res.data) throw new Error(res.errMsg || t('chat.choice.submitFailed'));
+    return res.data;
+  }
+
   /**
    * 提交决策（v3 版本化 JSON 回执，不建 SSE）。
    *

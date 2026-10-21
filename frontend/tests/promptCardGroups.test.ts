@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groupCommandApprovals, type PromptCardEntry } from '../src/utils/promptCardGroups';
+import { groupCommandApprovals, groupChoiceQuestions, type PromptCardEntry } from '../src/utils/promptCardGroups';
 import { resolveCardStatusLabel } from '../src/utils/toolCallCard';
 import { setPreference } from '../src/i18n';
 
@@ -8,6 +8,17 @@ setPreference('zh-CN');
 const entry = (id: string, kind: PromptCardEntry['card']['kind'] = 'COMMAND'): PromptCardEntry => ({
   id, card: { toolCallId: id, conversationId: '42', kind, title: '', content: 'git status',
     command: 'git status', status: 'completed', pending: false, outcome: 'APPROVED', version: '7' }
+});
+
+test('选择按模型响应和会话分组，同一业务轮次的后续提问保持独立', () => {
+  const first = { ...entry('q1', 'CHOICE'), responseId: 'response-1' };
+  const second = { ...entry('q2', 'CHOICE'), responseId: 'response-1' };
+  const next = { ...entry('q3', 'CHOICE'), responseId: 'response-2' };
+  const other = { ...entry('q4', 'CHOICE'), responseId: 'response-1', card: { ...first.card, conversationId: '99' } };
+  const groups = groupChoiceQuestions(groupCommandApprovals([first, entry('cmd'), second, next, other]));
+  assert.deepEqual(groups.map(group => group.choices?.map(item => item.id) ?? ['cmd']), [['q1', 'q2'], ['cmd'], ['q3'], ['q4']]);
+  assert.equal(groups[0]!.choices![0]!.card, first.card);
+  assert.equal('choices' in first, false);
 });
 
 test('本轮命令按类型合成一组，计划和提问保持独立且不改写卡片身份', () => {

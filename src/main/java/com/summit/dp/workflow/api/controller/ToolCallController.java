@@ -2,6 +2,9 @@ package com.summit.dp.workflow.api.controller;
 
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.toolcall.api.dto.ToolCallDecisionCommand;
+import com.summit.dp.toolcall.api.dto.ChoiceAnswersCommand;
+import com.summit.dp.toolcall.api.dto.ChoiceAnswersReceipt;
+import com.summit.dp.workflow.application.approval.ChoiceAnswersService;
 import com.summit.dp.toolcall.api.dto.ToolCallDecisionReceipt;
 import com.summit.dp.toolcall.api.dto.ToolCallDecisionRequest;
 import com.summit.dp.toolcall.application.service.ToolCallService;
@@ -35,6 +38,13 @@ public class ToolCallController {
     private final ToolCallWorkflowService workflowService;
     /** v2 版本化决策入口；与 v1 SSE 入口并存，各自独立。 */
     private final VersionedToolCallDecisionService versionedDecisionService;
+    private final ChoiceAnswersService choiceAnswersService;
+
+    @Operation(summary = "一次提交同组全部选择答案")
+    @PostMapping("/choice-answers")
+    public Result<ChoiceAnswersReceipt> answerChoices(@RequestBody ChoiceAnswersCommand request) {
+        return Result.success(choiceAnswersService.submit(request));
+    }
 
     /**
      * 提交决策结论：批准 / 拒绝 / 作答一次待决策的卡片。

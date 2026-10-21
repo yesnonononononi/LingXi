@@ -365,7 +365,7 @@ import { isOk } from '../../utils/api';
 import { LogAPI } from '../../services/log';
 import { useFilePreview } from '../../composables/useFilePreview';
 import { FILE_PREVIEW_KEY } from '../../types/filePreview';
-import { DECIDE_TOOL_CALL_KEY } from '../../types/toolDecision';
+import { DECIDE_TOOL_CALL_KEY, ANSWER_CHOICES_KEY } from '../../types/toolDecision';
 import FilePreviewPanel from '../../components/chat/FilePreviewPanel.vue';
 import { useChatView } from './useChatView';
 import Sidebar from '../../components/chat/Sidebar.vue';
@@ -491,6 +491,7 @@ const {
   handleSendMessage,
   handleStopGeneration,
   decideToolCall,
+  answerChoices,
   handleSelectPrompt,
   handleQuickStart,
   handleLoadMoreHistory,
@@ -508,4 +509,5 @@ const {
 
 // 卡片决策提交能力：注入给深层卡片组件（PlanCard / ApprovalCard / RequireChoiceCard）
 provide(DECIDE_TOOL_CALL_KEY, decideToolCall);
+provide(ANSWER_CHOICES_KEY, answerChoices);
 </script>

@@ -34,6 +34,7 @@ import type {
   ToolCallDecisionReceipt
 } from '../types/chat';
 import type { TurnViewVO } from '../types/block';
+import type { ChoiceAnswersPayload, ChoiceAnswersReceipt } from '../types/toolDecision';
 
 /**
  * fetch* 的判别结果：让调用方能区分「加载失败（可重试）」与「确实为空」。
@@ -79,6 +80,10 @@ export const chatApi = {
    * @param expectedVersion 客户端看到的卡片版本（可空）；与库中不符即冲突
    * @param commandId      决策命令身份；同 ID 重试不重复提交
    */
+  async answerChoices(payload: ChoiceAnswersPayload): Promise<ChoiceAnswersReceipt> {
+    return ToolCallAPI.answerChoices(payload);
+  },
+
   async decideToolCall(
     conversationId: string | number,
     toolCallId: string,

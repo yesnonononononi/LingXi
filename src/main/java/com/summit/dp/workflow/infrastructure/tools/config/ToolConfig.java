@@ -40,7 +40,7 @@ public class ToolConfig {
                 .name(ToolCatalog.REQUIRE_CHOICE)
                 .executor(executor)
                 .concurrentPolicy(ConcurrentPolicy.READ_ONLY)
-                .description("Ask the user a question and wait for an explicit answer.")
+                .description("Ask the user a question and wait for an explicit answer. When several independent questions are needed, call this tool multiple times in the SAME response. The user can answer all questions together before execution resumes.")
                 .parametersJsonSchema("""
                         {"type":"object","properties":{"question":{"type":"string"},
                         "options":{"type":"array","items":{"type":"string"}}},

@@ -3,7 +3,7 @@ import { SessionAPI } from '../../services/session';
 import { chatApi } from '../../services/chat';
 import type { ChatSession, ModelConfig, ChatMessage, WorkspaceVO, ToolCallDecisionReceipt } from '../../types/chat';
 import type { AgentEvent } from '../../types/Event';
-import type { ToolDecisionHandler } from '../../types/toolDecision';
+import type { ToolDecisionHandler, ChoiceAnswersHandler } from '../../types/toolDecision';
 import { buildMessageTurnMap, isSessionRunning, resolveRootSessionId } from '../../utils/session';
 import { useChatScroll } from './useChatScroll';
 import { useChatHistory } from './useChatHistory';
@@ -613,6 +613,14 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     return receipt;
   };
 
+  const answerChoices: ChoiceAnswersHandler = async (payload) => {
+    const receipt = await chatApi.answerChoices(payload);
+    for (const toolCall of receipt.toolCalls) {
+      applyCardReceipt({ ...receipt, decision: 'ANSWERED', toolCall });
+    }
+    return receipt;
+  };
+
   // ---------- 会话列表 ----------
   const sessionList = useChatSessionList({
     localSessions,
@@ -886,6 +894,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     handleSendMessage,
     handleStopGeneration: sending.handleStopGeneration,
     decideToolCall,
+    answerChoices,
     handleSelectPrompt,
     /** 重发一条「未发送」的提问（受理被拒留下的幽灵气泡）。 */
     handleResendUnsent,

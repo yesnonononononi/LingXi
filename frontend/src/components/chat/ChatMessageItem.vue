@@ -454,6 +454,13 @@
           :session-id="props.sessionId"
           :is-dark="isDark"
         />
+        <ChoiceQuestionGroup
+          v-else-if="entry.choices"
+          :entries="entry.choices"
+          :response-id="entry.responseId!"
+          :expected-count="props.message.toolCalls?.filter(call => call.responseId === entry.responseId && call.toolName === AgentToolName.RequireChoice).length ?? 0"
+          :is-dark="isDark"
+        />
         <!-- 待决策卡片整卡展开（要按键）；已决卡片默认收成一行，细节按需展开 -->
         <div v-else-if="!entry.card.pending" class="w-full">
           <button
@@ -634,7 +641,8 @@ import MarkdownRenderer from './MarkdownRenderer.vue';
 import DelegatedTaskMessage from './DelegatedTaskMessage.vue';
 import PromptCard from './PromptCard.vue';
 import CommandApprovalGroup from './CommandApprovalGroup.vue';
-import { groupCommandApprovals } from '../../utils/promptCardGroups';
+import { groupCommandApprovals, groupChoiceQuestions, type PromptCardEntry } from '../../utils/promptCardGroups';
+import ChoiceQuestionGroup from './ChoiceQuestionGroup.vue';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import ReadImageToolGroup from './ReadImageToolGroup.vue';
 import { groupReadImageTools } from '../../utils/readImageTools';
@@ -1046,11 +1054,12 @@ const processTimeline = computed<ProcessTimelineItem[]>(() => {
   //    但模板里被分离到过程折叠区之外渲染 —— 用户可操作项不能被吞进「已思考并调用工具」大框。
   if (props.message.promptCards?.length) {
     props.message.promptCards.forEach((card, idx) => {
-      const toolOrder = props.message.toolCalls?.find(tc => String(tc.id) === String(card.id))?.order;
+      const trace = props.message.toolCalls?.find(tc => String(tc.id) === String(card.id));
       items.push({
         id: `card-${card.id ?? idx}`,
         type: 'prompt_card',
-        order: toolOrder ?? (CARD_ORDER_BASE + idx),
+        order: trace?.order ?? (CARD_ORDER_BASE + idx),
+        responseId: trace?.responseId,
         card
       });
     });
@@ -1071,12 +1080,12 @@ const processItems = computed(() =>
 );
 
 /** 过程折叠区之外的互动卡片（映射为卡片展示数据）。 */
-const cardItems = computed<Array<{ id: string; card: PromptCardData }>>(() =>
+const cardItems = computed<PromptCardEntry[]>(() =>
   processTimeline.value
     .filter(item => item.type === 'prompt_card' && !!item.card)
-    .map(item => ({ id: item.id, card: toPromptCardData(item.card as NonNullable<ProcessTimelineItem['card']>) }))
+    .map(item => ({ id: item.id, responseId: item.responseId ?? undefined, card: toPromptCardData(item.card as NonNullable<ProcessTimelineItem['card']>) }))
 );
-const groupedCardItems = computed(() => groupCommandApprovals(cardItems.value));
+const groupedCardItems = computed(() => groupChoiceQuestions(groupCommandApprovals(cardItems.value)));
 
 /** 已决卡片默认收成一行（避免大卡片常驻页底占位），细节按需展开；待决策卡片整卡展开。 */
 const expandedCardIds = ref<Record<string, boolean>>({});

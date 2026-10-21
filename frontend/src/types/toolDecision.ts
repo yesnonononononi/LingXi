@@ -1,5 +1,5 @@
 import type { InjectionKey } from 'vue';
-import type { ToolCallAction, ToolCallDecisionReceipt } from './chat';
+import type { ToolCallAction, ToolCallDecisionReceipt, ToolCallVO, ResumeDisposition } from './chat';
 
 /** 卡片决策提交载荷（由卡片组件构造，视图层补齐会话 id 后提交）。 */
 export interface ToolDecisionPayload {
@@ -25,3 +25,20 @@ export type ToolDecisionHandler = (payload: ToolDecisionPayload) => Promise<Tool
 
 /** 卡片决策提交能力的注入键。 */
 export const DECIDE_TOOL_CALL_KEY: InjectionKey<ToolDecisionHandler> = Symbol('decide-tool-call');
+
+export interface ChoiceAnswersPayload {
+  conversationId: string;
+  responseId: string;
+  commandId: string;
+  answers: Array<{ toolCallId: string; expectedVersion: string | number; text: string }>;
+}
+
+export interface ChoiceAnswersReceipt {
+  commandId: string;
+  decisionApplied: boolean;
+  toolCalls: ToolCallVO[];
+  resumeDisposition: ResumeDisposition;
+}
+
+export type ChoiceAnswersHandler = (payload: ChoiceAnswersPayload) => Promise<ChoiceAnswersReceipt>;
+export const ANSWER_CHOICES_KEY: InjectionKey<ChoiceAnswersHandler> = Symbol('answer-choices');
