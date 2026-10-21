@@ -189,7 +189,7 @@ test('历史计划书：权威卡片经真实消息和计划组件显示完整�
   }
 });
 
-test('过程区行字号统一：终端描述与深度思考标题同为 13px，颜色仍保持终端更暗', async t => {
+test('过程区行样式统一：终端描述与工具行同字号同色，深度思考标题仍低一档', async t => {
   const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
   for (const isDark of [false, true]) {
     const answer = message({ isComplete: false, aiMessages: [], thoughtSteps: [
@@ -212,12 +212,14 @@ test('过程区行字号统一：终端描述与深度思考标题同为 13px，
       assert.match(thinking.parent.props.class, /text-\[13px\]/, '思考标题行必须同为 13px');
       // 工具行容器是"读取/查看"这类工具标题的唯一字号来源（标题本身不带字号类），一并锁住。
       assert.match(description.parent.props.class, /text-\[13px\]/, '工具行容器必须为 13px');
-      const colors = isDark ? ['text-zinc-400', 'hover:text-zinc-200'] : ['text-zinc-500', 'hover:text-zinc-700'];
+      const colors = isDark ? ['text-zinc-100', 'text-glow-white'] : ['text-gray-700'];
       for (const color of colors) {
-        assert.equal(description.props.class.split(' ').includes(color), true, `终端描述颜色应与思考一致：${color}`);
-        assert.equal(thinking.props.class.split(' ').includes(color), true);
+        assert.equal(description.props.class.split(' ').includes(color), true, `终端描述必须与工具行同色：${color}`);
       }
-      assert.equal(description.props.class.split(' ').includes('[text-shadow:none]'), true, '终端描述不继承工具行的发光');
+      assert.equal(description.props.class.split(' ').includes('[text-shadow:none]'), false, '终端描述不得再单独关掉发光');
+      // 深度思考标题刻意低一档：同字号、不同色，用它把「思考」和「工具动作」分开。
+      const thinkingColor = isDark ? 'text-zinc-400' : 'text-zinc-500';
+      assert.equal(thinking.props.class.split(' ').includes(thinkingColor), true, '思考标题必须保持低一档颜色');
     }
   }
 });

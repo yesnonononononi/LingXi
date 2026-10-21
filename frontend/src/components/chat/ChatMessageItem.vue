@@ -316,13 +316,7 @@
                       :aria-expanded="!!expandedToolIds[item.tool.id]"
                       @click.stop="toggleToolCall(item.tool.id)"
                       class="transition-colors truncate min-w-0 font-medium"
-                      :class="[
-                        // 与其它工具行、思考标题统一 13px：过程区里同一层级的行必须一样大，
-                        // 只有颜色差别（终端描述更暗，不抢工具行的发光）。
-                        item.tool.toolName === AgentToolName.ExecuteCommand
-                          ? (isDark ? 'text-[13px] text-zinc-400 hover:text-zinc-200 [text-shadow:none]' : 'text-[13px] text-zinc-500 hover:text-zinc-700 [text-shadow:none]')
-                          : (isDark ? 'text-[13px] text-zinc-100 text-glow-white' : 'text-[13px] text-gray-700')
-                      ]"
+                      :class="isDark ? 'text-[13px] text-zinc-100 text-glow-white' : 'text-[13px] text-gray-700'"
                     >
                                             {{ cleanDisplayPath(getToolDescription(item.tool)) || resolveToolRenderName(item.tool.toolName) }}
                     </button>
