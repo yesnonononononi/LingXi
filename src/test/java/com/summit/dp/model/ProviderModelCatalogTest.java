@@ -8,6 +8,7 @@ import com.summit.dp.model.domain.repo.ModelConfigRepository;
 import com.summit.dp.provider.application.service.ProviderConfigService;
 import com.summit.dp.provider.application.vo.ProviderConfigVO;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.harness.springbootautoconfigure.properties.agent.AgentChatProperties;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -31,7 +32,7 @@ class ProviderModelCatalogTest {
 
     private final ModelConfigRepository repository = mock(ModelConfigRepository.class);
     private final ProviderConfigService providerService = mock(ProviderConfigService.class);
-    private final ModelServiceImpl service = new ModelServiceImpl(repository, providerService);
+    private final ModelServiceImpl service = new ModelServiceImpl(repository, providerService, new AgentChatProperties());
 
     @Test
     void groupsModelsByProviderAndKeepsDanglingReferencesUngrouped() {

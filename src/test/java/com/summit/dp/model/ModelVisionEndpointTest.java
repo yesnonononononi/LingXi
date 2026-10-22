@@ -5,6 +5,7 @@ import com.summit.dp.model.application.service.ModelServiceImpl;
 import com.summit.dp.model.domain.model.ModelConfig;
 import com.summit.dp.model.domain.repo.ModelConfigRepository;
 import com.summit.dp.provider.application.service.ProviderConfigService;
+import com.summit.harness.springbootautoconfigure.properties.agent.AgentChatProperties;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
@@ -27,7 +28,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ModelVisionEndpointTest {
     private final ModelConfigRepository repository = mock(ModelConfigRepository.class);
     private final MockMvc mvc = MockMvcBuilders.standaloneSetup(
-            new ModelController(new ModelServiceImpl(repository, mock(ProviderConfigService.class)))).build();
+            new ModelController(new ModelServiceImpl(repository, mock(ProviderConfigService.class),
+                    new AgentChatProperties()))).build();
 
     @Test
     void requestAndResponseCarryTheExplicitBooleanInBothDirections() throws Exception {

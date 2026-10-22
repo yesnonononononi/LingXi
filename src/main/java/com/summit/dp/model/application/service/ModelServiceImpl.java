@@ -14,6 +14,7 @@ import com.summit.dp.provider.application.service.ProviderConfigService;
 import com.summit.dp.provider.application.vo.ProviderConfigVO;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.harness.springbootautoconfigure.properties.agent.AgentChatProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -38,6 +39,7 @@ import java.util.stream.Collectors;
 public class ModelServiceImpl implements ModelService {
     private final ModelConfigRepository modelConfigRepository;
     private final ProviderConfigService providerConfigService;
+    private final AgentChatProperties chatProperties;
 
     @Override
     public Result<Void> add(ModelConfigCommand command) {
@@ -176,7 +178,8 @@ public class ModelServiceImpl implements ModelService {
         throwIf(model.getBaseUrl() == null || model.getBaseUrl().isBlank()
                 || model.getApiKey() == null || model.getApiKey().isBlank()
                 || model.getModelName() == null || model.getModelName().isBlank(), "模型连接配置不完整: " + id);
-        return RuntimeModel.create(model.getBaseUrl(), model.getApiKey(), model.getModelName(), model.getProvider(), model.isVision(), settings);
+        return RuntimeModel.create(model.getBaseUrl(), model.getApiKey(), model.getModelName(), model.getProvider(),
+                model.isVision(), settings, chatProperties.getTimeout());
     }
 
     /** 分组内按模型名排序：同一提供商的模型较多时，字母序比插入序更可预期。 */
