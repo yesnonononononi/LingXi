@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li>{@code webEnvironment=NONE}：不绑定端口，绝不与运行中的实例抢 8088。</li>
  *   <li>数据源改内存 H2：不去打开实例正在使用的 {@code ~/.lingxi/data/lingxi.mv.db} 文件库。</li>
  *   <li>{@code lingxi.data.dir} / 四个 config 路径指向 {@code .run/tmp}，不写用户真实配置。</li>
- *   <li>MCP 关闭、API Key 置为占位符值，避免联网与未解析占位符导致的环境噪声。</li>
+ *   <li>MCP 客户端使用测试替身、API Key 置为占位符值，避免联网与配置解析的环境噪声。</li>
  * </ul>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, properties = {
@@ -43,7 +43,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
         "spring.sql.init.encoding=UTF-8",
         "lingxi.data.dir=D:/Code/LingXi/.run/tmp/ctx-verify/data",
         "lingxi.skill.dir=",
-        "lingxi.mcp.enabled=false",
         "lingxi.config.sandbox-security.directory=.run/tmp/ctx-verify/security",
         "lingxi.config.user-configs.path=D:/Code/LingXi/.run/tmp/ctx-verify/user-configs.json",
         "lingxi.config.mcp.path=D:/Code/LingXi/.run/tmp/ctx-verify/mcp.json",
@@ -54,7 +53,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 })
 class ApplicationContextAssemblyTest {
 
-    /** 关闭 MCP 自动配置后仍需满足管理器依赖，测试不能建立外部连接。 */
+    /** 连接由请求决定，测试替身保证装配验证不依赖外部服务。 */
     @MockitoBean
     private McpClientFactory clientFactory;
 

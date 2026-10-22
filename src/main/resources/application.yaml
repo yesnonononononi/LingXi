@@ -51,8 +51,6 @@ lingxi:
     startup-timeout: 30s
     file-timeout: 30s
     environment: {}
-  mcp:
-    enabled: true
   # 数据存储目录的缺省值：真源在设置页（user_configs.data_dir），这里只在设置页没写时生效。
   # H2 库文件落在 <dir>/lingxi.mv.db；设置页改目录会自动把库文件搬迁过去，但需要重启才切得过去。
   # 也可用 -Dlingxi.data.dir=... 或环境变量 LINGXI_DATA_DIR 覆盖，但设置页一旦写了值就以它为准。

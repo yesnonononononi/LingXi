@@ -64,7 +64,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.datasource.url=jdbc:h2:mem:chatcontrols;MODE=MySQL;DB_CLOSE_DELAY=-1",
         "spring.sql.init.mode=always", "spring.sql.init.schema-locations=classpath:init.sql",
         "lingxi.data.dir=D:/Code/LingXi/.run/chat-controls/data", "lingxi.skill.dir=",
-        "lingxi.mcp.enabled=false", "lingxi.config.sandbox-security.directory=.run/chat-controls/security",
+        "lingxi.config.sandbox-security.directory=.run/chat-controls/security",
         "lingxi.config.user-configs.path=D:/Code/LingXi/.run/chat-controls/user-configs.json",
         "lingxi.config.mcp.path=D:/Code/LingXi/.run/chat-controls/mcp.json",
         "lingxi.config.model.path=D:/Code/LingXi/.run/chat-controls/models.json",
