@@ -19,6 +19,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -62,7 +63,10 @@ class ApplicationContextAssemblyTest {
 
     @Test
     void allConfigurationRepositoriesUseJsonStorage() {
-        assertEquals(7, context.getBeansOfType(AbstractJsonRepository.class).size());
+        assertEquals(Set.of("modelConfigRepositoryImpl", "providerConfigRepositoryImpl",
+                "personalizationRepositoryImpl", "mcpRepositoryImpl", "userConfigRepositoryImpl",
+                "securityFilesRepository", "securityTerminalRepository", "securityNetRepository"),
+                context.getBeansOfType(AbstractJsonRepository.class).keySet());
         assertTrue(context.getBean("securityFilesRepository") instanceof AbstractJsonRepository);
         assertTrue(context.getBean("securityTerminalRepository") instanceof AbstractJsonRepository);
         assertTrue(context.getBean("securityNetRepository") instanceof AbstractJsonRepository);
