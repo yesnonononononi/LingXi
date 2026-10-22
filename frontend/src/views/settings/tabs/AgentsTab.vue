@@ -88,7 +88,7 @@ const {
       </div>
 
       <!-- 加载中 -->
-            <div v-if="isAgentsLoading" class="py-8 text-center text-xs" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">
+            <div v-if="isAgentsLoading" class="py-8 text-center text-xs" :class="'text-lx-disabled'">
         {{ t('settings.agents.loading') }}
       </div>
 
@@ -108,7 +108,7 @@ const {
       <div
         v-else-if="agentsList.length === 0"
         class="py-12 text-center text-xs border border-dashed rounded-2xl"
-                :class="isDark ? 'border-white/10 text-zinc-500' : 'border-gray-200 text-gray-400'"
+                :class="'border-lx-border-subtle text-lx-disabled'"
       >
         {{ t('settings.agents.empty') }}
       </div>
@@ -120,7 +120,7 @@ const {
           <div class="relative flex-1 min-w-[7rem]">
             <svg
               class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none"
-              :class="isDark ? 'text-zinc-500' : 'text-gray-400'"
+              :class="'text-lx-disabled'"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -134,8 +134,8 @@ const {
               :class="[
                 'w-full h-[30px] pl-8 pr-7 rounded-lg border outline-none text-xs transition',
                 isDark
-                  ? 'bg-black/90 border-white/20 text-zinc-100 placeholder-zinc-500 focus:border-cyan-400'
-                  : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500'
+                  ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-lx-disabled focus:border-cyan-400'
+                  : 'bg-lx-surface-elevated border-lx-border-strong text-gray-900 placeholder-lx-disabled focus:border-blue-500'
               ]"
             />
             <button
@@ -143,7 +143,7 @@ const {
               type="button"
               :title="t('settings.agents.clearSearch')"
               class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded cursor-pointer"
-              :class="isDark ? 'text-zinc-500 hover:text-zinc-300' : 'text-gray-400 hover:text-gray-600'"
+              :class="'text-lx-disabled hover:text-lx-tertiary'"
               @click="agentSearchQuery = ''"
             >
               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -159,13 +159,13 @@ const {
               class="rounded text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
               @change="toggleAllAgents"
             />
-            <span class="text-xs" :class="isDark ? 'text-zinc-300' : 'text-gray-600'">
+            <span class="text-xs" :class="'text-lx-tertiary'">
               {{ t('settings.agents.selectedCount', { count: selectedAgentIds.length }) }}
             </span>
           </label>
 
           <div class="flex items-center gap-2 shrink-0">
-            <span class="text-xs" :class="isDark ? 'text-zinc-400' : 'text-gray-500'">
+            <span class="text-xs" :class="'text-lx-muted'">
               {{ t('settings.agents.batchLabel') }}
             </span>
             <DropUpSelect
@@ -196,7 +196,7 @@ const {
         <div
           v-if="filteredAgents.length === 0"
           class="py-10 text-center text-xs border border-dashed rounded-2xl"
-          :class="isDark ? 'border-white/10 text-zinc-500' : 'border-gray-200 text-gray-400'"
+          :class="'border-lx-border-subtle text-lx-disabled'"
         >
           {{ t('settings.agents.emptySearch') }}
         </div>
@@ -253,14 +253,14 @@ const {
                     {{ getModelName(agent.modelId) }}
                   </span>
                 </div>
-                              <p class="text-xs line-clamp-2" :class="isDark ? 'text-zinc-400' : 'text-gray-500'">
+                              <p class="text-xs line-clamp-2" :class="'text-lx-muted'">
                   {{ agent.description || t('settings.agents.noDescription') }}
                 </p>
                 <!-- 已分配工具展示 -->
                 <div class="pt-1">
-                  <div class="text-[11px] font-medium mb-1 flex items-center gap-1.5" :class="isDark ? 'text-zinc-300' : 'text-gray-600'">
+                  <div class="text-[11px] font-medium mb-1 flex items-center gap-1.5" :class="'text-lx-tertiary'">
                     <span>{{ t('settings.agents.assignedTools') }}</span>
-                    <span class="text-xs font-normal" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">
+                    <span class="text-xs font-normal" :class="'text-lx-disabled'">
                       ({{ agent.toolList?.length || 0 }})
                     </span>
                   </div>
@@ -278,7 +278,7 @@ const {
                       {{ resolveToolFullName(toolName) }}
                     </span>
                   </div>
-                  <span v-else class="text-[11px] italic" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">{{ t('settings.agents.noTools') }}</span>
+                  <span v-else class="text-[11px] italic" :class="'text-lx-disabled'">{{ t('settings.agents.noTools') }}</span>
                 </div>
               </div>
 
@@ -315,7 +315,7 @@ const {
     <div v-else class="space-y-4">
       <div class="flex items-center justify-between border-b pb-3" :class="isDark ? 'border-gray-800' : 'border-gray-200'">
         <div>
-                    <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white">
+                    <h4 class="text-base font-bold tracking-tight text-lx-primary">
             {{ editingAgentId ? t('settings.agents.editHeading') : t('settings.agents.addHeading') }}
           </h4>
           <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
@@ -346,7 +346,7 @@ const {
                             :placeholder="t('settings.agents.namePlaceholder')"
               :class="[
                 'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
-                isDark ? 'bg-black/90 border-white/20 text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+                isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-gray-900 focus:border-blue-500'
               ]"
             />
           </div>
@@ -376,7 +376,7 @@ const {
             :placeholder="t('settings.agents.descriptionPlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
-              isDark ? 'bg-black/90 border-white/20 text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-gray-900 focus:border-blue-500'
             ]"
           />
         </div>
@@ -390,7 +390,7 @@ const {
             :placeholder="t('settings.agents.avatarPlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
-              isDark ? 'bg-black/90 border-white/20 text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-gray-900 focus:border-blue-500'
             ]"
           />
         </div>
@@ -405,7 +405,7 @@ const {
             :placeholder="t('settings.agents.promptPlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs resize-none transition',
-              isDark ? 'bg-black/90 border-white/20 text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-gray-900 focus:border-blue-500'
             ]"
           ></textarea>
         </div>
@@ -415,7 +415,7 @@ const {
           <div class="flex items-center justify-between mb-1.5">
             <label class="block font-medium" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
                             {{ t('settings.agents.toolsLabel') }}
-              <span class="font-normal ml-1" :class="isDark ? 'text-zinc-400' : 'text-gray-500'">
+              <span class="font-normal ml-1" :class="'text-lx-muted'">
                 {{ t('settings.agents.toolsCount', { selected: agentForm.toolList.length, total: availableTools.length }) }}
               </span>
             </label>
@@ -433,7 +433,7 @@ const {
                 type="button"
                 @click="clearAgentTools"
                 class="cursor-pointer"
-                :class="isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-gray-500 hover:text-gray-400'"
+                :class="isDark ? 'text-lx-muted hover:text-zinc-200' : 'text-lx-muted hover:text-gray-400'"
               >
                                 {{ t('settings.agents.clear') }}
               </button>
@@ -443,14 +443,14 @@ const {
           <div
             v-if="isToolsLoading"
             class="p-3 text-center border border-dashed rounded-xl"
-            :class="isDark ? 'border-white/10 text-zinc-500' : 'border-gray-200 text-gray-400'"
+            :class="'border-lx-border-subtle text-lx-disabled'"
           >
                         {{ t('settings.agents.toolsLoading') }}
           </div>
           <div
             v-else-if="toolsErrorMsg"
             class="p-3 text-center border border-dashed rounded-xl flex items-center justify-center gap-2"
-            :class="isDark ? 'border-red-900/60 text-red-300' : 'border-red-200 text-red-600'"
+            :class="'border-lx-danger-border text-lx-danger'"
           >
             <span>{{ toolsErrorMsg }}</span>
             <button
@@ -464,14 +464,14 @@ const {
           <div
             v-else-if="availableTools.length === 0"
             class="p-3 text-center border border-dashed rounded-xl"
-            :class="isDark ? 'border-white/10 text-zinc-500' : 'border-gray-200 text-gray-400'"
+            :class="'border-lx-border-subtle text-lx-disabled'"
           >
             {{ t('settings.agents.noToolsRegistered') }}
           </div>
           <div
             v-else
             class="max-h-48 overflow-y-auto rounded-xl border p-2 grid grid-cols-1 sm:grid-cols-2 gap-2"
-            :class="isDark ? 'border-white/15 bg-black/90' : 'border-gray-200 bg-white'"
+            :class="'border-lx-border bg-lx-surface-elevated'"
           >
             <div
               v-for="tool in availableTools"
@@ -481,7 +481,7 @@ const {
                 'p-2.5 rounded-lg border transition-all cursor-pointer flex flex-col justify-between text-left',
                 agentForm.toolList.includes(tool.name)
                   ? (isDark ? 'bg-white/10 border-white/30 text-white text-glow-subtle' : 'bg-blue-50 border-blue-300 text-blue-900')
-                  : (isDark ? 'bg-white/[0.03] border-white/10 text-zinc-300 hover:border-white/30' : 'bg-gray-50/80 border-gray-200 text-gray-700 hover:border-gray-300')
+                  : (isDark ? 'bg-white/[0.03] border-lx-border-subtle text-zinc-300 hover:border-white/30' : 'bg-gray-50/80 border-lx-border-subtle text-gray-700 hover:border-gray-300')
               ]"
             >
               <div class="flex items-center justify-between gap-1">
@@ -507,7 +507,7 @@ const {
           </div>
         </div>
 
-        <div class="flex items-center justify-end gap-2 pt-2 border-t" :class="isDark ? 'border-white/10' : 'border-gray-200'">
+        <div class="flex items-center justify-end gap-2 pt-2 border-t" :class="'border-lx-border-subtle'">
           <button
             type="button"
             @click="cancelAgentForm"
