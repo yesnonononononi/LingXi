@@ -114,19 +114,47 @@ const isClassLike = (t) =>
  * @param {'dark'|'light'} mode 明暗模式
  * @returns {{colors: Array<{prop: string, value: string, cls: string, token: boolean}>, raw: string[]}} 颜色项（含是否令牌类）+ 非颜色类名
  */
+/**
+ * 变体前缀解析：`dark:hover:bg-white/10` → { variants: ['dark','hover'], base: 'bg-white/10' }。
+ *
+ * 为什么需要：dist 产物里**根本没有 `dark:` 变体类**（实测 keys 中 hover:/placeholder: 有，dark: 为空），
+ * 而 `isClassLike` 只认 `dark-` 不认 `dark:`，导致所有变体类既不进颜色组也不进字面量多重集——
+ * 删掉一个 `dark:text-zinc-400` 这种真实渲染变化，门禁会判「等价」。这里把变体剥掉后按基础类解析，
+ * 再由 `collect` 按「dark: 只暗态生效 + 覆盖同属性基础类」重建明暗有效集。
+ * @param {string} cls 原始类名
+ * @returns {{variants: string[], base: string}} 变体列表与基础类
+ */
+const splitVariant = (cls) => {
+  const i = cls.lastIndexOf(':');
+  if (i <= 0 || i === cls.length - 1) return { variants: [], base: cls };
+  return { variants: cls.slice(0, i).split(':'), base: cls.slice(i + 1) };
+};
+
 const collect = (ctx, lit, mode) => {
-  /** @type {Array<{prop: string, value: string, cls: string, token: boolean}>} */
+  /** @type {Array<{prop: string, value: string, cls: string, token: boolean, darkOnly: boolean}>} */
+  const entries = [];
   const colors = [];
   /** @type {string[]} */
   const raw = [];
   for (const cls of String(lit).split(/\s+/)) {
-    if (cls === '' || !isClassLike(cls)) continue;
-    const r = resolveClass(ctx, cls, mode);
+    if (cls === '') continue;
+    const { variants, base } = splitVariant(cls);
+    if (!isClassLike(base) && !isClassLike(cls)) continue;
+    const darkOnly = variants.includes('dark');
+    const r = resolveClass(ctx, base, mode) ?? resolveClass(ctx, cls, mode);
     if (!r || !parseRgba(r.value)) {
       raw.push(cls);
       continue;
     }
-    colors.push({ prop: r.prop, value: r.value, cls, token: TOKEN_CLASS_RE.test(cls) });
+    entries.push({ prop: r.prop, value: r.value, cls, token: TOKEN_CLASS_RE.test(base), darkOnly });
+  }
+  // 明暗有效集：`dark:` 变体只在暗态生效，且暗态覆盖同属性的基础类取值
+  // （这正是 `text-gray-500 dark:text-zinc-400` 的真实语义：亮取 gray-500、暗取 zinc-400）。
+  const darkOnlyProps = new Set(entries.filter((e) => e.darkOnly).map((e) => e.prop));
+  for (const e of entries) {
+    if (e.darkOnly && mode !== 'dark') continue;
+    if (!e.darkOnly && mode === 'dark' && darkOnlyProps.has(e.prop)) continue;
+    colors.push({ prop: e.prop, value: e.value, cls: e.cls, token: e.token });
   }
   return { colors, raw };
 };
@@ -154,7 +182,7 @@ const LITERAL_RE = /'([^'\\\n]{1,400})'|"([^"\\\n]{1,400})"/g;
  * @returns {void}
  */
 const scanText = (ctx, src, g, depth) => {
-  /** @type {Array<[number, number]>} 「属性值容器」区间（双引号命中且内容含单引号） */
+  /** @type {Array<[number, number]>}「属性值容器」区间（双引号命中且内容含单引号） */
   const containers = [];
   for (const m of src.matchAll(LITERAL_RE)) {
     if (m[1] === undefined && (m[2] ?? '').includes("'")) {
@@ -185,48 +213,24 @@ const scanText = (ctx, src, g, depth) => {
   for (const m of src.matchAll(LITERAL_RE)) {
     const start = m.index ?? 0;
     const content = m[1] ?? m[2] ?? '';
-    // 容器：向内再扫（`:class="'a b'"` 与 `:class="['a', isDark ? 'b' : 'c']"` 都走这里）
     if (m[1] === undefined && content.includes("'")) {
       if (depth < 3) scanText(ctx, content, g, depth + 1);
       continue;
     }
     if (inTernary(start, m[0].length)) continue;
+    // 统一模型：任何颜色贡献都按「明暗两态各自的生效值」归属，不再有「中性字面量要求暗亮同值」这一层。
+    // 理由：渲染等价 = 明态集合等价 且 暗态集合等价，这是唯一有意义的判据；
+    // 旧的中性模型既误杀令牌类（暗亮本就不同值），又看不见 dark: 变体（变体类根本没进候选集）。
     const d = collect(ctx, content, 'dark');
     const l = collect(ctx, content, 'light');
     g.raw.push(...d.raw);
     if (d.colors.length === 0 && l.colors.length === 0) continue;
     g.counters.neutral += 1;
-    const n = Math.max(d.colors.length, l.colors.length);
-    for (let i = 0; i < n; i += 1) {
-      const pick = d.colors[i] ?? l.colors[i];
-      // 令牌类（bg-lx-* / text-lx-* / border-lx-* / placeholder-lx-* …）是**主题相关**的：
-      // 产物里编译成 `var(--lx-*)`，明暗取值由 :root / html.light 提供（规格书 §0.1 实证）。
-      // 因此必须把暗侧真实值送进 dark 组、亮侧真实值送进 light 组，去和「改造前三元的各分支」配对，
-      // 而不能当成中性字面量比 —— 当成中性会要求「同一令牌暗亮同值」，任何合法改造都会被判漂移，
-      // 于是施工者只能写回 `isDark ? 'A' : 'A'` 这种自欺形态（门禁假绿 vs 代码腐化二选一）。
-      if (pick.token) {
-        const dv = d.colors[i]?.value;
-        const lv = l.colors[i]?.value;
-        if (dv !== undefined) g.dark.push({ prop: pick.prop, value: dv });
-        if (lv !== undefined) g.light.push({ prop: pick.prop, value: lv });
-        continue;
-      }
-      g.neutral.push({
-        prop: pick.prop,
-        d: d.colors[i]?.value ?? null,
-        l: l.colors[i]?.value ?? null
-      });
-    }
+    g.dark.push(...d.colors);
+    g.light.push(...l.colors);
   }
 };
 
-
-/**
- * 把一份 SFC 源码切成「三元双侧 / 中性字面量 / 字面量类多重集」三组。
- * @param {ReturnType<typeof loadThemeContext>} ctx 解析上下文
- * @param {string} source 源码文本
- * @returns {{dark: Array<{prop: string, value: string}>, light: Array<{prop: string, value: string}>, neutral: Array<{prop: string, d: string|null, l: string|null}>, raw: string[], unknown: string[], counters: {darkBranch: number, lightBranch: number, neutral: number}}}
- */
 const groupsOf = (ctx, source) => {
   /** @type {{dark: Array<{prop: string, value: string}>, light: Array<{prop: string, value: string}>, neutral: Array<{prop: string, d: string|null, l: string|null}>, raw: string[], unknown: string[], counters: {darkBranch: number, lightBranch: number, neutral: number}}} */
   const g = {
@@ -284,6 +288,18 @@ const near = (a, b) => closeAlpha(a, b) && rgbDelta(a, b) <= TOL.rgb;
  * @param {Array<{prop: string, value: string}>} B 新
  * @returns {string[]} 问题列表
  */
+/**
+ * 两个颜色项是否等价（容差只对「令牌 vs 产物」生效）：
+ * - 任一侧是令牌类 → 带容差：令牌值来自 tokens.css，产物值是 oklch 反算，高饱和色实测最大差 8/255；
+ * - 两侧都是普通产物类 → 严格相等：同一个 Tailwind 类的取值是确定的，容差只会掩盖真实漂移
+ *   （实测 `#9f9fa9`(zinc-400) 与 `#99a1af`(gray-400) 只差 6/255，被 8 的容差整条放过 = 漏检）。
+ * @param {{prop: string, value: string, token?: boolean}} a 左侧项
+ * @param {{prop: string, value: string, token?: boolean}} b 右侧项
+ * @returns {boolean} true = 等价
+ */
+const sameEntry = (a, b) =>
+  a.token || b.token ? near(a.value, b.value) : closeAlpha(a.value, b.value) && rgbDelta(a.value, b.value) === 0;
+
 const compareColorGroups = (label, A, B) => {
   /** @param {Array<{prop: string, value: string}>} list */
   const bucketize = (list) => {
@@ -315,7 +331,7 @@ const compareColorGroups = (label, A, B) => {
       continue;
     }
     for (let i = 0; i < la.length; i += 1) {
-      if (!near(la[i].value, lb[i].value)) {
+      if (!sameEntry(la[i], lb[i])) {
         problems.push(`[${label}] ${prop} 值漂移：旧 ${la[i].value} → 新 ${lb[i].value}`);
       }
     }
@@ -954,7 +970,25 @@ const selftest = (ctx) => {
   check('非颜色类改动 → 报字面量差异', compareRaw(g3.raw, g4.raw).length > 0, JSON.stringify(compareRaw(g3.raw, g4.raw)));
 
   // alpha 差异必须能抓到（不能因为只看 RGB 就放过半透明变化）
-  const a1 = groupsOf(ctx, "const c = isDark ? 'bg-white/10' : 'bg-white'");
+    // ---- dark: 变体通道（2026-10-21 新增）----
+  // 历史盲区：变体类（dark:/hover:/focus:）根本进不了候选集，删掉一个 dark:text-zinc-400 也判「等价」。
+  // 下面 5 条锁死新模型：折叠成令牌类必须绿，删/改变体必须红，近色不得被容差放过。
+  const eqPair = (a, b) => {
+    const ga = groupsOf(ctx, a);
+    const gb = groupsOf(ctx, b);
+    return [
+      compareColorGroups('dark', ga.dark, gb.dark),
+      compareColorGroups('light', ga.light, gb.light),
+      compareRaw(ga.raw, gb.raw)
+    ].every((x) => x.length === 0);
+  };
+  check('dark: 通道折叠成令牌类 → 判等绿', eqPair("const c = 'text-gray-500 dark:text-zinc-400'", "const c = 'text-lx-muted'"));
+  check('删掉 dark: 变体 → 必红', !eqPair("const c = 'text-gray-500 dark:text-zinc-400'", "const c = 'text-gray-500'"));
+  check('dark: 变体改值 → 必红', !eqPair("const c = 'text-gray-500 dark:text-zinc-400'", "const c = 'text-gray-500 dark:text-zinc-500'"));
+  check('状态变体 hover: 改值 → 必红', !eqPair("const c = 'hover:bg-black/5'", "const c = 'hover:bg-black/10'"));
+  check('近色不得被容差放过（zinc-400 vs gray-400，差 6/255）', !eqPair("const c = 'text-gray-400 dark:text-zinc-400'", "const c = 'text-gray-400'"));
+
+const a1 = groupsOf(ctx, "const c = isDark ? 'bg-white/10' : 'bg-white'");
   const a2 = groupsOf(ctx, "const c = isDark ? 'bg-white' : 'bg-white'");
   check('alpha 变化 → 报漂移', compareColorGroups('dark', a1.dark, a2.dark).length > 0);
 
