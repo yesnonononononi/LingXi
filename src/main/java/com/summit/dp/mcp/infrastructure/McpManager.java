@@ -28,6 +28,8 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * MCP 暂不进入工作区沙箱，请求统一复用进程级连接。
@@ -42,6 +44,10 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
     private final McpConfigAssembler assembler;
     private final McpClientFactory clientFactory;
     private final Map<Long, PooledSession> sessions = new ConcurrentSkipListMap<>();
+    // 每个 id 一把锁：注册是 I/O 密集的，共用一把锁会让卡住的 server 把整批排队拖死。
+    private final Map<Long, Object> registrationLocks = new ConcurrentHashMap<>();
+    // 读锁=注册/移除并行，写锁=关闭整体排除，避免连接在关闭过程中被发布出去。
+    private final ReadWriteLock lifecycle = new ReentrantReadWriteLock();
     private final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
 
     @PostConstruct
@@ -82,9 +88,20 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
     }
 
     @Override
-    public synchronized void register(Long id) {
+    public void register(Long id) {
         throwIf(id == null, "MCP 配置标识不能为空");
-        // 串行同步时重新读取已保存配置，避免并发保存把旧配置重新发布。
+        lifecycle.readLock().lock();
+        try {
+            synchronized (resolveRegistrationLock(id)) {
+                registerLocked(id);
+            }
+        } finally {
+            lifecycle.readLock().unlock();
+        }
+    }
+
+    private void registerLocked(Long id) {
+        // 同 id 串行时重新读取已保存配置，避免并发保存把旧配置重新发布。
         Mcp model = repository.findById(id).orElse(null);
         if (model == null || !model.enabled()) {
             remove(id);
@@ -116,9 +133,22 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
     }
 
     @Override
-    public synchronized void remove(Long id) {
+    public void remove(Long id) {
         throwIf(id == null, "MCP 配置标识不能为空");
-        closeQuietly(sessions.remove(id));
+        lifecycle.readLock().lock();
+        try {
+            // 与 register 同锁：否则在途注册会把刚摘掉的连接又发布回来，留下没人管的子进程。
+            synchronized (resolveRegistrationLock(id)) {
+                closeQuietly(sessions.remove(id));
+            }
+        } finally {
+            lifecycle.readLock().unlock();
+        }
+    }
+
+    /** 同一 id 的注册与移除共用一把锁，不同 id 之间互不阻塞。 */
+    private Object resolveRegistrationLock(Long id) {
+        return registrationLocks.computeIfAbsent(id, ignored -> new Object());
     }
 
     @Override
@@ -132,9 +162,15 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
     }
 
     @PreDestroy
-    public synchronized void close() {
-        sessions.values().forEach(this::closeQuietly);
-        sessions.clear();
+    public void close() {
+        // 写锁排除在途注册：否则刚建好的连接会逃过这次关闭，子进程变成孤儿。
+        lifecycle.writeLock().lock();
+        try {
+            sessions.values().forEach(this::closeQuietly);
+            sessions.clear();
+        } finally {
+            lifecycle.writeLock().unlock();
+        }
     }
 
     private void closeQuietly(McpSession session) {

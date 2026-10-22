@@ -199,6 +199,38 @@ class McpManagerTest {
     }
 
     @Test
+    void slowRegistrationOfOneServerDoesNotBlockAnother() throws Exception {
+        Mcp slow = model(1L, "slow");
+        Mcp fast = model(2L, "fast");
+        McpClient slowClient = client(slow, "slow_tool");
+        client(fast, "fast_tool");
+        CountDownLatch slowEntered = new CountDownLatch(1);
+        CountDownLatch releaseSlow = new CountDownLatch(1);
+        when(factory.create(eq("slow"), any())).thenAnswer(invocation -> {
+            slowEntered.countDown();
+            assertTrue(releaseSlow.await(10, TimeUnit.SECONDS));
+            return slowClient;
+        });
+
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<?> slowRegistration = executor.submit(() -> manager.register(1L));
+            assertTrue(slowEntered.await(2, TimeUnit.SECONDS));
+            Future<?> fastRegistration = executor.submit(() -> manager.register(2L));
+            try {
+                // 一个 server 卡在连接上时，另一个必须能自己连完，不能被同一把锁挡在后面。
+                fastRegistration.get(2, TimeUnit.SECONDS);
+            } finally {
+                releaseSlow.countDown();
+            }
+            slowRegistration.get(5, TimeUnit.SECONDS);
+        }
+        try (McpToolScope scope = manager.openScope(config(slow, fast))) {
+            assertTrue(scope.serverNames().containsAll(List.of("slow", "fast")));
+        }
+        manager.close();
+    }
+
+    @Test
     void slowRegistrationDoesNotBlockRequestScope() throws Exception {
         Mcp ready = model(1L, "ready");
         client(ready, "ready_tool");
