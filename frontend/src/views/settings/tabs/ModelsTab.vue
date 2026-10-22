@@ -155,7 +155,7 @@ const addRowClass = computed(() => [
         </button>
       </div>
 
-      <div v-if="isModelLoading" class="py-8 text-center text-xs" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">
+      <div v-if="isModelLoading" class="py-8 text-center text-xs text-lx-disabled">
         {{ t('settings.models.loading') }}
       </div>
 
@@ -173,8 +173,7 @@ const addRowClass = computed(() => [
       <div v-else class="space-y-3">
         <div
           v-if="catalogGroups.length === 0"
-          class="py-12 text-center text-xs border border-dashed rounded-2xl"
-          :class="isDark ? 'border-white/10 text-zinc-500' : 'border-gray-200 text-gray-400'"
+          class="py-12 text-center text-xs border border-dashed rounded-2xl border-lx-border-subtle text-lx-disabled"
         >
           {{ t('settings.models.empty') }}
         </div>
@@ -216,11 +215,11 @@ const addRowClass = computed(() => [
               class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl"
               :class="isDark ? 'hover:bg-white/[0.06]' : 'hover:bg-white'"
             >
-              <span class="text-xs truncate" :class="isDark ? 'text-zinc-200' : 'text-gray-700'">
+              <span class="text-xs truncate text-lx-secondary">
                 {{ item.modelName || t('settings.models.unnamed') }}
               </span>
               <div class="flex items-center gap-1.5 shrink-0">
-                <button type="button" class="text-[11px] px-2 py-0.5 rounded-md transition cursor-pointer" :class="isDark ? 'text-zinc-400 hover:text-white hover:bg-white/10' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'" @click="startEditModel(item)">
+                <button type="button" class="text-[11px] px-2 py-0.5 rounded-md transition cursor-pointer text-lx-muted hover:text-lx-primary hover:bg-lx-surface-selected" @click="startEditModel(item)">
                   {{ t('common.edit') }}
                 </button>
                 <button type="button" class="text-[11px] px-2 py-0.5 rounded-md transition cursor-pointer" :class="isDark ? 'text-rose-400 hover:text-rose-300 hover:bg-rose-500/10' : 'text-red-500 hover:text-red-600 hover:bg-red-50'" @click="handleDeleteModel(item)">
@@ -229,7 +228,7 @@ const addRowClass = computed(() => [
               </div>
             </div>
 
-            <div v-if="group.models.length === 0" class="px-2.5 py-1.5 text-[11px]" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">
+            <div v-if="group.models.length === 0" class="px-2.5 py-1.5 text-[11px] text-lx-disabled">
               {{ t('settings.models.emptyGroup') }}
             </div>
 
@@ -258,7 +257,7 @@ const addRowClass = computed(() => [
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <h4 class="text-sm font-bold tracking-tight text-gray-900 dark:text-white">
+          <h4 class="text-sm font-bold tracking-tight text-lx-primary">
             {{ providerForm.id !== null ? t('settings.models.editProviderHeading') : t('settings.models.addProviderHeading') }}
           </h4>
         </div>
@@ -277,7 +276,7 @@ const addRowClass = computed(() => [
         <div>
           <label for="provider-base-url" :class="labelClass">{{ t('settings.models.baseUrlLabel') }} <span class="text-red-500">*</span></label>
           <input id="provider-base-url" v-model="providerForm.baseUrl" :placeholder="t('settings.models.baseUrlPlaceholder')" :class="fieldClass" />
-          <p class="mt-1 text-[11px]" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">{{ importCopy.urlHelp }}</p>
+          <p class="mt-1 text-[11px] text-lx-disabled">{{ importCopy.urlHelp }}</p>
         </div>
 
         <div>
@@ -295,7 +294,7 @@ const addRowClass = computed(() => [
               :size="24"
             />
           </div>
-          <p class="mt-1 text-[11px]" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">
+          <p class="mt-1 text-[11px] text-lx-disabled">
             {{ t('settings.models.providerIconHelp') }}
           </p>
         </div>
@@ -322,7 +321,7 @@ const addRowClass = computed(() => [
               </svg>
             </button>
           </div>
-          <p class="mt-1 text-[11px]" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">
+          <p class="mt-1 text-[11px] text-lx-disabled">
             {{ importCopy.keyHelp }}
           </p>
         </div>
@@ -367,7 +366,7 @@ const addRowClass = computed(() => [
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <h4 class="text-sm font-bold tracking-tight text-gray-900 dark:text-white">
+          <h4 class="text-sm font-bold tracking-tight text-lx-primary">
             {{ modelForm.id !== null ? t('settings.models.editHeading') : t('settings.models.addModelHeading') }}
           </h4>
         </div>
@@ -393,7 +392,7 @@ const addRowClass = computed(() => [
               </svg>
             </template>
           </DropUpSelect>
-          <p class="mt-1 text-[11px]" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">
+          <p class="mt-1 text-[11px] text-lx-disabled">
             {{ t('settings.models.providerSelectHelp') }}
           </p>
         </div>
@@ -431,7 +430,7 @@ const addRowClass = computed(() => [
                 isDark ? 'bg-black/95 border-white/20 text-zinc-100' : 'bg-white border-gray-200 text-gray-700'
               ]"
             >
-              <div class="p-2 border-b" :class="isDark ? 'border-white/10' : 'border-gray-100'">
+              <div class="p-2 border-b border-lx-border-faint">
                 <input
                   v-model="remoteModelSearch"
                   :placeholder="t('settings.models.searchModels')"
@@ -461,7 +460,7 @@ const addRowClass = computed(() => [
                     'px-3 py-1.5 cursor-pointer flex items-center justify-between transition',
                     modelForm.modelName === item.id
                       ? (isDark ? 'text-sky-400 font-medium bg-white/10' : 'text-blue-500 font-medium bg-blue-50/50')
-                      : (isDark ? 'text-zinc-200 hover:bg-white/10' : 'text-gray-700 hover:bg-gray-100')
+                      : 'text-lx-secondary hover:bg-lx-surface-selected'
                   ]"
                 >
                   <div class="font-mono text-xs truncate">{{ item.id }}</div>
@@ -488,10 +487,10 @@ const addRowClass = computed(() => [
           >
             <input v-model="modelForm.useProviderApiKey" type="checkbox" class="mt-0.5 accent-blue-600" />
             <span class="min-w-0">
-              <span class="block text-xs font-medium" :class="isDark ? 'text-zinc-200' : 'text-gray-700'">
+              <span class="block text-xs font-medium text-lx-secondary">
                 {{ t('settings.models.useProviderApiKeyLabel') }}
               </span>
-              <span class="block text-[11px] mt-0.5" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">
+              <span class="block text-[11px] mt-0.5 text-lx-disabled">
                 {{ t('settings.models.useProviderApiKeyHelp') }}
               </span>
             </span>
