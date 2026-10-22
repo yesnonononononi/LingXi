@@ -7,12 +7,15 @@ import ModelVisionField from '../../../components/model/ModelVisionField.vue';
 import ProviderIcon from '../../../components/model/ProviderIcon.vue';
 import DropUpSelect from '../../../components/common/DropUpSelect.vue';
 import type { SelectOption } from '../../../types/ui';
+import BatchModelsForm from './BatchModelsForm.vue';
+import { useModelImportCopy } from './useModelImportCopy';
 
 const props = defineProps<{
   isDark?: boolean;
 }>();
 
 const { t } = useI18n();
+const importCopy = useModelImportCopy();
 const { isDark: globalIsDark } = useTheme();
 const isDark = computed(() => props.isDark ?? globalIsDark.value);
 
@@ -31,6 +34,10 @@ const {
   modelToast,
   providerForm,
   providerFormError,
+  batchProvider,
+  batchExistingNames,
+  startBatchModels,
+  refreshAfterChange,
   modelForm,
   modelFormError,
   isFetchingRemoteModels,
@@ -186,6 +193,9 @@ const addRowClass = computed(() => [
               >{{ t('settings.models.providerModels', { count: group.modelCount }) }}</span>
             </div>
             <div v-if="group.providerConfigId" class="flex items-center gap-2 shrink-0">
+              <button type="button" :class="ghostBtnClass" @click="startBatchModels(group.providerConfigId)">
+                {{ importCopy.batch }}
+              </button>
               <button type="button" :class="ghostBtnClass" @click="editProviderOfGroup(group.providerConfigId)">
                 {{ t('common.edit') }}
               </button>
@@ -256,9 +266,18 @@ const addRowClass = computed(() => [
       </div>
 
       <div class="space-y-3">
+        <div v-if="providerForm.id === null" class="flex items-center gap-3 text-xs text-gray-400" aria-label="steps">
+          <span class="text-blue-600 dark:text-sky-400">1 · {{ importCopy.connection }}</span><span>→</span><span>2 · {{ importCopy.selection }}</span>
+        </div>
         <div>
           <label :class="labelClass">{{ t('settings.models.providerNameLabel') }} <span class="text-red-500">*</span></label>
-          <input v-model="providerForm.name" :placeholder="t('settings.models.providerNamePlaceholder')" :class="fieldClass" />
+          <input v-model="providerForm.name" data-testid="provider-name" :placeholder="t('settings.models.providerNamePlaceholder')" :class="fieldClass" />
+        </div>
+
+        <div>
+          <label for="provider-base-url" :class="labelClass">{{ t('settings.models.baseUrlLabel') }} <span class="text-red-500">*</span></label>
+          <input id="provider-base-url" v-model="providerForm.baseUrl" :placeholder="t('settings.models.baseUrlPlaceholder')" :class="fieldClass" />
+          <p class="mt-1 text-[11px]" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">{{ importCopy.urlHelp }}</p>
         </div>
 
         <div>
@@ -286,6 +305,7 @@ const addRowClass = computed(() => [
           <div class="relative">
             <input
               v-model="providerForm.apiKey"
+              data-testid="provider-api-key"
               :type="showApiKey ? 'text' : 'password'"
               :placeholder="providerForm.id !== null ? t('settings.models.apiKeyEditPlaceholder') : t('settings.models.providerApiKeyPlaceholder')"
               :class="[fieldClass, 'pr-10']"
@@ -303,7 +323,7 @@ const addRowClass = computed(() => [
             </button>
           </div>
           <p class="mt-1 text-[11px]" :class="isDark ? 'text-zinc-500' : 'text-gray-400'">
-            {{ t('settings.models.providerApiKeyHelp') }}
+            {{ importCopy.keyHelp }}
           </p>
         </div>
 
@@ -319,13 +339,22 @@ const addRowClass = computed(() => [
           class="px-5 py-1.5 rounded-xl text-xs font-medium text-white transition cursor-pointer"
           :class="isSubmitting ? 'bg-blue-400 cursor-not-allowed' : (isDark ? 'bg-sky-600 hover:bg-sky-500' : 'bg-blue-600 hover:bg-blue-500 shadow-sm')"
         >
-          {{ isSubmitting ? t('common.saving') : t('common.save') }}
+          {{ isSubmitting ? t('common.saving') : providerForm.id === null ? importCopy.next : t('common.save') }}
         </button>
       </div>
     </div>
 
     <!-- ============================ 模型表单 ============================ -->
-    <div v-else class="space-y-4">
+    <BatchModelsForm v-else-if="mode === 'batch-form' && batchProvider" :key="batchProvider.id"
+      :provider="batchProvider" :existing-names="batchExistingNames" :is-dark="isDark"
+      @back="cancelForm" @edit="startEditProvider(batchProvider)" @updated="refreshAfterChange" />
+
+    <div v-else-if="mode === 'batch-form'" class="space-y-3 text-xs" role="alert">
+      <p>{{ t('settings.models.errLoadConfig') }}</p>
+      <button type="button" :class="ghostBtnClass" @click="cancelForm">{{ importCopy.back }}</button>
+    </div>
+
+    <div v-else-if="mode === 'model-form'" class="space-y-4">
       <div class="flex items-center justify-between pb-1 border-b border-gray-100 dark:border-gray-800">
         <div class="flex items-center gap-2">
           <button

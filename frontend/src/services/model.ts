@@ -4,6 +4,9 @@ import type { PageResult, ModelConfigVO, ModelConfigPayload, ProviderModelGroupV
 
 /** 2. 模型配置 API (对应后端 ModelController) */
 export class ModelAPI {
+  static async batchAdd(data: { providerConfigId: string | number; modelNames: string[]; vision: boolean }): Promise<Result<{ addedCount: number; skippedNames: string[] }>> {
+    return http.post('/model/batch/add', data);
+  }
   static async update(data: ModelConfigPayload): Promise<Result<void>> {
     return http.post<any, Result<void>>('/model/update', data);
   }

@@ -52,6 +52,7 @@
     "app:release": "node scripts/release-guard.mjs",
     "test:chat-images": "npx tsx --test tests/chatImages.test.ts",
     "test:model-vision:ui": "electron tests/modelVision.smoke.cjs",
+    "test:provider-models:ui": "electron tests/providerModelImport.smoke.cjs",
     "test:chat-images:ui": "electron tests/chatImages.smoke.cjs",
     "test:read-images:ui": "electron tests/readImageTools.smoke.cjs",
     "test:approval-groups:ui": "electron tests/commandApprovalGroup.smoke.cjs",

@@ -7,19 +7,18 @@ import type {
   OpenAIModelItem,
 } from '../../../types/chat';
 import { isOk } from '../../../utils/api';
-import { extractOpenAIError, parseOpenAIModelList } from '../../../utils/openaiModels';
+import { useModelImportCopy } from './useModelImportCopy';
 import { useConfirm } from '../../../composables/useConfirm';
 import { useI18n } from '../../../i18n';
 
-/** 设置页「模型」tab 的三种视图：列表 / 提供商表单 / 模型表单。 */
-export type ModelsTabMode = 'list' | 'provider-form' | 'model-form';
+export type ModelsTabMode = 'list' | 'provider-form' | 'model-form' | 'batch-form';
 
-/** 提供商只要三样：名称、图标 URL、通用 API Key（Base URL 由模型自己填）。 */
 interface ProviderForm {
   id: string | number | null;
   name: string;
   icon: string;
   apiKey: string;
+  baseUrl: string;
 }
 
 interface ModelForm {
@@ -35,6 +34,7 @@ interface ModelForm {
 
 export function useModelsTab(emit: (e: 'modelUpdated') => void) {
   const { t } = useI18n();
+  const importCopy = useModelImportCopy();
   const { confirm } = useConfirm();
 
   const catalogGroups = ref<ProviderModelGroupVO[]>([]);
@@ -51,9 +51,18 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
   const providerFormError = ref('');
   const modelForm = ref<ModelForm>(emptyModelForm());
   const modelFormError = ref('');
+  const batchProviderId = ref<string | number | null>(null);
+  const batchProvider = computed(() => providers.value.find(provider => String(provider.id) === String(batchProviderId.value)));
+  const batchExistingNames = computed(() => catalogGroups.value
+    .find(group => String(group.providerConfigId) === String(batchProviderId.value))?.models.map(model => model.modelName ?? '') ?? []);
+
+  const startBatchModels = (id: string | number) => {
+    batchProviderId.value = id;
+    mode.value = 'batch-form';
+  };
 
   function emptyProviderForm(): ProviderForm {
-    return { id: null, name: '', icon: '', apiKey: '' };
+    return { id: null, name: '', icon: '', apiKey: '', baseUrl: '' };
   }
 
   function emptyModelForm(): ModelForm {
@@ -108,7 +117,6 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
 
   // ---------------------------------------------------------------- 提供商
 
-  /** 只有一个入口：名称 / 图标 URL / 通用 API Key 全部由用户填写，不再套内置预设。 */
   const startAddProvider = () => {
     providerForm.value = emptyProviderForm();
     providerFormError.value = '';
@@ -122,6 +130,7 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
       name: provider.name ?? '',
       icon: provider.icon ?? '',
       apiKey: '',
+      baseUrl: provider.baseUrl ?? '',
     };
     providerFormError.value = '';
     showApiKey.value = false;
@@ -135,10 +144,19 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
       providerFormError.value = t('settings.models.errProviderNameRequired');
       return;
     }
+    if (form.id === null && !form.baseUrl.trim()) {
+      providerFormError.value = t('settings.models.errBaseUrlRequired');
+      return;
+    }
+    if (form.id === null && !form.apiKey.trim()) {
+      providerFormError.value = t('settings.models.errApiKeyRequired');
+      return;
+    }
     isSubmitting.value = true;
     try {
       const payload = {
         name: form.name.trim(),
+        baseUrl: form.baseUrl.trim(),
         // 始终回传：空串表示清除图标（后端把 blank 归一成 null），传 null 会被判为「不修改」。
         icon: form.icon.trim(),
         apiKey: form.apiKey.trim() || undefined,
@@ -150,8 +168,14 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
         showModelToast(form.id === null
           ? t('settings.models.toastProviderAdded')
           : t('settings.models.toastProviderUpdated'));
-        mode.value = 'list';
+        if (form.id === null && typeof res.data !== 'string') {
+          providerFormError.value = t('settings.models.errSave');
+          return;
+        }
+        const createdId = form.id === null ? res.data : null;
         await refreshAfterChange();
+        if (typeof createdId === 'string') startBatchModels(createdId);
+        else mode.value = 'list';
       } else {
         providerFormError.value = res.errMsg || t('settings.models.errSave');
       }
@@ -349,51 +373,26 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
       return;
     }
 
-    const base = modelForm.value.baseUrl.trim();
-    const url = base.replace(/\/+$/, '') + '/models';
-
     isFetchingRemoteModels.value = true;
     fetchRemoteModelError.value = '';
     isRemoteModelDropdownOpen.value = true;
     remoteModelSearch.value = '';
 
     try {
-      const headers: Record<string, string> = {
-        'Accept': 'application/json'
-      };
-      const key = modelForm.value.apiKey?.trim();
-      if (key) {
-        headers['Authorization'] = `Bearer ${key}`;
-        headers['apikey'] = key;
-        headers['api-key'] = key;
-      }
-
-      const res = await fetch(url, {
-        method: 'GET',
-        headers
+      const res = await ProviderAPI.discoverModels({
+        providerConfigId: modelForm.value.useProviderApiKey ? modelForm.value.providerConfigId ?? undefined : undefined,
+        baseUrl: modelForm.value.baseUrl.trim(),
+        apiKey: modelForm.value.apiKey.trim() || undefined,
       });
-
-      if (!res.ok) {
-        let errJson: unknown = null;
-        try {
-          errJson = await res.json();
-        } catch (err) {
-          console.warn('[fetchRemoteModels] 错误响应体不是合法 JSON:', err);
-        }
-        throw new Error(extractOpenAIError(errJson, `HTTP ${res.status}: ${res.statusText}`));
-      }
-
-      const json = await res.json();
-      // 各厂商 /v1/models 响应结构不一致（外部契约），解析收敛到 utils/openaiModels
-      const validItems: OpenAIModelItem[] = parseOpenAIModelList(json);
+      if (!isOk(res.code) || !res.data) throw new Error('模型发现失败');
+      const validItems: OpenAIModelItem[] = res.data;
 
       remoteModelList.value = validItems;
       if (validItems.length === 0) {
         fetchRemoteModelError.value = t('settings.models.errNoRemote');
       }
-    } catch (err: any) {
-      console.error('获取模型列表失败:', err);
-      fetchRemoteModelError.value = err.message || t('settings.models.errFetchRemote');
+    } catch {
+      fetchRemoteModelError.value = importCopy.value.failureHint;
     } finally {
       isFetchingRemoteModels.value = false;
     }
@@ -433,6 +432,10 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
     modelToast,
     providerForm,
     providerFormError,
+    batchProvider,
+    batchExistingNames,
+    startBatchModels,
+    refreshAfterChange,
     modelForm,
     modelFormError,
     isFetchingRemoteModels,

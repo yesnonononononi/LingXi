@@ -13,8 +13,12 @@ export class ProviderAPI {
     return http.get<any, Result<ProviderConfigVO[]>>('/provider/list');
   }
 
-  static async add(data: ProviderConfigPayload): Promise<Result<void>> {
-    return http.post<any, Result<void>>('/provider/add', data);
+  static async add(data: ProviderConfigPayload): Promise<Result<string>> {
+    return http.post<any, Result<string>>('/provider/add', data);
+  }
+
+  static async discoverModels(data: { providerConfigId?: string | number; baseUrl?: string; apiKey?: string }): Promise<Result<{ id: string }[]>> {
+    return http.post('/provider/models/discover', data, { timeout: 20000 });
   }
 
   static async update(data: ProviderConfigPayload): Promise<Result<void>> {
