@@ -239,14 +239,26 @@ export class PageSession {
   }
 
   /**
-   * 导航并等待 load 事件。
+   * 导航并等待页面就绪。
+   *
+   * 以 {@code Page.loadEventFired} 为主信号，但它存在两类天然不可靠：一是事件在
+   * {@code Page.navigate} 返回前就已回放（竞态），二是缓存命中时事件可能不再重放。
+   * 因此该事件超时只降级为「轮询 document.readyState」，不直接判失败——就绪判定
+   * 的真正依据始终是调用方随后的显式等待（如 waitForReady 的应用渲染断言）。
    *
    * @param {string} url 目标地址。
    */
   async navigate(url) {
-    const loaded = this.waitEvent('Page.loadEventFired', 40000);
+    const loaded = this.waitEvent('Page.loadEventFired', 40000).then(() => true, () => false);
     await this.send('Page.navigate', { url });
-    await loaded;
+    if (await loaded) return;
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline) {
+      const state = await this.evaluate('document.readyState');
+      if (state === 'complete' || state === 'interactive') return;
+      await new Promise(resolve => { setTimeout(resolve, 200); });
+    }
+    throw new Error(`导航后页面始终未就绪：${url}`);
   }
 
   /**
