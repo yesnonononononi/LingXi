@@ -112,10 +112,10 @@ const isClassLike = (t) =>
  * @param {ReturnType<typeof loadThemeContext>} ctx 解析上下文
  * @param {string} lit 字面量内容（如 `text-zinc-400 flex` ）
  * @param {'dark'|'light'} mode 明暗模式
- * @returns {{colors: Array<{prop: string, value: string}>, raw: string[]}} 颜色项 + 非颜色类名
+ * @returns {{colors: Array<{prop: string, value: string, cls: string, token: boolean}>, raw: string[]}} 颜色项（含是否令牌类）+ 非颜色类名
  */
 const collect = (ctx, lit, mode) => {
-  /** @type {Array<{prop: string, value: string}>} */
+  /** @type {Array<{prop: string, value: string, cls: string, token: boolean}>} */
   const colors = [];
   /** @type {string[]} */
   const raw = [];
@@ -126,31 +126,52 @@ const collect = (ctx, lit, mode) => {
       raw.push(cls);
       continue;
     }
-    colors.push({ prop: r.prop, value: r.value });
+    colors.push({ prop: r.prop, value: r.value, cls, token: TOKEN_CLASS_RE.test(cls) });
   }
   return { colors, raw };
 };
 
+/** 三元配对（暗侧/亮侧各一个单引号字面量） */
+const TERNARY_RE = /\?\s*'([^'\\\n]*)'\s*:\s*'([^'\\\n]*)'/g;
+/** 字符串字面量：单引号优先，其次双引号（属性值也是「字符串字面量」，与 class='...' 同权） */
+const LITERAL_RE = /'([^'\\\n]{1,400})'|"([^"\\\n]{1,400})"/g;
+
 /**
- * 把一份 SFC 源码切成「三元双侧 / 中性字面量 / 字面量类多重集」三组。
+ * 扫一段源码文本，把三元分支 / 中性字面量 / 字面量类分别累积进分组结果。
+ *
+ * 关键点（都是踩过的坑）：
+ *   1. **属性值容器**：`:class="isDark ? 'a' : 'b'"` 会被双引号分支整体命中，内容里既有单引号又有三元。
+ *      直接当字面量 split 会产出 `text-zinc-400'` 这类**带引号的幽灵类名**（假漂移噪音），
+ *      而且要是在本层跳过整段，就会连 `['text-xs', …]` 里的 `text-xs` 一起看不见（漏检）。
+ *      所以：内容含单引号的双引号命中一律视为**容器**，只向内递归一层，本层不重复计。
+ *   2. 同一份文本里，落在容器内的三元由递归负责计数，本层必须跳过，否则双重计数。
+ *   3. 令牌类必须按「主题相关」处理：暗侧值进 dark 组、亮侧值进 light 组（详见下方注释）。
+ *
  * @param {ReturnType<typeof loadThemeContext>} ctx 解析上下文
- * @param {string} source 源码文本
- * @returns {{dark: Array<{prop: string, value: string}>, light: Array<{prop: string, value: string}>, neutral: Array<{prop: string, d: string|null, l: string|null}>, raw: string[], unknown: string[], counters: {darkBranch: number, lightBranch: number, neutral: number}}}
+ * @param {string} src 待扫文本
+ * @param {{dark: Array<{prop: string, value: string}>, light: Array<{prop: string, value: string}>, neutral: Array<{prop: string, d: string|null, l: string|null}>, raw: string[], counters: {darkBranch: number, lightBranch: number, neutral: number}}} g 累积目标
+ * @param {number} depth 递归深度（容器最多再进 3 层，防止病态嵌套）
+ * @returns {void}
  */
-const groupsOf = (ctx, source) => {
-  const src = String(source);
-  const g = {
-    dark: [],
-    light: [],
-    neutral: [],
-    raw: [],
-    unknown: [],
-    counters: { darkBranch: 0, lightBranch: 0, neutral: 0 }
-  };
-  /** @type {Array<[number, number]>} 已归属三元的区间，避免同一串被重复计入中性层 */
+const scanText = (ctx, src, g, depth) => {
+  /** @type {Array<[number, number]>} 「属性值容器」区间（双引号命中且内容含单引号） */
+  const containers = [];
+  for (const m of src.matchAll(LITERAL_RE)) {
+    if (m[1] === undefined && (m[2] ?? '').includes("'")) {
+      const start = m.index ?? 0;
+      containers.push([start, start + m[0].length]);
+    }
+  }
+  const withinContainers = (start, len) =>
+    containers.some(([s, e]) => start >= s && start + len <= e);
+
+  /** @type {Array<[number, number]>} 本层已归属三元的区间 */
   const consumed = [];
-  for (const m of src.matchAll(/\?\s*'([^'\\\n]*)'\s*:\s*'([^'\\\n]*)'/g)) {
-    consumed.push([m.index ?? 0, (m.index ?? 0) + m[0].length]);
+  for (const m of src.matchAll(TERNARY_RE)) {
+    const start = m.index ?? 0;
+    const len = m[0].length;
+    if (withinContainers(start, len)) continue; // 交给递归计，避免双重计数
+    consumed.push([start, start + len]);
     const d = collect(ctx, m[1], 'dark');
     const l = collect(ctx, m[2], 'light');
     g.dark.push(...d.colors);
@@ -159,19 +180,37 @@ const groupsOf = (ctx, source) => {
     if (d.colors.length > 0) g.counters.darkBranch += 1;
     if (l.colors.length > 0) g.counters.lightBranch += 1;
   }
-  const inside = (i) => consumed.some(([s, e]) => i >= s && i < e);
+  const inTernary = (start, len) => consumed.some(([s, e]) => start < e && start + len > s);
 
-  for (const m of src.matchAll(/'([^'\\\n]{1,400})'|"([^"\\\n]{1,400})"/g)) {
-    if (inside(m.index ?? 0)) continue;
-    const lit = m[1] ?? m[2] ?? '';
-    const d = collect(ctx, lit, 'dark');
-    const l = collect(ctx, lit, 'light');
+  for (const m of src.matchAll(LITERAL_RE)) {
+    const start = m.index ?? 0;
+    const content = m[1] ?? m[2] ?? '';
+    // 容器：向内再扫（`:class="'a b'"` 与 `:class="['a', isDark ? 'b' : 'c']"` 都走这里）
+    if (m[1] === undefined && content.includes("'")) {
+      if (depth < 3) scanText(ctx, content, g, depth + 1);
+      continue;
+    }
+    if (inTernary(start, m[0].length)) continue;
+    const d = collect(ctx, content, 'dark');
+    const l = collect(ctx, content, 'light');
     g.raw.push(...d.raw);
     if (d.colors.length === 0 && l.colors.length === 0) continue;
     g.counters.neutral += 1;
     const n = Math.max(d.colors.length, l.colors.length);
     for (let i = 0; i < n; i += 1) {
       const pick = d.colors[i] ?? l.colors[i];
+      // 令牌类（bg-lx-* / text-lx-* / border-lx-* / placeholder-lx-* …）是**主题相关**的：
+      // 产物里编译成 `var(--lx-*)`，明暗取值由 :root / html.light 提供（规格书 §0.1 实证）。
+      // 因此必须把暗侧真实值送进 dark 组、亮侧真实值送进 light 组，去和「改造前三元的各分支」配对，
+      // 而不能当成中性字面量比 —— 当成中性会要求「同一令牌暗亮同值」，任何合法改造都会被判漂移，
+      // 于是施工者只能写回 `isDark ? 'A' : 'A'` 这种自欺形态（门禁假绿 vs 代码腐化二选一）。
+      if (pick.token) {
+        const dv = d.colors[i]?.value;
+        const lv = l.colors[i]?.value;
+        if (dv !== undefined) g.dark.push({ prop: pick.prop, value: dv });
+        if (lv !== undefined) g.light.push({ prop: pick.prop, value: lv });
+        continue;
+      }
       g.neutral.push({
         prop: pick.prop,
         d: d.colors[i]?.value ?? null,
@@ -179,7 +218,26 @@ const groupsOf = (ctx, source) => {
       });
     }
   }
+};
 
+
+/**
+ * 把一份 SFC 源码切成「三元双侧 / 中性字面量 / 字面量类多重集」三组。
+ * @param {ReturnType<typeof loadThemeContext>} ctx 解析上下文
+ * @param {string} source 源码文本
+ * @returns {{dark: Array<{prop: string, value: string}>, light: Array<{prop: string, value: string}>, neutral: Array<{prop: string, d: string|null, l: string|null}>, raw: string[], unknown: string[], counters: {darkBranch: number, lightBranch: number, neutral: number}}}
+ */
+const groupsOf = (ctx, source) => {
+  /** @type {{dark: Array<{prop: string, value: string}>, light: Array<{prop: string, value: string}>, neutral: Array<{prop: string, d: string|null, l: string|null}>, raw: string[], unknown: string[], counters: {darkBranch: number, lightBranch: number, neutral: number}}} */
+  const g = {
+    dark: [],
+    light: [],
+    neutral: [],
+    raw: [],
+    unknown: [],
+    counters: { darkBranch: 0, lightBranch: 0, neutral: 0 }
+  };
+  scanText(ctx, String(source), g, 0);
   // 第 1 层：命中令牌前缀却解析不到的，就是写错/不存在的令牌类
   g.unknown = [...new Set(g.raw)].filter((c) => TOKEN_CLASS_RE.test(c));
   return g;
@@ -922,6 +980,36 @@ const selftest = (ctx) => {
   check('令牌表改值 → 报令牌漂移', compareTokenTables(fakeBaseCtx, fakeCtx).length > 0, JSON.stringify(compareTokenTables(fakeBaseCtx, fakeCtx)));
   check('令牌表未改 → 零令牌漂移', compareTokenTables(fakeCtx, fakeCtx).length === 0);
 
+  // ---------- 第 4 层语义之外的模型自检：令牌类在「字面量」里也要被正确配对 ----------
+  // 背景：M3 的合法改造形态是「三元 → 单个令牌类字面量」（规格书 §2.5 例 1/2/4）。
+  // 令牌类编译成 var(--lx-*)，暗亮自动不同；若把它当中性字面量比，任何合法改造都会红，
+  // 自检必须同时证明「合法折叠判绿」与「折叠到错令牌/单侧不等值判红」，否则这个放宽就是新假绿。
+  const foldBase = "const c = isDark ? 'text-zinc-400' : 'text-gray-500'";
+  const foldOk = "const c = 'text-lx-muted'";
+  const foldBadToken = "const c = 'text-lx-tertiary'";
+  const foldBadLight = "const c = 'text-lx-muted'";
+  const foldOneSide = "const c = isDark ? 'text-zinc-400' : 'text-gray-400'";
+  const foldAttr = ':class="\'text-lx-muted\'"';
+  const foldAttrBase = ':class="isDark ? \'text-zinc-400\' : \'text-gray-500\'"';
+
+  /** @param {string} a @param {string} b */
+  const eqOf = (a, b) => {
+    const A = groupsOf(ctx, a);
+    const B = groupsOf(ctx, b);
+    return [
+      ...compareColorGroups('dark', A.dark, B.dark),
+      ...compareColorGroups('light', A.light, B.light),
+      ...compareNeutral(A.neutral, B.neutral),
+      ...compareRaw(A.raw, B.raw)
+    ];
+  };
+
+  check('三元 → 等价令牌类字面量：判等价', eqOf(foldBase, foldOk).length === 0, JSON.stringify(eqOf(foldBase, foldOk)));
+  check('三元 → 不等价令牌类字面量：必红', eqOf(foldBase, foldBadToken).length > 0, JSON.stringify(eqOf(foldBase, foldBadToken)));
+  check('同令牌但亮侧不等价：必红（防止整个模型无脑放绿）', eqOf(foldOneSide, foldBadLight).length > 0, JSON.stringify(eqOf(foldOneSide, foldBadLight)));
+  check(':class="\'...\'"（属性值内套单引号）也能取到类名', eqOf(foldAttrBase, foldAttr).length === 0, JSON.stringify(eqOf(foldAttrBase, foldAttr)));
+  check('带引号的幽灵类名不再进 raw（历史假漂移噪音）', groupsOf(ctx, foldAttrBase).raw.every((c) => !c.includes("'")), JSON.stringify(groupsOf(ctx, foldAttrBase).raw));
+
   // ---------- 第 4 层自检：归一化 + 容差 + 真值源结构 ----------
   check('归一化 rgba() ⇄ #rrggbb@a', normColor('rgba(255, 255, 255, 0.102)') === normColor('#ffffff1a'), normColor('rgba(255, 255, 255, 0.102)'));
   check('归一化 #rgb ⇄ #rrggbb', normColor('#fff') === '#ffffff', String(normColor('#fff')));
@@ -1101,3 +1189,4 @@ const main = () => {
 };
 
 process.exit(main());
+
