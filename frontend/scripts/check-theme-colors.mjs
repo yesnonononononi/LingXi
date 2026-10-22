@@ -10,7 +10,7 @@
  * 数据链路（缺一环就会误判）：
  *   组件类名 → dist 产物里的规则（`.text-lx-primary{color:var(--color-lx-primary)}`）
  *            → style.css 的 `@theme inline` 桥（`--color-lx-primary: var(--lx-text-primary)`）
- *            → tokens.css 的 `--lx-text-primary: #f4f4f5`（暗）/ `#18181b`（亮）
+ *            → tokens.css 的 `--lx-text-primary: #ffffff`（暗）/ `#101828`（亮）
  *
  * 三条硬结论（实测得来，别再重踩）：
  *   1) **alpha 必须参与判等**：曾丢掉 alpha，导致 `bg-white/10` 与纯白被判相等（假等价）。
@@ -511,7 +511,7 @@ const selftest = () => {
   const canvasLight = resolveClass(ctx, 'bg-lx-canvas', 'light');
   check('令牌链路 bg-lx-canvas（亮）', canvasLight !== null && canvasLight.value === '#ffffff', JSON.stringify(canvasLight));
   const primary = resolveClass(ctx, 'text-lx-primary', 'dark');
-  check('令牌链路 text-lx-primary（暗）', primary !== null && primary.value === '#f4f4f5', JSON.stringify(primary));
+  check('令牌链路 text-lx-primary（暗）', primary !== null && primary.value === '#ffffff', JSON.stringify(primary));
 
   // 写错的令牌名必须解析不到（Tailwind 不产出规则 = 等于没写，是静默失效）
   check('写错的令牌名解析不到', resolveClass(ctx, 'bg-lx-canvas-typo', 'dark') === null);
