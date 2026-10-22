@@ -76,8 +76,8 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
             List<String> names = client.listTools().stream().map(ToolSpecification::name).sorted().toList();
             return new McpConnectionVO(names.size(), names, (System.nanoTime() - started) / 1_000_000L);
         } catch (Exception failure) {
-            log.warn("测试 MCP 连接失败: name={}, error={}", server.name(), failure.getClass().getSimpleName());
-            throw new ClientException("MCP 连接测试失败，请检查服务地址、启动命令、凭据和超时设置");
+            log.warn("测试 MCP 连接失败: name={}", server.name(), failure);
+            throw new ClientException("MCP 连接测试失败，请检查服务地址、启动命令、凭据和超时设置", failure);
         }
     }
 
@@ -108,9 +108,10 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
         } catch (RuntimeException failure) {
             closeQuietly(candidate);
             remove(id);
-            log.warn("注册 MCP 连接失败: id={}, name={}, error={}", id, server.name(),
-                    failure.getMessage());
-            throw new ClientException("MCP 配置已保存，但连接或工具发现失败，请检查地址、启动命令、凭据和超时设置");
+            // 必须打全栈：真实原因（初始化超时、tools/list 失败）藏在 wrapper 的 cause 里，
+            // 只记 message 会得到一句固定的 "Failed to list the tools"，事后无从定位。
+            log.warn("注册 MCP 连接失败: id={}, name={}", id, server.name(), failure);
+            throw new ClientException("MCP 配置已保存，但连接或工具发现失败，请检查地址、启动命令、凭据和超时设置", failure);
         }
     }
 

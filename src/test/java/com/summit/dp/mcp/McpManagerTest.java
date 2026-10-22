@@ -139,6 +139,28 @@ class McpManagerTest {
         verify(brokenClient).close();
     }
 
+    /** 排查连接失败只能靠日志：异常链必须保住原始原因，同时文案不许泄露内部细节。 */
+    @Test
+    void discoveryFailureKeepsOriginalCauseForDiagnosis() {
+        Mcp model = model(1L, "first");
+        McpClient brokenClient = client(model, "inspect");
+        when(brokenClient.listTools()).thenThrow(new IllegalStateException("secret=do-not-expose"));
+
+        ClientException failure = assertThrows(ClientException.class, () -> manager.register(1L));
+
+        assertNotNull(failure.getCause());
+        assertEquals("secret=do-not-expose", rootCause(failure).getMessage());
+        assertFalse(failure.getMessage().contains("do-not-expose"));
+    }
+
+    private Throwable rootCause(Throwable failure) {
+        Throwable current = failure;
+        while (current.getCause() != null && current.getCause() != current) {
+            current = current.getCause();
+        }
+        return current;
+    }
+
     @Test
     void startupHandlesEmptyConfigurationAndSkipsUnreachableServer() {
         when(repository.findEnabled()).thenReturn(List.of());
