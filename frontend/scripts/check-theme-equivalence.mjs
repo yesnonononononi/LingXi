@@ -233,6 +233,23 @@ const scanText = (ctx, src, g, depth) => {
   }
 };
 
+/**
+ * CSS `@apply` 的函数体。
+ *
+ * 为什么需要：`@apply` 里的类不是字符串字面量，抽取器原本看不见，于是「样式块里的类」
+ * 无论怎么改都不会被等价门禁验证——这是个静默的验证黑洞（实测项目里有 2 处）。
+ * 把函数体提升成合成字面量后，它和模板里的 `class="..."` 走完全相同的判定路径。
+ */
+const APPLY_BODY_RE = /@apply\s+([^;{}'"`]+);/g;
+
+/**
+ * 把 `@apply` 函数体注入为字符串字面量（只保留类串，丢掉 `@apply` 与分号）。
+ *
+ * @param {string} src 源码文本
+ * @returns {string} 注入后的文本
+ */
+const injectApplyBodies = (src) => src.replace(APPLY_BODY_RE, (_whole, body) => `'${body.trim()}'`);
+
 const groupsOf = (ctx, source) => {
   /** @type {{dark: Array<{prop: string, value: string}>, light: Array<{prop: string, value: string}>, neutral: Array<{prop: string, d: string|null, l: string|null}>, raw: string[], unknown: string[], counters: {darkBranch: number, lightBranch: number, neutral: number}}} */
   const g = {
@@ -245,7 +262,7 @@ const groupsOf = (ctx, source) => {
     unknown: [],
     counters: { darkBranch: 0, lightBranch: 0, neutral: 0 }
   };
-  scanText(ctx, String(source), g, 0);
+  scanText(ctx, injectApplyBodies(String(source)), g, 0);
   // 第 1 层：命中令牌前缀却解析不到的，就是写错/不存在的令牌类
   g.raw = [...g.rawDark, ...g.rawLight];
   g.unknown = [...new Set(g.raw)].filter((c) => TOKEN_CLASS_RE.test(c));
@@ -1050,6 +1067,20 @@ const a1 = groupsOf(ctx, "const c = isDark ? 'bg-white/10' : 'bg-white'");
   check('同令牌但亮侧不等价：必红（防止整个模型无脑放绿）', eqOf(foldOneSide, foldBadLight).length > 0, JSON.stringify(eqOf(foldOneSide, foldBadLight)));
   check(':class="\'...\'"（属性值内套单引号）也能取到类名', eqOf(foldAttrBase, foldAttr).length === 0, JSON.stringify(eqOf(foldAttrBase, foldAttr)));
   check('带引号的幽灵类名不再进 raw（历史假漂移噪音）', groupsOf(ctx, foldAttrBase).raw.every((c) => !c.includes("'")), JSON.stringify(groupsOf(ctx, foldAttrBase).raw));
+
+  // ---------- 第 4 层自检：@apply 函数体也必须进等价模型 ----------
+  // 背景：@apply 里的类不是字符串字面量，若不注入就永远是验证黑洞（改了也没人管）。
+  // 三条一起证明：注入生效、合法折叠判绿、折叠到错令牌判红。
+  const applyBase = ".a { @apply text-xs text-gray-800 dark:text-zinc-100; }";
+  const applyOk = ".a { @apply text-xs text-lx-primary-soft; }";
+  const applyBad = ".a { @apply text-xs text-lx-secondary; }";
+  check(
+    '@apply 函数体被提升为字面量（含 dark: 变体）',
+    injectApplyBodies(applyBase).includes("'text-xs text-gray-800 dark:text-zinc-100'"),
+    injectApplyBodies(applyBase)
+  );
+  check('@apply 内 → 等价令牌类：判等价', eqOf(applyBase, applyOk).length === 0, JSON.stringify(eqOf(applyBase, applyOk)));
+  check('@apply 内 → 不等价令牌类：必红', eqOf(applyBase, applyBad).length > 0, JSON.stringify(eqOf(applyBase, applyBad)));
 
   // ---------- 第 4 层自检：归一化 + 容差 + 真值源结构 ----------
   check('归一化 rgba() ⇄ #rrggbb@a', normColor('rgba(255, 255, 255, 0.102)') === normColor('#ffffff1a'), normColor('rgba(255, 255, 255, 0.102)'));
