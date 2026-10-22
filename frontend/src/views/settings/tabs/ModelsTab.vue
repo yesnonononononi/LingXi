@@ -436,7 +436,7 @@ const addRowClass = computed(() => [
                   :placeholder="t('settings.models.searchModels')"
                   :class="[
                     'w-full px-2.5 py-1 rounded-lg text-xs outline-none',
-                    isDark ? 'bg-white/5 border border-white/10 text-zinc-100 placeholder-zinc-500' : 'bg-gray-50 border border-gray-200 text-gray-800 placeholder-gray-400'
+                    isDark ? 'bg-white/5 border border-lx-border-subtle text-zinc-100 placeholder-lx-disabled' : 'bg-gray-50 border border-lx-border-subtle text-gray-800 placeholder-lx-disabled'
                   ]"
                   @click.stop
                 />
@@ -483,7 +483,7 @@ const addRowClass = computed(() => [
           <label
             v-if="providerHasCredential(modelForm.providerConfigId)"
             class="mb-2 flex items-start gap-2 rounded-xl border px-3 py-2 cursor-pointer select-none"
-            :class="isDark ? 'border-white/15 hover:border-white/30' : 'border-gray-200 hover:border-gray-300'"
+            :class="isDark ? 'border-lx-border hover:border-white/30' : 'border-lx-border hover:border-gray-300'"
           >
             <input v-model="modelForm.useProviderApiKey" type="checkbox" class="mt-0.5 accent-blue-600" />
             <span class="min-w-0">
