@@ -367,6 +367,7 @@ import { t } from '../../i18n';
 import { isOk } from '../../utils/api';
 import { LogAPI } from '../../services/log';
 import { useFilePreview } from '../../composables/useFilePreview';
+import { provideChatInputFocus } from '../../composables/useChatInputFocus';
 import { FILE_PREVIEW_KEY } from '../../types/filePreview';
 import { DECIDE_TOOL_CALL_KEY, ANSWER_CHOICES_KEY } from '../../types/toolDecision';
 import FilePreviewPanel from '../../components/chat/FilePreviewPanel.vue';
@@ -386,6 +387,14 @@ import SubSessionDetailDrawer from '../../components/chat/SubSessionDetailDrawer
 import SubAgentSidePanel from '../../components/chat/SubAgentSidePanel.vue';
 
 const inputAreaRef = ref<InstanceType<typeof ChatInputArea> | null>(null);
+/**
+ * 「去聊天里说」能力注入：PlanCard 等深层卡片消费 CHAT_INPUT_FOCUS_KEY 取用本回调。
+ *
+ * <p>链路 ChatView → ChatMessageList → ChatMessageItem → PromptCard → PlanCard 是纯渲染祖先链，
+ * 因此在此处 provide 即可被卡片 inject 到。反射取 `focusInput`（ChatInputArea 的 defineExpose），
+ * 用可选链兜住「输入框尚未挂载 / 已卸载」的窗口期，避免点击时机竞态抛错。</p>
+ */
+provideChatInputFocus(() => inputAreaRef.value?.focusInput?.());
 const messagesContainerRef = ref<InstanceType<typeof ChatMessageList> | null>(null);
 const { fileTabs, activeFileId, filePreviewOpen, openFilePreview, closeFileTab, refreshFile, runFileAction } = useFilePreview();
 provide(FILE_PREVIEW_KEY, openFilePreview);
