@@ -246,7 +246,8 @@ defineExpose({
         !triggerExtraClass ? (isSmall ? 'h-8 px-2.5 py-1.5' : 'h-9 px-3 py-2') : '',
         disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer',
         // 边框颜色随主题：调用方只写 `border` 宽度时，Tailwind 默认用 currentColor 会画出深色粗边。
-        isDark ? 'border-white/20' : 'border-gray-300',
+        // [Q2] border-white/20 : border-gray-300 → border-strong（equalDark/equalLight 均 true）
+        'border-lx-border-strong',
         isDark ? 'hover:bg-white/5' : 'hover:bg-black/5',
         triggerExtraClass
       ]"
@@ -304,7 +305,7 @@ defineExpose({
             type="text"
             :placeholder="searchPlaceholder ?? t('common.searchPlaceholder')"
             class="w-full px-2 py-1 text-xs border rounded-lg outline-none select-text transition"
-            :class="isDark ? 'bg-white/[0.06] border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/60' : 'bg-transparent border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'"
+            :class="isDark ? 'bg-white/[0.06] border-lx-border text-white placeholder-lx-disabled focus:border-cyan-400/60' : 'bg-transparent border-lx-border text-gray-800 placeholder-lx-disabled focus:border-blue-500'"
             @keydown.stop
             @keydown.esc="close"
             @keydown.enter="handleSearchEnter"
@@ -347,18 +348,18 @@ defineExpose({
               />
               <span
                 class="flex-1 min-w-0 text-[10px] font-bold uppercase tracking-wider truncate"
-                :class="isDark ? 'text-zinc-200' : 'text-gray-700'"
+                :class="'text-lx-secondary'"
               >{{ group.name }}</span>
               <span
                 class="shrink-0 px-1.5 py-px rounded-md text-[10px] leading-none"
-                :class="isDark ? 'bg-white/10 text-zinc-400' : 'bg-gray-100 text-gray-500'"
+                :class="'bg-lx-surface-selected text-lx-muted'"
               >{{ group.count }}</span>
               <!-- 折叠箭头：收起朝右（可展开），展开朝下（内容已铺开） -->
               <svg
                 class="w-2.5 h-2.5 shrink-0 transition-transform duration-200"
                 :class="[
                   isGroupCollapsed(group) ? 'rotate-90' : 'rotate-180',
-                  isDark ? 'text-zinc-500' : 'text-gray-400'
+                  'text-lx-disabled'
                 ]"
                 viewBox="0 0 1024 1024"
                 fill="currentColor"

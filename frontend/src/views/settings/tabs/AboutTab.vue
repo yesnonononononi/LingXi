@@ -96,18 +96,18 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
       <div
         :class="[
           'rounded-2xl border p-4 space-y-3',
-          isDark ? 'bg-white/[0.03] border-white/10' : 'bg-gray-50 border-gray-100',
+          isDark ? 'bg-white/[0.03] border-lx-border-faint' : 'bg-gray-50 border-lx-border-faint',
         ]"
       >
         <div class="flex items-center justify-between">
-          <span :class="['text-xs', isDark ? 'text-zinc-400' : 'text-gray-500']">{{ t('settings.about.currentVersion') }}</span>
+          <span class="text-xs text-lx-muted">{{ t('settings.about.currentVersion') }}</span>
           <span :class="['text-xs font-mono font-semibold', isDark ? 'text-zinc-100' : 'text-gray-900']">
             {{ currentVersion || '—' }}
           </span>
         </div>
 
         <div v-if="hasUpdate" class="flex items-center justify-between">
-          <span :class="['text-xs', isDark ? 'text-zinc-400' : 'text-gray-500']">{{ t('settings.about.availableVersion') }}</span>
+          <span class="text-xs text-lx-muted">{{ t('settings.about.availableVersion') }}</span>
           <span class="flex items-center gap-1.5">
             <span
               v-if="mandatory"
@@ -146,10 +146,10 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
             />
           </div>
           <div class="flex items-center justify-between">
-            <span :class="['text-[10px] font-mono', isDark ? 'text-zinc-500' : 'text-gray-400']">
+            <span :class="['text-[10px] font-mono', 'text-lx-disabled']">
               {{ percent }}%
             </span>
-            <span v-if="bytesPerSecond > 0" :class="['text-[10px] font-mono', isDark ? 'text-zinc-500' : 'text-gray-400']">
+            <span v-if="bytesPerSecond > 0" :class="['text-[10px] font-mono', 'text-lx-disabled']">
               {{ formatBytes(bytesPerSecond) }}/s
             </span>
           </div>
@@ -165,8 +165,8 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
               'px-4 py-2 rounded-xl text-xs font-semibold transition',
               busy || !supported
                 ? isDark
-                  ? 'bg-white/5 text-zinc-500 cursor-not-allowed'
-                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  ? 'bg-white/5 text-lx-disabled cursor-not-allowed'
+                  : 'bg-gray-100 text-lx-disabled cursor-not-allowed'
                 : mandatory
                   ? 'bg-red-500 text-white hover:bg-red-600 shadow-sm cursor-pointer'
                   : 'bg-blue-500 text-white hover:bg-blue-600 shadow-sm cursor-pointer',
@@ -196,7 +196,7 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
       <div
         :class="[
           'update-notes rounded-2xl border p-4 text-xs leading-relaxed max-h-64 overflow-y-auto scrollbar-thin',
-          isDark ? 'bg-white/[0.03] border-white/10 text-zinc-300' : 'bg-gray-50 border-gray-100 text-gray-700',
+          isDark ? 'bg-white/[0.03] border-lx-border-faint text-zinc-300' : 'bg-gray-50 border-lx-border-faint text-gray-700',
         ]"
         v-html="renderedNotes"
       />
@@ -209,7 +209,7 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
         @click="openLog"
         :class="[
           'text-[11px] underline-offset-2 hover:underline transition cursor-pointer',
-          isDark ? 'text-zinc-500 hover:text-zinc-300' : 'text-gray-400 hover:text-gray-600',
+          'text-lx-disabled hover:text-lx-tertiary',
         ]"
       >
                 {{ t('settings.about.viewLog') }}

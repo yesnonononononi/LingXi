@@ -79,7 +79,7 @@ const handleClearSessions = async () => {
         <div class="text-xs font-semibold text-gray-800 dark:text-zinc-100 dark:text-glow-subtle tracking-wide">
           {{ t('settings.data.storageTitle') }}
         </div>
-        <p class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">
+        <p class="text-[11px] text-gray-400 mt-0.5">
           {{ t('settings.data.storageDesc') }}
         </p>
       </div>
@@ -95,7 +95,7 @@ const handleClearSessions = async () => {
           </span>
           <span
             class="text-[11px] mt-0.5 truncate font-mono"
-            :class="isDark ? 'text-zinc-300' : 'text-gray-600'"
+            :class="'text-lx-tertiary'"
             :title="userConfig.dataDir"
           >{{ userConfig.dataDir || '—' }}</span>
         </div>
@@ -105,15 +105,15 @@ const handleClearSessions = async () => {
           @click="changeDirectory('dataDir')"
           class="shrink-0 px-3 py-1 rounded-full border text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           :class="isDark
-            ? 'border-white/20 text-zinc-200 hover:bg-white/5'
-            : 'border-gray-300 text-gray-700 hover:bg-gray-50'"
+            ? 'border-lx-border-strong text-lx-secondary hover:bg-white/5'
+            : 'border-lx-border-strong text-lx-secondary hover:bg-gray-50'"
         >
           {{ busyField === 'dataDir' ? t('settings.data.migrating') : t('settings.data.change') }}
         </button>
       </div>
 
       <!-- 技能目录 -->
-      <div class="flex items-center justify-between gap-3 py-2 border-t" :class="isDark ? 'border-white/10' : 'border-gray-100'">
+      <div class="flex items-center justify-between gap-3 py-2 border-t border-lx-border-faint">
         <div class="flex flex-col min-w-0">
           <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">
             {{ t('settings.data.skillDirLabel') }}
@@ -123,7 +123,7 @@ const handleClearSessions = async () => {
           </span>
           <span
             class="text-[11px] mt-0.5 truncate font-mono"
-            :class="isDark ? 'text-zinc-300' : 'text-gray-600'"
+            :class="'text-lx-tertiary'"
             :title="userConfig.skillDir"
           >{{ userConfig.skillDir || t('settings.data.skillDisabled') }}</span>
         </div>
@@ -133,8 +133,8 @@ const handleClearSessions = async () => {
           @click="changeDirectory('skillDir')"
           class="shrink-0 px-3 py-1 rounded-full border text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           :class="isDark
-            ? 'border-white/20 text-zinc-200 hover:bg-white/5'
-            : 'border-gray-300 text-gray-700 hover:bg-gray-50'"
+            ? 'border-lx-border-strong text-lx-secondary hover:bg-white/5'
+            : 'border-lx-border-strong text-lx-secondary hover:bg-gray-50'"
         >
           {{ busyField === 'skillDir' ? t('settings.data.migrating') : t('settings.data.change') }}
         </button>
@@ -144,7 +144,7 @@ const handleClearSessions = async () => {
       <div
         v-if="userConfig.dataDirRestartRequired"
         class="p-3 rounded-xl border space-y-2"
-        :class="isDark ? 'bg-amber-500/10 border-amber-500/30' : 'bg-amber-50 border-amber-200'"
+        :class="isDark ? 'bg-lx-warning-soft border-amber-500/30' : 'bg-lx-warning-soft border-amber-200'"
       >
         <div class="text-xs font-semibold text-amber-600 dark:text-amber-400">
           {{ t('settings.data.restartTitle') }}
