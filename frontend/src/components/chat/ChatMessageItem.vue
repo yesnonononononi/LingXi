@@ -39,7 +39,7 @@
       </div>
 
       <!-- 气泡下方时间与复制图标 (完全匹配左图)；受理被拒的气泡额外标「未发送」并给重发入口 -->
-      <div class="flex items-center gap-2 mt-1.5 text-xs text-gray-400 dark:text-zinc-500 pr-1 select-none">
+      <div class="flex items-center gap-2 mt-1.5 text-xs text-lx-disabled pr-1 select-none">
         <span>{{ displayTime }}</span>
         <!-- 受理被拒：这条消息后端不存在（未进 transcript / 未进模型上下文），绝不呈现成已发送 -->
         <template v-if="props.message.unsent">
@@ -476,8 +476,7 @@
             <!-- 已决卡片摘要：状态点 + 类型图标，与过程区灰字拉开层级 -->
             <span :class="['w-1.5 h-1.5 rounded-full shrink-0', cardDotClass(resolveCardTone(entry.card))]"></span>
             <svg
-              class="w-3.5 h-3.5 shrink-0"
-              :class="isDark ? 'text-zinc-400' : 'text-gray-500'"
+              class="w-3.5 h-3.5 shrink-0 text-lx-muted"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -1100,7 +1099,7 @@ const toolRowHeaderClass = (tc: ToolCallTrace, dark: boolean): string[] => {
   if (!canExpandTool(tc)) {
     return [base, 'cursor-default'];
   }
-  return [base, dark ? 'cursor-pointer hover:text-white' : 'cursor-pointer hover:text-gray-900'];
+  return [base, 'cursor-pointer hover:text-lx-primary'];
 };
 
 const getToolMeta = (tc: ToolCallTrace) => resolveToolMeta({ toolName: tc.toolName, args: tc.args ?? tc.query });
