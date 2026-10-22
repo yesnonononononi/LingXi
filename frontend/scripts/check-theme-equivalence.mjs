@@ -20,7 +20,15 @@
  *   非颜色类（`flex` / `mb-2.5` / `text-[10px]`）一变就是行为变更，不做容差，直接报。
  *
  * ────────────────────────────────────────────────────────────────
- * 为什么退出码是 0 / 2
+ * 第 4 层 · 令牌数值（`--check-token-values`，**不需要 git 基线**）
+ *   第 1~3 层都在比「源码里写的类名」，没有一层在比「令牌自己的取值对不对」。
+ *   已证实的假绿：`tests/themeTokens.test.ts` 17 条只守结构一致性，把 `--lx-text-muted`
+ *   改回错值 `#71717a` 时 17/17 全绿逃逸。本层把「令牌当前值」与「代言类名在 dist 产物
+ *   里的真实取值」归一化后逐条比对（容差同 TOL），真值源在
+ *   `frontend/scripts/theme-spec/token-value-spec.json`。产物缺失/过期一律判 1，不静默通过。
+ *
+ * ────────────────────────────────────────────────────────────────
+ * 为什么退出码是 0 / 2 * 为什么退出码是 0 / 2
  * ────────────────────────────────────────────────────────────────
  *   0 = 零漂移（可合）
  *   2 = 有漂移/告警（不许合，需人工确认或修回去）
@@ -48,6 +56,8 @@
  *   node scripts/check-theme-equivalence.mjs --base origin/develop                     # PR 门禁
  *   node scripts/check-theme-equivalence.mjs --static-only                             # 只跑第 1 层（CI 用）
  *   node scripts/check-theme-equivalence.mjs --selftest
+ *   node scripts/check-theme-equivalence.mjs --check-token-values          # 第 4 层：令牌数值校验
+ *   node scripts/check-theme-equivalence.mjs --check-token-values --allow-stale
  */
 
 import fs from 'node:fs';
@@ -491,6 +501,315 @@ const checkFreshness = (ctx) => {
   };
 };
 
+// ---------------------------------------------------------------------------
+// 第 4 层 · 令牌值 == 代言类名产物真实值（数值校验）
+// ---------------------------------------------------------------------------
+//
+// 为什么必须有这一层（已证实的假绿漏洞）：
+//   `tests/themeTokens.test.ts` 只守**结构**一致性（令牌名存在、桥接层有条目、明暗都有值）。
+//   把 `--lx-text-muted` 改回错值 `#71717a` 时，那 17 条用例 **17/17 全绿**照样逃逸——
+//   「令牌值对不对」过去只能人工 audit。
+//   本层把「令牌当前值」与「代言类名在 dist 产物里的真实取值」逐条比对，才是机器判据。
+//
+// 真值源：frontend/scripts/theme-spec/token-value-spec.json
+//   （由 .lingxi/tmp/m3/m3a-class-map.json 迁入；运行期不依赖 .lingxi 或任何仓库外路径）
+//
+// 比对口径：**归一化后比 + 容差**
+//   归一化：rgba() ⇄ #rrggbb@a、#rgb ⇄ #rrggbb、alpha 补足三位小数、oklch 反算、color-mix 按 8 位量化。
+//   容差：沿用 TOL（rgb ≤ 8、alpha ≤ 0.01）。高饱和色（cyan/amber）在「设计侧字面量」
+//   与「产物侧 hex」两条独立推导间必然差几个通道，那是解析精度不是设计漂移；
+//   拿严格字符串判等会在合法树上误红，而 TOL=8 对「改错值」这类真实漂移（例如
+//   #9f9fa9 → #71717a 差 46）依然必红。
+
+/** 真值源（相对仓库根，仅用于日志展示） */
+const SPEC_REL = 'frontend/scripts/theme-spec/token-value-spec.json';
+/** 真值源绝对路径：用 import.meta.url 解析，从 frontend/ 或仓库根调用结果一致 */
+const SPEC_FILE = path.join(__dirname, 'theme-spec', 'token-value-spec.json');
+/** 真值源每条记录必须具备的字段（缺字段 = 真值源损坏，必须显式报错而不是跳过） */
+const SPEC_FIELDS = [
+  'token',
+  'name',
+  'group',
+  'status',
+  'darkClass',
+  'lightClass',
+  'expectedDark',
+  'expectedLight',
+  'themeKey',
+  'utilityClass'
+];
+
+/**
+ * 把「已经是归一化口径」的字符串补成规范形式（alpha 三位小数，≥1 视为不透明）。
+ * 必须先认这个分支：`normalizeColor()` 只吃 CSS 原串，**不认** `#rrggbb@a` 这种本仓
+ * 自定义口径，直接喂给它会被判成「不是颜色」→ 误报「代言类名不可解析」（踩过）。
+ *
+ * @param {string} s 候选串
+ * @returns {string | null} 规范形式，或 null（不是归一化口径）
+ */
+const canonicalColor = (s) => {
+  const m = s.match(/^(#[0-9a-f]{6})(?:@([\d.]+))?$/);
+  if (!m) return null;
+  if (m[2] === undefined) return m[1];
+  const a = Number(m[2]);
+  if (!Number.isFinite(a) || a >= 1) return m[1];
+  return m[1] + '@' + a.toFixed(3);
+};
+
+/**
+ * 颜色归一化（严格口径，供数值校验使用）。
+ * 与原型 `.lingxi/tmp/m3/verify-token-values.mjs` 的 `norm()` 同口径，
+ * 但底层复用 `color-resolver`（check-theme-colors.mjs）的 `normalizeColor`，
+ * 因此 `oklch()` / `color-mix()` 也能归一化，不必另写一套解析器。
+ *
+ * @param {unknown} raw 任意 CSS 颜色原串（也接受已归一化的 `#rrggbb[@a]`）
+ * @returns {string | null} `#rrggbb` 或 `#rrggbb@0.xxx`；null = 无法归一化（不是颜色）
+ */
+const normColor = (raw) => {
+  if (typeof raw === 'string') {
+    const canonical = canonicalColor(raw.trim().toLowerCase());
+    if (canonical !== null) return canonical;
+  }
+  const n = normalizeColor(raw);
+  if (n === null) return null;
+  return canonicalColor(n);
+};
+
+/**
+ * 两条归一化颜色之间的距离，用于打印「差了多少」。
+ * @param {string | null} want 期望（归一化）
+ * @param {string | null} got 实际（归一化）
+ * @returns {{rgb: number, alpha: number}} rgb = 最大通道差，alpha = |Δα|
+ */
+const colorGap = (want, got) => {
+  const a = parseRgba(want);
+  const b = parseRgba(got);
+  if (!a || !b) return { rgb: Number.POSITIVE_INFINITY, alpha: Number.POSITIVE_INFINITY };
+  return {
+    rgb: Math.max(Math.abs(a.r - b.r), Math.abs(a.g - b.g), Math.abs(a.b - b.b)),
+    alpha: Math.abs(a.a - b.a)
+  };
+};
+
+/**
+ * 读入并校验真值源。
+ *
+ * 校验为什么这么严：真值源被改坏（少一条令牌、字段改名）时若静默跳过，
+ * 门禁就会「少检一条却仍然绿」——又一个假绿入口。
+ *
+ * @returns {{schemaVersion: number, tokens: Array<Record<string, string>>, compareContract: object, provenance: object}} 真值源
+ * @throws {Error} 文件缺失 / JSON 损坏 / 结构不合法 / 令牌重复 时抛出
+ */
+const loadTokenValueSpec = () => {
+  if (!fs.existsSync(SPEC_FILE)) {
+    throw new Error(`真值源不存在：${SPEC_REL}`);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(SPEC_FILE, 'utf8'));
+  } catch (e) {
+    throw new Error(`真值源 JSON 解析失败（${SPEC_REL}）：${e.message}`);
+  }
+  if (parsed === null || typeof parsed !== 'object') {
+    throw new Error(`真值源结构不合法（${SPEC_REL}）：顶层必须是对象`);
+  }
+  if (parsed.schemaVersion !== 1) {
+    throw new Error(`真值源 schemaVersion 必须是 1，实际 ${String(parsed.schemaVersion)}`);
+  }
+  if (!Array.isArray(parsed.tokens) || parsed.tokens.length === 0) {
+    throw new Error('真值源 tokens 必须是非空数组');
+  }
+  const seen = new Set();
+  for (const [i, row] of parsed.tokens.entries()) {
+    if (row === null || typeof row !== 'object') {
+      throw new Error(`真值源 tokens[${i}] 不是对象`);
+    }
+    for (const field of SPEC_FIELDS) {
+      if (typeof row[field] !== 'string' || row[field] === '') {
+        throw new Error(`真值源 tokens[${i}] 缺少字段 ${field}`);
+      }
+    }
+    if (!/^--lx-[a-z0-9-]+$/.test(row.token)) {
+      throw new Error(`真值源 tokens[${i}].token 命名不合法：${row.token}`);
+    }
+    if (seen.has(row.token)) {
+      throw new Error(`真值源令牌重复：${row.token}`);
+    }
+    seen.add(row.token);
+  }
+  return parsed;
+};
+
+/**
+ * 第 4 层：令牌值 == 代言类名产物真实值 的数值校验。
+ *
+ * 每条令牌分暗/亮两侧做三件事（任何一件不成立都判非 0）：
+ *   1. 令牌必须存在于 tokens.css 对应模式（否则门禁无从比对）；
+ *   2. 代言类名必须能在全部 dist chunk 里解析出真实取值（解析不到 = 产物过期/类名写错，判死）；
+ *   3. 令牌当前值 与 产物真实值、以及产物真实值 与 真值源 expected 必须在容差内一致。
+ *
+ * @param {ReturnType<typeof loadThemeContext>} ctx 解析上下文（dist 全 chunk + 令牌双套 + 桥接层）
+ * @param {string[]} args 命令行参数（支持 --quiet / --allow-stale）
+ * @returns {number} 退出码：0=全部一致，2=有 mismatch，1=无法执行（产物/真值源问题）
+ */
+const checkTokenValues = (ctx, args) => {
+  const quiet = args.includes('--quiet');
+  const allowStale = args.includes('--allow-stale');
+
+  console.log('[gate:theme] 令牌数值校验（令牌值 == 代言类名产物真实值）');
+  console.log('  仓库根    : ' + REPO_ROOT);
+  console.log('  cwd       : ' + process.cwd());
+  console.log('  真值源    : ' + SPEC_REL);
+  console.log('  产物 chunk: ' + ctx.built.files.join(', ') + '（共 ' + ctx.built.files.length + ' 个）');
+  console.log('  令牌 暗/亮: ' + Object.keys(ctx.tokens.dark).length + ' / ' + Object.keys(ctx.tokens.light).length);
+  console.log('  容差      : rgb ≤ ' + TOL.rgb + '/255，alpha ≤ ' + TOL.alpha);
+
+  // ---------- 前置 1：产物新鲜度（旧产物会让「令牌被改错」看起来没变 → 假绿） ----------
+  const fresh = checkFreshness(ctx);
+  const fmt = (t) => new Date(t).toLocaleString('zh-CN', { hour12: false });
+  console.log('  产物最新  : ' + fmt(fresh.cssTime) + '  (' + fresh.cssFile + ')');
+  console.log('  源码最新  : ' + fmt(fresh.srcTime) + '  (' + fresh.srcFile + ')');
+  if (fresh.stale) {
+    if (allowStale) {
+      console.log('  ⚠ 产物早于源码，已按 --allow-stale 放行（结论可能是假绿，自行确认）');
+    } else {
+      console.error('\n[gate:theme] 构建产物早于源码，令牌数值校验拒绝判定。');
+      console.error(`  源码最新 ${fmt(fresh.srcTime)}  →  ${fresh.srcFile}`);
+      console.error(`  产物最新 ${fmt(fresh.cssTime)}  →  ${fresh.cssFile}`);
+      console.error('  本校验读的是 dist 产物；旧产物会让「令牌被改成错值」看起来仍然一致，这是假绿。');
+      console.error('  请先 `npm run build`（或 `npm run gate:theme:values:build`）。');
+      return 1;
+    }
+  }
+
+  // ---------- 前置 2：真值源可读且结构合法 ----------
+  let spec;
+  try {
+    spec = loadTokenValueSpec();
+  } catch (e) {
+    console.error('\n[gate:theme] 无法加载令牌数值真值源：' + e.message);
+    console.error('  真值源缺失/损坏时本校验无法判定，返回 1（无法执行）而不是 0（一致）。');
+    return 1;
+  }
+  console.log('  真值源条目: ' + spec.tokens.length + ' 条');
+
+  /**
+   * 不一致明细（每条都带齐「令牌名 / 期望值 / 实际值 / 代言类名」四要素，便于直接定位）
+   * @type {Array<{token: string, cls: string, want: string, got: string, note: string}>}
+   */
+  const problems = [];
+  /** 两侧在容差内但不完全相等（高饱和色的解析精度差异），单独记录不算错 */
+  /** @type {string[]} */
+  const nearRows = [];
+  let checked = 0;
+
+  for (const row of spec.tokens) {
+    for (const mode of ['dark', 'light']) {
+      checked += 1;
+      const cls = mode === 'dark' ? row.darkClass : row.lightClass;
+      const expectedRaw = mode === 'dark' ? row.expectedDark : row.expectedLight;
+      const want = normColor(ctx.tokens[mode][row.token]);
+      const expected = normColor(expectedRaw);
+      const resolved = resolveClass(ctx, cls, mode);
+      const got = resolved === null ? null : normColor(resolved.value);
+      const label = `${row.token} [${mode}]`;
+
+      if (ctx.tokens[mode][row.token] === undefined) {
+        problems.push({
+          token: label,
+          cls,
+          want: '(tokens.css 缺失该令牌)',
+          got: got ?? '(不可解析)',
+          note: '令牌在 tokens.css 中不存在，门禁无从比对'
+        });
+        continue;
+      }
+      if (got === null) {
+        problems.push({
+          token: label,
+          cls,
+          want: want ?? String(ctx.tokens[mode][row.token]),
+          got: '(产物中解析不到该代言类名)',
+          note: '代言类名不可解析 = 产物过期或类名写错（Tailwind 不产出规则 = 静默失效），判死'
+        });
+        continue;
+      }
+      if (want === null) {
+        problems.push({
+          token: label,
+          cls,
+          want: '(令牌值无法归一化：' + String(ctx.tokens[mode][row.token]) + ')',
+          got,
+          note: '令牌取值不是可识别的颜色字面量'
+        });
+        continue;
+      }
+      if (expected === null) {
+        problems.push({
+          token: label,
+          cls,
+          want,
+          got,
+          note: '真值源 expected 无法归一化：' + String(expectedRaw)
+        });
+        continue;
+      }
+
+      // 1) 令牌当前值 vs 代言类名产物真实值（本层的主判据）
+      if (!near(want, got)) {
+        const gap = colorGap(want, got);
+        problems.push({
+          token: label,
+          cls,
+          want,
+          got,
+          note: `令牌值与代言类名产物真实值不一致（rgb 最大通道差 ${gap.rgb}，alpha 差 ${gap.alpha.toFixed(3)}，容差 rgb≤${TOL.rgb}/alpha≤${TOL.alpha}）`
+        });
+        continue;
+      }
+      if (want !== got) {
+        const gap = colorGap(want, got);
+        nearRows.push(`${label}  ${want} ≈ ${got}  (rgb 差 ${gap.rgb}，alpha 差 ${gap.alpha.toFixed(3)}，代言 ${cls}，在容差内)`);
+      }
+
+      // 2) 产物真实值 vs 真值源 expected（防止真值源或产物被悄悄改动后「共同漂移」）
+      if (!near(expected, got)) {
+        const gap = colorGap(expected, got);
+        problems.push({
+          token: label,
+          cls,
+          want: expected,
+          got,
+          note: `真值源 expected 与产物真实值不一致（rgb 最大通道差 ${gap.rgb}，alpha 差 ${gap.alpha.toFixed(3)}）；要么产物/调色板变了，要么真值源被改，二者必须一致`
+        });
+      }
+    }
+  }
+
+  if (!quiet && nearRows.length > 0) {
+    console.log('\n≈ 以下 ' + nearRows.length + ' 项在容差内（解析精度差异，不是漂移）：');
+    for (const r of nearRows) console.log('    ' + r);
+  }
+
+  if (problems.length > 0) {
+    console.log('\n✗ 令牌数值不一致：' + problems.length + ' 处。格式：令牌名 / 期望值 / 实际值 / 代言类名');
+    for (const p of problems) {
+      console.log('  ✗ ' + p.token);
+      console.log('      令牌名  : ' + p.token);
+      console.log('      期望值  : ' + p.want);
+      console.log('      实际值  : ' + p.got);
+      console.log('      代言类名: ' + p.cls);
+      console.log('      说明    : ' + p.note);
+    }
+    console.log('\n== 结论：令牌数值校验未通过（' + problems.length + ' / ' + checked + ' 处不一致） ==');
+    return 2;
+  }
+
+  console.log('\n✓ 全部 ' + spec.tokens.length + ' 条令牌（' + checked + ' 侧）与代言类名产物真实值一致');
+  console.log('== 结论：令牌数值校验通过 ==');
+  return 0;
+};
+
 /**
  * 完整检查单个文件：第 1 层 + 第 2/3 层（与基线比较）。
  * @param {ReturnType<typeof loadThemeContext>} ctx 当前解析上下文
@@ -603,6 +922,39 @@ const selftest = (ctx) => {
   check('令牌表改值 → 报令牌漂移', compareTokenTables(fakeBaseCtx, fakeCtx).length > 0, JSON.stringify(compareTokenTables(fakeBaseCtx, fakeCtx)));
   check('令牌表未改 → 零令牌漂移', compareTokenTables(fakeCtx, fakeCtx).length === 0);
 
+  // ---------- 第 4 层自检：归一化 + 容差 + 真值源结构 ----------
+  check('归一化 rgba() ⇄ #rrggbb@a', normColor('rgba(255, 255, 255, 0.102)') === normColor('#ffffff1a'), normColor('rgba(255, 255, 255, 0.102)'));
+  check('归一化 #rgb ⇄ #rrggbb', normColor('#fff') === '#ffffff', String(normColor('#fff')));
+  check('归一化 oklch() 可识别', normColor('oklch(70.5% .015 286.067)') === '#9f9fa9', String(normColor('oklch(70.5% .015 286.067)')));
+  check('非颜色值必须是 null（不得当成相等）', normColor('12px') === null && normColor('0 1px 2px rgba(0,0,0,.4)') === null);
+  check(
+    '令牌值改错 → 数值校验必红（历史假绿：#9f9fa9 → #71717a）',
+    !near(normColor('#9f9fa9'), normColor('#71717a')),
+    'rgb 差 ' + colorGap(normColor('#9f9fa9'), normColor('#71717a')).rgb
+  );
+  check('a 通道极小的改动也要红', !near(normColor('#ffffff@0.102'), normColor('#ffffff@0.05')));
+  check('高饱和色两条推导路径在容差内 → 判绿', near(normColor('#00d2ef'), normColor('#00d3f2')));
+
+  let spec = null;
+  try {
+    spec = loadTokenValueSpec();
+    check('真值源可加载', spec.tokens.length === 20, 'tokens=' + spec.tokens.length);
+  } catch (e) {
+    check('真值源可加载', false, e.message);
+  }
+  if (spec !== null) {
+    const unresolvable = [];
+    const missingTokens = [];
+    for (const row of spec.tokens) {
+      if (ctx.tokens.dark[row.token] === undefined) missingTokens.push(row.token + '(dark)');
+      if (ctx.tokens.light[row.token] === undefined) missingTokens.push(row.token + '(light)');
+      if (resolveClass(ctx, row.darkClass, 'dark') === null) unresolvable.push(row.darkClass);
+      if (resolveClass(ctx, row.lightClass, 'light') === null) unresolvable.push(row.lightClass);
+    }
+    check('真值源的令牌都在 tokens.css 里', missingTokens.length === 0, JSON.stringify(missingTokens));
+    check('真值源的代言类名都能在产物里解析', unresolvable.length === 0, JSON.stringify(unresolvable));
+  }
+
   console.log(bad === 0 ? '\nSELFTEST PASS' : '\nSELFTEST FAIL count=' + bad);
   return bad === 0 ? 0 : 1;
 };
@@ -619,13 +971,19 @@ const printUsage = () => {
       '选项：',
       '  --base <ref>     等价性比较的基线，默认 HEAD',
       '  --static-only    只跑第 1 层（令牌类可达性，不需要 git 基线）',
+      '  --check-token-values  第 4 层数值校验：令牌值 == 代言类名产物真实值（不需要 git 基线）',
       '  --allow-stale    产物早于源码时仍继续（默认拒绝：旧产物会导致假绿）',
       '  --quiet          只输出汇总与问题',
       '  --selftest       跑门禁自检',
       '  --help           显示本帮助',
       '',
       '不传文件 = 全量扫描 frontend/src 下所有 .vue。',
-      '退出码：0=零漂移，2=有漂移，1=无法执行。'
+      '退出码：0=零漂移，2=有漂移，1=无法执行。',
+      '',
+      '示例：',
+      '  node scripts/check-theme-equivalence.mjs --check-token-values   # 令牌数值 vs 代言类名产物真实值',
+      '  npm run gate:theme:values                                       # 同上（需先 build）',
+      '  npm run gate:theme:values:build                                 # build + 数值校验'
     ].join('\n')
   );
 };
@@ -652,6 +1010,8 @@ const main = () => {
   }
 
   if (args.includes('--selftest')) return selftest(ctx);
+  // 第 4 层单独成模式：只做「令牌值 == 代言类名产物真实值」的数值校验，不需要 git 基线
+  if (args.includes('--check-token-values')) return checkTokenValues(ctx, args);
 
   const staticOnly = args.includes('--static-only');
   const quiet = args.includes('--quiet');
