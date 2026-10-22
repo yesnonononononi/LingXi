@@ -94,8 +94,7 @@ const handleClearSessions = async () => {
             {{ t('settings.data.dataDirDesc') }}
           </span>
           <span
-            class="text-[11px] mt-0.5 truncate font-mono"
-            :class="'text-lx-tertiary'"
+            class="text-[11px] mt-0.5 truncate font-mono text-lx-tertiary"
             :title="userConfig.dataDir"
           >{{ userConfig.dataDir || '—' }}</span>
         </div>
@@ -122,8 +121,7 @@ const handleClearSessions = async () => {
             {{ t('settings.data.skillDirDesc') }}
           </span>
           <span
-            class="text-[11px] mt-0.5 truncate font-mono"
-            :class="'text-lx-tertiary'"
+            class="text-[11px] mt-0.5 truncate font-mono text-lx-tertiary"
             :title="userConfig.skillDir"
           >{{ userConfig.skillDir || t('settings.data.skillDisabled') }}</span>
         </div>

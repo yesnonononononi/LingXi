@@ -88,7 +88,7 @@ const {
       </div>
 
       <!-- 加载中 -->
-            <div v-if="isAgentsLoading" class="py-8 text-center text-xs" :class="'text-lx-disabled'">
+            <div v-if="isAgentsLoading" class="py-8 text-center text-xs text-lx-disabled">
         {{ t('settings.agents.loading') }}
       </div>
 
@@ -107,8 +107,7 @@ const {
       <!-- 空状态 -->
       <div
         v-else-if="agentsList.length === 0"
-        class="py-12 text-center text-xs border border-dashed rounded-2xl"
-                :class="'border-lx-border-subtle text-lx-disabled'"
+        class="py-12 text-center text-xs border border-dashed rounded-2xl border-lx-border-subtle text-lx-disabled"
       >
         {{ t('settings.agents.empty') }}
       </div>
@@ -119,8 +118,7 @@ const {
           <!-- 搜索框：只过滤展示，不动已勾选项（勾了再搜不会丢选择） -->
           <div class="relative flex-1 min-w-[7rem]">
             <svg
-              class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none"
-              :class="'text-lx-disabled'"
+              class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none text-lx-disabled"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -142,8 +140,7 @@ const {
               v-if="agentSearchQuery"
               type="button"
               :title="t('settings.agents.clearSearch')"
-              class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded cursor-pointer"
-              :class="'text-lx-disabled hover:text-lx-tertiary'"
+              class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded cursor-pointer text-lx-disabled hover:text-lx-tertiary"
               @click="agentSearchQuery = ''"
             >
               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -159,13 +156,13 @@ const {
               class="rounded text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer"
               @change="toggleAllAgents"
             />
-            <span class="text-xs" :class="'text-lx-tertiary'">
+            <span class="text-xs text-lx-tertiary">
               {{ t('settings.agents.selectedCount', { count: selectedAgentIds.length }) }}
             </span>
           </label>
 
           <div class="flex items-center gap-2 shrink-0">
-            <span class="text-xs" :class="'text-lx-muted'">
+            <span class="text-xs text-lx-muted">
               {{ t('settings.agents.batchLabel') }}
             </span>
             <DropUpSelect
@@ -195,8 +192,7 @@ const {
         <!-- 搜索无结果：与「一个智能体都没有」区分开，否则用户以为数据丢了 -->
         <div
           v-if="filteredAgents.length === 0"
-          class="py-10 text-center text-xs border border-dashed rounded-2xl"
-          :class="'border-lx-border-subtle text-lx-disabled'"
+          class="py-10 text-center text-xs border border-dashed rounded-2xl border-lx-border-subtle text-lx-disabled"
         >
           {{ t('settings.agents.emptySearch') }}
         </div>
@@ -253,14 +249,14 @@ const {
                     {{ getModelName(agent.modelId) }}
                   </span>
                 </div>
-                              <p class="text-xs line-clamp-2" :class="'text-lx-muted'">
+                              <p class="text-xs line-clamp-2 text-lx-muted">
                   {{ agent.description || t('settings.agents.noDescription') }}
                 </p>
                 <!-- 已分配工具展示 -->
                 <div class="pt-1">
-                  <div class="text-[11px] font-medium mb-1 flex items-center gap-1.5" :class="'text-lx-tertiary'">
+                  <div class="text-[11px] font-medium mb-1 flex items-center gap-1.5 text-lx-tertiary">
                     <span>{{ t('settings.agents.assignedTools') }}</span>
-                    <span class="text-xs font-normal" :class="'text-lx-disabled'">
+                    <span class="text-xs font-normal text-lx-disabled">
                       ({{ agent.toolList?.length || 0 }})
                     </span>
                   </div>
@@ -278,7 +274,7 @@ const {
                       {{ resolveToolFullName(toolName) }}
                     </span>
                   </div>
-                  <span v-else class="text-[11px] italic" :class="'text-lx-disabled'">{{ t('settings.agents.noTools') }}</span>
+                  <span v-else class="text-[11px] italic text-lx-disabled">{{ t('settings.agents.noTools') }}</span>
                 </div>
               </div>
 
@@ -415,7 +411,7 @@ const {
           <div class="flex items-center justify-between mb-1.5">
             <label class="block font-medium" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
                             {{ t('settings.agents.toolsLabel') }}
-              <span class="font-normal ml-1" :class="'text-lx-muted'">
+              <span class="font-normal ml-1 text-lx-muted">
                 {{ t('settings.agents.toolsCount', { selected: agentForm.toolList.length, total: availableTools.length }) }}
               </span>
             </label>
@@ -442,15 +438,13 @@ const {
 
           <div
             v-if="isToolsLoading"
-            class="p-3 text-center border border-dashed rounded-xl"
-            :class="'border-lx-border-subtle text-lx-disabled'"
+            class="p-3 text-center border border-dashed rounded-xl border-lx-border-subtle text-lx-disabled"
           >
                         {{ t('settings.agents.toolsLoading') }}
           </div>
           <div
             v-else-if="toolsErrorMsg"
-            class="p-3 text-center border border-dashed rounded-xl flex items-center justify-center gap-2"
-            :class="'border-lx-danger-border text-lx-danger'"
+            class="p-3 text-center border border-dashed rounded-xl flex items-center justify-center gap-2 border-lx-danger-border text-lx-danger"
           >
             <span>{{ toolsErrorMsg }}</span>
             <button
@@ -463,15 +457,13 @@ const {
           </div>
           <div
             v-else-if="availableTools.length === 0"
-            class="p-3 text-center border border-dashed rounded-xl"
-            :class="'border-lx-border-subtle text-lx-disabled'"
+            class="p-3 text-center border border-dashed rounded-xl border-lx-border-subtle text-lx-disabled"
           >
             {{ t('settings.agents.noToolsRegistered') }}
           </div>
           <div
             v-else
-            class="max-h-48 overflow-y-auto rounded-xl border p-2 grid grid-cols-1 sm:grid-cols-2 gap-2"
-            :class="'border-lx-border bg-lx-surface-elevated'"
+            class="max-h-48 overflow-y-auto rounded-xl border p-2 grid grid-cols-1 sm:grid-cols-2 gap-2 border-lx-border bg-lx-surface-elevated"
           >
             <div
               v-for="tool in availableTools"
@@ -507,7 +499,7 @@ const {
           </div>
         </div>
 
-        <div class="flex items-center justify-end gap-2 pt-2 border-t" :class="'border-lx-border-subtle'">
+        <div class="flex items-center justify-end gap-2 pt-2 border-t border-lx-border-subtle">
           <button
             type="button"
             @click="cancelAgentForm"

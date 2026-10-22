@@ -347,12 +347,10 @@ defineExpose({
                 :size="12"
               />
               <span
-                class="flex-1 min-w-0 text-[10px] font-bold uppercase tracking-wider truncate"
-                :class="'text-lx-secondary'"
+                class="flex-1 min-w-0 text-[10px] font-bold uppercase tracking-wider truncate text-lx-secondary"
               >{{ group.name }}</span>
               <span
-                class="shrink-0 px-1.5 py-px rounded-md text-[10px] leading-none"
-                :class="'bg-lx-surface-selected text-lx-muted'"
+                class="shrink-0 px-1.5 py-px rounded-md text-[10px] leading-none bg-lx-surface-selected text-lx-muted"
               >{{ group.count }}</span>
               <!-- 折叠箭头：收起朝右（可展开），展开朝下（内容已铺开） -->
               <svg
