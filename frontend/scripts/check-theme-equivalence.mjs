@@ -204,7 +204,8 @@ const scanText = (ctx, src, g, depth) => {
     const l = collect(ctx, m[2], 'light');
     g.dark.push(...d.colors);
     g.light.push(...l.colors);
-    g.raw.push(...d.raw, ...l.raw);
+    g.rawDark.push(...d.raw);
+    g.rawLight.push(...l.raw);
     if (d.colors.length > 0) g.counters.darkBranch += 1;
     if (l.colors.length > 0) g.counters.lightBranch += 1;
   }
@@ -223,7 +224,8 @@ const scanText = (ctx, src, g, depth) => {
     // 旧的中性模型既误杀令牌类（暗亮本就不同值），又看不见 dark: 变体（变体类根本没进候选集）。
     const d = collect(ctx, content, 'dark');
     const l = collect(ctx, content, 'light');
-    g.raw.push(...d.raw);
+    g.rawDark.push(...d.raw);
+    g.rawLight.push(...d.raw);
     if (d.colors.length === 0 && l.colors.length === 0) continue;
     g.counters.neutral += 1;
     g.dark.push(...d.colors);
@@ -238,11 +240,14 @@ const groupsOf = (ctx, source) => {
     light: [],
     neutral: [],
     raw: [],
+    rawDark: [],
+    rawLight: [],
     unknown: [],
     counters: { darkBranch: 0, lightBranch: 0, neutral: 0 }
   };
   scanText(ctx, String(source), g, 0);
   // 第 1 层：命中令牌前缀却解析不到的，就是写错/不存在的令牌类
+  g.raw = [...g.rawDark, ...g.rawLight];
   g.unknown = [...new Set(g.raw)].filter((c) => TOKEN_CLASS_RE.test(c));
   return g;
 };
@@ -919,7 +924,8 @@ const checkFile = (ctx, baseCtx, relPath, base, staticOnly) => {
     ...compareColorGroups('dark', A.dark, B.dark),
     ...compareColorGroups('light', A.light, B.light),
     ...compareNeutral(A.neutral, B.neutral),
-    ...compareRaw(A.raw, B.raw)
+    ...compareRaw(A.rawDark, B.rawDark),
+    ...compareRaw(A.rawLight, B.rawLight)
   ];
   return { problems: [...problems, ...driftProblems], drift: problems.length + driftProblems.length, notes };
 };
@@ -1034,7 +1040,8 @@ const a1 = groupsOf(ctx, "const c = isDark ? 'bg-white/10' : 'bg-white'");
       ...compareColorGroups('dark', A.dark, B.dark),
       ...compareColorGroups('light', A.light, B.light),
       ...compareNeutral(A.neutral, B.neutral),
-      ...compareRaw(A.raw, B.raw)
+      ...compareRaw(A.rawDark, B.rawDark),
+    ...compareRaw(A.rawLight, B.rawLight)
     ];
   };
 
