@@ -49,17 +49,17 @@ async function submit() {
       <fieldset :disabled="saving || loading" class="space-y-4 min-w-0">
         <section class="personalization-card space-y-5">
           <div v-for="field in (['title', 'commonAgentName'] as const)" :key="field" class="identity-row">
-            <label :for="`personalization-${field}`" class="text-xs font-semibold text-gray-800 dark:text-zinc-100">{{ field === 'title' ? copy.title : copy.name }}</label>
+            <label :for="`personalization-${field}`" class="text-xs font-semibold text-lx-primary-soft">{{ field === 'title' ? copy.title : copy.name }}</label>
             <input v-if="editing === field" :id="`personalization-${field}`" :ref="element => { identityInput = element as HTMLInputElement | null; }" v-model="draft[field]" class="personalization-input identity-control" :aria-label="field === 'title' ? copy.title : copy.name" @blur="editing = null" @keydown.enter.prevent="editing = null" />
             <button v-else :id="`personalization-${field}`" type="button" class="identity-control personalization-input text-right cursor-pointer" @click="editIdentity(field)">
-              <span :class="draft[field] ? 'text-gray-800 dark:text-zinc-100' : 'text-gray-400 dark:text-zinc-500'">{{ draft[field] || copy.empty }}</span>
+              <span :class="draft[field] ? 'text-lx-primary-soft' : 'text-gray-400 dark:text-zinc-500'">{{ draft[field] || copy.empty }}</span>
             </button>
           </div>
         </section>
 
         <section class="personalization-card identity-row">
           <div>
-            <label for="personalization-style" class="text-xs font-semibold text-gray-800 dark:text-zinc-100">{{ copy.style }}</label>
+            <label for="personalization-style" class="text-xs font-semibold text-lx-primary-soft">{{ copy.style }}</label>
             <p class="mt-1.5 text-xs leading-relaxed text-gray-500 dark:text-zinc-400">{{ copy.styleHint }}</p>
           </div>
           <div class="identity-control">
@@ -71,7 +71,7 @@ async function submit() {
         <section class="personalization-card">
           <div class="flex items-start justify-between gap-4">
             <div>
-              <label for="personalization-instruction" class="text-xs font-semibold text-gray-800 dark:text-zinc-100">{{ copy.instruction }}</label>
+              <label for="personalization-instruction" class="text-xs font-semibold text-lx-primary-soft">{{ copy.instruction }}</label>
               <p class="mt-1.5 text-xs leading-relaxed text-gray-500 dark:text-zinc-400">{{ copy.instructionHint }}</p>
             </div>
             <button type="button" class="personalization-input shrink-0 px-3 cursor-pointer" @click="editingInstruction ? cancelInstruction() : editInstruction()">{{ editingInstruction ? copy.cancel : copy.edit }}</button>
@@ -93,7 +93,7 @@ async function submit() {
 .personalization-card { @apply rounded-2xl border border-gray-100 bg-gray-50/60 p-4 dark:border-white/10 dark:bg-white/[0.03]; }
 .identity-row { @apply flex items-center justify-between gap-4; }
 .identity-control { @apply w-52 min-w-0 shrink-0; }
-.personalization-input { @apply rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-gray-800 outline-none transition focus:border-gray-400 focus:ring-2 focus:ring-gray-200/60 dark:border-white/15 dark:bg-black/30 dark:text-zinc-100 dark:focus:border-white/40 dark:focus:ring-white/10; }
+.personalization-input { @apply rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-lx-primary-soft outline-none transition focus:border-gray-400 focus:ring-2 focus:ring-gray-200/60 dark:border-white/15 dark:bg-black/30 dark:focus:border-white/40 dark:focus:ring-white/10; }
 @media (max-width: 640px) {
   .identity-row { @apply flex-col items-stretch gap-2.5; }
   .identity-control { @apply w-full; }

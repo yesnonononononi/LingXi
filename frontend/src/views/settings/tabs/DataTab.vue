@@ -76,7 +76,7 @@ const handleClearSessions = async () => {
     <!-- 存储目录：真能力（改了会搬迁现有内容），因此放在最前面 -->
     <div class="space-y-3">
       <div>
-        <div class="text-xs font-semibold text-gray-800 dark:text-zinc-100 dark:text-glow-subtle tracking-wide">
+        <div class="text-xs font-semibold text-lx-primary-soft dark:text-glow-subtle tracking-wide">
           {{ t('settings.data.storageTitle') }}
         </div>
         <p class="text-[11px] text-gray-400 mt-0.5">
@@ -87,7 +87,7 @@ const handleClearSessions = async () => {
       <!-- 数据目录 -->
       <div class="flex items-center justify-between gap-3 py-2">
         <div class="flex flex-col min-w-0">
-          <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">
+          <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">
             {{ t('settings.data.dataDirLabel') }}
           </span>
           <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">
@@ -114,7 +114,7 @@ const handleClearSessions = async () => {
       <!-- 技能目录 -->
       <div class="flex items-center justify-between gap-3 py-2 border-t border-lx-border-faint">
         <div class="flex flex-col min-w-0">
-          <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">
+          <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">
             {{ t('settings.data.skillDirLabel') }}
           </span>
           <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">

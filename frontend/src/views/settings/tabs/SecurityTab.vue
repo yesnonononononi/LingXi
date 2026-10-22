@@ -144,13 +144,13 @@ async function save() {
 void load();
 </script>
 <template>
-  <div class="space-y-4 min-w-0 text-gray-800 dark:text-zinc-100" data-testid="security-center">
+  <div class="space-y-4 min-w-0 text-lx-primary-soft" data-testid="security-center">
     <!-- 第一层：策略清单。沙箱总开关决定 AI 是否跑在隔离环境里，其余三类各自进第二层编辑。 -->
     <template v-if="view === 'list'">
       <section class="sec-rise">
         <div class="flex items-start justify-between gap-3">
           <div class="flex min-w-0 flex-col">
-            <span class="flex items-center gap-1.5 text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">
+            <span class="flex items-center gap-1.5 text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">
               {{ copy.sandboxTitle }}
               <button type="button" class="sec-info" :aria-label="copy.scope" :aria-expanded="showScope" @click="showScope = !showScope">
                 <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" /></svg>
@@ -195,7 +195,7 @@ void load();
         <button v-for="item in categories" :key="item" type="button" :data-testid="`security-tab-${item}`" @click="open(item)"
           class="sec-nav flex w-full items-center justify-between gap-3 rounded-xl px-2 py-3 text-left transition-colors cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/[0.05]">
           <span class="flex min-w-0 flex-col">
-            <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ copy[item] }}</span>
+            <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ copy[item] }}</span>
             <span class="mt-0.5 text-[11px] leading-snug text-gray-400 dark:text-zinc-400">{{ copy[categoryDesc[item]] }}</span>
           </span>
           <svg class="sec-nav-chevron h-3.5 w-3.5 shrink-0 text-gray-300 dark:text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
@@ -210,7 +210,7 @@ void load();
           <button type="button" :class="[iconButton, 'h-6 w-6']" :aria-label="copy.back" data-testid="security-back" @click="back">
             <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
           </button>
-          <h4 class="truncate text-xs font-semibold tracking-wide text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ copy[category] }}</h4>
+          <h4 class="truncate text-xs font-semibold tracking-wide text-lx-primary-soft dark:text-glow-subtle">{{ copy[category] }}</h4>
         </div>
         <button v-if="category !== 'net' && current" type="button" :class="button" :disabled="busy" @click="reset" data-testid="security-reset">{{ copy.defaults }}</button>
       </div>
@@ -220,7 +220,7 @@ void load();
       <section v-if="category === 'files'" :class="[panel, 'sec-rise']" :style="{ '--sec-delay': '70ms' }">
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <div class="flex min-w-0 flex-col">
-            <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.accessMode') }}</span>
+            <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.accessMode') }}</span>
             <span class="mt-0.5 text-[11px] leading-snug text-gray-400 dark:text-zinc-400">{{ t('settings.general.accessModeDesc') }}</span>
           </div>
           <div class="w-full min-w-0 shrink-0 sm:w-64">
@@ -232,7 +232,7 @@ void load();
       <section v-else-if="category === 'terminal'" :class="[panel, 'sec-rise']" :style="{ '--sec-delay': '70ms' }">
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <div class="flex min-w-0 flex-col">
-            <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.toolPermission') }}</span>
+            <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.toolPermission') }}</span>
             <span class="mt-0.5 text-[11px] leading-snug text-gray-400 dark:text-zinc-400">{{ t('settings.general.toolPermissionDesc') }}</span>
           </div>
           <div class="w-full min-w-0 shrink-0 sm:w-64">
@@ -274,7 +274,7 @@ void load();
               <span class="sec-ping absolute h-full w-full rounded-full bg-emerald-500/60"></span>
               <span class="relative h-2 w-2 rounded-full bg-emerald-500"></span>
             </span>
-            <span class="text-xs font-semibold text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ copy.netStatus }}</span>
+            <span class="text-xs font-semibold text-lx-primary-soft dark:text-glow-subtle">{{ copy.netStatus }}</span>
           </div>
           <p class="mt-2 text-[11px] leading-5 text-gray-500 dark:text-zinc-400">{{ copy.netDetail }}</p>
         </section>

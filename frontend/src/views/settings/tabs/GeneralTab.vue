@@ -37,7 +37,7 @@ const {
   <div class="space-y-3" @click="closeGeneralDropdowns">
     <!-- 主题选项 -->
     <div>
-      <div class="text-xs font-semibold text-gray-800 dark:text-zinc-100 dark:text-glow-subtle mb-2.5 tracking-wide">{{ t('settings.general.theme') }}</div>
+      <div class="text-xs font-semibold text-lx-primary-soft dark:text-glow-subtle mb-2.5 tracking-wide">{{ t('settings.general.theme') }}</div>
       <div class="grid grid-cols-3 gap-3">
         <!-- 浅色 -->
         <button
@@ -94,7 +94,7 @@ const {
 
     <!-- 语言 -->
     <div class="flex items-center justify-between">
-      <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.language') }}</span>
+      <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.language') }}</span>
       <div class="relative general-dropdown-container" @click.stop>
         <SpecularButton
           size="sm"
@@ -152,7 +152,7 @@ const {
     <div class="pt-3">
       <div class="flex items-center justify-between">
         <div class="flex flex-col">
-          <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.notifySound') }}</span>
+          <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.notifySound') }}</span>
           <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.notifySoundDesc') }}</span>
         </div>
         <div class="relative general-dropdown-container" @click.stop>
@@ -213,7 +213,7 @@ const {
     <div>
       <div class="flex items-center justify-between mb-2">
         <div class="flex flex-col">
-          <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">{{ t('settings.general.apiBaseUrl') }}</span>
+          <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.apiBaseUrl') }}</span>
           <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.apiBaseUrlDesc') }}</span>
         </div>
         <button

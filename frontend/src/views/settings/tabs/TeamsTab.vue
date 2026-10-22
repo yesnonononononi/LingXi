@@ -62,7 +62,7 @@ const {
         :class="isDark ? 'border-white/10' : 'border-gray-100'"
       >
         <div class="flex flex-col">
-          <span class="text-xs font-medium text-gray-800 dark:text-zinc-100 dark:text-glow-subtle">
+          <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">
             {{ t('settings.teams.maxMemberSizeLabel') }}
           </span>
           <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">

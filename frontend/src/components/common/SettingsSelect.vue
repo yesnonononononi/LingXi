@@ -129,7 +129,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 @reference "../../style.css";
-.settings-select-trigger { @apply flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2 text-left text-xs text-gray-800 outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed dark:border-white/15 dark:bg-black/30 dark:text-zinc-100; transition: background-color 160ms, border-color 160ms, box-shadow 160ms; }
+.settings-select-trigger { @apply flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2 text-left text-xs text-lx-primary-soft outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed dark:border-white/15 dark:bg-black/30; transition: background-color 160ms, border-color 160ms, box-shadow 160ms; }
 .settings-select-trigger:hover { @apply border-gray-300 bg-gray-50 dark:border-white/30 dark:bg-white/5; }
 .settings-select-trigger:focus-visible, .settings-select-trigger.is-open { @apply border-gray-400 ring-2 ring-gray-200/60 dark:border-white/40 dark:ring-white/10; }
 .settings-select-chevron { @apply h-3.5 w-3.5 shrink-0 text-gray-500 dark:text-zinc-400; transition: transform 180ms ease; }

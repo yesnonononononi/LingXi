@@ -90,7 +90,7 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
   <div class="space-y-5">
     <!-- 当前版本 -->
     <div>
-            <div class="text-xs font-semibold text-gray-800 dark:text-zinc-100 dark:text-glow-subtle mb-2.5 tracking-wide">
+            <div class="text-xs font-semibold text-lx-primary-soft dark:text-glow-subtle mb-2.5 tracking-wide">
         {{ t('settings.about.versionInfo') }}
       </div>
       <div
@@ -190,7 +190,7 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
 
     <!-- 更新说明 -->
     <div v-if="renderedNotes">
-            <div class="text-xs font-semibold text-gray-800 dark:text-zinc-100 dark:text-glow-subtle mb-2.5 tracking-wide">
+            <div class="text-xs font-semibold text-lx-primary-soft dark:text-glow-subtle mb-2.5 tracking-wide">
         {{ t('settings.about.updateContent') }}
       </div>
       <div
