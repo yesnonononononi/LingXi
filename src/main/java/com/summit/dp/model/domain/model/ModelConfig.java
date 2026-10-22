@@ -10,6 +10,7 @@ import com.summit.dp.shared.exception.ClientException;
 @Getter
 @NoArgsConstructor
 public class ModelConfig {
+    public static final int MODEL_NAME_MAX_LENGTH = 100;
     private Long id;
     private String baseUrl;
     private String apiKey;

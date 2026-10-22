@@ -34,7 +34,7 @@ public class ProviderConfigController {
     }
 
     @PostMapping("/add")
-    public Result<Void> add(@RequestBody ProviderConfigRequest request) {
+    public Result<Long> add(@RequestBody ProviderConfigRequest request) {
         return service.add(toCommand(request));
     }
 

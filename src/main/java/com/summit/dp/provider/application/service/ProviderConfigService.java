@@ -10,7 +10,7 @@ import java.util.Optional;
 /** 提供商配置预设：区分多个来源的同名模型，模型配置与下拉分组都以它为依据。 */
 public interface ProviderConfigService {
 
-    Result<Void> add(ProviderConfigCommand command);
+    Result<Long> add(ProviderConfigCommand command);
 
     Result<Void> update(ProviderConfigCommand command);
 

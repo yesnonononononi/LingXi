@@ -27,13 +27,20 @@ class ProviderConfigServiceTest {
     private final ProviderConfigServiceImpl service = new ProviderConfigServiceImpl(repository);
 
     @Test
+    void creationReturnsTheRepositoryIdForFollowingBatchRequests() {
+        when(repository.saveAndReturnId(any())).thenReturn(9007199254740993L);
+        assertEquals(9007199254740993L, service.add(new ProviderConfigCommand(null, "自定义", null,
+                "https://example.invalid/v1", "key", 0)).getData());
+    }
+
+    @Test
     void rejectsDuplicateNameIgnoringCaseAndRequiresName() {
         when(repository.existsByName("DeepSeek", null)).thenReturn(true);
         assertThrows(ClientException.class,
                 () -> service.add(new ProviderConfigCommand(null, "DeepSeek", null, null, "key", 0)));
         assertThrows(ClientException.class,
                 () -> service.add(new ProviderConfigCommand(null, "  ", null, null, "key", 0)));
-        verify(repository, never()).save(any());
+        verify(repository, never()).saveAndReturnId(any());
     }
 
     @Test
@@ -76,7 +83,7 @@ class ProviderConfigServiceTest {
     void blankIconAndBaseUrlBecomeNullSoAggregationHasNoEmptyStrings() {
         service.add(new ProviderConfigCommand(null, "自定义", "  ", "", "", 0));
         ArgumentCaptor<ProviderConfig> saved = ArgumentCaptor.forClass(ProviderConfig.class);
-        verify(repository).save(saved.capture());
+        verify(repository).saveAndReturnId(saved.capture());
         assertEquals(null, saved.getValue().getIcon());
         assertEquals(null, saved.getValue().getBaseUrl());
         assertEquals("", saved.getValue().getApiKey());

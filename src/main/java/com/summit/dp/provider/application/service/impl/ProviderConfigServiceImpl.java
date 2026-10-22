@@ -20,7 +20,7 @@ public class ProviderConfigServiceImpl implements ProviderConfigService {
     private final ProviderConfigRepository repository;
 
     @Override
-    public Result<Void> add(ProviderConfigCommand command) {
+    public Result<Long> add(ProviderConfigCommand command) {
         throwIf(command == null, "提供商配置不能为空");
         ProviderConfig config = new ProviderConfig();
         config.changeName(command.name());
@@ -29,8 +29,7 @@ public class ProviderConfigServiceImpl implements ProviderConfigService {
         config.changeBaseUrl(command.baseUrl());
         config.changeApiKey(command.apiKey() == null ? "" : command.apiKey().trim());
         config.changeSortOrder(command.sortOrder());
-        repository.save(config);
-        return Result.success();
+        return Result.success(repository.saveAndReturnId(config));
     }
 
     @Override

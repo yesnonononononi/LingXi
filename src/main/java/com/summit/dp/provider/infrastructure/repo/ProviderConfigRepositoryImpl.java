@@ -76,6 +76,11 @@ public class ProviderConfigRepositoryImpl
     }
 
     @Override
+    public Long saveAndReturnId(ProviderConfig config) {
+        return save(config, ProviderConfigPO::getId).longValue();
+    }
+
+    @Override
     public List<ProviderConfig> findAll() {
         return store.access(false, records -> records.stream()
                 .sorted(DISPLAY_ORDER).map(this::toModel).toList());
