@@ -23,6 +23,7 @@ export type SurfaceTone =
 
 export type TextTone =
   | 'primary'
+  | 'primary-soft'
   | 'secondary'
   | 'tertiary'
   | 'muted'
@@ -54,6 +55,7 @@ export const SURFACE_BG: Readonly<Record<SurfaceTone, string>> = Object.freeze({
 /** 文字色 */
 export const TEXT_FG: Readonly<Record<TextTone, string>> = Object.freeze({
   'primary': 'text-lx-primary',
+  'primary-soft': 'text-lx-primary-soft',
   'secondary': 'text-lx-secondary',
   'tertiary': 'text-lx-tertiary',
   'muted': 'text-lx-muted',

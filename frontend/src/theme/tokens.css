@@ -28,6 +28,7 @@
 
   /* 文字 Text */
   --lx-text-primary:          #ffffff;
+  --lx-text-primary-soft:     #f4f4f5;
   --lx-text-secondary:        #e4e4e7;
   --lx-text-tertiary:         #d4d4d8;
   --lx-text-muted:            #9f9fa9;
@@ -97,6 +98,7 @@ html[data-theme="light"] {
   --lx-overlay:               rgba(0, 0, 0, 0.32);
 
   --lx-text-primary:          #101828;
+  --lx-text-primary-soft:     #1e2939;
   --lx-text-secondary:        #364153;
   --lx-text-tertiary:         #4a5565;
   --lx-text-muted:            #6a7282;

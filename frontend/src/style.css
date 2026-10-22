@@ -23,6 +23,7 @@
   --color-lx-overlay:          var(--lx-overlay);
 
   --color-lx-primary:          var(--lx-text-primary);
+  --color-lx-primary-soft:     var(--lx-text-primary-soft);
   --color-lx-secondary:        var(--lx-text-secondary);
   --color-lx-tertiary:         var(--lx-text-tertiary);
   --color-lx-muted:            var(--lx-text-muted);

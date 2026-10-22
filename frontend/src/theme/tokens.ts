@@ -42,6 +42,7 @@ export const THEME_TOKEN_META: readonly ThemeTokenMeta[] = Object.freeze([
 
   // 文字
   def('text-primary', 'text', true, '正文主色'),
+  def('text-primary-soft', 'text', true, '主文字柔和档（需读长文本的正文/列表主标题，低于 primary 高于 secondary）'),
   def('text-secondary', 'text', true, '次级文字'),
   def('text-tertiary', 'text', true, '辅助说明'),
   def('text-muted', 'text', true, '弱化文字/占位'),

@@ -1067,7 +1067,7 @@ const a1 = groupsOf(ctx, "const c = isDark ? 'bg-white/10' : 'bg-white'");
   let spec = null;
   try {
     spec = loadTokenValueSpec();
-    check('真值源可加载', spec.tokens.length === 20, 'tokens=' + spec.tokens.length);
+    check('真值源可加载', spec.tokens.length > 0 && spec.tokens.length === spec.provenance.tokenCount, 'tokens=' + spec.tokens.length + ' declared=' + spec.provenance.tokenCount);
   } catch (e) {
     check('真值源可加载', false, e.message);
   }

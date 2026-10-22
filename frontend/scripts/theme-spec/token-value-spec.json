@@ -4,10 +4,10 @@
   "provenance": {
     "migratedFrom": ".lingxi/tmp/m3/m3a-class-map.json（临时目录，已迁出仓库外路径，运行期不再依赖）",
     "generator": "decide.mjs（M3a 决策产物）",
-    "tokenCount": 20,
+    "tokenCount": 21,
     "statuses": {
       "rederive": 19,
-      "add": 1
+      "add": 2
     },
     "expectedDerivation": "expected* = 决策产物里的 darkLiteral/lightLiteral 经色值归一化得到（oklch / hex / rgba / color-mix 四类写法）；与 dist 产物解析出的代言类名真实值互为独立推导，二者在容差内必须一致。",
     "note": "只迁移 20 条令牌映射结论（token/darkClass/lightClass/expected/themeKey/utilityClass/note），不迁移决策过程里的 residual 明细；原映射结论（谁代言谁、状态 rederive/add、note）一字未改。"
@@ -33,6 +33,19 @@
       "themeKey": "--color-lx-primary",
       "utilityClass": "text-lx-primary",
       "note": "主线正文：30 处/7 文件（全仓最大文字对）；64 处 text-white 上下文中 59 处为黑底正文、0 处为彩色实底按钮（见 text-white-context.txt）"
+    },
+    {
+      "token": "--lx-text-primary-soft",
+      "name": "text-primary-soft",
+      "group": "text",
+      "status": "add",
+      "darkClass": "text-zinc-100",
+      "lightClass": "text-gray-800",
+      "expectedDark": "#f4f4f5",
+      "expectedLight": "#1e2939",
+      "themeKey": "--color-lx-primary-soft",
+      "utilityClass": "text-lx-primary-soft",
+      "note": "主文字柔和档：暗 #f4f4f5 严格夹在 primary #ffffff 与 secondary #e4e4e7 之间，亮 #1e2939 严格夹在 #101828 与 #364153 之间，两端都落在阶梯空档内；与 primary/secondary 差 11–17 通道 > 门禁容差 8，换任一条都判漂移。实测消费点 23 处/7 文件走 dark: 通道 + 2 处走三元通道，未覆盖仅 4 处（基底 gray-900/gray-300）。"
     },
     {
       "token": "--lx-text-secondary",

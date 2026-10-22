@@ -162,6 +162,7 @@ const THEME_KEY_OF_TOKEN: Readonly<Record<string, string | null>> = {
   'surface-selected': '--color-lx-surface-selected',
   'overlay': '--color-lx-overlay',
   'text-primary': '--color-lx-primary',
+  'text-primary-soft': '--color-lx-primary-soft',
   'text-secondary': '--color-lx-secondary',
   'text-tertiary': '--color-lx-tertiary',
   'text-muted': '--color-lx-muted',
