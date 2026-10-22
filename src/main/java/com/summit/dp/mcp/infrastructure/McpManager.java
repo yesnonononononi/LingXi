@@ -9,6 +9,7 @@ import com.summit.core.mcp.McpSessionType;
 import com.summit.core.mcp.McpToolScope;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecutor;
+import com.summit.ddd.utils.RetryUtil;
 import com.summit.dp.mcp.application.service.McpConfigAssembler;
 import com.summit.dp.mcp.application.service.McpConnectionRegistry;
 import com.summit.dp.mcp.application.service.McpSessionRegistry;
@@ -40,6 +41,11 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
 
     private static final long RUNTIME_TIMEOUT_GRACE_SECONDS = 5L;
+    /** 启动期重试次数（不含首次）；仍失败就等下一次「保存配置」或重启。 */
+    private static final int STARTUP_RETRY_TIMES = 1;
+    /** 退避基数，RetryUtil 会在此基础上取 0~基数 的随机抖动，避免多个 server 同时重试。 */
+    private static final long STARTUP_RETRY_BASIC_DELAY_MILLIS = 2_000L;
+    private static final int STARTUP_RETRY_MULTIPLE = 2;
     private final McpRepository repository;
     private final McpConfigAssembler assembler;
     private final McpClientFactory clientFactory;
@@ -52,18 +58,20 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
 
     @PostConstruct
     public void connect() {
-
-        List<CompletableFuture<Void>> futures = repository.findEnabled().stream()
-                .map(model -> CompletableFuture.runAsync(() -> {
-                    try {
-                        register(model.getId());
-                    } catch (ClientException failure) {
-                        log.warn("初始化 MCP 连接失败: id={}, name={}",
-                                model.getId(), model.getName(), failure);
-                    }
-                }, executorService))
-                .toList();
-
+        // 并发提交，失败只记日志：启动不能被远端 MCP 拖住。
+        repository.findEnabled().forEach(model -> CompletableFuture.runAsync(() -> {
+            try {
+                // 启动期一次抖动不该让 server 在整个进程生命周期缺席（注册只有启动和保存配置两个入口）。
+                // 只补一次：连接失败本身可能已经耗掉整个初始化预算，重试太多会把启动拖成几分钟。
+                RetryUtil.retry(STARTUP_RETRY_BASIC_DELAY_MILLIS, STARTUP_RETRY_TIMES, STARTUP_RETRY_MULTIPLE,
+                        TimeUnit.MILLISECONDS, () -> {
+                            register(model.getId());
+                            return null;
+                        });
+            } catch (Exception failure) {
+                log.warn("初始化 MCP 连接失败: id={}, name={}", model.getId(), model.getName(), failure);
+            }
+        }, executorService));
     }
 
 

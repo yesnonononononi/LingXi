@@ -182,6 +182,44 @@ class McpManagerTest {
     }
 
     @Test
+    void startupRetriesTransientFailureAndPublishesTools() {
+        Mcp model = model(1L, "flaky");
+        McpClient client = mock(McpClient.class);
+        when(repository.findById(1L)).thenReturn(Optional.of(model));
+        when(client.listTools()).thenReturn(List.of(ToolSpecification.builder()
+                .name("inspect").description("inspect").build()));
+        when(factory.create(eq("flaky"), any()))
+                .thenThrow(new IllegalStateException("first attempt fails"))
+                .thenReturn(client);
+        when(repository.findEnabled()).thenReturn(List.of(model));
+
+        manager.connect();
+        manager.disconnect();
+
+        try (McpToolScope scope = manager.openScope(config(model))) {
+            assertNotNull(scope.getTool("mcp_flaky_inspect"));
+        }
+        verify(factory, times(2)).create(eq("flaky"), any());
+        manager.close();
+    }
+
+    @Test
+    void startupGivesUpAfterSingleRetry() {
+        Mcp model = model(1L, "dead");
+        when(repository.findById(1L)).thenReturn(Optional.of(model));
+        when(factory.create(eq("dead"), any())).thenThrow(new IllegalStateException("always fails"));
+        when(repository.findEnabled()).thenReturn(List.of(model));
+
+        manager.connect();
+        manager.disconnect();
+
+        assertTrue(manager.openScope(config(model)).isEmpty());
+        // 只补一次：退化成无限重试会把启动拖成几分钟。
+        verify(factory, times(2)).create(eq("dead"), any());
+        manager.close();
+    }
+
+    @Test
     void requestConfigurationFiltersProcessPool() {
         Mcp first = model(1L, "first");
         Mcp second = model(2L, "second");
