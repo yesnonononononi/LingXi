@@ -70,3 +70,11 @@ test('only-script wrapper 没有 jar 时仍实际调用 Maven，并传递打包�
 test('带 wrapper jar 的传统模式仍实际调用 Maven，并传播失败', (t) => {
   assertWrapperInvocation(createFixture(t, false));
 });
+
+test('发布先启动随包 JRE 与后端，再生成安装包', () => {
+  const workflow = fs.readFileSync(path.join(__dirname, '../../.github/workflows/release.yml'), 'utf8');
+  const build = workflow.indexOf('run: npm run backend:runtime');
+  const startup = workflow.indexOf('run: node scripts/check-backend-startup.mjs');
+  const installer = workflow.indexOf('run: npx electron-builder');
+  assert.ok(build >= 0 && startup > build && installer > startup, '实际启动闸门必须在运行产物就绪后、生成安装包前执行');
+});

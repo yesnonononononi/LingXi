@@ -126,6 +126,10 @@ jobs:
         working-directory: frontend
         run: npm run backend:runtime
 
+      - name: 验证随包 JRE 与后端实际启动
+        working-directory: frontend
+        run: node scripts/check-backend-startup.mjs
+
       - name: 构建并打包（产出 nsis + latest.yml，但不发布）
         working-directory: frontend
         run: npx electron-builder --win nsis --x64 --publish never
