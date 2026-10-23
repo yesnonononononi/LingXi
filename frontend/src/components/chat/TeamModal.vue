@@ -703,7 +703,7 @@ const handleSaveTeam = async () => {
                       {{ t('chat.team.noTool') }}
                     </span>
                   </div>
-                  <div class="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                  <div class="text-[11px] text-lx-muted truncate">
                     {{ agent.description || t('chat.team.noDescription') }}
                   </div>
                 </div>
@@ -775,7 +775,7 @@ const handleSaveTeam = async () => {
                   <span class="text-xs font-semibold text-gray-900 dark:text-zinc-100 truncate">{{ currentCommander.name }}</span>
                   <span class="px-1.5 py-0.2 text-[9px] rounded-full bg-cyan-500/20 text-cyan-300 font-medium">{{ t('chat.team.manager') }}</span>
                 </div>
-                <div class="text-[11px] text-gray-500 dark:text-zinc-400 truncate max-w-[320px]">
+                <div class="text-[11px] text-lx-muted truncate max-w-[320px]">
                   {{ currentCommander.description || t('chat.team.managerDefaultDesc') }}
                 </div>
               </div>

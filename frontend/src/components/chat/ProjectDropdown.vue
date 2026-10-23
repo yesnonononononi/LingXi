@@ -103,7 +103,7 @@ onBeforeUnmount(() => {
       <!-- Folder Icon -->
       <svg
         v-if="currentWorkspace"
-        class="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400 shrink-0"
+        class="w-3.5 h-3.5 text-lx-muted shrink-0"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"

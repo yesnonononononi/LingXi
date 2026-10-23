@@ -187,7 +187,7 @@ const handleReject = () => submit(false);
                 </button>
               </div>
 
-              <div v-if="commandIntention" class="px-3 pt-2 pr-16 text-xs break-all" :class="isDark ? 'text-gray-300' : 'text-gray-600'">
+              <div v-if="commandIntention" class="px-3 pt-2 pr-16 text-xs break-all text-lx-tertiary">
                                 <span class="font-medium">{{ t('chat.approval.intention') }}</span>{{ commandIntention }}
               </div>
               <div v-if="commandWorkDir" class="px-3 pt-2 pr-16 text-xs text-gray-500 break-all">{{ t('chat.approval.workDir') }}{{ commandWorkDir }}</div>

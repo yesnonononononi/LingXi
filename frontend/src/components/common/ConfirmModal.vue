@@ -149,7 +149,7 @@ onUnmounted(() => {
               <h3 class="text-base font-semibold text-gray-900 dark:text-gray-100">
                 {{ state.options.title || t('common.confirmTitle') }}
               </h3>
-              <p class="mt-1 text-xs sm:text-sm text-gray-500 dark:text-gray-400 leading-relaxed break-words whitespace-pre-line">
+              <p class="mt-1 text-xs sm:text-sm text-lx-muted leading-relaxed break-words whitespace-pre-line">
                 {{ state.options.content }}
               </p>
             </div>
@@ -167,7 +167,7 @@ onUnmounted(() => {
               v-if="state.options.showCancel"
               ref="cancelButton"
               type="button"
-              class="px-3.5 py-1.5 text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white bg-gray-100 hover:bg-gray-200/80 dark:bg-white/5 dark:hover:bg-white/10 rounded-xl border border-gray-200/80 dark:border-white/10 transition-colors focus:outline-none cursor-pointer active:scale-95"
+              class="px-3.5 py-1.5 text-xs sm:text-sm font-medium text-lx-tertiary hover:text-gray-900 dark:hover:text-white bg-gray-100 hover:bg-gray-200/80 dark:bg-white/5 dark:hover:bg-white/10 rounded-xl border border-gray-200/80 dark:border-white/10 transition-colors focus:outline-none cursor-pointer active:scale-95"
               @click="handleCancel"
             >
               {{ state.options.cancelText || t('common.cancel') }}

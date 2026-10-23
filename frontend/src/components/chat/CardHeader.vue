@@ -25,7 +25,7 @@ withDefaults(defineProps<{
   <div class="flex items-center justify-between gap-2 select-none">
     <div class="flex items-center gap-2 min-w-0">
       <span :class="['w-2 h-2 rounded-full flex-shrink-0', cardDotClass(tone)]"></span>
-      <span :class="['text-xs font-semibold flex-shrink-0', isDark ? 'text-gray-300' : 'text-gray-600']">
+      <span :class="['text-xs font-semibold flex-shrink-0', 'text-lx-tertiary']">
         {{ typeLabel }}
       </span>
       <span

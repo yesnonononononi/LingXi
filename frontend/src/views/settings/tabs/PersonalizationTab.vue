@@ -44,7 +44,7 @@ async function submit() {
       <p>{{ error }}</p>
       <button v-if="!config" type="button" class="mt-2 underline cursor-pointer" :disabled="loading" @click="load">{{ copy.retry }}</button>
     </div>
-    <div v-if="loading && !config" role="status" class="py-12 text-center text-xs text-gray-500 dark:text-zinc-400">{{ copy.loading }}</div>
+    <div v-if="loading && !config" role="status" class="py-12 text-center text-xs text-lx-muted">{{ copy.loading }}</div>
     <form v-if="config" class="space-y-4" @submit.prevent="submit">
       <fieldset :disabled="saving || loading" class="space-y-4 min-w-0">
         <section class="personalization-card space-y-5">
@@ -60,7 +60,7 @@ async function submit() {
         <section class="personalization-card identity-row">
           <div>
             <label for="personalization-style" class="text-xs font-semibold text-lx-primary-soft">{{ copy.style }}</label>
-            <p class="mt-1.5 text-xs leading-relaxed text-gray-500 dark:text-zinc-400">{{ copy.styleHint }}</p>
+            <p class="mt-1.5 text-xs leading-relaxed text-lx-muted">{{ copy.styleHint }}</p>
           </div>
           <div class="identity-control">
             <SettingsSelect id="personalization-style" v-model="draft.replyStyle" :label="copy.style"
@@ -72,7 +72,7 @@ async function submit() {
           <div class="flex items-start justify-between gap-4">
             <div>
               <label for="personalization-instruction" class="text-xs font-semibold text-lx-primary-soft">{{ copy.instruction }}</label>
-              <p class="mt-1.5 text-xs leading-relaxed text-gray-500 dark:text-zinc-400">{{ copy.instructionHint }}</p>
+              <p class="mt-1.5 text-xs leading-relaxed text-lx-muted">{{ copy.instructionHint }}</p>
             </div>
             <button type="button" class="personalization-input shrink-0 px-3 cursor-pointer" @click="editingInstruction ? cancelInstruction() : editInstruction()">{{ editingInstruction ? copy.cancel : copy.edit }}</button>
           </div>
@@ -80,7 +80,7 @@ async function submit() {
         </section>
 
         <div class="sticky bottom-0 flex items-center justify-end gap-3 bg-white/95 pt-3 pb-1 dark:bg-black/95">
-          <span v-if="saved && !dirty" role="status" class="text-xs text-gray-500 dark:text-zinc-400">{{ copy.saved }}</span>
+          <span v-if="saved && !dirty" role="status" class="text-xs text-lx-muted">{{ copy.saved }}</span>
           <button type="submit" :disabled="!dirty || saving || loading" class="rounded-xl bg-gray-900 px-4 py-2.5 text-xs font-medium text-white transition hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white">{{ saving ? copy.saving : copy.save }}</button>
         </div>
       </fieldset>

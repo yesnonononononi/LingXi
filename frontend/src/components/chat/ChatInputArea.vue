@@ -1385,7 +1385,7 @@ defineExpose({
       <p v-if="reasoningEffortError" role="alert" class="text-xs text-red-500">
         {{ reasoningEffortError }}
       </p>
-      <p v-if="promptOptimization.isOptimizing.value" role="status" class="text-xs text-gray-500 dark:text-zinc-400">
+      <p v-if="promptOptimization.isOptimizing.value" role="status" class="text-xs text-lx-muted">
         {{ t('chat.optimizePrompt.loading') }}
       </p>
       <p v-if="promptOptimization.error.value" role="alert" class="text-xs text-red-500">
@@ -1417,7 +1417,7 @@ defineExpose({
           </button>
         </span>
       </div>
-      <div class="text-xs text-gray-500 dark:text-zinc-400" aria-live="polite">
+      <div class="text-xs text-lx-muted" aria-live="polite">
                 <span v-if="limitsLoading">{{ t('chat.input.readingImageLimit') }}</span>
         <span v-else-if="limitsError" class="text-red-500">{{ limitsError }}
           <button type="button" class="ml-2 underline" @click="loadLimits">{{ t('common.retry') }}</button>

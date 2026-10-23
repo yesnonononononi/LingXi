@@ -193,7 +193,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Workspaces Section Header -->
-    <div v-if="!isCollapsed" class="px-4 pt-3 pb-1 flex items-center justify-between shrink-0 text-gray-500 dark:text-zinc-400">
+    <div v-if="!isCollapsed" class="px-4 pt-3 pb-1 flex items-center justify-between shrink-0 text-lx-muted">
       <span class="font-medium text-xs tracking-tight">{{ t('chat.sidebar.workspace') }}</span>
       <div class="flex items-center gap-1">
         <!-- Search / Filter Icon -->

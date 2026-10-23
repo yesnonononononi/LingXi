@@ -95,7 +95,7 @@ const {
                     <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
             {{ t('settings.teams.title') }}
           </h4>
-          <p class="text-xs text-gray-500 dark:text-gray-400 dark:text-glow-subtle mt-0.5">
+          <p class="text-xs text-lx-muted dark:text-glow-subtle mt-0.5">
             {{ t('settings.teams.subtitle') }}
           </p>
         </div>
@@ -195,7 +195,7 @@ const {
               </div>
 
               <!-- 团队描述展示 -->
-                            <p class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">
+                            <p class="text-xs text-lx-muted line-clamp-2">
                 {{ team.description || t('settings.teams.noDescription') }}
               </p>
 
@@ -271,7 +271,7 @@ const {
           <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
                         {{ editingTeamId ? t('settings.teams.editHeading', { name: teamForm.name || t('settings.teams.unnamedTeam') }) : t('settings.teams.addHeading') }}
           </h4>
-          <p class="text-xs text-gray-500 dark:text-gray-400 dark:text-glow-subtle mt-0.5">
+          <p class="text-xs text-lx-muted dark:text-glow-subtle mt-0.5">
             {{ t('settings.teams.formSubtitle') }}
           </p>
         </div>

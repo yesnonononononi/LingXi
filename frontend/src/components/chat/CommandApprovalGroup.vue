@@ -59,8 +59,7 @@ watch(() => pendingEntries.value.map(entry => entry.id), async (ids, previous = 
       <div v-for="entry in orderedEntries" :key="entry.id" class="min-w-0" :data-approval-id="entry.card.toolCallId">
         <button
           type="button"
-          class="flex w-full min-w-0 items-center gap-2 py-2 text-left text-xs disabled:cursor-default cursor-pointer"
-          :class="isDark ? 'text-zinc-300' : 'text-gray-600'"
+          class="flex w-full min-w-0 items-center gap-2 py-2 text-left text-xs text-lx-tertiary disabled:cursor-default cursor-pointer"
           :disabled="entry.card.pending"
           :aria-expanded="entry.card.pending || !!expandedEntries[entry.id]"
           :title="entry.card.command"

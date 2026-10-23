@@ -514,7 +514,7 @@
           <!-- 两侧等分剩余空间，保证提示始终居中。 -->
           <div class="flex-1 min-w-0 h-[1px] bg-gray-200 dark:bg-gray-700/60"></div>
 
-          <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-normal shrink-0">
+          <div class="flex items-center gap-1.5 text-xs text-lx-muted font-normal shrink-0">
             <svg v-if="props.message.isCompressingContext" class="w-3.5 h-3.5 opacity-80 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
               <polyline points="14 2 14 8 20 8"></polyline>

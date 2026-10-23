@@ -446,7 +446,7 @@ defineExpose({
                                 {{ t('chat.subAgent.assignedTask') }}
               </span>
             </div>
-            <p :class="['text-xs text-gray-500 dark:text-gray-400 leading-relaxed', !expandedTaskId[String(it.id)] ? 'line-clamp-2' : 'whitespace-pre-wrap']">
+            <p :class="['text-xs text-lx-muted leading-relaxed', !expandedTaskId[String(it.id)] ? 'line-clamp-2' : 'whitespace-pre-wrap']">
               {{ it.task }}
             </p>
           </div>

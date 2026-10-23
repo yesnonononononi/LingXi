@@ -61,7 +61,7 @@ const {
                     <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
             {{ t('settings.mcp.title') }}
           </h4>
-          <p class="text-xs text-gray-500 dark:text-gray-400 dark:text-glow-subtle mt-0.5">
+          <p class="text-xs text-lx-muted dark:text-glow-subtle mt-0.5">
             {{ t('settings.mcp.subtitle') }}
           </p>
                 </div>
@@ -159,12 +159,12 @@ const {
               </div>
 
               <!-- 服务描述：随提示词下发给模型，让模型判断该服务是否相关 -->
-              <p v-if="item.description" class="text-xs text-gray-600 dark:text-gray-300 mt-1 break-words">
+              <p v-if="item.description" class="text-xs text-lx-tertiary mt-1 break-words">
                 {{ item.description }}
               </p>
 
               <!-- 连接信息：http 系显示端点，stdio 显示启动命令 -->
-              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 break-all font-mono">
+              <p class="text-xs text-lx-muted mt-1 break-all font-mono">
                 {{ resolveConnectionLabel(item) }}
               </p>
 

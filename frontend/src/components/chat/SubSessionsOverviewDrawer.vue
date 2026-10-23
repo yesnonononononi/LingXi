@@ -130,7 +130,7 @@ const emit = defineEmits<{
                       #{{ sub.id }}
                     </span>
                   </div>
-                  <p class="text-xs text-gray-500 dark:text-gray-400 line-clamp-1 mt-0.5">
+                  <p class="text-xs text-lx-muted line-clamp-1 mt-0.5">
                     {{ sub.name || sub.task || t('chat.subSessions.defaultTask') }}
                   </p>
                 </div>

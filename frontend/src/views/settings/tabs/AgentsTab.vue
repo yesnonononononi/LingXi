@@ -314,7 +314,7 @@ const {
                     <h4 class="text-base font-bold tracking-tight text-lx-primary">
             {{ editingAgentId ? t('settings.agents.editHeading') : t('settings.agents.addHeading') }}
           </h4>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+          <p class="text-xs text-lx-muted mt-0.5">
             {{ t('settings.agents.formSubtitle') }}
           </p>
         </div>

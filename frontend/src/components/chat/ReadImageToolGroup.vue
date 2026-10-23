@@ -18,7 +18,7 @@ const openPreview = (image: ReadToolImage) => {
 </script>
 
 <template>
-  <div data-testid="read-image-group" class="w-full min-w-0 text-[13px]" :class="isDark ? 'text-zinc-400' : 'text-zinc-500'">
+  <div data-testid="read-image-group" class="w-full min-w-0 text-[13px] text-lx-muted">
     <button type="button" data-testid="read-image-toggle" class="flex items-center gap-1.5 py-0.5 cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-200" :aria-expanded="expanded" @click="expanded = !expanded">
       <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
         <rect x="7" y="3" width="14" height="14" rx="3" />

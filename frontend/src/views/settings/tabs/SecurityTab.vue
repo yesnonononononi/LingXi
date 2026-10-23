@@ -64,7 +64,7 @@ function resolveRuleKey(rule: SecurityRule): number {
 
 /* 卡片 / 控件 / 按钮：与设置页其它 tab 同一套圆角与配色（卡片 2xl、控件 xl、图标按钮 lg） */
 const panel = 'rounded-2xl border border-gray-100 dark:border-white/10 bg-gray-50/60 dark:bg-white/[0.03] p-4';
-const control = 'rounded-xl border border-gray-200 dark:border-white/15 bg-white dark:bg-black/30 text-gray-700 dark:text-zinc-200 px-3 py-1.5 text-xs outline-none transition focus:border-gray-400 focus:ring-2 focus:ring-gray-200/60 dark:focus:border-white/40 dark:focus:ring-white/10';
+const control = 'rounded-xl border border-gray-200 dark:border-white/15 bg-white dark:bg-black/30 text-lx-secondary px-3 py-1.5 text-xs outline-none transition focus:border-gray-400 focus:ring-2 focus:ring-gray-200/60 dark:focus:border-white/40 dark:focus:ring-white/10';
 const button = 'rounded-xl border border-gray-200 dark:border-white/15 px-3 py-1.5 text-xs font-medium transition cursor-pointer hover:bg-black/5 active:scale-[0.97] dark:hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100';
 const primary = 'rounded-xl bg-blue-600 px-4 py-1.5 text-xs font-medium text-white shadow-sm transition cursor-pointer hover:bg-blue-500 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:active:scale-100';
 const iconButton = 'grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-gray-200 text-gray-500 transition cursor-pointer dark:border-white/15 dark:text-zinc-400 hover:border-gray-300 hover:bg-black/5 hover:text-gray-900 dark:hover:border-white/25 dark:hover:bg-white/10 dark:hover:text-white disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent';
@@ -173,7 +173,7 @@ void load();
 
         <!-- 沙箱服务能力检查（随沙箱设置一起从通用页搬来） -->
         <div class="mt-3 flex items-center justify-between gap-2 border-t border-gray-100 pt-3 dark:border-white/10">
-          <span class="flex min-w-0 items-center gap-1.5 text-[11px] leading-5 text-gray-500 dark:text-zinc-400">
+          <span class="flex min-w-0 items-center gap-1.5 text-[11px] leading-5 text-lx-muted">
             <span :class="['h-1.5 w-1.5 shrink-0 rounded-full', sandboxStatus ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-white/20']" aria-hidden="true" />
             <span class="min-w-0">{{ t('settings.general.sandboxService') }}：{{ sandboxStatus?.message || t('settings.general.sandboxServiceDesc') }}</span>
           </span>
@@ -185,8 +185,8 @@ void load();
         <div v-if="sandboxNotice" class="sec-rise mt-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-2.5 text-[11px] text-emerald-600 dark:text-emerald-400">{{ sandboxNotice }}</div>
         <div v-if="sandboxError" class="sec-rise mt-2 rounded-xl border border-red-500/20 bg-red-500/10 p-2.5 text-[11px] text-red-600 dark:text-red-400">{{ sandboxError }}</div>
         <div v-if="showScope" class="sec-rise mt-2 rounded-xl border border-gray-100 bg-white/70 p-2.5 dark:border-white/10 dark:bg-white/[0.03]">
-          <p class="text-[11px] font-medium text-gray-600 dark:text-zinc-300">{{ copy.scope }}</p>
-          <p class="mt-1 text-[11px] leading-5 text-gray-500 dark:text-zinc-400">{{ copy.fileLimits }}</p>
+          <p class="text-[11px] font-medium text-lx-tertiary">{{ copy.scope }}</p>
+          <p class="mt-1 text-[11px] leading-5 text-lx-muted">{{ copy.fileLimits }}</p>
         </div>
       </section>
 
@@ -214,7 +214,7 @@ void load();
         </div>
         <button v-if="category !== 'net' && current" type="button" :class="button" :disabled="busy" @click="reset" data-testid="security-reset">{{ copy.defaults }}</button>
       </div>
-      <p class="sec-rise text-[11px] leading-5 text-gray-500 dark:text-zinc-400" :style="{ '--sec-delay': '40ms' }">{{ hint }}</p>
+      <p class="sec-rise text-[11px] leading-5 text-lx-muted" :style="{ '--sec-delay': '40ms' }">{{ hint }}</p>
 
       <!-- 该类规则的默认策略（随沙箱设置一起从通用页搬来）：规则未命中时按它执行 -->
       <section v-if="category === 'files'" :class="[panel, 'sec-rise']" :style="{ '--sec-delay': '70ms' }">
@@ -263,7 +263,7 @@ void load();
       </div>
 
       <template v-if="current">
-        <p role="status" class="sec-rise flex items-start gap-1.5 text-[11px] leading-5 text-gray-500 dark:text-zinc-400">
+        <p role="status" class="sec-rise flex items-start gap-1.5 text-[11px] leading-5 text-lx-muted">
           <svg class="mt-[3px] h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" /></svg>
           <span class="min-w-0">{{ activeHint }}</span>
         </p>
@@ -276,7 +276,7 @@ void load();
             </span>
             <span class="text-xs font-semibold text-lx-primary-soft dark:text-glow-subtle">{{ copy.netStatus }}</span>
           </div>
-          <p class="mt-2 text-[11px] leading-5 text-gray-500 dark:text-zinc-400">{{ copy.netDetail }}</p>
+          <p class="mt-2 text-[11px] leading-5 text-lx-muted">{{ copy.netDetail }}</p>
         </section>
 
         <fieldset v-else :disabled="busy" :class="[panel, 'sec-rise min-w-0']">
@@ -294,7 +294,7 @@ void load();
           </form>
 
           <div class="mt-3 mb-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span class="flex items-center gap-1.5 text-[11px] font-medium text-gray-500 dark:text-zinc-400">{{ copy.rules }}
+            <span class="flex items-center gap-1.5 text-[11px] font-medium text-lx-muted">{{ copy.rules }}
               <span class="rounded-full bg-black/[0.06] px-1.5 text-[10px] font-semibold tabular-nums dark:bg-white/10">{{ current.rules.length }}</span>
             </span>
             <span class="text-[11px] leading-5 text-gray-400 dark:text-zinc-500">{{ copy.moveHint }}</span>
@@ -332,7 +332,7 @@ void load();
             </div>
             <div class="mt-2 flex flex-wrap items-center justify-end gap-2">
               <template v-if="category === 'files'">
-                <span class="text-[11px] text-gray-500 dark:text-zinc-400">{{ copy.access }}</span>
+                <span class="text-[11px] text-lx-muted">{{ copy.access }}</span>
                 <div class="w-28 shrink-0">
                   <SettingsSelect :id="`security-rule-access-${index}`" data-testid="security-access" :label="`${rule.pattern} ${copy.access}`" :model-value="rule.read ?? ''"
                     :options="current.supportedActions.map(action => ({ value: action, label: label(action) }))" @update:model-value="setAccess(rule, $event)" />
@@ -348,7 +348,7 @@ void load();
 
         <!-- 保存底栏：浮起的玻璃条，滚动时压住下方规则（sticky 不能被带 transform 的祖先包住） -->
         <div v-if="category !== 'net'" class="sec-rise sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-gray-200/80 bg-white/95 px-3 py-2 shadow-lg backdrop-blur dark:border-white/10 dark:bg-zinc-950/90" :style="{ '--sec-delay': '140ms' }">
-          <span role="status" class="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-zinc-400">
+          <span role="status" class="flex items-center gap-1.5 text-[11px] text-lx-muted">
             <span v-if="notice" class="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
             <span v-else-if="dirty[category]" class="sec-ping h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
             {{ notice || (dirty[category] ? copy.dirty : '') }}
@@ -404,7 +404,7 @@ void load();
   @apply grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full text-gray-400 transition-colors cursor-pointer dark:text-zinc-500;
 }
 
-.sec-info:hover { @apply text-gray-700 dark:text-zinc-200; }
+.sec-info:hover { @apply text-lx-secondary; }
 
 /* ================= 总开关 ================= */
 .sec-switch {

@@ -258,7 +258,7 @@ defineExpose({
       <slot name="trigger" :is-open="isOpen" :selected="selectedOption" :label="displayLabel">
         <span
           class="font-medium leading-[18px] truncate max-w-[150px]"
-          :class="[labelSizeClass, isDark ? 'text-gray-300' : 'text-gray-600']"
+          :class="[labelSizeClass, 'text-lx-tertiary']"
         >{{ displayLabel }}</span>
         <!-- chevron svg：上拉展开时旋转 180° -->
         <svg

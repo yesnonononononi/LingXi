@@ -11,7 +11,7 @@ const emit = defineEmits<{ (event: 'resume'): void }>();
     <!-- 有待审批/待回答卡片时不出现：此类暂停下 resume 必被 canResume 挡掉（要等卡片答完），
          「请先处理卡片」的提示也由卡片本身承担，留着只是一行禁用按钮占位置。 -->
     <div v-if="status === 'SUSPENDED' && !hasUnresolved" class="flex items-center justify-between gap-3 py-1">
-      <span role="status" class="text-gray-500 dark:text-zinc-400">
+      <span role="status" class="text-lx-muted">
         {{ hasUnresolved ? t('chat.controls.waitingApproval') : t('chat.controls.paused') }}
       </span>
       <button type="button" :disabled="!canResume" data-testid="resume-generation"
