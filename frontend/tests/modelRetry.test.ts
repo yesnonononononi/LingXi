@@ -123,6 +123,21 @@ test('新响应先到时，迟到重试只撤下旧尝试，不重开等待提�
   assert.equal(bubble.aiMessages?.[0]?.responseId, next);
 });
 
+test('新尝试的空流片段不能撤下重试提示，也不能阻挡随后到达的重试事件', () => {
+  const { reducer, bubble } = setup();
+  reducer.consume(retry());
+  for (const type of ['PARTIAL_TEXT', 'PARTIAL_THINKING'] as const) {
+    reducer.consume({ ...partial(next), type, content: '' });
+    assert.equal(bubble.modelRetry?.responseId, failed);
+    assert.equal(bubble.turnState?.texts[`text:${next}`], undefined);
+    assert.equal(bubble.turnState?.texts[`thinking:${next}`], undefined);
+  }
+  reducer.consume(retry(next, 2));
+  assert.equal(bubble.modelRetry?.responseId, next);
+  reducer.consume(partial('9007199254740994', true));
+  assert.equal(bubble.modelRetry, undefined);
+});
+
 for (const type of ['EXECUTION_COMPLETED', 'EXECUTION_FAILED', 'EXECUTION_CANCELLED', 'EXECUTION_SUSPENDED'] as const) {
   test(`${type} 清除重试提示，迟到重试不能重开运行态`, () => {
     const { reducer, bubble } = setup();

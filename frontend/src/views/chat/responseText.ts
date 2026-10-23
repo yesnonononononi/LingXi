@@ -8,7 +8,7 @@ export function consumeResponseText(bubble: ChatMessage, event: AgentEvent): boo
   const responseId = event.responseId;
   if (getTurnState(bubble).rejectedResponses?.[responseId]) return false;
   if (event.type === 'PARTIAL_TEXT' || event.type === 'PARTIAL_THINKING') {
-    if (event.offset === undefined) return false;
+    if (event.offset === undefined || event.content === '') return false;
     const kind = event.type === 'PARTIAL_TEXT' ? 'TEXT' : 'THINKING';
     const id = `${kind === 'TEXT' ? 'text' : 'thinking'}:${responseId}`;
     if (getTurnState(bubble).texts[id]?.complete) return false;
