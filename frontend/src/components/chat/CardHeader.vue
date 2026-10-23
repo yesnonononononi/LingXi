@@ -31,7 +31,7 @@ withDefaults(defineProps<{
       <span
         v-if="title"
         :title="title"
-        :class="['text-sm font-medium truncate', isDark ? 'text-gray-100' : 'text-gray-800']"
+        :class="['text-sm font-medium truncate', 'text-lx-primary-soft']"
       >
         {{ title }}
       </span>

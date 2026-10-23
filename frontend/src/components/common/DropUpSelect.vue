@@ -315,7 +315,7 @@ defineExpose({
         <div
           v-if="menuTitle"
           class="px-2.5 py-1 font-semibold uppercase tracking-wider text-[10px]"
-          :class="isDark ? 'text-gray-500' : 'text-gray-400'"
+          :class="'text-lx-faint'"
         >
           {{ menuTitle }}
         </div>

@@ -280,7 +280,7 @@ const handleSubmit = () => {
                   :placeholder="t('chat.choice.customAnswerPlaceholder')"
                   :class="[
                     'w-full text-[13px] bg-transparent outline-none placeholder:text-gray-400',
-                    isDark ? 'text-gray-100' : 'text-gray-800'
+                    'text-lx-primary-soft'
                   ]"
                 />
               </div>
