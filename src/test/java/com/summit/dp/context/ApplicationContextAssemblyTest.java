@@ -3,27 +3,30 @@ package com.summit.dp.context;
 import com.summit.ddd.infrastructure.repository.json.AbstractJsonRepository;
 import com.summit.core.runtime.loop.LoopInterceptor;
 import com.summit.adapter.langchain4j.mcp.McpClientFactory;
+import com.summit.core.mcp.ScopeMcpProvider;
 import com.summit.core.runtime.loop.LoopInterceptorProcessor;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskLoopInterceptor;
+import com.summit.dp.workflow.infrastructure.mcp.HostMcpScopeProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mockingDetails;
 
 /**
  * 独立验证：真跑一次完整 {@code ApplicationContext} 装配，证明「编译过 → 容器能装」。
@@ -33,7 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li>{@code webEnvironment=NONE}：不绑定端口，绝不与运行中的实例抢 8088。</li>
  *   <li>数据源改内存 H2：不去打开实例正在使用的 {@code ~/.lingxi/data/lingxi.mv.db} 文件库。</li>
  *   <li>{@code lingxi.data.dir} / 四个 config 路径指向 {@code .run/tmp}，不写用户真实配置。</li>
- *   <li>MCP 客户端使用测试替身、API Key 置为占位符值，避免联网与配置解析的环境噪声。</li>
+ *   <li>MCP 使用真实工厂及独立的空配置，验证装配时不连接外部服务。</li>
  * </ul>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, properties = {
@@ -53,12 +56,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 })
 class ApplicationContextAssemblyTest {
 
-    /** 连接由请求决定，测试替身保证装配验证不依赖外部服务。 */
-    @MockitoBean
+    @Autowired
     private McpClientFactory clientFactory;
 
     @Autowired
     private ApplicationContext context;
+
+    @Test
+    void realMcpInfrastructureLoadsWithoutTheFrameworkGlobalSwitch() {
+        assertEquals(1, context.getBeansOfType(McpClientFactory.class).size());
+        assertFalse(mockingDetails(clientFactory).isMock());
+        assertTrue(context.getBean(ScopeMcpProvider.class) instanceof HostMcpScopeProvider);
+        assertTrue(context.getEnvironment().getProperty("lingxi.mcp.enabled") == null);
+    }
 
     @Test
     void allConfigurationRepositoriesUseJsonStorage() {
