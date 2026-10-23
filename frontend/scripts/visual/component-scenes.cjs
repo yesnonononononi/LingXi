@@ -18,20 +18,23 @@
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
-const { app, BrowserWindow } = require('electron');
+const { app } = require('electron');
+const kit = require('./scene-kit.cjs');
 
-const FRONTEND_ROOT = path.resolve(__dirname, '..', '..');
-const REPO_ROOT = path.resolve(FRONTEND_ROOT, '..');
-const COMP_ROOT = path.join(REPO_ROOT, '.lingxi', 'tmp', 'visual', 'components');
+const FRONTEND_ROOT = kit.FRONTEND_ROOT;
+const COMP_ROOT = path.join(kit.ARTIFACT_ROOT, 'components');
 const BASE_DIR = path.join(COMP_ROOT, 'baseline');
 const CUR_DIR = path.join(COMP_ROOT, 'current');
 const DIFF_DIR = path.join(COMP_ROOT, 'diff');
-const WORK = path.join(FRONTEND_ROOT, 'node_modules', '.tmp', 'component-scenes');
+const WORK = kit.sceneDir('component-scenes');
+const TOKENS = kit.readTokenValues();
 
 const argv = process.argv.slice(2);
 const argOf = (key, fb) => { const i = argv.indexOf(`--${key}`); return i >= 0 && argv[i + 1] ? argv[i + 1] : fb; };
 const MODE = argOf('mode', 'baseline'); // baseline | check
 const SELFCHECK = argv.includes('--selfcheck');
+/** 故意破坏主题切换，验证「主题未翻转」这条护栏真的会红（防假基线）。 */
+const SELFCHECK_THEME = argv.includes('--selfcheck-theme');
 
 /** 三个目标场景的 computed-style 采集选择器（函数体在渲染器里执行）。 */
 const TARGETS = [
@@ -47,10 +50,10 @@ const STYLE_PROPS = ['color', 'backgroundColor', 'borderTopColor', 'outlineColor
 
 const APP_VUE = `<script setup>
 import {ref} from 'vue';
-import CardHeader from '${path.relative(WORK, path.join(FRONTEND_ROOT, 'src/components/chat/CardHeader.vue')).split(String.fromCharCode(92)).join('/')}';
-import RequireChoiceCard from '${path.relative(WORK, path.join(FRONTEND_ROOT, 'src/components/chat/RequireChoiceCard.vue')).split(String.fromCharCode(92)).join('/')}';
-import DropUpSelect from '${path.relative(WORK, path.join(FRONTEND_ROOT, 'src/components/common/DropUpSelect.vue')).split(String.fromCharCode(92)).join('/')}';
-import '${path.relative(WORK, path.join(FRONTEND_ROOT, 'src/style.css')).split(String.fromCharCode(92)).join('/')}';
+import CardHeader from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/components/chat/CardHeader.vue'))}';
+import RequireChoiceCard from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/components/chat/RequireChoiceCard.vue'))}';
+import DropUpSelect from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/components/common/DropUpSelect.vue'))}';
+import '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/style.css'))}';
 const dark=ref(false);
 const choiceCard={kind:'CHOICE',toolCallId:'choice-0',conversationId:'42',title:'选择交付方式？',content:'选择交付方式？',options:['源码','安装包','Docker 镜像'],status:'pending',pending:true,version:'2',allowedActions:['ANSWER']};
 const sel=ref('a');
@@ -81,16 +84,9 @@ const {default:App}=await import('./App.vue');
 createApp(App).mount('#app');
 window.ready=true;`;
 
+/** 构建迷你 App（bootstrap 已下沉到 scene-kit，避免两套 suite 各写一份主题语义）。 */
 async function buildApp() {
-  await fsp.mkdir(WORK, { recursive: true });
-  await fsp.writeFile(path.join(WORK, 'App.vue'), APP_VUE);
-  await fsp.writeFile(path.join(WORK, 'entry.js'), ENTRY_JS);
-  await fsp.writeFile(path.join(WORK, 'index.html'),
-    '<!doctype html><html><head><meta charset="utf-8"></head><body><div id="app"></div><script type="module" src="./entry.js"></script></body></html>');
-  const { build } = await import('vite');
-  const { default: vue } = await import('@vitejs/plugin-vue');
-  await build({ configFile: false, root: WORK, base: './', plugins: [vue()], logLevel: 'error',
-    build: { target: 'esnext', outDir: path.join(WORK, 'dist'), emptyOutDir: true } });
+  await kit.buildMiniApp({ id: 'component-scenes', appVue: APP_VUE, entryJs: ENTRY_JS });
 }
 
 /** 在渲染器里读取某选择器目标的 computed style 与可见性。 */
@@ -112,10 +108,28 @@ function readStylesExpr() {
   })()`;
 }
 
-async function captureTheme(win, theme, outDir, mutate) {
+/** 故意破坏主题切换，验证「主题未翻转」护栏会红。两种破坏各打一条断言路径。 */
+const BREAK_THEME_JS = {
+  // 只切 class 不写 data-theme：等价于「主题标记位没落到根节点」。
+  marker: `(() => { if (window.__themeBroken) return; window.__themeBroken = true; const orig = window.setDark;
+    window.setDark = (v) => { orig(v); const el = document.documentElement; el.removeAttribute('data-theme'); el.classList.remove('light', 'dark'); }; })()`,
+  // 标记位正确但令牌覆盖失效：亮色下仍拿到暗色令牌值。
+  token: `(() => { if (window.__themeBroken) return; window.__themeBroken = true; const orig = window.setDark;
+    window.setDark = (v) => { orig(v); const el = document.documentElement;
+      if (v) el.style.removeProperty('--lx-text-secondary'); else el.style.setProperty('--lx-text-secondary', '#e4e4e7'); }; })()`,
+};
+
+async function captureTheme(win, theme, outDir, mutate = false, breakTheme = null) {
   const evaluate = s => win.webContents.executeJavaScript(s);
+  if (breakTheme) {
+    await evaluate(BREAK_THEME_JS[breakTheme]);
+    await evaluate('window.flush()');
+  }
   await evaluate(`window.setDark(${theme === 'dark'})`);
   await evaluate('window.flush()');
+  // 护栏：主题必须真的翻转（根标记位 + 令牌变量 + Tailwind 映射后的计算色）。
+  const themeProbe = await kit.assertThemeApplied(evaluate, theme, TOKENS);
+
   // 先开下拉（点按钮会 blur），再聚焦自定义输入框，最后统一等待过渡完成。
   await evaluate('window.openDropdown()');
   await evaluate('window.flush()');
@@ -148,23 +162,23 @@ async function captureTheme(win, theme, outDir, mutate) {
   return styles;
 }
 
-async function runCapture(outDir, mutate = false) {
-  const win = new BrowserWindow({ width: 780, height: 760, show: false,
-    webPreferences: { contextIsolation: true, offscreen: true, backgroundThrottling: false } });
-  await win.loadFile(path.join(WORK, 'dist/index.html'));
-  const evaluate = s => win.webContents.executeJavaScript(s);
-  for (let i = 0; i < 200; i++) { if (await evaluate('window.ready===true')) break; await new Promise(r => setTimeout(r, 50)); }
+async function runCapture(outDir, { mutate = false, breakTheme = null } = {}) {
+  const scene = await kit.openScene(WORK);
+  const { win, evaluate } = scene;
   const styles = {};
+  const probes = {};
   try {
     for (const theme of ['light', 'dark']) {
-      styles[theme] = await captureTheme(win, theme, outDir, mutate);
+      styles[theme] = await captureTheme(win, theme, outDir, mutate, breakTheme);
+      probes[theme] = await evaluate(kit.PROBE_JS);
     }
+    kit.assertThemesDiffer(probes.light, probes.dark);
   } finally {
-    win.destroy();
+    scene.close();
   }
   await fsp.mkdir(outDir, { recursive: true });
-  await fsp.writeFile(path.join(outDir, 'styles.json'), JSON.stringify(styles, null, 2));
-  return styles;
+  await fsp.writeFile(path.join(outDir, 'styles.json'), JSON.stringify({ styles, probes }, null, 2));
+  return { styles, probes };
 }
 
 /** 样式等价比对：每个目标每个属性的 computed style 必须逐字相等。 */
@@ -189,9 +203,9 @@ async function main() {
 
   if (SELFCHECK) {
     const tmpA = path.join(COMP_ROOT, '_selfcheck');
-    const stylesA = await runCapture(path.join(tmpA, 'before'), false);
-    const stylesB = await runCapture(path.join(tmpA, 'after'), true);
-    const styleDiffs = diffStyles(stylesA, stylesB);
+    const a = await runCapture(path.join(tmpA, 'before'));
+    const b = await runCapture(path.join(tmpA, 'after'), { mutate: true });
+    const styleDiffs = diffStyles(a.styles, b.styles);
     const { compareImagePair, decodePng } = await import('./compare.mjs');
     const fsx = require('node:fs');
     const imgA = decodePng(fsx.readFileSync(path.join(tmpA, 'before', 'light.png')));
@@ -203,18 +217,39 @@ async function main() {
     return;
   }
 
+  // 主题护栏自检：故意破坏主题切换，护栏必须报红；报告绿 = 护栏是瞎的。
+  if (SELFCHECK_THEME) {
+    const variant = argOf('selfcheck-theme', 'marker');
+    if (!BREAK_THEME_JS[variant]) {
+      console.error(`未知破坏方式：${variant}（可选 ${Object.keys(BREAK_THEME_JS).join(' / ')}）`);
+      app.exit(2);
+      return;
+    }
+    let caught = null;
+    try {
+      await runCapture(path.join(COMP_ROOT, '_selfcheck-theme', variant), { breakTheme: variant });
+    } catch (e) {
+      caught = e && e.message ? e.message : String(e);
+    }
+    const ok = !!caught;
+    console.log(JSON.stringify({ selfcheckTheme: ok ? 'PASS' : 'BLIND', variant, caught }, null, 2));
+    app.exit(ok ? 0 : 1);
+    return;
+  }
+
   if (MODE === 'baseline') {
-    const styles = await runCapture(BASE_DIR, false);
-    console.log(JSON.stringify({ mode: 'baseline', outDir: BASE_DIR, styles }, null, 2));
+    const { styles, probes } = await runCapture(BASE_DIR);
+    console.log(JSON.stringify({ mode: 'baseline', outDir: BASE_DIR, probes, styles }, null, 2));
     app.exit(0);
     return;
   }
 
   // check：先采当前，再与基线做像素 + 样式双比对。
-  const styles = await runCapture(CUR_DIR, false);
+  const { styles, probes } = await runCapture(CUR_DIR);
   const baseStylesPath = path.join(BASE_DIR, 'styles.json');
   if (!fs.existsSync(baseStylesPath)) { console.error(`基线不存在：${baseStylesPath}（先跑 --mode baseline）`); app.exit(2); return; }
-  const baseStyles = JSON.parse(fs.readFileSync(baseStylesPath, 'utf8'));
+  const baseRaw = JSON.parse(fs.readFileSync(baseStylesPath, 'utf8'));
+  const baseStyles = baseRaw.styles || baseRaw; // 兼容旧的纯 styles 格式
   const styleDiffs = diffStyles(baseStyles, styles);
 
   const { compareDirectories, DEFAULT_OPTIONS } = await import('./compare.mjs');
@@ -222,7 +257,7 @@ async function main() {
   const options = { ...DEFAULT_OPTIONS, threshold: 0.0002, strongPixels: 12 };
   const px = compareDirectories({ baselineDir: BASE_DIR, currentDir: CUR_DIR, diffDir: DIFF_DIR, options });
   const failed = styleDiffs.length > 0 || px.failed > 0;
-  console.log(JSON.stringify({ mode: 'check', styleDiffs, pixel: { images: px.images, failed: px.failed, details: px.details, failures: px.failures } }, null, 2));
+  console.log(JSON.stringify({ mode: 'check', probes, styleDiffs, pixel: { images: px.images, failed: px.failed, details: px.details, failures: px.failures } }, null, 2));
   app.exit(failed ? 1 : 0);
 }
 

@@ -64,7 +64,26 @@ node scripts/visual/compare.mjs --baseline <dir> --current <dir> --pixel-delta 6
 - ⚠️ **暗色态阴影变化抓不到**：暗底黑影本就不可见，实测差异 0.0012%，**不要对暗色态承诺阴影覆盖**
 - ⚠️ 全局位移只改变很小面积时（例如只在可视区外），可能低于阈值 → 阈值下调前必须先跑两次自比确认噪声仍为 0
 
+## 组件级 / 交互态 harness（Electron offscreen）
+
+设置弹窗之外的两层补充，都复用 `scene-kit.cjs`（令牌解析 + 主题断言 + 迷你 App 构建，只实现一次）：
+
+| 脚本 | 覆盖 | 关键断言 |
+| --- | --- | --- |
+| `component-scenes.cjs`（`visual:components:{baseline,check,selfcheck}`） | CardHeader / RequireChoiceCard / DropUpSelect 的静态态 | 目标存在且可见 + 明暗 computed style 逐属性相等 + 像素比对 |
+| `hover-states.cjs`（`visual:hover:{baseline,check,selfcheck}`） | 5 处已折叠 hover（ChatMessageItem 复制、PlanCard 收起、Sidebar 工作区入口、RequireChoiceCard 折叠/关闭） | 目标可见 + hover 色 ≠ 基色 + hover 色 == 令牌计算色 |
+
+要点：
+
+- **hover 用 CDP `CSS.forcePseudoState` 强制**（offscreen 下 `sendInputEvent` 鼠标命中测试不可靠）；不要改成真鼠标。
+- 必须**挂载真实组件并点真实按钮进入状态**（工具行要展开两级、「增加 Tip」要先点），不接受在测试页里复刻类名——那样测的是类名不是组件。
+- 主题必须写 `data-theme`（tokens.css 是 `:root` 暗色默认 + `html[data-theme=light]` 覆盖），且每次切换后调用 `kit.assertThemeApplied` 四路校验（根标记位 / 变量原文 / Tailwind 映射计算色 / `var()` 计算色）。变异验证：
+  `visual:components:selfcheck:theme` 两种破坏方式（丢标记位、亮色仍取暗令牌）都必须报红。
+- `hover-states.cjs` 会注入一段**场景稳定性 CSS**（禁光标闪烁/动画/过渡）：Tip 输入框的闪烁光标会让同一份代码两次截图不一致，产生假红。它只作用于隔离场景，不改生产样式。
+- 两套 harness 的基线同样**不入仓**（`.lingxi/tmp/visual/**`）。
+
 ## 维护规则
+
 
 1. **基线变更必须单独提交**，commit message 写清「为什么这组像素差异是预期变化」，并附 diff 图路径。
 2. 出现红时先看 `.lingxi/tmp/visual/diff/` 的差异图，确认是**真实回归**还是**预期改动**；禁止用 `visual:baseline` 直接覆盖来「消除」红。
