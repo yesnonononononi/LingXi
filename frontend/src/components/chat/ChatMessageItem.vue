@@ -374,7 +374,7 @@
                         <button
                           type="button"
                           @click.stop="copyToolContent(unwrapToolResultEnvelope(item.tool.result), item.tool.id)"
-                          class="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition px-1 py-0.5 select-none flex-shrink-0 cursor-pointer"
+                          class="text-xs text-gray-400 hover:text-lx-secondary transition px-1 py-0.5 select-none flex-shrink-0 cursor-pointer"
                         >
                           {{ toolCopiedId === item.tool.id ? t('common.copied') : t('common.copy') }}
                         </button>

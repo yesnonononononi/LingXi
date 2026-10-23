@@ -260,7 +260,7 @@ onBeforeUnmount(() => {
             'p-2 rounded-xl flex items-center justify-center cursor-pointer transition',
             isWorkspaceActive(group.workspace)
               ? 'bg-blue-600/15 text-blue-500'
-              : 'text-gray-400 hover:bg-gray-200/60 dark:hover:bg-gray-800 hover:text-gray-700 dark:hover:text-gray-200'
+              : 'text-gray-400 hover:bg-gray-200/60 dark:hover:bg-gray-800 hover:text-lx-secondary'
           ]"
           :title="group.workspace.name || group.workspace.workDir"
         >
