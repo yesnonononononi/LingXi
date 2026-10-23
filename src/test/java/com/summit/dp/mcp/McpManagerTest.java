@@ -11,6 +11,9 @@ import com.summit.dp.shared.exception.ClientException;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.mcp.client.McpClient;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
 import java.time.Duration;
 import java.util.List;
@@ -27,6 +30,23 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class McpManagerTest {
+
+    @Test
+    void startupReadsConfigurationOnlyAfterApplicationReady() {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(McpRepository.class, () -> repository);
+            context.registerBean(McpClientFactory.class, () -> factory);
+            context.registerBean(McpConfigAssembler.class, () -> assembler);
+            context.register(McpManager.class);
+            context.refresh();
+            verify(repository, never()).findEnabled();
+
+            when(repository.findEnabled()).thenReturn(List.of());
+            context.publishEvent(new ApplicationReadyEvent(new SpringApplication(McpManager.class),
+                    new String[0], context, Duration.ZERO));
+            verify(repository, times(1)).findEnabled();
+        }
+    }
 
     private final McpRepository repository = mock(McpRepository.class);
     private final McpClientFactory factory = mock(McpClientFactory.class);

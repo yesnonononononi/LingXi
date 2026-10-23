@@ -19,12 +19,13 @@ import com.summit.dp.mcp.domain.repository.McpRepository;
 import com.summit.dp.shared.exception.ClientException;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.mcp.client.McpClient;
-import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 
 import java.util.List;
 import java.util.Map;
@@ -56,7 +57,8 @@ public class McpManager implements McpConnectionRegistry, McpSessionRegistry {
     private final ReadWriteLock lifecycle = new ReentrantReadWriteLock();
     private final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
 
-    @PostConstruct
+    // JSON 配置首次读取会迁移数据库记录，必须等建表与迁移完成。
+    @EventListener(ApplicationReadyEvent.class)
     public void connect() {
         // 并发提交，失败只记日志：启动不能被远端 MCP 拖住。
         repository.findEnabled().forEach(model -> CompletableFuture.runAsync(() -> {
