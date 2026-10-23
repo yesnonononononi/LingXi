@@ -131,7 +131,7 @@ const splitVariant = (cls) => {
 };
 
 const collect = (ctx, lit, mode) => {
-  /** @type {Array<{prop: string, value: string, cls: string, token: boolean, darkOnly: boolean}>} */
+  /** @type {Array<{prop: string, value: string, cls: string, token: boolean, isDark: boolean, state: string}>} */
   const entries = [];
   const colors = [];
   /** @type {string[]} */
@@ -140,16 +140,19 @@ const collect = (ctx, lit, mode) => {
     if (cls === '') continue;
     const { variants, base } = splitVariant(cls);
     if (!isClassLike(base) && !isClassLike(cls)) continue;
-    // 状态变体（hover/focus/active…）与暗色变体是两个维度，必须分桶比较：
-    // `dark:hover:text-white` 只在「暗色 + 悬停」时生效，不能当作暗态基础色去覆盖 text-*（那会把基础色凭空吞掉）。
+    // 主题（dark）与状态（hover/focus/active…）是两个正交维度，必须各自独立参与「模式过滤」与「同状态覆盖」：
+    //   - 只要带 dark，就只在暗态渲染（`dark:hover:x` 在明态_绝不_出现，旧模型正是漏了这条）；
+    //   - dark 声明覆盖**同状态桶内**同属性声明（`hover:a dark:hover:b`：亮态悬停取 a、暗态悬停取 b）。
+    // 历史缺陷：旧模型把 darkOnly 限定为「带 dark 且无任何 state」，导致 `dark:hover:` 被当成普通 hover
+    // 声明在明暗两态都进入候选集——明态被污染，且把 base+dark:hover 折叠成单令牌会误报「数量不一致」。
     const stateVariants = variants.filter((v) => v !== 'dark');
-    const darkOnly = variants.includes('dark') && stateVariants.length === 0;
+    const isDark = variants.includes('dark');
     const r = resolveClass(ctx, base, mode) ?? resolveClass(ctx, cls, mode);
     if (!r || !parseRgba(r.value)) {
       raw.push(cls);
       continue;
     }
-    entries.push({ prop: r.prop, value: r.value, cls, token: TOKEN_CLASS_RE.test(base), darkOnly, state: stateVariants.sort().join(':') });
+    entries.push({ prop: r.prop, value: r.value, cls, token: TOKEN_CLASS_RE.test(base), isDark, state: stateVariants.sort().join(':') });
   }
   // 明暗有效集：`dark:` 变体只在暗态生效，且暗态覆盖同属性的基础类取值
   // （这正是 `text-gray-500 dark:text-zinc-400` 的真实语义：亮取 gray-500、暗取 zinc-400）。
@@ -160,15 +163,15 @@ const collect = (ctx, lit, mode) => {
   /** @type {Map<string, Set<string>>} state -> 该状态下有纯 dark 覆盖的属性集 */
   const darkPropsByState = new Map();
   for (const e of entries) {
-    if (!e.darkOnly) continue;
+    if (!e.isDark) continue;
     const set = darkPropsByState.get(e.state) ?? new Set();
     set.add(e.prop);
     darkPropsByState.set(e.state, set);
   }
   for (const e of entries) {
-    if (e.darkOnly && mode !== 'dark') continue;
+    if (e.isDark && mode !== 'dark') continue;
     const overridden = darkPropsByState.get(e.state) ?? new Set();
-    if (!e.darkOnly && mode === 'dark' && overridden.has(e.prop)) continue;
+    if (!e.isDark && mode === 'dark' && overridden.has(e.prop)) continue;
     colors.push({ prop: e.prop, value: e.value, cls: e.cls, token: e.token, state: e.state });
   }
   return { colors, raw };
@@ -1176,6 +1179,22 @@ const a1 = groupsOf(ctx, "const c = isDark ? 'bg-white/10' : 'bg-white'");
   const hoverNew = "const c = 'text-lx-tertiary hover:text-gray-900 dark:hover:text-white';";
   check('dark:hover: 不得吞掉基础色（状态与暗色分桶）', eqOf(hoverOld, hoverNew).length === 0, JSON.stringify(eqOf(hoverOld, hoverNew)));
   check('状态分桶不得放过真实悬停色漂移', eqOf(hoverOld, "const c = 'text-lx-tertiary hover:text-gray-500 dark:hover:text-white';").length > 0, 'hover 色被改必须红');
+
+  // ---------- 第 5 层自检：主题×状态二维覆盖（2026-10-23 模型修正） ----------
+  // 修的是：带 dark 的声明必须只在暗态生效，且覆盖同状态桶内同属性。下面把「合法折叠必绿 +
+  // 三类腐败必红」都锁死；其中第一条原本会误报（旧模型把 dark:hover 漏进明态致数量不一致），
+  // 是本次修复的回归护栏——一旦有人把 isDark 退回 darkOnly，这条立刻变红。
+  const prefBase = "const c = 'hover:text-gray-700 dark:hover:text-gray-200'";
+  check('base+dark:hover 折叠成令牌 → 判等价（旧模型此处误红）', eqOf(prefBase, "const c = 'hover:text-lx-secondary'").length === 0, JSON.stringify(eqOf(prefBase, "const c = 'hover:text-lx-secondary'")));
+  check('折叠后亮态悬停色改错 → 必红', eqOf(prefBase, "const c = 'hover:text-gray-600 dark:hover:text-gray-200'").length > 0);
+  check('折叠后暗态悬停色改错 → 必红', eqOf(prefBase, "const c = 'hover:text-gray-700 dark:hover:text-gray-300'").length > 0);
+  check('删掉暗态悬停覆盖 → 必红', eqOf(prefBase, "const c = 'hover:text-gray-700'").length > 0);
+  // focus 与 hover 同为状态变体，走同一覆盖规则：合法折叠绿、改错亮/暗 focus 必红。
+  const focBase = "const c = 'focus:text-gray-600 dark:focus:text-gray-300'";
+  check('base+dark:focus 折叠成令牌 → 判等价', eqOf(focBase, "const c = 'focus:text-lx-tertiary'").length === 0, JSON.stringify(eqOf(focBase, "const c = 'focus:text-lx-tertiary'")));
+  check('折叠后亮态 focus 改错 → 必红', eqOf(focBase, "const c = 'focus:text-gray-500 dark:focus:text-gray-300'").length > 0);
+  check('折叠后暗态 focus 改错 → 必红', eqOf(focBase, "const c = 'focus:text-gray-600 dark:focus:text-gray-400'").length > 0);
+
 
   // ---------- 第 4 层自检：@apply 函数体也必须进等价模型 ----------
   // 背景：@apply 里的类不是字符串字面量，若不注入就永远是验证黑洞（改了也没人管）。
