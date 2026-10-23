@@ -105,6 +105,23 @@
         </dependency>
     </dependencies>
 
+    <profiles>
+        <profile>
+            <id>http-client-comparison</id>
+            <properties>
+                <kotlin.version>2.2.21</kotlin.version>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <groupId>dev.langchain4j</groupId>
+                    <artifactId>langchain4j-http-client-okhttp</artifactId>
+                    <version>1.22.0-beta32</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
+
     <build>
         <directory>${lingxi.build.directory}</directory>
         <plugins>
