@@ -27,7 +27,7 @@ export type TextTone =
   | 'secondary'
   | 'tertiary'
   | 'muted'
-  | 'disabled'
+  | 'faint'
   | 'inverse'
   | 'on-accent';
 
@@ -59,7 +59,7 @@ export const TEXT_FG: Readonly<Record<TextTone, string>> = Object.freeze({
   'secondary': 'text-lx-secondary',
   'tertiary': 'text-lx-tertiary',
   'muted': 'text-lx-muted',
-  'disabled': 'text-lx-disabled',
+  'faint': 'text-lx-faint',
   'inverse': 'text-lx-inverse',
   'on-accent': 'text-lx-on-accent'
 });

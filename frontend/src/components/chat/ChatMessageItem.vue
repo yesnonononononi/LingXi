@@ -39,7 +39,7 @@
       </div>
 
       <!-- 气泡下方时间与复制图标 (完全匹配左图)；受理被拒的气泡额外标「未发送」并给重发入口 -->
-      <div class="flex items-center gap-2 mt-1.5 text-xs text-lx-disabled pr-1 select-none">
+      <div class="flex items-center gap-2 mt-1.5 text-xs text-lx-faint pr-1 select-none">
         <span>{{ displayTime }}</span>
         <!-- 受理被拒：这条消息后端不存在（未进 transcript / 未进模型上下文），绝不呈现成已发送 -->
         <template v-if="props.message.unsent">
@@ -350,7 +350,7 @@
                               toolStatusDotClass(item.tool.status)
                             ]"
                           ></span>
-                          <span class="text-gray-400 dark:text-gray-500 font-mono text-xs flex-shrink-0 select-none">
+                          <span class="text-lx-faint font-mono text-xs flex-shrink-0 select-none">
                             {{ item.tool.workDir }}
                           </span>
                           <span class="font-mono text-xs text-gray-800 dark:text-gray-200 truncate select-text">

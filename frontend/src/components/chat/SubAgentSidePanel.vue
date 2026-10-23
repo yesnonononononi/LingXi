@@ -293,7 +293,7 @@ defineExpose({
             <div class="flex items-center gap-1.5">
               <h3 class="text-xs font-semibold truncate">{{ activeItem.agentName }}</h3>
             </div>
-            <p v-if="activeItem.task" class="text-[11px] text-gray-400 dark:text-zinc-500 truncate mt-0.5">{{ activeItem.task }}</p>
+            <p v-if="activeItem.task" class="text-[11px] text-lx-faint truncate mt-0.5">{{ activeItem.task }}</p>
           </div>
         </div>
 
@@ -369,7 +369,7 @@ defineExpose({
                 {{ items.length }}
               </span>
             </div>
-            <p class="text-[11px] text-gray-400 dark:text-zinc-500 truncate">{{ t('chat.subAgent.membersHint') }}</p>
+            <p class="text-[11px] text-lx-faint truncate">{{ t('chat.subAgent.membersHint') }}</p>
           </div>
         </div>
 

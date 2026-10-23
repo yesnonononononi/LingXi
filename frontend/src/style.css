@@ -27,7 +27,7 @@
   --color-lx-secondary:        var(--lx-text-secondary);
   --color-lx-tertiary:         var(--lx-text-tertiary);
   --color-lx-muted:            var(--lx-text-muted);
-  --color-lx-disabled:         var(--lx-text-disabled);
+  --color-lx-faint:         var(--lx-text-faint);
   --color-lx-inverse:          var(--lx-text-inverse);
   --color-lx-on-accent:        var(--lx-text-on-accent);
 

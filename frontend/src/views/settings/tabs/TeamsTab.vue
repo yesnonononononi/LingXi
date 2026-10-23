@@ -131,7 +131,7 @@ const {
       <!-- 空状态 -->
       <div
         v-else-if="teamsList.length === 0"
-        class="py-12 text-center text-xs text-gray-400 dark:text-gray-500 border border-dashed rounded-2xl"
+        class="py-12 text-center text-xs text-lx-faint border border-dashed rounded-2xl"
                 :class="isDark ? 'border-white/10' : 'border-gray-200'"
       >
         {{ t('settings.teams.empty') }}

@@ -87,17 +87,17 @@
       "note": "17 处/10 文件；原明暗同值豁免取消，亮侧改 gray-500。历史缺陷：此处被改回 #71717a 时结构测试 17/17 全绿逃逸"
     },
     {
-      "token": "--lx-text-disabled",
-      "name": "text-disabled",
+      "token": "--lx-text-faint",
+      "name": "text-faint",
       "group": "text",
       "status": "rederive",
       "darkClass": "text-zinc-500",
       "lightClass": "text-gray-400",
       "expectedDark": "#71717b",
       "expectedLight": "#99a1af",
-      "themeKey": "--color-lx-disabled",
-      "utilityClass": "text-lx-disabled",
-      "note": "23 处/5 文件；同时是 placeholder 的唯一来源（11 处）"
+      "themeKey": "--color-lx-faint",
+      "utilityClass": "text-lx-faint",
+      "note": "最弱文字层：空态/loading 提示、占位符、辅助说明与真正禁用态共用这一档（实测 31 处消费点里仅 3–4 处是真禁用态）。原名 text-disabled 名不符实，2026-10-23 正名为 text-faint；取值未变（暗 #71717b / 亮 #99a1af）。"
     },
     {
       "token": "--lx-border-faint",

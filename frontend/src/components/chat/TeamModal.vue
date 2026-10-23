@@ -626,7 +626,7 @@ const handleSaveTeam = async () => {
                       {{ tool.readOnly ? t('chat.team.readOnly') : t('chat.team.readWrite') }}
                     </span>
                   </div>
-                  <div v-if="tool.description" class="text-[10px] text-gray-400 dark:text-gray-500 truncate mt-0.5" :title="tool.description">
+                  <div v-if="tool.description" class="text-[10px] text-lx-faint truncate mt-0.5" :title="tool.description">
                     {{ tool.description }}
                   </div>
                 </div>
@@ -698,7 +698,7 @@ const handleSaveTeam = async () => {
                     </span>
                     <span
                       v-else
-                      class="px-1.5 py-0.5 text-[10px] rounded bg-gray-500/10 text-gray-400 dark:text-gray-500"
+                      class="px-1.5 py-0.5 text-[10px] rounded bg-gray-500/10 text-lx-faint"
                     >
                       {{ t('chat.team.noTool') }}
                     </span>

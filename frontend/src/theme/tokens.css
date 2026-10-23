@@ -32,7 +32,7 @@
   --lx-text-secondary:        #e4e4e7;
   --lx-text-tertiary:         #d4d4d8;
   --lx-text-muted:            #9f9fa9;
-  --lx-text-disabled:         #71717b;
+  --lx-text-faint:         #71717b;
   --lx-text-inverse:          #18181b;
   --lx-text-on-accent:        #ffffff;
 
@@ -102,7 +102,7 @@ html[data-theme="light"] {
   --lx-text-secondary:        #364153;
   --lx-text-tertiary:         #4a5565;
   --lx-text-muted:            #6a7282;
-  --lx-text-disabled:         #99a1af;
+  --lx-text-faint:         #99a1af;
   --lx-text-inverse:          #fafafa;
   --lx-text-on-accent:        #ffffff;
 

@@ -166,7 +166,7 @@ const THEME_KEY_OF_TOKEN: Readonly<Record<string, string | null>> = {
   'text-secondary': '--color-lx-secondary',
   'text-tertiary': '--color-lx-tertiary',
   'text-muted': '--color-lx-muted',
-  'text-disabled': '--color-lx-disabled',
+  'text-faint': '--color-lx-faint',
   'text-inverse': '--color-lx-inverse',
   'text-on-accent': '--color-lx-on-accent',
   'border-subtle': '--color-lx-border-subtle',

@@ -209,7 +209,7 @@ defineExpose({
     <!-- 顶部加载完毕提示 -->
     <div
       v-if="direction === 'top' && !loading && !hasMore && showFinished"
-      class="w-full flex items-center justify-center py-2 text-[11px] text-gray-400 dark:text-gray-500 select-none shrink-0"
+      class="w-full flex items-center justify-center py-2 text-[11px] text-lx-faint select-none shrink-0"
     >
       <slot name="finished">
         <span>{{ finishedText || t('chat.message.allLoaded') }}</span>
@@ -238,7 +238,7 @@ defineExpose({
     <!-- 底部加载完毕提示 -->
     <div
       v-else-if="direction === 'bottom' && !hasMore && showFinished"
-      class="w-full flex items-center justify-center py-2 text-[11px] text-gray-400 dark:text-gray-500 select-none shrink-0"
+      class="w-full flex items-center justify-center py-2 text-[11px] text-lx-faint select-none shrink-0"
     >
       <slot name="finished">
         <span>{{ finishedText || t('chat.message.allLoaded') }}</span>

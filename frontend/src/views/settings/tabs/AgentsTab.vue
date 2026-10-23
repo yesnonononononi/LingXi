@@ -88,7 +88,7 @@ const {
       </div>
 
       <!-- 加载中 -->
-            <div v-if="isAgentsLoading" class="py-8 text-center text-xs text-lx-disabled">
+            <div v-if="isAgentsLoading" class="py-8 text-center text-xs text-lx-faint">
         {{ t('settings.agents.loading') }}
       </div>
 
@@ -107,7 +107,7 @@ const {
       <!-- 空状态 -->
       <div
         v-else-if="agentsList.length === 0"
-        class="py-12 text-center text-xs border border-dashed rounded-2xl border-lx-border-subtle text-lx-disabled"
+        class="py-12 text-center text-xs border border-dashed rounded-2xl border-lx-border-subtle text-lx-faint"
       >
         {{ t('settings.agents.empty') }}
       </div>
@@ -118,7 +118,7 @@ const {
           <!-- 搜索框：只过滤展示，不动已勾选项（勾了再搜不会丢选择） -->
           <div class="relative flex-1 min-w-[7rem]">
             <svg
-              class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none text-lx-disabled"
+              class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none text-lx-faint"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -132,15 +132,15 @@ const {
               :class="[
                 'w-full h-[30px] pl-8 pr-7 rounded-lg border outline-none text-xs transition',
                 isDark
-                  ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-lx-disabled focus:border-cyan-400'
-                  : 'bg-lx-surface-elevated border-lx-border-strong text-gray-900 placeholder-lx-disabled focus:border-blue-500'
+                  ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-lx-faint focus:border-cyan-400'
+                  : 'bg-lx-surface-elevated border-lx-border-strong text-gray-900 placeholder-lx-faint focus:border-blue-500'
               ]"
             />
             <button
               v-if="agentSearchQuery"
               type="button"
               :title="t('settings.agents.clearSearch')"
-              class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded cursor-pointer text-lx-disabled hover:text-lx-tertiary"
+              class="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded cursor-pointer text-lx-faint hover:text-lx-tertiary"
               @click="agentSearchQuery = ''"
             >
               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -192,7 +192,7 @@ const {
         <!-- 搜索无结果：与「一个智能体都没有」区分开，否则用户以为数据丢了 -->
         <div
           v-if="filteredAgents.length === 0"
-          class="py-10 text-center text-xs border border-dashed rounded-2xl border-lx-border-subtle text-lx-disabled"
+          class="py-10 text-center text-xs border border-dashed rounded-2xl border-lx-border-subtle text-lx-faint"
         >
           {{ t('settings.agents.emptySearch') }}
         </div>
@@ -256,7 +256,7 @@ const {
                 <div class="pt-1">
                   <div class="text-[11px] font-medium mb-1 flex items-center gap-1.5 text-lx-tertiary">
                     <span>{{ t('settings.agents.assignedTools') }}</span>
-                    <span class="text-xs font-normal text-lx-disabled">
+                    <span class="text-xs font-normal text-lx-faint">
                       ({{ agent.toolList?.length || 0 }})
                     </span>
                   </div>
@@ -274,7 +274,7 @@ const {
                       {{ resolveToolFullName(toolName) }}
                     </span>
                   </div>
-                  <span v-else class="text-[11px] italic text-lx-disabled">{{ t('settings.agents.noTools') }}</span>
+                  <span v-else class="text-[11px] italic text-lx-faint">{{ t('settings.agents.noTools') }}</span>
                 </div>
               </div>
 
@@ -438,7 +438,7 @@ const {
 
           <div
             v-if="isToolsLoading"
-            class="p-3 text-center border border-dashed rounded-xl border-lx-border-subtle text-lx-disabled"
+            class="p-3 text-center border border-dashed rounded-xl border-lx-border-subtle text-lx-faint"
           >
                         {{ t('settings.agents.toolsLoading') }}
           </div>
@@ -457,7 +457,7 @@ const {
           </div>
           <div
             v-else-if="availableTools.length === 0"
-            class="p-3 text-center border border-dashed rounded-xl border-lx-border-subtle text-lx-disabled"
+            class="p-3 text-center border border-dashed rounded-xl border-lx-border-subtle text-lx-faint"
           >
             {{ t('settings.agents.noToolsRegistered') }}
           </div>

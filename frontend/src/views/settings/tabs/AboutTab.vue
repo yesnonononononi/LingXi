@@ -146,10 +146,10 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
             />
           </div>
           <div class="flex items-center justify-between">
-            <span :class="['text-[10px] font-mono', 'text-lx-disabled']">
+            <span :class="['text-[10px] font-mono', 'text-lx-faint']">
               {{ percent }}%
             </span>
-            <span v-if="bytesPerSecond > 0" :class="['text-[10px] font-mono', 'text-lx-disabled']">
+            <span v-if="bytesPerSecond > 0" :class="['text-[10px] font-mono', 'text-lx-faint']">
               {{ formatBytes(bytesPerSecond) }}/s
             </span>
           </div>
@@ -165,8 +165,8 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
               'px-4 py-2 rounded-xl text-xs font-semibold transition',
               busy || !supported
                 ? isDark
-                  ? 'bg-white/5 text-lx-disabled cursor-not-allowed'
-                  : 'bg-gray-100 text-lx-disabled cursor-not-allowed'
+                  ? 'bg-white/5 text-lx-faint cursor-not-allowed'
+                  : 'bg-gray-100 text-lx-faint cursor-not-allowed'
                 : mandatory
                   ? 'bg-red-500 text-white hover:bg-red-600 shadow-sm cursor-pointer'
                   : 'bg-blue-500 text-white hover:bg-blue-600 shadow-sm cursor-pointer',
@@ -209,7 +209,7 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
         @click="openLog"
         :class="[
           'text-[11px] underline-offset-2 hover:underline transition cursor-pointer',
-          'text-lx-disabled hover:text-lx-tertiary',
+          'text-lx-faint hover:text-lx-tertiary',
         ]"
       >
                 {{ t('settings.about.viewLog') }}

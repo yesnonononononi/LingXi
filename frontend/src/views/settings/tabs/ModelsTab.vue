@@ -155,7 +155,7 @@ const addRowClass = computed(() => [
         </button>
       </div>
 
-      <div v-if="isModelLoading" class="py-8 text-center text-xs text-lx-disabled">
+      <div v-if="isModelLoading" class="py-8 text-center text-xs text-lx-faint">
         {{ t('settings.models.loading') }}
       </div>
 
@@ -173,7 +173,7 @@ const addRowClass = computed(() => [
       <div v-else class="space-y-3">
         <div
           v-if="catalogGroups.length === 0"
-          class="py-12 text-center text-xs border border-dashed rounded-2xl border-lx-border-subtle text-lx-disabled"
+          class="py-12 text-center text-xs border border-dashed rounded-2xl border-lx-border-subtle text-lx-faint"
         >
           {{ t('settings.models.empty') }}
         </div>
@@ -228,7 +228,7 @@ const addRowClass = computed(() => [
               </div>
             </div>
 
-            <div v-if="group.models.length === 0" class="px-2.5 py-1.5 text-[11px] text-lx-disabled">
+            <div v-if="group.models.length === 0" class="px-2.5 py-1.5 text-[11px] text-lx-faint">
               {{ t('settings.models.emptyGroup') }}
             </div>
 
@@ -276,7 +276,7 @@ const addRowClass = computed(() => [
         <div>
           <label for="provider-base-url" :class="labelClass">{{ t('settings.models.baseUrlLabel') }} <span class="text-red-500">*</span></label>
           <input id="provider-base-url" v-model="providerForm.baseUrl" :placeholder="t('settings.models.baseUrlPlaceholder')" :class="fieldClass" />
-          <p class="mt-1 text-[11px] text-lx-disabled">{{ importCopy.urlHelp }}</p>
+          <p class="mt-1 text-[11px] text-lx-faint">{{ importCopy.urlHelp }}</p>
         </div>
 
         <div>
@@ -294,7 +294,7 @@ const addRowClass = computed(() => [
               :size="24"
             />
           </div>
-          <p class="mt-1 text-[11px] text-lx-disabled">
+          <p class="mt-1 text-[11px] text-lx-faint">
             {{ t('settings.models.providerIconHelp') }}
           </p>
         </div>
@@ -321,7 +321,7 @@ const addRowClass = computed(() => [
               </svg>
             </button>
           </div>
-          <p class="mt-1 text-[11px] text-lx-disabled">
+          <p class="mt-1 text-[11px] text-lx-faint">
             {{ importCopy.keyHelp }}
           </p>
         </div>
@@ -392,7 +392,7 @@ const addRowClass = computed(() => [
               </svg>
             </template>
           </DropUpSelect>
-          <p class="mt-1 text-[11px] text-lx-disabled">
+          <p class="mt-1 text-[11px] text-lx-faint">
             {{ t('settings.models.providerSelectHelp') }}
           </p>
         </div>
@@ -436,7 +436,7 @@ const addRowClass = computed(() => [
                   :placeholder="t('settings.models.searchModels')"
                   :class="[
                     'w-full px-2.5 py-1 rounded-lg text-xs outline-none',
-                    isDark ? 'bg-white/5 border border-lx-border-subtle text-zinc-100 placeholder-lx-disabled' : 'bg-gray-50 border border-lx-border-subtle text-gray-800 placeholder-lx-disabled'
+                    isDark ? 'bg-white/5 border border-lx-border-subtle text-zinc-100 placeholder-lx-faint' : 'bg-gray-50 border border-lx-border-subtle text-gray-800 placeholder-lx-faint'
                   ]"
                   @click.stop
                 />
@@ -490,7 +490,7 @@ const addRowClass = computed(() => [
               <span class="block text-xs font-medium text-lx-secondary">
                 {{ t('settings.models.useProviderApiKeyLabel') }}
               </span>
-              <span class="block text-[11px] mt-0.5 text-lx-disabled">
+              <span class="block text-[11px] mt-0.5 text-lx-faint">
                 {{ t('settings.models.useProviderApiKeyHelp') }}
               </span>
             </span>

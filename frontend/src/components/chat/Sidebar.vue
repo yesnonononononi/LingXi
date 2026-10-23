@@ -273,7 +273,7 @@ onBeforeUnmount(() => {
       <!-- Expanded Workspace Tree View -->
       <div v-else class="space-y-0.5">
         <!-- Empty State if no workspaces and no unassigned sessions -->
-        <div v-if="projectGroups.length === 0 && unassignedSessions.length === 0" class="px-2 py-6 text-center text-xs text-gray-400 dark:text-gray-500 select-none">
+        <div v-if="projectGroups.length === 0 && unassignedSessions.length === 0" class="px-2 py-6 text-center text-xs text-lx-faint select-none">
                     {{ t('chat.sidebar.noWorkspace') }}
         </div>
 

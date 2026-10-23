@@ -46,7 +46,7 @@ export const THEME_TOKEN_META: readonly ThemeTokenMeta[] = Object.freeze([
   def('text-secondary', 'text', true, '次级文字'),
   def('text-tertiary', 'text', true, '辅助说明'),
   def('text-muted', 'text', true, '弱化文字/占位'),
-  def('text-disabled', 'text', true, '禁用态文字'),
+  def('text-faint', 'text', true, '最弱文字层（空态提示/占位/禁用态共用）'),
   def('text-inverse', 'text', true, '反色文字（用于浅底）'),
   def('text-on-accent', 'text', true, '强调色之上的文字'),
 

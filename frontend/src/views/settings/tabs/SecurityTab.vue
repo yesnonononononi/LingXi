@@ -259,7 +259,7 @@ void load();
           <div class="sec-skeleton h-8 w-full"></div>
           <div v-for="row in 3" :key="row" class="sec-skeleton h-6 w-full"></div>
         </div>
-        <p role="status" class="text-center text-[11px] text-gray-400 dark:text-zinc-500">{{ copy.loading }}</p>
+        <p role="status" class="text-center text-[11px] text-lx-faint">{{ copy.loading }}</p>
       </div>
 
       <template v-if="current">
@@ -297,13 +297,13 @@ void load();
             <span class="flex items-center gap-1.5 text-[11px] font-medium text-lx-muted">{{ copy.rules }}
               <span class="rounded-full bg-black/[0.06] px-1.5 text-[10px] font-semibold tabular-nums dark:bg-white/10">{{ current.rules.length }}</span>
             </span>
-            <span class="text-[11px] leading-5 text-gray-400 dark:text-zinc-500">{{ copy.moveHint }}</span>
+            <span class="text-[11px] leading-5 text-lx-faint">{{ copy.moveHint }}</span>
           </div>
 
           <!-- 空态：虚线框 + 图标，与 MCP 列表的空态同一语气 -->
           <div v-if="!current.rules.length" class="grid place-items-center gap-2 rounded-2xl border border-dashed border-gray-200 py-10 text-center dark:border-white/15">
             <svg class="h-6 w-6 text-gray-300 dark:text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.57-.598-3.75h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
-            <p class="text-[11px] text-gray-400 dark:text-zinc-500">{{ copy.empty }}</p>
+            <p class="text-[11px] text-lx-faint">{{ copy.empty }}</p>
           </div>
 
           <div v-for="(rule, index) in current.rules" :key="resolveRuleKey(rule)"

@@ -97,7 +97,7 @@ const {
       <!-- 空状态 -->
       <div
         v-else-if="mcpList.length === 0"
-        class="py-12 text-center text-xs text-gray-400 dark:text-gray-500 border border-dashed rounded-2xl"
+        class="py-12 text-center text-xs text-lx-faint border border-dashed rounded-2xl"
                 :class="isDark ? 'border-white/10' : 'border-gray-200'"
       >
         {{ t('settings.mcp.empty') }}
@@ -168,7 +168,7 @@ const {
                 {{ resolveConnectionLabel(item) }}
               </p>
 
-              <div class="flex items-center gap-3 mt-1.5 text-[11px] text-gray-400 dark:text-gray-500">
+              <div class="flex items-center gap-3 mt-1.5 text-[11px] text-lx-faint">
                                 <span v-if="countHeaders(item) > 0">
                   {{ t('settings.mcp.headersCount', { count: countHeaders(item) }) }}
                 </span>
@@ -303,7 +303,7 @@ const {
             {{ t }}
           </button>
         </div>
-                <p v-if="mcpForm.transport === 'stdio'" class="text-[11px] text-gray-400 dark:text-gray-500">
+                <p v-if="mcpForm.transport === 'stdio'" class="text-[11px] text-lx-faint">
           {{ t('settings.mcp.stdioHintText') }}
         </p>
       </div>
@@ -328,7 +328,7 @@ const {
       <div v-if="mcpForm.transport === 'stdio'" class="space-y-1.5">
                 <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
           {{ t('settings.mcp.commandLabel') }}
-          <span class="text-gray-400 dark:text-gray-500 font-normal">{{ t('settings.mcp.commandHint') }}</span>
+          <span class="text-lx-faint font-normal">{{ t('settings.mcp.commandHint') }}</span>
         </label>
         <textarea
           v-model="mcpForm.commandLines"
@@ -347,7 +347,7 @@ const {
       <div v-if="mcpForm.transport === 'stdio'" class="space-y-1.5">
                 <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
           {{ t('settings.mcp.envLabel') }}
-          <span class="text-gray-400 dark:text-gray-500 font-normal">{{ t('settings.mcp.envHint') }}</span>
+          <span class="text-lx-faint font-normal">{{ t('settings.mcp.envHint') }}</span>
         </label>
         <textarea
           v-model="mcpForm.envLines"
@@ -363,7 +363,7 @@ const {
         ></textarea>
         <p
           v-if="mcpEnvPristine && mcpForm.envLines"
-          class="text-[11px] text-gray-400 dark:text-gray-500"
+          class="text-[11px] text-lx-faint"
         >
                     {{ t('settings.mcp.envPristineHint') }}
         </p>
@@ -373,7 +373,7 @@ const {
       <div v-if="mcpForm.transport !== 'stdio'" class="space-y-1.5">
                 <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
           {{ t('settings.mcp.headersLabel') }}
-          <span class="text-gray-400 dark:text-gray-500 font-normal">{{ t('settings.mcp.headersHint') }}</span>
+          <span class="text-lx-faint font-normal">{{ t('settings.mcp.headersHint') }}</span>
         </label>
         <textarea
           v-model="mcpForm.headerLines"
@@ -389,7 +389,7 @@ const {
         ></textarea>
         <p
           v-if="mcpHeadersPristine && mcpForm.headerLines"
-          class="text-[11px] text-gray-400 dark:text-gray-500"
+          class="text-[11px] text-lx-faint"
         >
                     {{ t('settings.mcp.headersPristineHint') }}
         </p>
@@ -399,7 +399,7 @@ const {
       <div class="space-y-1.5">
                 <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
           {{ t('settings.mcp.descriptionLabel') }}
-          <span class="text-gray-400 dark:text-gray-500 font-normal">{{ t('settings.mcp.descriptionHint') }}</span>
+          <span class="text-lx-faint font-normal">{{ t('settings.mcp.descriptionHint') }}</span>
         </label>
         <input
           v-model="mcpForm.description"

@@ -305,7 +305,7 @@ defineExpose({
             type="text"
             :placeholder="searchPlaceholder ?? t('common.searchPlaceholder')"
             class="w-full px-2 py-1 text-xs border rounded-lg outline-none select-text transition"
-            :class="isDark ? 'bg-white/[0.06] border-lx-border text-white placeholder-lx-disabled focus:border-cyan-400/60' : 'bg-transparent border-lx-border text-gray-800 placeholder-lx-disabled focus:border-blue-500'"
+            :class="isDark ? 'bg-white/[0.06] border-lx-border text-white placeholder-lx-faint focus:border-cyan-400/60' : 'bg-transparent border-lx-border text-gray-800 placeholder-lx-faint focus:border-blue-500'"
             @keydown.stop
             @keydown.esc="close"
             @keydown.enter="handleSearchEnter"
@@ -324,7 +324,7 @@ defineExpose({
         <div class="min-h-0 overflow-y-auto scrollbar-thin space-y-0.5 max-h-80">
           <div
             v-if="filteredOptions.length === 0"
-            class="px-3 py-2 text-xs text-gray-400 dark:text-gray-500 text-center"
+            class="px-3 py-2 text-xs text-lx-faint text-center"
           >
             {{ t('common.noOptions') }}
           </div>
@@ -357,7 +357,7 @@ defineExpose({
                 class="w-2.5 h-2.5 shrink-0 transition-transform duration-200"
                 :class="[
                   isGroupCollapsed(group) ? 'rotate-90' : 'rotate-180',
-                  'text-lx-disabled'
+                  'text-lx-faint'
                 ]"
                 viewBox="0 0 1024 1024"
                 fill="currentColor"
