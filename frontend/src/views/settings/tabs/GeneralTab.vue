@@ -219,7 +219,7 @@ const {
         <button
           type="button"
           @click="handleResetApiUrl"
-          class="text-[11px] text-gray-500 hover:text-blue-500 dark:text-zinc-400 dark:hover:text-cyan-300 dark:hover:text-glow-cyan cursor-pointer transition"
+          class="text-[11px] text-lx-muted hover:text-blue-500 dark:hover:text-cyan-300 dark:hover:text-glow-cyan cursor-pointer transition"
         >
           {{ t('settings.general.resetApiUrl') }}
         </button>

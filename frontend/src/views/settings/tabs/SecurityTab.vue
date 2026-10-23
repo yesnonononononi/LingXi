@@ -67,7 +67,7 @@ const panel = 'rounded-2xl border border-gray-100 dark:border-white/10 bg-gray-5
 const control = 'rounded-xl border border-gray-200 dark:border-white/15 bg-white dark:bg-black/30 text-lx-secondary px-3 py-1.5 text-xs outline-none transition focus:border-gray-400 focus:ring-2 focus:ring-gray-200/60 dark:focus:border-white/40 dark:focus:ring-white/10';
 const button = 'rounded-xl border border-gray-200 dark:border-white/15 px-3 py-1.5 text-xs font-medium transition cursor-pointer hover:bg-black/5 active:scale-[0.97] dark:hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100';
 const primary = 'rounded-xl bg-blue-600 px-4 py-1.5 text-xs font-medium text-white shadow-sm transition cursor-pointer hover:bg-blue-500 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:active:scale-100';
-const iconButton = 'grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-gray-200 text-gray-500 transition cursor-pointer dark:border-white/15 dark:text-zinc-400 hover:border-gray-300 hover:bg-black/5 hover:text-gray-900 dark:hover:border-white/25 dark:hover:bg-white/10 dark:hover:text-white disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent';
+const iconButton = 'grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-gray-200 text-lx-muted transition cursor-pointer dark:border-white/15 hover:border-gray-300 hover:bg-black/5 hover:text-gray-900 dark:hover:border-white/25 dark:hover:bg-white/10 dark:hover:text-white disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent';
 const stateChip = 'shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium';
 function label(action: SecurityAction) { return copy.value[action === 'ALLOW' ? 'allow' : action === 'ASK' ? 'ask' : 'deny']; }
 function validate(table: SecurityRuleView | undefined, selected: SecurityCategory): asserts table is SecurityRuleView {
@@ -162,7 +162,7 @@ void load();
             <span :class="[stateChip, sandboxState === 'ON'
               ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
               : sandboxState === 'OFF'
-                ? 'border-gray-200 text-gray-500 dark:border-white/15 dark:text-zinc-400'
+                ? 'border-gray-200 text-lx-muted dark:border-white/15'
                 : 'border-amber-500/25 bg-amber-500/10 text-amber-600 dark:text-amber-400']" data-testid="security-sandbox-state">{{ sandboxStateLabel }}</span>
             <button type="button" role="switch" :aria-checked="sandboxState === 'ON'" :aria-label="copy.sandboxTitle" :disabled="isSavingEnv"
               :class="['sec-switch', sandboxState === 'ON' ? 'is-on' : '']" data-testid="security-sandbox-toggle" @click="setSandboxEnabled(sandboxState !== 'ON')">
@@ -312,8 +312,8 @@ void load();
             :style="{ '--sec-delay': `${Math.min(index, 10) * 30}ms` }" data-testid="security-rule">
             <div class="flex items-start gap-2 min-w-0">
               <span :class="['shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium',
-                rule.preset ? 'border-blue-500/25 bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'border-gray-200 text-gray-500 dark:border-white/15 dark:text-zinc-400']">{{ rule.preset ? copy.preset : copy.custom }}</span>
-              <code class="min-w-0 flex-1 rounded-md bg-black/[0.04] px-1.5 py-0.5 font-mono text-xs leading-5 text-gray-700 [overflow-wrap:anywhere] dark:bg-white/[0.06] dark:text-zinc-200">{{ rule.pattern }}</code>
+                rule.preset ? 'border-blue-500/25 bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'border-gray-200 text-lx-muted dark:border-white/15']">{{ rule.preset ? copy.preset : copy.custom }}</span>
+              <code class="min-w-0 flex-1 rounded-md bg-black/[0.04] px-1.5 py-0.5 font-mono text-xs leading-5 text-lx-secondary [overflow-wrap:anywhere] dark:bg-white/[0.06]">{{ rule.pattern }}</code>
               <span class="flex shrink-0 items-center gap-1">
                 <label class="sec-check" :title="copy.enabled">
                   <input type="checkbox" v-model="rule.enabled" @change="change" class="sec-check__input" :aria-label="copy.enabled" />
