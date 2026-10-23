@@ -55,6 +55,7 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   assert.equal(await evaluate('document.body.textContent.includes("未完成片段")'), false);
   assert.equal((await evaluate('window.snapshot()')).isComplete, false);
   const animationChecks = [];
+  const pixelChecks = [];
   for (const dark of [false, true]) {
     await evaluate(`window.dark(${dark});window.flush()`);
     assert.equal(await evaluate('getComputedStyle(document.body).backgroundColor'), dark ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)');
@@ -67,56 +68,81 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
         const layout = await evaluate(`(() => {
           const bar = document.querySelector('.context-compact-bar[role=status]');
           const label = bar.querySelector('.context-compact-shimmer-text');
-          const beam = bar.querySelector('.context-compact-beam');
-          if (!label || !beam) return null;
+          if (!label) return null;
           const bounds = bar.getBoundingClientRect();
           const content = label.parentElement.getBoundingClientRect();
           return { centerError: Math.abs(content.x + content.width / 2 - bounds.x - bounds.width / 2),
             overflow: content.left < bounds.left || content.right > bounds.right,
-            gradient: getComputedStyle(label).backgroundImage };
+            gradient: getComputedStyle(label).backgroundImage,
+            clip: getComputedStyle(label).backgroundClip };
         })()`);
         assert.ok(layout, '重试与压缩必须共用居中扫光提示栏');
         assert.ok(layout.centerError < 1 && !layout.overflow, JSON.stringify(layout));
         assert.ok(layout.gradient.includes(dark ? 'rgb(255, 255, 255)' : 'rgb(16, 24, 40)'));
+        assert.equal(layout.clip, 'text');
+        const paintedFrames = [];
         for (const cycle of [0, 1]) {
           for (const progress of [0.15, 0.35, 0.5, 0.65, 0.85]) {
             const sample = await evaluate(`(async () => {
               const bar = document.querySelector('.context-compact-bar[role=status]');
               const label = bar.querySelector('.context-compact-shimmer-text');
-              const beam = bar.querySelector('.context-compact-beam');
-              const animations = [label.getAnimations()[0], beam.getAnimations()[0]];
+              const animations = [label.getAnimations()[0]];
               const timing = animations.map(animation => animation.effect.getTiming());
               animations.forEach((animation, index) => {
                 animation.pause();
                 animation.currentTime = timing[index].duration * (${cycle} + ${progress});
               });
-              await new Promise(resolve => requestAnimationFrame(resolve));
+              await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
               const style = getComputedStyle(label);
               const size = parseFloat(style.backgroundSize) / 100;
               const position = parseFloat(style.backgroundPositionX) / 100;
-              const bounds = beam.parentElement.getBoundingClientRect();
-              const light = beam.getBoundingClientRect();
+              const bounds = bar.getBoundingClientRect();
+              const text = label.getBoundingClientRect();
               return { textCenter: size / 2 + (1 - size) * position,
-                beamCenter: (light.x + light.width / 2 - bounds.x) / bounds.width,
+                bounds: { x: Math.ceil(bounds.x), y: Math.ceil(bounds.y), width: Math.floor(bounds.width), height: Math.floor(bounds.height) },
+                text: { left: text.left, right: text.right, top: text.top, bottom: text.bottom },
                 periods: timing.map(value => value.duration),
                 repeats: timing.map(value => value.iterations === Infinity) };
             })()`);
             const expected = 2 * progress - 0.5;
             assert.ok(Math.abs(sample.textCenter - expected) < 0.02, `文字扫光偏离位置: ${JSON.stringify(sample)}`);
-            assert.ok(Math.abs(sample.beamCenter - expected) < 0.02, `光束未从左到右扫过整栏: ${JSON.stringify(sample)}`);
-            assert.deepEqual(sample.repeats, [true, true]);
-            assert.equal(sample.periods[0], sample.periods[1]);
+            assert.deepEqual(sample.repeats, [true]);
             animationChecks.push({ dark, width, compressing, cycle, progress, ...sample });
+            if (cycle === 1 && (progress === 0.15 || progress === 0.5)) {
+              paintedFrames.push({ image: await window.webContents.capturePage(sample.bounds), ...sample });
+            }
             if (cycle === 1 && progress === 0.5) {
               const name = `${compressing ? 'compress' : 'retry'}-${dark ? 'dark' : 'light'}-${width}.png`;
               await fs.writeFile(path.join(output, name), (await window.webContents.capturePage()).toPNG());
             }
           }
         }
+        const [before, after] = paintedFrames;
+        const size = before.image.getSize();
+        const first = before.image.toBitmap();
+        const second = after.image.toBitmap();
+        assert.equal(first.length, second.length);
+        let changedText = 0;
+        let changedOutside = 0;
+        for (let y = 0; y < size.height; y++) {
+          for (let x = 0; x < size.width; x++) {
+            const offset = (y * size.width + x) * 4;
+            if (first.subarray(offset, offset + 4).equals(second.subarray(offset, offset + 4))) continue;
+            const pageX = before.bounds.x + (x + 0.5) * before.bounds.width / size.width;
+            const pageY = before.bounds.y + (y + 0.5) * before.bounds.height / size.height;
+            if (pageX >= before.text.left - 1 && pageX <= before.text.right + 1
+                && pageY >= before.text.top - 1 && pageY <= before.text.bottom + 1) changedText++;
+            else changedOutside++;
+          }
+        }
+        assert.ok(changedText > 0, '截图必须捕捉到文字扫光的实际变化');
+        assert.equal(changedOutside, 0, '文字之外的图标、分隔线和背景不能出现扫光');
+        pixelChecks.push({ dark, width, compressing, changedText, changedOutside });
       }
     }
   }
   await fs.writeFile(path.join(output, 'animation-checks.json'), JSON.stringify(animationChecks, null, 2));
+  await fs.writeFile(path.join(output, 'pixel-checks.json'), JSON.stringify(pixelChecks, null, 2));
   await emit({ type: 'CONTEXT_UPDATE', phase: 'SQUEEZE_COMPLETED', band: 'SUMMARY' });
   await evaluate('window.language("en-US");window.flush()');
   assert.equal(await evaluate('document.querySelector("[role=status]").textContent.trim()'), 'Request temporarily failed. Retrying (1)…');

@@ -508,7 +508,7 @@
         <div
           v-if="props.message.isCompressingContext || props.message.modelRetry"
           role="status"
-          class="w-full my-3 py-1 flex items-center gap-3 select-none relative overflow-hidden context-compact-bar"
+          class="w-full my-3 py-1 flex items-center gap-3 select-none context-compact-bar"
           :title="props.message.isCompressingContext && props.message.contextUsage?.tokenCount ? t('chat.message.contextTitle', { used: props.message.contextUsage.tokenCount, max: props.message.contextUsage.maxTokens || 0 }) : activityStatusText"
         >
           <!-- 两侧等分剩余空间，保证提示始终居中。 -->
@@ -531,9 +531,6 @@
 
           <div class="flex-1 min-w-0 h-[1px] bg-gray-200 dark:bg-gray-700/60"></div>
 
-          <div class="pointer-events-none absolute inset-0 overflow-hidden">
-            <div class="context-compact-beam"></div>
-          </div>
         </div>
       </transition>
 
@@ -1349,6 +1346,7 @@ const handleImageClick = (url?: string) => {
     var(--lx-text-muted) 60%
   );
   background-size: 300% 100%;
+  background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   animation: context-shimmer-text 2.2s linear infinite;
@@ -1363,24 +1361,4 @@ const handleImageClick = (url?: string) => {
   }
 }
 
-.context-compact-beam {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    90deg,
-    transparent 40%,
-    var(--lx-border-strong) 50%,
-    transparent 60%
-  );
-  animation: context-beam-sweep 2.2s linear infinite;
-}
-
-@keyframes context-beam-sweep {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
-}
 </style>
