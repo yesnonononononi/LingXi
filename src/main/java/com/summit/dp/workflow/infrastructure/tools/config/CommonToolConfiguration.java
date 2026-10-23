@@ -103,9 +103,9 @@ public class CommonToolConfiguration {
                           "type": "object",
                           "properties": {
                             "query": {"type": "string", "description": "Search the web for external or current information. it is a required parameter"},
-                            "maxResults or max_results": {"type": "number", "description": "Maximum number of results to return. it is an optional parameter max :%s"},
-                            "startDate or start_date": {"type": "string", "description": " Will return all results after the specified date until current date. Required to be written in the format YYYY-MM-DD. it is an optional parameter"},
-                            "endDate or end_date": {"type": "string", "description": " Will return all results before the specified date until current date. Required to be written in the format YYYY-MM-DD. it is an optional parameter"}
+                            "max_results": {"type": "number", "description": "Maximum number of results to return. it is an optional parameter max :%s"},
+                            "start_date": {"type": "string", "description": " Will return all results after the specified date until current date. Required to be written in the format YYYY-MM-DD. it is an optional parameter"},
+                            "end_date": {"type": "string", "description": " Will return all results before the specified date until current date. Required to be written in the format YYYY-MM-DD. it is an optional parameter"}
                           }
                         }
                         """).formatted(String.valueOf(webSearchToolProperties.getMaxResult())))
