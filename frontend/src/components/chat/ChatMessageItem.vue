@@ -504,32 +504,33 @@
         />
       </template>
 
-      <!-- 上下文压缩中扫光提示条 (对应 ContextUpdateEvent SQUEEZE_STARTED，收到 SQUEEZE_COMPLETED 自动消失) -->
       <transition name="context-compact-fade">
         <div
-          v-if="props.message.isCompressingContext"
+          v-if="props.message.isCompressingContext || props.message.modelRetry"
+          role="status"
           class="w-full my-3 py-1 flex items-center gap-3 select-none relative overflow-hidden context-compact-bar"
-          :title="props.message.contextUsage?.tokenCount ? t('chat.message.contextTitle', { used: props.message.contextUsage.tokenCount, max: props.message.contextUsage.maxTokens || 0 }) : t('chat.message.compressing')"
+          :title="props.message.isCompressingContext && props.message.contextUsage?.tokenCount ? t('chat.message.contextTitle', { used: props.message.contextUsage.tokenCount, max: props.message.contextUsage.maxTokens || 0 }) : activityStatusText"
         >
           <!-- 两侧等分剩余空间，保证提示始终居中。 -->
           <div class="flex-1 min-w-0 h-[1px] bg-gray-200 dark:bg-gray-700/60"></div>
 
-          <!-- 中间指示内容：带折角便签图标 + 正在压缩上下文 -->
           <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 font-normal shrink-0">
-            <!-- 小图标：对齐用户截图便签本文档折角图标 -->
-            <svg class="w-3.5 h-3.5 opacity-80 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <svg v-if="props.message.isCompressingContext" class="w-3.5 h-3.5 opacity-80 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
               <polyline points="14 2 14 8 20 8"></polyline>
               <line x1="16" y1="13" x2="8" y2="13"></line>
               <line x1="16" y1="17" x2="8" y2="17"></line>
               <polyline points="10 9 9 9 8 9"></polyline>
             </svg>
-            <span class="context-compact-shimmer-text">{{ t('chat.message.compressing') }}</span>
+            <svg v-else class="w-3.5 h-3.5 opacity-80 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 7v5h-5M4 17v-5h5" />
+              <path d="M6.1 7a7 7 0 0 1 11.55-2L20 8M4 16l2.35 3A7 7 0 0 0 17.9 17" />
+            </svg>
+            <span class="context-compact-shimmer-text">{{ activityStatusText }}</span>
           </div>
 
           <div class="flex-1 min-w-0 h-[1px] bg-gray-200 dark:bg-gray-700/60"></div>
 
-          <!-- 从左到右扫光光斑层 (Light beam sweep) -->
           <div class="pointer-events-none absolute inset-0 overflow-hidden">
             <div class="context-compact-beam"></div>
           </div>
@@ -537,9 +538,6 @@
       </transition>
 
       <!-- 回复正文 (使用 Markdown 渲染，包含代码高亮、代码块复制、表格与列表) -->
-      <div v-if="props.message.modelRetry" role="status" class="my-2 text-xs text-lx-muted">
-        {{ t('chat.message.retrying', { count: props.message.modelRetry.retryCount }) }}
-      </div>
       <div
         v-if="props.message.content || (props.message.isThinking && !props.message.isExploring)"
         class="w-full text-sm font-normal my-1"
@@ -672,6 +670,9 @@ const userImageUrls = computed(() => props.message.imageUrls ?? (props.message.i
 const resendTitle = computed(() => !props.message.serverMessageId ? t('chat.controls.messageSyncPending')
   : !props.canResend ? t('chat.controls.waitUntilIdle') : t('chat.controls.editResend'));
 const isDark = computed(() => props.isDark ?? globalIsDark.value);
+const activityStatusText = computed(() => props.message.isCompressingContext
+  ? t('chat.message.compressing')
+  : props.message.modelRetry ? t('chat.message.retrying', { count: props.message.modelRetry.retryCount }) : '');
 // 委派身份由后端父轮次声明，不能从任务文本或会话位置猜测。
 const isDelegatedTask = computed(() => props.message.role === 'user' && !!props.turn?.parentTurnId);
 const openFilePreview = inject(FILE_PREVIEW_KEY);
@@ -1339,36 +1340,18 @@ const handleImageClick = (url?: string) => {
   transform: translateY(-4px);
 }
 
-/* 文字从左到右扫光效果 */
+/* 高亮在循环两端都位于文字外，复位时不会闪回或滞留在右侧。 */
 .context-compact-shimmer-text {
   background: linear-gradient(
     90deg,
-    #6b7280 0%,
-    #6b7280 25%,
-    #111827 50%,
-    #6b7280 75%,
-    #6b7280 100%
+    var(--lx-text-muted) 40%,
+    var(--lx-text-primary) 50%,
+    var(--lx-text-muted) 60%
   );
-  background-size: 200% 100%;
+  background-size: 300% 100%;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: context-shimmer-text 2s linear infinite;
-}
-
-:deep(.dark) .context-compact-shimmer-text,
-.dark .context-compact-shimmer-text {
-  background: linear-gradient(
-    90deg,
-    #9ca3af 0%,
-    #9ca3af 25%,
-    #ffffff 50%,
-    #9ca3af 75%,
-    #9ca3af 100%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: context-shimmer-text 2s linear infinite;
+  animation: context-shimmer-text 2.2s linear infinite;
 }
 
 @keyframes context-shimmer-text {
@@ -1376,47 +1359,28 @@ const handleImageClick = (url?: string) => {
     background-position: 100% 0;
   }
   100% {
-    background-position: -100% 0;
+    background-position: 0% 0;
   }
 }
 
-/* 贯穿全宽的从左到右扫光束 (Light beam sweep) */
 .context-compact-beam {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 35%;
+  inset: 0;
   background: linear-gradient(
     90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0) 10%,
-    rgba(255, 255, 255, 0.8) 50%,
-    rgba(255, 255, 255, 0) 90%,
-    transparent 100%
+    transparent 40%,
+    var(--lx-border-strong) 50%,
+    transparent 60%
   );
-  mix-blend-mode: overlay;
-  animation: context-beam-sweep 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-
-:deep(.dark) .context-compact-beam,
-.dark .context-compact-beam {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0) 10%,
-    rgba(255, 255, 255, 0.4) 50%,
-    rgba(255, 255, 255, 0) 90%,
-    transparent 100%
-  );
-  mix-blend-mode: screen;
+  animation: context-beam-sweep 2.2s linear infinite;
 }
 
 @keyframes context-beam-sweep {
   0% {
-    transform: translateX(-150%);
+    transform: translateX(-100%);
   }
   100% {
-    transform: translateX(350%);
+    transform: translateX(100%);
   }
 }
 </style>

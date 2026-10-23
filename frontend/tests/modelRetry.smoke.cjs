@@ -12,25 +12,20 @@ const deadline = setTimeout(() => { console.error('重试提示验证超时'); a
 app.whenReady().then(async () => {
   await fs.mkdir(output, { recursive: true });
   await fs.writeFile(path.join(output, 'App.vue'), `<script setup>
-import { reactive, computed, ref } from 'vue';
+import { reactive, computed } from 'vue';
 import ChatMessageItem from '../../../src/components/chat/ChatMessageItem.vue';
 import { TurnStreamReducer } from '../../../src/views/chat/turnStreamReducer';
 import { useI18n } from '../../../src/i18n';
+import { useTheme } from '../../../src/composables/useTheme';
 import '../../../src/style.css';
 const messages = reactive([]);
-const isDark = ref(false);
+const { isDark, setTheme } = useTheme();
 const reducer = new TurnStreamReducer(() => messages, {sessionId:'7'});
 const message = computed(() => messages.find(item => item.role === 'assistant'));
 window.emitEvent = event => reducer.consume(event);
 window.snapshot = () => JSON.parse(JSON.stringify(message.value));
 window.language = useI18n().setPreference;
-window.dark = value => {
-  isDark.value = value;
-  for (const element of [document.documentElement, document.body]) {
-    element.classList.toggle('dark', value);
-    element.classList.toggle('light', !value);
-  }
-};
+window.dark = value => setTheme(value ? 'dark' : 'light');
 window.dark(false);
 </script><template><main style="max-width:680px;margin:24px auto"><ChatMessageItem v-if="message" :message="message" :is-dark="isDark" session-id="7" /></main></template>`);
   await fs.writeFile(path.join(output, 'entry.js'), `import {createApp,nextTick} from 'vue';
@@ -59,20 +54,80 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   assert.equal(await evaluate('document.querySelector("[role=status]").textContent.trim()'), '请求暂时失败，正在第 1 次重试…');
   assert.equal(await evaluate('document.body.textContent.includes("未完成片段")'), false);
   assert.equal((await evaluate('window.snapshot()')).isComplete, false);
-  await fs.writeFile(path.join(output, 'retry-light.png'), (await window.webContents.capturePage()).toPNG());
-  await evaluate('window.dark(true);window.flush()');
-  assert.equal(await evaluate('getComputedStyle(document.body).backgroundColor'), 'rgb(0, 0, 0)');
-  await fs.writeFile(path.join(output, 'retry-dark.png'), (await window.webContents.capturePage()).toPNG());
+  const animationChecks = [];
+  for (const dark of [false, true]) {
+    await evaluate(`window.dark(${dark});window.flush()`);
+    assert.equal(await evaluate('getComputedStyle(document.body).backgroundColor'), dark ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)');
+    for (const width of [800, 360]) {
+      window.setSize(width, 420);
+      await evaluate('window.flush()');
+      for (const compressing of [false, true]) {
+        await emit({ type: 'CONTEXT_UPDATE', phase: compressing ? 'SQUEEZE_STARTED' : 'SQUEEZE_COMPLETED', band: 'SUMMARY' });
+        assert.equal(await evaluate('document.querySelectorAll(".context-compact-bar[role=status]").length'), 1);
+        const layout = await evaluate(`(() => {
+          const bar = document.querySelector('.context-compact-bar[role=status]');
+          const label = bar.querySelector('.context-compact-shimmer-text');
+          const beam = bar.querySelector('.context-compact-beam');
+          if (!label || !beam) return null;
+          const bounds = bar.getBoundingClientRect();
+          const content = label.parentElement.getBoundingClientRect();
+          return { centerError: Math.abs(content.x + content.width / 2 - bounds.x - bounds.width / 2),
+            overflow: content.left < bounds.left || content.right > bounds.right,
+            gradient: getComputedStyle(label).backgroundImage };
+        })()`);
+        assert.ok(layout, '重试与压缩必须共用居中扫光提示栏');
+        assert.ok(layout.centerError < 1 && !layout.overflow, JSON.stringify(layout));
+        assert.ok(layout.gradient.includes(dark ? 'rgb(255, 255, 255)' : 'rgb(16, 24, 40)'));
+        for (const cycle of [0, 1]) {
+          for (const progress of [0.15, 0.35, 0.5, 0.65, 0.85]) {
+            const sample = await evaluate(`(async () => {
+              const bar = document.querySelector('.context-compact-bar[role=status]');
+              const label = bar.querySelector('.context-compact-shimmer-text');
+              const beam = bar.querySelector('.context-compact-beam');
+              const animations = [label.getAnimations()[0], beam.getAnimations()[0]];
+              const timing = animations.map(animation => animation.effect.getTiming());
+              animations.forEach((animation, index) => {
+                animation.pause();
+                animation.currentTime = timing[index].duration * (${cycle} + ${progress});
+              });
+              await new Promise(resolve => requestAnimationFrame(resolve));
+              const style = getComputedStyle(label);
+              const size = parseFloat(style.backgroundSize) / 100;
+              const position = parseFloat(style.backgroundPositionX) / 100;
+              const bounds = beam.parentElement.getBoundingClientRect();
+              const light = beam.getBoundingClientRect();
+              return { textCenter: size / 2 + (1 - size) * position,
+                beamCenter: (light.x + light.width / 2 - bounds.x) / bounds.width,
+                periods: timing.map(value => value.duration),
+                repeats: timing.map(value => value.iterations === Infinity) };
+            })()`);
+            const expected = 2 * progress - 0.5;
+            assert.ok(Math.abs(sample.textCenter - expected) < 0.02, `文字扫光偏离位置: ${JSON.stringify(sample)}`);
+            assert.ok(Math.abs(sample.beamCenter - expected) < 0.02, `光束未从左到右扫过整栏: ${JSON.stringify(sample)}`);
+            assert.deepEqual(sample.repeats, [true, true]);
+            assert.equal(sample.periods[0], sample.periods[1]);
+            animationChecks.push({ dark, width, compressing, cycle, progress, ...sample });
+            if (cycle === 1 && progress === 0.5) {
+              const name = `${compressing ? 'compress' : 'retry'}-${dark ? 'dark' : 'light'}-${width}.png`;
+              await fs.writeFile(path.join(output, name), (await window.webContents.capturePage()).toPNG());
+            }
+          }
+        }
+      }
+    }
+  }
+  await fs.writeFile(path.join(output, 'animation-checks.json'), JSON.stringify(animationChecks, null, 2));
+  await emit({ type: 'CONTEXT_UPDATE', phase: 'SQUEEZE_COMPLETED', band: 'SUMMARY' });
   await evaluate('window.language("en-US");window.flush()');
   assert.equal(await evaluate('document.querySelector("[role=status]").textContent.trim()'), 'Request temporarily failed. Retrying (1)…');
   await emit({ type: 'PARTIAL_TEXT', responseId: '9007199254740992', offset: 0, order: 1, content: '旧回调' });
   assert.equal(await evaluate('document.body.textContent.includes("旧回调")'), false);
   await emit({ type: 'AI_MESSAGE', responseId: '9007199254740993', text: '恢复成功', order: 1, isBody: true });
-  assert.equal(await evaluate('document.querySelector("[role=status]")'), null);
+  assert.equal(await evaluate('document.querySelector("[role=status]:not(.context-compact-fade-leave-active)")'), null);
   assert.equal((await evaluate('window.snapshot()')).content, '恢复成功');
   await emit({ type: 'EXECUTION_COMPLETED' });
   assert.equal((await evaluate('window.snapshot()')).isComplete, true);
   assert.deepEqual(await evaluate('window.runtimeErrors'), []);
-  console.log('重试组件通过：等待提示、失败片段撤下、旧回调丢弃、深浅主题、双语和成功接续。');
+  console.log('重试与压缩组件通过：同款居中提示、深浅主题、窄屏、连续两轮从左到右扫光、双语和成功接续。');
   clearTimeout(deadline); window.destroy(); app.exit(0);
 }).catch(error => { console.error(error); clearTimeout(deadline); if (window) window.destroy(); app.exit(1); });
