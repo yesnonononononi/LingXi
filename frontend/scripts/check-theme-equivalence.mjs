@@ -445,6 +445,32 @@ const compareRaw = (A, B) => {
 };
 
 /**
+ * 令牌改名台账（可选文件）。
+ *
+ * 为什么需要：门禁拿「HEAD 基线源码」与「工作树源码」比对，但两侧都用**当前**令牌表解析颜色。
+ * 一旦把令牌改名（值不变），基线源码里的旧类名就解析不到，只能报「数量不一致」——
+ * 改名本身无法被验证。这里按台账把基线侧的旧类名替换成新名后再解析，
+ * 使「改名」变成可验证的等价操作。台账入仓（`frontend/scripts/theme-spec/token-renames.json`），可审计可清理。
+ * @type {Array<{from: string, to: string}>}
+ */
+const RENAMES = (() => {
+  const file = path.join(FRONTEND_ROOT, 'scripts', 'theme-spec', 'token-renames.json');
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return Array.isArray(parsed.renames) ? parsed.renames.filter((r) => r && r.from && r.to) : [];
+  } catch {
+    return [];
+  }
+})();
+
+/**
+ * 把基线源码里的旧令牌类名替换成新名（仅用于基线侧，工作树侧不动）。
+ * @param {string} src 基线源码
+ * @returns {string} 替换后的源码
+ */
+const applyRenames = (src) => RENAMES.reduce((acc, r) => acc.split(r.from).join(r.to), String(src));
+
+/**
  * 从 git 取某文件在指定基线版本的内容。
  * @param {string} relPath 相对仓库根的路径（正斜杠）
  * @param {string} base git ref
@@ -529,10 +555,39 @@ const staticCheck = (ctx, relPath) => {
 const buildBaseContext = (ctx, base) => {
   const tokensText = readBaseFile(TOKENS_REL, base);
   const styleText = readBaseFile(STYLE_REL, base);
+  /**
+   * 基线令牌表的键名也要过改名台账（注意结构是 { dark: {...}, light: {...} } 两层）。
+   * @param {Record<string, any>} tokens 令牌表
+   * @returns {Record<string, any>} 键名规范化后的令牌表
+   */
+  const renameTokenKeys = (tokens) => {
+    if (RENAMES.length === 0) return tokens;
+    /** @param {Record<string, string>} side @returns {Record<string, string>} */
+    const one = (side) => {
+      /** @type {Record<string, string>} */
+      const out = {};
+      for (const [k, v] of Object.entries(side ?? {})) out[applyRenames(k)] = v;
+      return out;
+    };
+    return { ...tokens, dark: one(tokens.dark), light: one(tokens.light) };
+  };
+  /**
+   * @theme 桥（`color-lx-primary` → `lx-text-primary`）也要过改名台账：
+   * 只改令牌键不改桥，基线侧仍然只有旧桥键，令牌类照样解析不到。
+   * @param {Map<string, string>} themeMap 桥接层
+   * @returns {Map<string, string>} 键值都规范化后的桥接层
+   */
+  const renameThemeMap = (themeMap) => {
+    if (RENAMES.length === 0) return themeMap;
+    /** @type {Map<string, string>} */
+    const out = new Map();
+    for (const [k, v] of themeMap.entries()) out.set(applyRenames(k), applyRenames(v));
+    return out;
+  };
   return {
     ...ctx,
-    tokens: tokensText === null ? ctx.tokens : loadTokensFromText(tokensText),
-    themeMap: styleText === null ? ctx.themeMap : loadThemeMapFromText(styleText)
+    tokens: tokensText === null ? ctx.tokens : renameTokenKeys(loadTokensFromText(tokensText)),
+    themeMap: styleText === null ? ctx.themeMap : renameThemeMap(loadThemeMapFromText(styleText))
   };
 };
 
@@ -968,8 +1023,14 @@ const checkFile = (ctx, baseCtx, relPath, base, staticOnly) => {
     return { problems, drift: problems.length, notes };
   }
 
-  const A = groupsOf(baseCtx, prevSrc);
+  if (process.env.GATE_DEBUG) {
+    console.error('RENAMES=', JSON.stringify(RENAMES), 'baseTokensHasFaint=', baseCtx.tokens['--lx-text-faint'] ?? '(none)', 'hasDisabled=', baseCtx.tokens['--lx-text-disabled'] ?? '(none)');
+  }
+  const A = groupsOf(baseCtx, applyRenames(prevSrc));
   const B = groupsOf(ctx, nextSrc);
+  if (process.env.GATE_DEBUG) {
+    console.error('SIDE', relPath, 'A.rawDark=', JSON.stringify(A.rawDark.slice(0, 6)), 'B.rawDark=', JSON.stringify(B.rawDark.slice(0, 6)), 'A.dark=', A.dark.length, 'B.dark=', B.dark.length);
+  }
   notes.push('三元计数 旧=' + JSON.stringify(A.counters) + ' 新=' + JSON.stringify(B.counters));
 
   const driftProblems = [

@@ -1,0 +1,17 @@
+{
+  "$comment": "令牌/工具类改名台账。门禁比对「HEAD 基线 vs 工作树」时，会把基线源码、基线令牌表、基线 @theme 桥里的旧名按此表替换后再解析——否则改名后基线侧解析不到（令牌已不存在），只能报数量不一致，等于无法验证改名。注意：类名里的片段是 lx-disabled，而令牌键是 --lx-text-disabled，两者拼写不同，必须各写一条。",
+  "renames": [
+    {
+      "from": "lx-text-disabled",
+      "to": "lx-text-faint",
+      "date": "2026-10-23",
+      "reason": "令牌键 --lx-text-disabled → --lx-text-faint（名字错，值不变）。"
+    },
+    {
+      "from": "lx-disabled",
+      "to": "lx-faint",
+      "date": "2026-10-23",
+      "reason": "工具类 text-lx-disabled / placeholder-lx-disabled 与 @theme 桥键 color-lx-disabled 同步改名。原令牌名不符实：实测 31 处消费点里仅 3–4 处是真禁用态，其余是空态提示/loading/占位，实为「最弱文字层」。"
+    }
+  ]
+}
