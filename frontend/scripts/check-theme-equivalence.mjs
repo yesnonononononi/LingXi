@@ -140,21 +140,36 @@ const collect = (ctx, lit, mode) => {
     if (cls === '') continue;
     const { variants, base } = splitVariant(cls);
     if (!isClassLike(base) && !isClassLike(cls)) continue;
-    const darkOnly = variants.includes('dark');
+    // 状态变体（hover/focus/active…）与暗色变体是两个维度，必须分桶比较：
+    // `dark:hover:text-white` 只在「暗色 + 悬停」时生效，不能当作暗态基础色去覆盖 text-*（那会把基础色凭空吞掉）。
+    const stateVariants = variants.filter((v) => v !== 'dark');
+    const darkOnly = variants.includes('dark') && stateVariants.length === 0;
     const r = resolveClass(ctx, base, mode) ?? resolveClass(ctx, cls, mode);
     if (!r || !parseRgba(r.value)) {
       raw.push(cls);
       continue;
     }
-    entries.push({ prop: r.prop, value: r.value, cls, token: TOKEN_CLASS_RE.test(base), darkOnly });
+    entries.push({ prop: r.prop, value: r.value, cls, token: TOKEN_CLASS_RE.test(base), darkOnly, state: stateVariants.sort().join(':') });
   }
   // 明暗有效集：`dark:` 变体只在暗态生效，且暗态覆盖同属性的基础类取值
   // （这正是 `text-gray-500 dark:text-zinc-400` 的真实语义：亮取 gray-500、暗取 zinc-400）。
-  const darkOnlyProps = new Set(entries.filter((e) => e.darkOnly).map((e) => e.prop));
+  // 明暗有效集：`dark:` 变体只在暗态生效，且暗态覆盖**同状态桶内**同属性的基础类取值
+  // （这正是 `text-gray-500 dark:text-gray-400` 的真实语义：亮取 gray-500、暗取 zinc-400）。
+  // 状态桶必须分开算：`hover:text-x` 与 `hover:dark:text-y` 是悬停态自己的覆盖关系，
+  // 不能拿 `dark:hover:` 去覆盖非悬停的基础色。
+  /** @type {Map<string, Set<string>>} state -> 该状态下有纯 dark 覆盖的属性集 */
+  const darkPropsByState = new Map();
+  for (const e of entries) {
+    if (!e.darkOnly) continue;
+    const set = darkPropsByState.get(e.state) ?? new Set();
+    set.add(e.prop);
+    darkPropsByState.set(e.state, set);
+  }
   for (const e of entries) {
     if (e.darkOnly && mode !== 'dark') continue;
-    if (!e.darkOnly && mode === 'dark' && darkOnlyProps.has(e.prop)) continue;
-    colors.push({ prop: e.prop, value: e.value, cls: e.cls, token: e.token });
+    const overridden = darkPropsByState.get(e.state) ?? new Set();
+    if (!e.darkOnly && mode === 'dark' && overridden.has(e.prop)) continue;
+    colors.push({ prop: e.prop, value: e.value, cls: e.cls, token: e.token, state: e.state });
   }
   return { colors, raw };
 };
@@ -328,9 +343,10 @@ const compareColorGroups = (label, A, B) => {
     /** @type {Map<string, Array<{prop: string, value: string}>>} */
     const m = new Map();
     for (const e of list) {
-      const arr = m.get(e.prop) ?? [];
+      const key = `${e.prop}|${e.state ?? ''}`;
+      const arr = m.get(key) ?? [];
       arr.push(e);
-      m.set(e.prop, arr);
+      m.set(key, arr);
     }
     for (const arr of m.values()) {
       arr.sort((x, y) => {
@@ -352,11 +368,30 @@ const compareColorGroups = (label, A, B) => {
       problems.push(`[${label}] ${prop} 数量不一致：旧 ${la.length} / 新 ${lb.length}`);
       continue;
     }
-    for (let i = 0; i < la.length; i += 1) {
-      if (!sameEntry(la[i], lb[i])) {
-        problems.push(`[${label}] ${prop} 值漂移：旧 ${la[i].value} → 新 ${lb[i].value}`);
+    // 配对必须「按值匹配」而不是「按下标配对」。
+    // 反例（真实踩过）：把 `text-gray-500 dark:text-gray-400` 折成 `text-lx-muted` 后，暗组里
+    // 同时存在令牌的 #9f9fa9 和一个原生 `text-zinc-400` 的 #9f9fa9；旧组是 #99a1af + #9f9fa9。
+    // 排序后按下标配对会把「旧 #99a1af」配给「新 zinc-400」，两个都不是令牌 → 严格比 → 假红。
+    // 所以：每个旧项优先找「完全相等」的新项，找不到再找「容差内等价」的新项，配到就消耗掉。
+    /** @type {Array<{prop: string, value: string, token?: boolean}>} */
+    const pool = [...lb];
+    for (const a of la) {
+      let exactIdx = -1;
+      let nearIdx = -1;
+      for (let j = 0; j < pool.length; j += 1) {
+        const b = pool[j];
+        if (exactIdx < 0 && closeAlpha(a.value, b.value) && rgbDelta(a.value, b.value) === 0) exactIdx = j;
+        else if (nearIdx < 0 && sameEntry(a, b)) nearIdx = j;
+      }
+      const hit = exactIdx >= 0 ? exactIdx : nearIdx;
+      if (hit >= 0) {
+        pool.splice(hit, 1);
+      } else {
+        if (process.env.GATE_DEBUG) console.error('PAIR', label, JSON.stringify(a), JSON.stringify(pool));
+        problems.push(`[${label}] ${prop} 值漂移：旧 ${a.value} → 新（无可匹配项）`);
       }
     }
+    for (const b of pool) problems.push(`[${label}] ${prop} 值漂移：旧（无可匹配项） → 新 ${b.value}`);
   }
   return problems;
 };
@@ -1067,6 +1102,19 @@ const a1 = groupsOf(ctx, "const c = isDark ? 'bg-white/10' : 'bg-white'");
   check('同令牌但亮侧不等价：必红（防止整个模型无脑放绿）', eqOf(foldOneSide, foldBadLight).length > 0, JSON.stringify(eqOf(foldOneSide, foldBadLight)));
   check(':class="\'...\'"（属性值内套单引号）也能取到类名', eqOf(foldAttrBase, foldAttr).length === 0, JSON.stringify(eqOf(foldAttrBase, foldAttr)));
   check('带引号的幽灵类名不再进 raw（历史假漂移噪音）', groupsOf(ctx, foldAttrBase).raw.every((c) => !c.includes("'")), JSON.stringify(groupsOf(ctx, foldAttrBase).raw));
+
+  // ---------- 第 4 层自检：配对与状态分桶（两次真实假红的回归锁） ----------
+  // 假红一：把 `text-gray-500 dark:text-gray-400` 折成令牌后，同组里还存在另一个「同值非令牌」项，
+  // 按下标配对会把旧 #99a1af 配给新的 zinc-400 → 严格比 → 假红。必须按值配对（先精确后容差）。
+  const pairOld = "const a = 'text-gray-500 dark:text-gray-400'; const b = 'dark:text-zinc-400';";
+  const pairNew = "const a = 'text-lx-muted'; const b = 'dark:text-zinc-400';";
+  check('同值非令牌共存时，令牌小差折叠仍判绿（配对按值不按下标）', eqOf(pairOld, pairNew).length === 0, JSON.stringify(eqOf(pairOld, pairNew)));
+  // 假红二：`dark:hover:` 曾被当成「暗态基础色覆盖」而把基础色吞掉，导致数量不一致。
+  // 状态变体与暗色变体是两个维度，必须分桶。
+  const hoverOld = "const c = 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white';";
+  const hoverNew = "const c = 'text-lx-tertiary hover:text-gray-900 dark:hover:text-white';";
+  check('dark:hover: 不得吞掉基础色（状态与暗色分桶）', eqOf(hoverOld, hoverNew).length === 0, JSON.stringify(eqOf(hoverOld, hoverNew)));
+  check('状态分桶不得放过真实悬停色漂移', eqOf(hoverOld, "const c = 'text-lx-tertiary hover:text-gray-500 dark:hover:text-white';").length > 0, 'hover 色被改必须红');
 
   // ---------- 第 4 层自检：@apply 函数体也必须进等价模型 ----------
   // 背景：@apply 里的类不是字符串字面量，若不注入就永远是验证黑洞（改了也没人管）。
