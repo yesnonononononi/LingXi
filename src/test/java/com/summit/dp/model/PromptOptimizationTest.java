@@ -38,6 +38,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -75,9 +76,9 @@ class PromptOptimizationTest {
         assertEquals("default", config.getValue().getProvider());
         assertEquals(Duration.ofSeconds(60), config.getValue().getTimeout());
         assertEquals(8192, config.getValue().getMaxTokens());
-        ArgumentCaptor<ModelChatCommand> command = ArgumentCaptor.forClass(ModelChatCommand.class);
+        ArgumentCaptor<Supplier<ModelChatCommand>> command = ArgumentCaptor.captor();
         verify(invoker, times(1)).invoke(command.capture());
-        ModelChatCommand call = command.getValue();
+        ModelChatCommand call = command.getValue().get();
         assertFalse(call.streaming());
         assertFalse(call.thinking());
         assertEquals(List.of(), call.chatRequest().getTools());

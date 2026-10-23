@@ -1,5 +1,7 @@
 package com.summit.dp.workflow.infrastructure.tools.image;
 
+import com.summit.runtime.model.DefaultChatModelInvoker;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -113,7 +115,7 @@ class ReadImageLoopIntegrationTest {
                         .toolExecutionManager(tools).runtimeBoundaryChecker(budget)
                         .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(
                                 new DefaultLoopInterceptor(), new ImageInjectionInterceptor(cache))))
-                        .invoker(command -> model.chat(command.chatRequest())).build();
+                        .invoker(new DefaultChatModelInvoker(model)).build();
                 assertEquals(LoopResult.Status.COMPLETED, new AgentLoopStepRunner(context)
                         .run(execution, new ExecutionControlSignal(execution.getId())).status());
             }

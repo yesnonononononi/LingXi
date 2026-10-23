@@ -6,7 +6,7 @@ import type { ChatMessage, ToolCallTrace } from '../../types/chat';
 import { resolveToolCategory } from '../../utils/toolMeta';
 import { toObject } from '../../utils/json';
 import { parseToolDiff } from '../../utils/toolDiff';
-import { applyTextPlacement, applyTurnStatus, renderTurnState, writeResponseText, writeToolTrace } from './turnRenderState';
+import { applyTextPlacement, applyTurnStatus, getTurnState, renderTurnState, writeResponseText, writeToolTrace } from './turnRenderState';
 
 
 /** 思考 / 文本块的状态取值（后端 {@code BlockStatus} 的响应生命周期两态）。 */
@@ -180,6 +180,7 @@ function parseSnowflakeKey(raw: unknown): bigint | null {
 /** 快照和单块更新使用同一条写入路径，缺少的块不能删除已收到的内容。 */
 export function upsertBlockIntoBubble(bubble: ChatMessage, view: TurnViewVO): void {
   for (const block of view.blocks) {
+    if (block.responseId && getTurnState(bubble).rejectedResponses?.[block.responseId]) continue;
     if (block.type === 'TOOL') {
       writeToolTrace(bubble, toToolTrace(block));
       continue;

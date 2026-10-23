@@ -1,33 +1,45 @@
 package com.summit.dp.agent;
 
-import com.summit.dp.model.application.vo.RuntimeModel;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.adapter.langchain4j.mcp.McpClientFactory;
+import com.summit.adapter.langchain4j.model.StreamingChatModelAdapter;
+import com.summit.core.agent.Execution;
 import com.summit.core.conf.ModelConfig;
+import com.summit.core.conf.ModelRetryConfig;
+import com.summit.core.conversation.api.ChatRequestEntity;
 import com.summit.core.conversation.api.ChatResponseEntity;
 import com.summit.core.conversation.api.ToolCallRequest;
+import com.summit.core.conversation.event.AgentEvent;
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.TokenUsageEntity;
-import com.summit.core.model.ModelChatCommand;
 import com.summit.core.model.RequestModelInvokerFactory;
+import com.summit.core.runtime.loop.suspension.ExecutionInterruptedException;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.model.application.service.ModelService;
-import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.workflow.application.chat.AgentWorkflowOrchestrator;
-import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
-import com.summit.dp.workflow.application.chat.RuntimeContext;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.session.application.service.SessionService;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
+import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
+import com.summit.dp.workflow.application.chat.AgentWorkflowOrchestrator;
+import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
+import com.summit.dp.workflow.application.chat.RuntimeContext;
+import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
+import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
+import com.summit.runtime.model.DefaultChatModelInvoker;
+import com.summit.runtime.model.DefaultStreamingModelInvoker;
+import com.sun.net.httpserver.HttpServer;
+import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,13 +49,18 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.net.InetSocketAddress;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -51,9 +68,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.doThrow;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -85,10 +104,74 @@ class ChatControllerLifecycleTest {
     @MockitoBean private SettingsProvider settings;
     @MockitoSpyBean private AgentWorkflowOrchestrator orchestrator;
     @MockitoSpyBean private PreparedChatExecutor executor;
+    @MockitoSpyBean private LocalExecutionRepository checkpoints;
+    @MockitoSpyBean private SseEventPublisher eventPublisher;
 
     private final BlockingQueue<Gate> gates = new LinkedBlockingQueue<>();
     private final AtomicInteger modelCalls = new AtomicInteger();
     private final Set<String> finishedRuns = ConcurrentHashMap.newKeySet();
+
+    @Test
+    void streamingRetryPersistsOnlyTheRecoveredResponseAndPublishesAuthoritativeTurnViews() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        CountDownLatch retrySeen = new CountDownLatch(1);
+        List<JsonNode> frames = new CopyOnWriteArrayList<>();
+        doAnswer(invocation -> {
+            Execution execution = invocation.getArgument(0);
+            execution.getAgentRequest().setRetryConfig(ModelRetryConfig.builder().enabled(true).maxRetries(2)
+                    .initialDelay(Duration.ZERO).maxDelay(Duration.ZERO).build());
+            return invocation.callRealMethod();
+        }).when(checkpoints).save(any());
+        doAnswer(invocation -> {
+            AgentEvent event = invocation.getArgument(1);
+            frames.add(mapper.valueToTree(event));
+            return invocation.callRealMethod();
+        }).when(eventPublisher).publish(anyLong(), any(AgentEvent.class));
+        doAnswer(invocation -> {
+            String name = invocation.getArgument(1);
+            Object payload = invocation.getArgument(2);
+            ObjectNode frame = mapper.valueToTree(payload);
+            frame.put("type", name);
+            frames.add(frame);
+            if ("INVOKE_RETRY".equals(name)) retrySeen.countDown();
+            return invocation.callRealMethod();
+        }).when(eventPublisher).publishBusiness(anyLong(), anyString(), any());
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        try (ExecutorService workers = Executors.newCachedThreadPool()) {
+            server.setExecutor(workers);
+            server.createContext("/", exchange -> StreamingRetryContractTest.respond(exchange, "OPENAI_SSE", false,
+                    requests.incrementAndGet(), retrySeen));
+            server.start();
+            StreamingChatModelAdapter model = new StreamingChatModelAdapter(OpenAiStreamingChatModel.builder()
+                    .baseUrl("http://127.0.0.1:" + server.getAddress().getPort() + "/v1")
+                    .apiKey("test").modelName("controlled-model").timeout(Duration.ofSeconds(3)).build());
+            when(modelFactory.select(any(ModelConfig.class))).thenReturn(new RequestModelInvokerFactory.Selection(
+                    "default-streaming", new DefaultStreamingModelInvoker(model), true));
+            Long sessionId = sessions.initialize("流式重试闭环验证", null, null).getData();
+            Long turnId = Long.valueOf(accept(sessionId, "遇到短暂故障后继续").path("turnId").asText());
+            waitForState(sessionId, 3);
+            assertEquals(2, requests.get());
+            ChatTurn turn = turns.findById(turnId).orElseThrow();
+            assertEquals("COMPLETED", turn.getStatus().name());
+            assertEquals(5L, turn.getTotalTokenCount());
+            List<SessionMessage> replies = messages.findByTurnIds(sessionId, List.of(turnId)).stream()
+                    .filter(message -> message.getType() == SessionMessageType.AI).toList();
+            assertEquals(1, replies.size());
+            assertTrue(replies.getFirst().getText().contains("recovered"));
+            assertFalse(replies.getFirst().getText().contains("discard"));
+            assertEquals(1, frames.stream().filter(frame -> frame.path("type").asText().equals("INVOKE_RETRY")).count());
+            assertEquals(0, frames.stream().filter(frame -> frame.path("type").asText().equals("EXECUTION_FAILED")).count());
+            JsonNode view = mapper.readTree(mvc.perform(get("/session/{id}/messages", sessionId))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
+                    .path("data").path("turnViews").path(turnId.toString());
+            assertEquals("COMPLETED", view.path("status").asText());
+            assertTrue(view.path("blocks").get(0).path("isBody").asBoolean());
+            String export = System.getProperty("lingxi.retry.spring.output");
+            if (export != null) mapper.writeValue(Path.of(export).toFile(), frames);
+        } finally {
+            server.stop(0);
+        }
+    }
 
     private static final class Gate {
         private final CountDownLatch entered = new CountDownLatch(1);
@@ -109,15 +192,20 @@ class ChatControllerLifecycleTest {
         when(models.resolveRuntimeConfig(any(), any())).thenReturn(new RuntimeModel(ModelConfig.builder().modelName("controlled-model")
                 .baseUrl("https://example.invalid").apiKey("controlled-key").provider("default").build(), false));
         when(modelFactory.select(any(ModelConfig.class))).thenReturn(new RequestModelInvokerFactory.Selection(
-                "default", this::invoke, false));
+                "default", new DefaultChatModelInvoker(this::invoke), false));
     }
 
-    private ChatResponseEntity invoke(ModelChatCommand command) throws Exception {
+    private ChatResponseEntity invoke(ChatRequestEntity request) {
         modelCalls.incrementAndGet();
         Gate gate = gates.poll();
         if (gate == null) return reply("实际循环完成");
         gate.entered.countDown();
-        if (!gate.release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("测试模型闸门超时");
+        try {
+            if (!gate.release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("测试模型闸门超时");
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new ExecutionInterruptedException(ExecutionInterruptedException.Kind.CANCEL, "测试模型等待已中断");
+        }
         return gate.response;
     }
 

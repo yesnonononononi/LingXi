@@ -13,6 +13,7 @@ import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.core.agent.AgentRequest;
+import com.summit.core.conf.ModelRetryConfig;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Image;
 import com.summit.core.conversation.message.Message;
@@ -398,6 +399,7 @@ public class RequestPreparer {
                         .accessMode(context.accessMode()).requirePlan(context.requirePlan())
                         .mcpConfig(mcpConfig).skillRoot(skillRoot).build()))
                 .modelConfig(context.modelConfig())
+                .retryConfig(ModelRetryConfig.builder().enabled(true).build())
                 .mcpConfig(mcpConfig)
                 .skillConfig(skillRoot == null ? null : new SkillConfig(skillRoot))
                 .runtimeParameters(AgentRuntimeParameters.builder()

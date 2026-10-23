@@ -1,5 +1,7 @@
 package com.summit.dp.task;
 
+import com.summit.runtime.model.DefaultChatModelInvoker;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -186,16 +188,16 @@ class BackgroundTaskNotificationTest {
                 .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(interceptor)))
                 .runtimeBoundaryChecker(boundary).executionRepository(checkpoints)
                 .toolExecutionManager(tools).runtimeEventPublisher(new RuntimeEventPublisher(List.of()))
-                .invoker(command -> {
+                .invoker(new DefaultChatModelInvoker(command -> {
                     int round = modelCalls.incrementAndGet();
-                    long notices = command.chatRequest().getMessages().stream()
+                    long notices = command.getMessages().stream()
                             .filter(message -> message.text().contains("后台终端任务已结束：taskId=1")).count();
                     assertEquals(round == 1 ? 0L : 1L, notices);
                     if (round == 1) task.finish(TaskStatus.FAILED, "compile failed", 7, false);
                     return ChatResponseEntity.builder().aiMessageEntity(AiMessageEntity.builder()
                                     .text(round == 1 ? "任务正在后台运行" : "编译失败，退出码为7").toolCalls(List.of()).build())
                             .tokenUsage(TokenUsageEntity.empty()).build();
-                }).build());
+                })).build());
         Execution execution = execution(100L, 10L, false);
         execution.setTokenUsage(TokenUsageEntity.empty());
         assertEquals(LoopResult.Status.SUSPENDED, runner.run(execution, new ExecutionControlSignal("100")).status());

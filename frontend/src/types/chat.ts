@@ -122,6 +122,7 @@ export interface ResponseTextBuffer extends ResponsePosition {
 export interface TurnRenderState {
   texts: Record<string, ResponseTextBuffer>;
   tools: Record<string, ToolCallTrace>;
+  rejectedResponses?: Record<string, true>;
 }
 
 /** 单条消息接口 (支持多分支对话) */
@@ -168,6 +169,7 @@ export interface ChatMessage {
   fileEdits?: FileEditRecord[];      // 文件修改记录
   contextUsage?: ContextUsageData;   // 上下文用量与压缩状态
   isCompressingContext?: boolean;    // 是否正在压缩上下文中
+  modelRetry?: { responseId: string; retryCount: number; retryDelay: number };
   isThinking?: boolean;              // 是否正在思考中
   isExploring?: boolean;             // 是否正在探索中（发送消息到第一个工具调用之间）
   isComplete?: boolean;              // 会话/轮次是否已结束

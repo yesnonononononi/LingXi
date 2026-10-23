@@ -6,6 +6,7 @@ import { isCardToolName, upsertPromptCard } from '../../utils/toolCallCard';
 import { buildBubbleFromTurnView, buildUserMessageFromTurnView, projectTurnView, upsertBlockIntoBubble } from './blockProjection';
 import { consumeResponseText } from './responseText';
 import { consumeToolEvent } from './toolStream';
+import { getTurnState, renderTurnState } from './turnRenderState';
 
 /** 卡片就绪重试上限（次）。 */
 const CARD_RETRY_MAX = 5;
@@ -153,6 +154,25 @@ export class TurnStreamReducer {
     }
 
     switch (event.type) {
+      case 'INVOKE_RETRY': {
+        if (!turnId || this.disposed) break;
+        const bubble = this.obtainActiveBubble(turnId);
+        if (bubble.isComplete || bubble.isSuspended) break;
+        const state = getTurnState(bubble);
+        if (state.rejectedResponses?.[event.responseId]) break;
+        (state.rejectedResponses ??= {})[event.responseId] = true;
+        delete state.texts[`text:${event.responseId}`];
+        delete state.texts[`thinking:${event.responseId}`];
+        renderTurnState(bubble);
+        // 较新响应已经到达时，迟到的重试通知只撤下失败片段。
+        if (Object.values(state.texts).some(buffer => buffer.responseId
+            && BigInt(buffer.responseId) > BigInt(event.responseId))) break;
+        bubble.modelRetry = { responseId: event.responseId, retryCount: event.retryCount, retryDelay: event.retryDelay };
+        bubble.isThinking = true;
+        bubble.isExploring = false;
+        this.onScrollFollow?.();
+        break;
+      }
       case 'EXECUTION_STARTED':
         this.handleExecutionStarted(turnId);
         break;
@@ -165,6 +185,9 @@ export class TurnStreamReducer {
         const bubble = this.obtainActiveBubble(turnId);
         if (bubble.isComplete || bubble.isSuspended) break;
         if (consumeResponseText(bubble, event)) {
+          if (bubble.modelRetry && BigInt(event.responseId) > BigInt(bubble.modelRetry.responseId)) {
+            bubble.modelRetry = undefined;
+          }
           bubble.isThinking = true;
           bubble.isExploring = false;
           this.onScrollFollow?.();
@@ -368,6 +391,7 @@ export class TurnStreamReducer {
 
   private handleExecutionStarted(turnId: string | null): void {
     const bubble = this.obtainActiveBubble(turnId);
+    bubble.modelRetry = undefined;
     bubble.isThinking = true;
     bubble.isExploring = true;
     bubble.isSuspended = false;
@@ -436,6 +460,7 @@ export class TurnStreamReducer {
 
   private handleExecutionSuspended(): void {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
+    bubble.modelRetry = undefined;
     bubble.isThinking = false;
     bubble.isExploring = false;
     bubble.isSuspended = true;
@@ -454,6 +479,7 @@ export class TurnStreamReducer {
 
   private handleExecutionResumed(): void {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
+    bubble.modelRetry = undefined;
     bubble.isSuspended = false;
     bubble.isThinking = true;
     // 恢复后这一轮不再是「被取消 / 已失败」，否则空内容气泡会一直顶着终态提示行。
@@ -465,6 +491,7 @@ export class TurnStreamReducer {
 
   private handleExecutionCompleted(tokenInfo: TokenInfo | null): void {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
+    bubble.modelRetry = undefined;
     bubble.isComplete = true;
     bubble.isThinking = false;
     bubble.isExploring = false;
@@ -480,6 +507,7 @@ export class TurnStreamReducer {
 
   private handleExecutionFailed(errMsg: string | undefined, tokenInfo: TokenInfo | null): void {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
+    bubble.modelRetry = undefined;
     bubble.isComplete = true;
     bubble.isThinking = false;
     bubble.isExploring = false;
@@ -502,6 +530,7 @@ export class TurnStreamReducer {
 
   private handleExecutionCancelled(tokenInfo: TokenInfo | null): void {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
+    bubble.modelRetry = undefined;
     bubble.isComplete = true;
     bubble.isThinking = false;
     bubble.isExploring = false;

@@ -64,7 +64,7 @@ public class PromptOptimizationService {
                 .build();
         ChatResponseEntity response;
         try {
-            response = selection.invoker().invoke(ModelChatCommand.builder()
+            response = selection.invoker().invoke(() -> ModelChatCommand.builder()
                     .chatRequest(request).streaming(false).thinking(false).build());
         } catch (Exception error) {
             log.warn("优化提示词失败: modelId={}", selectedModelId, error);

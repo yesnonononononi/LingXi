@@ -2,6 +2,7 @@ package com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation;
 
 import cn.hutool.core.util.IdUtil;
 import com.summit.core.agent.AgentRequest;
+import com.summit.core.conf.ModelRetryConfig;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.conf.SkillConfig;
 import com.summit.core.conversation.message.Message;
@@ -105,6 +106,7 @@ public class SubAgentRequestFactory {
         return builder
                 .messages(buildContext(priorMessages, task))
                 .modelConfig(childModel.config())
+                .retryConfig(ModelRetryConfig.builder().enabled(true).build())
                 .executionId(String.valueOf(IdUtil.getSnowflakeNextId()))
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(childAttributes(subAgent, toolExecution, subSessionId, childModel))

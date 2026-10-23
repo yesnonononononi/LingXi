@@ -1,0 +1,214 @@
+[
+  {
+    "metaData": {
+      "sessionId": "2113505992938496000",
+      "historyRevision": "1",
+      "turnId": "2113505992963661824",
+      "rootSessionId": "2113505992938496000"
+    },
+    "executionId": "2113505992959467520",
+    "timestamp": "2026-10-23T05:41:10.432019900Z",
+    "type": "EXECUTION_STARTED"
+  },
+  {
+    "sessionId": "2113505992938496000",
+    "turnId": "2113505992963661824",
+    "viewVersion": "2",
+    "view": {
+      "sessionId": "2113505992938496000",
+      "turnId": "2113505992963661824",
+      "status": "RUNNING",
+      "viewVersion": "2",
+      "userMessage": "遇到短暂故障后继续",
+      "userImageUrls": [],
+      "blocks": [],
+      "metric": null,
+      "userMessageId": "2113505992963661825"
+    },
+    "type": "TURN_SNAPSHOT"
+  },
+  {
+    "agentId": "chatAgent",
+    "executionId": "2113505992959467520",
+    "responseId": "901344480995573760",
+    "content": "discard",
+    "offset": 0,
+    "metaData": {
+      "sessionId": "2113505992938496000",
+      "historyRevision": "1",
+      "turnId": "2113505992963661824",
+      "rootSessionId": "2113505992938496000"
+    },
+    "timestamp": "2026-10-23T05:41:10.562316Z",
+    "type": "PARTIAL_TEXT",
+    "order": 1
+  },
+  {
+    "responseId": "901344480995573760",
+    "metaData": {
+      "sessionId": "2113505992938496000",
+      "historyRevision": "1",
+      "turnId": "2113505992963661824",
+      "rootSessionId": "2113505992938496000"
+    },
+    "retryCount": 1,
+    "retryDelay": 0,
+    "timeUnit": "MILLISECONDS",
+    "executionId": "2113505992959467520",
+    "timestamp": "2026-10-23T05:41:10.570832500Z",
+    "type": "INVOKE_RETRY"
+  },
+  {
+    "agentId": "chatAgent",
+    "executionId": "2113505992959467520",
+    "responseId": "901344481549221888",
+    "content": "recovered",
+    "offset": 0,
+    "metaData": {
+      "sessionId": "2113505992938496000",
+      "historyRevision": "1",
+      "turnId": "2113505992963661824",
+      "rootSessionId": "2113505992938496000"
+    },
+    "timestamp": "2026-10-23T05:41:10.576853500Z",
+    "type": "PARTIAL_TEXT",
+    "order": 1
+  },
+  {
+    "agentId": "chatAgent",
+    "executionId": "2113505992959467520",
+    "content": "recovered",
+    "responseId": "901344481549221888",
+    "meta": {
+      "id": "m",
+      "modelName": "probe",
+      "finishReason": "STOP",
+      "images": null
+    },
+    "metaData": {
+      "sessionId": "2113505992938496000",
+      "historyRevision": "1",
+      "turnId": "2113505992963661824",
+      "rootSessionId": "2113505992938496000"
+    },
+    "timestamp": "2026-10-23T05:41:10.580853400Z",
+    "type": "COMPLETE_TEXT",
+    "order": 1
+  },
+  {
+    "responseId": "901344481549221888",
+    "metaData": {
+      "sessionId": "2113505992938496000",
+      "historyRevision": "1",
+      "turnId": "2113505992963661824",
+      "rootSessionId": "2113505992938496000"
+    },
+    "executionId": "2113505992959467520",
+    "timestamp": "2026-10-23T05:41:10.582867100Z",
+    "type": "AI_MESSAGE",
+    "text": "recovered",
+    "thinking": null,
+    "isBody": false,
+    "order": 1,
+    "thinkingOrder": 0
+  },
+  {
+    "phase": "UPDATE",
+    "band": null,
+    "usage": {
+      "tokenCount": 798,
+      "maxTokens": 258000,
+      "ratio": 0.0030930232558139537
+    },
+    "message": "",
+    "metaData": {
+      "sessionId": "2113505992938496000",
+      "historyRevision": "1",
+      "turnId": "2113505992963661824",
+      "rootSessionId": "2113505992938496000"
+    },
+    "executionId": "2113505992959467520",
+    "timestamp": "2026-10-23T05:41:10.597880900Z",
+    "type": "CONTEXT_UPDATE"
+  },
+  {
+    "sessionId": "2113505992938496000",
+    "turnId": "2113505992963661824",
+    "viewVersion": "3",
+    "view": {
+      "sessionId": "2113505992938496000",
+      "turnId": "2113505992963661824",
+      "status": "COMPLETED",
+      "viewVersion": "3",
+      "userMessage": "遇到短暂故障后继续",
+      "userImageUrls": [],
+      "blocks": [
+        {
+          "type": "TEXT",
+          "blockId": "text:901344481549221888",
+          "responseId": "901344481549221888",
+          "order": 1,
+          "status": "COMPLETE",
+          "isBody": true,
+          "text": "recovered"
+        }
+      ],
+      "metric": {
+        "tokenCount": 798,
+        "maxTokens": 258000,
+        "ratio": 0.0030930232558139537
+      },
+      "userMessageId": "2113505992963661825"
+    },
+    "type": "TURN_SNAPSHOT"
+  },
+  {
+    "tokenInfo": {
+      "inputTokenCount": 3,
+      "outputTokenCount": 2,
+      "totalTokenCount": 5,
+      "reasoningTokens": 0,
+      "cacheTokens": 0
+    },
+    "metaData": {
+      "sessionId": "2113505992938496000",
+      "historyRevision": "1",
+      "turnId": "2113505992963661824",
+      "rootSessionId": "2113505992938496000"
+    },
+    "executionId": "2113505992959467520",
+    "timestamp": "2026-10-23T05:41:10.602387500Z",
+    "type": "EXECUTION_COMPLETED"
+  },
+  {
+    "sessionId": "2113505992938496000",
+    "turnId": "2113505992963661824",
+    "viewVersion": "4",
+    "view": {
+      "sessionId": "2113505992938496000",
+      "turnId": "2113505992963661824",
+      "status": "COMPLETED",
+      "viewVersion": "4",
+      "userMessage": "遇到短暂故障后继续",
+      "userImageUrls": [],
+      "blocks": [
+        {
+          "type": "TEXT",
+          "blockId": "text:901344481549221888",
+          "responseId": "901344481549221888",
+          "order": 1,
+          "status": "COMPLETE",
+          "isBody": true,
+          "text": "recovered"
+        }
+      ],
+      "metric": {
+        "tokenCount": 798,
+        "maxTokens": 258000,
+        "ratio": 0.0030930232558139537
+      },
+      "userMessageId": "2113505992963661825"
+    },
+    "type": "TURN_SNAPSHOT"
+  }
+]

@@ -537,6 +537,9 @@
       </transition>
 
       <!-- 回复正文 (使用 Markdown 渲染，包含代码高亮、代码块复制、表格与列表) -->
+      <div v-if="props.message.modelRetry" role="status" class="my-2 text-xs text-lx-muted">
+        {{ t('chat.message.retrying', { count: props.message.modelRetry.retryCount }) }}
+      </div>
       <div
         v-if="props.message.content || (props.message.isThinking && !props.message.isExploring)"
         class="w-full text-sm font-normal my-1"

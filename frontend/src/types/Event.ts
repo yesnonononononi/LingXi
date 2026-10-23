@@ -296,6 +296,15 @@ export interface BlockUpsertEvent extends EventInterface {
 /* 判别式联合与事件表                                                   */
 /* ------------------------------------------------------------------ */
 
+/** 模型失败后即将等待重试，responseId 指向被放弃的尝试。 */
+export interface InvokeRetryEvent extends EventInterface {
+  type: 'INVOKE_RETRY';
+  responseId: string;
+  retryCount: number;
+  retryDelay: number;
+  timeUnit: 'MILLISECONDS';
+}
+
 /**
  * 事件类型 → 接口 的映射表。
  *
@@ -303,6 +312,7 @@ export interface BlockUpsertEvent extends EventInterface {
  * 新增事件只需在这里加一行，不再维护第二份手写字面量联合。</p>
  */
 export interface AgentEventMap {
+  INVOKE_RETRY: InvokeRetryEvent;
   EXECUTION_STARTED: ExecutionStartEvent;
   EXECUTION_COMPLETED: ExecutionCompleteEvent;
   EXECUTION_FAILED: ExecutionErrorEvent;
@@ -366,6 +376,7 @@ export function isAgentEventType(type: string): type is RuntimeEventType {
 
 /** 已知事件类型集合（运行时校验用，与 {@link AgentEventMap} 同源）。 */
 const AGENT_EVENT_TYPES: Record<RuntimeEventType, true> = {
+  INVOKE_RETRY: true,
   EXECUTION_STARTED: true,
   EXECUTION_COMPLETED: true,
   EXECUTION_FAILED: true,

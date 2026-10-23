@@ -11,11 +11,13 @@ export function applyTurnStatus(bubble: ChatMessage, status: string): void {
   if (bubble.isComplete && (status === 'RUNNING' || status === 'WAITING')) return;
   if (bubble.isSuspended && status === 'RUNNING') return;
   if (status === 'COMPLETED' || status === 'FAILED' || status === 'CANCELLED') {
+    bubble.modelRetry = undefined;
     bubble.isComplete = true;
     bubble.isThinking = false;
     bubble.isExploring = false;
     bubble.isSuspended = false;
   } else if (status === 'WAITING') {
+    bubble.modelRetry = undefined;
     bubble.isSuspended = true;
     bubble.isThinking = false;
     bubble.isExploring = false;

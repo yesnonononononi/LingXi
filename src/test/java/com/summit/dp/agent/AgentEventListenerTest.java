@@ -7,6 +7,7 @@ import com.summit.core.conversation.api.ToolCallRequest;
 import com.summit.core.conversation.event.AgentCompleteTextEvent;
 import com.summit.core.conversation.event.AgentMessageEvent;
 import com.summit.core.conversation.event.AgentEvent;
+import com.summit.core.conversation.event.InvokeRetryEvent;
 import com.summit.core.conversation.event.AgentPartialTextEvent;
 import com.summit.core.conversation.event.AgentPartialThinkingEvent;
 import com.summit.core.conversation.event.ContextUpdateEvent;
@@ -25,6 +26,7 @@ import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.shared.vo.block.TextBlock;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.dp.workflow.infrastructure.listener.agent.AgentEventListener;
+import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import org.junit.jupiter.api.AfterEach;
@@ -42,6 +44,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -60,6 +63,25 @@ import static org.mockito.Mockito.when;
 
 /** 片段偏移、根会话路由及终态后的连接寿命必须同时守住。 */
 class AgentEventListenerTest {
+    @Test
+    void retryRoutesToRootSessionAndRetainsFailedResponseAndTurnIdentity() {
+        resolveSession();
+        AgentEventListener retryListener = new AgentEventListener(new JsonConfig().objectMapper(), publisher, identity);
+        retryListener.init();
+        InvokeRetryEvent event = InvokeRetryEvent.builder().executionId(EXECUTION_ID).responseId(RESPONSE_ID)
+                .retryCount(2).retryDelay(750).timeUnit(TimeUnit.MILLISECONDS)
+                .metaData(Map.of("turnId", Long.toString(TURN_ID), "sessionId", Long.toString(SESSION_ID))).build();
+        retryListener.onInvokeRetry(event);
+        ArgumentCaptor<ObjectNode> captured = ArgumentCaptor.forClass(ObjectNode.class);
+        verify(publisher).publishBusiness(eq(ROOT_SESSION_ID), eq("INVOKE_RETRY"), captured.capture());
+        ObjectNode payload = captured.getValue();
+        assertEquals("INVOKE_RETRY", payload.get("type").asText());
+        assertEquals(RESPONSE_ID, payload.get("responseId").asText());
+        assertEquals(Long.toString(TURN_ID), payload.path("metaData").path("turnId").asText());
+        assertEquals("MILLISECONDS", payload.get("timeUnit").asText());
+        assertEquals(750, payload.get("retryDelay").asLong());
+        assertEquals(true, payload.get("retryDelay").isIntegralNumber());
+    }
     private static final String EXECUTION_ID = "2105000000000000001";
     private static final long SESSION_ID = 2105000000000000002L;
     private static final long ROOT_SESSION_ID = 2105000000000000003L;

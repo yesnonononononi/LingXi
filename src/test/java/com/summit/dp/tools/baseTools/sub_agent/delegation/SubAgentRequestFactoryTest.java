@@ -82,6 +82,7 @@ class SubAgentRequestFactoryTest {
                 .attributes(Map.of(ExecutionAttributes.MODEL_VISION, false)).build();
         when(modelService.resolveRuntimeConfig(anyLong(), any())).thenReturn(new RuntimeModel(ModelConfig.builder().modelName("arbitrary-model").build(), true));
         AgentRequest supported = build(target, member, buildTeam(member), parent, List.of());
+        assertTrue(supported.getRetryConfig().isEnabled());
         assertTrue(supported.getToolList().contains(ToolCatalog.READ_IMAGE));
         assertEquals(true, supported.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.MODEL_VISION));
 

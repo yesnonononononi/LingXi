@@ -217,6 +217,7 @@ class RequestPreparerExecutionIdentityTest {
         AgentRequest request = preparer.buildRequest("prompt", context, List.of());
 
         assertEquals(context.executionContext().executionId(), request.getExecutionId());
+        assertTrue(request.getRetryConfig().isEnabled());
     }
 
     @Test

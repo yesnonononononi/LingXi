@@ -89,6 +89,16 @@ public class AgentEventListener implements RuntimeListener {
     }
 
     @Override
+    public void onInvokeRetry(InvokeRetryEvent event) {
+        BroadcastTarget target = resolveTarget(event);
+        if (target == null) return;
+        ObjectNode payload = objectMapper.valueToTree(event);
+        // 全局 Long 序列化保护雪花标识，等待时长仍按数值交付。
+        payload.put("retryDelay", event.getRetryDelay());
+        sseEventPublisher.publishBusiness(target.rootSessionId(), event.type(), payload);
+    }
+
+    @Override
     public void onCompleteText(AgentCompleteTextEvent event) {
         broadcastRenderEvent(event);
     }

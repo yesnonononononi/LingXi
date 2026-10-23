@@ -6,6 +6,7 @@ import { applyTextPlacement, getTurnState, renderTurnState, writeResponseText } 
 export function consumeResponseText(bubble: ChatMessage, event: AgentEvent): boolean {
   if (!('responseId' in event) || !event.responseId) return false;
   const responseId = event.responseId;
+  if (getTurnState(bubble).rejectedResponses?.[responseId]) return false;
   if (event.type === 'PARTIAL_TEXT' || event.type === 'PARTIAL_THINKING') {
     if (event.offset === undefined) return false;
     const kind = event.type === 'PARTIAL_TEXT' ? 'TEXT' : 'THINKING';
