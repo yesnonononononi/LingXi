@@ -11,6 +11,7 @@ import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendM
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskLoopInterceptor;
 import com.summit.dp.workflow.infrastructure.mcp.HostMcpScopeProvider;
+import com.summit.harness.springbootautoconfigure.config.mcp.McpAutoConfiguration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -64,8 +65,10 @@ class ApplicationContextAssemblyTest {
 
     @Test
     void realMcpInfrastructureLoadsWithoutTheFrameworkGlobalSwitch() {
+        assertNotNull(context.getBean(McpAutoConfiguration.class));
         assertEquals(1, context.getBeansOfType(McpClientFactory.class).size());
         assertFalse(mockingDetails(clientFactory).isMock());
+        assertEquals(1, context.getBeansOfType(ScopeMcpProvider.class).size());
         assertTrue(context.getBean(ScopeMcpProvider.class) instanceof HostMcpScopeProvider);
         assertTrue(context.getEnvironment().getProperty("lingxi.mcp.enabled") == null);
     }
