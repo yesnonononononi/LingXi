@@ -65,6 +65,48 @@ class CommandToolDefinitionExecutorTest {
     }
 
     @Test
+    void successfulProcessCarriesItsZeroExitCodeWithoutChangingSuccessSemantics() throws Exception {
+        Workspace workspace = mockedWorkspaceReturning(0, "ok");
+        ToolDefinition<?> definition = ToolDefinition.builder().id("execute_command").name("execute_command")
+                .timeout(1L).maxOutput(100).executor(executor).build();
+
+        ToolExecuteResult result = executor.process(ExecuteCommandRequest.builder().command("echo ok").build(),
+                null, workspace, definition);
+
+        assertEquals(0, result.getExitCode(), "真实进程退出码 0 应原样填入 exitCode");
+        assertEquals(1, result.getCode(), "框架 code 语义不变：执行成功仍为 1");
+        assertTrue(result.isSuccess());
+    }
+
+    @Test
+    void failingProcessCarriesItsNonZeroExitCodeWithoutFlippingSuccessSemantics() throws Exception {
+        Workspace workspace = mockedWorkspaceReturning(1, "boom");
+        ToolDefinition<?> definition = ToolDefinition.builder().id("execute_command").name("execute_command")
+                .timeout(1L).maxOutput(100).executor(executor).build();
+
+        ToolExecuteResult result = executor.process(ExecuteCommandRequest.builder().command("false").build(),
+                null, workspace, definition);
+
+        assertEquals(1, result.getExitCode(), "真实进程退出码 1 应原样填入 exitCode");
+        assertEquals(0, result.getCode(), "框架 code 语义不变：执行失败仍为 0");
+        assertFalse(result.isSuccess());
+    }
+
+    private Workspace mockedWorkspaceReturning(int exitCode, String output) throws Exception {
+        Workspace workspace = mock(Workspace.class);
+        WorkspaceBridge bridge = mock(WorkspaceBridge.class);
+        WorkspaceCommands commands = mock(WorkspaceCommands.class);
+        when(workspace.runtimeEnvironment()).thenReturn(RuntimeEnvironment.builder()
+                .charset(StandardCharsets.UTF_8).build());
+        when(workspace.bridge()).thenReturn(bridge);
+        when(bridge.commands()).thenReturn(commands);
+        when(workspace.workDir()).thenReturn(".");
+        when(commands.execute(anyString(), any(), eq("."), eq(StandardCharsets.UTF_8), eq(1L), eq(TimeUnit.SECONDS), eq(100L)))
+                .thenReturn(new WorkspaceCommands.CommandResult(exitCode, output, false, false));
+        return workspace;
+    }
+
+    @Test
     void requestedShellRunsInThatInterpreter() throws Exception {
         Workspace workspace = mock(Workspace.class);
         WorkspaceBridge bridge = mock(WorkspaceBridge.class);

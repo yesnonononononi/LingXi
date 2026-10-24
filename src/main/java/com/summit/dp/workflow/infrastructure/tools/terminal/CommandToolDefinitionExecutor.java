@@ -125,8 +125,20 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
             );
         }
         return result.exitCode() == 0
-                ? ToolExecuteResult.success(processResult, ToolResultType.NORMAL, buildMetadata(request))
-                : ToolExecuteResult.err(processResult, ToolResultType.NORMAL, buildMetadata(request));
+                ? ToolExecuteResult.builder()
+                        .code(1)
+                        .exitCode(result.exitCode())
+                        .toolResultType(ToolResultType.NORMAL)
+                        .toolOutput(processResult)
+                        .toolMetaData(buildMetadata(request))
+                        .build()
+                : ToolExecuteResult.builder()
+                        .code(0)
+                        .exitCode(result.exitCode())
+                        .toolResultType(ToolResultType.NORMAL)
+                        .toolOutput(processResult)
+                        .toolMetaData(buildMetadata(request))
+                        .build();
     }
 
     /**
