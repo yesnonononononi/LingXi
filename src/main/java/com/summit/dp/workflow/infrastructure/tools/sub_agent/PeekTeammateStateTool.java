@@ -19,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -70,9 +71,14 @@ public class PeekTeammateStateTool extends AbstractSubAgentTool implements ToolE
                 return success("队员 " + agentName + " 尚未被唤醒：本会话内没有它的子会话");
             }
             SessionVO vo = sessionService.findById(subSession.get().getId()).getData();
-            return success("队员 " + agentName + " 当前状态: " + vo.getRunStatus()
-                    + ", 最近结果: " + (vo.getLastOutcome() == null ? "无" : vo.getLastOutcome())
-                    + ", 子会话: " + vo.getId());
+
+            return success(String.format("""
+                    队员: %s \n
+                    当前状态: %s \n
+                    最近状态: %s \n
+                    会话创建时间: %s
+                    """,agentName,vo.getRunStatus(), Objects.requireNonNullElse(vo.getLastOutcome(),"未知"),vo.getCreateTime()));
+
         } catch (ClientException e) {
             // 服务层查不到是抛 ClientException（不是返回 null），这里翻译成工具回执文案。
             return err(e.getMessage());

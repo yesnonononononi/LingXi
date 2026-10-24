@@ -47,7 +47,7 @@ public class ToolConfig {
                         "required":["question"]}
                         """)
                 .maxOutput(1_000)
-                .timeout(300L)
+                .timeout(30_000L)
                 .build();
     }
 
