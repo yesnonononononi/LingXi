@@ -72,7 +72,7 @@ export interface FileEditRecord {
 export interface ContextUsageData {
   phase?: 'UPDATE' | 'SQUEEZE_STARTED' | 'SQUEEZE_COMPLETED' | string;
   /** 产生该事件的压缩档位；SNAPSHOT 快照与纯用量遥测（UPDATE）不带 */
-  band?: 'MANUAL' | 'SUMMARY' | string;
+  band?: 'PRUNE' | 'SUMMARY' | string;
   tokenCount?: number;
   maxTokens?: number;
   ratio?: number;

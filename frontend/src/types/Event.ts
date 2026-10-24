@@ -77,8 +77,8 @@ export type ToolCallStatus =
 /** 上下文压缩阶段（对应 {@code ContextUpdateEvent.Phase}）。 */
 export type ContextUpdatePhase = 'UPDATE' | 'SQUEEZE_STARTED' | 'SQUEEZE_COMPLETED';
 
-/** 产生压缩事件的档位：MANUAL=本地轮次截断（毫秒级），SUMMARY=模型深度压缩（上下文重建）。 */
-export type ContextUpdateBand = 'MANUAL' | 'SUMMARY';
+/** 产生压缩事件的档位：PRUNE=本地剪枝（毫秒级、无模型调用），SUMMARY=模型深度压缩（上下文重建）。 */
+export type ContextUpdateBand = 'PRUNE' | 'SUMMARY';
 
 /** 上下文用量指标（对应 {@code ContextUsageMetric}）；maxTokens 为 0 表示未配置上限。 */
 export interface ContextUsageMetric {

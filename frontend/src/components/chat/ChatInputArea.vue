@@ -645,9 +645,9 @@ const contextUsageText = computed<string>(() => {
   const ratio = usage?.ratio ?? (max && max > 0 ? used / max : null);
   const pct = ratio != null && ratio >= 0 ? `${(ratio * 100).toFixed(1)}%` : null;
   const amount = `${formatContextTokens(used)}${max && max > 0 ? ` / ${formatContextTokens(max)}` : ''}`;
-  // 「压缩中」只由 SUMMARY（模型深度压缩）档位点亮；MANUAL 是毫秒级本地截断，每个 checkpoint
-  // 都会跑一对 SQUEEZE 事件，照旧渲染会让指示器反复跳变。旧数据不带档位时保持原行为。
-  const compressing = usage?.phase === 'SQUEEZE_STARTED' && usage?.band !== 'MANUAL';
+  // 「压缩中」只由 SUMMARY（模型深度压缩）档位点亮；PRUNE 是毫秒级本地剪枝（无模型调用），每个
+  // checkpoint 都会跑一对 SQUEEZE 事件，照旧渲染会让指示器反复跳变。旧数据不带档位时保持原行为。
+  const compressing = usage?.phase === 'SQUEEZE_STARTED' && usage?.band !== 'PRUNE';
   const label = compressing ? t('chat.input.contextCompressing') : t('chat.input.contextUsed');
   return pct ? `${pct} · ${amount} ${label}` : `${amount} ${label}`;
 });

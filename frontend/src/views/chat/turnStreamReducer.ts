@@ -433,10 +433,10 @@ export class TurnStreamReducer {
     message?: string;
   }): void {
     const bubble = this.obtainActiveBubble(this.currentTurnId);
-    // 「压缩中」样式的消费权按档位决定：MANUAL 是毫秒级本地截断，每个 checkpoint 都会跑一对
-    // SQUEEZE_STARTED/COMPLETED，照旧渲染会让指示器反复跳变；只有 SUMMARY（深度压缩）才置位。
-    // 事件不带档位时保持原行为（!== 'MANUAL' 视为可消费），透传链路丢字段不至于让样式失效。
-    if (event.band !== 'MANUAL') {
+    // 「压缩中」样式的消费权按档位决定：PRUNE 是毫秒级本地剪枝（无模型调用），每个 checkpoint 都会跑
+    // 一对 SQUEEZE_STARTED/COMPLETED，照旧渲染会让指示器反复跳变；只有 SUMMARY（深度压缩）才置位。
+    // 事件不带档位时保持原行为（!== 'PRUNE' 视为可消费），透传链路丢字段不至于让样式失效。
+    if (event.band !== 'PRUNE') {
       if (event.phase === 'SQUEEZE_STARTED') {
         bubble.isCompressingContext = true;
       } else if (event.phase === 'SQUEEZE_COMPLETED') {
