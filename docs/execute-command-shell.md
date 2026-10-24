@@ -38,13 +38,24 @@
 
 截断按 char 预算，不会切断多字节字符，也不会在 emoji 的代理对中间切开。
 
-## 已知限制：CMD 的命令行文本不能承载非 ASCII
+## 已知限制：CMD 内置命令输出非 ASCII 会失真
 
-`cmd.exe` 用系统 OEM 代码页解析自己的命令行，非 ASCII 字符会在执行前就被破坏（实测：`echo 中文😀` 输出为 `??????`，而读取同一个 UTF-8 文件的 `type file` 完全正常）。
+命令文本本身**没有**损坏：cmd 通过 CreateProcessW 以 UTF-16 把命令行交给子进程。实测同一条命令里让 node 回显收到的参数，码点是 `4e2d,6587,1f600`，即完整的 `中文😀`。
+
+失真发生在 cmd 的**内置命令**（`echo` 等）：它们按启动时解析出的 ANSI/OEM 字节输出，而不是按当前代码页。同一台机器的实测：
+
+| 命令 | 输出码点 | 结论 |
+| --- | --- | --- |
+| `echo 中文😀` | `fffd fffd fffd fffd 3f 3f` | 中文按 GBK 编码、emoji 变成 `?` |
+| `chcp 65001>nul & echo 中文😀` | 同上 | 同一 cmd 里 chcp 对内置命令无效 |
+| `chcp 65001>nul & node -e ...` | `4e2d,6587,1f600` | 外部程序完全不受影响 |
+
+`chcp` 本身是生效的（`chcp 65001>nul & chcp` 打印 `Active code page: 65001`），差别只在于内置命令不读它。
 
 因此：
 
-- CMD 下需要输出中文/emoji 时，让**程序或文件**产出这些字符，而不是把字面量写进命令文本。
-- 命令文本本身需要非 ASCII 时，用 `shell: "powershell"` 或 `shell: "pwsh"`——它们的脚本经 base64 传递，不受命令行代码页影响。
+- 框架前置的 `chcp 65001` 是为**按控制台代码页输出字节的程序**（git、node、各类 CLI）准备的，不是给 `echo` 用的。
+- 需要输出中文/emoji 时让程序或文件产出这些字符，不要依赖 `echo` 之类内置命令。
+- 脚本里需要非 ASCII 字面量时用 `shell: "powershell"` 或 `"pwsh"`——脚本经 base64 传递，输出编码也在脚本内显式设定。
 
-`ShellInterpreterEncodingTest` 覆盖了三种解释器的中文、emoji、标准错误与截断行为。
+`ShellInterpreterEncodingTest` 用三条独立路径钉住上述结论：`type` 读 UTF-8 文件、`node` 回显参数码点、PowerShell/pwsh 的 `[Console]::Write`。
