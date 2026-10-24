@@ -1008,6 +1008,121 @@ const checkTokenValues = (ctx, args) => {
  * @param {boolean} staticOnly 只跑第 1 层
  * @returns {{problems: string[], drift: number, notes: string[]}} 结果
  */
+/**
+ * ===== 第 5 层：残余存量基线（约束而非清零目标）=====
+ *
+ * 背景（2026-10-23 拍板）：无法等价迁移的颜色残余视为**存量基线**，不再以清零为验收目标。
+ * 但「不清零」不等于「可以随便涨」——新代码把颜色写死会让令牌化持续腐烂。
+ * 因此把基线固化成可执行约束：
+ *   - 当前残余 > 基线 → 红（本次改动新增了未令牌化颜色，必须令牌化或显式说明）
+ *   - 当前残余 < 基线 → 绿，并提示可下调基线（收敛是好事，但要显式登记，避免下次「莫名变绿」）
+ * 口径：按「明暗两态各自生效的非令牌颜色项」计数（复用等价门禁的解析与覆盖模型），
+ * 与历史 census 的「原子出现次数」口径不同，两者数字不可混用比较。
+ */
+const RESIDUAL_REL = 'frontend/scripts/theme-spec/residual-baseline.json';
+const RESIDUAL_FILE = path.join(__dirname, 'theme-spec', 'residual-baseline.json');
+
+/** 残余普查要扫的源码文件：模板、脚本、样式块里的颜色都算。 */
+const listResidualFiles = (dir) => {
+  /** @type {string[]} */
+  const out = [];
+  const walk = (d) => {
+    for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, entry.name);
+      if (entry.isDirectory()) walk(p);
+      else if (entry.isFile() && /\.(vue|ts|css)$/.test(entry.name)) out.push(p);
+    }
+  };
+  walk(dir);
+  return out.sort();
+};
+
+/**
+ * 统计当前残余：非令牌颜色项按明暗两态各计一次。
+ * @param {ReturnType<typeof loadThemeContext>} ctx
+ */
+const collectResidual = (ctx) => {
+  /** @type {Record<string, {dark: number, light: number}>} */
+  const files = {};
+  let dark = 0;
+  let light = 0;
+  for (const abs of listResidualFiles(SRC_ROOT)) {
+    const rel = path.relative(REPO_ROOT, abs).split(path.sep).join('/');
+    const g = groupsOf(ctx, fs.readFileSync(abs, 'utf8'));
+    const d = g.dark.filter((e) => !e.token).length;
+    const l = g.light.filter((e) => !e.token).length;
+    if (d > 0 || l > 0) files[rel] = { dark: d, light: l };
+    dark += d;
+    light += l;
+  }
+  return { dark, light, total: dark + light, files };
+};
+
+/**
+ * 残余基线校验 / 更新。
+ * @param {ReturnType<typeof loadThemeContext>} ctx
+ * @param {string[]} args
+ * @returns {number} 退出码
+ */
+const checkResidual = (ctx, args) => {
+  const allowStale = args.includes('--allow-stale');
+  const fresh = checkFreshness(ctx);
+  if (fresh.stale && !allowStale) {
+    console.error('[gate:theme:residual] 构建产物早于源码，拒绝判定（先 npm run build）。');
+    return 1;
+  }
+  const now = collectResidual(ctx);
+
+  if (args.includes('--update-residual')) {
+    const payload = {
+      note: '无法等价迁移的颜色残余存量基线。只允许「不得上涨」；下跌时用 --update-residual 显式下调。',
+      caliber: '按「明暗两态各自生效的非令牌颜色项」计数（复用等价门禁覆盖模型），与 census 的原子计数口径不同。',
+      updatedAt: new Date().toISOString().slice(0, 10),
+      total: now.total,
+      dark: now.dark,
+      light: now.light,
+      files: now.files
+    };
+    fs.writeFileSync(RESIDUAL_FILE, JSON.stringify(payload, null, 2) + '\n');
+    console.log(`[gate:theme:residual] 已写入基线：${RESIDUAL_REL}（total=${now.total}, dark=${now.dark}, light=${now.light}）`);
+    return 0;
+  }
+
+  if (!fs.existsSync(RESIDUAL_FILE)) {
+    console.error(`[gate:theme:residual] 基线不存在：${RESIDUAL_REL}`);
+    console.error('  首次建立基线请执行：node scripts/check-theme-equivalence.mjs --update-residual');
+    return 1;
+  }
+  const base = JSON.parse(fs.readFileSync(RESIDUAL_FILE, 'utf8'));
+  console.log('[gate:theme:residual] 无法等价迁移的颜色残余（存量基线）');
+  console.log(`  基线 : total=${base.total}（dark=${base.dark} / light=${base.light}，${base.updatedAt}）`);
+  console.log(`  当前 : total=${now.total}（dark=${now.dark} / light=${now.light}）`);
+  if (now.total > base.total) {
+    const deltas = [];
+    for (const [rel, v] of Object.entries(now.files)) {
+      const b = (base.files && base.files[rel]) || { dark: 0, light: 0 };
+      const dd = v.dark - b.dark;
+      const dl = v.light - b.light;
+      if (dd > 0 || dl > 0) deltas.push(`  ${rel}  +dark ${dd} / +light ${dl}`);
+    }
+    console.error(`\n✗ 残余相对基线上涨 ${now.total - base.total} 项：`);
+    for (const d of deltas) console.error(d);
+    if (deltas.length === 0) {
+      console.error('  （没有单文件涨幅：说明基线文件的 total 与各文件明细不自洽，多半是被人手改过 —— 请用 --update-residual 重写）');
+    }
+    console.error('  新增颜色必须令牌化，或在评审中显式说明为何无法等价迁移；');
+    console.error('  确认属于合理的存量扩张后，用 --update-residual 显式上调基线（不要偷偷改）。');
+    return 2;
+  }
+  if (now.total < base.total) {
+    console.log(`\n✓ 未超基线，且已下降 ${base.total - now.total} 项；收敛值得登记：`);
+    console.log('  node scripts/check-theme-equivalence.mjs --update-residual');
+    return 0;
+  }
+  console.log('\n== 结论：残余与存量基线一致（本批次不以清零为目标） ==');
+  return 0;
+};
+
 const checkFile = (ctx, baseCtx, relPath, base, staticOnly) => {
   const problems = staticCheck(ctx, relPath);
   const notes = [];
@@ -1109,6 +1224,18 @@ const selftest = (ctx) => {
   check('dark: 变体改值 → 必红', !eqPair("const c = 'text-gray-500 dark:text-zinc-400'", "const c = 'text-gray-500 dark:text-zinc-500'"));
   check('状态变体 hover: 改值 → 必红', !eqPair("const c = 'hover:bg-black/5'", "const c = 'hover:bg-black/10'"));
   check('近色不得被容差放过（zinc-400 vs gray-400，差 6/255）', !eqPair("const c = 'text-gray-400 dark:text-zinc-400'", "const c = 'text-gray-400'"));
+
+  // ---- 同前缀（hover:）相邻对折叠（2026-10-23 补）----
+  // 「等价折叠必须绿」已由上方 base+dark:hover / base+dark:focus 两条覆盖；
+  // 这里补的是**反面**：跨档拼接、以及折叠后丢掉暗侧声明，都必须红——
+  // 否则「变体前缀折叠」这条放宽就会变成新的假绿通道。
+  check('hover: 跨档拼接折成单令牌 → 必红（亮侧 gray-600 ≠ secondary 亮值）', !eqPair(
+    "const c = 'hover:text-gray-600 dark:hover:text-gray-200'",
+    "const c = 'hover:text-lx-secondary'"));
+  check('hover: 折叠后丢掉暗侧声明 → 必红', !eqPair(
+    "const c = 'hover:text-gray-700 dark:hover:text-zinc-200'",
+    "const c = 'hover:text-gray-700'"));
+
 
 const a1 = groupsOf(ctx, "const c = isDark ? 'bg-white/10' : 'bg-white'");
   const a2 = groupsOf(ctx, "const c = isDark ? 'bg-white' : 'bg-white'");
@@ -1260,6 +1387,8 @@ const printUsage = () => {
       '  --base <ref>     等价性比较的基线，默认 HEAD',
       '  --static-only    只跑第 1 层（令牌类可达性，不需要 git 基线）',
       '  --check-token-values  第 4 层数值校验：令牌值 == 代言类名产物真实值（不需要 git 基线）',
+      '  --residual       第 5 层残余存量基线：残余不得上涨（不清零，但也不许偷偷变多）',
+      '  --update-residual  重写残余基线（收敛后显式下调；上涨需在评审中说明）',
       '  --allow-stale    产物早于源码时仍继续（默认拒绝：旧产物会导致假绿）',
       '  --quiet          只输出汇总与问题',
       '  --selftest       跑门禁自检',
@@ -1300,6 +1429,8 @@ const main = () => {
   if (args.includes('--selftest')) return selftest(ctx);
   // 第 4 层单独成模式：只做「令牌值 == 代言类名产物真实值」的数值校验，不需要 git 基线
   if (args.includes('--check-token-values')) return checkTokenValues(ctx, args);
+  // 第 5 层单独成模式：残余存量基线（不清零，但不得上涨）
+  if (args.includes('--residual') || args.includes('--update-residual')) return checkResidual(ctx, args);
 
   const staticOnly = args.includes('--static-only');
   const quiet = args.includes('--quiet');

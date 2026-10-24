@@ -69,7 +69,8 @@
     "visual:components:selfcheck:theme": "electron scripts/visual/component-scenes.cjs --selfcheck-theme marker",
     "visual:hover:baseline": "electron scripts/visual/hover-states.cjs --mode baseline",
     "visual:hover:check": "electron scripts/visual/hover-states.cjs --mode check",
-    "visual:hover:selfcheck": "electron scripts/visual/hover-states.cjs --selfcheck"
+    "visual:hover:selfcheck": "electron scripts/visual/hover-states.cjs --selfcheck",
+    "gate:theme:residual": "node scripts/check-theme-equivalence.mjs --residual"
   },
   "devDependencies": {
     "@guolao/vue-monaco-editor": "^1.6.0",

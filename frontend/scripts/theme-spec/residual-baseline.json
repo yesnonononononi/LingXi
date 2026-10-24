@@ -1,0 +1,190 @@
+{
+  "note": "无法等价迁移的颜色残余存量基线。只允许「不得上涨」；下跌时用 --update-residual 显式下调。",
+  "caliber": "按「明暗两态各自生效的非令牌颜色项」计数（复用等价门禁覆盖模型），与 census 的原子计数口径不同。",
+  "updatedAt": "2026-10-24",
+  "total": 3286,
+  "dark": 1650,
+  "light": 1636,
+  "files": {
+    "frontend/src/components/chat/ApprovalCard.vue": {
+      "dark": 21,
+      "light": 22
+    },
+    "frontend/src/components/chat/CardActionButton.vue": {
+      "dark": 31,
+      "light": 31
+    },
+    "frontend/src/components/chat/ChatExecutionControls.vue": {
+      "dark": 3,
+      "light": 3
+    },
+    "frontend/src/components/chat/ChatInputArea.vue": {
+      "dark": 36,
+      "light": 36
+    },
+    "frontend/src/components/chat/ChatMessageItem.vue": {
+      "dark": 79,
+      "light": 78
+    },
+    "frontend/src/components/chat/ChatMessageList.vue": {
+      "dark": 14,
+      "light": 14
+    },
+    "frontend/src/components/chat/ChatResendDialog.vue": {
+      "dark": 12,
+      "light": 12
+    },
+    "frontend/src/components/chat/ChoiceQuestionGroup.vue": {
+      "dark": 43,
+      "light": 41
+    },
+    "frontend/src/components/chat/CommandApprovalGroup.vue": {
+      "dark": 6,
+      "light": 6
+    },
+    "frontend/src/components/chat/DelegatedTaskMessage.vue": {
+      "dark": 4,
+      "light": 0
+    },
+    "frontend/src/components/chat/MarkdownRenderer.vue": {
+      "dark": 3,
+      "light": 2
+    },
+    "frontend/src/components/chat/PlanCard.vue": {
+      "dark": 20,
+      "light": 22
+    },
+    "frontend/src/components/chat/ProjectDropdown.vue": {
+      "dark": 40,
+      "light": 38
+    },
+    "frontend/src/components/chat/PromptCard.vue": {
+      "dark": 2,
+      "light": 3
+    },
+    "frontend/src/components/chat/ReadImageToolGroup.vue": {
+      "dark": 7,
+      "light": 6
+    },
+    "frontend/src/components/chat/RequireChoiceCard.vue": {
+      "dark": 28,
+      "light": 27
+    },
+    "frontend/src/components/chat/Sidebar.vue": {
+      "dark": 79,
+      "light": 79
+    },
+    "frontend/src/components/chat/SubAgentSidePanel.vue": {
+      "dark": 62,
+      "light": 72
+    },
+    "frontend/src/components/chat/SubSessionDetailDrawer.vue": {
+      "dark": 63,
+      "light": 60
+    },
+    "frontend/src/components/chat/SubSessionsOverviewDrawer.vue": {
+      "dark": 31,
+      "light": 31
+    },
+    "frontend/src/components/chat/TeamModal.vue": {
+      "dark": 162,
+      "light": 156
+    },
+    "frontend/src/components/chat/WelcomeView.vue": {
+      "dark": 2,
+      "light": 2
+    },
+    "frontend/src/components/chat/WorkspaceModal.vue": {
+      "dark": 48,
+      "light": 44
+    },
+    "frontend/src/components/common/BorderGlow.vue": {
+      "dark": 1,
+      "light": 1
+    },
+    "frontend/src/components/common/ConfirmModal.vue": {
+      "dark": 36,
+      "light": 36
+    },
+    "frontend/src/components/common/DropUpSelect.vue": {
+      "dark": 16,
+      "light": 15
+    },
+    "frontend/src/components/common/GradientText.vue": {
+      "dark": 2,
+      "light": 2
+    },
+    "frontend/src/components/common/ScrollCursorLoader.vue": {
+      "dark": 7,
+      "light": 7
+    },
+    "frontend/src/components/common/SettingsSelect.vue": {
+      "dark": 12,
+      "light": 12
+    },
+    "frontend/src/components/model/ModelVisionField.vue": {
+      "dark": 5,
+      "light": 5
+    },
+    "frontend/src/utils/asyncDelegation.ts": {
+      "dark": 4,
+      "light": 4
+    },
+    "frontend/src/utils/cardUi.ts": {
+      "dark": 29,
+      "light": 29
+    },
+    "frontend/src/views/chat/ChatView.vue": {
+      "dark": 30,
+      "light": 29
+    },
+    "frontend/src/views/model/ModelFormView.vue": {
+      "dark": 38,
+      "light": 50
+    },
+    "frontend/src/views/model/ModelListView.vue": {
+      "dark": 24,
+      "light": 37
+    },
+    "frontend/src/views/settings/SettingsModal.vue": {
+      "dark": 57,
+      "light": 47
+    },
+    "frontend/src/views/settings/tabs/AboutTab.vue": {
+      "dark": 16,
+      "light": 16
+    },
+    "frontend/src/views/settings/tabs/AgentsTab.vue": {
+      "dark": 92,
+      "light": 88
+    },
+    "frontend/src/views/settings/tabs/DataTab.vue": {
+      "dark": 19,
+      "light": 19
+    },
+    "frontend/src/views/settings/tabs/GeneralTab.vue": {
+      "dark": 53,
+      "light": 45
+    },
+    "frontend/src/views/settings/tabs/McpTab.vue": {
+      "dark": 115,
+      "light": 116
+    },
+    "frontend/src/views/settings/tabs/ModelsTab.vue": {
+      "dark": 90,
+      "light": 87
+    },
+    "frontend/src/views/settings/tabs/PersonalizationTab.vue": {
+      "dark": 13,
+      "light": 13
+    },
+    "frontend/src/views/settings/tabs/SecurityTab.vue": {
+      "dark": 81,
+      "light": 81
+    },
+    "frontend/src/views/settings/tabs/TeamsTab.vue": {
+      "dark": 114,
+      "light": 112
+    }
+  }
+}
