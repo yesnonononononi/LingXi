@@ -637,7 +637,7 @@ const handleSaveTeam = async () => {
               <button
                 type="button"
                 @click="closeAgentForm"
-                class="px-2.5 py-1 text-gray-500 hover:text-gray-700 dark:hover:text-zinc-200 rounded-lg cursor-pointer"
+                class="px-2.5 py-1 text-gray-500 hover:text-lx-secondary rounded-lg cursor-pointer"
               >
                 {{ t('common.cancel') }}
               </button>

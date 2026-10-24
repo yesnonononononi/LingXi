@@ -401,7 +401,7 @@ void load();
 
 /* 标题旁的说明按钮 */
 .sec-info {
-  @apply grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full text-gray-400 transition-colors cursor-pointer dark:text-zinc-500;
+  @apply grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full text-lx-faint transition-colors cursor-pointer;
 }
 
 .sec-info:hover { @apply text-lx-secondary; }

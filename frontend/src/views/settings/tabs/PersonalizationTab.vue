@@ -52,7 +52,7 @@ async function submit() {
             <label :for="`personalization-${field}`" class="text-xs font-semibold text-lx-primary-soft">{{ field === 'title' ? copy.title : copy.name }}</label>
             <input v-if="editing === field" :id="`personalization-${field}`" :ref="element => { identityInput = element as HTMLInputElement | null; }" v-model="draft[field]" class="personalization-input identity-control" :aria-label="field === 'title' ? copy.title : copy.name" @blur="editing = null" @keydown.enter.prevent="editing = null" />
             <button v-else :id="`personalization-${field}`" type="button" class="identity-control personalization-input text-right cursor-pointer" @click="editIdentity(field)">
-              <span :class="draft[field] ? 'text-lx-primary-soft' : 'text-gray-400 dark:text-zinc-500'">{{ draft[field] || copy.empty }}</span>
+              <span :class="draft[field] ? 'text-lx-primary-soft' : 'text-lx-faint'">{{ draft[field] || copy.empty }}</span>
             </button>
           </div>
         </section>

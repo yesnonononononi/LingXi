@@ -139,7 +139,7 @@ onBeforeUnmount(() => {
 .settings-select-option { @apply flex min-h-9 items-center justify-between gap-3 rounded-lg px-3 py-2 cursor-pointer select-none; transition: background-color 120ms, color 120ms; }
 .settings-select-option.is-active { @apply bg-gray-100 text-gray-900 dark:bg-white/10 dark:text-white; }
 .settings-select-option.is-selected { @apply font-medium text-gray-900 dark:text-white; }
-.settings-select-option-desc { @apply mt-0.5 text-[11px] font-normal leading-snug text-gray-400 dark:text-zinc-500; }
+.settings-select-option-desc { @apply mt-0.5 text-[11px] font-normal leading-snug text-lx-faint; }
 .settings-select-enter-active { transition: opacity 160ms ease-out, transform 160ms ease-out; }
 .settings-select-leave-active { transition: opacity 120ms ease-in, transform 120ms ease-in; pointer-events: none; }
 .settings-select-enter-from, .settings-select-leave-to { opacity: 0; transform: translateY(-4px) scale(0.97); }
