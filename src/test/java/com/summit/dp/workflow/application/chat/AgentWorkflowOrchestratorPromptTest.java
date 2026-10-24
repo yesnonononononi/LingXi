@@ -133,7 +133,8 @@ class AgentWorkflowOrchestratorPromptTest {
         assertTrue(request.getSystemPrompt().contains("- id: 6"));
         assertTrue(request.getSystemPrompt().contains("验证回归用例"));
         assertEquals(context.messageList(), request.getMessages());
-        assertEquals(List.of(ToolCatalog.READ_FILE, ToolCatalog.CALL_SUB_AGENT, ToolCatalog.SEND_MAIL_TO_AGENT),
+        assertEquals(List.of(ToolCatalog.READ_FILE, ToolCatalog.CALL_SUB_AGENT,
+                        ToolCatalog.PEEK_TEAMMATE_STATE, ToolCatalog.SEND_MAIL_TO_AGENT),
                 request.getToolList());
         verifyNoInteractions(chatAgent);
     }

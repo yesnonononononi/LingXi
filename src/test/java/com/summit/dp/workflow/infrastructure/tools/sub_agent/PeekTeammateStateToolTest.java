@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -55,12 +56,15 @@ class PeekTeammateStateToolTest {
         when(sessionRepository.findByRootAndAgent(ROOT_SESSION_ID, AGENT_ID))
                 .thenReturn(Optional.of(Session.builder().id(SUB_SESSION_ID).build()));
         when(sessionService.findById(SUB_SESSION_ID)).thenReturn(Result.success(SessionVO.builder()
-                .id(SUB_SESSION_ID).runStatus("RUNNING").lastOutcome("COMPLETED").build()));
+                .id(SUB_SESSION_ID).runStatus("RUNNING").lastOutcome("COMPLETED")
+                .createTime(Instant.parse("2026-10-24T12:34:56Z")).build()));
 
         ToolExecuteResult result = tool.execute(toolExecution(args, sessionAttributes()));
 
         assertTrue(result.isSuccess(), result.getToolOutput());
-        assertEquals("队员 编码 当前状态: RUNNING, 最近结果: COMPLETED, 子会话: 555", result.getToolOutput());
+        List<String> fields = result.getToolOutput().lines().map(String::strip).filter(line -> !line.isEmpty()).toList();
+        assertEquals(List.of("队员: 编码", "当前状态: RUNNING", "最近状态: COMPLETED",
+                "会话创建时间: 2026-10-24T12:34:56Z"), fields);
         verify(sessionRepository).findByRootAndAgent(ROOT_SESSION_ID, AGENT_ID);
     }
 

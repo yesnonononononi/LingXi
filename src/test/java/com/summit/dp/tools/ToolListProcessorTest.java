@@ -54,10 +54,12 @@ class ToolListProcessorTest {
     void commandersAndMembersReceiveDifferentCollaborationTools() {
         ToolProcessingContext commander = ToolProcessingContext.builder().agentId(7L).teamId(9L)
                 .accessMode(AgentAccessMode.IN_WORKSPACE).build();
-        assertEquals(List.of(ToolCatalog.CALL_SUB_AGENT, ToolCatalog.SEND_MAIL_TO_AGENT), processor.process(null, commander));
+        assertEquals(List.of(ToolCatalog.CALL_SUB_AGENT, ToolCatalog.PEEK_TEAMMATE_STATE, ToolCatalog.SEND_MAIL_TO_AGENT),
+                processor.process(null, commander));
         ToolProcessingContext member = ToolProcessingContext.builder().member(true).agentId(8L).teamId(9L)
                 .accessMode(AgentAccessMode.IN_WORKSPACE).build();
-        assertEquals(List.of(ToolCatalog.SEND_MAIL_TO_AGENT), processor.process(List.of(ToolCatalog.CALL_SUB_AGENT), member));
+        assertEquals(List.of(ToolCatalog.SEND_MAIL_TO_AGENT), processor.process(
+                List.of(ToolCatalog.CALL_SUB_AGENT, ToolCatalog.PEEK_TEAMMATE_STATE), member));
         assertTrue(processor.process(List.of(ToolCatalog.CALL_SUB_AGENT, ToolCatalog.SEND_MAIL_TO_AGENT), root()).isEmpty());
     }
 

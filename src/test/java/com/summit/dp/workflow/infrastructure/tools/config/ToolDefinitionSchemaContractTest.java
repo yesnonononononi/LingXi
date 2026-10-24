@@ -48,23 +48,34 @@ class ToolDefinitionSchemaContractTest {
     }
 
     @Test
-    void executeCommandKeepsSingleCommandParameterAndAllowsExplicitPowerShell() throws Exception {
+    void executeCommandExposesOptionalShellWithoutChangingRequiredArguments() throws Exception {
         ToolDefinition<?> definition = configuration.executeCommandToolDefinition(
                 objectMapper, null, null, new CommandToolProperties());
 
         JsonNode schema = objectMapper.readTree(definition.parametersJsonSchema());
         JsonNode required = schema.get("required");
-        assertEquals("command", required.get(0).asText());
-        assertEquals("intention", required.get(1).asText());
+        List<String> requiredNames = new ArrayList<>();
+        required.forEach(property -> requiredNames.add(property.asText()));
+        assertEquals(List.of("command", "intention"), requiredNames);
+
         List<String> properties = new ArrayList<>();
         schema.get("properties").fieldNames().forEachRemaining(properties::add);
-        assertEquals(List.of("command", "intention", "background"), properties);
+        assertEquals(List.of("command", "shell", "intention", "background"), properties);
+
+        JsonNode shell = schema.get("properties").get("shell");
+        assertEquals("string", shell.path("type").asText());
+        List<String> shellNames = new ArrayList<>();
+        shell.path("enum").forEach(value -> shellNames.add(value.asText()));
+        assertEquals(List.of("cmd", "pwsh", "powershell", "bash", "sh", "zsh"), shellNames);
+
         assertTrue(schema.get("properties").get("command").get("description").asText()
                 .contains("does not detect script languages"));
 
         String description = definition.description();
-        assertTrue(description.contains("pwsh.exe -NoProfile -NonInteractive -Command"),
-                "工具描述要给出显式启动 PowerShell 的示例");
+        assertTrue(description.contains("Omit shell to use the workspace default"),
+                "未指定 shell 时应说明使用工作区默认解释器");
+        assertTrue(description.contains("Set shell to cmd, pwsh or powershell"),
+                "工具描述应明确说明如何选择解释器");
         assertFalse(description.toLowerCase().contains("do not add a shell launcher prefix"),
                 "旧的启动前缀禁令必须删除，否则模型不敢显式调用其它解释器");
         assertFalse(definition.parametersJsonSchema().toLowerCase().contains("do not add a shell launcher prefix"));
