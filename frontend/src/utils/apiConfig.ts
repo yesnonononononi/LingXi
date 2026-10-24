@@ -19,6 +19,9 @@ export function isDesktopApp(): boolean {
 export function getApiBaseUrl(): string {
   if (typeof window === 'undefined') return '';
 
+  // 开发页面走 Vite 代理，避免桌面桥接与旧 localStorage 把请求送回安装版。
+  if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) return '';
+
   // 1. 用户自定义配置优先
   const userConfigured = localStorage.getItem(STORAGE_KEY_API_BASE_URL)?.trim();
   if (userConfigured) {

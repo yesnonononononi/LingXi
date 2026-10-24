@@ -14,6 +14,7 @@ async function launch({ platform = 'win32', packaged = true, env = {}, root: cus
   const userDataDir = paths.join(root, 'user data');
   const frontendRoot = paths.join(root, 'source', 'frontend');
   let invocation;
+  const checkedPorts = [];
   let checks = 0;
   const child = new EventEmitter();
   child.stdout = child.stderr = { pipe() {} };
@@ -23,7 +24,8 @@ async function launch({ platform = 'win32', packaged = true, env = {}, root: cus
     fs: { existsSync: () => true, readFileSync() { throw new Error('启动器不应读取组件部署说明'); },
       mkdirSync() {}, accessSync() {}, constants: { W_OK: 2 }, createWriteStream: () => ({ write() {} }) },
     path: paths,
-    net: { connect() {
+    net: { connect(options) {
+      checkedPorts.push(options.port);
       const socket = new EventEmitter();
       socket.destroy = socket.setTimeout = () => {};
       queueMicrotask(() => socket.emit(checks++ === 0 ? 'error' : 'connect'));
@@ -34,10 +36,10 @@ async function launch({ platform = 'win32', packaged = true, env = {}, root: cus
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../electron/backend.cjs'), 'utf8'), {
     module, require: name => dependencies[name], process: { platform, env }, console: { log() {} }, setTimeout,
   });
-  await module.exports.start({ frontendRoot, isPackaged: packaged,
+  const result = await module.exports.start({ frontendRoot, isPackaged: packaged,
     executablePath: paths.join(root, 'LX.exe'), resourcesPath: paths.join(root, 'resources'),
     userDataDir, logPath: paths.join(userDataDir, 'backend.log'), isDev: !packaged });
-  return { invocation, root, userDataDir, frontendRoot, paths };
+  return { invocation, result, checkedPorts, root, userDataDir, frontendRoot, paths };
 }
 
 for (const platform of ['win32', 'linux']) {
@@ -52,9 +54,11 @@ for (const platform of ['win32', 'linux']) {
   });
 }
 
-test('开发态传仓库根目录，移动 checkout 后仍不注入组件路径', async () => {
-  const { invocation, frontendRoot, paths } = await launch({ packaged: false, root: 'E:\\Moved Checkout' });
-  assert.ok(invocation.args.includes(`--lingxi.sandbox.application-directory=${paths.dirname(frontendRoot)}`));
+test('开发态只检查 8089，后端未启动时不运行可能过期的 jar', async () => {
+  const { invocation, result, checkedPorts } = await launch({ packaged: false, root: 'E:\\Moved Checkout' });
+  assert.equal(invocation, undefined);
+  assert.equal(result.skipped, true);
+  assert.deepEqual(checkedPorts, [8089]);
 });
 
 test('安装目录与状态目录可分别覆盖，宿主 PATH 保持原值', async () => {

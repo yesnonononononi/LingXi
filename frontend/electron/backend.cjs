@@ -16,7 +16,7 @@ const fs = require('fs');
 const net = require('net');
 const path = require('path');
 
-/** 端口固定 8088：前端 utils/apiConfig.ts 的桌面端默认地址就是它，改这里必须同步改前端 */
+/** 安装版端口；开发版由 Vite 代理访问 8089。 */
 const BACKEND_PORT = 8088;
 /** 冷启动 = JVM + Spring 上下文 + 数据库连接池，给足 90s */
 const READY_TIMEOUT_MS = 90000;
@@ -109,6 +109,7 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
   };
 
   const layout = resolveLayout(frontendRoot, isPackaged, resourcesPath);
+  const backendPort = isPackaged ? BACKEND_PORT : 8089;
   // 安装位置来自 Electron，不能用 JVM 的可写工作目录反推；开发态使用项目根目录。
   const applicationDirectory = process.env.LINGXI_SANDBOX_APPLICATION_DIRECTORY
     || (isPackaged ? path.dirname(executablePath) : path.resolve(frontendRoot, '..'));
@@ -119,9 +120,15 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
 
   // 端口已占用：可能是用户在 IDE 里跑着后端，也可能是上次崩溃残留的孤儿 JVM。
   // 两种都直接复用 —— 既不会「端口占用」启动失败，也不会去杀不属于自己的进程。
-  if (await isPortOpen(BACKEND_PORT)) {
-    logFn(`端口 ${BACKEND_PORT} 已有服务，直接复用（退出时不会结束它）`);
-    return { port: BACKEND_PORT, reused: true };
+  if (await isPortOpen(backendPort)) {
+    logFn(`端口 ${backendPort} 已有服务，直接复用（退出时不会结束它）`);
+    return { port: backendPort, reused: true };
+  }
+
+  // 源码目录里的旧 jar 可能没有隔离配置，只允许连接 IDE 启动的开发后端。
+  if (!isPackaged) {
+    logFn(`开发态等待 IDE 后端: port=${backendPort}`);
+    return { port: backendPort, reused: false, skipped: true };
   }
 
   const missing = [];
@@ -132,7 +139,7 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
     // 开发态由开发者自己起后端（IDE），不该因为没打产物就挡住前端调试
     if (isDev) {
       logFn(`开发态跳过启动后端：${missing.join('; ')}`);
-      return { port: BACKEND_PORT, reused: false, skipped: true };
+      return { port: backendPort, reused: false, skipped: true };
     }
     throw new Error(detail);
   }
@@ -150,7 +157,7 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
     '-Xmx512m',
     '-jar',
     layout.jar,
-    `--server.port=${BACKEND_PORT}`,
+    `--server.port=${backendPort}`,
     `--lingxi.sandbox.application-directory=${applicationDirectory}`,
     `--lingxi.sandbox.state-directory=${process.env.LINGXI_SANDBOX_STATE_DIRECTORY || path.join(userDataDir, 'sandbox')}`,
     `--lingxi.log.dir=${process.env.LINGXI_LOG_DIR || logDir}`,
@@ -188,7 +195,7 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
   let lastLoggedSecond = -1;
   let ready = false;
   while (Date.now() < deadline) {
-    if (await isPortOpen(BACKEND_PORT)) {
+    if (await isPortOpen(backendPort)) {
       ready = true;
       break;
     }
@@ -204,13 +211,13 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
 
   if (!ready) {
     throw new Error(
-      `后端在 ${READY_TIMEOUT_MS / 1000}s 内未就绪（端口 ${BACKEND_PORT} 无响应）。\n后端日志: ${logPath}`
+      `后端在 ${READY_TIMEOUT_MS / 1000}s 内未就绪（端口 ${backendPort} 无响应）。\n后端日志: ${logPath}`
     );
   }
 
-  logFn(`后端就绪: http://127.0.0.1:${BACKEND_PORT}`);
+  logFn(`后端就绪: http://127.0.0.1:${backendPort}`);
   started = true;
-  return { port: BACKEND_PORT, reused: false };
+  return { port: backendPort, reused: false };
 }
 
 /** 关闭后端；只杀自己启动的那个进程树 */

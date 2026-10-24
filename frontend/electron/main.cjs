@@ -15,7 +15,12 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('com.lingxi.lx');
 }
 
-// 单实例锁：后端端口固定 8088，多开必然撞端口；第二次启动只把已有窗口唤到前台。
+// 开发与安装版的浏览器配置分开，避免单实例锁和 API 地址互相覆盖。
+if (!app.isPackaged) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'aether-agent-chat-development'));
+}
+
+// 同一版本只保留一个窗口；开发与安装版各有自己的 userData 和锁。
 // 必须在 whenReady 之前调用，否则拿不到锁的进程窗口已经建出来了。
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
@@ -37,7 +42,7 @@ let relaunching = false;
 const closeFilePreviews = registerFilePreview({ ipcMain, shell, getWindow: () => mainWindow });
 
 // 开发态判定（与 createWindow 内保持一致）：开发态允许缺后端产物，由开发者在 IDE 里起后端
-const isDev = process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
+const isDev = !app.isPackaged || process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
 
 /** 应用根目录（打包后为 resources/app）；通知窗口按它解析 dist/notification.html。 */
 const frontendRoot = path.resolve(__dirname, '..');

@@ -1,0 +1,28 @@
+# IDE 和源码启动由 LocalDevelopmentLauncher 启用，安装包不启用。
+server:
+  port: 8089
+
+lingxi:
+  development:
+    directory: ${user.dir}/.lingxi/development
+  data:
+    dir: ${lingxi.development.directory}/data
+  skill:
+    dir: ${lingxi.development.directory}/skill
+  log:
+    dir: ${lingxi.development.directory}/logs
+  sandbox:
+    state-directory: ${lingxi.development.directory}/sandbox
+  config:
+    user-configs:
+      path: ${lingxi.development.directory}/config/user-configs.json
+    mcp:
+      path: ${lingxi.development.directory}/config/mcp.json
+    model:
+      path: ${lingxi.development.directory}/config/models.json
+    provider:
+      path: ${lingxi.development.directory}/config/providers.json
+    personalization:
+      path: ${lingxi.development.directory}/config/personalization.json
+    sandbox-security:
+      directory: ${lingxi.development.directory}/config
