@@ -1,3 +1,5 @@
+server:
+  port: 8088
 lingxi:
   sandbox:
     # 本机开发资源由 npm run sandbox:dev 准备，部署时可用环境变量覆盖。
@@ -5,3 +7,4 @@ lingxi:
     state-directory: ${LINGXI_SANDBOX_STATE_DIRECTORY:${user.home}/.lingxi/sandbox}
     startup-timeout: 30s
     file-timeout: 30s
+
