@@ -51,16 +51,20 @@ public class CommonToolConfiguration {
                 .description("""
                         Execute a terminal command in the assigned workspace environment.
                         The command is handed as-is to the shell reported in the execution environment (CMD on Windows, Bash on Linux). Executable programs present in that workspace (for example git, node, pwsh.exe, powershell.exe) can be launched directly by name; they start inside the same sandbox under the same approvals, timeout, cancellation and permission limits, and a missing or denied program fails with an explicit error instead of falling back to the host.
+                        On Windows the interpreter is CMD, so a bare PowerShell script is not valid input. To use PowerShell, start it explicitly, for example: pwsh.exe -NoProfile -NonInteractive -Command "Get-ChildItem -LiteralPath ."
+                        If that output can contain non-ASCII text, prefix the script with `[Console]::OutputEncoding=[Text.Encoding]::UTF8;` inside `-Command` to avoid mojibake.
                         Output may be truncated according to the configured maximum.
-                        On Windows, an explicitly started PowerShell may encode non-ASCII output with a legacy code page and return mojibake; prefix `[Console]::OutputEncoding=[Text.Encoding]::UTF8;` inside `-Command` when the output can contain non-ASCII text.
                         Set background=true to return a persisted taskId immediately. Completion is reported to this execution automatically; use manage_command to inspect or stop tasks.
                         Always state in `intention` what the command is for; it is displayed to the user.
                         """)
+                // 参数 Schema 是 JSON 原文，不是给人看的说明：文本块同样会处理转义序列，
+                // 所以这里写 \" 只会得到裸引号并让 JSON 非法（正确写法是 \\"，但更稳妥的是干脆不写引号）。
+                // 命令示例带引号，统一放在上面的 description 里。
                 .parametersJsonSchema("""
                         {
                           "type": "object",
                           "properties": {
-                            "command": {"type": "string", "description": "Raw command text, passed unchanged to the workspace command interpreter. That interpreter does not detect script languages: on Windows it is CMD, so shell built-ins and ordinary executables work, while a bare PowerShell script (Get-ChildItem, $variables, cmdlet pipelines) is not valid input by itself. To use PowerShell, invoke it explicitly, for example pwsh.exe -NoProfile -NonInteractive -Command \"Get-ChildItem -LiteralPath .\" - quoting, relative paths and the working directory then behave as inside that interpreter."},
+                            "command": {"type": "string", "description": "Raw command text, passed unchanged to the workspace command interpreter. That interpreter does not detect script languages: on Windows it is CMD, so shell built-ins and ordinary executables work, while a bare PowerShell script (Get-ChildItem, $variables, cmdlet pipelines) is not valid input by itself. To use PowerShell, start it explicitly with -NoProfile -NonInteractive -Command plus a single script argument, as the tool description shows; quoting, relative paths and the working directory then behave as inside that interpreter."},
                             "intention": {"type": "string", "description": "One short sentence stating what this command is intended to achieve. It is shown to the user in the UI next to the command, so make it specific and human-readable."},
                             "background": {"type": "boolean", "default": false, "description": "Return a taskId immediately while the command runs in the background. Completion is injected into this execution automatically, so continue other work without polling. Natural completion waits for this execution's tasks. The configured background timeout and the same output limit apply."}
                           },
