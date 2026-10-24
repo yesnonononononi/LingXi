@@ -1,9 +1,8 @@
 import { ref, computed, type ComputedRef } from 'vue';
 import { chatApi } from '../../services/chat';
 import type { ChatMessage, ChatSession, SubSessionVO } from '../../types/chat';
-import { mergeTurns, mergeTurnViews, resolveRootSessionId, synthesizeFailedTurnBubbles } from '../../utils/session';
-import { upsertTurnViewIntoMessages } from './blockProjection';
-import { attachPromptCards } from '../../utils/toolCallCard';
+import { resolveRootSessionId } from '../../utils/session';
+import { absorbSubSessionHistory } from './subSessionHistory';
 import { toSubItemStatus } from '../../utils/subSessionStatus';
 import type { SubSessionItem } from '../../components/chat/SubAgentSidePanel.vue';
 import { t } from '../../i18n';
@@ -22,7 +21,22 @@ export function useChatSubSession(options: ChatSubSessionOptions) {
 
   const isSubPanelOpen = ref(false);
   const isSubSessionsOverviewOpen = ref(false);
-  const selectedSubSessionForDetail = ref<SubSessionVO | null>(null);
+  /**
+   * 详情抽屉的目标 id。
+   *
+   * <p>只存 id 不存 VO 对象：对账会整体替换 {@code subSessions}（见
+   * {@code mergeSubSessionTree}），抓住旧对象等于抓住一份不会再更新的快照 ——
+   * 抽屉里的消息与运行状态会停在打开那一刻。</p>
+   */
+  const selectedSubSessionDetailId = ref<string | null>(null);
+
+  /** 详情抽屉的目标子会话：每次按 id 从当前会话树解析，永远指向最新 VO。 */
+  const selectedSubSessionForDetail = computed<SubSessionVO | null>(() => {
+    const id = selectedSubSessionDetailId.value;
+    if (id === null) return null;
+    const found = currentActiveSession.value?.subSessions?.find(sub => sub?.id != null && String(sub.id) === id);
+    return found ?? null;
+  });
   const isSubSessionDetailOpen = ref(false);
   const activeViewingSubSessionId = ref<string | number | null>(null);
 
@@ -88,7 +102,8 @@ export function useChatSubSession(options: ChatSubSessionOptions) {
   });
 
   const handleOpenSubSessionDetailFromOverview = (sub: SubSessionVO) => {
-    selectedSubSessionForDetail.value = sub;
+    if (sub?.id == null) return;
+    selectedSubSessionDetailId.value = String(sub.id);
     isSubSessionDetailOpen.value = true;
   };
 
@@ -116,20 +131,8 @@ export function useChatSubSession(options: ChatSubSessionOptions) {
         return;
       }
       const sub = availableSubSessionItems.value.find(it => String(it.id) === key);
-      if (sub?.subSession) {
-        // ⚠️ turns 必须先于 messages 落定：合成失败气泡要读 turns 判 FAILED，
-        //    反序会让首屏的失败轮拿不到摘要 → 气泡不合成。
-        sub.subSession.turns = mergeTurns(sub.subSession.turns, res.data.turns);
-        sub.subSession.turnViews = mergeTurnViews(sub.subSession.turnViews, res.data.turnViews);
-        sub.subSession.turnViewVersions ??= new Map<string, number>();
-        // 请求在途期间可能已有实时内容，历史只补齐原数组中的轮次。
-        const messages: ChatMessage[] = sub.subSession.messages ?? [];
-        for (const view of Object.values(res.data.turnViews ?? {})) {
-          if (view) upsertTurnViewIntoMessages(messages, view, sub.subSession.turnViewVersions);
-        }
-        attachPromptCards(messages, res.data.records.flatMap(record => record.toolCall ? [record.toolCall] : []));
-        sub.subSession.messages = synthesizeFailedTurnBubbles(messages, sub.subSession.turns);
-      }
+      // 与详情抽屉共用同一吸入逻辑：写进 VO 上的实时数组，实时事件与历史不会各存一份。
+      if (sub?.subSession) absorbSubSessionHistory(sub.subSession, res.data);
       subSessionPaginationMap.value[key] = { hasMore: res.data.hasMore, nextCursor: res.data.nextCursor };
     } catch (err) {
       console.error('加载子会话消息失败:', err);
@@ -155,18 +158,8 @@ export function useChatSubSession(options: ChatSubSessionOptions) {
         return;
       }
       const sub = availableSubSessionItems.value.find(it => String(it.id) === key);
-      if (sub?.subSession) {
-        // 先 union turns / turnViews 再逐轮 upsert：更早页的摘要可能正好包含某个失败轮。
-        sub.subSession.turns = mergeTurns(sub.subSession.turns, res.data.turns);
-        sub.subSession.turnViews = mergeTurnViews(sub.subSession.turnViews, res.data.turnViews);
-        if (!sub.subSession.turnViewVersions) sub.subSession.turnViewVersions = new Map<string, number>();
-        const messages = sub.subSession.messages ?? [];
-        for (const view of Object.values(res.data.turnViews ?? {})) {
-          if (view) upsertTurnViewIntoMessages(messages, view, sub.subSession.turnViewVersions);
-        }
-        attachPromptCards(messages, res.data.records.flatMap(record => record.toolCall ? [record.toolCall] : []));
-        sub.subSession.messages = synthesizeFailedTurnBubbles(messages, sub.subSession.turns);
-      }
+      // 同一吸入逻辑：更早页的摘要可能正好包含某个失败轮，顺序由该函数内部保证。
+      if (sub?.subSession) absorbSubSessionHistory(sub.subSession, res.data);
       subSessionPaginationMap.value[key] = { hasMore: res.data.hasMore, nextCursor: res.data.nextCursor };
     } catch (err) {
       console.error('加载更多子会话消息失败:', err);
@@ -186,7 +179,7 @@ export function useChatSubSession(options: ChatSubSessionOptions) {
   /** 切走会话时重置子会话查看态。 */
   const resetSubSessionView = () => {
     activeViewingSubSessionId.value = null;
-    selectedSubSessionForDetail.value = null;
+    selectedSubSessionDetailId.value = null;
     isSubSessionDetailOpen.value = false;
   };
 

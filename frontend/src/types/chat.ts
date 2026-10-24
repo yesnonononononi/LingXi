@@ -125,6 +125,25 @@ export interface TurnRenderState {
   rejectedResponses?: Record<string, true>;
 }
 
+/**
+ * 模型调用失败后、下一次尝试开始前的等待标记（`INVOKE_RETRY` 的展示态）。
+ *
+ * <p><b>它只是实时提示，不是权威事实</b>：不进轮次视图，刷新即消失；轮次是否还在跑由执行事件
+ * 与 {@code TurnViewVO.status} 决定。任何渲染方都只能把它当成「一行提示」，不得据此改变气泡的
+ * 终态、正文归属或用量统计。</p>
+ *
+ * <p>{@code retryDelay} 恒为毫秒（框架契约 {@code TimeUnit.MILLISECONDS}），展示格式化集中在
+ * {@code views/chat/modelRetryStatus.ts}，禁止各渲染点各写一套单位换算。</p>
+ */
+export interface ModelRetryState {
+  /** 被放弃的那次尝试的响应 id（雪花字符串，用于判定尝试新旧） */
+  responseId: string;
+  /** 第几次重试，从 1 开始 */
+  retryCount: number;
+  /** 下一次尝试开始前的等待时长（毫秒） */
+  retryDelay: number;
+}
+
 /** 单条消息接口 (支持多分支对话) */
 export interface ChatMessage {
   id: string;
@@ -169,7 +188,7 @@ export interface ChatMessage {
   fileEdits?: FileEditRecord[];      // 文件修改记录
   contextUsage?: ContextUsageData;   // 上下文用量与压缩状态
   isCompressingContext?: boolean;    // 是否正在压缩上下文中
-  modelRetry?: { responseId: string; retryCount: number; retryDelay: number };
+  modelRetry?: ModelRetryState;
   isThinking?: boolean;              // 是否正在思考中
   isExploring?: boolean;             // 是否正在探索中（发送消息到第一个工具调用之间）
   isComplete?: boolean;              // 会话/轮次是否已结束

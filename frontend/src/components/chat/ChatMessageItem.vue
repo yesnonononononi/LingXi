@@ -504,35 +504,35 @@
         />
       </template>
 
+      <!-- 上下文压缩提示：与「模型重试」是两件不同的事，各自有唯一实现 -->
       <transition name="context-compact-fade">
         <div
-          v-if="props.message.isCompressingContext || props.message.modelRetry"
+          v-if="props.message.isCompressingContext"
           role="status"
           class="w-full my-3 py-1 flex items-center gap-3 select-none context-compact-bar"
-          :title="props.message.isCompressingContext && props.message.contextUsage?.tokenCount ? t('chat.message.contextTitle', { used: props.message.contextUsage.tokenCount, max: props.message.contextUsage.maxTokens || 0 }) : activityStatusText"
+          :title="compactingTitle"
         >
           <!-- 两侧等分剩余空间，保证提示始终居中。 -->
           <div class="flex-1 min-w-0 h-[1px] bg-gray-200 dark:bg-gray-700/60"></div>
 
           <div class="flex items-center gap-1.5 text-xs text-lx-muted font-normal shrink-0">
-            <svg v-if="props.message.isCompressingContext" class="w-3.5 h-3.5 opacity-80 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <svg class="w-3.5 h-3.5 opacity-80 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
               <polyline points="14 2 14 8 20 8"></polyline>
               <line x1="16" y1="13" x2="8" y2="13"></line>
               <line x1="16" y1="17" x2="8" y2="17"></line>
               <polyline points="10 9 9 9 8 9"></polyline>
             </svg>
-            <svg v-else class="w-3.5 h-3.5 opacity-80 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M20 7v5h-5M4 17v-5h5" />
-              <path d="M6.1 7a7 7 0 0 1 11.55-2L20 8M4 16l2.35 3A7 7 0 0 0 17.9 17" />
-            </svg>
-            <span class="context-compact-shimmer-text">{{ activityStatusText }}</span>
+            <span class="context-compact-shimmer-text">{{ t('chat.message.compressing') }}</span>
           </div>
 
           <div class="flex-1 min-w-0 h-[1px] bg-gray-200 dark:bg-gray-700/60"></div>
 
         </div>
       </transition>
+
+      <!-- 模型调用失败、等待重试：实现在 ModelRetryNotice，子会话详情复用同一个组件 -->
+      <ModelRetryNotice v-if="props.message.modelRetry" :retry="props.message.modelRetry" />
 
       <!-- 回复正文 (使用 Markdown 渲染，包含代码高亮、代码块复制、表格与列表) -->
       <div
@@ -595,6 +595,7 @@ import { t } from '../../i18n';
 import GradientText from '../common/GradientText.vue';
 import MarkdownRenderer from './MarkdownRenderer.vue';
 import MessageBodyDefault from './MessageBodyDefault.vue';
+import ModelRetryNotice from './ModelRetryNotice.vue';
 import DelegatedTaskMessage from './DelegatedTaskMessage.vue';
 import PromptCard from './PromptCard.vue';
 import CommandApprovalGroup from './CommandApprovalGroup.vue';
@@ -631,9 +632,19 @@ const userImageUrls = computed(() => props.message.imageUrls ?? (props.message.i
 const resendTitle = computed(() => !props.message.serverMessageId ? t('chat.controls.messageSyncPending')
   : !props.canResend ? t('chat.controls.waitUntilIdle') : t('chat.controls.editResend'));
 const isDark = computed(() => props.isDark ?? globalIsDark.value);
-const activityStatusText = computed(() => props.message.isCompressingContext
-  ? t('chat.message.compressing')
-  : props.message.modelRetry ? t('chat.message.retrying', { count: props.message.modelRetry.retryCount }) : '');
+/**
+ * 上下文压缩提示的 title：权威用量缺失时退回提示文案本身。
+ *
+ * <p>重试提示**不在这里**：它有自己的组件与文案实现（{@code ModelRetryNotice} +
+ * {@code views/chat/modelRetryStatus.ts}），两件事共用一个字段时，谁覆盖谁全靠
+ * 三元表达式里的先后顺序，改一个必然踩另一个。</p>
+ */
+const compactingTitle = computed(() => props.message.contextUsage?.tokenCount
+  ? t('chat.message.contextTitle', {
+    used: props.message.contextUsage.tokenCount,
+    max: props.message.contextUsage.maxTokens || 0
+  })
+  : t('chat.message.compressing'));
 // 委派身份由后端父轮次声明，不能从任务文本或会话位置猜测。
 const isDelegatedTask = computed(() => props.message.role === 'user' && !!props.turn?.parentTurnId);
 const openFilePreview = inject(FILE_PREVIEW_KEY);

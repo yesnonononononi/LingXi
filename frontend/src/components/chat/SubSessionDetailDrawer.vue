@@ -3,8 +3,7 @@ import { ref, watch, computed } from 'vue';
 import type { SubSessionVO, ChatMessage, ToolCallTrace } from '../../types/chat';
 import { chatApi } from '../../services/chat';
 import { formatClockTime } from '../../utils/format';
-import { synthesizeFailedTurnBubbles } from '../../utils/session';
-import { upsertTurnViewIntoMessages } from '../../views/chat/blockProjection';
+import { absorbSubSessionHistory } from '../../views/chat/subSessionHistory';
 import { parseToolDiff } from '../../utils/toolDiff';
 import { shouldShowToolArguments, unwrapToolResultEnvelope } from '../../utils/toolMeta';
 import { resolveToolRenderName } from '../../utils/toolDisplayNames';
@@ -12,6 +11,7 @@ import { toSubItemStatus } from '../../utils/subSessionStatus';
 import { subItemStatusDotClass, subItemStatusLabel } from '../../utils/asyncDelegation';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
 import MarkdownRenderer from './MarkdownRenderer.vue';
+import ModelRetryNotice from './ModelRetryNotice.vue';
 import GradientText from '../common/GradientText.vue';
 import { useTheme } from '../../composables/useTheme';
 import { useI18n } from '../../i18n';
@@ -32,7 +32,13 @@ const emit = defineEmits<{
 }>();
 
 const isLoading = ref(false);
-const messages = ref<ChatMessage[]>([]);
+/**
+ * 展示数据直接取自会话 VO 上的**实时数组**（与右侧面板、实时 reducer 同一份）。
+ *
+ * <p>抽屉不再持有私有副本：副本既收不到实时事件（模型重试这类瞬时态在抽屉里彻底不可见），
+ * 也会和右侧面板出现两套内容。历史分页只往里补齐，见 {@link absorbSubSessionHistory}。</p>
+ */
+const messages = computed<ChatMessage[]>(() => props.subSession?.messages ?? []);
 /** 加载失败标记：区分「加载失败（可重试）」与「确实为空」 */
 const loadError = ref(false);
 // 复制反馈（布尔键控；见 composables/useCopyFeedback.ts）
@@ -58,8 +64,8 @@ const hasToolDetail = (tc: ToolCallTrace): boolean => {
 };
 
 const loadMessages = async () => {
-  if (!props.subSession || !props.subSession.id) {
-    messages.value = [];
+  const sub = props.subSession;
+  if (!sub || !sub.id) {
     loadError.value = false;
     return;
   }
@@ -67,27 +73,17 @@ const loadMessages = async () => {
   isLoading.value = true;
   loadError.value = false;
   try {
-    // 与根会话共用同一条历史管线：chatApi.fetchSessionMessages 分页拉取，
-    // 返回的 turnViews 由后端轮次视图统一投影，不再自建第二套加载/解析。
-    const res = await chatApi.fetchSessionMessages(props.subSession.id, null, 100);
+    // 与主会话/右侧面板共用同一条历史管线：分页拉取后并入会话 VO 的实时数组，
+    // 抽屉因此与实时事件读同一份数据（失败轮合成气泡也在同一处完成）。
+    const res = await chatApi.fetchSessionMessages(sub.id, null, 100);
     if (res.ok) {
-      // 与主会话同口径：失败轮在库里可能只有 USER 行，需按 turns 补合成气泡，
-      // 否则子代理失败在这里同样看不见原因。
-      const versions = new Map<string, number>();
-      const projected: ChatMessage[] = [];
-      for (const view of Object.values(res.data.turnViews ?? {})) {
-        if (!view) continue;
-        upsertTurnViewIntoMessages(projected, view, versions);
-      }
-      messages.value = synthesizeFailedTurnBubbles(projected, res.data.turns);
+      absorbSubSessionHistory(sub, res.data);
     } else {
       // 加载失败：区别于「确实为空」，置失败态允许重试
-      messages.value = [];
       loadError.value = true;
     }
   } catch (err) {
     console.error('加载子会话消息列表失败:', err);
-    messages.value = [];
     loadError.value = true;
   } finally {
     isLoading.value = false;
@@ -381,6 +377,9 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                   </div>
                 </div>
               </div>
+
+              <!-- 模型失败等待重试：与主消息列表共用同一份提示实现 -->
+              <ModelRetryNotice v-if="msg.modelRetry" :retry="msg.modelRetry" />
 
               <!-- 消息正文 -->
               <div

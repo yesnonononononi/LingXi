@@ -262,14 +262,9 @@ test('★ 生产接线：历史管线的每个 messages 落点都必须经过 sy
       why: '流结束对账 + 往前翻页',
     },
     {
-      file: 'src/views/chat/useChatSubSession.ts',
-      min: 2,
-      why: '子会话首屏 + 子会话翻页',
-    },
-    {
-      file: 'src/components/chat/SubSessionDetailDrawer.vue',
+      file: 'src/views/chat/subSessionHistory.ts',
       min: 1,
-      why: '子代理详情抽屉',
+      why: '子会话的唯一吸入点（面板首屏、翻页、详情抽屉共用）',
     },
   ];
 
@@ -286,6 +281,27 @@ test('★ 生产接线：历史管线的每个 messages 落点都必须经过 sy
       failures.push(
         `${t.file} 只调用了 synthesizeFailedTurnBubbles ${count} 次（应 ≥ ${t.min}）。` +
           `缺口：${t.why} —— 调用点被删掉会让失败轮的提示重新消失。`
+      );
+    }
+  }
+
+  // 子会话落点收敛到 subSessionHistory 之后，还要守住「两个调用方都走它」：
+  // 任一调用方回退成自己投影，失败轮提示与实时状态就会在那个入口重新消失。
+  const subSessionSinks: Array<{ file: string; min: number; why: string }> = [
+    { file: 'src/views/chat/useChatSubSession.ts', min: 2, why: '子会话首屏 + 子会话翻页' },
+    { file: 'src/components/chat/SubSessionDetailDrawer.vue', min: 1, why: '子代理详情抽屉' },
+  ];
+  for (const t of subSessionSinks) {
+    const full = path.join(root, t.file);
+    if (!fs.existsSync(full)) {
+      failures.push(`${t.file} 不存在（被移动/删除了？）`);
+      continue;
+    }
+    const count = (fs.readFileSync(full, 'utf8').match(/absorbSubSessionHistory\s*\(/g) || []).length;
+    if (count < t.min) {
+      failures.push(
+        `${t.file} 只走了 absorbSubSessionHistory ${count} 次（应 ≥ ${t.min}）。` +
+        `缺口：${t.why} —— 自己投影会绕开失败轮合成，也会丢掉实时状态。`
       );
     }
   }
