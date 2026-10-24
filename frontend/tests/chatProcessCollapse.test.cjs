@@ -26,6 +26,9 @@ function loadChatModule(filename, realPlanCards = false) {
       if (request.endsWith('.vue')) {
         if (request.endsWith('CommandApprovalGroup.vue')) return load(resolved);
         if (request.endsWith('CardHeader.vue')) return load(resolved);
+        // 插槽化试点（B 档）：正文与底栏内容已抽成独立组件，必须递归进来，
+        // 否则通用的「透传 slots」桩会把它当成空实现，正文与工具条一起消失。
+        if (request.endsWith('MessageBodyDefault.vue') || request.endsWith('MessageActionsBar.vue')) return load(resolved);
         if (realPlanCards && /(?:PromptCard|PlanCard|CardActionButton)\.vue$/.test(request)) return load(resolved);
         if (request.endsWith('GradientText.vue')) {
           return { __esModule: true, default: {
@@ -54,7 +57,13 @@ function loadChatModule(filename, realPlanCards = false) {
     let source = fs.readFileSync(filename, 'utf8');
     if (filename.endsWith('.vue')) {
       const descriptor = parse(source, { filename }).descriptor;
-      source = compileScript(descriptor, { id: 'chat-process-collapse', inlineTemplate: true }).content;
+      source = compileScript(descriptor, {
+        id: 'chat-process-collapse',
+        inlineTemplate: true,
+        // 插槽化试点后，正文/底栏的 props 类型来自 `types/chatMessageSlots.ts`，
+        // defineProps<T>() 需要 fs 才能解析导入类型（否则 compileScript 直接报错）。
+        fs: { fileExists: file => fs.existsSync(file), readFile: file => fs.readFileSync(file, 'utf8') }
+      }).content;
     }
     module._compile(ts.transpileModule(source, { compilerOptions: {
       module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,

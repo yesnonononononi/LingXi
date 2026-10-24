@@ -370,6 +370,9 @@ import { useFilePreview } from '../../composables/useFilePreview';
 import { provideChatInputFocus } from '../../composables/useChatInputFocus';
 import { FILE_PREVIEW_KEY } from '../../types/filePreview';
 import { DECIDE_TOOL_CALL_KEY, ANSWER_CHOICES_KEY } from '../../types/toolDecision';
+import { CHAT_MESSAGE_SLOTS_KEY } from '../../types/chatMessageSlots';
+import MessageBodyDefault from '../../components/chat/MessageBodyDefault.vue';
+import MessageActionsBar from '../../components/chat/MessageActionsBar.vue';
 import FilePreviewPanel from '../../components/chat/FilePreviewPanel.vue';
 import { useChatView } from './useChatView';
 import Sidebar from '../../components/chat/Sidebar.vue';
@@ -522,4 +525,14 @@ const {
 // 卡片决策提交能力：注入给深层卡片组件（PlanCard / ApprovalCard / RequireChoiceCard）
 provide(DECIDE_TOOL_CALL_KEY, decideToolCall);
 provide(ANSWER_CHOICES_KEY, answerChoices);
+
+/**
+ * 消息级插槽渲染器（试点期注册的就是**内置默认实现**本身）。
+ *
+ * <p>为什么要注册一份等价实现：不注册时「宿主注入」这条分支在今天的生产里永远走不到，
+ * 它就会变成没人验证的死代码；注册同一份组件后，注册分支是活路径，而「未注册」的兜底分支
+ * 由无宿主挂载场景（例如 visual 场景里直接挂 ChatMessageItem）承担，两个分支都真实存在，
+ * 且**只有一份实现代码**，不存在 A/B 双实现漂移。</p>
+ */
+provide(CHAT_MESSAGE_SLOTS_KEY, { body: MessageBodyDefault, actions: MessageActionsBar });
 </script>

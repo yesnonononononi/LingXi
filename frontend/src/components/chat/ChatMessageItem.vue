@@ -536,63 +536,24 @@
 
       <!-- 回复正文 (使用 Markdown 渲染，包含代码高亮、代码块复制、表格与列表) -->
       <div
-        v-if="props.message.content || (props.message.isThinking && !props.message.isExploring)"
+        v-if="bodyVisible"
         class="w-full text-sm font-normal my-1"
       >
-        <MarkdownRenderer
-          :content="props.message.content"
-          :is-dark="props.isDark"
-          :is-thinking="props.message.isThinking && !props.message.isExploring"
-        />
+        <slot name="body" v-bind="bodySlotProps">
+          <!-- 兜底实现与宿主注册项指向同一份组件（MessageBodyDefault），不存在两份渲染代码漂移。 -->
+          <component :is="injectedBody" v-if="injectedBody" v-bind="bodySlotProps" />
+          <MessageBodyDefault v-else v-bind="bodySlotProps" />
+        </slot>
       </div>
 
       <!-- 底部工具与状态栏 (对应右图：复制、赞、踩、重试、用量、耗时、时间) - 仅在会话生成结束时展示 -->
       <!-- 出现时机契约：活跃期只跟随后端终结/开始事件（isMessageCompleted）；非活跃期按 turnId 回答组 -->
       <!-- 收敛为组尾一次（isGroupTail !== false），避免同一轮次「本地气泡 + 对账行」并存时双工具条 -->
       <div v-if="isMessageCompleted && isGroupTail !== false" class="flex flex-wrap items-center gap-4 pt-1 text-xs text-gray-400 select-none">
-        <!-- 复制图标 -->
-        <button
-          @click="copyContent"
-          class="hover:text-gray-600 dark:hover:text-gray-200 transition p-0.5"
-          :title="copied ? t('common.copied') : t('chat.message.copyAnswer')"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-          </svg>
-        </button>
-
-
-        <!-- 执行状态（仅回答组有摘要时展示；进行中/失败/终态不同配色，失败附带原因全文 title） -->
-        <!-- min-w-0 + 原因单独限宽：whitespace-nowrap 的 flex 子项默认按内容撑开，
-             长异常串会把用量/耗时挤到下一行。压不下来就永远「底部状态栏被吃掉」。 -->
-        <div v-if="execStatusMeta" class="flex min-w-0 flex-1 items-center gap-1 whitespace-nowrap" :title="execStatusMeta.errorReason">
-          <span
-            :class="[
-              'w-1.5 h-1.5 rounded-full shrink-0',
-              execStatusMeta.failed ? 'bg-red-500' : execStatusMeta.running ? 'bg-amber-400 animate-pulse' : 'bg-gray-500'
-            ]"
-          ></span>
-          <span class="shrink-0" :class="execStatusMeta.failed ? (isDark ? 'text-red-400' : 'text-red-600') : ''">{{ execStatusMeta.text }}</span>
-          <span
-            v-if="execStatusMeta.errorReason"
-            class="min-w-0 max-w-[16rem] truncate cursor-help text-red-500/90"
-            :title="execStatusMeta.errorReason"
-          >{{ t('common.colon') }}{{ execStatusMeta.errorReason }}</span>
-        </div>
-
-        <TokenUsagePopover v-if="showExecutionMeta" class="shrink-0" :usage="tokenUsage" :model-name="turn?.modelName"
-          :model-provider="turn?.modelProvider" :is-dark="isDark" />
-
-        <!-- 耗时统计（组尾展示一次；标注「总历时包含等待时间」） -->
-        <div v-if="showExecutionMeta" class="flex shrink-0 whitespace-nowrap items-center gap-1">
-          <svg class="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <span>{{ t('chat.message.usageDuration', { duration: displayDuration }) }}</span>
-        </div>
-
-        <!-- 时间戳 -->
-        <span class="shrink-0">{{ displayTime }}</span>
+        <slot name="actions" v-bind="actionsSlotProps">
+          <component :is="injectedActions" v-if="injectedActions" v-bind="actionsSlotProps" />
+          <MessageActionsBar v-else v-bind="actionsSlotProps" />
+        </slot>
       </div>
     </div>
 
@@ -602,6 +563,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, inject } from 'vue';
 import { FILE_PREVIEW_KEY } from '../../types/filePreview';
+import { CHAT_MESSAGE_SLOTS_KEY } from '../../types/chatMessageSlots';
+import type { ChatMessageBodySlotProps, ChatMessageActionsSlotProps } from '../../types/chatMessageSlots';
 import type { ChatMessage, ThoughtStep, ToolCallTrace, SubSessionVO, ProcessTimelineItem, ChatTurn, PromptCardData, SubItemStatus } from '../../types/chat';
 import { toPromptCardData, buildCardSummary } from '../../utils/toolCallCard';
 import { cardDotClass, cardKindIconPath, resolveCardTone } from '../../utils/cardUi';
@@ -623,7 +586,7 @@ import { resolveToolRenderName } from '../../utils/toolDisplayNames';
 import { isActiveTurnStatus, isFailedTurnStatus, turnStatusLabel } from '../../utils/turnStatus';
 import { formatDurationOrPlaceholder } from '../../utils/format';
 import { resolveTokenUsage } from '../../utils/tokenUsage';
-import TokenUsagePopover from './TokenUsagePopover.vue';
+import MessageActionsBar from './MessageActionsBar.vue';
 import { parseToolDiff } from '../../utils/toolDiff';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
 import { useStreamStickyScroll } from '../../composables/useStreamStickyScroll';
@@ -631,6 +594,7 @@ import { useTheme } from '../../composables/useTheme';
 import { t } from '../../i18n';
 import GradientText from '../common/GradientText.vue';
 import MarkdownRenderer from './MarkdownRenderer.vue';
+import MessageBodyDefault from './MessageBodyDefault.vue';
 import DelegatedTaskMessage from './DelegatedTaskMessage.vue';
 import PromptCard from './PromptCard.vue';
 import CommandApprovalGroup from './CommandApprovalGroup.vue';
@@ -674,6 +638,26 @@ const activityStatusText = computed(() => props.message.isCompressingContext
 const isDelegatedTask = computed(() => props.message.role === 'user' && !!props.turn?.parentTurnId);
 const openFilePreview = inject(FILE_PREVIEW_KEY);
 const canPreviewFile = (tool: ToolCallTrace) => !!openFilePreview && (isReadFileTool(tool.toolName) || isEditFileTool(tool.toolName));
+
+/**
+ * 宿主注册的插槽渲染器（三级解析的中间层：父级 `$slots` > 宿主注入 > 内置默认）。
+ *
+ * <p>必须**按字段判空**，不能按对象真值判：宿主 `provide(CHAT_MESSAGE_SLOTS_KEY, {})` 时对象为真
+ * 但两个字段缺省，按对象真值判会把两侧都当成「已注册」，结果渲染出空白。
+ * `inject` 的默认值给 `undefined`，与「未注册」语义一致。</p>
+ */
+const slotOverrides = inject(CHAT_MESSAGE_SLOTS_KEY, undefined);
+const injectedBody = computed(() => slotOverrides?.body);
+const injectedActions = computed(() => slotOverrides?.actions);
+
+defineSlots<{
+  /** 正文内容。外层容器/class/时机由组件拥有，本插槽只替换容器内部。 */
+  body(props: ChatMessageBodySlotProps): unknown;
+  /** 底部工具条内容。同上，容器与出现时机由组件拥有。 */
+  actions(props: ChatMessageActionsSlotProps): unknown;
+}>();
+
+
 
 const emit = defineEmits<{
   (e: 'selectSubSession', id: string | number): void;
@@ -1317,6 +1301,48 @@ const displayTime = computed(() => {
 const copyContent = () => {
   void copyContentRaw(props.message.content);
 };
+
+/**
+ * 正文「思考中且未在探索」判定。
+ *
+ * <p>抽成 computed 的唯一理由是它**被两处引用**（外层 v-if 与默认渲染器的 is-thinking），
+ * 原来两处各写一遍同样的表达式；表达式逐字照抄，只换载体，不改语义。</p>
+ */
+const bodyIsThinking = computed(() => !!props.message.isThinking && !props.message.isExploring);
+
+/** 正文是否出现：把原 v-if 的行内条件收敛成单一事实来源（语义等价，纯搬家）。 */
+const bodyVisible = computed(() => !!props.message.content || bodyIsThinking.value);
+
+/**
+ * 正文插槽 props：只暴露渲染正文必需的 3 项。
+ * 用 computed 包一层而不是普通对象：`message` 是 props，消息流式更新时必须跟着变。
+ */
+const bodySlotProps = computed<ChatMessageBodySlotProps>(() => ({
+  message: props.message,
+  isDark: isDark.value,
+  isThinking: bodyIsThinking.value
+}));
+
+/**
+ * 操作区插槽 props：11 项全部来自组件内既有派生值，消费者不需要（也不允许）重算。
+ *
+ * <p>`turn` 用 `props.turn ?? null` 归一：外层可能传 `undefined`，而契约里 null 表示「无轮次」，
+ * 两者混用会让消费者写出两种判空分支。</p>
+ */
+const actionsSlotProps = computed<ChatMessageActionsSlotProps>(() => ({
+  message: props.message,
+  isDark: isDark.value,
+  isMessageCompleted: isMessageCompleted.value,
+  execStatusMeta: execStatusMeta.value,
+  showExecutionMeta: showExecutionMeta.value,
+  tokenUsage: tokenUsage.value,
+  turn: props.turn ?? null,
+  displayDuration: displayDuration.value,
+  displayTime: displayTime.value,
+  copied: copied.value,
+  copyContent
+}));
+
 
 const handleImageClick = (url?: string) => {
   if (url) {
