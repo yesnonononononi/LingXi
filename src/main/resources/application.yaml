@@ -3,9 +3,6 @@ server:
 spring:
   application:
     name: LingXi
-  profiles:
-    active:
-      - dev
   servlet:
     multipart:
       max-file-size: 10MB
@@ -141,14 +138,12 @@ lingxi:
           max-matches: 30
           timeout: 10s
 
-        # 多段压缩：两档阈值 + 每趟截断轮次，都收在这个命名空间下。
-        # 占比落在 [truncate-threshold, model-threshold) 走本地截断（不调模型），
-        # 达到 model-threshold 就让模型把历史总结掉。model-threshold 必须大于 truncate-threshold，
-        # 反了会让本地截断那一档永远进不去。
+        # 上下文压缩：触发模型摘要的 token 占比阈值。
+        # 达到 model-threshold 即让模型把历史总结掉；摘要不可用时由本地剪枝兜底。
+        # max-summary-attempts 限定单个触发窗口内的摘要总尝试次数（未配置时仅尝试一次）。
         context-compact:
-          truncate-threshold: 0.6
           model-threshold: 0.85
-          truncate-rounds: 5
+          max-summary-attempts: 2
 
     model:
       conf:
@@ -167,9 +162,9 @@ lingxi:
           # 每多少轮上报一次上下文用量（进度显示用）。上报要数一遍全量 token，不必每轮都做。
           usage-report-interval: 5
         compact:
-          base-url: https://api.deepseek.com
-          api-key: ${DEEPSEEK_APIKEY}
-          model-name: deepseek-flash
+          base-url:
+          api-key:
+          model-name:
           timeout: 120s
           max-tokens: 32768
 
