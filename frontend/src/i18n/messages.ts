@@ -31,7 +31,7 @@ export const messages: MessageSchema = {
     },
 
     app: {
-      titlebar: '灵犀 · 智能体工作台',
+      titlebar: 'LingXi Harness',
     },
     update: {
       disabled: '当前环境不支持自动更新',
