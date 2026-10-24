@@ -69,7 +69,7 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
             // 审批后再次执行也走这里，最新禁止规则不能被旧审批绕过。
             SecurityDecision decision = security == null ? null : security.evaluate(request.getCommand());
             if (decision != null && decision.action() == SecurityAction.DENY) {
-                return ToolExecuteResult.err("命令被安全规则禁止：" + decision.matchedRule());
+                return ToolExecuteResult.err(decision.describe());
             }
             if (request.isBackground()) {
                 throwIf(background == null, "后台命令服务尚未装配");

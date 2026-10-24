@@ -221,7 +221,7 @@ class BackgroundCommandTest {
         when(failing.bridge()).thenReturn(bridge); when(bridge.commands()).thenReturn(commands);
         when(failing.workDir()).thenReturn(temporary.toString());
         when(failing.runtimeEnvironment()).thenReturn(RuntimeEnvironment.builder().charset(StandardCharsets.UTF_8).build());
-        when(commands.startCommand(anyString(), anyString(), any(), anyLong(), any(), anyLong())).thenThrow(new IOException("spawn failed"));
+        when(commands.startCommand(anyString(), any(), anyString(), any(), anyLong(), any(), anyLong())).thenThrow(new IOException("spawn failed"));
         assertThrows(ClientException.class, () -> submitter.submit("echo test", 99L, 20L, 100L, failing, 10, 100));
         verifyNoInteractions(commands);
         assertThrows(IOException.class, () -> submitter.submit("echo test", 10L, 20L, 100L, failing, 10, 100));
@@ -285,7 +285,7 @@ class BackgroundCommandTest {
         ToolExecuteResult deniedRead = manage.execute(call(manage, Map.of("action", "read", "taskId", "104"), 10));
         assertFalse(deniedRead.isSuccess());
         TerminalSecurityPolicy security = mock(TerminalSecurityPolicy.class);
-        when(security.evaluate(anyString())).thenReturn(new SecurityDecision(SecurityAction.DENY, "policy"));
+        when(security.evaluate(anyString())).thenReturn(new SecurityDecision(SecurityAction.DENY, "policy", "PROGRAM", null));
         BackendProcesser forbidden = mock(BackendProcesser.class);
         CommandToolDefinitionExecutor executor = new CommandToolDefinitionExecutor(json, security, forbidden);
         assertFalse(executor.execute(call(executor, Map.of("command", "echo test", "background", true), 10)).isSuccess());
@@ -311,7 +311,7 @@ class BackgroundCommandTest {
         when(controlled.runtimeEnvironment()).thenReturn(RuntimeEnvironment.builder().charset(StandardCharsets.UTF_8).build());
         CommandHandler handle = mock(CommandHandler.class);
         when(handle.await()).thenReturn(new CommandResult(8, "already exited", false, false));
-        when(commands.startCommand(anyString(), anyString(), any(), anyLong(), any(), anyLong())).thenAnswer(invocation -> {
+        when(commands.startCommand(anyString(), any(), anyString(), any(), anyLong(), any(), anyLong())).thenAnswer(invocation -> {
             List<TaskPO> rows = mapper.selectList(null);
             assertEquals(1, rows.size()); assertEquals("PENDING", rows.getFirst().getStatus());
             assertNotNull(rows.getFirst().getId()); return handle;
@@ -320,7 +320,7 @@ class BackgroundCommandTest {
         await(() -> repository.findById(id).orElseThrow().getStatus().isTerminal());
         assertEquals(8, repository.findById(id).orElseThrow().getExitCode());
         assertEquals("already exited", manager.read(10L, id, false).getOutput());
-        verify(commands, never()).execute(anyString(), anyString(), any(), anyLong(), any(), anyLong());
+        verify(commands, never()).execute(anyString(), any(), anyString(), any(), anyLong(), any(), anyLong());
     }
 
     @Test void outputSnapshotFailureDoesNotPreventStoppingTheProcess() throws Exception {
@@ -390,7 +390,7 @@ class BackgroundCommandTest {
         when(controlled.bridge()).thenReturn(bridge); when(bridge.commands()).thenReturn(commands);
         when(controlled.workDir()).thenReturn(temporary.toString());
         when(controlled.runtimeEnvironment()).thenReturn(RuntimeEnvironment.builder().charset(StandardCharsets.UTF_8).build());
-        when(commands.startCommand(anyString(), anyString(), any(), anyLong(), any(), anyLong()))
+        when(commands.startCommand(anyString(), any(), anyString(), any(), anyLong(), any(), anyLong()))
                 .thenThrow(new InterruptedException("interrupted startup"));
         try {
             assertThrows(InterruptedException.class, () -> submitter.submit("echo test", 10L, 20L, 100L, controlled, 10, 100));

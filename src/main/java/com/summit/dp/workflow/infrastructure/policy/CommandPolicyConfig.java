@@ -78,7 +78,7 @@ public class CommandPolicyConfig {
 
             SecurityDecision decision = security == null ? null : security.evaluate(command);
             if (decision != null && decision.action() == SecurityAction.DENY) {
-                return ToolExecuteResult.err("命令被安全规则禁止：" + decision.matchedRule());
+                return ToolExecuteResult.err(decision.describe());
             }
             boolean ask = decision == null ? requiresApproval(CommandApprovalPolicy.from(execution.getAttributes()), verdict)
                     : decision.action() == SecurityAction.ASK;
