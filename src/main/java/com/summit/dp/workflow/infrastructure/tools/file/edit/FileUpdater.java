@@ -4,55 +4,39 @@ import com.summit.dp.workflow.infrastructure.tools.arguments.EditFileRequest;
 import org.jspecify.annotations.NonNull;
 
 import java.nio.charset.Charset;
-import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 public class FileUpdater {
     public static FileEditorResult update(EditFileRequest editFileRequest, @NonNull String content, Charset charset, Integer aroundLines){
-        int oldIndex ;
-        String newText = Objects.requireNonNullElse(editFileRequest.getNewText(),"");
+        String newText = editFileRequest.getNewText();
         String oldText = editFileRequest.getOldText();
 
         try {
             EditType type = EditType.fromString(editFileRequest.getType());
-            if (oldText == null || oldText.isBlank()) return FileEditorResult.err("old text is empty");
+            if (type == EditType.REPLACE && newText == null) return FileEditorResult.err("替换文件时必须提供 newText");
+            if (oldText == null || oldText.isBlank()) return FileEditorResult.err("被替换或删除的原文不能为空");
 
-            //1, validate newText whether duplicate or not
-            if(content.isEmpty())   return FileEditorResult.err("file is empty");
+            if(content.isEmpty()) return FileEditorResult.err("文件内容为空，无法定位原文");
 
-            // 先精确匹配，再统一空白与引号，避免规范化误选原本可定位的内容。
-            int oldEnd;
-            oldIndex = content.indexOf(oldText);
+            // 原文必须逐字一致，忽略空白和引号可能改变字符串或代码语义。
+            int oldIndex = content.indexOf(oldText);
             if (oldIndex == -1) {
-                List<TextNormalizer.Match> matches = TextNormalizer.findAll(content, oldText);
-                if (matches.isEmpty()) {
-                    return FileEditorResult.err("old text not found");
-                }
-                if (matches.size() > 1) {
-                    return FileEditorResult.err(TextNormalizer.buildDuplicateArea(matches, content, aroundLines));
-                }
-                oldIndex = matches.getFirst().start();
-                oldEnd = matches.getFirst().end();
-            } else {
-                // 重复内容不能自动选取，避免修改错误位置。
-                oldEnd = oldIndex + oldText.length();
-                if (content.indexOf(oldText, oldEnd) != -1) {
-                    Map<Integer, String> duplicateArea = FileEditor.resolveDuplicateArea(oldText, content, aroundLines);
-                    return FileEditorResult.err(FileEditor.handleDuplicateStr(duplicateArea));
-                }
+                return FileEditorResult.err("未找到完全一致的原文，请重新读取文件后编辑");
             }
 
-            //2, edit. replace old text with new text and is equal result for DELETE type when newText is empty
-            //2.1 handle DELETE type. force new text to empty
+            // 从起点后一位检查，重叠的命中同样存在定位歧义。
+            if (content.indexOf(oldText, oldIndex + 1) != -1) {
+                Map<Integer, String> duplicateArea = FileEditor.resolveDuplicateArea(oldText, content, aroundLines);
+                return FileEditorResult.err(FileEditor.handleDuplicateStr(duplicateArea));
+            }
+
+            int oldEnd = oldIndex + oldText.length();
             if(type.equals(EditType.DELETE)) newText = "";
 
             String newContent =
                     content.substring(0, oldIndex)
                             + newText
                             + content.substring(oldEnd);
-
-           // Files.writeString(targetFile.toPath(), newContent, charset);
 
             return FileEditorResult.success(FileEditorResult.ContentInfo.builder()
                     .oldContent(content)

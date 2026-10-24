@@ -10,10 +10,10 @@ import com.summit.dp.workflow.infrastructure.tools.file.record.Differ;
 import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecord;
 import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecordManager;
 import com.summit.dp.workflow.infrastructure.tools.arguments.EditFileRequest;
+import com.summit.dp.shared.exception.ClientException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
-import java.io.IOException;
 import java.io.Serializable;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -28,53 +28,58 @@ public class EditFileToolExecutor implements ToolExecutor {
     private final ObjectMapper objectMapper;
     private final Differ differ;
     private final FileRecordManager fileRecordManager;
-    private final int DEFAULT_AROUND_LINE = 3;
+    private static final int DEFAULT_AROUND_LINE = 3;
 
     @Override
     public @NonNull ToolExecuteResult execute(ToolExecution toolExecution) {
         String args = toolExecution.getArgs();
         try {
             EditFileRequest request = objectMapper.readValue(args, EditFileRequest.class);
-            log.info("【ToolCall】 edit_file :{}", request.getPath());
+            throwIf(request == null, "编辑文件参数不能为空");
+            throwIf(request.getPath() == null || request.getPath().isBlank(), "编辑文件路径不能为空");
+            throwIf(request.getType() == null || request.getType().isBlank(), "文件编辑类型不能为空");
+            EditType type = EditType.fromString(request.getType());
+            throwIf(type != EditType.DELETE && request.getNewText() == null,
+                    "编辑文件时必须提供 newText，删除文本请显式传空字符串或使用 DELETE");
+            log.info("编辑文件: path={}, type={}", request.getPath(), type);
 
             Workspace workspace = toolExecution.getWorkspace();
-            EditOutcome outcome = applyEdit(request, workspace);
+            WorkspaceFiles files = workspace.bridge().files();
+            Charset charset = StandardCharsets.UTF_8;
+            Path target = workspace.resolve(request.getPath());
+            boolean existed = files.exists(target);
+            String oldContent = existed ? files.readString(target, charset) : null;
 
-            if (!outcome.success()) {
-                return ToolExecuteResult.err(outcome.error());
+            FileEditorResult editRes = FileEditor.edit(request, oldContent == null ? "" : oldContent,
+                    charset, DEFAULT_AROUND_LINE);
+            if (!editRes.isSuccess()) {
+                return ToolExecuteResult.err(editRes.getErrMsg());
             }
 
+            // 定位成功后才能创建目录和写入，失败不得产生文件副作用。
+            Path parent = target.getParent();
+            if (parent != null && !files.exists(parent)) {
+                files.createDirectories(parent);
+            }
+            files.writeString(target, editRes.getData().newContent(), charset);
+
+            EditOutcome outcome = new EditOutcome(request.getPath(), existed, oldContent,
+                    editRes.getData().newContent(), differ.diff(request.getPath(),
+                    oldContent == null ? "" : oldContent, editRes.getData().newContent()));
+            // 登记必须在落盘之后，不能把未写入的内容当成可回滚记录。
             Serializable recordId = recordEdit(toolExecution, outcome);
             return ToolExecuteResult.success(objectMapper.writeValueAsString(outcome.toSummary()),
                     ToolResultType.NORMAL, buildMetadata(outcome, recordId));
 
-        } catch (IOException e) {
-            return ToolExecuteResult.err(e.getMessage());
+        } catch (Exception e) {
+            return ToolExecuteResult.err("编辑文件失败: " + e.getMessage());
         }
     }
 
-    private EditOutcome applyEdit(EditFileRequest request, Workspace workspace) throws IOException {
-        WorkspaceFiles files = workspace.bridge().files();
-        Charset charset = StandardCharsets.UTF_8;
-        Path target = workspace.resolve(request.getPath());
-
-        boolean existed = files.exists(target);
-        String oldContent = existed ? files.readString(target, charset) : null;
-
-        FileEditorResult editRes = FileEditor.edit(request, oldContent == null ? "" : oldContent, charset, DEFAULT_AROUND_LINE);
-
-        if (!editRes.isSuccess()) {
-            return EditOutcome.failure(editRes.getErrMsg());
+    private void throwIf(boolean condition, String err) {
+        if (condition) {
+            throw new ClientException(err);
         }
-
-        Path parent = target.getParent();
-        if (parent != null && !files.exists(parent)) {
-            files.createDirectories(parent);
-        }
-        files.writeString(target, editRes.getData().newContent(), charset);
-
-        return EditOutcome.success(request.getPath(), existed, oldContent,
-                editRes.getData().newContent(), differ.diff(request.getPath(), oldContent == null ? "" : oldContent, editRes.getData().newContent()));
     }
 
     private Serializable recordEdit(ToolExecution toolExecution, EditOutcome outcome) {
@@ -112,17 +117,8 @@ public class EditFileToolExecutor implements ToolExecutor {
                                String diffError) {
     }
 
-    private record EditOutcome(boolean success, String error, String path, boolean existed,
+    private record EditOutcome(String path, boolean existed,
                                String oldContent, String newContent, DiffResult diffResult) {
-
-        static EditOutcome success(String path, boolean existed, String oldContent,
-                                   String newContent, DiffResult diffResult) {
-            return new EditOutcome(true, null, path, existed, oldContent, newContent, diffResult);
-        }
-
-        static EditOutcome failure(String error) {
-            return new EditOutcome(false, error, null, false, null, null, null);
-        }
 
         boolean created() {
             return !existed;

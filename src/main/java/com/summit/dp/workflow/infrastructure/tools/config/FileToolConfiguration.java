@@ -38,7 +38,7 @@ public class FileToolConfiguration {
                 .id(name)
                 .name(name)
                 .concurrentPolicy(ConcurrentPolicy.SERIAL_MUTATION)
-                .description("Edit file content using REPLACE, INSERT_BEFORE, INSERT_AFTER or DELETE, and return the applied diff.")
+                .description("Edit UTF-8 text using exact, unique oldText or anchor matches. Supports REPLACE, INSERT_BEFORE, INSERT_AFTER and DELETE; INSERT_* can create files. Returns an edit summary.")
                 .parametersJsonSchema("""
                         {
                           "type": "object",
@@ -46,9 +46,10 @@ public class FileToolConfiguration {
                             "type": {"type": "string", "enum": ["INSERT_BEFORE", "INSERT_AFTER", "REPLACE", "DELETE"], "description": "INSERT_* : insert content behind or in front of anchor. "},
                             "anchor": {"type": "string", "description": "The anchor of Insert operation it is a required parameter if type in terms of INSERT unless want to insert a empty file"},
                             "path": {"type": "string", "description": "File path relative to the workspace root. Do not use absolute paths it is a required parameter"},
-                            "oldText": {"type": "string", "description": "Old text to be replaced it is a optional parameter"},
-                            "newText": {"type": "string", "description": "New text to replace old text.it is empty when type is DELETE .it is a optional parameter"}
-                          }
+                            "oldText": {"type": "string", "description": "Exact original text, required for REPLACE and DELETE. Must match exactly once."},
+                            "newText": {"type": "string", "description": "Required for REPLACE and INSERT_*. An explicit empty string is allowed for REPLACE. Ignored for DELETE."}
+                          },
+                          "required": ["type", "path"]
                         }
                         """)
                 .maxOutput(200)
@@ -70,9 +71,10 @@ public class FileToolConfiguration {
                           "type": "object",
                           "properties": {
                             "path": {"type": "string", "description": "File path it is a required parameter"},
-                            "startLine": {"type": "integer", "description": "Start line to read If both startLine and endLine are empty, read the entire file. start at zero"},
-                            "endLine": {"type": "integer", "description": "End line to read If both startLine and endLine are empty, read the entire file"}
-                          }
+                            "startLine": {"type": "integer", "minimum": 0, "description": "Zero-based start line, inclusive. Defaults to 0. Omit both line bounds to read the entire file."},
+                            "endLine": {"type": "integer", "minimum": 0, "description": "Zero-based end line, inclusive. Must not precede startLine. Defaults to the last line."}
+                          },
+                          "required": ["path"]
                         }
                         """)
                 .concurrentPolicy(ConcurrentPolicy.READ_ONLY)

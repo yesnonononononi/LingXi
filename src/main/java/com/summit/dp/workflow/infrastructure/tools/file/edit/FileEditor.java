@@ -3,7 +3,6 @@ package com.summit.dp.workflow.infrastructure.tools.file.edit;
 import com.summit.dp.workflow.infrastructure.tools.arguments.EditFileRequest;
 import org.jspecify.annotations.NonNull;
 
-import java.io.File;
 import java.nio.charset.Charset;
 
 import java.util.LinkedHashMap;
@@ -13,7 +12,7 @@ import java.util.Objects;
 public  class FileEditor {
 
     private static final String DUPLICATE_AREA_FORMAT = """
-            duplicate old text in target file, require choice a specific area
+            原文或锚点命中多处，请增加上下文以唯一定位
             %s
             """;
 
@@ -76,7 +75,7 @@ public  class FileEditor {
                     endLineIndex
             );
 
-            startIndex = i + matchStr.length();
+            startIndex = i + 1;
 
             result.put(findLineNumber(fileContent, i), area);
 

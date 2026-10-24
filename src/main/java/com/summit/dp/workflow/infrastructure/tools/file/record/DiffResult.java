@@ -47,8 +47,16 @@ public class DiffResult {
         if (diffs == null) {
             return 0;
         }
-        return (int) diffs.stream()
-                .filter(l -> l.length() > 1 && l.charAt(0) == marker)
-                .count();
+        int count = 0;
+        boolean inHunk = false;
+        for (String line : diffs) {
+            if (line.startsWith("@@ ")) {
+                inHunk = true;
+            } else if (inHunk && !line.isEmpty() && line.charAt(0) == marker) {
+                // 只统计差异块正文；空白行也算，文件头不算。
+                count++;
+            }
+        }
+        return count;
     }
 }
