@@ -317,6 +317,31 @@ class CommandApprovalExecutorTest {
         verify(commandExecutor).execute(any());
     }
 
+    @Test
+    void changedShellIsRejectedWhenResumingAnApprovedCommand() throws Exception {
+        // 快照里的解释器与恢复时解析出的解释器不一致：这是「执行环境已变化」，必须重新审批，
+        // 不能悄悄换成默认 shell 把命令放行。
+        WorkspaceResolver resolver = new DefaultWorkspaceResolver(List.of(new LocalWorkspaceProvider()));
+        Workspace fallback = resolver.resolve(new BasicWorkspaceSpec(LocalWorkspaceProvider.TYPE,
+                System.getProperty("user.dir")));
+        ToolCall toolCall = commandCall("call-shell-changed", "echo hi", "echo hi", fallback.workDir(),
+                "pwsh", fallback.id());
+        Execution execution = execution(AgentRequest.builder()
+                        .runtimeParameters(AgentRuntimeParameters.builder()
+                                .attributes(Map.of(ExecutionAttributes.SESSION_ID, "2")).build())
+                        .build(), "3",
+                ToolMessageEntity.builder().id("call-shell-changed").name("command").toolOutput("pending").build());
+        when(toolCallRepository.findById("call-shell-changed")).thenReturn(Optional.of(toolCall));
+        when(executionRepository.register("3")).thenReturn(new ExecutionControlSignal("3"));
+        when(executionRepository.findById("3")).thenReturn(Optional.of(execution));
+        doReturn(commandTool()).when(toolRegistry).getTool("command");
+
+        CountDownLatch finished = new CountDownLatch(1);
+        assertThrows(ClientException.class,
+                () -> buildExecutor(resolver).decide(toolCall, true, null, null, finished::countDown));
+        verify(commandExecutor, org.mockito.Mockito.never()).execute(any());
+    }
+
     private ToolCall commandCall(String id, String snapshotCommand, String argsCommand) {
         return commandCall(id, snapshotCommand, argsCommand, "/project", "BASH", "workspace");
     }

@@ -50,9 +50,8 @@ public class CommonToolConfiguration {
                 .name(name)
                 .description("""
                         Execute a terminal command in the assigned workspace environment.
-                        The command is handed as-is to the shell reported in the execution environment (CMD on Windows, Bash on Linux). Executable programs present in that workspace (for example git, node, pwsh.exe, powershell.exe) can be launched directly by name; they start inside the same sandbox under the same approvals, timeout, cancellation and permission limits, and a missing or denied program fails with an explicit error instead of falling back to the host.
-                        On Windows the interpreter is CMD, so a bare PowerShell script is not valid input. To use PowerShell, start it explicitly, for example: pwsh.exe -NoProfile -NonInteractive -Command "Get-ChildItem -LiteralPath ."
-                        If that output can contain non-ASCII text, prefix the script with `[Console]::OutputEncoding=[Text.Encoding]::UTF8;` inside `-Command` to avoid mojibake.
+                        The command is handed as-is to the chosen shell. Omit shell to use the workspace default (cmd on Windows, bash on Linux). Set shell to cmd, pwsh or powershell on Windows, or bash, sh or pwsh on Linux, and write the script in that interpreter's syntax: the interpreter is not detected from the script.
+                        The interpreter starts inside the same sandbox under the same approvals, timeout, cancellation and permission limits. A shell that is unsupported on this platform, missing or denied fails the call with an explicit error; it is never replaced by another shell. Output is decoded as UTF-8 for every supported interpreter.
                         Output may be truncated according to the configured maximum.
                         Set background=true to return a persisted taskId immediately. Completion is reported to this execution automatically; use manage_command to inspect or stop tasks.
                         Always state in `intention` what the command is for; it is displayed to the user.
@@ -64,7 +63,8 @@ public class CommonToolConfiguration {
                         {
                           "type": "object",
                           "properties": {
-                            "command": {"type": "string", "description": "Raw command text, passed unchanged to the workspace command interpreter. That interpreter does not detect script languages: on Windows it is CMD, so shell built-ins and ordinary executables work, while a bare PowerShell script (Get-ChildItem, $variables, cmdlet pipelines) is not valid input by itself. To use PowerShell, start it explicitly with -NoProfile -NonInteractive -Command plus a single script argument, as the tool description shows; quoting, relative paths and the working directory then behave as inside that interpreter."},
+                            "command": {"type": "string", "description": "Raw command text, passed unchanged to the selected shell. The interpreter does not detect script languages: a bare PowerShell script is not valid input for cmd, so choose the shell that matches the syntax. Quoting, relative paths and the working directory behave as inside that interpreter."},
+                            "shell": {"type": "string", "enum": ["cmd", "pwsh", "powershell", "bash", "sh", "zsh"], "description": "Interpreter that runs this command. Omit it to use the workspace default. Windows supports cmd, pwsh and powershell; Linux supports bash, sh and pwsh. An unsupported, missing or denied interpreter fails the call explicitly instead of falling back to another shell."},
                             "intention": {"type": "string", "description": "One short sentence stating what this command is intended to achieve. It is shown to the user in the UI next to the command, so make it specific and human-readable."},
                             "background": {"type": "boolean", "default": false, "description": "Return a taskId immediately while the command runs in the background. Completion is injected into this execution automatically, so continue other work without polling. Natural completion waits for this execution's tasks. The configured background timeout and the same output limit apply."}
                           },

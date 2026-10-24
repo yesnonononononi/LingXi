@@ -50,7 +50,13 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
                 return ToolExecuteResult.err("instruction is empty", ToolResultType.NORMAL, buildMetadata(request));
 
             Workspace workspace = toolExecution.getWorkspace();
-            ShellType shellType = workspace == null ? null : workspace.runtimeEnvironment().shellType();
+            ShellType shellType;
+            try {
+                // 本次调用实际使用的解释器只解析一次，检查、审批、执行都用它。
+                shellType = CommandShell.resolve(request, workspace);
+            } catch (IllegalArgumentException unsupported) {
+                return ToolExecuteResult.err(unsupported.getMessage(), ToolResultType.NORMAL, buildMetadata(request));
+            }
             if (CommandGuard.assess(request.getCommand(), shellType) == CommandGuard.Verdict.DESTRUCTIVE) {
 
                 log.warn("【ToolCall】 refused destructive command: {}", request.getCommand());
@@ -73,11 +79,11 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
                 Long executionId = ExecutionIdentity.numericOrNull(toolExecution.getExecutionId());
                 throwIf(executionId == null || executionId <= 0, "后台任务缺少有效执行标识");
                 Long taskId = background.submit(request.getCommand(), request.getIntention(), sessionId, turnId,
-                        executionId, workspace, properties.getBackgroundTimeout().toSeconds(), toolExecution.getToolDefinition().maxOutput());
+                        executionId, shellType, workspace, properties.getBackgroundTimeout().toSeconds(), toolExecution.getToolDefinition().maxOutput());
                 return ToolExecuteResult.success(objectMapper.writeValueAsString(Map.of("taskId", taskId.toString(),
                         "message", "后台任务已登记，完成后会通知当前执行；可使用 manage_command 查询或停止")), ToolResultType.NORMAL, buildMetadata(request));
             }
-            return process(request, toolExecution.getWorkspace(), toolExecution.getToolDefinition());
+            return process(request, shellType, toolExecution.getWorkspace(), toolExecution.getToolDefinition());
 
         } catch (InterruptedException e) {
             // 打断来自框架的停止执行（或工具超时后的 future.cancel）：进程已由 ProcessCoordinator
@@ -91,11 +97,12 @@ public class CommandToolDefinitionExecutor implements ToolExecutor {
         }
     }
 
-    public ToolExecuteResult process(ExecuteCommandRequest request, Workspace workspace, ToolDefinition<?> toolDefinition) throws IOException, InterruptedException {
+    public ToolExecuteResult process(ExecuteCommandRequest request, ShellType shell, Workspace workspace, ToolDefinition<?> toolDefinition) throws IOException, InterruptedException {
 
-        // 原始命令交给框架，shell 的选择和启动由工作空间负责。
+        // 原始命令连同本次解析出的 shell 交给框架，shell 的启动参数由 ShellType 构造。
         WorkspaceCommands.CommandResult result = workspace.bridge().commands().execute(
                 request.getCommand(),
+                shell,
                 workspace.workDir(),
                 workspace.runtimeEnvironment().charset(),
                 toolDefinition.timeout(),

@@ -69,7 +69,7 @@ class SandboxWorkspaceIntegrationTest {
         boolean windows = System.getProperty("os.name").toLowerCase().contains("windows");
         String command = windows ? "node --version && git --version && where git && echo business-terminal-ok>from-terminal && type from-terminal"
                 : "node --version && git --version && printf business-terminal-ok > from-terminal && cat from-terminal";
-        ToolExecuteResult terminalResult = terminal.process(ExecuteCommandRequest.builder().command(command).build(), writable, definition);
+        ToolExecuteResult terminalResult = terminal.process(ExecuteCommandRequest.builder().command(command).build(), null, writable, definition);
         assertTrue(terminalResult.isSuccess(), terminalResult.getToolOutput());
         if (windows) assertTrue(terminalResult.getToolOutput().contains(properties.runtimeDirectory().resolve("git/cmd/git.exe").toString()),
                 terminalResult.getToolOutput());
@@ -95,7 +95,7 @@ class SandboxWorkspaceIntegrationTest {
         assertThrows(IOException.class, () -> readonly.bridge().files().writeString(readonly.resolve("input"), "bad", StandardCharsets.UTF_8));
         assertThrows(IOException.class, () -> readonly.bridge().files().deleteFile(readonly.resolve("input")));
         assertThrows(IOException.class, () -> readonly.bridge().files().createDirectories(readonly.resolve("blocked-directory")));
-        assertFalse(terminal.process(ExecuteCommandRequest.builder().command(windows ? "echo bad > input" : "printf bad > input").build(), readonly, definition).isSuccess());
+        assertFalse(terminal.process(ExecuteCommandRequest.builder().command(windows ? "echo bad > input" : "printf bad > input").build(), null, readonly, definition).isSuccess());
         assertEquals("original", Files.readString(input));
         assertFalse(Files.exists(project.resolve("blocked-directory")));
         assertFalse(((MxcWorkspaceSpec) converter.toSpec(business, WorkspaceType.SAND_BOX, AgentAccessMode.OUT_OF_WORKSPACE)).securityPolicy().deniedPaths().isEmpty());

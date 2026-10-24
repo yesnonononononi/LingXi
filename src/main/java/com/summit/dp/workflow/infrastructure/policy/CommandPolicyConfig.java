@@ -12,6 +12,7 @@ import com.summit.core.tool.ToolExecutionPolicy;
 import com.summit.dp.workflow.application.approval.CommandApprovalRegistrar;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ExecuteCommandRequest;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandGuard;
+import com.summit.dp.workflow.infrastructure.tools.terminal.CommandShell;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -47,18 +48,26 @@ public class CommandPolicyConfig {
                 return null;
             }
 
-            String command;
+
+            ExecuteCommandRequest request;
             try {
-                command = mapper.readValue(execution.getArgs(), ExecuteCommandRequest.class).getCommand();
+                request = mapper.readValue(execution.getArgs(), ExecuteCommandRequest.class);
             } catch (Exception e) {
                 return null;
             }
+            String command = request.getCommand();
             if (command == null || command.isBlank()) {
                 return null;
             }
 
-            ShellType shell = execution.getWorkspace() == null ? null
-                    : execution.getWorkspace().runtimeEnvironment().shellType();
+
+            ShellType shell;
+            try {
+                // 审批卡记录的就是「批准后真正要用的」解释器，与执行侧同一处解析。
+                shell = CommandShell.resolve(request, execution.getWorkspace());
+            } catch (IllegalArgumentException unsupported) {
+                return ToolExecuteResult.err(unsupported.getMessage());
+            }
             CommandGuard.Verdict verdict = CommandGuard.assess(command, shell);
 
             // 毁灭性命令：内核会拒绝，这里直接给出结论，避免用户批准一条注定被拒的命令。

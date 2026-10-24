@@ -36,7 +36,7 @@ public class CommandApprovalRegistrar {
 
         registrar.registerPromise(ToolCallRegisterCommand.promise(
                 toolCallId, sessionId, executionId, toolName, ToolCallKind.COMMAND, "命令审批",
-                converter.commandContent(command, workDir, shell.name(), workspaceId, execution.getArgs()),
+                converter.commandContent(command, workDir, shell.id(), workspaceId, execution.getArgs()),
                 converter.rawInput(execution.getArgs())));
     }
 }

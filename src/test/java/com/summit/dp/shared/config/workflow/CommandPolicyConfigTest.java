@@ -6,6 +6,7 @@ import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.RuntimeEnvironment;
+import com.summit.core.runtime.workspace.OsType;
 import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolDefinition;
@@ -50,6 +51,51 @@ class CommandPolicyConfigTest {
                         .executor(new CommandToolDefinitionExecutor(mapper)).build())
                 .args(mapper.writeValueAsString(Map.of("command", command)))
                 .attributes(attributes).build();
+    }
+
+    @Test
+    void approvalSnapshotRecordsTheEffectiveShellInsteadOfTheWorkspaceDefault() throws Exception {
+        Workspace workspace = mock(Workspace.class);
+        RuntimeEnvironment environment = mock(RuntimeEnvironment.class);
+        when(workspace.id()).thenReturn("workspace");
+        when(workspace.workDir()).thenReturn("/project");
+        when(workspace.runtimeEnvironment()).thenReturn(environment);
+        when(environment.osType()).thenReturn(OsType.WINDOWS);
+        when(environment.shellType()).thenReturn(ShellType.CMD);
+        Map<String, Object> attributes = new HashMap<>(CommandApprovalPolicy.toAttributes(CommandApprovalPolicy.PRE_EXEC_CONFIRM));
+        attributes.put(ExecutionAttributes.SESSION_ID, "1");
+        ToolExecution execution = ToolExecution.builder().workspace(workspace).executionId("1").id("tool-shell")
+                .toolDefinition(ToolDefinition.<CommandToolDefinitionExecutor>builder()
+                        .id("command").name("command").maxOutput(1000).timeout(30L)
+                        .executor(new CommandToolDefinitionExecutor(mapper)).build())
+                .args(mapper.writeValueAsString(Map.of("command", "Get-ChildItem", "shell", "pwsh")))
+                .attributes(attributes).build();
+
+        assertTrue(policy.beforeExecution(execution).isPromise());
+        // 快照里必须是「批准后真正要用的」解释器，而不是工作空间默认的 CMD。
+        verify(registrar).registerPromise(argThat(cmd -> cmd.content().contains("\"shell\":\"pwsh\"")));
+    }
+
+    @Test
+    void unsupportedShellBlocksTheApprovalCard() throws Exception {
+        Workspace workspace = mock(Workspace.class);
+        RuntimeEnvironment environment = mock(RuntimeEnvironment.class);
+        when(workspace.id()).thenReturn("workspace");
+        when(workspace.workDir()).thenReturn("/project");
+        when(workspace.runtimeEnvironment()).thenReturn(environment);
+        when(environment.osType()).thenReturn(OsType.WINDOWS);
+        when(environment.shellType()).thenReturn(ShellType.CMD);
+        Map<String, Object> attributes = new HashMap<>(CommandApprovalPolicy.toAttributes(CommandApprovalPolicy.PRE_EXEC_CONFIRM));
+        attributes.put(ExecutionAttributes.SESSION_ID, "1");
+        ToolExecution execution = ToolExecution.builder().workspace(workspace).executionId("1").id("tool-shell")
+                .toolDefinition(ToolDefinition.<CommandToolDefinitionExecutor>builder()
+                        .id("command").name("command").maxOutput(1000).timeout(30L)
+                        .executor(new CommandToolDefinitionExecutor(mapper)).build())
+                .args(mapper.writeValueAsString(Map.of("command", "ls", "shell", "bash")))
+                .attributes(attributes).build();
+
+        assertFalse(policy.beforeExecution(execution).isSuccess());
+        verifyNoInteractions(registrar);
     }
 
     @Test

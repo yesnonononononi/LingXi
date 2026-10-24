@@ -2,6 +2,7 @@ package com.summit.dp.workflow.infrastructure.tools.terminal.backend;
 
 import cn.hutool.core.util.IdUtil;
 import com.summit.core.runtime.CommandHandler;
+import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.task.domain.model.Task;
@@ -25,11 +26,11 @@ public class BackendProcesser {
 
     public Long submit(String command, Long sessionId, Long turnId, Long executionId, Workspace workspace, long timeout, long maxChars)
             throws IOException, InterruptedException {
-        return submit(command, null, sessionId, turnId, executionId, workspace, timeout, maxChars);
+        return submit(command, null, sessionId, turnId, executionId, null, workspace, timeout, maxChars);
     }
 
     public Long submit(String command, String intention, Long sessionId, Long turnId, Long executionId,
-                       Workspace workspace, long timeout, long maxChars) throws IOException, InterruptedException {
+                       ShellType shell, Workspace workspace, long timeout, long maxChars) throws IOException, InterruptedException {
         throwIf(command == null || command.isBlank(), "后台命令不能为空");
         throwIf(intention != null && intention.length() > Task.MAX_INTENTION, "后台任务用途不能超过 " + Task.MAX_INTENTION + " 字符");
         throwIf(sessionId == null || turnId == null || workspace == null, "后台任务缺少会话、轮次或执行环境");
@@ -42,7 +43,7 @@ public class BackendProcesser {
         manager.notifyTaskChanged(task);
         CommandHandler handle = null;
         try {
-            handle = workspace.bridge().commands().startCommand(command, workspace.workDir(), workspace.runtimeEnvironment().charset(),
+            handle = workspace.bridge().commands().startCommand(command, shell, workspace.workDir(), workspace.runtimeEnvironment().charset(),
                     timeout, TimeUnit.SECONDS, Math.min(maxChars, Task.MAX_OUTPUT));
             manager.registerBackendProcess(new BackendProcess(task, handle));
             return task.getId();

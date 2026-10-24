@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.Execution;
+import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecution;
@@ -15,6 +16,7 @@ import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallKeys;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ExecuteCommandRequest;
+import com.summit.dp.workflow.infrastructure.tools.terminal.CommandShell;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import com.summit.runtime.workspace.LocalWorkspaceProvider;
 import lombok.RequiredArgsConstructor;
@@ -50,19 +52,30 @@ public class ApprovedCommandRestorer {
             throw new ClientException("审批命令工具不可用");
         }
         Workspace workspace = resolveWorkspace(execution);
-        if (!Objects.equals(snapshot.workspaceId(), workspace.id())
-                || !Objects.equals(snapshot.workDir(), workspace.workDir())
-                || !Objects.equals(snapshot.shell(), workspace.runtimeEnvironment().shellType().name())) {
-            throw new ClientException("命令执行环境已变化，请重新发起审批");
-        }
         String args = snapshot.args();
+        ExecuteCommandRequest request;
         try {
-            if (!Objects.equals(snapshot.command(),
-                    objectMapper.readValue(args, ExecuteCommandRequest.class).getCommand())) {
-                throw new ClientException("命令审批参数不一致");
-            }
+            request = objectMapper.readValue(args, ExecuteCommandRequest.class);
         } catch (JsonProcessingException e) {
             throw new ClientException("命令审批参数无效");
+        }
+        if (!Objects.equals(snapshot.workspaceId(), workspace.id())
+                || !Objects.equals(snapshot.workDir(), workspace.workDir())) {
+            throw new ClientException("命令执行环境已变化，请重新发起审批");
+        }
+        // 解释器同样属于「环境」：恢复时用快照里的参数重新解析，必须与签发审批卡时一致。
+        // 比较不区分大小写，旧快照记录的是 ShellType 枚举名（如 CMD），新快照记录小写 id。
+        ShellType shell;
+        try {
+            shell = CommandShell.resolve(request, workspace);
+        } catch (IllegalArgumentException unsupported) {
+            throw new ClientException(unsupported.getMessage());
+        }
+        if (shell == null || snapshot.shell() == null || !shell.id().equalsIgnoreCase(snapshot.shell())) {
+            throw new ClientException("命令执行环境已变化，请重新发起审批");
+        }
+        if (!Objects.equals(snapshot.command(), request.getCommand())) {
+            throw new ClientException("命令审批参数不一致");
         }
         // 工具槽位全部落定前不会再次调用模型，审批沿用暂停时的响应身份。
         return ToolExecution.builder()

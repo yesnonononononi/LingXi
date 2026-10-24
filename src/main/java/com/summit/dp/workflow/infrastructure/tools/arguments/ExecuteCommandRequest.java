@@ -16,4 +16,6 @@ public class ExecuteCommandRequest  {
     private String command;
     private String intention;
     private boolean background;
+    /** 本次执行要求的目标解释器 id（cmd/pwsh/powershell/bash/sh/zsh）；为空表示沿用工作空间默认。 */
+    private String shell;
 }

@@ -4,6 +4,7 @@ import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitio
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.RuntimeEnvironment;
+import com.summit.core.runtime.workspace.OsType;
 import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceCommands;
@@ -22,10 +23,12 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -49,16 +52,61 @@ class CommandToolDefinitionExecutorTest {
         when(workspace.bridge()).thenReturn(bridge);
         when(bridge.commands()).thenReturn(commands);
         when(workspace.workDir()).thenReturn(".");
-        when(commands.execute(anyString(), eq("."), eq(StandardCharsets.UTF_8), eq(1L), eq(TimeUnit.SECONDS), eq(100L)))
+        when(commands.execute(anyString(), any(), eq("."), eq(StandardCharsets.UTF_8), eq(1L), eq(TimeUnit.SECONDS), eq(100L)))
                 .thenReturn(new WorkspaceCommands.CommandResult(0, "A B", false, false));
         ToolDefinition<?> definition = ToolDefinition.builder().id("execute_command").name("execute_command")
                 .timeout(1L).maxOutput(100).executor(executor).build();
 
         ToolExecuteResult result = executor.process(ExecuteCommandRequest.builder().command(command).build(),
-                workspace, definition);
+                null, workspace, definition);
 
         assertTrue(result.isSuccess());
-        verify(commands).execute(command, ".", StandardCharsets.UTF_8, 1L, TimeUnit.SECONDS, 100L);
+        verify(commands).execute(command, null, ".", StandardCharsets.UTF_8, 1L, TimeUnit.SECONDS, 100L);
+    }
+
+    @Test
+    void requestedShellRunsInThatInterpreter() throws Exception {
+        Workspace workspace = mock(Workspace.class);
+        WorkspaceBridge bridge = mock(WorkspaceBridge.class);
+        WorkspaceCommands commands = mock(WorkspaceCommands.class);
+        when(workspace.runtimeEnvironment()).thenReturn(RuntimeEnvironment.builder()
+                .osType(OsType.WINDOWS).shellType(ShellType.CMD).charset(StandardCharsets.UTF_8).build());
+        when(workspace.bridge()).thenReturn(bridge);
+        when(bridge.commands()).thenReturn(commands);
+        when(workspace.workDir()).thenReturn(".");
+        when(commands.execute(anyString(), any(), eq("."), eq(StandardCharsets.UTF_8), eq(1L), eq(TimeUnit.SECONDS), eq(100L)))
+                .thenReturn(new WorkspaceCommands.CommandResult(0, "ok", false, false));
+        ToolDefinition<?> definition = ToolDefinition.builder().id("execute_command").name("execute_command")
+                .timeout(1L).maxOutput(100).executor(executor).build();
+
+        ToolExecuteResult result = executor.execute(ToolExecution.builder().id("call").executionId("1")
+                .toolDefinition(definition).workspace(workspace).attributes(Map.of()).eventMetaData(Map.of())
+                .args("{\"command\":\"Get-ChildItem\",\"shell\":\"pwsh\"}").build());
+
+        assertTrue(result.isSuccess(), result.getToolOutput());
+        verify(commands).execute("Get-ChildItem", ShellType.PWSH, ".", StandardCharsets.UTF_8, 1L, TimeUnit.SECONDS, 100L);
+    }
+
+    @Test
+    void shellThatDoesNotBelongToThisPlatformIsRejectedBeforeRunningAnything() throws Exception {
+        Workspace workspace = mock(Workspace.class);
+        WorkspaceBridge bridge = mock(WorkspaceBridge.class);
+        WorkspaceCommands commands = mock(WorkspaceCommands.class);
+        when(workspace.runtimeEnvironment()).thenReturn(RuntimeEnvironment.builder()
+                .osType(OsType.WINDOWS).shellType(ShellType.CMD).charset(StandardCharsets.UTF_8).build());
+        when(workspace.bridge()).thenReturn(bridge);
+        when(bridge.commands()).thenReturn(commands);
+        when(workspace.workDir()).thenReturn(".");
+        ToolDefinition<?> definition = ToolDefinition.builder().id("execute_command").name("execute_command")
+                .timeout(1L).maxOutput(100).executor(executor).build();
+
+        ToolExecuteResult result = executor.execute(ToolExecution.builder().id("call").executionId("1")
+                .toolDefinition(definition).workspace(workspace).attributes(Map.of()).eventMetaData(Map.of())
+                .args("{\"command\":\"ls\",\"shell\":\"bash\"}").build());
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getToolOutput().contains("bash"), result.getToolOutput());
+        verifyNoInteractions(commands);
     }
 
     @Test
@@ -87,7 +135,7 @@ class CommandToolDefinitionExecutorTest {
         when(workspace.bridge()).thenReturn(bridge);
         when(bridge.commands()).thenReturn(commands);
         when(workspace.workDir()).thenReturn(".");
-        when(commands.execute(anyString(), eq("."), eq(StandardCharsets.UTF_8), eq(240L), eq(TimeUnit.SECONDS), eq(100L)))
+        when(commands.execute(anyString(), any(), eq("."), eq(StandardCharsets.UTF_8), eq(240L), eq(TimeUnit.SECONDS), eq(100L)))
                 .thenThrow(new InterruptedException("stop requested"));
 
         ToolExecuteResult result = executor.execute(execution("sleep 600", "长时间等待", workspace));
