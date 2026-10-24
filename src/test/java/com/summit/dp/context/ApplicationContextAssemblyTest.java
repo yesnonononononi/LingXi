@@ -1,6 +1,9 @@
 package com.summit.dp.context;
 
 import com.summit.ddd.infrastructure.repository.json.AbstractJsonRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.adapter.langchain4j.codec.tool.ToolCodecAdapter;
+import com.summit.core.tool.ToolDefinition;
 import com.summit.core.runtime.loop.LoopInterceptor;
 import com.summit.adapter.langchain4j.mcp.McpClientFactory;
 import com.summit.core.mcp.ScopeMcpProvider;
@@ -11,7 +14,9 @@ import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendM
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskLoopInterceptor;
 import com.summit.dp.workflow.infrastructure.mcp.HostMcpScopeProvider;
+import com.summit.dp.workflow.infrastructure.tools.config.ToolDefinitionSchemaGate;
 import com.summit.harness.springbootautoconfigure.config.mcp.McpAutoConfiguration;
+import dev.langchain4j.agent.tool.ToolSpecification;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,10 +24,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -115,6 +122,34 @@ class ApplicationContextAssemblyTest {
                 "SubAgentWaitInterceptor 必须被 DefaultLoopInterceptorProcessor 收集，实际=" + collected);
         assertTrue(collected.stream().anyMatch(i -> i instanceof BackgroundTaskLoopInterceptor),
                 "后台终端通知拦截器必须进入实际执行链");
+    }
+
+    @Test
+    @DisplayName("④ 全量工具 Schema 门禁：装配出来的每个 ToolDefinition 都能被 Jackson 解析并转换成框架工具")
+    void everyAssembledToolDefinitionHasUsableSchema() {
+        // 门禁 bean 必须真实存在：否则这条断言只剩「我自己也解析了一遍」，挡不住启动期漏检。
+        assertEquals(1, context.getBeansOfType(ToolDefinitionSchemaGate.class).size(),
+                "启动期 Schema 门禁必须装配且唯一");
+
+        Map<String, ToolDefinition> definitions = context.getBeansOfType(ToolDefinition.class);
+        assertTrue(definitions.size() >= 10, "静态装配的工具数量异常，实际=" + definitions.keySet());
+
+        ObjectMapper objectMapper = context.getBean(ObjectMapper.class);
+        ToolCodecAdapter codec = new ToolCodecAdapter();
+        List<String> names = new ArrayList<>();
+        definitions.forEach((beanName, definition) -> {
+            assertDoesNotThrow(() -> objectMapper.readTree(definition.parametersJsonSchema()),
+                    () -> "工具 " + beanName + " 的参数 Schema 不是合法 JSON");
+            ToolSpecification specification = assertDoesNotThrow(() -> codec.toFrameworkTool(definition),
+                    () -> "工具 " + beanName + " 无法转换为框架工具定义");
+            assertEquals(definition.name(), specification.name());
+            names.add(definition.name());
+        });
+
+        assertTrue(names.containsAll(List.of("execute_command", "manage_command", "read_file", "edit_file",
+                        "read_image", "web_search", "require_choice", "call_sub_agent", "peek_teammate_state",
+                        "send_mail_to_agent", "create_plan")),
+                "门禁必须覆盖全部基础工具，实际=" + names);
     }
 
     @Test
