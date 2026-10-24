@@ -39,6 +39,7 @@ import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import com.summit.runtime.model.DefaultChatModelInvoker;
 import com.summit.runtime.model.DefaultStreamingModelInvoker;
 import com.sun.net.httpserver.HttpServer;
+import dev.langchain4j.http.client.okhttp.OkHttpClient;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -143,6 +144,7 @@ class ChatControllerLifecycleTest {
                     requests.incrementAndGet(), retrySeen));
             server.start();
             StreamingChatModelAdapter model = new StreamingChatModelAdapter(OpenAiStreamingChatModel.builder()
+                    .httpClientBuilder(OkHttpClient.builder())
                     .baseUrl("http://127.0.0.1:" + server.getAddress().getPort() + "/v1")
                     .apiKey("test").modelName("controlled-model").timeout(Duration.ofSeconds(3)).build());
             when(modelFactory.select(any(ModelConfig.class))).thenReturn(new RequestModelInvokerFactory.Selection(

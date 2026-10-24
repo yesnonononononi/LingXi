@@ -32,6 +32,7 @@ import com.summit.runtime.loop.DefaultLoopInterceptorProcessor;
 import com.summit.runtime.tool.DefaultToolExecutionManager;
 import com.summit.runtime.workspace.LocalWorkspace;
 import com.sun.net.httpserver.HttpServer;
+import dev.langchain4j.http.client.okhttp.OkHttpClient;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -93,6 +94,7 @@ class ReadImageLoopIntegrationTest {
                     mapper, new ImageNormalizer(), cache);
             RuntimeEventPublisher events = new RuntimeEventPublisher(List.of());
             ChatModelAdapter model = new ChatModelAdapter(OpenAiChatModel.builder()
+                    .httpClientBuilder(OkHttpClient.builder())
                     .baseUrl("http://127.0.0.1:" + server.getAddress().getPort() + "/v1")
                     .apiKey("local-test-key").modelName("arbitrary-vision-model").timeout(Duration.ofSeconds(5)).maxRetries(0).build());
             AgentRequest request = AgentRequest.builder().toolList(List.of(ToolCatalog.READ_IMAGE))

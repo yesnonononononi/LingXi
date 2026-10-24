@@ -23,6 +23,7 @@ import com.summit.core.tool.ToolExecutionManager;
 import com.summit.core.tool.ToolRegistry;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
+import com.summit.dp.workflow.infrastructure.config.ModelHttpClientConfiguration;
 import com.summit.dp.workflow.infrastructure.listener.agent.AgentEventListener;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import com.summit.harness.springbootautoconfigure.config.ModelProviderConfig;
@@ -42,7 +43,6 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpsConfigurator;
 import com.sun.net.httpserver.HttpsServer;
-import dev.langchain4j.http.client.HttpClientBuilderFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -85,7 +85,7 @@ import static org.mockito.Mockito.when;
 
 /** 同一套真实网络故障贯穿模型选择、执行终态与业务事件，连接器由运行参数切换。 */
 class HttpClientNetworkComparisonTest {
-    private static final String CLIENT = System.getProperty("lingxi.network.client", "JDK");
+    private static final String CLIENT = System.getProperty("lingxi.network.client", "OKHTTP");
     private static final List<Measurement> RESULTS = new CopyOnWriteArrayList<>();
     private static final AtomicInteger IDS = new AtomicInteger(1000);
 
@@ -198,9 +198,7 @@ class HttpClientNetworkComparisonTest {
         @SuppressWarnings("unchecked")
         private Harness(Endpoint endpoint, boolean anthropic) throws Exception {
             if (CLIENT.equals("OKHTTP")) {
-                HttpClientBuilderFactory factory = (HttpClientBuilderFactory) Class.forName(
-                        "dev.langchain4j.http.client.okhttp.OkHttpClientBuilderFactory").getConstructor().newInstance();
-                context.registerBean("applicationHttpClientBuilderFactory", HttpClientBuilderFactory.class, () -> factory);
+                context.register(ModelHttpClientConfiguration.class);
             } else {
                 assertEquals("JDK", CLIENT, "未知连接器不能悄悄退回默认实现");
             }

@@ -1,5 +1,7 @@
 # JDK 与 OkHttp 网络调用对比（2026-10-23）
 
+后续变更：LingXi 已在 [2026-10-24 接入 OkHttp](okhttp-adoption-2026-10-24.md)。下文默认客户端与验证结果记录的是本次对比时的状态；当前复现无需启用测试 profile。
+
 保留 JDK 默认实现，允许应用通过 `HttpClientBuilderFactory` 选择 OkHttp 或其他实现。本轮没有测出 OkHttp 稳定的延迟、连接复用或常见网络错误恢复优势；明确差异是读取空闲超时。替换连接器不能替代框架的异常分类。
 
 ## 已完成的改动
@@ -73,7 +75,7 @@ mvn -B -ntp "-Dgpg.skip=true" "-Dmaven.javadoc.skip=true" install
 
 ```powershell
 mvn -B -ntp "-Dtest=HttpClientNetworkComparisonTest,StreamingRetryContractTest,RuntimeModelTimeoutTest,PromptOptimizationTest" "-Dlingxi.network.client=JDK" test
-mvn -B -ntp -Phttp-client-comparison "-Dtest=HttpClientNetworkComparisonTest" "-Dlingxi.network.client=OKHTTP" test
+mvn -B -ntp "-Dtest=HttpClientNetworkComparisonTest" "-Dlingxi.network.client=OKHTTP" test
 ```
 
 预热计时可单独运行，分别将连接器设为 JDK、OKHTTP，并交替重复三轮：

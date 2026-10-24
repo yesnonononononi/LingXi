@@ -28,6 +28,8 @@
     </scm>
     <properties>
         <java.version>21</java.version>
+        <!-- OkHttp 所需 Kotlin 版本不能被 Spring Boot 的默认版本覆盖。 -->
+        <kotlin.version>2.2.21</kotlin.version>
         <lingxi.build.directory>${project.basedir}/target</lingxi.build.directory>
         <mybatis-plus>3.5.9</mybatis-plus>
         <lingxi-starter>1.1.8-SNAPSHOT</lingxi-starter>
@@ -103,24 +105,12 @@
             <artifactId>java-diff-utils</artifactId>
             <version>4.15</version>
         </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-http-client-okhttp</artifactId>
+            <version>1.22.0-beta32</version>
+        </dependency>
     </dependencies>
-
-    <profiles>
-        <profile>
-            <id>http-client-comparison</id>
-            <properties>
-                <kotlin.version>2.2.21</kotlin.version>
-            </properties>
-            <dependencies>
-                <dependency>
-                    <groupId>dev.langchain4j</groupId>
-                    <artifactId>langchain4j-http-client-okhttp</artifactId>
-                    <version>1.22.0-beta32</version>
-                    <scope>test</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-    </profiles>
 
     <build>
         <directory>${lingxi.build.directory}</directory>

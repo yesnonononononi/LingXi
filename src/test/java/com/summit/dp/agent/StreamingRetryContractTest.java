@@ -36,6 +36,7 @@ import com.summit.runtime.loop.control.InMemoryActiveExecutionRegistry;
 import com.summit.runtime.model.DefaultStreamingModelInvoker;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import dev.langchain4j.http.client.okhttp.OkHttpClient;
 import dev.langchain4j.model.anthropic.AnthropicStreamingChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -75,9 +76,11 @@ class StreamingRetryContractTest {
             server.start();
             String base = "http://127.0.0.1:" + server.getAddress().getPort();
             StreamingChatModelAdapter model = anthropic
-                    ? new StreamingChatModelAdapter(AnthropicStreamingChatModel.builder().baseUrl(base).apiKey("test")
+                    ? new StreamingChatModelAdapter(AnthropicStreamingChatModel.builder()
+                            .httpClientBuilder(OkHttpClient.builder()).baseUrl(base).apiKey("test")
                             .modelName("probe").maxTokens(100).timeout(Duration.ofSeconds(3)).build())
-                    : new StreamingChatModelAdapter(OpenAiStreamingChatModel.builder().baseUrl(base + "/v1").apiKey("test")
+                    : new StreamingChatModelAdapter(OpenAiStreamingChatModel.builder()
+                            .httpClientBuilder(OkHttpClient.builder()).baseUrl(base + "/v1").apiKey("test")
                             .modelName("probe").timeout(Duration.ofMillis(mode.endsWith("TIMEOUT") ? 500 : 3000)).build());
             ExecutionLocator locator = mock(ExecutionLocator.class);
             when(locator.sessionId("101")).thenReturn(7L);
