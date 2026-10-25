@@ -67,6 +67,15 @@
   --shadow-lx-2:               var(--lx-shadow-2);
   --shadow-lx-3:               var(--lx-shadow-3);
   --blur-lx-panel:             var(--lx-blur-panel);
+
+  /*
+   * 对话列宽单一真源：生成 `max-w-lx-chat` 工具类（Tailwind v4 由 --container-* 自动派生
+   * max-w-* 工具类）。消息列表 / 输入区 / 执行控制条 / 后台任务面板必须全部消费它，
+   * 任一处写死具体宽度都会导致左右不对齐。回归守卫见 tests/chatColumnWidth.test.cjs。
+   * 注意：这是布局宽度（字面量），不进 theme/tokens.css 与 theme/tokens.ts —— 布局宽度
+   * 不属于主题包可覆盖范围，tokens.css/tokens.ts 只管颜色与形态令牌。
+   */
+  --container-lx-chat:         64rem;
 }
 
 /* Vue Bits 纯黑风格亮/暗模式 CSS 变量与主题拓展 */

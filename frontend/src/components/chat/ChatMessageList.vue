@@ -16,7 +16,7 @@
     @load="emit('load')"
     @scroll="handleScroll"
   >
-    <div :class="['flex-1 w-full space-y-3', compact ? 'px-3.5 py-4' : 'max-w-3xl mx-auto py-6 px-4']">
+    <div :class="['flex-1 w-full space-y-3', compact ? 'px-3.5 py-4' : 'max-w-lx-chat mx-auto py-6 px-4']">
       <!-- 历史消息加载失败：可见失败态 + 重试 -->
       <div
         v-if="historyLoadError"

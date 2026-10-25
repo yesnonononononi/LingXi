@@ -1160,7 +1160,7 @@ defineExpose({
 </script>
 
 <template>
-  <div class="w-full max-w-3xl mx-auto px-4 select-none">
+  <div class="w-full max-w-lx-chat mx-auto px-4 select-none">
     <!-- Top Pills Row: Workspace Selector -->
     <div
       v-if="allowWorkspaceChange"

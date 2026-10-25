@@ -24,7 +24,7 @@ watch(sessionId, () => { expanded.value = false; });
 </script>
 
 <template>
-  <div v-if="visible" class="background-tasks w-full max-w-3xl mx-auto px-4" :data-theme="isDark ? 'dark' : 'light'">
+  <div v-if="visible" class="background-tasks w-full max-w-lx-chat mx-auto px-4" :data-theme="isDark ? 'dark' : 'light'">
     <button v-if="!expanded" type="button" class="task-pill" data-testid="background-task-toggle"
       :aria-label="t('chat.backgroundTasks.expand')" :aria-expanded="false" @click="expanded = true; refresh()">
       <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.2"/><path d="M10 5.5V10l3 2"/></svg>

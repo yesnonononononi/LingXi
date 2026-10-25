@@ -76,7 +76,7 @@
     </div>
 
     <!-- 2. Agent 回复展示样式 (匹配右图：无头像，顶部折叠"已思考 >"及分割线，正文高亮，底部丰富状态操作栏) -->
-    <div v-else class="flex flex-col items-start w-full max-w-3xl space-y-2.5">
+    <div v-else class="flex flex-col items-start w-full max-w-lx-chat space-y-2.5">
       
       <!-- 顶部：思考过程与工具调用统一折叠区 (发光字体与差异化微光) -->
       <div v-if="hasProcessContent" class="w-full">
