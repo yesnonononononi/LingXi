@@ -119,6 +119,13 @@ public class PreparedChatExecutor {
             Execution result = agentWorkflowOrchestrator.execute(context, execution);
             modelContextService.replace(ExecutionIdentity.sessionId(result), result.getMessages());
             return result;
+        } catch (LinkageError error) {
+            // 异步任务不会把 Error 返回给受理接口，依赖不兼容也必须落失败终态并通知界面。
+            IllegalStateException failure = new IllegalStateException(
+                    "运行依赖版本不兼容，请重新加载 Maven 依赖并重启后端", error);
+            log.error("执行依赖加载失败: executionId={}", context.executionContext().executionId(), error);
+            markStartupFailedQuietly(context, failure);
+            throw failure;
         } catch (RuntimeException e) {
             markStartupFailedQuietly(context, e);
             throw e;
