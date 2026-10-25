@@ -34,6 +34,14 @@
 - 实现用 `as const` 对象 + 派生联合类型，不是 `enum` —— tsconfig 开了 `erasableSyntaxOnly`，enum 语法编译不过。
 - MCP 工具名是远端下发的动态集合（`mcp_` 前缀），不入枚举。
 
+## 前端：对话列宽只有单一真源
+
+- 中间对话列（消息列表 / 输入区 / assistant 消息体 / 执行控制条 / 后台任务面板）宽度**只定义一次**：`src/style.css` 的 `@theme inline` 里 `--container-lx-chat`，Tailwind v4 由 `--container-*` 自动派生 `max-w-lx-chat`。任何地方再写 `max-w-3xl` / `max-w-[48rem]` 就是回退缺陷 —— 只改一两处，列表和输入框会左右不对齐。
+- 布局宽度是字面量，**不进** `theme/tokens.css` 与 `theme/tokens.ts`（那两处管颜色与形态令牌，要能被主题包覆盖）。
+- 守护用例 `frontend/tests/chatColumnWidth.test.cjs` 按消费者签名锚定到承载列宽的那个元素；改这些元素的 class 顺序/命名要同步更新 `anchor`。
+- 前端 `package.json` 的 `test` / `test:all` 是**显式枚举**测试文件，新增用例必须手动接进去，否则等于没写（也不会有人因为漏接而变红）。
+
+
 ## 命名：不要 `xxxOf`
 
 - **不用以 `of` 结尾的命名**，方法名与变量名都算：`runStatusOf(...)`、`statusOf(...)`、`kindOf(...)`、`typeOf(...)`、`sessionIdOf(...)`、`taskOf(...)`、`baselineOf(...)` 这类一律不要。
