@@ -44,6 +44,8 @@ const TARGETS = [
     sel: `document.querySelector('[data-scene="choice"] input[type="text"]')` },
   { key: 'dropdownMenuTitle', desc: 'DropUpSelect 展开后菜单标题（折 text-faint 目标）',
     sel: `(()=>{const p=document.querySelector('[role="listbox"]');if(!p)return null;return [...p.querySelectorAll('div')].find(el=>el.textContent.trim()==='下拉菜单标题')||null;})()` },
+  { key: 'chatInputTextarea', desc: 'ChatInputArea 输入框（插件化试点 B 档：插槽化前后必须逐字节等价）',
+    sel: `document.querySelector('[data-scene="chat-input"] textarea')` },
 ];
 
 const STYLE_PROPS = ['color', 'backgroundColor', 'borderTopColor', 'outlineColor', 'textShadow', 'opacity', 'fontSize', 'fontWeight'];
@@ -53,11 +55,15 @@ import {ref} from 'vue';
 import CardHeader from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/components/chat/CardHeader.vue'))}';
 import RequireChoiceCard from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/components/chat/RequireChoiceCard.vue'))}';
 import DropUpSelect from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/components/common/DropUpSelect.vue'))}';
+import ChatInputArea from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/components/chat/ChatInputArea.vue'))}';
 import '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/style.css'))}';
 const dark=ref(false);
 const choiceCard={kind:'CHOICE',toolCallId:'choice-0',conversationId:'42',title:'选择交付方式？',content:'选择交付方式？',options:['源码','安装包','Docker 镜像'],status:'pending',pending:true,version:'2',allowedActions:['ANSWER']};
 const sel=ref('a');
 const opts=[{value:'a',label:'选项一'},{value:'b',label:'选项二'},{value:'c',label:'选项三'}];
+const inputUsage={usedTokens:24600,maxTokens:200000,ratio:0.123};
+const inputModels=[{id:'m1',name:'GPT-Test',modelName:'gpt-test'}];
+const inputAgents=[{id:'a1',name:'代码助手',modelId:'m1'}];
 window.setDark=value=>{dark.value=value;const el=document.documentElement;el.classList.toggle('dark',value);el.classList.toggle('light',!value);el.setAttribute('data-theme',value?'dark':'light');document.body.style.background=value?'#18181b':'#ffffff';};
 window.openDropdown=()=>{const trigger=document.querySelector('[data-scene="dropdown"] button');if(trigger&&trigger.getAttribute('aria-expanded')!=='true')trigger.click();};
 window.showCustomInput=()=>{};
@@ -73,6 +79,12 @@ window.focusCustomInput=()=>{const input=document.querySelector('[data-scene="ch
     </section>
     <section data-scene="dropdown" style="padding:10px 8px;min-height:260px">
       <DropUpSelect v-model="sel" :options="opts" :is-dark="dark" menu-title="下拉菜单标题" />
+    </section>
+    <section data-scene="chat-input" style="padding:10px 8px;min-height:220px">
+      <ChatInputArea :is-dark="dark" :context-usage="inputUsage" :models="inputModels" />
+    </section>
+    <section data-scene="chat-input-driven" style="padding:10px 8px;min-height:220px">
+      <ChatInputArea :is-dark="dark" :models="inputModels" :agents="inputAgents" selected-agent-id="a1" />
     </section>
   </main>
 </template>`;
