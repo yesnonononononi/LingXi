@@ -362,7 +362,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, provide } from 'vue';
+import { ref, provide, onMounted } from 'vue';
 import { t } from '../../i18n';
 import { isOk } from '../../utils/api';
 import { LogAPI } from '../../services/log';
@@ -389,6 +389,9 @@ import SidebarFooterBar from '../../components/chat/SidebarFooterBar.vue';
 import WelcomeView from '../../components/chat/WelcomeView.vue';
 import ChatMessageList from '../../components/chat/ChatMessageList.vue';
 import ChatInputArea from '../../components/chat/ChatInputArea.vue';
+// 命令面契约：inputAreaRef 只按这 11 项命令使用，不再用 InstanceType 绑组件内部形状（B-5 阶段 1a）
+import type { ChatInputCommands } from '../../types/chatInputCommands';
+import { assertChatInputCommands } from '../../utils/assertChatInputCommands';
 import ChatExecutionControls from '../../components/chat/ChatExecutionControls.vue';
 import BackgroundTaskPanel from '../../components/chat/BackgroundTaskPanel.vue';
 import ChatResendDialog from '../../components/chat/ChatResendDialog.vue';
@@ -399,7 +402,7 @@ import SubSessionsOverviewDrawer from '../../components/chat/SubSessionsOverview
 import SubSessionDetailDrawer from '../../components/chat/SubSessionDetailDrawer.vue';
 import SubAgentSidePanel from '../../components/chat/SubAgentSidePanel.vue';
 
-const inputAreaRef = ref<InstanceType<typeof ChatInputArea> | null>(null);
+const inputAreaRef = ref<ChatInputCommands | null>(null);
 /**
  * 「去聊天里说」能力注入：PlanCard 等深层卡片消费 CHAT_INPUT_FOCUS_KEY 取用本回调。
  *
@@ -408,6 +411,16 @@ const inputAreaRef = ref<InstanceType<typeof ChatInputArea> | null>(null);
  * 用可选链兜住「输入框尚未挂载 / 已卸载」的窗口期，避免点击时机竞态抛错。</p>
  */
 provideChatInputFocus(() => inputAreaRef.value?.focusInput?.());
+
+/**
+ * dev 期命令面自检：确认 ChatInputArea 的 defineExpose 与 `ChatInputCommands` 契约一致。
+ *
+ * <p>为什么放在 `onMounted`：`inputAreaRef` 只有在子组件挂载后才有值，早于 `onMounted`
+ * 永远是 null（会得到一条无意义的"目标为空"告警）。只在 DEV 执行，生产零开销。</p>
+ */
+onMounted(() => {
+  assertChatInputCommands(inputAreaRef.value, 'ChatView.onMounted');
+});
 const messagesContainerRef = ref<InstanceType<typeof ChatMessageList> | null>(null);
 const { fileTabs, activeFileId, filePreviewOpen, openFilePreview, closeFileTab, refreshFile, runFileAction } = useFilePreview();
 provide(FILE_PREVIEW_KEY, openFilePreview);

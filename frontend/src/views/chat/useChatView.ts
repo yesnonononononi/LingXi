@@ -29,7 +29,7 @@ import { useDesktopNotification } from '../../composables/useDesktopNotification
 import { isPersistedSessionId, toServerSessionId } from '../../utils/ids';
 import { toPositiveInt, isOk } from '../../utils/api';
 
-import type ChatInputArea from '../../components/chat/ChatInputArea.vue';
+import type { ChatInputCommands } from '../../types/chatInputCommands';
 import type ScrollCursorLoader from '../../components/common/ScrollCursorLoader.vue';
 import type ChatMessageList from '../../components/chat/ChatMessageList.vue';
 
@@ -37,7 +37,7 @@ import type ChatMessageList from '../../components/chat/ChatMessageList.vue';
 const SUBSCRIBE_READY_TIMEOUT_MS = 5000;
 
 export interface ChatViewTemplateRefs {
-  inputAreaRef?: Ref<InstanceType<typeof ChatInputArea> | null>;
+  inputAreaRef?: Ref<ChatInputCommands | null>;
   messagesContainerRef?: Ref<InstanceType<typeof ScrollCursorLoader> | InstanceType<typeof ChatMessageList> | any>;
 }
 
@@ -727,7 +727,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   });
 
   // ---------- 输入区与团队 ----------
-  const inputAreaRef = templateRefs?.inputAreaRef ?? ref<InstanceType<typeof ChatInputArea> | null>(null);
+  const inputAreaRef = templateRefs?.inputAreaRef ?? ref<ChatInputCommands | null>(null);
   const isTeamModalOpen = ref(false);
 
   const handleOpenTeamModal = () => { isTeamModalOpen.value = true; };
