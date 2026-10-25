@@ -25,7 +25,8 @@ class PersonalizationApiTest {
 
     @Test
     void currentCreatesRealRecordAndOptionsExposeSubmissionValues() throws Exception {
-        Path path = directory.resolve("personalization.json");
+        Path path = directory.resolve("blank-machine/config/personalization.json");
+        assertFalse(Files.exists(path.getParent()));
         PersonalizationServiceImpl service = new PersonalizationServiceImpl(new PersonalizationRepositoryImpl(path.toString()));
         MockMvc mvc = createMvc(service);
         mvc.perform(get("/personalization/current")).andExpect(status().isOk())
@@ -35,8 +36,12 @@ class PersonalizationApiTest {
                 .andExpect(jsonPath("$.data.commonAgentName").value(""))
                 .andExpect(jsonPath("$.data.customInstruction").value(""));
         assertTrue(Files.exists(path));
-        assertEquals(1, new PersonalizationRepositoryImpl(path.toString()).queryByPage(1, 10).getTotal());
-        mvc.perform(get("/personalization/current")).andExpect(jsonPath("$.data.id").value("1"));
+        PersonalizationRepositoryImpl reopened = new PersonalizationRepositoryImpl(path.toString());
+        assertEquals(1, reopened.queryByPage(1, 10).getTotal());
+        createMvc(new PersonalizationServiceImpl(reopened)).perform(get("/personalization/current"))
+                .andExpect(jsonPath("$.data.id").value("1"))
+                .andExpect(jsonPath("$.data.replyStyle").value("DEFAULT"));
+        assertEquals(1, reopened.queryByPage(1, 10).getTotal());
         mvc.perform(get("/personalization/reply-styles")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].value").value("DEFAULT"))
                 .andExpect(jsonPath("$.data[1].value").value("PROFESSIONAL_STRICT"))

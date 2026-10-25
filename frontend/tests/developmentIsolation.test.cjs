@@ -5,7 +5,18 @@ const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 const { spawnSync } = require('node:child_process');
+const http = require('node:http');
 const { transformSync } = require('esbuild');
+
+function loadViteConfig() {
+  const source = fs.readFileSync(path.join(__dirname, '../vite.config.ts'), 'utf8');
+  const code = transformSync(source, { loader: 'ts', format: 'cjs' }).code;
+  const module = { exports: {} };
+  vm.runInNewContext(code, { module, exports: module.exports, __dirname,
+    require: name => name === 'vite' ? { defineConfig: value => value }
+      : name === '@vitejs/plugin-vue' ? () => ({}) : require(name) });
+  return module.exports.default;
+}
 
 test('开发页面忽略旧桌面地址，安装版保留默认地址和用户配置', () => {
   const source = fs.readFileSync(path.join(__dirname, '../src/utils/apiConfig.ts'), 'utf8');
@@ -25,16 +36,40 @@ test('开发页面忽略旧桌面地址，安装版保留默认地址和用户�
 });
 
 test('Vite 的实际代理表将业务请求送到开发端口', () => {
-  const source = fs.readFileSync(path.join(__dirname, '../vite.config.ts'), 'utf8');
-  const code = transformSync(source, { loader: 'ts', format: 'cjs' }).code;
-  const module = { exports: {} };
-  vm.runInNewContext(code, { module, exports: module.exports, __dirname,
-    require: name => name === 'vite' ? { defineConfig: value => value }
-      : name === '@vitejs/plugin-vue' ? () => ({}) : require(name) });
-  const proxy = module.exports.default.server.proxy;
-  for (const prefix of ['/a', '/config', '/session', '/mcp']) {
-    assert.equal(proxy[prefix].target, 'http://localhost:8089');
+  const proxy = loadViteConfig().server.proxy;
+  for (const prefix of ['/a', '/config', '/session', '/mcp', '/personalization', '/provider', '/skill', '/log']) {
+    assert.equal(proxy[prefix]?.target, 'http://localhost:8089', prefix);
   }
+});
+
+test('设置请求经过真实 Vite 代理返回后端 JSON，不能落到 HTML 页面', async t => {
+  const requests = [];
+  const backend = http.createServer((request, response) => {
+    requests.push([request.method, request.url]);
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify({ code: 1, data: { method: request.method, path: request.url } }));
+  });
+  t.after(() => new Promise(resolve => { backend.closeAllConnections(); backend.close(resolve); }));
+  await new Promise(resolve => backend.listen(0, '127.0.0.1', resolve));
+  const config = loadViteConfig();
+  const target = `http://127.0.0.1:${backend.address().port}`;
+  const { createServer } = await import('vite');
+  const vite = await createServer({ ...config, configFile: false, root: path.join(__dirname, '..'),
+    logLevel: 'silent', server: { ...config.server, host: '127.0.0.1', port: 0,
+      watch: null, proxy: Object.fromEntries(Object.entries(config.server.proxy)
+        .map(([prefix, options]) => [prefix, { ...options, target }])) } });
+  t.after(() => vite.close());
+  await vite.listen();
+  const base = `http://127.0.0.1:${vite.httpServer.address().port}`;
+  const endpoints = [['GET', '/personalization/current'], ['GET', '/personalization/reply-styles'],
+    ['POST', '/personalization/update'], ['GET', '/provider/list'], ['GET', '/skill/list'], ['GET', '/log/location']];
+  for (const [method, endpoint] of endpoints) {
+    const response = await fetch(base + endpoint, { method });
+    assert.equal(response.status, 200, endpoint);
+    assert.match(response.headers.get('content-type'), /application\/json/, endpoint);
+    assert.deepEqual(await response.json(), { code: 1, data: { method, path: endpoint } });
+  }
+  assert.deepEqual(requests, endpoints);
 });
 
 test('初始化复制真实文件、改写副本目录，并拒绝覆盖已有开发数据', { skip: process.platform !== 'win32' }, () => {
