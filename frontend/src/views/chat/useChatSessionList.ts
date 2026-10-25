@@ -1,7 +1,7 @@
 import { ref, type Ref, type ComputedRef } from 'vue';
 import { chatApi } from '../../services/chat';
 import type { ChatSession, ChatMessage } from '../../types/chat';
-import { buildSessionMarkdown, mergeTurns, mergeTurnViews, synthesizeFailedTurnBubbles } from '../../utils/session';
+import { buildSessionMarkdown, mergeTurns, mergeTurnViews, mergeSubSessionTree, synthesizeFailedTurnBubbles } from '../../utils/session';
 import { upsertTurnViewIntoMessages } from './blockProjection';
 import { attachPromptCards } from '../../utils/toolCallCard';
 import { isTempSessionId } from '../../utils/ids';
@@ -100,6 +100,8 @@ export function useChatSessionList(options: ChatSessionListOptions) {
         localSessions.value[idx] = {
           ...previous,
           ...detail,
+          // 详情只带子会话元数据，不能冲掉在途期间加载的历史和实时内容。
+          subSessions: mergeSubSessionTree(previous.subSessions, detail.subSessions ?? []),
           // ⚠️ 合成失败气泡必须在合并**之后**、用**合并后**的 turns：
           //    失败轮（模型接口 400 这类）在库里只有 USER 行，没有 assistant 行可合并，
           //    只能按 turns 判 FAILED 后补气泡，否则用户点进失败会话什么都看不到。

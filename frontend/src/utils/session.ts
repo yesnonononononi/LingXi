@@ -152,11 +152,14 @@ export function mergeSubSessionTree(
   return incoming.map(fresh => {
     const old = prevById.get(String(fresh.id));
     if (!old) return fresh;
-    return {
+    // 保留 VO 身份，避免在途历史响应写回已脱离会话树的旧对象。
+    return Object.assign(old, {
       ...fresh,
       messages: old.messages ?? fresh.messages,
-      turns: mergeTurns(old.turns, fresh.turns)
-    };
+      turns: mergeTurns(old.turns, fresh.turns),
+      turnViews: mergeTurnViews(old.turnViews, fresh.turnViews),
+      turnViewVersions: old.turnViewVersions ?? fresh.turnViewVersions,
+    });
   });
 }
 

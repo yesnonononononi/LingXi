@@ -42,9 +42,16 @@ export function useChatSubSession(options: ChatSubSessionOptions) {
 
   const isLoadingSubMessages = ref(false);
   const subMessagesError = ref('');
-  const subSessionPaginationMap = ref<Record<string, { hasMore: boolean; nextCursor: string | null }>>({});
+  const subSessionPaginationMap = ref<Record<string, {
+    hasMore: boolean;
+    nextCursor: string | null;
+    messages: ChatMessage[];
+    historyRevision: string | undefined;
+  }>>({});
   const isLoadingMoreSubMessages = ref(false);
   const subHistoryLoadError = ref('');
+  let messagesRequestVersion = 0;
+  let moreRequestVersion = 0;
 
   /** 聚合提取当前会话中的所有子代理项（右侧子代理轨迹与标签面板）。 */
   const availableSubSessionItems = computed<SubSessionItem[]>(() => {
@@ -107,38 +114,58 @@ export function useChatSubSession(options: ChatSubSessionOptions) {
     isSubSessionDetailOpen.value = true;
   };
 
-  /** 切换子代理 Option 选项：把左侧会话历史切换为该子 Agent 的。 */
-  const handleSelectSubSessionOption = async (subId: string | number | null) => {
+  /** 选中子会话时补齐历史，实时消息本身不代表历史已经加载。 */
+  const handleSelectSubSessionOption = async (subId: string | number | null, refresh = false) => {
+    const requestVersion = ++messagesRequestVersion;
+    moreRequestVersion += 1;
+    isLoadingSubMessages.value = false;
+    isLoadingMoreSubMessages.value = false;
+    subMessagesError.value = '';
+    subHistoryLoadError.value = '';
     activeViewingSubSessionId.value = subId;
     if (subId === null) return;
     // 选中即展开侧边面板：从主会话协同条点击时面板默认是收起的，不展开就等于「点了没反应」。
     isSubPanelOpen.value = true;
     const key = String(subId);
 
-    // 已加载过且确有消息才短路；否则重拉 —— 对账替换 subSessions 或首次加载时该子会话还没有
-    // 产出（消息为空）时，用一次性守卫会把「空的」永久钉死（再点也不加载）。
+    const ownerId = currentActiveSession.value?.id;
+    const historyRevision = currentActiveSession.value?.historyRevision;
     const loaded = subSessionPaginationMap.value[key];
     const current = availableSubSessionItems.value.find(it => String(it.id) === key);
     const hasMessages = (current?.subSession?.messages?.length ?? 0) > 0;
-    if (loaded && hasMessages) return;
+    // 缓存必须属于当前消息数组与历史版本，几条新到的实时消息不能复活旧加载标记。
+    if (!refresh && loaded && hasMessages && loaded.messages === current?.subSession?.messages
+      && loaded.historyRevision === historyRevision) return;
 
-    isLoadingSubMessages.value = true;
-    subMessagesError.value = '';
+    const isCurrentRequest = () => requestVersion === messagesRequestVersion
+      && currentActiveSession.value?.id === ownerId
+      && currentActiveSession.value?.historyRevision === historyRevision;
+
+    // 后台补齐时继续展示已有轨迹，避免每次终态回查都闪回整屏加载态。
+    isLoadingSubMessages.value = !refresh || !hasMessages;
     try {
       const res = await chatApi.fetchSessionMessages(subId, null, 50);
+      if (!isCurrentRequest()) return;
       if (!res.ok) {
+        delete subSessionPaginationMap.value[key];
         subMessagesError.value = res.error;
         return;
       }
       const sub = availableSubSessionItems.value.find(it => String(it.id) === key);
       // 与详情抽屉共用同一吸入逻辑：写进 VO 上的实时数组，实时事件与历史不会各存一份。
-      if (sub?.subSession) absorbSubSessionHistory(sub.subSession, res.data);
-      subSessionPaginationMap.value[key] = { hasMore: res.data.hasMore, nextCursor: res.data.nextCursor };
+      const messages = absorbSubSessionHistory(sub?.subSession, res.data);
+      if (messages) {
+        subSessionPaginationMap.value[key] = {
+          hasMore: res.data.hasMore, nextCursor: res.data.nextCursor, messages, historyRevision,
+        };
+      }
     } catch (err) {
+      if (!isCurrentRequest()) return;
+      delete subSessionPaginationMap.value[key];
       console.error('加载子会话消息失败:', err);
       subMessagesError.value = t('chat.view.subMessagesLoadFailed');
     } finally {
-      isLoadingSubMessages.value = false;
+      if (requestVersion === messagesRequestVersion) isLoadingSubMessages.value = false;
     }
   };
 
@@ -148,24 +175,40 @@ export function useChatSubSession(options: ChatSubSessionOptions) {
     const key = String(subId);
     const page = subSessionPaginationMap.value[key];
     if (!page?.hasMore || !page.nextCursor) return;
+    const ownerId = currentActiveSession.value?.id;
+    const historyRevision = currentActiveSession.value?.historyRevision;
+    if (page.messages !== activeViewingSubSessionVO.value?.messages || page.historyRevision !== historyRevision) {
+      await handleSelectSubSessionOption(subId, true);
+      return;
+    }
+    const requestVersion = ++moreRequestVersion;
+    const isCurrentRequest = () => requestVersion === moreRequestVersion
+      && currentActiveSession.value?.id === ownerId
+      && currentActiveSession.value?.historyRevision === historyRevision;
 
     isLoadingMoreSubMessages.value = true;
     subHistoryLoadError.value = '';
     try {
       const res = await chatApi.fetchSessionMessages(subId, page.nextCursor, 50);
+      if (!isCurrentRequest()) return;
       if (!res.ok) {
         subHistoryLoadError.value = res.error;
         return;
       }
       const sub = availableSubSessionItems.value.find(it => String(it.id) === key);
       // 同一吸入逻辑：更早页的摘要可能正好包含某个失败轮，顺序由该函数内部保证。
-      if (sub?.subSession) absorbSubSessionHistory(sub.subSession, res.data);
-      subSessionPaginationMap.value[key] = { hasMore: res.data.hasMore, nextCursor: res.data.nextCursor };
+      const messages = absorbSubSessionHistory(sub?.subSession, res.data);
+      if (messages) {
+        subSessionPaginationMap.value[key] = {
+          hasMore: res.data.hasMore, nextCursor: res.data.nextCursor, messages, historyRevision,
+        };
+      }
     } catch (err) {
+      if (!isCurrentRequest()) return;
       console.error('加载更多子会话消息失败:', err);
       subHistoryLoadError.value = t('chat.view.historyLoadFailed');
     } finally {
-      isLoadingMoreSubMessages.value = false;
+      if (requestVersion === moreRequestVersion) isLoadingMoreSubMessages.value = false;
     }
   };
 
@@ -173,11 +216,25 @@ export function useChatSubSession(options: ChatSubSessionOptions) {
     const subId = activeViewingSubSessionId.value;
     if (subId === null) return;
     subMessagesError.value = '';
-    void handleSelectSubSessionOption(subId);
+    void handleSelectSubSessionOption(subId, true);
+  };
+
+  /** 重连和终态回查必须绕过点击缓存，否则断线期间的历史缺口会一直留着。 */
+  const refreshViewedSubSessionHistory = async (ownerSessionId: string) => {
+    if (String(currentActiveSession.value?.id) !== ownerSessionId) return;
+    const subId = activeViewingSubSessionId.value;
+    if (subId !== null) await handleSelectSubSessionOption(subId, true);
   };
 
   /** 切走会话时重置子会话查看态。 */
   const resetSubSessionView = () => {
+    messagesRequestVersion += 1;
+    moreRequestVersion += 1;
+    subSessionPaginationMap.value = {};
+    isLoadingSubMessages.value = false;
+    isLoadingMoreSubMessages.value = false;
+    subMessagesError.value = '';
+    subHistoryLoadError.value = '';
     activeViewingSubSessionId.value = null;
     selectedSubSessionDetailId.value = null;
     isSubSessionDetailOpen.value = false;
@@ -203,6 +260,7 @@ export function useChatSubSession(options: ChatSubSessionOptions) {
     handleSelectSubSessionOption,
     handleLoadMoreSubSessionHistory,
     handleRetrySubSessionMessages,
+    refreshViewedSubSessionHistory,
     resetSubSessionView,
   };
 }

@@ -21,6 +21,7 @@ export interface ChatHistoryOptions {
   localSessions: Ref<ChatSession[]>;
   messagesContainerRef: Ref<any>;
   scheduleTimeout: (handler: () => void, delayMs: number) => number;
+  reconcileSubSessions?: (ownerSessionId: string) => Promise<void>;
 }
 
 /**
@@ -176,6 +177,7 @@ export function useChatHistory(options: ChatHistoryOptions) {
     } catch (e) {
       console.warn('主流结束消息对账失败:', e);
     }
+    if (version === reconcileVersion) await options.reconcileSubSessions?.(ownerSessionId);
   };
 
   const handleLoadMoreHistory = async () => {

@@ -133,6 +133,8 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     handleScrollToBottomClick,
   } = useChatScroll({ messagesContainerRef });
 
+  const subSession = useChatSubSession({ currentActiveSession });
+
   // ---------- 历史分页 ----------
   const {
     isLoadingMoreHistory,
@@ -147,6 +149,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     localSessions,
     messagesContainerRef,
     scheduleTimeout,
+    reconcileSubSessions: subSession.refreshViewedSubSessionHistory,
   });
 
   // ---------- 消息展示派生（供发送/会话模块引用，故先于它们定义） ----------
@@ -176,9 +179,6 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     }
     return derived;
   });
-
-  // ---------- 子会话面板 ----------
-  const subSession = useChatSubSession({ currentActiveSession });
 
   // ---------- 工作空间 / 模型 / 权限 / 设置 ----------
   const workspace = useChatWorkspace({
@@ -640,7 +640,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     scrollToBottomForce,
     seedContextUsageFromTree,
     resetScrollAnchors,
-    onNewSession: () => { subSession.activeViewingSubSessionId.value = null; },
+    onNewSession: () => { subSession.resetSubSessionView(); },
   });
 
   // 会话列表就绪后回填通知跳转入口：用户点通知 → 切到产生该通知的会话
