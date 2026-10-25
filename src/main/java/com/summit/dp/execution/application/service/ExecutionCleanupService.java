@@ -1,11 +1,11 @@
 package com.summit.dp.execution.application.service;
 
-import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.execution.domain.model.Execution;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -18,24 +18,23 @@ public class ExecutionCleanupService {
     private static final int BATCH_SIZE = 200;
     private static final int MAX_BATCHES = 50;
     private final ExecutionRepository repository;
-    private final ExecutionActivity activity;
+    private final ExecutionReclaimService reclaimer;
 
     public Preview preview() {
         return new Preview(repository.countReclaimable());
     }
 
-    @Transactional
+    // 查询也必须脱离调用方事务，避免清理后的计数仍命中旧的会话缓存。
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public CleanupResult cleanup() {
         long deleted = 0;
         long afterId = 0;
-        // 限制单次事务的扫描量，剩余记录由界面展示，避免长时间持有数据库锁。
+        // 只限制本次请求的扫描量，每条快照独立提交，避免累积大体积回滚日志。
         for (int batch = 0; batch < MAX_BATCHES; batch++) {
             List<Execution> candidates = repository.findReclaimable(afterId, BATCH_SIZE);
             for (Execution candidate : candidates) {
                 afterId = candidate.getId();
-                // 终态落库可能早于控制槽位释放；这段窗口仍由执行线程负责收尾。
-                if (!activity.isActive(String.valueOf(candidate.getId()))
-                        && repository.deleteReclaimable(candidate.getId(), candidate.getVersion())) {
+                if (reclaimer.reclaim(candidate)) {
                     deleted++;
                 }
             }

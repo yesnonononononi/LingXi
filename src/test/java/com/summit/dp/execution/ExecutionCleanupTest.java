@@ -14,6 +14,7 @@ import com.summit.dp.execution.api.controller.ExecutionCleanupController;
 import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.execution.application.service.ExecutionCleanupService;
 import com.summit.dp.execution.application.service.ExecutionCleanupService.CleanupResult;
+import com.summit.dp.execution.application.service.ExecutionReclaimService;
 import com.summit.dp.execution.application.service.impl.ExecutionQueryServiceImpl;
 import com.summit.dp.execution.domain.model.Execution;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
@@ -55,6 +56,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.List;
@@ -74,13 +76,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-/** 使用真实 Mapper 验证清理边界、并发重查与事务回滚。 */
+/** 使用真实 Mapper 验证清理边界、并发重查与独立回收事务。 */
 @SpringJUnitConfig(ExecutionCleanupTest.Config.class)
 class ExecutionCleanupTest {
     @Autowired private ExecutionCleanupService service;
     @Autowired private ExecutionRepository repository;
     @Autowired private ExecutionActivity activity;
     @Autowired private SqlSessionTemplate sql;
+    @Autowired private PlatformTransactionManager transactionManager;
     private ExecutionMapper executions;
     private SessionMapper sessions;
     private ChatTurnMapper turns;
@@ -204,7 +207,7 @@ class ExecutionCleanupTest {
     }
 
     @Test
-    void failureRollsBackEarlierDeletions() {
+    void failurePreservesCommittedDeletionsAndLeavesRemainingCandidates() {
         insertExecution(100L, 3);
         insertExecution(101L, 3);
         AtomicInteger attempts = new AtomicInteger();
@@ -214,7 +217,37 @@ class ExecutionCleanupTest {
         }).when(repository).deleteReclaimable(anyLong(), anyLong());
 
         assertThrows(IllegalStateException.class, service::cleanup);
-        assertEquals(2L, executions.selectCount(null), "第二条删除失败后第一条也必须回滚");
+        assertNull(executions.selectById(100L), "已完成的回收必须及时提交，不能积累整次清理的回滚日志");
+        assertNotNull(executions.selectById(101L));
+        assertEquals(1L, service.preview().executionCount());
+    }
+
+    @Test
+    void failureRollsBackCurrentDeletion() {
+        insertExecution(100L, 3);
+        doAnswer(invocation -> {
+            invocation.callRealMethod();
+            throw new IllegalStateException("模拟删除后的事务失败");
+        }).when(repository).deleteReclaimable(anyLong(), anyLong());
+
+        assertThrows(IllegalStateException.class, service::cleanup);
+        assertNotNull(executions.selectById(100L), "单条回收失败仍须完整回滚");
+    }
+
+    @Test
+    void cleanupCommitsIndependentlyFromCallerTransaction() {
+        insertExecution(100L, 3);
+        insertExecution(101L, 3);
+        TransactionTemplate caller = new TransactionTemplate(transactionManager);
+        caller.executeWithoutResult(status -> {
+            assertEquals(2L, service.preview().executionCount());
+            CleanupResult result = service.cleanup();
+            assertEquals(2L, result.deletedCount());
+            assertEquals(0L, result.remainingCount(), "清理结果必须重新计数，不能使用调用方缓存");
+            status.setRollbackOnly();
+        });
+
+        assertEquals(0L, executions.selectCount(null), "调用方不能把独立回收合并成长事务");
     }
 
     @Test
@@ -328,8 +361,13 @@ class ExecutionCleanupTest {
 
         @Bean ExecutionActivity activity() { return mock(ExecutionActivity.class); }
 
-        @Bean ExecutionCleanupService cleanupService(ExecutionRepository repository, ExecutionActivity activity) {
-            return new ExecutionCleanupService(repository, activity);
+        @Bean ExecutionReclaimService reclaimer(ExecutionRepository repository, ExecutionActivity activity,
+                                                PlatformTransactionManager transactionManager) {
+            return new ExecutionReclaimService(repository, activity, transactionManager);
+        }
+
+        @Bean ExecutionCleanupService cleanupService(ExecutionRepository repository, ExecutionReclaimService reclaimer) {
+            return new ExecutionCleanupService(repository, reclaimer);
         }
     }
 }
