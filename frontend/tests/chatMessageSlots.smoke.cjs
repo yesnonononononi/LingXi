@@ -233,6 +233,8 @@ window.__actionsInfo = () => {
     probeText: element.querySelector('[data-slot-probe]') ? element.querySelector('[data-slot-probe]').textContent.trim() : null,
     defaultButtons: defaultButtons.length,
     defaultTitledButtons: defaultButtons.filter(node => node.hasAttribute('title')).length,
+    // B-1：生产注册换成替换实现后，操作区里应恰好有 1 个「复制为引用」按钮（供「替换生效」与「绝不并存」判定）
+    quoteButtons: element.querySelectorAll('[data-quote-action="1"]').length,
     defaultSpans: [...element.querySelectorAll('span')].filter(node => !isProbeNode(node)).map(node => node.textContent.trim()).filter(Boolean)
   };
 };
@@ -298,6 +300,8 @@ app.whenReady().then(async () => {
       assert.equal(actions.probeCount, 0, '未注册时不应出现探针');
       assert.equal(actions.defaultButtons, 1, `默认复制按钮应恰好 1 个，实际 ${actions.defaultButtons}`);
       assert.equal(actions.defaultTitledButtons, 1, '默认复制按钮缺少 title');
+      // 兜底实现不得带替换实现的新增按钮（否则「默认」被污染）
+      assert.equal(actions.quoteButtons, 0, `兜底实现不应出现引用按钮，实际 ${actions.quoteButtons}`);
       assert.ok(actions.defaultSpans.some(text => /\d{1,2}:\d{2}/.test(text)),
         `默认时间戳缺失，实际 spans=${JSON.stringify(actions.defaultSpans)}`);
     });
@@ -383,8 +387,12 @@ app.whenReady().then(async () => {
       assert.deepEqual(providerKeys, ['actions', 'body'],
         `ChatView 的 provide 字段应恰为 body/actions，实际 ${JSON.stringify(providerKeys)}`);
       const providerIdentity = await evaluate('window.__prodProviderIdentity');
+      // providerIdentity 只回答「provide 里的值是否就是 ChatView import 进来的那个模块」，
+      // 用于证明注册链可达（标识符与模块同源），不判断「是不是默认实现」——
+      // B-1 之后 actions 是替换实现，这条仍应为 true（替换实现同样必须被真实导入、真实接上）。
+      // 「替换是否真的生效」由下面的 quoteButtons 断言证明。
       assert.deepEqual(providerIdentity, { body: true, actions: true },
-        `ChatView 注册的必须是真实默认实现组件：${JSON.stringify(providerIdentity)}`);
+        `ChatView 注册的组件必须与它 import 的模块同一（注册链可达）：${JSON.stringify(providerIdentity)}`);
       // 5.2 再用这份生产注册值挂真实 ChatMessageList → ChatMessageItem
       await evaluate('window.__render("production")');
       const actions = await evaluate('window.__actionsInfo()');
@@ -394,7 +402,14 @@ app.whenReady().then(async () => {
       assert.match(body.text, /插槽试点正文内容/, '生产注册下正文未渲染');
       assert.equal(actions.found, true, '生产注册下操作区容器不存在');
       assert.equal(actions.probeCount, 0, '生产注册值来自默认实现，不应出现探针');
-      assert.equal(actions.defaultButtons, 1, `生产注册下默认复制按钮应恰好 1 个，实际 ${actions.defaultButtons}`);
+      assert.equal(actions.defaultButtons, 2,
+        `B-1 生产注册下操作区应为「默认 5 元素 + 引用按钮」共 2 个按钮，实际 ${actions.defaultButtons}`);
+      assert.equal(actions.defaultTitledButtons, 2,
+        `两个按钮都应带 title（复制回答 / 引用提示），实际 ${actions.defaultTitledButtons}`);
+      assert.equal(actions.quoteButtons, 1,
+        `生产注册下引用按钮应恰好 1 个（替换实现生效），实际 ${actions.quoteButtons}`);
+      assert.ok(actions.defaultSpans.some(text => /\d{1,2}:\d{2}/.test(text)),
+        `原有时间戳必须保留（复用默认操作栏），实际 spans=${JSON.stringify(actions.defaultSpans)}`);
       assert.ok(reads.includes('body'),
         `Item 未读取注册表的 body 字段 ⇒ 注册分支不可达，reads=${JSON.stringify(reads)}`);
       assert.ok(reads.includes('actions'),
@@ -402,6 +417,81 @@ app.whenReady().then(async () => {
       const executed = await evaluate('window.__prodProviderKeys');
       assert.deepEqual(executed, ['actions', 'body'],
         `执行的 provide 表达式字段异常：${JSON.stringify(executed)}`);
+    });
+
+    // 用例 7：B-1 替换实现的行为契约（引用格式正确 / 一次点击只写一次 / 默认复制仍工作）
+    await runCase('用例7 引用按钮：格式正确且一次点击只写一次', async () => {
+      await evaluate(`(() => {
+        window.__writes = [];
+        Object.defineProperty(navigator, 'clipboard', {
+          configurable: true,
+          value: { writeText: async text => { window.__writes.push(text); } }
+        });
+        return true;
+      })()`);
+      await evaluate('window.__render("production")');
+      const before = await evaluate(`({
+        quote: document.querySelectorAll('[data-quote-action="1"]').length,
+        title: (document.querySelector('[data-quote-action="1"]') || {}).title
+      })`);
+      assert.equal(before.quote, 1, `引用按钮应恰好 1 个，实际 ${before.quote}`);
+
+      // 一次点击
+      await evaluate('document.querySelector(\'[data-quote-action="1"]\').click()');
+      await new Promise(resolve => setTimeout(resolve, 260));
+      const afterQuote = await evaluate(`({
+        writes: window.__writes,
+        title: document.querySelector('[data-quote-action="1"]').title,
+        disabled: document.querySelector('[data-quote-action="1"]').disabled
+      })`);
+      assert.equal(afterQuote.writes.length, 1,
+        `引用按钮一次点击只应写剪贴板 1 次（双写入路径会写 2 次），实际 ${afterQuote.writes.length}`);
+      // 正文为「插槽试点正文内容」：逐行加 "> " 前缀 + 块尾一个换行
+      assert.equal(afterQuote.writes[0], '> 插槽试点正文内容\n',
+        `引用格式不符，实际 ${JSON.stringify(afterQuote.writes[0])}`);
+      assert.equal(afterQuote.disabled, false, '有正文时引用按钮不应禁用');
+      // 反馈：title 应切到「已复制引用」
+      assert.match(String(afterQuote.title), /已复制引用|Quote copied/,
+        `点击后应给一次短反馈（title 变为已复制），实际 ${JSON.stringify(afterQuote.title)}`);
+
+      // 原有复制按钮仍然工作，且写的是正文原文（证明它没被替换实现改坏）
+      await evaluate('window.__writes.length = 0');
+      await evaluate(`(() => {
+        const element = [...document.querySelectorAll('div')].find(node => typeof node.className === 'string'
+          && /\\bflex-wrap\\b/.test(node.className) && /\\bgap-4\\b/.test(node.className) && /\\bpt-1\\b/.test(node.className));
+        const copy = [...element.querySelectorAll('button')].find(node => !node.hasAttribute('data-quote-action'));
+        copy.click();
+        return true;
+      })()`);
+      await new Promise(resolve => setTimeout(resolve, 220));
+      const afterCopy = await evaluate('window.__writes');
+      assert.equal(afterCopy.length, 1, `默认复制按钮应写 1 次，实际 ${afterCopy.length}`);
+      assert.equal(afterCopy[0], '插槽试点正文内容',
+        `默认复制按钮应复制正文原文，实际 ${JSON.stringify(afterCopy[0])}`);
+    });
+
+    // 用例 8：空正文时引用按钮禁用，且点击不写入空串
+    await runCase('用例8 空正文：引用按钮禁用且不写入空串', async () => {
+      await evaluate(`(() => {
+        window.__writes = [];
+        Object.defineProperty(navigator, 'clipboard', {
+          configurable: true,
+          value: { writeText: async text => { window.__writes.push(text); } }
+        });
+        return true;
+      })()`);
+      // 用空白正文渲染生产场景（isThinking 关闭时正文本就不渲染，但操作区仍会出现，正是要覆盖的边界）
+      await evaluate('window.__render("production", { content: "   " })');
+      const state = await evaluate(`(() => {
+        const node = document.querySelector('[data-quote-action="1"]');
+        if (!node) return { found: false };
+        node.click();
+        return { found: true, disabled: node.disabled };
+      })()`);
+      assert.equal(state.found, true, '空正文时引用按钮仍应存在（只是禁用）');
+      assert.equal(state.disabled, true, '空/纯空白正文时引用按钮必须禁用');
+      const writes = await evaluate('window.__writes');
+      assert.deepEqual(writes, [], `禁用状态下不得写入剪贴板，实际 ${JSON.stringify(writes)}`);
     });
 
     await fs.writeFile(path.join(logDir, 'smoke-result.json'),

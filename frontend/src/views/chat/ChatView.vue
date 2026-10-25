@@ -372,7 +372,8 @@ import { FILE_PREVIEW_KEY } from '../../types/filePreview';
 import { DECIDE_TOOL_CALL_KEY, ANSWER_CHOICES_KEY } from '../../types/toolDecision';
 import { CHAT_MESSAGE_SLOTS_KEY } from '../../types/chatMessageSlots';
 import MessageBodyDefault from '../../components/chat/MessageBodyDefault.vue';
-import MessageActionsBar from '../../components/chat/MessageActionsBar.vue';
+// B-1 真实替换实现：独立 feature 目录，由本宿主注册接入（删掉下面 provide 里的注册即回默认操作栏）
+import QuoteMessageActions from '../../features/quote/QuoteMessageActions.vue';
 import { CHAT_INPUT_SLOTS_KEY } from '../../types/chatInputSlots';
 import ChatInputContextUsage from '../../components/chat/ChatInputContextUsage.vue';
 import ChatInputModelSelector from '../../components/chat/ChatInputModelSelector.vue';
@@ -531,14 +532,19 @@ provide(DECIDE_TOOL_CALL_KEY, decideToolCall);
 provide(ANSWER_CHOICES_KEY, answerChoices);
 
 /**
- * 消息级插槽渲染器（试点期注册的就是**内置默认实现**本身）。
+ * 消息级插槽渲染器。
  *
- * <p>为什么要注册一份等价实现：不注册时「宿主注入」这条分支在今天的生产里永远走不到，
- * 它就会变成没人验证的死代码；注册同一份组件后，注册分支是活路径，而「未注册」的兜底分支
- * 由无宿主挂载场景（例如 visual 场景里直接挂 ChatMessageItem）承担，两个分支都真实存在，
- * 且**只有一份实现代码**，不存在 A/B 双实现漂移。</p>
+ * <p><b>B-1 真实替换实现（本次）：</b>`actions` 已从内置默认实现 `MessageActionsBar`
+ * 换成独立 feature 目录下的 `QuoteMessageActions`（`features/quote/`）。它**复用**默认操作栏
+ * 渲染原有 5 个元素（复制 / 执行状态 / 用量 / 耗时 / 时间戳），并额外追加一个「复制为引用」按钮，
+ * 因此替代了「注册即等价」的试点态，成为第一个**可见差异**的替换实现。</p>
+ *
+ * <p><b>回退方式：</b>把下面 `actions` 改回 `MessageActionsBar`（或整行删掉 provide）即可回到
+ * 默认操作栏 —— 默认实现本身没被改动过一行，所以回退是零成本的。</p>
+ *
+ * <p>`body` 仍是内置默认实现 `MessageBodyDefault`：本次只替换 actions，body 不在范围内。</p>
  */
-provide(CHAT_MESSAGE_SLOTS_KEY, { body: MessageBodyDefault, actions: MessageActionsBar });
+provide(CHAT_MESSAGE_SLOTS_KEY, { body: MessageBodyDefault, actions: QuoteMessageActions });
 
 /**
  * 输入区插槽渲染器（同上：试点期注册的就是**内置默认实现**本身）。

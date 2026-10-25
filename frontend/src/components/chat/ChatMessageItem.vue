@@ -1351,7 +1351,9 @@ const actionsSlotProps = computed<ChatMessageActionsSlotProps>(() => ({
   displayDuration: displayDuration.value,
   displayTime: displayTime.value,
   copied: copied.value,
-  copyContent
+  copyContent,
+  // 与 copyContent 共用同一个 useCopyFeedback 实例：反馈状态同源，替换实现不会出现「复制了但提示不亮」。
+  copyText: copyContentRaw
 }));
 
 

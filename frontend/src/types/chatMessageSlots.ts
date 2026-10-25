@@ -41,6 +41,11 @@ export interface ChatMessageActionsSlotProps {
    * 因此不会出现"同一次点击走两条路径"（论证见 §4.3）。
    */
   readonly copyContent: () => void;
+  /**
+   * 复制任意文本到剪贴板的**唯一**宿主动作。
+   * 替换实现不得自己调 navigator.clipboard，否则会出现两条写入路径与两套反馈。
+   */
+  readonly copyText: (text: string) => void;
 }
 
 /** 宿主可注册的渲染器集合。缺省（undefined / 字段缺省）= 使用内置默认实现。 */
