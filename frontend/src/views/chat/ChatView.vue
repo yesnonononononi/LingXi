@@ -373,6 +373,10 @@ import { DECIDE_TOOL_CALL_KEY, ANSWER_CHOICES_KEY } from '../../types/toolDecisi
 import { CHAT_MESSAGE_SLOTS_KEY } from '../../types/chatMessageSlots';
 import MessageBodyDefault from '../../components/chat/MessageBodyDefault.vue';
 import MessageActionsBar from '../../components/chat/MessageActionsBar.vue';
+import { CHAT_INPUT_SLOTS_KEY } from '../../types/chatInputSlots';
+import ChatInputContextUsage from '../../components/chat/ChatInputContextUsage.vue';
+import ChatInputModelSelector from '../../components/chat/ChatInputModelSelector.vue';
+import ChatInputSendButton from '../../components/chat/ChatInputSendButton.vue';
 import FilePreviewPanel from '../../components/chat/FilePreviewPanel.vue';
 import { useChatView } from './useChatView';
 import Sidebar from '../../components/chat/Sidebar.vue';
@@ -535,4 +539,18 @@ provide(ANSWER_CHOICES_KEY, answerChoices);
  * 且**只有一份实现代码**，不存在 A/B 双实现漂移。</p>
  */
 provide(CHAT_MESSAGE_SLOTS_KEY, { body: MessageBodyDefault, actions: MessageActionsBar });
+
+/**
+ * 输入区插槽渲染器（同上：试点期注册的就是**内置默认实现**本身）。
+ *
+ * <p>三个字段全部指向默认实现，好处是「宿主注入」这条分支在生产是活路径，
+ * 而「未注册」的兜底分支由无宿主挂载场景（visual 场景直接挂 ChatInputArea）承担，
+ * 两条分支都真实存在，且只有一份实现代码 —— 不存在 A/B 双实现漂移。
+ * 注意这里**只注册渲染器**：输入/附件/语音/菜单/拖拽等行为状态仍全部留在 ChatInputArea 内部。</p>
+ */
+provide(CHAT_INPUT_SLOTS_KEY, {
+  contextUsage: ChatInputContextUsage,
+  modelSelector: ChatInputModelSelector,
+  sendButton: ChatInputSendButton,
+});
 </script>

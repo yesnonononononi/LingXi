@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, computed, onMounted, onBeforeUnmount, type CSSProperties } from 'vue';
+import { ref, watch, nextTick, computed, onMounted, onBeforeUnmount, inject, type CSSProperties } from 'vue';
 import {
   Attachment01Icon,
   Cancel01Icon,
@@ -13,10 +13,7 @@ import { HugeiconsIcon, type IconArray } from '@hugeicons/vue';
 import DropUpSelect from '../common/DropUpSelect.vue';
 import BorderGlow from '../common/BorderGlow.vue';
 import SparkTrail from '../common/SparkTrail.vue';
-import MorphingSendIcon from '../common/MorphingSendIcon.vue';
-import SlingButton from '../common/SlingButton.vue';
 import ProjectDropdown from './ProjectDropdown.vue';
-import ProviderIcon from '../model/ProviderIcon.vue';
 import type { SelectOption } from '../../types/ui';
 import type { ChatMode, ModelConfig, WorkspaceVO, AgentAccessMode, TeamVO, AgentVO, ReasoningEffort } from '../../types/chat';
 import { reasoningEffortOptions } from '../../composables/useReasoningEffort';
@@ -29,6 +26,16 @@ import { isPromptOptimizationCommand, usePromptOptimization } from '../../compos
 import { useConfirm } from '../../composables/useConfirm';
 import { isImageAvatar } from '../../utils/avatar';
 import { t } from '../../i18n';
+import { CHAT_INPUT_SLOTS_KEY } from '../../types/chatInputSlots';
+import type {
+  ChatInputContextUsageSlotProps,
+  ChatInputModelSelectorSlotProps,
+  ChatInputSendButtonSlotProps,
+} from '../../types/chatInputSlots';
+import ChatInputContextUsage from './ChatInputContextUsage.vue';
+import ChatInputModelSelector from './ChatInputModelSelector.vue';
+import ChatInputSendButton from './ChatInputSendButton.vue';
+import { MUTED, TOOL_BTN, ICON_BTN } from '../../utils/promptBarStyles';
 
 const props = defineProps<{
   isSending?: boolean;
@@ -84,15 +91,18 @@ const emit = defineEmits<{
   (e: 'openSettingsTab', tab: string): void;
 }>();
 
-// PromptBar 样式常量
+defineSlots<{
+  /** 上下文用量指示器。出现时机（有无数据）由组件裁决，本插槽只替换环+浮层本身。 */
+  contextUsage(props: ChatInputContextUsageSlotProps): unknown;
+  /** 模型选择器（含「驱动徽标」与「权威下拉」两个状态，二选一由组件决定）。 */
+  modelSelector(props: ChatInputModelSelectorSlotProps): unknown;
+  /** 发送/停止按钮（二态共用 onSend 一个入口）。 */
+  sendButton(props: ChatInputSendButtonSlotProps): unknown;
+}>();
+
+// PromptBar 样式常量已抽到 utils/promptBarStyles.ts（供留在本组件的按钮与默认实现组件共用）
 /** 拖拽缩放手柄的命中区边距（px）。 */
 const EDGE = 11;
-const MUTED = '[color:color-mix(in_srgb,var(--pb-ink)_55%,transparent)]';
-
-const TOOL_BTN =
-  'inline-flex h-7 flex-none cursor-pointer touch-manipulation items-center gap-1 rounded-lg border-0 bg-transparent px-2 text-[12px] font-medium outline-none select-none [color:color-mix(in_srgb,var(--pb-ink)_70%,transparent)] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease] data-[on]:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] data-[on]:[color:var(--pb-ink)] [@media(hover:hover)_and_(pointer:fine)]:hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] [@media(hover:hover)_and_(pointer:fine)]:hover:[color:var(--pb-ink)] data-[max]:[color:var(--pb-spark)]!';
-const ICON_BTN =
-  'inline-grid h-7 w-7 flex-none cursor-pointer touch-manipulation place-items-center rounded-lg border-0 bg-transparent p-0 outline-none select-none [color:color-mix(in_srgb,var(--pb-ink)_60%,transparent)] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease,transform_160ms_cubic-bezier(0.23,1,0.32,1)] active:[transform:scale(0.94)] data-[on]:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] data-[on]:[color:var(--pb-ink)] motion-reduce:active:[transform:none] [@media(hover:hover)_and_(pointer:fine)]:hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] [@media(hover:hover)_and_(pointer:fine)]:hover:[color:var(--pb-ink)]';
 
 const commandContainerRef = ref<HTMLDivElement | null>(null);
 const inputContainerRef = ref<HTMLDivElement | null>(null);
@@ -568,25 +578,8 @@ const teamOptions = computed<SelectOption<string | number>[]>(() => {
   ];
 });
 
-// 基座模型：按提供商分组展示（同一模型名可能来自不同提供商），选中值仍是 model id。
-const ADD_CUSTOM_MODEL = '__add_custom_model__';
-const modelOptions = computed<SelectOption<string | number>[]>(() => {
-  const ungroupedLabel = t('chat.input.ungroupedProvider');
-  const options: SelectOption<string | number>[] = (props.models ?? []).map(m => ({
-    label: m.name || m.modelName || t('session.modelFallback', { id: m.id }),
-    value: m.id,
-    group: m.providerName || ungroupedLabel,
-    // 图标只挂在组标题上：同一提供商下的模型重复渲染 logo 只会挤占名称宽度。
-    groupIcon: m.providerIcon ?? undefined,
-  }));
-  // 不给 group：「+ 添加自定义模型」落在末尾的无名块，不会混进上面任一提供商组。
-  options.push({ label: t('chat.input.addCustomModel'), value: ADD_CUSTOM_MODEL });
-  return options;
-});
-const selectedModel = computed<string | number>({
-  get: () => props.selectedModelId ?? '',
-  set: (value) => { if (value === ADD_CUSTOM_MODEL) { emit('openModelEditor'); return; } emit('updateModel', value); }
-});
+// 基座模型的下拉选项与选中值已随模型选择器搬进 `ChatInputModelSelector.vue`
+// （连同 `+ 添加自定义模型` 的哨兵值路由：哨兵 → onOpenModelEditor，其余 → onUpdateModel）。
 
 /**
  * 本轮实际生效的模型（Agent/团队预设驱动时）。
@@ -662,8 +655,9 @@ const contextRingDash = computed<string>(() => {
   return `${arc} ${CONTEXT_RING_CIRCUMFERENCE - arc}`;
 });
 
-/** 仅在鼠标悬停在用量圆环图标上时显示上下文浮层提示 */
-const isContextTooltipVisible = ref(false);
+// 上下文浮层的悬停状态**没有**随浮层搬进 `ChatInputContextUsage.vue`：触发区是外层容器
+// （28px 高）的交互属性，容器归组件所有；渲染器只按 `tooltipVisible` 决定画不画。
+// 曾经把它挪进 svg，结果触发区缩到 18×18 —— 已由契约测试用例 7 锁死，别再搬。
 
 
 
@@ -968,6 +962,38 @@ const onSendClick = () => {
   else handleSend();
 };
 
+/**
+ * 三个插槽的 props 投影。
+ *
+ * <p>共同原则：只暴露「消费者渲染所需」的只读派生值 + **唯一**行为入口；输入区的行为状态
+ * （inputText / 附件 / 语音听写 / 斜杠菜单 / 拖拽缩放 / 弹弓力学）一概不暴露，
+ * 这样替换实现最多改变"长什么样"，改不掉"怎么工作"，也不会出现第二条触发路径。</p>
+ */
+const contextUsageSlotProps = computed<ChatInputContextUsageSlotProps>(() => ({
+  isDark: props.isDark !== false,
+  contextUsageText: contextUsageText.value,
+  contextRingDash: contextRingDash.value,
+  tooltipVisible: isContextTooltipVisible.value
+}));
+
+const modelSelectorSlotProps = computed<ChatInputModelSelectorSlotProps>(() => ({
+  isDark: props.isDark !== false,
+  models: props.models ?? [],
+  selectedModelId: props.selectedModelId,
+  drivenModel: drivenModel.value,
+  onUpdateModel: (modelId: string | number) => emit('updateModel', modelId),
+  onOpenSettingsTab: (tab: string) => emit('openSettingsTab', tab),
+  onOpenModelEditor: () => emit('openModelEditor')
+}));
+
+const sendButtonSlotProps = computed<ChatInputSendButtonSlotProps>(() => ({
+  isSending: !!props.isSending,
+  armed: armed.value,
+  isDark: props.isDark !== false,
+  colors: slingColors.value,
+  onSend: onSendClick
+}));
+
 onMounted(() => {
   void loadLimits();
   document.addEventListener('mousedown', handleClickOutside);
@@ -1075,6 +1101,25 @@ const handleSend = () => {
   inputText.value = '';
   clearImages();
 };
+
+/**
+ * 宿主注册的输入区渲染器（三层解析的中间层：父级 `$slots` > 宿主注入 > 内置默认）。
+ *
+ * <p>必须**按字段判空**，不能按对象真值判：宿主 `provide(CHAT_INPUT_SLOTS_KEY, {})` 时对象为真
+ * 但三个字段都缺省，按对象真值判会把它们都当成「已注册」，结果整块区域渲染成空白。
+ * 理由与写法照抄 `ChatMessageItem.vue` 的同名逻辑，保持两个组件的解析规则一致。</p>
+ */
+const slotOverrides = inject(CHAT_INPUT_SLOTS_KEY, undefined);const injectedContextUsage = computed(() => slotOverrides?.contextUsage);
+const injectedModelSelector = computed(() => slotOverrides?.modelSelector);
+const injectedSendButton = computed(() => slotOverrides?.sendButton);
+
+/**
+ * 上下文用量浮层的显示状态。
+ *
+ * <p>留在组件侧是有意的：触发区是**外层容器**（`relative inline-flex h-7 …`，28px 高）的交互属性，
+ * 而容器归组件所有。若随浮层一起搬进渲染器，触发区会缩成 18×18 图标，悬停行为即漂移。</p>
+ */
+const isContextTooltipVisible = ref(false);
 
 const rootStyle = computed(
   () =>
@@ -1542,93 +1587,17 @@ defineExpose({
             @mouseenter="isContextTooltipVisible = true"
             @mouseleave="isContextTooltipVisible = false"
           >
-            <svg class="w-[18px] h-[18px] shrink-0 -rotate-90 -translate-y-[0.5px]" viewBox="0 0 16 16" aria-hidden="true">
-              <!-- 未占用底轨：浅色模式为浅白灰，深色模式为深灰 -->
-              <circle
-                cx="8" cy="8" r="6" fill="none" stroke-width="2.3"
-                class="stroke-zinc-200 dark:stroke-zinc-700/60"
-              />
-              <!-- 已占用进度：浅色模式为黑色，深色模式为白色 -->
-              <circle
-                cx="8" cy="8" r="6" fill="none" stroke-width="2.3" stroke-linecap="round"
-                class="stroke-zinc-900 dark:stroke-zinc-100 transition-[stroke-dasharray] duration-500"
-                :stroke-dasharray="contextRingDash"
-              />
-            </svg>
-            <Transition
-              enter-active-class="transition duration-150 ease-out"
-              enter-from-class="opacity-0 translate-y-1"
-              enter-to-class="opacity-100 translate-y-0"
-              leave-active-class="transition duration-100 ease-in"
-              leave-from-class="opacity-100 translate-y-0"
-              leave-to-class="opacity-0 translate-y-1"
-            >
-              <div
-                v-if="isContextTooltipVisible"
-                class="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg border px-2.5 py-1.5 shadow-xl z-50 [background:var(--pb-menu)] border-white/[0.08] backdrop-blur-md [color:var(--pb-ink)] text-xs"
-              >
-                {{ contextUsageText }}
-              </div>
-            </Transition>
+            <slot name="contextUsage" v-bind="contextUsageSlotProps">
+              <component :is="injectedContextUsage" v-if="injectedContextUsage" v-bind="contextUsageSlotProps" />
+              <ChatInputContextUsage v-else v-bind="contextUsageSlotProps" />
+            </slot>
           </div>
 
           <!-- 模型：Agent/团队预设驱动时选择器不参与本轮，改显实际生效模型与来源（点击去改预设） -->
-          <button
-            v-if="drivenModel"
-            type="button"
-            class="inline-flex h-7 max-w-[230px] flex-none cursor-pointer items-center gap-1 rounded-lg border px-2 text-[12px] font-medium whitespace-nowrap transition"
-            :class="drivenModel.missing
-              ? (isDark !== false
-                ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
-                : 'border-amber-300 bg-amber-50 text-amber-700')
-              : (isDark !== false
-                ? 'border-white/15 text-zinc-300 hover:bg-white/10 hover:text-zinc-100'
-                : 'border-gray-200 text-gray-600 hover:bg-black/5 hover:text-gray-900')"
-            :title="drivenModel.tip"
-            :aria-label="drivenModel.tip"
-            @mousedown.prevent
-            @click="emit('openSettingsTab', 'agents')"
-          >
-            <svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <rect x="5" y="11" width="14" height="9" rx="2" />
-              <path stroke-linecap="round" d="M8 11V8a4 4 0 018 0v3" />
-            </svg>
-            <span class="truncate">{{ drivenModel.text }}</span>
-          </button>
-
-          <!-- 模型选择下拉（无 Agent/团队驱动时，选择器即权威） -->
-          <DropUpSelect
-            v-else
-            v-model="selectedModel"
-            :options="modelOptions"
-            :isDark="isDark"
-            size="sm"
-            :searchable="true"
-            :placeholder="t('chat.input.selectModel')"
-            trigger-class="inline-flex h-7 flex-none cursor-pointer touch-manipulation items-center gap-1 rounded-lg border-0 bg-transparent px-2 text-[12px] font-medium outline-none select-none [color:color-mix(in_srgb,var(--pb-ink)_70%,transparent)] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease] hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] hover:[color:var(--pb-ink)] whitespace-nowrap"
-          >
-            <template #trigger="{ selected, isOpen: menuOpen }">
-              <ProviderIcon
-                v-if="selected?.groupIcon"
-                :icon="selected.groupIcon"
-                :name="selected.group ?? selected.label"
-                :size="14"
-              />
-              <span class="truncate max-w-[220px] text-[12px] leading-[18px]">
-                <template v-if="selected?.group">{{ selected.group }} / </template>{{ selected?.label ?? t('chat.input.selectModel') }}
-              </span>
-              <svg
-                class="w-2.5 h-2.5 shrink-0 origin-center transition-transform duration-300 ease-out"
-                :class="menuOpen ? 'rotate-180' : 'rotate-0'"
-                viewBox="0 0 1024 1024"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="currentColor"
-                aria-hidden="true"
-              >
-                <path d="M838.116 732.779 877.7 693.195 511.979 327.549 146.3 693.195 185.883 732.779 512.003 406.652Z" />
-              </svg>
-            </template>
-          </DropUpSelect>
+          <slot name="modelSelector" v-bind="modelSelectorSlotProps">
+            <component :is="injectedModelSelector" v-if="injectedModelSelector" v-bind="modelSelectorSlotProps" />
+            <ChatInputModelSelector v-else v-bind="modelSelectorSlotProps" />
+          </slot>
 
           <!-- 语音录入 (Mic) 按钮 -->
           <button
@@ -1655,30 +1624,10 @@ defineExpose({
           </button>
 
           <!-- Vue Bits 弹弓发送 / 停止按钮：支持拖拽弹射与点击发送，带发射粒子与弹力回弹 -->
-          <SlingButton
-            :pad-color="slingColors.padColor"
-            :icon-color="slingColors.iconColor"
-            :accent-color="slingColors.accentColor"
-            :well-color="slingColors.wellColor"
-            :band-color="slingColors.bandColor"
-            :size="32"
-            :stroke-width="2"
-            :arm-at="32"
-            :max-pull="90"
-            :launch-speed="2400"
-            :recoil="0.2"
-            :flight="80"
-            :particles="12"
-            :spread="60"
-            axis="any"
-            tap-sends
-            :disabled="!armed"
-            :aria-label="isSending ? t('chat.input.stop') : t('chat.input.send')"
-            :title="isSending ? t('chat.input.stop') : t('chat.input.sendTip')"
-            @send="onSendClick"
-          >
-            <MorphingSendIcon :is-sending="!!isSending" class="w-3.5 h-3.5" />
-          </SlingButton>
+          <slot name="sendButton" v-bind="sendButtonSlotProps">
+            <component :is="injectedSendButton" v-if="injectedSendButton" v-bind="sendButtonSlotProps" />
+            <ChatInputSendButton v-else v-bind="sendButtonSlotProps" />
+          </slot>
         </div>
       </div>
     </div>

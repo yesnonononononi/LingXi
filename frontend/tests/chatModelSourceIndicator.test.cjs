@@ -22,10 +22,18 @@ const viewSource = fs.readFileSync(
   path.resolve(__dirname, '../src/views/chat/useChatView.ts'),
   'utf8'
 );
-const inputSource = fs.readFileSync(
-  path.resolve(__dirname, '../src/components/chat/ChatInputArea.vue'),
-  'utf8'
-);
+/**
+ * 装配面扫描范围：插入区试点把「模型选择器」整段从 `ChatInputArea.vue` 搬进了
+ * `ChatInputModelSelector.vue`（默认实现），因此断言在这两个文件里**任一处**命中即成立 ——
+ * 断言条件本身不变，只是让「搬家」不至于把这条护栏变成假红。
+ * 选择器里的 `(?:props\.)?` 同理：搬成组件后模板引用的是 props。
+ */
+const inputSource = [
+  '../src/components/chat/ChatInputArea.vue',
+  '../src/components/chat/ChatInputModelSelector.vue',
+]
+  .map((rel) => fs.readFileSync(path.resolve(__dirname, rel), 'utf8'))
+  .join('\n/* --- 下一个文件 --- */\n');
 
 test('金丝雀：两个被测文件都读到了（否则下面的「不得出现」可能假绿）', () => {
   assert.match(viewSource, /export function useChatView/, '未读到 useChatView 源码');
@@ -50,10 +58,10 @@ test('配置类展示字段以 computed 暴露，不得直接返回 store 的取
 
 test('Agent/团队驱动时必须显式呈现实际生效模型与来源，而不是只显示全局选择器', () => {
   // 徽标：drivenModel 非空时替换模型下拉（v-if / v-else 成对）
-  assert.match(inputSource, /v-if="drivenModel"/, '缺少实际生效模型徽标');
+  assert.match(inputSource, /v-if="(?:props\.)?drivenModel"/, '缺少实际生效模型徽标');
   assert.match(inputSource, /v-else\s*\n\s*v-model="selectedModel"/, '徽标必须与模型下拉互斥');
   // 点击徽标要能直达改预设的地方
-  assert.match(inputSource, /emit\('openSettingsTab', 'agents'\)/, '徽标应能跳转「智能体」设置');
+  assert.match(inputSource, /onOpenSettingsTab\('agents'\)/, '徽标应能跳转「智能体」设置');
   // 两种来源（指挥者 / 单 Agent）都要覆盖
   assert.match(inputSource, /modelSourceCommander/, '未覆盖协作模式（指挥者预设）来源');
   assert.match(inputSource, /modelSourceAgent/, '未覆盖单 Agent 直聊来源');
