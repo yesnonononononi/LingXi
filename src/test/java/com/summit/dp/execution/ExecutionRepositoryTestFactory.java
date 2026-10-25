@@ -1,6 +1,7 @@
 package com.summit.dp.execution;
 
 import com.summit.dp.workflow.infrastructure.harness.ExecutionSnapshotReader;
+import com.summit.dp.workflow.infrastructure.harness.LegacyExecutionSnapshotAdapter;
 
 import com.summit.dp.execution.application.service.ExecutionCheckpointService;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
@@ -34,7 +35,8 @@ public final class ExecutionRepositoryTestFactory {
         return new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(mapper)), objectMapper,
                 provider(mock(ToolCallReadinessService.class)), provider(mock(ToolCallService.class)),
                 provider(mock(SubExecutionLifecycle.class)), provider(mock(SessionContextUsageProjector.class)),
-                provider(new ChatTurnLifecycleProjector(chatTurnService)), provider(mock(RuntimeEventPublisher.class)), new ExecutionSnapshotReader(objectMapper, RuntimeConfigurationTestSupport.create()));
+                provider(new ChatTurnLifecycleProjector(chatTurnService)), provider(mock(RuntimeEventPublisher.class)),
+                new ExecutionSnapshotReader(objectMapper, new LegacyExecutionSnapshotAdapter(objectMapper, RuntimeConfigurationTestSupport.create())));
     }
 
     @SuppressWarnings("unchecked")

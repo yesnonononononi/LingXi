@@ -41,6 +41,7 @@ import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.workflow.application.chat.RuntimeContext;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionSnapshotReader;
+import com.summit.dp.workflow.infrastructure.harness.LegacyExecutionSnapshotAdapter;
 import com.summit.dp.workflow.infrastructure.harness.RuntimeConfigurationProviders;
 import com.summit.dp.workflow.infrastructure.harness.agent.IChatAgent;
 import com.summit.dp.workflow.infrastructure.harness.agent.SubAgent;
@@ -195,7 +196,7 @@ class RuntimeConfigurationIntegrationTest {
             application.register(IChatAgent.class, SubAgent.class, RuntimeConfigurationProviders.class);
             application.refresh();
             for (ChatAgent agent : List.of(application.getBean(IChatAgent.class), application.getBean(SubAgent.class))) {
-                Execution restored = new ExecutionSnapshotReader(json, configurations).read(snapshot);
+                Execution restored = new ExecutionSnapshotReader(json, new LegacyExecutionSnapshotAdapter(json, configurations)).read(snapshot);
                 agent.execute(restored);
                 assertFalse(json.writeValueAsString(restored).contains("model-secret-canary"));
                 assertFalse(json.writeValueAsString(restored).contains("mcp-secret-canary"));
@@ -214,7 +215,7 @@ class RuntimeConfigurationIntegrationTest {
         request.set("mcpConfig", json.valueToTree(mcp(Map.of("Authorization", "legacy-mcp-canary"))));
         request.putObject("runtimeParameters").putObject("attributes").put(ExecutionAttributes.MODEL_CONFIG_ID, "31");
         tree.set("mcpConfig", request.get("mcpConfig"));
-        Execution restored = new ExecutionSnapshotReader(json, configurations).read(json.writeValueAsString(tree));
+        Execution restored = new ExecutionSnapshotReader(json, new LegacyExecutionSnapshotAdapter(json, configurations)).read(json.writeValueAsString(tree));
         SensitiveDataSpec modelSpec = restored.getAgentRequest().getModelConfigSpec();
         assertNotNull(modelSpec);
         assertEquals(2, modelSpec.getVersion());

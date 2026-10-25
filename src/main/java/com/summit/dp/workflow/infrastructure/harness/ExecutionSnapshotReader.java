@@ -5,36 +5,21 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.core.agent.Execution;
-import com.summit.core.conf.McpConfig;
-import com.summit.core.conf.ModelConfig;
-import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.execution.application.service.RuntimeConfigurationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-/** 旧快照恢复时先归档原连接配置，不能替换成当前设置。 */
+/** 新快照直接读取，含旧配置字段时才进入兼容路径。 */
 @Component
 @RequiredArgsConstructor
 public class ExecutionSnapshotReader {
     private final ObjectMapper mapper;
-    private final RuntimeConfigurationService configurations;
+    private final LegacyExecutionSnapshotAdapter legacySnapshots;
 
     public Execution read(String snapshot) throws JsonProcessingException {
         JsonNode tree = mapper.readTree(snapshot);
-        if (tree instanceof ObjectNode root && root.path("agentRequest") instanceof ObjectNode request) {
-            JsonNode legacyModel = request.remove("modelConfig");
-            if (legacyModel != null && !legacyModel.isNull() && !request.hasNonNull("modelConfigSpec")) {
-                long modelId = request.path("runtimeParameters").path("attributes")
-                        .path(ExecutionAttributes.MODEL_CONFIG_ID).asLong(0);
-                if (modelId <= 0) modelId = root.path("id").asLong(0);
-                request.set("modelConfigSpec", mapper.valueToTree(configurations.freezeModel(modelId,
-                        mapper.treeToValue(legacyModel, ModelConfig.class))));
-            }
-            JsonNode legacyMcp = request.remove("mcpConfig");
-            if (legacyMcp != null && !legacyMcp.isNull() && !request.hasNonNull("mcpConfigSpec")) {
-                request.set("mcpConfigSpec", mapper.valueToTree(configurations.freezeMcp(mapper.treeToValue(legacyMcp, McpConfig.class))));
-            }
-            root.remove("mcpConfig");
+        if (tree instanceof ObjectNode root && (root.has("mcpConfig")
+                || root.path("agentRequest").has("modelConfig") || root.path("agentRequest").has("mcpConfig"))) {
+            legacySnapshots.upgrade(root);
         }
         return mapper.treeToValue(tree, Execution.class);
     }
