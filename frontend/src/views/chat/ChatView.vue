@@ -381,6 +381,11 @@ import ChatInputSendButton from '../../components/chat/ChatInputSendButton.vue';
 import FilePreviewPanel from '../../components/chat/FilePreviewPanel.vue';
 import { useChatView } from './useChatView';
 import Sidebar from '../../components/chat/Sidebar.vue';
+import type { Component } from 'vue';
+import { SIDEBAR_SLOTS_KEY } from '../../types/sidebarSlots';
+import type { SidebarTreeSlotProps } from '../../types/sidebarSlots';
+import SidebarWorkspaceTree from '../../components/chat/SidebarWorkspaceTree.vue';
+import SidebarFooterBar from '../../components/chat/SidebarFooterBar.vue';
 import WelcomeView from '../../components/chat/WelcomeView.vue';
 import ChatMessageList from '../../components/chat/ChatMessageList.vue';
 import ChatInputArea from '../../components/chat/ChatInputArea.vue';
@@ -558,5 +563,32 @@ provide(CHAT_INPUT_SLOTS_KEY, {
   contextUsage: ChatInputContextUsage,
   modelSelector: ChatInputModelSelector,
   sendButton: ChatInputSendButton,
+});
+
+/**
+ * Sidebar 插槽渲染器（B 档第三组件 S4：让「宿主注入」这条分支成为活路径）。
+ *
+ * <p>注册的就是**内置默认实现**本身：生产里走<em>注入分支</em>，而无宿主挂载场景
+ * （例如 visual 组件场景直接挂 Sidebar）走<em>兜底分支</em>，两条分支都真实存在，
+ * 且只有一份实现代码 —— 不存在 A/B 双实现漂移。</p>
+ *
+ * <p>Sidebar 的对外契约只有 2 个插槽，且**不含** openModels / toggleTheme 两个死事件
+ * （已裁决不纳入契约，另立缺陷 D-1），因此这里只注册两个字段。</p>
+ */
+/**
+ * 默认工作区树实现的注册标记。
+ *
+ * <p>它的 props 是**内部接口**（24 项，见 SidebarWorkspaceTree.vue 文件头），并不满足对外 7 项
+ * 契约，因此注册处必须显式转换 —— 这是设计 §7.0「两套接口」方案③的直接代价。</p>
+ *
+ * <p><b>为什么这个转换是安全的：</b>Sidebar 用组件身份（`injectedTree === SidebarWorkspaceTree`）
+ * 决定渲染时喂哪一套 props；命中默认实现时喂内部 props，绝不会按对外契约喂它。
+ * 真正的第三方替换实现走的是对外契约分支，与这里无关。</p>
+ */
+const defaultWorkspaceTree = SidebarWorkspaceTree as unknown as Component<SidebarTreeSlotProps>;
+
+provide(SIDEBAR_SLOTS_KEY, {
+  workspaceTree: defaultWorkspaceTree,
+  sidebarFooter: SidebarFooterBar,
 });
 </script>

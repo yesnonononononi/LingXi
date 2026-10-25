@@ -36,6 +36,29 @@ const SELFCHECK = argv.includes('--selfcheck');
 /** 故意破坏主题切换，验证「主题未翻转」这条护栏真的会红（防假基线）。 */
 const SELFCHECK_THEME = argv.includes('--selfcheck-theme');
 
+/**
+ * 场景稳定性样式（只注入隔离场景，不动生产 CSS）。
+ *
+ * <p><b>为什么这是验收前提而不是可选项：</b>本批新增的 Sidebar 场景里，`BranchedMenu` 有
+ * `--bm-draw: 400ms` 展开 / `--bm-fold: 300ms` 折叠动画，`<aside>` 又有
+ * `transition-all duration-300`。不锁时间维度，同一份代码两次截图的像素就会不同 ——
+ * 那种基线是**假基线**，会让「零差异」结论不可信（也会让后续回归判定随机变红）。</p>
+ *
+ * <p>作用范围：全场景统一关掉光标闪烁 / 动画 / 过渡。它不改变任何**终态**色值，只消除
+ * 时间维度噪声，因此既有 4 个场景的形状与配色不变（基线会因新增 section 而整图刷新，
+ * 这是预期行为，见设计文档 §6.5-③）。</p>
+ */
+const STABILIZE_CSS = '*, *::before, *::after { caret-color: transparent !important;'
+  + ' animation: none !important; transition: none !important; }';
+
+/**
+ * 场景视口尺寸。
+ *
+ * <p>为什么不是默认的 780×760：本批把 Sidebar 的 4 个场景追加在页面下方，整体高度约 2.9k px。
+ * 若沿用默认视口，`capturePage()` 只截到前 760 px ⇒ 侧栏根本不在基线图里（"有场景没覆盖"的假绿）。</p>
+ */
+const SCENE_VIEWPORT = { width: 800, height: 3100 };
+
 /** 三个目标场景的 computed-style 采集选择器（函数体在渲染器里执行）。 */
 const TARGETS = [
   { key: 'cardHeaderTitle', desc: 'CardHeader 标题文字（折 text-lx-primary-soft 目标）',
@@ -46,7 +69,21 @@ const TARGETS = [
     sel: `(()=>{const p=document.querySelector('[role="listbox"]');if(!p)return null;return [...p.querySelectorAll('div')].find(el=>el.textContent.trim()==='下拉菜单标题')||null;})()` },
   { key: 'chatInputTextarea', desc: 'ChatInputArea 输入框（插件化试点 B 档：插槽化前后必须逐字节等价）',
     sel: `document.querySelector('[data-scene="chat-input"] textarea')` },
+  // ── Sidebar 插槽化（B 档第三组件）的 5 个探针 ──────────────────────────────
+  // 全部用「现有结构 + 文案」定位，零源码改动（设计文档 §6.4 推荐做法 a）。
+  // 注意：这些选择器在 S0 抓基线时就必须可用，且 S3 改组件后 DOM 结构不变 ⇒ 前后可比。
+  { key: 'sidebarWorkspaceLabel', desc: 'Sidebar 工作区名（暗色走 BranchedMenu header-label / 亮色走自绘列表）',
+    sel: `(()=>{const root=document.querySelector('[data-scene="sidebar-open"]');if(!root)return null;return [...root.querySelectorAll('span,div')].find(el=>el.children.length===0&&el.textContent.trim()==='ws-alpha')||null;})()` },
+  { key: 'sidebarSessionTitle', desc: 'Sidebar 会话标题（会话行文字色）',
+    sel: `(()=>{const root=document.querySelector('[data-scene="sidebar-open"]');if(!root)return null;return [...root.querySelectorAll('span,div')].find(el=>el.children.length===0&&el.textContent.trim()==='会话一')||null;})()` },
+  { key: 'sidebarFooterButton', desc: 'Sidebar 底部设置按钮（footer 容器内唯一带 title 的按钮）',
+    sel: `(()=>{const root=document.querySelector('[data-scene="sidebar-open"]');if(!root)return null;const list=[...root.querySelectorAll('button[title]')];return list.length?list[list.length-1]:null;})()` },
+  { key: 'sidebarEmptyState', desc: 'Sidebar 空态文案（无工作区无会话 → 「暂未指定工作区」）',
+    sel: `(()=>{const root=document.querySelector('[data-scene="sidebar-empty"]');if(!root)return null;return [...root.querySelectorAll('div,span,p')].find(el=>el.children.length===0&&el.textContent.trim()==='暂未指定工作区')||null;})()` },
+  { key: 'sidebarHistoryTitle', desc: 'Sidebar「历史对话」分组标题（未归属会话分区）',
+    sel: `(()=>{const root=document.querySelector('[data-scene="sidebar-history"]');if(!root)return null;return [...root.querySelectorAll('div,span')].find(el=>el.children.length===0&&el.textContent.trim()==='历史对话')||null;})()` },
 ];
+
 
 const STYLE_PROPS = ['color', 'backgroundColor', 'borderTopColor', 'outlineColor', 'textShadow', 'opacity', 'fontSize', 'fontWeight'];
 
@@ -56,15 +93,32 @@ import CardHeader from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/compon
 import RequireChoiceCard from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/components/chat/RequireChoiceCard.vue'))}';
 import DropUpSelect from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/components/common/DropUpSelect.vue'))}';
 import ChatInputArea from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/components/chat/ChatInputArea.vue'))}';
+import Sidebar from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/components/chat/Sidebar.vue'))}';
+import { useTheme } from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/composables/useTheme.ts'))}';
 import '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/style.css'))}';
 const dark=ref(false);
+/**
+ * Sidebar 的暗色分支读的是 useTheme 的模块单例（不是 isDark prop），
+ * 因此场景切主题时必须同时驱动 useTheme —— 否则侧栏永远停在初始主题上，
+ * 暗色 BranchedMenu 分支根本不会被渲染（假基线）。
+ */
+const { setTheme } = useTheme();
 const choiceCard={kind:'CHOICE',toolCallId:'choice-0',conversationId:'42',title:'选择交付方式？',content:'选择交付方式？',options:['源码','安装包','Docker 镜像'],status:'pending',pending:true,version:'2',allowedActions:['ANSWER']};
 const sel=ref('a');
 const opts=[{value:'a',label:'选项一'},{value:'b',label:'选项二'},{value:'c',label:'选项三'}];
 const inputUsage={usedTokens:24600,maxTokens:200000,ratio:0.123};
 const inputModels=[{id:'m1',name:'GPT-Test',modelName:'gpt-test'}];
 const inputAgents=[{id:'a1',name:'代码助手',modelId:'m1'}];
-window.setDark=value=>{dark.value=value;const el=document.documentElement;el.classList.toggle('dark',value);el.classList.toggle('light',!value);el.setAttribute('data-theme',value?'dark':'light');document.body.style.background=value?'#18181b':'#ffffff';};
+/**
+ * Sidebar 场景数据（确定性：固定 id / 固定时间戳 / 固定标题，避免基线随当前时间漂移）。
+ * 只提供渲染必需字段；messages 为空数组（侧栏不用消息内容）。
+ */
+const sbWorkspaces=[{id:1,name:'ws-alpha',workDir:'/ws-alpha'},{id:2,name:'ws-beta',workDir:'/ws-beta'}];
+const mkSession=(id,title,workspaceId,offset)=>({id,title,createdAt:1704067200000+offset,updatedAt:1704067200000+offset,modelId:'m1',activeTools:[],messages:[],workspaceId});
+const sbSessions=[mkSession('s1','会话一',1,1000),mkSession('s2','会话二',1,2000),mkSession('s3','会话三',2,3000)];
+/** 历史分组：7 条未归属会话（> SESSION_VISIBLE_LIMIT=5 ⇒ 触发「展开显示」按钮）。 */
+const sbHistorySessions=Array.from({length:7},(_,i)=>mkSession('h'+(i+1),'历史会话'+(i+1),null,10000+i*1000));
+window.setDark=value=>{dark.value=value;setTheme(value?'dark':'light');const el=document.documentElement;el.classList.toggle('dark',value);el.classList.toggle('light',!value);el.setAttribute('data-theme',value?'dark':'light');document.body.style.background=value?'#18181b':'#ffffff';};
 window.openDropdown=()=>{const trigger=document.querySelector('[data-scene="dropdown"] button');if(trigger&&trigger.getAttribute('aria-expanded')!=='true')trigger.click();};
 window.showCustomInput=()=>{};
 window.focusCustomInput=()=>{const input=document.querySelector('[data-scene="choice"] input[type="text"]');if(input)input.focus();};
@@ -86,8 +140,23 @@ window.focusCustomInput=()=>{const input=document.querySelector('[data-scene="ch
     <section data-scene="chat-input-driven" style="padding:10px 8px;min-height:220px">
       <ChatInputArea :is-dark="dark" :models="inputModels" :agents="inputAgents" selected-agent-id="a1" />
     </section>
+    <!-- 以下 4 个 Sidebar 场景：固定尺寸 + 固定数据，明暗两态由 runner 切换。
+         一个 section × 两主题即可同时覆盖「暗色 BranchedMenu 分支」与「亮色自绘列表」。 -->
+    <section data-scene="sidebar-open" style="width:264px;height:520px;overflow:hidden;border:1px solid #8884">
+      <Sidebar :sessions="sbSessions" active-session-id="s1" :workspaces="sbWorkspaces" :active-workspace-id="1" :is-collapsed="false" :is-dark="dark" />
+    </section>
+    <section data-scene="sidebar-empty" style="width:264px;height:520px;overflow:hidden;border:1px solid #8884">
+      <Sidebar :sessions="[]" :active-session-id="null" :workspaces="[]" :is-collapsed="false" :is-dark="dark" />
+    </section>
+    <section data-scene="sidebar-collapsed" style="width:80px;height:520px;overflow:hidden;border:1px solid #8884">
+      <Sidebar :sessions="[]" :active-session-id="null" :workspaces="sbWorkspaces" :is-collapsed="true" :is-dark="dark" />
+    </section>
+    <section data-scene="sidebar-history" style="width:264px;height:640px;overflow:hidden;border:1px solid #8884">
+      <Sidebar :sessions="sbHistorySessions" :active-session-id="null" :workspaces="[]" :is-collapsed="false" :is-dark="dark" />
+    </section>
   </main>
-</template>`;
+</template>
+<style>${STABILIZE_CSS}</style>`;
 
 const ENTRY_JS = `import {createApp,nextTick} from 'vue';
 localStorage.setItem('lingxi-locale','zh-CN');
@@ -175,7 +244,9 @@ async function captureTheme(win, theme, outDir, mutate = false, breakTheme = nul
 }
 
 async function runCapture(outDir, { mutate = false, breakTheme = null } = {}) {
-  const scene = await kit.openScene(WORK);
+  // 视口必须容纳全部场景（新增 4 个 Sidebar section 后页面高约 2.9k px）。
+  // 用默认 780×760 会让下方场景拍不到 —— 那样「基线」里根本没有侧栏，等于没有覆盖。
+  const scene = await kit.openScene(WORK, SCENE_VIEWPORT);
   const { win, evaluate } = scene;
   const styles = {};
   const probes = {};

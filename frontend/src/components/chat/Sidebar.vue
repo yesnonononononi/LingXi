@@ -1,8 +1,17 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, inject } from 'vue';
 import type { ChatSession, WorkspaceVO } from '../../types/chat';
 import logoUrl from '../../assets/lingxi-agent-logo.png';
-import BranchedMenu from '../common/BranchedMenu.vue';
+import { SIDEBAR_SLOTS_KEY } from '../../types/sidebarSlots';
+import type {
+  SidebarFooterSlotProps,
+  SidebarGroupNode,
+  SidebarTreeActions,
+  SidebarTreeSlotProps
+} from '../../types/sidebarSlots';
+import SidebarWorkspaceTree from './SidebarWorkspaceTree.vue';
+import type { SidebarWorkspaceTreeInternalProps } from './SidebarWorkspaceTree.vue';
+import SidebarFooterBar from './SidebarFooterBar.vue';
 
 
 import { useTheme } from '../../composables/useTheme';
@@ -35,6 +44,17 @@ const emit = defineEmits<{
   (e: 'openSettings'): void;
   (e: 'openModels'): void;
   (e: 'toggleTheme'): void;
+}>();
+
+/**
+ * 两个具名插槽（容器与出现时机归组件，插槽只替换容器内部内容）。
+ * 解析顺序：父级 `$slots` > 宿主注入（SIDEBAR_SLOTS_KEY）> 内置默认实现。
+ */
+defineSlots<{
+  /** 工作区树 / 历史分组的全部内容（容器、滚动、折叠态与空态时机由组件拥有）。 */
+  workspaceTree(props: SidebarTreeSlotProps): unknown;
+  /** 底部入口区内容（容器与布局由组件拥有）。 */
+  sidebarFooter(props: SidebarFooterSlotProps): unknown;
 }>();
 
 const { isDark: themeIsDark } = useTheme();
@@ -101,6 +121,158 @@ const {
   toggleWorkspaceExpand,
   toggleFullyExpanded
 });
+
+/**
+ * 宿主注册的渲染器（三层解析的中间层：父级 `$slots` > 宿主注入 > 内置默认实现）。
+ *
+ * <p>必须**按字段判空**，不能按对象真值判：宿主 `provide(SIDEBAR_SLOTS_KEY, {})` 时对象为真
+ * 但两个字段缺省，按对象真值判会把两侧都当成「已注册」，结果整块区域渲染成空白。
+ * `inject` 的默认值给 `undefined`，与「未注册」语义一致。</p>
+ */
+const slotOverrides = inject(SIDEBAR_SLOTS_KEY, undefined);
+const injectedTree = computed(() => slotOverrides?.workspaceTree);
+const injectedFooter = computed(() => slotOverrides?.sidebarFooter);
+
+/** 注册项是否就是内置默认实现（决定用内部 props 还是对外契约渲染，见下方模板注释）。 */
+const isDefaultTree = computed(() => injectedTree.value === SidebarWorkspaceTree);
+
+/**
+ * 语义键 → 组件内部状态键。
+ *
+ * <p><b>为什么需要这个映射（与设计稿 §4.4 的一处偏差）：</b>插槽的语义键统一为 `ws-<id>` /
+ * `ws-unassigned`（与 BranchedMenu 的 value 对齐），但组件内部 `fullyExpandedWorkspaces` 对
+ * **工作区分组**用的键是 `String(workspace.id)`（见 useWorkspaceExpansion 的 activeSessionId watch
+ * 与亮色分支的 toggle），只有历史分组用 `ws-unassigned`。若直接拿 `ws-<id>` 去查，`isFullyExpanded`
+ * 恒为 false ⇒ 对外语义模型会谎报「未展开」。这里显式还原真实键，避免把内部键口径泄漏成契约的一部分。</p>
+ *
+ * @param groupKey 语义键（`ws-12` / `ws-unassigned`）
+ * @returns 组件内部使用的工作区 id 字符串 / `ws-unassigned`
+ */
+const internalKeyOf = (groupKey: string): string =>
+  groupKey === 'ws-unassigned' ? 'ws-unassigned' : groupKey.replace(/^ws-/, '');
+
+/**
+ * 树内容区的唯一行为入口集合（10 个回调，每个 1:1 对应组件内既有实现点）。
+ *
+ * <p>消费者只能调用这些回调，拿不到 `emit` —— 这样替换实现无法自造一条事件路径（§5.3 D2）。</p>
+ */
+const treeActions: SidebarTreeActions = {
+  onSelectSession: (id: string) => emit('selectSession', id),
+  onSelectWorkspace: (workspace: WorkspaceVO | null) => {
+    // 历史分组（null）只有「选中」语义：不切换任何工作区展开态，直接上报给宿主。
+    if (workspace === null) { emit('selectWorkspace', null); return; }
+    handleSelectWorkspace(workspace);
+  },
+  onToggleGroup: (groupKey: string) => {
+    // 历史分组没有「展开/折叠」状态（它的可见性由 onToggleMore 控制），因此是显式 no-op。
+    if (groupKey === 'ws-unassigned') return;
+    toggleWorkspaceExpand(internalKeyOf(groupKey));
+  },
+  onToggleMore: (groupKey: string) => toggleFullyExpanded(internalKeyOf(groupKey)),
+  onStartEdit: (id: string) => {
+    const session = props.sessions.find((item) => item.id === id);
+    if (!session) return;
+    // 复用既有 startEdit：它需要 Event（内部会 stopPropagation 并写 editingSessionId/editingTitle）。
+    startEdit(session, new Event('click'));
+  },
+  onRenameSession: (id: string, name: string) => emit('renameSession', id, name),
+  onDeleteSession: (id: string) => emit('deleteSession', id),
+  onNewSession: (workspaceId?: string | number | null) => emit('newSession', workspaceId),
+  onNewWorkspace: () => emit('newWorkspace'),
+  onDeleteWorkspace: (id: string | number) => emit('deleteWorkspace', id)
+};
+
+/**
+ * 语义层装配：把 `projectGroups`（领域模型）+ `unassignedSessions` 投影成插槽契约模型。
+ *
+ * <p>三个必须由这里做、不能外移的决定：①「历史对话」分组以 `workspace: null` 表达（它在一处被折进
+ * branchedMenuItems，在另一处是独立区块）；②截断与「展开显示」还原成 `truncated`/`totalCount`
+ * （伪条目 `<more-*>` 属渲染细节）；③`active` 复用组件既有的 `isWorkspaceActive` 判定，
+ * 保证两种默认实现与替换实现的选中态一致。</p>
+ */
+const treeGroups = computed<SidebarGroupNode[]>(() => {
+  const nodes: SidebarGroupNode[] = projectGroups.value.map((group) => {
+    const internalKey = String(group.workspace.id);
+    const visible = limitSessions(internalKey, group.sessions);
+    return {
+      key: 'ws-' + internalKey,
+      workspace: group.workspace,
+      label: group.workspace.name || group.workspace.workDir || t('session.workspace'),
+      sessions: visible,
+      totalCount: group.sessions.length,
+      truncated: visible.length < group.sessions.length,
+      expanded: isFullyExpanded(internalKey),
+      active: isWorkspaceActive(group.workspace)
+    };
+  });
+  if (unassignedSessions.value.length > 0) {
+    const visible = limitSessions('ws-unassigned', unassignedSessions.value);
+    nodes.push({
+      key: 'ws-unassigned',
+      workspace: null,
+      label: t('chat.sidebar.history'),
+      sessions: visible,
+      totalCount: unassignedSessions.value.length,
+      truncated: visible.length < unassignedSessions.value.length,
+      expanded: isFullyExpanded('ws-unassigned'),
+      active: false
+    });
+  }
+  return nodes;
+});
+
+/** `workspaceTree` 插槽 props（对外契约，7 项）。 */
+const treeSlotProps = computed<SidebarTreeSlotProps>(() => ({
+  groups: treeGroups.value,
+  activeSessionId: props.activeSessionId,
+  isCollapsed: props.isCollapsed,
+  isDark: isDark.value,
+  sessionLimit: SESSION_VISIBLE_LIMIT,
+  editingSessionId: editingSessionId.value,
+  actions: treeActions
+}));
+
+/**
+ * 工作区树**默认实现**的内部 props（24 项，无兼容承诺）。
+ *
+ * <p>`editingTitle` 传的是 Ref 本身（不是 `.value`）：原模板用 `v-model` 双向绑定重命名输入框，
+ * 传值会让输入框变成只读。这里在 script 作用域里组对象，模板不会再自动解包，
+ * 因此子组件拿到的是真正的 Ref —— 这是内部接口专有的约定，对外契约不这样写。</p>
+ */
+const treeDefaultProps = computed<SidebarWorkspaceTreeInternalProps>(() => ({
+  projectGroups: projectGroups.value,
+  unassignedSessions: unassignedSessions.value,
+  expandedWorkspaces: expandedWorkspaces.value,
+  branchedMenuItems: branchedMenuItems.value,
+  branchedOpenIndices: branchedOpenIndices.value,
+  editingSessionId: editingSessionId.value,
+  editingTitle,
+  activeMenuWorkspaceId: activeMenuWorkspaceId.value,
+  activeSessionId: props.activeSessionId,
+  isCollapsed: props.isCollapsed,
+  isDark: isDark.value,
+  limitSessions,
+  isFullyExpanded,
+  toggleFullyExpanded,
+  toggleWorkspaceExpand,
+  isWorkspaceActive,
+  handleSelectWorkspace,
+  handleNewSessionInProject,
+  toggleProjectMenu,
+  handleDeleteProject,
+  startEdit,
+  saveEdit,
+  handleBranchedSelect,
+  handleBranchedToggle,
+  actions: treeActions
+}));
+
+/** `sidebarFooter` 插槽 props（对外契约，3 项）+ 默认实现的同一份 props。 */
+const footerSlotProps = computed<SidebarFooterSlotProps>(() => ({
+  isCollapsed: props.isCollapsed,
+  isDark: isDark.value,
+  onOpenSettings: () => emit('openSettings')
+}));
 
 onMounted(() => {
   installClickOutside();
@@ -250,413 +422,18 @@ onBeforeUnmount(() => {
 
     <!-- Workspaces List (Scrollable Area) -->
     <div class="flex-1 overflow-y-auto px-2 py-1 space-y-0.5 scrollbar-thin">
-      <!-- Collapsed view for icons -->
-      <div v-if="isCollapsed" class="space-y-1 py-1">
-        <div
-          v-for="group in projectGroups"
-          :key="group.workspace.id"
-          @click="handleSelectWorkspace(group.workspace)"
-          :class="[
-            'p-2 rounded-xl flex items-center justify-center cursor-pointer transition',
-            isWorkspaceActive(group.workspace)
-              ? 'bg-blue-600/15 text-blue-500'
-              : 'text-gray-400 hover:bg-gray-200/60 dark:hover:bg-gray-800 hover:text-lx-secondary'
-          ]"
-          :title="group.workspace.name || group.workspace.workDir"
-        >
-          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-          </svg>
-        </div>
-      </div>
-
-      <!-- Expanded Workspace Tree View -->
-      <div v-else class="space-y-0.5">
-        <!-- Empty State if no workspaces and no unassigned sessions -->
-        <div v-if="projectGroups.length === 0 && unassignedSessions.length === 0" class="px-2 py-6 text-center text-xs text-lx-faint select-none">
-                    {{ t('chat.sidebar.noWorkspace') }}
-        </div>
-
-        <!-- Dark Mode: 使用 BranchedMenu 树形分支结构渲染 -->
-        <div v-else-if="isDark" class="py-1">
-          <BranchedMenu
-            :items="branchedMenuItems"
-            :active="activeSessionId || ''"
-            :openIndices="branchedOpenIndices"
-            color="#a1a1aa"
-            accentColor="#38bdf8"
-            lineColor="rgba(255, 255, 255, 0.12)"
-            :lineWidth="1.2"
-            :rowHeight="34"
-            :indent="36"
-            :trunk="14"
-            :radius="8"
-            :fontSize="13"
-            className="w-full"
-            @select="handleBranchedSelect"
-            @toggle="handleBranchedToggle"
-          >
-            <!-- Header Prefix: 文件夹图标 -->
-            <template #header-prefix="{ item }">
-              <svg
-                class="w-3.5 h-3.5 shrink-0 transition-colors"
-                :class="item.raw && isWorkspaceActive(item.raw) ? 'text-zinc-100' : 'text-zinc-500'"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-              </svg>
-            </template>
-
-            <!-- Header Label: 标题 -->
-            <template #header-label="{ item }">
-              <span
-                class="truncate text-xs tracking-wide"
-                :class="item.raw && isWorkspaceActive(item.raw) ? 'text-white font-medium' : ''"
-              >
-                {{ item.label }}
-              </span>
-            </template>
-
-            <!-- Header Actions: 工作区操作与新建会话 -->
-            <template #header-actions="{ item }">
-              <div v-if="item.raw" class="flex items-center gap-1 shrink-0">
-                <div class="relative">
-                                    <button
-                    @click="toggleProjectMenu(item.raw.id, $event)"
-                    class="p-0.5 rounded opacity-0 group-hover/head:opacity-80 hover:opacity-100 hover:text-zinc-100 transition cursor-pointer"
-                    :title="t('chat.sidebar.workspaceActions')"
-                  >
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                    </svg>
-                  </button>
-
-                  <!-- Context Menu Floating Panel -->
-                  <Transition
-                    enter-active-class="transition duration-150 ease-out"
-                    enter-from-class="opacity-0 scale-95 translate-y-1"
-                    enter-to-class="opacity-100 scale-100 translate-y-0"
-                    leave-active-class="transition duration-100 ease-in"
-                    leave-from-class="opacity-100 scale-100 translate-y-0"
-                    leave-to-class="opacity-0 scale-95 translate-y-1"
-                  >
-                    <div
-                      v-if="activeMenuWorkspaceId === String(item.raw.id)"
-                      class="absolute right-0 top-6 w-32 py-1 rounded-xl shadow-2xl border border-white/[0.08] bg-zinc-900 text-zinc-200 z-50 text-xs backdrop-blur-md"
-                    >
-                      <button
-                                                @click="handleDeleteProject(item.raw, $event)"
-                        class="w-full text-left px-3 py-1.5 hover:bg-red-500/10 text-red-400 transition-colors flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                        <span>{{ t('chat.sidebar.deleteWorkspaceLabel') }}</span>
-                      </button>
-                    </div>
-                  </Transition>
-                </div>
-
-                <button
-                                    @click="handleNewSessionInProject(item.raw, $event)"
-                  class="p-0.5 rounded opacity-0 group-hover/head:opacity-80 hover:opacity-100 hover:text-white transition cursor-pointer"
-                  :title="t('chat.sidebar.newSessionInWorkspace')"
-                >
-                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                  </svg>
-                </button>
-              </div>
-            </template>
-
-            <!-- Item Label: 会话标题或行内编辑器 -->
-            <template #item-label="{ item }">
-              <div class="flex-1 truncate min-w-0 pr-1">
-                <input
-                  v-if="editingSessionId === item.value"
-                  v-model="editingTitle"
-                  @blur="saveEdit(item.raw, $event)"
-                  @keyup.enter="saveEdit(item.raw, $event)"
-                  @click.stop
-                  class="w-full bg-transparent border-b border-white/50 outline-none text-xs px-0.5 text-inherit"
-                  autoFocus
-                />
-                <span v-else class="block truncate" :title="item.label">{{ item.label }}</span>
-              </div>
-            </template>
-
-            <!-- Item Actions: 重命名与删除 -->
-            <template #item-actions="{ item }">
-              <div
-                v-if="editingSessionId !== item.value"
-                class="hidden group-hover/kid:flex items-center gap-1 opacity-70 shrink-0"
-                @click.stop
-              >
-                                <button
-                  @click.stop="startEdit(item.raw, $event)"
-                  class="p-0.5 hover:text-white transition cursor-pointer"
-                  :title="t('chat.sidebar.rename')"
-                >
-                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </button>
-                                <button
-                  @click.stop="emit('deleteSession', item.value)"
-                  class="p-0.5 hover:text-red-400 transition cursor-pointer"
-                  :title="t('common.remove')"
-                >
-                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
-              </div>
-            </template>
-          </BranchedMenu>
-        </div>
-
-        <!-- Light Mode: 既有会话列表渲染 -->
-        <div v-else class="space-y-0.5">
-          <!-- Each Workspace Group Item -->
-          <div
-            v-for="group in projectGroups"
-            :key="group.workspace.id"
-            class="rounded-lg transition-colors"
-          >
-            <!-- Workspace Row (Folder Icon + Name) -->
-            <div
-              @click="handleSelectWorkspace(group.workspace)"
-              :class="[
-                'group relative flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
-                isWorkspaceActive(group.workspace)
-                  ? 'bg-gray-200/80 text-gray-900 font-medium'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-              ]"
-            >
-              <!-- Left: Chevron Indicator + Folder Icon + Workspace Name -->
-              <div class="flex items-center gap-1.5 truncate min-w-0 pr-1" @click.stop="toggleWorkspaceExpand(group.workspace.id!)">
-                <svg
-                  class="w-3 h-3 shrink-0 transition-transform duration-200 text-gray-400 group-hover:text-gray-600"
-                  :class="expandedWorkspaces[String(group.workspace.id)] ? 'rotate-90' : 'rotate-0'"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                </svg>
-                <svg
-                  class="w-4 h-4 shrink-0 transition-colors text-gray-400 group-hover:text-gray-600"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                </svg>
-                <span class="truncate">{{ group.workspace.name || group.workspace.workDir }}</span>
-              </div>
-
-              <!-- Right: Three Dots Menu ⋮ and New Chat + -->
-              <div class="flex items-center gap-1 shrink-0">
-                <!-- Three Dots Context Menu ⋮ -->
-                <div class="relative">
-                  <button
-                    @click="toggleProjectMenu(group.workspace.id!, $event)"
-                                        :class="[
-                      'p-0.5 rounded transition-opacity cursor-pointer',
-                      isWorkspaceActive(group.workspace) ? 'opacity-80 hover:opacity-100' : 'opacity-0 group-hover:opacity-80 hover:opacity-100',
-                      'hover:text-gray-900'
-                    ]"
-                    :title="t('chat.sidebar.workspaceActions')"
-                  >
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                    </svg>
-                  </button>
-
-                  <!-- Context Menu Floating Panel -->
-                  <Transition
-                    enter-active-class="transition duration-150 ease-out"
-                    enter-from-class="opacity-0 scale-95 translate-y-1"
-                    enter-to-class="opacity-100 scale-100 translate-y-0"
-                    leave-active-class="transition duration-100 ease-in"
-                    leave-from-class="opacity-100 scale-100 translate-y-0"
-                    leave-to-class="opacity-0 scale-95 translate-y-1"
-                  >
-                    <div
-                      v-if="activeMenuWorkspaceId === String(group.workspace.id)"
-                      class="absolute right-0 top-6 w-32 py-1 rounded-xl shadow-xl border z-50 text-xs bg-white border-gray-200 text-gray-700 backdrop-blur-md"
-                    >
-                      <button
-                                                @click="handleDeleteProject(group.workspace, $event)"
-                        class="w-full text-left px-3 py-1.5 hover:bg-red-500/10 text-red-500 transition-colors flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                        <span>{{ t('chat.sidebar.deleteWorkspaceLabel') }}</span>
-                      </button>
-                    </div>
-                  </Transition>
-                </div>
-
-                <!-- + New Chat in this Workspace -->
-                <button
-                                    @click="handleNewSessionInProject(group.workspace, $event)"
-                  :class="[
-                    'p-0.5 rounded transition-opacity cursor-pointer',
-                    isWorkspaceActive(group.workspace) ? 'opacity-80 hover:opacity-100' : 'opacity-0 group-hover:opacity-80 hover:opacity-100',
-                    'hover:text-blue-500'
-                  ]"
-                  :title="t('chat.sidebar.newSessionInWorkspace')"
-                >
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <!-- Sessions under this Workspace -->
-            <CollapseTransition>
-              <div v-if="expandedWorkspaces[String(group.workspace.id)] && group.sessions.length > 0">
-                <div class="pl-4 pr-1 py-0.5 space-y-0.5">
-                  <div
-                    v-for="session in limitSessions(String(group.workspace.id), group.sessions)"
-                    :key="session.id"
-                    @click="emit('selectSession', session.id)"
-                    :class="[
-                      'group/session relative flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
-                      activeSessionId === session.id
-                        ? 'bg-blue-50 text-blue-600 font-medium'
-                        : 'hover:bg-gray-100/70 text-gray-600 hover:text-gray-900'
-                    ]"
-                  >
-                    <!-- Chat Bubble Icon -->
-                    <svg class="w-3.5 h-3.5 shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                    </svg>
-
-                    <!-- Session Title or Inline Editor -->
-                    <div class="flex-1 truncate">
-                      <input
-                        v-if="editingSessionId === session.id"
-                        v-model="editingTitle"
-                        @blur="saveEdit(session, $event)"
-                        @keyup.enter="saveEdit(session, $event)"
-                        class="w-full bg-transparent border-b border-blue-500 outline-none text-xs px-0.5 text-inherit"
-                        autoFocus
-                      />
-                      <span v-else class="block truncate" :title="session.title || t('session.newConversation')">{{ session.title || t('session.newConversation') }}</span>
-                    </div>
-
-                    <!-- Action Controls: Rename & Delete -->
-                    <div v-if="editingSessionId !== session.id" class="hidden group-hover/session:flex items-center gap-1 opacity-70 shrink-0">
-                      <button @click="startEdit(session, $event)" class="p-0.5 hover:text-blue-500 transition cursor-pointer" :title="t('chat.sidebar.rename')">
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                      </button>
-                      <button @click.stop="emit('deleteSession', session.id)" class="p-0.5 hover:text-red-500 transition cursor-pointer" :title="t('common.remove')">
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- 展开显示 / 收起 -->
-                  <button
-                    v-if="group.sessions.length > SESSION_VISIBLE_LIMIT"
-                    @click.stop="toggleFullyExpanded(String(group.workspace.id))"
-                    class="w-full text-left px-2 py-1.5 rounded-lg text-xs transition-colors cursor-pointer"
-                    :class="isDark ? 'text-zinc-500 hover:text-zinc-300' : 'text-gray-400 hover:text-gray-600'"
-                  >
-                    {{ isFullyExpanded(String(group.workspace.id)) ? t('chat.sidebar.collapseDisplay') : t('chat.sidebar.expandDisplay', { count: group.sessions.length }) }}
-                  </button>
-                </div>
-              </div>
-            </CollapseTransition>
-          </div>
-
-          <!-- Unassigned Sessions Section (if any) -->
-          <div v-if="unassignedSessions.length > 0" class="pt-2">
-                        <div class="px-2 py-1 text-[11px] font-medium text-gray-400 tracking-wider">
-              {{ t('chat.sidebar.history') }}
-            </div>
-            <div class="space-y-0.5">
-              <div
-                v-for="session in limitSessions('ws-unassigned', unassignedSessions)"
-                :key="session.id"
-                @click="emit('selectSession', session.id)"
-                :class="[
-                  'group/session relative flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
-                  activeSessionId === session.id
-                    ? 'bg-blue-50 text-blue-600 font-medium'
-                    : 'hover:bg-gray-100/70 text-gray-600 hover:text-gray-900'
-                ]"
-              >
-                <svg class="w-3.5 h-3.5 shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                </svg>
-                <div class="flex-1 truncate">
-                  <input
-                    v-if="editingSessionId === session.id"
-                    v-model="editingTitle"
-                    @blur="saveEdit(session, $event)"
-                    @keyup.enter="saveEdit(session, $event)"
-                    class="w-full bg-transparent border-b border-blue-500 outline-none text-xs px-0.5 text-inherit"
-                    autoFocus
-                  />
-                  <span v-else class="block truncate">{{ session.title || t('session.newConversation') }}</span>
-                </div>
-                <div v-if="editingSessionId !== session.id" class="hidden group-hover/session:flex items-center gap-1 opacity-70 shrink-0">
-                  <button @click="startEdit(session, $event)" class="p-0.5 hover:text-blue-500 transition cursor-pointer" :title="t('chat.sidebar.rename')">
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                  </button>
-                  <button @click.stop="emit('deleteSession', session.id)" class="p-0.5 hover:text-red-500 transition cursor-pointer" :title="t('common.remove')">
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              <button
-                v-if="unassignedSessions.length > SESSION_VISIBLE_LIMIT"
-                @click.stop="toggleFullyExpanded('ws-unassigned')"
-                class="w-full text-left px-2 py-1.5 rounded-lg text-xs transition-colors cursor-pointer"
-                :class="isDark ? 'text-zinc-500 hover:text-zinc-300' : 'text-gray-400 hover:text-gray-600'"
-              >
-                {{ isFullyExpanded('ws-unassigned') ? t('chat.sidebar.collapseDisplay') : t('chat.sidebar.expandDisplay', { count: unassignedSessions.length }) }}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <slot name="workspaceTree" v-bind="treeSlotProps">
+        <component :is="injectedTree" v-if="injectedTree && !isDefaultTree" v-bind="treeSlotProps" />
+        <SidebarWorkspaceTree v-else v-bind="treeDefaultProps" />
+      </slot>
     </div>
 
     <!-- Bottom Left Settings Bar (Image style) -->
     <div :class="['p-3 border-t shrink-0', isDark ? 'border-white/[0.06]' : 'border-gray-200/80']">
-      <div :class="['flex items-center', isCollapsed ? 'justify-center' : 'justify-between']">
-        <!-- Settings Button (⚙ 设置) -->
-        <button
-          @click="emit('openSettings')"
-          :class="[
-            'flex items-center gap-2 text-xs font-medium transition-colors cursor-pointer py-1.5 px-2 rounded-lg',
-            isDark ? 'text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.05]' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200/60'
-          ]"
-          :title="t('chat.sidebar.systemSettings')"
-        >
-          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-          <span v-if="!isCollapsed">{{ t('chat.sidebar.settings') }}</span>
-        </button>
-      </div>
+      <slot name="sidebarFooter" v-bind="footerSlotProps">
+        <component :is="injectedFooter" v-if="injectedFooter" v-bind="footerSlotProps" />
+        <SidebarFooterBar v-else v-bind="footerSlotProps" />
+      </slot>
     </div>
   </aside>
 </template>
