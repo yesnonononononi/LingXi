@@ -2,6 +2,7 @@ package com.summit.dp.session.infrastructure.persistence.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
+import com.summit.dp.execution.ExecutionStatusCodes;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -10,8 +11,13 @@ import java.util.List;
 
 @Mapper
 public interface SessionMapper extends BaseMapper<SessionPO> {
-    /** 根会话分页：子代理会话不参与列表展示，按主键倒序。 */
-    @Select("SELECT * FROM session WHERE root_session_id = #{root} ORDER BY id DESC LIMIT #{offset}, #{size}")
+    /** 排序必须先于分页；最新进行态与展示口径一致，避免历史运行记录把挂起会话置顶。 */
+    @Select("SELECT s.* FROM session s WHERE s.root_session_id = #{root}"
+            + " ORDER BY CASE WHEN (SELECT e.status FROM execution e WHERE e.session_id = s.id"
+            + " AND e.status IN (" + ExecutionStatusCodes.CREATED + "," + ExecutionStatusCodes.RUNNING
+            + "," + ExecutionStatusCodes.SUSPENDED + ") ORDER BY e.id DESC LIMIT 1)"
+            + " IN (" + ExecutionStatusCodes.CREATED + "," + ExecutionStatusCodes.RUNNING + ") THEN 0 ELSE 1 END,"
+            + " s.update_time DESC, s.id DESC LIMIT #{offset}, #{size}")
     List<SessionPO> selectRootPage(@Param("root") long rootSessionId, @Param("offset") long offset,
                                    @Param("size") long size);
 
