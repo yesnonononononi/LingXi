@@ -1,5 +1,7 @@
 package com.summit.dp.execution;
 
+import com.summit.dp.workflow.infrastructure.harness.ExecutionSnapshotReader;
+
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 
 import com.summit.dp.execution.application.service.ExecutionCheckpointService;
@@ -70,7 +72,7 @@ class LocalExecutionRepositoryResumeTest {
     }
     private final LocalExecutionRepository repository =
             new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(persistence)), mapper, provider(readiness), provider(tools),
-                    provider(subExecutionLifecycle), provider(sessions), provider(turns), provider(runtimeEvents));
+                    provider(subExecutionLifecycle), provider(sessions), provider(turns), provider(runtimeEvents), new ExecutionSnapshotReader(mapper, RuntimeConfigurationTestSupport.create()));
 
     private static Execution execution() {
         List<Message> history = List.of(UserMessageEntity.from("hi"),
@@ -398,7 +400,7 @@ class LocalExecutionRepositoryResumeTest {
     void releasedSignalIsVisibleAndServiceFailureDoesNotBlockFollowingService() {
         ToolCallReadinessService failing = mock(ToolCallReadinessService.class);
         LocalExecutionRepository isolated = new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(persistence)), mapper,
-                provider(failing), provider(tools), provider(subExecutionLifecycle), provider(sessions), provider(turns), provider(runtimeEvents));
+                provider(failing), provider(tools), provider(subExecutionLifecycle), provider(sessions), provider(turns), provider(runtimeEvents), new ExecutionSnapshotReader(mapper, RuntimeConfigurationTestSupport.create()));
         doAnswer(invocation -> {
             assertFalse(Thread.holdsLock(ExecutionCoordination.monitor("305")));
             assertFalse(isolated.isActive("305"));

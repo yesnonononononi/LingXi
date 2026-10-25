@@ -1,5 +1,7 @@
 package com.summit.dp.shared.utils;
 
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
+
 import com.summit.dp.tools.application.service.ToolListProcessor;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
@@ -293,7 +295,7 @@ class CollaborationToolExposureTest {
                 mock(SettingsProvider.class), new ToolListProcessor(catalog), mock(ConversationTranscriptService.class),
                 mock(ModelContextService.class),
                 mock(com.summit.dp.turn.application.service.ChatTurnService.class),
-                mock(AgentService.class), mock(TeamService.class), mcpService, skillRootResolver, new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class));
+                mock(AgentService.class), mock(TeamService.class), mcpService, skillRootResolver, new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class), RuntimeConfigurationTestSupport.create());
 
         // executionId 必须非空：buildRequest 不再自造身份，缺身份即视为「prepare 没跑」并直接报错。
         ExecutionContext executionContext = ExecutionContext.root(500L, "2105000000000000001", null, null,

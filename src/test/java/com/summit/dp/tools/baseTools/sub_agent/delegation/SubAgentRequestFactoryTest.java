@@ -1,5 +1,7 @@
 package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
+
 import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
@@ -60,7 +62,7 @@ class SubAgentRequestFactoryTest {
 
     /** Skill 关闭（空配置）时的组装器：本类多数用例的基线。 */
     private final SubAgentRequestFactory factory = new SubAgentRequestFactory(
-            workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create());
+            workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create());
 
     @TempDir
     Path skillDir;
@@ -68,20 +70,22 @@ class SubAgentRequestFactoryTest {
     /** Skill 开启时的组装器：根目录指向一个真实存在的临时目录。 */
     private SubAgentRequestFactory factoryWithSkills() {
         return new SubAgentRequestFactory(workspaceService, modelService, settingsProvider,
-                workspaceConverter, new SkillRootResolver(skillDir.toString()), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create());
+                workspaceConverter, new SkillRootResolver(skillDir.toString()), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create());
     }
 
     @Test
     void imageCapabilityUsesTheChildModelRatherThanTheParentModel() {
         stubModel();
         SubAgentRequestFactory target = new SubAgentRequestFactory(workspaceService, modelService, settingsProvider,
-                workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create());
+                workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create());
         AgentVO member = agent(6L, "图片评审员", "检查图片");
         member.setToolList(List.of(ToolCatalog.READ_FILE));
         ToolExecution parent = ToolExecution.builder().executionId("900")
                 .attributes(Map.of(ExecutionAttributes.MODEL_VISION, false)).build();
         when(modelService.resolveRuntimeConfig(anyLong(), any())).thenReturn(new RuntimeModel(ModelConfig.builder().modelName("arbitrary-model").build(), true));
         AgentRequest supported = build(target, member, buildTeam(member), parent, List.of());
+        assertNotNull(supported.getModelConfigSpec());
+        assertEquals(member.getModelId().longValue(), supported.getModelConfigSpec().getId().longValue());
         assertTrue(supported.getRetryConfig().isEnabled());
         assertTrue(supported.getToolList().contains(ToolCatalog.READ_IMAGE));
         assertEquals(true, supported.runtimeParametersOrDefault().getAttributes().get(ExecutionAttributes.MODEL_VISION));

@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
-import com.summit.core.conf.ModelConfig;
+import com.summit.core.conf.SensitiveDataSpec;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
@@ -77,7 +77,7 @@ class ExecutionSummaryCheckpointTest {
         });
     }
 
-    /** 一次请求：带模型配置（含连接凭据）与可选的根执行属性。 */
+    /** 执行只携带模型版本引用，连接凭据由版本库解析。 */
     private static AgentRequest request(Map<String, Object> extraAttributes) {
         Map<String, Object> attributes = new HashMap<>();
         attributes.put(ExecutionAttributes.SESSION_ID, String.valueOf(SESSION_ID));
@@ -85,9 +85,7 @@ class ExecutionSummaryCheckpointTest {
         return AgentRequest.builder()
                 .executionId(String.valueOf(EXECUTION_ID))
                 .messages(List.of(UserMessageEntity.from("hi")))
-                .modelConfig(ModelConfig.builder()
-                        .baseUrl("https://example.invalid").apiKey("secret-key")
-                        .modelName(MODEL_NAME).provider(MODEL_PROVIDER).build())
+                .modelConfigSpec(SensitiveDataSpec.builder().id(31L).version(1).build())
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.copyOf(attributes)).build())
                 .build();

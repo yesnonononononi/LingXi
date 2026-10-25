@@ -2,7 +2,6 @@ package com.summit.dp.workflow.application.chat;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
@@ -69,15 +68,16 @@ public class ResendTargetResolver {
         String snapshot = executionQueryService.findSnapshotById(executionId);
         throwIf(snapshot == null, "执行快照不存在，无法重发");
 
-        Execution execution;
+        List<Message> messages;
         try {
-            execution = objectMapper.readValue(snapshot, Execution.class);
+            // 重发只复用历史消息；连接参数由新请求重新选择，不需要恢复旧凭据。
+            messages = objectMapper.treeToValue(objectMapper.readTree(snapshot).get("messages"),
+                    objectMapper.getTypeFactory().constructCollectionType(List.class, Message.class));
         } catch (JsonProcessingException e) {
             // 快照损坏是系统故障，不是用户能改正的业务错误，因此不套 ClientException。
             throw new IllegalStateException("执行快照无法解析: executionId=" + executionId, e);
         }
 
-        List<Message> messages = execution.getMessages();
         throwIf(messages == null || messages.isEmpty(), "执行快照缺少历史上下文，无法重发");
         for (int i = messages.size() - 1; i >= 0; i--) {
             if (messages.get(i) instanceof UserMessageEntity) {

@@ -1,5 +1,7 @@
 package com.summit.dp.agent;
 
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
+
 import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
@@ -144,7 +146,7 @@ class ChatAdmissionTransactionTest {
                 mock(WorkspaceConverter.class), mock(SettingsProvider.class), ToolListProcessorTestSupport.create(),
                 transcriptService, mock(ModelContextService.class),
                 chatTurnService, mock(com.summit.dp.agent.application.service.AgentService.class),
-                mock(TeamService.class), mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class));
+                mock(TeamService.class), mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class), RuntimeConfigurationTestSupport.create());
         executor = new PreparedChatExecutor(orchestrator, requestPreparer,
                 mock(ModelContextService.class), mock(SessionExecutionRegistry.class),
                 mock(ExecutionControl.class));

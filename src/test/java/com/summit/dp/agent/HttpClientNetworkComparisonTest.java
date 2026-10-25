@@ -240,7 +240,7 @@ class HttpClientNetworkComparisonTest {
             capture.frames.clear();
             String executionId = String.valueOf(IDS.incrementAndGet());
             AgentRequest request = AgentRequest.builder().messages(List.of(UserMessageEntity.from("question")))
-                    .systemPrompt("Answer the question.").modelConfig(config)
+                    .systemPrompt("Answer the question.")
                     .retryConfig(ModelRetryConfig.builder().enabled(true).maxRetries(2)
                             .initialDelay(Duration.ZERO).maxDelay(Duration.ZERO).build()).build();
             request.runtimeParametersOrDefault().setEventMetaData(Map.of("rootSessionId", "7", "sessionId", "7", "turnId", "900"));

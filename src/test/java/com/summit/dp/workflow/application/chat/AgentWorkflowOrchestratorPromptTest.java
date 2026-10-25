@@ -1,5 +1,7 @@
 package com.summit.dp.workflow.application.chat;
 
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
+
 
 import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.core.agent.AgentRequest;
@@ -60,7 +62,7 @@ class AgentWorkflowOrchestratorPromptTest {
             mock(ModelService.class), mock(WorkspaceConverter.class), mock(SettingsProvider.class), ToolListProcessorTestSupport.create(), mock(ConversationTranscriptService.class), mock(ModelContextService.class),
             mock(ChatTurnService.class), agentService, teamService, mock(McpService.class),
             new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder("全局规则"),
-            personalizationRepository);
+            personalizationRepository, RuntimeConfigurationTestSupport.create());
     private final AgentWorkflowOrchestratorImpl orchestrator = new AgentWorkflowOrchestratorImpl(
             subAgent, teamService, preparer, agentService, chatAgent);
 

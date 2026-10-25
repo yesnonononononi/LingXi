@@ -16,6 +16,7 @@ import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.execution.application.service.RuntimeConfigurationService;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.shared.exception.ClientException;
@@ -58,6 +59,7 @@ public class SubAgentRequestFactory {
     private final SkillRootResolver skillRootResolver;
     private final BusinessSystemPromptBuilder systemPromptBuilder;
     private final ToolListProcessor toolListProcessor;
+    private final RuntimeConfigurationService runtimeConfigurations;
 
     /**
      * 组装子执行请求。
@@ -105,7 +107,7 @@ public class SubAgentRequestFactory {
         Objects.requireNonNull(toolExecution);
         return builder
                 .messages(buildContext(priorMessages, task))
-                .modelConfig(childModel.config())
+                .modelConfigSpec(runtimeConfigurations.freezeModel(subAgent.getModelId(), childModel.config()))
                 .retryConfig(ModelRetryConfig.builder().enabled(true).build())
                 .executionId(String.valueOf(IdUtil.getSnowflakeNextId()))
                 .runtimeParameters(AgentRuntimeParameters.builder()

@@ -14,7 +14,7 @@ import java.util.List;
  * Mcp 应用层服务接口。
  *
  * <p>除标准 CRUD 外，额外提供 {@link #currentConfig()}：把库中<b>启用</b>的 MCP 服务
- * 组装成框架侧 {@link McpConfig}，供 {@code RequestPreparer} 随 {@code AgentRequest} 下行。
+ * 组装成框架侧 {@link McpConfig}，供工具筛选和运行配置版本归档使用。
  * 这是本模块与框架侧 {@code McpScope} 的唯一契约面。</p>
  */
 public interface McpService {

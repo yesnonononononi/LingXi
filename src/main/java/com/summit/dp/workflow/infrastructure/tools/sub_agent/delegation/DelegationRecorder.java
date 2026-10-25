@@ -1,6 +1,9 @@
 package com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation;
 
 import com.summit.core.agent.AgentRequest;
+import com.summit.core.conf.ModelConfig;
+import com.summit.core.conf.SensitiveDataSpec;
+import com.summit.dp.execution.application.service.RuntimeConfigurationService;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.tool.ToolExecution;
 import com.summit.dp.agent.application.vo.AgentVO;
@@ -33,6 +36,7 @@ public class DelegationRecorder {
 
     private final ChatTurnService chatTurnService;
     private final ConversationTranscriptService transcriptService;
+    private final RuntimeConfigurationService runtimeConfigurations;
 
     /**
      * 记录一次委派：发映射事件 → 建子轮次（并把子执行的事件元数据指向它）→ 追加 transcript。
@@ -52,10 +56,12 @@ public class DelegationRecorder {
         // 从父工具执行的事件元数据读取，不反查执行对应的轮次。
         // 子会话会被复用，所以每次委派都必须新建一个子轮次，否则多次委派会共用一条统计。
         Long parentTurnId = ExecutionEventMetadata.turnId(toolExecution.getEventMetaData());
+        SensitiveDataSpec modelSpec = request.getModelConfigSpec();
+        ModelConfig model = modelSpec == null ? null : runtimeConfigurations.resolveModel(modelSpec.getId(), modelSpec.getVersion());
         long childTurnId = chatTurnService.acceptTurn(numericSubSessionId, rootSessionId, parentTurnId,
                 ExecutionIdentity.numericOrNull(request.getExecutionId()),
-                request.getModelConfig() == null ? null : request.getModelConfig().getModelName(),
-                request.getModelConfig() == null ? null : request.getModelConfig().getProvider());
+                model == null ? null : model.getModelName(),
+                model == null ? null : model.getProvider());
         request.runtimeParametersOrDefault().setEventMetaData(
                 childExecutionMetadata(agent, rootSessionId, toolExecution.getEventMetaData(),
                         numericSubSessionId, childTurnId, parentTurnId));

@@ -1,5 +1,7 @@
 package com.summit.dp.tools.baseTools.sub_agent;
 
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
+
 import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
@@ -103,9 +105,9 @@ class QaAsyncDelegationAdversarialTest {
     /** 用「可注入提交器」构造工具：便于分别验证正常提交与「提交被拒」两条路径。 */
     private CallSubAgentTool toolWith(AsyncDelegationSubmitter submitter) {
         SubAgentRequestFactory requestFactory = new SubAgentRequestFactory(workspaceService, modelService,
-                settingsProvider, mock(WorkspaceConverter.class), new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create());
+                settingsProvider, mock(WorkspaceConverter.class), new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create());
         SubSessionResolver subSessionResolver = new SubSessionResolver(sessionRepository, modelContextService);
-        DelegationRecorder recorder = new DelegationRecorder(chatTurnService, transcriptService);
+        DelegationRecorder recorder = new DelegationRecorder(chatTurnService, transcriptService, RuntimeConfigurationTestSupport.create());
         return new CallSubAgentTool(objectMapper, agentService, teamService, requestFactory,
                 subSessionResolver, registry, sessionRepository, submitter,
                 new AsyncDelegationResultRenderer(objectMapper));

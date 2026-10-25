@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.jsontype.NamedType;
 import com.summit.core.json.ExecutionJson;
+import com.summit.core.conf.SensitiveDataSpec;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.summit.dp.workspace.application.convert.LingXiWorkspaceSpec;
 import com.summit.sandbox.mxc.MxcWorkspaceSpec;
 import com.fasterxml.jackson.databind.module.SimpleModule;
@@ -33,15 +35,23 @@ public class JsonConfig {
         // 契约里「未知类型失败」的承诺就会悄悄失效。
         objectMapper.enable(DeserializationFeature.FAIL_ON_INVALID_SUBTYPE);
         objectMapper.registerModule(simpleModule);
+        objectMapper.addMixIn(SensitiveDataSpec.class, SensitiveDataSpecJsonMixin.class);
         return objectMapper;
     }
 
     @Bean
     public Jackson2ObjectMapperBuilderCustomizer jackson2ObjectMapperBuilderCustomizer() {
         return builder -> {
+            builder.mixIn(SensitiveDataSpec.class, SensitiveDataSpecJsonMixin.class);
             builder.serializerByType(Long.class, ToStringSerializer.instance);
             builder.serializerByType(Long.TYPE, ToStringSerializer.instance);
             builder.serializerByType(BigInteger.class, ToStringSerializer.instance);
         };
+    }
+
+    /** Number 读回后可能变为 Integer，引用标识必须始终按字符串输出。 */
+    abstract static class SensitiveDataSpecJsonMixin {
+        @JsonSerialize(using = ToStringSerializer.class)
+        public abstract Number getId();
     }
 }

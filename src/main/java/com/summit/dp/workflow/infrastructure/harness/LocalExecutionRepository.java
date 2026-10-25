@@ -52,6 +52,7 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     private final ObjectProvider<SessionContextUsageProjector> sessionService;
     private final ObjectProvider<ChatTurnLifecycleProjector> chatTurnService;
     private final ObjectProvider<RuntimeEventPublisher> runtimeEvents;
+    private final ExecutionSnapshotReader snapshotReader;
 
     /** 进程内活跃执行的控制信号；与框架 InMemoryActiveExecutionRegistry 语义一致。 */
     private final Map<String, ExecutionControlSignal> active = new ConcurrentHashMap<>();
@@ -136,7 +137,7 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
         }
         if (snapshot == null) return Optional.empty();
         try {
-            Execution restored = objectMapper.readValue(snapshot, Execution.class);
+            Execution restored = snapshotReader.read(snapshot);
             // 启动清理只更新摘要列，不能让旧快照重新开放已终结的执行。
             if (ExecutionStatusCodes.isTerminal(persistedStatus)
                     && !ExecutionStateCodec.isTerminalState(restored.getExecutionState())) {

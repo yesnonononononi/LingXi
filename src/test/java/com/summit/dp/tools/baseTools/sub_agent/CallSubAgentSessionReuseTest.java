@@ -1,5 +1,7 @@
 package com.summit.dp.tools.baseTools.sub_agent;
 
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
+
 import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
@@ -92,7 +94,7 @@ class CallSubAgentSessionReuseTest {
 
         SubSessionResolver subSessionResolver = new SubSessionResolver(sessionRepository, modelContextService);
         SubAgentRequestFactory requestFactory = new SubAgentRequestFactory(workspaceService, modelService,
-                settingsProvider, mock(WorkspaceConverter.class), new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create());
+                settingsProvider, mock(WorkspaceConverter.class), new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create());
         this.tool = new CallSubAgentTool(new ObjectMapper(), agentService, teamService, requestFactory,
                 subSessionResolver, registry, sessionRepository, asyncSubmitter,
                 new AsyncDelegationResultRenderer(new ObjectMapper()));

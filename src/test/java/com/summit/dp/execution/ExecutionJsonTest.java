@@ -5,7 +5,7 @@ import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import com.summit.core.agent.*;
-import com.summit.core.conf.ModelConfig;
+import com.summit.core.conf.SensitiveDataSpec;
 import com.summit.core.conf.SkillConfig;
 import com.summit.core.conversation.message.*;
 import com.summit.core.workspace.WorkspaceSpec;
@@ -19,7 +19,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -71,8 +70,9 @@ class ExecutionJsonTest {
             assertEquals(mapper.readTree(json), mapper.readTree(mapper.writeValueAsString(restored)));
             assertEquals(spec, restored.getAgentRequest().getWorkspaceSpec());
             assertEquals(201, ExecutionIdentity.sessionId(restored));
-            assertEquals("test-original-key", restored.getAgentRequest().getModelConfig().getApiKey());
-            assertEquals(Duration.ofMillis(1250), restored.getAgentRequest().getModelConfig().getTimeout());
+            assertEquals(301L, restored.getAgentRequest().getModelConfigSpec().getId().longValue());
+            assertEquals(7, restored.getAgentRequest().getModelConfigSpec().getVersion());
+            assertFalse(mapper.readTree(json).path("agentRequest").has("modelConfig"));
             assertEquals(original.getCreateAt(), restored.getCreateAt());
             assertEquals(12, restored.getTokenUsage().getTotalTokens());
             assertEquals(8, restored.getTokenUsage().getInputTokens().getInputTokens());
@@ -90,10 +90,11 @@ class ExecutionJsonTest {
     }
 
     @Test
-    void restoresModelWithoutDatabaseOrYamlLookup() throws Exception {
+    void restoresExactModelReferenceWithoutResolvingCredentials() throws Exception {
         Execution restored = mapper.readValue(mapper.writeValueAsString(execution(null,
                 Map.of(ExecutionAttributes.SESSION_ID, "201"))), Execution.class);
-        assertEquals("test-original-key", restored.getAgentRequest().getModelConfig().getApiKey());
+        assertEquals(301L, restored.getAgentRequest().getModelConfigSpec().getId().longValue());
+        assertEquals(7, restored.getAgentRequest().getModelConfigSpec().getVersion());
     }
 
     @Test
@@ -152,11 +153,8 @@ class ExecutionJsonTest {
         List<Message> history = List.of(SystemMessageEntity.builder().text("system").build(),
                 UserMessageEntity.from("hello"), ai,
                 ToolMessageEntity.builder().id("call-1").name("search").toolOutput("result").build());
-        ModelConfig model = ModelConfig.builder().baseUrl("https://example.invalid")
-                .apiKey("test-original-key").modelName("test-model").provider("default")
-                .timeout(Duration.ofMillis(1250)).maxTokens(1024).reasoningEffort("high")
-                .returnThinking(true).sendThinking(true).build();
-        AgentRequest request = AgentRequest.builder().executionId("101").workspaceSpec(spec).modelConfig(model)
+        AgentRequest request = AgentRequest.builder().executionId("101").workspaceSpec(spec)
+                .modelConfigSpec(SensitiveDataSpec.builder().id(301L).version(7).build())
                 .messages(history).runtimeParameters(AgentRuntimeParameters.builder().attributes(attributes)
                         .allowOutsideWorkspace(true).build()).build();
         return Execution.builder().id("101").agentId("chatAgent").agentRequest(request)

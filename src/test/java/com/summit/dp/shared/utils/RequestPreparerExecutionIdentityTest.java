@@ -1,5 +1,7 @@
 package com.summit.dp.shared.utils;
 
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
+
 
 import com.summit.dp.tools.application.service.ToolListProcessor;
 import com.summit.dp.model.application.vo.RuntimeModel;
@@ -93,7 +95,7 @@ class RequestPreparerExecutionIdentityTest {
     private final RequestPreparer preparer = new RequestPreparer(sessionService, sessionRepository,
             workspaceService, modelService, workspaceConverter, settingsProvider, new ToolListProcessor(toolCatalog),
             transcriptService, modelContextService,
-            chatTurnService, agentService, teamService, mcpService, new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder("全局规则"), personalizationRepository);
+            chatTurnService, agentService, teamService, mcpService, new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder("全局规则"), personalizationRepository, RuntimeConfigurationTestSupport.create());
 
     @Test
     void requestReadsLatestPreferencesAndKeepsThemBeforeTeamPrompt() {

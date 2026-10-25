@@ -2,6 +2,7 @@ package com.summit.dp.workflow.application.chat;
 
 import cn.hutool.core.util.IdUtil;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.execution.application.service.RuntimeConfigurationService;
 import com.summit.dp.personalization.application.convert.PersonalizationConvert;
 import com.summit.dp.personalization.application.vo.PersonalizationVO;
 import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
@@ -92,6 +93,7 @@ public class RequestPreparer {
 
     private final BusinessSystemPromptBuilder systemPromptBuilder;
     private final PersonalizationRepository personalizationRepository;
+    private final RuntimeConfigurationService runtimeConfigurations;
 
     /**
      * 解析本轮生效的模型：显式 modelId → 单例设置 {@code user_configs.model_id} → 无则报错。
@@ -398,9 +400,9 @@ public class RequestPreparer {
                         .agentId(context.agentId()).teamId(context.teamId()).vision(context.vision())
                         .accessMode(context.accessMode()).requirePlan(context.requirePlan())
                         .mcpConfig(mcpConfig).skillRoot(skillRoot).build()))
-                .modelConfig(context.modelConfig())
+                .modelConfigSpec(runtimeConfigurations.freezeModel(context.executionContext().modelConfigId(), context.modelConfig()))
                 .retryConfig(ModelRetryConfig.builder().enabled(true).build())
-                .mcpConfig(mcpConfig)
+                .mcpConfigSpec(runtimeConfigurations.freezeMcp(mcpConfig))
                 .skillConfig(skillRoot == null ? null : new SkillConfig(skillRoot))
                 .runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(attributes(context.executionContext(), context))

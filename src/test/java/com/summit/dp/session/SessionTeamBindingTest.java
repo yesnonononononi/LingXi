@@ -1,5 +1,7 @@
 package com.summit.dp.session;
 
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
+
 import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.ddd.application.vo.Result;
@@ -68,7 +70,7 @@ class SessionTeamBindingTest {
             workspaceService, modelService, workspaceConverter, settingsProvider, ToolListProcessorTestSupport.create(), transcriptService, modelContextService,
             mock(com.summit.dp.turn.application.service.ChatTurnService.class),
             agentService, teamService,
-            mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class));
+            mock(McpService.class), new SkillRootResolver(""), new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class), RuntimeConfigurationTestSupport.create());
 
     private static final long SESSION_ID = 500L;
     private static final long TEAM_ID = 3L;

@@ -134,8 +134,7 @@ public class McpServiceImpl implements McpService {
     /**
      * 组装框架侧配置：仅启用项参与，按库中顺序稳定输出。
      *
-     * <p>这里<b>不解密也不脱敏</b>——请求头必须带着真实令牌才能连上服务，
-     * 该对象随执行下行、不经过接口层，因此不构成泄漏面。</p>
+     * <p>真实凭据只供运行配置版本库和连接器使用，不能直接放入执行快照。</p>
      */
     @Override
     public McpConfig currentConfig() {

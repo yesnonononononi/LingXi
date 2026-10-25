@@ -1,5 +1,7 @@
 package com.summit.dp.workflow.application.chat;
 
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
+
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.AgentRequest;
@@ -82,7 +84,7 @@ class RequestPreparerModelFallbackTest {
             settingsProvider, ToolListProcessorTestSupport.create(),
             transcriptService, modelContextService,
             chatTurnService, agentService, teamService, mcpService, new SkillRootResolver(""),
-            new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class));
+            new ChatImageResolver(), new BusinessSystemPromptBuilder(""), mock(PersonalizationRepository.class), RuntimeConfigurationTestSupport.create());
 
     @BeforeEach
     void stubCommonPath() {
