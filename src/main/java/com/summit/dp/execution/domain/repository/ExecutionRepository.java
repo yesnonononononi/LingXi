@@ -7,6 +7,15 @@ import java.util.List;
 import java.util.Optional;
 
 public interface ExecutionRepository extends RepositoryTemplate<Execution, Long> {
+    /** 有效历史与其他模块仍引用的执行必须保留，清理不能改变重发或恢复能力。 */
+    long countReclaimable();
+
+    /** 只读取身份与版本，避免清理过程把大快照装进内存。 */
+    List<Execution> findReclaimable(long afterId, int limit);
+
+    /** 删除时重新验证引用和版本，不能信任预览或此前取到的候选。 */
+    boolean deleteReclaimable(long executionId, long version);
+
     /** 保存前只读并发判据，避免再次加载完整快照。 */
     Optional<Execution> findCheckpointSummary(long executionId);
     Collection<Execution> findList(Collection<Long> ids);

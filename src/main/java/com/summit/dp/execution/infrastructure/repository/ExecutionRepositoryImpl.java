@@ -37,6 +37,21 @@ public class ExecutionRepositoryImpl extends AbstractRepository<Execution, Execu
     }
 
     @Override
+    public long countReclaimable() {
+        return mapper.countReclaimable();
+    }
+
+    @Override
+    public List<Execution> findReclaimable(long afterId, int limit) {
+        return mapper.findReclaimable(afterId, Math.clamp(limit, 1, 500)).stream().map(this::toModel).toList();
+    }
+
+    @Override
+    public boolean deleteReclaimable(long executionId, long version) {
+        return mapper.deleteReclaimable(executionId, version) == 1;
+    }
+
+    @Override
     public Collection<Execution> findList(Collection<Long> ids) {
         return super.findList(ids);
     }

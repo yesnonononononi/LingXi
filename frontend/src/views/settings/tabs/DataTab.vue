@@ -4,6 +4,7 @@ import { useConfirm } from '../../../composables/useConfirm';
 import { useI18n } from '../../../i18n';
 import { useUserConfigStore } from '../../../stores/userConfigStore';
 import { openDirectoryPicker, relaunchApp } from '../../../utils/platform';
+import { useExecutionCleanup } from './useExecutionCleanup';
 
 const props = defineProps<{
   isDark?: boolean;
@@ -17,6 +18,7 @@ const emit = defineEmits<{
 
 const { confirm } = useConfirm();
 const userConfig = useUserConfigStore();
+const cleanup = useExecutionCleanup();
 
 const isDark = computed(() => props.isDark === true);
 
@@ -32,7 +34,7 @@ const isRestarting = ref(false);
  * 都由后端负责，前端只管把用户选的路径交上去。</p>
  */
 const changeDirectory = async (field: 'dataDir' | 'skillDir'): Promise<void> => {
-  if (busyField.value) return;
+  if (busyField.value || cleanup.busy.value) return;
   errorMsg.value = '';
   const picked = await openDirectoryPicker();
   // 取消选择，或运行在浏览器里（没有原生选择器）：什么都不做，也不伪造路径。
@@ -100,7 +102,7 @@ const handleClearSessions = async () => {
         </div>
         <button
           type="button"
-          :disabled="busyField !== ''"
+          :disabled="busyField !== '' || cleanup.busy.value"
           @click="changeDirectory('dataDir')"
           class="shrink-0 px-3 py-1 rounded-full border text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           :class="isDark
@@ -127,7 +129,7 @@ const handleClearSessions = async () => {
         </div>
         <button
           type="button"
-          :disabled="busyField !== ''"
+          :disabled="busyField !== '' || cleanup.busy.value"
           @click="changeDirectory('skillDir')"
           class="shrink-0 px-3 py-1 rounded-full border text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           :class="isDark
@@ -164,6 +166,34 @@ const handleClearSessions = async () => {
         {{ errorMsg }}
       </div>
     </div>
+
+    <div class="h-px bg-gray-100 dark:bg-white/10"></div>
+    <section class="space-y-2" data-testid="execution-cleanup">
+      <div class="flex items-center justify-between gap-3">
+        <span class="text-gray-800 dark:text-zinc-200">{{ cleanup.copy.value.title }}</span>
+        <div class="flex shrink-0 gap-2">
+          <button type="button" :disabled="cleanup.busy.value || busyField !== ''"
+            @click="cleanup.load" data-testid="execution-cleanup-refresh"
+            class="px-3 py-1 rounded-full border border-lx-border-strong text-lx-secondary text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+            {{ cleanup.copy.value.refresh }}
+          </button>
+          <button type="button" :disabled="!cleanup.canClean.value || busyField !== '' || userConfig.dataDirRestartRequired"
+            @click="cleanup.cleanup" data-testid="execution-cleanup-run"
+            class="px-3 py-1 rounded-full border border-lx-border-strong text-lx-secondary hover:bg-lx-surface-hover text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+            {{ cleanup.busy.value && cleanup.count.value !== null ? cleanup.copy.value.cleaning : cleanup.copy.value.action }}
+          </button>
+        </div>
+      </div>
+      <p class="text-[11px] text-lx-tertiary">{{ cleanup.copy.value.description }}</p>
+      <p v-if="cleanup.count.value !== null" class="text-[11px] text-lx-secondary" aria-live="polite">
+        {{ cleanup.copy.value.count(cleanup.count.value) }}
+      </p>
+      <p v-else-if="cleanup.busy.value" class="text-[11px] text-lx-secondary">{{ cleanup.copy.value.loading }}</p>
+      <p v-if="cleanup.deletedCount.value !== null" class="text-[11px] text-lx-secondary" role="status">
+        {{ cleanup.copy.value.success(cleanup.deletedCount.value) }}
+      </p>
+      <p v-if="cleanup.error.value" class="text-[11px] text-red-500" role="alert">{{ cleanup.error.value }}</p>
+    </section>
 
     <!-- 删除所有对话：真实能力（清空全部会话），保留并带二次确认 -->
     <div class="h-px bg-gray-100 dark:bg-white/10"></div>

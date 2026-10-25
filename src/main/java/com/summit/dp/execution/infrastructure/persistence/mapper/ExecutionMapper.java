@@ -2,6 +2,8 @@ package com.summit.dp.execution.infrastructure.persistence.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
+import com.summit.dp.execution.ExecutionStatusCodes;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Result;
@@ -17,6 +19,25 @@ import java.util.List;
  */
 @Mapper
 public interface ExecutionMapper extends BaseMapper<ExecutionPO> {
+
+    // 已删除会话可能残留轮次；只有仍属于有效会话的历史才提供重发入口。
+    String RECLAIMABLE = " status IN (" + ExecutionStatusCodes.COMPLETED + ","
+            + ExecutionStatusCodes.FAILED + "," + ExecutionStatusCodes.CANCELLED + ")"
+            + " AND NOT EXISTS (SELECT 1 FROM chat_turn t JOIN session s ON s.id = t.session_id"
+            + " WHERE t.execution_id = execution.id)"
+            + " AND NOT EXISTS (SELECT 1 FROM tool_call c WHERE c.execution_id = execution.id)"
+            + " AND NOT EXISTS (SELECT 1 FROM execution_resume_task r WHERE r.execution_id = execution.id)"
+            + " AND NOT EXISTS (SELECT 1 FROM task b WHERE b.execution_id = execution.id)";
+
+    @Select("SELECT COUNT(*) FROM execution WHERE" + RECLAIMABLE)
+    long countReclaimable();
+
+    @Select("SELECT id, version, status FROM execution WHERE id > #{afterId} AND" + RECLAIMABLE
+            + " ORDER BY id LIMIT #{limit}")
+    List<ExecutionPO> findReclaimable(@Param("afterId") long afterId, @Param("limit") int limit);
+
+    @Delete("DELETE FROM execution WHERE id = #{id} AND version = #{version} AND" + RECLAIMABLE)
+    int deleteReclaimable(@Param("id") long executionId, @Param("version") long version);
 
     /**
      * 收口孤儿执行：进程崩溃重启后，仍停留在 CREATED / RUNNING 的执行没有任何线程再负责收尾，
