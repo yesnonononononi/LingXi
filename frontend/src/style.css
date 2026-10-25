@@ -75,7 +75,7 @@
    * 注意：这是布局宽度（字面量），不进 theme/tokens.css 与 theme/tokens.ts —— 布局宽度
    * 不属于主题包可覆盖范围，tokens.css/tokens.ts 只管颜色与形态令牌。
    */
-  --container-lx-chat:         64rem;
+  --container-lx-chat:         56rem;
 }
 
 /* Vue Bits 纯黑风格亮/暗模式 CSS 变量与主题拓展 */

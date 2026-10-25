@@ -200,14 +200,14 @@ test('C0 金丝雀：解析器能从合成样本里抓到容器令牌与 max-w �
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 断言 A：宽度令牌存在且确实「加宽」了（>= 60rem，原 48rem）
+// 断言 A：固定适度收窄后的列宽，避免输入框再次铺得过宽
 // ─────────────────────────────────────────────────────────────────────────────
 
-test('C1 @theme inline 里的 --container-lx-chat 存在且不小于 60rem', () => {
+test('C1 @theme inline 里的 --container-lx-chat 为 56rem', () => {
   const themeBody = extractBlock(styleCss, '@theme inline');
   const rem = parseChatColumnRem(themeBody);
   assert.notEqual(rem, null, 'src/style.css 的 @theme inline 里必须有 --container-lx-chat: <数值>rem');
-  assert.ok(rem >= 60, `对话列宽令牌不得被改窄：期望 >= 60rem，实际 ${rem}rem`);
+  assert.equal(rem, 56, '对话列宽应保持 56rem，让输入框适度收窄');
 });
 
 test('C2 令牌是字面量宽度，不得引入 var() 引用（布局宽度不属于主题包令牌）', () => {
