@@ -18,6 +18,7 @@ const API_PREFIXES = [
   '/api',
   '/config',
   '/email',
+  '/execution',
   '/interaction-status',
   '/interaction',
   '/log',

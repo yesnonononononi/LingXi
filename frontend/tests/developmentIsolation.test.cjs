@@ -37,7 +37,7 @@ test('开发页面忽略旧桌面地址，安装版保留默认地址和用户�
 
 test('Vite 的实际代理表将业务请求送到开发端口', () => {
   const proxy = loadViteConfig().server.proxy;
-  for (const prefix of ['/a', '/config', '/session', '/mcp', '/personalization', '/provider', '/skill', '/log']) {
+  for (const prefix of ['/a', '/config', '/execution', '/session', '/mcp', '/personalization', '/provider', '/skill', '/log']) {
     assert.equal(proxy[prefix]?.target, 'http://localhost:8089', prefix);
   }
 });
@@ -62,7 +62,8 @@ test('设置请求经过真实 Vite 代理返回后端 JSON，不能落到 HTML 
   await vite.listen();
   const base = `http://127.0.0.1:${vite.httpServer.address().port}`;
   const endpoints = [['GET', '/personalization/current'], ['GET', '/personalization/reply-styles'],
-    ['POST', '/personalization/update'], ['GET', '/provider/list'], ['GET', '/skill/list'], ['GET', '/log/location']];
+    ['POST', '/personalization/update'], ['GET', '/provider/list'], ['GET', '/skill/list'], ['GET', '/log/location'],
+    ['GET', '/execution/cleanup/preview'], ['POST', '/execution/cleanup']];
   for (const [method, endpoint] of endpoints) {
     const response = await fetch(base + endpoint, { method });
     assert.equal(response.status, 200, endpoint);
