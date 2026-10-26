@@ -24,8 +24,8 @@ const md = new MarkdownIt({
     const displayLang = validLang || lang || 'code';
     const encoded = encodeURIComponent(str);
 
-    return `<div class="code-block-wrapper">` +
-      `<div class="code-block-header">` +
+    return `<div class="content-block code-block">` +
+      `<div class="block-toolbar block-toolbar--code">` +
         `<span class="lang-badge">${md.utils.escapeHtml(displayLang)}</span>` +
         `<button type="button" class="copy-code-btn" data-code="${encoded}" title="${md.utils.escapeHtml(t('markdown.copyCode'))}">` +
           `<svg class="copy-icon w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">` +

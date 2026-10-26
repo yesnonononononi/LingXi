@@ -26,9 +26,8 @@ watch(() => [props.source, props.complete, props.isDark] as const, async ([sourc
 </script>
 
 <template>
-  <section class="code-block-wrapper mermaid-block" :class="{ 'mermaid-block--dark': isDark }">
-    <div class="code-block-header">
-      <span class="lang-badge">mermaid</span>
+  <section class="content-block mermaid-block" :class="{ 'mermaid-block--dark': isDark }">
+    <div class="block-toolbar block-toolbar--diagram">
       <button type="button" class="copy-code-btn" :title="t('markdown.copyCode')" @click.stop="copy(source)">
         {{ isCopied ? t('common.copied') : t('markdown.copy') }}
       </button>

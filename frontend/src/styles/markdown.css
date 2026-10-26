@@ -178,8 +178,8 @@ html.light .markdown-body hr {
   color: #7dd3fc;
 }
 
-/* Code Blocks Container */
-.markdown-body .code-block-wrapper {
+/* Content Block：内容块通用容器（代码块、图表共用外观，不再靠"借用别人的类"） */
+.markdown-body .content-block {
   margin: 0.75rem 0;
   border-radius: 0.75rem;
   overflow: hidden;
@@ -187,50 +187,81 @@ html.light .markdown-body hr {
   background-color: #0d0d10;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
 }
-html.light .markdown-body .code-block-wrapper {
+html.light .markdown-body .content-block {
   border: 1px solid #e2e8f0;
   background-color: #181d28;
 }
 
-/* Header bar above code block */
-.markdown-body .code-block-header {
+/* Block Toolbar：块顶部的操作区。布局归中性基类，配色归各自的变体类 */
+.markdown-body .block-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0.35rem 0.85rem;
-  background-color: #121215;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   font-size: 0.75rem;
-  color: #a1a1aa;
   user-select: none;
 }
-html.light .markdown-body .code-block-header {
-  background-color: #0f1420;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-.markdown-body .code-block-header .lang-badge {
-  font-family: ui-monospace, SFMono-Regular, monospace;
-  font-weight: 500;
-  text-transform: lowercase;
-  color: #7dd3fc;
-  opacity: 0.9;
-}
-.markdown-body .code-block-header .copy-code-btn {
+.markdown-body .block-toolbar .copy-code-btn {
   display: flex;
   align-items: center;
   gap: 0.35rem;
   cursor: pointer;
   padding: 0.15rem 0.45rem;
   border-radius: 0.35rem;
-  transition: all 0.15s ease;
-  color: #94a3b8;
+  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
   font-size: 0.75rem;
 }
-.markdown-body .code-block-header .copy-code-btn:hover {
+
+/* 代码块工具栏：深色条，与代码区连成一体 */
+.markdown-body .block-toolbar--code {
+  background-color: #121215;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #a1a1aa;
+}
+html.light .markdown-body .block-toolbar--code {
+  background-color: #0f1420;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.markdown-body .block-toolbar--code .lang-badge {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-weight: 500;
+  text-transform: lowercase;
+  color: #7dd3fc;
+  opacity: 0.9;
+}
+.markdown-body .block-toolbar--code .copy-code-btn {
+  color: #94a3b8;
+}
+.markdown-body .block-toolbar--code .copy-code-btn:hover {
   background-color: rgba(255, 255, 255, 0.1);
   color: #f1f5f9;
 }
 
+/* 图表工具栏：透明、无边框，只保留右侧一个低调的复制入口 */
+.markdown-body .block-toolbar--diagram {
+  justify-content: flex-end;
+  padding: 0.4rem 0.65rem 0;
+  color: #6b7280;
+}
+.markdown-body .block-toolbar--diagram .copy-code-btn {
+  color: #6b7280;
+  opacity: 0.65;
+}
+.markdown-body .block-toolbar--diagram .copy-code-btn:hover {
+  background-color: rgba(15, 23, 42, 0.08);
+  color: #111827;
+  opacity: 1;
+}
+.markdown-body .mermaid-block--dark .block-toolbar--diagram {
+  color: #a1a1aa;
+}
+.markdown-body .mermaid-block--dark .block-toolbar--diagram .copy-code-btn {
+  color: #a1a1aa;
+}
+.markdown-body .mermaid-block--dark .block-toolbar--diagram .copy-code-btn:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: #f4f4f5;
+}
 /* Pre and Code inside code blocks */
 .markdown-body pre {
   margin: 0;
@@ -258,43 +289,6 @@ html.light .markdown-body .mermaid-block {
 html.light .markdown-body .mermaid-block--dark {
   background: #18181b;
   color: #e4e4e7;
-}
-
-/* Mermaid 是图表不是代码：不要代码块那条深色标题栏，只保留右侧低调的复制入口。
-   语言徽标对图表零信息量，直接隐藏；复制按钮退成随主题走的弱化文字。 */
-.markdown-body .mermaid-block .code-block-header {
-  background-color: transparent;
-  border-bottom: none;
-  padding: 0.4rem 0.65rem 0;
-  justify-content: flex-end;
-  color: #6b7280;
-}
-html.light .markdown-body .mermaid-block .code-block-header {
-  background-color: transparent;
-  border-bottom: none;
-}
-.markdown-body .mermaid-block .code-block-header .lang-badge {
-  display: none;
-}
-.markdown-body .mermaid-block .code-block-header .copy-code-btn {
-  color: #6b7280;
-  opacity: 0.65;
-  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
-}
-.markdown-body .mermaid-block .code-block-header .copy-code-btn:hover {
-  background-color: rgba(15, 23, 42, 0.08);
-  color: #111827;
-  opacity: 1;
-}
-.markdown-body .mermaid-block--dark .code-block-header {
-  color: #a1a1aa;
-}
-.markdown-body .mermaid-block--dark .code-block-header .copy-code-btn {
-  color: #a1a1aa;
-}
-.markdown-body .mermaid-block--dark .code-block-header .copy-code-btn:hover {
-  background-color: rgba(255, 255, 255, 0.12);
-  color: #f4f4f5;
 }
 
 .mermaid-diagram {

@@ -105,8 +105,8 @@ window.parseDocument = renderMarkdownDocument;
   assert.match(await evaluate('document.querySelector("#actual svg").textContent'), /开始/);
   assert.equal(await evaluate('getComputedStyle(document.querySelector("#actual .mermaid-block")).backgroundColor'), 'rgb(255, 255, 255)', '浅色图表背景必须与文字主题一致');
   // 图表不是代码块：不能继承代码块的深色标题栏与语言徽标（回归锁）。
-  assert.equal(await evaluate('getComputedStyle(document.querySelector("#actual .mermaid-block .code-block-header")).backgroundColor'), 'rgba(0, 0, 0, 0)', '图表工具栏不能有深色标题栏背景');
-  assert.equal(await evaluate('getComputedStyle(document.querySelector("#actual .mermaid-block .code-block-header .lang-badge")).display'), 'none', '图表工具栏不显示语言徽标');
+  assert.equal(await evaluate('getComputedStyle(document.querySelector("#actual .mermaid-block .block-toolbar")).backgroundColor'), 'rgba(0, 0, 0, 0)', '图表工具栏不能有深色标题栏背景');
+  assert.equal(await evaluate('document.querySelector("#actual .mermaid-block .lang-badge") === null'), true, '图表结构里根本不该有语言徽标');
   await evaluate('window.savedSvg = document.querySelector("#actual .mermaid-diagram svg")');
   await setContent(first + '\n\n后续文字正在追加', true);
   assert.equal(await evaluate('document.querySelector("#actual .mermaid-diagram svg") === window.savedSvg'), true, '追加正文必须保留 SVG 节点');
@@ -120,7 +120,7 @@ window.parseDocument = renderMarkdownDocument;
   await waitFor('document.querySelector("#actual .mermaid-diagram svg") && document.querySelector("#actual .mermaid-diagram svg") !== window.savedSvg', '主题切换没有重画');
   assert.notEqual(await evaluate('document.querySelector("#actual .mermaid-diagram svg style").textContent'), lightStyle);
   assert.equal(await evaluate('getComputedStyle(document.querySelector("#actual .mermaid-block")).backgroundColor'), 'rgb(24, 24, 27)');
-  assert.equal(await evaluate('getComputedStyle(document.querySelector("#actual .mermaid-block .code-block-header")).backgroundColor'), 'rgba(0, 0, 0, 0)', '深色图表工具栏同样不能有标题栏背景');
+  assert.equal(await evaluate('getComputedStyle(document.querySelector("#actual .mermaid-block .block-toolbar")).backgroundColor'), 'rgba(0, 0, 0, 0)', '深色图表工具栏同样不能有标题栏背景');
   await fs.writeFile(path.join(output, 'dark.png'), (await window.webContents.capturePage()).toPNG());
 
   const nested = '> ' + first.replaceAll('\n', '\n> ');
