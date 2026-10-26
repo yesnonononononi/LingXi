@@ -34,6 +34,8 @@ const message = ref({ id: 'answer', role: 'assistant', turnId: '900', timestamp:
 window.flush = async () => { await nextTick(); await new Promise(resolve => setTimeout(resolve, 320)); };
 window.setDark = async value => { dark.value = value; setTheme(value ? 'dark' : 'light'); await window.flush(); };
 window.appendThought = async () => { message.value.thoughtSteps[0].content += '继续输出'; await window.flush(); };
+window.failEarlier = async () => { message.value.toolCalls[0].toolName = 'mcp_docs_' + 'very_long_operation_name_'.repeat(8);
+  message.value.toolCalls[0].status = 'failed'; message.value.toolCalls[1].status = 'unknown'; await window.flush(); };
 window.finish = async () => { message.value.isThinking = false; message.value.isComplete = true;
   message.value.content = '配置修改与检查已完成。'; message.value.thoughtSteps[0].status = 'success'; await window.flush(); };
 </script>
@@ -81,6 +83,17 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
     assert.match(geometry.body, /写入、执行命令/);
     await fs.writeFile(path.join(output, `${name}.png`), (await window.webContents.capturePage()).toPNG());
   }
+  await evaluate('window.failEarlier()');
+  const failureGeometry = await evaluate(`(() => {
+    const row = document.querySelector('[data-testid=process-segment-toggle]');
+    const label = row.querySelector('[data-testid=process-segment-title]');
+    const status = row.querySelector('[data-testid=process-segment-status]');
+    return { right:row.getBoundingClientRect().right, labelRight:label.getBoundingClientRect().right,
+      statusRight:status.getBoundingClientRect().right, status:status.textContent };
+  })()`);
+  assert.ok(failureGeometry.labelRight <= failureGeometry.right + 1 && failureGeometry.statusRight <= failureGeometry.right + 1,
+    '长 MCP 名称和状态提示不能挤出窄屏折叠行：' + JSON.stringify(failureGeometry));
+  assert.match(failureGeometry.status, /1 项失败.*1 项状态未知/);
   await evaluate('document.querySelectorAll("[data-testid=process-segment-toggle]")[1].click(); window.flush()');
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=process-segment-toggle]")[1].getAttribute("aria-expanded")'), 'true');
   await evaluate('window.appendThought()');

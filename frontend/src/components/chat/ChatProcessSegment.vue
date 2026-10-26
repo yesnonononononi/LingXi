@@ -67,7 +67,7 @@ const statusLabel = computed(() => [
         <path stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7" />
       </svg>
       <span v-if="active" class="h-1.5 w-1.5 shrink-0 rounded-full bg-current animate-pulse" aria-hidden="true"></span>
-      <span class="shrink-0 max-w-[60%] truncate font-medium" data-testid="process-segment-title">{{ title }}</span>
+      <span class="min-w-0 max-w-[60%] truncate font-medium" data-testid="process-segment-title">{{ title }}</span>
       <span v-if="preview" class="min-w-0 flex-1 overflow-hidden whitespace-nowrap"
         :class="active && latest?.step ? 'flex justify-end' : ''" data-testid="process-segment-preview">
         <span :class="active && latest?.step ? 'shrink-0 min-w-full text-left' : 'block truncate'">{{ preview }}</span>
