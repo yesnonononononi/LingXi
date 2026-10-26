@@ -2,6 +2,12 @@ package com.summit.dp.workflow.infrastructure.tools.require_choice;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.anno.Tool;
+import com.summit.core.anno.type.ArrayValue;
+import com.summit.core.anno.type.ObjectValue;
+import com.summit.core.anno.type.ScalarType;
+import com.summit.core.anno.type.ToolProperty;
+import com.summit.core.anno.type.Value;
+import com.summit.core.anno.type.ValueType;
 import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
@@ -25,14 +31,15 @@ import org.springframework.stereotype.Component;
     name = ToolCatalog.REQUIRE_CHOICE,
     executor = RequireChoiceToolExecutor.class,
     description = "Ask the user a question and wait for an explicit answer. When several independent questions are needed, call this tool multiple times in the SAME response. The user can answer all questions together before execution resumes.",
-    parametersJsonSchema = """
-        {"type":"object",
-        "properties":{
-        "question":{"type":"string"},
-        "options":{"type":"array","items":{"type":"string"}}
+    parameters = @ObjectValue(
+        properties = {
+            @ToolProperty(key = "question", value = @Value(
+                type = ValueType.STRING)),
+            @ToolProperty(key = "options", value = @Value(
+                type = ValueType.ARRAY,
+                arrayValue = @ArrayValue(itemType = ScalarType.STRING)))
         },
-        "required":["question"]}
-        """,
+        required = {"question"}),
     concurrentPolicy = ConcurrentPolicy.READ_ONLY,
     maxOutput = 1_000,
     timeout = 30_000L)

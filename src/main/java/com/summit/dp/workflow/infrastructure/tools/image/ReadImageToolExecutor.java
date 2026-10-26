@@ -4,6 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.core.anno.Tool;
+import com.summit.core.anno.type.ObjectValue;
+import com.summit.core.anno.type.ToolProperty;
+import com.summit.core.anno.type.Value;
+import com.summit.core.anno.type.ValueType;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceFiles;
 import com.summit.core.tool.ConcurrentPolicy;
@@ -43,15 +47,13 @@ import org.springframework.stereotype.Component;
         Images consume model input tokens; one execution may receive at most 15 distinct images.
         Only PNG/JPEG/GIF/BMP are accepted; the path must stay inside the workspace.
         """,
-    parametersJsonSchema = """
-        {
-          "type": "object",
-          "properties": {
-            "path": {"type": "string", "description": "Image path inside the workspace. Relative paths are resolved against the workspace root."}
-          },
-          "required": ["path"]
-        }
-        """,
+    parameters = @ObjectValue(
+        properties = {
+            @ToolProperty(key = "path", value = @Value(
+                type = ValueType.STRING,
+                description = "Image path inside the workspace. Relative paths are resolved against the workspace root."))
+        },
+        required = {"path"}),
     concurrentPolicy = ConcurrentPolicy.READ_ONLY,
     maxOutput = 400,
     timeout = 20L)

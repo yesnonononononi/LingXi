@@ -2,6 +2,11 @@ package com.summit.dp.workflow.infrastructure.tools.sub_agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.anno.Tool;
+import com.summit.core.anno.type.ObjectValue;
+import com.summit.core.anno.type.OptionalBoolean;
+import com.summit.core.anno.type.ToolProperty;
+import com.summit.core.anno.type.Value;
+import com.summit.core.anno.type.ValueType;
 import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
@@ -42,17 +47,17 @@ import org.springframework.stereotype.Component;
         This is read-only observation: it never wakes, resumes or delegates. Use call_sub_agent to give a teammate work.
         `最近状态`: the target state of the last turn, it cannot be considered unable to continue working now
         """,
-    parametersJsonSchema = """
-        {
-          "type": "object",
-          "properties": {
-            "agentId": {"type": "integer", "description": "Agent id from the commander's teammate list."},
-            "agentName": {"type": "string", "description": "That teammate's name from the same list. Display only: it never affects which agent is read."}
-          },
-          "required": ["agentId"],
-          "additionalProperties": false
-        }
-        """,
+    parameters = @ObjectValue(
+        properties = {
+            @ToolProperty(key = "agentId", value = @Value(
+                type = ValueType.INTEGER,
+                description = "Agent id from the commander's teammate list.")),
+            @ToolProperty(key = "agentName", value = @Value(
+                type = ValueType.STRING,
+                description = "That teammate's name from the same list. Display only: it never affects which agent is read."))
+        },
+        required = {"agentId"},
+        additionalProperties = OptionalBoolean.FALSE),
     concurrentPolicy = ConcurrentPolicy.READ_ONLY,
     maxOutput = 2_000,
     timeout = 10L)

@@ -2,6 +2,11 @@ package com.summit.dp.workflow.infrastructure.tools.file.read;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.anno.Tool;
+import com.summit.core.anno.type.IntegerValue;
+import com.summit.core.anno.type.ObjectValue;
+import com.summit.core.anno.type.ToolProperty;
+import com.summit.core.anno.type.Value;
+import com.summit.core.anno.type.ValueType;
 import com.summit.core.runtime.workspace.WorkspaceFiles;
 import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolExecuteResult;
@@ -25,17 +30,21 @@ import org.springframework.stereotype.Component;
     name = ToolCatalog.READ_FILE,
     executor = ReadFileToolExecutor.class,
     description = "Read file content, optionally limited to a startLine/endLine range.",
-    parametersJsonSchema = """
-        {
-          "type": "object",
-          "properties": {
-            "path": {"type": "string", "description": "File path it is a required parameter"},
-            "startLine": {"type": "integer", "minimum": 0, "description": "Zero-based start line, inclusive. Defaults to 0. Omit both line bounds to read the entire file."},
-            "endLine": {"type": "integer", "minimum": 0, "description": "Zero-based end line, inclusive. Must not precede startLine. Defaults to the last line."}
-          },
-          "required": ["path"]
-        }
-        """,
+    parameters = @ObjectValue(
+        properties = {
+            @ToolProperty(key = "path", value = @Value(
+                type = ValueType.STRING,
+                description = "File path it is a required parameter")),
+            @ToolProperty(key = "startLine", value = @Value(
+                type = ValueType.INTEGER,
+                description = "Zero-based start line, inclusive. Defaults to 0. Omit both line bounds to read the entire file.",
+                integerValue = @IntegerValue(minimum = 0))),
+            @ToolProperty(key = "endLine", value = @Value(
+                type = ValueType.INTEGER,
+                description = "Zero-based end line, inclusive. Must not precede startLine. Defaults to the last line.",
+                integerValue = @IntegerValue(minimum = 0)))
+        },
+        required = {"path"}),
     concurrentPolicy = ConcurrentPolicy.READ_ONLY,
     maxOutput = 3_000,
     timeout = 30L)

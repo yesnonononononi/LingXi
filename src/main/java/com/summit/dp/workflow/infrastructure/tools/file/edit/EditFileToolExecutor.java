@@ -3,6 +3,11 @@ package com.summit.dp.workflow.infrastructure.tools.file.edit;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.anno.Tool;
+import com.summit.core.anno.type.ObjectValue;
+import com.summit.core.anno.type.StringValue;
+import com.summit.core.anno.type.ToolProperty;
+import com.summit.core.anno.type.Value;
+import com.summit.core.anno.type.ValueType;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceFiles;
 import com.summit.core.tool.*;
@@ -34,19 +39,26 @@ import org.springframework.stereotype.Component;
     name = ToolCatalog.EDIT_FILE,
     executor = EditFileToolExecutor.class,
     description = "Edit UTF-8 text using exact, unique oldText or anchor matches. Supports REPLACE, INSERT_BEFORE, INSERT_AFTER and DELETE; INSERT_* can create files. Returns an edit summary.",
-    parametersJsonSchema = """
-        {
-          "type": "object",
-          "properties": {
-            "type": {"type": "string", "enum": ["INSERT_BEFORE", "INSERT_AFTER", "REPLACE", "DELETE"], "description": "INSERT_* : insert content behind or in front of anchor. "},
-            "anchor": {"type": "string", "description": "The anchor of Insert operation it is a required parameter if type in terms of INSERT unless want to insert a empty file"},
-            "path": {"type": "string", "description": "File path relative to the workspace root. Do not use absolute paths it is a required parameter"},
-            "oldText": {"type": "string", "description": "Exact original text, required for REPLACE and DELETE. Must match exactly once."},
-            "newText": {"type": "string", "description": "Required for REPLACE and INSERT_*. An explicit empty string is allowed for REPLACE. Ignored for DELETE."}
-          },
-          "required": ["type", "path"]
-        }
-        """,
+    parameters = @ObjectValue(
+        properties = {
+            @ToolProperty(key = "type", value = @Value(
+                type = ValueType.STRING,
+                description = "INSERT_* : insert content behind or in front of anchor. ",
+                stringValue = @StringValue(enums = {"INSERT_BEFORE", "INSERT_AFTER", "REPLACE", "DELETE"}))),
+            @ToolProperty(key = "anchor", value = @Value(
+                type = ValueType.STRING,
+                description = "The anchor of Insert operation it is a required parameter if type in terms of INSERT unless want to insert a empty file")),
+            @ToolProperty(key = "path", value = @Value(
+                type = ValueType.STRING,
+                description = "File path relative to the workspace root. Do not use absolute paths it is a required parameter")),
+            @ToolProperty(key = "oldText", value = @Value(
+                type = ValueType.STRING,
+                description = "Exact original text, required for REPLACE and DELETE. Must match exactly once.")),
+            @ToolProperty(key = "newText", value = @Value(
+                type = ValueType.STRING,
+                description = "Required for REPLACE and INSERT_*. An explicit empty string is allowed for REPLACE. Ignored for DELETE."))
+        },
+        required = {"type", "path"}),
     concurrentPolicy = ConcurrentPolicy.SERIAL_MUTATION,
     maxOutput = 200,
     timeout = 30L)

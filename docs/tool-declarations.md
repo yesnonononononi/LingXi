@@ -15,6 +15,8 @@
 | 框架 `compact_context` | 条件自动配置 | 工具可禁用，但同一压缩器还承担循环内部压缩职责，不能因执行器存在就自动暴露工具。 |
 | 远端 `mcp_*` | 请求级动态定义 | 名称和 schema 由远端发现，每次请求隔离，不能进入全局静态注册表。 |
 
-复杂 schema 使用 `parametersJsonSchema` 原样声明，保留数组、枚举、默认值与约束；不得与 `props`、`others` 同时声明。
+十个固定工具使用 `parameters = @ObjectValue(...)`：根节点固定为 object，属性通过 `ValueType` 选择标量或标量数组，必填项在根节点统一声明。约束只填写到对应类型中；`OptionalBoolean.UNSET` 表示省略，`FALSE` 表示显式 false。
+
+嵌套对象、嵌套数组等复杂 schema 继续使用 `parametersJsonSchema`；不得与结构化约束混用。旧 `props`、`others`、`type` 仅供已有声明使用，不与 `parameters` 混用。
 
 启动时先收集显式定义，再注册注解工具，最后校验完整注册表。`StaticToolDeclarationContractTest` 用迁移前的独立快照核对十个工具的契约；`ApplicationContextAssemblyTest` 验证实际装配与 codec 转换。

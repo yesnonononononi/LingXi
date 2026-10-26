@@ -3,6 +3,11 @@ package com.summit.dp.workflow.infrastructure.tools.plan;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.anno.Tool;
+import com.summit.core.anno.type.ObjectValue;
+import com.summit.core.anno.type.OptionalBoolean;
+import com.summit.core.anno.type.ToolProperty;
+import com.summit.core.anno.type.Value;
+import com.summit.core.anno.type.ValueType;
 import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
@@ -32,17 +37,17 @@ import org.springframework.stereotype.Component;
         The user may have embedded some tips in your plan so it is common if you see other text that differs from the original plan text.
         However, you don't ignore them.
         """,
-    parametersJsonSchema = """
-        {
-        "type": "object",
-        "properties": {
-            "title": {"type": "string", "description": "The title of the plan to create."},
-            "text" : {"type": "string", "description": "The text of the plan to create. it is displayed by the format of MARKDOWN"}
+    parameters = @ObjectValue(
+        properties = {
+            @ToolProperty(key = "title", value = @Value(
+                type = ValueType.STRING,
+                description = "The title of the plan to create.")),
+            @ToolProperty(key = "text", value = @Value(
+                type = ValueType.STRING,
+                description = "The text of the plan to create. it is displayed by the format of MARKDOWN"))
         },
-        "required": ["title"],
-        "additionalProperties": false
-        }
-        """,
+        required = {"title"},
+        additionalProperties = OptionalBoolean.FALSE),
     concurrentPolicy = ConcurrentPolicy.READ_ONLY,
     maxOutput = 5_000,
     timeout = 6_000L)

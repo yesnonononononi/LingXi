@@ -3,6 +3,11 @@ package com.summit.dp.workflow.infrastructure.tools.sub_agent.communication;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.anno.Tool;
+import com.summit.core.anno.type.ObjectValue;
+import com.summit.core.anno.type.OptionalBoolean;
+import com.summit.core.anno.type.ToolProperty;
+import com.summit.core.anno.type.Value;
+import com.summit.core.anno.type.ValueType;
 import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
@@ -45,17 +50,17 @@ import org.springframework.stereotype.Component;
         Intended for code-collaboration hand-offs, not for real-time back-and-forth chat.
         The target agent must belong to your team.
         """,
-    parametersJsonSchema = """
-        {
-          "type": "object",
-          "properties": {
-            "toAgentId": {"type": "integer", "description": "Agent id of the recipient: a teammate, or the commander when a member sends its result back."},
-            "mailContent": {"type": "string", "description": "The mail body. Write it as a complete, self-contained message; the recipient cannot ask clarifying questions synchronously."}
-          },
-          "required": ["toAgentId", "mailContent"],
-          "additionalProperties": false
-        }
-        """,
+    parameters = @ObjectValue(
+        properties = {
+            @ToolProperty(key = "toAgentId", value = @Value(
+                type = ValueType.INTEGER,
+                description = "Agent id of the recipient: a teammate, or the commander when a member sends its result back.")),
+            @ToolProperty(key = "mailContent", value = @Value(
+                type = ValueType.STRING,
+                description = "The mail body. Write it as a complete, self-contained message; the recipient cannot ask clarifying questions synchronously."))
+        },
+        required = {"toAgentId", "mailContent"},
+        additionalProperties = OptionalBoolean.FALSE),
     concurrentPolicy = ConcurrentPolicy.ISOLATED_MUTATION,
     maxOutput = 20_000,
     timeout = 60L)

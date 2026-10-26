@@ -4,6 +4,11 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.anno.Tool;
+import com.summit.core.anno.type.ObjectValue;
+import com.summit.core.anno.type.OptionalBoolean;
+import com.summit.core.anno.type.ToolProperty;
+import com.summit.core.anno.type.Value;
+import com.summit.core.anno.type.ValueType;
 import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
@@ -53,20 +58,26 @@ import org.springframework.stereotype.Component;
         Require a changed-file list, actual validation commands and results, and unresolved items. If delivery is empty or unclear, inspect files and run checks yourself; if there is no usable output or the teammate fails, complete the work or re-delegate with this explicit format. Handle these internal failures yourself.
         Of course, you can terminate this turn, and you will be notified(the notification will be put into your context as the system message) when the teammate completed his task
         """,
-    parametersJsonSchema = """
-        {
-          "type": "object",
-          "properties": {
-            "agentId": {"type": "integer", "description": "Agent id from the commander's teammate list."},
-            "task": {"type": "string", "description": "A concrete, self-contained task for the teammate."},
-            "prompt": {"type": "string", "description": "Relevant context, constraints and expected output format."},
-            "workDir": {"type": "string", "description": "Current workspace directory."},
-            "agentName": {"type": "string", "description": "The name of the target agent."}
-          },
-          "required": ["agentId", "task"],
-          "additionalProperties": false
-        }
-        """,
+    parameters = @ObjectValue(
+        properties = {
+            @ToolProperty(key = "agentId", value = @Value(
+                type = ValueType.INTEGER,
+                description = "Agent id from the commander's teammate list.")),
+            @ToolProperty(key = "task", value = @Value(
+                type = ValueType.STRING,
+                description = "A concrete, self-contained task for the teammate.")),
+            @ToolProperty(key = "prompt", value = @Value(
+                type = ValueType.STRING,
+                description = "Relevant context, constraints and expected output format.")),
+            @ToolProperty(key = "workDir", value = @Value(
+                type = ValueType.STRING,
+                description = "Current workspace directory.")),
+            @ToolProperty(key = "agentName", value = @Value(
+                type = ValueType.STRING,
+                description = "The name of the target agent."))
+        },
+        required = {"agentId", "task"},
+        additionalProperties = OptionalBoolean.FALSE),
     concurrentPolicy = ConcurrentPolicy.ISOLATED_MUTATION,
     maxOutput = 20_000,
     timeout = 36_000L)

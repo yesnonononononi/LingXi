@@ -3,6 +3,7 @@ package com.summit.dp.workflow.infrastructure.tools.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.summit.core.anno.Tool;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditFileToolExecutor;
@@ -33,6 +34,10 @@ class StaticToolDeclarationContractTest {
                 SendMailToAgentTool.class, CreatePlanTool.class);
         ArrayNode snapshot = mapper.createArrayNode();
         for (Class<? extends ToolExecutor> executorType : executorTypes) {
+            Tool declaration = executorType.getAnnotation(Tool.class);
+            assertNotNull(declaration);
+            assertEquals("", declaration.parametersJsonSchema(), executorType.getSimpleName());
+            assertTrue(declaration.parameters().properties().length > 0, executorType.getSimpleName());
             ToolExecutor executor = mock(executorType);
             ToolDefinition<?> definition = AnnotatedToolTestDefinitions.create(executorType, executor);
             assertSame(executor, definition.executor());

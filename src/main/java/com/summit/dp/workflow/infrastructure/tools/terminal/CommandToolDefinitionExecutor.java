@@ -3,6 +3,13 @@ package com.summit.dp.workflow.infrastructure.tools.terminal;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.anno.Tool;
+import com.summit.core.anno.type.BooleanValue;
+import com.summit.core.anno.type.ObjectValue;
+import com.summit.core.anno.type.OptionalBoolean;
+import com.summit.core.anno.type.StringValue;
+import com.summit.core.anno.type.ToolProperty;
+import com.summit.core.anno.type.Value;
+import com.summit.core.anno.type.ValueType;
 import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceCommands;
@@ -45,18 +52,24 @@ import org.springframework.stereotype.Component;
         Set background=true to return a persisted taskId immediately. Completion is reported to this execution automatically; use manage_command to inspect or stop tasks.
         Always state in `intention` what the command is for; it is displayed to the user in the UI next to the command, so make it specific and human-readable.
         """,
-    parametersJsonSchema = """
-        {
-          "type": "object",
-          "properties": {
-            "command": {"type": "string", "description": "Raw command text, passed unchanged to the selected shell. The interpreter does not detect script languages: a bare PowerShell script is not valid input for cmd, so choose the shell that matches the syntax. Quoting, relative paths and the working directory behave as inside that interpreter."},
-            "shell": {"type": "string", "enum": ["cmd", "pwsh", "powershell", "bash", "sh", "zsh"], "description": "Interpreter that runs this command. Omit it to use the workspace default. Windows supports cmd, pwsh and powershell; Linux supports bash, sh and pwsh. An unsupported, missing or denied interpreter fails the call explicitly instead of falling back to another shell."},
-            "intention": {"type": "string", "description": "One short sentence stating what this command is intended to achieve. It is shown to the user in the UI next to the command, so make it specific and human-readable."},
-            "background": {"type": "boolean", "default": false, "description": "Return a taskId immediately while the command runs in the background. Completion is injected into this execution automatically, so continue other work without polling. Natural completion waits for this execution's tasks. The configured background timeout and the same output limit apply."}
-          },
-          "required": ["command", "intention"]
-        }
-        """,
+    parameters = @ObjectValue(
+        properties = {
+            @ToolProperty(key = "command", value = @Value(
+                type = ValueType.STRING,
+                description = "Raw command text, passed unchanged to the selected shell. The interpreter does not detect script languages: a bare PowerShell script is not valid input for cmd, so choose the shell that matches the syntax. Quoting, relative paths and the working directory behave as inside that interpreter.")),
+            @ToolProperty(key = "shell", value = @Value(
+                type = ValueType.STRING,
+                description = "Interpreter that runs this command. Omit it to use the workspace default. Windows supports cmd, pwsh and powershell; Linux supports bash, sh and pwsh. An unsupported, missing or denied interpreter fails the call explicitly instead of falling back to another shell.",
+                stringValue = @StringValue(enums = {"cmd", "pwsh", "powershell", "bash", "sh", "zsh"}))),
+            @ToolProperty(key = "intention", value = @Value(
+                type = ValueType.STRING,
+                description = "One short sentence stating what this command is intended to achieve. It is shown to the user in the UI next to the command, so make it specific and human-readable.")),
+            @ToolProperty(key = "background", value = @Value(
+                type = ValueType.BOOLEAN,
+                description = "Return a taskId immediately while the command runs in the background. Completion is injected into this execution automatically, so continue other work without polling. Natural completion waits for this execution's tasks. The configured background timeout and the same output limit apply.",
+                booleanValue = @BooleanValue(defaultValue = OptionalBoolean.FALSE)))
+        },
+        required = {"command", "intention"}),
     concurrentPolicy = ConcurrentPolicy.SERIAL_MUTATION,
     maxOutput = 5_000,
     timeout = 240L)
