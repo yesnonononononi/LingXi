@@ -24,7 +24,7 @@ import org.springframework.stereotype.Component;
     id = ToolCatalog.MANAGE_COMMAND,
     name = ToolCatalog.MANAGE_COMMAND,
     executor = ManageCommandToolExecutor.class,
-    description = "Manage background commands in the current session. List returns task summaries. Snapshot returns current output immediately. Read waits for completion up to the tool timeout and returns the final status, output and exit code; interrupting the wait does not stop the task. Stop waits for confirmed termination.",
+    description = "Manage background commands in the current session. List returns task summaries. Snapshot returns current output immediately. Read waits for completion up to the tool timeout and returns the final status, output and exit code; interrupting the wait does not stop the task. Stop waits for confirmed termination. if you need to immediately acquire the result, please to use the command_execute tool",
     parameters = @ObjectValue(
         properties = {
             @ToolProperty(key = "action", value = @Value(
