@@ -2,14 +2,8 @@
 <template>
   <div :class="['relative flex h-screen w-screen overflow-hidden font-sans', displayIsDark ? 'text-gray-100 dark' : 'text-gray-900 light']">
 
-    <!-- 全局纯净背景层 (Vue Bits 纯黑科技质感 + 极微弱环境微光) -->
-    <div class="pointer-events-none absolute inset-0 z-0 overflow-hidden">
-      <div :class="displayIsDark ? 'absolute inset-0 bg-black' : 'absolute inset-0 bg-white'"></div>
-      <div
-        v-if="displayIsDark"
-        class="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[360px] bg-gradient-to-b from-blue-500/[0.035] via-indigo-500/[0.015] to-transparent blur-3xl pointer-events-none"
-      ></div>
-    </div>
+    <!-- 全局纯净背景层：已抽成可被插件替换的独立组件，明暗由 tokens.css 的变量自行切换 -->
+    <ChatBackground />
 
 
     <Sidebar
@@ -372,6 +366,7 @@ import { FILE_PREVIEW_KEY } from '../../types/filePreview';
 import { DECIDE_TOOL_CALL_KEY, ANSWER_CHOICES_KEY } from '../../types/toolDecision';
 import { CHAT_MESSAGE_SLOTS_KEY } from '../../types/chatMessageSlots';
 import MessageBodyDefault from '../../components/chat/MessageBodyDefault.vue';
+import ChatBackground from '../../components/chat/ChatBackground.vue';
 import MessageActionsBar from '../../components/chat/MessageActionsBar.vue';
 import { CHAT_INPUT_SLOTS_KEY } from '../../types/chatInputSlots';
 import ChatInputContextUsage from '../../components/chat/ChatInputContextUsage.vue';

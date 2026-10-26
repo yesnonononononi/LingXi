@@ -154,6 +154,9 @@ test('T2-5 豁免集反向断言：白名单里非形态类的令牌必须真的
 const THEME_KEY_OF_TOKEN: Readonly<Record<string, string | null>> = {
   'canvas': '--color-lx-canvas',
   'canvas-subtle': '--color-lx-canvas-subtle',
+  /* 画布光晕只被背景层的 background-image 以 CSS var() 消费，做成 bg-/text- 工具类没有语义 */
+  'canvas-glow-from': null,
+  'canvas-glow-via': null,
   'surface': '--color-lx-surface',
   'surface-elevated': '--color-lx-surface-elevated',
   'surface-sunken': '--color-lx-surface-sunken',
@@ -219,7 +222,7 @@ test('T3-1 每个令牌要么有 @theme 映射，要么显式登记为「不映�
 
 test('T3-1b 登记为「不映射」的令牌，@theme 里确实不得出现其映射键', () => {
   const declaredUnmapped = Object.entries(THEME_KEY_OF_TOKEN).filter(([, key]) => key === null).map(([name]) => name);
-  assert.deepEqual(declaredUnmapped.sort(), ['ring', 'scrollbar-thumb', 'scrollbar-thumb-hover'], '「不映射」名单变化需同步本断言');
+  assert.deepEqual(declaredUnmapped.sort(), ['canvas-glow-from', 'canvas-glow-via', 'ring', 'scrollbar-thumb', 'scrollbar-thumb-hover'], '「不映射」名单变化需同步本断言');
   const leaked = declaredUnmapped.filter(name => new RegExp(`--(color|radius|shadow|blur)-lx-${name}\\s*:`).test(themeBlock));
   assert.deepEqual(leaked, [], '以下令牌声明为不映射，却在 @theme 里出现了映射键');
 });
