@@ -17,6 +17,6 @@
 
 十个固定工具使用 `parameters = @ObjectValue(...)`：根节点固定为 object，属性通过 `ValueType` 选择标量或标量数组，必填项在根节点统一声明。约束只填写到对应类型中；`OptionalBoolean.UNSET` 表示省略，`FALSE` 表示显式 false。
 
-嵌套对象、嵌套数组等复杂 schema 继续使用 `parametersJsonSchema`；不得与结构化约束混用。旧 `props`、`others`、`type` 仅供已有声明使用，不与 `parameters` 混用。
+嵌套对象、嵌套数组等复杂 schema 继续使用 `parametersJsonSchema`；不得与结构化约束混用。`@Tool` 不再提供旧的 `props`、`others`、`type` 属性。
 
 启动时先收集显式定义，再注册注解工具，最后校验完整注册表。`StaticToolDeclarationContractTest` 用迁移前的独立快照核对十个工具的契约；`ApplicationContextAssemblyTest` 验证实际装配与 codec 转换。
