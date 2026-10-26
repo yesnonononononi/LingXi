@@ -4,13 +4,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.adapter.langchain4j.codec.tool.ToolCodecAdapter;
 import com.summit.core.tool.ToolDefinition;
+import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
 import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
 import com.summit.dp.workflow.infrastructure.tools.config.properties.WebSearchToolProperties;
+import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.ManageCommandToolExecutor;
 import dev.langchain4j.agent.tool.ToolSpecification;
-import org.junit.jupiter.api.Test;
-
 import java.util.ArrayList;
 import java.util.List;
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -31,8 +33,8 @@ class ToolDefinitionSchemaContractTest {
 
     private List<ToolDefinition<?>> allDefinitions() {
         return List.of(
-                configuration.executeCommandToolDefinition(objectMapper, null, null, new CommandToolProperties()),
-                configuration.manageCommandToolDefinition(objectMapper, null),
+                AnnotatedToolTestDefinitions.create(CommandToolDefinitionExecutor.class, new CommandToolDefinitionExecutor(objectMapper, null, null, new CommandToolProperties())),
+                AnnotatedToolTestDefinitions.create(ManageCommandToolExecutor.class, new ManageCommandToolExecutor(objectMapper, null)),
                 configuration.webSearchToolDefinition(null, new WebSearchToolProperties(), objectMapper));
     }
 
@@ -49,8 +51,7 @@ class ToolDefinitionSchemaContractTest {
 
     @Test
     void executeCommandExposesOptionalShellWithoutChangingRequiredArguments() throws Exception {
-        ToolDefinition<?> definition = configuration.executeCommandToolDefinition(
-                objectMapper, null, null, new CommandToolProperties());
+        ToolDefinition<?> definition = AnnotatedToolTestDefinitions.create(CommandToolDefinitionExecutor.class, new CommandToolDefinitionExecutor(objectMapper, null, null, new CommandToolProperties()));
 
         JsonNode schema = objectMapper.readTree(definition.parametersJsonSchema());
         JsonNode required = schema.get("required");

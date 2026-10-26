@@ -1,25 +1,23 @@
 package com.summit.dp.tools.baseTools.config;
 
-import com.summit.dp.workflow.infrastructure.tools.config.ToolConfig;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.workflow.application.delegation.TeamPromptComposer;
 import com.summit.dp.email.application.service.EmailService;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.dp.workflow.application.delegation.TeamPromptComposer;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailWakeMisuseDetector;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -72,7 +70,7 @@ class QaToolDefinitionAndPromptTest {
     @DisplayName("T02 call_sub_agent schema：不再有 runtime_mode（收敛为单一异步口径），必填仍为 agentId/task")
     void callSubAgentSchemaHasNoRuntimeMode() throws Exception {
         ToolDefinition<CallSubAgentTool> definition =
-                new ToolConfig().callSubAgentToolDefinition(mock(CallSubAgentTool.class));
+                AnnotatedToolTestDefinitions.create(CallSubAgentTool.class, mock(CallSubAgentTool.class));
 
         assertEquals(ToolCatalog.CALL_SUB_AGENT, definition.name());
         JsonNode schema = objectMapper.readTree(definition.parametersJsonSchema());
@@ -91,7 +89,7 @@ class QaToolDefinitionAndPromptTest {
     @Test
     @DisplayName("T02 call_sub_agent description：单一异步口径，且验收以产物与验证记录为准、内部故障自行处理")
     void callSubAgentDescriptionDescribesSingleAsyncMode() {
-        String description = new ToolConfig().callSubAgentToolDefinition(mock(CallSubAgentTool.class)).description();
+        String description = AnnotatedToolTestDefinitions.create(CallSubAgentTool.class, mock(CallSubAgentTool.class)).description();
 
         assertFalse(description.contains("blocking"), "阻塞式委派已删除，描述不得再提 blocking");
         assertFalse(description.contains("runtime_mode"), "描述不得再提 runtime_mode");
@@ -105,8 +103,7 @@ class QaToolDefinitionAndPromptTest {
     @DisplayName("T02 send_mail_to_agent：description 与 toAgentId 描述均为双向措辞")
     void sendMailDefinitionIsBidirectional() throws Exception {
         ToolDefinition<SendMailToAgentTool> definition =
-                new ToolConfig().sendMailToAgentToolToolDefinition(objectMapper, emailService,
-                        mock(ExecutionResumeCoordinator.class), mock(MailWakeMisuseDetector.class));
+                AnnotatedToolTestDefinitions.create(SendMailToAgentTool.class, new SendMailToAgentTool(objectMapper, emailService, mock(ExecutionResumeCoordinator.class), mock(MailWakeMisuseDetector.class)));
 
         String description = definition.description();
         assertTrue(description.toLowerCase().contains("commander"),

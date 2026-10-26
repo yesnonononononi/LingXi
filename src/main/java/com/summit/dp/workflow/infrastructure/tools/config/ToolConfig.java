@@ -1,199 +1,20 @@
 package com.summit.dp.workflow.infrastructure.tools.config;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.compact.ContextAttachmentProvider;
-import com.summit.core.tool.ConcurrentPolicy;
-import com.summit.core.tool.ToolDefinition;
-import com.summit.dp.email.application.service.EmailService;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCallKeys;
 import com.summit.dp.toolcall.domain.model.ToolCallKind;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
-import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.workflow.infrastructure.tools.plan.CreatePlanTool;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.PeekTeammateStateTool;
-import com.summit.dp.workflow.infrastructure.tools.require_choice.RequireChoiceToolExecutor;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailWakeMisuseDetector;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
-import lombok.Builder;
+import java.io.Serializable;
+import java.util.Optional;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.io.Serializable;
-import java.util.Optional;
-
-/**
- * 应用内全部工具的执行器装配与 {@link ToolDefinition} 注册入口。
- */
+/** 计划附件需要仓储与转换器协作，保留显式装配。 */
 @Configuration(proxyBeanMethods = false)
 public class ToolConfig {
-
-    @Bean
-    public ToolDefinition<RequireChoiceToolExecutor> requireChoiceTool(
-            RequireChoiceToolExecutor executor) {
-        return ToolDefinition.<RequireChoiceToolExecutor>builder()
-                .id(ToolCatalog.REQUIRE_CHOICE)
-                .name(ToolCatalog.REQUIRE_CHOICE)
-                .executor(executor)
-                .concurrentPolicy(ConcurrentPolicy.READ_ONLY)
-                .description("Ask the user a question and wait for an explicit answer. When several independent questions are needed, call this tool multiple times in the SAME response. The user can answer all questions together before execution resumes.")
-                .parametersJsonSchema("""
-                        {"type":"object","properties":{"question":{"type":"string"},
-                        "options":{"type":"array","items":{"type":"string"}}},
-                        "required":["question"]}
-                        """)
-                .maxOutput(1_000)
-                .timeout(30_000L)
-                .build();
-    }
-
-    @Bean
-    public ToolDefinition<CallSubAgentTool> callSubAgentToolDefinition(CallSubAgentTool executor) {
-        return ToolDefinition.<CallSubAgentTool>builder()
-                .id(ToolCatalog.CALL_SUB_AGENT)
-                .name(ToolCatalog.CALL_SUB_AGENT)
-                .executor(executor)
-                .description("""
-                        Delegate one well-scoped task to a configured teammate.
-                        The delegation is accepted immediately; the teammate runs asynchronously so you keep working on the rest of the round. Verify workspace artifacts and validation records yourself; email (send_mail_to_agent) is supplementary and is not the basis for acceptance.
-                        Require a changed-file list, actual validation commands and results, and unresolved items. If delivery is empty or unclear, inspect files and run checks yourself; if there is no usable output or the teammate fails, complete the work or re-delegate with this explicit format. Handle these internal failures yourself.
-                        """)
-                .parametersJsonSchema("""
-                        {
-                          "type": "object",
-                          "properties": {
-                            "agentId": {"type": "integer", "description": "Agent id from the commander's teammate list."},
-                            "task": {"type": "string", "description": "A concrete, self-contained task for the teammate."},
-                            "prompt": {"type": "string", "description": "Relevant context, constraints and expected output format."},
-                            "workDir": {"type": "string", "description": "Current workspace directory."},
-                            "agentName": {"type": "string", "description": "The name of the target agent."}
-                          },
-                          "required": ["agentId", "task"],
-                          "additionalProperties": false
-                        }
-                        """)
-                .concurrentPolicy(ConcurrentPolicy.ISOLATED_MUTATION)
-                .maxOutput(20_000)
-                .timeout(36_000L)
-                .build();
-    }
-    /**
-     * 队员状态查询工具：只读观测，<b>不唤醒</b>任何执行。
-     *
-     * <p>description 必须写明这一点：它和 {@code call_sub_agent} 是两件事，模型曾把「看一眼」当成
-     * 「催一下」，而队员结束后不会再被任何消息唤醒。</p>
-     */
-    @Bean
-    public ToolDefinition<PeekTeammateStateTool> peekTeammateStateToolDefinition(PeekTeammateStateTool executor) {
-        return ToolDefinition.<PeekTeammateStateTool>builder()
-                .id(ToolCatalog.PEEK_TEAMMATE_STATE)
-                .name(ToolCatalog.PEEK_TEAMMATE_STATE)
-                .executor(executor)
-                .description("""
-                        Read one teammate's current run state in this collaboration session. Commander only: members cannot see each other.
-                        Returns RUNNING / SUSPENDED / IDLE plus the last outcome, or reports that the teammate has not been woken yet.
-                        This is read-only observation: it never wakes, resumes or delegates. Use call_sub_agent to give a teammate work.
-                        """)
-                .parametersJsonSchema("""
-                        {
-                          "type": "object",
-                          "properties": {
-                            "agentId": {"type": "integer", "description": "Agent id from the commander's teammate list."},
-                            "agentName": {"type": "string", "description": "That teammate's name from the same list. Display only: it never affects which agent is read."}
-                          },
-                          "required": ["agentId"],
-                          "additionalProperties": false
-                        }
-                        """)
-                .concurrentPolicy(ConcurrentPolicy.READ_ONLY)
-                .maxOutput(2_000)
-                .timeout(10L)
-                .build();
-    }
-
-    /**
-     * 发信工具定义。
-     *
-     * <p>{@code description} 必须讲清<b>投递是异步的</b>：对方要等到它自己的下一次模型调用
-     * 才会读到这封信。这既符合实现（{@code EmailService.sendMail} 只落一条 PENDING 消息，
-     * 由收件方的 {@code AgenticLoopInterceptor} 在其下一轮消费），也是压住「发完不放心、再发一封」
-     * 这类行为的关键——曾观测到同一执行在 2.7 秒内发出两封内容完全相同的邮件。</p>
-     *
-     * <p>文案还刻意点明这是<b>编码协作</b>用途而非即时聊天：本工具没有回执通道，
-     * 不该被用于「一问一答」的往返等待。措辞保持英文以与其余工具定义一致。</p>
-     *
-     * <p><b>双向用途</b>：这条描述对主理人（发给成员）与成员（把结果发回主理人）都要成立 ——
-     * 邮件仅补充交付通知，主理人仍须核验产物与验证记录。</p>
-     *
-     * <p>主理人若拿它当唤醒/催办通道（收件成员当前没有在跑的），成功回执会追加一条纠正提醒，
-     * 见 {@code MailWakeMisuseDetector}。</p>
-     */
-    @Bean
-    public ToolDefinition<SendMailToAgentTool> sendMailToAgentToolToolDefinition(ObjectMapper objectMapper,
-                                                                                EmailService emailService,
-                                                                                ExecutionResumeCoordinator resumeCoordinator,
-                                                                                MailWakeMisuseDetector wakeMisuseDetector) {
-        return ToolDefinition.<SendMailToAgentTool>builder()
-                .id(ToolCatalog.SEND_MAIL_TO_AGENT)
-                .name(ToolCatalog.SEND_MAIL_TO_AGENT)
-                .executor(new SendMailToAgentTool(objectMapper, emailService, resumeCoordinator, wakeMisuseDetector))
-                .description("""
-                        Send an asynchronous mail to a teammate agent or to the commander.
-                        Use it for supplementary delivery notifications; the commander assesses workspace artifacts and validation records even without email, and email is not the basis for acceptance.
-                        Delivery is asynchronous: the recipient reads this mail at the start of ITS next model round,
-                        not immediately. There is no reply channel on this call, so sending does not return an answer.
-                        After a successful send, continue with your own work, or if you have nothing left to do,
-                        end your turn and wait for incoming mail; never resend the same content because no reply arrived yet.
-                        Intended for code-collaboration hand-offs, not for real-time back-and-forth chat.
-                        The target agent must belong to your team.
-                        """)
-                .parametersJsonSchema("""
-                        {
-                          "type": "object",
-                          "properties": {
-                            "toAgentId": {"type": "integer", "description": "Agent id of the recipient: a teammate, or the commander when a member sends its result back."},
-                            "mailContent": {"type": "string", "description": "The mail body. Write it as a complete, self-contained message; the recipient cannot ask clarifying questions synchronously."}
-                          },
-                          "required": ["toAgentId", "mailContent"],
-                          "additionalProperties": false
-                        }
-                        """)
-                .concurrentPolicy(ConcurrentPolicy.ISOLATED_MUTATION)
-                .maxOutput(20_000)
-                .timeout(60L)
-                .build();
-    }
-    @Bean
-    public ToolDefinition<CreatePlanTool> createPlanToolToolDefinition(CreatePlanTool createPlanTool) {
-        return ToolDefinition.<CreatePlanTool>builder()
-                .id(ToolCatalog.CREATE_PLAN)
-                .name(ToolCatalog.CREATE_PLAN)
-                .executor(createPlanTool)
-                .description("""
-                        Create a plan for the given task.
-                        The user may have embedded some tips in your plan so it is common if you see  other text that differs from the original plan text.
-                        However, you don't ignore them.
-                        """)
-                .parametersJsonSchema("""
-                        {
-                        "type": "object",
-                        "properties": {
-                            "title": {"type": "string", "description": "The title of the plan to create."},
-                            "text" : {"type": "string", "description": "The text of the plan to create. it is displayed by the format of MARKDOWN"}
-                        },
-                        "required": ["title"],
-                        "additionalProperties": false
-                        }
-                        """)
-                .concurrentPolicy(ConcurrentPolicy.READ_ONLY)
-                .timeout(6_000L)
-                .maxOutput(5_000)
-                .build();
-    }
 
     /**
      * 上下文压缩时的计划书附件：框架传入的键是<b>执行 id</b>。

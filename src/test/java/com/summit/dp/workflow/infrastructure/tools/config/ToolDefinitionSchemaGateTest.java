@@ -4,10 +4,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecutor;
-import org.junit.jupiter.api.Test;
-
+import com.summit.core.tool.ToolRegistry;
+import com.summit.harness.springbootautoconfigure.toolHelper.ToolRegister;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.DefaultApplicationArguments;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.core.annotation.AnnotationAwareOrderComparator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -71,6 +76,30 @@ class ToolDefinitionSchemaGateTest {
         definitions.put("bad", definition("bad", "{\"type\":\"object\",}"));
         IllegalStateException error = assertThrows(IllegalStateException.class, () -> gate.check(definitions));
         assertEquals(1, error.getMessage().split("bad（bean: bad）", -1).length - 1);
+    }
+
+    @Test
+    void runnerChecksRegistryEntriesWithoutDefinitionBeans() {
+        ToolRegistry registry = new ToolRegistry(List.of());
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(ToolRegistry.class, () -> registry);
+            context.refresh();
+            ToolDefinitionSchemaGate registryGate = new ToolDefinitionSchemaGate(context, new ObjectMapper());
+            assertTrue(context.getBeansOfType(ToolDefinition.class).isEmpty());
+            registry.register(definition("registered_without_bean", "[]"));
+
+            IllegalStateException error = assertThrows(IllegalStateException.class,
+                    () -> registryGate.run(new DefaultApplicationArguments()));
+
+            assertTrue(error.getMessage().contains("registered_without_bean"));
+        }
+    }
+
+    @Test
+    void annotationRegistrationMustRunBeforeTheRegistryGate() {
+        ToolRegister registrar = new ToolRegister(new ToolRegistry(List.of()), new ObjectMapper(), null);
+
+        assertTrue(AnnotationAwareOrderComparator.INSTANCE.compare(registrar, gate) < 0);
     }
 
     private ToolDefinition<?> definition(String name, String schema) {

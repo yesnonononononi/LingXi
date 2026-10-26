@@ -9,21 +9,18 @@ import com.summit.core.tool.ToolExecution;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.task.api.controller.BackgroundTaskController;
+import com.summit.dp.task.application.service.TaskDeletionPolicy;
 import com.summit.dp.task.application.service.TaskRuntimeService;
 import com.summit.dp.task.application.vo.TaskVO;
 import com.summit.dp.task.domain.model.Task;
-import com.summit.dp.task.application.service.TaskDeletionPolicy;
 import com.summit.dp.task.domain.repository.TaskRepository;
-import com.summit.dp.workflow.infrastructure.tools.config.CommonToolConfiguration;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcess;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcessManager;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskCompletion;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskBroadcaster;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskCompletion;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.ManageCommandToolExecutor;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Test;
-
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -32,6 +29,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -153,7 +152,7 @@ class BackgroundCommandReadTest {
         }
         verify(controlled).read(10L, taskId, false);
         verify(controlled).read(10L, taskId, true);
-        JsonNode schema = json.readTree(new CommonToolConfiguration().manageCommandToolDefinition(json, controlled).parametersJsonSchema());
+        JsonNode schema = json.readTree(AnnotatedToolTestDefinitions.create(ManageCommandToolExecutor.class, new ManageCommandToolExecutor(json, controlled)).parametersJsonSchema());
         assertTrue(schema.path("properties").path("action").path("enum").toString().contains("snapshot"));
         assertTrue(schema.path("properties").path("taskId").path("description").asText().contains("snapshot"));
     }

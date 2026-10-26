@@ -1,6 +1,8 @@
 package com.summit.dp.workflow.infrastructure.tools.sub_agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.core.anno.Tool;
+import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecutor;
@@ -13,14 +15,14 @@ import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
+import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.infrastructure.tools.arguments.PeekTeammateStateArgument;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
-
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 
 /**
  * 只读地查看某个队员在本会话里的运行状态，<b>固定给指挥者</b>（队员之间互不可见）。
@@ -30,6 +32,30 @@ import java.util.Optional;
  */
 @RequiredArgsConstructor
 @Component
+@Tool(
+    id = ToolCatalog.PEEK_TEAMMATE_STATE,
+    name = ToolCatalog.PEEK_TEAMMATE_STATE,
+    executor = PeekTeammateStateTool.class,
+    description = """
+        Read one teammate's current run state in this collaboration session. Commander only: members cannot see each other.
+        Returns RUNNING / SUSPENDED / IDLE plus the last outcome, or reports that the teammate has not been woken yet.
+        This is read-only observation: it never wakes, resumes or delegates. Use call_sub_agent to give a teammate work.
+        `最近状态`: the target state of the last turn, it cannot be considered unable to continue working now
+        """,
+    parametersJsonSchema = """
+        {
+          "type": "object",
+          "properties": {
+            "agentId": {"type": "integer", "description": "Agent id from the commander's teammate list."},
+            "agentName": {"type": "string", "description": "That teammate's name from the same list. Display only: it never affects which agent is read."}
+          },
+          "required": ["agentId"],
+          "additionalProperties": false
+        }
+        """,
+    concurrentPolicy = ConcurrentPolicy.READ_ONLY,
+    maxOutput = 2_000,
+    timeout = 10L)
 public class PeekTeammateStateTool extends AbstractSubAgentTool implements ToolExecutor {
 
     private final ObjectMapper objectMapper;

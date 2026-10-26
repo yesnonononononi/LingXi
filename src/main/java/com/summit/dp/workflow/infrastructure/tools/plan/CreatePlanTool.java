@@ -2,15 +2,17 @@ package com.summit.dp.workflow.infrastructure.tools.plan;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.core.anno.Tool;
+import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecutor;
-import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.toolcall.application.command.ToolCallRegisterCommand;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.ToolCallRegistrar;
 import com.summit.dp.toolcall.domain.model.ToolCallKind;
 import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.workflow.infrastructure.tools.arguments.PlanCreateArgument;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +23,29 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @RequiredArgsConstructor
 @Component
+@Tool(
+    id = ToolCatalog.CREATE_PLAN,
+    name = ToolCatalog.CREATE_PLAN,
+    executor = CreatePlanTool.class,
+    description = """
+        Create a plan for the given task.
+        The user may have embedded some tips in your plan so it is common if you see other text that differs from the original plan text.
+        However, you don't ignore them.
+        """,
+    parametersJsonSchema = """
+        {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "description": "The title of the plan to create."},
+            "text" : {"type": "string", "description": "The text of the plan to create. it is displayed by the format of MARKDOWN"}
+        },
+        "required": ["title"],
+        "additionalProperties": false
+        }
+        """,
+    concurrentPolicy = ConcurrentPolicy.READ_ONLY,
+    maxOutput = 5_000,
+    timeout = 6_000L)
 public class CreatePlanTool implements ToolExecutor {
 
     private final ObjectMapper objectMapper;

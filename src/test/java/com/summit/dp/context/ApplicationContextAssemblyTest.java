@@ -1,33 +1,35 @@
 package com.summit.dp.context;
 
-import com.summit.ddd.infrastructure.repository.json.AbstractJsonRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.adapter.langchain4j.codec.tool.ToolCodecAdapter;
-import com.summit.core.tool.ToolDefinition;
-import com.summit.core.runtime.loop.LoopInterceptor;
 import com.summit.adapter.langchain4j.mcp.McpClientFactory;
+import com.summit.core.anno.Tool;
 import com.summit.core.mcp.ScopeMcpProvider;
+import com.summit.core.runtime.loop.LoopInterceptor;
 import com.summit.core.runtime.loop.LoopInterceptorProcessor;
+import com.summit.core.tool.ToolDefinition;
+import com.summit.core.tool.ToolExecutor;
+import com.summit.core.tool.ToolRegistry;
+import com.summit.ddd.infrastructure.repository.json.AbstractJsonRepository;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.infrastructure.mcp.HostMcpScopeProvider;
+import com.summit.dp.workflow.infrastructure.tools.config.ToolDefinitionSchemaGate;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskLoopInterceptor;
-import com.summit.dp.workflow.infrastructure.mcp.HostMcpScopeProvider;
-import com.summit.dp.workflow.infrastructure.tools.config.ToolDefinitionSchemaGate;
 import com.summit.harness.springbootautoconfigure.config.mcp.McpAutoConfiguration;
 import dev.langchain4j.agent.tool.ToolSpecification;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.util.ReflectionTestUtils;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -131,7 +133,7 @@ class ApplicationContextAssemblyTest {
         assertEquals(1, context.getBeansOfType(ToolDefinitionSchemaGate.class).size(),
                 "启动期 Schema 门禁必须装配且唯一");
 
-        Map<String, ToolDefinition> definitions = context.getBeansOfType(ToolDefinition.class);
+        Map<String, ToolDefinition<? extends ToolExecutor>> definitions = context.getBean(ToolRegistry.class).getTools();
         assertTrue(definitions.size() >= 10, "静态装配的工具数量异常，实际=" + definitions.keySet());
 
         ObjectMapper objectMapper = context.getBean(ObjectMapper.class);
@@ -150,6 +152,15 @@ class ApplicationContextAssemblyTest {
                         "read_image", "web_search", "require_choice", "call_sub_agent", "peek_teammate_state",
                         "send_mail_to_agent", "create_plan")),
                 "门禁必须覆盖全部基础工具，实际=" + names);
+        assertEquals(10, definitions.values().stream()
+                .filter(definition -> definition.executor().getClass().isAnnotationPresent(Tool.class)).count());
+        assertEquals(5, context.getBeansOfType(ToolDefinition.class).size(),
+                "只有配置驱动的网页检索与四个框架内核工具保留定义 Bean");
+        definitions.values().stream()
+                .filter(definition -> definition.executor().getClass().isAnnotationPresent(Tool.class))
+                .forEach(definition -> assertTrue(context.getBeansOfType(ToolExecutor.class).values().stream()
+                                .anyMatch(executor -> executor == definition.executor()),
+                        "注解工具必须绑定容器管理的执行器: " + definition.name()));
     }
 
     @Test

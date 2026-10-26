@@ -1,14 +1,17 @@
 package com.summit.dp.workflow.infrastructure.tools.require_choice;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.core.anno.Tool;
+import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecutor;
-import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.toolcall.application.command.ToolCallRegisterCommand;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.ToolCallRegistrar;
 import com.summit.dp.toolcall.domain.model.ToolCallKind;
+import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ChoiceQuestionArgument;
 import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.NonNull;
@@ -17,6 +20,22 @@ import org.springframework.stereotype.Component;
 /** 提问先登记准备槽位，避免执行尚未退出就接受回答。 */
 @RequiredArgsConstructor
 @Component
+@Tool(
+    id = ToolCatalog.REQUIRE_CHOICE,
+    name = ToolCatalog.REQUIRE_CHOICE,
+    executor = RequireChoiceToolExecutor.class,
+    description = "Ask the user a question and wait for an explicit answer. When several independent questions are needed, call this tool multiple times in the SAME response. The user can answer all questions together before execution resumes.",
+    parametersJsonSchema = """
+        {"type":"object",
+        "properties":{
+        "question":{"type":"string"},
+        "options":{"type":"array","items":{"type":"string"}}
+        },
+        "required":["question"]}
+        """,
+    concurrentPolicy = ConcurrentPolicy.READ_ONLY,
+    maxOutput = 1_000,
+    timeout = 30_000L)
 public class RequireChoiceToolExecutor implements ToolExecutor {
 
     private final ToolCallRegistrar registrar;

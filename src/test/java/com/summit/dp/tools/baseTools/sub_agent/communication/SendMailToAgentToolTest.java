@@ -1,8 +1,5 @@
 package com.summit.dp.tools.baseTools.sub_agent.communication;
 
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailWakeMisuseDetector;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.tool.ToolDefinition;
@@ -11,13 +8,12 @@ import com.summit.core.tool.ToolExecution;
 import com.summit.dp.email.application.command.MailSendContext;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.tools.arguments.SendMailArgument;
-import com.summit.dp.workflow.infrastructure.tools.config.ToolConfig;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-
+import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailWakeMisuseDetector;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
 import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -25,6 +21,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -58,8 +56,7 @@ class SendMailToAgentToolTest {
     @DisplayName("注册的 JSON Schema 与 SendMailArgument 字段名严格一致，且只有这两个必填项")
     void registeredSchemaMatchesArgumentFields() throws Exception {
         ToolDefinition<SendMailToAgentTool> definition =
-                new ToolConfig().sendMailToAgentToolToolDefinition(objectMapper, emailService,
-                        mock(ExecutionResumeCoordinator.class), mock(MailWakeMisuseDetector.class));
+                AnnotatedToolTestDefinitions.create(SendMailToAgentTool.class, new SendMailToAgentTool(objectMapper, emailService, mock(ExecutionResumeCoordinator.class), mock(MailWakeMisuseDetector.class)));
 
         assertEquals(ToolCatalog.SEND_MAIL_TO_AGENT, definition.name());
 
@@ -149,8 +146,7 @@ class SendMailToAgentToolTest {
     @DisplayName("注册的工具描述必须讲清投递是异步的、且无回复通道")
     void registeredDescriptionExplainsAsynchronousDelivery() throws Exception {
         ToolDefinition<SendMailToAgentTool> definition =
-                new ToolConfig().sendMailToAgentToolToolDefinition(objectMapper, emailService,
-                        mock(ExecutionResumeCoordinator.class), mock(MailWakeMisuseDetector.class));
+                AnnotatedToolTestDefinitions.create(SendMailToAgentTool.class, new SendMailToAgentTool(objectMapper, emailService, mock(ExecutionResumeCoordinator.class), mock(MailWakeMisuseDetector.class)));
 
         String description = definition.description();
         assertTrue(description.contains("asynchronous"),

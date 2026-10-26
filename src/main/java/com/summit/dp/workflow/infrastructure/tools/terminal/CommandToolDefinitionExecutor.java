@@ -1,33 +1,65 @@
 package com.summit.dp.workflow.infrastructure.tools.terminal;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
-import com.summit.dp.execution.ExecutionEventMetadata;
-import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.sandbox_security.domain.model.SecurityAction;
-import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
-import com.summit.dp.sandbox_security.application.TerminalSecurityPolicy;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.core.anno.Tool;
 import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceCommands;
 import com.summit.core.tool.*;
+import com.summit.core.tool.ConcurrentPolicy;
+import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.execution.ExecutionEventMetadata;
+import com.summit.dp.sandbox_security.application.TerminalSecurityPolicy;
+import com.summit.dp.sandbox_security.domain.model.SecurityAction;
+import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
+import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ExecuteCommandRequest;
 import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcesser;
+import java.io.IOException;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.NonNull;
-
-import java.io.IOException;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 @Slf4j
 @Getter
-@RequiredArgsConstructor
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
+@Component
+@Tool(
+    id = ToolCatalog.EXECUTE_COMMAND,
+    name = ToolCatalog.EXECUTE_COMMAND,
+    executor = CommandToolDefinitionExecutor.class,
+    description = """
+        Execute a terminal command in the assigned workspace environment.
+        The command is handed as-is to the chosen shell. Omit shell to use the workspace default (cmd on Windows, bash on Linux). Set shell to cmd, pwsh or powershell on Windows, or bash, sh or pwsh on Linux, and write the script in that interpreter's syntax: the interpreter is not detected from the script.
+        The interpreter starts inside the same sandbox under the same approvals, timeout, cancellation and permission limits. A shell that is unsupported on this platform, missing or denied fails the call with an explicit error; it is never replaced by another shell. Output is decoded as UTF-8 for every supported interpreter.
+        Output may be truncated according to the configured maximum.
+        Set background=true to return a persisted taskId immediately. Completion is reported to this execution automatically; use manage_command to inspect or stop tasks.
+        Always state in `intention` what the command is for; it is displayed to the user in the UI next to the command, so make it specific and human-readable.
+        """,
+    parametersJsonSchema = """
+        {
+          "type": "object",
+          "properties": {
+            "command": {"type": "string", "description": "Raw command text, passed unchanged to the selected shell. The interpreter does not detect script languages: a bare PowerShell script is not valid input for cmd, so choose the shell that matches the syntax. Quoting, relative paths and the working directory behave as inside that interpreter."},
+            "shell": {"type": "string", "enum": ["cmd", "pwsh", "powershell", "bash", "sh", "zsh"], "description": "Interpreter that runs this command. Omit it to use the workspace default. Windows supports cmd, pwsh and powershell; Linux supports bash, sh and pwsh. An unsupported, missing or denied interpreter fails the call explicitly instead of falling back to another shell."},
+            "intention": {"type": "string", "description": "One short sentence stating what this command is intended to achieve. It is shown to the user in the UI next to the command, so make it specific and human-readable."},
+            "background": {"type": "boolean", "default": false, "description": "Return a taskId immediately while the command runs in the background. Completion is injected into this execution automatically, so continue other work without polling. Natural completion waits for this execution's tasks. The configured background timeout and the same output limit apply."}
+          },
+          "required": ["command", "intention"]
+        }
+        """,
+    concurrentPolicy = ConcurrentPolicy.SERIAL_MUTATION,
+    maxOutput = 5_000,
+    timeout = 240L)
 public class CommandToolDefinitionExecutor implements ToolExecutor {
     private final ObjectMapper objectMapper;
     private final TerminalSecurityPolicy security;

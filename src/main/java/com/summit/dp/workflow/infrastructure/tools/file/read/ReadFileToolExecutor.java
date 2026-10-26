@@ -1,22 +1,44 @@
 package com.summit.dp.workflow.infrastructure.tools.file.read;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.core.anno.Tool;
 import com.summit.core.runtime.workspace.WorkspaceFiles;
+import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecutor;
-
-import com.summit.dp.workflow.infrastructure.tools.arguments.ReadFileRequest;
 import com.summit.dp.shared.exception.ClientException;
-import lombok.extern.slf4j.Slf4j;
-import org.jspecify.annotations.NonNull;
-
+import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.dp.workflow.infrastructure.tools.arguments.ReadFileRequest;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
+import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
+import org.springframework.stereotype.Component;
 
 @Slf4j
+@Component
+@Tool(
+    id = ToolCatalog.READ_FILE,
+    name = ToolCatalog.READ_FILE,
+    executor = ReadFileToolExecutor.class,
+    description = "Read file content, optionally limited to a startLine/endLine range.",
+    parametersJsonSchema = """
+        {
+          "type": "object",
+          "properties": {
+            "path": {"type": "string", "description": "File path it is a required parameter"},
+            "startLine": {"type": "integer", "minimum": 0, "description": "Zero-based start line, inclusive. Defaults to 0. Omit both line bounds to read the entire file."},
+            "endLine": {"type": "integer", "minimum": 0, "description": "Zero-based end line, inclusive. Must not precede startLine. Defaults to the last line."}
+          },
+          "required": ["path"]
+        }
+        """,
+    concurrentPolicy = ConcurrentPolicy.READ_ONLY,
+    maxOutput = 3_000,
+    timeout = 30L)
 public class ReadFileToolExecutor implements ToolExecutor {
     private final ObjectMapper objectMapper;
 

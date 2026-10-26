@@ -4,29 +4,26 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.tool.ToolDefinition;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.SmartInitializingSingleton;
-import org.springframework.context.ApplicationContext;
-import org.springframework.stereotype.Component;
-
+import com.summit.core.tool.ToolRegistry;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.SmartInitializingSingleton;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.context.ApplicationContext;
+import org.springframework.core.annotation.Order;
+import org.springframework.stereotype.Component;
 
 /**
- * 启动期门禁：每个静态装配的 {@link ToolDefinition} 必须带一份能被 Jackson 解析的参数 JSON Schema。
- *
- * <p>为什么需要这道门禁：Schema 是写在 Java 文本块里的 JSON 原文，而文本块同样处理转义序列，
- * 一个 {@code \"} 就退化成裸引号。这类错误编译期毫无反应，直到模型请求组装时才炸在
- * {@code JsonSchemaConverter}，代价是整批工具一起不可用，而且报错只说「schema 非法」不说哪个工具。
- * 把它提前到启动期，并指名到具体工具。</p>
- *
- * <p>范围：只覆盖启动时静态装配的工具。MCP 工具按 scope 在运行时动态生成，没有静态 Schema 文本可校验。</p>
+ * 注解工具稍晚于普通 Bean 入表，门禁必须在注册器之后再次核验完整注册表。
  */
 @Slf4j
 @Component
-public class ToolDefinitionSchemaGate implements SmartInitializingSingleton {
+@Order(1000)
+public class ToolDefinitionSchemaGate implements SmartInitializingSingleton, ApplicationRunner {
 
     private final ApplicationContext context;
     private final ObjectMapper objectMapper;
@@ -39,6 +36,13 @@ public class ToolDefinitionSchemaGate implements SmartInitializingSingleton {
     @Override
     public void afterSingletonsInstantiated() {
         check(assembledDefinitions());
+    }
+
+    @Override
+    public void run(ApplicationArguments args) {
+        Map<String, ToolDefinition<?>> definitions = new LinkedHashMap<>();
+        context.getBean(ToolRegistry.class).getTools().forEach(definitions::put);
+        check(definitions);
     }
 
     /**
@@ -75,7 +79,7 @@ public class ToolDefinitionSchemaGate implements SmartInitializingSingleton {
         if (!violations.isEmpty()) {
             throw new IllegalStateException("工具参数 Schema 门禁未通过，包含这些工具的模型请求将无法组装: " + violations);
         }
-        log.info("工具参数 Schema 门禁通过: 校验 {} 个工具", definitions.size());
+        log.info("工具参数 Schema 门禁通过: count={}", definitions.size());
         return violations;
     }
 

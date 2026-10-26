@@ -1,99 +1,30 @@
 package com.summit.dp.workflow.infrastructure.tools.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.dp.sandbox_security.application.TerminalSecurityPolicy;
-
-import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
-import com.summit.dp.workflow.infrastructure.tools.config.properties.WebSearchToolProperties;
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.model.ModelProviderRegistry;
 import com.summit.core.model.chat.ChatModel;
-import com.summit.core.tool.*;
-import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcesser;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcessManager;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.ManageCommandToolExecutor;
-import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.core.tool.ConcurrentPolicy;
+import com.summit.core.tool.ToolDefinition;
+import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
+import com.summit.dp.workflow.infrastructure.tools.config.properties.WebSearchToolProperties;
 import com.summit.dp.workflow.infrastructure.tools.web.WebResultSummarizer;
 import com.summit.dp.workflow.infrastructure.tools.web.WebSearchConfig;
 import com.summit.dp.workflow.infrastructure.tools.web.WebSearchEngine;
 import com.summit.dp.workflow.infrastructure.tools.web.WebSearchExecutor;
+import java.net.http.HttpClient;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
-import java.net.http.HttpClient;
-
-/**
- * 基础工具的装配入口。
- *
- * <p>这些工具不再有 yaml {@code enabled} 开关。装配由代码决定，不由某个部署恰好写没写一个键决定；
- * 要停用某个工具，从 Agent 的工具清单里去掉它即可（框架侧名单即授权）。yaml 只配置工具的连接参数与执行限制。</p>
- */
+/** 网页检索 Schema 由配置决定，相关模型与属性继续显式装配。 */
 @Slf4j
 @EnableConfigurationProperties({WebSearchToolProperties.class, CommandToolProperties.class})
-@org.springframework.context.annotation.Configuration(proxyBeanMethods = false)
+@Configuration(proxyBeanMethods = false)
 public class CommonToolConfiguration {
-    @Bean
-    @ConditionalOnMissingBean(name = "executeCommandToolDefinition")
-    public ToolDefinition<CommandToolDefinitionExecutor> executeCommandToolDefinition(ObjectMapper objectMapper, TerminalSecurityPolicy security, BackendProcesser background, CommandToolProperties properties) {
-        String name = ToolCatalog.EXECUTE_COMMAND;
-        // SERIAL_MUTATION：终端命令一律串行，不参与并发窗口。
-        // 框架判据是「整批请求全都 allowConcurrent 才并发」（DefaultToolExecutionManager#canExecuteConcurrently），
-        // 故模型在同一轮里发起的多条命令会在同一线程上顺序执行，不会互相抢占工作区。
-        return ToolDefinition.<CommandToolDefinitionExecutor>builder()
-                .executor(new CommandToolDefinitionExecutor(objectMapper, security, background, properties))
-                .id(name)
-                .concurrentPolicy(ConcurrentPolicy.SERIAL_MUTATION)
-                .name(name)
-                .description("""
-                        Execute a terminal command in the assigned workspace environment.
-                        The command is handed as-is to the chosen shell. Omit shell to use the workspace default (cmd on Windows, bash on Linux). Set shell to cmd, pwsh or powershell on Windows, or bash, sh or pwsh on Linux, and write the script in that interpreter's syntax: the interpreter is not detected from the script.
-                        The interpreter starts inside the same sandbox under the same approvals, timeout, cancellation and permission limits. A shell that is unsupported on this platform, missing or denied fails the call with an explicit error; it is never replaced by another shell. Output is decoded as UTF-8 for every supported interpreter.
-                        Output may be truncated according to the configured maximum.
-                        Set background=true to return a persisted taskId immediately. Completion is reported to this execution automatically; use manage_command to inspect or stop tasks.
-                        Always state in `intention` what the command is for; it is displayed to the user.
-                        """)
-                // 参数 Schema 是 JSON 原文，不是给人看的说明：文本块同样会处理转义序列，
-                // 所以这里写 \" 只会得到裸引号并让 JSON 非法（正确写法是 \\"，但更稳妥的是干脆不写引号）。
-                // 命令示例带引号，统一放在上面的 description 里。
-                .parametersJsonSchema("""
-                        {
-                          "type": "object",
-                          "properties": {
-                            "command": {"type": "string", "description": "Raw command text, passed unchanged to the selected shell. The interpreter does not detect script languages: a bare PowerShell script is not valid input for cmd, so choose the shell that matches the syntax. Quoting, relative paths and the working directory behave as inside that interpreter."},
-                            "shell": {"type": "string", "enum": ["cmd", "pwsh", "powershell", "bash", "sh", "zsh"], "description": "Interpreter that runs this command. Omit it to use the workspace default. Windows supports cmd, pwsh and powershell; Linux supports bash, sh and pwsh. An unsupported, missing or denied interpreter fails the call explicitly instead of falling back to another shell."},
-                            "intention": {"type": "string", "description": "One short sentence stating what this command is intended to achieve. It is shown to the user in the UI next to the command, so make it specific and human-readable."},
-                            "background": {"type": "boolean", "default": false, "description": "Return a taskId immediately while the command runs in the background. Completion is injected into this execution automatically, so continue other work without polling. Natural completion waits for this execution's tasks. The configured background timeout and the same output limit apply."}
-                          },
-                          "required": ["command", "intention"]
-                        }
-                        """)
-                .maxOutput(5_000)
-                .timeout(240L)
-                .build();
-    }
-
-    @Bean
-    @ConditionalOnMissingBean(name = "manageCommandToolDefinition")
-    public ToolDefinition<ManageCommandToolExecutor> manageCommandToolDefinition(ObjectMapper mapper, BackendProcessManager manager) {
-        return ToolDefinition.<ManageCommandToolExecutor>builder()
-                .id(ToolCatalog.MANAGE_COMMAND).name(ToolCatalog.MANAGE_COMMAND)
-                .executor(new ManageCommandToolExecutor(mapper, manager))
-                .concurrentPolicy(ConcurrentPolicy.SERIAL_MUTATION)
-                .description("Manage background commands in the current session. List returns task summaries. Snapshot returns current output immediately. Read waits for completion up to the tool timeout and returns the final status, output and exit code; interrupting the wait does not stop the task. Stop waits for confirmed termination.")
-                .parametersJsonSchema("""
-                        {"type":"object","properties":{
-                          "action":{"type":"string","enum":["list","read","stop","snapshot"]},
-                          "taskId":{"type":"string","description":"Exact taskId returned by execute_command; required for read, snapshot and stop."}
-                        },"required":["action"]}
-                        """)
-                .timeout(300L)
-                .maxOutput(55_000)
-                .build();
-    }
 
     @Bean
     @ConditionalOnMissingBean(name = "webSearchToolDefinition")
@@ -137,8 +68,6 @@ public class CommonToolConfiguration {
                 , webResultSummarizer
         );
     }
-
-
 
     /** 压缩模型直接使用框架提供的 compact 配置。 */
     @Bean

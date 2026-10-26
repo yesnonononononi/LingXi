@@ -1,11 +1,10 @@
 package com.summit.dp.tools.baseTools.config;
 
-import com.summit.dp.workflow.infrastructure.tools.config.CommonToolConfiguration;
-import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolDefinition;
+import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
+import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 class ExecuteCommandConcurrencyTest {
 
     private final ToolDefinition<CommandToolDefinitionExecutor> definition =
-            new CommonToolConfiguration().executeCommandToolDefinition(new ObjectMapper(), null, null, new CommandToolProperties());
+            AnnotatedToolTestDefinitions.create(CommandToolDefinitionExecutor.class, new CommandToolDefinitionExecutor(new ObjectMapper(), null, null, new CommandToolProperties()));
 
     @Test
     @DisplayName("execute_command 声明 SERIAL_MUTATION，整批命令退化为串行执行")

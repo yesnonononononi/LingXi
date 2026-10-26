@@ -1,15 +1,34 @@
 package com.summit.dp.workflow.infrastructure.tools.terminal.backend;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.core.anno.Tool;
+import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecutor;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.tools.application.port.ToolCatalog;
 import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 
 /** 查询与停止始终使用发起工具调用的会话身份。 */
 @RequiredArgsConstructor
+@Component
+@Tool(
+    id = ToolCatalog.MANAGE_COMMAND,
+    name = ToolCatalog.MANAGE_COMMAND,
+    executor = ManageCommandToolExecutor.class,
+    description = "Manage background commands in the current session. List returns task summaries. Snapshot returns current output immediately. Read waits for completion up to the tool timeout and returns the final status, output and exit code; interrupting the wait does not stop the task. Stop waits for confirmed termination.",
+    parametersJsonSchema = """
+        {"type":"object","properties":{
+          "action":{"type":"string","enum":["list","read","stop","snapshot"]},
+          "taskId":{"type":"string","description":"Exact taskId returned by execute_command; required for read, snapshot and stop."}
+        },"required":["action"]}
+        """,
+    concurrentPolicy = ConcurrentPolicy.SERIAL_MUTATION,
+    maxOutput = 55_000,
+    timeout = 300L)
 public class ManageCommandToolExecutor implements ToolExecutor {
     private final ObjectMapper mapper;
     private final BackendProcessManager manager;

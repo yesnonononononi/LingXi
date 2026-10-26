@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
-import com.summit.dp.workflow.infrastructure.tools.config.FileToolConfiguration;
+import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditFileToolExecutor;
 import com.summit.dp.workflow.infrastructure.tools.file.read.ReadFileToolExecutor;
@@ -15,17 +15,16 @@ import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecord
 import com.summit.dp.workflow.infrastructure.tools.file.record.DiffResult;
 import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecordRestorer;
 import com.summit.runtime.workspace.LocalWorkspace;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
-import org.junit.jupiter.params.provider.ValueSource;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -127,9 +126,8 @@ class FileToolContractRegressionTest {
 
     @Test
     void toolSchemasDeclareRequiredFieldsAndLineBounds() throws Exception {
-        FileToolConfiguration configuration = new FileToolConfiguration();
-        JsonNode read = mapper.readTree(configuration.readFileToolDefinition(mapper).parametersJsonSchema());
-        JsonNode edit = mapper.readTree(configuration.editFileToolDefinition(mapper, records, new EditDiffer())
+        JsonNode read = mapper.readTree(AnnotatedToolTestDefinitions.create(ReadFileToolExecutor.class, new ReadFileToolExecutor(mapper)).parametersJsonSchema());
+        JsonNode edit = mapper.readTree(AnnotatedToolTestDefinitions.create(EditFileToolExecutor.class, new EditFileToolExecutor(mapper, new EditDiffer(), records))
                 .parametersJsonSchema());
         assertEquals(List.of("path"), mapper.convertValue(read.path("required"), List.class));
         assertEquals(List.of("type", "path"), mapper.convertValue(edit.path("required"), List.class));

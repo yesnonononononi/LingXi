@@ -3,16 +3,19 @@ package com.summit.dp.workflow.infrastructure.tools.sub_agent;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
+import com.summit.core.anno.Tool;
+import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecutor;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
+import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationSubmitter;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationTask;
@@ -20,11 +23,10 @@ import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgent
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.result.AsyncDelegationResultRenderer;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionResolver;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionTarget;
+import java.util.Objects;
 import lombok.AllArgsConstructor;
 import lombok.NonNull;
 import org.springframework.stereotype.Component;
-
-import java.util.Objects;
 
 /**
  * 委派工具：把一段任务交给团队里的另一个 Agent 并<b>立即受理</b>，让指挥者继续推进本轮其它工作。
@@ -41,6 +43,33 @@ import java.util.Objects;
  */
 @AllArgsConstructor
 @Component
+@Tool(
+    id = ToolCatalog.CALL_SUB_AGENT,
+    name = ToolCatalog.CALL_SUB_AGENT,
+    executor = CallSubAgentTool.class,
+    description = """
+        Delegate one well-scoped task to a configured teammate.
+        The delegation is accepted immediately; the teammate runs asynchronously so you keep working on the rest of the round. Verify workspace artifacts and validation records yourself; email (send_mail_to_agent) is supplementary and is not the basis for acceptance.
+        Require a changed-file list, actual validation commands and results, and unresolved items. If delivery is empty or unclear, inspect files and run checks yourself; if there is no usable output or the teammate fails, complete the work or re-delegate with this explicit format. Handle these internal failures yourself.
+        Of course, you can terminate this turn, and you will be notified(the notification will be put into your context as the system message) when the teammate completed his task
+        """,
+    parametersJsonSchema = """
+        {
+          "type": "object",
+          "properties": {
+            "agentId": {"type": "integer", "description": "Agent id from the commander's teammate list."},
+            "task": {"type": "string", "description": "A concrete, self-contained task for the teammate."},
+            "prompt": {"type": "string", "description": "Relevant context, constraints and expected output format."},
+            "workDir": {"type": "string", "description": "Current workspace directory."},
+            "agentName": {"type": "string", "description": "The name of the target agent."}
+          },
+          "required": ["agentId", "task"],
+          "additionalProperties": false
+        }
+        """,
+    concurrentPolicy = ConcurrentPolicy.ISOLATED_MUTATION,
+    maxOutput = 20_000,
+    timeout = 36_000L)
 public class CallSubAgentTool extends AbstractSubAgentTool implements ToolExecutor {
 
     private final ObjectMapper objectMapper;

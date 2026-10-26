@@ -2,20 +2,22 @@ package com.summit.dp.workflow.infrastructure.tools.sub_agent.communication;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.core.anno.Tool;
+import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecutor;
 import com.summit.dp.email.application.command.MailSendContext;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.tools.arguments.SendMailArgument;
+import java.util.Map;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-
-import java.util.Map;
 
 /**
  * 发信工具：把一封邮件投递到「本次协作轮次里、收件 Agent 的角色邮箱」。
@@ -29,6 +31,34 @@ import java.util.Map;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@Tool(
+    id = ToolCatalog.SEND_MAIL_TO_AGENT,
+    name = ToolCatalog.SEND_MAIL_TO_AGENT,
+    executor = SendMailToAgentTool.class,
+    description = """
+        Send an asynchronous mail to a teammate agent or to the commander.
+        Use it for supplementary delivery notifications; the commander assesses workspace artifacts and validation records even without email, and email is not the basis for acceptance.
+        Delivery is asynchronous: the recipient reads this mail at the start of ITS next model round,
+        not immediately. There is no reply channel on this call, so sending does not return an answer.
+        After a successful send, continue with your own work, or if you have nothing left to do,
+        end your turn and wait for incoming mail; never resend the same content because no reply arrived yet.
+        Intended for code-collaboration hand-offs, not for real-time back-and-forth chat.
+        The target agent must belong to your team.
+        """,
+    parametersJsonSchema = """
+        {
+          "type": "object",
+          "properties": {
+            "toAgentId": {"type": "integer", "description": "Agent id of the recipient: a teammate, or the commander when a member sends its result back."},
+            "mailContent": {"type": "string", "description": "The mail body. Write it as a complete, self-contained message; the recipient cannot ask clarifying questions synchronously."}
+          },
+          "required": ["toAgentId", "mailContent"],
+          "additionalProperties": false
+        }
+        """,
+    concurrentPolicy = ConcurrentPolicy.ISOLATED_MUTATION,
+    maxOutput = 20_000,
+    timeout = 60L)
 public class SendMailToAgentTool implements ToolExecutor {
 
     private final ObjectMapper objectMapper;

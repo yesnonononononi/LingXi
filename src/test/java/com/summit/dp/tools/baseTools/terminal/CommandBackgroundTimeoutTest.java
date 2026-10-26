@@ -11,21 +11,21 @@ import com.summit.core.tool.ToolExecution;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.workflow.infrastructure.tools.config.CommonToolConfiguration;
+import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
 import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcesser;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.ManageCommandToolExecutor;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
-
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -89,11 +89,9 @@ class CommandBackgroundTimeoutTest {
         when(background.submit("echo test", "验证时限", 10L, 20L, 100L, null, workspace, expectedSeconds, 5000L)).thenReturn(123L);
         when(commands.execute("echo test", null, ".", StandardCharsets.UTF_8, 240L, TimeUnit.SECONDS, 5000L))
                 .thenReturn(new WorkspaceCommands.CommandResult(0, "test", false, false));
-        CommonToolConfiguration configuration = new CommonToolConfiguration();
-        ToolDefinition<CommandToolDefinitionExecutor> definition = configuration.executeCommandToolDefinition(
-                new ObjectMapper(), null, background, properties);
+        ToolDefinition<CommandToolDefinitionExecutor> definition = AnnotatedToolTestDefinitions.create(CommandToolDefinitionExecutor.class, new CommandToolDefinitionExecutor(new ObjectMapper(), null, background, properties));
         assertEquals(240L, definition.timeout());
-        assertEquals(300L, configuration.manageCommandToolDefinition(new ObjectMapper(), null).timeout());
+        assertEquals(300L, AnnotatedToolTestDefinitions.create(ManageCommandToolExecutor.class, new ManageCommandToolExecutor(new ObjectMapper(), null)).timeout());
 
         ToolExecution call = ToolExecution.builder().id("call").executionId("100").turnId("execution")
                 .toolDefinition(definition).workspace(workspace)

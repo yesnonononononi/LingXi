@@ -3,23 +3,26 @@ package com.summit.dp.workflow.infrastructure.tools.image;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.summit.core.anno.Tool;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceFiles;
+import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.tool.ToolExecutor;
 import com.summit.core.tool.ToolResultType;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ReadImageRequest;
-import lombok.extern.slf4j.Slf4j;
-import org.jspecify.annotations.NonNull;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
+import org.springframework.stereotype.Component;
 
 /**
  * {@code read_image}：把工作区里的一张图规整、落盘，并把图像元数据交给注入拦截器。
@@ -28,6 +31,30 @@ import java.util.Map;
  * 在下一轮模型调用前作为一条用户消息注入。</p>
  */
 @Slf4j
+@Component
+@Tool(
+    id = ToolCatalog.READ_IMAGE,
+    name = ToolCatalog.READ_IMAGE,
+    executor = ReadImageToolExecutor.class,
+    description = """
+        Load one image from the workspace into your context so you can actually see it.
+        The pixels are not inside this result: you get image metadata now, and the image itself
+        arrives as a separate user message on your next turn, still within this same task.
+        Images consume model input tokens; one execution may receive at most 15 distinct images.
+        Only PNG/JPEG/GIF/BMP are accepted; the path must stay inside the workspace.
+        """,
+    parametersJsonSchema = """
+        {
+          "type": "object",
+          "properties": {
+            "path": {"type": "string", "description": "Image path inside the workspace. Relative paths are resolved against the workspace root."}
+          },
+          "required": ["path"]
+        }
+        """,
+    concurrentPolicy = ConcurrentPolicy.READ_ONLY,
+    maxOutput = 400,
+    timeout = 20L)
 public class ReadImageToolExecutor implements ToolExecutor {
 
     /** 单图字节上限：再大就不是「看一眼」的场景了。 */

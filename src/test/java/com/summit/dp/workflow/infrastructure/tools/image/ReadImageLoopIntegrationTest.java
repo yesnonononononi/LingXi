@@ -1,7 +1,5 @@
 package com.summit.dp.workflow.infrastructure.tools.image;
 
-import com.summit.runtime.model.DefaultChatModelInvoker;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -23,21 +21,19 @@ import com.summit.core.tool.ToolExecutor;
 import com.summit.core.tool.ToolRegistry;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.workflow.infrastructure.tools.config.FileToolConfiguration;
+import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
+import com.summit.dp.workflow.infrastructure.tools.image.ReadImageToolExecutor;
 import com.summit.runtime.context.RuntimeContext;
 import com.summit.runtime.conversation.DefaultConversationManager;
 import com.summit.runtime.loop.AgentLoopStepRunner;
 import com.summit.runtime.loop.DefaultLoopInterceptor;
 import com.summit.runtime.loop.DefaultLoopInterceptorProcessor;
+import com.summit.runtime.model.DefaultChatModelInvoker;
 import com.summit.runtime.tool.DefaultToolExecutionManager;
 import com.summit.runtime.workspace.LocalWorkspace;
 import com.sun.net.httpserver.HttpServer;
 import dev.langchain4j.http.client.okhttp.OkHttpClient;
 import dev.langchain4j.model.openai.OpenAiChatModel;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
-import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.net.InetSocketAddress;
 import java.nio.file.Files;
@@ -48,6 +44,9 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import javax.imageio.ImageIO;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -90,8 +89,7 @@ class ReadImageLoopIntegrationTest {
         server.start();
         try {
             ImageCacheDirectory cache = new ImageCacheDirectory(dataDir.toString());
-            ToolDefinition<ReadImageToolExecutor> definition = new FileToolConfiguration().readImageToolDefinition(
-                    mapper, new ImageNormalizer(), cache);
+            ToolDefinition<ReadImageToolExecutor> definition = AnnotatedToolTestDefinitions.create(ReadImageToolExecutor.class, new ReadImageToolExecutor(mapper, new ImageNormalizer(), cache));
             RuntimeEventPublisher events = new RuntimeEventPublisher(List.of());
             ChatModelAdapter model = new ChatModelAdapter(OpenAiChatModel.builder()
                     .httpClientBuilder(OkHttpClient.builder())
