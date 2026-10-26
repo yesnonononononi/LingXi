@@ -27,7 +27,7 @@ export function cardDotClass(tone: CardTone): string {
     case 'rejected':
       return 'bg-red-500';
     case 'pending':
-      return 'bg-amber-400 animate-pulse';
+      return 'bg-amber-400 lx-live-dot';
     default:
       return 'bg-gray-400';
   }

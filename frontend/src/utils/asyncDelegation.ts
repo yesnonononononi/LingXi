@@ -70,7 +70,7 @@ export function subItemStatusDotClass(status: SubItemStatus): string {
   switch (status) {
     case 'running':
     case 'suspended':
-      return 'bg-amber-400 animate-pulse';
+      return 'bg-amber-400 lx-live-dot';
     case 'completed':
       return 'bg-emerald-500';
     case 'failed':

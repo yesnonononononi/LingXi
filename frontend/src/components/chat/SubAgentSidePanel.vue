@@ -246,7 +246,7 @@ defineExpose({
       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
       </svg>
-      <div class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+      <div class="w-2 h-2 rounded-full bg-blue-500 lx-live-dot"></div>
       <span>{{ t('chat.subAgent.title', { count: items.length }) }}</span>
     </button>
   </div>

@@ -1,0 +1,35 @@
+/**
+ * 活动指示点 (Live Dot)
+ *
+ * 为什么单独成文件：全仓有 5 处「仍在进行」的色点，之前各自挂 Tailwind 的 animate-pulse，
+ * 节奏跟着框架默认的 2s 走，和过程标题扫光的 1.8s 各播各的 —— 同一屏两个不同频率的循环动画
+ * 会让人眼觉得"卡"。这里把「活动」的时序收成一处，节奏与 loading-sweep 对齐。
+ *
+ * 为什么只管动画不管颜色：色点颜色现在由调用方的 bg-amber-400 / bg-emerald-500 等决定，
+ * 迁移到状态令牌会改变实际渲染色值（例如 #fbbf24 → #f59e0b），那是视觉变更，
+ * 需要单独走主题等价性基线与产品确认。动画统一与配色语义化是两笔账，不混。
+ *
+ * 用法：`<span class="w-1.5 h-1.5 rounded-full bg-amber-400 lx-live-dot">`
+ */
+
+@keyframes lx-live-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.lx-live-dot {
+  animation: lx-live-dot-pulse 1.8s ease-in-out infinite;
+}
+
+/* 减弱动态效果：不闪，但保留「比终态更弱」的静止样式，避免被误读成已完成。 */
+@media (prefers-reduced-motion: reduce) {
+  .lx-live-dot {
+    animation: none;
+    opacity: 0.75;
+  }
+}

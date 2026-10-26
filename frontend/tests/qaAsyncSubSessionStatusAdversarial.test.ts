@@ -165,7 +165,7 @@ test('第4组 历史态兜底：blockProjection 无 arguments/output 时 query/r
 /* ============================ 附：展示态映射稳定性 ============================ */
 
 test('附 展示态 → 色点 / 文案映射稳定', () => {
-  assert.equal(subItemStatusDotClass('running'), 'bg-amber-400 animate-pulse');
+  assert.equal(subItemStatusDotClass('running'), 'bg-amber-400 lx-live-dot');
   assert.equal(subItemStatusDotClass('completed'), 'bg-emerald-500');
   assert.equal(subItemStatusDotClass('failed'), 'bg-red-500');
   assert.equal(subItemStatusLabel('running'), '执行中');

@@ -160,7 +160,7 @@ const toolStatusDotClass = (status?: string): string => {
     case 'calling':
       
     case 'pending':
-      return 'bg-amber-400 animate-pulse';
+      return 'bg-amber-400 lx-live-dot';
     case 'failed':
       return 'bg-red-500';
 

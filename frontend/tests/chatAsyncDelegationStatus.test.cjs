@@ -163,7 +163,7 @@ test('asyncDelegation：asyncSubSessionStatus 优先子会话权威态，缺省�
 
 test('asyncDelegation：状态点色与文案映射稳定', () => {
   const { subItemStatusDotClass, subItemStatusLabel } = util('utils/asyncDelegation.ts');
-  assert.equal(subItemStatusDotClass('running'), 'bg-amber-400 animate-pulse');
+  assert.equal(subItemStatusDotClass('running'), 'bg-amber-400 lx-live-dot');
   assert.equal(subItemStatusDotClass('completed'), 'bg-emerald-500');
   assert.equal(subItemStatusDotClass('failed'), 'bg-red-500');
   assert.equal(subItemStatusDotClass('cancelled'), 'bg-gray-400');

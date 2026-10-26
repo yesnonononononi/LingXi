@@ -38,7 +38,7 @@ const props = defineProps<ChatMessageActionsSlotProps>();
     <span
       :class="[
         'w-1.5 h-1.5 rounded-full shrink-0',
-        props.execStatusMeta.failed ? 'bg-red-500' : props.execStatusMeta.running ? 'bg-amber-400 animate-pulse' : 'bg-gray-500'
+        props.execStatusMeta.failed ? 'bg-red-500' : props.execStatusMeta.running ? 'bg-amber-400 lx-live-dot' : 'bg-gray-500'
       ]"
     ></span>
     <span class="shrink-0" :class="props.execStatusMeta.failed ? (props.isDark ? 'text-red-400' : 'text-red-600') : ''">{{ props.execStatusMeta.text }}</span>

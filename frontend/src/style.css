@@ -3,6 +3,7 @@
 @import "./styles/markdown.css";
 @import "./styles/stream-animation.css";
 @import "./styles/loading-sweep.css";
+@import "./styles/status-indicator.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
