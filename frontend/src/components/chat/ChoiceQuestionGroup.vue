@@ -4,6 +4,7 @@ import type { PromptCardEntry } from '../../utils/promptCardGroups';
 import { ANSWER_CHOICES_KEY, type ChoiceAnswersPayload } from '../../types/toolDecision';
 import { canDecideCard, resolveCardStatusLabel } from '../../utils/toolCallCard';
 import { createLocalId } from '../../utils/ids';
+import { firstUnansweredIndex, nextUnansweredIndex } from '../../utils/choiceNavigation';
 import { CARD_SHELL_CLASS, CARD_ERROR_TEXT_CLASS } from '../../utils/cardUi';
 import { useI18n } from '../../i18n';
 import CardActionButton from './CardActionButton.vue';
@@ -26,7 +27,11 @@ watch(() => props.entries, entries => {
       drafts[card.toolCallId] = { version: card.version, selected: null, custom: '', useCustom: false };
     }
   }
-  if (!entries.some(entry => entry.card.toolCallId === activeId.value)) activeId.value = entries[0]?.card.toolCallId ?? '';
+  if (!entries.some(entry => entry.card.toolCallId === activeId.value)) {
+    // 落点交给纯函数状态机：第一道还没答的题，而不是"数组第 0 个"这种撞运气的假设。
+    const index = firstUnansweredIndex(entries.map(isAnswered));
+    activeId.value = entries[index]?.card.toolCallId ?? '';
+  }
 }, { immediate: true, deep: true });
 
 const active = computed(() => props.entries.find(entry => entry.card.toolCallId === activeId.value)?.card);
@@ -36,12 +41,25 @@ const pending = computed(() => props.entries.filter(entry => entry.card.status !
 const total = computed(() => Math.max(props.expectedCount, props.entries.length));
 const ready = computed(() => props.entries.length === total.value && pending.value.every(entry =>
   canDecideCard(entry.card, 'ANSWER') && !!entry.card.version));
-const answer = (entry: PromptCardEntry): string => {
+function answer(entry: PromptCardEntry): string {
   const value = drafts[entry.card.toolCallId];
   if (!value) return '';
   return value.useCustom ? value.custom : value.selected === null ? '' : entry.card.options?.[value.selected] ?? '';
-};
-const answered = computed(() => props.entries.filter(entry => entry.card.status === 'completed' || answer(entry).trim()).length);
+}
+const answered = computed(() => props.entries.filter(isAnswered).length);
+
+/**
+ * 单题是否「已经有答案」：后端已决（completed）或本地草稿已填。
+ *
+ * <p>落点与进位都以它为准——**草稿也算答**，否则用户选完第一题、还没提交，
+ * 组件就会把这道题当成"没答过"而反复把人送回来。</p>
+ */
+function isAnswered(entry: PromptCardEntry): boolean {
+  return entry.card.status === 'completed' || answer(entry).trim().length > 0;
+}
+
+/** 逐题作答状态，顺序与 entries 一致，喂给纯函数状态机。 */
+const answeredStates = computed(() => props.entries.map(isAnswered));
 const canSubmit = computed(() => ready.value && pending.value.length > 0 && answered.value === total.value && !submitting.value);
 const editable = computed(() => !!active.value && canDecideCard(active.value, 'ANSWER') && !submitting.value);
 /** 题干占用标题位：优先正文，其次标题，全缺时回落分组名。 */
@@ -61,9 +79,11 @@ function selectOption(index: number) {
   draft.value.selected = index;
   draft.value.useCustom = false;
   // 单选即进位：一题一答的顺序最省事，省掉再点「下一题」这一手。
-  // 最后一题没有下家就不动（不回绕到第 1 题），否则用户以为还有题没答。
+  // 去哪个由状态机算：后面第一道还没答的题；后面都答过了（或本来就是末题）就不动，
+  // 否则用户以为还有题没答。
   // 「其他补充」不走这里——打字时把人送到下一题是灾难。
-  navigate(1);
+  const target = nextUnansweredIndex(answeredStates.value, activeIndex.value);
+  if (target > -1) activeId.value = props.entries[target]!.card.toolCallId;
 }
 
 /** 点「其他补充」整行即可输入：不弹第二块输入框，光标直接落到行内。 */

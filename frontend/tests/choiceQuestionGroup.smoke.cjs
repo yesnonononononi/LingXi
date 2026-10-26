@@ -34,6 +34,9 @@ provide(ANSWER_CHOICES_KEY,payload=>{
   });
 });
 window.addLastQuestion=()=>message.value.promptCards.push(card(3));
+window.reopenPartial=()=>{message.value={...message.value,promptCards:[0,1,2,3].map(index=>index<2
+?{...card(index),status:'completed',version:'3',allowedActions:[],rawOutput:{outcome:'ANSWERED',answer:'已答'+index}}
+:card(index))};mount.value++;};
 window.remount=()=>mount.value++;
 window.setDark=value=>{dark.value=value;document.documentElement.classList.toggle('dark',value);document.body.style.background=value?'#18181b':'white';};
 </script><template><main style="max-width:720px;margin:24px auto;padding:0 12px" :class="dark?'text-gray-100':'text-gray-900'"><ChatMessageItem :key="mount" :message="message" session-id="42" :is-dark="dark" /></main></template>`);
@@ -122,6 +125,19 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-question-group]").length'),0,'全部答完后允许整卡关闭');
   await evaluate('window.remount();window.flush()');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-confirmed-answer]").textContent.includes("安装包")'),true,'重新挂载使用权威已答结果');
+  // 默认落点契约：前面已答过的题不再是落点，落点必须是第一道未答的题（曾经停在哪张全靠数组顺序）
+  await evaluate('window.reopenPartial();window.flush()');
+  assert.equal(await evaluate('document.querySelector("[role=status]").textContent.trim()'),'3 / 4',
+    '落点必须是第一道未答的题，不能停在已答的题上，也不能一上来就跳到最后一题');
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-question]").textContent.includes("选择验证方式")'),true,
+    '第三问题干必须已就位');
+  // 顺序往后作答：第三题答完进第四题；第四题（无预设选项）填完不再进位
+  await click('[data-choice-option="0"]');
+  assert.equal(await evaluate('document.querySelector("[role=status]").textContent.trim()'),'4 / 4','答完第三题必须进到第四题');
+  await click('[data-testid=choice-custom-toggle]');
+  await evaluate(`(()=>{const input=document.querySelector('[data-testid=choice-custom-input]');input.value='补充说明';input.dispatchEvent(new Event('input',{bubbles:true}));})();window.flush()`);
+  assert.equal(await evaluate('document.querySelector("[role=status]").textContent.trim()'),'4 / 4','末题填完不位移、不回绕');
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]").disabled'),false,'四题都有答案后必须可提交');
   assert.deepEqual(await evaluate('window.singleSubmissions'),[]);
   assert.deepEqual(await evaluate('window.runtimeErrors'),[]);
   console.log('选择组真实组件通过：四卡分组、选中即进位、缺题禁交、前后切换、答案保留、自定义原文、统一提交、重试幂等、防重复操作、历史已答回显、深浅主题和360px窄屏。');
