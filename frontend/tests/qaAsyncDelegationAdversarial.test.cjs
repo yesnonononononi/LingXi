@@ -36,6 +36,7 @@ function loadModule(filename) {
       }
       const resolved = path.resolve(path.dirname(file), request);
       if (request.endsWith('.vue')) {
+        if (/(?:ChatProcessSegment|ProcessDetails)\.vue$/.test(request)) return load(resolved);
         if (request.endsWith('CardHeader.vue')) return load(resolved);
         if (request.endsWith('GradientText.vue')) {
           return { __esModule: true, default: {
@@ -69,7 +70,7 @@ function loadModule(filename) {
     let source = fs.readFileSync(file, 'utf8');
     if (file.endsWith('.vue')) {
       const descriptor = parse(source, { filename: file }).descriptor;
-      source = compileScript(descriptor, { id: 'qa-async-delegation', inlineTemplate: true }).content;
+      source = compileScript(descriptor, { id: 'qa-async-delegation', inlineTemplate: true, fs: { fileExists: file => fs.existsSync(file), readFile: file => fs.readFileSync(file, 'utf8') } }).content;
     }
     module._compile(ts.transpileModule(source, { compilerOptions: {
       module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
@@ -174,6 +175,10 @@ test('AC-5 对抗：协同条色点——子会话进行中即便工具 calling 
   });
   const root = mountComponent(t, component('components/chat/ChatMessageItem.vue'), { message, isDark: true, subSessions });
 
+  const segmentToggle = find(root, node => node.props?.['data-testid'] === 'process-segment-toggle');
+  assert.ok(segmentToggle);
+  segmentToggle.props.onClick();
+  await nextTick();
   const member = find(root, node => node.tag === 'button' && String(node.props.title ?? '').startsWith('协作式委派'));
   assert.ok(member, '协作式委派成员行应存在');
   const dot = find(member, node => {

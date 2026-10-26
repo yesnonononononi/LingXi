@@ -5,7 +5,7 @@ const path = require('node:path');
 const Module = require('node:module');
 const ts = require('typescript');
 const { parse, compileScript } = require('@vue/compiler-sfc');
-const { createRenderer, h, ref, reactive, nextTick } = require('vue');
+const { createRenderer, h, ref, reactive, nextTick, watch } = require('vue');
 const previewKey = Symbol('file-preview');
 
 // 编译真实模板，只替换子组件和浏览器依赖，折叠状态与事件使用组件自身逻辑。
@@ -24,6 +24,7 @@ function loadChatModule(filename, realPlanCards = false) {
       if (!request.startsWith('.')) return require(request);
       const resolved = path.resolve(path.dirname(filename), request);
       if (request.endsWith('.vue')) {
+        if (/(?:ChatProcessSegment|ProcessDetails)\.vue$/.test(request)) return load(resolved);
         if (request.endsWith('CommandApprovalGroup.vue')) return load(resolved);
         if (request.endsWith('CardHeader.vue')) return load(resolved);
         // 插槽化试点（B 档）：正文与底栏内容已抽成独立组件，必须递归进来，
@@ -155,10 +156,32 @@ function message(overrides = {}) {
   });
 }
 
+function findAll(root, predicate) {
+  return [...(predicate(root) ? [root] : []), ...root.children.flatMap(child => findAll(child, predicate))];
+}
 function toggleProcess(root) {
-  const button = find(root, node => node.tag === 'button' && /执行过程|已思考|已调用/.test(text(node)));
-  assert.ok(button, '只有中间文本时也必须提供过程折叠入口');
+  const button = find(root, node => node.props?.['data-testid'] === 'process-segment-toggle');
+  assert.ok(button, '应提供过程段展开入口');
   button.props.onClick();
+}
+
+// 详情回归先显式展开新段；默认折叠与手动状态由下方独立用例验证。
+async function mountExpanded(t, answer, props = {}) {
+  const root = mount(t, answer, props);
+  const seen = new Set();
+  const reveal = () => {
+    for (const segment of findAll(root, node => node.props?.['data-testid'] === 'process-segment')) {
+      const id = segment.props['data-segment-id'];
+      if (seen.has(id)) continue;
+      seen.add(id);
+      find(segment, node => node.props?.['data-testid'] === 'process-segment-toggle')?.props.onClick();
+    }
+  };
+  reveal();
+  const stop = watch(answer, reveal, { deep: true, flush: 'post' });
+  t.after(stop);
+  await nextTick();
+  return root;
 }
 
 function streamFixture() {
@@ -170,6 +193,94 @@ function streamFixture() {
   reducer.consume(event({ type: 'EXECUTION_STARTED' }));
   return { reducer, event, answer: messages[0], AgentToolName };
 }
+
+test('分段折叠：文本直接展示，各段默认收起，思考与工具详情不提前挂载', async t => {
+  const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
+  const answer = message({ isComplete: false, isThinking: true, content: '',
+    thoughtSteps: [{ id: 's1', order: 0, title: '思考', content: '详情正文', status: 'running' }],
+    aiMessages: [{ id: 't1', text: '开始修改', order: 1 }, { id: 't2', text: '继续检查', order: 3 }],
+    toolCalls: [{ id: 'c1', toolName: AgentToolName.EditFile, order: 2, status: 'success', args: { path: 'C:\\project\\mcp.json' } }] });
+  const root = mount(t, answer);
+  const headers = findAll(root, node => node.props?.['data-testid'] === 'process-segment-toggle');
+  assert.equal(headers.length, 2);
+  assert.ok(headers.every(node => node.props['aria-expanded'] === false));
+  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'process-segment-details').length, 0);
+  assert.equal(findAll(root, node => node.tag === 'markdown' && node.props.thinkingText).length, 0);
+  assert.match(text(root), /开始修改/);
+  assert.match(text(root), /继续检查/);
+  assert.match(text(headers[1]), /写入.*mcp\.json/);
+  assert.doesNotMatch(text(root), /C:\\project/);
+  headers[0].props.onClick();
+  await nextTick();
+  assert.equal(headers[0].props['aria-expanded'], true);
+  assert.equal(headers[1].props['aria-expanded'], false);
+  assert.match(text(root), /详情正文/);
+});
+
+test('实时预览：思考显示最新尾部，迟到工具收尾不抢位置，后续工具沿用原渲染名', async t => {
+  const { reducer, event, answer, AgentToolName } = streamFixture();
+  reducer.consume(event({ type: 'TOOL_CALL', requestId: 'old', responseId: '101', order: 2,
+    toolName: AgentToolName.ReadFile, args: '{"path":"old.md"}' }));
+  reducer.consume(event({ type: 'PARTIAL_THINKING', responseId: '102', order: 0, offset: 0,
+    content: '不应保留的开头' + '推理'.repeat(200) + '最新尾部' }));
+  const root = mount(t, answer);
+  const preview = () => find(root, node => node.props?.['data-testid'] === 'process-segment-preview');
+  assert.match(text(preview()), /最新尾部$/);
+  assert.doesNotMatch(text(preview()), /不应保留的开头/);
+  assert.match(preview().props.class, /overflow-hidden.*whitespace-nowrap/);
+  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'process-segment-details').length, 0);
+  reducer.consume(event({ type: 'TOOL_COMPLETED', requestId: 'old', responseId: '101', order: 2,
+    toolName: AgentToolName.ReadFile, resultStatus: 'COMPLETED', output: '旧收尾' }));
+  await nextTick();
+  assert.match(text(preview()), /最新尾部$/);
+  reducer.consume(event({ type: 'TOOL_CALL', requestId: 'new', responseId: '102', order: 2,
+    toolName: AgentToolName.WebSearch, args: '{}' }));
+  await nextTick();
+  assert.equal(text(find(root, node => node.props?.['data-testid'] === 'process-segment-title')), '检索网络资源');
+  reducer.dispose();
+});
+
+test('手动展开按段身份保留，流式增长、历史替换和终态不会自动折叠，新段仍默认收起', async t => {
+  const answer = message({ content: '', isComplete: false, isThinking: true, aiMessages: [],
+    thoughtSteps: [{ id: 's1', title: '思考', content: '初始内容', order: 0, status: 'running' }] });
+  const root = mount(t, answer);
+  const header = find(root, node => node.props?.['data-testid'] === 'process-segment-toggle');
+  header.props.onClick();
+  await nextTick();
+  answer.thoughtSteps = [{ ...answer.thoughtSteps[0], content: '历史与实时补齐后的内容' }];
+  await nextTick();
+  assert.equal(find(root, node => node.props?.['data-testid'] === 'process-segment-toggle'), header);
+  assert.equal(header.props['aria-expanded'], true);
+  answer.isThinking = false;
+  answer.isComplete = true;
+  await nextTick();
+  assert.equal(header.props['aria-expanded'], true);
+  answer.aiMessages = [{ id: 't1', text: '下一步', order: 1 }];
+  answer.thoughtSteps.push({ id: 's2', title: '思考', content: '下一段', order: 2, status: 'running' });
+  await nextTick();
+  const headers = findAll(root, node => node.props?.['data-testid'] === 'process-segment-toggle');
+  assert.deepEqual(headers.map(node => node.props['aria-expanded']), [true, false]);
+});
+
+test('历史摘要使用原操作名和目标，三类完整展示、四类压缩，失败待确认与未知状态不隐藏', async t => {
+  const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
+  const answer = message({ aiMessages: [], toolCalls: [
+    { id: 'read', toolName: AgentToolName.ReadFile, order: 0, status: 'failed', args: { path: '/repo/mcp.json' } },
+    { id: 'edit', toolName: AgentToolName.EditFile, order: 1, status: 'pending', args: { path: '/repo/mcp.json' } },
+    { id: 'run', toolName: AgentToolName.ExecuteCommand, order: 2, status: 'unknown' },
+  ], promptCards: [{ id: 'approval', type: 'PROMISE', status: 'pending', content: { kind: 'COMMAND' } }] });
+  const root = mount(t, answer);
+  const header = () => find(root, node => node.props?.['data-testid'] === 'process-segment-toggle');
+  const title = () => find(root, node => node.props?.['data-testid'] === 'process-segment-title');
+  assert.equal(text(title()), '读取、写入、执行命令');
+  assert.match(text(root), /1 项失败.*1 项待确认.*1 项状态未知/);
+  assert.ok(find(root, node => node.tag === 'prompt-card'), '审批卡片不进入过程折叠');
+  assert.equal(header().props['aria-expanded'], false);
+  answer.toolCalls.push({ id: 'search', toolName: AgentToolName.WebSearch, order: 3, status: 'success' });
+  await nextTick();
+  assert.equal(text(title()), '读取、写入、执行命令等 4 类操作');
+  assert.equal(text(find(root, node => node.props?.['data-testid'] === 'process-segment-preview')), 'mcp.json');
+});
 
 test('历史计划书：权威卡片经真实消息和计划组件显示完整正文与审批按钮', t => {
   const load = filename => loadChatModule(path.resolve(__dirname, filename), true);
@@ -207,7 +318,7 @@ test('过程区行样式统一：终端描述与工具行同字号同色，深�
       { id: 'command-size', toolName: AgentToolName.ExecuteCommand, status: 'calling',
         query: JSON.stringify({ command: 'git status', intention: '检查工作目录' }), order: 1 },
     ] });
-    const root = mount(t, answer, { isDark });
+    const root = await mountExpanded(t, answer, { isDark });
     for (const status of ['calling', 'success']) {
       answer.toolCalls[0].status = status;
       answer.thoughtSteps[0].status = status === 'calling' ? 'running' : 'success';
@@ -239,7 +350,7 @@ test('工具执行提示：仅显示静态灰字，结束后替换为真实输�
     { id: 'command-running', toolName: AgentToolName.ExecuteCommand, status: 'calling',
       query: JSON.stringify({ command: 'git status' }), order: 0 },
   ] });
-  const root = mount(t, answer);
+  const root = await mountExpanded(t, answer);
   const toggle = find(root, node => node.tag === 'button' && /查看.*详情/.test(node.props['aria-label'] ?? ''));
   assert.ok(toggle);
   toggle.props.onClick({ stopPropagation() {} });
@@ -261,27 +372,27 @@ test('深度思考标题：只在运行时加载渐变，结束后静态标题�
   const answer = message({ isComplete: false, aiMessages: [], thoughtSteps: [
     { id: 'thinking-gradient', title: '思考', content: '思考正文', status: 'running', order: 0 },
   ] });
-  const root = mount(t, answer);
+  const root = await mountExpanded(t, answer);
   const title = find(root, node => node.tag === 'gradient-text' && text(node) === '深度思考');
   assert.ok(title, '思考标题应使用 GradientText 组件');
   assert.equal(title.props.animationSpeed, 3);
   assert.equal(title.props.showBorder, false);
   const header = find(root, node => node.tag === 'button' && text(node).includes('深度思考'));
   assert.equal(Boolean(find(header, node => String(node.props.class ?? '').includes('animate-ping'))), false);
-  assert.match(text(root), /思考正文/);
+  assert.match(text(find(root, node => node.props?.['data-testid'] === 'process-segment-details')), /思考正文/);
 
   answer.thoughtSteps[0].status = 'success';
   await nextTick();
-  assert.doesNotMatch(text(root), /思考正文/);
+  assert.doesNotMatch(text(find(root, node => node.props?.['data-testid'] === 'process-segment-details')), /思考正文/);
   const toggle = find(root, node => node.tag === 'button' && text(node).includes('深度思考'));
   assert.ok(toggle);
   toggle.props.onClick();
   await nextTick();
-  assert.match(text(root), /思考正文/);
+  assert.match(text(find(root, node => node.props?.['data-testid'] === 'process-segment-details')), /思考正文/);
   assert.equal(Boolean(find(root, node => node.tag === 'gradient-text' && text(node) === '深度思考')), false);
   toggle.props.onClick();
   await nextTick();
-  assert.doesNotMatch(text(root), /思考正文/);
+  assert.doesNotMatch(text(find(root, node => node.props?.['data-testid'] === 'process-segment-details')), /思考正文/);
 });
 
 test('深度思考动效：挂起、终态和历史不加载，运行中的对账消息仍可加载', async t => {
@@ -290,7 +401,7 @@ test('深度思考动效：挂起、终态和历史不加载，运行中的对�
     { id: 'thinking-old', title: '旧思考', content: '历史思考', status: 'success', order: 1 },
   ] });
   const turn = reactive({ status: 'RUNNING' });
-  const root = mount(t, answer, { turn });
+  const root = await mountExpanded(t, answer, { turn });
   const resolveAnimation = () => find(root, node => node.tag === 'gradient-text' && text(node) === '深度思考');
   assert.ok(resolveAnimation());
   assert.equal(Boolean(find(root, node => node.tag === 'gradient-text' && text(node) === '旧思考')), false);
@@ -311,15 +422,11 @@ test('深度思考动效：挂起、终态和历史不加载，运行中的对�
   turn.status = 'RUNNING';
   answer.isComplete = false;
   await nextTick();
-  toggleProcess(root);
-  await nextTick();
   assert.ok(resolveAnimation());
 
-  const history = mount(t, message({ aiMessages: [], thoughtSteps: [
+  const history = await mountExpanded(t, message({ aiMessages: [], thoughtSteps: [
     { id: 'history-step', title: '思考', content: '旧记录', status: 'running', order: 0 },
   ] }));
-  toggleProcess(history);
-  await nextTick();
   assert.match(text(history), /深度思考/);
   assert.equal(Boolean(find(history, node => node.tag === 'gradient-text')), false);
 });
@@ -328,7 +435,7 @@ test('思考正文：引用块内使用 Markdown，逐段追加保留完整内�
   const answer = message({ isComplete: false, aiMessages: [], thoughtSteps: [
     { id: 'thinking-markdown', title: '思考', content: '**原因**\n\n- 第一条', status: 'running', order: 0 },
   ] });
-  const root = mount(t, answer, { isDark: false });
+  const root = await mountExpanded(t, answer, { isDark: false });
   const resolveBody = () => find(root, node => node.tag === 'markdown' && node.props.thinkingText === true);
   assert.ok(resolveBody(), '思考内容使用独立 Markdown 样式');
   assert.equal(text(resolveBody()), answer.thoughtSteps[0].content);
@@ -343,7 +450,7 @@ test('思考正文：引用块内使用 Markdown，逐段追加保留完整内�
 test('挂起消息不显示黄色恢复条，计划与命令审批卡仍保留', async t => {
   for (const isDark of [false, true]) {
     const answer = message({ isSuspended: true, isComplete: false, aiMessages: [] });
-    const root = mount(t, answer, { isDark });
+    const root = await mountExpanded(t, answer, { isDark });
     const assertNoResumeBar = () => {
       assert.doesNotMatch(text(root), /当前轮次已挂起|等待人工决策或继续操作|恢复执行/);
       assert.equal(Boolean(find(root, node => node.tag === 'button' && text(node).trim() === '恢复执行')), false);
@@ -376,22 +483,22 @@ test('实测回归：已有历史工具之后，新思考在过程末尾即时�
         toolName: AgentToolName.ReadFile, arguments: '{"path":"old-tool.md"}' },
     ],
   } });
-  const root = mount(t, answer);
+  const root = await mountExpanded(t, answer);
   reducer.consume(event({ type: 'PARTIAL_THINKING', responseId: '102', offset: 0, order: 2000, content: '末尾实时思考' }));
   await nextTick();
-  let rendered = text(root);
+  let rendered = text(find(root, node => node.props?.['data-testid'] === 'process-segment-details'));
   assert.ok(rendered.includes('old-tool.md'));
   assert.ok(rendered.indexOf('末尾实时思考') > rendered.indexOf('old-tool.md'), rendered);
   reducer.consume(event({ type: 'PARTIAL_THINKING', responseId: '102', offset: 6, order: 2000, content: '继续打印' }));
   await nextTick();
-  rendered = text(root);
+  rendered = text(find(root, node => node.props?.['data-testid'] === 'process-segment-details'));
   assert.ok(rendered.indexOf('末尾实时思考继续打印') > rendered.indexOf('old-tool.md'), rendered);
   assert.equal(answer.thoughtSteps.filter(step => step.id === 'thinking:102').length, 1);
 });
 
 test('实测回归：没有快照时工具开始即渲染，收尾和重复事件不增行', async t => {
   const { reducer, event, answer, AgentToolName } = streamFixture();
-  const root = mount(t, answer);
+  const root = await mountExpanded(t, answer);
   const call = { type: 'TOOL_CALL', requestId: 'c1', responseId: '101', order: 2,
     toolName: AgentToolName.ReadFile, args: '{"path":"live-tool.md"}', resultStatus: 'STARTED' };
   reducer.consume(event(call));
@@ -405,14 +512,14 @@ test('实测回归：没有快照时工具开始即渲染，收尾和重复事�
   assert.equal(answer.toolCalls.length, 1);
   assert.equal(answer.toolCalls[0].status, 'success');
   assert.equal(answer.toolCalls[0].result, '工具结果');
-  const rendered = text(root);
+  const rendered = text(find(root, node => node.props?.['data-testid'] === 'process-segment-details'));
   assert.equal(rendered.split('live-tool.md').length - 1, 1);
   assert.ok(rendered.indexOf('工具后的新思考') > rendered.indexOf('live-tool.md'), rendered);
 });
 
 test('过程文本不跳正文：首片段即时打印，用途确认和工具开始保持同一过程节点', async t => {
   const { reducer, event, answer, AgentToolName } = streamFixture();
-  const root = mount(t, answer);
+  const root = await mountExpanded(t, answer);
   const resolveProcessText = () => find(root, node => node.tag === 'markdown' && node.props.processText === true);
   for (const [offset, content, expected] of [[0, '检索', '检索'], [2, '完成', '检索完成'], [4, '。', '检索完成。']]) {
     reducer.consume(event({ type: 'PARTIAL_TEXT', responseId: '101', offset, order: 1, content }));
@@ -448,7 +555,7 @@ test('过程文本不跳正文：首片段即时打印，用途确认和工具�
 
 test('第二版真实组件：工具先到的文本持续追加在过程区，isBody:false 的快照把它留在过程区', async t => {
   const { reducer, event, answer, AgentToolName } = streamFixture();
-  const root = mount(t, answer);
+  const root = await mountExpanded(t, answer);
   reducer.consume(event({ type: 'TOOL_CALL', requestId: 'c1', responseId: '101', order: 2, isBody: false,
     toolName: AgentToolName.ReadFile, args: '{"path":"a.md"}' }));
   reducer.consume(event({ type: 'PARTIAL_TEXT', responseId: '101', offset: 0, order: 1, content: '先读' }));
@@ -482,16 +589,16 @@ test('第二版真实组件：工具先到的文本持续追加在过程区，is
   await nextTick();
   reducer.consume(event({ type: 'EXECUTION_COMPLETED' }));
   await nextTick();
-  assert.doesNotMatch(text(root), /先读文件/);
+  assert.match(text(root), /先读文件/);
   assert.match(text(root), /最终结论/);
   toggleProcess(root);
   await nextTick();
-  assert.match(text(root), /先读文件/);
+  assert.match(text(root), /先读文件/, '折叠不隐藏过程叙述文本');
 });
 
 test('框架位置真实组件：逐段打印、用途确认和并发工具位置无需快照，后续响应排在末尾', async t => {
   const { reducer, event, answer, AgentToolName } = streamFixture();
-  const root = mount(t, answer);
+  const root = await mountExpanded(t, answer);
   const first = '9007199254740992';
   const second = '9007199254740993';
   reducer.consume(event({ type: 'PARTIAL_TEXT', responseId: first, offset: 0, order: 1, content: '先' }));
@@ -518,7 +625,7 @@ test('框架位置真实组件：逐段打印、用途确认和并发工具位�
 
 test('读取摘要：缺省范围显示全文，单边范围按后端默认边界显示', async t => {
   const { reducer, event, answer, AgentToolName } = streamFixture();
-  const root = mount(t, answer);
+  const root = await mountExpanded(t, answer);
   for (const [index, args] of [
     { path: 'whole.json' }, { path: 'range.json', startLine: 2, endLine: 5 },
     { path: 'head.json', endLine: 3 }, { path: 'tail.json', startLine: 4 },
@@ -536,7 +643,7 @@ test('读取摘要：缺省范围显示全文，单边范围按后端默认边�
 
 test('实时编辑摘要：从元数据读取统计，未展开也显示 +N -0，旧快照不得清除统计', async t => {
   const { reducer, event, answer, AgentToolName } = streamFixture();
-  const root = mount(t, answer);
+  const root = await mountExpanded(t, answer);
   const call = { requestId: 'edit-1', responseId: '101', order: 2,
     toolName: AgentToolName.EditFile, args: '{"path":"memory.md"}' };
   reducer.consume(event({ ...call, type: 'TOOL_CALL' }));
@@ -568,7 +675,7 @@ test('历史编辑摘要：解析持久化结果的 output，工具收起时显�
         output: JSON.stringify({ plusLines: 5, minusLines: 0 }) },
     ],
   } });
-  const root = mount(t, answer);
+  const root = await mountExpanded(t, answer);
   assert.match(text(root), /history\.md\s*\+3-2/);
   assert.match(text(root), /created\.md\s*\+5-0/);
   const button = find(root, node => node.tag === 'button' && node.props['aria-label'] === '查看写入详情');
@@ -577,170 +684,11 @@ test('历史编辑摘要：解析持久化结果的 output，工具收起时显�
   assert.equal(text(root).split('+3-2').length - 1, 2, '展开详情也保留相同统计');
 });
 
-test('中间文本随过程展开与收起，最终正文始终可见', async t => {
-  const root = mount(t, message());
-  assert.doesNotMatch(text(root), /先检查是否已安装/);
-  assert.match(text(root), /最终正文/);
-  toggleProcess(root);
-  await nextTick();
-  assert.match(text(root), /先检查是否已安装/);
-  toggleProcess(root);
-  await nextTick();
-  assert.doesNotMatch(text(root), /先检查是否已安装/);
-  assert.match(text(root), /最终正文/);
-});
-
-test('执行终结自动折叠中间文本，结束后仍可手动展开', async t => {
-  const answer = message({ isComplete: false });
-  const root = mount(t, answer);
-  assert.match(text(root), /先检查是否已安装/);
-  answer.isComplete = true;
-  await nextTick();
-  assert.doesNotMatch(text(root), /先检查是否已安装/);
-  assert.match(text(root), /最终正文/);
-  toggleProcess(root);
-  await nextTick();
-  assert.match(text(root), /先检查是否已安装/);
-});
-
-test('带思考的过程收起后，中间叙述也必须隐藏', async t => {
-  const root = mount(t, message({
-    thoughtSteps: [{ id: 'thinking-1', title: '深度思考', content: '思考内容', status: 'success', order: 0 }],
-  }));
-  assert.doesNotMatch(text(root), /先检查是否已安装|深度思考/);
-  toggleProcess(root);
-  await nextTick();
-  assert.match(text(root), /先检查是否已安装/);
-  assert.match(text(root), /深度思考/);
-  toggleProcess(root);
-  await nextTick();
-  assert.doesNotMatch(text(root), /先检查是否已安装|深度思考/);
-  assert.match(text(root), /最终正文/);
-});
-
-test('过程折叠不隐藏审批卡片，也不重复展示正文', t => {
-  const root = mount(t, message({
-    aiMessages: [
-      { id: 'progress-1', text: '先检查是否已安装', order: 0 },
-      { id: 'same-body', text: '最终正文', order: 1 },
-    ],
-    promptCards: [{ id: 'approval-1', type: 'PROMISE', status: 'pending', kind: 'COMMAND' }],
-  }));
-  assert.match(text(root), /审批卡片/);
-  assert.doesNotMatch(text(root), /先检查是否已安装/);
-  assert.equal(text(root).split('最终正文').length - 1, 1);
-});
-
-/**
- * ★ 未结束的轮次不得收起最外层过程框（用户实测截图回归）。
- *
- * <p>真实场景（截图）：多轮工具调用跑到第 7 个工具时，界面上的「已思考并调用 N 个工具」
- * 已经折叠起来了，且再也不会自动展开。</p>
- *
- * <p>根因：`isMessageCompleted` 第 1 条判据是 `isThinking || isExploring`。多轮工具调用期间
- * `handleToolCall` 会把 `isThinking` 置为 false（工具调用意味着本轮叙述告一段落），
- * 于是「思考中」这条守卫失效；一旦 `isComplete` 不是 false（后台对账重建的行恒为 true），
- * 且 `turn.status` 尚未解析出来（第 4 条守卫拿不到活跃证据），全部守卫穿透 →
- * 判定「已完成」→ `watch(isMessageCompleted)` 的 false→true 跳变把过程框收起。</p>
- *
- * <p>本用例锁定的不变量：<b>只要轮次未终结，过程框保持展开</b>。断言用「展开态下才渲染的
- * 中间叙述文本」是否存在，而不是断言标题文案 —— 标题在思考中会合法地显示为「思考中...」。</p>
- */
-test('★ 未结束的轮次（多轮工具调用进行中）过程框必须保持展开', async t => {
-  // 还原截图现场：已思考过、已调用若干工具、当前仍在调用工具、轮次未终结。
-  // 关键：isThinking=false + isExploring=false（工具调用把它们清了），但 isComplete 也不是 false
-  //      （对账行恒 true）—— 正是守卫全部穿透的组合。
-  const answer = message({
-    isComplete: true,
-    isThinking: false,
-    isExploring: false,
-    isSuspended: false,
-    isSending: true,
-    isLastAssistant: true,
-    thoughtSteps: [
-      { id: 'thinking-1', title: '深度思考', content: '先确认是否已安装', status: 'success', order: 0 },
-      { id: 'thinking-2', title: '深度思考', content: '再打开它', status: 'success', order: 1000 },
-    ],
-    toolCalls: [
-      { id: 'call-1', toolName: 'search_tool', status: 'success', order: 1 },
-      { id: 'call-2', toolName: 'list_mcp_tools', status: 'success', order: 2 },
-      { id: 'call-3', toolName: 'mcp_WaitFor', status: 'calling', order: 1002 },
-    ],
-    aiMessages: [{ id: 'progress-1', text: '先检查是否已安装', order: 1 }],
-  });
-  const root = mount(t, answer);
-
-  assert.match(text(root), /先检查是否已安装/, '未终结的轮次过程框必须保持展开');
-  assert.match(text(root), /已思考并调用/, '过程框标题必须是「已思考并调用 N 个工具」');
-
-  // 追加一个工具调用（第 8 个）—— 过程框不能因此收起。
-  answer.toolCalls.push({ id: 'call-4', toolName: 'mcp_WaitFor', status: 'calling', order: 2002 });
-  await nextTick();
-  assert.match(text(root), /先检查是否已安装/, '追加工具调用不得把过程框收起');
-});
-
-/**
- * ★ 对账重建的行（isComplete 恒 true）在轮次仍活跃时也不能收起过程框。
- *
- * <p>这是上一条的另一半：`isMessageCompleted` 的第 4 条守卫按 `turn.status` 判活跃，
- * 但 `turn` 可能还没解析出来（`props.turn` 为 undefined）→ 拿不到活跃证据 →
- * `isComplete === true` 直接穿透，过程框在「后台 reconcile 拉入行」后被收起。</p>
- */
-test('★ turn 摘要缺失但仍在发送中的最新回答，过程框不得收起', async t => {
-  const answer = message({
-    isComplete: false,
-    isThinking: true,
-    thoughtSteps: [{ id: 'thinking-1', title: '深度思考', content: '先检查是否已安装', status: 'running', order: 0 }],
-  });
-  const renderer = createRenderer({
-    createElement: tag => element(tag),
-    createText: value => element('#text', value),
-    createComment: value => element('#comment'),
-    setText: (node, value) => { node.text = value; },
-    setElementText: (node, value) => { node.text = value; node.children = []; },
-    parentNode: node => node.parent,
-    nextSibling: node => node.parent?.children[node.parent.children.indexOf(node) + 1] ?? null,
-    patchProp: (node, key, _old, value) => { node.props[key] = value; },
-    insert: (node, parent, anchor = null) => {
-      if (node.parent) node.parent.children.splice(node.parent.children.indexOf(node), 1);
-      node.parent = parent;
-      const index = anchor ? parent.children.indexOf(anchor) : -1;
-      if (index < 0) parent.children.push(node); else parent.children.splice(index, 0, node);
-    },
-    remove: node => {
-      if (node.parent) node.parent.children.splice(node.parent.children.indexOf(node), 1);
-      node.parent = null;
-    },
-  });
-  const previousWindow = global.window;
-  global.window = { setInterval };
-  const root = element('root');
-  const app = renderer.createApp(loadComponent(), { message: answer, isDark: true, isSending: true, isLastAssistant: true });
-  app.provide(previewKey, undefined);
-  app.mount(root);
-  t.after(() => {
-    app.unmount();
-    if (previousWindow === undefined) delete global.window;
-    else global.window = previousWindow;
-  });
-
-  assert.match(text(root), /先检查是否已安装/, '发送中的最新回答必须是展开的');
-});
-
-/**
- * ★ 实测回归：思考框首屏就超出一屏时，流式增量必须继续贴底。
- *
- * <p>旧实现用「此刻是否贴近底部（< 80px）」决定要不要贴底。思考框是首个分片落地才挂载的，
- * 那一刻 scrollTop 还是 0；只要首屏内容就超出 max-h-72，距离直接判定为「用户已经滚走了」，
- * 之后每个分片只会让距离更大 —— 贴底动作永久失效，用户只能不断手动往底部拖。</p>
- *
- * <p>不变量：只要用户没有自己上滑，流式增量必须把内容钉在底部。</p>
- */
 test('★ 思考框首屏超出一屏后，流式增量继续贴底', async t => {
   const answer = message({ isComplete: false, aiMessages: [], thoughtSteps: [
     { id: 'thinking-stick', title: '思考', content: '首屏思考', status: 'running', order: 0 },
   ] });
-  const root = mount(t, answer);
+  const root = await mountExpanded(t, answer);
   const box = resolveThinkingBox(root, '首屏思考');
   assert.ok(box, '运行中的思考框必须展开渲染');
   // 内容 1000、可视 288：首屏就已经溢出 712px，远超「贴近底部」阈值。
@@ -762,7 +710,7 @@ test('★ 用户上滑后新分片不抢位置，滚回底部即恢复跟随', a
   const answer = message({ isComplete: false, aiMessages: [], thoughtSteps: [
     { id: 'thinking-hold', title: '思考', content: '长思考', status: 'running', order: 0 },
   ] });
-  const root = mount(t, answer);
+  const root = await mountExpanded(t, answer);
   const box = resolveThinkingBox(root, '长思考');
   layoutThinkingBox(box, 1000, 288);
   const resolveBackToBottom = () => find(root, node => node.tag === 'button' && text(node).trim() === '回到底部');
@@ -807,7 +755,7 @@ test('★ 已定型的思考展开后停在顶部，不被别处增量顶走', a
     { id: 'thinking-done', title: '旧思考', content: '旧思考正文', status: 'success', order: 0 },
     { id: 'thinking-live', title: '思考', content: '实时思考正文', status: 'running', order: 1000 },
   ] });
-  const root = mount(t, answer);
+  const root = await mountExpanded(t, answer);
   assert.equal(resolveThinkingBox(root, '旧思考正文'), undefined, '已定型的思考默认折叠');
 
   find(root, node => node.tag === 'button' && text(node) === '旧思考').props.onClick();

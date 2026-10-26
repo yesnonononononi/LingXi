@@ -297,6 +297,10 @@ export const messages: MessageSchema = {
       noReadableBody: '响应没有可读的 body，无法读取 SSE 流',
     },
     chat: {
+      process: {
+        separator: '、', moreOperations: '{names}等 {count} 类操作', moreTargets: '{targets}等 {count} 个目标',
+        failed: '{count} 项失败', pending: '{count} 项待确认', unknown: '{count} 项状态未知', running: '{count} 项进行中',
+      },
       backgroundTasks: {
         title: '后台任务', running: '{count} 个后台任务运行中', pending: '{count} 个后台任务等待执行',
         finished: '{count} 个后台任务已结束', expand: '展开后台任务', elapsed: '已运行 {seconds}s',
@@ -1399,6 +1403,10 @@ export const messages: MessageSchema = {
       noReadableBody: 'The response has no readable body; cannot read the SSE stream',
     },
     chat: {
+      process: {
+        separator: ', ', moreOperations: '{names} ({count} operation types)', moreTargets: '{targets} ({count} targets)',
+        failed: '{count} failed', pending: '{count} awaiting input', unknown: '{count} unknown', running: '{count} running',
+      },
       backgroundTasks: {
         title: 'Background tasks', running: '{count} background tasks running', pending: '{count} background tasks waiting',
         finished: '{count} background tasks finished', expand: 'Expand background tasks', elapsed: 'Running for {seconds}s',

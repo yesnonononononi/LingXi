@@ -63,30 +63,17 @@ export function resolveSubAgentToolCalls(toolCalls: ToolCallTrace[] = [], subSes
   return Array.from(map.values()).sort((a, b) => (a.displayIndex ?? 0) - (b.displayIndex ?? 0));
 }
 
-/** 过程叙述沿用现有展示边界，正文不在折叠区重复展示。 */
+/** 文本身份与正文归属已由状态投影确定，相同文案也可以是不同的分段边界。 */
 export function selectIntermediateMessages(message: ChatMessage) {
-  const list = message.aiMessages;
-  if (!list || list.length === 0) {
-    return [];
-  }
-  const body = (message.content ?? '').trim();
-  const seen = new Set<string>();
-  const out: typeof list = [];
-  for (const m of list) {
-    const text = (m.text ?? '').trim();
-    if (!text || text === body || seen.has(text)) continue;
-    seen.add(text);
-    out.push(m);
-  }
-  return out;
+  return message.aiMessages?.filter(item => !!item.text?.trim()) ?? [];
 }
 
 const CARD_ORDER_BASE = 1_000_000;
 
 /** 组件与回归测试共用同一投影，卡片始终位于过程折叠区之外。 */
-export function buildProcessTimeline(message: ChatMessage, subAgentTools = resolveSubAgentToolCalls(message.toolCalls)): ProcessTimelineItem[] {
+export function buildProcessTimeline(message: ChatMessage): ProcessTimelineItem[] {
   const intermediateMessages = selectIntermediateMessages(message);
-  const regularTools = message.toolCalls?.filter(tool => !isSubAgentTool(tool.toolName, tool.category)) ?? [];
+  const tools = message.toolCalls ?? [];
   const items: ProcessTimelineItem[] = [];
 
   if (message.thoughtSteps?.length) {
@@ -113,19 +100,8 @@ export function buildProcessTimeline(message: ChatMessage, subAgentTools = resol
     });
   }
 
-  if (subAgentTools.length > 0) {
-    const firstSubTool = [...subAgentTools].sort(compareResponsePosition)[0];
-    items.push({
-      id: 'sub-agents-banner',
-      type: 'sub_agent',
-      order: firstSubTool?.order ?? Infinity,
-      responseId: firstSubTool?.responseId,
-      subAgents: subAgentTools
-    });
-  }
-
-  if (regularTools.length > 0) {
-    regularTools.forEach((tc, idx) => {
+  if (tools.length > 0) {
+    tools.forEach((tc, idx) => {
       items.push({
         id: tc.id || `tool-${idx}`,
         type: 'tool',

@@ -14,7 +14,7 @@ const path = require('node:path');
 const CASES = [
   {
     label: '主过程框工具行',
-    file: '../src/components/chat/ChatMessageItem.vue',
+    file: '../src/components/chat/ProcessDetails.vue',
     // 锚点取箭头按钮本身，确保 region 起点就在箭头列
     anchor: 'canExpandTool(item.tool)" type="button"',
   },

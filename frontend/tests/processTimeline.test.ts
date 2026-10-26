@@ -19,8 +19,8 @@ test('UI 投影保持跨响应顺序，协同成员合并，互动卡片独立�
   };
   const members = resolveSubAgentToolCalls(message.toolCalls,
     [{ id: '88', name: '工程师', agentName: '工程师' }]);
-  assert.deepEqual(buildProcessTimeline(message, members).map(item => item.id),
-    ['thinking:101', 'read', 'text:102', 'sub-agents-banner', 'card-approval']);
+  assert.deepEqual(buildProcessTimeline(message).map(item => item.id),
+    ['thinking:101', 'read', 'text:102', 'delegate', 'card-approval']);
   assert.equal(members[0]?.subAgentName, '工程师');
   message.toolCalls!.push({ ...message.toolCalls![1]!, id: 'delegate-again', responseId: '103' });
   assert.equal(resolveSubAgentToolCalls(message.toolCalls).length, 1);
