@@ -5,6 +5,8 @@ import type { TurnViewVO } from '../src/types/block';
 import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
 import { upsertTurnViewIntoMessages } from '../src/views/chat/blockProjection';
 import { AgentToolName } from '../src/utils/toolNames';
+import { buildProcessTimeline } from '../src/utils/processTimeline';
+import { effect, reactive, stop } from 'vue';
 
 function view(turnVersion: string, toolVersion: string, output: string): TurnViewVO {
   return { sessionId: '7', turnId: '900', viewVersion: turnVersion, status: 'COMPLETED',
@@ -57,5 +59,45 @@ test('快照与历史走同一用户气泡更新入口，补齐图片与消息�
   reducer.consume({ type: 'TURN_SNAPSHOT', sessionId: '7', turnId: '900', viewVersion: '2', view: current });
   assert.equal(messages[0]?.serverMessageId, '901');
   assert.deepEqual(messages[0]?.imageUrls, ['/image.png']);
+  reducer.dispose();
+});
+
+test('连续文本只修改原条目，工具数组与对象保持稳定，新增与迟到位置仍按后端顺序展示', () => {
+  const messages = reactive<ChatMessage[]>([]);
+  const reducer = new TurnStreamReducer(() => messages, { sessionId: '7' });
+  const metadata = { sessionId: '7', turnId: '900' };
+  reducer.consume({ type: 'PARTIAL_THINKING', executionId: 'e', timestamp: '', metaData: metadata,
+    responseId: '101', order: 0, offset: 0, content: '先检查' });
+  reducer.consume({ type: 'TOOL_CALL', executionId: 'e', timestamp: '', metaData: metadata,
+    responseId: '101', order: 3, requestId: 'later', toolName: AgentToolName.ReadFile, args: '{}' });
+  const bubble = messages[0]!;
+  const tools = bubble.toolCalls;
+  const tool = tools![0];
+  const thoughts = bubble.thoughtSteps;
+  const thought = thoughts![0];
+  let toolProjectionRuns = 0;
+  const observer = effect(() => {
+    bubble.toolCalls?.map(item => item.id);
+    toolProjectionRuns++;
+  });
+  reducer.consume({ type: 'PARTIAL_THINKING', executionId: 'e', timestamp: '', metaData: metadata,
+    responseId: '101', order: 0, offset: 3, content: '文件' });
+  assert.equal(bubble.toolCalls, tools);
+  assert.equal(bubble.toolCalls![0], tool);
+  assert.equal(bubble.thoughtSteps, thoughts);
+  assert.equal(bubble.thoughtSteps![0], thought);
+  assert.equal(thought?.content, '先检查文件');
+  assert.equal(toolProjectionRuns, 1, '文本增长不能使只订阅工具集合的投影失效');
+  reducer.consume({ type: 'TOOL_COMPLETED', executionId: 'e', timestamp: '', metaData: metadata,
+    responseId: '101', order: 3, requestId: 'later', toolName: AgentToolName.ReadFile,
+    resultStatus: 'COMPLETED', output: '结果' });
+  assert.equal(bubble.toolCalls, tools);
+  assert.equal(bubble.toolCalls![0], tool);
+  assert.equal(tool?.status, 'success');
+  reducer.consume({ type: 'TOOL_CALL', executionId: 'e', timestamp: '', metaData: metadata,
+    responseId: '101', order: 2, requestId: 'earlier', toolName: AgentToolName.ReadFile, args: '{}' });
+  assert.deepEqual(buildProcessTimeline(bubble).map(item => item.id), ['thinking:101', 'earlier', 'later']);
+  assert.equal(toolProjectionRuns, 2, '新增工具必须触发集合更新');
+  stop(observer);
   reducer.dispose();
 });

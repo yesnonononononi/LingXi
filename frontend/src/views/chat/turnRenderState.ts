@@ -1,4 +1,5 @@
-import type { ChatMessage, ResponseTextBuffer, ToolCallTrace, TurnRenderState } from '../../types/chat';
+import type { AiMessageItem, ChatMessage, ResponseTextBuffer, ThoughtStep, ToolCallTrace, TurnRenderState } from '../../types/chat';
+import type { ResponsePosition } from '../../utils/responseOrder';
 import { compareResponsePosition } from '../../utils/responseOrder';
 import { t } from '../../i18n';
 
@@ -43,6 +44,10 @@ export function writeResponseText(
   if (!Number.isSafeInteger(offset) || offset < 0 || typeof text !== 'string') return null;
   const texts = getTurnState(bubble).texts;
   const buffer = texts[id] ??= { kind, text: '', pending: {}, complete: false };
+  if (offset === buffer.text.length && Object.keys(buffer.pending).length === 0) {
+    buffer.text += text;
+    return buffer;
+  }
   const segments = [{ offset: 0, text: buffer.text }, ...Object.entries(buffer.pending)
     .map(([start, value]) => ({ offset: Number(start), text: value }))];
   for (const segment of segments) {
@@ -77,7 +82,7 @@ export function writeToolTrace(bubble: ChatMessage, incoming: ToolCallTrace): vo
   const terminal = previous.status === 'success' || previous.status === 'failed';
   const retainResult = (terminal && incoming.status !== 'success' && incoming.status !== 'failed') ||
     (previous.status === 'pending' && incoming.status === 'calling');
-  tools[incoming.id] = { ...previous, ...incoming,
+  Object.assign(previous, { ...incoming,
     version: incoming.version ?? previous.version,
     order: incoming.order ?? previous.order,
     responseId: incoming.responseId ?? previous.responseId,
@@ -86,31 +91,51 @@ export function writeToolTrace(bubble: ChatMessage, incoming: ToolCallTrace): vo
     result: retainResult ? previous.result : incoming.result ?? previous.result,
     status: retainResult ? previous.status : incoming.status,
     plusLines: incoming.plusLines ?? previous.plusLines,
-    minusLines: incoming.minusLines ?? previous.minusLines };
+    minusLines: incoming.minusLines ?? previous.minusLines });
 }
 
-/** 展示列只在这里生成，快照与实时事件无需互相覆盖或补回。 */
+/** 保留条目身份，只有成员或位置变化才替换数组，已排序的列表不重复排序。 */
+function reconcileRenderItems<T extends ResponsePosition & { id?: string }>(previous: T[] | undefined, incoming: T[]): T[] {
+  const current = previous ?? [];
+  const remaining = new Map(incoming.map(item => [item.id, item]));
+  const next: T[] = [];
+  for (const item of current) {
+    const update = remaining.get(item.id);
+    if (!update) continue;
+    if (item !== update) Object.assign(item, update);
+    next.push(item);
+    remaining.delete(item.id);
+  }
+  next.push(...remaining.values());
+  if (next.some((item, index) => index > 0 && compareResponsePosition(next[index - 1]!, item) > 0)) {
+    next.sort(compareResponsePosition);
+  }
+  return current.length === next.length && current.every((item, index) => item === next[index]) ? current : next;
+}
+
+/** 内容变化只更新原条目，避免每个文本分片使工具区与完整过程列表失效。 */
 export function renderTurnState(bubble: ChatMessage): void {
   const state = getTurnState(bubble);
-  bubble.thoughtSteps = [];
-  bubble.aiMessages = [];
-  bubble.toolCalls = Object.values(state.tools).sort(compareResponsePosition);
+  const thoughts: ThoughtStep[] = [];
+  const messages: AiMessageItem[] = [];
+  let body: ResponseTextBuffer | undefined;
   for (const [id, buffer] of Object.entries(state.texts)) {
     if (!buffer.text) continue;
     if (buffer.kind === 'THINKING') {
       const step = { id, title: t('tool.category.think'), content: buffer.text,
         status: buffer.complete ? 'success' as const : 'running' as const, order: buffer.order, responseId: buffer.responseId };
-      bubble.thoughtSteps.push(step);
+      thoughts.push(step);
     } else if (buffer.isBody !== true) {
       const message = { id, text: buffer.text, order: buffer.order, responseId: buffer.responseId };
-      bubble.aiMessages.push(message);
+      messages.push(message);
+    } else if (!body || compareResponsePosition(body, buffer) <= 0) {
+      body = buffer;
     }
   }
-  bubble.thoughtSteps.sort(compareResponsePosition);
-  bubble.aiMessages.sort(compareResponsePosition);
+  bubble.thoughtSteps = reconcileRenderItems(bubble.thoughtSteps, thoughts);
+  bubble.aiMessages = reconcileRenderItems(bubble.aiMessages, messages);
+  bubble.toolCalls = reconcileRenderItems(bubble.toolCalls, Object.values(state.tools));
   // 正文只由后端 isBody === true 决定，前端不猜工具调用是否出现。
-  const body = Object.values(state.texts).filter(buffer => buffer.kind === 'TEXT' && buffer.isBody === true)
-    .sort(compareResponsePosition).at(-1);
   bubble.content = body?.text ?? '';
   if (bubble.sendError && !bubble.content.endsWith(bubble.sendError)) {
     bubble.content = bubble.content ? `${bubble.content}\n\n${bubble.sendError}` : bubble.sendError;
