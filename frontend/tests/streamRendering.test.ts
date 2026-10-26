@@ -1,3 +1,4 @@
+import { buildProcessTimeline } from '../src/utils/processTimeline';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { ChatMessage, ChatSession } from '../src/types/chat';
@@ -598,7 +599,7 @@ test('★ 过程项分桶与 order 完全来自后端块视图，前端不做任
 
   // 时间线顺序 = 后端 order 升序，与传入顺序无关
   assert.deepEqual(
-    (bubble.processTimeline ?? []).map(item => item.type),
+    (buildProcessTimeline(bubble!) ?? []).map(item => item.type),
     ['intermediate_ai', 'tool'],
     '时间线按后端 order 升序'
   );

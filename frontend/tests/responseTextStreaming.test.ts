@@ -1,3 +1,4 @@
+import { buildProcessTimeline } from '../src/utils/processTimeline';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { AgentEvent } from '../src/types/Event';
@@ -58,13 +59,13 @@ test('框架位置：超安全整数的相邻响应按 BigInt 排序，迟到旧
       order: 2, status: 'STARTED', arguments: '{"path":"first.md"}' },
   ];
   snapshot(reducer, { ...view(), blocks });
-  assert.deepEqual(bubble.processTimeline?.map(item => item.id), [
-    `thinking:${earlier}`, `text:${earlier}`, 'tool:c1', 'tool:c2', `thinking:${later}`,
+  assert.deepEqual(buildProcessTimeline(bubble!)?.map(item => item.id), [
+    `thinking:${earlier}`, `text:${earlier}`, 'c1', 'c2', `thinking:${later}`,
   ]);
   const history: ChatMessage[] = [];
   upsertTurnViewIntoMessages(history, { ...view(), blocks }, new Map());
   assert.equal(history.at(-1)?.content, bubble.content);
-  assert.deepEqual(history.at(-1)?.processTimeline, bubble.processTimeline);
+  assert.deepEqual(buildProcessTimeline(history.at(-1)!), buildProcessTimeline(bubble!));
 });
 
 test('响应身份不是数字时明确失败，不能用本地序号兼容旧 UUID', () => {
@@ -206,7 +207,7 @@ test('第二版：流式、块更新和刷新历史生成相同展示', () => {
   const history: ChatMessage[] = [];
   upsertTurnViewIntoMessages(history, finalView, new Map());
   const rendered = (current: ChatMessage) => ({ content: current.content, thoughtSteps: current.thoughtSteps,
-    aiMessages: current.aiMessages, toolCalls: current.toolCalls, processTimeline: current.processTimeline });
+    aiMessages: current.aiMessages, toolCalls: current.toolCalls, processTimeline: buildProcessTimeline(current!) });
   assert.deepEqual(rendered(bubble), rendered(history[0]!));
 });
 
@@ -421,13 +422,13 @@ test('★ 正文升级：false → true 允许（终态快照把过程文本提�
     order: 1, executionId: 'e', timestamp: '', metaData: metadata });
   assert.equal(bubble.content, '');
   assert.equal(bubble.aiMessages?.[0]?.text, '过程文本');
-  assert.ok((bubble.processTimeline ?? []).some(item => item.id === 'text:101'), '升级前在过程时间线');
+  assert.ok((buildProcessTimeline(bubble!) ?? []).some(item => item.id === 'text:101'), '升级前在过程时间线');
 
   snapshot(reducer, view('过程文本', true));
   assert.equal(bubble.turnState?.texts['text:101']?.isBody, true);
   assert.equal(bubble.content, '过程文本', '升级后进入正文');
   assert.equal(bubble.aiMessages?.length, 0, '升级后从过程区移出');
-  assert.ok(!(bubble.processTimeline ?? []).some(item => item.id === 'text:101'), '升级后从过程时间线移出');
+  assert.ok(!(buildProcessTimeline(bubble!) ?? []).some(item => item.id === 'text:101'), '升级后从过程时间线移出');
 });
 
 /**

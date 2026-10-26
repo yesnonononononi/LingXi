@@ -1,3 +1,4 @@
+import { buildProcessTimeline } from '../src/utils/processTimeline';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { computed, ref } from 'vue';
@@ -244,7 +245,7 @@ test('正对照：过程项按框架响应身份和后端块内位置排列', ()
   reducer.flush();
   assert.equal(messages[0].thoughtSteps?.length, 2, '实时思考按响应分段');
   assert.equal(messages[0].toolCalls?.length, 1, '工具即时显示');
-  assert.deepEqual(messages[0].processTimeline?.map(item => item.order), [0, 2, 0]);
+  assert.deepEqual(buildProcessTimeline(messages[0]!)?.map(item => item.order), [0, 2, 0]);
 
   // 故意乱序传入，响应身份优先于响应内位置
   reducer.consume(createEvent({
@@ -260,7 +261,7 @@ test('正对照：过程项按框架响应身份和后端块内位置排列', ()
       ]
     }
   } as unknown as AgentEvent));
-  const orders = (messages[0].processTimeline ?? []).map(item => item.order ?? 0);
+  const orders = (buildProcessTimeline(messages[0]!) ?? []).map(item => item.order ?? 0);
   assert.deepEqual(orders, [0, 2, 0], '时间线必须先按响应身份再按块内位置排列');
 });
 

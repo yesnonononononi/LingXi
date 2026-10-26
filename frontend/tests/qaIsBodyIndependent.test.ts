@@ -1,3 +1,4 @@
+import { buildProcessTimeline } from '../src/utils/processTimeline';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { AgentEvent } from '../src/types/Event';
@@ -83,13 +84,13 @@ test('C2 ★ false → true 升级：终态快照把过程文本提升为正文�
   reducer.consume(aiMessage('过程文本', false));
   assert.equal(bubble.content, '');
   assert.equal(bubble.aiMessages?.[0]?.text, '过程文本');
-  assert.ok((bubble.processTimeline ?? []).some(item => item.id === 'text:101'), '升级前在过程时间线');
+  assert.ok((buildProcessTimeline(bubble!) ?? []).some(item => item.id === 'text:101'), '升级前在过程时间线');
 
   snapshot(reducer, view('过程文本', true));
   assert.equal(getTurnState(bubble).texts['text:101']?.isBody, true);
   assert.equal(bubble.content, '过程文本', '升级后进入正文');
   assert.equal(bubble.aiMessages?.length, 0, '升级后从 aiMessages 移出');
-  assert.ok(!(bubble.processTimeline ?? []).some(item => item.id === 'text:101'), '升级后从过程时间线移出');
+  assert.ok(!(buildProcessTimeline(bubble!) ?? []).some(item => item.id === 'text:101'), '升级后从过程时间线移出');
 });
 
 // ─────────────────────────── C3 ───────────────────────────

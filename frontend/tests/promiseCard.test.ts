@@ -1,3 +1,4 @@
+import { buildProcessTimeline } from '../src/utils/processTimeline';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { ChatMessage, ToolCallVO } from '../src/types/chat';
@@ -210,7 +211,7 @@ test('6. 思考分段与交错顺序由后端块视图给出（前端不再自�
   const bubble = messages[0];
   assert.equal(bubble.thoughtSteps?.length, 3, '思考即时分段打印');
   assert.equal(bubble.toolCalls?.length, 2, '工具开始即时展示');
-  assert.deepEqual(bubble.processTimeline?.map(item => item.order), [0, 10, 20, 30, 40]);
+  assert.deepEqual(buildProcessTimeline(bubble!)?.map(item => item.order), [0, 10, 20, 30, 40]);
 
   // 后端块视图给出三段思考与两个工具，严格交错
   reducer.consume(evt('TURN_SNAPSHOT', {

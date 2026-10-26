@@ -380,7 +380,6 @@ export class TurnStreamReducer {
       thoughtSteps: [],
       toolCalls: [],
       aiMessages: [],
-      processTimeline: []
     };
 
     this.getMessages().push(newBubble);

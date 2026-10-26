@@ -1,3 +1,4 @@
+import { buildProcessTimeline } from '../src/utils/processTimeline';
 /**
  * Block 契约投影守卫（P3）。
  *
@@ -65,7 +66,7 @@ test('顺序由后端 order 决定，与传入顺序无关', () => {
   // 故意乱序传入：后端已排好序，前端只是防御性再排一次。
   projectTurnView(b, view([tool(2), thinking(0), processText(1)]));
 
-  const kinds = (b.processTimeline ?? []).map(item => item.type);
+  const kinds = (buildProcessTimeline(b!) ?? []).map(item => item.type);
   assert.deepEqual(kinds, ['thought', 'intermediate_ai', 'tool'], '时间线必须按 order 升序');
 });
 
@@ -94,7 +95,7 @@ test('重复投影同一视图是幂等的（整体重写，不追加）', () =>
 
   assert.equal(b.thoughtSteps?.length, 1, '不能因重复投影而翻倍');
   assert.equal(b.toolCalls?.length, 1);
-  assert.equal(b.processTimeline?.length, 2);
+  assert.equal(buildProcessTimeline(b!)?.length, 2);
 });
 
 test('增量按 blockId 覆盖，即使 viewVersion 未变（工具收尾不改 chat_turn）', () => {
@@ -109,7 +110,7 @@ test('增量按 blockId 覆盖，即使 viewVersion 未变（工具收尾不改 
   assert.equal(b.toolCalls?.length, 1, '同 blockId 必须替换而非追加');
   assert.equal(b.toolCalls?.[0].status, 'success', '版本号相等也必须采纳增量');
   assert.equal(b.thoughtSteps?.length, 1, '未变化的块必须保留');
-  assert.equal(b.processTimeline?.length, 2, '时间线同 blockId 也必须替换而非重复');
+  assert.equal(buildProcessTimeline(b!)?.length, 2, '时间线同 blockId 也必须替换而非重复');
 });
 
 test('增量遇到新 blockId 时追加，不改动其它块', () => {
@@ -119,7 +120,7 @@ test('增量遇到新 blockId 时追加，不改动其它块', () => {
 
   assert.equal(b.thoughtSteps?.length, 1, '原有思考块保留');
   assert.equal(b.toolCalls?.length, 1, '新块追加');
-  assert.equal(b.processTimeline?.length, 2);
+  assert.equal(buildProcessTimeline(b!)?.length, 2);
 });
 
 test('空块增量是空操作（不发空帧语义）', () => {
@@ -128,7 +129,7 @@ test('空块增量是空操作（不发空帧语义）', () => {
   upsertBlockIntoBubble(b, view([], 5));
 
   assert.equal(b.thoughtSteps?.length, 1);
-  assert.equal(b.processTimeline?.length, 1);
+  assert.equal(buildProcessTimeline(b!)?.length, 1);
 });
 
 /* ------------------------------------------------------------------ */
@@ -200,7 +201,7 @@ test('★ 历史轮次只走视图：整轮按后端 order / 落点重写（不�
   assert.equal(asst?.toolCalls?.[0].order, 2, '工具 order 取后端值（旧口径是 102）');
   assert.equal(asst?.toolCalls?.[0].status, 'success');
   assert.deepEqual(
-    (asst?.processTimeline ?? []).map(item => item.type),
+    (buildProcessTimeline(asst!) ?? []).map(item => item.type),
     ['thought', 'intermediate_ai', 'tool'],
     '时间线按后端 order 升序'
   );

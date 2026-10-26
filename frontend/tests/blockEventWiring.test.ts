@@ -1,3 +1,4 @@
+import { buildProcessTimeline } from '../src/utils/processTimeline';
 /**
  * 实时块事件接入守卫（P3 第一步）。
  *
@@ -67,7 +68,7 @@ test('P3-1 TURN_SNAPSHOT 整轮投影到气泡（快照校准路径）', () => {
   const bubble = messages.find(m => m.role === 'assistant')!;
   assert.equal(bubble.thoughtSteps?.length, 1, '思考块落到 thoughtSteps');
   assert.equal(bubble.toolCalls?.length, 1, '工具块落到 toolCalls');
-  assert.equal(bubble.processTimeline?.length, 2, '时间线含两块');
+  assert.equal(buildProcessTimeline(bubble!)?.length, 2, '时间线含两块');
 });
 
 test('P3-1 更小的 viewVersion 快照被丢弃（乱序旧帧不覆盖新内容）', () => {

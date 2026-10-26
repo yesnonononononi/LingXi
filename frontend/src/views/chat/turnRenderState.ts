@@ -91,26 +91,19 @@ export function renderTurnState(bubble: ChatMessage): void {
   bubble.thoughtSteps = [];
   bubble.aiMessages = [];
   bubble.toolCalls = Object.values(state.tools).sort(compareResponsePosition);
-  bubble.processTimeline = [];
   for (const [id, buffer] of Object.entries(state.texts)) {
     if (!buffer.text) continue;
     if (buffer.kind === 'THINKING') {
       const step = { id, title: t('tool.category.think'), content: buffer.text,
         status: buffer.complete ? 'success' as const : 'running' as const, order: buffer.order, responseId: buffer.responseId };
       bubble.thoughtSteps.push(step);
-      if (buffer.order !== undefined) bubble.processTimeline.push({ id, type: 'thought', order: buffer.order, responseId: buffer.responseId, step });
     } else if (buffer.isBody !== true) {
       const message = { id, text: buffer.text, order: buffer.order, responseId: buffer.responseId };
       bubble.aiMessages.push(message);
-      if (buffer.order !== undefined) bubble.processTimeline.push({ id, type: 'intermediate_ai', order: buffer.order, responseId: buffer.responseId, message });
     }
-  }
-  for (const tool of bubble.toolCalls) {
-    if (tool.order !== undefined) bubble.processTimeline.push({ id: `tool:${tool.id}`, type: 'tool', order: tool.order, responseId: tool.responseId, tool });
   }
   bubble.thoughtSteps.sort(compareResponsePosition);
   bubble.aiMessages.sort(compareResponsePosition);
-  bubble.processTimeline.sort(compareResponsePosition);
   // 正文只由后端 isBody === true 决定，前端不猜工具调用是否出现。
   const body = Object.values(state.texts).filter(buffer => buffer.kind === 'TEXT' && buffer.isBody === true)
     .sort(compareResponsePosition).at(-1);

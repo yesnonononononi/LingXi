@@ -572,13 +572,12 @@ import {
   isEditFileTool,
   isReadFileTool,
   shouldShowToolArguments,
-  isSubAgentTool,
-    resolveToolMeta,
+  resolveToolMeta,
   extractSubAgentParams,
   unwrapToolResultEnvelope,
   TOOL_CATEGORY,
 } from '../../utils/toolMeta';
-import { compareResponsePosition } from '../../utils/responseOrder';
+import { buildProcessTimeline, resolveSubAgentToolCalls, selectIntermediateMessages } from '../../utils/processTimeline';
 import { toObject } from '../../utils/json';
 import { isAsyncDelegation, asyncSubSessionStatus, subItemStatusDotClass } from '../../utils/asyncDelegation';
 import { AgentToolName } from '../../utils/toolNames';
@@ -803,27 +802,7 @@ onUnmounted(() => {
   }
 });
 
-// 中间轮次的 aimessage（与正文同文本的条目不再重复展示，其余中间过程文本归入折叠块）
-//
-// 判据用「文本是否等于正文」而非「是否为最后一个元素」：正文取 props.message.content，
-// 与 aiMessages 的末条不必等价（历史解析会去重、流式恢复会重放），按位置切会在
-// 「末条不等于正文」时把正文又重复渲染到折叠区里。
-const intermediateAiMessages = computed(() => {
-  const list = props.message.aiMessages;
-  if (!list || list.length === 0) {
-    return [];
-  }
-  const body = (props.message.content ?? '').trim();
-  const seen = new Set<string>();
-  const out: typeof list = [];
-  for (const m of list) {
-    const text = (m.text ?? '').trim();
-    if (!text || text === body || seen.has(text)) continue;
-    seen.add(text);
-    out.push(m);
-  }
-  return out;
-});
+const intermediateAiMessages = computed(() => selectIntermediateMessages(props.message));
 
 // 只有中间叙述时也需要折叠入口，否则过程文本无法展开。
 const hasProcessContent = computed(() => {
@@ -863,7 +842,6 @@ const copyToolContent = (text: string, id: string) => {
   void copyToolContentRaw(text, id);
 };
 
-const isSubAgentToolCall = (tc?: ToolCallTrace): boolean => isSubAgentTool(tc?.toolName, tc?.category);
 const isEditFileToolCall = (toolName?: string): boolean => isEditFileTool(toolName);
 
 /**
@@ -888,72 +866,7 @@ const canExpandTool = (tc?: ToolCallTrace): boolean => !!tc && !isReadFileTool(t
  * 同一子会话可能被多次调用复用（如多次委派产品经理），按 subSessionId / agentId 去重合并，
  * 并与 props.subSessions 关联取得权威名称与团队序号，解决成员数量虚增与名字回退为 Agent #N 的问题。
  */
-const subAgentToolCalls = computed<ToolCallTrace[]>(() => {
-  const tcs = props.message.toolCalls?.filter(tc => isSubAgentToolCall(tc)) || [];
-  if (tcs.length === 0) return [];
-
-  const map = new Map<string, ToolCallTrace>();
-
-  tcs.forEach((tc, idx) => {
-    const params = extractSubAgentParams(tc);
-    const agentId = params.agentId ?? tc.subAgentId;
-    const subSessionId = tc.subSessionId ?? params.subSessionId;
-
-    // 优先匹配当前会话绑定的权威 subSessions
-    const matchedSub = (subSessionId
-      ? props.subSessions?.find(s => String(s.id) === String(subSessionId))
-      : undefined)
-      || (agentId ? props.subSessions?.find(s => String(s.agentId) === String(agentId)) : undefined);
-
-    // 计算在团队中的真实序号（1-indexed）
-    let displayIndex = idx + 1;
-    if (props.subSessions?.length) {
-      const subIdx = props.subSessions.findIndex(s =>
-        (subSessionId && String(s.id) === String(subSessionId)) ||
-        (agentId && String(s.agentId) === String(agentId))
-      );
-      if (subIdx !== -1) {
-        displayIndex = subIdx + 1;
-      }
-    }
-
-    const agentName = matchedSub?.agentName
-      || matchedSub?.name
-      || params.agentName
-      || tc.subAgentName
-      || (agentId ? `Agent #${agentId}` : t('chat.message.subAgentIndex', { index: displayIndex }));
-
-    const resolvedSubSessionId = subSessionId || matchedSub?.id || tc.subSessionId;
-    const resolvedAgentId = agentId || matchedSub?.agentId;
-
-    // 去重键：优先子会话 ID，其次 agentId
-    const key = String(resolvedSubSessionId || resolvedAgentId || tc.id || `tc-${idx}`);
-
-    const existing = map.get(key);
-    if (existing) {
-      // 若多次调用复用，更新状态与相关属性
-      existing.status = tc.status || existing.status;
-      if (tc.order !== undefined) existing.order = tc.order;
-      if (resolvedSubSessionId && !existing.subSessionId) existing.subSessionId = resolvedSubSessionId;
-      if (agentName && !existing.subAgentName) existing.subAgentName = agentName;
-    } else {
-      map.set(key, {
-        ...tc,
-        subSessionId: resolvedSubSessionId,
-        subAgentId: resolvedAgentId,
-        subAgentName: agentName,
-        displayIndex,
-        order: tc.order ?? idx
-      });
-    }
-  });
-
-  return Array.from(map.values()).sort((a, b) => (a.displayIndex ?? 0) - (b.displayIndex ?? 0));
-});
-
-const regularToolCalls = computed<ToolCallTrace[]>(() => {
-  return props.message.toolCalls?.filter(tc => !isSubAgentToolCall(tc)) || [];
-});
+const subAgentToolCalls = computed(() => resolveSubAgentToolCalls(props.message.toolCalls, props.subSessions));
 
 /**
  * 协同条成员行的展示态：改由<b>子会话权威态</b>驱动。
@@ -983,87 +896,7 @@ const subAgentMemberTitle = (tc: ToolCallTrace, idx: number): string => {
     : t('chat.message.viewSubSessionTip', { name });
 };
 
-/** 卡片无对应工具行时的排序基准（大于任何 rowIndex 派生的工具 order，保证卡片排在过程项之后） */
-const CARD_ORDER_BASE = 1_000_000;
-
-// 统一执行过程时间线：按真实时序交替排列思维链思考 (Thought for)、中间轮次文本、子代理协同与工具调用
-const processTimeline = computed<ProcessTimelineItem[]>(() => {
-  const items: ProcessTimelineItem[] = [];
-
-  // 1. 思维链思考步骤
-  if (props.message.thoughtSteps?.length) {
-    props.message.thoughtSteps.forEach((step, idx) => {
-      items.push({
-        id: step.id || `step-${idx}`,
-        type: 'thought',
-        order: step.order ?? Infinity,
-        responseId: step.responseId,
-        step
-      });
-    });
-  }
-
-  // 2. 中间轮次 aimessage 文本（多轮执行时产生的中间说明，非最终结论）
-  if (intermediateAiMessages.value.length) {
-    intermediateAiMessages.value.forEach((im, idx) => {
-      items.push({
-        id: im.id || `im-${idx}`,
-        type: 'intermediate_ai',
-        order: im.order ?? Infinity,
-        responseId: im.responseId,
-        message: im
-      });
-    });
-  }
-
-  // 3. SubAgent 协同条（按首个子会话时间线位置插入）
-  if (subAgentToolCalls.value.length > 0) {
-    const firstSubTool = [...subAgentToolCalls.value].sort(compareResponsePosition)[0];
-    items.push({
-      id: 'sub-agents-banner',
-      type: 'sub_agent',
-      order: firstSubTool?.order ?? Infinity,
-      responseId: firstSubTool?.responseId,
-      subAgents: subAgentToolCalls.value
-    });
-  }
-
-  // 4. 普通 Agent 工具调用
-  if (regularToolCalls.value.length > 0) {
-    regularToolCalls.value.forEach((tc, idx) => {
-      items.push({
-        id: tc.id || `tool-${idx}`,
-        type: 'tool',
-        order: tc.order ?? Infinity,
-        responseId: tc.responseId,
-        tool: tc
-      });
-    });
-  }
-
-  // 5. 互动卡片（PLAN / CHOICE / COMMAND 三类 PROMISE 卡片）：参与同一时序集合，
-  //    但模板里被分离到过程折叠区之外渲染 —— 用户可操作项不能被吞进「已思考并调用工具」大框。
-  if (props.message.promptCards?.length) {
-    props.message.promptCards.forEach((card, idx) => {
-      const trace = props.message.toolCalls?.find(tc => String(tc.id) === String(card.id));
-      items.push({
-        id: `card-${card.id ?? idx}`,
-        type: 'prompt_card',
-        order: trace?.order ?? (CARD_ORDER_BASE + idx),
-        responseId: trace?.responseId,
-        card
-      });
-    });
-  }
-
-  // 不能按片段或工具的到达时间排，乱序事件会把过程插回中间。
-  return items.sort((a, b) => {
-    if (a.type === 'prompt_card' || b.type === 'prompt_card') {
-      return a.type === b.type ? a.order - b.order : a.type === 'prompt_card' ? 1 : -1;
-    }
-    return compareResponsePosition(a, b);
-  });
-});
+const processTimeline = computed(() => buildProcessTimeline(props.message, subAgentToolCalls.value));
 
 /** 过程折叠区内的时序项（剔除互动卡片）。 */
 const processItems = computed(() =>

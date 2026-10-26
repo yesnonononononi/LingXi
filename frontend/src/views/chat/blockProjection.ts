@@ -87,7 +87,6 @@ export function buildBubbleFromTurnView(view: TurnViewVO, fallbackTimestamp = Da
     thoughtSteps: [],
     toolCalls: [],
     aiMessages: [],
-    processTimeline: [],
   };
   projectTurnView(bubble, view);
   return bubble;

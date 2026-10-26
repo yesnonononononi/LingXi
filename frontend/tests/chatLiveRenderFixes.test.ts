@@ -1,3 +1,4 @@
+import { buildProcessTimeline } from '../src/utils/processTimeline';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPinia, setActivePinia } from 'pinia';
@@ -99,7 +100,7 @@ test('缺陷1：首轮发消息时，流式事件必须驱动渲染副作用更�
     rendered.push(view.displayedMessages.value.length);
     renderedTexts.push(view.displayedMessages.value.filter((message: any) => message.role === 'assistant').map((message: any) => message.content).join(''));
     renderedProcess.push(view.displayedMessages.value.filter((message: any) => message.role === 'assistant')
-      .flatMap((message: any) => message.processTimeline ?? [])
+      .flatMap((message: any) => buildProcessTimeline(message))
       .map((item: any) => `${item.id}:${item.tool?.status ?? item.step?.content ?? item.message?.text}`));
   }); });
   // 首屏渲染先读一次，缓存 computed
@@ -129,7 +130,7 @@ test('缺陷1：首轮发消息时，流式事件必须驱动渲染副作用更�
     requestId: 'c-live', toolName: AgentToolName.ReadFile, order: 2, args: '{"path":"input.md"}' })));
   for (let i = 0; i < 20; i++) await tick();
   await nextTick();
-  assert.ok(renderedProcess.at(-1)?.includes('tool:c-live:calling'), 'SSE 工具开始在快照前触发渲染');
+  assert.ok(renderedProcess.at(-1)?.includes('c-live:calling'), 'SSE 工具开始在快照前触发渲染');
   (streamCtl as any).enqueue(new TextEncoder().encode(frame('TOOL_COMPLETED', { ...runtime, type: 'TOOL_COMPLETED', responseId: '101',
     requestId: 'c-live', toolName: AgentToolName.ReadFile, order: 2, resultStatus: 'COMPLETED', output: '读取结果' })));
   (streamCtl as any).enqueue(new TextEncoder().encode(frame('PARTIAL_THINKING', { ...runtime, type: 'PARTIAL_THINKING',
@@ -137,7 +138,7 @@ test('缺陷1：首轮发消息时，流式事件必须驱动渲染副作用更�
   for (let i = 0; i < 20; i++) await tick();
   await nextTick();
   assert.equal(renderedTexts.at(-1), '', '过程用途确认后仍不进入正文');
-  assert.deepEqual(renderedProcess.at(-1), ['text:101:你发送的是「1」，收到', 'tool:c-live:success', 'thinking:102:末尾的新思考'],
+  assert.deepEqual(renderedProcess.at(-1), ['text:101:你发送的是「1」，收到', 'c-live:success', 'thinking:102:末尾的新思考'],
     '后续思考在工具之后打印，收尾更新原工具条');
 
   const lastRendered = rendered[rendered.length - 1];

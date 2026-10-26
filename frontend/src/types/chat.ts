@@ -184,7 +184,6 @@ export interface ChatMessage {
    */
   promptCards?: ToolCallVO[];
   aiMessages?: AiMessageItem[];      // 运行时收到的所有 AI 轮次消息
-  processTimeline?: ProcessTimelineItem[]; // 严格时序混合时间线
   fileEdits?: FileEditRecord[];      // 文件修改记录
   contextUsage?: ContextUsageData;   // 上下文用量与压缩状态
   isCompressingContext?: boolean;    // 是否正在压缩上下文中
