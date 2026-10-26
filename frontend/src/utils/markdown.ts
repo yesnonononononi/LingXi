@@ -39,6 +39,39 @@ const md = new MarkdownIt({
   }
 });
 
+export interface MermaidDiagram {
+  source: string;
+  complete: boolean;
+}
+
+export interface MarkdownDocument {
+  html: string;
+  diagrams: MermaidDiagram[];
+}
+
+interface DiagramEnvironment {
+  [key: PropertyKey]: unknown;
+  diagrams: MermaidDiagram[];
+  lines: string[];
+  streaming: boolean;
+}
+
+const defaultFence = md.renderer.rules.fence!;
+md.renderer.rules.fence = (tokens, index, options, environment, renderer) => {
+  const env = environment as DiagramEnvironment | undefined;
+  const token = tokens[index]!;
+  if (!env?.diagrams || token.info.trim().split(/\s+/)[0]?.toLowerCase() !== 'mermaid') {
+    return defaultFence(tokens, index, options, env, renderer);
+  }
+
+  // Markdown 允许围栏在正文末尾隐式结束，但流式末尾仍可能继续收到图表源码。
+  const lastLine = env.lines[(token.map?.[1] ?? 0) - 1] ?? '';
+  const closing = lastLine.trim().replace(/^(?:>\s*)+/, '').trim();
+  const closed = closing.length >= token.markup.length && [...closing].every(char => char === token.markup[0]);
+  const diagramIndex = env.diagrams.push({ source: token.content, complete: closed || !env.streaming }) - 1;
+  return `<div data-mermaid-index="${diagramIndex}"></div>\n`;
+};
+
 // Configure external links to open in a new tab safely
 const defaultLinkOpen = md.renderer.rules.link_open || function (tokens: any[], idx: number, options: any, _env: any, self: any) {
   return self.renderToken(tokens, idx, options);
@@ -67,4 +100,13 @@ export function renderMarkdown(content: string): string {
     ADD_ATTR: ['target', 'rel', 'data-code'],
     ADD_TAGS: ['button', 'svg', 'path', 'span']
   });
+}
+
+export function renderMarkdownDocument(content: string, streaming: boolean): MarkdownDocument {
+  const env: DiagramEnvironment = { diagrams: [], lines: content.replace(/\r\n?/g, '\n').split('\n'), streaming };
+  const html = DOMPurify.sanitize(md.render(content, env), {
+    ADD_ATTR: ['target', 'rel', 'data-code', 'data-mermaid-index'],
+    ADD_TAGS: ['button', 'svg', 'path', 'span'],
+  });
+  return { html, diagrams: env.diagrams };
 }

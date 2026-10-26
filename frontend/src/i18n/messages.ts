@@ -224,6 +224,9 @@ export const messages: MessageSchema = {
     markdown: {
       copyCode: '复制代码',
       copy: '复制',
+      diagram: 'Mermaid 图表',
+      diagramLoading: '正在绘制图表…',
+      diagramFailed: '图表渲染失败，请检查 Mermaid 源码。',
     },
     chatExport: {
       defaultTitle: '灵犀会话记录',
@@ -1323,6 +1326,9 @@ export const messages: MessageSchema = {
     markdown: {
       copyCode: 'Copy code',
       copy: 'Copy',
+      diagram: 'Mermaid diagram',
+      diagramLoading: 'Rendering diagram…',
+      diagramFailed: 'Unable to render the diagram. Please check the Mermaid source.',
     },
     chatExport: {
       defaultTitle: 'LingXi conversation log',

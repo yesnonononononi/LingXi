@@ -246,3 +246,34 @@ html.light .markdown-body .code-block-header {
   background-color: transparent !important;
   padding: 0 !important;
 }
+
+.markdown-body .mermaid-block,
+html.light .markdown-body .mermaid-block {
+  background: #ffffff;
+  color: #1f2937;
+  min-width: 0;
+}
+
+.markdown-body .mermaid-block--dark,
+html.light .markdown-body .mermaid-block--dark {
+  background: #18181b;
+  color: #e4e4e7;
+}
+
+.mermaid-diagram {
+  padding: 1rem;
+  overflow-x: auto;
+}
+
+.mermaid-diagram svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.markdown-body .mermaid-status {
+  margin: 0;
+  padding: 0.75rem 1rem 0;
+  font-size: 0.825rem;
+}

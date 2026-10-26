@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { renderMarkdown } from '../../utils/markdown';
+import { renderMarkdownDocument } from '../../utils/markdown';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
 import { useTheme } from '../../composables/useTheme';
 import { t } from '../../i18n';
 import GradientText from '../common/GradientText.vue';
+import MarkdownContent from './MarkdownContent';
 
 const props = withDefaults(
   defineProps<{
@@ -28,15 +29,12 @@ const props = withDefaults(
 const { isDark: globalIsDark } = useTheme();
 const isDark = computed(() => props.isDark ?? globalIsDark.value);
 
-const renderedHtml = computed(() => {
-  return renderMarkdown(props.content || '');
-});
+const markdownDocument = computed(() => renderMarkdownDocument(props.content || '', props.isThinking));
+const renderedHtml = computed(() => markdownDocument.value.html);
 
-// 剪贴板写入 + 失败告警统一走 composable（见 composables/useCopyFeedback.ts）。
-// 代码块按钮位于 v-html 容器内、非 Vue 托管节点，故「已复制」文案/样式仍在此手动切换。
+// 普通代码块由 Markdown 生成，事件委托可以复用同一套复制反馈。
 const { copy: copyRaw } = useCopyFeedback();
 
-// Event delegation for copying code from any code block
 const handleContainerClick = async (event: MouseEvent) => {
   const target = event.target as HTMLElement;
   const btn = target.closest('.copy-code-btn') as HTMLElement;
@@ -74,8 +72,9 @@ const handleContainerClick = async (event: MouseEvent) => {
       v-if="renderedHtml"
       class="markdown-body"
       :class="{ 'markdown-body--process': props.processText, 'markdown-body--thinking': props.thinkingText }"
-      v-html="renderedHtml"
-    ></div>
+    >
+      <MarkdownContent :document="markdownDocument" :is-dark="isDark" />
+    </div>
     
     <!-- 空正文时用文字提示工作状态，避免光条难以辨认。 -->
     <div
