@@ -84,7 +84,7 @@ const component = relative => loadModule(path.resolve(__dirname, '../src', relat
 const util = relative => loadModule(path.resolve(__dirname, '../src', relative));
 
 function element(tag, text = '') {
-  return { tag, text, props: {}, children: [], parent: null };
+  return { tag, text, props: {}, style: {}, children: [], parent: null };
 }
 
 function text(node) {

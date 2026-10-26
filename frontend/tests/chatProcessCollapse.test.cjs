@@ -168,6 +168,8 @@ function toggleProcess(root) {
 // 详情回归先显式展开新段；默认折叠与手动状态由下方独立用例验证。
 async function mountExpanded(t, answer, props = {}) {
   const root = mount(t, answer, props);
+  const whole = find(root, node => node.props?.['data-testid'] === 'whole-process-toggle');
+  if (whole && !whole.props['aria-expanded']) whole.props.onClick();
   const seen = new Set();
   const reveal = () => {
     for (const segment of findAll(root, node => node.props?.['data-testid'] === 'process-segment')) {
@@ -193,6 +195,74 @@ function streamFixture() {
   reducer.consume(event({ type: 'EXECUTION_STARTED' }));
   return { reducer, event, answer: messages[0], AgentToolName };
 }
+
+test('整轮过程可折叠：历史默认收起，文本与分段一起隐藏，审批和最终正文保留', async t => {
+  const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
+  const answer = message({
+    thoughtSteps: [{ id: 's1', title: '思考', content: '内部推理', order: 0, status: 'success' }],
+    toolCalls: [{ id: 'c1', toolName: AgentToolName.ReadFile, order: 2, status: 'failed', args: { path: 'a.md' } }],
+    aiMessages: [{ id: 't1', text: '先检查配置', order: 1 }, { id: 't2', text: '再确认结果', order: 3 }],
+    promptCards: [{ id: 'approval', type: 'PROMISE', status: 'pending', content: { kind: 'COMMAND' } }],
+  });
+  const root = mount(t, answer);
+  const whole = find(root, node => node.props?.['data-testid'] === 'whole-process-toggle');
+  assert.ok(whole, '整轮必须有独立于分段的折叠入口');
+  const content = () => find(root, node => node.props?.['data-testid'] === 'whole-process-content');
+  assert.equal(whole.props['aria-expanded'], false);
+  assert.equal(content().style.display, 'none');
+  assert.equal(findAll(root, node => node.tag === 'markdown' && node.props.processText).length, 0);
+  assert.match(text(whole), /1 项失败/, '收起整轮后失败提示仍可见');
+  assert.ok(find(root, node => node.tag === 'prompt-card'));
+  assert.match(text(root), /最终正文/);
+  whole.props.onClick();
+  await nextTick();
+  assert.notEqual(content().style.display, 'none');
+  assert.equal(findAll(root, node => node.tag === 'markdown' && node.props.processText).length, 2);
+  const segment = find(root, node => node.props?.['data-testid'] === 'process-segment-toggle');
+  segment.props.onClick();
+  await nextTick();
+  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'process-segment-details').length, 1);
+  whole.props.onClick();
+  await nextTick();
+  assert.equal(content().style.display, 'none');
+  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'process-segment-details').length, 0);
+  assert.equal(findAll(root, node => node.tag === 'markdown' && node.props.processText).length, 0);
+  whole.props.onClick();
+  await nextTick();
+  assert.equal(segment.props['aria-expanded'], true, '整轮重新展开时保留分段的手动选择');
+  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'process-segment-details').length, 1);
+});
+
+test('整轮默认跟随执行阶段，用户手动选择不被流式增长和终态覆盖', async t => {
+  const answer = message({ content: '', isComplete: false, isThinking: true, aiMessages: [],
+    thoughtSteps: [{ id: 's1', title: '思考', content: '推理', order: 0, status: 'running' }] });
+  const root = mount(t, answer);
+  const whole = find(root, node => node.props?.['data-testid'] === 'whole-process-toggle');
+  assert.ok(whole);
+  assert.equal(whole.props['aria-expanded'], true);
+  whole.props.onClick();
+  await nextTick();
+  answer.thoughtSteps[0].content += '继续增长';
+  await nextTick();
+  assert.equal(whole.props['aria-expanded'], false);
+  answer.isThinking = false;
+  answer.isComplete = true;
+  await nextTick();
+  assert.equal(whole.props['aria-expanded'], false);
+  whole.props.onClick();
+  await nextTick();
+  assert.equal(whole.props['aria-expanded'], true);
+
+  const untouched = message({ content: '', isComplete: false, isThinking: true,
+    thoughtSteps: [{ id: 's2', title: '思考', content: '推理', order: 0, status: 'running' }] });
+  const second = mount(t, untouched);
+  const automatic = find(second, node => node.props?.['data-testid'] === 'whole-process-toggle');
+  assert.equal(automatic.props['aria-expanded'], true);
+  untouched.isThinking = false;
+  untouched.isComplete = true;
+  await nextTick();
+  assert.equal(automatic.props['aria-expanded'], false, '用户没操作过时，终态自动收起整轮过程');
+});
 
 test('分段折叠：文本直接展示，各段默认收起，思考与工具详情不提前挂载', async t => {
   const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
@@ -589,8 +659,11 @@ test('第二版真实组件：工具先到的文本持续追加在过程区，is
   await nextTick();
   reducer.consume(event({ type: 'EXECUTION_COMPLETED' }));
   await nextTick();
-  assert.match(text(root), /先读文件/);
+  assert.doesNotMatch(text(root), /先读文件/, '终态默认收起整轮过程');
   assert.match(text(root), /最终结论/);
+  find(root, node => node.props?.['data-testid'] === 'whole-process-toggle').props.onClick();
+  await nextTick();
+  assert.match(text(root), /先读文件/);
   toggleProcess(root);
   await nextTick();
   assert.match(text(root), /先读文件/, '折叠不隐藏过程叙述文本');

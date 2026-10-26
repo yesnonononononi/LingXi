@@ -9,15 +9,16 @@ import { t } from '../../i18n';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import ProcessDetails from './ProcessDetails.vue';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   segment: ProcessSegment;
   message: ChatMessage;
   turn?: ChatTurn | null;
   active: boolean;
+  visible?: boolean;
   subSessions?: SubSessionVO[];
   sessionId?: string | number;
   isDark: boolean;
-}>();
+}>(), { visible: true });
 const emit = defineEmits<{ (e: 'selectSubSession', id: string | number): void }>();
 // 只由用户操作改变，文本增长、终态和历史对账不能覆盖展开选择。
 const expanded = ref(false);
@@ -77,7 +78,7 @@ const statusLabel = computed(() => [
         data-testid="process-segment-status">{{ statusLabel }}</span>
     </button>
     <CollapseTransition>
-      <div v-if="expanded" class="mt-1 pl-3 border-l border-gray-200 dark:border-white/10" data-testid="process-segment-details">
+      <div v-if="expanded && visible" class="mt-1 pl-3 border-l border-gray-200 dark:border-white/10" data-testid="process-segment-details">
         <ProcessDetails :items="segment.detailItems" :message="message" :turn="turn"
           :sub-sessions="subSessions" :session-id="sessionId" :is-dark="isDark"
           @select-sub-session="emit('selectSubSession', $event)" />

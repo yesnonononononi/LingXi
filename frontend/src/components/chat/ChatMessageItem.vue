@@ -78,17 +78,37 @@
     <!-- 2. Agent 回复展示样式 (匹配右图：无头像，顶部折叠"已思考 >"及分割线，正文高亮，底部丰富状态操作栏) -->
     <div v-else class="flex flex-col items-start w-full max-w-lx-chat space-y-2.5">
       
-      <template v-for="part in processParts" :key="part.id">
-        <div v-if="part.kind === 'text'" class="w-full select-text" data-testid="process-text">
-          <MarkdownRenderer :content="part.message.text" :is-dark="isDark" :process-text="true" />
-        </div>
-        <ChatProcessSegment v-else :segment="part" :message="props.message" :turn="props.turn"
-          :active="!part.closed && processIsStreaming"
-          :sub-sessions="props.subSessions" :session-id="props.sessionId" :is-dark="isDark"
-          @select-sub-session="emit('selectSubSession', $event)" />
-      </template>
-      <div v-if="!processParts.length && props.message.isExploring" class="text-xs text-lx-muted" role="status">
-        {{ t('chat.message.thinking') }}
+      <div v-if="processParts.length || props.message.isExploring" class="w-full min-w-0" data-testid="whole-process">
+        <button type="button" data-testid="whole-process-toggle" :aria-expanded="wholeProcessExpanded"
+          class="flex w-full min-w-0 items-center gap-2 py-1 text-left text-xs cursor-pointer"
+          :class="isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-gray-500 hover:text-gray-700'"
+          @click="processExpansion = !wholeProcessExpanded">
+          <svg class="h-3.5 w-3.5 shrink-0 transition-transform" :class="wholeProcessExpanded ? 'rotate-90' : ''"
+            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7" />
+          </svg>
+          <span class="font-medium">{{ t('chat.message.process') }}</span>
+          <span v-if="!wholeProcessExpanded && wholeProcessStatus" class="min-w-0 truncate text-[11px]"
+            :class="wholeProcessSummary.failedCount ? 'text-red-500 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'"
+            data-testid="whole-process-status">{{ wholeProcessStatus }}</span>
+        </button>
+        <CollapseTransition>
+          <div v-show="wholeProcessExpanded" class="mt-1 space-y-2.5" data-testid="whole-process-content">
+            <template v-for="part in processParts" :key="part.id">
+              <div v-if="part.kind === 'text'" class="w-full select-text" data-testid="process-text">
+                <MarkdownRenderer v-if="wholeProcessExpanded" :content="part.message.text" :is-dark="isDark" :process-text="true" />
+              </div>
+              <ChatProcessSegment v-else :visible="wholeProcessExpanded" :segment="part" :message="props.message" :turn="props.turn"
+                :active="!part.closed && processIsStreaming"
+                :sub-sessions="props.subSessions" :session-id="props.sessionId" :is-dark="isDark"
+                @select-sub-session="emit('selectSubSession', $event)" />
+            </template>
+            <div v-if="!processParts.length && props.message.isExploring" class="text-xs text-lx-muted" role="status">
+              {{ t('chat.message.thinking') }}
+            </div>
+
+          </div>
+        </CollapseTransition>
       </div>
 
       <!-- 统一互动卡片：PLAN / CHOICE / COMMAND 三类 PROMISE 卡片（含 UNAVAILABLE）。
@@ -219,7 +239,7 @@ import { toPromptCardData, buildCardSummary } from '../../utils/toolCallCard';
 import { cardDotClass, cardKindIconPath, resolveCardTone } from '../../utils/cardUi';
 import { AgentToolName } from '../../utils/toolNames';
 import { buildProcessTimeline } from '../../utils/processTimeline';
-import { buildProcessSegments } from '../../utils/processSegments';
+import { buildProcessSegments, summarizeProcess } from '../../utils/processSegments';
 import { isActiveTurnStatus, isFailedTurnStatus, turnStatusLabel } from '../../utils/turnStatus';
 import { formatDurationOrPlaceholder } from '../../utils/format';
 import { resolveTokenUsage } from '../../utils/tokenUsage';
@@ -324,6 +344,18 @@ const { isCopied: copied, copy: copyContentRaw } = useCopyFeedback();
 
 const processTimeline = computed(() => buildProcessTimeline(props.message));
 const processParts = computed(() => buildProcessSegments(processTimeline.value, props.subSessions, props.sessionId));
+
+// 自动展开只跟随执行阶段；用户一旦操作，就保留用户选择。
+const processExpansion = ref<boolean | null>(null);
+const wholeProcessExpanded = computed(() => processExpansion.value ?? processIsStreaming.value);
+const wholeProcessSummary = computed(() => summarizeProcess(processParts.value.flatMap(part =>
+  part.kind === 'process' ? part.items : []), props.subSessions));
+const wholeProcessStatus = computed(() => [
+  wholeProcessSummary.value.failedCount ? t('chat.process.failed', { count: wholeProcessSummary.value.failedCount }) : '',
+  wholeProcessSummary.value.pendingCount ? t('chat.process.pending', { count: wholeProcessSummary.value.pendingCount }) : '',
+  wholeProcessSummary.value.unknownCount ? t('chat.process.unknown', { count: wholeProcessSummary.value.unknownCount }) : '',
+].filter(Boolean).join(t('chat.process.separator')));
+
 
 /** 过程折叠区之外的互动卡片（映射为卡片展示数据）。 */
 const cardItems = computed<PromptCardEntry[]>(() =>
