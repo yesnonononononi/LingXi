@@ -1,0 +1,48 @@
+/**
+ * Loading 扫光体系 (Sweep Highlight)
+ *
+ * 为什么单独成文件：加载态是纯视觉表达，动画时长、高光宽度、渐变形状都属于设计系统，
+ * 不属于业务逻辑。组件只挂 `.lx-sweep-text` 一个类名，业务脚本里不出现任何样式字面量
+ * （不写 inline style、不拼 className 三元串）。调参只改这里，改一处等于全站统一。
+ *
+ * 为什么用颜色令牌而不是写死白色：
+ *   --lx-text-muted   常态文字色（暗 #9f9fa9 / 亮 #6a7282），与沿用已久的 zinc-400 / gray-500 视觉连续
+ *   --lx-text-primary 高光色（暗 #ffffff → 白色扫光；亮 #101828 → 深色扫光）
+ * 亮色主题里白色扫光落在浅底上等于看不见，所以高光取「当前主题的最高对比前景色」：
+ * 暗色是白色，亮色是近黑。语义统一为「一道高对比光带扫过」，因此不需要写主题分支。
+ */
+
+/* 一轮只有一次扫光：位移量恰好等于一个背景周期（背景宽 2×容器宽），循环处无跳变。 */
+@keyframes lx-sweep-text-shift {
+  from {
+    background-position: 100% center;
+  }
+  to {
+    background-position: -100% center;
+  }
+}
+
+.lx-sweep-text {
+  /* 三段式渐变：常态色 → 高光 → 常态色。首尾同色，平铺移动时不会出现色块接缝。 */
+  background-image: linear-gradient(
+    90deg,
+    var(--lx-text-muted) 45%,
+    var(--lx-text-primary) 50%,
+    var(--lx-text-muted) 55%
+  );
+  background-size: 200% 100%;
+  background-repeat: repeat;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: lx-sweep-text-shift 1.8s linear infinite;
+}
+
+/* 减弱动态效果：不做动画，也不留一帧静止的半灰半亮渐变，直接退回普通文字色。 */
+@media (prefers-reduced-motion: reduce) {
+  .lx-sweep-text {
+    animation: none;
+    background-image: none;
+    color: inherit;
+  }
+}

@@ -2,6 +2,7 @@
 @import "./theme/tokens.css";
 @import "./styles/markdown.css";
 @import "./styles/stream-animation.css";
+@import "./styles/loading-sweep.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
