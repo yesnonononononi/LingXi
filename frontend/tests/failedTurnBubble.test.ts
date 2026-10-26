@@ -41,8 +41,7 @@ const PROJECT_ROOT = path.resolve(TEST_DIR, '..');
  */
 function projectViews(views: TurnViewVO[]): ChatMessage[] {
   const messages: ChatMessage[] = [];
-  const versions = new Map<string, number>();
-  for (const view of views) upsertTurnViewIntoMessages(messages, view, versions);
+  for (const view of views) upsertTurnViewIntoMessages(messages, view);
   return messages;
 }
 
@@ -317,7 +316,7 @@ test('★ 生产接线：合成必须发生在逐轮 upsert 之后（用合并�
     'utf8'
   );
 
-  const upsertIdx = src.indexOf('upsertTurnViewIntoMessages(mergedMessages, view, versions)');
+  const upsertIdx = src.indexOf('upsertTurnViewIntoMessages(mergedMessages, view)');
   const synthIdx = src.indexOf('synthesizeFailedTurnBubbles(mergedMessages, mergedTurns)');
 
   assert.ok(upsertIdx >= 0, '找不到逐轮 upsert 调用 —— 结构变了，请同步更新本测试');

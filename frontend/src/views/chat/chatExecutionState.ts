@@ -13,7 +13,6 @@ export function applyResendAcceptance(session: ChatSession, receipt: ChatAccepta
   session.messages = session.messages.filter(message => !message.turnId || !removed.has(message.turnId));
   session.turns = Object.fromEntries(Object.entries(session.turns ?? {}).filter(([id]) => !removed.has(id)));
   session.turnViews = Object.fromEntries(Object.entries(session.turnViews ?? {}).filter(([id]) => !removed.has(id)));
-  session.turnViewVersions = new Map([...(session.turnViewVersions ?? [])].filter(([id]) => !removed.has(id)));
 }
 
 export function acceptsChatEvent(session: ChatSession | null | undefined, event: AgentEvent): boolean {

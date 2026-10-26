@@ -34,11 +34,10 @@ export function absorbSubSessionHistory(
   if (!sub) return null;
   sub.turns = mergeTurns(sub.turns, page.turns);
   sub.turnViews = mergeTurnViews(sub.turnViews, page.turnViews);
-  sub.turnViewVersions ??= new Map<string, number>();
   // 请求在途期间可能已有实时内容：历史只按 turnId + 版本补齐，绝不新建第二套数组。
   const messages: ChatMessage[] = sub.messages ?? [];
   for (const view of Object.values(page.turnViews ?? {})) {
-    if (view) upsertTurnViewIntoMessages(messages, view, sub.turnViewVersions);
+    if (view) upsertTurnViewIntoMessages(messages, view);
   }
   attachPromptCards(messages, page.records.flatMap(record => record.toolCall ? [record.toolCall] : []));
   sub.messages = synthesizeFailedTurnBubbles(messages, sub.turns);

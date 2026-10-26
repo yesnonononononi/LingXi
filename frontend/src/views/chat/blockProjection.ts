@@ -40,6 +40,7 @@ function toToolTrace(block: ToolBlock): ToolCallTrace {
   const diff = parseToolDiff({ toolName: block.toolName, result: block.output ?? undefined });
   return {
     id: block.toolCallId,
+    version: block.version == null ? undefined : parseVersion(block.version),
     toolName: block.toolName,
     args: argsObj,
     query: block.arguments ?? undefined,
@@ -54,13 +55,18 @@ function toToolTrace(block: ToolBlock): ToolCallTrace {
 }
 
 /** 历史与实时快照只补齐同一份状态，不再覆盖展示数组。 */
-export function projectTurnView(bubble: ChatMessage, view: TurnViewVO): void {
+export function projectTurnView(bubble: ChatMessage, view: TurnViewVO): boolean {
+  const state = getTurnState(bubble);
+  const incoming = parseVersion(view.viewVersion);
+  if (state.viewVersion !== undefined && incoming < state.viewVersion) return false;
+  state.viewVersion = incoming;
   upsertBlockIntoBubble(bubble, view);
   applyTurnStatus(bubble, view.status);
   // 终态标记由快照（唯一权威源）直接给出：空组的提示由渲染层按 `turn.errorReason` / 状态生成，
   // 不往 content 里拼字 —— 正文每次投影都会重算，拼进去的文字会被下一次投影抹掉。
   bubble.cancelled = view.status === 'CANCELLED';
   bubble.failed = view.status === 'FAILED';
+  return true;
 }
 
 /**
@@ -118,29 +124,23 @@ export function buildUserMessageFromTurnView(
 export function upsertTurnViewIntoMessages(
   messages: ChatMessage[],
   view: TurnViewVO,
-  versions: Map<string, number>,
   fallbackTimestamp = Date.now()
-): void {
-  const turnKey = String(view.turnId);
-  const incoming = parseVersion(view.viewVersion);
-  const current = versions.get(turnKey);
-  if (current !== undefined && incoming < current) return;
-  versions.set(turnKey, incoming);
+): ChatMessage | null {
+  const existing = messages.find(message => message.role === 'assistant' && message.turnId === view.turnId);
+  if (existing && !projectTurnView(existing, view)) return null;
 
   const existingUser = messages.find(message => message.role === 'user' && message.turnId === view.turnId);
   if (existingUser && view.userMessageId != null) existingUser.serverMessageId = view.userMessageId;
   if (existingUser && view.userImageUrls !== undefined) existingUser.imageUrls = [...view.userImageUrls];
 
   // 原气泡只补齐状态，避免替换对象导致 DOM 重建。
-  const existing = messages.find(m => m.role === 'assistant' && m.turnId === view.turnId);
   if (existing) {
-    projectTurnView(existing, view);
     // 用户气泡文本若在历史里出现（首屏从未给过），补上；已存在则不动。
     if ((view.userMessage || view.userImageUrls?.length) && !messages.some(m => m.role === 'user' && m.turnId === view.turnId)) {
       const userMessage = buildUserMessageFromTurnView(view, fallbackTimestamp);
       if (userMessage) messages.splice(messages.indexOf(existing), 0, userMessage);
     }
-    return;
+    return existing;
   }
 
   // 终态（含空块的 FAILED / CANCELLED）也照常建气泡：空组的提示由渲染层按 `turn.errorReason`
@@ -152,6 +152,7 @@ export function upsertTurnViewIntoMessages(
   const userMessage = buildUserMessageFromTurnView(view, fallbackTimestamp);
   const pair = userMessage && !existingUser ? [userMessage, bubble] : [bubble];
   messages.splice(insertAt, 0, ...pair);
+  return bubble;
 }
 
 /**

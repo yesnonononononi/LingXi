@@ -168,12 +168,12 @@ public class TurnViewAssembler {
         if (toolCall == null) {
             return new ToolBlock(ToolBlock.identity(toolCallId), responseId, order,
                     BlockStatus.TOOL_STARTED, toolCallId, request.name(), request.arguments(),
-                    null, null, null);
+                    null, null, null, null);
         }
         return new ToolBlock(ToolBlock.identity(toolCallId), responseId, order,
                 toolBlockStatusResolver.resolve(toolCall), toolCallId,
                 toolCall.getToolName() == null ? request.name() : toolCall.getToolName(),
-                request.arguments(), toolCall.getRawOutput(), null, null);
+                request.arguments(), toolCall.getRawOutput(), null, null, toolCall.getVersion());
     }
 
     /**

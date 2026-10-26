@@ -28,7 +28,7 @@ test('1. 轮次视图 + 权威卡片 VO：PLAN / CHOICE / COMMAND 三类 PROMISE
       { blockId: 'tool:call-cmd', type: 'TOOL', order: 20, status: 'COMPLETED', toolCallId: 'call-cmd', toolName: 'execute_command' },
       { blockId: 'text:end', type: 'TEXT', order: 30, status: 'COMPLETE', isBody: true, text: '已完成' },
     ],
-  }, new Map());
+  });
 
   const asst = messages.find(m => m.role === 'assistant');
   assert.ok(asst, '应投影出助手回答组');

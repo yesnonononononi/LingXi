@@ -51,6 +51,19 @@ class TurnViewAssemblerTest {
     private final TurnViewAssembler assembler =
             new TurnViewAssembler(json, new ToolBlockStatusResolver(converter));
 
+    @Test
+    void toolBlockCarriesPersistedVersionIndependentlyFromTurn() {
+        SessionMessage ai = aiRow(0, null, null, request("call_a"));
+        ToolCall call = toolCall("call_a", ToolCallStatus.COMPLETED, ToolCallOutcome.SUCCEEDED);
+        call.acceptPersistedVersion(7L);
+        List<Block> blocks = assembler.assembleBlocks(TURN_ID, List.of(ai), Map.of("call_a", call), ChatTurnStatus.RUNNING);
+        ToolBlock tool = (ToolBlock) blocks.stream().filter(block -> block instanceof ToolBlock).findFirst().orElseThrow();
+        assertEquals(7L, tool.version());
+        List<Block> missing = assembler.assembleBlocks(TURN_ID, List.of(ai), Map.of(), ChatTurnStatus.RUNNING);
+        ToolBlock unpersisted = (ToolBlock) missing.stream().filter(block -> block instanceof ToolBlock).findFirst().orElseThrow();
+        assertNull(unpersisted.version());
+    }
+
     /** 思考 → 正文 → 工具块按此顺序，工具块 order 递增且跟在正文之后。 */
     @Test
     void blocksAreOrderedThinkingThenTextThenTools() {

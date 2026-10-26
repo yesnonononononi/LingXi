@@ -54,8 +54,7 @@ function toolBlock(callId: string, toolName: string, order = nextOrder(), output
 /** 单一入口：把若干视图并入一个新消息数组。 */
 function project(views: TurnViewVO[]): ChatMessage[] {
   const messages: ChatMessage[] = [];
-  const versions = new Map<string, number>();
-  for (const view of views) upsertTurnViewIntoMessages(messages, view, versions);
+  for (const view of views) upsertTurnViewIntoMessages(messages, view);
   return messages;
 }
 
@@ -108,11 +107,10 @@ test('2. 重复投递同一视图: 幂等，消息 / 工具 / 文本不重复计
   });
 
   const messages: ChatMessage[] = [];
-  const versions = new Map<string, number>();
-  upsertTurnViewIntoMessages(messages, view, versions);
+  upsertTurnViewIntoMessages(messages, view);
   const snapshot = JSON.stringify(messages);
-  upsertTurnViewIntoMessages(messages, view, versions);
-  upsertTurnViewIntoMessages(messages, view, versions);
+  upsertTurnViewIntoMessages(messages, view);
+  upsertTurnViewIntoMessages(messages, view);
 
   assert.strictEqual(messages.length, 2, '重复投递不增加消息条数');
   assert.strictEqual(messages[1].toolCalls?.length, 1, '重复投递不增加工具条数');
@@ -164,7 +162,6 @@ test('6. PROMISE 工具跨页: 审批卡片按 blockId 就地更新，不新增�
   const callId = 'call-promise-1';
 
   const messages: ChatMessage[] = [];
-  const versions = new Map<string, number>();
 
   // 第一阶段：待决策（同一轮，版本 1）
   upsertTurnViewIntoMessages(messages, turnView(sessionId, turnId, {
@@ -173,7 +170,7 @@ test('6. PROMISE 工具跨页: 审批卡片按 blockId 就地更新，不新增�
       blockId: `tool:${callId}`, type: 'TOOL', order: 0, status: 'PROMISED',
       toolCallId: callId, toolName: 'execute_command',
     }],
-  }), versions);
+  }));
   assert.strictEqual(messages.length, 1);
   assert.strictEqual(messages[0].toolCalls?.length, 1);
 
@@ -188,7 +185,7 @@ test('6. PROMISE 工具跨页: 审批卡片按 blockId 就地更新，不新增�
       },
       bodyText('命令已执行', 1),
     ],
-  }), versions);
+  }));
 
   assert.strictEqual(messages.length, 1, '同一轮不得裂出第二条气泡');
   assert.strictEqual(messages[0].content, '命令已执行');
@@ -203,7 +200,6 @@ test('7. 相同轮次恢复（审批恢复/暂停恢复/重新订阅）: 复用�
   const callId = 'call-cmd';
 
   const messages: ChatMessage[] = [];
-  const versions = new Map<string, number>();
 
   // 第一阶段：触发审批并暂停
   upsertTurnViewIntoMessages(messages, turnView(sessionId, turnId, {
@@ -214,7 +210,7 @@ test('7. 相同轮次恢复（审批恢复/暂停恢复/重新订阅）: 复用�
       blockId: `tool:${callId}`, type: 'TOOL', order: 0, status: 'PROMISED',
       toolCallId: callId, toolName: 'execute_command',
     }],
-  }), versions);
+  }));
 
   assert.strictEqual(messages.length, 2);
   assert.strictEqual(messages[1].id, `bubble-${sessionId}-${turnId}`);
@@ -234,7 +230,7 @@ test('7. 相同轮次恢复（审批恢复/暂停恢复/重新订阅）: 复用�
       },
       bodyText('已处理完毕', 1),
     ],
-  }), versions);
+  }));
 
   assert.strictEqual(messages.length, 2, '恢复后应沿用同一个回答组，不生成新气泡');
   assert.strictEqual(messages[1].id, `bubble-${sessionId}-${turnId}`);
@@ -247,7 +243,6 @@ test('8. 子会话历史跨页: 与主会话采用同一投影规则', () => {
   const subTurnId = '2106057227516379137';
 
   const messages: ChatMessage[] = [];
-  const versions = new Map<string, number>();
 
   upsertTurnViewIntoMessages(messages, turnView(subSessionId, subTurnId, {
     version: 3,
@@ -256,7 +251,7 @@ test('8. 子会话历史跨页: 与主会话采用同一投影规则', () => {
       processText('准备处理数据...', 0),
       toolBlock('sub-call-1', 'read_file', 1, 'a,b,c'),
     ],
-  }), versions);
+  }));
   // 同一轮更全的一页
   upsertTurnViewIntoMessages(messages, turnView(subSessionId, subTurnId, {
     version: 4,
@@ -266,7 +261,7 @@ test('8. 子会话历史跨页: 与主会话采用同一投影规则', () => {
       toolBlock('sub-call-1', 'read_file', 1, 'a,b,c'),
       bodyText('子任务完成', 2),
     ],
-  }), versions);
+  }));
 
   assert.strictEqual(messages.length, 2);
   const subAsst = messages[1];
@@ -378,44 +373,30 @@ test('11. 视图乱序并入: 气泡顺序仍按轮次雪花键升序，不随�
   assert.deepStrictEqual(groups.map(g => g.turnId), [earlierTurn, laterTurn]);
 });
 
-/**
- * 共享版本表：一次「多页累计投影」里，同一轮的低版本不得覆盖高版本。
- *
- * <p>{@link aggregateRecordsByIdentity} 是纯函数 —— 每次调用从零重建完整投影。
- * 翻页入口的正确用法是「先把多页 turnViews 累计成一张表再调用一次」，因此同一 turnId
- * 在一张累计表里只会留下装配器写入的那一份；若调用方额外保留了旧版本（如手工合并的
- * 两页 map），共享版本表负责把旧版本挡掉，不让它回退已投影的新内容。</p>
- *
- * <p>两条断言：① 同一调用内高版本先入、低版本后入被拒；② 版本表在调用外可复用，
- * 低版本视图被整体跳过（返回空投影而非回退内容）。</p>
- */
-test('12. 共享版本表: 同一轮的低版本不得回退高版本内容', () => {
+/** 已接受版本属于轮次状态，独立数组不共享外部缓存。 */
+test('12. 轮次状态保存版本，独立历史投影互不干扰', () => {
   const sessionId = 'sess-version';
   const turnId = '2106057094397558784';
 
   // ① 同一调用内：高版本先并入，随后并入同一轮的低版本 —— 必须被拒
   const messages: ChatMessage[] = [];
-  const versions = new Map<string, number>();
   upsertTurnViewIntoMessages(
     messages,
     turnView(sessionId, turnId, { version: 5, user: '提问', blocks: [bodyText('定稿正文')] }),
-    versions,
   );
   upsertTurnViewIntoMessages(
     messages,
     turnView(sessionId, turnId, { version: 3, user: '提问', blocks: [bodyText('中途稿正文')] }),
-    versions,
   );
   assert.strictEqual(messages[1]?.content, '定稿正文', '低版本视图不得覆盖高版本内容');
-  assert.strictEqual(versions.get(turnId), 5, '版本表保留已接受的高水位');
+  assert.strictEqual(messages[1]?.turnState?.viewVersion, 5, '版本表保留已接受的高水位');
 
-  // ② 跨调用复用同一版本表：低版本视图被整体跳过，返回空投影（而非回退内容）
+  // 独立数组不能因为别处读过高版本而缺少整个轮次。
   const stale = aggregateRecordsByIdentity(
     sessionId,
     { [turnId]: turnView(sessionId, turnId, { version: 3, user: '提问', blocks: [bodyText('中途稿正文')] }) },
-    versions,
   );
-  assert.strictEqual(stale.length, 0, '版本表已记录更高水位时，低版本视图被跳过');
+  assert.strictEqual(stale[1]?.content, '中途稿正文', '独立数组从自己的权威视图构建，不依赖外部版本缓存');
 
   // ③ 纯函数性：不带版本表调用时，单次投影按视图自身内容完整重建
   const fresh = aggregateRecordsByIdentity(sessionId, {

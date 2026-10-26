@@ -722,8 +722,8 @@ test('5e. ★ 视图内块按 blockId 幂等覆盖：重复投递同一视图不
 test('5f. ★ 视图按 turnId 定位：同一轮跨页多次下发只保留一条气泡', () => {
   const messages: ChatMessage[] = [];
   // 第一页：该轮只落了部分块（版本 3）；第二页：同一轮更全（版本 5）
-  upsertTurnViewIntoMessages(messages, turnView(T1, { version: 3, user: '问题', text: '完整', tools: ['c1'] }), new Map());
-  upsertTurnViewIntoMessages(messages, turnView(T1, { version: 5, user: '问题', text: '完整正文', tools: ['c1', 'c2', 'c3'] }), new Map());
+  upsertTurnViewIntoMessages(messages, turnView(T1, { version: 3, user: '问题', text: '完整', tools: ['c1'] }));
+  upsertTurnViewIntoMessages(messages, turnView(T1, { version: 5, user: '问题', text: '完整正文', tools: ['c1', 'c2', 'c3'] }));
 
   const assistants = messages.filter(m => m.role === 'assistant');
   assert.equal(assistants.length, 1, `同一轮跨页只能有一条气泡，实际=${messages.map(m => m.id).join(',')}`);
@@ -738,7 +738,7 @@ test('5g. ★ 无视图即无气泡：缺 turnViews 时不从原始记录聚合'
 
 test('5h. ★ 视图缺 userMessage 时不伪造用户气泡，只投影助手气泡', () => {
   const messages: ChatMessage[] = [];
-  upsertTurnViewIntoMessages(messages, turnView(T1, { version: 1, text: '只有回答' }), new Map());
+  upsertTurnViewIntoMessages(messages, turnView(T1, { version: 1, text: '只有回答' }));
   assert.equal(messages.filter(m => m.role === 'user').length, 0, '视图未给 userMessage 就不应造用户气泡');
   assert.equal(messages.filter(m => m.role === 'assistant').length, 1);
 });

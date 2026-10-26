@@ -245,7 +245,7 @@ test('主会话详情迟到时保留子会话历史、实时内容及版本表�
   await sub.handleSelectSubSessionOption('sub-1');
   const loaded = current.value!.subSessions![0]!;
   const loadedMessages = loaded.messages;
-  const versions = loaded.turnViewVersions;
+  const turnState = loaded.messages?.find(message => message.role === 'assistant')?.turnState;
   const views = loaded.turnViews;
   const router = new StreamSessionRouter();
   t.after(() => router.dispose());
@@ -259,7 +259,7 @@ test('主会话详情迟到时保留子会话历史、实时内容及版本表�
 
   assert.equal(current.value!.subSessions![0], loaded, '抽屉在途请求捕获的 VO 仍须属于会话树');
   assert.equal(loaded.messages, loadedMessages);
-  assert.equal(loaded.turnViewVersions, versions);
+  assert.equal(loaded.messages?.find(message => message.role === 'assistant')?.turnState, turnState);
   assert.deepEqual(loaded.turnViews, views);
   assert.equal(loaded.name, '新名称');
   assert.ok(sub.activeSubSessionMessages.value.some(message => message.content === '历史正文'));
@@ -273,10 +273,10 @@ test('树对账保留子会话对象和视图版本，旧历史响应不能使�
   assert.ok(page.ok);
   const previous = { id: 'sub-1', messages: [] as ChatMessage[] };
   absorbSubSessionHistory(previous, page.data);
-  const oldVersions = (previous as any).turnViewVersions;
+  const oldState = previous.messages.find(message => message.role === 'assistant')?.turnState;
   const merged = mergeSubSessionTree([previous], [{ id: 'sub-1', name: '新名称' }]);
   assert.equal(merged[0], previous);
-  assert.equal(merged[0]!.turnViewVersions, oldVersions);
+  assert.equal(merged[0]!.messages?.find(message => message.role === 'assistant')?.turnState, oldState);
   assert.equal(merged[0]!.turnViews?.['900']?.viewVersion, '4');
   const stalePage = createPage('sub-1', '过期历史');
   assert.ok(stalePage.ok);

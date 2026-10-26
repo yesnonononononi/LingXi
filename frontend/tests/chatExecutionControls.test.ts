@@ -26,7 +26,7 @@ function session(): ChatSession {
   return { id: '500', title: '验证会话', modelId: '7', createdAt: 1, updatedAt: 1, activeTools: [], runStatus: 'IDLE',
     messages: [{ ...original }, { id: 'answer-1', role: 'assistant', turnId: '101', content: '旧回答', timestamp: 2 },
       { id: 'user-2', role: 'user', turnId: '102', content: '后续问题', timestamp: 3 }],
-    turns: {}, turnViews: {}, turnViewVersions: new Map([['101', 2], ['102', 1]]) };
+    turns: {}, turnViews: {} };
 }
 function receipt(): ChatAcceptance {
   return { sessionId: '500', turnId: '103', historyRevision: '2', invalidatedTurnIds: ['101', '102'], invalidatedExecutionIds: ['901', '902'] };
@@ -71,7 +71,7 @@ test('视图补入真实消息 ID，更新已有乐观气泡而不把展示 ID �
   const messages: ChatMessage[] = [{ id: 'local-display', role: 'user', content: '原问题', turnId: '101', timestamp: 1 }];
   const view: TurnViewVO = { sessionId: '500', turnId: '101', status: 'COMPLETED', viewVersion: '1',
     userMessage: '原问题', userMessageId: original.serverMessageId, blocks: [] };
-  upsertTurnViewIntoMessages(messages, view, new Map());
+  upsertTurnViewIntoMessages(messages, view);
   assert.equal(messages[0]!.id, 'local-display');
   assert.equal(messages[0]!.serverMessageId, '9007199254740993');
 });
@@ -90,7 +90,7 @@ test('实时快照给已有用户气泡补齐真实消息 ID，首个回答到�
     router.dispatch(snapshot);
     assert.equal(user.serverMessageId, original.serverMessageId);
     assert.deepEqual(current.messages.filter(message => message.role === 'user'), [user]);
-    router.dispatch({ ...snapshot, viewVersion: '1', view: { ...snapshot.view, userMessageId: '1' } });
+    router.dispatch({ ...snapshot, viewVersion: '1', view: { ...snapshot.view, viewVersion: '1', userMessageId: '1' } });
     assert.equal(user.serverMessageId, original.serverMessageId);
     router.dispose();
   }
@@ -161,7 +161,7 @@ test('受理成功后才按回执作废原轮次及后续轮次，保留已经�
   assert.deepEqual(f.current.value.messages.map(message => message.turnId), ['103']);
   assert.equal(f.current.value.historyRevision, '2');
   assert.equal(f.controls.editTarget.value, null);
-  assert.equal(f.current.value.turnViewVersions?.has('101'), false);
+  assert.equal(f.current.value.messages.some(message => message.turnId === '101'), false);
 });
 
 test('重发失败保留原对话和编辑稿，不乐观删除历史', async t => {

@@ -71,10 +71,14 @@ export function writeToolTrace(bubble: ChatMessage, incoming: ToolCallTrace): vo
     tools[incoming.id] = incoming;
     return;
   }
+  // 一旦拿到持久化工具块，后续结果只接受同源的新版本，不再靠状态猜新旧。
+  if (previous.version !== undefined &&
+      (incoming.version === undefined || incoming.version <= previous.version)) return;
   const terminal = previous.status === 'success' || previous.status === 'failed';
   const retainResult = (terminal && incoming.status !== 'success' && incoming.status !== 'failed') ||
     (previous.status === 'pending' && incoming.status === 'calling');
   tools[incoming.id] = { ...previous, ...incoming,
+    version: incoming.version ?? previous.version,
     order: incoming.order ?? previous.order,
     responseId: incoming.responseId ?? previous.responseId,
     query: incoming.query ?? previous.query,

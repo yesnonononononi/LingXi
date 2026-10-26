@@ -68,17 +68,17 @@ test('实时提问与刷新历史保留所有图片，权威历史替换预览�
   assert.equal(messages[0]?.imageUrls?.length, 2);
   const history: TurnViewVO = { sessionId: '42', turnId: '43', status: 'COMPLETED', viewVersion: 1,
     userMessage: '比较图片', userImageUrls: ['https://example.com/a.png', 'https://example.com/b.png'], blocks: [] };
-  upsertTurnViewIntoMessages(messages, history, new Map());
+  upsertTurnViewIntoMessages(messages, history);
   assert.equal(messages.filter(message => message.role === 'user').length, 1);
   assert.deepEqual(messages[0]?.imageUrls, history.userImageUrls);
   const reloaded: ChatMessage[] = [];
-  upsertTurnViewIntoMessages(reloaded, history, new Map());
+  upsertTurnViewIntoMessages(reloaded, history);
   assert.deepEqual(reloaded.find(message => message.role === 'user')?.imageUrls, history.userImageUrls);
 });
 
 test('只有图片的失败轮次仍能还原用户提问', () => {
   const messages: ChatMessage[] = [];
   upsertTurnViewIntoMessages(messages, { sessionId: '42', turnId: '43', status: 'FAILED', viewVersion: 1,
-    userImageUrls: ['https://example.com/a.png', 'https://example.com/b.png'], blocks: [] }, new Map());
+    userImageUrls: ['https://example.com/a.png', 'https://example.com/b.png'], blocks: [] });
   assert.deepEqual(messages[0]?.imageUrls, ['https://example.com/a.png', 'https://example.com/b.png']);
 });

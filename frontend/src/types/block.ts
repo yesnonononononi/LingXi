@@ -90,6 +90,8 @@ export interface TextBlock extends BlockBase {
 /** 工具块（对应后端 {@code ToolBlock}）。 */
 export interface ToolBlock extends BlockBase {
   type: 'TOOL';
+  /** 工具调用行的持久化版本；尚未落库时为空，与轮次版本独立。 */
+  version?: string | null;
   /** 工具调用 id（{@code call_xxx}），与 {@code ToolCallVO.id} 同源 */
   toolCallId: string;
   /** 工具名（仅展示） */

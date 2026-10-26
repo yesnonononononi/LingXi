@@ -22,6 +22,8 @@ export interface ThoughtStep extends ResponsePosition {
 /** Agent 工具调用日志 */
 export interface ToolCallTrace extends ResponsePosition {
   id: string;
+  /** 权威工具块版本；框架事件不携带持久化版本。 */
+  version?: number;
   toolName: string;          // 工具名称，如 "execute_command", "web_search", "read_file"
   query?: string;            // 调用输入参数
   args?: any;                // 结构化输入参数对象
@@ -120,6 +122,8 @@ export interface ResponseTextBuffer extends ResponsePosition {
 
 /** 输入只更新这份状态，组件使用的数组统一从这里派生。 */
 export interface TurnRenderState {
+  /** 历史与 SSE 共用已接受版本，随轮次状态一并保留或作废。 */
+  viewVersion?: number;
   texts: Record<string, ResponseTextBuffer>;
   tools: Record<string, ToolCallTrace>;
   rejectedResponses?: Record<string, true>;
@@ -252,13 +256,6 @@ export interface ChatSession {
    * 翻页 / 对账重新聚合时必须把它一起传进去，否则同一轮的气泡会退回前端自造顺序。</p>
    */
   turnViews?: Record<string, TurnViewVO>;
-  /**
-   * 跨页累计的轮次视图版本表：键 = turnId 字符串，值 = 已接受的最大 viewVersion。
-   *
-   * <p>统一更新入口按它拦截过期帧：分页与实时快照都可能送来更旧的版本，
-   * 只有版本不低于当前值的更新才会写入气泡。</p>
-   */
-  turnViewVersions?: Map<string, number>;
   /** 上下文用量快照（最近一次终结执行回写，随 tree/detail 下发）；详见 SessionVO 同名字段。 */
   contextTokenCount?: number | null;
   contextMaxTokens?: number | null;
@@ -283,8 +280,6 @@ export interface SubSessionVO extends SessionVO {
   turns?: Record<string, ChatTurn>;
   /** 本子会话已加载的块视图表（键 = turnId），逐页合并；语义同 {@link ChatSession.turnViews}。 */
   turnViews?: Record<string, TurnViewVO>;
-  /** 本子会话跨页累计的轮次视图版本表（键 = turnId）；语义同 {@link ChatSession.turnViewVersions}。 */
-  turnViewVersions?: Map<string, number>;
 }
 
 /** 会话树 (对应后端 SessionTreeVO)：平铺列表 + 真正的根会话 id */

@@ -68,7 +68,7 @@ function viaProducePath(vO: ToolCallVO): ChatMessage {
     blocks: [
       { blockId: `tool:${vO.id}`, type: 'TOOL', order: 0, status: 'PROMISED', toolCallId: vO.id, toolName: vO.toolName },
     ],
-  }, new Map());
+  });
   const bubble = messages.find(m => m.role === 'assistant')!;
   upsertPromptCard(bubble, vO);
   return bubble;

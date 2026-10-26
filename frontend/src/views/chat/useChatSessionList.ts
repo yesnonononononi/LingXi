@@ -91,10 +91,9 @@ export function useChatSessionList(options: ChatSessionListOptions) {
         // 实时已写入的轮次不会被回退，详情只补齐缺失的轮次与过程数据。
         const mergedTurns = mergeTurns(previous.turns, detail.turns);
         const mergedViews = mergeTurnViews(previous.turnViews, detail.turnViews);
-        const versions = previous.turnViewVersions ?? new Map<string, number>();
         const mergedMessages = previous.messages.slice();
         for (const view of Object.values(mergedViews)) {
-          if (view) upsertTurnViewIntoMessages(mergedMessages, view, versions);
+          if (view) upsertTurnViewIntoMessages(mergedMessages, view);
         }
         attachPromptCards(mergedMessages, detail.messages.flatMap(message => message.promptCards ?? []));
         localSessions.value[idx] = {
@@ -107,19 +106,16 @@ export function useChatSessionList(options: ChatSessionListOptions) {
           //    只能按 turns 判 FAILED 后补气泡，否则用户点进失败会话什么都看不到。
           messages: synthesizeFailedTurnBubbles(mergedMessages, mergedTurns),
           turns: mergedTurns,
-          // 块视图与版本表跨页累计：不合并就会把「已翻开的更早页」学到的块视图丢掉。
+          // 块视图跨页累计，避免丢掉已翻开页的内容。
           turnViews: mergedViews,
-          turnViewVersions: versions,
           hasMoreMessages: !!detail.hasMoreMessages,
           nextMessageCursor: detail.nextMessageCursor ?? null,
         };
       } else {
         // 首屏走这里（会话列表里第一次点开）：turns 来自 detail（可能缺省，合成器按空表处理）。
-        // 版本表必须此刻建好：后续实时快照与翻页都往同一张表里累计，缺表会让旧帧重新被接受。
         localSessions.value.unshift({
           ...detail,
           messages: synthesizeFailedTurnBubbles(detail.messages, detail.turns ?? {}),
-          turnViewVersions: new Map<string, number>(),
         });
       }
 

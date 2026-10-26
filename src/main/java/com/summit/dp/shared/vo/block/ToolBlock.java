@@ -14,7 +14,8 @@ public record ToolBlock(
         @JsonProperty("arguments") String arguments,
         @JsonProperty("output") String output,
         @JsonProperty("plusLines") Integer plusLines,
-        @JsonProperty("minusLines") Integer minusLines
+        @JsonProperty("minusLines") Integer minusLines,
+        @JsonProperty("version") Long version
 ) implements Block {
 
     /** 身份规则：{@code tool:<toolCallId>}。 */

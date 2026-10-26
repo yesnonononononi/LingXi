@@ -41,7 +41,7 @@ class BlockSerializationTest {
                 TextBlock.identity("9007199254740993"), "9007199254740993", 1, BlockStatus.COMPLETE, true, "正文");
         ToolBlock tool = new ToolBlock(
                 ToolBlock.identity("call_1"), null, 2, BlockStatus.TOOL_COMPLETED,
-                "call_1", "read_file", "{\"path\":\"a\"}", "文件内容", 3, 0);
+                "call_1", "read_file", "{\"path\":\"a\"}", "文件内容", 3, 0, 7L);
         return new TurnViewVO(700L, 800L, BlockStatus.TURN_COMPLETED, 5L, "用户提问",
                 List.of(),
                 List.of(thinking, body, tool), null, 9007199254740993L);
@@ -86,6 +86,7 @@ class BlockSerializationTest {
         assertFalse(text.contains("\"body\""), "布尔键名变成了 body（对外契约破裂）: " + text);
         // Long 走 ToStringSerializer：turnId 必须是字符串，避免前端大整数精度丢失。
         assertTrue(text.contains("\"turnId\":\"800\""), "turnId 应为字符串: " + text);
+        assertEquals("7", json.readTree(text).at("/blocks/2/version").textValue());
     }
 
     /** 失败边界：未知子类型必须明确失败，不得静默转成某个默认类型。 */

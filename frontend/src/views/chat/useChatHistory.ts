@@ -70,16 +70,6 @@ export function useChatHistory(options: ChatHistoryOptions) {
   };
 
   /**
-   * 保证会话持有「每轮已接受版本」表。
-   *
-   * <p>版本表跨页/跨对账累计：同一轮在两页都出现时，按版本取新（低版本整轮丢弃）。
-   * 它与会话同寿，切换会话时随会话对象自然重建。</p>
-   */
-  const ensureTurnViewVersions = (session: ChatSession): void => {
-    if (!session.turnViewVersions) session.turnViewVersions = new Map<string, number>();
-  };
-
-  /**
    * 回读会话权威状态并按轮次视图写回（tree + 消息，尽力而为）。
    *
    * <p>三个对齐入口都走这里：<b>进入会话</b>、<b>重连成功后</b>、<b>本轮终结或挂起后</b>。
@@ -163,9 +153,8 @@ export function useChatHistory(options: ChatHistoryOptions) {
       if (cur) {
         cur.turns = mergeTurns(cur.turns, collectedTurns);
         // 逐轮 upsert 进现有数组：活跃轮不在视图里 → 原样保留；已在的轮按版本更新。
-        ensureTurnViewVersions(cur);
         for (const view of Object.values(collectedTurnViews)) {
-          if (view) upsertTurnViewIntoMessages(cur.messages, view, cur.turnViewVersions!);
+          if (view) upsertTurnViewIntoMessages(cur.messages, view);
         }
         attachPromptCards(cur.messages, collectedCards);
         cur.messages = synthesizeFailedTurnBubbles(cur.messages, cur.turns);
@@ -211,9 +200,8 @@ export function useChatHistory(options: ChatHistoryOptions) {
       session.turns = mergeTurns(session.turns, pageResultRes.data.turns);
       session.turnViews = mergeTurnViews(session.turnViews, pageResultRes.data.turnViews);
       // 逐轮 upsert：已存在的轮按版本更新（不新建气泡），新的轮按雪花键插到正确位置。
-      ensureTurnViewVersions(session);
       for (const view of Object.values(pageResultRes.data.turnViews ?? {})) {
-        if (view) upsertTurnViewIntoMessages(session.messages, view, session.turnViewVersions!);
+        if (view) upsertTurnViewIntoMessages(session.messages, view);
       }
       attachPromptCards(session.messages, pageResultRes.data.records.flatMap(record => record.toolCall ? [record.toolCall] : []));
       // 失败轮：后端在 session_message 里没有 assistant 行，但 turns 里有 FAILED 状态 —— 补合成气泡。

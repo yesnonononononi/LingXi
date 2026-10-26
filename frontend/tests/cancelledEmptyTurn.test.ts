@@ -41,8 +41,7 @@ function view(overrides: Partial<TurnViewVO>): TurnViewVO {
 
 function project(views: TurnViewVO[]): ChatMessage[] {
   const messages: ChatMessage[] = [];
-  const versions = new Map<string, number>();
-  for (const item of views) upsertTurnViewIntoMessages(messages, item, versions);
+  for (const item of views) upsertTurnViewIntoMessages(messages, item);
   return messages;
 }
 

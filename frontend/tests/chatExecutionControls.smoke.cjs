@@ -28,7 +28,7 @@ const session = ref({ id:'500', title:'控制验证', runStatus:'RUNNING', model
 async function reconcile(id) {
   const tree = await SessionAPI.tree(id);
   session.value.runStatus = tree.data.sessions[0].runStatus;
-  if(window.newView) upsertTurnViewIntoMessages(session.value.messages, window.newView, session.value.turnViewVersions ?? new Map());
+  if(window.newView) upsertTurnViewIntoMessages(session.value.messages, window.newView);
 }
 window.refreshSession=()=>reconcile('500');
 const controls=useChatExecutionControls({session:computed(()=>session.value),isSubmitting:computed(()=>false),

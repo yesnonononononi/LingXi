@@ -264,23 +264,22 @@ test('★ 跨页累计：mergeTurnViews 后到覆盖先到，聚合用合并后�
 });
 
 test('★ 版本拦截：更旧的视图不再覆盖已接受的更新', () => {
-  const versions = new Map<string, number>();
   const newer = historyView();          // viewVersion = 7
   const older: TurnViewVO = { ...historyView(), viewVersion: 3, blocks: [thinking(0)] };
 
   const messages: ChatMessage[] = [];
-  upsertTurnViewIntoMessages(messages, newer, versions);
-  upsertTurnViewIntoMessages(messages, older, versions);
+  upsertTurnViewIntoMessages(messages, newer);
+  upsertTurnViewIntoMessages(messages, older);
 
   const asst = messages.find(m => m.role === 'assistant');
   assert.equal(asst?.content, '结论正文', '旧帧必须被 version 拦截，正文保持新值');
-  assert.equal(versions.get(HISTORY_TURN), 7, '累计版本保持最大值');
+  assert.equal(asst?.turnState?.viewVersion, 7, '累计版本保持最大值');
   assert.equal(messages.filter(m => m.role === 'assistant').length, 1, '同一轮只有一个气泡');
 });
 
 test('用户气泡与助手气泡成对出现，且用户气泡在助手气泡之前', () => {
   const messages: ChatMessage[] = [];
-  upsertTurnViewIntoMessages(messages, historyView(), new Map<string, number>());
+  upsertTurnViewIntoMessages(messages, historyView());
 
   assert.equal(messages.length, 2, '一轮 = 用户提问 + 助手回答');
   assert.equal(messages[0].role, 'user');
@@ -291,10 +290,9 @@ test('用户气泡与助手气泡成对出现，且用户气泡在助手气泡�
 });
 
 test('重复 upsert 同一视图是幂等的，不会重复插入用户消息', () => {
-  const versions = new Map<string, number>();
   const messages: ChatMessage[] = [];
-  upsertTurnViewIntoMessages(messages, historyView(), versions);
-  upsertTurnViewIntoMessages(messages, historyView(), versions);
+  upsertTurnViewIntoMessages(messages, historyView());
+  upsertTurnViewIntoMessages(messages, historyView());
 
   assert.equal(messages.filter(m => m.role === 'user').length, 1, '用户消息不得重复');
   assert.equal(messages.filter(m => m.role === 'assistant').length, 1, '助手气泡不得重复');

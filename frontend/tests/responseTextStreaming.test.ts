@@ -63,7 +63,7 @@ test('框架位置：超安全整数的相邻响应按 BigInt 排序，迟到旧
     `thinking:${earlier}`, `text:${earlier}`, 'c1', 'c2', `thinking:${later}`,
   ]);
   const history: ChatMessage[] = [];
-  upsertTurnViewIntoMessages(history, { ...view(), blocks }, new Map());
+  upsertTurnViewIntoMessages(history, { ...view(), blocks });
   assert.equal(history.at(-1)?.content, bubble.content);
   assert.deepEqual(buildProcessTimeline(history.at(-1)!), buildProcessTimeline(bubble!));
 });
@@ -205,7 +205,7 @@ test('第二版：流式、块更新和刷新历史生成相同展示', () => {
   ] };
   upsertBlockIntoBubble(bubble, finalView);
   const history: ChatMessage[] = [];
-  upsertTurnViewIntoMessages(history, finalView, new Map());
+  upsertTurnViewIntoMessages(history, finalView);
   const rendered = (current: ChatMessage) => ({ content: current.content, thoughtSteps: current.thoughtSteps,
     aiMessages: current.aiMessages, toolCalls: current.toolCalls, processTimeline: buildProcessTimeline(current!) });
   assert.deepEqual(rendered(bubble), rendered(history[0]!));
@@ -232,7 +232,7 @@ test('重复片段、全文完成和历史回查共用 offset 写入，不重复
     executionId: 'e', timestamp: '', metaData: metadata });
   reducer.consume({ type: 'AI_MESSAGE', responseId: '101', text: '检索完成。', thinking: '查询资料',
     executionId: 'e', timestamp: '', metaData: metadata });
-  upsertTurnViewIntoMessages(messages, view('检索完成。'), new Map());
+  upsertTurnViewIntoMessages(messages, view('检索完成。'));
   snapshot(reducer, view('检索完成。'));
   assert.equal(bubble.content, '检索完成。');
   assert.equal(bubble.thoughtSteps?.[0]?.content, '查询资料');
@@ -244,7 +244,7 @@ test('慢历史缺少当前响应或只带较短前缀时，不清空已打印�
   reducer.consume(partial('检索完成。', 0));
   snapshot(reducer, view());
   assertPendingText(bubble, '检索完成。');
-  upsertTurnViewIntoMessages(messages, view('检索'), new Map());
+  upsertTurnViewIntoMessages(messages, view('检索'));
   assert.equal(bubble.content, '检索完成。');
   reducer.consume(partial('继续', 5));
   assert.equal(bubble.content, '检索完成。继续', '较短历史不能提前结束流式响应');

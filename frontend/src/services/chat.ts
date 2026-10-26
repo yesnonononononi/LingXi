@@ -531,7 +531,6 @@ export const chatApi = {
           // 首屏块视图表：翻页 / 对账重新聚合时必须一并传入（见 ChatSession.turnViews）
           turnViews: pageResult.turnViews,
           // 版本表起点：实时快照与后续翻页共用同一张表，缺表会让旧帧重新被接受
-          turnViewVersions: new Map<string, number>(),
           hasMoreMessages: pageResult.hasMore,
           nextMessageCursor: pageResult.nextCursor
         }

@@ -158,7 +158,6 @@ export function mergeSubSessionTree(
       messages: old.messages ?? fresh.messages,
       turns: mergeTurns(old.turns, fresh.turns),
       turnViews: mergeTurnViews(old.turnViews, fresh.turnViews),
-      turnViewVersions: old.turnViewVersions ?? fresh.turnViewVersions,
     });
   });
 }
@@ -193,21 +192,18 @@ export function resolveRootSessionId(session: ChatSession | null | undefined): s
  *
  * @param sessionId 会话 id，参与气泡身份构造
  * @param turnViews 已累计的块视图表（键 = turnId）；这就是展示内容的唯一来源
- * @param versions  可选：跨调用累计的版本表（翻页场景传入会话级表，避免重复投影）
  */
 export function aggregateRecordsByIdentity(
   sessionId: string | number,
-  turnViews?: Record<string, TurnViewVO> | null,
-  versions?: Map<string, number>
+  turnViews?: Record<string, TurnViewVO> | null
 ): ChatMessage[] {
   const messages: ChatMessage[] = [];
   if (!turnViews) return messages;
-  const versionTable = versions ?? new Map<string, number>();
   // 依次并入（而非先收集再按 key 遍历）：upsert 内部按雪花键决定插入位次，
   // 顺序无关，且每条视图的版本比较就地生效。
   for (const view of Object.values(turnViews)) {
     if (!view) continue;
-    upsertTurnViewIntoMessages(messages, { ...view, sessionId: view.sessionId ?? String(sessionId) }, versionTable);
+    upsertTurnViewIntoMessages(messages, { ...view, sessionId: view.sessionId ?? String(sessionId) });
   }
   return messages;
 }

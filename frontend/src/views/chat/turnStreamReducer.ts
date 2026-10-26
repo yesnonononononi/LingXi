@@ -1,9 +1,8 @@
 import type { AgentEvent, TokenInfo } from '../../types/Event';
 import type { BlockEventPayload } from '../../types/block';
-import { parseVersion } from '../../types/block';
 import type { ChatMessage, ContextUsageData, ToolCallVO } from '../../types/chat';
 import { isCardToolName, upsertPromptCard } from '../../utils/toolCallCard';
-import { buildBubbleFromTurnView, buildUserMessageFromTurnView, projectTurnView, upsertBlockIntoBubble } from './blockProjection';
+import { upsertTurnViewIntoMessages, upsertBlockIntoBubble } from './blockProjection';
 import { consumeResponseText } from './responseText';
 import { consumeToolEvent } from './toolStream';
 import { getTurnState, renderTurnState } from './turnRenderState';
@@ -61,13 +60,6 @@ export class TurnStreamReducer {
   private cardResolving = new Set<string>();
   /** 已释放标记：释放后不再创建重试。 */
   private disposed = false;
-  /**
-   * 每轮已渲染到的块视图版本号（{@code viewVersion}）。
-   *
-   * <p>只用于 {@code TURN_SNAPSHOT} 的乱序拦截：拿到更小的版本即丢弃。
-   * {@code BLOCK_UPSERT} 刻意**不**参与比较 —— 工具收尾不改 chat_turn，同轮多次增量版本号相等。</p>
-   */
-  private turnViewVersions = new Map<string, number>();
 
   constructor(messages: ChatMessage[] | (() => ChatMessage[]), options: TurnStreamReducerOptions) {
     // 兼容两种入参：裸数组（测试 / 旧调用）与访问器（绑定「当前」数组）
@@ -254,40 +246,8 @@ export class TurnStreamReducer {
   private handleTurnSnapshot(raw: unknown): void {
     const payload = extractBlockPayload(raw);
     if (!payload) return;
-    const turnId = payload.turnId;
-
-    const last = this.turnViewVersions.get(turnId);
-    // ⚠️ 必须转数值再比：线上 viewVersion 是十进制字符串，字典序比较下 "10" < "9" 为真。
-    const incoming = parseVersion(payload.viewVersion);
-    if (last !== undefined && incoming < last) {
-      // 乱序到达的旧帧：丢弃，绝不用旧内容覆盖新内容。
-      return;
-    }
-    this.turnViewVersions.set(turnId, incoming);
-
-    // 与历史侧共用同一更新入口：按 sessionId + turnId 定位、按版本接受更新，
-    // 用户气泡与助手气泡成对写入。这样「实时到达」与「历史回查」走的是同一条规则。
-    const messages = this.getMessages();
-    const existingUser = messages.find(message => message.role === 'user' && message.turnId === turnId);
-    // 已有用户气泡仍需补齐服务端标识，编辑入口依赖它。
-    if (existingUser && payload.view.userMessageId != null) existingUser.serverMessageId = payload.view.userMessageId;
-    const existing = this.findBubbleByTurnId(turnId);
-    let bubble: ChatMessage;
-    if (existing) {
-      // 原气泡只补齐状态，身份不变。
-      bubble = existing;
-      projectTurnView(bubble, payload.view);
-      // 用户气泡若还没落（首屏从未给过）补上，已存在则不动
-      if (payload.view.userMessage && !messages.some(m => m.role === 'user' && m.turnId === turnId)) {
-        const userMessage = buildUserMessageFromTurnView(payload.view, bubble.timestamp);
-        if (userMessage) messages.splice(messages.indexOf(bubble), 0, userMessage);
-      }
-    } else {
-      bubble = buildBubbleFromTurnView(payload.view);
-      const userMessage = buildUserMessageFromTurnView(payload.view);
-      const pair = userMessage && !existingUser ? [userMessage, bubble] : [bubble];
-      messages.splice(messages.length, 0, ...pair);
-    }
+    const bubble = upsertTurnViewIntoMessages(this.getMessages(), payload.view);
+    if (!bubble) return;
     this.activeBubbleId = bubble.id;
     this.requestBlockCards(bubble);
     this.onScrollFollow?.();
@@ -675,23 +635,9 @@ export class TurnStreamReducer {
   }
 }
 
-/**
- * 从 SSE 业务事件里取出块视图载荷。
- *
- * <p>后端把 {@code BlockEventPayload} 直接作为事件体下发（见 {@code SseEventPublisher#sendBusiness}
- * 的 {@code .data(payload)}），载荷字段平铺在事件 JSON 顶层。这里同时兼容「顶层平铺」（现行）
- * 与「包一层 payload」（防御未来信封化）两种形状；取不到返回 null，由调用方静默跳过。</p>
- */
+/** 块事件只接受后端平铺载荷，不维护未定义的信封协议。 */
 function extractBlockPayload(raw: unknown): BlockEventPayload | null {
   if (!raw || typeof raw !== 'object') return null;
-  const obj = raw as Record<string, unknown>;
-  const top = obj as unknown as BlockEventPayload;
-  if (top.view && typeof top.view === 'object' && Array.isArray(top.view.blocks)) {
-    return top;
-  }
-  const nested = obj.payload as BlockEventPayload | undefined;
-  if (nested && nested.view && Array.isArray(nested.view.blocks)) {
-    return nested;
-  }
-  return null;
+  const payload = raw as BlockEventPayload;
+  return payload.view && Array.isArray(payload.view.blocks) ? payload : null;
 }
