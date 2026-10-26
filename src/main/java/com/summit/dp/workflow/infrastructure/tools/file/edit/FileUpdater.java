@@ -18,23 +18,25 @@ public class FileUpdater {
 
             if(content.isEmpty()) return FileEditorResult.err("文件内容为空，无法定位原文");
 
-            // 原文必须逐字一致，忽略空白和引号可能改变字符串或代码语义。
-            int oldIndex = content.indexOf(oldText);
+            // 只统一换行参与定位，空白、引号等其他字符仍须完全一致。
+            FileTextMatcher matcher = new FileTextMatcher(content, oldText);
+            int oldIndex = matcher.find(0);
             if (oldIndex == -1) {
                 return FileEditorResult.err("未找到完全一致的原文，请重新读取文件后编辑");
             }
 
             // 从起点后一位检查，重叠的命中同样存在定位歧义。
-            if (content.indexOf(oldText, oldIndex + 1) != -1) {
-                Map<Integer, String> duplicateArea = FileEditor.resolveDuplicateArea(oldText, content, aroundLines);
+            if (matcher.find(oldIndex + 1) != -1) {
+                Map<Integer, String> duplicateArea = matcher.duplicateAreas(aroundLines);
                 return FileEditorResult.err(FileEditor.handleDuplicateStr(duplicateArea));
             }
 
-            int oldEnd = oldIndex + oldText.length();
-            if(type.equals(EditType.DELETE)) newText = "";
+            int oldStart = matcher.toOriginalIndex(oldIndex);
+            int oldEnd = matcher.toOriginalIndex(oldIndex + matcher.matchLength());
+            newText = type == EditType.DELETE ? "" : matcher.normalizeNewText(newText, oldStart);
 
             String newContent =
-                    content.substring(0, oldIndex)
+                    content.substring(0, oldStart)
                             + newText
                             + content.substring(oldEnd);
 

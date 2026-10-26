@@ -38,7 +38,7 @@ import org.springframework.stereotype.Component;
     id = ToolCatalog.EDIT_FILE,
     name = ToolCatalog.EDIT_FILE,
     executor = EditFileToolExecutor.class,
-    description = "Edit UTF-8 text using exact, unique oldText or anchor matches. Supports REPLACE, INSERT_BEFORE, INSERT_AFTER and DELETE; INSERT_* can create files. Returns an edit summary.",
+    description = "Edit UTF-8 text using unique oldText or anchor matches. LF and CRLF are equivalent for matching; all other characters must match exactly. New text follows the local line ending, while untouched content is preserved. Supports REPLACE, INSERT_BEFORE, INSERT_AFTER and DELETE; INSERT_* can create files. Returns an edit summary.",
     parameters = @ObjectValue(
         properties = {
             @ToolProperty(key = "type", value = @Value(

@@ -19,16 +19,19 @@ public class FileInsertor  {
                 if (anchor == null || anchor.isEmpty())
                     return FileEditorResult.err("插入位置的锚点不能为空");
 
-                // 锚点必须逐字一致，不能忽略空白和引号后猜测插入位置。
-                if ((insertIndex = content.indexOf(anchor)) == -1) {
+                // 换行等价不能放宽其他字符，也不能自动选择多个命中中的一个。
+                FileTextMatcher matcher = new FileTextMatcher(content, anchor);
+                if ((insertIndex = matcher.find(0)) == -1) {
                     return FileEditorResult.err("未找到完全一致的锚点，请重新读取文件后编辑");
                 }
-                int anchorEnd = insertIndex + anchor.length();
+                int anchorEnd = matcher.toOriginalIndex(insertIndex + matcher.matchLength());
                 // 重叠的命中同样不能自动选取。
-                if (content.indexOf(anchor, insertIndex + 1) != -1) {
-                    Map<Integer, String> duplicateArea = FileEditor.resolveDuplicateArea(anchor, content, aroundLines);
+                if (matcher.find(insertIndex + 1) != -1) {
+                    Map<Integer, String> duplicateArea = matcher.duplicateAreas(aroundLines);
                     return FileEditorResult.err(FileEditor.handleDuplicateStr(duplicateArea));
                 }
+                insertIndex = matcher.toOriginalIndex(insertIndex);
+                newText = matcher.normalizeNewText(newText, type == EditType.INSERT_BEFORE ? insertIndex : anchorEnd);
                 String newContent;
                 if (type.equals(EditType.INSERT_BEFORE)) {
                     newContent = content.substring(0, insertIndex) + newText + content.substring(insertIndex);
