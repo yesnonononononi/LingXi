@@ -28,7 +28,7 @@ public class ToolConfig {
      */
     @Bean
     public ContextAttachmentProvider contextAttachmentProvider(ToolCallRepository toolCallRepository,
-                                                           ToolCallConverter converter) {
+                                                               ToolCallConverter converter) {
         return executionId -> {
             Long execId = toId(executionId);
             if (execId == null) {
@@ -63,7 +63,9 @@ public class ToolConfig {
         return sb.toString();
     }
 
-    /** 附件提供者收到的是不透明标识，这里做一次显式转换；非数字直接跳过而非抛异常。 */
+    /**
+     * 附件提供者收到的是不透明标识，这里做一次显式转换；非数字直接跳过而非抛异常。
+     */
     private static Long toId(Serializable raw) {
         if (raw == null) return null;
         try {
