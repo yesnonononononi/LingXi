@@ -239,6 +239,7 @@ import { cardDotClass, cardKindIconPath, resolveCardTone } from '../../utils/car
 import { AgentToolName } from '../../utils/toolNames';
 import { buildProcessTimeline } from '../../utils/processTimeline';
 import { buildProcessSegments, summarizeProcess } from '../../utils/processSegments';
+import { formatProcessStatus } from '../../utils/processHeadline';
 import { isActiveTurnStatus, isFailedTurnStatus, turnStatusLabel } from '../../utils/turnStatus';
 import { formatDurationOrPlaceholder } from '../../utils/format';
 import { resolveTokenUsage } from '../../utils/tokenUsage';
@@ -349,10 +350,7 @@ const processExpansion = ref<boolean | null>(null);
 const wholeProcessExpanded = computed(() => processExpansion.value ?? processIsStreaming.value);
 const wholeProcessSummary = computed(() => summarizeProcess(processParts.value.flatMap(part =>
   part.kind === 'process' ? part.items : []), props.subSessions));
-const wholeProcessStatus = computed(() => [
-  wholeProcessSummary.value.pendingCount ? t('chat.process.pending', { count: wholeProcessSummary.value.pendingCount }) : '',
-  wholeProcessSummary.value.unknownCount ? t('chat.process.unknown', { count: wholeProcessSummary.value.unknownCount }) : '',
-].filter(Boolean).join(t('chat.process.separator')));
+const wholeProcessStatus = computed(() => formatProcessStatus(wholeProcessSummary.value, { running: 'never' }));
 
 
 /** 过程折叠区之外的互动卡片（映射为卡片展示数据）。 */

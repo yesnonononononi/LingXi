@@ -3,9 +3,7 @@ import { computed, ref } from 'vue';
 import type { ChatMessage, ChatTurn, SubSessionVO } from '../../types/chat';
 import type { ProcessSegment } from '../../utils/processSegments';
 import { summarizeProcess } from '../../utils/processSegments';
-import { resolveToolRenderName } from '../../utils/toolDisplayNames';
-import { resolveToolMeta } from '../../utils/toolMeta';
-import { t } from '../../i18n';
+import { formatProcessHeadline } from '../../utils/processHeadline';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import ProcessDetails from './ProcessDetails.vue';
 
@@ -23,36 +21,12 @@ const emit = defineEmits<{ (e: 'selectSubSession', id: string | number): void }>
 // 只由用户操作改变，文本增长、终态和历史对账不能覆盖展开选择。
 const expanded = ref(false);
 const summary = computed(() => summarizeProcess(props.segment.items, props.subSessions));
-const operationTitle = computed(() => {
-  const names = [...new Set(summary.value.toolNames.map(resolveToolRenderName))];
-  if (!names.length) return t('tool.category.think');
-  const text = names.slice(0, 3).join(t('chat.process.separator'));
-  return names.length > 3 ? t('chat.process.moreOperations', { names: text, count: names.length }) : text;
-});
-const latest = computed(() => summary.value.latest);
-const title = computed(() => {
-  if (!props.active) return operationTitle.value;
-  return latest.value?.tool ? resolveToolRenderName(latest.value.tool.toolName) : t('tool.category.think');
-});
-const preview = computed(() => {
-  if (props.active) {
-    const item = latest.value;
-    if (item?.step) return item.step.content.slice(-320).replace(/\s+/g, ' ').trim();
-    if (item?.tool) {
-      const meta = resolveToolMeta({ toolName: item.tool.toolName, args: item.tool.args ?? item.tool.query });
-      return meta.target.split(/[\\/]/).filter(Boolean).at(-1) || meta.description || meta.command;
-    }
-    return '';
-  }
-  const targets = summary.value.targets;
-  const text = targets.slice(0, 3).join(t('chat.process.separator'));
-  return targets.length > 3 ? t('chat.process.moreTargets', { targets: text, count: targets.length }) : text;
-});
-const statusLabel = computed(() => [
-  summary.value.pendingCount ? t('chat.process.pending', { count: summary.value.pendingCount }) : '',
-  summary.value.unknownCount ? t('chat.process.unknown', { count: summary.value.unknownCount }) : '',
-  !props.active && summary.value.runningCount ? t('chat.process.running', { count: summary.value.runningCount }) : '',
-].filter(Boolean).join(t('chat.process.separator')));
+const headline = computed(() => formatProcessHeadline(summary.value, { active: props.active }));
+// 标题/预览/状态全部来自同一份纯函数，组件只决定排版：长正文右对齐溢出，短值截断。
+const title = computed(() => headline.value.title);
+const preview = computed(() => headline.value.preview);
+const statusLabel = computed(() => headline.value.status);
+const previewIsText = computed(() => headline.value.previewKind === 'text');
 </script>
 
 <template>
@@ -69,8 +43,8 @@ const statusLabel = computed(() => [
       <span v-if="active" class="h-1.5 w-1.5 shrink-0 rounded-full bg-current animate-pulse" aria-hidden="true"></span>
       <span class="min-w-0 max-w-[60%] truncate font-medium" data-testid="process-segment-title">{{ title }}</span>
       <span v-if="preview" class="min-w-0 flex-1 overflow-hidden whitespace-nowrap"
-        :class="active && latest?.step ? 'flex justify-end' : ''" data-testid="process-segment-preview">
-        <span :class="active && latest?.step ? 'shrink-0 min-w-full text-left' : 'block truncate'">{{ preview }}</span>
+        :class="previewIsText ? 'flex justify-end' : ''" data-testid="process-segment-preview">
+        <span :class="previewIsText ? 'shrink-0 min-w-full text-left' : 'block truncate'">{{ preview }}</span>
       </span>
       <span v-if="statusLabel" class="shrink-0 max-w-[40%] truncate text-[11px] text-amber-600 dark:text-amber-400"
         data-testid="process-segment-status">{{ statusLabel }}</span>
