@@ -372,8 +372,7 @@ import { FILE_PREVIEW_KEY } from '../../types/filePreview';
 import { DECIDE_TOOL_CALL_KEY, ANSWER_CHOICES_KEY } from '../../types/toolDecision';
 import { CHAT_MESSAGE_SLOTS_KEY } from '../../types/chatMessageSlots';
 import MessageBodyDefault from '../../components/chat/MessageBodyDefault.vue';
-// B-1 真实替换实现：独立 feature 目录，由本宿主注册接入（删掉下面 provide 里的注册即回默认操作栏）
-import QuoteMessageActions from '../../features/quote/QuoteMessageActions.vue';
+import MessageActionsBar from '../../components/chat/MessageActionsBar.vue';
 import { CHAT_INPUT_SLOTS_KEY } from '../../types/chatInputSlots';
 import ChatInputContextUsage from '../../components/chat/ChatInputContextUsage.vue';
 import ChatInputModelSelector from '../../components/chat/ChatInputModelSelector.vue';
@@ -549,20 +548,8 @@ const {
 provide(DECIDE_TOOL_CALL_KEY, decideToolCall);
 provide(ANSWER_CHOICES_KEY, answerChoices);
 
-/**
- * 消息级插槽渲染器。
- *
- * <p><b>B-1 真实替换实现（本次）：</b>`actions` 已从内置默认实现 `MessageActionsBar`
- * 换成独立 feature 目录下的 `QuoteMessageActions`（`features/quote/`）。它**复用**默认操作栏
- * 渲染原有 5 个元素（复制 / 执行状态 / 用量 / 耗时 / 时间戳），并额外追加一个「复制为引用」按钮，
- * 因此替代了「注册即等价」的试点态，成为第一个**可见差异**的替换实现。</p>
- *
- * <p><b>回退方式：</b>把下面 `actions` 改回 `MessageActionsBar`（或整行删掉 provide）即可回到
- * 默认操作栏 —— 默认实现本身没被改动过一行，所以回退是零成本的。</p>
- *
- * <p>`body` 仍是内置默认实现 `MessageBodyDefault`：本次只替换 actions，body 不在范围内。</p>
- */
-provide(CHAT_MESSAGE_SLOTS_KEY, { body: MessageBodyDefault, actions: QuoteMessageActions });
+// 默认实现也走注册入口，保证生产与扩展组件使用同一契约。
+provide(CHAT_MESSAGE_SLOTS_KEY, { body: MessageBodyDefault, actions: MessageActionsBar });
 
 /**
  * 输入区插槽渲染器（同上：试点期注册的就是**内置默认实现**本身）。
