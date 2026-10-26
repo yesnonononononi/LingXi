@@ -62,7 +62,6 @@ export function buildProcessSegments(
 export interface ProcessSummary {
   toolNames: string[];
   targets: string[];
-  failedCount: number;
   pendingCount: number;
   runningCount: number;
   unknownCount: number;
@@ -91,12 +90,11 @@ function resolveProcessToolStatus(tool: ToolCallTrace, subSessions: SubSessionVO
 export function summarizeProcess(items: ProcessTimelineItem[], subSessions: SubSessionVO[] = []): ProcessSummary {
   const names = new Set<string>();
   const targets = new Set<string>();
-  const summary: ProcessSummary = { toolNames: [], targets: [], failedCount: 0,
+  const summary: ProcessSummary = { toolNames: [], targets: [],
     pendingCount: 0, runningCount: 0, unknownCount: 0, latest: items.at(-1) };
   for (const item of items) {
     const status = item.tool ? resolveProcessToolStatus(item.tool, subSessions) : item.step?.status;
-    if (status === 'failed') summary.failedCount++;
-    else if (status === 'pending') summary.pendingCount++;
+    if (status === 'pending') summary.pendingCount++;
     else if (status === 'calling' || status === 'running') summary.runningCount++;
     else if (status === 'unknown') summary.unknownCount++;
     if (!item.tool) continue;

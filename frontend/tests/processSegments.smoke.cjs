@@ -93,7 +93,7 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
   })()`);
   assert.ok(failureGeometry.labelRight <= failureGeometry.right + 1 && failureGeometry.statusRight <= failureGeometry.right + 1,
     '长 MCP 名称和状态提示不能挤出窄屏折叠行：' + JSON.stringify(failureGeometry));
-  assert.match(failureGeometry.status, /1 项失败.*1 项状态未知/);
+  assert.equal(failureGeometry.status, '1 项状态未知');
   await evaluate('document.querySelectorAll("[data-testid=process-segment-toggle]")[1].click(); window.flush()');
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=process-segment-toggle]")[1].getAttribute("aria-expanded")'), 'true');
   await evaluate('document.querySelector("[data-testid=whole-process-toggle]").click(); window.flush()');

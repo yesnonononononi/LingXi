@@ -49,7 +49,6 @@ const preview = computed(() => {
   return targets.length > 3 ? t('chat.process.moreTargets', { targets: text, count: targets.length }) : text;
 });
 const statusLabel = computed(() => [
-  summary.value.failedCount ? t('chat.process.failed', { count: summary.value.failedCount }) : '',
   summary.value.pendingCount ? t('chat.process.pending', { count: summary.value.pendingCount }) : '',
   summary.value.unknownCount ? t('chat.process.unknown', { count: summary.value.unknownCount }) : '',
   !props.active && summary.value.runningCount ? t('chat.process.running', { count: summary.value.runningCount }) : '',
@@ -73,8 +72,7 @@ const statusLabel = computed(() => [
         :class="active && latest?.step ? 'flex justify-end' : ''" data-testid="process-segment-preview">
         <span :class="active && latest?.step ? 'shrink-0 min-w-full text-left' : 'block truncate'">{{ preview }}</span>
       </span>
-      <span v-if="statusLabel" class="shrink-0 max-w-[40%] truncate text-[11px]"
-        :class="summary.failedCount ? 'text-red-500 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'"
+      <span v-if="statusLabel" class="shrink-0 max-w-[40%] truncate text-[11px] text-amber-600 dark:text-amber-400"
         data-testid="process-segment-status">{{ statusLabel }}</span>
     </button>
     <CollapseTransition>

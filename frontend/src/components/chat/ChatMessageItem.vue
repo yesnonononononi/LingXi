@@ -88,8 +88,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7" />
           </svg>
           <span class="font-medium">{{ t('chat.message.process') }}</span>
-          <span v-if="!wholeProcessExpanded && wholeProcessStatus" class="min-w-0 truncate text-[11px]"
-            :class="wholeProcessSummary.failedCount ? 'text-red-500 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'"
+          <span v-if="!wholeProcessExpanded && wholeProcessStatus" class="min-w-0 truncate text-[11px] text-amber-600 dark:text-amber-400"
             data-testid="whole-process-status">{{ wholeProcessStatus }}</span>
         </button>
         <CollapseTransition>
@@ -351,7 +350,6 @@ const wholeProcessExpanded = computed(() => processExpansion.value ?? processIsS
 const wholeProcessSummary = computed(() => summarizeProcess(processParts.value.flatMap(part =>
   part.kind === 'process' ? part.items : []), props.subSessions));
 const wholeProcessStatus = computed(() => [
-  wholeProcessSummary.value.failedCount ? t('chat.process.failed', { count: wholeProcessSummary.value.failedCount }) : '',
   wholeProcessSummary.value.pendingCount ? t('chat.process.pending', { count: wholeProcessSummary.value.pendingCount }) : '',
   wholeProcessSummary.value.unknownCount ? t('chat.process.unknown', { count: wholeProcessSummary.value.unknownCount }) : '',
 ].filter(Boolean).join(t('chat.process.separator')));

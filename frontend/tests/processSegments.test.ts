@@ -53,7 +53,7 @@ test('最新活动按时间线选取，迟到旧工具收尾不能抢回思考�
   const summary = summarizeProcess(items);
   assert.equal(summary.latest?.id, 's1');
   assert.deepEqual(summary.targets, ['mcp.json']);
-  assert.equal(summary.failedCount, 1);
+  assert.equal(first.tool!.status, 'failed');
   assert.equal(summary.pendingCount, 1);
   assert.equal(summary.unknownCount, 1);
   assert.equal(summary.runningCount, 1);
@@ -63,7 +63,7 @@ test('所有固定工具沿用原名，无独立动词映射；空摘要与子�
   const names = Object.values(AgentToolName);
   const items = names.map((name, index) => tool(String(index), name, index));
   assert.deepEqual(summarizeProcess(items).toolNames, names);
-  assert.deepEqual(summarizeProcess([]), { toolNames: [], targets: [], failedCount: 0,
+  assert.deepEqual(summarizeProcess([]), { toolNames: [], targets: [],
     pendingCount: 0, runningCount: 0, unknownCount: 0, latest: undefined });
   const delegate = tool('delegate', AgentToolName.CallSubAgent, 0, { subSessionId: '88', query: '{"runtime_mode":"async"}' });
   assert.equal(summarizeProcess([delegate], [{ id: '88', runStatus: 'RUNNING' }]).runningCount, 1);

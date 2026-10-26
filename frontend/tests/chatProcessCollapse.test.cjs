@@ -211,7 +211,7 @@ test('整轮过程可折叠：历史默认收起，文本与分段一起隐藏�
   assert.equal(whole.props['aria-expanded'], false);
   assert.equal(content().style.display, 'none');
   assert.equal(findAll(root, node => node.tag === 'markdown' && node.props.processText).length, 0);
-  assert.match(text(whole), /1 项失败/, '收起整轮后失败提示仍可见');
+  assert.equal(text(whole), '执行过程', '失败无需在整轮入口额外显示');
   assert.ok(find(root, node => node.tag === 'prompt-card'));
   assert.match(text(root), /最终正文/);
   whole.props.onClick();
@@ -332,7 +332,7 @@ test('手动展开按段身份保留，流式增长、历史替换和终态不�
   assert.deepEqual(headers.map(node => node.props['aria-expanded']), [true, false]);
 });
 
-test('历史摘要使用原操作名和目标，三类完整展示、四类压缩，失败待确认与未知状态不隐藏', async t => {
+test('历史摘要使用原操作名和目标，待确认与未知状态保留，失败不额外计数', async t => {
   const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
   const answer = message({ aiMessages: [], toolCalls: [
     { id: 'read', toolName: AgentToolName.ReadFile, order: 0, status: 'failed', args: { path: '/repo/mcp.json' } },
@@ -343,7 +343,8 @@ test('历史摘要使用原操作名和目标，三类完整展示、四类压�
   const header = () => find(root, node => node.props?.['data-testid'] === 'process-segment-toggle');
   const title = () => find(root, node => node.props?.['data-testid'] === 'process-segment-title');
   assert.equal(text(title()), '读取、写入、执行命令');
-  assert.match(text(root), /1 项失败.*1 项待确认.*1 项状态未知/);
+  assert.equal(text(find(root, node => node.props?.['data-testid'] === 'process-segment-status')), '1 项待确认、1 项状态未知');
+  assert.equal(answer.toolCalls[0].status, 'failed', '工具自身的失败状态保留');
   assert.ok(find(root, node => node.tag === 'prompt-card'), '审批卡片不进入过程折叠');
   assert.equal(header().props['aria-expanded'], false);
   answer.toolCalls.push({ id: 'search', toolName: AgentToolName.WebSearch, order: 3, status: 'success' });
