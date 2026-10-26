@@ -260,6 +260,43 @@ html.light .markdown-body .mermaid-block--dark {
   color: #e4e4e7;
 }
 
+/* Mermaid 是图表不是代码：不要代码块那条深色标题栏，只保留右侧低调的复制入口。
+   语言徽标对图表零信息量，直接隐藏；复制按钮退成随主题走的弱化文字。 */
+.markdown-body .mermaid-block .code-block-header {
+  background-color: transparent;
+  border-bottom: none;
+  padding: 0.4rem 0.65rem 0;
+  justify-content: flex-end;
+  color: #6b7280;
+}
+html.light .markdown-body .mermaid-block .code-block-header {
+  background-color: transparent;
+  border-bottom: none;
+}
+.markdown-body .mermaid-block .code-block-header .lang-badge {
+  display: none;
+}
+.markdown-body .mermaid-block .code-block-header .copy-code-btn {
+  color: #6b7280;
+  opacity: 0.65;
+  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+.markdown-body .mermaid-block .code-block-header .copy-code-btn:hover {
+  background-color: rgba(15, 23, 42, 0.08);
+  color: #111827;
+  opacity: 1;
+}
+.markdown-body .mermaid-block--dark .code-block-header {
+  color: #a1a1aa;
+}
+.markdown-body .mermaid-block--dark .code-block-header .copy-code-btn {
+  color: #a1a1aa;
+}
+.markdown-body .mermaid-block--dark .code-block-header .copy-code-btn:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: #f4f4f5;
+}
+
 .mermaid-diagram {
   padding: 1rem;
   overflow-x: auto;
