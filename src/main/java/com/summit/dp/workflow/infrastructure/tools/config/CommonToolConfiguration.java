@@ -26,12 +26,21 @@ import org.springframework.context.annotation.Configuration;
 @Configuration(proxyBeanMethods = false)
 public class CommonToolConfiguration {
 
+    /**
+     * web_search 工具允许输出的最大字符数（唯一来源）。
+     *
+     * <p>同一个常量既喂给 {@code ToolDefinition#maxOutput(int)}，又注入
+     * {@link WebSearchConfig#maxOutput()}，让"框架截断上限"与"引擎摘要触发阈值 / 降级裁剪上限"
+     * 永远同源，不会出现两处各写一个 {@code 3_000} 而悄悄漂移的情况。</p>
+     */
+    private static final int WEB_SEARCH_MAX_OUTPUT = 3_000;
+
     @Bean
     @ConditionalOnMissingBean(name = "webSearchToolDefinition")
     public ToolDefinition<WebSearchExecutor> webSearchToolDefinition(WebSearchEngine webSearchEngine, WebSearchToolProperties webSearchToolProperties, ObjectMapper objectMapper) {
         String name = "web_search";
         ToolDefinition<WebSearchExecutor> definition = ToolDefinition.<WebSearchExecutor>builder()
-                .executor(new WebSearchExecutor(webSearchEngine,objectMapper))
+                .executor(new WebSearchExecutor(webSearchEngine, objectMapper))
                 .id(name)
                 .name(name)
                 .description("Search the web for external or current information.")
@@ -47,11 +56,11 @@ public class CommonToolConfiguration {
                         }
                         """).formatted(String.valueOf(webSearchToolProperties.getMaxResult())))
                 .concurrentPolicy(ConcurrentPolicy.READ_ONLY)
-                .maxOutput(3_000)
+                // 与注入 WebSearchEngine 的 maxOutput 同源：摘要阈值、降级裁剪上限都按它算。
+                .maxOutput(WEB_SEARCH_MAX_OUTPUT)
                 .timeout(30L)
-
                 .build();
-        log.info("注册网页检索工具: toolName=web_search");
+        log.info("注册网页检索工具: toolName=web_search, maxOutput={}", WEB_SEARCH_MAX_OUTPUT);
         return definition;
     }
 
@@ -61,6 +70,7 @@ public class CommonToolConfiguration {
                 .baseUrl(webSearchToolProperties.getBaseUrl())
                 .apiKey(webSearchToolProperties.getApiKey())
                 .maxResult(webSearchToolProperties.getMaxResult())
+                .maxOutput(WEB_SEARCH_MAX_OUTPUT)
                 .timeout(30L)
                 .build()
                 , HttpClient.newHttpClient()
@@ -78,7 +88,7 @@ public class CommonToolConfiguration {
     }
 
     @Bean
-    public WebResultSummarizer resultSummarizer(@Qualifier("defaultContextCompactModel") ChatModel chatModel){
+    public WebResultSummarizer resultSummarizer(@Qualifier("defaultContextCompactModel") ChatModel chatModel) {
         return new WebResultSummarizer(chatModel);
     }
 
