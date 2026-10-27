@@ -375,7 +375,7 @@ onBeforeUnmount(() => {
             'p-1 rounded-md transition-colors cursor-pointer',
             isFilterOpen
               ? 'text-blue-500'
-              : 'text-zinc-400 hover:text-gray-700 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-200/70 dark:hover:bg-white/[0.06]'
+              : 'text-zinc-400 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-200/70 dark:hover:bg-white/[0.06]'
           ]"
           :title="t('chat.sidebar.searchWorkspace')"
         >
@@ -387,7 +387,7 @@ onBeforeUnmount(() => {
         <!-- Sort / Switch Icon -->
         <button
           @click="isSortAsc = !isSortAsc"
-          class="p-1 rounded-md text-zinc-400 hover:text-gray-700 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-200/70 dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
+          class="p-1 rounded-md text-zinc-400 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-200/70 dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
           :title="isSortAsc ? t('chat.sidebar.sortDefault') : t('chat.sidebar.sortByName')"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -398,7 +398,7 @@ onBeforeUnmount(() => {
         <!-- Add Workspace Icon -->
         <button
           @click="emit('newWorkspace')"
-          class="p-1 rounded-md text-zinc-400 hover:text-gray-700 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-200/70 dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
+          class="p-1 rounded-md text-zinc-400 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-200/70 dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
           :title="t('chat.sidebar.newWorkspace')"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

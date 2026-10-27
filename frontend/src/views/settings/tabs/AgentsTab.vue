@@ -334,7 +334,7 @@ const {
       <div class="space-y-3 text-xs">
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-                        <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
+                        <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-zinc-700'">
               {{ t('settings.agents.nameLabel') }} <span class="text-red-500">*</span>
             </label>
             <input
@@ -347,7 +347,7 @@ const {
             />
           </div>
           <div>
-                        <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
+                        <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-zinc-700'">
               {{ t('settings.agents.modelLabel') }} <span class="text-red-500">*</span>
             </label>
             <!-- 基座模型：与输入框共用同一套分组下拉，替代原生 select 的系统外观 -->
@@ -364,7 +364,7 @@ const {
         </div>
 
         <div>
-          <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
+          <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-zinc-700'">
             {{ t('settings.agents.descriptionLabel') }}
           </label>
           <input
@@ -378,7 +378,7 @@ const {
         </div>
 
         <div>
-          <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
+          <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-zinc-700'">
             {{ t('settings.agents.avatarLabel') }}
           </label>
           <input
@@ -392,7 +392,7 @@ const {
         </div>
 
         <div>
-          <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
+          <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-zinc-700'">
                         {{ t('settings.agents.promptLabel') }} <span class="text-red-500">*</span>
           </label>
           <textarea
@@ -409,7 +409,7 @@ const {
         <!-- 工具分配模块 -->
         <div class="pt-1">
           <div class="flex items-center justify-between mb-1.5">
-            <label class="block font-medium" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
+            <label class="block font-medium" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-zinc-700'">
                             {{ t('settings.agents.toolsLabel') }}
               <span class="font-normal ml-1 text-lx-muted">
                 {{ t('settings.agents.toolsCount', { selected: agentForm.toolList.length, total: availableTools.length }) }}
@@ -473,7 +473,7 @@ const {
                 'p-2.5 rounded-lg border transition-all cursor-pointer flex flex-col justify-between text-left',
                 agentForm.toolList.includes(tool.name)
                   ? (isDark ? 'bg-white/10 border-white/30 text-white text-glow-subtle' : 'bg-blue-50 border-blue-300 text-blue-900')
-                  : (isDark ? 'bg-white/[0.03] border-lx-border-subtle text-zinc-300 hover:border-white/30' : 'bg-zinc-50/80 border-lx-border-subtle text-gray-700 hover:border-zinc-300')
+                  : (isDark ? 'bg-white/[0.03] border-lx-border-subtle text-zinc-300 hover:border-white/30' : 'bg-zinc-50/80 border-lx-border-subtle text-zinc-700 hover:border-zinc-300')
               ]"
             >
               <div class="flex items-center justify-between gap-1">
@@ -504,7 +504,7 @@ const {
             type="button"
             @click="cancelAgentForm"
             class="px-3 py-1.5 rounded-xl border text-xs cursor-pointer transition"
-            :class="isDark ? 'border-white/20 hover:bg-white/10 text-zinc-200 text-glow-subtle' : 'border-zinc-300 text-zinc-500 hover:text-gray-700'"
+            :class="isDark ? 'border-white/20 hover:bg-white/10 text-zinc-200 text-glow-subtle' : 'border-zinc-300 text-zinc-500 hover:text-zinc-700'"
           >
                         {{ t('common.cancel') }}
           </button>

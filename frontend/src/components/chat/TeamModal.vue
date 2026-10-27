@@ -397,7 +397,7 @@ const handleSaveTeam = async () => {
 
         <!-- 团队名称 -->
         <div>
-          <label class="block text-xs font-medium text-gray-700 dark:text-zinc-300 mb-1">
+          <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
             {{ t('chat.team.nameLabel') }} <span class="text-red-500">*</span>
           </label>
           <input
@@ -415,7 +415,7 @@ const handleSaveTeam = async () => {
 
         <!-- 团队描述 -->
         <div>
-          <label class="block text-xs font-medium text-gray-700 dark:text-zinc-300 mb-1">
+          <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
             {{ t('chat.team.descLabel') }}
           </label>
           <textarea
@@ -434,7 +434,7 @@ const handleSaveTeam = async () => {
         <!-- 团队成员 Agent 列表 -->
         <div>
           <div class="flex items-center justify-between mb-1.5">
-            <label class="block text-xs font-medium text-gray-700 dark:text-zinc-300">
+            <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
               {{ t('chat.team.membersLabel') }} <span class="text-red-500">*</span>
               <span class="text-[11px] font-normal text-zinc-500 ml-1">
                 {{ t('chat.team.selectedCount', { count: selectedAgentIds.length }) }}
@@ -569,7 +569,7 @@ const handleSaveTeam = async () => {
               <div
                 v-if="isLoadingTools"
                 class="p-2 text-center text-zinc-400 text-xs rounded-lg border border-dashed"
-                :class="isDark ? 'border-gray-700 bg-gray-900/30' : 'border-zinc-300 bg-zinc-50/50'"
+                :class="isDark ? 'border-zinc-700 bg-gray-900/30' : 'border-zinc-300 bg-zinc-50/50'"
               >
                 {{ t('chat.team.loadingTools') }}
               </div>
@@ -607,7 +607,7 @@ const handleSaveTeam = async () => {
                     'p-1.5 rounded-md border transition-all cursor-pointer flex flex-col justify-between text-left',
                     agentFormToolList.includes(tool.name)
                       ? (isDark ? 'bg-cyan-600/20 border-cyan-500/50 text-white' : 'bg-blue-50 border-blue-300 text-blue-900')
-                      : (isDark ? 'bg-white/[0.04] border-white/10 text-zinc-300 hover:border-white/25' : 'bg-zinc-50/80 border-zinc-200 text-gray-700 hover:border-zinc-300')
+                      : (isDark ? 'bg-white/[0.04] border-white/10 text-zinc-300 hover:border-white/25' : 'bg-zinc-50/80 border-zinc-200 text-zinc-700 hover:border-zinc-300')
                   ]"
                 >
                   <div class="flex items-center justify-between gap-1">
@@ -746,7 +746,7 @@ const handleSaveTeam = async () => {
 
         <!-- 团队管理者选择 (Custom Dropdown) -->
         <div v-if="selectedAgents.length > 0" ref="commanderSelectRef" class="relative">
-          <label class="block text-xs font-medium text-gray-700 dark:text-zinc-300 mb-1.5">
+          <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
             {{ t('chat.team.managerLabel') }} <span class="text-red-500">*</span>
             <span class="text-[11px] font-normal text-zinc-500 ml-1">
               {{ t('chat.team.managerHint') }}
@@ -813,7 +813,7 @@ const handleSaveTeam = async () => {
                 'px-3 py-2 flex items-center justify-between cursor-pointer transition-colors text-xs',
                 commanderAgentId === agent.id
                   ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-blue-50 text-blue-700 font-medium')
-                  : (isDark ? 'hover:bg-white/10 text-zinc-300' : 'hover:bg-zinc-100/80 text-gray-700')
+                  : (isDark ? 'hover:bg-white/10 text-zinc-300' : 'hover:bg-zinc-100/80 text-zinc-700')
               ]"
             >
               <div class="flex items-center gap-2.5 min-w-0">

@@ -98,7 +98,7 @@ const fieldClass = computed(() => [
 ]);
 const labelClass = computed(() => [
   'block text-xs font-medium mb-1',
-  isDark.value ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700',
+  isDark.value ? 'text-zinc-200 text-glow-subtle' : 'text-zinc-700',
 ]);
 const cardClass = computed(() => [
   'rounded-2xl border transition-colors',
@@ -110,7 +110,7 @@ const ghostBtnClass = computed(() => [
   'px-3 py-1 rounded-lg border text-xs font-medium transition cursor-pointer',
   isDark.value
     ? 'border-white/20 hover:border-white/40 bg-white/[0.06] hover:bg-white/[0.12] text-zinc-100'
-    : 'border-zinc-200 hover:bg-zinc-50 text-gray-700',
+    : 'border-zinc-200 hover:bg-zinc-50 text-zinc-700',
 ]);
 const dangerBtnClass = computed(() => [
   'text-xs px-2 py-1 transition cursor-pointer font-medium',
@@ -427,7 +427,7 @@ const addRowClass = computed(() => [
               v-if="isRemoteModelDropdownOpen"
               :class="[
                 'absolute left-0 right-0 mt-1 max-h-60 overflow-hidden rounded-xl border shadow-2xl py-1 z-30 flex flex-col text-xs origin-top backdrop-blur-xl',
-                isDark ? 'bg-black/95 border-white/20 text-zinc-100' : 'bg-white border-zinc-200 text-gray-700'
+                isDark ? 'bg-black/95 border-white/20 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-700'
               ]"
             >
               <div class="p-2 border-b border-lx-border-faint">

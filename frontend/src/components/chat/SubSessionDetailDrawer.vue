@@ -402,7 +402,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                     <span class="text-[11px] shrink-0">{{ tc.status || 'done' }}</span>
                   </button>
 
-                  <div v-if="hasToolDetail(tc) && expandedToolCallIds[tc.id]" class="px-3 pb-3 pt-0 space-y-2 border-t border-gray-700/30">
+                  <div v-if="hasToolDetail(tc) && expandedToolCallIds[tc.id]" class="px-3 pb-3 pt-0 space-y-2 border-t border-zinc-700/30">
                     <pre v-if="shouldShowToolArguments(tc.toolName) && tc.query" class="text-[11px] text-zinc-300 overflow-x-auto whitespace-pre-wrap max-h-32 mt-2 p-2 rounded-lg bg-black/40 border border-white/10">{{ tc.query }}</pre>
                     <pre v-if="tc.result" class="text-[11px] text-zinc-200 overflow-x-auto whitespace-pre-wrap max-h-48 p-2 rounded-lg bg-black/40 border border-white/10">{{ unwrapToolResultEnvelope(tc.result) }}</pre>
                   </div>

@@ -135,7 +135,7 @@ const {
                 'px-3 py-1.5 cursor-pointer flex items-center justify-between transition-colors',
                 preference === opt.value
                   ? (isDark ? 'text-sky-400 text-glow-cyan font-medium bg-white/10' : 'text-blue-500 font-medium bg-blue-50')
-                  : (isDark ? 'text-zinc-200 hover:bg-white/10 hover:text-white' : 'text-gray-700 hover:bg-zinc-100')
+                  : (isDark ? 'text-zinc-200 hover:bg-white/10 hover:text-white' : 'text-zinc-700 hover:bg-zinc-100')
               ]"
             >
               <span>{{ opt.label }}</span>
@@ -195,7 +195,7 @@ const {
                   'px-3 py-1.5 cursor-pointer flex items-center justify-between transition-colors',
                   soundPref === option.id
                     ? (isDark ? 'text-sky-400 text-glow-cyan font-medium bg-white/10' : 'text-blue-500 font-medium bg-blue-50')
-                    : (isDark ? 'text-zinc-200 hover:bg-white/10 hover:text-white' : 'text-gray-700 hover:bg-zinc-100')
+                    : (isDark ? 'text-zinc-200 hover:bg-white/10 hover:text-white' : 'text-zinc-700 hover:bg-zinc-100')
                 ]"
               >
                 <span>{{ t(option.labelKey) }}</span>

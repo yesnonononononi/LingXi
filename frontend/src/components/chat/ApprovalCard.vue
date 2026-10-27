@@ -168,7 +168,7 @@ const handleReject = () => submit(false);
                   :class="[
                     'text-[11px] px-2 py-0.5 rounded-md transition flex items-center gap-1 cursor-pointer select-none border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50',
                     isDark
-                      ? 'bg-gray-800/80 hover:bg-gray-700 text-zinc-400 hover:text-zinc-200 border-gray-700/60'
+                      ? 'bg-gray-800/80 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 border-zinc-700/60'
                       : 'bg-white hover:bg-zinc-50 text-zinc-500 hover:text-gray-800 border-zinc-200 shadow-2xs'
                   ]"
                 >

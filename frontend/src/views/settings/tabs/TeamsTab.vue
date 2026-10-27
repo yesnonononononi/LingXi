@@ -212,7 +212,7 @@ const {
                     :class="[
                       agent.id === team.commanderAgentId
                         ? (isDark ? 'bg-cyan-600/20 border-cyan-500/40 text-cyan-200 font-medium' : 'bg-blue-50 border-blue-300 text-blue-800 font-medium')
-                        : (isDark ? 'bg-white/[0.04] border-white/10 text-zinc-300' : 'bg-white border-zinc-200 text-gray-700 shadow-2xs')
+                        : (isDark ? 'bg-white/[0.04] border-white/10 text-zinc-300' : 'bg-white border-zinc-200 text-zinc-700 shadow-2xs')
                     ]"
                   >
                     <!-- 成员小头像：URL 走 <img>，其余按 Emoji 文本渲染 -->
@@ -292,7 +292,7 @@ const {
       <div class="space-y-3.5 text-xs">
         <!-- 团队名称 -->
         <div>
-          <label class="block text-gray-700 dark:text-zinc-300 font-medium mb-1">
+          <label class="block text-zinc-700 dark:text-zinc-300 font-medium mb-1">
                         {{ t('settings.teams.nameLabel') }} <span class="text-red-500">*</span>
           </label>
           <input
@@ -307,7 +307,7 @@ const {
 
         <!-- 团队描述 (编辑团队描述) -->
         <div>
-          <label class="block text-gray-700 dark:text-zinc-300 font-medium mb-1">
+          <label class="block text-zinc-700 dark:text-zinc-300 font-medium mb-1">
                         {{ t('settings.teams.descriptionLabel') }}
           </label>
           <textarea
@@ -323,7 +323,7 @@ const {
 
         <!-- 团队头像 -->
         <div>
-          <label class="block text-gray-700 dark:text-zinc-300 font-medium mb-1">
+          <label class="block text-zinc-700 dark:text-zinc-300 font-medium mb-1">
             {{ t('settings.teams.avatarLabel') }}
           </label>
           <input
@@ -339,7 +339,7 @@ const {
         <!-- 团队成员选择 -->
         <div>
           <div class="flex items-center justify-between mb-1.5">
-            <label class="block text-gray-700 dark:text-zinc-300 font-medium">
+            <label class="block text-zinc-700 dark:text-zinc-300 font-medium">
                             {{ t('settings.teams.membersSelectLabel') }} <span class="text-red-500">*</span>
               <span class="text-zinc-400 font-normal ml-1">
                 {{ t('settings.teams.membersSelectCount', { selected: teamForm.agentIds.length, max: maxMemberSize }) }}
@@ -425,7 +425,7 @@ const {
 
         <!-- 团队管理者选择 -->
         <div>
-          <label class="block text-gray-700 dark:text-zinc-300 font-medium mb-1">
+          <label class="block text-zinc-700 dark:text-zinc-300 font-medium mb-1">
                         {{ t('settings.teams.commanderLabel') }} <span class="text-red-500">*</span>
             <span class="text-zinc-400 font-normal ml-1">
               {{ t('settings.teams.commanderHint') }}
@@ -459,7 +459,7 @@ const {
               'px-4 py-1.5 rounded-xl border text-xs font-medium transition cursor-pointer',
               isDark
                 ? 'border-white/15 hover:bg-white/5 text-zinc-300'
-                : 'border-zinc-200 hover:bg-zinc-50 text-gray-700'
+                : 'border-zinc-200 hover:bg-zinc-50 text-zinc-700'
             ]"
           >
                         {{ t('common.cancel') }}

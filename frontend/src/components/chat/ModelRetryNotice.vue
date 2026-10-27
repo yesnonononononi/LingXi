@@ -30,7 +30,7 @@ const text = computed(() => resolveModelRetryText(props.retry));
       class="retry-notice w-full my-3 py-1 flex items-center gap-3 select-none"
     >
       <!-- 两侧等分剩余空间，保证提示始终居中。 -->
-      <div class="flex-1 min-w-0 h-[1px] bg-zinc-200 dark:bg-gray-700/60"></div>
+      <div class="flex-1 min-w-0 h-[1px] bg-zinc-200 dark:bg-zinc-700/60"></div>
 
       <div class="flex items-center gap-1.5 text-xs text-lx-muted font-normal shrink-0">
         <svg class="w-3.5 h-3.5 opacity-80 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -40,7 +40,7 @@ const text = computed(() => resolveModelRetryText(props.retry));
         <span class="retry-notice-shimmer">{{ text }}</span>
       </div>
 
-      <div class="flex-1 min-w-0 h-[1px] bg-zinc-200 dark:bg-gray-700/60"></div>
+      <div class="flex-1 min-w-0 h-[1px] bg-zinc-200 dark:bg-zinc-700/60"></div>
     </div>
   </transition>
 </template>

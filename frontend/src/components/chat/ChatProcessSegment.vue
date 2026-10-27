@@ -34,7 +34,7 @@ const previewIsText = computed(() => headline.value.previewKind === 'text');
     <button type="button" data-testid="process-segment-toggle" :aria-expanded="expanded"
       :aria-label="[title, preview, statusLabel].filter(Boolean).join(' ')"
       class="flex w-full min-w-0 items-center gap-2 py-1 text-left text-xs cursor-pointer group"
-      :class="isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-500 hover:text-gray-700'"
+      :class="isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-500 hover:text-zinc-700'"
       @click="expanded = !expanded">
       <svg class="h-3.5 w-3.5 shrink-0 transition-transform" :class="expanded ? 'rotate-90' : ''"
         viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">

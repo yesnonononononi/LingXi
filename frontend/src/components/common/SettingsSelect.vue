@@ -134,7 +134,7 @@ onBeforeUnmount(() => {
 .settings-select-trigger:focus-visible, .settings-select-trigger.is-open { @apply border-zinc-400 ring-2 ring-zinc-200/60 dark:border-white/40 dark:ring-white/10; }
 .settings-select-chevron { @apply h-3.5 w-3.5 shrink-0 text-lx-muted; transition: transform 180ms ease; }
 .settings-select-chevron.is-open { transform: rotate(180deg); }
-.settings-select-menu { @apply fixed z-[1000] overflow-y-auto rounded-xl border border-zinc-200 bg-white p-1.5 text-xs text-gray-700 shadow-[0_8px_28px_rgba(0,0,0,0.12)] dark:border-white/15 dark:bg-zinc-950 dark:text-zinc-300 dark:shadow-[0_12px_36px_rgba(0,0,0,0.65)]; transform-origin: top center; }
+.settings-select-menu { @apply fixed z-[1000] overflow-y-auto rounded-xl border border-zinc-200 bg-white p-1.5 text-xs text-zinc-700 shadow-[0_8px_28px_rgba(0,0,0,0.12)] dark:border-white/15 dark:bg-zinc-950 dark:text-zinc-300 dark:shadow-[0_12px_36px_rgba(0,0,0,0.65)]; transform-origin: top center; }
 .settings-select-menu.opens-up { transform-origin: bottom center; }
 .settings-select-option { @apply flex min-h-9 items-center justify-between gap-3 rounded-lg px-3 py-2 cursor-pointer select-none; transition: background-color 120ms, color 120ms; }
 .settings-select-option.is-active { @apply bg-zinc-100 text-gray-900 dark:bg-white/10 dark:text-white; }

@@ -196,7 +196,7 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
       <div
         :class="[
           'update-notes rounded-2xl border p-4 text-xs leading-relaxed max-h-64 overflow-y-auto scrollbar-thin',
-          isDark ? 'bg-white/[0.03] border-lx-border-faint text-zinc-300' : 'bg-zinc-50 border-lx-border-faint text-gray-700',
+          isDark ? 'bg-white/[0.03] border-lx-border-faint text-zinc-300' : 'bg-zinc-50 border-lx-border-faint text-zinc-700',
         ]"
         v-html="renderedNotes"
       />

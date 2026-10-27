@@ -383,14 +383,14 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                   </div>
                   <!-- 有目标路径/对象时（如读取/写入）：分类名 + 目标路径（读文件附行范围） -->
                   <template v-if="getToolTarget(item.tool)">
-                    <span class="font-normal shrink-0" :class="isDark ? 'text-zinc-100 text-glow-white font-medium' : 'text-gray-700'">{{ resolveToolRenderName(item.tool.toolName) }}</span>
+                    <span class="font-normal shrink-0" :class="isDark ? 'text-zinc-100 text-glow-white font-medium' : 'text-zinc-700'">{{ resolveToolRenderName(item.tool.toolName) }}</span>
                     <button
                       type="button"
                       :disabled="!canPreviewFile(item.tool)"
                       :title="canPreviewFile(item.tool) ? t('chat.message.previewFile') : undefined"
                       @click.stop="openFilePreview?.(props.sessionId, getToolTarget(item.tool))"
                       class="border-b border-dotted font-mono text-[12.5px] pb-px transition-colors truncate min-w-0"
-                      :class="isDark ? 'border-white/30 text-zinc-200 text-glow-subtle' : 'border-zinc-400 text-gray-700'"
+                      :class="isDark ? 'border-white/30 text-zinc-200 text-glow-subtle' : 'border-zinc-400 text-zinc-700'"
                     >
                       {{ cleanDisplayPath(getToolTarget(item.tool)) }}
                     </button>
@@ -411,7 +411,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                       :aria-expanded="!!expandedToolIds[item.tool.id]"
                       @click.stop="toggleToolCall(item.tool.id)"
                       class="transition-colors truncate min-w-0 font-medium"
-                      :class="isDark ? 'text-[13px] text-zinc-100 text-glow-white' : 'text-[13px] text-gray-700'"
+                      :class="isDark ? 'text-[13px] text-zinc-100 text-glow-white' : 'text-[13px] text-zinc-700'"
                     >
                                             {{ cleanDisplayPath(getToolDescription(item.tool)) || resolveToolRenderName(item.tool.toolName) }}
                     </button>

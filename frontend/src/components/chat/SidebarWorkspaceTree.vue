@@ -318,7 +318,7 @@ const emit = emitShim as TreeEmitShim;
                 'group relative flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
                 isWorkspaceActive(group.workspace)
                   ? 'bg-zinc-200/80 text-gray-900 font-medium'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-zinc-100'
+                  : 'text-zinc-700 hover:text-gray-900 hover:bg-zinc-100'
               ]"
             >
               <!-- Left: Chevron Indicator + Folder Icon + Workspace Name -->
@@ -372,7 +372,7 @@ const emit = emitShim as TreeEmitShim;
                   >
                     <div
                       v-if="activeMenuWorkspaceId === String(group.workspace.id)"
-                      class="absolute right-0 top-6 w-32 py-1 rounded-xl shadow-xl border z-50 text-xs bg-white border-zinc-200 text-gray-700 backdrop-blur-md"
+                      class="absolute right-0 top-6 w-32 py-1 rounded-xl shadow-xl border z-50 text-xs bg-white border-zinc-200 text-zinc-700 backdrop-blur-md"
                     >
                       <button
                                                 @click="handleDeleteProject(group.workspace, $event)"
