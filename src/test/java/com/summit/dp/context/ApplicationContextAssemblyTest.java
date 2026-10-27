@@ -150,10 +150,12 @@ class ApplicationContextAssemblyTest {
 
         assertTrue(names.containsAll(List.of("execute_command", "manage_command", "read_file", "edit_file",
                         "read_image", "web_search", "require_choice", "call_sub_agent", "peek_teammate_state",
-                        "send_mail_to_agent", "create_plan")),
+                        "send_mail_to_agent", "create_plan",
+                        "create_checklist", "update_checklist_step", "modify_checklist", "delete_checklist")),
                 "门禁必须覆盖全部基础工具，实际=" + names);
-        assertEquals(10, definitions.values().stream()
-                .filter(definition -> definition.executor().getClass().isAnnotationPresent(Tool.class)).count());
+        assertEquals(14, definitions.values().stream()
+                .filter(definition -> definition.executor().getClass().isAnnotationPresent(Tool.class)).count(),
+                "注解声明工具的固定数量：十件旧工具 + 四件执行清单工具");
         assertEquals(5, context.getBeansOfType(ToolDefinition.class).size(),
                 "只有配置驱动的网页检索与四个框架内核工具保留定义 Bean");
         definitions.values().stream()
