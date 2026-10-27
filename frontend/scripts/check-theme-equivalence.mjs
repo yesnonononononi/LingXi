@@ -65,6 +65,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
+  DIST_ASSETS_DIR,
   FRONTEND_ROOT,
   loadThemeContext,
   loadThemeMap,
@@ -95,6 +96,105 @@ const TOL = { rgb: 8, alpha: 0.01 };
 
 /** 令牌工具类前缀：命中但它解析不到，就是「写错令牌名」的静默失效 */
 const TOKEN_CLASS_RE = /^(?:bg|text|border|border-[tb]|from|to|via|ring|fill|stroke|divide|placeholder|outline|shadow|accent|caret|decoration)-(?:lx|color-lx)-/;
+
+/**
+ * Tailwind 内置调色板名（灰阶统一迁移的主角都在其中）。
+ *
+ * <p>为什么要把名单写死而不是用「任意单词」：护栏必须**窄**，否则 `text-xs`、`text-lx-faint`、
+ * `bg-[#151b26]` 这类非调色板/任意值会被误判成「解析不到的调色板类」，一改就假红一片。</p>
+ */
+const PALETTE_NAMES = new Set([
+  'slate', 'gray', 'zinc', 'neutral', 'stone',
+  'red', 'orange', 'amber', 'yellow', 'lime', 'green', 'emerald', 'teal', 'cyan', 'sky',
+  'blue', 'indigo', 'violet', 'purple', 'fuchsia', 'pink', 'rose',
+]);
+
+/**
+ * 判据：`{prop}-{paletteName}-{tier}` 形状的类（G-7 护栏的输入）。
+ *
+ * <p>tier 用 `\d{2,3}` 而不是枚举 50…950：像 `bg-zinc-999` 这种**不存在的档位**必须被判成
+ * 「形如调色板类但解析不到」，否则护栏在变异测试里会哑火（那正是本护栏要防的情形）。
+ * 合法性由 `resolveClass` 判断，不用正则枚举档位。</p>
+ */
+const PALETTE_CLASS_RE = new RegExp(
+  '^(?:bg|text|border|border-[trblxyse]|ring|from|via|to|fill|stroke|divide|placeholder|outline|shadow|accent|caret|decoration)'
+  + '-([a-z]+)-(\\d{2,3})$'
+);
+
+/**
+ * 判断一个类名是否为「形如调色板类」。
+ * @param {string} cls 类名（不含变体前缀）
+ * @returns {boolean} true = 形如调色板类
+ */
+const looksLikePaletteClass = (cls) => {
+  const m = PALETTE_CLASS_RE.exec(cls);
+  return m !== null && PALETTE_NAMES.has(m[1]);
+};
+
+/**
+ * 解释「为什么解析不到」，供报错打印（要能直接指导修法）。
+ * @param {ReturnType<typeof loadThemeContext>} ctx 解析上下文
+ * @param {string} base 基础类名（已剥变体）
+ * @param {boolean} presentInArtifact 类名是否作为整词出现在产物 CSS 里
+ * @returns {string} 原因说明
+ */
+const whyUnresolved = (ctx, base, presentInArtifact) => {
+  if (ctx.built.classes.has(base)) {
+    return '类在产物里有规则，但颜色值无法解析（如 oklch(… none) 这类未支持的语法，或引用到缺失变量）';
+  }
+  if (!presentInArtifact) {
+    return '产物里根本没有这个类：档位/调色板名拼错，或该类未被 Tailwind 生成（构建过期 / 被 purge）';
+  }
+  return '产物里有该类名但解析上下文未收录（已知索引边界，本条已被护栏过滤，不应出现在报错里）';
+};
+
+/**
+ * 类名是否出现在 `@apply ...;` 声明体里。
+ *
+ * <p>为什么需要：`@apply` 里的类**不会**在产物中生成同名工具类（Tailwind 只把属性内联到宿主规则），
+ * 所以「产物里没有这个类」在 @apply 场景下完全正常；把它当失败会假红一片。</p>
+ *
+ * @param {string} source 文件源码
+ * @param {string} cls 类名（不含变体前缀）
+ * @returns {boolean} true = 该类的使用点在 @apply 内
+ */
+const insideApplyBody = (source, cls) => {
+  const bodies = String(source).match(/@apply[^;{}]*/g) ?? [];
+  if (bodies.length === 0) return false;
+  const esc = cls.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`(?:^|[^\\w-])${esc}(?![\\w-])`);
+  return bodies.some((b) => re.test(b));
+};
+
+/**
+ * 产物 CSS 全文（懒加载并缓存）：用于区分「类压根没生成」与「生成了但解析器没收录」。
+ * @type {string|null}
+ */
+let artifactCssCache = null;
+const artifactCss = () => {
+  if (artifactCssCache !== null) return artifactCssCache;
+  try {
+    const dir = DIST_ASSETS_DIR;
+    const parts = fs.readdirSync(dir).filter((f) => f.endsWith('.css'));
+    artifactCssCache = parts.map((f) => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n');
+  } catch {
+    artifactCssCache = '';
+  }
+  return artifactCssCache;
+};
+
+/**
+ * 类名是否**作为整词**出现在产物 CSS 里（`zinc-50` 不得命中 `zinc-500`）。
+ * @param {string} cls 类名
+ * @returns {boolean} true = 产物中存在（或产物不可读时返回 true，避免假红）
+ */
+const presentInArtifact = (cls) => {
+  const css = artifactCss();
+  if (css === '') return true;
+  const esc = cls.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?:^|[^\\w-])${esc}(?![\\w-])`).test(css);
+};
+
 
 /**
  * 是否是「像工具类」的 token（用于把字符串字面量里的类名挑出来）。
@@ -290,6 +390,36 @@ const groupsOf = (ctx, source) => {
   // 第 1 层：命中令牌前缀却解析不到的，就是写错/不存在的令牌类
   g.raw = [...g.rawDark, ...g.rawLight];
   g.unknown = [...new Set(g.raw)].filter((c) => TOKEN_CLASS_RE.test(c));
+  // G-7 护栏：形如调色板类、却解析不到的类（灰阶迁移期最容易出现的静默失效）。
+  // 历史盲区：`oklch(… none)` 解析失败 ⇒ 类被丢进 raw ⇒ raw 只参与「两侧多重集比对」，
+  // 于是「整族 zinc-50 从未进入 residual 统计」这件事在门禁里完全无声。
+  // 判据要**窄**（避免假红一片）：
+  //   (a) 类在产物里有规则、解析上下文也收录了，但取值解析失败 → 真缺陷（G-7 形态）；
+  //   (b) 类名压根没出现在产物 CSS 里 → 拼错档位/调色板名（变异测试要抓的就是这种）。
+  // 「产物里有该类名但索引未收录」是解析器的已知边界（divide-*、组合选择器类等），
+  // 那类既存情形不在此报红（不是本次迁移引入的，硬报会造成几十处假红）。
+  g.unresolvedPalette = [...new Set(g.raw)]
+    .map((cls) => ({ cls, base: splitVariant(cls).base }))
+    .filter((it) => looksLikePaletteClass(it.base))
+    .map((it) => {
+      const present = presentInArtifact(it.base);
+      const indexed = ctx.built.classes.has(it.base);
+      return {
+        cls: it.cls,
+        base: it.base,
+        present,
+        indexed,
+        reason: whyUnresolved(ctx, it.base, present),
+      };
+    })
+    // 判据要窄（否则假红一片），用两个条件排除三类非缺陷情形：
+    //   1) `indexed=true`：产物里有该类的**单类规则**，却仍然取不到颜色 ⇒ 一定是解析失败（G-7 形态）。
+    //   2) `!present`：产物里根本没有这个类名 ⇒ 拼错调色板名/档位（变异测试要抓的就是这种）。
+    // 被排除的只有：产物里有类名但解析器未建索引（组合选择器 `divide-*`、`:where(.dark …)` 包裹等
+    // 已知边界，实测本仓 29 处，均非本次迁移引入）；以及 @apply 内的类名（Tailwind 只内联属性、
+    // 不生成工具类本身，属正常）。
+    .filter((it) => it.indexed || !it.present)
+    .filter((it) => it.indexed || !insideApplyBody(source, it.base));
   return g;
 };
 
@@ -559,6 +689,12 @@ const staticCheck = (ctx, relPath) => {
   const problems = [];
   for (const c of g.unknown) {
     problems.push(`[static] ${c} —— 产物里解析不到该令牌类（Tailwind 不产出规则，等于没写；多半是令牌名写错）`);
+  }
+  // G-7 护栏：形如调色板类却解析不到 ⇒ 硬失败（打印文件 / 类名 / 原因）。
+  // 为什么单列一条而不是并进 unknown：unknown 只看令牌前缀（lx-/color-lx-），
+  // 而这次漏的是**整族灰阶调色板类**（zinc-50 全族因 oklch hue=none 解析失败被静默丢弃 41 项）。
+  for (const it of g.unresolvedPalette) {
+    problems.push(`[static] ${relPath} · ${it.cls} —— 形如调色板类但解析不到：${it.reason}`);
   }
   return problems;
 };
@@ -1063,18 +1199,23 @@ const listResidualFiles = (dir) => {
 const collectResidual = (ctx) => {
   /** @type {Record<string, {dark: number, light: number}>} */
   const files = {};
+  /** @type {Array<{file: string, cls: string, reason: string}>} */
+  const unresolvedPalette = [];
   let dark = 0;
   let light = 0;
   for (const abs of listResidualFiles(SRC_ROOT)) {
     const rel = path.relative(REPO_ROOT, abs).split(path.sep).join('/');
     const g = groupsOf(ctx, fs.readFileSync(abs, 'utf8'));
+    for (const it of g.unresolvedPalette) {
+      unresolvedPalette.push({ file: rel, cls: it.cls, reason: it.reason });
+    }
     const d = g.dark.filter((e) => !e.token).length;
     const l = g.light.filter((e) => !e.token).length;
     if (d > 0 || l > 0) files[rel] = { dark: d, light: l };
     dark += d;
     light += l;
   }
-  return { dark, light, total: dark + light, files };
+  return { dark, light, total: dark + light, files, unresolvedPalette };
 };
 
 /**
@@ -1091,6 +1232,28 @@ const checkResidual = (ctx, args) => {
     return 1;
   }
   const now = collectResidual(ctx);
+
+  // 先打印读数（即使随后要拒绝，也要让人看到数字，便于对账），再判准入。
+  if (fs.existsSync(RESIDUAL_FILE)) {
+    const basePeek = JSON.parse(fs.readFileSync(RESIDUAL_FILE, 'utf8'));
+    console.log('[gate:theme:residual] 无法等价迁移的颜色残余（存量基线）');
+    console.log(`  基线 : total=${basePeek.total}（dark=${basePeek.dark} / light=${basePeek.light}，${basePeek.updatedAt}）`);
+    console.log(`  当前 : total=${now.total}（dark=${now.dark} / light=${now.light}）`);
+  }
+
+  // 准入闸门（G-7）：只要有「形如调色板类却解析不到」的类，残余统计本身就是失明的，
+  // 这时写基线等于把读数错误固化成「合规」；连只读判定也不许绿——否则「残余不涨」会被当成验收依据。
+  if (now.unresolvedPalette.length > 0) {
+    console.error(`\n[gate:theme:residual] 拒绝判定/写基线：${now.unresolvedPalette.length} 处调色板类解析不到（统计会失明）`);
+    for (const it of now.unresolvedPalette.slice(0, 40)) {
+      console.error(`  ✗ ${it.file} · ${it.cls} —— ${it.reason}`);
+    }
+    if (now.unresolvedPalette.length > 40) {
+      console.error(`  … 其余 ${now.unresolvedPalette.length - 40} 处省略`);
+    }
+    console.error('  先修好解析（如 oklch hue=none）或改对类名，再执行 --update-residual。');
+    return 1;
+  }
 
   if (args.includes('--update-residual')) {
     const payload = {
@@ -1269,6 +1432,47 @@ const selftest = (ctx) => {
 
   console.log('容差 RGB≤' + TOL.rgb + ' alpha≤' + TOL.alpha);
 
+  // ---- G-7：oklch hue=none（灰阶整族计量失明的根因）----
+  // Tailwind v4 的灰阶全用 `oklch(98.5% 0 none)` 形式（彩度 0 ⇒ 色相角无意义，规范允许 none）。
+  // 旧正则只认 `([\d.]+)`，遇到 none 整条匹配失败 ⇒ normalizeColor=null ⇒ 类被丢进 raw
+  // ⇒ 永不进 colors ⇒ residual 少算整族（实测 41 项）。这条用例把精确值钉死。
+  check(
+    'oklch hue=none 解析为 #fafafa（zinc-50 的真实取值）',
+    normalizeColor('oklch(98.5% 0 none)') === '#fafafa',
+    String(normalizeColor('oklch(98.5% 0 none)'))
+  );
+  check(
+    'oklch hue=none 与 hue=0 结果一致（C=0 时色相无意义）',
+    normalizeColor('oklch(98.5% 0 none)') === normalizeColor('oklch(98.5% 0 0)'),
+    `${normalizeColor('oklch(98.5% 0 none)')} vs ${normalizeColor('oklch(98.5% 0 0)')}`
+  );
+  check(
+    'oklch 仍在其它色相下正常解析（回归：不得因放宽正则而错算彩度色）',
+    normalizeColor('oklch(64.5% 0.246 16.439)') !== null
+      && normalizeColor('oklch(64.5% 0.246 16.439)') !== normalizeColor('oklch(64.5% 0.246 120)'),
+    String(normalizeColor('oklch(64.5% 0.246 16.439)'))
+  );
+
+  // ---- G-7 护栏：unresolvedPalette ----
+  const gUnres = groupsOf(ctx, "const c = 'bg-zinc-999 text-zinc-100'");
+  check(
+    '不存在的调色板类 → unresolvedPalette 报出（变异守卫生效）',
+    gUnres.unresolvedPalette.length === 1 && gUnres.unresolvedPalette[0].base === 'bg-zinc-999',
+    JSON.stringify(gUnres.unresolvedPalette.map((x) => x.cls))
+  );
+  const gClean = groupsOf(ctx, "const c = 'bg-[#151b26] text-lx-faint text-xs bg-zinc-100'");
+  check(
+    'arbitrary 值 / 令牌类 / 非颜色类 → 不进 unresolvedPalette（不假红）',
+    gClean.unresolvedPalette.length === 0,
+    JSON.stringify(gClean.unresolvedPalette.map((x) => x.cls))
+  );
+  const gApply = groupsOf(ctx, '.x{ @apply bg-sky-400; }');
+  check(
+    '@apply 里的类名 → 不进 unresolvedPalette（@apply 不生成工具类，属正常）',
+    gApply.unresolvedPalette.length === 0,
+    JSON.stringify(gApply.unresolvedPalette.map((x) => x.cls))
+  );
+
   const before = "const c = isDark ? 'text-zinc-400' : 'text-gray-500'";
   const same = "const c = isDark ? 'text-zinc-400' : 'text-gray-500'";
   const moved = "const c = isDark ? 'text-lx-primary' : 'text-gray-500'";
@@ -1419,7 +1623,7 @@ const a1 = groupsOf(ctx, "const c = isDark ? 'bg-white/10' : 'bg-white'");
   check('同值非令牌共存时，令牌小差折叠仍判绿（配对按值不按下标）', eqOf(pairOld, pairNew).length === 0, JSON.stringify(eqOf(pairOld, pairNew)));
   // 假红二：`dark:hover:` 曾被当成「暗态基础色覆盖」而把基础色吞掉，导致数量不一致。
   // 状态变体与暗色变体是两个维度，必须分桶。
-  const hoverOld = "const c = 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white';";
+  const hoverOld = "const c = 'text-gray-600 dark:text-zinc-300 hover:text-gray-900 dark:hover:text-white';";
   const hoverNew = "const c = 'text-lx-tertiary hover:text-gray-900 dark:hover:text-white';";
   check('dark:hover: 不得吞掉基础色（状态与暗色分桶）', eqOf(hoverOld, hoverNew).length === 0, JSON.stringify(eqOf(hoverOld, hoverNew)));
   check('状态分桶不得放过真实悬停色漂移', eqOf(hoverOld, "const c = 'text-lx-tertiary hover:text-gray-500 dark:hover:text-white';").length > 0, 'hover 色被改必须红');
@@ -1428,13 +1632,13 @@ const a1 = groupsOf(ctx, "const c = isDark ? 'bg-white/10' : 'bg-white'");
   // 修的是：带 dark 的声明必须只在暗态生效，且覆盖同状态桶内同属性。下面把「合法折叠必绿 +
   // 三类腐败必红」都锁死；其中第一条原本会误报（旧模型把 dark:hover 漏进明态致数量不一致），
   // 是本次修复的回归护栏——一旦有人把 isDark 退回 darkOnly，这条立刻变红。
-  const prefBase = "const c = 'hover:text-gray-700 dark:hover:text-gray-200'";
+  const prefBase = "const c = 'hover:text-gray-700 dark:hover:text-zinc-200'";
   check('base+dark:hover 折叠成令牌 → 判等价（旧模型此处误红）', eqOf(prefBase, "const c = 'hover:text-lx-secondary'").length === 0, JSON.stringify(eqOf(prefBase, "const c = 'hover:text-lx-secondary'")));
   check('折叠后亮态悬停色改错 → 必红', eqOf(prefBase, "const c = 'hover:text-gray-600 dark:hover:text-gray-200'").length > 0);
   check('折叠后暗态悬停色改错 → 必红', eqOf(prefBase, "const c = 'hover:text-gray-700 dark:hover:text-gray-300'").length > 0);
   check('删掉暗态悬停覆盖 → 必红', eqOf(prefBase, "const c = 'hover:text-gray-700'").length > 0);
   // focus 与 hover 同为状态变体，走同一覆盖规则：合法折叠绿、改错亮/暗 focus 必红。
-  const focBase = "const c = 'focus:text-gray-600 dark:focus:text-gray-300'";
+  const focBase = "const c = 'focus:text-gray-600 dark:focus:text-zinc-300'";
   check('base+dark:focus 折叠成令牌 → 判等价', eqOf(focBase, "const c = 'focus:text-lx-tertiary'").length === 0, JSON.stringify(eqOf(focBase, "const c = 'focus:text-lx-tertiary'")));
   check('折叠后亮态 focus 改错 → 必红', eqOf(focBase, "const c = 'focus:text-gray-500 dark:focus:text-gray-300'").length > 0);
   check('折叠后暗态 focus 改错 → 必红', eqOf(focBase, "const c = 'focus:text-gray-600 dark:focus:text-gray-400'").length > 0);
