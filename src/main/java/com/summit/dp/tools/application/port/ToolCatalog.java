@@ -25,6 +25,12 @@ public interface ToolCatalog {
     String EXECUTE_COMMAND = "execute_command";
     String MANAGE_COMMAND = "manage_command";
 
+    /** 执行清单工具名：多步任务的可维护待办，与审批计划 {@link #CREATE_PLAN} 语义不同 */
+    String CREATE_CHECKLIST = "create_checklist";
+    String UPDATE_CHECKLIST_STEP = "update_checklist_step";
+    String MODIFY_CHECKLIST = "modify_checklist";
+    String DELETE_CHECKLIST = "delete_checklist";
+
     /** 读文件工具名 */
     String READ_FILE = "read_file";
 
@@ -46,11 +52,15 @@ public interface ToolCatalog {
      * 所以裸模型档位给了就能用。协作类工具刻意不在列：它们要么需要团队（{@code call_sub_agent}），
      * 要么需要发件人身份（{@code send_mail_to_agent}），给了也只会一调用就报错。</p>
      *
+     * <p>执行清单四工具也在列：它们只依赖会话归属（执行上下文自带），
+     * 且 Agent 必须能自发记录与推进步骤，否则收尾提醒就无从判定「还剩什么没做」。</p>
+     *
      * <p>只读档位不必在这里分叉：工具加工层会按注册表的只读标记剔除写工具，
      * 只读模式保留终端，禁用编辑工具；终端写入副作用不由档位保证。</p>
      */
     List<String> DEFAULT_AGENT_TOOLS =
-            List.of(EXECUTE_COMMAND, MANAGE_COMMAND, READ_FILE, EDIT_FILE, WEB_SEARCH, REQUIRE_CHOICE);
+            List.of(EXECUTE_COMMAND, MANAGE_COMMAND, READ_FILE, EDIT_FILE, WEB_SEARCH, REQUIRE_CHOICE,
+                    CREATE_CHECKLIST, UPDATE_CHECKLIST_STEP, MODIFY_CHECKLIST, DELETE_CHECKLIST);
 
     /**
      * 工具检索工具名。实现归框架侧（{@code harness-kernel-tools} 的 {@link SearchToolExecutor}），

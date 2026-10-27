@@ -41,7 +41,8 @@ public class ChecklistVO {
         private Instant updateAt;
     }
 
-    /** 按 seq 升序的步骤列表，避免调用方各自排序。 */
+    /** 按 seq 升序的步骤列表，避免调用方各自排序；不参与序列化，免得快照里出现两份步骤。 */
+    @com.fasterxml.jackson.annotation.JsonIgnore
     public List<StepVO> sortedSteps() {
         if (steps == null) {
             return List.of();
