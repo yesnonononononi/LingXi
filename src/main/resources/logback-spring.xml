@@ -11,9 +11,6 @@
   console-appender，保持控制台输出格式不变。
 -->
 <configuration>
-    <conversionRule conversionWord="mcpException"
-                    class="com.summit.dp.mcp.infrastructure.McpExceptionConverter"/>
-    <property name="LOG_EXCEPTION_CONVERSION_WORD" value="%mcpException"/>
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
 
     <springProperty scope="context" name="LOG_DIR" source="lingxi.log.dir"
@@ -34,10 +31,26 @@
             <totalSizeCap>50MB</totalSizeCap>
         </rollingPolicy>
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{40} : %msg%n%mcpException</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{40} : %msg%n</pattern>
             <charset>UTF-8</charset>
         </encoder>
     </appender>
+
+    <appender name="MCP_MESSAGE_ONLY" class="com.summit.dp.shared.logging.ExceptionMessageAppender">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="WARN_ERROR_FILE"/>
+    </appender>
+
+    <!-- 阻止向根 logger 再次传播，否则同一异常会重复输出完整堆栈。 -->
+    <logger name="dev.langchain4j.mcp" additivity="false">
+        <appender-ref ref="MCP_MESSAGE_ONLY"/>
+    </logger>
+    <logger name="com.summit.adapter.langchain4j.mcp" additivity="false">
+        <appender-ref ref="MCP_MESSAGE_ONLY"/>
+    </logger>
+    <logger name="com.summit.dp.mcp" additivity="false">
+        <appender-ref ref="MCP_MESSAGE_ONLY"/>
+    </logger>
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
