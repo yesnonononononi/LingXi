@@ -84,7 +84,7 @@ const {
             @change="saveTeamSize"
             :class="[
               'w-16 px-2 py-1 rounded-xl border outline-none text-xs text-center transition [color-scheme:light] dark:[color-scheme:dark]',
-              isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-gray-900 focus:border-blue-500'
             ]"
           />
         </div>
@@ -146,7 +146,7 @@ const {
           :class="[
             isDark
               ? 'bg-black/90 border-white/15 hover:border-white/30 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
-              : 'bg-zinc-50/70 border-gray-200 hover:border-gray-300'
+              : 'bg-zinc-50/70 border-gray-200 hover:border-zinc-300'
           ]"
         >
           <div class="flex items-start justify-between gap-3">
@@ -292,7 +292,7 @@ const {
       <div class="space-y-3.5 text-xs">
         <!-- 团队名称 -->
         <div>
-          <label class="block text-gray-700 dark:text-gray-300 font-medium mb-1">
+          <label class="block text-gray-700 dark:text-zinc-300 font-medium mb-1">
                         {{ t('settings.teams.nameLabel') }} <span class="text-red-500">*</span>
           </label>
           <input
@@ -300,14 +300,14 @@ const {
             :placeholder="t('settings.teams.namePlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
-              isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-gray-900 focus:border-blue-500'
             ]"
           />
         </div>
 
         <!-- 团队描述 (编辑团队描述) -->
         <div>
-          <label class="block text-gray-700 dark:text-gray-300 font-medium mb-1">
+          <label class="block text-gray-700 dark:text-zinc-300 font-medium mb-1">
                         {{ t('settings.teams.descriptionLabel') }}
           </label>
           <textarea
@@ -316,14 +316,14 @@ const {
             :placeholder="t('settings.teams.descriptionPlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs resize-none transition',
-              isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-gray-900 focus:border-blue-500'
             ]"
           ></textarea>
         </div>
 
         <!-- 团队头像 -->
         <div>
-          <label class="block text-gray-700 dark:text-gray-300 font-medium mb-1">
+          <label class="block text-gray-700 dark:text-zinc-300 font-medium mb-1">
             {{ t('settings.teams.avatarLabel') }}
           </label>
           <input
@@ -331,7 +331,7 @@ const {
             :placeholder="t('settings.teams.avatarPlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
-              isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-gray-900 focus:border-blue-500'
             ]"
           />
         </div>
@@ -339,7 +339,7 @@ const {
         <!-- 团队成员选择 -->
         <div>
           <div class="flex items-center justify-between mb-1.5">
-            <label class="block text-gray-700 dark:text-gray-300 font-medium">
+            <label class="block text-gray-700 dark:text-zinc-300 font-medium">
                             {{ t('settings.teams.membersSelectLabel') }} <span class="text-red-500">*</span>
               <span class="text-gray-400 font-normal ml-1">
                 {{ t('settings.teams.membersSelectCount', { selected: teamForm.agentIds.length, max: maxMemberSize }) }}
@@ -425,7 +425,7 @@ const {
 
         <!-- 团队管理者选择 -->
         <div>
-          <label class="block text-gray-700 dark:text-gray-300 font-medium mb-1">
+          <label class="block text-gray-700 dark:text-zinc-300 font-medium mb-1">
                         {{ t('settings.teams.commanderLabel') }} <span class="text-red-500">*</span>
             <span class="text-gray-400 font-normal ml-1">
               {{ t('settings.teams.commanderHint') }}
@@ -441,7 +441,7 @@ const {
             v-model="teamForm.commanderAgentId"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs cursor-pointer [color-scheme:dark]',
-              isDark ? 'bg-black border-white/20 text-white focus:border-cyan-400' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-black border-white/20 text-white focus:border-cyan-400' : 'bg-white border-zinc-300 text-gray-900 focus:border-blue-500'
             ]"
           >
             <option v-for="agent in selectedTeamAgents" :key="agent.id" :value="agent.id" class="bg-black text-white">

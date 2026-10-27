@@ -51,7 +51,7 @@ const classes = computed(() => {
         ? 'border border-red-900/60 text-red-400 hover:bg-red-950/40 hover:border-red-800'
         : 'border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300',
       neutral: props.isDark
-        ? 'border border-gray-700 text-gray-300 hover:bg-gray-800'
+        ? 'border border-gray-700 text-zinc-300 hover:bg-gray-800'
         : 'border border-gray-200 text-gray-700 hover:bg-zinc-50'
     }[props.tone];
     return [base, outline, ring];

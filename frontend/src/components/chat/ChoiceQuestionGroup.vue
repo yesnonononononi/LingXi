@@ -130,7 +130,7 @@ async function submit() {
             data-testid="choice-previous" @click="navigate(-1)">
             <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m15 5-7 7 7 7" /></svg>
           </button>
-          <span class="min-w-8 text-center text-xs tabular-nums" :class="isDark ? 'text-gray-300 text-glow-subtle' : 'text-gray-500'" role="status">{{ activeIndex + 1 }} / {{ total }}</span>
+          <span class="min-w-8 text-center text-xs tabular-nums" :class="isDark ? 'text-zinc-300 text-glow-subtle' : 'text-gray-500'" role="status">{{ activeIndex + 1 }} / {{ total }}</span>
           <button type="button" :disabled="activeIndex >= entries.length - 1" :aria-label="t('chat.choice.next')"
             class="rounded-md p-1 transition disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default"
             :class="isDark ? 'text-gray-400 hover:bg-white/10 hover:text-white' : 'text-gray-400 hover:bg-zinc-100 hover:text-gray-600'"
@@ -164,10 +164,10 @@ async function submit() {
             <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold tabular-nums transition-colors"
               :class="!draft.useCustom && draft.selected === index
                 ? 'bg-white text-gray-900 shadow-[0_0_12px_rgba(255,255,255,0.60)]'
-                : (isDark ? 'bg-white/10 text-gray-300' : 'bg-zinc-100 text-gray-500')">{{ index + 1 }}</span>
+                : (isDark ? 'bg-white/10 text-zinc-300' : 'bg-zinc-100 text-gray-500')">{{ index + 1 }}</span>
             <span class="min-w-0 flex-1 whitespace-pre-wrap break-words"
               :class="isDark ? (draft.selected === index && !draft.useCustom ? 'text-white text-glow-white' : 'text-gray-200 text-glow-subtle') : ''">{{ option }}</span>
-            <svg class="h-3.5 w-3.5 shrink-0 transition-colors" :class="!draft.useCustom && draft.selected === index ? (isDark ? 'text-white' : 'text-blue-500') : (isDark ? 'text-gray-600' : 'text-gray-300')"
+            <svg class="h-3.5 w-3.5 shrink-0 transition-colors" :class="!draft.useCustom && draft.selected === index ? (isDark ? 'text-white' : 'text-blue-500') : (isDark ? 'text-gray-600' : 'text-zinc-300')"
               fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 5 7 7-7 7" /></svg>
           </button>
         </div>
@@ -178,7 +178,7 @@ async function submit() {
             : (isDark ? 'border-white/10 hover:border-white/40 hover:bg-white/5' : 'border-zinc-100 hover:border-blue-200 hover:bg-blue-50/50')"
           role="presentation" data-testid="choice-custom-toggle" @click="activateCustom">
           <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md transition-colors"
-            :class="draft.useCustom ? 'bg-white text-gray-900 shadow-[0_0_12px_rgba(255,255,255,0.60)]' : (isDark ? 'bg-white/10 text-gray-300' : 'bg-zinc-100 text-gray-400')">
+            :class="draft.useCustom ? 'bg-white text-gray-900 shadow-[0_0_12px_rgba(255,255,255,0.60)]' : (isDark ? 'bg-white/10 text-zinc-300' : 'bg-zinc-100 text-gray-400')">
             <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
           </span>
           <!-- rows=1 + resize-none：外观是输入行，粘贴多行仍原样保留 -->

@@ -143,7 +143,7 @@ const decide = async (approved: boolean) => {
             <svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
             </svg>
-            <span class="font-medium text-gray-700 dark:text-gray-300">{{ t('chat.plan.tipHeader') }}</span>
+            <span class="font-medium text-gray-700 dark:text-zinc-300">{{ t('chat.plan.tipHeader') }}</span>
           </div>
           <button
             type="button"
@@ -200,7 +200,7 @@ const decide = async (approved: boolean) => {
               'px-3.5 py-1.5 rounded-xl border text-xs sm:text-sm font-normal transition cursor-pointer flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50',
               isAddingTip
                 ? (isDark ? 'border-amber-500/50 bg-amber-500/10 text-amber-400' : 'border-amber-400 bg-amber-50 text-amber-700')
-                : (isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : 'border-gray-200 text-gray-700 hover:bg-zinc-50')
+                : (isDark ? 'border-gray-700 text-zinc-300 hover:bg-gray-800' : 'border-gray-200 text-gray-700 hover:bg-zinc-50')
             ]"
           >
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">

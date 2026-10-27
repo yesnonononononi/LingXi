@@ -17,11 +17,11 @@ const emit = defineEmits<{ (event: 'update:modelValue', text: string): void; (ev
         <p class="mt-2 text-sm text-lx-muted">{{ t('chat.controls.resendWarning') }}</p>
         <p v-if="imageCount" class="mt-2 text-xs text-gray-500">{{ t('chat.controls.keepImages', { count: imageCount }) }}</p>
         <textarea ref="textarea" :value="modelValue" :disabled="busy" :aria-label="t('chat.controls.editedPrompt')" rows="7"
-          class="mt-4 w-full resize-y rounded-xl border border-gray-300 dark:border-white/15 bg-transparent p-3 text-sm text-gray-900 dark:text-zinc-100 select-text"
+          class="mt-4 w-full resize-y rounded-xl border border-zinc-300 dark:border-white/15 bg-transparent p-3 text-sm text-gray-900 dark:text-zinc-100 select-text"
           @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)" />
         <p v-if="error" role="alert" class="mt-2 text-sm text-red-500">{{ error }}</p>
         <div class="mt-4 flex justify-end gap-2">
-          <button type="button" :disabled="busy" class="rounded-lg border border-gray-300 dark:border-white/20 px-4 py-2 text-sm text-lx-secondary cursor-pointer disabled:opacity-50"
+          <button type="button" :disabled="busy" class="rounded-lg border border-zinc-300 dark:border-white/20 px-4 py-2 text-sm text-lx-secondary cursor-pointer disabled:opacity-50"
             @click="emit('cancel')">{{ t('common.cancel') }}</button>
           <button type="button" :disabled="busy || !modelValue.trim()" data-testid="confirm-resend"
             class="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white cursor-pointer disabled:opacity-50"

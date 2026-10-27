@@ -144,9 +144,9 @@
       "group": "border",
       "status": "rederive",
       "darkClass": "border-white/20",
-      "lightClass": "border-gray-300",
+      "lightClass": "border-zinc-300",
       "expectedDark": "#ffffff@0.200",
-      "expectedLight": "#d1d5dc",
+      "expectedLight": "#d4d4d8",
       "themeKey": "--color-lx-border-strong",
       "utilityClass": "border-lx-border-strong",
       "note": "15 处/6 文件"

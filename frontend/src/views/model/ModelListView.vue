@@ -81,7 +81,7 @@ const mutedText = computed(() => (isDark.value ? 'text-xs text-gray-400' : 'text
 const theadClass = computed(() => (isDark.value ? 'bg-[#121722] text-gray-400' : 'bg-zinc-100 text-gray-500'));
 const btnClass = computed(() => [
   'px-3 py-1.5 rounded-lg text-xs border transition disabled:opacity-40 disabled:cursor-not-allowed',
-  isDark.value ? 'border-[#2d3a54] text-gray-300 hover:bg-white/5' : 'border-gray-300 text-gray-600 hover:bg-black/5',
+  isDark.value ? 'border-[#2d3a54] text-zinc-300 hover:bg-white/5' : 'border-zinc-300 text-gray-600 hover:bg-black/5',
 ]);
 const cardClass = computed(() => ['rounded-2xl border overflow-hidden', isDark.value ? 'border-[#273043]' : 'border-gray-200']);
 const rowClass = computed(() => ['border-t', isDark.value ? 'border-[#273043] hover:bg-[#141a26]' : 'border-zinc-100 hover:bg-zinc-50']);

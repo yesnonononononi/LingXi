@@ -126,7 +126,7 @@ const emit = defineEmits<{
                     <h4 class="font-semibold text-sm truncate group-hover:text-cyan-400 transition-colors">
                       {{ sub.agentName || (sub.agentId ? `Agent #${sub.agentId}` : t('chat.subSessions.fallbackName')) }}
                     </h4>
-                    <span :class="['text-[10px] px-1.5 py-0.2 rounded-full font-mono', isDark ? 'bg-gray-800 text-gray-300' : 'bg-zinc-100 text-gray-600']">
+                    <span :class="['text-[10px] px-1.5 py-0.2 rounded-full font-mono', isDark ? 'bg-gray-800 text-zinc-300' : 'bg-zinc-100 text-gray-600']">
                       #{{ sub.id }}
                     </span>
                   </div>

@@ -112,7 +112,7 @@ const {
           :class="[
             isDark
               ? 'bg-black/90 border-white/15 hover:border-white/30 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
-              : 'bg-zinc-50/70 border-gray-200 hover:border-gray-300'
+              : 'bg-zinc-50/70 border-gray-200 hover:border-zinc-300'
           ]"
         >
           <div class="flex items-start justify-between gap-3">
@@ -125,7 +125,7 @@ const {
                 <span
                   class="px-1.5 py-0.5 rounded-md text-[10px] font-medium shrink-0 border"
                   :class="item.status === 0
-                    ? (isDark ? 'bg-white/5 border-white/10 text-zinc-400' : 'bg-gray-200 border-gray-300 text-gray-500')
+                    ? (isDark ? 'bg-white/5 border-white/10 text-zinc-400' : 'bg-gray-200 border-zinc-300 text-gray-500')
                     : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'"
                 >
                   {{ item.status === 0 ? t('settings.mcp.disabled') : t('settings.mcp.enabled') }}
@@ -247,7 +247,7 @@ const {
 
       <!-- 服务名称 -->
       <div class="space-y-1.5">
-        <label class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ t('settings.mcp.nameLabel') }}</label>
+        <label class="text-xs font-medium text-gray-700 dark:text-zinc-300">{{ t('settings.mcp.nameLabel') }}</label>
         <input
           v-model="mcpForm.name"
           type="text"
@@ -263,7 +263,7 @@ const {
 
       <!-- 传输方式 -->
       <div class="space-y-1.5">
-        <label class="text-xs font-medium text-gray-700 dark:text-gray-300 inline-flex items-center gap-1.5">
+        <label class="text-xs font-medium text-gray-700 dark:text-zinc-300 inline-flex items-center gap-1.5">
                     {{ t('settings.mcp.transportLabel') }}
           <!-- stdio 环境依赖提示：黄圈白底感叹号，hover 说明 npx/PATH 限制 -->
           <span
@@ -310,7 +310,7 @@ const {
 
       <!-- 服务地址（http 系传输） -->
       <div v-if="mcpForm.transport !== 'stdio'" class="space-y-1.5">
-        <label class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ t('settings.mcp.urlLabel') }}</label>
+        <label class="text-xs font-medium text-gray-700 dark:text-zinc-300">{{ t('settings.mcp.urlLabel') }}</label>
         <input
           v-model="mcpForm.url"
           type="text"
@@ -326,7 +326,7 @@ const {
 
       <!-- stdio 启动命令 -->
       <div v-if="mcpForm.transport === 'stdio'" class="space-y-1.5">
-                <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
+                <label class="text-xs font-medium text-gray-700 dark:text-zinc-300">
           {{ t('settings.mcp.commandLabel') }}
           <span class="text-lx-faint font-normal">{{ t('settings.mcp.commandHint') }}</span>
         </label>
@@ -345,7 +345,7 @@ const {
 
       <!-- stdio 环境变量 -->
       <div v-if="mcpForm.transport === 'stdio'" class="space-y-1.5">
-                <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
+                <label class="text-xs font-medium text-gray-700 dark:text-zinc-300">
           {{ t('settings.mcp.envLabel') }}
           <span class="text-lx-faint font-normal">{{ t('settings.mcp.envHint') }}</span>
         </label>
@@ -371,7 +371,7 @@ const {
 
       <!-- 请求头（http 系传输） -->
       <div v-if="mcpForm.transport !== 'stdio'" class="space-y-1.5">
-                <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
+                <label class="text-xs font-medium text-gray-700 dark:text-zinc-300">
           {{ t('settings.mcp.headersLabel') }}
           <span class="text-lx-faint font-normal">{{ t('settings.mcp.headersHint') }}</span>
         </label>
@@ -397,7 +397,7 @@ const {
 
       <!-- 服务描述：随提示词下发给模型（每服务一行），由业务用户填写 -->
       <div class="space-y-1.5">
-                <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
+                <label class="text-xs font-medium text-gray-700 dark:text-zinc-300">
           {{ t('settings.mcp.descriptionLabel') }}
           <span class="text-lx-faint font-normal">{{ t('settings.mcp.descriptionHint') }}</span>
         </label>
@@ -418,7 +418,7 @@ const {
       <!-- 超时与输出上限 -->
       <div class="grid grid-cols-3 gap-3">
         <div class="space-y-1.5">
-          <label class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ t('settings.mcp.initTimeoutLabel') }}</label>
+          <label class="text-xs font-medium text-gray-700 dark:text-zinc-300">{{ t('settings.mcp.initTimeoutLabel') }}</label>
           <input
             v-model.number="mcpForm.initializationTimeout"
             type="number"
@@ -432,7 +432,7 @@ const {
           />
         </div>
         <div class="space-y-1.5">
-          <label class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ t('settings.mcp.execTimeoutLabel') }}</label>
+          <label class="text-xs font-medium text-gray-700 dark:text-zinc-300">{{ t('settings.mcp.execTimeoutLabel') }}</label>
           <input
             v-model.number="mcpForm.executionTimeout"
             type="number"
@@ -446,7 +446,7 @@ const {
           />
         </div>
         <div class="space-y-1.5">
-          <label class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ t('settings.mcp.maxOutputLabel') }}</label>
+          <label class="text-xs font-medium text-gray-700 dark:text-zinc-300">{{ t('settings.mcp.maxOutputLabel') }}</label>
           <input
             v-model.number="mcpForm.maxOutput"
             type="number"
@@ -464,7 +464,7 @@ const {
       <!-- 启用开关 -->
       <label class="flex items-center gap-2 cursor-pointer select-none">
         <input v-model="mcpForm.enabled" type="checkbox" class="w-3.5 h-3.5 cursor-pointer accent-cyan-500" />
-        <span class="text-xs text-gray-700 dark:text-gray-300">{{ t('settings.mcp.enableService') }}</span>
+        <span class="text-xs text-gray-700 dark:text-zinc-300">{{ t('settings.mcp.enableService') }}</span>
       </label>
 
       <!-- 表单错误 -->

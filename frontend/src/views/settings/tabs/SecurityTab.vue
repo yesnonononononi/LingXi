@@ -67,7 +67,7 @@ const panel = 'rounded-2xl border border-zinc-100 dark:border-white/10 bg-zinc-5
 const control = 'rounded-xl border border-gray-200 dark:border-white/15 bg-white dark:bg-black/30 text-lx-secondary px-3 py-1.5 text-xs outline-none transition focus:border-gray-400 focus:ring-2 focus:ring-gray-200/60 dark:focus:border-white/40 dark:focus:ring-white/10';
 const button = 'rounded-xl border border-gray-200 dark:border-white/15 px-3 py-1.5 text-xs font-medium transition cursor-pointer hover:bg-black/5 active:scale-[0.97] dark:hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100';
 const primary = 'rounded-xl bg-blue-600 px-4 py-1.5 text-xs font-medium text-white shadow-sm transition cursor-pointer hover:bg-blue-500 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:active:scale-100';
-const iconButton = 'grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-gray-200 text-lx-muted transition cursor-pointer dark:border-white/15 hover:border-gray-300 hover:bg-black/5 hover:text-gray-900 dark:hover:border-white/25 dark:hover:bg-white/10 dark:hover:text-white disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent';
+const iconButton = 'grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-gray-200 text-lx-muted transition cursor-pointer dark:border-white/15 hover:border-zinc-300 hover:bg-black/5 hover:text-gray-900 dark:hover:border-white/25 dark:hover:bg-white/10 dark:hover:text-white disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent';
 const stateChip = 'shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium';
 function label(action: SecurityAction) { return copy.value[action === 'ALLOW' ? 'allow' : action === 'ASK' ? 'ask' : 'deny']; }
 function validate(table: SecurityRuleView | undefined, selected: SecurityCategory): asserts table is SecurityRuleView {
@@ -174,7 +174,7 @@ void load();
         <!-- 沙箱服务能力检查（随沙箱设置一起从通用页搬来） -->
         <div class="mt-3 flex items-center justify-between gap-2 border-t border-zinc-100 pt-3 dark:border-white/10">
           <span class="flex min-w-0 items-center gap-1.5 text-[11px] leading-5 text-lx-muted">
-            <span :class="['h-1.5 w-1.5 shrink-0 rounded-full', sandboxStatus ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-white/20']" aria-hidden="true" />
+            <span :class="['h-1.5 w-1.5 shrink-0 rounded-full', sandboxStatus ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-white/20']" aria-hidden="true" />
             <span class="min-w-0">{{ t('settings.general.sandboxService') }}：{{ sandboxStatus?.message || t('settings.general.sandboxServiceDesc') }}</span>
           </span>
           <button type="button" :class="[button, 'shrink-0']" :disabled="isCheckingSandbox" data-testid="security-check-service" @click="checkSandboxService">
@@ -198,7 +198,7 @@ void load();
             <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ copy[item] }}</span>
             <span class="mt-0.5 text-[11px] leading-snug text-gray-400 dark:text-zinc-400">{{ copy[categoryDesc[item]] }}</span>
           </span>
-          <svg class="sec-nav-chevron h-3.5 w-3.5 shrink-0 text-gray-300 dark:text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+          <svg class="sec-nav-chevron h-3.5 w-3.5 shrink-0 text-zinc-300 dark:text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
         </button>
       </div>
     </template>
@@ -302,12 +302,12 @@ void load();
 
           <!-- 空态：虚线框 + 图标，与 MCP 列表的空态同一语气 -->
           <div v-if="!current.rules.length" class="grid place-items-center gap-2 rounded-2xl border border-dashed border-gray-200 py-10 text-center dark:border-white/15">
-            <svg class="h-6 w-6 text-gray-300 dark:text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.57-.598-3.75h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
+            <svg class="h-6 w-6 text-zinc-300 dark:text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.57-.598-3.75h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
             <p class="text-[11px] text-lx-faint">{{ copy.empty }}</p>
           </div>
 
           <div v-for="(rule, index) in current.rules" :key="resolveRuleKey(rule)"
-            :class="['sec-rise group mt-2 rounded-xl border border-gray-200/80 bg-white/70 p-2.5 transition-colors hover:border-gray-300 hover:bg-white dark:border-white/10 dark:bg-white/[0.02] dark:hover:border-white/20 dark:hover:bg-white/[0.05]',
+            :class="['sec-rise group mt-2 rounded-xl border border-gray-200/80 bg-white/70 p-2.5 transition-colors hover:border-zinc-300 hover:bg-white dark:border-white/10 dark:bg-white/[0.02] dark:hover:border-white/20 dark:hover:bg-white/[0.05]',
               rule.enabled ? '' : 'opacity-55', rule === freshRule ? 'sec-flash' : '']"
             :style="{ '--sec-delay': `${Math.min(index, 10) * 30}ms` }" data-testid="security-rule">
             <div class="flex items-start gap-2 min-w-0">
@@ -412,7 +412,7 @@ void load();
   transition: background-color 0.22s ease;
 }
 
-.sec-switch:hover { @apply bg-gray-300; }
+.sec-switch:hover { @apply bg-zinc-300; }
 .sec-switch.is-on { @apply bg-blue-600; }
 .sec-switch.is-on:hover { @apply bg-blue-500; }
 .sec-switch:disabled { @apply cursor-not-allowed opacity-50; }
@@ -436,7 +436,7 @@ void load();
 }
 
 .sec-check__input {
-  @apply h-3.5 w-3.5 cursor-pointer appearance-none rounded-[5px] border border-gray-300 bg-white;
+  @apply h-3.5 w-3.5 cursor-pointer appearance-none rounded-[5px] border border-zinc-300 bg-white;
   transition: background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
 }
 

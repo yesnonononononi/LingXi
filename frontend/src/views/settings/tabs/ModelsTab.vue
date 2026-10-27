@@ -104,7 +104,7 @@ const cardClass = computed(() => [
   'rounded-2xl border transition-colors',
   isDark.value
     ? 'bg-black/90 border-white/15 hover:border-white/30 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
-    : 'bg-zinc-50/70 border-gray-200 hover:border-gray-300',
+    : 'bg-zinc-50/70 border-gray-200 hover:border-zinc-300',
 ]);
 const ghostBtnClass = computed(() => [
   'px-3 py-1 rounded-lg border text-xs font-medium transition cursor-pointer',
@@ -408,7 +408,7 @@ const addRowClass = computed(() => [
               :class="[
                 'px-3 py-2 rounded-xl text-xs font-medium shrink-0 flex items-center gap-1.5 transition border cursor-pointer select-none',
                 isFetchingRemoteModels
-                  ? 'opacity-60 cursor-not-allowed border-gray-300 dark:border-gray-600 bg-zinc-100 dark:bg-black text-gray-400'
+                  ? 'opacity-60 cursor-not-allowed border-zinc-300 dark:border-gray-600 bg-zinc-100 dark:bg-black text-gray-400'
                   : (isDark
                       ? 'border-white/20 bg-white/[0.06] text-sky-400 hover:bg-white/[0.12]'
                       : 'border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100/80')
@@ -483,7 +483,7 @@ const addRowClass = computed(() => [
           <label
             v-if="providerHasCredential(modelForm.providerConfigId)"
             class="mb-2 flex items-start gap-2 rounded-xl border px-3 py-2 cursor-pointer select-none"
-            :class="isDark ? 'border-lx-border hover:border-white/30' : 'border-lx-border hover:border-gray-300'"
+            :class="isDark ? 'border-lx-border hover:border-white/30' : 'border-lx-border hover:border-zinc-300'"
           >
             <input v-model="modelForm.useProviderApiKey" type="checkbox" class="mt-0.5 accent-blue-600" />
             <span class="min-w-0">

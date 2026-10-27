@@ -210,7 +210,7 @@ const {
                     : 'bg-blue-50/60 border-blue-400 shadow-sm')
                 : (isDark
                     ? 'bg-black/90 border-white/15 hover:border-white/30 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
-                    : 'bg-zinc-50/70 border-gray-200 hover:border-gray-300')
+                    : 'bg-zinc-50/70 border-gray-200 hover:border-zinc-300')
             ]"
           >
             <div class="flex items-start justify-between gap-3">
@@ -473,7 +473,7 @@ const {
                 'p-2.5 rounded-lg border transition-all cursor-pointer flex flex-col justify-between text-left',
                 agentForm.toolList.includes(tool.name)
                   ? (isDark ? 'bg-white/10 border-white/30 text-white text-glow-subtle' : 'bg-blue-50 border-blue-300 text-blue-900')
-                  : (isDark ? 'bg-white/[0.03] border-lx-border-subtle text-zinc-300 hover:border-white/30' : 'bg-zinc-50/80 border-lx-border-subtle text-gray-700 hover:border-gray-300')
+                  : (isDark ? 'bg-white/[0.03] border-lx-border-subtle text-zinc-300 hover:border-white/30' : 'bg-zinc-50/80 border-lx-border-subtle text-gray-700 hover:border-zinc-300')
               ]"
             >
               <div class="flex items-center justify-between gap-1">
@@ -504,7 +504,7 @@ const {
             type="button"
             @click="cancelAgentForm"
             class="px-3 py-1.5 rounded-xl border text-xs cursor-pointer transition"
-            :class="isDark ? 'border-white/20 hover:bg-white/10 text-zinc-200 text-glow-subtle' : 'border-gray-300 text-gray-500 hover:text-gray-700'"
+            :class="isDark ? 'border-white/20 hover:bg-white/10 text-zinc-200 text-glow-subtle' : 'border-zinc-300 text-gray-500 hover:text-gray-700'"
           >
                         {{ t('common.cancel') }}
           </button>

@@ -46,7 +46,7 @@ const {
           :class="[
             'px-4 py-3.5 rounded-2xl border flex flex-col items-center justify-center gap-2 transition cursor-pointer',
             themeMode === 'light'
-              ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_15px_rgba(255,255,255,0.1)] text-white font-semibold dark:text-glow-white' : 'bg-zinc-100 border-gray-300 text-gray-900 font-semibold shadow-sm')
+              ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_15px_rgba(255,255,255,0.1)] text-white font-semibold dark:text-glow-white' : 'bg-zinc-100 border-zinc-300 text-gray-900 font-semibold shadow-sm')
               : (isDark ? 'border-white/10 text-zinc-400 bg-black/40 hover:border-white/20 hover:bg-white/[0.04]' : 'border-gray-200 text-gray-600 hover:bg-zinc-50')
           ]"
         >
@@ -63,7 +63,7 @@ const {
           :class="[
             'px-4 py-3.5 rounded-2xl border flex flex-col items-center justify-center gap-2 transition cursor-pointer',
             themeMode === 'dark'
-              ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.12)] text-white font-semibold dark:text-glow-white' : 'bg-zinc-100 border-gray-300 text-gray-900 font-semibold shadow-sm')
+              ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.12)] text-white font-semibold dark:text-glow-white' : 'bg-zinc-100 border-zinc-300 text-gray-900 font-semibold shadow-sm')
               : (isDark ? 'border-white/10 text-zinc-400 bg-black/40 hover:border-white/20 hover:bg-white/[0.04]' : 'border-gray-200 text-gray-600 hover:bg-zinc-50')
           ]"
         >
@@ -80,7 +80,7 @@ const {
           :class="[
             'px-4 py-3.5 rounded-2xl border flex flex-col items-center justify-center gap-2 transition cursor-pointer',
             themeMode === 'system'
-              ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.12)] text-white font-semibold dark:text-glow-white' : 'bg-zinc-100 border-gray-300 text-gray-900 font-semibold shadow-sm')
+              ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.12)] text-white font-semibold dark:text-glow-white' : 'bg-zinc-100 border-zinc-300 text-gray-900 font-semibold shadow-sm')
               : (isDark ? 'border-white/10 text-zinc-400 bg-black/40 hover:border-white/20 hover:bg-white/[0.04]' : 'border-gray-200 text-gray-600 hover:bg-zinc-50')
           ]"
         >

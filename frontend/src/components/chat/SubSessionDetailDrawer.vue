@@ -289,7 +289,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
             <button
               type="button"
               @click="loadMessages"
-              :class="['px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer', isDark ? 'border-[#2c374d] hover:bg-[#1f2838] text-gray-300' : 'border-gray-200 hover:bg-zinc-100 text-gray-600']"
+              :class="['px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer', isDark ? 'border-[#2c374d] hover:bg-[#1f2838] text-zinc-300' : 'border-gray-200 hover:bg-zinc-100 text-gray-600']"
             >
               {{ t('common.retry') }}
             </button>
@@ -384,7 +384,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                       </svg>
                       <span v-else class="w-3.5 h-3.5 shrink-0" aria-hidden="true"></span>
                       <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="tc.status === 'failed' ? 'bg-rose-500' : tc.status === 'calling' ? 'bg-amber-400 lx-live-dot' : 'bg-emerald-400'"></span>
-                      <span class="font-semibold text-gray-300 dark:text-zinc-100 truncate">{{ resolveToolRenderName(tc.toolName) }}</span>
+                      <span class="font-semibold text-zinc-300 dark:text-zinc-100 truncate">{{ resolveToolRenderName(tc.toolName) }}</span>
                       <span
                         v-if="getToolDiffStat(tc)"
                         class="inline-flex items-center gap-1 font-mono text-[11px] font-medium leading-none shrink-0 select-none ml-1"
