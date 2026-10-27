@@ -346,9 +346,11 @@ const { isCopied: copied, copy: copyContentRaw } = useCopyFeedback();
 const processTimeline = computed(() => buildProcessTimeline(props.message));
 const processParts = computed(() => buildProcessSegments(processTimeline.value, props.subSessions, props.sessionId));
 
-// 自动展开只跟随执行阶段；用户一旦操作，就保留用户选择。
+// 挂起和等待审批仍未结束，不能用实时输出状态决定收起；用户操作后保留其选择。
 const processExpansion = ref<boolean | null>(null);
-const wholeProcessExpanded = computed(() => processExpansion.value ?? processIsStreaming.value);
+const wholeProcessExpanded = computed(() => processExpansion.value ?? (props.turn
+  ? isActiveTurnStatus(props.turn.status)
+  : props.message.isComplete !== true && isTurnRunning.value));
 const wholeProcessSummary = computed(() => summarizeProcess(processParts.value.flatMap(part =>
   part.kind === 'process' ? part.items : []), props.subSessions));
 const wholeProcessStatus = computed(() => formatProcessStatus(wholeProcessSummary.value, { running: 'never' }));

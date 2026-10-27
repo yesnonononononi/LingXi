@@ -21,6 +21,8 @@ import '../../src/style.css';
 setPreference('zh-CN');
 const { setTheme } = useTheme();
 const dark = ref(true);
+const turn = ref(null);
+const mountKey = ref(0);
 const message = ref({ id: 'answer', role: 'assistant', turnId: '900', timestamp: 0, content: '',
   isComplete: false, isThinking: true,
   aiMessages: [{ id: 'text:101', responseId: '101', order: 1, text: '现在开始修改配置。' },
@@ -38,9 +40,11 @@ window.failEarlier = async () => { message.value.toolCalls[0].toolName = 'mcp_do
   message.value.toolCalls[0].status = 'failed'; message.value.toolCalls[1].status = 'unknown'; await window.flush(); };
 window.finish = async () => { message.value.isThinking = false; message.value.isComplete = true;
   message.value.content = '配置修改与检查已完成。'; message.value.thoughtSteps[0].status = 'success'; await window.flush(); };
+window.reenterWaiting = async () => { turn.value = { status: 'WAITING' }; message.value.isComplete = false;
+  message.value.isSuspended = true; mountKey.value++; await window.flush(); };
 </script>
 <template><main class="mx-auto max-w-lx-chat px-4 py-10">
-<ChatMessageItem :message="message" :is-dark="dark" session-id="7" />
+<ChatMessageItem :key="mountKey" :message="message" :turn="turn" :is-dark="dark" session-id="7" />
 </main></template>`);
   await fs.writeFile(path.join(output, 'entry.js'), `import { createApp } from 'vue';
 import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`);
@@ -114,6 +118,14 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
   assert.match(await evaluate('document.body.innerText'), /配置修改与检查已完成/);
   assert.doesNotMatch(await evaluate('document.body.innerText'), /现在开始修改配置|修改完成，继续核对依赖/);
   await fs.writeFile(path.join(output, 'whole-collapsed.png'), (await window.webContents.capturePage()).toPNG());
+  await evaluate('window.reenterWaiting()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=whole-process-toggle]").getAttribute("aria-expanded")'), 'true',
+    '重新进入等待中的会话，无需手动展开执行过程');
+  assert.ok(await evaluate('document.querySelector("[data-testid=whole-process-content]").getBoundingClientRect().height > 0'));
+  assert.match(await evaluate('document.body.innerText'), /现在开始修改配置/);
+  assert.match(await evaluate('document.body.innerText'), /修改完成，继续核对依赖/);
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=process-segment-details]").length'), 0);
+  await fs.writeFile(path.join(output, 'waiting-reentry.png'), (await window.webContents.capturePage()).toPNG());
   assert.deepEqual(errors, []);
   await fs.writeFile(path.join(output, 'measurements.json'), JSON.stringify(measurements, null, 2));
   console.log('过程区：整轮折叠、独立分段、深浅主题、窄屏、尾部裁剪与手动展开保留验证通过。截图：' + output);

@@ -264,6 +264,61 @@ test('整轮默认跟随执行阶段，用户手动选择不被流式增长和�
   assert.equal(automatic.props['aria-expanded'], false, '用户没操作过时，终态自动收起整轮过程');
 });
 
+test('切入未结束会话时展开整轮过程，挂起与等待审批也直接显示过程文本', t => {
+  const { aggregateRecordsByIdentity } = loadChatModule(path.resolve(__dirname, '../src/utils/session.ts'));
+  const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
+  for (const status of ['ACCEPTED', 'RUNNING', 'WAITING', 'COMPLETED', 'FAILED', 'CANCELLED']) {
+    for (const withTurn of [false, true]) {
+      const [answer] = aggregateRecordsByIdentity('7', { '900': {
+        sessionId: '7', turnId: '900', status, viewVersion: '1', blocks: [
+          { blockId: 'text:101', responseId: '101', order: 1, type: 'TEXT', status: 'COMPLETE',
+            isBody: false, text: '已检查配置，正在准备下一步' },
+          { blockId: 'tool:approval', responseId: '102', order: 2, type: 'TOOL', status: 'PROMISED',
+            toolCallId: 'approval', toolName: AgentToolName.ExecuteCommand, arguments: '{"command":"npm test"}' },
+        ],
+      } });
+      const root = mount(t, reactive(answer), withTurn ? { turn: { status } } : {});
+      const whole = find(root, node => node.props?.['data-testid'] === 'whole-process-toggle');
+      const content = find(root, node => node.props?.['data-testid'] === 'whole-process-content');
+      const active = ['ACCEPTED', 'RUNNING', 'WAITING'].includes(status);
+      const context = `${status}, withTurn=${withTurn}`;
+      assert.equal(whole.props['aria-expanded'], active, context);
+      assert.equal(content.style.display === 'none', !active, context);
+      assert.equal(findAll(root, node => node.tag === 'markdown' && node.props.processText).length,
+        active ? 1 : 0, context);
+      if (status === 'WAITING') {
+        assert.match(text(root), /已检查配置，正在准备下一步/);
+        const title = find(root, node => node.props?.['data-testid'] === 'process-segment-title');
+        assert.doesNotMatch(title.props.class, /lx-sweep-text/, '挂起保持展开，但不能伪装成正在输出');
+      }
+    }
+  }
+});
+
+test('整轮过程在挂起和恢复间保持展开，手动折叠后仍尊重用户选择', async t => {
+  for (const withTurn of [false, true]) {
+    const answer = message({ content: '', isComplete: false, isThinking: true });
+    const turn = reactive({ status: 'RUNNING' });
+    const root = mount(t, answer, withTurn ? { turn } : {});
+    const whole = find(root, node => node.props?.['data-testid'] === 'whole-process-toggle');
+    assert.equal(whole.props['aria-expanded'], true);
+
+    answer.isThinking = false;
+    answer.isSuspended = true;
+    turn.status = 'WAITING';
+    await nextTick();
+    assert.equal(whole.props['aria-expanded'], true, '挂起不能把正在阅读的过程收起来');
+    whole.props.onClick();
+    await nextTick();
+    answer.aiMessages[0].text += '补充说明';
+    answer.isSuspended = false;
+    answer.isThinking = true;
+    turn.status = 'RUNNING';
+    await nextTick();
+    assert.equal(whole.props['aria-expanded'], false, '恢复执行不能覆盖手动折叠');
+  }
+});
+
 test('分段折叠：文本直接展示，各段默认收起，思考与工具详情不提前挂载', async t => {
   const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
   const answer = message({ isComplete: false, isThinking: true, content: '',
