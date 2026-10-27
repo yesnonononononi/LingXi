@@ -246,7 +246,7 @@ defineExpose({
         !triggerExtraClass ? (isSmall ? 'h-8 px-2.5 py-1.5' : 'h-9 px-3 py-2') : '',
         disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer',
         // 边框颜色随主题：调用方只写 `border` 宽度时，Tailwind 默认用 currentColor 会画出深色粗边。
-        // [Q2] border-white/20 : border-gray-300 → border-strong（equalDark/equalLight 均 true）
+        // [Q2] border-white/20 : border-zinc-300 → border-strong（equalDark/equalLight 均 true）
         'border-lx-border-strong',
         isDark ? 'hover:bg-white/5' : 'hover:bg-black/5',
         triggerExtraClass

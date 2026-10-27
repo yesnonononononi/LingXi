@@ -116,7 +116,7 @@ html[data-theme="light"] {
   --lx-border-default:        #e5e7eb;
   --lx-border-strong:         #d1d5dc;
   --lx-border-focus:          #2b7fff;
-  --lx-border-faint:          #f3f4f6;   /* = border-gray-100 */
+  --lx-border-faint:          #f3f4f6;   /* = border-zinc-100 */
 
   --lx-accent:                #155dfc;
   --lx-accent-hover:          #2b7fff;
