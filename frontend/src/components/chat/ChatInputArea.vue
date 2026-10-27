@@ -33,6 +33,7 @@ import type {
   ChatInputSendButtonSlotProps,
 } from '../../types/chatInputSlots';
 import ChatInputContextUsage from './ChatInputContextUsage.vue';
+import { resolveContextUsageText, resolveContextRingDash } from '../../views/chat/contextUsagePresentation';
 import ChatInputModelSelector from './ChatInputModelSelector.vue';
 import ChatInputSendButton from './ChatInputSendButton.vue';
 import { MUTED, TOOL_BTN, ICON_BTN } from '../../utils/promptBarStyles';
@@ -627,33 +628,8 @@ const drivenModel = computed<{ text: string; tip: string; missing: boolean } | n
   return null;
 });
 
-/** ≥1000 显示 `216.7K` */
-const formatContextTokens = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : `${n}`);
-
-const contextUsageText = computed<string>(() => {
-  const usage = props.contextUsage;
-  const used = usage?.usedTokens;
-  if (used == null || used <= 0) return '';
-  const max = usage?.maxTokens ?? null;
-  const ratio = usage?.ratio ?? (max && max > 0 ? used / max : null);
-  const pct = ratio != null && ratio >= 0 ? `${(ratio * 100).toFixed(1)}%` : null;
-  const amount = `${formatContextTokens(used)}${max && max > 0 ? ` / ${formatContextTokens(max)}` : ''}`;
-  // 「压缩中」只由 SUMMARY（模型深度压缩）档位点亮；PRUNE 是毫秒级本地剪枝（无模型调用），每个
-  // checkpoint 都会跑一对 SQUEEZE 事件，照旧渲染会让指示器反复跳变。旧数据不带档位时保持原行为。
-  const compressing = usage?.phase === 'SQUEEZE_STARTED' && usage?.band !== 'PRUNE';
-  const label = compressing ? t('chat.input.contextCompressing') : t('chat.input.contextUsed');
-  return pct ? `${pct} · ${amount} ${label}` : `${amount} ${label}`;
-});
-
-const CONTEXT_RING_RADIUS = 6;
-const CONTEXT_RING_CIRCUMFERENCE = 2 * Math.PI * CONTEXT_RING_RADIUS;
-const contextRingDash = computed<string>(() => {
-  const usage = props.contextUsage;
-  const ratio = usage?.ratio ?? (usage?.maxTokens && usage.maxTokens > 0 ? usage.usedTokens / usage.maxTokens : null);
-  const clamped = ratio != null ? Math.min(Math.max(ratio, 0), 1) : 0;
-  const arc = clamped * CONTEXT_RING_CIRCUMFERENCE;
-  return `${arc} ${CONTEXT_RING_CIRCUMFERENCE - arc}`;
-});
+const contextUsageText = computed(() => resolveContextUsageText(props.contextUsage));
+const contextRingDash = computed(() => resolveContextRingDash(props.contextUsage));
 
 // 上下文浮层的悬停状态**没有**随浮层搬进 `ChatInputContextUsage.vue`：触发区是外层容器
 // （28px 高）的交互属性，容器归组件所有；渲染器只按 `tooltipVisible` 决定画不画。

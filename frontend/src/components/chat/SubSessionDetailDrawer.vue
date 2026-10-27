@@ -14,6 +14,7 @@ import { subItemStatusDotClass, subItemStatusLabel } from '../../utils/asyncDele
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
 import MarkdownRenderer from './MarkdownRenderer.vue';
 import ModelRetryNotice from './ModelRetryNotice.vue';
+import SessionContextUsage from './SessionContextUsage.vue';
 import GradientText from '../common/GradientText.vue';
 import { useTheme } from '../../composables/useTheme';
 import { useChatScroll } from '../../views/chat/useChatScroll';
@@ -210,7 +211,8 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
             </div>
             <div class="min-w-0">
               <div class="flex items-center gap-2">
-                <h3 class="font-semibold text-sm truncate dark:text-white dark:text-glow-white">{{ displayAgentName }}</h3>
+                <h3 class="min-w-0 font-semibold text-sm truncate dark:text-white dark:text-glow-white">{{ displayAgentName }}</h3>
+                <SessionContextUsage :session="subSession" :isDark="isDark" />
                 <span :class="['text-[11px] px-2 py-0.5 rounded-full font-mono font-medium', isDark ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30' : 'bg-blue-50 text-blue-600 border border-blue-200']">
                   {{ t('chat.subSession.sessionLabel', { id: subSession?.id ?? '' }) }}
                 </span>

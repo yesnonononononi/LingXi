@@ -20,7 +20,7 @@ const path = require('node:path');
 const { app, BrowserWindow } = require('electron');
 
 const frontendRoot = path.resolve(__dirname, '..');
-const output = path.resolve(frontendRoot, 'node_modules/.tmp/chat-input-slots');
+const output = path.resolve(frontendRoot, '.run/chat-input-slots');
 const logDir = path.resolve(frontendRoot, '../.lingxi/tmp/qa-input-slot-pilot');
 const chatViewPath = path.resolve(frontendRoot, 'src/views/chat/ChatView.vue');
 

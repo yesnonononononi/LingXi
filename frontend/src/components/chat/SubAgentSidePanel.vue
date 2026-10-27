@@ -6,6 +6,7 @@ import type { SubSessionVO, SubItemStatus, ToolCallTrace, ChatMessage, ChatTurn 
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
 import { t } from '../../i18n';
 import ChatMessageList from './ChatMessageList.vue';
+import SessionContextUsage from './SessionContextUsage.vue';
 import { useChatScroll } from '../../views/chat/useChatScroll';
 
 /** 默认及最小宽度配置 */
@@ -265,10 +266,11 @@ defineExpose({
     <div v-if="activeItem" class="flex flex-col h-full overflow-hidden">
       <!-- 顶部：标题与收束按钮 (去掉头像，名字为纯agentName无后缀，仅保留右侧向右按钮) -->
       <div :class="['px-4 py-3 border-b flex items-center justify-between shrink-0', isDark ? 'border-white/[0.06] bg-[#0d0e12]/80' : 'border-gray-200/80 bg-white/80']">
-        <div class="flex items-center gap-2.5 min-w-0">
-          <div class="min-w-0">
-            <div class="flex items-center gap-1.5">
-              <h3 class="text-xs font-semibold truncate">{{ activeItem.agentName }}</h3>
+        <div class="flex flex-1 items-center gap-2.5 min-w-0">
+          <div class="min-w-0 flex-1">
+            <div class="flex min-w-0 items-center gap-1.5" data-testid="sub-session-heading">
+              <h3 class="min-w-0 text-xs font-semibold truncate">{{ activeItem.agentName }}</h3>
+              <SessionContextUsage :session="activeSubSession ?? activeItem.subSession" :isDark="isDark" />
             </div>
             <p v-if="activeItem.task" class="text-[11px] text-lx-faint truncate mt-0.5">{{ activeItem.task }}</p>
           </div>

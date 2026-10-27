@@ -10,11 +10,12 @@
  * <p>悬停状态（原 1542–1543 的两个行内处理器）随浮层一起搬入：浮层只由本组件拥有，
  * 状态留在外面会形成"两个 owner 管一个节点"。</p>
  */
+import type { CSSProperties } from 'vue';
 import type { ChatInputContextUsageSlotProps } from '../../types/chatInputSlots';
 
 defineOptions({ inheritAttrs: false });
 
-const props = defineProps<ChatInputContextUsageSlotProps>();
+const props = defineProps<ChatInputContextUsageSlotProps & { tooltipId?: string; tooltipStyle?: CSSProperties }>();
 
 /**
  * 悬浮浮层的显示状态**不在本组件**：触发区是外层容器（28px 高）的、归 `ChatInputArea` 所有，
@@ -42,6 +43,7 @@ const props = defineProps<ChatInputContextUsageSlotProps>();
       :stroke-dasharray="props.contextRingDash"
     />
   </svg>
+  <Teleport to="body" :disabled="!props.tooltipStyle">
   <Transition
     enter-active-class="transition duration-150 ease-out"
     enter-from-class="opacity-0 translate-y-1"
@@ -52,9 +54,14 @@ const props = defineProps<ChatInputContextUsageSlotProps>();
   >
     <div
       v-if="props.tooltipVisible"
-      class="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg border px-2.5 py-1.5 shadow-xl z-50 [background:var(--pb-menu)] border-white/[0.08] backdrop-blur-md [color:var(--pb-ink)] text-xs"
+      :id="props.tooltipId"
+      role="tooltip"
+      :style="props.tooltipStyle"
+      :class="props.tooltipStyle ? 'fixed -translate-x-1/2' : 'absolute bottom-full left-1/2 -translate-x-1/2 mb-2'"
+      class="pointer-events-none whitespace-nowrap rounded-lg border px-2.5 py-1.5 shadow-xl z-50 [background:var(--pb-menu)] border-white/[0.08] backdrop-blur-md [color:var(--pb-ink)] text-xs"
     >
       {{ props.contextUsageText }}
     </div>
   </Transition>
+  </Teleport>
 </template>
