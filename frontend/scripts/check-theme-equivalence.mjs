@@ -1123,7 +1123,58 @@ const checkResidual = (ctx, args) => {
   return 0;
 };
 
-const checkFile = (ctx, baseCtx, relPath, base, staticOnly) => {
+/**
+ * 逐原子（类名）结构化差异：把「旧侧有、新侧无」与「新侧有、旧侧无」的颜色项按 prop+state 配对。
+ *
+ * <p>为什么按类名而不是按色值配对：预期变色清单要回答的是「哪一行哪个类被换成了哪个类」，
+ * 色值只是附加信息；按色值配对在两档颜色恰好相等时会给出模棱两可的对应关系。</p>
+ *
+ * @param {Array<{prop: string, value: string, cls: string, state?: string}>} A 旧侧颜色项
+ * @param {Array<{prop: string, value: string, cls: string, state?: string}>} B 新侧颜色项
+ * @returns {Array<{prop: string, state: string, oldCls: string|null, oldValue: string|null, newCls: string|null, newValue: string|null}>} 原子差异
+ */
+const atomColorDiff = (A, B) => {
+  const sig = (e) => `${e.prop}|${e.state ?? ''}|${e.cls}`;
+  const pool = [...B];
+  const removed = [];
+  for (const a of A) {
+    const i = pool.findIndex((b) => sig(b) === sig(a));
+    if (i >= 0) pool.splice(i, 1);
+    else removed.push(a);
+  }
+  const added = pool;
+  const out = [];
+  const used = new Set();
+  for (const a of removed) {
+    const i = added.findIndex((b, idx) => !used.has(idx) && b.prop === a.prop && (b.state ?? '') === (a.state ?? ''));
+    if (i >= 0) {
+      used.add(i);
+      out.push({ prop: a.prop, state: a.state ?? '', oldCls: a.cls, oldValue: a.value, newCls: added[i].cls, newValue: added[i].value });
+    } else {
+      out.push({ prop: a.prop, state: a.state ?? '', oldCls: a.cls, oldValue: a.value, newCls: null, newValue: null });
+    }
+  }
+  added.forEach((b, idx) => {
+    if (used.has(idx)) return;
+    out.push({ prop: b.prop, state: b.state ?? '', oldCls: null, oldValue: null, newCls: b.cls, newValue: b.value });
+  });
+  return out;
+};
+
+/**
+ * 在源码里定位某个类名首次出现的行号（1 基）。
+ * @param {string} src 源码
+ * @param {string|null} cls 类名
+ * @returns {number} 行号；找不到返回 0
+ */
+const lineOfClass = (src, cls) => {
+  if (!cls) return 0;
+  const lines = String(src).split(/\r?\n/);
+  for (let i = 0; i < lines.length; i += 1) if (lines[i].includes(cls)) return i + 1;
+  return 0;
+};
+
+const checkFile = (ctx, baseCtx, relPath, base, staticOnly, jsonOut = false) => {
   const problems = staticCheck(ctx, relPath);
   const notes = [];
   if (staticOnly) return { problems, drift: problems.length, notes };
@@ -1158,7 +1209,25 @@ const checkFile = (ctx, baseCtx, relPath, base, staticOnly) => {
     ...compareRaw(A.rawDark, B.rawDark),
     ...compareRaw(A.rawLight, B.rawLight)
   ];
-  return { problems: [...problems, ...driftProblems], drift: problems.length + driftProblems.length, notes };
+  /**
+   * 预期变色清单（只给 --json 用）：按类名配对出的原子差异 + 源码行号。
+   *
+   * <p>行号以**当前工作树源码**为准（清单的读者是「将要实施替换的人」，他要找的是现在的代码）；
+   * 旧类名若在当前源码里已不存在，行号记 0 并在 CSV 里显式标注，不编造。</p>
+   */
+  const inventory = jsonOut
+    ? atomColorDiff([...A.dark, ...A.light], [...B.dark, ...B.light]).map((d) => ({
+      file: relPath,
+      line: lineOfClass(nextSrc, d.newCls) || lineOfClass(prevSrc, d.oldCls),
+      prop: d.prop,
+      state: d.state,
+      oldClass: d.oldCls,
+      oldValue: d.oldValue,
+      newClass: d.newCls,
+      newValue: d.newValue,
+    }))
+    : [];
+  return { problems: [...problems, ...driftProblems], drift: problems.length + driftProblems.length, notes, inventory };
 };
 
 /**
@@ -1390,6 +1459,7 @@ const printUsage = () => {
       '  --residual       第 5 层残余存量基线：残余不得上涨（不清零，但也不许偷偷变多）',
       '  --update-residual  重写残余基线（收敛后显式下调；上涨需在评审中说明）',
       '  --allow-stale    产物早于源码时仍继续（默认拒绝：旧产物会导致假绿）',
+      '  --json           额外输出一行 [JSON] 结构化报告（逐文件逐原子的旧类/旧值/新类/新值），供 visual:expect-inventory 消费',
       '  --quiet          只输出汇总与问题',
       '  --selftest       跑门禁自检',
       '  --help           显示本帮助',
@@ -1434,6 +1504,14 @@ const main = () => {
 
   const staticOnly = args.includes('--static-only');
   const quiet = args.includes('--quiet');
+  /**
+   * `--json`：把逐文件逐原子的「旧类 / 旧值 / 新类 / 新值」结构化输出到 stdout。
+   *
+   * <p>为什么要加在门禁里而不是在外面重写一套：等价判定（三元配对、dark: 变体覆盖、
+   * 令牌解析、容差）全在这里，复制一份解析逻辑就是再造一个会漂移的真值源。
+   * `visual:expect-inventory` 只是这份报告的一层「按文件分组的 CSV 渲染」。</p>
+   */
+  const jsonOut = args.includes('--json');
   const baseIdx = args.indexOf('--base');
   const base = baseIdx >= 0 ? args[baseIdx + 1] : 'HEAD';
   if (baseIdx >= 0 && (base === undefined || base.startsWith('--'))) {
@@ -1503,8 +1581,11 @@ const main = () => {
     }
   }
 
+  /** @type {Array<object>} */
+  const inventoryRows = [];
   for (const relPath of targets) {
-    const r = checkFile(ctx, baseCtx, relPath, base, staticOnly);
+    const r = checkFile(ctx, baseCtx, relPath, base, staticOnly, jsonOut);
+    if (jsonOut && Array.isArray(r.inventory)) inventoryRows.push(...r.inventory);
     if (r.problems.length > 0) {
       totalDrift += r.problems.length;
       affected += 1;
@@ -1513,6 +1594,18 @@ const main = () => {
     } else if (!quiet) {
       console.log('✓ ' + relPath + (r.notes.length > 0 ? '  [' + r.notes.join('；') + ']' : ''));
     }
+  }
+
+  if (jsonOut) {
+    // 机读输出：只放一行 JSON（人类可读报告仍走 stderr 之外的常规输出），
+    // 由 visual:expect-inventory 消费，避免它再造一套等价判定逻辑。
+    console.log('\n[JSON] ' + JSON.stringify({
+      base,
+      fileCount: targets.length,
+      totalDrift,
+      affected,
+      atoms: inventoryRows,
+    }));
   }
 
   console.log('\n== 结论：' + (totalDrift === 0 ? '等价（零漂移）' : `存在 ${totalDrift} 处漂移/告警（${affected} 个文件），需人工确认`) + ' ==');

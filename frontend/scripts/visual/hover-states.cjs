@@ -431,7 +431,26 @@ async function main() {
     const { compareDirectories, DEFAULT_OPTIONS } = await import('./compare.mjs');
     // 组件图很小，收紧阈值，避免「小面积文字色变化」被整图比例吞掉。
     const options = { ...DEFAULT_OPTIONS, threshold: 0.0002, strongPixels: 12 };
-    const px = compareDirectories({ baselineDir: BASE_DIR, currentDir: CUR_DIR, diffDir: DIFF_DIR, options });
+    // 先清空 diff 目录：compare 只在「有差异」时写文件、从不清理，历史残留会让
+  // 「本轮有哪些 hover 目标变了」不可判定（visual:expect-inventory 直接读这个目录）。
+  await fsp.rm(DIFF_DIR, { recursive: true, force: true });
+  await fsp.mkdir(DIFF_DIR, { recursive: true });
+  const px = compareDirectories({ baselineDir: BASE_DIR, currentDir: CUR_DIR, diffDir: DIFF_DIR, options });
+  // 与组件场景同一口径：diff 目录「有文件」≠「有变化」，只有 status !== 'pass' 才是真变化。
+  const hoverFailures = px.details.filter((d) => d.status !== 'pass');
+  await fsp.writeFile(path.join(OUT_ROOT, 'diff-manifest.json'), `${JSON.stringify({
+    generatedAt: new Date().toISOString(),
+    source: 'hover-states --mode check',
+    imagesCompared: px.images,
+    failedCount: px.failed,
+    failures: hoverFailures.map((d) => ({
+      image: String(d.image).split(path.sep).join('/'),
+      status: String(d.status),
+      changedPixels: d.changedPixels,
+      changedRatio: d.changedRatio,
+      reasons: Array.isArray(d.reasons) ? d.reasons : [],
+    })),
+  }, null, 2)}\n`);
     // 静默失效防护（G-4）：基线可能因 .lingxi/tmp 被清而蒸发，此时 compare 只比剩下那几张，
     // failed 仍为 0 —— 覆盖率悄悄掉一半也没人发现。故这里按「目标数 × 主题数」核对实际比对张数。
     const expectedImages = ACTIVE_TARGETS.length * 2; // 2 = light + dark（与上面的循环一致）
