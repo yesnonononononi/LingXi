@@ -98,7 +98,7 @@ public class ChecklistServiceImpl implements ChecklistService {
         ChecklistModification modification = new ChecklistModification(
                 command.getNewTitle(),
                 contentUpdates(command.getStepContents()),
-                newSteps(checklist.getId(), command.getAddedSteps()),
+                newSteps(command.getAddedSteps()),
                 command.getRemovedStepIds(),
                 command.getOrderedStepIds());
         ChecklistMutation mutation = checklist.applyModification(modification);
@@ -212,7 +212,7 @@ public class ChecklistServiceImpl implements ChecklistService {
         return updates;
     }
 
-    private List<ChecklistModification.NewStep> newSteps(Long checklistId, List<String> contents) {
+    private List<ChecklistModification.NewStep> newSteps(List<String> contents) {
         if (contents == null || contents.isEmpty()) {
             return List.of();
         }
