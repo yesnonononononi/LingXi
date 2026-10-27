@@ -295,6 +295,24 @@ if (isCli) {
       }
       const compare = compareDirectories({ baselineDir: BASELINE_DIR, currentDir: outDir, diffDir: DIFF_DIR, options: DEFAULT_OPTIONS });
       fs.writeFileSync(path.join(VISUAL_ROOT, 'compare-report.json'), JSON.stringify({ ...compare, options: DEFAULT_OPTIONS }, null, 2));
+      // 与 component-scenes / hover-states 同一口径写出 diff-manifest.json：expect-inventory 的
+      // collectDiffImages 靠扫该文件汇总「本轮真的变了」的失败图。capture.mjs（settings 三页签）
+      // 此前不写，导致 settings 的失败图进不了清单（清单 27 vs 实际 30）。字段名与另两个 writer 完全一致，
+      // 让 collectDiffImages 无需改逻辑即可汇总。diff 目录「有文件」≠「有变化」，只有 status!=='pass' 才是真变化。
+      const captureFailures = compare.details.filter((d) => d.status !== 'pass');
+      fs.writeFileSync(path.join(VISUAL_ROOT, 'diff-manifest.json'), `${JSON.stringify({
+        generatedAt: new Date().toISOString(),
+        source: 'visual:check (capture.mjs)',
+        imagesCompared: compare.images,
+        failedCount: compare.failed,
+        failures: captureFailures.map((d) => ({
+          image: String(d.image).split(path.sep).join('/'),
+          status: String(d.status),
+          changedPixels: d.changedPixels,
+          changedRatio: d.changedRatio,
+          reasons: Array.isArray(d.reasons) ? d.reasons : [],
+        })),
+      }, null, 2)}\n`);
       summary.compare = { images: compare.images, failed: compare.failed, details: compare.details, failures: compare.failures };
     }
   } catch (error) {

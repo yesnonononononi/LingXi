@@ -130,12 +130,14 @@ function walk(dir) {
  * 一张零差异的图也会被当成「本轮变更」。真正的信号是比对明细里 `status !== 'pass'`，
  * 两个 check 脚本会把它固化成 `diff-manifest.json`，这里只做汇总。</p>
  *
- * @returns {{images: string[], manifests: number, compared: number}} 失败图像与统计
+ * @returns {{images: string[], items: Array<{repoPath: string, image: string, status: string, changedPixels: number|null, changedRatio: number|null}>, manifests: number, compared: number}} 失败图像、逐张明细与统计
  */
 function collectDiffImages() {
   const manifests = walk(ARTIFACT_ROOT).filter((f) => path.basename(f) === 'diff-manifest.json');
-  /** @type {string[]} */
-  const images = [];
+  /** @type {Array<{repoPath: string, image: string, status: string, changedPixels: number|null, changedRatio: number|null}>} */
+  const items = [];
+  /** @type {Map<string, {repoPath: string, image: string, status: string, changedPixels: number|null, changedRatio: number|null}>} */
+  const byRepoPath = new Map();
   let compared = 0;
   for (const file of manifests) {
     let parsed;
@@ -145,11 +147,24 @@ function collectDiffImages() {
       continue; // manifest 损坏不阻塞清单生成（会在统计里少一份，但不会编造数据）
     }
     compared += Number(parsed.imagesCompared ?? 0);
+    const prefix = path.relative(REPO_ROOT, path.dirname(file)).split(path.sep).join('/');
     for (const item of Array.isArray(parsed.failures) ? parsed.failures : []) {
-      if (item && item.image) images.push(`${path.relative(REPO_ROOT, path.dirname(file)).split(path.sep).join('/')}/${item.image}`);
+      if (!item || !item.image) continue;
+      const repoPath = `${prefix}/${item.image}`;
+      if (byRepoPath.has(repoPath)) continue; // 同一张图被多份 manifest 记到时按路径去重
+      const rec = {
+        repoPath,
+        image: String(item.image),
+        status: String(item.status ?? 'fail'),
+        changedPixels: item.changedPixels === undefined ? null : Number(item.changedPixels),
+        changedRatio: item.changedRatio === undefined ? null : Number(item.changedRatio),
+      };
+      byRepoPath.set(repoPath, rec);
+      items.push(rec);
     }
   }
-  return { images: [...new Set(images)].sort(), manifests: manifests.length, compared };
+  items.sort((a, b) => a.repoPath.localeCompare(b.repoPath));
+  return { images: items.map((it) => it.repoPath), items, manifests: manifests.length, compared };
 }
 
 /** CSV 单元格转义：逗号 / 引号 / 换行都必须包起来，否则行会被拆错。 */
@@ -162,26 +177,38 @@ function csvCell(value) {
  * 把原子差异渲染成「按文件分组」的 CSV 文本。
  *
  * @param {Array<object>} atoms 门禁给的结构化原子差异
- * @param {string[]} diffImages diff 图清单
+ * @param {Array<{repoPath: string, status: string, changedPixels: number|null, changedRatio: number|null}>} diffItems diff 图逐张明细
  * @param {string|null} sign 签字人
  * @returns {string} CSV 全文
  */
-function renderCsv(atoms, diffImages, sign, diffStats = { manifests: 0, compared: 0 }) {
+function renderCsv(atoms, diffItems, sign, diffStats = { manifests: 0, compared: 0 }) {
   const lines = [];
   lines.push('# 预期变色清单（灰阶统一 gray-N ↔ zinc-N）');
   lines.push(`# 生成时间: ${new Date().toISOString()}`);
   lines.push(`# 生成器  : scripts/visual/expect-inventory.cjs`);
   lines.push(`# 数据源  : check-theme-equivalence.mjs --json（门禁结构化报告）+ .lingxi/tmp/visual/**/diff-manifest.json（失败图像清单）`);
+  lines.push(`# 预期变更条目: ${atoms.length}`);
   lines.push('# 列      : 文件:行 | 属性 | 旧值 | 新值');
-  if (diffImages.length > 0) {
-    lines.push(`# 本轮像素变化图 (${diffImages.length})（来自 diff-manifest.json 的 status!=pass 项）:`);
-    for (const d of diffImages) lines.push(`#   ${d}`);
+  if (diffItems.length > 0) {
+    lines.push(`# 本轮像素变化图 (${diffItems.length})（来自 diff-manifest.json 的 status!=pass 项）:`);
+    // 逐张列出：文件(repoPath，内含主题/场景) | 状态 | diff 像素 | 占比。verify 靠 # DIFFIMG 行逐张核对。
+    for (const it of diffItems) {
+      const px = it.changedPixels === null ? '?' : String(it.changedPixels);
+      const ratio = it.changedRatio === null ? '?' : String(it.changedRatio);
+      lines.push(`# DIFFIMG ${it.repoPath} | status=${it.status} | diffPixels=${px} | ratio=${ratio}`);
+    }
   } else {
     lines.push(`# 本轮像素变化图: 无（已比对 ${diffStats.manifests} 份 manifest / ${diffStats.compared} 张图，全部通过）`);
   }
   lines.push('文件:行,属性,旧值,新值');
   if (atoms.length === 0) {
-    lines.push('# 当前无预期变更（门禁报告零原子差异，且无 diff 图）');
+    // 文案必须据实：不得在存在 diff 图时谎称「且无 diff 图」。
+    if (diffItems.length > 0) {
+      lines.push('# 当前无原子差异（门禁报告零原子差异）');
+      lines.push(`# ⚠ 存在 ${diffItems.length} 张像素差异图但零原子差异（本次迁移即属此类：类名等价、像素真实变化）`);
+    } else {
+      lines.push('# 当前无预期变更（门禁报告零原子差异，且无 diff 图）');
+    }
   } else {
     let currentFile = '';
     for (const a of atoms) {
@@ -210,18 +237,24 @@ function renderCsv(atoms, diffImages, sign, diffStats = { manifests: 0, compared
  * 读取已存在 CSV 的签字信息与「当时是否有变更」。
  *
  * @param {string} text CSV 全文
- * @returns {{signedBy: string|null, signedAt: string|null, hadChanges: boolean, diffCount: number}} 元信息
+ * @returns {{signedBy: string|null, signedAt: string|null, atomCount: number, diffCount: number, listedDiffs: string[]}} 元信息
  */
 function readCsvMeta(text) {
   const byMatch = /^#\s*SIGNED-BY:\s*(.+)$/m.exec(text);
   const atMatch = /^#\s*SIGNED-AT:\s*(.+)$/m.exec(text);
-  const noChange = text.includes('# 当前无预期变更');
-  const diffMatch = /^#\s*本轮 diff 图 \((\d+)\):/m.exec(text);
+  // 原子计数：新增结构化头（旧清单没有则回落到「当前无预期变更」字符串判断，-1 表示无法判定）。
+  const atomMatch = /^#\s*预期变更条目:\s*(\d+)/m.exec(text);
+  const atomCount = atomMatch ? Number(atomMatch[1]) : (text.includes('# 当前无预期变更') ? 0 : -1);
+  // diff 计数：与 renderCsv 的「本轮像素变化图 (N)」严格对齐（旧正则是「本轮 diff 图」，永远匹配不上 ⇒ 计数恒 0）。
+  const diffMatch = /^#\s*本轮像素变化图 \((\d+)\)/m.exec(text);
+  // 逐张 diff 图清单：从 `# DIFFIMG <repoPath> | ...` 行抽取 repoPath。
+  const listedDiffs = [...text.matchAll(/^#\s*DIFFIMG (\S+)/gm)].map((m) => m[1]);
   return {
     signedBy: byMatch ? byMatch[1].trim() : null,
     signedAt: atMatch ? atMatch[1].trim() : null,
-    hadChanges: !noChange,
+    atomCount,
     diffCount: diffMatch ? Number(diffMatch[1]) : 0,
+    listedDiffs,
   };
 }
 
@@ -273,14 +306,26 @@ function main() {
     if (meta.signedBy && !AUTHORIZED_SIGNERS.includes(meta.signedBy)) {
       failures.push(`签字人「${meta.signedBy}」无授权。预期变色是产品决策，只接受 ${AUTHORIZED_SIGNERS.join(' / ')} 签字；工程师自签无效。`);
     }
-    if (gate.atoms.length > 0 && !meta.hadChanges) {
-      failures.push(`实际存在 ${gate.atoms.length} 条预期变更，但清单声明「当前无预期变更」`);
+    // 原子差异必须与清单「预期变更条目」计数严格一致（保留原「双向」语义，并更严：数量也要对得上）。
+    if (meta.atomCount === -1) {
+      failures.push('清单缺少「预期变更条目」计数（旧格式清单，请重新生成并签字）');
+    } else if (meta.atomCount !== gate.atoms.length) {
+      failures.push(`清单记录的预期变更条目（${meta.atomCount}）与实际（${gate.atoms.length}）不一致`);
     }
-    if (gate.atoms.length === 0 && meta.hadChanges) {
-      failures.push('清单记录了变更，但当前实际零差异（清单已过期，需重新生成并签字）');
-    }
+    // diff 图数量必须与实际一致。
     if (meta.diffCount !== diffImages.length) {
       failures.push(`清单记录的 diff 图数量（${meta.diffCount}）与实际（${diffImages.length}）不一致`);
+    }
+    // 逐张核对：清单必须逐张列出实际存在的每张 diff 图；缺一张、或多列一张不存在的，都失败。
+    const listedSet = new Set(meta.listedDiffs);
+    const diffSet = new Set(diffImages);
+    const missingDiffs = diffImages.filter((p) => !listedSet.has(p));
+    const extraDiffs = meta.listedDiffs.filter((p) => !diffSet.has(p));
+    if (missingDiffs.length > 0) {
+      failures.push(`清单漏列了 ${missingDiffs.length} 张 diff 图：${missingDiffs.join(', ')}`);
+    }
+    if (extraDiffs.length > 0) {
+      failures.push(`清单列出了 ${extraDiffs.length} 张不存在的 diff 图：${extraDiffs.join(', ')}`);
     }
     if (failures.length > 0) {
       console.error('[expect-inventory] --verify 失败：');
@@ -291,7 +336,7 @@ function main() {
     return 0;
   }
 
-  const csv = renderCsv(gate.atoms, diffImages, args.sign, diff);
+  const csv = renderCsv(gate.atoms, diff.items, args.sign, diff);
   fs.mkdirSync(path.dirname(CSV_PATH), { recursive: true });
   fs.writeFileSync(CSV_PATH, csv);
   console.log(`[expect-inventory] 已写出 ${path.relative(REPO_ROOT, CSV_PATH).split(path.sep).join('/')}`);
