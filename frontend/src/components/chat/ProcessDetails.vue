@@ -437,7 +437,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                 <CollapseTransition>
                   <div v-if="canExpandTool(item.tool) && expandedToolIds[item.tool.id]">
                     <div :class="['w-full rounded-2xl border overflow-hidden mt-1.5 shadow-xs transition-colors', isDark ? 'border-[#273043] bg-[#12161f]' : 'border-gray-200/90 bg-white']">
-                      <div :class="['px-4 py-2.5 flex items-center justify-between gap-3 text-xs border-b', isDark ? 'border-gray-800/80' : 'border-gray-100']">
+                      <div :class="['px-4 py-2.5 flex items-center justify-between gap-3 text-xs border-b', isDark ? 'border-gray-800/80' : 'border-zinc-100']">
                         <div class="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
                           <span
                             :class="[

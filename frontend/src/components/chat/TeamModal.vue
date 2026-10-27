@@ -656,7 +656,7 @@ const handleSaveTeam = async () => {
           <div
             class="rounded-xl border divide-y overflow-y-auto max-h-48"
             :class="[
-              isDark ? 'border-white/15 divide-white/10 bg-black/90' : 'border-gray-200 divide-gray-100 bg-zinc-50'
+              isDark ? 'border-white/15 divide-white/10 bg-black/90' : 'border-gray-200 divide-zinc-100 bg-zinc-50'
             ]"
           >
             <div v-if="isLoadingAgents" class="p-4 text-center text-xs text-gray-500">
@@ -674,7 +674,7 @@ const handleSaveTeam = async () => {
                 'group p-2.5 flex items-center justify-between cursor-pointer transition-colors',
                 selectedAgentIds.includes(agent.id)
                   ? (isDark ? 'bg-cyan-500/15' : 'bg-blue-50')
-                  : (isDark ? 'hover:bg-white/5' : 'hover:bg-gray-100/80'),
+                  : (isDark ? 'hover:bg-white/5' : 'hover:bg-zinc-100/80'),
                 editingAgentId === agent.id ? 'ring-1 ring-blue-500/50' : ''
               ]"
             >
@@ -813,7 +813,7 @@ const handleSaveTeam = async () => {
                 'px-3 py-2 flex items-center justify-between cursor-pointer transition-colors text-xs',
                 commanderAgentId === agent.id
                   ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-blue-50 text-blue-700 font-medium')
-                  : (isDark ? 'hover:bg-white/10 text-zinc-300' : 'hover:bg-gray-100/80 text-gray-700')
+                  : (isDark ? 'hover:bg-white/10 text-zinc-300' : 'hover:bg-zinc-100/80 text-gray-700')
               ]"
             >
               <div class="flex items-center gap-2.5 min-w-0">
@@ -861,7 +861,7 @@ const handleSaveTeam = async () => {
             @click="emit('close')"
             :class="[
               'px-4 py-1.5 text-xs rounded-xl border transition cursor-pointer',
-              isDark ? 'border-white/15 text-zinc-300 hover:bg-white/5' : 'border-gray-300 text-gray-600 hover:bg-gray-100'
+              isDark ? 'border-white/15 text-zinc-300 hover:bg-white/5' : 'border-gray-300 text-gray-600 hover:bg-zinc-100'
             ]"
           >
             {{ t('common.cancel') }}

@@ -105,9 +105,9 @@
       "group": "border",
       "status": "add",
       "darkClass": "border-white/10",
-      "lightClass": "border-gray-100",
+      "lightClass": "border-zinc-100",
       "expectedDark": "#ffffff@0.102",
-      "expectedLight": "#f3f4f6",
+      "expectedLight": "#f4f4f5",
       "themeKey": "--color-lx-border-faint",
       "utilityClass": "border-lx-border-faint",
       "note": "(a)10 处/7 文件 (b)subtle 必须取 gray-200（20 处更主力），gray-100 无令牌可落 (c)faint=边框层级最弱"
@@ -222,9 +222,9 @@
       "group": "surface",
       "status": "rederive",
       "darkClass": "bg-white/10",
-      "lightClass": "bg-gray-100",
+      "lightClass": "bg-zinc-100",
       "expectedDark": "#ffffff@0.102",
-      "expectedLight": "#f3f4f6",
+      "expectedLight": "#f4f4f5",
       "themeKey": "--color-lx-surface-selected",
       "utilityClass": "bg-lx-surface-selected",
       "note": "13 处/3 文件；选中/次级小块底（徽章、激活项）"

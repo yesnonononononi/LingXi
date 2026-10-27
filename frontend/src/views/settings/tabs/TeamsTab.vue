@@ -59,7 +59,7 @@ const {
       <!-- 团队规模上限：真值在设置行（team_size），改完即时生效，不需要重启 -->
       <div
         class="flex items-center justify-between pb-3 border-b"
-        :class="isDark ? 'border-white/10' : 'border-gray-100'"
+        :class="isDark ? 'border-white/10' : 'border-zinc-100'"
       >
         <div class="flex flex-col">
           <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">
@@ -350,7 +350,7 @@ const {
           <div
             class="rounded-xl border divide-y overflow-y-auto max-h-44"
             :class="[
-              isDark ? 'border-white/15 divide-white/10 bg-black/90' : 'border-gray-200 divide-gray-100 bg-zinc-50'
+              isDark ? 'border-white/15 divide-white/10 bg-black/90' : 'border-gray-200 divide-zinc-100 bg-zinc-50'
             ]"
           >
                         <div v-if="agentsList.length === 0" class="p-4 text-center text-xs text-gray-400">
@@ -365,7 +365,7 @@ const {
                 'p-2.5 flex items-center justify-between cursor-pointer transition-colors text-xs',
                 teamForm.agentIds.includes(agent.id)
                   ? (isDark ? 'bg-cyan-500/15' : 'bg-blue-50')
-                  : (isDark ? 'hover:bg-white/5' : 'hover:bg-gray-100/80')
+                  : (isDark ? 'hover:bg-white/5' : 'hover:bg-zinc-100/80')
               ]"
             >
               <div class="flex items-center gap-2.5 min-w-0 flex-1 mr-2">

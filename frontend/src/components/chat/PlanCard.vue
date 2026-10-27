@@ -136,7 +136,7 @@ const decide = async (approved: boolean) => {
       <!-- 3. 补充 Tip 输入区（可折叠） -->
       <div
         v-if="isPending && isAddingTip"
-        class="pt-3 border-t border-gray-100 dark:border-gray-800/80"
+        class="pt-3 border-t border-zinc-100 dark:border-gray-800/80"
       >
         <div class="flex items-center justify-between mb-1.5 text-xs text-lx-muted">
           <div class="flex items-center gap-1.5">
@@ -172,7 +172,7 @@ const decide = async (approved: boolean) => {
       </div>
 
       <!-- 4. 底部操作栏 -->
-      <div class="pt-3 border-t border-gray-100 dark:border-gray-800/80 flex items-center justify-between gap-3 select-none flex-wrap">
+      <div class="pt-3 border-t border-zinc-100 dark:border-gray-800/80 flex items-center justify-between gap-3 select-none flex-wrap">
 
         <!-- 左：去聊天里说（无 provider 时不渲染，避免死按钮） -->
         <button

@@ -372,7 +372,7 @@ defineExpose({
                 <!-- 针对 '+ 添加团队' 等操作项的分隔线 -->
                 <div
                   v-if="String(option.value).startsWith('__add_') && idx > 0"
-                  class="h-px my-1 bg-gray-100 dark:bg-gray-800/80"
+                  class="h-px my-1 bg-zinc-100 dark:bg-gray-800/80"
                 ></div>
 
                 <div
@@ -382,7 +382,7 @@ defineExpose({
                     'px-3 py-2 rounded-xl text-xs flex items-center gap-2 transition-colors select-none',
                     option.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer',
                     isSelected(option)
-                      ? (isDark ? 'border border-white/85 bg-white/[0.12] text-white font-medium shadow-[0_0_14px_rgba(255,255,255,0.22)]' : 'bg-gray-100 text-gray-900 font-normal')
+                      ? (isDark ? 'border border-white/85 bg-white/[0.12] text-white font-medium shadow-[0_0_14px_rgba(255,255,255,0.22)]' : 'bg-zinc-100 text-gray-900 font-normal')
                       : (!option.disabled ? (isDark ? 'hover:bg-white/10 text-zinc-300' : 'hover:bg-zinc-50 text-gray-700') : '')
                   ]"
                   @click="select(option)"

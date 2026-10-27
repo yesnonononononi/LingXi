@@ -166,7 +166,7 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
               busy || !supported
                 ? isDark
                   ? 'bg-white/5 text-lx-faint cursor-not-allowed'
-                  : 'bg-gray-100 text-lx-faint cursor-not-allowed'
+                  : 'bg-zinc-100 text-lx-faint cursor-not-allowed'
                 : mandatory
                   ? 'bg-red-500 text-white hover:bg-red-600 shadow-sm cursor-pointer'
                   : 'bg-blue-500 text-white hover:bg-blue-600 shadow-sm cursor-pointer',

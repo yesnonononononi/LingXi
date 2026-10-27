@@ -63,7 +63,7 @@ function resolveRuleKey(rule: SecurityRule): number {
 }
 
 /* 卡片 / 控件 / 按钮：与设置页其它 tab 同一套圆角与配色（卡片 2xl、控件 xl、图标按钮 lg） */
-const panel = 'rounded-2xl border border-gray-100 dark:border-white/10 bg-zinc-50/60 dark:bg-white/[0.03] p-4';
+const panel = 'rounded-2xl border border-zinc-100 dark:border-white/10 bg-zinc-50/60 dark:bg-white/[0.03] p-4';
 const control = 'rounded-xl border border-gray-200 dark:border-white/15 bg-white dark:bg-black/30 text-lx-secondary px-3 py-1.5 text-xs outline-none transition focus:border-gray-400 focus:ring-2 focus:ring-gray-200/60 dark:focus:border-white/40 dark:focus:ring-white/10';
 const button = 'rounded-xl border border-gray-200 dark:border-white/15 px-3 py-1.5 text-xs font-medium transition cursor-pointer hover:bg-black/5 active:scale-[0.97] dark:hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100';
 const primary = 'rounded-xl bg-blue-600 px-4 py-1.5 text-xs font-medium text-white shadow-sm transition cursor-pointer hover:bg-blue-500 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:active:scale-100';
@@ -172,7 +172,7 @@ void load();
         </div>
 
         <!-- 沙箱服务能力检查（随沙箱设置一起从通用页搬来） -->
-        <div class="mt-3 flex items-center justify-between gap-2 border-t border-gray-100 pt-3 dark:border-white/10">
+        <div class="mt-3 flex items-center justify-between gap-2 border-t border-zinc-100 pt-3 dark:border-white/10">
           <span class="flex min-w-0 items-center gap-1.5 text-[11px] leading-5 text-lx-muted">
             <span :class="['h-1.5 w-1.5 shrink-0 rounded-full', sandboxStatus ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-white/20']" aria-hidden="true" />
             <span class="min-w-0">{{ t('settings.general.sandboxService') }}：{{ sandboxStatus?.message || t('settings.general.sandboxServiceDesc') }}</span>
@@ -184,14 +184,14 @@ void load();
         <p v-if="isCheckingSandbox" class="mt-2 text-[11px] leading-snug text-gray-400 dark:text-zinc-400">{{ t('settings.general.sandboxCheckingHint') }}</p>
         <div v-if="sandboxNotice" class="sec-rise mt-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-2.5 text-[11px] text-emerald-600 dark:text-emerald-400">{{ sandboxNotice }}</div>
         <div v-if="sandboxError" class="sec-rise mt-2 rounded-xl border border-red-500/20 bg-red-500/10 p-2.5 text-[11px] text-red-600 dark:text-red-400">{{ sandboxError }}</div>
-        <div v-if="showScope" class="sec-rise mt-2 rounded-xl border border-gray-100 bg-white/70 p-2.5 dark:border-white/10 dark:bg-white/[0.03]">
+        <div v-if="showScope" class="sec-rise mt-2 rounded-xl border border-zinc-100 bg-white/70 p-2.5 dark:border-white/10 dark:bg-white/[0.03]">
           <p class="text-[11px] font-medium text-lx-tertiary">{{ copy.scope }}</p>
           <p class="mt-1 text-[11px] leading-5 text-lx-muted">{{ copy.fileLimits }}</p>
         </div>
       </section>
 
       <!-- 三个入口行：标题 + 一句说明 + 箭头 -->
-      <div class="sec-rise divide-y divide-gray-100 dark:divide-white/10" :style="{ '--sec-delay': '60ms' }">
+      <div class="sec-rise divide-y divide-zinc-100 dark:divide-white/10" :style="{ '--sec-delay': '60ms' }">
         <button v-for="item in categories" :key="item" type="button" :data-testid="`security-tab-${item}`" @click="open(item)"
           class="sec-nav flex w-full items-center justify-between gap-3 rounded-xl px-2 py-3 text-left transition-colors cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/[0.05]">
           <span class="flex min-w-0 flex-col">

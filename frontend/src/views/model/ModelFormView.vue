@@ -147,7 +147,7 @@ const goBack = () => router.push('/models');
 
 const rootClass = computed(() => [
   'min-h-screen w-screen font-sans',
-  isDark.value ? 'bg-[#0b0f17] text-gray-100' : 'bg-zinc-50 text-gray-900',
+  isDark.value ? 'bg-[#0b0f17] text-zinc-100' : 'bg-zinc-50 text-gray-900',
 ]);
 const headerClass = computed(() => [
   'sticky top-0 z-20 h-14 px-4 flex items-center justify-between border-b backdrop-blur select-none',
@@ -155,7 +155,7 @@ const headerClass = computed(() => [
 ]);
 const themeBtnClass = computed(() => [
   'p-2 rounded-xl border transition',
-  isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-yellow-400 hover:bg-[#202738]' : 'bg-zinc-50 border-gray-200 text-gray-600 hover:bg-gray-100',
+  isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-yellow-400 hover:bg-[#202738]' : 'bg-zinc-50 border-gray-200 text-gray-600 hover:bg-zinc-100',
 ]);
 const mutedText = computed(() => (isDark.value ? 'mt-1 text-xs text-gray-400' : 'mt-1 text-xs text-gray-500'));
 const btnClass = computed(() => [
@@ -167,7 +167,7 @@ const dividerClass = computed(() => (isDark.value ? 'border-[#273043]' : 'border
 const labelClass = computed(() => (isDark.value ? 'text-xs text-gray-400' : 'text-xs text-gray-500'));
 const inputClass = computed(() => [
   'w-full px-3 py-2 rounded-lg text-xs outline-none border transition',
-  isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-gray-100 placeholder-gray-500 focus:border-blue-500/60' : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-400',
+  isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-zinc-100 placeholder-gray-500 focus:border-blue-500/60' : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-400',
 ]);
 const toastClass = computed(() => [
   'fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-xs shadow-lg',
@@ -351,7 +351,7 @@ onBeforeUnmount(() => {
                   @click='handleSelectRemoteModel(item.id)'
                   :class="[
                     'px-3 py-1.5 cursor-pointer flex items-center justify-between transition',
-                    isDark ? 'hover:bg-white/10' : 'hover:bg-gray-100',
+                    isDark ? 'hover:bg-white/10' : 'hover:bg-zinc-100',
                     form.modelName === item.id ? 'text-blue-500 font-medium bg-blue-500/10' : ''
                   ]"
                 >

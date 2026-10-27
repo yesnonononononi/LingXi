@@ -13,11 +13,11 @@ const emit = defineEmits<{ (event: 'update:modelValue', text: string): void; (ev
       @click.self="!busy && emit('cancel')" @keydown.esc.stop="!busy && emit('cancel')">
       <section role="dialog" aria-modal="true" :aria-label="t('chat.controls.editResend')"
         class="w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-zinc-900 p-5 shadow-xl">
-        <h2 class="text-base font-semibold text-gray-900 dark:text-gray-100">{{ t('chat.controls.editResend') }}</h2>
+        <h2 class="text-base font-semibold text-gray-900 dark:text-zinc-100">{{ t('chat.controls.editResend') }}</h2>
         <p class="mt-2 text-sm text-lx-muted">{{ t('chat.controls.resendWarning') }}</p>
         <p v-if="imageCount" class="mt-2 text-xs text-gray-500">{{ t('chat.controls.keepImages', { count: imageCount }) }}</p>
         <textarea ref="textarea" :value="modelValue" :disabled="busy" :aria-label="t('chat.controls.editedPrompt')" rows="7"
-          class="mt-4 w-full resize-y rounded-xl border border-gray-300 dark:border-white/15 bg-transparent p-3 text-sm text-gray-900 dark:text-gray-100 select-text"
+          class="mt-4 w-full resize-y rounded-xl border border-gray-300 dark:border-white/15 bg-transparent p-3 text-sm text-gray-900 dark:text-zinc-100 select-text"
           @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)" />
         <p v-if="error" role="alert" class="mt-2 text-sm text-red-500">{{ error }}</p>
         <div class="mt-4 flex justify-end gap-2">

@@ -137,7 +137,7 @@ onBeforeUnmount(() => {
 .settings-select-menu { @apply fixed z-[1000] overflow-y-auto rounded-xl border border-gray-200 bg-white p-1.5 text-xs text-gray-700 shadow-[0_8px_28px_rgba(0,0,0,0.12)] dark:border-white/15 dark:bg-zinc-950 dark:text-zinc-300 dark:shadow-[0_12px_36px_rgba(0,0,0,0.65)]; transform-origin: top center; }
 .settings-select-menu.opens-up { transform-origin: bottom center; }
 .settings-select-option { @apply flex min-h-9 items-center justify-between gap-3 rounded-lg px-3 py-2 cursor-pointer select-none; transition: background-color 120ms, color 120ms; }
-.settings-select-option.is-active { @apply bg-gray-100 text-gray-900 dark:bg-white/10 dark:text-white; }
+.settings-select-option.is-active { @apply bg-zinc-100 text-gray-900 dark:bg-white/10 dark:text-white; }
 .settings-select-option.is-selected { @apply font-medium text-gray-900 dark:text-white; }
 .settings-select-option-desc { @apply mt-0.5 text-[11px] font-normal leading-snug text-lx-faint; }
 .settings-select-enter-active { transition: opacity 160ms ease-out, transform 160ms ease-out; }

@@ -318,7 +318,7 @@ const emit = emitShim as TreeEmitShim;
                 'group relative flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
                 isWorkspaceActive(group.workspace)
                   ? 'bg-gray-200/80 text-gray-900 font-medium'
-                  : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
+                  : 'text-gray-700 hover:text-gray-900 hover:bg-zinc-100'
               ]"
             >
               <!-- Left: Chevron Indicator + Folder Icon + Workspace Name -->
@@ -416,7 +416,7 @@ const emit = emitShim as TreeEmitShim;
                       'group/session relative flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
                       activeSessionId === session.id
                         ? 'bg-blue-50 text-blue-600 font-medium'
-                        : 'hover:bg-gray-100/70 text-gray-600 hover:text-gray-900'
+                        : 'hover:bg-zinc-100/70 text-gray-600 hover:text-gray-900'
                     ]"
                   >
                     <!-- Chat Bubble Icon -->
@@ -480,7 +480,7 @@ const emit = emitShim as TreeEmitShim;
                   'group/session relative flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
                   activeSessionId === session.id
                     ? 'bg-blue-50 text-blue-600 font-medium'
-                    : 'hover:bg-gray-100/70 text-gray-600 hover:text-gray-900'
+                    : 'hover:bg-zinc-100/70 text-gray-600 hover:text-gray-900'
                 ]"
               >
                 <svg class="w-3.5 h-3.5 shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">

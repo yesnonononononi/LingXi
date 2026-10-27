@@ -25,7 +25,7 @@ const { text: greetingText, ready: greetingReady } = useGreeting();
   <div class="flex flex-col items-center justify-center select-none pb-4">
     <!-- Brand Hero Row: Title -->
     <div class="flex items-center justify-center">
-      <h1 class="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100 flex items-center min-h-[36px]">
+      <h1 class="text-2xl font-bold tracking-tight text-gray-900 dark:text-zinc-100 flex items-center min-h-[36px]">
         <!-- 称呼还没取回来时不渲染打字机，避免默认句与问候句各打一次 -->
         <TextType
           v-if="greetingReady"

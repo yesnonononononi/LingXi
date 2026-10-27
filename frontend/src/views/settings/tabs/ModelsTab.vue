@@ -120,7 +120,7 @@ const addRowClass = computed(() => [
   'w-full py-2 text-[11px] rounded-xl flex items-center justify-center gap-1 transition cursor-pointer',
   isDark.value
     ? 'text-zinc-300 hover:text-white hover:bg-white/[0.06]'
-    : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100/70',
+    : 'text-gray-500 hover:text-gray-800 hover:bg-zinc-100/70',
 ]);
 </script>
 
@@ -245,7 +245,7 @@ const addRowClass = computed(() => [
 
     <!-- ========================== 提供商表单 ========================== -->
     <div v-else-if="mode === 'provider-form'" class="space-y-4">
-      <div class="flex items-center justify-between pb-1 border-b border-gray-100 dark:border-gray-800">
+      <div class="flex items-center justify-between pb-1 border-b border-zinc-100 dark:border-gray-800">
         <div class="flex items-center gap-2">
           <button
             type="button"
@@ -354,7 +354,7 @@ const addRowClass = computed(() => [
     </div>
 
     <div v-else-if="mode === 'model-form'" class="space-y-4">
-      <div class="flex items-center justify-between pb-1 border-b border-gray-100 dark:border-gray-800">
+      <div class="flex items-center justify-between pb-1 border-b border-zinc-100 dark:border-gray-800">
         <div class="flex items-center gap-2">
           <button
             type="button"
@@ -408,7 +408,7 @@ const addRowClass = computed(() => [
               :class="[
                 'px-3 py-2 rounded-xl text-xs font-medium shrink-0 flex items-center gap-1.5 transition border cursor-pointer select-none',
                 isFetchingRemoteModels
-                  ? 'opacity-60 cursor-not-allowed border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-black text-gray-400'
+                  ? 'opacity-60 cursor-not-allowed border-gray-300 dark:border-gray-600 bg-zinc-100 dark:bg-black text-gray-400'
                   : (isDark
                       ? 'border-white/20 bg-white/[0.06] text-sky-400 hover:bg-white/[0.12]'
                       : 'border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100/80')

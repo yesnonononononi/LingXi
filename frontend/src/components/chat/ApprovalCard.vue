@@ -221,7 +221,7 @@ const handleReject = () => submit(false);
             </div>
 
             <!-- 3. 底部操作栏 (未决断时展示) -->
-            <div v-if="!isResolved" class="pt-2 flex items-center justify-end gap-2.5 select-none border-t border-gray-100 dark:border-gray-800/80">
+            <div v-if="!isResolved" class="pt-2 flex items-center justify-end gap-2.5 select-none border-t border-zinc-100 dark:border-gray-800/80">
               <CardActionButton
                 tone="danger"
                 variant="outline"

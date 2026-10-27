@@ -42,8 +42,8 @@
         "borderBottomColor": "rgb(153, 161, 175)"
       },
       "smCard": {
-        "borderTopColor": "rgb(243, 244, 246)",
-        "borderBottomColor": "rgb(243, 244, 246)"
+        "borderTopColor": "rgb(244, 244, 245)",
+        "borderBottomColor": "rgb(244, 244, 245)"
       },
       "smTitle": {},
       "atRow": {
@@ -100,7 +100,7 @@
       },
       "smTitle": {},
       "atRow": {
-        "color": "rgb(243, 244, 246)"
+        "color": "rgb(244, 244, 245)"
       },
       "atName": {},
       "atDesc": {

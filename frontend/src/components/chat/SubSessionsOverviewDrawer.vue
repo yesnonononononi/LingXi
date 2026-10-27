@@ -56,7 +56,7 @@ const emit = defineEmits<{
         ]"
       >
         <!-- 头部 -->
-        <div :class="['px-6 py-4 border-b flex items-center justify-between shrink-0', isDark ? 'border-white/10 bg-black/60' : 'border-gray-100 bg-zinc-50/70']">
+        <div :class="['px-6 py-4 border-b flex items-center justify-between shrink-0', isDark ? 'border-white/10 bg-black/60' : 'border-zinc-100 bg-zinc-50/70']">
           <div class="flex items-center gap-3">
             <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-600 via-indigo-600 to-cyan-400 flex items-center justify-center text-white shadow-sm shrink-0">
               <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -88,7 +88,7 @@ const emit = defineEmits<{
         </div>
 
         <!-- 查看提示 -->
-        <div :class="['px-6 py-2.5 border-b text-xs flex items-center justify-between gap-4 select-none', isDark ? 'border-white/10 bg-black/40 text-zinc-400' : 'border-gray-100 bg-zinc-50/40 text-gray-500']">
+        <div :class="['px-6 py-2.5 border-b text-xs flex items-center justify-between gap-4 select-none', isDark ? 'border-white/10 bg-black/40 text-zinc-400' : 'border-zinc-100 bg-zinc-50/40 text-gray-500']">
 
           <span class="text-[11px] opacity-70">{{ t('chat.subSessions.cardHint') }}</span>
         </div>
@@ -126,7 +126,7 @@ const emit = defineEmits<{
                     <h4 class="font-semibold text-sm truncate group-hover:text-cyan-400 transition-colors">
                       {{ sub.agentName || (sub.agentId ? `Agent #${sub.agentId}` : t('chat.subSessions.fallbackName')) }}
                     </h4>
-                    <span :class="['text-[10px] px-1.5 py-0.2 rounded-full font-mono', isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600']">
+                    <span :class="['text-[10px] px-1.5 py-0.2 rounded-full font-mono', isDark ? 'bg-gray-800 text-gray-300' : 'bg-zinc-100 text-gray-600']">
                       #{{ sub.id }}
                     </span>
                   </div>

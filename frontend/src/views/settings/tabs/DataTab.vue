@@ -167,7 +167,7 @@ const handleClearSessions = async () => {
       </div>
     </div>
 
-    <div class="h-px bg-gray-100 dark:bg-white/10"></div>
+    <div class="h-px bg-zinc-100 dark:bg-white/10"></div>
     <section class="space-y-2" data-testid="execution-cleanup">
       <div class="flex items-center justify-between gap-3">
         <span class="text-gray-800 dark:text-zinc-200">{{ cleanup.copy.value.title }}</span>
@@ -196,7 +196,7 @@ const handleClearSessions = async () => {
     </section>
 
     <!-- 删除所有对话：真实能力（清空全部会话），保留并带二次确认 -->
-    <div class="h-px bg-gray-100 dark:bg-white/10"></div>
+    <div class="h-px bg-zinc-100 dark:bg-white/10"></div>
     <div class="flex items-center justify-between py-1.5">
       <span class="text-gray-800 dark:text-zinc-200 dark:text-glow-subtle">{{ t('settings.data.clearAll') }}</span>
       <button
