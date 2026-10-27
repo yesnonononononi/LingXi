@@ -31,10 +31,79 @@ const TOKENS = kit.readTokenValues();
 
 const argv = process.argv.slice(2);
 const argOf = (key, fb) => { const i = argv.indexOf(`--${key}`); return i >= 0 && argv[i + 1] ? argv[i + 1] : fb; };
+const hasFlag = (key) => argv.some((value, index) => value === `--${key}`);
+
+/**
+ * 帮助文本。
+ *
+ * <p>为什么把 `--assert-dark-colors` 与 `--mode check` 的组合行为写进来：这两个开关语义独立，
+ * 组合时的行为不做说明就会被误用（例如以为给了 `--assert-dark-colors` 就等于做了像素回归）。</p>
+ */
+const HELP = `用法：electron scripts/visual/component-scenes.cjs [选项]
+
+  --mode <baseline|check>       baseline=重抓基线；check=与基线比对（像素 + computed style）。
+  --themes <both|dark|light>    只跑指定主题（默认 both，保持既有行为）。
+                                报告里会打印「实际跑了哪几态」（themesRun 字段 + stderr 一行），
+                                避免因场景硬编码而「以为跑了暗态其实没跑」。
+  --assert-dark-colors          暗态色值断言（不看像素占比，只看色值）：
+                                对每个 target 的 color / background-color / border-top-color /
+                                border-bottom-color / box-shadow / text-shadow 逐项与令牌真值比对，
+                                输出四列表「元素 → 属性 → 期望色 → 实际色」，任一不等即退出码 1。
+                                期望色一律由 scene-kit 的令牌解析（readTokenValues + toCssRgb）算出，
+                                令牌解析不到直接报错（不静默跳过）。隐含 --themes dark。
+
+  组合行为：--assert-dark-colors 与 --mode check 同时给出时，**先**做暗态色值断言，
+  断言全绿**再**继续做 check 的像素 / computed-style 比对；任一段失败即退出码 1。
+  只给 --assert-dark-colors 时不做基线比对（不要求基线存在）。
+
+  --selfcheck                   对标题注入非法色，证明比对确实会红（防验证器是瞎子）。
+  --selfcheck-theme <marker|token>  故意破坏主题切换，证明主题护栏会红。
+  --help                        打印本帮助。
+`;
+
+if (argv.includes('--help') || argv.includes('-h')) {
+  console.log(HELP);
+  app.exit(0);
+}
+
 const MODE = argOf('mode', 'baseline'); // baseline | check
 const SELFCHECK = argv.includes('--selfcheck');
 /** 故意破坏主题切换，验证「主题未翻转」这条护栏真的会红（防假基线）。 */
 const SELFCHECK_THEME = argv.includes('--selfcheck-theme');
+
+/** `--themes` 取值表：默认 both（与改动前「硬编码跑 light+dark」行为一致）。 */
+const THEME_SETS = { both: ['light', 'dark'], dark: ['dark'], light: ['light'] };
+const THEMES_ARG = argOf('themes', 'both');
+/** 暗态色值断言开关（V5）。 */
+const ASSERT_DARK = argv.includes('--assert-dark-colors');
+
+const themesError = validateFlags();
+if (themesError) {
+  console.error(themesError);
+  app.exit(2);
+}
+
+/**
+ * 校验命令行组合。
+ *
+ * <p>为什么要在这里拦「--themes light + --assert-dark-colors」：这是一个自相矛盾的要求
+ * （断言的是暗态，却只跑亮态），静默取其一都会让使用者以为断言做过。</p>
+ *
+ * @returns {string|null} 错误信息；null 表示组合合法。
+ */
+function validateFlags() {
+  if (!Object.prototype.hasOwnProperty.call(THEME_SETS, THEMES_ARG)) {
+    return `--themes 只接受 both|dark|light，收到「${THEMES_ARG}」。\n\n${HELP}`;
+  }
+  if (!['baseline', 'check'].includes(MODE)) {
+    return `--mode 只接受 baseline|check，收到「${MODE}」。\n\n${HELP}`;
+  }
+  if (ASSERT_DARK && THEMES_ARG === 'light') return '--assert-dark-colors 断言的是暗态，不能与 --themes light 组合';
+  return null;
+}
+
+/** 本次实际要跑的主题列表。 */
+const THEMES = ASSERT_DARK ? ['dark'] : THEME_SETS[THEMES_ARG];
 
 /**
  * 场景稳定性样式（只注入隔离场景，不动生产 CSS）。
@@ -240,7 +309,10 @@ async function captureTheme(win, theme, outDir, mutate = false, breakTheme = nul
   await fsp.mkdir(outDir, { recursive: true });
   const png = await win.webContents.capturePage();
   await fsp.writeFile(path.join(outDir, `${theme}.png`), png.toPNG());
-  return styles;
+  // V7：整页图之外再从同一张 png 裁出每个目标的元素级 ROI（小面积变化的唯一可见证据）。
+  // 用内存裁切而非再次 capturePage(rect)：offscreen 下 rect 抓图会抛 UnknownVizError（已实测）。
+  const roi = await captureRoi(png, evaluate, theme, outDir);
+  return { styles, roi };
 }
 
 async function runCapture(outDir, { mutate = false, breakTheme = null } = {}) {
@@ -250,18 +322,324 @@ async function runCapture(outDir, { mutate = false, breakTheme = null } = {}) {
   const { win, evaluate } = scene;
   const styles = {};
   const probes = {};
+  /** @type {Record<string, Array<{key: string, file: string, rect: object}>>} */
+  const roiByTheme = {};
   try {
-    for (const theme of ['light', 'dark']) {
-      styles[theme] = await captureTheme(win, theme, outDir, mutate, breakTheme);
+    for (const theme of THEMES) {
+      const captured = await captureTheme(win, theme, outDir, mutate, breakTheme);
+      styles[theme] = captured.styles;
+      roiByTheme[theme] = captured.roi;
       probes[theme] = await evaluate(kit.PROBE_JS);
     }
-    kit.assertThemesDiffer(probes.light, probes.dark);
+    // 两态都要跑时才能比较「明暗是否真的不同」；只跑一态时这条护栏无意义（也是显式跳过而非假绿）。
+    if (THEMES.length === 2) kit.assertThemesDiffer(probes.light, probes.dark);
   } finally {
     scene.close();
   }
   await fsp.mkdir(outDir, { recursive: true });
-  await fsp.writeFile(path.join(outDir, 'styles.json'), JSON.stringify({ styles, probes }, null, 2));
-  return { styles, probes };
+  await fsp.writeFile(
+    path.join(outDir, 'styles.json'),
+    JSON.stringify({ themesRun: THEMES, styles, probes, roi: roiByTheme }, null, 2),
+  );
+  return { styles, probes, roi: roiByTheme };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// V7：元素级 ROI 截图
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** ROI 在元素包围盒四周留的白边（px）。 */
+const ROI_PADDING = 4;
+
+/**
+ * 对每个 computed-style 目标从**已抓到的整页图**里裁出「元素包围盒 + 4px」的小图，命名 `<key>-roi.png`。
+ *
+ * <p><b>为什么需要它：</b>整页图里一处 12px 文字色变化只占约 130 个像素（≈0.01%），
+ * 整图比例阈值天然把它吞掉 —— 暗态阴影盲区实测覆盖只有 0.0012%，就是这个原因。
+ * 把每个目标单独裁出来，同样的变化占比立刻变成可观数字，断言才有分辨力。</p>
+ *
+ * <p><b>为什么用 nativeImage.crop 而不是 capturePage(rect)：</b>本仓库的视觉场景跑在
+ * offscreen 渲染下，实测 `webContents.capturePage(rect)` 会抛 `UnknownVizError`（整条 baseline 失败），
+ * 而**无参** `capturePage()` 正常。因此这里只在内存里裁整页图：不再触发一次抓图，
+ * 性能更好，也不依赖 rect 抓图这条在 offscreen 下不可靠的路径。</p>
+ *
+ * <p><b>为什么同时保留整页图：</b>ROI 只覆盖目标本体，看不到「周围元素被挤位 / 布局塌陷」这类
+ * 结构性回归；整页图是兜底。两者一起进 baseline/check，缺一不可。</p>
+ *
+ * @param {object} fullImage 已抓到的整页 nativeImage
+ * @param {(expr: string) => Promise<any>} evaluate 页面求值函数
+ * @param {'light'|'dark'} theme 当前主题（写进返回值，便于报告）
+ * @param {string} outDir 本次产物目录
+ * @returns {Promise<Array<{key: string, file: string, rect: object, theme: string}>>} 已写出的 ROI 清单
+ */
+async function captureRoi(fullImage, evaluate, theme, outDir) {
+  // 按主题分子目录存放：明暗两态的元素包围盒尺寸不同（文字宽度与主题无关但边框/内距可能变），
+  // 若两态写同一个 `<key>-roi.png`，后跑的一态会覆盖前一态，单跑 light 时会拿暗色 ROI 当基线
+  // 直接 100% 全图差异（实测踩到）。分子目录后文件名仍是要求的 `<key>-roi.png`。
+  const themeDir = path.join(outDir, theme);
+  await fsp.rm(themeDir, { recursive: true, force: true });
+  await fsp.mkdir(themeDir, { recursive: true });
+  const imageSize = fullImage.getSize();
+  /**
+   * 页面坐标 → 图片像素坐标。
+   *
+   * <p>整页图按 devicePixelRatio 缩放（crop 用的是图片像素而非 CSS 像素），因此必须换算；
+   * 同时把结果 clamp 到图片范围内 —— crop 越界会返回空白或抛错，是这一类"ROI 图全是空白"的根因。</p>
+   */
+  const rects = await evaluate(`(() => {
+    const defs = ${JSON.stringify(TARGETS.map((t) => ({ key: t.key, sel: t.sel })))};
+    const pad = ${ROI_PADDING};
+    const out = [];
+    for (const d of defs) {
+      const el = eval(d.sel);
+      if (!el) { out.push({ key: d.key, rect: null, reason: 'not-found' }); continue; }
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) { out.push({ key: d.key, rect: null, reason: 'not-visible' }); continue; }
+      out.push({
+        key: d.key,
+        rect: { x: r.left - pad, y: r.top - pad, width: r.width + pad * 2, height: r.height + pad * 2 },
+      });
+    }
+    return out;
+  })()`);
+
+  const written = [];
+  // 页面 CSS 像素 → 图片像素：整页图宽度 / 页面宽度（只求一次，页面宽度在本次采集内不变）
+  const pageWidth = await evaluate('document.documentElement.scrollWidth || window.innerWidth');
+  const ratio = pageWidth > 0 ? imageSize.width / pageWidth : 1;
+  for (const item of rects) {
+    if (!item.rect) continue; // 目标不可见：captureTheme 的可见性断言负责报错，这里不重复失败
+    const x = Math.max(0, Math.round(item.rect.x * ratio));
+    const y = Math.max(0, Math.round(item.rect.y * ratio));
+    const width = Math.max(1, Math.round(item.rect.width * ratio));
+    const height = Math.max(1, Math.round(item.rect.height * ratio));
+    // 二次 clamp：crop 的矩形必须完全落在图片内
+    const clampedWidth = Math.min(width, imageSize.width - x);
+    const clampedHeight = Math.min(height, imageSize.height - y);
+    if (clampedWidth < 1 || clampedHeight < 1) continue;
+    const cropped = fullImage.crop({ x, y, width: clampedWidth, height: clampedHeight });
+    const file = path.join(themeDir, `${item.key}-roi.png`);
+    await fsp.writeFile(file, cropped.toPNG());
+    written.push({ key: item.key, file, rect: { x, y, width: clampedWidth, height: clampedHeight }, theme });
+  }
+  return written;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// V5：暗态色值断言（四列表：元素 → 属性 → 期望色 → 实际色）
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 六项必查属性：CSS 属性名 → 报告里的显示名。 */
+const DARK_ASSERT_PROPS = [
+  ['color', 'color'],
+  ['backgroundColor', 'background-color'],
+  ['borderTopColor', 'border-top-color'],
+  ['borderBottomColor', 'border-bottom-color'],
+  ['boxShadow', 'box-shadow'],
+  ['textShadow', 'text-shadow'],
+];
+
+/**
+ * 期望值来源的三种形态：
+ * - 令牌名（以 `--lx-` 开头）：期望色由 `kit.readTokenValues()` 解析后换算成 rgb，绝不硬编码 hex；
+ * - 结构哨兵：某些属性本来就不该有令牌（例如「这个元素没有背景」「没有边框」「没有阴影」），
+ *   用哨兵表达比硬编码一个色值更耐改；
+ * - 显式跳过：属性确实未令牌化时**必须**写明原因并出现在报告里 —— 这是「显式跳过」，
+ *   与「静默跳过」的区别是它在四列表里占一行、能被审计到。
+ */
+const STRUCTURAL = {
+  /** 声明「该属性必须等于元素自身的 color」（border-color 未设时即 currentColor）。 */
+  currentColor: '@currentColor',
+  /** 声明「该属性必须完全透明」——即这个元素没有背景。 */
+  transparent: 'rgba(0, 0, 0, 0)',
+  /** 声明「该属性必须为 none」——即没有阴影 / 光效。 */
+  none: 'none',
+};
+
+/** 显式跳过标记：带了它就一定会在报告里打出一行带原因的 SKIP。 */
+const skip = (reason) => ({ skip: reason });
+
+/**
+ * 逐目标声明的「期望令牌」。
+ *
+ * <p>期望值**只**来自 `kit.readTokenValues()`（scene-kit 里的令牌解析），不硬编码任何 hex ——
+ * 令牌改名或改值时断言自动跟随，写死色值则会悄悄失去意义。
+ * 声明里出现的令牌名解析不到 ⇒ 直接报错退出（禁止静默跳过，否则断言会变成"零条断言也全绿"）。</p>
+ *
+ * <p>六个属性全部条目都必须显式声明（值可以是令牌名 / 结构哨兵 / 显式跳过），
+ * 漏声明会红 —— 目的是让「新增光效」「新增背景」成为需要显式决策的动作。</p>
+ */
+const DARK_EXPECT_TOKENS = {
+  // 卡片标题、选择卡自定义输入、聊天输入框正文：实测 #f4f4f5 = 正文「柔和档」（primary-soft），
+  // 不是 primary(#ffffff)。这条映射是 V5 首次运行时由断言自己暴露出来的，不是凭文档抄的。
+  cardHeaderTitle: { color: '--lx-text-primary-soft', backgroundColor: STRUCTURAL.transparent, borderTopColor: STRUCTURAL.currentColor, borderBottomColor: STRUCTURAL.currentColor, boxShadow: STRUCTURAL.none, textShadow: STRUCTURAL.none },
+  choiceCustomInput: { color: '--lx-text-primary-soft', backgroundColor: STRUCTURAL.transparent, borderTopColor: STRUCTURAL.currentColor, borderBottomColor: STRUCTURAL.currentColor, boxShadow: STRUCTURAL.none, textShadow: STRUCTURAL.none },
+  chatInputTextarea: { color: '--lx-text-primary-soft', backgroundColor: STRUCTURAL.transparent, borderTopColor: STRUCTURAL.currentColor, borderBottomColor: STRUCTURAL.currentColor, boxShadow: STRUCTURAL.none, textShadow: STRUCTURAL.none },
+  // 下拉菜单标题：最弱一档文字（faint）
+  dropdownMenuTitle: { color: '--lx-text-faint', backgroundColor: STRUCTURAL.transparent, borderTopColor: STRUCTURAL.currentColor, borderBottomColor: STRUCTURAL.currentColor, boxShadow: STRUCTURAL.none, textShadow: STRUCTURAL.none },
+  // 侧栏工作区标签：主色；会话标题：选中态走 info 蓝
+  sidebarWorkspaceLabel: { color: '--lx-text-primary', backgroundColor: STRUCTURAL.transparent, borderTopColor: STRUCTURAL.currentColor, borderBottomColor: STRUCTURAL.currentColor, boxShadow: STRUCTURAL.none, textShadow: STRUCTURAL.none },
+  sidebarSessionTitle: { color: '--lx-info', backgroundColor: STRUCTURAL.transparent, borderTopColor: STRUCTURAL.currentColor, borderBottomColor: STRUCTURAL.currentColor, boxShadow: STRUCTURAL.none, textShadow: STRUCTURAL.none },
+  // 侧栏底栏按钮：muted 档
+  sidebarFooterButton: { color: '--lx-text-muted', backgroundColor: STRUCTURAL.transparent, borderTopColor: STRUCTURAL.currentColor, borderBottomColor: STRUCTURAL.currentColor, boxShadow: STRUCTURAL.none, textShadow: STRUCTURAL.none },
+  // 空态文案：faint 档
+  sidebarEmptyState: { color: '--lx-text-faint', backgroundColor: STRUCTURAL.transparent, borderTopColor: STRUCTURAL.currentColor, borderBottomColor: STRUCTURAL.currentColor, boxShadow: STRUCTURAL.none, textShadow: STRUCTURAL.none },
+  // 历史分组标题：实测 #a1a1aa，**不在** 20 条令牌表里（--lx-text-muted 是 #9f9fa9，差 2/255）。
+  // 不做「就近取令牌」——那会把「未令牌化」伪装成已覆盖。显式跳过并在报告里打出一行。
+  sidebarHistoryTitle: {
+    color: skip('未令牌化：实测 #a1a1aa 不在令牌表（--lx-text-muted=#9f9fa9，差 2/255），待补令牌后再纳入断言'),
+    backgroundColor: STRUCTURAL.transparent,
+    borderTopColor: STRUCTURAL.currentColor,
+    borderBottomColor: STRUCTURAL.currentColor,
+    boxShadow: STRUCTURAL.none,
+    textShadow: STRUCTURAL.none,
+  },
+};
+
+/**
+ * 把令牌值解析成浏览器 computed style 的可比字符串。
+ *
+ * @param {Record<string, string>} tokens 暗态令牌表（token 名 → 原值）
+ * @param {string} tokenName 令牌名；不存在则抛错
+ * @returns {string} 形如 `rgb(228, 228, 231)`
+ */
+function resolveTokenRgb(tokens, tokenName) {
+  if (!Object.prototype.hasOwnProperty.call(tokens, tokenName)) {
+    throw new Error(`--assert-dark-colors：令牌「${tokenName}」在 scene-kit 的暗态令牌表里解析不到（不允许静默跳过）`);
+  }
+  return kit.toCssRgb(tokens[tokenName]);
+}
+
+/**
+ * 暗态色值断言主体。
+ *
+ * <p>判据是**色值**而不是像素占比：暗态阴影区实测像素覆盖只有 0.0012%，任何"按比例"的阈值
+ * 都看不见它；色值逐项比对没有这个问题。</p>
+ *
+ * @returns {Promise<{rows: Array<object>, mismatches: Array<object>}>} 四列表行与不匹配项
+ */
+async function runDarkColorAssert() {
+  // 令牌真值分两层使用：断言函数要整张表（它内部按 theme 取子表），解析期望色只要暗态子表。
+  const allTokens = TOKENS;
+  const tokens = allTokens.dark;
+  const scene = await kit.openScene(WORK, SCENE_VIEWPORT);
+  const { evaluate } = scene;
+  const rows = [];
+  try {
+    await evaluate('window.setDark(true)');
+    await evaluate('window.openDropdown()');
+    await evaluate('window.flush()');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await kit.assertThemeApplied(evaluate, 'dark', allTokens);
+
+    const actual = await evaluate(`(() => {
+      const defs = ${JSON.stringify(TARGETS.map((t) => ({ key: t.key, sel: t.sel })))};
+      const props = ${JSON.stringify(DARK_ASSERT_PROPS.map((p) => p[0]))};
+      const ctx = document.createElement('canvas').getContext('2d');
+      // 颜色统一归一成 rgb()/rgba() 字符串再比较：
+      // 计算值可能是 hex（Tailwind 的 #f4f4f5）也可能是 oklch（Tailwind v4 的输出），
+      // 两种表示不能直接和令牌的 hex 比。用 1×1 画布采样拿到真实 RGB，是唯一对所有色彩空间都成立的归一化方式。
+      const toRgb = (value) => {
+        const raw = String(value).trim();
+        ctx.clearRect(0, 0, 1, 1);
+        ctx.fillStyle = raw;
+        ctx.fillRect(0, 0, 1, 1);
+        const d = ctx.getImageData(0, 0, 1, 1).data;
+        if (d[3] === 0) return 'rgba(0, 0, 0, 0)';
+        const alpha = Math.round((d[3] / 255) * 1000) / 1000;
+        return alpha >= 1 ? 'rgb(' + d[0] + ', ' + d[1] + ', ' + d[2] + ')'
+          : 'rgba(' + d[0] + ', ' + d[1] + ', ' + d[2] + ', ' + alpha + ')';
+      };
+      const out = {};
+      for (const d of defs) {
+        const el = eval(d.sel);
+        if (!el) { out[d.key] = null; continue; }
+        const cs = getComputedStyle(el);
+        const row = {};
+        for (const p of props) {
+          const raw = cs[p];
+          // 阴影是复合值，逐字比较；其余颜色归一成 rgb() 再比，避免表示差异造成假红
+          row[p] = (p === 'boxShadow' || p === 'textShadow') ? String(raw).trim() : toRgb(raw);
+        }
+        out[d.key] = row;
+      }
+      return out;
+    })()`);
+
+    for (const target of TARGETS) {
+      const row = actual[target.key];
+      if (!row) {
+        throw new Error(`--assert-dark-colors：目标「${target.key}」未找到或不可见（${target.desc}），禁止对空目标断言`);
+      }
+      const declared = DARK_EXPECT_TOKENS[target.key] || {};
+      for (const [prop, label] of DARK_ASSERT_PROPS) {
+        if (!Object.prototype.hasOwnProperty.call(declared, prop)) {
+          throw new Error(
+            `--assert-dark-colors：目标「${target.key}」的属性 ${label} 没有声明期望`
+            + `（在 DARK_EXPECT_TOKENS 里补 { ${prop}: '<令牌名>' | STRUCTURAL.* | skip('<原因>') }；禁止静默跳过）`,
+          );
+        }
+        const spec = declared[prop];
+        const actualValue = row[prop];
+        if (spec && typeof spec === 'object' && spec.skip) {
+          // 显式跳过：占用一行、写明原因，可被审计 —— 不是静默漏掉
+          rows.push({
+            target: target.key,
+            property: label,
+            expected: '—（跳过）',
+            actual: actualValue,
+            token: null,
+            note: spec.skip,
+            skipped: true,
+            ok: true,
+          });
+          continue;
+        }
+        let expected;
+        let tokenLabel;
+        if (spec === STRUCTURAL.currentColor) {
+          // 无边框时 border-color 计算值即元素自身 color，断言「与 color 一致」比断言某个色值更稳
+          expected = row.color;
+          tokenLabel = '结构: currentColor';
+        } else if (spec === STRUCTURAL.transparent || spec === STRUCTURAL.none) {
+          expected = spec;
+          tokenLabel = `结构: ${spec}`;
+        } else {
+          expected = resolveTokenRgb(tokens, spec);
+          tokenLabel = spec;
+        }
+        rows.push({
+          target: target.key,
+          property: label,
+          expected,
+          actual: actualValue,
+          token: tokenLabel,
+          ok: expected === actualValue,
+        });
+      }
+    }
+  } finally {
+    scene.close();
+  }
+  return { rows, mismatches: rows.filter((r) => !r.ok) };
+}
+
+/**
+ * 把四列表渲染成定宽文本（中文/全角字符按 2 列计宽，保证表头与数据对齐）。
+ *
+ * @param {Array<object>} rows 断言行
+ * @returns {string} 可直接打印的表格文本
+ */
+function formatDarkAssertTable(rows) {
+  /** 视觉宽度：CJK / 全角标点算 2。 */
+  const width = (s) => [...String(s)].reduce((n, ch) => n + (/[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE6F\uFF00-\uFF60\uFFE0-\uFFE6]/.test(ch) ? 2 : 1), 0);
+  const pad = (s, n) => String(s) + ' '.repeat(Math.max(0, n - width(s)));
+  const head = ['元素', '属性', '期望色', '实际色'];
+  const body = rows.map((r) => [r.target, r.property, r.expected, r.actual]);
+  const widths = head.map((h, i) => Math.max(width(h), ...body.map((b) => width(b[i]))));
+  const line = (cells) => cells.map((c, i) => pad(c, widths[i])).join('  ');
+  const sep = widths.map((w) => '─'.repeat(w)).join('  ');
+  return [line(head), sep, ...body.map(line)].join('\n');
 }
 
 /** 样式等价比对：每个目标每个属性的 computed style 必须逐字相等。 */
@@ -284,6 +662,32 @@ function diffStyles(a, b) {
 async function main() {
   await buildApp();
 
+  // ── V5：暗态色值断言（给 --assert-dark-colors 时先跑，绿了才继续做其它模式） ──────────
+  if (ASSERT_DARK) {
+    const { rows, mismatches } = await runDarkColorAssert();
+    const skipped = rows.filter((r) => r.skipped);
+    console.log(`\n=== 暗态色值断言（--assert-dark-colors）：共 ${rows.length} 条（其中显式跳过 ${skipped.length} 条），实际跑 ${THEMES.join(' + ')} 态 ===`);
+    console.log(formatDarkAssertTable(rows));
+    if (skipped.length > 0) {
+      // 跳过项必须逐条打印原因：跳过可以，静默跳过不可以
+      console.log('\n--- 显式跳过明细（未令牌化属性，不计入失败但必须可审计）---');
+      for (const r of skipped) console.log(`  ${r.target} / ${r.property}: ${r.note}`);
+    }
+    if (mismatches.length > 0) {
+      console.error(`\n[FAIL] ${mismatches.length} 条色值不匹配：`);
+      for (const m of mismatches) console.error(`  ${m.target} / ${m.property}: 期望 ${m.expected}，实际 ${m.actual}`);
+      app.exit(1);
+      return;
+    }
+    console.log(`\n[PASS] ${rows.length - skipped.length} 条色值断言全绿（跳过 ${skipped.length} 条，原因见上）`);
+    // 只给 --assert-dark-colors 时到此为止，不要求基线存在。
+    if (!argv.some((v) => v === '--mode' || v.startsWith('--mode='))) {
+      app.exit(0);
+      return;
+    }
+    console.log('继续执行 --mode 的像素 / computed-style 比对…\n');
+  }
+
   if (SELFCHECK) {
     const tmpA = path.join(COMP_ROOT, '_selfcheck');
     const a = await runCapture(path.join(tmpA, 'before'));
@@ -295,7 +699,7 @@ async function main() {
     const imgB = decodePng(fsx.readFileSync(path.join(tmpA, 'after', 'light.png')));
     const cmp = compareImagePair(imgA, imgB);
     const detected = styleDiffs.length > 0 || cmp.failed === true;
-    console.log(JSON.stringify({ selfcheck: detected ? 'PASS' : 'BLIND', styleDiffs, pixelFailed: cmp.failed, changedPixels: cmp.changedPixels, maxChannelDelta: cmp.maxChannelDelta, strongPixels: cmp.strongPixels }, null, 2));
+    console.log(JSON.stringify({ selfcheck: detected ? 'PASS' : 'BLIND', themesRun: THEMES, styleDiffs, pixelFailed: cmp.failed, changedPixels: cmp.changedPixels, maxChannelDelta: cmp.maxChannelDelta, strongPixels: cmp.strongPixels }, null, 2));
     app.exit(detected ? 0 : 1);
     return;
   }
@@ -315,32 +719,64 @@ async function main() {
       caught = e && e.message ? e.message : String(e);
     }
     const ok = !!caught;
-    console.log(JSON.stringify({ selfcheckTheme: ok ? 'PASS' : 'BLIND', variant, caught }, null, 2));
+    console.log(JSON.stringify({ selfcheckTheme: ok ? 'PASS' : 'BLIND', variant, themesRun: THEMES, caught }, null, 2));
     app.exit(ok ? 0 : 1);
     return;
   }
 
   if (MODE === 'baseline') {
-    const { styles, probes } = await runCapture(BASE_DIR);
-    console.log(JSON.stringify({ mode: 'baseline', outDir: BASE_DIR, probes, styles }, null, 2));
+    const { styles, probes, roi } = await runCapture(BASE_DIR);
+    // V11：显式打印「实际跑了哪几态」——由 --themes 决定，不再靠场景硬编码去猜。
+    console.error(`[themes] 本次实际运行：${THEMES.join(' + ')}（--themes ${ASSERT_DARK ? 'dark（--assert-dark-colors 隐含）' : THEMES_ARG}）`);
+    console.log(JSON.stringify({ mode: 'baseline', themesRun: THEMES, outDir: BASE_DIR, probes, styles, roi }, null, 2));
     app.exit(0);
     return;
   }
 
   // check：先采当前，再与基线做像素 + 样式双比对。
-  const { styles, probes } = await runCapture(CUR_DIR);
+  const { styles, probes, roi } = await runCapture(CUR_DIR);
+  console.error(`[themes] 本次实际运行：${THEMES.join(' + ')}（--themes ${ASSERT_DARK ? 'dark（--assert-dark-colors 隐含）' : THEMES_ARG}）`);
   const baseStylesPath = path.join(BASE_DIR, 'styles.json');
   if (!fs.existsSync(baseStylesPath)) { console.error(`基线不存在：${baseStylesPath}（先跑 --mode baseline）`); app.exit(2); return; }
   const baseRaw = JSON.parse(fs.readFileSync(baseStylesPath, 'utf8'));
   const baseStyles = baseRaw.styles || baseRaw; // 兼容旧的纯 styles 格式
-  const styleDiffs = diffStyles(baseStyles, styles);
+  const baseThemes = Array.isArray(baseRaw.themesRun) ? baseRaw.themesRun : Object.keys(baseStyles);
+  /**
+   * 只比较本次实际跑过的、且基线里也有的主题。
+   *
+   * <p>为什么必须过滤：`--themes dark` 时当前目录里没有 light.png 与 light 的 computed style，
+   * 直接拿基线全集来比会报"基线有当前没有"，那是比较口径错位，不是视觉回归。</p>
+   */
+  const comparableThemes = THEMES.filter((theme) => baseThemes.includes(theme));
+  if (comparableThemes.length === 0) {
+    console.error(`基线里没有本次要跑的主题（基线 ${baseThemes.join('+')} / 本次 ${THEMES.join('+')}），无法比对；请先用相同 --themes 抓基线`);
+    app.exit(2);
+    return;
+  }
+  const filteredBase = {};
+  const filteredCur = {};
+  for (const theme of comparableThemes) {
+    filteredBase[theme] = baseStyles[theme];
+    filteredCur[theme] = styles[theme];
+  }
+  const styleDiffs = diffStyles(filteredBase, filteredCur);
 
   const { compareDirectories, DEFAULT_OPTIONS } = await import('./compare.mjs');
   // 组件场景图很小，收紧阈值，避免小面积文字色变化被整图比例吞掉。
   const options = { ...DEFAULT_OPTIONS, threshold: 0.0002, strongPixels: 12 };
+  // V7：全屏图 + 每个目标的 <key>-roi.png 一起参与比对（ROI 是"小面积变化"的有效证据）。
   const px = compareDirectories({ baselineDir: BASE_DIR, currentDir: CUR_DIR, diffDir: DIFF_DIR, options });
+  const roiFiles = Object.values(roi).flat().map((r) => path.basename(r.file));
   const failed = styleDiffs.length > 0 || px.failed > 0;
-  console.log(JSON.stringify({ mode: 'check', probes, styleDiffs, pixel: { images: px.images, failed: px.failed, details: px.details, failures: px.failures } }, null, 2));
+  console.log(JSON.stringify({
+    mode: 'check',
+    themesRun: THEMES,
+    comparedThemes: comparableThemes,
+    roi: { count: roiFiles.length, files: roiFiles },
+    probes,
+    styleDiffs,
+    pixel: { images: px.images, failed: px.failed, details: px.details, failures: px.failures },
+  }, null, 2));
   app.exit(failed ? 1 : 0);
 }
 
