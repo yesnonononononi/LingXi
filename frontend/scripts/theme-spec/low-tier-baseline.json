@@ -47,14 +47,14 @@
       },
       "smTitle": {},
       "atRow": {
-        "borderTopColor": "rgb(229, 231, 235)",
-        "borderBottomColor": "rgb(229, 231, 235)"
+        "borderTopColor": "rgb(228, 228, 231)",
+        "borderBottomColor": "rgb(228, 228, 231)"
       },
       "atName": {},
       "atDesc": {},
       "sapShell": {
-        "borderTopColor": "rgb(229, 231, 235)",
-        "borderBottomColor": "rgb(229, 231, 235)"
+        "borderTopColor": "rgb(228, 228, 231)",
+        "borderBottomColor": "rgb(228, 228, 231)"
       },
       "sapTitle": {},
       "tmRow": {},
@@ -122,9 +122,9 @@
         "borderBottomColor": "rgb(244, 244, 245)"
       },
       "tmName": {
-        "color": "rgb(229, 231, 235)",
-        "borderTopColor": "rgb(229, 231, 235)",
-        "borderBottomColor": "rgb(229, 231, 235)"
+        "color": "rgb(228, 228, 231)",
+        "borderTopColor": "rgb(228, 228, 231)",
+        "borderBottomColor": "rgb(228, 228, 231)"
       }
     }
   }

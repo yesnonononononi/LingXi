@@ -117,7 +117,7 @@ async function submit() {
 </script>
 
 <template>
-  <section v-if="!dismissed" :class="[CARD_SHELL_CLASS, 'w-full min-w-0 overflow-hidden', isDark ? 'bg-black border-white/10' : 'bg-white border-gray-200/90']" data-testid="choice-question-group">
+  <section v-if="!dismissed" :class="[CARD_SHELL_CLASS, 'w-full min-w-0 overflow-hidden', isDark ? 'bg-black border-white/10' : 'bg-white border-zinc-200/90']" data-testid="choice-question-group">
     <header class="flex items-start justify-between gap-3 px-4 pb-2 pt-3">
       <!-- 题干固定两行高、可内部滚动：四道题来回切换时卡片不能跳高度 -->
       <p class="scrollbar-thin h-[46px] min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words text-sm font-semibold leading-relaxed"
@@ -166,7 +166,7 @@ async function submit() {
                 ? 'bg-white text-gray-900 shadow-[0_0_12px_rgba(255,255,255,0.60)]'
                 : (isDark ? 'bg-white/10 text-zinc-300' : 'bg-zinc-100 text-gray-500')">{{ index + 1 }}</span>
             <span class="min-w-0 flex-1 whitespace-pre-wrap break-words"
-              :class="isDark ? (draft.selected === index && !draft.useCustom ? 'text-white text-glow-white' : 'text-gray-200 text-glow-subtle') : ''">{{ option }}</span>
+              :class="isDark ? (draft.selected === index && !draft.useCustom ? 'text-white text-glow-white' : 'text-zinc-200 text-glow-subtle') : ''">{{ option }}</span>
             <svg class="h-3.5 w-3.5 shrink-0 transition-colors" :class="!draft.useCustom && draft.selected === index ? (isDark ? 'text-white' : 'text-blue-500') : (isDark ? 'text-gray-600' : 'text-zinc-300')"
               fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 5 7 7-7 7" /></svg>
           </button>

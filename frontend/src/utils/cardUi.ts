@@ -54,7 +54,7 @@ export function cardToneClass(tone: CardTone, isDark?: boolean): string {
       dark: 'bg-amber-950/30 text-amber-400 border-amber-900/40'
     },
     unknown: {
-      light: 'bg-zinc-50 text-gray-600 border-gray-200',
+      light: 'bg-zinc-50 text-gray-600 border-zinc-200',
       dark: 'bg-gray-800/40 text-gray-400 border-gray-700/60'
     }
   };

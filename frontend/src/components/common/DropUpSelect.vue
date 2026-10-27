@@ -294,7 +294,7 @@ defineExpose({
           isDark ? 'dark' : 'light',
           isDark
             ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_12px_40px_rgba(0,0,0,0.95)]'
-            : 'bg-white border-gray-200/90 text-gray-800 shadow-[0_12px_30px_rgba(0,0,0,0.12)]'
+            : 'bg-white border-zinc-200/90 text-gray-800 shadow-[0_12px_30px_rgba(0,0,0,0.12)]'
         ]"
       >
         <!-- 顶部搜索框 (完全对齐 media_1789910619342.png: 搜索...) -->

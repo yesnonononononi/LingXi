@@ -291,7 +291,7 @@ onBeforeUnmount(() => {
       isCollapsed ? 'w-16' : 'w-64',
       isDark
         ? 'bg-black border-white/[0.06] text-zinc-100'
-        : 'bg-[#fafafa] border-gray-200/80 text-gray-800'
+        : 'bg-[#fafafa] border-zinc-200/80 text-gray-800'
     ]"
   >
     <!-- Top Header: Logo & Sidebar Toggle Button -->
@@ -314,7 +314,7 @@ onBeforeUnmount(() => {
           'p-1.5 rounded-lg transition-colors cursor-pointer',
           isDark
             ? 'hover:bg-white/[0.06] text-zinc-400 hover:text-zinc-100'
-            : 'hover:bg-gray-200/70 text-gray-500 hover:text-gray-900',
+            : 'hover:bg-zinc-200/70 text-gray-500 hover:text-gray-900',
           isCollapsed ? 'mx-auto' : ''
         ]"
       >
@@ -335,7 +335,7 @@ onBeforeUnmount(() => {
           'w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs sm:text-sm font-medium transition-all shadow-xs cursor-pointer',
           isDark
             ? 'bg-zinc-900/90 border-white/[0.08] hover:bg-zinc-800 hover:border-white/[0.16] text-zinc-200 hover:text-white'
-            : 'bg-white border-gray-200 hover:border-zinc-300 hover:bg-white text-gray-800'
+            : 'bg-white border-zinc-200 hover:border-zinc-300 hover:bg-white text-gray-800'
         ]"
         :title="t('chat.sidebar.newChat')"
       >
@@ -354,7 +354,7 @@ onBeforeUnmount(() => {
           'w-10 h-10 mx-auto flex items-center justify-center rounded-xl border transition-all shadow-xs cursor-pointer',
           isDark
             ? 'bg-zinc-900/90 border-white/[0.08] hover:bg-zinc-800 hover:border-white/[0.16] text-zinc-200 hover:text-white'
-            : 'bg-white border-gray-200 hover:border-zinc-300 text-gray-800'
+            : 'bg-white border-zinc-200 hover:border-zinc-300 text-gray-800'
         ]"
         :title="t('chat.sidebar.newSession')"
       >
@@ -375,7 +375,7 @@ onBeforeUnmount(() => {
             'p-1 rounded-md transition-colors cursor-pointer',
             isFilterOpen
               ? 'text-blue-500'
-              : 'text-gray-400 hover:text-gray-700 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-gray-200/70 dark:hover:bg-white/[0.06]'
+              : 'text-gray-400 hover:text-gray-700 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-200/70 dark:hover:bg-white/[0.06]'
           ]"
           :title="t('chat.sidebar.searchWorkspace')"
         >
@@ -387,7 +387,7 @@ onBeforeUnmount(() => {
         <!-- Sort / Switch Icon -->
         <button
           @click="isSortAsc = !isSortAsc"
-          class="p-1 rounded-md text-gray-400 hover:text-gray-700 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-gray-200/70 dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
+          class="p-1 rounded-md text-gray-400 hover:text-gray-700 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-200/70 dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
           :title="isSortAsc ? t('chat.sidebar.sortDefault') : t('chat.sidebar.sortByName')"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -398,7 +398,7 @@ onBeforeUnmount(() => {
         <!-- Add Workspace Icon -->
         <button
           @click="emit('newWorkspace')"
-          class="p-1 rounded-md text-gray-400 hover:text-gray-700 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-gray-200/70 dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
+          class="p-1 rounded-md text-gray-400 hover:text-gray-700 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-200/70 dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
           :title="t('chat.sidebar.newWorkspace')"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -414,7 +414,7 @@ onBeforeUnmount(() => {
         <input
           v-model="filterQuery"
           :placeholder="t('chat.sidebar.searchWorkspacePlaceholder')"
-          class="w-full px-2.5 py-1 text-xs rounded-lg border outline-none bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-800 focus:border-blue-500 dark:focus:border-zinc-600 text-gray-800 dark:text-zinc-200 placeholder:text-lx-faint"
+          class="w-full px-2.5 py-1 text-xs rounded-lg border outline-none bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 focus:border-blue-500 dark:focus:border-zinc-600 text-gray-800 dark:text-zinc-200 placeholder:text-lx-faint"
           autoFocus
         />
       </div>
@@ -429,7 +429,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Bottom Left Settings Bar (Image style) -->
-    <div :class="['p-3 border-t shrink-0', isDark ? 'border-white/[0.06]' : 'border-gray-200/80']">
+    <div :class="['p-3 border-t shrink-0', isDark ? 'border-white/[0.06]' : 'border-zinc-200/80']">
       <slot name="sidebarFooter" v-bind="footerSlotProps">
         <component :is="injectedFooter" v-if="injectedFooter" v-bind="footerSlotProps" />
         <SidebarFooterBar v-else v-bind="footerSlotProps" />

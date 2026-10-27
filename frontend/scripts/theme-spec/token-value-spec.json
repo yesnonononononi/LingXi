@@ -118,9 +118,9 @@
       "group": "border",
       "status": "rederive",
       "darkClass": "border-white/10",
-      "lightClass": "border-gray-200",
+      "lightClass": "border-zinc-200",
       "expectedDark": "#ffffff@0.102",
-      "expectedLight": "#e5e7eb",
+      "expectedLight": "#e4e4e7",
       "themeKey": "--color-lx-border-subtle",
       "utilityClass": "border-lx-border-subtle",
       "note": "20 处/7 文件；原 rgba(255,255,255,.08) → white/10（α 0.08→0.10，见规格书 §3）"
@@ -131,9 +131,9 @@
       "group": "border",
       "status": "rederive",
       "darkClass": "border-white/15",
-      "lightClass": "border-gray-200",
+      "lightClass": "border-zinc-200",
       "expectedDark": "#ffffff@0.149",
-      "expectedLight": "#e5e7eb",
+      "expectedLight": "#e4e4e7",
       "themeKey": "--color-lx-border",
       "utilityClass": "border-lx-border",
       "note": "全仓最高频边框对 30 处/10 文件；原 .14 → .15"

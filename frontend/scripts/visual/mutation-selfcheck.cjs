@@ -69,27 +69,27 @@ const SCENES_SCRIPT = path.join(FRONTEND_ROOT, 'scripts', 'visual', 'component-s
 const CASES = [
   {
     id: 'high-tier-visible',
-    desc: '高档位（可感知）：gray-200(#e5e7eb) → gray-400(#99a1af)，通道差 76 —— 像素层必须红',
+    desc: '高档位（可感知）：zinc-200(#e4e4e7) → zinc-400(#9f9fa9)，通道差 69 —— 像素层必须红',
     // AgentsTab 智能体行卡片的亮态边框（该卡片就是断言目标 atRow，computed style 层可独立作证）。
     // 为什么选大跨度：像素层的"强差异像素"门槛实测要 ~20+ 通道差，跨度小的改动即使人眼可辨
     // 也常常只让 diff 图产生"非强差异"像素而不判红 —— 这正是低档位盲区的成因。
     // 所以这条用例的作用是「证明像素层确实会红」的灵敏度对照，而低档位那条证明 computed style 层兜底。
     file: 'frontend/src/views/settings/tabs/AgentsTab.vue',
-    from: 'bg-zinc-50/70 border-gray-200',
-    to: 'bg-zinc-50/70 border-gray-400',
+    from: 'bg-zinc-50/70 border-zinc-200',
+    to: 'bg-zinc-50/70 border-zinc-400',
     expectPixelRed: true,
     expectStyleRed: true,
   },
   {
     id: 'low-tier-blind-spot',
-    desc: '低档位（盲区）：gray-200(#e5e7eb) → zinc-200(#e4e4e7)，通道差 1 —— 像素层允许不红，computed style 层必须红',
-    // TeamModal 成员行名字：`text-gray-800 dark:text-gray-200`，暗态取值落在断言目标 tmName 上。
+    desc: '低档位（盲区）：zinc-200(#e4e4e7) → gray-200(#e5e7eb)，通道差 1 —— 像素层允许不红，computed style 层必须红',
+    // TeamModal 成员行名字：`text-gray-800 dark:text-zinc-200`，暗态取值落在断言目标 tmName 上。
     // 为什么不是任务原文的 300 档：300 档在本仓库只出现在表单边框（未被任何断言目标覆盖），
     // 拿它做用例会得到「两层都绿」，反而无法证明盲区已补；200 档差 1/255 比 300 档的 4/255
     // 更极端，证明力更强。这一点写进 DELIVERY 的未决项里，不隐瞒。
     file: 'frontend/src/components/chat/TeamModal.vue',
-    from: 'dark:text-gray-200 truncate',
-    to: 'dark:text-zinc-200 truncate',
+    from: 'dark:text-zinc-200 truncate',
+    to: 'dark:text-gray-200 truncate',
     expectPixelRed: false,
     expectStyleRed: true,
   },

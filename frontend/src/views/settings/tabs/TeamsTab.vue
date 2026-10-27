@@ -132,7 +132,7 @@ const {
       <div
         v-else-if="teamsList.length === 0"
         class="py-12 text-center text-xs text-lx-faint border border-dashed rounded-2xl"
-                :class="isDark ? 'border-white/10' : 'border-gray-200'"
+                :class="isDark ? 'border-white/10' : 'border-zinc-200'"
       >
         {{ t('settings.teams.empty') }}
       </div>
@@ -146,7 +146,7 @@ const {
           :class="[
             isDark
               ? 'bg-black/90 border-white/15 hover:border-white/30 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
-              : 'bg-zinc-50/70 border-gray-200 hover:border-zinc-300'
+              : 'bg-zinc-50/70 border-zinc-200 hover:border-zinc-300'
           ]"
         >
           <div class="flex items-start justify-between gap-3">
@@ -162,7 +162,7 @@ const {
                 <span
                   v-else-if="team.avatar"
                   class="w-5 h-5 rounded-full flex items-center justify-center text-xs leading-none shrink-0 select-none"
-                  :class="isDark ? 'bg-white/10' : 'bg-gray-200/80'"
+                  :class="isDark ? 'bg-white/10' : 'bg-zinc-200/80'"
                 >{{ team.avatar }}</span>
                 <span class="text-sm font-semibold text-gray-900 dark:text-white dark:text-glow-subtle">
                   {{ team.name }}
@@ -212,7 +212,7 @@ const {
                     :class="[
                       agent.id === team.commanderAgentId
                         ? (isDark ? 'bg-cyan-600/20 border-cyan-500/40 text-cyan-200 font-medium' : 'bg-blue-50 border-blue-300 text-blue-800 font-medium')
-                        : (isDark ? 'bg-white/[0.04] border-white/10 text-zinc-300' : 'bg-white border-gray-200 text-gray-700 shadow-2xs')
+                        : (isDark ? 'bg-white/[0.04] border-white/10 text-zinc-300' : 'bg-white border-zinc-200 text-gray-700 shadow-2xs')
                     ]"
                   >
                     <!-- 成员小头像：URL 走 <img>，其余按 Emoji 文本渲染 -->
@@ -266,7 +266,7 @@ const {
 
     <!-- 新增 / 编辑团队表单模式 -->
     <div v-else class="space-y-4">
-      <div class="flex items-center justify-between border-b pb-3" :class="isDark ? 'border-white/10' : 'border-gray-200'">
+      <div class="flex items-center justify-between border-b pb-3" :class="isDark ? 'border-white/10' : 'border-zinc-200'">
         <div>
           <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
                         {{ editingTeamId ? t('settings.teams.editHeading', { name: teamForm.name || t('settings.teams.unnamedTeam') }) : t('settings.teams.addHeading') }}
@@ -350,7 +350,7 @@ const {
           <div
             class="rounded-xl border divide-y overflow-y-auto max-h-44"
             :class="[
-              isDark ? 'border-white/15 divide-white/10 bg-black/90' : 'border-gray-200 divide-zinc-100 bg-zinc-50'
+              isDark ? 'border-white/15 divide-white/10 bg-black/90' : 'border-zinc-200 divide-zinc-100 bg-zinc-50'
             ]"
           >
                         <div v-if="agentsList.length === 0" class="p-4 text-center text-xs text-gray-400">
@@ -387,7 +387,7 @@ const {
                     v-else-if="agent.avatar"
                     class="text-[10px] leading-none shrink-0 select-none"
                   >{{ agent.avatar }}</span>
-                  <span class="font-medium text-gray-800 dark:text-gray-200 truncate">
+                  <span class="font-medium text-gray-800 dark:text-zinc-200 truncate">
                     {{ agent.name }}
                   </span>
                     <span
@@ -451,7 +451,7 @@ const {
         </div>
 
         <!-- 底部操作按钮 -->
-        <div class="flex items-center justify-end gap-2.5 pt-3 border-t" :class="isDark ? 'border-white/10' : 'border-gray-200'">
+        <div class="flex items-center justify-end gap-2.5 pt-3 border-t" :class="isDark ? 'border-white/10' : 'border-zinc-200'">
           <button
             type="button"
             @click="cancelTeamForm"
@@ -459,7 +459,7 @@ const {
               'px-4 py-1.5 rounded-xl border text-xs font-medium transition cursor-pointer',
               isDark
                 ? 'border-white/15 hover:bg-white/5 text-zinc-300'
-                : 'border-gray-200 hover:bg-zinc-50 text-gray-700'
+                : 'border-zinc-200 hover:bg-zinc-50 text-gray-700'
             ]"
           >
                         {{ t('common.cancel') }}

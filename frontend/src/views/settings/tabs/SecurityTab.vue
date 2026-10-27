@@ -64,10 +64,10 @@ function resolveRuleKey(rule: SecurityRule): number {
 
 /* 卡片 / 控件 / 按钮：与设置页其它 tab 同一套圆角与配色（卡片 2xl、控件 xl、图标按钮 lg） */
 const panel = 'rounded-2xl border border-zinc-100 dark:border-white/10 bg-zinc-50/60 dark:bg-white/[0.03] p-4';
-const control = 'rounded-xl border border-gray-200 dark:border-white/15 bg-white dark:bg-black/30 text-lx-secondary px-3 py-1.5 text-xs outline-none transition focus:border-gray-400 focus:ring-2 focus:ring-gray-200/60 dark:focus:border-white/40 dark:focus:ring-white/10';
-const button = 'rounded-xl border border-gray-200 dark:border-white/15 px-3 py-1.5 text-xs font-medium transition cursor-pointer hover:bg-black/5 active:scale-[0.97] dark:hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100';
+const control = 'rounded-xl border border-zinc-200 dark:border-white/15 bg-white dark:bg-black/30 text-lx-secondary px-3 py-1.5 text-xs outline-none transition focus:border-gray-400 focus:ring-2 focus:ring-zinc-200/60 dark:focus:border-white/40 dark:focus:ring-white/10';
+const button = 'rounded-xl border border-zinc-200 dark:border-white/15 px-3 py-1.5 text-xs font-medium transition cursor-pointer hover:bg-black/5 active:scale-[0.97] dark:hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100';
 const primary = 'rounded-xl bg-blue-600 px-4 py-1.5 text-xs font-medium text-white shadow-sm transition cursor-pointer hover:bg-blue-500 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:active:scale-100';
-const iconButton = 'grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-gray-200 text-lx-muted transition cursor-pointer dark:border-white/15 hover:border-zinc-300 hover:bg-black/5 hover:text-gray-900 dark:hover:border-white/25 dark:hover:bg-white/10 dark:hover:text-white disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent';
+const iconButton = 'grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-zinc-200 text-lx-muted transition cursor-pointer dark:border-white/15 hover:border-zinc-300 hover:bg-black/5 hover:text-gray-900 dark:hover:border-white/25 dark:hover:bg-white/10 dark:hover:text-white disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent';
 const stateChip = 'shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium';
 function label(action: SecurityAction) { return copy.value[action === 'ALLOW' ? 'allow' : action === 'ASK' ? 'ask' : 'deny']; }
 function validate(table: SecurityRuleView | undefined, selected: SecurityCategory): asserts table is SecurityRuleView {
@@ -162,7 +162,7 @@ void load();
             <span :class="[stateChip, sandboxState === 'ON'
               ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
               : sandboxState === 'OFF'
-                ? 'border-gray-200 text-lx-muted dark:border-white/15'
+                ? 'border-zinc-200 text-lx-muted dark:border-white/15'
                 : 'border-amber-500/25 bg-amber-500/10 text-amber-600 dark:text-amber-400']" data-testid="security-sandbox-state">{{ sandboxStateLabel }}</span>
             <button type="button" role="switch" :aria-checked="sandboxState === 'ON'" :aria-label="copy.sandboxTitle" :disabled="isSavingEnv"
               :class="['sec-switch', sandboxState === 'ON' ? 'is-on' : '']" data-testid="security-sandbox-toggle" @click="setSandboxEnabled(sandboxState !== 'ON')">
@@ -301,18 +301,18 @@ void load();
           </div>
 
           <!-- 空态：虚线框 + 图标，与 MCP 列表的空态同一语气 -->
-          <div v-if="!current.rules.length" class="grid place-items-center gap-2 rounded-2xl border border-dashed border-gray-200 py-10 text-center dark:border-white/15">
+          <div v-if="!current.rules.length" class="grid place-items-center gap-2 rounded-2xl border border-dashed border-zinc-200 py-10 text-center dark:border-white/15">
             <svg class="h-6 w-6 text-zinc-300 dark:text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.57-.598-3.75h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
             <p class="text-[11px] text-lx-faint">{{ copy.empty }}</p>
           </div>
 
           <div v-for="(rule, index) in current.rules" :key="resolveRuleKey(rule)"
-            :class="['sec-rise group mt-2 rounded-xl border border-gray-200/80 bg-white/70 p-2.5 transition-colors hover:border-zinc-300 hover:bg-white dark:border-white/10 dark:bg-white/[0.02] dark:hover:border-white/20 dark:hover:bg-white/[0.05]',
+            :class="['sec-rise group mt-2 rounded-xl border border-zinc-200/80 bg-white/70 p-2.5 transition-colors hover:border-zinc-300 hover:bg-white dark:border-white/10 dark:bg-white/[0.02] dark:hover:border-white/20 dark:hover:bg-white/[0.05]',
               rule.enabled ? '' : 'opacity-55', rule === freshRule ? 'sec-flash' : '']"
             :style="{ '--sec-delay': `${Math.min(index, 10) * 30}ms` }" data-testid="security-rule">
             <div class="flex items-start gap-2 min-w-0">
               <span :class="['shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium',
-                rule.preset ? 'border-blue-500/25 bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'border-gray-200 text-lx-muted dark:border-white/15']">{{ rule.preset ? copy.preset : copy.custom }}</span>
+                rule.preset ? 'border-blue-500/25 bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'border-zinc-200 text-lx-muted dark:border-white/15']">{{ rule.preset ? copy.preset : copy.custom }}</span>
               <code class="min-w-0 flex-1 rounded-md bg-black/[0.04] px-1.5 py-0.5 font-mono text-xs leading-5 text-lx-secondary [overflow-wrap:anywhere] dark:bg-white/[0.06]">{{ rule.pattern }}</code>
               <span class="flex shrink-0 items-center gap-1">
                 <label class="sec-check" :title="copy.enabled">
@@ -347,7 +347,7 @@ void load();
         </fieldset>
 
         <!-- 保存底栏：浮起的玻璃条，滚动时压住下方规则（sticky 不能被带 transform 的祖先包住） -->
-        <div v-if="category !== 'net'" class="sec-rise sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-gray-200/80 bg-white/95 px-3 py-2 shadow-lg backdrop-blur dark:border-white/10 dark:bg-zinc-950/90" :style="{ '--sec-delay': '140ms' }">
+        <div v-if="category !== 'net'" class="sec-rise sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-zinc-200/80 bg-white/95 px-3 py-2 shadow-lg backdrop-blur dark:border-white/10 dark:bg-zinc-950/90" :style="{ '--sec-delay': '140ms' }">
           <span role="status" class="flex items-center gap-1.5 text-[11px] text-lx-muted">
             <span v-if="notice" class="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
             <span v-else-if="dirty[category]" class="sec-ping h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
@@ -408,7 +408,7 @@ void load();
 
 /* ================= 总开关 ================= */
 .sec-switch {
-  @apply relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full bg-gray-200;
+  @apply relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full bg-zinc-200;
   transition: background-color 0.22s ease;
 }
 

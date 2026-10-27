@@ -53,7 +53,7 @@ watch(() => pendingEntries.value.map(entry => entry.id), async (ids, previous = 
       :aria-label="t('chat.approval.groupTitle')"
       tabindex="0"
       class="max-h-80 overflow-y-auto overscroll-contain rounded-xl border px-3 py-1"
-      :class="isDark ? 'border-white/10 bg-zinc-950/20' : 'border-gray-200/80 bg-zinc-50/40'"
+      :class="isDark ? 'border-white/10 bg-zinc-950/20' : 'border-zinc-200/80 bg-zinc-50/40'"
       data-testid="command-approval-list"
     >
       <div v-for="entry in orderedEntries" :key="entry.id" class="min-w-0" :data-approval-id="entry.card.toolCallId">

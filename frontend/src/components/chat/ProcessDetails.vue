@@ -274,7 +274,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                       'absolute bottom-2 right-2 flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] leading-none shadow-sm transition-colors cursor-pointer',
                       isDark
                         ? 'border-white/15 bg-[#1b2130]/90 text-zinc-300 hover:text-zinc-100'
-                        : 'border-gray-200 bg-white/95 text-gray-500 hover:text-gray-800'
+                        : 'border-zinc-200 bg-white/95 text-gray-500 hover:text-gray-800'
                     ]"
                   >
                     <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -291,7 +291,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
               v-else-if="item.type === 'sub_agent' && item.subAgents?.length"
               :class="[
                 'w-full min-w-0 px-3.5 py-2.5 rounded-2xl border flex items-center justify-between gap-3 text-xs select-none transition-colors overflow-hidden',
-                props.isDark ? 'bg-[#141b29]/70 border-[#222d42] text-gray-200' : 'bg-blue-50/70 border-blue-200/80 text-blue-900'
+                props.isDark ? 'bg-[#141b29]/70 border-[#222d42] text-zinc-200' : 'bg-blue-50/70 border-blue-200/80 text-blue-900'
               ]"
             >
               <!-- 左侧信息区：固定尺寸，禁止压缩，文案不折行 -->
@@ -436,7 +436,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                 <!-- 展开的工具详情卡片 (带平滑折叠动画)；读文件没有详情，见 canExpandTool -->
                 <CollapseTransition>
                   <div v-if="canExpandTool(item.tool) && expandedToolIds[item.tool.id]">
-                    <div :class="['w-full rounded-2xl border overflow-hidden mt-1.5 shadow-xs transition-colors', isDark ? 'border-[#273043] bg-[#12161f]' : 'border-gray-200/90 bg-white']">
+                    <div :class="['w-full rounded-2xl border overflow-hidden mt-1.5 shadow-xs transition-colors', isDark ? 'border-[#273043] bg-[#12161f]' : 'border-zinc-200/90 bg-white']">
                       <div :class="['px-4 py-2.5 flex items-center justify-between gap-3 text-xs border-b', isDark ? 'border-gray-800/80' : 'border-zinc-100']">
                         <div class="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
                           <span
@@ -448,7 +448,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                           <span class="text-lx-faint font-mono text-xs flex-shrink-0 select-none">
                             {{ item.tool.workDir }}
                           </span>
-                          <span class="font-mono text-xs text-gray-800 dark:text-gray-200 truncate select-text">
+                          <span class="font-mono text-xs text-gray-800 dark:text-zinc-200 truncate select-text">
                             {{ cleanDisplayPath(getToolDetail(item.tool)) }}
                           </span>
                           <!-- 卡片栏中的 diff 状态指示 -->
@@ -495,7 +495,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                         </div>
                         <pre
                           v-else-if="item.tool.result"
-                          :class="['font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto max-h-[380px] scrollbar-thin select-text', isDark ? 'text-gray-200' : 'text-gray-800']"
+                          :class="['font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto max-h-[380px] scrollbar-thin select-text', isDark ? 'text-zinc-200' : 'text-gray-800']"
                         >{{ unwrapToolResultEnvelope(item.tool.result) }}</pre>
                         <div v-else-if="item.tool.status === 'pending'" class="font-mono text-xs text-amber-500/90 flex items-center gap-2">
                           <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>

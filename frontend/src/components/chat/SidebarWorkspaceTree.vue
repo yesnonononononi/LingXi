@@ -146,7 +146,7 @@ const emit = emitShim as TreeEmitShim;
             'p-2 rounded-xl flex items-center justify-center cursor-pointer transition',
             isWorkspaceActive(group.workspace)
               ? 'bg-blue-600/15 text-blue-500'
-              : 'text-gray-400 hover:bg-gray-200/60 dark:hover:bg-gray-800 hover:text-lx-secondary'
+              : 'text-gray-400 hover:bg-zinc-200/60 dark:hover:bg-gray-800 hover:text-lx-secondary'
           ]"
           :title="group.workspace.name || group.workspace.workDir"
         >
@@ -317,7 +317,7 @@ const emit = emitShim as TreeEmitShim;
               :class="[
                 'group relative flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
                 isWorkspaceActive(group.workspace)
-                  ? 'bg-gray-200/80 text-gray-900 font-medium'
+                  ? 'bg-zinc-200/80 text-gray-900 font-medium'
                   : 'text-gray-700 hover:text-gray-900 hover:bg-zinc-100'
               ]"
             >
@@ -372,7 +372,7 @@ const emit = emitShim as TreeEmitShim;
                   >
                     <div
                       v-if="activeMenuWorkspaceId === String(group.workspace.id)"
-                      class="absolute right-0 top-6 w-32 py-1 rounded-xl shadow-xl border z-50 text-xs bg-white border-gray-200 text-gray-700 backdrop-blur-md"
+                      class="absolute right-0 top-6 w-32 py-1 rounded-xl shadow-xl border z-50 text-xs bg-white border-zinc-200 text-gray-700 backdrop-blur-md"
                     >
                       <button
                                                 @click="handleDeleteProject(group.workspace, $event)"

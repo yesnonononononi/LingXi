@@ -139,7 +139,7 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
 
         <!-- 下载进度（仅下载中显示；不定态进度条不用百分比文案以免误导） -->
         <div v-if="state === 'downloading'" class="space-y-1.5">
-          <div :class="['h-1.5 rounded-full overflow-hidden', isDark ? 'bg-white/10' : 'bg-gray-200']">
+          <div :class="['h-1.5 rounded-full overflow-hidden', isDark ? 'bg-white/10' : 'bg-zinc-200']">
             <div
               class="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-[width] duration-300"
               :style="{ width: `${Math.max(percent, 2)}%` }"

@@ -156,7 +156,7 @@ const handleSubmit = () => {
 <template>
   <div
     v-if="!isDismissed"
-    :class="[CARD_SHELL_CLASS, isDark ? 'bg-[#161b26] border-gray-800' : 'bg-white border-gray-200/90']"
+    :class="[CARD_SHELL_CLASS, isDark ? 'bg-[#161b26] border-gray-800' : 'bg-white border-zinc-200/90']"
   >
     <div :class="CARD_BODY_CLASS">
       <!-- 1. 统一 header：状态点 + 类型标签；右侧折叠/关闭（关闭仅在已决态出现） -->
@@ -227,7 +227,7 @@ const handleSubmit = () => {
                   'flex items-start sm:items-center gap-2 p-2.5 rounded-xl border transition-all cursor-pointer select-none group',
                   selectedIndex === idx
                     ? (isDark ? 'bg-blue-950/30 border-blue-500/60' : 'bg-blue-50/80 border-blue-400/80 shadow-xs')
-                    : (isDark ? 'border-transparent hover:bg-gray-800/40 hover:border-gray-700' : 'border-transparent hover:bg-zinc-50/80 hover:border-gray-200')
+                    : (isDark ? 'border-transparent hover:bg-gray-800/40 hover:border-gray-700' : 'border-transparent hover:bg-zinc-50/80 hover:border-zinc-200')
                 ]"
               >
                 <div
@@ -235,7 +235,7 @@ const handleSubmit = () => {
                     'w-6 h-6 rounded-md flex items-center justify-center text-xs font-semibold flex-shrink-0 transition-colors mt-0.5 sm:mt-0',
                     selectedIndex === idx
                       ? 'bg-blue-600 text-white'
-                      : (isDark ? 'bg-gray-800 text-gray-400 group-hover:text-gray-200' : 'bg-[#eef2f6] text-gray-500 group-hover:text-gray-700')
+                      : (isDark ? 'bg-gray-800 text-gray-400 group-hover:text-zinc-200' : 'bg-[#eef2f6] text-gray-500 group-hover:text-gray-700')
                   ]"
                 >
                   {{ idx + 1 }}
@@ -255,7 +255,7 @@ const handleSubmit = () => {
                   'flex items-center gap-3 p-2 rounded-xl border transition-all cursor-text',
                   isCustomSelected
                     ? (isDark ? 'bg-blue-950/30 border-blue-500/60' : 'bg-blue-50/80 border-blue-400/80 shadow-xs')
-                    : (isDark ? 'border-transparent hover:bg-gray-800/40 hover:border-gray-700' : 'border-transparent hover:bg-zinc-50/80 hover:border-gray-200')
+                    : (isDark ? 'border-transparent hover:bg-gray-800/40 hover:border-gray-700' : 'border-transparent hover:bg-zinc-50/80 hover:border-zinc-200')
                 ]"
               >
                 <div

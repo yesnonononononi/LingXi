@@ -368,11 +368,11 @@ const handleSaveTeam = async () => {
     <div
       :class="[
         'w-full max-w-lg max-h-[85vh] flex flex-col rounded-2xl border shadow-2xl transition-all overflow-hidden',
-        isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_12px_40px_rgba(0,0,0,0.95)] backdrop-blur-2xl' : 'bg-white border-gray-200 text-gray-800'
+        isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_12px_40px_rgba(0,0,0,0.95)] backdrop-blur-2xl' : 'bg-white border-zinc-200 text-gray-800'
       ]"
     >
       <!-- Header -->
-      <div class="px-6 py-4 flex items-center justify-between border-b shrink-0" :class="isDark ? 'border-white/10' : 'border-gray-200/50'">
+      <div class="px-6 py-4 flex items-center justify-between border-b shrink-0" :class="isDark ? 'border-white/10' : 'border-zinc-200/50'">
         <h3 class="text-base font-semibold flex items-center gap-2">
           <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -467,7 +467,7 @@ const handleSaveTeam = async () => {
               <button
                 type="button"
                 @click="closeAgentForm"
-                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                class="text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200 cursor-pointer"
               >
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -597,7 +597,7 @@ const handleSaveTeam = async () => {
               <div
                 v-else
                 class="max-h-36 overflow-y-auto rounded-lg border p-1.5 grid grid-cols-1 sm:grid-cols-2 gap-1.5"
-                :class="isDark ? 'border-white/15 bg-black/80' : 'border-gray-200 bg-white'"
+                :class="isDark ? 'border-white/15 bg-black/80' : 'border-zinc-200 bg-white'"
               >
                 <div
                   v-for="tool in availableTools"
@@ -607,7 +607,7 @@ const handleSaveTeam = async () => {
                     'p-1.5 rounded-md border transition-all cursor-pointer flex flex-col justify-between text-left',
                     agentFormToolList.includes(tool.name)
                       ? (isDark ? 'bg-cyan-600/20 border-cyan-500/50 text-white' : 'bg-blue-50 border-blue-300 text-blue-900')
-                      : (isDark ? 'bg-white/[0.04] border-white/10 text-zinc-300 hover:border-white/25' : 'bg-zinc-50/80 border-gray-200 text-gray-700 hover:border-zinc-300')
+                      : (isDark ? 'bg-white/[0.04] border-white/10 text-zinc-300 hover:border-white/25' : 'bg-zinc-50/80 border-zinc-200 text-gray-700 hover:border-zinc-300')
                   ]"
                 >
                   <div class="flex items-center justify-between gap-1">
@@ -656,7 +656,7 @@ const handleSaveTeam = async () => {
           <div
             class="rounded-xl border divide-y overflow-y-auto max-h-48"
             :class="[
-              isDark ? 'border-white/15 divide-white/10 bg-black/90' : 'border-gray-200 divide-zinc-100 bg-zinc-50'
+              isDark ? 'border-white/15 divide-white/10 bg-black/90' : 'border-zinc-200 divide-zinc-100 bg-zinc-50'
             ]"
           >
             <div v-if="isLoadingAgents" class="p-4 text-center text-xs text-gray-500">
@@ -686,7 +686,7 @@ const handleSaveTeam = async () => {
                 />
                 <div class="truncate">
                   <div class="flex items-center gap-1.5">
-                    <span class="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">
+                    <span class="text-xs font-medium text-gray-800 dark:text-zinc-200 truncate">
                       {{ agent.name }}
                     </span>
                     <span
@@ -802,7 +802,7 @@ const handleSaveTeam = async () => {
             :class="[
               isDark
                 ? 'bg-black/95 border-white/20 shadow-[0_12px_40px_rgba(0,0,0,0.95)] text-zinc-100'
-                : 'bg-white border-gray-200 shadow-gray-200/80 text-gray-800'
+                : 'bg-white border-zinc-200 shadow-zinc-200/80 text-gray-800'
             ]"
           >
             <div
@@ -854,7 +854,7 @@ const handleSaveTeam = async () => {
       </div>
 
       <!-- Footer -->
-      <div class="px-6 py-3 flex items-center justify-end border-t shrink-0" :class="isDark ? 'border-white/10' : 'border-gray-200/50'">
+      <div class="px-6 py-3 flex items-center justify-end border-t shrink-0" :class="isDark ? 'border-white/10' : 'border-zinc-200/50'">
         <div class="flex items-center gap-2">
           <button
             type="button"

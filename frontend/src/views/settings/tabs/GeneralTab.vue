@@ -47,7 +47,7 @@ const {
             'px-4 py-3.5 rounded-2xl border flex flex-col items-center justify-center gap-2 transition cursor-pointer',
             themeMode === 'light'
               ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_15px_rgba(255,255,255,0.1)] text-white font-semibold dark:text-glow-white' : 'bg-zinc-100 border-zinc-300 text-gray-900 font-semibold shadow-sm')
-              : (isDark ? 'border-white/10 text-zinc-400 bg-black/40 hover:border-white/20 hover:bg-white/[0.04]' : 'border-gray-200 text-gray-600 hover:bg-zinc-50')
+              : (isDark ? 'border-white/10 text-zinc-400 bg-black/40 hover:border-white/20 hover:bg-white/[0.04]' : 'border-zinc-200 text-gray-600 hover:bg-zinc-50')
           ]"
         >
           <svg class="w-5 h-5 text-lx-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -64,7 +64,7 @@ const {
             'px-4 py-3.5 rounded-2xl border flex flex-col items-center justify-center gap-2 transition cursor-pointer',
             themeMode === 'dark'
               ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.12)] text-white font-semibold dark:text-glow-white' : 'bg-zinc-100 border-zinc-300 text-gray-900 font-semibold shadow-sm')
-              : (isDark ? 'border-white/10 text-zinc-400 bg-black/40 hover:border-white/20 hover:bg-white/[0.04]' : 'border-gray-200 text-gray-600 hover:bg-zinc-50')
+              : (isDark ? 'border-white/10 text-zinc-400 bg-black/40 hover:border-white/20 hover:bg-white/[0.04]' : 'border-zinc-200 text-gray-600 hover:bg-zinc-50')
           ]"
         >
           <svg class="w-5 h-5 text-lx-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -81,7 +81,7 @@ const {
             'px-4 py-3.5 rounded-2xl border flex flex-col items-center justify-center gap-2 transition cursor-pointer',
             themeMode === 'system'
               ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.12)] text-white font-semibold dark:text-glow-white' : 'bg-zinc-100 border-zinc-300 text-gray-900 font-semibold shadow-sm')
-              : (isDark ? 'border-white/10 text-zinc-400 bg-black/40 hover:border-white/20 hover:bg-white/[0.04]' : 'border-gray-200 text-gray-600 hover:bg-zinc-50')
+              : (isDark ? 'border-white/10 text-zinc-400 bg-black/40 hover:border-white/20 hover:bg-white/[0.04]' : 'border-zinc-200 text-gray-600 hover:bg-zinc-50')
           ]"
         >
           <svg class="w-5 h-5 text-lx-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -124,7 +124,7 @@ const {
             v-if="isLanguageOpen"
             :class="[
               'absolute right-0 mt-1.5 w-32 rounded-xl border shadow-2xl py-1 z-30 text-xs origin-top backdrop-blur-xl',
-              isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.9)]' : 'bg-white border-gray-200 text-gray-800'
+              isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.9)]' : 'bg-white border-zinc-200 text-gray-800'
             ]"
           >
                         <div
@@ -184,7 +184,7 @@ const {
               v-if="isSoundOpen"
               :class="[
                 'absolute right-0 mt-1.5 w-36 rounded-xl border shadow-2xl py-1 z-30 text-xs origin-top backdrop-blur-xl',
-                isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.9)]' : 'bg-white border-gray-200 text-gray-800'
+                isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.9)]' : 'bg-white border-zinc-200 text-gray-800'
               ]"
             >
               <div
@@ -229,7 +229,7 @@ const {
           v-model="apiBaseUrl"
           type="text"
           placeholder="http://localhost:8088"
-          class="flex-1 px-3 py-2 text-xs rounded-xl border border-gray-200 dark:border-white/15 bg-white dark:bg-black/60 text-gray-900 dark:text-zinc-100 focus:outline-none focus:border-blue-500 dark:focus:border-cyan-400 focus:ring-1 focus:ring-blue-500 dark:focus:ring-cyan-400 transition"
+          class="flex-1 px-3 py-2 text-xs rounded-xl border border-zinc-200 dark:border-white/15 bg-white dark:bg-black/60 text-gray-900 dark:text-zinc-100 focus:outline-none focus:border-blue-500 dark:focus:border-cyan-400 focus:ring-1 focus:ring-blue-500 dark:focus:ring-cyan-400 transition"
         />
         <SpecularButton
           size="sm"

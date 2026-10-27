@@ -98,7 +98,7 @@ const {
       <div
         v-else-if="mcpList.length === 0"
         class="py-12 text-center text-xs text-lx-faint border border-dashed rounded-2xl"
-                :class="isDark ? 'border-white/10' : 'border-gray-200'"
+                :class="isDark ? 'border-white/10' : 'border-zinc-200'"
       >
         {{ t('settings.mcp.empty') }}
       </div>
@@ -112,7 +112,7 @@ const {
           :class="[
             isDark
               ? 'bg-black/90 border-white/15 hover:border-white/30 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
-              : 'bg-zinc-50/70 border-gray-200 hover:border-zinc-300'
+              : 'bg-zinc-50/70 border-zinc-200 hover:border-zinc-300'
           ]"
         >
           <div class="flex items-start justify-between gap-3">
@@ -125,7 +125,7 @@ const {
                 <span
                   class="px-1.5 py-0.5 rounded-md text-[10px] font-medium shrink-0 border"
                   :class="item.status === 0
-                    ? (isDark ? 'bg-white/5 border-white/10 text-zinc-400' : 'bg-gray-200 border-zinc-300 text-gray-500')
+                    ? (isDark ? 'bg-white/5 border-white/10 text-zinc-400' : 'bg-zinc-200 border-zinc-300 text-gray-500')
                     : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'"
                 >
                   {{ item.status === 0 ? t('settings.mcp.disabled') : t('settings.mcp.enabled') }}
@@ -133,7 +133,7 @@ const {
                 <!-- 传输方式 -->
                 <span
                   class="px-1.5 py-0.5 rounded-md text-[10px] shrink-0 border"
-                  :class="isDark ? 'bg-white/5 border-white/10 text-zinc-300' : 'bg-black/5 border-gray-200 text-gray-500'"
+                  :class="isDark ? 'bg-white/5 border-white/10 text-zinc-300' : 'bg-black/5 border-zinc-200 text-gray-500'"
                 >
                   {{ item.transport || 'streamable-http' }}
                 </span>
@@ -256,7 +256,7 @@ const {
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
             isDark
               ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-              : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
+              : 'bg-white border-zinc-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
           ]"
         />
       </div>
@@ -297,7 +297,7 @@ const {
                 ? 'bg-cyan-600 border-cyan-500 text-white shadow-[0_0_12px_rgba(8,145,178,0.4)]'
                 : (isDark
                     ? 'border-white/15 text-zinc-300 hover:bg-white/5'
-                    : 'border-gray-200 text-gray-600 hover:bg-zinc-50')
+                    : 'border-zinc-200 text-gray-600 hover:bg-zinc-50')
             ]"
           >
             {{ t }}
@@ -319,7 +319,7 @@ const {
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
             isDark
               ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-              : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
+              : 'bg-white border-zinc-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
           ]"
         />
       </div>
@@ -338,7 +338,7 @@ const {
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
             isDark
               ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-              : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
+              : 'bg-white border-zinc-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
           ]"
         ></textarea>
       </div>
@@ -358,7 +358,7 @@ const {
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
             isDark
               ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-              : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
+              : 'bg-white border-zinc-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
           ]"
         ></textarea>
         <p
@@ -384,7 +384,7 @@ const {
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
             isDark
               ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-              : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
+              : 'bg-white border-zinc-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
           ]"
         ></textarea>
         <p
@@ -410,7 +410,7 @@ const {
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
             isDark
               ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-              : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
+              : 'bg-white border-zinc-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
           ]"
         />
       </div>
@@ -427,7 +427,7 @@ const {
               'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
               isDark
                 ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80'
-                : 'bg-white border-gray-200 text-gray-800 focus:border-blue-500'
+                : 'bg-white border-zinc-200 text-gray-800 focus:border-blue-500'
             ]"
           />
         </div>
@@ -441,7 +441,7 @@ const {
               'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
               isDark
                 ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80'
-                : 'bg-white border-gray-200 text-gray-800 focus:border-blue-500'
+                : 'bg-white border-zinc-200 text-gray-800 focus:border-blue-500'
             ]"
           />
         </div>
@@ -455,7 +455,7 @@ const {
               'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
               isDark
                 ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80'
-                : 'bg-white border-gray-200 text-gray-800 focus:border-blue-500'
+                : 'bg-white border-zinc-200 text-gray-800 focus:border-blue-500'
             ]"
           />
         </div>
@@ -487,7 +487,7 @@ const {
       </div>
 
       <!-- 底部操作按钮 -->
-      <div class="flex items-center justify-end gap-2.5 pt-3 border-t" :class="isDark ? 'border-white/10' : 'border-gray-200'">
+      <div class="flex items-center justify-end gap-2.5 pt-3 border-t" :class="isDark ? 'border-white/10' : 'border-zinc-200'">
         <button
           type="button"
           @click="cancelMcpForm"
@@ -495,7 +495,7 @@ const {
             'px-4 py-1.5 rounded-xl border text-xs font-medium transition cursor-pointer',
             isDark
               ? 'border-white/15 hover:bg-white/5 text-zinc-300'
-              : 'border-gray-200 hover:bg-zinc-50 text-gray-700'
+              : 'border-zinc-200 hover:bg-zinc-50 text-gray-700'
           ]"
         >
                     {{ t('common.cancel') }}

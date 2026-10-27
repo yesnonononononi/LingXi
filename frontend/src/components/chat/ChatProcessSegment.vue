@@ -51,7 +51,7 @@ const previewIsText = computed(() => headline.value.previewKind === 'text');
         data-testid="process-segment-status">{{ statusLabel }}</span>
     </button>
     <CollapseTransition>
-      <div v-if="expanded && visible" class="mt-1 pl-3 border-l border-gray-200 dark:border-white/10" data-testid="process-segment-details">
+      <div v-if="expanded && visible" class="mt-1 pl-3 border-l border-zinc-200 dark:border-white/10" data-testid="process-segment-details">
         <ProcessDetails :items="segment.detailItems" :message="message" :turn="turn"
           :sub-sessions="subSessions" :session-id="sessionId" :is-dark="isDark"
           @select-sub-session="emit('selectSubSession', $event)" />

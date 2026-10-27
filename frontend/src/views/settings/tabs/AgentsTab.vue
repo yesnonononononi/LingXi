@@ -210,7 +210,7 @@ const {
                     : 'bg-blue-50/60 border-blue-400 shadow-sm')
                 : (isDark
                     ? 'bg-black/90 border-white/15 hover:border-white/30 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
-                    : 'bg-zinc-50/70 border-gray-200 hover:border-zinc-300')
+                    : 'bg-zinc-50/70 border-zinc-200 hover:border-zinc-300')
             ]"
           >
             <div class="flex items-start justify-between gap-3">
@@ -233,7 +233,7 @@ const {
                   <span
                     v-else-if="agent.avatar"
                     class="w-5 h-5 rounded-full flex items-center justify-center text-xs leading-none shrink-0 select-none"
-                    :class="isDark ? 'bg-white/10' : 'bg-gray-200/80'"
+                    :class="isDark ? 'bg-white/10' : 'bg-zinc-200/80'"
                   >{{ agent.avatar }}</span>
                   <span class="text-sm font-semibold truncate" :class="isDark ? 'text-white text-glow-white' : 'text-gray-900'">
                     {{ agent.name }}
@@ -268,7 +268,7 @@ const {
                       :class="[
                         isDark
                           ? 'bg-white/5 border-white/15 text-emerald-400'
-                          : 'bg-white border-gray-200 text-emerald-700 shadow-2xs'
+                          : 'bg-white border-zinc-200 text-emerald-700 shadow-2xs'
                       ]"
                     >
                       {{ resolveToolFullName(toolName) }}
@@ -309,7 +309,7 @@ const {
 
     <!-- 新增 / 编辑表单模式 -->
     <div v-else class="space-y-4">
-      <div class="flex items-center justify-between border-b pb-3" :class="isDark ? 'border-gray-800' : 'border-gray-200'">
+      <div class="flex items-center justify-between border-b pb-3" :class="isDark ? 'border-gray-800' : 'border-zinc-200'">
         <div>
                     <h4 class="text-base font-bold tracking-tight text-lx-primary">
             {{ editingAgentId ? t('settings.agents.editHeading') : t('settings.agents.addHeading') }}
@@ -321,7 +321,7 @@ const {
         <button
           type="button"
           @click="cancelAgentForm"
-          class="px-2.5 py-1 text-xs rounded-lg text-gray-400 hover:text-gray-200 cursor-pointer"
+          class="px-2.5 py-1 text-xs rounded-lg text-gray-400 hover:text-zinc-200 cursor-pointer"
         >
                     {{ t('common.backToList') }}
         </button>

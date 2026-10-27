@@ -197,7 +197,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
         v-if="isOpen"
         :class="[
           'fixed inset-y-0 right-0 w-full max-w-2xl shadow-2xl z-50 flex flex-col border-l transition-colors backdrop-blur-2xl',
-          isDark ? 'bg-black/95 border-white/15 text-zinc-100 shadow-[0_0_60px_rgba(0,0,0,0.9)]' : 'bg-white border-gray-200 text-gray-800'
+          isDark ? 'bg-black/95 border-white/15 text-zinc-100 shadow-[0_0_60px_rgba(0,0,0,0.9)]' : 'bg-white border-zinc-200 text-gray-800'
         ]"
       >
         <!-- 抽屉头部 -->
@@ -226,7 +226,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
             <button
               v-if="messages.length > 0"
               @click="copyAllContent"
-              :class="['px-2.5 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition cursor-pointer', isDark ? 'border-white/15 hover:bg-white/5 text-zinc-300' : 'border-gray-200 hover:bg-zinc-100 text-gray-600']"
+              :class="['px-2.5 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition cursor-pointer', isDark ? 'border-white/15 hover:bg-white/5 text-zinc-300' : 'border-zinc-200 hover:bg-zinc-100 text-gray-600']"
               :title="copied ? t('chat.subSession.copyAllDone') : t('chat.subSession.copyAll')"
             >
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -289,7 +289,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
             <button
               type="button"
               @click="loadMessages"
-              :class="['px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer', isDark ? 'border-[#2c374d] hover:bg-[#1f2838] text-zinc-300' : 'border-gray-200 hover:bg-zinc-100 text-gray-600']"
+              :class="['px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer', isDark ? 'border-[#2c374d] hover:bg-[#1f2838] text-zinc-300' : 'border-zinc-200 hover:bg-zinc-100 text-gray-600']"
             >
               {{ t('common.retry') }}
             </button>
@@ -362,14 +362,14 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                 <div
                   v-for="tc in msg.toolCalls"
                   :key="tc.id"
-                  :class="['rounded-xl border text-xs font-mono transition overflow-hidden', isDark ? 'border-white/15 bg-black/80' : 'border-gray-200 bg-zinc-50']"
+                  :class="['rounded-xl border text-xs font-mono transition overflow-hidden', isDark ? 'border-white/15 bg-black/80' : 'border-zinc-200 bg-zinc-50']"
                 >
                   <button
                     type="button"
                     :disabled="!hasToolDetail(tc)"
                     @click="toggleToolCall(tc.id)"
                     class="w-full p-2.5 flex items-center justify-between text-gray-400 transition select-none text-left"
-                    :class="hasToolDetail(tc) ? 'hover:text-gray-200 cursor-pointer' : 'cursor-default'"
+                    :class="hasToolDetail(tc) ? 'hover:text-zinc-200 cursor-pointer' : 'cursor-default'"
                   >
                     <div class="flex items-center gap-2 truncate min-w-0">
                       <!-- 与主过程框同一规则：无详情时留出箭头位，避免指示灯列左移 -->
@@ -418,7 +418,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                   'p-4 rounded-2xl text-sm leading-relaxed border transition-colors shadow-2xs',
                   msg.role === 'user'
                     ? (isDark ? 'bg-cyan-950/20 border-cyan-500/30 text-cyan-100' : 'bg-[#eef4fd] border-blue-100 text-gray-900')
-                    : (isDark ? 'bg-black/90 border-white/15 text-zinc-100 shadow-[0_0_20px_rgba(0,0,0,0.8)]' : 'bg-white border-gray-200 text-gray-900')
+                    : (isDark ? 'bg-black/90 border-white/15 text-zinc-100 shadow-[0_0_20px_rgba(0,0,0,0.8)]' : 'bg-white border-zinc-200 text-gray-900')
                 ]"
               >
                 <MarkdownRenderer :content="msg.content" :is-dark="isDark" />

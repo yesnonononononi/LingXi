@@ -52,7 +52,7 @@ const emit = defineEmits<{
         v-if="isOpen"
         :class="[
           'fixed inset-y-0 right-0 w-full max-w-xl shadow-2xl z-50 flex flex-col border-l transition-colors backdrop-blur-2xl',
-          isDark ? 'bg-black/95 border-white/15 text-zinc-100 shadow-[0_0_60px_rgba(0,0,0,0.9)]' : 'bg-white border-gray-200 text-gray-800'
+          isDark ? 'bg-black/95 border-white/15 text-zinc-100 shadow-[0_0_60px_rgba(0,0,0,0.9)]' : 'bg-white border-zinc-200 text-gray-800'
         ]"
       >
         <!-- 头部 -->
@@ -113,7 +113,7 @@ const emit = defineEmits<{
               'p-4 rounded-2xl border transition-all cursor-pointer group shadow-2xs select-none',
               isDark
                 ? 'border-white/15 bg-black/90 hover:border-cyan-400/50 hover:shadow-[0_0_20px_rgba(34,211,238,0.15)]'
-                : 'border-gray-200 bg-white hover:border-blue-400 hover:bg-blue-50/30'
+                : 'border-zinc-200 bg-white hover:border-blue-400 hover:bg-blue-50/30'
             ]"
           >
             <div class="flex items-start justify-between gap-3">

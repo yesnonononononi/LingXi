@@ -23,7 +23,7 @@ const props = defineProps<ChatMessageActionsSlotProps>();
   <button
     data-testid="message-copy"
     @click="props.copyContent"
-    class="hover:text-gray-600 dark:hover:text-gray-200 transition p-0.5"
+    class="hover:text-gray-600 dark:hover:text-zinc-200 transition p-0.5"
     :title="props.copied ? t('common.copied') : t('chat.message.copyAnswer')"
   >
     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

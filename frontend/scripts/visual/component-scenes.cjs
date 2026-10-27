@@ -824,7 +824,7 @@ const DARK_EXPECT_TOKENS = {
     textShadow: STRUCTURAL.none,
   },
   tmName: {
-    color: literal('#e5e7eb', '行名字是 text-gray-800 dark:text-gray-200 混用对，暗值 gray-200 与 secondary(#e4e4e7) 差 1/255，尚不可令牌化'),
+    color: literal('#e4e4e7', '行名字是 text-gray-800 dark:text-zinc-200 混用对，暗值 zinc-200(#e4e4e7) 与 secondary 暗值 #e4e4e7 相同，是否令牌化留待后续批次裁决'),
     backgroundColor: STRUCTURAL.transparent,
     borderTopColor: STRUCTURAL.currentColor,
     borderBottomColor: STRUCTURAL.currentColor,

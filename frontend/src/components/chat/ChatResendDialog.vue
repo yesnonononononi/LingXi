@@ -12,7 +12,7 @@ const emit = defineEmits<{ (event: 'update:modelValue', text: string): void; (ev
     <div v-if="open" class="fixed inset-0 z-[99990] flex items-center justify-center bg-black/45 backdrop-blur-sm p-4"
       @click.self="!busy && emit('cancel')" @keydown.esc.stop="!busy && emit('cancel')">
       <section role="dialog" aria-modal="true" :aria-label="t('chat.controls.editResend')"
-        class="w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-zinc-900 p-5 shadow-xl">
+        class="w-full max-w-2xl rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-900 p-5 shadow-xl">
         <h2 class="text-base font-semibold text-gray-900 dark:text-zinc-100">{{ t('chat.controls.editResend') }}</h2>
         <p class="mt-2 text-sm text-lx-muted">{{ t('chat.controls.resendWarning') }}</p>
         <p v-if="imageCount" class="mt-2 text-xs text-gray-500">{{ t('chat.controls.keepImages', { count: imageCount }) }}</p>
