@@ -107,7 +107,7 @@ const handleClearSessions = async () => {
           class="shrink-0 px-3 py-1 rounded-full border text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           :class="isDark
             ? 'border-lx-border-strong text-lx-secondary hover:bg-white/5'
-            : 'border-lx-border-strong text-lx-secondary hover:bg-gray-50'"
+            : 'border-lx-border-strong text-lx-secondary hover:bg-zinc-50'"
         >
           {{ busyField === 'dataDir' ? t('settings.data.migrating') : t('settings.data.change') }}
         </button>
@@ -134,7 +134,7 @@ const handleClearSessions = async () => {
           class="shrink-0 px-3 py-1 rounded-full border text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           :class="isDark
             ? 'border-lx-border-strong text-lx-secondary hover:bg-white/5'
-            : 'border-lx-border-strong text-lx-secondary hover:bg-gray-50'"
+            : 'border-lx-border-strong text-lx-secondary hover:bg-zinc-50'"
         >
           {{ busyField === 'skillDir' ? t('settings.data.migrating') : t('settings.data.change') }}
         </button>

@@ -147,7 +147,7 @@ const goBack = () => router.push('/models');
 
 const rootClass = computed(() => [
   'min-h-screen w-screen font-sans',
-  isDark.value ? 'bg-[#0b0f17] text-gray-100' : 'bg-gray-50 text-gray-900',
+  isDark.value ? 'bg-[#0b0f17] text-gray-100' : 'bg-zinc-50 text-gray-900',
 ]);
 const headerClass = computed(() => [
   'sticky top-0 z-20 h-14 px-4 flex items-center justify-between border-b backdrop-blur select-none',
@@ -155,7 +155,7 @@ const headerClass = computed(() => [
 ]);
 const themeBtnClass = computed(() => [
   'p-2 rounded-xl border transition',
-  isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-yellow-400 hover:bg-[#202738]' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100',
+  isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-yellow-400 hover:bg-[#202738]' : 'bg-zinc-50 border-gray-200 text-gray-600 hover:bg-gray-100',
 ]);
 const mutedText = computed(() => (isDark.value ? 'mt-1 text-xs text-gray-400' : 'mt-1 text-xs text-gray-500'));
 const btnClass = computed(() => [

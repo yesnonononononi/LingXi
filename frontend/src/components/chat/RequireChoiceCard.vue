@@ -227,7 +227,7 @@ const handleSubmit = () => {
                   'flex items-start sm:items-center gap-2 p-2.5 rounded-xl border transition-all cursor-pointer select-none group',
                   selectedIndex === idx
                     ? (isDark ? 'bg-blue-950/30 border-blue-500/60' : 'bg-blue-50/80 border-blue-400/80 shadow-xs')
-                    : (isDark ? 'border-transparent hover:bg-gray-800/40 hover:border-gray-700' : 'border-transparent hover:bg-gray-50/80 hover:border-gray-200')
+                    : (isDark ? 'border-transparent hover:bg-gray-800/40 hover:border-gray-700' : 'border-transparent hover:bg-zinc-50/80 hover:border-gray-200')
                 ]"
               >
                 <div
@@ -255,7 +255,7 @@ const handleSubmit = () => {
                   'flex items-center gap-3 p-2 rounded-xl border transition-all cursor-text',
                   isCustomSelected
                     ? (isDark ? 'bg-blue-950/30 border-blue-500/60' : 'bg-blue-50/80 border-blue-400/80 shadow-xs')
-                    : (isDark ? 'border-transparent hover:bg-gray-800/40 hover:border-gray-700' : 'border-transparent hover:bg-gray-50/80 hover:border-gray-200')
+                    : (isDark ? 'border-transparent hover:bg-gray-800/40 hover:border-gray-700' : 'border-transparent hover:bg-zinc-50/80 hover:border-gray-200')
                 ]"
               >
                 <div

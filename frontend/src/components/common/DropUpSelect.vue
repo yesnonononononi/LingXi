@@ -383,7 +383,7 @@ defineExpose({
                     option.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer',
                     isSelected(option)
                       ? (isDark ? 'border border-white/85 bg-white/[0.12] text-white font-medium shadow-[0_0_14px_rgba(255,255,255,0.22)]' : 'bg-gray-100 text-gray-900 font-normal')
-                      : (!option.disabled ? (isDark ? 'hover:bg-white/10 text-zinc-300' : 'hover:bg-gray-50 text-gray-700') : '')
+                      : (!option.disabled ? (isDark ? 'hover:bg-white/10 text-zinc-300' : 'hover:bg-zinc-50 text-gray-700') : '')
                   ]"
                   @click="select(option)"
                 >

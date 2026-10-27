@@ -241,7 +241,7 @@ defineExpose({
     :style="{ width: `${panelWidth}px` }"
     :class="[
       'relative shrink-0 border-l flex flex-col h-full z-20 backdrop-blur-md select-none',
-      isDark ? 'bg-[#09090b]/95 border-white/[0.06] text-zinc-200' : 'bg-gray-50/90 border-gray-200 text-gray-800'
+      isDark ? 'bg-[#09090b]/95 border-white/[0.06] text-zinc-200' : 'bg-zinc-50/90 border-gray-200 text-gray-800'
     ]"
   >
     <!-- 左边缘拖拽分割条 (Resize Handle) -->
@@ -299,7 +299,7 @@ defineExpose({
       </div>
 
       <!-- 状态与用量指标栏 -->
-      <div :class="['px-4 py-2 border-b text-[11px] flex items-center justify-between gap-2 select-none shrink-0', isDark ? 'border-white/[0.06] bg-[#09090b]/60 text-zinc-400' : 'border-gray-100 bg-gray-50/60 text-gray-500']">
+      <div :class="['px-4 py-2 border-b text-[11px] flex items-center justify-between gap-2 select-none shrink-0', isDark ? 'border-white/[0.06] bg-[#09090b]/60 text-zinc-400' : 'border-gray-100 bg-zinc-50/60 text-gray-500']">
         <span class="flex items-center gap-1.5">
           <span class="w-1.5 h-1.5 rounded-full" :class="activeItem.status === 'running' ? 'bg-amber-400 animate-ping' : activeItem.status === 'completed' ? 'bg-emerald-500' : 'bg-gray-400'"></span>
           <span>{{ statusLabel(activeItem.status) }}</span>
@@ -402,7 +402,7 @@ defineExpose({
             <span
               :class="[
                 'px-1.5 py-0.5 rounded-full text-[10px] font-medium flex items-center gap-1 shrink-0',
-                (it.status === 'idle' || it.status === 'unknown') ? (isDark ? 'bg-gray-500/15 text-gray-400 border border-gray-500/30' : 'bg-gray-50 text-gray-500 border border-gray-200') :
+                (it.status === 'idle' || it.status === 'unknown') ? (isDark ? 'bg-gray-500/15 text-gray-400 border border-gray-500/30' : 'bg-zinc-50 text-gray-500 border border-gray-200') :
                 it.status === 'running' ? (isDark ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30' : 'bg-amber-50 text-amber-600 border border-amber-200') :
                 it.status === 'suspended' ? (isDark ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30' : 'bg-blue-50 text-blue-600 border border-blue-200') :
                 (it.status === 'failed' || it.status === 'cancelled') ? (isDark ? 'bg-red-500/15 text-red-400 border border-red-500/30' : 'bg-red-50 text-red-600 border border-red-200') :
@@ -425,7 +425,7 @@ defineExpose({
           <!-- 任务目标标签 (指派任务) -->
           <div
             @click.stop="toggleTaskExpand(it.id)"
-            :class="['p-2 rounded-xl text-xs space-y-1 cursor-pointer', isDark ? 'bg-[#0d121a]' : 'bg-gray-50']"
+            :class="['p-2 rounded-xl text-xs space-y-1 cursor-pointer', isDark ? 'bg-[#0d121a]' : 'bg-zinc-50']"
             :title="t('chat.subAgent.expandTaskTip')"
           >
             <div class="flex items-center justify-between">

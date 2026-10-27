@@ -67,7 +67,7 @@ const goNext = () => {
 
 const rootClass = computed(() => [
   'min-h-screen w-screen font-sans',
-  isDark.value ? 'bg-[#0b0f17] text-gray-100' : 'bg-gray-50 text-gray-900',
+  isDark.value ? 'bg-[#0b0f17] text-gray-100' : 'bg-zinc-50 text-gray-900',
 ]);
 const headerClass = computed(() => [
   'sticky top-0 z-20 h-14 px-4 flex items-center justify-between border-b backdrop-blur select-none',
@@ -75,7 +75,7 @@ const headerClass = computed(() => [
 ]);
 const themeBtnClass = computed(() => [
   'p-2 rounded-xl border transition',
-  isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-yellow-400 hover:bg-[#202738]' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100',
+  isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-yellow-400 hover:bg-[#202738]' : 'bg-zinc-50 border-gray-200 text-gray-600 hover:bg-gray-100',
 ]);
 const mutedText = computed(() => (isDark.value ? 'text-xs text-gray-400' : 'text-xs text-gray-500'));
 const theadClass = computed(() => (isDark.value ? 'bg-[#121722] text-gray-400' : 'bg-gray-100 text-gray-500'));
@@ -84,7 +84,7 @@ const btnClass = computed(() => [
   isDark.value ? 'border-[#2d3a54] text-gray-300 hover:bg-white/5' : 'border-gray-300 text-gray-600 hover:bg-black/5',
 ]);
 const cardClass = computed(() => ['rounded-2xl border overflow-hidden', isDark.value ? 'border-[#273043]' : 'border-gray-200']);
-const rowClass = computed(() => ['border-t', isDark.value ? 'border-[#273043] hover:bg-[#141a26]' : 'border-gray-100 hover:bg-gray-50']);
+const rowClass = computed(() => ['border-t', isDark.value ? 'border-[#273043] hover:bg-[#141a26]' : 'border-gray-100 hover:bg-zinc-50']);
 const modalClass = computed(() => [
   'relative z-50 w-full rounded-2xl border p-5 shadow-2xl',
   isDark.value ? 'bg-[#161b26] border-[#273043] text-gray-200' : 'bg-white border-gray-200 text-gray-800',

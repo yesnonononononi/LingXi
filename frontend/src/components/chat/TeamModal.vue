@@ -408,7 +408,7 @@ const handleSaveTeam = async () => {
               'w-full px-3 py-2 rounded-xl border text-sm outline-none transition',
               isDark
                 ? 'bg-black/90 border-white/15 focus:border-cyan-400/80 text-white placeholder-zinc-500'
-                : 'bg-gray-50 border-gray-300 focus:border-blue-500 text-gray-900 placeholder-gray-400'
+                : 'bg-zinc-50 border-gray-300 focus:border-blue-500 text-gray-900 placeholder-gray-400'
             ]"
           />
         </div>
@@ -426,7 +426,7 @@ const handleSaveTeam = async () => {
               'w-full px-3 py-2 rounded-xl border text-sm outline-none resize-none transition',
               isDark
                 ? 'bg-black/90 border-white/15 focus:border-cyan-400/80 text-white placeholder-zinc-500'
-                : 'bg-gray-50 border-gray-300 focus:border-blue-500 text-gray-900 placeholder-gray-400'
+                : 'bg-zinc-50 border-gray-300 focus:border-blue-500 text-gray-900 placeholder-gray-400'
             ]"
           ></textarea>
         </div>
@@ -569,7 +569,7 @@ const handleSaveTeam = async () => {
               <div
                 v-if="isLoadingTools"
                 class="p-2 text-center text-gray-400 text-xs rounded-lg border border-dashed"
-                :class="isDark ? 'border-gray-700 bg-gray-900/30' : 'border-gray-300 bg-gray-50/50'"
+                :class="isDark ? 'border-gray-700 bg-gray-900/30' : 'border-gray-300 bg-zinc-50/50'"
               >
                 {{ t('chat.team.loadingTools') }}
               </div>
@@ -590,7 +590,7 @@ const handleSaveTeam = async () => {
               <div
                 v-else-if="availableTools.length === 0"
                 class="p-2 text-center text-gray-400 text-xs rounded-lg border border-dashed"
-                :class="isDark ? 'border-white/10 bg-black/60' : 'border-gray-300 bg-gray-50/50'"
+                :class="isDark ? 'border-white/10 bg-black/60' : 'border-gray-300 bg-zinc-50/50'"
               >
                 {{ t('chat.team.noTools') }}
               </div>
@@ -607,7 +607,7 @@ const handleSaveTeam = async () => {
                     'p-1.5 rounded-md border transition-all cursor-pointer flex flex-col justify-between text-left',
                     agentFormToolList.includes(tool.name)
                       ? (isDark ? 'bg-cyan-600/20 border-cyan-500/50 text-white' : 'bg-blue-50 border-blue-300 text-blue-900')
-                      : (isDark ? 'bg-white/[0.04] border-white/10 text-zinc-300 hover:border-white/25' : 'bg-gray-50/80 border-gray-200 text-gray-700 hover:border-gray-300')
+                      : (isDark ? 'bg-white/[0.04] border-white/10 text-zinc-300 hover:border-white/25' : 'bg-zinc-50/80 border-gray-200 text-gray-700 hover:border-gray-300')
                   ]"
                 >
                   <div class="flex items-center justify-between gap-1">
@@ -656,7 +656,7 @@ const handleSaveTeam = async () => {
           <div
             class="rounded-xl border divide-y overflow-y-auto max-h-48"
             :class="[
-              isDark ? 'border-white/15 divide-white/10 bg-black/90' : 'border-gray-200 divide-gray-100 bg-gray-50'
+              isDark ? 'border-white/15 divide-white/10 bg-black/90' : 'border-gray-200 divide-gray-100 bg-zinc-50'
             ]"
           >
             <div v-if="isLoadingAgents" class="p-4 text-center text-xs text-gray-500">

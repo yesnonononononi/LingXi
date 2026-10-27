@@ -9,7 +9,7 @@ const id = useId();
 </script>
 
 <template>
-  <div class="rounded-xl border p-3 space-y-2" :class="isDark ? 'border-white/15 bg-white/5' : 'border-gray-200 bg-gray-50'">
+  <div class="rounded-xl border p-3 space-y-2" :class="isDark ? 'border-white/15 bg-white/5' : 'border-gray-200 bg-zinc-50'">
     <label class="flex items-center gap-2.5 text-xs font-medium text-lx-primary-soft cursor-pointer">
       <input :checked="modelValue" type="checkbox" data-testid="model-vision" :aria-describedby="`${id}-help ${id}-warning`"
         class="h-4 w-4 accent-blue-600 cursor-pointer"

@@ -31,7 +31,7 @@ watch(() => pendingEntries.value.map(entry => entry.id), async (ids, previous = 
     <button
       type="button"
       class="flex w-full min-w-0 items-center gap-2 rounded-lg px-1 py-2 text-left text-xs transition cursor-pointer"
-      :class="isDark ? 'text-zinc-300 hover:bg-white/5' : 'text-gray-600 hover:bg-gray-50'"
+      :class="isDark ? 'text-zinc-300 hover:bg-white/5' : 'text-gray-600 hover:bg-zinc-50'"
       :aria-expanded="expanded"
       :aria-controls="listId"
       data-testid="command-approval-toggle"
@@ -53,7 +53,7 @@ watch(() => pendingEntries.value.map(entry => entry.id), async (ids, previous = 
       :aria-label="t('chat.approval.groupTitle')"
       tabindex="0"
       class="max-h-80 overflow-y-auto overscroll-contain rounded-xl border px-3 py-1"
-      :class="isDark ? 'border-white/10 bg-zinc-950/20' : 'border-gray-200/80 bg-gray-50/40'"
+      :class="isDark ? 'border-white/10 bg-zinc-950/20' : 'border-gray-200/80 bg-zinc-50/40'"
       data-testid="command-approval-list"
     >
       <div v-for="entry in orderedEntries" :key="entry.id" class="min-w-0" :data-approval-id="entry.card.toolCallId">

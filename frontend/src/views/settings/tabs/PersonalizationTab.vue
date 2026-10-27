@@ -90,7 +90,7 @@ async function submit() {
 
 <style scoped>
 @reference "../../../style.css";
-.personalization-card { @apply rounded-2xl border border-gray-100 bg-gray-50/60 p-4 dark:border-white/10 dark:bg-white/[0.03]; }
+.personalization-card { @apply rounded-2xl border border-gray-100 bg-zinc-50/60 p-4 dark:border-white/10 dark:bg-white/[0.03]; }
 .identity-row { @apply flex items-center justify-between gap-4; }
 .identity-control { @apply w-52 min-w-0 shrink-0; }
 .personalization-input { @apply rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-lx-primary-soft outline-none transition focus:border-gray-400 focus:ring-2 focus:ring-gray-200/60 dark:border-white/15 dark:bg-black/30 dark:focus:border-white/40 dark:focus:ring-white/10; }

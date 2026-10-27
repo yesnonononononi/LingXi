@@ -201,7 +201,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
         ]"
       >
         <!-- 抽屉头部 -->
-        <div :class="['px-6 py-4 border-b flex items-center justify-between shrink-0', isDark ? 'border-white/10 bg-black/60' : 'border-gray-100 bg-gray-50/70']">
+        <div :class="['px-6 py-4 border-b flex items-center justify-between shrink-0', isDark ? 'border-white/10 bg-black/60' : 'border-gray-100 bg-zinc-50/70']">
           <div class="flex items-center gap-3 min-w-0">
             <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-600 via-indigo-600 to-cyan-400 flex items-center justify-center text-white shadow-sm shrink-0">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -249,7 +249,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
         </div>
 
         <!-- 会话状态与指标信息栏 -->
-        <div :class="['px-6 py-2.5 border-b text-xs flex items-center justify-between gap-4 flex-wrap select-none', isDark ? 'border-white/10 bg-black/40 text-zinc-400' : 'border-gray-100 bg-gray-50/40 text-gray-500']">
+        <div :class="['px-6 py-2.5 border-b text-xs flex items-center justify-between gap-4 flex-wrap select-none', isDark ? 'border-white/10 bg-black/40 text-zinc-400' : 'border-gray-100 bg-zinc-50/40 text-gray-500']">
           <div class="flex items-center gap-4">
             <span class="flex items-center gap-1.5">
               <span :class="['w-2 h-2 rounded-full', subStatusDot]"></span>
@@ -362,7 +362,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                 <div
                   v-for="tc in msg.toolCalls"
                   :key="tc.id"
-                  :class="['rounded-xl border text-xs font-mono transition overflow-hidden', isDark ? 'border-white/15 bg-black/80' : 'border-gray-200 bg-gray-50']"
+                  :class="['rounded-xl border text-xs font-mono transition overflow-hidden', isDark ? 'border-white/15 bg-black/80' : 'border-gray-200 bg-zinc-50']"
                 >
                   <button
                     type="button"

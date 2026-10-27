@@ -12,6 +12,12 @@
       "to": "lx-faint",
       "date": "2026-10-23",
       "reason": "工具类 text-lx-disabled / placeholder-lx-disabled 与 @theme 桥键 color-lx-disabled 同步改名。原令牌名不符实：实测 31 处消费点里仅 3–4 处是真禁用态，其余是空态提示/loading/占位，实为「最弱文字层」。"
+    },
+    {
+      "from": "gray-50",
+      "to": "zinc-50",
+      "date": "2026-10-27",
+      "reason": "灰阶统一 §7 决策：同档替换（1/10）"
     }
   ]
 }

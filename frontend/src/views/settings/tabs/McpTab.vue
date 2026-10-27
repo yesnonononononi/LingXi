@@ -112,7 +112,7 @@ const {
           :class="[
             isDark
               ? 'bg-black/90 border-white/15 hover:border-white/30 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
-              : 'bg-gray-50/70 border-gray-200 hover:border-gray-300'
+              : 'bg-zinc-50/70 border-gray-200 hover:border-gray-300'
           ]"
         >
           <div class="flex items-start justify-between gap-3">
@@ -297,7 +297,7 @@ const {
                 ? 'bg-cyan-600 border-cyan-500 text-white shadow-[0_0_12px_rgba(8,145,178,0.4)]'
                 : (isDark
                     ? 'border-white/15 text-zinc-300 hover:bg-white/5'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-50')
+                    : 'border-gray-200 text-gray-600 hover:bg-zinc-50')
             ]"
           >
             {{ t }}
@@ -495,7 +495,7 @@ const {
             'px-4 py-1.5 rounded-xl border text-xs font-medium transition cursor-pointer',
             isDark
               ? 'border-white/15 hover:bg-white/5 text-zinc-300'
-              : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+              : 'border-gray-200 hover:bg-zinc-50 text-gray-700'
           ]"
         >
                     {{ t('common.cancel') }}

@@ -104,13 +104,13 @@ const cardClass = computed(() => [
   'rounded-2xl border transition-colors',
   isDark.value
     ? 'bg-black/90 border-white/15 hover:border-white/30 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
-    : 'bg-gray-50/70 border-gray-200 hover:border-gray-300',
+    : 'bg-zinc-50/70 border-gray-200 hover:border-gray-300',
 ]);
 const ghostBtnClass = computed(() => [
   'px-3 py-1 rounded-lg border text-xs font-medium transition cursor-pointer',
   isDark.value
     ? 'border-white/20 hover:border-white/40 bg-white/[0.06] hover:bg-white/[0.12] text-zinc-100'
-    : 'border-gray-200 hover:bg-gray-50 text-gray-700',
+    : 'border-gray-200 hover:bg-zinc-50 text-gray-700',
 ]);
 const dangerBtnClass = computed(() => [
   'text-xs px-2 py-1 transition cursor-pointer font-medium',
@@ -436,7 +436,7 @@ const addRowClass = computed(() => [
                   :placeholder="t('settings.models.searchModels')"
                   :class="[
                     'w-full px-2.5 py-1 rounded-lg text-xs outline-none',
-                    isDark ? 'bg-white/5 border border-lx-border-subtle text-zinc-100 placeholder-lx-faint' : 'bg-gray-50 border border-lx-border-subtle text-gray-800 placeholder-lx-faint'
+                    isDark ? 'bg-white/5 border border-lx-border-subtle text-zinc-100 placeholder-lx-faint' : 'bg-zinc-50 border border-lx-border-subtle text-gray-800 placeholder-lx-faint'
                   ]"
                   @click.stop
                 />

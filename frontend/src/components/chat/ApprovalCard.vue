@@ -169,7 +169,7 @@ const handleReject = () => submit(false);
                     'text-[11px] px-2 py-0.5 rounded-md transition flex items-center gap-1 cursor-pointer select-none border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50',
                     isDark
                       ? 'bg-gray-800/80 hover:bg-gray-700 text-gray-400 hover:text-gray-200 border-gray-700/60'
-                      : 'bg-white hover:bg-gray-50 text-gray-500 hover:text-gray-800 border-gray-200 shadow-2xs'
+                      : 'bg-white hover:bg-zinc-50 text-gray-500 hover:text-gray-800 border-gray-200 shadow-2xs'
                   ]"
                 >
                   <template v-if="copied">

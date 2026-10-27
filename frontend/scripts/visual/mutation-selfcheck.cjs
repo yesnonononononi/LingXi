@@ -75,8 +75,8 @@ const CASES = [
     // 也常常只让 diff 图产生"非强差异"像素而不判红 —— 这正是低档位盲区的成因。
     // 所以这条用例的作用是「证明像素层确实会红」的灵敏度对照，而低档位那条证明 computed style 层兜底。
     file: 'frontend/src/views/settings/tabs/AgentsTab.vue',
-    from: 'bg-gray-50/70 border-gray-200',
-    to: 'bg-gray-50/70 border-gray-400',
+    from: 'bg-zinc-50/70 border-gray-200',
+    to: 'bg-zinc-50/70 border-gray-400',
     expectPixelRed: true,
     expectStyleRed: true,
   },
