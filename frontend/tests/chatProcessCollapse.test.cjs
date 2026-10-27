@@ -25,7 +25,7 @@ function loadChatModule(filename, realPlanCards = false) {
       const resolved = path.resolve(path.dirname(filename), request);
       if (request.endsWith('.vue')) {
         if (/(?:ChatProcessSegment|ProcessDetails)\.vue$/.test(request)) return load(resolved);
-        if (request.endsWith('ApprovalCardGroup.vue') || request.endsWith('ChoiceQuestionGroup.vue')) return load(resolved);
+        if (/(?:InteractionCards|InteractionCardGroup|ChoiceQuestionGroup)\.vue$/.test(request)) return load(resolved);
         if (request.endsWith('CardHeader.vue')) return load(resolved);
         // 插槽化试点（B 档）：正文与底栏内容已抽成独立组件，必须递归进来，
         // 否则通用的「透传 slots」桩会把它当成空实现，正文与工具条一起消失。
@@ -196,6 +196,75 @@ function streamFixture() {
   return { reducer, event, answer: messages[0], AgentToolName };
 }
 
+test('所有卡片统一收进下拉，提问按类型归组，待处理到来不覆盖折叠选择', async t => {
+  const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
+  const answer = message({ aiMessages: [], toolCalls: [
+    { id: 'q1', toolName: AgentToolName.RequireChoice, status: 'pending', order: 1, responseId: '101' },
+    { id: 'q2', toolName: AgentToolName.RequireChoice, status: 'success', order: 2, responseId: '102' },
+  ], promptCards: [
+    { id: 'q1', conversationId: '7', type: 'PROMISE', status: 'pending', version: '1', allowedActions: ['ANSWER'],
+      content: { kind: 'CHOICE', question: '第一批问题', options: ['会话', '数据库'] } },
+    { id: 'plan', type: 'PROMISE', status: 'completed', content: { kind: 'PLAN', title: '计划书', text: '计划详情' } },
+    { id: 'q2', conversationId: '7', type: 'PROMISE', status: 'completed', content: { kind: 'CHOICE', question: '第二批问题' },
+      rawOutput: { outcome: 'ANSWERED', answer: '权威答案' } },
+    { id: 'cmd', type: 'PROMISE', status: 'pending', content: { kind: 'COMMAND', command: 'npm test' } },
+    { id: 'unknown', type: 'PROMISE', status: 'completed', content: {} },
+  ] });
+  const root = mount(t, answer);
+  const whole = find(root, node => node.props?.['data-testid'] === 'interaction-cards-toggle');
+  const content = find(root, node => node.props?.['data-testid'] === 'interaction-cards-content');
+  assert.match(text(whole), /互动卡片.*5 条.*2 条待处理/);
+  assert.equal(whole.props['aria-expanded'], false, '待处理卡片也默认收起');
+  assert.equal(content.style.display, 'none');
+  const choice = find(root, node => node.props?.['data-testid'] === 'choice-card-toggle');
+  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'choice-card-group').length, 1);
+  assert.match(text(choice), /提问.*2 条/);
+  assert.equal(choice.props['aria-expanded'], false);
+  whole.props.onClick();
+  choice.props.onClick();
+  await nextTick();
+  assert.notEqual(content.style.display, 'none');
+  const option = find(root, node => node.props?.role === 'radio');
+  option.props.onClick();
+  await nextTick();
+  assert.equal(option.props['aria-checked'], true);
+  choice.props.onClick();
+  whole.props.onClick();
+  await nextTick();
+  answer.promptCards.push({ id: 'new-plan', type: 'PROMISE', status: 'pending', content: { kind: 'PLAN', title: '新计划' } });
+  await nextTick();
+  assert.equal(whole.props['aria-expanded'], false);
+  assert.equal(choice.props['aria-expanded'], false);
+  assert.match(text(whole), /6 条.*3 条待处理/);
+  whole.props.onClick();
+  choice.props.onClick();
+  await nextTick();
+  const restoredOption = find(root, node => node.props?.role === 'radio');
+  assert.equal(restoredOption.props['aria-checked'], true, '折叠后重开不能丢失作答草稿');
+  const reopened = mount(t, answer);
+  assert.equal(find(reopened, node => node.props?.['data-testid'] === 'interaction-cards-toggle').props['aria-expanded'], false);
+  const empty = mount(t, message({ aiMessages: [], promptCards: [] }));
+  assert.equal(Boolean(find(empty, node => node.props?.['data-testid'] === 'interaction-cards-toggle')), false);
+});
+
+test('同批提问保留原题序，待答题置于正确题号，后续响应仍是独立批次', t => {
+  const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
+  const answer = message({ aiMessages: [], toolCalls: [0, 1, 2].map(index => ({
+    id: `q${index}`, toolName: AgentToolName.RequireChoice, status: index === 0 ? 'success' : 'pending', order: index,
+    responseId: index < 2 ? '101' : '102',
+  })), promptCards: [0, 1, 2].map(index => ({ id: `q${index}`, conversationId: '7', type: 'PROMISE',
+    status: index === 0 ? 'completed' : 'pending', version: '2', allowedActions: index === 0 ? [] : ['ANSWER'],
+    content: { kind: 'CHOICE', question: `问题 ${index}`, options: ['会话', '数据库'] },
+    rawOutput: index === 0 ? { outcome: 'ANSWERED', answer: '会话' } : undefined,
+  })) });
+  const root = mount(t, answer);
+  const batches = findAll(root, node => node.props?.['data-testid'] === 'choice-question-group');
+  assert.equal(batches.length, 2);
+  assert.match(text(find(batches[0], node => node.props?.role === 'status')), /2 \/ 2/);
+  assert.match(text(find(batches[0], node => node.props?.['data-testid'] === 'choice-question')), /问题 1/);
+  assert.match(text(find(batches[1], node => node.props?.['data-testid'] === 'choice-question')), /问题 2/);
+});
+
 test('已决提问收成摘要，展开可回看答案，关闭和重进均保留摘要入口', async t => {
   const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
   const answer = message({ aiMessages: [], toolCalls: [0, 1].map(index => ({
@@ -247,7 +316,7 @@ test('问题尚未收齐或仍有待答时保留作答卡，全部已决后自�
   assert.ok(find(root, node => node.props?.['data-testid'] === 'choice-question-group'));
 });
 
-test('计划按组收敛，待审批计划置顶并直接露出审批卡，命令保留独立组', async t => {
+test('计划按组收敛，新待审批只更新数量，展开后置顶且命令保留独立组', async t => {
   const answer = message({ aiMessages: [], promptCards: [
     ...[0, 1].map(index => ({ id: `p${index}`, conversationId: '7', type: 'PROMISE', status: 'completed',
       content: { kind: 'PLAN', title: `计划 ${index}`, text: `计划正文 ${index}` }, rawOutput: { outcome: 'APPROVED' } })),
@@ -272,7 +341,9 @@ test('计划按组收敛，待审批计划置顶并直接露出审批卡，命�
   answer.promptCards.push({ id: 'p2', conversationId: '7', type: 'PROMISE', status: 'pending', version: '3',
     allowedActions: ['APPROVE', 'REJECT'], content: { kind: 'PLAN', title: '新计划', text: '新计划正文' } });
   await nextTick();
-  assert.equal(planToggle.props['aria-expanded'], true);
+  assert.equal(planToggle.props['aria-expanded'], false, '新增卡片不能覆盖用户折叠选择');
+  planToggle.props.onClick();
+  await nextTick();
   const list = find(root, node => node.props?.['data-testid'] === 'plan-approval-list');
   const first = find(list, node => node.props?.['data-approval-id']);
   assert.equal(first.props['data-approval-id'], 'p2');

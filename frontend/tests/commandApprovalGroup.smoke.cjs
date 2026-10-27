@@ -52,6 +52,10 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   const evaluate = source => window.webContents.executeJavaScript(source);
   for(let attempt=0;attempt<100;attempt++) {if(await evaluate('window.ready===true'))break;await new Promise(resolve=>setTimeout(resolve,50));}
   await evaluate('window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=interaction-cards-toggle]").getAttribute("aria-expanded")'),'false');
+  assert.equal(await evaluate('document.querySelector("[data-testid=interaction-cards-content]").getBoundingClientRect().height'),0);
+  await fs.writeFile(path.join(output, 'all-cards-collapsed.png'), (await window.webContents.capturePage()).toPNG());
+  await evaluate('document.querySelector("[data-testid=interaction-cards-toggle]").click();window.flush()');
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=command-approval-group]").length'),1);
   assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-toggle]").getAttribute("aria-expanded")'),'false');
   assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-group]").getBoundingClientRect().height<50'),true);
@@ -68,11 +72,12 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   await evaluate('document.querySelector("[data-testid=command-approval-entry-toggle]").click();window.flush()');
   assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-list]").textContent.includes("git status --short command-0")'),true);
   assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-list]").clientHeight<=320'),true);
-  // 手动收起后到来的待审批，必须重新展开；待审批不能被组内历史淹没。
+  // 新待审批只更新入口数量，展开后仍须置顶。
   await evaluate('document.querySelector("[data-testid=command-approval-toggle]").click();window.addPending("command-60");window.flush()');
-  assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-toggle]").getAttribute("aria-expanded")'),'true','新待审批必须展开分组');
+  assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-toggle]").getAttribute("aria-expanded")'),'false','新待审批不能覆盖用户收起的选择');
+  await evaluate('document.querySelector("[data-testid=command-approval-toggle]").click();window.flush()');
   assert.equal(await evaluate('document.querySelector("[data-approval-id]").dataset.approvalId'),'command-60');
-  assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-toggle]").textContent.includes("1 条待审批")'),true);
+  assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-toggle]").textContent.includes("1 条待处理")'),true);
   const clickAction = async label => evaluate(`[...document.querySelectorAll('[data-approval-id="command-60"] button')].find(button=>button.textContent.includes(${JSON.stringify(label)})).click();window.flush()`);
   await clickAction('批准并执行');
   assert.deepEqual(await evaluate('window.decisions'),[{conversationId:'42',toolCallId:'command-60',action:'APPROVE',expectedVersion:'7'}]);
@@ -98,7 +103,8 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   await evaluate('document.querySelector("[data-testid=plan-approval-entry-toggle]").click();window.flush()');
   assert.equal(await evaluate('document.querySelector("[data-testid=plan-approval-list]").innerText.includes("完整计划正文 plan-0")'),true);
   await evaluate('document.querySelector("[data-testid=plan-approval-toggle]").click();window.addPendingPlan("plan-20");window.flush()');
-  assert.equal(await evaluate('document.querySelector("[data-testid=plan-approval-toggle]").getAttribute("aria-expanded")'),'true');
+  assert.equal(await evaluate('document.querySelector("[data-testid=plan-approval-toggle]").getAttribute("aria-expanded")'),'false');
+  await evaluate('document.querySelector("[data-testid=plan-approval-toggle]").click();window.flush()');
   assert.equal(await evaluate('document.querySelector("[data-testid=plan-approval-list] [data-approval-id]").dataset.approvalId'),'plan-20');
   await evaluate('[...document.querySelectorAll(\'[data-approval-id="plan-20"] button\')].find(button=>button.textContent.trim()==="批准").click();window.flush()');
   assert.deepEqual(await evaluate('window.decisions[2]'),{conversationId:'42',toolCallId:'plan-20',action:'APPROVE',text:'',expectedVersion:'7'});
@@ -107,6 +113,10 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   assert.equal(await evaluate('document.documentElement.scrollWidth<=window.innerWidth'),true);
   await fs.writeFile(path.join(output, 'plans-narrow.png'), (await window.webContents.capturePage()).toPNG());
   await evaluate('window.showResolvedOverview();window.setDark(false);window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=interaction-cards-toggle]").getAttribute("aria-expanded")'),'false');
+  assert.equal(await evaluate('document.querySelector("[data-testid=interaction-cards-toggle]").textContent.includes("4 条")'),true);
+  assert.equal(await evaluate('document.querySelector("[data-testid=interaction-cards-content]").getBoundingClientRect().height'),0);
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-card-group]").length'),1);
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-summary-toggle]").length'),2);
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-question-group]").length'),0);
   assert.equal(await evaluate('document.querySelector("[data-testid=plan-approval-toggle]").getAttribute("aria-expanded")'),'false');
@@ -118,7 +128,11 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   await fs.writeFile(path.join(output, 'resolved-overview-light.png'), (await window.webContents.capturePage()).toPNG());
   await evaluate('window.setDark(true);window.flush()');
   await fs.writeFile(path.join(output, 'resolved-overview-dark.png'), (await window.webContents.capturePage()).toPNG());
+  await evaluate('document.querySelector("[data-testid=interaction-cards-toggle]").click();window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-card-toggle]").getAttribute("aria-expanded")'),'false');
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-card-toggle]").textContent.includes("2 条")'),true);
+  await fs.writeFile(path.join(output, 'all-card-categories.png'), (await window.webContents.capturePage()).toPNG());
   assert.deepEqual(await evaluate('window.runtimeErrors'),[]);
-  console.log('真实组件通过：命令与计划分别归组、默认折叠、320px 限高滚动、逐项详情、新审批自动露出、权威逐条批准/拒绝、防重复提交、已决提问摘要、深浅主题与窄屏。');
+  console.log('真实组件通过：全部卡片共用折叠入口、提问/计划/命令分别归组、待处理数量、320px 限高滚动、逐项详情、权威逐条批准/拒绝、防重复提交、深浅主题与窄屏。');
   clearTimeout(deadline);window.destroy();app.exit(0);
 }).catch(error=>{console.error(error);clearTimeout(deadline);if(window)window.destroy();app.exit(1);});

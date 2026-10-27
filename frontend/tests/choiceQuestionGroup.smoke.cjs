@@ -55,7 +55,15 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   const evaluate = source => window.webContents.executeJavaScript(source);
   for(let attempt=0;attempt<100;attempt++){if(await evaluate('window.ready===true'))break;await new Promise(resolve=>setTimeout(resolve,50));}
   const click = async selector => evaluate(`document.querySelector(${JSON.stringify(selector)}).click();window.flush()`);
+  const revealCards = async () => evaluate(`for (const id of ['interaction-cards-toggle','choice-card-toggle']) {
+    const button=document.querySelector('[data-testid="'+id+'"]');
+    if(button?.getAttribute('aria-expanded')==='false')button.click();
+  } window.flush()`);
   await evaluate('window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=interaction-cards-toggle]").getAttribute("aria-expanded")'),'false');
+  assert.equal(await evaluate('document.querySelector("[data-testid=interaction-cards-content]").getBoundingClientRect().height'),0);
+  assert.equal(await evaluate('document.querySelector("[data-testid=interaction-cards-pending]").textContent.includes("3 条待处理")'),true);
+  await revealCards();
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-question-group]").length'),1);
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]").disabled'),true);
   // 卡片尺寸契约：选项框高度恒定，选项超量只滚动（六选项不许把卡片撑大）
@@ -79,11 +87,11 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   // 单选即进位：点一次选项自动跳下一题，不必再点「下一题」；最后一题不再进位
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-question]").textContent.includes("选择交付方式")'),true,'首题必须是第一问');
   await click('[data-choice-option="1"]');
-  assert.equal(await evaluate('document.querySelector("[role=status]").textContent.trim()'),'2 / 4','选中后必须自动跳到下一题');
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-question-group] [role=status]").textContent.trim()'),'2 / 4','选中后必须自动跳到下一题');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-question]").textContent.includes("选择部署环境")'),true,'第二题必须已就位');
   await click('[data-choice-option="1"]');
   await click('[data-choice-option="1"]');
-  assert.equal(await evaluate('document.querySelector("[role=status]").textContent.trim()'),'3 / 4','最后一题不该再进位（没有下一题）');
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-question-group] [role=status]").textContent.trim()'),'3 / 4','最后一题不该再进位（没有下一题）');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]").disabled'),true,'缺少第四张卡片时不能提交');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-dismiss]")'),null,'待答题时不得提供关闭入口，否则等于藏掉唯一的作答口');
   assert.equal(await evaluate('document.querySelector("[data-choice-option=\\"1\\"]").className.includes("bg-blue-50")'),true,'选中项必须带浅蓝高亮');
@@ -95,6 +103,9 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   assert.equal(await evaluate('document.querySelector("[data-choice-option=\\"1\\"]").getAttribute("aria-checked")'),'true','切卡不能丢失预设答案');
   await click('[data-testid=choice-next]');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-custom-input]").value'),'  保留原始输入\n以及换行  ');
+  await click('[data-testid=interaction-cards-toggle]');
+  await click('[data-testid=interaction-cards-toggle]');
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-custom-input]").value'),'  保留原始输入\n以及换行  ','外层折叠不能清掉草稿');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]").disabled'),false);
   await fs.writeFile(path.join(output,'light.png'),(await window.webContents.capturePage()).toPNG());
   await evaluate('window.setDark(true);window.flush()');
@@ -131,21 +142,23 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-question-group]").length'),0,'关闭详情后收回摘要');
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-summary-toggle]").length'),1,'已决问题不能关闭后消失');
   await evaluate('window.remount();window.flush()');
+  await revealCards();
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-question-group]").length'),0,'历史重进默认显示摘要');
   await click('[data-testid=choice-summary-toggle]');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-confirmed-answer]").textContent.includes("安装包")'),true,'重新挂载使用权威已答结果');
   // 默认落点契约：前面已答过的题不再是落点，落点必须是第一道未答的题（曾经停在哪张全靠数组顺序）
   await evaluate('window.reopenPartial();window.flush()');
-  assert.equal(await evaluate('document.querySelector("[role=status]").textContent.trim()'),'3 / 4',
+  await revealCards();
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-question-group] [role=status]").textContent.trim()'),'3 / 4',
     '落点必须是第一道未答的题，不能停在已答的题上，也不能一上来就跳到最后一题');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-question]").textContent.includes("选择验证方式")'),true,
     '第三问题干必须已就位');
   // 顺序往后作答：第三题答完进第四题；第四题（无预设选项）填完不再进位
   await click('[data-choice-option="0"]');
-  assert.equal(await evaluate('document.querySelector("[role=status]").textContent.trim()'),'4 / 4','答完第三题必须进到第四题');
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-question-group] [role=status]").textContent.trim()'),'4 / 4','答完第三题必须进到第四题');
   await click('[data-testid=choice-custom-toggle]');
   await evaluate(`(()=>{const input=document.querySelector('[data-testid=choice-custom-input]');input.value='补充说明';input.dispatchEvent(new Event('input',{bubbles:true}));})();window.flush()`);
-  assert.equal(await evaluate('document.querySelector("[role=status]").textContent.trim()'),'4 / 4','末题填完不位移、不回绕');
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-question-group] [role=status]").textContent.trim()'),'4 / 4','末题填完不位移、不回绕');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]").disabled'),false,'四题都有答案后必须可提交');
   assert.deepEqual(await evaluate('window.singleSubmissions'),[]);
   assert.deepEqual(await evaluate('window.runtimeErrors'),[]);

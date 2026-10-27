@@ -6,24 +6,25 @@ export interface PromptCardEntry {
   responseId?: string;
 }
 
-export type GroupedPromptCardEntry = PromptCardEntry & { approvals?: PromptCardEntry[]; choices?: PromptCardEntry[] };
+export type GroupedPromptCardEntry = PromptCardEntry & { choices?: PromptCardEntry[] };
 
-/** 当前消息内按审批类型归组，保留每张卡片的权威身份。 */
-export function groupApprovalCards(entries: PromptCardEntry[]): GroupedPromptCardEntry[] {
-  const grouped: GroupedPromptCardEntry[] = [];
-  const groups = new Map<string, GroupedPromptCardEntry>();
+export interface InteractionCardCategory {
+  kind: PromptCardData['kind'];
+  entries: PromptCardEntry[];
+}
+
+/** 只合并当前消息的同类卡片，提交身份仍由每张卡片与模型响应决定。 */
+export function groupInteractionCards(entries: PromptCardEntry[]): InteractionCardCategory[] {
+  const grouped: InteractionCardCategory[] = [];
+  const groups = new Map<PromptCardData['kind'], InteractionCardCategory>();
   for (const entry of entries) {
     const kind = entry.card.kind;
-    if (kind !== 'COMMAND' && kind !== 'PLAN') {
-      grouped.push(entry);
-    } else {
-      const existing = groups.get(kind);
-      if (existing) existing.approvals!.push(entry);
-      else {
-        const group = { ...entry, approvals: [entry] };
-        groups.set(kind, group);
-        grouped.push(group);
-      }
+    const existing = groups.get(kind);
+    if (existing) existing.entries.push(entry);
+    else {
+      const group = { kind, entries: [entry] };
+      groups.set(kind, group);
+      grouped.push(group);
     }
   }
   return grouped;

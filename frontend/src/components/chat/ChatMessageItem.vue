@@ -111,69 +111,8 @@
         </CollapseTransition>
       </div>
 
-      <!-- 统一互动卡片：PLAN / CHOICE / COMMAND 三类 PROMISE 卡片（含 UNAVAILABLE）。
-           渲染在过程折叠区之外，作为一等时间线项，确保用户可操作项不会被吞进折叠框。 -->
-      <template v-for="entry in groupedCardItems" :key="entry.id">
-        <ApprovalCardGroup
-          v-if="entry.approvals"
-          :kind="entry.card.kind === 'PLAN' ? 'PLAN' : 'COMMAND'"
-          :entries="entry.approvals"
-          :session-id="props.sessionId"
-          :is-dark="isDark"
-        />
-        <ChoiceQuestionGroup
-          v-else-if="entry.choices"
-          :entries="entry.choices"
-          :response-id="entry.responseId!"
-          :expected-count="props.message.toolCalls?.filter(call => call.responseId === entry.responseId && call.toolName === AgentToolName.RequireChoice).length ?? 0"
-          :is-dark="isDark"
-        />
-        <!-- 待决策卡片整卡展开（要按键）；已决卡片默认收成一行，细节按需展开 -->
-        <div v-else-if="!entry.card.pending" class="w-full">
-          <button
-            type="button"
-            @click="toggleCard(entry.id)"
-            class="w-full flex items-center gap-1.5 text-xs py-1 transition select-none text-left cursor-pointer min-w-0"
-            :class="isDark ? 'text-zinc-300 hover:text-zinc-100' : 'text-zinc-600 hover:text-zinc-900'"
-          >
-            <svg
-              :class="['w-3 h-3 transition-transform duration-200 shrink-0', isCardExpanded(entry.id) ? 'rotate-90' : '']"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-            </svg>
-            <!-- 已决卡片摘要：状态点 + 类型图标，与过程区灰字拉开层级 -->
-            <span :class="['w-1.5 h-1.5 rounded-full shrink-0', cardDotClass(resolveCardTone(entry.card))]"></span>
-            <svg
-              class="w-3.5 h-3.5 shrink-0 text-lx-muted"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" :d="cardKindIconPath(entry.card.kind)" />
-            </svg>
-            <span class="truncate">{{ cardSummary(entry.card) }}</span>
-          </button>
-          <CollapseTransition>
-            <div v-if="isCardExpanded(entry.id)">
-              <PromptCard
-                :prompt-card="entry.card"
-                :session-id="props.sessionId"
-                :is-dark="isDark"
-              />
-            </div>
-          </CollapseTransition>
-        </div>
-        <PromptCard
-          v-else
-          :prompt-card="entry.card"
-          :session-id="props.sessionId"
-          :is-dark="isDark"
-        />
-      </template>
+      <InteractionCards :entries="cardItems" :tool-calls="props.message.toolCalls"
+        :session-id="props.sessionId" :is-dark="isDark" />
 
       <!-- 上下文压缩提示：与「模型重试」是两件不同的事，各自有唯一实现 -->
       <transition name="context-compact-fade">
@@ -235,10 +174,8 @@
 import { ref, computed, inject } from 'vue';
 import { CHAT_MESSAGE_SLOTS_KEY } from '../../types/chatMessageSlots';
 import type { ChatMessageBodySlotProps, ChatMessageActionsSlotProps } from '../../types/chatMessageSlots';
-import type { ChatMessage, ToolCallTrace, SubSessionVO, ProcessTimelineItem, ChatTurn, PromptCardData } from '../../types/chat';
-import { toPromptCardData, buildCardSummary } from '../../utils/toolCallCard';
-import { cardDotClass, cardKindIconPath, resolveCardTone } from '../../utils/cardUi';
-import { AgentToolName } from '../../utils/toolNames';
+import type { ChatMessage, ToolCallTrace, SubSessionVO, ProcessTimelineItem, ChatTurn } from '../../types/chat';
+import { toPromptCardData } from '../../utils/toolCallCard';
 import { buildProcessTimeline } from '../../utils/processTimeline';
 import { buildProcessSegments, summarizeProcess } from '../../utils/processSegments';
 import { formatProcessStatus } from '../../utils/processHeadline';
@@ -253,10 +190,8 @@ import MarkdownRenderer from './MarkdownRenderer.vue';
 import MessageBodyDefault from './MessageBodyDefault.vue';
 import ModelRetryNotice from './ModelRetryNotice.vue';
 import DelegatedTaskMessage from './DelegatedTaskMessage.vue';
-import PromptCard from './PromptCard.vue';
-import ApprovalCardGroup from './ApprovalCardGroup.vue';
-import { groupApprovalCards, groupChoiceQuestions, type PromptCardEntry } from '../../utils/promptCardGroups';
-import ChoiceQuestionGroup from './ChoiceQuestionGroup.vue';
+import InteractionCards from './InteractionCards.vue';
+import type { PromptCardEntry } from '../../utils/promptCardGroups';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import ChatProcessSegment from './ChatProcessSegment.vue';
 
@@ -363,15 +298,6 @@ const cardItems = computed<PromptCardEntry[]>(() =>
     .filter(item => item.type === 'prompt_card' && !!item.card)
     .map(item => ({ id: item.id, responseId: item.responseId ?? undefined, card: toPromptCardData(item.card as NonNullable<ProcessTimelineItem['card']>) }))
 );
-const groupedCardItems = computed(() => groupChoiceQuestions(groupApprovalCards(cardItems.value)));
-
-/** 已决卡片默认收成一行（避免大卡片常驻页底占位），细节按需展开；待决策卡片整卡展开。 */
-const expandedCardIds = ref<Record<string, boolean>>({});
-const toggleCard = (id: string) => {
-  expandedCardIds.value[id] = !expandedCardIds.value[id];
-};
-const isCardExpanded = (id: string): boolean => !!expandedCardIds.value[id];
-const cardSummary = (card: PromptCardData): string => buildCardSummary(card);
 
 /**
  * 轮次是否**仍在运行**（权威判据，供「过程框展开态」与「工具条出现时机」共用）。

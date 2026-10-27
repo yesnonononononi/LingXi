@@ -640,6 +640,12 @@ export const messages: MessageSchema = {
       toolCall: {
         submitFailed: '提交决策失败',
       },
+      cards: {
+        title: '互动卡片',
+        count: '{count} 条',
+        pending: '{count} 条待处理',
+        otherTitle: '其他卡片',
+      },
       plan: {
         typeLabel: '计划',
         groupTitle: '计划审批',
@@ -670,6 +676,7 @@ export const messages: MessageSchema = {
       },
       choice: {
         groupTitle: '请确认以下问题',
+        categoryTitle: '提问',
         completedSummary: '提问：{count} 个问题 · 已结束',
         groupProgress: '已填写 {answered} / {total}',
         draftAnswered: '已填写',
@@ -1747,6 +1754,12 @@ export const messages: MessageSchema = {
       toolCall: {
         submitFailed: 'Failed to submit the decision',
       },
+      cards: {
+        title: 'Interaction cards',
+        count: '{count} items',
+        pending: '{count} pending',
+        otherTitle: 'Other cards',
+      },
       plan: {
         typeLabel: 'Plan',
         groupTitle: 'Plan approvals',
@@ -1777,6 +1790,7 @@ export const messages: MessageSchema = {
       },
       choice: {
         groupTitle: 'Confirm these questions',
+        categoryTitle: 'Questions',
         completedSummary: 'Questions: {count} · Resolved',
         groupProgress: '{answered} / {total} answered',
         draftAnswered: 'Answered',
