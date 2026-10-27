@@ -155,7 +155,7 @@ class QaDelegationLifecycleInterleavingTest {
         assertTrue(registry.registerPendingChild(ROOT_SESSION_ID, CHILD_SESSION_ID));
 
         InterceptorResult beforeAbandon = waitInterceptor.onBeforeComplete(rootLoopContext());
-        assertFalse(beforeAbandon.shouldContinue(), "子任务已受理但没开跑时，根不得自然完成");
+        assertFalse(beforeAbandon.next(), "子任务已受理但没开跑时，根不得自然完成");
         assertEquals(LoopResult.Status.SUSPENDED, beforeAbandon.loopResult().status());
 
         // 子执行从未建立（落库前失败）：兜底结束事实移除待启动登记并在根活跃时保留唤醒。
@@ -241,7 +241,7 @@ class QaDelegationLifecycleInterleavingTest {
         assertTrue(registry.hasUnfinishedChildren(ROOT_SESSION_ID), "等审批的子执行仍是未结束子执行");
 
         InterceptorResult whileWaiting = waitInterceptor.onBeforeComplete(rootLoopContext());
-        assertFalse(whileWaiting.shouldContinue(), "有等审批的子执行时根不得收尾");
+        assertFalse(whileWaiting.next(), "有等审批的子执行时根不得收尾");
         assertResumedCount(0);
 
         suspendRoot();

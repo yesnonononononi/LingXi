@@ -59,7 +59,7 @@ class AgenticLoopInterceptorTest {
 
         verifyNoInteractions(emailService);
         assertTrue(appended.isEmpty());
-        assertTrue(result.shouldContinue(), "跳过注入只是不消费邮箱，不该中断这一轮");
+        assertTrue(result.next(), "跳过注入只是不消费邮箱，不该中断这一轮");
     }
 
     @Test
@@ -69,7 +69,7 @@ class AgenticLoopInterceptorTest {
                 context("900", Map.of(ExecutionAttributes.AGENT_ID, "7"), new ArrayList<>()));
 
         verifyNoInteractions(emailService);
-        assertTrue(result.shouldContinue());
+        assertTrue(result.next());
     }
 
     @Test

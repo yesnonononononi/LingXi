@@ -73,7 +73,7 @@ class SubAgentWaitInterceptorTest {
 
         InterceptorResult result = interceptor.onBeforeComplete(context);
 
-        assertTrue(result.shouldContinue(), "子执行收尾就是它自己的结束，必须放行");
+        assertTrue(result.next(), "子执行收尾就是它自己的结束，必须放行");
         verifyNoInteractions(registry);
         verifyNoInteractions(emailService);
     }
@@ -97,7 +97,7 @@ class SubAgentWaitInterceptorTest {
 
         InterceptorResult result = interceptor.onBeforeComplete(rootContext());
 
-        assertTrue(result.shouldContinue());
+        assertTrue(result.next());
         verify(registry).hasUnfinishedChildren(ROOT_SESSION_ID);
         verify(emailService).hasPending(ROOT_SESSION_ID, ROOT_AGENT_ID);
         verify(resumeCoordinator, never()).accept(org.mockito.ArgumentMatchers.anyLong());
@@ -111,7 +111,7 @@ class SubAgentWaitInterceptorTest {
 
         InterceptorResult result = interceptor.onBeforeComplete(rootContext());
 
-        assertFalse(result.shouldContinue(), "有未结束子代理时必须驻留，不能自然完成");
+        assertFalse(result.next(), "有未结束子代理时必须驻留，不能自然完成");
         assertNotNull(result.loopResult(), "驻留分支必须返回一个非 NONE 的结果");
         assertEquals(LoopResult.Status.SUSPENDED, result.loopResult().status(),
                 "只有 SUSPENDED 才可被框架 resume；COMPLETED 会永久锁死邮箱");
@@ -127,7 +127,7 @@ class SubAgentWaitInterceptorTest {
 
         InterceptorResult result = interceptor.onBeforeComplete(rootContext());
 
-        assertFalse(result.shouldContinue());
+        assertFalse(result.next());
         assertEquals(LoopResult.Status.SUSPENDED, result.loopResult().status());
         verify(resumeCoordinator).accept(900L);
     }
@@ -140,7 +140,7 @@ class SubAgentWaitInterceptorTest {
         InterceptorResult result = interceptor.onBeforeComplete(context("900",
                 Map.of(ExecutionAttributes.SESSION_ID, String.valueOf(ROOT_SESSION_ID))));
 
-        assertFalse(result.shouldContinue());
+        assertFalse(result.next());
         verify(emailService, never()).hasPending(org.mockito.ArgumentMatchers.anyLong(),
                 org.mockito.ArgumentMatchers.anyLong());
     }
