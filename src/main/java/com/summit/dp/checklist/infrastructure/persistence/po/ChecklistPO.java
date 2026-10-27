@@ -1,6 +1,8 @@
 package com.summit.dp.checklist.infrastructure.persistence.po;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -29,7 +31,9 @@ public class ChecklistPO {
     private boolean remindStatus;
     /** 步骤实际推进次数；结构修改不递增 */
     private long progressVersion;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private Long remindExecutionId;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private Long remindedProgressVersion;
     private Instant createAt;
     private Instant updateAt;

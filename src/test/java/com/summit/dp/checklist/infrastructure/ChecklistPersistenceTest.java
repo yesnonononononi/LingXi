@@ -6,6 +6,7 @@ import com.summit.dp.checklist.application.ChecklistVO;
 import com.summit.dp.checklist.application.ReminderDecision;
 import com.summit.dp.checklist.domain.model.Checklist;
 import com.summit.dp.checklist.domain.model.ChecklistStatus;
+import com.summit.dp.checklist.domain.model.ChecklistStep;
 import com.summit.dp.checklist.infrastructure.persistence.mapper.ChecklistMapper;
 import com.summit.dp.checklist.infrastructure.persistence.po.ChecklistPO;
 import com.summit.dp.checklist.infrastructure.repository.ChecklistRepositoryImpl;
@@ -23,8 +24,12 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.spy;
 
 /**
  * 清单持久化与真实 H2 约束（建表走仓库根 init.sql，不另建测试 schema）。
@@ -139,11 +144,36 @@ class ChecklistPersistenceTest {
                 ChecklistCommand.updateStep(SESSION_ID, null, firstStep, "COMPLETED"));
         assertFalse(repository.findByIdWithSteps(checklistId).orElseThrow().isRemindStatus(),
                 "同事务必须把 remind_status 置回 FALSE");
+        Checklist reset = repository.findByIdWithSteps(checklistId).orElseThrow();
+        assertNull(reset.getRemindExecutionId(), "数据库中的旧提醒执行必须清空");
+        assertNull(reset.getRemindedProgressVersion(), "数据库中的旧提醒版本必须清空");
         assertEquals(1L, advanced.getProgressVersion());
 
         ChecklistVO repeated = service.updateStep(
                 ChecklistCommand.updateStep(SESSION_ID, null, firstStep, "COMPLETED"));
         assertEquals(1L, repeated.getProgressVersion(), "重复提交不得递增进展版本");
+    }
+
+    @Test
+    void failedStepWriteRollsBackChecklistProgressAndReminderFields() {
+        ChecklistVO created = service.create(ChecklistCommand.create(SESSION_ID, null, "回滚", List.of("一步", "两步")));
+        repository.claimReminder(created.getChecklistId(), EXECUTION_ID);
+        ChecklistRepositoryImpl failing = spy(repository);
+        doAnswer(invocation -> {
+            invocation.callRealMethod();
+            throw new ClientException("模拟步骤写入失败");
+        }).when(failing).updateStep(any(ChecklistStep.class));
+        ChecklistService faultedService = fixture.serviceWithRepository(failing);
+
+        assertThrows(ClientException.class, () -> faultedService.updateStep(ChecklistCommand.updateStep(
+                SESSION_ID, created.getChecklistId(), created.getSteps().getFirst().getStepId(), "COMPLETED")));
+
+        Checklist reloaded = repository.findByIdWithSteps(created.getChecklistId()).orElseThrow();
+        assertEquals(0L, reloaded.getProgressVersion());
+        assertTrue(reloaded.isRemindStatus());
+        assertEquals(EXECUTION_ID, reloaded.getRemindExecutionId());
+        assertEquals(0L, reloaded.getRemindedProgressVersion());
+        assertTrue(reloaded.getSteps().getFirst().isPending());
     }
 
     @Test

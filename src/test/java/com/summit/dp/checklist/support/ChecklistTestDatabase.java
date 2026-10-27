@@ -14,31 +14,31 @@ import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
+import org.springframework.aop.framework.ProxyFactory;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
+import org.springframework.transaction.interceptor.TransactionInterceptor;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.UUID;
 
-/**
- * 清单测试夹具：真 H2（MODE=MySQL）+ 仓库根 init.sql + 真 Mapper + 真服务。
- *
- * <p>刻意不用 Spring 容器也不需要手工建表脚本：建表走的就是生产那份 init.sql，
- * 这样「派生列 + 唯一索引真的存在」才有意义——测试自建 schema 恰好会掩盖这类差异。</p>
- *
- * <p>事务边界没有代理：服务上的 {@code @Transactional} 在裸 new 的情况下不生效，
- * 而这正好用来观察单条语句的原子性（CAS 影响行数、唯一索引冲突）。</p>
- */
+/** 使用生产建表脚本及事务代理，避免自动提交掩盖聚合锁与回滚缺陷。 */
 public final class ChecklistTestDatabase implements AutoCloseable {
 
     private final EmbeddedDatabase database;
     private final ChecklistMapper mapper;
     private final ChecklistRepositoryImpl repository;
     private final ChecklistService service;
+    private final DataSourceTransactionManager transactionManager;
 
     private ChecklistTestDatabase(EmbeddedDatabase database, ChecklistMapper mapper,
-                                 ChecklistRepositoryImpl repository, ChecklistService service) {
+                                 ChecklistRepositoryImpl repository, ChecklistService service,
+                                 DataSourceTransactionManager transactionManager) {
         this.database = database;
         this.mapper = mapper;
         this.repository = repository;
         this.service = service;
+        this.transactionManager = transactionManager;
     }
 
     /** 起一个独立内存库，避免用例之间互相污染唯一索引。 */
@@ -62,7 +62,9 @@ public final class ChecklistTestDatabase implements AutoCloseable {
             ChecklistMapper mapper = template.getMapper(ChecklistMapper.class);
             ChecklistRepositoryImpl repository = new ChecklistRepositoryImpl(mapper,
                     template.getMapper(ChecklistStepMapper.class));
-            return new ChecklistTestDatabase(database, mapper, repository, new ChecklistServiceImpl(repository));
+            DataSourceTransactionManager transactionManager = new DataSourceTransactionManager(database);
+            ChecklistService service = transactionalService(new ChecklistServiceImpl(repository), transactionManager);
+            return new ChecklistTestDatabase(database, mapper, repository, service, transactionManager);
         } catch (Exception e) {
             throw new IllegalStateException("清单测试库启动失败", e);
         }
@@ -78,6 +80,24 @@ public final class ChecklistTestDatabase implements AutoCloseable {
 
     public ChecklistService service() {
         return service;
+    }
+
+    public ChecklistService serviceWithRepository(ChecklistRepositoryImpl replacement) {
+        return transactionalService(new ChecklistServiceImpl(replacement), transactionManager);
+    }
+
+    public TransactionTemplate transaction() {
+        return new TransactionTemplate(transactionManager);
+    }
+
+    private static ChecklistService transactionalService(ChecklistService target,
+                                                         DataSourceTransactionManager transactionManager) {
+        TransactionInterceptor interceptor = new TransactionInterceptor();
+        interceptor.setTransactionManager(transactionManager);
+        interceptor.setTransactionAttributeSource(new AnnotationTransactionAttributeSource());
+        ProxyFactory proxy = new ProxyFactory(target);
+        proxy.addAdvice(interceptor);
+        return (ChecklistService) proxy.getProxy();
     }
 
     @Override
