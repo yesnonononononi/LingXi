@@ -179,8 +179,14 @@ const collect = (ctx, lit, mode) => {
 
 /** 三元配对（暗侧/亮侧各一个单引号字面量） */
 const TERNARY_RE = /\?\s*'([^'\\\n]*)'\s*:\s*'([^'\\\n]*)'/g;
-/** 字符串字面量：单引号优先，其次双引号（属性值也是「字符串字面量」，与 class='...' 同权） */
-const LITERAL_RE = /'([^'\\\n]{1,400})'|"([^"\\\n]{1,400})"/g;
+/**
+ * 字符串字面量：单引号优先，其次双引号（属性值也是「字符串字面量」，与 class='...' 同权）。
+ *
+ * 长度上限 2000（原为 400）：`src/components/common/SpecularButton.vue:276` 是 632 字符的单引号
+ * 类串，被 400 上限整行漏掉 ⇒ 该行里的 `border-gray-200` 对门禁完全不可见（变异 M5 逃逸）。
+ * 修法是放宽门禁自己的上限，**不是**把生产代码的字面量拆开去迁就门禁（主理人裁决 D2）。
+ */
+const LITERAL_RE = /'([^'\\\n]{1,2000})'|"([^"\\\n]{1,2000})"/g;
 
 /**
  * 扫一段源码文本，把三元分支 / 中性字面量 / 字面量类分别累积进分组结果。
@@ -1293,6 +1299,19 @@ const selftest = (ctx) => {
   check('dark: 变体改值 → 必红', !eqPair("const c = 'text-gray-500 dark:text-zinc-400'", "const c = 'text-gray-500 dark:text-zinc-500'"));
   check('状态变体 hover: 改值 → 必红', !eqPair("const c = 'hover:bg-black/5'", "const c = 'hover:bg-black/10'"));
   check('近色不得被容差放过（zinc-400 vs gray-400，差 6/255）', !eqPair("const c = 'text-gray-400 dark:text-zinc-400'", "const c = 'text-gray-400'"));
+
+  // ---- 超长字面量（>400 字符）里的类必须可见（2026-10-27 修门禁根因，裁决 D2）----
+  // 历史盲区：`LITERAL_RE` 上限曾是 {1,400}，而 `SpecularButton.vue:276` 是 632 字符的单引号类串，
+  // 该行命中 0 次 ⇒ 里面的 `border-gray-200` 对门禁完全不可见（变异 M5 逃逸，改档也抓不到）。
+  // 修法是放宽上限（不是拆生产代码的字面量）。这条用例把结论钉死：上限一旦被改回 <632 它立刻变红。
+  const longPad = 'tracking-wide '.repeat(40).trim();
+  const longCase = "const c = 'border-gray-200 " + longPad + "'";
+  const gLong = groupsOf(ctx, longCase);
+  check(
+    '超长字面量（>' + 400 + ' 字符）内的灰阶类必须被解析出来',
+    longCase.length > 400 && gLong.light.length === 1 && gLong.light[0].cls === 'border-gray-200',
+    'literalLen=' + longCase.length + ' light=' + JSON.stringify(gLong.light.map((e) => [e.cls, e.value]))
+  );
 
   // ---- 同前缀（hover:）相邻对折叠（2026-10-23 补）----
   // 「等价折叠必须绿」已由上方 base+dark:hover / base+dark:focus 两条覆盖；
