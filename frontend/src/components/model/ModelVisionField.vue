@@ -16,7 +16,7 @@ const id = useId();
         @change="emit('update:modelValue', ($event.target as HTMLInputElement).checked)" />
       {{ t('settings.models.visionLabel') }}
     </label>
-    <p :id="`${id}-help`" class="text-xs leading-relaxed" :class="isDark ? 'text-zinc-400' : 'text-gray-600'">{{ t('settings.models.visionHelp') }}</p>
+    <p :id="`${id}-help`" class="text-xs leading-relaxed" :class="isDark ? 'text-zinc-400' : 'text-zinc-600'">{{ t('settings.models.visionHelp') }}</p>
     <p :id="`${id}-warning`" role="note" class="text-xs leading-relaxed" :class="isDark ? 'text-amber-300' : 'text-amber-800'">{{ t('settings.models.visionWarning') }}</p>
   </div>
 </template>

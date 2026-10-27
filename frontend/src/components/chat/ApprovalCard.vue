@@ -123,7 +123,7 @@ const handleReject = () => submit(false);
             v-if="isResolved"
             type="button"
             @click="isCollapsed = !isCollapsed"
-            class="p-1 text-zinc-400 hover:text-gray-600 dark:hover:text-zinc-200 rounded transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50"
+            class="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50"
                         :title="isCollapsed ? t('common.expand') : t('common.collapse')"
                         :aria-label="isCollapsed ? t('chat.approval.expandCard') : t('chat.approval.collapseCard')"
           >
@@ -136,7 +136,7 @@ const handleReject = () => submit(false);
             v-if="isResolved"
             type="button"
             @click="isDismissed = true"
-            class="p-1 text-zinc-400 hover:text-gray-600 dark:hover:text-zinc-200 rounded transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50"
+            class="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50"
                         :title="t('common.close')"
             :aria-label="t('chat.approval.closeCard')"
           >

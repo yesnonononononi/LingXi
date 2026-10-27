@@ -54,7 +54,7 @@ const selectedModel = computed<string | number>({
         : 'border-amber-300 bg-amber-50 text-amber-700')
       : (props.isDark
         ? 'border-white/15 text-zinc-300 hover:bg-white/10 hover:text-zinc-100'
-        : 'border-zinc-200 text-gray-600 hover:bg-black/5 hover:text-gray-900')"
+        : 'border-zinc-200 text-zinc-600 hover:bg-black/5 hover:text-gray-900')"
     :title="props.drivenModel.tip"
     :aria-label="props.drivenModel.tip"
     @mousedown.prevent

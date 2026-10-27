@@ -78,7 +78,7 @@ const emit = defineEmits<{
 
           <button
             @click="emit('close')"
-            :class="['p-1.5 rounded-lg text-zinc-400 hover:text-gray-600 dark:hover:text-zinc-200 hover:bg-white/5 transition cursor-pointer']"
+            :class="['p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-white/5 transition cursor-pointer']"
             :title="t('chat.subSessions.closeTip')"
           >
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -126,7 +126,7 @@ const emit = defineEmits<{
                     <h4 class="font-semibold text-sm truncate group-hover:text-cyan-400 transition-colors">
                       {{ sub.agentName || (sub.agentId ? `Agent #${sub.agentId}` : t('chat.subSessions.fallbackName')) }}
                     </h4>
-                    <span :class="['text-[10px] px-1.5 py-0.2 rounded-full font-mono', isDark ? 'bg-gray-800 text-zinc-300' : 'bg-zinc-100 text-gray-600']">
+                    <span :class="['text-[10px] px-1.5 py-0.2 rounded-full font-mono', isDark ? 'bg-gray-800 text-zinc-300' : 'bg-zinc-100 text-zinc-600']">
                       #{{ sub.id }}
                     </span>
                   </div>

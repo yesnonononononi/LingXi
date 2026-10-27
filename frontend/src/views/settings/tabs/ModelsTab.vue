@@ -251,7 +251,7 @@ const addRowClass = computed(() => [
             type="button"
             @click="cancelForm"
             :title="t('settings.models.backToList')"
-            :class="['p-1 rounded-lg text-zinc-400 hover:text-gray-600 dark:hover:text-zinc-200 transition cursor-pointer', isDark ? 'hover:bg-white/5' : 'hover:bg-black/5']"
+            :class="['p-1 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition cursor-pointer', isDark ? 'hover:bg-white/5' : 'hover:bg-black/5']"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
@@ -312,7 +312,7 @@ const addRowClass = computed(() => [
             <button
               type="button"
               @click="showApiKey = !showApiKey"
-              class="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-gray-600 dark:hover:text-zinc-200 cursor-pointer p-1"
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer p-1"
               :title="showApiKey ? t('settings.models.hideKey') : t('settings.models.showKey')"
             >
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -360,7 +360,7 @@ const addRowClass = computed(() => [
             type="button"
             @click="cancelForm"
             :title="t('settings.models.backToList')"
-            :class="['p-1 rounded-lg text-zinc-400 hover:text-gray-600 dark:hover:text-zinc-200 transition cursor-pointer', isDark ? 'hover:bg-white/5' : 'hover:bg-black/5']"
+            :class="['p-1 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition cursor-pointer', isDark ? 'hover:bg-white/5' : 'hover:bg-black/5']"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
@@ -408,7 +408,7 @@ const addRowClass = computed(() => [
               :class="[
                 'px-3 py-2 rounded-xl text-xs font-medium shrink-0 flex items-center gap-1.5 transition border cursor-pointer select-none',
                 isFetchingRemoteModels
-                  ? 'opacity-60 cursor-not-allowed border-zinc-300 dark:border-gray-600 bg-zinc-100 dark:bg-black text-zinc-400'
+                  ? 'opacity-60 cursor-not-allowed border-zinc-300 dark:border-zinc-600 bg-zinc-100 dark:bg-black text-zinc-400'
                   : (isDark
                       ? 'border-white/20 bg-white/[0.06] text-sky-400 hover:bg-white/[0.12]'
                       : 'border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100/80')
@@ -509,7 +509,7 @@ const addRowClass = computed(() => [
             <button
               type="button"
               @click="showApiKey = !showApiKey"
-              class="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-gray-600 dark:hover:text-zinc-200 cursor-pointer p-1"
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer p-1"
               :title="showApiKey ? t('settings.models.hideKey') : t('settings.models.showKey')"
             >
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -58,7 +58,7 @@
         <button
           data-testid="user-message-copy"
           @click="copyContent"
-          class="hover:text-gray-600 dark:hover:text-zinc-200 transition p-0.5"
+          class="hover:text-zinc-600 dark:hover:text-zinc-200 transition p-0.5"
           :title="copied ? t('common.copied') : t('chat.message.copyContent')"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -68,7 +68,7 @@
         <button v-if="!props.message.unsent && props.message.turnId"
           type="button" data-testid="edit-resend" :disabled="!props.canResend || !props.message.serverMessageId"
           :aria-label="t('chat.controls.editResend')" :title="resendTitle" @click="emit('editResend', props.message)"
-          class="hover:text-gray-600 dark:hover:text-zinc-200 transition p-0.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+          class="hover:text-zinc-600 dark:hover:text-zinc-200 transition p-0.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
           <svg class="w-3.5 h-3.5" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="m16 4 4 4M4 20l4.5-1 12-12a2.8 2.8 0 0 0-4-4l-12 12L4 20Z" />
           </svg>
@@ -133,7 +133,7 @@
             type="button"
             @click="toggleCard(entry.id)"
             class="w-full flex items-center gap-1.5 text-xs py-1 transition select-none text-left cursor-pointer min-w-0"
-            :class="isDark ? 'text-zinc-300 hover:text-zinc-100' : 'text-gray-600 hover:text-gray-900'"
+            :class="isDark ? 'text-zinc-300 hover:text-zinc-100' : 'text-zinc-600 hover:text-gray-900'"
           >
             <svg
               :class="['w-3 h-3 transition-transform duration-200 shrink-0', isCardExpanded(entry.id) ? 'rotate-90' : '']"

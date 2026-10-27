@@ -47,7 +47,7 @@
         <button
           type="button"
           @click="emit('retryInitialLoad')"
-          :class="['px-2.5 py-1 rounded-lg border text-xs cursor-pointer', isDark ? 'border-gray-700 hover:bg-gray-800 text-zinc-300' : 'border-zinc-300 hover:bg-zinc-100 text-gray-600']"
+          :class="['px-2.5 py-1 rounded-lg border text-xs cursor-pointer', isDark ? 'border-gray-700 hover:bg-gray-800 text-zinc-300' : 'border-zinc-300 hover:bg-zinc-100 text-zinc-600']"
         >
                     {{ t('common.retry') }}
         </button>

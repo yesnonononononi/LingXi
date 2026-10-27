@@ -61,7 +61,7 @@ const classes = computed(() => {
     emerald: 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs',
     blue: 'bg-blue-600 hover:bg-blue-500 text-white shadow-xs',
     danger: 'bg-red-600 hover:bg-red-500 text-white shadow-xs',
-    neutral: props.isDark ? 'bg-gray-700 hover:bg-gray-600 text-white shadow-xs' : 'bg-gray-800 hover:bg-gray-700 text-white shadow-xs'
+    neutral: props.isDark ? 'bg-gray-700 hover:bg-zinc-600 text-white shadow-xs' : 'bg-gray-800 hover:bg-gray-700 text-white shadow-xs'
   }[props.tone];
   return [base, solid, ring];
 });

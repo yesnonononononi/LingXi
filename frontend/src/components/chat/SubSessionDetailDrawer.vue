@@ -226,7 +226,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
             <button
               v-if="messages.length > 0"
               @click="copyAllContent"
-              :class="['px-2.5 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition cursor-pointer', isDark ? 'border-white/15 hover:bg-white/5 text-zinc-300' : 'border-zinc-200 hover:bg-zinc-100 text-gray-600']"
+              :class="['px-2.5 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition cursor-pointer', isDark ? 'border-white/15 hover:bg-white/5 text-zinc-300' : 'border-zinc-200 hover:bg-zinc-100 text-zinc-600']"
               :title="copied ? t('chat.subSession.copyAllDone') : t('chat.subSession.copyAll')"
             >
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -238,7 +238,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
             <!-- 关闭按钮 -->
             <button
               @click="emit('close')"
-              :class="['p-1.5 rounded-lg text-zinc-400 hover:text-gray-600 dark:hover:text-zinc-200 hover:bg-white/5 transition cursor-pointer']"
+              :class="['p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-white/5 transition cursor-pointer']"
               :title="t('chat.subSession.closeDetail')"
             >
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -289,7 +289,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
             <button
               type="button"
               @click="loadMessages"
-              :class="['px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer', isDark ? 'border-[#2c374d] hover:bg-[#1f2838] text-zinc-300' : 'border-zinc-200 hover:bg-zinc-100 text-gray-600']"
+              :class="['px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer', isDark ? 'border-[#2c374d] hover:bg-[#1f2838] text-zinc-300' : 'border-zinc-200 hover:bg-zinc-100 text-zinc-600']"
             >
               {{ t('common.retry') }}
             </button>

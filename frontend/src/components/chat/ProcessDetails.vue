@@ -141,7 +141,7 @@ const subAgentMemberTitle = (tc: ToolCallTrace, idx: number): string => {
  * （样式集中在此的理由同 {@link toolStatusDotClass}：模板里只保留一次类绑定，避免分支散落。）
  */
 const toolRowHeaderClass = (tc: ToolCallTrace, dark: boolean): string[] => {
-  const base = dark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-600';
+  const base = dark ? 'text-zinc-200 text-glow-subtle' : 'text-zinc-600';
   if (!canExpandTool(tc)) {
     return [base, 'cursor-default'];
   }
@@ -504,7 +504,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                         <div v-else-if="isToolInProgress(item.tool.status)" class="font-mono text-xs text-zinc-400">{{ t('chat.message.toolInProgress') }}</div>
                         <pre
                           v-else-if="shouldShowToolArguments(item.tool.toolName) && item.tool.query"
-                          :class="['font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto select-text', isDark ? 'text-zinc-400' : 'text-gray-600']"
+                          :class="['font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto select-text', isDark ? 'text-zinc-400' : 'text-zinc-600']"
                         >{{ item.tool.query }}</pre>
                         <div v-else class="text-xs text-zinc-400 font-mono">
                                                     {{ t('chat.message.noOutput') }}

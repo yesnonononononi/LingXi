@@ -201,7 +201,7 @@ const {
 
               <!-- 团队成员标签列表 -->
               <div class="pt-1">
-                <div class="text-[11px] font-medium text-gray-600 dark:text-zinc-400 mb-1 flex items-center gap-1.5">
+                <div class="text-[11px] font-medium text-zinc-600 dark:text-zinc-400 mb-1 flex items-center gap-1.5">
                   <span>{{ t('settings.teams.membersLabel') }}</span>
                 </div>
                 <div v-if="team.agents && team.agents.length > 0" class="flex flex-wrap gap-1.5">

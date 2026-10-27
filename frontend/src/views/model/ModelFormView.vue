@@ -155,12 +155,12 @@ const headerClass = computed(() => [
 ]);
 const themeBtnClass = computed(() => [
   'p-2 rounded-xl border transition',
-  isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-yellow-400 hover:bg-[#202738]' : 'bg-zinc-50 border-zinc-200 text-gray-600 hover:bg-zinc-100',
+  isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-yellow-400 hover:bg-[#202738]' : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:bg-zinc-100',
 ]);
 const mutedText = computed(() => (isDark.value ? 'mt-1 text-xs text-zinc-400' : 'mt-1 text-xs text-zinc-500'));
 const btnClass = computed(() => [
   'px-3 py-1.5 rounded-lg text-xs border transition disabled:opacity-40 disabled:cursor-not-allowed',
-  isDark.value ? 'border-[#2d3a54] text-zinc-300 hover:bg-white/5' : 'border-zinc-300 text-gray-600 hover:bg-black/5',
+  isDark.value ? 'border-[#2d3a54] text-zinc-300 hover:bg-white/5' : 'border-zinc-300 text-zinc-600 hover:bg-black/5',
 ]);
 const cardClass = computed(() => ['rounded-2xl border overflow-hidden', isDark.value ? 'border-[#273043] bg-[#0f1420]' : 'border-zinc-200 bg-white']);
 const dividerClass = computed(() => (isDark.value ? 'border-[#273043]' : 'border-zinc-200'));

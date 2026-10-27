@@ -181,7 +181,7 @@ const decide = async (approved: boolean) => {
           @click="goToChatInput"
           :class="[
             'text-xs sm:text-sm font-normal transition flex items-center gap-1.5 cursor-pointer rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50',
-            isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-gray-600 hover:text-gray-900'
+            isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-600 hover:text-gray-900'
           ]"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">

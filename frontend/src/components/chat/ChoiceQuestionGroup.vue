@@ -126,21 +126,21 @@ async function submit() {
         <template v-if="entries.length > 1">
           <button type="button" :disabled="activeIndex <= 0" :aria-label="t('chat.choice.previous')"
             class="rounded-md p-1 transition disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default"
-            :class="isDark ? 'text-zinc-400 hover:bg-white/10 hover:text-white' : 'text-zinc-400 hover:bg-zinc-100 hover:text-gray-600'"
+            :class="isDark ? 'text-zinc-400 hover:bg-white/10 hover:text-white' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600'"
             data-testid="choice-previous" @click="navigate(-1)">
             <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m15 5-7 7 7 7" /></svg>
           </button>
           <span class="min-w-8 text-center text-xs tabular-nums" :class="isDark ? 'text-zinc-300 text-glow-subtle' : 'text-zinc-500'" role="status">{{ activeIndex + 1 }} / {{ total }}</span>
           <button type="button" :disabled="activeIndex >= entries.length - 1" :aria-label="t('chat.choice.next')"
             class="rounded-md p-1 transition disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default"
-            :class="isDark ? 'text-zinc-400 hover:bg-white/10 hover:text-white' : 'text-zinc-400 hover:bg-zinc-100 hover:text-gray-600'"
+            :class="isDark ? 'text-zinc-400 hover:bg-white/10 hover:text-white' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600'"
             data-testid="choice-next" @click="navigate(1)">
             <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 5 7 7-7 7" /></svg>
           </button>
         </template>
         <button v-if="closable" type="button" :title="t('common.close')" :aria-label="t('common.close')"
           class="ml-1 rounded-md p-1 transition cursor-pointer"
-          :class="isDark ? 'text-zinc-400 hover:bg-white/10 hover:text-white' : 'text-zinc-400 hover:bg-zinc-100 hover:text-gray-600'"
+          :class="isDark ? 'text-zinc-400 hover:bg-white/10 hover:text-white' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600'"
           data-testid="choice-dismiss" @click="dismissed = true">
           <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18 18 6M6 6l12 12" /></svg>
         </button>
@@ -167,7 +167,7 @@ async function submit() {
                 : (isDark ? 'bg-white/10 text-zinc-300' : 'bg-zinc-100 text-zinc-500')">{{ index + 1 }}</span>
             <span class="min-w-0 flex-1 whitespace-pre-wrap break-words"
               :class="isDark ? (draft.selected === index && !draft.useCustom ? 'text-white text-glow-white' : 'text-zinc-200 text-glow-subtle') : ''">{{ option }}</span>
-            <svg class="h-3.5 w-3.5 shrink-0 transition-colors" :class="!draft.useCustom && draft.selected === index ? (isDark ? 'text-white' : 'text-blue-500') : (isDark ? 'text-gray-600' : 'text-zinc-300')"
+            <svg class="h-3.5 w-3.5 shrink-0 transition-colors" :class="!draft.useCustom && draft.selected === index ? (isDark ? 'text-white' : 'text-blue-500') : (isDark ? 'text-zinc-600' : 'text-zinc-300')"
               fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 5 7 7-7 7" /></svg>
           </button>
         </div>

@@ -467,7 +467,7 @@ const handleSaveTeam = async () => {
               <button
                 type="button"
                 @click="closeAgentForm"
-                class="text-zinc-400 hover:text-gray-600 dark:hover:text-zinc-200 cursor-pointer"
+                class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
               >
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -486,7 +486,7 @@ const handleSaveTeam = async () => {
 
             <div class="grid grid-cols-2 gap-2">
               <div>
-                <label class="block text-gray-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentNameLabel') }}</label>
+                <label class="block text-zinc-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentNameLabel') }}</label>
                 <input
                   v-model="agentFormName"
                   :placeholder="t('chat.team.agentNamePlaceholder')"
@@ -497,7 +497,7 @@ const handleSaveTeam = async () => {
                 />
               </div>
               <div>
-                <label class="block text-gray-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentModelLabel') }}</label>
+                <label class="block text-zinc-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentModelLabel') }}</label>
                 <select
                   v-model="agentFormModelId"
                   :class="[
@@ -513,7 +513,7 @@ const handleSaveTeam = async () => {
             </div>
 
             <div>
-              <label class="block text-gray-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentDescLabel') }}</label>
+              <label class="block text-zinc-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentDescLabel') }}</label>
               <input
                 v-model="agentFormDesc"
                 :placeholder="t('chat.team.agentDescPlaceholder')"
@@ -525,7 +525,7 @@ const handleSaveTeam = async () => {
             </div>
 
             <div>
-              <label class="block text-gray-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentPromptLabel') }}</label>
+              <label class="block text-zinc-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentPromptLabel') }}</label>
               <textarea
                 v-model="agentFormPrompt"
                 rows="2"
@@ -540,7 +540,7 @@ const handleSaveTeam = async () => {
             <!-- 工具分配 -->
             <div>
               <div class="flex items-center justify-between mb-1">
-                <label class="block text-gray-600 dark:text-zinc-400 font-medium">
+                <label class="block text-zinc-600 dark:text-zinc-400 font-medium">
                   {{ t('chat.team.assignTools') }}
                   <span class="text-[11px] font-normal text-zinc-500 ml-1">
                     {{ t('chat.team.assignedCount', { selected: agentFormToolList.length, total: availableTools.length }) }}
@@ -861,7 +861,7 @@ const handleSaveTeam = async () => {
             @click="emit('close')"
             :class="[
               'px-4 py-1.5 text-xs rounded-xl border transition cursor-pointer',
-              isDark ? 'border-white/15 text-zinc-300 hover:bg-white/5' : 'border-zinc-300 text-gray-600 hover:bg-zinc-100'
+              isDark ? 'border-white/15 text-zinc-300 hover:bg-white/5' : 'border-zinc-300 text-zinc-600 hover:bg-zinc-100'
             ]"
           >
             {{ t('common.cancel') }}

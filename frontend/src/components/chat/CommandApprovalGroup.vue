@@ -31,7 +31,7 @@ watch(() => pendingEntries.value.map(entry => entry.id), async (ids, previous = 
     <button
       type="button"
       class="flex w-full min-w-0 items-center gap-2 rounded-lg px-1 py-2 text-left text-xs transition cursor-pointer"
-      :class="isDark ? 'text-zinc-300 hover:bg-white/5' : 'text-gray-600 hover:bg-zinc-50'"
+      :class="isDark ? 'text-zinc-300 hover:bg-white/5' : 'text-zinc-600 hover:bg-zinc-50'"
       :aria-expanded="expanded"
       :aria-controls="listId"
       data-testid="command-approval-toggle"

@@ -193,7 +193,7 @@ const {
                   'px-2 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer',
                   isDark
                     ? 'text-zinc-300 hover:bg-white/5'
-                    : 'text-gray-600 hover:bg-black/5'
+                    : 'text-zinc-600 hover:bg-black/5'
                 ]"
               >
                 {{ item.status === 0 ? t('settings.mcp.enable') : t('settings.mcp.disable') }}
@@ -297,7 +297,7 @@ const {
                 ? 'bg-cyan-600 border-cyan-500 text-white shadow-[0_0_12px_rgba(8,145,178,0.4)]'
                 : (isDark
                     ? 'border-white/15 text-zinc-300 hover:bg-white/5'
-                    : 'border-zinc-200 text-gray-600 hover:bg-zinc-50')
+                    : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50')
             ]"
           >
             {{ t }}
