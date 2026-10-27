@@ -1,35 +1,24 @@
 package com.summit.dp.checklist.infrastructure;
 
-import com.baomidou.mybatisplus.core.MybatisConfiguration;
-import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
-import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
-import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.checklist.application.ChecklistCommand;
 import com.summit.dp.checklist.application.ChecklistService;
 import com.summit.dp.checklist.application.ChecklistVO;
 import com.summit.dp.checklist.application.ReminderDecision;
-import com.summit.dp.checklist.application.service.impl.ChecklistServiceImpl;
 import com.summit.dp.checklist.domain.model.Checklist;
 import com.summit.dp.checklist.domain.model.ChecklistStatus;
 import com.summit.dp.checklist.infrastructure.persistence.mapper.ChecklistMapper;
-import com.summit.dp.checklist.infrastructure.persistence.mapper.ChecklistStepMapper;
 import com.summit.dp.checklist.infrastructure.persistence.po.ChecklistPO;
 import com.summit.dp.checklist.infrastructure.repository.ChecklistRepositoryImpl;
+import com.summit.dp.checklist.support.ChecklistTestDatabase;
 import com.summit.dp.shared.exception.ClientException;
-import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.dao.DataAccessException;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -49,37 +38,23 @@ class ChecklistPersistenceTest {
     private static final long SESSION_ID = 7001L;
     private static final long EXECUTION_ID = 8801L;
 
-    private EmbeddedDatabase database;
+    private ChecklistTestDatabase fixture;
     private ChecklistMapper mapper;
     private ChecklistRepositoryImpl repository;
     private ChecklistService service;
 
     @BeforeEach
-    void setUp() throws Exception {
-        database = new EmbeddedDatabaseBuilder().setType(EmbeddedDatabaseType.H2)
-                .setName("checklist-" + UUID.randomUUID() + ";MODE=MySQL;DB_CLOSE_DELAY=-1")
-                .addScript("file:./init.sql").build();
-        MybatisConfiguration configuration = new MybatisConfiguration();
-        configuration.setMapUnderscoreToCamelCase(true);
-        configuration.addMapper(ChecklistMapper.class);
-        configuration.addMapper(ChecklistStepMapper.class);
-        MybatisPlusInterceptor plugins = new MybatisPlusInterceptor();
-        plugins.addInnerInterceptor(new PaginationInnerInterceptor());
-        MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
-        factory.setDataSource(database);
-        factory.setConfiguration(configuration);
-        factory.setPlugins(plugins);
-        SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate template = new SqlSessionTemplate(sessionFactory);
-        mapper = template.getMapper(ChecklistMapper.class);
-        repository = new ChecklistRepositoryImpl(mapper, template.getMapper(ChecklistStepMapper.class));
-        service = new ChecklistServiceImpl(repository);
+    void setUp() {
+        fixture = ChecklistTestDatabase.start("checklist");
+        mapper = fixture.mapper();
+        repository = fixture.repository();
+        service = fixture.service();
     }
 
     @AfterEach
     void tearDown() {
-        if (database != null) {
-            database.shutdown();
+        if (fixture != null) {
+            fixture.close();
         }
     }
 
