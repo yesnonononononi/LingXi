@@ -88,7 +88,7 @@ const emit = defineEmits<{
         </div>
 
         <!-- 查看提示 -->
-        <div :class="['px-6 py-2.5 border-b text-xs flex items-center justify-between gap-4 select-none', isDark ? 'border-white/10 bg-black/40 text-zinc-400' : 'border-zinc-100 bg-zinc-50/40 text-gray-500']">
+        <div :class="['px-6 py-2.5 border-b text-xs flex items-center justify-between gap-4 select-none', isDark ? 'border-white/10 bg-black/40 text-zinc-400' : 'border-zinc-100 bg-zinc-50/40 text-zinc-500']">
 
           <span class="text-[11px] opacity-70">{{ t('chat.subSessions.cardHint') }}</span>
         </div>
@@ -99,7 +99,7 @@ const emit = defineEmits<{
             v-if="subSessions.length === 0"
             class="py-16 text-center text-zinc-400 text-xs flex flex-col items-center justify-center gap-2"
           >
-            <svg class="w-10 h-10 text-gray-500/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <svg class="w-10 h-10 text-zinc-500/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
             </svg>
             <span>{{ t('chat.subSessions.empty') }}</span>
@@ -150,7 +150,7 @@ const emit = defineEmits<{
               </div>
             </div>
 
-            <div class="mt-3 pt-2.5 border-t border-gray-500/15 flex items-center justify-between text-[11px] text-zinc-400">
+            <div class="mt-3 pt-2.5 border-t border-zinc-500/15 flex items-center justify-between text-[11px] text-zinc-400">
               <span>
                 {{ sub.messageCount ? t('chat.subSessions.messageCount', { count: sub.messageCount }) : t('chat.subSessions.archived') }}
               </span>

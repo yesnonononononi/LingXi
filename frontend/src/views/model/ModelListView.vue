@@ -77,8 +77,8 @@ const themeBtnClass = computed(() => [
   'p-2 rounded-xl border transition',
   isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-yellow-400 hover:bg-[#202738]' : 'bg-zinc-50 border-zinc-200 text-gray-600 hover:bg-zinc-100',
 ]);
-const mutedText = computed(() => (isDark.value ? 'text-xs text-zinc-400' : 'text-xs text-gray-500'));
-const theadClass = computed(() => (isDark.value ? 'bg-[#121722] text-zinc-400' : 'bg-zinc-100 text-gray-500'));
+const mutedText = computed(() => (isDark.value ? 'text-xs text-zinc-400' : 'text-xs text-zinc-500'));
+const theadClass = computed(() => (isDark.value ? 'bg-[#121722] text-zinc-400' : 'bg-zinc-100 text-zinc-500'));
 const btnClass = computed(() => [
   'px-3 py-1.5 rounded-lg text-xs border transition disabled:opacity-40 disabled:cursor-not-allowed',
   isDark.value ? 'border-[#2d3a54] text-zinc-300 hover:bg-white/5' : 'border-zinc-300 text-gray-600 hover:bg-black/5',
@@ -171,7 +171,7 @@ onMounted(load);
               <td class='px-4 py-3 text-xs break-all opacity-90'>{{ row.baseUrl }}</td>
               <td class='px-4 py-3 text-xs'>
                                 <span v-if='row.credentialConfigured' class='inline-flex items-center px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 font-medium'>{{ t('model.configured') }}</span>
-                <span v-else class='inline-flex items-center px-2 py-0.5 rounded-full bg-gray-500/10 text-zinc-400'>{{ t('model.notConfigured') }}</span>
+                <span v-else class='inline-flex items-center px-2 py-0.5 rounded-full bg-zinc-500/10 text-zinc-400'>{{ t('model.notConfigured') }}</span>
               </td>
               <td class='px-4 py-3 text-right'>
                 <div class='flex items-center justify-end gap-2'>

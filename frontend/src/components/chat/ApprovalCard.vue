@@ -169,7 +169,7 @@ const handleReject = () => submit(false);
                     'text-[11px] px-2 py-0.5 rounded-md transition flex items-center gap-1 cursor-pointer select-none border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50',
                     isDark
                       ? 'bg-gray-800/80 hover:bg-gray-700 text-zinc-400 hover:text-zinc-200 border-gray-700/60'
-                      : 'bg-white hover:bg-zinc-50 text-gray-500 hover:text-gray-800 border-zinc-200 shadow-2xs'
+                      : 'bg-white hover:bg-zinc-50 text-zinc-500 hover:text-gray-800 border-zinc-200 shadow-2xs'
                   ]"
                 >
                   <template v-if="copied">
@@ -190,7 +190,7 @@ const handleReject = () => submit(false);
               <div v-if="commandIntention" class="px-3 pt-2 pr-16 text-xs break-all text-lx-tertiary">
                                 <span class="font-medium">{{ t('chat.approval.intention') }}</span>{{ commandIntention }}
               </div>
-              <div v-if="commandWorkDir" class="px-3 pt-2 pr-16 text-xs text-gray-500 break-all">{{ t('chat.approval.workDir') }}{{ commandWorkDir }}</div>
+              <div v-if="commandWorkDir" class="px-3 pt-2 pr-16 text-xs text-zinc-500 break-all">{{ t('chat.approval.workDir') }}{{ commandWorkDir }}</div>
               <!-- 命令正文 -->
               <div class="p-3 pr-16 font-mono text-[12px] leading-relaxed break-all select-text flex items-start gap-2">
                 <span class="text-blue-500/80 font-bold select-none">$</span>

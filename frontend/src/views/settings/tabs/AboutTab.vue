@@ -130,7 +130,7 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
                 ? 'text-red-500 dark:text-red-400'
                 : isDark
                   ? 'text-zinc-400'
-                  : 'text-gray-500',
+                  : 'text-zinc-500',
             ]"
           >
             {{ statusText }}

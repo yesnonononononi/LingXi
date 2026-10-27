@@ -436,7 +436,7 @@ const handleSaveTeam = async () => {
           <div class="flex items-center justify-between mb-1.5">
             <label class="block text-xs font-medium text-gray-700 dark:text-zinc-300">
               {{ t('chat.team.membersLabel') }} <span class="text-red-500">*</span>
-              <span class="text-[11px] font-normal text-gray-500 ml-1">
+              <span class="text-[11px] font-normal text-zinc-500 ml-1">
                 {{ t('chat.team.selectedCount', { count: selectedAgentIds.length }) }}
               </span>
             </label>
@@ -542,7 +542,7 @@ const handleSaveTeam = async () => {
               <div class="flex items-center justify-between mb-1">
                 <label class="block text-gray-600 dark:text-zinc-400 font-medium">
                   {{ t('chat.team.assignTools') }}
-                  <span class="text-[11px] font-normal text-gray-500 ml-1">
+                  <span class="text-[11px] font-normal text-zinc-500 ml-1">
                     {{ t('chat.team.assignedCount', { selected: agentFormToolList.length, total: availableTools.length }) }}
                   </span>
                 </label>
@@ -558,7 +558,7 @@ const handleSaveTeam = async () => {
                   <button
                     type="button"
                     @click="clearTools"
-                    class="text-gray-500 hover:text-zinc-400 cursor-pointer"
+                    class="text-zinc-500 hover:text-zinc-400 cursor-pointer"
                   >
                     {{ t('chat.team.clear') }}
                   </button>
@@ -637,7 +637,7 @@ const handleSaveTeam = async () => {
               <button
                 type="button"
                 @click="closeAgentForm"
-                class="px-2.5 py-1 text-gray-500 hover:text-lx-secondary rounded-lg cursor-pointer"
+                class="px-2.5 py-1 text-zinc-500 hover:text-lx-secondary rounded-lg cursor-pointer"
               >
                 {{ t('common.cancel') }}
               </button>
@@ -659,10 +659,10 @@ const handleSaveTeam = async () => {
               isDark ? 'border-white/15 divide-white/10 bg-black/90' : 'border-zinc-200 divide-zinc-100 bg-zinc-50'
             ]"
           >
-            <div v-if="isLoadingAgents" class="p-4 text-center text-xs text-gray-500">
+            <div v-if="isLoadingAgents" class="p-4 text-center text-xs text-zinc-500">
               {{ t('chat.team.loadingAgents') }}
             </div>
-            <div v-else-if="availableAgents.length === 0" class="p-4 text-center text-xs text-gray-500">
+            <div v-else-if="availableAgents.length === 0" class="p-4 text-center text-xs text-zinc-500">
               {{ t('chat.team.noAgents') }}
             </div>
             <div
@@ -698,7 +698,7 @@ const handleSaveTeam = async () => {
                     </span>
                     <span
                       v-else
-                      class="px-1.5 py-0.5 text-[10px] rounded bg-gray-500/10 text-lx-faint"
+                      class="px-1.5 py-0.5 text-[10px] rounded bg-zinc-500/10 text-lx-faint"
                     >
                       {{ t('chat.team.noTool') }}
                     </span>
@@ -748,7 +748,7 @@ const handleSaveTeam = async () => {
         <div v-if="selectedAgents.length > 0" ref="commanderSelectRef" class="relative">
           <label class="block text-xs font-medium text-gray-700 dark:text-zinc-300 mb-1.5">
             {{ t('chat.team.managerLabel') }} <span class="text-red-500">*</span>
-            <span class="text-[11px] font-normal text-gray-500 ml-1">
+            <span class="text-[11px] font-normal text-zinc-500 ml-1">
               {{ t('chat.team.managerHint') }}
             </span>
           </label>

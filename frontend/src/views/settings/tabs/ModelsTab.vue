@@ -120,7 +120,7 @@ const addRowClass = computed(() => [
   'w-full py-2 text-[11px] rounded-xl flex items-center justify-center gap-1 transition cursor-pointer',
   isDark.value
     ? 'text-zinc-300 hover:text-white hover:bg-white/[0.06]'
-    : 'text-gray-500 hover:text-gray-800 hover:bg-zinc-100/70',
+    : 'text-zinc-500 hover:text-gray-800 hover:bg-zinc-100/70',
 ]);
 </script>
 
@@ -141,7 +141,7 @@ const addRowClass = computed(() => [
           <h4 class="text-base font-bold tracking-tight" :class="isDark ? 'text-white text-glow-white' : 'text-gray-900'">
             {{ t('settings.models.title') }}
           </h4>
-          <p class="text-xs mt-1" :class="isDark ? 'text-zinc-400 text-glow-subtle' : 'text-gray-500'">
+          <p class="text-xs mt-1" :class="isDark ? 'text-zinc-400 text-glow-subtle' : 'text-zinc-500'">
             {{ t('settings.models.subtitle') }}
           </p>
         </div>
@@ -188,7 +188,7 @@ const addRowClass = computed(() => [
               </span>
               <span
                 class="shrink-0 text-[10px] px-1.5 py-0.5 rounded border tracking-tight"
-                :class="isDark ? 'border-white/20 text-zinc-300 bg-white/5' : 'border-zinc-200 text-gray-500'"
+                :class="isDark ? 'border-white/20 text-zinc-300 bg-white/5' : 'border-zinc-200 text-zinc-500'"
               >{{ t('settings.models.providerModels', { count: group.modelCount }) }}</span>
             </div>
             <div v-if="group.providerConfigId" class="flex items-center gap-2 shrink-0">

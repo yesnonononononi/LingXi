@@ -314,7 +314,7 @@ onBeforeUnmount(() => {
           'p-1.5 rounded-lg transition-colors cursor-pointer',
           isDark
             ? 'hover:bg-white/[0.06] text-zinc-400 hover:text-zinc-100'
-            : 'hover:bg-zinc-200/70 text-gray-500 hover:text-gray-900',
+            : 'hover:bg-zinc-200/70 text-zinc-500 hover:text-gray-900',
           isCollapsed ? 'mx-auto' : ''
         ]"
       >

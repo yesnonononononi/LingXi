@@ -249,7 +249,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
         </div>
 
         <!-- 会话状态与指标信息栏 -->
-        <div :class="['px-6 py-2.5 border-b text-xs flex items-center justify-between gap-4 flex-wrap select-none', isDark ? 'border-white/10 bg-black/40 text-zinc-400' : 'border-zinc-100 bg-zinc-50/40 text-gray-500']">
+        <div :class="['px-6 py-2.5 border-b text-xs flex items-center justify-between gap-4 flex-wrap select-none', isDark ? 'border-white/10 bg-black/40 text-zinc-400' : 'border-zinc-100 bg-zinc-50/40 text-zinc-500']">
           <div class="flex items-center gap-4">
             <span class="flex items-center gap-1.5">
               <span :class="['w-2 h-2 rounded-full', subStatusDot]"></span>
@@ -297,7 +297,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
 
           <!-- 空列表状态 -->
           <div v-else-if="messages.length === 0" class="py-16 text-center text-zinc-400 text-xs">
-            <div class="w-12 h-12 mx-auto mb-3 rounded-full flex items-center justify-center bg-gray-500/10 text-zinc-400">
+            <div class="w-12 h-12 mx-auto mb-3 rounded-full flex items-center justify-center bg-zinc-500/10 text-zinc-400">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>

@@ -235,7 +235,7 @@ const handleSubmit = () => {
                     'w-6 h-6 rounded-md flex items-center justify-center text-xs font-semibold flex-shrink-0 transition-colors mt-0.5 sm:mt-0',
                     selectedIndex === idx
                       ? 'bg-blue-600 text-white'
-                      : (isDark ? 'bg-gray-800 text-zinc-400 group-hover:text-zinc-200' : 'bg-[#eef2f6] text-gray-500 group-hover:text-gray-700')
+                      : (isDark ? 'bg-gray-800 text-zinc-400 group-hover:text-zinc-200' : 'bg-[#eef2f6] text-zinc-500 group-hover:text-gray-700')
                   ]"
                 >
                   {{ idx + 1 }}

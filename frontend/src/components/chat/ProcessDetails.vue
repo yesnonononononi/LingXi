@@ -274,7 +274,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                       'absolute bottom-2 right-2 flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] leading-none shadow-sm transition-colors cursor-pointer',
                       isDark
                         ? 'border-white/15 bg-[#1b2130]/90 text-zinc-300 hover:text-zinc-100'
-                        : 'border-zinc-200 bg-white/95 text-gray-500 hover:text-gray-800'
+                        : 'border-zinc-200 bg-white/95 text-zinc-500 hover:text-gray-800'
                     ]"
                   >
                     <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -362,21 +362,21 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                   </button>
                   <span v-else class="w-3.5 h-3.5 shrink-0" aria-hidden="true"></span>
                   <div class="flex-shrink-0 flex items-center">
-                    <svg v-if="getToolCategory(item.tool) === TOOL_CATEGORY.READ || getToolCategory(item.tool) === TOOL_CATEGORY.WRITE" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <svg v-if="getToolCategory(item.tool) === TOOL_CATEGORY.READ || getToolCategory(item.tool) === TOOL_CATEGORY.WRITE" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-zinc-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                       <rect x="4" y="3" width="16" height="18" rx="2" />
                       <path stroke-linecap="round" d="M8 8h8M8 12h8M8 16h4" />
                     </svg>
-                    <svg v-else-if="getToolCategory(item.tool) === TOOL_CATEGORY.COMMAND" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <svg v-else-if="getToolCategory(item.tool) === TOOL_CATEGORY.COMMAND" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-zinc-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                       <rect x="3" y="4" width="18" height="16" rx="3" />
                       <path stroke-linecap="round" stroke-linejoin="round" d="M7 9l3 3-3 3M13 15h4" />
                     </svg>
-                    <svg v-else-if="getToolCategory(item.tool) === TOOL_CATEGORY.THINK" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <svg v-else-if="getToolCategory(item.tool) === TOOL_CATEGORY.THINK" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-zinc-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                       <circle cx="9" cy="9" r="3.5" />
                       <circle cx="15" cy="9" r="3.5" />
                       <circle cx="9" cy="15" r="3.5" />
                       <circle cx="15" cy="15" r="3.5" />
                     </svg>
-                    <svg v-else class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <svg v-else class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-zinc-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                       <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>

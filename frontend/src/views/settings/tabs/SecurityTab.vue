@@ -396,7 +396,7 @@ void load();
 
 .sec-nav:hover .sec-nav-chevron {
   transform: translateX(3px);
-  @apply text-gray-500 dark:text-zinc-300;
+  @apply text-zinc-500 dark:text-zinc-300;
 }
 
 /* 标题旁的说明按钮 */

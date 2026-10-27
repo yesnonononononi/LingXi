@@ -82,7 +82,7 @@
       <div v-if="processParts.length || props.message.isExploring" class="w-full min-w-0" data-testid="whole-process">
         <button type="button" data-testid="whole-process-toggle" :aria-expanded="wholeProcessExpanded"
           class="flex w-full min-w-0 items-center gap-2 py-1 text-left text-xs cursor-pointer"
-          :class="isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-gray-500 hover:text-gray-700'"
+          :class="isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-500 hover:text-gray-700'"
           @click="processExpansion = !wholeProcessExpanded">
           <svg class="h-3.5 w-3.5 shrink-0 transition-transform" :class="wholeProcessExpanded ? 'rotate-90' : ''"
             viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">

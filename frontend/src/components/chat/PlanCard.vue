@@ -160,7 +160,7 @@ const decide = async (approved: boolean) => {
           :class="[
             'w-full text-xs sm:text-sm px-3 py-2 rounded-xl border outline-none transition resize-none',
             isDark
-              ? 'bg-[#1a2130] border-gray-700 text-zinc-200 placeholder-gray-500 focus:border-blue-500'
+              ? 'bg-[#1a2130] border-gray-700 text-zinc-200 placeholder-zinc-500 focus:border-blue-500'
               : 'bg-zinc-50 border-zinc-200 text-gray-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         ></textarea>

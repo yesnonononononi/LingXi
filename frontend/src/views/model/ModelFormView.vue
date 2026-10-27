@@ -157,17 +157,17 @@ const themeBtnClass = computed(() => [
   'p-2 rounded-xl border transition',
   isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-yellow-400 hover:bg-[#202738]' : 'bg-zinc-50 border-zinc-200 text-gray-600 hover:bg-zinc-100',
 ]);
-const mutedText = computed(() => (isDark.value ? 'mt-1 text-xs text-zinc-400' : 'mt-1 text-xs text-gray-500'));
+const mutedText = computed(() => (isDark.value ? 'mt-1 text-xs text-zinc-400' : 'mt-1 text-xs text-zinc-500'));
 const btnClass = computed(() => [
   'px-3 py-1.5 rounded-lg text-xs border transition disabled:opacity-40 disabled:cursor-not-allowed',
   isDark.value ? 'border-[#2d3a54] text-zinc-300 hover:bg-white/5' : 'border-zinc-300 text-gray-600 hover:bg-black/5',
 ]);
 const cardClass = computed(() => ['rounded-2xl border overflow-hidden', isDark.value ? 'border-[#273043] bg-[#0f1420]' : 'border-zinc-200 bg-white']);
 const dividerClass = computed(() => (isDark.value ? 'border-[#273043]' : 'border-zinc-200'));
-const labelClass = computed(() => (isDark.value ? 'text-xs text-zinc-400' : 'text-xs text-gray-500'));
+const labelClass = computed(() => (isDark.value ? 'text-xs text-zinc-400' : 'text-xs text-zinc-500'));
 const inputClass = computed(() => [
   'w-full px-3 py-2 rounded-lg text-xs outline-none border transition',
-  isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-zinc-100 placeholder-gray-500 focus:border-blue-500/60' : 'bg-white border-zinc-200 text-gray-800 placeholder-zinc-400 focus:border-blue-400',
+  isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-zinc-100 placeholder-zinc-500 focus:border-blue-500/60' : 'bg-white border-zinc-200 text-gray-800 placeholder-zinc-400 focus:border-blue-400',
 ]);
 const toastClass = computed(() => [
   'fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-xs shadow-lg',
@@ -381,7 +381,7 @@ onBeforeUnmount(() => {
               >{{ t('model.keyConfigured') }}</span>
               <span
                 v-else-if='isEdit'
-                class='inline-flex items-center px-2 py-0.5 rounded-full bg-gray-500/10 text-zinc-400 text-[11px]'
+                class='inline-flex items-center px-2 py-0.5 rounded-full bg-zinc-500/10 text-zinc-400 text-[11px]'
               >{{ t('model.notConfigured') }}</span>
             </div>
             <input

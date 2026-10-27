@@ -71,7 +71,7 @@ const {
                     <h4 class="text-base font-bold tracking-tight" :class="isDark ? 'text-white text-glow-white' : 'text-gray-900'">
             {{ t('settings.agents.title') }}
           </h4>
-          <p class="text-xs mt-0.5" :class="isDark ? 'text-zinc-400 text-glow-subtle' : 'text-gray-500'">
+          <p class="text-xs mt-0.5" :class="isDark ? 'text-zinc-400 text-glow-subtle' : 'text-zinc-500'">
             {{ t('settings.agents.subtitle') }}
           </p>
         </div>
@@ -504,7 +504,7 @@ const {
             type="button"
             @click="cancelAgentForm"
             class="px-3 py-1.5 rounded-xl border text-xs cursor-pointer transition"
-            :class="isDark ? 'border-white/20 hover:bg-white/10 text-zinc-200 text-glow-subtle' : 'border-zinc-300 text-gray-500 hover:text-gray-700'"
+            :class="isDark ? 'border-white/20 hover:bg-white/10 text-zinc-200 text-glow-subtle' : 'border-zinc-300 text-zinc-500 hover:text-gray-700'"
           >
                         {{ t('common.cancel') }}
           </button>
