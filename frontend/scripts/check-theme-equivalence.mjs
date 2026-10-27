@@ -613,14 +613,19 @@ const RENAMES = (() => {
  * 加 `(?!\d)` 后 `gray-50` 只命中真正的 50 档（`gray-50`、`gray-50/70`），
  * 既不影响既有两条 `lx-*` 台账（它们后面从不跟数字），也不放宽任何判定（只是收窄改写范围）。
  *
+ * `renames` 默认取全局台账 `RENAMES`；可显式传入**合成台账**，让「档位边界」这类用例
+ * 不耦合会持续增长的全局状态——否则每加一条台账（如登记 gray-500）就会废掉一条旧用例。
+ *
  * @param {string} src 基线源码
+ * @param {Array<{from: string, to: string}>} [renames] 台账（默认全局 RENAMES）
  * @returns {string} 替换后的源码
  */
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const applyRenames = (src) => RENAMES.reduce(
+const applyRenamesWith = (src, renames) => renames.reduce(
   (acc, r) => acc.replace(new RegExp(escapeRegExp(r.from) + '(?!\\d)', 'g'), () => r.to),
   String(src)
 );
+const applyRenames = (src, renames = RENAMES) => applyRenamesWith(src, renames);
 
 /**
  * 从 git 取某文件在指定基线版本的内容。
@@ -1515,7 +1520,11 @@ const selftest = (ctx) => {
   check('删掉 dark: 变体 → 必红', !eqPair("const c = 'text-gray-500 dark:text-zinc-400'", "const c = 'text-gray-500'"));
   check('dark: 变体改值 → 必红', !eqPair("const c = 'text-gray-500 dark:text-zinc-400'", "const c = 'text-gray-500 dark:text-zinc-500'"));
   check('状态变体 hover: 改值 → 必红', !eqPair("const c = 'hover:bg-black/5'", "const c = 'hover:bg-black/10'"));
-  check('近色不得被容差放过（zinc-400 vs gray-400，差 6/255）', !eqPair("const c = 'text-gray-400 dark:text-zinc-400'", "const c = 'text-gray-400'"));
+  // 近色严格不等：`text-zinc-400`(#9f9fa9) 与 `text-gray-400`(#99a1af) 实测最大通道差 Δ=6/255，
+  // 两者都**仍在产物里**（未随迁移消失：gray 调色板仍被 @theme 发射）。这一对证明「产物 vs 产物」
+  // 比较是**严格相等**、不会被 8/255 的令牌容差放过——否则 Δ≤8 的近色会被当成没改。
+  check('近色不得被容差放过（text-zinc-400 vs text-gray-400，实测 Δ=6/255，均在产物）',
+    !eqPair("const c = 'text-zinc-400'", "const c = 'text-gray-400'"));
 
   // ---- 超长字面量（>400 字符）里的类必须可见（2026-10-27 修门禁根因，裁决 D2）----
   // 历史盲区：`LITERAL_RE` 上限曾是 {1,400}，而 `SpecularButton.vue:276` 是 632 字符的单引号类串，
@@ -1534,16 +1543,27 @@ const selftest = (ctx) => {
   // applyRenames 原用 split(from).join(to)（无边界）：登记 gray-50 会把基线里的 gray-500
   // 一起改成 zinc-500，与工作树仍是 gray-500 的行对不上 ⇒ 第 1 档在 16 个文件里报 92 处伪红。
   // 这两条把「不吞更长档位」与「仍命中本档（含 /alpha 后缀）」一起钉死。
-  const hasGray50 = RENAMES.some((r) => r.from === 'gray-50');
+  // 用例不能耦合「会持续增长的全局台账」：下面两条用**合成台账**（只含 gray-50 → zinc-50）验证
+  // 档位边界与 /alpha 后缀命中，与真实 RENAMES 里登记了多少档无关。否则每加一条台账
+  // （如本批登记 gray-500）都会让「gray-500 必须原样」的前提失效，废掉一条用例。
+  const synthRenames = [{ from: 'gray-50', to: 'zinc-50' }];
   check(
-    '台账替换不吞更长档位（gray-50 不得命中 gray-500）',
-    !hasGray50 || applyRenames("'text-gray-500 border-gray-500/20'") === "'text-gray-500 border-gray-500/20'",
-    applyRenames("'text-gray-500 border-gray-500/20'")
+    '台账替换不吞更长档位（合成台账：gray-50 不得命中 gray-500）',
+    applyRenamesWith("'text-gray-500 border-gray-500/20'", synthRenames) === "'text-gray-500 border-gray-500/20'",
+    applyRenamesWith("'text-gray-500 border-gray-500/20'", synthRenames)
   );
   check(
-    '台账替换仍命中本档（含 /alpha 后缀与词尾）',
-    !hasGray50 || applyRenames("'bg-gray-50/70 text-gray-50'") === "'bg-zinc-50/70 text-zinc-50'",
-    applyRenames("'bg-gray-50/70 text-gray-50'")
+    '台账替换仍命中本档（合成台账：含 /alpha 后缀与词尾）',
+    applyRenamesWith("'bg-gray-50/70 text-gray-50'", synthRenames) === "'bg-zinc-50/70 text-zinc-50'",
+    applyRenamesWith("'bg-gray-50/70 text-gray-50'", synthRenames)
+  );
+  // 真实台账下 gray-500 有自己的条目 ⇒ 应被正确改写为 zinc-500（这是迁移后的真实事实）。
+  // 守卫：仅当台账确实登记了 gray-500 时才断言，避免将来撤销该档时误红。
+  const hasGray500 = RENAMES.some((r) => r.from === 'gray-500');
+  check(
+    '真实台账下 gray-500 被自己的条目正确改写为 zinc-500',
+    !hasGray500 || applyRenames("'text-gray-500 border-gray-500/20'") === "'text-zinc-500 border-zinc-500/20'",
+    applyRenames("'text-gray-500 border-gray-500/20'")
   );
 
   // ---- 同前缀（hover:）相邻对折叠（2026-10-23 补）----  // ---- 同前缀（hover:）相邻对折叠（2026-10-23 补）----
