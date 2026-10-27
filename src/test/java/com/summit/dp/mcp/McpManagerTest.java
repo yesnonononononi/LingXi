@@ -1,5 +1,9 @@
 package com.summit.dp.mcp;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.summit.adapter.langchain4j.mcp.McpClientFactory;
 import com.summit.core.conf.McpConfig;
 import com.summit.core.mcp.McpToolScope;
@@ -14,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.util.List;
@@ -159,7 +164,7 @@ class McpManagerTest {
         verify(brokenClient).close();
     }
 
-    /** 排查连接失败只能靠日志：异常链必须保住原始原因，同时文案不许泄露内部细节。 */
+    /** 内部异常链保留原始原因，面向用户的文案不暴露内部细节。 */
     @Test
     void discoveryFailureKeepsOriginalCauseForDiagnosis() {
         Mcp model = model(1L, "first");
@@ -179,6 +184,48 @@ class McpManagerTest {
             current = current.getCause();
         }
         return current;
+    }
+
+    @Test
+    void connectionFailuresLogOnlyTheirMessages() throws Exception {
+        Logger logger = (Logger) LoggerFactory.getLogger(McpManager.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            Mcp broken = model(1L, "broken");
+            when(repository.findById(1L)).thenReturn(Optional.of(broken));
+            when(factory.create(eq("broken"), any())).thenThrow(new IllegalStateException("connection unavailable"));
+
+            assertThrows(ClientException.class, () -> manager.connect(assembler.toServer(broken)));
+            assertThrows(ClientException.class, () -> manager.register(1L));
+            when(repository.findEnabled()).thenReturn(List.of(broken));
+            manager.connect();
+            manager.disconnect();
+
+            Mcp closing = model(2L, "closing");
+            McpClient client = client(closing, "inspect");
+            doThrow(new IllegalStateException("close unavailable")).when(client).close();
+            manager.register(2L);
+            manager.remove(2L);
+
+            List<ILoggingEvent> warnings = appender.list.stream()
+                    .filter(event -> event.getLevel() == Level.WARN).toList();
+            assertEquals(6, warnings.size());
+            for (ILoggingEvent event : warnings) {
+                assertNull(event.getThrowableProxy(), event.getFormattedMessage());
+            }
+            assertEquals("测试 MCP 连接失败: name=broken, error=connection unavailable", warnings.getFirst().getFormattedMessage());
+            assertEquals("注册 MCP 连接失败: id=1, name=broken, error=connection unavailable", warnings.get(1).getFormattedMessage());
+            assertTrue(warnings.get(4).getFormattedMessage().startsWith("初始化 MCP 连接失败: id=1, name=broken, error="));
+            assertEquals("关闭 MCP 连接失败: name=closing, error=Failed to close MCP client of server 'closing'",
+                    warnings.getLast().getFormattedMessage());
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+            manager.disconnect();
+            manager.close();
+        }
     }
 
     @Test

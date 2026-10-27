@@ -11,6 +11,9 @@
   console-appender，保持控制台输出格式不变。
 -->
 <configuration>
+    <conversionRule conversionWord="mcpException"
+                    class="com.summit.dp.mcp.infrastructure.McpExceptionConverter"/>
+    <property name="LOG_EXCEPTION_CONVERSION_WORD" value="%mcpException"/>
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
 
     <springProperty scope="context" name="LOG_DIR" source="lingxi.log.dir"
@@ -31,7 +34,7 @@
             <totalSizeCap>50MB</totalSizeCap>
         </rollingPolicy>
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{40} : %msg%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{40} : %msg%n%mcpException</pattern>
             <charset>UTF-8</charset>
         </encoder>
     </appender>
