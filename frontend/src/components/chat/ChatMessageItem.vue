@@ -56,6 +56,7 @@
           </button>
         </template>
         <button
+          data-testid="user-message-copy"
           @click="copyContent"
           class="hover:text-gray-600 dark:hover:text-zinc-200 transition p-0.5"
           :title="copied ? t('common.copied') : t('chat.message.copyContent')"

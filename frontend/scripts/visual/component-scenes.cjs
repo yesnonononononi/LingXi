@@ -126,6 +126,17 @@ const STABILIZE_CSS = '*, *::before, *::after { caret-color: transparent !import
  * <p>为什么不是默认的 780×760：本批把 Sidebar 的 4 个场景追加在页面下方，整体高度约 2.9k px。
  * 若沿用默认视口，`capturePage()` 只截到前 760 px ⇒ 侧栏根本不在基线图里（"有场景没覆盖"的假绿）。</p>
  */
+/**
+ * 场景窗口尺寸。
+ *
+ * <p><b>为什么保持 800×3100 不变：</b>窗口高度会改变 CSS `vh`，从而改变既有 9 个场景的布局 ——
+ * 一旦调高窗口，既有 light.png / dark.png 与 4 张既有 ROI 就会整片变化（实测改到 5800 时
+ * 上部区域有 8.2 万像素差），那等于默默重建既有基线。</p>
+ *
+ * <p>下方新增场景不靠调大窗口来覆盖，而靠 {@link captureFullPage} 的 CDP 全页截图
+ * （`captureBeyondViewport`）作为 ROI 裁切源 —— 既不动既有基线，也不会把新场景裁掉。
+ * 另外实测本机 `capturePage()` 无论窗口多高都只返回 800×1032，调大窗口本身也拿不到下方内容。</p>
+ */
 const SCENE_VIEWPORT = { width: 800, height: 3100 };
 
 /** 三个目标场景的 computed-style 采集选择器（函数体在渲染器里执行）。 */
@@ -151,18 +162,51 @@ const TARGETS = [
     sel: `(()=>{const root=document.querySelector('[data-scene="sidebar-empty"]');if(!root)return null;return [...root.querySelectorAll('div,span,p')].find(el=>el.children.length===0&&el.textContent.trim()==='暂未指定工作区')||null;})()` },
   { key: 'sidebarHistoryTitle', desc: 'Sidebar「历史对话」分组标题（未归属会话分区）',
     sel: `(()=>{const root=document.querySelector('[data-scene="sidebar-history"]');if(!root)return null;return [...root.querySelectorAll('div,span')].find(el=>el.children.length===0&&el.textContent.trim()==='历史对话')||null;})()` },
+  // ── V1：5 个「灰阶混用组件」的探针（灰阶统一前置条件第一批）───────────────
+  // 这些组件本轮**不许改**，场景只负责把当前外观钉在基线上，供后续 gray-N ↔ zinc-N
+  // 统一时逐字节比对。选择器宁可依赖 DOM 结构也不要依赖颜色类名（类名正是未来要改的东西）。
+  { key: 'cmiBubble', desc: 'ChatMessageItem 用户气泡容器（背景 = 灰阶混用点）',
+    sel: `document.querySelector('[data-scene="chat-message-item"] [data-testid="user-message-bubble"]')` },
+  { key: 'cmiBody', desc: 'ChatMessageItem 气泡正文（正文文字色）',
+    sel: `document.querySelector('[data-scene="chat-message-item"] [data-testid="user-message-text"]')` },
+  { key: 'cmiMeta', desc: 'ChatMessageItem 元信息行（时间戳 / 状态）',
+    sel: `document.querySelector('[data-scene="chat-message-item"] [data-testid="user-message"] > div:last-child')` },
+  { key: 'smCard', desc: 'SettingsModal 卡片本体（卡片背景 + 边框色）',
+    sel: `document.querySelector('[data-scene="settings-modal-card"] div.rounded-3xl')` },
+  { key: 'smTitle', desc: 'SettingsModal 标题文字',
+    sel: `document.querySelector('[data-scene="settings-modal-card"] h3')` },
+  { key: 'atRow', desc: 'AgentsTab 智能体卡片行（行背景 + 边框色）',
+    sel: `document.querySelector('[data-scene="agents-tab-row"] div.space-y-3 > div')` },
+  { key: 'atName', desc: 'AgentsTab 智能体名字（行主文字色）',
+    sel: `document.querySelector('[data-scene="agents-tab-row"] div.space-y-3 > div span.text-sm')` },
+  { key: 'atDesc', desc: 'AgentsTab 智能体描述（行次级文字色，已令牌化）',
+    sel: `document.querySelector('[data-scene="agents-tab-row"] div.space-y-3 > div p')` },
+  { key: 'sapShell', desc: 'SubAgentSidePanel 面板本体（面板背景）',
+    sel: `document.querySelector('[data-scene="subagent-panel"] aside')` },
+  { key: 'sapTitle', desc: 'SubAgentSidePanel 标题（子代理名）',
+    sel: `document.querySelector('[data-scene="subagent-panel"] aside h3')` },
+  { key: 'tmRow', desc: 'TeamModal 成员列表第 2 行（divide-y 产生的行上边框）',
+    sel: `document.querySelector('[data-scene="team-modal-row"] div.divide-y > div:nth-child(2)')` },
+  { key: 'tmName', desc: 'TeamModal 成员行名字（行文字色）',
+    sel: `document.querySelector('[data-scene="team-modal-row"] div.divide-y > div span.text-xs')` },
 ];
 
 
 const STYLE_PROPS = ['color', 'backgroundColor', 'borderTopColor', 'outlineColor', 'textShadow', 'opacity', 'fontSize', 'fontWeight'];
 
 const APP_VUE = `<script setup>
-import {ref} from 'vue';
+import {ref,onMounted,nextTick} from 'vue';
 import CardHeader from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/components/chat/CardHeader.vue'))}';
 import RequireChoiceCard from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/components/chat/RequireChoiceCard.vue'))}';
 import DropUpSelect from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/components/common/DropUpSelect.vue'))}';
 import ChatInputArea from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/components/chat/ChatInputArea.vue'))}';
 import Sidebar from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/components/chat/Sidebar.vue'))}';
+import ChatMessageItem from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/components/chat/ChatMessageItem.vue'))}';
+import SettingsModal from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/views/settings/SettingsModal.vue'))}';
+import AgentsTab from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/views/settings/tabs/AgentsTab.vue'))}';
+import SubAgentSidePanel from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/components/chat/SubAgentSidePanel.vue'))}';
+import TeamModal from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/components/chat/TeamModal.vue'))}';
+import http from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/services/interceptor.ts'))}';
 import { useTheme } from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/composables/useTheme.ts'))}';
 import '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/style.css'))}';
 const dark=ref(false);
@@ -187,6 +231,50 @@ const mkSession=(id,title,workspaceId,offset)=>({id,title,createdAt:170406720000
 const sbSessions=[mkSession('s1','会话一',1,1000),mkSession('s2','会话二',1,2000),mkSession('s3','会话三',2,3000)];
 /** 历史分组：7 条未归属会话（> SESSION_VISIBLE_LIMIT=5 ⇒ 触发「展开显示」按钮）。 */
 const sbHistorySessions=Array.from({length:7},(_,i)=>mkSession('h'+(i+1),'历史会话'+(i+1),null,10000+i*1000));
+/**
+ * 场景内 API 桩（只作用于这个隔离场景，不碰任何生产代码）。
+ *
+ * <p><b>为什么必须有：</b>AgentsTab / SettingsModal 的部分页签 / TeamModal 都在 onMounted 里拉
+ * 列表数据。没有后端时它们永远停在「加载中 → 加载失败」态，**列表行根本不会渲染**，
+ * 那样「行文字色 / 边框色」的断言就是对着空气断言（或直接因目标不存在而失败）。
+ * 用 axios adapter 返回确定性的 Result 形状（code:1 = 成功，见 utils/api.ts 的 SUCCESS_CODES），
+ * 让组件走真实渲染分支，同时保证数据固定、基线不随时间漂移。</p>
+ */
+const apiAgentRows=[
+  {id:1,name:'代码助手',avatar:'🤖',modelId:'m1',description:'灰阶场景用的智能体',toolList:['read_file']},
+  {id:2,name:'文档助手',avatar:'📄',modelId:'m1',description:'第二个成员行（触发 divide 边框）',toolList:[]},
+];
+const apiToolRows=[{name:'read_file',description:'读取文件',readOnly:true},{name:'write_file',description:'写入文件',readOnly:false}];
+const apiModelGroups=[{providerName:'本地',models:[{id:'m1',modelName:'GPT-Test',providerName:'本地'}]}];
+const API_FIXTURES={
+  '/agent/list':{code:1,data:{records:apiAgentRows,total:apiAgentRows.length}},
+  '/tools/list':{code:1,data:apiToolRows},
+  '/model/catalog':{code:1,data:apiModelGroups},
+  '/model/list':{code:1,data:{records:[],total:0}},
+  '/team/list':{code:1,data:{records:[],total:0}},
+};
+http.defaults.adapter=async(config)=>{
+  const url=String(config.url||'');
+  window.__apiCalls=(window.__apiCalls||[]).concat(url);
+  const hit=Object.keys(API_FIXTURES).find((k)=>url.startsWith(k));
+  return {data:hit?API_FIXTURES[hit]:{code:1,data:null},status:200,statusText:'OK',headers:{},config,request:{}};
+};
+window.__apiProbe=async()=>{ try { const r=await http.get('/agent/list?page=1&pageSize=100'); return JSON.stringify(r).slice(0,300); } catch(e){ return 'ERR:'+String(e&&e.message||e); } };
+/** 灰阶混用场景的数据：固定 id / 固定文案，保证基线可重复。 */
+const cmiMessage={id:'u1',role:'user',content:'灰阶混用：气泡正文与元信息行',timestamp:1704067200000,messages:[]};
+/**
+ * TeamModal 必须先挂载（isOpen=false）再打开。
+ *
+ * 它的 watch(() => props.isOpen, ..., { immediate: true }) 在「挂载时 isOpen 已为 true」这一支里
+ * 会调用 closeAgentForm()，而该函数是后面才声明的 const ⇒ 命中 TDZ 抛错，成员列表永远不加载。
+ * 生产里弹窗总是先挂载（关闭态）再被打开，所以场景照真实顺序走；这不是改组件，只是不踩它的初始化缺陷。
+ */
+const teamOpen=ref(false);
+onMounted(async()=>{await nextTick();teamOpen.value=true;});
+const sapItems=[
+  {id:'sub-1',agentName:'子代理甲',task:'整理灰阶清单',status:'completed'},
+  {id:'sub-2',agentName:'子代理乙',task:'复核令牌映射',status:'running'},
+];
 window.setDark=value=>{dark.value=value;setTheme(value?'dark':'light');const el=document.documentElement;el.classList.toggle('dark',value);el.classList.toggle('light',!value);el.setAttribute('data-theme',value?'dark':'light');document.body.style.background=value?'#18181b':'#ffffff';};
 window.openDropdown=()=>{const trigger=document.querySelector('[data-scene="dropdown"] button');if(trigger&&trigger.getAttribute('aria-expanded')!=='true')trigger.click();};
 window.showCustomInput=()=>{};
@@ -223,6 +311,30 @@ window.focusCustomInput=()=>{const input=document.querySelector('[data-scene="ch
     <section data-scene="sidebar-history" style="width:264px;height:640px;overflow:hidden;border:1px solid #8884">
       <Sidebar :sessions="sbHistorySessions" :active-session-id="null" :workspaces="[]" :is-collapsed="false" :is-dark="dark" />
     </section>
+    <!-- 以下 5 个「灰阶混用组件」场景（V1）。
+         关键：外层用 **绝对定位** 承载，不参与文档流 ⇒ 页面总高度不变、不出现竖向滚动条 ⇒
+         上方 9 个既有场景的布局与像素一字节不变（实测：把新场景放进正常流会让上部 8.2 万像素
+         因滚动条挤压而变，等于默默重建既有基线）。绝对定位元素仍会渲染、仍可测 computed style，
+         也仍被 CDP 全页截图（captureBeyondViewport）覆盖，因此新场景的 ROI 不丢。
+         SettingsModal / TeamModal 根节点是 fixed inset-0 全屏遮罩，再套一层 transform 容器，
+         让它们以该容器为包含块，避免盖住整页。 -->
+    <div data-scene-group="gray-scale" style="position:absolute;left:0;top:3400px;width:800px">
+    <section data-scene="chat-message-item" style="padding:10px 8px">
+      <ChatMessageItem :message="cmiMessage" :is-dark="dark" session-id="42" />
+    </section>
+    <section data-scene="settings-modal-card" style="position:relative;transform:translateZ(0);width:768px;height:600px;overflow:hidden;border:1px solid #8884">
+      <SettingsModal :is-dark="dark" initial-tab="about" />
+    </section>
+    <section data-scene="agents-tab-row" style="width:720px;padding:8px;border:1px solid #8884">
+      <AgentsTab :is-dark="dark" />
+    </section>
+    <section data-scene="subagent-panel" style="width:380px;height:460px;overflow:hidden;border:1px solid #8884">
+      <SubAgentSidePanel :items="sapItems" active-sub-id="sub-1" :is-open="true" :is-dark="dark" />
+    </section>
+    <section data-scene="team-modal-row" style="position:relative;transform:translateZ(0);width:768px;height:620px;overflow:hidden;border:1px solid #8884">
+      <TeamModal :is-open="teamOpen" :is-dark="dark" :models="[]" />
+    </section>
+    </div>
   </main>
 </template>
 <style>${STABILIZE_CSS}</style>`;
@@ -311,7 +423,9 @@ async function captureTheme(win, theme, outDir, mutate = false, breakTheme = nul
   await fsp.writeFile(path.join(outDir, `${theme}.png`), png.toPNG());
   // V7：整页图之外再从同一张 png 裁出每个目标的元素级 ROI（小面积变化的唯一可见证据）。
   // 用内存裁切而非再次 capturePage(rect)：offscreen 下 rect 抓图会抛 UnknownVizError（已实测）。
-  const roi = await captureRoi(png, evaluate, theme, outDir);
+  // 视口图只覆盖 800×1032，下方场景另取一张 CDP 全页图作为裁切源（只写新文件，不动既有 ROI）。
+  const bigImage = await captureFullPage(win);
+  const roi = await captureRoi(png, evaluate, theme, outDir, bigImage);
   return { styles, roi };
 }
 
@@ -372,7 +486,44 @@ const ROI_PADDING = 4;
  * @param {string} outDir 本次产物目录
  * @returns {Promise<Array<{key: string, file: string, rect: object, theme: string}>>} 已写出的 ROI 清单
  */
-async function captureRoi(fullImage, evaluate, theme, outDir) {
+/**
+ * 用 CDP 截一张「完整页面」图（`captureBeyondViewport` 才能突破窗口可视区）。
+ *
+ * <p><b>为什么必须补这条路径：</b>实测本机（offscreen）`webContents.capturePage()` 无论窗口多高
+ * 都只返回 **800×1032** 的可视区图 —— 页面下方的场景（侧栏、本轮新增的 5 个灰阶场景）
+ * 从来没进过像素基线，属于「有场景没覆盖」的假绿。`capturePage(rect)` 又会抛 UnknownVizError，
+ * 因此改走 CDP 的 `Page.captureScreenshot({ captureBeyondViewport: true })`。</p>
+ *
+ * <p><b>为什么只用于下方目标：</b>既有 4 个目标的 ROI 是从原来那张视口图裁出来的，
+ * 换成新图会改变既有基线的字节。这里只在「目标超出视口图范围」时才用大图，既有文件零改动。</p>
+ *
+ * @param {object} win BrowserWindow
+ * @returns {Promise<object|null>} nativeImage 或 null（CDP 失败时不阻塞主流程）
+ */
+async function captureFullPage(win) {
+  const dbg = win.webContents.debugger;
+  let attached = false;
+  try {
+    if (!dbg.isAttached()) { dbg.attach('1.3'); attached = true; }
+    await dbg.sendCommand('Page.enable');
+    const metrics = await dbg.sendCommand('Page.getLayoutMetrics');
+    const content = metrics.cssContentSize || metrics.contentSize;
+    const result = await dbg.sendCommand('Page.captureScreenshot', {
+      format: 'png',
+      captureBeyondViewport: true,
+      clip: { x: 0, y: 0, width: Math.ceil(content.width), height: Math.ceil(content.height), scale: 1 },
+    });
+    const { nativeImage } = require('electron');
+    return nativeImage.createFromBuffer(Buffer.from(result.data, 'base64'));
+  } catch (err) {
+    console.error(`[roi] CDP 全页截图失败（回落到视口图）：${err && err.message ? err.message : err}`);
+    return null;
+  } finally {
+    if (attached) { try { dbg.detach(); } catch { /* 已分离则忽略 */ } }
+  }
+}
+
+async function captureRoi(fullImage, evaluate, theme, outDir, bigImage = null) {
   // 按主题分子目录存放：明暗两态的元素包围盒尺寸不同（文字宽度与主题无关但边框/内距可能变），
   // 若两态写同一个 `<key>-roi.png`，后跑的一态会覆盖前一态，单跑 light 时会拿暗色 ROI 当基线
   // 直接 100% 全图差异（实测踩到）。分子目录后文件名仍是要求的 `<key>-roi.png`。
@@ -404,23 +555,34 @@ async function captureRoi(fullImage, evaluate, theme, outDir) {
   })()`);
 
   const written = [];
+  // 诊断开关：给了 ROI_DEBUG 就打印每个目标的裁切决策（定位「为什么某目标没有 ROI 图」）。
+  if (process.env.ROI_DEBUG) console.error(`[roi/${theme}] ` + JSON.stringify(rects.map((r) => `${r.key}:${r.reason || 'ok'}`)));
+
   // 页面 CSS 像素 → 图片像素：整页图宽度 / 页面宽度（只求一次，页面宽度在本次采集内不变）
   const pageWidth = await evaluate('document.documentElement.scrollWidth || window.innerWidth');
   const ratio = pageWidth > 0 ? imageSize.width / pageWidth : 1;
   for (const item of rects) {
     if (!item.rect) continue; // 目标不可见：captureTheme 的可见性断言负责报错，这里不重复失败
+    /**
+     * 选图：视口图能完整容纳该目标就用视口图（既有 ROI 因此逐字节不变），
+     * 否则用 CDP 全页图（否则下方场景会被静默裁掉 —— 那正是「有场景没覆盖」的假绿）。
+     */
+    const inViewport = item.rect.y + item.rect.height <= imageSize.height;
+    const source = inViewport || !bigImage ? fullImage : bigImage;
+    const sourceSize = source.getSize();
+    if (!inViewport && !bigImage) continue; // 两种图都拿不到：不写空图，交给报告里的 roi 数量体现
     const x = Math.max(0, Math.round(item.rect.x * ratio));
     const y = Math.max(0, Math.round(item.rect.y * ratio));
     const width = Math.max(1, Math.round(item.rect.width * ratio));
     const height = Math.max(1, Math.round(item.rect.height * ratio));
     // 二次 clamp：crop 的矩形必须完全落在图片内
-    const clampedWidth = Math.min(width, imageSize.width - x);
-    const clampedHeight = Math.min(height, imageSize.height - y);
+    const clampedWidth = Math.min(width, sourceSize.width - x);
+    const clampedHeight = Math.min(height, sourceSize.height - y);
     if (clampedWidth < 1 || clampedHeight < 1) continue;
-    const cropped = fullImage.crop({ x, y, width: clampedWidth, height: clampedHeight });
+    const cropped = source.crop({ x, y, width: clampedWidth, height: clampedHeight });
     const file = path.join(themeDir, `${item.key}-roi.png`);
     await fsp.writeFile(file, cropped.toPNG());
-    written.push({ key: item.key, file, rect: { x, y, width: clampedWidth, height: clampedHeight }, theme });
+    written.push({ key: item.key, file, rect: { x, y, width: clampedWidth, height: clampedHeight }, theme, source: inViewport ? 'viewport' : 'cdp-fullpage' });
   }
   return written;
 }
@@ -460,6 +622,37 @@ const STRUCTURAL = {
 const skip = (reason) => ({ skip: reason });
 
 /**
+ * 「锁当前值」标记：该属性目前**没有**语义令牌（灰阶统一的前置目标），
+ * 但断言仍然要断具体色值，因此把当前计算色写死成期望，并附上理由。
+ *
+ * <p>为什么允许写死：这些正是「灰阶混用」要统一的值，统一前必须先把现状钉住，
+ * 否则无从证明改造只改了实现、没改外观。统一完成后必须把它们换成令牌（见未决项）。</p>
+ *
+ * @param {string} value 期望色（hex 或 rgba(...)）
+ * @param {string} reason 为什么此处还没有令牌
+ * @returns {{literal: string, reason: string}}
+ */
+const literal = (value, reason) => ({ literal: normalizeColorString(value), reason });
+
+/**
+ * 把颜色字符串归一成「与浏览器 computed style 可比」的形式。
+ *
+ * <p>两侧都要归一，否则半透明色会因为 alpha 精度（0.7 / 0.698 / 0.702）互不相等而假红：
+ * 画布像素采样只能给出 8 位 alpha（38/255=0.149），因此统一把 alpha 收到两位小数。</p>
+ *
+ * @param {string} raw 形如 `#e5e7eb` / `rgba(255, 255, 255, 0.7)` 的颜色
+ * @returns {string} `rgb(r, g, b)` 或 `rgba(r, g, b, a)`（a 两位小数）
+ */
+function normalizeColorString(raw) {
+  const asRgb = kit.toCssRgb(String(raw));
+  const m = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)$/.exec(asRgb.trim());
+  if (!m) return asRgb.trim();
+  const alpha = m[4] === undefined ? 1 : Math.round(parseFloat(m[4]) * 100) / 100;
+  const head = `rgb(${Number(m[1])}, ${Number(m[2])}, ${Number(m[3])}`;
+  return alpha >= 1 ? `${head})` : `rgba(${Number(m[1])}, ${Number(m[2])}, ${Number(m[3])}, ${alpha})`;
+}
+
+/**
  * 逐目标声明的「期望令牌」。
  *
  * <p>期望值**只**来自 `kit.readTokenValues()`（scene-kit 里的令牌解析），不硬编码任何 hex ——
@@ -488,6 +681,112 @@ const DARK_EXPECT_TOKENS = {
   // 不做「就近取令牌」——那会把「未令牌化」伪装成已覆盖。显式跳过并在报告里打出一行。
   sidebarHistoryTitle: {
     color: skip('未令牌化：实测 #a1a1aa 不在令牌表（--lx-text-muted=#9f9fa9，差 2/255），待补令牌后再纳入断言'),
+    backgroundColor: STRUCTURAL.transparent,
+    borderTopColor: STRUCTURAL.currentColor,
+    borderBottomColor: STRUCTURAL.currentColor,
+    boxShadow: STRUCTURAL.none,
+    textShadow: STRUCTURAL.none,
+  },
+  // ── V1：灰阶混用组件（暗态期望）───────────────────────────────────────────
+  // 说明：能落到令牌上的直接写令牌；还没令牌化的**锁当前值**并写明理由 —— 这些正是
+  // 「gray-N ↔ zinc-N 统一」待改造的点，先钉现状才能证明后续改造零视觉漂移。
+  cmiBubble: {
+    // 气泡正文色：暗 text-zinc-100(#f4f4f5) 恰好等于 primary-soft 的暗值 ⇒ 可令牌化
+    color: '--lx-text-primary-soft',
+    // 气泡背景：暗 bg-zinc-800(#27272a)，令牌表里没有对应语义（surface-elevated 是 0.902 黑）
+    backgroundColor: literal('#27272a', '气泡底色仍是原始灰阶类 bg-zinc-800，待灰阶统一后补令牌'),
+    // 暗态有 border border-white/[0.08]
+    borderTopColor: literal('rgba(255, 255, 255, 0.08)', '气泡描边是原始 alpha 类，无对应令牌'),
+    borderBottomColor: literal('rgba(255, 255, 255, 0.08)', '气泡描边是原始 alpha 类，无对应令牌'),
+    boxShadow: skip('shadow-xs 是原始阴影类，本批不追踪阴影（灰阶只管颜色）'),
+    textShadow: STRUCTURAL.none,
+  },
+  cmiBody: {
+    color: '--lx-text-primary-soft',
+    backgroundColor: STRUCTURAL.transparent,
+    borderTopColor: STRUCTURAL.currentColor,
+    borderBottomColor: STRUCTURAL.currentColor,
+    boxShadow: STRUCTURAL.none,
+    textShadow: STRUCTURAL.none,
+  },
+  cmiMeta: {
+    // 元信息行（时间戳/状态）已折成 text-lx-faint
+    color: '--lx-text-faint',
+    backgroundColor: STRUCTURAL.transparent,
+    borderTopColor: STRUCTURAL.currentColor,
+    borderBottomColor: STRUCTURAL.currentColor,
+    boxShadow: STRUCTURAL.none,
+    textShadow: STRUCTURAL.none,
+  },
+  smCard: {
+    color: '--lx-text-primary-soft',
+    backgroundColor: literal('#000000', '卡片底色仍是原始 bg-black，令牌 surface-elevated 是 0.902 黑，不等价'),
+    borderTopColor: literal('rgba(255, 255, 255, 0.15)', '卡片描边是原始 alpha 类 border-white/15，与 border-default(0.149) 差 0.001'),
+    borderBottomColor: literal('rgba(255, 255, 255, 0.15)', '同上'),
+    boxShadow: skip('shadow-2xl + 自定义发光阴影是复合值，本批不追踪阴影'),
+    textShadow: STRUCTURAL.none,
+  },
+  smTitle: {
+    color: '--lx-text-primary',
+    backgroundColor: STRUCTURAL.transparent,
+    borderTopColor: STRUCTURAL.currentColor,
+    borderBottomColor: STRUCTURAL.currentColor,
+    boxShadow: STRUCTURAL.none,
+    textShadow: skip('标题带 dark:text-glow-white 发光特效，属 GLOW 类，按规格书不许改也不纳入色值断言'),
+  },
+  atRow: {
+    color: skip('行容器文字色继承自场景外壳，不代表组件自身取色'),
+    backgroundColor: literal('rgba(0, 0, 0, 0.9)', '行底色仍是原始 bg-black/90，待灰阶统一后补令牌'),
+    borderTopColor: literal('rgba(255, 255, 255, 0.15)', '行描边是原始 alpha 类 border-white/15'),
+    borderBottomColor: literal('rgba(255, 255, 255, 0.15)', '同上'),
+    boxShadow: skip('行带自定义发光阴影（rgba(0,0,0,0.8) 外发光），本批不追踪阴影'),
+    textShadow: STRUCTURAL.none,
+  },
+  atName: {
+    color: '--lx-text-primary',
+    backgroundColor: STRUCTURAL.transparent,
+    borderTopColor: STRUCTURAL.currentColor,
+    borderBottomColor: STRUCTURAL.currentColor,
+    boxShadow: STRUCTURAL.none,
+    textShadow: skip('名字带 dark: text-glow-white 发光特效（GLOW 类，原样保留）'),
+  },
+  atDesc: {
+    color: '--lx-text-muted',
+    backgroundColor: STRUCTURAL.transparent,
+    borderTopColor: STRUCTURAL.currentColor,
+    borderBottomColor: STRUCTURAL.currentColor,
+    boxShadow: STRUCTURAL.none,
+    textShadow: STRUCTURAL.none,
+  },
+  sapShell: {
+    color: '--lx-text-secondary',
+    backgroundColor: literal('rgba(9, 9, 11, 0.95)', '面板底是原始 bg-[#09090b]/95，无对应令牌'),
+    // aside 只有 border-l，但 border-white/[0.06] 是 border-color 简写 ⇒ 四边 color 都被设上了
+    borderTopColor: literal('rgba(255, 255, 255, 0.06)', '面板描边是原始 alpha 类 border-white/[0.06]，无对应令牌'),
+    borderBottomColor: literal('rgba(255, 255, 255, 0.06)', '同上'),
+    boxShadow: STRUCTURAL.none,
+    textShadow: STRUCTURAL.none,
+  },
+  sapTitle: {
+    color: '--lx-text-secondary',
+    backgroundColor: STRUCTURAL.transparent,
+    borderTopColor: STRUCTURAL.currentColor,
+    borderBottomColor: STRUCTURAL.currentColor,
+    boxShadow: STRUCTURAL.none,
+    textShadow: STRUCTURAL.none,
+  },
+  tmRow: {
+    color: skip('行容器文字色继承自弹窗外壳，不代表组件自身取色'),
+    backgroundColor: STRUCTURAL.transparent,
+    // 实测行上边框取的是 currentColor（divide-white/10 在当前 Tailwind 版本下未生效），
+    // 因此按「与自身 color 一致」断言，比写死一个色值更能反映真实渲染。
+    borderTopColor: STRUCTURAL.currentColor,
+    borderBottomColor: STRUCTURAL.currentColor,
+    boxShadow: STRUCTURAL.none,
+    textShadow: STRUCTURAL.none,
+  },
+  tmName: {
+    color: literal('#e5e7eb', '行名字是 text-gray-800 dark:text-gray-200 混用对，暗值 gray-200 与 secondary(#e4e4e7) 差 1/255，尚不可令牌化'),
     backgroundColor: STRUCTURAL.transparent,
     borderTopColor: STRUCTURAL.currentColor,
     borderBottomColor: STRUCTURAL.currentColor,
@@ -546,7 +845,7 @@ async function runDarkColorAssert() {
         ctx.fillRect(0, 0, 1, 1);
         const d = ctx.getImageData(0, 0, 1, 1).data;
         if (d[3] === 0) return 'rgba(0, 0, 0, 0)';
-        const alpha = Math.round((d[3] / 255) * 1000) / 1000;
+        const alpha = Math.round((d[3] / 255) * 100) / 100;
         return alpha >= 1 ? 'rgb(' + d[0] + ', ' + d[1] + ', ' + d[2] + ')'
           : 'rgba(' + d[0] + ', ' + d[1] + ', ' + d[2] + ', ' + alpha + ')';
       };
@@ -604,8 +903,11 @@ async function runDarkColorAssert() {
         } else if (spec === STRUCTURAL.transparent || spec === STRUCTURAL.none) {
           expected = spec;
           tokenLabel = `结构: ${spec}`;
+        } else if (spec && typeof spec === 'object' && spec.literal) {
+          expected = spec.literal;
+          tokenLabel = `锁当前值（未令牌化）：${spec.reason}`;
         } else {
-          expected = resolveTokenRgb(tokens, spec);
+          expected = normalizeColorString(tokens[spec]);
           tokenLabel = spec;
         }
         rows.push({

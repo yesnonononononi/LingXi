@@ -21,6 +21,7 @@ const props = defineProps<ChatMessageActionsSlotProps>();
 <template>
   <!-- 复制图标 -->
   <button
+    data-testid="message-copy"
     @click="props.copyContent"
     class="hover:text-gray-600 dark:hover:text-gray-200 transition p-0.5"
     :title="props.copied ? t('common.copied') : t('chat.message.copyAnswer')"
