@@ -36,15 +36,22 @@
  * ——裸 `git diff` 比较的是「工作树 vs 索引」，一旦先 `git add` 再跑校验就什么都看不到，
  * 容易造成假绿/假红。</p>
  *
- * <h3>用法</h3> * <h3>用法</h3>
+ * <h3>用法</h3>
  * ```
  * node scripts/theme-spec/check-tier-map.cjs                 # 默认 --worktree：工作树 vs HEAD
  * node scripts/theme-spec/check-tier-map.cjs --worktree
  * node scripts/theme-spec/check-tier-map.cjs --commit <sha>   # git show <sha> -U0
  * node scripts/theme-spec/check-tier-map.cjs --diff-file <p>  # 直接校验一份 diff 文本（自检/离线用）
  * node scripts/theme-spec/check-tier-map.cjs --allow-reverse  # 允许灰色增加（显式回退）
+ * node scripts/theme-spec/check-tier-map.cjs --path frontend/ # 只看某个前缀下的文件
  * ```
  * 退出码：`0` = 全部逐位同档；`1` = 发现违规；`2` = 基础设施错误（git 失败/参数错误）。
+ *
+ * <h3>作用域（`--path`）</h3>
+ * 灰阶迁移期间，工作树里常有别人正在改的 Java / 文档文件：它们的新增行 hunk 会被
+ * 「行数守恒」判成违规（实测一次 4 条误报）。`--path <前缀>` 可多次给出，
+ * 内部转成 `git diff HEAD -- <paths>`，只校验该前缀下的改动；不传则维持全仓语义（向后兼容）。
+ * 为让 `--diff-file` 与其它模式行为一致，解析后还会按前缀再过滤一次文件（等价语义，不是放宽判定）。
  *
  * <p>脚本**只读**：不写任何文件、不改 git 状态。</p>
  */
@@ -92,6 +99,22 @@ const seqOf = (tokens) => tokens.map((t) => t.tier).join(',');
 
 /** 某一族在序列里的档位列表。 */
 const tiersOfFamily = (tokens, family) => tokens.filter((t) => t.family === family).map((t) => t.tier);
+
+/**
+ * 判断文件路径是否落在给定的前缀集合下。
+ *
+ * <p>前缀比对前先规范化成仓库相对、正斜杠形式：`git diff` 输出永远是正斜杠相对路径，
+ * 而人手动传的可能是 `frontend\`（Windows 反斜杠）或以 `./` 开头。</p>
+ *
+ * @param {string} file 仓库相对路径（正斜杠）
+ * @param {string[]} prefixes 前缀集合（空数组 = 不限制）
+ * @returns {boolean} true = 该文件参与校验
+ */
+function inScope(file, prefixes) {
+  if (prefixes.length === 0) return true;
+  const norm = String(file).split(path.sep).join('/').replace(/^\.\//, '');
+  return prefixes.some((p) => norm === p || norm.startsWith(p.endsWith('/') ? p : p + '/'));
+}
 
 /**
  * 取一段 diff 文本（`git diff --unified=0` / `git show -U0`）。
@@ -162,7 +185,7 @@ function parseDiff(text) {
  * 校验解析结果。
  *
  * @param {Array<{file: string, hunks: Array<{header: string, minus: string[], plus: string[]}>}>} files 解析后的 diff
- * @param {{allowReverse: boolean}} options 选项
+ * @param {{allowReverse: boolean, paths: string[]}} options 选项
  * @returns {{problems: string[], pairs: number, skipped: string[], grayMinus: number, grayPlus: number, assetHits: string[]}} 结果
  */
 function validate(files, options) {
@@ -178,6 +201,8 @@ function validate(files, options) {
 
   for (const entry of files) {
     const file = entry.file;
+    // 作用域过滤：`--path` 之外的他人改动不参与判定（不是放宽判据，只是不看无关文件）
+    if (!inScope(file, options.paths)) continue;
     if (file === FORBIDDEN_REL) {
       problems.push(`${file}: 禁止修改令牌文件（N5：tokens.css 一个字都不许动）`);
       continue;
@@ -241,6 +266,7 @@ function printUsage() {
     '  --worktree         校验工作树相对 HEAD 的 diff（默认）',
     '  --commit <sha>     校验某个提交：git show <sha> --unified=0',
     '  --diff-file <路径> 直接校验一份 diff 文本（离线/自检用；相对仓库根或绝对路径）',
+    '  --path <前缀>      只看该前缀下的文件（可多次；如 --path frontend/），不传 = 全仓',
     '  --allow-reverse    允许 + 侧灰色多于 - 侧（显式回退时使用）',
     '  --help             显示本帮助',
     '',
@@ -262,6 +288,19 @@ function main() {
   const allowReverse = argv.includes('--allow-reverse');
   const commitIdx = argv.indexOf('--commit');
   const fileIdx = argv.indexOf('--diff-file');
+  // `--path` 可重复：收集所有取值（每个都必须带非空、非选项的值）
+  /** @type {string[]} */
+  const paths = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] !== '--path') continue;
+    const v = argv[i + 1];
+    if (!v || v.startsWith('--')) {
+      console.error('[check-tier-map] --path 需要一个前缀参数（如 --path frontend/）');
+      return 2;
+    }
+    // 统一成「正斜杠、去掉结尾多余斜杠」的形式，`inScope` 与 git 都用同一份
+    paths.push(v.split('\\').join('/').replace(/\/+$/, '') + '/');
+  }
   const modeCount = [commitIdx >= 0, fileIdx >= 0].filter(Boolean).length;
   if (modeCount > 1) {
     console.error('[check-tier-map] --commit 与 --diff-file 不能同时使用');
@@ -279,8 +318,10 @@ function main() {
         console.error('[check-tier-map] --commit 需要一个提交 sha');
         return 2;
       }
-      diffText = runGit(['show', '--unified=0', '--no-color', '--no-ext-diff', '--no-renames', '--format=', sha]);
-      modeLabel = `commit ${sha}`;
+      // `git show <sha> -- <paths>` 同样接受 pathspec，作用域语义与 --worktree 一致
+      const scope = paths.length > 0 ? ['--', ...paths] : [];
+      diffText = runGit(['show', '--unified=0', '--no-color', '--no-ext-diff', '--no-renames', '--format=', sha, ...scope]);
+      modeLabel = `commit ${sha}${paths.length > 0 ? ' [path ' + paths.join(',') + ']' : ''}`;
     } else if (fileIdx >= 0) {
       const p = argv[fileIdx + 1];
       if (!p || p.startsWith('--')) {
@@ -289,10 +330,11 @@ function main() {
       }
       const abs = path.isAbsolute(p) ? p : path.join(REPO_ROOT, p);
       diffText = fs.readFileSync(abs, 'utf8');
-      modeLabel = `diff-file ${path.basename(abs)}`;
+      modeLabel = `diff-file ${path.basename(abs)}${paths.length > 0 ? ' [path ' + paths.join(',') + ']' : ''}`;
     } else {
-      diffText = runGit(['diff', 'HEAD', '--unified=0', '--no-color', '--no-ext-diff', '--no-renames']);
-      modeLabel = 'worktree (工作树 vs HEAD)';
+      const scope = paths.length > 0 ? ['--', ...paths] : [];
+      diffText = runGit(['diff', 'HEAD', '--unified=0', '--no-color', '--no-ext-diff', '--no-renames', ...scope]);
+      modeLabel = `worktree (工作树 vs HEAD)${paths.length > 0 ? ' [path ' + paths.join(',') + ']' : ''}`;
     }
   } catch (err) {
     console.error(`[check-tier-map] 无法获取 diff：${err && err.message ? err.message : err}`);
@@ -300,10 +342,13 @@ function main() {
   }
 
   const files = parseDiff(diffText);
-  const result = validate(files, { allowReverse });
+  const result = validate(files, { allowReverse, paths });
+  const scoped = paths.length > 0
+    ? files.filter((f) => inScope(f.file, paths)).length
+    : files.length;
 
   console.log(`[check-tier-map] 模式=${modeLabel}`);
-  console.log(`  文件数=${files.length}  行对=${result.pairs}  gray: - ${result.grayMinus} / + ${result.grayPlus}`);
+  console.log(`  文件数=${scoped}${paths.length > 0 ? `（diff 内共 ${files.length}，其余 ${files.length - scoped} 个不在 --path 作用域）` : ''}  行对=${result.pairs}  gray: - ${result.grayMinus} / + ${result.grayPlus}`);
   if (result.skipped.length > 0) {
     console.log('  跳过（白名单）：');
     for (const s of result.skipped) console.log(`    · ${s}`);
