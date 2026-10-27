@@ -474,10 +474,23 @@ const RENAMES = (() => {
 
 /**
  * 把基线源码里的旧令牌类名替换成新名（仅用于基线侧，工作树侧不动）。
+ *
+ * **必须带「档位边界」**：`from` 之后不允许紧跟数字。历史实现用
+ * `acc.split(r.from).join(r.to)`（无锚点、无边界），登记 `gray-50` 时会把基线的
+ * `gray-500` 一起改写成 `zinc-500`（尾部 `0` 保留），而工作树这一批仍写着 `gray-500`
+ * ⇒ 基线侧 #71717b(zinc-500) 与工作树 #6a7282(gray-500) 对不上 ⇒ 灰阶第 1 档（gray-50）
+ * 在 16 个文件里报出 92 处**伪红**（实测：这 16 个文件全部含 `gray-500`、全部不含 `gray-50`）。
+ * 加 `(?!\d)` 后 `gray-50` 只命中真正的 50 档（`gray-50`、`gray-50/70`），
+ * 既不影响既有两条 `lx-*` 台账（它们后面从不跟数字），也不放宽任何判定（只是收窄改写范围）。
+ *
  * @param {string} src 基线源码
  * @returns {string} 替换后的源码
  */
-const applyRenames = (src) => RENAMES.reduce((acc, r) => acc.split(r.from).join(r.to), String(src));
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const applyRenames = (src) => RENAMES.reduce(
+  (acc, r) => acc.replace(new RegExp(escapeRegExp(r.from) + '(?!\\d)', 'g'), () => r.to),
+  String(src)
+);
 
 /**
  * 从 git 取某文件在指定基线版本的内容。
@@ -1313,7 +1326,23 @@ const selftest = (ctx) => {
     'literalLen=' + longCase.length + ' light=' + JSON.stringify(gLong.light.map((e) => [e.cls, e.value]))
   );
 
-  // ---- 同前缀（hover:）相邻对折叠（2026-10-23 补）----
+  // ---- 台账替换的「档位边界」（2026-10-27 补，灰阶第 1 档暴露的缺陷）----
+  // applyRenames 原用 split(from).join(to)（无边界）：登记 gray-50 会把基线里的 gray-500
+  // 一起改成 zinc-500，与工作树仍是 gray-500 的行对不上 ⇒ 第 1 档在 16 个文件里报 92 处伪红。
+  // 这两条把「不吞更长档位」与「仍命中本档（含 /alpha 后缀）」一起钉死。
+  const hasGray50 = RENAMES.some((r) => r.from === 'gray-50');
+  check(
+    '台账替换不吞更长档位（gray-50 不得命中 gray-500）',
+    !hasGray50 || applyRenames("'text-gray-500 border-gray-500/20'") === "'text-gray-500 border-gray-500/20'",
+    applyRenames("'text-gray-500 border-gray-500/20'")
+  );
+  check(
+    '台账替换仍命中本档（含 /alpha 后缀与词尾）',
+    !hasGray50 || applyRenames("'bg-gray-50/70 text-gray-50'") === "'bg-zinc-50/70 text-zinc-50'",
+    applyRenames("'bg-gray-50/70 text-gray-50'")
+  );
+
+  // ---- 同前缀（hover:）相邻对折叠（2026-10-23 补）----  // ---- 同前缀（hover:）相邻对折叠（2026-10-23 补）----
   // 「等价折叠必须绿」已由上方 base+dark:hover / base+dark:focus 两条覆盖；
   // 这里补的是**反面**：跨档拼接、以及折叠后丢掉暗侧声明，都必须红——
   // 否则「变体前缀折叠」这条放宽就会变成新的假绿通道。
