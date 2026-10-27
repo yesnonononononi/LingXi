@@ -114,9 +114,10 @@
       <!-- 统一互动卡片：PLAN / CHOICE / COMMAND 三类 PROMISE 卡片（含 UNAVAILABLE）。
            渲染在过程折叠区之外，作为一等时间线项，确保用户可操作项不会被吞进折叠框。 -->
       <template v-for="entry in groupedCardItems" :key="entry.id">
-        <CommandApprovalGroup
-          v-if="entry.commands"
-          :entries="entry.commands"
+        <ApprovalCardGroup
+          v-if="entry.approvals"
+          :kind="entry.card.kind === 'PLAN' ? 'PLAN' : 'COMMAND'"
+          :entries="entry.approvals"
           :session-id="props.sessionId"
           :is-dark="isDark"
         />
@@ -253,8 +254,8 @@ import MessageBodyDefault from './MessageBodyDefault.vue';
 import ModelRetryNotice from './ModelRetryNotice.vue';
 import DelegatedTaskMessage from './DelegatedTaskMessage.vue';
 import PromptCard from './PromptCard.vue';
-import CommandApprovalGroup from './CommandApprovalGroup.vue';
-import { groupCommandApprovals, groupChoiceQuestions, type PromptCardEntry } from '../../utils/promptCardGroups';
+import ApprovalCardGroup from './ApprovalCardGroup.vue';
+import { groupApprovalCards, groupChoiceQuestions, type PromptCardEntry } from '../../utils/promptCardGroups';
 import ChoiceQuestionGroup from './ChoiceQuestionGroup.vue';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import ChatProcessSegment from './ChatProcessSegment.vue';
@@ -362,7 +363,7 @@ const cardItems = computed<PromptCardEntry[]>(() =>
     .filter(item => item.type === 'prompt_card' && !!item.card)
     .map(item => ({ id: item.id, responseId: item.responseId ?? undefined, card: toPromptCardData(item.card as NonNullable<ProcessTimelineItem['card']>) }))
 );
-const groupedCardItems = computed(() => groupChoiceQuestions(groupCommandApprovals(cardItems.value)));
+const groupedCardItems = computed(() => groupChoiceQuestions(groupApprovalCards(cardItems.value)));
 
 /** 已决卡片默认收成一行（避免大卡片常驻页底占位），细节按需展开；待决策卡片整卡展开。 */
 const expandedCardIds = ref<Record<string, boolean>>({});

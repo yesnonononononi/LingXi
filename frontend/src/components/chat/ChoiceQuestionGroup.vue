@@ -2,10 +2,10 @@
 import { computed, inject, nextTick, reactive, ref, watch } from 'vue';
 import type { PromptCardEntry } from '../../utils/promptCardGroups';
 import { ANSWER_CHOICES_KEY, type ChoiceAnswersPayload } from '../../types/toolDecision';
-import { canDecideCard, resolveCardStatusLabel } from '../../utils/toolCallCard';
+import { buildCardSummary, canDecideCard, resolveCardStatusLabel } from '../../utils/toolCallCard';
 import { createLocalId } from '../../utils/ids';
 import { firstUnansweredIndex, nextUnansweredIndex } from '../../utils/choiceNavigation';
-import { CARD_SHELL_CLASS, CARD_ERROR_TEXT_CLASS } from '../../utils/cardUi';
+import { CARD_SHELL_CLASS, CARD_ERROR_TEXT_CLASS, cardDotClass, cardKindIconPath, resolveCardTone } from '../../utils/cardUi';
 import { useI18n } from '../../i18n';
 import CardActionButton from './CardActionButton.vue';
 
@@ -18,7 +18,7 @@ const activeId = ref('');
 const submitting = ref(false);
 const error = ref('');
 const retry = ref<{ signature: string; payload: ChoiceAnswersPayload } | null>(null);
-const dismissed = ref(false);
+const expanded = ref(false);
 const customInput = ref<HTMLTextAreaElement | null>(null);
 
 watch(() => props.entries, entries => {
@@ -66,8 +66,17 @@ const editable = computed(() => !!active.value && canDecideCard(active.value, 'A
 const questionText = computed(() => active.value?.content || active.value?.title || t('chat.choice.groupTitle'));
 /** 无选项时（纯自由回答）不留固定滚动区，否则是一整块空白。 */
 const scrollable = computed(() => (active.value?.options?.length ?? 0) > 0);
-/** 组内还有待答题时不允许关掉这张卡——关掉等于把唯一的作答入口藏起来。 */
-const closable = computed(() => pending.value.length === 0);
+/** 缺题或仍待作答时，不能把唯一作答入口收进摘要。 */
+const closable = computed(() => props.entries.length === total.value && pending.value.length === 0);
+const summary = computed(() => props.entries.length === 1
+  ? buildCardSummary(props.entries[0]!.card)
+  : t('chat.choice.completedSummary', { count: props.entries.length }));
+const summaryTone = computed(() => {
+  const tones = props.entries.map(entry => resolveCardTone(entry.card));
+  return tones.every(tone => tone === tones[0]) ? (tones[0] ?? 'unknown') : 'unknown';
+});
+// 新问题必须露出作答入口；全部已决后收成摘要，历史重进也沿用同一规则。
+watch(closable, () => { expanded.value = false; });
 
 function navigate(offset: number) {
   const next = props.entries[activeIndex.value + offset];
@@ -117,7 +126,17 @@ async function submit() {
 </script>
 
 <template>
-  <section v-if="!dismissed" :class="[CARD_SHELL_CLASS, 'w-full min-w-0 overflow-hidden', isDark ? 'bg-black border-white/10' : 'bg-white border-zinc-200/90']" data-testid="choice-question-group">
+  <div class="w-full min-w-0">
+    <button v-if="closable" type="button" :aria-expanded="expanded"
+      class="flex w-full min-w-0 items-center gap-1.5 py-1 text-left text-xs transition cursor-pointer"
+      :class="isDark ? 'text-zinc-300 hover:text-zinc-100' : 'text-zinc-600 hover:text-zinc-900'"
+      data-testid="choice-summary-toggle" @click="expanded = !expanded">
+      <svg class="h-3 w-3 shrink-0 transition-transform" :class="expanded ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 5 7 7-7 7" /></svg>
+      <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="cardDotClass(summaryTone)"></span>
+      <svg class="h-3.5 w-3.5 shrink-0 text-lx-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" :d="cardKindIconPath('CHOICE')" /></svg>
+      <span class="truncate">{{ summary }}</span>
+    </button>
+  <section v-if="!closable || expanded" :class="[CARD_SHELL_CLASS, 'w-full min-w-0 overflow-hidden', isDark ? 'bg-black border-white/10' : 'bg-white border-zinc-200/90']" data-testid="choice-question-group">
     <header class="flex items-start justify-between gap-3 px-4 pb-2 pt-3">
       <!-- 题干固定两行高、可内部滚动：四道题来回切换时卡片不能跳高度 -->
       <p class="scrollbar-thin h-[46px] min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words text-sm font-semibold leading-relaxed"
@@ -141,7 +160,7 @@ async function submit() {
         <button v-if="closable" type="button" :title="t('common.close')" :aria-label="t('common.close')"
           class="ml-1 rounded-md p-1 transition cursor-pointer"
           :class="isDark ? 'text-zinc-400 hover:bg-white/10 hover:text-white' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600'"
-          data-testid="choice-dismiss" @click="dismissed = true">
+          data-testid="choice-dismiss" @click="expanded = false">
           <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18 18 6M6 6l12 12" /></svg>
         </button>
       </div>
@@ -198,4 +217,5 @@ async function submit() {
       </div>
     </footer>
   </section>
+  </div>
 </template>

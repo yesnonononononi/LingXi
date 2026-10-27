@@ -642,6 +642,8 @@ export const messages: MessageSchema = {
       },
       plan: {
         typeLabel: '计划',
+        groupTitle: '计划审批',
+        groupCount: '{count} 条',
         defaultTitle: '任务计划',
         statusApproved: '✓ 计划已批准，正在实施',
         statusRejected: '✕ 计划已被否决',
@@ -668,6 +670,7 @@ export const messages: MessageSchema = {
       },
       choice: {
         groupTitle: '请确认以下问题',
+        completedSummary: '提问：{count} 个问题 · 已结束',
         groupProgress: '已填写 {answered} / {total}',
         draftAnswered: '已填写',
         previous: '上一题',
@@ -1746,6 +1749,8 @@ export const messages: MessageSchema = {
       },
       plan: {
         typeLabel: 'Plan',
+        groupTitle: 'Plan approvals',
+        groupCount: '{count} plans',
         defaultTitle: 'Task plan',
         statusApproved: '✓ Plan approved, in progress',
         statusRejected: '✕ Plan rejected',
@@ -1772,6 +1777,7 @@ export const messages: MessageSchema = {
       },
       choice: {
         groupTitle: 'Confirm these questions',
+        completedSummary: 'Questions: {count} · Resolved',
         groupProgress: '{answered} / {total} answered',
         draftAnswered: 'Answered',
         previous: 'Previous',

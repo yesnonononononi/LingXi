@@ -15,19 +15,28 @@ app.whenReady().then(async () => {
 import { ref, provide } from 'vue';
 import ChatMessageItem from '../../../src/components/chat/ChatMessageItem.vue';
 import { DECIDE_TOOL_CALL_KEY } from '../../../src/types/toolDecision';
+import { AgentToolName } from '../../../src/utils/toolNames';
 import '../../../src/style.css';
 const dark = ref(false);
+const mountKey = ref(0);
 const createCard = (id, pending=false) => ({id,conversationId:'42',type:'PROMISE',status:pending?'pending':'completed',version:'7',allowedActions:pending?['APPROVE','REJECT']:[],content:{kind:'COMMAND',command:'git status --short '+id,intention:'检查工作目录 '+id,workDir:'D:/Code/LingXi'},rawOutput:pending?null:{outcome:Number(id.split('-')[1])%3?'APPROVED':'CANCELLED'}});
-const message = ref({id:'answer',turnId:'43',role:'assistant',timestamp:0,content:'本轮命令审批记录。',isComplete:true,toolCalls:[],promptCards:Array.from({length:60},(_,i)=>createCard('command-'+i))});
+const createPlan = (id, pending=false) => ({...createCard(id,pending),content:{kind:'PLAN',title:'实施计划 '+id,text:'## 目标\\n\\n完整计划正文 '+id}});
+const message = ref({id:'answer',turnId:'43',role:'assistant',timestamp:0,content:'本轮审批记录。',isComplete:true,toolCalls:[],promptCards:[...Array.from({length:60},(_,i)=>createCard('command-'+i)),...Array.from({length:20},(_,i)=>createPlan('plan-'+i))]});
 window.decisions=[];
 provide(DECIDE_TOOL_CALL_KEY, async decision=>{
   window.decisions.push(decision);
   await new Promise(resolve=>{window.finishDecision=()=>{const card=message.value.promptCards.find(card=>card.id===decision.toolCallId);card.status='completed';card.allowedActions=[];card.rawOutput={outcome:decision.action==='APPROVE'?'APPROVED':'REJECTED'};resolve();};});
 });
 window.addPending = id => message.value.promptCards.push(createCard(id,true));
+window.addPendingPlan = id => message.value.promptCards.push(createPlan(id,true));
 window.addChoice = () => message.value.promptCards.push({id:'choice-1',conversationId:'42',type:'PROMISE',status:'pending',version:'2',allowedActions:['ANSWER'],content:{kind:'CHOICE',question:'选择交付方式',options:['源码','安装包']}});
+window.showResolvedOverview = () => { message.value={...message.value,content:'',
+  toolCalls:[0,1].map(index=>({id:'choice-'+index,toolName:AgentToolName.RequireChoice,status:'success',order:index,responseId:String(200+index)})),
+  promptCards:[0,1].map(index=>({id:'choice-'+index,conversationId:'42',type:'PROMISE',status:'completed',version:'3',allowedActions:[],
+    content:{kind:'CHOICE',question:index===0?'功能范围确认：本轮计划清单需要哪些工具？':'计划清单需要落库还是只活在当前会话？'},
+    rawOutput:{outcome:'ANSWERED',answer:index===0?'创建、更新、删除、修改计划。':'先按当前会话设计。'}})).concat([createPlan('plan-0'),createPlan('plan-1')])}; mountKey.value++; };
 window.setDark = value=>{dark.value=value;document.documentElement.classList.toggle('dark',value);document.body.style.background=value?'#18181b':'white';};
-</script><template><main style="max-width:720px;margin:24px auto;padding:0 12px"><ChatMessageItem :message="message" session-id="42" :is-dark="dark" /></main></template>`);
+</script><template><main style="max-width:720px;margin:24px auto;padding:0 12px"><ChatMessageItem :key="mountKey" :message="message" session-id="42" :is-dark="dark" /></main></template>`);
   await fs.writeFile(path.join(output, 'entry.js'), `import {createApp,nextTick} from 'vue';
 localStorage.setItem('lingxi-locale','zh-CN');window.runtimeErrors=[];
 window.addEventListener('error',event=>window.runtimeErrors.push(event.message));
@@ -46,6 +55,9 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=command-approval-group]").length'),1);
   assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-toggle]").getAttribute("aria-expanded")'),'false');
   assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-group]").getBoundingClientRect().height<50'),true);
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=plan-approval-group]").length'),1);
+  assert.equal(await evaluate('document.querySelector("[data-testid=plan-approval-toggle]").getAttribute("aria-expanded")'),'false');
+  assert.equal(await evaluate('document.querySelector("[data-testid=plan-approval-toggle]").textContent.includes("20 条")'),true);
   await fs.writeFile(path.join(output, 'collapsed.png'), (await window.webContents.capturePage()).toPNG());
   await evaluate('document.querySelector("[data-testid=command-approval-toggle]").click();window.flush()');
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=command-approval-entry-toggle]").length'),60);
@@ -80,7 +92,33 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   await evaluate('window.addChoice();window.flush()');
   assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-list]").textContent.includes("选择交付方式")'),false);
   assert.equal(await evaluate('document.body.textContent.includes("选择交付方式")'),true);
+  await evaluate('document.querySelector("[data-testid=command-approval-toggle]").click();document.querySelector("[data-testid=plan-approval-toggle]").click();window.flush()');
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=plan-approval-entry-toggle]").length'),20);
+  assert.equal(await evaluate('(()=>{const list=document.querySelector("[data-testid=plan-approval-list]");return list.scrollHeight>list.clientHeight&&list.clientHeight<=320;})()'),true);
+  await evaluate('document.querySelector("[data-testid=plan-approval-entry-toggle]").click();window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=plan-approval-list]").innerText.includes("完整计划正文 plan-0")'),true);
+  await evaluate('document.querySelector("[data-testid=plan-approval-toggle]").click();window.addPendingPlan("plan-20");window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=plan-approval-toggle]").getAttribute("aria-expanded")'),'true');
+  assert.equal(await evaluate('document.querySelector("[data-testid=plan-approval-list] [data-approval-id]").dataset.approvalId'),'plan-20');
+  await evaluate('[...document.querySelectorAll(\'[data-approval-id="plan-20"] button\')].find(button=>button.textContent.trim()==="批准").click();window.flush()');
+  assert.deepEqual(await evaluate('window.decisions[2]'),{conversationId:'42',toolCallId:'plan-20',action:'APPROVE',text:'',expectedVersion:'7'});
+  await evaluate('window.finishDecision();window.flush()');
+  assert.equal(await evaluate('document.querySelector(\'[data-approval-id="plan-20"]\').textContent.includes("已批准")'),true);
+  assert.equal(await evaluate('document.documentElement.scrollWidth<=window.innerWidth'),true);
+  await fs.writeFile(path.join(output, 'plans-narrow.png'), (await window.webContents.capturePage()).toPNG());
+  await evaluate('window.showResolvedOverview();window.setDark(false);window.flush()');
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-summary-toggle]").length'),2);
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-question-group]").length'),0);
+  assert.equal(await evaluate('document.querySelector("[data-testid=plan-approval-toggle]").getAttribute("aria-expanded")'),'false');
+  assert.equal(await evaluate('document.querySelector("[data-testid=plan-approval-toggle]").textContent.includes("2 条")'),true);
+  assert.equal(await evaluate('document.documentElement.scrollWidth<=window.innerWidth'),true);
+  await fs.writeFile(path.join(output, 'resolved-overview-narrow.png'), (await window.webContents.capturePage()).toPNG());
+  window.setSize(860,660);
+  await evaluate('window.flush()');
+  await fs.writeFile(path.join(output, 'resolved-overview-light.png'), (await window.webContents.capturePage()).toPNG());
+  await evaluate('window.setDark(true);window.flush()');
+  await fs.writeFile(path.join(output, 'resolved-overview-dark.png'), (await window.webContents.capturePage()).toPNG());
   assert.deepEqual(await evaluate('window.runtimeErrors'),[]);
-  console.log('真实组件通过：60 条记录单组、默认折叠、320px 限高滚动、逐项详情、新审批自动露出、权威逐条批准/拒绝、防重复提交、其他卡片独立、深浅主题与窄屏。');
+  console.log('真实组件通过：命令与计划分别归组、默认折叠、320px 限高滚动、逐项详情、新审批自动露出、权威逐条批准/拒绝、防重复提交、已决提问摘要、深浅主题与窄屏。');
   clearTimeout(deadline);window.destroy();app.exit(0);
 }).catch(error=>{console.error(error);clearTimeout(deadline);if(window)window.destroy();app.exit(1);});
