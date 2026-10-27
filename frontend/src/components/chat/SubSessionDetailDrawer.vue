@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import SessionConnectionNotice from './SessionConnectionNotice.vue';
+import type { StreamHealthState } from '../../views/chat/sessionEventStream';
 import { ref, watch, computed } from 'vue';
 import type { SubSessionVO, ChatMessage, ToolCallTrace } from '../../types/chat';
 import { chatApi } from '../../services/chat';
@@ -20,6 +22,7 @@ const props = defineProps<{
   isOpen: boolean;
   subSession: SubSessionVO | null;
   isDark?: boolean;
+  streamHealthState?: StreamHealthState;
 }>();
 
 const { t } = useI18n();
@@ -28,6 +31,7 @@ const { isDark: themeIsDark } = useTheme();
 const isDark = computed(() => props.isDark ?? themeIsDark.value);
 
 const emit = defineEmits<{
+  (e: 'reconnect'): void;
   (e: 'close'): void;
 }>();
 
@@ -238,6 +242,8 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
             {{ t('chat.subSession.createdAt', { time: new Date(subSession.createTime).toLocaleString() }) }}
           </div>
         </div>
+
+        <SessionConnectionNotice :state="streamHealthState" @reconnect="emit('reconnect')" />
 
         <!-- 消息列表正文区域 -->
         <div class="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin">

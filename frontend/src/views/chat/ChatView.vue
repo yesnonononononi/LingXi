@@ -184,22 +184,7 @@
             </button>
           </div>
 
-          <!-- 实时连接失败横幅：重试耗尽后不静默，显式呈现并给出重挂入口。
-               不承诺无条件自动恢复 —— 断线期间服务端不补发事件，重挂后由历史回查对齐。 -->
-          <div
-            v-if="streamHealthState === 'FAILED'"
-            class="w-full shrink-0 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-600 dark:text-amber-400 flex items-center gap-3"
-            role="alert"
-          >
-                        <span class="flex-1">{{ t('chat.view.disconnected') }}</span>
-            <button
-              type="button"
-              class="shrink-0 rounded-md border border-current px-2 py-1 text-xs opacity-80 hover:opacity-100 transition-opacity"
-              @click="handleReconnectStream"
-            >
-              {{ t('chat.view.reconnect') }}
-            </button>
-          </div>
+          <SessionConnectionNotice :state="streamHealthState" @reconnect="handleReconnectStream" />
           <ChatExecutionControls
             :status="currentActiveSession?.runStatus"
             :canResume="executionControls.canResume.value" :resuming="executionControls.isResuming.value"
@@ -289,6 +274,8 @@
         :messagesError="subMessagesError"
         :hasMoreSubMessages="hasMoreSubMessages"
         :isLoadingMoreSubMessages="isLoadingMoreSubMessages"
+        :streamHealthState="streamHealthState"
+        @reconnect="handleReconnectStream"
         :isDark="displayIsDark"
         :isOpen="isSubPanelOpen"
         @selectOption="handleSelectSubSessionOption"
@@ -347,6 +334,8 @@
       <SubSessionDetailDrawer
         :isOpen="isSubSessionDetailOpen"
         :subSession="selectedSubSessionForDetail"
+        :streamHealthState="streamHealthState"
+        @reconnect="handleReconnectStream"
         :isDark="displayIsDark"
         @close="isSubSessionDetailOpen = false"
       />
@@ -394,6 +383,7 @@ import WorkspaceModal from '../../components/chat/WorkspaceModal.vue';
 import TeamModal from '../../components/chat/TeamModal.vue';
 import SubSessionsOverviewDrawer from '../../components/chat/SubSessionsOverviewDrawer.vue';
 import SubSessionDetailDrawer from '../../components/chat/SubSessionDetailDrawer.vue';
+import SessionConnectionNotice from '../../components/chat/SessionConnectionNotice.vue';
 import SubAgentSidePanel from '../../components/chat/SubAgentSidePanel.vue';
 
 const inputAreaRef = ref<ChatInputCommands | null>(null);

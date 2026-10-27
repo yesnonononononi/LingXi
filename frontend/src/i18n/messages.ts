@@ -459,6 +459,7 @@ export const messages: MessageSchema = {
       view: {
         filePreview: '文件预览 · {count}',
         disconnected: '实时连接已断开，生成结果可能有延迟。可重新连接并同步最新进度。',
+        reconnecting: '实时连接已中断，正在自动重连并同步最新进度…',
         reconnect: '重新连接',
         historyLoadFailed: '加载历史消息失败，请重试',
         channelNotReady: '实时通道未就绪，请稍后重试',
@@ -1562,6 +1563,7 @@ export const messages: MessageSchema = {
       view: {
         filePreview: 'File preview · {count}',
         disconnected: 'The live connection was lost, so results may be delayed. You can reconnect and sync the latest progress.',
+        reconnecting: 'Live connection interrupted. Reconnecting and syncing the latest progress…',
         reconnect: 'Reconnect',
         historyLoadFailed: 'Failed to load history messages. Please retry.',
         channelNotReady: 'The real-time channel is not ready. Please try again later.',

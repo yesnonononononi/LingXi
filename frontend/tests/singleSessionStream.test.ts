@@ -451,6 +451,68 @@ test('3. 心跳超时判定为不健康 → 触发重挂', async () => {
   stream.close();
 });
 
+test('断线立刻通知界面，重连等待握手期间持续显示恢复状态', async () => {
+  const endpoint = installEventEndpoint();
+  const scheduler = makeManualScheduler();
+  const states: string[] = [];
+  const stream = new SessionEventStream({
+    onEvent: () => {}, onConnectionClosed: () => new Promise<void>(() => {}),
+    onHealthChange: (_root, state) => states.push(state),
+    scheduleRetry: scheduler.schedule, cancelRetry: scheduler.cancel,
+  });
+  try {
+    stream.acquire(ROOT);
+    await tick();
+    assert.equal(stream.getHealthState(ROOT), 'CONNECTING');
+    endpoint.send('READY', {});
+    await tick();
+    endpoint.closeAll();
+    await tick();
+    assert.equal(stream.getHealthState(ROOT), 'RECONNECTING');
+    assert.equal(states.at(-1), 'RECONNECTING');
+    scheduler.takeByDelay(1_000);
+    await tick();
+    assert.equal(stream.getHealthState(ROOT), 'RECONNECTING');
+    endpoint.send('READY', {});
+    await tick();
+    assert.equal(stream.getHealthState(ROOT), 'READY');
+  } finally { stream.close(); }
+});
+
+for (const mode of ['pending', 'reject', 'throw'] as const) {
+  test(`历史回查${mode}仍按时重连并接收子会话事件`, async () => {
+    const endpoint = installEventEndpoint();
+    const scheduler = makeManualScheduler();
+    const events: AgentEvent[] = [];
+    const stream = new SessionEventStream({
+      onEvent: event => events.push(event),
+      onConnectionClosed: () => {
+        if (mode === 'throw') throw new Error('回查同步失败');
+        if (mode === 'reject') return Promise.reject(new Error('回查网络失败'));
+        return new Promise<void>(() => {});
+      },
+      scheduleRetry: scheduler.schedule, cancelRetry: scheduler.cancel,
+    });
+    try {
+      stream.acquire(ROOT);
+      await tick();
+      endpoint.send('READY', {});
+      await tick();
+      endpoint.closeAll();
+      await tick();
+      assert.equal(scheduler.takeByDelay(1_000), true, '历史回查不能阻止安排重连');
+      await tick();
+      assert.equal(endpoint.fetchCount, 2);
+      endpoint.send('READY', {});
+      endpoint.send('PARTIAL_THINKING', { responseId: '901', offset: 0, content: '恢复思考',
+        metaData: { rootSessionId: ROOT, sessionId: SUB, turnId: T2 } });
+      await tick();
+      assert.equal(stream.isReady(ROOT), true);
+      assert.equal(events[0]?.metaData?.sessionId, SUB);
+    } finally { stream.close(); }
+  });
+}
+
 test('3b. 重试耗尽 → 暴露「连接失败」，reconnect() 可恢复', async () => {
   const endpoint = installEventEndpoint();
   const scheduler = makeManualScheduler();

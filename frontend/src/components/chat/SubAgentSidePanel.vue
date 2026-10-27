@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import SessionConnectionNotice from './SessionConnectionNotice.vue';
+import type { StreamHealthState } from '../../views/chat/sessionEventStream';
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
 import type { SubSessionVO, SubItemStatus, ToolCallTrace, ChatMessage, ChatTurn } from '../../types/chat';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
@@ -121,10 +123,12 @@ const props = defineProps<{
   hasMoreSubMessages?: boolean;
   isLoadingMoreSubMessages?: boolean;
   isDark?: boolean;
+  streamHealthState?: StreamHealthState;
   isOpen: boolean;
 }>();
 
 const emit = defineEmits<{
+  (e: 'reconnect'): void;
   (e: 'selectOption', id: string | number | null): void;
   (e: 'toggleOpen'): void;
   (e: 'retryMessages'): void;
@@ -328,6 +332,8 @@ defineExpose({
           <span>{{ statusLabel(activeItem.status) }}</span>
         </span>
       </div>
+
+        <SessionConnectionNotice :state="streamHealthState" @reconnect="emit('reconnect')" />
 
       <!-- 子会话消息轨迹正文 (使用与主消息列表完全一致的公共渲染组件) -->
       <div class="flex-1 overflow-hidden relative flex flex-col min-h-0 select-text">

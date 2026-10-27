@@ -27,7 +27,7 @@ const SIGNAL_READY = 'READY';
 const SIGNAL_HEARTBEAT = 'HEARTBEAT';
 
 /** 会话级连接的健康状态（供界面显式呈现「连接失败」并提供重挂入口）。 */
-export type StreamHealthState = 'IDLE' | 'CONNECTING' | 'READY' | 'UNHEALTHY' | 'FAILED';
+export type StreamHealthState = 'IDLE' | 'CONNECTING' | 'READY' | 'RECONNECTING' | 'UNHEALTHY' | 'FAILED';
 
 export interface SessionEventStreamOptions {
   onBackgroundTaskChanged?: (event: BackgroundTaskChanged) => void;
@@ -223,14 +223,13 @@ export class SessionEventStream {
     this.connections.forEach((connection) => {
       connection.attempts = 0;
       this.clearTimers(connection);
-      this.setState(connection, 'IDLE');
       const controller = connection.controller;
       connection.controller = null;
       connection.ready = false;
       controller?.abort();
       this.flushWaiters(connection, false);
-      void this.options.onConnectionClosed(connection.rootSessionId);
       this.open(connection);
+      this.reconcileAfterDrop(connection);
     });
   }
 
@@ -294,7 +293,7 @@ export class SessionEventStream {
     connection.controller = controller;
     connection.ready = false;
     connection.lastFrameAt = this.now();
-    this.setState(connection, 'CONNECTING');
+    this.setState(connection, connection.everReady ? 'RECONNECTING' : 'CONNECTING');
     void this.read(connection, controller);
   }
 
@@ -393,9 +392,7 @@ export class SessionEventStream {
   }
 
   /**
-   * 连接结束的统一收口：先回读权威状态，再按引用计数决定是否重挂。
-   *
-   * <p>回读后调用方可能已释放该会话（切走 / 卸载），此时不再重挂。</p>
+   * 重连不能等待历史接口，否则网络故障时回查会把实时恢复一起拖住。
    */
   private async handleDrop(connection: RootConnection, controller: AbortController): Promise<void> {
     if (connection.controller !== controller) return; // 已被别的路径收口
@@ -403,13 +400,17 @@ export class SessionEventStream {
 
     connection.controller = null;
     connection.ready = false;
+    this.setState(connection, 'RECONNECTING');
     this.clearHealthTimer(connection);
     this.flushWaiters(connection, false);
 
-    await this.options.onConnectionClosed(connection.rootSessionId);
-    if (this.connections.get(connection.rootSessionId) !== connection) return;
-    if (connection.controller) return;
     this.scheduleReconnect(connection);
+    this.reconcileAfterDrop(connection);
+  }
+
+  private reconcileAfterDrop(connection: RootConnection): void {
+    void Promise.resolve().then(() => this.options.onConnectionClosed(connection.rootSessionId))
+      .catch(error => console.warn('断线后同步历史失败: rootSessionId=' + connection.rootSessionId, error));
   }
 
   private scheduleReconnect(connection: RootConnection): void {
