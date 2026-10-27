@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import SessionConnectionNotice from './SessionConnectionNotice.vue';
 import type { StreamHealthState } from '../../views/chat/sessionEventStream';
-import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
+import { ref, computed, watch, onUnmounted } from 'vue';
 import type { SubSessionVO, SubItemStatus, ToolCallTrace, ChatMessage, ChatTurn } from '../../types/chat';
 import { useCopyFeedback } from '../../composables/useCopyFeedback';
 import { t } from '../../i18n';
 import ChatMessageList from './ChatMessageList.vue';
+import { useChatScroll } from '../../views/chat/useChatScroll';
 
 /** 默认及最小宽度配置 */
 const DEFAULT_PANEL_WIDTH = 460;
@@ -81,9 +82,6 @@ onUnmounted(() => {
   document.body.style.userSelect = '';
 });
 
-/** 距底部多少像素以内仍视为「用户在跟随底部」（与主列表 scrollToBottomIfAuto 同款意图判定） */
-const NEAR_BOTTOM_THRESHOLD_PX = 120;
-
 export interface SubSessionItem {
   id: string | number;
   agentId?: string | number;
@@ -150,47 +148,22 @@ const toggleTaskExpand = (id: string | number) => {
   expandedTaskId.value[key] = !expandedTaskId.value[key];
 };
 
-/** 自动平滑滚动到底部（点击即滚动、新内容即滚动） */
-const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
-  nextTick(() => {
-    subScrollLoaderRef.value?.scrollToBottom(behavior);
-  });
-};
+const {
+  scrollToBottomForce: scrollToBottom,
+  scrollToBottomIfAuto,
+  handleMessagesScroll,
+  handleMessagesWheel,
+  handleTouchStart,
+  handleTouchMove,
+} = useChatScroll({ messagesContainerRef: subScrollLoaderRef });
 
-/**
- * 用户是否「贴底跟随」：以最近一次滚动事件时的位置为准（滚动意图），而不是读取瞬时距离——
- * 大块新内容（新工具卡、长气泡）插入瞬间 scrollHeight 先变大，瞬时判定会误判为「用户已上翻」。
- * 程序化 scrollToBottom 触发的滚动事件会把标志重新置 true，不影响跟随。
- */
-let stickToBottom = true;
-const handleSubListScroll = () => {
-  const container = subScrollLoaderRef.value?.getContainer?.();
-  if (!container) return;
-  stickToBottom = container.scrollHeight - container.scrollTop - container.clientHeight < NEAR_BOTTOM_THRESHOLD_PX;
-};
+const handleSelectCard = (id: string | number | null) => emit('selectOption', id);
 
-/** 仅在用户未上翻时跟随到底部 */
-const scrollToBottomIfFollowing = () => {
-  if (!stickToBottom) return;
-  scrollToBottom('auto');
-};
-
-const handleSelectCard = (id: string | number | null) => {
-  emit('selectOption', id);
-  if (id !== null) {
-    stickToBottom = true;
-    scrollToBottom('auto');
-    setTimeout(() => scrollToBottom('auto'), 50);
-  }
-};
-
-watch(() => props.activeSubId, (newId) => {
-  if (newId !== null) {
-    stickToBottom = true;
-    scrollToBottom('auto');
-    setTimeout(() => scrollToBottom('auto'), 50);
-  }
-});
+// 加载态会隐藏正文；必须等正文挂载后定位，固定延迟无法覆盖慢请求和缓存重开。
+watch([() => props.isOpen, () => props.activeSubId, () => props.isLoadingMessages, subScrollLoaderRef],
+  ([open, id, loading]) => {
+    if (open && id !== null && !loading) scrollToBottom();
+  }, { flush: 'post', immediate: true });
 
 /**
  * 流式跟随：子会话的流式更新走「按 id 原位替换」，消息条数不变，
@@ -217,7 +190,7 @@ const lastMessageActivity = computed(() => {
 });
 
 watch(lastMessageActivity, () => {
-  scrollToBottomIfFollowing();
+  if (!props.isLoadingMessages && !props.isLoadingMoreSubMessages) scrollToBottomIfAuto();
 });
 
 const activeItem = computed(() => {
@@ -337,23 +310,31 @@ defineExpose({
 
       <!-- 子会话消息轨迹正文 (使用与主消息列表完全一致的公共渲染组件) -->
       <div class="flex-1 overflow-hidden relative flex flex-col min-h-0 select-text">
+        <div v-if="subMessages?.length && (isLoadingMessages || messagesError)" class="px-4 py-2 text-xs text-lx-muted" role="status">
+          <span>{{ messagesError || t('chat.subAgent.loadingTrajectory') }}</span>
+          <button v-if="messagesError" class="ml-2 underline" @click="emit('retryMessages')">{{ t('common.retry') }}</button>
+        </div>
         <ChatMessageList
           ref="subScrollLoaderRef"
+          data-testid="sub-session-messages"
           :messages="subMessages || []"
           :turnMap="turnMap"
           :taskRecipientName="activeSubSession?.name"
           :sessionId="activeSubSession?.id || activeItem.id"
           :isDark="isDark"
-          :isLoading="isLoadingMessages"
+          :isLoading="isLoadingMessages && !subMessages?.length"
           :loadingText="t('chat.subAgent.loadingTrajectory')"
-          :loadError="messagesError"
+          :loadError="!subMessages?.length ? messagesError : undefined"
           :hasMore="hasMoreSubMessages"
           :isLoadingMore="isLoadingMoreSubMessages"
           :compact="true"
           @load="emit('loadMoreMessages')"
           @retryInitialLoad="emit('retryMessages')"
           @selectSubSession="(id) => emit('selectOption', id)"
-          @scroll="handleSubListScroll"
+          @scroll="handleMessagesScroll"
+          @wheel.passive="handleMessagesWheel"
+          @touchstart.passive="handleTouchStart"
+          @touchmove.passive="handleTouchMove"
         />
       </div>
     </div>

@@ -84,7 +84,10 @@ const component = relative => loadModule(path.resolve(__dirname, '../src', relat
 const util = relative => loadModule(path.resolve(__dirname, '../src', relative));
 
 function element(tag, text = '') {
-  return { tag, text, props: {}, style: {}, children: [], parent: null };
+  return { tag, text, props: {}, style: {}, children: [], parent: null,
+    scrollTop: 0, scrollHeight: 100, clientHeight: 100,
+    scrollTo({ top }) { this.scrollTop = Math.max(0, top - this.clientHeight); },
+  };
 }
 
 function text(node) {
@@ -121,13 +124,22 @@ function mountComponent(t, componentDefinition, props) {
     },
   });
   const previousWindow = global.window;
-  global.window = { setInterval };
+  const previousFrame = global.requestAnimationFrame;
+  const previousCancelFrame = global.cancelAnimationFrame;
+  global.window = { setInterval, setTimeout, clearTimeout };
+  global.requestAnimationFrame = callback => setTimeout(callback, 0);
+  global.cancelAnimationFrame = clearTimeout;
   const root = element('root');
   const app = renderer.createApp(componentDefinition, props);
   app.provide(previewKey, undefined);
   app.mount(root);
-  t.after(() => {
+  t.after(async () => {
+    await nextTick();
     app.unmount();
+    if (previousFrame === undefined) delete global.requestAnimationFrame;
+    else global.requestAnimationFrame = previousFrame;
+    if (previousCancelFrame === undefined) delete global.cancelAnimationFrame;
+    else global.cancelAnimationFrame = previousCancelFrame;
     if (previousWindow === undefined) delete global.window;
     else global.window = previousWindow;
   });

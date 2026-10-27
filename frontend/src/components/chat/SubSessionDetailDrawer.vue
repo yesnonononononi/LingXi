@@ -16,6 +16,7 @@ import MarkdownRenderer from './MarkdownRenderer.vue';
 import ModelRetryNotice from './ModelRetryNotice.vue';
 import GradientText from '../common/GradientText.vue';
 import { useTheme } from '../../composables/useTheme';
+import { useChatScroll } from '../../views/chat/useChatScroll';
 import { useI18n } from '../../i18n';
 
 const props = defineProps<{
@@ -36,6 +37,15 @@ const emit = defineEmits<{
 }>();
 
 const isLoading = ref(false);
+const messagesContainerRef = ref<HTMLElement | null>(null);
+const scroll = useChatScroll({
+  messagesContainerRef: computed(() => ({ getContainer: () => messagesContainerRef.value })),
+});
+
+watch([() => props.isOpen, () => props.subSession?.id, isLoading, messagesContainerRef],
+  ([open, id, loading]) => {
+    if (open && id != null && !loading) scroll.scrollToBottomForce();
+  }, { flush: 'post', immediate: true });
 /**
  * 展示数据直接取自会话 VO 上的**实时数组**（与右侧面板、实时 reducer 同一份）。
  *
@@ -67,9 +77,12 @@ const hasToolDetail = (tc: ToolCallTrace): boolean => {
   return (shouldShowToolArguments(tc.toolName) && !!tc.query) || !!tc.result;
 };
 
+let messagesRequestVersion = 0;
 const loadMessages = async () => {
+  const version = ++messagesRequestVersion;
   const sub = props.subSession;
   if (!sub || !sub.id) {
+    isLoading.value = false;
     loadError.value = false;
     return;
   }
@@ -80,17 +93,19 @@ const loadMessages = async () => {
     // 与主会话/右侧面板共用同一条历史管线：分页拉取后并入会话 VO 的实时数组，
     // 抽屉因此与实时事件读同一份数据（失败轮合成气泡也在同一处完成）。
     const res = await chatApi.fetchSessionMessages(sub.id, null, 100);
+    if (version !== messagesRequestVersion) return;
     if (res.ok) {
-      absorbSubSessionHistory(sub, res.data);
+      absorbSubSessionHistory(props.subSession, res.data);
     } else {
       // 加载失败：区别于「确实为空」，置失败态允许重试
       loadError.value = true;
     }
   } catch (err) {
+    if (version !== messagesRequestVersion) return;
     console.error('加载子会话消息列表失败:', err);
     loadError.value = true;
   } finally {
-    isLoading.value = false;
+    if (version === messagesRequestVersion) isLoading.value = false;
   }
 };
 
@@ -98,7 +113,10 @@ watch(
   () => [props.isOpen, props.subSession?.id],
   ([open]) => {
     if (open) {
-      loadMessages();
+      void loadMessages();
+    } else {
+      messagesRequestVersion += 1;
+      isLoading.value = false;
     }
   },
   { immediate: true }
@@ -246,15 +264,22 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
         <SessionConnectionNotice :state="streamHealthState" @reconnect="emit('reconnect')" />
 
         <!-- 消息列表正文区域 -->
-        <div class="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin">
+        <div ref="messagesContainerRef" data-testid="sub-session-detail-messages" class="flex-1 min-h-0 overflow-y-auto p-6 scrollbar-thin"
+          @scroll="scroll.handleMessagesScroll" @wheel.passive="scroll.handleMessagesWheel"
+          @touchstart.passive="scroll.handleTouchStart" @touchmove.passive="scroll.handleTouchMove">
+          <div class="space-y-6">
+          <div v-if="messages.length && (isLoading || loadError)" class="text-xs text-lx-muted" role="status">
+            <span>{{ t(loadError ? 'chat.subSession.loadFailed' : 'chat.subSession.loadingTrajectory') }}</span>
+            <button v-if="loadError" class="ml-2 underline" @click="loadMessages">{{ t('common.retry') }}</button>
+          </div>
           <!-- 加载中骨架屏 -->
-          <div v-if="isLoading" class="py-12 flex flex-col items-center justify-center gap-3 text-gray-400">
+          <div v-if="isLoading && !messages.length" class="py-12 flex flex-col items-center justify-center gap-3 text-gray-400">
             <div class="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
             <span class="text-xs font-medium">{{ t('chat.subSession.loadingTrajectory') }}</span>
           </div>
 
           <!-- 加载失败状态（区别于「确实为空」，可重试） -->
-          <div v-else-if="loadError" class="py-16 text-center text-gray-400 text-xs flex flex-col items-center gap-3">
+          <div v-else-if="loadError && !messages.length" class="py-16 text-center text-gray-400 text-xs flex flex-col items-center gap-3">
             <div class="w-12 h-12 rounded-full flex items-center justify-center bg-red-500/10 text-red-400">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -400,6 +425,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
               </div>
             </div>
           </template>
+          </div>
         </div>
       </aside>
     </Transition>
