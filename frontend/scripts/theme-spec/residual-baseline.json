@@ -2,9 +2,9 @@
   "note": "无法等价迁移的颜色残余存量基线。只允许「不得上涨」；下跌时用 --update-residual 显式下调。",
   "caliber": "按「明暗两态各自生效的非令牌颜色项」计数（复用等价门禁覆盖模型），与 census 的原子计数口径不同。",
   "updatedAt": "2026-10-27",
-  "total": 3318,
-  "dark": 1664,
-  "light": 1654,
+  "total": 3325,
+  "dark": 1668,
+  "light": 1657,
   "files": {
     "frontend/src/components/chat/ApprovalCard.vue": {
       "dark": 21,
@@ -31,8 +31,8 @@
       "light": 8
     },
     "frontend/src/components/chat/ChatMessageItem.vue": {
-      "dark": 17,
-      "light": 15
+      "dark": 15,
+      "light": 13
     },
     "frontend/src/components/chat/ChatMessageList.vue": {
       "dark": 14,
@@ -40,23 +40,27 @@
     },
     "frontend/src/components/chat/ChatProcessSegment.vue": {
       "dark": 4,
-      "light": 4
+      "light": 3
     },
     "frontend/src/components/chat/ChatResendDialog.vue": {
       "dark": 12,
       "light": 12
     },
     "frontend/src/components/chat/ChoiceQuestionGroup.vue": {
-      "dark": 43,
-      "light": 41
-    },
-    "frontend/src/components/chat/CommandApprovalGroup.vue": {
-      "dark": 6,
-      "light": 6
+      "dark": 45,
+      "light": 43
     },
     "frontend/src/components/chat/DelegatedTaskMessage.vue": {
       "dark": 4,
       "light": 0
+    },
+    "frontend/src/components/chat/InteractionCardGroup.vue": {
+      "dark": 6,
+      "light": 6
+    },
+    "frontend/src/components/chat/InteractionCards.vue": {
+      "dark": 4,
+      "light": 4
     },
     "frontend/src/components/chat/MarkdownRenderer.vue": {
       "dark": 3,
