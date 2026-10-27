@@ -14,6 +14,10 @@ import com.summit.core.conf.SensitiveDataSpec;
 import com.summit.core.mcp.McpToolScope;
 import com.summit.core.mcp.ScopeMcpProvider;
 import com.summit.core.model.RequestModelInvokerFactory;
+import com.summit.core.model.ModelProvider;
+import com.summit.core.model.ModelProviderRegistry;
+import com.summit.core.model.chat.ChatModel;
+import com.summit.runtime.compact.RequestCompactModelResolver;
 import com.summit.core.runtime.RuntimeFactory;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
@@ -104,6 +108,47 @@ class RuntimeConfigurationIntegrationTest {
 
     @AfterEach
     void shutdown() { database.shutdown(); }
+
+    @Test
+    void compactionSelectionUsesTheFrozenRevisionAndKeepsItsCredentialsOutOfExecutionSnapshots() throws Exception {
+        ModelConfig reused = model("main-model-secret").toBuilder().provider("default-streaming")
+                .reuseModelForCompaction(true).build();
+        SensitiveDataSpec first = configurations.freezeModel(31L, reused);
+        ModelConfig independent = reused.toBuilder().reuseModelForCompaction(false)
+                .compactModel(new ModelConfig.CompactModelConfig("https://compact.example/v1", "compact-secret-canary", "summary"))
+                .build();
+        SensitiveDataSpec second = configurations.freezeModel(31L, independent);
+        assertEquals(first.getVersion() + 1, second.getVersion());
+        assertEquals(reused, configurations.resolveModel(first.getId(), first.getVersion()));
+        assertEquals(independent, configurations.resolveModel(second.getId(), second.getVersion()));
+
+        List<ModelConfig> selected = new ArrayList<>();
+        ModelProviderRegistry<ChatModel> providers = new ModelProviderRegistry<>();
+        for (String provider : List.of("default", "default-compact")) {
+            providers.register(new ModelProvider<>() {
+                public String name() { return provider; }
+                public ChatModel create(ModelConfig config) {
+                    selected.add(config);
+                    return request -> null;
+                }
+            });
+        }
+        RequestCompactModelResolver resolver = new RequestCompactModelResolver(null, configurations::resolveModel,
+                providers, request -> { throw new AssertionError("不能使用应用级压缩模型"); });
+        resolver.resolve(AgentRequest.builder().modelConfigSpec(first).build());
+        resolver.resolve(AgentRequest.builder().modelConfigSpec(second).build());
+        assertEquals("main-model-secret", selected.getFirst().getApiKey());
+        assertEquals("https://compact.example/v1", selected.getLast().getBaseUrl());
+        assertEquals("compact-secret-canary", selected.getLast().getApiKey());
+        assertEquals("summary", selected.getLast().getModelName());
+        assertTrue(json.writeValueAsString(independent).contains("compact-secret-canary"));
+        String snapshot = json.writeValueAsString(Execution.builder().id("compact-config")
+                .agentRequest(AgentRequest.builder().modelConfigSpec(second).build()).build());
+        assertFalse(snapshot.contains("compact-secret-canary"));
+        SensitiveDataSpec restored = json.readValue(snapshot, Execution.class).getAgentRequest().getModelConfigSpec();
+        assertEquals(second.getId().longValue(), restored.getId().longValue());
+        assertEquals(second.getVersion(), restored.getVersion());
+    }
 
     @Test
     void changedCredentialsAndSettingsCreateImmutableRevisionsThatSurviveServiceRestart() {

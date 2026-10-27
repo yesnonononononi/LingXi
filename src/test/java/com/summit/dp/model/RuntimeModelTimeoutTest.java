@@ -51,6 +51,8 @@ class RuntimeModelTimeoutTest {
             assertTrue(withSettings.vision());
             assertTrue(withSettings.config().isReturnThinking());
             assertTrue(withSettings.config().isSendThinking());
+            assertTrue(withSettings.config().isReuseModelForCompaction());
+            assertTrue(service.runtimeConfig(7L, null).isReuseModelForCompaction());
         });
     }
 
