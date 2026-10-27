@@ -1,0 +1,178 @@
+{
+  "generatedBy": "scripts/visual/component-scenes.cjs --write-shadow-baseline",
+  "note": "暗态阴影逐字基线：box-shadow / text-shadow 完整字符串，禁止归一化",
+  "themes": {
+    "light": {
+      "cardHeaderTitle": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "choiceCustomInput": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "dropdownMenuTitle": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "chatInputTextarea": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "sidebarWorkspaceLabel": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "sidebarSessionTitle": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "sidebarFooterButton": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "sidebarEmptyState": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "sidebarHistoryTitle": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "cmiBubble": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "cmiBody": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "cmiMeta": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "smCard": {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.25) 0px 25px 50px -12px",
+        "textShadow": "none"
+      },
+      "smTitle": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "atRow": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "atName": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "atDesc": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "sapShell": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "sapTitle": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "tmRow": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "tmName": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      }
+    },
+    "dark": {
+      "cardHeaderTitle": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "choiceCustomInput": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "dropdownMenuTitle": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "chatInputTextarea": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "sidebarWorkspaceLabel": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "sidebarSessionTitle": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "sidebarFooterButton": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "sidebarEmptyState": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "sidebarHistoryTitle": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "cmiBubble": {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.05) 0px 1px 2px 0px",
+        "textShadow": "none"
+      },
+      "cmiBody": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "cmiMeta": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "smCard": {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.9) 0px 0px 60px 0px",
+        "textShadow": "none"
+      },
+      "smTitle": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "atRow": {
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.8) 0px 0px 20px 0px",
+        "textShadow": "none"
+      },
+      "atName": {
+        "boxShadow": "none",
+        "textShadow": "rgba(255, 255, 255, 0.65) 0px 0px 8px, rgba(255, 255, 255, 0.3) 0px 0px 20px"
+      },
+      "atDesc": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "sapShell": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "sapTitle": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "tmRow": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      },
+      "tmName": {
+        "boxShadow": "none",
+        "textShadow": "none"
+      }
+    }
+  }
+}

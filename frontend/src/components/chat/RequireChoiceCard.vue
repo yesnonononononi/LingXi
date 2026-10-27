@@ -156,7 +156,7 @@ const handleSubmit = () => {
 <template>
   <div
     v-if="!isDismissed"
-    :class="[CARD_SHELL_CLASS, isDark ? 'bg-[#161b26] border-gray-800' : 'bg-white border-gray-200/90']"
+    :class="[CARD_SHELL_CLASS, isDark ? 'bg-[#161b26] border-zinc-800' : 'bg-white border-zinc-200/90']"
   >
     <div :class="CARD_BODY_CLASS">
       <!-- 1. 统一 header：状态点 + 类型标签；右侧折叠/关闭（关闭仅在已决态出现） -->
@@ -167,7 +167,7 @@ const handleSubmit = () => {
             v-if="isResolved"
             type="button"
             @click="isCollapsed = !isCollapsed"
-            class="p-1 text-gray-400 hover:text-lx-tertiary transition rounded-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50"
+            class="p-1 text-zinc-400 hover:text-lx-tertiary transition rounded-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50"
                         :title="isCollapsed ? t('common.expand') : t('common.collapse')"
                         :aria-label="isCollapsed ? t('chat.approval.expandCard') : t('chat.approval.collapseCard')"
           >
@@ -180,7 +180,7 @@ const handleSubmit = () => {
             v-if="isResolved"
             type="button"
             @click="isDismissed = true"
-            class="p-1 text-gray-400 hover:text-lx-tertiary transition rounded-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50"
+            class="p-1 text-zinc-400 hover:text-lx-tertiary transition rounded-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50"
                         :title="t('common.close')"
             :aria-label="t('chat.approval.closeCard')"
           >
@@ -198,7 +198,7 @@ const handleSubmit = () => {
 
             <!-- 问题正文按纯文本渲染：后端 question 常带多行（选项说明、补充材料），
                  必须显式保留换行，否则 HTML 空白折叠会把 \n 吞成空格、全部挤成一段。 -->
-            <h3 :class="['text-[13.5px] sm:text-base font-semibold leading-relaxed whitespace-pre-wrap break-words', isDark ? 'text-gray-100' : 'text-gray-900']">
+            <h3 :class="['text-[13.5px] sm:text-base font-semibold leading-relaxed whitespace-pre-wrap break-words', isDark ? 'text-zinc-100' : 'text-zinc-900']">
               {{ questionText }}
             </h3>
 
@@ -227,7 +227,7 @@ const handleSubmit = () => {
                   'flex items-start sm:items-center gap-2 p-2.5 rounded-xl border transition-all cursor-pointer select-none group',
                   selectedIndex === idx
                     ? (isDark ? 'bg-blue-950/30 border-blue-500/60' : 'bg-blue-50/80 border-blue-400/80 shadow-xs')
-                    : (isDark ? 'border-transparent hover:bg-gray-800/40 hover:border-gray-700' : 'border-transparent hover:bg-gray-50/80 hover:border-gray-200')
+                    : (isDark ? 'border-transparent hover:bg-zinc-800/40 hover:border-zinc-700' : 'border-transparent hover:bg-zinc-50/80 hover:border-zinc-200')
                 ]"
               >
                 <div
@@ -235,14 +235,14 @@ const handleSubmit = () => {
                     'w-6 h-6 rounded-md flex items-center justify-center text-xs font-semibold flex-shrink-0 transition-colors mt-0.5 sm:mt-0',
                     selectedIndex === idx
                       ? 'bg-blue-600 text-white'
-                      : (isDark ? 'bg-gray-800 text-gray-400 group-hover:text-gray-200' : 'bg-[#eef2f6] text-gray-500 group-hover:text-gray-700')
+                      : (isDark ? 'bg-zinc-800 text-zinc-400 group-hover:text-zinc-200' : 'bg-[#eef2f6] text-zinc-500 group-hover:text-zinc-700')
                   ]"
                 >
                   {{ idx + 1 }}
                 </div>
 
                 <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 flex-1 min-w-0">
-                  <span :class="['text-[13.5px] font-semibold transition-colors whitespace-pre-wrap break-words', isDark ? 'text-gray-100' : 'text-gray-900']">
+                  <span :class="['text-[13.5px] font-semibold transition-colors whitespace-pre-wrap break-words', isDark ? 'text-zinc-100' : 'text-zinc-900']">
                     {{ item }}
                   </span>
                 </div>
@@ -255,7 +255,7 @@ const handleSubmit = () => {
                   'flex items-center gap-3 p-2 rounded-xl border transition-all cursor-text',
                   isCustomSelected
                     ? (isDark ? 'bg-blue-950/30 border-blue-500/60' : 'bg-blue-50/80 border-blue-400/80 shadow-xs')
-                    : (isDark ? 'border-transparent hover:bg-gray-800/40 hover:border-gray-700' : 'border-transparent hover:bg-gray-50/80 hover:border-gray-200')
+                    : (isDark ? 'border-transparent hover:bg-zinc-800/40 hover:border-zinc-700' : 'border-transparent hover:bg-zinc-50/80 hover:border-zinc-200')
                 ]"
               >
                 <div
@@ -263,7 +263,7 @@ const handleSubmit = () => {
                     'w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 transition-colors',
                     isCustomSelected
                       ? 'bg-blue-600 text-white'
-                      : (isDark ? 'bg-gray-800 text-gray-400' : 'bg-[#eef2f6] text-gray-400')
+                      : (isDark ? 'bg-zinc-800 text-zinc-400' : 'bg-[#eef2f6] text-zinc-400')
                   ]"
                 >
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -279,7 +279,7 @@ const handleSubmit = () => {
                   type="text"
                   :placeholder="t('chat.choice.customAnswerPlaceholder')"
                   :class="[
-                    'w-full text-[13px] bg-transparent outline-none placeholder:text-gray-400',
+                    'w-full text-[13px] bg-transparent outline-none placeholder:text-zinc-400',
                     'text-lx-primary-soft'
                   ]"
                 />

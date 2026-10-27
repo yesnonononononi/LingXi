@@ -36,7 +36,7 @@ const classes = computed(() => {
     emerald: 'focus-visible:ring-emerald-500/50',
     blue: 'focus-visible:ring-blue-500/50',
     danger: 'focus-visible:ring-red-500/50',
-    neutral: 'focus-visible:ring-gray-400/50'
+    neutral: 'focus-visible:ring-zinc-400/50'
   }[props.tone];
 
   if (props.variant === 'outline') {
@@ -51,8 +51,8 @@ const classes = computed(() => {
         ? 'border border-red-900/60 text-red-400 hover:bg-red-950/40 hover:border-red-800'
         : 'border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300',
       neutral: props.isDark
-        ? 'border border-gray-700 text-gray-300 hover:bg-gray-800'
-        : 'border border-gray-200 text-gray-700 hover:bg-gray-50'
+        ? 'border border-zinc-700 text-zinc-300 hover:bg-zinc-800'
+        : 'border border-zinc-200 text-zinc-700 hover:bg-zinc-50'
     }[props.tone];
     return [base, outline, ring];
   }
@@ -61,7 +61,7 @@ const classes = computed(() => {
     emerald: 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs',
     blue: 'bg-blue-600 hover:bg-blue-500 text-white shadow-xs',
     danger: 'bg-red-600 hover:bg-red-500 text-white shadow-xs',
-    neutral: props.isDark ? 'bg-gray-700 hover:bg-gray-600 text-white shadow-xs' : 'bg-gray-800 hover:bg-gray-700 text-white shadow-xs'
+    neutral: props.isDark ? 'bg-zinc-700 hover:bg-zinc-600 text-white shadow-xs' : 'bg-zinc-800 hover:bg-zinc-700 text-white shadow-xs'
   }[props.tone];
   return [base, solid, ring];
 });

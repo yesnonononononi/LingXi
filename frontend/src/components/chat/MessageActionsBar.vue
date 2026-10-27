@@ -21,8 +21,9 @@ const props = defineProps<ChatMessageActionsSlotProps>();
 <template>
   <!-- 复制图标 -->
   <button
+    data-testid="message-copy"
     @click="props.copyContent"
-    class="hover:text-gray-600 dark:hover:text-gray-200 transition p-0.5"
+    class="hover:text-zinc-600 dark:hover:text-zinc-200 transition p-0.5"
     :title="props.copied ? t('common.copied') : t('chat.message.copyAnswer')"
   >
     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -38,7 +39,7 @@ const props = defineProps<ChatMessageActionsSlotProps>();
     <span
       :class="[
         'w-1.5 h-1.5 rounded-full shrink-0',
-        props.execStatusMeta.failed ? 'bg-red-500' : props.execStatusMeta.running ? 'bg-amber-400 lx-live-dot' : 'bg-gray-500'
+        props.execStatusMeta.failed ? 'bg-red-500' : props.execStatusMeta.running ? 'bg-amber-400 lx-live-dot' : 'bg-zinc-500'
       ]"
     ></span>
     <span class="shrink-0" :class="props.execStatusMeta.failed ? (props.isDark ? 'text-red-400' : 'text-red-600') : ''">{{ props.execStatusMeta.text }}</span>

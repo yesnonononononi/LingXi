@@ -179,7 +179,7 @@ class QaMailboxSessionKeyEndToEndTest {
         // 3) 收尾驻留判定用同一把键：真实 SubAgentWaitInterceptor 在无子执行时因「有未处理输入」驻留。
         SessionExecutionRegistry emptyRegistry = new SessionExecutionRegistry();
         SubAgentWaitInterceptor wait = new SubAgentWaitInterceptor(emptyRegistry, service, resumeCoordinator);
-        assertFalse(wait.onBeforeComplete(rootContext("E1", ROOT_SESSION_ID, ROOT_AGENT_ID)).shouldContinue(),
+        assertFalse(wait.onBeforeComplete(rootContext("E1", ROOT_SESSION_ID, ROOT_AGENT_ID)).next(),
                 "收尾判定与投递同键：有未处理输入时必须驻留，不得提前 COMPLETED");
 
         // 4) 下一轮全新根执行 E2：执行 id 与 E1 不同，会话 id 相同 —— 消费侧必须仍命中同一把邮箱。

@@ -49,6 +49,6 @@ public class BackgroundTaskLoopInterceptor implements LoopInterceptor {
         if (!pending && !running) return InterceptorResult.NONE;
         // 完成可能早于挂起；提前登记唤醒，由控制槽位释放后重放。
         if (pending) resumeCoordinator.accept(executionId);
-        return InterceptorResult.of(LoopResult.suspended("等待后台终端任务结果"));
+        return InterceptorResult.of(LoopResult.suspended("等待后台终端任务结果"), false);
     }
 }

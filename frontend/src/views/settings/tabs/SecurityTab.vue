@@ -63,11 +63,11 @@ function resolveRuleKey(rule: SecurityRule): number {
 }
 
 /* 卡片 / 控件 / 按钮：与设置页其它 tab 同一套圆角与配色（卡片 2xl、控件 xl、图标按钮 lg） */
-const panel = 'rounded-2xl border border-gray-100 dark:border-white/10 bg-gray-50/60 dark:bg-white/[0.03] p-4';
-const control = 'rounded-xl border border-gray-200 dark:border-white/15 bg-white dark:bg-black/30 text-lx-secondary px-3 py-1.5 text-xs outline-none transition focus:border-gray-400 focus:ring-2 focus:ring-gray-200/60 dark:focus:border-white/40 dark:focus:ring-white/10';
-const button = 'rounded-xl border border-gray-200 dark:border-white/15 px-3 py-1.5 text-xs font-medium transition cursor-pointer hover:bg-black/5 active:scale-[0.97] dark:hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100';
+const panel = 'rounded-2xl border border-zinc-100 dark:border-white/10 bg-zinc-50/60 dark:bg-white/[0.03] p-4';
+const control = 'rounded-xl border border-zinc-200 dark:border-white/15 bg-white dark:bg-black/30 text-lx-secondary px-3 py-1.5 text-xs outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200/60 dark:focus:border-white/40 dark:focus:ring-white/10';
+const button = 'rounded-xl border border-zinc-200 dark:border-white/15 px-3 py-1.5 text-xs font-medium transition cursor-pointer hover:bg-black/5 active:scale-[0.97] dark:hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100';
 const primary = 'rounded-xl bg-blue-600 px-4 py-1.5 text-xs font-medium text-white shadow-sm transition cursor-pointer hover:bg-blue-500 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:active:scale-100';
-const iconButton = 'grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-gray-200 text-lx-muted transition cursor-pointer dark:border-white/15 hover:border-gray-300 hover:bg-black/5 hover:text-gray-900 dark:hover:border-white/25 dark:hover:bg-white/10 dark:hover:text-white disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent';
+const iconButton = 'grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-zinc-200 text-lx-muted transition cursor-pointer dark:border-white/15 hover:border-zinc-300 hover:bg-black/5 hover:text-zinc-900 dark:hover:border-white/25 dark:hover:bg-white/10 dark:hover:text-white disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent';
 const stateChip = 'shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium';
 function label(action: SecurityAction) { return copy.value[action === 'ALLOW' ? 'allow' : action === 'ASK' ? 'ask' : 'deny']; }
 function validate(table: SecurityRuleView | undefined, selected: SecurityCategory): asserts table is SecurityRuleView {
@@ -156,13 +156,13 @@ void load();
                 <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" /></svg>
               </button>
             </span>
-            <span class="mt-0.5 text-[11px] leading-snug text-gray-400 dark:text-zinc-400">{{ copy.sandboxDesc }}</span>
+            <span class="mt-0.5 text-[11px] leading-snug text-zinc-400 dark:text-zinc-400">{{ copy.sandboxDesc }}</span>
           </div>
           <div class="flex shrink-0 items-center gap-2">
             <span :class="[stateChip, sandboxState === 'ON'
               ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
               : sandboxState === 'OFF'
-                ? 'border-gray-200 text-lx-muted dark:border-white/15'
+                ? 'border-zinc-200 text-lx-muted dark:border-white/15'
                 : 'border-amber-500/25 bg-amber-500/10 text-amber-600 dark:text-amber-400']" data-testid="security-sandbox-state">{{ sandboxStateLabel }}</span>
             <button type="button" role="switch" :aria-checked="sandboxState === 'ON'" :aria-label="copy.sandboxTitle" :disabled="isSavingEnv"
               :class="['sec-switch', sandboxState === 'ON' ? 'is-on' : '']" data-testid="security-sandbox-toggle" @click="setSandboxEnabled(sandboxState !== 'ON')">
@@ -172,33 +172,33 @@ void load();
         </div>
 
         <!-- 沙箱服务能力检查（随沙箱设置一起从通用页搬来） -->
-        <div class="mt-3 flex items-center justify-between gap-2 border-t border-gray-100 pt-3 dark:border-white/10">
+        <div class="mt-3 flex items-center justify-between gap-2 border-t border-zinc-100 pt-3 dark:border-white/10">
           <span class="flex min-w-0 items-center gap-1.5 text-[11px] leading-5 text-lx-muted">
-            <span :class="['h-1.5 w-1.5 shrink-0 rounded-full', sandboxStatus ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-white/20']" aria-hidden="true" />
+            <span :class="['h-1.5 w-1.5 shrink-0 rounded-full', sandboxStatus ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-white/20']" aria-hidden="true" />
             <span class="min-w-0">{{ t('settings.general.sandboxService') }}：{{ sandboxStatus?.message || t('settings.general.sandboxServiceDesc') }}</span>
           </span>
           <button type="button" :class="[button, 'shrink-0']" :disabled="isCheckingSandbox" data-testid="security-check-service" @click="checkSandboxService">
             {{ isCheckingSandbox ? t('settings.general.sandboxChecking') : t('settings.general.sandboxCheck') }}
           </button>
         </div>
-        <p v-if="isCheckingSandbox" class="mt-2 text-[11px] leading-snug text-gray-400 dark:text-zinc-400">{{ t('settings.general.sandboxCheckingHint') }}</p>
+        <p v-if="isCheckingSandbox" class="mt-2 text-[11px] leading-snug text-zinc-400 dark:text-zinc-400">{{ t('settings.general.sandboxCheckingHint') }}</p>
         <div v-if="sandboxNotice" class="sec-rise mt-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-2.5 text-[11px] text-emerald-600 dark:text-emerald-400">{{ sandboxNotice }}</div>
         <div v-if="sandboxError" class="sec-rise mt-2 rounded-xl border border-red-500/20 bg-red-500/10 p-2.5 text-[11px] text-red-600 dark:text-red-400">{{ sandboxError }}</div>
-        <div v-if="showScope" class="sec-rise mt-2 rounded-xl border border-gray-100 bg-white/70 p-2.5 dark:border-white/10 dark:bg-white/[0.03]">
+        <div v-if="showScope" class="sec-rise mt-2 rounded-xl border border-zinc-100 bg-white/70 p-2.5 dark:border-white/10 dark:bg-white/[0.03]">
           <p class="text-[11px] font-medium text-lx-tertiary">{{ copy.scope }}</p>
           <p class="mt-1 text-[11px] leading-5 text-lx-muted">{{ copy.fileLimits }}</p>
         </div>
       </section>
 
       <!-- 三个入口行：标题 + 一句说明 + 箭头 -->
-      <div class="sec-rise divide-y divide-gray-100 dark:divide-white/10" :style="{ '--sec-delay': '60ms' }">
+      <div class="sec-rise divide-y divide-zinc-100 dark:divide-white/10" :style="{ '--sec-delay': '60ms' }">
         <button v-for="item in categories" :key="item" type="button" :data-testid="`security-tab-${item}`" @click="open(item)"
           class="sec-nav flex w-full items-center justify-between gap-3 rounded-xl px-2 py-3 text-left transition-colors cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/[0.05]">
           <span class="flex min-w-0 flex-col">
             <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ copy[item] }}</span>
-            <span class="mt-0.5 text-[11px] leading-snug text-gray-400 dark:text-zinc-400">{{ copy[categoryDesc[item]] }}</span>
+            <span class="mt-0.5 text-[11px] leading-snug text-zinc-400 dark:text-zinc-400">{{ copy[categoryDesc[item]] }}</span>
           </span>
-          <svg class="sec-nav-chevron h-3.5 w-3.5 shrink-0 text-gray-300 dark:text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+          <svg class="sec-nav-chevron h-3.5 w-3.5 shrink-0 text-zinc-300 dark:text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
         </button>
       </div>
     </template>
@@ -221,7 +221,7 @@ void load();
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <div class="flex min-w-0 flex-col">
             <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.accessMode') }}</span>
-            <span class="mt-0.5 text-[11px] leading-snug text-gray-400 dark:text-zinc-400">{{ t('settings.general.accessModeDesc') }}</span>
+            <span class="mt-0.5 text-[11px] leading-snug text-zinc-400 dark:text-zinc-400">{{ t('settings.general.accessModeDesc') }}</span>
           </div>
           <div class="w-full min-w-0 shrink-0 sm:w-64">
             <SettingsSelect id="security-access-mode" data-testid="security-access-mode" :label="t('settings.general.accessMode')"
@@ -233,7 +233,7 @@ void load();
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <div class="flex min-w-0 flex-col">
             <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.toolPermission') }}</span>
-            <span class="mt-0.5 text-[11px] leading-snug text-gray-400 dark:text-zinc-400">{{ t('settings.general.toolPermissionDesc') }}</span>
+            <span class="mt-0.5 text-[11px] leading-snug text-zinc-400 dark:text-zinc-400">{{ t('settings.general.toolPermissionDesc') }}</span>
           </div>
           <div class="w-full min-w-0 shrink-0 sm:w-64">
             <SettingsSelect id="security-command-policy" data-testid="security-command-policy" :label="t('settings.general.toolPermission')"
@@ -301,18 +301,18 @@ void load();
           </div>
 
           <!-- 空态：虚线框 + 图标，与 MCP 列表的空态同一语气 -->
-          <div v-if="!current.rules.length" class="grid place-items-center gap-2 rounded-2xl border border-dashed border-gray-200 py-10 text-center dark:border-white/15">
-            <svg class="h-6 w-6 text-gray-300 dark:text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.57-.598-3.75h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
+          <div v-if="!current.rules.length" class="grid place-items-center gap-2 rounded-2xl border border-dashed border-zinc-200 py-10 text-center dark:border-white/15">
+            <svg class="h-6 w-6 text-zinc-300 dark:text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.57-.598-3.75h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
             <p class="text-[11px] text-lx-faint">{{ copy.empty }}</p>
           </div>
 
           <div v-for="(rule, index) in current.rules" :key="resolveRuleKey(rule)"
-            :class="['sec-rise group mt-2 rounded-xl border border-gray-200/80 bg-white/70 p-2.5 transition-colors hover:border-gray-300 hover:bg-white dark:border-white/10 dark:bg-white/[0.02] dark:hover:border-white/20 dark:hover:bg-white/[0.05]',
+            :class="['sec-rise group mt-2 rounded-xl border border-zinc-200/80 bg-white/70 p-2.5 transition-colors hover:border-zinc-300 hover:bg-white dark:border-white/10 dark:bg-white/[0.02] dark:hover:border-white/20 dark:hover:bg-white/[0.05]',
               rule.enabled ? '' : 'opacity-55', rule === freshRule ? 'sec-flash' : '']"
             :style="{ '--sec-delay': `${Math.min(index, 10) * 30}ms` }" data-testid="security-rule">
             <div class="flex items-start gap-2 min-w-0">
               <span :class="['shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium',
-                rule.preset ? 'border-blue-500/25 bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'border-gray-200 text-lx-muted dark:border-white/15']">{{ rule.preset ? copy.preset : copy.custom }}</span>
+                rule.preset ? 'border-blue-500/25 bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'border-zinc-200 text-lx-muted dark:border-white/15']">{{ rule.preset ? copy.preset : copy.custom }}</span>
               <code class="min-w-0 flex-1 rounded-md bg-black/[0.04] px-1.5 py-0.5 font-mono text-xs leading-5 text-lx-secondary [overflow-wrap:anywhere] dark:bg-white/[0.06]">{{ rule.pattern }}</code>
               <span class="flex shrink-0 items-center gap-1">
                 <label class="sec-check" :title="copy.enabled">
@@ -347,7 +347,7 @@ void load();
         </fieldset>
 
         <!-- 保存底栏：浮起的玻璃条，滚动时压住下方规则（sticky 不能被带 transform 的祖先包住） -->
-        <div v-if="category !== 'net'" class="sec-rise sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-gray-200/80 bg-white/95 px-3 py-2 shadow-lg backdrop-blur dark:border-white/10 dark:bg-zinc-950/90" :style="{ '--sec-delay': '140ms' }">
+        <div v-if="category !== 'net'" class="sec-rise sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-zinc-200/80 bg-white/95 px-3 py-2 shadow-lg backdrop-blur dark:border-white/10 dark:bg-zinc-950/90" :style="{ '--sec-delay': '140ms' }">
           <span role="status" class="flex items-center gap-1.5 text-[11px] text-lx-muted">
             <span v-if="notice" class="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
             <span v-else-if="dirty[category]" class="sec-ping h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
@@ -396,7 +396,7 @@ void load();
 
 .sec-nav:hover .sec-nav-chevron {
   transform: translateX(3px);
-  @apply text-gray-500 dark:text-zinc-300;
+  @apply text-zinc-500 dark:text-zinc-300;
 }
 
 /* 标题旁的说明按钮 */
@@ -408,11 +408,11 @@ void load();
 
 /* ================= 总开关 ================= */
 .sec-switch {
-  @apply relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full bg-gray-200;
+  @apply relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full bg-zinc-200;
   transition: background-color 0.22s ease;
 }
 
-.sec-switch:hover { @apply bg-gray-300; }
+.sec-switch:hover { @apply bg-zinc-300; }
 .sec-switch.is-on { @apply bg-blue-600; }
 .sec-switch.is-on:hover { @apply bg-blue-500; }
 .sec-switch:disabled { @apply cursor-not-allowed opacity-50; }
@@ -436,11 +436,11 @@ void load();
 }
 
 .sec-check__input {
-  @apply h-3.5 w-3.5 cursor-pointer appearance-none rounded-[5px] border border-gray-300 bg-white;
+  @apply h-3.5 w-3.5 cursor-pointer appearance-none rounded-[5px] border border-zinc-300 bg-white;
   transition: background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
-.sec-check__input:hover { @apply border-gray-400; }
+.sec-check__input:hover { @apply border-zinc-400; }
 .sec-check__input:checked { @apply border-blue-600 bg-blue-600; }
 .sec-check__input:focus-visible { @apply outline-none ring-2 ring-blue-500/30; }
 

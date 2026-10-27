@@ -6,20 +6,24 @@ export interface PromptCardEntry {
   responseId?: string;
 }
 
-export type GroupedPromptCardEntry = PromptCardEntry & { commands?: PromptCardEntry[]; choices?: PromptCardEntry[] };
+export type GroupedPromptCardEntry = PromptCardEntry & { approvals?: PromptCardEntry[]; choices?: PromptCardEntry[] };
 
-/** 只合并当前消息的命令审批，其他卡片保留独立位置和权威身份。 */
-export function groupCommandApprovals(entries: PromptCardEntry[]): GroupedPromptCardEntry[] {
+/** 当前消息内按审批类型归组，保留每张卡片的权威身份。 */
+export function groupApprovalCards(entries: PromptCardEntry[]): GroupedPromptCardEntry[] {
   const grouped: GroupedPromptCardEntry[] = [];
-  let commandGroup: GroupedPromptCardEntry | undefined;
+  const groups = new Map<string, GroupedPromptCardEntry>();
   for (const entry of entries) {
-    if (entry.card.kind !== 'COMMAND') {
+    const kind = entry.card.kind;
+    if (kind !== 'COMMAND' && kind !== 'PLAN') {
       grouped.push(entry);
-    } else if (commandGroup) {
-      commandGroup.commands!.push(entry);
     } else {
-      commandGroup = { ...entry, commands: [entry] };
-      grouped.push(commandGroup);
+      const existing = groups.get(kind);
+      if (existing) existing.approvals!.push(entry);
+      else {
+        const group = { ...entry, approvals: [entry] };
+        groups.set(kind, group);
+        grouped.push(group);
+      }
     }
   }
   return grouped;

@@ -68,10 +68,10 @@ const {
     <div v-if="!isEditingOrAddingAgent" class="space-y-4">
       <div class="flex items-center justify-between">
         <div>
-                    <h4 class="text-base font-bold tracking-tight" :class="isDark ? 'text-white text-glow-white' : 'text-gray-900'">
+                    <h4 class="text-base font-bold tracking-tight" :class="isDark ? 'text-white text-glow-white' : 'text-zinc-900'">
             {{ t('settings.agents.title') }}
           </h4>
-          <p class="text-xs mt-0.5" :class="isDark ? 'text-zinc-400 text-glow-subtle' : 'text-gray-500'">
+          <p class="text-xs mt-0.5" :class="isDark ? 'text-zinc-400 text-glow-subtle' : 'text-zinc-500'">
             {{ t('settings.agents.subtitle') }}
           </p>
         </div>
@@ -133,7 +133,7 @@ const {
                 'w-full h-[30px] pl-8 pr-7 rounded-lg border outline-none text-xs transition',
                 isDark
                   ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-lx-faint focus:border-cyan-400'
-                  : 'bg-lx-surface-elevated border-lx-border-strong text-gray-900 placeholder-lx-faint focus:border-blue-500'
+                  : 'bg-lx-surface-elevated border-lx-border-strong text-zinc-900 placeholder-lx-faint focus:border-blue-500'
               ]"
             />
             <button
@@ -210,7 +210,7 @@ const {
                     : 'bg-blue-50/60 border-blue-400 shadow-sm')
                 : (isDark
                     ? 'bg-black/90 border-white/15 hover:border-white/30 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
-                    : 'bg-gray-50/70 border-gray-200 hover:border-gray-300')
+                    : 'bg-zinc-50/70 border-zinc-200 hover:border-zinc-300')
             ]"
           >
             <div class="flex items-start justify-between gap-3">
@@ -233,9 +233,9 @@ const {
                   <span
                     v-else-if="agent.avatar"
                     class="w-5 h-5 rounded-full flex items-center justify-center text-xs leading-none shrink-0 select-none"
-                    :class="isDark ? 'bg-white/10' : 'bg-gray-200/80'"
+                    :class="isDark ? 'bg-white/10' : 'bg-zinc-200/80'"
                   >{{ agent.avatar }}</span>
-                  <span class="text-sm font-semibold truncate" :class="isDark ? 'text-white text-glow-white' : 'text-gray-900'">
+                  <span class="text-sm font-semibold truncate" :class="isDark ? 'text-white text-glow-white' : 'text-zinc-900'">
                     {{ agent.name }}
                   </span>
                   <span
@@ -268,7 +268,7 @@ const {
                       :class="[
                         isDark
                           ? 'bg-white/5 border-white/15 text-emerald-400'
-                          : 'bg-white border-gray-200 text-emerald-700 shadow-2xs'
+                          : 'bg-white border-zinc-200 text-emerald-700 shadow-2xs'
                       ]"
                     >
                       {{ resolveToolFullName(toolName) }}
@@ -283,7 +283,7 @@ const {
                 <button
                   type="button"
                   @click="startEditAgent(agent)"
-                  class="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 transition cursor-pointer"
+                  class="p-1.5 rounded-lg text-zinc-400 hover:text-blue-500 transition cursor-pointer"
                   :title="t('settings.agents.editAction')"
                 >
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -293,7 +293,7 @@ const {
                 <button
                   type="button"
                   @click="handleDeleteAgent(agent)"
-                  class="p-1.5 rounded-lg text-gray-400 hover:text-red-500 transition cursor-pointer"
+                  class="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 transition cursor-pointer"
                   :title="t('settings.agents.deleteAction')"
                 >
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -309,7 +309,7 @@ const {
 
     <!-- 新增 / 编辑表单模式 -->
     <div v-else class="space-y-4">
-      <div class="flex items-center justify-between border-b pb-3" :class="isDark ? 'border-gray-800' : 'border-gray-200'">
+      <div class="flex items-center justify-between border-b pb-3" :class="isDark ? 'border-zinc-800' : 'border-zinc-200'">
         <div>
                     <h4 class="text-base font-bold tracking-tight text-lx-primary">
             {{ editingAgentId ? t('settings.agents.editHeading') : t('settings.agents.addHeading') }}
@@ -321,7 +321,7 @@ const {
         <button
           type="button"
           @click="cancelAgentForm"
-          class="px-2.5 py-1 text-xs rounded-lg text-gray-400 hover:text-gray-200 cursor-pointer"
+          class="px-2.5 py-1 text-xs rounded-lg text-zinc-400 hover:text-zinc-200 cursor-pointer"
         >
                     {{ t('common.backToList') }}
         </button>
@@ -334,7 +334,7 @@ const {
       <div class="space-y-3 text-xs">
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-                        <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
+                        <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-zinc-700'">
               {{ t('settings.agents.nameLabel') }} <span class="text-red-500">*</span>
             </label>
             <input
@@ -342,12 +342,12 @@ const {
                             :placeholder="t('settings.agents.namePlaceholder')"
               :class="[
                 'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
-                isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-gray-900 focus:border-blue-500'
+                isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-zinc-900 focus:border-blue-500'
               ]"
             />
           </div>
           <div>
-                        <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
+                        <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-zinc-700'">
               {{ t('settings.agents.modelLabel') }} <span class="text-red-500">*</span>
             </label>
             <!-- 基座模型：与输入框共用同一套分组下拉，替代原生 select 的系统外观 -->
@@ -364,7 +364,7 @@ const {
         </div>
 
         <div>
-          <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
+          <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-zinc-700'">
             {{ t('settings.agents.descriptionLabel') }}
           </label>
           <input
@@ -372,13 +372,13 @@ const {
             :placeholder="t('settings.agents.descriptionPlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
-              isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-zinc-900 focus:border-blue-500'
             ]"
           />
         </div>
 
         <div>
-          <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
+          <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-zinc-700'">
             {{ t('settings.agents.avatarLabel') }}
           </label>
           <input
@@ -386,13 +386,13 @@ const {
             :placeholder="t('settings.agents.avatarPlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
-              isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-zinc-900 focus:border-blue-500'
             ]"
           />
         </div>
 
         <div>
-          <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
+          <label class="block font-medium mb-1" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-zinc-700'">
                         {{ t('settings.agents.promptLabel') }} <span class="text-red-500">*</span>
           </label>
           <textarea
@@ -401,7 +401,7 @@ const {
             :placeholder="t('settings.agents.promptPlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs resize-none transition',
-              isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-zinc-900 focus:border-blue-500'
             ]"
           ></textarea>
         </div>
@@ -409,7 +409,7 @@ const {
         <!-- 工具分配模块 -->
         <div class="pt-1">
           <div class="flex items-center justify-between mb-1.5">
-            <label class="block font-medium" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700'">
+            <label class="block font-medium" :class="isDark ? 'text-zinc-200 text-glow-subtle' : 'text-zinc-700'">
                             {{ t('settings.agents.toolsLabel') }}
               <span class="font-normal ml-1 text-lx-muted">
                 {{ t('settings.agents.toolsCount', { selected: agentForm.toolList.length, total: availableTools.length }) }}
@@ -424,12 +424,12 @@ const {
               >
                                 {{ t('settings.agents.selectAll') }}
               </button>
-              <span :class="isDark ? 'text-zinc-600' : 'text-gray-400'">|</span>
+              <span :class="isDark ? 'text-zinc-600' : 'text-zinc-400'">|</span>
               <button
                 type="button"
                 @click="clearAgentTools"
                 class="cursor-pointer"
-                :class="isDark ? 'text-lx-muted hover:text-zinc-200' : 'text-lx-muted hover:text-gray-400'"
+                :class="isDark ? 'text-lx-muted hover:text-zinc-200' : 'text-lx-muted hover:text-zinc-400'"
               >
                                 {{ t('settings.agents.clear') }}
               </button>
@@ -473,7 +473,7 @@ const {
                 'p-2.5 rounded-lg border transition-all cursor-pointer flex flex-col justify-between text-left',
                 agentForm.toolList.includes(tool.name)
                   ? (isDark ? 'bg-white/10 border-white/30 text-white text-glow-subtle' : 'bg-blue-50 border-blue-300 text-blue-900')
-                  : (isDark ? 'bg-white/[0.03] border-lx-border-subtle text-zinc-300 hover:border-white/30' : 'bg-gray-50/80 border-lx-border-subtle text-gray-700 hover:border-gray-300')
+                  : (isDark ? 'bg-white/[0.03] border-lx-border-subtle text-zinc-300 hover:border-white/30' : 'bg-zinc-50/80 border-lx-border-subtle text-zinc-700 hover:border-zinc-300')
               ]"
             >
               <div class="flex items-center justify-between gap-1">
@@ -492,7 +492,7 @@ const {
                   {{ tool.readOnly ? t('settings.agents.readOnly') : t('settings.agents.readWrite') }}
                 </span>
               </div>
-              <div v-if="tool.description" class="text-[11px] truncate mt-1" :class="isDark ? 'text-zinc-400' : 'text-gray-400'" :title="tool.description">
+              <div v-if="tool.description" class="text-[11px] truncate mt-1" :class="isDark ? 'text-zinc-400' : 'text-zinc-400'" :title="tool.description">
                 {{ tool.description }}
               </div>
             </div>
@@ -504,7 +504,7 @@ const {
             type="button"
             @click="cancelAgentForm"
             class="px-3 py-1.5 rounded-xl border text-xs cursor-pointer transition"
-            :class="isDark ? 'border-white/20 hover:bg-white/10 text-zinc-200 text-glow-subtle' : 'border-gray-300 text-gray-500 hover:text-gray-700'"
+            :class="isDark ? 'border-white/20 hover:bg-white/10 text-zinc-200 text-glow-subtle' : 'border-zinc-300 text-zinc-500 hover:text-zinc-700'"
           >
                         {{ t('common.cancel') }}
           </button>

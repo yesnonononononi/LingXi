@@ -81,7 +81,7 @@ const handleClearSessions = async () => {
         <div class="text-xs font-semibold text-lx-primary-soft dark:text-glow-subtle tracking-wide">
           {{ t('settings.data.storageTitle') }}
         </div>
-        <p class="text-[11px] text-gray-400 mt-0.5">
+        <p class="text-[11px] text-zinc-400 mt-0.5">
           {{ t('settings.data.storageDesc') }}
         </p>
       </div>
@@ -92,7 +92,7 @@ const handleClearSessions = async () => {
           <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">
             {{ t('settings.data.dataDirLabel') }}
           </span>
-          <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">
+          <span class="text-[11px] text-zinc-400 dark:text-zinc-400 mt-0.5">
             {{ t('settings.data.dataDirDesc') }}
           </span>
           <span
@@ -107,7 +107,7 @@ const handleClearSessions = async () => {
           class="shrink-0 px-3 py-1 rounded-full border text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           :class="isDark
             ? 'border-lx-border-strong text-lx-secondary hover:bg-white/5'
-            : 'border-lx-border-strong text-lx-secondary hover:bg-gray-50'"
+            : 'border-lx-border-strong text-lx-secondary hover:bg-zinc-50'"
         >
           {{ busyField === 'dataDir' ? t('settings.data.migrating') : t('settings.data.change') }}
         </button>
@@ -119,7 +119,7 @@ const handleClearSessions = async () => {
           <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">
             {{ t('settings.data.skillDirLabel') }}
           </span>
-          <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">
+          <span class="text-[11px] text-zinc-400 dark:text-zinc-400 mt-0.5">
             {{ t('settings.data.skillDirDesc') }}
           </span>
           <span
@@ -134,7 +134,7 @@ const handleClearSessions = async () => {
           class="shrink-0 px-3 py-1 rounded-full border text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           :class="isDark
             ? 'border-lx-border-strong text-lx-secondary hover:bg-white/5'
-            : 'border-lx-border-strong text-lx-secondary hover:bg-gray-50'"
+            : 'border-lx-border-strong text-lx-secondary hover:bg-zinc-50'"
         >
           {{ busyField === 'skillDir' ? t('settings.data.migrating') : t('settings.data.change') }}
         </button>
@@ -167,10 +167,10 @@ const handleClearSessions = async () => {
       </div>
     </div>
 
-    <div class="h-px bg-gray-100 dark:bg-white/10"></div>
+    <div class="h-px bg-zinc-100 dark:bg-white/10"></div>
     <section class="space-y-2" data-testid="execution-cleanup">
       <div class="flex items-center justify-between gap-3">
-        <span class="text-gray-800 dark:text-zinc-200">{{ cleanup.copy.value.title }}</span>
+        <span class="text-zinc-800 dark:text-zinc-200">{{ cleanup.copy.value.title }}</span>
         <div class="flex shrink-0 gap-2">
           <button type="button" :disabled="cleanup.busy.value || busyField !== ''"
             @click="cleanup.load" data-testid="execution-cleanup-refresh"
@@ -196,9 +196,9 @@ const handleClearSessions = async () => {
     </section>
 
     <!-- 删除所有对话：真实能力（清空全部会话），保留并带二次确认 -->
-    <div class="h-px bg-gray-100 dark:bg-white/10"></div>
+    <div class="h-px bg-zinc-100 dark:bg-white/10"></div>
     <div class="flex items-center justify-between py-1.5">
-      <span class="text-gray-800 dark:text-zinc-200 dark:text-glow-subtle">{{ t('settings.data.clearAll') }}</span>
+      <span class="text-zinc-800 dark:text-zinc-200 dark:text-glow-subtle">{{ t('settings.data.clearAll') }}</span>
       <button
         type="button"
         @click="handleClearSessions"

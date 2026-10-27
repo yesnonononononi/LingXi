@@ -1,0 +1,262 @@
+{
+  "$comment": "灰阶迁移（gray → zinc）收口时重建的视觉基线指纹。基线 PNG 本身在 .lingxi/ 下、被 .gitignore 忽略，无法入仓（技术债 G-4）；本文件记录当次基线的 MD5，用于将来判断“某个基线是哪一版生成的”。重建基线后必须同步更新本文件。",
+  "generatedAt": "2026-10-27T14:57:53.064Z",
+  "commit": "819ff16（灰阶迁移收口提交，预制说明见 note）",
+  "note": "迁移前基线由 commit 8c1d616 抢救生成；本文件对应迁移后的新基线。",
+  "counts": {
+    "settings": 6,
+    "components": 44,
+    "hover": 12,
+    "total": 62
+  },
+  "files": [
+    {
+      "path": "baseline/dark/settings-agents.png",
+      "md5": "7362628e599dd90d19ab0e6117c64573"
+    },
+    {
+      "path": "baseline/dark/settings-modal.png",
+      "md5": "0cf4f0844610e6668003ed18778c72ab"
+    },
+    {
+      "path": "baseline/dark/settings-models.png",
+      "md5": "2b5abb39665527a6f67a3c36ac9dc495"
+    },
+    {
+      "path": "baseline/light/settings-agents.png",
+      "md5": "16320e973553f948fded260ffd652f63"
+    },
+    {
+      "path": "baseline/light/settings-modal.png",
+      "md5": "4022b37b5c572f7a3777ea4dec48825f"
+    },
+    {
+      "path": "baseline/light/settings-models.png",
+      "md5": "005bcfa7c6e3d76a11492767c12b33ae"
+    },
+    {
+      "path": "components/baseline/dark.png",
+      "md5": "0837fc724e6213c852f171d9c378e01e"
+    },
+    {
+      "path": "components/baseline/dark/atDesc-roi.png",
+      "md5": "b8b140e4307d41f4d77f0bdf5fd24b66"
+    },
+    {
+      "path": "components/baseline/dark/atName-roi.png",
+      "md5": "52b2205cdc4769ab2e8eea4d7e7f6e03"
+    },
+    {
+      "path": "components/baseline/dark/atRow-roi.png",
+      "md5": "1c04a19485093bca7d56524cb5868231"
+    },
+    {
+      "path": "components/baseline/dark/cardHeaderTitle-roi.png",
+      "md5": "da65e38742b5a85636aecb09d39c0cc1"
+    },
+    {
+      "path": "components/baseline/dark/chatInputTextarea-roi.png",
+      "md5": "d95a0e62cca81903932358599ff10b79"
+    },
+    {
+      "path": "components/baseline/dark/choiceCustomInput-roi.png",
+      "md5": "9fa1300889e91fac495b3cdad7c72a67"
+    },
+    {
+      "path": "components/baseline/dark/cmiBody-roi.png",
+      "md5": "dbd8f21691cfecb4773f228b2406036d"
+    },
+    {
+      "path": "components/baseline/dark/cmiBubble-roi.png",
+      "md5": "80aaa4abd46cbcca8872562efed94b81"
+    },
+    {
+      "path": "components/baseline/dark/cmiMeta-roi.png",
+      "md5": "101585fd9f241fc263e54d776c3f4684"
+    },
+    {
+      "path": "components/baseline/dark/dropdownMenuTitle-roi.png",
+      "md5": "28a890cd3a047769217dd691071d2d49"
+    },
+    {
+      "path": "components/baseline/dark/sapShell-roi.png",
+      "md5": "5242bd86e644a5d98913ace87914e391"
+    },
+    {
+      "path": "components/baseline/dark/sapTitle-roi.png",
+      "md5": "d05a42c52bbcd8cdda110d408f1e9738"
+    },
+    {
+      "path": "components/baseline/dark/sidebarEmptyState-roi.png",
+      "md5": "fd1b3e2a174f389810ef63cedaeea9ab"
+    },
+    {
+      "path": "components/baseline/dark/sidebarFooterButton-roi.png",
+      "md5": "ff73afd2654edf50765d923132b35df2"
+    },
+    {
+      "path": "components/baseline/dark/sidebarHistoryTitle-roi.png",
+      "md5": "eb1eae65775a1feff8f04e36d4736852"
+    },
+    {
+      "path": "components/baseline/dark/sidebarSessionTitle-roi.png",
+      "md5": "5f10f473ee19d3b44b72a28debcde161"
+    },
+    {
+      "path": "components/baseline/dark/sidebarWorkspaceLabel-roi.png",
+      "md5": "001d42873c8a780b05d7174ac6b55b7e"
+    },
+    {
+      "path": "components/baseline/dark/smCard-roi.png",
+      "md5": "cc81b86233633355dd69f948c7d972b4"
+    },
+    {
+      "path": "components/baseline/dark/smTitle-roi.png",
+      "md5": "54baa1808cfba3a6994ba4c48b20a6df"
+    },
+    {
+      "path": "components/baseline/dark/tmName-roi.png",
+      "md5": "3904a3d5750f9ba616485687d1b3556d"
+    },
+    {
+      "path": "components/baseline/dark/tmRow-roi.png",
+      "md5": "057d0b53e8e953890d78c345b0ee30e8"
+    },
+    {
+      "path": "components/baseline/light.png",
+      "md5": "45b1c59182779455ac53208b3c48024e"
+    },
+    {
+      "path": "components/baseline/light/atDesc-roi.png",
+      "md5": "60572746cb4b16bad81f8b62ff45fe13"
+    },
+    {
+      "path": "components/baseline/light/atName-roi.png",
+      "md5": "21dbc901d82ed4bfb09845b5c4f6bed7"
+    },
+    {
+      "path": "components/baseline/light/atRow-roi.png",
+      "md5": "2aad75e529ed80ea041940d3b0d2fec6"
+    },
+    {
+      "path": "components/baseline/light/cardHeaderTitle-roi.png",
+      "md5": "6ef42f43be1378861088f52e39567c1b"
+    },
+    {
+      "path": "components/baseline/light/chatInputTextarea-roi.png",
+      "md5": "a27e3c53b04d7ebbef29ca76cf2982e5"
+    },
+    {
+      "path": "components/baseline/light/choiceCustomInput-roi.png",
+      "md5": "d094ea343f7248d5b1e350c262773c01"
+    },
+    {
+      "path": "components/baseline/light/cmiBody-roi.png",
+      "md5": "176feaa170e3c76a2b811e1b5c5e3c44"
+    },
+    {
+      "path": "components/baseline/light/cmiBubble-roi.png",
+      "md5": "f08fdd0907e4d80f1fdc579675228bda"
+    },
+    {
+      "path": "components/baseline/light/cmiMeta-roi.png",
+      "md5": "5d9af93b174986de1a871203ac68b338"
+    },
+    {
+      "path": "components/baseline/light/dropdownMenuTitle-roi.png",
+      "md5": "a1398dc36f98582a72843c0e22e712ca"
+    },
+    {
+      "path": "components/baseline/light/sapShell-roi.png",
+      "md5": "b2e0ff473042a663f67fc024c9a72ff8"
+    },
+    {
+      "path": "components/baseline/light/sapTitle-roi.png",
+      "md5": "99b4569b2edbb8dbf017aaf537c462b0"
+    },
+    {
+      "path": "components/baseline/light/sidebarEmptyState-roi.png",
+      "md5": "c929795284e14c1d97161a087fa432c3"
+    },
+    {
+      "path": "components/baseline/light/sidebarFooterButton-roi.png",
+      "md5": "b70050acb29c1cf2c50411deaa17458d"
+    },
+    {
+      "path": "components/baseline/light/sidebarHistoryTitle-roi.png",
+      "md5": "e912423df59e596a4e9bad8a20e5cad3"
+    },
+    {
+      "path": "components/baseline/light/sidebarSessionTitle-roi.png",
+      "md5": "b98249a47b23a6d4bad3dab75e52135c"
+    },
+    {
+      "path": "components/baseline/light/sidebarWorkspaceLabel-roi.png",
+      "md5": "5e46aa0db60b3f295c8bf45f4b8e240e"
+    },
+    {
+      "path": "components/baseline/light/smCard-roi.png",
+      "md5": "15572e422180fba2c1a1ee7e39fb133a"
+    },
+    {
+      "path": "components/baseline/light/smTitle-roi.png",
+      "md5": "49fe481567d2eb61410aaf0f3a991f6f"
+    },
+    {
+      "path": "components/baseline/light/tmName-roi.png",
+      "md5": "cdfcdf205bb7b37641f1f3df00d72008"
+    },
+    {
+      "path": "components/baseline/light/tmRow-roi.png",
+      "md5": "7838d03c37159f36e65da2ceb0cab13f"
+    },
+    {
+      "path": "hover/baseline/dark-chat-copy.png",
+      "md5": "8b874501f5248272ebc853d50356ce2e"
+    },
+    {
+      "path": "hover/baseline/dark-choice-close.png",
+      "md5": "bc49a494cd7236970988cc0f1fe1e12a"
+    },
+    {
+      "path": "hover/baseline/dark-choice-collapse.png",
+      "md5": "2898e9973f724bf299acff2b9d903c48"
+    },
+    {
+      "path": "hover/baseline/dark-plan-collapse.png",
+      "md5": "83837c599428a7e40d7d6c0b5dd4cb4c"
+    },
+    {
+      "path": "hover/baseline/dark-sidebar-workspace.png",
+      "md5": "75149f0092dd1ccae522c1687708a01b"
+    },
+    {
+      "path": "hover/baseline/dark-team-modal-row-action.png",
+      "md5": "03f549d20db725d45ee32ef32591aae2"
+    },
+    {
+      "path": "hover/baseline/light-chat-copy.png",
+      "md5": "714b84e64546b00788e0f4949121f703"
+    },
+    {
+      "path": "hover/baseline/light-choice-close.png",
+      "md5": "4ab2478c0026f0bcde0759872478fd4e"
+    },
+    {
+      "path": "hover/baseline/light-choice-collapse.png",
+      "md5": "cf20ac27f1507e9ed23fa76d53c0860b"
+    },
+    {
+      "path": "hover/baseline/light-plan-collapse.png",
+      "md5": "ed58a19c66853146479bcc0456f644e8"
+    },
+    {
+      "path": "hover/baseline/light-sidebar-workspace.png",
+      "md5": "d9ac78cf75c9cf088c21a5b189816893"
+    },
+    {
+      "path": "hover/baseline/light-team-modal-row-action.png",
+      "md5": "26c20c629f3a2ab9168cff47758c8e83"
+    }
+  ]
+}

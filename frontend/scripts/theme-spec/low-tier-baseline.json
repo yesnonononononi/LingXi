@@ -1,0 +1,131 @@
+{
+  "generatedBy": "scripts/visual/component-scenes.cjs --write-low-tier-baseline",
+  "note": "低档位（gray/zinc 100–400）替换前基线：替换后必须与本文件逐条相等，否则即为未登记的预期变更",
+  "palette": {
+    "gray-100": "rgb(243, 244, 246)",
+    "gray-200": "rgb(229, 231, 235)",
+    "gray-300": "rgb(209, 213, 220)",
+    "gray-400": "rgb(153, 161, 175)",
+    "zinc-100": "rgb(244, 244, 245)",
+    "zinc-200": "rgb(228, 228, 231)",
+    "zinc-300": "rgb(212, 212, 216)",
+    "zinc-400": "rgb(159, 159, 169)"
+  },
+  "values": {
+    "light": {
+      "cardHeaderTitle": {},
+      "choiceCustomInput": {},
+      "dropdownMenuTitle": {
+        "color": "rgb(153, 161, 175)",
+        "borderTopColor": "rgb(153, 161, 175)",
+        "borderBottomColor": "rgb(153, 161, 175)"
+      },
+      "chatInputTextarea": {},
+      "sidebarWorkspaceLabel": {},
+      "sidebarSessionTitle": {},
+      "sidebarFooterButton": {},
+      "sidebarEmptyState": {
+        "color": "rgb(153, 161, 175)",
+        "borderTopColor": "rgb(153, 161, 175)",
+        "borderBottomColor": "rgb(153, 161, 175)"
+      },
+      "sidebarHistoryTitle": {
+        "color": "rgb(159, 159, 169)",
+        "borderTopColor": "rgb(159, 159, 169)",
+        "borderBottomColor": "rgb(159, 159, 169)"
+      },
+      "cmiBubble": {},
+      "cmiBody": {},
+      "cmiMeta": {
+        "color": "rgb(153, 161, 175)",
+        "borderTopColor": "rgb(153, 161, 175)",
+        "borderBottomColor": "rgb(153, 161, 175)"
+      },
+      "smCard": {
+        "borderTopColor": "rgb(244, 244, 245)",
+        "borderBottomColor": "rgb(244, 244, 245)"
+      },
+      "smTitle": {},
+      "atRow": {
+        "borderTopColor": "rgb(228, 228, 231)",
+        "borderBottomColor": "rgb(228, 228, 231)"
+      },
+      "atName": {},
+      "atDesc": {},
+      "sapShell": {
+        "borderTopColor": "rgb(228, 228, 231)",
+        "borderBottomColor": "rgb(228, 228, 231)"
+      },
+      "sapTitle": {},
+      "tmRow": {},
+      "tmName": {}
+    },
+    "dark": {
+      "cardHeaderTitle": {
+        "color": "rgb(244, 244, 245)",
+        "borderTopColor": "rgb(244, 244, 245)",
+        "borderBottomColor": "rgb(244, 244, 245)"
+      },
+      "choiceCustomInput": {
+        "color": "rgb(244, 244, 245)",
+        "borderTopColor": "rgb(244, 244, 245)",
+        "borderBottomColor": "rgb(244, 244, 245)"
+      },
+      "dropdownMenuTitle": {},
+      "chatInputTextarea": {
+        "color": "rgb(244, 244, 245)",
+        "borderTopColor": "rgb(244, 244, 245)",
+        "borderBottomColor": "rgb(244, 244, 245)"
+      },
+      "sidebarWorkspaceLabel": {},
+      "sidebarSessionTitle": {},
+      "sidebarFooterButton": {
+        "color": "rgb(159, 159, 169)",
+        "borderTopColor": "rgb(159, 159, 169)",
+        "borderBottomColor": "rgb(159, 159, 169)"
+      },
+      "sidebarEmptyState": {},
+      "sidebarHistoryTitle": {},
+      "cmiBubble": {
+        "color": "rgb(244, 244, 245)"
+      },
+      "cmiBody": {
+        "color": "rgb(244, 244, 245)",
+        "borderTopColor": "rgb(244, 244, 245)",
+        "borderBottomColor": "rgb(244, 244, 245)"
+      },
+      "cmiMeta": {},
+      "smCard": {
+        "color": "rgb(244, 244, 245)"
+      },
+      "smTitle": {},
+      "atRow": {
+        "color": "rgb(244, 244, 245)"
+      },
+      "atName": {},
+      "atDesc": {
+        "color": "rgb(159, 159, 169)",
+        "borderTopColor": "rgb(159, 159, 169)",
+        "borderBottomColor": "rgb(159, 159, 169)"
+      },
+      "sapShell": {
+        "color": "rgb(228, 228, 231)"
+      },
+      "sapTitle": {
+        "color": "rgb(228, 228, 231)",
+        "borderTopColor": "rgb(228, 228, 231)",
+        "borderBottomColor": "rgb(228, 228, 231)"
+      },
+      "tmRow": {
+        "color": "rgb(244, 244, 245)",
+        "borderTopColor": "rgb(244, 244, 245)",
+        "borderBottomColor": "rgb(244, 244, 245)"
+      },
+      "tmName": {
+        "color": "rgb(228, 228, 231)",
+        "borderTopColor": "rgb(228, 228, 231)",
+        "borderBottomColor": "rgb(228, 228, 231)"
+      }
+    }
+  }
+}

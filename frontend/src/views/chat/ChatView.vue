@@ -1,6 +1,6 @@
 
 <template>
-  <div :class="['relative flex h-screen w-screen overflow-hidden font-sans', displayIsDark ? 'text-gray-100 dark' : 'text-gray-900 light']">
+  <div :class="['relative flex h-screen w-screen overflow-hidden font-sans', displayIsDark ? 'text-zinc-100 dark' : 'text-zinc-900 light']">
 
     <!-- 全局纯净背景层：已抽成可被插件替换的独立组件，明暗由 tokens.css 的变量自行切换 -->
     <ChatBackground />
@@ -122,7 +122,7 @@
                   <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
                   <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
                 </span>
-                <span v-else class="flex items-center justify-center text-gray-400 dark:text-gray-300">
+                <span v-else class="flex items-center justify-center text-zinc-400 dark:text-zinc-300">
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7" />
                   </svg>

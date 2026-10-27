@@ -68,7 +68,7 @@ onBeforeUnmount(() => {
         'w-[768px] max-w-[calc(100vw-2rem)] h-[580px] max-h-[calc(100vh-2rem)] rounded-3xl p-6 shadow-2xl border flex flex-col',
         isDark
           ? 'bg-black border-white/15 text-zinc-100 shadow-[0_0_60px_rgba(0,0,0,0.9)] backdrop-blur-2xl'
-          : 'bg-white border-gray-100 text-gray-800'
+          : 'bg-white border-zinc-100 text-zinc-800'
       ]"
     >
       <!-- Header -->
@@ -77,7 +77,7 @@ onBeforeUnmount(() => {
         <button
           type="button"
           @click="emit('close')"
-          class="p-1 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition cursor-pointer"
+          class="p-1 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition cursor-pointer"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -95,8 +95,8 @@ onBeforeUnmount(() => {
             :class="[
               'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
               activeTab === 'general'
-                ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
-                : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-gray-600 hover:text-gray-900 hover:bg-lx-surface-hover')
+                ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
+                : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover')
             ]"
           >
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -111,8 +111,8 @@ onBeforeUnmount(() => {
             :class="[
               'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
               activeTab === 'personalization'
-                ? (isDark ? 'bg-white/10 text-white border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
-                : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-gray-600 hover:text-gray-900 hover:bg-lx-surface-hover')
+                ? (isDark ? 'bg-white/10 text-white border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
+                : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover')
             ]"
           >
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -127,8 +127,8 @@ onBeforeUnmount(() => {
             :class="[
               'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
               activeTab === 'models'
-                ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
-                : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-gray-600 hover:text-gray-900 hover:bg-lx-surface-hover')
+                ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
+                : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover')
             ]"
           >
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -145,8 +145,8 @@ onBeforeUnmount(() => {
             :class="[
               'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
               activeTab === 'agents'
-                ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
-                : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-gray-600 hover:text-gray-900 hover:bg-lx-surface-hover')
+                ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
+                : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover')
             ]"
           >
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -161,8 +161,8 @@ onBeforeUnmount(() => {
             :class="[
               'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
               activeTab === 'teams'
-                ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
-                : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-gray-600 hover:text-gray-900 hover:bg-lx-surface-hover')
+                ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
+                : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover')
             ]"
           >
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -177,8 +177,8 @@ onBeforeUnmount(() => {
             :class="[
               'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
               activeTab === 'mcp'
-                ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
-                : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-gray-600 hover:text-gray-900 hover:bg-lx-surface-hover')
+                ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
+                : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover')
             ]"
           >
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -189,8 +189,8 @@ onBeforeUnmount(() => {
 
           <button @click="activeTab = 'security'" type="button"
             :class="['shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
-              activeTab === 'security' ? (isDark ? 'bg-white/10 text-white border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
-              : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-gray-600 hover:text-gray-900 hover:bg-lx-surface-hover') ]">
+              activeTab === 'security' ? (isDark ? 'bg-white/10 text-white border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
+              : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover') ]">
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 3l8 4v5c0 5-8 9-8 9s-8-4-8-9V7l8-4zM8 12l3 3 5-6" /></svg>
             <span>{{ securityCopy.page }}</span>
           </button>
@@ -201,8 +201,8 @@ onBeforeUnmount(() => {
             :class="[
               'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
               activeTab === 'data'
-                ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
-                : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-gray-600 hover:text-gray-900 hover:bg-lx-surface-hover')
+                ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
+                : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover')
             ]"
           >
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -217,8 +217,8 @@ onBeforeUnmount(() => {
             :class="[
               'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
               activeTab === 'terms'
-                ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
-                : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-gray-600 hover:text-gray-900 hover:bg-lx-surface-hover')
+                ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
+                : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover')
             ]"
           >
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -233,8 +233,8 @@ onBeforeUnmount(() => {
             :class="[
               'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
               activeTab === 'about'
-                ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-gray-100 text-gray-900 font-semibold')
-                : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-gray-600 hover:text-gray-900 hover:bg-lx-surface-hover')
+                ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
+                : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover')
             ]"
           >
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

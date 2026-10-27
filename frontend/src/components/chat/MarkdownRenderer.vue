@@ -63,7 +63,7 @@ const handleContainerClick = async (event: MouseEvent) => {
   <div
     class="markdown-container markdown-stream-flow select-text"
     :class="[
-      props.thinkingText ? (isDark ? 'text-zinc-400' : 'text-[#888888]') : props.processText ? (isDark ? 'text-zinc-100' : 'text-black') : (isDark ? 'text-zinc-100' : 'text-gray-800'),
+      props.thinkingText ? (isDark ? 'text-zinc-400' : 'text-[#888888]') : props.processText ? (isDark ? 'text-zinc-100' : 'text-black') : (isDark ? 'text-zinc-100' : 'text-zinc-800'),
       { 'is-streaming': props.isThinking }
     ]"
     @click="handleContainerClick"

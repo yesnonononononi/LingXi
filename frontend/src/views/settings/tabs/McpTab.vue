@@ -58,7 +58,7 @@ const {
     <div v-if="!isEditingOrAddingMcp" class="space-y-4">
       <div class="flex items-center justify-between">
         <div>
-                    <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
+                    <h4 class="text-base font-bold tracking-tight text-zinc-900 dark:text-white dark:text-glow-white">
             {{ t('settings.mcp.title') }}
           </h4>
           <p class="text-xs text-lx-muted dark:text-glow-subtle mt-0.5">
@@ -78,7 +78,7 @@ const {
       </div>
 
       <!-- 加载中 -->
-            <div v-if="isMcpLoading" class="py-8 text-center text-xs text-gray-400">
+            <div v-if="isMcpLoading" class="py-8 text-center text-xs text-zinc-400">
         {{ t('settings.mcp.loading') }}
       </div>
 
@@ -98,7 +98,7 @@ const {
       <div
         v-else-if="mcpList.length === 0"
         class="py-12 text-center text-xs text-lx-faint border border-dashed rounded-2xl"
-                :class="isDark ? 'border-white/10' : 'border-gray-200'"
+                :class="isDark ? 'border-white/10' : 'border-zinc-200'"
       >
         {{ t('settings.mcp.empty') }}
       </div>
@@ -112,20 +112,20 @@ const {
           :class="[
             isDark
               ? 'bg-black/90 border-white/15 hover:border-white/30 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
-              : 'bg-gray-50/70 border-gray-200 hover:border-gray-300'
+              : 'bg-zinc-50/70 border-zinc-200 hover:border-zinc-300'
           ]"
         >
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2 flex-wrap">
-                <span class="text-sm font-semibold text-gray-900 dark:text-white dark:text-glow-subtle truncate">
+                <span class="text-sm font-semibold text-zinc-900 dark:text-white dark:text-glow-subtle truncate">
                   {{ item.name }}
                 </span>
                 <!-- 启停状态徽标 -->
                 <span
                   class="px-1.5 py-0.5 rounded-md text-[10px] font-medium shrink-0 border"
                   :class="item.status === 0
-                    ? (isDark ? 'bg-white/5 border-white/10 text-zinc-400' : 'bg-gray-200 border-gray-300 text-gray-500')
+                    ? (isDark ? 'bg-white/5 border-white/10 text-zinc-400' : 'bg-zinc-200 border-zinc-300 text-zinc-500')
                     : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'"
                 >
                   {{ item.status === 0 ? t('settings.mcp.disabled') : t('settings.mcp.enabled') }}
@@ -133,7 +133,7 @@ const {
                 <!-- 传输方式 -->
                 <span
                   class="px-1.5 py-0.5 rounded-md text-[10px] shrink-0 border"
-                  :class="isDark ? 'bg-white/5 border-white/10 text-zinc-300' : 'bg-black/5 border-gray-200 text-gray-500'"
+                  :class="isDark ? 'bg-white/5 border-white/10 text-zinc-300' : 'bg-black/5 border-zinc-200 text-zinc-500'"
                 >
                   {{ item.transport || 'streamable-http' }}
                 </span>
@@ -193,7 +193,7 @@ const {
                   'px-2 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer',
                   isDark
                     ? 'text-zinc-300 hover:bg-white/5'
-                    : 'text-gray-600 hover:bg-black/5'
+                    : 'text-zinc-600 hover:bg-black/5'
                 ]"
               >
                 {{ item.status === 0 ? t('settings.mcp.enable') : t('settings.mcp.disable') }}
@@ -241,13 +241,13 @@ const {
 
     <!-- 编辑 / 新增表单 -->
     <div v-else class="space-y-4">
-      <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
+      <h4 class="text-base font-bold tracking-tight text-zinc-900 dark:text-white dark:text-glow-white">
                 {{ editingMcpId ? t('settings.mcp.editHeading') : t('settings.mcp.addHeading') }}
       </h4>
 
       <!-- 服务名称 -->
       <div class="space-y-1.5">
-        <label class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ t('settings.mcp.nameLabel') }}</label>
+        <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.nameLabel') }}</label>
         <input
           v-model="mcpForm.name"
           type="text"
@@ -256,14 +256,14 @@ const {
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
             isDark
               ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-              : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
+              : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         />
       </div>
 
       <!-- 传输方式 -->
       <div class="space-y-1.5">
-        <label class="text-xs font-medium text-gray-700 dark:text-gray-300 inline-flex items-center gap-1.5">
+        <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300 inline-flex items-center gap-1.5">
                     {{ t('settings.mcp.transportLabel') }}
           <!-- stdio 环境依赖提示：黄圈白底感叹号，hover 说明 npx/PATH 限制 -->
           <span
@@ -297,7 +297,7 @@ const {
                 ? 'bg-cyan-600 border-cyan-500 text-white shadow-[0_0_12px_rgba(8,145,178,0.4)]'
                 : (isDark
                     ? 'border-white/15 text-zinc-300 hover:bg-white/5'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-50')
+                    : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50')
             ]"
           >
             {{ t }}
@@ -310,7 +310,7 @@ const {
 
       <!-- 服务地址（http 系传输） -->
       <div v-if="mcpForm.transport !== 'stdio'" class="space-y-1.5">
-        <label class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ t('settings.mcp.urlLabel') }}</label>
+        <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.urlLabel') }}</label>
         <input
           v-model="mcpForm.url"
           type="text"
@@ -319,14 +319,14 @@ const {
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
             isDark
               ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-              : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
+              : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         />
       </div>
 
       <!-- stdio 启动命令 -->
       <div v-if="mcpForm.transport === 'stdio'" class="space-y-1.5">
-                <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
+                <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
           {{ t('settings.mcp.commandLabel') }}
           <span class="text-lx-faint font-normal">{{ t('settings.mcp.commandHint') }}</span>
         </label>
@@ -338,14 +338,14 @@ const {
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
             isDark
               ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-              : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
+              : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         ></textarea>
       </div>
 
       <!-- stdio 环境变量 -->
       <div v-if="mcpForm.transport === 'stdio'" class="space-y-1.5">
-                <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
+                <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
           {{ t('settings.mcp.envLabel') }}
           <span class="text-lx-faint font-normal">{{ t('settings.mcp.envHint') }}</span>
         </label>
@@ -358,7 +358,7 @@ const {
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
             isDark
               ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-              : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
+              : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         ></textarea>
         <p
@@ -371,7 +371,7 @@ const {
 
       <!-- 请求头（http 系传输） -->
       <div v-if="mcpForm.transport !== 'stdio'" class="space-y-1.5">
-                <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
+                <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
           {{ t('settings.mcp.headersLabel') }}
           <span class="text-lx-faint font-normal">{{ t('settings.mcp.headersHint') }}</span>
         </label>
@@ -384,7 +384,7 @@ const {
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
             isDark
               ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-              : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
+              : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         ></textarea>
         <p
@@ -397,7 +397,7 @@ const {
 
       <!-- 服务描述：随提示词下发给模型（每服务一行），由业务用户填写 -->
       <div class="space-y-1.5">
-                <label class="text-xs font-medium text-gray-700 dark:text-gray-300">
+                <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
           {{ t('settings.mcp.descriptionLabel') }}
           <span class="text-lx-faint font-normal">{{ t('settings.mcp.descriptionHint') }}</span>
         </label>
@@ -410,7 +410,7 @@ const {
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
             isDark
               ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-              : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
+              : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         />
       </div>
@@ -418,7 +418,7 @@ const {
       <!-- 超时与输出上限 -->
       <div class="grid grid-cols-3 gap-3">
         <div class="space-y-1.5">
-          <label class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ t('settings.mcp.initTimeoutLabel') }}</label>
+          <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.initTimeoutLabel') }}</label>
           <input
             v-model.number="mcpForm.initializationTimeout"
             type="number"
@@ -427,12 +427,12 @@ const {
               'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
               isDark
                 ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80'
-                : 'bg-white border-gray-200 text-gray-800 focus:border-blue-500'
+                : 'bg-white border-zinc-200 text-zinc-800 focus:border-blue-500'
             ]"
           />
         </div>
         <div class="space-y-1.5">
-          <label class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ t('settings.mcp.execTimeoutLabel') }}</label>
+          <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.execTimeoutLabel') }}</label>
           <input
             v-model.number="mcpForm.executionTimeout"
             type="number"
@@ -441,12 +441,12 @@ const {
               'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
               isDark
                 ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80'
-                : 'bg-white border-gray-200 text-gray-800 focus:border-blue-500'
+                : 'bg-white border-zinc-200 text-zinc-800 focus:border-blue-500'
             ]"
           />
         </div>
         <div class="space-y-1.5">
-          <label class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ t('settings.mcp.maxOutputLabel') }}</label>
+          <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.maxOutputLabel') }}</label>
           <input
             v-model.number="mcpForm.maxOutput"
             type="number"
@@ -455,7 +455,7 @@ const {
               'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
               isDark
                 ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80'
-                : 'bg-white border-gray-200 text-gray-800 focus:border-blue-500'
+                : 'bg-white border-zinc-200 text-zinc-800 focus:border-blue-500'
             ]"
           />
         </div>
@@ -464,7 +464,7 @@ const {
       <!-- 启用开关 -->
       <label class="flex items-center gap-2 cursor-pointer select-none">
         <input v-model="mcpForm.enabled" type="checkbox" class="w-3.5 h-3.5 cursor-pointer accent-cyan-500" />
-        <span class="text-xs text-gray-700 dark:text-gray-300">{{ t('settings.mcp.enableService') }}</span>
+        <span class="text-xs text-zinc-700 dark:text-zinc-300">{{ t('settings.mcp.enableService') }}</span>
       </label>
 
       <!-- 表单错误 -->
@@ -487,7 +487,7 @@ const {
       </div>
 
       <!-- 底部操作按钮 -->
-      <div class="flex items-center justify-end gap-2.5 pt-3 border-t" :class="isDark ? 'border-white/10' : 'border-gray-200'">
+      <div class="flex items-center justify-end gap-2.5 pt-3 border-t" :class="isDark ? 'border-white/10' : 'border-zinc-200'">
         <button
           type="button"
           @click="cancelMcpForm"
@@ -495,7 +495,7 @@ const {
             'px-4 py-1.5 rounded-xl border text-xs font-medium transition cursor-pointer',
             isDark
               ? 'border-white/15 hover:bg-white/5 text-zinc-300'
-              : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+              : 'border-zinc-200 hover:bg-zinc-50 text-zinc-700'
           ]"
         >
                     {{ t('common.cancel') }}

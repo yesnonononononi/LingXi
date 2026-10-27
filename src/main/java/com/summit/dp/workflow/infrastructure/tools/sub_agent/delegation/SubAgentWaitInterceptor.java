@@ -96,12 +96,12 @@ public class SubAgentWaitInterceptor implements LoopInterceptor {
             }
             log.info("根执行 {} 收尾前检测到未处理协作输入，驻留并登记唤醒: rootSessionId={}",
                     execution.getId(), rootSessionId);
-            return InterceptorResult.of(LoopResult.suspended("pending collaboration input"));
+            return InterceptorResult.of(LoopResult.suspended("pending collaboration input"), false);
         }
 
         // 5, 仅剩未结束子执行：驻留等待「最后一个子执行终结」的结束事实唤醒（不自我唤醒）。
         log.info("根执行 {} 收尾前检测到未结束子执行，驻留等待: rootSessionId={}",
                 execution.getId(), rootSessionId);
-        return InterceptorResult.of(LoopResult.suspended("waiting for sub-agent results"));
+        return InterceptorResult.of(LoopResult.suspended("waiting for sub-agent results"), false);
     }
 }

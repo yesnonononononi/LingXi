@@ -59,20 +59,20 @@ const {
       <!-- 团队规模上限：真值在设置行（team_size），改完即时生效，不需要重启 -->
       <div
         class="flex items-center justify-between pb-3 border-b"
-        :class="isDark ? 'border-white/10' : 'border-gray-100'"
+        :class="isDark ? 'border-white/10' : 'border-zinc-100'"
       >
         <div class="flex flex-col">
           <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">
             {{ t('settings.teams.maxMemberSizeLabel') }}
           </span>
-          <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">
+          <span class="text-[11px] text-zinc-400 dark:text-zinc-400 mt-0.5">
             {{ t('settings.teams.maxMemberSizeDesc', { min: TEAM_SIZE_MIN, max: TEAM_SIZE_MAX }) }}
           </span>
         </div>
         <div class="flex items-center gap-2 shrink-0">
           <span
             v-if="isSavingTeamSize"
-            class="text-[11px] text-gray-400 dark:text-zinc-400"
+            class="text-[11px] text-zinc-400 dark:text-zinc-400"
           >{{ t('common.saving') }}</span>
           <input
             v-model.number="teamSizeInput"
@@ -84,7 +84,7 @@ const {
             @change="saveTeamSize"
             :class="[
               'w-16 px-2 py-1 rounded-xl border outline-none text-xs text-center transition [color-scheme:light] dark:[color-scheme:dark]',
-              isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-zinc-900 focus:border-blue-500'
             ]"
           />
         </div>
@@ -92,7 +92,7 @@ const {
 
       <div class="flex items-center justify-between">
         <div>
-                    <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
+                    <h4 class="text-base font-bold tracking-tight text-zinc-900 dark:text-white dark:text-glow-white">
             {{ t('settings.teams.title') }}
           </h4>
           <p class="text-xs text-lx-muted dark:text-glow-subtle mt-0.5">
@@ -112,7 +112,7 @@ const {
       </div>
 
       <!-- 加载中 -->
-            <div v-if="isTeamsLoading" class="py-8 text-center text-xs text-gray-400">
+            <div v-if="isTeamsLoading" class="py-8 text-center text-xs text-zinc-400">
         {{ t('settings.teams.loading') }}
       </div>
 
@@ -132,7 +132,7 @@ const {
       <div
         v-else-if="teamsList.length === 0"
         class="py-12 text-center text-xs text-lx-faint border border-dashed rounded-2xl"
-                :class="isDark ? 'border-white/10' : 'border-gray-200'"
+                :class="isDark ? 'border-white/10' : 'border-zinc-200'"
       >
         {{ t('settings.teams.empty') }}
       </div>
@@ -146,7 +146,7 @@ const {
           :class="[
             isDark
               ? 'bg-black/90 border-white/15 hover:border-white/30 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
-              : 'bg-gray-50/70 border-gray-200 hover:border-gray-300'
+              : 'bg-zinc-50/70 border-zinc-200 hover:border-zinc-300'
           ]"
         >
           <div class="flex items-start justify-between gap-3">
@@ -162,9 +162,9 @@ const {
                 <span
                   v-else-if="team.avatar"
                   class="w-5 h-5 rounded-full flex items-center justify-center text-xs leading-none shrink-0 select-none"
-                  :class="isDark ? 'bg-white/10' : 'bg-gray-200/80'"
+                  :class="isDark ? 'bg-white/10' : 'bg-zinc-200/80'"
                 >{{ team.avatar }}</span>
-                <span class="text-sm font-semibold text-gray-900 dark:text-white dark:text-glow-subtle">
+                <span class="text-sm font-semibold text-zinc-900 dark:text-white dark:text-glow-subtle">
                   {{ team.name }}
                 </span>
                 <!-- 管理者徽章 -->
@@ -201,7 +201,7 @@ const {
 
               <!-- 团队成员标签列表 -->
               <div class="pt-1">
-                <div class="text-[11px] font-medium text-gray-600 dark:text-gray-400 mb-1 flex items-center gap-1.5">
+                <div class="text-[11px] font-medium text-zinc-600 dark:text-zinc-400 mb-1 flex items-center gap-1.5">
                   <span>{{ t('settings.teams.membersLabel') }}</span>
                 </div>
                 <div v-if="team.agents && team.agents.length > 0" class="flex flex-wrap gap-1.5">
@@ -212,7 +212,7 @@ const {
                     :class="[
                       agent.id === team.commanderAgentId
                         ? (isDark ? 'bg-cyan-600/20 border-cyan-500/40 text-cyan-200 font-medium' : 'bg-blue-50 border-blue-300 text-blue-800 font-medium')
-                        : (isDark ? 'bg-white/[0.04] border-white/10 text-zinc-300' : 'bg-white border-gray-200 text-gray-700 shadow-2xs')
+                        : (isDark ? 'bg-white/[0.04] border-white/10 text-zinc-300' : 'bg-white border-zinc-200 text-zinc-700 shadow-2xs')
                     ]"
                   >
                     <!-- 成员小头像：URL 走 <img>，其余按 Emoji 文本渲染 -->
@@ -232,7 +232,7 @@ const {
                     </span>
                   </span>
                 </div>
-                <span v-else class="text-[11px] text-gray-400 italic">{{ t('settings.teams.noMemberDetail') }}</span>
+                <span v-else class="text-[11px] text-zinc-400 italic">{{ t('settings.teams.noMemberDetail') }}</span>
               </div>
             </div>
 
@@ -241,7 +241,7 @@ const {
               <button
                 type="button"
                 @click="startEditTeam(team)"
-                class="p-1.5 rounded-lg text-gray-400 hover:text-cyan-400 dark:hover:text-cyan-300 hover:bg-white/5 transition cursor-pointer"
+                class="p-1.5 rounded-lg text-zinc-400 hover:text-cyan-400 dark:hover:text-cyan-300 hover:bg-white/5 transition cursor-pointer"
                 :title="t('settings.teams.editAction')"
               >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -251,7 +251,7 @@ const {
               <button
                 type="button"
                 @click="handleDeleteTeam(team)"
-                class="p-1.5 rounded-lg text-gray-400 hover:text-red-400 dark:hover:text-red-400 hover:bg-white/5 transition cursor-pointer"
+                class="p-1.5 rounded-lg text-zinc-400 hover:text-red-400 dark:hover:text-red-400 hover:bg-white/5 transition cursor-pointer"
                 :title="t('settings.teams.deleteAction')"
               >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -266,9 +266,9 @@ const {
 
     <!-- 新增 / 编辑团队表单模式 -->
     <div v-else class="space-y-4">
-      <div class="flex items-center justify-between border-b pb-3" :class="isDark ? 'border-white/10' : 'border-gray-200'">
+      <div class="flex items-center justify-between border-b pb-3" :class="isDark ? 'border-white/10' : 'border-zinc-200'">
         <div>
-          <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
+          <h4 class="text-base font-bold tracking-tight text-zinc-900 dark:text-white dark:text-glow-white">
                         {{ editingTeamId ? t('settings.teams.editHeading', { name: teamForm.name || t('settings.teams.unnamedTeam') }) : t('settings.teams.addHeading') }}
           </h4>
           <p class="text-xs text-lx-muted dark:text-glow-subtle mt-0.5">
@@ -278,7 +278,7 @@ const {
         <button
           type="button"
           @click="cancelTeamForm"
-          class="px-2.5 py-1 text-xs rounded-lg text-gray-400 hover:text-zinc-200 cursor-pointer"
+          class="px-2.5 py-1 text-xs rounded-lg text-zinc-400 hover:text-zinc-200 cursor-pointer"
         >
                     {{ t('common.backToList') }}
         </button>
@@ -292,7 +292,7 @@ const {
       <div class="space-y-3.5 text-xs">
         <!-- 团队名称 -->
         <div>
-          <label class="block text-gray-700 dark:text-gray-300 font-medium mb-1">
+          <label class="block text-zinc-700 dark:text-zinc-300 font-medium mb-1">
                         {{ t('settings.teams.nameLabel') }} <span class="text-red-500">*</span>
           </label>
           <input
@@ -300,14 +300,14 @@ const {
             :placeholder="t('settings.teams.namePlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
-              isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-zinc-900 focus:border-blue-500'
             ]"
           />
         </div>
 
         <!-- 团队描述 (编辑团队描述) -->
         <div>
-          <label class="block text-gray-700 dark:text-gray-300 font-medium mb-1">
+          <label class="block text-zinc-700 dark:text-zinc-300 font-medium mb-1">
                         {{ t('settings.teams.descriptionLabel') }}
           </label>
           <textarea
@@ -316,14 +316,14 @@ const {
             :placeholder="t('settings.teams.descriptionPlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs resize-none transition',
-              isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-zinc-900 focus:border-blue-500'
             ]"
           ></textarea>
         </div>
 
         <!-- 团队头像 -->
         <div>
-          <label class="block text-gray-700 dark:text-gray-300 font-medium mb-1">
+          <label class="block text-zinc-700 dark:text-zinc-300 font-medium mb-1">
             {{ t('settings.teams.avatarLabel') }}
           </label>
           <input
@@ -331,7 +331,7 @@ const {
             :placeholder="t('settings.teams.avatarPlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
-              isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-zinc-900 focus:border-blue-500'
             ]"
           />
         </div>
@@ -339,9 +339,9 @@ const {
         <!-- 团队成员选择 -->
         <div>
           <div class="flex items-center justify-between mb-1.5">
-            <label class="block text-gray-700 dark:text-gray-300 font-medium">
+            <label class="block text-zinc-700 dark:text-zinc-300 font-medium">
                             {{ t('settings.teams.membersSelectLabel') }} <span class="text-red-500">*</span>
-              <span class="text-gray-400 font-normal ml-1">
+              <span class="text-zinc-400 font-normal ml-1">
                 {{ t('settings.teams.membersSelectCount', { selected: teamForm.agentIds.length, max: maxMemberSize }) }}
               </span>
             </label>
@@ -350,10 +350,10 @@ const {
           <div
             class="rounded-xl border divide-y overflow-y-auto max-h-44"
             :class="[
-              isDark ? 'border-white/15 divide-white/10 bg-black/90' : 'border-gray-200 divide-gray-100 bg-gray-50'
+              isDark ? 'border-white/15 divide-white/10 bg-black/90' : 'border-zinc-200 divide-zinc-100 bg-zinc-50'
             ]"
           >
-                        <div v-if="agentsList.length === 0" class="p-4 text-center text-xs text-gray-400">
+                        <div v-if="agentsList.length === 0" class="p-4 text-center text-xs text-zinc-400">
               {{ t('settings.teams.noAgents') }}
             </div>
             <div
@@ -365,7 +365,7 @@ const {
                 'p-2.5 flex items-center justify-between cursor-pointer transition-colors text-xs',
                 teamForm.agentIds.includes(agent.id)
                   ? (isDark ? 'bg-cyan-500/15' : 'bg-blue-50')
-                  : (isDark ? 'hover:bg-white/5' : 'hover:bg-gray-100/80')
+                  : (isDark ? 'hover:bg-white/5' : 'hover:bg-zinc-100/80')
               ]"
             >
               <div class="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
@@ -387,7 +387,7 @@ const {
                     v-else-if="agent.avatar"
                     class="text-[10px] leading-none shrink-0 select-none"
                   >{{ agent.avatar }}</span>
-                  <span class="font-medium text-gray-800 dark:text-gray-200 truncate">
+                  <span class="font-medium text-zinc-800 dark:text-zinc-200 truncate">
                     {{ agent.name }}
                   </span>
                     <span
@@ -397,7 +397,7 @@ const {
                                             {{ t('settings.teams.agentToolCount', { count: agent.toolList.length }) }}
                     </span>
                   </div>
-                  <div class="text-[11px] text-gray-400 truncate">
+                  <div class="text-[11px] text-zinc-400 truncate">
                     {{ agent.description || t('settings.agents.noDescription') }}
                   </div>
                 </div>
@@ -414,7 +414,7 @@ const {
                   v-else-if="teamForm.agentIds.includes(agent.id)"
                   type="button"
                   @click.stop="teamForm.commanderAgentId = agent.id"
-                  class="px-1.5 py-0.5 text-[10px] rounded text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/10 cursor-pointer transition"
+                  class="px-1.5 py-0.5 text-[10px] rounded text-zinc-400 hover:text-cyan-400 hover:bg-cyan-500/10 cursor-pointer transition"
                 >
                                     {{ t('settings.teams.setAsCommander') }}
                 </button>
@@ -425,9 +425,9 @@ const {
 
         <!-- 团队管理者选择 -->
         <div>
-          <label class="block text-gray-700 dark:text-gray-300 font-medium mb-1">
+          <label class="block text-zinc-700 dark:text-zinc-300 font-medium mb-1">
                         {{ t('settings.teams.commanderLabel') }} <span class="text-red-500">*</span>
-            <span class="text-gray-400 font-normal ml-1">
+            <span class="text-zinc-400 font-normal ml-1">
               {{ t('settings.teams.commanderHint') }}
             </span>
           </label>
@@ -441,7 +441,7 @@ const {
             v-model="teamForm.commanderAgentId"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs cursor-pointer [color-scheme:dark]',
-              isDark ? 'bg-black border-white/20 text-white focus:border-cyan-400' : 'bg-white border-gray-300 text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-black border-white/20 text-white focus:border-cyan-400' : 'bg-white border-zinc-300 text-zinc-900 focus:border-blue-500'
             ]"
           >
             <option v-for="agent in selectedTeamAgents" :key="agent.id" :value="agent.id" class="bg-black text-white">
@@ -451,7 +451,7 @@ const {
         </div>
 
         <!-- 底部操作按钮 -->
-        <div class="flex items-center justify-end gap-2.5 pt-3 border-t" :class="isDark ? 'border-white/10' : 'border-gray-200'">
+        <div class="flex items-center justify-end gap-2.5 pt-3 border-t" :class="isDark ? 'border-white/10' : 'border-zinc-200'">
           <button
             type="button"
             @click="cancelTeamForm"
@@ -459,7 +459,7 @@ const {
               'px-4 py-1.5 rounded-xl border text-xs font-medium transition cursor-pointer',
               isDark
                 ? 'border-white/15 hover:bg-white/5 text-zinc-300'
-                : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+                : 'border-zinc-200 hover:bg-zinc-50 text-zinc-700'
             ]"
           >
                         {{ t('common.cancel') }}

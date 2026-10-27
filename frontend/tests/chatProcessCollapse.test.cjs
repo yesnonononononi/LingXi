@@ -25,7 +25,7 @@ function loadChatModule(filename, realPlanCards = false) {
       const resolved = path.resolve(path.dirname(filename), request);
       if (request.endsWith('.vue')) {
         if (/(?:ChatProcessSegment|ProcessDetails)\.vue$/.test(request)) return load(resolved);
-        if (request.endsWith('CommandApprovalGroup.vue')) return load(resolved);
+        if (request.endsWith('ApprovalCardGroup.vue') || request.endsWith('ChoiceQuestionGroup.vue')) return load(resolved);
         if (request.endsWith('CardHeader.vue')) return load(resolved);
         // 插槽化试点（B 档）：正文与底栏内容已抽成独立组件，必须递归进来，
         // 否则通用的「透传 slots」桩会把它当成空实现，正文与工具条一起消失。
@@ -79,7 +79,7 @@ function loadComponent() {
 }
 
 function element(tag, text = '') {
-  return { tag, text, props: {}, style: {}, children: [], parent: null };
+  return { tag, text, props: {}, style: {}, children: [], parent: null, addEventListener() {}, removeEventListener() {} };
 }
 
 function text(node) {
@@ -196,6 +196,89 @@ function streamFixture() {
   return { reducer, event, answer: messages[0], AgentToolName };
 }
 
+test('已决提问收成摘要，展开可回看答案，关闭和重进均保留摘要入口', async t => {
+  const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
+  const answer = message({ aiMessages: [], toolCalls: [0, 1].map(index => ({
+    id: `q${index}`, toolName: AgentToolName.RequireChoice, status: 'success', order: index,
+    responseId: String(100 + index),
+  })), promptCards: [0, 1].map(index => ({
+    id: `q${index}`, conversationId: '7', type: 'PROMISE', status: 'completed', version: '2', allowedActions: [],
+    content: { kind: 'CHOICE', question: `问题 ${index}：选择存储方式？`, options: ['会话', '数据库'] },
+    rawOutput: { outcome: 'ANSWERED', answer: `权威答案 ${index}` },
+  })) });
+  const root = mount(t, answer);
+  const summaries = findAll(root, node => node.props?.['data-testid'] === 'choice-summary-toggle');
+  assert.equal(summaries.length, 2);
+  assert.ok(summaries.every(node => node.props['aria-expanded'] === false));
+  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'choice-question-group').length, 0);
+  assert.match(text(summaries[0]), /问题 0.*已答复/);
+  summaries[0].props.onClick();
+  await nextTick();
+  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'choice-question-group').length, 1);
+  assert.match(text(root), /权威答案 0/);
+  find(root, node => node.props?.['data-testid'] === 'choice-dismiss').props.onClick();
+  await nextTick();
+  assert.equal(summaries[0].props['aria-expanded'], false);
+  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'choice-summary-toggle').length, 2);
+  const reopened = mount(t, answer);
+  assert.equal(findAll(reopened, node => node.props?.['data-testid'] === 'choice-question-group').length, 0);
+});
+
+test('问题尚未收齐或仍有待答时保留作答卡，全部已决后自动收成组摘要', async t => {
+  const component = loadChatModule(path.resolve(__dirname, '../src/components/chat/ChoiceQuestionGroup.vue')).default;
+  const entries = reactive([{ id: 'q1', card: { toolCallId: 'q1', conversationId: '7', kind: 'CHOICE',
+    title: '', content: '第一问', status: 'completed', pending: false, outcome: 'ANSWERED', answer: '会话' } }]);
+  const root = mountComponent(t, component, { entries, responseId: '101', expectedCount: 2, isDark: true });
+  const resolveSummary = () => find(root, node => node.props?.['data-testid'] === 'choice-summary-toggle');
+  assert.equal(Boolean(resolveSummary()), false, '缺题不能误判为全部结束');
+  entries.push({ id: 'q2', card: { toolCallId: 'q2', conversationId: '7', kind: 'CHOICE', title: '',
+    content: '第二问', status: 'pending', pending: true, version: '1', allowedActions: ['ANSWER'] } });
+  await nextTick();
+  assert.equal(Boolean(resolveSummary()), false, '仍待回答时不得收起入口');
+  entries[1].card.status = 'completed';
+  entries[1].card.pending = false;
+  entries[1].card.outcome = 'ANSWERED';
+  entries[1].card.answer = '数据库';
+  await nextTick();
+  assert.equal(resolveSummary().props['aria-expanded'], false);
+  assert.match(text(resolveSummary()), /2 个问题/);
+  resolveSummary().props.onClick();
+  await nextTick();
+  assert.ok(find(root, node => node.props?.['data-testid'] === 'choice-question-group'));
+});
+
+test('计划按组收敛，待审批计划置顶并直接露出审批卡，命令保留独立组', async t => {
+  const answer = message({ aiMessages: [], promptCards: [
+    ...[0, 1].map(index => ({ id: `p${index}`, conversationId: '7', type: 'PROMISE', status: 'completed',
+      content: { kind: 'PLAN', title: `计划 ${index}`, text: `计划正文 ${index}` }, rawOutput: { outcome: 'APPROVED' } })),
+    { id: 'cmd', conversationId: '7', type: 'PROMISE', status: 'completed', content: { kind: 'COMMAND', command: 'npm test' } },
+  ] });
+  const root = mount(t, answer);
+  const planToggle = find(root, node => node.props?.['data-testid'] === 'plan-approval-toggle');
+  assert.ok(planToggle);
+  assert.match(text(planToggle), /计划审批.*2 条/);
+  assert.equal(planToggle.props['aria-expanded'], false);
+  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'command-approval-group').length, 1);
+  planToggle.props.onClick();
+  await nextTick();
+  const entries = findAll(root, node => node.props?.['data-testid'] === 'plan-approval-entry-toggle');
+  assert.equal(entries.length, 2);
+  assert.ok(entries.every(node => node.props['aria-expanded'] === false));
+  entries[0].props.onClick();
+  await nextTick();
+  assert.equal(findAll(root, node => node.tag === 'prompt-card').length, 1);
+  planToggle.props.onClick();
+  await nextTick();
+  answer.promptCards.push({ id: 'p2', conversationId: '7', type: 'PROMISE', status: 'pending', version: '3',
+    allowedActions: ['APPROVE', 'REJECT'], content: { kind: 'PLAN', title: '新计划', text: '新计划正文' } });
+  await nextTick();
+  assert.equal(planToggle.props['aria-expanded'], true);
+  const list = find(root, node => node.props?.['data-testid'] === 'plan-approval-list');
+  const first = find(list, node => node.props?.['data-approval-id']);
+  assert.equal(first.props['data-approval-id'], 'p2');
+  assert.ok(find(first, node => node.tag === 'prompt-card'));
+});
+
 test('整轮过程可折叠：历史默认收起，文本与分段一起隐藏，审批和最终正文保留', async t => {
   const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
   const answer = message({
@@ -262,6 +345,61 @@ test('整轮默认跟随执行阶段，用户手动选择不被流式增长和�
   untouched.isComplete = true;
   await nextTick();
   assert.equal(automatic.props['aria-expanded'], false, '用户没操作过时，终态自动收起整轮过程');
+});
+
+test('切入未结束会话时展开整轮过程，挂起与等待审批也直接显示过程文本', t => {
+  const { aggregateRecordsByIdentity } = loadChatModule(path.resolve(__dirname, '../src/utils/session.ts'));
+  const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
+  for (const status of ['ACCEPTED', 'RUNNING', 'WAITING', 'COMPLETED', 'FAILED', 'CANCELLED']) {
+    for (const withTurn of [false, true]) {
+      const [answer] = aggregateRecordsByIdentity('7', { '900': {
+        sessionId: '7', turnId: '900', status, viewVersion: '1', blocks: [
+          { blockId: 'text:101', responseId: '101', order: 1, type: 'TEXT', status: 'COMPLETE',
+            isBody: false, text: '已检查配置，正在准备下一步' },
+          { blockId: 'tool:approval', responseId: '102', order: 2, type: 'TOOL', status: 'PROMISED',
+            toolCallId: 'approval', toolName: AgentToolName.ExecuteCommand, arguments: '{"command":"npm test"}' },
+        ],
+      } });
+      const root = mount(t, reactive(answer), withTurn ? { turn: { status } } : {});
+      const whole = find(root, node => node.props?.['data-testid'] === 'whole-process-toggle');
+      const content = find(root, node => node.props?.['data-testid'] === 'whole-process-content');
+      const active = ['ACCEPTED', 'RUNNING', 'WAITING'].includes(status);
+      const context = `${status}, withTurn=${withTurn}`;
+      assert.equal(whole.props['aria-expanded'], active, context);
+      assert.equal(content.style.display === 'none', !active, context);
+      assert.equal(findAll(root, node => node.tag === 'markdown' && node.props.processText).length,
+        active ? 1 : 0, context);
+      if (status === 'WAITING') {
+        assert.match(text(root), /已检查配置，正在准备下一步/);
+        const title = find(root, node => node.props?.['data-testid'] === 'process-segment-title');
+        assert.doesNotMatch(title.props.class, /lx-sweep-text/, '挂起保持展开，但不能伪装成正在输出');
+      }
+    }
+  }
+});
+
+test('整轮过程在挂起和恢复间保持展开，手动折叠后仍尊重用户选择', async t => {
+  for (const withTurn of [false, true]) {
+    const answer = message({ content: '', isComplete: false, isThinking: true });
+    const turn = reactive({ status: 'RUNNING' });
+    const root = mount(t, answer, withTurn ? { turn } : {});
+    const whole = find(root, node => node.props?.['data-testid'] === 'whole-process-toggle');
+    assert.equal(whole.props['aria-expanded'], true);
+
+    answer.isThinking = false;
+    answer.isSuspended = true;
+    turn.status = 'WAITING';
+    await nextTick();
+    assert.equal(whole.props['aria-expanded'], true, '挂起不能把正在阅读的过程收起来');
+    whole.props.onClick();
+    await nextTick();
+    answer.aiMessages[0].text += '补充说明';
+    answer.isSuspended = false;
+    answer.isThinking = true;
+    turn.status = 'RUNNING';
+    await nextTick();
+    assert.equal(whole.props['aria-expanded'], false, '恢复执行不能覆盖手动折叠');
+  }
 });
 
 test('分段折叠：文本直接展示，各段默认收起，思考与工具详情不提前挂载', async t => {
@@ -403,7 +541,7 @@ test('过程区行样式统一：终端描述与工具行同字号同色，深�
       assert.match(thinking.parent.props.class, /text-\[13px\]/, '思考标题行必须同为 13px');
       // 工具行容器是"读取/查看"这类工具标题的唯一字号来源（标题本身不带字号类），一并锁住。
       assert.match(description.parent.props.class, /text-\[13px\]/, '工具行容器必须为 13px');
-      const colors = isDark ? ['text-zinc-100', 'text-glow-white'] : ['text-gray-700'];
+      const colors = isDark ? ['text-zinc-100', 'text-glow-white'] : ['text-zinc-700'];
       for (const color of colors) {
         assert.equal(description.props.class.split(' ').includes(color), true, `终端描述必须与工具行同色：${color}`);
       }
@@ -428,7 +566,7 @@ test('工具执行提示：仅显示静态灰字，结束后替换为真实输�
   await nextTick();
   const hint = find(root, node => node.tag === 'div' && String(node.props.class ?? '').includes('font-mono') && text(node).trim() === '正在执行中...');
   assert.ok(hint);
-  assert.match(hint.props.class, /text-gray-400/);
+  assert.match(hint.props.class, /text-zinc-400/);
   assert.doesNotMatch(hint.props.class, /animate-|text-amber/);
   assert.equal(Boolean(find(hint, node => String(node.props.class ?? '').includes('rounded-full'))), false);
 

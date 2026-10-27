@@ -147,27 +147,27 @@ const goBack = () => router.push('/models');
 
 const rootClass = computed(() => [
   'min-h-screen w-screen font-sans',
-  isDark.value ? 'bg-[#0b0f17] text-gray-100' : 'bg-gray-50 text-gray-900',
+  isDark.value ? 'bg-[#0b0f17] text-zinc-100' : 'bg-zinc-50 text-zinc-900',
 ]);
 const headerClass = computed(() => [
   'sticky top-0 z-20 h-14 px-4 flex items-center justify-between border-b backdrop-blur select-none',
-  isDark.value ? 'bg-[#0b0f17]/90 border-[#273043]' : 'bg-white/90 border-gray-200',
+  isDark.value ? 'bg-[#0b0f17]/90 border-[#273043]' : 'bg-white/90 border-zinc-200',
 ]);
 const themeBtnClass = computed(() => [
   'p-2 rounded-xl border transition',
-  isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-yellow-400 hover:bg-[#202738]' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100',
+  isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-yellow-400 hover:bg-[#202738]' : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:bg-zinc-100',
 ]);
-const mutedText = computed(() => (isDark.value ? 'mt-1 text-xs text-gray-400' : 'mt-1 text-xs text-gray-500'));
+const mutedText = computed(() => (isDark.value ? 'mt-1 text-xs text-zinc-400' : 'mt-1 text-xs text-zinc-500'));
 const btnClass = computed(() => [
   'px-3 py-1.5 rounded-lg text-xs border transition disabled:opacity-40 disabled:cursor-not-allowed',
-  isDark.value ? 'border-[#2d3a54] text-gray-300 hover:bg-white/5' : 'border-gray-300 text-gray-600 hover:bg-black/5',
+  isDark.value ? 'border-[#2d3a54] text-zinc-300 hover:bg-white/5' : 'border-zinc-300 text-zinc-600 hover:bg-black/5',
 ]);
-const cardClass = computed(() => ['rounded-2xl border overflow-hidden', isDark.value ? 'border-[#273043] bg-[#0f1420]' : 'border-gray-200 bg-white']);
-const dividerClass = computed(() => (isDark.value ? 'border-[#273043]' : 'border-gray-200'));
-const labelClass = computed(() => (isDark.value ? 'text-xs text-gray-400' : 'text-xs text-gray-500'));
+const cardClass = computed(() => ['rounded-2xl border overflow-hidden', isDark.value ? 'border-[#273043] bg-[#0f1420]' : 'border-zinc-200 bg-white']);
+const dividerClass = computed(() => (isDark.value ? 'border-[#273043]' : 'border-zinc-200'));
+const labelClass = computed(() => (isDark.value ? 'text-xs text-zinc-400' : 'text-xs text-zinc-500'));
 const inputClass = computed(() => [
   'w-full px-3 py-2 rounded-lg text-xs outline-none border transition',
-  isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-gray-100 placeholder-gray-500 focus:border-blue-500/60' : 'bg-white border-gray-200 text-gray-800 placeholder-gray-400 focus:border-blue-400',
+  isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-zinc-100 placeholder-zinc-500 focus:border-blue-500/60' : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-400',
 ]);
 const toastClass = computed(() => [
   'fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-xs shadow-lg',
@@ -306,7 +306,7 @@ onBeforeUnmount(() => {
                   <path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15' />
                 </svg>
                 <span>{{ isFetchingRemoteModels ? t('model.fetchingModels') : t('model.fetchModels') }}</span>
-                <svg class='w-3 h-3 text-gray-400' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
+                <svg class='w-3 h-3 text-zinc-400' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
                   <path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7' />
                 </svg>
               </button>
@@ -315,7 +315,7 @@ onBeforeUnmount(() => {
             <!-- 下拉列表 -->
             <div
               v-if='isRemoteModelDropdownOpen'
-              :class="['absolute left-0 right-0 mt-1 max-h-60 overflow-hidden rounded-xl border shadow-xl py-1 z-30 flex flex-col text-xs', isDark ? 'bg-[#161b26] border-[#2d3a54]' : 'bg-white border-gray-200']"
+              :class="['absolute left-0 right-0 mt-1 max-h-60 overflow-hidden rounded-xl border shadow-xl py-1 z-30 flex flex-col text-xs', isDark ? 'bg-[#161b26] border-[#2d3a54]' : 'bg-white border-zinc-200']"
             >
               <div v-if='remoteModelList.length > 5' class='p-2 border-b' :class='dividerClass'>
                 <input
@@ -325,7 +325,7 @@ onBeforeUnmount(() => {
                   @click.stop
                 />
               </div>
-              <div v-if='isFetchingRemoteModels' class='py-4 text-center text-gray-400 flex items-center justify-center gap-2'>
+              <div v-if='isFetchingRemoteModels' class='py-4 text-center text-zinc-400 flex items-center justify-center gap-2'>
                 <svg class='w-3.5 h-3.5 animate-spin text-blue-500' fill='none' viewBox='0 0 24 24'>
                   <circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle>
                   <path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z'></path>
@@ -341,7 +341,7 @@ onBeforeUnmount(() => {
                 </div>
                 <div class='text-[11px] opacity-90'>{{ fetchRemoteModelError }}</div>
               </div>
-              <div v-else-if='filteredRemoteModels.length === 0' class='py-4 text-center text-gray-400'>
+              <div v-else-if='filteredRemoteModels.length === 0' class='py-4 text-center text-zinc-400'>
                 {{ remoteModelSearch ? t('model.noMatchedModels') : t('model.noRemoteModels') }}
               </div>
               <div v-else class='overflow-y-auto max-h-48 scrollbar-thin py-0.5'>
@@ -351,13 +351,13 @@ onBeforeUnmount(() => {
                   @click='handleSelectRemoteModel(item.id)'
                   :class="[
                     'px-3 py-1.5 cursor-pointer flex items-center justify-between transition',
-                    isDark ? 'hover:bg-white/10' : 'hover:bg-gray-100',
+                    isDark ? 'hover:bg-white/10' : 'hover:bg-zinc-100',
                     form.modelName === item.id ? 'text-blue-500 font-medium bg-blue-500/10' : ''
                   ]"
                 >
                   <div class='min-w-0 pr-2'>
                     <div class='font-mono text-xs truncate'>{{ item.id }}</div>
-                    <div v-if='item.owned_by' class='text-[10px] text-gray-400 truncate'>
+                    <div v-if='item.owned_by' class='text-[10px] text-zinc-400 truncate'>
                       {{ t('model.organization', { owner: item.owned_by }) }}
                     </div>
                   </div>
@@ -381,7 +381,7 @@ onBeforeUnmount(() => {
               >{{ t('model.keyConfigured') }}</span>
               <span
                 v-else-if='isEdit'
-                class='inline-flex items-center px-2 py-0.5 rounded-full bg-gray-500/10 text-gray-400 text-[11px]'
+                class='inline-flex items-center px-2 py-0.5 rounded-full bg-zinc-500/10 text-zinc-400 text-[11px]'
               >{{ t('model.notConfigured') }}</span>
             </div>
             <input

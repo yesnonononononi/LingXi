@@ -18,7 +18,7 @@
           :class="[
             'min-w-0 max-w-full rounded-[18px] text-sm leading-relaxed whitespace-pre-wrap transition-colors [overflow-wrap:anywhere] overflow-hidden',
             userImageUrls.length ? 'p-2' : 'px-4 py-2.5',
-            isDark ? 'bg-zinc-800 text-zinc-100 border border-white/[0.08] shadow-xs' : 'bg-[#edf3fc] text-gray-800'
+            isDark ? 'bg-zinc-800 text-zinc-100 border border-white/[0.08] shadow-xs' : 'bg-[#edf3fc] text-zinc-800'
           ]"
         >
           <div v-if="userImageUrls.length" class="mb-2 max-w-sm flex flex-wrap gap-2" data-testid="user-images">
@@ -56,8 +56,9 @@
           </button>
         </template>
         <button
+          data-testid="user-message-copy"
           @click="copyContent"
-          class="hover:text-gray-600 dark:hover:text-zinc-200 transition p-0.5"
+          class="hover:text-zinc-600 dark:hover:text-zinc-200 transition p-0.5"
           :title="copied ? t('common.copied') : t('chat.message.copyContent')"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -67,7 +68,7 @@
         <button v-if="!props.message.unsent && props.message.turnId"
           type="button" data-testid="edit-resend" :disabled="!props.canResend || !props.message.serverMessageId"
           :aria-label="t('chat.controls.editResend')" :title="resendTitle" @click="emit('editResend', props.message)"
-          class="hover:text-gray-600 dark:hover:text-zinc-200 transition p-0.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+          class="hover:text-zinc-600 dark:hover:text-zinc-200 transition p-0.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
           <svg class="w-3.5 h-3.5" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="m16 4 4 4M4 20l4.5-1 12-12a2.8 2.8 0 0 0-4-4l-12 12L4 20Z" />
           </svg>
@@ -81,7 +82,7 @@
       <div v-if="processParts.length || props.message.isExploring" class="w-full min-w-0" data-testid="whole-process">
         <button type="button" data-testid="whole-process-toggle" :aria-expanded="wholeProcessExpanded"
           class="flex w-full min-w-0 items-center gap-2 py-1 text-left text-xs cursor-pointer"
-          :class="isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-gray-500 hover:text-gray-700'"
+          :class="isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-500 hover:text-zinc-700'"
           @click="processExpansion = !wholeProcessExpanded">
           <svg class="h-3.5 w-3.5 shrink-0 transition-transform" :class="wholeProcessExpanded ? 'rotate-90' : ''"
             viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
@@ -113,9 +114,10 @@
       <!-- 统一互动卡片：PLAN / CHOICE / COMMAND 三类 PROMISE 卡片（含 UNAVAILABLE）。
            渲染在过程折叠区之外，作为一等时间线项，确保用户可操作项不会被吞进折叠框。 -->
       <template v-for="entry in groupedCardItems" :key="entry.id">
-        <CommandApprovalGroup
-          v-if="entry.commands"
-          :entries="entry.commands"
+        <ApprovalCardGroup
+          v-if="entry.approvals"
+          :kind="entry.card.kind === 'PLAN' ? 'PLAN' : 'COMMAND'"
+          :entries="entry.approvals"
           :session-id="props.sessionId"
           :is-dark="isDark"
         />
@@ -132,7 +134,7 @@
             type="button"
             @click="toggleCard(entry.id)"
             class="w-full flex items-center gap-1.5 text-xs py-1 transition select-none text-left cursor-pointer min-w-0"
-            :class="isDark ? 'text-zinc-300 hover:text-zinc-100' : 'text-gray-600 hover:text-gray-900'"
+            :class="isDark ? 'text-zinc-300 hover:text-zinc-100' : 'text-zinc-600 hover:text-zinc-900'"
           >
             <svg
               :class="['w-3 h-3 transition-transform duration-200 shrink-0', isCardExpanded(entry.id) ? 'rotate-90' : '']"
@@ -182,7 +184,7 @@
           :title="compactingTitle"
         >
           <!-- 两侧等分剩余空间，保证提示始终居中。 -->
-          <div class="flex-1 min-w-0 h-[1px] bg-gray-200 dark:bg-gray-700/60"></div>
+          <div class="flex-1 min-w-0 h-[1px] bg-zinc-200 dark:bg-zinc-700/60"></div>
 
           <div class="flex items-center gap-1.5 text-xs text-lx-muted font-normal shrink-0">
             <svg class="w-3.5 h-3.5 opacity-80 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -195,7 +197,7 @@
             <span class="context-compact-shimmer-text">{{ t('chat.message.compressing') }}</span>
           </div>
 
-          <div class="flex-1 min-w-0 h-[1px] bg-gray-200 dark:bg-gray-700/60"></div>
+          <div class="flex-1 min-w-0 h-[1px] bg-zinc-200 dark:bg-zinc-700/60"></div>
 
         </div>
       </transition>
@@ -218,7 +220,7 @@
       <!-- 底部工具与状态栏 (对应右图：复制、赞、踩、重试、用量、耗时、时间) - 仅在会话生成结束时展示 -->
       <!-- 出现时机契约：活跃期只跟随后端终结/开始事件（isMessageCompleted）；非活跃期按 turnId 回答组 -->
       <!-- 收敛为组尾一次（isGroupTail !== false），避免同一轮次「本地气泡 + 对账行」并存时双工具条 -->
-      <div v-if="isMessageCompleted && isGroupTail !== false" class="flex flex-wrap items-center gap-4 pt-1 text-xs text-gray-400 select-none">
+      <div v-if="isMessageCompleted && isGroupTail !== false" class="flex flex-wrap items-center gap-4 pt-1 text-xs text-zinc-400 select-none">
         <slot name="actions" v-bind="actionsSlotProps">
           <component :is="injectedActions" v-if="injectedActions" v-bind="actionsSlotProps" />
           <MessageActionsBar v-else v-bind="actionsSlotProps" />
@@ -252,8 +254,8 @@ import MessageBodyDefault from './MessageBodyDefault.vue';
 import ModelRetryNotice from './ModelRetryNotice.vue';
 import DelegatedTaskMessage from './DelegatedTaskMessage.vue';
 import PromptCard from './PromptCard.vue';
-import CommandApprovalGroup from './CommandApprovalGroup.vue';
-import { groupCommandApprovals, groupChoiceQuestions, type PromptCardEntry } from '../../utils/promptCardGroups';
+import ApprovalCardGroup from './ApprovalCardGroup.vue';
+import { groupApprovalCards, groupChoiceQuestions, type PromptCardEntry } from '../../utils/promptCardGroups';
 import ChoiceQuestionGroup from './ChoiceQuestionGroup.vue';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import ChatProcessSegment from './ChatProcessSegment.vue';
@@ -345,9 +347,11 @@ const { isCopied: copied, copy: copyContentRaw } = useCopyFeedback();
 const processTimeline = computed(() => buildProcessTimeline(props.message));
 const processParts = computed(() => buildProcessSegments(processTimeline.value, props.subSessions, props.sessionId));
 
-// 自动展开只跟随执行阶段；用户一旦操作，就保留用户选择。
+// 挂起和等待审批仍未结束，不能用实时输出状态决定收起；用户操作后保留其选择。
 const processExpansion = ref<boolean | null>(null);
-const wholeProcessExpanded = computed(() => processExpansion.value ?? processIsStreaming.value);
+const wholeProcessExpanded = computed(() => processExpansion.value ?? (props.turn
+  ? isActiveTurnStatus(props.turn.status)
+  : props.message.isComplete !== true && isTurnRunning.value));
 const wholeProcessSummary = computed(() => summarizeProcess(processParts.value.flatMap(part =>
   part.kind === 'process' ? part.items : []), props.subSessions));
 const wholeProcessStatus = computed(() => formatProcessStatus(wholeProcessSummary.value, { running: 'never' }));
@@ -359,7 +363,7 @@ const cardItems = computed<PromptCardEntry[]>(() =>
     .filter(item => item.type === 'prompt_card' && !!item.card)
     .map(item => ({ id: item.id, responseId: item.responseId ?? undefined, card: toPromptCardData(item.card as NonNullable<ProcessTimelineItem['card']>) }))
 );
-const groupedCardItems = computed(() => groupChoiceQuestions(groupCommandApprovals(cardItems.value)));
+const groupedCardItems = computed(() => groupChoiceQuestions(groupApprovalCards(cardItems.value)));
 
 /** 已决卡片默认收成一行（避免大卡片常驻页底占位），细节按需展开；待决策卡片整卡展开。 */
 const expandedCardIds = ref<Record<string, boolean>>({});

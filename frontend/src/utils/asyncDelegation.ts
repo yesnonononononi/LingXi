@@ -76,7 +76,7 @@ export function subItemStatusDotClass(status: SubItemStatus): string {
     case 'failed':
       return 'bg-red-500';
     default:
-      return 'bg-gray-400';
+      return 'bg-zinc-400';
   }
 }
 

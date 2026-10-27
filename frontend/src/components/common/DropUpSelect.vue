@@ -246,7 +246,7 @@ defineExpose({
         !triggerExtraClass ? (isSmall ? 'h-8 px-2.5 py-1.5' : 'h-9 px-3 py-2') : '',
         disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer',
         // 边框颜色随主题：调用方只写 `border` 宽度时，Tailwind 默认用 currentColor 会画出深色粗边。
-        // [Q2] border-white/20 : border-gray-300 → border-strong（equalDark/equalLight 均 true）
+        // [Q2] border-white/20 : border-zinc-300 → border-strong（equalDark/equalLight 均 true）
         'border-lx-border-strong',
         isDark ? 'hover:bg-white/5' : 'hover:bg-black/5',
         triggerExtraClass
@@ -294,7 +294,7 @@ defineExpose({
           isDark ? 'dark' : 'light',
           isDark
             ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_12px_40px_rgba(0,0,0,0.95)]'
-            : 'bg-white border-gray-200/90 text-gray-800 shadow-[0_12px_30px_rgba(0,0,0,0.12)]'
+            : 'bg-white border-zinc-200/90 text-zinc-800 shadow-[0_12px_30px_rgba(0,0,0,0.12)]'
         ]"
       >
         <!-- 顶部搜索框 (完全对齐 media_1789910619342.png: 搜索...) -->
@@ -305,7 +305,7 @@ defineExpose({
             type="text"
             :placeholder="searchPlaceholder ?? t('common.searchPlaceholder')"
             class="w-full px-2 py-1 text-xs border rounded-lg outline-none select-text transition"
-            :class="isDark ? 'bg-white/[0.06] border-lx-border text-white placeholder-lx-faint focus:border-cyan-400/60' : 'bg-transparent border-lx-border text-gray-800 placeholder-lx-faint focus:border-blue-500'"
+            :class="isDark ? 'bg-white/[0.06] border-lx-border text-white placeholder-lx-faint focus:border-cyan-400/60' : 'bg-transparent border-lx-border text-zinc-800 placeholder-lx-faint focus:border-blue-500'"
             @keydown.stop
             @keydown.esc="close"
             @keydown.enter="handleSearchEnter"
@@ -372,7 +372,7 @@ defineExpose({
                 <!-- 针对 '+ 添加团队' 等操作项的分隔线 -->
                 <div
                   v-if="String(option.value).startsWith('__add_') && idx > 0"
-                  class="h-px my-1 bg-gray-100 dark:bg-gray-800/80"
+                  class="h-px my-1 bg-zinc-100 dark:bg-zinc-800/80"
                 ></div>
 
                 <div
@@ -382,8 +382,8 @@ defineExpose({
                     'px-3 py-2 rounded-xl text-xs flex items-center gap-2 transition-colors select-none',
                     option.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer',
                     isSelected(option)
-                      ? (isDark ? 'border border-white/85 bg-white/[0.12] text-white font-medium shadow-[0_0_14px_rgba(255,255,255,0.22)]' : 'bg-gray-100 text-gray-900 font-normal')
-                      : (!option.disabled ? (isDark ? 'hover:bg-white/10 text-zinc-300' : 'hover:bg-gray-50 text-gray-700') : '')
+                      ? (isDark ? 'border border-white/85 bg-white/[0.12] text-white font-medium shadow-[0_0_14px_rgba(255,255,255,0.22)]' : 'bg-zinc-100 text-zinc-900 font-normal')
+                      : (!option.disabled ? (isDark ? 'hover:bg-white/10 text-zinc-300' : 'hover:bg-zinc-50 text-zinc-700') : '')
                   ]"
                   @click="select(option)"
                 >
@@ -411,7 +411,7 @@ defineExpose({
                 <svg
                   v-if="isSelected(option)"
                   class="w-4 h-4 shrink-0 ml-auto"
-                  :class="isDark ? 'text-white' : 'text-gray-900'"
+                  :class="isDark ? 'text-white' : 'text-zinc-900'"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"

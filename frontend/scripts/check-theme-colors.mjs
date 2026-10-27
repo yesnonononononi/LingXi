@@ -111,13 +111,18 @@ export const normalizeColor = (raw) => {
   if (typeof raw !== 'string' || raw === '') return null;
   const v = raw.trim().toLowerCase();
 
-  const oklch = v.match(/^oklch\(\s*([\d.]+)(%?)\s+([\d.]+%?)\s+([\d.]+)(?:deg)?\s*(?:\/\s*([\d.]+)(%?))?\s*\)$/);
+  // 色相允许 `none`：Tailwind v4 的灰阶（如 `--color-zinc-50: oklch(98.5% 0 none)`）彩度为 0，
+  // 色相角无意义，规范允许写 `none`。旧正则只认 `[\d.]+`，遇到 `none` 整条匹配失败 ⇒
+  // normalizeColor 返回 null ⇒ 该类被当作「无法解析」丢进 raw，**整族灰阶永远不进 residual 统计**
+  // （G-7：实测 zinc-50 全族 41 项计量失明）。C=0 时色相取任何值结果相同，故把 none 当 0。
+  const oklch = v.match(/^oklch\(\s*([\d.]+)(%?)\s+([\d.]+%?|none)\s+([\d.]+|none)(?:deg)?\s*(?:\/\s*([\d.]+)(%?))?\s*\)$/);
   if (oklch) {
     const lRaw = Number(oklch[1]);
     const L = oklch[2] === '%' || lRaw > 1 ? lRaw / 100 : lRaw;
-    const cRaw = Number(String(oklch[3]).replace('%', ''));
+    const cRaw = oklch[3] === 'none' ? 0 : Number(String(oklch[3]).replace('%', ''));
     const C = String(oklch[3]).endsWith('%') ? cRaw / 100 : cRaw;
-    const [r, g, b] = oklchToRgb(L, C, Number(oklch[4]));
+    const hueDeg = oklch[4] === 'none' ? 0 : Number(oklch[4]);
+    const [r, g, b] = oklchToRgb(L, C, hueDeg);
     const alpha = oklch[5] === undefined
       ? 1
       : (oklch[6] === '%' ? Number(oklch[5]) / 100 : Number(oklch[5]));

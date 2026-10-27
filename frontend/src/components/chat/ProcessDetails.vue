@@ -141,7 +141,7 @@ const subAgentMemberTitle = (tc: ToolCallTrace, idx: number): string => {
  * （样式集中在此的理由同 {@link toolStatusDotClass}：模板里只保留一次类绑定，避免分支散落。）
  */
 const toolRowHeaderClass = (tc: ToolCallTrace, dark: boolean): string[] => {
-  const base = dark ? 'text-zinc-200 text-glow-subtle' : 'text-gray-600';
+  const base = dark ? 'text-zinc-200 text-glow-subtle' : 'text-zinc-600';
   if (!canExpandTool(tc)) {
     return [base, 'cursor-default'];
   }
@@ -165,7 +165,7 @@ const toolStatusDotClass = (status?: string): string => {
       return 'bg-red-500';
 
     case 'unknown':
-      return 'bg-gray-400';
+      return 'bg-zinc-400';
 
     default:
       return 'bg-emerald-500';
@@ -234,7 +234,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                 :class="isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-500 hover:text-zinc-700'"
               >
                 <svg
-                  :class="['w-3 h-3 transition-transform duration-200 shrink-0', isThoughtStepExpanded(item.step) ? 'rotate-90' : '', isDark ? 'text-zinc-300 drop-shadow-[0_0_4px_rgba(255,255,255,0.4)]' : 'text-gray-400']"
+                  :class="['w-3 h-3 transition-transform duration-200 shrink-0', isThoughtStepExpanded(item.step) ? 'rotate-90' : '', isDark ? 'text-zinc-300 drop-shadow-[0_0_4px_rgba(255,255,255,0.4)]' : 'text-zinc-400']"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -274,7 +274,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                       'absolute bottom-2 right-2 flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] leading-none shadow-sm transition-colors cursor-pointer',
                       isDark
                         ? 'border-white/15 bg-[#1b2130]/90 text-zinc-300 hover:text-zinc-100'
-                        : 'border-gray-200 bg-white/95 text-gray-500 hover:text-gray-800'
+                        : 'border-zinc-200 bg-white/95 text-zinc-500 hover:text-zinc-800'
                     ]"
                   >
                     <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -291,7 +291,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
               v-else-if="item.type === 'sub_agent' && item.subAgents?.length"
               :class="[
                 'w-full min-w-0 px-3.5 py-2.5 rounded-2xl border flex items-center justify-between gap-3 text-xs select-none transition-colors overflow-hidden',
-                props.isDark ? 'bg-[#141b29]/70 border-[#222d42] text-gray-200' : 'bg-blue-50/70 border-blue-200/80 text-blue-900'
+                props.isDark ? 'bg-[#141b29]/70 border-[#222d42] text-zinc-200' : 'bg-blue-50/70 border-blue-200/80 text-blue-900'
               ]"
             >
               <!-- 左侧信息区：固定尺寸，禁止压缩，文案不折行 -->
@@ -308,7 +308,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                       {{ t('chat.message.membersWorking', { count: item.subAgents.length }) }}
                     </span>
                   </div>
-                  <p class="text-[11px] text-gray-400 whitespace-nowrap">{{ t('chat.message.trajectoryOnRight') }}</p>
+                  <p class="text-[11px] text-zinc-400 whitespace-nowrap">{{ t('chat.message.trajectoryOnRight') }}</p>
                 </div>
               </div>
 
@@ -352,7 +352,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                   <!-- 箭头列恒定占位：读文件没有详情不渲染箭头，缺了这格图标会左移一格，与可展开行的图标列对不齐 -->
                   <button v-if="canExpandTool(item.tool)" type="button" class="shrink-0 cursor-pointer" :aria-expanded="!!expandedToolIds[item.tool.id]" :aria-label="t('chat.message.viewToolDetail', { category: resolveToolRenderName(item.tool.toolName) })" @click.stop="toggleToolCall(item.tool.id)">
                   <svg
-                    :class="['w-3.5 h-3.5 transition-transform duration-200 shrink-0', expandedToolIds[item.tool.id] ? 'rotate-90' : '', isDark ? 'text-zinc-300 drop-shadow-[0_0_4px_rgba(255,255,255,0.4)]' : 'text-gray-400']"
+                    :class="['w-3.5 h-3.5 transition-transform duration-200 shrink-0', expandedToolIds[item.tool.id] ? 'rotate-90' : '', isDark ? 'text-zinc-300 drop-shadow-[0_0_4px_rgba(255,255,255,0.4)]' : 'text-zinc-400']"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -362,42 +362,42 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                   </button>
                   <span v-else class="w-3.5 h-3.5 shrink-0" aria-hidden="true"></span>
                   <div class="flex-shrink-0 flex items-center">
-                    <svg v-if="getToolCategory(item.tool) === TOOL_CATEGORY.READ || getToolCategory(item.tool) === TOOL_CATEGORY.WRITE" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <svg v-if="getToolCategory(item.tool) === TOOL_CATEGORY.READ || getToolCategory(item.tool) === TOOL_CATEGORY.WRITE" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-zinc-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                       <rect x="4" y="3" width="16" height="18" rx="2" />
                       <path stroke-linecap="round" d="M8 8h8M8 12h8M8 16h4" />
                     </svg>
-                    <svg v-else-if="getToolCategory(item.tool) === TOOL_CATEGORY.COMMAND" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <svg v-else-if="getToolCategory(item.tool) === TOOL_CATEGORY.COMMAND" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-zinc-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                       <rect x="3" y="4" width="18" height="16" rx="3" />
                       <path stroke-linecap="round" stroke-linejoin="round" d="M7 9l3 3-3 3M13 15h4" />
                     </svg>
-                    <svg v-else-if="getToolCategory(item.tool) === TOOL_CATEGORY.THINK" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <svg v-else-if="getToolCategory(item.tool) === TOOL_CATEGORY.THINK" class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-zinc-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                       <circle cx="9" cy="9" r="3.5" />
                       <circle cx="15" cy="9" r="3.5" />
                       <circle cx="9" cy="15" r="3.5" />
                       <circle cx="15" cy="15" r="3.5" />
                     </svg>
-                    <svg v-else class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-gray-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <svg v-else class="w-4 h-4" :class="isDark ? 'text-zinc-100 drop-shadow-[0_0_6px_rgba(255,255,255,0.6)]' : 'text-zinc-500'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                       <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
                   </div>
                   <!-- 有目标路径/对象时（如读取/写入）：分类名 + 目标路径（读文件附行范围） -->
                   <template v-if="getToolTarget(item.tool)">
-                    <span class="font-normal shrink-0" :class="isDark ? 'text-zinc-100 text-glow-white font-medium' : 'text-gray-700'">{{ resolveToolRenderName(item.tool.toolName) }}</span>
+                    <span class="font-normal shrink-0" :class="isDark ? 'text-zinc-100 text-glow-white font-medium' : 'text-zinc-700'">{{ resolveToolRenderName(item.tool.toolName) }}</span>
                     <button
                       type="button"
                       :disabled="!canPreviewFile(item.tool)"
                       :title="canPreviewFile(item.tool) ? t('chat.message.previewFile') : undefined"
                       @click.stop="openFilePreview?.(props.sessionId, getToolTarget(item.tool))"
                       class="border-b border-dotted font-mono text-[12.5px] pb-px transition-colors truncate min-w-0"
-                      :class="isDark ? 'border-white/30 text-zinc-200 text-glow-subtle' : 'border-gray-400 text-gray-700'"
+                      :class="isDark ? 'border-white/30 text-zinc-200 text-glow-subtle' : 'border-zinc-400 text-zinc-700'"
                     >
                       {{ cleanDisplayPath(getToolTarget(item.tool)) }}
                     </button>
                     <span
                       v-if="getToolLineRange(item.tool)"
                       class="font-mono text-[11.5px] shrink-0 select-none"
-                      :class="isDark ? 'text-zinc-400' : 'text-gray-400'"
+                      :class="isDark ? 'text-zinc-400' : 'text-zinc-400'"
                     >
                       {{ getToolLineRange(item.tool) }}
                     </span>
@@ -411,7 +411,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                       :aria-expanded="!!expandedToolIds[item.tool.id]"
                       @click.stop="toggleToolCall(item.tool.id)"
                       class="transition-colors truncate min-w-0 font-medium"
-                      :class="isDark ? 'text-[13px] text-zinc-100 text-glow-white' : 'text-[13px] text-gray-700'"
+                      :class="isDark ? 'text-[13px] text-zinc-100 text-glow-white' : 'text-[13px] text-zinc-700'"
                     >
                                             {{ cleanDisplayPath(getToolDescription(item.tool)) || resolveToolRenderName(item.tool.toolName) }}
                     </button>
@@ -436,8 +436,8 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                 <!-- 展开的工具详情卡片 (带平滑折叠动画)；读文件没有详情，见 canExpandTool -->
                 <CollapseTransition>
                   <div v-if="canExpandTool(item.tool) && expandedToolIds[item.tool.id]">
-                    <div :class="['w-full rounded-2xl border overflow-hidden mt-1.5 shadow-xs transition-colors', isDark ? 'border-[#273043] bg-[#12161f]' : 'border-gray-200/90 bg-white']">
-                      <div :class="['px-4 py-2.5 flex items-center justify-between gap-3 text-xs border-b', isDark ? 'border-gray-800/80' : 'border-gray-100']">
+                    <div :class="['w-full rounded-2xl border overflow-hidden mt-1.5 shadow-xs transition-colors', isDark ? 'border-[#273043] bg-[#12161f]' : 'border-zinc-200/90 bg-white']">
+                      <div :class="['px-4 py-2.5 flex items-center justify-between gap-3 text-xs border-b', isDark ? 'border-zinc-800/80' : 'border-zinc-100']">
                         <div class="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
                           <span
                             :class="[
@@ -448,7 +448,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                           <span class="text-lx-faint font-mono text-xs flex-shrink-0 select-none">
                             {{ item.tool.workDir }}
                           </span>
-                          <span class="font-mono text-xs text-gray-800 dark:text-gray-200 truncate select-text">
+                          <span class="font-mono text-xs text-zinc-800 dark:text-zinc-200 truncate select-text">
                             {{ cleanDisplayPath(getToolDetail(item.tool)) }}
                           </span>
                           <!-- 卡片栏中的 diff 状态指示 -->
@@ -469,7 +469,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                         <button
                           type="button"
                           @click.stop="copyToolContent(unwrapToolResultEnvelope(item.tool.result), item.tool.id)"
-                          class="text-xs text-gray-400 hover:text-lx-secondary transition px-1 py-0.5 select-none flex-shrink-0 cursor-pointer"
+                          class="text-xs text-zinc-400 hover:text-lx-secondary transition px-1 py-0.5 select-none flex-shrink-0 cursor-pointer"
                         >
                           {{ toolCopiedId === item.tool.id ? t('common.copied') : t('common.copy') }}
                         </button>
@@ -495,18 +495,18 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                         </div>
                         <pre
                           v-else-if="item.tool.result"
-                          :class="['font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto max-h-[380px] scrollbar-thin select-text', isDark ? 'text-gray-200' : 'text-gray-800']"
+                          :class="['font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto max-h-[380px] scrollbar-thin select-text', isDark ? 'text-zinc-200' : 'text-zinc-800']"
                         >{{ unwrapToolResultEnvelope(item.tool.result) }}</pre>
                         <div v-else-if="item.tool.status === 'pending'" class="font-mono text-xs text-amber-500/90 flex items-center gap-2">
                           <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
                                                     <span>{{ t('chat.message.awaitingDecision') }}</span>
                         </div>
-                        <div v-else-if="isToolInProgress(item.tool.status)" class="font-mono text-xs text-gray-400">{{ t('chat.message.toolInProgress') }}</div>
+                        <div v-else-if="isToolInProgress(item.tool.status)" class="font-mono text-xs text-zinc-400">{{ t('chat.message.toolInProgress') }}</div>
                         <pre
                           v-else-if="shouldShowToolArguments(item.tool.toolName) && item.tool.query"
-                          :class="['font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto select-text', isDark ? 'text-gray-400' : 'text-gray-600']"
+                          :class="['font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto select-text', isDark ? 'text-zinc-400' : 'text-zinc-600']"
                         >{{ item.tool.query }}</pre>
-                        <div v-else class="text-xs text-gray-400 font-mono">
+                        <div v-else class="text-xs text-zinc-400 font-mono">
                                                     {{ t('chat.message.noOutput') }}
                         </div>
                       </div>

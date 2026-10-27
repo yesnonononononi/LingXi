@@ -96,12 +96,12 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
       <div
         :class="[
           'rounded-2xl border p-4 space-y-3',
-          isDark ? 'bg-white/[0.03] border-lx-border-faint' : 'bg-gray-50 border-lx-border-faint',
+          isDark ? 'bg-white/[0.03] border-lx-border-faint' : 'bg-zinc-50 border-lx-border-faint',
         ]"
       >
         <div class="flex items-center justify-between">
           <span class="text-xs text-lx-muted">{{ t('settings.about.currentVersion') }}</span>
-          <span :class="['text-xs font-mono font-semibold', isDark ? 'text-zinc-100' : 'text-gray-900']">
+          <span :class="['text-xs font-mono font-semibold', isDark ? 'text-zinc-100' : 'text-zinc-900']">
             {{ currentVersion || '—' }}
           </span>
         </div>
@@ -130,7 +130,7 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
                 ? 'text-red-500 dark:text-red-400'
                 : isDark
                   ? 'text-zinc-400'
-                  : 'text-gray-500',
+                  : 'text-zinc-500',
             ]"
           >
             {{ statusText }}
@@ -139,7 +139,7 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
 
         <!-- 下载进度（仅下载中显示；不定态进度条不用百分比文案以免误导） -->
         <div v-if="state === 'downloading'" class="space-y-1.5">
-          <div :class="['h-1.5 rounded-full overflow-hidden', isDark ? 'bg-white/10' : 'bg-gray-200']">
+          <div :class="['h-1.5 rounded-full overflow-hidden', isDark ? 'bg-white/10' : 'bg-zinc-200']">
             <div
               class="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-[width] duration-300"
               :style="{ width: `${Math.max(percent, 2)}%` }"
@@ -166,7 +166,7 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
               busy || !supported
                 ? isDark
                   ? 'bg-white/5 text-lx-faint cursor-not-allowed'
-                  : 'bg-gray-100 text-lx-faint cursor-not-allowed'
+                  : 'bg-zinc-100 text-lx-faint cursor-not-allowed'
                 : mandatory
                   ? 'bg-red-500 text-white hover:bg-red-600 shadow-sm cursor-pointer'
                   : 'bg-blue-500 text-white hover:bg-blue-600 shadow-sm cursor-pointer',
@@ -180,7 +180,7 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
             type="button"
             disabled
             class="px-3 py-2 rounded-xl text-xs font-medium bg-transparent cursor-not-allowed"
-            :class="isDark ? 'text-zinc-600' : 'text-gray-400'"
+            :class="isDark ? 'text-zinc-600' : 'text-zinc-400'"
           >
                         {{ t('settings.about.desktopOnly') }}
           </button>
@@ -196,7 +196,7 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
       <div
         :class="[
           'update-notes rounded-2xl border p-4 text-xs leading-relaxed max-h-64 overflow-y-auto scrollbar-thin',
-          isDark ? 'bg-white/[0.03] border-lx-border-faint text-zinc-300' : 'bg-gray-50 border-lx-border-faint text-gray-700',
+          isDark ? 'bg-white/[0.03] border-lx-border-faint text-zinc-300' : 'bg-zinc-50 border-lx-border-faint text-zinc-700',
         ]"
         v-html="renderedNotes"
       />

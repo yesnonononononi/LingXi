@@ -2,9 +2,9 @@
   "note": "无法等价迁移的颜色残余存量基线。只允许「不得上涨」；下跌时用 --update-residual 显式下调。",
   "caliber": "按「明暗两态各自生效的非令牌颜色项」计数（复用等价门禁覆盖模型），与 census 的原子计数口径不同。",
   "updatedAt": "2026-10-27",
-  "total": 3291,
-  "dark": 1653,
-  "light": 1638,
+  "total": 3318,
+  "dark": 1664,
+  "light": 1654,
   "files": {
     "frontend/src/components/chat/ApprovalCard.vue": {
       "dark": 21,
@@ -19,16 +19,16 @@
       "light": 3
     },
     "frontend/src/components/chat/ChatInputArea.vue": {
-      "dark": 26,
-      "light": 26
+      "dark": 27,
+      "light": 27
     },
     "frontend/src/components/chat/ChatInputContextUsage.vue": {
       "dark": 3,
       "light": 3
     },
     "frontend/src/components/chat/ChatInputModelSelector.vue": {
-      "dark": 7,
-      "light": 7
+      "dark": 8,
+      "light": 8
     },
     "frontend/src/components/chat/ChatMessageItem.vue": {
       "dark": 17,
@@ -80,7 +80,7 @@
     },
     "frontend/src/components/chat/ProjectDropdown.vue": {
       "dark": 40,
-      "light": 38
+      "light": 39
     },
     "frontend/src/components/chat/PromptCard.vue": {
       "dark": 2,
@@ -88,7 +88,7 @@
     },
     "frontend/src/components/chat/ReadImageToolGroup.vue": {
       "dark": 7,
-      "light": 6
+      "light": 7
     },
     "frontend/src/components/chat/RequireChoiceCard.vue": {
       "dark": 28,
@@ -132,11 +132,15 @@
     },
     "frontend/src/components/chat/WorkspaceModal.vue": {
       "dark": 48,
-      "light": 44
+      "light": 47
     },
     "frontend/src/components/common/BorderGlow.vue": {
       "dark": 1,
       "light": 1
+    },
+    "frontend/src/components/common/BranchedMenu.vue": {
+      "dark": 4,
+      "light": 4
     },
     "frontend/src/components/common/ConfirmModal.vue": {
       "dark": 36,
@@ -158,6 +162,10 @@
       "dark": 12,
       "light": 12
     },
+    "frontend/src/components/common/SpecularButton.vue": {
+      "dark": 3,
+      "light": 3
+    },
     "frontend/src/components/model/ModelVisionField.vue": {
       "dark": 5,
       "light": 5
@@ -173,6 +181,10 @@
     "frontend/src/utils/cardUi.ts": {
       "dark": 29,
       "light": 29
+    },
+    "frontend/src/utils/promptBarStyles.ts": {
+      "dark": 2,
+      "light": 2
     },
     "frontend/src/views/chat/ChatView.vue": {
       "dark": 24,

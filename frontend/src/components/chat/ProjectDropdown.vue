@@ -93,7 +93,7 @@ onBeforeUnmount(() => {
         isOpen
           ? (isDark
               ? 'bg-zinc-800 border-zinc-700 text-white shadow-xs'
-              : 'bg-zinc-100 border-zinc-300 text-gray-900 shadow-xs')
+              : 'bg-zinc-100 border-zinc-300 text-zinc-900 shadow-xs')
           : (isDark
               ? 'bg-zinc-800/80 border-zinc-700/60 text-zinc-300 hover:bg-zinc-800 hover:text-white hover:border-zinc-600'
               : 'bg-white/90 border-zinc-200/90 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 hover:border-zinc-300')
@@ -142,7 +142,7 @@ onBeforeUnmount(() => {
         'absolute left-0 top-full mt-1.5 w-60 rounded-xl border shadow-2xl p-1.5 z-50 transition-all animate-in fade-in zoom-in-95 duration-150 backdrop-blur-2xl',
         isDark
           ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_12px_40px_rgba(0,0,0,0.95)]'
-          : 'bg-white/95 border-zinc-200 text-gray-800 shadow-gray-400/20'
+          : 'bg-white/95 border-zinc-200 text-zinc-800 shadow-zinc-400/20'
       ]"
     >
       <!-- 1. Existing Workspaces List -->
@@ -154,8 +154,8 @@ onBeforeUnmount(() => {
           :class="[
             'group relative flex items-center justify-between px-2.5 py-1.5 rounded-xl cursor-pointer text-xs transition-colors',
             String(selectedWorkspaceId) === String(ws.id)
-              ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-gray-100 text-gray-900 font-medium')
-              : (isDark ? 'hover:bg-white/10 text-zinc-300 hover:text-white' : 'hover:bg-gray-100/70 text-gray-700 hover:text-gray-900')
+              ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-zinc-100 text-zinc-900 font-medium')
+              : (isDark ? 'hover:bg-white/10 text-zinc-300 hover:text-white' : 'hover:bg-zinc-100/70 text-zinc-700 hover:text-zinc-900')
           ]"
         >
           <!-- Left: Folder Icon + Name -->
@@ -182,7 +182,7 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- Divider 1 -->
-      <div :class="['h-px my-1 mx-1', isDark ? 'bg-white/10' : 'bg-gray-100']"></div>
+      <div :class="['h-px my-1 mx-1', isDark ? 'bg-white/10' : 'bg-zinc-100']"></div>
 
       <!-- 2. Action Items: New Project & Quick Start -->
       <div class="space-y-0.5 px-0.5">
@@ -191,7 +191,7 @@ onBeforeUnmount(() => {
           @click="handleNewProject"
           :class="[
             'flex items-center gap-2 px-2.5 py-1.5 rounded-xl cursor-pointer text-xs transition-colors',
-            isDark ? 'hover:bg-white/10 text-zinc-300 hover:text-white' : 'hover:bg-gray-100/70 text-gray-700 hover:text-gray-900'
+            isDark ? 'hover:bg-white/10 text-zinc-300 hover:text-white' : 'hover:bg-zinc-100/70 text-zinc-700 hover:text-zinc-900'
           ]"
         >
           <svg class="w-4 h-4 text-zinc-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -205,7 +205,7 @@ onBeforeUnmount(() => {
           @click="handleQuickStart"
           :class="[
             'flex items-center gap-2 px-2.5 py-1.5 rounded-xl cursor-pointer text-xs transition-colors',
-            isDark ? 'hover:bg-white/10 text-zinc-300 hover:text-white' : 'hover:bg-gray-100/70 text-gray-700 hover:text-gray-900'
+            isDark ? 'hover:bg-white/10 text-zinc-300 hover:text-white' : 'hover:bg-zinc-100/70 text-zinc-700 hover:text-zinc-900'
           ]"
         >
           <svg class="w-4 h-4 text-zinc-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -217,7 +217,7 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- Divider 2 -->
-      <div :class="['h-px my-1 mx-1', isDark ? 'bg-white/10' : 'bg-gray-100']"></div>
+      <div :class="['h-px my-1 mx-1', isDark ? 'bg-white/10' : 'bg-zinc-100']"></div>
 
       <!-- 3. No Project -->
       <div class="px-0.5">
@@ -226,8 +226,8 @@ onBeforeUnmount(() => {
           :class="[
             'flex items-center gap-2 px-2.5 py-1.5 rounded-xl cursor-pointer text-xs transition-colors',
             !selectedWorkspaceId
-              ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-gray-100 text-gray-900 font-medium')
-              : (isDark ? 'hover:bg-white/10 text-zinc-300 hover:text-white' : 'hover:bg-gray-100/70 text-gray-700 hover:text-gray-900')
+              ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-zinc-100 text-zinc-900 font-medium')
+              : (isDark ? 'hover:bg-white/10 text-zinc-300 hover:text-white' : 'hover:bg-zinc-100/70 text-zinc-700 hover:text-zinc-900')
           ]"
         >
           <svg class="w-4 h-4 text-zinc-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

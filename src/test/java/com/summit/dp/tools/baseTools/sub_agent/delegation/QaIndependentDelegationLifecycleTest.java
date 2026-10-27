@@ -171,7 +171,7 @@ class QaIndependentDelegationLifecycleTest {
         assertTrue(registry.registerPendingChild(ROOT_SESSION_ID, CHILD_SESSION_ID));
 
         InterceptorResult resident = waitInterceptor.onBeforeComplete(rootLoopContext());
-        assertFalse(resident.shouldContinue(), "已受理但尚未开跑的子执行也算未结束，根不得提前完成");
+        assertFalse(resident.next(), "已受理但尚未开跑的子执行也算未结束，根不得提前完成");
         assertEquals(LoopResult.Status.SUSPENDED, resident.loopResult().status());
 
         registry.revokeChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
@@ -319,7 +319,7 @@ class QaIndependentDelegationLifecycleTest {
         lifecycle.onSuspended(childExecution(CHILD_SESSION_ID));
         assertTrue(registry.hasUnfinishedChildren(ROOT_SESSION_ID), "等审批的子执行仍算未结束");
 
-        assertFalse(waitInterceptor.onBeforeComplete(rootLoopContext()).shouldContinue(),
+        assertFalse(waitInterceptor.onBeforeComplete(rootLoopContext()).next(),
                 "有等审批子执行时根不得收尾");
         assertEquals(0, resumeCount.get());
 

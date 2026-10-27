@@ -121,9 +121,18 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   assert.deepEqual(await evaluate('window.submissions[1]'),first,'未修改答案的重试必须沿用命令身份');
   await evaluate('window.finishBatch();window.flush()');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]")'),null);
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-question-group]").length'),0,'全部已决后自动收起整张卡');
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-summary-toggle]").getAttribute("aria-expanded")'),'false');
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-summary-toggle]").textContent.includes("4 个问题")'),true);
+  await fs.writeFile(path.join(output,'resolved-collapsed.png'),(await window.webContents.capturePage()).toPNG());
+  await click('[data-testid=choice-summary-toggle]');
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-confirmed-answer]").textContent.includes("安装包")'),true);
   await evaluate('document.querySelector("[data-testid=choice-dismiss]").click();window.flush()');
-  assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-question-group]").length'),0,'全部答完后允许整卡关闭');
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-question-group]").length'),0,'关闭详情后收回摘要');
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-summary-toggle]").length'),1,'已决问题不能关闭后消失');
   await evaluate('window.remount();window.flush()');
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-question-group]").length'),0,'历史重进默认显示摘要');
+  await click('[data-testid=choice-summary-toggle]');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-confirmed-answer]").textContent.includes("安装包")'),true,'重新挂载使用权威已答结果');
   // 默认落点契约：前面已答过的题不再是落点，落点必须是第一道未答的题（曾经停在哪张全靠数组顺序）
   await evaluate('window.reopenPartial();window.flush()');
@@ -140,6 +149,6 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]").disabled'),false,'四题都有答案后必须可提交');
   assert.deepEqual(await evaluate('window.singleSubmissions'),[]);
   assert.deepEqual(await evaluate('window.runtimeErrors'),[]);
-  console.log('选择组真实组件通过：四卡分组、选中即进位、缺题禁交、前后切换、答案保留、自定义原文、统一提交、重试幂等、防重复操作、历史已答回显、深浅主题和360px窄屏。');
+  console.log('选择组真实组件通过：四卡分组、选中即进位、缺题禁交、前后切换、答案保留、自定义原文、统一提交、重试幂等、防重复操作、全部已决自动收敛、历史摘要与答案回看、深浅主题和360px窄屏。');
   clearTimeout(deadline);window.destroy();app.exit(0);
 }).catch(error=>{console.error(error);clearTimeout(deadline);if(window)window.destroy();app.exit(1);});

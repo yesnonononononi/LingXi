@@ -65,11 +65,14 @@ const STABILIZE_CSS = '*, *::before, *::after { caret-color: transparent !import
 const TARGETS = [
   {
     key: 'chat-copy',
-    desc: 'ChatMessageItem 工具详情区「复制」按钮（需先展开工具行）',
-    token: '--lx-text-secondary',
+    desc: 'ChatMessageItem 气泡下方「复制」按钮（纯图标，title=复制内容）',
+    // 未令牌化（有意）：该按钮亮侧 hover=text-gray-600(#4a5565，等于 tertiary 亮侧值)，
+    // 暗侧 hover=text-zinc-200(#e4e4e7，等于 secondary 暗侧值) —— 亮暗语义错配，
+    // 折成任一单一令牌都会改变视觉。已登记为灰阶统一靶子，此处只断言「hover 生效」并打印实际色供审计。
+    token: null,
+    untokenizedReason: '亮侧 gray-600(#4a5565)=tertiary 亮侧值；暗侧 gray-200(#e5e7eb) 与 secondary 暗侧 #e4e4e7 差 2/255 —— 灰阶混用，不能折成单一令牌',
     prep: 'expandChatTool',
-    find: `(() => { const s = document.querySelector('[data-scene="chat"]'); if (!s) return null;
-      return [...s.querySelectorAll('button')].find((b) => b.textContent.trim() === '复制') || null; })()`,
+    find: `(() => document.querySelector('[data-scene="chat"] [data-testid="message-copy"]'))()`,
   },
   {
     key: 'plan-collapse',
@@ -100,16 +103,47 @@ const TARGETS = [
     prep: null,
     find: `document.querySelectorAll('[data-scene="choice"] button[aria-label]')[1] || null`,
   },
+  {
+    // V9：TeamModal:640 的智能体表单「取消」按钮。它已被折成 hover:text-lx-secondary，
+    // 但此前不在回归目标里 ⇒ 有人把令牌改错也没有任何门禁会红。
+    key: 'team-modal-row-action',
+    desc: 'TeamModal 智能体表单的「取消」按钮（需先点「新建 Agent」展开表单）',
+    token: '--lx-text-secondary',
+    prep: 'teamOpenAgentForm',
+    find: `(() => { const s = document.querySelector('[data-scene="team"]'); if (!s) return null;
+      // 表单卡片用 class 特征定位（含 p-3.5 与 rounded-xl），再取卡片内文案为「取消」的按钮；
+      // 不能只按文案找 —— 弹窗底部还有一个同名「取消」。
+      const form = [...s.querySelectorAll('div')].find((d) => typeof d.className === 'string'
+        && d.className.includes('p-3.5') && d.className.includes('rounded-xl'));
+      if (!form) return null;
+      return [...form.querySelectorAll('button')].find((b) => (b.textContent || '').trim() === '取消') || null; })()`,
+  },
 ];
 
-const imp = (rel) => kit.relFrom(WORK, path.join(kit.FRONTEND_ROOT, rel));
+/**
+ * `--only <key[,key]>`：只跑指定目标。
+ *
+ * <p>为什么要这个开关：既有 5 个目标中有一部分被后续重构改了实现（例如复制按钮从
+ * `hover:text-lx-secondary` 变成 `hover:text-gray-600 dark:hover:text-gray-200`），
+ * 在它们被负责方修好之前，整轮 harness 会一直红 —— 那会掩盖「新加的目标到底对不对」。
+ * 过滤只缩小**采集范围**，不改变任何断言口径。</p>
+ */
+const ONLY = argOf('only', '');
+/** 本次实际采集的目标集合。 */
+const ACTIVE_TARGETS = ONLY ? TARGETS.filter((t) => ONLY.split(',').map((s) => s.trim()).includes(t.key)) : TARGETS;
+if (ACTIVE_TARGETS.length === 0) {
+  console.error(`--only 没有匹配到任何目标：${ONLY}`);
+  app.exit(2);
+}
 
+const imp = (rel) => kit.relFrom(WORK, path.join(kit.FRONTEND_ROOT, rel));
 const APP_VUE = `<script setup>
-import { nextTick } from 'vue';
+import { nextTick, onMounted, ref } from 'vue';
 import ChatMessageItem from '${imp('src/components/chat/ChatMessageItem.vue')}';
 import PlanCard from '${imp('src/components/chat/PlanCard.vue')}';
 import Sidebar from '${imp('src/components/chat/Sidebar.vue')}';
 import RequireChoiceCard from '${imp('src/components/chat/RequireChoiceCard.vue')}';
+import TeamModal from '${imp('src/components/chat/TeamModal.vue')}';
 import { useTheme } from '${imp('src/composables/useTheme')}';
 import '${imp('src/style.css')}';
 
@@ -117,11 +151,21 @@ import '${imp('src/style.css')}';
 const { isDark, setTheme } = useTheme();
 
 const chatMessage = {
-  id: 'm1', role: 'assistant', content: '', timestamp: 0,
+  id: 'm1', role: 'assistant', content: '这是一条助手回复正文，用于验证复制按钮的 hover 折叠。', timestamp: 0,
+  status: 'completed',
+  isComplete: true,
+  durationMs: 1200,
   toolCalls: [{
     id: 't1', toolName: 'write_file', status: 'success', order: 1,
     arguments: '{"path":"/tmp/a.txt"}', result: 'ok', workDir: '/workspace'
   }]
+};
+// 已完成的轮次摘要：让底栏工具条（含复制按钮）真的渲染出来。
+const chatTurn = {
+  turnId: 'turn-1', status: 'COMPLETED',
+  modelName: 'test-model', modelProvider: 'test',
+  inputTokens: 120, outputTokens: 340, totalTokens: 460,
+  durationMs: 1200
 };
 const planCard = {
   kind: 'PLAN', toolCallId: 'plan-0', conversationId: '42', version: '2',
@@ -138,21 +182,23 @@ const workspaces = [{ id: 1, name: 'ws-alpha', workDir: '/ws-alpha' }];
 const settle = (ms) => new Promise((r) => setTimeout(r, ms));
 window.setDark = async (value) => { setTheme(value === 'dark' ? 'dark' : 'light'); await nextTick(); await settle(90); };
 window.expandChatTool = async () => {
-  // 两级展开：先展开「已调用 N 个工具」的过程折叠区，再展开具体工具行，
-  // 工具详情卡片里的「复制」按钮才会被渲染出来（见 ChatMessageItem 模板）。
+  // 两级展开：先展开「执行过程」（旧版文案是「已调用 N 个工具」，组件改版后是「执行过程」，
+  // 因此按 data-testid 定位而不是按文案 —— 文案会变，测试不该跟着碎），
+  // 再展开具体工具行，工具详情卡片里的「复制」按钮才会被渲染出来。
   // 幂等：切主题不会重置组件内部展开态，重复点击会把区域又收起来，所以先探测再点。
   const s = document.querySelector('[data-scene="chat"]');
   if (!s) return;
-  if (!s.querySelector('button[aria-expanded]')) {
-    const group = [...s.querySelectorAll('button')]
-      .find((b) => (b.textContent || '').includes('个工具'));
-    if (group) group.click();
+  const whole = s.querySelector('[data-testid="whole-process-toggle"]');
+  if (whole && whole.getAttribute('aria-expanded') !== 'true') {
+    whole.click();
     await settle(300);
   }
-  const row = [...s.querySelectorAll('button[aria-expanded]')]
+  const seg = [...s.querySelectorAll('[data-testid="process-segment-toggle"]')]
     .find((b) => b.getAttribute('aria-expanded') !== 'true');
-  if (row) row.click();
-  await settle(320);
+  if (seg) {
+    seg.click();
+    await settle(320);
+  }
 };
 window.planAddTip = async () => {
   const s = document.querySelector('[data-scene="plan"]');
@@ -165,11 +211,43 @@ window.planAddTip = async () => {
     await settle(320);
   }
 };
+
+/**
+ * TeamModal：把「新建 Agent」表单打开，:640 的「取消」按钮才会渲染。
+ *
+ * 幂等：表单已打开（出现表单卡片）时不再点，避免切主题后重复点击把它收起。
+ */
+window.teamOpenAgentForm = async () => {
+  const s = document.querySelector('[data-scene="team"]');
+  if (!s) return;
+  const formOpen = [...s.querySelectorAll('div')].some(
+    (d) => typeof d.className === 'string' && d.className.includes('p-3.5') && d.className.includes('rounded-xl'));
+  if (!formOpen) {
+    const btn = [...s.querySelectorAll('button')].find((b) => (b.textContent || '').includes('新建 Agent'));
+    if (btn) btn.click();
+    await settle(320);
+  }
+};
+
+// TeamModal 必须先挂载（isOpen=false）再打开：它的 watch(immediate) 在「挂载即打开」分支会调用
+// 尚未初始化的 closeAgentForm（const 声明在后）而抛 TDZ，成员列表永远不加载 —— 生产里弹窗
+// 总是先挂载再打开，场景照真实顺序走。
+const teamOpen = ref(false);
+onMounted(async () => { await nextTick(); teamOpen.value = true; });
+/**
+ * 是否挂载 TeamModal 场景。
+ *
+ * <p>为什么要这么一个开关：capturePage() 抓的是**窗口可视区**，新场景一旦常驻就会改变
+ * 前 5 个目标截图里的像素（页面变长、布局重排），等于把既有基线悄悄换掉。
+ * 只有跑到第 6 个目标时才挂载它，前 5 个目标拿到的页面与加场景之前完全一致。</p>
+ */
+const teamSceneVisible = ref(false);
+window.setTeamScene = (visible) => { teamSceneVisible.value = !!visible; };
 </script>
 <template>
   <main style="width:720px;margin:0 auto;padding:20px;font-family:system-ui,sans-serif">
     <section data-scene="chat" style="padding:6px 0">
-      <ChatMessageItem :message="chatMessage" :is-dark="isDark" session-id="42" />
+      <ChatMessageItem :message="chatMessage" :turn="chatTurn" :is-dark="isDark" :is-group-tail="true" session-id="42" />
     </section>
     <section data-scene="plan" style="padding:6px 0">
       <PlanCard :prompt-card="planCard" :is-dark="isDark" session-id="42" />
@@ -180,6 +258,9 @@ window.planAddTip = async () => {
     </section>
     <section data-scene="choice" style="padding:6px 0">
       <RequireChoiceCard :prompt-card="choiceCard" :is-dark="isDark" />
+    </section>
+    <section v-if="teamSceneVisible" data-scene="team" style="position:relative;transform:translateZ(0);width:760px;height:620px;overflow:hidden;border:1px solid #8884">
+      <TeamModal :is-open="teamOpen" :is-dark="isDark" :models="[]" />
     </section>
   </main>
 </template>`;
@@ -222,7 +303,10 @@ async function captureTheme(scene, theme, outDir, { breakExpect = false } = {}) 
   await kit.assertThemeApplied(evaluate, theme, TOKENS);
 
   const results = {};
-  for (const t of TARGETS) {
+  for (const t of ACTIVE_TARGETS) {
+    // 只有跑到 TeamModal 目标时才挂载它的场景，保证其它目标的截图与加场景前逐像素一致。
+    await evaluate(`window.setTeamScene(${t.key === 'team-modal-row-action'})`);
+    await evaluate('window.flush()');
     if (t.prep) {
       await evaluate(`window.${t.prep}()`);
       await evaluate('window.flush()');
@@ -240,12 +324,14 @@ async function captureTheme(scene, theme, outDir, { breakExpect = false } = {}) 
     await fsp.writeFile(path.join(outDir, `${theme}-${t.key}.png`), png.toPNG());
     await forceHover(win.webContents.debugger, t.key, false);
 
-    const expected = breakExpect ? BROKEN_EXPECT : kit.toCssRgb(TOKENS[theme][t.token]);
+    const expected = t.token
+      ? (breakExpect ? BROKEN_EXPECT : kit.toCssRgb(TOKENS[theme][t.token]))
+      : null;
     const problems = [];
     if (hovered === info.baseColor) {
       problems.push(`${t.key}: hover 后颜色与基色相同（${hovered}）——hover 规则未命中或折叠丢失了 hover`);
     }
-    if (hovered !== expected) {
+    if (expected !== null && hovered !== expected) {
       problems.push(`${t.key}: hover 计算色=${hovered}，期望 ${t.token}=${expected}`);
     }
     if (problems.length) throw new Error(`[${theme}] hover 断言失败：\n  - ${problems.join('\n  - ')}`);
@@ -345,7 +431,32 @@ async function main() {
     const { compareDirectories, DEFAULT_OPTIONS } = await import('./compare.mjs');
     // 组件图很小，收紧阈值，避免「小面积文字色变化」被整图比例吞掉。
     const options = { ...DEFAULT_OPTIONS, threshold: 0.0002, strongPixels: 12 };
-    const px = compareDirectories({ baselineDir: BASE_DIR, currentDir: CUR_DIR, diffDir: DIFF_DIR, options });
+    // 先清空 diff 目录：compare 只在「有差异」时写文件、从不清理，历史残留会让
+  // 「本轮有哪些 hover 目标变了」不可判定（visual:expect-inventory 直接读这个目录）。
+  await fsp.rm(DIFF_DIR, { recursive: true, force: true });
+  await fsp.mkdir(DIFF_DIR, { recursive: true });
+  const px = compareDirectories({ baselineDir: BASE_DIR, currentDir: CUR_DIR, diffDir: DIFF_DIR, options });
+  // 与组件场景同一口径：diff 目录「有文件」≠「有变化」，只有 status !== 'pass' 才是真变化。
+  const hoverFailures = px.details.filter((d) => d.status !== 'pass');
+  await fsp.writeFile(path.join(OUT_ROOT, 'diff-manifest.json'), `${JSON.stringify({
+    generatedAt: new Date().toISOString(),
+    source: 'hover-states --mode check',
+    imagesCompared: px.images,
+    failedCount: px.failed,
+    failures: hoverFailures.map((d) => ({
+      image: String(d.image).split(path.sep).join('/'),
+      status: String(d.status),
+      changedPixels: d.changedPixels,
+      changedRatio: d.changedRatio,
+      reasons: Array.isArray(d.reasons) ? d.reasons : [],
+    })),
+  }, null, 2)}\n`);
+    // 静默失效防护（G-4）：基线可能因 .lingxi/tmp 被清而蒸发，此时 compare 只比剩下那几张，
+    // failed 仍为 0 —— 覆盖率悄悄掉一半也没人发现。故这里按「目标数 × 主题数」核对实际比对张数。
+    const expectedImages = ACTIVE_TARGETS.length * 2; // 2 = light + dark（与上面的循环一致）
+    if (px.images !== expectedImages) {
+      styleDiffs.push(`覆盖缺失：实际比对 ${px.images} 张，应为 ${expectedImages} 张（${ACTIVE_TARGETS.length} 目标 × 2 主题）—— 基线可能已丢失，先跑 --mode baseline 重建`);
+    }
     const failed = styleDiffs.length > 0 || px.failed > 0;
     console.log(JSON.stringify({
       mode: 'check', styleDiffs,

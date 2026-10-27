@@ -46,8 +46,8 @@ const {
           :class="[
             'px-4 py-3.5 rounded-2xl border flex flex-col items-center justify-center gap-2 transition cursor-pointer',
             themeMode === 'light'
-              ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_15px_rgba(255,255,255,0.1)] text-white font-semibold dark:text-glow-white' : 'bg-gray-100 border-gray-300 text-gray-900 font-semibold shadow-sm')
-              : (isDark ? 'border-white/10 text-zinc-400 bg-black/40 hover:border-white/20 hover:bg-white/[0.04]' : 'border-gray-200 text-gray-600 hover:bg-gray-50')
+              ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_15px_rgba(255,255,255,0.1)] text-white font-semibold dark:text-glow-white' : 'bg-zinc-100 border-zinc-300 text-zinc-900 font-semibold shadow-sm')
+              : (isDark ? 'border-white/10 text-zinc-400 bg-black/40 hover:border-white/20 hover:bg-white/[0.04]' : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50')
           ]"
         >
           <svg class="w-5 h-5 text-lx-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -63,8 +63,8 @@ const {
           :class="[
             'px-4 py-3.5 rounded-2xl border flex flex-col items-center justify-center gap-2 transition cursor-pointer',
             themeMode === 'dark'
-              ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.12)] text-white font-semibold dark:text-glow-white' : 'bg-gray-100 border-gray-300 text-gray-900 font-semibold shadow-sm')
-              : (isDark ? 'border-white/10 text-zinc-400 bg-black/40 hover:border-white/20 hover:bg-white/[0.04]' : 'border-gray-200 text-gray-600 hover:bg-gray-50')
+              ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.12)] text-white font-semibold dark:text-glow-white' : 'bg-zinc-100 border-zinc-300 text-zinc-900 font-semibold shadow-sm')
+              : (isDark ? 'border-white/10 text-zinc-400 bg-black/40 hover:border-white/20 hover:bg-white/[0.04]' : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50')
           ]"
         >
           <svg class="w-5 h-5 text-lx-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -80,8 +80,8 @@ const {
           :class="[
             'px-4 py-3.5 rounded-2xl border flex flex-col items-center justify-center gap-2 transition cursor-pointer',
             themeMode === 'system'
-              ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.12)] text-white font-semibold dark:text-glow-white' : 'bg-gray-100 border-gray-300 text-gray-900 font-semibold shadow-sm')
-              : (isDark ? 'border-white/10 text-zinc-400 bg-black/40 hover:border-white/20 hover:bg-white/[0.04]' : 'border-gray-200 text-gray-600 hover:bg-gray-50')
+              ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.12)] text-white font-semibold dark:text-glow-white' : 'bg-zinc-100 border-zinc-300 text-zinc-900 font-semibold shadow-sm')
+              : (isDark ? 'border-white/10 text-zinc-400 bg-black/40 hover:border-white/20 hover:bg-white/[0.04]' : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50')
           ]"
         >
           <svg class="w-5 h-5 text-lx-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -110,7 +110,7 @@ const {
         >
           <span class="text-xs font-normal">{{ currentLanguageLabel }}</span>
           <svg
-            class="w-3 h-3 text-gray-400 dark:text-zinc-300 transition-transform duration-200"
+            class="w-3 h-3 text-zinc-400 dark:text-zinc-300 transition-transform duration-200"
             :class="{ 'rotate-180': isLanguageOpen }"
             fill="none"
             stroke="currentColor"
@@ -124,7 +124,7 @@ const {
             v-if="isLanguageOpen"
             :class="[
               'absolute right-0 mt-1.5 w-32 rounded-xl border shadow-2xl py-1 z-30 text-xs origin-top backdrop-blur-xl',
-              isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.9)]' : 'bg-white border-gray-200 text-gray-800'
+              isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.9)]' : 'bg-white border-zinc-200 text-zinc-800'
             ]"
           >
                         <div
@@ -135,7 +135,7 @@ const {
                 'px-3 py-1.5 cursor-pointer flex items-center justify-between transition-colors',
                 preference === opt.value
                   ? (isDark ? 'text-sky-400 text-glow-cyan font-medium bg-white/10' : 'text-blue-500 font-medium bg-blue-50')
-                  : (isDark ? 'text-zinc-200 hover:bg-white/10 hover:text-white' : 'text-gray-700 hover:bg-gray-100')
+                  : (isDark ? 'text-zinc-200 hover:bg-white/10 hover:text-white' : 'text-zinc-700 hover:bg-zinc-100')
               ]"
             >
               <span>{{ opt.label }}</span>
@@ -153,7 +153,7 @@ const {
       <div class="flex items-center justify-between">
         <div class="flex flex-col">
           <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.notifySound') }}</span>
-          <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.notifySoundDesc') }}</span>
+          <span class="text-[11px] text-zinc-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.notifySoundDesc') }}</span>
         </div>
         <div class="relative general-dropdown-container" @click.stop>
           <SpecularButton
@@ -170,7 +170,7 @@ const {
           >
             <span class="text-xs font-normal">{{ currentSoundLabel }}</span>
             <svg
-              class="w-3 h-3 text-gray-400 dark:text-zinc-300 transition-transform duration-200"
+              class="w-3 h-3 text-zinc-400 dark:text-zinc-300 transition-transform duration-200"
               :class="{ 'rotate-180': isSoundOpen }"
               fill="none"
               stroke="currentColor"
@@ -184,7 +184,7 @@ const {
               v-if="isSoundOpen"
               :class="[
                 'absolute right-0 mt-1.5 w-36 rounded-xl border shadow-2xl py-1 z-30 text-xs origin-top backdrop-blur-xl',
-                isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.9)]' : 'bg-white border-gray-200 text-gray-800'
+                isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.9)]' : 'bg-white border-zinc-200 text-zinc-800'
               ]"
             >
               <div
@@ -195,7 +195,7 @@ const {
                   'px-3 py-1.5 cursor-pointer flex items-center justify-between transition-colors',
                   soundPref === option.id
                     ? (isDark ? 'text-sky-400 text-glow-cyan font-medium bg-white/10' : 'text-blue-500 font-medium bg-blue-50')
-                    : (isDark ? 'text-zinc-200 hover:bg-white/10 hover:text-white' : 'text-gray-700 hover:bg-gray-100')
+                    : (isDark ? 'text-zinc-200 hover:bg-white/10 hover:text-white' : 'text-zinc-700 hover:bg-zinc-100')
                 ]"
               >
                 <span>{{ t(option.labelKey) }}</span>
@@ -214,7 +214,7 @@ const {
       <div class="flex items-center justify-between mb-2">
         <div class="flex flex-col">
           <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.apiBaseUrl') }}</span>
-          <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.apiBaseUrlDesc') }}</span>
+          <span class="text-[11px] text-zinc-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.apiBaseUrlDesc') }}</span>
         </div>
         <button
           type="button"
@@ -229,7 +229,7 @@ const {
           v-model="apiBaseUrl"
           type="text"
           placeholder="http://localhost:8088"
-          class="flex-1 px-3 py-2 text-xs rounded-xl border border-gray-200 dark:border-white/15 bg-white dark:bg-black/60 text-gray-900 dark:text-zinc-100 focus:outline-none focus:border-blue-500 dark:focus:border-cyan-400 focus:ring-1 focus:ring-blue-500 dark:focus:ring-cyan-400 transition"
+          class="flex-1 px-3 py-2 text-xs rounded-xl border border-zinc-200 dark:border-white/15 bg-white dark:bg-black/60 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-blue-500 dark:focus:border-cyan-400 focus:ring-1 focus:ring-blue-500 dark:focus:ring-cyan-400 transition"
         />
         <SpecularButton
           size="sm"

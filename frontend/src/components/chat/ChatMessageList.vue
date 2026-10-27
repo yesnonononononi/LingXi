@@ -33,7 +33,7 @@
       </div>
 
       <!-- 首次会话消息加载中 -->
-      <div v-if="isLoading" class="flex flex-col items-center justify-center py-20 text-xs text-gray-400 gap-3 select-none">
+      <div v-if="isLoading" class="flex flex-col items-center justify-center py-20 text-xs text-zinc-400 gap-3 select-none">
         <svg class="animate-spin h-6 w-6 text-blue-500" viewBox="0 0 24 24" fill="none">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
@@ -42,19 +42,19 @@
       </div>
 
       <!-- 首次加载错误 -->
-      <div v-else-if="loadError" class="py-8 text-center text-xs text-gray-400 space-y-2">
+      <div v-else-if="loadError" class="py-8 text-center text-xs text-zinc-400 space-y-2">
         <div class="text-red-400">{{ loadError }}</div>
         <button
           type="button"
           @click="emit('retryInitialLoad')"
-          :class="['px-2.5 py-1 rounded-lg border text-xs cursor-pointer', isDark ? 'border-gray-700 hover:bg-gray-800 text-gray-300' : 'border-gray-300 hover:bg-gray-100 text-gray-600']"
+          :class="['px-2.5 py-1 rounded-lg border text-xs cursor-pointer', isDark ? 'border-zinc-700 hover:bg-zinc-800 text-zinc-300' : 'border-zinc-300 hover:bg-zinc-100 text-zinc-600']"
         >
                     {{ t('common.retry') }}
         </button>
       </div>
 
       <!-- 空消息提示 -->
-      <div v-else-if="!messages || messages.length === 0" class="py-12 text-center text-xs text-gray-400 select-none">
+      <div v-else-if="!messages || messages.length === 0" class="py-12 text-center text-xs text-zinc-400 select-none">
         {{ t('chat.message.noMessages') }}
       </div>
 

@@ -67,27 +67,27 @@ const goNext = () => {
 
 const rootClass = computed(() => [
   'min-h-screen w-screen font-sans',
-  isDark.value ? 'bg-[#0b0f17] text-gray-100' : 'bg-gray-50 text-gray-900',
+  isDark.value ? 'bg-[#0b0f17] text-zinc-100' : 'bg-zinc-50 text-zinc-900',
 ]);
 const headerClass = computed(() => [
   'sticky top-0 z-20 h-14 px-4 flex items-center justify-between border-b backdrop-blur select-none',
-  isDark.value ? 'bg-[#0b0f17]/90 border-[#273043]' : 'bg-white/90 border-gray-200',
+  isDark.value ? 'bg-[#0b0f17]/90 border-[#273043]' : 'bg-white/90 border-zinc-200',
 ]);
 const themeBtnClass = computed(() => [
   'p-2 rounded-xl border transition',
-  isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-yellow-400 hover:bg-[#202738]' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100',
+  isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-yellow-400 hover:bg-[#202738]' : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:bg-zinc-100',
 ]);
-const mutedText = computed(() => (isDark.value ? 'text-xs text-gray-400' : 'text-xs text-gray-500'));
-const theadClass = computed(() => (isDark.value ? 'bg-[#121722] text-gray-400' : 'bg-gray-100 text-gray-500'));
+const mutedText = computed(() => (isDark.value ? 'text-xs text-zinc-400' : 'text-xs text-zinc-500'));
+const theadClass = computed(() => (isDark.value ? 'bg-[#121722] text-zinc-400' : 'bg-zinc-100 text-zinc-500'));
 const btnClass = computed(() => [
   'px-3 py-1.5 rounded-lg text-xs border transition disabled:opacity-40 disabled:cursor-not-allowed',
-  isDark.value ? 'border-[#2d3a54] text-gray-300 hover:bg-white/5' : 'border-gray-300 text-gray-600 hover:bg-black/5',
+  isDark.value ? 'border-[#2d3a54] text-zinc-300 hover:bg-white/5' : 'border-zinc-300 text-zinc-600 hover:bg-black/5',
 ]);
-const cardClass = computed(() => ['rounded-2xl border overflow-hidden', isDark.value ? 'border-[#273043]' : 'border-gray-200']);
-const rowClass = computed(() => ['border-t', isDark.value ? 'border-[#273043] hover:bg-[#141a26]' : 'border-gray-100 hover:bg-gray-50']);
+const cardClass = computed(() => ['rounded-2xl border overflow-hidden', isDark.value ? 'border-[#273043]' : 'border-zinc-200']);
+const rowClass = computed(() => ['border-t', isDark.value ? 'border-[#273043] hover:bg-[#141a26]' : 'border-zinc-100 hover:bg-zinc-50']);
 const modalClass = computed(() => [
   'relative z-50 w-full rounded-2xl border p-5 shadow-2xl',
-  isDark.value ? 'bg-[#161b26] border-[#273043] text-gray-200' : 'bg-white border-gray-200 text-gray-800',
+  isDark.value ? 'bg-[#161b26] border-[#273043] text-zinc-200' : 'bg-white border-zinc-200 text-zinc-800',
 ]);
 const delCardClass = computed(() => [...modalClass.value, 'max-w-sm']);
 const toastClass = computed(() => [
@@ -171,7 +171,7 @@ onMounted(load);
               <td class='px-4 py-3 text-xs break-all opacity-90'>{{ row.baseUrl }}</td>
               <td class='px-4 py-3 text-xs'>
                                 <span v-if='row.credentialConfigured' class='inline-flex items-center px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 font-medium'>{{ t('model.configured') }}</span>
-                <span v-else class='inline-flex items-center px-2 py-0.5 rounded-full bg-gray-500/10 text-gray-400'>{{ t('model.notConfigured') }}</span>
+                <span v-else class='inline-flex items-center px-2 py-0.5 rounded-full bg-zinc-500/10 text-zinc-400'>{{ t('model.notConfigured') }}</span>
               </td>
               <td class='px-4 py-3 text-right'>
                 <div class='flex items-center justify-end gap-2'>

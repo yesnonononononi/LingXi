@@ -224,7 +224,8 @@ export function resolveCardStatusLabel(card: PromptCardData): string {
 export function buildCardSummary(card: PromptCardData): string {
   const kind = t(CARD_KIND_LABEL_KEY[card.kind]);
   const tail = resolveCardStatusLabel(card);
-  return card.title
-    ? t('card.summaryWithTitle', { kind, title: card.title, tail })
+  const title = card.title || (card.kind === 'CHOICE' ? card.content : '');
+  return title
+    ? t('card.summaryWithTitle', { kind, title, tail })
     : t('card.summaryPlain', { kind, tail });
 }

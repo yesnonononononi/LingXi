@@ -81,7 +81,7 @@ async function submit() {
 
         <div class="sticky bottom-0 flex items-center justify-end gap-3 bg-white/95 pt-3 pb-1 dark:bg-black/95">
           <span v-if="saved && !dirty" role="status" class="text-xs text-lx-muted">{{ copy.saved }}</span>
-          <button type="submit" :disabled="!dirty || saving || loading" class="rounded-xl bg-gray-900 px-4 py-2.5 text-xs font-medium text-white transition hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white">{{ saving ? copy.saving : copy.save }}</button>
+          <button type="submit" :disabled="!dirty || saving || loading" class="rounded-xl bg-zinc-900 px-4 py-2.5 text-xs font-medium text-white transition hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white">{{ saving ? copy.saving : copy.save }}</button>
         </div>
       </fieldset>
     </form>
@@ -90,10 +90,10 @@ async function submit() {
 
 <style scoped>
 @reference "../../../style.css";
-.personalization-card { @apply rounded-2xl border border-gray-100 bg-gray-50/60 p-4 dark:border-white/10 dark:bg-white/[0.03]; }
+.personalization-card { @apply rounded-2xl border border-zinc-100 bg-zinc-50/60 p-4 dark:border-white/10 dark:bg-white/[0.03]; }
 .identity-row { @apply flex items-center justify-between gap-4; }
 .identity-control { @apply w-52 min-w-0 shrink-0; }
-.personalization-input { @apply rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-lx-primary-soft outline-none transition focus:border-gray-400 focus:ring-2 focus:ring-gray-200/60 dark:border-white/15 dark:bg-black/30 dark:focus:border-white/40 dark:focus:ring-white/10; }
+.personalization-input { @apply rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs text-lx-primary-soft outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200/60 dark:border-white/15 dark:bg-black/30 dark:focus:border-white/40 dark:focus:ring-white/10; }
 @media (max-width: 640px) {
   .identity-row { @apply flex-col items-stretch gap-2.5; }
   .identity-control { @apply w-full; }

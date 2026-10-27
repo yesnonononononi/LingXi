@@ -11,6 +11,7 @@ public record RuntimeModel(ModelConfig config, boolean vision) {
                                       boolean vision, SettingsView settings, Duration timeout) {
         ModelConfig.ModelConfigBuilder builder = ModelConfig.builder().baseUrl(baseUrl).apiKey(apiKey)
                 .modelName(modelName).provider(provider).returnThinking(true).sendThinking(true)
+                .reuseModelForCompaction(true)
                 // 请求级配置会独立创建客户端，超时必须显式继承，避免落回 SDK 默认值。
                 .timeout(timeout);
         if (settings != null) builder.maxTokens(settings.maxTokens()).reasoningEffort(settings.reasoningEffort());

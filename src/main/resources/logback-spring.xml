@@ -36,6 +36,22 @@
         </encoder>
     </appender>
 
+    <appender name="MCP_MESSAGE_ONLY" class="com.summit.dp.shared.logging.ExceptionMessageAppender">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="WARN_ERROR_FILE"/>
+    </appender>
+
+    <!-- 阻止向根 logger 再次传播，否则同一异常会重复输出完整堆栈。 -->
+    <logger name="dev.langchain4j.mcp" additivity="false">
+        <appender-ref ref="MCP_MESSAGE_ONLY"/>
+    </logger>
+    <logger name="com.summit.adapter.langchain4j.mcp" additivity="false">
+        <appender-ref ref="MCP_MESSAGE_ONLY"/>
+    </logger>
+    <logger name="com.summit.dp.mcp" additivity="false">
+        <appender-ref ref="MCP_MESSAGE_ONLY"/>
+    </logger>
+
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="WARN_ERROR_FILE"/>

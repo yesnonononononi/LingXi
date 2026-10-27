@@ -273,7 +273,7 @@ onMounted(() => {
     :type="type"
     :disabled="disabled"
     :class="[
-      'relative m-0 inline-flex cursor-pointer items-center justify-center border border-gray-200 dark:border-white/20 bg-white/[0.05] hover:bg-white/[0.1] dark:bg-white/[0.06] dark:hover:bg-white/[0.12] font-medium leading-none tracking-[0.01em] outline-none transition-all duration-150 active:scale-[0.97] disabled:cursor-default disabled:opacity-55 disabled:active:scale-100 [color:var(--sb-text-color)] [border-radius:var(--sb-radius)] [background:color-mix(in_srgb,var(--sb-tint)_calc(var(--sb-tint-opacity)*100%),transparent)] [backdrop-filter:blur(var(--sb-blur))] focus-visible:outline-2 focus-visible:outline-offset-[3px]',
+      'relative m-0 inline-flex cursor-pointer items-center justify-center border border-zinc-200 dark:border-white/20 bg-white/[0.05] hover:bg-white/[0.1] dark:bg-white/[0.06] dark:hover:bg-white/[0.12] font-medium leading-none tracking-[0.01em] outline-none transition-all duration-150 active:scale-[0.97] disabled:cursor-default disabled:opacity-55 disabled:active:scale-100 [color:var(--sb-text-color)] [border-radius:var(--sb-radius)] [background:color-mix(in_srgb,var(--sb-tint)_calc(var(--sb-tint-opacity)*100%),transparent)] [backdrop-filter:blur(var(--sb-blur))] focus-visible:outline-2 focus-visible:outline-offset-[3px]',
       props.noShadow ? '' : 'shadow-xs dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_2px_8px_rgba(0,0,0,0.5)]',
       sizeClass,
       props.className

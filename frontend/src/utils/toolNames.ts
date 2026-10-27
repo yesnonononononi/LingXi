@@ -35,6 +35,14 @@ export const AgentToolName = {
   RequireChoice: 'require_choice',
   /** 计划书（PROMISE 卡片） */
   CreatePlan: 'create_plan',
+  /** 执行清单：创建（多步任务的待办清单，不是审批计划书） */
+  CreateChecklist: 'create_checklist',
+  /** 执行清单：推进单个步骤到终态（完成 / 失败 / 跳过） */
+  UpdateChecklistStep: 'update_checklist_step',
+  /** 执行清单：修改标题与步骤结构 */
+  ModifyChecklist: 'modify_checklist',
+  /** 执行清单：软删 */
+  DeleteChecklist: 'delete_checklist',
   /** 委派子代理 */
   CallSubAgent: 'call_sub_agent',
   /** Agent 间邮件 */

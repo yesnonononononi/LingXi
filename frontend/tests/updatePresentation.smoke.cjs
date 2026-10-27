@@ -69,7 +69,7 @@ await nextTick(); window.ready = true;`);
         link:notes?.querySelector('a')?.getAttribute('rel') };
     })()`);
     assert.equal(result.status, '当前已是最新版本');
-    assert.match(result.classes, theme === 'light' ? /text-gray-500/ : /text-zinc-400/);
+    assert.match(result.classes, theme === 'light' ? /text-zinc-500/ : /text-zinc-400/);
     assert.equal(result.heading, '体验优化');
     assert.equal(result.items, 2);
     assert.equal(result.text.includes('TEST_SIGNATURE'), false);

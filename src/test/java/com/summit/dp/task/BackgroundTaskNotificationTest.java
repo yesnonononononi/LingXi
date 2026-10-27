@@ -70,7 +70,7 @@ class BackgroundTaskNotificationTest {
         assertTrue(notice.contains("status=FAILED, exitCode=7"));
         assertTrue(notice.contains("[摘要已截断]"));
         assertFalse(notice.contains("x".repeat(2_001)));
-        assertTrue(interceptor.onBeforeComplete(context).shouldContinue());
+        assertTrue(interceptor.onBeforeComplete(context).next());
 
         Execution restored = json.readValue(json.writeValueAsBytes(execution), Execution.class);
         restored.getMessages().clear();
@@ -109,7 +109,7 @@ class BackgroundTaskNotificationTest {
         when(repository.findByExecutionId(10L, 100L)).thenReturn(List.of(task(1L)));
         for (boolean child : List.of(false, true)) {
             LoopContext context = context(execution(100L, 10L, child));
-            assertFalse(interceptor.onBeforeComplete(context).shouldContinue());
+            assertFalse(interceptor.onBeforeComplete(context).next());
             assertEquals(LoopResult.Status.SUSPENDED, interceptor.onBeforeComplete(context).loopResult().status());
         }
         verifyNoInteractions(coordinator);
@@ -124,7 +124,7 @@ class BackgroundTaskNotificationTest {
         assertEquals(LoopResult.Status.SUSPENDED, interceptor.onBeforeComplete(context).loopResult().status());
         verify(coordinator).accept(100L);
         interceptor.onBeforeModelInvoke(context);
-        assertTrue(interceptor.onBeforeComplete(context).shouldContinue());
+        assertTrue(interceptor.onBeforeComplete(context).next());
         assertTrue(context.getLoopMessages().getExecution().getMessages().getFirst().text().contains("CANCELLED"));
     }
 
@@ -143,7 +143,7 @@ class BackgroundTaskNotificationTest {
         Execution next = execution(101L, 10L, false);
         interceptor.onBeforeModelInvoke(context(next));
         assertTrue(next.getMessages().isEmpty());
-        assertTrue(interceptor.onBeforeComplete(context(next)).shouldContinue());
+        assertTrue(interceptor.onBeforeComplete(context(next)).next());
         Execution other = execution(100L, 11L, false);
         interceptor.onBeforeModelInvoke(context(other));
         assertTrue(other.getMessages().isEmpty());

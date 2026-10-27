@@ -94,23 +94,23 @@ const fieldClass = computed(() => [
   'w-full px-3 py-2 rounded-xl text-xs border outline-none transition',
   isDark.value
     ? 'bg-black/90 border-white/20 text-zinc-100 placeholder-zinc-500 focus:border-cyan-400'
-    : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-blue-500 shadow-2xs',
+    : 'bg-white border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:border-blue-500 shadow-2xs',
 ]);
 const labelClass = computed(() => [
   'block text-xs font-medium mb-1',
-  isDark.value ? 'text-zinc-200 text-glow-subtle' : 'text-gray-700',
+  isDark.value ? 'text-zinc-200 text-glow-subtle' : 'text-zinc-700',
 ]);
 const cardClass = computed(() => [
   'rounded-2xl border transition-colors',
   isDark.value
     ? 'bg-black/90 border-white/15 hover:border-white/30 shadow-[0_0_20px_rgba(0,0,0,0.8)]'
-    : 'bg-gray-50/70 border-gray-200 hover:border-gray-300',
+    : 'bg-zinc-50/70 border-zinc-200 hover:border-zinc-300',
 ]);
 const ghostBtnClass = computed(() => [
   'px-3 py-1 rounded-lg border text-xs font-medium transition cursor-pointer',
   isDark.value
     ? 'border-white/20 hover:border-white/40 bg-white/[0.06] hover:bg-white/[0.12] text-zinc-100'
-    : 'border-gray-200 hover:bg-gray-50 text-gray-700',
+    : 'border-zinc-200 hover:bg-zinc-50 text-zinc-700',
 ]);
 const dangerBtnClass = computed(() => [
   'text-xs px-2 py-1 transition cursor-pointer font-medium',
@@ -120,7 +120,7 @@ const addRowClass = computed(() => [
   'w-full py-2 text-[11px] rounded-xl flex items-center justify-center gap-1 transition cursor-pointer',
   isDark.value
     ? 'text-zinc-300 hover:text-white hover:bg-white/[0.06]'
-    : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100/70',
+    : 'text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100/70',
 ]);
 </script>
 
@@ -138,10 +138,10 @@ const addRowClass = computed(() => [
     <div v-if="mode === 'list'" class="space-y-4">
       <div class="flex items-start justify-between gap-3">
         <div>
-          <h4 class="text-base font-bold tracking-tight" :class="isDark ? 'text-white text-glow-white' : 'text-gray-900'">
+          <h4 class="text-base font-bold tracking-tight" :class="isDark ? 'text-white text-glow-white' : 'text-zinc-900'">
             {{ t('settings.models.title') }}
           </h4>
-          <p class="text-xs mt-1" :class="isDark ? 'text-zinc-400 text-glow-subtle' : 'text-gray-500'">
+          <p class="text-xs mt-1" :class="isDark ? 'text-zinc-400 text-glow-subtle' : 'text-zinc-500'">
             {{ t('settings.models.subtitle') }}
           </p>
         </div>
@@ -183,12 +183,12 @@ const addRowClass = computed(() => [
           <div class="flex items-center justify-between gap-2 px-4 py-3">
             <div class="flex items-center gap-2 min-w-0">
               <ProviderIcon :icon="group.providerIcon" :name="group.providerName" :size="18" />
-              <span class="font-semibold text-sm truncate" :class="isDark ? 'text-white text-glow-white' : 'text-gray-900'">
+              <span class="font-semibold text-sm truncate" :class="isDark ? 'text-white text-glow-white' : 'text-zinc-900'">
                 {{ groupTitle(group.providerName) }}
               </span>
               <span
                 class="shrink-0 text-[10px] px-1.5 py-0.5 rounded border tracking-tight"
-                :class="isDark ? 'border-white/20 text-zinc-300 bg-white/5' : 'border-gray-200 text-gray-500'"
+                :class="isDark ? 'border-white/20 text-zinc-300 bg-white/5' : 'border-zinc-200 text-zinc-500'"
               >{{ t('settings.models.providerModels', { count: group.modelCount }) }}</span>
             </div>
             <div v-if="group.providerConfigId" class="flex items-center gap-2 shrink-0">
@@ -245,13 +245,13 @@ const addRowClass = computed(() => [
 
     <!-- ========================== 提供商表单 ========================== -->
     <div v-else-if="mode === 'provider-form'" class="space-y-4">
-      <div class="flex items-center justify-between pb-1 border-b border-gray-100 dark:border-gray-800">
+      <div class="flex items-center justify-between pb-1 border-b border-zinc-100 dark:border-zinc-800">
         <div class="flex items-center gap-2">
           <button
             type="button"
             @click="cancelForm"
             :title="t('settings.models.backToList')"
-            :class="['p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition cursor-pointer', isDark ? 'hover:bg-white/5' : 'hover:bg-black/5']"
+            :class="['p-1 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition cursor-pointer', isDark ? 'hover:bg-white/5' : 'hover:bg-black/5']"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
@@ -261,11 +261,11 @@ const addRowClass = computed(() => [
             {{ providerForm.id !== null ? t('settings.models.editProviderHeading') : t('settings.models.addProviderHeading') }}
           </h4>
         </div>
-        <span class="text-[11px] text-gray-400">{{ t('settings.models.providerFormSubtitle') }}</span>
+        <span class="text-[11px] text-zinc-400">{{ t('settings.models.providerFormSubtitle') }}</span>
       </div>
 
       <div class="space-y-3">
-        <div v-if="providerForm.id === null" class="flex items-center gap-3 text-xs text-gray-400" aria-label="steps">
+        <div v-if="providerForm.id === null" class="flex items-center gap-3 text-xs text-zinc-400" aria-label="steps">
           <span class="text-blue-600 dark:text-sky-400">1 · {{ importCopy.connection }}</span><span>→</span><span>2 · {{ importCopy.selection }}</span>
         </div>
         <div>
@@ -312,7 +312,7 @@ const addRowClass = computed(() => [
             <button
               type="button"
               @click="showApiKey = !showApiKey"
-              class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer p-1"
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer p-1"
               :title="showApiKey ? t('settings.models.hideKey') : t('settings.models.showKey')"
             >
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -354,13 +354,13 @@ const addRowClass = computed(() => [
     </div>
 
     <div v-else-if="mode === 'model-form'" class="space-y-4">
-      <div class="flex items-center justify-between pb-1 border-b border-gray-100 dark:border-gray-800">
+      <div class="flex items-center justify-between pb-1 border-b border-zinc-100 dark:border-zinc-800">
         <div class="flex items-center gap-2">
           <button
             type="button"
             @click="cancelForm"
             :title="t('settings.models.backToList')"
-            :class="['p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition cursor-pointer', isDark ? 'hover:bg-white/5' : 'hover:bg-black/5']"
+            :class="['p-1 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition cursor-pointer', isDark ? 'hover:bg-white/5' : 'hover:bg-black/5']"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
@@ -370,7 +370,7 @@ const addRowClass = computed(() => [
             {{ modelForm.id !== null ? t('settings.models.editHeading') : t('settings.models.addModelHeading') }}
           </h4>
         </div>
-        <span class="text-[11px] text-gray-400">{{ t('settings.models.modelFormSubtitle') }}</span>
+        <span class="text-[11px] text-zinc-400">{{ t('settings.models.modelFormSubtitle') }}</span>
       </div>
 
       <div class="space-y-3">
@@ -387,7 +387,7 @@ const addRowClass = computed(() => [
             <template #trigger="{ selected }">
               <ProviderIcon v-if="selected?.avatar" :icon="selected.avatar" :name="selected.label" :size="14" />
               <span class="truncate">{{ selected?.label ?? ungroupedLabel }}</span>
-              <svg class="w-3 h-3 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg class="w-3 h-3 shrink-0 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
               </svg>
             </template>
@@ -408,7 +408,7 @@ const addRowClass = computed(() => [
               :class="[
                 'px-3 py-2 rounded-xl text-xs font-medium shrink-0 flex items-center gap-1.5 transition border cursor-pointer select-none',
                 isFetchingRemoteModels
-                  ? 'opacity-60 cursor-not-allowed border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-black text-gray-400'
+                  ? 'opacity-60 cursor-not-allowed border-zinc-300 dark:border-zinc-600 bg-zinc-100 dark:bg-black text-zinc-400'
                   : (isDark
                       ? 'border-white/20 bg-white/[0.06] text-sky-400 hover:bg-white/[0.12]'
                       : 'border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100/80')
@@ -427,7 +427,7 @@ const addRowClass = computed(() => [
               v-if="isRemoteModelDropdownOpen"
               :class="[
                 'absolute left-0 right-0 mt-1 max-h-60 overflow-hidden rounded-xl border shadow-2xl py-1 z-30 flex flex-col text-xs origin-top backdrop-blur-xl',
-                isDark ? 'bg-black/95 border-white/20 text-zinc-100' : 'bg-white border-gray-200 text-gray-700'
+                isDark ? 'bg-black/95 border-white/20 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-700'
               ]"
             >
               <div class="p-2 border-b border-lx-border-faint">
@@ -436,19 +436,19 @@ const addRowClass = computed(() => [
                   :placeholder="t('settings.models.searchModels')"
                   :class="[
                     'w-full px-2.5 py-1 rounded-lg text-xs outline-none',
-                    isDark ? 'bg-white/5 border border-lx-border-subtle text-zinc-100 placeholder-lx-faint' : 'bg-gray-50 border border-lx-border-subtle text-gray-800 placeholder-lx-faint'
+                    isDark ? 'bg-white/5 border border-lx-border-subtle text-zinc-100 placeholder-lx-faint' : 'bg-zinc-50 border border-lx-border-subtle text-zinc-800 placeholder-lx-faint'
                   ]"
                   @click.stop
                 />
               </div>
-              <div v-if="isFetchingRemoteModels" class="py-4 text-center text-gray-400">
+              <div v-if="isFetchingRemoteModels" class="py-4 text-center text-zinc-400">
                 {{ t('settings.models.fetchingRemote') }}
               </div>
               <div v-else-if="fetchRemoteModelError" class="p-3 text-red-500 dark:text-red-400 break-all space-y-1">
                 <div class="font-medium">{{ t('settings.models.fetchFailed') }}</div>
                 <div class="text-[11px] opacity-90">{{ fetchRemoteModelError }}</div>
               </div>
-              <div v-else-if="filteredRemoteModels.length === 0" class="py-4 text-center text-gray-400">
+              <div v-else-if="filteredRemoteModels.length === 0" class="py-4 text-center text-zinc-400">
                 {{ remoteModelSearch ? t('settings.models.noMatch') : t('settings.models.errNoRemote') }}
               </div>
               <div v-else class="overflow-y-auto max-h-48 scrollbar-thin py-0.5">
@@ -464,7 +464,7 @@ const addRowClass = computed(() => [
                   ]"
                 >
                   <div class="font-mono text-xs truncate">{{ item.id }}</div>
-                  <div v-if="item.owned_by" class="text-[10px] text-gray-400 truncate ml-2">{{ item.owned_by }}</div>
+                  <div v-if="item.owned_by" class="text-[10px] text-zinc-400 truncate ml-2">{{ item.owned_by }}</div>
                 </div>
               </div>
             </div>
@@ -483,7 +483,7 @@ const addRowClass = computed(() => [
           <label
             v-if="providerHasCredential(modelForm.providerConfigId)"
             class="mb-2 flex items-start gap-2 rounded-xl border px-3 py-2 cursor-pointer select-none"
-            :class="isDark ? 'border-lx-border hover:border-white/30' : 'border-lx-border hover:border-gray-300'"
+            :class="isDark ? 'border-lx-border hover:border-white/30' : 'border-lx-border hover:border-zinc-300'"
           >
             <input v-model="modelForm.useProviderApiKey" type="checkbox" class="mt-0.5 accent-blue-600" />
             <span class="min-w-0">
@@ -509,7 +509,7 @@ const addRowClass = computed(() => [
             <button
               type="button"
               @click="showApiKey = !showApiKey"
-              class="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer p-1"
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer p-1"
               :title="showApiKey ? t('settings.models.hideKey') : t('settings.models.showKey')"
             >
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
