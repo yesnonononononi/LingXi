@@ -403,7 +403,7 @@ test('过程区行样式统一：终端描述与工具行同字号同色，深�
       assert.match(thinking.parent.props.class, /text-\[13px\]/, '思考标题行必须同为 13px');
       // 工具行容器是"读取/查看"这类工具标题的唯一字号来源（标题本身不带字号类），一并锁住。
       assert.match(description.parent.props.class, /text-\[13px\]/, '工具行容器必须为 13px');
-      const colors = isDark ? ['text-zinc-100', 'text-glow-white'] : ['text-gray-700'];
+      const colors = isDark ? ['text-zinc-100', 'text-glow-white'] : ['text-zinc-700'];
       for (const color of colors) {
         assert.equal(description.props.class.split(' ').includes(color), true, `终端描述必须与工具行同色：${color}`);
       }
@@ -428,7 +428,7 @@ test('工具执行提示：仅显示静态灰字，结束后替换为真实输�
   await nextTick();
   const hint = find(root, node => node.tag === 'div' && String(node.props.class ?? '').includes('font-mono') && text(node).trim() === '正在执行中...');
   assert.ok(hint);
-  assert.match(hint.props.class, /text-gray-400/);
+  assert.match(hint.props.class, /text-zinc-400/);
   assert.doesNotMatch(hint.props.class, /animate-|text-amber/);
   assert.equal(Boolean(find(hint, node => String(node.props.class ?? '').includes('rounded-full'))), false);
 

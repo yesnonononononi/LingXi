@@ -178,7 +178,7 @@ test('asyncDelegation：状态点色与文案映射稳定', () => {
   assert.equal(subItemStatusDotClass('running'), 'bg-amber-400 lx-live-dot');
   assert.equal(subItemStatusDotClass('completed'), 'bg-emerald-500');
   assert.equal(subItemStatusDotClass('failed'), 'bg-red-500');
-  assert.equal(subItemStatusDotClass('cancelled'), 'bg-gray-400');
+  assert.equal(subItemStatusDotClass('cancelled'), 'bg-zinc-400');
   assert.equal(subItemStatusLabel('running'), '执行中');
   assert.equal(subItemStatusLabel('completed'), '执行完成');
   assert.equal(subItemStatusLabel('failed'), '执行失败');
