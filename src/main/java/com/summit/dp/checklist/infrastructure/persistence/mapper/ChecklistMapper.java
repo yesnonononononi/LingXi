@@ -26,15 +26,12 @@ public interface ChecklistMapper extends BaseMapper<ChecklistPO> {
     @Select("SELECT * FROM checklist WHERE session_id = #{sessionId} AND status = 'ACTIVE' FOR UPDATE")
     ChecklistPO selectActiveBySessionIdForUpdate(@Param("sessionId") long sessionId);
 
-    /**
-     * 原子占用提醒额度。
-     *
-     * <p>影响行数为 1 表示本次拿到了额度；为 0 表示条件不再成立（额度已被用掉）。
-     * 归属执行与提醒版本必须和状态一起写入，否则后续无法区分「本执行已提醒」与「别的执行持有提醒」。</p>
-     */
+    /** 条件变化时返回 0，调用方必须重查，不能据此认定提醒已经送达。 */
     @Update("UPDATE checklist SET remind_status = TRUE, remind_execution_id = #{executionId,jdbcType=BIGINT}, "
             + "reminded_progress_version = progress_version, update_at = #{updateAt,jdbcType=TIMESTAMP} "
-            + "WHERE id = #{id} AND remind_status = FALSE")
-    int claimReminder(@Param("id") long id, @Param("executionId") Long executionId,
+            + "WHERE id = #{id} AND session_id = #{sessionId} AND status = 'ACTIVE' "
+            + "AND progress_version = #{progressVersion} AND remind_status = FALSE")
+    int claimReminder(@Param("id") long id, @Param("sessionId") long sessionId,
+                      @Param("progressVersion") long progressVersion, @Param("executionId") long executionId,
                       @Param("updateAt") Instant updateAt);
 }

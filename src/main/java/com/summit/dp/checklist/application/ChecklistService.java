@@ -25,11 +25,6 @@ public interface ChecklistService {
     /** 读取会话当前的活动清单，用于给模型补上下文。 */
     Optional<ChecklistVO> findActive(long sessionId);
 
-    /**
-     * 自然收尾时的提醒判定。
-     *
-     * @param sessionId   本次执行的会话
-     * @param executionId 本次执行标识（可能为 {@code null}：框架回落 UUID 时无法解析）
-     */
-    ReminderDecision remindOnNaturalComplete(long sessionId, Long executionId);
+    /** 自然收尾只信任本执行、当前进展版本的投递事实。 */
+    ReminderDecision remindOnNaturalComplete(ChecklistReminderContext context);
 }

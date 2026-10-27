@@ -34,14 +34,8 @@ public interface ChecklistRepository extends RepositoryTemplate<Checklist, Long>
     /** 按标识锁住清单行（含步骤）；删除与修改需要按标识定位，就靠它。 */
     Optional<Checklist> findByIdForUpdate(long checklistId);
 
-    /**
-     * 原子占用提醒额度。
-     *
-     * <p>条件更新是唯一的判定点：{@code WHERE id = ? AND remind_status = FALSE}。
-     * 返回 {@code true} 表示本次调用拿到了额度并已写入归属执行与提醒版本。
-     * 执行标识可为 {@code null}（框架回落 UUID 时无法解析），此时只占额度不记归属。</p>
-     */
-    boolean claimReminder(long checklistId, Long executionId);
+    /** 只占用同会话、同进展版本的 ACTIVE 额度，未命中不代表无进展。 */
+    boolean claimReminder(Checklist checklist, long executionId);
 
     void insertStep(ChecklistStep step);
 

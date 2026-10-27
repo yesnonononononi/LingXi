@@ -2,16 +2,13 @@ package com.summit.dp.workflow.infrastructure.tools.checklist;
 
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.Execution;
-import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.InterceptorResult;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopInterceptor;
 import com.summit.core.runtime.loop.LoopResult;
-import com.summit.dp.checklist.application.ChecklistReminderText;
 import com.summit.dp.checklist.application.ChecklistService;
 import com.summit.dp.checklist.application.ReminderDecision;
 import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -38,6 +35,7 @@ public class ChecklistReminderInterceptor implements LoopInterceptor {
 
     private final ChecklistService checklistService;
     private final ChecklistContextInjector contextInjector;
+    private final ChecklistReminderDelivery delivery;
 
     @Override
     public int order() {
@@ -63,8 +61,9 @@ public class ChecklistReminderInterceptor implements LoopInterceptor {
     /**
      * 收尾判定：有活动清单且有 PENDING 步骤时提醒一次。
      *
-     * <p>只做三件事：取执行身份、问服务要结论、按结论追加消息并返回续轮。
-     * 状态机、CAS、归属判断都在 {@code ChecklistService} 里。</p>
+     * <p>只做三件事：取执行身份与投递证据、问服务要结论、按结论追加消息并返回续轮。
+     * 状态机、CAS、归属判断都在 {@code ChecklistService} 里；投递证据来自执行检查点，
+     * 不能把「额度被占」当成「模型已经收到提醒」。</p>
      */
     @Override
     public InterceptorResult onBeforeComplete(LoopContext context) {
@@ -76,18 +75,17 @@ public class ChecklistReminderInterceptor implements LoopInterceptor {
             // 没有更新能力就不提醒：否则模型会看到「请标记步骤」却无工具可用，白耗一轮
             return InterceptorResult.NONE;
         }
-        long sessionId = ExecutionIdentity.sessionId(execution);
-        Long executionId = ExecutionIdentity.numericOrNull(execution.getId());
-        ReminderDecision decision = checklistService.remindOnNaturalComplete(sessionId, executionId);
+        ReminderDecision decision = checklistService.remindOnNaturalComplete(delivery.buildContext(execution));
         if (!decision.requiresAnotherRound()) {
             log.debug("清单收尾判定放行: outcome={}, reason={}", decision.outcome(), decision.reason());
             return InterceptorResult.NONE;
         }
         // 先追加消息再返回续轮：注入失败要直接抛出，绝不能消费了额度却静默完成
-        context.appendMessage(List.of(UserMessageEntity.from(ChecklistReminderText.render(decision))));
-        log.info("清单提醒续轮: checklistId={}, sessionId={}, pending={}",
+        delivery.append(context, decision);
+        log.info("清单提醒续轮: checklistId={}, sessionId={}, outcome={}, pending={}",
                 decision.checklist() == null ? null : decision.checklist().getChecklistId(),
-                sessionId, decision.pendingSteps().size());
+                decision.checklist() == null ? null : decision.checklist().getSessionId(),
+                decision.outcome(), decision.pendingSteps().size());
         return InterceptorResult.of(LoopResult.continueLoop(), false);
     }
 

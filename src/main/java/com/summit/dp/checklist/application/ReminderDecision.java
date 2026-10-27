@@ -27,6 +27,8 @@ public record ReminderDecision(
         NOTHING_PENDING,
         /** 首次提醒：额度已占用，需要再来一轮模型调用 */
         REMINDED,
+        /** 未确认投递或已接管终结执行的提醒，需要有界重放。 */
+        REPLAYED,
         /** 额度已用尽仍无实际推进：清单置 UNFINISHED 后放行 */
         EXHAUSTED
     }
@@ -47,8 +49,12 @@ public record ReminderDecision(
         return new ReminderDecision(Outcome.EXHAUSTED, snapshot, List.of(), reason);
     }
 
+    public static ReminderDecision replayed(ChecklistVO snapshot, List<ChecklistVO.StepVO> pendingSteps) {
+        return new ReminderDecision(Outcome.REPLAYED, snapshot, pendingSteps, "提醒投递未确认或执行已接续，重放一次");
+    }
+
     /** 是否需要再来一轮模型调用。 */
     public boolean requiresAnotherRound() {
-        return outcome == Outcome.REMINDED;
+        return outcome == Outcome.REMINDED || outcome == Outcome.REPLAYED;
     }
 }

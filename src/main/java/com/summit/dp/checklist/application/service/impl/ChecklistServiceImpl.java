@@ -3,6 +3,8 @@ package com.summit.dp.checklist.application.service.impl;
 import cn.hutool.core.util.IdUtil;
 import com.summit.dp.checklist.application.ChecklistCommand;
 import com.summit.dp.checklist.application.ChecklistService;
+import com.summit.dp.checklist.application.ChecklistReminderContext;
+import com.summit.dp.checklist.application.ChecklistReminderOwnership;
 import com.summit.dp.checklist.application.ChecklistVO;
 import com.summit.dp.checklist.application.ReminderDecision;
 import com.summit.dp.checklist.domain.model.Checklist;
@@ -27,21 +29,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/**
- * 清单应用服务实现。
- *
- * <p><b>为什么所有写操作都在这里</b>：清单是聚合，步骤状态、清单状态与提醒字段必须一起提交。
- * 让 Executor 直接改步骤会绕过父行锁，于是「推进步骤」和「无进展收口」可以同时成立，
- * 这就是计划书里点名要避免的半聚合写入。</p>
- *
- * <p>事务内顺序固定：<b>锁父行 → 读步骤 → 跑聚合方法 → 按变更面精确落库</b>。</p>
- */
+/** 所有写入先锁父行，步骤推进与提醒收口必须在同一聚合事务中裁决。 */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ChecklistServiceImpl implements ChecklistService {
 
     private final ChecklistRepository repository;
+    private final ChecklistReminderOwnership reminderOwnership;
 
     @Override
     @Transactional
@@ -137,7 +132,11 @@ public class ChecklistServiceImpl implements ChecklistService {
 
     @Override
     @Transactional
-    public ReminderDecision remindOnNaturalComplete(long sessionId, Long executionId) {
+    public ReminderDecision remindOnNaturalComplete(ChecklistReminderContext context) {
+        throwIf(context == null, "清单收尾上下文不能为空");
+        long sessionId = requireSessionId(context.sessionId());
+        Long executionId = context.executionId();
+        throwIf(executionId == null || executionId <= 0L, "清单提醒缺少有效执行标识");
         Optional<Checklist> found = repository.findActiveBySessionIdForUpdate(sessionId);
         if (found.isEmpty()) {
             return ReminderDecision.noActiveChecklist();
@@ -153,8 +152,9 @@ public class ChecklistServiceImpl implements ChecklistService {
             return ReminderDecision.nothingPending(toVO(checklist));
         }
 
-        if (!repository.claimReminder(checklist.getId(), executionId)) {
-            // 条件更新 0 行：本进展版本的额度已被用掉（本执行上一轮，或已接管的旧执行）
+        reminderOwnership.requireAvailable(sessionId, executionId);
+        if (checklist.reminderOwnedBy(executionId)
+                && context.wasDelivered(checklist.getId(), checklist.getProgressVersion())) {
             checklist.markUnfinished();
             repository.updateChecklist(checklist);
             log.info("清单提醒额度用尽: checklistId={}, sessionId={}, progressVersion={}",
@@ -162,11 +162,27 @@ public class ChecklistServiceImpl implements ChecklistService {
             return ReminderDecision.exhausted(toVO(checklist), "本进展版本已提醒过且仍无实际推进");
         }
 
-        // CAS 已经把归属执行与提醒版本写进库里，这里只同步内存快照
+        boolean replay = checklist.isReminderConsumed();
+        if (!replay && !repository.claimReminder(checklist, executionId)) {
+            Optional<Checklist> current = repository.findByIdForUpdate(checklist.getId());
+            if (current.isEmpty() || current.get().getStatus().isTerminal()) {
+                return ReminderDecision.noActiveChecklist();
+            }
+            current.get().requireSession(sessionId);
+            throwIf(current.get().hasPendingSteps(), "清单提醒状态已变化，请重新执行收尾检查");
+            current.get().complete();
+            repository.updateChecklist(current.get());
+            return ReminderDecision.nothingPending(toVO(current.get()));
+        }
+
         checklist.applyReminderFact(executionId);
-        log.info("发送清单提醒: checklistId={}, sessionId={}, pending={}",
-                checklist.getId(), sessionId, checklist.pendingSteps().size());
-        return ReminderDecision.reminded(toVO(checklist), pendingSteps(checklist));
+        if (replay) {
+            repository.updateChecklist(checklist);
+        }
+        log.info("登记清单提醒: checklistId={}, sessionId={}, pending={}, replay={}",
+                checklist.getId(), sessionId, checklist.pendingSteps().size(), replay);
+        return replay ? ReminderDecision.replayed(toVO(checklist), pendingSteps(checklist))
+                : ReminderDecision.reminded(toVO(checklist), pendingSteps(checklist));
     }
 
     /** 按聚合给出的变更面精确落库：先删、再改、最后插，避免顺序冲突。 */

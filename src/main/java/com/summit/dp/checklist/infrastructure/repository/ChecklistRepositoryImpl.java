@@ -103,8 +103,9 @@ public class ChecklistRepositoryImpl extends AbstractRepository<Checklist, Check
     }
 
     @Override
-    public boolean claimReminder(long checklistId, Long executionId) {
-        return mapper.claimReminder(checklistId, executionId, Instant.now()) == 1;
+    public boolean claimReminder(Checklist checklist, long executionId) {
+        return mapper.claimReminder(checklist.getId(), checklist.getSessionId(), checklist.getProgressVersion(),
+                executionId, Instant.now()) == 1;
     }
 
     @Override
@@ -144,7 +145,7 @@ public class ChecklistRepositoryImpl extends AbstractRepository<Checklist, Check
                 po.getId(), po.getSessionId(), po.getAgentId(), po.getTitle(),
                 ChecklistStatus.valueOf(po.getStatus()), po.isRemindStatus(), po.getProgressVersion(),
                 po.getRemindExecutionId(), po.getRemindedProgressVersion(),
-                po.getCreateAt(), po.getUpdateAt(), stepsOf(po.getId()));
+                po.getCreateAt(), po.getUpdateAt(), loadSteps(po.getId()));
     }
 
     @Override
@@ -157,7 +158,7 @@ public class ChecklistRepositoryImpl extends AbstractRepository<Checklist, Check
         return po;
     }
 
-    private List<ChecklistStep> stepsOf(Long checklistId) {
+    private List<ChecklistStep> loadSteps(Long checklistId) {
         return stepMapper.selectList(new LambdaQueryWrapper<ChecklistStepPO>()
                         .eq(ChecklistStepPO::getChecklistId, checklistId)
                         .orderByAsc(ChecklistStepPO::getSeq))

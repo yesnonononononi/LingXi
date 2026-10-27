@@ -53,7 +53,7 @@ class ChecklistReminderInterceptorTest {
     void setUp() {
         fixture = ChecklistTestDatabase.start("checklist-reminder");
         service = fixture.service();
-        interceptor = new ChecklistReminderInterceptor(service, new ChecklistContextInjector(service));
+        interceptor = new ChecklistReminderInterceptor(service, new ChecklistContextInjector(service), new ChecklistReminderDelivery());
     }
 
     @AfterEach
@@ -93,11 +93,12 @@ class ChecklistReminderInterceptorTest {
         ChecklistVO created = service.create(ChecklistCommand.create(
                 SESSION_ID, null, "本次任务", List.of("写领域层", "跑测试")));
 
-        InterceptorResult first = interceptor.onBeforeComplete(context(execution(true), new ArrayList<>()));
+        Execution execution = execution(true);
+        InterceptorResult first = interceptor.onBeforeComplete(context(execution, new ArrayList<>()));
         assertTrue(first.loopResult().shouldContinue());
 
         List<Message> secondAppended = new ArrayList<>();
-        InterceptorResult second = interceptor.onBeforeComplete(context(execution(true), secondAppended));
+        InterceptorResult second = interceptor.onBeforeComplete(context(execution, secondAppended));
 
         assertTrue(second.next(), "放行时应当允许后续拦截器继续");
         assertTrue(second.loopResult().shouldContinue(), "放行不是显式终态");
@@ -153,7 +154,7 @@ class ChecklistReminderInterceptorTest {
     @DisplayName("顺序语义：必须晚于后台任务等待，且异常不得被吞")
     void orderStaysAfterTheBackgroundTaskWaitAndErrorsPropagate() {
         ChecklistReminderInterceptor reminder = new ChecklistReminderInterceptor(
-                mock(ChecklistService.class), mock(ChecklistContextInjector.class));
+                mock(ChecklistService.class), mock(ChecklistContextInjector.class), new ChecklistReminderDelivery());
         BackgroundTaskLoopInterceptor background = new BackgroundTaskLoopInterceptor(
                 mock(TaskRepository.class), mock(BackgroundTaskNotifications.class),
                 mock(ExecutionResumeCoordinator.class));
@@ -199,6 +200,9 @@ class ChecklistReminderInterceptorTest {
 
     private LoopContext context(Execution execution, List<Message> appended) {
         LoopMessages messages = LoopMessages.builder().execution(execution).build();
-        return LoopContext.withCompactionCounter(messages, null, () -> 0, appended::addAll);
+        return LoopContext.withCompactionCounter(messages, null, () -> 0, added -> {
+            appended.addAll(added);
+            execution.getMessages().addAll(added);
+        });
     }
 }

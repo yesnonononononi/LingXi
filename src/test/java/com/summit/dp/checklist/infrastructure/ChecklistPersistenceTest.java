@@ -2,6 +2,7 @@ package com.summit.dp.checklist.infrastructure;
 
 import com.summit.dp.checklist.application.ChecklistCommand;
 import com.summit.dp.checklist.application.ChecklistService;
+import com.summit.dp.checklist.application.ChecklistReminderContext;
 import com.summit.dp.checklist.application.ChecklistVO;
 import com.summit.dp.checklist.application.ReminderDecision;
 import com.summit.dp.checklist.domain.model.Checklist;
@@ -20,6 +21,13 @@ import org.springframework.dao.DataAccessException;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -162,7 +170,7 @@ class ChecklistPersistenceTest {
         long checklistId = created.getChecklistId();
         long firstStep = created.getSteps().get(0).getStepId();
 
-        assertTrue(repository.claimReminder(checklistId, EXECUTION_ID), "首次占用额度应成功");
+        assertTrue(repository.claimReminder(repository.findByIdWithSteps(checklistId).orElseThrow(), EXECUTION_ID), "首次占用额度应成功");
         assertTrue(repository.findByIdWithSteps(checklistId).orElseThrow().isRemindStatus());
 
         ChecklistVO advanced = service.updateStep(
@@ -182,7 +190,7 @@ class ChecklistPersistenceTest {
     @Test
     void failedStepWriteRollsBackChecklistProgressAndReminderFields() {
         ChecklistVO created = service.create(ChecklistCommand.create(SESSION_ID, null, "回滚", List.of("一步", "两步")));
-        repository.claimReminder(created.getChecklistId(), EXECUTION_ID);
+        repository.claimReminder(repository.findByIdWithSteps(created.getChecklistId()).orElseThrow(), EXECUTION_ID);
         ChecklistRepositoryImpl failing = spy(repository);
         doAnswer(invocation -> {
             invocation.callRealMethod();
@@ -199,6 +207,77 @@ class ChecklistPersistenceTest {
         assertEquals(EXECUTION_ID, reloaded.getRemindExecutionId());
         assertEquals(0L, reloaded.getRemindedProgressVersion());
         assertTrue(reloaded.getSteps().getFirst().isPending());
+    }
+
+    @Test
+    void concurrentCreatorsLeaveOnlyOneCompleteAggregate() throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            Future<String> first = pool.submit(() -> {
+                await(start);
+                try {
+                    service.create(ChecklistCommand.create(SESSION_ID, null, "甲", List.of("一步", "两步")));
+                    return "created";
+                } catch (ClientException expected) { return "rejected"; }
+            });
+            Future<String> second = pool.submit(() -> {
+                await(start);
+                try {
+                    service.create(ChecklistCommand.create(SESSION_ID, null, "乙", List.of("一步", "两步")));
+                    return "created";
+                } catch (ClientException expected) { return "rejected"; }
+            });
+            start.countDown();
+            assertEquals(Set.of("created", "rejected"), Set.of(first.get(5, TimeUnit.SECONDS), second.get(5, TimeUnit.SECONDS)));
+            assertEquals(1, repository.findAllBySessionId(SESSION_ID).size());
+            assertEquals(2, repository.findActiveBySessionId(SESSION_ID).orElseThrow().getSteps().size());
+        } finally {
+            start.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void reminderWaitsForTheParentLockAndObservesCommittedProgress() throws Exception {
+        ChecklistVO created = service.create(ChecklistCommand.create(SESSION_ID, null, "并发", List.of("一步")));
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch checking = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<ChecklistVO> advancing = pool.submit(() -> fixture.transaction().execute(status -> {
+                repository.findByIdForUpdate(created.getChecklistId()).orElseThrow();
+                locked.countDown();
+                await(release);
+                return service.updateStep(ChecklistCommand.updateStep(SESSION_ID, created.getChecklistId(),
+                        created.getSteps().getFirst().getStepId(), "COMPLETED"));
+            }));
+            await(locked);
+            Future<ReminderDecision> checkingReminder = pool.submit(() -> {
+                checking.countDown();
+                return service.remindOnNaturalComplete(new ChecklistReminderContext(SESSION_ID, EXECUTION_ID, null));
+            });
+            await(checking);
+            assertThrows(TimeoutException.class, () -> checkingReminder.get(150, TimeUnit.MILLISECONDS));
+            release.countDown();
+
+            assertEquals("COMPLETED", advancing.get(5, TimeUnit.SECONDS).getStatus());
+            assertFalse(checkingReminder.get(5, TimeUnit.SECONDS).requiresAnotherRound());
+            assertFalse(repository.findByIdWithSteps(created.getChecklistId()).orElseThrow().isRemindStatus());
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            assertTrue(latch.await(5, TimeUnit.SECONDS), "并发测试未及时到达同步点");
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("并发测试被中断", interrupted);
+        }
     }
 
     @Test
@@ -267,7 +346,7 @@ class ChecklistPersistenceTest {
     @Test
     @DisplayName("没有活动清单时提醒判定直接放行，不消费任何额度")
     void reminderWithoutActiveChecklistPasses() {
-        ReminderDecision decision = service.remindOnNaturalComplete(SESSION_ID, EXECUTION_ID);
+        ReminderDecision decision = service.remindOnNaturalComplete(new ChecklistReminderContext(SESSION_ID, EXECUTION_ID, null));
 
         assertEquals(ReminderDecision.Outcome.NO_ACTIVE_CHECKLIST, decision.outcome());
         assertFalse(decision.requiresAnotherRound());
