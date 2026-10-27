@@ -82,7 +82,7 @@ public class ChecklistServiceImpl implements ChecklistService {
         throwIf(command.getStepId() == null, "更新步骤需要提供 stepId");
         ChecklistStepStatus next = ChecklistRules.parseStepStatus(command.getStatus());
 
-        Checklist checklist = lockActive(sessionId, command.getChecklistId());
+        Checklist checklist = lockOwned(sessionId, command.getChecklistId());
         ChecklistMutation mutation = checklist.changeStepStatus(command.getStepId(), next);
         persist(checklist, mutation);
         return toVO(checklist);
@@ -94,7 +94,7 @@ public class ChecklistServiceImpl implements ChecklistService {
         throwIf(command == null, "清单参数不能为空");
         long sessionId = requireSessionId(command.getSessionId());
 
-        Checklist checklist = lockActive(sessionId, command.getChecklistId());
+        Checklist checklist = lockOwned(sessionId, command.getChecklistId());
         ChecklistModification modification = new ChecklistModification(
                 command.getNewTitle(),
                 contentUpdates(command.getStepContents()),
@@ -186,14 +186,13 @@ public class ChecklistServiceImpl implements ChecklistService {
     }
 
     /** 写入路径统一走带锁定位：checklistId 为空时用会话内的活动清单。 */
-    private Checklist lockActive(long sessionId, Long checklistId) {
+    private Checklist lockOwned(long sessionId, Long checklistId) {
         Checklist checklist = checklistId == null
                 ? repository.findActiveBySessionIdForUpdate(sessionId)
                         .orElseThrow(() -> new ClientException("当前会话没有活动清单，请先用 create_checklist 创建"))
                 : repository.findByIdForUpdate(checklistId)
                         .orElseThrow(() -> new ClientException("清单 " + checklistId + " 不存在"));
         checklist.requireSession(sessionId);
-        checklist.requireActive("写入");
         return checklist;
     }
 

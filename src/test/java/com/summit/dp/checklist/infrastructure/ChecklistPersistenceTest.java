@@ -131,6 +131,31 @@ class ChecklistPersistenceTest {
     }
 
     @Test
+    void completedLastStepCanBeRetriedWithoutReopeningOrTouchingANewChecklist() {
+        ChecklistVO created = service.create(ChecklistCommand.create(SESSION_ID, null, "旧清单", List.of("一步")));
+        long stepId = created.getSteps().getFirst().getStepId();
+        ChecklistVO finished = service.updateStep(ChecklistCommand.updateStep(
+                SESSION_ID, created.getChecklistId(), stepId, "COMPLETED"));
+        Instant persistedUpdate = repository.findByIdWithSteps(created.getChecklistId()).orElseThrow().getUpdateAt();
+        ChecklistVO next = service.create(ChecklistCommand.create(SESSION_ID, null, "新清单", List.of("新一步")));
+
+        ChecklistVO repeated = service.updateStep(ChecklistCommand.updateStep(
+                SESSION_ID, created.getChecklistId(), stepId, "COMPLETED"));
+
+        assertEquals("COMPLETED", repeated.getStatus());
+        assertEquals(finished.getProgressVersion(), repeated.getProgressVersion());
+        assertEquals(persistedUpdate, repeated.getUpdateAt());
+        assertEquals(next.getChecklistId(), service.findActive(SESSION_ID).orElseThrow().getChecklistId());
+        assertThrows(ClientException.class, () -> service.updateStep(ChecklistCommand.updateStep(
+                SESSION_ID, created.getChecklistId(), stepId, "FAILED")));
+        assertThrows(ClientException.class, () -> service.updateStep(ChecklistCommand.updateStep(
+                SESSION_ID + 1, created.getChecklistId(), stepId, "COMPLETED")));
+        service.delete(ChecklistCommand.delete(SESSION_ID, created.getChecklistId()));
+        assertThrows(ClientException.class, () -> service.updateStep(ChecklistCommand.updateStep(
+                SESSION_ID, created.getChecklistId(), stepId, "COMPLETED")));
+    }
+
+    @Test
     @DisplayName("步骤推进落库并重置提醒额度；重复提交同一状态不改变进展版本")
     void advancingStepResetsReminderQuotaInDatabase() {
         ChecklistVO created = service.create(ChecklistCommand.create(SESSION_ID, null, "清单", List.of("一步", "两步")));

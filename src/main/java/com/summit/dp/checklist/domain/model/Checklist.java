@@ -143,15 +143,19 @@ public class Checklist {
      * @return 本次变更需要落库的影响面；重复提交相同终态时返回 {@link ChecklistMutation#none()}
      */
     public ChecklistMutation changeStepStatus(long stepId, ChecklistStepStatus next) {
-        requireActive("更新步骤");
         ChecklistStep step = requireStep(stepId);
+        // 已收口后的同状态重试只读取既有事实，不能借此重新打开清单。
+        if (status == ChecklistStatus.COMPLETED && step.getStatus() == next) {
+            return ChecklistMutation.none();
+        }
+        requireActive("更新步骤");
         if (!step.moveToTerminal(next)) {
             // 无变化：不递增版本、不重置提醒额度，也不刷新清单时间——重试必须完全等价于没发生
             return ChecklistMutation.none();
         }
         progressVersion++;
         resetReminderQuota();
-        boolean closed = recomputeStatus();
+        recomputeStatus();
         touch();
         log.debug("清单步骤推进: checklistId={}, stepId={}, status={}, progressVersion={}",
                 id, stepId, next, progressVersion);
