@@ -199,9 +199,8 @@ test('AC-5 协同条成员色点：协作式委派下由子会话权威态驱动
   });
   const root = mountComponent(t, component('components/chat/ChatMessageItem.vue'), { message, isDark: true, subSessions });
 
-  const segmentToggle = find(root, node => node.props?.['data-testid'] === 'process-segment-toggle');
-  assert.ok(segmentToggle);
-  segmentToggle.props.onClick();
+  const segment = find(root, node => node.props?.['data-testid'] === 'process-segment');
+  assert.equal(segment.props['data-process-mode'], 'live');
   await nextTick();
   const member = find(root, node => node.tag === 'button' && String(node.props.title ?? '').startsWith('协作式委派'));
   assert.ok(member, '协作式委派成员行必须带「结果将以邮件送达」提示');
@@ -275,9 +274,8 @@ test('AC-5 协作式委派：子会话尚未出现时不得抢先亮「完成」
   const subSessions = reactive([]);
   const root = mountComponent(t, component('components/chat/ChatMessageItem.vue'), { message, isDark: true, subSessions });
 
-  const segmentToggle = find(root, node => node.props?.['data-testid'] === 'process-segment-toggle');
-  assert.ok(segmentToggle);
-  segmentToggle.props.onClick();
+  const segment = find(root, node => node.props?.['data-testid'] === 'process-segment');
+  assert.equal(segment.props['data-process-mode'], 'live');
   await nextTick();
   const member = find(root, node => node.tag === 'button' && String(node.props.title ?? '').startsWith('协作式委派'));
   assert.ok(member, '协作式委派成员行必须渲染');

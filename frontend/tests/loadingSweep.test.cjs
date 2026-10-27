@@ -66,8 +66,9 @@ test('减弱动态效果时退回普通文字色', () => {
   assert.match(block, /color:\s*inherit/, '降级时文字要回到父级颜色，否则仍是透明');
 });
 
-test('过程段标题在活动态挂扫光类，且不再保留呼吸点', () => {
-  assert.match(segment, /:class="\{ 'lx-sweep-text': active \}"/, '标题未在 active 时挂扫光类');
+test('过程摘要只在可汇总时渲染，运行过程保留独立呈现模式', () => {
+  assert.match(segment, /<button v-if="canSummarize"/, '摘要入口必须受可汇总判据约束');
+  assert.match(segment, /:data-process-mode="canSummarize \? 'summary' : 'live'"/);
   assert.doesNotMatch(segment, /animate-pulse/, '呼吸点与扫光是两个互相打架的加载信号，只留一个');
   assert.doesNotMatch(segment, /rounded-full bg-current/, '呼吸点被删干净');
 });

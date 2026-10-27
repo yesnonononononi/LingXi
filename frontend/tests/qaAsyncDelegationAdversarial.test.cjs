@@ -187,9 +187,8 @@ test('AC-5 对抗：协同条色点——子会话进行中即便工具 calling 
   });
   const root = mountComponent(t, component('components/chat/ChatMessageItem.vue'), { message, isDark: true, subSessions });
 
-  const segmentToggle = find(root, node => node.props?.['data-testid'] === 'process-segment-toggle');
-  assert.ok(segmentToggle);
-  segmentToggle.props.onClick();
+  const segment = find(root, node => node.props?.['data-testid'] === 'process-segment');
+  assert.equal(segment.props['data-process-mode'], 'live');
   await nextTick();
   const member = find(root, node => node.tag === 'button' && String(node.props.title ?? '').startsWith('协作式委派'));
   assert.ok(member, '协作式委派成员行应存在');

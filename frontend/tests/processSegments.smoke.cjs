@@ -42,6 +42,13 @@ window.finish = async () => { message.value.isThinking = false; message.value.is
   message.value.content = '配置修改与检查已完成。'; message.value.thoughtSteps[0].status = 'success'; await window.flush(); };
 window.reenterWaiting = async () => { turn.value = { status: 'WAITING' }; message.value.isComplete = false;
   message.value.isSuspended = true; mountKey.value++; await window.flush(); };
+window.runClosedSegment = async () => { turn.value={status:'RUNNING'};
+  message.value={id:'answer',role:'assistant',turnId:'900',timestamp:0,content:'',isComplete:false,
+    aiMessages:[{id:'before',order:0,text:'开始核验。'},{id:'after',order:3,text:'继续等待命令收尾。'}],
+    toolCalls:[{id:'long',toolName:AgentToolName.ExecuteCommand,order:1,status:'calling',query:JSON.stringify({command:'npm test',intention:'长任务核验'})},
+      {id:'read',toolName:AgentToolName.ReadFile,order:2,status:'success',args:{path:'ApplicationContextAssemblyTest.java'}}]};
+  mountKey.value++; await window.flush(); };
+window.completeCommand = async () => { message.value.toolCalls[0].status='success'; message.value.toolCalls[0].result='核验通过'; await window.flush(); };
 </script>
 <template><main class="mx-auto max-w-lx-chat px-4 py-10">
 <ChatMessageItem :key="mountKey" :message="message" :turn="turn" :is-dark="dark" session-id="7" />
@@ -66,24 +73,27 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
     await evaluate(`window.setDark(${dark})`);
     const geometry = await evaluate(`(() => {
       const headers = [...document.querySelectorAll('[data-testid=process-segment-toggle]')];
-      const previews = [...document.querySelectorAll('[data-testid=process-segment-preview]')];
-      const preview = previews.at(-1); const text = preview.firstElementChild.firstChild;
-      const range = document.createRange(); range.setStart(text, text.length - 6); range.setEnd(text, text.length);
-      const end = range.getBoundingClientRect(); const box = preview.getBoundingClientRect();
+      const live = document.querySelector('[data-process-mode=live]');
+      const thinking = live.querySelector('.thinking-content');
       return { headers: headers.map(element => ({ expanded: element.getAttribute('aria-expanded'), height:element.getBoundingClientRect().height })),
         textCount: document.querySelectorAll('[data-testid=process-text]').length,
         details: document.querySelectorAll('[data-testid=process-segment-details]').length,
-        width:document.documentElement.scrollWidth, viewport:innerWidth, tailLeft:end.left, tailRight:end.right,
-        previewLeft:box.left, previewRight:box.right, background:getComputedStyle(document.body).backgroundColor, body:document.body.innerText };
+        liveCount:document.querySelectorAll('[data-process-mode=live]').length,
+        liveSummaries:live.querySelectorAll('[data-testid=process-segment-toggle]').length,
+        thinkingHeight:thinking.clientHeight,
+        width:document.documentElement.scrollWidth, viewport:innerWidth,
+        background:getComputedStyle(document.body).backgroundColor, body:document.body.innerText };
     })()`);
     measurements.push({ name, ...geometry });
     assert.equal(geometry.background, dark ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)', '主题背景必须与组件配色一致');
-    assert.equal(geometry.headers.length, 2);
+    assert.equal(geometry.headers.length, 1);
     assert.equal(geometry.textCount, 2);
-    assert.equal(geometry.details, 0, '折叠时不能挂载详细 Markdown 和工具结果');
+    assert.equal(geometry.details, 1, '只有运行过程直接渲染详情');
+    assert.equal(geometry.liveCount, 1);
+    assert.equal(geometry.liveSummaries, 0);
+    assert.ok(geometry.thinkingHeight > 0 && geometry.thinkingHeight <= 288);
     assert.ok(geometry.headers.every(header => header.expanded === 'false' && header.height <= 28));
     assert.ok(geometry.width <= geometry.viewport + 1, '摘要不能撑宽页面');
-    assert.ok(geometry.tailRight <= geometry.previewRight + 1 && geometry.tailLeft >= geometry.previewLeft - 1, '最新尾部必须实际位于裁剪窗口内');
     assert.match(geometry.body, /写入、执行命令/);
     await fs.writeFile(path.join(output, `${name}.png`), (await window.webContents.capturePage()).toPNG());
   }
@@ -98,8 +108,8 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
   assert.ok(failureGeometry.labelRight <= failureGeometry.right + 1 && failureGeometry.statusRight <= failureGeometry.right + 1,
     '长 MCP 名称和状态提示不能挤出窄屏折叠行：' + JSON.stringify(failureGeometry));
   assert.equal(failureGeometry.status, '1 项状态未知');
-  await evaluate('document.querySelectorAll("[data-testid=process-segment-toggle]")[1].click(); window.flush()');
-  assert.equal(await evaluate('document.querySelectorAll("[data-testid=process-segment-toggle]")[1].getAttribute("aria-expanded")'), 'true');
+  await evaluate('document.querySelector("[data-testid=process-segment-toggle]").click(); window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=process-segment-toggle]").getAttribute("aria-expanded")'), 'true');
   await evaluate('document.querySelector("[data-testid=whole-process-toggle]").click(); window.flush()');
   assert.equal(await evaluate('document.querySelector("[data-testid=whole-process-toggle]").getAttribute("aria-expanded")'), 'false');
   assert.equal(await evaluate('document.querySelector("[data-testid=whole-process-content]").getBoundingClientRect().height'), 0);
@@ -108,11 +118,13 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
   await evaluate('window.appendThought()');
   assert.equal(await evaluate('document.querySelector("[data-testid=whole-process-toggle]").getAttribute("aria-expanded")'), 'false');
   await evaluate('document.querySelector("[data-testid=whole-process-toggle]").click(); window.flush()');
-  assert.equal(await evaluate('document.querySelectorAll("[data-testid=process-segment-toggle]")[1].getAttribute("aria-expanded")'), 'true');
-  assert.equal(await evaluate('document.querySelectorAll("[data-testid=process-segment-details]").length'), 1);
+  assert.equal(await evaluate('document.querySelector("[data-testid=process-segment-toggle]").getAttribute("aria-expanded")'), 'true');
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=process-segment-details]").length'), 2);
   await evaluate('window.finish()');
   assert.equal(await evaluate('document.querySelector("[data-testid=whole-process-toggle]").getAttribute("aria-expanded")'), 'true');
-  assert.equal(await evaluate('document.querySelectorAll("[data-testid=process-segment-toggle]")[1].getAttribute("aria-expanded")'), 'true');
+  assert.deepEqual(await evaluate('[...document.querySelectorAll("[data-testid=process-segment-toggle]")].map(button=>button.getAttribute("aria-expanded"))'), ['true','false']);
+  assert.equal(await evaluate('document.querySelectorAll("[data-process-mode=live]").length'), 0);
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=process-segment-details]").length'), 1);
   assert.match(await evaluate('document.body.innerText'), /配置修改与检查已完成/);
   await evaluate('document.querySelector("[data-testid=whole-process-toggle]").click(); window.flush()');
   assert.match(await evaluate('document.body.innerText'), /配置修改与检查已完成/);
@@ -124,10 +136,22 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
   assert.ok(await evaluate('document.querySelector("[data-testid=whole-process-content]").getBoundingClientRect().height > 0'));
   assert.match(await evaluate('document.body.innerText'), /现在开始修改配置/);
   assert.match(await evaluate('document.body.innerText'), /修改完成，继续核对依赖/);
-  assert.equal(await evaluate('document.querySelectorAll("[data-testid=process-segment-details]").length'), 0);
+  assert.equal(await evaluate('document.querySelectorAll("[data-process-mode=live]").length'), 1);
   await fs.writeFile(path.join(output, 'waiting-reentry.png'), (await window.webContents.capturePage()).toPNG());
+  window.setContentSize(1000,680);
+  await evaluate('window.setDark(false);window.runClosedSegment()');
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=process-segment-toggle]").length'),0,'命令未结束时不能生成工具集合摘要');
+  assert.equal(await evaluate('document.querySelector("[data-testid=process-segment]").dataset.processMode'),'live');
+  await evaluate('[...document.querySelectorAll("button")].find(button=>button.textContent.trim()==="长任务核验").click();window.flush()');
+  assert.match(await evaluate('document.body.innerText'),/正在执行中/);
+  await fs.writeFile(path.join(output, 'running-between-text.png'), (await window.webContents.capturePage()).toPNG());
+  await evaluate('window.completeCommand()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=process-segment]").dataset.processMode'),'summary');
+  assert.equal(await evaluate('document.querySelector("[data-testid=process-segment-toggle]").getAttribute("aria-expanded")'),'false');
+  assert.match(await evaluate('document.querySelector("[data-testid=process-segment-title]").textContent'),/执行命令、读取/);
+  await fs.writeFile(path.join(output, 'completed-between-text.png'), (await window.webContents.capturePage()).toPNG());
   assert.deepEqual(errors, []);
   await fs.writeFile(path.join(output, 'measurements.json'), JSON.stringify(measurements, null, 2));
-  console.log('过程区：整轮折叠、独立分段、深浅主题、窄屏、尾部裁剪与手动展开保留验证通过。截图：' + output);
+  console.log('过程区：运行节点不被摘要占位、文本间命令收尾后才生成摘要、整轮折叠、深浅主题、窄屏与历史展开选择保留验证通过。截图：' + output);
   clearTimeout(deadline); window.destroy(); app.exit(0);
 }).catch(error => { console.error(error); clearTimeout(deadline); if (window) window.destroy(); app.exit(1); });

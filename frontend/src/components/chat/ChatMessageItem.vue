@@ -99,7 +99,7 @@
                 <MarkdownRenderer v-if="wholeProcessExpanded" :content="part.message.text" :is-dark="isDark" :process-text="true" />
               </div>
               <ChatProcessSegment v-else :visible="wholeProcessExpanded" :segment="part" :message="props.message" :turn="props.turn"
-                :active="!part.closed && processIsStreaming"
+                :ongoing="processIsOngoing"
                 :sub-sessions="props.subSessions" :session-id="props.sessionId" :is-dark="isDark"
                 @select-sub-session="emit('selectSubSession', $event)" />
             </template>
@@ -284,9 +284,7 @@ const processParts = computed(() => buildProcessSegments(processTimeline.value, 
 
 // 挂起和等待审批仍未结束，不能用实时输出状态决定收起；用户操作后保留其选择。
 const processExpansion = ref<boolean | null>(null);
-const wholeProcessExpanded = computed(() => processExpansion.value ?? (props.turn
-  ? isActiveTurnStatus(props.turn.status)
-  : props.message.isComplete !== true && isTurnRunning.value));
+const wholeProcessExpanded = computed(() => processExpansion.value ?? processIsOngoing.value);
 const wholeProcessSummary = computed(() => summarizeProcess(processParts.value.flatMap(part =>
   part.kind === 'process' ? part.items : []), props.subSessions));
 const wholeProcessStatus = computed(() => formatProcessStatus(wholeProcessSummary.value, { running: 'never' }));
@@ -319,10 +317,10 @@ const isTurnRunning = computed(() => {
   return hasPendingTool(props.message.toolCalls);
 });
 
-/** 历史待确认工具不代表正在输出；有轮次摘要时由执行状态决定实时预览。 */
-const processIsStreaming = computed(() => !props.message.isSuspended && (props.turn
-  ? props.turn.status === 'RUNNING'
-  : props.message.isComplete !== true && isTurnRunning.value));
+/** 暂停不代表结束；历史残留的待确认工具不能重开已终结轮次。 */
+const processIsOngoing = computed(() => props.turn
+  ? isActiveTurnStatus(props.turn.status)
+  : props.message.isComplete !== true && isTurnRunning.value);
 
 /** 终态底栏不依赖正文，只有思考内容也必须展示；须在完成判据首次求值前声明。 */
 const isTerminalTurn = computed(() => props.message.cancelled === true || props.message.failed === true);

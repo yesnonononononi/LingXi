@@ -176,7 +176,8 @@ async function mountExpanded(t, answer, props = {}) {
       const id = segment.props['data-segment-id'];
       if (seen.has(id)) continue;
       seen.add(id);
-      find(segment, node => node.props?.['data-testid'] === 'process-segment-toggle')?.props.onClick();
+      const button = find(segment, node => node.props?.['data-testid'] === 'process-segment-toggle');
+      if (button && !button.props['aria-expanded']) button.props.onClick();
     }
   };
   reveal();
@@ -442,8 +443,8 @@ test('切入未结束会话时展开整轮过程，挂起与等待审批也直�
         active ? 1 : 0, context);
       if (status === 'WAITING') {
         assert.match(text(root), /已检查配置，正在准备下一步/);
-        const title = find(root, node => node.props?.['data-testid'] === 'process-segment-title');
-        assert.doesNotMatch(title.props.class, /lx-sweep-text/, '挂起保持展开，但不能伪装成正在输出');
+        const segment = find(root, node => node.props?.['data-testid'] === 'process-segment');
+        assert.equal(segment.props['data-process-mode'], 'live', '挂起未结束，不能提前生成历史摘要');
       }
     }
   }
@@ -473,7 +474,81 @@ test('整轮过程在挂起和恢复间保持展开，手动折叠后仍尊重�
   }
 });
 
-test('分段折叠：文本直接展示，各段默认收起，思考与工具详情不提前挂载', async t => {
+test('文本边界不能提前替换实时过程，所有工具收尾后才生成摘要', async t => {
+  const { reducer, event, answer, AgentToolName } = streamFixture();
+  t.after(() => reducer.dispose());
+  reducer.consume(event({ type: 'AI_MESSAGE', responseId: '101', order: 1, text: '开始核验', isBody: false }));
+  reducer.consume(event({ type: 'TOOL_CALL', requestId: 'long-command', responseId: '102', order: 1,
+    toolName: AgentToolName.ExecuteCommand, args: '{"command":"npm test","intention":"长任务核验"}' }));
+  reducer.consume(event({ type: 'TOOL_CALL', requestId: 'read', responseId: '102', order: 2,
+    toolName: AgentToolName.ReadFile, args: '{"path":"ApplicationContextAssemblyTest.java"}' }));
+  reducer.consume(event({ type: 'TOOL_COMPLETED', requestId: 'read', responseId: '102', order: 2,
+    toolName: AgentToolName.ReadFile, resultStatus: 'COMPLETED', output: '文件内容' }));
+  reducer.consume(event({ type: 'AI_MESSAGE', responseId: '103', order: 1, text: '继续等待长任务', isBody: false }));
+  const turn = reactive({ status: 'RUNNING' });
+  const root = mount(t, answer, { turn });
+  const segment = find(root, node => node.props?.['data-testid'] === 'process-segment');
+  assert.equal(segment.props['data-process-mode'], 'live');
+  assert.equal(Boolean(find(segment, node => node.props?.['data-testid'] === 'process-segment-title')), false,
+    '运行中的过程不能被工具集合摘要占位');
+  const command = find(segment, node => node.tag === 'button' && text(node) === '长任务核验');
+  assert.ok(command, '运行命令必须保留自己的动态渲染位置');
+  command.props.onClick({ stopPropagation() {} });
+  await nextTick();
+  assert.match(text(segment), /正在执行中/);
+  answer.isSuspended = true;
+  turn.status = 'WAITING';
+  await nextTick();
+  assert.equal(segment.props['data-process-mode'], 'live', '暂停不能被当作整段已结束');
+  answer.isSuspended = false;
+  turn.status = 'RUNNING';
+  reducer.consume(event({ type: 'TOOL_COMPLETED', requestId: 'long-command', responseId: '102', order: 1,
+    toolName: AgentToolName.ExecuteCommand, resultStatus: 'COMPLETED', output: '核验通过' }));
+  await nextTick();
+  assert.equal(segment.props['data-process-mode'], 'summary');
+  assert.equal(text(find(segment, node => node.props?.['data-testid'] === 'process-segment-title')), '执行命令、读取');
+  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'process-segment-details').length, 0);
+});
+
+test('尾段仍可增长时继续渲染过程，后续文本到达才生成已完成段摘要', async t => {
+  const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
+  const answer = message({ content: '', isComplete: false, isThinking: false, aiMessages: [],
+    toolCalls: [{ id: 'done', toolName: AgentToolName.ReadFile, order: 1, status: 'success', args: { path: 'a.md' } }] });
+  const root = mount(t, answer);
+  const segment = find(root, node => node.props?.['data-testid'] === 'process-segment');
+  assert.equal(segment.props['data-process-mode'], 'live');
+  assert.equal(Boolean(find(segment, node => node.props?.['data-testid'] === 'process-segment-toggle')), false);
+  assert.match(text(segment), /a\.md/);
+  answer.aiMessages.push({ id: 'after', order: 2, text: '本段已完成' });
+  await nextTick();
+  assert.equal(segment.props['data-process-mode'], 'summary');
+  const header = find(segment, node => node.props?.['data-testid'] === 'process-segment-toggle');
+  assert.equal(header.props['aria-expanded'], false, '摘要默认折叠，不改变展开策略');
+  answer.toolCalls[0].status = 'calling';
+  await nextTick();
+  assert.equal(segment.props['data-process-mode'], 'live', '迟到的未完成事实必须恢复实时位置');
+  assert.equal(Boolean(find(segment, node => node.props?.['data-testid'] === 'process-segment-toggle')), false);
+});
+
+test('委派工具成功不等于过程结束，协作任务运行和挂起时仍保留实时位置', async t => {
+  const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
+  const subSessions = reactive([{ id: '88', agentId: '5', agentName: '工程师', runStatus: 'RUNNING' }]);
+  const answer = message({ content: '', isComplete: false, aiMessages: [{ id: 'after', order: 1, text: '继续等待交付' }],
+    toolCalls: [{ id: 'delegate', toolName: AgentToolName.CallSubAgent, order: 0, status: 'success', subSessionId: '88',
+      query: '{"agentId":"5","runtime_mode":"async"}' }] });
+  const root = mount(t, answer, { subSessions });
+  const segment = find(root, node => node.props?.['data-testid'] === 'process-segment');
+  assert.equal(segment.props['data-process-mode'], 'live');
+  subSessions[0].runStatus = 'SUSPENDED';
+  await nextTick();
+  assert.equal(segment.props['data-process-mode'], 'live');
+  subSessions[0].runStatus = 'IDLE';
+  subSessions[0].lastOutcome = 'COMPLETED';
+  await nextTick();
+  assert.equal(segment.props['data-process-mode'], 'summary');
+});
+
+test('分段呈现：文本直接展示，运行过程不生成摘要，只有已结束段默认折叠', async t => {
   const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
   const answer = message({ isComplete: false, isThinking: true, content: '',
     thoughtSteps: [{ id: 's1', order: 0, title: '思考', content: '详情正文', status: 'running' }],
@@ -481,47 +556,50 @@ test('分段折叠：文本直接展示，各段默认收起，思考与工具�
     toolCalls: [{ id: 'c1', toolName: AgentToolName.EditFile, order: 2, status: 'success', args: { path: 'C:\\project\\mcp.json' } }] });
   const root = mount(t, answer);
   const headers = findAll(root, node => node.props?.['data-testid'] === 'process-segment-toggle');
-  assert.equal(headers.length, 2);
-  assert.ok(headers.every(node => node.props['aria-expanded'] === false));
-  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'process-segment-details').length, 0);
-  assert.equal(findAll(root, node => node.tag === 'markdown' && node.props.thinkingText).length, 0);
+  assert.equal(headers.length, 1);
+  assert.equal(headers[0].props['aria-expanded'], false);
+  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'process-segment-details').length, 1);
+  assert.equal(findAll(root, node => node.tag === 'markdown' && node.props.thinkingText).length, 1);
   assert.match(text(root), /开始修改/);
   assert.match(text(root), /继续检查/);
-  assert.match(text(headers[1]), /写入.*mcp\.json/);
+  assert.match(text(headers[0]), /写入.*mcp\.json/);
   assert.doesNotMatch(text(root), /C:\\project/);
   headers[0].props.onClick();
   await nextTick();
   assert.equal(headers[0].props['aria-expanded'], true);
-  assert.equal(headers[1].props['aria-expanded'], false);
   assert.match(text(root), /详情正文/);
 });
 
-test('实时预览：思考显示最新尾部，迟到工具收尾不抢位置，后续工具沿用原渲染名', async t => {
+test('实时过程：思考持续追加，迟到工具收尾不替换动态节点，后续工具即时呈现', async t => {
   const { reducer, event, answer, AgentToolName } = streamFixture();
   reducer.consume(event({ type: 'TOOL_CALL', requestId: 'old', responseId: '101', order: 2,
     toolName: AgentToolName.ReadFile, args: '{"path":"old.md"}' }));
   reducer.consume(event({ type: 'PARTIAL_THINKING', responseId: '102', order: 0, offset: 0,
     content: '不应保留的开头' + '推理'.repeat(200) + '最新尾部' }));
   const root = mount(t, answer);
-  const preview = () => find(root, node => node.props?.['data-testid'] === 'process-segment-preview');
-  assert.match(text(preview()), /最新尾部$/);
-  assert.doesNotMatch(text(preview()), /不应保留的开头/);
-  assert.match(preview().props.class, /overflow-hidden.*whitespace-nowrap/);
-  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'process-segment-details').length, 0);
+  const thinking = resolveThinkingBox(root, '最新尾部');
+  assert.ok(thinking);
+  assert.equal(Boolean(find(root, node => node.props?.['data-testid'] === 'process-segment-title')), false);
+  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'process-segment-details').length, 1);
   reducer.consume(event({ type: 'TOOL_COMPLETED', requestId: 'old', responseId: '101', order: 2,
     toolName: AgentToolName.ReadFile, resultStatus: 'COMPLETED', output: '旧收尾' }));
   await nextTick();
-  assert.match(text(preview()), /最新尾部$/);
+  assert.equal(resolveThinkingBox(root, '最新尾部'), thinking);
+  const current = answer.thoughtSteps.find(step => step.id === 'thinking:102');
+  reducer.consume(event({ type: 'PARTIAL_THINKING', responseId: '102', order: 0, offset: current.content.length,
+    content: '继续实时追加' }));
+  await nextTick();
+  assert.match(text(thinking), /继续实时追加/);
   reducer.consume(event({ type: 'TOOL_CALL', requestId: 'new', responseId: '102', order: 2,
     toolName: AgentToolName.WebSearch, args: '{}' }));
   await nextTick();
-  assert.equal(text(find(root, node => node.props?.['data-testid'] === 'process-segment-title')), '检索网络资源');
+  assert.match(text(root), /检索网络资源/);
   reducer.dispose();
 });
 
-test('手动展开按段身份保留，流式增长、历史替换和终态不会自动折叠，新段仍默认收起', async t => {
-  const answer = message({ content: '', isComplete: false, isThinking: true, aiMessages: [],
-    thoughtSteps: [{ id: 's1', title: '思考', content: '初始内容', order: 0, status: 'running' }] });
+test('摘要的手动展开按段身份保留，历史替换和终态不会自动折叠，新段仍默认收起', async t => {
+  const answer = message({ content: '', isComplete: true, isThinking: false, aiMessages: [],
+    thoughtSteps: [{ id: 's1', title: '思考', content: '初始内容', order: 0, status: 'success' }] });
   const root = mount(t, answer);
   const header = find(root, node => node.props?.['data-testid'] === 'process-segment-toggle');
   header.props.onClick();
