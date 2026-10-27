@@ -888,7 +888,7 @@ test('6. 切换会话前发起的旧回查响应必须被版本控制丢弃', as
 /* 7. 执行生命周期事件 → runStatus                                       */
 /* ------------------------------------------------------------------ */
 
-test('7. ★ 挂起事件必须把 runStatus 写成 SUSPENDED（挂起态卡片可达性的前提）', async () => {
+test('7. 生命周期事件与权威回查共同保持正确的运行状态', async t => {
   setActivePinia(createPinia());
   const controllers: Array<ReadableStreamDefaultController<Uint8Array>> = [];
   (globalThis as any).fetch = async (url: string) => {
@@ -912,9 +912,10 @@ test('7. ★ 挂起事件必须把 runStatus 写成 SUSPENDED（挂起态卡片�
   const { chatApi } = await import('../src/services/chat');
   const originalTree = chatApi.fetchSessionTree;
   const originalMessages = chatApi.fetchSessionMessages;
+  let serverRunStatus: 'IDLE' | 'RUNNING' | 'SUSPENDED' = 'IDLE';
   (chatApi as any).fetchSessionTree = async () => ({
     ok: true,
-    data: { rootSessionId: ROOT, root: { id: ROOT, name: '会话', runStatus: 'IDLE', lastOutcome: 'COMPLETED' }, subSessions: [] },
+    data: { rootSessionId: ROOT, root: { id: ROOT, name: '会话', runStatus: serverRunStatus, lastOutcome: 'COMPLETED' }, subSessions: [] },
   });
   (chatApi as any).fetchSessionMessages = async () => ({
     ok: true,
@@ -922,6 +923,13 @@ test('7. ★ 挂起事件必须把 runStatus 写成 SUSPENDED（挂起态卡片�
   });
 
   const scope = effectScope();
+  t.after(async () => {
+    controllers.forEach(controller => { try { controller.close(); } catch { /* 已关闭 */ } });
+    for (let index = 0; index < 4; index++) await tick();
+    scope.stop();
+    (chatApi as any).fetchSessionTree = originalTree;
+    (chatApi as any).fetchSessionMessages = originalMessages;
+  });
   const { useChatView } = await import('../src/views/chat/useChatView');
   let view: any;
   scope.run(() => { view = useChatView(); });
@@ -946,6 +954,7 @@ test('7. ★ 挂起事件必须把 runStatus 写成 SUSPENDED（挂起态卡片�
   };
 
   // 先跑起来
+  serverRunStatus = 'RUNNING';
   controllers[0].enqueue(encode(frame('EXECUTION_STARTED', {
     type: 'EXECUTION_STARTED', executionId: 'e1', timestamp: 't', metaData: meta,
   })));
@@ -954,6 +963,7 @@ test('7. ★ 挂起事件必须把 runStatus 写成 SUSPENDED（挂起态卡片�
 
   // ★ 挂起：等人工审批。runStatus 必须是 SUSPENDED —— 审批卡片与恢复入口都依赖它，
   //   漏写会让界面停在「生成中」，用户看不到「等待你审批」
+  serverRunStatus = 'SUSPENDED';
   controllers[0].enqueue(encode(frame('EXECUTION_SUSPENDED', {
     type: 'EXECUTION_SUSPENDED', executionId: 'e1', timestamp: 't', metaData: meta,
   })));
@@ -964,6 +974,7 @@ test('7. ★ 挂起事件必须把 runStatus 写成 SUSPENDED（挂起态卡片�
   );
 
   // 恢复 → 回到 RUNNING
+  serverRunStatus = 'RUNNING';
   controllers[0].enqueue(encode(frame('EXECUTION_RESUME', {
     type: 'EXECUTION_RESUME', executionId: 'e1', timestamp: 't', metaData: meta,
   })));
@@ -971,14 +982,11 @@ test('7. ★ 挂起事件必须把 runStatus 写成 SUSPENDED（挂起态卡片�
   assert.equal(view.currentActiveSession.value?.runStatus, 'RUNNING', 'EXECUTION_RESUME 应写成 RUNNING');
 
   // 终态 → 回到 IDLE
+  serverRunStatus = 'IDLE';
   controllers[0].enqueue(encode(frame('EXECUTION_COMPLETED', {
     type: 'EXECUTION_COMPLETED', executionId: 'e1', timestamp: 't', metaData: meta,
   })));
   await waitRunStatus('IDLE');
   assert.equal(view.currentActiveSession.value?.runStatus, 'IDLE', 'EXECUTION_COMPLETED 应写成 IDLE');
 
-  controllers.forEach(c => { try { c.close(); } catch { /* 已关闭 */ } });
-  scope.stop();
-  (chatApi as any).fetchSessionTree = originalTree;
-  (chatApi as any).fetchSessionMessages = originalMessages;
 });

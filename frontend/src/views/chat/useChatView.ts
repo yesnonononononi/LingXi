@@ -1,4 +1,4 @@
-import { ref, computed, watch, onBeforeUnmount, type Ref } from 'vue';
+import { ref, computed, watch, nextTick, onBeforeUnmount, type Ref } from 'vue';
 import { SessionAPI } from '../../services/session';
 import { chatApi } from '../../services/chat';
 import type { ChatSession, ModelConfig, ChatMessage, WorkspaceVO, ToolCallDecisionReceipt } from '../../types/chat';
@@ -9,6 +9,7 @@ import { useChatScroll } from './useChatScroll';
 import { useChatHistory } from './useChatHistory';
 import { useChatSending } from './useChatSending';
 import { useChatExecutionControls } from './useChatExecutionControls';
+import { useChatOutcomeNotifications } from './useChatOutcomeNotifications';
 import { useBackgroundTasks } from './useBackgroundTasks';
 import { acceptsChatEvent } from './chatExecutionState';
 import { useChatSessionList } from './useChatSessionList';
@@ -63,6 +64,7 @@ export interface ChatViewTemplateRefs {
  * <p>本组件是路由首页（{@code '/'}），没有父层消费方，因此不再有 props 与 emits。</p>
  */
 export function useChatView(templateRefs?: ChatViewTemplateRefs) {
+  let disposed = false;
   // ---------- 主题与思考强度（真值在 userConfigStore） ----------
   const { isDark: sharedIsDark, setTheme: setSharedTheme } = useTheme();
   const {
@@ -264,34 +266,9 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     },
   });
 
-  /** 终态 / 挂起事件 → 通知种类；其余事件返回 null。 */
-  const notifyKindOf = (type: string): 'completed' | 'failed' | 'cancelled' | 'suspended' | null => {
-    switch (type) {
-      case 'EXECUTION_COMPLETED': return 'completed';
-      case 'EXECUTION_FAILED': return 'failed';
-      case 'EXECUTION_CANCELLED': return 'cancelled';
-      case 'EXECUTION_SUSPENDED': return 'suspended';
-      default: return null;
-    }
-  };
-
-  /**
-   * 用户不在前台时，把本轮结果推成一条桌面通知。
-   *
-   * <p><b>只认根会话的事件</b>：子代理/委派子会话跑完同样会发 EXECUTION_COMPLETED，
-   * 但那时根任务还没结束，凭它弹「任务已完成」是彻底的假消息。</p>
-   */
-  const notifyIfUserAway = (event: AgentEvent): void => {
-    const kind = notifyKindOf(event.type);
-    if (!kind) return;
-    const session = currentActiveSession.value;
-    if (!session) return;
-    const eventSessionId = event.metaData?.sessionId ? String(event.metaData.sessionId) : null;
-    const rootId = String(resolveRootSessionId(session) ?? session.id);
-    if (eventSessionId && eventSessionId !== rootId) return;
-    const detail = event.type === 'EXECUTION_FAILED' ? event.errMsg : undefined;
-    void desktopNotify.notifyOutcome(session.id, kind, session.title, detail);
-  };
+  const outcomeNotifications = useChatOutcomeNotifications({
+    session: currentActiveSession, notify: desktopNotify.notifyOutcome,
+  });
 
   /**
    * 会话级流：发送只做同步受理、不带流，正文与工具轨迹全部由这条流下发。
@@ -314,10 +291,13 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
       if (isTerminalEvent(event.type) || event.type === 'EXECUTION_SUSPENDED') {
         const owner = currentActiveSession.value?.id ?? null;
         if (owner) {
-          void reconcileSessionAfterStream(String(owner));
+          // 状态监听会作废旧查询，等本轮状态变更处理完再回查，避免把自己的请求一并作废。
+          void nextTick(() => {
+            if (!disposed && currentActiveSession.value?.id === owner) void reconcileSessionAfterStream(String(owner));
+          });
         }
       }
-      notifyIfUserAway(event);
+      outcomeNotifications.onEvent(event);
     },
 
     onConnectionClosed: (sessionId) => {
@@ -769,6 +749,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
 
   // ---------- 组件销毁清理 ----------
   onBeforeUnmount(() => {
+    disposed = true;
     // 先作废在途回查，再断流：否则卸载后到达的响应仍会写回已销毁的状态。
     invalidateReconcile();
     sessionEventStream.close();
