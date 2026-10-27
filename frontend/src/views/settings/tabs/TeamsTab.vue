@@ -84,7 +84,7 @@ const {
             @change="saveTeamSize"
             :class="[
               'w-16 px-2 py-1 rounded-xl border outline-none text-xs text-center transition [color-scheme:light] dark:[color-scheme:dark]',
-              isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-zinc-900 focus:border-blue-500'
             ]"
           />
         </div>
@@ -92,7 +92,7 @@ const {
 
       <div class="flex items-center justify-between">
         <div>
-                    <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
+                    <h4 class="text-base font-bold tracking-tight text-zinc-900 dark:text-white dark:text-glow-white">
             {{ t('settings.teams.title') }}
           </h4>
           <p class="text-xs text-lx-muted dark:text-glow-subtle mt-0.5">
@@ -164,7 +164,7 @@ const {
                   class="w-5 h-5 rounded-full flex items-center justify-center text-xs leading-none shrink-0 select-none"
                   :class="isDark ? 'bg-white/10' : 'bg-zinc-200/80'"
                 >{{ team.avatar }}</span>
-                <span class="text-sm font-semibold text-gray-900 dark:text-white dark:text-glow-subtle">
+                <span class="text-sm font-semibold text-zinc-900 dark:text-white dark:text-glow-subtle">
                   {{ team.name }}
                 </span>
                 <!-- 管理者徽章 -->
@@ -268,7 +268,7 @@ const {
     <div v-else class="space-y-4">
       <div class="flex items-center justify-between border-b pb-3" :class="isDark ? 'border-white/10' : 'border-zinc-200'">
         <div>
-          <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
+          <h4 class="text-base font-bold tracking-tight text-zinc-900 dark:text-white dark:text-glow-white">
                         {{ editingTeamId ? t('settings.teams.editHeading', { name: teamForm.name || t('settings.teams.unnamedTeam') }) : t('settings.teams.addHeading') }}
           </h4>
           <p class="text-xs text-lx-muted dark:text-glow-subtle mt-0.5">
@@ -300,7 +300,7 @@ const {
             :placeholder="t('settings.teams.namePlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
-              isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-zinc-900 focus:border-blue-500'
             ]"
           />
         </div>
@@ -316,7 +316,7 @@ const {
             :placeholder="t('settings.teams.descriptionPlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs resize-none transition',
-              isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-zinc-900 focus:border-blue-500'
             ]"
           ></textarea>
         </div>
@@ -331,7 +331,7 @@ const {
             :placeholder="t('settings.teams.avatarPlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
-              isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-zinc-900 focus:border-blue-500'
             ]"
           />
         </div>
@@ -441,7 +441,7 @@ const {
             v-model="teamForm.commanderAgentId"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs cursor-pointer [color-scheme:dark]',
-              isDark ? 'bg-black border-white/20 text-white focus:border-cyan-400' : 'bg-white border-zinc-300 text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-black border-white/20 text-white focus:border-cyan-400' : 'bg-white border-zinc-300 text-zinc-900 focus:border-blue-500'
             ]"
           >
             <option v-for="agent in selectedTeamAgents" :key="agent.id" :value="agent.id" class="bg-black text-white">

@@ -302,7 +302,7 @@ window.showCustomInput=()=>{};
 window.focusCustomInput=()=>{const input=document.querySelector('[data-scene="choice"] input[type="text"]');if(input)input.focus();};
 </script>
 <template>
-  <main style="width:720px;margin:0 auto;padding:20px;font-family:system-ui,sans-serif" :class="dark?'text-zinc-100':'text-gray-900'">
+  <main style="width:720px;margin:0 auto;padding:20px;font-family:system-ui,sans-serif" :class="dark?'text-zinc-100':'text-zinc-900'">
     <section data-scene="card-header" style="padding:10px 8px">
       <CardHeader tone="pending" type-label="计划" title="卡片标题可见性探针" :is-dark="dark" />
     </section>

@@ -67,7 +67,7 @@ const goNext = () => {
 
 const rootClass = computed(() => [
   'min-h-screen w-screen font-sans',
-  isDark.value ? 'bg-[#0b0f17] text-zinc-100' : 'bg-zinc-50 text-gray-900',
+  isDark.value ? 'bg-[#0b0f17] text-zinc-100' : 'bg-zinc-50 text-zinc-900',
 ]);
 const headerClass = computed(() => [
   'sticky top-0 z-20 h-14 px-4 flex items-center justify-between border-b backdrop-blur select-none',

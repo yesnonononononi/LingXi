@@ -317,8 +317,8 @@ const emit = emitShim as TreeEmitShim;
               :class="[
                 'group relative flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
                 isWorkspaceActive(group.workspace)
-                  ? 'bg-zinc-200/80 text-gray-900 font-medium'
-                  : 'text-zinc-700 hover:text-gray-900 hover:bg-zinc-100'
+                  ? 'bg-zinc-200/80 text-zinc-900 font-medium'
+                  : 'text-zinc-700 hover:text-zinc-900 hover:bg-zinc-100'
               ]"
             >
               <!-- Left: Chevron Indicator + Folder Icon + Workspace Name -->
@@ -352,7 +352,7 @@ const emit = emitShim as TreeEmitShim;
                                         :class="[
                       'p-0.5 rounded transition-opacity cursor-pointer',
                       isWorkspaceActive(group.workspace) ? 'opacity-80 hover:opacity-100' : 'opacity-0 group-hover:opacity-80 hover:opacity-100',
-                      'hover:text-gray-900'
+                      'hover:text-zinc-900'
                     ]"
                     :title="t('chat.sidebar.workspaceActions')"
                   >
@@ -416,7 +416,7 @@ const emit = emitShim as TreeEmitShim;
                       'group/session relative flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
                       activeSessionId === session.id
                         ? 'bg-blue-50 text-blue-600 font-medium'
-                        : 'hover:bg-zinc-100/70 text-zinc-600 hover:text-gray-900'
+                        : 'hover:bg-zinc-100/70 text-zinc-600 hover:text-zinc-900'
                     ]"
                   >
                     <!-- Chat Bubble Icon -->
@@ -480,7 +480,7 @@ const emit = emitShim as TreeEmitShim;
                   'group/session relative flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer text-xs transition-colors',
                   activeSessionId === session.id
                     ? 'bg-blue-50 text-blue-600 font-medium'
-                    : 'hover:bg-zinc-100/70 text-zinc-600 hover:text-gray-900'
+                    : 'hover:bg-zinc-100/70 text-zinc-600 hover:text-zinc-900'
                 ]"
               >
                 <svg class="w-3.5 h-3.5 shrink-0 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">

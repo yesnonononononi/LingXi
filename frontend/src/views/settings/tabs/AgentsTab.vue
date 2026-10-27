@@ -68,7 +68,7 @@ const {
     <div v-if="!isEditingOrAddingAgent" class="space-y-4">
       <div class="flex items-center justify-between">
         <div>
-                    <h4 class="text-base font-bold tracking-tight" :class="isDark ? 'text-white text-glow-white' : 'text-gray-900'">
+                    <h4 class="text-base font-bold tracking-tight" :class="isDark ? 'text-white text-glow-white' : 'text-zinc-900'">
             {{ t('settings.agents.title') }}
           </h4>
           <p class="text-xs mt-0.5" :class="isDark ? 'text-zinc-400 text-glow-subtle' : 'text-zinc-500'">
@@ -133,7 +133,7 @@ const {
                 'w-full h-[30px] pl-8 pr-7 rounded-lg border outline-none text-xs transition',
                 isDark
                   ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-lx-faint focus:border-cyan-400'
-                  : 'bg-lx-surface-elevated border-lx-border-strong text-gray-900 placeholder-lx-faint focus:border-blue-500'
+                  : 'bg-lx-surface-elevated border-lx-border-strong text-zinc-900 placeholder-lx-faint focus:border-blue-500'
               ]"
             />
             <button
@@ -235,7 +235,7 @@ const {
                     class="w-5 h-5 rounded-full flex items-center justify-center text-xs leading-none shrink-0 select-none"
                     :class="isDark ? 'bg-white/10' : 'bg-zinc-200/80'"
                   >{{ agent.avatar }}</span>
-                  <span class="text-sm font-semibold truncate" :class="isDark ? 'text-white text-glow-white' : 'text-gray-900'">
+                  <span class="text-sm font-semibold truncate" :class="isDark ? 'text-white text-glow-white' : 'text-zinc-900'">
                     {{ agent.name }}
                   </span>
                   <span
@@ -342,7 +342,7 @@ const {
                             :placeholder="t('settings.agents.namePlaceholder')"
               :class="[
                 'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
-                isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-gray-900 focus:border-blue-500'
+                isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-zinc-900 focus:border-blue-500'
               ]"
             />
           </div>
@@ -372,7 +372,7 @@ const {
             :placeholder="t('settings.agents.descriptionPlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
-              isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-zinc-900 focus:border-blue-500'
             ]"
           />
         </div>
@@ -386,7 +386,7 @@ const {
             :placeholder="t('settings.agents.avatarPlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs transition',
-              isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-zinc-900 focus:border-blue-500'
             ]"
           />
         </div>
@@ -401,7 +401,7 @@ const {
             :placeholder="t('settings.agents.promptPlaceholder')"
             :class="[
               'w-full px-3 py-2 rounded-xl border outline-none text-xs resize-none transition',
-              isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-gray-900 focus:border-blue-500'
+              isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-zinc-900 focus:border-blue-500'
             ]"
           ></textarea>
         </div>

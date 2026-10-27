@@ -408,7 +408,7 @@ const handleSaveTeam = async () => {
               'w-full px-3 py-2 rounded-xl border text-sm outline-none transition',
               isDark
                 ? 'bg-black/90 border-white/15 focus:border-cyan-400/80 text-white placeholder-zinc-500'
-                : 'bg-zinc-50 border-zinc-300 focus:border-blue-500 text-gray-900 placeholder-zinc-400'
+                : 'bg-zinc-50 border-zinc-300 focus:border-blue-500 text-zinc-900 placeholder-zinc-400'
             ]"
           />
         </div>
@@ -426,7 +426,7 @@ const handleSaveTeam = async () => {
               'w-full px-3 py-2 rounded-xl border text-sm outline-none resize-none transition',
               isDark
                 ? 'bg-black/90 border-white/15 focus:border-cyan-400/80 text-white placeholder-zinc-500'
-                : 'bg-zinc-50 border-zinc-300 focus:border-blue-500 text-gray-900 placeholder-zinc-400'
+                : 'bg-zinc-50 border-zinc-300 focus:border-blue-500 text-zinc-900 placeholder-zinc-400'
             ]"
           ></textarea>
         </div>
@@ -492,7 +492,7 @@ const handleSaveTeam = async () => {
                   :placeholder="t('chat.team.agentNamePlaceholder')"
                   :class="[
                     'w-full px-2.5 py-1.5 rounded-lg border outline-none',
-                    isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-gray-900'
+                    isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-zinc-900'
                   ]"
                 />
               </div>
@@ -502,7 +502,7 @@ const handleSaveTeam = async () => {
                   v-model="agentFormModelId"
                   :class="[
                     'w-full px-2.5 py-1.5 rounded-lg border outline-none cursor-pointer [color-scheme:dark]',
-                    isDark ? 'bg-black border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-gray-900'
+                    isDark ? 'bg-black border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-zinc-900'
                   ]"
                 >
                   <option v-for="m in (models || [])" :key="m.id" :value="m.id" class="bg-black text-white">
@@ -519,7 +519,7 @@ const handleSaveTeam = async () => {
                 :placeholder="t('chat.team.agentDescPlaceholder')"
                 :class="[
                   'w-full px-2.5 py-1.5 rounded-lg border outline-none',
-                  isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-gray-900'
+                  isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-zinc-900'
                 ]"
               />
             </div>
@@ -532,7 +532,7 @@ const handleSaveTeam = async () => {
                 :placeholder="t('chat.team.agentPromptPlaceholder')"
                 :class="[
                   'w-full px-2.5 py-1.5 rounded-lg border outline-none resize-none',
-                  isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-gray-900'
+                  isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-zinc-900'
                 ]"
               ></textarea>
             </div>
@@ -569,7 +569,7 @@ const handleSaveTeam = async () => {
               <div
                 v-if="isLoadingTools"
                 class="p-2 text-center text-zinc-400 text-xs rounded-lg border border-dashed"
-                :class="isDark ? 'border-zinc-700 bg-gray-900/30' : 'border-zinc-300 bg-zinc-50/50'"
+                :class="isDark ? 'border-zinc-700 bg-zinc-900/30' : 'border-zinc-300 bg-zinc-50/50'"
               >
                 {{ t('chat.team.loadingTools') }}
               </div>
@@ -761,7 +761,7 @@ const handleSaveTeam = async () => {
               'w-full px-3.5 py-2.5 rounded-xl border text-left flex items-center justify-between transition-all outline-none cursor-pointer',
               isDark
                 ? 'bg-black/90 border-white/15 hover:border-cyan-400/60 focus:border-cyan-400 text-white'
-                : 'bg-white border-zinc-300 hover:border-blue-400 focus:border-blue-500 text-gray-900 shadow-sm'
+                : 'bg-white border-zinc-300 hover:border-blue-400 focus:border-blue-500 text-zinc-900 shadow-sm'
             ]"
           >
             <div v-if="currentCommander" class="flex items-center gap-2.5 min-w-0">
@@ -772,7 +772,7 @@ const handleSaveTeam = async () => {
               </div>
               <div class="truncate">
                 <div class="flex items-center gap-1.5">
-                  <span class="text-xs font-semibold text-gray-900 dark:text-zinc-100 truncate">{{ currentCommander.name }}</span>
+                  <span class="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate">{{ currentCommander.name }}</span>
                   <span class="px-1.5 py-0.2 text-[9px] rounded-full bg-cyan-500/20 text-cyan-300 font-medium">{{ t('chat.team.manager') }}</span>
                 </div>
                 <div class="text-[11px] text-lx-muted truncate max-w-[320px]">

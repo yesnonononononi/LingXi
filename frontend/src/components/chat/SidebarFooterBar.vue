@@ -36,7 +36,7 @@ const emit = (event: string): void => {
           @click="emit('openSettings')"
           :class="[
             'flex items-center gap-2 text-xs font-medium transition-colors cursor-pointer py-1.5 px-2 rounded-lg',
-            isDark ? 'text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.05]' : 'text-zinc-600 hover:text-gray-900 hover:bg-zinc-200/60'
+            isDark ? 'text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.05]' : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/60'
           ]"
           :title="t('chat.sidebar.systemSettings')"
         >

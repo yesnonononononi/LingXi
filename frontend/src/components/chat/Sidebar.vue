@@ -300,7 +300,7 @@ onBeforeUnmount(() => {
         <!-- LingXi Logo Icon -->
         <img :src="logoUrl" alt="LingXi" class="h-7 w-7 object-contain drop-shadow-sm" />
         <!-- LingXi Text -->
-        <span class="font-bold text-sm tracking-tight text-gray-900 dark:text-zinc-100">
+        <span class="font-bold text-sm tracking-tight text-zinc-900 dark:text-zinc-100">
           LingXi
         </span>
       
@@ -314,7 +314,7 @@ onBeforeUnmount(() => {
           'p-1.5 rounded-lg transition-colors cursor-pointer',
           isDark
             ? 'hover:bg-white/[0.06] text-zinc-400 hover:text-zinc-100'
-            : 'hover:bg-zinc-200/70 text-zinc-500 hover:text-gray-900',
+            : 'hover:bg-zinc-200/70 text-zinc-500 hover:text-zinc-900',
           isCollapsed ? 'mx-auto' : ''
         ]"
       >

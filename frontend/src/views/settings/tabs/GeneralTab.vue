@@ -46,7 +46,7 @@ const {
           :class="[
             'px-4 py-3.5 rounded-2xl border flex flex-col items-center justify-center gap-2 transition cursor-pointer',
             themeMode === 'light'
-              ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_15px_rgba(255,255,255,0.1)] text-white font-semibold dark:text-glow-white' : 'bg-zinc-100 border-zinc-300 text-gray-900 font-semibold shadow-sm')
+              ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_15px_rgba(255,255,255,0.1)] text-white font-semibold dark:text-glow-white' : 'bg-zinc-100 border-zinc-300 text-zinc-900 font-semibold shadow-sm')
               : (isDark ? 'border-white/10 text-zinc-400 bg-black/40 hover:border-white/20 hover:bg-white/[0.04]' : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50')
           ]"
         >
@@ -63,7 +63,7 @@ const {
           :class="[
             'px-4 py-3.5 rounded-2xl border flex flex-col items-center justify-center gap-2 transition cursor-pointer',
             themeMode === 'dark'
-              ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.12)] text-white font-semibold dark:text-glow-white' : 'bg-zinc-100 border-zinc-300 text-gray-900 font-semibold shadow-sm')
+              ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.12)] text-white font-semibold dark:text-glow-white' : 'bg-zinc-100 border-zinc-300 text-zinc-900 font-semibold shadow-sm')
               : (isDark ? 'border-white/10 text-zinc-400 bg-black/40 hover:border-white/20 hover:bg-white/[0.04]' : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50')
           ]"
         >
@@ -80,7 +80,7 @@ const {
           :class="[
             'px-4 py-3.5 rounded-2xl border flex flex-col items-center justify-center gap-2 transition cursor-pointer',
             themeMode === 'system'
-              ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.12)] text-white font-semibold dark:text-glow-white' : 'bg-zinc-100 border-zinc-300 text-gray-900 font-semibold shadow-sm')
+              ? (isDark ? 'bg-zinc-900/90 border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.12)] text-white font-semibold dark:text-glow-white' : 'bg-zinc-100 border-zinc-300 text-zinc-900 font-semibold shadow-sm')
               : (isDark ? 'border-white/10 text-zinc-400 bg-black/40 hover:border-white/20 hover:bg-white/[0.04]' : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50')
           ]"
         >
@@ -229,7 +229,7 @@ const {
           v-model="apiBaseUrl"
           type="text"
           placeholder="http://localhost:8088"
-          class="flex-1 px-3 py-2 text-xs rounded-xl border border-zinc-200 dark:border-white/15 bg-white dark:bg-black/60 text-gray-900 dark:text-zinc-100 focus:outline-none focus:border-blue-500 dark:focus:border-cyan-400 focus:ring-1 focus:ring-blue-500 dark:focus:ring-cyan-400 transition"
+          class="flex-1 px-3 py-2 text-xs rounded-xl border border-zinc-200 dark:border-white/15 bg-white dark:bg-black/60 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-blue-500 dark:focus:border-cyan-400 focus:ring-1 focus:ring-blue-500 dark:focus:ring-cyan-400 transition"
         />
         <SpecularButton
           size="sm"

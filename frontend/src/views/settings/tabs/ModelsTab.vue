@@ -94,7 +94,7 @@ const fieldClass = computed(() => [
   'w-full px-3 py-2 rounded-xl text-xs border outline-none transition',
   isDark.value
     ? 'bg-black/90 border-white/20 text-zinc-100 placeholder-zinc-500 focus:border-cyan-400'
-    : 'bg-white border-zinc-200 text-gray-900 placeholder-zinc-400 focus:border-blue-500 shadow-2xs',
+    : 'bg-white border-zinc-200 text-zinc-900 placeholder-zinc-400 focus:border-blue-500 shadow-2xs',
 ]);
 const labelClass = computed(() => [
   'block text-xs font-medium mb-1',
@@ -138,7 +138,7 @@ const addRowClass = computed(() => [
     <div v-if="mode === 'list'" class="space-y-4">
       <div class="flex items-start justify-between gap-3">
         <div>
-          <h4 class="text-base font-bold tracking-tight" :class="isDark ? 'text-white text-glow-white' : 'text-gray-900'">
+          <h4 class="text-base font-bold tracking-tight" :class="isDark ? 'text-white text-glow-white' : 'text-zinc-900'">
             {{ t('settings.models.title') }}
           </h4>
           <p class="text-xs mt-1" :class="isDark ? 'text-zinc-400 text-glow-subtle' : 'text-zinc-500'">
@@ -183,7 +183,7 @@ const addRowClass = computed(() => [
           <div class="flex items-center justify-between gap-2 px-4 py-3">
             <div class="flex items-center gap-2 min-w-0">
               <ProviderIcon :icon="group.providerIcon" :name="group.providerName" :size="18" />
-              <span class="font-semibold text-sm truncate" :class="isDark ? 'text-white text-glow-white' : 'text-gray-900'">
+              <span class="font-semibold text-sm truncate" :class="isDark ? 'text-white text-glow-white' : 'text-zinc-900'">
                 {{ groupTitle(group.providerName) }}
               </span>
               <span

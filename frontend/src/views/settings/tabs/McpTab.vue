@@ -58,7 +58,7 @@ const {
     <div v-if="!isEditingOrAddingMcp" class="space-y-4">
       <div class="flex items-center justify-between">
         <div>
-                    <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
+                    <h4 class="text-base font-bold tracking-tight text-zinc-900 dark:text-white dark:text-glow-white">
             {{ t('settings.mcp.title') }}
           </h4>
           <p class="text-xs text-lx-muted dark:text-glow-subtle mt-0.5">
@@ -118,7 +118,7 @@ const {
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2 flex-wrap">
-                <span class="text-sm font-semibold text-gray-900 dark:text-white dark:text-glow-subtle truncate">
+                <span class="text-sm font-semibold text-zinc-900 dark:text-white dark:text-glow-subtle truncate">
                   {{ item.name }}
                 </span>
                 <!-- 启停状态徽标 -->
@@ -241,7 +241,7 @@ const {
 
     <!-- 编辑 / 新增表单 -->
     <div v-else class="space-y-4">
-      <h4 class="text-base font-bold tracking-tight text-gray-900 dark:text-white dark:text-glow-white">
+      <h4 class="text-base font-bold tracking-tight text-zinc-900 dark:text-white dark:text-glow-white">
                 {{ editingMcpId ? t('settings.mcp.editHeading') : t('settings.mcp.addHeading') }}
       </h4>
 

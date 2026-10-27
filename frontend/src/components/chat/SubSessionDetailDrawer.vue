@@ -417,8 +417,8 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                 :class="[
                   'p-4 rounded-2xl text-sm leading-relaxed border transition-colors shadow-2xs',
                   msg.role === 'user'
-                    ? (isDark ? 'bg-cyan-950/20 border-cyan-500/30 text-cyan-100' : 'bg-[#eef4fd] border-blue-100 text-gray-900')
-                    : (isDark ? 'bg-black/90 border-white/15 text-zinc-100 shadow-[0_0_20px_rgba(0,0,0,0.8)]' : 'bg-white border-zinc-200 text-gray-900')
+                    ? (isDark ? 'bg-cyan-950/20 border-cyan-500/30 text-cyan-100' : 'bg-[#eef4fd] border-blue-100 text-zinc-900')
+                    : (isDark ? 'bg-black/90 border-white/15 text-zinc-100 shadow-[0_0_20px_rgba(0,0,0,0.8)]' : 'bg-white border-zinc-200 text-zinc-900')
                 ]"
               >
                 <MarkdownRenderer :content="msg.content" :is-dark="isDark" />

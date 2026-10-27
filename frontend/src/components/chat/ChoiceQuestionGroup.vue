@@ -163,7 +163,7 @@ async function submit() {
             :data-choice-option="index" @click="selectOption(index)">
             <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold tabular-nums transition-colors"
               :class="!draft.useCustom && draft.selected === index
-                ? 'bg-white text-gray-900 shadow-[0_0_12px_rgba(255,255,255,0.60)]'
+                ? 'bg-white text-zinc-900 shadow-[0_0_12px_rgba(255,255,255,0.60)]'
                 : (isDark ? 'bg-white/10 text-zinc-300' : 'bg-zinc-100 text-zinc-500')">{{ index + 1 }}</span>
             <span class="min-w-0 flex-1 whitespace-pre-wrap break-words"
               :class="isDark ? (draft.selected === index && !draft.useCustom ? 'text-white text-glow-white' : 'text-zinc-200 text-glow-subtle') : ''">{{ option }}</span>
@@ -178,14 +178,14 @@ async function submit() {
             : (isDark ? 'border-white/10 hover:border-white/40 hover:bg-white/5' : 'border-zinc-100 hover:border-blue-200 hover:bg-blue-50/50')"
           role="presentation" data-testid="choice-custom-toggle" @click="activateCustom">
           <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md transition-colors"
-            :class="draft.useCustom ? 'bg-white text-gray-900 shadow-[0_0_12px_rgba(255,255,255,0.60)]' : (isDark ? 'bg-white/10 text-zinc-300' : 'bg-zinc-100 text-zinc-400')">
+            :class="draft.useCustom ? 'bg-white text-zinc-900 shadow-[0_0_12px_rgba(255,255,255,0.60)]' : (isDark ? 'bg-white/10 text-zinc-300' : 'bg-zinc-100 text-zinc-400')">
             <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
           </span>
           <!-- rows=1 + resize-none：外观是输入行，粘贴多行仍原样保留 -->
           <textarea ref="customInput" v-model="draft.custom" :disabled="!editable" rows="1"
             :aria-label="t('chat.choice.customAnswerPlaceholder')" :placeholder="t('chat.choice.customRowLabel')"
             class="h-5 min-w-0 flex-1 resize-none bg-transparent text-sm leading-5 outline-none placeholder:text-zinc-500"
-            :class="isDark ? 'text-white caret-blue-400 text-glow-subtle' : 'text-gray-900'"
+            :class="isDark ? 'text-white caret-blue-400 text-glow-subtle' : 'text-zinc-900'"
             data-testid="choice-custom-input" />
         </div>
       </template>

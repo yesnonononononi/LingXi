@@ -101,7 +101,7 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
       >
         <div class="flex items-center justify-between">
           <span class="text-xs text-lx-muted">{{ t('settings.about.currentVersion') }}</span>
-          <span :class="['text-xs font-mono font-semibold', isDark ? 'text-zinc-100' : 'text-gray-900']">
+          <span :class="['text-xs font-mono font-semibold', isDark ? 'text-zinc-100' : 'text-zinc-900']">
             {{ currentVersion || '—' }}
           </span>
         </div>

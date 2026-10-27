@@ -93,7 +93,7 @@ onBeforeUnmount(() => {
         isOpen
           ? (isDark
               ? 'bg-zinc-800 border-zinc-700 text-white shadow-xs'
-              : 'bg-zinc-100 border-zinc-300 text-gray-900 shadow-xs')
+              : 'bg-zinc-100 border-zinc-300 text-zinc-900 shadow-xs')
           : (isDark
               ? 'bg-zinc-800/80 border-zinc-700/60 text-zinc-300 hover:bg-zinc-800 hover:text-white hover:border-zinc-600'
               : 'bg-white/90 border-zinc-200/90 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 hover:border-zinc-300')
@@ -154,8 +154,8 @@ onBeforeUnmount(() => {
           :class="[
             'group relative flex items-center justify-between px-2.5 py-1.5 rounded-xl cursor-pointer text-xs transition-colors',
             String(selectedWorkspaceId) === String(ws.id)
-              ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-zinc-100 text-gray-900 font-medium')
-              : (isDark ? 'hover:bg-white/10 text-zinc-300 hover:text-white' : 'hover:bg-zinc-100/70 text-zinc-700 hover:text-gray-900')
+              ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-zinc-100 text-zinc-900 font-medium')
+              : (isDark ? 'hover:bg-white/10 text-zinc-300 hover:text-white' : 'hover:bg-zinc-100/70 text-zinc-700 hover:text-zinc-900')
           ]"
         >
           <!-- Left: Folder Icon + Name -->
@@ -191,7 +191,7 @@ onBeforeUnmount(() => {
           @click="handleNewProject"
           :class="[
             'flex items-center gap-2 px-2.5 py-1.5 rounded-xl cursor-pointer text-xs transition-colors',
-            isDark ? 'hover:bg-white/10 text-zinc-300 hover:text-white' : 'hover:bg-zinc-100/70 text-zinc-700 hover:text-gray-900'
+            isDark ? 'hover:bg-white/10 text-zinc-300 hover:text-white' : 'hover:bg-zinc-100/70 text-zinc-700 hover:text-zinc-900'
           ]"
         >
           <svg class="w-4 h-4 text-zinc-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -205,7 +205,7 @@ onBeforeUnmount(() => {
           @click="handleQuickStart"
           :class="[
             'flex items-center gap-2 px-2.5 py-1.5 rounded-xl cursor-pointer text-xs transition-colors',
-            isDark ? 'hover:bg-white/10 text-zinc-300 hover:text-white' : 'hover:bg-zinc-100/70 text-zinc-700 hover:text-gray-900'
+            isDark ? 'hover:bg-white/10 text-zinc-300 hover:text-white' : 'hover:bg-zinc-100/70 text-zinc-700 hover:text-zinc-900'
           ]"
         >
           <svg class="w-4 h-4 text-zinc-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -226,8 +226,8 @@ onBeforeUnmount(() => {
           :class="[
             'flex items-center gap-2 px-2.5 py-1.5 rounded-xl cursor-pointer text-xs transition-colors',
             !selectedWorkspaceId
-              ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-zinc-100 text-gray-900 font-medium')
-              : (isDark ? 'hover:bg-white/10 text-zinc-300 hover:text-white' : 'hover:bg-zinc-100/70 text-zinc-700 hover:text-gray-900')
+              ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-zinc-100 text-zinc-900 font-medium')
+              : (isDark ? 'hover:bg-white/10 text-zinc-300 hover:text-white' : 'hover:bg-zinc-100/70 text-zinc-700 hover:text-zinc-900')
           ]"
         >
           <svg class="w-4 h-4 text-zinc-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -198,7 +198,7 @@ const handleSubmit = () => {
 
             <!-- 问题正文按纯文本渲染：后端 question 常带多行（选项说明、补充材料），
                  必须显式保留换行，否则 HTML 空白折叠会把 \n 吞成空格、全部挤成一段。 -->
-            <h3 :class="['text-[13.5px] sm:text-base font-semibold leading-relaxed whitespace-pre-wrap break-words', isDark ? 'text-zinc-100' : 'text-gray-900']">
+            <h3 :class="['text-[13.5px] sm:text-base font-semibold leading-relaxed whitespace-pre-wrap break-words', isDark ? 'text-zinc-100' : 'text-zinc-900']">
               {{ questionText }}
             </h3>
 
@@ -242,7 +242,7 @@ const handleSubmit = () => {
                 </div>
 
                 <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 flex-1 min-w-0">
-                  <span :class="['text-[13.5px] font-semibold transition-colors whitespace-pre-wrap break-words', isDark ? 'text-zinc-100' : 'text-gray-900']">
+                  <span :class="['text-[13.5px] font-semibold transition-colors whitespace-pre-wrap break-words', isDark ? 'text-zinc-100' : 'text-zinc-900']">
                     {{ item }}
                   </span>
                 </div>
