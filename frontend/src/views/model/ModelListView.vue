@@ -87,7 +87,7 @@ const cardClass = computed(() => ['rounded-2xl border overflow-hidden', isDark.v
 const rowClass = computed(() => ['border-t', isDark.value ? 'border-[#273043] hover:bg-[#141a26]' : 'border-zinc-100 hover:bg-zinc-50']);
 const modalClass = computed(() => [
   'relative z-50 w-full rounded-2xl border p-5 shadow-2xl',
-  isDark.value ? 'bg-[#161b26] border-[#273043] text-zinc-200' : 'bg-white border-zinc-200 text-gray-800',
+  isDark.value ? 'bg-[#161b26] border-[#273043] text-zinc-200' : 'bg-white border-zinc-200 text-zinc-800',
 ]);
 const delCardClass = computed(() => [...modalClass.value, 'max-w-sm']);
 const toastClass = computed(() => [

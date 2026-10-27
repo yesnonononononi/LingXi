@@ -18,7 +18,7 @@
           :class="[
             'min-w-0 max-w-full rounded-[18px] text-sm leading-relaxed whitespace-pre-wrap transition-colors [overflow-wrap:anywhere] overflow-hidden',
             userImageUrls.length ? 'p-2' : 'px-4 py-2.5',
-            isDark ? 'bg-zinc-800 text-zinc-100 border border-white/[0.08] shadow-xs' : 'bg-[#edf3fc] text-gray-800'
+            isDark ? 'bg-zinc-800 text-zinc-100 border border-white/[0.08] shadow-xs' : 'bg-[#edf3fc] text-zinc-800'
           ]"
         >
           <div v-if="userImageUrls.length" class="mb-2 max-w-sm flex flex-wrap gap-2" data-testid="user-images">

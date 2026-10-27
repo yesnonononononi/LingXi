@@ -146,7 +146,7 @@ const emit = emitShim as TreeEmitShim;
             'p-2 rounded-xl flex items-center justify-center cursor-pointer transition',
             isWorkspaceActive(group.workspace)
               ? 'bg-blue-600/15 text-blue-500'
-              : 'text-zinc-400 hover:bg-zinc-200/60 dark:hover:bg-gray-800 hover:text-lx-secondary'
+              : 'text-zinc-400 hover:bg-zinc-200/60 dark:hover:bg-zinc-800 hover:text-lx-secondary'
           ]"
           :title="group.workspace.name || group.workspace.workDir"
         >

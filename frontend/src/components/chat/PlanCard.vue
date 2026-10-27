@@ -119,7 +119,7 @@ const decide = async (approved: boolean) => {
 </script>
 
 <template>
-  <div :class="[CARD_SHELL_CLASS, isDark ? 'bg-[#161b26] border-gray-800' : 'bg-white border-zinc-200/90']">
+  <div :class="[CARD_SHELL_CLASS, isDark ? 'bg-[#161b26] border-zinc-800' : 'bg-white border-zinc-200/90']">
     <div :class="CARD_BODY_CLASS">
 
       <!-- 1. 统一 header：状态点 + 类型标签 + 标题 -->
@@ -136,7 +136,7 @@ const decide = async (approved: boolean) => {
       <!-- 3. 补充 Tip 输入区（可折叠） -->
       <div
         v-if="isPending && isAddingTip"
-        class="pt-3 border-t border-zinc-100 dark:border-gray-800/80"
+        class="pt-3 border-t border-zinc-100 dark:border-zinc-800/80"
       >
         <div class="flex items-center justify-between mb-1.5 text-xs text-lx-muted">
           <div class="flex items-center gap-1.5">
@@ -161,7 +161,7 @@ const decide = async (approved: boolean) => {
             'w-full text-xs sm:text-sm px-3 py-2 rounded-xl border outline-none transition resize-none',
             isDark
               ? 'bg-[#1a2130] border-zinc-700 text-zinc-200 placeholder-zinc-500 focus:border-blue-500'
-              : 'bg-zinc-50 border-zinc-200 text-gray-800 placeholder-zinc-400 focus:border-blue-500'
+              : 'bg-zinc-50 border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         ></textarea>
       </div>
@@ -172,7 +172,7 @@ const decide = async (approved: boolean) => {
       </div>
 
       <!-- 4. 底部操作栏 -->
-      <div class="pt-3 border-t border-zinc-100 dark:border-gray-800/80 flex items-center justify-between gap-3 select-none flex-wrap">
+      <div class="pt-3 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between gap-3 select-none flex-wrap">
 
         <!-- 左：去聊天里说（无 provider 时不渲染，避免死按钮） -->
         <button
@@ -200,7 +200,7 @@ const decide = async (approved: boolean) => {
               'px-3.5 py-1.5 rounded-xl border text-xs sm:text-sm font-normal transition cursor-pointer flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50',
               isAddingTip
                 ? (isDark ? 'border-amber-500/50 bg-amber-500/10 text-amber-400' : 'border-amber-400 bg-amber-50 text-amber-700')
-                : (isDark ? 'border-zinc-700 text-zinc-300 hover:bg-gray-800' : 'border-zinc-200 text-zinc-700 hover:bg-zinc-50')
+                : (isDark ? 'border-zinc-700 text-zinc-300 hover:bg-zinc-800' : 'border-zinc-200 text-zinc-700 hover:bg-zinc-50')
             ]"
           >
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">

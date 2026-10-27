@@ -291,7 +291,7 @@ onBeforeUnmount(() => {
       isCollapsed ? 'w-16' : 'w-64',
       isDark
         ? 'bg-black border-white/[0.06] text-zinc-100'
-        : 'bg-[#fafafa] border-zinc-200/80 text-gray-800'
+        : 'bg-[#fafafa] border-zinc-200/80 text-zinc-800'
     ]"
   >
     <!-- Top Header: Logo & Sidebar Toggle Button -->
@@ -335,7 +335,7 @@ onBeforeUnmount(() => {
           'w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs sm:text-sm font-medium transition-all shadow-xs cursor-pointer',
           isDark
             ? 'bg-zinc-900/90 border-white/[0.08] hover:bg-zinc-800 hover:border-white/[0.16] text-zinc-200 hover:text-white'
-            : 'bg-white border-zinc-200 hover:border-zinc-300 hover:bg-white text-gray-800'
+            : 'bg-white border-zinc-200 hover:border-zinc-300 hover:bg-white text-zinc-800'
         ]"
         :title="t('chat.sidebar.newChat')"
       >
@@ -354,7 +354,7 @@ onBeforeUnmount(() => {
           'w-10 h-10 mx-auto flex items-center justify-center rounded-xl border transition-all shadow-xs cursor-pointer',
           isDark
             ? 'bg-zinc-900/90 border-white/[0.08] hover:bg-zinc-800 hover:border-white/[0.16] text-zinc-200 hover:text-white'
-            : 'bg-white border-zinc-200 hover:border-zinc-300 text-gray-800'
+            : 'bg-white border-zinc-200 hover:border-zinc-300 text-zinc-800'
         ]"
         :title="t('chat.sidebar.newSession')"
       >
@@ -414,7 +414,7 @@ onBeforeUnmount(() => {
         <input
           v-model="filterQuery"
           :placeholder="t('chat.sidebar.searchWorkspacePlaceholder')"
-          class="w-full px-2.5 py-1 text-xs rounded-lg border outline-none bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 focus:border-blue-500 dark:focus:border-zinc-600 text-gray-800 dark:text-zinc-200 placeholder:text-lx-faint"
+          class="w-full px-2.5 py-1 text-xs rounded-lg border outline-none bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 focus:border-blue-500 dark:focus:border-zinc-600 text-zinc-800 dark:text-zinc-200 placeholder:text-lx-faint"
           autoFocus
         />
       </div>

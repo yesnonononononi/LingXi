@@ -1248,7 +1248,7 @@ defineExpose({
         v-if="isAgentMenuOpen"
         ref="agentMenuRef"
         class="bottom-[calc(100%+8px)] z-50 absolute inset-x-0 shadow-[0_16px_40px_rgba(0,0,0,0.7)] p-1.5 rounded-xl border backdrop-blur-md [background:color-mix(in_srgb,var(--pb-menu)_95%,transparent)] [animation:prompt-bar-pop_180ms_cubic-bezier(0.23,1,0.32,1)_both]"
-        :class="isDark !== false ? 'border-white/[0.08] text-zinc-200' : 'border-zinc-200 text-gray-800'"
+        :class="isDark !== false ? 'border-white/[0.08] text-zinc-200' : 'border-zinc-200 text-zinc-800'"
       >
         <div class="px-2.5 pt-1.5 pb-1.5 shrink-0 border-b border-black/5 dark:border-white/5">
           <input
@@ -1324,7 +1324,7 @@ defineExpose({
       <div
         v-if="isSkillMenuOpen"
         class="bottom-[calc(100%+8px)] z-50 absolute inset-x-0 shadow-[0_16px_40px_rgba(0,0,0,0.7)] p-1.5 rounded-xl border backdrop-blur-md [background:color-mix(in_srgb,var(--pb-menu)_95%,transparent)] [animation:prompt-bar-pop_180ms_cubic-bezier(0.23,1,0.32,1)_both]"
-        :class="isDark !== false ? 'border-white/[0.08] text-zinc-200' : 'border-zinc-200 text-gray-800'"
+        :class="isDark !== false ? 'border-white/[0.08] text-zinc-200' : 'border-zinc-200 text-zinc-800'"
       >
         <div class="px-2.5 pt-1.5 pb-1.5 shrink-0 border-b border-black/5 dark:border-white/5">
           <input

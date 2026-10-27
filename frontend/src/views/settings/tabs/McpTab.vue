@@ -256,7 +256,7 @@ const {
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
             isDark
               ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-              : 'bg-white border-zinc-200 text-gray-800 placeholder-zinc-400 focus:border-blue-500'
+              : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         />
       </div>
@@ -319,7 +319,7 @@ const {
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
             isDark
               ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-              : 'bg-white border-zinc-200 text-gray-800 placeholder-zinc-400 focus:border-blue-500'
+              : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         />
       </div>
@@ -338,7 +338,7 @@ const {
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
             isDark
               ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-              : 'bg-white border-zinc-200 text-gray-800 placeholder-zinc-400 focus:border-blue-500'
+              : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         ></textarea>
       </div>
@@ -358,7 +358,7 @@ const {
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
             isDark
               ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-              : 'bg-white border-zinc-200 text-gray-800 placeholder-zinc-400 focus:border-blue-500'
+              : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         ></textarea>
         <p
@@ -384,7 +384,7 @@ const {
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition resize-none font-mono',
             isDark
               ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-              : 'bg-white border-zinc-200 text-gray-800 placeholder-zinc-400 focus:border-blue-500'
+              : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         ></textarea>
         <p
@@ -410,7 +410,7 @@ const {
             'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
             isDark
               ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
-              : 'bg-white border-zinc-200 text-gray-800 placeholder-zinc-400 focus:border-blue-500'
+              : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         />
       </div>
@@ -427,7 +427,7 @@ const {
               'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
               isDark
                 ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80'
-                : 'bg-white border-zinc-200 text-gray-800 focus:border-blue-500'
+                : 'bg-white border-zinc-200 text-zinc-800 focus:border-blue-500'
             ]"
           />
         </div>
@@ -441,7 +441,7 @@ const {
               'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
               isDark
                 ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80'
-                : 'bg-white border-zinc-200 text-gray-800 focus:border-blue-500'
+                : 'bg-white border-zinc-200 text-zinc-800 focus:border-blue-500'
             ]"
           />
         </div>
@@ -455,7 +455,7 @@ const {
               'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
               isDark
                 ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80'
-                : 'bg-white border-zinc-200 text-gray-800 focus:border-blue-500'
+                : 'bg-white border-zinc-200 text-zinc-800 focus:border-blue-500'
             ]"
           />
         </div>

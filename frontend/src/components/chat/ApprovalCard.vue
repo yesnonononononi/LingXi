@@ -112,7 +112,7 @@ const handleReject = () => submit(false);
 <template>
   <div
     v-if="!isDismissed"
-    :class="[CARD_SHELL_CLASS, 'overflow-hidden', isDark ? 'bg-[#151b26] border-gray-800' : 'bg-white border-zinc-200/90']"
+    :class="[CARD_SHELL_CLASS, 'overflow-hidden', isDark ? 'bg-[#151b26] border-zinc-800' : 'bg-white border-zinc-200/90']"
   >
     <div :class="CARD_BODY_CLASS">
       <!-- 1. 统一 header：状态点 + 类型标签；右侧折叠/关闭（关闭仅在已决态出现） -->
@@ -156,7 +156,7 @@ const handleReject = () => submit(false);
               v-if="commandText"
               :class="[
                 'rounded-xl border relative group overflow-hidden',
-                isDark ? 'bg-[#0e131d] border-gray-800' : 'bg-[#f7f8fa] border-zinc-200/80'
+                isDark ? 'bg-[#0e131d] border-zinc-800' : 'bg-[#f7f8fa] border-zinc-200/80'
               ]"
             >
               <!-- 复制按钮 (右上角悬浮)；意图/目录行右侧预留安全区，避免遮挡 -->
@@ -168,8 +168,8 @@ const handleReject = () => submit(false);
                   :class="[
                     'text-[11px] px-2 py-0.5 rounded-md transition flex items-center gap-1 cursor-pointer select-none border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50',
                     isDark
-                      ? 'bg-gray-800/80 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 border-zinc-700/60'
-                      : 'bg-white hover:bg-zinc-50 text-zinc-500 hover:text-gray-800 border-zinc-200 shadow-2xs'
+                      ? 'bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 border-zinc-700/60'
+                      : 'bg-white hover:bg-zinc-50 text-zinc-500 hover:text-zinc-800 border-zinc-200 shadow-2xs'
                   ]"
                 >
                   <template v-if="copied">
@@ -194,7 +194,7 @@ const handleReject = () => submit(false);
               <!-- 命令正文 -->
               <div class="p-3 pr-16 font-mono text-[12px] leading-relaxed break-all select-text flex items-start gap-2">
                 <span class="text-blue-500/80 font-bold select-none">$</span>
-                <span :class="isDark ? 'text-zinc-200' : 'text-gray-800'">{{ commandText }}</span>
+                <span :class="isDark ? 'text-zinc-200' : 'text-zinc-800'">{{ commandText }}</span>
               </div>
             </div>
 
@@ -221,7 +221,7 @@ const handleReject = () => submit(false);
             </div>
 
             <!-- 3. 底部操作栏 (未决断时展示) -->
-            <div v-if="!isResolved" class="pt-2 flex items-center justify-end gap-2.5 select-none border-t border-zinc-100 dark:border-gray-800/80">
+            <div v-if="!isResolved" class="pt-2 flex items-center justify-end gap-2.5 select-none border-t border-zinc-100 dark:border-zinc-800/80">
               <CardActionButton
                 tone="danger"
                 variant="outline"

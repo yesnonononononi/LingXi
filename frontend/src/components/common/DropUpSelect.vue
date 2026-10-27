@@ -294,7 +294,7 @@ defineExpose({
           isDark ? 'dark' : 'light',
           isDark
             ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_12px_40px_rgba(0,0,0,0.95)]'
-            : 'bg-white border-zinc-200/90 text-gray-800 shadow-[0_12px_30px_rgba(0,0,0,0.12)]'
+            : 'bg-white border-zinc-200/90 text-zinc-800 shadow-[0_12px_30px_rgba(0,0,0,0.12)]'
         ]"
       >
         <!-- 顶部搜索框 (完全对齐 media_1789910619342.png: 搜索...) -->
@@ -305,7 +305,7 @@ defineExpose({
             type="text"
             :placeholder="searchPlaceholder ?? t('common.searchPlaceholder')"
             class="w-full px-2 py-1 text-xs border rounded-lg outline-none select-text transition"
-            :class="isDark ? 'bg-white/[0.06] border-lx-border text-white placeholder-lx-faint focus:border-cyan-400/60' : 'bg-transparent border-lx-border text-gray-800 placeholder-lx-faint focus:border-blue-500'"
+            :class="isDark ? 'bg-white/[0.06] border-lx-border text-white placeholder-lx-faint focus:border-cyan-400/60' : 'bg-transparent border-lx-border text-zinc-800 placeholder-lx-faint focus:border-blue-500'"
             @keydown.stop
             @keydown.esc="close"
             @keydown.enter="handleSearchEnter"
@@ -372,7 +372,7 @@ defineExpose({
                 <!-- 针对 '+ 添加团队' 等操作项的分隔线 -->
                 <div
                   v-if="String(option.value).startsWith('__add_') && idx > 0"
-                  class="h-px my-1 bg-zinc-100 dark:bg-gray-800/80"
+                  class="h-px my-1 bg-zinc-100 dark:bg-zinc-800/80"
                 ></div>
 
                 <div

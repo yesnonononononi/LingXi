@@ -120,7 +120,7 @@ const addRowClass = computed(() => [
   'w-full py-2 text-[11px] rounded-xl flex items-center justify-center gap-1 transition cursor-pointer',
   isDark.value
     ? 'text-zinc-300 hover:text-white hover:bg-white/[0.06]'
-    : 'text-zinc-500 hover:text-gray-800 hover:bg-zinc-100/70',
+    : 'text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100/70',
 ]);
 </script>
 
@@ -245,7 +245,7 @@ const addRowClass = computed(() => [
 
     <!-- ========================== 提供商表单 ========================== -->
     <div v-else-if="mode === 'provider-form'" class="space-y-4">
-      <div class="flex items-center justify-between pb-1 border-b border-zinc-100 dark:border-gray-800">
+      <div class="flex items-center justify-between pb-1 border-b border-zinc-100 dark:border-zinc-800">
         <div class="flex items-center gap-2">
           <button
             type="button"
@@ -354,7 +354,7 @@ const addRowClass = computed(() => [
     </div>
 
     <div v-else-if="mode === 'model-form'" class="space-y-4">
-      <div class="flex items-center justify-between pb-1 border-b border-zinc-100 dark:border-gray-800">
+      <div class="flex items-center justify-between pb-1 border-b border-zinc-100 dark:border-zinc-800">
         <div class="flex items-center gap-2">
           <button
             type="button"
@@ -436,7 +436,7 @@ const addRowClass = computed(() => [
                   :placeholder="t('settings.models.searchModels')"
                   :class="[
                     'w-full px-2.5 py-1 rounded-lg text-xs outline-none',
-                    isDark ? 'bg-white/5 border border-lx-border-subtle text-zinc-100 placeholder-lx-faint' : 'bg-zinc-50 border border-lx-border-subtle text-gray-800 placeholder-lx-faint'
+                    isDark ? 'bg-white/5 border border-lx-border-subtle text-zinc-100 placeholder-lx-faint' : 'bg-zinc-50 border border-lx-border-subtle text-zinc-800 placeholder-lx-faint'
                   ]"
                   @click.stop
                 />

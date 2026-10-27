@@ -309,7 +309,7 @@ const {
 
     <!-- 新增 / 编辑表单模式 -->
     <div v-else class="space-y-4">
-      <div class="flex items-center justify-between border-b pb-3" :class="isDark ? 'border-gray-800' : 'border-zinc-200'">
+      <div class="flex items-center justify-between border-b pb-3" :class="isDark ? 'border-zinc-800' : 'border-zinc-200'">
         <div>
                     <h4 class="text-base font-bold tracking-tight text-lx-primary">
             {{ editingAgentId ? t('settings.agents.editHeading') : t('settings.agents.addHeading') }}

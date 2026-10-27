@@ -142,7 +142,7 @@ onBeforeUnmount(() => {
         'absolute left-0 top-full mt-1.5 w-60 rounded-xl border shadow-2xl p-1.5 z-50 transition-all animate-in fade-in zoom-in-95 duration-150 backdrop-blur-2xl',
         isDark
           ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_12px_40px_rgba(0,0,0,0.95)]'
-          : 'bg-white/95 border-zinc-200 text-gray-800 shadow-zinc-400/20'
+          : 'bg-white/95 border-zinc-200 text-zinc-800 shadow-zinc-400/20'
       ]"
     >
       <!-- 1. Existing Workspaces List -->

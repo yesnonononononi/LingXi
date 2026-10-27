@@ -124,7 +124,7 @@ const {
             v-if="isLanguageOpen"
             :class="[
               'absolute right-0 mt-1.5 w-32 rounded-xl border shadow-2xl py-1 z-30 text-xs origin-top backdrop-blur-xl',
-              isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.9)]' : 'bg-white border-zinc-200 text-gray-800'
+              isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.9)]' : 'bg-white border-zinc-200 text-zinc-800'
             ]"
           >
                         <div
@@ -184,7 +184,7 @@ const {
               v-if="isSoundOpen"
               :class="[
                 'absolute right-0 mt-1.5 w-36 rounded-xl border shadow-2xl py-1 z-30 text-xs origin-top backdrop-blur-xl',
-                isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.9)]' : 'bg-white border-zinc-200 text-gray-800'
+                isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.9)]' : 'bg-white border-zinc-200 text-zinc-800'
               ]"
             >
               <div

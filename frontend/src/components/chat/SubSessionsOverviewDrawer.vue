@@ -52,7 +52,7 @@ const emit = defineEmits<{
         v-if="isOpen"
         :class="[
           'fixed inset-y-0 right-0 w-full max-w-xl shadow-2xl z-50 flex flex-col border-l transition-colors backdrop-blur-2xl',
-          isDark ? 'bg-black/95 border-white/15 text-zinc-100 shadow-[0_0_60px_rgba(0,0,0,0.9)]' : 'bg-white border-zinc-200 text-gray-800'
+          isDark ? 'bg-black/95 border-white/15 text-zinc-100 shadow-[0_0_60px_rgba(0,0,0,0.9)]' : 'bg-white border-zinc-200 text-zinc-800'
         ]"
       >
         <!-- 头部 -->
@@ -126,7 +126,7 @@ const emit = defineEmits<{
                     <h4 class="font-semibold text-sm truncate group-hover:text-cyan-400 transition-colors">
                       {{ sub.agentName || (sub.agentId ? `Agent #${sub.agentId}` : t('chat.subSessions.fallbackName')) }}
                     </h4>
-                    <span :class="['text-[10px] px-1.5 py-0.2 rounded-full font-mono', isDark ? 'bg-gray-800 text-zinc-300' : 'bg-zinc-100 text-zinc-600']">
+                    <span :class="['text-[10px] px-1.5 py-0.2 rounded-full font-mono', isDark ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-100 text-zinc-600']">
                       #{{ sub.id }}
                     </span>
                   </div>

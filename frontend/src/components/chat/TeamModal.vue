@@ -368,7 +368,7 @@ const handleSaveTeam = async () => {
     <div
       :class="[
         'w-full max-w-lg max-h-[85vh] flex flex-col rounded-2xl border shadow-2xl transition-all overflow-hidden',
-        isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_12px_40px_rgba(0,0,0,0.95)] backdrop-blur-2xl' : 'bg-white border-zinc-200 text-gray-800'
+        isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_12px_40px_rgba(0,0,0,0.95)] backdrop-blur-2xl' : 'bg-white border-zinc-200 text-zinc-800'
       ]"
     >
       <!-- Header -->
@@ -686,7 +686,7 @@ const handleSaveTeam = async () => {
                 />
                 <div class="truncate">
                   <div class="flex items-center gap-1.5">
-                    <span class="text-xs font-medium text-gray-800 dark:text-zinc-200 truncate">
+                    <span class="text-xs font-medium text-zinc-800 dark:text-zinc-200 truncate">
                       {{ agent.name }}
                     </span>
                     <span
@@ -802,7 +802,7 @@ const handleSaveTeam = async () => {
             :class="[
               isDark
                 ? 'bg-black/95 border-white/20 shadow-[0_12px_40px_rgba(0,0,0,0.95)] text-zinc-100'
-                : 'bg-white border-zinc-200 shadow-zinc-200/80 text-gray-800'
+                : 'bg-white border-zinc-200 shadow-zinc-200/80 text-zinc-800'
             ]"
           >
             <div

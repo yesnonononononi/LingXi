@@ -167,7 +167,7 @@ const dividerClass = computed(() => (isDark.value ? 'border-[#273043]' : 'border
 const labelClass = computed(() => (isDark.value ? 'text-xs text-zinc-400' : 'text-xs text-zinc-500'));
 const inputClass = computed(() => [
   'w-full px-3 py-2 rounded-lg text-xs outline-none border transition',
-  isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-zinc-100 placeholder-zinc-500 focus:border-blue-500/60' : 'bg-white border-zinc-200 text-gray-800 placeholder-zinc-400 focus:border-blue-400',
+  isDark.value ? 'bg-[#161b26] border-[#2d3a54] text-zinc-100 placeholder-zinc-500 focus:border-blue-500/60' : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-400',
 ]);
 const toastClass = computed(() => [
   'fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-xs shadow-lg',

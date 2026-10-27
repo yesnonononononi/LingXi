@@ -158,7 +158,7 @@ onUnmounted(() => {
           <pre
             v-if="state.options.preview !== undefined"
             data-testid="confirm-preview"
-            class="min-h-0 overflow-y-auto max-h-[55vh] whitespace-pre-wrap break-words [overflow-wrap:anywhere] select-text rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-black/20 p-4 text-sm leading-relaxed font-sans text-gray-800 dark:text-zinc-200"
+            class="min-h-0 overflow-y-auto max-h-[55vh] whitespace-pre-wrap break-words [overflow-wrap:anywhere] select-text rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-black/20 p-4 text-sm leading-relaxed font-sans text-zinc-800 dark:text-zinc-200"
           >{{ state.options.preview }}</pre>
 
           <!-- Bottom Action Buttons -->

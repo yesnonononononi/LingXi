@@ -387,7 +387,7 @@ const {
                     v-else-if="agent.avatar"
                     class="text-[10px] leading-none shrink-0 select-none"
                   >{{ agent.avatar }}</span>
-                  <span class="font-medium text-gray-800 dark:text-zinc-200 truncate">
+                  <span class="font-medium text-zinc-800 dark:text-zinc-200 truncate">
                     {{ agent.name }}
                   </span>
                     <span

@@ -241,7 +241,7 @@ defineExpose({
     :style="{ width: `${panelWidth}px` }"
     :class="[
       'relative shrink-0 border-l flex flex-col h-full z-20 backdrop-blur-md select-none',
-      isDark ? 'bg-[#09090b]/95 border-white/[0.06] text-zinc-200' : 'bg-zinc-50/90 border-zinc-200 text-gray-800'
+      isDark ? 'bg-[#09090b]/95 border-white/[0.06] text-zinc-200' : 'bg-zinc-50/90 border-zinc-200 text-zinc-800'
     ]"
   >
     <!-- 左边缘拖拽分割条 (Resize Handle) -->
