@@ -278,7 +278,7 @@ defineExpose({
           <!-- 返回成员列表：清空选中子会话，面板回到成员概览（此前只能收起整个面板，回不去列表） -->
           <button
             @click="emit('selectOption', null)"
-            :class="['p-1.5 rounded-lg border transition cursor-pointer text-gray-400 hover:text-blue-500', isDark ? 'border-white/[0.08] hover:bg-white/[0.06]' : 'border-zinc-200 hover:bg-blue-50']"
+            :class="['p-1.5 rounded-lg border transition cursor-pointer text-zinc-400 hover:text-blue-500', isDark ? 'border-white/[0.08] hover:bg-white/[0.06]' : 'border-zinc-200 hover:bg-blue-50']"
             :title="t('chat.subAgent.backToList')"
           >
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -288,7 +288,7 @@ defineExpose({
                     <!-- 收起整个侧边面板按钮 -->
           <button
             @click="emit('toggleOpen')"
-            :class="['p-1.5 rounded-lg border transition cursor-pointer text-gray-400 hover:text-zinc-200', isDark ? 'border-white/[0.08] hover:bg-white/[0.06]' : 'border-zinc-200 hover:bg-zinc-100']"
+            :class="['p-1.5 rounded-lg border transition cursor-pointer text-zinc-400 hover:text-zinc-200', isDark ? 'border-white/[0.08] hover:bg-white/[0.06]' : 'border-zinc-200 hover:bg-zinc-100']"
             :title="t('chat.subAgent.collapsePanel')"
           >
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -301,7 +301,7 @@ defineExpose({
       <!-- 状态与用量指标栏 -->
       <div :class="['px-4 py-2 border-b text-[11px] flex items-center justify-between gap-2 select-none shrink-0', isDark ? 'border-white/[0.06] bg-[#09090b]/60 text-zinc-400' : 'border-zinc-100 bg-zinc-50/60 text-gray-500']">
         <span class="flex items-center gap-1.5">
-          <span class="w-1.5 h-1.5 rounded-full" :class="activeItem.status === 'running' ? 'bg-amber-400 animate-ping' : activeItem.status === 'completed' ? 'bg-emerald-500' : 'bg-gray-400'"></span>
+          <span class="w-1.5 h-1.5 rounded-full" :class="activeItem.status === 'running' ? 'bg-amber-400 animate-ping' : activeItem.status === 'completed' ? 'bg-emerald-500' : 'bg-zinc-400'"></span>
           <span>{{ statusLabel(activeItem.status) }}</span>
         </span>
       </div>
@@ -363,7 +363,7 @@ defineExpose({
                 <!-- 折叠面板按钮 -->
         <button
           @click="emit('toggleOpen')"
-          :class="['p-1.5 rounded-lg border transition cursor-pointer text-gray-400 hover:text-zinc-200', isDark ? 'border-white/[0.08] hover:bg-white/[0.06]' : 'border-zinc-200 hover:bg-zinc-100']"
+          :class="['p-1.5 rounded-lg border transition cursor-pointer text-zinc-400 hover:text-zinc-200', isDark ? 'border-white/[0.08] hover:bg-white/[0.06]' : 'border-zinc-200 hover:bg-zinc-100']"
           :title="t('chat.subAgent.collapsePanel')"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -402,7 +402,7 @@ defineExpose({
             <span
               :class="[
                 'px-1.5 py-0.5 rounded-full text-[10px] font-medium flex items-center gap-1 shrink-0',
-                (it.status === 'idle' || it.status === 'unknown') ? (isDark ? 'bg-gray-500/15 text-gray-400 border border-gray-500/30' : 'bg-zinc-50 text-gray-500 border border-zinc-200') :
+                (it.status === 'idle' || it.status === 'unknown') ? (isDark ? 'bg-gray-500/15 text-zinc-400 border border-gray-500/30' : 'bg-zinc-50 text-gray-500 border border-zinc-200') :
                 it.status === 'running' ? (isDark ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30' : 'bg-amber-50 text-amber-600 border border-amber-200') :
                 it.status === 'suspended' ? (isDark ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30' : 'bg-blue-50 text-blue-600 border border-blue-200') :
                 (it.status === 'failed' || it.status === 'cancelled') ? (isDark ? 'bg-red-500/15 text-red-400 border border-red-500/30' : 'bg-red-50 text-red-600 border border-red-200') :
@@ -412,7 +412,7 @@ defineExpose({
               <span
                 :class="[
                   'w-1.5 h-1.5 rounded-full',
-                  (it.status === 'idle' || it.status === 'unknown') ? 'bg-gray-400' :
+                  (it.status === 'idle' || it.status === 'unknown') ? 'bg-zinc-400' :
                   it.status === 'running' ? 'bg-amber-400 animate-ping' :
                   it.status === 'suspended' ? 'bg-blue-400' :
                   (it.status === 'failed' || it.status === 'cancelled') ? 'bg-red-500' : 'bg-emerald-500'
@@ -452,7 +452,7 @@ defineExpose({
               </span>
               <span
                 v-else
-                class="text-[11px] text-gray-400 hover:text-blue-500 flex items-center gap-1"
+                class="text-[11px] text-zinc-400 hover:text-blue-500 flex items-center gap-1"
               >
                 <span>{{ t('chat.subAgent.expandTrajectory') }}</span>
                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -465,7 +465,7 @@ defineExpose({
             <button
               v-if="it.result"
               @click.stop="handleCopyResult(it.result, it.id)"
-              :class="['p-1 rounded-lg border text-gray-400 hover:text-zinc-200 transition cursor-pointer', isDark ? 'border-[#29354d] hover:bg-[#1d273a]' : 'border-zinc-200 hover:bg-zinc-100']"
+              :class="['p-1 rounded-lg border text-zinc-400 hover:text-zinc-200 transition cursor-pointer', isDark ? 'border-[#29354d] hover:bg-[#1d273a]' : 'border-zinc-200 hover:bg-zinc-100']"
               :title="copiedId === it.id ? t('chat.subAgent.copiedOutput') : t('chat.subAgent.copyOutput')"
             >
               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

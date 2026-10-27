@@ -381,7 +381,7 @@ const handleSaveTeam = async () => {
         </h3>
         <button
           @click="emit('close')"
-          class="p-1 rounded-lg text-gray-400 hover:text-zinc-200 hover:bg-white/5 transition-colors cursor-pointer"
+          class="p-1 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-white/5 transition-colors cursor-pointer"
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -408,7 +408,7 @@ const handleSaveTeam = async () => {
               'w-full px-3 py-2 rounded-xl border text-sm outline-none transition',
               isDark
                 ? 'bg-black/90 border-white/15 focus:border-cyan-400/80 text-white placeholder-zinc-500'
-                : 'bg-zinc-50 border-zinc-300 focus:border-blue-500 text-gray-900 placeholder-gray-400'
+                : 'bg-zinc-50 border-zinc-300 focus:border-blue-500 text-gray-900 placeholder-zinc-400'
             ]"
           />
         </div>
@@ -426,7 +426,7 @@ const handleSaveTeam = async () => {
               'w-full px-3 py-2 rounded-xl border text-sm outline-none resize-none transition',
               isDark
                 ? 'bg-black/90 border-white/15 focus:border-cyan-400/80 text-white placeholder-zinc-500'
-                : 'bg-zinc-50 border-zinc-300 focus:border-blue-500 text-gray-900 placeholder-gray-400'
+                : 'bg-zinc-50 border-zinc-300 focus:border-blue-500 text-gray-900 placeholder-zinc-400'
             ]"
           ></textarea>
         </div>
@@ -467,7 +467,7 @@ const handleSaveTeam = async () => {
               <button
                 type="button"
                 @click="closeAgentForm"
-                class="text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200 cursor-pointer"
+                class="text-zinc-400 hover:text-gray-600 dark:hover:text-zinc-200 cursor-pointer"
               >
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -486,7 +486,7 @@ const handleSaveTeam = async () => {
 
             <div class="grid grid-cols-2 gap-2">
               <div>
-                <label class="block text-gray-600 dark:text-gray-400 mb-0.5">{{ t('chat.team.agentNameLabel') }}</label>
+                <label class="block text-gray-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentNameLabel') }}</label>
                 <input
                   v-model="agentFormName"
                   :placeholder="t('chat.team.agentNamePlaceholder')"
@@ -497,7 +497,7 @@ const handleSaveTeam = async () => {
                 />
               </div>
               <div>
-                <label class="block text-gray-600 dark:text-gray-400 mb-0.5">{{ t('chat.team.agentModelLabel') }}</label>
+                <label class="block text-gray-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentModelLabel') }}</label>
                 <select
                   v-model="agentFormModelId"
                   :class="[
@@ -513,7 +513,7 @@ const handleSaveTeam = async () => {
             </div>
 
             <div>
-              <label class="block text-gray-600 dark:text-gray-400 mb-0.5">{{ t('chat.team.agentDescLabel') }}</label>
+              <label class="block text-gray-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentDescLabel') }}</label>
               <input
                 v-model="agentFormDesc"
                 :placeholder="t('chat.team.agentDescPlaceholder')"
@@ -525,7 +525,7 @@ const handleSaveTeam = async () => {
             </div>
 
             <div>
-              <label class="block text-gray-600 dark:text-gray-400 mb-0.5">{{ t('chat.team.agentPromptLabel') }}</label>
+              <label class="block text-gray-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentPromptLabel') }}</label>
               <textarea
                 v-model="agentFormPrompt"
                 rows="2"
@@ -540,7 +540,7 @@ const handleSaveTeam = async () => {
             <!-- 工具分配 -->
             <div>
               <div class="flex items-center justify-between mb-1">
-                <label class="block text-gray-600 dark:text-gray-400 font-medium">
+                <label class="block text-gray-600 dark:text-zinc-400 font-medium">
                   {{ t('chat.team.assignTools') }}
                   <span class="text-[11px] font-normal text-gray-500 ml-1">
                     {{ t('chat.team.assignedCount', { selected: agentFormToolList.length, total: availableTools.length }) }}
@@ -554,11 +554,11 @@ const handleSaveTeam = async () => {
                   >
                     {{ t('chat.team.selectAll') }}
                   </button>
-                  <span class="text-gray-400">|</span>
+                  <span class="text-zinc-400">|</span>
                   <button
                     type="button"
                     @click="clearTools"
-                    class="text-gray-500 hover:text-gray-400 cursor-pointer"
+                    class="text-gray-500 hover:text-zinc-400 cursor-pointer"
                   >
                     {{ t('chat.team.clear') }}
                   </button>
@@ -568,7 +568,7 @@ const handleSaveTeam = async () => {
               <!-- 工具列表卡片容器 -->
               <div
                 v-if="isLoadingTools"
-                class="p-2 text-center text-gray-400 text-xs rounded-lg border border-dashed"
+                class="p-2 text-center text-zinc-400 text-xs rounded-lg border border-dashed"
                 :class="isDark ? 'border-gray-700 bg-gray-900/30' : 'border-zinc-300 bg-zinc-50/50'"
               >
                 {{ t('chat.team.loadingTools') }}
@@ -589,7 +589,7 @@ const handleSaveTeam = async () => {
               </div>
               <div
                 v-else-if="availableTools.length === 0"
-                class="p-2 text-center text-gray-400 text-xs rounded-lg border border-dashed"
+                class="p-2 text-center text-zinc-400 text-xs rounded-lg border border-dashed"
                 :class="isDark ? 'border-white/10 bg-black/60' : 'border-zinc-300 bg-zinc-50/50'"
               >
                 {{ t('chat.team.noTools') }}
@@ -715,7 +715,7 @@ const handleSaveTeam = async () => {
                 <button
                   type="button"
                   @click.stop="openEditAgent(agent)"
-                  class="p-1 rounded-md text-gray-400 hover:text-blue-500 hover:bg-blue-500/10 transition-colors cursor-pointer"
+                  class="p-1 rounded-md text-zinc-400 hover:text-blue-500 hover:bg-blue-500/10 transition-colors cursor-pointer"
                   :title="t('chat.team.editAgentTip')"
                 >
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -734,7 +734,7 @@ const handleSaveTeam = async () => {
                   v-else-if="selectedAgentIds.includes(agent.id)"
                   type="button"
                   @click.stop="commanderAgentId = agent.id"
-                  class="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 text-[10px] rounded text-gray-400 hover:text-blue-500 hover:bg-blue-500/10 transition-all cursor-pointer"
+                  class="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 text-[10px] rounded text-zinc-400 hover:text-blue-500 hover:bg-blue-500/10 transition-all cursor-pointer"
                   :title="t('chat.team.setManagerTip')"
                 >
                   {{ t('chat.team.setManager') }}
@@ -780,12 +780,12 @@ const handleSaveTeam = async () => {
                 </div>
               </div>
             </div>
-            <div v-else class="text-xs text-gray-400">
+            <div v-else class="text-xs text-zinc-400">
               {{ t('chat.team.managerPlaceholder') }}
             </div>
 
             <svg
-              class="w-4 h-4 text-gray-400 shrink-0 transition-transform duration-200 ml-2"
+              class="w-4 h-4 text-zinc-400 shrink-0 transition-transform duration-200 ml-2"
               :class="{ 'rotate-180': isCommanderDropdownOpen }"
               fill="none"
               stroke="currentColor"

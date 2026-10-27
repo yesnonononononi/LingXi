@@ -283,7 +283,7 @@ const {
                 <button
                   type="button"
                   @click="startEditAgent(agent)"
-                  class="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 transition cursor-pointer"
+                  class="p-1.5 rounded-lg text-zinc-400 hover:text-blue-500 transition cursor-pointer"
                   :title="t('settings.agents.editAction')"
                 >
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -293,7 +293,7 @@ const {
                 <button
                   type="button"
                   @click="handleDeleteAgent(agent)"
-                  class="p-1.5 rounded-lg text-gray-400 hover:text-red-500 transition cursor-pointer"
+                  class="p-1.5 rounded-lg text-zinc-400 hover:text-red-500 transition cursor-pointer"
                   :title="t('settings.agents.deleteAction')"
                 >
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -321,7 +321,7 @@ const {
         <button
           type="button"
           @click="cancelAgentForm"
-          class="px-2.5 py-1 text-xs rounded-lg text-gray-400 hover:text-zinc-200 cursor-pointer"
+          class="px-2.5 py-1 text-xs rounded-lg text-zinc-400 hover:text-zinc-200 cursor-pointer"
         >
                     {{ t('common.backToList') }}
         </button>
@@ -424,12 +424,12 @@ const {
               >
                                 {{ t('settings.agents.selectAll') }}
               </button>
-              <span :class="isDark ? 'text-zinc-600' : 'text-gray-400'">|</span>
+              <span :class="isDark ? 'text-zinc-600' : 'text-zinc-400'">|</span>
               <button
                 type="button"
                 @click="clearAgentTools"
                 class="cursor-pointer"
-                :class="isDark ? 'text-lx-muted hover:text-zinc-200' : 'text-lx-muted hover:text-gray-400'"
+                :class="isDark ? 'text-lx-muted hover:text-zinc-200' : 'text-lx-muted hover:text-zinc-400'"
               >
                                 {{ t('settings.agents.clear') }}
               </button>
@@ -492,7 +492,7 @@ const {
                   {{ tool.readOnly ? t('settings.agents.readOnly') : t('settings.agents.readWrite') }}
                 </span>
               </div>
-              <div v-if="tool.description" class="text-[11px] truncate mt-1" :class="isDark ? 'text-zinc-400' : 'text-gray-400'" :title="tool.description">
+              <div v-if="tool.description" class="text-[11px] truncate mt-1" :class="isDark ? 'text-zinc-400' : 'text-zinc-400'" :title="tool.description">
                 {{ tool.description }}
               </div>
             </div>

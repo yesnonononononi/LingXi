@@ -123,7 +123,7 @@ const handleReject = () => submit(false);
             v-if="isResolved"
             type="button"
             @click="isCollapsed = !isCollapsed"
-            class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200 rounded transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50"
+            class="p-1 text-zinc-400 hover:text-gray-600 dark:hover:text-zinc-200 rounded transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50"
                         :title="isCollapsed ? t('common.expand') : t('common.collapse')"
                         :aria-label="isCollapsed ? t('chat.approval.expandCard') : t('chat.approval.collapseCard')"
           >
@@ -136,7 +136,7 @@ const handleReject = () => submit(false);
             v-if="isResolved"
             type="button"
             @click="isDismissed = true"
-            class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200 rounded transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50"
+            class="p-1 text-zinc-400 hover:text-gray-600 dark:hover:text-zinc-200 rounded transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50"
                         :title="t('common.close')"
             :aria-label="t('chat.approval.closeCard')"
           >
@@ -166,9 +166,9 @@ const handleReject = () => submit(false);
                   @click="copyCommand"
                   :aria-label="t('chat.approval.copyCommand')"
                   :class="[
-                    'text-[11px] px-2 py-0.5 rounded-md transition flex items-center gap-1 cursor-pointer select-none border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50',
+                    'text-[11px] px-2 py-0.5 rounded-md transition flex items-center gap-1 cursor-pointer select-none border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50',
                     isDark
-                      ? 'bg-gray-800/80 hover:bg-gray-700 text-gray-400 hover:text-zinc-200 border-gray-700/60'
+                      ? 'bg-gray-800/80 hover:bg-gray-700 text-zinc-400 hover:text-zinc-200 border-gray-700/60'
                       : 'bg-white hover:bg-zinc-50 text-gray-500 hover:text-gray-800 border-zinc-200 shadow-2xs'
                   ]"
                 >
@@ -179,7 +179,7 @@ const handleReject = () => submit(false);
                     <span class="text-emerald-600 dark:text-emerald-400 font-medium">{{ t('common.copied') }}</span>
                   </template>
                   <template v-else>
-                    <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <svg class="w-3 h-3 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
                     </svg>
                     <span>{{ t('common.copy') }}</span>

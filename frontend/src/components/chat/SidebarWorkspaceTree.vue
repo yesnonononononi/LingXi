@@ -146,7 +146,7 @@ const emit = emitShim as TreeEmitShim;
             'p-2 rounded-xl flex items-center justify-center cursor-pointer transition',
             isWorkspaceActive(group.workspace)
               ? 'bg-blue-600/15 text-blue-500'
-              : 'text-gray-400 hover:bg-zinc-200/60 dark:hover:bg-gray-800 hover:text-lx-secondary'
+              : 'text-zinc-400 hover:bg-zinc-200/60 dark:hover:bg-gray-800 hover:text-lx-secondary'
           ]"
           :title="group.workspace.name || group.workspace.workDir"
         >
@@ -324,7 +324,7 @@ const emit = emitShim as TreeEmitShim;
               <!-- Left: Chevron Indicator + Folder Icon + Workspace Name -->
               <div class="flex items-center gap-1.5 truncate min-w-0 pr-1" @click.stop="toggleWorkspaceExpand(group.workspace.id!)">
                 <svg
-                  class="w-3 h-3 shrink-0 transition-transform duration-200 text-gray-400 group-hover:text-gray-600"
+                  class="w-3 h-3 shrink-0 transition-transform duration-200 text-zinc-400 group-hover:text-gray-600"
                   :class="expandedWorkspaces[String(group.workspace.id)] ? 'rotate-90' : 'rotate-0'"
                   fill="none"
                   stroke="currentColor"
@@ -333,7 +333,7 @@ const emit = emitShim as TreeEmitShim;
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
                 </svg>
                 <svg
-                  class="w-4 h-4 shrink-0 transition-colors text-gray-400 group-hover:text-gray-600"
+                  class="w-4 h-4 shrink-0 transition-colors text-zinc-400 group-hover:text-gray-600"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -457,7 +457,7 @@ const emit = emitShim as TreeEmitShim;
                     v-if="group.sessions.length > SESSION_VISIBLE_LIMIT"
                     @click.stop="toggleFullyExpanded(String(group.workspace.id))"
                     class="w-full text-left px-2 py-1.5 rounded-lg text-xs transition-colors cursor-pointer"
-                    :class="isDark ? 'text-zinc-500 hover:text-zinc-300' : 'text-gray-400 hover:text-gray-600'"
+                    :class="isDark ? 'text-zinc-500 hover:text-zinc-300' : 'text-zinc-400 hover:text-gray-600'"
                   >
                     {{ isFullyExpanded(String(group.workspace.id)) ? t('chat.sidebar.collapseDisplay') : t('chat.sidebar.expandDisplay', { count: group.sessions.length }) }}
                   </button>
@@ -468,7 +468,7 @@ const emit = emitShim as TreeEmitShim;
 
           <!-- Unassigned Sessions Section (if any) -->
           <div v-if="unassignedSessions.length > 0" class="pt-2">
-                        <div class="px-2 py-1 text-[11px] font-medium text-gray-400 tracking-wider">
+                        <div class="px-2 py-1 text-[11px] font-medium text-zinc-400 tracking-wider">
               {{ t('chat.sidebar.history') }}
             </div>
             <div class="space-y-0.5">
@@ -514,7 +514,7 @@ const emit = emitShim as TreeEmitShim;
                 v-if="unassignedSessions.length > SESSION_VISIBLE_LIMIT"
                 @click.stop="toggleFullyExpanded('ws-unassigned')"
                 class="w-full text-left px-2 py-1.5 rounded-lg text-xs transition-colors cursor-pointer"
-                :class="isDark ? 'text-zinc-500 hover:text-zinc-300' : 'text-gray-400 hover:text-gray-600'"
+                :class="isDark ? 'text-zinc-500 hover:text-zinc-300' : 'text-zinc-400 hover:text-gray-600'"
               >
                 {{ isFullyExpanded('ws-unassigned') ? t('chat.sidebar.collapseDisplay') : t('chat.sidebar.expandDisplay', { count: unassignedSessions.length }) }}
               </button>

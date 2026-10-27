@@ -110,7 +110,7 @@ const {
         >
           <span class="text-xs font-normal">{{ currentLanguageLabel }}</span>
           <svg
-            class="w-3 h-3 text-gray-400 dark:text-zinc-300 transition-transform duration-200"
+            class="w-3 h-3 text-zinc-400 dark:text-zinc-300 transition-transform duration-200"
             :class="{ 'rotate-180': isLanguageOpen }"
             fill="none"
             stroke="currentColor"
@@ -153,7 +153,7 @@ const {
       <div class="flex items-center justify-between">
         <div class="flex flex-col">
           <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.notifySound') }}</span>
-          <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.notifySoundDesc') }}</span>
+          <span class="text-[11px] text-zinc-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.notifySoundDesc') }}</span>
         </div>
         <div class="relative general-dropdown-container" @click.stop>
           <SpecularButton
@@ -170,7 +170,7 @@ const {
           >
             <span class="text-xs font-normal">{{ currentSoundLabel }}</span>
             <svg
-              class="w-3 h-3 text-gray-400 dark:text-zinc-300 transition-transform duration-200"
+              class="w-3 h-3 text-zinc-400 dark:text-zinc-300 transition-transform duration-200"
               :class="{ 'rotate-180': isSoundOpen }"
               fill="none"
               stroke="currentColor"
@@ -214,7 +214,7 @@ const {
       <div class="flex items-center justify-between mb-2">
         <div class="flex flex-col">
           <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.apiBaseUrl') }}</span>
-          <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.apiBaseUrlDesc') }}</span>
+          <span class="text-[11px] text-zinc-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.apiBaseUrlDesc') }}</span>
         </div>
         <button
           type="button"

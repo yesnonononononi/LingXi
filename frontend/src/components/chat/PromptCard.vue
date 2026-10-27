@@ -29,7 +29,7 @@ const isUnavailable = computed(() => props.promptCard.unavailable === true || ki
     :class="[
       CARD_SHELL_CLASS,
       'p-4 text-xs leading-relaxed',
-      isDark ? 'bg-[#151b26] border-gray-800 text-gray-400' : 'bg-white border-zinc-200/90 text-gray-500'
+      isDark ? 'bg-[#151b26] border-gray-800 text-zinc-400' : 'bg-white border-zinc-200/90 text-gray-500'
     ]"
   >
         {{ t('chat.prompt.unavailable') }}

@@ -65,14 +65,14 @@ const {
           <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">
             {{ t('settings.teams.maxMemberSizeLabel') }}
           </span>
-          <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">
+          <span class="text-[11px] text-zinc-400 dark:text-zinc-400 mt-0.5">
             {{ t('settings.teams.maxMemberSizeDesc', { min: TEAM_SIZE_MIN, max: TEAM_SIZE_MAX }) }}
           </span>
         </div>
         <div class="flex items-center gap-2 shrink-0">
           <span
             v-if="isSavingTeamSize"
-            class="text-[11px] text-gray-400 dark:text-zinc-400"
+            class="text-[11px] text-zinc-400 dark:text-zinc-400"
           >{{ t('common.saving') }}</span>
           <input
             v-model.number="teamSizeInput"
@@ -112,7 +112,7 @@ const {
       </div>
 
       <!-- 加载中 -->
-            <div v-if="isTeamsLoading" class="py-8 text-center text-xs text-gray-400">
+            <div v-if="isTeamsLoading" class="py-8 text-center text-xs text-zinc-400">
         {{ t('settings.teams.loading') }}
       </div>
 
@@ -201,7 +201,7 @@ const {
 
               <!-- 团队成员标签列表 -->
               <div class="pt-1">
-                <div class="text-[11px] font-medium text-gray-600 dark:text-gray-400 mb-1 flex items-center gap-1.5">
+                <div class="text-[11px] font-medium text-gray-600 dark:text-zinc-400 mb-1 flex items-center gap-1.5">
                   <span>{{ t('settings.teams.membersLabel') }}</span>
                 </div>
                 <div v-if="team.agents && team.agents.length > 0" class="flex flex-wrap gap-1.5">
@@ -232,7 +232,7 @@ const {
                     </span>
                   </span>
                 </div>
-                <span v-else class="text-[11px] text-gray-400 italic">{{ t('settings.teams.noMemberDetail') }}</span>
+                <span v-else class="text-[11px] text-zinc-400 italic">{{ t('settings.teams.noMemberDetail') }}</span>
               </div>
             </div>
 
@@ -241,7 +241,7 @@ const {
               <button
                 type="button"
                 @click="startEditTeam(team)"
-                class="p-1.5 rounded-lg text-gray-400 hover:text-cyan-400 dark:hover:text-cyan-300 hover:bg-white/5 transition cursor-pointer"
+                class="p-1.5 rounded-lg text-zinc-400 hover:text-cyan-400 dark:hover:text-cyan-300 hover:bg-white/5 transition cursor-pointer"
                 :title="t('settings.teams.editAction')"
               >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -251,7 +251,7 @@ const {
               <button
                 type="button"
                 @click="handleDeleteTeam(team)"
-                class="p-1.5 rounded-lg text-gray-400 hover:text-red-400 dark:hover:text-red-400 hover:bg-white/5 transition cursor-pointer"
+                class="p-1.5 rounded-lg text-zinc-400 hover:text-red-400 dark:hover:text-red-400 hover:bg-white/5 transition cursor-pointer"
                 :title="t('settings.teams.deleteAction')"
               >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -278,7 +278,7 @@ const {
         <button
           type="button"
           @click="cancelTeamForm"
-          class="px-2.5 py-1 text-xs rounded-lg text-gray-400 hover:text-zinc-200 cursor-pointer"
+          class="px-2.5 py-1 text-xs rounded-lg text-zinc-400 hover:text-zinc-200 cursor-pointer"
         >
                     {{ t('common.backToList') }}
         </button>
@@ -341,7 +341,7 @@ const {
           <div class="flex items-center justify-between mb-1.5">
             <label class="block text-gray-700 dark:text-zinc-300 font-medium">
                             {{ t('settings.teams.membersSelectLabel') }} <span class="text-red-500">*</span>
-              <span class="text-gray-400 font-normal ml-1">
+              <span class="text-zinc-400 font-normal ml-1">
                 {{ t('settings.teams.membersSelectCount', { selected: teamForm.agentIds.length, max: maxMemberSize }) }}
               </span>
             </label>
@@ -353,7 +353,7 @@ const {
               isDark ? 'border-white/15 divide-white/10 bg-black/90' : 'border-zinc-200 divide-zinc-100 bg-zinc-50'
             ]"
           >
-                        <div v-if="agentsList.length === 0" class="p-4 text-center text-xs text-gray-400">
+                        <div v-if="agentsList.length === 0" class="p-4 text-center text-xs text-zinc-400">
               {{ t('settings.teams.noAgents') }}
             </div>
             <div
@@ -397,7 +397,7 @@ const {
                                             {{ t('settings.teams.agentToolCount', { count: agent.toolList.length }) }}
                     </span>
                   </div>
-                  <div class="text-[11px] text-gray-400 truncate">
+                  <div class="text-[11px] text-zinc-400 truncate">
                     {{ agent.description || t('settings.agents.noDescription') }}
                   </div>
                 </div>
@@ -414,7 +414,7 @@ const {
                   v-else-if="teamForm.agentIds.includes(agent.id)"
                   type="button"
                   @click.stop="teamForm.commanderAgentId = agent.id"
-                  class="px-1.5 py-0.5 text-[10px] rounded text-gray-400 hover:text-cyan-400 hover:bg-cyan-500/10 cursor-pointer transition"
+                  class="px-1.5 py-0.5 text-[10px] rounded text-zinc-400 hover:text-cyan-400 hover:bg-cyan-500/10 cursor-pointer transition"
                 >
                                     {{ t('settings.teams.setAsCommander') }}
                 </button>
@@ -427,7 +427,7 @@ const {
         <div>
           <label class="block text-gray-700 dark:text-zinc-300 font-medium mb-1">
                         {{ t('settings.teams.commanderLabel') }} <span class="text-red-500">*</span>
-            <span class="text-gray-400 font-normal ml-1">
+            <span class="text-zinc-400 font-normal ml-1">
               {{ t('settings.teams.commanderHint') }}
             </span>
           </label>

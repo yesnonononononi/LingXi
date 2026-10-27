@@ -36,7 +36,7 @@ const classes = computed(() => {
     emerald: 'focus-visible:ring-emerald-500/50',
     blue: 'focus-visible:ring-blue-500/50',
     danger: 'focus-visible:ring-red-500/50',
-    neutral: 'focus-visible:ring-gray-400/50'
+    neutral: 'focus-visible:ring-zinc-400/50'
   }[props.tone];
 
   if (props.variant === 'outline') {

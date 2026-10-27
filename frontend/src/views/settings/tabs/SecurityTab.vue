@@ -64,7 +64,7 @@ function resolveRuleKey(rule: SecurityRule): number {
 
 /* 卡片 / 控件 / 按钮：与设置页其它 tab 同一套圆角与配色（卡片 2xl、控件 xl、图标按钮 lg） */
 const panel = 'rounded-2xl border border-zinc-100 dark:border-white/10 bg-zinc-50/60 dark:bg-white/[0.03] p-4';
-const control = 'rounded-xl border border-zinc-200 dark:border-white/15 bg-white dark:bg-black/30 text-lx-secondary px-3 py-1.5 text-xs outline-none transition focus:border-gray-400 focus:ring-2 focus:ring-zinc-200/60 dark:focus:border-white/40 dark:focus:ring-white/10';
+const control = 'rounded-xl border border-zinc-200 dark:border-white/15 bg-white dark:bg-black/30 text-lx-secondary px-3 py-1.5 text-xs outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200/60 dark:focus:border-white/40 dark:focus:ring-white/10';
 const button = 'rounded-xl border border-zinc-200 dark:border-white/15 px-3 py-1.5 text-xs font-medium transition cursor-pointer hover:bg-black/5 active:scale-[0.97] dark:hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100';
 const primary = 'rounded-xl bg-blue-600 px-4 py-1.5 text-xs font-medium text-white shadow-sm transition cursor-pointer hover:bg-blue-500 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:active:scale-100';
 const iconButton = 'grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-zinc-200 text-lx-muted transition cursor-pointer dark:border-white/15 hover:border-zinc-300 hover:bg-black/5 hover:text-gray-900 dark:hover:border-white/25 dark:hover:bg-white/10 dark:hover:text-white disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent';
@@ -156,7 +156,7 @@ void load();
                 <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" /></svg>
               </button>
             </span>
-            <span class="mt-0.5 text-[11px] leading-snug text-gray-400 dark:text-zinc-400">{{ copy.sandboxDesc }}</span>
+            <span class="mt-0.5 text-[11px] leading-snug text-zinc-400 dark:text-zinc-400">{{ copy.sandboxDesc }}</span>
           </div>
           <div class="flex shrink-0 items-center gap-2">
             <span :class="[stateChip, sandboxState === 'ON'
@@ -181,7 +181,7 @@ void load();
             {{ isCheckingSandbox ? t('settings.general.sandboxChecking') : t('settings.general.sandboxCheck') }}
           </button>
         </div>
-        <p v-if="isCheckingSandbox" class="mt-2 text-[11px] leading-snug text-gray-400 dark:text-zinc-400">{{ t('settings.general.sandboxCheckingHint') }}</p>
+        <p v-if="isCheckingSandbox" class="mt-2 text-[11px] leading-snug text-zinc-400 dark:text-zinc-400">{{ t('settings.general.sandboxCheckingHint') }}</p>
         <div v-if="sandboxNotice" class="sec-rise mt-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-2.5 text-[11px] text-emerald-600 dark:text-emerald-400">{{ sandboxNotice }}</div>
         <div v-if="sandboxError" class="sec-rise mt-2 rounded-xl border border-red-500/20 bg-red-500/10 p-2.5 text-[11px] text-red-600 dark:text-red-400">{{ sandboxError }}</div>
         <div v-if="showScope" class="sec-rise mt-2 rounded-xl border border-zinc-100 bg-white/70 p-2.5 dark:border-white/10 dark:bg-white/[0.03]">
@@ -196,7 +196,7 @@ void load();
           class="sec-nav flex w-full items-center justify-between gap-3 rounded-xl px-2 py-3 text-left transition-colors cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/[0.05]">
           <span class="flex min-w-0 flex-col">
             <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ copy[item] }}</span>
-            <span class="mt-0.5 text-[11px] leading-snug text-gray-400 dark:text-zinc-400">{{ copy[categoryDesc[item]] }}</span>
+            <span class="mt-0.5 text-[11px] leading-snug text-zinc-400 dark:text-zinc-400">{{ copy[categoryDesc[item]] }}</span>
           </span>
           <svg class="sec-nav-chevron h-3.5 w-3.5 shrink-0 text-zinc-300 dark:text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
         </button>
@@ -221,7 +221,7 @@ void load();
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <div class="flex min-w-0 flex-col">
             <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.accessMode') }}</span>
-            <span class="mt-0.5 text-[11px] leading-snug text-gray-400 dark:text-zinc-400">{{ t('settings.general.accessModeDesc') }}</span>
+            <span class="mt-0.5 text-[11px] leading-snug text-zinc-400 dark:text-zinc-400">{{ t('settings.general.accessModeDesc') }}</span>
           </div>
           <div class="w-full min-w-0 shrink-0 sm:w-64">
             <SettingsSelect id="security-access-mode" data-testid="security-access-mode" :label="t('settings.general.accessMode')"
@@ -233,7 +233,7 @@ void load();
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <div class="flex min-w-0 flex-col">
             <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.toolPermission') }}</span>
-            <span class="mt-0.5 text-[11px] leading-snug text-gray-400 dark:text-zinc-400">{{ t('settings.general.toolPermissionDesc') }}</span>
+            <span class="mt-0.5 text-[11px] leading-snug text-zinc-400 dark:text-zinc-400">{{ t('settings.general.toolPermissionDesc') }}</span>
           </div>
           <div class="w-full min-w-0 shrink-0 sm:w-64">
             <SettingsSelect id="security-command-policy" data-testid="security-command-policy" :label="t('settings.general.toolPermission')"
@@ -440,7 +440,7 @@ void load();
   transition: background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
-.sec-check__input:hover { @apply border-gray-400; }
+.sec-check__input:hover { @apply border-zinc-400; }
 .sec-check__input:checked { @apply border-blue-600 bg-blue-600; }
 .sec-check__input:focus-visible { @apply outline-none ring-2 ring-blue-500/30; }
 

@@ -215,7 +215,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                   {{ t('chat.subSession.sessionLabel', { id: subSession?.id ?? '' }) }}
                 </span>
               </div>
-              <p class="text-xs text-gray-400 dark:text-zinc-400 dark:text-glow-subtle truncate mt-0.5">
+              <p class="text-xs text-zinc-400 dark:text-zinc-400 dark:text-glow-subtle truncate mt-0.5">
                 {{ subSession?.name || subSession?.task || t('chat.subSession.fallbackName') }}
               </p>
             </div>
@@ -238,7 +238,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
             <!-- 关闭按钮 -->
             <button
               @click="emit('close')"
-              :class="['p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200 hover:bg-white/5 transition cursor-pointer']"
+              :class="['p-1.5 rounded-lg text-zinc-400 hover:text-gray-600 dark:hover:text-zinc-200 hover:bg-white/5 transition cursor-pointer']"
               :title="t('chat.subSession.closeDetail')"
             >
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -273,13 +273,13 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
             <button v-if="loadError" class="ml-2 underline" @click="loadMessages">{{ t('common.retry') }}</button>
           </div>
           <!-- 加载中骨架屏 -->
-          <div v-if="isLoading && !messages.length" class="py-12 flex flex-col items-center justify-center gap-3 text-gray-400">
+          <div v-if="isLoading && !messages.length" class="py-12 flex flex-col items-center justify-center gap-3 text-zinc-400">
             <div class="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
             <span class="text-xs font-medium">{{ t('chat.subSession.loadingTrajectory') }}</span>
           </div>
 
           <!-- 加载失败状态（区别于「确实为空」，可重试） -->
-          <div v-else-if="loadError && !messages.length" class="py-16 text-center text-gray-400 text-xs flex flex-col items-center gap-3">
+          <div v-else-if="loadError && !messages.length" class="py-16 text-center text-zinc-400 text-xs flex flex-col items-center gap-3">
             <div class="w-12 h-12 rounded-full flex items-center justify-center bg-red-500/10 text-red-400">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -296,8 +296,8 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
           </div>
 
           <!-- 空列表状态 -->
-          <div v-else-if="messages.length === 0" class="py-16 text-center text-gray-400 text-xs">
-            <div class="w-12 h-12 mx-auto mb-3 rounded-full flex items-center justify-center bg-gray-500/10 text-gray-400">
+          <div v-else-if="messages.length === 0" class="py-16 text-center text-zinc-400 text-xs">
+            <div class="w-12 h-12 mx-auto mb-3 rounded-full flex items-center justify-center bg-gray-500/10 text-zinc-400">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
@@ -313,7 +313,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
               class="flex flex-col gap-2"
             >
               <!-- 角色标识与时间 -->
-              <div class="flex items-center gap-2 text-xs text-gray-400 select-none">
+              <div class="flex items-center gap-2 text-xs text-zinc-400 select-none">
                 <span :class="['font-medium px-2 py-0.5 rounded text-[11px]', msg.role === 'user' ? (isDark ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-50 text-blue-700') : (isDark ? 'bg-purple-900/30 text-purple-300' : 'bg-purple-50 text-purple-700')]">
                   {{ msg.role === 'user' ? t('chat.subSession.managerInstruction') : displayAgentName }}
                 </span>
@@ -368,14 +368,14 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                     type="button"
                     :disabled="!hasToolDetail(tc)"
                     @click="toggleToolCall(tc.id)"
-                    class="w-full p-2.5 flex items-center justify-between text-gray-400 transition select-none text-left"
+                    class="w-full p-2.5 flex items-center justify-between text-zinc-400 transition select-none text-left"
                     :class="hasToolDetail(tc) ? 'hover:text-zinc-200 cursor-pointer' : 'cursor-default'"
                   >
                     <div class="flex items-center gap-2 truncate min-w-0">
                       <!-- 与主过程框同一规则：无详情时留出箭头位，避免指示灯列左移 -->
                       <svg
                         v-if="hasToolDetail(tc)"
-                        :class="['w-3.5 h-3.5 text-gray-400 transition-transform duration-200 shrink-0', expandedToolCallIds[tc.id] ? 'rotate-90' : '']"
+                        :class="['w-3.5 h-3.5 text-zinc-400 transition-transform duration-200 shrink-0', expandedToolCallIds[tc.id] ? 'rotate-90' : '']"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"

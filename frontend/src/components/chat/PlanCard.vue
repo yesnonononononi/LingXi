@@ -148,7 +148,7 @@ const decide = async (approved: boolean) => {
           <button
             type="button"
             @click="isAddingTip = false"
-            class="text-[11px] text-lx-muted hover:text-lx-secondary cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50"
+            class="text-[11px] text-lx-muted hover:text-lx-secondary cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50"
           >
                         {{ t('common.collapse') }}
           </button>
@@ -161,7 +161,7 @@ const decide = async (approved: boolean) => {
             'w-full text-xs sm:text-sm px-3 py-2 rounded-xl border outline-none transition resize-none',
             isDark
               ? 'bg-[#1a2130] border-gray-700 text-zinc-200 placeholder-gray-500 focus:border-blue-500'
-              : 'bg-zinc-50 border-zinc-200 text-gray-800 placeholder-gray-400 focus:border-blue-500'
+              : 'bg-zinc-50 border-zinc-200 text-gray-800 placeholder-zinc-400 focus:border-blue-500'
           ]"
         ></textarea>
       </div>
@@ -180,8 +180,8 @@ const decide = async (approved: boolean) => {
           type="button"
           @click="goToChatInput"
           :class="[
-            'text-xs sm:text-sm font-normal transition flex items-center gap-1.5 cursor-pointer rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50',
-            isDark ? 'text-gray-400 hover:text-zinc-200' : 'text-gray-600 hover:text-gray-900'
+            'text-xs sm:text-sm font-normal transition flex items-center gap-1.5 cursor-pointer rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50',
+            isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-gray-600 hover:text-gray-900'
           ]"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -197,7 +197,7 @@ const decide = async (approved: boolean) => {
             type="button"
             @click="toggleTipInput"
             :class="[
-              'px-3.5 py-1.5 rounded-xl border text-xs sm:text-sm font-normal transition cursor-pointer flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50',
+              'px-3.5 py-1.5 rounded-xl border text-xs sm:text-sm font-normal transition cursor-pointer flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50',
               isAddingTip
                 ? (isDark ? 'border-amber-500/50 bg-amber-500/10 text-amber-400' : 'border-amber-400 bg-amber-50 text-amber-700')
                 : (isDark ? 'border-gray-700 text-zinc-300 hover:bg-gray-800' : 'border-zinc-200 text-gray-700 hover:bg-zinc-50')

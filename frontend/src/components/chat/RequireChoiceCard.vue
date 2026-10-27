@@ -167,7 +167,7 @@ const handleSubmit = () => {
             v-if="isResolved"
             type="button"
             @click="isCollapsed = !isCollapsed"
-            class="p-1 text-gray-400 hover:text-lx-tertiary transition rounded-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50"
+            class="p-1 text-zinc-400 hover:text-lx-tertiary transition rounded-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50"
                         :title="isCollapsed ? t('common.expand') : t('common.collapse')"
                         :aria-label="isCollapsed ? t('chat.approval.expandCard') : t('chat.approval.collapseCard')"
           >
@@ -180,7 +180,7 @@ const handleSubmit = () => {
             v-if="isResolved"
             type="button"
             @click="isDismissed = true"
-            class="p-1 text-gray-400 hover:text-lx-tertiary transition rounded-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/50"
+            class="p-1 text-zinc-400 hover:text-lx-tertiary transition rounded-md cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50"
                         :title="t('common.close')"
             :aria-label="t('chat.approval.closeCard')"
           >
@@ -235,7 +235,7 @@ const handleSubmit = () => {
                     'w-6 h-6 rounded-md flex items-center justify-center text-xs font-semibold flex-shrink-0 transition-colors mt-0.5 sm:mt-0',
                     selectedIndex === idx
                       ? 'bg-blue-600 text-white'
-                      : (isDark ? 'bg-gray-800 text-gray-400 group-hover:text-zinc-200' : 'bg-[#eef2f6] text-gray-500 group-hover:text-gray-700')
+                      : (isDark ? 'bg-gray-800 text-zinc-400 group-hover:text-zinc-200' : 'bg-[#eef2f6] text-gray-500 group-hover:text-gray-700')
                   ]"
                 >
                   {{ idx + 1 }}
@@ -263,7 +263,7 @@ const handleSubmit = () => {
                     'w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 transition-colors',
                     isCustomSelected
                       ? 'bg-blue-600 text-white'
-                      : (isDark ? 'bg-gray-800 text-gray-400' : 'bg-[#eef2f6] text-gray-400')
+                      : (isDark ? 'bg-gray-800 text-zinc-400' : 'bg-[#eef2f6] text-zinc-400')
                   ]"
                 >
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -279,7 +279,7 @@ const handleSubmit = () => {
                   type="text"
                   :placeholder="t('chat.choice.customAnswerPlaceholder')"
                   :class="[
-                    'w-full text-[13px] bg-transparent outline-none placeholder:text-gray-400',
+                    'w-full text-[13px] bg-transparent outline-none placeholder:text-zinc-400',
                     'text-lx-primary-soft'
                   ]"
                 />

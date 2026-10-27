@@ -81,7 +81,7 @@ const handleClearSessions = async () => {
         <div class="text-xs font-semibold text-lx-primary-soft dark:text-glow-subtle tracking-wide">
           {{ t('settings.data.storageTitle') }}
         </div>
-        <p class="text-[11px] text-gray-400 mt-0.5">
+        <p class="text-[11px] text-zinc-400 mt-0.5">
           {{ t('settings.data.storageDesc') }}
         </p>
       </div>
@@ -92,7 +92,7 @@ const handleClearSessions = async () => {
           <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">
             {{ t('settings.data.dataDirLabel') }}
           </span>
-          <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">
+          <span class="text-[11px] text-zinc-400 dark:text-zinc-400 mt-0.5">
             {{ t('settings.data.dataDirDesc') }}
           </span>
           <span
@@ -119,7 +119,7 @@ const handleClearSessions = async () => {
           <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">
             {{ t('settings.data.skillDirLabel') }}
           </span>
-          <span class="text-[11px] text-gray-400 dark:text-zinc-400 mt-0.5">
+          <span class="text-[11px] text-zinc-400 dark:text-zinc-400 mt-0.5">
             {{ t('settings.data.skillDirDesc') }}
           </span>
           <span

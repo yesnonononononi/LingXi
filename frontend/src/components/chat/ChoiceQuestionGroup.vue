@@ -126,28 +126,28 @@ async function submit() {
         <template v-if="entries.length > 1">
           <button type="button" :disabled="activeIndex <= 0" :aria-label="t('chat.choice.previous')"
             class="rounded-md p-1 transition disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default"
-            :class="isDark ? 'text-gray-400 hover:bg-white/10 hover:text-white' : 'text-gray-400 hover:bg-zinc-100 hover:text-gray-600'"
+            :class="isDark ? 'text-zinc-400 hover:bg-white/10 hover:text-white' : 'text-zinc-400 hover:bg-zinc-100 hover:text-gray-600'"
             data-testid="choice-previous" @click="navigate(-1)">
             <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m15 5-7 7 7 7" /></svg>
           </button>
           <span class="min-w-8 text-center text-xs tabular-nums" :class="isDark ? 'text-zinc-300 text-glow-subtle' : 'text-gray-500'" role="status">{{ activeIndex + 1 }} / {{ total }}</span>
           <button type="button" :disabled="activeIndex >= entries.length - 1" :aria-label="t('chat.choice.next')"
             class="rounded-md p-1 transition disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer disabled:cursor-default"
-            :class="isDark ? 'text-gray-400 hover:bg-white/10 hover:text-white' : 'text-gray-400 hover:bg-zinc-100 hover:text-gray-600'"
+            :class="isDark ? 'text-zinc-400 hover:bg-white/10 hover:text-white' : 'text-zinc-400 hover:bg-zinc-100 hover:text-gray-600'"
             data-testid="choice-next" @click="navigate(1)">
             <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 5 7 7-7 7" /></svg>
           </button>
         </template>
         <button v-if="closable" type="button" :title="t('common.close')" :aria-label="t('common.close')"
           class="ml-1 rounded-md p-1 transition cursor-pointer"
-          :class="isDark ? 'text-gray-400 hover:bg-white/10 hover:text-white' : 'text-gray-400 hover:bg-zinc-100 hover:text-gray-600'"
+          :class="isDark ? 'text-zinc-400 hover:bg-white/10 hover:text-white' : 'text-zinc-400 hover:bg-zinc-100 hover:text-gray-600'"
           data-testid="choice-dismiss" @click="dismissed = true">
           <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18 18 6M6 6l12 12" /></svg>
         </button>
       </div>
     </header>
     <div v-if="active && draft" :id="`question-${active.toolCallId}`" class="px-4 pb-3">
-      <div v-if="active.status === 'completed'" class="whitespace-pre-wrap break-words text-sm" :class="isDark ? 'text-gray-400 text-glow-subtle' : 'text-gray-500'" data-testid="choice-confirmed-answer">
+      <div v-if="active.status === 'completed'" class="whitespace-pre-wrap break-words text-sm" :class="isDark ? 'text-zinc-400 text-glow-subtle' : 'text-gray-500'" data-testid="choice-confirmed-answer">
         <template v-if="active.outcome === 'ANSWERED'">{{ t('chat.choice.confirmedDecision') }}{{ active.answer }}</template>
         <template v-else>{{ resolveCardStatusLabel(active) }}</template>
       </div>
@@ -178,7 +178,7 @@ async function submit() {
             : (isDark ? 'border-white/10 hover:border-white/40 hover:bg-white/5' : 'border-zinc-100 hover:border-blue-200 hover:bg-blue-50/50')"
           role="presentation" data-testid="choice-custom-toggle" @click="activateCustom">
           <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md transition-colors"
-            :class="draft.useCustom ? 'bg-white text-gray-900 shadow-[0_0_12px_rgba(255,255,255,0.60)]' : (isDark ? 'bg-white/10 text-zinc-300' : 'bg-zinc-100 text-gray-400')">
+            :class="draft.useCustom ? 'bg-white text-gray-900 shadow-[0_0_12px_rgba(255,255,255,0.60)]' : (isDark ? 'bg-white/10 text-zinc-300' : 'bg-zinc-100 text-zinc-400')">
             <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
           </span>
           <!-- rows=1 + resize-none：外观是输入行，粘贴多行仍原样保留 -->
@@ -193,7 +193,7 @@ async function submit() {
     <footer v-if="pending.length || error" class="space-y-2 border-t px-4 py-3" :class="isDark ? 'border-white/10' : 'border-zinc-100'">
       <p v-if="error" :class="['text-xs', CARD_ERROR_TEXT_CLASS]" role="alert">{{ error }}</p>
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <span class="text-xs" :class="isDark ? 'text-gray-400 text-glow-subtle' : 'text-gray-500'">{{ !ready ? t('chat.choice.groupPreparing') : (canSubmit ? t('chat.choice.groupProgress', { answered, total }) : t('chat.choice.groupHint')) }}</span>
+        <span class="text-xs" :class="isDark ? 'text-zinc-400 text-glow-subtle' : 'text-gray-500'">{{ !ready ? t('chat.choice.groupPreparing') : (canSubmit ? t('chat.choice.groupProgress', { answered, total }) : t('chat.choice.groupHint')) }}</span>
         <CardActionButton tone="blue" :loading="submitting" :disabled="!canSubmit" :is-dark="isDark" data-testid="choice-submit-all" @click="submit">{{ t('chat.choice.submitAll') }}</CardActionButton>
       </div>
     </footer>

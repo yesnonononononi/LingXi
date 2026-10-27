@@ -30,9 +30,9 @@
         "borderBottomColor": "rgb(153, 161, 175)"
       },
       "sidebarHistoryTitle": {
-        "color": "rgb(153, 161, 175)",
-        "borderTopColor": "rgb(153, 161, 175)",
-        "borderBottomColor": "rgb(153, 161, 175)"
+        "color": "rgb(159, 159, 169)",
+        "borderTopColor": "rgb(159, 159, 169)",
+        "borderBottomColor": "rgb(159, 159, 169)"
       },
       "cmiBubble": {},
       "cmiBody": {},

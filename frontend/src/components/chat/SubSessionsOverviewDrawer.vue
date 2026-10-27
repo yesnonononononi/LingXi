@@ -70,7 +70,7 @@ const emit = defineEmits<{
                   {{ t('chat.subSessions.count', { count: subSessions.length }) }}
                 </span>
               </div>
-              <p class="text-xs text-gray-400 dark:text-zinc-400 dark:text-glow-subtle mt-0.5">
+              <p class="text-xs text-zinc-400 dark:text-zinc-400 dark:text-glow-subtle mt-0.5">
                 {{ t('chat.subSessions.desc') }}
               </p>
             </div>
@@ -78,7 +78,7 @@ const emit = defineEmits<{
 
           <button
             @click="emit('close')"
-            :class="['p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200 hover:bg-white/5 transition cursor-pointer']"
+            :class="['p-1.5 rounded-lg text-zinc-400 hover:text-gray-600 dark:hover:text-zinc-200 hover:bg-white/5 transition cursor-pointer']"
             :title="t('chat.subSessions.closeTip')"
           >
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -97,7 +97,7 @@ const emit = defineEmits<{
         <div class="flex-1 overflow-y-auto p-6 space-y-3.5 scrollbar-thin">
           <div
             v-if="subSessions.length === 0"
-            class="py-16 text-center text-gray-400 text-xs flex flex-col items-center justify-center gap-2"
+            class="py-16 text-center text-zinc-400 text-xs flex flex-col items-center justify-center gap-2"
           >
             <svg class="w-10 h-10 text-gray-500/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
@@ -150,7 +150,7 @@ const emit = defineEmits<{
               </div>
             </div>
 
-            <div class="mt-3 pt-2.5 border-t border-gray-500/15 flex items-center justify-between text-[11px] text-gray-400">
+            <div class="mt-3 pt-2.5 border-t border-gray-500/15 flex items-center justify-between text-[11px] text-zinc-400">
               <span>
                 {{ sub.messageCount ? t('chat.subSessions.messageCount', { count: sub.messageCount }) : t('chat.subSessions.archived') }}
               </span>

@@ -165,7 +165,7 @@ const toolStatusDotClass = (status?: string): string => {
       return 'bg-red-500';
 
     case 'unknown':
-      return 'bg-gray-400';
+      return 'bg-zinc-400';
 
     default:
       return 'bg-emerald-500';
@@ -234,7 +234,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                 :class="isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-500 hover:text-zinc-700'"
               >
                 <svg
-                  :class="['w-3 h-3 transition-transform duration-200 shrink-0', isThoughtStepExpanded(item.step) ? 'rotate-90' : '', isDark ? 'text-zinc-300 drop-shadow-[0_0_4px_rgba(255,255,255,0.4)]' : 'text-gray-400']"
+                  :class="['w-3 h-3 transition-transform duration-200 shrink-0', isThoughtStepExpanded(item.step) ? 'rotate-90' : '', isDark ? 'text-zinc-300 drop-shadow-[0_0_4px_rgba(255,255,255,0.4)]' : 'text-zinc-400']"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -308,7 +308,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                       {{ t('chat.message.membersWorking', { count: item.subAgents.length }) }}
                     </span>
                   </div>
-                  <p class="text-[11px] text-gray-400 whitespace-nowrap">{{ t('chat.message.trajectoryOnRight') }}</p>
+                  <p class="text-[11px] text-zinc-400 whitespace-nowrap">{{ t('chat.message.trajectoryOnRight') }}</p>
                 </div>
               </div>
 
@@ -352,7 +352,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                   <!-- 箭头列恒定占位：读文件没有详情不渲染箭头，缺了这格图标会左移一格，与可展开行的图标列对不齐 -->
                   <button v-if="canExpandTool(item.tool)" type="button" class="shrink-0 cursor-pointer" :aria-expanded="!!expandedToolIds[item.tool.id]" :aria-label="t('chat.message.viewToolDetail', { category: resolveToolRenderName(item.tool.toolName) })" @click.stop="toggleToolCall(item.tool.id)">
                   <svg
-                    :class="['w-3.5 h-3.5 transition-transform duration-200 shrink-0', expandedToolIds[item.tool.id] ? 'rotate-90' : '', isDark ? 'text-zinc-300 drop-shadow-[0_0_4px_rgba(255,255,255,0.4)]' : 'text-gray-400']"
+                    :class="['w-3.5 h-3.5 transition-transform duration-200 shrink-0', expandedToolIds[item.tool.id] ? 'rotate-90' : '', isDark ? 'text-zinc-300 drop-shadow-[0_0_4px_rgba(255,255,255,0.4)]' : 'text-zinc-400']"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -390,14 +390,14 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                       :title="canPreviewFile(item.tool) ? t('chat.message.previewFile') : undefined"
                       @click.stop="openFilePreview?.(props.sessionId, getToolTarget(item.tool))"
                       class="border-b border-dotted font-mono text-[12.5px] pb-px transition-colors truncate min-w-0"
-                      :class="isDark ? 'border-white/30 text-zinc-200 text-glow-subtle' : 'border-gray-400 text-gray-700'"
+                      :class="isDark ? 'border-white/30 text-zinc-200 text-glow-subtle' : 'border-zinc-400 text-gray-700'"
                     >
                       {{ cleanDisplayPath(getToolTarget(item.tool)) }}
                     </button>
                     <span
                       v-if="getToolLineRange(item.tool)"
                       class="font-mono text-[11.5px] shrink-0 select-none"
-                      :class="isDark ? 'text-zinc-400' : 'text-gray-400'"
+                      :class="isDark ? 'text-zinc-400' : 'text-zinc-400'"
                     >
                       {{ getToolLineRange(item.tool) }}
                     </span>
@@ -469,7 +469,7 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                         <button
                           type="button"
                           @click.stop="copyToolContent(unwrapToolResultEnvelope(item.tool.result), item.tool.id)"
-                          class="text-xs text-gray-400 hover:text-lx-secondary transition px-1 py-0.5 select-none flex-shrink-0 cursor-pointer"
+                          class="text-xs text-zinc-400 hover:text-lx-secondary transition px-1 py-0.5 select-none flex-shrink-0 cursor-pointer"
                         >
                           {{ toolCopiedId === item.tool.id ? t('common.copied') : t('common.copy') }}
                         </button>
@@ -501,12 +501,12 @@ const getEditFileDiffChunks = (tc: ToolCallTrace) => {
                           <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
                                                     <span>{{ t('chat.message.awaitingDecision') }}</span>
                         </div>
-                        <div v-else-if="isToolInProgress(item.tool.status)" class="font-mono text-xs text-gray-400">{{ t('chat.message.toolInProgress') }}</div>
+                        <div v-else-if="isToolInProgress(item.tool.status)" class="font-mono text-xs text-zinc-400">{{ t('chat.message.toolInProgress') }}</div>
                         <pre
                           v-else-if="shouldShowToolArguments(item.tool.toolName) && item.tool.query"
-                          :class="['font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto select-text', isDark ? 'text-gray-400' : 'text-gray-600']"
+                          :class="['font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto select-text', isDark ? 'text-zinc-400' : 'text-gray-600']"
                         >{{ item.tool.query }}</pre>
-                        <div v-else class="text-xs text-gray-400 font-mono">
+                        <div v-else class="text-xs text-zinc-400 font-mono">
                                                     {{ t('chat.message.noOutput') }}
                         </div>
                       </div>

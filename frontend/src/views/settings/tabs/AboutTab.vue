@@ -180,7 +180,7 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
             type="button"
             disabled
             class="px-3 py-2 rounded-xl text-xs font-medium bg-transparent cursor-not-allowed"
-            :class="isDark ? 'text-zinc-600' : 'text-gray-400'"
+            :class="isDark ? 'text-zinc-600' : 'text-zinc-400'"
           >
                         {{ t('settings.about.desktopOnly') }}
           </button>
