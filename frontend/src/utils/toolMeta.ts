@@ -17,6 +17,7 @@ export const TOOL_CATEGORY = {
   PEEK: 'PEEK',
   THINK: 'THINK',
   PLAN: 'PLAN',
+  CHECKLIST: 'CHECKLIST',
   MAIL: 'MAIL',
   COMPACT: 'COMPACT',
   TOOL_SEARCH: 'TOOL_SEARCH',
@@ -40,6 +41,11 @@ const KNOWN_TOOL_CATEGORY: Partial<Record<AgentToolName, string>> = {
   [AgentToolName.RequireChoice]: TOOL_CATEGORY.CHOICE,
   // 计划书
   [AgentToolName.CreatePlan]: TOOL_CATEGORY.PLAN,
+  // 执行清单：执行期可维护的待办，与计划书审批分属不同分类
+  [AgentToolName.CreateChecklist]: TOOL_CATEGORY.CHECKLIST,
+  [AgentToolName.UpdateChecklistStep]: TOOL_CATEGORY.CHECKLIST,
+  [AgentToolName.ModifyChecklist]: TOOL_CATEGORY.CHECKLIST,
+  [AgentToolName.DeleteChecklist]: TOOL_CATEGORY.CHECKLIST,
   // 子代理
   [AgentToolName.CallSubAgent]: TOOL_CATEGORY.SUB_AGENT,
   // 查看队员状态（只读观测，与委派分属两类）
@@ -68,6 +74,7 @@ const TOOL_CATEGORY_LABEL_KEY: Record<string, string> = {
   [TOOL_CATEGORY.PEEK]: 'tool.category.peek',
   [TOOL_CATEGORY.THINK]: 'tool.category.think',
   [TOOL_CATEGORY.PLAN]: 'tool.category.plan',
+  [TOOL_CATEGORY.CHECKLIST]: 'tool.category.checklist',
   [TOOL_CATEGORY.MAIL]: 'tool.category.mail',
   [TOOL_CATEGORY.COMPACT]: 'tool.category.compact',
   [TOOL_CATEGORY.TOOL_SEARCH]: 'tool.category.toolSearch',

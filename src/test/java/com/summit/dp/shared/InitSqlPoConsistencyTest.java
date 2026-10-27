@@ -62,12 +62,18 @@ class InitSqlPoConsistencyTest {
             com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO.class,
             com.summit.dp.email.infrastructure.persistence.po.EmailPO.class,
             com.summit.dp.email.infrastructure.persistence.po.EmailMessagePO.class,
-            com.summit.dp.mcp.infrastructure.persistence.po.McpPO.class);
+            com.summit.dp.mcp.infrastructure.persistence.po.McpPO.class,
+            com.summit.dp.checklist.infrastructure.persistence.po.ChecklistPO.class,
+            com.summit.dp.checklist.infrastructure.persistence.po.ChecklistStepPO.class);
 
     /** 捕获 {@code CREATE TABLE <name> ( ... ) ENGINE ...} 块；DOTALL 让列定义可跨行。 */
     private static final Pattern CREATE_TABLE = Pattern.compile(
             "CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?`?(\\w+)`?\\s*\\((.*?)\\)\\s*ENGINE",
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
+    /** 表级约束/索引行：首词是这些关键字时必须按词边界匹配，否则 CHECKLIST_ID 会被当成 CHECK。 */
+    private static final Pattern TABLE_CONSTRAINT = Pattern.compile(
+            "^(PRIMARY|UNIQUE|KEY|INDEX|CONSTRAINT|FOREIGN|CHECK)\\b", Pattern.CASE_INSENSITIVE);
 
     @Test
     @DisplayName("每个持久化 PO 的字段都必须在 init.sql 对应表中存在同名列")
@@ -118,10 +124,9 @@ class InitSqlPoConsistencyTest {
                 continue;
             }
             String upper = line.toUpperCase(Locale.ROOT);
-            if (upper.startsWith("PRIMARY") || upper.startsWith("UNIQUE") || upper.startsWith("KEY")
-                    || upper.startsWith("INDEX") || upper.startsWith("CONSTRAINT")
-                    || upper.startsWith("FOREIGN") || upper.startsWith("CHECK")
-                    || upper.startsWith("(")) {
+            // 表级约束/索引整行跳过；判定必须带词边界：CHECKLIST_ID 曾因 startsWith("CHECK") 被误判成约束行，
+            // 于是 checklist_step.checklist_id 在整个断言里凭空消失（列真在，解析器看不见）。
+            if (line.startsWith("(") || TABLE_CONSTRAINT.matcher(upper).find()) {
                 continue;
             }
             // 列名取该行第一个 token（列定义形如 "col TYPE ..."，类型与注释在同行）

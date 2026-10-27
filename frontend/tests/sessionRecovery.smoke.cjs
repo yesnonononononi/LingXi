@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { app, BrowserWindow } = require('electron');
 
-const output = path.resolve(__dirname, '../node_modules/.tmp/session-recovery');
+const output = path.resolve(__dirname, '../.run/session-recovery');
 app.setPath('userData', path.join(output, 'profile'));
 app.on('window-all-closed', () => {});
 const deadline = setTimeout(() => { console.error('会话恢复验证超时'); app.exit(1); }, 90000);
@@ -12,15 +12,15 @@ app.whenReady().then(async () => {
   await fs.mkdir(output, { recursive: true });
   await fs.writeFile(path.join(output, 'App.vue'), `<script setup>
 import { reactive, ref, computed, nextTick } from 'vue';
-import SessionConnectionNotice from '../../../src/components/chat/SessionConnectionNotice.vue';
-import SubAgentSidePanel from '../../../src/components/chat/SubAgentSidePanel.vue';
-import SubSessionDetailDrawer from '../../../src/components/chat/SubSessionDetailDrawer.vue';
-import { SessionEventStream } from '../../../src/views/chat/sessionEventStream';
-import { StreamSessionRouter } from '../../../src/views/chat/streamSessionRouter';
-import { useChatSubSession } from '../../../src/views/chat/useChatSubSession';
-import { chatApi } from '../../../src/services/chat';
-import { setPreference } from '../../../src/i18n';
-import '../../../src/style.css';
+import SessionConnectionNotice from '../../src/components/chat/SessionConnectionNotice.vue';
+import SubAgentSidePanel from '../../src/components/chat/SubAgentSidePanel.vue';
+import SubSessionDetailDrawer from '../../src/components/chat/SubSessionDetailDrawer.vue';
+import { SessionEventStream } from '../../src/views/chat/sessionEventStream';
+import { StreamSessionRouter } from '../../src/views/chat/streamSessionRouter';
+import { useChatSubSession } from '../../src/views/chat/useChatSubSession';
+import { chatApi } from '../../src/services/chat';
+import { setPreference } from '../../src/i18n';
+import '../../src/style.css';
 setPreference('zh-CN');
 const root = reactive({ id: '7', title: '会话', messages: [], subSessions: [{ id: '8', name: '成员', rootSessionId: '7', messages: [] }] });
 const sub = root.subSessions[0];

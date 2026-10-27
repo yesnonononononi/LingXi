@@ -361,3 +361,37 @@ CREATE TABLE IF NOT EXISTS task (
     KEY idx_task_session (session_id, id),
     KEY idx_task_execution (session_id, execution_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='后台命令任务';
+
+-- ------------------------------------------------------------
+-- 10. Agent 执行清单（清单 + 步骤；多步任务的可维护待办，不是审批计划书）
+--     唯一性策略：active_session_key 是数据库维护的生成列 ——
+--     ACTIVE 时等于 session_id，其余状态为 NULL。
+--     H2 的唯一索引允许多行 NULL，于是「每个会话至多一份活动清单」
+--     由数据库裁决，而不是靠应用「先查再插」。
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS checklist (
+    id                        BIGINT       NOT NULL PRIMARY KEY COMMENT '应用生成的雪花 ID',
+    session_id                BIGINT       NOT NULL COMMENT '所属会话；子会话各持自己的清单',
+    agent_id                  BIGINT       NULL COMMENT '创建清单的 Agent ID，仅作记录，不参与归属判定',
+    title                     VARCHAR(200) NOT NULL COMMENT '清单标题',
+    status                    VARCHAR(16)  NOT NULL COMMENT 'ACTIVE/COMPLETED/UNFINISHED/DELETED',
+    remind_status             BOOLEAN      NOT NULL DEFAULT FALSE COMMENT '本进展版本是否已用过提醒额度',
+    progress_version          BIGINT       NOT NULL DEFAULT 0 COMMENT '步骤实际推进次数；结构修改不递增',
+    remind_execution_id       BIGINT       NULL COMMENT '提醒归属的执行 ID',
+    reminded_progress_version BIGINT       NULL COMMENT '提醒发生时的进展版本',
+    active_session_key        BIGINT       GENERATED ALWAYS AS (CASE WHEN status = 'ACTIVE' THEN session_id ELSE NULL END) COMMENT '派生列：ACTIVE 时为 session_id，其余为 NULL',
+    create_at                 TIMESTAMP    NOT NULL COMMENT '创建时间',
+    update_at                 TIMESTAMP    NOT NULL COMMENT '更新时间',
+    UNIQUE KEY uk_checklist_active_session (active_session_key),
+    KEY idx_checklist_session (session_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent 执行清单；每会话至多一份 ACTIVE';
+
+CREATE TABLE IF NOT EXISTS checklist_step (
+    id           BIGINT       NOT NULL PRIMARY KEY COMMENT '应用生成的雪花 ID，稳定标识',
+    checklist_id BIGINT       NOT NULL COMMENT '所属清单 ID',
+    seq          INTEGER      NOT NULL COMMENT '展示顺序，从 1 开始；重排会改写但 ID 不变',
+    content      VARCHAR(500) NOT NULL COMMENT '步骤内容',
+    status       VARCHAR(16)  NOT NULL COMMENT 'PENDING/COMPLETED/FAILED/SKIPPED',
+    update_at    TIMESTAMP    NOT NULL COMMENT '更新时间',
+    KEY idx_checklist_step_order (checklist_id, seq)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='执行清单步骤';
