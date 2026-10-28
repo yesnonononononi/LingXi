@@ -21,4 +21,15 @@ public class ChecklistController {
     public Result<ChecklistVO> current(@RequestParam Long sessionId) {
         return Result.success(service.findCurrent(sessionId).orElse(null));
     }
+
+    /**
+     * 界面常驻入口：返回会话最近一份清单，**包含已软删**，供用户审计。
+     *
+     * <p>与 {@code /current} 的差别写在服务层注释里：那条是「还能不能继续干」，这条是「发生过什么」。
+     * 两个口径不能合并——合并后要么卡片删除即消失，要么已删清单被误当成活动清单。</p>
+     */
+    @GetMapping("/latest")
+    public Result<ChecklistVO> latest(@RequestParam Long sessionId) {
+        return Result.success(service.findLatestForDisplay(sessionId).orElse(null));
+    }
 }

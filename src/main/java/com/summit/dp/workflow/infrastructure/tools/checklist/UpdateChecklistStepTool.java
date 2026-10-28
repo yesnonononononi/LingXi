@@ -37,6 +37,7 @@ import org.springframework.stereotype.Component;
         已收口清单需显式传入 checklistId；状态变更后仍有未结束步骤时重新激活，会话内不能另有活动清单。
         DELETED 清单不可修改；同状态重试只返回既有状态的回执，不刷新时间或提醒额度。
         PENDING 和 IN_PROGRESS 不算实际完成进展，不刷新提醒额度。
+        有未结束步骤时汇总为 ACTIVE；全部成功才是 COMPLETED，结案后含失败为 FAILED，否则含跳过为 CLOSED。
         上报终态结果时可传 continueNextStep=true，在同一事务中将当前顺序之后的第一个未结束步骤标为 IN_PROGRESS，
         自动跳过终态步骤；没有后续步骤时只更新当前结果。默认 false；回退状态时不能启用。
         同状态重试不会启动其他步骤；只返回状态统计、本步骤及后续步骤的标识与状态，不回传完整正文。

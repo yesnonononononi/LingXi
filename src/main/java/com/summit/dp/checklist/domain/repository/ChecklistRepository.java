@@ -31,6 +31,14 @@ public interface ChecklistRepository extends RepositoryTemplate<Checklist, Long>
     /** 最新清单保留终态；删除后不让历史清单重新冒出。 */
     Optional<Checklist> findCurrentBySessionId(long sessionId);
 
+    /**
+     * 会话最近一份清单，**不按状态过滤**（含已软删）。
+     *
+     * <p>与 {@link #findCurrentBySessionId(long)} 的分工是本次设计要点：那条是「还能不能继续干活」，
+     * 这条是「用户要看历史」。混用一个查询会让卡片在删除后凭空消失，或者让已删清单重新变成活动清单。</p>
+     */
+    Optional<Checklist> findLatestBySessionId(long sessionId);
+
     /** 会话当前的活动清单（含步骤），行级加锁；写入路径必须走它。 */
     Optional<Checklist> findActiveBySessionIdForUpdate(long sessionId);
 

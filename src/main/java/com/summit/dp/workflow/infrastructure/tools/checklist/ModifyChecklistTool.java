@@ -34,9 +34,11 @@ import java.util.List;
     name = ToolCatalog.MODIFY_CHECKLIST,
     executor = ModifyChecklistTool.class,
     description = """
-        修改 ACTIVE 执行清单的标题、步骤文案、结构和顺序。
+        修改任意未删除执行清单的标题、步骤文案、结构和顺序；已收口清单需显式传入 checklistId。
         删除步骤必须显式提供 removeStepIds；未提供的步骤保留，已有 stepId 和状态不随改文案变化。
         新增步骤从 PENDING 开始；不能删光步骤，orderedStepIds 必须恰好覆盖修改后的全部步骤。
+        实际变更后仍有未结束步骤时重新激活；会话内不能同时存在另一份活动清单，空补丁不会重新激活。
+        汇总状态按步骤派生：全部成功为 COMPLETED，含失败为 FAILED，无失败但有跳过为 CLOSED。
         本工具不产生审批卡片；需要用户批准计划时使用 create_plan。
         只返回清单标识与状态统计，需要修改后的步骤标识、顺序或完整内容时调用 get_current_checklist。
         """,
@@ -46,7 +48,7 @@ import java.util.List;
           "properties": {
             "checklistId": {
               "type": "integer",
-              "description": "Checklist id from a previous snapshot; omit to use this session's ACTIVE checklist."
+              "description": "权威清单标识；已收口清单必须提供，省略时仅定位活动清单。"
             },
             "newTitle": {
               "type": "string",

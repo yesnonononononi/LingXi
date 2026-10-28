@@ -10,6 +10,7 @@ import com.summit.dp.checklist.application.ChecklistVO;
 import com.summit.dp.checklist.domain.model.ChecklistRules;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.shared.exception.ClientException;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -103,6 +104,37 @@ class ChecklistToolOutputTest {
         ToolExecuteResult result = new GetCurrentChecklistTool(json, service).execute(execution(Map.of()));
         assertFalse(result.isSuccess());
         assertEquals("清单会话标识无效", result.getToolOutput());
+    }
+
+    @Test
+    @DisplayName("get_checklist 按标识回放完整历史，包括已删除清单")
+    void auditQueryReturnsTheFullSnapshotIncludingDeletedHistory() throws Exception {
+        ChecklistVO deleted = snapshot(3);
+        deleted.setStatus("DELETED");
+        when(service.findById(SESSION, 99L)).thenReturn(Optional.of(deleted));
+
+        ToolExecuteResult result = new GetChecklistTool(json, service).execute(execution(Map.of("checklistId", 99L)));
+
+        assertTrue(result.isSuccess(), result.getToolOutput());
+        JsonNode checklist = json.readTree(result.getToolOutput()).path("checklist");
+        assertEquals(99L, checklist.path("checklistId").asLong());
+        assertEquals("DELETED", checklist.path("status").asText());
+        assertEquals(3, checklist.path("steps").size());
+        verify(service).findById(SESSION, 99L);
+        verifyNoMoreInteractions(service);
+    }
+
+    @Test
+    void auditQueryReturnsNullForAnUnknownIdAndKeepsSessionRejections() throws Exception {
+        when(service.findById(SESSION, 404L)).thenReturn(Optional.empty());
+        ToolExecuteResult empty = new GetChecklistTool(json, service).execute(execution(Map.of("checklistId", 404L)));
+        assertTrue(empty.isSuccess(), empty.getToolOutput());
+        assertTrue(json.readTree(empty.getToolOutput()).path("checklist").isNull());
+
+        when(service.findById(SESSION, 500L)).thenThrow(new ClientException("清单不属于当前会话，拒绝访问"));
+        ToolExecuteResult rejected = new GetChecklistTool(json, service).execute(execution(Map.of("checklistId", 500L)));
+        assertFalse(rejected.isSuccess());
+        assertEquals("清单不属于当前会话，拒绝访问", rejected.getToolOutput());
     }
 
     private ChecklistVO snapshot(int count) {

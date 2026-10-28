@@ -28,6 +28,8 @@ public interface ToolCatalog {
     /** 执行清单工具名：多步任务的可维护待办，与审批计划 {@link #CREATE_PLAN} 语义不同 */
     String CREATE_CHECKLIST = "create_checklist";
     String GET_CURRENT_CHECKLIST = "get_current_checklist";
+    /** 按 ID 审计任意状态（含已删除）的清单历史：只读，不参与「写工具自动补 reader」的注入。 */
+    String GET_CHECKLIST = "get_checklist";
     String UPDATE_CHECKLIST_STEP = "update_checklist_step";
     String MODIFY_CHECKLIST = "modify_checklist";
     String DELETE_CHECKLIST = "delete_checklist";
@@ -61,7 +63,8 @@ public interface ToolCatalog {
      */
     List<String> DEFAULT_AGENT_TOOLS =
             List.of(EXECUTE_COMMAND, MANAGE_COMMAND, READ_FILE, EDIT_FILE, WEB_SEARCH, REQUIRE_CHOICE,
-                    CREATE_CHECKLIST, GET_CURRENT_CHECKLIST, UPDATE_CHECKLIST_STEP, MODIFY_CHECKLIST, DELETE_CHECKLIST);
+                    CREATE_CHECKLIST, GET_CURRENT_CHECKLIST, GET_CHECKLIST, UPDATE_CHECKLIST_STEP, MODIFY_CHECKLIST,
+                    DELETE_CHECKLIST);
 
     /**
      * 工具检索工具名。实现归框架侧（{@code harness-kernel-tools} 的 {@link SearchToolExecutor}），

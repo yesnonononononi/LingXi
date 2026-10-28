@@ -161,8 +161,8 @@ class CollaborationToolExposureTest {
 
         assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE,
                         ToolCatalog.EDIT_FILE, ToolCatalog.WEB_SEARCH, ToolCatalog.REQUIRE_CHOICE,
-                        ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.UPDATE_CHECKLIST_STEP,
-                        ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST,
+                        ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST,
+                        ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST,
                         ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.SEARCH_TOOL),
                 request.getToolList(),
                 "基础工具包含用户确认与执行清单，外加两级 MCP 发现入口；协作工具不该出现");
@@ -175,8 +175,8 @@ class CollaborationToolExposureTest {
 
         assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE,
                         ToolCatalog.EDIT_FILE, ToolCatalog.WEB_SEARCH, ToolCatalog.REQUIRE_CHOICE,
-                        ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.UPDATE_CHECKLIST_STEP,
-                        ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST),
+                        ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST,
+                        ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST),
                 request.getToolList());
     }
 
@@ -184,10 +184,11 @@ class CollaborationToolExposureTest {
     @DisplayName("只读档位：禁用编辑工具，保留终端及只读工具")
     void readOnlyModeDisablesEditingAndKeepsTerminal() {
         AgentRequest request = request(null, null, ToolCatalog.DEFAULT_AGENT_TOOLS, REGISTERED, false,
-                AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of("read_file", "web_search", "require_choice", ToolCatalog.GET_CURRENT_CHECKLIST));
+                AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of("read_file", "web_search", "require_choice",
+                        ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST));
 
         assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE, ToolCatalog.WEB_SEARCH,
-                        ToolCatalog.REQUIRE_CHOICE, ToolCatalog.GET_CURRENT_CHECKLIST),
+                        ToolCatalog.REQUIRE_CHOICE, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST),
                 request.getToolList(), "只读档禁用 edit_file，终端不按并发策略被剔除");
     }
 

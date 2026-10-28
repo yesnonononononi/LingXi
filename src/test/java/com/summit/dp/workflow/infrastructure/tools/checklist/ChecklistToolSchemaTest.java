@@ -38,6 +38,7 @@ class ChecklistToolSchemaTest {
         Map<String, ToolDefinition<?>> definitions = new LinkedHashMap<>();
         definitions.put("createChecklistTool", definition(CreateChecklistTool.class));
         definitions.put("getCurrentChecklistTool", definition(GetCurrentChecklistTool.class));
+        definitions.put("getChecklistTool", definition(GetChecklistTool.class));
         definitions.put("updateChecklistStepTool", definition(UpdateChecklistStepTool.class));
         definitions.put("modifyChecklistTool", definition(ModifyChecklistTool.class));
         definitions.put("deleteChecklistTool", definition(DeleteChecklistTool.class));
@@ -112,7 +113,8 @@ class ChecklistToolSchemaTest {
     @DisplayName("工具描述写明与 create_plan 的边界，并说明何时才建清单")
     void descriptionsStateTheBoundaryWithCreatePlan() {
         for (Class<? extends ToolExecutor> type : List.of(CreateChecklistTool.class,
-                GetCurrentChecklistTool.class, UpdateChecklistStepTool.class, ModifyChecklistTool.class, DeleteChecklistTool.class)) {
+                GetCurrentChecklistTool.class, GetChecklistTool.class, UpdateChecklistStepTool.class,
+                ModifyChecklistTool.class, DeleteChecklistTool.class)) {
             String description = type.getAnnotation(com.summit.core.anno.Tool.class).description();
             assertTrue(description.toLowerCase().contains("create_plan"),
                     type.getSimpleName() + " 的描述必须点明与 create_plan 的边界");
@@ -129,8 +131,21 @@ class ChecklistToolSchemaTest {
     @DisplayName("默认 Agent 工具集包含全部清单工具：否则裸默认 Agent 无法使用")
     void defaultAgentToolsContainChecklistTools() {
         assertTrue(ToolCatalog.DEFAULT_AGENT_TOOLS.containsAll(List.of(
-                ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.UPDATE_CHECKLIST_STEP,
-                ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST)));
+                ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST,
+                ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST)));
+    }
+
+    @Test
+    @DisplayName("get_checklist 只读、必须给权威标识，且不接受会话标识")
+    void getChecklistIsReadOnlyAndRequiresTheAuthoritativeId() throws Exception {
+        JsonNode schema = buildSchema(GetChecklistTool.class);
+
+        assertEquals(List.of("checklistId"), resolveRequiredFields(schema));
+        assertEquals("integer", schema.path("properties").path("checklistId").path("type").asText());
+        assertTrue(schema.path("properties").path("sessionId").isMissingNode(),
+                "会话归属只能来自执行上下文，模型不能指定");
+        assertFalse(schema.path("additionalProperties").asBoolean(true));
+        assertEquals(ConcurrentPolicy.READ_ONLY, definition(GetChecklistTool.class).concurrentPolicy());
     }
 
     private JsonNode buildSchema(Class<? extends ToolExecutor> type) throws Exception {

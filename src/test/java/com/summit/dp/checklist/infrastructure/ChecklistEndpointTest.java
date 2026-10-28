@@ -44,4 +44,27 @@ class ChecklistEndpointTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data").doesNotExist());
         verify(service).findCurrent(sessionId + 1);
     }
+
+    @Test
+    void latestEndpointServesDeletedHistoryForAuditing() throws Exception {
+        long sessionId = 9007199254740993L;
+        ChecklistService service = mock(ChecklistService.class);
+        ChecklistVO deleted = ChecklistVO.builder().checklistId(sessionId + 2).sessionId(sessionId)
+                .title("已收尾").status("DELETED")
+                .steps(List.of(ChecklistVO.StepVO.builder().stepId(sessionId + 4).seq(1)
+                        .content("编译").status("COMPLETED").build())).build();
+        when(service.findLatestForDisplay(sessionId)).thenReturn(Optional.of(deleted));
+        when(service.findLatestForDisplay(sessionId + 1)).thenReturn(Optional.empty());
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new ChecklistController(service))
+                .setMessageConverters(new MappingJackson2HttpMessageConverter(new JsonConfig().objectMapper())).build();
+
+        mvc.perform(get("/checklist/latest").param("sessionId", Long.toString(sessionId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("DELETED"))
+                .andExpect(jsonPath("$.data.checklistId").value(Long.toString(sessionId + 2)))
+                .andExpect(jsonPath("$.data.steps[0].status").value("COMPLETED"));
+        mvc.perform(get("/checklist/latest").param("sessionId", Long.toString(sessionId + 1)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data").doesNotExist());
+        verify(service).findLatestForDisplay(sessionId + 1);
+    }
 }

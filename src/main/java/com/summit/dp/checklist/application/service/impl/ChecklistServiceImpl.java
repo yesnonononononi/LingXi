@@ -81,17 +81,8 @@ public class ChecklistServiceImpl implements ChecklistService {
                 "只有上报 COMPLETED、FAILED 或 SKIPPED 结果时才能继续下一步");
 
         Checklist checklist = lockOwned(sessionId, command.getChecklistId());
-        ChecklistStatus previousStatus = checklist.getStatus();
         ChecklistMutation mutation = checklist.changeStepStatus(command.getStepId(), next, command.isContinueNextStep());
-        try {
-            // 重新激活也必须经过唯一索引裁决，避免和并发新建各占一份活动清单。
-            persist(checklist, mutation);
-        } catch (DataIntegrityViolationException conflict) {
-            if (previousStatus != ChecklistStatus.ACTIVE && checklist.getStatus() == ChecklistStatus.ACTIVE) {
-                throw new ClientException("当前会话已有活动清单，请先完成或删除它，再回退此清单的步骤", conflict);
-            }
-            throw conflict;
-        }
+        persist(checklist, mutation);
         return toVO(checklist);
     }
 
@@ -147,6 +138,25 @@ public class ChecklistServiceImpl implements ChecklistService {
     public Optional<ChecklistVO> findCurrent(Long sessionId) {
         long owner = requireSessionId(sessionId);
         return repository.findCurrentBySessionId(owner).map(this::toVO);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<ChecklistVO> findById(long sessionId, Long checklistId) {
+        long owner = requireSessionId(sessionId);
+        throwIf(checklistId == null, "按标识查询清单需要提供 checklistId");
+        return repository.findByIdWithSteps(checklistId).map(checklist -> {
+            // 审计口径与写入口一致：归属只认会话，不看状态，所以 DELETED 也能读、别的会话照样拒。
+            checklist.requireSession(owner);
+            return toVO(checklist);
+        });
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<ChecklistVO> findLatestForDisplay(long sessionId) {
+        long owner = requireSessionId(sessionId);
+        return repository.findLatestBySessionId(owner).map(this::toVO);
     }
 
     @Override
@@ -207,7 +217,15 @@ public class ChecklistServiceImpl implements ChecklistService {
     /** 按聚合给出的变更面精确落库：先删、再改、最后插，避免顺序冲突。 */
     private void persist(Checklist checklist, ChecklistMutation mutation) {
         if (mutation.checklistChanged()) {
-            repository.updateChecklist(checklist);
+            try {
+                // 状态回退和追加步骤都可能重新占用名额，必须让同一唯一索引裁决。
+                repository.updateChecklist(checklist);
+            } catch (DataIntegrityViolationException conflict) {
+                if (checklist.getStatus() == ChecklistStatus.ACTIVE) {
+                    throw new ClientException("当前会话已有活动清单，请先完成或删除它，再重新激活此清单", conflict);
+                }
+                throw conflict;
+            }
         }
         for (Long stepId : mutation.removedStepIds()) {
             repository.deleteStep(stepId);
@@ -224,7 +242,7 @@ public class ChecklistServiceImpl implements ChecklistService {
     private Checklist lockOwned(long sessionId, Long checklistId) {
         Checklist checklist = checklistId == null
                 ? repository.findActiveBySessionIdForUpdate(sessionId)
-                        .orElseThrow(() -> new ClientException("当前会话没有活动清单，请先用 create_checklist 创建"))
+                        .orElseThrow(() -> new ClientException("当前会话没有活动清单；编辑已收口清单请显式传入 checklistId，可先用 get_current_checklist 查询；没有清单时用 create_checklist 创建"))
                 : repository.findByIdForUpdate(checklistId)
                         .orElseThrow(() -> new ClientException("清单 " + checklistId + " 不存在"));
         checklist.requireSession(sessionId);

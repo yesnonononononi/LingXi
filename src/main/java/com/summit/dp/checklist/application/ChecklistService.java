@@ -28,6 +28,24 @@ public interface ChecklistService {
     /** 界面读取最近清单，终态仍可回看。 */
     Optional<ChecklistVO> findCurrent(Long sessionId);
 
+    /**
+     * 按权威标识精确读取任意状态的清单，含已软删的历史，用于审计与复核。
+     *
+     * <p>与 {@link #findCurrent(Long)} 的差别：那条路径刻意跳过 DELETED，只服务于「继续干活」；
+     * 本方法不参与任何写判定，仅把「删掉之后到底发生了什么」重新变成可读事实。
+     * 归属仍以会话为准，跨会话读取一律拒绝。</p>
+     */
+    Optional<ChecklistVO> findById(long sessionId, Long checklistId);
+
+    /**
+     * 会话最近一份清单，**包含已软删**，只用于界面常驻展示与用户审计。
+     *
+     * <p>刻意与 {@link #findCurrent(Long)} 分开：那条决定「模型还能不能接着干」，会跳过 DELETED；
+     * 这条决定「用户能不能看见发生过什么」，所以删除后卡片不该凭空消失。
+     * 本方法不参与任何写判定，返回的 DELETED 快照也不代表清单可以复活。</p>
+     */
+    Optional<ChecklistVO> findLatestForDisplay(long sessionId);
+
     /** 自然收尾只信任本执行、当前进展版本的投递事实。 */
     ReminderDecision remindOnNaturalComplete(ChecklistReminderContext context);
 }
