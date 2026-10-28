@@ -4,7 +4,7 @@ import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.Message;
-import com.summit.core.conversation.message.UserMessageEntity;
+import com.summit.core.conversation.message.SystemMessageEntity;
 import com.summit.core.runtime.loop.InterceptorResult;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopMessages;
@@ -76,7 +76,7 @@ class ChecklistReminderInterceptorTest {
         assertFalse(result.next(), "必须短路当前拦截器链，不能再让后续链路改动结局");
         assertTrue(result.loopResult().shouldContinue(), "续轮必须是显式 CONTINUE");
         assertEquals(1, appended.size());
-        String text = ((UserMessageEntity) appended.getFirst()).text();
+        String text = ((SystemMessageEntity) appended.getFirst()).text();
         assertTrue(text.contains("本次任务"), text);
         assertTrue(text.contains("update_checklist_step"), text);
         assertTrue(text.contains(String.valueOf(created.getSteps().getFirst().getStepId())),
@@ -167,8 +167,8 @@ class ChecklistReminderInterceptorTest {
     }
 
     @Test
-    @DisplayName("上下文注入有界：同一进展版本只补一次，推进后才再补")
-    void contextInjectionIsBoundedPerProgressVersion() {
+    @DisplayName("上下文注入有界：相同内容不追加，推进后替换系统消息")
+    void contextInjectionReplacesTheCurrentSystemSnapshot() {
         ChecklistVO created = service.create(ChecklistCommand.create(
                 SESSION_ID, null, "本次任务", List.of("写领域层", "跑测试")));
         Execution execution = execution(true);
@@ -181,7 +181,10 @@ class ChecklistReminderInterceptorTest {
         service.updateStep(ChecklistCommand.updateStep(SESSION_ID, created.getChecklistId(),
                 created.getSteps().getFirst().getStepId(), "COMPLETED"));
         interceptor.onBeforeModelInvoke(context(execution, appended));
-        assertEquals(2, appended.size(), "推进后应再补一次新状态");
+        assertEquals(1, appended.size(), "推进后替换已有系统消息，不堆积旧快照");
+        assertEquals(1, execution.getMessages().size());
+        assertTrue(execution.getMessages().getFirst() instanceof SystemMessageEntity);
+        assertTrue(execution.getMessages().getFirst().text().contains("COMPLETED"));
     }
 
     private Execution execution(boolean withChecklistTools) {

@@ -58,7 +58,7 @@ public final class ChecklistReminderText {
             text.append("- 序号 ").append(step.getSeq())
                     .append(" | stepId ").append(step.getStepId())
                     .append(" | ").append(step.getStatus())
-                    .append(" | ").append(preview(step.getContent()))
+                    .append(" | ").append(step.getContent())
                     .append('\n');
         }
         text.append("开始处理步骤前用 update_checklist_step 标记 IN_PROGRESS，完成后立刻如实标记结果；这份清单不是审批计划，不产生审批卡片。");

@@ -47,7 +47,7 @@ public class ChecklistReminderInterceptor implements LoopInterceptor {
         return false;
     }
 
-    /** 新执行、压缩恢复后补清单上下文；只补一次，不参与任何收尾判定。 */
+    /** 补入或更新系统上下文，不参与收尾额度判定。 */
     @Override
     public InterceptorResult onBeforeModelInvoke(LoopContext context) {
         Execution execution = context.getLoopMessages().getExecution();
@@ -59,7 +59,7 @@ public class ChecklistReminderInterceptor implements LoopInterceptor {
     }
 
     /**
-     * 收尾判定：有活动清单且有 PENDING 步骤时提醒一次。
+     * 收尾判定：有活动清单且有未结束步骤时提醒一次。
      *
      * <p>只做三件事：取执行身份与投递证据、问服务要结论、按结论追加消息并返回续轮。
      * 状态机、CAS、归属判断都在 {@code ChecklistService} 里；投递证据来自执行检查点，
