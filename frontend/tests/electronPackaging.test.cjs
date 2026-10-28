@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { Platform } = require('app-builder-lib');
 const { createElectronFrameworkSupport } = require('app-builder-lib/out/electron/ElectronFramework');
 const electronGet = require('app-builder-lib/out/util/electronGet');
@@ -43,6 +44,30 @@ test('桌面窗口在 Windows 用 ICO（经 nativeImage 解码），其余平台
   assert.match(main, /icon: icon,/);
   assert.equal(packageConfig.build.win.icon, 'electron/resources/icon.ico');
 });
+
+test('Windows 真实窗口向 Shell 注册产品任务栏图标，开发版与安装版身份隔离',
+  { skip: process.platform !== 'win32' }, () => {
+    const env = { ...process.env };
+    delete env.ELECTRON_RUN_AS_NODE;
+    const result = spawnSync(require('electron'), [path.join(__dirname, 'electronTaskbar.smoke.cjs')], {
+      env, encoding: 'utf8', windowsHide: true, timeout: 30000,
+    });
+    assert.equal(result.error, undefined, result.error?.message);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /开发版与安装版任务栏属性验证通过/);
+  });
+
+test('正对照：撤掉任务栏属性注册时，原生回归断言必须失败',
+  { skip: process.platform !== 'win32' }, () => {
+    const env = { ...process.env };
+    delete env.ELECTRON_RUN_AS_NODE;
+    const result = spawnSync(require('electron'), [path.join(__dirname, 'electronTaskbar.smoke.cjs'),
+      '--omit-taskbar-details'], { env, encoding: 'utf8', windowsHide: true, timeout: 30000 });
+    assert.equal(result.error, undefined, result.error?.message);
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stderr, /AssertionError/);
+    assert.match(result.stderr, /com\.lingxi\.lx\.development/);
+  });
 
 async function createProbe(t, overrides = {}) {
   const temporaryRoot = path.resolve(os.tmpdir());

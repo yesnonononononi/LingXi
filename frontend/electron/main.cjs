@@ -10,9 +10,10 @@ const { createUpdater } = require('./updater.cjs');
 // 生产环境下关闭默认冗余的控制台警告
 process.env['ELECTRON_DISABLE_SECURITY_WARNINGS'] = 'true';
 
-// Windows 原生应用标识 (确保系统通知显示正确的应用名与图标)
+// 开发宿主与安装版不能共用任务栏分组，否则 Windows 会复用另一侧的图标关联。
+const windowsAppId = app.isPackaged ? 'com.lingxi.lx' : 'com.lingxi.lx.development';
 if (process.platform === 'win32') {
-  app.setAppUserModelId('com.lingxi.lx');
+  app.setAppUserModelId(windowsAppId);
 }
 
 // 开发与安装版的浏览器配置分开，避免单实例锁和 API 地址互相覆盖。
@@ -182,7 +183,9 @@ function closeSplash() {
 }
 
 function createWindow() {
- const iconPath = process.platform === 'win32'  ? path.join(__dirname, 'resources/icon.ico')   : path.join(__dirname, 'resources/icon.png')  // 其他平台用 PNG
+  const iconPath = process.platform === 'win32'
+    ? path.join(__dirname, 'resources/icon.ico')
+    : path.join(__dirname, 'resources/icon.png');
   nativeTheme.themeSource = 'dark';
   const icon = nativeImage.createFromPath(iconPath);
   mainWindow = new BrowserWindow({
@@ -210,6 +213,19 @@ function createWindow() {
       backgroundThrottling: false,
     },
   });
+
+  if (process.platform === 'win32') {
+    // 必须在显示前设置；Shell 读不到 asar 内的 ICO，安装版直接使用已嵌入图标的 EXE。
+    mainWindow.setAppDetails({
+      appId: windowsAppId,
+      appIconPath: app.isPackaged ? process.execPath : iconPath,
+      appIconIndex: 0,
+      relaunchCommand: app.isPackaged
+        ? `"${process.execPath}"`
+        : `"${process.execPath}" "${app.getAppPath()}" --dev`,
+      relaunchDisplayName: app.isPackaged ? 'LX' : 'LX 开发版',
+    });
+  }
 
   // 窗口准备好后再显示，消除白屏/黑屏闪烁；同时撤掉启动遮罩
   mainWindow.once('ready-to-show', () => {

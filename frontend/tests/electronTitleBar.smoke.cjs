@@ -2,9 +2,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { createRequire } = require('node:module');
 const electron = require('electron');
 
 const frontendRoot = path.resolve(__dirname, '..');
+const requireMain = createRequire(path.join(frontendRoot, 'electron/main.cjs'));
 const outputDir = path.join(frontendRoot, 'node_modules/.tmp/titlebar-verification');
 fs.mkdirSync(outputDir, { recursive: true });
 electron.app.setPath('userData', outputDir);
@@ -19,6 +21,7 @@ class WindowStub {
     this.webContents = { setWindowOpenHandler() {}, on() {} };
   }
   once() {}
+  setAppDetails() {}
   on() {}
   loadFile() {}
   loadURL() {}
@@ -30,13 +33,14 @@ const context = vm.createContext({
       BrowserWindow: WindowStub,
       ipcMain: { handle: (name, handler) => handlers.set(name, handler) },
       app: {
+        isPackaged: true,
         setAppUserModelId() {}, requestSingleInstanceLock: () => true,
         getPath: () => outputDir, whenReady: () => ({ then() {} }), on() {}, quit() {},
       },
     };
     if (name === './backend.cjs') return {};
     if (name === './file-preview.cjs') return require('../electron/file-preview.cjs');
-    return require(name);
+    return requireMain(name);
   },
   __dirname: path.join(frontendRoot, 'electron'),
   process: { platform: process.platform, argv: [], env: {} },
