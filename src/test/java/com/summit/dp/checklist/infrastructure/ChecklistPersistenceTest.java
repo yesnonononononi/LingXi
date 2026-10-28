@@ -174,8 +174,15 @@ class ChecklistPersistenceTest {
         assertEquals(finished.getProgressVersion(), repeated.getProgressVersion());
         assertEquals(persistedUpdate, repeated.getUpdateAt());
         assertEquals(next.getChecklistId(), service.findActive(SESSION_ID).orElseThrow().getChecklistId());
-        assertThrows(ClientException.class, () -> service.updateStep(ChecklistCommand.updateStep(
-                SESSION_ID, created.getChecklistId(), stepId, "FAILED")));
+        ChecklistVO corrected = service.updateStep(ChecklistCommand.updateStep(
+                SESSION_ID, created.getChecklistId(), stepId, "FAILED"));
+        assertEquals("COMPLETED", corrected.getStatus());
+        assertEquals("FAILED", corrected.getSteps().getFirst().getStatus());
+        ClientException conflict = assertThrows(ClientException.class, () -> service.updateStep(ChecklistCommand.updateStep(
+                SESSION_ID, created.getChecklistId(), stepId, "PENDING")));
+        assertTrue(conflict.getMessage().contains("已有活动清单"));
+        assertEquals("FAILED", repository.findByIdWithSteps(created.getChecklistId()).orElseThrow()
+                .getSteps().getFirst().getStatus().name());
         assertThrows(ClientException.class, () -> service.updateStep(ChecklistCommand.updateStep(
                 SESSION_ID + 1, created.getChecklistId(), stepId, "COMPLETED")));
         service.delete(ChecklistCommand.delete(SESSION_ID, created.getChecklistId()));
@@ -354,6 +361,7 @@ class ChecklistPersistenceTest {
 
         ChecklistVO deleted = service.delete(ChecklistCommand.delete(SESSION_ID, created.getChecklistId()));
         assertEquals("DELETED", deleted.getStatus());
+        assertEquals("PENDING", deleted.getSteps().getFirst().getStatus());
 
         ChecklistVO again = service.delete(ChecklistCommand.delete(SESSION_ID, created.getChecklistId()));
         assertEquals("DELETED", again.getStatus(), "重复删除必须返回既有删除事实");
@@ -361,6 +369,110 @@ class ChecklistPersistenceTest {
         ChecklistVO next = service.create(ChecklistCommand.create(SESSION_ID, null, "第二份", List.of("一步")));
         assertEquals("ACTIVE", next.getStatus(), "软删后唯一键必须让位");
         assertEquals(2, repository.findAllBySessionId(SESSION_ID).size(), "历史不物理清除");
+    }
+
+    @Test
+    void reopeningOlderChecklistMakesItCurrentAndPreservesReminderBudget() {
+        ChecklistVO old = service.create(ChecklistCommand.create(SESSION_ID, null, "旧清单", List.of("一步")));
+        long stepId = old.getSteps().getFirst().getStepId();
+        service.updateStep(ChecklistCommand.updateStep(SESSION_ID, old.getChecklistId(), stepId, "COMPLETED"));
+        ChecklistVO newer = service.create(ChecklistCommand.create(SESSION_ID, null, "新清单", List.of("另一步")));
+        service.updateStep(ChecklistCommand.updateStep(SESSION_ID, newer.getChecklistId(),
+                newer.getSteps().getFirst().getStepId(), "COMPLETED"));
+        service.updateStep(ChecklistCommand.updateStep(SESSION_ID, old.getChecklistId(), stepId, "IN_PROGRESS"));
+        Checklist reopened = repository.findActiveBySessionId(SESSION_ID).orElseThrow();
+        assertEquals(old.getChecklistId(), reopened.getId());
+        assertEquals(old.getChecklistId(), service.findCurrent(SESSION_ID).orElseThrow().getChecklistId());
+        assertEquals(1L, reopened.getProgressVersion());
+        repository.claimReminder(reopened, EXECUTION_ID);
+        ChecklistVO pending = service.updateStep(ChecklistCommand.updateStep(SESSION_ID, old.getChecklistId(), stepId, "PENDING"));
+        assertEquals("PENDING", pending.getSteps().getFirst().getStatus());
+        Checklist reloaded = repository.findByIdWithSteps(old.getChecklistId()).orElseThrow();
+        assertTrue(reloaded.reminderOwnedBy(EXECUTION_ID));
+        assertEquals(1L, reloaded.getProgressVersion());
+    }
+
+    @Test
+    void deleteCompletesOpenStepsAtomicallyAndKeepsTerminalResultsAndRetryFacts() {
+        ChecklistVO created = service.create(ChecklistCommand.create(SESSION_ID, null, "收尾",
+                List.of("失败项", "跳过项", "待处理项", "删除整个清单")));
+        service.updateStep(ChecklistCommand.updateStep(SESSION_ID, null, created.getSteps().get(0).getStepId(), "FAILED"));
+        service.updateStep(ChecklistCommand.updateStep(SESSION_ID, null, created.getSteps().get(1).getStepId(), "SKIPPED"));
+        service.updateStep(ChecklistCommand.updateStep(SESSION_ID, null, created.getSteps().get(3).getStepId(), "IN_PROGRESS"));
+        repository.claimReminder(repository.findByIdWithSteps(created.getChecklistId()).orElseThrow(), EXECUTION_ID);
+
+        ChecklistVO deleted = service.delete(ChecklistCommand.delete(SESSION_ID, created.getChecklistId(), true));
+        assertEquals("DELETED", deleted.getStatus());
+        assertEquals(List.of("FAILED", "SKIPPED", "COMPLETED", "COMPLETED"), deleted.getSteps().stream()
+                .map(ChecklistVO.StepVO::getStatus).toList());
+        Checklist persisted = repository.findByIdWithSteps(created.getChecklistId()).orElseThrow();
+        assertEquals(4L, persisted.getProgressVersion());
+        assertFalse(persisted.hasPendingSteps());
+        assertNull(persisted.getRemindExecutionId());
+        assertNull(persisted.getRemindedProgressVersion());
+        ChecklistVO retried = service.delete(ChecklistCommand.delete(SESSION_ID, created.getChecklistId(), true));
+        assertEquals(deleted.getProgressVersion(), retried.getProgressVersion());
+        assertEquals(persisted.getUpdateAt(), retried.getUpdateAt());
+
+        ChecklistVO abandoned = service.create(ChecklistCommand.create(SESSION_ID, null, "放弃", List.of("未完成")));
+        service.delete(ChecklistCommand.delete(SESSION_ID, abandoned.getChecklistId()));
+        ChecklistVO repeated = service.delete(ChecklistCommand.delete(SESSION_ID, abandoned.getChecklistId(), true));
+        assertEquals("PENDING", repeated.getSteps().getFirst().getStatus());
+        assertEquals(0L, repeated.getProgressVersion());
+    }
+
+    @Test
+    void failedDeleteCompletionRollsBackDeletionAndAllStepWrites() {
+        ChecklistVO created = service.create(ChecklistCommand.create(SESSION_ID, null, "回滚", List.of("一步", "删除清单")));
+        ChecklistRepositoryImpl failing = spy(repository);
+        doAnswer(invocation -> {
+            invocation.callRealMethod();
+            ChecklistStep step = invocation.getArgument(0);
+            if (step.getId().equals(created.getSteps().get(1).getStepId())) {
+                throw new ClientException("模拟第二步写入失败");
+            }
+            return null;
+        }).when(failing).updateStep(any(ChecklistStep.class));
+        ChecklistService faultedService = fixture.serviceWithRepository(failing);
+        assertThrows(ClientException.class, () -> faultedService.delete(
+                ChecklistCommand.delete(SESSION_ID, created.getChecklistId(), true)));
+        Checklist reloaded = repository.findByIdWithSteps(created.getChecklistId()).orElseThrow();
+        assertEquals(ChecklistStatus.ACTIVE, reloaded.getStatus());
+        assertEquals(0L, reloaded.getProgressVersion());
+        assertTrue(reloaded.getSteps().stream().allMatch(ChecklistStep::isPending));
+    }
+
+    @Test
+    void concurrentReopenAndCreateKeepOneActiveChecklist() throws Exception {
+        ChecklistVO created = service.create(ChecklistCommand.create(SESSION_ID, null, "旧清单", List.of("一步")));
+        long stepId = created.getSteps().getFirst().getStepId();
+        service.updateStep(ChecklistCommand.updateStep(SESSION_ID, created.getChecklistId(), stepId, "COMPLETED"));
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            Future<String> reopening = pool.submit(() -> {
+                await(start);
+                try {
+                    service.updateStep(ChecklistCommand.updateStep(SESSION_ID, created.getChecklistId(), stepId, "PENDING"));
+                    return "accepted";
+                } catch (ClientException expected) { return "rejected"; }
+            });
+            Future<String> creating = pool.submit(() -> {
+                await(start);
+                try {
+                    service.create(ChecklistCommand.create(SESSION_ID, null, "新清单", List.of("另一步")));
+                    return "accepted";
+                } catch (ClientException expected) { return "rejected"; }
+            });
+            start.countDown();
+            assertEquals(Set.of("accepted", "rejected"), Set.of(
+                    reopening.get(5, TimeUnit.SECONDS), creating.get(5, TimeUnit.SECONDS)));
+            assertEquals(1L, repository.findAllBySessionId(SESSION_ID).stream()
+                    .filter(checklist -> checklist.getStatus() == ChecklistStatus.ACTIVE).count());
+        } finally {
+            start.countDown();
+            pool.shutdownNow();
+        }
     }
 
     @Test

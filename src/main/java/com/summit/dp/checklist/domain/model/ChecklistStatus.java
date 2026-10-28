@@ -17,7 +17,7 @@ public enum ChecklistStatus {
     /** 显式软删；历史不被物理清除 */
     DELETED;
 
-    /** 是否已离开 ACTIVE：终态清单不再接受任何修改，需要重试时新建清单。 */
+    /** 是否已离开 ACTIVE：步骤修正可以重新激活未删除的清单。 */
     public boolean isTerminal() {
         return this != ACTIVE;
     }

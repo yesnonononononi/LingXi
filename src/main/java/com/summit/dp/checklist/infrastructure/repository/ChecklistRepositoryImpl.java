@@ -94,6 +94,10 @@ public class ChecklistRepositoryImpl extends AbstractRepository<Checklist, Check
 
     @Override
     public Optional<Checklist> findCurrentBySessionId(long sessionId) {
+        Optional<Checklist> active = findActiveBySessionId(sessionId);
+        if (active.isPresent()) {
+            return active;
+        }
         ChecklistPO row = mapper.selectOne(new LambdaQueryWrapper<ChecklistPO>()
                 .eq(ChecklistPO::getSessionId, sessionId)
                 .orderByDesc(ChecklistPO::getId)

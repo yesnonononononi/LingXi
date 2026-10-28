@@ -32,26 +32,25 @@ import org.springframework.stereotype.Component;
     name = ToolCatalog.UPDATE_CHECKLIST_STEP,
     executor = UpdateChecklistStepTool.class,
     description = """
-        Before working on a checklist step, mark it IN_PROGRESS; then report COMPLETED, FAILED or SKIPPED.
-        Report the real outcome: never mark unfinished work as COMPLETED just to empty the checklist;
-        use FAILED or SKIPPED with an honest step content instead.
-        PENDING may become IN_PROGRESS or a terminal status; finished steps cannot be reopened.
-        IN_PROGRESS does not count as completed progress or renew the reminder budget.
-        Marking a step that is already in the requested status is a no-op and returns the snapshot.
-        This tool maintains the execution checklist only; it never creates an approval card (create_plan does that).
+        处理步骤前标记 IN_PROGRESS，结束后如实上报 COMPLETED、FAILED 或 SKIPPED，不能为清空清单虚报完成。
+        可以退回 PENDING 或 IN_PROGRESS，也可以修正终态结果，原 stepId 保持不变。
+        已收口清单需显式传入 checklistId；状态变更后仍有未结束步骤时重新激活，会话内不能另有活动清单。
+        DELETED 清单不可修改；同状态重试只返回既有快照，不刷新时间或提醒额度。
+        PENDING 和 IN_PROGRESS 不算实际完成进展，不刷新提醒额度。
+        本工具只维护执行清单；create_plan 才会创建审批卡片。
         """,
     parameters = @ObjectValue(
         properties = {
             @ToolProperty(key = "checklistId", value = @Value(
                 type = ValueType.INTEGER,
-                description = "Checklist id from a previous snapshot; omit to use this session's ACTIVE checklist.")),
+                description = "权威快照中的清单标识；省略时定位本会话的活动清单，修正已收口清单时必须提供。")),
             @ToolProperty(key = "stepId", value = @Value(
                 type = ValueType.INTEGER,
-                description = "Stable step id from the snapshot; seq is only display order and cannot be used instead.")),
+                description = "权威快照中的稳定步骤标识，不能用展示顺序 seq 代替。")),
             @ToolProperty(key = "status", value = @Value(
                 type = ValueType.STRING,
-                stringValue = @StringValue(enums = {"IN_PROGRESS", "COMPLETED", "FAILED", "SKIPPED"}),
-                description = "Explicit start or real outcome of the step."))
+                stringValue = @StringValue(enums = {"PENDING", "IN_PROGRESS", "COMPLETED", "FAILED", "SKIPPED"}),
+                description = "明确开始、回退或修正后的真实步骤状态。"))
         },
         required = {"stepId", "status"},
         additionalProperties = OptionalBoolean.FALSE),

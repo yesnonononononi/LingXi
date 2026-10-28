@@ -36,17 +36,20 @@ import org.springframework.stereotype.Component;
     name = ToolCatalog.DELETE_CHECKLIST,
     executor = DeleteChecklistTool.class,
     description = """
-        Soft-delete a checklist when the task was abandoned or replaced by a different plan.
-        The history is kept: deleting releases the session's single ACTIVE slot but never erases the steps,
-        so unfinished work stays visible instead of being faked as done.
-        Deleting an already deleted checklist returns the existing deletion instead of failing.
-        This is not create_plan related: no approval card is produced or cancelled here.
+        软删清单并释放本会话的活动清单名额，保留全部步骤历史。
+        仅在剩余工作确实全部完成时传 completeOpenSteps=true，将未结束步骤与删除操作在同一事务完成，
+        可用于完成“删除整个清单”这一步；已有 FAILED、SKIPPED 等终态结果保持不变。
+        放弃或替换任务时省略此参数或传 false，保留未完成事实，不能虚报完成。
+        重复删除返回既有删除快照，不能补改历史步骤；本工具不创建或取消 create_plan 审批卡片。
         """,
     parameters = @ObjectValue(
         properties = {
             @ToolProperty(key = "checklistId", value = @Value(
                 type = ValueType.INTEGER,
-                description = "Checklist id from a previous snapshot."))
+                description = "上次权威快照中的清单标识。")),
+            @ToolProperty(key = "completeOpenSteps", value = @Value(
+                type = ValueType.BOOLEAN,
+                description = "显式确认剩余工作全部完成，删除时一并完成未结束步骤；默认 false。"))
         },
         required = {"checklistId"},
         additionalProperties = OptionalBoolean.FALSE),
@@ -64,7 +67,7 @@ public class DeleteChecklistTool implements ToolExecutor {
             DeleteChecklistArgument argument = ChecklistToolSupport.parse(objectMapper,
                     toolExecution.getArgs(), DeleteChecklistArgument.class);
             ChecklistVO snapshot = checklistService.delete(ChecklistCommand.delete(
-                    ChecklistToolSupport.sessionId(toolExecution), argument.getChecklistId()));
+                    ChecklistToolSupport.sessionId(toolExecution), argument.getChecklistId(), argument.isCompleteOpenSteps()));
             return ToolExecuteResult.success(ChecklistToolSupport.render(objectMapper, snapshot));
         } catch (ClientException e) {
             log.info("删除清单被拒绝: reason={}", e.getMessage());

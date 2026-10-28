@@ -78,18 +78,18 @@ public final class ChecklistRules {
         }
     }
 
-    /** 待处理只能在创建时写入，开始与结果必须由模型明确上报。 */
+    /** 状态修正与正常推进使用相同的取值集合。 */
     public static ChecklistStepStatus parseStepStatus(String status) {
         if (status == null || status.isBlank()) {
-            throw new ClientException("步骤状态不能为空，只接受 IN_PROGRESS / COMPLETED / FAILED / SKIPPED");
+            throw new ClientException("步骤状态不能为空，只接受 PENDING / IN_PROGRESS / COMPLETED / FAILED / SKIPPED");
         }
         String normalized = status.trim().toUpperCase(Locale.ROOT);
         for (ChecklistStepStatus candidate : ChecklistStepStatus.values()) {
-            if (candidate != ChecklistStepStatus.PENDING && candidate.name().equals(normalized)) {
+            if (candidate.name().equals(normalized)) {
                 return candidate;
             }
         }
-        throw new ClientException("步骤状态 " + status + " 不合法，只接受 IN_PROGRESS / COMPLETED / FAILED / SKIPPED");
+        throw new ClientException("步骤状态 " + status + " 不合法，只接受 PENDING / IN_PROGRESS / COMPLETED / FAILED / SKIPPED");
     }
 
     /** 统一的时间戳来源，便于测试观察「无变化不刷新时间」。 */

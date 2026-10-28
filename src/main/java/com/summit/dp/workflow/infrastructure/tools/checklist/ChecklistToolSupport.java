@@ -70,8 +70,8 @@ final class ChecklistToolSupport {
         }
         return switch (snapshot.getStatus()) {
             case "ACTIVE" -> "开始处理步骤前用 update_checklist_step 标记 IN_PROGRESS，完成后立刻如实标记结果。";
-            case "COMPLETED" -> "清单已收口：所有步骤都已是终态（含失败与跳过），不需要再推进。";
-            case "UNFINISHED" -> "清单因无实际推进被关闭：需要继续工作请新建清单。";
+            case "COMPLETED" -> "清单已收口：所有步骤都已是终态（含失败与跳过）；需要修正时可带 checklistId 更新或回退步骤。";
+            case "UNFINISHED" -> "清单因无实际推进被关闭：可带 checklistId 修正步骤；重新激活前会话内不能有其他活动清单。";
             case "DELETED" -> "清单已删除：历史保留但不可再修改。";
             default -> "未知清单状态。";
         };

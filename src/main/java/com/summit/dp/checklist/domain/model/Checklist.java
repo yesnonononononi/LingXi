@@ -18,7 +18,7 @@ import java.util.Set;
 
 /**
  * 清单收尾以持久化步骤为准，同会话只允许一份活动清单。
- * 开始和结构修改不重置提醒额度，只有写入终态才算推进；终态不能重开。
+ * 开始、回退和结构修改不重置提醒额度，只有写入终态才算推进。
  * 待处理和进行中的步骤均阻止收口，失败和跳过保留真实结果。
  */
 @Slf4j
@@ -133,25 +133,18 @@ public class Checklist {
      */
     public ChecklistMutation changeStepStatus(long stepId, ChecklistStepStatus next) {
         ChecklistStep step = requireStep(stepId);
-        // 已收口后的同状态重试只读取既有事实，不能借此重新打开清单。
-        if (status == ChecklistStatus.COMPLETED && step.getStatus() == next) {
-            return ChecklistMutation.none();
+        if (status.isDeleted()) {
+            throw new ClientException("清单已删除，不能更新步骤");
         }
-        requireActive("更新步骤");
-        if (next == ChecklistStepStatus.IN_PROGRESS) {
-            if (!step.start()) {
-                return ChecklistMutation.none();
-            }
-            touch();
-            return new ChecklistMutation(true, List.of(), List.of(step), List.of());
-        }
-        if (!step.moveToTerminal(next)) {
+        if (!step.changeStatus(next)) {
             // 无变化：不递增版本、不重置提醒额度，也不刷新清单时间——重试必须完全等价于没发生
             return ChecklistMutation.none();
         }
-        progressVersion++;
-        resetReminderQuota();
-        recomputeStatus();
+        if (next.isTerminal()) {
+            progressVersion++;
+            resetReminderQuota();
+        }
+        status = hasPendingSteps() ? ChecklistStatus.ACTIVE : ChecklistStatus.COMPLETED;
         touch();
         log.debug("清单步骤推进: checklistId={}, stepId={}, status={}, progressVersion={}",
                 id, stepId, next, progressVersion);
@@ -292,6 +285,27 @@ public class Checklist {
         }
         status = ChecklistStatus.DELETED;
         touch();
+    }
+
+    /** 显式确认剩余工作完成后再删除，避免删除自身的步骤永远停在进行中。 */
+    public ChecklistMutation softDelete(boolean completeOpenSteps) {
+        if (status.isDeleted()) {
+            return ChecklistMutation.none();
+        }
+        List<ChecklistStep> changedSteps = new ArrayList<>();
+        if (completeOpenSteps) {
+            for (ChecklistStep step : steps) {
+                if (step.isUnresolved() && step.changeStatus(ChecklistStepStatus.COMPLETED)) {
+                    changedSteps.add(step);
+                    progressVersion++;
+                }
+            }
+            if (!changedSteps.isEmpty()) {
+                resetReminderQuota();
+            }
+        }
+        softDelete();
+        return new ChecklistMutation(true, List.of(), List.copyOf(changedSteps), List.of());
     }
 
     /**

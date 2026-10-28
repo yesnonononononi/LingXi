@@ -52,34 +52,41 @@ class ChecklistToolSchemaTest {
     @Test
     @DisplayName("create_checklist 的步骤数组上下限与领域常量同源")
     void createChecklistSchemaBindsStepBoundsToDomainConstants() throws Exception {
-        JsonNode schema = schemaOf(CreateChecklistTool.class);
+        JsonNode schema = buildSchema(CreateChecklistTool.class);
         JsonNode steps = schema.path("properties").path("steps");
 
         assertEquals("array", steps.path("type").asText());
         assertEquals(ChecklistRules.MIN_STEPS, steps.path("minItems").asInt());
         assertEquals(ChecklistRules.MAX_STEPS, steps.path("maxItems").asInt());
-        assertEquals(List.of("title", "steps"), requiredOf(schema));
+        assertEquals(List.of("title", "steps"), resolveRequiredFields(schema));
     }
 
     @Test
-    @DisplayName("步骤工具公开进行中与三个终态，禁止退回待处理")
+    @DisplayName("步骤工具公开回退、进行中与三个终态")
     void updateStepSchemaExposesExplicitStartAndOutcomes() throws Exception {
-        JsonNode status = schemaOf(UpdateChecklistStepTool.class).path("properties").path("status");
+        JsonNode status = buildSchema(UpdateChecklistStepTool.class).path("properties").path("status");
 
         assertEquals("string", status.path("type").asText());
         List<String> enums = new java.util.ArrayList<>();
         status.path("enum").forEach(node -> enums.add(node.asText()));
-        assertEquals(List.of("IN_PROGRESS", "COMPLETED", "FAILED", "SKIPPED"), enums);
+        assertEquals(List.of("PENDING", "IN_PROGRESS", "COMPLETED", "FAILED", "SKIPPED"), enums);
+    }
+
+    @Test
+    void deleteSchemaExposesOptionalCompletionFlag() throws Exception {
+        JsonNode schema = buildSchema(DeleteChecklistTool.class);
+        assertEquals("boolean", schema.path("properties").path("completeOpenSteps").path("type").asText());
+        assertEquals(List.of("checklistId"), resolveRequiredFields(schema));
     }
 
     @Test
     @DisplayName("modify_checklist 用嵌套 schema 表达补丁：步骤内容项是对象数组")
     void modifyChecklistSchemaDescribesNestedPatch() throws Exception {
-        JsonNode schema = schemaOf(ModifyChecklistTool.class);
+        JsonNode schema = buildSchema(ModifyChecklistTool.class);
         JsonNode contentItem = schema.path("properties").path("stepContents").path("items");
 
         assertEquals("object", contentItem.path("type").asText());
-        assertEquals(List.of("stepId", "content"), requiredOf(contentItem));
+        assertEquals(List.of("stepId", "content"), resolveRequiredFields(contentItem));
         assertTrue(schema.path("required").toString().contains("checklistId"), "必须要求权威清单标识");
     }
 
@@ -108,11 +115,11 @@ class ChecklistToolSchemaTest {
                 ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST)));
     }
 
-    private JsonNode schemaOf(Class<? extends ToolExecutor> type) throws Exception {
+    private JsonNode buildSchema(Class<? extends ToolExecutor> type) throws Exception {
         return objectMapper.readTree(definition(type).parametersJsonSchema());
     }
 
-    private List<String> requiredOf(JsonNode schema) {
+    private List<String> resolveRequiredFields(JsonNode schema) {
         List<String> required = new java.util.ArrayList<>();
         schema.path("required").forEach(node -> required.add(node.asText()));
         return required;

@@ -8,7 +8,7 @@ import java.util.Objects;
 
 /**
  * 步骤标识不随文案和顺序变化，开始处理也不等于完成。
- * 同状态重试不刷新时间与额度；终态不能重开，需要重做时新增步骤。
+ * 同状态重试不刷新时间；状态回退保留步骤标识与文案。
  */
 @Getter
 public final class ChecklistStep {
@@ -48,39 +48,15 @@ public final class ChecklistStep {
         return new ChecklistStep(id, checklistId, seq, content, status, updateAt);
     }
 
-    /**
-     * 推进到终态。
-     *
-     * @return {@code true} 表示状态真的变了（调用方据此递增进展版本、重置提醒额度）；
-     *         {@code false} 表示本次提交与现状相同，属于无变化
-     */
-    public boolean moveToTerminal(ChecklistStepStatus next) {
+    /** 状态修正必须保留原步骤，同状态重试不刷新时间。 */
+    public boolean changeStatus(ChecklistStepStatus next) {
         if (next == null) {
             throw new ClientException("步骤状态不能为空");
-        }
-        if (!next.isTerminal()) {
-            throw new ClientException("步骤不能退回待处理状态；需要重做时请新增一个步骤");
         }
         if (status == next) {
             return false;
         }
-        if (status.isTerminal()) {
-            throw new ClientException("已结束的步骤不能改为另一个终态；需要重做时请新增一个步骤");
-        }
         status = next;
-        updateAt = ChecklistRules.now();
-        return true;
-    }
-
-    /** 开始处理不消耗进展版本，避免反复开始换取提醒额度。 */
-    public boolean start() {
-        if (status == ChecklistStepStatus.IN_PROGRESS) {
-            return false;
-        }
-        if (status.isTerminal()) {
-            throw new ClientException("已结束的步骤不能重新开始；需要重做时请新增一个步骤");
-        }
-        status = ChecklistStepStatus.IN_PROGRESS;
         updateAt = ChecklistRules.now();
         return true;
     }

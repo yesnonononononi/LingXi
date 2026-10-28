@@ -11,6 +11,7 @@ import com.summit.dp.checklist.domain.model.Checklist;
 import com.summit.dp.checklist.domain.model.ChecklistModification;
 import com.summit.dp.checklist.domain.model.ChecklistMutation;
 import com.summit.dp.checklist.domain.model.ChecklistRules;
+import com.summit.dp.checklist.domain.model.ChecklistStatus;
 import com.summit.dp.checklist.domain.model.ChecklistStep;
 import com.summit.dp.checklist.domain.model.ChecklistStepStatus;
 import com.summit.dp.checklist.domain.repository.ChecklistRepository;
@@ -78,8 +79,17 @@ public class ChecklistServiceImpl implements ChecklistService {
         ChecklistStepStatus next = ChecklistRules.parseStepStatus(command.getStatus());
 
         Checklist checklist = lockOwned(sessionId, command.getChecklistId());
+        ChecklistStatus previousStatus = checklist.getStatus();
         ChecklistMutation mutation = checklist.changeStepStatus(command.getStepId(), next);
-        persist(checklist, mutation);
+        try {
+            // 重新激活也必须经过唯一索引裁决，避免和并发新建各占一份活动清单。
+            persist(checklist, mutation);
+        } catch (DataIntegrityViolationException conflict) {
+            if (previousStatus != ChecklistStatus.ACTIVE && checklist.getStatus() == ChecklistStatus.ACTIVE) {
+                throw new ClientException("当前会话已有活动清单，请先完成或删除它，再回退此清单的步骤", conflict);
+            }
+            throw conflict;
+        }
         return toVO(checklist);
     }
 
@@ -115,8 +125,8 @@ public class ChecklistServiceImpl implements ChecklistService {
             // 重复删除返回既有删除事实：删历史不能因为重试而变成错误
             return toVO(checklist);
         }
-        checklist.softDelete();
-        repository.updateChecklist(checklist);
+        ChecklistMutation mutation = checklist.softDelete(command.isCompleteOpenSteps());
+        persist(checklist, mutation);
         log.info("软删执行清单: checklistId={}, sessionId={}", checklist.getId(), sessionId);
         return toVO(checklist);
     }

@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 清单聚合的状态机与结构修改规则（纯领域，无数据库）。
  *
- * <p>覆盖计划书里点名要守住的边界：终态不可重开、无变化不消耗进展版本、
+ * <p>覆盖状态回退、无变化不消耗进展版本、
  * 最后一个待处理步骤被删掉要收口、删光步骤要拒绝。</p>
  */
 class ChecklistDomainTest {
@@ -50,7 +50,9 @@ class ChecklistDomainTest {
         checklist.changeStepStatus(first, ChecklistStepStatus.COMPLETED);
         assertEquals(2L, checklist.getProgressVersion());
         assertEquals(ChecklistStatus.COMPLETED, checklist.getStatus());
-        assertThrows(ClientException.class, () -> checklist.changeStepStatus(first, ChecklistStepStatus.IN_PROGRESS));
+        checklist.changeStepStatus(first, ChecklistStepStatus.IN_PROGRESS);
+        assertEquals(ChecklistStatus.ACTIVE, checklist.getStatus());
+        assertEquals(2L, checklist.getProgressVersion());
     }
 
     @Test
@@ -123,19 +125,23 @@ class ChecklistDomainTest {
     }
 
     @Test
-    @DisplayName("终态不可重开，也不能改成另一个终态")
-    void terminalStepCannotBeReopenedOrReclassified() {
+    @DisplayName("步骤回退保留提醒额度与标识，终态结果可以修正")
+    void terminalStepCanBeReopenedAndReclassified() {
         Checklist checklist = checklist("编译", "跑测试");
         long stepId = stepId(checklist, 1);
         checklist.changeStepStatus(stepId, ChecklistStepStatus.COMPLETED);
 
-        ClientException reopened = assertThrows(ClientException.class,
-                () -> checklist.changeStepStatus(stepId, ChecklistStepStatus.PENDING));
-        assertTrue(reopened.getMessage().contains("不能退回"), reopened.getMessage());
-
-        ClientException reclassified = assertThrows(ClientException.class,
-                () -> checklist.changeStepStatus(stepId, ChecklistStepStatus.FAILED));
-        assertTrue(reclassified.getMessage().contains("另一个终态"), reclassified.getMessage());
+        checklist.applyReminderFact(77L);
+        checklist.changeStepStatus(stepId, ChecklistStepStatus.PENDING);
+        assertEquals(ChecklistStepStatus.PENDING, checklist.getSteps().getFirst().getStatus());
+        assertEquals(stepId, checklist.getSteps().getFirst().getId());
+        assertEquals(1L, checklist.getProgressVersion());
+        assertTrue(checklist.reminderOwnedBy(77L));
+        checklist.changeStepStatus(stepId, ChecklistStepStatus.FAILED);
+        checklist.changeStepStatus(stepId, ChecklistStepStatus.SKIPPED);
+        assertEquals(ChecklistStepStatus.SKIPPED, checklist.getSteps().getFirst().getStatus());
+        assertEquals(3L, checklist.getProgressVersion());
+        assertFalse(checklist.isRemindStatus());
     }
 
     @Test
@@ -147,9 +153,10 @@ class ChecklistDomainTest {
 
         assertEquals(ChecklistStatus.COMPLETED, checklist.getStatus());
         assertFalse(checklist.hasPendingSteps());
-        assertThrows(ClientException.class,
-                () -> checklist.changeStepStatus(stepId(checklist, 1), ChecklistStepStatus.FAILED),
-                "已收口的清单不能再写");
+        checklist.changeStepStatus(stepId(checklist, 1), ChecklistStepStatus.FAILED);
+        assertEquals(ChecklistStatus.COMPLETED, checklist.getStatus());
+        checklist.changeStepStatus(stepId(checklist, 2), ChecklistStepStatus.PENDING);
+        assertEquals(ChecklistStatus.ACTIVE, checklist.getStatus());
     }
 
     @Test
@@ -236,19 +243,20 @@ class ChecklistDomainTest {
     }
 
     @Test
-    @DisplayName("非活动状态拒绝一切写入，UNFINISHED 与 DELETED 都不可改")
-    void terminalChecklistsRejectWrites() {
+    @DisplayName("未完成清单可修正，已删除清单不可再写")
+    void unfinishedChecklistCanResumeButDeletedChecklistRejectsWrites() {
         Checklist checklist = checklist("编译");
         checklist.markUnfinished();
         assertEquals(ChecklistStatus.UNFINISHED, checklist.getStatus());
-        ClientException error = assertThrows(ClientException.class,
-                () -> checklist.changeStepStatus(stepId(checklist, 1), ChecklistStepStatus.COMPLETED));
-        assertTrue(error.getMessage().contains("UNFINISHED"), error.getMessage());
+        checklist.changeStepStatus(stepId(checklist, 1), ChecklistStepStatus.IN_PROGRESS);
+        assertEquals(ChecklistStatus.ACTIVE, checklist.getStatus());
 
         Checklist deleted = checklist("编译");
         deleted.softDelete();
         assertEquals(ChecklistStatus.DELETED, deleted.getStatus());
         assertThrows(ClientException.class, deleted::softDelete);
+        assertThrows(ClientException.class,
+                () -> deleted.changeStepStatus(stepId(deleted, 1), ChecklistStepStatus.PENDING));
     }
 
     @Test
@@ -262,11 +270,12 @@ class ChecklistDomainTest {
     }
 
     @Test
-    @DisplayName("步骤状态解析只接受三个终态取值")
+    @DisplayName("步骤状态解析包含回退与所有真实结果")
     void stepStatusParsingRejectsAnythingElse() {
         assertSame(ChecklistStepStatus.COMPLETED, ChecklistRules.parseStepStatus("completed"));
         assertSame(ChecklistStepStatus.SKIPPED, ChecklistRules.parseStepStatus(" SKIPPED "));
-        assertThrows(ClientException.class, () -> ChecklistRules.parseStepStatus("PENDING"));
+        assertSame(ChecklistStepStatus.PENDING, ChecklistRules.parseStepStatus(" pending "));
+        assertSame(ChecklistStepStatus.IN_PROGRESS, ChecklistRules.parseStepStatus("IN_PROGRESS"));
         assertThrows(ClientException.class, () -> ChecklistRules.parseStepStatus("DONE"));
         assertThrows(ClientException.class, () -> ChecklistRules.parseStepStatus(null));
     }

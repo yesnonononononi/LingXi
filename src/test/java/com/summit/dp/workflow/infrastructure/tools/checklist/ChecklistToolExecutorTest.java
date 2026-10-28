@@ -155,7 +155,19 @@ class ChecklistToolExecutorTest {
         verify(service).delete(captor.capture());
         assertEquals(SESSION_ID, captor.getValue().getSessionId());
         assertEquals(9001L, captor.getValue().getChecklistId());
+        assertFalse(captor.getValue().isCompleteOpenSteps());
         assertTrue(result.getToolOutput().contains("DELETED"), result.getToolOutput());
+    }
+
+    @Test
+    void deleteForwardsExplicitCompletionFlag() throws Exception {
+        when(service.delete(any())).thenReturn(snapshot("DELETED"));
+        ToolExecuteResult result = new DeleteChecklistTool(objectMapper, service)
+                .execute(execution(Map.of("checklistId", 9001L, "completeOpenSteps", true)));
+        assertTrue(result.isSuccess(), result.getToolOutput());
+        ArgumentCaptor<ChecklistCommand> captor = ArgumentCaptor.forClass(ChecklistCommand.class);
+        verify(service).delete(captor.capture());
+        assertTrue(captor.getValue().isCompleteOpenSteps());
     }
 
     @Test

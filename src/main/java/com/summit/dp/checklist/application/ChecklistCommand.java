@@ -45,6 +45,8 @@ public class ChecklistCommand {
     private List<Long> removedStepIds;
     /** 修改后的完整顺序；为空表示沿用现有顺序 */
     private List<Long> orderedStepIds;
+    /** 删除前显式完成剩余步骤；默认保留原状态。 */
+    private boolean completeOpenSteps;
 
     /** 步骤内容补丁项：标识稳定，文案可改。 */
     public record StepContent(Long stepId, String content) {
@@ -77,8 +79,14 @@ public class ChecklistCommand {
 
     /** 软删清单。 */
     public static ChecklistCommand delete(long sessionId, Long checklistId) {
+        return delete(sessionId, checklistId, false);
+    }
+
+    /** 删除与剩余步骤的完成事实必须在同一事务落库。 */
+    public static ChecklistCommand delete(long sessionId, Long checklistId, boolean completeOpenSteps) {
         return ChecklistCommand.builder()
                 .sessionId(sessionId).checklistId(checklistId)
+                .completeOpenSteps(completeOpenSteps)
                 .build();
     }
 }
