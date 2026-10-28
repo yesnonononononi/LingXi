@@ -16,9 +16,28 @@ import { setPreference, t as translate } from '../src/i18n';
 interface Node {
   tag: string; text: string; props: Record<string, any>; children: Node[]; parent: Node | null;
   addEventListener: (...args: any[]) => void;
+  classList: { add: (...names: string[]) => void; remove: (...names: string[]) => void; contains: (name: string) => boolean };
   options: Node[];
 }
+/**
+ * 合成节点的 classList。
+ *
+ * <p>为什么必须有：`dd853da` 把四处弹窗收敛到 LxModal 后，弹窗内容被 `<Transition>` 包了一层，
+ * 而 Transition 的入场钩子（@vue/runtime-dom runtime-dom.cjs 的 addTransitionClass）会执行
+ * {@code el.classList.add(cls)}。真实 DOM 元素天然有这个属性，合成节点没有 ⇒ 钩子抛
+ * `TypeError: Cannot read properties of undefined (reading 'add')`，mountElement 中途失败，
+ * 子树根本没挂上 —— 表现为「断言找不到元素」，看起来像组件把内容吃掉，实则桩不足。</p>
+ */
+const makeClassList = () => {
+  const names = new Set<string>();
+  return {
+    add: (...list: string[]) => list.forEach(name => names.add(name)),
+    remove: (...list: string[]) => list.forEach(name => names.delete(name)),
+    contains: (name: string) => names.has(name),
+  };
+};
 const node = (tag: string, text = ''): Node => ({ tag, text, props: {}, children: [], parent: null, addEventListener() {},
+  classList: makeClassList(),
   get options() { return this.children.filter(child => child.tag === 'option'); } });
 const text = (value: Node): string => value.tag === '#comment' ? '' : value.text + value.children.map(text).join('');
 function find(value: Node, predicate: (item: Node) => boolean): Node | undefined {
@@ -146,6 +165,17 @@ async function mount(context: test.TestContext, path: string, props: Record<stri
   await settle(); return root;
 }
 
+/**
+ * 零时长的 computed style。
+ *
+ * <p>Transition 结束判定（runtime-dom 的 getTransitionInfo）会读 `transitionDelay` 等四个属性；
+ * 返回空串即可判定「无过渡」，钩子立刻收尾。桩缺这一项时 `<Transition>` 会以
+ * `ReferenceError: window is not defined / getComputedStyle is not a function` 打断挂载。</p>
+ */
+const ZERO_TRANSITION_STYLE: Record<string, string> = {
+  transitionDelay: '', transitionDuration: '', animationDelay: '', animationDuration: '',
+};
+
 function prepare(context: test.TestContext) {
   const previousGlobals = new Map<string, PropertyDescriptor | undefined>();
   /**
@@ -170,7 +200,14 @@ function prepare(context: test.TestContext) {
       setTimeout, clearTimeout,
       addEventListener() {}, removeEventListener() {},
       innerWidth: 1280, innerHeight: 800,
+      // Transition 结束判定读 window.getComputedStyle；缺它会以 ReferenceError 打断挂载。
+      getComputedStyle() { return ZERO_TRANSITION_STYLE; },
+      requestAnimationFrame: (cb: (time: number) => void) => setTimeout(() => cb(0), 0),
+      cancelAnimationFrame: (id: any) => clearTimeout(id),
     },
+    // Transition 的入场走 nextFrame（双 rAF），裸全局缺它会 ReferenceError。
+    requestAnimationFrame: (cb: (time: number) => void) => setTimeout(() => cb(0), 0),
+    cancelAnimationFrame: (id: any) => clearTimeout(id),
     Document: class {}, ShadowRoot: class {},
   })) {
     const previous = Object.getOwnPropertyDescriptor(globalThis, key);
