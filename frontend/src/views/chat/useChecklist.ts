@@ -35,7 +35,7 @@ export function useChecklist(sessionId: Readonly<Ref<string | null>>, api = Chec
       try {
         do {
           dirty = false;
-          const response = await api.current(owner, signal);
+          const response = await api.latest(owner, signal);
           if (disposed || revision !== epoch) return;
           if (!isOk(response.code) || (response.data !== null
               && (!isChecklistSnapshot(response.data) || response.data.sessionId !== owner))) {
@@ -71,6 +71,8 @@ export function useChecklist(sessionId: Readonly<Ref<string | null>>, api = Chec
     void refresh();
   }, { immediate: true, flush: 'sync' });
   const timer = setInterval(() => {
+    // 已删除的历史不可再变，继续轮询只是白烧请求；审计视图靠手动刷新即可。
+    if (snapshot.value?.status === 'DELETED') return;
     elapsed += 1;
     if (typeof document !== 'undefined' && document.hidden) return;
     if (elapsed >= (snapshot.value?.status === 'ACTIVE' ? 5 : 15) && !flight) void refresh();

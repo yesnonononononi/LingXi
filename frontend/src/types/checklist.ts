@@ -9,7 +9,7 @@ export interface ChecklistSnapshot {
   checklistId: string;
   sessionId: string;
   title: string;
-  status: 'ACTIVE' | 'COMPLETED' | 'UNFINISHED';
+  status: 'ACTIVE' | 'COMPLETED' | 'CLOSED' | 'FAILED' | 'UNFINISHED' | 'DELETED';
   steps: ChecklistStep[];
 }
 
@@ -18,7 +18,7 @@ export function isChecklistSnapshot(value: unknown): value is ChecklistSnapshot 
   if (!value || typeof value !== 'object') return false;
   const snapshot = value as ChecklistSnapshot;
   if (!isId(snapshot.checklistId) || !isId(snapshot.sessionId) || typeof snapshot.title !== 'string'
-      || !['ACTIVE', 'COMPLETED', 'UNFINISHED'].includes(snapshot.status)
+      || !['ACTIVE', 'COMPLETED', 'CLOSED', 'FAILED', 'UNFINISHED', 'DELETED'].includes(snapshot.status)
       || !Array.isArray(snapshot.steps) || snapshot.steps.length === 0) return false;
   const ids = new Set<string>();
   const sequences = new Set<number>();

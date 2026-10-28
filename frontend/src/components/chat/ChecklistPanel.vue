@@ -20,6 +20,9 @@ function toggle() { emit('update:expanded', !props.expanded); if (!props.expande
       <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="2.5" width="15" height="15" rx="3"/><path d="m5.5 7 1 1 2-2m2.5 1H15m-9.5 6 1 1 2-2m2.5 1H15"/></svg>
       <span>{{ t('chat.checklist.title') }}</span>
       <span v-if="snapshot" aria-live="polite">{{ settled }}/{{ steps.length }}</span>
+      <span v-if="snapshot?.status === 'FAILED'">{{ t('chat.checklist.failedResult') }}</span>
+      <span v-else-if="snapshot?.status === 'CLOSED'">{{ t('chat.checklist.closedResult') }}</span>
+      <span v-else-if="snapshot?.status === 'DELETED'">{{ t('chat.checklist.deletedResult') }}</span>
       <span v-if="error" :title="error">!</span>
       <svg viewBox="0 0 20 20" aria-hidden="true"><path :d="expanded ? 'm5 7 5 5 5-5' : 'm5 12 5-5 5 5'"/></svg>
     </button>
@@ -33,6 +36,9 @@ function toggle() { emit('update:expanded', !props.expanded); if (!props.expande
       </header>
       <p v-if="error" role="alert" class="checklist-note">{{ error }}</p>
       <p v-if="snapshot?.status === 'UNFINISHED'" class="checklist-note">{{ t('chat.checklist.unfinished') }}</p>
+      <p v-else-if="snapshot?.status === 'FAILED'" class="checklist-note">{{ t('chat.checklist.failedResult') }}</p>
+      <p v-else-if="snapshot?.status === 'CLOSED'" class="checklist-note">{{ t('chat.checklist.closedResult') }}</p>
+      <p v-else-if="snapshot?.status === 'DELETED'" class="checklist-note">{{ t('chat.checklist.deletedNote') }}</p>
       <ul class="checklist-steps">
         <li v-for="step in steps" :key="step.stepId" :data-status="step.status" class="checklist-step">
           <svg v-if="step.status === 'IN_PROGRESS' && snapshot?.status === 'ACTIVE' && executing" class="checklist-loading" viewBox="0 0 20 20"
@@ -46,9 +52,11 @@ function toggle() { emit('update:expanded', !props.expanded); if (!props.expande
             <circle v-else cx="10" cy="10" r="6.5" />
           </svg>
           <span class="checklist-content">{{ step.content }}</span>
-          <span class="checklist-status">{{ snapshot?.status === 'UNFINISHED' && step.status === 'IN_PROGRESS'
-            ? t('chat.checklist.unfinished') : step.status === 'IN_PROGRESS' && !executing
-              ? t('chat.checklist.paused') : t(`chat.checklist.status.${step.status}`) }}</span>
+          <span class="checklist-status">{{ snapshot?.status === 'DELETED'
+            ? t(`chat.checklist.status.${step.status}`)
+            : snapshot?.status === 'UNFINISHED' && step.status === 'IN_PROGRESS'
+              ? t('chat.checklist.unfinished') : step.status === 'IN_PROGRESS' && !executing
+                ? t('chat.checklist.paused') : t(`chat.checklist.status.${step.status}`) }}</span>
         </li>
       </ul>
     </section>

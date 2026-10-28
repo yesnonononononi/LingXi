@@ -305,6 +305,9 @@ export const messages: MessageSchema = {
       checklist: {
         title: '任务清单', loadFailed: '任务清单加载失败，请重试', invalidData: '任务清单数据不完整，请刷新重试',
         unfinished: '未完成', paused: '等待继续', progress: '已处理 {settled}/{total} 项，详情包含成功、失败和跳过状态',
+        failedResult: '已结案，存在失败', closedResult: '已结案，包含跳过',
+        deletedResult: '已删除，仅供审计',
+        deletedNote: '这份清单已被删除：详情保留仅供复核，不能继续推进；需要继续工作请新建清单。',
         status: { PENDING: '待处理', IN_PROGRESS: '进行中', COMPLETED: '已完成', FAILED: '失败', SKIPPED: '已跳过' },
       },
       backgroundTasks: {
@@ -1425,6 +1428,9 @@ export const messages: MessageSchema = {
       checklist: {
         title: 'Checklist', loadFailed: 'Could not load the checklist. Please retry.', invalidData: 'Checklist data is incomplete. Please refresh.',
         unfinished: 'Unfinished', paused: 'Waiting to continue', progress: '{settled}/{total} processed; details distinguish completed, failed and skipped steps',
+        failedResult: 'Closed with failures', closedResult: 'Closed with skipped steps',
+        deletedResult: 'Deleted, audit only',
+        deletedNote: 'This checklist was deleted. Its details are kept for review only; create a new checklist to keep working.',
         status: { PENDING: 'Pending', IN_PROGRESS: 'In progress', COMPLETED: 'Completed', FAILED: 'Failed', SKIPPED: 'Skipped' },
       },
       backgroundTasks: {

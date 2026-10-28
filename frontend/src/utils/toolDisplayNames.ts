@@ -30,6 +30,7 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = n
   // 执行清单工具与 create_plan 分类不同：它们是执行期可维护的待办，不产生审批卡片
   [AgentToolName.CreateChecklist, defineToolName('创建执行清单', 'Create checklist', 'tool.category.checklist')],
   [AgentToolName.GetCurrentChecklist, defineToolName('查看当前执行清单', 'Get current checklist', 'tool.category.checklist')],
+  [AgentToolName.GetChecklist, defineToolName('按标识查看执行清单', 'Get checklist', 'tool.category.checklist')],
   [AgentToolName.UpdateChecklistStep, defineToolName('更新清单步骤', 'Update checklist step', 'tool.category.checklist')],
   [AgentToolName.ModifyChecklist, defineToolName('修改执行清单', 'Modify checklist', 'tool.category.checklist')],
   [AgentToolName.DeleteChecklist, defineToolName('删除执行清单', 'Delete checklist', 'tool.category.checklist')],

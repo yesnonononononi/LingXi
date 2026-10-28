@@ -23,11 +23,11 @@ function fixture(api: typeof ChecklistAPI, id: string | null = ROOT) {
   return { session, scope, feed: scope.run(() => useChecklist(session, api))! };
 }
 
-test('清单 API 保留雪花字符串和请求取消信号', async context => {
+test('清单 API 保留雪花字符串和请求取消信号，并走常驻展示口径', async context => {
   const get = context.mock.method(http, 'get', async () => ok(null));
   const signal = new AbortController().signal;
-  await ChecklistAPI.current(ROOT, signal);
-  assert.deepEqual(get.mock.calls[0]!.arguments, ['/checklist/current', { params: { sessionId: ROOT }, signal }]);
+  await ChecklistAPI.latest(ROOT, signal);
+  assert.deepEqual(get.mock.calls[0]!.arguments, ['/checklist/latest', { params: { sessionId: ROOT }, signal }]);
 });
 
 test('快照校验先做有效样本正对照，再拒绝重复标识、顺序与未知状态', () => {
@@ -42,9 +42,21 @@ test('快照校验先做有效样本正对照，再拒绝重复标识、顺序�
   }
 });
 
+test('后端失败、跳过与已删除结案状态保留原样，不伪造成功也不隐藏历史', async context => {
+  for (const status of ['FAILED', 'CLOSED', 'DELETED'] as const) {
+    const snapshot: ChecklistSnapshot = { ...createSnapshot(), status };
+    assert.equal(isChecklistSnapshot(snapshot), true);
+    const f = fixture({ latest: async () => ok(snapshot) });
+    context.after(() => f.scope.stop());
+    await tick();
+    assert.equal(f.feed.snapshot.value?.status, status);
+    assert.equal(f.feed.error.value, '');
+  }
+});
+
 test('空会话不请求，权威空值删除胶囊，失败保留原快照并展示错误', async context => {
   let calls = 0; let response: Result<ChecklistSnapshot | null> = ok(createSnapshot());
-  const f = fixture({ current: async () => { calls++; return response; } }, null);
+  const f = fixture({ latest: async () => { calls++; return response; } }, null);
   context.after(() => f.scope.stop()); await tick(); assert.equal(calls, 0);
   f.session.value = ROOT; await tick(); assert.equal(f.feed.snapshot.value?.sessionId, ROOT);
   response = { code: 0, errMsg: '清单读取失败' }; await f.feed.refresh();
@@ -54,20 +66,20 @@ test('空会话不请求，权威空值删除胶囊，失败保留原快照并�
 
 test('切换会话会取消旧请求，迟到结果不得回写；错误归属也被拒绝', async context => {
   const old = deferred<Result<ChecklistSnapshot | null>>(); let oldSignal: AbortSignal | undefined;
-  const f = fixture({ current: async (owner, signal) => {
+  const f = fixture({ latest: async (owner, signal) => {
     if (owner === ROOT) { oldSignal = signal; return old.promise; }
     return ok(createSnapshot(OTHER));
   } });
   context.after(() => f.scope.stop()); await tick();
   f.session.value = OTHER; await tick(); assert.equal(oldSignal?.aborted, true);
   old.resolve(ok(createSnapshot())); await tick(); assert.equal(f.feed.snapshot.value?.sessionId, OTHER);
-  const wrong = fixture({ current: async () => ok(createSnapshot(OTHER)) });
+  const wrong = fixture({ latest: async () => ok(createSnapshot(OTHER)) });
   context.after(() => wrong.scope.stop()); await tick(); assert.equal(wrong.feed.snapshot.value, null); assert.ok(wrong.feed.error.value);
 });
 
 test('清单工具事件只触发所属会话回查，请求中变化必须二次回查', async context => {
   const first = deferred<Result<ChecklistSnapshot | null>>(); let calls = 0;
-  const f = fixture({ current: async () => ++calls === 1 ? first.promise : ok(null) });
+  const f = fixture({ latest: async () => ++calls === 1 ? first.promise : ok(null) });
   context.after(() => f.scope.stop()); await tick();
   const event = { type: 'TOOL_COMPLETED' as const, executionId: '21', timestamp: '', toolName: AgentToolName.DeleteChecklist,
     metaData: { sessionId: OTHER } };
@@ -80,6 +92,7 @@ test('清单工具事件只触发所属会话回查，请求中变化必须二�
 
 test('卸载后响应不能回写，未知数据不会生成临时清单', async () => {
   const pending = deferred<Result<ChecklistSnapshot | null>>();
-  const f = fixture({ current: async () => pending.promise }); await tick(); f.scope.stop();
+  const f = fixture({ latest: async () => pending.promise }); await tick(); f.scope.stop();
   pending.resolve(ok(createSnapshot())); await tick(); assert.equal(f.feed.snapshot.value, null);
 });
+
