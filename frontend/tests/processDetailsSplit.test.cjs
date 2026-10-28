@@ -134,6 +134,67 @@ test('兜底不白屏：未知类型渲染占位行，且不新增 i18n 键', as
   assert.ok(message, '构造消息成功');
 });
 
+test('未命中类型穿过真实注册表：空串 / 未知 / 缺 type 都落兜底，单行灰字且不加宽度类', async t => {
+  const processDetails = harness.componentFromSrc('components/chat/ProcessDetails.vue',
+    { compileId: 'process-details-split' });
+  const items = reactive([
+    { id: 'u1', type: '', order: 0 },
+    { id: 'u2', type: 'mystery_block', order: 1 },
+    { id: 'u3', order: 2 },
+  ]);
+  const root = mountComponent(t, processDetails, {
+    items, isDark: true, sessionId: '7', messageIsSuspended: false, isRunningTurn: false,
+  }, { raf: true });
+  const rows = elementChildren(elementChildren(root)[0]);
+  assert.equal(rows.length, 3, '每个未知项都要渲染一行，既不能白屏也不能被合并掉');
+  assert.deepEqual(rows.map(row => row.props['data-item-type']), ['', 'mystery_block', undefined],
+    '兜底行回显原始 type，便于 dev 排查');
+  for (const row of rows) {
+    assert.equal(row.props.class, 'text-xs text-zinc-400 font-mono', '兜底行沿用既有单行灰字样式');
+    assert.doesNotMatch(String(row.props.class), /\b(w-full|flex-1|min-w-\S+)\b/, '兜底行不得撑宽');
+    assert.match(text(row), /\(暂无输出\)/, '不得出现未翻译的 key 字面量');
+  }
+});
+
+test('段内插入新工具：renderer 实例与折叠态按 item.id 保持', async t => {
+  const processDetails = harness.componentFromSrc('components/chat/ProcessDetails.vue',
+    { compileId: 'process-details-split' });
+  const toolRow = (id, toolName, order, extra = {}) => ({ id, type: 'tool', order,
+    tool: { id, toolName, order, status: 'success', ...extra } });
+  const items = reactive([
+    toolRow('run-1', 'execute_command', 0, { query: JSON.stringify({ command: 'npm test' }) }),
+    toolRow('read-1', 'read_file', 1, { args: { path: 'tail.md' } }),
+  ]);
+  const root = mountComponent(t, processDetails, {
+    items, isDark: true, sessionId: '7', messageIsSuspended: false, isRunningTurn: false,
+  }, { raf: true });
+  // ProcessDetails 根是 div.space-y-2.5，renderer 行是它的直接子元素。
+  const rows = () => elementChildren(elementChildren(root)[0]);
+  const cardCount = (row) => findAll(row,
+    node => String(node.props?.class ?? '').includes('rounded-2xl border overflow-hidden')).length;
+
+  assert.equal(rows().length, 2);
+  const runRow = rows()[0];
+  const readRow = rows()[1];
+  assert.equal(cardCount(runRow), 0, '折叠态不渲染详情卡片');
+  // 展开命令工具（读文件没有详情，不渲染箭头按钮）。
+  const expandButton = find(runRow, node => node.tag === 'button' && node.props['aria-expanded'] !== undefined);
+  assert.ok(expandButton, '可展开的工具行必须有箭头按钮');
+  expandButton.props.onClick({ stopPropagation() {} });
+  await nextTick();
+  assert.equal(cardCount(runRow), 1, '点击后展开详情卡片');
+
+  // 新工具插到中间：位置按时间线顺序生效，但同 id 的实例必须复用。
+  items.splice(1, 0, toolRow('mid-1', 'edit_file', 1, { args: { path: 'mid.md' } }));
+  await nextTick();
+  const after = rows();
+  assert.equal(after.length, 3);
+  assert.match(text(after[1]), /mid\.md/, '新工具插到中间位置');
+  assert.equal(after[0], runRow, '同 id 的 renderer 实例被复用，节点身份不变');
+  assert.equal(after[2], readRow, '后续行同样复用实例');
+  assert.equal(cardCount(after[0]), 1, '折叠态按 item.id 保持，插队不会把已展开行折叠回去');
+});
+
 test('兜底渲染器直接挂载：未知项显示既有文案，不出现 key 字面量', t => {
   const unknownRenderer = harness.componentFromSrc('components/chat/process/UnknownItemRenderer.vue',
     { compileId: 'process-details-split' });

@@ -26,12 +26,13 @@ import { AgentToolName } from '../src/utils/toolNames';
 setPreference('zh-CN');
 
 /** 造一个工具项；`status` 直接决定 running / pending 计数。 */
-function toolItem(id: string, order: number, status: string): ProcessTimelineItem {
+function toolItem(id: string, order: number, status: string,
+  toolName: string = AgentToolName.ReadFile): ProcessTimelineItem {
   return {
     id,
     type: 'tool',
     order,
-    tool: { id, toolName: AgentToolName.ReadFile, order, status, args: { path: `${id}.md` } },
+    tool: { id, toolName, order, status, args: { path: `${id}.md` } },
   };
 }
 
@@ -90,6 +91,27 @@ test('判定表 7/8：段仍在增长（未收尾）且轮次未结束 → live'
   }
 });
 
+test('判定表 8/8 接线：live 段用最新一步，summary 段用整段概览（mode 必须真的接到 headline）', () => {
+  // 未收尾 + 轮次进行中 → live：标题与预览都必须指向「最新一步」。
+  const live = segmentViews(segmentParts([
+    toolItem('a', 0, 'success'),
+    toolItem('b', 1, 'calling', AgentToolName.EditFile),
+  ], false), true)[0];
+  assert.equal(live.mode, 'live');
+  assert.equal(live.headline.title, '写入', 'live 标题取最新一步的工具名（写入），不是整段类别集合');
+  assert.equal(live.headline.preview, 'b.md', 'live 预览取最新一步的目标，不是整段目标列表');
+  assert.equal(live.headline.previewKind, 'value');
+
+  // 已收尾且步骤全定型 → summary：标题与预览都必须是整段概览。
+  const summary = segmentViews(segmentParts([
+    toolItem('a', 0, 'success'),
+    toolItem('b', 1, 'success', AgentToolName.EditFile),
+  ], true), true)[0];
+  assert.equal(summary.mode, 'summary');
+  assert.equal(summary.headline.title, '读取、写入', 'summary 标题列出整段类别');
+  assert.equal(summary.headline.preview, 'a.md、b.md', 'summary 预览列出整段目标');
+});
+
 test('unknown 计数不参与判定，只影响状态文案', () => {
   const views = segmentViews(segmentParts([toolItem('a', 0, 'unknown')], true), true);
   assert.equal(views[0].mode, 'summary', 'unknown 既不能证明在跑也不能证明定型，不否决概览');
@@ -123,9 +145,17 @@ test('mergeSummaries：计数相加、工具名与目标保序去重、latest �
   assert.equal(merged.unknownCount, 3);
   assert.equal(merged.latest?.id, 'a', 'latest 取最后一个有值的摘要');
   assert.equal(mergeSummaries([]).latest, undefined);
+  // latest 全为 undefined 时（整组合并到的都是没有过程事实的摘要）同样返回 undefined，计数照常相加。
+  const noLatest = mergeSummaries([
+    EMPTY_PROCESS_SUMMARY,
+    { toolNames: [], targets: [], pendingCount: 1, runningCount: 2, unknownCount: 3 },
+  ]);
+  assert.equal(noLatest.latest, undefined, 'latest 全为 undefined 时不得凭空造出最新一步');
+  assert.deepEqual([noLatest.pendingCount, noLatest.runningCount, noLatest.unknownCount], [1, 2, 3],
+    '计数仍逐段相加');
 });
 
-test('失效分频：只翻 ongoing 时 summarizeProcess 一次都不被调用（层二不重算摘要）', () => {
+test('失效分频：层一按段各摘一次（注入计数桩）', () => {
   const parts = buildProcessSegments([
     toolItem('a', 0, 'success'), textItem('t1', 1), toolItem('b', 2, 'calling'),
   ]);
@@ -138,10 +168,47 @@ test('失效分频：只翻 ongoing 时 summarizeProcess 一次都不被调用�
   const summaries = deriveProcessSummaries(parts, [], countingSummarize);
   const segmentCount = parts.filter(part => part.kind === 'process').length;
   assert.equal(calls, segmentCount, '层一按段各摘一次');
+  assert.equal(summaries.length, parts.length, '摘要与分段等长，索引一一对应');
 
-  const before = calls;
   for (const ongoing of [true, false, true, false]) deriveProcessViews(parts, summaries, ongoing);
-  assert.equal(calls, before, '层二（含只翻 ongoing）绝不能再调用摘要函数');
+  assert.equal(calls, segmentCount, '层二没有持有计数桩，故计数不变（这条本身不可证伪，真正的锁见下一条）');
+});
+
+/**
+ * ★ 层二不得再遍历段内 items —— 用 Proxy 把「读了几次 items」变成可观测、可证伪的事实。
+ *
+ * <p>为什么不能用上一条的「注入计数桩」：`deriveProcessViews` 根本拿不到那个桩，
+ * 所以「计数不变」永远成立，对「层二自己又 summarize 一遍」这种真实回归**不会变红**。
+ * 这里改为统计 `part.items` 的读取次数：层二只允许读 `part.closed` 与入参摘要，
+ * 一旦它自己再跑 `summarizeProcess`（或任何遍历 items 的实现），计数必然增长。</p>
+ */
+test('★ 失效分频可证伪：只翻 ongoing 时层二连段内 items 都不再遍历', () => {
+  const parts = buildProcessSegments([
+    toolItem('a', 0, 'success'),
+    toolItem('b', 1, 'success'),
+    toolItem('c', 2, 'success'),
+    textItem('t1', 3),
+  ]);
+  const reads = new Map<string, number>();
+  const tracked: ProcessPart[] = parts.map(part => {
+    if (part.kind !== 'process') return part;
+    reads.set(part.id, 0);
+    const proxy = new Proxy(part.items, {
+      get(target, prop, receiver) {
+        reads.set(part.id, (reads.get(part.id) ?? 0) + 1);
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+    return { ...part, items: proxy };
+  });
+
+  const summaries = deriveProcessSummaries(tracked);
+  assert.ok([...reads.values()].some(count => count > 0), '层一确实遍历了 items（探针有效）');
+  const before = [...reads.entries()].map(([id, count]) => `${id}:${count}`);
+
+  for (const ongoing of [true, false, true, false]) deriveProcessViews(tracked, summaries, ongoing);
+  const after = [...reads.entries()].map(([id, count]) => `${id}:${count}`);
+  assert.deepEqual(after, before, '层二不得再遍历段内 items（重算摘要会让这里的计数增长）');
 });
 
 test('层二只读入参摘要：传入与 items 不一致的摘要，headline 必须跟着摘要走（不重算）', () => {

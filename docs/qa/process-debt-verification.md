@@ -11,8 +11,8 @@
 | 断言目标 | 手段 | 落点 | 本轮结果 |
 |---|---|---|---|
 | 模式判据语义（8 条判定表） | 纯函数单测 | `tests/processSegments.test.ts`（6 例） | pass |
-| 判定表经视图模型仍然成立 | 纯函数单测 | `tests/processViewModel.test.ts`（10 例） | pass |
-| 失效分频（只翻 `ongoing` 不重算摘要） | 调用计数桩 | `tests/processViewModel.test.ts` | pass |
+| 判定表经视图模型仍然成立 | 纯函数单测 | `tests/processViewModel.test.ts`（12 例） | pass |
+| 失效分频（只翻 `ongoing` 不重算摘要） | **Proxy 统计 `part.items` 读取次数**（可证伪） | `tests/processViewModel.test.ts`「★ 失效分频可证伪：只翻 ongoing 时层二连段内 items 都不再遍历」 | pass |
 | 段渲染结果（标题/预览/状态/`data-process-mode`/扫光类） | 真实组件挂载（`createRenderer`） | `tests/chatProcessCollapse.test.cjs`（36 例） | pass |
 | 协作式委派成员行与色点 | 真实组件挂载 | `tests/chatAsyncDelegationStatus.test.cjs`（11 例）+ `tests/qaAsyncDelegationAdversarial.test.cjs`（3 例） | pass |
 | 扫光样式类只出现在模板、`mode` 绑定名不变 | 源码字面断言 | `tests/loadingSweep.test.cjs` | pass |
@@ -29,15 +29,22 @@ node --test tests/chatProcessCollapse.test.cjs tests/loadingSweep.test.cjs \
   tests/chatAsyncDelegationStatus.test.cjs tests/qaAsyncDelegationAdversarial.test.cjs \
   tests/collapseTransitionClip.test.cjs tests/processDetailsSplit.test.cjs \
   tests/toolRowIconAlignment.test.cjs
-→ tests 68 / pass 68 / fail 0
+→ tests 70 / pass 70 / fail 0
 
 npx tsx --test tests/processSegments.test.ts tests/processHeadline.test.ts \
   tests/processViewModel.test.ts tests/toolRowUi.test.ts
-→ tests 41 / pass 41 / fail 0
+→ tests 43 / pass 43 / fail 0
 
 npx vue-tsc -b --force        → exit 0，无输出
 npm run build                 → vite 构建成功（built in 1m 45s）
 ```
+
+> **口径修正（QA 独立验证发现）**：上表原「失效分频」一行写的是「调用计数桩」锁定。事实是
+> `deriveProcessViews` 拿不到那个桩，所以「计数不变」恒真，对「层二自己又 summarize 一遍」这种
+> 真实回归**不会变红**——按团队纪律「断言必须能因缺陷变红」，这条不能算锁定。
+> 现已改为 Proxy 统计 `part.items` 读取次数：把 `deriveProcessViews` 改成自己重算摘要时，
+> 该用例立即变红（实测 12 例中 2 红，断言消息「层二不得再遍历段内 items」）。
+> 上面 70 / 43 两个数字已含 QA 本轮新增的 4 例。
 
 基线对照：改造前 `chatProcessCollapse` 35 例、`loadingSweep + chatAsyncDelegationStatus` 17 例、
 `processSegments` 11 例全绿。T01（harness 改造）完成时结果与基线逐条一致（35 → 35，随后新增
