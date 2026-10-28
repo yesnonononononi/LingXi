@@ -54,7 +54,7 @@ window.taskData={[root]:[],[other]:[]};
 window.makeTask=owner=>({id:'9007199254741021',sessionId:owner,turnId:'9007199254741023',command:'mvn verify',intention:'运行后端回归测试',status:'RUNNING',createAt:new Date().toISOString(),output:'<script>window.injected=true</script>',truncated:false});
 http.defaults.adapter=async config=>{window.requests.push(config.url);const owner=config.params?.sessionId;
 let data=null;
-if(config.url==='/checklist/current')data=window.snapshots[owner]??null;
+if(config.url==='/checklist/latest')data=window.snapshots[owner]??null;
 else if(config.url==='/task/runtime/list')data=window.taskData[owner]??[];
 else if(config.url.startsWith('/task/runtime/'))data=(window.taskData[owner]??[]).find(task=>task.id===config.url.split('/')[3]);
 else throw new Error('意外请求: '+config.url);
@@ -63,7 +63,7 @@ window.fetch=async url=>{const id=String(url).match(/completion\\/(\\d+)\\/event
 if(!id)throw new Error('意外事件请求: '+url);
 return new Response(new ReadableStream({start(controller){window.controllers[id]=controller;controller.enqueue(new TextEncoder().encode('event: READY\\ndata: '+JSON.stringify({rootSessionId:id})+'\\n\\n'));}}),{headers:{'Content-Type':'text/event-stream'}});};
 window.emitChecklist=()=>window.controllers[root].enqueue(new TextEncoder().encode('event: TOOL_COMPLETED\\ndata: '+JSON.stringify({type:'TOOL_COMPLETED',executionId:'81',timestamp:new Date().toISOString(),toolName:AgentToolName.UpdateChecklistStep,metaData:{rootSessionId:root,sessionId:root}})+'\\n\\n'));
-window.flush=async()=>{await nextTick();await new Promise(resolve=>setTimeout(resolve,60));};
+window.flush=async()=>{await nextTick();await new Promise(resolve=>setTimeout(resolve,220));};
 const {default:App}=await import('./App.vue');createApp(App).mount('#app');await window.flush();window.ready=true;`);
   await fs.writeFile(path.join(output, 'index.html'), '<!doctype html><html><head><meta charset="utf-8"></head><body><div id="app"></div><script type="module" src="./entry.js"></script></body></html>');
   const { build } = await import('vite'); const { default: vue } = await import('@vitejs/plugin-vue');

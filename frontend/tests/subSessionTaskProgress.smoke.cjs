@@ -86,7 +86,7 @@ window.emit=(name,data)=>window.controllers.at(-1).enqueue(new TextEncoder().enc
 window.emitChecklist=()=>window.emit('TOOL_COMPLETED',{type:'TOOL_COMPLETED',executionId:'23',timestamp:'',
   toolName:AgentToolName.UpdateChecklistStep,metaData:{rootSessionId:root,sessionId:sub}});
 window.emitTask=()=>window.emit('BACKGROUND_TASK_CHANGED',{rootSessionId:root,sessionId:sub,taskId:sub,status:'SUCCESS'});
-window.flush=async()=>{await nextTick();await new Promise(resolve=>setTimeout(resolve,40));};
+window.flush=async()=>{await nextTick();await new Promise(resolve=>setTimeout(resolve,220));};
 createApp(App).use(createPinia()).mount('#app');window.ready=true;`);
   await fs.writeFile(path.join(output, 'index.html'), '<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0"><div id="app"></div><script type="module" src="./entry.js"></script></body></html>');
   const { build } = await import('vite');
@@ -99,6 +99,10 @@ createApp(App).use(createPinia()).mount('#app');window.ready=true;`);
     if (process.env.SUB_TASK_PROGRESS_MUTATION === 'owner' && id.endsWith('/useSubSessionTaskProgress.ts')) {
       assert.ok(source.includes('toServerId(session.value?.id)'));
       return source.replace('toServerId(session.value?.id)','toServerId(session.value?.rootSessionId)');
+    }
+    if (process.env.SUB_TASK_PROGRESS_MUTATION === 'animation' && id.endsWith('/taskProgress.css')) {
+      assert.ok(source.includes('transition: opacity 160ms ease'));
+      return source.replace('transition: opacity 160ms ease, transform 160ms cubic-bezier(.22, 1, .36, 1)', 'transition: none');
     }
   } };
   await build({configFile:false,root:output,base:'./',plugins:[mutationPlugin,vue()],logLevel:'error',
@@ -113,6 +117,24 @@ createApp(App).use(createPinia()).mount('#app');window.ready=true;`);
   const step = source => evaluate(`(async()=>{${source};await window.flush();})()`);
   const click = (id,scope='aside') => step(`document.querySelector('${scope} [data-testid=${id}]').click()`);
   await until('window.ready && document.querySelectorAll("aside .task-pill").length===2');
+  const sampleTransition = (trigger,selector) => evaluate(`(async()=>{
+    ${trigger};await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
+    await new Promise(resolve=>setTimeout(resolve,40));
+    const element=document.querySelector('${selector}');if(!element)return null;
+    const style=getComputedStyle(element);return {opacity:Number(style.opacity),transform:style.transform,
+      duration:style.transitionDuration,pointerEvents:style.pointerEvents};})()`);
+  const entering = await sampleTransition('document.querySelector("aside [data-testid=background-task-toggle]").click()', 'aside .task-popup-enter-active');
+  assert.ok(entering && entering.opacity>0 && entering.opacity<1,`展开必须有真实的中间帧: ${JSON.stringify(entering)}`);
+  assert.match(entering.duration,/0\.16s/);
+  await step('');
+  const leaving = await sampleTransition('document.querySelector("aside [data-testid=background-task-toggle]").click()', 'aside .task-popup-leave-active');
+  assert.ok(leaving && leaving.opacity>0 && leaving.opacity<1,'收起必须保留淡出中间帧');
+  assert.equal(leaving.pointerEvents,'none','退场面板不能继续响应操作');
+  await step('');
+  await step('window.savedTasks=window.tasks["9007199254740995"]');
+  const capsuleLeaving = await sampleTransition('window.tasks["9007199254740995"]=[];window.emitTask()', 'aside .task-capsule-leave-active');
+  assert.ok(capsuleLeaving && capsuleLeaving.opacity>0 && capsuleLeaving.opacity<1,'单个胶囊移除也必须淡出');
+  await step('window.tasks["9007199254740995"]=window.savedTasks;window.emitTask()');
   assert.equal(await evaluate('window.controllers.length'),1,'复用一条根会话连接');
   await click('background-task-toggle');
   assert.match(await evaluate('document.querySelector("aside .task-list").textContent'),/子会话后台测试/);
@@ -182,7 +204,18 @@ createApp(App).use(createPinia()).mount('#app');window.ready=true;`);
   await until('document.querySelectorAll("aside .task-pill").length===2');
   await step('window.tasks["9007199254740995"]=[];window.snapshots["9007199254740995"]=null;window.reconnect()');
   await until('window.controllers.length===2 && document.querySelectorAll("aside .task-pill").length===0');
+  await step('');
+  const dockEntering = await sampleTransition('window.tasks["9007199254740995"]=[{id:"9007199254740995",sessionId:"9007199254740995",turnId:"21",command:"npm test",status:"RUNNING",createAt:new Date().toISOString(),truncated:false}];window.emitTask()', 'aside .task-dock-enter-active');
+  assert.ok(dockEntering && dockEntering.opacity>0 && dockEntering.opacity<1,'首次出现的胶囊必须淡入');
+  await step('');
+  window.webContents.debugger.attach('1.3');
+  await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+  const reduced = await sampleTransition('document.querySelector("aside [data-testid=background-task-toggle]").click()', 'aside [data-testid=background-task-panel]');
+  assert.ok(reduced);
+  assert.equal(reduced.duration,'0s','减少动态效果时关闭过渡');
+  assert.equal(reduced.opacity,1);
+  window.webContents.debugger.detach();
   assert.deepEqual(await evaluate('window.runtimeErrors'),[]);
-  console.log('子会话任务胶囊通过：底部布局、主题、输出、停止/删除、实时事件、成员隔离、收起重开和重连');
+  console.log('子会话任务胶囊通过：布局、主题、输出、停止/删除、事件隔离、重连、进退场动画和减少动态效果');
   window.destroy(); clearTimeout(deadline); app.quit();
 }).catch(error => {console.error(error);clearTimeout(deadline);app.exit(1);});

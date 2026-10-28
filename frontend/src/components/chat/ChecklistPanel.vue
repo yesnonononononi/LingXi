@@ -27,6 +27,7 @@ function toggle() { emit('update:expanded', !props.expanded); if (!props.expande
       <span v-if="error" :title="error">!</span>
       <svg viewBox="0 0 20 20" aria-hidden="true"><path :d="expanded ? 'm5 7 5 5 5-5' : 'm5 12 5-5 5 5'"/></svg>
     </button>
+    <Transition name="task-popup">
     <section v-if="expanded" :id="panelId" class="task-panel" data-testid="checklist-panel"
       :aria-label="t('chat.checklist.title')">
       <header class="checklist-header">
@@ -61,6 +62,7 @@ function toggle() { emit('update:expanded', !props.expanded); if (!props.expande
         </li>
       </ul>
     </section>
+    </Transition>
   </div>
 </template>
 

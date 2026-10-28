@@ -27,3 +27,32 @@
   max-height: min(55vh, 460px); overflow: auto;
 }
 .task-progress-row .background-tasks.embedded { margin: 0; padding: 0; }
+
+.task-dock-enter-active,
+.task-dock-leave-active,
+.task-capsule-enter-active,
+.task-capsule-leave-active,
+.task-popup-enter-active,
+.task-popup-leave-active {
+  transition: opacity 160ms ease, transform 160ms cubic-bezier(.22, 1, .36, 1);
+}
+.task-capsule-move { transition: transform 160ms cubic-bezier(.22, 1, .36, 1); }
+.task-dock-enter-from,
+.task-dock-leave-to,
+.task-capsule-enter-from,
+.task-capsule-leave-to,
+.task-popup-enter-from,
+.task-popup-leave-to { opacity: 0; transform: translateY(6px); }
+.task-dock-leave-active,
+.task-capsule-leave-active,
+.task-popup-leave-active { pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .task-dock-enter-active,
+  .task-dock-leave-active,
+  .task-capsule-enter-active,
+  .task-capsule-leave-active,
+  .task-capsule-move,
+  .task-popup-enter-active,
+  .task-popup-leave-active { transition: none; }
+}

@@ -39,6 +39,7 @@ watch(expanded, value => { if (!value) closeOutput(); });
       <span v-if="error" class="task-error-indicator" :title="error">!</span>
       <svg viewBox="0 0 20 20" aria-hidden="true"><path :d="expanded ? 'm5 7 5 5 5-5' : 'm5 12 5-5 5 5'"/></svg>
     </button>
+    <Transition name="task-popup">
     <section v-if="expanded" :id="panelId" class="task-panel" data-testid="background-task-panel" :aria-label="t('chat.backgroundTasks.title')">
       <header class="task-panel-header">
         <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.2"/><path d="M10 5.5V10l3 2"/></svg>
@@ -82,6 +83,7 @@ watch(expanded, value => { if (!value) closeOutput(); });
         <p v-if="detail?.truncated" class="task-output-note">{{ t('chat.backgroundTasks.truncated') }}</p>
       </div>
     </section>
+    </Transition>
   </div>
 </template>
 

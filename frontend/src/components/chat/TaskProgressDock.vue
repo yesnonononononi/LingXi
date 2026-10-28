@@ -40,15 +40,17 @@ onScopeDispose(() => { document.removeEventListener('pointerdown', onPointer); d
 </script>
 
 <template>
+  <Transition name="task-dock" appear>
   <div v-if="backgroundVisible || checklistVisible" ref="dock" class="task-progress-dock task-progress-surface w-full max-w-lx-chat mx-auto px-4"
     :data-theme="isDark ? 'dark' : 'light'" data-testid="task-progress-dock">
-    <div class="task-progress-row">
+    <TransitionGroup name="task-capsule" tag="div" class="task-progress-row" appear>
       <template v-for="panel in order" :key="panel">
         <BackgroundTaskPanel v-if="panel === 'background'" :feed="background" :is-dark="isDark" embedded
           :expanded="activePanel === 'background'" @update:expanded="setExpanded('background', $event)" />
         <ChecklistPanel v-else :feed="checklist" :executing="executing" :expanded="activePanel === 'checklist'"
           @update:expanded="setExpanded('checklist', $event)" />
       </template>
-    </div>
+    </TransitionGroup>
   </div>
+  </Transition>
 </template>
