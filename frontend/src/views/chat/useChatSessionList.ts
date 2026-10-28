@@ -1,4 +1,5 @@
 import { ref, type Ref, type ComputedRef } from 'vue';
+import { useApplicationSessionStore } from '../../stores/applicationSessionStore';
 import { chatApi } from '../../services/chat';
 import type { ChatSession, ChatMessage } from '../../types/chat';
 import { buildSessionMarkdown, mergeTurns, mergeTurnViews, mergeSubSessionTree, synthesizeFailedTurnBubbles } from '../../utils/session';
@@ -33,6 +34,7 @@ export interface ChatSessionListOptions {
  * <p>会话数据由本模块自己持有并直接落库，变更即刻写回本地 ref。</p>
  */
 export function useChatSessionList(options: ChatSessionListOptions) {
+  const applicationSessions = useApplicationSessionStore();
   const {
     localSessions,
     localActiveId,
@@ -163,6 +165,7 @@ export function useChatSessionList(options: ChatSessionListOptions) {
     }
     const ok = await chatApi.deleteSession(id);
     if (ok) {
+      applicationSessions.forget(id);
       localSessions.value = localSessions.value.filter(s => s.id !== id);
       if (localActiveId.value === id) localActiveId.value = null;
     } else {
@@ -188,6 +191,7 @@ export function useChatSessionList(options: ChatSessionListOptions) {
       ids.map(async id => ({ id, ok: await chatApi.deleteSession(id) })),
     );
     const failedIds = new Set(results.filter(r => !r.ok).map(r => r.id));
+    results.filter(result => result.ok).forEach(result => applicationSessions.forget(result.id));
     const okCount = ids.length - failedIds.size;
     localSessions.value = localSessions.value.filter(s => failedIds.has(s.id));
     if (localActiveId.value && !failedIds.has(localActiveId.value)) {

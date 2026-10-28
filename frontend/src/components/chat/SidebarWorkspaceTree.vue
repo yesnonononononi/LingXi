@@ -20,6 +20,7 @@
  */
 import { computed, type Ref } from 'vue';
 import BranchedMenu from '../common/BranchedMenu.vue';
+import SessionStateIndicator from './SessionStateIndicator.vue';
 import type { BranchedMenuChild, BranchedMenuItem } from '../common/BranchedMenu.vue';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import { t } from '../../i18n';
@@ -275,6 +276,7 @@ const emit = emitShim as TreeEmitShim;
 
             <!-- Item Actions: 重命名与删除 -->
             <template #item-actions="{ item }">
+              <SessionStateIndicator v-if="item.raw" :session="item.raw" />
               <div
                 v-if="editingSessionId !== item.value"
                 class="hidden group-hover/kid:flex items-center gap-1 opacity-70 shrink-0"
@@ -438,6 +440,7 @@ const emit = emitShim as TreeEmitShim;
                     </div>
 
                     <!-- Action Controls: Rename & Delete -->
+                    <SessionStateIndicator :session="session" />
                     <div v-if="editingSessionId !== session.id" class="hidden group-hover/session:flex items-center gap-1 opacity-70 shrink-0">
                       <button @click="startEdit(session, $event)" class="p-0.5 hover:text-blue-500 transition cursor-pointer" :title="t('chat.sidebar.rename')">
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -497,6 +500,7 @@ const emit = emitShim as TreeEmitShim;
                   />
                   <span v-else class="block truncate">{{ session.title || t('session.newConversation') }}</span>
                 </div>
+                <SessionStateIndicator :session="session" />
                 <div v-if="editingSessionId !== session.id" class="hidden group-hover/session:flex items-center gap-1 opacity-70 shrink-0">
                   <button @click="startEdit(session, $event)" class="p-0.5 hover:text-blue-500 transition cursor-pointer" :title="t('chat.sidebar.rename')">
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

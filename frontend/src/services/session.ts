@@ -11,6 +11,15 @@ export interface SessionCreateRequest {
 
 /** 3. 会话 API (对应后端 SessionController) */
 export class SessionAPI {
+  static async applicationStates(): Promise<Result<SessionVO[]>> {
+    return http.get<any, Result<SessionVO[]>>('/application/sessions');
+  }
+
+  static async read(id: string, expectedVersion?: number): Promise<Result<SessionVO>> {
+    const query = expectedVersion === undefined ? '' : `?expectedVersion=${expectedVersion}`;
+    return http.post<any, Result<SessionVO>>(`/session/${encodeURIComponent(id)}/read${query}`);
+  }
+
   static async list(page = 1, pageSize = 50): Promise<Result<any>> {
     return http.get<any, Result<any>>(`/session/list?page=${page}&pageSize=${pageSize}`);
   }

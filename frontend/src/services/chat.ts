@@ -279,6 +279,9 @@ export const chatApi = {
               modelId: '',
               activeTools: [],
               runStatus: item.runStatus,
+              isRead: item.isRead,
+              renderStatus: item.renderStatus,
+              version: item.version,
               lastOutcome: item.lastOutcome,
               messages: []
             };
@@ -519,6 +522,9 @@ export const chatApi = {
           agentId: meta?.agentId,
           rootSessionId: meta?.rootSessionId,
           runStatus: meta?.runStatus,
+          isRead: meta?.isRead,
+          renderStatus: meta?.renderStatus,
+          version: meta?.version,
           lastOutcome: meta?.lastOutcome,
           subSessions: enrichedSubSessions,
           messages: messages,

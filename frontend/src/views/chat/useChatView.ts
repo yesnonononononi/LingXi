@@ -1,5 +1,6 @@
 import { ref, computed, watch, nextTick, onBeforeUnmount, type Ref } from 'vue';
 import { SessionAPI } from '../../services/session';
+import { useApplicationSessionState } from './useApplicationSessionState';
 import { chatApi } from '../../services/chat';
 import type { ChatSession, ModelConfig, ChatMessage, WorkspaceVO, ToolCallDecisionReceipt } from '../../types/chat';
 import type { AgentEvent } from '../../types/Event';
@@ -100,6 +101,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   // ---------- 本地响应式状态（视图自有，不来自全局配置） ----------
   const localSessions = ref<ChatSession[]>([]);
   const localActiveId = ref<string | null>(null);
+  useApplicationSessionState(localSessions, localActiveId);
   const localModels = ref<ModelConfig[]>([]);
   const localWorkspaces = ref<WorkspaceVO[]>([]);
   const localActiveWorkspaceId = ref<string | number | null>(null);

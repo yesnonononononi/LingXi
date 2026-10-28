@@ -5,7 +5,7 @@ import { useChatSessionStore } from '../../stores/chatSessionStore';
 import { resolveContextUsageText, resolveContextRingDash } from '../../views/chat/contextUsagePresentation';
 import ChatInputContextUsage from './ChatInputContextUsage.vue';
 
-const props = defineProps<{ session?: SessionVO | null; isDark?: boolean }>();
+const props = defineProps<{ session?: Pick<SessionVO, 'id' | 'contextTokenCount' | 'contextMaxTokens' | 'contextRatio'> | null; isDark?: boolean }>();
 const store = useChatSessionStore();
 const triggerRef = ref<HTMLButtonElement | null>(null);
 const tooltipVisible = ref(false);
