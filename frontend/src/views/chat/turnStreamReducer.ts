@@ -529,8 +529,7 @@ export class TurnStreamReducer {
   /**
    * 拉取权威卡片并挂到气泡上（幂等：按 id 覆盖）。
    *
-   * <p>「查不到」「查失败」都**不建卡、不伪造状态**，并纳入有界重试；只有 `type==='PROMISE'`
-   * 才建卡。就绪（权威 `pending=true`）或已决（`completed`/`in_progress`）即停止重试。</p>
+   * <p>查不到或查失败时不建卡，只做有界重试；动作可用或已决后停止。</p>
    *
    * <p>气泡按 id 现查而非持引用：会话对账会整体替换 messages，持有旧引用会写到脱离渲染的对象上。</p>
    */
@@ -570,15 +569,13 @@ export class TurnStreamReducer {
   }
 
   /**
-   * 卡片是否已无需再拉：权威 {@code status} 已到「可审批（pending）」或后续态（in_progress / completed）。
-   *
-   * <p><b>不能用 VO 的 {@code pending} 字段判就绪</b>：后端 {@code pending = isUnresolved()}（未终结即 true），
-   * PREPARING 也返回 true —— 据此停查会把卡片永远钉死在首次拉到的「准备中」，用户拿不到审批按钮。
-   * 只有显式 {@code status} 才分得清「准备中」与「等待审批」。</p>
+   * 卡片先进入 pending，执行退出后才开放动作，不能在两者之间停查。
+   * VO 的 pending 仅表示未终结，PREPARING 时同样为 true。
    */
   private isCardSettled(card: ToolCallVO): boolean {
     const status = String(card.status ?? '').trim().toLowerCase();
-    return status === 'pending' || status === 'in_progress' || status === 'completed';
+    return (status === 'pending' && (card.allowedActions?.length ?? 0) > 0)
+      || status === 'in_progress' || status === 'completed';
   }
 
   /**

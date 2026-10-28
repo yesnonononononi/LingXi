@@ -133,6 +133,50 @@ test('A. 挂起后卡片未就绪（PREPARING）→ 有界重试直到权威 pen
   assert.equal(scheduler.size, 0, '就绪后必须停止重试');
 });
 
+for (const trigger of ['工具完成事件', '轮次快照'] as const) {
+  test(`pending 但动作尚未开放时继续拉取，直到权威 ANSWER 可用：${trigger}`, async () => {
+    const { TurnStreamReducer } = await import('../src/views/chat/turnStreamReducer');
+    const { canDecideCard, toPromptCardData } = await import('../src/utils/toolCallCard');
+    const messages: ChatMessage[] = [];
+    const scheduler = makeManualScheduler();
+    let callCount = 0;
+    const reducer = new TurnStreamReducer(messages, {
+      sessionId: SID,
+      onResolveCard: async id => ({
+        id, conversationId: SID, type: 'PROMISE', status: 'pending', pending: true, version: '2',
+        content: { kind: 'CHOICE', question: '授权到什么程度？', options: ['全量授权', '只做前端'] },
+        allowedActions: ++callCount < 3 ? [] : ['ANSWER'],
+      }),
+      scheduleCardRetry: scheduler.schedule,
+      cancelCardRetry: scheduler.cancel,
+    });
+    reducer.consume({ type: 'EXECUTION_STARTED', executionId: 'e1', timestamp: 't', metaData: { turnId: ROOT_TID } });
+    if (trigger === '工具完成事件') {
+      reducer.consume({ type: 'TOOL_COMPLETED', toolName: AgentToolName.RequireChoice, requestId: 'choice-pending',
+        resultStatus: 'PROMISED', executionId: 'e1', timestamp: 't', metaData: { turnId: ROOT_TID } });
+    } else {
+      messages[0]!.promptCards = [{ id: 'choice-pending', type: 'PROMISE', status: 'pending', allowedActions: [] }];
+      reducer.consume({ type: 'TURN_SNAPSHOT', executionId: 'e1', timestamp: 't', metaData: { turnId: ROOT_TID },
+        view: { sessionId: SID, turnId: ROOT_TID, status: 'WAITING', viewVersion: '1', blocks: [{
+          blockId: 'tool:choice-pending', type: 'TOOL', order: 2, status: 'PROMISED',
+          toolCallId: 'choice-pending', toolName: AgentToolName.RequireChoice,
+        }] } });
+    }
+    await flushAsync();
+    assert.equal(canDecideCard(toPromptCardData(messages[0]!.promptCards![0]!), 'ANSWER'), false);
+    assert.equal(scheduler.size, 1, 'pending 尚无动作时不得停查');
+    scheduler.runNext();
+    await flushAsync();
+    assert.equal(scheduler.size, 1, '第二次动作仍未开放，继续重试');
+    scheduler.runNext();
+    await flushAsync();
+    assert.equal(callCount, 3);
+    assert.equal(canDecideCard(toPromptCardData(messages[0]!.promptCards![0]!), 'ANSWER'), true);
+    assert.equal(scheduler.size, 0, '动作开放后停止重试');
+    reducer.dispose();
+  });
+}
+
 test('A2. 执行终结时取消未决重试，不再空转', async () => {
   const { TurnStreamReducer } = await import('../src/views/chat/turnStreamReducer');
   const messages: ChatMessage[] = [];

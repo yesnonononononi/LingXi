@@ -38,6 +38,10 @@ window.reopenPartial=()=>{message.value={...message.value,promptCards:[0,1,2,3].
 ?{...card(index),status:'completed',version:'3',allowedActions:[],rawOutput:{outcome:'ANSWERED',answer:'已答'+index}}
 :card(index))};mount.value++;};
 window.remount=()=>mount.value++;
+window.reopenSinglePending=()=>{message.value={...message.value,
+toolCalls:[{id:'choice-0',toolName:AgentToolName.RequireChoice,status:'pending',order:2,responseId:'201'}],
+promptCards:[{...card(0),allowedActions:[]}]};mount.value++;};
+window.allowAnswer=()=>{message.value.promptCards[0].allowedActions=['ANSWER'];};
 window.setDark=value=>{dark.value=value;document.documentElement.classList.toggle('dark',value);document.body.style.background=value?'#18181b':'white';};
 </script><template><main style="max-width:720px;margin:24px auto;padding:0 12px" :class="dark?'text-gray-100':'text-gray-900'"><ChatMessageItem :key="mount" :message="message" session-id="42" :is-dark="dark" /></main></template>`);
   await fs.writeFile(path.join(output, 'entry.js'), `import {createApp,nextTick} from 'vue';
@@ -65,6 +69,13 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   assert.equal(await evaluate('document.querySelector("[data-testid=interaction-cards-pending]").textContent.includes("3 条待处理")'),true);
   await revealCards();
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-question-group]").length'),1);
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-question]").clientHeight'),92,'题干必须预留四行高度');
+  assert.equal(await evaluate(`(()=>{
+    const list=document.querySelector('[data-testid=choice-card-list]');
+    const submit=document.querySelector('[data-testid=choice-submit-all]');
+    const bounds=list.getBoundingClientRect(), button=submit.getBoundingClientRect();
+    return list.clientHeight>320 && button.bottom<=bounds.bottom && button.top>=bounds.top;
+  })()`),true,'展开后必须直接露出提交按钮，不能被原来的 320px 上限裁掉');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]").disabled'),true);
   // 卡片尺寸契约：选项框高度恒定，选项超量只滚动（六选项不许把卡片撑大）
   assert.deepEqual(
@@ -160,6 +171,20 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   await evaluate(`(()=>{const input=document.querySelector('[data-testid=choice-custom-input]');input.value='补充说明';input.dispatchEvent(new Event('input',{bubbles:true}));})();window.flush()`);
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-question-group] [role=status]").textContent.trim()'),'4 / 4','末题填完不位移、不回绕');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]").disabled'),false,'四题都有答案后必须可提交');
+  await evaluate('window.reopenSinglePending();window.flush()');
+  await revealCards();
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-question-group]").textContent.includes("问题准备中")'),true);
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]").disabled'),true);
+  await evaluate('window.allowAnswer();window.flush()');
+  await click('[data-choice-option="0"]');
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-question-group]").textContent.includes("问题准备中")'),false,'权威动作开放后必须解除准备中');
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]").disabled'),false,'单题作答后必须可提交');
+  await click('[data-testid=choice-submit-all]');
+  const single = await evaluate('window.submissions[2]');
+  assert.equal(single.responseId,'201');
+  assert.deepEqual(single.answers,[{toolCallId:'choice-0',expectedVersion:'2',text:'源码'}]);
+  await evaluate('window.finishBatch();window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]")'),null);
   assert.deepEqual(await evaluate('window.singleSubmissions'),[]);
   assert.deepEqual(await evaluate('window.runtimeErrors'),[]);
   console.log('选择组真实组件通过：四卡分组、选中即进位、缺题禁交、前后切换、答案保留、自定义原文、统一提交、重试幂等、防重复操作、全部已决自动收敛、历史摘要与答案回看、深浅主题和360px窄屏。');

@@ -138,8 +138,8 @@ async function submit() {
     </button>
   <section v-if="!closable || expanded" :class="[CARD_SHELL_CLASS, 'w-full min-w-0 overflow-hidden', isDark ? 'bg-black border-white/10' : 'bg-white border-zinc-200/90']" data-testid="choice-question-group">
     <header class="flex items-start justify-between gap-3 px-4 pb-2 pt-3">
-      <!-- 题干固定两行高、可内部滚动：四道题来回切换时卡片不能跳高度 -->
-      <p class="scrollbar-thin h-[46px] min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words text-sm font-semibold leading-relaxed"
+      <!-- 题干预留四行并内部滚动，切题时保持高度稳定。 -->
+      <p class="scrollbar-thin h-[92px] min-w-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words text-sm font-semibold leading-relaxed"
         :class="isDark ? 'text-white text-glow-white' : ''" data-testid="choice-question">{{ questionText }}</p>
       <div class="flex shrink-0 items-center gap-0.5">
         <template v-if="entries.length > 1">

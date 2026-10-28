@@ -64,8 +64,8 @@ const expectedChoiceCounts = computed(() => {
       role="region"
       :aria-label="groupTitle"
       tabindex="0"
-      class="max-h-80 overflow-y-auto overscroll-contain rounded-xl border px-3 py-1"
-      :class="isDark ? 'border-white/10 bg-zinc-950/20' : 'border-zinc-200/80 bg-zinc-50/40'"
+      class="overflow-y-auto overscroll-contain rounded-xl border px-3 py-1"
+      :class="[kind === 'CHOICE' ? 'max-h-[min(36rem,75vh)]' : 'max-h-80', isDark ? 'border-white/10 bg-zinc-950/20' : 'border-zinc-200/80 bg-zinc-50/40']"
       :data-testid="`${testPrefix}-list`"
     >
       <template v-for="entry in orderedEntries" :key="entry.id">
