@@ -19,7 +19,7 @@ import com.summit.core.model.chat.ChatModel;
 import com.summit.core.runtime.loop.ContextUsageReporter;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.core.tool.ToolExecution;
-import com.summit.dp.model.Infrastructure.config.CompactionModelConfiguration;
+import com.summit.dp.workflow.infrastructure.config.CompactionModelConfiguration;
 import com.summit.dp.model.Infrastructure.config.CompactionProperties;
 import com.summit.dp.model.api.controller.SettingsController;
 import com.summit.dp.model.application.service.ModelService;

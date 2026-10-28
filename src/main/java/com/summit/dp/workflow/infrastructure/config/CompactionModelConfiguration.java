@@ -1,4 +1,4 @@
-package com.summit.dp.model.Infrastructure.config;
+package com.summit.dp.workflow.infrastructure.config;
 
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.conf.SensitiveDataProvider;
@@ -7,6 +7,7 @@ import com.summit.core.model.chat.ChatModel;
 import com.summit.runtime.compact.RequestCompactModelResolver;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -20,15 +21,15 @@ public class CompactionModelConfiguration {
             ObjectProvider<SensitiveDataProvider<ModelConfig>> configurations,
             ModelProviderRegistry<ChatModel> providers,
             @Qualifier("defaultContextCompactModel") ChatModel applicationCompactModel,
-            CompactionProperties properties) {
+            @Value("${lingxi.agent.model.conf.compact.max-tokens:32768}") int compactMaxTokens) {
         SensitiveDataProvider<ModelConfig> source = configurations.getIfAvailable();
         // 只改压缩解析器读到的副本，不能污染冻结版本或影响同轮对话的预算。
         SensitiveDataProvider<ModelConfig> compactConfigurations = source == null ? null : (id, version) -> {
             ModelConfig config = source.get(id, version);
-            return config == null ? null : config.toBuilder().maxTokens(properties.getCompactMaxTokens()).build();
+            return config == null ? null : config.toBuilder().maxTokens(compactMaxTokens).build();
         };
         ModelConfig compactApplicationConfig = applicationConfig.toBuilder()
-                .maxTokens(properties.getCompactMaxTokens()).build();
+                .maxTokens(compactMaxTokens).build();
         return new RequestCompactModelResolver(compactApplicationConfig, compactConfigurations,
                 providers, applicationCompactModel);
     }
