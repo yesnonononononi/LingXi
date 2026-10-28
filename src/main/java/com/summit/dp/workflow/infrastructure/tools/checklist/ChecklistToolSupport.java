@@ -9,10 +9,12 @@ import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
- * 四个清单工具共用的参数解析与回执渲染。
+ * 清单工具共用的参数解析与回执渲染。
  *
  * <p>放在工具包而不是应用层：这些是「给模型看的形状」，不是业务规则。
  * 业务规则一律在 {@code ChecklistService} 与领域对象里，Executor 只解析参数、委派、翻译错误。</p>
@@ -48,25 +50,60 @@ final class ChecklistToolSupport {
         return ExecutionAttributes.readLong(toolExecution.getAttributes(), ExecutionAttributes.AGENT_ID);
     }
 
-    /**
-     * 渲染权威快照：模型必须看到稳定 stepId 与 seq，才能在下一次调用里指对步骤。
-     *
-     * <p>附一句状态提示：清单已收口时不要再去推进步骤，避免模型拿旧快照反复重试。</p>
-     */
-    static String render(ObjectMapper objectMapper, ChecklistVO snapshot) {
+    /** 完整快照只在模型主动查询时返回，避免每次写入都复制全部步骤。 */
+    static String renderSnapshot(ObjectMapper objectMapper, ChecklistVO snapshot) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("checklist", snapshot);
         payload.put("hint", hint(snapshot));
+        return serialize(objectMapper, payload);
+    }
+
+    /** 写回执不含步骤正文，体积不随清单长度增长。 */
+    static String renderReceipt(ObjectMapper objectMapper, ChecklistVO snapshot) {
+        return renderReceipt(objectMapper, snapshot, null, false);
+    }
+
+    /** 继续下一步只携带一个后续步骤的权威标识和状态，重试时也不暗示它刚被启动。 */
+    static String renderReceipt(ObjectMapper objectMapper, ChecklistVO snapshot, Long stepId, boolean includeNextStep) {
+        List<ChecklistVO.StepVO> steps = snapshot.sortedSteps();
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("checklistId", snapshot.getChecklistId());
+        payload.put("status", snapshot.getStatus());
+        payload.put("progressVersion", snapshot.getProgressVersion());
+        payload.put("stepCount", steps.size());
+        payload.put("openStepCount", steps.stream().filter(ChecklistToolSupport::isOpen).count());
+        steps.stream().filter(step -> Objects.equals(step.getStepId(), stepId)).findFirst().ifPresent(step -> {
+            payload.put("step", buildStepIdentity(step));
+            if (includeNextStep) {
+                steps.stream().filter(candidate -> candidate.getSeq() > step.getSeq())
+                        .filter(ChecklistToolSupport::isOpen).findFirst()
+                        .ifPresent(following -> payload.put("nextStep", buildStepIdentity(following)));
+            }
+        });
+        payload.put("hint", "DELETED".equals(snapshot.getStatus()) ? hint(snapshot)
+                : "需要步骤标识或完整清单时调用 get_current_checklist。");
+        return serialize(objectMapper, payload);
+    }
+
+    private static boolean isOpen(ChecklistVO.StepVO step) {
+        return "PENDING".equals(step.getStatus()) || "IN_PROGRESS".equals(step.getStatus());
+    }
+
+    private static Map<String, Object> buildStepIdentity(ChecklistVO.StepVO step) {
+        return Map.of("stepId", step.getStepId(), "seq", step.getSeq(), "status", step.getStatus());
+    }
+
+    private static String serialize(ObjectMapper objectMapper, Map<String, Object> payload) {
         try {
             return objectMapper.writeValueAsString(payload);
         } catch (JsonProcessingException e) {
-            throw new ClientException("清单快照序列化失败", e);
+            throw new ClientException("清单工具回执序列化失败", e);
         }
     }
 
     private static String hint(ChecklistVO snapshot) {
         if (snapshot == null) {
-            return "没有可用的清单快照。";
+            return "当前会话没有可查看的清单，需要记录任务时可用 create_checklist 创建。";
         }
         return switch (snapshot.getStatus()) {
             case "ACTIVE" -> "开始处理步骤前用 update_checklist_step 标记 IN_PROGRESS，完成后立刻如实标记结果。";

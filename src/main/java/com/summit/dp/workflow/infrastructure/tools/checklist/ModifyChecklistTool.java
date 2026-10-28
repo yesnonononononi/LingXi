@@ -34,11 +34,11 @@ import java.util.List;
     name = ToolCatalog.MODIFY_CHECKLIST,
     executor = ModifyChecklistTool.class,
     description = """
-        Modify the ACTIVE checklist: rename it, reword steps, add steps, remove steps or reorder them.
-        Omitted steps are kept: removal is explicit through removeStepIds, never implied by absence.
-        Existing stepId values stay stable; newly added steps start as PENDING; step status is never reset by rewording.
-        All steps cannot be removed, and orderedStepIds must list exactly the remaining steps.
-        This only edits your execution checklist and produces no approval card (create_plan is the approval tool).
+        修改 ACTIVE 执行清单的标题、步骤文案、结构和顺序。
+        删除步骤必须显式提供 removeStepIds；未提供的步骤保留，已有 stepId 和状态不随改文案变化。
+        新增步骤从 PENDING 开始；不能删光步骤，orderedStepIds 必须恰好覆盖修改后的全部步骤。
+        本工具不产生审批卡片；需要用户批准计划时使用 create_plan。
+        只返回清单标识与状态统计，需要修改后的步骤标识、顺序或完整内容时调用 get_current_checklist。
         """,
     parametersJsonSchema = """
         {
@@ -108,7 +108,7 @@ public class ModifyChecklistTool implements ToolExecutor {
                     argument.getAddSteps(),
                     argument.getRemoveStepIds(),
                     argument.getOrderedStepIds()));
-            return ToolExecuteResult.success(ChecklistToolSupport.render(objectMapper, snapshot));
+            return ToolExecuteResult.success(ChecklistToolSupport.renderReceipt(objectMapper, snapshot));
         } catch (ClientException e) {
             log.info("修改清单被拒绝: reason={}", e.getMessage());
             return ToolExecuteResult.err(e.getMessage());

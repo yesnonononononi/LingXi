@@ -3,6 +3,7 @@ package com.summit.dp.workflow.infrastructure.tools.checklist;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.tool.ToolDefinition;
+import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolExecutor;
 import com.summit.dp.checklist.domain.model.ChecklistRules;
 import com.summit.dp.tools.application.port.ToolCatalog;
@@ -21,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 /**
- * 四个清单工具必须过真实的 Schema 门禁，并且带上「与 create_plan 的边界」说明。
+ * 清单工具必须过真实的 Schema 门禁，并且带上「与 create_plan 的边界」说明。
  *
  * <p>门禁本体在这里是同一个实现（不是测试里另写的近似），所以它一旦被改成永远通过，
  * 这几条用例仍是绿的——但其它故意写坏的用例会红（见 {@code ToolDefinitionSchemaGateTest}）。</p>
@@ -32,10 +33,11 @@ class ChecklistToolSchemaTest {
     private final ToolDefinitionSchemaGate gate = new ToolDefinitionSchemaGate(null, objectMapper);
 
     @Test
-    @DisplayName("四个工具一起过门禁：参数 Schema 都是合法 JSON 对象")
-    void allFourChecklistToolsPassTheRealSchemaGate() throws Exception {
+    @DisplayName("全部清单工具一起过门禁：参数 Schema 都是合法 JSON 对象")
+    void allChecklistToolsPassTheRealSchemaGate() throws Exception {
         Map<String, ToolDefinition<?>> definitions = new LinkedHashMap<>();
         definitions.put("createChecklistTool", definition(CreateChecklistTool.class));
+        definitions.put("getCurrentChecklistTool", definition(GetCurrentChecklistTool.class));
         definitions.put("updateChecklistStepTool", definition(UpdateChecklistStepTool.class));
         definitions.put("modifyChecklistTool", definition(ModifyChecklistTool.class));
         definitions.put("deleteChecklistTool", definition(DeleteChecklistTool.class));
@@ -47,6 +49,15 @@ class ChecklistToolSchemaTest {
             assertFalse(schema.path("additionalProperties").asBoolean(true),
                     definition.name() + " 必须显式关闭 additionalProperties");
         }
+    }
+
+    @Test
+    void getCurrentChecklistIsReadOnlyAndCannotAcceptAnotherSessionId() throws Exception {
+        JsonNode schema = buildSchema(GetCurrentChecklistTool.class);
+        assertTrue(schema.path("properties").isMissingNode() || schema.path("properties").isEmpty());
+        assertFalse(schema.path("additionalProperties").asBoolean(true));
+        assertTrue(resolveRequiredFields(schema).isEmpty());
+        assertEquals(ConcurrentPolicy.READ_ONLY, definition(GetCurrentChecklistTool.class).concurrentPolicy());
     }
 
     @Test
@@ -101,24 +112,24 @@ class ChecklistToolSchemaTest {
     @DisplayName("工具描述写明与 create_plan 的边界，并说明何时才建清单")
     void descriptionsStateTheBoundaryWithCreatePlan() {
         for (Class<? extends ToolExecutor> type : List.of(CreateChecklistTool.class,
-                UpdateChecklistStepTool.class, ModifyChecklistTool.class, DeleteChecklistTool.class)) {
+                GetCurrentChecklistTool.class, UpdateChecklistStepTool.class, ModifyChecklistTool.class, DeleteChecklistTool.class)) {
             String description = type.getAnnotation(com.summit.core.anno.Tool.class).description();
             assertTrue(description.toLowerCase().contains("create_plan"),
                     type.getSimpleName() + " 的描述必须点明与 create_plan 的边界");
         }
         String createDescription = CreateChecklistTool.class.getAnnotation(com.summit.core.anno.Tool.class)
                 .description();
-        assertTrue(createDescription.contains("several distinct steps"),
+        assertTrue(createDescription.contains("多步任务"),
                 "必须说明只对多步任务建清单");
-        assertTrue(createDescription.contains("single-step") || createDescription.contains("does not need"),
+        assertTrue(createDescription.contains("单步任务不需要清单"),
                 "必须说明单步任务不要建清单");
     }
 
     @Test
-    @DisplayName("默认 Agent 工具集包含四个清单工具：否则裸默认 Agent 无法使用")
+    @DisplayName("默认 Agent 工具集包含全部清单工具：否则裸默认 Agent 无法使用")
     void defaultAgentToolsContainChecklistTools() {
         assertTrue(ToolCatalog.DEFAULT_AGENT_TOOLS.containsAll(List.of(
-                ToolCatalog.CREATE_CHECKLIST, ToolCatalog.UPDATE_CHECKLIST_STEP,
+                ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.UPDATE_CHECKLIST_STEP,
                 ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST)));
     }
 

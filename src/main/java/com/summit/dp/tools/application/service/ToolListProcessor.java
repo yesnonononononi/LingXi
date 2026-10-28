@@ -20,6 +20,11 @@ public class ToolListProcessor {
         if (configured != null) {
             configured.stream().filter(name -> name != null && !name.isBlank()).map(String::trim).forEach(tools::add);
         }
+        // 写回执不再携带整份清单，已有清单写权限的 Agent 必须能按需读取权威步骤标识。
+        if (tools.contains(ToolCatalog.CREATE_CHECKLIST) || tools.contains(ToolCatalog.UPDATE_CHECKLIST_STEP)
+                || tools.contains(ToolCatalog.MODIFY_CHECKLIST) || tools.contains(ToolCatalog.DELETE_CHECKLIST)) {
+            tools.add(ToolCatalog.GET_CURRENT_CHECKLIST);
+        }
         if (context.member()) {
             tools.add(ToolCatalog.SEND_MAIL_TO_AGENT);
         } else if (context.teamId() != null && context.agentId() != null) {

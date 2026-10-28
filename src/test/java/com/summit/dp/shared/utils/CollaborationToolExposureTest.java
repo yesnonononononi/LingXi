@@ -143,13 +143,25 @@ class CollaborationToolExposureTest {
     // --- 默认档位：基础工具集 --------------------------------------------------------------
 
     @Test
+    void configuredChecklistWritersAlsoReceiveTheCurrentSessionReader() {
+        for (String writer : List.of(ToolCatalog.CREATE_CHECKLIST, ToolCatalog.UPDATE_CHECKLIST_STEP,
+                ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST)) {
+            AgentRequest request = request(null, null, List.of(writer), REGISTERED, false);
+            assertEquals(List.of(writer, ToolCatalog.GET_CURRENT_CHECKLIST), request.getToolList());
+            AgentRequest readOnly = request(null, null, List.of(writer), REGISTERED, false,
+                    AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of(ToolCatalog.GET_CURRENT_CHECKLIST));
+            assertEquals(List.of(ToolCatalog.GET_CURRENT_CHECKLIST), readOnly.getToolList());
+        }
+    }
+
+    @Test
     @DisplayName("默认 Agent（无团队无 Agent）：拿到基础工具集，且不含任何协作工具")
     void defaultAgentGetsTheBasicTools() {
         AgentRequest request = request(null, null, ToolCatalog.DEFAULT_AGENT_TOOLS, REGISTERED, true);
 
         assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE,
                         ToolCatalog.EDIT_FILE, ToolCatalog.WEB_SEARCH, ToolCatalog.REQUIRE_CHOICE,
-                        ToolCatalog.CREATE_CHECKLIST, ToolCatalog.UPDATE_CHECKLIST_STEP,
+                        ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.UPDATE_CHECKLIST_STEP,
                         ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST,
                         ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.SEARCH_TOOL),
                 request.getToolList(),
@@ -163,7 +175,7 @@ class CollaborationToolExposureTest {
 
         assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE,
                         ToolCatalog.EDIT_FILE, ToolCatalog.WEB_SEARCH, ToolCatalog.REQUIRE_CHOICE,
-                        ToolCatalog.CREATE_CHECKLIST, ToolCatalog.UPDATE_CHECKLIST_STEP,
+                        ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.UPDATE_CHECKLIST_STEP,
                         ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST),
                 request.getToolList());
     }
@@ -172,10 +184,10 @@ class CollaborationToolExposureTest {
     @DisplayName("只读档位：禁用编辑工具，保留终端及只读工具")
     void readOnlyModeDisablesEditingAndKeepsTerminal() {
         AgentRequest request = request(null, null, ToolCatalog.DEFAULT_AGENT_TOOLS, REGISTERED, false,
-                AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of("read_file", "web_search", "require_choice"));
+                AgentAccessMode.READ_ONLY_IN_WORKSPACE, Set.of("read_file", "web_search", "require_choice", ToolCatalog.GET_CURRENT_CHECKLIST));
 
         assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE, ToolCatalog.WEB_SEARCH,
-                        ToolCatalog.REQUIRE_CHOICE),
+                        ToolCatalog.REQUIRE_CHOICE, ToolCatalog.GET_CURRENT_CHECKLIST),
                 request.getToolList(), "只读档禁用 edit_file，终端不按并发策略被剔除");
     }
 

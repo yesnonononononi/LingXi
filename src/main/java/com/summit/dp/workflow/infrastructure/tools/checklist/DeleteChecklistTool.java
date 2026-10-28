@@ -40,7 +40,8 @@ import org.springframework.stereotype.Component;
         仅在剩余工作确实全部完成时传 completeOpenSteps=true，将未结束步骤与删除操作在同一事务完成，
         可用于完成“删除整个清单”这一步；已有 FAILED、SKIPPED 等终态结果保持不变。
         放弃或替换任务时省略此参数或传 false，保留未完成事实，不能虚报完成。
-        重复删除返回既有删除快照，不能补改历史步骤；本工具不创建或取消 create_plan 审批卡片。
+        重复删除返回既有删除状态的回执，不能补改历史步骤；本工具不创建或取消 create_plan 审批卡片。
+        只返回删除状态与统计，不回传完整步骤正文。
         """,
     parameters = @ObjectValue(
         properties = {
@@ -68,7 +69,7 @@ public class DeleteChecklistTool implements ToolExecutor {
                     toolExecution.getArgs(), DeleteChecklistArgument.class);
             ChecklistVO snapshot = checklistService.delete(ChecklistCommand.delete(
                     ChecklistToolSupport.sessionId(toolExecution), argument.getChecklistId(), argument.isCompleteOpenSteps()));
-            return ToolExecuteResult.success(ChecklistToolSupport.render(objectMapper, snapshot));
+            return ToolExecuteResult.success(ChecklistToolSupport.renderReceipt(objectMapper, snapshot));
         } catch (ClientException e) {
             log.info("删除清单被拒绝: reason={}", e.getMessage());
             return ToolExecuteResult.err(e.getMessage());

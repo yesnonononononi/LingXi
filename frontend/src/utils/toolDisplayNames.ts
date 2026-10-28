@@ -27,8 +27,9 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = n
   [AgentToolName.WebSearch, defineToolName('网页搜索', 'Web search', 'tool.category.webSearch')],
   [AgentToolName.RequireChoice, defineToolName('请求用户选择', 'Request user choice', 'tool.category.choice')],
   [AgentToolName.CreatePlan, defineToolName('创建计划', 'Create plan', 'tool.category.plan')],
-  // 执行清单四工具与 create_plan 分类不同：它们是执行期可维护的待办，不产生审批卡片
+  // 执行清单工具与 create_plan 分类不同：它们是执行期可维护的待办，不产生审批卡片
   [AgentToolName.CreateChecklist, defineToolName('创建执行清单', 'Create checklist', 'tool.category.checklist')],
+  [AgentToolName.GetCurrentChecklist, defineToolName('查看当前执行清单', 'Get current checklist', 'tool.category.checklist')],
   [AgentToolName.UpdateChecklistStep, defineToolName('更新清单步骤', 'Update checklist step', 'tool.category.checklist')],
   [AgentToolName.ModifyChecklist, defineToolName('修改执行清单', 'Modify checklist', 'tool.category.checklist')],
   [AgentToolName.DeleteChecklist, defineToolName('删除执行清单', 'Delete checklist', 'tool.category.checklist')],

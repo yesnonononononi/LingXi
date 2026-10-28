@@ -58,7 +58,8 @@ class ChecklistToolExecutorTest {
         assertEquals(List.of("读计划书", "写代码"), captor.getValue().getSteps());
 
         JsonNode payload = objectMapper.readTree(result.getToolOutput());
-        assertEquals(9001L, payload.path("checklist").path("checklistId").asLong());
+        assertEquals(9001L, payload.path("checklistId").asLong());
+        assertFalse(payload.has("checklist"));
         assertNotNull(payload.path("hint").asText());
     }
 

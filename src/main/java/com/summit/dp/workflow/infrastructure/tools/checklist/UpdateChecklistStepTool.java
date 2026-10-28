@@ -35,11 +35,12 @@ import org.springframework.stereotype.Component;
         处理步骤前标记 IN_PROGRESS，结束后如实上报 COMPLETED、FAILED 或 SKIPPED，不能为清空清单虚报完成。
         可以退回 PENDING 或 IN_PROGRESS，也可以修正终态结果，原 stepId 保持不变。
         已收口清单需显式传入 checklistId；状态变更后仍有未结束步骤时重新激活，会话内不能另有活动清单。
-        DELETED 清单不可修改；同状态重试只返回既有快照，不刷新时间或提醒额度。
+        DELETED 清单不可修改；同状态重试只返回既有状态的回执，不刷新时间或提醒额度。
         PENDING 和 IN_PROGRESS 不算实际完成进展，不刷新提醒额度。
         上报终态结果时可传 continueNextStep=true，在同一事务中将当前顺序之后的第一个未结束步骤标为 IN_PROGRESS，
         自动跳过终态步骤；没有后续步骤时只更新当前结果。默认 false；回退状态时不能启用。
-        同状态重试不会启动其他步骤，返回快照同时包含当前步骤与下一步的状态。
+        同状态重试不会启动其他步骤；只返回状态统计、本步骤及后续步骤的标识与状态，不回传完整正文。
+        需要完整清单或步骤内容时调用 get_current_checklist。
         本工具只维护执行清单；create_plan 才会创建审批卡片。
         """,
     parameters = @ObjectValue(
@@ -79,7 +80,8 @@ public class UpdateChecklistStepTool implements ToolExecutor {
                     argument.getStepId(),
                     argument.getStatus(),
                     argument.isContinueNextStep()));
-            return ToolExecuteResult.success(ChecklistToolSupport.render(objectMapper, snapshot));
+            return ToolExecuteResult.success(ChecklistToolSupport.renderReceipt(objectMapper, snapshot,
+                    argument.getStepId(), argument.isContinueNextStep()));
         } catch (ClientException e) {
             log.info("更新清单步骤被拒绝: reason={}", e.getMessage());
             return ToolExecuteResult.err(e.getMessage());

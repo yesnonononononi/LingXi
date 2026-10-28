@@ -43,6 +43,7 @@ const KNOWN_TOOL_CATEGORY: Partial<Record<AgentToolName, string>> = {
   [AgentToolName.CreatePlan]: TOOL_CATEGORY.PLAN,
   // 执行清单：执行期可维护的待办，与计划书审批分属不同分类
   [AgentToolName.CreateChecklist]: TOOL_CATEGORY.CHECKLIST,
+  [AgentToolName.GetCurrentChecklist]: TOOL_CATEGORY.CHECKLIST,
   [AgentToolName.UpdateChecklistStep]: TOOL_CATEGORY.CHECKLIST,
   [AgentToolName.ModifyChecklist]: TOOL_CATEGORY.CHECKLIST,
   [AgentToolName.DeleteChecklist]: TOOL_CATEGORY.CHECKLIST,

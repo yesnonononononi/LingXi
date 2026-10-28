@@ -7,12 +7,7 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 
-/**
- * 清单的权威快照。
- *
- * <p>所有写接口都返回完整快照（含稳定 stepId、seq、状态与进展版本），
- * 目的是让模型不需要再猜「现在还剩什么」——它刚写完就能看到权威结果。</p>
- */
+/** 内部写接口与界面复用权威快照；工具写回执单独裁剪，完整步骤仅在主动查询时返回。 */
 @Data
 @Builder
 public class ChecklistVO {

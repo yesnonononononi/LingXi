@@ -39,12 +39,10 @@ import org.springframework.stereotype.Component;
     name = ToolCatalog.CREATE_CHECKLIST,
     executor = CreateChecklistTool.class,
     description = """
-        Create an execution checklist (a maintainable todo list you keep up to date while working).
-        Use it only for tasks with several distinct steps; a single-step task does not need a checklist.
-        This is NOT create_plan: create_plan asks the user to approve a plan and shows an approval card,
-        while this tool only records steps for yourself and never blocks anyone.
-        Returns the authoritative checklist snapshot with stable stepId values; keep them for later calls.
-        One session can hold at most one ACTIVE checklist.
+        为多步任务创建执行清单，工作过程中持续更新；单步任务不需要清单。
+        本工具只记录执行步骤、不阻塞执行；需要用户批准计划时使用 create_plan 审批卡片。
+        创建后只返回清单标识与状态统计，需要稳定 stepId 和完整内容时调用 get_current_checklist。
+        同一会话最多持有一份 ACTIVE 清单。
         """,
     parameters = @ObjectValue(
         properties = {
@@ -77,7 +75,7 @@ public class CreateChecklistTool implements ToolExecutor {
                     ChecklistToolSupport.agentId(toolExecution),
                     argument.getTitle(),
                     argument.getSteps()));
-            return ToolExecuteResult.success(ChecklistToolSupport.render(objectMapper, snapshot));
+            return ToolExecuteResult.success(ChecklistToolSupport.renderReceipt(objectMapper, snapshot));
         } catch (ClientException e) {
             // 业务拒绝（已有活动清单、空步骤、超长标题）一律回可读文案，模型据此自行纠正
             log.info("创建清单被拒绝: reason={}", e.getMessage());

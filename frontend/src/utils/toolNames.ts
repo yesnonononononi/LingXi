@@ -37,6 +37,8 @@ export const AgentToolName = {
   CreatePlan: 'create_plan',
   /** 执行清单：创建（多步任务的待办清单，不是审批计划书） */
   CreateChecklist: 'create_checklist',
+  /** 按需查看当前会话完整执行清单 */
+  GetCurrentChecklist: 'get_current_checklist',
   /** 执行清单：推进单个步骤到终态（完成 / 失败 / 跳过） */
   UpdateChecklistStep: 'update_checklist_step',
   /** 执行清单：修改标题与步骤结构 */
