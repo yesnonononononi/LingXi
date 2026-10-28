@@ -135,8 +135,8 @@ class InitSqlMigrationCoverageTest {
     private boolean hasMigrationFor(Map<String, String> migrations, String table, String column) {
         String suffix = "_" + table + "_" + column + ".sql";
         Pattern addColumn = Pattern.compile(
-                "(?i)add\\s+column\\s+`?" + Pattern.quote(column) + "`?\\b"
-                        + "|add\\s+`?" + Pattern.quote(column) + "`?\\s");
+                "(?i)add\\s+(?:column\\s+)?(?:if\\s+not\\s+exists\\s+)?`?"
+                        + Pattern.quote(column) + "`?\\b");
         for (Map.Entry<String, String> migration : migrations.entrySet()) {
             if (migration.getKey().toLowerCase(Locale.ROOT).endsWith(suffix)) {
                 return true;
@@ -146,6 +146,15 @@ class InitSqlMigrationCoverageTest {
             }
         }
         return false;
+    }
+
+    @Test
+    void recognizesIdempotentColumnAdditionWithoutRenamingTheMigration() {
+        Map<String, String> migrations = Map.of("V15_session_read.sql",
+                "ALTER TABLE session ADD COLUMN IF NOT EXISTS is_read BOOLEAN NOT NULL DEFAULT TRUE;");
+        assertTrue(hasMigrationFor(migrations, "session", "is_read"));
+        assertFalse(hasMigrationFor(Map.of("V15_session_read.sql", "SELECT is_read FROM session;"),
+                "session", "is_read"));
     }
 
     /** 迁移目录里所有脚本：文件名(小写) → 正文。 */
