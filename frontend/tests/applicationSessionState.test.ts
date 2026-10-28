@@ -14,10 +14,13 @@ const metadata = (version: number | string, isRead = false): SessionVO => ({
 });
 const turn = (): Promise<void> => new Promise(resolve => setImmediate(resolve));
 
-test('运行态始终可见，其他三态只渲染未读权威状态', () => {
+test('后台运行态始终可见，当前会话隐藏全部状态标记', () => {
   for (const state of ['WAITING', 'COMPLETED', 'FAILED', 'RUNNING'] as const) {
     assert.equal(resolveSessionIndicator({ isRead: false, renderStatus: state }), state);
     assert.equal(resolveSessionIndicator({ isRead: true, renderStatus: state }), state === 'RUNNING' ? 'RUNNING' : null);
+    for (const isRead of [true, false]) {
+      assert.equal(resolveSessionIndicator({ isRead, renderStatus: state }, true), null);
+    }
   }
   assert.equal(resolveSessionIndicator({ isRead: false, renderStatus: null }), null);
   assert.equal(resolveSessionIndicator({ isRead: undefined, renderStatus: 'FAILED' }), null);
@@ -136,14 +139,14 @@ test('挂载和切换当前未读会话调用已读接口，失败不伪造成�
     };
     store.accept(metadata(4));
     await nextTick(); await turn();
-    assert.equal(calls.length, 1);
+    assert.equal(calls.length, 2);
     assert.equal(sessions.value[0]?.isRead, false);
     active.value = null;
     await nextTick();
     active.value = sessions.value[0]!.id;
     await nextTick(); await turn(); await nextTick();
     assert.equal(sessions.value[0]?.isRead, false);
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 3);
   } finally {
     scope.stop();
     SessionAPI.read = originalRead;
@@ -200,7 +203,7 @@ test('应用流共享连接、断线重试、心跳超时及关闭清理', async
   }
 });
 
-test('实际侧栏亮暗两种分支都渲染四态，并隐藏已读标记', async () => {
+test('实际侧栏的亮暗主题、工作区与历史列表均隐藏当前会话状态', async () => {
   const server = await createServer({ root: new URL('..', import.meta.url).pathname.replace(/^\/(\w:)/, '$1'), optimizeDeps: { noDiscovery: true, include: [], entries: [] }, server: { middlewareMode: true, hmr: false }, appType: 'custom' });
   try {
     const { default: Tree } = await server.ssrLoadModule('/src/components/chat/SidebarWorkspaceTree.vue');
@@ -210,21 +213,61 @@ test('实际侧栏亮暗两种分支都渲染四态，并隐藏已读标记', as
     sessions.push({ id: 'read', title: '已读', isRead: true, renderStatus: 'FAILED' });
     sessions.find(session => session.renderStatus === 'RUNNING')!.isRead = true;
     for (const isDark of [false, true]) {
+      for (const grouped of [false, true]) {
+      for (const activeSessionId of [null, ...sessions.map(session => session.id)]) {
       const html = await renderToString(createSSRApp(Tree, {
-        projectGroups: [], unassignedSessions: sessions, expandedWorkspaces: {},
+        projectGroups: grouped ? [{ workspace: { id: 'workspace', name: '工作区' }, sessions }] : [],
+        unassignedSessions: grouped ? [] : sessions, expandedWorkspaces: { workspace: true },
         branchedMenuItems: [{ label: '历史对话', children: [...sessions.map(session => ({ label: session.title, value: session.id, raw: session })), { label: '展开显示', value: 'more' }] }],
         branchedOpenIndices: [0], editingSessionId: null, editingTitle: ref(''), activeMenuWorkspaceId: null,
-        activeSessionId: null, isCollapsed: false, isDark, limitSessions: (_key: string, items: unknown[]) => items,
+        activeSessionId, isCollapsed: false, isDark, limitSessions: (_key: string, items: unknown[]) => items,
         isFullyExpanded: () => true, toggleFullyExpanded() {}, toggleWorkspaceExpand() {}, isWorkspaceActive: () => false,
         handleSelectWorkspace() {}, handleNewSessionInProject() {}, toggleProjectMenu() {}, handleDeleteProject() {},
         startEdit() {}, saveEdit() {}, handleBranchedSelect() {}, handleBranchedToggle() {}, actions: {},
       }));
       for (const state of ['WAITING', 'COMPLETED', 'FAILED', 'RUNNING']) {
-        assert.equal(html.split(`data-state="${state}"`).length - 1, 1, `${isDark}:${state}`);
+        const activeState = sessions.find(session => session.id === activeSessionId)?.renderStatus;
+        const expected = activeState === state && activeSessionId !== 'read' ? 0 : 1;
+        assert.equal(html.split(`data-state="${state}"`).length - 1, expected, `${isDark}:${grouped}:${activeSessionId}:${state}`);
       }
-      assert.ok(html.includes('session-running-bars'));
+      assert.equal(html.includes('session-running-bars'), activeSessionId !== '3');
+      }
+      }
     }
   } finally {
     await server.close();
+  }
+});
+
+test('当前会话收到完成事件后再次确认已读，切走后保留后台未读事实', async context => {
+  const originalDocument = globalThis.document;
+  (globalThis as any).document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
+  const { SessionAPI } = await import('../src/services/session');
+  const { useApplicationSessionState } = await import('../src/views/chat/useApplicationSessionState');
+  const { useApplicationSessionStore } = await import('../src/stores/applicationSessionStore');
+  const read = context.mock.method(SessionAPI, 'read', async (_id: string, version?: string) => ({
+    code: 1, data: metadata(String(BigInt(version ?? '0') + 1n), true),
+  }));
+  setActivePinia(createPinia());
+  const store = useApplicationSessionStore();
+  const sessions = ref([{ id: String(metadata(1).id), version: '1', isRead: true, messages: [] }] as ChatSession[]);
+  const active = ref<string | null>(sessions.value[0]!.id);
+  const scope = effectScope();
+  try {
+    scope.run(() => useApplicationSessionState(sessions, active));
+    await nextTick(); await turn();
+    assert.equal(read.mock.callCount(), 0);
+    store.accept(metadata(2));
+    await nextTick(); await turn(); await nextTick();
+    assert.deepEqual(read.mock.calls[0]?.arguments, [active.value, '2']);
+    assert.equal(sessions.value[0]?.isRead, true);
+    assert.equal(read.mock.callCount(), 1);
+    active.value = null; await nextTick();
+    store.accept(metadata(4)); await nextTick(); await turn();
+    assert.equal(read.mock.callCount(), 1);
+    assert.equal(sessions.value[0]?.isRead, false);
+  } finally {
+    scope.stop();
+    (globalThis as any).document = originalDocument;
   }
 });

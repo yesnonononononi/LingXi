@@ -3,8 +3,8 @@ import { computed } from 'vue';
 import type { ChatSession } from '../../types/chat';
 import { resolveSessionIndicator } from '../../utils/sessionIndicator';
 
-const props = defineProps<{ session: ChatSession }>();
-const state = computed(() => resolveSessionIndicator(props.session));
+const props = defineProps<{ session: ChatSession; active?: boolean }>();
+const state = computed(() => resolveSessionIndicator(props.session, props.active));
 const labels = { WAITING: '待确认', COMPLETED: '完成', FAILED: '失败', RUNNING: '正在运行' };
 </script>
 

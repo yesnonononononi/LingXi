@@ -76,7 +76,9 @@ export function useApplicationSessionState(sessions: Ref<ChatSession[]>, activeI
 
   watch(() => {
     const session = sessions.value.find(item => item.id === activeId.value);
-    return session?.isRead !== undefined && session.version !== undefined ? activeId.value : null;
+    // 当前会话也会收到新版本的未读状态，不能只在切换会话时确认已读。
+    return session?.isRead !== undefined && session.version !== undefined
+      ? [activeId.value, session.version, session.isRead] as const : null;
   }, () => void readVisibleSession(), { immediate: true, flush: 'post' });
 
   const onVisible = () => void readVisibleSession();
