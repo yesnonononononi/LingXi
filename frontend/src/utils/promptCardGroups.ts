@@ -13,6 +13,11 @@ export interface InteractionCardCategory {
   entries: PromptCardEntry[];
 }
 
+/** 准备中与处理中同样尚未收口，不能被归入已决记录。 */
+export function isUnresolvedCardEntry(entry: PromptCardEntry): boolean {
+  return entry.card.status !== 'completed';
+}
+
 /** 只合并当前消息的同类卡片，提交身份仍由每张卡片与模型响应决定。 */
 export function groupInteractionCards(entries: PromptCardEntry[]): InteractionCardCategory[] {
   const grouped: InteractionCardCategory[] = [];
@@ -27,7 +32,8 @@ export function groupInteractionCards(entries: PromptCardEntry[]): InteractionCa
       grouped.push(group);
     }
   }
-  return grouped;
+  return grouped.sort((first, second) => Number(second.entries.some(isUnresolvedCardEntry))
+    - Number(first.entries.some(isUnresolvedCardEntry)));
 }
 
 /** 同一轮可能多次提问，选择组必须沿用后端模型响应身份。 */

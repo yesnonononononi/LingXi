@@ -65,8 +65,9 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
     if(button?.getAttribute('aria-expanded')==='false')button.click();
   } window.flush()`);
   await evaluate('window.flush()');
-  assert.equal(await evaluate('document.querySelector("[data-testid=interaction-cards-toggle]").getAttribute("aria-expanded")'),'false');
-  assert.equal(await evaluate('document.querySelector("[data-testid=interaction-cards-content]").getBoundingClientRect().height'),0);
+  assert.equal(await evaluate('document.querySelector("[data-testid=interaction-cards-toggle]").getAttribute("aria-expanded")'),'true','待决卡片默认展开');
+  assert.equal(await evaluate('document.querySelector("[data-testid=choice-card-toggle]").getAttribute("aria-expanded")'),'true','待决提问分类默认展开');
+  assert.equal(await evaluate('document.querySelector("[data-testid=interaction-cards-content]").getBoundingClientRect().height>0'),true);
   assert.equal(await evaluate('document.querySelector("[data-testid=interaction-cards-pending]").textContent.includes("3 条待处理")'),true);
   await revealCards();
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=choice-question-group]").length'),1);

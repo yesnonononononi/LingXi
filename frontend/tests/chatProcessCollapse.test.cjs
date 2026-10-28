@@ -127,7 +127,7 @@ test('★ harness 金丝雀：过程区组件真实加载，桩掉即无节点',
   assert.equal(hasToolRow(stubbed), false, '桩掉 ProcessDetails 后工具行必须消失（金丝雀有效）');
 });
 
-test('所有卡片统一收进下拉，提问按类型归组，待处理到来不覆盖折叠选择', async t => {
+test('待决卡片默认展开，新待决到来自动露出，折叠保留草稿', async t => {
   const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
   const answer = message({ aiMessages: [], toolCalls: [
     { id: 'q1', toolName: AgentToolName.RequireChoice, status: 'pending', order: 1, responseId: '101' },
@@ -145,15 +145,12 @@ test('所有卡片统一收进下拉，提问按类型归组，待处理到来�
   const whole = find(root, node => node.props?.['data-testid'] === 'interaction-cards-toggle');
   const content = find(root, node => node.props?.['data-testid'] === 'interaction-cards-content');
   assert.match(text(whole), /互动卡片.*5 条.*2 条待处理/);
-  assert.equal(whole.props['aria-expanded'], false, '待处理卡片也默认收起');
-  assert.equal(content.style.display, 'none');
+  assert.equal(whole.props['aria-expanded'], true, '待决卡片必须默认展开');
+  assert.notEqual(content.style.display, 'none');
   const choice = find(root, node => node.props?.['data-testid'] === 'choice-card-toggle');
   assert.equal(findAll(root, node => node.props?.['data-testid'] === 'choice-card-group').length, 1);
   assert.match(text(choice), /提问.*2 条/);
-  assert.equal(choice.props['aria-expanded'], false);
-  whole.props.onClick();
-  choice.props.onClick();
-  await nextTick();
+  assert.equal(choice.props['aria-expanded'], true, '待决分类同样默认展开');
   assert.notEqual(content.style.display, 'none');
   const option = find(root, node => node.props?.role === 'radio');
   option.props.onClick();
@@ -164,18 +161,41 @@ test('所有卡片统一收进下拉，提问按类型归组，待处理到来�
   await nextTick();
   answer.promptCards.push({ id: 'new-plan', type: 'PROMISE', status: 'pending', content: { kind: 'PLAN', title: '新计划' } });
   await nextTick();
-  assert.equal(whole.props['aria-expanded'], false);
+  assert.equal(whole.props['aria-expanded'], true, '新待决必须重新露出外层入口');
   assert.equal(choice.props['aria-expanded'], false);
+  assert.equal(find(root, node => node.props?.['data-testid'] === 'plan-approval-toggle').props['aria-expanded'], true);
   assert.match(text(whole), /6 条.*3 条待处理/);
-  whole.props.onClick();
   choice.props.onClick();
   await nextTick();
   const restoredOption = find(root, node => node.props?.role === 'radio');
   assert.equal(restoredOption.props['aria-checked'], true, '折叠后重开不能丢失作答草稿');
   const reopened = mount(t, answer);
-  assert.equal(find(reopened, node => node.props?.['data-testid'] === 'interaction-cards-toggle').props['aria-expanded'], false);
+  assert.equal(find(reopened, node => node.props?.['data-testid'] === 'interaction-cards-toggle').props['aria-expanded'], true);
   const empty = mount(t, message({ aiMessages: [], promptCards: [] }));
   assert.equal(Boolean(find(empty, node => node.props?.['data-testid'] === 'interaction-cards-toggle')), false);
+});
+
+test('准备中的卡片也优先展开，待决分类排在已决分类之前，全部已决后自动收起', async t => {
+  const answer = message({ aiMessages: [], promptCards: [
+    { id: 'done', type: 'PROMISE', status: 'completed', content: { kind: 'PLAN', title: '已决计划' } },
+    { id: 'preparing', type: 'PROMISE', status: 'preparing', content: { kind: 'COMMAND', command: 'npm test' } },
+  ] });
+  const root = mount(t, answer);
+  const whole = find(root, node => node.props?.['data-testid'] === 'interaction-cards-toggle');
+  const command = find(root, node => node.props?.['data-testid'] === 'command-approval-toggle');
+  const plan = find(root, node => node.props?.['data-testid'] === 'plan-approval-toggle');
+  assert.equal(whole.props['aria-expanded'], true);
+  assert.equal(command.props['aria-expanded'], true);
+  assert.equal(plan.props['aria-expanded'], false);
+  assert.match(text(whole), /1 条待处理/);
+  const groups = findAll(root, node => ['command-approval-group', 'plan-approval-group'].includes(node.props?.['data-testid']));
+  assert.deepEqual(groups.map(node => node.props['data-testid']), ['command-approval-group', 'plan-approval-group']);
+  answer.promptCards[1].status = 'completed';
+  await nextTick();
+  assert.equal(whole.props['aria-expanded'], false);
+  assert.equal(command.props['aria-expanded'], false);
+  const reopened = mount(t, answer);
+  assert.equal(find(reopened, node => node.props?.['data-testid'] === 'interaction-cards-toggle').props['aria-expanded'], false);
 });
 
 test('同批提问保留原题序，待答题置于正确题号，后续响应仍是独立批次', t => {
@@ -247,7 +267,7 @@ test('问题尚未收齐或仍有待答时保留作答卡，全部已决后自�
   assert.ok(find(root, node => node.props?.['data-testid'] === 'choice-question-group'));
 });
 
-test('计划按组收敛，新待审批只更新数量，展开后置顶且命令保留独立组', async t => {
+test('计划按组收敛，新待审批自动展开置顶且命令保留独立组', async t => {
   const answer = message({ aiMessages: [], promptCards: [
     ...[0, 1].map(index => ({ id: `p${index}`, conversationId: '7', type: 'PROMISE', status: 'completed',
       content: { kind: 'PLAN', title: `计划 ${index}`, text: `计划正文 ${index}` }, rawOutput: { outcome: 'APPROVED' } })),
@@ -272,9 +292,7 @@ test('计划按组收敛，新待审批只更新数量，展开后置顶且命�
   answer.promptCards.push({ id: 'p2', conversationId: '7', type: 'PROMISE', status: 'pending', version: '3',
     allowedActions: ['APPROVE', 'REJECT'], content: { kind: 'PLAN', title: '新计划', text: '新计划正文' } });
   await nextTick();
-  assert.equal(planToggle.props['aria-expanded'], false, '新增卡片不能覆盖用户折叠选择');
-  planToggle.props.onClick();
-  await nextTick();
+  assert.equal(planToggle.props['aria-expanded'], true, '新增待决计划必须自动展开');
   const list = find(root, node => node.props?.['data-testid'] === 'plan-approval-list');
   const first = find(list, node => node.props?.['data-approval-id']);
   assert.equal(first.props['data-approval-id'], 'p2');

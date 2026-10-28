@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, useId } from 'vue';
+import { computed, ref, useId, watch } from 'vue';
 import type { GroupedPromptCardEntry, PromptCardEntry } from '../../utils/promptCardGroups';
-import { groupChoiceQuestions } from '../../utils/promptCardGroups';
+import { groupChoiceQuestions, isUnresolvedCardEntry } from '../../utils/promptCardGroups';
 import type { PromptCardData, ToolCallTrace } from '../../types/chat';
 import { cardDotClass, cardKindIconPath, resolveCardTone } from '../../utils/cardUi';
 import { resolveCardStatusLabel } from '../../utils/toolCallCard';
@@ -22,10 +22,14 @@ const groupTitle = computed(() => t(GROUP_LABELS[props.kind].title));
 const listId = useId();
 const expanded = ref(false);
 const expandedEntries = ref<Record<string, boolean>>({});
-const pendingEntries = computed(() => props.entries.filter(entry => entry.card.pending));
+const pendingEntries = computed(() => props.entries.filter(isUnresolvedCardEntry));
+watch(() => pendingEntries.value.map(entry => entry.id), (ids, previous) => {
+  if (ids.some(id => !previous?.includes(id))) expanded.value = true;
+  else if (!ids.length) expanded.value = false;
+}, { immediate: true });
 // 先保留响应内题序再置顶待处理批次，否则已答题会被挪到末尾，题号与提交批次失去对应。
 function isPendingEntry(entry: GroupedPromptCardEntry): boolean {
-  return entry.choices?.some(item => item.card.pending) ?? entry.card.pending;
+  return entry.choices?.some(isUnresolvedCardEntry) ?? isUnresolvedCardEntry(entry);
 }
 const orderedEntries = computed(() => groupChoiceQuestions(props.entries)
   .sort((first, second) => Number(isPendingEntry(second)) - Number(isPendingEntry(first))));

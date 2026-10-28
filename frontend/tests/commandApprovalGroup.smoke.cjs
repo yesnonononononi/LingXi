@@ -72,10 +72,9 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   await evaluate('document.querySelector("[data-testid=command-approval-entry-toggle]").click();window.flush()');
   assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-list]").textContent.includes("git status --short command-0")'),true);
   assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-list]").clientHeight<=320'),true);
-  // 新待审批只更新入口数量，展开后仍须置顶。
+  // 新待审批必须重新展开并置顶，不能藏在已决记录之后。
   await evaluate('document.querySelector("[data-testid=command-approval-toggle]").click();window.addPending("command-60");window.flush()');
-  assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-toggle]").getAttribute("aria-expanded")'),'false','新待审批不能覆盖用户收起的选择');
-  await evaluate('document.querySelector("[data-testid=command-approval-toggle]").click();window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-toggle]").getAttribute("aria-expanded")'),'true','新待审批必须自动露出');
   assert.equal(await evaluate('document.querySelector("[data-approval-id]").dataset.approvalId'),'command-60');
   assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-toggle]").textContent.includes("1 条待处理")'),true);
   const clickAction = async label => evaluate(`[...document.querySelectorAll('[data-approval-id="command-60"] button')].find(button=>button.textContent.includes(${JSON.stringify(label)})).click();window.flush()`);
@@ -103,8 +102,7 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   await evaluate('document.querySelector("[data-testid=plan-approval-entry-toggle]").click();window.flush()');
   assert.equal(await evaluate('document.querySelector("[data-testid=plan-approval-list]").innerText.includes("完整计划正文 plan-0")'),true);
   await evaluate('document.querySelector("[data-testid=plan-approval-toggle]").click();window.addPendingPlan("plan-20");window.flush()');
-  assert.equal(await evaluate('document.querySelector("[data-testid=plan-approval-toggle]").getAttribute("aria-expanded")'),'false');
-  await evaluate('document.querySelector("[data-testid=plan-approval-toggle]").click();window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=plan-approval-toggle]").getAttribute("aria-expanded")'),'true','新待决计划必须自动露出');
   assert.equal(await evaluate('document.querySelector("[data-testid=plan-approval-list] [data-approval-id]").dataset.approvalId'),'plan-20');
   await evaluate('[...document.querySelectorAll(\'[data-approval-id="plan-20"] button\')].find(button=>button.textContent.trim()==="批准").click();window.flush()');
   assert.deepEqual(await evaluate('window.decisions[2]'),{conversationId:'42',toolCallId:'plan-20',action:'APPROVE',text:'',expectedVersion:'7'});

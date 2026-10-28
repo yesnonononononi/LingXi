@@ -32,6 +32,17 @@ test('本轮卡片按类型归组，不改写卡片身份', () => {
   assert.equal('entries' in source[1]!, false);
 });
 
+test('待决与准备中分类优先于已决分类，同状态分类保留原序', () => {
+  const completed = entry('done', 'PLAN');
+  const pending = entry('waiting', 'CHOICE');
+  pending.card = { ...pending.card, status: 'pending', pending: true };
+  const preparing = entry('preparing', 'COMMAND');
+  preparing.card = { ...preparing.card, status: 'preparing', pending: false };
+  const source = [completed, pending, preparing];
+  assert.deepEqual(groupInteractionCards(source).map(category => category.kind), ['CHOICE', 'COMMAND', 'PLAN']);
+  assert.deepEqual(source.map(item => item.id), ['done', 'waiting', 'preparing']);
+});
+
 test('分组状态不会跨轮次泄漏，待审批与已决记录均保留', () => {
   const pending = entry('pending');
   pending.card = { ...pending.card, pending: true, status: 'pending', outcome: undefined, allowedActions: ['APPROVE', 'REJECT'] };

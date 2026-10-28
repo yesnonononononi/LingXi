@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, useId } from 'vue';
+import { computed, ref, useId, watch } from 'vue';
 import type { ToolCallTrace } from '../../types/chat';
-import { groupInteractionCards, type PromptCardEntry } from '../../utils/promptCardGroups';
+import { groupInteractionCards, isUnresolvedCardEntry, type PromptCardEntry } from '../../utils/promptCardGroups';
 import { t } from '../../i18n';
 import InteractionCardGroup from './InteractionCardGroup.vue';
 
@@ -9,7 +9,13 @@ const props = defineProps<{ entries: PromptCardEntry[]; toolCalls?: ToolCallTrac
 const expanded = ref(false);
 const contentId = useId();
 const categories = computed(() => groupInteractionCards(props.entries));
-const pendingCount = computed(() => props.entries.filter(entry => entry.card.pending).length);
+const pendingEntries = computed(() => props.entries.filter(isUnresolvedCardEntry));
+const pendingCount = computed(() => pendingEntries.value.length);
+// 新待决到来必须露出入口；仅手动折叠时保留当前草稿。
+watch(() => pendingEntries.value.map(entry => entry.id), (ids, previous) => {
+  if (ids.some(id => !previous?.includes(id))) expanded.value = true;
+  else if (!ids.length) expanded.value = false;
+}, { immediate: true });
 </script>
 
 <template>
