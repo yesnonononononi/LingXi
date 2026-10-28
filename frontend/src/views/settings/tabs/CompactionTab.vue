@@ -120,7 +120,7 @@ const maxTokensFill = computed(() => {
               data-testid="compaction-switch"
               :aria-checked="enabled"
               :aria-label="t('settings.compaction.toggleLabel')"
-              :disabled="disabled || !readyModels.length"
+              :disabled="disabled || (!enabled && !readyModels.length)"
               :class="switchClass"
               @click="toggle(!enabled)"
             >

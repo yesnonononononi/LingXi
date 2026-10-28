@@ -33,7 +33,7 @@ export function useCompactionTab() {
 
   const options = computed(() => readyModels.value.map(entry => ({
     value: String(entry.model.id),
-    label: labelOf(entry.providerName, entry.model.modelName),
+    label: buildModelLabel(entry.providerName, entry.model.modelName),
     desc: entry.model.baseUrl ?? undefined,
   })));
 
@@ -52,17 +52,19 @@ export function useCompactionTab() {
     loadError.value = '';
     paramsError.value = '';
     try {
-      const [configOk, catalog, compaction] = await Promise.all([
+      const [config, catalog, compaction] = await Promise.allSettled([
         store.load(true),
         ModelAPI.catalog(),
         CompactionSettingsAPI.params(),
       ]);
-      if (!configOk) throw new Error(t('config.loadFailed'));
-      groups.value = isOk(catalog.code) ? (catalog.data ?? []) : [];
-      // 参数读取失败只降级「高级设置」一块：选择压缩模型本身不依赖它，
-      // 整页一起报错会让人以为连模型都不能选（本页初版就犯了这个错）。
-      if (isOk(compaction.code)) {
-        params.value = compaction.data ?? null;
+      if (config.status === 'rejected' || !config.value
+        || catalog.status === 'rejected' || !isOk(catalog.value.code)) {
+        throw new Error(t('config.loadFailed'));
+      }
+      groups.value = catalog.value.data ?? [];
+      // 参数接口独立处理传输与业务错误，避免只读参数故障阻断模型选择。
+      if (compaction.status === 'fulfilled' && isOk(compaction.value.code) && compaction.value.data) {
+        params.value = compaction.value.data;
       } else {
         params.value = null;
         paramsError.value = t('settings.compaction.loadFailed');
@@ -125,7 +127,7 @@ export function useCompactionTab() {
 }
 
 /** 下拉展示名：有提供商时用「提供商/模型」，与模型页的分组口径一致。 */
-function labelOf(providerName: string, modelName?: string | null): string {
+function buildModelLabel(providerName: string, modelName?: string | null): string {
   const name = (modelName ?? '').trim();
   return providerName ? providerName + '/' + name : name;
 }

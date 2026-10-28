@@ -97,6 +97,50 @@ test('保存失败回滚到原值并给出可见错误', async (t) => {
   assert.equal(state.saveError.value, translate('settings.compaction.saveFailed'));
 });
 
+test('参数请求异常只影响高级设置，模型仍可选择和取消，重试能恢复', async (t) => {
+  mockReads(t, { modelThreshold: 0.85, maxSummaryAttempts: 2, compactMaxTokens: 32768 });
+  let failure = false;
+  t.mock.method(CompactionSettingsAPI, 'params', async () => {
+    if (failure) throw new Error('HTTP 500');
+    return { code: 1, data: { modelThreshold: 0.72, maxSummaryAttempts: 3, compactMaxTokens: 4096 } };
+  });
+  const writes: unknown[] = [];
+  t.mock.method(UserConfigAPI, 'updateCurrent', async (payload: unknown) => {
+    writes.push(payload);
+    return { code: 1 };
+  });
+  const state = useCompactionTab();
+  await state.load();
+  assert.equal(state.params.value?.compactMaxTokens, 4096);
+  failure = true;
+  await state.load();
+  assert.equal(state.loadError.value, '');
+  assert.equal(state.params.value, null);
+  assert.equal(state.paramsError.value, translate('settings.compaction.loadFailed'));
+  assert.equal(state.options.value.length, 1);
+  assert.equal(state.disabled.value, false);
+  await state.choose('11');
+  await state.toggle(false);
+  assert.deepEqual(writes, [{ compactModelId: '11' }, { compactModelId: null }]);
+  failure = false;
+  await state.load();
+  assert.equal(state.paramsError.value, '');
+  assert.equal(state.params.value?.compactMaxTokens, 4096);
+});
+
+test('参数业务错误局部展示，模型目录业务错误不能伪装为空目录', async (t) => {
+  mockReads(t, {});
+  t.mock.method(CompactionSettingsAPI, 'params', async () => ({ code: 0 }));
+  const state = useCompactionTab();
+  await state.load();
+  assert.equal(state.loadError.value, '');
+  assert.notEqual(state.paramsError.value, '');
+  assert.equal(state.options.value.length, 1);
+  t.mock.method(ModelAPI, 'catalog', async () => ({ code: 0 }));
+  await state.load();
+  assert.notEqual(state.loadError.value, '');
+});
+
 test('压缩模型的文案在中英两套里都有真值，没有漏键', () => {
   const keys = [    'title',
     'subtitle',
