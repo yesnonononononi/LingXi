@@ -13,6 +13,6 @@ public class UpdateChecklistStepArgument {
 
     private Long checklistId;
     private Long stepId;
-    /** COMPLETED / FAILED / SKIPPED */
+    /** 开始或真实结果，不允许退回待处理。 */
     private String status;
 }

@@ -7,13 +7,8 @@ import java.time.Instant;
 import java.util.Objects;
 
 /**
- * 清单聚合内的步骤实体。
- *
- * <p>状态机只有一条前进边：{@code PENDING → COMPLETED/FAILED/SKIPPED}。
- * 重复提交同一个终态视为无变化（幂等，返回 {@code false}），
- * 这样重试不会白拿一次提醒额度；纠正错误的办法是新增步骤，而不是把已完成的步骤改回去。</p>
- *
- * <p>步骤标识稳定：改文案、重排序都不换 ID，模型与前端不能靠 seq 指代步骤。</p>
+ * 步骤标识不随文案和顺序变化，开始处理也不等于完成。
+ * 同状态重试不刷新时间与额度；终态不能重开，需要重做时新增步骤。
  */
 @Getter
 public final class ChecklistStep {
@@ -75,6 +70,24 @@ public final class ChecklistStep {
         status = next;
         updateAt = ChecklistRules.now();
         return true;
+    }
+
+    /** 开始处理不消耗进展版本，避免反复开始换取提醒额度。 */
+    public boolean start() {
+        if (status == ChecklistStepStatus.IN_PROGRESS) {
+            return false;
+        }
+        if (status.isTerminal()) {
+            throw new ClientException("已结束的步骤不能重新开始；需要重做时请新增一个步骤");
+        }
+        status = ChecklistStepStatus.IN_PROGRESS;
+        updateAt = ChecklistRules.now();
+        return true;
+    }
+
+    /** 进行中的步骤也不能在收尾时遗漏。 */
+    public boolean isUnresolved() {
+        return !status.isTerminal();
     }
 
     /**

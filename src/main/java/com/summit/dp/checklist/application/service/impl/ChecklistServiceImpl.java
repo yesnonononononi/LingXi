@@ -131,6 +131,13 @@ public class ChecklistServiceImpl implements ChecklistService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public Optional<ChecklistVO> findCurrent(Long sessionId) {
+        long owner = requireSessionId(sessionId);
+        return repository.findCurrentBySessionId(owner).map(this::toVO);
+    }
+
+    @Override
     @Transactional
     public ReminderDecision remindOnNaturalComplete(ChecklistReminderContext context) {
         throwIf(context == null, "清单收尾上下文不能为空");

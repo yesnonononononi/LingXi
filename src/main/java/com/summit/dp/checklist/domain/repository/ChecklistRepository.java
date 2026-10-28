@@ -28,6 +28,9 @@ public interface ChecklistRepository extends RepositoryTemplate<Checklist, Long>
     /** 会话当前的活动清单（含步骤），不加锁；用于给模型补上下文与友好报错。 */
     Optional<Checklist> findActiveBySessionId(long sessionId);
 
+    /** 最新清单保留终态；删除后不让历史清单重新冒出。 */
+    Optional<Checklist> findCurrentBySessionId(long sessionId);
+
     /** 会话当前的活动清单（含步骤），行级加锁；写入路径必须走它。 */
     Optional<Checklist> findActiveBySessionIdForUpdate(long sessionId);
 

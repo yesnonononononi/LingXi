@@ -56,6 +56,26 @@ class ChecklistPersistenceTest {
     private ChecklistRepositoryImpl repository;
     private ChecklistService service;
 
+    @Test
+    void currentSnapshotRetainsStartedAndCompletedStepsAndExcludesDeletedHistory() {
+        assertTrue(service.findCurrent(SESSION_ID).isEmpty());
+        ChecklistVO first = service.create(ChecklistCommand.create(SESSION_ID, null, "第一份", List.of("编译")));
+        long stepId = first.getSteps().get(0).getStepId();
+        service.updateStep(ChecklistCommand.updateStep(SESSION_ID, null, stepId, "IN_PROGRESS"));
+        ChecklistVO started = service.findCurrent(SESSION_ID).orElseThrow();
+        assertEquals("IN_PROGRESS", started.getSteps().get(0).getStatus());
+        assertEquals(0L, started.getProgressVersion());
+        assertTrue(service.findCurrent(SESSION_ID + 1).isEmpty());
+        service.updateStep(ChecklistCommand.updateStep(SESSION_ID, null, stepId, "COMPLETED"));
+        assertEquals("COMPLETED", service.findCurrent(SESSION_ID).orElseThrow().getStatus());
+        ChecklistVO second = service.create(ChecklistCommand.create(SESSION_ID, null, "第二份", List.of("测试")));
+        assertEquals(second.getChecklistId(), service.findCurrent(SESSION_ID).orElseThrow().getChecklistId());
+        service.delete(ChecklistCommand.delete(SESSION_ID, second.getChecklistId()));
+        assertTrue(service.findCurrent(SESSION_ID).isEmpty());
+        assertThrows(ClientException.class, () -> service.findCurrent(null));
+        assertThrows(ClientException.class, () -> service.findCurrent(0L));
+    }
+
     @BeforeEach
     void setUp() {
         fixture = ChecklistTestDatabase.start("checklist");

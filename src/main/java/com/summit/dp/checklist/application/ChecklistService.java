@@ -13,7 +13,7 @@ public interface ChecklistService {
     /** 新建清单；同会话已有活动清单时拒绝。 */
     ChecklistVO create(ChecklistCommand command);
 
-    /** 更新一个步骤为终态；实际推进时重置提醒额度。 */
+    /** 开始不刷新提醒额度，写入结果才算实际推进。 */
     ChecklistVO updateStep(ChecklistCommand command);
 
     /** 修改标题、改步骤内容、增删与重排步骤。 */
@@ -24,6 +24,9 @@ public interface ChecklistService {
 
     /** 读取会话当前的活动清单，用于给模型补上下文。 */
     Optional<ChecklistVO> findActive(long sessionId);
+
+    /** 界面读取最近清单，终态仍可回看。 */
+    Optional<ChecklistVO> findCurrent(Long sessionId);
 
     /** 自然收尾只信任本执行、当前进展版本的投递事实。 */
     ReminderDecision remindOnNaturalComplete(ChecklistReminderContext context);

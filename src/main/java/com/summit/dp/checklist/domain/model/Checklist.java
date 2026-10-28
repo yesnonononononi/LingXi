@@ -17,20 +17,9 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Agent 执行清单聚合根。
- *
- * <p><b>为什么需要它</b>：多步任务里模型容易在第 N 步就宣布「全部完成」。清单把「还剩什么没做」
- * 变成持久化事实，收尾时由服务端而不是模型来判定是否还有待处理步骤。</p>
- *
- * <p><b>不变量</b>（全部在这里守住，Service 只负责事务与锁）：</p>
- * <ul>
- *   <li>每个会话至多一份 ACTIVE 清单（由 init.sql 的派生列唯一索引兜底，这里不重复实现）</li>
- *   <li>只有 ACTIVE 可改；COMPLETED / UNFINISHED / DELETED 一律拒绝写入</li>
- *   <li>步骤只能 PENDING → 终态，且不能删光</li>
- *   <li>只有<b>实际</b>推进（PENDING → 终态）才递增 progressVersion 并重置提醒额度；
- *       改标题、改文案、增删重排都不重置，避免用结构修改无限换取续轮</li>
- *   <li>所有步骤都不再 PENDING 时清单自动收口为 COMPLETED（FAILED / SKIPPED 不阻止收口）</li>
- * </ul>
+ * 清单收尾以持久化步骤为准，同会话只允许一份活动清单。
+ * 开始和结构修改不重置提醒额度，只有写入终态才算推进；终态不能重开。
+ * 待处理和进行中的步骤均阻止收口，失败和跳过保留真实结果。
  */
 @Slf4j
 @Getter
@@ -125,20 +114,20 @@ public class Checklist {
         return List.copyOf(steps);
     }
 
-    /** 仍是待处理的步骤，按 seq 升序；提醒文案直接用它。 */
+    /** 待处理和进行中的步骤都要提醒，按 seq 升序。 */
     public List<ChecklistStep> pendingSteps() {
-        return steps.stream().filter(ChecklistStep::isPending)
+        return steps.stream().filter(ChecklistStep::isUnresolved)
                 .sorted((left, right) -> Integer.compare(left.getSeq(), right.getSeq()))
                 .toList();
     }
 
     /** 是否还有未处理步骤：收尾判定的唯一依据。 */
     public boolean hasPendingSteps() {
-        return steps.stream().anyMatch(ChecklistStep::isPending);
+        return steps.stream().anyMatch(ChecklistStep::isUnresolved);
     }
 
     /**
-     * 推进一个步骤到终态。
+     * 开始不刷新提醒额度，写入结果才算推进。
      *
      * @return 本次变更需要落库的影响面；重复提交相同终态时返回 {@link ChecklistMutation#none()}
      */
@@ -149,6 +138,13 @@ public class Checklist {
             return ChecklistMutation.none();
         }
         requireActive("更新步骤");
+        if (next == ChecklistStepStatus.IN_PROGRESS) {
+            if (!step.start()) {
+                return ChecklistMutation.none();
+            }
+            touch();
+            return new ChecklistMutation(true, List.of(), List.of(step), List.of());
+        }
         if (!step.moveToTerminal(next)) {
             // 无变化：不递增版本、不重置提醒额度，也不刷新清单时间——重试必须完全等价于没发生
             return ChecklistMutation.none();

@@ -32,7 +32,7 @@ public class ChecklistCommand {
     private Long checklistId;
     /** 目标步骤标识 */
     private Long stepId;
-    /** 目标状态，只接受 COMPLETED / FAILED / SKIPPED */
+    /** 目标状态：明确开始或真实结果。 */
     private String status;
 
     /** 修改后的新标题，null 表示不改 */
@@ -57,7 +57,7 @@ public class ChecklistCommand {
                 .build();
     }
 
-    /** 更新一个步骤的终态。 */
+    /** 上报开始或步骤结果。 */
     public static ChecklistCommand updateStep(long sessionId, Long checklistId, Long stepId, String status) {
         return ChecklistCommand.builder()
                 .sessionId(sessionId).checklistId(checklistId).stepId(stepId).status(status)

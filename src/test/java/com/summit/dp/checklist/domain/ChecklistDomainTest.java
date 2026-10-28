@@ -34,6 +34,26 @@ class ChecklistDomainTest {
     private static final long CHECKLIST_ID = 100L;
 
     @Test
+    void startingAStepKeepsReminderBudgetAndRemainsUnresolved() {
+        Checklist checklist = checklist("编译", "测试");
+        long first = checklist.getSteps().get(0).getId();
+        checklist.applyReminderFact(77L);
+        assertTrue(checklist.changeStepStatus(first, ChecklistStepStatus.IN_PROGRESS).checklistChanged());
+        assertEquals(ChecklistStepStatus.IN_PROGRESS, checklist.getSteps().get(0).getStatus());
+        assertEquals(0L, checklist.getProgressVersion());
+        assertTrue(checklist.isRemindStatus());
+        assertEquals(2, checklist.pendingSteps().size());
+        assertFalse(checklist.changeStepStatus(first, ChecklistStepStatus.IN_PROGRESS).checklistChanged());
+        checklist.changeStepStatus(checklist.getSteps().get(1).getId(), ChecklistStepStatus.SKIPPED);
+        assertTrue(checklist.hasPendingSteps());
+        assertEquals(ChecklistStatus.ACTIVE, checklist.getStatus());
+        checklist.changeStepStatus(first, ChecklistStepStatus.COMPLETED);
+        assertEquals(2L, checklist.getProgressVersion());
+        assertEquals(ChecklistStatus.COMPLETED, checklist.getStatus());
+        assertThrows(ClientException.class, () -> checklist.changeStepStatus(first, ChecklistStepStatus.IN_PROGRESS));
+    }
+
+    @Test
     @DisplayName("新建清单：步骤按传入顺序编号，进展版本从 0 开始，提醒未使用")
     void createStartsActiveWithNumberedPendingSteps() {
         Checklist checklist = checklist("编译", "跑测试", "写记录");

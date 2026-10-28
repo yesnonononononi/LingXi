@@ -391,7 +391,7 @@ CREATE TABLE IF NOT EXISTS checklist_step (
     checklist_id BIGINT       NOT NULL COMMENT '所属清单 ID',
     seq          INTEGER      NOT NULL COMMENT '展示顺序，从 1 开始；重排会改写但 ID 不变',
     content      VARCHAR(500) NOT NULL COMMENT '步骤内容',
-    status       VARCHAR(16)  NOT NULL COMMENT 'PENDING/COMPLETED/FAILED/SKIPPED',
+    status       VARCHAR(16)  NOT NULL COMMENT 'PENDING/IN_PROGRESS/COMPLETED/FAILED/SKIPPED',
     update_at    TIMESTAMP    NOT NULL COMMENT '更新时间',
     KEY idx_checklist_step_order (checklist_id, seq)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='执行清单步骤';

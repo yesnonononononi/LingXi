@@ -23,12 +23,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-/**
- * 把一个步骤标记为终态。
- *
- * <p>返回权威快照，模型不需要猜「现在还差什么」。状态只接受三个终态取值：
- * 完成、失败、跳过 —— 全部如实记录，不允许为了清空清单把没做的事标成成功。</p>
- */
+/** 开始与结果均由模型明确上报，界面不猜测正在处理哪一步。 */
 @Slf4j
 @RequiredArgsConstructor
 @Component
@@ -37,10 +32,11 @@ import org.springframework.stereotype.Component;
     name = ToolCatalog.UPDATE_CHECKLIST_STEP,
     executor = UpdateChecklistStepTool.class,
     description = """
-        Mark one checklist step as COMPLETED, FAILED or SKIPPED.
+        Before working on a checklist step, mark it IN_PROGRESS; then report COMPLETED, FAILED or SKIPPED.
         Report the real outcome: never mark unfinished work as COMPLETED just to empty the checklist;
         use FAILED or SKIPPED with an honest step content instead.
-        A step can move only once, from PENDING to one terminal status; finished steps cannot be reopened.
+        PENDING may become IN_PROGRESS or a terminal status; finished steps cannot be reopened.
+        IN_PROGRESS does not count as completed progress or renew the reminder budget.
         Marking a step that is already in the requested status is a no-op and returns the snapshot.
         This tool maintains the execution checklist only; it never creates an approval card (create_plan does that).
         """,
@@ -54,8 +50,8 @@ import org.springframework.stereotype.Component;
                 description = "Stable step id from the snapshot; seq is only display order and cannot be used instead.")),
             @ToolProperty(key = "status", value = @Value(
                 type = ValueType.STRING,
-                stringValue = @StringValue(enums = {"COMPLETED", "FAILED", "SKIPPED"}),
-                description = "Terminal status of the step."))
+                stringValue = @StringValue(enums = {"IN_PROGRESS", "COMPLETED", "FAILED", "SKIPPED"}),
+                description = "Explicit start or real outcome of the step."))
         },
         required = {"stepId", "status"},
         additionalProperties = OptionalBoolean.FALSE),

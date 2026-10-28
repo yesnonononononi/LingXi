@@ -62,14 +62,14 @@ class ChecklistToolSchemaTest {
     }
 
     @Test
-    @DisplayName("update_checklist_step 的状态只允许三个终态取值")
-    void updateStepSchemaLimitsStatusToTerminalValues() throws Exception {
+    @DisplayName("步骤工具公开进行中与三个终态，禁止退回待处理")
+    void updateStepSchemaExposesExplicitStartAndOutcomes() throws Exception {
         JsonNode status = schemaOf(UpdateChecklistStepTool.class).path("properties").path("status");
 
         assertEquals("string", status.path("type").asText());
         List<String> enums = new java.util.ArrayList<>();
         status.path("enum").forEach(node -> enums.add(node.asText()));
-        assertEquals(List.of("COMPLETED", "FAILED", "SKIPPED"), enums);
+        assertEquals(List.of("IN_PROGRESS", "COMPLETED", "FAILED", "SKIPPED"), enums);
     }
 
     @Test
