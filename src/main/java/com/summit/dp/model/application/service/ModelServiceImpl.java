@@ -179,7 +179,7 @@ public class ModelServiceImpl implements ModelService {
                 || model.getApiKey() == null || model.getApiKey().isBlank()
                 || model.getModelName() == null || model.getModelName().isBlank(), "模型连接配置不完整: " + id);
         return RuntimeModel.create(model.getBaseUrl(), model.getApiKey(), model.getModelName(), model.getProvider(),
-                model.isVision(), settings, chatProperties.getTimeout(), compactModelOf(settings));
+                model.isVision(), settings, chatProperties.getTimeout(), resolveCompactModel(settings));
     }
 
     /**
@@ -189,7 +189,7 @@ public class ModelServiceImpl implements ModelService {
      * 并留一条 WARN —— 拿一个不存在的模型去抛错，会让用户每发一句话都失败，
      * 而真正该修的是设置页那处失配（页面对空选中有显式提示）。</p>
      */
-    private RuntimeModel.CompactModel compactModelOf(SettingsView settings) {
+    private RuntimeModel.CompactModel resolveCompactModel(SettingsView settings) {
         Long compactModelId = settings == null ? null : settings.compactModelId();
         if (compactModelId == null) {
             return null;

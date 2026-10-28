@@ -1,5 +1,6 @@
 package com.summit.dp.model;
 
+import com.summit.core.conf.ModelConfig.CompactModelConfig;
 import com.summit.dp.model.application.service.ModelServiceImpl;
 import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.model.domain.model.ModelConfig;
@@ -59,7 +60,7 @@ class CompactionModelRoutingTest {
                     .resolveRuntimeConfig(CHAT_MODEL_ID, settings(COMPACT_MODEL_ID));
             assertEquals("https://chat.invalid/v1", runtime.config().getBaseUrl());
             assertFalse(runtime.config().isReuseModelForCompaction());
-            com.summit.core.conf.ModelConfig.CompactModelConfig compact = runtime.config().getCompactModel();
+            CompactModelConfig compact = runtime.config().getCompactModel();
             assertNotNull(compact);
             assertEquals("https://compact.invalid/v1", compact.baseUrl());
             assertEquals("compact-key", compact.apiKey());
