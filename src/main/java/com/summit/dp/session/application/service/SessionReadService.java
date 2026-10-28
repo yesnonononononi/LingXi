@@ -35,8 +35,8 @@ public class SessionReadService {
 
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void onExecutionStateChanged(SessionExecutionStateChanged event) {
-        Session session = repository.lockById(event.sessionId()).orElseThrow(ClientException::new);
-        changeRead(session, false);
+        // 会话可在执行途中删除，渲染投影不能阻止剩余检查点收尾。
+        repository.lockById(event.sessionId()).ifPresent(session -> changeRead(session, false));
     }
 
     private void changeRead(Session session, boolean read) {

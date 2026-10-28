@@ -118,6 +118,18 @@ class ApplicationSessionStateTest {
     }
 
     @Test
+    void deletedSessionDoesNotPreventExecutionFromFinishing() {
+        save(101L, 11L, ExecutionStatusCodes.CREATED);
+        int delivered = stream.frames.size();
+        sessions.delSessionTreeByRootSId(11L);
+
+        save(101L, null, ExecutionStatusCodes.COMPLETED);
+
+        assertEquals(ExecutionStatusCodes.COMPLETED, checkpoints.find(101L).orElseThrow().status());
+        assertEquals(delivered, stream.frames.size());
+    }
+
+    @Test
     void applicationSnapshotIncludesAllRootSessionsBeyondTheSidebarPage() {
         for (long id = 1000L; id < 1105L; id++) {
             sessions.save(Session.builder().id(id).name("会话" + id).build());
