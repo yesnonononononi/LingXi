@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import LxModal from './LxModal.vue'
 import { useConfirm } from '../../composables/useConfirm'
 import { t } from '../../i18n'
 
@@ -39,11 +40,18 @@ const typeConfig = computed(() => {
   }
 })
 
+/** 面板尺寸/配色；Esc 关闭交给 LxModal（closeOnEsc 默认 true → emit close → handleCancel） */
+const panelClass = computed(() =>
+  [
+    'w-full max-h-[90vh] bg-white dark:bg-[#1a1c23] rounded-2xl shadow-xl shadow-black/10 border border-zinc-100 dark:border-white/10 p-5 sm:p-5.5 flex flex-col gap-4 transform transition-all duration-200',
+    state.value.options.preview !== undefined ? 'max-w-[640px]' : 'max-w-[360px]',
+  ].join(' ')
+)
+
 const handleKeyDown = (e: KeyboardEvent) => {
   if (!state.value.isOpen) return
-  if (e.key === 'Escape') {
-    handleCancel()
-  } else if (e.key === 'Enter') {
+  // Esc 由 LxModal 统一承担（避免两处各自监听导致双重触发），这里只管 Enter 确认
+  if (e.key === 'Enter') {
     handleConfirm()
   }
 }
@@ -58,145 +66,123 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="modal-fade">
+  <LxModal
+    :open="state.isOpen"
+    overlay-class="z-[99999] bg-black/45 backdrop-blur-sm transition-all duration-200 select-none"
+    :panel-class="panelClass"
+    :aria-label="state.options.title || t('common.confirmTitle')"
+    transition-name="lx-modal"
+    @close="handleCancel"
+  >
+    <!-- Top: Icon & Text content -->
+    <div class="flex items-start gap-3.5">
+      <!-- Compact Type Icon -->
       <div
-        v-if="state.isOpen"
-        class="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/45 backdrop-blur-sm transition-all duration-200 select-none"
-        @click.self="handleCancel"
+        class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+        :class="typeConfig.iconBg"
       >
-        <div
-          role="dialog"
-          aria-modal="true"
-          :aria-label="state.options.title || t('common.confirmTitle')"
-          class="w-full max-h-[90vh] bg-white dark:bg-[#1a1c23] rounded-2xl shadow-xl shadow-black/10 border border-zinc-100 dark:border-white/10 p-5 sm:p-5.5 flex flex-col gap-4 transform transition-all duration-200"
-          :class="state.options.preview !== undefined ? 'max-w-[640px]' : 'max-w-[360px]'"
+        <!-- Danger Icon -->
+        <svg
+          v-if="state.options.type === 'danger'"
+          class="w-5 h-5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
         >
-          <!-- Top: Icon & Text content -->
-          <div class="flex items-start gap-3.5">
-            <!-- Compact Type Icon -->
-            <div
-              class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-              :class="typeConfig.iconBg"
-            >
-              <!-- Danger Icon -->
-              <svg
-                v-if="state.options.type === 'danger'"
-                class="w-5 h-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
-                />
-              </svg>
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+          />
+        </svg>
 
-              <!-- Warning Icon -->
-              <svg
-                v-else-if="state.options.type === 'warning'"
-                class="w-5 h-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
-                />
-              </svg>
+        <!-- Warning Icon -->
+        <svg
+          v-else-if="state.options.type === 'warning'"
+          class="w-5 h-5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
+          />
+        </svg>
 
-              <!-- Success Icon -->
-              <svg
-                v-else-if="state.options.type === 'success'"
-                class="w-5 h-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
+        <!-- Success Icon -->
+        <svg
+          v-else-if="state.options.type === 'success'"
+          class="w-5 h-5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+          />
+        </svg>
 
-              <!-- Info Icon -->
-              <svg
-                v-else
-                class="w-5 h-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
-                />
-              </svg>
-            </div>
-
-            <!-- Title & Description -->
-            <div class="flex-1 min-w-0 pt-0.5">
-              <h3 class="text-base font-semibold text-zinc-900 dark:text-zinc-100">
-                {{ state.options.title || t('common.confirmTitle') }}
-              </h3>
-              <p class="mt-1 text-xs sm:text-sm text-lx-muted leading-relaxed break-words whitespace-pre-line">
-                {{ state.options.content }}
-              </p>
-            </div>
-          </div>
-
-          <pre
-            v-if="state.options.preview !== undefined"
-            data-testid="confirm-preview"
-            class="min-h-0 overflow-y-auto max-h-[55vh] whitespace-pre-wrap break-words [overflow-wrap:anywhere] select-text rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-black/20 p-4 text-sm leading-relaxed font-sans text-zinc-800 dark:text-zinc-200"
-          >{{ state.options.preview }}</pre>
-
-          <!-- Bottom Action Buttons -->
-          <div class="flex items-center justify-end gap-2.5 pt-1">
-            <button
-              v-if="state.options.showCancel"
-              ref="cancelButton"
-              type="button"
-              class="px-3.5 py-1.5 text-xs sm:text-sm font-medium text-lx-tertiary hover:text-zinc-900 dark:hover:text-white bg-zinc-100 hover:bg-zinc-200/80 dark:bg-white/5 dark:hover:bg-white/10 rounded-xl border border-zinc-200/80 dark:border-white/10 transition-colors focus:outline-none cursor-pointer active:scale-95"
-              @click="handleCancel"
-            >
-              {{ state.options.cancelText || t('common.cancel') }}
-            </button>
-
-            <button
-              type="button"
-              class="px-4 py-1.5 text-xs sm:text-sm font-medium rounded-xl transition-colors focus:outline-none cursor-pointer active:scale-95 shadow-sm"
-              :class="typeConfig.confirmBtn"
-              @click="handleConfirm"
-            >
-              {{ state.options.confirmText || t('common.confirm') }}
-            </button>
-          </div>
-        </div>
+        <!-- Info Icon -->
+        <svg
+          v-else
+          class="w-5 h-5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+          />
+        </svg>
       </div>
-    </Transition>
-  </Teleport>
+
+      <!-- Title & Description -->
+      <div class="flex-1 min-w-0 pt-0.5">
+        <h3 class="text-base font-semibold text-zinc-900 dark:text-zinc-100">
+          {{ state.options.title || t('common.confirmTitle') }}
+        </h3>
+        <p class="mt-1 text-xs sm:text-sm text-lx-muted leading-relaxed break-words whitespace-pre-line">
+          {{ state.options.content }}
+        </p>
+      </div>
+    </div>
+
+    <pre
+      v-if="state.options.preview !== undefined"
+      data-testid="confirm-preview"
+      class="min-h-0 overflow-y-auto max-h-[55vh] whitespace-pre-wrap break-words [overflow-wrap:anywhere] select-text rounded-xl border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-black/20 p-4 text-sm leading-relaxed font-sans text-zinc-800 dark:text-zinc-200"
+    >{{ state.options.preview }}</pre>
+
+    <!-- Bottom Action Buttons -->
+    <div class="flex items-center justify-end gap-2.5 pt-1">
+      <button
+        v-if="state.options.showCancel"
+        ref="cancelButton"
+        type="button"
+        class="px-3.5 py-1.5 text-xs sm:text-sm font-medium text-lx-tertiary hover:text-zinc-900 dark:hover:text-white bg-zinc-100 hover:bg-zinc-200/80 dark:bg-white/5 dark:hover:bg-white/10 rounded-xl border border-zinc-200/80 dark:border-white/10 transition-colors focus:outline-none cursor-pointer active:scale-95"
+        @click="handleCancel"
+      >
+        {{ state.options.cancelText || t('common.cancel') }}
+      </button>
+
+      <button
+        type="button"
+        class="px-4 py-1.5 text-xs sm:text-sm font-medium rounded-xl transition-colors focus:outline-none cursor-pointer active:scale-95 shadow-sm"
+        :class="typeConfig.confirmBtn"
+        @click="handleConfirm"
+      >
+        {{ state.options.confirmText || t('common.confirm') }}
+      </button>
+    </div>
+  </LxModal>
 </template>
-
-<style scoped>
-.modal-fade-enter-active,
-.modal-fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-.modal-fade-enter-from,
-.modal-fade-leave-to {
-  opacity: 0;
-  transform: scale(0.95);
-}
-</style>

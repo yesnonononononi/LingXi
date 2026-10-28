@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue';
+import LxModal from '../common/LxModal.vue';
 import type { AgentVO, ModelConfig, ToolVO } from '../../types/chat';
 import { TeamAPI } from '../../services/team';
 import { AgentAPI } from '../../services/agent';
@@ -14,6 +15,8 @@ const props = defineProps<{
   isOpen: boolean;
   isDark?: boolean;
   models?: ModelConfig[];
+  /** 是否挂到 body（默认 true）；受限容器渲染场景（视觉基线）置 false */
+  teleport?: boolean;
 }>();
 
 const { isDark: themeIsDark } = useTheme();
@@ -23,6 +26,16 @@ const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'created', newTeamId?: number | string): void;
 }>();
+
+/** 面板样式；关闭策略交给 LxModal：本弹窗没有 Esc 关闭（沿用既有行为） */
+const panelClass = computed(() =>
+  [
+    'w-full max-w-lg max-h-[85vh] flex flex-col rounded-2xl border shadow-2xl transition-all overflow-hidden',
+    isDark.value
+      ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_12px_40px_rgba(0,0,0,0.95)] backdrop-blur-2xl'
+      : 'bg-white border-zinc-200 text-zinc-800',
+  ].join(' ')
+);
 
 // 表单字段
 const teamName = ref('');
@@ -360,523 +373,520 @@ const handleSaveTeam = async () => {
 </script>
 
 <template>
-  <div
-    v-if="isOpen"
-    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150"
-    @click.self="emit('close')"
+  <LxModal
+    :open="isOpen"
+    :teleport="props.teleport !== false"
+    overlay-class="z-50 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150"
+    :panel-class="panelClass"
+    :aria-label="t('chat.team.title')"
+    :close-on-esc="false"
+    @close="emit('close')"
   >
-    <div
-      :class="[
-        'w-full max-w-lg max-h-[85vh] flex flex-col rounded-2xl border shadow-2xl transition-all overflow-hidden',
-        isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_12px_40px_rgba(0,0,0,0.95)] backdrop-blur-2xl' : 'bg-white border-zinc-200 text-zinc-800'
-      ]"
-    >
-      <!-- Header -->
-      <div class="px-6 py-4 flex items-center justify-between border-b shrink-0" :class="isDark ? 'border-white/10' : 'border-zinc-200/50'">
-        <h3 class="text-base font-semibold flex items-center gap-2">
-          <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-          </svg>
-          <span class="dark:text-white dark:text-glow-white">{{ t('chat.team.title') }}</span>
-        </h3>
-        <button
-          @click="emit('close')"
-          class="p-1 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-white/5 transition-colors cursor-pointer"
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+    <!-- Header -->
+    <div class="px-6 py-4 flex items-center justify-between border-b shrink-0" :class="isDark ? 'border-white/10' : 'border-zinc-200/50'">
+      <h3 class="text-base font-semibold flex items-center gap-2">
+        <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+        </svg>
+        <span class="dark:text-white dark:text-glow-white">{{ t('chat.team.title') }}</span>
+      </h3>
+      <button
+        @click="emit('close')"
+        class="p-1 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-white/5 transition-colors cursor-pointer"
+      >
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+
+    <!-- Body Scrollable -->
+    <div class="px-6 py-4 space-y-4 overflow-y-auto text-sm">
+      <div v-if="errorMsg" class="p-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500 text-xs">
+        {{ errorMsg }}
       </div>
 
-      <!-- Body Scrollable -->
-      <div class="px-6 py-4 space-y-4 overflow-y-auto text-sm">
-        <div v-if="errorMsg" class="p-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500 text-xs">
-          {{ errorMsg }}
-        </div>
+      <!-- 团队名称 -->
+      <div>
+        <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+          {{ t('chat.team.nameLabel') }} <span class="text-red-500">*</span>
+        </label>
+        <input
+          v-model="teamName"
+          autoFocus
+          :placeholder="t('chat.team.namePlaceholder')"
+          :class="[
+            'w-full px-3 py-2 rounded-xl border text-sm outline-none transition',
+            isDark
+              ? 'bg-black/90 border-white/15 focus:border-cyan-400/80 text-white placeholder-zinc-500'
+              : 'bg-zinc-50 border-zinc-300 focus:border-blue-500 text-zinc-900 placeholder-zinc-400'
+          ]"
+        />
+      </div>
 
-        <!-- 团队名称 -->
-        <div>
-          <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-            {{ t('chat.team.nameLabel') }} <span class="text-red-500">*</span>
+      <!-- 团队描述 -->
+      <div>
+        <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+          {{ t('chat.team.descLabel') }}
+        </label>
+        <textarea
+          v-model="teamDescription"
+          rows="2"
+          :placeholder="t('chat.team.descPlaceholder')"
+          :class="[
+            'w-full px-3 py-2 rounded-xl border text-sm outline-none resize-none transition',
+            isDark
+              ? 'bg-black/90 border-white/15 focus:border-cyan-400/80 text-white placeholder-zinc-500'
+              : 'bg-zinc-50 border-zinc-300 focus:border-blue-500 text-zinc-900 placeholder-zinc-400'
+          ]"
+        ></textarea>
+      </div>
+
+      <!-- 团队成员 Agent 列表 -->
+      <div>
+        <div class="flex items-center justify-between mb-1.5">
+          <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+            {{ t('chat.team.membersLabel') }} <span class="text-red-500">*</span>
+            <span class="text-[11px] font-normal text-zinc-500 ml-1">
+              {{ t('chat.team.selectedCount', { count: selectedAgentIds.length }) }}
+            </span>
           </label>
-          <input
-            v-model="teamName"
-            autoFocus
-            :placeholder="t('chat.team.namePlaceholder')"
-            :class="[
-              'w-full px-3 py-2 rounded-xl border text-sm outline-none transition',
-              isDark
-                ? 'bg-black/90 border-white/15 focus:border-cyan-400/80 text-white placeholder-zinc-500'
-                : 'bg-zinc-50 border-zinc-300 focus:border-blue-500 text-zinc-900 placeholder-zinc-400'
-            ]"
-          />
+          <button
+            type="button"
+            @click="openCreateAgent"
+            class="text-xs text-blue-500 hover:text-blue-400 cursor-pointer flex items-center gap-1"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            <span>{{ showAgentForm && editingAgentId === null ? t('chat.team.collapseNew') : t('chat.team.newAgent') }}</span>
+          </button>
         </div>
 
-        <!-- 团队描述 -->
-        <div>
-          <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-            {{ t('chat.team.descLabel') }}
-          </label>
-          <textarea
-            v-model="teamDescription"
-            rows="2"
-            :placeholder="t('chat.team.descPlaceholder')"
-            :class="[
-              'w-full px-3 py-2 rounded-xl border text-sm outline-none resize-none transition',
-              isDark
-                ? 'bg-black/90 border-white/15 focus:border-cyan-400/80 text-white placeholder-zinc-500'
-                : 'bg-zinc-50 border-zinc-300 focus:border-blue-500 text-zinc-900 placeholder-zinc-400'
-            ]"
-          ></textarea>
-        </div>
-
-        <!-- 团队成员 Agent 列表 -->
-        <div>
-          <div class="flex items-center justify-between mb-1.5">
-            <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-              {{ t('chat.team.membersLabel') }} <span class="text-red-500">*</span>
-              <span class="text-[11px] font-normal text-zinc-500 ml-1">
-                {{ t('chat.team.selectedCount', { count: selectedAgentIds.length }) }}
-              </span>
-            </label>
+        <!-- 新建 / 编辑 Agent 卡片表单 -->
+        <div
+          v-if="showAgentForm"
+          class="mb-3 p-3.5 rounded-xl border border-blue-500/30 bg-blue-500/5 space-y-2.5 text-xs animate-in fade-in duration-150"
+        >
+          <div class="flex items-center justify-between">
+            <div class="font-medium text-blue-500 flex items-center gap-1.5">
+              <svg v-if="editingAgentId" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              <span>{{ editingAgentId ? t('chat.team.editAgent', { name: agentFormName || t('chat.team.unnamed') }) : t('chat.team.newAgentMember') }}</span>
+            </div>
             <button
               type="button"
-              @click="openCreateAgent"
-              class="text-xs text-blue-500 hover:text-blue-400 cursor-pointer flex items-center gap-1"
+              @click="closeAgentForm"
+              class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
             >
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
               </svg>
-              <span>{{ showAgentForm && editingAgentId === null ? t('chat.team.collapseNew') : t('chat.team.newAgent') }}</span>
             </button>
           </div>
 
-          <!-- 新建 / 编辑 Agent 卡片表单 -->
+          <!-- 详情拉取失败提示：禁用保存，避免覆盖原有 prompt -->
           <div
-            v-if="showAgentForm"
-            class="mb-3 p-3.5 rounded-xl border border-blue-500/30 bg-blue-500/5 space-y-2.5 text-xs animate-in fade-in duration-150"
+            v-if="agentDetailError"
+            class="p-2 rounded-lg text-[11px] border"
+            :class="isDark ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-red-50 border-red-200 text-red-600'"
           >
-            <div class="flex items-center justify-between">
-              <div class="font-medium text-blue-500 flex items-center gap-1.5">
-                <svg v-if="editingAgentId" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-                <span>{{ editingAgentId ? t('chat.team.editAgent', { name: agentFormName || t('chat.team.unnamed') }) : t('chat.team.newAgentMember') }}</span>
-              </div>
-              <button
-                type="button"
-                @click="closeAgentForm"
-                class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer"
-              >
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
+            {{ agentDetailError }}
+          </div>
 
-            <!-- 详情拉取失败提示：禁用保存，避免覆盖原有 prompt -->
-            <div
-              v-if="agentDetailError"
-              class="p-2 rounded-lg text-[11px] border"
-              :class="isDark ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-red-50 border-red-200 text-red-600'"
-            >
-              {{ agentDetailError }}
-            </div>
-
-            <div class="grid grid-cols-2 gap-2">
-              <div>
-                <label class="block text-zinc-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentNameLabel') }}</label>
-                <input
-                  v-model="agentFormName"
-                  :placeholder="t('chat.team.agentNamePlaceholder')"
-                  :class="[
-                    'w-full px-2.5 py-1.5 rounded-lg border outline-none',
-                    isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-zinc-900'
-                  ]"
-                />
-              </div>
-              <div>
-                <label class="block text-zinc-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentModelLabel') }}</label>
-                <select
-                  v-model="agentFormModelId"
-                  :class="[
-                    'w-full px-2.5 py-1.5 rounded-lg border outline-none cursor-pointer [color-scheme:dark]',
-                    isDark ? 'bg-black border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-zinc-900'
-                  ]"
-                >
-                  <option v-for="m in (models || [])" :key="m.id" :value="m.id" class="bg-black text-white">
-                    {{ m.name || m.modelName || t('session.modelFallback', { id: m.id }) }}
-                  </option>
-                </select>
-              </div>
-            </div>
-
+          <div class="grid grid-cols-2 gap-2">
             <div>
-              <label class="block text-zinc-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentDescLabel') }}</label>
+              <label class="block text-zinc-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentNameLabel') }}</label>
               <input
-                v-model="agentFormDesc"
-                :placeholder="t('chat.team.agentDescPlaceholder')"
+                v-model="agentFormName"
+                :placeholder="t('chat.team.agentNamePlaceholder')"
                 :class="[
                   'w-full px-2.5 py-1.5 rounded-lg border outline-none',
                   isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-zinc-900'
                 ]"
               />
             </div>
-
             <div>
-              <label class="block text-zinc-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentPromptLabel') }}</label>
-              <textarea
-                v-model="agentFormPrompt"
-                rows="2"
-                :placeholder="t('chat.team.agentPromptPlaceholder')"
+              <label class="block text-zinc-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentModelLabel') }}</label>
+              <select
+                v-model="agentFormModelId"
                 :class="[
-                  'w-full px-2.5 py-1.5 rounded-lg border outline-none resize-none',
-                  isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-zinc-900'
+                  'w-full px-2.5 py-1.5 rounded-lg border outline-none cursor-pointer [color-scheme:dark]',
+                  isDark ? 'bg-black border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-zinc-900'
                 ]"
-              ></textarea>
-            </div>
-
-            <!-- 工具分配 -->
-            <div>
-              <div class="flex items-center justify-between mb-1">
-                <label class="block text-zinc-600 dark:text-zinc-400 font-medium">
-                  {{ t('chat.team.assignTools') }}
-                  <span class="text-[11px] font-normal text-zinc-500 ml-1">
-                    {{ t('chat.team.assignedCount', { selected: agentFormToolList.length, total: availableTools.length }) }}
-                  </span>
-                </label>
-                <div class="flex items-center gap-2 text-[11px]">
-                  <button
-                    type="button"
-                    @click="selectAllTools"
-                    class="text-blue-500 hover:text-blue-400 cursor-pointer"
-                  >
-                    {{ t('chat.team.selectAll') }}
-                  </button>
-                  <span class="text-zinc-400">|</span>
-                  <button
-                    type="button"
-                    @click="clearTools"
-                    class="text-zinc-500 hover:text-zinc-400 cursor-pointer"
-                  >
-                    {{ t('chat.team.clear') }}
-                  </button>
-                </div>
-              </div>
-
-              <!-- 工具列表卡片容器 -->
-              <div
-                v-if="isLoadingTools"
-                class="p-2 text-center text-zinc-400 text-xs rounded-lg border border-dashed"
-                :class="isDark ? 'border-zinc-700 bg-zinc-900/30' : 'border-zinc-300 bg-zinc-50/50'"
               >
-                {{ t('chat.team.loadingTools') }}
-              </div>
-              <div
-                v-else-if="toolsError"
-                class="p-2 text-center text-xs rounded-lg border border-dashed flex items-center justify-center gap-2"
-                :class="isDark ? 'border-red-500/40 bg-red-500/10 text-red-400' : 'border-red-300 bg-red-50 text-red-600'"
-              >
-                <span>{{ toolsError }}</span>
-                <button
-                  type="button"
-                  @click="loadTools"
-                  class="underline hover:no-underline cursor-pointer"
-                >
-                  {{ t('common.retry') }}
-                </button>
-              </div>
-              <div
-                v-else-if="availableTools.length === 0"
-                class="p-2 text-center text-zinc-400 text-xs rounded-lg border border-dashed"
-                :class="isDark ? 'border-white/10 bg-black/60' : 'border-zinc-300 bg-zinc-50/50'"
-              >
-                {{ t('chat.team.noTools') }}
-              </div>
-              <div
-                v-else
-                class="max-h-36 overflow-y-auto rounded-lg border p-1.5 grid grid-cols-1 sm:grid-cols-2 gap-1.5"
-                :class="isDark ? 'border-white/15 bg-black/80' : 'border-zinc-200 bg-white'"
-              >
-                <div
-                  v-for="tool in availableTools"
-                  :key="tool.name"
-                  @click="toggleTool(tool.name)"
-                  :class="[
-                    'p-1.5 rounded-md border transition-all cursor-pointer flex flex-col justify-between text-left',
-                    agentFormToolList.includes(tool.name)
-                      ? (isDark ? 'bg-cyan-600/20 border-cyan-500/50 text-white' : 'bg-blue-50 border-blue-300 text-blue-900')
-                      : (isDark ? 'bg-white/[0.04] border-white/10 text-zinc-300 hover:border-white/25' : 'bg-zinc-50/80 border-zinc-200 text-zinc-700 hover:border-zinc-300')
-                  ]"
-                >
-                  <div class="flex items-center justify-between gap-1">
-                    <div class="flex items-center gap-1.5 min-w-0">
-                      <input
-                        type="checkbox"
-                        :checked="agentFormToolList.includes(tool.name)"
-                        class="rounded text-blue-600 focus:ring-blue-500 h-3 w-3 pointer-events-none accent-cyan-500"
-                      />
-                      <span class="font-medium truncate text-[11px]">{{ resolveToolFullName(tool.name) }}</span>
-                    </div>
-                    <span
-                      class="text-[9px] px-1 py-0.2 rounded font-normal shrink-0 border"
-                      :class="tool.readOnly ? (isDark ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300' : 'bg-emerald-100 border-emerald-200 text-emerald-700') : (isDark ? 'bg-amber-500/20 border-amber-500/30 text-amber-300' : 'bg-amber-100 border-amber-200 text-amber-700')"
-                    >
-                      {{ tool.readOnly ? t('chat.team.readOnly') : t('chat.team.readWrite') }}
-                    </span>
-                  </div>
-                  <div v-if="tool.description" class="text-[10px] text-lx-faint truncate mt-0.5" :title="tool.description">
-                    {{ tool.description }}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="flex justify-end items-center gap-2 pt-1">
-              <button
-                type="button"
-                @click="closeAgentForm"
-                class="px-2.5 py-1 text-zinc-500 hover:text-lx-secondary rounded-lg cursor-pointer"
-              >
-                {{ t('common.cancel') }}
-              </button>
-              <button
-                type="button"
-                :disabled="isSavingAgent || !!agentDetailError"
-                @click="handleSaveAgent"
-                class="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-lg cursor-pointer shadow-sm transition"
-              >
-                {{ isSavingAgent ? t('common.saving') : (editingAgentId ? t('common.save') : t('chat.team.saveAndJoin')) }}
-              </button>
+                <option v-for="m in (models || [])" :key="m.id" :value="m.id" class="bg-black text-white">
+                  {{ m.name || m.modelName || t('session.modelFallback', { id: m.id }) }}
+                </option>
+              </select>
             </div>
           </div>
 
-          <!-- Agent 列表容器 -->
-          <div
-            class="rounded-xl border divide-y overflow-y-auto max-h-48"
-            :class="[
-              isDark ? 'border-white/15 divide-white/10 bg-black/90' : 'border-zinc-200 divide-zinc-100 bg-zinc-50'
-            ]"
-          >
-            <div v-if="isLoadingAgents" class="p-4 text-center text-xs text-zinc-500">
-              {{ t('chat.team.loadingAgents') }}
+          <div>
+            <label class="block text-zinc-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentDescLabel') }}</label>
+            <input
+              v-model="agentFormDesc"
+              :placeholder="t('chat.team.agentDescPlaceholder')"
+              :class="[
+                'w-full px-2.5 py-1.5 rounded-lg border outline-none',
+                isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-zinc-900'
+              ]"
+            />
+          </div>
+
+          <div>
+            <label class="block text-zinc-600 dark:text-zinc-400 mb-0.5">{{ t('chat.team.agentPromptLabel') }}</label>
+            <textarea
+              v-model="agentFormPrompt"
+              rows="2"
+              :placeholder="t('chat.team.agentPromptPlaceholder')"
+              :class="[
+                'w-full px-2.5 py-1.5 rounded-lg border outline-none resize-none',
+                isDark ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80' : 'bg-white border-zinc-300 text-zinc-900'
+              ]"
+            ></textarea>
+          </div>
+
+          <!-- 工具分配 -->
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-zinc-600 dark:text-zinc-400 font-medium">
+                {{ t('chat.team.assignTools') }}
+                <span class="text-[11px] font-normal text-zinc-500 ml-1">
+                  {{ t('chat.team.assignedCount', { selected: agentFormToolList.length, total: availableTools.length }) }}
+                </span>
+              </label>
+              <div class="flex items-center gap-2 text-[11px]">
+                <button
+                  type="button"
+                  @click="selectAllTools"
+                  class="text-blue-500 hover:text-blue-400 cursor-pointer"
+                >
+                  {{ t('chat.team.selectAll') }}
+                </button>
+                <span class="text-zinc-400">|</span>
+                <button
+                  type="button"
+                  @click="clearTools"
+                  class="text-zinc-500 hover:text-zinc-400 cursor-pointer"
+                >
+                  {{ t('chat.team.clear') }}
+                </button>
+              </div>
             </div>
-            <div v-else-if="availableAgents.length === 0" class="p-4 text-center text-xs text-zinc-500">
-              {{ t('chat.team.noAgents') }}
+
+            <!-- 工具列表卡片容器 -->
+            <div
+              v-if="isLoadingTools"
+              class="p-2 text-center text-zinc-400 text-xs rounded-lg border border-dashed"
+              :class="isDark ? 'border-zinc-700 bg-zinc-900/30' : 'border-zinc-300 bg-zinc-50/50'"
+            >
+              {{ t('chat.team.loadingTools') }}
+            </div>
+            <div
+              v-else-if="toolsError"
+              class="p-2 text-center text-xs rounded-lg border border-dashed flex items-center justify-center gap-2"
+              :class="isDark ? 'border-red-500/40 bg-red-500/10 text-red-400' : 'border-red-300 bg-red-50 text-red-600'"
+            >
+              <span>{{ toolsError }}</span>
+              <button
+                type="button"
+                @click="loadTools"
+                class="underline hover:no-underline cursor-pointer"
+              >
+                {{ t('common.retry') }}
+              </button>
+            </div>
+            <div
+              v-else-if="availableTools.length === 0"
+              class="p-2 text-center text-zinc-400 text-xs rounded-lg border border-dashed"
+              :class="isDark ? 'border-white/10 bg-black/60' : 'border-zinc-300 bg-zinc-50/50'"
+            >
+              {{ t('chat.team.noTools') }}
             </div>
             <div
               v-else
-              v-for="agent in availableAgents"
-              :key="agent.id"
-              @click="toggleAgentSelection(agent.id)"
-              :class="[
-                'group p-2.5 flex items-center justify-between cursor-pointer transition-colors',
-                selectedAgentIds.includes(agent.id)
-                  ? (isDark ? 'bg-cyan-500/15' : 'bg-blue-50')
-                  : (isDark ? 'hover:bg-white/5' : 'hover:bg-zinc-100/80'),
-                editingAgentId === agent.id ? 'ring-1 ring-blue-500/50' : ''
-              ]"
+              class="max-h-36 overflow-y-auto rounded-lg border p-1.5 grid grid-cols-1 sm:grid-cols-2 gap-1.5"
+              :class="isDark ? 'border-white/15 bg-black/80' : 'border-zinc-200 bg-white'"
             >
-              <div class="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
-                <input
-                  type="checkbox"
-                  :checked="selectedAgentIds.includes(agent.id)"
-                  class="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 pointer-events-none"
-                />
-                <div class="truncate">
-                  <div class="flex items-center gap-1.5">
-                    <span class="text-xs font-medium text-zinc-800 dark:text-zinc-200 truncate">
-                      {{ agent.name }}
-                    </span>
-                    <span
-                      v-if="agent.toolList && agent.toolList.length > 0"
-                      class="px-1.5 py-0.5 text-[10px] rounded bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/20"
-                      :title="agent.toolList.map(name => resolveToolFullName(name)).join(t('common.listSeparator'))"
-                    >
-                      {{ t('chat.team.toolCount', { count: agent.toolList.length }) }}
-                    </span>
-                    <span
-                      v-else
-                      class="px-1.5 py-0.5 text-[10px] rounded bg-zinc-500/10 text-lx-faint"
-                    >
-                      {{ t('chat.team.noTool') }}
-                    </span>
+              <div
+                v-for="tool in availableTools"
+                :key="tool.name"
+                @click="toggleTool(tool.name)"
+                :class="[
+                  'p-1.5 rounded-md border transition-all cursor-pointer flex flex-col justify-between text-left',
+                  agentFormToolList.includes(tool.name)
+                    ? (isDark ? 'bg-cyan-600/20 border-cyan-500/50 text-white' : 'bg-blue-50 border-blue-300 text-blue-900')
+                    : (isDark ? 'bg-white/[0.04] border-white/10 text-zinc-300 hover:border-white/25' : 'bg-zinc-50/80 border-zinc-200 text-zinc-700 hover:border-zinc-300')
+                ]"
+              >
+                <div class="flex items-center justify-between gap-1">
+                  <div class="flex items-center gap-1.5 min-w-0">
+                    <input
+                      type="checkbox"
+                      :checked="agentFormToolList.includes(tool.name)"
+                      class="rounded text-blue-600 focus:ring-blue-500 h-3 w-3 pointer-events-none accent-cyan-500"
+                    />
+                    <span class="font-medium truncate text-[11px]">{{ resolveToolFullName(tool.name) }}</span>
                   </div>
-                  <div class="text-[11px] text-lx-muted truncate">
-                    {{ agent.description || t('chat.team.noDescription') }}
-                  </div>
+                  <span
+                    class="text-[9px] px-1 py-0.2 rounded font-normal shrink-0 border"
+                    :class="tool.readOnly ? (isDark ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300' : 'bg-emerald-100 border-emerald-200 text-emerald-700') : (isDark ? 'bg-amber-500/20 border-amber-500/30 text-amber-300' : 'bg-amber-100 border-amber-200 text-amber-700')"
+                  >
+                    {{ tool.readOnly ? t('chat.team.readOnly') : t('chat.team.readWrite') }}
+                  </span>
                 </div>
-              </div>
-
-              <!-- 右侧动作区：修改 Agent & 管理者状态 -->
-              <div class="flex items-center gap-1.5 shrink-0">
-                <!-- 修改 Agent 按钮 -->
-                <button
-                  type="button"
-                  @click.stop="openEditAgent(agent)"
-                  class="p-1 rounded-md text-zinc-400 hover:text-blue-500 hover:bg-blue-500/10 transition-colors cursor-pointer"
-                  :title="t('chat.team.editAgentTip')"
-                >
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </button>
-
-                <!-- 管理者标识或快捷设为管理者 -->
-                <span
-                  v-if="commanderAgentId === agent.id"
-                  class="shrink-0 px-2 py-0.5 text-[10px] rounded-full bg-blue-500/20 text-blue-500 border border-blue-500/30 font-medium"
-                >
-                  {{ t('chat.team.manager') }}
-                </span>
-                <button
-                  v-else-if="selectedAgentIds.includes(agent.id)"
-                  type="button"
-                  @click.stop="commanderAgentId = agent.id"
-                  class="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 text-[10px] rounded text-zinc-400 hover:text-blue-500 hover:bg-blue-500/10 transition-all cursor-pointer"
-                  :title="t('chat.team.setManagerTip')"
-                >
-                  {{ t('chat.team.setManager') }}
-                </button>
+                <div v-if="tool.description" class="text-[10px] text-lx-faint truncate mt-0.5" :title="tool.description">
+                  {{ tool.description }}
+                </div>
               </div>
             </div>
           </div>
+
+          <div class="flex justify-end items-center gap-2 pt-1">
+            <button
+              type="button"
+              @click="closeAgentForm"
+              class="px-2.5 py-1 text-zinc-500 hover:text-lx-secondary rounded-lg cursor-pointer"
+            >
+              {{ t('common.cancel') }}
+            </button>
+            <button
+              type="button"
+              :disabled="isSavingAgent || !!agentDetailError"
+              @click="handleSaveAgent"
+              class="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-lg cursor-pointer shadow-sm transition"
+            >
+              {{ isSavingAgent ? t('common.saving') : (editingAgentId ? t('common.save') : t('chat.team.saveAndJoin')) }}
+            </button>
+          </div>
         </div>
 
-        <!-- 团队管理者选择 (Custom Dropdown) -->
-        <div v-if="selectedAgents.length > 0" ref="commanderSelectRef" class="relative">
-          <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
-            {{ t('chat.team.managerLabel') }} <span class="text-red-500">*</span>
-            <span class="text-[11px] font-normal text-zinc-500 ml-1">
-              {{ t('chat.team.managerHint') }}
-            </span>
-          </label>
-
-          <!-- 自定义下拉触发卡片 -->
-          <button
-            type="button"
-            @click="isCommanderDropdownOpen = !isCommanderDropdownOpen"
+        <!-- Agent 列表容器 -->
+        <div
+          class="rounded-xl border divide-y overflow-y-auto max-h-48"
+          :class="[
+            isDark ? 'border-white/15 divide-white/10 bg-black/90' : 'border-zinc-200 divide-zinc-100 bg-zinc-50'
+          ]"
+        >
+          <div v-if="isLoadingAgents" class="p-4 text-center text-xs text-zinc-500">
+            {{ t('chat.team.loadingAgents') }}
+          </div>
+          <div v-else-if="availableAgents.length === 0" class="p-4 text-center text-xs text-zinc-500">
+            {{ t('chat.team.noAgents') }}
+          </div>
+          <div
+            v-else
+            v-for="agent in availableAgents"
+            :key="agent.id"
+            @click="toggleAgentSelection(agent.id)"
             :class="[
-              'w-full px-3.5 py-2.5 rounded-xl border text-left flex items-center justify-between transition-all outline-none cursor-pointer',
-              isDark
-                ? 'bg-black/90 border-white/15 hover:border-cyan-400/60 focus:border-cyan-400 text-white'
-                : 'bg-white border-zinc-300 hover:border-blue-400 focus:border-blue-500 text-zinc-900 shadow-sm'
+              'group p-2.5 flex items-center justify-between cursor-pointer transition-colors',
+              selectedAgentIds.includes(agent.id)
+                ? (isDark ? 'bg-cyan-500/15' : 'bg-blue-50')
+                : (isDark ? 'hover:bg-white/5' : 'hover:bg-zinc-100/80'),
+              editingAgentId === agent.id ? 'ring-1 ring-blue-500/50' : ''
             ]"
           >
-            <div v-if="currentCommander" class="flex items-center gap-2.5 min-w-0">
-              <div class="w-7 h-7 rounded-lg bg-cyan-500/15 text-cyan-400 flex items-center justify-center shrink-0">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                </svg>
-              </div>
+            <div class="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
+              <input
+                type="checkbox"
+                :checked="selectedAgentIds.includes(agent.id)"
+                class="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 pointer-events-none"
+              />
               <div class="truncate">
                 <div class="flex items-center gap-1.5">
-                  <span class="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate">{{ currentCommander.name }}</span>
-                  <span class="px-1.5 py-0.2 text-[9px] rounded-full bg-cyan-500/20 text-cyan-300 font-medium">{{ t('chat.team.manager') }}</span>
+                  <span class="text-xs font-medium text-zinc-800 dark:text-zinc-200 truncate">
+                    {{ agent.name }}
+                  </span>
+                  <span
+                    v-if="agent.toolList && agent.toolList.length > 0"
+                    class="px-1.5 py-0.5 text-[10px] rounded bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/20"
+                    :title="agent.toolList.map(name => resolveToolFullName(name)).join(t('common.listSeparator'))"
+                  >
+                    {{ t('chat.team.toolCount', { count: agent.toolList.length }) }}
+                  </span>
+                  <span
+                    v-else
+                    class="px-1.5 py-0.5 text-[10px] rounded bg-zinc-500/10 text-lx-faint"
+                  >
+                    {{ t('chat.team.noTool') }}
+                  </span>
                 </div>
-                <div class="text-[11px] text-lx-muted truncate max-w-[320px]">
-                  {{ currentCommander.description || t('chat.team.managerDefaultDesc') }}
+                <div class="text-[11px] text-lx-muted truncate">
+                  {{ agent.description || t('chat.team.noDescription') }}
                 </div>
               </div>
             </div>
-            <div v-else class="text-xs text-zinc-400">
-              {{ t('chat.team.managerPlaceholder') }}
-            </div>
 
-            <svg
-              class="w-4 h-4 text-zinc-400 shrink-0 transition-transform duration-200 ml-2"
-              :class="{ 'rotate-180': isCommanderDropdownOpen }"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
+            <!-- 右侧动作区：修改 Agent & 管理者状态 -->
+            <div class="flex items-center gap-1.5 shrink-0">
+              <!-- 修改 Agent 按钮 -->
+              <button
+                type="button"
+                @click.stop="openEditAgent(agent)"
+                class="p-1 rounded-md text-zinc-400 hover:text-blue-500 hover:bg-blue-500/10 transition-colors cursor-pointer"
+                :title="t('chat.team.editAgentTip')"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </button>
 
-          <!-- 自定义下拉选项菜单面板 -->
-          <div
-            v-if="isCommanderDropdownOpen"
-            class="absolute z-20 w-full mt-1.5 py-1.5 rounded-xl border shadow-2xl transition-all max-h-52 overflow-y-auto animate-in fade-in duration-100 backdrop-blur-2xl"
-            :class="[
-              isDark
-                ? 'bg-black/95 border-white/20 shadow-[0_12px_40px_rgba(0,0,0,0.95)] text-zinc-100'
-                : 'bg-white border-zinc-200 shadow-zinc-200/80 text-zinc-800'
-            ]"
-          >
-            <div
-              v-for="agent in selectedAgents"
-              :key="agent.id"
-              @click="selectCommander(agent.id)"
-              :class="[
-                'px-3 py-2 flex items-center justify-between cursor-pointer transition-colors text-xs',
-                commanderAgentId === agent.id
-                  ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-blue-50 text-blue-700 font-medium')
-                  : (isDark ? 'hover:bg-white/10 text-zinc-300' : 'hover:bg-zinc-100/80 text-zinc-700')
-              ]"
-            >
-              <div class="flex items-center gap-2.5 min-w-0">
-                <!-- 勾选指示点 -->
-                <div
-                  class="w-4 h-4 rounded-full flex items-center justify-center shrink-0 border transition"
-                  :class="commanderAgentId === agent.id
-                    ? 'bg-cyan-500 border-cyan-400 text-black font-bold'
-                    : (isDark ? 'border-zinc-700 bg-transparent' : 'border-zinc-300 bg-transparent')"
-                >
-                  <svg v-if="commanderAgentId === agent.id" class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-
-                <div class="truncate">
-                  <div class="flex items-center gap-1.5">
-                    <span class="truncate font-medium">{{ agent.name }}</span>
-                    <span v-if="agent.toolList?.length" class="text-[10px] text-zinc-400">
-                      {{ t('chat.team.toolCountShort', { count: agent.toolList.length }) }}
-                    </span>
-                  </div>
-                  <div v-if="agent.description" class="text-[10px] text-zinc-400 truncate max-w-[280px]">
-                    {{ agent.description }}
-                  </div>
-                </div>
-              </div>
-
+              <!-- 管理者标识或快捷设为管理者 -->
               <span
                 v-if="commanderAgentId === agent.id"
-                class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-medium shrink-0 ml-2"
+                class="shrink-0 px-2 py-0.5 text-[10px] rounded-full bg-blue-500/20 text-blue-500 border border-blue-500/30 font-medium"
               >
-                {{ t('chat.team.currentManager') }}
+                {{ t('chat.team.manager') }}
               </span>
+              <button
+                v-else-if="selectedAgentIds.includes(agent.id)"
+                type="button"
+                @click.stop="commanderAgentId = agent.id"
+                class="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 text-[10px] rounded text-zinc-400 hover:text-blue-500 hover:bg-blue-500/10 transition-all cursor-pointer"
+                :title="t('chat.team.setManagerTip')"
+              >
+                {{ t('chat.team.setManager') }}
+              </button>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Footer -->
-      <div class="px-6 py-3 flex items-center justify-end border-t shrink-0" :class="isDark ? 'border-white/10' : 'border-zinc-200/50'">
-        <div class="flex items-center gap-2">
-          <button
-            type="button"
-            @click="emit('close')"
+      <!-- 团队管理者选择 (Custom Dropdown) -->
+      <div v-if="selectedAgents.length > 0" ref="commanderSelectRef" class="relative">
+        <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
+          {{ t('chat.team.managerLabel') }} <span class="text-red-500">*</span>
+          <span class="text-[11px] font-normal text-zinc-500 ml-1">
+            {{ t('chat.team.managerHint') }}
+          </span>
+        </label>
+
+        <!-- 自定义下拉触发卡片 -->
+        <button
+          type="button"
+          @click="isCommanderDropdownOpen = !isCommanderDropdownOpen"
+          :class="[
+            'w-full px-3.5 py-2.5 rounded-xl border text-left flex items-center justify-between transition-all outline-none cursor-pointer',
+            isDark
+              ? 'bg-black/90 border-white/15 hover:border-cyan-400/60 focus:border-cyan-400 text-white'
+              : 'bg-white border-zinc-300 hover:border-blue-400 focus:border-blue-500 text-zinc-900 shadow-sm'
+          ]"
+        >
+          <div v-if="currentCommander" class="flex items-center gap-2.5 min-w-0">
+            <div class="w-7 h-7 rounded-lg bg-cyan-500/15 text-cyan-400 flex items-center justify-center shrink-0">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+            </div>
+            <div class="truncate">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate">{{ currentCommander.name }}</span>
+                <span class="px-1.5 py-0.2 text-[9px] rounded-full bg-cyan-500/20 text-cyan-300 font-medium">{{ t('chat.team.manager') }}</span>
+              </div>
+              <div class="text-[11px] text-lx-muted truncate max-w-[320px]">
+                {{ currentCommander.description || t('chat.team.managerDefaultDesc') }}
+              </div>
+            </div>
+          </div>
+          <div v-else class="text-xs text-zinc-400">
+            {{ t('chat.team.managerPlaceholder') }}
+          </div>
+
+          <svg
+            class="w-4 h-4 text-zinc-400 shrink-0 transition-transform duration-200 ml-2"
+            :class="{ 'rotate-180': isCommanderDropdownOpen }"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        <!-- 自定义下拉选项菜单面板 -->
+        <div
+          v-if="isCommanderDropdownOpen"
+          class="absolute z-20 w-full mt-1.5 py-1.5 rounded-xl border shadow-2xl transition-all max-h-52 overflow-y-auto animate-in fade-in duration-100 backdrop-blur-2xl"
+          :class="[
+            isDark
+              ? 'bg-black/95 border-white/20 shadow-[0_12px_40px_rgba(0,0,0,0.95)] text-zinc-100'
+              : 'bg-white border-zinc-200 shadow-zinc-200/80 text-zinc-800'
+          ]"
+        >
+          <div
+            v-for="agent in selectedAgents"
+            :key="agent.id"
+            @click="selectCommander(agent.id)"
             :class="[
-              'px-4 py-1.5 text-xs rounded-xl border transition cursor-pointer',
-              isDark ? 'border-white/15 text-zinc-300 hover:bg-white/5' : 'border-zinc-300 text-zinc-600 hover:bg-zinc-100'
+              'px-3 py-2 flex items-center justify-between cursor-pointer transition-colors text-xs',
+              commanderAgentId === agent.id
+                ? (isDark ? 'bg-cyan-500/15 text-cyan-300 font-medium border border-cyan-500/30' : 'bg-blue-50 text-blue-700 font-medium')
+                : (isDark ? 'hover:bg-white/10 text-zinc-300' : 'hover:bg-zinc-100/80 text-zinc-700')
             ]"
           >
-            {{ t('common.cancel') }}
-          </button>
-          <button
-            type="button"
-            :disabled="isSubmitting"
-            @click="handleSaveTeam"
-            class="px-4 py-1.5 text-xs rounded-xl text-white font-medium shadow-md transition cursor-pointer"
-            :class="isDark ? 'bg-cyan-600 hover:bg-cyan-500 shadow-[0_0_15px_rgba(8,145,178,0.4)]' : 'bg-blue-600 hover:bg-blue-500 disabled:opacity-50'"
-          >
-            {{ isSubmitting ? t('chat.team.creating') : t('chat.team.createTeam') }}
-          </button>
+            <div class="flex items-center gap-2.5 min-w-0">
+              <!-- 勾选指示点 -->
+              <div
+                class="w-4 h-4 rounded-full flex items-center justify-center shrink-0 border transition"
+                :class="commanderAgentId === agent.id
+                  ? 'bg-cyan-500 border-cyan-400 text-black font-bold'
+                  : (isDark ? 'border-zinc-700 bg-transparent' : 'border-zinc-300 bg-transparent')"
+              >
+                <svg v-if="commanderAgentId === agent.id" class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+
+              <div class="truncate">
+                <div class="flex items-center gap-1.5">
+                  <span class="truncate font-medium">{{ agent.name }}</span>
+                  <span v-if="agent.toolList?.length" class="text-[10px] text-zinc-400">
+                    {{ t('chat.team.toolCountShort', { count: agent.toolList.length }) }}
+                  </span>
+                </div>
+                <div v-if="agent.description" class="text-[10px] text-zinc-400 truncate max-w-[280px]">
+                  {{ agent.description }}
+                </div>
+              </div>
+            </div>
+
+            <span
+              v-if="commanderAgentId === agent.id"
+              class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-medium shrink-0 ml-2"
+            >
+              {{ t('chat.team.currentManager') }}
+            </span>
+          </div>
         </div>
       </div>
     </div>
-  </div>
+
+    <!-- Footer -->
+    <div class="px-6 py-3 flex items-center justify-end border-t shrink-0" :class="isDark ? 'border-white/10' : 'border-zinc-200/50'">
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          @click="emit('close')"
+          :class="[
+            'px-4 py-1.5 text-xs rounded-xl border transition cursor-pointer',
+            isDark ? 'border-white/15 text-zinc-300 hover:bg-white/5' : 'border-zinc-300 text-zinc-600 hover:bg-zinc-100'
+          ]"
+        >
+          {{ t('common.cancel') }}
+        </button>
+        <button
+          type="button"
+          :disabled="isSubmitting"
+          @click="handleSaveTeam"
+          class="px-4 py-1.5 text-xs rounded-xl text-white font-medium shadow-md transition cursor-pointer"
+          :class="isDark ? 'bg-cyan-600 hover:bg-cyan-500 shadow-[0_0_15px_rgba(8,145,178,0.4)]' : 'bg-blue-600 hover:bg-blue-500 disabled:opacity-50'"
+        >
+          {{ isSubmitting ? t('chat.team.creating') : t('chat.team.createTeam') }}
+        </button>
+      </div>
+    </div>
+  </LxModal>
 </template>

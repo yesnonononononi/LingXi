@@ -260,7 +260,7 @@ window.setTeamScene = (visible) => { teamSceneVisible.value = !!visible; };
       <RequireChoiceCard :prompt-card="choiceCard" :is-dark="isDark" />
     </section>
     <section v-if="teamSceneVisible" data-scene="team" style="position:relative;transform:translateZ(0);width:760px;height:620px;overflow:hidden;border:1px solid #8884">
-      <TeamModal :is-open="teamOpen" :is-dark="isDark" :models="[]" />
+      <TeamModal :is-open="teamOpen" :is-dark="isDark" :models="[]" :teleport="false" />
     </section>
   </main>
 </template>`;

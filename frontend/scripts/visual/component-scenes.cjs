@@ -344,7 +344,7 @@ window.focusCustomInput=()=>{const input=document.querySelector('[data-scene="ch
       <ChatMessageItem :message="cmiMessage" :is-dark="dark" session-id="42" />
     </section>
     <section data-scene="settings-modal-card" style="position:relative;transform:translateZ(0);width:768px;height:600px;overflow:hidden;border:1px solid #8884">
-      <SettingsModal :is-dark="dark" initial-tab="about" />
+      <SettingsModal :is-dark="dark" initial-tab="about" :teleport="false" />
     </section>
     <section data-scene="agents-tab-row" style="width:720px;padding:8px;border:1px solid #8884">
       <AgentsTab :is-dark="dark" />
@@ -353,7 +353,7 @@ window.focusCustomInput=()=>{const input=document.querySelector('[data-scene="ch
       <SubAgentSidePanel :items="sapItems" active-sub-id="sub-1" :is-open="true" :is-dark="dark" />
     </section>
     <section data-scene="team-modal-row" style="position:relative;transform:translateZ(0);width:768px;height:620px;overflow:hidden;border:1px solid #8884">
-      <TeamModal :is-open="teamOpen" :is-dark="dark" :models="[]" />
+      <TeamModal :is-open="teamOpen" :is-dark="dark" :models="[]" :teleport="false" />
     </section>
     </div>
   </main>
