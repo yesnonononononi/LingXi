@@ -14,9 +14,11 @@ const path = require('node:path');
 const CASES = [
   {
     label: '主过程框工具行',
-    file: '../src/components/chat/ProcessDetails.vue',
+    // 过程区拆分后工具行搬到 renderer（DOM/testid 由 processDetailsSplit.test.cjs 保等价），
+    // 箭头列契约跟着源文件走：锚点改为 renderer 里的箭头按钮。
+    file: '../src/components/chat/process/ToolCallRenderer.vue',
     // 锚点取箭头按钮本身，确保 region 起点就在箭头列
-    anchor: 'canExpandTool(item.tool)" type="button"',
+    anchor: 'v-if="expandable" type="button"',
   },
   {
     label: '子会话抽屉工具行',

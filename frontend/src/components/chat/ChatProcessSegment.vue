@@ -26,6 +26,13 @@ const title = computed(() => headline.value.title);
 const preview = computed(() => headline.value.preview);
 const statusLabel = computed(() => headline.value.status);
 const previewIsText = computed(() => headline.value.previewKind === 'text');
+/**
+ * 轮次是否仍在运行 —— 与原来传给 `ProcessDetails` 的 `turn` 判定逐字等价：
+ * 有 turn 时看 `turn.status`，无 turn 时看 `message.isComplete !== true`。
+ */
+const isRunningTurn = computed(() => props.turn
+  ? props.turn.status === 'RUNNING'
+  : props.message.isComplete !== true);
 </script>
 
 <template>
@@ -53,9 +60,10 @@ const previewIsText = computed(() => headline.value.previewKind === 'text');
     <CollapseTransition>
       <div v-if="visible && expanded" class="mt-1 pl-3 border-l border-zinc-200 dark:border-white/10"
         data-testid="process-segment-details">
-        <ProcessDetails :items="segment.detailItems" :message="message" :turn="turn"
-          :sub-sessions="subSessions" :session-id="sessionId" :is-dark="isDark"
-          @select-sub-session="emit('selectSubSession', $event)" />
+        <ProcessDetails :items="segment.detailItems" :is-dark="isDark" :session-id="sessionId"
+          :file-edits="message.fileEdits" :is-message-complete="message.isComplete"
+          :message-is-suspended="Boolean(message.isSuspended)" :is-running-turn="isRunningTurn"
+          :sub-sessions="subSessions" @select-sub-session="emit('selectSubSession', $event)" />
       </div>
     </CollapseTransition>
   </div>
