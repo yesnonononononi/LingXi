@@ -52,6 +52,13 @@ public class Session {
 
     private String name;
 
+    @Builder.Default
+    private boolean isRead = true;
+
+    public void changeRead(boolean read) {
+        this.isRead = read;
+    }
+
     private Long workspaceId;
 
     /**

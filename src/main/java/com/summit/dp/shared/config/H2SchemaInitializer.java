@@ -78,6 +78,8 @@ public class H2SchemaInitializer {
                         "db/migration/V13_model_config_provider_config_id.sql"), StandardCharsets.UTF_8));
                 ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
                         "db/migration/V14_checklist_result_status.sql"), StandardCharsets.UTF_8));
+                ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                        "db/migration/V15_session_read.sql"), StandardCharsets.UTF_8));
             }
         };
     }

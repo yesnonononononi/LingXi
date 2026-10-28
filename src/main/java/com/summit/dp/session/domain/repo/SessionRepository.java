@@ -11,6 +11,12 @@ import java.util.Optional;
 public interface SessionRepository extends RepositoryTemplate<Session, Long> {
     Long saveAndReturnId(Session session);
 
+    Optional<Session> lockById(Long sessionId);
+
+    void updateRead(Session session);
+
+    List<Session> findRootSessions();
+
     /** 根会话分页：过滤掉子代理会话，避免同一次委派在列表里重复出现。 */
     IPage<Session> queryRootPage(int current, int size);
 

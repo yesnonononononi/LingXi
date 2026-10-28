@@ -2,10 +2,12 @@ package com.summit.dp.shared.vo;
 
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Builder;
 import lombok.Data;
+import lombok.Getter;
 
 import java.time.Instant;
 
@@ -19,6 +21,11 @@ public class SessionVO {
     private Long historyRevision;
 
     private String name;
+    @JsonProperty("isRead")
+    @Getter(onMethod_ = @JsonProperty("isRead"))
+    private boolean isRead;
+    /** 侧栏四态；新会话与取消执行没有结果标记。 */
+    private String renderStatus;
     /**
      * 展示状态组合（后端唯一来源，前端不再猜测）：进行中状态，取值 IDLE | RUNNING | SUSPENDED。
      * 无进行中执行时为 IDLE（缺省输出 IDLE，前端免判空）。

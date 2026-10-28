@@ -27,6 +27,31 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
     private final SessionMapper sessionMapper;
 
     @Override
+    public List<Session> findRootSessions() {
+        return sessionMapper.selectList(Wrappers.<SessionPO>lambdaQuery()
+                .eq(SessionPO::getRootSessionId, Session.ROOT_SESSION_ID)
+                .orderByAsc(SessionPO::getId)).stream().map(this::toModel).toList();
+    }
+
+    @Override
+    public Optional<Session> lockById(Long sessionId) {
+        return Optional.ofNullable(sessionMapper.selectOne(Wrappers.<SessionPO>lambdaQuery()
+                .eq(SessionPO::getId, sessionId).last("FOR UPDATE"))).map(this::toModel);
+    }
+
+    @Override
+    public void updateRead(Session session) {
+        long expected = session.getVersion();
+        if (sessionMapper.update(null, Wrappers.<SessionPO>lambdaUpdate()
+                .eq(SessionPO::getId, session.getId()).eq(SessionPO::getVersion, expected)
+                .set(SessionPO::getIsRead, session.isRead()).set(SessionPO::getVersion, expected + 1)
+                .set(SessionPO::getUpdateTime, session.getUpdateTime())) != 1) {
+            throw new ClientException("会话状态已变化，请刷新后重试");
+        }
+        session.acceptPersistedVersion(expected + 1);
+    }
+
+    @Override
     public void save(Session session) { saveAndReturnId(session); }
 
     @Override
@@ -111,6 +136,7 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
     @Override
     protected SessionPO toPO(Session session) {
         return SessionPO.builder().id(session.getId()).name(session.getName()).workspaceId(session.getWorkspaceId())
+                .isRead(session.isRead())
                 .version(session.getVersion()).historyRevision(session.getHistoryRevision())
                 .rootSessionId(session.getRootSessionId() == null ? SessionPO.ROOT_SESSION_ID
                         : session.getRootSessionId())
@@ -126,6 +152,7 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
     @Override
     protected Session toModel(SessionPO po) {
         return Session.builder().id(po.getId()).name(po.getName()).workspaceId(po.getWorkspaceId())
+                .isRead(po.getIsRead())
                 .version(po.getVersion() == null ? 1L : po.getVersion())
                 .historyRevision(po.getHistoryRevision() == null ? 1L : po.getHistoryRevision())
                 .rootSessionId(po.getRootSessionId())

@@ -34,6 +34,8 @@ public class SessionPO {
     /** 会话归属的 Agent；根会话/非 Agent 会话为 NULL，子代理会话为其子 Agent。 */
     private Long agentId;
     private String name;
+    @TableField(value = "is_read", updateStrategy = FieldStrategy.NEVER)
+    private Boolean isRead;
     /** 关联 workspace 表，可空（会话未绑定工作空间） */
     private Long workspaceId;
     /**

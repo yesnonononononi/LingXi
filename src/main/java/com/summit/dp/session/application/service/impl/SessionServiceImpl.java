@@ -77,6 +77,16 @@ public class SessionServiceImpl implements SessionService {
     private final TurnViewService turnViewService;
 
     @Override
+    public Result<List<SessionVO>> applicationStates() {
+        List<Session> sessions = sessionRepository.findRootSessions();
+        Map<Long, List<ExecutionStatus>> states = executionQueryService.latestStatesBySession(
+                sessions.stream().map(Session::getId).toList());
+
+        return Result.success(sessions.stream()
+                .map(session -> toVO(session, states.get(session.getId()), null, null)).toList());
+    }
+
+    @Override
     public Result<Long> initialize(String input, Long workspaceId, Long teamId) {
         if (input == null || input.isBlank()) throw new ClientException("聊天内容不能为空");
         // 工作空间由 findById 校验存在性；不存在直接抛「工作空间不存在」，
@@ -326,6 +336,8 @@ public class SessionServiceImpl implements SessionService {
     private SessionVO toVO(Session session, List<ExecutionStatus> states, Long messageCount, String agentName) {
         WorkspaceVO workspace = workspaceOrDefault(session.getWorkspaceId());
         return SessionVO.builder().id(session.getId()).name(session.getName())
+                .isRead(session.isRead())
+                .renderStatus(resolveRenderStatus(states))
                 .version(session.getVersion()).historyRevision(session.getHistoryRevision())
                 .runStatus(resolveRunStatus(states))
                 .lastOutcome(resolveLastOutcome(states))
@@ -360,6 +372,17 @@ public class SessionServiceImpl implements SessionService {
             }
         }
         return "IDLE";
+    }
+
+    private static String resolveRenderStatus(List<ExecutionStatus> states) {
+        return switch (resolveRunStatus(states)) {
+            case "RUNNING" -> "RUNNING";
+            case "SUSPENDED" -> "WAITING";
+            default -> {
+                String outcome = resolveLastOutcome(states);
+                yield "COMPLETED".equals(outcome) || "FAILED".equals(outcome) ? outcome : null;
+            }
+        };
     }
 
     /** 最近终态与进行态独立选择，二者可以同时存在。 */

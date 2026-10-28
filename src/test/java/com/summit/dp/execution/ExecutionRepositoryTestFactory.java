@@ -1,5 +1,7 @@
 package com.summit.dp.execution;
 
+import org.springframework.context.ApplicationEventPublisher;
+
 import com.summit.dp.workflow.infrastructure.harness.ExecutionSnapshotReader;
 import com.summit.dp.workflow.infrastructure.harness.LegacyExecutionSnapshotAdapter;
 
@@ -32,7 +34,7 @@ public final class ExecutionRepositoryTestFactory {
 
     public static LocalExecutionRepository create(ExecutionMapper mapper, ObjectMapper objectMapper,
                                                  ChatTurnService chatTurnService) {
-        return new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(mapper)), objectMapper,
+        return new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(mapper), mock(ApplicationEventPublisher.class)), objectMapper,
                 provider(mock(ToolCallReadinessService.class)), provider(mock(ToolCallService.class)),
                 provider(mock(SubExecutionLifecycle.class)), provider(mock(SessionContextUsageProjector.class)),
                 provider(new ChatTurnLifecycleProjector(chatTurnService)), provider(mock(RuntimeEventPublisher.class)),

@@ -35,10 +35,11 @@ public class Execution {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
-    /** 更新投影不携带归属和创建时间，检查点保存不能重写这些事实。 */
-    public static Execution restoreCheckpointSummary(Long id, Long version, Integer status, Long generation) {
+    /** 会话归属只能从数据库恢复，检查点请求不能覆盖它。 */
+    public static Execution restoreCheckpointSummary(Long id, Long version, Integer status, Long generation, Long sessionId) {
         Execution execution = new Execution();
         execution.id = id;
+        execution.sessionId = sessionId;
         execution.version = version == null ? 1L : version;
         execution.status = status;
         execution.resumeGeneration = generation;

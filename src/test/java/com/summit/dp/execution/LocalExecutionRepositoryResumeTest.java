@@ -1,5 +1,7 @@
 package com.summit.dp.execution;
 
+import org.springframework.context.ApplicationEventPublisher;
+
 import com.summit.dp.workflow.infrastructure.harness.ExecutionSnapshotReader;
 import com.summit.dp.workflow.infrastructure.harness.LegacyExecutionSnapshotAdapter;
 
@@ -72,7 +74,7 @@ class LocalExecutionRepositoryResumeTest {
                 .when(turns).finishExecution(any());
     }
     private final LocalExecutionRepository repository =
-            new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(persistence)), mapper, provider(readiness), provider(tools),
+            new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(persistence), mock(ApplicationEventPublisher.class)), mapper, provider(readiness), provider(tools),
                     provider(subExecutionLifecycle), provider(sessions), provider(turns), provider(runtimeEvents),
                     new ExecutionSnapshotReader(mapper, new LegacyExecutionSnapshotAdapter(mapper, RuntimeConfigurationTestSupport.create())));
 
@@ -401,7 +403,7 @@ class LocalExecutionRepositoryResumeTest {
     @Test
     void releasedSignalIsVisibleAndServiceFailureDoesNotBlockFollowingService() {
         ToolCallReadinessService failing = mock(ToolCallReadinessService.class);
-        LocalExecutionRepository isolated = new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(persistence)), mapper,
+        LocalExecutionRepository isolated = new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(persistence), mock(ApplicationEventPublisher.class)), mapper,
                 provider(failing), provider(tools), provider(subExecutionLifecycle), provider(sessions), provider(turns), provider(runtimeEvents),
                 new ExecutionSnapshotReader(mapper, new LegacyExecutionSnapshotAdapter(mapper, RuntimeConfigurationTestSupport.create())));
         doAnswer(invocation -> {

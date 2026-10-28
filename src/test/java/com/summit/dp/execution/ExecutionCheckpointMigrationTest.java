@@ -1,5 +1,8 @@
 package com.summit.dp.execution;
 
+import org.springframework.context.ApplicationEventPublisher;
+import static org.mockito.Mockito.mock;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.execution.application.service.ExecutionCheckpointService;
@@ -48,7 +51,7 @@ class ExecutionCheckpointMigrationTest {
         factory.setConfiguration(configuration);
         mapper = new SqlSessionTemplate(factory.getObject()).getMapper(ExecutionMapper.class);
         repository = new ExecutionRepositoryImpl(mapper);
-        checkpoints = new ExecutionCheckpointService(repository);
+        checkpoints = new ExecutionCheckpointService(repository, mock(ApplicationEventPublisher.class));
         transactions = new TransactionTemplate(new DataSourceTransactionManager(database));
     }
 

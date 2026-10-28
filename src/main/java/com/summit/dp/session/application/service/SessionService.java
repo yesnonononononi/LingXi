@@ -6,8 +6,10 @@ import com.summit.dp.session.application.command.SessionCommand;
 import com.summit.dp.shared.vo.SessionMessagePageVO;
 import com.summit.dp.shared.vo.SessionTreeVO;
 import com.summit.dp.shared.vo.SessionVO;
+import java.util.List;
 
 public interface SessionService {
+    Result<List<SessionVO>> applicationStates();
     /**
      * 仅供聊天编排初始化会话，名称由首条用户输入截断生成。
      *

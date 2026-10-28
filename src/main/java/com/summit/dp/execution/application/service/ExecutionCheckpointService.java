@@ -6,6 +6,7 @@ import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.shared.exception.ClientException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -18,6 +19,7 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class ExecutionCheckpointService {
     private final ExecutionRepository repository;
+    private final ApplicationEventPublisher events;
 
     @Transactional
     public boolean save(long executionId, Long sessionId, int status, String snapshot,
@@ -28,13 +30,18 @@ public class ExecutionCheckpointService {
                     toLocalTime(createdAt == null ? Instant.now() : createdAt),
                     toLocalTime(startedAt), toLocalTime(completedAt));
             repository.save(checkpoint);
+            events.publishEvent(new SessionExecutionStateChanged(sessionId));
             return false;
         }
         Execution checkpoint = repository.findCheckpointSummary(executionId).orElseThrow(ClientException::new);
         boolean firstFailure = status == ExecutionStatusCodes.FAILED
                 && (checkpoint.getStatus() == null || checkpoint.getStatus() != ExecutionStatusCodes.FAILED);
+        boolean stateChanged = !Integer.valueOf(status).equals(checkpoint.getStatus());
         checkpoint.changeCheckpoint(status, snapshot, toLocalTime(startedAt), toLocalTime(completedAt));
         repository.updateById(checkpoint);
+        if (stateChanged) {
+            events.publishEvent(new SessionExecutionStateChanged(checkpoint.getSessionId()));
+        }
         return firstFailure;
     }
 

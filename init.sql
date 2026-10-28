@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS workspace (
 --    agent_id 已下线：本实例选中的 Agent 改由 user_configs.agent_id 承载(单例)。
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS session (
+    is_read BOOLEAN NOT NULL DEFAULT TRUE,
     history_revision BIGINT NOT NULL DEFAULT 1,
     version BIGINT NOT NULL DEFAULT 1,
     id             BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',

@@ -59,11 +59,11 @@ public class ExecutionRepositoryImpl extends AbstractRepository<Execution, Execu
     @Override
     public Optional<Execution> findCheckpointSummary(long executionId) {
         return Optional.ofNullable(mapper.selectOne(Wrappers.<ExecutionPO>lambdaQuery()
-                .select(ExecutionPO::getId, ExecutionPO::getStatus, ExecutionPO::getVersion,
+                .select(ExecutionPO::getId, ExecutionPO::getSessionId, ExecutionPO::getStatus, ExecutionPO::getVersion,
                         ExecutionPO::getResumeGeneration)
                 .eq(ExecutionPO::getId, executionId)))
                 .map(row -> Execution.restoreCheckpointSummary(row.getId(), row.getVersion(),
-                        row.getStatus(), row.getResumeGeneration()));
+                        row.getStatus(), row.getResumeGeneration(), row.getSessionId()));
     }
 
     @Override public void save(Execution model) {
@@ -72,6 +72,8 @@ public class ExecutionRepositoryImpl extends AbstractRepository<Execution, Execu
     @Override public void updateById(Execution model) {
         long version = model.getVersion();
         ExecutionPO row = toPO(model);
+        // 归属只供状态通知读取，更新检查点不能重写创建时的归属。
+        row.setSessionId(null);
         row.setVersion(version + 1);
         if (mapper.update(row, Wrappers.<ExecutionPO>lambdaUpdate().eq(ExecutionPO::getId, model.getId())
                 .eq(ExecutionPO::getVersion, version)) != 1) throw new ClientException("执行状态已变更，请刷新后重试");
