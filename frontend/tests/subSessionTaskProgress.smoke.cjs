@@ -121,12 +121,67 @@ createApp(App).use(createPinia()).mount('#app');window.ready=true;`);
   const step = source => evaluate(`(async()=>{${source};await window.flush();})()`);
   const click = (id,scope='aside') => step(`document.querySelector('${scope} [data-testid=${id}]').click()`);
   await until('window.ready && document.querySelectorAll("aside .task-pill").length===2');
-  const sampleTransition = (trigger,selector) => evaluate(`(async()=>{
-    ${trigger};await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
-    await new Promise(resolve=>setTimeout(resolve,40));
-    const element=document.querySelector('${selector}');if(!element)return null;
-    const style=getComputedStyle(element);return {opacity:Number(style.opacity),transform:style.transform,
-      duration:style.transitionDuration,pointerEvents:style.pointerEvents};})()`);
+  /**
+   * 采样一次过渡的「真实中间帧」。
+   *
+   * <p><b>为什么不能固定等待后单点取样：</b>这两个过渡只有 160ms，而旧实现是
+   * `2×rAF + 40ms` 固定等待后**只取一个点**。机器一忙，这个点就可能落在过渡开始之前
+   * （opacity=0，还是 enter-from 初态）或结束之后（opacity=1），于是同一条断言随机红
+   * （实测负载下 红/绿/绿）。单点取样的结论取决于运气，与「实现里到底有没有动画」无关。</p>
+   *
+   * <p><b>改成确定性取样：真实时钟轮询。</b>从第一帧起每帧采一次、最长 250ms，
+   * 只要观察到 `0 < opacity < 1` 就立刻返回该帧并记录用了几帧、用了多久。160ms 的过渡
+   * 在 60fps 下有约 10 个可观测帧、本实现给了 250ms 预算（≈15 帧），要做到「一次都扫不到」
+   * 需要单个帧间隔超过 160ms（即比正常慢 10 倍以上）。</p>
+   * <p><b>为什么不用 `getAnimations()` 冻结再步进：</b>实测本机（Electron/Chromium，
+   * 五轮带负载复跑）该元素在过渡刚触发时 `getAnimations()` 恒返回空数组 —— 过渡对象要等
+   * enter-to 那一帧应用后才诞生，而我们恰恰需要在那一刻之前就开始观察；冻结路径从未命中，
+   * 却会额外消耗一帧延迟，属于「看起来更严谨、实际不起作用」的复杂度，故不采用。</p>
+   * <p>超时返回最后一次观察值（而不是 undefined），让断言把真实状态（opacity 是 0 还是 1）
+   * 打印出来，便于区分「取样错过」与「本来就没有过渡」。若连续三帧都读到
+   * `transition-duration: 0s`，说明该元素本来就没有过渡（reduced-motion 分支），直接返回，
+   * 不必空转到超时。</p>
+   * <p><b>判据不变</b>（`0 < opacity < 1`，时长 `0.16s`，退场 `pointer-events:none`）：
+   * 只是把「赌一个时刻」换成「必然扫到中间帧」，没有放宽任何一条。</p>
+   */
+  const sampleTransition = async (trigger,selector) => {
+    const frame = await evaluate(`(async()=>{
+    ${trigger};
+    await Promise.resolve();await Promise.resolve();
+    const TOTAL_MS=250;
+    const pick=()=>document.querySelector('${selector}');
+    const read=element=>{const style=getComputedStyle(element);return {opacity:Number(style.opacity),
+      transform:style.transform,duration:style.transitionDuration,pointerEvents:style.pointerEvents};};
+    const isMid=frame=>frame.opacity>0&&frame.opacity<1;
+    const startedAt=performance.now();
+    // 阶段 A：等元素出现（Vue 可能还要拉数据后才渲染）。判据只用「元素存在」，不预设时间点。
+    let element=pick();
+    while(!element&&performance.now()-startedAt<TOTAL_MS){
+      await new Promise(resolve=>requestAnimationFrame(resolve));
+      element=pick();
+    }
+    if(!element)return null;
+    // 阶段 B：按真实时钟逐帧轮询。每帧采一次，命中中间帧立刻返回；
+    // 超时（TOTAL_MS）返回最后一次观察值，让断言打印真实状态而不是含糊的 undefined。
+    let last=null,samples=0,quiet=0;
+    do{
+      const frame=read(element);samples+=1;last=frame;
+      if(isMid(frame))return {...frame,waitedMs:Math.round(performance.now()-startedAt),samples,mode:'poll'};
+      // transition-duration 是静态声明，与过渡是否在跑无关：连续三帧都读到 0s 说明
+      // 该元素根本没有过渡（例如 prefers-reduced-motion 关掉了动画），不必空转到超时。
+      // 留三帧余量是为了容忍元素刚插入、样式尚未提交的那一两帧。
+      quiet=frame.duration==='0s'?quiet+1:0;
+      if(quiet>=3)return {...frame,waitedMs:Math.round(performance.now()-startedAt),samples,mode:'no-transition'};
+      if(performance.now()-startedAt>=TOTAL_MS)break;
+      await new Promise(resolve=>requestAnimationFrame(resolve));
+      element=pick()||element;
+    }while(true);
+    return {...last,waitedMs:Math.round(performance.now()-startedAt),samples,mode:'timeout'};
+  })()`);
+    // 诊断开关：只打印不判断。排查 flake 时看 mode= 就知道是采到中间帧（poll）还是超时（timeout）。
+    if (process.env.SUB_TASK_PROGRESS_TRACE) console.log('[transition]',selector,JSON.stringify(frame));
+    return frame;
+  };
   const entering = await sampleTransition('document.querySelector("aside [data-testid=background-task-toggle]").click()', 'aside .task-popup-enter-active');
   assert.ok(entering && entering.opacity>0 && entering.opacity<1,`展开必须有真实的中间帧: ${JSON.stringify(entering)}`);
   assert.match(entering.duration,/0\.16s/);
