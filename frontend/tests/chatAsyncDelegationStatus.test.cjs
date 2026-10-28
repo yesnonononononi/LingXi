@@ -1,12 +1,15 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
 const path = require('node:path');
-const Module = require('node:module');
-const ts = require('typescript');
-const { parse, compileScript } = require('@vue/compiler-sfc');
-const { createRenderer, h, ref, reactive, nextTick } = require('vue');
-const previewKey = Symbol('file-preview');
+const { reactive, nextTick } = require('vue');
+// 挂载 harness 收敛到 tests/support/chatProcessHarness.cjs：唯一 stub 清单 + 目录递归真实加载。
+const harness = require('./support/chatProcessHarness.cjs');
+const { find, findAll, text } = harness;
+
+// 协作式委派链路需要 requestAnimationFrame（贴底调度），保持与本套件历史语义一致。
+const mountComponent = (t, definition, props) => harness.mountComponent(t, definition, props, { raf: true });
+
+/** 加载 `src/` 下的组件与其工具模块（白名单语义见共享 harness）。 */
+const component = relative => harness.loadFromSrc(relative, { compileId: 'async-delegation', restrictToRealPrefixes: true }).default;
+const util = relative => harness.loadFromSrc(relative, { compileId: 'async-delegation', restrictToRealPrefixes: true });
 
 /**
  * 协作式（异步）委派展示态的组件层回归（AC-5）。
@@ -15,139 +18,8 @@ const previewKey = Symbol('file-preview');
  * 组件自身逻辑原样执行。锁定三个「仍在跑却被显示成已完成 / 已失败」的误判点：
  * ① 协同条成员色点；② 子会话详情状态栏；③ 委派等待卡结论。</p>
  */
-function loadModule(filename) {
-  const cache = new Map();
-  function load(file) {
-    if (cache.has(file)) return cache.get(file).exports;
-    const module = new Module(file);
-    cache.set(file, module);
-    module.filename = file;
-    module.paths = Module._nodeModulePaths(path.dirname(file));
-    module.require = request => {
-      if (request === 'vue') {
-        return {
-          ...require('vue'),
-          // 过渡与传送门只是渲染容器，测试里直接渲染默认插槽（Teleport 需要真实 DOM 目标）。
-          Transition: { setup: (_props, { slots }) => () => slots.default?.() },
-          Teleport: { setup: (_props, { slots }) => () => slots.default?.() },
-        };
-      }
-      if (!request.startsWith('.')) return require(request);
-      // 子会话详情会拉取历史消息，测试中不触网：统一返回「加载失败」的可判定结果。
-      if (request.includes('services/chat')) {
-        return { chatApi: { fetchSessionMessages: async () => ({ ok: false }) } };
-      }
-      const resolved = path.resolve(path.dirname(file), request);
-      if (request.endsWith('.vue')) {
-        if (/(?:ChatProcessSegment|ProcessDetails)\.vue$/.test(request)) return load(resolved);
-        if (request.endsWith('CardHeader.vue')) return load(resolved);
-        if (request.endsWith('GradientText.vue')) {
-          return { __esModule: true, default: {
-            props: ['colors', 'animationSpeed', 'showBorder'],
-            setup: (props, { slots }) => () => h('gradient-text', { ...props }, slots.default?.()),
-          } };
-        }
-        if (request.endsWith('MarkdownRenderer.vue')) {
-          return { __esModule: true, default: {
-            props: ['content', 'thinkingText', 'processText'],
-            setup: props => () => h('markdown', {
-              thinkingText: props.thinkingText, processText: props.processText,
-            }, props.content),
-          } };
-        }
-        if (request.endsWith('PromptCard.vue')) {
-          return { __esModule: true, default: { setup: () => () => h('prompt-card', '审批卡片') } };
-        }
-        return { __esModule: true, default: { setup: (_props, { slots }) => () => slots.default?.() } };
-      }
-      if (request.endsWith('/filePreview')) return { FILE_PREVIEW_KEY: previewKey };
-      if (request.endsWith('/useTheme')) return { useTheme: () => ({ isDark: ref(true) }) };
-      if (request.endsWith('/useCopyFeedback')) {
-        return { useCopyFeedback: () => ({ isCopied: ref(false), copiedKey: ref(null), copy() {} }) };
-      }
-      // 相对依赖解析：优先 <path>.ts，其次目录模块 <path>/index.ts（如 ../i18n）。
-      if (resolved.endsWith('.ts')) return load(resolved);
-      if (fs.existsSync(resolved + '.ts')) return load(resolved + '.ts');
-      return load(path.join(resolved, 'index.ts'));
-    };
-    let source = fs.readFileSync(file, 'utf8');
-    if (file.endsWith('.vue')) {
-      const descriptor = parse(source, { filename: file }).descriptor;
-      source = compileScript(descriptor, { id: 'async-delegation', inlineTemplate: true, fs: { fileExists: file => fs.existsSync(file), readFile: file => fs.readFileSync(file, 'utf8') } }).content;
-    }
-    module._compile(ts.transpileModule(source, { compilerOptions: {
-      module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
-    } }).outputText, file);
-    return module.exports;
-  }
-  return load(filename);
-}
-
-const component = relative => loadModule(path.resolve(__dirname, '../src', relative)).default;
-const util = relative => loadModule(path.resolve(__dirname, '../src', relative));
-
-function element(tag, text = '') {
-  return { tag, text, props: {}, style: {}, children: [], parent: null,
-    scrollTop: 0, scrollHeight: 100, clientHeight: 100,
-    scrollTo({ top }) { this.scrollTop = Math.max(0, top - this.clientHeight); },
-  };
-}
-
-function text(node) {
-  return node.text + node.children.map(text).join('');
-}
-
-function find(node, predicate) {
-  if (predicate(node)) return node;
-  for (const child of node.children) {
-    const match = find(child, predicate);
-    if (match) return match;
-  }
-}
-
-function mountComponent(t, componentDefinition, props) {
-  const renderer = createRenderer({
-    createElement: tag => element(tag),
-    createText: value => element('#text', value),
-    createComment: () => element('#comment'),
-    setText: (node, value) => { node.text = value; },
-    setElementText: (node, value) => { node.text = value; node.children = []; },
-    parentNode: node => node.parent,
-    nextSibling: node => node.parent?.children[node.parent.children.indexOf(node) + 1] ?? null,
-    patchProp: (node, key, _old, value) => { node.props[key] = value; },
-    insert: (node, parent, anchor = null) => {
-      if (node.parent) node.parent.children.splice(node.parent.children.indexOf(node), 1);
-      node.parent = parent;
-      const index = anchor ? parent.children.indexOf(anchor) : -1;
-      if (index < 0) parent.children.push(node); else parent.children.splice(index, 0, node);
-    },
-    remove: node => {
-      if (node.parent) node.parent.children.splice(node.parent.children.indexOf(node), 1);
-      node.parent = null;
-    },
-  });
-  const previousWindow = global.window;
-  const previousFrame = global.requestAnimationFrame;
-  const previousCancelFrame = global.cancelAnimationFrame;
-  global.window = { setInterval, setTimeout, clearTimeout };
-  global.requestAnimationFrame = callback => setTimeout(callback, 0);
-  global.cancelAnimationFrame = clearTimeout;
-  const root = element('root');
-  const app = renderer.createApp(componentDefinition, props);
-  app.provide(previewKey, undefined);
-  app.mount(root);
-  t.after(async () => {
-    await nextTick();
-    app.unmount();
-    if (previousFrame === undefined) delete global.requestAnimationFrame;
-    else global.requestAnimationFrame = previousFrame;
-    if (previousCancelFrame === undefined) delete global.cancelAnimationFrame;
-    else global.cancelAnimationFrame = previousCancelFrame;
-    if (previousWindow === undefined) delete global.window;
-    else global.window = previousWindow;
-  });
-  return root;
-}
+const test = require('node:test');
+const assert = require('node:assert/strict');
 
 test('asyncDelegation：isAsyncDelegation 从入参 runtime_mode 或结果 runtimeMode 判定', () => {
   const { isAsyncDelegation } = util('utils/asyncDelegation.ts');

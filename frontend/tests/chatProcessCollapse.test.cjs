@@ -1,97 +1,24 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const Module = require('node:module');
-const ts = require('typescript');
-const { parse, compileScript } = require('@vue/compiler-sfc');
-const { createRenderer, h, ref, reactive, nextTick, watch } = require('vue');
-const previewKey = Symbol('file-preview');
 
-// 编译真实模板，只替换子组件和浏览器依赖，折叠状态与事件使用组件自身逻辑。
-function loadChatModule(filename, realPlanCards = false) {
-  const cache = new Map();
-  function load(filename) {
-    if (cache.has(filename)) return cache.get(filename).exports;
-    const module = new Module(filename);
-    cache.set(filename, module);
-    module.filename = filename;
-    module.paths = Module._nodeModulePaths(path.dirname(filename));
-    module.require = request => {
-      if (request === 'vue') {
-        return { ...require('vue'), Transition: { setup: (_props, { slots }) => () => slots.default?.() } };
-      }
-      if (!request.startsWith('.')) return require(request);
-      const resolved = path.resolve(path.dirname(filename), request);
-      if (request.endsWith('.vue')) {
-        if (/(?:ChatProcessSegment|ProcessDetails)\.vue$/.test(request)) return load(resolved);
-        if (/(?:InteractionCards|InteractionCardGroup|ChoiceQuestionGroup)\.vue$/.test(request)) return load(resolved);
-        if (request.endsWith('CardHeader.vue')) return load(resolved);
-        // 插槽化试点（B 档）：正文与底栏内容已抽成独立组件，必须递归进来，
-        // 否则通用的「透传 slots」桩会把它当成空实现，正文与工具条一起消失。
-        if (request.endsWith('MessageBodyDefault.vue') || request.endsWith('MessageActionsBar.vue')) return load(resolved);
-        if (realPlanCards && /(?:PromptCard|PlanCard|CardActionButton)\.vue$/.test(request)) return load(resolved);
-        if (request.endsWith('GradientText.vue')) {
-          return { __esModule: true, default: {
-            props: ['colors', 'animationSpeed', 'showBorder'],
-            setup: (props, { slots }) => () => h('gradient-text', { ...props }, slots.default?.()),
-          } };
-        }
-        if (request.endsWith('MarkdownRenderer.vue')) {
-          return { __esModule: true, default: { props: ['content', 'thinkingText', 'processText'], setup: props => () => h('markdown', { thinkingText: props.thinkingText, processText: props.processText }, props.content) } };
-        }
-        if (request.endsWith('PromptCard.vue')) {
-          return { __esModule: true, default: { setup: () => () => h('prompt-card', '审批卡片') } };
-        }
-        return { __esModule: true, default: { setup: (_props, { slots }) => () => slots.default?.() } };
-      }
-      if (request.endsWith('/filePreview')) return { FILE_PREVIEW_KEY: previewKey };
-      if (request.endsWith('/useTheme')) return { useTheme: () => ({ isDark: ref(true) }) };
-      if (request.endsWith('/useCopyFeedback')) {
-        return { useCopyFeedback: () => ({ isCopied: ref(false), copiedKey: ref(null), copy() {} }) };
-      }
-      // 相对依赖解析：优先 <path>.ts，其次目录模块 <path>/index.ts（如 ../i18n）。
-      if (resolved.endsWith('.ts')) return load(resolved);
-      if (fs.existsSync(resolved + '.ts')) return load(resolved + '.ts');
-      return load(path.join(resolved, 'index.ts'));
-    };
-    let source = fs.readFileSync(filename, 'utf8');
-    if (filename.endsWith('.vue')) {
-      const descriptor = parse(source, { filename }).descriptor;
-      source = compileScript(descriptor, {
-        id: 'chat-process-collapse',
-        inlineTemplate: true,
-        // 插槽化试点后，正文/底栏的 props 类型来自 `types/chatMessageSlots.ts`，
-        // defineProps<T>() 需要 fs 才能解析导入类型（否则 compileScript 直接报错）。
-        fs: { fileExists: file => fs.existsSync(file), readFile: file => fs.readFileSync(file, 'utf8') }
-      }).content;
-    }
-    module._compile(ts.transpileModule(source, { compilerOptions: {
-      module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022,
-    } }).outputText, filename);
-    return module.exports;
-  }
-  return load(filename);
+
+const path = require('node:path');
+const { reactive, nextTick, watch } = require('vue');
+// 挂载 harness 已收敛到 tests/support/chatProcessHarness.cjs：唯一 stub 清单 + 目录递归真实加载。
+const { find, findAll, text, mountComponent, loadModule } = require('./support/chatProcessHarness.cjs');
+
+/**
+ * 编译真实 .vue / .ts，只替换子组件与浏览器依赖。
+ *
+ * <p>白名单语义由 harness 统一维护：`components/chat/**`（含 `chat/process/`）下的 `.vue`
+ * 默认真实加载，只有 harness 里显式列出的才走桩。新增 renderer 因此不会被静默吞成空壳。</p>
+ */
+function loadChatModule(filename, realPlanCards = false, extraStubs = []) {
+  return loadModule(filename, { realPlanCards, extraStubs, compileId: 'chat-process-collapse' });
 }
 
 function loadComponent() {
   return loadChatModule(path.resolve(__dirname, '../src/components/chat/ChatMessageItem.vue')).default;
-}
-
-function element(tag, text = '') {
-  return { tag, text, props: {}, style: {}, children: [], parent: null, addEventListener() {}, removeEventListener() {} };
-}
-
-function text(node) {
-  return node.text + node.children.map(text).join('');
-}
-
-function find(node, predicate) {
-  if (predicate(node)) return node;
-  for (const child of node.children) {
-    const match = find(child, predicate);
-    if (match) return match;
-  }
 }
 
 /** 按内容定位某个思考步骤的滚动框（一个消息里可能同时有多段思考）。 */
@@ -112,40 +39,6 @@ function mount(t, message, props = {}) {
   return mountComponent(t, loadComponent(), { message, isDark: true, ...props });
 }
 
-function mountComponent(t, component, props) {
-  const renderer = createRenderer({
-    createElement: tag => element(tag),
-    createText: value => element('#text', value),
-    createComment: value => element('#comment'),
-    setText: (node, value) => { node.text = value; },
-    setElementText: (node, value) => { node.text = value; node.children = []; },
-    parentNode: node => node.parent,
-    nextSibling: node => node.parent?.children[node.parent.children.indexOf(node) + 1] ?? null,
-    patchProp: (node, key, _old, value) => { node.props[key] = value; },
-    insert: (node, parent, anchor = null) => {
-      if (node.parent) node.parent.children.splice(node.parent.children.indexOf(node), 1);
-      node.parent = parent;
-      const index = anchor ? parent.children.indexOf(anchor) : -1;
-      if (index < 0) parent.children.push(node); else parent.children.splice(index, 0, node);
-    },
-    remove: node => {
-      if (node.parent) node.parent.children.splice(node.parent.children.indexOf(node), 1);
-      node.parent = null;
-    },
-  });
-  const previousWindow = global.window;
-  global.window = { setInterval };
-  const root = element('root');
-  const app = renderer.createApp(component, props);
-  app.provide(previewKey, undefined);
-  app.mount(root);
-  t.after(() => {
-    app.unmount();
-    if (previousWindow === undefined) delete global.window;
-    else global.window = previousWindow;
-  });
-  return root;
-}
 
 function message(overrides = {}) {
   return reactive({
@@ -156,9 +49,6 @@ function message(overrides = {}) {
   });
 }
 
-function findAll(root, predicate) {
-  return [...(predicate(root) ? [root] : []), ...root.children.flatMap(child => findAll(child, predicate))];
-}
 function toggleProcess(root) {
   const button = find(root, node => node.props?.['data-testid'] === 'process-segment-toggle');
   assert.ok(button, '应提供过程段展开入口');
@@ -196,6 +86,46 @@ function streamFixture() {
   reducer.consume(event({ type: 'EXECUTION_STARTED' }));
   return { reducer, event, answer: messages[0], AgentToolName };
 }
+
+/**
+ * ★ 金丝雀：harness 必须**真实加载并渲染**过程区的组件，而不是把它们桩成空壳。
+ *
+ * <p>harness 的历史缺陷是「白名单未命中的 `.vue` 一律桩成只透传 slots 的空壳」，后果是
+ * 断言「找不到节点」，甚至断言数量不变而测试假绿。这条用例显式断言两个只有真实渲染才会
+ * 产出的节点，并在同一用例里**把加载器显式桩掉**再跑一次，证明它一旦被桩就立刻变红 ——
+ * 金丝雀自己证明自己有效，不依赖人工临时改代码。</p>
+ */
+test('★ harness 金丝雀：过程区组件真实加载，桩掉即无节点', async t => {
+  const canary = message({
+    isComplete: false, isThinking: true, content: '', aiMessages: [],
+    thoughtSteps: [{ id: 'canary-thought', order: 0, title: '思考', content: '金丝雀思考正文', status: 'running' }],
+    toolCalls: [{ id: 'canary-tool', toolName: 'ReadFile', order: 1, status: 'success', args: { path: 'canary.md' } }],
+  });
+  const hasThinkingBox = root => Boolean(find(root,
+    node => String(node.props?.class ?? '').includes('thinking-content')));
+  const hasToolRow = root => Boolean(find(root,
+    node => String(node.props?.class ?? '').includes('w-full my-0.5')));
+
+  const root = await mountExpanded(t, canary);
+  assert.ok(hasThinkingBox(root), '真实 ProcessDetails 才会渲染思考贴底框（.thinking-content）');
+  assert.ok(hasToolRow(root), '真实 ProcessDetails 才会渲染工具行（w-full my-0.5）');
+  assert.match(text(root), /金丝雀思考正文/, '思考正文必须真实渲染（MarkdownRenderer 拿到的 content）');
+
+  // 反证：把 ProcessDetails 显式桩掉后，同样的断言必须落空 —— 金丝雀对「被吞成空壳」敏感。
+  const stubbedDefinition = loadChatModule(
+    path.resolve(__dirname, '../src/components/chat/ChatMessageItem.vue'), false, [/ProcessDetails\.vue$/]).default;
+  const stubbed = mountComponent(t, stubbedDefinition, {
+    message: message({ isComplete: false, isThinking: true, content: '', aiMessages: [],
+      thoughtSteps: [{ id: 'canary-thought', order: 0, title: '思考', content: '金丝雀思考正文', status: 'running' }],
+      toolCalls: [{ id: 'canary-tool', toolName: 'ReadFile', order: 1, status: 'success', args: { path: 'canary.md' } }] }),
+    isDark: true,
+  });
+  const stubbedToggle = find(stubbed, node => node.props?.['data-testid'] === 'process-segment-toggle');
+  if (stubbedToggle && !stubbedToggle.props['aria-expanded']) stubbedToggle.props.onClick();
+  await nextTick();
+  assert.equal(hasThinkingBox(stubbed), false, '桩掉 ProcessDetails 后思考框必须消失（金丝雀有效）');
+  assert.equal(hasToolRow(stubbed), false, '桩掉 ProcessDetails 后工具行必须消失（金丝雀有效）');
+});
 
 test('所有卡片统一收进下拉，提问按类型归组，待处理到来不覆盖折叠选择', async t => {
   const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
