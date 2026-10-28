@@ -141,9 +141,7 @@ public class Checklist {
         if (continueNextStep && (next == null || !next.isTerminal())) {
             throw new ClientException("只有上报 COMPLETED、FAILED 或 SKIPPED 结果时才能继续下一步");
         }
-        if (status.isDeleted()) {
-            throw new ClientException("清单已删除，不能更新步骤");
-        }
+        requireEditable("更新步骤");
         if (!step.changeStatus(next)) {
             // 无变化：不递增版本、不重置提醒额度，也不刷新清单时间——重试必须完全等价于没发生
             return ChecklistMutation.none();
@@ -161,7 +159,7 @@ public class Checklist {
                 changedSteps.add(following.get());
             }
         }
-        status = hasPendingSteps() ? ChecklistStatus.ACTIVE : ChecklistStatus.COMPLETED;
+        status = resolveStepStatus();
         touch();
         log.debug("清单步骤推进: checklistId={}, stepId={}, status={}, progressVersion={}",
                 id, stepId, next, progressVersion);
@@ -176,7 +174,7 @@ public class Checklist {
      * 事务回滚能救数据库，救不了内存里的聚合。</p>
      */
     public ChecklistMutation applyModification(ChecklistModification modification) {
-        requireActive("修改清单");
+        requireEditable("修改清单");
         ChecklistModification patch = Objects.requireNonNullElseGet(modification, ChecklistModification::empty);
 
         // ---- 第一段：只校验与计算，不改聚合 ----
@@ -258,10 +256,8 @@ public class Checklist {
         steps.clear();
         steps.addAll(nextOrder);
 
-        if (recomputeStatus()) {
-            checklistChanged = true;
-        }
         if (checklistChanged) {
+            recomputeStatus();
             touch();
         }
         return new ChecklistMutation(checklistChanged, List.copyOf(removedStepIds),
@@ -269,15 +265,15 @@ public class Checklist {
     }
 
     /**
-     * 把清单收口为 COMPLETED。
+     * 仅在全部步骤已结案时收口，失败和跳过不能被抹成成功。
      *
      * @return {@code true} 表示状态真的从 ACTIVE 变了
      */
     public boolean complete() {
-        if (status != ChecklistStatus.ACTIVE) {
+        if (status != ChecklistStatus.ACTIVE || hasPendingSteps()) {
             return false;
         }
-        status = ChecklistStatus.COMPLETED;
+        recomputeStatus();
         touch();
         return true;
     }
@@ -348,11 +344,10 @@ public class Checklist {
         return remindStatus;
     }
 
-    /** 当前处于 ACTIVE 才允许写操作。 */
-    public void requireActive(String action) {
-        if (status != ChecklistStatus.ACTIVE) {
-            throw new ClientException("清单当前状态为 " + status + "，不能" + action
-                    + "；需要继续工作请新建清单");
+    /** 所有编辑入口共享边界，已删除历史只能查询。 */
+    public void requireEditable(String action) {
+        if (status.isDeleted()) {
+            throw new ClientException("清单已删除，不能" + action);
         }
     }
 
@@ -386,13 +381,25 @@ public class Checklist {
         return ordered;
     }
 
-    /** 所有步骤都不再待处理即收口；FAILED / SKIPPED 是步骤级结果，不阻止收口。 */
-    private boolean recomputeStatus() {
-        if (status != ChecklistStatus.ACTIVE || hasPendingSteps()) {
-            return false;
+    /** 收口后的结构修正也必须重新裁决，不能保留过期汇总态。 */
+    private void recomputeStatus() {
+        status = resolveStepStatus();
+    }
+
+    private ChecklistStatus resolveStepStatus() {
+        if (steps.isEmpty()) {
+            return ChecklistStatus.UNFINISHED;
         }
-        status = ChecklistStatus.COMPLETED;
-        return true;
+        if (hasPendingSteps()) {
+            return ChecklistStatus.ACTIVE;
+        }
+        if (steps.stream().anyMatch(step -> step.getStatus() == ChecklistStepStatus.FAILED)) {
+            return ChecklistStatus.FAILED;
+        }
+        if (steps.stream().anyMatch(step -> step.getStatus() == ChecklistStepStatus.SKIPPED)) {
+            return ChecklistStatus.CLOSED;
+        }
+        return ChecklistStatus.COMPLETED;
     }
 
     private void resetReminderQuota() {

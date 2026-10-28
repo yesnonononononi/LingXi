@@ -10,6 +10,8 @@ import com.summit.dp.checklist.application.service.impl.ChecklistServiceImpl;
 import com.summit.dp.checklist.infrastructure.persistence.mapper.ChecklistMapper;
 import com.summit.dp.checklist.infrastructure.persistence.mapper.ChecklistStepMapper;
 import com.summit.dp.checklist.infrastructure.repository.ChecklistRepositoryImpl;
+import com.summit.dp.shared.config.H2SchemaInitializer;
+import org.springframework.boot.DefaultApplicationArguments;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
@@ -83,6 +85,10 @@ public final class ChecklistTestDatabase implements AutoCloseable {
 
     public ChecklistMapper mapper() {
         return mapper;
+    }
+
+    public void bootstrapSchema() throws Exception {
+        new H2SchemaInitializer().h2SchemaBootstrap(database).run(new DefaultApplicationArguments());
     }
 
     public ChecklistRepositoryImpl repository() {

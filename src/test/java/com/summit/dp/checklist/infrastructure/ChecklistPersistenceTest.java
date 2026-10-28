@@ -194,7 +194,7 @@ class ChecklistPersistenceTest {
         ChecklistVO finished = service.updateStep(
                 ChecklistCommand.updateStep(SESSION_ID, null, secondStep, "FAILED"));
 
-        assertEquals("COMPLETED", finished.getStatus());
+        assertEquals("FAILED", finished.getStatus());
         assertTrue(repository.findActiveBySessionId(SESSION_ID).isEmpty());
         ChecklistVO next = service.create(ChecklistCommand.create(SESSION_ID, null, "下一份", List.of("重新来")));
         assertEquals("ACTIVE", next.getStatus());
@@ -218,7 +218,7 @@ class ChecklistPersistenceTest {
         assertEquals(next.getChecklistId(), service.findActive(SESSION_ID).orElseThrow().getChecklistId());
         ChecklistVO corrected = service.updateStep(ChecklistCommand.updateStep(
                 SESSION_ID, created.getChecklistId(), stepId, "FAILED"));
-        assertEquals("COMPLETED", corrected.getStatus());
+        assertEquals("FAILED", corrected.getStatus());
         assertEquals("FAILED", corrected.getSteps().getFirst().getStatus());
         ClientException conflict = assertThrows(ClientException.class, () -> service.updateStep(ChecklistCommand.updateStep(
                 SESSION_ID, created.getChecklistId(), stepId, "PENDING")));

@@ -85,7 +85,12 @@ class ChecklistDomainTest {
             assertEquals(List.of(1L), mutation.changedSteps().stream().map(ChecklistStep::getId).toList());
             assertEquals(startedAt, checklist.getSteps().get(1).getUpdateAt());
             checklist.changeStepStatus(2L, result, true);
-            assertEquals(ChecklistStatus.COMPLETED, checklist.getStatus());
+            ChecklistStatus expected = switch (result) {
+                case FAILED -> ChecklistStatus.FAILED;
+                case SKIPPED -> ChecklistStatus.CLOSED;
+                default -> ChecklistStatus.COMPLETED;
+            };
+            assertEquals(expected, checklist.getStatus());
             assertEquals(2L, checklist.getProgressVersion());
         }
     }
@@ -119,7 +124,7 @@ class ChecklistDomainTest {
         assertEquals(ChecklistStatus.ACTIVE, checklist.getStatus());
         checklist.changeStepStatus(first, ChecklistStepStatus.COMPLETED);
         assertEquals(2L, checklist.getProgressVersion());
-        assertEquals(ChecklistStatus.COMPLETED, checklist.getStatus());
+        assertEquals(ChecklistStatus.CLOSED, checklist.getStatus());
         checklist.changeStepStatus(first, ChecklistStepStatus.IN_PROGRESS);
         assertEquals(ChecklistStatus.ACTIVE, checklist.getStatus());
         assertEquals(2L, checklist.getProgressVersion());
@@ -215,16 +220,16 @@ class ChecklistDomainTest {
     }
 
     @Test
-    @DisplayName("全部步骤进入终态即收口为 COMPLETED，FAILED 不阻止收口")
+    @DisplayName("失败结案不能当成成功，结果修正与回退重新计算汇总状态")
     void allTerminalStepsCompleteTheChecklist() {
         Checklist checklist = checklist("编译", "跑测试");
         checklist.changeStepStatus(stepId(checklist, 1), ChecklistStepStatus.COMPLETED);
         checklist.changeStepStatus(stepId(checklist, 2), ChecklistStepStatus.FAILED);
 
-        assertEquals(ChecklistStatus.COMPLETED, checklist.getStatus());
+        assertEquals(ChecklistStatus.FAILED, checklist.getStatus());
         assertFalse(checklist.hasPendingSteps());
         checklist.changeStepStatus(stepId(checklist, 1), ChecklistStepStatus.FAILED);
-        assertEquals(ChecklistStatus.COMPLETED, checklist.getStatus());
+        assertEquals(ChecklistStatus.FAILED, checklist.getStatus());
         checklist.changeStepStatus(stepId(checklist, 2), ChecklistStepStatus.PENDING);
         assertEquals(ChecklistStatus.ACTIVE, checklist.getStatus());
     }

@@ -374,7 +374,7 @@ CREATE TABLE IF NOT EXISTS checklist (
     session_id                BIGINT       NOT NULL COMMENT '所属会话；子会话各持自己的清单',
     agent_id                  BIGINT       NULL COMMENT '创建清单的 Agent ID，仅作记录，不参与归属判定',
     title                     VARCHAR(200) NOT NULL COMMENT '清单标题',
-    status                    VARCHAR(16)  NOT NULL COMMENT 'ACTIVE/COMPLETED/UNFINISHED/DELETED',
+    status                    VARCHAR(16)  NOT NULL COMMENT 'ACTIVE/COMPLETED/CLOSED/FAILED/UNFINISHED/DELETED',
     remind_status             BOOLEAN      NOT NULL DEFAULT FALSE COMMENT '本进展版本是否已用过提醒额度',
     progress_version          BIGINT       NOT NULL DEFAULT 0 COMMENT '步骤实际推进次数；结构修改不递增',
     remind_execution_id       BIGINT       NULL COMMENT '提醒归属的执行 ID',

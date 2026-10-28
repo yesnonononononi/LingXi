@@ -76,6 +76,8 @@ public class H2SchemaInitializer {
                 // V13：model_config 补 provider_config_id（脚本自带 IF NOT EXISTS，新库天然空操作）。
                 ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
                         "db/migration/V13_model_config_provider_config_id.sql"), StandardCharsets.UTF_8));
+                ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                        "db/migration/V14_checklist_result_status.sql"), StandardCharsets.UTF_8));
             }
         };
     }
