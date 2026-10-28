@@ -66,9 +66,15 @@ test('减弱动态效果时退回普通文字色', () => {
   assert.match(block, /color:\s*inherit/, '降级时文字要回到父级颜色，否则仍是透明');
 });
 
-test('过程摘要只在可汇总时渲染，运行过程保留独立呈现模式', () => {
-  assert.match(segment, /<button v-if="canSummarize"/, '摘要入口必须受可汇总判据约束');
-  assert.match(segment, /:data-process-mode="canSummarize \? 'summary' : 'live'"/);
+test('摘要行始终存在：live 模式带扫光，summary 模式不带', () => {
+  // 新契约：标题按钮不再有 v-if 门禁，运行态也保留一行摘要（只换文案，不是换有无）。
+  assert.match(segment, /<button\s+type="button" data-testid="process-segment-toggle"/,
+    '摘要入口必须始终渲染，运行态也不例外');
+  assert.doesNotMatch(segment, /v-if="canSummarize/, 'canSummarize 双关布尔已被单一 mode 取代');
+  assert.match(segment, /:data-process-mode="mode"/, '模式只由一个派生值决定');
+  // 扫光只挂在 live 模式的标题上，summary 模式必须停掉运行信号。
+  assert.match(segment, /:class="\{ 'lx-sweep-text': mode === 'live' \}"/,
+    '扫光只允许出现在 live 模式的标题上');
   assert.doesNotMatch(segment, /animate-pulse/, '呼吸点与扫光是两个互相打架的加载信号，只留一个');
   assert.doesNotMatch(segment, /rounded-full bg-current/, '呼吸点被删干净');
 });

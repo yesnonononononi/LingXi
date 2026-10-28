@@ -71,31 +71,44 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
   for (const [name, width, dark] of [['dark', 1000, true], ['light', 1000, false], ['narrow', 360, true]]) {
     window.setContentSize(width, 680);
     await evaluate(`window.setDark(${dark})`);
+    // 新契约：两段过程各有一行摘要（live 段 + summary 段），细节默认折叠 —— 先量折叠态。
     const geometry = await evaluate(`(() => {
       const headers = [...document.querySelectorAll('[data-testid=process-segment-toggle]')];
       const live = document.querySelector('[data-process-mode=live]');
-      const thinking = live.querySelector('.thinking-content');
       return { headers: headers.map(element => ({ expanded: element.getAttribute('aria-expanded'), height:element.getBoundingClientRect().height })),
         textCount: document.querySelectorAll('[data-testid=process-text]').length,
         details: document.querySelectorAll('[data-testid=process-segment-details]').length,
         liveCount:document.querySelectorAll('[data-process-mode=live]').length,
         liveSummaries:live.querySelectorAll('[data-testid=process-segment-toggle]').length,
-        thinkingHeight:thinking.clientHeight,
+        liveSweep:!!live.querySelector('[data-testid=process-segment-title].lx-sweep-text'),
+        summarySweep:!!document.querySelector('[data-process-mode=summary] [data-testid=process-segment-title].lx-sweep-text'),
         width:document.documentElement.scrollWidth, viewport:innerWidth,
         background:getComputedStyle(document.body).backgroundColor, body:document.body.innerText };
     })()`);
     measurements.push({ name, ...geometry });
     assert.equal(geometry.background, dark ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)', '主题背景必须与组件配色一致');
-    assert.equal(geometry.headers.length, 1);
+    assert.equal(geometry.headers.length, 2, '运行段与收尾段各有一行摘要');
     assert.equal(geometry.textCount, 2);
-    assert.equal(geometry.details, 1, '只有运行过程直接渲染详情');
+    assert.equal(geometry.details, 0, '细节默认折叠，运行态不再直接铺满');
     assert.equal(geometry.liveCount, 1);
-    assert.equal(geometry.liveSummaries, 0);
-    assert.ok(geometry.thinkingHeight > 0 && geometry.thinkingHeight <= 288);
+    assert.equal(geometry.liveSummaries, 1);
+    assert.equal(geometry.liveSweep, true, 'live 模式的标题必须带扫光');
+    assert.equal(geometry.summarySweep, false, 'summary 模式不挂扫光');
     assert.ok(geometry.headers.every(header => header.expanded === 'false' && header.height <= 28));
     assert.ok(geometry.width <= geometry.viewport + 1, '摘要不能撑宽页面');
     assert.match(geometry.body, /写入、执行命令/);
+    // 展开 live 段后，思考框才进入布局，量它的高度。
+    await evaluate('document.querySelector("[data-process-mode=live] [data-testid=process-segment-toggle]").click(); window.flush()');
+    const liveGeometry = await evaluate(`(() => {
+      const thinking = document.querySelector('[data-process-mode=live] .thinking-content');
+      return { thinkingHeight: thinking ? thinking.clientHeight : -1,
+        details: document.querySelectorAll('[data-testid=process-segment-details]').length };
+    })()`);
+    measurements.push({ name: name + '-expanded', ...liveGeometry });
+    assert.equal(liveGeometry.details, 1, '展开后只多出 live 段的细节');
+    assert.ok(liveGeometry.thinkingHeight > 0 && liveGeometry.thinkingHeight <= 288, '思考框有可视高度且限高');
     await fs.writeFile(path.join(output, `${name}.png`), (await window.webContents.capturePage()).toPNG());
+    await evaluate('document.querySelector("[data-process-mode=live] [data-testid=process-segment-toggle]").click(); window.flush()');
   }
   await evaluate('window.failEarlier()');
   const failureGeometry = await evaluate(`(() => {
@@ -119,7 +132,9 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
   assert.equal(await evaluate('document.querySelector("[data-testid=whole-process-toggle]").getAttribute("aria-expanded")'), 'false');
   await evaluate('document.querySelector("[data-testid=whole-process-toggle]").click(); window.flush()');
   assert.equal(await evaluate('document.querySelector("[data-testid=process-segment-toggle]").getAttribute("aria-expanded")'), 'true');
-  assert.equal(await evaluate('document.querySelectorAll("[data-testid=process-segment-details]").length'), 2);
+  // 用户只展开过 summary 段；live 段仍保持默认折叠（新契约：细节从不自动铺开）。
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=process-segment-details]").length'), 1);
+  assert.equal(await evaluate('document.querySelector("[data-process-mode=live] [data-testid=process-segment-toggle]").getAttribute("aria-expanded")'), 'false');
   await evaluate('window.finish()');
   assert.equal(await evaluate('document.querySelector("[data-testid=whole-process-toggle]").getAttribute("aria-expanded")'), 'true');
   assert.deepEqual(await evaluate('[...document.querySelectorAll("[data-testid=process-segment-toggle]")].map(button=>button.getAttribute("aria-expanded"))'), ['true','false']);
@@ -140,11 +155,19 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
   await fs.writeFile(path.join(output, 'waiting-reentry.png'), (await window.webContents.capturePage()).toPNG());
   window.setContentSize(1000,680);
   await evaluate('window.setDark(false);window.runClosedSegment()');
-  assert.equal(await evaluate('document.querySelectorAll("[data-testid=process-segment-toggle]").length'),0,'命令未结束时不能生成工具集合摘要');
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=process-segment-toggle]").length'),1,
+    '命令未结束时已有一行摘要，但文案是最新一步而非工具集合');
   assert.equal(await evaluate('document.querySelector("[data-testid=process-segment]").dataset.processMode'),'live');
+  assert.match(await evaluate('document.querySelector("[data-testid=process-segment-title]").textContent'),/读取/,
+    'live 模式标题取最新一步，不是工具集合');
+  assert.equal(await evaluate('document.querySelector("[data-testid=process-segment-details]") === null'),true,
+    '运行态细节默认折叠');
+  await evaluate('document.querySelector("[data-testid=process-segment-toggle]").click(); window.flush()');
   await evaluate('[...document.querySelectorAll("button")].find(button=>button.textContent.trim()==="长任务核验").click();window.flush()');
   assert.match(await evaluate('document.body.innerText'),/正在执行中/);
   await fs.writeFile(path.join(output, 'running-between-text.png'), (await window.webContents.capturePage()).toPNG());
+  // 收回手动展开，验证摘要行默认收起。
+  await evaluate('document.querySelector("[data-testid=process-segment-toggle]").click(); window.flush()');
   await evaluate('window.completeCommand()');
   assert.equal(await evaluate('document.querySelector("[data-testid=process-segment]").dataset.processMode'),'summary');
   assert.equal(await evaluate('document.querySelector("[data-testid=process-segment-toggle]").getAttribute("aria-expanded")'),'false');

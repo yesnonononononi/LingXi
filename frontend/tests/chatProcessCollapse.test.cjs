@@ -489,13 +489,24 @@ test('文本边界不能提前替换实时过程，所有工具收尾后才生�
   const root = mount(t, answer, { turn });
   const segment = find(root, node => node.props?.['data-testid'] === 'process-segment');
   assert.equal(segment.props['data-process-mode'], 'live');
-  assert.equal(Boolean(find(segment, node => node.props?.['data-testid'] === 'process-segment-title')), false,
-    '运行中的过程不能被工具集合摘要占位');
+  // 运行态摘要行永远存在，但文案是「最新一步」，不是工具集合概览。
+  const title = find(segment, node => node.props?.['data-testid'] === 'process-segment-title');
+  assert.ok(title, '运行中的过程也必须有一行摘要标题');
+  assert.equal(text(title), '读取', '运行中标题取最新一步的工具名');
+  // 细节默认折叠，用户点标题行才展开 —— 运行命令仍保留自己的动态渲染位置。
+  assert.equal(Boolean(find(segment, node => node.props?.['data-testid'] === 'process-segment-details')), false,
+    '运行态细节默认折叠，不再直接铺满');
+  const toggle = find(segment, node => node.props?.['data-testid'] === 'process-segment-toggle');
+  toggle.props.onClick();
+  await nextTick();
   const command = find(segment, node => node.tag === 'button' && text(node) === '长任务核验');
   assert.ok(command, '运行命令必须保留自己的动态渲染位置');
   command.props.onClick({ stopPropagation() {} });
   await nextTick();
   assert.match(text(segment), /正在执行中/);
+  // 收回折叠选择，后面验证摘要行默认收起。
+  toggle.props.onClick();
+  await nextTick();
   answer.isSuspended = true;
   turn.status = 'WAITING';
   await nextTick();
@@ -516,18 +527,22 @@ test('尾段仍可增长时继续渲染过程，后续文本到达才生成已�
     toolCalls: [{ id: 'done', toolName: AgentToolName.ReadFile, order: 1, status: 'success', args: { path: 'a.md' } }] });
   const root = mount(t, answer);
   const segment = find(root, node => node.props?.['data-testid'] === 'process-segment');
+  const toggle = () => find(segment, node => node.props?.['data-testid'] === 'process-segment-toggle');
   assert.equal(segment.props['data-process-mode'], 'live');
-  assert.equal(Boolean(find(segment, node => node.props?.['data-testid'] === 'process-segment-toggle')), false);
-  assert.match(text(segment), /a\.md/);
+  assert.ok(toggle(), '运行态也必须有摘要行，不再整行消失');
+  assert.match(text(toggle()), /a\.md/, '实时摘要展示最新一步的目标');
+  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'process-segment-details').length, 0,
+    '细节默认折叠');
   answer.aiMessages.push({ id: 'after', order: 2, text: '本段已完成' });
   await nextTick();
   assert.equal(segment.props['data-process-mode'], 'summary');
-  const header = find(segment, node => node.props?.['data-testid'] === 'process-segment-toggle');
+  const header = toggle();
   assert.equal(header.props['aria-expanded'], false, '摘要默认折叠，不改变展开策略');
   answer.toolCalls[0].status = 'calling';
   await nextTick();
   assert.equal(segment.props['data-process-mode'], 'live', '迟到的未完成事实必须恢复实时位置');
-  assert.equal(Boolean(find(segment, node => node.props?.['data-testid'] === 'process-segment-toggle')), false);
+  assert.ok(toggle(), '恢复实时位置后摘要行仍在');
+  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'process-segment-details').length, 0);
 });
 
 test('委派工具成功不等于过程结束，协作任务运行和挂起时仍保留实时位置', async t => {
@@ -548,7 +563,7 @@ test('委派工具成功不等于过程结束，协作任务运行和挂起时�
   assert.equal(segment.props['data-process-mode'], 'summary');
 });
 
-test('分段呈现：文本直接展示，运行过程不生成摘要，只有已结束段默认折叠', async t => {
+test('分段呈现：摘要行两段都在，运行段展示最新一步，收尾段展示整段概览，细节默认折叠', async t => {
   const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
   const answer = message({ isComplete: false, isThinking: true, content: '',
     thoughtSteps: [{ id: 's1', order: 0, title: '思考', content: '详情正文', status: 'running' }],
@@ -556,18 +571,56 @@ test('分段呈现：文本直接展示，运行过程不生成摘要，只有�
     toolCalls: [{ id: 'c1', toolName: AgentToolName.EditFile, order: 2, status: 'success', args: { path: 'C:\\project\\mcp.json' } }] });
   const root = mount(t, answer);
   const headers = findAll(root, node => node.props?.['data-testid'] === 'process-segment-toggle');
-  assert.equal(headers.length, 1);
-  assert.equal(headers[0].props['aria-expanded'], false);
-  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'process-segment-details').length, 1);
-  assert.equal(findAll(root, node => node.tag === 'markdown' && node.props.thinkingText).length, 1);
+  assert.equal(headers.length, 2, '两段过程各有一行摘要，运行段不再只剩裸细节');
+  assert.deepEqual(headers.map(node => node.props['aria-expanded']), [false, false], '摘要行默认折叠');
+  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'process-segment-details').length, 0,
+    '折叠态不渲染细节');
+  assert.equal(findAll(root, node => node.tag === 'markdown' && node.props.thinkingText).length, 0);
   assert.match(text(root), /开始修改/);
   assert.match(text(root), /继续检查/);
-  assert.match(text(headers[0]), /写入.*mcp\.json/);
+  // 第一段思考仍在跑 → live；第二段已收尾且无未完成步骤 → summary。
+  assert.deepEqual(findAll(root, node => node.props?.['data-testid'] === 'process-segment')
+    .map(node => node.props['data-process-mode']), ['live', 'summary']);
+  assert.match(text(headers[0]), /详情正文/, '运行段展示最新一步正文');
+  assert.match(text(headers[1]), /写入.*mcp\.json/);
   assert.doesNotMatch(text(root), /C:\\project/);
   headers[0].props.onClick();
   await nextTick();
   assert.equal(headers[0].props['aria-expanded'], true);
-  assert.match(text(root), /详情正文/);
+  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'process-segment-details').length, 1);
+  assert.equal(findAll(root, node => node.tag === 'markdown' && node.props.thinkingText).length, 1,
+    '展开后才渲染细节正文');
+});
+
+/**
+ * 纯思考段（段内没有任何工具）在实时态下标题必须回落到「思考」类文案。
+ *
+ * <p>锁两件事：其一 live 标题取「最新一步」的工具名，段内无工具时必须回落到类别名 ——
+ * 回落成空串时摘要行就只剩一个箭头，正是本次要修的「摘要行不可用」；其二 `previewIsText`
+ * 排版必须由 `v-if="preview"` 兜住 —— 空白思考正文不得渲染出撑宽 / 撑高的空预览槽，
+ * 但标题仍然要在。</p>
+ */
+test('实时纯思考段：标题回落「思考」，空预览不渲染预览槽', async t => {
+  const answer = message({ isComplete: false, isThinking: true, content: '', aiMessages: [],
+    thoughtSteps: [{ id: 'th1', order: 0, title: '思考', content: '   \n  ', status: 'running' }] });
+  const root = mount(t, answer);
+  const segment = find(root, node => node.props?.['data-testid'] === 'process-segment');
+  assert.ok(segment, '只有思考也必须有一段过程段，摘要行才有落点');
+  assert.equal(segment.props['data-process-mode'], 'live', '段未收尾且整轮进行中，必须实时一步');
+  const title = () => find(segment, node => node.props?.['data-testid'] === 'process-segment-title');
+  assert.equal(text(title()), '思考', '无工具的实时段标题必须是「思考」，不能是空串');
+  assert.equal(findAll(segment, node => node.props?.['data-testid'] === 'process-segment-preview').length, 0,
+    '预览为空时不渲染预览槽，摘要行不得被空槽撑宽（也不会塌成只剩箭头）');
+  assert.ok(find(segment, node => node.props?.['data-testid'] === 'process-segment-toggle'),
+    '摘要行永远存在');
+  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'process-segment-details').length, 0,
+    '折叠态不渲染细节');
+  // 思考正文长出内容后，预览回到 text 排版并与标题并存。
+  answer.thoughtSteps[0].content = '正在核对配置';
+  await nextTick();
+  assert.equal(text(title()), '思考', '预览到位后标题仍是最新一步的类别名');
+  assert.match(text(find(segment, node => node.props?.['data-testid'] === 'process-segment-preview')),
+    /正在核对配置/, '实时预览取最新一步正文');
 });
 
 test('实时过程：思考持续追加，迟到工具收尾不替换动态节点，后续工具即时呈现', async t => {
@@ -576,10 +629,13 @@ test('实时过程：思考持续追加，迟到工具收尾不替换动态节�
     toolName: AgentToolName.ReadFile, args: '{"path":"old.md"}' }));
   reducer.consume(event({ type: 'PARTIAL_THINKING', responseId: '102', order: 0, offset: 0,
     content: '不应保留的开头' + '推理'.repeat(200) + '最新尾部' }));
-  const root = mount(t, answer);
+  const root = await mountExpanded(t, answer);
   const thinking = resolveThinkingBox(root, '最新尾部');
-  assert.ok(thinking);
-  assert.equal(Boolean(find(root, node => node.props?.['data-testid'] === 'process-segment-title')), false);
+  assert.ok(thinking, '展开细节后运行中的思考可见');
+  const segment = find(root, node => node.props?.['data-testid'] === 'process-segment');
+  assert.equal(segment.props['data-process-mode'], 'live');
+  assert.ok(find(root, node => node.props?.['data-testid'] === 'process-segment-title'),
+    '运行态也必须渲染摘要标题');
   assert.equal(findAll(root, node => node.props?.['data-testid'] === 'process-segment-details').length, 1);
   reducer.consume(event({ type: 'TOOL_COMPLETED', requestId: 'old', responseId: '101', order: 2,
     toolName: AgentToolName.ReadFile, resultStatus: 'COMPLETED', output: '旧收尾' }));
@@ -979,9 +1035,13 @@ test('框架位置真实组件：逐段打印、用途确认和并发工具位�
   reducer.consume(event({ type: 'AI_MESSAGE', responseId: second, order: 1, text: '再确认', isBody: false }));
   await nextTick();
   const rendered = text(root);
+  // 实时摘要行会提前展示「最新一步」的目标，工具行的相对顺序只在细节区内比较。
+  const detail = find(root, node => node.props?.['data-testid'] === 'process-segment-details');
+  assert.ok(detail, '过程细节应随摘要行一并可展开');
+  const detailText = text(detail);
+  assert.ok(detailText.indexOf('first.md') < detailText.indexOf('second.md'), detailText);
   assert.ok(rendered.indexOf('先读文件') < rendered.indexOf('first.md'), rendered);
-  assert.ok(rendered.indexOf('first.md') < rendered.indexOf('second.md'), rendered);
-  assert.ok(rendered.indexOf('second.md') < rendered.indexOf('再确认'), rendered);
+  assert.ok(rendered.indexOf('first.md') < rendered.indexOf('再确认'), rendered);
 });
 
 test('读取摘要：缺省范围显示全文，单边范围按后端默认边界显示', async t => {

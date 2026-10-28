@@ -202,6 +202,11 @@ test('AC-5 协同条成员色点：协作式委派下由子会话权威态驱动
   const segment = find(root, node => node.props?.['data-testid'] === 'process-segment');
   assert.equal(segment.props['data-process-mode'], 'live');
   await nextTick();
+  // 新契约：运行态细节默认折叠，成员行在展开后可见（摘要行始终存在）。
+  const toggle = find(segment, node => node.props?.['data-testid'] === 'process-segment-toggle');
+  assert.ok(toggle, '运行态也必须有摘要行');
+  toggle.props.onClick();
+  await nextTick();
   const member = find(root, node => node.tag === 'button' && String(node.props.title ?? '').startsWith('协作式委派'));
   assert.ok(member, '协作式委派成员行必须带「结果将以邮件送达」提示');
   assert.match(String(member.props.title), /邮件/);
@@ -276,6 +281,11 @@ test('AC-5 协作式委派：子会话尚未出现时不得抢先亮「完成」
 
   const segment = find(root, node => node.props?.['data-testid'] === 'process-segment');
   assert.equal(segment.props['data-process-mode'], 'live');
+  await nextTick();
+  // 新契约：细节默认折叠，先展开摘要行再取成员行。
+  const toggle = find(segment, node => node.props?.['data-testid'] === 'process-segment-toggle');
+  assert.ok(toggle, '运行态也必须有摘要行');
+  toggle.props.onClick();
   await nextTick();
   const member = find(root, node => node.tag === 'button' && String(node.props.title ?? '').startsWith('协作式委派'));
   assert.ok(member, '协作式委派成员行必须渲染');

@@ -190,6 +190,11 @@ test('AC-5 对抗：协同条色点——子会话进行中即便工具 calling 
   const segment = find(root, node => node.props?.['data-testid'] === 'process-segment');
   assert.equal(segment.props['data-process-mode'], 'live');
   await nextTick();
+  // 新契约：细节默认折叠，先展开摘要行再取成员行。
+  const toggle = find(segment, node => node.props?.['data-testid'] === 'process-segment-toggle');
+  assert.ok(toggle, '运行态也必须有摘要行');
+  toggle.props.onClick();
+  await nextTick();
   const member = find(root, node => node.tag === 'button' && String(node.props.title ?? '').startsWith('协作式委派'));
   assert.ok(member, '协作式委派成员行应存在');
   const dot = find(member, node => {

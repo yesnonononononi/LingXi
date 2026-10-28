@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import type { ChatMessage, ProcessTimelineItem, ToolCallTrace } from '../src/types/chat';
 import { AgentToolName } from '../src/utils/toolNames';
 import { buildProcessTimeline } from '../src/utils/processTimeline';
-import { buildProcessSegments, summarizeProcess } from '../src/utils/processSegments';
+import { buildProcessSegments, resolveProcessSegmentMode, summarizeProcess } from '../src/utils/processSegments';
+import type { ProcessSegmentModeFacts } from '../src/utils/processSegments';
 
 function tool(id: string, toolName: string, order: number, extra: Partial<ToolCallTrace> = {}): ProcessTimelineItem {
   return { id, type: 'tool', order, tool: { id, toolName, order, status: 'success', ...extra } };
@@ -68,3 +69,46 @@ test('所有固定工具沿用原名，无独立动词映射；空摘要与子�
   const delegate = tool('delegate', AgentToolName.CallSubAgent, 0, { subSessionId: '88', query: '{"runtime_mode":"async"}' });
   assert.equal(summarizeProcess([delegate], [{ id: '88', runStatus: 'RUNNING' }]).runningCount, 1);
 });
+/**
+ * 过程段呈现模式判定（`resolveProcessSegmentMode`）。
+ *
+ * <p>锁四类事实组合与两条否决条件：只有「段已收尾」且「无 running / pending」才允许整段概览；
+ * 整轮已结束时最后一段（永远等不到下一段 text）也必须汇总；其余一律实时一步。</p>
+ */
+function modeFacts(patch: Partial<ProcessSegmentModeFacts> = {}): ProcessSegmentModeFacts {
+  return { closed: false, ongoing: true, runningCount: 0, pendingCount: 0, ...patch };
+}
+
+test('模式判定：段未收尾时无论有无未完成步骤，一律实时一步', () => {
+  assert.equal(resolveProcessSegmentMode(modeFacts()), 'live');
+  assert.equal(resolveProcessSegmentMode(modeFacts({ runningCount: 2 })), 'live');
+  assert.equal(resolveProcessSegmentMode(modeFacts({ pendingCount: 1 })), 'live');
+  assert.equal(resolveProcessSegmentMode(modeFacts({ runningCount: 1, pendingCount: 1 })), 'live');
+});
+
+test('模式判定：段已收尾且无未完成步骤时汇总整段', () => {
+  assert.equal(resolveProcessSegmentMode(modeFacts({ closed: true })), 'summary');
+});
+
+test('模式判定：running / pending 各自一票否决汇总', () => {
+  assert.equal(resolveProcessSegmentMode(modeFacts({ closed: true, runningCount: 1 })), 'live');
+  assert.equal(resolveProcessSegmentMode(modeFacts({ closed: true, pendingCount: 1 })), 'live');
+  assert.equal(resolveProcessSegmentMode(modeFacts({ closed: true, runningCount: 1, pendingCount: 1 })), 'live');
+});
+
+test('模式判定：整轮已结束时即使未收尾也汇总（其后不会再有 text）', () => {
+  assert.equal(resolveProcessSegmentMode(modeFacts({ closed: false, ongoing: false })), 'summary');
+});
+
+test('模式判定：整轮已结束时残留未完成步骤同样汇总（轮次终态是权威）', () => {
+  assert.equal(resolveProcessSegmentMode(modeFacts({ closed: true, ongoing: false, runningCount: 3 })), 'summary');
+  assert.equal(resolveProcessSegmentMode(modeFacts({ ongoing: false, pendingCount: 1 })), 'summary');
+});
+
+test('模式判定是纯函数：相同输入恒等，且不修改入参', () => {
+  const input = modeFacts({ closed: true });
+  const snapshot = { ...input };
+  assert.equal(resolveProcessSegmentMode(input), resolveProcessSegmentMode(input));
+  assert.deepEqual(input, snapshot);
+});
+
