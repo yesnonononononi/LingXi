@@ -34,6 +34,10 @@
         <mybatis-plus>3.5.9</mybatis-plus>
         <lingxi-starter>1.1.8-SNAPSHOT</lingxi-starter>
         <ddd-starter>1.0.7</ddd-starter>
+        <!-- 变异测试（Pitest）：用法与结果解读见 docs/mutation-testing.md -->
+        <pitest.version>1.21.1</pitest.version>
+        <pitest.junit5.version>1.2.3</pitest.junit5.version>
+        <!-- 默认目标只覆盖纯逻辑核心包，单次可接受；要跑别的范围用 -DtargetClasses=a.*,b.* 覆盖（逗号分隔由 Maven 拆成数组）。 -->
     </properties>
     <dependencies>
         <dependency>
@@ -130,6 +134,63 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <!-- 变异测试：不绑定生命周期，只在显式执行 `mvn pitest:mutationCoverage` 时运行，不影响 test/package。 -->
+            <plugin>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-maven</artifactId>
+                <version>${pitest.version}</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.pitest</groupId>
+                        <artifactId>pitest-junit5-plugin</artifactId>
+                        <version>${pitest.junit5.version}</version>
+                    </dependency>
+                </dependencies>
+                <configuration>
+                    <!-- 默认目标=纯逻辑核心包；多 glob 必须写成多个 param，XML 里的逗号不会被拆分。 -->
+                    <targetClasses>
+                        <param>com.summit.dp.shared.utils.*</param>
+                        <param>com.summit.dp.shared.vo.block.*</param>
+                        <param>com.summit.dp.toolcall.domain.model.*</param>
+                        <param>com.summit.dp.toolcall.application.convert.*</param>
+                        <param>com.summit.dp.checklist.domain.model.*</param>
+                        <param>com.summit.dp.turn.domain.model.*</param>
+                        <param>com.summit.dp.session.domain.model.*</param>
+                        <param>com.summit.dp.model.domain.model.*</param>
+                    </targetClasses>
+                    <!-- 结构性代码没有可辨别的行为差异，喂进去只会稀释分数、拉长耗时。 -->
+                    <excludedClasses>
+                        <param>com.summit.dp.*.api.*</param>
+                        <param>com.summit.dp.*.infrastructure.*</param>
+                        <param>*VO</param>
+                        <param>*PO</param>
+                        <param>*DTO</param>
+                        <param>*Mapper</param>
+                        <param>*Config</param>
+                        <param>com.summit.dp.LingXiApplication</param>
+                    </excludedClasses>
+                    <!-- 环境敏感测试（本地起端口/子进程/真实网络/长超时）在 minion 里不稳定，会让整轮因基线不绿直接失败。 -->
+                    <excludedTestClasses>
+                        <param>com.summit.dp.agent.HttpClientNetworkComparisonTest</param>
+                        <param>com.summit.dp.agent.StreamingRetryContractTest</param>
+                        <param>com.summit.dp.agent.ChatControllerLifecycleTest</param>
+                        <param>com.summit.dp.agent.StartupFailureEndToEndTest</param>
+                        <param>com.summit.dp.model.PromptOptimizationTest</param>
+                        <param>com.summit.dp.provider.ProviderModelDiscoveryTest</param>
+                        <param>com.summit.dp.workspace.SandboxAmbientReadBoundaryTest</param>
+                        <param>com.summit.dp.workflow.infrastructure.tools.image.*</param>
+                        <param>com.summit.dp.mcp.*</param>
+                    </excludedTestClasses>
+                    <!-- 单测里 Spring/DB 用例动辄数秒，默认 3 秒超时会把它们误判成 TIMED_OUT。 -->
+                    <timeoutConstant>10000</timeoutConstant>
+                    <outputFormats>
+                        <param>HTML</param>
+                        <param>XML</param>
+                    </outputFormats>
+                    <!-- 固定报告目录，否则每次运行都堆一个带时间戳的新目录。 -->
+                    <timestampedReports>false</timestampedReports>
+                </configuration>
             </plugin>
         </plugins>
     </build>
