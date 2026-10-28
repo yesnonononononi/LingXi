@@ -77,7 +77,7 @@ onBeforeUnmount(closeTooltip);
 
 <template>
   <button v-if="text" ref="triggerRef" type="button" data-testid="session-context-usage"
-    class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded cursor-help text-lx-muted focus-visible:outline focus-visible:outline-1"
+    class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded cursor-help text-lx-muted focus-visible:outline focus-visible:outline-1 [&>svg]:translate-y-0"
     :aria-label="text" :aria-describedby="tooltipVisible ? tooltipId : undefined"
     @mouseenter="openTooltip" @mouseleave="closeTooltip" @focus="openTooltip" @blur="closeTooltip" @keydown.esc="closeTooltip">
     <ChatInputContextUsage :isDark="!!isDark" :contextUsageText="text" :contextRingDash="ringDash"

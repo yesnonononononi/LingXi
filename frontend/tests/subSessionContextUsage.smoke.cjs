@@ -97,11 +97,15 @@ createApp(App).use(createPinia()).mount('#app');window.ready=true;`);
         const ring=row.querySelector('svg'); const reference=document.querySelector('[data-testid=reference] svg');
         const paint=svg=>({width:svg.getBoundingClientRect().width,height:svg.getBoundingClientRect().height,
           color:getComputedStyle(svg.querySelector('circle:last-child')).stroke,dash:svg.querySelector('circle:last-child').getAttribute('stroke-dasharray')});
-        return {nameRight:title.right,ringLeft:button.left,ringRight:button.right,rowRight:row.getBoundingClientRect().right,
+        const ringBox=ring.getBoundingClientRect();
+        return {nameRight:title.right,nameCenterY:title.top+title.height/2,ringCenterY:ringBox.top+ringBox.height/2,
+          ringLeft:button.left,ringRight:button.right,rowRight:row.getBoundingClientRect().right,
           left:box.left,right:box.right,top:box.top,bottom:box.bottom,tooltipHeight:box.height,viewport:innerWidth,height:innerHeight,
           parent:tooltip.parentElement.tagName,ring:paint(ring),reference:paint(reference),pageWidth:document.documentElement.scrollWidth};
       })()`);
       assert.ok(geometry.ringLeft>=geometry.nameRight+4,'圆环必须位于名称右侧');
+      assert.ok(Math.abs(geometry.ringCenterY-geometry.nameCenterY)<=0.1,
+        `圆环中心线必须与名称文字居中对齐：${JSON.stringify(geometry)}`);
       assert.ok(geometry.ringRight<=geometry.rowRight+1,'圆环不能挤出标题行');
       assert.deepEqual(geometry.ring,geometry.reference,'与现有圆环的尺寸、颜色和占比一致');
       assert.ok(geometry.tooltipHeight<=32,'标准用量文案应保持现有单行样式');
@@ -136,6 +140,14 @@ createApp(App).use(createPinia()).mount('#app');window.ready=true;`);
   await step("window.select('8');window.drawer(true)");
   const drawerSelector='aside.fixed [data-testid=session-context-usage]';
   assert.equal(await evaluate(`document.querySelector('${drawerSelector}').getAttribute('aria-label')`),await label(),'抽屉也按当前子会话取值');
+  const drawerAlignment=await evaluate(`(()=>{
+    const trigger=document.querySelector('${drawerSelector}');
+    const title=trigger.previousElementSibling.getBoundingClientRect();
+    const ring=trigger.querySelector('svg').getBoundingClientRect();
+    return {nameCenterY:title.top+title.height/2,ringCenterY:ring.top+ring.height/2};
+  })()`);
+  assert.ok(Math.abs(drawerAlignment.ringCenterY-drawerAlignment.nameCenterY)<=0.1,
+    `抽屉圆环中心线必须与名称文字居中对齐：${JSON.stringify(drawerAlignment)}`);
   // 离屏窗口没有系统焦点，显式派发与键盘聚焦同源的 DOM 事件。
   await step(`document.querySelector('${drawerSelector}').focus({ preventScroll: true });
     document.querySelector('${drawerSelector}').dispatchEvent(new FocusEvent('focus'))`);
