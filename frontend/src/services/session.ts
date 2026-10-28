@@ -15,7 +15,7 @@ export class SessionAPI {
     return http.get<any, Result<SessionVO[]>>('/application/sessions');
   }
 
-  static async read(id: string, expectedVersion?: number): Promise<Result<SessionVO>> {
+  static async read(id: string, expectedVersion?: string): Promise<Result<SessionVO>> {
     const query = expectedVersion === undefined ? '' : `?expectedVersion=${expectedVersion}`;
     return http.post<any, Result<SessionVO>>(`/session/${encodeURIComponent(id)}/read${query}`);
   }

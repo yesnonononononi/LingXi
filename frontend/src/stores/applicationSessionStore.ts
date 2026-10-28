@@ -8,7 +8,7 @@ import { isOk } from '../utils/api';
 export function mergeSessionState(states: Map<string, SessionVO>, session: SessionVO): void {
   const id = String(session.id);
   const previous = states.get(id);
-  if (previous && previous.version >= session.version) return;
+  if (previous && BigInt(previous.version) >= BigInt(session.version)) return;
 
   states.set(id, session);
 }

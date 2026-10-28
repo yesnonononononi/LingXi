@@ -8,8 +8,8 @@ import { resolveSessionIndicator } from '../src/utils/sessionIndicator';
 import { ApplicationEventStream } from '../src/services/applicationEventStream';
 import type { ChatSession, SessionVO } from '../src/types/chat';
 
-const metadata = (version: number, isRead = false): SessionVO => ({
-  id: '2107364703088017408', rootSessionId: '0', name: '后台会话', version, isRead,
+const metadata = (version: number | string, isRead = false): SessionVO => ({
+  id: '2107364703088017408', rootSessionId: '0', name: '后台会话', version: String(version), isRead,
   runStatus: 'IDLE', lastOutcome: 'COMPLETED', renderStatus: 'COMPLETED',
 });
 const turn = (): Promise<void> => new Promise(resolve => setImmediate(resolve));
@@ -31,13 +31,34 @@ test('过期快照与已读回执不能覆盖较新的状态，元数据更新�
   mergeSessionState(states, metadata(3, true));
   assert.equal(states.get(String(metadata(4).id))?.isRead, false);
 
-  const session = { id: String(metadata(4).id), version: 4, isRead: false, messages: [{ content: '已到达的正文' }] } as ChatSession;
+  const session = { id: String(metadata(4).id), version: '4', isRead: false, messages: [{ content: '已到达的正文' }] } as ChatSession;
   const messages = session.messages;
   applySessionState(session, metadata(3, true));
   assert.equal(session.isRead, false);
   applySessionState(session, metadata(5, true));
   assert.equal(session.isRead, true);
   assert.equal(session.messages, messages);
+});
+
+test('真实字符串版本跨位数和安全整数边界时仍按数值合并', async () => {
+  const { mergeSessionState } = await import('../src/stores/applicationSessionStore');
+  const { applySessionState } = await import('../src/views/chat/useApplicationSessionState');
+  for (const [older, newer] of [['9', '10'], ['9007199254740992', '9007199254740993']]) {
+    const states = new Map<string, SessionVO>();
+    mergeSessionState(states, metadata(older!, true));
+    mergeSessionState(states, metadata(newer!));
+    assert.equal(states.get(String(metadata(1).id))?.version, newer);
+    mergeSessionState(states, metadata(older!, true));
+    assert.equal(states.get(String(metadata(1).id))?.isRead, false);
+
+    const session = { id: String(metadata(1).id), version: older, isRead: true, messages: [] } as ChatSession;
+    applySessionState(session, metadata(newer!));
+    assert.equal(session.version, newer);
+    assert.equal(session.isRead, false);
+    applySessionState(session, metadata(older!, true));
+    assert.equal(session.version, newer);
+    assert.equal(session.isRead, false);
+  }
 });
 
 test('删除后的会话不会被在途快照重新加入列表', async () => {
@@ -75,7 +96,7 @@ test('就绪后同步应用快照，旧快照不覆盖同步期间的实时迁�
     release();
     await turn(); await turn();
     assert.equal(calls, 1);
-    assert.equal(store.states.get(String(metadata(4).id))?.version, 4);
+    assert.equal(store.states.get(String(metadata(4).id))?.version, '4');
     assert.equal(store.states.get(String(metadata(4).id))?.isRead, false);
     assert.ok(store.states.has('22'));
   } finally {
@@ -93,20 +114,20 @@ test('挂载和切换当前未读会话调用已读接口，失败不伪造成�
   const { useApplicationSessionState } = await import('../src/views/chat/useApplicationSessionState');
   const { useApplicationSessionStore } = await import('../src/stores/applicationSessionStore');
   const originalRead = SessionAPI.read;
-  const calls: Array<[string, number | undefined]> = [];
+  const calls: Array<[string, string | undefined]> = [];
   const scope = effectScope();
   try {
     setActivePinia(createPinia());
     const store = useApplicationSessionStore();
     SessionAPI.read = async (id, version) => {
       calls.push([id, version]);
-      return { code: 1, data: metadata((version ?? 0) + 1, true) };
+      return { code: 1, data: metadata(String(BigInt(version ?? '0') + 1n), true) };
     };
-    const sessions = ref([{ id: String(metadata(2).id), version: 2, isRead: false, messages: [] }] as ChatSession[]);
+    const sessions = ref([{ id: String(metadata(2).id), version: '2', isRead: false, messages: [] }] as ChatSession[]);
     const active = ref<string | null>(sessions.value[0]!.id);
     scope.run(() => useApplicationSessionState(sessions, active));
     await nextTick(); await turn(); await nextTick();
-    assert.deepEqual(calls, [[active.value, 2]]);
+    assert.deepEqual(calls, [[active.value, '2']]);
     assert.equal(sessions.value[0]?.isRead, true);
 
     SessionAPI.read = async (id, version) => {

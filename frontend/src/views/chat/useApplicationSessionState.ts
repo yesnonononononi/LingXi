@@ -6,7 +6,7 @@ import type { ChatSession, SessionVO } from '../../types/chat';
 import { parseTimestampOr } from '../../utils/time';
 
 export function applySessionState(session: ChatSession, state: SessionVO): void {
-  if (session.version !== undefined && session.version > state.version) return;
+  if (session.version !== undefined && BigInt(session.version) > BigInt(state.version)) return;
 
   session.version = state.version;
   session.isRead = state.isRead;

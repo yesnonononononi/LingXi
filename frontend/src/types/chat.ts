@@ -223,7 +223,7 @@ export interface ChatMessage {
 export interface ChatSession {
   renderStatus?: SessionVO['renderStatus'];
   isRead?: boolean;
-  version?: number;
+  version?: string;
   id: string;
   historyRevision?: string;
   invalidatedTurnIds?: Set<string>;
@@ -275,7 +275,7 @@ export type SubItemStatus = 'running' | 'suspended' | 'completed' | 'failed' | '
 /** 子会话 = 会话树里除根会话外的节点；沿用旧命名，各展示组件无需改动 */
 export interface SubSessionVO extends Omit<SessionVO, 'isRead' | 'version' | 'renderStatus'> {
   isRead?: boolean;
-  version?: number;
+  version?: string;
   renderStatus?: SessionVO['renderStatus'];
   // 前端补充的展示数据，不属于后端会话元数据。
   agentName?: string;
@@ -629,7 +629,7 @@ export interface ToolCallDecisionReceipt {
 export interface SessionVO {
   renderStatus: 'WAITING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | null;
   isRead: boolean;
-  version: number;
+  version: string;
   id: number | string;
   name?: string;
   agentId?: number | string;
