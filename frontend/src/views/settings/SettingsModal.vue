@@ -137,7 +137,7 @@ const panelClass = computed(() =>
           @click="activeTab = 'models'"
           :class="[
             'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
-            activeTab === 'models'
+            activeTab === 'models' || activeTab === 'compaction'
               ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
               : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover')
           ]"
@@ -148,21 +148,6 @@ const panelClass = computed(() =>
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 12c0 1.657 3.582 3 8 3s8-1.343 8-3" />
           </svg>
           <span>{{ t('settings.nav.models') }}</span>
-        </button>
-
-        <!-- 2b. 压缩模型配置：模型的子页，缩进一级以示从属关系 -->
-        <button
-          @click="activeTab = 'compaction'"
-          data-testid="nav-compaction"
-          :class="[
-            'shrink-0 w-auto sm:w-full sm:ml-3 sm:w-[calc(100%-0.75rem)] whitespace-nowrap flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-medium transition cursor-pointer text-left border',
-            activeTab === 'compaction'
-              ? 'bg-lx-surface-selected text-lx-primary font-semibold border-lx-border-subtle'
-              : 'text-lx-muted hover:text-lx-secondary hover:bg-lx-surface-hover border-transparent'
-          ]"
-        >
-          <span class="w-1 h-1 rounded-full shrink-0 bg-lx-faint" />
-          <span>{{ t('settings.nav.compaction') }}</span>
         </button>
 
         <!-- 3. 智能体 -->
