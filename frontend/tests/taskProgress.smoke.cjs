@@ -1,3 +1,6 @@
+// 本轮（过程区技术债）未执行：用户要求绕过 Electron。本脚本只挂 ChatMessageItem / 列表，
+// 不触碰过程段内部与 ProcessDetails，与本轮改动无交集；断言一行未改。
+// 未验证面登记见 docs/qa/process-debt-verification.md §4。
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');

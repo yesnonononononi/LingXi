@@ -1,3 +1,7 @@
+// 本轮（过程区技术债）未执行：用户要求绕过 Electron。DOM/testid 等价性由
+// tests/processDetailsSplit.test.cjs 与 node 侧真实组件挂载覆盖；真实布局几何、计算样式与
+// 扫光视觉呈现是**不可替代断言**，清单见 docs/qa/process-debt-verification.md §3。
+// 断言一行未改（拆分前后选择器等价），合并前需有 Electron 环境的人补跑一次并回填结论。
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
