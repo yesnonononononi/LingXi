@@ -42,6 +42,7 @@ window.reopenSinglePending=()=>{message.value={...message.value,
 toolCalls:[{id:'choice-0',toolName:AgentToolName.RequireChoice,status:'pending',order:2,responseId:'201'}],
 promptCards:[{...card(0),allowedActions:[]}]};mount.value++;};
 window.allowAnswer=()=>{message.value.promptCards[0].allowedActions=['ANSWER'];};
+window.addFailedChoice=()=>message.value.toolCalls.push({id:'failed-choice',toolName:AgentToolName.RequireChoice,status:'failed',order:3,responseId:'201',result:'提问登记失败'});
 window.setDark=value=>{dark.value=value;document.documentElement.classList.toggle('dark',value);document.body.style.background=value?'#18181b':'white';};
 </script><template><main style="max-width:720px;margin:24px auto;padding:0 12px" :class="dark?'text-gray-100':'text-gray-900'"><ChatMessageItem :key="mount" :message="message" session-id="42" :is-dark="dark" /></main></template>`);
   await fs.writeFile(path.join(output, 'entry.js'), `import {createApp,nextTick} from 'vue';
@@ -176,6 +177,7 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-question-group]").textContent.includes("问题准备中")'),true);
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]").disabled'),true);
   await evaluate('window.allowAnswer();window.flush()');
+  await evaluate('window.addFailedChoice();window.flush()');
   await click('[data-choice-option="0"]');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-question-group]").textContent.includes("问题准备中")'),false,'权威动作开放后必须解除准备中');
   assert.equal(await evaluate('document.querySelector("[data-testid=choice-submit-all]").disabled'),false,'单题作答后必须可提交');

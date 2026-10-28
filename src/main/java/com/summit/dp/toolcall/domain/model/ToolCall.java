@@ -11,6 +11,15 @@ import java.time.Instant;
 @Builder(toBuilder = true)
 @AllArgsConstructor
 public class ToolCall {
+    public static final int MAX_TITLE_LENGTH = 500;
+
+    /** 标题只作摘要，完整问题留在 content，不能受摘要列长度限制。 */
+    public static String buildTitleSummary(String title) {
+        if (title == null || title.length() <= MAX_TITLE_LENGTH) return title;
+        int end = MAX_TITLE_LENGTH;
+        if (Character.isHighSurrogate(title.charAt(end - 1))) end--;
+        return title.substring(0, end);
+    }
 
     /** 工具调用 ID（模型下发的 call id，{@code call_xxx}）。 */
     private final String id;

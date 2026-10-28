@@ -178,6 +178,29 @@ class ChoiceAnswersServiceTest {
     }
 
     @Test
+    void failedChoiceWithoutPromiseDoesNotBlockTheRemainingAnswers() {
+        ToolCall failed = tools.findById("choice-3").orElseThrow();
+        tools.delete(failed);
+        String failure = "{\"outcome\":\"FAILED\",\"output\":\"提问登记失败\"}";
+        tools.save(ToolCall.builder().id("choice-3").conversationId(CONVERSATION).executionId(EXECUTION)
+                .toolName(ToolCatalog.REQUIRE_CHOICE).type(ToolCallType.EXECUTE)
+                .status(ToolCallStatus.COMPLETED).rawOutput(failure).build());
+        Execution execution = executions.findById(String.valueOf(EXECUTION)).orElseThrow();
+        ((ToolMessageEntity) execution.getMessages().get(4)).setToolOutput(failure);
+        transactions.executeWithoutResult(status -> executions.save(execution));
+
+        ChoiceAnswersReceipt receipt = service.submit(new ChoiceAnswersCommand(CONVERSATION, RESPONSE,
+                "with-failed-choice", command("with-failed-choice").answers().subList(0, 3)));
+
+        assertEquals(3, receipt.toolCalls().size());
+        assertEquals(ResumeDisposition.QUEUED, receipt.resumeDisposition());
+        Execution saved = executions.findById(String.valueOf(EXECUTION)).orElseThrow();
+        assertEquals(failure, ((ToolMessageEntity) saved.getMessages().get(4)).getToolOutput());
+        assertEquals(failure, tools.findById("choice-3").orElseThrow().getRawOutput());
+        verify(coordinator).accept(EXECUTION);
+    }
+
+    @Test
     void endpointAcceptsOneRequestAndReturnsAllAuthoritativeCards() throws Exception {
         ToolCallController controller = new ToolCallController(mock(ToolCallService.class),
                 mock(ToolCallWorkflowService.class), mock(VersionedToolCallDecisionService.class), service);

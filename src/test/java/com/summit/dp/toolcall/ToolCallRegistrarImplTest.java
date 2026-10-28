@@ -54,6 +54,16 @@ class ToolCallRegistrarImplTest {
     }
 
     @Test
+    void titleSummaryPreservesShortTitlesAndDoesNotSplitSurrogatePairs() {
+        assertNull(ToolCall.buildTitleSummary(null));
+        assertEquals("原始标题", ToolCall.buildTitleSummary("原始标题"));
+        String boundary = "问".repeat(ToolCall.MAX_TITLE_LENGTH);
+        assertEquals(boundary, ToolCall.buildTitleSummary(boundary));
+        String prefix = "问".repeat(ToolCall.MAX_TITLE_LENGTH - 1);
+        assertEquals(prefix, ToolCall.buildTitleSummary(prefix + "😀后续内容"));
+    }
+
+    @Test
     void markThenPromiseUpsertsToExactlyOneRowInPendingPromise() {
         when(identity.sessionId("100")).thenReturn(5L);
 

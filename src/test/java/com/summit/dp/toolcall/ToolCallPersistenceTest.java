@@ -6,12 +6,18 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.toolcall.application.service.CardAvailabilityPolicy;
+import com.summit.dp.execution.application.service.ExecutionLocator;
+import com.summit.dp.toolcall.application.command.ToolCallRegisterCommand;
+import com.summit.dp.toolcall.application.convert.ToolCallConverter;
+import com.summit.dp.toolcall.application.service.impl.ToolCallRegistrarImpl;
 import com.summit.dp.toolcall.domain.model.ToolCall;
+import com.summit.dp.toolcall.domain.model.ToolCallKind;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.infrastructure.persistence.mapper.ToolCallMapper;
 import com.summit.dp.toolcall.infrastructure.persistence.repository.ToolCallRepositoryImpl;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.tools.application.port.ToolCatalog;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,10 +32,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * {@code tool_call} 表的持久化回归：PO + Mapper + RepositoryImpl 的整行读写与事务回滚。
@@ -63,6 +71,32 @@ class ToolCallPersistenceTest {
     @AfterEach
     void shutdown() {
         database.shutdown();    }
+
+    @Test
+    void longQuestionsPersistAsPromisesOnInsertAndPlaceholderPromotion() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        ToolCallConverter converter = new ToolCallConverter(mapper);
+        ExecutionLocator locator = mock(ExecutionLocator.class);
+        when(locator.sessionId("11")).thenReturn(1L);
+        ToolCallRegistrarImpl registrar = new ToolCallRegistrarImpl(repository, converter, locator);
+        String question = "问".repeat(548);
+        String content = converter.choiceContent(question, List.of("A", "B"));
+        String rawInput = converter.rawInput(mapper.writeValueAsString(Map.of("question", question)));
+        for (boolean placeholder : new boolean[]{false, true}) {
+            String id = placeholder ? "long-promoted" : "long-inserted";
+            transactions.executeWithoutResult(status -> {
+                if (placeholder) registrar.markExecuteStarted(id, 11L, ToolCatalog.REQUIRE_CHOICE, rawInput);
+                registrar.registerPromise(ToolCallRegisterCommand.promise(id, 1L, 11L,
+                        ToolCatalog.REQUIRE_CHOICE, ToolCallKind.CHOICE, question, content, rawInput));
+            });
+            ToolCall saved = repository.findById(id).orElseThrow();
+            assertEquals(ToolCallType.PROMISE, saved.getType());
+            assertEquals(ToolCallStatus.PREPARING, saved.getStatus());
+            assertEquals("问".repeat(ToolCall.MAX_TITLE_LENGTH), saved.getTitle());
+            assertEquals(question, mapper.readTree(saved.getContent()).path("question").asText());
+            assertEquals(rawInput, saved.getRawInput());
+        }
+    }
 
     @Test
     void roundTripsAllColumnsIncludingJsonPayloads() {

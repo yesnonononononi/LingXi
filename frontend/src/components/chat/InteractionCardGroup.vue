@@ -32,7 +32,8 @@ const orderedEntries = computed(() => groupChoiceQuestions(props.entries)
 const expectedChoiceCounts = computed(() => {
   const counts = new Map<string, number>();
   for (const call of props.toolCalls ?? []) {
-    if (call.toolName !== AgentToolName.RequireChoice || !call.responseId) continue;
+    // 失败调用不会生成待答卡片，不能让同批正常问题永远等待它。
+    if (call.toolName !== AgentToolName.RequireChoice || !call.responseId || call.status === 'failed') continue;
     counts.set(call.responseId, (counts.get(call.responseId) ?? 0) + 1);
   }
   return counts;

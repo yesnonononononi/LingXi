@@ -32,6 +32,7 @@ public class ToolCallRegistrarImpl implements ToolCallRegistrar {
     @Transactional
     public String registerPromise(ToolCallRegisterCommand cmd) {
         throwIf(cmd == null || cmd.toolCallId() == null || cmd.toolCallId().isBlank(), "工具调用标识不能为空");
+        String title = ToolCall.buildTitleSummary(cmd.title());
         ToolCall existing = toolCallRepository.findById(cmd.toolCallId()).orElse(null);
         if (existing == null) {
             ToolCall created = ToolCall.builder()
@@ -41,7 +42,7 @@ public class ToolCallRegistrarImpl implements ToolCallRegistrar {
                     .toolName(cmd.toolName())
                     .type(ToolCallType.PROMISE)
                     .status(ToolCallStatus.PREPARING)
-                    .title(cmd.title())
+                    .title(title)
                     .content(cmd.content())
                     .rawInput(cmd.rawInput())
                     .metaData(converter.executionMeta(cmd.executionId(), cmd.toolName()))
@@ -59,7 +60,7 @@ public class ToolCallRegistrarImpl implements ToolCallRegistrar {
                 return cmd.toolCallId();
             }
             if (existing.isCompleted()) return cmd.toolCallId();
-            existing.promoteToPromise(ToolCallType.PROMISE, cmd.toolName(), cmd.title(), cmd.content(), cmd.rawInput());
+            existing.promoteToPromise(ToolCallType.PROMISE, cmd.toolName(), title, cmd.content(), cmd.rawInput());
             toolCallRepository.updateById(existing);
         }
         return cmd.toolCallId();
