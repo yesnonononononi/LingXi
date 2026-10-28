@@ -94,12 +94,12 @@
         </button>
         <CollapseTransition>
           <div v-show="wholeProcessExpanded" class="mt-1 space-y-2.5" data-testid="whole-process-content">
-            <template v-for="part in processParts" :key="part.id">
+            <template v-for="part in processViews.parts"
+              :key="part.kind === 'text' ? part.part.id : part.segment.id">
               <div v-if="part.kind === 'text'" class="w-full select-text" data-testid="process-text">
-                <MarkdownRenderer v-if="wholeProcessExpanded" :content="part.message.text" :is-dark="isDark" :process-text="true" />
+                <MarkdownRenderer v-if="wholeProcessExpanded" :content="part.part.message.text" :is-dark="isDark" :process-text="true" />
               </div>
-              <ChatProcessSegment v-else :visible="wholeProcessExpanded" :segment="part" :message="props.message" :turn="props.turn"
-                :ongoing="processIsOngoing"
+              <ChatProcessSegment v-else :visible="wholeProcessExpanded" :view="part" :message="props.message" :turn="props.turn"
                 :sub-sessions="props.subSessions" :session-id="props.sessionId" :is-dark="isDark"
                 @select-sub-session="emit('selectSubSession', $event)" />
             </template>
@@ -177,7 +177,8 @@ import type { ChatMessageBodySlotProps, ChatMessageActionsSlotProps } from '../.
 import type { ChatMessage, ToolCallTrace, SubSessionVO, ProcessTimelineItem, ChatTurn } from '../../types/chat';
 import { toPromptCardData } from '../../utils/toolCallCard';
 import { buildProcessTimeline } from '../../utils/processTimeline';
-import { buildProcessSegments, summarizeProcess } from '../../utils/processSegments';
+import { buildProcessSegments } from '../../utils/processSegments';
+import { deriveProcessSummaries, deriveProcessViews } from '../../utils/processViewModel';
 import { formatProcessStatus } from '../../utils/processHeadline';
 import { isActiveTurnStatus, isFailedTurnStatus, turnStatusLabel } from '../../utils/turnStatus';
 import { formatDurationOrPlaceholder } from '../../utils/format';
@@ -281,12 +282,17 @@ const { isCopied: copied, copy: copyContentRaw } = useCopyFeedback();
 
 const processTimeline = computed(() => buildProcessTimeline(props.message));
 const processParts = computed(() => buildProcessSegments(processTimeline.value, props.subSessions, props.sessionId));
+// 层一：只依赖分段结果（token 级失效）—— 每个 token 只重算摘要，不重算视图。
+const processSummaries = computed(() => deriveProcessSummaries(processParts.value, props.subSessions));
+// 层二：只重新算 mode/headline（轮次级失效，O(#段)）。只翻 ongoing 时上面两层全部命中缓存。
+const processViews = computed(() => deriveProcessViews(
+  processParts.value, processSummaries.value, processIsOngoing.value));
 
 // 挂起和等待审批仍未结束，不能用实时输出状态决定收起；用户操作后保留其选择。
 const processExpansion = ref<boolean | null>(null);
 const wholeProcessExpanded = computed(() => processExpansion.value ?? processIsOngoing.value);
-const wholeProcessSummary = computed(() => summarizeProcess(processParts.value.flatMap(part =>
-  part.kind === 'process' ? part.items : []), props.subSessions));
+// 整组总览直接合并各段摘要，不再对全部 items 跑第二趟 summarizeProcess（每 token 省一趟）。
+const wholeProcessSummary = computed(() => processViews.value.totals);
 const wholeProcessStatus = computed(() => formatProcessStatus(wholeProcessSummary.value, { running: 'never' }));
 
 

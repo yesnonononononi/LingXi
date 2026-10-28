@@ -1,35 +1,27 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import type { ChatMessage, ChatTurn, SubSessionVO } from '../../types/chat';
-import type { ProcessSegment } from '../../utils/processSegments';
-import { resolveProcessSegmentMode, summarizeProcess } from '../../utils/processSegments';
-import { formatProcessHeadline } from '../../utils/processHeadline';
+import type { ProcessSegmentView } from '../../utils/processViewModel';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import ProcessDetails from './ProcessDetails.vue';
 
 const props = withDefaults(defineProps<{
-  segment: ProcessSegment;
+  /** 视图模型：段事实 + 呈现模式 + 折叠行文案，全部由 ChatMessageItem 的纯函数层算好。 */
+  view: ProcessSegmentView;
   message: ChatMessage;
   turn?: ChatTurn | null;
-  ongoing: boolean;
   visible?: boolean;
   subSessions?: SubSessionVO[];
   sessionId?: string | number;
   isDark: boolean;
 }>(), { visible: true });
 const emit = defineEmits<{ (e: 'selectSubSession', id: string | number): void }>();
-const summary = computed(() => summarizeProcess(props.segment.items, props.subSessions));
-// 摘要行永远存在；只有「段已收尾且无 running/pending」才换成整段概览，其余一律展示最新一步。
-// 判定收敛在 resolveProcessSegmentMode（纯函数，见 utils/processSegments.ts），组件只做分支。
-const mode = computed(() => resolveProcessSegmentMode({
-  closed: props.segment.closed,
-  ongoing: props.ongoing,
-  runningCount: summary.value.runningCount,
-  pendingCount: summary.value.pendingCount,
-}));
+// 组件只剩「解引用 + 本地折叠状态」，不含任何判据。
+const segment = computed(() => props.view.segment);
+const mode = computed(() => props.view.mode);
 const expanded = ref(false);
-const headline = computed(() => formatProcessHeadline(summary.value, { active: mode.value === 'live' }));
-// 标题/预览/状态全部来自同一份纯函数，组件只决定排版：长正文右对齐溢出，短值截断。
+const headline = computed(() => props.view.headline);
+// 标题/预览/状态全部来自视图模型，组件只决定排版：长正文右对齐溢出，短值截断。
 const title = computed(() => headline.value.title);
 const preview = computed(() => headline.value.preview);
 const statusLabel = computed(() => headline.value.status);
