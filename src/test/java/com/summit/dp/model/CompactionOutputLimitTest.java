@@ -106,6 +106,7 @@ class CompactionOutputLimitTest {
             assertEquals(4096, displayedLimit);
             assertEquals(2, selected.size());
             for (ModelConfig compact : selected) {
+                assertNull(compact.getReasoningEffort());
                 assertEquals(displayedLimit, compact.getMaxTokens());
                 assertEquals("https://compact.invalid/v1", compact.getBaseUrl());
                 assertEquals("compact-key", compact.getApiKey());
