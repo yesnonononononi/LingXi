@@ -28,6 +28,66 @@ function api(list = async (_owner: string): Promise<Result<BackgroundTask[]>> =>
     remove: async () => ok(undefined) };
 }
 
+test('批量删除只处理已结束记录，保留运行与等待任务，并关闭已删除任务的输出', async context => {
+  const finished = ['SUCCESS', 'FAILED', 'TIMEOUT', 'CANCELLED', 'LOST'] as const;
+  const backend = api(async () => ok([task('RUNNING', ROOT, '10'), task('PENDING', ROOT, '11'),
+    ...finished.map((status, index) => task(status, ROOT, String(index + 20)))]));
+  const remove = context.mock.method(backend, 'remove', async () => ok(undefined));
+  const f = fixture(backend); context.after(() => f.scope.stop()); await tick();
+  await f.feed.read('20');
+  assert.equal(f.feed.finishedCount.value, 5);
+  await f.feed.removeFinished();
+  assert.deepEqual(remove.mock.calls.map(call => call.arguments.slice(0, 2)), finished.map((_, index) => [ROOT, String(index + 20)]));
+  assert.deepEqual(f.feed.tasks.value.map(task => task.id), ['10', '11']);
+  assert.equal(f.feed.selectedId.value, null);
+  assert.equal(f.feed.deletingFinished.value, false);
+});
+
+test('批量删除部分失败时保留失败行，继续删除其他行且不接受重复点击', async context => {
+  const gate = deferred<Result<void>>();
+  const backend = api(async () => ok([task('SUCCESS', ROOT, '1'), task('FAILED', ROOT, '2'), task('SUCCESS', ROOT, '3')]));
+  const remove = context.mock.method(backend, 'remove', async (_owner, id) => id === '1' ? gate.promise
+    : id === '2' ? { code: 0, errMsg: '所属执行仍在等待结果' } : ok(undefined));
+  const f = fixture(backend); context.after(() => f.scope.stop()); await tick();
+  const batch = f.feed.removeFinished();
+  assert.equal(f.feed.deletingFinished.value, true);
+  await f.feed.removeFinished(); await f.feed.removeTask('3');
+  assert.equal(remove.mock.callCount(), 1);
+  assert.equal(f.feed.tasks.value.length, 3);
+  gate.resolve(ok(undefined)); await batch;
+  assert.deepEqual(f.feed.tasks.value.map(task => task.id), ['2']);
+  assert.equal(remove.mock.callCount(), 3);
+  assert.match(f.feed.deleteError.value, /所属执行仍在等待结果/);
+  assert.equal(f.feed.finishedCount.value, 1);
+});
+
+test('批量删除在切换会话后终止，不继续发送旧会话剩余删除请求', async context => {
+  const gate = deferred<Result<void>>();
+  const backend = api(async owner => ok([task('SUCCESS', owner, '1'), task('SUCCESS', owner, '2')]));
+  const remove = context.mock.method(backend, 'remove', async () => gate.promise);
+  const f = fixture(backend); context.after(() => f.scope.stop()); await tick();
+  const batch = f.feed.removeFinished();
+  const signal = remove.mock.calls[0]!.arguments[2] as AbortSignal;
+  f.session.value = OTHER; await tick();
+  assert.equal(signal.aborted, true);
+  gate.resolve(ok(undefined)); await batch;
+  assert.equal(remove.mock.callCount(), 1);
+  assert.equal(f.feed.tasks.value.length, 2);
+  assert.equal(f.feed.tasks.value[0]?.sessionId, OTHER);
+  assert.equal(f.feed.deletingFinished.value, false);
+});
+
+test('删除回执到达后，较早发出的列表请求不能让已删除记录重新出现', async context => {
+  const old = deferred<Result<BackgroundTask[]>>(); let count = 0;
+  const backend = api(async () => ++count === 1 ? ok([task('SUCCESS')]) : count === 2 ? old.promise : ok([]));
+  const f = fixture(backend); context.after(() => f.scope.stop()); await tick();
+  const refresh = f.feed.refresh(); await tick();
+  await f.feed.removeFinished();
+  old.resolve(ok([task('SUCCESS')])); await refresh;
+  assert.deepEqual(f.feed.tasks.value, []);
+  assert.equal(count, 3);
+});
+
 test('任务 API 全程保留雪花字符串和取消信号', async context => {
   const get = context.mock.method(http, 'get', async () => ok([]));
   const post = context.mock.method(http, 'post', async () => ok(task('CANCELLED')));

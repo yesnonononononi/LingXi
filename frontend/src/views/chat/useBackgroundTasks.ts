@@ -24,6 +24,7 @@ export function useBackgroundTasks(sessionId: Readonly<Ref<string | null>>, api:
   const stoppingId = ref<string | null>(null);
   const stopError = ref('');
   const deletingId = ref<string | null>(null);
+  const deletingFinished = ref(false);
   const deleteError = ref('');
   let epoch = 0;
   let disposed = false;
@@ -132,26 +133,43 @@ export function useBackgroundTasks(sessionId: Readonly<Ref<string | null>>, api:
     } finally { if (currentEpoch === epoch) stoppingId.value = null; }
   }
 
-  /** 删掉一条已结束的记录；行从界面消失以服务端回执为准，失败就保留原行。 */
-  async function removeTask(taskId: string) {
-    if (disposed || !sessionId.value || deletingId.value) return;
+  /** 批量操作也逐条走后端删除约束，部分失败不能让界面提前丢掉记录。 */
+  async function removeTasks(taskIds: string[], batch: boolean) {
+    if (disposed || !sessionId.value || deletingId.value || deletingFinished.value || !taskIds.length) return;
     const currentEpoch = epoch;
     const owner = sessionId.value;
     deleteController = new AbortController();
     const signal = deleteController.signal;
-    deletingId.value = taskId;
+    deletingFinished.value = batch;
     deleteError.value = '';
+    const failures: string[] = [];
     try {
-      const response = await api.remove(owner, taskId, signal);
-      if (disposed || currentEpoch !== epoch) return;
-      if (!isOk(response.code)) throw new Error(response.errMsg || t('chat.backgroundTasks.deleteFailed'));
-      tasks.value = tasks.value.filter(task => task.id !== taskId);
-      if (selectedId.value === taskId) closeOutput();
-    } catch (cause) {
-      if (!disposed && currentEpoch === epoch && !signal.aborted) {
-        deleteError.value = cause instanceof Error ? cause.message : t('chat.backgroundTasks.deleteFailed');
+      for (const taskId of taskIds) {
+        if (disposed || currentEpoch !== epoch || signal.aborted) return;
+        deletingId.value = taskId;
+        try {
+          const response = await api.remove(owner, taskId, signal);
+          if (disposed || currentEpoch !== epoch || signal.aborted) return;
+          if (!isOk(response.code)) throw new Error(response.errMsg || t('chat.backgroundTasks.deleteFailed'));
+          if (flight) dirty = true;
+          tasks.value = tasks.value.filter(task => task.id !== taskId);
+          if (selectedId.value === taskId) closeOutput();
+        } catch (cause) {
+          if (disposed || currentEpoch !== epoch || signal.aborted) return;
+          failures.push(cause instanceof Error ? cause.message : t('chat.backgroundTasks.deleteFailed'));
+          deleteError.value = batch
+            ? t('chat.backgroundTasks.batchDeleteFailed', { count: failures.length, message: failures[0]! })
+            : failures[0]!;
+        }
       }
-    } finally { if (currentEpoch === epoch) deletingId.value = null; }
+    } finally {
+      if (currentEpoch === epoch) { deletingId.value = null; deletingFinished.value = false; }
+    }
+  }
+
+  async function removeTask(taskId: string) { await removeTasks([taskId], false); }
+  async function removeFinished() {
+    await removeTasks(tasks.value.filter(task => !isTaskActive(task)).map(task => task.id), true);
   }
 
   function onTaskChanged(event: BackgroundTaskChanged) {
@@ -165,7 +183,7 @@ export function useBackgroundTasks(sessionId: Readonly<Ref<string | null>>, api:
     listController?.abort(); stopController?.abort(); deleteController?.abort(); closeOutput();
     flight = null; dirty = false; tasks.value = [];
     error.value = ''; stopError.value = ''; stoppingId.value = null; loading.value = false;
-    deleteError.value = ''; deletingId.value = null;
+    deleteError.value = ''; deletingId.value = null; deletingFinished.value = false;
     void refresh();
   }, { immediate: true, flush: 'sync' });
 
@@ -188,9 +206,10 @@ export function useBackgroundTasks(sessionId: Readonly<Ref<string | null>>, api:
   });
 
   return { sessionId, tasks, error, loading, now, selectedId, detail, detailError, reading, stoppingId, stopError,
-    deletingId, deleteError,
+    deletingId, deletingFinished, deleteError,
+    finishedCount: computed(() => tasks.value.filter(task => !isTaskActive(task)).length),
     runningCount: computed(() => tasks.value.filter(task => task.status === 'RUNNING').length),
     pendingCount: computed(() => tasks.value.filter(task => task.status === 'PENDING').length),
-    refresh, read, closeOutput, stop, removeTask, onTaskChanged };
+    refresh, read, closeOutput, stop, removeTask, removeFinished, onTaskChanged };
 }
 export type BackgroundTasksState = ReturnType<typeof useBackgroundTasks>;

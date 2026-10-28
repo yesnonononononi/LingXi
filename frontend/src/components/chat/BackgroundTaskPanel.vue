@@ -8,7 +8,8 @@ const props = withDefaults(defineProps<{ feed: BackgroundTasksState; isDark?: bo
 const emit = defineEmits<{ 'update:expanded': [value: boolean] }>();
 const panelId = useId();
 const { tasks, error, loading, now, runningCount, pendingCount, sessionId, selectedId, detail, detailError,
-  reading, stoppingId, stopError, deletingId, deleteError, refresh, read, stop, removeTask, closeOutput } = props.feed;
+  reading, stoppingId, stopError, deletingId, deletingFinished, finishedCount, deleteError,
+  refresh, read, stop, removeTask, removeFinished, closeOutput } = props.feed;
 const localExpanded = ref(false);
 const expanded = computed({ get: () => props.expanded ?? localExpanded.value,
   set: (value: boolean) => { localExpanded.value = value; emit('update:expanded', value); } });
@@ -44,6 +45,10 @@ watch(expanded, value => { if (!value) closeOutput(); });
       <header class="task-panel-header">
         <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.2"/><path d="M10 5.5V10l3 2"/></svg>
         <span aria-live="polite">{{ summary }}</span>
+        <button v-if="finishedCount" type="button" class="task-stop" data-testid="background-task-delete-finished"
+          :disabled="!!deletingId || deletingFinished" @click="removeFinished()">
+          {{ deletingFinished ? t('chat.backgroundTasks.deleting') : t('chat.backgroundTasks.deleteFinished') }}
+        </button>
         <button type="button" class="task-icon-button" :title="t('common.refresh')" :disabled="loading"
           :aria-label="t('common.refresh')" @click="refresh()">↻</button>
         <button type="button" class="task-icon-button" data-testid="background-task-collapse" :title="t('common.collapse')"

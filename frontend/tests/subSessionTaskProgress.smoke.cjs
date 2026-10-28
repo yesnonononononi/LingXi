@@ -104,6 +104,10 @@ createApp(App).use(createPinia()).mount('#app');window.ready=true;`);
       assert.ok(source.includes('transition: opacity 160ms ease'));
       return source.replace('transition: opacity 160ms ease, transform 160ms cubic-bezier(.22, 1, .36, 1)', 'transition: none');
     }
+    if (process.env.SUB_TASK_PROGRESS_MUTATION === 'bulk' && id.endsWith('/BackgroundTaskPanel.vue')) {
+      assert.ok(source.includes('@click="removeFinished()"'));
+      return source.replace('@click="removeFinished()"','@click="refresh()"');
+    }
   } };
   await build({configFile:false,root:output,base:'./',plugins:[mutationPlugin,vue()],logLevel:'error',
     resolve:{dedupe:['vue','pinia']},build:{target:'esnext',outDir:path.join(output,'dist'),emptyOutDir:true}});
@@ -215,7 +219,24 @@ createApp(App).use(createPinia()).mount('#app');window.ready=true;`);
   assert.equal(reduced.duration,'0s','减少动态效果时关闭过渡');
   assert.equal(reduced.opacity,1);
   window.webContents.debugger.detach();
+  await step(`window.tasks['9007199254740993']=Array.from({length:33},(_,index)=>({id:String(10000+index),sessionId:'9007199254740993',
+    turnId:'21',command:'npm test '+index,status:index<31?'SUCCESS':index===31?'RUNNING':'PENDING',createAt:new Date().toISOString(),truncated:false}));
+    window.tasks['9007199254740995']=Array.from({length:3},(_,index)=>({id:String(20000+index),sessionId:'9007199254740995',
+    turnId:'21',command:'子会话测试 '+index,status:index<2?'SUCCESS':'RUNNING',createAt:new Date().toISOString(),truncated:false}));
+    window.emitTask();window.emit('BACKGROUND_TASK_CHANGED',{rootSessionId:'9007199254740993',sessionId:'9007199254740993',taskId:'10000',status:'SUCCESS'});
+    const mainToggle=document.querySelector('main [data-testid=background-task-toggle]');if(mainToggle.getAttribute('aria-expanded')!=='true')mainToggle.click()`);
+  await until('document.querySelectorAll("main .task-row").length===33 && document.querySelectorAll("aside .task-row").length===3');
+  await fs.writeFile(path.join(output,'bulk-delete.png'),(await window.webContents.capturePage()).toPNG());
+  const beforeDeletes=await evaluate('window.requests.filter(request=>request.method==="delete").length');
+  await click('background-task-delete-finished','main');
+  await until('document.querySelectorAll("main .task-row").length===2');
+  assert.equal(await evaluate('document.querySelectorAll("main [data-testid=background-task-delete-finished]").length'),0);
+  assert.equal(await evaluate('document.querySelectorAll("aside .task-row").length'),3,'主会话批量删除不能影响子会话');
+  assert.equal(await evaluate('window.requests.filter(request=>request.method==="delete").length'),beforeDeletes+31);
+  await click('background-task-delete-finished');
+  await until('document.querySelectorAll("aside .task-row").length===1');
+  assert.equal(await evaluate('document.querySelector("aside .task-row").dataset.status'),'RUNNING');
   assert.deepEqual(await evaluate('window.runtimeErrors'),[]);
-  console.log('子会话任务胶囊通过：布局、主题、输出、停止/删除、事件隔离、重连、进退场动画和减少动态效果');
+  console.log('任务胶囊通过：主/子会话批量删除、活跃任务保留、布局、主题、输出、事件隔离、重连与动画');
   window.destroy(); clearTimeout(deadline); app.quit();
 }).catch(error => {console.error(error);clearTimeout(deadline);app.exit(1);});
