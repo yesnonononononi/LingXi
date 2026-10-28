@@ -404,6 +404,16 @@ async function main() {
     await fsp.writeFile(path.join(outDir, 'styles.json'), JSON.stringify(collected, null, 2));
 
     if (MODE === 'baseline') {
+      // G-4：重建基线后必须同步 oracle 指纹，否则下一个人 check 立刻红。
+      // 只在全量（无 --only 过滤）时写：部分采集只覆盖子集，当成整节写回会把指纹削成残缺。
+      const { writeBaselineSuite } = await import('./baseline-manifest.mjs');
+      if (ONLY === '') {
+        const written = writeBaselineSuite({ suite: 'hover', baselineDir: BASE_DIR });
+        console.error(`[baseline] 已同步视觉基线 oracle：suite=hover ${written.count} 张，counts=${JSON.stringify(written.counts)}`);
+      } else {
+        console.error('[baseline] 警告：本次是部分采集（--only 过滤），已跳过视觉基线 oracle 重写；'
+          + '否则会把整节指纹削成残缺。需要同步指纹请跑一次全量 npm run visual:hover:baseline。');
+      }
       console.log(JSON.stringify({ mode: 'baseline', outDir, collected }, null, 2));
       app.exit(0);
       return;
@@ -414,6 +424,17 @@ async function main() {
       console.error(`基线不存在：${basePath}（先跑 --mode baseline）`);
       app.exit(2);
       return;
+    }
+    // G-4：先验基线完整性，再比对。基线残缺（少几张 hover 图）会让 compare 只比剩下那几张、
+    // failed=0 → 静默假绿。凡不完整一律 exit 2（基础设施故障），不是视觉回归（exit 1）。
+    {
+      const { verifyBaseline, formatVerifyFailure } = await import('./baseline-manifest.mjs');
+      const integrity = verifyBaseline({ suite: 'hover', baselineDir: BASE_DIR });
+      if (!integrity.ok) {
+        console.error(formatVerifyFailure(integrity));
+        app.exit(2);
+        return;
+      }
     }
     const base = JSON.parse(fs.readFileSync(basePath, 'utf8'));
     const styleDiffs = [];

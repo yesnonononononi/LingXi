@@ -31,7 +31,15 @@ node scripts/visual/compare.mjs --baseline <dir> --current <dir> --pixel-delta 6
 | --- | --- |
 | `.lingxi/tmp/visual/baseline/` | 基线图（`{dark,light}/*.png`），**本机渲染环境绑定，不入仓**（`.lingxi` 已 gitignore） |
 | `.lingxi/tmp/visual/current/` | 本次截图 |
-| `.lingxi/tmp/visual/diff/` | 差异图（变化像素涂红，用来人眼确认） |
+| `.lingxi/tmp/visual/diff/` | 差异图（变化像素涂红，用来人眼确认） || `.lingxi/tmp/visual/diff/` | 差异图（变化像素涂红，用来人眼确认） |
+| `frontend/scripts/theme-spec/visual-baseline-md5.json` | **基线完整性 oracle（入仓）**：三套基线（`settings` / `components` / `hover`）每张 PNG 的 MD5 指纹。基线本体不入仓，此文件回答「本机基线应该长什么样」 |
+
+**为什么基线不入仓、但指纹必须入仓（技术债 G-4 的根治方式）**：像素结果与机器 / DPI / 字体 / 浏览器版本强绑定（见下方维护规则第 4 条），把 PNG 入仓会让「换个环境 clone 就一片红」，团队最终会无视这个门禁。但基线**只**放在 gitignore 目录里又会蒸发：`compare.mjs` 的 `compareDirectories` 以「基线目录里的文件」为遍历源，基线丢一半后只剩几张图参与比对，`failed=0` ⇒ **退出码 0 的静默假绿**。因此三道门禁在 `--mode check` 时**先按 oracle 校验完整性**，不通过一律 **exit 2**（基础设施故障，区别于视觉回归的 exit 1）：
+
+- `missing`（清单有、磁盘无）⇒ 基线被删 / `.lingxi/tmp` 被清
+- `extra`（磁盘有、清单无）⇒ 陈旧图混进来，「这台机器的基线是哪一版」不可判定
+- `mismatched`（MD5 不符）⇒ 图被手工改过或被别的采集覆盖
+- `suite 为空` ⇒ 没有可校验的期望值，一律算失败（不许「没有期望 = 通过」）
 
 **基线目录必须独占**：多个 agent/多人并行跑视觉基线时，必须各自用 `--out`/`--baseline` 指定独立目录，否则会互相覆盖并产生「当前截图缺失」的假红。
 
@@ -41,7 +49,8 @@ node scripts/visual/compare.mjs --baseline <dir> --current <dir> --pixel-delta 6
 | --- | --- | --- |
 | `settings-modal` | 设置弹窗（显式切到「通用设置」页签） | 否 |
 | `settings-models` | 设置 · 模型页签 | 否（无后端时是错误态，仍可做回归对照） |
-| `settings-agents` | 设置 · 智能体页签 | 否 |
+| `settings-agents` | 设置 · 智能体页签 | 否 || `settings-agents` | 设置 · 智能体页签 | 否 |
+| `settings-compaction` | 设置 · 模型 → 压缩模型配置子页 | 否 |
 
 主题切换（源码依据：`index.html` 内联脚本 + `useTheme.ts` 的 `THEME_STORAGE_KEY`）：写入 `localStorage['lingxi-theme']`（`dark`/`light`），首帧落到 `html.dark` / `html.light` + `data-theme` + `colorScheme`。截图前脚本会断言 `html.class` 与 `body` 背景色确实切过去了。
 
@@ -88,5 +97,8 @@ node scripts/visual/compare.mjs --baseline <dir> --current <dir> --pixel-delta 6
 1. **基线变更必须单独提交**，commit message 写清「为什么这组像素差异是预期变化」，并附 diff 图路径。
 2. 出现红时先看 `.lingxi/tmp/visual/diff/` 的差异图，确认是**真实回归**还是**预期改动**；禁止用 `visual:baseline` 直接覆盖来「消除」红。
 3. 换了机器/DPI/字体/浏览器缓存版本后，基线必须重生成（像素结果不可跨机器比较）。
-4. 跨机器或 CI 复用前，需要固定浏览器版本与字体，并把基线图入仓或放对象存储。
+4. 跨机器或 CI 复用前，需要固定浏览器版本与字体，并把基线图入仓或放对象存储。4. 跨机器或 CI 复用前，需要固定浏览器版本与字体，并把基线图入仓或放对象存储。
+5. **基线重建会自动刷新 oracle**：`--mode baseline` 全量跑完即重写 `visual-baseline-md5.json` 对应 suite 一节并重算 `counts`，必须与该次重建**同批提交**（否则下一个人 check 立刻红）。带 `--scenes` / `--themes` / `--only` 的部分采集**不会**写 oracle（会把整节指纹削成残缺），会打印警告 —— 指纹要同步就再跑一次全量。
+6. **禁止手工编辑基线 PNG 或用外部工具覆盖**：任何非 `--mode baseline` 产生的字节变化都会在下一次 check 被 `mismatched` 抓住（这是「基线悄悄被换掉」的唯一防线）。
+7. 门禁绿灯的含义变了：`exit 0` 现在同时意味着「基线完整 + 比对无差异」。看到 `exit 2` 先读报错里的 `missing / extra / mismatched` 分类，别当成视觉回归去调阈值。
 

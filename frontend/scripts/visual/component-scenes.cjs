@@ -1460,6 +1460,17 @@ async function main() {
     const { styles, probes, roi } = await runCapture(BASE_DIR);
     // V11：显式打印「实际跑了哪几态」——由 --themes 决定，不再靠场景硬编码去猜。
     console.error(`[themes] 本次实际运行：${THEMES.join(' + ')}（--themes ${ASSERT_DARK ? 'dark（--assert-dark-colors 隐含）' : THEMES_ARG}）`);
+    // G-4：重建基线后必须同步 oracle 指纹，否则下一个人 check 立刻红。
+    // 只在全量（--themes both 且未被 --assert-dark-colors 收窄成单态）时写：部分采集只覆盖子集，
+    // 当成整节写回会把 fingerprint 削成残缺。
+    const { writeBaselineSuite } = await import('./baseline-manifest.mjs');
+    if (THEMES_ARG === 'both' && !ASSERT_DARK) {
+      const written = writeBaselineSuite({ suite: 'components', baselineDir: BASE_DIR });
+      console.error(`[baseline] 已同步视觉基线 oracle：suite=components ${written.count} 张，counts=${JSON.stringify(written.counts)}`);
+    } else {
+      console.error('[baseline] 警告：本次是部分采集（--themes 过滤），已跳过视觉基线 oracle 重写；'
+        + '否则会把整节指纹削成残缺。需要同步指纹请跑一次全量 npm run visual:components:baseline。');
+    }
     console.log(JSON.stringify({ mode: 'baseline', themesRun: THEMES, outDir: BASE_DIR, probes, styles, roi }, null, 2));
     app.exit(0);
     return;
@@ -1470,6 +1481,17 @@ async function main() {
   console.error(`[themes] 本次实际运行：${THEMES.join(' + ')}（--themes ${ASSERT_DARK ? 'dark（--assert-dark-colors 隐含）' : THEMES_ARG}）`);
   const baseStylesPath = path.join(BASE_DIR, 'styles.json');
   if (!fs.existsSync(baseStylesPath)) { console.error(`基线不存在：${baseStylesPath}（先跑 --mode baseline）`); app.exit(2); return; }
+  // G-4：先验基线完整性，再读基线做比对。基线残缺（少几张 ROI / 整页图）会让 compare 只比
+  // 剩下那几张、failed=0 → 静默假绿。凡不完整一律 exit 2（基础设施故障），不是视觉回归（exit 1）。
+  {
+    const { verifyBaseline, formatVerifyFailure } = await import('./baseline-manifest.mjs');
+    const integrity = verifyBaseline({ suite: 'components', baselineDir: BASE_DIR });
+    if (!integrity.ok) {
+      console.error(formatVerifyFailure(integrity));
+      app.exit(2);
+      return;
+    }
+  }
   const baseRaw = JSON.parse(fs.readFileSync(baseStylesPath, 'utf8'));
   const baseStyles = baseRaw.styles || baseRaw; // 兼容旧的纯 styles 格式
   const baseThemes = Array.isArray(baseRaw.themesRun) ? baseRaw.themesRun : Object.keys(baseStyles);

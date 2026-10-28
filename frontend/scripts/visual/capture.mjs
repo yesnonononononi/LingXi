@@ -25,6 +25,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launchBrowser, findFreePort, waitForHttp } from './cdp.mjs';
 import { compareDirectories, DEFAULT_OPTIONS } from './compare.mjs';
+// G-4：基线完整性 oracle。check 之前先证「基线是完整的」，否则残缺基线会让 compare 只比
+// 剩下那几张图 → failed=0 → 静默假绿。baseline 之后要把本节指纹同步写回，否则下一个人 check 立刻红。
+import { verifyBaseline, formatVerifyFailure, writeBaselineSuite } from './baseline-manifest.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /** 前端根目录（scripts/visual → ../..）。 */
@@ -297,10 +300,43 @@ if (isCli) {
       summary.warnings = unverified.map(item => `${item.theme}/${item.scene}: ${item.status}`);
     }
 
+    if (mode === 'baseline') {
+      /**
+       * 重建基线后同步 oracle 指纹。
+       *
+       * <p>只在「全量」时写：带 `--scenes` / `--themes` 过滤（或 `--out` 指到别处）时，目录里
+       * 只是**子集**，把它当成整节写回会把 manifest 削成残缺 —— 下一个人跑全量 check 立刻假红，
+       * 而真正的整节指纹已经丢了。所以宁可 skip 并出声。</p>
+       */
+      const fullThemes = themes.length === 2 && themes.includes('dark') && themes.includes('light');
+      const isFullBaseline = sceneFilter === '' && scenes.length === SCENES.length && fullThemes
+        && path.resolve(outDir) === path.resolve(BASELINE_DIR);
+      if (isFullBaseline) {
+        const written = writeBaselineSuite({ suite: 'settings', baselineDir: BASELINE_DIR });
+        summary.baselineManifest = written;
+        console.error(`[baseline] 已同步视觉基线 oracle：suite=settings ${written.count} 张，counts=${JSON.stringify(written.counts)}`);
+      } else {
+        summary.baselineManifest = { skipped: true, reason: '部分采集（--scenes/--themes/--out 过滤）不重写整节指纹' };
+        console.error('[baseline] 警告：本次是部分采集（--scenes/--themes/--out 过滤），已跳过视觉基线 oracle 重写；'
+          + '否则会把整节指纹削成残缺。需要同步指纹请跑一次全量 npm run visual:baseline。');
+      }
+    }
+
     if (mode === 'check') {
       if (!fs.existsSync(BASELINE_DIR)) {
         console.error(`基线目录不存在：${BASELINE_DIR}\n请先执行 npm run visual:baseline`);
-        process.exit(2);
+        summary.exitCode = 2;
+        // 不直接 process.exit：那样会跳过 finally 里的 server.stop()，留下一个孤儿 vite 进程。
+        throw new Error(`基线目录不存在：${BASELINE_DIR}`);
+      }
+      // G-4：先验基线完整性再比对。残缺基线（少几张图）会让 compare 只比剩下那几张、
+      // failed=0 → 静默假绿。凡不完整一律 exit 2（基础设施故障），与「基线不存在」同一口径。
+      const integrity = verifyBaseline({ suite: 'settings', baselineDir: BASELINE_DIR });
+      summary.integrity = { ok: integrity.ok, expected: integrity.expected, actual: integrity.actual };
+      if (!integrity.ok) {
+        console.error(formatVerifyFailure(integrity));
+        summary.exitCode = 2;
+        throw new Error('视觉基线完整性校验失败（suite=settings）');
       }
       const compare = compareDirectories({ baselineDir: BASELINE_DIR, currentDir: outDir, diffDir: DIFF_DIR, options: DEFAULT_OPTIONS });
       fs.writeFileSync(path.join(VISUAL_ROOT, 'compare-report.json'), JSON.stringify({ ...compare, options: DEFAULT_OPTIONS }, null, 2));
@@ -325,8 +361,13 @@ if (isCli) {
       summary.compare = { images: compare.images, failed: compare.failed, details: compare.details, failures: compare.failures };
     }
   } catch (error) {
-    summary.error = error && error.stack ? error.stack : String(error);
-    summary.exitCode = 3;
+    if (summary.exitCode) {
+      // 已在上面显式判定过退出码（基线不存在 / 完整性失败 → 2）：详情已打印，保留该码，不降级成 3。
+      summary.error = error && error.message ? error.message : String(error);
+    } else {
+      summary.error = error && error.stack ? error.stack : String(error);
+      summary.exitCode = 3;
+    }
   } finally {
     if (server) server.stop();
   }
