@@ -68,6 +68,15 @@ test('卡片归属：只关联块中确实存在的调用，缺行不造卡，�
 });
 
 test('进入已有根会话：详情重新投影后仍保留加载到的计划卡', async t => {
+  /**
+   * 新契约（`6daa429` 起）：`useChatSessionList` 在**函数顶部**取应用级 store
+   * （`useChatSessionList.ts:37` `useApplicationSessionStore()`，用于删除/批量删除后
+   * `applicationSessions.forget(id)`）。生产里由 `main.ts` 的 `app.use(createPinia())` 提供
+   * active pinia，而合成测试进程没有 Vue app，必须在调用 composable **之前**显式装一个，
+   * 否则 `getActivePinia()` 抛错，比任何断言都更早地打断用例。
+   * 只影响本用例：下一个用例自己 `setActivePinia`，其余用例不经 store。
+   */
+  setActivePinia(createPinia());
   const current = session();
   const detailMessages = aggregateRecordsByIdentity(SESSION_ID, { [TURN_ID]: view() });
   attachPromptCards(detailMessages, [plan()]);
