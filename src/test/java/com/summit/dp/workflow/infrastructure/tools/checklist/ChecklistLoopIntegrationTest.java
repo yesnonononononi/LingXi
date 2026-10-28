@@ -116,6 +116,37 @@ class ChecklistLoopIntegrationTest {
     }
 
     @Test
+    void completingAndStartingNextStepUseOneToolCallInTheRealLoop() throws Exception {
+        ChecklistVO checklist = service.modify(ChecklistCommand.modify(SESSION, created.getChecklistId(), null,
+                null, List.of("下一步"), null, null));
+        ObjectMapper objectMapper = new ObjectMapper();
+        String firstArgs = objectMapper.writeValueAsString(Map.of("checklistId", checklist.getChecklistId(),
+                "stepId", checklist.getSteps().getFirst().getStepId(), "status", "COMPLETED", "continueNextStep", true));
+        String secondArgs = objectMapper.writeValueAsString(Map.of("checklistId", checklist.getChecklistId(),
+                "stepId", checklist.getSteps().get(1).getStepId(), "status", "COMPLETED"));
+        LoopResult result = runner(command -> {
+            int round = calls.incrementAndGet();
+            if (round == 1) {
+                return response(List.of(new ToolCallRequest("first", ToolCatalog.UPDATE_CHECKLIST_STEP, 0, firstArgs)));
+            }
+            if (round == 2) {
+                ChecklistVO current = service.findCurrent(SESSION).orElseThrow();
+                assertEquals(List.of("COMPLETED", "IN_PROGRESS"), current.getSteps().stream()
+                        .map(ChecklistVO.StepVO::getStatus).toList());
+                return response(List.of(new ToolCallRequest("second", ToolCatalog.UPDATE_CHECKLIST_STEP, 0, secondArgs)));
+            }
+            return response(List.of());
+        }, List.of(reminder(new ChecklistReminderDelivery())), 3).run(execution(), signal());
+
+        assertEquals(LoopResult.Status.COMPLETED, result.status());
+        assertEquals(3, calls.get());
+        assertEquals(3, transcripts.get());
+        ChecklistVO finished = service.findCurrent(SESSION).orElseThrow();
+        assertEquals("COMPLETED", finished.getStatus());
+        assertEquals(2L, finished.getProgressVersion());
+    }
+
+    @Test
     void backgroundSuspensionHappensBeforeReminderConsumption() throws Exception {
         TaskRepository tasks = mock(TaskRepository.class);
         when(tasks.findByExecutionId(SESSION, 1001L)).thenReturn(List.of(Task.builder().id(1L).build()));

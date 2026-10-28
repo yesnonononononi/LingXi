@@ -57,6 +57,48 @@ class ChecklistPersistenceTest {
     private ChecklistService service;
 
     @Test
+    void continuingPersistsBothStatesAndRejectsRollbackBeforeWriting() {
+        ChecklistVO created = service.create(ChecklistCommand.create(SESSION_ID, null, "继续", List.of("一步", "两步")));
+        long first = created.getSteps().getFirst().getStepId();
+        ChecklistVO updated = service.updateStep(ChecklistCommand.updateStep(
+                SESSION_ID, created.getChecklistId(), first, "COMPLETED", true));
+        assertEquals(List.of("COMPLETED", "IN_PROGRESS"), updated.getSteps().stream()
+                .map(ChecklistVO.StepVO::getStatus).toList());
+        Checklist persisted = repository.findByIdWithSteps(created.getChecklistId()).orElseThrow();
+        assertEquals(List.of("COMPLETED", "IN_PROGRESS"), persisted.getSteps().stream()
+                .map(step -> step.getStatus().name()).toList());
+        assertEquals(1L, persisted.getProgressVersion());
+        ClientException rejected = assertThrows(ClientException.class, () -> service.updateStep(
+                ChecklistCommand.updateStep(SESSION_ID, created.getChecklistId(), first, "PENDING", true)));
+        assertTrue(rejected.getMessage().contains("才能继续下一步"));
+        assertEquals("COMPLETED", repository.findByIdWithSteps(created.getChecklistId()).orElseThrow()
+                .getSteps().getFirst().getStatus().name());
+    }
+
+    @Test
+    void failedNextStepWriteRollsBackCurrentCompletionAndReminderReset() {
+        ChecklistVO created = service.create(ChecklistCommand.create(SESSION_ID, null, "原子继续", List.of("一步", "两步")));
+        repository.claimReminder(repository.findByIdWithSteps(created.getChecklistId()).orElseThrow(), EXECUTION_ID);
+        ChecklistRepositoryImpl failing = spy(repository);
+        doAnswer(invocation -> {
+            invocation.callRealMethod();
+            ChecklistStep step = invocation.getArgument(0);
+            if (step.getId().equals(created.getSteps().get(1).getStepId())) {
+                throw new ClientException("模拟启动下一步失败");
+            }
+            return null;
+        }).when(failing).updateStep(any(ChecklistStep.class));
+        ChecklistService faultedService = fixture.serviceWithRepository(failing);
+        assertThrows(ClientException.class, () -> faultedService.updateStep(ChecklistCommand.updateStep(
+                SESSION_ID, created.getChecklistId(), created.getSteps().getFirst().getStepId(), "COMPLETED", true)));
+        Checklist reloaded = repository.findByIdWithSteps(created.getChecklistId()).orElseThrow();
+        assertEquals(ChecklistStatus.ACTIVE, reloaded.getStatus());
+        assertTrue(reloaded.getSteps().stream().allMatch(ChecklistStep::isPending));
+        assertEquals(0L, reloaded.getProgressVersion());
+        assertTrue(reloaded.reminderOwnedBy(EXECUTION_ID));
+    }
+
+    @Test
     void currentSnapshotRetainsStartedAndCompletedStepsAndExcludesDeletedHistory() {
         assertTrue(service.findCurrent(SESSION_ID).isEmpty());
         ChecklistVO first = service.create(ChecklistCommand.create(SESSION_ID, null, "第一份", List.of("编译")));

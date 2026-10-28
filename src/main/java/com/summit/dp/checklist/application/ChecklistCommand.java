@@ -34,6 +34,8 @@ public class ChecklistCommand {
     private Long stepId;
     /** 目标状态：明确开始或真实结果。 */
     private String status;
+    /** 上报结果后按现有顺序继续下一步，默认不启动。 */
+    private boolean continueNextStep;
 
     /** 修改后的新标题，null 表示不改 */
     private String newTitle;
@@ -61,8 +63,15 @@ public class ChecklistCommand {
 
     /** 上报开始或步骤结果。 */
     public static ChecklistCommand updateStep(long sessionId, Long checklistId, Long stepId, String status) {
+        return updateStep(sessionId, checklistId, stepId, status, false);
+    }
+
+    /** 当前步骤结果与下一步开始必须由同一快照确认。 */
+    public static ChecklistCommand updateStep(long sessionId, Long checklistId, Long stepId, String status,
+                                              boolean continueNextStep) {
         return ChecklistCommand.builder()
                 .sessionId(sessionId).checklistId(checklistId).stepId(stepId).status(status)
+                .continueNextStep(continueNextStep)
                 .build();
     }
 

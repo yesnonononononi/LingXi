@@ -80,6 +80,13 @@ class ChecklistToolSchemaTest {
     }
 
     @Test
+    void updateSchemaExposesOptionalContinueNextStepFlag() throws Exception {
+        JsonNode schema = buildSchema(UpdateChecklistStepTool.class);
+        assertEquals("boolean", schema.path("properties").path("continueNextStep").path("type").asText());
+        assertEquals(List.of("stepId", "status"), resolveRequiredFields(schema));
+    }
+
+    @Test
     @DisplayName("modify_checklist 用嵌套 schema 表达补丁：步骤内容项是对象数组")
     void modifyChecklistSchemaDescribesNestedPatch() throws Exception {
         JsonNode schema = buildSchema(ModifyChecklistTool.class);

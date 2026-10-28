@@ -132,7 +132,15 @@ public class Checklist {
      * @return 本次变更需要落库的影响面；重复提交相同终态时返回 {@link ChecklistMutation#none()}
      */
     public ChecklistMutation changeStepStatus(long stepId, ChecklistStepStatus next) {
+        return changeStepStatus(stepId, next, false);
+    }
+
+    /** 完成当前步骤与启动下一步一起裁决，重试不能越过已处理的步骤继续启动。 */
+    public ChecklistMutation changeStepStatus(long stepId, ChecklistStepStatus next, boolean continueNextStep) {
         ChecklistStep step = requireStep(stepId);
+        if (continueNextStep && (next == null || !next.isTerminal())) {
+            throw new ClientException("只有上报 COMPLETED、FAILED 或 SKIPPED 结果时才能继续下一步");
+        }
         if (status.isDeleted()) {
             throw new ClientException("清单已删除，不能更新步骤");
         }
@@ -140,15 +148,24 @@ public class Checklist {
             // 无变化：不递增版本、不重置提醒额度，也不刷新清单时间——重试必须完全等价于没发生
             return ChecklistMutation.none();
         }
+        List<ChecklistStep> changedSteps = new ArrayList<>();
+        changedSteps.add(step);
         if (next.isTerminal()) {
             progressVersion++;
             resetReminderQuota();
+        }
+        if (continueNextStep) {
+            Optional<ChecklistStep> following = pendingSteps().stream()
+                    .filter(candidate -> candidate.getSeq() > step.getSeq()).findFirst();
+            if (following.isPresent() && following.get().changeStatus(ChecklistStepStatus.IN_PROGRESS)) {
+                changedSteps.add(following.get());
+            }
         }
         status = hasPendingSteps() ? ChecklistStatus.ACTIVE : ChecklistStatus.COMPLETED;
         touch();
         log.debug("清单步骤推进: checklistId={}, stepId={}, status={}, progressVersion={}",
                 id, stepId, next, progressVersion);
-        return new ChecklistMutation(true, List.of(), List.of(step), List.of());
+        return new ChecklistMutation(true, List.of(), List.copyOf(changedSteps), List.of());
     }
 
     /**

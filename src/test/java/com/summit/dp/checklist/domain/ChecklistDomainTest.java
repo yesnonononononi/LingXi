@@ -34,6 +34,76 @@ class ChecklistDomainTest {
     private static final long CHECKLIST_ID = 100L;
 
     @Test
+    void continuingUsesCurrentOrderSkipsTerminalStepsAndLeavesEarlierWorkAlone() {
+        Checklist checklist = checklist("一", "二", "三", "四", "五");
+        checklist.changeStepStatus(2L, ChecklistStepStatus.COMPLETED);
+        checklist.changeStepStatus(4L, ChecklistStepStatus.SKIPPED);
+        checklist.applyModification(new ChecklistModification(null, Map.of(), List.of(), List.of(),
+                List.of(5L, 3L, 2L, 1L, 4L)));
+        checklist.applyReminderFact(77L);
+
+        ChecklistMutation mutation = checklist.changeStepStatus(3L, ChecklistStepStatus.FAILED, true);
+
+        assertEquals(List.of(3L, 1L), mutation.changedSteps().stream().map(ChecklistStep::getId).toList());
+        assertEquals(List.of(ChecklistStepStatus.PENDING, ChecklistStepStatus.FAILED, ChecklistStepStatus.COMPLETED,
+                ChecklistStepStatus.IN_PROGRESS, ChecklistStepStatus.SKIPPED), checklist.getSteps().stream()
+                .map(ChecklistStep::getStatus).toList());
+        assertEquals(3L, checklist.getProgressVersion());
+        assertFalse(checklist.isRemindStatus());
+        assertEquals(ChecklistStatus.ACTIVE, checklist.getStatus());
+    }
+
+    @Test
+    void repeatedCompletionCannotStartAnotherStepAfterTheNextOneFinished() {
+        Checklist checklist = checklist("一", "二", "三");
+        checklist.changeStepStatus(1L, ChecklistStepStatus.COMPLETED, true);
+        assertEquals(ChecklistStepStatus.IN_PROGRESS, checklist.getSteps().get(1).getStatus());
+        checklist.changeStepStatus(2L, ChecklistStepStatus.COMPLETED);
+        checklist.applyReminderFact(77L);
+        Instant timestamp = checklist.getUpdateAt();
+        Instant pendingTimestamp = checklist.getSteps().get(2).getUpdateAt();
+
+        ChecklistMutation repeated = checklist.changeStepStatus(1L, ChecklistStepStatus.COMPLETED, true);
+
+        assertFalse(repeated.checklistChanged());
+        assertTrue(repeated.changedSteps().isEmpty());
+        assertEquals(ChecklistStepStatus.PENDING, checklist.getSteps().get(2).getStatus());
+        assertEquals(pendingTimestamp, checklist.getSteps().get(2).getUpdateAt());
+        assertEquals(timestamp, checklist.getUpdateAt());
+        assertEquals(2L, checklist.getProgressVersion());
+        assertTrue(checklist.reminderOwnedBy(77L));
+    }
+
+    @Test
+    void continuingKeepsAnAlreadyStartedStepAndCompletesAtTheEnd() {
+        for (ChecklistStepStatus result : List.of(ChecklistStepStatus.COMPLETED,
+                ChecklistStepStatus.FAILED, ChecklistStepStatus.SKIPPED)) {
+            Checklist checklist = checklist("一", "二");
+            checklist.changeStepStatus(2L, ChecklistStepStatus.IN_PROGRESS);
+            Instant startedAt = checklist.getSteps().get(1).getUpdateAt();
+            ChecklistMutation mutation = checklist.changeStepStatus(1L, result, true);
+            assertEquals(List.of(1L), mutation.changedSteps().stream().map(ChecklistStep::getId).toList());
+            assertEquals(startedAt, checklist.getSteps().get(1).getUpdateAt());
+            checklist.changeStepStatus(2L, result, true);
+            assertEquals(ChecklistStatus.COMPLETED, checklist.getStatus());
+            assertEquals(2L, checklist.getProgressVersion());
+        }
+    }
+
+    @Test
+    void rollbackCannotContinueAndDefaultCompletionDoesNotStartTheNextStep() {
+        Checklist checklist = checklist("一", "二");
+        Instant timestamp = checklist.getUpdateAt();
+        for (ChecklistStepStatus rollback : List.of(ChecklistStepStatus.PENDING, ChecklistStepStatus.IN_PROGRESS)) {
+            assertThrows(ClientException.class, () -> checklist.changeStepStatus(1L, rollback, true));
+            assertTrue(checklist.getSteps().stream().allMatch(ChecklistStep::isPending));
+            assertEquals(timestamp, checklist.getUpdateAt());
+        }
+        checklist.changeStepStatus(1L, ChecklistStepStatus.COMPLETED);
+        assertTrue(checklist.getSteps().get(1).isPending());
+    }
+
+    @Test
     void startingAStepKeepsReminderBudgetAndRemainsUnresolved() {
         Checklist checklist = checklist("编译", "测试");
         long first = checklist.getSteps().get(0).getId();

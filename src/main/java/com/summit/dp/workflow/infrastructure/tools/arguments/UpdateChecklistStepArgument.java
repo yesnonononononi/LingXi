@@ -15,4 +15,6 @@ public class UpdateChecklistStepArgument {
     private Long stepId;
     /** 状态回退保留原步骤标识。 */
     private String status;
+    /** 与当前步骤的结果一起提交，省去单独启动下一步的调用。 */
+    private boolean continueNextStep;
 }

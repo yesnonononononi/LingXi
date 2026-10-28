@@ -77,10 +77,12 @@ public class ChecklistServiceImpl implements ChecklistService {
         long sessionId = requireSessionId(command.getSessionId());
         throwIf(command.getStepId() == null, "更新步骤需要提供 stepId");
         ChecklistStepStatus next = ChecklistRules.parseStepStatus(command.getStatus());
+        throwIf(command.isContinueNextStep() && !next.isTerminal(),
+                "只有上报 COMPLETED、FAILED 或 SKIPPED 结果时才能继续下一步");
 
         Checklist checklist = lockOwned(sessionId, command.getChecklistId());
         ChecklistStatus previousStatus = checklist.getStatus();
-        ChecklistMutation mutation = checklist.changeStepStatus(command.getStepId(), next);
+        ChecklistMutation mutation = checklist.changeStepStatus(command.getStepId(), next, command.isContinueNextStep());
         try {
             // 重新激活也必须经过唯一索引裁决，避免和并发新建各占一份活动清单。
             persist(checklist, mutation);

@@ -101,7 +101,19 @@ class ChecklistToolExecutorTest {
         verify(service).updateStep(captor.capture());
         assertEquals(11L, captor.getValue().getStepId());
         assertEquals("COMPLETED", captor.getValue().getStatus());
+        assertFalse(captor.getValue().isContinueNextStep());
         assertEquals(null, captor.getValue().getChecklistId(), "未给出清单标识时应保持为空");
+    }
+
+    @Test
+    void updateForwardsContinueNextStepFlag() throws Exception {
+        when(service.updateStep(any())).thenReturn(snapshot("ACTIVE"));
+        ToolExecuteResult result = new UpdateChecklistStepTool(objectMapper, service)
+                .execute(execution(Map.of("stepId", 11L, "status", "COMPLETED", "continueNextStep", true)));
+        assertTrue(result.isSuccess(), result.getToolOutput());
+        ArgumentCaptor<ChecklistCommand> captor = ArgumentCaptor.forClass(ChecklistCommand.class);
+        verify(service).updateStep(captor.capture());
+        assertTrue(captor.getValue().isContinueNextStep());
     }
 
     @Test
