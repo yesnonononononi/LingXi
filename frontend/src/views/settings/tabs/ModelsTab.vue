@@ -21,6 +21,7 @@ const isDark = computed(() => props.isDark ?? globalIsDark.value);
 
 const emit = defineEmits<{
   (e: 'modelUpdated'): void;
+  (e: 'openCompaction'): void;
 }>();
 
 const {
@@ -145,14 +146,24 @@ const addRowClass = computed(() => [
             {{ t('settings.models.subtitle') }}
           </p>
         </div>
-        <button
-          type="button"
-          @click="startAddProvider()"
-          class="shrink-0 px-3 py-1.5 rounded-xl text-xs font-medium text-white transition cursor-pointer"
-          :class="isDark ? 'bg-sky-600 hover:bg-sky-500' : 'bg-blue-600 hover:bg-blue-500 shadow-sm'"
-        >
-          {{ t('settings.models.addProvider') }}
-        </button>
+        <div class="shrink-0 flex items-center gap-2">
+          <button
+            type="button"
+            data-testid="open-compaction"
+            @click="emit('openCompaction')"
+            :class="ghostBtnClass"
+          >
+            {{ t('settings.nav.compaction') }}
+          </button>
+          <button
+            type="button"
+            @click="startAddProvider()"
+            class="shrink-0 px-3 py-1.5 rounded-xl text-xs font-medium text-white transition cursor-pointer"
+            :class="isDark ? 'bg-sky-600 hover:bg-sky-500' : 'bg-blue-600 hover:bg-blue-500 shadow-sm'"
+          >
+            {{ t('settings.models.addProvider') }}
+          </button>
+        </div>
       </div>
 
       <div v-if="isModelLoading" class="py-8 text-center text-xs text-lx-faint">

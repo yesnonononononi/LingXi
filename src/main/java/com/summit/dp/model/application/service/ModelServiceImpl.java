@@ -179,7 +179,35 @@ public class ModelServiceImpl implements ModelService {
                 || model.getApiKey() == null || model.getApiKey().isBlank()
                 || model.getModelName() == null || model.getModelName().isBlank(), "模型连接配置不完整: " + id);
         return RuntimeModel.create(model.getBaseUrl(), model.getApiKey(), model.getModelName(), model.getProvider(),
-                model.isVision(), settings, chatProperties.getTimeout());
+                model.isVision(), settings, chatProperties.getTimeout(), compactModelOf(settings));
+    }
+
+    /**
+     * 解析专用压缩模型。
+     *
+     * <p><b>悬空引用不拦聊天</b>：设置行选中的模型被删掉后，这里回落到「沿用对话模型」
+     * 并留一条 WARN —— 拿一个不存在的模型去抛错，会让用户每发一句话都失败，
+     * 而真正该修的是设置页那处失配（页面对空选中有显式提示）。</p>
+     */
+    private RuntimeModel.CompactModel compactModelOf(SettingsView settings) {
+        Long compactModelId = settings == null ? null : settings.compactModelId();
+        if (compactModelId == null) {
+            return null;
+        }
+        ModelConfig compact = modelConfigRepository.findById(compactModelId).orElse(null);
+        if (compact == null) {
+            log.warn("专用压缩模型不存在，已回落到对话模型: compactModelId={}", compactModelId);
+            return null;
+        }
+        if (isBlank(compact.getBaseUrl()) || isBlank(compact.getApiKey()) || isBlank(compact.getModelName())) {
+            log.warn("专用压缩模型连接配置不完整，已回落到对话模型: compactModelId={}", compactModelId);
+            return null;
+        }
+        return new RuntimeModel.CompactModel(compact.getBaseUrl(), compact.getApiKey(), compact.getModelName());
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     /** 分组内按模型名排序：同一提供商的模型较多时，字母序比插入序更可预期。 */

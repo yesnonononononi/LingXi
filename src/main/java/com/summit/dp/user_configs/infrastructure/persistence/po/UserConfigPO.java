@@ -43,6 +43,8 @@ public class UserConfigPO {
     private String skillDir;
     /** 团队最大成员数（空则由配置项 lingxi.team.max-member-size 兜底） */
     private Integer teamSize;
+    /** 专用压缩模型（关联 model_config.id；空表示沿用对话模型做摘要） */
+    private Long compactModelId;
 
     private Integer status;
     private Instant createTime;

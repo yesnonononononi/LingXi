@@ -35,6 +35,9 @@ public class UserConfigVO {
     private String skillDir;
     /** 团队最大成员数；空值表示沿用配置项缺省。 */
     private Integer teamSize;
+    /** 专用压缩模型（关联 model_config.id）；空表示沿用对话模型做摘要。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long compactModelId;
     /**
      * 数据目录变更是否待重启生效。
      *

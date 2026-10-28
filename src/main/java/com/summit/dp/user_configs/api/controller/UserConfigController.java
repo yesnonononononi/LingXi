@@ -52,7 +52,9 @@ public class UserConfigController {
                 request.getRenderTheme(),
                 request.getDataDir(),
                 request.getSkillDir(),
-                request.getTeamSize()
+                request.getTeamSize(),
+                request.getCompactModelId(),
+                request.isCompactModelIdPresent()
         );
     }
 }

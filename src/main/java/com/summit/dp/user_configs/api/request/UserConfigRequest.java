@@ -42,4 +42,20 @@ public class UserConfigRequest {
     private String skillDir;
     /** 团队最大成员数；空值表示沿用配置项缺省 */
     private Integer teamSize;
+
+    /**
+     * 本次请求是否显式带了 {@code compactModelId} 键。
+     *
+     * <p>与 {@code agentId} 同理：显式传 {@code null} 表示「取消专用压缩模型、回到沿用对话模型」，
+     * 不传表示「保持原值」。两者反序列化后都是 null，只能靠 setter 有没有被调用区分。</p>
+     */
+    @JsonSetter("compactModelId")
+    public void markCompactModelIdPresent(Long compactModelId) {
+        this.compactModelId = compactModelId;
+        this.compactModelIdPresent = true;
+    }
+
+    /** 专用压缩模型ID（关联 model_config.id；空表示沿用对话模型做摘要） */
+    private Long compactModelId;
+    private boolean compactModelIdPresent;
 }

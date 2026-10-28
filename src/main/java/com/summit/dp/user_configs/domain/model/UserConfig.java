@@ -98,6 +98,14 @@ public class UserConfig {
     private String skillDir;
 
     /**
+     * 专用压缩模型（关联 model_config.id）。
+     *
+     * <p>空值表示「沿用对话模型做摘要」—— 框架侧的既有缺省；有值则本轮聊天请求
+     * 会带上独立的 compactModel，上下文压缩不再借用对话模型。</p>
+     */
+    private Long compactModelId;
+
+    /**
      * 最大团队规模
      */
     private Integer teamSize;
@@ -160,6 +168,14 @@ public class UserConfig {
      */
     public void changeAgent(Long agentId) {
         this.agentId = agentId;
+        update();
+    }
+
+    /**
+     * 切换专用压缩模型；{@code compactModelId} 允许为空，表示回到「沿用对话模型」。
+     */
+    public void changeCompactModel(Long compactModelId) {
+        this.compactModelId = compactModelId;
         update();
     }
 

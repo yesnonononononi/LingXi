@@ -26,7 +26,7 @@ class SandboxAccessModeTest {
         UserConfigServiceImpl service = new UserConfigServiceImpl(
                 repository, mock(ModelService.class), settingsProvider, mock(SettingsDirectoryMigrator.class));
         service.update(new UserConfigCommand(null, null, "OUT_OF_WORKSPACE", null, null, null,
-                false, null, null, null, null, null, null, null));
+                false, null, null, null, null, null, null, null, null, false));
         verify(repository).updateById(config);
         assertEquals(UserConfig.AccessMode.OUT_OF_WORKSPACE, config.getAccessMode());
         assertEquals(WorkspaceType.SAND_BOX, config.getWorkSpaceConfig().type());

@@ -71,7 +71,8 @@ public class DefaultSettingsProvider implements SettingsProvider {
                 config.getMaxTokens(),
                 effort == null ? null : effort.getValue(),
                 effectiveSkillDir(config.getSkillDir()),
-                config.getTeamSize() == null ? defaultTeamSize : config.getTeamSize());
+                config.getTeamSize() == null ? defaultTeamSize : config.getTeamSize(),
+                config.getCompactModelId());
     }
 
     /** 与 {@link UserConfig#defaultConfig()} 同源的缺省值；仅在设置行不存在时使用。 */
@@ -86,7 +87,8 @@ public class DefaultSettingsProvider implements SettingsProvider {
                 UserConfig.DEFAULT_MAX_TOKENS,
                 ReasoningEffort.LOW.getValue(),
                 effectiveSkillDir(null),
-                defaultTeamSize);
+                defaultTeamSize,
+                null);
     }
 
     /** 设置行未指定时用 yaml 缺省；缺省为空串即「不提供 Skill」，投影成 null 交给使用方判断。 */

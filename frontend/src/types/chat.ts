@@ -736,12 +736,35 @@ export interface UserConfigVO {
   /** 团队最大成员数（同上，已是生效值） */
   teamSize?: number;
   /**
+   * 专用压缩模型（关联 model_config.id）；空表示沿用对话模型做摘要。
+   *
+   * <p>与 agentId 同构：显式传 null 才是「取消专用压缩模型」，
+   * 不带这个键表示保持原值 —— 因此类型必须允许 null。</p>
+   */
+  compactModelId?: number | string | null;
+  /**
    * 数据目录变更是否待重启生效。
    *
    * <p>库文件在进程启动时打开，改目录只能「落库 + 搬文件」，本进程仍写在旧目录上；
    * 为 true 时前端必须提示重启并拦住继续对话，否则这段对话的数据不在新目录的副本里。</p>
    */
   dataDirRestartRequired?: boolean;
+}
+
+/**
+ * 上下文压缩的只读参数（对应后端 CompactionParamsVO）。
+ *
+ * <p>三个值都由后端从 yaml 读出：阈值与摘要尝试次数归
+ * {@code lingxi.agent.runtime.tool.context-compact.*}，输出上限归
+ * {@code lingxi.agent.model.conf.compact.max-tokens}。页面只展示，不提交。</p>
+ */
+export interface CompactionParamsVO {
+  /** 摘要触发阈值：上下文用量占比达到该值即开始压缩 */
+  modelThreshold?: number;
+  /** 单个触发窗口内的摘要总尝试次数；null/缺失表示只尝试一次 */
+  maxSummaryAttempts?: number | null;
+  /** 压缩模型最大输出 token 数 */
+  compactMaxTokens?: number;
 }
 
 /** 工作空间请求体 (对应后端 WorkspaceRequest) */

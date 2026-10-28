@@ -7,6 +7,7 @@ import GeneralTab from './tabs/GeneralTab.vue';
 import PersonalizationTab from './tabs/PersonalizationTab.vue';
 import { usePersonalizationCopy } from './tabs/personalizationCopy';
 import ModelsTab from './tabs/ModelsTab.vue';
+import CompactionTab from './tabs/CompactionTab.vue';
 import AgentsTab from './tabs/AgentsTab.vue';
 import TeamsTab from './tabs/TeamsTab.vue';
 import McpTab from './tabs/McpTab.vue';
@@ -149,6 +150,21 @@ const panelClass = computed(() =>
           <span>{{ t('settings.nav.models') }}</span>
         </button>
 
+        <!-- 2b. 压缩模型配置：模型的子页，缩进一级以示从属关系 -->
+        <button
+          @click="activeTab = 'compaction'"
+          data-testid="nav-compaction"
+          :class="[
+            'shrink-0 w-auto sm:w-full sm:ml-3 sm:w-[calc(100%-0.75rem)] whitespace-nowrap flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-medium transition cursor-pointer text-left border',
+            activeTab === 'compaction'
+              ? 'bg-lx-surface-selected text-lx-primary font-semibold border-lx-border-subtle'
+              : 'text-lx-muted hover:text-lx-secondary hover:bg-lx-surface-hover border-transparent'
+          ]"
+        >
+          <span class="w-1 h-1 rounded-full shrink-0 bg-lx-faint" />
+          <span>{{ t('settings.nav.compaction') }}</span>
+        </button>
+
         <!-- 3. 智能体 -->
         <button
           @click="activeTab = 'agents'"
@@ -261,7 +277,8 @@ const panelClass = computed(() =>
       >
         <GeneralTab v-if="activeTab === 'general'" :is-dark="isDark" />
         <PersonalizationTab v-else-if="activeTab === 'personalization'" />
-        <ModelsTab v-else-if="activeTab === 'models'" :is-dark="isDark" @model-updated="emit('modelUpdated')" />
+        <ModelsTab v-else-if="activeTab === 'models'" :is-dark="isDark" @model-updated="emit('modelUpdated')" @open-compaction="activeTab = 'compaction'" />
+        <CompactionTab v-else-if="activeTab === 'compaction'" :is-dark="isDark" @back="activeTab = 'models'" @open-models="activeTab = 'models'" />
         <AgentsTab v-else-if="activeTab === 'agents'" :is-dark="isDark" />
         <TeamsTab v-else-if="activeTab === 'teams'" :is-dark="isDark" @model-updated="emit('modelUpdated')" />
                   <McpTab v-else-if="activeTab === 'mcp'" :is-dark="isDark" />

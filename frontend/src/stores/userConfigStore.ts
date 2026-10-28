@@ -51,6 +51,8 @@ export const useUserConfigStore = defineStore('userConfig', () => {
   const skillDir = ref<string>('');
   /** 团队最大成员数（同上）。 */
   const teamSize = ref<number | null>(null);
+  /** 专用压缩模型（关联 model_config.id）；null 表示沿用对话模型做摘要。 */
+  const compactModelId = ref<string | number | null>(null);
   /** 数据目录已改但本进程还没重启：为 true 时界面必须提示重启并拦住继续对话。 */
   const dataDirRestartRequired = ref(false);
 
@@ -93,6 +95,7 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     dataDir.value = config?.dataDir ?? '';
     skillDir.value = config?.skillDir ?? '';
     teamSize.value = config?.teamSize ?? null;
+    compactModelId.value = config?.compactModelId ?? null;
     dataDirRestartRequired.value = config?.dataDirRestartRequired === true;
   };
 
@@ -138,7 +141,8 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     | 'renderTheme'
     | 'dataDir'
     | 'skillDir'
-    | 'teamSize';
+    | 'teamSize'
+    | 'compactModelId';
 
   /** 读某字段的当前值（回滚快照用）。 */
   const readField = (field: PatchableField): unknown => {
@@ -155,6 +159,7 @@ export const useUserConfigStore = defineStore('userConfig', () => {
       case 'dataDir': return dataDir.value;
       case 'skillDir': return skillDir.value;
       case 'teamSize': return teamSize.value;
+      case 'compactModelId': return compactModelId.value;
     }
   };
 
@@ -173,6 +178,7 @@ export const useUserConfigStore = defineStore('userConfig', () => {
       case 'dataDir': dataDir.value = value as string; break;
       case 'skillDir': skillDir.value = value as string; break;
       case 'teamSize': teamSize.value = value as number | null; break;
+      case 'compactModelId': compactModelId.value = value as string | number | null; break;
     }
   };
 
@@ -285,6 +291,7 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     dataDir,
     skillDir,
     teamSize,
+    compactModelId,
     dataDirRestartRequired,
     // 派生
     reasoningEffortPending,

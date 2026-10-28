@@ -12,6 +12,7 @@ import com.summit.dp.user_configs.domain.model.ReasoningEffort;
 import com.summit.dp.user_configs.domain.repository.UserConfigRepository;
 import com.summit.dp.user_configs.infrastructure.fs.SettingsDirectoryMigrator;
 import com.summit.dp.model.application.service.ModelService;
+import com.summit.dp.model.application.vo.ModelConfigVO;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.model.WorkspaceType;
 import lombok.RequiredArgsConstructor;
@@ -69,6 +70,9 @@ public class UserConfigServiceImpl implements UserConfigService {
         // 设置模型前先校验存在性：否则可以把 model_id 指向不存在的模型，
         // 后续聊天链路会拿着无效的模型配置发起调用。
         assertModelAccessible(command.modelId());
+        // 专用压缩模型同样只能在「模型存在且凭据齐备」时才落库：
+        // 否则每次压缩都在运行时抛错，而错误出现在一轮对话的中途，用户根本无从定位。
+        assertCompactModelUsable(command.compactModelId(), command.compactModelIdPresent());
         // INSERT/UPDATE 按「行是否存在」判断，不能按 id 是否为 null 判断：
         // 默认配置自带主键 1，若按 id 判空会误走 UPDATE，在无行时静默影响 0 行。
         Optional<UserConfig> existing = repository.findSingleton();
@@ -100,6 +104,21 @@ public class UserConfigServiceImpl implements UserConfigService {
         modelService.findById(modelId);
     }
 
+    /**
+     * 校验专用压缩模型可用：存在（findById 自带断言）且凭据齐备。
+     *
+     * <p>不传该字段的请求不校验；显式传 {@code null} 是「取消专用压缩模型」，
+     * 也不能因为「没有模型可查」而报错。</p>
+     */
+    private void assertCompactModelUsable(Long compactModelId, boolean present) {
+        if (!present || compactModelId == null) {
+            return;
+        }
+        ModelConfigVO compact = modelService.findById(compactModelId).getData();
+        throwIf(compact == null || !compact.isCredentialConfigured(),
+                "专用压缩模型缺少可用的 API 凭据，请先在模型页补全密钥");
+    }
+
 
     private UserConfig apply(UserConfigCommand command, UserConfig model) {
         String accessMode = command.accessMode();
@@ -120,6 +139,9 @@ public class UserConfigServiceImpl implements UserConfigService {
         // agentId 允许显式为 null（取消绑定），与 modelId 的「非 null 才改」规则相反：
         // 必须按 command 上的出现标记判断，光判值会把「解绑」当成「没传」。
         if (command.agentIdPresent()) model.changeAgent(command.agentId());
+
+        // 压缩模型与 agentId 同构：显式 null = 回到「沿用对话模型」，不传 = 保持原值。
+        if (command.compactModelIdPresent()) model.changeCompactModel(command.compactModelId());
 
         String workspaceType = command.workspaceType();
         if (workspaceType != null)
@@ -204,6 +226,7 @@ public class UserConfigServiceImpl implements UserConfigService {
                 .dataDir(dataDir)
                 .skillDir(settings == null ? null : settings.skillDir())
                 .teamSize(settings == null ? null : settings.teamSize())
+                .compactModelId(model.getCompactModelId())
                 .dataDirRestartRequired(isDataDirRestartRequired(dataDir))
                 .build();
     }

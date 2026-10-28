@@ -31,6 +31,21 @@ public record SettingsView(
         /* 技能根目录的生效值（已由设置行/yaml 缺省解析过）；null 表示未启用 Skill。 */
         String skillDir,
         /* 团队规模上限的生效值（已由设置行/yaml 缺省解析过）；不会为 null。 */
-        Integer teamSize
+        Integer teamSize,
+        /* 专用压缩模型（关联 model_config.id）；null 表示沿用对话模型做摘要。 */
+        Long compactModelId
 ) {
+    /**
+     * 兼容既有调用：未配置专用压缩模型（沿用对话模型做摘要）。
+     *
+     * <p>投影对象多一个可选字段，不该逼着每个只关心「模型/权限」的调用方也写一个 null；
+     * 但新增字段时必须检查这里，别让「不传」被误读成「显式关闭」。</p>
+     */
+    public SettingsView(WorkspaceType workspaceType, AgentAccessMode accessMode,
+                        CommandApprovalPolicy commandApprovalPolicy, Integer planMaxReminders, Long modelId,
+                        Long agentId, Integer maxTokens, String reasoningEffort, String skillDir,
+                        Integer teamSize) {
+        this(workspaceType, accessMode, commandApprovalPolicy, planMaxReminders, modelId, agentId, maxTokens,
+                reasoningEffort, skillDir, teamSize, null);
+    }
 }

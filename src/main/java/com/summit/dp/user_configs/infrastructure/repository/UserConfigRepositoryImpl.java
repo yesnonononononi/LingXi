@@ -68,6 +68,7 @@ public class UserConfigRepositoryImpl extends AbstractJsonRepository<UserConfig,
                 .dataDir(po.getDataDir())
                 .skillDir(po.getSkillDir())
                 .teamSize(po.getTeamSize())
+                .compactModelId(po.getCompactModelId())
                 .createAt(po.getCreateTime())
                 .updateAt(po.getUpdateTime())
                 .build();
@@ -97,6 +98,7 @@ public class UserConfigRepositoryImpl extends AbstractJsonRepository<UserConfig,
                 .dataDir(model.getDataDir())
                 .skillDir(model.getSkillDir())
                 .teamSize(model.getTeamSize())
+                .compactModelId(model.getCompactModelId())
                 .createTime(model.getCreateAt())
                 .updateTime(model.getUpdateAt())
                 .build();

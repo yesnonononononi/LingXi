@@ -16,7 +16,9 @@ public record UserConfigCommand(
         String renderTheme,
         String dataDir,
         String skillDir,
-        Integer teamSize
+        Integer teamSize,
+        Long compactModelId,
+        boolean compactModelIdPresent
 )  {
 
 }

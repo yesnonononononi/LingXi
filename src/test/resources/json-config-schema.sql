@@ -13,6 +13,6 @@ CREATE TABLE user_configs (
  id BIGINT PRIMARY KEY, workspace_type VARCHAR(20), command_approval_policy VARCHAR(30),
  access_mode VARCHAR(30), plan_max_reminders INT, agent_id BIGINT, model_id BIGINT,
  max_tokens INT, reasoning_effort VARCHAR(50), render_theme VARCHAR(10),
- data_dir VARCHAR(500), skill_dir VARCHAR(500), team_size INT,
+ data_dir VARCHAR(500), skill_dir VARCHAR(500), team_size INT, compact_model_id BIGINT,
  status INT, create_time TIMESTAMP, update_time TIMESTAMP
 );

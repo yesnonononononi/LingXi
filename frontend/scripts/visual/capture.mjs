@@ -60,6 +60,15 @@ const SCENES = [
     marker: '已分配工具',
     open: async page => { await clickTab(page, '智能体'); },
   },
+  {
+    name: 'settings-compaction',
+    description: '设置 · 压缩模型配置子页（模型 → 压缩模型配置；无后端时只到骨架与说明）',
+    marker: '高级设置',
+    open: async page => {
+      await clickTab(page, '模型');
+      await clickTab(page, '压缩模型配置');
+    },
+  },
 ];
 
 /**
