@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { normalizeSettingsTab } from '../../utils/enum';
 import type { SettingsTabKey } from '../../utils/enum';
 import GeneralTab from './tabs/GeneralTab.vue';
@@ -44,24 +44,11 @@ watch(() => props.initialTab, (newTab) => {
     activeTab.value = normalizeSettingsTab(newTab, 'general');
   }
 });
-
-const handleKeydown = (e: KeyboardEvent) => {
-  if (e.key === 'Escape') emit('close');
-};
-
-onMounted(() => {
-  window.addEventListener('keydown', handleKeydown);
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', handleKeydown);
-});
 </script>
 
 <template>
   <div
     class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in"
-    @click.self="emit('close')"
   >
     <div
       :class="[
@@ -74,10 +61,16 @@ onBeforeUnmount(() => {
       <!-- Header -->
       <div :class="['flex items-center justify-between pb-4 border-b shrink-0', 'border-lx-border-faint']">
         <h3 class="text-base font-bold tracking-tight text-lx-primary dark:text-glow-white">{{ t('settings.title') }}</h3>
+        <!--
+          唯一关闭入口。遮罩点击与 Esc 键**刻意不**关闭面板：设置项跨多个 Tab、易误触，
+          误关会打断正在填写的表单；关闭必须是一次显式点击。改动请先看 tests/settingsModalClose.test.cjs。
+        -->
         <button
           type="button"
           @click="emit('close')"
-          class="p-1 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition cursor-pointer"
+          :aria-label="t('common.close')"
+          :title="t('common.close')"
+          class="p-1 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-black/5 dark:hover:bg-white/5 transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lx-accent"
         >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
