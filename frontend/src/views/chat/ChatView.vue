@@ -191,7 +191,8 @@
             :hasUnresolved="executionControls.hasUnresolved.value" :error="executionControls.error.value"
             @resume="executionControls.resume"
           />
-          <BackgroundTaskPanel :feed="backgroundTasks" :isDark="displayIsDark" />
+          <TaskProgressDock :background="backgroundTasks" :checklist="checklist" :isDark="displayIsDark"
+            :executing="currentActiveSession?.runStatus === 'RUNNING'" />
           <!-- 待审批/待回答卡片存在时整块让位：此时输入框必然是禁用态，留着它只是把卡片往下挤，
                用户真正的下一步动作在卡片里。v-show 而非 v-if —— 组件不卸载，已经敲了一半的草稿不会丢。 -->
           <div
@@ -376,7 +377,7 @@ import ChatInputArea from '../../components/chat/ChatInputArea.vue';
 import type { ChatInputCommands } from '../../types/chatInputCommands';
 import { assertChatInputCommands } from '../../utils/assertChatInputCommands';
 import ChatExecutionControls from '../../components/chat/ChatExecutionControls.vue';
-import BackgroundTaskPanel from '../../components/chat/BackgroundTaskPanel.vue';
+import TaskProgressDock from '../../components/chat/TaskProgressDock.vue';
 import ChatResendDialog from '../../components/chat/ChatResendDialog.vue';
 import SettingsModal from '../settings/SettingsModal.vue';
 import WorkspaceModal from '../../components/chat/WorkspaceModal.vue';
@@ -458,6 +459,7 @@ const {
   handleResendUnsent,
   executionControls,
   backgroundTasks,
+  checklist,
   reasoningEffort,
   reasoningEffortPending,
   reasoningEffortError,

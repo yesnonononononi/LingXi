@@ -16,6 +16,7 @@ const API_PREFIXES = [
   '/a',
   '/agent',
   '/api',
+  '/checklist',
   '/config',
   '/email',
   '/execution',

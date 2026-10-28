@@ -67,6 +67,11 @@ const CONSUMERS = [
     // class="background-tasks w-full max-w-lx-chat mx-auto px-4"
     anchor: /background-tasks\s+w-full\s+max-w-lx-chat\s+mx-auto\s+px-4/,
   },
+  {
+    rel: '../src/components/chat/TaskProgressDock.vue',
+    label: '任务胶囊容器',
+    anchor: /task-progress-dock\s+task-progress-surface\s+w-full\s+max-w-lx-chat\s+mx-auto\s+px-4/,
+  },
 ].map((item) => ({
   ...item,
   source: fs.readFileSync(path.resolve(__dirname, item.rel), 'utf8'),

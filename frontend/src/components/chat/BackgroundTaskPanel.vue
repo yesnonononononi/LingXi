@@ -3,10 +3,14 @@ import { computed, ref, watch } from 'vue';
 import type { BackgroundTasksState } from '../../views/chat/useBackgroundTasks';
 import { isTaskActive, type BackgroundTask } from '../../types/backgroundTask';
 import { t } from '../../i18n';
-const props = defineProps<{ feed: BackgroundTasksState; isDark?: boolean }>();
+import './taskProgress.css';
+const props = withDefaults(defineProps<{ feed: BackgroundTasksState; isDark?: boolean; embedded?: boolean; expanded?: boolean }>(), { expanded: undefined });
+const emit = defineEmits<{ 'update:expanded': [value: boolean] }>();
 const { tasks, error, loading, now, runningCount, pendingCount, sessionId, selectedId, detail, detailError,
   reading, stoppingId, stopError, deletingId, deleteError, refresh, read, stop, removeTask, closeOutput } = props.feed;
-const expanded = ref(false);
+const localExpanded = ref(false);
+const expanded = computed({ get: () => props.expanded ?? localExpanded.value,
+  set: (value: boolean) => { localExpanded.value = value; emit('update:expanded', value); } });
 const visible = computed(() => tasks.value.length > 0 || !!error.value);
 const summary = computed(() => runningCount.value > 0
   ? t('chat.backgroundTasks.running', { count: runningCount.value })
@@ -21,17 +25,20 @@ function elapsed(task: BackgroundTask): string {
     : t('chat.backgroundTasks.status.RUNNING');
 }
 watch(sessionId, () => { expanded.value = false; });
+watch(expanded, value => { if (!value) closeOutput(); });
 </script>
 
 <template>
-  <div v-if="visible" class="background-tasks w-full max-w-lx-chat mx-auto px-4" :data-theme="isDark ? 'dark' : 'light'">
-    <button v-if="!expanded" type="button" class="task-pill" data-testid="background-task-toggle"
-      :aria-label="t('chat.backgroundTasks.expand')" :aria-expanded="false" @click="expanded = true; refresh()">
+  <div v-if="visible" :class="[embedded ? 'background-tasks embedded' : 'background-tasks w-full max-w-lx-chat mx-auto px-4', 'task-progress-surface']" :data-theme="isDark ? 'dark' : 'light'">
+    <button type="button" class="task-pill" data-testid="background-task-toggle"
+      :aria-label="expanded ? t('common.collapse') : t('chat.backgroundTasks.expand')" :aria-expanded="expanded"
+      aria-controls="background-task-panel" @click="expanded = !expanded; if (expanded) refresh()">
       <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.2"/><path d="M10 5.5V10l3 2"/></svg>
       <span aria-live="polite">{{ summary }}</span>
       <span v-if="error" class="task-error-indicator" :title="error">!</span>
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path :d="expanded ? 'm5 7 5 5 5-5' : 'm5 12 5-5 5 5'"/></svg>
     </button>
-    <section v-else class="task-panel" data-testid="background-task-panel" :aria-label="t('chat.backgroundTasks.title')">
+    <section v-if="expanded" id="background-task-panel" class="task-panel" data-testid="background-task-panel" :aria-label="t('chat.backgroundTasks.title')">
       <header class="task-panel-header">
         <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.2"/><path d="M10 5.5V10l3 2"/></svg>
         <span aria-live="polite">{{ summary }}</span>
@@ -78,14 +85,11 @@ watch(sessionId, () => { expanded.value = false; });
 </template>
 
 <style scoped>
-.background-tasks { --task-bg: #fff; --task-border: #c9dfcc; --task-ink: #3d5146; --task-muted: #819087; --task-hover: #f4f7f3; --task-delete: #b6c0ba; --task-delete-hover: #e2321d; margin-bottom: 12px; color: var(--task-ink); font-size: 13px; line-height: 20px; }
-.background-tasks[data-theme='dark'] { --task-bg: #111713; --task-border: #344c3c; --task-ink: #d2e0d5; --task-muted: #91a398; --task-hover: #1b271f; --task-delete: #6d7d73; --task-delete-hover: #ff6153; }
-button { cursor: pointer; font: inherit; }
+.background-tasks { margin-bottom: 12px; }
+button { cursor: pointer; font: inherit; text-shadow: inherit; }
 button:focus-visible { outline: 2px solid var(--task-muted); outline-offset: 3px; }
 button:disabled { cursor: wait; opacity: .5; }
 svg { flex: none; width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
-.task-pill { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--task-border); border-radius: 24px; padding: 7px 15px; background: var(--task-bg); color: var(--task-muted); box-shadow: 0 3px 14px #2946350c; }
-.task-panel { border: 1px solid var(--task-border); border-radius: 18px; padding: 11px 15px 12px; background: var(--task-bg); box-shadow: 0 8px 22px #29463504; }
 .task-panel-header { display: flex; gap: 8px; align-items: center; margin-bottom: 13px; color: var(--task-muted); }
 .task-panel-header > span { flex: 1; }
 .task-icon-button { display: inline-grid; place-items: center; flex: none; width: 22px; height: 22px; border: 0; background: transparent; border-radius: 6px; color: var(--task-muted); }
@@ -100,7 +104,7 @@ svg { flex: none; width: 15px; height: 15px; fill: none; stroke: currentColor; s
 .task-stop:hover { color: var(--task-ink); background: var(--task-bg); }
 .task-delete { display: inline-grid; place-items: center; flex: none; width: 22px; height: 22px; border: 0; border-radius: 6px; background: transparent; color: var(--task-delete); transition: color .15s ease; }
 .task-delete:hover:not(:disabled) { color: var(--task-delete-hover); }
-.task-row[data-status='FAILED'] .task-state, .task-row[data-status='TIMEOUT'] .task-state, .task-error, .task-error-indicator { color: #bd5e50; }
+.task-row[data-status='FAILED'] .task-state, .task-row[data-status='TIMEOUT'] .task-state, .task-error, .task-error-indicator { color: var(--task-ink); font-weight: 500; }
 .task-error { margin: 5px 0 9px; font-size: 12px; overflow-wrap: anywhere; }
 .task-output { border-top: 1px solid var(--task-border); margin-top: 10px; padding-top: 9px; }
 .task-output-header { display: flex; align-items: center; gap: 10px; color: var(--task-muted); font-size: 12px; }

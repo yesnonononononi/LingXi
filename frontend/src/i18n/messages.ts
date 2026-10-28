@@ -302,6 +302,11 @@ export const messages: MessageSchema = {
         separator: '、', moreOperations: '{names}等 {count} 类操作', moreTargets: '{targets}等 {count} 个目标',
         pending: '{count} 项待确认', unknown: '{count} 项状态未知', running: '{count} 项进行中',
       },
+      checklist: {
+        title: '任务清单', loadFailed: '任务清单加载失败，请重试', invalidData: '任务清单数据不完整，请刷新重试',
+        unfinished: '未完成', paused: '等待继续', progress: '已处理 {settled}/{total} 项，详情包含成功、失败和跳过状态',
+        status: { PENDING: '待处理', IN_PROGRESS: '进行中', COMPLETED: '已完成', FAILED: '失败', SKIPPED: '已跳过' },
+      },
       backgroundTasks: {
         title: '后台任务', running: '{count} 个后台任务运行中', pending: '{count} 个后台任务等待执行',
         finished: '{count} 个后台任务已结束', expand: '展开后台任务', elapsed: '已运行 {seconds}s',
@@ -1416,6 +1421,11 @@ export const messages: MessageSchema = {
       process: {
         separator: ', ', moreOperations: '{names} ({count} operation types)', moreTargets: '{targets} ({count} targets)',
         pending: '{count} awaiting input', unknown: '{count} unknown', running: '{count} running',
+      },
+      checklist: {
+        title: 'Checklist', loadFailed: 'Could not load the checklist. Please retry.', invalidData: 'Checklist data is incomplete. Please refresh.',
+        unfinished: 'Unfinished', paused: 'Waiting to continue', progress: '{settled}/{total} processed; details distinguish completed, failed and skipped steps',
+        status: { PENDING: 'Pending', IN_PROGRESS: 'In progress', COMPLETED: 'Completed', FAILED: 'Failed', SKIPPED: 'Skipped' },
       },
       backgroundTasks: {
         title: 'Background tasks', running: '{count} background tasks running', pending: '{count} background tasks waiting',

@@ -1,0 +1,29 @@
+.task-progress-surface {
+  --task-bg: #fff; --task-border: #e4e4e7; --task-ink: #27272a; --task-muted: #71717a;
+  --task-hover: #f4f4f5; --task-delete: #a1a1aa; --task-delete-hover: #27272a;
+  color: var(--task-ink); font-size: 13px; line-height: 20px;
+}
+.task-progress-surface[data-theme='dark'] {
+  --task-bg: #000; --task-border: #303034; --task-ink: #f4f4f5; --task-muted: #b4b4bc;
+  --task-hover: #151515; --task-delete: #a1a1aa; --task-delete-hover: #fff;
+  text-shadow: 0 0 7px #ffffff28;
+}
+.task-progress-surface .task-pill {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 36px;
+  border: 1px solid var(--task-border); border-radius: 999px; padding: 7px 14px;
+  background: var(--task-bg); color: var(--task-ink); font: inherit; text-shadow: inherit; cursor: pointer;
+}
+.task-progress-surface .task-pill:hover { background: var(--task-hover); }
+.task-progress-surface .task-pill svg { flex: none; width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.task-progress-surface .task-panel {
+  border: 1px solid var(--task-border); border-radius: 18px; padding: 11px 15px 12px;
+  background: var(--task-bg); box-shadow: 0 8px 24px #0000000a;
+}
+.task-progress-surface button:focus-visible { outline: 2px solid var(--task-muted); outline-offset: 3px; }
+.task-progress-dock { margin-bottom: 12px; }
+.task-progress-row { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.task-progress-row .task-panel {
+  position: absolute; z-index: 40; bottom: calc(100% + 10px); left: 0; right: 0;
+  max-height: min(55vh, 460px); overflow: auto;
+}
+.task-progress-row .background-tasks.embedded { margin: 0; padding: 0; }

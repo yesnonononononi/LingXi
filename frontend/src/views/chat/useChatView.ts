@@ -11,6 +11,7 @@ import { useChatSending } from './useChatSending';
 import { useChatExecutionControls } from './useChatExecutionControls';
 import { useChatOutcomeNotifications } from './useChatOutcomeNotifications';
 import { useBackgroundTasks } from './useBackgroundTasks';
+import { useChecklist } from './useChecklist';
 import { acceptsChatEvent } from './chatExecutionState';
 import { useChatSessionList } from './useChatSessionList';
 import { useChatWorkspace } from './useChatWorkspace';
@@ -113,6 +114,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     const id = currentActiveSession.value?.id;
     return id && isPersistedSessionId(id) ? String(id) : null;
   }));
+  const checklist = useChecklist(backgroundTasks.sessionId);
 
   // ---------- 滚动 ----------
   const messagesContainerRef = templateRefs?.messagesContainerRef ?? ref<any>(null);
@@ -281,6 +283,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     onBackgroundTaskChanged: backgroundTasks.onTaskChanged,
     onEvent: (event) => {
       if (!acceptsChatEvent(currentActiveSession.value, event)) return;
+      checklist.onEvent(event);
       streamRouter.dispatch(event);
       if (isRunStatusEvent(event.type)) {
         applyRunStatusFromEvent(event);
@@ -301,11 +304,13 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     },
 
     onConnectionClosed: (sessionId) => {
+      void checklist.refresh();
       // 掉线也可能意味着「终态事件没收到」：回读权威状态并对齐历史。
       void reconcileSessionAfterStream(sessionId);
     },
     onResubscribed: (rootSessionId) => {
       void backgroundTasks.refresh();
+      void checklist.refresh();
       // 断线期间服务端不补发：重连成功是唯一能对齐缺口的时机。
       console.info('[chat] 会话级流重连成功，回查历史对齐:', rootSessionId);
       void reconcileSessionAfterStream(rootSessionId);
@@ -786,6 +791,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     isSending: computed(() => sending.isSending.value || executionControls.resending.value),
     executionControls,
     backgroundTasks,
+    checklist,
     currentAbortController: sending.currentAbortController,
     sendFailureNotice: sending.sendFailureNotice,
     dismissSendFailure: sending.dismissSendFailure,
