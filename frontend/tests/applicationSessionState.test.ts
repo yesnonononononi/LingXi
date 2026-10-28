@@ -14,10 +14,10 @@ const metadata = (version: number, isRead = false): SessionVO => ({
 });
 const turn = (): Promise<void> => new Promise(resolve => setImmediate(resolve));
 
-test('四态只渲染未读权威状态，不从旧运行字段猜测', () => {
+test('运行态始终可见，其他三态只渲染未读权威状态', () => {
   for (const state of ['WAITING', 'COMPLETED', 'FAILED', 'RUNNING'] as const) {
     assert.equal(resolveSessionIndicator({ isRead: false, renderStatus: state }), state);
-    assert.equal(resolveSessionIndicator({ isRead: true, renderStatus: state }), null);
+    assert.equal(resolveSessionIndicator({ isRead: true, renderStatus: state }), state === 'RUNNING' ? 'RUNNING' : null);
   }
   assert.equal(resolveSessionIndicator({ isRead: false, renderStatus: null }), null);
   assert.equal(resolveSessionIndicator({ isRead: undefined, renderStatus: 'FAILED' }), null);
@@ -187,6 +187,7 @@ test('实际侧栏亮暗两种分支都渲染四态，并隐藏已读标记', as
       id: String(index), title: renderStatus, isRead: false, renderStatus,
     }));
     sessions.push({ id: 'read', title: '已读', isRead: true, renderStatus: 'FAILED' });
+    sessions.find(session => session.renderStatus === 'RUNNING')!.isRead = true;
     for (const isDark of [false, true]) {
       const html = await renderToString(createSSRApp(Tree, {
         projectGroups: [], unassignedSessions: sessions, expandedWorkspaces: {},
