@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, useId } from 'vue';
 import type { ChecklistState } from '../../views/chat/useChecklist';
 import { t } from '../../i18n';
 import './taskProgress.css';
 
 const props = defineProps<{ feed: ChecklistState; expanded: boolean; executing: boolean }>();
 const emit = defineEmits<{ 'update:expanded': [value: boolean] }>();
+const panelId = useId();
 const { snapshot, error, loading, refresh } = props.feed;
 const steps = computed(() => [...(snapshot.value?.steps ?? [])].sort((left, right) => left.seq - right.seq));
 // 失败和跳过保留原状态，只统计已处理数量，避免把终态收口误报为全部成功。
@@ -16,7 +17,7 @@ function toggle() { emit('update:expanded', !props.expanded); if (!props.expande
 <template>
   <div v-if="snapshot || error" class="checklist-tasks">
     <button type="button" class="task-pill" data-testid="checklist-toggle" :aria-expanded="expanded"
-      aria-controls="current-checklist-panel" :title="snapshot ? t('chat.checklist.progress', { settled, total: steps.length }) : error" @click="toggle">
+      :aria-controls="panelId" :title="snapshot ? t('chat.checklist.progress', { settled, total: steps.length }) : error" @click="toggle">
       <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="2.5" width="15" height="15" rx="3"/><path d="m5.5 7 1 1 2-2m2.5 1H15m-9.5 6 1 1 2-2m2.5 1H15"/></svg>
       <span>{{ t('chat.checklist.title') }}</span>
       <span v-if="snapshot" aria-live="polite">{{ settled }}/{{ steps.length }}</span>
@@ -26,7 +27,7 @@ function toggle() { emit('update:expanded', !props.expanded); if (!props.expande
       <span v-if="error" :title="error">!</span>
       <svg viewBox="0 0 20 20" aria-hidden="true"><path :d="expanded ? 'm5 7 5 5 5-5' : 'm5 12 5-5 5 5'"/></svg>
     </button>
-    <section v-if="expanded" id="current-checklist-panel" class="task-panel" data-testid="checklist-panel"
+    <section v-if="expanded" :id="panelId" class="task-panel" data-testid="checklist-panel"
       :aria-label="t('chat.checklist.title')">
       <header class="checklist-header">
         <span>{{ snapshot?.title || t('chat.checklist.title') }}</span>

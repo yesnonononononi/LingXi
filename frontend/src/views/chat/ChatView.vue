@@ -269,6 +269,7 @@
         :items="availableSubSessionItems"
         :activeSubId="activeViewingSubSessionId"
         :activeSubSession="activeViewingSubSessionVO"
+        :taskProgress="subTaskProgress"
         :subMessages="activeSubSessionMessages"
         :turnMap="activeSubSessionTurnMap"
         :isLoadingMessages="isLoadingSubMessages"
@@ -460,6 +461,7 @@ const {
   executionControls,
   backgroundTasks,
   checklist,
+  subTaskProgress,
   reasoningEffort,
   reasoningEffortPending,
   reasoningEffortError,

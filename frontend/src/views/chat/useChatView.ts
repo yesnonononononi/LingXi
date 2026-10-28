@@ -12,6 +12,7 @@ import { useChatSending } from './useChatSending';
 import { useChatExecutionControls } from './useChatExecutionControls';
 import { useChatOutcomeNotifications } from './useChatOutcomeNotifications';
 import { useBackgroundTasks } from './useBackgroundTasks';
+import { useSubSessionTaskProgress } from './useSubSessionTaskProgress';
 import { useChecklist } from './useChecklist';
 import { acceptsChatEvent } from './chatExecutionState';
 import { useChatSessionList } from './useChatSessionList';
@@ -140,6 +141,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
   } = useChatScroll({ messagesContainerRef });
 
   const subSession = useChatSubSession({ currentActiveSession });
+  const subTaskProgress = useSubSessionTaskProgress(subSession.activeViewingSubSessionVO, subSession.isSubPanelOpen);
 
   // ---------- 历史分页 ----------
   const {
@@ -282,10 +284,14 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
 
    */
   const sessionEventStream = new SessionEventStream({
-    onBackgroundTaskChanged: backgroundTasks.onTaskChanged,
+    onBackgroundTaskChanged: (event) => {
+      backgroundTasks.onTaskChanged(event);
+      subTaskProgress.onTaskChanged(event);
+    },
     onEvent: (event) => {
       if (!acceptsChatEvent(currentActiveSession.value, event)) return;
       checklist.onEvent(event);
+      subTaskProgress.onEvent(event);
       streamRouter.dispatch(event);
       if (isRunStatusEvent(event.type)) {
         applyRunStatusFromEvent(event);
@@ -307,12 +313,14 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
 
     onConnectionClosed: (sessionId) => {
       void checklist.refresh();
+      subTaskProgress.refresh();
       // 掉线也可能意味着「终态事件没收到」：回读权威状态并对齐历史。
       void reconcileSessionAfterStream(sessionId);
     },
     onResubscribed: (rootSessionId) => {
       void backgroundTasks.refresh();
       void checklist.refresh();
+      subTaskProgress.refresh();
       // 断线期间服务端不补发：重连成功是唯一能对齐缺口的时机。
       console.info('[chat] 会话级流重连成功，回查历史对齐:', rootSessionId);
       void reconcileSessionAfterStream(rootSessionId);
@@ -794,6 +802,7 @@ export function useChatView(templateRefs?: ChatViewTemplateRefs) {
     executionControls,
     backgroundTasks,
     checklist,
+    subTaskProgress,
     currentAbortController: sending.currentAbortController,
     sendFailureNotice: sending.sendFailureNotice,
     dismissSendFailure: sending.dismissSendFailure,

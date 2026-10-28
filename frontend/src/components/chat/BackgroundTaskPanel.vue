@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, ref, useId, watch } from 'vue';
 import type { BackgroundTasksState } from '../../views/chat/useBackgroundTasks';
 import { isTaskActive, type BackgroundTask } from '../../types/backgroundTask';
 import { t } from '../../i18n';
 import './taskProgress.css';
 const props = withDefaults(defineProps<{ feed: BackgroundTasksState; isDark?: boolean; embedded?: boolean; expanded?: boolean }>(), { expanded: undefined });
 const emit = defineEmits<{ 'update:expanded': [value: boolean] }>();
+const panelId = useId();
 const { tasks, error, loading, now, runningCount, pendingCount, sessionId, selectedId, detail, detailError,
   reading, stoppingId, stopError, deletingId, deleteError, refresh, read, stop, removeTask, closeOutput } = props.feed;
 const localExpanded = ref(false);
@@ -32,13 +33,13 @@ watch(expanded, value => { if (!value) closeOutput(); });
   <div v-if="visible" :class="[embedded ? 'background-tasks embedded' : 'background-tasks w-full max-w-lx-chat mx-auto px-4', 'task-progress-surface']" :data-theme="isDark ? 'dark' : 'light'">
     <button type="button" class="task-pill" data-testid="background-task-toggle"
       :aria-label="expanded ? t('common.collapse') : t('chat.backgroundTasks.expand')" :aria-expanded="expanded"
-      aria-controls="background-task-panel" @click="expanded = !expanded; if (expanded) refresh()">
+      :aria-controls="panelId" @click="expanded = !expanded; if (expanded) refresh()">
       <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.2"/><path d="M10 5.5V10l3 2"/></svg>
       <span aria-live="polite">{{ summary }}</span>
       <span v-if="error" class="task-error-indicator" :title="error">!</span>
       <svg viewBox="0 0 20 20" aria-hidden="true"><path :d="expanded ? 'm5 7 5 5 5-5' : 'm5 12 5-5 5 5'"/></svg>
     </button>
-    <section v-if="expanded" id="background-task-panel" class="task-panel" data-testid="background-task-panel" :aria-label="t('chat.backgroundTasks.title')">
+    <section v-if="expanded" :id="panelId" class="task-panel" data-testid="background-task-panel" :aria-label="t('chat.backgroundTasks.title')">
       <header class="task-panel-header">
         <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.2"/><path d="M10 5.5V10l3 2"/></svg>
         <span aria-live="polite">{{ summary }}</span>

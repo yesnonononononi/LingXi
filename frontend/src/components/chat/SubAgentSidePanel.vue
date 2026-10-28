@@ -7,6 +7,8 @@ import { useCopyFeedback } from '../../composables/useCopyFeedback';
 import { t } from '../../i18n';
 import ChatMessageList from './ChatMessageList.vue';
 import SessionContextUsage from './SessionContextUsage.vue';
+import TaskProgressDock from './TaskProgressDock.vue';
+import type { SubSessionTaskProgressState } from '../../views/chat/useSubSessionTaskProgress';
 import { useChatScroll } from '../../views/chat/useChatScroll';
 
 /** 默认及最小宽度配置 */
@@ -111,6 +113,7 @@ const props = defineProps<{
   items: SubSessionItem[];
   activeSubId: string | number | null;
   activeSubSession?: SubSessionVO | null;
+  taskProgress?: SubSessionTaskProgressState;
   subMessages?: ChatMessage[];
   /**
    * 子会话消息 → 所属回答组执行摘要 / 是否组尾 映射（与主会话同一分组规则）。
@@ -339,6 +342,9 @@ defineExpose({
           @touchmove.passive="handleTouchMove"
         />
       </div>
+      <TaskProgressDock v-if="taskProgress" class="shrink-0 pt-3 select-text"
+        :background="taskProgress.background" :checklist="taskProgress.checklist" :isDark="isDark"
+        :executing="activeItem.status === 'running'" />
     </div>
 
     <!-- 2.2 未选中具体子会话时：展示全部成员 Options 概览列表 -->
