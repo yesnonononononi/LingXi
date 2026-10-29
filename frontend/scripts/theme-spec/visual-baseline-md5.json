@@ -1,6 +1,6 @@
 {
   "$comment": "视觉基线完整性 oracle（G-4 根治用）：记录本机视觉基线的 MD5 指纹，用来在 compare 之前证明「基线是完整的」。基线 PNG 本体不入仓（像素结果与机器/DPI/字体/浏览器版本绑定，见 scripts/visual/README.md 第 4 条），入仓会让换环境 clone 就一片红，团队最终会无视门禁 —— 那比假绿更糟。所以本文件只是「基线应该长什么样」的凭据，不是像素基线本体。path 一律相对该 suite 的 baselineDir；三个脚本在 --mode baseline（全量、无过滤参数）时自动重写自己那一节并重算 counts/generatedAt；--mode check 时先按本文件校验完整性，不通过即 exit 2（基础设施故障，不是视觉回归）。",
-  "generatedAt": "2026-10-29T07:42:15.523Z",
+  "generatedAt": "2026-10-29T10:12:03.580Z",
   "forms": {
     "components": "per-scene-v1",
     "hover": "per-scene-v1"
@@ -99,7 +99,7 @@
       },
       {
         "path": "dark/scene-chat-input-driven.png",
-        "md5": "72c5653b06ba7cae63823594ea8e62a2"
+        "md5": "389d330ee768bc13c684fe7227ce0a22"
       },
       {
         "path": "dark/scene-chat-input.png",

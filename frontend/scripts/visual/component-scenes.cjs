@@ -349,8 +349,18 @@ const API_FIXTURES={
 http.defaults.adapter=async(config)=>{
   const url=String(config.url||'');
   window.__apiCalls=(window.__apiCalls||[]).concat(url);
-  const hit=Object.keys(API_FIXTURES).find((k)=>url.startsWith(k));
-  return {data:hit?API_FIXTURES[hit]:{code:1,data:null},status:200,statusText:'OK',headers:{},config,request:{}};
+  // 在飞的请求计数：采集前必须等它归零。
+  // 为什么不能靠「等固定时长」：组件取数是异步的，数据落地后会触发一次重渲染（行从 0 条变 2 条，
+  // 容器高度、边框 y 坐标都会变）。若截图正好落在这之前/之后，同一份代码两次采集就会差出
+  // 189px / maxDelta 8（正是 agents-tab-row 的实测抖动）。用「在飞计数归零」把这一点变成可观测事实，
+  // 而不是靠猜时间。
+  window.__apiPending=(window.__apiPending||0)+1;
+  try{
+    const hit=Object.keys(API_FIXTURES).find((k)=>url.startsWith(k));
+    return {data:hit?API_FIXTURES[hit]:{code:1,data:null},status:200,statusText:'OK',headers:{},config,request:{}};
+  } finally {
+    window.__apiPending=Math.max(0,(window.__apiPending||1)-1);
+  }
 };
 window.__apiProbe=async()=>{ try { const r=await http.get('/agent/list?page=1&pageSize=100'); return JSON.stringify(r).slice(0,300); } catch(e){ return 'ERR:'+String(e&&e.message||e); } };
 /** 灰阶混用场景的数据：固定 id / 固定文案，保证基线可重复。 */
@@ -516,6 +526,130 @@ async function waitForStableDom(evaluate, sceneKey, { timeoutMs = 6000, sampleMs
 }
 
 /**
+ * 等到「没有在飞的接口请求」。
+ *
+ * <p><b>为什么需要它（与 {@link waitForStableDom} 互补，不能互相替代）：</b>
+ * DOM 采样只能看到「已经落到 DOM 上的变化」。AgentsTab 的取数是
+ * 「挂载 → adapter 返回 → nextTick 落 DOM」，若采样窗口正好卡在「请求已发出、数据还没落 DOM」
+ * 的那一小段，两次 DOM 采样可能都是同一个「空态」而判定稳定 —— 但紧接着的 re-render 会让
+ * 截图变成「列表态」，于是同一份代码两次采集就差了 189 个像素（实测就是 agents-tab-row）。
+ * 把 adapter 的在飞计数也纳入判据后，这一类「尚未落到 DOM 的异步工作」也能被观测到。</p>
+ *
+ * @param {(expr: string) => Promise<any>} evaluate 页面求值函数
+ * @param {string} sceneKey 场景键（仅用于报错定位）
+ * @param {{timeoutMs?: number, sampleMs?: number}} [options] 超时与采样间隔
+ * @returns {Promise<void>} 在飞请求归零时返回
+ * @throws {Error} 超时仍有在飞请求时抛出
+ */
+async function waitForNoPendingRequests(evaluate, sceneKey, { timeoutMs = 6000, sampleMs = 60 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const pending = await evaluate('window.__apiPending||0');
+    if (pending === 0) return;
+    await new Promise((r) => setTimeout(r, sampleMs));
+  }
+  throw new Error(`[${sceneKey}] ${timeoutMs}ms 内仍有在飞接口请求（window.__apiPending≠0），拒绝在异步未落定时截图`);
+}
+
+/**
+ * 采集一次的「图集合」：容器 clip 图 +（可选）整页图，各带 PNG 字节。
+ *
+ * <p>为什么两遍 PNG 字节要一起验：ROI 是从整页图裁的，只验容器图的话，
+ * 「容器图稳定但整页图抖」仍会让 42 张 ROI 里的一张变字节。</p>
+ *
+ * @typedef {{image: object, buffer: Buffer}} Shot
+ * @typedef {{container: Shot, fullPage: Shot|null, box: {x: number, y: number, width: number, height: number}}} ShotSet
+ */
+
+/** 采集确定性判据的最大轮数（1 轮 = 抓两遍并逐字节比对）。 */
+const CAPTURE_STABILITY_ROUNDS = 5;
+
+/**
+ * 抓一次「图集合」，并在字节层面做像素差异描述（仅用于失败诊断）。
+ *
+ * @param {{a: Buffer, b: Buffer}} pair 两遍 PNG 字节
+ * @param {string} label 图像标识
+ * @returns {Promise<string>} 人话描述
+ */
+async function describeShotDiff(pair, label) {
+  const bytes = `字节 ${pair.a.length} vs ${pair.b.length}`;
+  if (pair.a.length === pair.b.length && pair.a.equals(pair.b)) return `${label}：一致`;
+  try {
+    const { decodePng, compareImagePair } = await import('./compare.mjs');
+    const result = compareImagePair(decodePng(pair.a), decodePng(pair.b));
+    return `${label}：${bytes}，changedPixels=${result.changedPixels} maxChannelDelta=${result.maxChannelDelta}`;
+  } catch (e) {
+    return `${label}：${bytes}（像素级诊断不可用：${e && e.message ? e.message : e}）`;
+  }
+}
+
+/**
+ * 确定性地抓「一场景一态」的图：同一状态连抓两遍，**逐字节相等才采信**；不等就重抓，最多 N 轮。
+ *
+ * <p><b>为什么这个判据能根治抖动（而不是「多等一会」）：</b>
+ * 抖动的本质是「截图采样了一个正在移动的状态」。单次截图只能给出某一个合成帧，
+ * 它是否属于终态**无法从这一帧本身判断**。连续抓两遍逐字节比对，等价于在采样时刻
+ * 检查「这一页的像素是不是已经静止」：静止页两帧必然相同；只要还有任何在变的东西
+ * （异步 re-render、字体回填、图层提升、动画残留）就会暴露为字节差异，于是我们**不落盘**。
+ * 于是「写进基线的每一张图」都满足「至少被连续观测到两次相同」，两次 baseline 之间也就不可能
+ * 出现字节差异；真正的持续抖动会在 N 轮后抛错（宁可红，也不留不稳定基线）。</p>
+ *
+ * <p><b>判据只作用于采集，不放宽任何比对口径</b>：pixelDelta / threshold / strongPixels 全部未动。</p>
+ *
+ * @param {{capturer: object, evaluate: Function, sceneKey: string, theme: 'light'|'dark', needFullPage: boolean}} options 采集参数
+ * @returns {Promise<ShotSet>} 已确认稳定的图集合
+ * @throws {Error} N 轮后仍不稳定时抛出
+ */
+async function captureStableSet({ capturer, evaluate, sceneKey, theme, needFullPage }) {
+  const measureBox = async () => {
+    const box = await evaluate(`(() => { const el = document.querySelector('[data-scene="${sceneKey}"]');
+      if (!el) return null; const r = el.getBoundingClientRect();
+      return { x: r.left, y: r.top, width: r.width, height: r.height }; })()`);
+    if (!box || box.width <= 0 || box.height <= 0) {
+      throw new Error(`[${theme}/${sceneKey}] 场景容器不存在或不可见，拒绝截图（否则是空图基线）`);
+    }
+    return box;
+  };
+  const grab = async () => {
+    const box = await measureBox();
+    const containerImage = await capturer.clip(box);
+    const containerBuffer = containerImage.toPNG();
+    let fullPage = null;
+    if (needFullPage) {
+      const fullPageImage = await captureFullPageShot(capturer, theme, sceneKey);
+      fullPage = { image: fullPageImage, buffer: fullPageImage.toPNG() };
+    }
+    return { container: { image: containerImage, buffer: containerBuffer }, fullPage, box };
+  };
+
+  let lastProblem = '';
+  for (let round = 1; round <= CAPTURE_STABILITY_ROUNDS; round += 1) {
+    const first = await grab();
+    // 让合成管线走完两帧再抓第二遍：静止页面两帧后像素必然一致；
+    // 仍在变（异步 re-render / 字体回填 / 图层提升）就必然在这里暴露。
+    await evaluate('new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))');
+    const second = await grab();
+    const containerSame = first.container.buffer.equals(second.container.buffer);
+    const fullSame = needFullPage ? first.fullPage.buffer.equals(second.fullPage.buffer) : true;
+    if (containerSame && fullSame) {
+      if (round > 1) console.error(`[capture] ${theme}/${sceneKey} 第 ${round} 轮才稳定（已丢弃前 ${round - 1} 轮抖动样本）`);
+      return second;
+    }
+    const details = [];
+    if (!containerSame) details.push(await describeShotDiff({ a: first.container.buffer, b: second.container.buffer }, '容器图'));
+    if (!fullSame) details.push(await describeShotDiff({ a: first.fullPage.buffer, b: second.fullPage.buffer }, '整页图'));
+    lastProblem = details.join('；');
+    console.error(`[capture] ${theme}/${sceneKey} 第 ${round}/${CAPTURE_STABILITY_ROUNDS} 轮两遍抓图不一致 → 重抓。${lastProblem}`);
+    // 重抓之前再等一帧：如果是「正好卡在某个异步落定瞬间」，下一轮通常立刻稳定。
+    await evaluate('new Promise((r) => setTimeout(r, 0))');
+  }
+  throw new Error(
+    `[${theme}/${sceneKey}] 采集不确定：连续 ${CAPTURE_STABILITY_ROUNDS} 轮「抓两遍逐字节相等」判据均失败（${lastProblem}）。`
+    + '拒绝写入抖动基线 —— 这是采集层的基础设施问题，不是视觉回归；请先让该场景的渲染输入确定（无异步 re-render / 无字体回填）。',
+  );
+}
+
+/**
  * 抓整页图（ROI 的裁切源），失败重试并给出可诊断的错误。
  *
  * <p><b>为什么用整页图而不是视口图：</b>`capturePage()`（视口图）在本机 offscreen 下恒为
@@ -598,9 +732,13 @@ async function captureScene({ scene, theme, outDir, mutate = false, breakTheme =
       await evaluate('window.flush()');
     }
 
-    // 稳定化两道：① 字体加载完（否则同一份代码会因字体替换时机产生 1px 级差异）；
-    // ② 容器 DOM 连续两次采样一致（异步取数的组件必须落定，否则截到「加载中→空态」的中间帧）。
+    // 稳定化三道（全部是「可观测事实」，不是「多等一会」）：
+    // ① 字体加载完（否则同一份代码会因字体替换时机产生 1px 级差异）；
+    // ② adapter 在飞请求归零（异步取数尚未落到 DOM 的窗口也要排除）；
+    // ③ 容器 DOM 连续两次采样一致（落定后的 DOM 事实）。
+    // 三道之后仍由 captureStableSet 做「抓两遍逐字节相等」的最终判据。
     await evaluate('document.fonts.ready.then(() => true)');
+    await waitForNoPendingRequests(evaluate, scene.key);
     await waitForStableDom(evaluate, scene.key);
 
     const styles = await evaluate(readStylesExpr(scene.targets));
@@ -620,22 +758,19 @@ async function captureScene({ scene, theme, outDir, mutate = false, breakTheme =
 
     const probe = await evaluate(kit.PROBE_JS);
 
-    // 容器图：CDP clip 到容器矩形，尺寸同时记进 styles.json.scenes（「容器被意外裁小」要能回溯期望值）。
-    const box = await evaluate(`(() => { const el = document.querySelector('[data-scene="${scene.key}"]');
-      if (!el) return null; const r = el.getBoundingClientRect();
-      return { x: r.left, y: r.top, width: r.width, height: r.height }; })()`);
-    if (!box || box.width <= 0 || box.height <= 0) {
-      throw new Error(`[${theme}/${scene.key}] 场景容器不存在或不可见，拒绝截图（否则是空图基线）`);
-    }
-    const containerShot = await capturer.clip(box);
+    // 容器图 + 整页图：同一时刻连抓两遍、逐字节相等才采信（见 captureStableSet 的机制说明）。
+    // 容器尺寸同时记进 styles.json.scenes（「容器被意外裁小」要能回溯期望值）。
+    const needFullPage = scene.targets.length > 0;
+    const stable = await captureStableSet({ capturer, evaluate, sceneKey: scene.key, theme, needFullPage });
+    const containerShot = stable.container.image;
     const containerFile = await kit.themeImagePath(outDir, theme, kit.sceneImageName(scene.key));
-    await fsp.writeFile(containerFile, containerShot.toPNG());
+    await fsp.writeFile(containerFile, stable.container.buffer);
     const containerSize = containerShot.getSize();
 
     // 元素 ROI：一律从整页图裁（见 captureFullPageShot 的注释：单一规则、不被视口高度夹掉）。
     const roi = [];
-    if (scene.targets.length > 0) {
-      const fullImage = await captureFullPageShot(capturer, theme, scene.key);
+    if (needFullPage) {
+      const fullImage = stable.fullPage.image;
       const pageWidth = await evaluate('document.documentElement.scrollWidth || window.innerWidth');
       const ratio = kit.imageRatio(fullImage, pageWidth);
       const rects = await evaluate(`(() => {
