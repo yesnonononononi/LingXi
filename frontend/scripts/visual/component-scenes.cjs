@@ -28,6 +28,14 @@ const CUR_DIR = path.join(COMP_ROOT, 'current');
 const DIFF_DIR = path.join(COMP_ROOT, 'diff');
 const WORK = kit.sceneDir('component-scenes');
 const TOKENS = kit.readTokenValues();
+/**
+ * 基线「形态」标记（G-5）。
+ *
+ * <p>为什么要它：形态变了（全景图 → 每场景容器图）但字节也变了，光靠 MD5 无法区分
+ * 「形态变更」与「视觉回归」。把形态写进 oracle 顶层 `forms` 后，不匹配就 exit 2
+ * （基础设施/代码与基线没配对），而不是 exit 1（真视觉回归）。</p>
+ */
+const FORM = 'per-scene-v1';
 
 const argv = process.argv.slice(2);
 const argOf = (key, fb) => { const i = argv.indexOf(`--${key}`); return i >= 0 && argv[i + 1] ? argv[i + 1] : fb; };
@@ -142,23 +150,34 @@ const STABILIZE_CSS = '*, *::before, *::after { caret-color: transparent !import
   + ' animation: none !important; transition: none !important; }';
 
 /**
- * 场景视口尺寸。
+ * 「固定画布」声明：每页都强制两条滚动条常驻。
  *
- * <p>为什么不是默认的 780×760：本批把 Sidebar 的 4 个场景追加在页面下方，整体高度约 2.9k px。
- * 若沿用默认视口，`capturePage()` 只截到前 760 px ⇒ 侧栏根本不在基线图里（"有场景没覆盖"的假绿）。</p>
+ * <p><b>为什么需要它（实测教训）：</b>页面的**可滚动画布**会决定经典滚动条是否占位，而占位与否
+ * 直接改变布局宽度（800 或 800−17），进而改变 `main` 的居中偏移（x=20 或 x=11.5）。
+ * x 落在半像素上还是整像素上，会让整片文字的亚像素抗锯齿都变 —— 于是「同一个元素、同一份代码」
+ * 的 ROI 字节也会变。旧形态（所有场景同页、内容 5000+ px 高、最宽的 section 768+40 > 800）
+ * 天然两条滚动条都在；一页一场景后窄场景页没有横向溢出，布局宽度就与旧形态不同。</p>
+ *
+ * <p>把它变成显式的固定画布（`overflow: scroll`）后，**每个场景页的布局几何逐像素一致**，
+ * 与「这一页里有几个场景、多高」完全无关 —— 这既保住了既有 ROI 的字节，也保住了
+ * 「新增场景不影响别人」这条解耦承诺（若依赖内容自然撑出滚动条，页内一改就又漂了）。</p>
  */
+const SCENE_CANVAS_CSS = 'html { overflow: hidden; }';
 /**
- * 场景窗口尺寸。
+ * 场景页视口尺寸（G-5 起每场景一个独立 page，但宽度/高度取与旧基线同一有效视口）。
  *
- * <p><b>为什么保持 800×3100 不变：</b>窗口高度会改变 CSS `vh`，从而改变既有 9 个场景的布局 ——
- * 一旦调高窗口，既有 light.png / dark.png 与 4 张既有 ROI 就会整片变化（实测改到 5800 时
- * 上部区域有 8.2 万像素差），那等于默默重建既有基线。</p>
+ * <p><b>为什么宽度必须保持 800：</b>页面宽度决定 `main`（宽度 720、`margin:0 auto`）的居中偏移
+ * 与可用宽度，进而决定每个元素落在哪个像素上。宽度一变，文字抗锯齿就会整片差异 ——
+ * 那是「基线被悄悄换掉」，不是「场景解耦」。</p>
  *
- * <p>下方新增场景不靠调大窗口来覆盖，而靠 {@link captureFullPage} 的 CDP 全页截图
- * （`captureBeyondViewport`）作为 ROI 裁切源 —— 既不动既有基线，也不会把新场景裁掉。
- * 另外实测本机 `capturePage()` 无论窗口多高都只返回 800×1032，调大窗口本身也拿不到下方内容。</p>
+ * <p><b>为什么高度取 1032 而不是 3100：</b>实测本机 offscreen 下 `capturePage()` 无论请求多高
+ * 都只返回 800×1032，即旧基线的**有效**视口就是 800×1032。新形态照这个有效值开页面，
+ * `vh` 与媒体查询的口径才与旧基线一致，既有 ROI 才能逐字节不变（G-5 硬指标）。</p>
+ *
+ * <p>需要更高视口的场景可在 {@link SCENES} 里单独给 `viewport`，互不影响 —— 这正是解耦的意义。</p>
  */
-const SCENE_VIEWPORT = { width: 800, height: 3100 };
+const SCENE_VIEWPORT = { width: 800, height: 1032 };
+
 
 /** 三个目标场景的 computed-style 采集选择器（函数体在渲染器里执行）。 */
 const TARGETS = [
@@ -177,6 +196,11 @@ const TARGETS = [
     sel: `(()=>{const root=document.querySelector('[data-scene="sidebar-open"]');if(!root)return null;return [...root.querySelectorAll('span,div')].find(el=>el.children.length===0&&el.textContent.trim()==='ws-alpha')||null;})()` },
   { key: 'sidebarSessionTitle', desc: 'Sidebar 会话标题（会话行文字色）',
     sel: `(()=>{const root=document.querySelector('[data-scene="sidebar-open"]');if(!root)return null;return [...root.querySelectorAll('span,div')].find(el=>el.children.length===0&&el.textContent.trim()==='会话一')||null;})()` },
+  // G-5：本目标固定在「展开态」页采集 —— 与 G-5 之前的口径逐字等价（旧选择器就是
+  // 在 `[data-scene="sidebar-open"]` 内取最后一个 button[title]，即带文字的「设置」按钮）。
+  // 曾经被错注册到 `sidebar-collapsed` 场景：一页一场景后那个页面上根本没有 open 容器，
+  // 基线重建直接红；即使把选择器改成 `[data-scene^="sidebar-"]`，折叠态取到的是纯图标按钮
+  // （40px 宽）而不是同一个元素（72px 宽）—— 那是「换了被测对象」，不是解耦。
   { key: 'sidebarFooterButton', desc: 'Sidebar 底部设置按钮（footer 容器内唯一带 title 的按钮）',
     sel: `(()=>{const root=document.querySelector('[data-scene="sidebar-open"]');if(!root)return null;const list=[...root.querySelectorAll('button[title]')];return list.length?list[list.length-1]:null;})()` },
   { key: 'sidebarEmptyState', desc: 'Sidebar 空态文案（无工作区无会话 → 「暂未指定工作区」）',
@@ -212,6 +236,42 @@ const TARGETS = [
     sel: `document.querySelector('[data-scene="team-modal-row"] div.divide-y > div span.text-xs')` },
 ];
 
+/**
+ * 场景注册表（G-5 的判据实现点）。
+ *
+ * <p><b>为什么要有这张表：</b>解耦的定义是「新增一个场景，既有基线的字节一个都不变」。
+ * 要做到这点，每个场景必须拥有**自己的页面与自己的视口**，页面里只挂自己那一个容器 ——
+ * 于是「新增场景」= 在这张表加一行，不会改动任何别的场景的文档高度、宽度或裁切源。</p>
+ *
+ * <p>字段说明：`targets` 是该场景页上要采集 computed style / 裁 ROI 的目标（必须在本页渲染）；
+ * `prep` 是采集前的页面动作（展开下拉、聚焦输入框），顺序即执行顺序；
+ * `settleMs` 是动作后的稳定等待（过渡/动画已被 STABILIZE_CSS 关掉，这里等的是布局提交）。</p>
+ */
+const SCENES = [
+  { key: 'card-header', label: 'CardHeader 标题', targets: ['cardHeaderTitle'], prep: [], settleMs: 120 },
+  { key: 'choice', label: 'RequireChoiceCard 自定义输入框', targets: ['choiceCustomInput'], prep: ['focusCustomInput'], settleMs: 120 },
+  { key: 'dropdown', label: 'DropUpSelect 展开菜单', targets: ['dropdownMenuTitle'], prep: ['openDropdown'], settleMs: 400 },
+  { key: 'chat-input', label: 'ChatInputArea', targets: ['chatInputTextarea'], prep: [], settleMs: 120 },
+  { key: 'chat-input-driven', label: 'ChatInputArea（已选智能体）', targets: [], prep: [], settleMs: 120 },
+  { key: 'sidebar-open', label: 'Sidebar 展开态', targets: ['sidebarWorkspaceLabel', 'sidebarSessionTitle', 'sidebarFooterButton'], prep: [], settleMs: 120 },
+  { key: 'sidebar-empty', label: 'Sidebar 空态', targets: ['sidebarEmptyState'], prep: [], settleMs: 120 },
+  // 折叠态只采容器图：它的验收点是「折叠后的整体外观」，没有元素级目标（旧实现里被错挂的
+  // sidebarFooterButton 已回到 sidebar-open —— 那个目标测的是带文字的设置按钮）。
+  { key: 'sidebar-collapsed', label: 'Sidebar 折叠态', targets: [], prep: [], settleMs: 120 },
+  { key: 'sidebar-history', label: 'Sidebar 历史分组', targets: ['sidebarHistoryTitle'], prep: [], settleMs: 120 },
+  { key: 'chat-message-item', label: 'ChatMessageItem 气泡', targets: ['cmiBubble', 'cmiBody', 'cmiMeta'], prep: [], settleMs: 120 },
+  { key: 'settings-modal-card', label: 'SettingsModal 卡片', targets: ['smCard', 'smTitle'], prep: [], settleMs: 120 },
+  { key: 'agents-tab-row', label: 'AgentsTab 行', targets: ['atRow', 'atName', 'atDesc'], prep: [], settleMs: 120 },
+  { key: 'subagent-panel', label: 'SubAgentSidePanel', targets: ['sapShell', 'sapTitle'], prep: [], settleMs: 120 },
+  { key: 'team-modal-row', label: 'TeamModal 成员行', targets: ['tmRow', 'tmName'], prep: [], settleMs: 120 },
+];
+
+/**
+ * 容器图一律用 CDP clip 抓（`capturePage()` 会被夹在 1032 高、小尺寸还会抛 UnknownVizError），
+ * ROI 一律从该页的视口图裁（与旧基线同一原语、同一像素网格 ⇒ 逐字节不变）。见 scene-kit 的
+ * `createCapturer` 注释。
+ */
+
 
 const STYLE_PROPS = ['color', 'backgroundColor', 'borderTopColor', 'outlineColor', 'textShadow', 'opacity', 'fontSize', 'fontWeight'];
 
@@ -231,6 +291,15 @@ import http from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/services/int
 import { useTheme } from '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/composables/useTheme.ts'))}';
 import '${kit.relFrom(WORK, path.join(FRONTEND_ROOT, 'src/style.css'))}';
 const dark=ref(false);
+/**
+ * G-5：场景页参数（?scene=<key>）。
+ *
+ * <p>空串 = 组合模式：把所有场景按正常流渲染在同一页上。它只服务「只看 computed style、
+ * 不截图」的断言路径（--assert-dark-colors / --assert-low-tier / --assert-shadow）与主题护栏自检，
+ * 因此不需要绝对定位之类的布局规避技巧 —— 那些技巧只为截图服务，而截图已经改成一场景一页。</p>
+ */
+const sceneKey=new URLSearchParams(location.search).get('scene')||'';
+const show=(key)=>!sceneKey||sceneKey===key;
 /**
  * Sidebar 的暗色分支读的是 useTheme 的模块单例（不是 isDark prop），
  * 因此场景切主题时必须同时驱动 useTheme —— 否则侧栏永远停在初始主题上，
@@ -261,9 +330,12 @@ const sbHistorySessions=Array.from({length:7},(_,i)=>mkSession('h'+(i+1),'历史
  * 用 axios adapter 返回确定性的 Result 形状（code:1 = 成功，见 utils/api.ts 的 SUCCESS_CODES），
  * 让组件走真实渲染分支，同时保证数据固定、基线不随时间漂移。</p>
  */
+// 头像不用 emoji：彩色 emoji 的字体回退/加载时机不同会让行盒高度出现亚像素差，
+// 进而让下方卡片的 1px 上边框落在不同像素上 —— 实测表现为「同一份代码两次采集
+// 189 个像素、maxDelta 8」的假红。改用 CJK 单字（页面本身就是 zh-CN，字体必然已就位）。
 const apiAgentRows=[
-  {id:1,name:'代码助手',avatar:'🤖',modelId:'m1',description:'灰阶场景用的智能体',toolList:['read_file']},
-  {id:2,name:'文档助手',avatar:'📄',modelId:'m1',description:'第二个成员行（触发 divide 边框）',toolList:[]},
+  {id:1,name:'代码助手',avatar:'代',modelId:'m1',description:'灰阶场景用的智能体',toolList:['read_file']},
+  {id:2,name:'文档助手',avatar:'文',modelId:'m1',description:'第二个成员行（触发 divide 边框）',toolList:[]},
 ];
 const apiToolRows=[{name:'read_file',description:'读取文件',readOnly:true},{name:'write_file',description:'写入文件',readOnly:false}];
 const apiModelGroups=[{providerName:'本地',models:[{id:'m1',modelName:'GPT-Test',providerName:'本地'}]}];
@@ -303,62 +375,59 @@ window.focusCustomInput=()=>{const input=document.querySelector('[data-scene="ch
 </script>
 <template>
   <main style="width:720px;margin:0 auto;padding:20px;font-family:system-ui,sans-serif" :class="dark?'text-zinc-100':'text-zinc-900'">
-    <section data-scene="card-header" style="padding:10px 8px">
+    <section v-if="show('card-header')" data-scene="card-header" style="padding:10px 8px">
       <CardHeader tone="pending" type-label="计划" title="卡片标题可见性探针" :is-dark="dark" />
     </section>
-    <section data-scene="choice" style="padding:10px 8px">
+    <section v-if="show('choice')" data-scene="choice" style="padding:10px 8px">
       <RequireChoiceCard :prompt-card="choiceCard" :is-dark="dark" />
     </section>
-    <section data-scene="dropdown" style="padding:10px 8px;min-height:260px">
+    <section v-if="show('dropdown')" data-scene="dropdown" style="padding:10px 8px;min-height:260px">
       <DropUpSelect v-model="sel" :options="opts" :is-dark="dark" menu-title="下拉菜单标题" />
     </section>
-    <section data-scene="chat-input" style="padding:10px 8px;min-height:220px">
+    <section v-if="show('chat-input')" data-scene="chat-input" style="padding:10px 8px;min-height:220px">
       <ChatInputArea :is-dark="dark" :context-usage="inputUsage" :models="inputModels" />
     </section>
-    <section data-scene="chat-input-driven" style="padding:10px 8px;min-height:220px">
+    <section v-if="show('chat-input-driven')" data-scene="chat-input-driven" style="padding:10px 8px;min-height:220px">
       <ChatInputArea :is-dark="dark" :models="inputModels" :agents="inputAgents" selected-agent-id="a1" />
     </section>
     <!-- 以下 4 个 Sidebar 场景：固定尺寸 + 固定数据，明暗两态由 runner 切换。
          一个 section × 两主题即可同时覆盖「暗色 BranchedMenu 分支」与「亮色自绘列表」。 -->
-    <section data-scene="sidebar-open" style="width:264px;height:520px;overflow:hidden;border:1px solid #8884">
+    <section v-if="show('sidebar-open')" data-scene="sidebar-open" style="width:264px;height:520px;overflow:hidden;border:1px solid #8884">
       <Sidebar :sessions="sbSessions" active-session-id="s1" :workspaces="sbWorkspaces" :active-workspace-id="1" :is-collapsed="false" :is-dark="dark" />
     </section>
-    <section data-scene="sidebar-empty" style="width:264px;height:520px;overflow:hidden;border:1px solid #8884">
+    <section v-if="show('sidebar-empty')" data-scene="sidebar-empty" style="width:264px;height:520px;overflow:hidden;border:1px solid #8884">
       <Sidebar :sessions="[]" :active-session-id="null" :workspaces="[]" :is-collapsed="false" :is-dark="dark" />
     </section>
-    <section data-scene="sidebar-collapsed" style="width:80px;height:520px;overflow:hidden;border:1px solid #8884">
+    <section v-if="show('sidebar-collapsed')" data-scene="sidebar-collapsed" style="width:80px;height:520px;overflow:hidden;border:1px solid #8884">
       <Sidebar :sessions="[]" :active-session-id="null" :workspaces="sbWorkspaces" :is-collapsed="true" :is-dark="dark" />
     </section>
-    <section data-scene="sidebar-history" style="width:264px;height:640px;overflow:hidden;border:1px solid #8884">
+    <section v-if="show('sidebar-history')" data-scene="sidebar-history" style="width:264px;height:640px;overflow:hidden;border:1px solid #8884">
       <Sidebar :sessions="sbHistorySessions" :active-session-id="null" :workspaces="[]" :is-collapsed="false" :is-dark="dark" />
     </section>
     <!-- 以下 5 个「灰阶混用组件」场景（V1）。
-         关键：外层用 **绝对定位** 承载，不参与文档流 ⇒ 页面总高度不变、不出现竖向滚动条 ⇒
-         上方 9 个既有场景的布局与像素一字节不变（实测：把新场景放进正常流会让上部 8.2 万像素
-         因滚动条挤压而变，等于默默重建既有基线）。绝对定位元素仍会渲染、仍可测 computed style，
-         也仍被 CDP 全页截图（captureBeyondViewport）覆盖，因此新场景的 ROI 不丢。
-         SettingsModal / TeamModal 根节点是 fixed inset-0 全屏遮罩，再套一层 transform 容器，
-         让它们以该容器为包含块，避免盖住整页。 -->
-    <div data-scene-group="gray-scale" style="position:absolute;left:0;top:3400px;width:800px">
-    <section data-scene="chat-message-item" style="padding:10px 8px">
+         它们以前靠 position:absolute;top:3400px 避开文档流，因为共用一页时新增场景会把上方
+         既有场景挤下去（滚动条一出现，上部 8.2 万像素就变）。G-5 改成一场景一页后这个 hack
+         已删除：每个场景页里只有自己，谁也不会挤谁。
+         SettingsModal / TeamModal 根节点是 fixed inset-0 全屏遮罩，因此仍套一层 transform 容器
+         让它们以该容器为包含块（这是组件本身的使用方式，不是布局规避）。 -->
+    <section v-if="show('chat-message-item')" data-scene="chat-message-item" style="padding:10px 8px">
       <ChatMessageItem :message="cmiMessage" :is-dark="dark" session-id="42" />
     </section>
-    <section data-scene="settings-modal-card" style="position:relative;transform:translateZ(0);width:768px;height:600px;overflow:hidden;border:1px solid #8884">
+    <section v-if="show('settings-modal-card')" data-scene="settings-modal-card" style="position:relative;transform:translateZ(0);width:768px;height:600px;overflow:hidden;border:1px solid #8884">
       <SettingsModal :is-dark="dark" initial-tab="about" :teleport="false" />
     </section>
-    <section data-scene="agents-tab-row" style="width:720px;padding:8px;border:1px solid #8884">
+    <section v-if="show('agents-tab-row')" data-scene="agents-tab-row" style="width:720px;padding:8px;border:1px solid #8884">
       <AgentsTab :is-dark="dark" />
     </section>
-    <section data-scene="subagent-panel" style="width:380px;height:460px;overflow:hidden;border:1px solid #8884">
+    <section v-if="show('subagent-panel')" data-scene="subagent-panel" style="width:380px;height:460px;overflow:hidden;border:1px solid #8884">
       <SubAgentSidePanel :items="sapItems" active-sub-id="sub-1" :is-open="true" :is-dark="dark" />
     </section>
-    <section data-scene="team-modal-row" style="position:relative;transform:translateZ(0);width:768px;height:620px;overflow:hidden;border:1px solid #8884">
+    <section v-if="show('team-modal-row')" data-scene="team-modal-row" style="position:relative;transform:translateZ(0);width:768px;height:620px;overflow:hidden;border:1px solid #8884">
       <TeamModal :is-open="teamOpen" :is-dark="dark" :models="[]" :teleport="false" />
     </section>
-    </div>
   </main>
 </template>
-<style>${STABILIZE_CSS}</style>`;
+<style>${STABILIZE_CSS}${SCENE_CANVAS_CSS}</style>`;
 
 const ENTRY_JS = `import {createApp,nextTick} from 'vue';
 localStorage.setItem('lingxi-locale','zh-CN');
@@ -372,12 +441,18 @@ async function buildApp() {
   await kit.buildMiniApp({ id: 'component-scenes', appVue: APP_VUE, entryJs: ENTRY_JS });
 }
 
-/** 在渲染器里读取某选择器目标的 computed style 与可见性。 */
-function readStylesExpr() {
+/**
+ * 在渲染器里读取目标元素的 computed style 与可见性。
+ *
+ * @param {string[]} keys 要采集的目标键（G-5 起按场景页过滤：一页只有该场景的目标）
+ * @returns {string} 渲染器表达式
+ */
+function readStylesExpr(keys) {
+  const selected = TARGETS.filter((t) => keys.includes(t.key));
   return `(() => {
     const props = ${JSON.stringify(STYLE_PROPS)};
     const out = {};
-    const defs = ${JSON.stringify(TARGETS.map(t => ({ key: t.key, sel: t.sel })))};
+    const defs = ${JSON.stringify(selected.map(t => ({ key: t.key, sel: t.sel })))};
     for (const d of defs) {
       const el = eval(d.sel);
       if (!el) { out[d.key] = { found: false }; continue; }
@@ -391,6 +466,9 @@ function readStylesExpr() {
   })()`;
 }
 
+/** 目标键 → 目标声明（报错文案用）。 */
+const TARGET_BY_KEY = new Map(TARGETS.map((t) => [t.key, t]));
+
 /** 故意破坏主题切换，验证「主题未翻转」护栏会红。两种破坏各打一条断言路径。 */
 const BREAK_THEME_JS = {
   // 只切 class 不写 data-theme：等价于「主题标记位没落到根节点」。
@@ -402,81 +480,250 @@ const BREAK_THEME_JS = {
       if (v) el.style.removeProperty('--lx-text-secondary'); else el.style.setProperty('--lx-text-secondary', '#e4e4e7'); }; })()`,
 };
 
-async function captureTheme(win, theme, outDir, mutate = false, breakTheme = null) {
-  const evaluate = s => win.webContents.executeJavaScript(s);
-  if (breakTheme) {
-    await evaluate(BREAK_THEME_JS[breakTheme]);
-    await evaluate('window.flush()');
+/**
+ * 等到容器 DOM 稳定（连续两次采样签名相同）。
+ *
+ * <p><b>为什么必需：</b>场景里挂的是真实组件，有些组件会异步取数据（AgentsTab 会打后端，
+ * 测试环境拿到 500 后落到空态）。若在「取数中 → 空态」的交界处截图，同一份代码两次采集会
+ * 得到 189 个像素、maxDelta 8 的微差 —— 那是**假红**，会让人去查一个根本不存在的回归。
+ * 这里用「连续两次 innerHTML+textContent 采样完全一致」作为稳定判据，与组件内部实现无关。</p>
+ *
+ * @param {(expr: string) => Promise<any>} evaluate 页面求值函数
+ * @param {string} sceneKey 场景键
+ * @param {{timeoutMs?: number, sampleMs?: number}} [options] 超时与采样间隔
+ * @returns {Promise<void>}
+ * @throws {Error} 超时仍未稳定时抛出（宁可红，也不要在抖动中截图）
+ */
+async function waitForStableDom(evaluate, sceneKey, { timeoutMs = 6000, sampleMs = 120 } = {}) {
+  const expr = `(() => { const el = document.querySelector('[data-scene="${sceneKey}"]');
+    return el ? (el.innerHTML.length + '|' + el.textContent) : 'missing'; })()`;
+  let prev = null;
+  let stableCount = 0;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const signature = await evaluate(expr);
+    if (signature === 'missing') throw new Error(`[${sceneKey}] 场景容器不存在，无法等待稳定`);
+    if (signature === prev) {
+      stableCount += 1;
+      if (stableCount >= 2) return;
+    } else {
+      stableCount = 0;
+      prev = signature;
+    }
+    await new Promise((r) => setTimeout(r, sampleMs));
   }
-  await evaluate(`window.setDark(${theme === 'dark'})`);
-  await evaluate('window.flush()');
-  // 护栏：主题必须真的翻转（根标记位 + 令牌变量 + Tailwind 映射后的计算色）。
-  const themeProbe = await kit.assertThemeApplied(evaluate, theme, TOKENS);
-
-  // 先开下拉（点按钮会 blur），再聚焦自定义输入框，最后统一等待过渡完成。
-  await evaluate('window.openDropdown()');
-  await evaluate('window.flush()');
-  await new Promise(r => setTimeout(r, 400));
-  await evaluate('window.focusCustomInput()');
-  await evaluate('window.flush()');
-  await new Promise(r => setTimeout(r, 120));
-
-  if (mutate) {
-    // 只改「标题」颜色，制造一个极小面积差异，验证比对/样式采集不会漏。
-    await evaluate(`(() => { const el = document.querySelector('[data-scene="card-header"] span[title]'); if (el) el.style.setProperty('color', 'rgb(255, 0, 255)', 'important'); })()`);
-    await evaluate('window.flush()');
-  }
-
-  const styles = await evaluate(readStylesExpr());
-  // 断言：目标都在、都可见、输入框确实获得焦点、下拉菜单标题已展开。
-  const problems = [];
-  for (const t of TARGETS) {
-    const s = styles[t.key];
-    if (!s || !s.found) problems.push(`${t.key}: 目标不存在（${t.desc}）`);
-    else if (!s.visible) problems.push(`${t.key}: 目标不可见`);
-  }
-  const inputFocused = await evaluate(`document.activeElement === document.querySelector('[data-scene="choice"] input[type="text"]')`);
-  if (!inputFocused) problems.push('choiceCustomInput: 未获得焦点');
-  if (problems.length) throw new Error(`[${theme}] 场景断言失败：\n  - ${problems.join('\n  - ')}`);
-
-  await fsp.mkdir(outDir, { recursive: true });
-  const png = await win.webContents.capturePage();
-  await fsp.writeFile(path.join(outDir, `${theme}.png`), png.toPNG());
-  // V7：整页图之外再从同一张 png 裁出每个目标的元素级 ROI（小面积变化的唯一可见证据）。
-  // 用内存裁切而非再次 capturePage(rect)：offscreen 下 rect 抓图会抛 UnknownVizError（已实测）。
-  // 视口图只覆盖 800×1032，下方场景另取一张 CDP 全页图作为裁切源（只写新文件，不动既有 ROI）。
-  const bigImage = await captureFullPage(win);
-  const roi = await captureRoi(png, evaluate, theme, outDir, bigImage);
-  return { styles, roi };
+  throw new Error(`[${sceneKey}] 容器 DOM 在 ${timeoutMs}ms 内没有稳定（异步内容一直在变），拒绝在抖动中截图`);
 }
 
+/**
+ * 抓整页图（ROI 的裁切源），失败重试并给出可诊断的错误。
+ *
+ * <p><b>为什么用整页图而不是视口图：</b>`capturePage()`（视口图）在本机 offscreen 下恒为
+ * 800×1032，目标一旦落在 1032 以下就裁出「越界后的空白」而比对照样全绿 —— 旧实现正是
+ * 靠「超界才改用整页图」的分支绕过了它，代价是 ROI 的字节取决于元素是否越界（同一个元素
+ * 上下挪一下，字节就变）。G-5 起统一：ROI 一律从整页图裁，规则唯一、与元素位置无关。</p>
+ *
+ * <p><b>为什么要重试：</b>offscrereen 下 CDP 截图偶发抛 `UnknownVizError`
+ * （实测一页一场景后单轮要开 28 个窗口，某个窗口的首次合成有时还没就绪）。
+ * 这是**基础设施瞬态**，不是视觉回归，因此重试而不是直接判红；同参数重复抓图逐字节一致
+ * （已由「连跑两次零差异」验证），重试不会让 ROI 字节漂移。</p>
+ *
+ * @param {{fullPage: Function}} capturer 截图器
+ * @param {'light'|'dark'} theme 主题（仅用于报错定位）
+ * @param {string} sceneKey 场景键（仅用于报错定位）
+ * @returns {Promise<object>} nativeImage 整页图
+ */
+async function captureFullPageShot(capturer, theme, sceneKey) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    try {
+      return await capturer.fullPage();
+    } catch (e) {
+      lastError = e;
+      console.error(`[capture] ${theme}/${sceneKey} 整页抓图失败（第 ${attempt}/4 次）：${e && e.message ? e.message : e}`);
+      await new Promise((r) => setTimeout(r, 200 * attempt));
+    }
+  }
+  throw new Error(`[${theme}/${sceneKey}] 整页抓图连续失败：${lastError && lastError.message ? lastError.message : lastError}`);
+}
+
+/**
+ * 采集「一个场景页」的一态：断言主题 → 前置动作 → computed style → 容器图 + 元素 ROI。
+ *
+ * <p><b>为什么一场景一页：</b>共用一页时，任何场景的增删都会改变文档高度/宽度与
+ * `capturePage()` 的裁切源，于是「新增场景」= 「既有基线字节全变」。一场景一页后，
+ * 页面里只有自己那一个容器，新增场景再也不会改动别人的页面。</p>
+ *
+ * <p><b>两种图的来源不同，这是有意的：</b>
+ * <ul>
+ *   <li>容器图 `scene-&lt;key&gt;.png`：CDP clip，正好是容器矩形（`capturePage()` 会被夹在 1032 高）；</li>
+ *   <li>元素 ROI `&lt;key&gt;-roi.png`：从该页的**视口图**（`capturePage()`）裁 —— 与 G-5 之前的
+ *       基线同一原语、同一像素网格，因此 42 张既有 ROI 可以逐字节不变（G-5 硬指标）。</li>
+ * </ul></p>
+ *
+ * @param {{scene: object, theme: 'light'|'dark', outDir: string, mutate?: boolean, breakTheme?: string|null}} options 采集参数
+ * @returns {Promise<{styles: object, roi: Array<object>, probe: object, scenes: object}>} 本场景本态的采集结果
+ */
+async function captureScene({ scene, theme, outDir, mutate = false, breakTheme = null }) {
+  const viewport = scene.viewport || SCENE_VIEWPORT;
+  // 进度打到 stderr：一页一场景后单轮要开 28 个窗口，失败时没有这行就只能靠猜「卡在哪一页」。
+  console.error(`[capture] ${theme}/${scene.key} 视口 ${viewport.width}x${viewport.height}`);
+  const page = await kit.openScene(WORK, {
+    width: viewport.width,
+    height: viewport.height,
+    query: { scene: scene.key },
+  });
+  const { win, evaluate } = page;
+  const capturer = kit.createCapturer(win);
+  try {
+    if (breakTheme) {
+      await evaluate(BREAK_THEME_JS[breakTheme]);
+      await evaluate('window.flush()');
+    }
+    await evaluate(`window.setDark(${theme === 'dark'})`);
+    await evaluate('window.flush()');
+    // 护栏：主题必须真的翻转（根标记位 + 令牌变量 + Tailwind 映射后的计算色）。
+    await kit.assertThemeApplied(evaluate, theme, TOKENS);
+
+    // 前置动作按场景声明执行（顺序即语义：先开下拉再聚焦，点按钮会让输入框失焦）。
+    for (const prep of scene.prep || []) {
+      await evaluate(`window.${prep}()`);
+      await evaluate('window.flush()');
+      await new Promise((r) => setTimeout(r, scene.settleMs || 120));
+    }
+
+    if (mutate) {
+      // 只改「标题」颜色，制造一个极小面积差异，验证比对/样式采集不会漏。
+      await evaluate(`(() => { const el = document.querySelector('[data-scene="card-header"] span[title]'); if (el) el.style.setProperty('color', 'rgb(255, 0, 255)', 'important'); })()`);
+      await evaluate('window.flush()');
+    }
+
+    // 稳定化两道：① 字体加载完（否则同一份代码会因字体替换时机产生 1px 级差异）；
+    // ② 容器 DOM 连续两次采样一致（异步取数的组件必须落定，否则截到「加载中→空态」的中间帧）。
+    await evaluate('document.fonts.ready.then(() => true)');
+    await waitForStableDom(evaluate, scene.key);
+
+    const styles = await evaluate(readStylesExpr(scene.targets));
+    // 断言：本场景的目标都在、都可见（缺失或不可见时截图就是空图基线）。
+    const problems = [];
+    for (const key of scene.targets) {
+      const target = TARGET_BY_KEY.get(key);
+      const s = styles[key];
+      if (!s || !s.found) problems.push(`${key}: 目标不存在（${target ? target.desc : '未登记'}）`);
+      else if (!s.visible) problems.push(`${key}: 目标不可见`);
+    }
+    if (scene.key === 'choice') {
+      const inputFocused = await evaluate(`document.activeElement === document.querySelector('[data-scene="choice"] input[type="text"]')`);
+      if (!inputFocused) problems.push('choiceCustomInput: 未获得焦点');
+    }
+    if (problems.length) throw new Error(`[${theme}/${scene.key}] 场景断言失败：\n  - ${problems.join('\n  - ')}`);
+
+    const probe = await evaluate(kit.PROBE_JS);
+
+    // 容器图：CDP clip 到容器矩形，尺寸同时记进 styles.json.scenes（「容器被意外裁小」要能回溯期望值）。
+    const box = await evaluate(`(() => { const el = document.querySelector('[data-scene="${scene.key}"]');
+      if (!el) return null; const r = el.getBoundingClientRect();
+      return { x: r.left, y: r.top, width: r.width, height: r.height }; })()`);
+    if (!box || box.width <= 0 || box.height <= 0) {
+      throw new Error(`[${theme}/${scene.key}] 场景容器不存在或不可见，拒绝截图（否则是空图基线）`);
+    }
+    const containerShot = await capturer.clip(box);
+    const containerFile = await kit.themeImagePath(outDir, theme, kit.sceneImageName(scene.key));
+    await fsp.writeFile(containerFile, containerShot.toPNG());
+    const containerSize = containerShot.getSize();
+
+    // 元素 ROI：一律从整页图裁（见 captureFullPageShot 的注释：单一规则、不被视口高度夹掉）。
+    const roi = [];
+    if (scene.targets.length > 0) {
+      const fullImage = await captureFullPageShot(capturer, theme, scene.key);
+      const pageWidth = await evaluate('document.documentElement.scrollWidth || window.innerWidth');
+      const ratio = kit.imageRatio(fullImage, pageWidth);
+      const rects = await evaluate(`(() => {
+        const defs = ${JSON.stringify(TARGETS.filter((t) => scene.targets.includes(t.key)).map((t) => ({ key: t.key, sel: t.sel })))};
+        const pad = ${ROI_PADDING};
+        const out = [];
+        for (const d of defs) {
+          const el = eval(d.sel);
+          if (!el) { out.push({ key: d.key, rect: null, reason: 'not-found' }); continue; }
+          const r = el.getBoundingClientRect();
+          if (r.width <= 0 || r.height <= 0) { out.push({ key: d.key, rect: null, reason: 'not-visible' }); continue; }
+          out.push({
+            key: d.key,
+            rect: { x: r.left - pad, y: r.top - pad, width: r.width + pad * 2, height: r.height + pad * 2 },
+          });
+        }
+        return out;
+      })()`);
+      // 诊断开关：给了 ROI_DEBUG 就打印裁切几何（定位「ROI 内容整体位移」这类问题：
+      // 位移通常是 imageRatio 的 pageWidth 取错 —— 图片宽度与 scrollWidth 不是同一口径时，
+      // crop 坐标会被整体缩放，表现就是「卡片大小一样、内容偏了几个像素」）。
+      if (process.env.ROI_DEBUG) {
+        console.error(`[roi/${theme}/${scene.key}] pageWidth=${pageWidth} image=${JSON.stringify(fullImage.getSize())} ratio=${ratio} `
+          + JSON.stringify(rects.map((r) => (r.rect ? `${r.key}@${Math.round(r.rect.x)},${Math.round(r.rect.y)}` : `${r.key}:${r.reason}`))));
+      }
+      for (const item of rects) {
+        if (!item.rect) continue; // 目标不可见：上面的可见性断言负责报错，这里不重复失败
+        const cropped = kit.cropImage(fullImage, item.rect, ratio);
+        if (!cropped) continue;
+        const file = await kit.themeImagePath(outDir, theme, kit.roiImageName(item.key));
+        await fsp.writeFile(file, cropped.image.toPNG());
+        roi.push({ key: item.key, file, rect: cropped.rect, theme, source: 'fullpage' });
+      }
+    }
+
+    return {
+      styles,
+      roi,
+      probe,
+      scenes: { [scene.key]: { width: containerSize.width, height: containerSize.height } },
+    };
+  } finally {
+    capturer.detach();
+    page.close();
+  }
+}
+
+/**
+ * 采集全部场景的全部主题。
+ *
+ * <p>顺序是「主题 → 场景」：每个场景页内只跑一态，避免同一页跑两态时主题切换的串扰
+ * （旧实现是同一页里切两次主题）。</p>
+ *
+ * @param {string} outDir 产物目录（baseline / current / 自检临时目录）
+ * @param {{mutate?: boolean, breakTheme?: string|null}} [options] 变异开关
+ * @returns {Promise<{styles: object, probes: object, roi: object, scenes: object}>} 采集结果
+ */
 async function runCapture(outDir, { mutate = false, breakTheme = null } = {}) {
-  // 视口必须容纳全部场景（新增 4 个 Sidebar section 后页面高约 2.9k px）。
-  // 用默认 780×760 会让下方场景拍不到 —— 那样「基线」里根本没有侧栏，等于没有覆盖。
-  const scene = await kit.openScene(WORK, SCENE_VIEWPORT);
-  const { win, evaluate } = scene;
   const styles = {};
   const probes = {};
-  /** @type {Record<string, Array<{key: string, file: string, rect: object}>>} */
+  /** @type {Record<string, Array<object>>} */
   const roiByTheme = {};
-  try {
-    for (const theme of THEMES) {
-      const captured = await captureTheme(win, theme, outDir, mutate, breakTheme);
-      styles[theme] = captured.styles;
-      roiByTheme[theme] = captured.roi;
-      probes[theme] = await evaluate(kit.PROBE_JS);
-    }
-    // 两态都要跑时才能比较「明暗是否真的不同」；只跑一态时这条护栏无意义（也是显式跳过而非假绿）。
-    if (THEMES.length === 2) kit.assertThemesDiffer(probes.light, probes.dark);
-  } finally {
-    scene.close();
-  }
+  /** @type {Record<string, Record<string, {width: number, height: number}>>} */
+  const sceneSizes = {};
   await fsp.mkdir(outDir, { recursive: true });
+  for (const theme of THEMES) {
+    styles[theme] = {};
+    roiByTheme[theme] = [];
+    sceneSizes[theme] = {};
+    // 清掉本主题目录与旧形态遗留的全景图：旧 light.png / dark.png 不属新形态，
+    // 留着会被 oracle 报成「多余文件」，也会让「这一轮到底产了什么」不可判定。
+    await fsp.rm(path.join(outDir, theme), { recursive: true, force: true });
+    await fsp.rm(path.join(outDir, `${theme}.png`), { force: true });
+    for (const scene of SCENES) {
+      const captured = await captureScene({ scene, theme, outDir, mutate, breakTheme });
+      Object.assign(styles[theme], captured.styles);
+      Object.assign(sceneSizes[theme], captured.scenes);
+      roiByTheme[theme].push(...captured.roi);
+      if (!probes[theme]) probes[theme] = captured.probe;
+    }
+  }
+  // 两态都要跑时才能比较「明暗是否真的不同」；只跑一态时这条护栏无意义（也是显式跳过而非假绿）。
+  if (THEMES.length === 2) kit.assertThemesDiffer(probes.light, probes.dark);
   await fsp.writeFile(
     path.join(outDir, 'styles.json'),
-    JSON.stringify({ themesRun: THEMES, styles, probes, roi: roiByTheme }, null, 2),
+    JSON.stringify({ themesRun: THEMES, styles, probes, scenes: sceneSizes, roi: roiByTheme }, null, 2),
   );
-  return { styles, probes, roi: roiByTheme };
+  return { styles, probes, roi: roiByTheme, scenes: sceneSizes };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -522,107 +769,6 @@ function recordOfDiffFailures(details, failures) {
     changedRatio: d.changedRatio,
     reasons: Array.isArray(d.reasons) ? d.reasons : [failures.find((f) => String(f).startsWith(String(d.image))) || '未知原因'],
   }));
-}
-
-/**
- * 用 CDP 截一张「完整页面」图（`captureBeyondViewport` 才能突破窗口可视区）。
- *
- * <p><b>为什么必须补这条路径：</b>实测本机（offscreen）`webContents.capturePage()` 无论窗口多高
- * 都只返回 **800×1032** 的可视区图 —— 页面下方的场景（侧栏、本轮新增的 5 个灰阶场景）
- * 从来没进过像素基线，属于「有场景没覆盖」的假绿。`capturePage(rect)` 又会抛 UnknownVizError，
- * 因此改走 CDP 的 `Page.captureScreenshot({ captureBeyondViewport: true })`。</p>
- *
- * <p><b>为什么只用于下方目标：</b>既有 4 个目标的 ROI 是从原来那张视口图裁出来的，
- * 换成新图会改变既有基线的字节。这里只在「目标超出视口图范围」时才用大图，既有文件零改动。</p>
- *
- * @param {object} win BrowserWindow
- * @returns {Promise<object|null>} nativeImage 或 null（CDP 失败时不阻塞主流程）
- */
-async function captureFullPage(win) {
-  const dbg = win.webContents.debugger;
-  let attached = false;
-  try {
-    if (!dbg.isAttached()) { dbg.attach('1.3'); attached = true; }
-    await dbg.sendCommand('Page.enable');
-    const metrics = await dbg.sendCommand('Page.getLayoutMetrics');
-    const content = metrics.cssContentSize || metrics.contentSize;
-    const result = await dbg.sendCommand('Page.captureScreenshot', {
-      format: 'png',
-      captureBeyondViewport: true,
-      clip: { x: 0, y: 0, width: Math.ceil(content.width), height: Math.ceil(content.height), scale: 1 },
-    });
-    const { nativeImage } = require('electron');
-    return nativeImage.createFromBuffer(Buffer.from(result.data, 'base64'));
-  } catch (err) {
-    console.error(`[roi] CDP 全页截图失败（回落到视口图）：${err && err.message ? err.message : err}`);
-    return null;
-  } finally {
-    if (attached) { try { dbg.detach(); } catch { /* 已分离则忽略 */ } }
-  }
-}
-
-async function captureRoi(fullImage, evaluate, theme, outDir, bigImage = null) {
-  // 按主题分子目录存放：明暗两态的元素包围盒尺寸不同（文字宽度与主题无关但边框/内距可能变），
-  // 若两态写同一个 `<key>-roi.png`，后跑的一态会覆盖前一态，单跑 light 时会拿暗色 ROI 当基线
-  // 直接 100% 全图差异（实测踩到）。分子目录后文件名仍是要求的 `<key>-roi.png`。
-  const themeDir = path.join(outDir, theme);
-  await fsp.rm(themeDir, { recursive: true, force: true });
-  await fsp.mkdir(themeDir, { recursive: true });
-  const imageSize = fullImage.getSize();
-  /**
-   * 页面坐标 → 图片像素坐标。
-   *
-   * <p>整页图按 devicePixelRatio 缩放（crop 用的是图片像素而非 CSS 像素），因此必须换算；
-   * 同时把结果 clamp 到图片范围内 —— crop 越界会返回空白或抛错，是这一类"ROI 图全是空白"的根因。</p>
-   */
-  const rects = await evaluate(`(() => {
-    const defs = ${JSON.stringify(TARGETS.map((t) => ({ key: t.key, sel: t.sel })))};
-    const pad = ${ROI_PADDING};
-    const out = [];
-    for (const d of defs) {
-      const el = eval(d.sel);
-      if (!el) { out.push({ key: d.key, rect: null, reason: 'not-found' }); continue; }
-      const r = el.getBoundingClientRect();
-      if (r.width <= 0 || r.height <= 0) { out.push({ key: d.key, rect: null, reason: 'not-visible' }); continue; }
-      out.push({
-        key: d.key,
-        rect: { x: r.left - pad, y: r.top - pad, width: r.width + pad * 2, height: r.height + pad * 2 },
-      });
-    }
-    return out;
-  })()`);
-
-  const written = [];
-  // 诊断开关：给了 ROI_DEBUG 就打印每个目标的裁切决策（定位「为什么某目标没有 ROI 图」）。
-  if (process.env.ROI_DEBUG) console.error(`[roi/${theme}] ` + JSON.stringify(rects.map((r) => `${r.key}:${r.reason || 'ok'}`)));
-
-  // 页面 CSS 像素 → 图片像素：整页图宽度 / 页面宽度（只求一次，页面宽度在本次采集内不变）
-  const pageWidth = await evaluate('document.documentElement.scrollWidth || window.innerWidth');
-  const ratio = pageWidth > 0 ? imageSize.width / pageWidth : 1;
-  for (const item of rects) {
-    if (!item.rect) continue; // 目标不可见：captureTheme 的可见性断言负责报错，这里不重复失败
-    /**
-     * 选图：视口图能完整容纳该目标就用视口图（既有 ROI 因此逐字节不变），
-     * 否则用 CDP 全页图（否则下方场景会被静默裁掉 —— 那正是「有场景没覆盖」的假绿）。
-     */
-    const inViewport = item.rect.y + item.rect.height <= imageSize.height;
-    const source = inViewport || !bigImage ? fullImage : bigImage;
-    const sourceSize = source.getSize();
-    if (!inViewport && !bigImage) continue; // 两种图都拿不到：不写空图，交给报告里的 roi 数量体现
-    const x = Math.max(0, Math.round(item.rect.x * ratio));
-    const y = Math.max(0, Math.round(item.rect.y * ratio));
-    const width = Math.max(1, Math.round(item.rect.width * ratio));
-    const height = Math.max(1, Math.round(item.rect.height * ratio));
-    // 二次 clamp：crop 的矩形必须完全落在图片内
-    const clampedWidth = Math.min(width, sourceSize.width - x);
-    const clampedHeight = Math.min(height, sourceSize.height - y);
-    if (clampedWidth < 1 || clampedHeight < 1) continue;
-    const cropped = source.crop({ x, y, width: clampedWidth, height: clampedHeight });
-    const file = path.join(themeDir, `${item.key}-roi.png`);
-    await fsp.writeFile(file, cropped.toPNG());
-    written.push({ key: item.key, file, rect: { x, y, width: clampedWidth, height: clampedHeight }, theme, source: inViewport ? 'viewport' : 'cdp-fullpage' });
-  }
-  return written;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1427,8 +1573,11 @@ async function main() {
     const styleDiffs = diffStyles(a.styles, b.styles);
     const { compareImagePair, decodePng } = await import('./compare.mjs');
     const fsx = require('node:fs');
-    const imgA = decodePng(fsx.readFileSync(path.join(tmpA, 'before', 'light.png')));
-    const imgB = decodePng(fsx.readFileSync(path.join(tmpA, 'after', 'light.png')));
+    // G-5：形态变更后没有 light.png 全景图，自检改为比较「被注入非法色的那个场景」的容器图
+    // （card-header 就是变异点），语义不变：注入极小面积颜色变化，像素比对必须能看见。
+    const selfcheckFile = path.join('light', kit.sceneImageName('card-header'));
+    const imgA = decodePng(fsx.readFileSync(path.join(tmpA, 'before', selfcheckFile)));
+    const imgB = decodePng(fsx.readFileSync(path.join(tmpA, 'after', selfcheckFile)));
     const cmp = compareImagePair(imgA, imgB);
     const detected = styleDiffs.length > 0 || cmp.failed === true;
     console.log(JSON.stringify({ selfcheck: detected ? 'PASS' : 'BLIND', themesRun: THEMES, styleDiffs, pixelFailed: cmp.failed, changedPixels: cmp.changedPixels, maxChannelDelta: cmp.maxChannelDelta, strongPixels: cmp.strongPixels }, null, 2));
@@ -1457,34 +1606,50 @@ async function main() {
   }
 
   if (MODE === 'baseline') {
-    const { styles, probes, roi } = await runCapture(BASE_DIR);
+    const { styles, probes, roi, scenes } = await runCapture(BASE_DIR);
     // V11：显式打印「实际跑了哪几态」——由 --themes 决定，不再靠场景硬编码去猜。
     console.error(`[themes] 本次实际运行：${THEMES.join(' + ')}（--themes ${ASSERT_DARK ? 'dark（--assert-dark-colors 隐含）' : THEMES_ARG}）`);
-    // G-4：重建基线后必须同步 oracle 指纹，否则下一个人 check 立刻红。
+    console.error(`[scenes] 每场景独立页：${SCENES.length} 个场景 × ${THEMES.length} 态 = ${SCENES.length * THEMES.length} 张容器图（scene-*.png）+ ${Object.values(roi).flat().length} 张 ROI`);
+    // G-4/G-5：重建基线后必须同步 oracle 指纹与形态标记，否则下一个人 check 立刻红 / 报错。
     // 只在全量（--themes both 且未被 --assert-dark-colors 收窄成单态）时写：部分采集只覆盖子集，
     // 当成整节写回会把 fingerprint 削成残缺。
     const { writeBaselineSuite } = await import('./baseline-manifest.mjs');
     if (THEMES_ARG === 'both' && !ASSERT_DARK) {
-      const written = writeBaselineSuite({ suite: 'components', baselineDir: BASE_DIR });
-      console.error(`[baseline] 已同步视觉基线 oracle：suite=components ${written.count} 张，counts=${JSON.stringify(written.counts)}`);
+      const written = writeBaselineSuite({ suite: 'components', baselineDir: BASE_DIR, form: FORM });
+      console.error(`[baseline] 已同步视觉基线 oracle：suite=components ${written.count} 张，form=${FORM}，counts=${JSON.stringify(written.counts)}`);
     } else {
       console.error('[baseline] 警告：本次是部分采集（--themes 过滤），已跳过视觉基线 oracle 重写；'
         + '否则会把整节指纹削成残缺。需要同步指纹请跑一次全量 npm run visual:components:baseline。');
     }
-    console.log(JSON.stringify({ mode: 'baseline', themesRun: THEMES, outDir: BASE_DIR, probes, styles, roi }, null, 2));
+    console.log(JSON.stringify({ mode: 'baseline', form: FORM, themesRun: THEMES, outDir: BASE_DIR, probes, styles, scenes, roi }, null, 2));
     app.exit(0);
     return;
   }
 
   // check：先采当前，再与基线做像素 + 样式双比对。
-  const { styles, probes, roi } = await runCapture(CUR_DIR);
+  const { styles, probes, roi, scenes } = await runCapture(CUR_DIR);
   console.error(`[themes] 本次实际运行：${THEMES.join(' + ')}（--themes ${ASSERT_DARK ? 'dark（--assert-dark-colors 隐含）' : THEMES_ARG}）`);
   const baseStylesPath = path.join(BASE_DIR, 'styles.json');
   if (!fs.existsSync(baseStylesPath)) { console.error(`基线不存在：${baseStylesPath}（先跑 --mode baseline）`); app.exit(2); return; }
-  // G-4：先验基线完整性，再读基线做比对。基线残缺（少几张 ROI / 整页图）会让 compare 只比
-  // 剩下那几张、failed=0 → 静默假绿。凡不完整一律 exit 2（基础设施故障），不是视觉回归（exit 1）。
+  // G-4/G-5：先验「形态」再验「完整性」。
+  // 形态不匹配（旧全景基线 + 新 per-scene harness，或反之）不是视觉回归，而是代码与基线没配对，
+  // 因此一律 exit 2（基础设施），绝不落到 exit 1（那会让人去 diff 图里找一个不存在的视觉变化）。
   {
-    const { verifyBaseline, formatVerifyFailure } = await import('./baseline-manifest.mjs');
+    const { readForms, verifyBaseline, formatVerifyFailure } = await import('./baseline-manifest.mjs');
+    const forms = readForms();
+    const declaredForm = forms.components;
+    if (!declaredForm) {
+      console.error(`[形态未知] oracle 里没有 forms.components（${FORM}）。这不是视觉回归：请跑一次全量 --mode baseline 重建基线并写入形态标记。`);
+      app.exit(2);
+      return;
+    }
+    if (declaredForm !== FORM) {
+      console.error(`[形态不匹配] 基线按 ${declaredForm} 形态生成，当前 harness 是 ${FORM}。`
+        + '这不是视觉回归：请先用 --mode baseline 按当前形态重建基线（单独一条 commit），或切到生成该基线的代码版本。');
+      app.exit(2);
+      return;
+    }
+    // 基线残缺（少几张 ROI / 容器图）会让 compare 只比剩下那几张、failed=0 → 静默假绿。
     const integrity = verifyBaseline({ suite: 'components', baselineDir: BASE_DIR });
     if (!integrity.ok) {
       console.error(formatVerifyFailure(integrity));
@@ -1514,6 +1679,21 @@ async function main() {
     filteredCur[theme] = styles[theme];
   }
   const styleDiffs = diffStyles(filteredBase, filteredCur);
+  // 容器尺寸也要比：容器图被意外裁小/裁高时像素比对会报「尺寸不一致」，但那条信息回溯不到
+  // 「期望尺寸是多少」。把期望值记在 styles.json.scenes 里，这里逐场景比一遍。
+  const baseScenes = baseRaw.scenes || {};
+  for (const theme of comparableThemes) {
+    const baseTheme = baseScenes[theme] || {};
+    const curTheme = (scenes && scenes[theme]) || {};
+    for (const key of Object.keys(baseTheme)) {
+      const expected = baseTheme[key];
+      const actual = curTheme[key];
+      if (!actual) { styleDiffs.push(`${theme}/${key}: 场景容器缺失`); continue; }
+      if (expected.width !== actual.width || expected.height !== actual.height) {
+        styleDiffs.push(`${theme}/${key}: 容器尺寸 ${expected.width}x${expected.height} -> ${actual.width}x${actual.height}`);
+      }
+    }
+  }
 
   const { compareDirectories, DEFAULT_OPTIONS } = await import('./compare.mjs');
   // 组件场景图很小，收紧阈值，避免小面积文字色变化被整图比例吞掉。
@@ -1547,9 +1727,11 @@ async function main() {
   const failed = styleDiffs.length > 0 || px.failed > 0;
   console.log(JSON.stringify({
     mode: 'check',
+    form: FORM,
     themesRun: THEMES,
     comparedThemes: comparableThemes,
     roi: { count: roiFiles.length, files: roiFiles },
+    scenes,
     probes,
     styleDiffs,
     pixel: { images: px.images, failed: px.failed, details: px.details, failures: px.failures },
@@ -1559,7 +1741,8 @@ async function main() {
 
 app.setPath('userData', path.join(WORK, 'profile'));
 app.on('window-all-closed', () => {});
-const deadline = setTimeout(() => { console.error('组件视觉验证超时'); app.exit(1); }, 180000);
+// 每场景一页后页面数从 1 变成 14×2，单轮耗时会上升，超时相应放宽（仍远低于 CI 上限）。
+const deadline = setTimeout(() => { console.error('组件视觉验证超时'); app.exit(1); }, 300000);
 app.whenReady().then(async () => {
   try { await main(); } catch (e) { console.error(e && e.stack ? e.stack : e); app.exit(1); } finally { clearTimeout(deadline); }
 }).catch(e => { console.error(e); app.exit(1); });

@@ -260,17 +260,44 @@ export function formatVerifyFailure(result) {
 }
 
 /**
+ * 读取各 suite 的「形态」标记（G-5 新增，顶层 `forms`）。
+ *
+ * <p><b>为什么要单独一个顶层字段：</b>`writeBaselineSuite` 是对 manifest 做<b>原地增改</b>
+ * （只重写 `suites[suite]` / `counts` / `generatedAt`），未知顶层键会被保留；而塞进
+ * `entries[]` 每条记录里的字段会在重建时被 `pngs.map(...)` 整体覆盖丢掉。所以形态只能放顶层。</p>
+ *
+ * <p><b>消费方约定：</b>形态不匹配 ⇒ <b>exit 2</b>（代码与基线没配对，属基础设施问题），
+ * 绝不落到 exit 1（那是真视觉回归）。缺失 `forms` 字段同样按「形态未知」处理 ⇒ exit 2。</p>
+ *
+ * @returns {Record<string, string>} 形如 `{ settings: 'legacy-3tab-v1', components: 'per-scene-v1' }`；
+ *   oracle 没有 forms 字段时返回空对象（由调用方决定怎么处理「形态未知」）。
+ * @throws {Error} oracle 缺失 / JSON 损坏时抛出（与 readManifest 同口径，不静默返回空）。
+ */
+export function readForms() {
+  const manifest = readManifest();
+  const forms = manifest.forms;
+  if (!forms || typeof forms !== 'object' || Array.isArray(forms)) return {};
+  /** @type {Record<string, string>} */
+  const out = {};
+  for (const [name, value] of Object.entries(forms)) {
+    if (typeof value === 'string' && value.length > 0) out[name] = value;
+  }
+  return out;
+}
+
+/**
  * 用磁盘现状重算某个 suite 的指纹并写回 oracle。
  *
- * <p>三个不变量：① 只改自己这一节（其他 suite 与 `$comment` 原样保留，否则重建 settings 会把
- * components/hover 的指纹抹掉）；② `counts` / `generatedAt` 由本函数统一重算，不手填；
- * ③ 目录下没有 PNG 时<b>拒绝写入</b> —— 空节等于「没有可校验的期望值」，写进去就是把门禁改成瞎子。</p>
+ * <p>三个不变量：① 只改自己这一节（其他 suite、`$comment` 与顶层 `forms` 原样保留，否则重建
+ * settings 会把 components/hover 的指纹与形态抹掉）；② `counts` / `generatedAt` 由本函数统一
+ * 重算，不手填；③ 目录下没有 PNG 时<b>拒绝写入</b> —— 空节等于「没有可校验的期望值」，
+ * 写进去就是把门禁改成瞎子。</p>
  *
- * @param {{suite: string, baselineDir: string}} params suite 名与其基线目录。
- * @returns {{suite: string, count: number, counts: Record<string, number|null>, manifestPath: string}} 写入结果
+ * @param {{suite: string, baselineDir: string, form?: string}} params suite 名、基线目录、形态标记。
+ * @returns {{suite: string, count: number, form: string|null, counts: Record<string, number|null>, manifestPath: string}} 写入结果
  * @throws {Error} suite 非法、目录无 PNG、oracle 不可写时抛出。
  */
-export function writeBaselineSuite({ suite, baselineDir }) {
+export function writeBaselineSuite({ suite, baselineDir, form = null }) {
   if (!SUITES.includes(suite)) {
     throw new Error(`未知的基线 suite：「${suite}」（只接受 ${SUITES.join(' / ')}）`);
   }
@@ -300,6 +327,11 @@ export function writeBaselineSuite({ suite, baselineDir }) {
   if (!manifest.suites || typeof manifest.suites !== 'object' || Array.isArray(manifest.suites)) manifest.suites = {};
 
   manifest.suites[suite] = entries;
+  // 形态标记同样「原地增改」，只写自己这一节；不传 form 时保持既有值不变（部分重建不会抹掉形态）。
+  if (typeof form === 'string' && form.length > 0) {
+    if (!manifest.forms || typeof manifest.forms !== 'object' || Array.isArray(manifest.forms)) manifest.forms = {};
+    manifest.forms[suite] = form;
+  }
 
   // counts 一律从 suites 重算：settings / components / hover 各自条数 + total（任一节缺失则 total 为 null）。
   /** @type {Record<string, number|null>} */
@@ -320,10 +352,25 @@ export function writeBaselineSuite({ suite, baselineDir }) {
   manifest.counts = counts;
   manifest.generatedAt = new Date().toISOString();
 
-  fs.mkdirSync(path.dirname(MANIFEST_PATH), { recursive: true });
-  fs.writeFileSync(MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`);
+  // 顶层字段按固定顺序落盘（$comment → generatedAt → forms → suites → counts），
+  // 便于人读与 diff；不认识的顶层键原样保留在末尾（前向兼容）。
+  const known = new Set(['$comment', 'generatedAt', 'forms', 'suites', 'counts']);
+  /** @type {Record<string, unknown>} */
+  const ordered = {};
+  if (typeof manifest.$comment === 'string') ordered.$comment = manifest.$comment;
+  ordered.generatedAt = manifest.generatedAt;
+  ordered.forms = manifest.forms && typeof manifest.forms === 'object' ? manifest.forms : {};
+  ordered.suites = manifest.suites;
+  ordered.counts = manifest.counts;
+  for (const [name, value] of Object.entries(manifest)) {
+    if (!known.has(name)) ordered[name] = value;
+  }
 
-  return { suite, count: entries.length, counts, manifestPath: MANIFEST_PATH };
+  fs.mkdirSync(path.dirname(MANIFEST_PATH), { recursive: true });
+  fs.writeFileSync(MANIFEST_PATH, `${JSON.stringify(ordered, null, 2)}\n`);
+
+  const writtenForm = ordered.forms[suite] || null;
+  return { suite, count: entries.length, form: typeof writtenForm === 'string' ? writtenForm : null, counts, manifestPath: MANIFEST_PATH };
 }
 
 /**
