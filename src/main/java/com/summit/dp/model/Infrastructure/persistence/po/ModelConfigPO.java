@@ -25,6 +25,7 @@ public class ModelConfigPO {
     /** 所属提供商预设(provider_config.id)；空=未归属，聚合时归入「未分组」。 */
     private Long providerConfigId;
     private boolean vision;
+    private boolean useProvider;
     private Instant createTime;
     private Instant updateTime;
 }

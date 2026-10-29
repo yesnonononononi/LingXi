@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS model_config (
     provider         VARCHAR(50) COMMENT '模型供应商',
     provider_config_id BIGINT COMMENT '所属提供商配置(provider_config.id)；空=未归属任何提供商',
     vision           BOOLEAN NOT NULL DEFAULT FALSE COMMENT '是否支持图片输入，由用户明确配置',
+    use_provider     BOOLEAN NOT NULL DEFAULT FALSE COMMENT '是否实时使用提供方API密钥',
     create_time      DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     UNIQUE KEY uk_model_name_base_url (model_name, base_url),

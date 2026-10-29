@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -68,7 +69,7 @@ class ProviderModelCatalogTest {
         assertThrows(ClientException.class,
                 () -> service.add(new ModelConfigCommand(null, "m", "https://example.invalid", "k", true, 404L)));
 
-        service.add(new ModelConfigCommand(null, "m", "https://example.invalid", "k", true, 10L));
+        service.add(new ModelConfigCommand(null, "m", "https://example.invalid", "k", true, 10L, false));
         ArgumentCaptor<ModelConfig> saved = ArgumentCaptor.forClass(ModelConfig.class);
         verify(repository).save(saved.capture());
         assertEquals(10L, saved.getValue().getProviderConfigId());
@@ -81,17 +82,18 @@ class ProviderModelCatalogTest {
     }
 
     @Test
-    void copiesProviderKeyIntoTheModelWhenOptedIn() {
+    void storesProviderReferenceWithoutCopyingTheKey() {
         when(providerService.findAllViews()).thenReturn(List.of(
                 ProviderConfigVO.builder().id(10L).name("DeepSeek").build()));
         when(providerService.findApiKey(10L)).thenReturn(Optional.of("sk-provider-secret"));
 
-        // 勾选复用：即使 apiKey 留空也必须把提供方密钥复制进来。
+        // 模型只保存来源，不能保留提供方密钥的副本。
         service.add(new ModelConfigCommand(null, "m", "https://example.invalid", null, true, 10L, true));
 
         ArgumentCaptor<ModelConfig> saved = ArgumentCaptor.forClass(ModelConfig.class);
         verify(repository).save(saved.capture());
-        assertEquals("sk-provider-secret", saved.getValue().getApiKey(), "密钥在落库时复制，运行期不再回落");
+        assertEquals("", saved.getValue().getApiKey());
+        assertTrue(saved.getValue().isUseProvider());
         assertEquals(10L, saved.getValue().getProviderConfigId());
     }
 
@@ -121,7 +123,8 @@ class ProviderModelCatalogTest {
         verify(providerService, never()).findApiKey(10L);
 
         service.update(new ModelConfigCommand(1L, null, null, null, null, 10L, true));
-        assertEquals("sk-provider-secret", existing.getApiKey());
+        assertEquals("", existing.getApiKey());
+        assertTrue(existing.isUseProvider());
     }
 
     private static ModelConfig model(Long id, String modelName, Long providerConfigId) {

@@ -311,6 +311,7 @@ export interface ModelConfig {
 
 /** 后端 ModelConfigVO 领域实体 */
 export interface ModelConfigVO {
+  useProvider: boolean;
   vision: boolean;
   id?: number | string;
   modelName?: string;
@@ -321,7 +322,7 @@ export interface ModelConfigVO {
   credentialConfigured?: boolean;
   /** 模型提供方标识（如 DEEPSEEK / OPENAI / CUSTOM）；后端 ModelConfigVO 已下发该字段 */
   provider?: string;
-  /** 所属提供商预设 ID；空 = 未分组（含预设已删除的悬空引用） */
+  /** 所属提供方 ID；空表示未归属，提供方删除后仍保留原 ID。 */
   providerConfigId?: string | number | null;
   /** 聚合自 provider_config 的展示名/图标，分组与徽章都用它 */
   providerName?: string | null;
@@ -784,6 +785,8 @@ export interface PageResult<T> {
 
 /** 模型配置读写载荷 (对齐后端 ModelConfigRequest) */
 export interface ModelConfigPayload {
+  /** 开启后实时使用提供方密钥，模型不保存副本。 */
+  useProvider?: boolean;
   vision: boolean;
   id?: number | string;
   modelName: string;

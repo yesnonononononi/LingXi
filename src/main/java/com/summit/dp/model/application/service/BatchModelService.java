@@ -45,7 +45,7 @@ public class BatchModelService {
             ModelConfig model = new ModelConfig();
             model.changeModelName(name);
             model.changeBaseUrl(provider.getBaseUrl());
-            model.changeApiKey(key);
+            model.changeUseProvider(true);
             model.changeProviderConfigId(provider.getId());
             model.changeVision(command.vision());
             candidates.add(model);

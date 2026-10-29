@@ -33,7 +33,7 @@ class BatchModelServiceTest {
     @TempDir Path directory;
 
     @Test
-    void copiesProviderConnectionAndDeduplicatesWithoutTouchingOtherProviders() {
+    void referencesProviderCredentialsAndDeduplicatesWithoutTouchingOtherProviders() {
         ModelConfigRepositoryImpl repository = repository();
         repository.save(new ModelConfig(null, "https://old.invalid", "old", "existing", null, 7L, false));
         repository.save(new ModelConfig(null, "https://other.invalid", "other", "new", null, 8L, false));
@@ -41,10 +41,10 @@ class BatchModelServiceTest {
         BatchModelResult result = service.add(new BatchModelCommand(7L, List.of("existing", " new ", "new", "another"), false));
         assertEquals(2, result.addedCount());
         assertEquals(List.of("existing"), result.skippedNames());
-        List<ModelConfig> added = repository.findAll().stream().filter(model -> "saved-secret".equals(model.getApiKey())).toList();
+        List<ModelConfig> added = repository.findAll().stream().filter(ModelConfig::isUseProvider).toList();
         assertEquals(2, added.size());
         assertTrue(added.stream().allMatch(model -> model.getProviderConfigId().equals(7L)
-                && model.getBaseUrl().equals("https://provider.invalid/v1") && !model.isVision()));
+                && model.getBaseUrl().equals("https://provider.invalid/v1") && !model.isVision() && model.getApiKey() == null));
         assertThrows(ClientException.class, () -> service.add(new BatchModelCommand(7L, List.of("valid", " "), false)));
         assertEquals(4, repository.findAll().size());
     }

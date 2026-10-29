@@ -27,12 +27,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/**
- * 模型配置与 API Key 明文保存到数据库；对外 VO 统一返回掩码。
- *
- * <p>模型归属的提供商预设不在本模块维护：跨模块只读注入 {@link ProviderConfigService}，
- * 聚合出「提供商 → 模型」视图。选择模型本身仍以 model_config.id 为准。</p>
- */
+/** 模型持久化密钥来源；提供方密钥仅在使用时读取，对外只返回掩码。 */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -46,16 +41,17 @@ public class ModelServiceImpl implements ModelService {
         throwIf(command == null, "模型配置不能为空");
         throwIf(command.vision() == null, "请明确选择模型是否支持图片输入");
         Long providerConfigId = requireProviderIfPresent(command.providerConfigId());
-        // 勾选「使用提供方密钥」时在落库这一刻复制明文：模型行自带密钥，后续运行期不再回落。
-        String apiKey = Boolean.TRUE.equals(command.useProviderApiKey())
-                ? providerApiKey(providerConfigId)
-                : (command.apiKey() == null ? "" : command.apiKey().trim());
+        boolean useProvider = command.useProvider() != null ? command.useProvider()
+                : providerConfigId != null && providerConfigId > 0;
+        if (useProvider) providerApiKey(providerConfigId);
+        String apiKey = useProvider || command.apiKey() == null ? "" : command.apiKey().trim();
         ModelConfig modelConfig = new ModelConfig();
         modelConfig.changeModelName(command.modelName());
         modelConfig.changeBaseUrl(command.baseUrl());
         modelConfig.changeApiKey(apiKey);
         modelConfig.changeVision(command.vision());
         modelConfig.changeProviderConfigId(providerConfigId);
+        modelConfig.changeUseProvider(useProvider);
         modelConfigRepository.save(modelConfig);
         return Result.success();
     }
@@ -64,13 +60,14 @@ public class ModelServiceImpl implements ModelService {
     public Result<Void> update(ModelConfigCommand command) {
         throwIf(command == null || command.id() == null, "修改模型必须提供模型标识");
         ModelConfig modelConfig = modelConfigRepository.findById(command.id()).orElseThrow(ClientException::new);
-        boolean useProviderKey = Boolean.TRUE.equals(command.useProviderApiKey());
+        boolean useProvider = command.useProvider() != null ? command.useProvider() : modelConfig.isUseProvider();
         Long providerConfigId = command.providerConfigId() != null
                 ? requireProviderIfPresent(command.providerConfigId())
                 : modelConfig.getProviderConfigId();
         String apiKey;
-        if (useProviderKey) {
-            apiKey = providerApiKey(providerConfigId);
+        if (useProvider) {
+            providerApiKey(providerConfigId);
+            apiKey = "";
         } else {
             // 编辑留空保留原值，清除仍走独立接口。
             apiKey = hasCredential(command) ? command.apiKey().trim() : modelConfig.getApiKey();
@@ -79,9 +76,10 @@ public class ModelServiceImpl implements ModelService {
         }
         if (command.modelName() != null) modelConfig.changeModelName(command.modelName());
         if (command.baseUrl() != null) modelConfig.changeBaseUrl(command.baseUrl());
-        if (useProviderKey || command.apiKey() != null) modelConfig.changeApiKey(apiKey);
+        if (useProvider || command.apiKey() != null) modelConfig.changeApiKey(apiKey);
         if (command.vision() != null) modelConfig.changeVision(command.vision());
         if (command.providerConfigId() != null) modelConfig.changeProviderConfigId(providerConfigId);
+        if (command.useProvider() != null) modelConfig.changeUseProvider(command.useProvider());
         modelConfigRepository.updateById(modelConfig);
         return Result.success();
     }
@@ -160,6 +158,7 @@ public class ModelServiceImpl implements ModelService {
         // 模型必须存在：清除不存在模型的凭据要报错而不是静默成功（设计要求）。
         ModelConfig modelConfig = modelConfigRepository.findById(id).orElseThrow(ModelNoFoundException::new);
         modelConfig.changeApiKey("");
+        modelConfig.changeUseProvider(false);
         modelConfigRepository.updateById(modelConfig);
         return Result.success();
     }
@@ -175,20 +174,15 @@ public class ModelServiceImpl implements ModelService {
 
         ModelConfig model = modelConfigRepository.findById(id).orElseThrow(ClientException::new);
 
+        String apiKey = resolveApiKey(model);
         throwIf(model.getBaseUrl() == null || model.getBaseUrl().isBlank()
-                || model.getApiKey() == null || model.getApiKey().isBlank()
+                || apiKey == null || apiKey.isBlank()
                 || model.getModelName() == null || model.getModelName().isBlank(), "模型连接配置不完整: " + id);
-        return RuntimeModel.create(model.getBaseUrl(), model.getApiKey(), model.getModelName(), model.getProvider(),
+        return RuntimeModel.create(model.getBaseUrl(), apiKey, model.getModelName(), model.getProvider(),
                 model.isVision(), settings, chatProperties.getTimeout(), resolveCompactModel(settings));
     }
 
-    /**
-     * 解析专用压缩模型。
-     *
-     * <p><b>悬空引用不拦聊天</b>：设置行选中的模型被删掉后，这里回落到「沿用对话模型」
-     * 并留一条 WARN —— 拿一个不存在的模型去抛错，会让用户每发一句话都失败，
-     * 而真正该修的是设置页那处失配（页面对空选中有显式提示）。</p>
-     */
+    /** 专用模型被删除时沿用对话模型；指定提供方的密钥失效必须报错。 */
     private RuntimeModel.CompactModel resolveCompactModel(SettingsView settings) {
         Long compactModelId = settings == null ? null : settings.compactModelId();
         if (compactModelId == null) {
@@ -199,11 +193,12 @@ public class ModelServiceImpl implements ModelService {
             log.warn("专用压缩模型不存在，已回落到对话模型: compactModelId={}", compactModelId);
             return null;
         }
-        if (isBlank(compact.getBaseUrl()) || isBlank(compact.getApiKey()) || isBlank(compact.getModelName())) {
+        String apiKey = resolveApiKey(compact);
+        if (isBlank(compact.getBaseUrl()) || isBlank(apiKey) || isBlank(compact.getModelName())) {
             log.warn("专用压缩模型连接配置不完整，已回落到对话模型: compactModelId={}", compactModelId);
             return null;
         }
-        return new RuntimeModel.CompactModel(compact.getBaseUrl(), compact.getApiKey(), compact.getModelName());
+        return new RuntimeModel.CompactModel(compact.getBaseUrl(), apiKey, compact.getModelName());
     }
 
     private static boolean isBlank(String value) {
@@ -234,12 +229,11 @@ public class ModelServiceImpl implements ModelService {
         return providerConfigId;
     }
 
-    /**
-     * 取提供商预设的明文密钥用于复制。
-     *
-     * <p>复制发生在写模型行时，模型自此持有自己的密钥；运行期不再需要「模型没配就借提供方的」
-     * 那种降级分支——降级分支恰恰是最容易在重启/换 key 后失配的地方。</p>
-     */
+    private String resolveApiKey(ModelConfig model) {
+        return model.isUseProvider() ? providerApiKey(model.getProviderConfigId()) : model.getApiKey();
+    }
+
+    /** 指定提供方后必须取得其当前密钥，不能使用模型残留的旧值。 */
     private String providerApiKey(Long providerConfigId) {
         throwIf(providerConfigId == null || providerConfigId <= 0, "使用提供方密钥时必须指定提供方");
         return providerConfigService.findApiKey(providerConfigId)
@@ -247,19 +241,22 @@ public class ModelServiceImpl implements ModelService {
                 .orElseThrow(() -> new ClientException("提供方未配置 API Key: " + providerConfigId));
     }
 
-    /** 接口固定返回前 20% + *** + 后 20%，配置状态依据数据库原值。 */
+    /** 列表允许展示失效配置，运行时再明确报错。 */
     private ModelConfigVO toVo(ModelConfig modelConfig, ProviderConfigVO provider) {
-        boolean configured = (modelConfig.getApiKey() != null && !modelConfig.getApiKey().isBlank());
+        boolean configured = modelConfig.isUseProvider()
+                ? provider != null && provider.isCredentialConfigured()
+                : !isBlank(modelConfig.getApiKey());
         return ModelConfigVO.builder()
                 .id(modelConfig.getId())
                 .modelName(modelConfig.getModelName())
                 .baseUrl(modelConfig.getBaseUrl())
-                .apiKey(modelConfig.getMaskedApiKey())
+                .apiKey(modelConfig.isUseProvider() ? (provider == null ? null : provider.getApiKey()) : modelConfig.getMaskedApiKey())
                 .provider(modelConfig.getProvider())
-                .providerConfigId(provider == null ? null : provider.getId())
+                .providerConfigId(modelConfig.getProviderConfigId())
                 .providerName(provider == null ? null : provider.getName())
                 .providerIcon(provider == null ? null : provider.getIcon())
                 .vision(modelConfig.isVision())
+                .useProvider(modelConfig.isUseProvider())
                 .credentialConfigured(configured)
                 .build();
     }

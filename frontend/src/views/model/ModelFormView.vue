@@ -1,12 +1,11 @@
 <script setup lang='ts'>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ModelAPI } from '../../services/api';
+import { ModelAPI, ProviderAPI } from '../../services/api';
 import { useTheme } from '../../composables/useTheme';
 import { useConfirm } from '../../composables/useConfirm';
-import type { OpenAIModelItem, ModelConfigPayload } from '../../types/chat';
+import type { OpenAIModelItem, ModelConfigPayload, ProviderConfigVO } from '../../types/chat';
 import ModelVisionField from '../../components/model/ModelVisionField.vue';
-import { extractOpenAIError, parseOpenAIModelList } from '../../utils/openaiModels';
 import { isOk } from '../../utils/api';
 import { t } from '../../i18n';
 
@@ -21,7 +20,14 @@ const { isDark, toggleTheme } = useTheme();
 const modelId = computed(() => String(route.params.id ?? ''));
 const isEdit = computed(() => modelId.value !== '');
 
-const form = ref({ modelName: '', baseUrl: '', apiKey: '', vision: false });
+const emptyForm = () => ({ modelName: '', baseUrl: '', apiKey: '', vision: false,
+  useProvider: true, providerConfigId: '' as string | number });
+const form = ref(emptyForm());
+const providers = ref<ProviderConfigVO[]>([]);
+const handleProviderChange = () => {
+  const provider = providers.value.find(item => String(item.id) === String(form.value.providerConfigId));
+  if (!form.value.baseUrl.trim()) form.value.baseUrl = provider?.baseUrl ?? '';
+};
 const formError = ref('');
 const loading = ref(false);
 const submitting = ref(false);
@@ -45,7 +51,7 @@ let detailRevision = 0;
 // 路由复用表单时必须清空能力声明，旧详情响应不能覆盖新模型。
 const loadDetail = async () => {
   const revision = ++detailRevision;
-  form.value = { modelName: '', baseUrl: '', apiKey: '', vision: false };
+  form.value = emptyForm();
   credentialConfigured.value = false;
   formError.value = '';
   loading.value = isEdit.value;
@@ -57,6 +63,8 @@ const loadDetail = async () => {
     if (isOk(res.code) && res.data) {
       form.value = {
         vision: res.data.vision,
+        useProvider: res.data.useProvider,
+        providerConfigId: res.data.providerConfigId ?? '',
         modelName: res.data.modelName ?? '',
         baseUrl: res.data.baseUrl ?? '',
         // 掩码值不回填输入框：留空 = 保留（三态语义），避免把掩码当成新密钥提交
@@ -80,8 +88,12 @@ const validate = () => {
         formError.value = t('model.requiredNameUrl');
     return false;
   }
-  // 三态语义（§6-6）：新增必须提供密钥；编辑留空 = 保留已有密钥（不发送 apiKey 字段）
-  if (!isEdit.value && !form.value.apiKey.trim()) {
+  // 独立密钥编辑留空时保留原值，提供方密钥始终由后端读取。
+  if (form.value.useProvider && !form.value.providerConfigId) {
+    formError.value = t('settings.models.errProviderRequired');
+    return false;
+  }
+  if (!isEdit.value && !form.value.useProvider && !form.value.apiKey.trim()) {
     formError.value = t('model.apiKeyRequired');
     return false;
   }
@@ -97,10 +109,12 @@ const submit = async () => {
     // apiKey 留空时不携带该字段（「保留」），带值即替换（「新增/替换」）；清除走 clearKey
     const payload: ModelConfigPayload = {
       vision: form.value.vision,
+      useProvider: form.value.useProvider,
+      providerConfigId: form.value.providerConfigId || 0,
       modelName: form.value.modelName.trim(),
       baseUrl: form.value.baseUrl.trim()
     };
-    if (key) payload.apiKey = key;
+    if (key && !form.value.useProvider) payload.apiKey = key;
     const res = isEdit.value
       ? await ModelAPI.update({ id: modelId.value, ...payload })
       : await ModelAPI.add(payload);
@@ -108,7 +122,7 @@ const submit = async () => {
             showToast(isEdit.value ? t('model.saveSuccess') : t('model.addSuccess'));
       window.setTimeout(() => router.push('/models'), 600);
     } else {
-      formError.value = isEdit.value ? t('model.saveFailed') : t('model.addFailed');
+      formError.value = res.errMsg || (isEdit.value ? t('model.saveFailed') : t('model.addFailed'));
     }
   } catch {
     formError.value = `${isEdit.value ? t('model.saveFailed') : t('model.addFailed')}`;
@@ -131,6 +145,7 @@ const clearKey = async () => {
     const res = await ModelAPI.clearCredential(modelId.value);
     if (isOk(res.code)) {
       credentialConfigured.value = false;
+      form.value.useProvider = false;
       form.value.apiKey = '';
             showToast(t('model.keyCleared'));
     } else {
@@ -195,43 +210,19 @@ const handleFetchRemoteModels = async (e?: Event) => {
     return;
   }
 
-  const base = form.value.baseUrl.trim();
-  const url = base.replace(/\/+$/, '') + '/models';
-
   isFetchingRemoteModels.value = true;
   fetchRemoteModelError.value = '';
   isRemoteModelDropdownOpen.value = true;
   remoteModelSearch.value = '';
 
   try {
-    const headers: Record<string, string> = {
-      'Accept': 'application/json'
-    };
-    const key = form.value.apiKey?.trim();
-    if (key) {
-      headers['Authorization'] = `Bearer ${key}`;
-      headers['apikey'] = key;
-      headers['api-key'] = key;
-    }
-
-    const res = await fetch(url, {
-      method: 'GET',
-      headers
+    const res = await ProviderAPI.discoverModels({
+      providerConfigId: form.value.useProvider ? form.value.providerConfigId || undefined : undefined,
+      baseUrl: form.value.baseUrl.trim(),
+      apiKey: form.value.useProvider ? undefined : form.value.apiKey.trim() || undefined,
     });
-
-    if (!res.ok) {
-      let errJson: unknown = null;
-      try {
-        errJson = await res.json();
-      } catch (err) {
-        console.warn('[fetchRemoteModels] 错误响应体不是合法 JSON:', err);
-      }
-      throw new Error(extractOpenAIError(errJson, `HTTP ${res.status}: ${res.statusText}`));
-    }
-
-    const json = await res.json();
-    // 各厂商 /v1/models 响应结构不一致（外部契约），解析收敛到 utils/openaiModels
-    const validItems: OpenAIModelItem[] = parseOpenAIModelList(json);
+    if (!isOk(res.code) || !res.data) throw new Error(res.errMsg || t('model.fetchModelsFailed'));
+    const validItems: OpenAIModelItem[] = res.data;
 
     remoteModelList.value = validItems;
     if (validItems.length === 0) {
@@ -260,6 +251,10 @@ const handleDocumentClick = (e: MouseEvent) => {
 
 onMounted(() => {
   window.addEventListener('click', handleDocumentClick);
+  ProviderAPI.list().then(res => {
+    if (isOk(res.code)) providers.value = res.data ?? [];
+    else formError.value = res.errMsg || t('model.loadFailed');
+  }).catch(() => { formError.value = t('model.loadFailed'); });
 });
 
 onBeforeUnmount(() => {
@@ -288,6 +283,13 @@ onBeforeUnmount(() => {
         <div v-if='loading' class='px-5 py-10 text-center text-xs opacity-60'>{{ t('common.loading') }}</div>
 
         <div v-else class='px-5 py-5 space-y-4'>
+          <div class='space-y-1.5'>
+            <label :class='labelClass'>{{ t('settings.models.providerSelectLabel') }}</label>
+            <select v-model='form.providerConfigId' data-testid='model-provider' :class='inputClass' @change='handleProviderChange'>
+              <option value=''>{{ t('settings.models.ungrouped') }}</option>
+              <option v-for='provider in providers' :key='provider.id' :value='provider.id'>{{ provider.name }}</option>
+            </select>
+          </div>
           <div class='model-dropdown-container relative space-y-1.5' @click.stop>
             <label :class='labelClass'>{{ t('model.nameLabel') }} <span class='text-red-400'>*</span></label>
             <div class='flex items-center gap-2'>
@@ -374,7 +376,7 @@ onBeforeUnmount(() => {
           </div>
           <div class='space-y-1.5'>
             <div class='flex items-center justify-between gap-2'>
-              <label :class='labelClass'>API Key <span v-if='!isEdit' class='text-red-400'>*</span></label>
+              <label :class='labelClass'>API Key <span v-if='!isEdit && !form.useProvider' class='text-red-400'>*</span></label>
               <span
                 v-if='isEdit && credentialConfigured'
                                 class='inline-flex items-center px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 text-[11px] font-medium'
@@ -384,16 +386,23 @@ onBeforeUnmount(() => {
                 class='inline-flex items-center px-2 py-0.5 rounded-full bg-zinc-500/10 text-zinc-400 text-[11px]'
               >{{ t('model.notConfigured') }}</span>
             </div>
+            <label class='flex items-start gap-2 text-xs'>
+              <input v-model='form.useProvider' data-testid='model-use-provider' type='checkbox' />
+              <span>{{ t('settings.models.useProviderApiKeyLabel') }}
+                <span class='block mt-1 opacity-60'>{{ t('settings.models.useProviderApiKeyHelp') }}</span>
+              </span>
+            </label>
             <input
               v-model='form.apiKey'
+              :disabled='form.useProvider'
               :class='inputClass'
-                                                        :placeholder='isEdit
+              :placeholder='form.useProvider ? t("settings.models.useProviderApiKeyPlaceholder") : isEdit
                 ? (credentialConfigured ? t("model.keyHintConfigured") : t("model.keyHintEmpty"))
                 : "API Key"'
               autocomplete='off'
             />
             <button
-              v-if='isEdit && credentialConfigured'
+              v-if='isEdit && credentialConfigured && !form.useProvider'
               type='button'
               :disabled='clearing'
               @click='clearKey'

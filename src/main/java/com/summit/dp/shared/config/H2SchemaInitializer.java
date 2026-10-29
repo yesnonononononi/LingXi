@@ -85,6 +85,8 @@ public class H2SchemaInitializer {
                         "db/migration/V16_user_configs_compact_model_id.sql"), StandardCharsets.UTF_8));
                 ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
                         "db/migration/V17_session_message_resume_request.sql"), StandardCharsets.UTF_8));
+                ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                        "db/migration/V18_model_config_use_provider.sql"), StandardCharsets.UTF_8));
             }
         };
     }

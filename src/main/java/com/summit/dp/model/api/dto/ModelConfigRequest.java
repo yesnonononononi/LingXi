@@ -1,5 +1,7 @@
 package com.summit.dp.model.api.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+
 public record ModelConfigRequest(
         Long id,
         String modelName,
@@ -8,6 +10,6 @@ public record ModelConfigRequest(
         String provider,
         Boolean vision,
         Long providerConfigId,
-        Boolean useProviderApiKey
+        @JsonAlias("useProviderApiKey") Boolean useProvider
 ) {
 }

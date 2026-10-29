@@ -16,9 +16,15 @@ public class ModelConfig {
     private String apiKey;
     private String modelName;
     private String provider;
-    /** 所属提供商预设；为空表示未归属（例如预设被删除后的悬空引用）。 */
+    /** 提供方删除后仍保留原标识，避免静默改变密钥来源。 */
     private Long providerConfigId;
     private boolean vision;
+    private boolean useProvider;
+
+    public ModelConfig(Long id, String baseUrl, String apiKey, String modelName, String provider,
+                       Long providerConfigId, boolean vision) {
+        this(id, baseUrl, apiKey, modelName, provider, providerConfigId, vision, false);
+    }
 
     /** 兼容既有调用：未归属任何提供商预设。 */
     public ModelConfig(Long id, String baseUrl, String apiKey, String modelName, String provider, boolean vision) {
@@ -41,6 +47,10 @@ public class ModelConfig {
 
     public void changeVision(boolean vision) {
         this.vision = vision;
+    }
+
+    public void changeUseProvider(boolean useProvider) {
+        this.useProvider = useProvider;
     }
 
     /** {@code 0} 表示显式解除归属（归入「未分组」）；正数指向 provider_config.id。 */

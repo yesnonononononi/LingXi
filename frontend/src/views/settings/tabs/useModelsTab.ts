@@ -28,8 +28,8 @@ interface ModelForm {
   baseUrl: string;
   apiKey: string;
   vision: boolean;
-  /** 勾选后保存时把提供商预设的密钥复制到本模型，之后与提供方解耦 */
-  useProviderApiKey: boolean;
+  /** 开启后实时读取提供方密钥，模型不保存副本。 */
+  useProvider: boolean;
 }
 
 export function useModelsTab(emit: (e: 'modelUpdated') => void) {
@@ -73,7 +73,7 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
       baseUrl: '',
       apiKey: '',
       vision: false,
-      useProviderApiKey: false,
+      useProvider: true,
     };
   }
 
@@ -230,7 +230,7 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
       baseUrl: item.baseUrl ?? '',
       apiKey: '', // 展示掩码不回填；编辑留空保留数据库中的原值。
       vision: item.vision,
-      useProviderApiKey: false,
+      useProvider: item.useProvider,
     };
     modelFormError.value = '';
     showApiKey.value = false;
@@ -245,13 +245,6 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
     return provider?.baseUrl ?? '';
   };
 
-  /** 该提供商是否已配置通用密钥：没有密钥时「复用提供方密钥」没有意义。 */
-  const providerHasCredential = (providerConfigId?: string | number | null): boolean => {
-    if (providerConfigId === null || providerConfigId === undefined) return false;
-    const provider = providers.value.find(p => String(p.id) === String(providerConfigId));
-    return !!provider?.credentialConfigured;
-  };
-
   /** 切换提供方时，Base URL 还是空或仍是旧提供方的值就跟着换，用户手改过的不动。 */
   const handleProviderChange = (value: string | number | null) => {
     const previousBaseUrl = providerBaseUrl(modelForm.value.providerConfigId);
@@ -261,8 +254,6 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
     if (!current || current === previousBaseUrl) {
       modelForm.value.baseUrl = nextBaseUrl;
     }
-    // 新提供方没有通用密钥，勾选态必须一起撤销，避免提交一个必然失败的请求。
-    if (!providerHasCredential(value)) modelForm.value.useProviderApiKey = false;
   };
 
   const cancelForm = () => {
@@ -287,7 +278,11 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
       modelFormError.value = t('settings.models.errBaseUrlInput');
       return;
     }
-    const reusesProviderKey = form.useProviderApiKey && providerHasCredential(form.providerConfigId);
+    if (form.useProvider && (!form.providerConfigId || Number(form.providerConfigId) <= 0)) {
+      modelFormError.value = t('settings.models.errProviderRequired');
+      return;
+    }
+    const reusesProviderKey = form.useProvider;
     if (form.id === null && !form.apiKey.trim() && !reusesProviderKey) {
       modelFormError.value = t('settings.models.errApiKeyRequired');
       return;
@@ -296,16 +291,16 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
     try {
       // 归属「未分组」时显式传 0：后端按键「是否出现」判定，null 会被当成「不修改」。
       const providerConfigId = form.providerConfigId === null
-        ? null
+        ? 0
         : Number(form.providerConfigId) > 0 ? form.providerConfigId : 0;
       const payload = {
         vision: form.vision,
         modelName: form.modelName.trim(),
         baseUrl: form.baseUrl.trim(),
-        // 复用提供方密钥时不带 apiKey，由后端在落库前复制明文。
+        // 提供方密钥只由后端实时读取，不回传模型密钥。
         apiKey: reusesProviderKey ? undefined : (form.apiKey.trim() || undefined),
         providerConfigId,
-        useProviderApiKey: form.useProviderApiKey || undefined,
+        useProvider: form.useProvider,
       };
       const res = form.id === null
         ? await ModelAPI.add(payload)
@@ -380,9 +375,9 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
 
     try {
       const res = await ProviderAPI.discoverModels({
-        providerConfigId: modelForm.value.useProviderApiKey ? modelForm.value.providerConfigId ?? undefined : undefined,
+        providerConfigId: modelForm.value.useProvider ? modelForm.value.providerConfigId ?? undefined : undefined,
         baseUrl: modelForm.value.baseUrl.trim(),
-        apiKey: modelForm.value.apiKey.trim() || undefined,
+        apiKey: modelForm.value.useProvider ? undefined : modelForm.value.apiKey.trim() || undefined,
       });
       if (!isOk(res.code) || !res.data) throw new Error('模型发现失败');
       const validItems: OpenAIModelItem[] = res.data;
@@ -453,7 +448,6 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
     startAddModel,
     startEditModel,
     handleProviderChange,
-    providerHasCredential,
     cancelForm,
     cancelModelForm: cancelForm,
     saveModelForm,

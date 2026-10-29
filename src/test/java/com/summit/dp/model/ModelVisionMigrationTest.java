@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ModelVisionMigrationTest {
     @Test
-    void oldModelsStartDisabledAndRepeatedBootstrapPreservesTheChoice() throws Exception {
+    void oldModelsKeepIndependentCredentialsAndRepeatedBootstrapPreservesBothChoices() throws Exception {
         EmbeddedDatabase database = new EmbeddedDatabaseBuilder().setType(EmbeddedDatabaseType.H2)
                 .setName(UUID.randomUUID() + ";MODE=MySQL").addScript("model-vision-legacy.sql").build();
         try {
@@ -36,10 +36,13 @@ class ModelVisionMigrationTest {
             factory.setDataSource(database);
             ModelConfigMapper mapper = new SqlSessionTemplate(factory.getObject()).getMapper(ModelConfigMapper.class);
             assertFalse(mapper.selectById(42L).isVision());
+            assertFalse(mapper.selectById(42L).isUseProvider());
             mapper.update(null, new LambdaUpdateWrapper<ModelConfigPO>().eq(ModelConfigPO::getId, 42L).set(ModelConfigPO::isVision, true));
+            mapper.update(null, new LambdaUpdateWrapper<ModelConfigPO>().eq(ModelConfigPO::getId, 42L).set(ModelConfigPO::isUseProvider, true));
             initializer.h2SchemaBootstrap(database).run(new DefaultApplicationArguments());
             ModelConfigPO row = mapper.selectById(42L);
             assertTrue(row.isVision());
+            assertTrue(row.isUseProvider());
             assertEquals("existing-key", row.getApiKey());
             assertEquals("custom-name", row.getModelName());
         } finally {

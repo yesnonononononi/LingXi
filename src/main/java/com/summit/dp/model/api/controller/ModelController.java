@@ -52,6 +52,6 @@ public class ModelController {
 
     private ModelConfigCommand toCommand(ModelConfigRequest request) {
         return new ModelConfigCommand(request.id(), request.modelName(), request.baseUrl(),
-                request.apiKey(), request.vision(), request.providerConfigId(), request.useProviderApiKey());
+                request.apiKey(), request.vision(), request.providerConfigId(), request.useProvider());
     }
 }

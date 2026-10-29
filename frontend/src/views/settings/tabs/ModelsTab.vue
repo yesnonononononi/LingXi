@@ -54,7 +54,6 @@ const {
   startAddModel,
   startEditModel,
   handleProviderChange,
-  providerHasCredential,
   cancelForm,
   saveModelForm,
   handleDeleteModel,
@@ -488,15 +487,13 @@ const addRowClass = computed(() => [
         </div>
 
         <div>
-          <label :class="labelClass">{{ t('settings.models.apiKeyLabel') }} <span v-if="modelForm.id === null && !modelForm.useProviderApiKey" class="text-red-500">*</span></label>
+          <label :class="labelClass">{{ t('settings.models.apiKeyLabel') }} <span v-if="modelForm.id === null && !modelForm.useProvider" class="text-red-500">*</span></label>
 
-          <!-- 只有该提供方确实配了通用密钥时才给这个选项，否则勾了也必然失败 -->
           <label
-            v-if="providerHasCredential(modelForm.providerConfigId)"
             class="mb-2 flex items-start gap-2 rounded-xl border px-3 py-2 cursor-pointer select-none"
             :class="isDark ? 'border-lx-border hover:border-white/30' : 'border-lx-border hover:border-zinc-300'"
           >
-            <input v-model="modelForm.useProviderApiKey" type="checkbox" class="mt-0.5 accent-blue-600" />
+            <input v-model="modelForm.useProvider" data-testid="model-use-provider" type="checkbox" class="mt-0.5 accent-blue-600" />
             <span class="min-w-0">
               <span class="block text-xs font-medium text-lx-secondary">
                 {{ t('settings.models.useProviderApiKeyLabel') }}
@@ -511,11 +508,11 @@ const addRowClass = computed(() => [
             <input
               v-model="modelForm.apiKey"
               :type="showApiKey ? 'text' : 'password'"
-              :disabled="modelForm.useProviderApiKey"
-              :placeholder="modelForm.useProviderApiKey
+              :disabled="modelForm.useProvider"
+              :placeholder="modelForm.useProvider
                 ? t('settings.models.useProviderApiKeyPlaceholder')
                 : (modelForm.id !== null ? t('settings.models.apiKeyEditPlaceholder') : t('settings.models.apiKeyAddPlaceholder'))"
-              :class="[fieldClass, 'pr-10', modelForm.useProviderApiKey ? 'opacity-60 cursor-not-allowed' : '']"
+              :class="[fieldClass, 'pr-10', modelForm.useProvider ? 'opacity-60 cursor-not-allowed' : '']"
             />
             <button
               type="button"

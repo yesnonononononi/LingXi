@@ -62,7 +62,8 @@ public class ModelConfigRepositoryImpl extends AbstractJsonRepository<ModelConfi
                 modelConfigPO.getModelName(),
                 modelConfigPO.getProvider(),
                 modelConfigPO.getProviderConfigId(),
-                modelConfigPO.isVision()
+                modelConfigPO.isVision(),
+                modelConfigPO.isUseProvider()
         );
         BeanUtils.copyProperties(modelConfigPO, modelConfig);
         return modelConfig;

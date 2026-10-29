@@ -88,6 +88,39 @@ class JsonRepositoriesTest {
     private Path path(String name) { return directory.resolve(name + ".json"); }
 
     @Test
+    void providerSourceSurvivesImportReopenRollbackAndExplicitDisable() {
+        modelMapper.insert(ModelConfigPO.builder().id(44L).modelName("provider-model").baseUrl("http://localhost")
+                .providerConfigId(7L).useProvider(true).build());
+        ModelConfig imported = models.findById(44L).orElseThrow();
+        assertTrue(imported.isUseProvider());
+        assertNull(imported.getApiKey());
+        ModelConfigRepositoryImpl reopened = new ModelConfigRepositoryImpl(modelMapper, path("models").toString());
+        assertTrue(reopened.findById(44L).orElseThrow().isUseProvider());
+        transaction.executeWithoutResult(status -> {
+            ModelConfig pending = models.findById(44L).orElseThrow();
+            pending.changeUseProvider(false);
+            models.updateById(pending);
+            status.setRollbackOnly();
+        });
+        assertTrue(reopened.findById(44L).orElseThrow().isUseProvider());
+        imported.changeUseProvider(false);
+        imported.changeApiKey("own-key");
+        models.updateById(imported);
+        assertFalse(reopened.findById(44L).orElseThrow().isUseProvider());
+        assertEquals("own-key", reopened.findById(44L).orElseThrow().getApiKey());
+    }
+
+    @Test
+    void legacyJsonWithoutSourceFlagKeepsItsOwnCredential() throws Exception {
+        Files.writeString(path("models"), """
+                [{"id":45,"modelName":"legacy","baseUrl":"http://localhost","apiKey":"old-key","providerConfigId":7}]
+                """);
+        ModelConfig legacy = models.findById(45L).orElseThrow();
+        assertFalse(legacy.isUseProvider());
+        assertEquals("old-key", legacy.getApiKey());
+    }
+
+    @Test
     void visionSurvivesImportReopenAndTransactionRollback() {
         modelMapper.insert(ModelConfigPO.builder().id(43L).modelName("custom-name").baseUrl("http://localhost")
                 .apiKey("key").vision(true).build());

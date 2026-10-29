@@ -14,20 +14,24 @@ app.whenReady().then(async () => {
   await fs.mkdir(output, { recursive: true });
   await fs.writeFile(path.join(fixture, 'App.vue'), `<script setup>
 import {ref} from 'vue';
+import {RouterView} from 'vue-router';
 import ModelsTab from '../../../src/views/settings/tabs/ModelsTab.vue';
 import SettingsModal from '../../../src/views/settings/SettingsModal.vue';
 import {useTheme} from '../../../src/composables/useTheme';
 import '../../../src/style.css';
-const dark=ref(false), modal=ref(false);
+const dark=ref(false), modal=ref(false), standalone=ref(false);
+window.showStandalone=()=>{standalone.value=true;};
 const {setTheme}=useTheme(); setTheme('light');
 window.setDark=value=>{dark.value=value;setTheme(value?'dark':'light');};
 window.showModal=()=>modal.value=true;
 </script><template>
-<div v-if="modal"><SettingsModal initial-tab="models"/></div>
+<RouterView v-if="standalone"/><div v-else-if="modal"><SettingsModal initial-tab="models"/></div>
 <main v-else class="font-sans" :style="{width:'640px',maxWidth:'calc(100vw - 32px)',margin:'28px auto',padding:'28px',border:'1px solid '+(dark?'#303035':'#e4e4e7'),borderRadius:'20px',background:dark?'#050505':'white'}">
 <div style="font-size:11px;color:#71717a;margin-bottom:20px;letter-spacing:.3px">设置 / 模型 · 界面预览（示例数据）</div>
 <ModelsTab :is-dark="dark"/></main></template>`);
   await fs.writeFile(path.join(fixture, 'entry.js'), `import {createApp,nextTick} from 'vue';
+import {createRouter,createMemoryHistory} from 'vue-router';
+import ModelFormView from '../../../src/views/model/ModelFormView.vue';
 import http from '../../../src/services/interceptor';
 import {setPreference} from '../../../src/i18n';
 setPreference('zh-CN');window.setLanguage=setPreference;
@@ -39,6 +43,8 @@ http.defaults.adapter=async config=>{
  window.requests.push({url:config.url,payload});let data={code:1};
  if(config.url==='/provider/list') data.data=window.providers;
  else if(config.url==='/model/catalog') data.data=window.providers.map(p=>({providerConfigId:p.id,providerName:p.name,providerIcon:p.icon,baseUrl:p.baseUrl,modelCount:window.models.length,models:window.models}));
+ else if(config.url.startsWith('/model/find/')) data.data=window.singleModel;
+ else if(['/model/add','/model/update'].includes(config.url)) window.singleModel={id:'9007199254740995',...payload,credentialConfigured:true};
  else if(config.url==='/provider/add') {
    window.providers=[{...payload,id:'9007199254740993',apiKey:'***',credentialConfigured:true}];
    data.data='9007199254740993';
@@ -55,7 +61,9 @@ http.defaults.adapter=async config=>{
  }
  return {config,status:200,statusText:'OK',headers:{},data};
 };
-const {default:App}=await import('./App.vue');createApp(App).mount('#app');
+const router=createRouter({history:createMemoryHistory(),routes:[{path:'/models',component:{template:'<div>models</div>'}},{path:'/models/add',component:ModelFormView},{path:'/models/:id',component:ModelFormView}]});
+await router.push('/models');window.go=async route=>{window.showStandalone();await router.push(route);};
+const {default:App}=await import('./App.vue');createApp(App).use(router).mount('#app');
 window.flush=async()=>{await nextTick();await new Promise(resolve=>setTimeout(resolve,100));};
 window.clickText=label=>{const button=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===label);if(!button)throw new Error('button missing: '+label);if(button.disabled)throw new Error('button disabled: '+label);button.click();};
 window.fill=(selector,value)=>{const input=document.querySelector(selector);if(!input)throw new Error('input missing: '+selector);input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));};
@@ -130,14 +138,32 @@ window.ready=true;`);
   await capture('06-settings-modal.png');
   await run(`window.clickText('返回列表')`);
   await run(`window.clickText('添加模型')`);
-  await run(`document.querySelector('input[type=checkbox]:not([data-testid=model-vision])').click()`);
+  assert.equal(await evaluate(`document.querySelector('[data-testid=model-use-provider]').checked`), true);
   await run(`window.clickText('获取模型列表')`);
   assert.equal(await evaluate(`window.requests.filter(r=>r.url==='/provider/models/discover').at(-1).payload.providerConfigId`), '9007199254740993');
   window.setSize(420, 850);
   await run(`window.flush()`);
   assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true);
+  await run(`window.go('/models/add')`);
+  assert.equal(await evaluate(`document.querySelector('[data-testid=model-use-provider]').checked`), true);
+  assert.equal(await evaluate(`document.querySelector('input[autocomplete=off]').disabled`), true);
+  await run(`const select=document.querySelector('[data-testid=model-provider]');select.value='9007199254740993';select.dispatchEvent(new Event('change',{bubbles:true}));window.fill('input:not([type=checkbox])','single-model')`);
+  await run(`window.clickText('获取模型列表')`);
+  assert.equal(await evaluate(`window.requests.filter(r=>r.url==='/provider/models/discover').at(-1).payload.providerConfigId`), '9007199254740993');
+  await run(`window.clickText('确认新增')`);
+  const singleAdd=await evaluate(`window.requests.filter(r=>r.url==='/model/add').at(-1).payload`);
+  assert.equal(singleAdd.useProvider, true);
+  assert.equal(singleAdd.providerConfigId, '9007199254740993');
+  assert.equal(Object.hasOwn(singleAdd,'apiKey'), false);
+  await run(`new Promise(resolve=>setTimeout(resolve,700))`);
+  await run(`window.go('/models/9007199254740995')`);
+  assert.equal(await evaluate(`document.querySelector('[data-testid=model-use-provider]').checked`), true);
+  await run(`document.querySelector('[data-testid=model-use-provider]').click();window.fill('input[autocomplete=off]','own-key');window.clickText('保存修改')`);
+  const singleEdit=await evaluate(`window.requests.filter(r=>r.url==='/model/update').at(-1).payload`);
+  assert.equal(singleEdit.useProvider, false);
+  assert.equal(singleEdit.apiKey, 'own-key');
   assert.deepEqual(await evaluate('window.errors'), []);
-  console.log('PASS: provider Base URL, authoritative ID, server discovery, remote/manual batches, deduplication, failure recovery, explicit vision, 200 limit, locale and narrow viewport.');
+  console.log('PASS: provider Base URL, authoritative ID, server discovery, remote/manual batches, deduplication, failure recovery, explicit vision, 200 limit, locale, narrow viewport, provider credential defaults and explicit independent-key edits.');
   console.log(output);
   clearTimeout(deadline); window.destroy(); app.exit(0);
 }).catch(error => { console.error(error); clearTimeout(deadline); if (window) window.destroy(); app.exit(1); });

@@ -19,9 +19,10 @@ public class ModelConfigVO {
     private String providerName;
     private String providerIcon;
     private boolean vision;
+    private boolean useProvider;
     private Duration timeout;
     private boolean returnThinking;
     private boolean sendThinking;
-    /** 数据库 API Key 是否已配置；前端据此展示「已配置/未配置」。 */
+    /** 当前选定的密钥来源是否已配置。 */
     private boolean credentialConfigured;
 }
