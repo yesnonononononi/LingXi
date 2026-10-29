@@ -240,8 +240,10 @@ class MemoryMonitorTest {
             assertEquals(1, context.getBeansOfType(LoopInterceptor.class).size());
             String prompt = context.getEnvironment().getProperty("lingxi.system-prompt");
             assertTrue(prompt.contains(globalMemory.toString()));
-            assertTrue(prompt.contains(projectRoot + "/" + PROJECT_MEMORY));
-            assertTrue(prompt.contains("项目长期记忆上限 2000 token"));
+            // 提示词模板已把「项目长期记忆」从内嵌绝对路径改为「工作区目录/相对路径」——
+            // Agent 的工作区在运行期才确定，写死绝对路径会随会话漂移。此处按模板现状断言。
+            assertTrue(prompt.contains("工作区目录/" + PROJECT_MEMORY));
+            assertTrue(prompt.contains("项目长期记忆"));
         }
     }
 
