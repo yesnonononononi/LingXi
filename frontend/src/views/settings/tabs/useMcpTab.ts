@@ -1,6 +1,10 @@
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { McpAPI } from '../../../services/api';
 import { ApiError } from '../../../services/interceptor';
+import {
+  MCP_PROTOCOL_VERSION_MAX_LENGTH,
+  MCP_PROTOCOL_VERSION_PATTERN,
+} from '../../../types/chat';
 import type { McpVO, McpRequest, McpConnectionVO } from '../../../types/chat';
 import { isOk } from '../../../utils/api';
 import { useConfirm } from '../../../composables/useConfirm';
@@ -9,6 +13,32 @@ import { useI18n } from '../../../i18n';
 const MCP_DEFAULT_INIT_TIMEOUT = 30_000;
 const MCP_DEFAULT_EXEC_TIMEOUT = 60_000;
 const MCP_DEFAULT_MAX_OUTPUT = 20_000;
+
+/** 「自动健康检查」三态取值：unset = 不下发（沿用库默认），on / off = 显式下发布尔值。 */
+export type McpTriState = 'unset' | 'on' | 'off';
+
+/**
+ * 把数字输入框的原始取值收敛为「毫秒数或 null」。
+ *
+ * `<input type="number">` 被清空时 `v-model.number` 会留下空串，运行时类型与声明的
+ * `number | null` 并不一致，因此这里统一兜底：空串/空白/NaN/其它类型一律视为
+ * 「未设置」= null（契约 2.2：null 就是 null，绝不补默认值）。
+ *
+ * @param raw 输入框原始取值
+ * @returns 毫秒数；未设置时返回 null
+ */
+function toNullableMilliseconds(raw: unknown): number | null {
+  if (typeof raw === 'number') {
+    return Number.isFinite(raw) ? raw : null;
+  }
+  if (typeof raw === 'string') {
+    const text = raw.trim();
+    if (text === '') return null;
+    const parsed = Number(text);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
 
 export function useMcpTab() {
   const { t } = useI18n();
@@ -46,7 +76,29 @@ export function useMcpTab() {
     initializationTimeout: MCP_DEFAULT_INIT_TIMEOUT as number | null,
     executionTimeout: MCP_DEFAULT_EXEC_TIMEOUT as number | null,
     maxOutput: MCP_DEFAULT_MAX_OUTPUT as number | null,
+    /**
+     * 高级连接容错四项（契约 2.1 / 2.2）。全部可选，留空即 null = 不下发 =
+     * 沿用库默认行为，与服务改造前完全一致；这里**没有**任何业务默认值。
+     * `protocolVersion` 用空串表示「未设置」，提交时归一成 null。
+     */
+    protocolVersion: '' as string,
+    autoHealthCheck: null as boolean | null,
+    healthCheckInterval: null as number | null,
+    reconnectInterval: null as number | null,
     enabled: true,
+  });
+
+  /** 「自动健康检查」三态下拉的视图模型：字符串态 ⇄ 表单里的 boolean | null */
+  const mcpAutoHealthCheckMode = computed<McpTriState>({
+    get: (): McpTriState => {
+      const value = mcpForm.value.autoHealthCheck;
+      if (value === true) return 'on';
+      if (value === false) return 'off';
+      return 'unset';
+    },
+    set: (mode: McpTriState): void => {
+      mcpForm.value.autoHealthCheck = mode === 'unset' ? null : mode === 'on';
+    },
   });
   /** 编辑态下请求头是否保持原样（未改动则不提交 headers 字段） */
   const mcpHeadersPristine = ref(false);
@@ -155,6 +207,10 @@ export function useMcpTab() {
       initializationTimeout: MCP_DEFAULT_INIT_TIMEOUT,
       executionTimeout: MCP_DEFAULT_EXEC_TIMEOUT,
       maxOutput: MCP_DEFAULT_MAX_OUTPUT,
+      protocolVersion: '',
+      autoHealthCheck: null,
+      healthCheckInterval: null,
+      reconnectInterval: null,
       enabled: true,
     };
     mcpHeadersPristine.value = false;
@@ -176,6 +232,11 @@ export function useMcpTab() {
       initializationTimeout: item.initializationTimeout ?? MCP_DEFAULT_INIT_TIMEOUT,
       executionTimeout: item.executionTimeout ?? MCP_DEFAULT_EXEC_TIMEOUT,
       maxOutput: item.maxOutput ?? MCP_DEFAULT_MAX_OUTPUT,
+      // 容错参数回填必须保真：库里是 null 就回填「未设置」，不得替换成任何默认值。
+      protocolVersion: item.protocolVersion ?? '',
+      autoHealthCheck: item.autoHealthCheck ?? null,
+      healthCheckInterval: item.healthCheckInterval ?? null,
+      reconnectInterval: item.reconnectInterval ?? null,
       enabled: item.status !== 0,
     };
     mcpHeadersPristine.value = true;
@@ -269,6 +330,27 @@ export function useMcpTab() {
       return null;
     }
 
+    // 高级连接容错四项：留空 = null = 不下发 = 沿用库默认（契约 2.2），
+    // 护栏按契约 2.3，错误文案与后端 McpValidator 保持一致的口径。
+    const protocolVersionText = (mcpForm.value.protocolVersion ?? '').trim();
+    const protocolVersion: string | null = protocolVersionText === '' ? null : protocolVersionText;
+    if (protocolVersion !== null
+      && (protocolVersion.length > MCP_PROTOCOL_VERSION_MAX_LENGTH
+        || !MCP_PROTOCOL_VERSION_PATTERN.test(protocolVersion))) {
+      mcpFormError.value = t('settings.mcp.errProtocolVersionFormat');
+      return null;
+    }
+    const healthCheckInterval = toNullableMilliseconds(mcpForm.value.healthCheckInterval);
+    if (healthCheckInterval !== null && (!Number.isInteger(healthCheckInterval) || healthCheckInterval < 1)) {
+      mcpFormError.value = t('settings.mcp.errHealthCheckInterval');
+      return null;
+    }
+    const reconnectInterval = toNullableMilliseconds(mcpForm.value.reconnectInterval);
+    if (reconnectInterval !== null && (!Number.isInteger(reconnectInterval) || reconnectInterval < 1)) {
+      mcpFormError.value = t('settings.mcp.errReconnectInterval');
+      return null;
+    }
+
     const payload = {
       name: trimmedName,
       transport: mcpForm.value.transport,
@@ -280,6 +362,11 @@ export function useMcpTab() {
       initializationTimeout: mcpForm.value.initializationTimeout ?? undefined,
       executionTimeout: mcpForm.value.executionTimeout ?? undefined,
       maxOutput: mcpForm.value.maxOutput ?? undefined,
+      // 四项容错参数提交 null 就是 null（显式下发），以便用户能把已配置的值清空回库默认。
+      protocolVersion,
+      autoHealthCheck: mcpForm.value.autoHealthCheck ?? null,
+      healthCheckInterval,
+      reconnectInterval,
       status: mcpForm.value.enabled ? 1 : 0,
     };
 
@@ -327,6 +414,11 @@ export function useMcpTab() {
         ...(item.transport === 'stdio' ? { command: item.command } : { url: item.url }),
         initializationTimeout: item.initializationTimeout,
         executionTimeout: item.executionTimeout, maxOutput: item.maxOutput, status: item.status,
+        // 容错参数跟随已保存配置，测试连接才与真实运行时的行为一致。
+        protocolVersion: item.protocolVersion ?? null,
+        autoHealthCheck: item.autoHealthCheck ?? null,
+        healthCheckInterval: item.healthCheckInterval ?? null,
+        reconnectInterval: item.reconnectInterval ?? null,
       });
       if (mcpRowConnections.value[key] !== state) return;
       state.success = isOk(res.code) && !!res.data;
@@ -458,6 +550,7 @@ export function useMcpTab() {
     mcpRowConnections,
     mcpToast,
     mcpForm,
+    mcpAutoHealthCheckMode,
     mcpHeadersPristine,
     mcpEnvPristine,
     loadMcp,

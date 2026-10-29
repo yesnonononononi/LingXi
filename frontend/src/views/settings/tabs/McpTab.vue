@@ -27,6 +27,7 @@ const {
   mcpRowConnections,
   mcpToast,
   mcpForm,
+  mcpAutoHealthCheckMode,
   mcpHeadersPristine,
   mcpEnvPristine,
   loadMcp,
@@ -459,6 +460,115 @@ const {
             ]"
           />
         </div>
+      </div>
+
+      <!-- 高级连接容错：4 项全部可选，留空即不下发（null），沿用库默认行为 -->
+      <div
+        class="space-y-3 p-3 rounded-2xl border"
+        :class="isDark ? 'border-white/10 bg-white/[0.02]' : 'border-zinc-200 bg-zinc-50/60'"
+      >
+        <div>
+          <p class="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+            {{ t('settings.mcp.advancedGroup') }}
+          </p>
+          <p class="text-[11px] text-lx-faint mt-0.5">
+            {{ t('settings.mcp.advancedGroupHint') }}
+          </p>
+        </div>
+
+        <!-- 协议版本：留空 = 走协议探测 -->
+        <div class="space-y-1.5">
+          <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+            {{ t('settings.mcp.protocolVersionLabel') }}
+            <span class="text-lx-faint font-normal">{{ t('settings.mcp.protocolVersionHint') }}</span>
+          </label>
+          <input
+            v-model="mcpForm.protocolVersion"
+            type="text"
+            maxlength="32"
+            :placeholder="t('settings.mcp.protocolVersionPlaceholder')"
+            :title="t('settings.mcp.protocolVersionTooltip')"
+            :class="[
+              'w-full px-3 py-2 rounded-xl border text-xs outline-none transition font-mono',
+              isDark
+                ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
+                : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
+            ]"
+          />
+          <p class="text-[11px] text-lx-faint">{{ t('settings.mcp.protocolVersionTooltip') }}</p>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3">
+          <!-- 自动健康检查：三态，才能表达「未设置，沿用库默认」 -->
+          <div class="space-y-1.5">
+            <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+              {{ t('settings.mcp.autoHealthCheckLabel') }}
+            </label>
+            <select
+              v-model="mcpAutoHealthCheckMode"
+              :title="t('settings.mcp.autoHealthCheckTooltip')"
+              :class="[
+                'w-full px-2 py-2 rounded-xl border text-xs outline-none transition cursor-pointer',
+                isDark
+                  ? 'bg-black/90 border-white/15 text-white focus:border-cyan-400/80'
+                  : 'bg-white border-zinc-200 text-zinc-800 focus:border-blue-500'
+              ]"
+            >
+              <option value="unset">{{ t('settings.mcp.autoHealthCheckUnset') }}</option>
+              <option value="on">{{ t('settings.mcp.autoHealthCheckOn') }}</option>
+              <option value="off">{{ t('settings.mcp.autoHealthCheckOff') }}</option>
+            </select>
+          </div>
+
+          <!-- 健康检查间隔(ms) -->
+          <div class="space-y-1.5">
+            <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+              {{ t('settings.mcp.healthCheckIntervalLabel') }}
+            </label>
+            <input
+              v-model.number="mcpForm.healthCheckInterval"
+              type="number"
+              min="1"
+              step="1"
+              :placeholder="t('settings.mcp.healthCheckIntervalPlaceholder')"
+              :title="t('settings.mcp.healthCheckIntervalTooltip')"
+              :class="[
+                'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
+                isDark
+                  ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
+                  : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
+              ]"
+            />
+          </div>
+
+          <!-- 重连间隔(ms) -->
+          <div class="space-y-1.5">
+            <label class="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+              {{ t('settings.mcp.reconnectIntervalLabel') }}
+            </label>
+            <input
+              v-model.number="mcpForm.reconnectInterval"
+              type="number"
+              min="1"
+              step="1"
+              :placeholder="t('settings.mcp.reconnectIntervalPlaceholder')"
+              :title="t('settings.mcp.reconnectIntervalTooltip')"
+              :class="[
+                'w-full px-3 py-2 rounded-xl border text-xs outline-none transition',
+                isDark
+                  ? 'bg-black/90 border-white/15 text-white placeholder-zinc-500 focus:border-cyan-400/80'
+                  : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
+              ]"
+            />
+          </div>
+        </div>
+
+        <p class="text-[11px] text-lx-faint">
+          {{ t('settings.mcp.autoHealthCheckTooltip') }}
+        </p>
+        <p class="text-[11px] text-lx-faint">
+          {{ t('settings.mcp.intervalTooltip') }}
+        </p>
       </div>
 
       <!-- 启用开关 -->

@@ -917,8 +917,35 @@ export const MCP_TRANSPORTS = ['streamable-http', 'sse', 'stdio'] as const;
  */
 export const MCP_HEADER_MASKED_VALUE = '__MCP_HEADER_UNCHANGED__';
 
+/**
+ * 协议版本格式：形如 `2025-11-25`。
+ * 契约来源：跨仓契约 2.3 取值护栏，与框架侧 McpValidator 的正则保持一致。
+ */
+export const MCP_PROTOCOL_VERSION_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/** 协议版本最大长度，对齐 DB 列 `protocol_version VARCHAR(32)`。 */
+export const MCP_PROTOCOL_VERSION_MAX_LENGTH = 32;
+
+/**
+ * MCP 容错调参字段（4 个）。
+ *
+ * 铁律（契约 2.2）：**null / 缺省 = 不设置 = 改造前的库默认行为**，
+ * 禁止用 `Optional` 或任何「业务默认值」把它补全，否则老配置的行为会被悄悄改变。
+ * DB / JSON 一律毫秒数值，前端与后端 JSON 类型完全一致。
+ */
+export interface McpTuningFields {
+  /** 显式协议版本；null 表示保持库默认的协议探测 */
+  protocolVersion?: string | null;
+  /** 自动健康检查开关；null 表示不设置，沿用库默认（开启） */
+  autoHealthCheck?: boolean | null;
+  /** 健康检查间隔，毫秒；null 表示不设置，沿用库默认间隔 */
+  healthCheckInterval?: number | null;
+  /** 重连间隔，毫秒；null 表示不设置，沿用库默认间隔 */
+  reconnectInterval?: number | null;
+}
+
 /** MCP 视图对象 (对应后端 McpVO) */
-export interface McpVO {
+export interface McpVO extends McpTuningFields {
   id: number | string;
   name: string;
   transport?: string;
@@ -951,7 +978,7 @@ export interface McpConnectionVO {
 }
 
 /** MCP 新增/更新请求 (对应后端 McpRequest) */
-export interface McpRequest {
+export interface McpRequest extends McpTuningFields {
   id?: number | string;
   name?: string;
   transport?: string;
