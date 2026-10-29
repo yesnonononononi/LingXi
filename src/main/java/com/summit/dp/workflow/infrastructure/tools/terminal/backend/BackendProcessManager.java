@@ -39,7 +39,7 @@ public class BackendProcessManager implements TaskRuntimeService {
         throwIf(closed, "后台任务服务正在关闭");
         throwIf(processes.putIfAbsent(task.getId(), process) != null, "后台任务标识已登记");
         try {
-            task.transferTo(TaskStatus.RUNNING);
+            synchronized (process) { task.transferTo(TaskStatus.RUNNING); }
             repository.updateById(task);
             notifyTaskChanged(task);
         } catch (RuntimeException failure) { processes.remove(task.getId(), process); throw failure; }
@@ -48,16 +48,20 @@ public class BackendProcessManager implements TaskRuntimeService {
             Exception executionFailure = null;
             try { result = process.getHandle().await(); }
             catch (Exception failure) { executionFailure = failure; }
-            synchronized (process) {
-                if (!task.getStatus().isTerminal()) {
-                    if (executionFailure == null) {
-                        task.finish(result.timedOut() ? TaskStatus.TIMEOUT : result.isSuccess() ? TaskStatus.SUCCESS : TaskStatus.FAILED,
-                                result.output(), result.exitCode(), result.truncated());
-                    } else {
-                        task.finish(TaskStatus.FAILED, "后台任务执行失败：" + executionFailure.getMessage(), null, false);
+            // 停止回执确认前不能抢先按退出码记成失败，否则手动取消会丢失语义。
+            process.getCompletionLock().lock();
+            try {
+                synchronized (process) {
+                    if (!task.getStatus().isTerminal()) {
+                        if (executionFailure == null) {
+                            task.finish(result.timedOut() ? TaskStatus.TIMEOUT : result.isSuccess() ? TaskStatus.SUCCESS : TaskStatus.FAILED,
+                                    result.output(), result.exitCode(), result.truncated());
+                        } else {
+                            task.finish(TaskStatus.FAILED, "后台任务执行失败：" + executionFailure.getMessage(), null, false);
+                        }
                     }
                 }
-            }
+            } finally { process.getCompletionLock().unlock(); }
             // 落库失败时保留句柄与原始结果，不能把暂时的存储故障改写成命令失败。
             while (!closed) {
                 try { persistAndRemove(process); return; }
@@ -86,26 +90,35 @@ public class BackendProcessManager implements TaskRuntimeService {
             synchronized (process) {
                 throwIf(!sessionId.equals(task.getSessionId()), "任务不属于当前会话");
                 if (task.getStatus().isTerminal()) return toView(task, task.getOutput());
-                if (!join) return toView(task, process.getHandle().outputSnapshot());
+            }
+            if (!join) {
+                String output = process.getHandle().outputSnapshot();
+                synchronized (process) {
+                    return toView(task, task.getStatus().isTerminal() ? task.getOutput() : output);
+                }
             }
             CommandResult result;
             // 等待时释放任务锁，停止请求和完成线程才能正常收口。
-            try { result = process.getHandle().await(); }
-            catch (InterruptedException failure) {
+            try {
+                result = process.getHandle().await();
+                process.getCompletionLock().lockInterruptibly();
+            } catch (InterruptedException failure) {
                 Thread.currentThread().interrupt();
                 throw new ClientException("等待后台任务结果时被中断，任务仍可查询或停止");
             } catch (IOException failure) {
                 throw new ClientException("读取后台任务结果失败：" + failure.getMessage());
             }
-            synchronized (process) {
-                // 完成线程可能尚未落定；返回的输出、状态和退出码必须来自同一个结果。
-                if (!task.getStatus().isTerminal()) {
-                    task.finish(result.timedOut() ? TaskStatus.TIMEOUT : result.isSuccess() ? TaskStatus.SUCCESS : TaskStatus.FAILED,
-                            result.output(), result.exitCode(), result.truncated());
+            try {
+                synchronized (process) {
+                    // 完成线程可能尚未落定；返回的输出、状态和退出码必须来自同一个结果。
+                    if (!task.getStatus().isTerminal()) {
+                        task.finish(result.timedOut() ? TaskStatus.TIMEOUT : result.isSuccess() ? TaskStatus.SUCCESS : TaskStatus.FAILED,
+                                result.output(), result.exitCode(), result.truncated());
+                    }
                 }
                 persistAndRemove(process);
                 return toView(task, task.getOutput());
-            }
+            } finally { process.getCompletionLock().unlock(); }
         }
         Task task = repository.findById(taskId).orElseThrow(ClientException::new);
         throwIf(!sessionId.equals(task.getSessionId()), "任务不属于当前会话");
@@ -138,24 +151,29 @@ public class BackendProcessManager implements TaskRuntimeService {
             throwIf("RUNNING".equals(current.getStatus()) || "PENDING".equals(current.getStatus()), "任务当前没有可控制的进程，请刷新状态");
             return current;
         }
-        synchronized (process) {
+        Task task = process.getTask();
+        throwIf(!sessionId.equals(task.getSessionId()), "任务不属于当前会话");
+        try {
+            process.getCompletionLock().lockInterruptibly();
             try {
-                Task task = process.getTask();
-                throwIf(!sessionId.equals(task.getSessionId()), "任务不属于当前会话");
-                if (!task.getStatus().isTerminal()) {
+                boolean terminal;
+                synchronized (process) { terminal = task.getStatus().isTerminal(); }
+                if (!terminal) {
                     CommandHandler.StopResult stopped = process.getHandle().stop();
                     CommandResult result = stopped.result();
-                    task.finish(stopped.stopped() ? TaskStatus.CANCELLED : result.timedOut() ? TaskStatus.TIMEOUT
-                                    : result.isSuccess() ? TaskStatus.SUCCESS : TaskStatus.FAILED,
-                            result.output(), result.exitCode(), result.truncated());
+                    synchronized (process) {
+                        task.finish(stopped.stopped() ? TaskStatus.CANCELLED : result.timedOut() ? TaskStatus.TIMEOUT
+                                        : result.isSuccess() ? TaskStatus.SUCCESS : TaskStatus.FAILED,
+                                result.output(), result.exitCode(), result.truncated());
+                    }
                 }
                 persistAndRemove(process);
                 return toView(task, task.getOutput());
-            } catch (IOException failure) { throw new ClientException("未能确认后台任务已停止：" + failure.getMessage()); }
-            catch (InterruptedException failure) {
-                Thread.currentThread().interrupt();
-                throw new ClientException("等待后台任务停止时被中断，尚未确认停止");
-            }
+            } finally { process.getCompletionLock().unlock(); }
+        } catch (IOException failure) { throw new ClientException("未能确认后台任务已停止：" + failure.getMessage()); }
+        catch (InterruptedException failure) {
+            Thread.currentThread().interrupt();
+            throw new ClientException("等待后台任务停止时被中断，尚未确认停止");
         }
     }
 
@@ -171,6 +189,8 @@ public class BackendProcessManager implements TaskRuntimeService {
                 throwIf(!sessionId.equals(running.getSessionId()), "任务不属于当前会话");
                 throwIf(!running.getStatus().isTerminal(), "任务仍在运行，请先停止再删除");
             }
+            // 内存终态可能仍在重试落库，必须先保存完成事实，避免删除后又被收尾线程写回。
+            persistAndRemove(process);
         }
         Task task = repository.findById(taskId).orElseThrow(ClientException::new);
         throwIf(!sessionId.equals(task.getSessionId()), "任务不属于当前会话");
@@ -198,12 +218,13 @@ public class BackendProcessManager implements TaskRuntimeService {
     }
 
     private void persistAndRemove(BackendProcess process) {
-        synchronized (process) {
+        process.getCompletionLock().lock();
+        try {
             if (processes.get(process.getTask().getId()) != process) return;
             completion.save(process.getTask());
             processes.remove(process.getTask().getId(), process);
             notifyTaskChanged(process.getTask());
-        }
+        } finally { process.getCompletionLock().unlock(); }
     }
 
     private TaskVO toView(Task task, String output) {
