@@ -91,6 +91,8 @@ class TeamPromptComposerTest {
         assertTrue(prompt.contains("改动文件清单、自检结论（实际执行的命令与结果）、未决项"));
         assertTrue(prompt.contains("先自行读文件、跑验证"));
         assertTrue(prompt.contains("由你补做或重新委派"));
+        assertTrue(prompt.contains("收到子任务失败通知时，立即结合异常信息和已有产物评估影响"));
+        assertTrue(prompt.contains("不必等其他队员结束"));
         assertTrue(prompt.contains("回退能让回归用例变红"));
         assertFalse(prompt.contains("等待用户决策是否重新委派"));
     }

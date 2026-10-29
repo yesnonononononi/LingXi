@@ -36,7 +36,7 @@ import java.util.Map;
  * 恢复后是全新一轮模型请求，其 {@code onBeforeModelInvoke} 会把期间到达的邮件注入上下文。</p>
  *
  * <p><b>唤醒侧</b>：输入驱动挂起时登记保留唤醒（控制槽位释放后立即自我唤醒）；有子执行时改由
- * 「最后一个子执行终结」的结束事实唤醒。两个来源都经 {@link ExecutionResumeCoordinator}。</p>
+ * 「子执行失败或最后一个子执行终结」的结束事实唤醒。两个来源都经 {@link ExecutionResumeCoordinator}。</p>
  */
 @Slf4j
 @Component
@@ -99,7 +99,7 @@ public class SubAgentWaitInterceptor implements LoopInterceptor {
             return InterceptorResult.of(LoopResult.suspended("pending collaboration input"), false);
         }
 
-        // 5, 仅剩未结束子执行：驻留等待「最后一个子执行终结」的结束事实唤醒（不自我唤醒）。
+        // 5, 仅剩未结束子执行：等待子执行失败或全部结束的事实唤醒，不自我唤醒。
         log.info("根执行 {} 收尾前检测到未结束子执行，驻留等待: rootSessionId={}",
                 execution.getId(), rootSessionId);
         return InterceptorResult.of(LoopResult.suspended("waiting for sub-agent results"), false);

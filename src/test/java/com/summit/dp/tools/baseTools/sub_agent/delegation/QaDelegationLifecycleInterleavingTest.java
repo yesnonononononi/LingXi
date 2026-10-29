@@ -252,31 +252,25 @@ class QaDelegationLifecycleInterleavingTest {
     }
 
     // ------------------------------------------------------------------
-    // ⑥ 子执行失败 / 取消产生明确结束事实：只在最后一个终结时唤醒
+    // ⑥ 子执行失败立即唤醒暂停中的主理人
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("⑥ 多子执行逐个失败/取消：非最后一个不唤醒，最后一个终结才唤醒根")
-    void failureAndCancellationWakeRootOnlyOnLastTerminal() {
+    @DisplayName("⑥ 根已暂停时子执行失败：立即恢复主理人，不等其他队员结束")
+    void failedChildImmediatelyWakesSuspendedCommander() {
         rootActive.set(true);
         registry.beginRoot(ROOT_SESSION_ID);
         delegateChild(CHILD_SESSION_ID);
         delegateChild(CHILD_SESSION_ID + 1);
-
-        // 根先挂起、释放控制槽位：此后任何唤醒都会走「直接派发」（没有保留唤醒可掩护），
-        // 「非最后一个子终结后仍无恢复」因此成为确定性判据，而非与异步派发赌时序。
         suspendRoot();
         assertNoResume();
 
-        // 非最后一个子执行失败：移除登记但不唤醒（避免无谓模型轮次）。
-        lifecycle.onFinished(childExecution(CHILD_SESSION_ID));
-        assertTrue(registry.hasUnfinishedChildren(ROOT_SESSION_ID));
-        assertNoResume();
+        Execution failed = childExecution(CHILD_SESSION_ID);
+        failed.fail("模型连接失败");
+        lifecycle.onFinished(failed);
 
-        // 最后一个子执行取消：明确结束事实 → 唤醒根。
-        lifecycle.onFinished(childExecution(CHILD_SESSION_ID + 1));
-        assertFalse(registry.hasUnfinishedChildren(ROOT_SESSION_ID));
         awaitResumedCount(1);
+        assertTrue(registry.hasUnfinishedChildren(ROOT_SESSION_ID), "失败队员退出，其他队员仍保留登记");
     }
 
     // ------------------------------------------------------------------

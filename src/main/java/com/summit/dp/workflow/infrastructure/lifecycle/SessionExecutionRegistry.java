@@ -103,8 +103,7 @@ public class SessionExecutionRegistry {
     /**
      * 子执行真正终态时移除登记。
      *
-     * @return 「此移除后是否已无未结束子」；这是唤醒门控——只有最后一个子执行终结这一原子跃迁
-     *         才唤醒根，避免每有一个子结束就唤醒一次造成无谓的模型轮次。
+     * @return 此移除后是否已无未结束子；失败的即时唤醒由生命周期协作器另行判定。
      */
     public boolean unregisterChild(Long rootSessionId, Long childSessionId) {
         if (rootSessionId == null || childSessionId == null) return false;

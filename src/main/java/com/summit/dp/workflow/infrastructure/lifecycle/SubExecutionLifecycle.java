@@ -1,6 +1,7 @@
 package com.summit.dp.workflow.infrastructure.lifecycle;
 
 import com.summit.core.agent.Execution;
+import com.summit.core.agent.ExecutionState;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.execution.application.service.ExecutionLocator;
@@ -11,13 +12,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
-/**
- * 子执行「结束事实」协作器：把执行仓储的生命周期通知翻译成「注册表登记变更 + 唤醒根」。
- *
- * <p>根与子共用同一条通知链：子执行进入 SUSPENDED 时保留登记（父侧仍算「未结束」），真正终态时
- * 移除登记并在「最后一个子执行终结」这一原子跃迁上唤醒根；所有执行进入 SUSPENDED 时重放保留
- * 唤醒（此时控制槽位已释放、检查点已提交，正是「释放后」的唯一时点），进入终态时清理保留唤醒。</p>
- */
+/** 子执行失败立即唤醒主理人处置，其余终态在最后一个子执行结束时唤醒；挂起后重放保留唤醒。 */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -44,7 +39,7 @@ public class SubExecutionLifecycle {
     }
 
     /**
-     * 子执行终态 → 移除登记（成为空则唤醒根）；根执行终态 → 清理保留唤醒。
+     * 子执行失败或全部结束后唤醒根；根执行终态清理保留唤醒。
      */
     public void onFinished(Execution execution) {
         Long executionId = ExecutionIdentity.numericOrNull(execution.getId());
@@ -67,8 +62,10 @@ public class SubExecutionLifecycle {
 
         boolean becameEmpty = registry.unregisterChild(rootSessionId, childSessionId);
 
-        if (becameEmpty) {
-            log.info("子执行终结唤醒根: rootExecutionId={}, childSessionId={}, becameEmpty=true", rootExecutionId, childSessionId);
+        boolean failed = execution.getExecutionState() == ExecutionState.FAILED;
+        if (failed || becameEmpty) {
+            log.info("子执行终结唤醒根: rootExecutionId={}, childSessionId={}, failed={}, becameEmpty={}",
+                    rootExecutionId, childSessionId, failed, becameEmpty);
             resumeCoordinator.accept(rootExecutionId);
         }
     }

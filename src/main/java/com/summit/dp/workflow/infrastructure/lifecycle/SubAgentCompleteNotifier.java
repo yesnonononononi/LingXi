@@ -3,12 +3,12 @@ package com.summit.dp.workflow.infrastructure.lifecycle;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
 
 import com.summit.core.agent.Execution;
+import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.email.application.command.MailSendContext;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
-import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.shared.exception.ClientException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
@@ -60,6 +60,12 @@ public class SubAgentCompleteNotifier {
         };
         String content = String.format("成员 @%s 的子任务%s（子会话：%s，执行：%s）。请核验工作目录中的产物并继续后续安排。",
                 senderAgentId, outcome, ExecutionIdentity.sessionId(subExecution), childExecutionId);
+        if (subExecution.getExecutionState() == ExecutionState.FAILED) {
+            // 框架失败检查点已保存异常 getMessage()，通知沿用原文，避免丢掉诊断信息。
+            String errorMessage = subExecution.getErrorMessage();
+            content += "\n异常信息：" + (errorMessage == null || errorMessage.isBlank() ? "异常未提供详细信息" : errorMessage)
+                    + "\n请立即评估失败影响，检查现有产物，采取修复、补做或重新委派等措施；其他仍在执行的子任务无需重复委派。";
+        }
 
         String dedupKey = "sub-agent-finished:" + childExecutionId + ":" + commanderId;
 

@@ -65,6 +65,40 @@ class SubAgentCompleteNotifierTest {
     }
 
     @Test
+    void failedNoticeContainsExceptionMessageAndAsksCommanderToAct() {
+        when(provider.getObject()).thenReturn(executions);
+        when(executions.findById("900")).thenReturn(Optional.of(root()));
+        SubAgentCompleteNotifier notifier = new SubAgentCompleteNotifier(provider, emails);
+        IllegalStateException failure = new IllegalStateException("HTTP 429: retry quota exhausted");
+        Execution failed = child("1234", ExecutionState.RUNNING);
+        failed.fail(failure.getMessage());
+
+        notifier.notifyCommander(failed);
+
+        ArgumentCaptor<String> content = ArgumentCaptor.forClass(String.class);
+        verify(emails).sendMailOnce(eq(7L), content.capture(), eq(new MailSendContext(800L, 8L, 2L)),
+                eq("sub-agent-finished:1234:7"));
+        assertTrue(content.getValue().contains("异常信息：" + failure.getMessage()));
+        assertTrue(content.getValue().contains("请立即评估失败影响"));
+        assertTrue(content.getValue().contains("修复、补做或重新委派"));
+    }
+
+    @Test
+    void failedNoticeWithNoExceptionMessageExplainsMissingDetail() {
+        when(provider.getObject()).thenReturn(executions);
+        when(executions.findById("900")).thenReturn(Optional.of(root()));
+        SubAgentCompleteNotifier notifier = new SubAgentCompleteNotifier(provider, emails);
+        Execution failed = child("1234", ExecutionState.RUNNING);
+        failed.fail(new IllegalStateException().getMessage());
+
+        notifier.notifyCommander(failed);
+
+        ArgumentCaptor<String> content = ArgumentCaptor.forClass(String.class);
+        verify(emails).sendMailOnce(eq(7L), content.capture(), any(), eq("sub-agent-finished:1234:7"));
+        assertTrue(content.getValue().contains("异常信息：异常未提供详细信息"));
+    }
+
+    @Test
     void suspensionCannotSendTerminalNotice() {
         SubAgentCompleteNotifier notifier = new SubAgentCompleteNotifier(provider, emails);
         assertThrows(ClientException.class, () -> notifier.notifyCommander(child("1234", ExecutionState.SUSPENDED)));

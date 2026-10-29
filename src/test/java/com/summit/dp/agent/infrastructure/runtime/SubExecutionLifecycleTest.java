@@ -7,12 +7,15 @@ import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
+import com.summit.core.agent.ExecutionState;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.Map;
 
@@ -81,16 +84,46 @@ class SubExecutionLifecycleTest {
         verify(resumeCoordinator).accept(ROOT_EXECUTION_ID);
     }
 
-    @Test
-    @DisplayName("子执行终态但仍有其它子在跑：移除登记但不唤醒根（避免无谓模型轮次）")
-    void nonLastChildFinishedDoesNotWakeRoot() {
+    @ParameterizedTest
+    @EnumSource(value = ExecutionState.class, names = {"COMPLETED", "CANCELLED"})
+    @DisplayName("子执行成功或取消但仍有其它子在跑：移除登记但不唤醒根")
+    void nonLastSuccessfulOrCancelledChildDoesNotWakeRoot(ExecutionState state) {
         when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
         when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(false);
 
-        lifecycle.onFinished(childExecution());
+        lifecycle.onFinished(childExecution(state));
 
         verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
         verify(resumeCoordinator, never()).accept(anyLong());
+    }
+
+    @Test
+    void failedChildWakesCommanderBeforeOtherChildrenFinish() {
+        when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
+        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(false);
+        Execution failed = childExecution(ExecutionState.RUNNING);
+        failed.fail("模型连接失败");
+
+        lifecycle.onFinished(failed);
+
+        InOrder order = inOrder(notifier, registry, resumeCoordinator);
+        order.verify(notifier).notifyCommander(failed);
+        order.verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        order.verify(resumeCoordinator).accept(ROOT_EXECUTION_ID);
+    }
+
+    @Test
+    void failedChildStillWakesCommanderWhenFailureNoticeCannotBeDelivered() {
+        when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
+        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(false);
+        Execution failed = childExecution(ExecutionState.RUNNING);
+        failed.fail("模型连接失败");
+        doThrow(new IllegalStateException("邮箱不可用")).when(notifier).notifyCommander(failed);
+
+        lifecycle.onFinished(failed);
+
+        verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        verify(resumeCoordinator).accept(ROOT_EXECUTION_ID);
     }
 
     @Test
@@ -141,7 +174,11 @@ class SubExecutionLifecycleTest {
     }
 
     private static Execution childExecution() {
-        return Execution.builder().id("1234")
+        return childExecution(ExecutionState.COMPLETED);
+    }
+
+    private static Execution childExecution(ExecutionState state) {
+        return Execution.builder().id("1234").executionState(state)
                 .agentRequest(AgentRequest.builder()
                         .runtimeParameters(AgentRuntimeParameters.builder().attributes(Map.of(
                                 ExecutionAttributes.SESSION_ID, String.valueOf(CHILD_SESSION_ID),

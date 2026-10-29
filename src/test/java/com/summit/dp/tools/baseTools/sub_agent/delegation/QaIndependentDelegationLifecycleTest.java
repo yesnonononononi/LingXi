@@ -335,25 +335,22 @@ class QaIndependentDelegationLifecycleTest {
     // ------------------------------------------------------------------
 
     @Test
-    @DisplayName("⑥ 多子执行逐个失败/取消：非最后一个不唤醒，最后一个终结才生成结束事实并唤醒根")
-    void failureAndCancellationWakeOnLastTerminalOnly() {
-        // 根持有控制槽位：非最后一个终结即便误走唤醒路径，也只会被「保留」，必须等到根挂起才可能重放；
-        // 因此这里用「根挂起后仍无恢复」来确定性证伪「过度唤醒」，而不是与异步派发赌时序。
+    @DisplayName("⑥ 子执行失败时根仍活跃：保留唤醒，根挂起后立即恢复，其他队员继续运行")
+    void failedChildRetainsWakeUntilActiveCommanderSuspends() {
         rootActive.set(true);
         registry.beginRoot(ROOT_SESSION_ID);
         delegateRunningChild(CHILD_SESSION_ID);
         delegateRunningChild(CHILD_SESSION_ID + 1);
 
-        lifecycle.onFinished(childExecution(CHILD_SESSION_ID));
+        Execution failed = childExecution(CHILD_SESSION_ID);
+        failed.fail("模型连接失败");
+        lifecycle.onFinished(failed);
         assertTrue(registry.hasUnfinishedChildren(ROOT_SESSION_ID));
         assertNoResumeWithin();
 
         suspendRoot();
-        assertNoResumeWithin();
-
-        lifecycle.onFinished(childExecution(CHILD_SESSION_ID + 1));
-        assertFalse(registry.hasUnfinishedChildren(ROOT_SESSION_ID));
         awaitResumeCount(1);
+        assertTrue(registry.hasUnfinishedChildren(ROOT_SESSION_ID), "恢复主理人不能终止其他队员");
     }
 
     // ------------------------------------------------------------------
