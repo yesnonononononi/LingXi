@@ -33,6 +33,7 @@ import com.summit.dp.email.infrastructure.persistence.mapper.EmailMessageMapper;
 import com.summit.dp.email.infrastructure.repository.EmailMessageRepositoryImpl;
 import com.summit.dp.email.infrastructure.repository.EmailRepositoryImpl;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.workflow.application.delegation.CommanderMailWakeService;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -85,7 +86,7 @@ class QaMailboxSessionKeyEndToEndTest {
     private EmailServiceImpl service;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final ExecutionResumeCoordinator resumeCoordinator = mock(ExecutionResumeCoordinator.class);
+    private final CommanderMailWakeService commanderMailWakeService = mock(CommanderMailWakeService.class);
 
     @BeforeEach
     void setup() throws Exception {
@@ -118,7 +119,7 @@ class QaMailboxSessionKeyEndToEndTest {
     @Test
     @DisplayName("投递侧同键：根执行取自身会话、子执行取 ROOT_SESSION_ID —— 都落到协作根会话这一把邮箱键")
     void rootAndChildProducersShareRootSessionMailboxKey() {
-        SendMailToAgentTool tool = new SendMailToAgentTool(objectMapper, service, resumeCoordinator,
+        SendMailToAgentTool tool = new SendMailToAgentTool(objectMapper, service, commanderMailWakeService,
                 mock(MailWakeMisuseDetector.class));
 
         // 根执行发信：只有 SESSION_ID（= 根会话），没有 ROOT_SESSION_ID。
@@ -153,7 +154,7 @@ class QaMailboxSessionKeyEndToEndTest {
     @Test
     @DisplayName("【核心风险】停止后迟到邮件：根会话键落箱，下一轮全新根执行（新执行 id）仍被消费；三处同键")
     void lateMailAfterRootStopIsConsumedByNextRoundUnderRootSessionKey() {
-        SendMailToAgentTool tool = new SendMailToAgentTool(objectMapper, service, resumeCoordinator,
+        SendMailToAgentTool tool = new SendMailToAgentTool(objectMapper, service, commanderMailWakeService,
                 mock(MailWakeMisuseDetector.class));
 
         // 1) 根执行 E1 已停止（不再消费）。子执行此刻发来迟到邮件 —— 键 = 根会话；唤醒目标 = 根执行 E1。
@@ -163,7 +164,7 @@ class QaMailboxSessionKeyEndToEndTest {
                 ExecutionAttributes.ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID),
                 ExecutionAttributes.ROOT_EXECUTION_ID, String.valueOf(ROOT_EXECUTION_ID)),
                 "{\"toAgentId\":100,\"mailContent\":\"交付通知\"}")).isSuccess());
-        verify(resumeCoordinator).accept(ROOT_EXECUTION_ID);
+        verify(commanderMailWakeService).wakeIfRecipient(ROOT_EXECUTION_ID, ROOT_AGENT_ID);
 
         // 2) 收尾判定侧（只读）与投递侧同键：hasPending(根会话, 根角色) 必须为真。
         assertTrue(service.hasPending(ROOT_SESSION_ID, ROOT_AGENT_ID), "收尾判定侧必须用根会话键看到这封信");
@@ -178,7 +179,7 @@ class QaMailboxSessionKeyEndToEndTest {
 
         // 3) 收尾驻留判定用同一把键：真实 SubAgentWaitInterceptor 在无子执行时因「有未处理输入」驻留。
         SessionExecutionRegistry emptyRegistry = new SessionExecutionRegistry();
-        SubAgentWaitInterceptor wait = new SubAgentWaitInterceptor(emptyRegistry, service, resumeCoordinator);
+        SubAgentWaitInterceptor wait = new SubAgentWaitInterceptor(emptyRegistry, service, mock(ExecutionResumeCoordinator.class));
         assertFalse(wait.onBeforeComplete(rootContext("E1", ROOT_SESSION_ID, ROOT_AGENT_ID)).next(),
                 "收尾判定与投递同键：有未处理输入时必须驻留，不得提前 COMPLETED");
 
@@ -194,7 +195,7 @@ class QaMailboxSessionKeyEndToEndTest {
     @Test
     @DisplayName("消费侧真正取回正文：下一轮模型上下文被追加该邮件的用户消息")
     void nextRoundActuallyReceivesTheMailContent() {
-        SendMailToAgentTool tool = new SendMailToAgentTool(objectMapper, service, resumeCoordinator,
+        SendMailToAgentTool tool = new SendMailToAgentTool(objectMapper, service, commanderMailWakeService,
                 mock(MailWakeMisuseDetector.class));
         assertTrue(tool.execute(execution("1234", Map.of(
                 ExecutionAttributes.AGENT_ID, String.valueOf(CHILD_AGENT_ID),

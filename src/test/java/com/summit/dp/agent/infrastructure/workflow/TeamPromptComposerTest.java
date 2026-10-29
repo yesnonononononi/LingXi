@@ -100,14 +100,14 @@ class TeamPromptComposerTest {
     void commanderWakesTeammatesOnlyThroughDelegation() {
         String prompt = TeamPromptComposer.commanderPrompt("人设", TEAM, 5L, TEAM_DESCRIPTION);
 
-        assertTrue(prompt.contains("派活与唤醒一律只用 `call_sub_agent`"),
+        assertTrue(prompt.contains("启动新任务或重新启动已结束的队员只用 `call_sub_agent`"),
                 "唤醒手段必须唯一锁定在 call_sub_agent");
-        assertTrue(prompt.contains("不要用 `send_mail_to_agent` 叫队员干活或催办"),
+        assertTrue(prompt.contains("不要用 `send_mail_to_agent` 启动任务或反复催办"),
                 "必须显式禁止把邮件当唤醒通道");
-        assertTrue(prompt.contains("队员一旦结束就再也不会读信"),
-                "禁令要连原因一起写：队员终结后邮件永久停在待处理，只给禁令模型会绕道");
+        assertTrue(prompt.contains("直到它再次执行才可能读取"),
+                "明确结束后的队员不会被邮件启动，再次运行才会读信");
         assertFalse(TeamPromptComposer.memberPrompt("人设", TEAM, 6L, 5L, TEAM_DESCRIPTION)
-                        .contains("派活与唤醒一律只用"),
+                        .contains("启动新任务或重新启动已结束的队员只用"),
                 "这条约束属于主理人职责，不得串到成员提示词里");
     }
 
@@ -119,8 +119,26 @@ class TeamPromptComposerTest {
         assertTrue(prompt.contains("改动文件清单、自检结论（实际执行的命令与结果）、未决项"));
         assertTrue(prompt.contains("主理人会核验产物"));
         assertTrue(prompt.contains("把产物和验证记录写入工作目录"));
-        assertTrue(prompt.contains("邮件只是补充通道"));
+        assertTrue(prompt.contains("交付通知只是补充"));
         assertTrue(prompt.contains("未运行的检查必须如实说明"));
+    }
+
+    @Test
+    @DisplayName("队员直接协调共享文件，无需通知主理人；主理人可向运行中的队员补充信息")
+    void teamMailSupportsDirectCoordinationAndSupplementaryInformation() {
+        String member = TeamPromptComposer.memberPrompt("人设", TEAM, 6L, 5L, TEAM_DESCRIPTION);
+        assertTrue(member.contains("同一文件") && member.contains("同一工作区"));
+        assertTrue(member.contains("直接协商，无需通知主理人"));
+        assertTrue(member.contains("文件路径、准备修改的范围、执行顺序和交接条件"));
+        assertTrue(member.contains("队员互发邮件不会通知或唤醒主理人"));
+        assertTrue(member.contains("未收到回复不等于同意"));
+        assertTrue(member.contains("只有协商无法解决的冲突、任务范围变更或需要主理人决策的阻塞"));
+        assertTrue(member.contains("主理人也可以发邮件补充需求、约束或新发现"));
+
+        String commander = TeamPromptComposer.commanderPrompt("人设", TEAM, 5L, TEAM_DESCRIPTION);
+        assertTrue(commander.contains("向正在执行任务的队员补充需求、约束、接口约定或新发现"));
+        assertTrue(commander.contains("日常协调无需通知你"));
+        assertTrue(commander.contains("补充信息用邮件，不要重复委派"));
     }
 
     @Test

@@ -16,7 +16,7 @@ import com.summit.dp.email.application.command.MailSendContext;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.delegation.CommanderMailWakeService;
 import com.summit.dp.workflow.infrastructure.tools.arguments.SendMailArgument;
 import java.util.Map;
 import lombok.NonNull;
@@ -42,11 +42,16 @@ import org.springframework.stereotype.Component;
     executor = SendMailToAgentTool.class,
     description = """
         Send an asynchronous mail to a teammate agent or to the commander.
-        Use it for supplementary delivery notifications; the commander assesses workspace artifacts and validation records even without email, and email is not the basis for acceptance.
+        Use it to coordinate shared files or workspaces directly with teammates: agree on edit scope, order, and hand-offs without notifying the commander.
+        The commander can mail running teammates supplementary requirements, constraints, or findings.
+        Escalate only unresolved conflicts, task-scope changes, or blockers that require the commander's decision.
+        The commander assesses workspace artifacts and validation records even without email; delivery notifications are supplementary.
         Delivery is asynchronous: the recipient reads this mail at the start of ITS next model round,
         not immediately. There is no reply channel on this call, so sending does not return an answer.
         After a successful send, continue with your own work, or if you have nothing left to do,
-        end your turn and wait for incoming mail; never resend the same content because no reply arrived yet.
+        end your turn; never resend the same content because no reply arrived yet.
+        Mail does not start or resume a teammate. If a shared edit requires agreement, work on independent items until agreement arrives; do not assume silence grants permission to overwrite changes.
+        Only mail addressed to the commander may wake the root execution; teammate mail does not notify or wake the commander.
         Intended for code-collaboration hand-offs, not for real-time back-and-forth chat.
         The target agent must belong to your team.
         """,
@@ -54,7 +59,7 @@ import org.springframework.stereotype.Component;
         properties = {
             @ToolProperty(key = "toAgentId", value = @Value(
                 type = ValueType.INTEGER,
-                description = "Agent id of the recipient: a teammate, or the commander when a member sends its result back.")),
+                description = "Agent id from the team roster: a teammate for coordination or supplementary information, or the commander for required decisions or delivery notifications.")),
             @ToolProperty(key = "mailContent", value = @Value(
                 type = ValueType.STRING,
                 description = "The mail body. Write it as a complete, self-contained message; the recipient cannot ask clarifying questions synchronously."))
@@ -68,14 +73,8 @@ public class SendMailToAgentTool implements ToolExecutor {
 
     private final ObjectMapper objectMapper;
     private final EmailService emailService;
-    /**
-     * 投递后唤醒收件方可能正在驻留等待的协作根执行。
-     *
-     * <p>协作模式下根代理会在「本轮无工具调用、但仍有子代理在跑」时保留轮次驻留（SUSPENDED），
-     * 这封邮件是它唯一的续跑信号；少了这一步，邮件只会停在 PENDING，根执行再也醒不过来。
-     * {@code accept} 自身幂等：收件方未挂起（运行中 / 已终态 / 无恢复边界）时一律让位，不会重复启动 loop。</p>
-     */
-    private final ExecutionResumeCoordinator resumeCoordinator;
+    /** 只唤醒邮件的实际收件主理人，队员互发与主理人补充信息不触发根执行。 */
+    private final CommanderMailWakeService commanderMailWakeService;
     /**
      * 唤醒误用判定：主理人拿邮件叫一个没有在跑的队员时，在回执里当场点出来。
      *
@@ -87,10 +86,10 @@ public class SendMailToAgentTool implements ToolExecutor {
     @Override
     public @NonNull ToolExecuteResult execute(ToolExecution toolExecution) {
         try {
-            // parse argument
+            // 模型只提供收件人和正文。
             SendMailArgument argument = objectMapper.readValue(toolExecution.getArgs(), SendMailArgument.class);
 
-            // resolve business attributes
+            // 路由身份由受控执行属性确定。
             Long toAgentId = argument.getToAgentId();
             String mailContent = argument.getMailContent();
             if (toAgentId == null)  return ToolExecuteResult.err("toAgentId is required");
@@ -102,14 +101,14 @@ public class SendMailToAgentTool implements ToolExecutor {
             Long rootExecutionId = requireRootExecutionId(toolExecution);
             Long teamId = ExecutionAttributes.readLong(attributes, ExecutionAttributes.TEAM_ID);
 
-            // send mail
+            // 邮件落库后再尝试唤醒，避免恢复时读不到正文。
             emailService.sendMail(toAgentId, mailContent, new MailSendContext(mailboxSessionId, senderAgentId, teamId));
 
-            // 投递即尝试唤醒收件方的协作根执行：若它正驻留等待（SUSPENDED）则恢复续跑，否则 accept 自行让位。
+            // 仅收件人为主理人时登记根执行唤醒，队员协调不能产生保留唤醒。
             // 唤醒失败只告警：邮件已经投出去了，不能把「唤醒没成功」报成「发信失败」——
             // 下面的回执文案明确要求模型不要重发，工具回 err 会让它怀疑投递失败而重发同一封。
             try {
-                resumeCoordinator.accept(rootExecutionId);
+                commanderMailWakeService.wakeIfRecipient(rootExecutionId, toAgentId);
             } catch (RuntimeException e) {
                 log.warn("邮件投递后唤醒协作根执行失败: rootExecutionId={}, cause={}",
                         rootExecutionId, e.toString());
@@ -118,7 +117,7 @@ public class SendMailToAgentTool implements ToolExecutor {
             // 回执必须与工具 description 同口径：讲明「已投递 + 对方下一轮才读到 + 无回复通道 + 别重发」。
             // 模型看不到投递结果，含糊的回执会让它怀疑没发出去而重发同一封
             String receipt = String.format(
-                    "Mail delivered to agent %d. It will be read at the start of that agent's next model round. "
+                    "Mail delivered to agent %d. It will be read at the start of that agent's next model round, if it runs again. Mail does not start or resume a teammate. "
                             + "This call returns no reply, so continue your own work or end your turn; do not resend the same content.",
                     toAgentId);
             // 主理人用邮件叫一个没有在跑的队员时，上面「对方下一轮读到」是假话 —— 追加提醒纠正，

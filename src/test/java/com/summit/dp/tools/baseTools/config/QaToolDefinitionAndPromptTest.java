@@ -7,7 +7,7 @@ import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.application.delegation.TeamPromptComposer;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.delegation.CommanderMailWakeService;
 import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailWakeMisuseDetector;
@@ -103,7 +103,7 @@ class QaToolDefinitionAndPromptTest {
     @DisplayName("T02 send_mail_to_agent：description 与 toAgentId 描述均为双向措辞")
     void sendMailDefinitionIsBidirectional() throws Exception {
         ToolDefinition<SendMailToAgentTool> definition =
-                AnnotatedToolTestDefinitions.create(SendMailToAgentTool.class, new SendMailToAgentTool(objectMapper, emailService, mock(ExecutionResumeCoordinator.class), mock(MailWakeMisuseDetector.class)));
+                AnnotatedToolTestDefinitions.create(SendMailToAgentTool.class, new SendMailToAgentTool(objectMapper, emailService, mock(CommanderMailWakeService.class), mock(MailWakeMisuseDetector.class)));
 
         String description = definition.description();
         assertTrue(description.toLowerCase().contains("commander"),
