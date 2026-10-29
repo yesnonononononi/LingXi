@@ -103,6 +103,8 @@ CREATE TABLE IF NOT EXISTS session (
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS session_message (
     response_id     VARCHAR(36) NULL COMMENT '本轮模型调用的响应身份(框架下发数字字符串); 只挂在AI行',
+    resume_request_id VARCHAR(64) NULL COMMENT '补充要求的幂等请求标识',
+    UNIQUE KEY uk_session_resume_request (session_id, resume_request_id),
     UNIQUE KEY uk_session_response_id (session_id, response_id),
     id              BIGINT NOT NULL PRIMARY KEY COMMENT '雪花ID(消息排序键与游标分页键, 全局趋势递增)',
     session_id      BIGINT NOT NULL COMMENT '关联会话ID',

@@ -7,6 +7,8 @@ import com.summit.dp.workflow.application.chat.ChatService;
 import com.summit.dp.workflow.application.chat.ChatAcceptanceVO;
 import com.summit.dp.workflow.application.chat.ChatLimitsVO;
 import com.summit.dp.session.domain.model.SessionMessage;
+import com.summit.dp.workflow.application.resume.ResumeSupplementCommand;
+import com.summit.dp.workflow.application.resume.ResumeSupplementService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.MediaType;
@@ -20,9 +22,11 @@ import java.util.Objects;
 @Tag(name = "chat接口", description = "会话聊天入口")
 public class ChatController {
     private final ChatService chatService;
+    private final ResumeSupplementService resumeSupplementService;
 
-    public ChatController(ChatService chatService) {
+    public ChatController(ChatService chatService, ResumeSupplementService resumeSupplementService) {
         this.chatService = chatService;
+        this.resumeSupplementService = resumeSupplementService;
     }
 
     @GetMapping("/completion/limits")
@@ -88,8 +92,10 @@ public class ChatController {
 
     @Operation(summary = "恢复当前会话最近暂停的执行")
     @PostMapping("/completion/{sessionId}/resume")
-    public Result<String> resume(@PathVariable Long sessionId) {
-        return chatService.resume(sessionId);
+    public Result<String> resume(@PathVariable Long sessionId,
+                                 @RequestBody(required = false) ResumeSupplementCommand supplement) {
+        return supplement == null ? chatService.resume(sessionId)
+                : Result.success(resumeSupplementService.accept(sessionId, supplement));
     }
 
     /** 请求 → 命令：计划能力是否下发由请求显式声明，后端不再按会话状态推断。团队按会话绑定取值。 */

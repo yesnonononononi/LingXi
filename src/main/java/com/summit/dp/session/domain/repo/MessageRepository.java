@@ -10,6 +10,11 @@ import java.util.Optional;
 
 /** session_message 表仓储。 */
 public interface MessageRepository extends RepositoryTemplate<SessionMessage, Long> {
+    Optional<SessionMessage> findByResumeRequestId(Long sessionId, String requestId);
+
+    /** 只查本轮的补充要求，按消息主键递增供执行游标消费。 */
+    List<SessionMessage> findResumeSupplements(Long sessionId, Long turnId);
+
     /**
      * 按响应身份取已落库的 AI 行，用于「同一轮重复落库」的幂等拦截。
      *

@@ -17,6 +17,7 @@ public class SessionMessagePO {
     private Long id;
     /** 本轮模型调用的响应身份（框架下发 String）；只挂在 AI 行 */
     private String responseId;
+    private String resumeRequestId;
 
     private Long sessionId;
     /** 消息所属的业务轮次 ID（关联 chat_turn.id）；旧数据为 null 表示归属未知 */

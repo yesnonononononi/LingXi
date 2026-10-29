@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS session_message;
 CREATE TABLE session_message (
     id             BIGINT       NOT NULL PRIMARY KEY,
     response_id    VARCHAR(36)  NULL,
+    resume_request_id VARCHAR(64) NULL,
     session_id     BIGINT       NOT NULL,
     turn_id        BIGINT       NULL,
     type           VARCHAR(16)  NOT NULL,
@@ -19,3 +20,4 @@ CREATE TABLE session_message (
 
 -- 与 init.sql 的 uk_session_response_id 一致：同一响应身份只落一行（重复落库由它拦住）。
 ALTER TABLE session_message ADD CONSTRAINT uk_session_response_id UNIQUE (session_id, response_id);
+ALTER TABLE session_message ADD CONSTRAINT uk_session_resume_request UNIQUE (session_id, resume_request_id);

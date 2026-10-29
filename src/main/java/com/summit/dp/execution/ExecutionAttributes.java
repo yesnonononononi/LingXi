@@ -14,6 +14,7 @@ public final class ExecutionAttributes {
     public static final String WORKSPACE_ID = "lingxi.workspace_id";
     public static final String ROOT_EXECUTION_ID = "lingxi.root_execution_id";
     public static final String TEAM_ID = "lingxi.team_id";
+    public static final String LAST_RESUME_SUPPLEMENT_ID = "lingxi.last_resume_supplement_id";
 
     private ExecutionAttributes() { }
 

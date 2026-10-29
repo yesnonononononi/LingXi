@@ -31,6 +31,23 @@ public class SessionMessageRepositoryImpl
     private final SessionMapper sessionMapper;
 
     @Override
+    public Optional<SessionMessage> findByResumeRequestId(Long sessionId, String requestId) {
+        return Optional.ofNullable(messageMapper.selectOne(Wrappers.<SessionMessagePO>lambdaQuery()
+                .eq(SessionMessagePO::getSessionId, sessionId)
+                .eq(SessionMessagePO::getResumeRequestId, requestId))).map(this::toModel);
+    }
+
+    @Override
+    public List<SessionMessage> findResumeSupplements(Long sessionId, Long turnId) {
+        return messageMapper.selectList(Wrappers.<SessionMessagePO>lambdaQuery()
+                .eq(SessionMessagePO::getSessionId, sessionId)
+                .eq(SessionMessagePO::getTurnId, turnId)
+                .eq(SessionMessagePO::getType, SessionMessageType.USER.name())
+                .isNotNull(SessionMessagePO::getResumeRequestId)
+                .orderByAsc(SessionMessagePO::getId)).stream().map(this::toModel).toList();
+    }
+
+    @Override
     public void save(SessionMessage message) {
         super.save(message);
     }
@@ -117,6 +134,7 @@ public class SessionMessageRepositoryImpl
             save(SessionMessage.builder()
                     .id(message.getId())
                     .responseId(message.getResponseId())
+                    .resumeRequestId(message.getResumeRequestId())
                     .sessionId(sessionId)
                     .turnId(message.getTurnId())
                     .type(message.getType())
@@ -192,6 +210,7 @@ public class SessionMessageRepositoryImpl
         Long id = message.getId() == null ? IdUtil.getSnowflakeNextId() : message.getId();
         return SessionMessagePO.builder().id(id).sessionId(message.getSessionId())
                 .responseId(message.getResponseId())
+                .resumeRequestId(message.getResumeRequestId())
                 .turnId(message.getTurnId())
                 .type(message.getType() == null ? null : message.getType().name())
                 .content(message.getText())
@@ -202,6 +221,7 @@ public class SessionMessageRepositoryImpl
     protected SessionMessage toModel(SessionMessagePO po) {
         return SessionMessage.builder().id(po.getId()).sessionId(po.getSessionId())
                 .responseId(po.getResponseId())
+                .resumeRequestId(po.getResumeRequestId())
                 .turnId(po.getTurnId())
                 .type(po.getType() == null ? null : SessionMessageType.valueOf(po.getType()))
                 .text(po.getContent())

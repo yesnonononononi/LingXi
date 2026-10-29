@@ -14,6 +14,7 @@ import com.summit.dp.shared.vo.block.BlockStatus;
 import com.summit.dp.shared.vo.block.TextBlock;
 import com.summit.dp.shared.vo.block.ThinkingBlock;
 import com.summit.dp.shared.vo.block.ToolBlock;
+import com.summit.dp.shared.vo.block.ResumeSupplementVO;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallOutcome;
@@ -50,6 +51,24 @@ class TurnViewAssemblerTest {
     private final ToolCallConverter converter = new ToolCallConverter(json);
     private final TurnViewAssembler assembler =
             new TurnViewAssembler(json, new ToolBlockStatusResolver(converter));
+
+    @Test
+    void supplementalUserMessagesRemainSeparateFromOriginalQuestionAndOrderedByIdentity() throws Exception {
+        SessionMessage original = SessionMessage.builder().id(1L).turnId(TURN_ID).type(SessionMessageType.USER)
+                .text(json.writeValueAsString(UserMessageEntity.from("原提问"))).build();
+        SessionMessage first = SessionMessage.builder().id(2L).turnId(TURN_ID).type(SessionMessageType.USER)
+                .resumeRequestId("first-request-id").text(json.writeValueAsString(UserMessageEntity.from("先别提交"))).build();
+        SessionMessage second = SessionMessage.builder().id(3L).turnId(TURN_ID).type(SessionMessageType.USER)
+                .resumeRequestId("second-request-id").text(json.writeValueAsString(UserMessageEntity.from("补充验收"))).build();
+        SessionMessage foreign = SessionMessage.builder().id(4L).turnId(TURN_ID + 1).type(SessionMessageType.USER)
+                .resumeRequestId("foreign-request-id").text(json.writeValueAsString(UserMessageEntity.from("别的轮次"))).build();
+        List<SessionMessage> records = List.of(second, foreign, original, first);
+        assertEquals("原提问", assembler.resolveUserMessage(TURN_ID, records));
+        assertEquals(List.of(2L, 3L), assembler.resolveResumeSupplements(TURN_ID, records).stream()
+                .map(ResumeSupplementVO::messageId).toList());
+        assertEquals(List.of("先别提交", "补充验收"), assembler.resolveResumeSupplements(TURN_ID, records).stream()
+                .map(ResumeSupplementVO::text).toList());
+    }
 
     @Test
     void toolBlockCarriesPersistedVersionIndependentlyFromTurn() {

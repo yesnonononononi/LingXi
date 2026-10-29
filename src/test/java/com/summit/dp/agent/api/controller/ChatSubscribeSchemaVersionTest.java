@@ -29,7 +29,7 @@ class ChatSubscribeSchemaVersionTest {
     void subscribeDelegatesToChatService() {
         SseEmitter emitter = mock(SseEmitter.class);
         when(chatService.subscribeSession(SESSION_ID)).thenReturn(emitter);
-        ChatController controller = new ChatController(chatService);
+        ChatController controller = new ChatController(chatService, null);
 
         SseEmitter returned = controller.subscribe(SESSION_ID);
 

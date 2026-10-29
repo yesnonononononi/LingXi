@@ -83,6 +83,8 @@ public class H2SchemaInitializer {
                 // V16：user_configs 补 compact_model_id（专用压缩模型；脚本自带 IF NOT EXISTS，新库天然空操作）。
                 ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
                         "db/migration/V16_user_configs_compact_model_id.sql"), StandardCharsets.UTF_8));
+                ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                        "db/migration/V17_session_message_resume_request.sql"), StandardCharsets.UTF_8));
             }
         };
     }

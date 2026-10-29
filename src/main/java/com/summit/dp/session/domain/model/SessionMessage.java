@@ -12,11 +12,15 @@ import java.time.Instant;
 public class SessionMessage {
     /** 单条用户消息的图片上限，所有入口和界面均以此为准。 */
     public static final int MAX_IMAGE_COUNT = 9;
+    public static final int MAX_SUPPLEMENT_LENGTH = 20000;
 
     private final Long id;
 
     /** 框架响应身份只挂 AI 行，幂等判定以整轮为单位。 */
     private final String responseId;
+
+    /** 补充请求的重试身份，与模型响应身份分开，普通提问为空。 */
+    private final String resumeRequestId;
 
     private final Long sessionId;
     /**

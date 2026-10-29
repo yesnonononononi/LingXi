@@ -9,6 +9,7 @@ import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.shared.vo.block.Block;
+import com.summit.dp.shared.vo.block.ResumeSupplementVO;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.vo.block.BlockOrder;
 import com.summit.dp.shared.vo.block.BlockStatus;
@@ -25,6 +26,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -191,6 +193,17 @@ public class TurnViewAssembler {
     public List<String> resolveUserImageUrls(Long turnId, List<SessionMessage> messages) {
         SessionMessage earliest = resolveUserRecord(turnId, messages);
         return earliest == null ? List.of() : UserImageViewAssembler.resolveImageUrls(parseUser(earliest.getText()));
+    }
+
+    public List<ResumeSupplementVO> resolveResumeSupplements(Long turnId, List<SessionMessage> messages) {
+        return messages.stream().filter(message -> turnId.equals(message.getTurnId())
+                        && message.getType() == SessionMessageType.USER && message.getResumeRequestId() != null)
+                .sorted(Comparator.comparing(SessionMessage::getId))
+                .map(message -> {
+                    UserMessageEntity user = parseUser(message.getText());
+                    return new ResumeSupplementVO(message.getId(), user == null ? message.getText() : user.text(),
+                            message.getCreateTime());
+                }).toList();
     }
 
     private SessionMessage resolveUserRecord(Long turnId, List<SessionMessage> messages) {

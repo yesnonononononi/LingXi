@@ -29,10 +29,17 @@ public record TurnViewVO(
         @JsonProperty("userImageUrls") List<String> userImageUrls,
         @JsonProperty("blocks") List<Block> blocks,
         @JsonProperty("metric") ContextUsageMetric metric,
-        @JsonProperty("userMessageId") Long userMessageId
+        @JsonProperty("userMessageId") Long userMessageId,
+        @JsonProperty("resumeSupplements") List<ResumeSupplementVO> resumeSupplements
 ) {
+    public TurnViewVO(Long sessionId, Long turnId, String status, long viewVersion, String userMessage,
+                      List<String> userImageUrls, List<Block> blocks, ContextUsageMetric metric, Long userMessageId) {
+        this(sessionId, turnId, status, viewVersion, userMessage, userImageUrls, blocks, metric, userMessageId, List.of());
+    }
+
     public TurnViewVO {
         userImageUrls = userImageUrls == null ? List.of() : List.copyOf(userImageUrls);
         blocks = blocks == null ? List.of() : List.copyOf(blocks);
+        resumeSupplements = resumeSupplements == null ? List.of() : List.copyOf(resumeSupplements);
     }
 }
