@@ -49,8 +49,23 @@ const FILE_NAME_RE = /^[A-Za-z0-9._-]+$/;
 
 /** 当前偏好（模块级单例：设置页与聊天页读到的是同一份状态）。 */
 const preference = ref<BackgroundPreference | null>(null);
-/** 当前图片的 data URL（不进 localStorage：几 MB 的串塞进去会把配额打爆）。 */
+/** 只保留短的 Blob URL，避免大图 Base64 超过 CSS 自定义属性的长度上限。 */
 const imageUrl = ref<string | null>(null);
+
+function replaceImage(dataUrl: string | null): void {
+  let next: string | null = null;
+  if (dataUrl) {
+    const separator = dataUrl.indexOf(',');
+    const mime = dataUrl.slice(5, dataUrl.indexOf(';'));
+    const decoded = atob(dataUrl.slice(separator + 1));
+    const bytes = new Uint8Array(decoded.length);
+    for (let index = 0; index < decoded.length; index++) bytes[index] = decoded.charCodeAt(index);
+    next = URL.createObjectURL(new Blob([bytes], { type: mime }));
+  }
+  const previous = imageUrl.value;
+  imageUrl.value = next;
+  if (previous) URL.revokeObjectURL(previous);
+}
 
 /** 文档根变量是否处于「已写入」状态（用于默认态零写入）。 */
 let documentVariablesApplied = false;
@@ -193,7 +208,7 @@ async function pickImage(): Promise<boolean> {
     return false;
   }
   if (!result || !result.ok || !result.fileName || !result.dataUrl) return false;
-  imageUrl.value = result.dataUrl;
+  replaceImage(result.dataUrl);
   const previous = preference.value;
   const next: BackgroundPreference = {
     version: BACKGROUND_SCHEMA_VERSION,
@@ -216,7 +231,7 @@ async function pickImage(): Promise<boolean> {
  */
 async function clear(): Promise<void> {
   preference.value = null;
-  imageUrl.value = null;
+  replaceImage(null);
   resetDocumentVariables();
   removePersisted();
   const api = backgroundApi();
@@ -275,7 +290,7 @@ async function init(): Promise<void> {
   const stored = readPersisted();
   if (!stored) {
     preference.value = null;
-    imageUrl.value = null;
+    replaceImage(null);
     documentVariablesApplied = false;
     return;
   }
@@ -283,7 +298,7 @@ async function init(): Promise<void> {
   if (!api) {
     // 非桌面端读不到本机文件：直接视为无背景，且不写任何变量
     preference.value = null;
-    imageUrl.value = null;
+    replaceImage(null);
     removePersisted();
     return;
   }
@@ -298,7 +313,7 @@ async function init(): Promise<void> {
     await clear();
     return;
   }
-  imageUrl.value = result.dataUrl;
+  replaceImage(result.dataUrl);
   applyToDocument();
 }
 
@@ -309,7 +324,7 @@ async function init(): Promise<void> {
  */
 export function useBackgroundPreference(): {
   preference: typeof preference;
-  /** 当前背景图的 data URL（缩略图预览用）；无背景时为 null。 */
+  /** 当前背景与缩略图共用的 Blob URL；无背景时为 null。 */
   imageUrl: typeof imageUrl;
   hasBackground: ComputedRef<boolean>;
   pickImage: () => Promise<boolean>;

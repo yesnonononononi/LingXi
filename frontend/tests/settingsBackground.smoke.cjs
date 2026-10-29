@@ -5,7 +5,7 @@ const { app, BrowserWindow, ipcMain, nativeImage } = require('electron');
 const { registerBackgroundImages } = require('../electron/background-images.cjs');
 
 const root = path.resolve(__dirname, '..');
-const output = path.join(root, '.run/settings-background');
+const output = path.join(root, '.run/settings-background-large');
 const source = file => path.relative(output, path.join(root, file)).split(path.sep).join('/');
 app.setPath('userData', path.join(output, 'profile'));
 app.on('window-all-closed', () => {});
@@ -49,6 +49,7 @@ window.setDark = async (dark: boolean) => { theme.setTheme(dark ? 'dark' : 'ligh
 window.backgroundProbe = () => ({
   preference: JSON.parse(JSON.stringify(background.preference.value)),
   stored: localStorage.getItem(BACKGROUND_STORAGE_KEY),
+  url: background.imageUrl.value,
   image: getComputedStyle(document.querySelector('.lx-chat-background')!).backgroundImage,
   fit: getComputedStyle(document.querySelector('.lx-chat-background')!).backgroundSize,
   scrim: document.querySelector('.lx-image-background__scrim')
@@ -60,15 +61,29 @@ window.backgroundProbe = () => ({
   await fs.writeFile(path.join(output, 'entry.js'), `import {createApp,Suspense,h} from 'vue';import {createPinia} from 'pinia';import App from './App.vue';
 window.runtimeErrors=[];window.addEventListener('error',e=>window.runtimeErrors.push(e.message));
 window.addEventListener('unhandledrejection',e=>window.runtimeErrors.push(String(e.reason)));
+window.revokedBackgroundUrls=[];const revoke=URL.revokeObjectURL.bind(URL);
+URL.revokeObjectURL=url=>{window.revokedBackgroundUrls.push(url);revoke(url)};
 createApp({render:()=>h(Suspense,null,{default:()=>h(App)})}).use(createPinia()).mount('#app');`);
   await fs.writeFile(path.join(output, 'index.html'), '<!doctype html><html><head><meta charset="utf-8"></head><body><div id="app"></div><script type="module" src="./entry.js"></script></body></html>');
   await fs.writeFile(path.join(output, 'preload.cjs'), `const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('electronAPI',{platform:process.platform,background:{pick:()=>ipcRenderer.invoke('background:pick'),load:name=>ipcRenderer.invoke('background:load',name),clear:()=>ipcRenderer.invoke('background:clear')}});`);
   const fixtures = [];
   for (const [name, pixel] of [['first', [45, 95, 210, 255]], ['second', [75, 185, 45, 255]]]) {
-    const bitmap = Buffer.alloc(512 * 128 * 4);
-    for (let index = 0; index < bitmap.length; index += 4) bitmap.set(pixel, index);
+    // 保留宽图比例，用真实噪声让 data URL 超过 CSS 自定义属性的长度上限。
+    const width = 2048;
+    const height = 512;
+    const bitmap = Buffer.alloc(width * height * 4);
+    let seed = 173;
+    for (let index = 0; index < bitmap.length; index += 4) {
+      for (let channel = 0; channel < 3; channel++) {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        bitmap[index + channel] = pixel[channel] + (seed >>> 24) % 31 - 15;
+      }
+      bitmap[index + 3] = 255;
+    }
     const fixture = path.join(output, `${name}.png`);
-    await fs.writeFile(fixture, nativeImage.createFromBitmap(bitmap, { width: 512, height: 128 }).toPNG());
+    const png = nativeImage.createFromBitmap(bitmap, { width, height }).toPNG();
+    assert.ok(png.toString('base64').length > 2 * 1024 * 1024, '大图回归样本必须超过 2 MiB');
+    await fs.writeFile(fixture, png);
     fixtures.push(fixture);
   }
   const { build } = await import('vite');
@@ -106,7 +121,8 @@ createApp({render:()=>h(Suspense,null,{default:()=>h(App)})}).use(createPinia())
     await click('[data-testid=background-custom]');
     assert.equal(await evaluate('window.backgroundProbe().scrim'), '0.5');
     assert.equal(await evaluate('window.backgroundProbe().glow'), false);
-    assert.match(await evaluate('window.backgroundProbe().image'), /data:image\/png;base64/);
+    assert.match(await evaluate('window.backgroundProbe().image'), /blob:/);
+    assert.equal(await evaluate(`(()=>{const image=document.querySelector('[data-testid=background-picker] img');return !!image && image.complete && image.naturalWidth > 0})()`), true, '大图缩略图必须加载成功');
   };
   const screenshot = async name => fs.writeFile(path.join(output, `${name}.png`), (await window.webContents.capturePage()).toPNG());
   const pixel = async (x = 20, y = 20) => [...(await window.webContents.capturePage({ x, y, width: 1, height: 1 })).toBitmap()];
@@ -126,6 +142,7 @@ createApp({render:()=>h(Suspense,null,{default:()=>h(App)})}).use(createPinia())
   const second = await evaluate('window.backgroundProbe()');
   assert.notEqual(second.image, first.image, '再次选图必须替换实际背景');
   assert.notEqual(second.preference.fileName, first.preference.fileName);
+  assert.equal(await evaluate(`window.revokedBackgroundUrls.includes(${JSON.stringify(first.url)})`), true, '换图必须释放旧 Blob URL');
   assert.equal((await fs.readdir(backgrounds.dir)).length, 1, '换图后必须回收旧图片');
   await evaluate('window.setModal(false)');
   assert.notDeepEqual(await pixel(), firstPixel, '画布像素必须随图片变化');
@@ -157,6 +174,11 @@ createApp({render:()=>h(Suspense,null,{default:()=>h(App)})}).use(createPinia())
   await evaluate('window.flush()');
   assert.equal(await evaluate('window.backgroundProbe().fit'), 'contain');
   assert.equal(await evaluate('window.backgroundProbe().scrim'), '0.8');
+  assert.match(await evaluate('window.backgroundProbe().image'), /blob:/, '重载必须重新生成有效图片地址');
+  assert.notEqual(await evaluate('window.backgroundProbe().url'), second.url);
+  await evaluate('window.setModal(false)');
+  assert.ok((await pixel(450, 370)).slice(0, 3).some(value => value > 20), '重载后大图必须仍然绘出');
+  await evaluate('window.setModal(true)');
   await evaluate(`document.querySelector('[data-settings-tab=terms]').click();new Promise(resolve=>setTimeout(resolve,30))`);
   assert.ok(await evaluate('document.querySelector("[data-testid=settings-nav-indicator]").getAnimations().length > 0'), '选中背景必须有移动过渡');
   await evaluate('window.flush()');
@@ -177,7 +199,9 @@ createApp({render:()=>h(Suspense,null,{default:()=>h(App)})}).use(createPinia())
   await click('#background-fit-menu [data-value=cover]');
   await media('reduce');
   assert.equal(await evaluate('getComputedStyle(document.querySelector("[data-testid=settings-nav-indicator]")).transitionDuration'), '0s');
+  const clearedUrl = await evaluate('window.backgroundProbe().url');
   await click('[data-testid=background-clear]');
+  assert.equal(await evaluate(`window.revokedBackgroundUrls.includes(${JSON.stringify(clearedUrl)})`), true, '清除必须释放当前 Blob URL');
   assert.equal(await evaluate('window.backgroundProbe().image'), 'none');
   assert.equal(await evaluate('window.backgroundProbe().scrim'), null);
   assert.equal(await evaluate('window.backgroundProbe().glow'), true);
