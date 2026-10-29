@@ -110,6 +110,7 @@ class StartupFailureEndToEndTest {
     private RecordingEmitter emitter;
     private SseEventPublisher publisher;
     private PreparedChatExecutor executor;
+    private AgentWorkflowOrchestrator orchestrator;
 
     @BeforeEach
     void setup() throws Exception {
@@ -158,7 +159,7 @@ class StartupFailureEndToEndTest {
         LocalExecutionRepository repository = ExecutionRepositoryTestFactory.create(executionMapper,
                 new JsonConfig().objectMapper(), chatTurnService);
 
-        AgentWorkflowOrchestrator orchestrator = mock(AgentWorkflowOrchestrator.class);
+        orchestrator = mock(AgentWorkflowOrchestrator.class);
         when(orchestrator.execute(any(RuntimeContext.class), any(Execution.class)))
                 .thenThrow(new IllegalStateException("模型不可用"));
         ExecutionControl control = new DefaultExecutionController(() -> null, repository, events,
@@ -216,6 +217,24 @@ class StartupFailureEndToEndTest {
             ExecutionRepositoryTestFactory.create(executionMapper, new JsonConfig().objectMapper())
                     .save(execution);
         });
+    }
+
+    @Test
+    void authenticationFailureShowsTheSameRepairHintInStreamAndPersistedTurn() {
+        String original = "{\"error\":{\"message\":\"Invalid 'Authorization' header or token.\","
+                + "\"type\":\"authentication_error\",\"code\":\"UNAUTHORIZED\"}}";
+        when(orchestrator.execute(any(RuntimeContext.class), any(Execution.class)))
+                .thenThrow(new IllegalStateException(original));
+        Execution execution = execution();
+        persistAccepted(execution);
+
+        assertThrows(IllegalStateException.class, () -> executor.run(context(execution)));
+
+        String expected = "模型服务认证失败，请在模型设置中更新有效 API Key 后重试；使用提供商密钥的模型需重新应用该密钥。";
+        assertTrue(String.join("\n", emitter.frames).contains(expected));
+        ChatTurnPO turn = chatTurnMapper.selectById(TURN_ID);
+        assertEquals("FAILED", turn.getStatus());
+        assertEquals(expected, turn.getErrorReason());
     }
 
     @Test
