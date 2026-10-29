@@ -1,6 +1,10 @@
 {
   "$comment": "视觉基线完整性 oracle（G-4 根治用）：记录本机视觉基线的 MD5 指纹，用来在 compare 之前证明「基线是完整的」。基线 PNG 本体不入仓（像素结果与机器/DPI/字体/浏览器版本绑定，见 scripts/visual/README.md 第 4 条），入仓会让换环境 clone 就一片红，团队最终会无视门禁 —— 那比假绿更糟。所以本文件只是「基线应该长什么样」的凭据，不是像素基线本体。path 一律相对该 suite 的 baselineDir；三个脚本在 --mode baseline（全量、无过滤参数）时自动重写自己那一节并重算 counts/generatedAt；--mode check 时先按本文件校验完整性，不通过即 exit 2（基础设施故障，不是视觉回归）。",
-  "generatedAt": "2026-10-28T15:31:27.112Z",
+  "generatedAt": "2026-10-29T07:42:15.523Z",
+  "forms": {
+    "components": "per-scene-v1",
+    "hover": "per-scene-v1"
+  },
   "suites": {
     "settings": [
       {
@@ -38,20 +42,16 @@
     ],
     "components": [
       {
-        "path": "dark.png",
-        "md5": "0837fc724e6213c852f171d9c378e01e"
-      },
-      {
         "path": "dark/atDesc-roi.png",
-        "md5": "b8b140e4307d41f4d77f0bdf5fd24b66"
+        "md5": "81445a75c2c088662f0786ba3501b8f1"
       },
       {
         "path": "dark/atName-roi.png",
-        "md5": "52b2205cdc4769ab2e8eea4d7e7f6e03"
+        "md5": "e641d887d25dd46c293cf89ef26e4259"
       },
       {
         "path": "dark/atRow-roi.png",
-        "md5": "1c04a19485093bca7d56524cb5868231"
+        "md5": "25340f573fd7d22e2b7b9d9aacf6ee77"
       },
       {
         "path": "dark/cardHeaderTitle-roi.png",
@@ -63,7 +63,7 @@
       },
       {
         "path": "dark/choiceCustomInput-roi.png",
-        "md5": "9fa1300889e91fac495b3cdad7c72a67"
+        "md5": "f3ab914d2669ee8d34b3854ec05bfff2"
       },
       {
         "path": "dark/cmiBody-roi.png",
@@ -71,47 +71,103 @@
       },
       {
         "path": "dark/cmiBubble-roi.png",
-        "md5": "80aaa4abd46cbcca8872562efed94b81"
+        "md5": "6138f1ead98ca37aeb33647203730d64"
       },
       {
         "path": "dark/cmiMeta-roi.png",
-        "md5": "101585fd9f241fc263e54d776c3f4684"
+        "md5": "cbf8ea529b1d7c3b7dc58bfda5e2ef4f"
       },
       {
         "path": "dark/dropdownMenuTitle-roi.png",
-        "md5": "28a890cd3a047769217dd691071d2d49"
+        "md5": "e2cb94d2a0b860b117a597aa76d3638b"
       },
       {
         "path": "dark/sapShell-roi.png",
-        "md5": "3a77e7170f9517fe16b18bfee009cca3"
+        "md5": "cbb52caddffdc768847ef7c3241d46cf"
       },
       {
         "path": "dark/sapTitle-roi.png",
         "md5": "d05a42c52bbcd8cdda110d408f1e9738"
       },
       {
+        "path": "dark/scene-agents-tab-row.png",
+        "md5": "41858c929db478effbb1fb626f3134f0"
+      },
+      {
+        "path": "dark/scene-card-header.png",
+        "md5": "26c5ef1f13e31ef80c51620ad41042fa"
+      },
+      {
+        "path": "dark/scene-chat-input-driven.png",
+        "md5": "72c5653b06ba7cae63823594ea8e62a2"
+      },
+      {
+        "path": "dark/scene-chat-input.png",
+        "md5": "781bf693aa7128abadd831067b4df5fb"
+      },
+      {
+        "path": "dark/scene-chat-message-item.png",
+        "md5": "d8396dfb4887db5738394a94d2a08e0d"
+      },
+      {
+        "path": "dark/scene-choice.png",
+        "md5": "cb64cc15a8c5c37b1412e95780f6e1ef"
+      },
+      {
+        "path": "dark/scene-dropdown.png",
+        "md5": "6ca51d5a1a997cfdc3e73ba97b33a192"
+      },
+      {
+        "path": "dark/scene-settings-modal-card.png",
+        "md5": "0ed49e891afcf93e9d0b74b02e1c5519"
+      },
+      {
+        "path": "dark/scene-sidebar-collapsed.png",
+        "md5": "13fe72166885ed52ed9332506faabfec"
+      },
+      {
+        "path": "dark/scene-sidebar-empty.png",
+        "md5": "9134a1771d80538f64574c18bf362843"
+      },
+      {
+        "path": "dark/scene-sidebar-history.png",
+        "md5": "f3990007ead119b8d39a6ea4b12eeb97"
+      },
+      {
+        "path": "dark/scene-sidebar-open.png",
+        "md5": "e126d2c16dd7bd42578218ac2b46320b"
+      },
+      {
+        "path": "dark/scene-subagent-panel.png",
+        "md5": "bc52c7dc2cd27471a6f148950fe48967"
+      },
+      {
+        "path": "dark/scene-team-modal-row.png",
+        "md5": "93ca665442da16883139debab10f2ecf"
+      },
+      {
         "path": "dark/sidebarEmptyState-roi.png",
-        "md5": "fd1b3e2a174f389810ef63cedaeea9ab"
+        "md5": "3ab35760eb6d21e9a3cb9d02a95123b6"
       },
       {
         "path": "dark/sidebarFooterButton-roi.png",
-        "md5": "ff73afd2654edf50765d923132b35df2"
+        "md5": "1fc1c3db756ac7093644fc95f838181f"
       },
       {
         "path": "dark/sidebarHistoryTitle-roi.png",
-        "md5": "eb1eae65775a1feff8f04e36d4736852"
+        "md5": "039112c56f9a691a60000f6564d08a0e"
       },
       {
         "path": "dark/sidebarSessionTitle-roi.png",
-        "md5": "5f10f473ee19d3b44b72a28debcde161"
+        "md5": "7cc121c4a02c1749a47b17e0f3c588bb"
       },
       {
         "path": "dark/sidebarWorkspaceLabel-roi.png",
-        "md5": "001d42873c8a780b05d7174ac6b55b7e"
+        "md5": "469ec6fc43f46f3aa47f51a1d7bae566"
       },
       {
         "path": "dark/smCard-roi.png",
-        "md5": "cc81b86233633355dd69f948c7d972b4"
+        "md5": "db2ccacb3057d9bdfb3fe5ba9b94b1f7"
       },
       {
         "path": "dark/smTitle-roi.png",
@@ -126,20 +182,16 @@
         "md5": "057d0b53e8e953890d78c345b0ee30e8"
       },
       {
-        "path": "light.png",
-        "md5": "45b1c59182779455ac53208b3c48024e"
-      },
-      {
         "path": "light/atDesc-roi.png",
-        "md5": "60572746cb4b16bad81f8b62ff45fe13"
+        "md5": "f58a5fc50bd4692eaff003f5a91a0653"
       },
       {
         "path": "light/atName-roi.png",
-        "md5": "21dbc901d82ed4bfb09845b5c4f6bed7"
+        "md5": "adc2eef7d8a3a279513b917cc5be76a5"
       },
       {
         "path": "light/atRow-roi.png",
-        "md5": "2aad75e529ed80ea041940d3b0d2fec6"
+        "md5": "b198bf500fd4ac4f419d01c9b7c8c4ee"
       },
       {
         "path": "light/cardHeaderTitle-roi.png",
@@ -151,7 +203,7 @@
       },
       {
         "path": "light/choiceCustomInput-roi.png",
-        "md5": "d094ea343f7248d5b1e350c262773c01"
+        "md5": "c815c33a7f350c425765635a4d4f700a"
       },
       {
         "path": "light/cmiBody-roi.png",
@@ -167,35 +219,91 @@
       },
       {
         "path": "light/dropdownMenuTitle-roi.png",
-        "md5": "a1398dc36f98582a72843c0e22e712ca"
+        "md5": "1597026bd44c131cd862c4f731532c13"
       },
       {
         "path": "light/sapShell-roi.png",
-        "md5": "84c3b04c53ca85fbab30d6b47456a064"
+        "md5": "6ba59057eaec696d6bad5fe756f4afff"
       },
       {
         "path": "light/sapTitle-roi.png",
         "md5": "99b4569b2edbb8dbf017aaf537c462b0"
       },
       {
+        "path": "light/scene-agents-tab-row.png",
+        "md5": "3176abeaa0433389732965c573e453cc"
+      },
+      {
+        "path": "light/scene-card-header.png",
+        "md5": "d60d9cd7702feaf2a8c528f53fb38d4c"
+      },
+      {
+        "path": "light/scene-chat-input-driven.png",
+        "md5": "19ccf3cc68601781206825e681839234"
+      },
+      {
+        "path": "light/scene-chat-input.png",
+        "md5": "16e1034fcfcb540e66eb0df4c356c1c5"
+      },
+      {
+        "path": "light/scene-chat-message-item.png",
+        "md5": "2a4a1865f95c4acaae80ef7bce57b07c"
+      },
+      {
+        "path": "light/scene-choice.png",
+        "md5": "d01f1680914bb8dd59d16eaf333b0851"
+      },
+      {
+        "path": "light/scene-dropdown.png",
+        "md5": "dea6cb5e55030b3a15367d26a96bf424"
+      },
+      {
+        "path": "light/scene-settings-modal-card.png",
+        "md5": "ea7c995e7ad37d7379a14a600f91e4cd"
+      },
+      {
+        "path": "light/scene-sidebar-collapsed.png",
+        "md5": "9b9331856b66a1fe14d83e14662e9929"
+      },
+      {
+        "path": "light/scene-sidebar-empty.png",
+        "md5": "1b71dcf903c6bd6464a98bd1a2c587ef"
+      },
+      {
+        "path": "light/scene-sidebar-history.png",
+        "md5": "fed0b52b94e7bbc1a7065c7320bd7353"
+      },
+      {
+        "path": "light/scene-sidebar-open.png",
+        "md5": "8f7f8acd598871fd12c0a761ae5353df"
+      },
+      {
+        "path": "light/scene-subagent-panel.png",
+        "md5": "845aa642de9c4a06b406f8e1216cd096"
+      },
+      {
+        "path": "light/scene-team-modal-row.png",
+        "md5": "a6b409ba383dad10f6e872f3bc3b6e34"
+      },
+      {
         "path": "light/sidebarEmptyState-roi.png",
-        "md5": "c929795284e14c1d97161a087fa432c3"
+        "md5": "61d0266d8e8b629acb4db141708e3146"
       },
       {
         "path": "light/sidebarFooterButton-roi.png",
-        "md5": "b70050acb29c1cf2c50411deaa17458d"
+        "md5": "f7c9d2ddb971e881885aa2e41c7fc68f"
       },
       {
         "path": "light/sidebarHistoryTitle-roi.png",
-        "md5": "e912423df59e596a4e9bad8a20e5cad3"
+        "md5": "3b6b97b5326eff0302dd81a26695afc7"
       },
       {
         "path": "light/sidebarSessionTitle-roi.png",
-        "md5": "b98249a47b23a6d4bad3dab75e52135c"
+        "md5": "8e4fb1af986c189e8cb88446137820e3"
       },
       {
         "path": "light/sidebarWorkspaceLabel-roi.png",
-        "md5": "5e46aa0db60b3f295c8bf45f4b8e240e"
+        "md5": "49db30bf7db43ff03286420d24a6a3d8"
       },
       {
         "path": "light/smCard-roi.png",
@@ -216,59 +324,59 @@
     ],
     "hover": [
       {
-        "path": "dark-chat-copy.png",
-        "md5": "8b874501f5248272ebc853d50356ce2e"
+        "path": "dark/chat-copy.png",
+        "md5": "8a7b566c494e50c67f03c4c7fbc75ae7"
       },
       {
-        "path": "dark-choice-close.png",
-        "md5": "bc49a494cd7236970988cc0f1fe1e12a"
+        "path": "dark/choice-close.png",
+        "md5": "fd9039c801b791578185604991adab0f"
       },
       {
-        "path": "dark-choice-collapse.png",
-        "md5": "2898e9973f724bf299acff2b9d903c48"
+        "path": "dark/choice-collapse.png",
+        "md5": "450b7ae524ba53cd39d629e1147e6804"
       },
       {
-        "path": "dark-plan-collapse.png",
-        "md5": "83837c599428a7e40d7d6c0b5dd4cb4c"
+        "path": "dark/plan-collapse.png",
+        "md5": "869952ec558db284535e0c87e59d3a62"
       },
       {
-        "path": "dark-sidebar-workspace.png",
-        "md5": "75149f0092dd1ccae522c1687708a01b"
+        "path": "dark/sidebar-workspace.png",
+        "md5": "afb545816ec8c7822fa367d563a9aa7e"
       },
       {
-        "path": "dark-team-modal-row-action.png",
-        "md5": "03f549d20db725d45ee32ef32591aae2"
+        "path": "dark/team-modal-row-action.png",
+        "md5": "1773b4c80350a98702981ff99c9698b9"
       },
       {
-        "path": "light-chat-copy.png",
-        "md5": "714b84e64546b00788e0f4949121f703"
+        "path": "light/chat-copy.png",
+        "md5": "e06a683df33de683ad7bbfb850dc093f"
       },
       {
-        "path": "light-choice-close.png",
-        "md5": "4ab2478c0026f0bcde0759872478fd4e"
+        "path": "light/choice-close.png",
+        "md5": "a91de98f0a592b178fd4406f594ed76c"
       },
       {
-        "path": "light-choice-collapse.png",
-        "md5": "cf20ac27f1507e9ed23fa76d53c0860b"
+        "path": "light/choice-collapse.png",
+        "md5": "12f0bc801ba3c194d47bf57f9d045250"
       },
       {
-        "path": "light-plan-collapse.png",
-        "md5": "ed58a19c66853146479bcc0456f644e8"
+        "path": "light/plan-collapse.png",
+        "md5": "f0b39922d86cc223c48d478e3ce65d28"
       },
       {
-        "path": "light-sidebar-workspace.png",
-        "md5": "d9ac78cf75c9cf088c21a5b189816893"
+        "path": "light/sidebar-workspace.png",
+        "md5": "de0f110d344c8b6fc1228a324f521e23"
       },
       {
-        "path": "light-team-modal-row-action.png",
-        "md5": "26c20c629f3a2ab9168cff47758c8e83"
+        "path": "light/team-modal-row-action.png",
+        "md5": "a14f79c4a16545bd9c12d0617c1442c7"
       }
     ]
   },
   "counts": {
     "settings": 8,
-    "components": 44,
+    "components": 70,
     "hover": 12,
-    "total": 64
+    "total": 90
   }
 }
