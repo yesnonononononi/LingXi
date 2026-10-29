@@ -37,8 +37,17 @@ import com.summit.runtime.model.DefaultStreamingModelInvoker;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import dev.langchain4j.http.client.okhttp.OkHttpClient;
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.exception.LangChain4jException;
+import dev.langchain4j.model.chat.StreamingChatModel;
+import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
+import dev.langchain4j.model.output.TokenUsage;
 import dev.langchain4j.model.anthropic.AnthropicStreamingChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
+import okhttp3.internal.http2.ErrorCode;
+import okhttp3.internal.http2.StreamResetException;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -59,11 +68,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-/** 同一批真实 HTTP 故障必须贯穿模型、重试、执行终态和业务事件序列化。 */
+/** 模型故障必须贯穿适配器、重试、执行终态和业务事件序列化。 */
 class StreamingRetryContractTest {
     @ParameterizedTest
     @ValueSource(strings = {"OPENAI_SSE", "ANTHROPIC_SSE", "OPENAI_503", "OPENAI_429", "OPENAI_TIMEOUT",
-            "OPENAI_TRUNCATED", "OPENAI_401", "OPENAI_QUOTA", "OPENAI_BUDGET"})
+            "OPENAI_TRUNCATED", "OPENAI_HTTP2_RESET", "OPENAI_401", "OPENAI_QUOTA", "OPENAI_BUDGET"})
     void providerFailureTraversesRuntimeAndBusinessStream(String mode) throws Exception {
         AtomicInteger requests = new AtomicInteger();
         CountDownLatch retrySeen = new CountDownLatch(1);
@@ -82,6 +91,20 @@ class StreamingRetryContractTest {
                     : new StreamingChatModelAdapter(OpenAiStreamingChatModel.builder()
                             .httpClientBuilder(OkHttpClient.builder()).baseUrl(base + "/v1").apiKey("test")
                             .modelName("probe").timeout(Duration.ofMillis(mode.endsWith("TIMEOUT") ? 500 : 3000)).build());
+            if (mode.endsWith("HTTP2_RESET")) {
+                // 注入生产报错的原始类型，避免重试测试提前把它转换成可重试异常。
+                model = new StreamingChatModelAdapter(new StreamingChatModel() {
+                    @Override
+                    public void chat(ChatRequest request, StreamingChatResponseHandler handler) {
+                        if (requests.incrementAndGet() == 1) {
+                            handler.onError(new LangChain4jException(new StreamResetException(ErrorCode.CANCEL)));
+                        } else {
+                            handler.onCompleteResponse(ChatResponse.builder().aiMessage(AiMessage.from("recovered"))
+                                    .tokenUsage(new TokenUsage(3, 2)).build());
+                        }
+                    }
+                });
+            }
             ExecutionLocator locator = mock(ExecutionLocator.class);
             when(locator.sessionId("101")).thenReturn(7L);
             when(locator.resolveRootSessionId(7L)).thenReturn(7L);
