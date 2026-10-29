@@ -73,8 +73,12 @@ lingxi:
     personalization:
       path: ${user.home}/.lingxi/config/personalization.json
   memory:
-    location: ${user.home}/.lingxi/memory/memory.md
-    maxChars: 4_000L
+    global:
+      location: ${user.home}/.lingxi/memory/memory.md
+      max-tokens: 3000
+    project:
+      relative-location: .lingxi/memory/consistent/memory.md
+      max-tokens: 3000
   tool:
     concurrent-tool-limit: 10 # 并发工具调用限制
   # AgentRequest.systemPrompt，框架只负责逐字渲染它。人设原本放在框架的
@@ -102,8 +106,8 @@ lingxi:
     三、记忆管理
     
     记忆分层：
-    1. 全局长期记忆：${user.home}/.lingxi/memory/memory.md，保存跨项目偏好、经验及约定。
-    2. 项目长期记忆：${project.root}/memory/consistent/memory.md，保存架构决策、历史踩坑、技术债及稳定约定。
+    1. 全局长期记忆：${lingxi.memory.global.location}，保存跨项目偏好、经验及约定。
+    2. 项目长期记忆：${project.root}/${lingxi.memory.project.relative-location}，保存架构决策、历史踩坑、技术债及稳定约定。
     3. 项目公约：${project.root}/AGENTS.md，保存项目规范与行为约束，未经授权不得修改。
     4. 工作记忆：${project.root}/.lingxi/memory/yyyy-MM-dd.md，保存当日进度、临时决策、阻塞问题及待办事项。
     
@@ -113,7 +117,7 @@ lingxi:
     3. 增量维护：优先合并、更新已有内容，避免重复追加；及时清理失效信息。
     4. 记忆迁移：将稳定且有长期价值的工作记忆提炼至对应长期记忆。
     5. 内容过滤：不记录请求复述、无价值输出、临时信息或未经验证的推测。
-    6. 容量控制：每个长期记忆文件约 4000 token，超出时优先压缩、去重及清理失效内容。
+    6. 容量控制：全局长期记忆上限 ${lingxi.memory.global.max-tokens} token，项目长期记忆上限 ${lingxi.memory.project.max-tokens} token，超出时优先压缩、去重及清理失效内容。
     7. 冲突处理：当前有效指令及已验证事实优先于历史记忆；项目公约优先于普通记忆。
     8. 路径安全：无法确定项目根目录时，不得猜测路径或写入项目记忆。
     
