@@ -90,6 +90,8 @@ function createMainWindow(isPackaged) {
       if (name === './backend.cjs') return {};
       if (name === './file-preview.cjs') return { registerFilePreview: () => () => {} };
       if (name === './notification-window.cjs') return { registerNotificationWindow: () => ({}) };
+      // 主页背景 IPC（L2）：主进程新增的模块，这里只需桩掉注册入口，本用例不关心它
+      if (name === './background-images.cjs') return { registerBackgroundImages: () => ({ close() {} }) };
       if (name === './updater.cjs') return { createUpdater: () => ({}) };
       return require(name);
     },
