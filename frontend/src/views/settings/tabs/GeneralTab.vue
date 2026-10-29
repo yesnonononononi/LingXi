@@ -3,6 +3,7 @@ import { useGeneralTab } from './useGeneralTab';
 import { useTheme } from '../../../composables/useTheme';
 import { useI18n } from '../../../i18n';
 import SpecularButton from '../../../components/common/SpecularButton.vue';
+import SettingsSelect from '../../../components/common/SettingsSelect.vue';
 
 defineProps<{
   isDark?: boolean;
@@ -107,21 +108,22 @@ const {
     </div>
 
     <!-- 主页背景：外观偏好，只在本机（不进后端配置），与主题 / 语言 / 提示音同类 -->
-    <!-- 布局（对齐设计稿）：第一行 = 标题说明 | 带缩略图的选择器 | 自定义 | 垃圾桶；第二行 = 填充方式 | 遮罩强度 -->
+    <!-- 文件名必须可收缩，不能挤掉自定义与清除按钮。 -->
     <!-- 全部使用 lx 令牌类，不写颜色字面量：既不增加门禁残余，也自动跟随亮/暗主题，无需 isDark 分支 -->
-    <div>
+    <div class="background-settings" data-testid="background-settings">
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex flex-col min-w-0 flex-1 basis-[180px]">
+        <div class="flex flex-col min-w-0 w-full">
           <span class="text-xs font-medium text-lx-primary-soft">{{ t('settings.general.background') }}</span>
-          <span class="text-[11px] text-lx-muted mt-0.5 truncate" :title="t('settings.general.backgroundDesc')">{{ t('settings.general.backgroundDesc') }}</span>
+          <span class="text-[11px] text-lx-muted mt-0.5 leading-relaxed">{{ t('settings.general.backgroundDesc') }}</span>
         </div>
-        <div class="flex items-center justify-end gap-2 shrink-0">
+        <div class="flex items-center gap-2 w-full min-w-0">
           <!-- 选择器：缩略图 + 当前值 + chevron，点开是「默认背景 / 自定义图片」两项 -->
-          <div class="relative general-dropdown-container" @click.stop>
+          <div class="relative general-dropdown-container flex-1 min-w-0" @click.stop>
             <button
               type="button"
+              data-testid="background-picker"
               @click="toggleBackgroundDropdown"
-              class="flex items-center gap-2 pl-2 pr-2.5 py-1.5 rounded-xl border border-lx-border-subtle bg-lx-surface-sunken hover:bg-lx-surface-hover transition cursor-pointer w-[196px]"
+              class="flex items-center gap-2 pl-2 pr-2.5 py-1.5 rounded-xl border border-lx-border-subtle bg-lx-surface-sunken hover:bg-lx-surface-hover transition cursor-pointer w-full min-w-0"
             >
               <!-- 缩略图：有背景显示真实图，无背景显示令牌色块占位，避免选择器看起来是空的 -->
               <span class="w-10 h-7 rounded-lg overflow-hidden shrink-0 border border-lx-border-faint bg-lx-surface-active">
@@ -171,6 +173,7 @@ const {
             type="button"
             :disabled="isBackgroundPicking"
             @click="handlePickBackground"
+            data-testid="background-custom"
             class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-lx-border-subtle text-xs text-lx-primary hover:bg-lx-surface-hover transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
           >
             <svg class="w-3.5 h-3.5 text-lx-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -185,6 +188,7 @@ const {
             :title="t('settings.general.backgroundClear')"
             :aria-label="t('settings.general.backgroundClear')"
             @click="handleClearBackground"
+            data-testid="background-clear"
             class="p-2 rounded-xl border border-lx-border-subtle text-lx-muted hover:text-lx-danger hover:bg-lx-surface-hover transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
           >
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -194,33 +198,28 @@ const {
         </div>
       </div>
       <!-- 第二行：填充方式 + 遮罩强度（无背景时两者禁用但保留原位，避免布局跳动） -->
-      <div class="flex items-center gap-6 mt-3">
-        <div class="flex items-center gap-2 flex-1 min-w-0">
-          <span class="text-[11px] text-lx-muted shrink-0">{{ t('settings.general.backgroundFit') }}</span>
-          <select
-            :value="backgroundPreference?.fit ?? 'cover'"
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+        <div class="min-w-0 space-y-1.5">
+          <label for="background-fit" class="text-[11px] text-lx-muted">{{ t('settings.general.backgroundFit') }}</label>
+          <SettingsSelect
+            id="background-fit"
+            :label="t('settings.general.backgroundFit')"
+            :model-value="backgroundPreference?.fit ?? 'cover'"
+            :options="backgroundFitOptions.map(option => ({ value: option.value, label: t(option.labelKey) }))"
             :disabled="!hasBackground"
-            @change="handleSelectBackgroundFit(($event.target as HTMLSelectElement).value as 'cover' | 'contain')"
-            class="flex-1 min-w-0 px-2.5 py-1.5 rounded-xl border border-lx-border-subtle bg-lx-surface-sunken text-xs text-lx-primary transition cursor-pointer hover:bg-lx-surface-hover disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <option v-for="option in backgroundFitOptions" :key="option.value" :value="option.value">
-              {{ t(option.labelKey) }}
-            </option>
-          </select>
-        </div>
-        <div class="flex items-center gap-2 flex-1 min-w-0">
-          <span class="text-[11px] text-lx-muted shrink-0">{{ t('settings.general.backgroundScrim') }}</span>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            step="5"
-            class="lx-background-scrim-range flex-1 min-w-0"
-            :value="backgroundScrimPercent"
-            :disabled="!hasBackground"
-            @input="handleBackgroundScrimInput"
+            @update:model-value="handleSelectBackgroundFit($event === 'contain' ? 'contain' : 'cover')"
           />
-          <span class="text-[11px] text-lx-muted w-9 text-right shrink-0">{{ backgroundScrimPercent }}%</span>
+        </div>
+        <div class="min-w-0 space-y-1.5">
+          <label for="background-scrim" class="text-[11px] text-lx-muted">{{ t('settings.general.backgroundScrim') }}</label>
+          <div class="background-scrim-control" :class="{ 'is-disabled': !hasBackground }"
+            :style="{ '--scrim-progress': `${backgroundScrimPercent}%` }">
+            <input id="background-scrim" type="range" min="0" max="100" step="5"
+              class="lx-background-scrim-range" :aria-label="t('settings.general.backgroundScrim')"
+              :aria-valuetext="`${backgroundScrimPercent}%`" :value="backgroundScrimPercent"
+              :disabled="!hasBackground" @input="handleBackgroundScrimInput" />
+            <output for="background-scrim" class="background-scrim-value">{{ backgroundScrimPercent }}%</output>
+          </div>
         </div>
       </div>
     </div>
@@ -362,7 +361,7 @@ const {
           v-model="apiBaseUrl"
           type="text"
           placeholder="http://localhost:8088"
-          class="flex-1 px-3 py-2 text-xs rounded-xl border border-zinc-200 dark:border-white/15 bg-white dark:bg-black/60 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-blue-500 dark:focus:border-cyan-400 focus:ring-1 focus:ring-blue-500 dark:focus:ring-cyan-400 transition"
+          class="flex-1 min-w-0 px-3 py-2 text-xs rounded-xl border border-zinc-200 dark:border-white/15 bg-white dark:bg-black/60 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-blue-500 dark:focus:border-cyan-400 focus:ring-1 focus:ring-blue-500 dark:focus:ring-cyan-400 transition"
         />
         <SpecularButton
           size="sm"
@@ -386,9 +385,66 @@ const {
 </template>
 
 <style scoped>
-/* 遮罩强度滑杆：配色只走令牌，避免新增非令牌颜色（残余门禁按「非令牌颜色项」计数） */
+.background-settings {
+  padding: 12px;
+  border: 1px solid var(--lx-border-subtle);
+  border-radius: var(--lx-radius-md);
+  background: var(--lx-surface-hover);
+}
+.background-scrim-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--lx-border-default);
+  border-radius: var(--lx-radius-md);
+  background: var(--lx-surface-sunken);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.background-scrim-control:focus-within {
+  border-color: var(--lx-border-strong);
+  box-shadow: 0 0 0 2px var(--lx-surface-active);
+}
+.background-scrim-control.is-disabled { opacity: 0.4; }
+.background-scrim-value {
+  min-width: 32px;
+  color: var(--lx-text-primary-soft);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+/* 只改变控件外观，进度来自同一份偏好，不另存滑杆状态。 */
 .lx-background-scrim-range {
-  accent-color: var(--lx-accent);
+  appearance: none;
+  flex: 1;
+  min-width: 0;
+  height: 4px;
+  border-radius: var(--lx-radius-full);
+  background: linear-gradient(to right, var(--lx-text-primary) var(--scrim-progress), var(--lx-border-strong) var(--scrim-progress));
+  outline: none;
+  cursor: pointer;
+}
+.lx-background-scrim-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--lx-surface-sunken);
+  border-radius: var(--lx-radius-full);
+  background: var(--lx-text-primary);
+  box-shadow: 0 0 0 1px var(--lx-border-strong), 0 0 10px color-mix(in srgb, var(--lx-text-primary) 20%, transparent);
+}
+.lx-background-scrim-range::-moz-range-thumb {
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--lx-surface-sunken);
+  border-radius: var(--lx-radius-full);
+  background: var(--lx-text-primary);
+  box-shadow: 0 0 0 1px var(--lx-border-strong);
+}
+.lx-background-scrim-range:disabled { cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) {
+  .background-scrim-control { transition: none; }
 }
 
 /* 下拉菜单向下展开动画 (右上角对齐触发器) */

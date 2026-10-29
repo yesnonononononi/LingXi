@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, type CSSProperties } from 'vue';
 import LxModal from '../../components/common/LxModal.vue';
 import { normalizeSettingsTab } from '../../utils/enum';
 import type { SettingsTabKey } from '../../utils/enum';
@@ -47,6 +47,32 @@ const emit = defineEmits<{
 
 type TabKey = SettingsTabKey;
 const activeTab = ref<TabKey>(normalizeSettingsTab(props.initialTab, 'general'));
+const navigation = ref<HTMLElement>();
+const content = ref<HTMLElement>();
+const indicatorStyle = ref<CSSProperties>({ opacity: 0 });
+let navigationObserver: ResizeObserver | undefined;
+
+function updateIndicator() {
+  const tab = activeTab.value === 'compaction' ? 'models' : activeTab.value;
+  const button = navigation.value?.querySelector<HTMLElement>(`[data-settings-tab="${tab}"]`);
+  if (!button || !button.offsetWidth) { indicatorStyle.value = { opacity: 0 }; return; }
+  indicatorStyle.value = {
+    width: `${button.offsetWidth}px`, height: `${button.offsetHeight}px`,
+    transform: `translate(${button.offsetLeft}px, ${button.offsetTop}px)`, opacity: 1,
+  };
+}
+
+watch([activeTab, () => props.open], async () => {
+  await nextTick();
+  updateIndicator();
+  content.value?.scrollTo({ top: 0 });
+});
+onMounted(() => {
+  updateIndicator();
+  navigationObserver = new ResizeObserver(updateIndicator);
+  if (navigation.value) navigationObserver.observe(navigation.value);
+});
+onBeforeUnmount(() => navigationObserver?.disconnect());
 
 watch(() => props.initialTab, (newTab) => {
   if (newTab) {
@@ -99,14 +125,16 @@ const panelClass = computed(() =>
     <!-- Main Layout: Left Sidebar + Right Content -->
     <div class="flex flex-col sm:flex-row gap-4 sm:gap-6 pt-4 flex-1 min-h-0">
       <!-- Left Sidebar Navigation -->
-      <div class="flex sm:block w-full sm:w-36 shrink-0 gap-1 sm:space-y-1 overflow-x-auto sm:overflow-visible">
+      <div ref="navigation" class="settings-navigation flex sm:block w-full sm:w-36 shrink-0 gap-1 sm:space-y-1 overflow-x-auto sm:overflow-visible">
+        <span class="settings-navigation-indicator" :style="indicatorStyle" data-testid="settings-nav-indicator" aria-hidden="true" />
         <!-- 1. 通用设置 -->
         <button
+          data-settings-tab="general"
           @click="activeTab = 'general'"
           :class="[
             'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
             activeTab === 'general'
-              ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
+              ? (isDark ? 'text-white font-medium dark:text-glow-subtle' : 'text-zinc-900 font-semibold')
               : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover')
           ]"
         >
@@ -118,11 +146,12 @@ const panelClass = computed(() =>
         </button>
 
         <button
+          data-settings-tab="personalization"
           @click="activeTab = 'personalization'"
           :class="[
             'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
             activeTab === 'personalization'
-              ? (isDark ? 'bg-white/10 text-white border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
+              ? (isDark ? 'text-white' : 'text-zinc-900 font-semibold')
               : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover')
           ]"
         >
@@ -134,11 +163,12 @@ const panelClass = computed(() =>
 
         <!-- 2. 模型 -->
         <button
+          data-settings-tab="models"
           @click="activeTab = 'models'"
           :class="[
             'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
             activeTab === 'models' || activeTab === 'compaction'
-              ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
+              ? (isDark ? 'text-white font-medium dark:text-glow-subtle' : 'text-zinc-900 font-semibold')
               : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover')
           ]"
         >
@@ -152,11 +182,12 @@ const panelClass = computed(() =>
 
         <!-- 3. 智能体 -->
         <button
+          data-settings-tab="agents"
           @click="activeTab = 'agents'"
           :class="[
             'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
             activeTab === 'agents'
-              ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
+              ? (isDark ? 'text-white font-medium dark:text-glow-subtle' : 'text-zinc-900 font-semibold')
               : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover')
           ]"
         >
@@ -168,11 +199,12 @@ const panelClass = computed(() =>
 
         <!-- 4. 团队协同 -->
         <button
+          data-settings-tab="teams"
           @click="activeTab = 'teams'"
           :class="[
             'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
             activeTab === 'teams'
-              ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
+              ? (isDark ? 'text-white font-medium dark:text-glow-subtle' : 'text-zinc-900 font-semibold')
               : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover')
           ]"
         >
@@ -184,11 +216,12 @@ const panelClass = computed(() =>
 
         <!-- 5. MCP 服务 -->
         <button
+          data-settings-tab="mcp"
           @click="activeTab = 'mcp'"
           :class="[
             'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
             activeTab === 'mcp'
-              ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
+              ? (isDark ? 'text-white font-medium dark:text-glow-subtle' : 'text-zinc-900 font-semibold')
               : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover')
           ]"
         >
@@ -198,9 +231,10 @@ const panelClass = computed(() =>
           <span>{{ t('settings.nav.mcp') }}</span>
                   </button>
 
-        <button @click="activeTab = 'security'" type="button"
+        <button data-settings-tab="security"
+          @click="activeTab = 'security'" type="button"
           :class="['shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
-            activeTab === 'security' ? (isDark ? 'bg-white/10 text-white border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
+            activeTab === 'security' ? (isDark ? 'text-white' : 'text-zinc-900 font-semibold')
             : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover') ]">
           <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 3l8 4v5c0 5-8 9-8 9s-8-4-8-9V7l8-4zM8 12l3 3 5-6" /></svg>
           <span>{{ securityCopy.page }}</span>
@@ -208,11 +242,12 @@ const panelClass = computed(() =>
 
         <!-- 6. 数据管理 -->
         <button
+          data-settings-tab="data"
           @click="activeTab = 'data'"
           :class="[
             'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
             activeTab === 'data'
-              ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
+              ? (isDark ? 'text-white font-medium dark:text-glow-subtle' : 'text-zinc-900 font-semibold')
               : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover')
           ]"
         >
@@ -224,11 +259,12 @@ const panelClass = computed(() =>
 
         <!-- 7. 服务协议 -->
         <button
+          data-settings-tab="terms"
           @click="activeTab = 'terms'"
           :class="[
             'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
             activeTab === 'terms'
-              ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
+              ? (isDark ? 'text-white font-medium dark:text-glow-subtle' : 'text-zinc-900 font-semibold')
               : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover')
           ]"
         >
@@ -240,11 +276,12 @@ const panelClass = computed(() =>
 
         <!-- 8. 关于与更新 -->
         <button
+          data-settings-tab="about"
           @click="activeTab = 'about'"
           :class="[
             'shrink-0 w-auto sm:w-full whitespace-nowrap flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer text-left',
             activeTab === 'about'
-              ? (isDark ? 'bg-white/10 text-white font-medium dark:text-glow-subtle border border-white/10 shadow-sm' : 'bg-zinc-100 text-zinc-900 font-semibold')
+              ? (isDark ? 'text-white font-medium dark:text-glow-subtle' : 'text-zinc-900 font-semibold')
               : (isDark ? 'text-zinc-400 hover:text-zinc-200 hover:bg-lx-surface-hover' : 'text-zinc-600 hover:text-zinc-900 hover:bg-lx-surface-hover')
           ]"
         >
@@ -257,9 +294,13 @@ const panelClass = computed(() =>
 
       <!-- Right Content Area -->
       <!-- scrollbar-gutter: 恒定预留滚动条槽位，使各 tab 的盒子宽度一致（不因是否出现滚动条而变窄） -->
+      <!-- 为按钮外发光预留空间，避免装饰画布撑出横向滚动条。 -->
       <div
-        class="flex-1 min-w-0 pr-1 text-sm h-full overflow-y-auto [scrollbar-gutter:stable]"
+        ref="content"
+        class="flex-1 min-w-0 pr-6 pb-6 text-sm h-full overflow-y-auto [scrollbar-gutter:stable]"
       >
+        <Transition name="settings-tab" mode="out-in">
+        <div :key="activeTab" class="settings-tab-content" :data-settings-content="activeTab">
         <GeneralTab v-if="activeTab === 'general'" :is-dark="isDark" />
         <PersonalizationTab v-else-if="activeTab === 'personalization'" />
         <ModelsTab v-else-if="activeTab === 'models'" :is-dark="isDark" @model-updated="emit('modelUpdated')" @open-compaction="activeTab = 'compaction'" />
@@ -271,7 +312,34 @@ const panelClass = computed(() =>
         <SecurityTab v-else-if="activeTab === 'security'" @model-updated="emit('modelUpdated')" />
         <TermsTab v-else-if="activeTab === 'terms'" :is-dark="isDark" />
         <AboutTab v-else-if="activeTab === 'about'" :is-dark="isDark" />
+        </div>
+        </Transition>
       </div>
     </div>
   </LxModal>
 </template>
+
+<style scoped>
+.settings-navigation { position: relative; isolation: isolate; }
+.settings-navigation > button { position: relative; z-index: 1; border: 1px solid transparent; }
+.settings-navigation-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  border: 1px solid var(--lx-border-subtle);
+  border-radius: var(--lx-radius-md);
+  background: var(--lx-surface-active);
+  box-shadow: var(--lx-shadow-1);
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), width 220ms ease, height 220ms ease, opacity 120ms ease;
+}
+.settings-tab-content { min-width: 0; }
+.settings-tab-enter-active { transition: opacity 180ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1); }
+.settings-tab-leave-active { transition: opacity 90ms ease, transform 90ms ease; pointer-events: none; }
+.settings-tab-enter-from { opacity: 0; transform: translateY(6px); }
+.settings-tab-leave-to { opacity: 0; transform: translateY(-3px); }
+@media (prefers-reduced-motion: reduce) {
+  .settings-navigation-indicator, .settings-tab-enter-active, .settings-tab-leave-active { transition: none; }
+  .settings-tab-enter-from, .settings-tab-leave-to { transform: none; }
+}
+</style>
