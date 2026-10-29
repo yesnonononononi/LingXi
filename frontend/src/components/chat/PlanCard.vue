@@ -8,6 +8,7 @@ import { canDecideCard } from '../../utils/toolCallCard';
 import CardHeader from './CardHeader.vue';
 import CardActionButton from './CardActionButton.vue';
 import MarkdownRenderer from './MarkdownRenderer.vue';
+import PlanPreviewModal from './PlanPreviewModal.vue';
 import { useI18n } from '../../i18n';
 
 const props = defineProps<{
@@ -40,6 +41,7 @@ const isSubmitting = ref(false);
 const errorMsg = ref('');
 const isAddingTip = ref(false);
 const tipText = ref('');
+const isPreviewOpen = ref(false);
 
 /**
  * 是否可操作：**叠加权威 `pending`**（= type==='PROMISE' && status==='pending'），
@@ -174,22 +176,36 @@ const decide = async (approved: boolean) => {
       <!-- 4. 底部操作栏 -->
       <div class="pt-3 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between gap-3 select-none flex-wrap">
 
-        <!-- 左：去聊天里说（无 provider 时不渲染，避免死按钮） -->
-        <button
-          v-if="isPending && focusChatInput"
-          type="button"
-          @click="goToChatInput"
-          :class="[
-            'text-xs sm:text-sm font-normal transition flex items-center gap-1.5 cursor-pointer rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50',
-            isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-600 hover:text-zinc-900'
-          ]"
-        >
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-          </svg>
-          <span>{{ t('chat.plan.goToChat') }}</span>
-        </button>
-        <div v-else></div>
+        <div class="flex items-center gap-3 flex-wrap">
+          <button
+            v-if="planBody"
+            type="button"
+            data-testid="plan-preview-open"
+            class="flex items-center gap-1.5 rounded px-1 py-0.5 text-xs sm:text-sm text-lx-secondary hover:text-lx-primary cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50"
+            aria-haspopup="dialog"
+            @click="isPreviewOpen = true"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M3 3l6 6m12-6l-6 6M3 21l6-6m12 6l-6-6" />
+            </svg>
+            {{ t('chat.plan.previewAction') }}
+          </button>
+
+          <button
+            v-if="isPending && focusChatInput"
+            type="button"
+            @click="goToChatInput"
+            :class="[
+              'text-xs sm:text-sm font-normal transition flex items-center gap-1.5 cursor-pointer rounded px-1 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50',
+              isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-600 hover:text-zinc-900'
+            ]"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+            <span>{{ t('chat.plan.goToChat') }}</span>
+          </button>
+        </div>
 
         <!-- 待审：决策按钮组 -->
         <div v-if="isPending" class="flex items-center gap-2.5">
@@ -250,4 +266,11 @@ const decide = async (approved: boolean) => {
       </div>
     </div>
   </div>
+  <PlanPreviewModal
+    :open="isPreviewOpen"
+    :title="planTitle"
+    :content="planBody"
+    :is-dark="isDark"
+    @close="isPreviewOpen = false"
+  />
 </template>
