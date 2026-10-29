@@ -35,7 +35,9 @@
  * 是灰阶迁移**重建前的历史快照**，仅供考古，<b>不是当前有效的签字清单</b>，不要拿它当签字依据。</p>
  *
  * <p><b>退出码约定：</b>0 = 一致 / 已生成；1 = 清单内容与实际不一致（未签字、签字人无授权、条数不符、diff 图缺失或多余）；
- * 2 = 过程证据故障（清单存在但未纳入版本库）或参数错误。</p>
+ * 2 = 过程证据故障（清单存在但未纳入版本库）或参数错误。
+ * 三档判据集中在纯函数 <code>evaluateVerification()</code> 里（不做 IO），QA 可直接用构造入参覆盖 2 / 1 / 0，
+ * 不必造真 CSV 或操纵 git 索引。</p>
  *
  * 用法：
  *   node scripts/visual/expect-inventory.cjs                 # 生成 CSV
@@ -62,6 +64,10 @@ const ARTIFACT_ROOT = path.join(REPO_ROOT, '.lingxi', 'tmp', 'visual');
 const SIGNED_CSV_PATH = path.join(FRONTEND_ROOT, 'scripts', 'theme-spec', 'expected-changes.csv');
 /** 门禁脚本。 */
 const GATE_SCRIPT = path.join(FRONTEND_ROOT, 'scripts', 'check-theme-equivalence.mjs');
+/** 签字清单相对仓库根的路径（仅字符串运算，供文案与提示使用）。 */
+const SIGNED_CSV_REL = path.relative(REPO_ROOT, SIGNED_CSV_PATH).split(path.sep).join('/');
+/** 授权签字人白名单：预期变色是产品决策，只有产品负责人/主理人可以签字放行，工程师自签无效。 */
+const AUTHORIZED_SIGNERS = ['summit', '科比', '齐活林', 'Qi'];
 
 /**
  * 解析命令行参数。
@@ -328,11 +334,71 @@ function readCsvMeta(text) {
 }
 
 /**
+ * 纯函数：把清单元信息 / 门禁报告 / 实际 diff 图清单 / git 跟踪状态换算成三档判定结果。
+ *
+ * <p><b>为什么把判定从 main() 里抽出来（判定与 IO 分离）：</b>
+ * `main()` 要读盘、跑门禁、调 git、打印，这些 IO 让「未跟踪必须返回退出码 2」这类判据
+ * 只能靠「造一个真 CSV + 操纵 git 索引」的黑盒手法验证，既脏又容易在 CI 上假红。
+ * 抽出本函数后，QA 直接用构造好的入参覆盖三档退出码（2 / 1 / 0），无需落盘、无需 git。</p>
+ *
+ * <p><b>纯函数约定：不做任何 IO</b> —— 不 fs、不 execFileSync、不 console；
+ * 需要打印的 WARN（如 git 不可用）由调用方 main() 根据返回值自行决定。</p>
+ *
+ * @param {object} input 入参对象
+ * @param {{signedBy: string|null, signedAt: string|null, atomCount: number, diffCount: number, listedDiffs: string[]}} input.meta 清单元信息
+ * @param {{atoms: unknown[]}} input.gate 等价门禁报告
+ * @param {string[]} input.diffImages 实际 diff 图相对路径
+ * @param {{tracked: boolean, gitAvailable: boolean, reason: string}} input.trackedState git 跟踪状态
+ * @returns {{failures: string[], evidenceFailures: string[], exitCode: number}} 内容故障、过程证据故障与退出码
+ */
+function evaluateVerification({ meta, gate, diffImages, trackedState }) {
+  /** @type {string[]} 清单内容与实际不一致（语义 = 退出码 1） */
+  const failures = [];
+  /** @type {string[]} 过程证据层面故障：签了但没入仓（语义 = 退出码 2） */
+  const evidenceFailures = [];
+
+  if (!meta.signedBy) failures.push('清单未签字（缺少 SIGNED-BY）');
+  if (meta.signedBy && !AUTHORIZED_SIGNERS.includes(meta.signedBy)) {
+    failures.push(`签字人「${meta.signedBy}」无授权。预期变色是产品决策，只接受 ${AUTHORIZED_SIGNERS.join(' / ')} 签字；工程师自签无效。`);
+  }
+  // 原子差异必须与清单「预期变更条目」计数严格一致（保留原「双向」语义，并更严：数量也要对得上）。
+  if (meta.atomCount === -1) {
+    failures.push('清单缺少「预期变更条目」计数（旧格式清单，请重新生成并签字）');
+  } else if (meta.atomCount !== gate.atoms.length) {
+    failures.push(`清单记录的预期变更条目（${meta.atomCount}）与实际（${gate.atoms.length}）不一致`);
+  }
+  // diff 图数量必须与实际一致。
+  if (meta.diffCount !== diffImages.length) {
+    failures.push(`清单记录的 diff 图数量（${meta.diffCount}）与实际（${diffImages.length}）不一致`);
+  }
+  // 逐张核对：清单必须逐张列出实际存在的每张 diff 图；缺一张、或多列一张不存在的，都失败。
+  const listedSet = new Set(meta.listedDiffs);
+  const diffSet = new Set(diffImages);
+  const missingDiffs = diffImages.filter((p) => !listedSet.has(p));
+  const extraDiffs = meta.listedDiffs.filter((p) => !diffSet.has(p));
+  if (missingDiffs.length > 0) {
+    failures.push(`清单漏列了 ${missingDiffs.length} 张 diff 图：${missingDiffs.join(', ')}`);
+  }
+  if (extraDiffs.length > 0) {
+    failures.push(`清单列出了 ${extraDiffs.length} 张不存在的 diff 图：${extraDiffs.join(', ')}`);
+  }
+  // G-10：签字清单是过程证据，必须已入仓；存在但未纳入版本库 = 签了不算数（过程证据故障，退出码 2）。
+  // gitAvailable === false 时无法判断，跳过检查（不判红），WARN 由 main() 负责打印。
+  if (trackedState.gitAvailable === true && trackedState.tracked === false) {
+    evidenceFailures.push(`清单存在但未纳入版本库（签了不算数，需 git add 并与基线重建同批提交）：${SIGNED_CSV_REL}`);
+  }
+
+  // 退出码优先级：过程证据故障（2）压过内容不一致（1）。
+  const exitCode = evidenceFailures.length > 0 ? 2 : (failures.length > 0 ? 1 : 0);
+  return { failures, evidenceFailures, exitCode };
+}
+
+/**
  * 主流程。
  * @returns {number} 退出码（0 = 一致/已生成，1 = 清单内容与实际不一致，2 = 过程证据故障或参数错误）
  */
 function main() {
-  const signedRel = toRepoRelative(SIGNED_CSV_PATH);
+  const signedRel = SIGNED_CSV_REL;
   const artifactRel = toRepoRelative(ARTIFACT_ROOT);
   let args;
   try {
@@ -369,55 +435,24 @@ function main() {
       console.error(`[expect-inventory] --verify 失败：清单不存在（${signedRel}）。先跑一次生成并评审签字。`);
       return 1;
     }
+    // 只负责「取数据」：读清单文本、解析元信息、探测 git 跟踪状态；判定全部交给 evaluateVerification。
     const text = fs.readFileSync(SIGNED_CSV_PATH, 'utf8');
     const meta = readCsvMeta(text);
-    /** @type {string[]} 清单内容与实际不一致（语义 = 退出码 1） */
-    const failures = [];
-    /** @type {string[]} 过程证据层面故障：签了但没入仓（语义 = 退出码 2） */
-    const evidenceFailures = [];
-    if (!meta.signedBy) failures.push('清单未签字（缺少 SIGNED-BY）');
-    // 签字必须有约束力：只有产品负责人/主理人可以签字放行。工程师自签不算。
-    const AUTHORIZED_SIGNERS = ['summit', '科比', '齐活林', 'Qi'];
-    if (meta.signedBy && !AUTHORIZED_SIGNERS.includes(meta.signedBy)) {
-      failures.push(`签字人「${meta.signedBy}」无授权。预期变色是产品决策，只接受 ${AUTHORIZED_SIGNERS.join(' / ')} 签字；工程师自签无效。`);
-    }
-    // 原子差异必须与清单「预期变更条目」计数严格一致（保留原「双向」语义，并更严：数量也要对得上）。
-    if (meta.atomCount === -1) {
-      failures.push('清单缺少「预期变更条目」计数（旧格式清单，请重新生成并签字）');
-    } else if (meta.atomCount !== gate.atoms.length) {
-      failures.push(`清单记录的预期变更条目（${meta.atomCount}）与实际（${gate.atoms.length}）不一致`);
-    }
-    // diff 图数量必须与实际一致。
-    if (meta.diffCount !== diffImages.length) {
-      failures.push(`清单记录的 diff 图数量（${meta.diffCount}）与实际（${diffImages.length}）不一致`);
-    }
-    // 逐张核对：清单必须逐张列出实际存在的每张 diff 图；缺一张、或多列一张不存在的，都失败。
-    const listedSet = new Set(meta.listedDiffs);
-    const diffSet = new Set(diffImages);
-    const missingDiffs = diffImages.filter((p) => !listedSet.has(p));
-    const extraDiffs = meta.listedDiffs.filter((p) => !diffSet.has(p));
-    if (missingDiffs.length > 0) {
-      failures.push(`清单漏列了 ${missingDiffs.length} 张 diff 图：${missingDiffs.join(', ')}`);
-    }
-    if (extraDiffs.length > 0) {
-      failures.push(`清单列出了 ${extraDiffs.length} 张不存在的 diff 图：${extraDiffs.join(', ')}`);
-    }
-    // G-10：签字清单是过程证据，必须已入仓；存在但未纳入版本库 = 签了不算数（过程证据故障，退出码 2）。
     const trackedState = isTrackedByGit(SIGNED_CSV_PATH);
+    // git 不可用时要「跳过」而不是判红，这属于调用方的策略与 IO 输出，纯函数里不做。
     if (!trackedState.gitAvailable) {
       console.warn('[expect-inventory] WARN：无法判断清单是否已纳入版本库（当前环境没有可用的 git），跳过「已入仓」检查。');
-    } else if (!trackedState.tracked) {
-      evidenceFailures.push(`清单存在但未纳入版本库（签了不算数，需 git add 并与基线重建同批提交）：${signedRel}`);
     }
-    if (failures.length > 0 || evidenceFailures.length > 0) {
+    const result = evaluateVerification({ meta, gate, diffImages, trackedState });
+    if (result.failures.length > 0 || result.evidenceFailures.length > 0) {
       console.error('[expect-inventory] --verify 失败：');
-      for (const f of failures) console.error(`  - ${f}`);
-      for (const f of evidenceFailures) console.error(`  - ${f}`);
-      return evidenceFailures.length > 0 ? 2 : 1;
+      for (const f of result.failures) console.error(`  - ${f}`);
+      for (const f of result.evidenceFailures) console.error(`  - ${f}`);
+      return result.exitCode;
     }
     console.log(`[expect-inventory] --verify 通过：签字人 ${meta.signedBy}（${meta.signedAt}），预期变更 ${gate.atoms.length} 条，diff 图 ${diffImages.length} 张`);
     console.log(`  签字清单已入仓：${signedRel}`);
-    return 0;
+    return result.exitCode;
   }
 
   const csv = renderCsv(gate.atoms, diff.items, args.sign, diff);
@@ -445,4 +480,4 @@ if (require.main === module) {
   process.exitCode = main();
 }
 
-module.exports = { ARTIFACT_ROOT, SIGNED_CSV_PATH, isTrackedByGit, main };
+module.exports = { ARTIFACT_ROOT, SIGNED_CSV_PATH, isTrackedByGit, main, evaluateVerification };
