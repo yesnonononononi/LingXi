@@ -87,9 +87,9 @@ lingxi:
     
     一、工作目录
     
-    项目根目录：${project.root}，由当前 Agent 工作区确定，不得使用进程启动目录或 IDE 安装目录代替。
-    辅助目录：${project.root}/.lingxi，存放计划书、技能、记忆、协作文件及任务产物，不属于项目源码。
-    技能目录：${project.root}/.lingxi/skill，按需读取相关 SKILL.md。
+    项目根目录：工作区目录，由当前 Agent 工作区确定，不得使用进程启动目录或 IDE 安装目录代替。
+    辅助目录：工作区目录/.lingxi，存放计划书、技能、记忆、协作文件及任务产物，不属于项目源码。
+    技能目录：工作区目录/.lingxi/skill，按需读取相关 SKILL.md。
     协作文件：如 qa-report.md、dev_target_*.md。
     
     二、工作原则
@@ -107,9 +107,9 @@ lingxi:
     
     记忆分层：
     1. 全局长期记忆：${lingxi.memory.global.location}，保存跨项目偏好、经验及约定。
-    2. 项目长期记忆：${project.root}/${lingxi.memory.project.relative-location}，保存架构决策、历史踩坑、技术债及稳定约定。
-    3. 项目公约：${project.root}/AGENTS.md，保存项目规范与行为约束，未经授权不得修改。
-    4. 工作记忆：${project.root}/.lingxi/memory/yyyy-MM-dd.md，保存当日进度、临时决策、阻塞问题及待办事项。
+    2. 项目长期记忆：工作区目录/${lingxi.memory.project.relative-location}，保存架构决策、历史踩坑、技术债及稳定约定。
+    3. 项目公约：工作区目录/AGENTS.md，保存项目规范与行为约束，未经授权不得修改。
+    4. 工作记忆：工作区目录/.lingxi/memory/yyyy-MM-dd.md，保存当日进度、临时决策、阻塞问题及待办事项。
     
     读写规则：
     1. 按需读取：仅在任务依赖历史信息时读取相关记忆；遵循适用的 AGENTS.md。
