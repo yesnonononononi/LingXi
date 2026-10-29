@@ -43,6 +43,7 @@ window.syncUserMessage=()=>router.dispatch({type:'TURN_SNAPSHOT',timestamp:'',ex
   :allow-resend="controls.canResend.value" @edit-resend="controls.edit" />
 <ChatExecutionControls :status="session.runStatus" :can-resume="controls.canResume.value"
   :resuming="controls.isResuming.value" :has-unresolved="controls.hasUnresolved.value"
+  v-model:supplement-draft="controls.supplementDraft.value" v-model:supplement-open="controls.supplementOpen.value"
   :error="controls.error.value" @resume="controls.resume" />
 <ChatInputArea :is-dark="false" :is-sending="session.runStatus!=='IDLE'" />
 <!-- 隔离副本：只用来断言「有待答卡片时暂停条整块让位」，不参与会话状态流转 -->
@@ -56,14 +57,21 @@ window.syncUserMessage=()=>router.dispatch({type:'TURN_SNAPSHOT',timestamp:'',ex
 import http from '../../../src/services/interceptor';
 import { useI18n } from '../../../src/i18n';
 useI18n().setPreference('zh-CN');
-window.backendStatus='RUNNING'; window.requests=[]; window.resends=[]; window.runtimeErrors=[];
+window.backendStatus='RUNNING'; window.requests=[]; window.resends=[]; window.supplements=[]; window.runtimeErrors=[];
 window.addEventListener('error',event=>window.runtimeErrors.push(event.error?.stack||event.message));
 window.addEventListener('unhandledrejection',event=>window.runtimeErrors.push(event.reason?.stack||String(event.reason)));
 http.defaults.adapter=async config=>{
   window.requests.push(config.url);
   let data={code:1,data:{records:[],total:0,current:1,size:50}};
   if(config.url.endsWith('/suspend')){window.backendStatus='SUSPENDED';data='';}
-  else if(config.url.endsWith('/resume')){window.backendStatus='RUNNING';data={code:1,data:'不可作为聊天正文展示'};}
+  else if(config.url.endsWith('/resume')){
+    const body=config.data?JSON.parse(config.data):null;
+    if(body){
+      window.supplements.push(body);
+      if(window.supplementFail) data={code:0,errMsg:'主会话已恢复，输入已保留'};
+      else {window.backendStatus='RUNNING';data={code:1,data:'9007199254740999'};}
+    } else {window.backendStatus='RUNNING';data={code:1,data:'不可作为聊天正文展示'};}
+  }
   else if(config.url.endsWith('/tree')) data={code:1,data:{rootSessionId:'500',sessions:[{id:'500',runStatus:window.backendStatus}]}};
   else if(config.url.includes('/limits')) data={code:1,data:{maxImages:9}};
   return {config,status:200,statusText:'OK',headers:{},data};
@@ -98,8 +106,25 @@ await window.flush();window.ready=true;`);
   assert.equal(await evaluate('document.querySelector("[data-testid=pause-generation]")!==null'),false);
   await evaluate('window.backendStatus="SUSPENDED";window.refreshSession();window.flush()');
   assert.equal(await evaluate('document.querySelector("[data-testid=resume-generation]")!==null'),true);
+  await evaluate('document.querySelector("[data-testid=toggle-resume-supplement]").click();window.flush()');
+  await evaluate('const input=document.querySelector("[data-testid=resume-supplement-input]");input.value="先别提交，补查边界情况";input.dispatchEvent(new Event("input",{bubbles:true}));window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=resume-generation]").textContent.trim()'),'补充并恢复');
+  assert.equal(await evaluate('document.querySelector("[data-testid=resume-supplement-input]").getAttribute("aria-label")'),'补充要求');
   await new Promise(resolve=>setTimeout(resolve,250));
   await fs.writeFile(path.join(output,'suspended.png'),(await window.webContents.capturePage()).toPNG());
+  await evaluate('window.supplementFail=true;document.querySelector("[data-testid=resume-generation]").click();window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=resume-supplement-input]").value'),'先别提交，补查边界情况');
+  assert.match(await evaluate('document.querySelector("[role=alert]").textContent'),/输入已保留/);
+  await evaluate('window.backendStatus="RUNNING";window.refreshSession();window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=resume-generation]")'),null);
+  assert.equal(await evaluate('document.querySelector("[data-testid=resume-supplement-input]").value'),'先别提交，补查边界情况');
+  await evaluate('window.backendStatus="SUSPENDED";window.refreshSession();window.flush()');
+  await evaluate('window.supplementFail=false;document.querySelector("[data-testid=resume-generation]").click();window.flush()');
+  assert.equal(await evaluate('window.supplements.length'),2);
+  assert.equal(await evaluate('window.supplements[0].requestId===window.supplements[1].requestId'),true);
+  assert.equal(await evaluate('window.supplements[1].turnId'),'102');
+  assert.equal(await evaluate('document.querySelector("[data-testid=resume-supplement-input]")'),null);
+  await evaluate('window.backendStatus="SUSPENDED";window.refreshSession();window.flush()');
   await evaluate('document.querySelector("[data-testid=resume-generation]").click();window.flush()');
   assert.ok((await evaluate('window.requests')).includes('/a/completion/500/resume'));
   assert.equal(await evaluate('document.body.textContent.includes("不可作为聊天正文展示")'),false);
@@ -138,6 +163,6 @@ await window.flush();window.ready=true;`);
   assert.equal(await evaluate('document.querySelector("[role=dialog]")!==null'),true);
   assert.match(await evaluate('document.querySelector("[role=dialog] [role=alert]").textContent'),/模拟重发失败/);
   assert.deepEqual(await evaluate('window.runtimeErrors'),[]);
-  console.log('实际组件验证通过：运行/暂停/恢复、历史编辑确认/取消、真实消息 ID、失败保留、作废历史清理。');
+  console.log('实际组件验证通过：补充并恢复、自动恢复竞争保留输入、幂等重试、运行/暂停/恢复、历史编辑和作废清理。');
   clearTimeout(deadline);window.destroy();app.exit(0);
 }).catch(error=>{console.error(error);clearTimeout(deadline);if(window)window.destroy();app.exit(1);});

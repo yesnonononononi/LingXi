@@ -41,6 +41,7 @@
       <!-- 气泡下方时间与复制图标 (完全匹配左图)；受理被拒的气泡额外标「未发送」并给重发入口 -->
       <div class="flex items-center gap-2 mt-1.5 text-xs text-lx-faint pr-1 select-none">
         <span>{{ displayTime }}</span>
+        <span v-if="props.message.isResumeSupplement">{{ t('chat.controls.supplementLabel') }}</span>
         <!-- 受理被拒：这条消息后端不存在（未进 transcript / 未进模型上下文），绝不呈现成已发送 -->
         <template v-if="props.message.unsent">
           <span class="text-amber-500 dark:text-amber-400 font-medium" data-testid="unsent-badge">
@@ -65,7 +66,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
           </svg>
         </button>
-        <button v-if="!props.message.unsent && props.message.turnId"
+        <button v-if="!props.message.unsent && !props.message.isResumeSupplement && props.message.turnId"
           type="button" data-testid="edit-resend" :disabled="!props.canResend || !props.message.serverMessageId"
           :aria-label="t('chat.controls.editResend')" :title="resendTitle" @click="emit('editResend', props.message)"
           class="hover:text-zinc-600 dark:hover:text-zinc-200 transition p-0.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">

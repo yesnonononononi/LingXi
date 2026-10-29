@@ -175,6 +175,7 @@ export interface ChatMessage {
    * 用户可据此重发，或刷新页面让它消失。</p>
    */
   unsent?: boolean;
+  isResumeSupplement?: boolean;
 
   // 消息模型标识
   model?: string;

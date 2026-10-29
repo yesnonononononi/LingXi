@@ -189,6 +189,8 @@
             :status="currentActiveSession?.runStatus"
             :canResume="executionControls.canResume.value" :resuming="executionControls.isResuming.value"
             :hasUnresolved="executionControls.hasUnresolved.value" :error="executionControls.error.value"
+            v-model:supplementDraft="executionControls.supplementDraft.value"
+            v-model:supplementOpen="executionControls.supplementOpen.value"
             @resume="executionControls.resume"
           />
           <TaskProgressDock :background="backgroundTasks" :checklist="checklist" :isDark="displayIsDark"

@@ -69,9 +69,9 @@ export class AgentAPI {
     if (result && !isOk(result.code)) throw new Error(result.errMsg || t('chat.controls.pauseFailed'));
   }
 
-  static async resume(sessionId: string | number): Promise<Result<string>> {
-    // 恢复接口同步运行到本次挂起或终态，不能沿用普通请求的 10 秒超时。
-    return http.post<any, Result<string>>(`/a/completion/${sessionId}/resume`, undefined, { timeout: 0 });
+  static async resume(sessionId: string | number, supplement?: { turnId: string; requestId: string; input: string }): Promise<Result<string>> {
+    // 普通恢复同步跑到挂起或终态；带补充时只等受理，两者仍共用接口。
+    return http.post<any, Result<string>>(`/a/completion/${sessionId}/resume`, supplement, { timeout: 0 });
   }
 
   static async resendCommand(command: ChatCommand, signal?: AbortSignal): Promise<Result<ChatAcceptance>> {

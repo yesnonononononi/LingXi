@@ -110,6 +110,133 @@ test('恢复等待权威事件，不伪造执行状态，恢复前先等订阅�
   assert.equal(f.current.value.messages[1]!.content, '旧回答');
 });
 
+test('补充并恢复传递原轮次与重试身份，失败保留草稿，成功后清空', async t => {
+  const resume = t.mock.method(AgentAPI, 'resume', async () => ({ code: 0, errMsg: '模拟网络失败' }));
+  const f = fixture(); t.after(() => f.scope.stop());
+  f.current.value.runStatus = 'SUSPENDED';
+  f.controls.supplementOpen.value = true;
+  f.controls.supplementDraft.value = '  先别提交  ';
+  await f.controls.resume();
+  const first = resume.mock.calls[0]!.arguments[1]!;
+  assert.equal(first.turnId, '102');
+  assert.equal(first.input, '先别提交');
+  assert.match(first.requestId, /^[a-f0-9-]{36}$/);
+  assert.equal(f.controls.supplementDraft.value, '  先别提交  ');
+  assert.equal(f.controls.supplementOpen.value, true);
+  assert.equal(f.current.value.messages.length, 3, '受理之前不能伪造用户消息');
+  resume.mock.mockImplementation(async () => ({ code: 1, data: '9007199254740999' }));
+  await f.controls.resume();
+  assert.deepEqual(resume.mock.calls[1]!.arguments[1], first, '失败重试沿用同一请求身份');
+  assert.equal(f.controls.supplementDraft.value, '');
+  assert.equal(f.controls.supplementOpen.value, false);
+  assert.equal(f.current.value.runStatus, 'SUSPENDED', '执行状态等权威事件更新');
+});
+
+test('空白补充保持原恢复请求，非空补充以 JSON 发送且雪花 ID 不转数字', async t => {
+  const post = t.mock.method(http, 'post', async () => ({ code: 1, data: 'ok' }));
+  const payload = { turnId: '9007199254740993', requestId: 'd58322cb-4ef9-4f32-a4cf-1e10bb51b937', input: '补充边界条件' };
+  await AgentAPI.resume('500', payload);
+  assert.deepEqual(post.mock.calls[0]!.arguments[1], payload);
+  const f = fixture(); t.after(() => f.scope.stop());
+  f.current.value.runStatus = 'SUSPENDED';
+  f.controls.supplementDraft.value = '  ';
+  await f.controls.resume();
+  assert.equal(post.mock.calls[1]!.arguments[1], undefined);
+});
+
+test('自动恢复发生在订阅等待期间时保留补充，不向已运行会话提交', async t => {
+  const resume = t.mock.method(AgentAPI, 'resume', async () => ({ code: 1, data: '' }));
+  const f = fixture(); t.after(() => f.scope.stop());
+  f.current.value.runStatus = 'SUSPENDED';
+  f.controls.supplementOpen.value = true;
+  f.controls.supplementDraft.value = '验收时检查边界';
+  let release!: () => void;
+  f.setReady(() => new Promise<boolean>(resolve => { release = () => resolve(true); }));
+  const pending = f.controls.resume();
+  f.current.value.runStatus = 'RUNNING';
+  release(); await pending;
+  assert.equal(resume.mock.calls.length, 0);
+  assert.equal(f.controls.supplementDraft.value, '验收时检查边界');
+  assert.ok(f.controls.error.value);
+});
+
+test('补充草稿按会话保存，订阅等待时切换会话不发送旧稿', async t => {
+  const resume = t.mock.method(AgentAPI, 'resume', async () => ({ code: 1, data: '' }));
+  const f = fixture(); t.after(() => f.scope.stop());
+  f.current.value.runStatus = 'SUSPENDED';
+  f.controls.supplementOpen.value = true;
+  f.controls.supplementDraft.value = 'A 的补充';
+  const originalSession = f.current.value;
+  let release!: () => void;
+  f.setReady(() => new Promise<boolean>(resolve => { release = () => resolve(true); }));
+  const pending = f.controls.resume();
+  f.current.value = { ...session(), id: '600', runStatus: 'SUSPENDED' };
+  await nextTick();
+  assert.equal(f.controls.supplementDraft.value, '');
+  f.controls.supplementDraft.value = 'B 的补充';
+  release(); await pending;
+  assert.equal(resume.mock.calls.length, 0);
+  assert.equal(f.controls.supplementDraft.value, 'B 的补充');
+  f.current.value = originalSession;
+  await nextTick();
+  assert.equal(f.controls.supplementDraft.value, 'A 的补充');
+  assert.equal(f.controls.supplementOpen.value, true);
+});
+
+test('补充请求在途不能重复提交，也不能将旧草稿换绑到新轮次', async t => {
+  let release!: () => void;
+  const resume = t.mock.method(AgentAPI, 'resume', () => new Promise<{ code: number; data: string }>(resolve => {
+    release = () => resolve({ code: 1, data: '' });
+  }));
+  const f = fixture(); t.after(() => f.scope.stop());
+  f.current.value.runStatus = 'SUSPENDED';
+  f.controls.supplementDraft.value = '旧轮次补充';
+  const first = f.controls.resume();
+  await nextTick(); await f.controls.resume();
+  assert.equal(resume.mock.calls.length, 1);
+  release(); await first;
+  f.controls.supplementDraft.value = '尚未提交的补充';
+  f.current.value.messages.push({ id: 'new', role: 'assistant', turnId: '103', content: '', timestamp: 4 });
+  await f.controls.resume();
+  assert.equal(resume.mock.calls.length, 1);
+  assert.equal(f.controls.supplementDraft.value, '尚未提交的补充');
+});
+
+test('补充历史与实时使用服务端消息身份去重，原提问与轮次保持不变', () => {
+  const view: TurnViewVO = { sessionId: '500', turnId: '101', status: 'WAITING', viewVersion: '2',
+    userMessage: '原提问', userMessageId: '9007199254740993', blocks: [],
+    resumeSupplements: [{ messageId: '9007199254740995', text: '先别提交', createdAt: '2026-10-29T01:00:00Z' },
+      { messageId: '9007199254740997', text: '检查边界条件' }] };
+  const messages: ChatMessage[] = [];
+  upsertTurnViewIntoMessages(messages, view);
+  assert.deepEqual(messages.map(message => message.content), ['原提问', '先别提交', '检查边界条件', ''],
+    '首次历史加载就要显示补充，不能靠第二帧补齐');
+  upsertTurnViewIntoMessages(messages, view);
+  assert.deepEqual(messages.map(message => message.content), ['原提问', '先别提交', '检查边界条件', '']);
+  assert.equal(messages[0]!.serverMessageId, '9007199254740993');
+  assert.equal(messages[1]!.serverMessageId, '9007199254740995');
+  assert.equal(messages[1]!.isResumeSupplement, true);
+  assert.equal(messages[2]!.isResumeSupplement, true);
+  assert.equal(messages.filter(message => message.role === 'assistant').length, 1);
+  assert.ok(messages.every(message => message.turnId === '101'));
+  upsertTurnViewIntoMessages(messages, { ...view, viewVersion: '1', resumeSupplements: [{ messageId: '1', text: '迟到旧帧' }] });
+  assert.equal(messages.length, 4);
+});
+
+test('补充消息不能按原提问重发，清空旧稿后新输入才能绑定当前轮次', async t => {
+  const resume = t.mock.method(AgentAPI, 'resume', async () => ({ code: 1, data: 'accepted' }));
+  const f = fixture(); t.after(() => f.scope.stop());
+  f.controls.edit({ ...original, isResumeSupplement: true });
+  assert.equal(f.controls.editTarget.value, null);
+  f.current.value.runStatus = 'SUSPENDED';
+  f.controls.supplementDraft.value = '原轮次的草稿';
+  f.current.value.messages.push({ id: 'next', role: 'assistant', content: '', timestamp: 4, turnId: '103' });
+  f.controls.supplementDraft.value = '';
+  f.controls.supplementDraft.value = '新轮次的补充';
+  await f.controls.resume();
+  assert.equal(resume.mock.calls[0]!.arguments[1]!.turnId, '103');
+});
+
 test('未决卡片禁止普通恢复，必须走原卡片决策链路', async t => {
   const resume = t.mock.method(AgentAPI, 'resume', async () => ({ code: 1, data: '' }));
   const f = fixture(); t.after(() => f.scope.stop());

@@ -1,4 +1,4 @@
-import { computed, onScopeDispose, ref, watch, type ComputedRef } from 'vue';
+import { computed, onScopeDispose, reactive, ref, watch, type ComputedRef } from 'vue';
 import { AgentAPI } from '../../services/agent';
 import type { ChatAcceptance, ChatMessage, ChatSession } from '../../types/chat';
 import type { ChatCommand } from '../../services/dto/chat_command';
@@ -17,14 +17,36 @@ interface Options {
 
 export function useChatExecutionControls(options: Options) {
   const error = ref('');
-  const resumingSessionId = ref<string | null>(null);
+  const resumingSessions = reactive(new Set<string>());
   const resending = ref(false);
   const editTarget = ref<ChatMessage | null>(null);
   const editSessionId = ref<string | null>(null);
   const draft = ref('');
+  const supplements = reactive(new Map<string, { text: string; open: boolean; turnId: string | null;
+    request?: { turnId: string; requestId: string; input: string } }>());
+  const supplementState = computed(() => {
+    const id = options.session.value?.id;
+    if (!id) return undefined;
+    if (!supplements.has(id)) supplements.set(id, { text: '', open: false, turnId: null });
+    return supplements.get(id)!;
+  });
+  const resolveResumeTurnId = () => [...(options.session.value?.messages ?? [])].reverse()
+    .find(message => message.turnId && !message.unsent)?.turnId ?? null;
+  const supplementDraft = computed({ get: () => supplementState.value?.text ?? '', set: (value: string) => {
+    const state = supplementState.value;
+    if (!state) return;
+    if (!state.text.trim()) state.turnId = resolveResumeTurnId();
+    state.text = value;
+  } });
+  const supplementOpen = computed({ get: () => supplementState.value?.open ?? false, set: (value: boolean) => {
+    const state = supplementState.value;
+    if (!state) return;
+    state.open = value;
+    if (!state.text) state.turnId = resolveResumeTurnId();
+  } });
   let disposed = false;
   let controller: AbortController | undefined;
-  const isResuming = computed(() => resumingSessionId.value === options.session.value?.id);
+  const isResuming = computed(() => resumingSessions.has(options.session.value?.id ?? ''));
   const hasUnresolved = computed(() => options.session.value?.messages.some(message =>
     message.promptCards?.some(card => card.type === 'PROMISE' && card.status !== 'completed')) ?? false);
   const canResume = computed(() => options.session.value?.runStatus === 'SUSPENDED'
@@ -46,21 +68,36 @@ export function useChatExecutionControls(options: Options) {
   const resume = async () => {
     const session = options.session.value;
     if (!session || !canResume.value) return;
-    resumingSessionId.value = session.id;
+    resumingSessions.add(session.id);
     error.value = '';
+    const state = supplementState.value!;
+    const input = state.text.trim();
     try {
+      if (input) {
+        if (!state.turnId || state.turnId !== resolveResumeTurnId()) throw new Error(t('chat.controls.supplementStale'));
+        if (input.length > 20000) throw new Error(t('chat.controls.supplementTooLong'));
+        if (!state.request || state.request.input !== input || state.request.turnId !== state.turnId) {
+          state.request = { turnId: state.turnId, requestId: crypto.randomUUID(), input };
+        }
+      }
+      const supplement = input ? { ...state.request! } : undefined;
       if (!await options.ensureSubscribed(session.id)) throw new Error(t('chat.view.channelNotReady'));
-      const result = await AgentAPI.resume(session.id);
+      if (disposed || options.session.value?.id !== session.id) return;
+      if (session.runStatus !== 'SUSPENDED' || hasUnresolved.value) throw new Error(t('chat.controls.supplementStale'));
+      const result = await AgentAPI.resume(session.id, supplement);
       if (!isOk(result.code)) throw new Error(result.errMsg || t('chat.controls.resumeFailed'));
+      if (state.text.trim() === input) {
+        state.text = ''; state.open = false; state.turnId = null; state.request = undefined;
+      }
     } catch (problem) { report(session.id, problem); }
     finally {
-      resumingSessionId.value = null;
+      resumingSessions.delete(session.id);
       if (!disposed) await options.reconcile(session.id);
     }
   };
 
   const edit = (message: ChatMessage) => {
-    if (!canResend.value || message.role !== 'user' || message.unsent || !message.serverMessageId || !message.turnId) return;
+    if (!canResend.value || message.role !== 'user' || message.unsent || message.isResumeSupplement || !message.serverMessageId || !message.turnId) return;
     editTarget.value = message;
     editSessionId.value = options.session.value!.id;
     draft.value = message.content;
@@ -96,5 +133,5 @@ export function useChatExecutionControls(options: Options) {
 
   onScopeDispose(() => { disposed = true; controller?.abort(); });
   return { error, isResuming, resending, canResume, canResend, hasUnresolved,
-    editTarget, draft, resume, edit, cancelEdit, resend };
+    editTarget, draft, supplementDraft, supplementOpen, resume, edit, cancelEdit, resend };
 }

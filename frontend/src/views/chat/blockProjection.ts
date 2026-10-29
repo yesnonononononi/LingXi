@@ -129,17 +129,18 @@ export function upsertTurnViewIntoMessages(
   const existing = messages.find(message => message.role === 'assistant' && message.turnId === view.turnId);
   if (existing && !projectTurnView(existing, view)) return null;
 
-  const existingUser = messages.find(message => message.role === 'user' && message.turnId === view.turnId);
+  const existingUser = messages.find(message => message.role === 'user' && !message.isResumeSupplement && message.turnId === view.turnId);
   if (existingUser && view.userMessageId != null) existingUser.serverMessageId = view.userMessageId;
   if (existingUser && view.userImageUrls !== undefined) existingUser.imageUrls = [...view.userImageUrls];
 
   // 原气泡只补齐状态，避免替换对象导致 DOM 重建。
   if (existing) {
     // 用户气泡文本若在历史里出现（首屏从未给过），补上；已存在则不动。
-    if ((view.userMessage || view.userImageUrls?.length) && !messages.some(m => m.role === 'user' && m.turnId === view.turnId)) {
+    if ((view.userMessage || view.userImageUrls?.length) && !existingUser) {
       const userMessage = buildUserMessageFromTurnView(view, fallbackTimestamp);
       if (userMessage) messages.splice(messages.indexOf(existing), 0, userMessage);
     }
+    upsertResumeSupplements(messages, view, existing, fallbackTimestamp);
     return existing;
   }
 
@@ -152,7 +153,19 @@ export function upsertTurnViewIntoMessages(
   const userMessage = buildUserMessageFromTurnView(view, fallbackTimestamp);
   const pair = userMessage && !existingUser ? [userMessage, bubble] : [bubble];
   messages.splice(insertAt, 0, ...pair);
+  upsertResumeSupplements(messages, view, bubble, fallbackTimestamp);
   return bubble;
+}
+
+function upsertResumeSupplements(messages: ChatMessage[], view: TurnViewVO, bubble: ChatMessage, fallbackTimestamp: number): void {
+  for (const supplement of view.resumeSupplements ?? []) {
+    if (messages.some(message => message.serverMessageId === supplement.messageId)) continue;
+    messages.splice(messages.indexOf(bubble), 0, {
+      id: `user-${view.sessionId}-message-${supplement.messageId}`, serverMessageId: supplement.messageId,
+      role: 'user', turnId: view.turnId, content: supplement.text, isResumeSupplement: true,
+      timestamp: supplement.createdAt ? Date.parse(supplement.createdAt) : fallbackTimestamp,
+    });
+  }
 }
 
 /**
