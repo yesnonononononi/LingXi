@@ -72,6 +72,9 @@ lingxi:
       path: ${user.home}/.lingxi/config/providers.json
     personalization:
       path: ${user.home}/.lingxi/config/personalization.json
+  memory:
+    location: ${user.home}/.lingxi/memory/memory.md
+    maxChars: 4_000L
   tool:
     concurrent-tool-limit: 10 # 并发工具调用限制
   # AgentRequest.systemPrompt，框架只负责逐字渲染它。人设原本放在框架的
