@@ -43,6 +43,8 @@ import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
@@ -55,6 +57,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -252,6 +255,45 @@ class ResumeSupplementTest {
         assertTrue(replayed.isEmpty());
         assertEquals("新增的验收项", reloaded.getMessages().getLast().text());
         assertEquals(1, messages.findBySessionId(SESSION_ID).size());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void immutableAttributesAcceptMultipleSupplementsAndPreserveCursorAfterReload(boolean copiedMap) {
+        service.accept(SESSION_ID, command("第一条补充"));
+        String lastMessageId = service.accept(SESSION_ID,
+                new ResumeSupplementCommand(TURN_ID, "another-resume-request-id", "第二条补充"));
+        Map<String, Object> source = Map.of(ExecutionAttributes.SESSION_ID, SESSION_ID,
+                ExecutionAttributes.WORKSPACE_ID, 7L, ExecutionAttributes.LAST_RESUME_SUPPLEMENT_ID, 1L);
+        Map<String, Object> immutable = copiedMap ? Map.copyOf(source) : Collections.unmodifiableMap(new HashMap<>(source));
+        AgentRuntimeParameters parameters = staleCheckpoint.getAgentRequest().runtimeParametersOrDefault();
+        parameters.setAttributes(immutable);
+        parameters.setEventMetaData(Map.of("event", "保留事件身份"));
+        parameters.setAllowOutsideWorkspace(true);
+        ResumeSupplementInterceptor interceptor = new ResumeSupplementInterceptor(messages, turns, json);
+        LoopContext failing = new LoopContext(LoopMessages.builder().execution(staleCheckpoint).build(),
+                new ExecutionControlSignal(EXECUTION_ID), 0, ignored -> { throw new IllegalStateException("模拟追加失败"); });
+        assertThrows(IllegalStateException.class, () -> interceptor.onBeforeModelInvoke(failing));
+        assertEquals(1L, parameters.getAttributes().get(ExecutionAttributes.LAST_RESUME_SUPPLEMENT_ID));
+
+        List<Message> appended = new ArrayList<>();
+        interceptor.onBeforeModelInvoke(context(staleCheckpoint, appended));
+        assertEquals(List.of("第一条补充", "第二条补充"), appended.stream().map(Message::text).toList());
+        assertEquals(1L, immutable.get(ExecutionAttributes.LAST_RESUME_SUPPLEMENT_ID), "不能修改上游共享的属性快照");
+        assertEquals(Long.valueOf(lastMessageId), ExecutionAttributes.readLong(parameters.getAttributes(),
+                ExecutionAttributes.LAST_RESUME_SUPPLEMENT_ID));
+        assertEquals(SESSION_ID, ExecutionAttributes.readLong(parameters.getAttributes(), ExecutionAttributes.SESSION_ID));
+        assertEquals(7L, ExecutionAttributes.readLong(parameters.getAttributes(), ExecutionAttributes.WORKSPACE_ID));
+        assertEquals("保留事件身份", parameters.getEventMetaData().get("event"));
+        assertTrue(parameters.isAllowOutsideWorkspace());
+        staleCheckpoint.getMessages().addAll(appended);
+        executions.save(staleCheckpoint);
+        Execution reloaded = executions.findById(EXECUTION_ID).orElseThrow();
+        List<Message> replayed = new ArrayList<>();
+        interceptor.onBeforeModelInvoke(context(reloaded, replayed));
+        assertTrue(replayed.isEmpty(), "游标必须随检查点保存，恢复后不能重复注入");
+        assertEquals(List.of("原提问", "第一条补充", "第二条补充"),
+                reloaded.getMessages().stream().map(Message::text).toList());
     }
 
     @Test

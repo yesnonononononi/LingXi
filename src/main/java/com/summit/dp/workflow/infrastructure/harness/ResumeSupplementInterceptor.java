@@ -3,6 +3,7 @@ package com.summit.dp.workflow.infrastructure.harness;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.Execution;
+import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.InterceptorResult;
 import com.summit.core.runtime.loop.LoopContext;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.Map;
 import java.util.List;
+import java.util.HashMap;
 
 /** 从已提交历史注入补充，自动恢复提前读取的旧检查点也能收到要求。 */
 @Component
@@ -42,8 +44,8 @@ public class ResumeSupplementInterceptor implements LoopInterceptor {
         ChatTurn turn = turns.findByExecutionId(executionId).orElse(null);
         if (turn == null) return InterceptorResult.NONE;
 
-        Map<String, Object> attributes = execution.getAgentRequest().runtimeParametersOrDefault().getAttributes();
-        Long lastId = ExecutionAttributes.readLong(attributes, ExecutionAttributes.LAST_RESUME_SUPPLEMENT_ID);
+        AgentRuntimeParameters parameters = execution.getAgentRequest().runtimeParametersOrDefault();
+        Long lastId = ExecutionAttributes.readLong(parameters.getAttributes(), ExecutionAttributes.LAST_RESUME_SUPPLEMENT_ID);
 
         for (SessionMessage record : messages.findResumeSupplements(turn.getSessionId(), turn.getId())) {
             if (lastId != null && record.getId() <= lastId) continue;
@@ -52,8 +54,11 @@ public class ResumeSupplementInterceptor implements LoopInterceptor {
             } catch (JsonProcessingException error) {
                 throw new IllegalStateException("读取已保存的补充要求失败", error);
             }
-            // 游标随检查点保存，后续调用与压缩恢复不重复注入已读要求。
+            // 恢复和其他拦截器可能提供只读属性；追加成功后复制回写，游标随消息一起进入检查点。
+            Map<String, Object> attributes = new HashMap<>(parameters.getAttributes());
             attributes.put(ExecutionAttributes.LAST_RESUME_SUPPLEMENT_ID, record.getId());
+            parameters.setAttributes(Map.copyOf(attributes));
+            execution.getAgentRequest().setRuntimeParameters(parameters);
             lastId = record.getId();
         }
         return InterceptorResult.NONE;
