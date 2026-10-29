@@ -288,6 +288,7 @@ const navStyle = computed(
                 v-for="(kid, k) in item.children"
                 :key="`reach-${kid.value}`"
                 class="fill-none motion-reduce:transition-none [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:var(--bm-line-w)] [stroke:var(--bm-accent)] [transition:stroke-dashoffset_var(--bm-draw)_cubic-bezier(0.23,1,0.32,1)]"
+                :class="kid.value === active ? 'branched-menu-active-glow' : undefined"
                 :d="reach(k)"
                 :style="{
                   strokeDasharray: length(k),
@@ -308,12 +309,14 @@ const navStyle = computed(
                 :tabindex="open.has(i) ? 0 : -1"
                 @click="select(kid.value, kid)"
               >
-                <span v-if="kid.icon" class="inline-flex flex-none opacity-70 group-data-[active]/kid:opacity-100" aria-hidden="true">
+                <span v-if="kid.icon" class="inline-flex flex-none opacity-70 group-data-[active]/kid:opacity-100"
+                  :class="kid.value === active ? 'branched-menu-active-glow' : undefined" aria-hidden="true">
                   <HugeiconsIcon v-if="isIconData(kid.icon)" :icon="kid.icon" :size="15" :stroke-width="1.8" />
                   <component :is="kid.icon" v-else />
                 </span>
                 <slot name="item-label" :item="kid" :section="item" :active="kid.value === active">
-                  <span class="whitespace-nowrap truncate flex-1">{{ kid.label }}</span>
+                  <span class="whitespace-nowrap truncate flex-1"
+                    :class="kid.value === active ? 'branched-menu-active-glow' : undefined">{{ kid.label }}</span>
                 </slot>
                 <div class="shrink-0 flex items-center ml-auto" @click.stop>
                   <slot name="item-actions" :item="kid" :section="item" :active="kid.value === active" />
@@ -326,3 +329,10 @@ const navStyle = computed(
     </div>
   </nav>
 </template>
+
+<style scoped>
+/* 在省略裁剪之后生成光晕，避免文字阴影被切成矩形灰底。 */
+.branched-menu-active-glow {
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--bm-accent) 45%, transparent));
+}
+</style>
