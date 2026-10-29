@@ -132,12 +132,37 @@ function sleep(ms) {
 }
 
 /**
+ * 等待应用渲染完成的超时（毫秒）。
+ *
+ * <p><b>为什么可配：</b>冷启动（首次 vite 预构建 + 浏览器缓存为空）偶发超过 30 s，此时门禁会
+ * 抛「等待应用渲染超时」并按基础设施故障 exit 3 —— 但那台机器其实只是慢，重跑就绿。
+ * 把超时做成环境变量，慢机器上 `set "LX_VISUAL_READY_TIMEOUT_MS=60000"` 即可，
+ * <b>默认值不变（30 s）</b>，语义（超时 = exit 3 基础设施故障，不是视觉回归 exit 1）也不变。</p>
+ *
+ * @type {number}
+ */
+const READY_TIMEOUT_MS = (() => {
+  const raw = process.env.LX_VISUAL_READY_TIMEOUT_MS;
+  const value = raw ? Number(raw) : NaN;
+  if (!raw) return 30000;
+  if (!Number.isFinite(value) || value <= 0) {
+    console.error(`[warn] LX_VISUAL_READY_TIMEOUT_MS 不是正数（${raw}），回落默认 30000ms`);
+    return 30000;
+  }
+  return value;
+})();
+
+/**
  * 等应用真正渲染完（冷启动 + 首批接口失败都算稳定态，只要 #app 有足够内容）。
+ *
+ * <p>超时抛错时**必须带上现场**：`#app` 当前长度（0 = 根本没挂载，5000 附近 = 卡在渲染中）
+ * 与控制台错误数（> 0 通常是源码/依赖炸了）。没有这两个数字，报错就只剩「超时」三个字，
+ * 排查得从头复现一遍。</p>
  *
  * @param {import('./cdp.mjs').PageSession} page 页面会话。
  * @param {number} [timeoutMs] 超时毫秒。
  */
-async function waitForReady(page, timeoutMs = 30000) {
+async function waitForReady(page, timeoutMs = READY_TIMEOUT_MS) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const ready = await page.evaluate(`(() => {
@@ -148,7 +173,18 @@ async function waitForReady(page, timeoutMs = 30000) {
     if (ready) return;
     await sleep(250);
   }
-  throw new Error('等待应用渲染超时（#app 内容始终不足 5000 字符）');
+  let appLength = 'unknown';
+  try {
+    appLength = await page.evaluate('(document.querySelector("#app") || {}).innerHTML ? document.querySelector("#app").innerHTML.length : 0');
+  } catch (e) {
+    appLength = `读取失败：${e && e.message ? e.message : e}`;
+  }
+  const errors = page.consoleErrors || [];
+  const detail = errors.slice(0, 3).map((item) => String(item).slice(0, 200)).join('\n  - ');
+  throw new Error(`等待应用渲染超时（${timeoutMs}ms 内 #app 内容始终不足 5000 字符）`
+    + `\n  #app 长度：${appLength}`
+    + `\n  控制台错误数：${errors.length}${errors.length ? `\n  - ${detail}` : ''}`
+    + `\n  提示：冷启动较慢的机器可设 LX_VISUAL_READY_TIMEOUT_MS（例如 60000）后重跑。`);
 }
 
 /**
