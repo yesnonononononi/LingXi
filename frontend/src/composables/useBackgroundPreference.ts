@@ -309,6 +309,8 @@ async function init(): Promise<void> {
  */
 export function useBackgroundPreference(): {
   preference: typeof preference;
+  /** 当前背景图的 data URL（缩略图预览用）；无背景时为 null。 */
+  imageUrl: typeof imageUrl;
   hasBackground: ComputedRef<boolean>;
   pickImage: () => Promise<boolean>;
   clear: () => Promise<void>;
@@ -318,7 +320,7 @@ export function useBackgroundPreference(): {
   init: () => Promise<void>;
 } {
   const hasBackground = computed<boolean>(() => preference.value !== null);
-  return { preference, hasBackground, pickImage, clear, setFit, setScrim, applyToDocument, init };
+  return { preference, imageUrl, hasBackground, pickImage, clear, setFit, setScrim, applyToDocument, init };
 }
 
 /** 内部状态是否已写入文档根（仅供测试与调试观察，不影响渲染）。 */

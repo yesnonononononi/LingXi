@@ -76,6 +76,7 @@ export function useGeneralTab() {
   const closeGeneralDropdowns = () => {
     isLanguageOpen.value = false;
     isSoundOpen.value = false;
+    isBackgroundOpen.value = false;
   };
 
   const handleDocumentClick = (e: MouseEvent) => {
@@ -168,6 +169,7 @@ export function useGeneralTab() {
   // 状态与 DOM 写入全部在 useBackgroundPreference 里，本页只做控件绑定。
   const {
     preference: backgroundPreference,
+    imageUrl: backgroundImageUrl,
     hasBackground,
     pickImage: pickBackgroundImage,
     clear: clearBackground,
@@ -175,7 +177,24 @@ export function useGeneralTab() {
     setScrim: setBackgroundScrim,
   } = useBackgroundPreference();
   const isBackgroundPicking = ref(false);
+  /** 背景选择器下拉的展开态（与语言/提示音同层管理，点空白处一起收起）。 */
+  const isBackgroundOpen = ref(false);
   const backgroundFitOptions = BACKGROUND_FIT_OPTIONS;
+  /** 选择器上显示的当前值：无背景 = 默认背景，有背景 = 文件名（由模板截断）。 */
+  const backgroundCurrentLabel = computed<string>(() =>
+    hasBackground.value && backgroundPreference.value
+      ? backgroundPreference.value.fileName
+      : t('settings.general.backgroundDefault'),
+  );
+
+  const toggleBackgroundDropdown = (e?: Event): void => {
+    e?.stopPropagation();
+    isBackgroundOpen.value = !isBackgroundOpen.value;
+    if (isBackgroundOpen.value) {
+      isLanguageOpen.value = false;
+      isSoundOpen.value = false;
+    }
+  };
   /** 滑杆用百分数（0–100），内部状态是 0–1。 */
   const backgroundScrimPercent = computed<number>(() => {
     const scrim = backgroundPreference.value?.scrim ?? DEFAULT_BACKGROUND_SCRIM;
@@ -185,6 +204,7 @@ export function useGeneralTab() {
   const handlePickBackground = async (): Promise<void> => {
     if (isBackgroundPicking.value) return;
     isBackgroundPicking.value = true;
+    isBackgroundOpen.value = false;
     try {
       await pickBackgroundImage();
     } finally {
@@ -193,7 +213,13 @@ export function useGeneralTab() {
   };
 
   const handleClearBackground = async (): Promise<void> => {
+    isBackgroundOpen.value = false;
     await clearBackground();
+  };
+
+  /** 选择器里的「默认背景」项：等价于清除当前背景。 */
+  const handleSelectDefaultBackground = async (): Promise<void> => {
+    await handleClearBackground();
   };
 
   const handleSelectBackgroundFit = (fit: BackgroundFit): void => {
@@ -229,8 +255,13 @@ export function useGeneralTab() {
     toggleSoundDropdown,
     handleSelectSound,
     backgroundPreference,
+    backgroundImageUrl,
     hasBackground,
     isBackgroundPicking,
+    isBackgroundOpen,
+    backgroundCurrentLabel,
+    toggleBackgroundDropdown,
+    handleSelectDefaultBackground,
     backgroundFitOptions,
     backgroundScrimPercent,
     handlePickBackground,

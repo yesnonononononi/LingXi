@@ -31,8 +31,13 @@ const {
   toggleSoundDropdown,
   handleSelectSound,
   backgroundPreference,
+  backgroundImageUrl,
   hasBackground,
   isBackgroundPicking,
+  isBackgroundOpen,
+  backgroundCurrentLabel,
+  toggleBackgroundDropdown,
+  handleSelectDefaultBackground,
   backgroundFitOptions,
   backgroundScrimPercent,
   handlePickBackground,
@@ -102,65 +107,120 @@ const {
     </div>
 
     <!-- 主页背景：外观偏好，只在本机（不进后端配置），与主题 / 语言 / 提示音同类 -->
+    <!-- 布局（对齐设计稿）：第一行 = 标题说明 | 带缩略图的选择器 | 自定义 | 垃圾桶；第二行 = 填充方式 | 遮罩强度 -->
+    <!-- 全部使用 lx 令牌类，不写颜色字面量：既不增加门禁残余，也自动跟随亮/暗主题，无需 isDark 分支 -->
     <div>
-      <div class="flex items-center justify-between mb-2">
-        <div class="flex flex-col">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-col min-w-0 flex-1 basis-[180px]">
           <span class="text-xs font-medium text-lx-primary-soft">{{ t('settings.general.background') }}</span>
-          <span class="text-[11px] text-lx-muted mt-0.5">{{ t('settings.general.backgroundDesc') }}</span>
+          <span class="text-[11px] text-lx-muted mt-0.5 truncate" :title="t('settings.general.backgroundDesc')">{{ t('settings.general.backgroundDesc') }}</span>
         </div>
-        <button
-          type="button"
-          @click="handleClearBackground"
-          class="text-[11px] text-lx-muted hover:text-lx-accent cursor-pointer transition"
-        >
-          {{ t('settings.general.backgroundClear') }}
-        </button>
-      </div>
-      <div class="flex items-center gap-2">
-        <button
-          type="button"
-          :disabled="isBackgroundPicking"
-          @click="handlePickBackground"
-          class="px-3 py-1.5 rounded-xl border border-lx-border-subtle text-xs text-lx-primary hover:bg-lx-surface-hover transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {{ t('settings.general.backgroundPick') }}
-        </button>
-        <span class="text-[11px] text-lx-muted truncate">{{ hasBackground ? backgroundPreference?.fileName : t('settings.general.backgroundNone') }}</span>
-      </div>
-      <div class="flex items-center justify-between mt-2">
-        <span class="text-[11px] text-lx-muted">{{ t('settings.general.backgroundFit') }}</span>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center justify-end gap-2 shrink-0">
+          <!-- 选择器：缩略图 + 当前值 + chevron，点开是「默认背景 / 自定义图片」两项 -->
+          <div class="relative general-dropdown-container" @click.stop>
+            <button
+              type="button"
+              @click="toggleBackgroundDropdown"
+              class="flex items-center gap-2 pl-2 pr-2.5 py-1.5 rounded-xl border border-lx-border-subtle bg-lx-surface-sunken hover:bg-lx-surface-hover transition cursor-pointer w-[196px]"
+            >
+              <!-- 缩略图：有背景显示真实图，无背景显示令牌色块占位，避免选择器看起来是空的 -->
+              <span class="w-10 h-7 rounded-lg overflow-hidden shrink-0 border border-lx-border-faint bg-lx-surface-active">
+                <img v-if="backgroundImageUrl" :src="backgroundImageUrl" class="w-full h-full object-cover" alt="" />
+              </span>
+              <span class="text-xs text-lx-primary truncate flex-1 text-left">{{ backgroundCurrentLabel }}</span>
+              <svg
+                class="w-3 h-3 shrink-0 text-lx-muted transition-transform duration-200"
+                :class="{ 'rotate-180': isBackgroundOpen }"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            <transition name="dropdown-down">
+              <div
+                v-if="isBackgroundOpen"
+                class="absolute right-0 mt-1.5 w-52 rounded-xl border border-lx-border bg-lx-surface-elevated shadow-2xl py-1 z-30 text-xs origin-top"
+              >
+                <div
+                  @click="handleSelectDefaultBackground"
+                  class="px-3 py-1.5 cursor-pointer flex items-center justify-between transition-colors hover:bg-lx-surface-hover"
+                  :class="!hasBackground ? 'text-lx-accent font-medium bg-lx-accent-soft' : 'text-lx-secondary'"
+                >
+                  <span>{{ t('settings.general.backgroundDefault') }}</span>
+                  <svg v-if="!hasBackground" class="w-3.5 h-3.5 text-lx-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <div
+                  @click="handlePickBackground"
+                  class="px-3 py-1.5 cursor-pointer flex items-center justify-between transition-colors hover:bg-lx-surface-hover"
+                  :class="hasBackground ? 'text-lx-accent font-medium bg-lx-accent-soft' : 'text-lx-secondary'"
+                >
+                  <span>{{ t('settings.general.backgroundPick') }}</span>
+                  <svg v-if="hasBackground" class="w-3.5 h-3.5 text-lx-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              </div>
+            </transition>
+          </div>
+          <!-- 自定义：与选择器同义但更直白（保留一键直达，省一次展开） -->
           <button
-            v-for="option in backgroundFitOptions"
-            :key="option.value"
+            type="button"
+            :disabled="isBackgroundPicking"
+            @click="handlePickBackground"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-lx-border-subtle text-xs text-lx-primary hover:bg-lx-surface-hover transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+          >
+            <svg class="w-3.5 h-3.5 text-lx-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M4 6h16a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V7a1 1 0 011-1z" />
+            </svg>
+            {{ t('settings.general.backgroundCustom') }}
+          </button>
+          <!-- 清除：图标按钮，无背景时禁用 -->
+          <button
             type="button"
             :disabled="!hasBackground"
-            @click="handleSelectBackgroundFit(option.value)"
-            :class="[
-              'px-3 py-1.5 rounded-xl border text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed',
-              backgroundPreference?.fit === option.value
-                ? 'border-lx-border-strong bg-lx-surface-hover text-lx-primary font-medium'
-                : 'border-lx-border-subtle text-lx-muted hover:bg-lx-surface-hover'
-            ]"
+            :title="t('settings.general.backgroundClear')"
+            :aria-label="t('settings.general.backgroundClear')"
+            @click="handleClearBackground"
+            class="p-2 rounded-xl border border-lx-border-subtle text-lx-muted hover:text-lx-danger hover:bg-lx-surface-hover transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
           >
-            {{ t(option.labelKey) }}
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
+            </svg>
           </button>
         </div>
       </div>
-      <div class="flex items-center justify-between mt-2">
-        <span class="text-[11px] text-lx-muted">{{ t('settings.general.backgroundScrim') }}</span>
-        <div class="flex items-center gap-2">
+      <!-- 第二行：填充方式 + 遮罩强度（无背景时两者禁用但保留原位，避免布局跳动） -->
+      <div class="flex items-center gap-6 mt-3">
+        <div class="flex items-center gap-2 flex-1 min-w-0">
+          <span class="text-[11px] text-lx-muted shrink-0">{{ t('settings.general.backgroundFit') }}</span>
+          <select
+            :value="backgroundPreference?.fit ?? 'cover'"
+            :disabled="!hasBackground"
+            @change="handleSelectBackgroundFit(($event.target as HTMLSelectElement).value as 'cover' | 'contain')"
+            class="flex-1 min-w-0 px-2.5 py-1.5 rounded-xl border border-lx-border-subtle bg-lx-surface-sunken text-xs text-lx-primary transition cursor-pointer hover:bg-lx-surface-hover disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <option v-for="option in backgroundFitOptions" :key="option.value" :value="option.value">
+              {{ t(option.labelKey) }}
+            </option>
+          </select>
+        </div>
+        <div class="flex items-center gap-2 flex-1 min-w-0">
+          <span class="text-[11px] text-lx-muted shrink-0">{{ t('settings.general.backgroundScrim') }}</span>
           <input
             type="range"
             min="0"
             max="100"
             step="5"
-            class="lx-background-scrim-range w-32"
+            class="lx-background-scrim-range flex-1 min-w-0"
             :value="backgroundScrimPercent"
             :disabled="!hasBackground"
             @input="handleBackgroundScrimInput"
           />
-          <span class="text-[11px] text-lx-muted w-9 text-right">{{ backgroundScrimPercent }}%</span>
+          <span class="text-[11px] text-lx-muted w-9 text-right shrink-0">{{ backgroundScrimPercent }}%</span>
         </div>
       </div>
     </div>
