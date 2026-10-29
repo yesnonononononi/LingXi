@@ -32,6 +32,46 @@ export interface NotifyActivation {
   kind: string | null;
 }
 
+/** 主页背景选图结果（主进程已完成大小/类型/解码校验；取消时 canceled=true）。 */
+export interface BackgroundPickResult {
+  readonly ok: boolean;
+  readonly canceled?: boolean;
+  /** 本机文件名（**不是路径**）：渲染层只保管它，用来重启后回读。 */
+  readonly fileName?: string;
+  readonly dataUrl?: string;
+  readonly width?: number;
+  readonly height?: number;
+  readonly error?: string;
+}
+
+/** 主页背景读图结果。 */
+export interface BackgroundLoadResult {
+  readonly ok: boolean;
+  readonly fileName?: string;
+  readonly dataUrl?: string;
+  readonly error?: string;
+}
+
+/** 主页背景清除结果。 */
+export interface BackgroundClearResult {
+  readonly ok: boolean;
+  /** 实际删除的文件数。 */
+  readonly removed?: number;
+  readonly error?: string;
+}
+
+/**
+ * 主页背景 IPC（桌面端可用，Web 端为 undefined）。
+ *
+ * <p>⚠️ 三个方法都只接受/返回**文件名与 data URL**，没有任何传路径的入口 ——
+ * 目录穿越在主进程侧就会被文件名白名单拒绝。</p>
+ */
+export interface ElectronBackgroundAPI {
+  pick: () => Promise<BackgroundPickResult>;
+  load: (fileName: string) => Promise<BackgroundLoadResult>;
+  clear: () => Promise<BackgroundClearResult>;
+}
+
 export interface ElectronAPI {
 
   previewFile?: (request: FilePreviewRequest) => Promise<NativeFileResult<FilePreviewData>>;
@@ -50,6 +90,8 @@ export interface ElectronAPI {
   platform: string;
   setTitleBarTheme?: (isDark: boolean) => Promise<void>;
   customTitleBar?: boolean;
+  /** 主页背景（选图 / 读图 / 清除）。Web 端为 undefined，调用方需判空。 */
+  background?: ElectronBackgroundAPI;
   /** 自动更新（桌面端打包态可用）。Web 端为 undefined，调用方需判空。 */
   updater?: ElectronUpdaterAPI;
 }

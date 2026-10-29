@@ -27,5 +27,17 @@
       "authorizedBy": "summit"
     }
   },
-  "moves": []
+  "moves": [
+    {
+      "id": "chat-background-slot-split",
+      "from": [
+        "frontend/src/components/chat/ChatBackground.vue"
+      ],
+      "to": [
+        "frontend/src/components/background/TokenBackground.vue"
+      ],
+      "reason": "主页背景插槽化（L2）：ChatBackground 里的光晕装饰层整块搬进 TokenBackground，类名逐字保留（lx-chat-background__glow + 定位/尺寸/模糊工具类原样），ChatBackground 只留画布根与其底色/背景图样式。两文件类名合计与 HEAD 相等，零真实颜色变化；ImageBackground.vue 是新增的图片表面，不属于本次搬移。",
+      "authorizedBy": "寇豆码（L2 背景切片执行人，拆分口径由主理人任务指令给定；请评审复核）"
+    }
+  ]
 }

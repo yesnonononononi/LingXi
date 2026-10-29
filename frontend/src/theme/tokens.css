@@ -21,6 +21,9 @@
   /* 画布上方环境光晕（主页背景层专用）：暗色=极微弱的蓝/靛蓝辉光，纯 CSS var() 消费，不做工具类映射 */
   --lx-canvas-glow-from:      rgba(59, 130, 246, 0.035);
   --lx-canvas-glow-via:       rgba(99, 102, 241, 0.015);
+  /* 主页背景图遮罩（scrim）色：暗色偏重（压暗图片保文字可读），亮色偏轻；
+     最终不透明度 = 本令牌 alpha × --lx-background-scrim（用户可调强度） */
+  --lx-canvas-scrim:          rgba(0, 0, 0, 0.60);
   --lx-surface:               #080808;
   --lx-surface-elevated:      rgba(0, 0, 0, 0.902);
   --lx-surface-sunken:        #030304;
@@ -95,6 +98,8 @@ html[data-theme="light"] {
   /* 亮色画布不需要光晕：同一组令牌取 transparent，背景层因此无条件渲染也不会留色 */
   --lx-canvas-glow-from:      transparent;
   --lx-canvas-glow-via:       transparent;
+  /* 亮色遮罩偏轻：用白色压淡图片，避免暗色文字压在深色图片上 */
+  --lx-canvas-scrim:          rgba(255, 255, 255, 0.50);
   --lx-surface:               #ffffff;
   --lx-surface-elevated:      #ffffff;
   --lx-surface-sunken:        #f4f4f5;

@@ -349,7 +349,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, provide, onMounted } from 'vue';
+import { ref, provide, onMounted, shallowReactive, watch } from 'vue';
 import { t } from '../../i18n';
 import { isOk } from '../../utils/api';
 import { LogAPI } from '../../services/log';
@@ -360,6 +360,10 @@ import { DECIDE_TOOL_CALL_KEY, ANSWER_CHOICES_KEY } from '../../types/toolDecisi
 import { CHAT_MESSAGE_SLOTS_KEY } from '../../types/chatMessageSlots';
 import MessageBodyDefault from '../../components/chat/MessageBodyDefault.vue';
 import ChatBackground from '../../components/chat/ChatBackground.vue';
+import TokenBackground from '../../components/background/TokenBackground.vue';
+import ImageBackground from '../../components/background/ImageBackground.vue';
+import { BACKGROUND_SLOTS_KEY } from '../../types/backgroundSlots';
+import { useBackgroundPreference } from '../../composables/useBackgroundPreference';
 import MessageActionsBar from '../../components/chat/MessageActionsBar.vue';
 import { CHAT_INPUT_SLOTS_KEY } from '../../types/chatInputSlots';
 import ChatInputContextUsage from '../../components/chat/ChatInputContextUsage.vue';
@@ -541,6 +545,26 @@ provide(ANSWER_CHOICES_KEY, answerChoices);
 
 // 默认实现也走注册入口，保证生产与扩展组件使用同一契约。
 provide(CHAT_MESSAGE_SLOTS_KEY, { body: MessageBodyDefault, actions: MessageActionsBar });
+
+/**
+ * 主页背景装饰表面（L2 切片：本仓第一个**真实替换实现**的注册点，全仓唯一）。
+ *
+ * <p>没有背景时注册的就是内置令牌背景本身 —— 「宿主注入」因此是生产活路径，
+ * 而「未注册兜底」由无宿主挂载场景（visual 组件场景直接挂 ChatBackground）承担，
+ * 两条分支都真实存在，且只有一份实现代码，不存在 A/B 双实现漂移。</p>
+ *
+ * <p>用 shallowReactive 而不是常量对象：用户在设置页选图/清除后表面要立刻跟着换
+ * （图片变量本身是实时的，若表面不换就会出现「有图没遮罩」）。组件对象不该被深度代理，
+ * 所以刻意用 shallow 版本。</p>
+ */
+const { hasBackground: hasBackgroundImage } = useBackgroundPreference();
+const backgroundSlots = shallowReactive<{ surface: Component }>({
+  surface: hasBackgroundImage.value ? ImageBackground : TokenBackground,
+});
+watch(hasBackgroundImage, (hasBackground) => {
+  backgroundSlots.surface = hasBackground ? ImageBackground : TokenBackground;
+});
+provide(BACKGROUND_SLOTS_KEY, backgroundSlots);
 
 /**
  * 输入区插槽渲染器（同上：试点期注册的就是**内置默认实现**本身）。

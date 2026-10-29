@@ -11,6 +11,19 @@ import {
   DEFAULT_SOUND_ID,
   type SoundId,
 } from '../../../notification/sound';
+import {
+  useBackgroundPreference,
+  DEFAULT_BACKGROUND_SCRIM,
+  MAX_BACKGROUND_SCRIM,
+  MIN_BACKGROUND_SCRIM,
+  type BackgroundFit,
+} from '../../../composables/useBackgroundPreference';
+
+/** 主页背景填充方式选项；顺序即设置页里的展示顺序。 */
+const BACKGROUND_FIT_OPTIONS: { value: BackgroundFit; labelKey: string }[] = [
+  { value: 'cover', labelKey: 'settings.general.backgroundFitCover' },
+  { value: 'contain', labelKey: 'settings.general.backgroundFitContain' },
+];
 
 /** 音效 id 与文案键的映射；顺序即设置页里的展示顺序（静音在最前）。 */
 const SOUND_LABEL_KEYS: { id: SoundId; labelKey: string }[] = [
@@ -151,6 +164,51 @@ export function useGeneralTab() {
     playNotificationSound(id);
   };
 
+  // 主页背景：外观偏好，只在本机（与主题 / 语言 / 提示音同属「这台机器长什么样」）。
+  // 状态与 DOM 写入全部在 useBackgroundPreference 里，本页只做控件绑定。
+  const {
+    preference: backgroundPreference,
+    hasBackground,
+    pickImage: pickBackgroundImage,
+    clear: clearBackground,
+    setFit: setBackgroundFit,
+    setScrim: setBackgroundScrim,
+  } = useBackgroundPreference();
+  const isBackgroundPicking = ref(false);
+  const backgroundFitOptions = BACKGROUND_FIT_OPTIONS;
+  /** 滑杆用百分数（0–100），内部状态是 0–1。 */
+  const backgroundScrimPercent = computed<number>(() => {
+    const scrim = backgroundPreference.value?.scrim ?? DEFAULT_BACKGROUND_SCRIM;
+    return Math.round(scrim * 100);
+  });
+
+  const handlePickBackground = async (): Promise<void> => {
+    if (isBackgroundPicking.value) return;
+    isBackgroundPicking.value = true;
+    try {
+      await pickBackgroundImage();
+    } finally {
+      isBackgroundPicking.value = false;
+    }
+  };
+
+  const handleClearBackground = async (): Promise<void> => {
+    await clearBackground();
+  };
+
+  const handleSelectBackgroundFit = (fit: BackgroundFit): void => {
+    setBackgroundFit(fit);
+  };
+
+  const handleBackgroundScrimInput = (event: Event): void => {
+    const target = event.target as HTMLInputElement | null;
+    if (!target) return;
+    const percent = Number(target.value);
+    if (!Number.isFinite(percent)) return;
+    const clampedPercent = Math.min(MAX_BACKGROUND_SCRIM * 100, Math.max(MIN_BACKGROUND_SCRIM * 100, percent));
+    setBackgroundScrim(clampedPercent / 100);
+  };
+
   return {
     themeMode,
     isLanguageOpen,
@@ -170,5 +228,14 @@ export function useGeneralTab() {
     isSoundOpen,
     toggleSoundDropdown,
     handleSelectSound,
+    backgroundPreference,
+    hasBackground,
+    isBackgroundPicking,
+    backgroundFitOptions,
+    backgroundScrimPercent,
+    handlePickBackground,
+    handleClearBackground,
+    handleSelectBackgroundFit,
+    handleBackgroundScrimInput,
   };
 }

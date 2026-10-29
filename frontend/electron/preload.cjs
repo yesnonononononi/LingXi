@@ -12,6 +12,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   /** 调起系统原生目录选择器，返回所选文件夹绝对物理路径 */
   selectDirectory: () => ipcRenderer.invoke('dialog:select-directory'),
+  /**
+   * 主页背景（图片文件只在主进程落盘；渲染层全程只拿「文件名 + data URL」，
+   * 永远不接触路径 —— 目录穿越在主进程侧就被文件名白名单挡掉）。
+   */
+  background: {
+    /** 选图并落地保存；返回 { ok, fileName, dataUrl, width, height }，取消时 { ok:false, canceled:true } */
+    pick: () => ipcRenderer.invoke('background:pick'),
+    /** 按文件名读回 data URL（只接受纯文件名，非法名返回 { ok:false, error }） */
+    load: (fileName) => ipcRenderer.invoke('background:load', fileName),
+    /** 清除本机背景图片文件 */
+    clear: () => ipcRenderer.invoke('background:clear'),
+  },
   /** 重启应用（数据目录变更后需要重启才生效）；主进程会校验调用来源 */
   relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
   /** 发送任务通知（自绘云母卡片，系统不支持时退回原生横幅） */

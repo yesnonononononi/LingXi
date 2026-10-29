@@ -34,6 +34,7 @@ export const THEME_TOKEN_META: readonly ThemeTokenMeta[] = Object.freeze([
   def('canvas-subtle', 'surface', true, '次级画布（大区块分隔）'),
   def('canvas-glow-from', 'surface', true, '画布顶部环境光晕起点色（暗色=极微弱蓝光，亮色=transparent）'),
   def('canvas-glow-via', 'surface', true, '画布顶部环境光晕中段色（暗色=极微弱靛蓝光，亮色=transparent）'),
+  def('canvas-scrim', 'surface', true, '主页背景图遮罩色（暗色偏重/亮色偏轻，最终不透明度再乘 --lx-background-scrim）'),
   def('surface', 'surface', true, '常规卡片/面板底'),
   def('surface-elevated', 'surface', true, '浮层、下拉、弹窗底'),
   def('surface-sunken', 'surface', true, '凹陷区（输入槽、代码槽）'),

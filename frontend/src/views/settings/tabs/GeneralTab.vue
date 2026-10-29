@@ -30,6 +30,15 @@ const {
   isSoundOpen,
   toggleSoundDropdown,
   handleSelectSound,
+  backgroundPreference,
+  hasBackground,
+  isBackgroundPicking,
+  backgroundFitOptions,
+  backgroundScrimPercent,
+  handlePickBackground,
+  handleClearBackground,
+  handleSelectBackgroundFit,
+  handleBackgroundScrimInput,
 } = useGeneralTab();
 </script>
 
@@ -89,6 +98,70 @@ const {
           </svg>
           <span class="text-xs">{{ t('settings.general.themeSystem') }}</span>
         </button>
+      </div>
+    </div>
+
+    <!-- 主页背景：外观偏好，只在本机（不进后端配置），与主题 / 语言 / 提示音同类 -->
+    <div>
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex flex-col">
+          <span class="text-xs font-medium text-lx-primary-soft">{{ t('settings.general.background') }}</span>
+          <span class="text-[11px] text-lx-muted mt-0.5">{{ t('settings.general.backgroundDesc') }}</span>
+        </div>
+        <button
+          type="button"
+          @click="handleClearBackground"
+          class="text-[11px] text-lx-muted hover:text-lx-accent cursor-pointer transition"
+        >
+          {{ t('settings.general.backgroundClear') }}
+        </button>
+      </div>
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          :disabled="isBackgroundPicking"
+          @click="handlePickBackground"
+          class="px-3 py-1.5 rounded-xl border border-lx-border-subtle text-xs text-lx-primary hover:bg-lx-surface-hover transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {{ t('settings.general.backgroundPick') }}
+        </button>
+        <span class="text-[11px] text-lx-muted truncate">{{ hasBackground ? backgroundPreference?.fileName : t('settings.general.backgroundNone') }}</span>
+      </div>
+      <div class="flex items-center justify-between mt-2">
+        <span class="text-[11px] text-lx-muted">{{ t('settings.general.backgroundFit') }}</span>
+        <div class="flex items-center gap-2">
+          <button
+            v-for="option in backgroundFitOptions"
+            :key="option.value"
+            type="button"
+            :disabled="!hasBackground"
+            @click="handleSelectBackgroundFit(option.value)"
+            :class="[
+              'px-3 py-1.5 rounded-xl border text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed',
+              backgroundPreference?.fit === option.value
+                ? 'border-lx-border-strong bg-lx-surface-hover text-lx-primary font-medium'
+                : 'border-lx-border-subtle text-lx-muted hover:bg-lx-surface-hover'
+            ]"
+          >
+            {{ t(option.labelKey) }}
+          </button>
+        </div>
+      </div>
+      <div class="flex items-center justify-between mt-2">
+        <span class="text-[11px] text-lx-muted">{{ t('settings.general.backgroundScrim') }}</span>
+        <div class="flex items-center gap-2">
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="5"
+            class="lx-background-scrim-range w-32"
+            :value="backgroundScrimPercent"
+            :disabled="!hasBackground"
+            @input="handleBackgroundScrimInput"
+          />
+          <span class="text-[11px] text-lx-muted w-9 text-right">{{ backgroundScrimPercent }}%</span>
+        </div>
       </div>
     </div>
 
@@ -253,6 +326,11 @@ const {
 </template>
 
 <style scoped>
+/* 遮罩强度滑杆：配色只走令牌，避免新增非令牌颜色（残余门禁按「非令牌颜色项」计数） */
+.lx-background-scrim-range {
+  accent-color: var(--lx-accent);
+}
+
 /* 下拉菜单向下展开动画 (右上角对齐触发器) */
 .dropdown-down-enter-active {
   transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);

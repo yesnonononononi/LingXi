@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const backend = require('./backend.cjs');
 const { registerFilePreview } = require('./file-preview.cjs');
+const { registerBackgroundImages } = require('./background-images.cjs');
 const { registerNotificationWindow, normalizePayload } = require('./notification-window.cjs');
 
 const { createUpdater } = require('./updater.cjs');
@@ -140,6 +141,22 @@ const updater = createUpdater({
 function assertTrustedSender(event) {
   return !!mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents;
 }
+
+/**
+ * 主页背景图片 IPC（选图 / 读图 / 清除）。
+ *
+ * <p>与 file-preview 同构地做成独立模块：校验逻辑（文件名白名单、大小上限、解码校验、
+ * 先写后删）全在 `background-images.cjs` 里，本文件只注入 electron 能力。
+ * 三条 handler 都做来源校验 —— 渲染层虽然只拿文件名与 data URL，但落盘与删文件是高权限动作。</p>
+ */
+const backgroundImages = registerBackgroundImages({
+  ipcMain,
+  dialog,
+  nativeImage,
+  userDataDir,
+  getWindow: () => mainWindow,
+  assertTrustedSender,
+});
 
 /** 启动遮罩：后端就绪前必须给用户反馈，否则首次启动会「点了没反应」好几秒 */
 function createSplash() {
@@ -537,6 +554,8 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => {
   isQuiting = true;
   closeFilePreviews();
+  // 背景 IPC 只是注销通道，不删用户图片（图片要跨重启保留）
+  backgroundImages.close();
   // 通知卡片不进任务栏，退出后没人能关掉它们，必须在这里主动收干净
   notifications.closeAll();
 
