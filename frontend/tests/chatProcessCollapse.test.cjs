@@ -694,10 +694,18 @@ test('过程区行样式统一：终端描述与工具行同字号同色，深�
       assert.match(thinking.parent.props.class, /text-\[13px\]/, '思考标题行必须同为 13px');
       // 工具行容器是"读取/查看"这类工具标题的唯一字号来源（标题本身不带字号类），一并锁住。
       assert.match(description.parent.props.class, /text-\[13px\]/, '工具行容器必须为 13px');
-      const colors = isDark ? ['text-zinc-100', 'text-glow-white'] : ['text-zinc-700'];
+      const colors = isDark ? ['text-zinc-100'] : ['text-zinc-700'];
       for (const color of colors) {
         assert.equal(description.props.class.split(' ').includes(color), true, `终端描述必须与工具行同色：${color}`);
       }
+      // 发光不得挂在会被 overflow 裁剪的元素上：description 是 truncate 按钮，自身即
+      // overflow:hidden，text-shadow 会被裁成文字框大小的矩形灰盒（dark 模式实测缺陷）。
+      // 契约由 tests/processRowGlowClipping.test.cjs 统一守卫。
+      assert.equal(
+        description.props.class.split(' ').some(cls => cls.startsWith('text-glow-')),
+        false,
+        '终端描述（truncate）不得带 text-glow-*：光晕会被自身裁剪框切成矩形'
+      );
       assert.equal(description.props.class.split(' ').includes('[text-shadow:none]'), false, '终端描述不得再单独关掉发光');
       // 深度思考标题刻意低一档：同字号、不同色，用它把「思考」和「工具动作」分开。
       const thinkingColor = isDark ? 'text-zinc-400' : 'text-zinc-500';

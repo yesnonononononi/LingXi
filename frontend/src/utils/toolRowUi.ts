@@ -119,7 +119,10 @@ export function canExpandToolRow(toolName?: string): boolean {
  * <p>样式集中在此的理由同 {@link toolStatusDotClass}：模板里只保留一次类绑定，避免分支散落。</p>
  */
 export function toolRowHeaderClass(tool: ToolCallTrace, dark: boolean): string[] {
-  const base = dark ? 'text-zinc-200 text-glow-subtle' : 'text-zinc-600';
+  // dark 基底刻意不带 text-glow-*：text-shadow 是继承属性，挂在行容器上等于粘到每个
+  // `truncate` 子元素上，被其自身 overflow:hidden 裁成矩形灰盒。发光只留给行内不可裁剪的
+  // 分类名（标题强调），守卫见 tests/processRowGlowClipping.test.cjs。
+  const base = dark ? 'text-zinc-200' : 'text-zinc-600';
   if (!canExpandToolRow(tool.toolName)) return [base, 'cursor-default'];
   return [base, 'cursor-pointer hover:text-lx-primary'];
 }

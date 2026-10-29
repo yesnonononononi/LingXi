@@ -77,8 +77,10 @@ test('canExpandToolRow：读文件没有详情，其余工具保留详情', () =
 });
 
 test('toolRowHeaderClass：不可展开的行没有「可点」的视觉暗示', () => {
+  // dark 基底不含 text-glow-*：光晕会继承进 truncate 子元素并被裁成矩形灰盒，
+  // 契约由 tests/processRowGlowClipping.test.cjs 守卫。
   assert.deepEqual(toolRowHeaderClass(tool(AgentToolName.ReadFile), true),
-    ['text-zinc-200 text-glow-subtle', 'cursor-default']);
+    ['text-zinc-200', 'cursor-default']);
   assert.deepEqual(toolRowHeaderClass(tool(AgentToolName.EditFile), false),
     ['text-zinc-600', 'cursor-pointer hover:text-lx-primary']);
 });

@@ -75,7 +75,7 @@ const copyResult = (): void => {
       <!-- 头部操作条 (始终显示，带旋转指示箭头和类型图标) -->
       <div
         @click="toggle"
-        class="flex items-center gap-1.5 text-[13px] py-0.5 transition group select-none w-full max-w-full min-w-0 overflow-hidden text-left"
+        class="flex items-center gap-1.5 text-[13px] py-0.5 transition group select-none w-full max-w-full min-w-0 text-left"
         :class="toolRowHeaderClass(tool, isDark)"
         :title="cleanDisplayPath(meta?.description) || resolveToolRenderName(tool.toolName)"
       >
@@ -120,7 +120,7 @@ const copyResult = (): void => {
             :title="canPreviewFile ? t('chat.message.previewFile') : undefined"
             @click.stop="previewTarget()"
             class="border-b border-dotted font-mono text-[12.5px] pb-px transition-colors truncate min-w-0"
-            :class="isDark ? 'border-white/30 text-zinc-200 text-glow-subtle' : 'border-zinc-400 text-zinc-700'"
+            :class="isDark ? 'border-white/30 text-zinc-200' : 'border-zinc-400 text-zinc-700'"
           >
             {{ cleanDisplayPath(meta?.target) }}
           </button>
@@ -141,7 +141,7 @@ const copyResult = (): void => {
             :aria-expanded="expanded"
             @click.stop="toggle"
             class="transition-colors truncate min-w-0 font-medium"
-            :class="isDark ? 'text-[13px] text-zinc-100 text-glow-white' : 'text-[13px] text-zinc-700'"
+            :class="isDark ? 'text-[13px] text-zinc-100' : 'text-[13px] text-zinc-700'"
           >
             {{ cleanDisplayPath(meta?.description) || resolveToolRenderName(tool.toolName) }}
           </button>
