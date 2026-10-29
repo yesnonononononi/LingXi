@@ -39,6 +39,14 @@ public class McpVO {
     private String description;
     private Long initializationTimeout;
     private Long executionTimeout;
+    /** 显式协议版本；null 表示不钉版本。非敏感字段，无需掩码 */
+    private String protocolVersion;
+    /** 自动健康检查开关；null 表示沿用客户端库默认 */
+    private Boolean autoHealthCheck;
+    /** 健康检查间隔，毫秒；null 表示沿用客户端库默认 */
+    private Long healthCheckInterval;
+    /** 重连间隔，毫秒；null 表示沿用客户端库默认 */
+    private Long reconnectInterval;
     private Integer maxOutput;
     private Integer status;
 }

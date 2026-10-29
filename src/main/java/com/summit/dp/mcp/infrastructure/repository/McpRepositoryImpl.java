@@ -87,6 +87,12 @@ public class McpRepositoryImpl extends AbstractJsonRepository<Mcp, McpPO>
                 .description(po.getDescription())
                 .initializationTimeout(toDuration(po.getInitializationTimeout(), Mcp.DEFAULT_INITIALIZATION_TIMEOUT))
                 .executionTimeout(toDuration(po.getExecutionTimeout(), Mcp.DEFAULT_EXECUTION_TIMEOUT))
+                // 客户端容错参数：null 必须保持 null（= 沿用客户端库默认）。
+                // 刻意不用 toDuration(...)：它会把 null 填成缺省值，等于悄悄改变老配置的行为。
+                .protocolVersion(po.getProtocolVersion())
+                .autoHealthCheck(po.getAutoHealthCheck())
+                .healthCheckInterval(toNullableDuration(po.getHealthCheckInterval()))
+                .reconnectInterval(toNullableDuration(po.getReconnectInterval()))
                 .maxOutput(po.getMaxOutput() == null ? Mcp.DEFAULT_MAX_OUTPUT : po.getMaxOutput())
                 .status(po.getStatus())
                 .createAt(po.getCreateTime())
@@ -119,6 +125,12 @@ public class McpRepositoryImpl extends AbstractJsonRepository<Mcp, McpPO>
                         ? null : model.getInitializationTimeout().toMillis())
                 .executionTimeout(model.getExecutionTimeout() == null
                         ? null : model.getExecutionTimeout().toMillis())
+                .protocolVersion(model.getProtocolVersion())
+                .autoHealthCheck(model.getAutoHealthCheck())
+                .healthCheckInterval(model.getHealthCheckInterval() == null
+                        ? null : model.getHealthCheckInterval().toMillis())
+                .reconnectInterval(model.getReconnectInterval() == null
+                        ? null : model.getReconnectInterval().toMillis())
                 .maxOutput(model.getMaxOutput())
                 .status(model.getStatus())
                 .createTime(model.getCreateAt())
@@ -174,5 +186,15 @@ public class McpRepositoryImpl extends AbstractJsonRepository<Mcp, McpPO>
 
     private Duration toDuration(Long millis, Duration fallback) {
         return millis == null || millis <= 0 ? fallback : Duration.ofMillis(millis);
+    }
+
+    /**
+     * 毫秒 → Duration，null 保持 null。
+     *
+     * <p>客户端容错参数（协议版本 / 健康检查 / 重连）的 null 语义是「沿用客户端库默认」，
+     * 不能像超时那样填缺省值，否则老配置的连接行为会被静默改变。</p>
+     */
+    private Duration toNullableDuration(Long millis) {
+        return millis == null ? null : Duration.ofMillis(millis);
     }
 }

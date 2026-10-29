@@ -47,6 +47,14 @@ public class McpPO {
     private Long initializationTimeout;
     /** 执行超时，毫秒 */
     private Long executionTimeout;
+    /** 显式协议版本（{@code yyyy-MM-dd}）；NULL 表示走客户端库协议探测 */
+    private String protocolVersion;
+    /** 自动健康检查开关（1 开 / 0 关）；NULL 表示沿用客户端库默认 */
+    private Boolean autoHealthCheck;
+    /** 健康检查间隔，毫秒；NULL 表示沿用客户端库默认 */
+    private Long healthCheckInterval;
+    /** 重连间隔，毫秒；NULL 表示沿用客户端库默认 */
+    private Long reconnectInterval;
     private Integer maxOutput;
     /** 1 = 启用，0 = 停用 */
     private Integer status;

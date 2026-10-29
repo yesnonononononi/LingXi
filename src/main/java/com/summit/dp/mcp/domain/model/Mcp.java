@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * Mcp 领域模型。
@@ -61,6 +62,16 @@ public class Mcp {
     public static final int DEFAULT_MAX_OUTPUT = 20000;
 
     /**
+     * 显式协议版本上限：与库中 {@code protocol_version VARCHAR(32)} 一致
+     */
+    public static final int PROTOCOL_VERSION_MAX_LENGTH = 32;
+
+    /**
+     * 协议版本形态：{@code yyyy-MM-dd}，如 {@code 2025-11-25}
+     */
+    private static final Pattern PROTOCOL_VERSION_PATTERN = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
+
+    /**
      * 1 = 启用，0 = 停用；与库中 status 列一致
      */
     public static final int STATUS_ENABLED = 1;
@@ -111,6 +122,28 @@ public class Mcp {
     private Duration initializationTimeout;
 
     private Duration executionTimeout;
+
+    /**
+     * 显式协议版本，如 {@code 2025-11-25}；{@code null} 表示不钉版本，由客户端库自行探测。
+     * <p>钉住版本是消除「探测被 server 以 400 拒绝 → 无限重连刷屏」的手段。</p>
+     */
+    private String protocolVersion;
+
+    /**
+     * 自动健康检查开关；{@code null} 表示沿用客户端库默认（开启）。
+     * <p>三态而非 boolean：布尔无法表达「未设置」。改成基本类型会让老配置凭空获得一个值。</p>
+     */
+    private Boolean autoHealthCheck;
+
+    /**
+     * 健康检查间隔；{@code null} 表示沿用客户端库默认间隔
+     */
+    private Duration healthCheckInterval;
+
+    /**
+     * 重连间隔；{@code null} 表示沿用客户端库默认间隔
+     */
+    private Duration reconnectInterval;
 
     /**
      * 单次工具输出最大字符数
@@ -191,6 +224,56 @@ public class Mcp {
     public void changeMaxOutput(int maxOutput) {
         throwEIf("Mcp maxOutput must be positive", maxOutput <= 0);
         this.maxOutput = maxOutput;
+        update();
+    }
+
+    /**
+     * 变更显式协议版本；{@code null} / 空白表示「不钉版本」，恢复客户端库的协议探测。
+     *
+     * <p>护栏与框架侧 {@code McpValidator} 一致：trim 后非空、长度不超过
+     * {@link #PROTOCOL_VERSION_MAX_LENGTH}、形态为 {@code yyyy-MM-dd}。库里存的是 trim 后的值，
+     * 避免「同一版本因前后空格被当成两个」。</p>
+     */
+    public void changeProtocolVersion(String protocolVersion) {
+        String normalized = protocolVersion == null ? null : protocolVersion.trim();
+        if (normalized != null && normalized.isEmpty()) normalized = null;
+        if (normalized != null) {
+            // 两条护栏分开写：合并成一条会丢掉「超长」与「形态不符」的区别，也让人分不清该改哪儿
+            throwEIf("Mcp protocolVersion is too long",
+                    normalized.length() > PROTOCOL_VERSION_MAX_LENGTH);
+            throwEIf("Mcp protocolVersion must look like 2025-11-25",
+                    !PROTOCOL_VERSION_PATTERN.matcher(normalized).matches());
+        }
+        this.protocolVersion = normalized;
+        update();
+    }
+
+    /**
+     * 变更自动健康检查开关；{@code null} 表示沿用客户端库默认（开启），必须原样保留 null。
+     */
+    public void changeAutoHealthCheck(Boolean autoHealthCheck) {
+        this.autoHealthCheck = autoHealthCheck;
+        update();
+    }
+
+    /**
+     * 变更健康检查间隔；{@code null} 表示沿用客户端库默认，非 null 时不得小于 1ms。
+     */
+    public void changeHealthCheckInterval(Duration healthCheckInterval) {
+        throwEIf("Mcp healthCheckInterval must be at least 1ms",
+                healthCheckInterval != null
+                        && healthCheckInterval.compareTo(Duration.ofMillis(1)) < 0);
+        this.healthCheckInterval = healthCheckInterval;
+        update();
+    }
+
+    /**
+     * 变更重连间隔；{@code null} 表示沿用客户端库默认，非 null 时不得小于 1ms。
+     */
+    public void changeReconnectInterval(Duration reconnectInterval) {
+        throwEIf("Mcp reconnectInterval must be at least 1ms",
+                reconnectInterval != null && reconnectInterval.compareTo(Duration.ofMillis(1)) < 0);
+        this.reconnectInterval = reconnectInterval;
         update();
     }
 

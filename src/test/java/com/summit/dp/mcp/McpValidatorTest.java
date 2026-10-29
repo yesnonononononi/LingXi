@@ -68,6 +68,75 @@ class McpValidatorTest {
                 "应指出描述长度限制，实际: " + error);
     }
 
+    /* ---------------- 客户端容错参数（协议版本 / 健康检查间隔 / 重连间隔） ---------------- */
+
+    @Test
+    @DisplayName("协议版本形态为 yyyy-MM-dd，前后空格由应用层归一")
+    void protocolVersionShapeIsGuarded() {
+        McpCommand valid = createCommand("github", null);
+        valid.setProtocolVersion("2025-11-25");
+        assertNull(validator(repository()).validateForCreate(valid));
+
+        McpCommand padded = createCommand("github", null);
+        padded.setProtocolVersion("  2025-11-25  ");
+        assertNull(validator(repository()).validateForCreate(padded));
+
+        McpCommand malformed = createCommand("github", null);
+        malformed.setProtocolVersion("abc");
+        assertTrue(validator(repository()).validateForCreate(malformed).contains("格式"),
+                "非法协议版本应被指出");
+
+        McpCommand overlong = createCommand("github", null);
+        overlong.setProtocolVersion("2025-11-25" + "x".repeat(23));
+        assertTrue(validator(repository()).validateForCreate(overlong).contains("长度"),
+                "超过 32 字符应报长度错误");
+
+        // 恰好 32 字符：长度合法但形态不符，必须落到「格式」而不是「长度」
+        McpCommand exactlyMax = createCommand("github", null);
+        exactlyMax.setProtocolVersion("2025-11-25" + "x".repeat(22));
+        assertTrue(validator(repository()).validateForCreate(exactlyMax).contains("格式"),
+                "32 字符在长度上限内，错误应来自形态");
+
+        // 空白视同「清空」，由应用层归一成 null，不算非法
+        McpCommand blank = createCommand("github", null);
+        blank.setProtocolVersion("   ");
+        assertNull(validator(repository()).validateForCreate(blank));
+    }
+
+    @Test
+    @DisplayName("健康检查间隔与重连间隔都不得小于 1 毫秒")
+    void tuningIntervalsMustBeAtLeastOneMillisecond() {
+        McpCommand zeroHealth = createCommand("github", null);
+        zeroHealth.setHealthCheckInterval(0L);
+        assertTrue(validator(repository()).validateForCreate(zeroHealth).contains("健康检查间隔"));
+
+        McpCommand negativeHealth = createCommand("github", null);
+        negativeHealth.setHealthCheckInterval(-1L);
+        assertTrue(validator(repository()).validateForCreate(negativeHealth).contains("健康检查间隔"));
+
+        McpCommand zeroReconnect = createCommand("github", null);
+        zeroReconnect.setReconnectInterval(0L);
+        assertTrue(validator(repository()).validateForCreate(zeroReconnect).contains("重连间隔"));
+
+        // 恰好 1 毫秒是合法下界
+        McpCommand oneMilli = createCommand("github", null);
+        oneMilli.setHealthCheckInterval(1L);
+        oneMilli.setReconnectInterval(1L);
+        assertNull(validator(repository()).validateForCreate(oneMilli));
+    }
+
+    @Test
+    @DisplayName("客户端容错参数全部缺省时校验放行（沿用客户端库默认）")
+    void absentTuningIsValid() {
+        McpCommand command = createCommand("github", null);
+        command.setAutoHealthCheck(null);
+        command.setHealthCheckInterval(null);
+        command.setReconnectInterval(null);
+        command.setProtocolVersion(null);
+
+        assertNull(validator(repository()).validateForCreate(command));
+    }
+
     /* ---------------- 夹具 ---------------- */
 
     private McpValidator validator(McpRepository repository) {

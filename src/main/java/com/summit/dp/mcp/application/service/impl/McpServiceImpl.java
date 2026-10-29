@@ -181,6 +181,34 @@ public class McpServiceImpl implements McpService {
             model.changeExecutionTimeout(Duration.ofMillis(command.getExecutionTimeout()));
         if (command.getMaxOutput() != null) model.changeMaxOutput(command.getMaxOutput());
         if (command.getStatus() != null) model.changeEnabled(command.getStatus() == Mcp.STATUS_ENABLED);
+
+        // 4 个客户端容错字段刻意「无条件覆盖」，不做 null 判断（与上面老字段的条件变更不同）：
+        // 1. 它们是本次新增，库中历史行全为 NULL，不存在「老数据被误清」的风险；
+        // 2. update 的唯一调用方是设置页表单，且表单全量提交（四个控件状态始终随请求带上）；
+        // 3. 若沿用 null=保持原值，用户在 UI 上就永远清不掉已填的协议版本（单向开关），
+        //    而这 4 个字段的 null 恰恰有语义：走客户端库默认。
+        model.changeProtocolVersion(toProtocolVersionOrNull(command.getProtocolVersion()));
+        model.changeAutoHealthCheck(command.getAutoHealthCheck());
+        model.changeHealthCheckInterval(toDurationOrNull(command.getHealthCheckInterval()));
+        model.changeReconnectInterval(toDurationOrNull(command.getReconnectInterval()));
+    }
+
+    /**
+     * 毫秒 → Duration，null 保持 null。
+     * <p>客户端容错字段的 null 是「沿用客户端库默认」，不能回落到任何业务缺省值。</p>
+     */
+    private Duration toDurationOrNull(Long millis) {
+        return millis == null ? null : Duration.ofMillis(millis);
+    }
+
+    /**
+     * 归一协议版本：空白视同未设置（null），其余 trim 后原样返回。
+     * <p>空字符串冒充 null 会让「清空输入框」下发出一个非法版本，这里收口成 null。</p>
+     */
+    private String toProtocolVersionOrNull(String protocolVersion) {
+        if (protocolVersion == null) return null;
+        String trimmed = protocolVersion.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     /**
@@ -223,6 +251,12 @@ public class McpServiceImpl implements McpService {
                         ? null : model.getInitializationTimeout().toMillis())
                 .executionTimeout(model.getExecutionTimeout() == null
                         ? null : model.getExecutionTimeout().toMillis())
+                .protocolVersion(model.getProtocolVersion())
+                .autoHealthCheck(model.getAutoHealthCheck())
+                .healthCheckInterval(model.getHealthCheckInterval() == null
+                        ? null : model.getHealthCheckInterval().toMillis())
+                .reconnectInterval(model.getReconnectInterval() == null
+                        ? null : model.getReconnectInterval().toMillis())
                 .maxOutput(model.getMaxOutput())
                 .status(model.getStatus())
                 .build();
@@ -253,6 +287,11 @@ public class McpServiceImpl implements McpService {
                 .executionTimeout(command.getExecutionTimeout() == null
                         ? Mcp.DEFAULT_EXECUTION_TIMEOUT : Duration.ofMillis(command.getExecutionTimeout()))
                 .maxOutput(command.getMaxOutput() == null ? Mcp.DEFAULT_MAX_OUTPUT : command.getMaxOutput())
+                // 客户端容错参数原样透传：这里严禁套用任何缺省值，null 就是「沿用客户端库默认」
+                .protocolVersion(toProtocolVersionOrNull(command.getProtocolVersion()))
+                .autoHealthCheck(command.getAutoHealthCheck())
+                .healthCheckInterval(toDurationOrNull(command.getHealthCheckInterval()))
+                .reconnectInterval(toDurationOrNull(command.getReconnectInterval()))
                 .status(command.getStatus() == null ? Mcp.STATUS_ENABLED : command.getStatus())
                 .createAt(now)
                 .updateAt(now)

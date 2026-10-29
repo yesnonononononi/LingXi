@@ -28,6 +28,14 @@ public class McpCommand {
     private Long initializationTimeout;
     /** 执行超时，毫秒；null 表示走缺省 */
     private Long executionTimeout;
+    /** 显式协议版本，如 {@code 2025-11-25}；null 表示不钉版本（走客户端库协议探测） */
+    private String protocolVersion;
+    /** 自动健康检查开关；null 表示沿用客户端库默认 */
+    private Boolean autoHealthCheck;
+    /** 健康检查间隔，毫秒；null 表示沿用客户端库默认 */
+    private Long healthCheckInterval;
+    /** 重连间隔，毫秒；null 表示沿用客户端库默认 */
+    private Long reconnectInterval;
     private Integer maxOutput;
     private Integer status;
 }

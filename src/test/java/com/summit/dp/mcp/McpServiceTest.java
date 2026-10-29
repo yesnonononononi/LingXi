@@ -523,4 +523,177 @@ class McpServiceTest {
         assertEquals(3000, updated.getMaxOutput());
         assertEquals(Mcp.STATUS_DISABLED, updated.getStatus());
     }
+
+    /* ---------------- 客户端容错参数（契约 4.1.1：update 无条件覆盖） ---------------- */
+
+    @Test
+    @DisplayName("update 传 null 时必须把已配置的协议版本清空，用户才能回到库默认探测")
+    void updateClearsProtocolVersionWhenNullIsSubmitted() {
+        McpRepository repository = repository();
+        Mcp stored = sampleModel();
+        stored.changeProtocolVersion("2025-11-25");
+        when(repository.findById(1L)).thenReturn(Optional.of(stored));
+
+        McpCommand command = new McpCommand();
+        command.setId(1L);
+        // 设置页「清空输入框」→ 前端显式下发 null
+        command.setProtocolVersion(null);
+
+        Result<Void> result = service(repository).update(command);
+
+        assertNull(result.getErrMsg(), "成功路径不应带错误信息: " + result.getErrMsg());
+        ArgumentCaptor<Mcp> captor = ArgumentCaptor.forClass(Mcp.class);
+        verify(repository).updateById(captor.capture());
+        assertNull(captor.getValue().getProtocolVersion(),
+                "null 必须覆盖成 null；沿用「null = 保持原值」会让协议版本永远清不掉");
+    }
+
+    @Test
+    @DisplayName("update 传 null 时四个容错字段全清空，老字段仍保持原值")
+    void updateClearsEveryTuningFieldWithoutTouchingLegacyFields() {
+        McpRepository repository = repository();
+        Mcp stored = sampleModel();
+        stored.changeProtocolVersion("2025-11-25");
+        stored.changeAutoHealthCheck(Boolean.TRUE);
+        stored.changeHealthCheckInterval(Duration.ofSeconds(30));
+        stored.changeReconnectInterval(Duration.ofSeconds(5));
+        stored.changeExecutionTimeout(Duration.ofSeconds(90));
+        when(repository.findById(1L)).thenReturn(Optional.of(stored));
+
+        McpCommand command = new McpCommand();
+        command.setId(1L);
+
+        service(repository).update(command);
+
+        ArgumentCaptor<Mcp> captor = ArgumentCaptor.forClass(Mcp.class);
+        verify(repository).updateById(captor.capture());
+        Mcp updated = captor.getValue();
+        assertNull(updated.getProtocolVersion());
+        assertNull(updated.getAutoHealthCheck());
+        assertNull(updated.getHealthCheckInterval());
+        assertNull(updated.getReconnectInterval());
+        assertEquals(Duration.ofSeconds(90), updated.getExecutionTimeout(),
+                "老字段的 null 仍是「保持原值」，不能被顺带改成无条件覆盖");
+        assertEquals(Duration.ofSeconds(30), updated.getInitializationTimeout());
+    }
+
+    @Test
+    @DisplayName("update 显式传值时四个容错字段被写入")
+    void updateWritesTuningWhenValuesAreSubmitted() {
+        McpRepository repository = repository();
+        Mcp stored = sampleModel();
+        when(repository.findById(1L)).thenReturn(Optional.of(stored));
+
+        McpCommand command = new McpCommand();
+        command.setId(1L);
+        command.setProtocolVersion(" 2025-11-25 ");
+        command.setAutoHealthCheck(Boolean.FALSE);
+        command.setHealthCheckInterval(1500L);
+        command.setReconnectInterval(2500L);
+
+        service(repository).update(command);
+
+        ArgumentCaptor<Mcp> captor = ArgumentCaptor.forClass(Mcp.class);
+        verify(repository).updateById(captor.capture());
+        Mcp updated = captor.getValue();
+        assertEquals("2025-11-25", updated.getProtocolVersion(), "落库前应 trim");
+        assertEquals(Boolean.FALSE, updated.getAutoHealthCheck());
+        assertEquals(Duration.ofMillis(1500), updated.getHealthCheckInterval());
+        assertEquals(Duration.ofMillis(2500), updated.getReconnectInterval());
+    }
+
+    @Test
+    @DisplayName("新增原样透传容错参数：绝不套任何缺省值")
+    void addPassesTuningThroughWithoutDefaults() {
+        McpRepository repository = repository();
+
+        McpCommand command = new McpCommand();
+        command.setName("tuned");
+        command.setTransport(Mcp.Transport.STREAMABLE_HTTP.toString());
+        command.setUrl("https://tuned/mcp");
+
+        service(repository).add(command);
+
+        ArgumentCaptor<Mcp> captor = ArgumentCaptor.forClass(Mcp.class);
+        verify(repository).save(captor.capture());
+        Mcp saved = captor.getValue();
+        assertNull(saved.getProtocolVersion(), "缺省时不得填业务默认值");
+        assertNull(saved.getAutoHealthCheck(), "缺省时不得填业务默认值");
+        assertNull(saved.getHealthCheckInterval(), "缺省时不得填业务默认值");
+        assertNull(saved.getReconnectInterval(), "缺省时不得填业务默认值");
+    }
+
+    @Test
+    @DisplayName("查询出口按毫秒返回四个容错字段")
+    void findByIdReturnsTuningInMilliseconds() {
+        McpRepository repository = repository();
+        Mcp stored = sampleModel();
+        stored.changeProtocolVersion("2025-11-25");
+        stored.changeAutoHealthCheck(Boolean.TRUE);
+        stored.changeHealthCheckInterval(Duration.ofMillis(1500));
+        stored.changeReconnectInterval(Duration.ofMillis(2500));
+        when(repository.findById(1L)).thenReturn(Optional.of(stored));
+
+        McpVO vo = service(repository).findById(1L).getData();
+
+        assertEquals("2025-11-25", vo.getProtocolVersion());
+        assertEquals(Boolean.TRUE, vo.getAutoHealthCheck());
+        assertEquals(Long.valueOf(1500L), vo.getHealthCheckInterval());
+        assertEquals(Long.valueOf(2500L), vo.getReconnectInterval());
+    }
+
+    @Test
+    @DisplayName("装配到框架配置：四个容错字段逐一搬运，null 保持 null")
+    void assemblerCarriesTuningIntoFrameworkConf() {
+        Mcp http = sampleModel();
+        http.changeProtocolVersion("2025-11-25");
+        http.changeAutoHealthCheck(Boolean.FALSE);
+        http.changeHealthCheckInterval(Duration.ofMillis(1500));
+        http.changeReconnectInterval(Duration.ofMillis(2500));
+
+        McpConfig.StreamableHttp httpConf = (McpConfig.StreamableHttp)
+                new McpConfigAssembler().toServer(http).conf();
+        assertEquals("2025-11-25", httpConf.protocolVersion());
+        assertEquals(Boolean.FALSE, httpConf.autoHealthCheck());
+        assertEquals(Duration.ofMillis(1500), httpConf.healthCheckInterval());
+        assertEquals(Duration.ofMillis(2500), httpConf.reconnectInterval());
+
+        Mcp stdio = Mcp.builder().id(2L).name("shadcn").transport(Mcp.Transport.STDIO)
+                .command(List.of("npx", "shadcn@latest", "mcp")).env(Map.of())
+                .initializationTimeout(Duration.ofSeconds(30))
+                .executionTimeout(Duration.ofSeconds(60)).maxOutput(20000)
+                .status(Mcp.STATUS_ENABLED).build();
+        McpConfig.Stdio stdioConf = (McpConfig.Stdio) new McpConfigAssembler().toServer(stdio).conf();
+        assertNull(stdioConf.protocolVersion());
+        assertNull(stdioConf.autoHealthCheck());
+        assertNull(stdioConf.healthCheckInterval());
+        assertNull(stdioConf.reconnectInterval());
+    }
+
+    @Test
+    @DisplayName("Controller 平移全部字段到 Command，不漏容错参数")
+    void controllerCopiesTuningToCommand() {
+        McpRepository repository = repository();
+        McpServiceImpl impl = service(repository);
+        McpController controller = new McpController(impl);
+
+        McpRequest request = new McpRequest();
+        request.setId(5L);
+        request.setProtocolVersion("2025-11-25");
+        request.setAutoHealthCheck(Boolean.TRUE);
+        request.setHealthCheckInterval(1500L);
+        request.setReconnectInterval(2500L);
+
+        when(repository.findById(5L)).thenReturn(Optional.of(sampleModel()));
+
+        controller.update(request);
+
+        ArgumentCaptor<Mcp> captor = ArgumentCaptor.forClass(Mcp.class);
+        verify(repository).updateById(captor.capture());
+        Mcp updated = captor.getValue();
+        assertEquals("2025-11-25", updated.getProtocolVersion());
+        assertEquals(Boolean.TRUE, updated.getAutoHealthCheck());
+        assertEquals(Duration.ofMillis(1500), updated.getHealthCheckInterval());
+        assertEquals(Duration.ofMillis(2500), updated.getReconnectInterval());
+    }
 }

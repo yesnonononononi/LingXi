@@ -87,6 +87,9 @@ public class H2SchemaInitializer {
                         "db/migration/V17_session_message_resume_request.sql"), StandardCharsets.UTF_8));
                 ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
                         "db/migration/V18_model_config_use_provider.sql"), StandardCharsets.UTF_8));
+                // V19：mcp 补客户端容错参数（协议版本/健康检查/重连；脚本自带 IF NOT EXISTS，新库天然空操作）。
+                ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                        "db/migration/V19_mcp_client_tuning.sql"), StandardCharsets.UTF_8));
             }
         };
     }

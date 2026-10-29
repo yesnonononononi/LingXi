@@ -35,6 +35,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -188,6 +189,51 @@ class JsonRepositoriesTest {
         assertTrue(mcps.findByName("不存在").isEmpty());
         assertEquals(2, mcps.findList(List.of(2L, 1L)).size());
         assertEquals("中文", mcps.findById(1L).orElseThrow().getEnv().get("LANG"));
+    }
+
+    /**
+     * 客户端容错参数必须原样穿过 JSON 仓储：配过的值要读得回来，null 要真的是 null。
+     *
+     * <p>这里刻意不用 {@code toDuration(..., DEFAULT)} 那类带缺省值的转换 —— 一旦回落成 20s/60s，
+     * 「沿用客户端库默认」就被悄悄换成了某个业务值，老配置的连接行为随之改变。</p>
+     */
+    @Test
+    void mcpClientTuningSurvivesReloadAndCanBeCleared() {
+        Mcp tuned = Mcp.builder().id(11L).name("调过的").transport(Mcp.Transport.STREAMABLE_HTTP)
+                .url("https://mcp.context7.com/mcp").status(1).build();
+        tuned.changeProtocolVersion("2025-11-25");
+        tuned.changeAutoHealthCheck(Boolean.FALSE);
+        tuned.changeHealthCheckInterval(Duration.ofSeconds(30));
+        tuned.changeReconnectInterval(Duration.ofSeconds(5));
+        mcps.save(tuned);
+
+        Mcp loaded = mcps.findById(11L).orElseThrow();
+        assertEquals("2025-11-25", loaded.getProtocolVersion());
+        assertEquals(Boolean.FALSE, loaded.getAutoHealthCheck());
+        assertEquals(Duration.ofSeconds(30), loaded.getHealthCheckInterval());
+        assertEquals(Duration.ofSeconds(5), loaded.getReconnectInterval());
+
+        // 没配过的服务：四个字段必须都是 null，不得被缺省值填充
+        mcps.save(Mcp.builder().id(12L).name("没配的").transport(Mcp.Transport.STREAMABLE_HTTP)
+                .url("https://a.example/mcp").status(1).build());
+        Mcp plain = mcps.findById(12L).orElseThrow();
+        assertNull(plain.getProtocolVersion());
+        assertNull(plain.getAutoHealthCheck());
+        assertNull(plain.getHealthCheckInterval());
+        assertNull(plain.getReconnectInterval());
+
+        // 清空 → 必须真的回到 null，否则用户永远走不回客户端库默认
+        loaded.changeProtocolVersion(null);
+        loaded.changeAutoHealthCheck(null);
+        loaded.changeHealthCheckInterval(null);
+        loaded.changeReconnectInterval(null);
+        mcps.updateById(loaded);
+
+        Mcp cleared = mcps.findById(11L).orElseThrow();
+        assertNull(cleared.getProtocolVersion());
+        assertNull(cleared.getAutoHealthCheck());
+        assertNull(cleared.getHealthCheckInterval());
+        assertNull(cleared.getReconnectInterval());
     }
 
     @Test

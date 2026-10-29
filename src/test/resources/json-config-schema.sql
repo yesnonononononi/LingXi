@@ -2,6 +2,9 @@ CREATE TABLE mcp (
  id BIGINT PRIMARY KEY, name VARCHAR(64), transport VARCHAR(32), url VARCHAR(1024),
  headers TEXT, command TEXT, env TEXT, description VARCHAR(200),
  initialization_timeout BIGINT, execution_timeout BIGINT, max_output INT, status INT,
+ -- 客户端容错参数（契约 §2.1）：可空，NULL = 沿用客户端库默认
+ protocol_version VARCHAR(32), auto_health_check TINYINT,
+ health_check_interval BIGINT, reconnect_interval BIGINT,
  create_time TIMESTAMP, update_time TIMESTAMP
 );
 CREATE TABLE model_config (

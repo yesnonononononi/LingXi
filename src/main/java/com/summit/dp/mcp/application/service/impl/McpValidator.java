@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * Mcp 新增/更新的业务校验。
@@ -27,6 +28,9 @@ public class McpValidator {
 
     /** 入参与库里的传输方式都是线上形态（streamable-http / sse / stdio），取值不受支持时统一给这条 */
     private static final String TRANSPORT_HINT = "传输方式仅支持 streamable-http / sse / stdio";
+
+    /** 显式协议版本的形态：{@code yyyy-MM-dd}，如 {@code 2025-11-25} */
+    private static final Pattern PROTOCOL_VERSION = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
 
     /** @return null 表示校验通过，否则为错误提示 */
     public String validateForCreate(McpCommand command) {
@@ -133,7 +137,36 @@ public class McpValidator {
         if (command.getMaxOutput() != null && command.getMaxOutput() <= 0)
             return "输出上限必须大于 0";
 
+        String tuningError = checkClientTuning(command);
+        if (tuningError != null) return tuningError;
+
         return checkHeaders(command.getHeaders());
+    }
+
+    /**
+     * 客户端容错参数（协议版本 / 健康检查间隔 / 重连间隔）的取值护栏。
+     *
+     * <p>三者都可选：不传即 null，含义是「沿用客户端库默认」，因此只在显式传值时校验。
+     * {@code autoHealthCheck} 是纯开关，没有取值约束。</p>
+     *
+     * @return null 表示校验通过，否则为错误提示
+     */
+    private String checkClientTuning(McpCommand command) {
+        if (command.getProtocolVersion() != null) {
+            String version = command.getProtocolVersion().trim();
+            // 空白视同「清空」，由应用层归一成 null，这里不报错
+            if (!version.isEmpty()) {
+                if (version.length() > Mcp.PROTOCOL_VERSION_MAX_LENGTH)
+                    return "协议版本长度不能超过" + Mcp.PROTOCOL_VERSION_MAX_LENGTH;
+                if (!PROTOCOL_VERSION.matcher(version).matches())
+                    return "协议版本格式应为 2025-11-25";
+            }
+        }
+        if (command.getHealthCheckInterval() != null && command.getHealthCheckInterval() < 1)
+            return "健康检查间隔不能小于 1 毫秒";
+        if (command.getReconnectInterval() != null && command.getReconnectInterval() < 1)
+            return "重连间隔不能小于 1 毫秒";
+        return null;
     }
 
     /**

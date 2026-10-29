@@ -27,6 +27,14 @@ public class McpRequest {
     private Long initializationTimeout;
     /** 执行超时，毫秒 */
     private Long executionTimeout;
+    /** 显式协议版本，如 {@code 2025-11-25}；不传表示不钉版本 */
+    private String protocolVersion;
+    /** 自动健康检查开关；不传表示沿用客户端库默认 */
+    private Boolean autoHealthCheck;
+    /** 健康检查间隔，毫秒；不传表示沿用客户端库默认 */
+    private Long healthCheckInterval;
+    /** 重连间隔，毫秒；不传表示沿用客户端库默认 */
+    private Long reconnectInterval;
     private Integer maxOutput;
     private Integer status;
 }

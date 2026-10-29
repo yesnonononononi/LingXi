@@ -16,10 +16,15 @@ public class McpConfigAssembler {
         McpConfig.Conf conf = switch (transport) {
             case STREAMABLE_HTTP, SSE -> new McpConfig.StreamableHttp(
                     model.getUrl(), model.getHeaders() == null ? Map.of() : model.getHeaders(),
-                    model.getInitializationTimeout(), model.getExecutionTimeout());
+                    model.getInitializationTimeout(), model.getExecutionTimeout(),
+                    model.getProtocolVersion(), model.getAutoHealthCheck(),
+                    model.getHealthCheckInterval(), model.getReconnectInterval());
+            // 工作目录不在领域模型里，业务库没有该概念，保持 null（框架侧回落到子进程的父目录）
             case STDIO -> new McpConfig.Stdio(
-                    model.getCommand(), model.getEnv() == null ? Map.of() : model.getEnv(),
-                    model.getInitializationTimeout(), model.getExecutionTimeout());
+                    model.getCommand(), model.getEnv() == null ? Map.of() : model.getEnv(), null,
+                    model.getInitializationTimeout(), model.getExecutionTimeout(),
+                    model.getProtocolVersion(), model.getAutoHealthCheck(),
+                    model.getHealthCheckInterval(), model.getReconnectInterval());
         };
         return new McpConfig.MCP(model.getName(), model.getDescription(), transport, conf, model.getMaxOutput());
     }
