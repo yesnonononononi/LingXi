@@ -42,6 +42,27 @@ test('Vite 的实际代理表将业务请求送到开发端口', () => {
   }
 });
 
+test('Vite 监听源码，但跳过 Electron 验证缓存目录', { timeout: 15000 }, async t => {
+  const root = path.resolve(__dirname, '..');
+  fs.mkdirSync(path.join(root, '.run'), { recursive: true });
+  const temporary = fs.mkdtempSync(path.join(root, '.run', 'watch-canary-'));
+  fs.writeFileSync(path.join(temporary, 'cache.db'), 'watch-canary');
+  t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+  const { createServer } = await import('vite');
+  const config = loadViteConfig();
+  const vite = await createServer({ ...config, configFile: false, root, logLevel: 'silent',
+    server: { ...config.server, middlewareMode: true } });
+  t.after(() => vite.close());
+  for (let attempt = 0; attempt < 50 && !vite.watcher.getWatched()[__dirname]?.includes(path.basename(__filename)); attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  const watched = vite.watcher.getWatched();
+  assert.ok(watched[__dirname]?.includes(path.basename(__filename)), '正对照：源码必须进入真实监听器');
+  const generated = path.join(root, '.run');
+  assert.equal(Object.keys(watched).some(directory => directory === generated || directory.startsWith(generated + path.sep)),
+    false, '运行缓存不得进入真实监听器');
+});
+
 test('设置请求经过真实 Vite 代理返回后端 JSON，不能落到 HTML 页面', async t => {
   const requests = [];
   const backend = http.createServer((request, response) => {

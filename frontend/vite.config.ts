@@ -63,6 +63,8 @@ export default defineConfig({
   },
   server: {
     port: 5174,
+    // Electron 验证产物含独占缓存文件，监听它们会导致开发服务器退出。
+    watch: { ignored: ['**/.run/**'] },
     proxy,
     /**
      * 关闭热更新：改文件不再自动热替换或整页刷新，必须手动 Ctrl+R 才能看到新代码。
