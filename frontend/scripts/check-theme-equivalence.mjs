@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * 主题令牌等价性门禁（M3 等价性验收的唯一机器判据）。
  *
@@ -644,6 +644,269 @@ const readBaseFile = (relPath, base) => {
   } catch {
     return null;
   }
+};
+
+/**
+ * 文件移动配对声明的路径（入仓，可 code review）。
+ *
+ * <p>要解决的事故：把 `Sidebar.vue` 的 397 行模板搬进两个新组件后，逐文件比对的账就平了不了——
+ * 源文件「少了 172 处类名」被判漂移，而三个文件的类名总数一个不多一个不少。这类**纯重构**
+ * （拆分/合并）会把门禁打成假红，于是大家学会「红了就重跑或忽略」，这才是门禁可信度的根问题。</p>
+ *
+ * <p>为此增加一条**显式声明**的通道：只有在「聚合后类名多重集完全相等」时，才豁免该组的逐文件比对。
+ * 任何真实颜色/字面量变化仍然报红（判据完全复用现成的 `compareColorGroups` / `compareNeutral` /
+ * `compareRaw`，一个字都没放宽）。未声明的拆分、声明后仍对不上账的拆分，一律还是红。</p>
+ */
+const MOVES_REL = 'frontend/scripts/theme-spec/theme-moves.json';
+const MOVES_FILE = path.join(__dirname, 'theme-spec', 'theme-moves.json');
+
+/**
+ * 多重集聚合的初值。
+ * @returns {{dark: Array<object>, light: Array<object>, neutral: Array<object>, rawDark: string[], rawLight: string[]}} 空聚合
+ */
+const emptyAggregate = () => ({ dark: [], light: [], neutral: [], rawDark: [], rawLight: [] });
+
+/**
+ * 把若干个 `groupsOf` 结果聚合成一个多重集（数组拼接 = 多重集并集）。
+ *
+ * <p>为什么按「组」聚合而不是把源码字符串拼起来再扫：字符串拼接会在文件边界处造出
+ * 原本不存在的字面量（前一个文件结尾的引号 + 后一个文件开头的引号），凭空产生假类名。</p>
+ *
+ * @param {Array<ReturnType<typeof groupsOf>>} list 各组
+ * @returns {{dark: Array<object>, light: Array<object>, neutral: Array<object>, rawDark: string[], rawLight: string[]}} 聚合结果
+ */
+const mergeAggregates = (list) => list.reduce((acc, g) => ({
+  dark: acc.dark.concat(g.dark),
+  light: acc.light.concat(g.light),
+  neutral: acc.neutral.concat(g.neutral),
+  rawDark: acc.rawDark.concat(g.rawDark),
+  rawLight: acc.rawLight.concat(g.rawLight)
+}), emptyAggregate());
+
+/**
+ * 移动配对的**聚合等价**判定（纯函数，自检可以直接喂源码串）。
+ *
+ * <p>口径（与逐文件比对完全同一套判据，只是把多重集先并起来）：</p>
+ * <ul>
+ *   <li>`base` 侧 = 所有 `from` 文件在基线版本里的聚合多重集（照旧过一遍 `applyRenames` 台账）；</li>
+ *   <li>`work` 侧 = 工作树里 `to + from` 的聚合多重集；</li>
+ *   <li>然后跑 `compareColorGroups` / `compareNeutral` / `compareRaw`，**一条 problem 都不许有**。</li>
+ * </ul>
+ *
+ * <p>由此自然得到两条性质，不需要额外写例外：`to` 侧凭空多出的颜色类会成为「多了 x」的原子差异；
+ * 拆分时改错一档会成为「值漂移」。所以豁免只覆盖「账不平」，不覆盖任何真实变化。</p>
+ *
+ * @param {ReturnType<typeof loadThemeContext>} ctx 当前解析上下文（工作树侧）
+ * @param {ReturnType<typeof loadThemeContext>} baseCtx 基线解析上下文
+ * @param {{baseSources: string[], workSources: string[]}} sources 两侧源码串
+ * @returns {{problems: string[], countBase: number, countWork: number}} 问题列表与两侧类名总数
+ */
+const compareMoveAggregate = (ctx, baseCtx, sources) => {
+  const baseSources = Array.isArray(sources?.baseSources) ? sources.baseSources : [];
+  const workSources = Array.isArray(sources?.workSources) ? sources.workSources : [];
+  const A = mergeAggregates(baseSources.map((src) => groupsOf(baseCtx, applyRenames(String(src)))));
+  const B = mergeAggregates(workSources.map((src) => groupsOf(ctx, String(src))));
+  const problems = [
+    ...compareColorGroups('dark', A.dark, B.dark),
+    ...compareColorGroups('light', A.light, B.light),
+    ...compareNeutral(A.neutral, B.neutral),
+    ...compareRaw(A.rawDark, B.rawDark),
+    ...compareRaw(A.rawLight, B.rawLight)
+  ];
+  return {
+    problems,
+    countBase: A.rawDark.length + A.rawLight.length,
+    countWork: B.rawDark.length + B.rawLight.length
+  };
+};
+
+/**
+ * 校验声明清单的**结构**（纯函数）：id 唯一、from/to 非空、from 与 to 不得有交集、可读字段齐全。
+ *
+ * @param {unknown} spec 解析后的 JSON
+ * @returns {string[]} 错误列表（空 = 合法）
+ */
+const validateMoveSpec = (spec) => {
+  if (spec === null || typeof spec !== 'object' || Array.isArray(spec)) {
+    return ['顶层必须是对象（形如 {"moves": [...]}）'];
+  }
+  /** @type {unknown} */
+  const moves = spec.moves;
+  if (!Array.isArray(moves)) return ['缺少 moves 数组'];
+  /** @type {string[]} */
+  const errors = [];
+  /** @type {Map<string, number>} */
+  const seen = new Map();
+  moves.forEach((move, index) => {
+    const at = `moves[${index}]`;
+    if (move === null || typeof move !== 'object' || Array.isArray(move)) {
+      errors.push(`${at} 不是对象`);
+      return;
+    }
+    const id = typeof move.id === 'string' ? move.id.trim() : '';
+    if (!id) {
+      errors.push(`${at} 缺少唯一 id`);
+    } else if (seen.has(id)) {
+      errors.push(`id 重复：${id}（第 ${seen.get(id) + 1} 条与第 ${index + 1} 条）`);
+    } else {
+      seen.set(id, index);
+    }
+    const label = id || at;
+    for (const field of ['from', 'to']) {
+      const list = move[field];
+      if (!Array.isArray(list) || list.length === 0) {
+        errors.push(`${label}: ${field} 必须是非空数组`);
+        continue;
+      }
+      list.forEach((p, i) => {
+        if (typeof p !== 'string' || p.trim() === '') errors.push(`${label}: ${field}[${i}] 必须是非空字符串路径`);
+        else if (p.includes('\\')) errors.push(`${label}: ${field}[${i}] 必须用正斜杠（${p}）`);
+      });
+    }
+    const from = Array.isArray(move.from) ? move.from : [];
+    const to = Array.isArray(move.to) ? move.to : [];
+    if (from.length > 0 && to.length > 0) {
+      const both = from.filter((p) => to.includes(p));
+      if (both.length > 0) errors.push(`${label}: from 与 to 不得有交集（${both.join(', ')}）`);
+      if (from.length === to.length && from.every((p) => to.includes(p))) {
+        errors.push(`${label}: from 与 to 完全相同，不构成移动（等于自证等价，会变成假绿通道）`);
+      }
+    }
+    if (typeof move.reason !== 'string' || move.reason.trim() === '') errors.push(`${label}: 缺少人可读 reason`);
+    if (typeof move.authorizedBy !== 'string' || move.authorizedBy.trim() === '') errors.push(`${label}: 缺少 authorizedBy（授权人）`);
+  });
+  return errors;
+};
+
+/**
+ * 读取并校验声明清单：结构 + **路径存在性**（声明写错等于把豁免权扔进黑洞，必须报红）。
+ *
+ * <p>路径口径（两条都必要）：</p>
+ * <ul>
+ *   <li>`to` 必须在工作树存在（拆出去的文件就该在当前树上，写错即报红）；</li>
+ *   <li>`from` 必须在工作树**或**基线里存在——合并场景下 `from` 文件本来就被删了，
+ *       强制要求它在工作树存在会把「合并」这种合法重构锁死。</li>
+ * </ul>
+ *
+ * @param {string} base git 基线 ref
+ * @returns {{moves: Array<{id: string, from: string[], to: string[], reason: string, authorizedBy: string}>, errors: string[], exists: boolean}} 加载结果
+ */
+const loadMoveSpec = (base) => {
+  /** @type {string} */
+  let raw;
+  try {
+    raw = fs.readFileSync(MOVES_FILE, 'utf8');
+  } catch {
+    // 没有声明文件 = 没有任何豁免（不是错误，也不放宽任何判据）
+    return { moves: [], errors: [], exists: false };
+  }
+  /** @type {any} */
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    return { moves: [], errors: [`不是合法 JSON：${e.message}`], exists: true };
+  }
+  const errors = validateMoveSpec(parsed);
+  /** @type {Array<{id: string, from: string[], to: string[], reason: string, authorizedBy: string}>} */
+  const moves = (Array.isArray(parsed?.moves) ? parsed.moves : [])
+    .filter((m) => m && typeof m === 'object' && Array.isArray(m.from) && Array.isArray(m.to))
+    .map((m) => ({
+      id: String(m.id ?? '').trim(),
+      from: m.from.map((p) => String(p).trim()),
+      to: m.to.map((p) => String(p).trim()),
+      reason: String(m.reason ?? ''),
+      authorizedBy: String(m.authorizedBy ?? '')
+    }));
+  for (const move of moves) {
+    const label = move.id || '(无 id)';
+    for (const relPath of move.to) {
+      if (!fs.existsSync(path.join(REPO_ROOT, relPath))) {
+        errors.push(`${label}: to 路径在工作树不存在（${relPath}）—— 声明写错会让豁免形同虚设`);
+      }
+    }
+    for (const relPath of move.from) {
+      const inWorktree = fs.existsSync(path.join(REPO_ROOT, relPath));
+      if (!inWorktree && readBaseFile(relPath, base) === null) {
+        errors.push(`${label}: from 路径在工作树与基线 ${base} 里都不存在（${relPath}）`);
+      }
+    }
+  }
+  return { moves, errors, exists: true };
+};
+
+/**
+ * 对一条移动声明做聚合等价判定（读盘 + 读 git 基线）。
+ *
+ * @param {ReturnType<typeof loadThemeContext>} ctx 当前解析上下文
+ * @param {ReturnType<typeof loadThemeContext>} baseCtx 基线解析上下文
+ * @param {{id: string, from: string[], to: string[], reason: string, authorizedBy: string}} move 声明
+ * @param {string} base git 基线 ref
+ * @returns {{id: string, problems: string[], countBase: number, countWork: number, fromCount: number, toCount: number, missingBase: string[]}} 判定结果
+ */
+const evaluateMove = (ctx, baseCtx, move, base) => {
+  /** @type {string[]} */
+  const baseSources = [];
+  /** @type {string[]} */
+  const missingBase = [];
+  for (const relPath of move.from) {
+    const src = readBaseFile(relPath, base);
+    if (src === null) missingBase.push(relPath);
+    else baseSources.push(src);
+  }
+  /** @type {string[]} */
+  const workSources = [];
+  for (const relPath of [...move.from, ...move.to]) {
+    const abs = path.join(REPO_ROOT, relPath);
+    if (fs.existsSync(abs)) workSources.push(fs.readFileSync(abs, 'utf8'));
+  }
+  const agg = compareMoveAggregate(ctx, baseCtx, { baseSources, workSources });
+  const problems = [...agg.problems];
+  // 基线里没有 from 文件时无法做聚合判定：宁可报红，也不能把「无从比较」当成「等价」。
+  for (const relPath of missingBase) {
+    problems.push(`from 文件在基线 ${base} 中不存在，无法做聚合比对：${relPath}`);
+  }
+  return {
+    id: move.id,
+    problems,
+    countBase: agg.countBase,
+    countWork: agg.countWork,
+    fromCount: move.from.length,
+    toCount: move.to.length,
+    missingBase
+  };
+};
+
+/**
+ * 取「相对基线更像是被 `git mv` 重命名出来」的工作树路径集合。
+ *
+ * <p>用途：新增文件告警要能区分两种「基线里没有的新文件」——</p>
+ * <ul>
+ *   <li>`git mv` 改名的结果：内容没变，git 自己会配对，不需要在移动声明里登记；</li>
+ *   <li>拆分/合并/全新文件：内容是新写的，需要显式声明或人工确认。</li>
+ * </ul>
+ *
+ * @param {string} base git 基线 ref
+ * @returns {Set<string>} 重命名后的新路径集合（相对仓库根、正斜杠）
+ */
+const gitRenamedTargets = (base) => {
+  /** @type {Set<string>} */
+  const targets = new Set();
+  try {
+    const out = execFileSync('git', ['diff', '--find-renames', '--name-status', '--diff-filter=R', base, '--'], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'ignore']
+    });
+    for (const line of String(out).split(/\r?\n/)) {
+      const parts = line.split('\t');
+      if (parts.length >= 3 && /^R/.test(parts[0])) targets.add(parts[2]);
+    }
+  } catch {
+    // 取不到就当作「没有重命名」：只会让告警更啰嗦，不会漏报
+  }
+  return targets;
 };
 
 /**
@@ -1362,21 +1625,26 @@ const lineOfClass = (src, cls) => {
 };
 
 const checkFile = (ctx, baseCtx, relPath, base, staticOnly, jsonOut = false) => {
-  const problems = staticCheck(ctx, relPath);
+  const staticProblems = staticCheck(ctx, relPath);
+  const problems = [...staticProblems];
   const notes = [];
-  if (staticOnly) return { problems, drift: problems.length, notes };
+  if (staticOnly) return { problems, staticProblems, driftProblems: [], drift: problems.length, notes };
 
   const abs = path.join(REPO_ROOT, relPath);
-  if (!fs.existsSync(abs)) return { problems, drift: problems.length + 1, notes };
+  if (!fs.existsSync(abs)) {
+    // 工作树里没有这个文件（被合并掉了）。逐文件比对无从谈起，先记 1 处漂移；
+    // 若它属于某条声明过的移动配对，聚合判定会把「内容搬走了」和「内容丢了」区分开。
+    return { problems, staticProblems, driftProblems: [`（工作树中不存在该文件）`], drift: problems.length + 1, notes, removed: true };
+  }
   const nextSrc = fs.readFileSync(abs, 'utf8');
   const prevSrc = readBaseFile(relPath, base);
   if (prevSrc === null) {
     notes.push(`基线 ${base} 中无此文件（新增文件，跳过等价性比较，仅做静态检查）`);
-    return { problems, drift: problems.length, notes };
+    return { problems, staticProblems, driftProblems: [], drift: problems.length, notes, newFile: true };
   }
   if (prevSrc === nextSrc) {
     notes.push('与基线逐字节相同');
-    return { problems, drift: problems.length, notes };
+    return { problems, staticProblems, driftProblems: [], drift: problems.length, notes };
   }
 
   if (process.env.GATE_DEBUG) {
@@ -1414,7 +1682,7 @@ const checkFile = (ctx, baseCtx, relPath, base, staticOnly, jsonOut = false) => 
       newValue: d.newValue,
     }))
     : [];
-  return { problems: [...problems, ...driftProblems], drift: problems.length + driftProblems.length, notes, inventory };
+  return { problems: [...problems, ...driftProblems], staticProblems, driftProblems, drift: problems.length + driftProblems.length, notes, inventory };
 };
 
 /**
@@ -1564,6 +1832,84 @@ const selftest = (ctx) => {
     '真实台账下 gray-500 被自己的条目正确改写为 zinc-500',
     !hasGray500 || applyRenames("'text-gray-500 border-gray-500/20'") === "'text-zinc-500 border-zinc-500/20'",
     applyRenames("'text-gray-500 border-gray-500/20'")
+  );
+
+  // ---------- G-1：声明式「文件移动配对」（拆分/合并的账不平豁免） ----------
+  // 背景事故：把 Sidebar.vue 的 397 行模板搬进两个新组件后，逐文件账不平 ⇒ 全量门禁 172 处假红，
+  // 而三文件类名合计 564 == HEAD 的 564、零真实颜色变化。新能力只在「聚合多重集完全相等」时豁免，
+  // 判据仍复用 compareColorGroups/compareNeutral/compareRaw（一个字都没放宽）。
+  //
+  // 注意 fixture 必须「整块搬」：一个元素的基础色与它的 `dark:` 覆盖**必须一起搬**，
+  // 否则暗侧语义真的变了（下面最后一条用例专门锁这个——门禁在这种情形下必须红，不许豁免）。
+  const splitBase = "const a = 'flex mb-2.5 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800';";
+  const splitFrom = "const a = 'flex mb-2.5';";
+  const splitToTree = "const c = 'text-zinc-600 dark:text-zinc-400';";
+  const splitToFooter = "const d = 'border-zinc-200 dark:border-zinc-800';";
+  const s1Declared = compareMoveAggregate(ctx, ctx, {
+    baseSources: [splitBase],
+    workSources: [splitFrom, splitToTree, splitToFooter],
+  });
+  check(
+    'S1 声明式拆分搬走 → 聚合多重集相等，豁免（零问题）',
+    s1Declared.problems.length === 0,
+    JSON.stringify(s1Declared.problems) + ' 聚合类名 ' + s1Declared.countBase + ' == ' + s1Declared.countWork
+  );
+  const s1Undeclared = compareMoveAggregate(ctx, ctx, { baseSources: [splitBase], workSources: [splitFrom] });
+  check(
+    'S1 反证：没有声明（只比 from 单个文件）→ 必红',
+    s1Undeclared.problems.length > 0,
+    JSON.stringify(s1Undeclared.problems.slice(0, 3))
+  );
+  const s2WrongTier = compareMoveAggregate(ctx, ctx, {
+    baseSources: [splitBase],
+    workSources: [splitFrom, "const c = 'text-zinc-500 dark:text-zinc-400';", splitToFooter],
+  });
+  check(
+    'S2 拆分时顺手改错一档（text-zinc-600→text-zinc-500；等价于事故里的 gray-600→gray-500）→ 有声明也必须红',
+    s2WrongTier.problems.length > 0,
+    JSON.stringify(s2WrongTier.problems.slice(0, 3))
+  );
+  const s3ExtraColor = compareMoveAggregate(ctx, ctx, {
+    baseSources: [splitBase],
+    workSources: [splitFrom, splitToTree, "const d = 'border-zinc-200 dark:border-zinc-800 text-sky-500';"],
+  });
+  check(
+    'S3 to 侧凭空多一个颜色类 → 有声明也必须红（不吞新增）',
+    s3ExtraColor.problems.length > 0,
+    JSON.stringify(s3ExtraColor.problems.slice(0, 3))
+  );
+  const s4SplitPairApart = compareMoveAggregate(ctx, ctx, {
+    baseSources: [splitBase],
+    workSources: [splitFrom, "const c = 'text-gray-600';", "const d = 'dark:text-zinc-400 border-zinc-200 dark:border-zinc-800';"],
+  });
+  check(
+    'S4 拆散「基础色 + dark: 覆盖」这一对（把暗侧覆盖留在原地）→ 有声明也必须红',
+    s4SplitPairApart.problems.length > 0,
+    JSON.stringify(s4SplitPairApart.problems.slice(0, 3))
+  );
+
+  // 声明清单自身的校验（写错声明 = 把豁免权扔进黑洞，必须报错）
+  const okMove = { id: 'm1', from: ['a.vue'], to: ['b.vue'], reason: '拆分', authorizedBy: 'summit' };
+  check('声明校验：合法声明 → 零错误', validateMoveSpec({ moves: [okMove] }).length === 0, JSON.stringify(validateMoveSpec({ moves: [okMove] })));
+  check(
+    '声明校验：id 重复 → 报错',
+    validateMoveSpec({ moves: [okMove, { ...okMove }] }).length > 0,
+    JSON.stringify(validateMoveSpec({ moves: [okMove, { ...okMove }] }))
+  );
+  check(
+    '声明校验：from 与 to 有交集 → 报错',
+    validateMoveSpec({ moves: [{ ...okMove, to: ['a.vue'] }] }).length > 0,
+    JSON.stringify(validateMoveSpec({ moves: [{ ...okMove, to: ['a.vue'] }] }))
+  );
+  check(
+    '声明校验：缺 reason / authorizedBy → 至少两条错误',
+    validateMoveSpec({ moves: [{ id: 'm2', from: ['a.vue'], to: ['b.vue'] }] }).length >= 2,
+    JSON.stringify(validateMoveSpec({ moves: [{ id: 'm2', from: ['a.vue'], to: ['b.vue'] }] }))
+  );
+  check(
+    '声明校验：顶层缺 moves / 非对象 → 报错',
+    validateMoveSpec({}).length > 0 && validateMoveSpec(null).length > 0 && validateMoveSpec([]).length > 0,
+    JSON.stringify([validateMoveSpec({}), validateMoveSpec(null), validateMoveSpec([])])
   );
 
   // ---- 同前缀（hover:）相邻对折叠（2026-10-23 补）----  // ---- 同前缀（hover:）相邻对折叠（2026-10-23 补）----
@@ -1732,12 +2078,16 @@ const printUsage = () => {
       '  --update-residual  重写残余基线（收敛后显式下调；上涨需在评审中说明）',
       '  --allow-stale    产物早于源码时仍继续（默认拒绝：旧产物会导致假绿）',
       '  --json           额外输出一行 [JSON] 结构化报告（逐文件逐原子的旧类/旧值/新类/新值），供 visual:expect-inventory 消费',
+      '                   追加字段：moves（移动配对裁决）、newFilesUndeclared / warnings（未声明的新增文件）',
       '  --quiet          只输出汇总与问题',
       '  --selftest       跑门禁自检',
       '  --help           显示本帮助',
       '',
       '不传文件 = 全量扫描 frontend/src 下所有 .vue。',
       '退出码：0=零漂移，2=有漂移，1=无法执行。',
+      '',
+      '拆分/合并的「账不平」：在 frontend/scripts/theme-spec/theme-moves.json 里显式登记 from/to，',
+      '  仅当聚合类名多重集完全相等时才豁免该组的逐文件比对（任何真实变化仍报红）；未声明的一律照旧报红。',
       '',
       '示例：',
       '  node scripts/check-theme-equivalence.mjs --check-token-values   # 令牌数值 vs 代言类名产物真实值',
@@ -1853,11 +2203,86 @@ const main = () => {
     }
   }
 
+  // ---------- 移动配对声明（第 2/3 层内的显式豁免通道，不影响第 1/4/5 层） ----------
+  const moveSpec = staticOnly ? { moves: [], errors: [], exists: false } : loadMoveSpec(base);
+  if (!staticOnly) {
+    if (moveSpec.errors.length > 0) {
+      // 声明本身非法：报红（exit 2）。声明写错等于把豁免权扔进黑洞，必须挡住。
+      totalDrift += moveSpec.errors.length;
+      affected += 1;
+      console.log('\n✗ 移动声明（' + MOVES_REL + '）  （' + moveSpec.errors.length + ' 处声明非法）');
+      for (const e of moveSpec.errors) console.log('    ' + e);
+    } else if (!quiet) {
+      console.log('✓ 移动声明（' + MOVES_REL + '）：'
+        + (moveSpec.moves.length === 0 ? '无（不做任何豁免）' : moveSpec.moves.length + ' 条'));
+    }
+  }
+
+  // 逐文件结果先全部算完，再做「移动配对」裁决，最后统一打印——
+  // 否则被豁免的文件会先把 172 处「账不平」刷屏打印出来，再被撤销，审计者只会看到红。
+  /** @type {Map<string, ReturnType<typeof checkFile>>} */
+  const results = new Map();
   /** @type {Array<object>} */
   const inventoryRows = [];
   for (const relPath of targets) {
     const r = checkFile(ctx, baseCtx, relPath, base, staticOnly, jsonOut);
+    results.set(relPath, r);
     if (jsonOut && Array.isArray(r.inventory)) inventoryRows.push(...r.inventory);
+  }
+
+  /** 已生效的配对：relPath → move id */
+  const excused = new Map();
+  /** 进入配对判定但未生效：relPath → move id（逐文件问题不再重复打印，由组级差异解释） */
+  const pairingFailed = new Map();
+  /** @type {Array<{id: string, problems: string[], countBase: number, countWork: number, fromCount: number, toCount: number, applied: boolean, participants: string[]}>} */
+  const moveReports = [];
+
+  for (const move of moveSpec.moves) {
+    const participants = [...move.from, ...move.to];
+    const scanned = participants.filter((p) => results.has(p));
+    if (scanned.length === 0) continue; // 本组不在本次扫描范围（单文件模式等）
+    const groupStatic = scanned.reduce((n, p) => n + (results.get(p)?.staticProblems?.length ?? 0), 0);
+    const groupDrift = scanned.reduce((n, p) => n + (results.get(p)?.drift ?? 0), 0);
+    // 干净组：完全不进入配对判定，行为逐字节不变（不打日志、不豁免）。
+    if (groupDrift === 0) continue;
+    // 第 1 层（静态可达性）红了不是「账不平」而是真缺陷，原样报红，绝不豁免。
+    if (groupStatic > 0) continue;
+    const evaluated = evaluateMove(ctx, baseCtx, move, base);
+    const applied = evaluated.problems.length === 0;
+    moveReports.push({ ...evaluated, applied, participants: scanned });
+    if (applied) {
+      for (const p of scanned) excused.set(p, move.id);
+    } else {
+      for (const p of scanned) pairingFailed.set(p, move.id);
+      totalDrift += evaluated.problems.length;
+      affected += 1;
+    }
+  }
+
+  for (const report of moveReports) {
+    const arrow = report.fromCount + ' 个 from → ' + report.toCount + ' 个 to';
+    if (report.applied) {
+      console.log('\n↔ 移动配对生效 ' + report.id + ': ' + arrow
+        + '，聚合类名 ' + report.countBase + ' == ' + report.countWork + '，零原子差异');
+      console.log('    依据：聚合多重集在现有判据（compareColorGroups/compareNeutral/compareRaw）下完全相等');
+      console.log('    参与：' + report.participants.join(', '));
+    } else {
+      console.log('\n✗ 移动配对失败 ' + report.id + ': ' + arrow
+        + '，聚合类名 ' + report.countBase + ' != ' + report.countWork
+        + '（' + report.problems.length + ' 处原子差异，声明不放宽真实变化）');
+      console.log('    参与：' + report.participants.join(', '));
+      for (const p of report.problems) console.log('    ' + p);
+    }
+  }
+
+  for (const relPath of targets) {
+    const r = results.get(relPath);
+    if (excused.has(relPath)) {
+      // 不允许静默豁免：逐个文件也留痕，指向上面的组级日志。
+      console.log('✓ ' + relPath + '  [↔ 移动配对 ' + excused.get(relPath) + '：逐文件账不平已由聚合等价解释]');
+      continue;
+    }
+    if (pairingFailed.has(relPath)) continue; // 组级差异已逐条打印，不重复刷屏
     if (r.problems.length > 0) {
       totalDrift += r.problems.length;
       affected += 1;
@@ -1866,6 +2291,22 @@ const main = () => {
     } else if (!quiet) {
       console.log('✓ ' + relPath + (r.notes.length > 0 ? '  [' + r.notes.join('；') + ']' : ''));
     }
+  }
+
+  // ---------- 未声明的新文件：从「静默跳过」改为「醒目告警但不阻断」 ----------
+  // 历史行为：基线里没有该文件 ⇒ 跳过等价性比较且不报错，等于**新增文件的整套类名没人管**。
+  // 这里只加告警（退出码不变），因为升级成 exit 2 会打爆其他并行分支；是否升级见交付说明的建议。
+  const declaredTargets = new Set(moveSpec.moves.flatMap((m) => m.to));
+  const newFiles = [...results].filter(([, r]) => r.newFile).map(([relPath]) => relPath);
+  const undeclaredNew = newFiles.filter((relPath) => !declaredTargets.has(relPath));
+  // `git mv` 的新路径不算「未声明的新增」：它不是拆分，内容由 git 自己配对。
+  const renamedTargets = undeclaredNew.length > 0 && !staticOnly ? gitRenamedTargets(base) : new Set();
+  const warnings = undeclaredNew.filter((relPath) => !renamedTargets.has(relPath));
+  if (warnings.length > 0) {
+    console.log('\n⚠ 以下新增文件在基线 ' + base + ' 中不存在，逐文件等价性比较被跳过（这些文件的类名目前无人看守）：');
+    for (const relPath of warnings) console.log('    ' + relPath);
+    console.log('  若它们是拆分/合并出来的：请在 ' + MOVES_REL + ' 里登记 from/to（登记后聚合等价才豁免）；');
+    console.log('  若确实是全新文件：请在评审中确认其类名（本次仅告警，不改变退出码）。');
   }
 
   if (jsonOut) {
@@ -1877,10 +2318,26 @@ const main = () => {
       totalDrift,
       affected,
       atoms: inventoryRows,
+      // 以下为追加字段（向后兼容：既有字段一个不改名、不删除）
+      moves: moveReports.map((r) => ({
+        id: r.id,
+        applied: r.applied,
+        fromCount: r.fromCount,
+        toCount: r.toCount,
+        countBase: r.countBase,
+        countWork: r.countWork,
+        participants: r.participants,
+        problems: r.problems,
+      })),
+      newFilesUndeclared: warnings,
+      warnings,
     }));
   }
 
   console.log('\n== 结论：' + (totalDrift === 0 ? '等价（零漂移）' : `存在 ${totalDrift} 处漂移/告警（${affected} 个文件），需人工确认`) + ' ==');
+  if (warnings.length > 0) {
+    console.log('   （另有 ' + warnings.length + ' 个新增文件未声明为移动配对：仅告警，不改变退出码）');
+  }
   return totalDrift === 0 ? 0 : 2;
 };
 
