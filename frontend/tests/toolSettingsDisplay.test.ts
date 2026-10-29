@@ -241,6 +241,11 @@ for (const mode of ['settings', 'team'] as const) {
     else assert.ok(find(root, item => item.props.title === '执行命令、读取文件'), '工具数量悬浮提示也必须映射完整名');
     const edit = find(root, item => item.tag === 'button' && item.props.title === translate(mode === 'settings' ? 'settings.agents.editAction' : 'chat.team.editAgentTip'));
     assert.ok(edit); await edit.props.onClick({ stopPropagation() {} }); await settle();
+    if (mode === 'settings') {
+      const prompt = find(root, item => item.tag === 'textarea');
+      assert.ok(prompt, '编辑智能体时应显示提示词输入框');
+      assert.match(String(prompt.props.class), /(?:^|\s)resize-y(?:\s|$)/, '提示词输入框应允许用户纵向拖拽调节高度');
+    }
     assert.ok(text(root).includes('执行命令')); assert.ok(text(root).includes('读取技能'));
     assert.ok(text(root).includes('读取文件')); assert.ok(text(root).includes('网页搜索'));
     for (const name of [AgentToolName.ExecuteCommand, AgentToolName.ReadSkill]) assert.ok(!text(root).includes(name));

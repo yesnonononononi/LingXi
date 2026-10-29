@@ -400,7 +400,7 @@ const {
             rows="3"
             :placeholder="t('settings.agents.promptPlaceholder')"
             :class="[
-              'w-full px-3 py-2 rounded-xl border outline-none text-xs resize-none transition',
+              'w-full min-h-16 px-3 py-2 rounded-xl border outline-none text-xs resize-y transition',
               isDark ? 'bg-lx-surface-elevated border-lx-border-strong text-zinc-100 placeholder-zinc-500 focus:border-cyan-400' : 'bg-lx-surface-elevated border-lx-border-strong text-zinc-900 focus:border-blue-500'
             ]"
           ></textarea>
