@@ -13,9 +13,9 @@ export interface InteractionCardCategory {
   entries: PromptCardEntry[];
 }
 
-/** 准备中与处理中同样尚未收口，不能被归入已决记录。 */
-export function isUnresolvedCardEntry(entry: PromptCardEntry): boolean {
-  return entry.card.status !== 'completed';
+/** 准备中仍需露出入口，放行执行后已无需用户处理。 */
+export function isPendingCardEntry(entry: PromptCardEntry): boolean {
+  return entry.card.status === 'preparing' || entry.card.status === 'pending';
 }
 
 /** 只合并当前消息的同类卡片，提交身份仍由每张卡片与模型响应决定。 */
@@ -32,8 +32,8 @@ export function groupInteractionCards(entries: PromptCardEntry[]): InteractionCa
       grouped.push(group);
     }
   }
-  return grouped.sort((first, second) => Number(second.entries.some(isUnresolvedCardEntry))
-    - Number(first.entries.some(isUnresolvedCardEntry)));
+  return grouped.sort((first, second) => Number(second.entries.some(isPendingCardEntry))
+    - Number(first.entries.some(isPendingCardEntry)));
 }
 
 /** 同一轮可能多次提问，选择组必须沿用后端模型响应身份。 */

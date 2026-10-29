@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groupInteractionCards, groupChoiceQuestions, type PromptCardEntry } from '../src/utils/promptCardGroups';
+import { groupInteractionCards, groupChoiceQuestions, isPendingCardEntry, type PromptCardEntry } from '../src/utils/promptCardGroups';
 import { resolveCardStatusLabel } from '../src/utils/toolCallCard';
 import { setPreference } from '../src/i18n';
 
@@ -77,6 +77,22 @@ test('组内状态保留取消、拒绝、失败和待审批的区别', () => {
     assert.equal(resolveCardStatusLabel({ ...card, outcome }), label);
   }
   assert.equal(resolveCardStatusLabel({ ...card, outcome: undefined, status: 'pending', pending: true }), '等待审批');
+});
+
+test('批准后执行中的命令不再计入待处理，准备中与待审批仍保留', () => {
+  const running = entry('running');
+  running.card = { ...running.card, status: 'in_progress', pending: false, allowedActions: [] };
+  const waiting = entry('waiting', 'PLAN');
+  waiting.card = { ...waiting.card, status: 'pending', pending: true, outcome: undefined };
+  const preparing = entry('preparing', 'CHOICE');
+  preparing.card = { ...preparing.card, status: 'preparing', pending: false, outcome: undefined };
+  assert.equal(resolveCardStatusLabel(running.card), '已批准');
+  assert.equal(isPendingCardEntry(running), false);
+  assert.equal(isPendingCardEntry({ ...running, card: { ...running.card, outcome: undefined } }), false);
+  assert.equal(isPendingCardEntry(waiting), true);
+  assert.equal(isPendingCardEntry(preparing), true);
+  assert.deepEqual(groupInteractionCards([running, waiting, preparing]).map(category => category.kind),
+    ['PLAN', 'CHOICE', 'COMMAND']);
 });
 
 test('提问合并进同一类型下拉，提交批次仍按会话和响应身份隔离', () => {

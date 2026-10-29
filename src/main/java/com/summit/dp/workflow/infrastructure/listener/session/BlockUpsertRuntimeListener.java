@@ -1,6 +1,7 @@
 package com.summit.dp.workflow.infrastructure.listener.session;
 
 import com.summit.core.conversation.event.ToolCallEndEvent;
+import com.summit.core.conversation.event.ToolCallStartEvent;
 import com.summit.core.runtime.RuntimeListener;
 import com.summit.core.tool.ToolCallStatus;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
@@ -16,19 +17,8 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * 工具收尾时的**块增量**推送：某个工具块的结论落定即推一帧 {@code BLOCK_UPSERT}。
- *
- * <p><b>为什么是增量而不是整轮快照</b>：一次工具收尾只改变一个工具块的状态，
- * 重发整轮块列表是纯流量浪费（一轮里可能有几十个工具调用）。前端按 {@code blockId} upsert，
- * 契约上增量与快照共用同一 {@code TurnViewVO} 形状，只是 {@code blocks} 只含变化的块。</p>
- *
- * <p><b>与 {@code ToolCallExecutionListener} 的关系</b>：那个类负责把结果**落库**
- * （{@code tool_call} 行），本类负责把落库结果**播出去**。顺序不可反 ——
- * 推送读的是 {@code tool_call} 的已落库行，先推后写会让前端看到旧状态。
- * 因此本类 order 取 {@link Ordered#LOWEST_PRECEDENCE}，保证在落库监听器之后跑。</p>
- *
- * <p><b>PROMISE 工具不在此推送</b>：它们的结论由决策端点收尾，那个路径自己触发快照；
- * 在这里推会与实际状态竞争的中间态。</p>
+ * 工具状态先落库再推块增量，避免前端读到旧状态。
+ * 审批命令开始时也需推送，原始无版本事件无法推进已有持久化块。
  */
 @Slf4j
 @Component
@@ -41,11 +31,21 @@ public class BlockUpsertRuntimeListener implements RuntimeListener {
     private final ChatTurnRepository chatTurnRepository;
 
     @Override
+    public void onToolCall(ToolCallStartEvent event) {
+        if (event != null) {
+            broadcastToolBlock(event.getRequestId(), event.getExecutionId());
+        }
+    }
+
+    @Override
     public void onToolCallOutput(ToolCallEndEvent event) {
         if (event == null || event.resultStatus() == ToolCallStatus.PROMISED) {
             return;
         }
-        String toolCallId = event.getRequestId();
+        broadcastToolBlock(event.getRequestId(), event.getExecutionId());
+    }
+
+    private void broadcastToolBlock(String toolCallId, String executionId) {
         if (toolCallId == null || toolCallId.isBlank()) {
             return;
         }
@@ -55,11 +55,11 @@ public class BlockUpsertRuntimeListener implements RuntimeListener {
             if (toolCall == null || toolCall.getConversationId() == null) {
                 return;
             }
-            Long executionId = ExecutionIdentity.numericOrNull(event.getExecutionId());
-            if (executionId == null) {
+            Long numericExecutionId = ExecutionIdentity.numericOrNull(executionId);
+            if (numericExecutionId == null) {
                 return;
             }
-            chatTurnRepository.findByExecutionId(executionId)
+            chatTurnRepository.findByExecutionId(numericExecutionId)
                     .map(ChatTurn::getId)
                     .ifPresent(turnId -> turnViewBroadcaster.broadcastBlockUpsert(turnId, toolCallId));
         } catch (RuntimeException e) {

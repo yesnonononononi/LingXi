@@ -6,6 +6,7 @@ import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
 import { upsertTurnViewIntoMessages } from '../src/views/chat/blockProjection';
 import { AgentToolName } from '../src/utils/toolNames';
 import { buildProcessTimeline } from '../src/utils/processTimeline';
+import { summarizeProcess } from '../src/utils/processSegments';
 import { effect, reactive, stop } from 'vue';
 
 function view(turnVersion: string, toolVersion: string, output: string): TurnViewVO {
@@ -13,6 +14,40 @@ function view(turnVersion: string, toolVersion: string, output: string): TurnVie
     blocks: [{ blockId: 'tool:c1', type: 'TOOL', responseId: '101', order: 2,
       toolCallId: 'c1', toolName: AgentToolName.ReadFile, status: 'COMPLETED', version: toolVersion, output }] };
 }
+
+test('命令批准后的新版本块解除待确认，旧快照与无版本事件不能回退状态', () => {
+  const messages: ChatMessage[] = [];
+  const reducer = new TurnStreamReducer(() => messages, { sessionId: '7' });
+  const commandView = (version: string, status: 'PROMISED' | 'STARTED' | 'COMPLETED'): TurnViewVO => ({
+    sessionId: '7', turnId: '900', viewVersion: '5', status: 'RUNNING',
+    blocks: [{ blockId: 'tool:command', type: 'TOOL', responseId: '101', order: 2,
+      toolCallId: 'command', toolName: AgentToolName.ExecuteCommand, status, version }],
+  });
+  const feed = (current: TurnViewVO) => reducer.consume({ type: 'BLOCK_UPSERT',
+    sessionId: '7', turnId: '900', viewVersion: current.viewVersion, view: current });
+  try {
+    upsertTurnViewIntoMessages(messages, commandView('1', 'PROMISED'));
+    const summary = () => summarizeProcess(buildProcessTimeline(messages[0]!));
+    assert.equal(summary().pendingCount, 1);
+    feed(commandView('2', 'STARTED'));
+    assert.equal(messages[0]!.toolCalls![0]!.status, 'calling');
+    assert.equal(summary().pendingCount, 0);
+    assert.equal(summary().runningCount, 1);
+    feed(commandView('1', 'PROMISED'));
+    upsertTurnViewIntoMessages(messages, commandView('1', 'PROMISED'));
+    reducer.consume({ type: 'TOOL_COMPLETED', executionId: 'e', timestamp: '',
+      metaData: { sessionId: '7', turnId: '900' }, requestId: 'command',
+      toolName: AgentToolName.ExecuteCommand, resultStatus: 'PROMISED' });
+    assert.equal(summary().pendingCount, 0);
+    assert.equal(summary().runningCount, 1);
+    feed(commandView('3', 'COMPLETED'));
+    assert.equal(messages[0]!.toolCalls![0]!.status, 'success');
+    assert.equal(summary().pendingCount, 0);
+    assert.equal(summary().runningCount, 0);
+  } finally {
+    reducer.dispose();
+  }
+});
 
 test('历史与 SSE 共用版本：两种到达顺序都不能让旧终态结果覆盖新结果', () => {
   for (const historyFirst of [true, false]) {

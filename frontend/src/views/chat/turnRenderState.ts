@@ -80,8 +80,9 @@ export function writeToolTrace(bubble: ChatMessage, incoming: ToolCallTrace): vo
   if (previous.version !== undefined &&
       (incoming.version === undefined || incoming.version <= previous.version)) return;
   const terminal = previous.status === 'success' || previous.status === 'failed';
+  // 较新持久化版本已证明状态推进，不能把批准后的执行中仍锁在待审批。
   const retainResult = (terminal && incoming.status !== 'success' && incoming.status !== 'failed') ||
-    (previous.status === 'pending' && incoming.status === 'calling');
+    (incoming.version === undefined && previous.status === 'pending' && incoming.status === 'calling');
   Object.assign(previous, { ...incoming,
     version: incoming.version ?? previous.version,
     order: incoming.order ?? previous.order,

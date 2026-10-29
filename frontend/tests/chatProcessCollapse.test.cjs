@@ -198,6 +198,44 @@ test('准备中的卡片也优先展开，待决分类排在已决分类之前�
   assert.equal(find(reopened, node => node.props?.['data-testid'] === 'interaction-cards-toggle').props['aria-expanded'], false);
 });
 
+test('七条命令全部批准后，执行中的一条不再显示待处理或待确认', async t => {
+  const { reducer, event, answer, AgentToolName } = streamFixture();
+  t.after(() => reducer.dispose());
+  const commandView = (version, status) => ({ sessionId: '7', turnId: '900', viewVersion: '5', status: 'RUNNING',
+    blocks: [{ blockId: 'tool:command-0', type: 'TOOL', responseId: '101', order: 2,
+      toolCallId: 'command-0', toolName: AgentToolName.ExecuteCommand, status, version }] });
+  reducer.consume({ type: 'TURN_SNAPSHOT', sessionId: '7', turnId: '900', viewVersion: '5', view: commandView('1', 'PROMISED') });
+  answer.promptCards = Array.from({ length: 7 }, (_, index) => ({
+    id: `command-${index}`, conversationId: '7', type: 'PROMISE', version: '1',
+    status: index === 0 ? 'pending' : 'completed', allowedActions: index === 0 ? ['APPROVE', 'REJECT'] : [],
+    content: { kind: 'COMMAND', command: `echo ${index}` }, rawOutput: index === 0 ? null : { outcome: 'APPROVED' },
+  }));
+  const root = mount(t, answer);
+  const whole = find(root, node => node.props?.['data-testid'] === 'interaction-cards-toggle');
+  const group = find(root, node => node.props?.['data-testid'] === 'command-approval-toggle');
+  assert.match(text(whole), /7 条.*1 条待处理/);
+  assert.match(text(root), /1 项待确认/);
+
+  Object.assign(answer.promptCards[0], { status: 'in_progress', version: '2', allowedActions: [], rawOutput: { outcome: 'APPROVED' } });
+  reducer.consume(event({ type: 'EXECUTION_RESUME' }));
+  reducer.consume({ type: 'BLOCK_UPSERT', sessionId: '7', turnId: '900', viewVersion: '5', view: commandView('2', 'STARTED') });
+  await nextTick();
+  assert.equal(whole.props['aria-expanded'], false);
+  assert.equal(group.props['aria-expanded'], false);
+  assert.doesNotMatch(text(whole), /待处理/);
+  assert.doesNotMatch(text(group), /待处理/);
+  assert.doesNotMatch(text(root), /待确认/);
+  assert.equal(findAll(root, node => node.props?.['data-testid'] === 'command-approval-entry-toggle')
+    .filter(node => text(node).includes('已批准')).length, 7);
+  const reopened = mount(t, answer);
+  assert.equal(find(reopened, node => node.props?.['data-testid'] === 'interaction-cards-toggle').props['aria-expanded'], false);
+
+  answer.promptCards[0].status = 'completed';
+  reducer.consume({ type: 'BLOCK_UPSERT', sessionId: '7', turnId: '900', viewVersion: '5', view: commandView('3', 'COMPLETED') });
+  await nextTick();
+  assert.doesNotMatch(text(root), /待处理|待确认/);
+});
+
 test('同批提问保留原题序，待答题置于正确题号，后续响应仍是独立批次', t => {
   const { AgentToolName } = loadChatModule(path.resolve(__dirname, '../src/utils/toolNames.ts'));
   const answer = message({ aiMessages: [], toolCalls: [0, 1, 2].map(index => ({

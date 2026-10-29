@@ -25,7 +25,7 @@ const message = ref({id:'answer',turnId:'43',role:'assistant',timestamp:0,conten
 window.decisions=[];
 provide(DECIDE_TOOL_CALL_KEY, async decision=>{
   window.decisions.push(decision);
-  await new Promise(resolve=>{window.finishDecision=()=>{const card=message.value.promptCards.find(card=>card.id===decision.toolCallId);card.status='completed';card.allowedActions=[];card.rawOutput={outcome:decision.action==='APPROVE'?'APPROVED':'REJECTED'};resolve();};});
+  await new Promise(resolve=>{window.finishDecision=(inProgress=false)=>{const card=message.value.promptCards.find(card=>card.id===decision.toolCallId);card.status=inProgress?'in_progress':'completed';card.allowedActions=[];card.rawOutput={outcome:decision.action==='APPROVE'?'APPROVED':'REJECTED'};resolve();};});
 });
 window.addPending = id => message.value.promptCards.push(createCard(id,true));
 window.addPendingPlan = id => message.value.promptCards.push(createPlan(id,true));
@@ -82,8 +82,12 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   assert.deepEqual(await evaluate('window.decisions'),[{conversationId:'42',toolCallId:'command-60',action:'APPROVE',expectedVersion:'7'}]);
   await evaluate('document.querySelector("[data-testid=command-approval-toggle]").click();document.querySelector("[data-testid=command-approval-toggle]").click();window.flush()');
   assert.equal(await evaluate('[...document.querySelectorAll(\'[data-approval-id="command-60"] button\')].filter(button=>button.textContent.includes("批准")).every(button=>button.disabled)'),true);
-  await evaluate('window.finishDecision();window.flush()');
+  await evaluate('window.finishDecision(true);window.flush()');
   assert.equal(await evaluate('document.querySelector(\'[data-approval-id="command-60"]\').textContent.includes("已批准")'),true);
+  assert.equal(await evaluate('document.querySelector("[data-testid=interaction-cards-pending]")===null'),true,'已批准执行中的命令不能计入待处理');
+  assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-toggle]").textContent.includes("待处理")'),false);
+  assert.equal(await evaluate('document.querySelector("[data-testid=command-approval-toggle]").getAttribute("aria-expanded")'),'false');
+  await fs.writeFile(path.join(output, 'approved-running.png'), (await window.webContents.capturePage()).toPNG());
   await evaluate('window.addPending("command-61");window.flush()');
   await evaluate('[...document.querySelectorAll(\'[data-approval-id="command-61"] button\')].find(button=>button.textContent.includes("拒绝")).click();window.flush()');
   assert.deepEqual(await evaluate('window.decisions[1]'),{conversationId:'42',toolCallId:'command-61',action:'REJECT',expectedVersion:'7'});
