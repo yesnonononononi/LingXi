@@ -32,20 +32,28 @@ class LimitedHeapCheckpointOomTest {
     /** 子进程堆上限：与用户现场一致。 */
     private static final String CHILD_HEAP = "-Xmx512m";
     /**
-     * 峰值堆上限（MiB）：取堆上限的一半。
+     * 峰值堆上限（MiB）。
      *
-     * <p>定标依据：改造后在 {@code -Xmx512m} 下多次实测峰值 96–128 MiB（夹具单份序列化 12.5 MiB，
-     * 负载为单执行 10 轮 + 三执行并发 5 轮 + 40 条历史执行 + 5 轮会话上下文写入）。
-     * 256 MiB 留出约 2 倍余量，同时仍能抓住「仓储里又囤起每条执行一份整段 JSON」
-     * （40 条 × 约 9.6 MB ≈ 384 MB，会直接撞上 512 MiB 堆上限）。</p>
+     * <p>定标依据（同夹具、{@code -Xmx512m}、隔离编译与主树各跑多次）：
+     * 流式 + 非保留型计数实测 <b>138 / 154 / 200 MiB</b>，流式 + 保留型计数 189 MiB；
+     * 字符串中转 + 非保留型 <b>438 / 476 MiB</b>，字符串中转 + 保留型 OOM（506 MiB）。
+     * 取 360 MiB：比最差的流式实测留约 1.8 倍余量（不然 GC 抖动会假红），又低于
+     * 438 MiB 那条回退（放宽也仍然抓得住）。</p>
+     *
+     * <p>注意分工：<b>整段转换次数</b>是确定性判据（保存路径偷偷拼字符串必然 +65），
+     * 峰值堆是兜底判据（抓「不改变交互次数但把正文囤在堆里」的回退，例如仓储级整段缓存）。</p>
      */
-    private static final long PEAK_HEAP_LIMIT_MB = 256L;
+    private static final long PEAK_HEAP_LIMIT_MB = 360L;
     /** 夹具下限：序列化后必须真的接近现场体积，否则用例是假绿。 */
     private static final long MIN_FIXTURE_BYTES = 7L * 1024 * 1024;
     private static final Pattern PEAK = Pattern.compile("^PEAK_HEAP_MB=(\\d+)$", Pattern.MULTILINE);
     private static final Pattern FIXTURE = Pattern.compile("^FIXTURE_BYTES=(\\d+)$", Pattern.MULTILINE);
     private static final Pattern WHOLE_DOCUMENT =
             Pattern.compile("^CHECKPOINT_WHOLE_DOCUMENT_STRINGS=(\\d+)$", Pattern.MULTILINE);
+    private static final Pattern STREAM_WRITES =
+            Pattern.compile("^CHECKPOINT_STREAM_WRITES=(\\d+)$", Pattern.MULTILINE);
+    private static final Pattern SAME_CONTEXT =
+            Pattern.compile("^SAME_CONTEXT_ROUNDS=(\\d+)$", Pattern.MULTILINE);
 
     @Test
     @Timeout(600)
@@ -71,6 +79,15 @@ class LimitedHeapCheckpointOomTest {
 
             assertEquals(0L, matchLong(WHOLE_DOCUMENT, log, "整段 JSON 字符串次数"),
                     () -> "检查点保存路径产生过整段 JSON 字符串/字节数组（改造前的写法）:\n" + log);
+
+            // 金丝雀：计数器必须是活的 —— 否则「整段转换 0 次」是一句空话，
+            // 计数器没接上流程时它永远是 0。
+            assertTrue(matchLong(STREAM_WRITES, log, "流式写入次数") > 0,
+                    () -> "计数 mapper 没有记录到任何流式写入，说明它在链路上失效了:\n" + log);
+
+            // 复核 R5 要求补的压力场景：同一个大上下文连续更新，不能被「5 个不同会话」替代。
+            assertTrue(matchLong(SAME_CONTEXT, log, "同一上下文连续更新轮数") >= 5,
+                    () -> "同一大上下文连续更新 5 轮的压力场景没有跑:\n" + log);
 
             // 把实测数字打出来，供内存对照报告取用（不做断言，只做记录）。
             System.out.println("[受限堆实测] " + summary(log));
@@ -114,6 +131,7 @@ class LimitedHeapCheckpointOomTest {
                     || line.startsWith("RESTORE_MS=") || line.startsWith("HISTORY_EXECUTIONS=")
                     || line.startsWith("CONTEXT_ROUNDS=") || line.startsWith("CHECKPOINT_WHOLE_DOCUMENT_STRINGS=")
                     || line.startsWith("SINGLE_ROUNDS=") || line.startsWith("CONCURRENT_ROUNDS=")
+                    || line.startsWith("SAME_CONTEXT_ROUNDS=") || line.startsWith("CHECKPOINT_STREAM_WRITES=")
                     || line.startsWith("GC_MS=")) {
                 text.append(line).append(' ');
             }

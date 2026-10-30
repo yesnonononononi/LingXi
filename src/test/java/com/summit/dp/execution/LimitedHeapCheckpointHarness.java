@@ -1,5 +1,6 @@
 package com.summit.dp.execution;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -27,6 +28,9 @@ import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.context.ApplicationEventPublisher;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.lang.management.ManagementFactory;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -35,10 +39,10 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.spy;
 
 /**
  * 512 MiB 受限堆下的真实保存压力夹具（由 {@link LimitedHeapCheckpointOomTest} 在子 JVM 里启动）。
@@ -59,6 +63,10 @@ public final class LimitedHeapCheckpointHarness {
     private static final long BYTES_PER_MB = 1024L * 1024L;
     /** 并发保存的执行数：对应用户现场「三个执行并发频繁保存」。 */
     private static final int CONCURRENT_EXECUTIONS = 3;
+    /** 同一大上下文连续更新的默认轮数（复核 R5 要求补的压力场景）。 */
+    private static final int SAME_CONTEXT_ROUNDS_DEFAULT = 5;
+    /** 这条上下文一直用同一个会话标识，模拟长会话里反复整体替换上下文。 */
+    private static final long SAME_CONTEXT_SESSION_ID = 777L;
 
     private LimitedHeapCheckpointHarness() {
     }
@@ -72,6 +80,7 @@ public final class LimitedHeapCheckpointHarness {
         int concurrentRounds = args.length > 2 ? Integer.parseInt(args[2]) : 5;
         int historyExecutions = args.length > 3 ? Integer.parseInt(args[3]) : 40;
         int contextRounds = args.length > 4 ? Integer.parseInt(args[4]) : 5;
+        int sameContextRounds = args.length > 5 ? Integer.parseInt(args[5]) : SAME_CONTEXT_ROUNDS_DEFAULT;
 
         PeakHeapSampler sampler = new PeakHeapSampler();
         sampler.start();
@@ -79,8 +88,10 @@ public final class LimitedHeapCheckpointHarness {
         try {
             database = SqliteTestDatabase.create("heap-harness");
             ObjectMapper plainMapper = new JsonConfig().objectMapper();
-            // 只有检查点这条路径的 mapper 被 spy：保存路径偷偷拼整段 JSON 字符串才看得见。
-            ObjectMapper checkpointMapper = spy(new JsonConfig().objectMapper());
+            // 检查点这条路径用「只数次数、不保留实参」的计数 mapper。
+            // 之前用 Mockito spy：它把每次调用的**实参**留在调用历史里，整段 JSON 字符串因此被钉在堆上，
+            // 于是「字符串变异必然 OOM」这个结论其实是被计量方式污染的（复核 R5）。
+            CountingObjectMapper checkpointMapper = new CountingObjectMapper(new JsonConfig().objectMapper());
 
             SqlSessionTemplate sql = SqliteTestDatabase.sqlSession(
                     database.sessionFactory(ExecutionMapper.class, SessionContextMapper.class));
@@ -162,6 +173,14 @@ public final class LimitedHeapCheckpointHarness {
             }
             System.out.println("CONTEXT_ROUNDS=" + contextRounds);
 
+            // ⑤ 同一个大上下文连续更新 5 轮：长会话里上下文是被反复整体替换的，
+            //    「5 个不同会话各写一次」与「同一个会话连写 5 次」的堆行为并不一样（后者会反复
+            //    覆盖同一行、叠加旧正文与旧字符串），复核 R5 指出上一版漏了这条。
+            for (int round = 0; round < sameContextRounds; round++) {
+                contextService.replace(SAME_CONTEXT_SESSION_ID, body);
+            }
+            System.out.println("SAME_CONTEXT_ROUNDS=" + sameContextRounds);
+
             // 恢复计时：从文件流式读回，验证「没有正文缓存也能读」。
             long restoreStart = System.nanoTime();
             Execution restored = repository.findById("1").orElseThrow(
@@ -174,16 +193,8 @@ public final class LimitedHeapCheckpointHarness {
             System.out.println("SAVE_MS=" + saveMillis);
             System.out.println("RESTORE_MS=" + restoreMillis);
 
-            long wholeDocumentConversions = org.mockito.Mockito.mockingDetails(checkpointMapper)
-                    .getInvocations().stream()
-                    .filter(invocation -> "writeValueAsString".equals(invocation.getMethod().getName())
-                            || "writeValueAsBytes".equals(invocation.getMethod().getName()))
-                    .count();
-            System.out.println("CHECKPOINT_WHOLE_DOCUMENT_STRINGS=" + wholeDocumentConversions);
-            System.out.println("CHECKPOINT_STREAM_WRITES="
-                    + org.mockito.Mockito.mockingDetails(checkpointMapper).getInvocations().stream()
-                    .filter(invocation -> "writeValue".equals(invocation.getMethod().getName()))
-                    .count());
+            System.out.println("CHECKPOINT_WHOLE_DOCUMENT_STRINGS=" + checkpointMapper.wholeDocumentConversions());
+            System.out.println("CHECKPOINT_STREAM_WRITES=" + checkpointMapper.streamWrites());
 
             sampler.stop();
             long gcMillis = ManagementFactory.getGarbageCollectorMXBeans().stream()
@@ -262,6 +273,55 @@ public final class LimitedHeapCheckpointHarness {
             });
         } catch (Exception ignored) {
             // 同上。
+        }
+    }
+
+    /**
+     * 只数次数、<b>不保留任何实参</b>的计数 mapper。
+     *
+     * <p>为什么不用 Mockito spy：spy 的调用历史会把每次调用的实参（这里是整段 JSON 字符串）
+     * 一起留在堆里，计量本身就把内存抬了上去 —— 复核 R5 实测「保留历史 → OOM，清历史 → 同负载跑完」。
+     * 交互断言（保存路径不许整段中转）只需要次数，所以用两个原子计数就够了，堆上不留任何引用。</p>
+     */
+    private static final class CountingObjectMapper extends ObjectMapper {
+
+        private final ObjectMapper delegate;
+        private final AtomicLong wholeDocument = new AtomicLong();
+        private final AtomicLong streamWrites = new AtomicLong();
+
+        private CountingObjectMapper(ObjectMapper delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public void writeValue(OutputStream out, Object value) throws IOException {
+            streamWrites.incrementAndGet();
+            delegate.writeValue(out, value);
+        }
+
+        @Override
+        public String writeValueAsString(Object value) throws JsonProcessingException {
+            wholeDocument.incrementAndGet();
+            return delegate.writeValueAsString(value);
+        }
+
+        @Override
+        public byte[] writeValueAsBytes(Object value) throws JsonProcessingException {
+            wholeDocument.incrementAndGet();
+            return delegate.writeValueAsBytes(value);
+        }
+
+        @Override
+        public <T> T readValue(InputStream src, Class<T> valueType) throws IOException {
+            return delegate.readValue(src, valueType);
+        }
+
+        private long wholeDocumentConversions() {
+            return wholeDocument.get();
+        }
+
+        private long streamWrites() {
+            return streamWrites.get();
         }
     }
 
