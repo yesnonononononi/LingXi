@@ -389,7 +389,10 @@ const {
   padding: 12px;
   border: 1px solid var(--lx-border-subtle);
   border-radius: var(--lx-radius-md);
-  background: var(--lx-surface-hover);
+  /* 分组容器不画填充：--lx-surface-hover 是交互反馈令牌，拿来当静态卡片底色，
+     亮色下把弹窗白色面板压成灰块、暗色下又和 sunken 控件几乎同色，两头都丢层次。
+     只留描边表达分组，底色交给父级，弹窗换主题/换背景时自然一致。 */
+  background: transparent;
 }
 .background-scrim-control {
   display: flex;
