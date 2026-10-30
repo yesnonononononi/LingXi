@@ -18,7 +18,9 @@ public record UserConfigCommand(
         String skillDir,
         Integer teamSize,
         Long compactModelId,
-        boolean compactModelIdPresent
+        boolean compactModelIdPresent,
+        String fontScale,
+        boolean fontScalePresent
 )  {
 
 }

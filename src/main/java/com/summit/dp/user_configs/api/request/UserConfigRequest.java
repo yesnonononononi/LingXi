@@ -36,6 +36,22 @@ public class UserConfigRequest {
     /** 思考深度/推理等级（空值表示沿用模型/框架缺省）。 */
     private String reasoningEffort;
     private String renderTheme;
+    /** 界面全局字号档位（SMALL/MEDIUM/LARGE/X_LARGE） */
+    private String fontScale;
+
+    /**
+     * 本次请求是否显式带了 {@code fontScale} 键。
+     *
+     * <p>与 {@code agentId} 同理：显式传 {@code null} 表示「回到未设置（默认档位）」，
+     * 不传表示「保持原值」。两者反序列化后都是 null，只能靠 setter 有没有被调用区分。</p>
+     */
+    @JsonSetter("fontScale")
+    public void markFontScalePresent(String fontScale) {
+        this.fontScale = fontScale;
+        this.fontScalePresent = true;
+    }
+
+    private boolean fontScalePresent;
     /** 数据存储目录；空值表示保持原值（改它会搬运库文件，因此不接受空串「清空」） */
     private String dataDir;
     /** 技能根目录；空值表示保持原值 */

@@ -54,7 +54,9 @@ public class UserConfigController {
                 request.getSkillDir(),
                 request.getTeamSize(),
                 request.getCompactModelId(),
-                request.isCompactModelIdPresent()
+                request.isCompactModelIdPresent(),
+                request.getFontScale(),
+                request.isFontScalePresent()
         );
     }
 }

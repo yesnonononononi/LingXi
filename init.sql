@@ -149,6 +149,7 @@ CREATE TABLE IF NOT EXISTS user_configs (
     skill_dir      VARCHAR(500) DEFAULT NULL COMMENT '技能根目录(递归查找SKILL.md的根); 空则取配置项 lingxi.skill.dir',
     team_size      INT DEFAULT NULL COMMENT '团队最大成员数; 空则取配置项 lingxi.team.max-member-size',
     compact_model_id BIGINT DEFAULT NULL COMMENT '专用压缩模型ID(关联 model_config.id); 空则沿用对话模型做摘要',
+    font_scale     VARCHAR(16) DEFAULT NULL COMMENT '界面全局字号档位: SMALL/MEDIUM/LARGE/X_LARGE; 空表示未设置(读取归一为 MEDIUM)',
     status         TINYINT DEFAULT 1 COMMENT '状态: 1正常 0删除',
     create_time    DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     update_time    DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',

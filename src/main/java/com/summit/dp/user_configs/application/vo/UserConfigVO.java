@@ -29,6 +29,8 @@ public class UserConfigVO {
     private String reasoningEffort;
     /** 渲染主题：light/dark */
     private String renderTheme;
+    /** 界面全局字号档位：SMALL/MEDIUM/LARGE/X_LARGE；未设置时已归一为 MEDIUM。 */
+    private String fontScale;
     /** 数据存储目录（H2 库文件所在目录）；已是「设置行覆盖配置项」后的生效值，前端只读展示。 */
     private String dataDir;
     /** 技能根目录；同样是生效值。 */

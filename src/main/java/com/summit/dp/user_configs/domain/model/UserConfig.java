@@ -1,6 +1,7 @@
 package com.summit.dp.user_configs.domain.model;
 
 
+import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.shared.model.WorkspaceType;
 import lombok.Builder;
@@ -47,7 +48,33 @@ public class UserConfig {
         DARK;
     }
 
+    /**
+     * 界面全局字号档位，与前端 4 档一一对应。
+     */
+    public enum FontScale {
+        SMALL,
+        MEDIUM,
+        LARGE,
+        X_LARGE;
+
+        /** 空值/空串返回 null（未设置）；非空值按 name 解析。 */
+        public static FontScale fromString(String value) {
+            if (value == null || value.isBlank()) return null;
+            return FontScale.valueOf(value.trim().toUpperCase());
+        }
+
+        /** 白名单判定：先判合法再 valueOf，报错文案才能带上可选值。 */
+        public static boolean isSupported(String normalized) {
+            for (FontScale scale : FontScale.values()) {
+                if (scale.name().equals(normalized)) return true;
+            }
+            return false;
+        }
+    }
+
     public static final int DEFAULT_PLAN_MAX_REMINDERS = 10;
+    /** 未设置时的字号档位：与历史界面观感（默认字号）一致，避免老库升级后视觉跳变。 */
+    public static final FontScale DEFAULT_FONT_SCALE = FontScale.MEDIUM;
     public static final int DEFAULT_MAX_TOKENS = 102400;
     /** 目录类字段的最大长度，与 user_configs.data_dir / skill_dir 的列宽一致。 */
     public static final int MAX_DIRECTORY_LENGTH = 500;
@@ -87,6 +114,10 @@ public class UserConfig {
      * 前端界面主题
      */
     private RenderTheme renderTheme;
+    /**
+     * 界面全局字号档位；空值表示未设置，读取时归一到 {@link #DEFAULT_FONT_SCALE}。
+     */
+    private FontScale fontScale;
 
     /**
      * 会话数据存放目录
@@ -144,6 +175,32 @@ public class UserConfig {
     public void changeRenderTheme(String s) {
         this.renderTheme = RenderTheme.valueOf(s.toUpperCase());
         update();
+    }
+
+    /**
+     * 切换界面字号档位；入参为空表示「回到未设置」（读取时取 {@link #DEFAULT_FONT_SCALE}）。
+     *
+     * <p>非法档位直接抛业务异常而不是静默回落 MEDIUM：回落会让调用方拿到「成功」却看到别的档位，
+     * 契约违约被藏起来，排查时无从下手。</p>
+     */
+    public void changeFontScale(String fontScale) {
+        this.fontScale = parseFontScale(fontScale);
+        update();
+    }
+
+    /** 归一校验：null/空串 = 未设置；其余必须落在 SMALL/MEDIUM/LARGE/X_LARGE 白名单内。 */
+    private FontScale parseFontScale(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String normalized = raw.trim().toUpperCase();
+        throwIf(!FontScale.isSupported(normalized), "字体大小档位不支持: " + raw + "，可选 SMALL/MEDIUM/LARGE/X_LARGE");
+        return FontScale.valueOf(normalized);
+    }
+
+    /** 读取侧归一：未设置按默认档位输出，前端不需要各自猜默认值。 */
+    public FontScale resolveFontScale() {
+        return this.fontScale == null ? DEFAULT_FONT_SCALE : this.fontScale;
     }
 
     public void changePlanMaxReminders(@NonNull Integer planMaxReminders) {
@@ -235,6 +292,13 @@ public class UserConfig {
 
     private void update() {
         this.updateAt = Instant.now();
+    }
+
+    /** 业务校验统一入口：报错交给 ClientException，前端能直接展示文案。 */
+    private void throwIf(boolean condition, String err) {
+        if (condition) {
+            throw new ClientException(err);
+        }
     }
 
 

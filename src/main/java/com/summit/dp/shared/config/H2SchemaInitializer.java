@@ -90,6 +90,9 @@ public class H2SchemaInitializer {
                 // V19：mcp 补客户端容错参数（协议版本/健康检查/重连；脚本自带 IF NOT EXISTS，新库天然空操作）。
                 ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
                         "db/migration/V19_mcp_client_tuning.sql"), StandardCharsets.UTF_8));
+                // V20：user_configs 补 font_scale（界面字号档位；脚本自带 IF NOT EXISTS，新库天然空操作）。
+                ScriptUtils.executeSqlScript(connection, new EncodedResource(new ClassPathResource(
+                        "db/migration/V20_user_configs_font_scale.sql"), StandardCharsets.UTF_8));
             }
         };
     }

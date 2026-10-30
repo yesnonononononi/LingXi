@@ -159,6 +159,9 @@ public class UserConfigServiceImpl implements UserConfigService {
         if (renderTheme != null)
             model.changeRenderTheme(renderTheme);
 
+        // 字号与 agentId 同构：显式 null = 回到未设置（默认档位），不传 = 保持原值。
+        if (command.fontScalePresent()) model.changeFontScale(command.fontScale());
+
         // 目录类字段的顺序不能反：先把现有内容搬到新目录（搬失败即抛错、配置保持原样），
         // 再记新位置。反过来的话，一旦搬迁失败，配置已经指向一个空目录，用户看到的是「数据没了」。
         String requestedDataDir = command.dataDir();
@@ -223,6 +226,8 @@ public class UserConfigServiceImpl implements UserConfigService {
                 .maxTokens(model.getMaxTokens())
                 .reasoningEffort(reasoningEffort == null ? null : reasoningEffort.getValue())
                 .renderTheme(model.getRenderTheme() == null ? null : model.getRenderTheme().toString())
+                // 未设置按默认档位输出：前端不必为「老库无值」再写一份默认值。
+                .fontScale(model.resolveFontScale().name())
                 .dataDir(dataDir)
                 .skillDir(settings == null ? null : settings.skillDir())
                 .teamSize(settings == null ? null : settings.teamSize())
