@@ -61,6 +61,16 @@ test('开发态只检查 8089，后端未启动时不运行可能过期的 jar',
   assert.deepEqual(checkedPorts, [8089]);
 });
 
+test('安装版实际传给 JVM 的堆上限为 1GiB，避免恢复大快照后重复耗尽旧配额', async () => {
+  const { invocation } = await launch();
+  const heapArguments = [...invocation.args].filter(argument => argument.startsWith('-Xmx'));
+  assert.equal(heapArguments.length, 1);
+  const heapSize = heapArguments[0].match(/^-Xmx(\d+)([kmg])$/i);
+  assert.ok(heapSize);
+  const unitBytes = { k: 1024, m: 1024 ** 2, g: 1024 ** 3 };
+  assert.equal(Number(heapSize[1]) * unitBytes[heapSize[2].toLowerCase()], 1024 ** 3);
+});
+
 test('安装目录与状态目录可分别覆盖，宿主 PATH 保持原值', async () => {
   const env = { LINGXI_SANDBOX_APPLICATION_DIRECTORY: 'E:/Installed LX',
     LINGXI_SANDBOX_STATE_DIRECTORY: 'F:/Writable State', PATH: 'C:/Windows' };
