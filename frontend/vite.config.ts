@@ -49,15 +49,19 @@ export default defineConfig({
   build: {
     rollupOptions: {
       /**
-       * 双入口：主应用 + 自绘通知窗口。
+       * 三入口：主应用 + 自绘通知窗口 + 桌宠窗口。
        *
        * <p>通知窗口必须是独立页面，不能复用 index.html —— 复用它会把整套 Vue 应用
        * 连同 pinia、路由、API 拦截器一起启动。而通知窗口只需要渲染一张卡片，
        * 且它跑在 `focusable: false` 的置顶小窗里，任何多余初始化都会拖慢首帧。</p>
+       *
+       * <p>桌宠窗口同理，且理由更强：它常驻不关，如果再拖起一整套 Vue + 路由，
+       * 一个透明小窗会白占掉几十兆内存。</p>
        */
       input: {
         main: resolve(__dirname, 'index.html'),
         notification: resolve(__dirname, 'notification.html'),
+        pet: resolve(__dirname, 'pet.html'),
       },
     },
   },

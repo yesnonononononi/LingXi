@@ -1,0 +1,178 @@
+/**
+ * 桌宠窗口的占位样式（阶段一：只验手感，不接 Live2D）。
+ *
+ * <p>整页必须保持透明：窗口尺寸比假宠物大一圈（320×420 里画一个 240 的圆），
+ * 那一圈透明区靠主进程的点击穿透保证不吃鼠标。所以这里禁止给 html/body 任何背景色，
+ * 连 `color-scheme` 都不设 —— 设了 Windows 会给无背景窗口配一层白底。</p>
+ */
+
+:root {
+  /* 假宠物的主色，将来换成 Live2D 模型时这里整块会被删掉 */
+  --pet-core: rgba(129, 140, 248, 0.30);
+  --pet-core-edge: rgba(165, 180, 252, 0.75);
+  --pet-ink: rgba(224, 231, 255, 0.92);
+  --pet-shadow: rgba(49, 46, 129, 0.35);
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+}
+
+body {
+  /* 桌宠窗口不该出现选中高亮，也不该有文本光标 */
+  user-select: none;
+  cursor: default;
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+#pet-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.pet-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/**
+ * 假宠物本体 = 命中区。
+ *
+ * <p>命中判定没有用 `elementFromPoint`，而是按几何圆形算（见 main.ts）：
+ * Live2D 模型将来的命中区是模型包围盒/轮廓，用几何判定才和它同构，
+ * 换成 elementFromPoint 就会把「圆角外的透明像素」也算成可点。</p>
+ */
+.pet {
+  position: relative;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, var(--pet-core-edge), var(--pet-core) 62%, rgba(30, 27, 75, 0.18));
+  border: 1px solid var(--pet-core-edge);
+  box-shadow: 0 12px 32px var(--pet-shadow), inset 0 0 24px rgba(255, 255, 255, 0.10);
+  /* 拖拽期间不能有过渡，否则跟手感会「黏」 */
+  transition: transform 120ms ease, box-shadow 120ms ease;
+  cursor: grab;
+  /* 面板内部不参与滚动，避免拖拽时出现橡皮筋 */
+  touch-action: none;
+}
+
+.pet.is-hit {
+  transform: scale(1.02);
+  box-shadow: 0 14px 38px var(--pet-shadow), inset 0 0 30px rgba(255, 255, 255, 0.16);
+}
+
+.pet.is-dragging {
+  cursor: grabbing;
+  transition: none;
+}
+
+/* 呼吸动画：没有它就看不出「窗口是不是活的」 */
+.pet-face {
+  position: absolute;
+  inset: 0;
+  animation: pet-breathe 3.2s ease-in-out infinite;
+}
+
+@keyframes pet-breathe {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-6px) scale(1.015); }
+}
+
+.eye {
+  position: absolute;
+  top: 88px;
+  width: 20px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--pet-ink);
+  animation: pet-blink 4.6s ease-in-out infinite;
+}
+
+.eye.left { left: 74px; }
+.eye.right { right: 74px; }
+
+@keyframes pet-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.12); }
+}
+
+.mouth {
+  position: absolute;
+  left: 50%;
+  top: 138px;
+  width: 38px;
+  height: 18px;
+  margin-left: -19px;
+  border-radius: 0 0 19px 19px;
+  border: 2px solid var(--pet-ink);
+  border-top: none;
+}
+
+.pet-close {
+  position: absolute;
+  top: 18px;
+  right: 26px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(226, 232, 240, 0.45);
+  background: rgba(15, 23, 42, 0.55);
+  color: rgba(226, 232, 240, 0.9);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.pet.is-hit .pet-close {
+  opacity: 1;
+}
+
+.pet-close:hover {
+  background: rgba(220, 38, 38, 0.75);
+  border-color: rgba(248, 250, 252, 0.6);
+}
+
+/* 调试标记：一眼看出当前是「穿透中」还是「可交互」，手感的验收就靠它 */
+.pet-badge {
+  position: absolute;
+  left: 50%;
+  bottom: 30px;
+  transform: translateX(-50%);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  color: var(--pet-ink);
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(165, 180, 252, 0.35);
+  white-space: nowrap;
+}
+
+.pet-badge.is-hit {
+  color: #052e16;
+  background: rgba(134, 239, 172, 0.85);
+  border-color: rgba(134, 239, 172, 0.95);
+}
+
+.pet-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: rgba(199, 210, 254, 0.55);
+  white-space: nowrap;
+}

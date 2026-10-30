@@ -1,0 +1,654 @@
+/**
+ * 桌宠窗口（Live2D 阶段一：只做窗口骨架，不含任何渲染依赖）。
+ *
+ * <p><b>为什么单独一个模块而不是塞进 main.cjs：</b>桌宠窗口的窗口参数（透明、置顶层级、
+ * 不抢焦点、不进任务栏）与桌面主窗口完全相反，而且它还有独立的 IPC（穿透 / 拖拽 / 位置持久化）。
+ * 放在 main.cjs 里会让那份文件继续膨胀，也不好单独验证。</p>
+ *
+ * <p><b>为什么要求「默认点击穿透」：</b>桌宠常驻在所有应用之上，如果整块窗口（含四周透明留白）
+ * 都吃鼠标，用户就会在空白处「点不动」，观感极差。因此默认 `setIgnoreMouseEvents(true, { forward: true })`，
+ * 只有渲染层报告的命中区（假宠物的圆形本体，将来换成 Live2D 模型的包围盒）内才临时关掉穿透。</p>
+ *
+ * <p><b>为什么 `forward: true` 是必需的：</b>不开 forward 时穿透中的窗口收不到任何 mousemove，
+ * 渲染层就永远无法重新报告「鼠标进来了」，等于把自己永久锁死在穿透状态。这是本功能最容易踩的坑。</p>
+ */
+const fs = require('node:fs');
+const path = require('node:path');
+
+/**
+ * 延迟取 electron 运行时。
+ *
+ * <p>本模块里只有创建窗口与查询屏幕才真正需要 electron；把 require 提到顶层会让这个文件
+ * 在纯 node 下（单元测试）直接崩掉，而其中的坐标换算函数是纯函数，最值得被测。</p>
+ */
+function electron() {
+  return require('electron');
+}
+
+// ---------------------------------------------------------------- 常量
+
+/**
+ * 桌宠窗口默认尺寸（**含四周留白**）。
+ *
+ * <p>留白是给 Live2D 模型的动作与阴影用的：模型的头/手经常超出本体包围盒，
+ * 窗口贴着模型裁边会把它们切掉。这一圈在窗口里是透明的，靠点击穿透保证不吃鼠标。</p>
+ */
+const PET_WIDTH = 320;
+const PET_HEIGHT = 420;
+/** 尺寸的安全区间：太小装不下模型，太大会挡住桌面操作。 */
+const MIN_DIMENSION = 120;
+const MAX_DIMENSION = 1200;
+/** 距离工作区边缘的默认留白（首次启动摆在右下角）。 */
+const EDGE_MARGIN = 24;
+/** 位置持久化文件名（落在 `app.getPath('userData')` 下）。 */
+const STATE_FILE_NAME = 'pet-window-state.json';
+/**
+ * 置顶层级。
+ *
+ * <p>`screen-saver` 是 Electron 里可用到的最高层级，能盖住全屏应用之外的一切窗口；
+ * 默认的 `floating` 会被某些全屏/置顶应用压住，桌宠「消失」却查不出原因。</p>
+ */
+const ALWAYS_ON_TOP_LEVEL = 'screen-saver';
+/**
+ * 穿透状态的下发合并窗口（毫秒）。
+ *
+ * <p>渲染层按 rAF 频率上报命中状态（一次移动最多 60 次/秒），每次都调
+ * `setIgnoreMouseEvents` 会在 Windows 上产生可见的窗口事件风暴。这里合并 + 去重：
+ * 只在「值真的变了」的时候下发一次。</p>
+ */
+const HIT_APPLY_DELAY_MS = 30;
+/** 拖拽过程中位置落盘的节流间隔（毫秒）：每帧写盘既慢又伤盘。 */
+const SAVE_THROTTLE_MS = 400;
+/**
+ * 恢复位置时要求窗口至少有这么大比例落在某块屏幕内。
+ *
+ * <p>用「比例」而不是「坐标在某个 workArea 内」，是因为用户可能把窗口拖到两块屏的接缝处；
+ * 只要还有相当一部分可见就算合法，完全不可见（屏幕被拔掉 / 分辨率变小）才回默认角落。</p>
+ */
+const MIN_VISIBLE_RATIO = 0.4;
+
+// ---------------------------------------------------------------- 纯函数（可单测）
+
+/**
+ * 归一化一个尺寸值。
+ *
+ * @param value 任意输入
+ * @param fallback 非法或缺失时的兜底值
+ * @returns 落在 [MIN_DIMENSION, MAX_DIMENSION] 内的整数
+ */
+function normalizeDimension(value, fallback) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return fallback;
+  return Math.round(Math.min(MAX_DIMENSION, Math.max(MIN_DIMENSION, num)));
+}
+
+/**
+ * 计算两个矩形的相交面积。
+ *
+ * @param a 矩形 { x, y, width, height }
+ * @param b 矩形 { x, y, width, height }
+ * @returns 相交面积；不相交时为 0
+ */
+function intersectArea(a, b) {
+  const left = Math.max(a.x, b.x);
+  const right = Math.min(a.x + a.width, b.x + b.width);
+  const top = Math.max(a.y, b.y);
+  const bottom = Math.min(a.y + a.height, b.y + b.height);
+  if (right <= left || bottom <= top) return 0;
+  return (right - left) * (bottom - top);
+}
+
+/**
+ * 把矩形夹进某块工作区。
+ *
+ * @param rect 目标矩形
+ * @param area 工作区 { x, y, width, height }
+ * @returns 完全落在工作区内的新矩形（尺寸不变；工作区比窗口还小时贴左上角）
+ */
+function clampRectToWorkArea(rect, area) {
+  const maxX = area.x + area.width - rect.width;
+  const maxY = area.y + area.height - rect.height;
+  return {
+    x: Math.round(Math.min(Math.max(rect.x, area.x), Math.max(area.x, maxX))),
+    y: Math.round(Math.min(Math.max(rect.y, area.y), Math.max(area.y, maxY))),
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+/**
+ * 默认落点：工作区右下角内缩 EDGE_MARGIN。
+ *
+ * @param size 窗口尺寸
+ * @param area 工作区
+ * @returns 矩形
+ */
+function defaultRect(size, area) {
+  return {
+    x: Math.round(area.x + area.width - size.width - EDGE_MARGIN),
+    y: Math.round(area.y + area.height - size.height - EDGE_MARGIN),
+    width: size.width,
+    height: size.height,
+  };
+}
+
+/**
+ * 在屏幕列表里挑出与矩形重叠最多的那块屏。
+ *
+ * @param rect 矩形
+ * @param displays 显示器信息数组
+ * @returns 命中的显示器与可见比例（都不命中时为 null 与 0）
+ */
+function pickDisplay(rect, displays) {
+  let matched = null;
+  let bestArea = 0;
+  const totalArea = Math.max(1, rect.width * rect.height);
+  const list = Array.isArray(displays) ? displays : [];
+  for (const display of list) {
+    if (!display || !display.workArea) continue;
+    const area = intersectArea(rect, display.workArea);
+    if (area > bestArea) {
+      bestArea = area;
+      matched = display;
+    }
+  }
+  return { display: matched, visibleRatio: bestArea / totalArea };
+}
+
+/**
+ * 解算桌宠窗口的启动位置。
+ *
+ * <p>三种情况：没存过 / 存的是脏数据 → 默认角落；存过但已经越界（屏幕被拔掉、分辨率变小）
+ * → 默认角落；仍在某块屏上有足够可见面积 → 夹进那块屏。**永远返回一个完全可见的位置**，
+ * 因为一个跑到屏幕外的桌宠用户没法用鼠标找回来（它还不进任务栏）。</p>
+ *
+ * @param options.saved 上次持久化的状态（可为 null）
+ * @param options.size 目标尺寸 { width, height }
+ * @param options.displays 显示器信息数组（来自 `screen.getAllDisplays()`）
+ * @param options.primaryArea 主显示器工作区（兜底落点用）
+ * @returns 完全落在某块工作区内的矩形
+ */
+function resolveInitialBounds({ saved, size, displays, primaryArea }) {
+  const width = normalizeDimension(size && size.width, PET_WIDTH);
+  const height = normalizeDimension(size && size.height, PET_HEIGHT);
+  const wanted = { width, height };
+  const savedX = saved ? Number(saved.x) : Number.NaN;
+  const savedY = saved ? Number(saved.y) : Number.NaN;
+  if (!Number.isFinite(savedX) || !Number.isFinite(savedY)) {
+    return defaultRect(wanted, primaryArea);
+  }
+  const rect = { x: Math.round(savedX), y: Math.round(savedY), width, height };
+  const { display, visibleRatio } = pickDisplay(rect, displays);
+  if (!display || visibleRatio < MIN_VISIBLE_RATIO) {
+    return defaultRect(wanted, primaryArea);
+  }
+  return clampRectToWorkArea(rect, display.workArea);
+}
+
+// ---------------------------------------------------------------- 状态文件
+
+/**
+ * 读取持久化的窗口状态。
+ *
+ * @param filePath 状态文件绝对路径
+ * @returns 解析成功的对象，任何异常都返回 null（位置读不出来就回默认角落，不能阻塞启动）
+ */
+function readState(filePath) {
+  try {
+    const text = fs.readFileSync(filePath, 'utf8');
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 写入窗口状态。
+ *
+ * @param filePath 状态文件绝对路径
+ * @param state 待写入的对象
+ * @returns 是否写入成功（失败只记日志：位置存不下不影响本次使用）
+ */
+function writeState(filePath, state) {
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+    return true;
+  } catch (err) {
+    console.warn(`[pet] 位置保存失败: path=${filePath}, error=${(err && err.message) || err}`);
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------- 窗口管理器
+
+/**
+ * 注册桌宠窗口。
+ *
+ * @param options.ipcMain Electron 的 ipcMain
+ * @param options.isDev 是否开发态（决定入口走 Vite 服务还是 dist 产物）
+ * @param options.frontendRoot 前端根目录（解析 `dist/pet.html`）
+ * @param options.statePath 可选：状态文件路径覆盖（测试用）
+ * @returns 窗口管理 API
+ */
+function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath }) {
+  const resolvedStatePath = statePath || path.join(electron().app.getPath('userData'), STATE_FILE_NAME);
+
+  /** 当前桌宠窗口（懒创建：托盘被点之前不占任何资源）。 */
+  let win = null;
+  /** 当前是否处于点击穿透。初始为 true：窗口一出现就必须是穿透的。 */
+  let ignoring = true;
+  /** 穿透状态的合并定时器与其待下发值。 */
+  let ignoreTimer = null;
+  let pendingIgnore = null;
+  /** 是否正在自定义拖拽。 */
+  let dragging = false;
+  /** 拖拽起点：光标相对窗口左上角的偏移，保证「抓起哪就从哪拖」。 */
+  let dragOffset = { x: 0, y: 0 };
+  /** 位置落盘定时器。 */
+  let saveTimer = null;
+  /** 可见性变化订阅者（托盘要跟着刷新勾选状态）。 */
+  const visibilityListeners = new Set();
+  /** 屏幕变化监听是否已挂（screen 只能在 app ready 之后用，故延迟到首次创建）。 */
+  let displayListenersBound = false;
+
+  /** 通知外界可见性变了。 */
+  function notifyVisibility() {
+    const visible = isVisible();
+    for (const listener of visibilityListeners) {
+      try {
+        listener(visible);
+      } catch (err) {
+        console.warn(`[pet] 可见性回调异常: error=${(err && err.message) || err}`);
+      }
+    }
+  }
+
+  /** 当前是否可见。 */
+  function isVisible() {
+    return !!win && !win.isDestroyed() && win.isVisible();
+  }
+
+  /** 取屏幕 API（app ready 之后才可用）。 */
+  function screenApi() {
+    return electron().screen;
+  }
+
+  /** 窗口入口：开发态走 Vite 服务，打包态走 dist 内的多入口产物。 */
+  function resolveEntry() {
+    if (isDev) {
+      const url = process.env.ELECTRON_URL || 'http://localhost:5174';
+      return { kind: 'url', value: new URL('pet.html', `${url}/`).toString() };
+    }
+    return { kind: 'file', value: path.join(frontendRoot, 'dist', 'pet.html') };
+  }
+
+  /** 清掉穿透合并定时器。 */
+  function clearIgnoreTimer() {
+    if (ignoreTimer) {
+      clearTimeout(ignoreTimer);
+      ignoreTimer = null;
+    }
+    pendingIgnore = null;
+  }
+
+  /**
+   * 把「是否穿透」合并后下发给窗口。
+   *
+   * <p>去重是关键：渲染层每帧都可能有 mousemove，状态没变的时候绝不能重复调用
+   * `setIgnoreMouseEvents`（Windows 上会看到鼠标指针状态抖动）。</p>
+   *
+   * @param next 目标值，true = 穿透
+   */
+  function applyIgnoreMouse(next) {
+    pendingIgnore = next === true;
+    if (ignoreTimer) return;
+    ignoreTimer = setTimeout(() => {
+      ignoreTimer = null;
+      const target = pendingIgnore;
+      pendingIgnore = null;
+      if (target === null || target === ignoring) return;
+      if (!win || win.isDestroyed()) return;
+      ignoring = target;
+      // 穿透态必须带 forward，否则收不到 mousemove，就再也无法恢复交互
+      win.setIgnoreMouseEvents(target, target ? { forward: true } : undefined);
+      // 回执给渲染层：它用它来显示「穿透中 / 可交互」的调试标记
+      win.webContents.send('pet:command', { type: 'hit-state', hit: !target });
+    }, HIT_APPLY_DELAY_MS);
+  }
+
+  /** 取窗口当前几何；窗口不存在时返回 null。 */
+  function captureBounds() {
+    if (!win || win.isDestroyed()) return null;
+    const bounds = win.getBounds();
+    return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+  }
+
+  /** 立即把当前位置写盘。 */
+  function flushSave() {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    const bounds = captureBounds();
+    if (!bounds) return;
+    writeState(resolvedStatePath, { ...bounds, updatedAt: new Date().toISOString() });
+  }
+
+  /** 拖拽期间的落盘节流。 */
+  function scheduleSave() {
+    if (saveTimer) return;
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      const bounds = captureBounds();
+      if (!bounds) return;
+      writeState(resolvedStatePath, { ...bounds, updatedAt: new Date().toISOString() });
+    }, SAVE_THROTTLE_MS);
+  }
+
+  /** 把窗口拉回可见区（显示器增减 / 分辨率变化后调用）。 */
+  function reclampIntoDisplays() {
+    const bounds = captureBounds();
+    if (!bounds) return;
+    const { screen } = electron();
+    const target = resolveInitialBounds({
+      saved: bounds,
+      size: bounds,
+      displays: screen.getAllDisplays(),
+      primaryArea: screen.getPrimaryDisplay().workArea,
+    });
+    if (target.x !== bounds.x || target.y !== bounds.y) {
+      win.setPosition(target.x, target.y, false);
+    }
+  }
+
+  /** 挂显示器变化监听：屏幕被拔掉时桌宠不能留在看不见的地方。 */
+  function bindDisplayListeners() {
+    if (displayListenersBound) return;
+    displayListenersBound = true;
+    try {
+      const { screen } = electron();
+      screen.on('display-removed', reclampIntoDisplays);
+      screen.on('display-metrics-changed', reclampIntoDisplays);
+    } catch (err) {
+      console.warn(`[pet] 显示器监听注册失败: error=${(err && err.message) || err}`);
+    }
+  }
+
+  /** 校验 IPC 来源：只认桌宠窗口自己。 */
+  function isFromPet(event) {
+    return !!win && !win.isDestroyed() && event.sender === win.webContents;
+  }
+
+  /** 取某个屏幕坐标所在显示器的工作区。 */
+  function resolveWorkArea(point) {
+    const { screen } = electron();
+    const x = Number.isFinite(point && point.x) ? point.x : 0;
+    const y = Number.isFinite(point && point.y) ? point.y : 0;
+    return screen.getDisplayNearestPoint({ x: Math.round(x), y: Math.round(y) }).workArea;
+  }
+
+  /** 关闭并销毁窗口（退出时用）。 */
+  function destroy() {
+    clearIgnoreTimer();
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    dragging = false;
+    if (win && !win.isDestroyed()) {
+      // close 事件里会落盘最后一次位置
+      win.destroy();
+    }
+    win = null;
+  }
+
+  /** 隐藏窗口（保留实例，位置与渲染状态都在）。 */
+  function hide() {
+    if (!win || win.isDestroyed()) return;
+    flushSave();
+    win.hide();
+    notifyVisibility();
+  }
+
+  /**
+   * 创建（或复用）桌宠窗口。
+   *
+   * @returns BrowserWindow 实例
+   */
+  function create() {
+    if (win && !win.isDestroyed()) return win;
+    const { BrowserWindow, screen } = electron();
+    bindDisplayListeners();
+
+    const size = { width: PET_WIDTH, height: PET_HEIGHT };
+    const initial = resolveInitialBounds({
+      saved: readState(resolvedStatePath),
+      size,
+      displays: screen.getAllDisplays(),
+      primaryArea: screen.getPrimaryDisplay().workArea,
+    });
+
+    const entry = resolveEntry();
+    win = new BrowserWindow({
+      x: initial.x,
+      y: initial.y,
+      width: initial.width,
+      height: initial.height,
+      // 一律透明无边框：留白必须真透，否则桌面上会多一块灰色方块
+      show: false,
+      frame: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      hasShadow: false,
+      // 桌宠的位置只由我们的拖拽逻辑决定，不让窗口管理器参与
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      // 不进任务栏：桌宠不是「应用窗口」，alt-tab 里也不该出现
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      // 不抢焦点：用户正在别的应用里打字，点一下桌宠不该把光标夺走
+      focusable: false,
+      acceptFirstMouse: true,
+      webPreferences: {
+        preload: path.join(__dirname, 'pet-preload.cjs'),
+        nodeIntegration: false,
+        contextIsolation: true,
+        // 与其它窗口保持一致：preload 需要 node 能力（读 ipcRenderer），渲染层本身仍是隔离的
+        sandbox: false,
+        // 桌宠永远在最前面，被判定「后台」后动画会掉帧；这里显式关掉节流
+        backgroundThrottling: false,
+      },
+    });
+
+    // 置顶层级要显式给：默认 floating 会被某些置顶应用压住
+    win.setAlwaysOnTop(true, ALWAYS_ON_TOP_LEVEL);
+    // 一出现就是穿透的：空白区域绝不吃鼠标
+    win.setIgnoreMouseEvents(true, { forward: true });
+    ignoring = true;
+    clearIgnoreTimer();
+
+    // 桌宠窗口不该导航、不该开新窗（内容里将来可能混入模型资源）
+    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    win.webContents.on('will-navigate', (event) => {
+      event.preventDefault();
+    });
+
+    win.once('ready-to-show', () => {
+      if (!win || win.isDestroyed()) return;
+      // showInactive：桌宠永远不该抢焦点
+      win.showInactive();
+      notifyVisibility();
+    });
+
+    win.webContents.once('did-finish-load', () => {
+      if (!win || win.isDestroyed()) return;
+      win.webContents.send('pet:command', {
+        type: 'ready',
+        clickThrough: ignoring,
+        size: { width: initial.width, height: initial.height },
+      });
+    });
+
+    // 渲染层崩了不能把一个空黑框留在桌面上
+    win.webContents.on('render-process-gone', () => {
+      console.warn('[pet] 渲染进程退出，隐藏桌宠');
+      hide();
+    });
+
+    win.on('show', notifyVisibility);
+    win.on('hide', notifyVisibility);
+    win.on('close', () => {
+      // destroy 之前把最后位置记下来
+      flushSave();
+    });
+    win.on('closed', () => {
+      clearIgnoreTimer();
+      dragging = false;
+      win = null;
+      notifyVisibility();
+    });
+
+    if (entry.kind === 'url') {
+      win.loadURL(entry.value);
+    } else {
+      win.loadFile(entry.value);
+    }
+    return win;
+  }
+
+  /**
+   * 显示桌宠（不存在就创建）。
+   *
+   * @returns BrowserWindow 实例
+   */
+  function show() {
+    const created = create();
+    if (!created) return null;
+    if (created.isMinimized()) created.restore();
+    created.showInactive();
+    notifyVisibility();
+    return created;
+  }
+
+  /** 显示 / 隐藏切换（托盘菜单用）。 */
+  function toggle() {
+    if (isVisible()) hide();
+    else show();
+  }
+
+  // ---------------------------------------------------------------- IPC
+
+  /** 渲染层：鼠标是否在命中区内 → 决定穿透还是可交互。 */
+  ipcMain.on('pet:set-hit', (event, hit) => {
+    if (!isFromPet(event)) return;
+    applyIgnoreMouse(hit !== true);
+  });
+
+  /** 渲染层：按下左键，开始拖拽（记录光标相对窗口的偏移）。 */
+  ipcMain.handle('pet:drag-start', (event, payload) => {
+    if (!isFromPet(event)) return { ok: false, error: '来源未授权' };
+    if (!win || win.isDestroyed()) return { ok: false, error: '桌宠窗口不存在' };
+    const bounds = win.getBounds();
+    const pointerX = Number(payload && payload.cursorX);
+    const pointerY = Number(payload && payload.cursorY);
+    let originX = pointerX;
+    let originY = pointerY;
+    if (!Number.isFinite(originX) || !Number.isFinite(originY)) {
+      // 渲染层没给坐标（或给了脏值）时用系统光标位置兜底
+      const cursor = electron().screen.getCursorScreenPoint();
+      originX = cursor.x;
+      originY = cursor.y;
+    }
+    dragOffset = { x: Math.round(originX) - bounds.x, y: Math.round(originY) - bounds.y };
+    dragging = true;
+    return { ok: true };
+  });
+
+  /**
+   * 渲染层：拖拽过程中的位置上报。
+   *
+   * <p>用 `send` 而不是 `invoke`：拖拽是高频单向事件，等一轮 promise 往返会明显拖慢跟手感。</p>
+   */
+  ipcMain.on('pet:drag-move', (event, payload) => {
+    if (!isFromPet(event)) return;
+    if (!dragging || !win || win.isDestroyed()) return;
+    const bounds = win.getBounds();
+    let cursorX = Number(payload && payload.cursorX);
+    let cursorY = Number(payload && payload.cursorY);
+    if (!Number.isFinite(cursorX) || !Number.isFinite(cursorY)) {
+      const cursor = electron().screen.getCursorScreenPoint();
+      cursorX = cursor.x;
+      cursorY = cursor.y;
+    }
+    const area = resolveWorkArea({ x: cursorX - dragOffset.x, y: cursorY - dragOffset.y });
+    const target = clampRectToWorkArea({
+      x: Math.round(cursorX) - dragOffset.x,
+      y: Math.round(cursorY) - dragOffset.y,
+      width: bounds.width,
+      height: bounds.height,
+    }, area);
+    if (target.x !== bounds.x || target.y !== bounds.y) {
+      win.setPosition(target.x, target.y, false);
+      scheduleSave();
+    }
+  });
+
+  /** 渲染层：松开左键，结束拖拽并立即落盘。 */
+  ipcMain.handle('pet:drag-end', (event) => {
+    if (!isFromPet(event)) return { ok: false, error: '来源未授权' };
+    dragging = false;
+    flushSave();
+    return { ok: true };
+  });
+
+  /** 渲染层：关掉桌宠（隐藏而不销毁：下次从托盘打开就在原地）。 */
+  ipcMain.handle('pet:close', (event) => {
+    if (!isFromPet(event)) return { ok: false, error: '来源未授权' };
+    hide();
+    return { ok: true };
+  });
+
+  return {
+    create,
+    show,
+    hide,
+    toggle,
+    isVisible,
+    destroy,
+    /**
+     * 订阅可见性变化（托盘用来刷新勾选状态）。
+     *
+     * @param listener 回调，参数为当前是否可见
+     * @returns 取消订阅函数
+     */
+    onVisibilityChange(listener) {
+      if (typeof listener !== 'function') return () => {};
+      visibilityListeners.add(listener);
+      return () => visibilityListeners.delete(listener);
+    },
+    /** 状态文件路径（排障用：用户报「位置记不住」时直接看这个文件）。 */
+    statePath: resolvedStatePath,
+  };
+}
+
+module.exports = {
+  registerPetWindow,
+  normalizeDimension,
+  intersectArea,
+  clampRectToWorkArea,
+  defaultRect,
+  pickDisplay,
+  resolveInitialBounds,
+  readState,
+  writeState,
+  PET_WIDTH,
+  PET_HEIGHT,
+  EDGE_MARGIN,
+  STATE_FILE_NAME,
+  MIN_VISIBLE_RATIO,
+};
