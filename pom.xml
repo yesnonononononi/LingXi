@@ -32,8 +32,9 @@
         <kotlin.version>2.2.21</kotlin.version>
         <lingxi.build.directory>${project.basedir}/target</lingxi.build.directory>
         <mybatis-plus>3.5.9</mybatis-plus>
-        <!-- SQLite 驱动：3.50.3.0 内核=SQLite 3.50.3，jar 内自带 Windows x86_64/aarch64/x86 的 sqlitejdbc.dll（JNI 免安装） -->
-        <sqlite-jdbc>3.50.3.0</sqlite-jdbc>
+        <!-- SQLite 驱动：3.54.1.0 内核=SQLite 3.54.1，含官方 WAL-reset 竞态修复（3.51.3 起修复，
+             影响范围 3.7.0–3.51.2）；jar 内自带 Windows x86_64/aarch64/x86 的 sqlitejdbc.dll（JNI 免安装） -->
+        <sqlite-jdbc>3.54.1.0</sqlite-jdbc>
         <lingxi-starter>1.1.8-SNAPSHOT</lingxi-starter>
         <ddd-starter>1.0.7</ddd-starter>
         <!-- 变异测试（Pitest）：用法与结果解读见 docs/mutation-testing.md -->
