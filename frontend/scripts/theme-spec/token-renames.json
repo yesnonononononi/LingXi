@@ -78,6 +78,36 @@
       "to": "text-lx-fs-sm",
       "date": "2026-10-30",
       "reason": "字号令牌化 S2：硬编码 11px 换成 --lx-font-size-sm（基准 11px × var(--lx-font-scale, 1)，默认档求值仍为 11px）。123 处 / 29 文件，纯同值替换，登记后基线侧改写为同一类名，等价判据不放宽。"
+    },
+    {
+      "from": "text-[9px]",
+      "to": "text-lx-fs-2xs",
+      "date": "2026-10-30",
+      "reason": "字号令牌化 S3：硬编码 9px 换成 --lx-font-size-2xs（基准 9px × var(--lx-font-scale, 1)，默认档求值仍为 9px）。纯同值替换，登记后基线侧改写为同一类名，等价判据不放宽。"
+    },
+    {
+      "from": "text-[10px]",
+      "to": "text-lx-fs-xs",
+      "date": "2026-10-30",
+      "reason": "字号令牌化 S3：硬编码 10px 换成 --lx-font-size-xs（基准 10px × var(--lx-font-scale, 1)，默认档求值仍为 10px）。纯同值替换，登记后基线侧改写为同一类名，等价判据不放宽。"
+    },
+    {
+      "from": "text-[12px]",
+      "to": "text-lx-fs-md",
+      "date": "2026-10-30",
+      "reason": "字号令牌化 S3：硬编码 12px 换成 --lx-font-size-md（基准 12px × var(--lx-font-scale, 1)，默认档求值仍为 12px）。纯同值替换，登记后基线侧改写为同一类名，等价判据不放宽。"
+    },
+    {
+      "from": "text-[13px]",
+      "to": "text-lx-fs-lg",
+      "date": "2026-10-30",
+      "reason": "字号令牌化 S3：硬编码 13px 换成 --lx-font-size-lg（基准 13px × var(--lx-font-scale, 1)，默认档求值仍为 13px）。纯同值替换，登记后基线侧改写为同一类名，等价判据不放宽。"
+    },
+    {
+      "from": "text-[14px]",
+      "to": "text-lx-fs-xl",
+      "date": "2026-10-30",
+      "reason": "字号令牌化 S3：硬编码 14px 换成 --lx-font-size-xl（基准 14px × var(--lx-font-scale, 1)，默认档求值仍为 14px）。纯同值替换，登记后基线侧改写为同一类名，等价判据不放宽。"
     }
   ]
 }
