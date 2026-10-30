@@ -61,7 +61,7 @@ test('开发态只检查 8089，后端未启动时不运行可能过期的 jar',
   assert.deepEqual(checkedPorts, [8089]);
 });
 
-test('安装版实际传给 JVM 的堆上限为 1GiB，避免恢复大快照后重复耗尽旧配额', async () => {
+test('安装版实际传给 JVM 的堆上限为 1GiB，为实测峰值留足余量', async () => {
   const { invocation } = await launch();
   const heapArguments = [...invocation.args].filter(argument => argument.startsWith('-Xmx'));
   assert.equal(heapArguments.length, 1);

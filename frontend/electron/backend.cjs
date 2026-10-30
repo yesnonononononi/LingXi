@@ -145,7 +145,8 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
   }
 
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
-  // H2 库文件目录由后端按配置项 lingxi.data.dir 自行创建（缺省 ~/.lingxi/data），
+  // 数据目录由后端按配置项 lingxi.data.dir 自行创建（缺省 ~/.lingxi/data，
+  // 里面是 SQLite 库文件 lingxi.sqlite 与 checkpoints 检查点正文目录），
   // Electron 不插手数据目录，这里只负责日志文件。
   logStream = fs.createWriteStream(logPath, { flags: 'a' });
 
@@ -154,7 +155,9 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
     '-Duser.language=zh',
     '-Duser.country=CN',
     '-Xms128m',
-    // 大型检查点与写盘缓冲区会同时驻留，给已复现的内存峰值留出空间。
+    // 改成文件检查点后实测过：512 MiB 堆下整条会话链路的峰值只有 96–128 MiB
+    // （检查点正文流式写文件、不再把整份 JSON 读进堆）。这里给到 1 GiB 是为留足余量，
+    // 同时覆盖非检查点负载（多图消息、大工具输出）的瞬时峰值。
     '-Xmx1024m',
     '-jar',
     layout.jar,
@@ -163,7 +166,7 @@ async function start({ frontendRoot, isPackaged, executablePath, resourcesPath, 
     `--lingxi.sandbox.state-directory=${process.env.LINGXI_SANDBOX_STATE_DIRECTORY || path.join(userDataDir, 'sandbox')}`,
     `--lingxi.log.dir=${process.env.LINGXI_LOG_DIR || logDir}`,
   ];
-  // 数据库内置（H2 文件库，用户机器不需要装任何数据库）。
+  // 数据库内置（SQLite 文件库 + sqlite-jdbc 自带各平台 JNI 原生库，用户机器不需要装任何数据库）。
   // 传 LX_SPRING_PROFILE 环境变量可覆盖为其他 Spring profile（默认不传，走主配置）。
   if (process.env.LX_SPRING_PROFILE) {
     args.push(`--spring.profiles.active=${process.env.LX_SPRING_PROFILE}`);
