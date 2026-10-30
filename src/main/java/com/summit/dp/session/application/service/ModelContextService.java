@@ -41,14 +41,17 @@ public class ModelContextService {
     public void replace(Long sessionId, List<Message> messages) {
         // Upsert：session_context 没有独立的初始化写入方，首聊收尾/恢复/压缩都经本方法落第一行。
         // 框架仓储 save=INSERT、updateById=UPDATE（对不存在行静默 0 行），必须按是否命中分支。
-        Optional<SessionContext> found = repository.findById(sessionId);
-        SessionContext context = found.orElseGet(() -> SessionContext.create(sessionId));
+        //
+        // 这里用**轻量摘要**（只读 session_id / version）判命中，绝不读旧正文：
+        // 替换是覆盖写，旧正文既不用来合并也不用来校验，读它只会把几十 MB 上下文搬进堆。
+        Optional<SessionContext> summary = repository.findSummary(sessionId);
+        SessionContext context = summary.orElseGet(() -> SessionContext.create(sessionId));
         try {
             context.changeContent(objectMapper.writeValueAsString(messages));
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize model context for session " + sessionId, e);
         }
-        if (found.isPresent()) {
+        if (summary.isPresent()) {
             repository.updateById(context);
         } else {
             repository.save(context);

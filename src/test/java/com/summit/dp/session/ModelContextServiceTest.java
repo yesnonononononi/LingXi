@@ -36,7 +36,7 @@ class ModelContextServiceTest {
 
     @Test
     void storesPlainMessageArrayAndRestoresConcreteMutableMessages() throws Exception {
-        when(repository.findById(201L)).thenReturn(Optional.empty());
+        when(repository.findSummary(201L)).thenReturn(Optional.empty());
         service.replace(201L, List.of(SystemMessageEntity.builder().text("system").build(),
                 UserMessageEntity.from("hello"), AiMessageEntity.builder().text("answer").build(),
                 ToolMessageEntity.builder().id("call").toolOutput("result").build()));
@@ -54,14 +54,36 @@ class ModelContextServiceTest {
         assertDoesNotThrow(() -> restored.add(UserMessageEntity.from("next")));
     }
 
+    /**
+     * 门槛守卫：替换正文路径只走摘要查询，绝不把旧正文读进堆。
+     *
+     * <p>旧实现为了判「行存不存在」整段读 {@code findById}；这条断言就是那次的翻红点 ——
+     * 谁把摘要查询改回整段加载，这里立刻红。</p>
+     */
+    @Test
+    void replacingContentNeverLoadsTheOldContent() throws Exception {
+        when(repository.findSummary(201L)).thenReturn(Optional.of(SessionContext.restoreSummary(201L, 7L)));
+
+        service.replace(201L, List.of(UserMessageEntity.from("新正文")));
+
+        verify(repository, never()).findById(any());
+        ArgumentCaptor<SessionContext> updated = ArgumentCaptor.forClass(SessionContext.class);
+        verify(repository).updateById(updated.capture());
+        verify(repository, never()).save(any());
+        // 行为保持不变：版本在库里那一版基础上 +1，正文是本次写入的新内容。
+        assertEquals(8L, updated.getValue().getVersion());
+        assertEquals("新正文", mapper.readTree(updated.getValue().getContent()).get(0)
+                .path("content").get(0).path("text").asText());
+    }
+
     @Test
     void replacesExistingContextAndHandlesEmptyHistory() {
-        SessionContext existing = SessionContext.create(201L);
-        existing.changeContent("[]");
-        when(repository.findById(201L)).thenReturn(Optional.of(existing));
+        when(repository.findSummary(201L)).thenReturn(Optional.of(SessionContext.restoreSummary(201L, 1L)));
         service.replace(201L, List.of());
-        verify(repository).updateById(existing);
-        assertEquals(2L, existing.getVersion());
+        ArgumentCaptor<SessionContext> updated = ArgumentCaptor.forClass(SessionContext.class);
+        verify(repository).updateById(updated.capture());
+        assertEquals(2L, updated.getValue().getVersion());
+        when(repository.findById(201L)).thenReturn(Optional.of(updated.getValue()));
         assertTrue(service.find(201L).orElseThrow().isEmpty());
     }
 
@@ -109,7 +131,7 @@ class ModelContextServiceTest {
         assertEquals(398, parseFailure.getLocation().getColumnNr());
         DefaultTokenizer tokenizer = new DefaultTokenizer(new TokenEstimatorAdapter("gpt-3.5-turbo"));
         int originalCount = assertDoesNotThrow(() -> tokenizer.count(execution.getMessages()));
-        when(repository.findById(201L)).thenReturn(Optional.empty());
+        when(repository.findSummary(201L)).thenReturn(Optional.empty());
 
         new ContextRecoveringFailureObserver(service).onFailure(execution, originalFailure);
         ArgumentCaptor<SessionContext> saved = ArgumentCaptor.forClass(SessionContext.class);
