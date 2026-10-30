@@ -9,9 +9,11 @@
  *   源码里出现的每个令牌类（`bg-lx-*` / `text-lx-*` / `border-lx-*` …）必须在
  *   构建产物里能解析到真实取值。解析不到 = Tailwind 不产出规则 = **组件像没写**
  *   （静默失效）。写错一个字母就属于这一层，判死。
- *   **例外（2026-10-30，字号令牌化 S2）**：字号令牌类（`text-lx-fs-*`）的取值天然不是颜色，
- *   解析不出颜色属设计使然；这类类名只在 `@theme inline` 桥里能反查到真实令牌时予以放行
- *   （写错档位仍旧判死，判据见 isNonColorTokenClass，未放宽任何 compare 容差）。
+ *   **例外（2026-10-30，字号令牌化 S2；2026-10-30 评审后收窄）**：字号令牌类
+ *   （`text-lx-fs-*`）的取值天然不是颜色，解析不出颜色属设计使然，故只在「类名以
+ *   `text-lx-fs-` 开头 + `@theme inline` 桥能反查到真实令牌 + 该令牌在 tokens.css 有定义」
+ *   三条同时成立时放行（判据见 isNonColorTokenClass）。写错档位（`text-lx-fs-smm`）仍旧判死；
+ *   形态类（`shadow-lx-*` / `blur-lx-panel`）不再被这条豁免覆盖；未放宽任何 compare 容差。
  *
  * 第 2 层 · 颜色等价（三元分支 vs 三元分支，按数值 RGBA 带容差比）
  *   `isDark ? 'text-zinc-400' : 'text-gray-500'` 换成令牌后，暗/亮两侧的真实取值
@@ -948,6 +950,17 @@ const listVueFiles = (dir) => {
 };
 
 /**
+ * 字号令牌类的类名前缀。**豁免面就收窄到这个前缀**（评审 C2(a)）。
+ *
+ * <p>为什么不写成「任何能在 `@theme` 桥里反查到键的类」：`loadThemeMapFromText` 的键是桥里的
+ * 变量名（`--color-lx-primary` → `color-lx-primary`，`--text-lx-fs-sm` → `text-lx-fs-sm`），
+ * 字号类能命中**只是因为 Tailwind 的 `--text-*` 命名空间让键名与工具类名恰好同名**。
+ * 靠命名巧合做豁免，会把 `shadow-lx-1` / `blur-lx-panel` 这类形态令牌一并放行（评审 §2a 实测 true）。
+ * 显式写死前缀后，豁免面 = 8 档 `--lx-font-size-*`，多一个都不给。</p>
+ */
+const FONT_SIZE_CLASS_PREFIX = 'text-lx-fs-';
+
+/**
  * 字号等「非颜色令牌类」的合法性判定（2026-10-30 新增，随字号令牌化 S2 引入）。
  *
  * <p>为什么需要：{@link staticCheck} 会把「命中令牌前缀却解析不到取值」的类判成写错令牌名。
@@ -958,20 +971,66 @@ const listVueFiles = (dir) => {
  * 实测证据（只登记 token-renames 台账、只改 SettingsSelect.vue 一个文件）：
  * raw 多重集已判等，但仍报 `[static] text-lx-fs-sm —— 产物里解析不到该令牌类`。</p>
  *
- * <p>判据刻意收窄到「能在 `@theme inline` 桥里反查到目标令牌，且该令牌在 tokens.css 里真有定义」。
- * 因此：写错档位（`text-lx-fs-smm`）反查不到 → 仍旧报红；颜色令牌类走颜色通道，
- * 压根不会进 unknown，与这条豁免无关；**没有放宽任何 compare 容差**。
- * 另注：字号类即使写在 `@apply` 里（Tailwind 只内联属性、不产工具类）也能通过——
- * 本判据查的是 `@theme` 桥而不是产物规则表，这正是它比「产品里有规则」更强的理由。</p>
+ * <p>判据两条必须同时成立（缺一条就判死）：
+ * ① 类名以 {@link FONT_SIZE_CLASS_PREFIX} 开头（豁免面见常量注释）；
+ * ② `@theme inline` 桥能反查到目标令牌，**且**该令牌在 tokens.css 明/暗两套里真有定义。
+ * 因此：写错档位（`text-lx-fs-smm`）反查不到 → 仍旧报红；颜色令牌类压根不会进 unknown，
+ * 与本条无关；**没有放宽任何 compare 容差**。另注：字号类即使写在 `@apply` 里
+ * （Tailwind 只内联属性、不产工具类）也能通过——本判据查的是 `@theme` 桥而不是产物规则表。</p>
  *
- * @param {ReturnType<typeof loadThemeContext>} ctx 解析上下文
+ * <p><b>已知缺口（评审 §2b 点名，留痕不掩盖）</b>：这一支不再验产物是否真有该类规则，
+ * 也不校验取值形态（颜色通道会过 normalizeColor/parseRgba，字号通道不会）。
+ * 风险量化为低：门禁扫描集 ⊆ Tailwind 自动扫描集；字号类在源码里都是字面量；
+ * 实测产物里确有 `.text-lx-fs-sm`。后续加强见评审 C4。</p>
+ *
+ * @param {any} ctx 解析上下文（只用到 themeMap 与 tokens 两个字段，故合成上下文也能测）
  * @param {string} cls 原始类名（可带 `dark:` / `hover:` 等变体前缀）
- * @returns {boolean} true = 这是一个有真实令牌定义的非颜色令牌类
+ * @returns {boolean} true = 这是一个有真实令牌定义的字号令牌类
  */
 const isNonColorTokenClass = (ctx, cls) => {
-  const target = ctx.themeMap.get(splitVariant(cls).base);
+  const base = splitVariant(cls).base;
+  if (!base.startsWith(FONT_SIZE_CLASS_PREFIX)) return false;
+  const target = ctx.themeMap.get(base);
   if (!target) return false;
   return ctx.tokens.dark['--' + target] !== undefined || ctx.tokens.light['--' + target] !== undefined;
+};
+
+/**
+ * 把「写错令牌名」的候选集过滤成真正要报的问题（纯函数，可直接在自检里断言）。
+ *
+ * <p>抽出来的目的不只是整洁：豁免逻辑一旦被摘掉（`staticCheck` 里漏掉这一步，或本函数退化成
+ * `return unknown`），自检里的集成断言会立刻变红——否则「守卫自己被摘掉」是无声的。</p>
+ *
+ * @param {any} ctx 解析上下文
+ * @param {string[]} unknown `groupsOf` 收出的候选类名
+ * @returns {string[]} 仍需报为「写错令牌名」的类名
+ */
+const filterUnknown = (ctx, unknown) => unknown.filter(cls => !isNonColorTokenClass(ctx, cls));
+
+/**
+ * 第 1 层的纯计算部分：给定源码文本，产出该文件的静态问题列表。
+ *
+ * <p>与 {@link staticCheck} 拆开是为了让自检能直接喂合成源码（不必落临时文件），
+ * 从而断言「豁免已真正接入静态层」这件事本身。</p>
+ *
+ * @param {ReturnType<typeof loadThemeContext>} ctx 解析上下文
+ * @param {string} source 源码文本
+ * @param {string} relPath 相对仓库根的路径（只用于报错文案）
+ * @returns {string[]} 问题列表
+ */
+const staticProblems = (ctx, source, relPath = '<inline>') => {
+  const g = groupsOf(ctx, source);
+  const problems = [];
+  for (const c of filterUnknown(ctx, g.unknown)) {
+    problems.push(`[static] ${c} —— 产物里解析不到该令牌类（Tailwind 不产出规则，等于没写；多半是令牌名写错）`);
+  }
+  // G-7 护栏：形如调色板类却解析不到 ⇒ 硬失败（打印文件 / 类名 / 原因）。
+  // 为什么单列一条而不是并进 unknown：unknown 只看令牌前缀（lx-/color-lx-），
+  // 而这次漏的是**整族灰阶调色板类**（zinc-50 全族因 oklch hue=none 解析失败被静默丢弃 41 项）。
+  for (const it of g.unresolvedPalette) {
+    problems.push(`[static] ${relPath} · ${it.cls} —— 形如调色板类但解析不到：${it.reason}`);
+  }
+  return problems;
 };
 
 /**
@@ -983,20 +1042,7 @@ const isNonColorTokenClass = (ctx, cls) => {
 const staticCheck = (ctx, relPath) => {
   const abs = path.join(REPO_ROOT, relPath);
   if (!fs.existsSync(abs)) return [`[static] 文件不存在：${relPath}`];
-  const g = groupsOf(ctx, fs.readFileSync(abs, 'utf8'));
-  const problems = [];
-  for (const c of g.unknown) {
-    // 字号等非颜色令牌类解析不出颜色是设计使然（见 isNonColorTokenClass），不算写错
-    if (isNonColorTokenClass(ctx, c)) continue;
-    problems.push(`[static] ${c} —— 产物里解析不到该令牌类（Tailwind 不产出规则，等于没写；多半是令牌名写错）`);
-  }
-  // G-7 护栏：形如调色板类却解析不到 ⇒ 硬失败（打印文件 / 类名 / 原因）。
-  // 为什么单列一条而不是并进 unknown：unknown 只看令牌前缀（lx-/color-lx-），
-  // 而这次漏的是**整族灰阶调色板类**（zinc-50 全族因 oklch hue=none 解析失败被静默丢弃 41 项）。
-  for (const it of g.unresolvedPalette) {
-    problems.push(`[static] ${relPath} · ${it.cls} —— 形如调色板类但解析不到：${it.reason}`);
-  }
-  return problems;
+  return staticProblems(ctx, fs.readFileSync(abs, 'utf8'), relPath);
 };
 
 /** 
@@ -1799,12 +1845,41 @@ const selftest = (ctx) => {
   check('写错令牌名 → 报不可解析', g2.unknown.length === 1, JSON.stringify(g2.unknown));
 
   // ---- 非颜色令牌类（字号）不得被误判成写错令牌名（2026-10-30 新增，字号令牌化 S2）----
-  // 字号类解析不出颜色是设计使然；豁免必须收窄到「@theme 桥能反查到真实令牌」，
-  // 否则这条豁免会变成「任何 text-lx-* 拼错都绿」的假绿通道。
+  // 字号类解析不出颜色是设计使然；豁免必须收窄到「text-lx-fs- 前缀 + 桥能反查到真实令牌 +
+  // tokens.css 真有定义」，否则这条豁免会变成「任何 text-lx-* 拼错都绿」的假绿通道。
   check('字号令牌类 → 不算写错令牌名', isNonColorTokenClass(ctx, 'text-lx-fs-sm') === true);
   check('字号令牌类带变体前缀也能识别', isNonColorTokenClass(ctx, 'hover:text-lx-fs-sm') === true);
   check('字号档位写错 → 仍报不可解析', isNonColorTokenClass(ctx, 'text-lx-fs-smm') === false);
   check('颜色令牌类不被这条豁免吞掉', isNonColorTokenClass(ctx, 'text-lx-primary') === false);
+
+  // ---- C1-1 集成断言：豁免必须真的接在过滤这一步上（守卫被摘 ⇒ 这里立刻变红）----
+  // 只断言 isNonColorTokenClass 是不够的：把它从 staticCheck 的过滤链里摘掉，或让 filterUnknown
+  // 退化成 return unknown，判据本身仍然正确，问题却会照旧误报。所以这里断的是「过滤后的结果」。
+  const filtered = filterUnknown(ctx, ['text-lx-fs-sm', 'text-lx-fs-smm']);
+  check(
+    'filterUnknown 只放行真令牌、留下拼错档位',
+    filtered.length === 1 && filtered[0] === 'text-lx-fs-smm',
+    JSON.stringify(filtered)
+  );
+  // 更强一档：直接喂合成源码给静态层本体，断言问题条数与内容（这条连「staticCheck 里漏掉过滤」也抓得住）
+  const ghostProblems = staticProblems(ctx, "const c = 'text-lx-fs-sm text-lx-fs-smm'");
+  check(
+    '静态层只对拼错档位报 problem（豁免已接入 staticCheck 本体）',
+    ghostProblems.length === 1 && ghostProblems[0].includes('text-lx-fs-smm'),
+    JSON.stringify(ghostProblems)
+  );
+
+  // ---- C1-2 判据后半段断言：桥里有键、tokens.css 里没定义 ⇒ 必须不放行 ----
+  // 少了这条，把后半段削成「只要桥里有键就 true」也能全绿（评审 §2c 实测）。
+  const ghostCtx = { themeMap: new Map([['text-lx-ghost', 'lx-ghost']]), tokens: { dark: {}, light: {} } };
+  check('桥里有键但 tokens.css 无定义 → 不放行', isNonColorTokenClass(ghostCtx, 'text-lx-ghost') === false);
+  // ⚠️ C2(a) 收窄后，上一条已被前缀检查先拦下（`text-lx-ghost` 不以 `text-lx-fs-` 开头），
+  // 单靠它测不到「判据后半段」。所以补一条**前缀合格**的同构用例：桥里有键、tokens.css 无定义。
+  const ghostFsCtx = { themeMap: new Map([['text-lx-fs-ghost', 'lx-ghost']]), tokens: { dark: {}, light: {} } };
+  check('字号前缀合格但 tokens.css 无定义 → 不放行', isNonColorTokenClass(ghostFsCtx, 'text-lx-fs-ghost') === false);
+
+  // ---- C2(a) 豁免面收窄：形态类不再被这条豁免覆盖（此前靠「类名恰等于桥键名」的巧合命中）----
+  check('形态类 shadow-lx-1 不被这条豁免吞掉', isNonColorTokenClass(ctx, 'shadow-lx-1') === false);
 
   // 红：非颜色类改动也要报
   const g3 = groupsOf(ctx, "const c = 'flex mb-2.5'");
