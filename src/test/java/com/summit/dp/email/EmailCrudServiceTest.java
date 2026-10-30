@@ -1,5 +1,9 @@
 package com.summit.dp.email;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import cn.hutool.core.util.IdUtil;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -49,9 +53,6 @@ import org.springframework.transaction.interceptor.TransactionInterceptor;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -94,7 +95,7 @@ import static org.mockito.ArgumentMatchers.any;
  */
 class EmailCrudServiceTest {
 
-    private EmbeddedDatabase database;
+    private SqliteTestDatabase database;
     private EmailMapper emailMapper;
     private EmailMessageMapper messageMapper;
     private EmailRepository emailRepository;
@@ -103,21 +104,22 @@ class EmailCrudServiceTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = new EmbeddedDatabaseBuilder().generateUniqueName(true).setType(EmbeddedDatabaseType.H2)
-                .addScript("email-schema.sql").build();
+        database = SqliteTestDatabase.create("EmailCrudServiceTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
+
+        MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(EmailMapper.class);
         configuration.addMapper(EmailMessageMapper.class);
         // 应用侧 MybatisPlusConfig 同款分页插件：selectPage 需要它做 LIMIT 改写与 count
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
-        interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.H2));
+        interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.SQLITE));
         configuration.addInterceptor(interceptor);
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate session = new SqlSessionTemplate(sessionFactory);
+        SqlSessionTemplate session = SqliteTestDatabase.sqlSession(sessionFactory);
         emailMapper = session.getMapper(EmailMapper.class);
         messageMapper = session.getMapper(EmailMessageMapper.class);
         emailRepository = new EmailRepositoryImpl(emailMapper);

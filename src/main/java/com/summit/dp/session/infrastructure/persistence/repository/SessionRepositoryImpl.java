@@ -35,8 +35,9 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
 
     @Override
     public Optional<Session> lockById(Long sessionId) {
+        // SQLite 无行锁：退化为普通读，「状态改写不能覆盖别人」由 update 的 version 条件裁决。
         return Optional.ofNullable(sessionMapper.selectOne(Wrappers.<SessionPO>lambdaQuery()
-                .eq(SessionPO::getId, sessionId).last("FOR UPDATE"))).map(this::toModel);
+                .eq(SessionPO::getId, sessionId))).map(this::toModel);
     }
 
     @Override

@@ -1,5 +1,9 @@
 package com.summit.dp.session;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
@@ -23,9 +27,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
@@ -64,21 +65,21 @@ class TranscriptConcurrencyTest {
     private static final long TURN_ID = 900900L;
     private static final String RESPONSE_ID = "9007199254740993";
 
-    private EmbeddedDatabase database;
+    private SqliteTestDatabase database;
     private DataSource dataSource;
     private ConversationTranscriptService service;
 
     @BeforeEach
     void setup() throws Exception {
-        database = new EmbeddedDatabaseBuilder().generateUniqueName(true).setType(EmbeddedDatabaseType.H2)
-                .addScript("session-response-id-concurrency-schema.sql")
-                .build();
+        database = SqliteTestDatabase.create("TranscriptConcurrencyTest");
         dataSource = database;
         try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
             statement.execute("INSERT INTO session (id, root_session_id, name) VALUES (" + SESSION_ID + ", 0, '并发会话')");
         }
 
         MybatisConfiguration configuration = new MybatisConfiguration();
+
+        MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(SessionMapper.class);
         configuration.addMapper(SessionMessageMapper.class);
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(configuration, "test");
@@ -89,7 +90,7 @@ class TranscriptConcurrencyTest {
         factory.setDataSource(dataSource);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate template = new SqlSessionTemplate(sessionFactory);
+        SqlSessionTemplate template = SqliteTestDatabase.sqlSession(sessionFactory);
 
         TranscriptRecordAssembler assembler = new TranscriptRecordAssembler(new JsonConfig().objectMapper());
         TranscriptReplayMatcher matcher = new TranscriptReplayMatcher(new JsonConfig().objectMapper());

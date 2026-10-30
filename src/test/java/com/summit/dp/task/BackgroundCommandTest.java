@@ -1,5 +1,10 @@
 package com.summit.dp.task;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.baomidou.mybatisplus.annotation.DbType;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
@@ -28,7 +33,6 @@ import com.summit.dp.execution.ExecutionEventMetadata;
 import com.summit.dp.sandbox_security.application.TerminalSecurityPolicy;
 import com.summit.dp.sandbox_security.domain.model.SecurityAction;
 import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
-import com.summit.dp.shared.config.H2SchemaInitializer;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.task.api.controller.BackgroundTaskController;
 import com.summit.dp.task.application.service.TaskDeletionPolicy;
@@ -80,10 +84,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mybatis.spring.SqlSessionTemplate;
-import org.springframework.boot.DefaultApplicationArguments;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -96,7 +96,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class BackgroundCommandTest {
     @TempDir Path temporary;
-    private EmbeddedDatabase database;
+    private SqliteTestDatabase database;
     private TaskMapper mapper;
     private TaskRepository repository;
     private BackendProcessManager manager;
@@ -107,18 +107,17 @@ class BackgroundCommandTest {
     private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
 
     @BeforeEach void setup() throws Exception {
-        database = new EmbeddedDatabaseBuilder().setType(EmbeddedDatabaseType.H2)
-                .setName("background-" + UUID.randomUUID() + ";MODE=MySQL;DB_CLOSE_DELAY=-1")
-                .addScript("file:./init.sql").build();
+        database = SqliteTestDatabase.create("BackgroundCommandTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
+        MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(TaskMapper.class);
         MybatisPlusInterceptor plugins = new MybatisPlusInterceptor();
-        plugins.addInnerInterceptor(new PaginationInnerInterceptor());
+        plugins.addInnerInterceptor(new PaginationInnerInterceptor(DbType.SQLITE));
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database); factory.setConfiguration(configuration); factory.setPlugins(plugins);
         SqlSessionFactory sessionFactory = factory.getObject();
-        mapper = new SqlSessionTemplate(sessionFactory).getMapper(TaskMapper.class);
+        mapper = SqliteTestDatabase.sqlSession(sessionFactory).getMapper(TaskMapper.class);
         repository = new TaskRepositoryImpl(mapper);
         BackgroundTaskBroadcaster broadcaster = mock(BackgroundTaskBroadcaster.class);
         doAnswer(invocation -> {
@@ -427,47 +426,6 @@ class BackgroundCommandTest {
         assertEquals(List.of(56L), repository.findByExecutionId(10L, 101L).stream().map(Task::getId).toList());
         assertEquals(List.of(57L), repository.findByExecutionId(11L, 100L).stream().map(Task::getId).toList());
         assertEquals(100L, repository.findById(1L).orElseThrow().getExecutionId());
-    }
-
-    @Test void existingTaskTableGainsItsLabelWithoutLosingDataAndMigrationIsRepeatable() throws Exception {
-        EmbeddedDatabase legacy = new EmbeddedDatabaseBuilder().setType(EmbeddedDatabaseType.H2)
-                .setName("task-label-" + UUID.randomUUID() + ";MODE=MySQL")
-                .addScript("file:./init.sql").addScript("background-task-legacy.sql").build();
-        try {
-            MybatisConfiguration configuration = new MybatisConfiguration();
-            configuration.setMapUnderscoreToCamelCase(true); configuration.addMapper(TaskMapper.class);
-            MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
-            factory.setDataSource(legacy); factory.setConfiguration(configuration);
-            TaskMapper tasks = new SqlSessionTemplate(factory.getObject()).getMapper(TaskMapper.class);
-            TaskPO row = new TaskPO(); row.setId(10L); row.setSessionId(10L); row.setTurnId(20L);
-            row.setCommand("original"); row.setStatus("SUCCESS"); row.setCreateAt(Instant.now());
-            tasks.insert(row);
-            H2SchemaInitializer initializer = new H2SchemaInitializer();
-            initializer.h2SchemaBootstrap(legacy).run(new DefaultApplicationArguments());
-            initializer.h2SchemaBootstrap(legacy).run(new DefaultApplicationArguments());
-            assertEquals("original", assertDoesNotThrow(() -> tasks.selectById(10L)).getCommand());
-            row.setIntention("后台执行全量编译"); tasks.updateById(row);
-            assertEquals("后台执行全量编译", tasks.selectById(10L).getIntention());
-            row.setExecutionId(100L); tasks.updateById(row);
-            assertEquals(100L, tasks.selectById(10L).getExecutionId());
-        } finally { legacy.shutdown(); }
-    }
-
-    @Test void legacyTaskTableWithCommandColumnIsRenamedWithoutLosingDataAndMigrationIsRepeatable() throws Exception {
-        EmbeddedDatabase legacy = new EmbeddedDatabaseBuilder().setType(EmbeddedDatabaseType.H2)
-                .setName("task-rename-" + UUID.randomUUID() + ";MODE=MySQL")
-                .addScript("file:./init.sql").addScript("background-task-command-column.sql").build();
-        try {
-            MybatisConfiguration configuration = new MybatisConfiguration();
-            configuration.setMapUnderscoreToCamelCase(true); configuration.addMapper(TaskMapper.class);
-            MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
-            factory.setDataSource(legacy); factory.setConfiguration(configuration);
-            TaskMapper tasks = new SqlSessionTemplate(factory.getObject()).getMapper(TaskMapper.class);
-            H2SchemaInitializer initializer = new H2SchemaInitializer();
-            initializer.h2SchemaBootstrap(legacy).run(new DefaultApplicationArguments());
-            initializer.h2SchemaBootstrap(legacy).run(new DefaultApplicationArguments());
-            assertEquals("原始命令", tasks.selectById(10L).getCommand());
-        } finally { legacy.shutdown(); }
     }
 
     private ToolExecution call(ToolExecutor executor, Map<String, Object> args, long timeout) throws Exception {

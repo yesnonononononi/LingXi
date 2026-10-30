@@ -72,12 +72,11 @@ public class EmailRepositoryImpl extends AbstractRepository<Email, EmailPO, Long
         if (workflowExecutionId == null || recipientAgentId == null) {
             return Optional.empty();
         }
-        // 锁定读（当前读）：绕过本事务的 read view，读到竞争方刚提交的邮箱行。
-        // 冲突回查时该行必定已存在，锁的是既有行而非间隙，不引入额外的间隙锁。
+        // SQLite 无行锁：退化为普通读，「同一业务键只有一把邮箱」由 uk_email_workflow_recipient 唯一索引裁决，
+        // 并发首次建箱的失败方收到唯一键冲突后回查既有行。
         EmailPO po = mapper.selectOne(Wrappers.<EmailPO>lambdaQuery()
                 .eq(EmailPO::getWorkflowExecutionId, workflowExecutionId)
-                .eq(EmailPO::getRecipientAgentId, recipientAgentId)
-                .last("FOR UPDATE"));
+                .eq(EmailPO::getRecipientAgentId, recipientAgentId));
         return po == null ? Optional.empty() : Optional.of(toModel(po));
     }
 

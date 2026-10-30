@@ -24,7 +24,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
-/** 沿用既有 PO 字段，首次从 H2 迁移后以 JSON 为准。 */
+/** 沿用既有 PO 字段，首次建库后以 JSON 为准。 */
 @Repository
 @Slf4j
 public class McpRepositoryImpl extends AbstractJsonRepository<Mcp, McpPO>

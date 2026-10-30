@@ -1,5 +1,9 @@
 package com.summit.dp.toolcall;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,9 +25,6 @@ import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -43,7 +44,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
 
 class ToolCallReadinessTest {
-    private EmbeddedDatabase database;
+    private SqliteTestDatabase database;
     private ToolCallRepositoryImpl tools;
     private ToolCallReadinessService readiness;
     private final ExecutionRepository executions = mock(ExecutionRepository.class);
@@ -54,16 +55,17 @@ class ToolCallReadinessTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = new EmbeddedDatabaseBuilder().generateUniqueName(true).setType(EmbeddedDatabaseType.H2)
-                .addScript("tool-call-schema.sql").build();
+        database = SqliteTestDatabase.create("ToolCallReadinessTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
+
+        MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(ToolCallMapper.class);
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         tools = new ToolCallRepositoryImpl(
-                new SqlSessionTemplate(factory.getObject()).getMapper(ToolCallMapper.class),
+                SqliteTestDatabase.sqlSession(factory.getObject()).getMapper(ToolCallMapper.class),
                 new ObjectMapper(), ToolCallPersistenceTest.buildCardAvailabilityPolicy());
         when(executions.findById("11")).thenReturn(Optional.of(execution));
         doAnswer(invocation -> {

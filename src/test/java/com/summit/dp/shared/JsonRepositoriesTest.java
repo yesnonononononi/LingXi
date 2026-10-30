@@ -1,5 +1,9 @@
 package com.summit.dp.shared;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,9 +32,6 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.InputStream;
@@ -50,7 +51,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class JsonRepositoriesTest {
     @TempDir Path directory;
-    private EmbeddedDatabase database;
+    private SqliteTestDatabase database;
     private McpMapper mcpMapper;
     private ModelConfigMapper modelMapper;
     private UserConfigMapper userMapper;
@@ -62,10 +63,10 @@ class JsonRepositoriesTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = new EmbeddedDatabaseBuilder().generateUniqueName(true).setType(EmbeddedDatabaseType.H2)
-                .addScript("json-config-schema.sql").build();
+        database = SqliteTestDatabase.create("JsonRepositoriesTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
+        MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(McpMapper.class);
         configuration.addMapper(ModelConfigMapper.class);
         configuration.addMapper(UserConfigMapper.class);
@@ -73,7 +74,7 @@ class JsonRepositoriesTest {
         factory.setConfiguration(configuration);
         factory.setDataSource(database);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate session = new SqlSessionTemplate(sessionFactory);
+        SqlSessionTemplate session = SqliteTestDatabase.sqlSession(sessionFactory);
         mcpMapper = session.getMapper(McpMapper.class);
         modelMapper = session.getMapper(ModelConfigMapper.class);
         userMapper = session.getMapper(UserConfigMapper.class);

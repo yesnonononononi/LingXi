@@ -1,5 +1,9 @@
 package com.summit.dp.turn;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.turn.domain.model.ChatTurn;
@@ -18,9 +22,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -52,22 +53,23 @@ class ChatTurnRepositoryTest {
     private static final long SESSION_ID = 500L;
     private static final long EXECUTION_ID = 9001L;
 
-    private EmbeddedDatabase database;
+    private SqliteTestDatabase database;
     private ChatTurnMapper mapper;
     private ChatTurnRepositoryImpl repository;
 
     @BeforeEach
     void setup() throws Exception {
-        database = new EmbeddedDatabaseBuilder().generateUniqueName(true).setType(EmbeddedDatabaseType.H2)
-                .addScript("chat-turn-schema.sql").build();
+        database = SqliteTestDatabase.create("ChatTurnRepositoryTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
+
+        MyBatisTypeHandlers.registerAll(configuration);
         configuration.setMapUnderscoreToCamelCase(false);
         configuration.addMapper(ChatTurnMapper.class);
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        mapper = new SqlSessionTemplate(sessionFactory).getMapper(ChatTurnMapper.class);
+        mapper = SqliteTestDatabase.sqlSession(sessionFactory).getMapper(ChatTurnMapper.class);
         repository = new ChatTurnRepositoryImpl(mapper);
     }
 

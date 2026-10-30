@@ -1,5 +1,9 @@
 package com.summit.dp.toolcall;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import com.summit.dp.workflow.infrastructure.harness.HarnessExecutionGate;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -25,9 +29,6 @@ import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
@@ -47,22 +48,23 @@ import static org.mockito.Mockito.when;
  */
 class ToolCallPersistenceTest {
 
-    private EmbeddedDatabase database;
+    private SqliteTestDatabase database;
     private ToolCallRepositoryImpl repository;
     private TransactionTemplate transactions;
 
     @BeforeEach
     void setup() throws Exception {
-        database = new EmbeddedDatabaseBuilder().generateUniqueName(true).setType(EmbeddedDatabaseType.H2)
-                .addScript("tool-call-schema.sql").build();
+        database = SqliteTestDatabase.create("ToolCallPersistenceTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
+
+        MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(ToolCallMapper.class);
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate session = new SqlSessionTemplate(sessionFactory);
+        SqlSessionTemplate session = SqliteTestDatabase.sqlSession(sessionFactory);
         repository = new ToolCallRepositoryImpl(session.getMapper(ToolCallMapper.class),
                 new ObjectMapper(), buildCardAvailabilityPolicy());
         transactions = new TransactionTemplate(new DataSourceTransactionManager(database));

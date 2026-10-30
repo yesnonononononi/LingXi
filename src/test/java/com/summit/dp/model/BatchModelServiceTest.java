@@ -1,5 +1,7 @@
 package com.summit.dp.model;
 
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import com.summit.dp.model.Infrastructure.persistence.mapper.ModelConfigMapper;
 import com.summit.dp.model.Infrastructure.repo.ModelConfigRepositoryImpl;
 import com.summit.dp.model.application.command.BatchModelCommand;
@@ -13,9 +15,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
 import org.springframework.transaction.interceptor.TransactionInterceptor;
 
@@ -51,7 +50,7 @@ class BatchModelServiceTest {
 
     @Test
     void realTransactionRollsBackEarlierWritesAndSerializesConcurrentBatches() throws Exception {
-        EmbeddedDatabase database = new EmbeddedDatabaseBuilder().generateUniqueName(true).setType(EmbeddedDatabaseType.H2).build();
+        SqliteTestDatabase database = SqliteTestDatabase.create("BatchModelServiceTest");
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
             ModelConfigRepositoryImpl repository = spy(repository());

@@ -1,1 +1,0 @@
-ALTER TABLE chat_turn ADD COLUMN command_id VARCHAR(64) NULL;

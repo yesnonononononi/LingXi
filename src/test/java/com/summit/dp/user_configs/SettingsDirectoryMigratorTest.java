@@ -78,17 +78,17 @@ class SettingsDirectoryMigratorTest {
 
     @Test
     @DisplayName("数据目录：目标里只躺着库文件时允许复用（改回原目录的场景）")
-    void dataDirAcceptsTargetHoldingOnlyH2Artifacts() throws Exception {
+    void dataDirAcceptsTargetHoldingOnlyDatabaseArtifacts() throws Exception {
         Path target = Files.createDirectories(tempDir.resolve("target"));
-        Files.writeString(target.resolve("lingxi.mv.db"), "");
-        Files.writeString(target.resolve("lingxi.trace.db"), "");
+        Files.writeString(target.resolve("lingxi.sqlite"), "");
+        Files.writeString(target.resolve("lingxi.sqlite-wal"), "");
         // 目录校验通过后才会去连库；这里让连接直接失败，用来证明「卡在备份」而不是「卡在校验」。
         when(dataSource.getConnection()).thenThrow(new SQLException("测试不接真库"));
 
         ClientException error = assertThrows(ClientException.class,
                 () -> migrator.migrateDataDir(tempDir.resolve("from").toString(), target.toString()));
 
-        assertTrue(error.getMessage().contains("数据库备份"), "应当已经走到备份这一步: " + error.getMessage());
+        assertTrue(error.getMessage().contains("快照"), "应当已经走到备份这一步: " + error.getMessage());
     }
 
     @Test

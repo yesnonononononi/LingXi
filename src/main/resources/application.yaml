@@ -8,22 +8,29 @@ spring:
       max-file-size: 10MB
       max-request-size: 12MB
   datasource:
-    # 内嵌 H2 文件库；MODE=MySQL 使 SQL 方言与 MySQL 一致（backtick / DATETIME / ON UPDATE 等）。
-    # 库文件目录 = lingxi.data.dir（见下方 lingxi.data），不再随进程 cwd 漂移
-    # （旧写法 ./data/lingxi 会落在 Electron userData 或项目根下）。
-    url: jdbc:h2:file:${lingxi.data.dir}/lingxi;MODE=MySQL
-    username: sa
-    password: ""
-    driver-class-name: org.h2.Driver
+    # SQLite 文件库：<数据目录>/lingxi.sqlite，与旧 H2 的 lingxi.mv.db 无关（不导入、不覆盖旧库）。
+    # 连接参数直接写在 URL 上，由驱动在建连接时下发：
+    #   journal_mode=WAL    读不阻塞写，后台保存与前端查询可以并行；
+    #   synchronous=FULL    提交即落盘，断电崩溃后已提交事务不丢（性能让位于正确性）；
+    #   busy_timeout=5000   写锁竞争最多等 5s 再报 SQLITE_BUSY，比立刻失败更贴近真实等待；
+    #   foreign_keys=true   恢复外键约束语义（默认关闭）；
+    #   transaction_mode=IMMEDIATE 事务一开始就取写锁：SQLite 的「先读后升写」在竞争时会
+    #                       立刻返回 SQLITE_BUSY（等下去注定死锁），只有 IMMEDIATE 才能让
+    #                       busy_timeout 真正生效（实测 IMMEDIATE 6 线程×10 次写事务 0 失败）。
+    #                       代价：已持写锁的事务里再开新写事务必然失败，因此业务侧不许在
+    #                       受理事务内冻结运行配置（后续「业务 SQL、锁与事务适配」单元处理）。
+    url: jdbc:sqlite:${lingxi.data.dir}/lingxi.sqlite?journal_mode=WAL&synchronous=FULL&busy_timeout=5000&foreign_keys=true&transaction_mode=IMMEDIATE
+    driver-class-name: org.sqlite.JDBC
     druid:
+      # SQLite 同一时刻只允许一个写者，连接池刻意保持小规模：连接越多，锁等待越容易堆积。
       # 初始化连接数
-      initial-size: 5
+      initial-size: 1
       # 最小空闲连接数
-      min-idle: 5
+      min-idle: 1
       # 最大活跃连接数
-      max-active: 20
+      max-active: 4
       # 获取连接等待超时时间（毫秒）
-      max-wait: 60000
+      max-wait: 30000
       # 开启空闲连接检查
       test-while-idle: true
       # 探测 SQL
@@ -34,6 +41,10 @@ spring:
       time-between-eviction-runs-millis: 60000
       # 连接在池中保持空闲而不被回收的最小时间
       min-evictable-idle-time-millis: 300000
+
+# 时间列在 SQLite 里存文本，必须用业务侧的类型处理器统一读写（见 TimeTextCodec）。
+mybatis-plus:
+  type-handlers-package: com.summit.dp.shared.persistence.handler
 
 lingxi:
   tools:
@@ -49,7 +60,8 @@ lingxi:
     file-timeout: 30s
     environment: {}
   # 数据存储目录的缺省值：真源在设置页（user_configs.data_dir），这里只在设置页没写时生效。
-  # H2 库文件落在 <dir>/lingxi.mv.db；设置页改目录会自动把库文件搬迁过去，但需要重启才切得过去。
+  # SQLite 库文件落在 <dir>/lingxi.sqlite（含 -wal/-shm 伴随文件）；设置页改目录会把库文件搬迁过去，
+  # 但需要重启才切得过去。
   # 也可用 -Dlingxi.data.dir=... 或环境变量 LINGXI_DATA_DIR 覆盖，但设置页一旦写了值就以它为准。
   data:
     dir: ${user.home}/.lingxi/data

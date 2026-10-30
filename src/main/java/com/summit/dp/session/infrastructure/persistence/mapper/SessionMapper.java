@@ -17,7 +17,7 @@ public interface SessionMapper extends BaseMapper<SessionPO> {
             + " AND e.status IN (" + ExecutionStatusCodes.CREATED + "," + ExecutionStatusCodes.RUNNING
             + "," + ExecutionStatusCodes.SUSPENDED + ") ORDER BY e.id DESC LIMIT 1)"
             + " IN (" + ExecutionStatusCodes.CREATED + "," + ExecutionStatusCodes.RUNNING + ") THEN 0 ELSE 1 END,"
-            + " s.update_time DESC, s.id DESC LIMIT #{offset}, #{size}")
+            + " s.update_time DESC, s.id DESC LIMIT #{size} OFFSET #{offset}")
     List<SessionPO> selectRootPage(@Param("root") long rootSessionId, @Param("offset") long offset,
                                    @Param("size") long size);
 

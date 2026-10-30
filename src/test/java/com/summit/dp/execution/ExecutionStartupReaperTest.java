@@ -1,5 +1,9 @@
 package com.summit.dp.execution;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
@@ -17,9 +21,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 
 import java.time.Instant;
 import java.util.List;
@@ -52,7 +53,7 @@ class ExecutionStartupReaperTest {
     private static final int STATUS_COMPLETED = 3;
     private static final int STATUS_FAILED = 4;
 
-    private EmbeddedDatabase database;
+    private SqliteTestDatabase database;
     private ExecutionMapper mapper;
     private ExecutionRepositoryImpl repository;
     private ExecutionResumeTaskRepository resumeTaskRepository;
@@ -60,16 +61,17 @@ class ExecutionStartupReaperTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = new EmbeddedDatabaseBuilder().generateUniqueName(true).setType(EmbeddedDatabaseType.H2)
-                .addScript("execution-status-schema.sql").build();
+        database = SqliteTestDatabase.create("ExecutionStartupReaperTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
+
+        MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(ExecutionMapper.class);
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate session = new SqlSessionTemplate(sessionFactory);
+        SqlSessionTemplate session = SqliteTestDatabase.sqlSession(sessionFactory);
         mapper = session.getMapper(ExecutionMapper.class);
         repository = new ExecutionRepositoryImpl(mapper);
         // 恢复请求表在 H2 单测库里是桩：只做启动收口判定，reap 本身不碰。

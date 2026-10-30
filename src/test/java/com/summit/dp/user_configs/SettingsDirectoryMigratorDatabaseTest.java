@@ -9,7 +9,6 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
 
@@ -19,9 +18,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 数据目录迁移的**真实数据库**验证。
  *
- * <p>这里要证的不是「代码调了 BACKUP」，而是两件读代码看不出来的事：
- * ① H2 到底把库文件以什么条目名打进备份 zip（条目名与期望不符 ⇒ 解包会找不到库文件）；
- * ② 从备份还原出来的库能不能被新目录重新打开、原来写进去的数据还在不在。
+ * <p>这里要证的不是「代码调了 VACUUM INTO」，而是两件读代码看不出来的事：
+ * ① 库在搬迁期间仍被本进程握着，快照是否真的与重启后打开的库一致（页面、WAL 都要合并进去）；
+ * ② 从快照还原出来的库能不能在**新目录**里重新打开、原来写进去的数据还在不在。
  * 这两点任一不成立，用户改数据目录之后看到的就是「数据没了」。</p>
  */
 class SettingsDirectoryMigratorDatabaseTest {
@@ -38,13 +37,15 @@ class SettingsDirectoryMigratorDatabaseTest {
         DriverManagerDataSource source = dataSourceOf(fromDir);
         try (Connection connection = source.getConnection();
              Statement statement = connection.createStatement()) {
-            statement.execute("CREATE TABLE probe (id INT PRIMARY KEY, note VARCHAR(64))");
+            statement.execute("CREATE TABLE probe (id INTEGER PRIMARY KEY, note TEXT)");
             statement.execute("INSERT INTO probe VALUES (1, '搬家前写入的数据')");
         }
 
         new SettingsDirectoryMigrator(source).migrateDataDir(fromDir.toString(), toDir.toString());
 
-        assertTrue(Files.exists(toDir.resolve("lingxi.mv.db")), "新目录里必须出现库文件");
+        assertTrue(Files.exists(toDir.resolve("lingxi.sqlite")), "新目录里必须出现库文件");
+        // 快照是单文件：不得把 -wal 里的提交留在源目录
+        assertTrue(Files.notExists(toDir.resolve("lingxi.sqlite-wal")), "快照不应依赖源库的 WAL 文件");
 
         try (Connection connection = dataSourceOf(toDir).getConnection();
              Statement statement = connection.createStatement();
@@ -62,22 +63,23 @@ class SettingsDirectoryMigratorDatabaseTest {
 
         new SettingsDirectoryMigrator(dataSourceOf(fromDir)).migrateDataDir(fromDir.toString(), toDir.toString());
 
-        // 注意这里的真实行为：H2 在建立连接时就把库文件创建出来了（哪怕一行数据都没有），
-        // 所以「源目录没有库文件」在生产里基本不会出现，备份出来的是一个空库 —— 结果等价于
-        // 全新库，重启后照样能打开。这里断言的是「新目录可用」，不是「没有库文件」。
+        // SQLite 在建立连接时就把库文件创建出来（哪怕一行数据都没有），
+        // 所以「源目录没有库文件」在生产里基本不会出现，快照出来的是一个空库 ——
+        // 结果等价于全新库，重启后照样能打开。这里断言的是「新目录可用」，不是「没有库文件」。
         try (Connection connection = dataSourceOf(toDir).getConnection();
-             Statement statement = connection.createStatement()) {
-            assertTrue(statement.executeQuery("SELECT 1").next());
+             Statement statement = connection.createStatement();
+             ResultSet rows = statement.executeQuery("SELECT 1")) {
+            assertTrue(rows.next());
         }
     }
 
     private static DriverManagerDataSource dataSourceOf(Path directory) {
         DriverManagerDataSource dataSource = new DriverManagerDataSource();
-        dataSource.setDriverClassName(org.h2.Driver.class.getName());
-        // 与生产同样的形态：file 库 + MySQL 兼容模式。
-        dataSource.setUrl("jdbc:h2:file:" + directory.resolve("lingxi").toString().replace('\\', '/') + ";MODE=MySQL");
-        dataSource.setUsername("sa");
-        dataSource.setPassword("");
+        dataSource.setDriverClassName("org.sqlite.JDBC");
+        // 与生产同样的形态：文件库 + WAL。
+        dataSource.setUrl("jdbc:sqlite:" + directory.resolve("lingxi.sqlite").toString().replace('\\', '/')
+                + "?journal_mode=WAL&synchronous=FULL&busy_timeout=5000");
         return dataSource;
     }
 }
+

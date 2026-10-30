@@ -1,5 +1,9 @@
 package com.summit.dp.execution;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -16,9 +20,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 
 import java.util.List;
 import java.util.Map;
@@ -43,22 +44,23 @@ class ResumeGenerationTest {
     private static final long SESSION_ID = 800L;
     private static final long EXECUTION_ID = 1000L;
 
-    private EmbeddedDatabase database;
+    private SqliteTestDatabase database;
     private ExecutionMapper mapper;
     private LocalExecutionRepository repository;
 
     @BeforeEach
     void setup() throws Exception {
-        database = new EmbeddedDatabaseBuilder().generateUniqueName(true).setType(EmbeddedDatabaseType.H2)
-                .addScript("execution-status-schema.sql").build();
+        database = SqliteTestDatabase.create("ResumeGenerationTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
+
+        MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(ExecutionMapper.class);
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate session = new SqlSessionTemplate(sessionFactory);
+        SqlSessionTemplate session = SqliteTestDatabase.sqlSession(sessionFactory);
         mapper = session.getMapper(ExecutionMapper.class);
         repository = ExecutionRepositoryTestFactory.create(mapper, new ObjectMapper());
     }

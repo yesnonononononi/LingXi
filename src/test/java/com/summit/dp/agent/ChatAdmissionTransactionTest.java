@@ -1,5 +1,9 @@
 package com.summit.dp.agent;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import com.summit.dp.execution.RuntimeConfigurationTestSupport;
 
 import com.summit.dp.tools.ToolListProcessorTestSupport;
@@ -64,9 +68,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
@@ -97,7 +98,7 @@ class ChatAdmissionTransactionTest {
     private static final String EXECUTION_ID = "2105000000000000001";
     private static final long EXECUTION_ID_NUMERIC = 2105000000000000001L;
 
-    private EmbeddedDatabase database;
+    private SqliteTestDatabase database;
     private TransactionTemplate transaction;
     private ExecutionMapper executionMapper;
     private ChatTurnMapper chatTurnMapper;
@@ -107,12 +108,9 @@ class ChatAdmissionTransactionTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = new EmbeddedDatabaseBuilder().generateUniqueName(true).setType(EmbeddedDatabaseType.H2)
-                .addScript("execution-status-schema.sql")
-                .addScript("chat-turn-schema.sql")
-                .addScript("session-message-schema.sql")
-                .build();
+        database = SqliteTestDatabase.create("ChatAdmissionTransactionTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
+        MyBatisTypeHandlers.registerAll(configuration);
         // 不要关驼峰转下划线：SessionMessagePO 没有 @TableField，靠这个开关映射 session_id。
         configuration.addMapper(ExecutionMapper.class);
         configuration.addMapper(ChatTurnMapper.class);
@@ -126,7 +124,7 @@ class ChatAdmissionTransactionTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate template = new SqlSessionTemplate(sessionFactory);
+        SqlSessionTemplate template = SqliteTestDatabase.sqlSession(sessionFactory);
         executionMapper = template.getMapper(ExecutionMapper.class);
         chatTurnMapper = template.getMapper(ChatTurnMapper.class);
         sessionMessageMapper = template.getMapper(SessionMessageMapper.class);

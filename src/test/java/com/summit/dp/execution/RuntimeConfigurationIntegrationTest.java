@@ -1,5 +1,9 @@
 package com.summit.dp.execution;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -34,8 +38,7 @@ import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.DelegationRecorder;
 import com.summit.core.tool.ToolExecution;
-import com.summit.dp.shared.config.H2SchemaInitializer;
-import org.springframework.boot.DefaultApplicationArguments;
+import com.summit.dp.shared.config.SqliteSchemaInitializer;
 import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
@@ -58,9 +61,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
@@ -84,7 +84,7 @@ import static org.mockito.Mockito.*;
 
 class RuntimeConfigurationIntegrationTest {
     private final ObjectMapper json = new JsonConfig().objectMapper();
-    private EmbeddedDatabase database;
+    private SqliteTestDatabase database;
     private RuntimeConfigRevisionMapper rows;
     private RuntimeConfigRevisionRepositoryImpl repository;
     private DataSourceTransactionManager transactionManager;
@@ -92,15 +92,15 @@ class RuntimeConfigurationIntegrationTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = new EmbeddedDatabaseBuilder().generateUniqueName(true).setType(EmbeddedDatabaseType.H2)
-                .addScript("db/migration/V14_runtime_config_revision.sql").build();
+        database = SqliteTestDatabase.create("RuntimeConfigurationIntegrationTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
+        MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(RuntimeConfigRevisionMapper.class);
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
-        rows = new SqlSessionTemplate(factory.getObject()).getMapper(RuntimeConfigRevisionMapper.class);
+        rows = SqliteTestDatabase.sqlSession(factory.getObject()).getMapper(RuntimeConfigRevisionMapper.class);
         repository = new RuntimeConfigRevisionRepositoryImpl(rows);
         transactionManager = new DataSourceTransactionManager(database);
         configurations = new RuntimeConfigurationService(repository, json, transactionManager);
@@ -320,23 +320,22 @@ class RuntimeConfigurationIntegrationTest {
     }
 
     @Test
-    void repeatedLegacyBootstrapAddsTheVersionStoreWithoutLosingPinnedRevisions() throws Exception {
-        EmbeddedDatabase legacy = new EmbeddedDatabaseBuilder().setType(EmbeddedDatabaseType.H2)
-                .setName(UUID.randomUUID() + ";MODE=MySQL").addScript("stream-legacy-schema.sql").build();
+    void repeatedBootstrapKeepsTheVersionStoreAndPinnedRevisions() throws Exception {
+        SqliteTestDatabase legacy = SqliteTestDatabase.create("RuntimeConfigurationIntegrationTest");
         try {
-            H2SchemaInitializer initializer = new H2SchemaInitializer();
-            initializer.h2SchemaBootstrap(legacy).run(new DefaultApplicationArguments());
+            SqliteSchemaInitializer initializer = new SqliteSchemaInitializer();
             MybatisConfiguration configuration = new MybatisConfiguration();
             configuration.setMapUnderscoreToCamelCase(true);
+            MyBatisTypeHandlers.registerAll(configuration);
             configuration.addMapper(RuntimeConfigRevisionMapper.class);
             MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
             factory.setDataSource(legacy);
             factory.setConfiguration(configuration);
-            RuntimeConfigRevisionMapper revisions = new SqlSessionTemplate(factory.getObject()).getMapper(RuntimeConfigRevisionMapper.class);
+            RuntimeConfigRevisionMapper revisions = SqliteTestDatabase.sqlSession(factory.getObject()).getMapper(RuntimeConfigRevisionMapper.class);
             RuntimeConfigurationService service = new RuntimeConfigurationService(new RuntimeConfigRevisionRepositoryImpl(revisions),
                     json, new DataSourceTransactionManager(legacy));
             SensitiveDataSpec pinned = service.freezeModel(31L, model("preserved"));
-            initializer.h2SchemaBootstrap(legacy).run(new DefaultApplicationArguments());
+            assertEquals(0, initializer.initialize(legacy), "重复建库必须幂等");
             assertEquals("preserved", service.resolveModel(pinned.getId(), pinned.getVersion()).getApiKey());
             assertEquals(1, revisions.selectCount(null));
         } finally {

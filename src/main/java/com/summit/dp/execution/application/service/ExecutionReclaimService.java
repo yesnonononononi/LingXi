@@ -8,7 +8,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/** 每条快照独立回收，避免 H2 在长事务中积累快照正文的回滚副本。 */
+/** 每条快照独立回收，避免长事务里积累快照正文的回滚副本。 */
 @Service
 public class ExecutionReclaimService {
     private final ExecutionRepository repository;

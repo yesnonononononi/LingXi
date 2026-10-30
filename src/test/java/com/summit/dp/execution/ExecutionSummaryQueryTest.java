@@ -1,5 +1,9 @@
 package com.summit.dp.execution;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
@@ -14,9 +18,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -42,16 +43,17 @@ class ExecutionSummaryQueryTest {
 
     private static final long SESSION_ID = 11L;
 
-    private EmbeddedDatabase database;
+    private SqliteTestDatabase database;
     private ExecutionMapper mapper;
     private ExecutionRepositoryImpl repository;
     private ExecutionQueryServiceImpl service;
 
     @BeforeEach
     void setup() throws Exception {
-        database = new EmbeddedDatabaseBuilder().generateUniqueName(true).setType(EmbeddedDatabaseType.H2)
-                .addScript("execution-status-schema.sql").build();
+        database = SqliteTestDatabase.create("ExecutionSummaryQueryTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
+
+        MyBatisTypeHandlers.registerAll(configuration);
         // 与生产一致：自定义查询的字段映射必须独立于全局驼峰开关。
         configuration.setMapUnderscoreToCamelCase(false);
         configuration.addMapper(ExecutionMapper.class);
@@ -59,7 +61,7 @@ class ExecutionSummaryQueryTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate session = new SqlSessionTemplate(sessionFactory);
+        SqlSessionTemplate session = SqliteTestDatabase.sqlSession(sessionFactory);
         mapper = session.getMapper(ExecutionMapper.class);
         repository = new ExecutionRepositoryImpl(mapper);
         service = new ExecutionQueryServiceImpl(repository);

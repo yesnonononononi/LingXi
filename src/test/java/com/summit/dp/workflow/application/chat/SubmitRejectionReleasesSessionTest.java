@@ -1,5 +1,9 @@
 package com.summit.dp.workflow.application.chat;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
 
 import com.summit.dp.workflow.application.chat.RuntimeContext;
@@ -44,9 +48,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
@@ -76,7 +77,7 @@ class SubmitRejectionReleasesSessionTest {
     private static final long ROOT_SESSION_ID = 500L;
     private static final long TURN_ID = 9001L;
 
-    private EmbeddedDatabase database;
+    private SqliteTestDatabase database;
     private TransactionTemplate transaction;
     private ExecutionMapper executionMapper;
     private ChatTurnMapper chatTurnMapper;
@@ -85,11 +86,10 @@ class SubmitRejectionReleasesSessionTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = new EmbeddedDatabaseBuilder().generateUniqueName(true).setType(EmbeddedDatabaseType.H2)
-                .addScript("execution-status-schema.sql")
-                .addScript("chat-turn-schema.sql")
-                .build();
+        database = SqliteTestDatabase.create("SubmitRejectionReleasesSessionTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
+
+        MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(ExecutionMapper.class);
         configuration.addMapper(ChatTurnMapper.class);
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(configuration, "test");
@@ -99,8 +99,8 @@ class SubmitRejectionReleasesSessionTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        executionMapper = new SqlSessionTemplate(sessionFactory).getMapper(ExecutionMapper.class);
-        chatTurnMapper = new SqlSessionTemplate(sessionFactory).getMapper(ChatTurnMapper.class);
+        executionMapper = SqliteTestDatabase.sqlSession(sessionFactory).getMapper(ExecutionMapper.class);
+        chatTurnMapper = SqliteTestDatabase.sqlSession(sessionFactory).getMapper(ChatTurnMapper.class);
         transaction = new TransactionTemplate(new DataSourceTransactionManager(database));
 
         ChatTurnService chatTurnService = new ChatTurnServiceImpl(new ChatTurnRepositoryImpl(chatTurnMapper));

@@ -33,8 +33,8 @@ public class UserConfigDataDirPostProcessor implements EnvironmentPostProcessor,
     private static final String DEFAULT_CONFIG_PATH = "${user.home}/.lingxi/config/user-configs.json";
     private static final String DEFAULT_DATA_DIR = "${user.home}/.lingxi/data";
 
-    /** H2 库文件主名；只有它存在才说明这个目录里躺着真数据。 */
-    private static final String DATABASE_FILE = "lingxi.mv.db";
+    /** SQLite 库文件主名；只有它存在才说明这个目录里躺着真数据。 */
+    private static final String DATABASE_FILE = "lingxi.sqlite";
 
     @Override
     public int getOrder() {

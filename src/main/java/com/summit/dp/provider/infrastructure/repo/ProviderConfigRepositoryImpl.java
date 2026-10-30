@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * 提供商配置仓储：首次从 H2 导入后以 providers.json 为准。
+ * 提供商配置仓储：首次建库导入后以 providers.json 为准。
  *
  * <p>与模型配置同构（{@link AbstractJsonRepository}）：JSON 是运行期真源，
  * 表只保证建库即有、并承接历史数据。</p>

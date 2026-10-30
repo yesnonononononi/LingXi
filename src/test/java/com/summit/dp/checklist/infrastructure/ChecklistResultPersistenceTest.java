@@ -101,33 +101,4 @@ class ChecklistResultPersistenceTest {
                 SESSION, old.getChecklistId(), "禁止修改", null, null, null, null)));
     }
 
-    @Test
-    void migrationReclassifiesLegacyCompletedRowsIdempotentlyWithoutChangingEvidence() throws Exception {
-        for (String result : List.of("FAILED", "SKIPPED", "COMPLETED", "PENDING")) {
-            ChecklistVO created = service.create(ChecklistCommand.create(SESSION, null, "历史", List.of("一步")));
-            if (!"PENDING".equals(result)) {
-                service.updateStep(ChecklistCommand.updateStep(SESSION, created.getChecklistId(), created.getSteps().getFirst().getStepId(), result));
-            }
-            ChecklistPO legacy = new ChecklistPO();
-            legacy.setId(created.getChecklistId());
-            legacy.setStatus("COMPLETED");
-            fixture.mapper().updateById(legacy);
-            ChecklistPO before = fixture.mapper().selectById(created.getChecklistId());
-            Instant timestamp = before.getUpdateAt();
-            fixture.bootstrapSchema();
-            fixture.bootstrapSchema();
-            ChecklistPO migrated = fixture.mapper().selectById(created.getChecklistId());
-            String expected = switch (result) {
-                case "FAILED" -> "FAILED";
-                case "SKIPPED" -> "CLOSED";
-                case "PENDING" -> "UNFINISHED";
-                default -> "COMPLETED";
-            };
-            assertEquals(expected, migrated.getStatus());
-            assertEquals(timestamp, migrated.getUpdateAt());
-            assertEquals(before.getProgressVersion(), migrated.getProgressVersion());
-            assertEquals(result, fixture.repository().findByIdWithSteps(created.getChecklistId()).orElseThrow()
-                    .getSteps().getFirst().getStatus().name());
-        }
-    }
 }

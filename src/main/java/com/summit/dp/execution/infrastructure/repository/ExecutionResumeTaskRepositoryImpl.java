@@ -107,8 +107,8 @@ public class ExecutionResumeTaskRepositoryImpl
                 .set(ExecutionResumeTaskPO::getState, task.getState().dbValue())
                 .set(ExecutionResumeTaskPO::getErrorReason, task.getErrorReason())
                 .set(ExecutionResumeTaskPO::getVersion, expected + 1)
-                // 必须显式写 updated_at：终态回收窗口按它判断，而 MySQL 的 ON UPDATE CURRENT_TIMESTAMP
-                // 在 H2(MODE=MySQL) 上不生效 —— 不写就等于按创建时刻回收。
+                // 必须显式写 updated_at：终态回收窗口按它判断，不能依赖库侧自动更新
+                // —— 触发器只在「本行没写 updated_at」时兜底，显式赋值才是权威。
                 .set(ExecutionResumeTaskPO::getUpdatedAt, LocalDateTime.now())
                 .eq(ExecutionResumeTaskPO::getId, task.getId())
                 .eq(ExecutionResumeTaskPO::getVersion, expected));

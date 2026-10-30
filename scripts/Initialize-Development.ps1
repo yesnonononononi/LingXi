@@ -33,7 +33,7 @@ if ($destinationRoot.StartsWith($sourceRoot + [System.IO.Path]::DirectorySeparat
     throw '开发目录必须位于安装版数据和配置目录之外。'
 }
 
-$databasePath = Join-Path $sourceData 'lingxi.mv.db'
+$databasePath = Join-Path $sourceData 'lingxi.sqlite'
 $database = $null
 $stage = $destinationRoot + '.initializing-' + [guid]::NewGuid().ToString('N')
 try {
@@ -45,7 +45,7 @@ try {
         throw '数据库无法独占读取，请先退出安装版和 IDE 后端，再执行初始化。'
     }
     New-Item -ItemType Directory -Path (Join-Path $stage 'data') -Force | Out-Null
-    $copiedDatabase = Join-Path $stage 'data/lingxi.mv.db'
+    $copiedDatabase = Join-Path $stage 'data/lingxi.sqlite'
     $output = [System.IO.File]::Create($copiedDatabase)
     try { $database.CopyTo($output) } finally { $output.Dispose() }
     $database.Position = 0
@@ -55,7 +55,8 @@ try {
     if ($sourceHash -ne (Get-Sha256File $copiedDatabase)) {
         throw '数据库副本校验失败，未启用开发目录。'
     }
-    Get-ChildItem -LiteralPath $sourceData -Force | Where-Object { $_.Name -notlike 'lingxi.*.db' } |
+    # 库文件本体与伴随文件（-wal/-shm/-journal）都算库，不当作普通资料再复制一遍。
+    Get-ChildItem -LiteralPath $sourceData -Force | Where-Object { $_.Name -notlike 'lingxi.sqlite*' } |
         ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $stage 'data') -Recurse -Force }
     Copy-Item -LiteralPath $sourceConfig -Destination (Join-Path $stage 'config') -Recurse
     if (Test-Path -LiteralPath $sourceSkill) {

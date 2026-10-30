@@ -1,5 +1,9 @@
 package com.summit.dp.agent;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import com.summit.dp.execution.ExecutionRepositoryTestFactory;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -49,9 +53,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -103,7 +104,7 @@ class StartupFailureEndToEndTest {
         }
     }
 
-    private EmbeddedDatabase database;
+    private SqliteTestDatabase database;
     private TransactionTemplate transaction;
     private ExecutionMapper executionMapper;
     private ChatTurnMapper chatTurnMapper;
@@ -113,11 +114,10 @@ class StartupFailureEndToEndTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = new EmbeddedDatabaseBuilder().generateUniqueName(true).setType(EmbeddedDatabaseType.H2)
-                .addScript("execution-status-schema.sql")
-                .addScript("chat-turn-schema.sql")
-                .build();
+        database = SqliteTestDatabase.create("StartupFailureEndToEndTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
+
+        MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(ExecutionMapper.class);
         configuration.addMapper(ChatTurnMapper.class);
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(configuration, "test");

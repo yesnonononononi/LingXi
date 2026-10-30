@@ -1,5 +1,9 @@
 package com.summit.dp.execution;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
@@ -48,9 +52,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -334,25 +335,24 @@ class ExecutionCleanupTest {
     @Configuration
     @EnableTransactionManagement
     static class Config {
-        @Bean(destroyMethod = "shutdown") EmbeddedDatabase database() {
-            return new EmbeddedDatabaseBuilder().setType(EmbeddedDatabaseType.H2)
-                    .setName("execution-cleanup-" + UUID.randomUUID() + ";MODE=MySQL")
-                    .addScript("file:./init.sql").build();
+        @Bean(destroyMethod = "shutdown") SqliteTestDatabase database() {
+            return SqliteTestDatabase.create("ExecutionCleanupTest");
         }
 
-        @Bean PlatformTransactionManager transactionManager(EmbeddedDatabase database) {
+        @Bean PlatformTransactionManager transactionManager(SqliteTestDatabase database) {
             return new DataSourceTransactionManager(database);
         }
 
-        @Bean SqlSessionTemplate sql(EmbeddedDatabase database) throws Exception {
+        @Bean SqlSessionTemplate sql(SqliteTestDatabase database) throws Exception {
             MybatisConfiguration configuration = new MybatisConfiguration();
             configuration.setMapUnderscoreToCamelCase(true);
+            MyBatisTypeHandlers.registerAll(configuration);
             for (Class<?> mapper : List.of(ExecutionMapper.class, SessionMapper.class, ChatTurnMapper.class,
                     ToolCallMapper.class, ExecutionResumeTaskMapper.class, TaskMapper.class)) configuration.addMapper(mapper);
             MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
             factory.setDataSource(database);
             factory.setConfiguration(configuration);
-            return new SqlSessionTemplate(factory.getObject());
+            return SqliteTestDatabase.sqlSession(factory.getObject());
         }
 
         @Bean ExecutionRepository repository(SqlSessionTemplate sql) {

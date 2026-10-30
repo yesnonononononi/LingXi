@@ -1,5 +1,9 @@
 package com.summit.dp.session;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.agent.domain.repository.AgentRepository;
@@ -28,9 +32,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -45,7 +46,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class SessionListOrderingTest {
-    private EmbeddedDatabase database;
+    private SqliteTestDatabase database;
     private SessionMapper sessions;
     private ExecutionMapper executions;
     private SessionServiceImpl service;
@@ -53,16 +54,16 @@ class SessionListOrderingTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = new EmbeddedDatabaseBuilder().setType(EmbeddedDatabaseType.H2)
-                .setName(UUID.randomUUID() + ";MODE=MySQL").addScript("init.sql").build();
+        database = SqliteTestDatabase.create("SessionListOrderingTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
+        MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(SessionMapper.class);
         configuration.addMapper(ExecutionMapper.class);
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
-        SqlSessionTemplate sql = new SqlSessionTemplate(factory.getObject());
+        SqlSessionTemplate sql = SqliteTestDatabase.sqlSession(factory.getObject());
         sessions = sql.getMapper(SessionMapper.class);
         executions = sql.getMapper(ExecutionMapper.class);
         SessionRepositoryImpl repository = new SessionRepositoryImpl(sessions);

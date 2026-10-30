@@ -39,9 +39,9 @@ public class EmailMessageRepositoryImpl extends AbstractRepository<EmailMessage,
 
     @Override
     public Optional<EmailMessage> findByDedupKeyForUpdate(String dedupKey) {
+        // SQLite 无行锁：这里退化为普通读，「只投一次」由 uk_email_message_dedup 唯一索引裁决。
         EmailMessagePO po = mapper.selectOne(Wrappers.<EmailMessagePO>lambdaQuery()
-                .eq(EmailMessagePO::getDedupKey, dedupKey)
-                .last("FOR UPDATE"));
+                .eq(EmailMessagePO::getDedupKey, dedupKey));
         return po == null ? Optional.empty() : Optional.of(toModel(po));
     }
 

@@ -1,5 +1,9 @@
 package com.summit.dp.execution;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import org.springframework.context.ApplicationEventPublisher;
 import static org.mockito.Mockito.mock;
 
@@ -16,9 +20,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
@@ -33,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** 真实持久化守住迁移后的回滚、挂起代际、终态与版本竞争。 */
 class ExecutionCheckpointMigrationTest {
-    private EmbeddedDatabase database;
+    private SqliteTestDatabase database;
     private ExecutionMapper mapper;
     private ExecutionRepositoryImpl repository;
     private ExecutionCheckpointService checkpoints;
@@ -41,15 +42,16 @@ class ExecutionCheckpointMigrationTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = new EmbeddedDatabaseBuilder().generateUniqueName(true).setType(EmbeddedDatabaseType.H2)
-                .addScript("execution-status-schema.sql").build();
+        database = SqliteTestDatabase.create("ExecutionCheckpointMigrationTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
+
+        MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(ExecutionMapper.class);
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
-        mapper = new SqlSessionTemplate(factory.getObject()).getMapper(ExecutionMapper.class);
+        mapper = SqliteTestDatabase.sqlSession(factory.getObject()).getMapper(ExecutionMapper.class);
         repository = new ExecutionRepositoryImpl(mapper);
         checkpoints = new ExecutionCheckpointService(repository, mock(ApplicationEventPublisher.class));
         transactions = new TransactionTemplate(new DataSourceTransactionManager(database));

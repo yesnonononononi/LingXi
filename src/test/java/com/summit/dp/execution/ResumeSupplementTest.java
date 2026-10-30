@@ -1,5 +1,9 @@
 package com.summit.dp.execution;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -47,9 +51,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -82,7 +83,7 @@ class ResumeSupplementTest {
     private final ChatTurnService turns = mock(ChatTurnService.class);
     private final SuspendedExecutionResumer resumer = mock(SuspendedExecutionResumer.class);
     private final ExecutionResumeCoordinator coordinator = mock(ExecutionResumeCoordinator.class);
-    private EmbeddedDatabase database;
+    private SqliteTestDatabase database;
     private SessionMessageRepositoryImpl messages;
     private ExecutionResumeTaskRepositoryImpl tasks;
     private LocalExecutionRepository executions;
@@ -91,11 +92,9 @@ class ResumeSupplementTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = new EmbeddedDatabaseBuilder().generateUniqueName(true).setType(EmbeddedDatabaseType.H2)
-                .addScript("session-response-id-concurrency-schema.sql")
-                .addScript("execution-status-schema.sql")
-                .addScript("execution-resume-task-schema.sql").build();
+        database = SqliteTestDatabase.create("ResumeSupplementTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
+        MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(SessionMapper.class);
         configuration.addMapper(SessionMessageMapper.class);
         configuration.addMapper(ExecutionMapper.class);
@@ -104,7 +103,7 @@ class ResumeSupplementTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate template = new SqlSessionTemplate(sessionFactory);
+        SqlSessionTemplate template = SqliteTestDatabase.sqlSession(sessionFactory);
         SessionMapper sessions = template.getMapper(SessionMapper.class);
         sessions.insert(SessionPO.builder().id(SESSION_ID).name("补充测试").build());
         messages = new SessionMessageRepositoryImpl(template.getMapper(SessionMessageMapper.class), sessions);

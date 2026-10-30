@@ -145,18 +145,18 @@ public class SessionMessageRepositoryImpl
     }
 
     /**
-     * 锁定会话行（{@code SELECT ... FOR UPDATE}）。
+     * 确认会话行存在（原 {@code SELECT ... FOR UPDATE}）。
      *
-     * <p>走主键等值锁既有行，不带间隙锁。会话在落库期间必然存在 —— 不存在则是真实的调用错误，
-     * 不该被静默吞掉（用 {@code selectOne} 拿到 null 即抛，让上游看到「锁不住就不保证幂等」）。</p>
+     * <p><b>为什么不再是锁定读</b>：SQLite 没有行锁，会话追加的并发裁决改由
+     * {@code uk_session_response_id} 唯一索引承担。这里保留「存在性校验」这一半语义：
+     * 会话在落库期间必然存在，不存在则是真实调用错误，不能被静默吞掉。</p>
      */
     @Override
     public void lockSessionForAppend(Long sessionId) {
         if (sessionId == null) return;
         SessionPO locked = sessionMapper.selectOne(Wrappers.<SessionPO>lambdaQuery()
                 .select(SessionPO::getId)
-                .eq(SessionPO::getId, sessionId)
-                .last("FOR UPDATE"));
+                .eq(SessionPO::getId, sessionId));
         if (locked == null) {
             throw new IllegalStateException("落库前锁定会话失败: sessionId=" + sessionId + " 不存在");
         }

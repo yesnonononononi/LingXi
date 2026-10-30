@@ -1,7 +1,10 @@
 package com.summit.dp.execution;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
+import com.summit.dp.shared.support.SqliteTestDatabase;
 import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.execution.application.service.ExecutionCleanupService;
 import com.summit.dp.execution.application.service.ExecutionReclaimService;
@@ -12,14 +15,10 @@ import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
 import com.summit.dp.turn.infrastructure.persistence.mapper.ChatTurnMapper;
 import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
-import org.h2.jdbcx.JdbcConnectionPool;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
-import org.junit.jupiter.api.io.TempDir;
 import org.mybatis.spring.SqlSessionTemplate;
-import org.springframework.core.io.FileSystemResource;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -31,27 +30,23 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 文件库与大快照共同覆盖内存库小样本遗漏的回滚日志开销。 */
+/** 大快照在真实文件库上的回收：每条快照单独提交，引用保护与回滚开销都要成立。 */
 class ExecutionCleanupFileStorageTest {
-    @TempDir Path directory;
-
     @Test
     @Timeout(60)
     void cleanupLargeSnapshotsInFileDatabasePreservesReferencedHistory() throws Exception {
-        JdbcConnectionPool database = JdbcConnectionPool.create("jdbc:h2:file:"
-                + directory.resolve("cleanup").toAbsolutePath()
-                + ";MODE=MySQL", "sa", "");
+        SqliteTestDatabase database = SqliteTestDatabase.create("cleanup-file");
         try {
-            new ResourceDatabasePopulator(new FileSystemResource("init.sql")).execute(database);
             MybatisConfiguration configuration = new MybatisConfiguration();
             configuration.setMapUnderscoreToCamelCase(true);
+            MyBatisTypeHandlers.registerAll(configuration);
             configuration.addMapper(ExecutionMapper.class);
             configuration.addMapper(SessionMapper.class);
             configuration.addMapper(ChatTurnMapper.class);
             MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
             factory.setDataSource(database);
             factory.setConfiguration(configuration);
-            SqlSessionTemplate sql = new SqlSessionTemplate(factory.getObject());
+            SqlSessionTemplate sql = SqliteTestDatabase.sqlSession(factory.getObject());
             ExecutionMapper executions = sql.getMapper(ExecutionMapper.class);
             String snapshot = "x".repeat(512 * 1024);
             for (long id = 1L; id <= 240L; id++) {
@@ -97,7 +92,7 @@ class ExecutionCleanupFileStorageTest {
             assertEquals(1L, executions.selectCount(null));
             assertEquals(snapshot, executions.selectById(1000L).getSnapshot());
         } finally {
-            database.dispose();
+            database.shutdown();
         }
     }
 }

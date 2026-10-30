@@ -17,32 +17,30 @@ import java.sql.Statement;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 /**
  * 设置目录搬迁：改 {@code dataDir} / {@code skillDir} 时把现有内容搬到新目录。
  *
- * <p><b>为什么改配置不能只改动一个字符串</b>：旧目录里躺着真数据（H2 库文件、用户的 SKILL.md），
+ * <p><b>为什么改配置不能只改动一个字符串</b>：旧目录里躺着真数据（SQLite 库文件、用户的 SKILL.md），
  * 只改路径会让新目录空空如也 —— 用户看到的现象是「数据没了」。因此搬迁必须先于落库：
  * 搬失败就抛错，配置保持原样，不会出现「配置指向空目录」。</p>
  *
- * <p><b>库文件为什么用 H2 的 BACKUP 而不是文件复制</b>：库正被本进程握着，
- * 直接 copy 可能拿到写了一半的页。{@code BACKUP TO} 是在线一致性备份，
- * 取出的是「已提交状态」，与重启后打开的库对得上。</p>
+ * <p><b>库文件为什么用 {@code VACUUM INTO} 而不是文件复制</b>：库正被本进程握着，
+ * 直接 copy 可能拿到写了一半的页（还有 -wal 里未合并的提交）。{@code VACUUM INTO}
+ * 在库侧生成一份「已提交状态」的单文件快照，与重启后打开的库对得上。</p>
  */
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class SettingsDirectoryMigrator {
 
-    /** H2 库文件主名；搬迁只认这一族，避免把用户目录里的杂物一起复制过去。 */
-    private static final String DATABASE_FILE = "lingxi.mv.db";
+    /** SQLite 库文件主名；搬迁只认这一族，避免把用户目录里的杂物一起复制过去。 */
+    private static final String DATABASE_FILE = "lingxi.sqlite";
 
     private final DataSource dataSource;
 
     /**
-     * 把当前 H2 库的一致性快照放进新目录；落库由调用方负责。
+     * 把当前库的一致性快照写进新目录；落库由调用方负责。
      *
      * <p>目标目录必须为空（或只含上一次搬迁留下的库文件），否则用户可能选错了地方，
      * 覆盖掉别的应用的数据 —— 宁可直接拒绝。</p>
@@ -55,15 +53,9 @@ public class SettingsDirectoryMigrator {
             return;
         }
         ensureReusable(to);
-        Path tempDir = createTempDir();
-        Path backup = tempDir.resolve(DATABASE_FILE + ".zip");
-        try {
-            backupTo(backup);
-            extractDatabase(backup, to.resolve(DATABASE_FILE));
-        } finally {
-            deleteQuietly(backup);
-            deleteQuietly(tempDir);
-        }
+        Path target = to.resolve(DATABASE_FILE);
+        deleteQuietly(target);
+        vacuumInto(target);
         log.info("数据目录搬迁完成: from={}, to={}", from, to);
     }
 
@@ -121,7 +113,7 @@ public class SettingsDirectoryMigrator {
         try (Stream<Path> children = Files.list(target)) {
             List<String> foreign = children
                     .map(path -> path.getFileName().toString())
-                    .filter(name -> !isH2Artifact(name))
+                    .filter(name -> !isDatabaseArtifact(name))
                     .toList();
             if (!foreign.isEmpty()) {
                 throw new ClientException("目标数据目录非空（含 " + String.join("、", foreign) + "），请选择空目录");
@@ -131,37 +123,20 @@ public class SettingsDirectoryMigrator {
         }
     }
 
-    /** H2 的库文件与其伴随文件（trace / lock）都形如 lingxi.*.db。 */
-    private static boolean isH2Artifact(String name) {
-        return name.startsWith("lingxi.") && name.endsWith(".db");
+    /** 库文件本体与它的伴随文件（-wal / -shm / -journal）都算「上一次搬迁的残留」。 */
+    private static boolean isDatabaseArtifact(String name) {
+        return name.equals(DATABASE_FILE) || name.startsWith(DATABASE_FILE + "-");
     }
 
-    private void backupTo(Path backup) {
-        // H2 只吃单引号字符串里的字面量路径：反斜杠原样传入即可，但要把引号转义掉。
-        String location = backup.toAbsolutePath().toString().replace('\\', '/').replace("'", "''");
+    private void vacuumInto(Path target) {
+        // VACUUM INTO 只接受单引号里的字面量路径：反斜杠原样传入即可，但要把引号转义掉。
+        // 目标文件必须不存在，否则 SQLite 直接报错 —— 调用方已先删除残留。
+        String location = target.toAbsolutePath().toString().replace('\\', '/').replace("'", "''");
         try (Connection connection = dataSource.getConnection();
              Statement statement = connection.createStatement()) {
-            statement.execute("BACKUP TO '" + location + "'");
+            statement.execute("VACUUM INTO '" + location + "'");
         } catch (SQLException e) {
-            throw new ClientException("数据目录迁移失败，数据库备份未成功: " + e.getMessage());
-        }
-    }
-
-    /** 备份 zip 里的条目名带原始目录前缀，因此按后缀找库文件，落地时统一改名。 */
-    private void extractDatabase(Path backup, Path target) {
-        try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(backup))) {
-            ZipEntry entry;
-            while ((entry = zip.getNextEntry()) != null) {
-                if (entry.isDirectory() || !entry.getName().endsWith(".mv.db")) {
-                    continue;
-                }
-                Files.copy(zip, target, StandardCopyOption.REPLACE_EXISTING);
-                log.info("已从备份取出库文件: entry={}, target={}", entry.getName(), target);
-                return;
-            }
-            throw new ClientException("备份包里没有找到库文件: " + backup);
-        } catch (IOException e) {
-            throw new ClientException("库文件解包失败: " + e.getMessage());
+            throw new ClientException("数据目录迁移失败，数据库快照未生成: " + e.getMessage());
         }
     }
 
@@ -181,14 +156,6 @@ public class SettingsDirectoryMigrator {
             Files.createDirectories(directory);
         } catch (IOException e) {
             throw new ClientException("目录创建失败: " + directory);
-        }
-    }
-
-    private Path createTempDir() {
-        try {
-            return Files.createTempDirectory("lingxi-data-move-");
-        } catch (IOException e) {
-            throw new ClientException("临时目录创建失败: " + e.getMessage());
         }
     }
 

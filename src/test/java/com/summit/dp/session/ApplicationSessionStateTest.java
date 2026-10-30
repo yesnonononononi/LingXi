@@ -1,5 +1,9 @@
 package com.summit.dp.session;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -31,9 +35,6 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -230,26 +231,26 @@ class ApplicationSessionStateTest {
     @EnableTransactionManagement
     static class Config {
         @Bean(destroyMethod = "shutdown")
-        EmbeddedDatabase database() {
-            return new EmbeddedDatabaseBuilder().setType(EmbeddedDatabaseType.H2)
-                    .setName(UUID.randomUUID() + ";MODE=MySQL").addScript("init.sql").build();
+        SqliteTestDatabase database() {
+            return SqliteTestDatabase.create("ApplicationSessionStateTest");
         }
 
         @Bean
-        DataSourceTransactionManager transactionManager(EmbeddedDatabase database) {
+        DataSourceTransactionManager transactionManager(SqliteTestDatabase database) {
             return new DataSourceTransactionManager(database);
         }
 
         @Bean
-        SqlSessionTemplate sql(EmbeddedDatabase database) throws Exception {
+        SqlSessionTemplate sql(SqliteTestDatabase database) throws Exception {
             MybatisConfiguration configuration = new MybatisConfiguration();
             configuration.setMapUnderscoreToCamelCase(true);
+            MyBatisTypeHandlers.registerAll(configuration);
             configuration.addMapper(SessionMapper.class);
             configuration.addMapper(ExecutionMapper.class);
             MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
             factory.setDataSource(database);
             factory.setConfiguration(configuration);
-            return new SqlSessionTemplate(factory.getObject());
+            return SqliteTestDatabase.sqlSession(factory.getObject());
         }
 
         @Bean

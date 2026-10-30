@@ -32,6 +32,8 @@
         <kotlin.version>2.2.21</kotlin.version>
         <lingxi.build.directory>${project.basedir}/target</lingxi.build.directory>
         <mybatis-plus>3.5.9</mybatis-plus>
+        <!-- SQLite 驱动：3.50.3.0 内核=SQLite 3.50.3，jar 内自带 Windows x86_64/aarch64/x86 的 sqlitejdbc.dll（JNI 免安装） -->
+        <sqlite-jdbc>3.50.3.0</sqlite-jdbc>
         <lingxi-starter>1.1.8-SNAPSHOT</lingxi-starter>
         <ddd-starter>1.0.7</ddd-starter>
         <!-- 变异测试（Pitest）：用法与结果解读见 docs/mutation-testing.md -->
@@ -40,9 +42,11 @@
         <!-- 默认目标只覆盖纯逻辑核心包，单次可接受；要跑别的范围用 -DtargetClasses=a.*,b.* 覆盖（逗号分隔由 Maven 拆成数组）。 -->
     </properties>
     <dependencies>
+        <!-- 唯一的运行期数据库：SQLite。H2 已彻底移除，避免「测试用 H2、真库用 SQLite」的方言双轨。 -->
         <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
+            <version>${sqlite-jdbc}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -121,13 +125,6 @@
         <resources>
             <resource>
                 <directory>src/main/resources</directory>
-            </resource>
-            <!-- IDE 按资源目录同步文件，不执行额外的 copy-resources 任务。 -->
-            <resource>
-                <directory>${project.basedir}</directory>
-                <includes>
-                    <include>init.sql</include>
-                </includes>
             </resource>
         </resources>
         <plugins>

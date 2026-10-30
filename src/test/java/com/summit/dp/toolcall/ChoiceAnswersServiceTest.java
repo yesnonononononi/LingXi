@@ -1,5 +1,9 @@
 package com.summit.dp.toolcall;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -48,9 +52,6 @@ import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.http.MediaType;
@@ -80,7 +81,7 @@ class ChoiceAnswersServiceTest {
     private static final long CONVERSATION = 500L;
     private static final long EXECUTION = 2105000000000000001L;
     private static final String RESPONSE = "2105000000000000011";
-    private EmbeddedDatabase database;
+    private SqliteTestDatabase database;
     private ExecutionRepository executions;
     private ToolCallRepositoryImpl tools;
     private ModelContextService contexts;
@@ -92,16 +93,16 @@ class ChoiceAnswersServiceTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = new EmbeddedDatabaseBuilder().generateUniqueName(true).setType(EmbeddedDatabaseType.H2)
-                .addScript("execution-status-schema.sql").addScript("tool-call-schema.sql").build();
+        database = SqliteTestDatabase.create("ChoiceAnswersServiceTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
+        MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(ExecutionMapper.class);
         configuration.addMapper(ToolCallMapper.class);
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate session = new SqlSessionTemplate(sessionFactory);
+        SqlSessionTemplate session = SqliteTestDatabase.sqlSession(sessionFactory);
         mapper = new ObjectMapper().findAndRegisterModules();
         messages = mock(MessageRepository.class);
         executions = ExecutionRepositoryTestFactory.create(session.getMapper(ExecutionMapper.class), mapper);

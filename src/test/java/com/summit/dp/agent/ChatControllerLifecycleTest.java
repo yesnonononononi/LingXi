@@ -26,6 +26,7 @@ import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.shared.support.SqliteTestDatabase;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
@@ -79,10 +80,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-/** 模型由闸门控制，其余入口、循环、检查点、消息与轮次均走实际实现和内存 H2。 */
+/** 模型由闸门控制，其余入口、循环、检查点、消息与轮次均走实际实现和真实的 SQLite 文件库。 */
 @SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:h2:mem:chatcontrols;MODE=MySQL;DB_CLOSE_DELAY=-1",
-        "spring.sql.init.mode=always", "spring.sql.init.schema-locations=classpath:init.sql",
         "lingxi.data.dir=D:/Code/LingXi/.run/chat-controls/data", "lingxi.skill.dir=",
         "lingxi.config.sandbox-security.directory=.run/chat-controls/security",
         "lingxi.config.user-configs.path=D:/Code/LingXi/.run/chat-controls/user-configs.json",
@@ -93,6 +92,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 })
 @AutoConfigureMockMvc
 class ChatControllerLifecycleTest {
+    /** 库建在系统临时目录：用例之间互不干扰，也不在工作区留 *.sqlite/-wal。 */
+    private static final String DATABASE_URL = SqliteTestDatabase.newDatasourceUrl("chat-controls");
+
+    @org.springframework.test.context.DynamicPropertySource
+    static void datasource(org.springframework.test.context.DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", () -> DATABASE_URL);
+        registry.add("spring.datasource.driver-class-name", () -> "org.sqlite.JDBC");
+    }
+
     @Autowired private MockMvc mvc;
     @Autowired private ObjectMapper mapper;
     @Autowired private SessionService sessions;

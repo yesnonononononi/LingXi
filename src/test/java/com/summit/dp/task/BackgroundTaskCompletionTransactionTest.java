@@ -1,5 +1,9 @@
 package com.summit.dp.task;
 
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+
+import com.summit.dp.shared.support.SqliteTestDatabase;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.execution.application.service.ResumeDisposition;
@@ -18,9 +22,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
@@ -97,22 +98,21 @@ class BackgroundTaskCompletionTransactionTest {
     @Configuration
     @EnableTransactionManagement
     static class Config {
-        @Bean(destroyMethod = "shutdown") EmbeddedDatabase database() {
-            return new EmbeddedDatabaseBuilder().setType(EmbeddedDatabaseType.H2)
-                    .setName("terminal-completion-" + UUID.randomUUID() + ";MODE=MySQL")
-                    .addScript("file:./init.sql").build();
+        @Bean(destroyMethod = "shutdown") SqliteTestDatabase database() {
+            return SqliteTestDatabase.create("BackgroundTaskCompletionTransactionTest");
         }
-        @Bean PlatformTransactionManager transactionManager(EmbeddedDatabase database) {
+        @Bean PlatformTransactionManager transactionManager(SqliteTestDatabase database) {
             return new DataSourceTransactionManager(database);
         }
-        @Bean TaskMapper taskMapper(EmbeddedDatabase database) throws Exception {
+        @Bean TaskMapper taskMapper(SqliteTestDatabase database) throws Exception {
             MybatisConfiguration configuration = new MybatisConfiguration();
             configuration.setMapUnderscoreToCamelCase(true);
+            MyBatisTypeHandlers.registerAll(configuration);
             configuration.addMapper(TaskMapper.class);
             MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
             factory.setConfiguration(configuration);
             factory.setDataSource(database);
-            return new SqlSessionTemplate(factory.getObject()).getMapper(TaskMapper.class);
+            return SqliteTestDatabase.sqlSession(factory.getObject()).getMapper(TaskMapper.class);
         }
         @Bean TaskRepository repository(TaskMapper mapper) { return new TaskRepositoryImpl(mapper); }
         @Bean ExecutionResumeCoordinator coordinator() { return mock(ExecutionResumeCoordinator.class); }

@@ -12,6 +12,7 @@ import com.summit.core.tool.ToolExecutor;
 import com.summit.core.tool.ToolRegistry;
 import com.summit.ddd.infrastructure.repository.json.AbstractJsonRepository;
 import com.summit.dp.email.application.service.EmailService;
+import com.summit.dp.shared.support.SqliteTestDatabase;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.mcp.HostMcpScopeProvider;
 import com.summit.dp.workflow.infrastructure.tools.config.ToolDefinitionSchemaGate;
@@ -44,16 +45,13 @@ import static org.mockito.Mockito.mockingDetails;
  * <p>隔离措施（避免干扰已在 8088 运行的实例与外部依赖）：</p>
  * <ul>
  *   <li>{@code webEnvironment=NONE}：不绑定端口，绝不与运行中的实例抢 8088。</li>
- *   <li>数据源改内存 H2：不去打开实例正在使用的 {@code ~/.lingxi/data/lingxi.mv.db} 文件库。</li>
+ *   <li>数据源改系统临时目录里的 SQLite 文件库：不去打开实例正在使用的 {@code ~/.lingxi/data/lingxi.sqlite}。</li>
+ *   <li>建表交给生产初始化器（ApplicationRunner）跑一遍，顺带验证真实建库脚本能装进容器。</li>
  *   <li>{@code lingxi.data.dir} / 四个 config 路径指向 {@code .run/tmp}，不写用户真实配置。</li>
  *   <li>MCP 使用真实工厂及独立的空配置，验证装配时不连接外部服务。</li>
  * </ul>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, properties = {
-        "spring.datasource.url=jdbc:h2:mem:ctxverify;MODE=MySQL;DB_CLOSE_DELAY=-1",
-        "spring.sql.init.mode=always",
-        "spring.sql.init.schema-locations=classpath:init.sql",
-        "spring.sql.init.encoding=UTF-8",
         "lingxi.data.dir=D:/Code/LingXi/.run/tmp/ctx-verify/data",
         "lingxi.skill.dir=",
         "lingxi.config.sandbox-security.directory=.run/tmp/ctx-verify/security",
@@ -65,6 +63,15 @@ import static org.mockito.Mockito.mockingDetails;
         "DEEPSEEK_APIKEY=ctx-verify-placeholder"
 })
 class ApplicationContextAssemblyTest {
+
+    /** 库建在系统临时目录：不打开实例正在用的库，也不在工作区留文件。 */
+    private static final String DATABASE_URL = SqliteTestDatabase.newDatasourceUrl("ctx-verify");
+
+    @org.springframework.test.context.DynamicPropertySource
+    static void datasource(org.springframework.test.context.DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", () -> DATABASE_URL);
+        registry.add("spring.datasource.driver-class-name", () -> "org.sqlite.JDBC");
+    }
 
     @Autowired
     private McpClientFactory clientFactory;
