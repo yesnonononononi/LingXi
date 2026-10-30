@@ -182,12 +182,16 @@ function notFound(reason) {
  *
  * @param options.userDataDir 用户数据目录（用户自装模型放 `live2d/`）
  * @param options.appRoot 应用根目录（内置模型在 `dist/live2d/`）
+ * @param options.extraBases 额外解析根（开发态把 `public/live2d` 放进来，否则 dev 下改素材必须
+ *        先 build 一次才能被桌宠看到）
  * @returns 解析基准列表（排障用）
  */
-function registerLxProtocol({ userDataDir, appRoot }) {
+function registerLxProtocol({ userDataDir, appRoot, extraBases }) {
   const { protocol } = electron();
+  const extras = Array.isArray(extraBases) ? extraBases.filter((item) => typeof item === 'string' && item.length > 0) : [];
   const bases = [
     path.join(String(userDataDir), 'live2d'),
+    ...extras,
     path.join(String(appRoot), 'dist', 'live2d'),
   ];
 

@@ -28,13 +28,32 @@ function electron() {
 // ---------------------------------------------------------------- 常量
 
 /**
- * 桌宠窗口默认尺寸（**含四周留白**）。
+ * 立绘箱（旋转后的可见尺寸）。
  *
- * <p>留白是给 Live2D 模型的动作与阴影用的：模型的头/手经常超出本体包围盒，
- * 窗口贴着模型裁边会把它们切掉。这一圈在窗口里是透明的，靠点击穿透保证不吃鼠标。</p>
+ * <p>素材是横构图的全身立绘，展示时绕中心逆时针转 90° 才是正姿，所以「宽×高」要按转过之后
+ * 的尺寸来算：1312×1199 的素材转完是竖的，这里取接近原始比例的 288×316。</p>
  */
-const PET_WIDTH = 320;
-const PET_HEIGHT = 420;
+const ART_WIDTH = 288;
+const ART_HEIGHT = 316;
+/**
+ * 立绘四周留给「发光 / 投影」的透明余量。
+ *
+ * <p><b>必须与 `pet.css` 的 `--pet-glow-pad` 保持一致。</b>没有这一圈，CSS 的外发光会被窗口边缘
+ * 直接切掉，浅色桌面下几乎看不出桌宠的轮廓。</p>
+ */
+const GLOW_PAD = 16;
+/**
+ * 顶部为「一句话气泡」预留的高度（U5：本批只做通知联动的一句话气泡）。
+ *
+ * <p><b>必须与 `pet.css` 的 `--pet-bubble-h` 保持一致。</b>预留而不是动态撑高窗口：
+ * 气泡出现时改窗口尺寸会让已经拖动过的位置跳一下。</p>
+ */
+const BUBBLE_H = 72;
+
+/** 桌宠窗口尺寸 = 立绘箱 + 四周发光余量 + 顶部气泡预留（**含留白**）。 */
+const PET_WIDTH = ART_WIDTH + GLOW_PAD * 2;
+const PET_HEIGHT = ART_HEIGHT + GLOW_PAD * 2 + BUBBLE_H;
+
 /** 尺寸的安全区间：太小装不下模型，太大会挡住桌面操作。 */
 const MIN_DIMENSION = 120;
 const MAX_DIMENSION = 1200;
@@ -648,6 +667,10 @@ module.exports = {
   writeState,
   PET_WIDTH,
   PET_HEIGHT,
+  ART_WIDTH,
+  ART_HEIGHT,
+  GLOW_PAD,
+  BUBBLE_H,
   EDGE_MARGIN,
   STATE_FILE_NAME,
   MIN_VISIBLE_RATIO,

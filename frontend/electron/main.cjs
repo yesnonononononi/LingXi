@@ -544,7 +544,9 @@ app.whenReady().then(async () => {
 
   // 桌宠资源协议：ready 之后才能 handle。失败不影响主应用（模型加载不到而已）
   try {
-    registerLxProtocol({ userDataDir, appRoot: app.getAppPath() });
+    // 开发态额外挂上 public/live2d：否则改完素材要先 build 一次才被桌宠看见
+    const extraBases = isDev ? [path.join(frontendRoot, 'public', 'live2d')] : [];
+    registerLxProtocol({ userDataDir, appRoot: app.getAppPath(), extraBases });
   } catch (err) {
     console.warn(`[lxa] 协议注册失败（桌宠模型将加载不出来）: ${(err && err.message) || err}`);
   }

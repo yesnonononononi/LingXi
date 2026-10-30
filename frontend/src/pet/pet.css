@@ -1,17 +1,26 @@
 /**
- * 桌宠窗口的占位样式（阶段一：只验手感，不接 Live2D）。
+ * 桌宠渲染层 v0 样式（静态立绘 + CSS 缓动，不含 Live2D）。
  *
- * <p>整页必须保持透明：窗口尺寸比假宠物大一圈（320×420 里画一个 240 的圆），
- * 那一圈透明区靠主进程的点击穿透保证不吃鼠标。所以这里禁止给 html/body 任何背景色，
- * 连 `color-scheme` 都不设 —— 设了 Windows 会给无背景窗口配一层白底。</p>
+ * <p>整页必须透明：窗口尺寸比立绘大一圈（发光余量 + 顶部气泡预留），那一圈靠主进程的点击穿透
+ * 保证不吃鼠标。所以这里禁止给 html/body 任何背景色，也不要设 `color-scheme`——
+ * 设了 Windows 会给无背景窗口配一层白底。</p>
  */
 
 :root {
-  /* 假宠物的主色，将来换成 Live2D 模型时这里整块会被删掉 */
-  --pet-core: rgba(129, 140, 248, 0.30);
-  --pet-core-edge: rgba(165, 180, 252, 0.75);
+  /*
+   * 下面两个值 **必须与 electron/pet-window.cjs 的 GLOW_PAD / BUBBLE_H 一致**：
+   * 主进程按它们算窗口大小，这里按它们排版。一旦不一致的表现是「立绘被窗口边缘切掉一角」
+   * 或「气泡区压到脸上」，而且很难一眼看出是数字没对齐。
+   */
+  --pet-glow-pad: 16px;
+  --pet-bubble-h: 72px;
+
+  /* 立绘箱：窗口 320×420 减掉四周 16 与顶部 72 → 288×316（旋转后的可见尺寸） */
+  --pet-art-w: 288px;
+  --pet-art-h: 316px;
+
   --pet-ink: rgba(224, 231, 255, 0.92);
-  --pet-shadow: rgba(49, 46, 129, 0.35);
+  --pet-glow: rgba(147, 197, 253, 0.35);
 }
 
 html,
@@ -23,7 +32,6 @@ body {
 }
 
 body {
-  /* 桌宠窗口不该出现选中高亮，也不该有文本光标 */
   user-select: none;
   cursor: default;
   font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
@@ -35,108 +43,156 @@ body {
   height: 100%;
 }
 
+/* 排版容器：padding 与主进程的留白常量一一对应 */
 .pet-stage {
-  position: relative;
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  padding: var(--pet-glow-pad);
+  padding-top: calc(var(--pet-glow-pad) + var(--pet-bubble-h));
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 /**
- * 假宠物本体 = 命中区。
- *
- * <p>命中判定没有用 `elementFromPoint`，而是按几何圆形算（见 main.ts）：
- * Live2D 模型将来的命中区是模型包围盒/轮廓，用几何判定才和它同构，
- * 换成 elementFromPoint 就会把「圆角外的透明像素」也算成可点。</p>
+ * 缓动分两层包：呼吸（scale + translateY）与摇摆（rotate）各自独立，
+ * 否则两个动画抢同一个 transform 会互相覆盖。只用 transform，走合成器，
+ * 不产生重排（frame-rate 友好）。
  */
-.pet {
-  position: relative;
-  width: 240px;
-  height: 240px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 38% 32%, var(--pet-core-edge), var(--pet-core) 62%, rgba(30, 27, 75, 0.18));
-  border: 1px solid var(--pet-core-edge);
-  box-shadow: 0 12px 32px var(--pet-shadow), inset 0 0 24px rgba(255, 255, 255, 0.10);
-  /* 拖拽期间不能有过渡，否则跟手感会「黏」 */
-  transition: transform 120ms ease, box-shadow 120ms ease;
-  cursor: grab;
-  /* 面板内部不参与滚动，避免拖拽时出现橡皮筋 */
-  touch-action: none;
+.pet-motion {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: pet-breathe 3.6s ease-in-out infinite;
+  will-change: transform;
 }
 
-.pet.is-hit {
-  transform: scale(1.02);
-  box-shadow: 0 14px 38px var(--pet-shadow), inset 0 0 30px rgba(255, 255, 255, 0.16);
-}
-
-.pet.is-dragging {
-  cursor: grabbing;
-  transition: none;
-}
-
-/* 呼吸动画：没有它就看不出「窗口是不是活的」 */
-.pet-face {
-  position: absolute;
-  inset: 0;
-  animation: pet-breathe 3.2s ease-in-out infinite;
+.pet-sway {
+  will-change: transform;
+  animation: pet-sway 5.2s ease-in-out infinite;
 }
 
 @keyframes pet-breathe {
-  0%, 100% { transform: translateY(0) scale(1); }
-  50% { transform: translateY(-6px) scale(1.015); }
+  0%, 100% { transform: scale(1) translateY(0); }
+  50% { transform: scale(1.014) translateY(-4px); }
 }
 
-.eye {
-  position: absolute;
-  top: 88px;
-  width: 20px;
-  height: 26px;
-  border-radius: 50%;
-  background: var(--pet-ink);
-  animation: pet-blink 4.6s ease-in-out infinite;
+@keyframes pet-sway {
+  0%, 100% { transform: rotate(-1.4deg); }
+  50% { transform: rotate(1.4deg); }
 }
 
-.eye.left { left: 74px; }
-.eye.right { right: 74px; }
-
-@keyframes pet-blink {
-  0%, 92%, 100% { transform: scaleY(1); }
-  95% { transform: scaleY(0.12); }
+/**
+ * 立绘箱 = 命中区矩形（当前兜底方案）。
+ *
+ * <p>精度只到矩形：真正的 alpha 掩码（1/8 降采样网格 + 膨胀滞回）在 T02 接，届时命中判定
+ * 换成掩码查询，这块矩形仍是「掩码不可用」时的降级路径。</p>
+ */
+.pet-art {
+  position: relative;
+  width: var(--pet-art-w);
+  height: var(--pet-art-h);
+  cursor: grab;
+  touch-action: none;
 }
 
-.mouth {
+.pet-art.is-dragging {
+  cursor: grabbing;
+}
+
+/**
+ * 立绘本体。
+ *
+ * <p><b>素材为横构图，换正立绘后即正，勿改代码</b>——当前 `front-master.png` 是 1312×1199 的
+ * 横躺原画（头在右、脚在左），这里给元素设成「转过来之后的横×竖」再绕中心逆时针转 90°，
+ * 屏幕上才是正姿。等美术交付正立的立绘，删掉 rotate 与宽高对调即可，其余排版不用动。</p>
+ */
+.pet-art-image {
   position: absolute;
   left: 50%;
-  top: 138px;
-  width: 38px;
-  height: 18px;
-  margin-left: -19px;
-  border-radius: 0 0 19px 19px;
-  border: 2px solid var(--pet-ink);
-  border-top: none;
+  top: 50%;
+  /* 未旋转的原始朝向：宽 = 旋转后的高，高 = 旋转后的宽 */
+  width: var(--pet-art-h);
+  height: var(--pet-art-w);
+  transform: translate(-50%, -50%) rotate(-90deg);
+  transform-origin: center center;
+  object-fit: contain;
+  filter: drop-shadow(0 6px 18px var(--pet-glow));
+  pointer-events: none;
+  /* 素材本身带透明底，禁用拖拽图片的系统行为 */
+  -webkit-user-drag: none;
 }
+
+/* 立绘加载失败时的兜底提示：宁可显眼地报错，也不要静默显示一个空白窗口 */
+.pet-art-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  box-sizing: border-box;
+  border: 1px dashed rgba(248, 113, 113, 0.8);
+  border-radius: 12px;
+  color: rgba(254, 202, 202, 0.95);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  background: rgba(69, 10, 10, 0.55);
+}
+
+/**
+ * 表情层（六格 3×2）。
+ *
+ * <p>背景图在 main.ts 里设成 `lxa://pet-v1/expressions.png`（资源路径只走 lxa:// 白名单，
+ * 且不放进 CSS 以免构建期被当成可解析资源改写）。这里只定义每格的背景位置：
+ * `background-size: 300% 200%` 时，x 的 0/50/100% 对应三列，y 的 0/100% 对应两行。</p>
+ *
+ * <p>默认档 = 第 1 格（左上），与立绘自带的脸同款，因此默认状态看不出叠了一层。</p>
+ */
+.pet-face {
+  position: absolute;
+  left: 50%;
+  /* 立绘转过之后头在顶部：表情层贴着上沿并略微上探，盖住立绘原本的脸 */
+  top: 0.5%;
+  width: 74%;
+  aspect-ratio: 1 / 1;
+  transform: translateX(-50%);
+  background-repeat: no-repeat;
+  background-size: 300% 200%;
+  background-position: 0% 0%;
+  pointer-events: none;
+}
+
+.pet-face.is-default { background-position: 0% 0%; }
+.pet-face.is-blink { background-position: 50% 0%; }
+.pet-face.is-happy { background-position: 100% 0%; }
+.pet-face.is-surprised { background-position: 0% 100%; }
+.pet-face.is-sleepy { background-position: 50% 100%; }
+.pet-face.is-sad { background-position: 100% 100%; }
 
 .pet-close {
   position: absolute;
-  top: 18px;
-  right: 26px;
-  width: 24px;
-  height: 24px;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border-radius: 50%;
   border: 1px solid rgba(226, 232, 240, 0.45);
   background: rgba(15, 23, 42, 0.55);
   color: rgba(226, 232, 240, 0.9);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1;
   cursor: pointer;
   opacity: 0;
   transition: opacity 120ms ease;
 }
 
-.pet.is-hit .pet-close {
+.pet-art.is-hit .pet-close {
   opacity: 1;
 }
 
@@ -145,13 +201,12 @@ body {
   border-color: rgba(248, 250, 252, 0.6);
 }
 
-/* 调试标记：一眼看出当前是「穿透中」还是「可交互」，手感的验收就靠它 */
+/* 调试标记：一眼看出当前是「穿透中」还是「可交互」，手感验收就靠它；点它可切表情 */
 .pet-badge {
   position: absolute;
-  left: 50%;
-  bottom: 30px;
-  transform: translateX(-50%);
-  padding: 3px 10px;
+  left: 8px;
+  bottom: 6px;
+  padding: 2px 10px;
   border-radius: 999px;
   font-size: 11px;
   letter-spacing: 0.4px;
@@ -159,6 +214,7 @@ body {
   background: rgba(15, 23, 42, 0.45);
   border: 1px solid rgba(165, 180, 252, 0.35);
   white-space: nowrap;
+  cursor: pointer;
 }
 
 .pet-badge.is-hit {
@@ -167,12 +223,25 @@ body {
   border-color: rgba(134, 239, 172, 0.95);
 }
 
+/* 提示行与调试标记并排贴在立绘底部：放在立绘箱外面会被窗口边缘裁掉（试过 bottom:-14px）。
+   加一层极淡的底色是因为它压在裙摆的浅色花纹上，纯文字几乎看不清。 */
 .pet-hint {
   position: absolute;
-  left: 50%;
-  bottom: 6px;
-  transform: translateX(-50%);
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
   font-size: 10px;
-  color: rgba(199, 210, 254, 0.55);
+  color: rgba(219, 228, 255, 0.78);
+  background: rgba(15, 23, 42, 0.42);
   white-space: nowrap;
+}
+
+/* 尊重系统的「减少动态效果」：关掉呼吸与摇摆，立绘静止但仍可交互 */
+@media (prefers-reduced-motion: reduce) {
+  .pet-motion,
+  .pet-sway {
+    animation: none;
+    will-change: auto;
+  }
 }
