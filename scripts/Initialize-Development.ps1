@@ -29,8 +29,19 @@ function Resolve-JavaExecutable([string]$Name) {
 function Resolve-LocalRepository {
     if ($LocalRepository) { return [System.IO.Path]::GetFullPath($LocalRepository) }
     if ($env:MAVEN_REPO_LOCAL) { return [System.IO.Path]::GetFullPath($env:MAVEN_REPO_LOCAL) }
-    $settingsPath = Join-Path $env:USERPROFILE '.m2/settings.xml'
-    if (Test-Path -LiteralPath $settingsPath) {
+    # settings.xml 可能在两处：用户级 ~/.m2，以及 Maven 安装目录的 conf（本机就把仓库配在那里）。
+    $settingsCandidates = @((Join-Path $env:USERPROFILE '.m2/settings.xml'))
+    foreach ($homeVariable in @($env:MAVEN_HOME, $env:M2_HOME)) {
+        if ($homeVariable) { $settingsCandidates += (Join-Path $homeVariable 'conf/settings.xml') }
+    }
+    $mavenCommand = Get-Command 'mvn.cmd' -ErrorAction SilentlyContinue
+    if (-not $mavenCommand) { $mavenCommand = Get-Command 'mvn' -ErrorAction SilentlyContinue }
+    if ($mavenCommand) {
+        $mavenRoot = Split-Path -Parent (Split-Path -Parent $mavenCommand.Source)
+        $settingsCandidates += (Join-Path $mavenRoot 'conf/settings.xml')
+    }
+    foreach ($settingsPath in $settingsCandidates) {
+        if (-not (Test-Path -LiteralPath $settingsPath)) { continue }
         $match = Select-String -LiteralPath $settingsPath -Pattern '<localRepository>\s*([^<]+?)\s*</localRepository>' |
             Select-Object -First 1
         if ($match) { return [System.IO.Path]::GetFullPath($match.Matches[0].Groups[1].Value) }

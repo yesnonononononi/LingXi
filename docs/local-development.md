@@ -12,7 +12,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Initialize-Developme
 
 脚本先独占打开一次库文件确认没有进程在写，再用驱动生成一致性快照（`VACUUM INTO`，WAL 里的提交一并合并，**不复制正在写入的主文件**），然后把检查点正文、图片、配置和技能整棵复制，并把数据库快照的 SHA-256 与 `checkpoints` 文件清单写进 `initialization.json`。开发副本只调整设置中的 `dataDir`、`skillDir`；模型、MCP、工作空间、会话等保持复制时的内容。已有开发目录不会被覆盖，后续两个环境各自修改各自的数据。
 
-快照步骤需要 JDK 21 与 `sqlite-jdbc`：脚本默认按 `pom.xml` 里固定的版本到 Maven 本地仓库（优先 `settings.xml` 的 `localRepository`）找 jar，也可以显式指定：
+快照步骤需要 JDK 21 与 `sqlite-jdbc`：脚本默认按 `pom.xml` 里固定的版本到 Maven 本地仓库找 jar（仓库路径按 `MAVEN_REPO_LOCAL` → `settings.xml` 的 `localRepository`（用户级 `~/.m2` 或 Maven 安装目录的 `conf/`）→ `~/.m2/repository` 的顺序解析），也可以显式指定：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Initialize-Development.ps1 `
