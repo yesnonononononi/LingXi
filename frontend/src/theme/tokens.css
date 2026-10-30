@@ -11,6 +11,9 @@
  *
  * ⚠️ 本文件当前为「纯新增」：没有任何既有组件消费 --lx-*，
  * 因此引入它对现有渲染结果零影响（等价性由此保证，而非靠肉眼比对）。
+ *
+ * 边界：字号是 typography 令牌（--lx-font-size-*），宽度仍为字面量
+ * —— 布局宽度（如 --container-lx-chat）留在 style.css 的 @theme 块，不进本文件。
  */
 
 /* ========== 1) 暗色（默认） ========== */
@@ -85,6 +88,21 @@
   --lx-ring:                  0 0 0 2px rgba(56, 189, 248, 0.45);
   --lx-blur-panel:            12px;
 
+  /* 字号 Typography（8 档，覆盖实测全站 px 字号分布）。
+     值 = 基准 px × --lx-font-scale 的退回值 1：默认态不写 --lx-font-scale，
+     因此 calc(11px * 1) 的求值与改造前的硬编码 11px 逐位相等（视觉基线按默认态采集）。
+     尺寸用 px 不用 rem：rem 会随根字号联动，而本项目布局间距是 rem（≈2210 处），
+     字号若也用 rem 就会跟布局相乘，破坏「只放大字不放大框」这一需求口径。
+     不给主题包覆盖：字号是可用性偏好，用户包改字号等于把界面撑坏，与 radius/shadow 同理。 */
+  --lx-font-size-2xs:         calc(9px * var(--lx-font-scale, 1));
+  --lx-font-size-xs:          calc(10px * var(--lx-font-scale, 1));
+  --lx-font-size-sm:          calc(11px * var(--lx-font-scale, 1));
+  --lx-font-size-md:          calc(12px * var(--lx-font-scale, 1));
+  --lx-font-size-lg:          calc(13px * var(--lx-font-scale, 1));
+  --lx-font-size-xl:          calc(14px * var(--lx-font-scale, 1));
+  --lx-font-size-2xl:         calc(16px * var(--lx-font-scale, 1));
+  --lx-font-size-3xl:         calc(18px * var(--lx-font-scale, 1));
+
   /* 滚动条（取值与 style.css 现有硬编码一致，供后续批次收口使用） */
   --lx-scrollbar-thumb:       rgba(255, 255, 255, 0.16);
   --lx-scrollbar-thumb-hover: rgba(255, 255, 255, 0.32);
@@ -149,6 +167,17 @@ html[data-theme="light"] {
   --lx-shadow-2:              0 8px 24px -8px rgba(16, 24, 40, 0.14);
   --lx-shadow-3:              0 12px 40px -10px rgba(16, 24, 40, 0.18);
   --lx-ring:                  0 0 0 2px rgba(2, 132, 199, 0.35);
+
+  /* 字号与明暗无关：这里给出同值声明，只为满足「亮色块必须逐个令牌给值」的结构门禁，
+     并让后续给亮色单独调字号时有落点（当前刻意同值，themeTokens.test.ts 的豁免集守护）。 */
+  --lx-font-size-2xs:         calc(9px * var(--lx-font-scale, 1));
+  --lx-font-size-xs:          calc(10px * var(--lx-font-scale, 1));
+  --lx-font-size-sm:          calc(11px * var(--lx-font-scale, 1));
+  --lx-font-size-md:          calc(12px * var(--lx-font-scale, 1));
+  --lx-font-size-lg:          calc(13px * var(--lx-font-scale, 1));
+  --lx-font-size-xl:          calc(14px * var(--lx-font-scale, 1));
+  --lx-font-size-2xl:         calc(16px * var(--lx-font-scale, 1));
+  --lx-font-size-3xl:         calc(18px * var(--lx-font-scale, 1));
 
   --lx-scrollbar-thumb:       rgba(161, 161, 170, 0.25);
   --lx-scrollbar-thumb-hover: rgba(161, 161, 170, 0.45);

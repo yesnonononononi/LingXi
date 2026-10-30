@@ -100,14 +100,20 @@ test('T2-3 除形态类（明暗共用一套值）外，每个令牌都必须在
 });
 
 /**
- * 「明暗刻意同值」豁免集：形态类（radius/shadow 等）+ 反色白字。
+ * 「明暗刻意同值」豁免集：形态类（radius/shadow 等）+ 字号类 + 反色白字。
  * 提升到模块级，供 T2-4（正向：非豁免不得同值）与 T2-5（反向：豁免必须真的同值）共用。
  * ⚠️ 两个方向都必须有，只留正向会让豁免集静默腐化（加进来的项永远不会被回收检查）。
+ *
+ * <p>字号（typography）与形态（shape）同列的理由：字号是几何量，明暗两套主题共用同一档基准值，
+ * 亮色块给出同值声明只为满足「每个令牌都要有亮色值」的结构门禁，不是颜色覆盖。</p>
  */
 const SAME_BY_DESIGN: ReadonlySet<string> = new Set(
-  THEME_TOKEN_META.filter(token => token.group === 'shape').map(token => token.name).concat([
-    'text-on-accent' // 强调色之上的文字，明暗都必须白
-  ])
+  THEME_TOKEN_META
+    .filter(token => token.group === 'shape' || token.group === 'typography')
+    .map(token => token.name)
+    .concat([
+      'text-on-accent' // 强调色之上的文字，明暗都必须白
+    ])
 );
 
 test('T2-4 明暗取值相同只允许出现在豁免集（反色白字 + 形态类）', () => {
@@ -207,6 +213,15 @@ const THEME_KEY_OF_TOKEN: Readonly<Record<string, string | null>> = {
   'shadow-3': '--shadow-lx-3',
   'ring': null,
   'blur-panel': '--blur-lx-panel',
+  /* 字号映射到 Tailwind v4 的 --text-* 命名空间（生成 text-lx-fs-*），不是 --color-* */
+  'font-size-2xs': '--text-lx-fs-2xs',
+  'font-size-xs': '--text-lx-fs-xs',
+  'font-size-sm': '--text-lx-fs-sm',
+  'font-size-md': '--text-lx-fs-md',
+  'font-size-lg': '--text-lx-fs-lg',
+  'font-size-xl': '--text-lx-fs-xl',
+  'font-size-2xl': '--text-lx-fs-2xl',
+  'font-size-3xl': '--text-lx-fs-3xl',
   'scrollbar-thumb': null,
   'scrollbar-thumb-hover': null
 };
@@ -251,6 +266,10 @@ test('T3-3 @theme 里不得出现没有对应令牌定义的 --color-lx-* / --ra
 const classToThemeVar = (className: string): string | null => {
   const bg = className.match(/^bg-lx-([a-z0-9-]+)$/);
   if (bg) return `--color-lx-${bg[1]}`;
+  // 字号分支必须排在 text-lx- 颜色分支之前：两者同为 text-lx- 前缀，
+  // 若先走颜色分支，text-lx-fs-sm 会被误推成 --color-lx-fs-sm 而误报红（不存在该映射）。
+  const fontSize = className.match(/^text-lx-fs-([a-z0-9]+)$/);
+  if (fontSize) return `--text-lx-fs-${fontSize[1]}`;
   const fg = className.match(/^text-lx-([a-z0-9-]+)$/);
   if (fg) return `--color-lx-${fg[1]}`;
   const border = className.match(/^border-lx-([a-z0-9-]+)$/);
@@ -296,6 +315,23 @@ test('T4-3 令牌名必须符合命名规范（禁止颜色名与色阶）', () 
   const colorNameLike = /-(red|blue|green|yellow|zinc|gray|grey|slate|indigo|purple|pink|orange|amber|teal|cyan|sky|violet|rose|lime|emerald|fuchsia)-?\d*$/;
   const bad = THEME_TOKEN_NAMES.filter(name => colorNameLike.test(`-${name}`));
   assert.deepEqual(bad, [], '令牌名不得含颜色名或色阶（换肤时要能整体替换色相）');
+});
+
+test('T4-4 字号工具类必须反推成 --text-lx-fs-*（分支先于颜色），且该映射在 @theme 中存在', () => {
+  assert.equal(
+    classToThemeVar('text-lx-fs-sm'),
+    '--text-lx-fs-sm',
+    '字号类被颜色分支抢走了（会让 text-lx-fs-* 误判成不存在的 --color-lx-fs-*）'
+  );
+  assert.equal(classToThemeVar('text-lx-primary'), '--color-lx-primary', '颜色类不得被字号分支抢走');
+  for (const name of tokensByGroup('typography').map(token => token.name)) {
+    const themeVar = THEME_KEY_OF_TOKEN[name];
+    assert.equal(typeof themeVar, 'string', `${name} 必须登记为 --text-lx-fs-* 映射`);
+    assert.ok(
+      new RegExp(`${themeVar as string}\\s*:`).test(themeBlock),
+      `${name} 映射的 ${String(themeVar)} 在 @theme 中不存在`
+    );
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

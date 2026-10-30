@@ -16,6 +16,15 @@
           root.classList.toggle('light', !isDark);
           root.dataset.theme = isDark ? 'dark' : 'light';
           root.style.colorScheme = isDark ? 'dark' : 'light';
+
+          // 字号缩放首帧镜像：真值源在后端（S2 接入），首帧拿不到，先按 localStorage 镜像写变量，
+          // 否则每次启动会「小字 → 变大」闪一下。口径与 useFontScale.ts 完全一致：
+          // 默认档（1）不写变量（写了会让 calc 的属性字符串形态变化，视觉基线按默认态采集），
+          // 区间 [0.875, 1.5] 与 useFontScale.ts 的 MIN_FONT_SCALE / MAX_FONT_SCALE 必须同步。
+          const storedRaw = localStorage.getItem('lingxi-font-scale');
+          const storedScale = storedRaw === null || storedRaw.trim() === '' ? 1 : Number(storedRaw);
+          const clampedScale = Number.isFinite(storedScale) ? Math.min(1.5, Math.max(0.875, storedScale)) : 1;
+          if (clampedScale !== 1) root.style.setProperty('--lx-font-scale', String(clampedScale));
         } catch (e) {}
       })();
     </script>

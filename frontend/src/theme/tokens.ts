@@ -6,7 +6,7 @@
  */
 
 /** 令牌分组：仅用于设置页分组展示与文档，不参与渲染。 */
-export type ThemeTokenGroup = 'surface' | 'text' | 'border' | 'accent' | 'status' | 'code' | 'shape' | 'scrollbar';
+export type ThemeTokenGroup = 'surface' | 'text' | 'border' | 'accent' | 'status' | 'code' | 'shape' | 'typography' | 'scrollbar';
 
 export interface ThemeTokenMeta {
   /** 不含 `--lx-` 前缀的短名，如 `surface-elevated` */
@@ -16,8 +16,8 @@ export interface ThemeTokenMeta {
   readonly group: ThemeTokenGroup;
   /**
    * 是否允许用户主题包（ThemePack）覆盖。
-   * 颜色类全部开放；radius / shadow / ring / blur / scrollbar 归内置，
-   * 避免用户包把界面撑坏（改圆角、超大阴影是负价值定制）。
+   * 颜色类全部开放；radius / shadow / ring / blur / 字号 / scrollbar 归内置，
+   * 避免用户包把界面撑坏（改圆角、超大阴影、乱改字号都是负价值定制）。
    */
   readonly overridable: boolean;
   /** 设计意图说明，写给后续做主题包 UI 的人看 */
@@ -95,6 +95,16 @@ export const THEME_TOKEN_META: readonly ThemeTokenMeta[] = Object.freeze([
   def('shadow-3', 'shape', false, '三级阴影'),
   def('ring', 'shape', false, '聚焦环'),
   def('blur-panel', 'shape', false, '面板毛玻璃模糊半径'),
+
+  // 字号（typography，不可覆盖：用户包改字号等于把界面撑坏）
+  def('font-size-2xs', 'typography', false, '最小字号档（9px 基准，吸收 9px 角标）'),
+  def('font-size-xs', 'typography', false, '超小字号档（10px 基准）'),
+  def('font-size-sm', 'typography', false, '小字号档（11px 基准，全站占比最高的一档）'),
+  def('font-size-md', 'typography', false, '正文字号档（12px 基准）'),
+  def('font-size-lg', 'typography', false, '偏大字号档（13px 基准）'),
+  def('font-size-xl', 'typography', false, '大字号档（14px 基准，内联 font-size 主体）'),
+  def('font-size-2xl', 'typography', false, '标题字号档（16px 基准）'),
+  def('font-size-3xl', 'typography', false, '最大字号档（18px 基准）'),
 
   // 滚动条（不可覆盖）
   def('scrollbar-thumb', 'scrollbar', false, '滚动条滑块'),

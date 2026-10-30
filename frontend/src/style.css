@@ -71,6 +71,21 @@
   --blur-lx-panel:             var(--lx-blur-panel);
 
   /*
+   * 字号工具类：`--text-*` 是 Tailwind v4 的字号命名空间，故生成 text-lx-fs-*。
+   * 刻意不写 --text-*--line-height：新增行高会改变行盒，默认态基线必红；行高是独立议题。
+   * 命名带 fs 是为了与颜色族的 text-lx-primary 区分（都是 text-lx-* 前缀，见 themeTokens.test.ts
+   * classToThemeVar 的先 --text-lx- 后 --color-lx- 匹配顺序）。
+   */
+  --text-lx-fs-2xs:            var(--lx-font-size-2xs);
+  --text-lx-fs-xs:             var(--lx-font-size-xs);
+  --text-lx-fs-sm:             var(--lx-font-size-sm);
+  --text-lx-fs-md:             var(--lx-font-size-md);
+  --text-lx-fs-lg:             var(--lx-font-size-lg);
+  --text-lx-fs-xl:             var(--lx-font-size-xl);
+  --text-lx-fs-2xl:            var(--lx-font-size-2xl);
+  --text-lx-fs-3xl:            var(--lx-font-size-3xl);
+
+  /*
    * 对话列宽单一真源：生成 `max-w-lx-chat` 工具类（Tailwind v4 由 --container-* 自动派生
    * max-w-* 工具类）。消息列表 / 输入区 / 执行控制条 / 后台任务面板必须全部消费它，
    * 任一处写死具体宽度都会导致左右不对齐。回归守卫见 tests/chatColumnWidth.test.cjs。
