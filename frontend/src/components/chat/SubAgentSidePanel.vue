@@ -360,7 +360,7 @@ defineExpose({
           <div class="min-w-0">
             <div class="flex items-center gap-1.5">
               <h3 class="text-xs font-semibold truncate">{{ t('chat.subAgent.members') }}</h3>
-              <span :class="['px-1.5 py-0.2 rounded-full text-[10px] font-mono font-medium', isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-700']">
+              <span :class="['px-1.5 py-0.2 rounded-full text-lx-fs-xs font-mono font-medium', isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-700']">
                 {{ items.length }}
               </span>
             </div>
@@ -409,7 +409,7 @@ defineExpose({
             <!-- 状态标签指示灯 -->
             <span
               :class="[
-                'px-1.5 py-0.5 rounded-full text-[10px] font-medium flex items-center gap-1 shrink-0',
+                'px-1.5 py-0.5 rounded-full text-lx-fs-xs font-medium flex items-center gap-1 shrink-0',
                 (it.status === 'idle' || it.status === 'unknown') ? (isDark ? 'bg-zinc-500/15 text-zinc-400 border border-zinc-500/30' : 'bg-zinc-50 text-zinc-500 border border-zinc-200') :
                 it.status === 'running' ? (isDark ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30' : 'bg-amber-50 text-amber-600 border border-amber-200') :
                 it.status === 'suspended' ? (isDark ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30' : 'bg-blue-50 text-blue-600 border border-blue-200') :
@@ -437,7 +437,7 @@ defineExpose({
             :title="t('chat.subAgent.expandTaskTip')"
           >
             <div class="flex items-center justify-between">
-              <span class="px-1.5 py-0.2 rounded text-[10px] font-medium bg-blue-500/15 text-blue-500">
+              <span class="px-1.5 py-0.2 rounded text-lx-fs-xs font-medium bg-blue-500/15 text-blue-500">
                                 {{ t('chat.subAgent.assignedTask') }}
               </span>
             </div>

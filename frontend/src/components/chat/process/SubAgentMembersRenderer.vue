@@ -71,7 +71,7 @@ const openMember = (tool: ToolCallTrace): void => {
       <div class="flex flex-col shrink-0">
         <div class="flex items-center gap-1.5 whitespace-nowrap">
           <span class="font-medium">{{ t('chat.message.teamCollab') }}</span>
-          <span :class="['px-1.5 py-0.5 rounded-full text-[10px] font-mono whitespace-nowrap', isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-700']">
+          <span :class="['px-1.5 py-0.5 rounded-full text-lx-fs-xs font-mono whitespace-nowrap', isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-700']">
             {{ t('chat.message.membersWorking', { count: members.length }) }}
           </span>
         </div>
@@ -93,7 +93,7 @@ const openMember = (tool: ToolCallTrace): void => {
       >
         <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="memberDotClass(tc)"></span>
         <span class="truncate max-w-28">{{ tc.subAgentName || `Agent #${tc.displayIndex || idx + 1}` }}</span>
-        <span class="text-[10px] opacity-60 shrink-0">#{{ tc.displayIndex ?? (idx + 1) }}</span>
+        <span class="text-lx-fs-xs opacity-60 shrink-0">#{{ tc.displayIndex ?? (idx + 1) }}</span>
       </button>
     </div>
   </div>

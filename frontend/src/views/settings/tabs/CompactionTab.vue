@@ -43,7 +43,7 @@ const cardClass = 'rounded-2xl border p-4 space-y-3 transition-colors bg-lx-surf
 const titleClass = 'text-sm font-bold tracking-tight text-lx-primary';
 const hintClass = 'text-lx-fs-sm leading-relaxed text-lx-muted';
 const badgeClass = computed(() => [
-  'text-[10px] px-1.5 py-0.5 rounded-full border tracking-tight shrink-0',
+  'text-lx-fs-xs px-1.5 py-0.5 rounded-full border tracking-tight shrink-0',
   enabled.value ? 'border-lx-success text-lx-success bg-lx-success-soft' : 'border-lx-border text-lx-muted',
 ]);
 const switchClass = computed(() => [

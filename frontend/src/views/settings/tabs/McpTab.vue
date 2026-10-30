@@ -124,7 +124,7 @@ const {
                 </span>
                 <!-- 启停状态徽标 -->
                 <span
-                  class="px-1.5 py-0.5 rounded-md text-[10px] font-medium shrink-0 border"
+                  class="px-1.5 py-0.5 rounded-md text-lx-fs-xs font-medium shrink-0 border"
                   :class="item.status === 0
                     ? (isDark ? 'bg-white/5 border-white/10 text-zinc-400' : 'bg-zinc-200 border-zinc-300 text-zinc-500')
                     : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'"
@@ -133,7 +133,7 @@ const {
                 </span>
                 <!-- 传输方式 -->
                 <span
-                  class="px-1.5 py-0.5 rounded-md text-[10px] shrink-0 border"
+                  class="px-1.5 py-0.5 rounded-md text-lx-fs-xs shrink-0 border"
                   :class="isDark ? 'bg-white/5 border-white/10 text-zinc-300' : 'bg-black/5 border-zinc-200 text-zinc-500'"
                 >
                   {{ item.transport || 'streamable-http' }}

@@ -47,7 +47,7 @@ const selectedModel = computed<string | number>({
     v-if="props.drivenModel"
     data-slot="model-selector"
     type="button"
-    class="inline-flex h-7 max-w-[230px] flex-none cursor-pointer items-center gap-1 rounded-lg border px-2 text-[12px] font-medium whitespace-nowrap transition"
+    class="inline-flex h-7 max-w-[230px] flex-none cursor-pointer items-center gap-1 rounded-lg border px-2 text-lx-fs-md font-medium whitespace-nowrap transition"
     :class="props.drivenModel.missing
       ? (props.isDark
         ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
@@ -77,7 +77,7 @@ const selectedModel = computed<string | number>({
     size="sm"
     :searchable="true"
     :placeholder="t('chat.input.selectModel')"
-    trigger-class="inline-flex h-7 flex-none cursor-pointer touch-manipulation items-center gap-1 rounded-lg border-0 bg-transparent px-2 text-[12px] font-medium outline-none select-none [color:color-mix(in_srgb,var(--pb-ink)_70%,transparent)] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease] hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] hover:[color:var(--pb-ink)] whitespace-nowrap"
+    trigger-class="inline-flex h-7 flex-none cursor-pointer touch-manipulation items-center gap-1 rounded-lg border-0 bg-transparent px-2 text-lx-fs-md font-medium outline-none select-none [color:color-mix(in_srgb,var(--pb-ink)_70%,transparent)] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease] hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] hover:[color:var(--pb-ink)] whitespace-nowrap"
   >
     <template #trigger="{ selected, isOpen: menuOpen }">
       <ProviderIcon
@@ -86,7 +86,7 @@ const selectedModel = computed<string | number>({
         :name="selected.group ?? selected.label"
         :size="14"
       />
-      <span class="truncate max-w-[220px] text-[12px] leading-[18px]">
+      <span class="truncate max-w-[220px] text-lx-fs-md leading-[18px]">
         <template v-if="selected?.group">{{ selected.group }} / </template>{{ selected?.label ?? t('chat.input.selectModel') }}
       </span>
       <svg

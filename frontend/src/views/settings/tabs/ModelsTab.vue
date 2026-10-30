@@ -197,7 +197,7 @@ const addRowClass = computed(() => [
                 {{ groupTitle(group.providerName) }}
               </span>
               <span
-                class="shrink-0 text-[10px] px-1.5 py-0.5 rounded border tracking-tight"
+                class="shrink-0 text-lx-fs-xs px-1.5 py-0.5 rounded border tracking-tight"
                 :class="isDark ? 'border-white/20 text-zinc-300 bg-white/5' : 'border-zinc-200 text-zinc-500'"
               >{{ t('settings.models.providerModels', { count: group.modelCount }) }}</span>
             </div>
@@ -474,7 +474,7 @@ const addRowClass = computed(() => [
                   ]"
                 >
                   <div class="font-mono text-xs truncate">{{ item.id }}</div>
-                  <div v-if="item.owned_by" class="text-[10px] text-zinc-400 truncate ml-2">{{ item.owned_by }}</div>
+                  <div v-if="item.owned_by" class="text-lx-fs-xs text-zinc-400 truncate ml-2">{{ item.owned_by }}</div>
                 </div>
               </div>
             </div>

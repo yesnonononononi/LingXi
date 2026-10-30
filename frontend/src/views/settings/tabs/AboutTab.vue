@@ -111,7 +111,7 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
           <span class="flex items-center gap-1.5">
             <span
               v-if="mandatory"
-              class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-500/15 text-red-500 dark:text-red-400"
+              class="px-1.5 py-0.5 rounded text-lx-fs-xs font-semibold bg-red-500/15 text-red-500 dark:text-red-400"
                         >
               {{ t('settings.about.mandatory') }}
             </span>
@@ -146,10 +146,10 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
             />
           </div>
           <div class="flex items-center justify-between">
-            <span :class="['text-[10px] font-mono', 'text-lx-faint']">
+            <span :class="['text-lx-fs-xs font-mono', 'text-lx-faint']">
               {{ percent }}%
             </span>
-            <span v-if="bytesPerSecond > 0" :class="['text-[10px] font-mono', 'text-lx-faint']">
+            <span v-if="bytesPerSecond > 0" :class="['text-lx-fs-xs font-mono', 'text-lx-faint']">
               {{ formatBytes(bytesPerSecond) }}/s
             </span>
           </div>

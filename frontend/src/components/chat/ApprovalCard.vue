@@ -192,7 +192,7 @@ const handleReject = () => submit(false);
               </div>
               <div v-if="commandWorkDir" class="px-3 pt-2 pr-16 text-xs text-zinc-500 break-all">{{ t('chat.approval.workDir') }}{{ commandWorkDir }}</div>
               <!-- 命令正文 -->
-              <div class="p-3 pr-16 font-mono text-[12px] leading-relaxed break-all select-text flex items-start gap-2">
+              <div class="p-3 pr-16 font-mono text-lx-fs-md leading-relaxed break-all select-text flex items-start gap-2">
                 <span class="text-blue-500/80 font-bold select-none">$</span>
                 <span :class="isDark ? 'text-zinc-200' : 'text-zinc-800'">{{ commandText }}</span>
               </div>

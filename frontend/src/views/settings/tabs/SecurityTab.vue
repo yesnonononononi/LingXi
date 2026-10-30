@@ -68,7 +68,7 @@ const control = 'rounded-xl border border-zinc-200 dark:border-white/15 bg-white
 const button = 'rounded-xl border border-zinc-200 dark:border-white/15 px-3 py-1.5 text-xs font-medium transition cursor-pointer hover:bg-black/5 active:scale-[0.97] dark:hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100';
 const primary = 'rounded-xl bg-blue-600 px-4 py-1.5 text-xs font-medium text-white shadow-sm transition cursor-pointer hover:bg-blue-500 active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:active:scale-100';
 const iconButton = 'grid h-6 w-6 shrink-0 place-items-center rounded-lg border border-zinc-200 text-lx-muted transition cursor-pointer dark:border-white/15 hover:border-zinc-300 hover:bg-black/5 hover:text-zinc-900 dark:hover:border-white/25 dark:hover:bg-white/10 dark:hover:text-white disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent';
-const stateChip = 'shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium';
+const stateChip = 'shrink-0 rounded-full border px-1.5 py-0.5 text-lx-fs-xs font-medium';
 function label(action: SecurityAction) { return copy.value[action === 'ALLOW' ? 'allow' : action === 'ASK' ? 'ask' : 'deny']; }
 function validate(table: SecurityRuleView | undefined, selected: SecurityCategory): asserts table is SecurityRuleView {
   if (!table || !['NATIVE_NEXT_WORKSPACE', 'IMMEDIATE', 'OUTBOUND_OPEN'].includes(table.activation) || table.category !== selected || typeof table.revision !== 'string' || !/^(0|[1-9]\d*)$/.test(table.revision)
@@ -295,7 +295,7 @@ void load();
 
           <div class="mt-3 mb-1 flex flex-wrap items-center gap-x-2 gap-y-1">
             <span class="flex items-center gap-1.5 text-lx-fs-sm font-medium text-lx-muted">{{ copy.rules }}
-              <span class="rounded-full bg-black/[0.06] px-1.5 text-[10px] font-semibold tabular-nums dark:bg-white/10">{{ current.rules.length }}</span>
+              <span class="rounded-full bg-black/[0.06] px-1.5 text-lx-fs-xs font-semibold tabular-nums dark:bg-white/10">{{ current.rules.length }}</span>
             </span>
             <span class="text-lx-fs-sm leading-5 text-lx-faint">{{ copy.moveHint }}</span>
           </div>
@@ -311,7 +311,7 @@ void load();
               rule.enabled ? '' : 'opacity-55', rule === freshRule ? 'sec-flash' : '']"
             :style="{ '--sec-delay': `${Math.min(index, 10) * 30}ms` }" data-testid="security-rule">
             <div class="flex items-start gap-2 min-w-0">
-              <span :class="['shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium',
+              <span :class="['shrink-0 rounded-full border px-1.5 py-0.5 text-lx-fs-xs font-medium',
                 rule.preset ? 'border-blue-500/25 bg-blue-500/10 text-blue-600 dark:text-blue-400' : 'border-zinc-200 text-lx-muted dark:border-white/15']">{{ rule.preset ? copy.preset : copy.custom }}</span>
               <code class="min-w-0 flex-1 rounded-md bg-black/[0.04] px-1.5 py-0.5 font-mono text-xs leading-5 text-lx-secondary [overflow-wrap:anywhere] dark:bg-white/[0.06]">{{ rule.pattern }}</code>
               <span class="flex shrink-0 items-center gap-1">

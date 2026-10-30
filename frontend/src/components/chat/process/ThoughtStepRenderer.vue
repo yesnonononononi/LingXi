@@ -50,7 +50,7 @@ const toggle = (): void => {
 </script>
 
 <template>
-  <div v-if="step" class="text-[13px] space-y-1">
+  <div v-if="step" class="text-lx-fs-lg space-y-1">
     <button
       type="button"
       @click="toggle"

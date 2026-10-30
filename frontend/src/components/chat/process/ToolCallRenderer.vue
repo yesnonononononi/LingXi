@@ -75,7 +75,7 @@ const copyResult = (): void => {
       <!-- 头部操作条 (始终显示，带旋转指示箭头和类型图标) -->
       <div
         @click="toggle"
-        class="flex items-center gap-1.5 text-[13px] py-0.5 transition group select-none w-full max-w-full min-w-0 text-left"
+        class="flex items-center gap-1.5 text-lx-fs-lg py-0.5 transition group select-none w-full max-w-full min-w-0 text-left"
         :class="toolRowHeaderClass(tool, isDark)"
         :title="cleanDisplayPath(meta?.description) || resolveToolRenderName(tool.toolName)"
       >
@@ -141,7 +141,7 @@ const copyResult = (): void => {
             :aria-expanded="expanded"
             @click.stop="toggle"
             class="transition-colors truncate min-w-0 font-medium"
-            :class="isDark ? 'text-[13px] text-zinc-100' : 'text-[13px] text-zinc-700'"
+            :class="isDark ? 'text-lx-fs-lg text-zinc-100' : 'text-lx-fs-lg text-zinc-700'"
           >
             {{ cleanDisplayPath(meta?.description) || resolveToolRenderName(tool.toolName) }}
           </button>
@@ -150,7 +150,7 @@ const copyResult = (): void => {
         <!-- edit_file 差异行指示（完全还原图片风格：绿+N 红-M） -->
         <span
           v-if="diff"
-          class="inline-flex items-center gap-1 font-mono text-[12px] font-medium leading-none shrink-0 select-none ml-1"
+          class="inline-flex items-center gap-1 font-mono text-lx-fs-md font-medium leading-none shrink-0 select-none ml-1"
         >
           <span
             v-if="diff.plusLines !== undefined"
@@ -184,7 +184,7 @@ const copyResult = (): void => {
                 <!-- 卡片栏中的 diff 状态指示 -->
                 <span
                   v-if="diff"
-                  class="inline-flex items-center gap-1 font-mono text-[12px] font-medium leading-none shrink-0 select-none ml-1"
+                  class="inline-flex items-center gap-1 font-mono text-lx-fs-md font-medium leading-none shrink-0 select-none ml-1"
                 >
                   <span
                     v-if="diff.plusLines !== undefined"

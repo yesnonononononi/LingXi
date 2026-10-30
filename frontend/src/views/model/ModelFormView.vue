@@ -359,7 +359,7 @@ onBeforeUnmount(() => {
                 >
                   <div class='min-w-0 pr-2'>
                     <div class='font-mono text-xs truncate'>{{ item.id }}</div>
-                    <div v-if='item.owned_by' class='text-[10px] text-zinc-400 truncate'>
+                    <div v-if='item.owned_by' class='text-lx-fs-xs text-zinc-400 truncate'>
                       {{ t('model.organization', { owner: item.owned_by }) }}
                     </div>
                   </div>

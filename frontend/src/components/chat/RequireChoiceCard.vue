@@ -279,7 +279,7 @@ const handleSubmit = () => {
                   type="text"
                   :placeholder="t('chat.choice.customAnswerPlaceholder')"
                   :class="[
-                    'w-full text-[13px] bg-transparent outline-none placeholder:text-zinc-400',
+                    'w-full text-lx-fs-lg bg-transparent outline-none placeholder:text-zinc-400',
                     'text-lx-primary-soft'
                   ]"
                 />

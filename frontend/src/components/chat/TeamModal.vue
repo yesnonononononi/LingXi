@@ -631,13 +631,13 @@ const handleSaveTeam = async () => {
                     <span class="font-medium truncate text-lx-fs-sm">{{ resolveToolFullName(tool.name) }}</span>
                   </div>
                   <span
-                    class="text-[9px] px-1 py-0.2 rounded font-normal shrink-0 border"
+                    class="text-lx-fs-2xs px-1 py-0.2 rounded font-normal shrink-0 border"
                     :class="tool.readOnly ? (isDark ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300' : 'bg-emerald-100 border-emerald-200 text-emerald-700') : (isDark ? 'bg-amber-500/20 border-amber-500/30 text-amber-300' : 'bg-amber-100 border-amber-200 text-amber-700')"
                   >
                     {{ tool.readOnly ? t('chat.team.readOnly') : t('chat.team.readWrite') }}
                   </span>
                 </div>
-                <div v-if="tool.description" class="text-[10px] text-lx-faint truncate mt-0.5" :title="tool.description">
+                <div v-if="tool.description" class="text-lx-fs-xs text-lx-faint truncate mt-0.5" :title="tool.description">
                   {{ tool.description }}
                 </div>
               </div>
@@ -702,14 +702,14 @@ const handleSaveTeam = async () => {
                   </span>
                   <span
                     v-if="agent.toolList && agent.toolList.length > 0"
-                    class="px-1.5 py-0.5 text-[10px] rounded bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/20"
+                    class="px-1.5 py-0.5 text-lx-fs-xs rounded bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/20"
                     :title="agent.toolList.map(name => resolveToolFullName(name)).join(t('common.listSeparator'))"
                   >
                     {{ t('chat.team.toolCount', { count: agent.toolList.length }) }}
                   </span>
                   <span
                     v-else
-                    class="px-1.5 py-0.5 text-[10px] rounded bg-zinc-500/10 text-lx-faint"
+                    class="px-1.5 py-0.5 text-lx-fs-xs rounded bg-zinc-500/10 text-lx-faint"
                   >
                     {{ t('chat.team.noTool') }}
                   </span>
@@ -737,7 +737,7 @@ const handleSaveTeam = async () => {
               <!-- 管理者标识或快捷设为管理者 -->
               <span
                 v-if="commanderAgentId === agent.id"
-                class="shrink-0 px-2 py-0.5 text-[10px] rounded-full bg-blue-500/20 text-blue-500 border border-blue-500/30 font-medium"
+                class="shrink-0 px-2 py-0.5 text-lx-fs-xs rounded-full bg-blue-500/20 text-blue-500 border border-blue-500/30 font-medium"
               >
                 {{ t('chat.team.manager') }}
               </span>
@@ -745,7 +745,7 @@ const handleSaveTeam = async () => {
                 v-else-if="selectedAgentIds.includes(agent.id)"
                 type="button"
                 @click.stop="commanderAgentId = agent.id"
-                class="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 text-[10px] rounded text-zinc-400 hover:text-blue-500 hover:bg-blue-500/10 transition-all cursor-pointer"
+                class="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 text-lx-fs-xs rounded text-zinc-400 hover:text-blue-500 hover:bg-blue-500/10 transition-all cursor-pointer"
                 :title="t('chat.team.setManagerTip')"
               >
                 {{ t('chat.team.setManager') }}
@@ -784,7 +784,7 @@ const handleSaveTeam = async () => {
             <div class="truncate">
               <div class="flex items-center gap-1.5">
                 <span class="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate">{{ currentCommander.name }}</span>
-                <span class="px-1.5 py-0.2 text-[9px] rounded-full bg-cyan-500/20 text-cyan-300 font-medium">{{ t('chat.team.manager') }}</span>
+                <span class="px-1.5 py-0.2 text-lx-fs-2xs rounded-full bg-cyan-500/20 text-cyan-300 font-medium">{{ t('chat.team.manager') }}</span>
               </div>
               <div class="text-lx-fs-sm text-lx-muted truncate max-w-[320px]">
                 {{ currentCommander.description || t('chat.team.managerDefaultDesc') }}
@@ -843,11 +843,11 @@ const handleSaveTeam = async () => {
               <div class="truncate">
                 <div class="flex items-center gap-1.5">
                   <span class="truncate font-medium">{{ agent.name }}</span>
-                  <span v-if="agent.toolList?.length" class="text-[10px] text-zinc-400">
+                  <span v-if="agent.toolList?.length" class="text-lx-fs-xs text-zinc-400">
                     {{ t('chat.team.toolCountShort', { count: agent.toolList.length }) }}
                   </span>
                 </div>
-                <div v-if="agent.description" class="text-[10px] text-zinc-400 truncate max-w-[280px]">
+                <div v-if="agent.description" class="text-lx-fs-xs text-zinc-400 truncate max-w-[280px]">
                   {{ agent.description }}
                 </div>
               </div>
@@ -855,7 +855,7 @@ const handleSaveTeam = async () => {
 
             <span
               v-if="commanderAgentId === agent.id"
-              class="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-medium shrink-0 ml-2"
+              class="text-lx-fs-xs px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-medium shrink-0 ml-2"
             >
               {{ t('chat.team.currentManager') }}
             </span>

@@ -239,7 +239,7 @@ const {
                     {{ agent.name }}
                   </span>
                   <span
-                    class="px-2 py-0.5 rounded-full text-[10px] font-medium border"
+                    class="px-2 py-0.5 rounded-full text-lx-fs-xs font-medium border"
                     :class="[
                       isDark
                         ? 'bg-white/5 border-white/15 text-sky-400 text-glow-cyan'
@@ -264,7 +264,7 @@ const {
                     <span
                       v-for="toolName in agent.toolList"
                       :key="toolName"
-                      class="px-2 py-0.5 rounded-md text-[10px] border"
+                      class="px-2 py-0.5 rounded-md text-lx-fs-xs border"
                       :class="[
                         isDark
                           ? 'bg-white/5 border-white/15 text-emerald-400'
@@ -486,7 +486,7 @@ const {
                   <span class="font-medium truncate">{{ resolveToolFullName(tool.name) }}</span>
                 </div>
                 <span
-                  class="text-[9px] px-1.5 py-0.5 rounded font-normal shrink-0"
+                  class="text-lx-fs-2xs px-1.5 py-0.5 rounded font-normal shrink-0"
                   :class="tool.readOnly ? (isDark ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-100 text-emerald-700') : (isDark ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-700')"
                 >
                   {{ tool.readOnly ? t('settings.agents.readOnly') : t('settings.agents.readWrite') }}

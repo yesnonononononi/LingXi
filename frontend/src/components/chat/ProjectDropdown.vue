@@ -89,7 +89,7 @@ onBeforeUnmount(() => {
       type="button"
       @click="toggleDropdown"
       :class="[
-        'inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-medium rounded-lg transition-all cursor-pointer outline-none border shadow-2xs select-none',
+        'inline-flex items-center gap-1.5 px-2.5 py-1 text-lx-fs-md font-medium rounded-lg transition-all cursor-pointer outline-none border shadow-2xs select-none',
         isOpen
           ? (isDark
               ? 'bg-zinc-800 border-zinc-700 text-white shadow-xs'

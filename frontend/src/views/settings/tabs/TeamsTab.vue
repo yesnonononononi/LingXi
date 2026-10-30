@@ -169,7 +169,7 @@ const {
                 </span>
                 <!-- 管理者徽章 -->
                 <span
-                  class="px-2 py-0.5 rounded-full text-[10px] font-medium border flex items-center gap-1"
+                  class="px-2 py-0.5 rounded-full text-lx-fs-xs font-medium border flex items-center gap-1"
                   :class="[
                     isDark
                       ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300'
@@ -183,7 +183,7 @@ const {
                 </span>
                 <!-- 成员总数徽章 -->
                 <span
-                  class="px-2 py-0.5 rounded-full text-[10px] font-medium border"
+                  class="px-2 py-0.5 rounded-full text-lx-fs-xs font-medium border"
                   :class="[
                     isDark
                       ? 'bg-purple-500/15 border-purple-500/30 text-purple-300'
@@ -208,7 +208,7 @@ const {
                   <span
                     v-for="agent in team.agents"
                     :key="agent.id"
-                    class="px-2 py-0.5 rounded-md text-[10px] border flex items-center gap-1"
+                    class="px-2 py-0.5 rounded-md text-lx-fs-xs border flex items-center gap-1"
                     :class="[
                       agent.id === team.commanderAgentId
                         ? (isDark ? 'bg-cyan-600/20 border-cyan-500/40 text-cyan-200 font-medium' : 'bg-blue-50 border-blue-300 text-blue-800 font-medium')
@@ -224,10 +224,10 @@ const {
                     />
                     <span v-else-if="agent.avatar" class="leading-none shrink-0 select-none">{{ agent.avatar }}</span>
                     <span>{{ agent.name }}</span>
-                                        <span v-if="agent.id === team.commanderAgentId" class="text-[9px] px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-normal">
+                                        <span v-if="agent.id === team.commanderAgentId" class="text-lx-fs-2xs px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-normal">
                       {{ t('settings.teams.commander') }}
                     </span>
-                    <span v-if="agent.toolList?.length" class="text-[9px] text-zinc-400">
+                    <span v-if="agent.toolList?.length" class="text-lx-fs-2xs text-zinc-400">
                       {{ t('settings.teams.toolCount', { count: agent.toolList.length }) }}
                     </span>
                   </span>
@@ -385,14 +385,14 @@ const {
                   />
                   <span
                     v-else-if="agent.avatar"
-                    class="text-[10px] leading-none shrink-0 select-none"
+                    class="text-lx-fs-xs leading-none shrink-0 select-none"
                   >{{ agent.avatar }}</span>
                   <span class="font-medium text-zinc-800 dark:text-zinc-200 truncate">
                     {{ agent.name }}
                   </span>
                     <span
                       v-if="agent.toolList && agent.toolList.length > 0"
-                      class="px-1.5 py-0.2 text-[9px] rounded bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/20"
+                      class="px-1.5 py-0.2 text-lx-fs-2xs rounded bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/20"
                     >
                                             {{ t('settings.teams.agentToolCount', { count: agent.toolList.length }) }}
                     </span>
@@ -406,7 +406,7 @@ const {
               <div class="flex items-center gap-1.5 shrink-0">
                 <span
                   v-if="teamForm.commanderAgentId === agent.id"
-                  class="px-2 py-0.5 text-[10px] rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-medium"
+                  class="px-2 py-0.5 text-lx-fs-xs rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-medium"
                 >
                                     {{ t('settings.teams.commander') }}
                 </span>
@@ -414,7 +414,7 @@ const {
                   v-else-if="teamForm.agentIds.includes(agent.id)"
                   type="button"
                   @click.stop="teamForm.commanderAgentId = agent.id"
-                  class="px-1.5 py-0.5 text-[10px] rounded text-zinc-400 hover:text-cyan-400 hover:bg-cyan-500/10 cursor-pointer transition"
+                  class="px-1.5 py-0.5 text-lx-fs-xs rounded text-zinc-400 hover:text-cyan-400 hover:bg-cyan-500/10 cursor-pointer transition"
                 >
                                     {{ t('settings.teams.setAsCommander') }}
                 </button>
