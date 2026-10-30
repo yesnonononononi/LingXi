@@ -56,7 +56,7 @@ watch(isDark, value => {
 
 .titlebar-name {
   color: #e4e4e7;
-  font-size: 12px;
+  font-size: var(--lx-font-size-md);
   font-weight: 600;
   letter-spacing: 0.04em;
 }
@@ -72,7 +72,7 @@ watch(isDark, value => {
   overflow: hidden;
   text-overflow: ellipsis;
   color: #71717a;
-  font-size: 11px;
+  font-size: var(--lx-font-size-sm);
   letter-spacing: 0.03em;
 }
 

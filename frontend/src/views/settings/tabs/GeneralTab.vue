@@ -480,7 +480,7 @@ const {
 .background-scrim-value {
   min-width: 32px;
   color: var(--lx-text-primary-soft);
-  font-size: 11px;
+  font-size: var(--lx-font-size-sm);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }

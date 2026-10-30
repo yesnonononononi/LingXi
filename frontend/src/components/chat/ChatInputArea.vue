@@ -1172,7 +1172,7 @@ defineExpose({
     >
       <div
         ref="commandContainerRef"
-        class="group relative z-10 text-[14px] leading-[22px] [color:var(--pb-ink)] [border-radius:var(--pb-radius)] transition-all isolate before:-z-10 before:absolute before:inset-0 before:rounded-[inherit] before:content-[''] before:pointer-events-none before:[transition:opacity_500ms_ease] data-[max]:before:opacity-100 before:opacity-0 before:[background:radial-gradient(140%_120%_at_0%_100%,color-mix(in_srgb,var(--pb-spark)_26%,transparent),transparent_62%)] p-3 flex flex-col gap-2 bg-transparent border-0"
+        class="group relative z-10 text-lx-fs-xl leading-[22px] [color:var(--pb-ink)] [border-radius:var(--pb-radius)] transition-all isolate before:-z-10 before:absolute before:inset-0 before:rounded-[inherit] before:content-[''] before:pointer-events-none before:[transition:opacity_500ms_ease] data-[max]:before:opacity-100 before:opacity-0 before:[background:radial-gradient(140%_120%_at_0%_100%,color-mix(in_srgb,var(--pb-spark)_26%,transparent),transparent_62%)] p-3 flex flex-col gap-2 bg-transparent border-0"
         :data-busy="isSending ? '' : undefined"
         :data-max="maxed ? '' : undefined"
         :style="rootStyle"
@@ -1274,7 +1274,7 @@ defineExpose({
               />
               <span
                 v-else-if="agent.avatar"
-                class="w-4 h-4 rounded-full flex items-center justify-center text-[10px] leading-none shrink-0 select-none [background:color-mix(in_srgb,var(--pb-ink)_10%,transparent)]"
+                class="w-4 h-4 rounded-full flex items-center justify-center text-lx-fs-xs leading-none shrink-0 select-none [background:color-mix(in_srgb,var(--pb-ink)_10%,transparent)]"
               >{{ agent.avatar }}</span>
               <span class="font-medium truncate [color:var(--pb-ink)]">
                 {{ agent.name }}
@@ -1362,7 +1362,7 @@ defineExpose({
         role="dialog"
         aria-label="Effort"
       >
-        <div class="flex items-center gap-2 text-[13px] leading-[18px]">
+        <div class="flex items-center gap-2 text-lx-fs-lg leading-[18px]">
                     <span :class="MUTED">{{ t('chat.input.reasoningEffort') }}</span>
           <span class="font-medium">{{ level }}</span>
           <span v-if="reasoningEffortPending" role="status" class="text-xs" :class="MUTED">{{ t('chat.input.syncing') }}</span>
@@ -1370,7 +1370,7 @@ defineExpose({
             <HugeiconsIcon :icon="HelpCircleIcon as IconArray" :size="14" :stroke-width="1.8" />
           </span>
         </div>
-        <div class="flex justify-between mt-3 text-[12px] leading-4" :class="MUTED">
+        <div class="flex justify-between mt-3 text-lx-fs-md leading-4" :class="MUTED">
           <span>Faster</span>
           <span>Smarter</span>
         </div>
@@ -1418,7 +1418,7 @@ defineExpose({
         <span
           v-for="(attachment, index) in attachments"
           :key="attachment.preview"
-          class="inline-flex items-center gap-1.5 pr-1.5 [background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] pl-2 rounded-lg h-[28px] text-[12px] motion-reduce:[animation:none] [animation:prompt-bar-pop_200ms_cubic-bezier(0.23,1,0.32,1)_both] border border-white/5"
+          class="inline-flex items-center gap-1.5 pr-1.5 [background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] pl-2 rounded-lg h-[28px] text-lx-fs-md motion-reduce:[animation:none] [animation:prompt-bar-pop_200ms_cubic-bezier(0.23,1,0.32,1)_both] border border-white/5"
         >
           <img
             :src="attachment.preview"
@@ -1479,7 +1479,7 @@ defineExpose({
             :placeholder="inputPlaceholder"
             :aria-label="inputPlaceholder"
             rows="1"
-            class="chat-text-input w-full text-[14px] leading-[22px] [color:var(--pb-ink)] [caret-color:var(--pb-ink)] cursor-text select-text"
+            class="chat-text-input w-full text-lx-fs-xl leading-[22px] [color:var(--pb-ink)] [caret-color:var(--pb-ink)] cursor-text select-text"
             @focus="effortOpen = false"
             @keydown="handleKeyDown"
           />
@@ -1533,7 +1533,7 @@ defineExpose({
             :isDark="isDark"
             size="sm"
             :placeholder="t('chat.input.selectTeam')"
-            trigger-class="inline-flex h-7 flex-none cursor-pointer touch-manipulation items-center gap-1 rounded-lg border-0 bg-transparent px-2 text-[12px] font-medium outline-none select-none [color:color-mix(in_srgb,var(--pb-ink)_70%,transparent)] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease] hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] hover:[color:var(--pb-ink)] whitespace-nowrap"
+            trigger-class="inline-flex h-7 flex-none cursor-pointer touch-manipulation items-center gap-1 rounded-lg border-0 bg-transparent px-2 text-lx-fs-md font-medium outline-none select-none [color:color-mix(in_srgb,var(--pb-ink)_70%,transparent)] [font:inherit] [-webkit-tap-highlight-color:transparent] [transition:background-color_150ms_ease,color_150ms_ease] hover:[background:color-mix(in_srgb,var(--pb-ink)_8%,transparent)] hover:[color:var(--pb-ink)] whitespace-nowrap"
           />
 
           <!-- Effort 思考强度按钮 -->
@@ -1625,7 +1625,7 @@ defineExpose({
   word-break: break-word;
   white-space: pre-wrap;
   font-family: inherit;
-  font-size: 14px;
+  font-size: var(--lx-font-size-xl);
   line-height: 22px;
 }
 .chat-text-input::placeholder {

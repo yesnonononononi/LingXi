@@ -107,17 +107,17 @@ svg { flex: none; width: 15px; height: 15px; fill: none; stroke: currentColor; s
 .task-row:hover, .task-row[data-status='SUCCESS'] { background: var(--task-hover); }
 .task-open { display: flex; gap: 8px; align-items: center; flex: 1; min-width: 0; border: 0; background: transparent; padding: 0; color: inherit; text-align: left; }
 .task-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.task-state { flex: none; font-size: 12px; color: var(--task-muted); }
-.task-stop { flex: none; padding: 1px 7px; border: 1px solid var(--task-border); border-radius: 6px; background: transparent; color: var(--task-muted); font-size: 11px; }
+.task-state { flex: none; font-size: var(--lx-font-size-md); color: var(--task-muted); }
+.task-stop { flex: none; padding: 1px 7px; border: 1px solid var(--task-border); border-radius: 6px; background: transparent; color: var(--task-muted); font-size: var(--lx-font-size-sm); }
 .task-stop:hover { color: var(--task-ink); background: var(--task-bg); }
 .task-delete { display: inline-grid; place-items: center; flex: none; width: 22px; height: 22px; border: 0; border-radius: 6px; background: transparent; color: var(--task-delete); transition: color .15s ease; }
 .task-delete:hover:not(:disabled) { color: var(--task-delete-hover); }
 .task-row[data-status='FAILED'] .task-state, .task-row[data-status='TIMEOUT'] .task-state, .task-error, .task-error-indicator { color: var(--task-ink); font-weight: 500; }
-.task-error { margin: 5px 0 9px; font-size: 12px; overflow-wrap: anywhere; }
+.task-error { margin: 5px 0 9px; font-size: var(--lx-font-size-md); overflow-wrap: anywhere; }
 .task-output { border-top: 1px solid var(--task-border); margin-top: 10px; padding-top: 9px; }
-.task-output-header { display: flex; align-items: center; gap: 10px; color: var(--task-muted); font-size: 12px; }
+.task-output-header { display: flex; align-items: center; gap: 10px; color: var(--task-muted); font-size: var(--lx-font-size-md); }
 .task-output-header > span:first-child { flex: 1; }
-.task-output pre { max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0 0; font-size: 12px; line-height: 1.6; user-select: text; }
-.task-output-note { margin: 7px 0 0; color: var(--task-muted); font-size: 12px; }
+.task-output pre { max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0 0; font-size: var(--lx-font-size-md); line-height: 1.6; user-select: text; }
+.task-output-note { margin: 7px 0 0; color: var(--task-muted); font-size: var(--lx-font-size-md); }
 @media (max-width: 480px) { .task-panel { padding: 10px; } .task-open { flex-wrap: wrap; column-gap: 6px; row-gap: 0; } .task-name { max-width: calc(100% - 22px); } .task-state { margin-left: 21px; } }
 </style>

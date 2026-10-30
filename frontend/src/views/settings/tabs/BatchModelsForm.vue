@@ -136,20 +136,20 @@ async function save() {
 
 <style scoped>
 /* 沿用设置页的字体与色阶，列表固定高度，避免模型较多时挤出提交入口。 */
-.model-import { --im-text:#18181b; --im-muted:#71717a; --im-line:#e4e4e7; --im-soft:#fafafa; --im-bg:#fff; --im-accent:#2563eb; color:var(--im-text); font-size:12px; display:grid; gap:14px; }
+.model-import { --im-text:#18181b; --im-muted:#71717a; --im-line:#e4e4e7; --im-soft:#fafafa; --im-bg:#fff; --im-accent:#2563eb; color:var(--im-text); font-size:var(--lx-font-size-md); display:grid; gap:14px; }
 .import-dark { --im-text:#f4f4f5; --im-muted:#a1a1aa; --im-line:#303035; --im-soft:#111113; --im-bg:#050505; --im-accent:#38bdf8; }
 .import-heading { display:flex; align-items:center; gap:10px; }
-h4 { font-size:16px; font-weight:650; margin:0; letter-spacing:-.3px; }
+h4 { font-size:var(--lx-font-size-2xl); font-weight:650; margin:0; letter-spacing:-.3px; }
 p { margin:0; }
 .import-heading p { margin-top:4px; color:var(--im-muted); }
 button { cursor:pointer; transition:background .15s; }
 button:disabled { opacity:.45; cursor:not-allowed; }
 .import-back { font-size:26px; width:28px; height:36px; border-radius:8px; }
 .import-provider { border:1px solid var(--im-line); border-radius:12px; padding:12px; display:flex; align-items:center; gap:10px; background:var(--im-soft); }
-.import-provider strong { font-size:13px; font-weight:600; }
-.import-provider p { color:var(--im-muted); font-size:11px; margin-top:3px; }
+.import-provider strong { font-size:var(--lx-font-size-lg); font-weight:600; }
+.import-provider p { color:var(--im-muted); font-size:var(--lx-font-size-sm); margin-top:3px; }
 .import-provider .import-link { margin-left:auto; flex-shrink:0; }
-.import-help { color:var(--im-muted); font-size:11px; line-height:1.6; }
+.import-help { color:var(--im-muted); font-size:var(--lx-font-size-sm); line-height:1.6; }
 .import-tabs { display:flex; gap:20px; border-bottom:1px solid var(--im-line); }
 .import-tabs button { padding:8px 0 10px; color:var(--im-muted); border-bottom:2px solid transparent; font-weight:550; }
 .import-tabs button[aria-selected=true] { color:var(--im-accent); border-bottom-color:var(--im-accent); }
@@ -161,12 +161,12 @@ input:focus,textarea:focus { border-color:var(--im-accent); }
 button:focus-visible { outline:2px solid var(--im-accent); outline-offset:3px; }
 .import-empty { padding:32px 12px; text-align:center; color:var(--im-muted); line-height:1.7; }
 .import-empty strong { font-weight:550; color:var(--im-text); }
-.import-empty p { font-size:11px; margin-top:6px; }
+.import-empty p { font-size:var(--lx-font-size-sm); margin-top:6px; }
 .import-failure { background:var(--im-soft); border:1px dashed var(--im-line); border-radius:10px; margin-top:12px; }
 .import-failure button { margin-top:12px; }
-.import-selection { display:flex; align-items:center; gap:12px; color:var(--im-muted); font-size:11px; padding:12px 0 8px; flex-wrap:wrap; }
+.import-selection { display:flex; align-items:center; gap:12px; color:var(--im-muted); font-size:var(--lx-font-size-sm); padding:12px 0 8px; flex-wrap:wrap; }
 .import-selection span { margin-right:auto; }
-.import-link { color:var(--im-accent); font-size:11px; }
+.import-link { color:var(--im-accent); font-size:var(--lx-font-size-sm); }
 .import-list { max-height:212px; overflow:auto; border:1px solid var(--im-line); border-radius:10px; }
 .import-list label { display:flex; align-items:center; gap:10px; padding:10px 12px; cursor:pointer; border-bottom:1px solid var(--im-line); }
 .import-list label:last-child { border-bottom:none; }
@@ -182,7 +182,7 @@ textarea { width:100%; min-height:156px; resize:vertical; font-family:ui-monospa
 .import-actions { display:flex; justify-content:flex-end; gap:8px; padding-top:12px; border-top:1px solid var(--im-line); }
 .import-actions .primary { background:#2563eb; border-color:#2563eb; color:white; }
 .import-dark .primary { background:#0284c7; border-color:#0284c7; }
-.import-error,.import-message { color:#dc2626; font-size:12px; }
+.import-error,.import-message { color:#dc2626; font-size:var(--lx-font-size-md); }
 .import-success { padding:24px 12px; text-align:center; background:var(--im-soft); border-radius:12px; }
 .import-success strong { color:var(--im-accent); font-size:15px; }
 .import-success p { padding:10px 0 20px; color:var(--im-muted); }

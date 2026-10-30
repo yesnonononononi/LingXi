@@ -1,22 +1,36 @@
 @import "highlight.js/styles/atom-one-dark.css";
 
+/* 字号相对化规则（S3）：
+   1) 正文基准 = var(--lx-font-size-xl)（14px，与改造前的 0.875rem / 14px 逐位相等）；
+   2) 标题与块内字号一律相对正文令牌缩放 —— 整篇 markdown 随字号偏好等比缩放，不会再出现
+      改造前那种「标题跟着根字号走、正文却是固定 px」的分裂；
+   3) 为什么用 calc(令牌 × 分数) 而不是 em：Electron 实测（.lingxi/tmp/fsprobe）em 走 float32，
+      h1 写成 1.4857142857142858em 时计算值是 20.7999px，比改造前的 20.8px 少 0.0001px；
+      而 calc(var(--lx-font-size-xl) * 52 / 35) 的计算值就是 20.8px，与旧 rem 值**逐位相等**。
+      视觉基线是逐像素比对，0.0001px 也会让字形亚像素定位偏移，所以宁可选精确写法。
+   原值 → 新值等价关系（分母 35 = 正文 14px 放大 2.5 倍后的分母，比值全部是整数比）：
+   h1 1.3rem=20.8px=52/35、h2 1.15rem=18.4px=46/35、h3 1.05rem=16.8px=1.2、
+   h4 0.95rem=15.2px=38/35、表格/pre/mermaid 状态 0.825rem=13.2px=33/35、
+   块工具栏 0.75rem=12px=6/7、复制按钮 0.75rem=12px=1em（父级已是 12px）、
+   行内代码 0.825em 原样保留。 */
+
 /* Markdown Body Base */
 .markdown-body {
-  font-size: 0.875rem;
+  font-size: var(--lx-font-size-xl); /* 正文基准 14px（原 0.875rem） */
   line-height: 1.65;
   word-break: break-word;
 }
 
 /* 字号需直接覆盖 Markdown 容器，父级字号无法改变它的固定值。 */
 .markdown-body--process {
-  font-size: 14px;
+  font-size: var(--lx-font-size-xl); /* 原 14px */
   font-weight: 500;
   line-height: 1.7;
 }
 
 .markdown-body--thinking {
   font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  font-size: 14px;
+  font-size: var(--lx-font-size-xl); /* 原 14px */
   font-weight: 400;
   line-height: 1.85;
   overflow-wrap: anywhere;
@@ -36,20 +50,20 @@
   line-height: 1.35;
 }
 .markdown-body h1 {
-  font-size: 1.3rem;
+  font-size: calc(var(--lx-font-size-xl) * 52 / 35); /* 原 1.3rem = 20.8px */
   border-bottom: 1px solid rgba(128, 128, 128, 0.2);
   padding-bottom: 0.3rem;
 }
 .markdown-body h2 {
-  font-size: 1.15rem;
+  font-size: calc(var(--lx-font-size-xl) * 46 / 35); /* 原 1.15rem = 18.4px */
   border-bottom: 1px solid rgba(128, 128, 128, 0.15);
   padding-bottom: 0.25rem;
 }
 .markdown-body h3 {
-  font-size: 1.05rem;
+  font-size: calc(var(--lx-font-size-xl) * 1.2); /* 原 1.05rem = 16.8px */
 }
 .markdown-body h4 {
-  font-size: 0.95rem;
+  font-size: calc(var(--lx-font-size-xl) * 38 / 35); /* 原 0.95rem = 15.2px */
 }
 
 /* Paragraphs */
@@ -127,7 +141,7 @@ html.light .markdown-body :not(pre) > code {
   margin: 0.85rem 0;
   overflow-x: auto;
   display: block;
-  font-size: 0.825rem;
+  font-size: calc(var(--lx-font-size-xl) * 33 / 35); /* 原 0.825rem = 13.2px（33/35 em） */
 }
 .markdown-body th,
 .markdown-body td {
@@ -198,7 +212,7 @@ html.light .markdown-body .content-block {
   align-items: center;
   justify-content: space-between;
   padding: 0.35rem 0.85rem;
-  font-size: 0.75rem;
+  font-size: calc(var(--lx-font-size-xl) * 6 / 7); /* 原 0.75rem = 12px（6/7 em） */
   user-select: none;
 }
 .markdown-body .block-toolbar .copy-code-btn {
@@ -209,7 +223,7 @@ html.light .markdown-body .content-block {
   padding: 0.15rem 0.45rem;
   border-radius: 0.35rem;
   transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
-  font-size: 0.75rem;
+  font-size: 1em; /* 原 0.75rem = 12px，父级工具栏已是 12px，故 1em 精确等价 */
 }
 
 /* 代码块工具栏：深色条，与代码区连成一体 */
@@ -268,7 +282,7 @@ html.light .markdown-body .block-toolbar--code {
   padding: 0.85rem 1rem;
   overflow-x: auto;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  font-size: 0.825rem;
+  font-size: calc(var(--lx-font-size-xl) * 33 / 35); /* 原 0.825rem = 13.2px（33/35 em） */
   line-height: 1.55;
   background-color: transparent !important;
 }
@@ -306,5 +320,5 @@ html.light .markdown-body .mermaid-block--dark {
 .markdown-body .mermaid-status {
   margin: 0;
   padding: 0.75rem 1rem 0;
-  font-size: 0.825rem;
+  font-size: calc(var(--lx-font-size-xl) * 33 / 35); /* 原 0.825rem = 13.2px（33/35 em） */
 }

@@ -78,7 +78,7 @@ button:disabled { opacity: .5; cursor: wait; }
 .checklist-step[data-status='IN_PROGRESS'] { color: var(--task-ink); }
 .checklist-step svg { flex: none; width: 18px; height: 18px; margin-top: 1px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
 .checklist-content { flex: 1; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
-.checklist-status { flex: none; font-size: 12px; color: var(--task-muted); }
+.checklist-status { flex: none; font-size: var(--lx-font-size-md); color: var(--task-muted); }
 .checklist-note { margin: 6px 0 10px; overflow-wrap: anywhere; color: var(--task-muted); }
 .checklist-loading { animation: checklist-spin .9s steps(8) infinite; }
 @keyframes checklist-spin { to { transform: rotate(360deg); } }

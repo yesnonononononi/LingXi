@@ -1,7 +1,7 @@
 .task-progress-surface {
   --task-bg: #fff; --task-border: #e4e4e7; --task-ink: #27272a; --task-muted: #71717a;
   --task-hover: #f4f4f5; --task-delete: #a1a1aa; --task-delete-hover: #27272a;
-  color: var(--task-ink); font-size: 13px; line-height: 20px;
+  color: var(--task-ink); font-size: var(--lx-font-size-lg); line-height: 20px;
 }
 .task-progress-surface[data-theme='dark'] {
   --task-bg: #000; --task-border: #303034; --task-ink: #f4f4f5; --task-muted: #b4b4bc;

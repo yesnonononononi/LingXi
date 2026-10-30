@@ -79,7 +79,7 @@ onUnmounted(() => {
 .usage-trigger { display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px; border-radius: 7px; color: #858b94; background: transparent; cursor: pointer; white-space: nowrap; }
 .usage-trigger:hover, .usage-trigger:focus-visible { background: #e8eaed; color: #626975; }
 .usage-trigger:focus-visible { outline: 2px solid #94a3b8; outline-offset: 2px; }
-.usage-card { position: fixed; inset: auto; margin: 0; width: 320px; max-width: calc(100vw - 24px); padding: 12px 16px 14px; border: 1px solid #e9eaec; border-radius: 14px; background: #f9fafb; color: #626975; box-shadow: 0 2px 8px #0000000a; font-size: 12px; line-height: 1.6; }
+.usage-card { position: fixed; inset: auto; margin: 0; width: 320px; max-width: calc(100vw - 24px); padding: 12px 16px 14px; border: 1px solid #e9eaec; border-radius: 14px; background: #f9fafb; color: #626975; box-shadow: 0 2px 8px #0000000a; font-size: var(--lx-font-size-md); line-height: 1.6; }
 .usage-card::backdrop { background: transparent; }
 .usage-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid #dcdfe3; color: #20242a; }
 .usage-title { display: inline-flex; align-items: center; gap: 5px; }
@@ -87,7 +87,7 @@ onUnmounted(() => {
 .usage-rows > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .usage-rows dt { flex-shrink: 0; color: #858b94; }
 .usage-rows dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.usage-model { font-size: 11px; }
+.usage-model { font-size: var(--lx-font-size-sm); }
 .usage-reasoning { color: #858b94; }
 .usage-trigger.dark { background: transparent; color: #a1a1aa; }
 .usage-trigger.dark:hover, .usage-trigger.dark:focus-visible { background: #ffffff12; color: #d4d4d8; }

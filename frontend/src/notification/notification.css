@@ -175,7 +175,7 @@ html.theme-light .card::before {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: var(--lx-font-size-xl);
   line-height: 1;
   background: rgba(96, 165, 250, 0.16);
   color: var(--accent);
@@ -203,7 +203,7 @@ html.theme-light .card::before {
 }
 
 .title {
-  font-size: 13px;
+  font-size: var(--lx-font-size-lg);
   font-weight: 600;
   line-height: 1.35;
   letter-spacing: 0.01em;
@@ -214,7 +214,7 @@ html.theme-light .card::before {
 
 .body {
   margin-top: 3px;
-  font-size: 12px;
+  font-size: var(--lx-font-size-md);
   line-height: 1.45;
   color: var(--fg-dim);
   /* 最多两行，超出省略：通知不是日志，塞不下就截断 */
@@ -235,7 +235,7 @@ html.theme-light .card::before {
   border-radius: 6px;
   background: transparent;
   color: var(--fg-dim);
-  font-size: 13px;
+  font-size: var(--lx-font-size-lg);
   line-height: 1;
   cursor: pointer;
   opacity: 0;
