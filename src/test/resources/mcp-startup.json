@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1,
+    "name": "startup-protocol-check",
+    "transport": "STREAMABLE_HTTP",
+    "url": "http://127.0.0.1:1/mcp",
+    "protocolVersion": "2025-11-25",
+    "autoHealthCheck": false,
+    "healthCheckInterval": 45000,
+    "reconnectInterval": 90000,
+    "initializationTimeout": 30000,
+    "executionTimeout": 60000,
+    "maxOutput": 20000,
+    "status": 0
+  },
+  {
+    "id": 2,
+    "name": "startup-legacy-check",
+    "transport": "STREAMABLE_HTTP",
+    "url": "http://127.0.0.1:1/mcp",
+    "initializationTimeout": 30000,
+    "executionTimeout": 60000,
+    "maxOutput": 20000,
+    "status": 0
+  }
+]

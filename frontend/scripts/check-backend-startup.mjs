@@ -18,6 +18,11 @@ for (const file of [java, jar]) {
   if (!fs.existsSync(file)) throw new Error(`缺少启动验证产物: ${file}`);
 }
 fs.mkdirSync(state, { recursive: true });
+// 空配置无法拦住漏打新字段的旧后端；停用记录保留反序列化覆盖，又不会连接外部服务。
+const mcpConfig = path.join(state, 'mcp.json');
+if (!fs.existsSync(mcpConfig)) {
+  fs.copyFileSync(path.join(frontend, '../src/test/resources/mcp-startup.json'), mcpConfig);
+}
 const listener = net.createServer();
 await new Promise((resolve, reject) => { listener.once('error', reject); listener.listen(0, '127.0.0.1', resolve); });
 const port = listener.address().port;

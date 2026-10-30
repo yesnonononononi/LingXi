@@ -33,6 +33,7 @@ import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -87,6 +88,27 @@ class JsonRepositoriesTest {
     void cleanup() { database.shutdown(); }
 
     private Path path(String name) { return directory.resolve(name + ".json"); }
+
+    @Test
+    void startupFixtureLoadsProtocolSettingsAndKeepsLegacyDefaults() throws Exception {
+        try (InputStream fixture = getClass().getResourceAsStream("/mcp-startup.json")) {
+            assertNotNull(fixture);
+            Files.copy(fixture, path("mcp"));
+        }
+        String original = Files.readString(path("mcp"));
+        assertTrue(mcps.findEnabled().isEmpty());
+        Mcp configured = mcps.findById(1L).orElseThrow();
+        assertEquals("2025-11-25", configured.getProtocolVersion());
+        assertEquals(Boolean.FALSE, configured.getAutoHealthCheck());
+        assertEquals(Duration.ofSeconds(45), configured.getHealthCheckInterval());
+        assertEquals(Duration.ofSeconds(90), configured.getReconnectInterval());
+        Mcp legacy = mcps.findById(2L).orElseThrow();
+        assertNull(legacy.getProtocolVersion());
+        assertNull(legacy.getAutoHealthCheck());
+        assertNull(legacy.getHealthCheckInterval());
+        assertNull(legacy.getReconnectInterval());
+        assertEquals(original, Files.readString(path("mcp")));
+    }
 
     @Test
     void providerSourceSurvivesImportReopenRollbackAndExplicitDisable() {
