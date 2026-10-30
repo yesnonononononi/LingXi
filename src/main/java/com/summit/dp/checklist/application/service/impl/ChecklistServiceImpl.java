@@ -82,6 +82,9 @@ public class ChecklistServiceImpl implements ChecklistService {
         throwIf(command.isContinueNextStep() && !next.isTerminal(),
                 "只有上报 COMPLETED、FAILED 或 SKIPPED 结果时才能继续下一步");
 
+        // 读聚合 → 按业务规则判断（步骤推进）→ 写回，这段逻辑无法压成单条条件更新，
+        // 只能靠进程内写监视器串行化：抢到锁后才发第一条语句，读到的必然是已提交的新状态。
+        ChecklistWriteMonitor.acquireForCurrentTransaction();
         Checklist checklist = lockOwned(sessionId, command.getChecklistId());
         ChecklistMutation mutation = checklist.changeStepStatus(command.getStepId(), next, command.isContinueNextStep());
         persist(checklist, mutation);
@@ -94,6 +97,8 @@ public class ChecklistServiceImpl implements ChecklistService {
         throwIf(command == null, "清单参数不能为空");
         long sessionId = requireSessionId(command.getSessionId());
 
+        // 同 updateStep：读聚合后按规则改写，必须与其它清单写入方共用同一把进程内写监视器。
+        ChecklistWriteMonitor.acquireForCurrentTransaction();
         Checklist checklist = lockOwned(sessionId, command.getChecklistId());
         ChecklistModification modification = new ChecklistModification(
                 command.getNewTitle(),
@@ -113,6 +118,8 @@ public class ChecklistServiceImpl implements ChecklistService {
         long sessionId = requireSessionId(command.getSessionId());
         throwIf(command.getChecklistId() == null, "删除清单需要提供 checklistId");
 
+        // 软删除同样是「读聚合 → 判断 → 写回」，与其它写入路径共用写监视器。
+        ChecklistWriteMonitor.acquireForCurrentTransaction();
         Checklist checklist = repository.findByIdForUpdate(command.getChecklistId())
                 .orElseThrow(() -> new ClientException("清单 " + command.getChecklistId() + " 不存在"));
         checklist.requireSession(sessionId);

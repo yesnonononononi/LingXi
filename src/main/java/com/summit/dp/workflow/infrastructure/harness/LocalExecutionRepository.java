@@ -11,6 +11,7 @@ import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.port.ExecutionCheckpointStore;
 import com.summit.dp.execution.application.service.ExecutionCheckpointService;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.shared.persistence.TransactionRetryTemplate;
 import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
@@ -24,17 +25,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.IOException;
-import java.sql.SQLException;
-import java.sql.SQLTransientException;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.Instant;
@@ -64,11 +60,6 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     /** 进程内活跃执行的控制信号；与框架 InMemoryActiveExecutionRegistry 语义一致。 */
     private final Map<String, ExecutionControlSignal> active = new ConcurrentHashMap<>();
 
-    /** 保存的整笔重试上限（含首次尝试）；只对 SQLite 锁冲突生效。 */
-    private static final int SAVE_MAX_ATTEMPTS = 4;
-    /** 每次重试前的线性退避基数（毫秒）。 */
-    private static final long SAVE_RETRY_BACKOFF_MILLIS = 20L;
-
     /**
      * 事务管理器：仅用于「自己拥有事务时，每次重试开一个全新事务」。
      *
@@ -78,11 +69,14 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     @Autowired(required = false)
     private PlatformTransactionManager transactionManager;
 
+    /** 整笔保存的重试器；惰性创建后复用同一实例以累计指标。 */
+    private volatile TransactionRetryTemplate saveRetry;
+
     /**
      * 保存执行：正文写文件、元数据写库。
      *
      * <p><b>事务边界在这里显式化</b>（不再用方法级 {@code @Transactional}）：方法自己拥有事务时，
-     * 「开事务」交给 {@link #commitCheckpoint} 里的 {@link TransactionTemplate} 逐次开启，
+     * 「开事务」交给 {@link #commitCheckpoint} 里的 {@link TransactionRetryTemplate} 逐次开启，
      * 于是每次重试都是全新事务/新快照；代理最外层那个大事务会把重试困在同一个过期快照里。</p>
      *
      * <p>调用方已经有事务时（受理阶段：轮次 + 用户消息 + 执行行一起提交），保存加入该事务、
@@ -168,12 +162,12 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
      * <p><b>为什么必须整笔重试，而不是只重试 UPDATE</b>：SQLite 的事务第一次读就固定了快照。
      * 两个不同执行并发保存时，A 提交后 B 在自己的旧快照上写会立刻收到
      * {@code SQLITE_BUSY_SNAPSHOT} —— 在同一个已过期的读事务里重试 UPDATE 永远不会成功，
-     * 必须丢弃整个事务、用全新事务重新读一遍再写。</p>
+     * 必须丢弃整个事务、用全新事务重新读一遍再写。重试本身由共享的
+     * {@link TransactionRetryTemplate} 实现（同一套判定也用于会话上下文替换）。</p>
      *
-     * <p><b>为什么重试只能发生在事务外</b>：{@code LocalExecutionRepository.save} 自己开事务时，
-     * 每次尝试都由 {@link TransactionTemplate} 重新开启（{@code REQUIRES_NEW}），
-     * 于是每次尝试都是新快照。若调用方已经有事务（例如受理阶段要把轮次、消息、执行行一起提交），
-     * 保存必须加入那个事务以保住原子性 —— 那条路径不重试，锁冲突如实上抛。</p>
+     * <p><b>为什么重试只能发生在事务外</b>：{@link TransactionRetryTemplate} 只在自己拥有事务时
+     * 逐次开新事务；调用方已有事务（例如受理阶段要把轮次、消息、执行行一起提交）就只尝试一次，
+     * 锁冲突如实上抛 —— 换了新事务等于把执行行从调用方事务里偷走。</p>
      *
      * <p><b>文件归属</b>：正文只发布一次（重试的是数据库事务，不是文件），
      * 每次失败的尝试只回滚数据库；整笔最终失败时由调用方 {@code writer.rollback()} 删掉本次新文件；
@@ -181,77 +175,21 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
      */
     private ExecutionCheckpointService.SaveOutcome commitCheckpoint(Execution execution, long id, Long sessionId,
                                                                     int status, String fileId) {
-        if (TransactionSynchronizationManager.isActualTransactionActive() || transactionManager == null) {
-            // 加入调用方事务（原子性与受理等场景绑定），或测试里没有任何事务基础设施：
-            // 两者都只尝试一次，不在这里另开事务。
-            return checkpointService.save(id, sessionId, status, fileId, execution.getCreateAt(),
-                    execution.getStartAt(), execution.getCompletedAt());
-        }
-        RuntimeException lastFailure = null;
-        for (int attempt = 1; attempt <= SAVE_MAX_ATTEMPTS; attempt++) {
-            TransactionTemplate transaction = new TransactionTemplate(transactionManager);
-            // 每次尝试都是全新事务/新快照：这是 SQLITE_BUSY_SNAPSHOT 能重试成功的唯一前提。
-            transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-            try {
-                return transaction.execute(state -> checkpointService.save(id, sessionId, status, fileId,
-                        execution.getCreateAt(), execution.getStartAt(), execution.getCompletedAt()));
-            } catch (RuntimeException failure) {
-                lastFailure = failure;
-                if (attempt == SAVE_MAX_ATTEMPTS || !isLockConflict(failure)) {
-                    throw failure;
-                }
-                log.warn("检查点保存遇到数据库锁冲突，换新事务重试: executionId={}, attempt={}/{}, cause={}",
-                        execution.getId(), attempt, SAVE_MAX_ATTEMPTS, rootMessage(failure));
-                backoffBeforeRetry(attempt);
-            }
-        }
-        throw lastFailure == null ? new IllegalStateException("保存执行检查点失败") : lastFailure;
+        return checkpointSaveRetryTemplate().execute(() -> checkpointService.save(id, sessionId, status, fileId,
+                execution.getCreateAt(), execution.getStartAt(), execution.getCompletedAt()));
     }
 
-    /**
-     * 只对数据库锁冲突重试。
-     *
-     * <p>SQLite 单写者下，并发写同一库必然有 {@code SQLITE_BUSY}（库被写）/
-     * {@code SQLITE_BUSY_SNAPSHOT}（读快照已过期）；这类冲突换新事务重放就能成功。
-     * 其它异常（约束、SQL 错误、业务校验）一律不重试 —— 重放同样的输入只会得到同样的失败。</p>
-     */
-    private static boolean isLockConflict(Throwable failure) {
-        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
-            if (cause instanceof CannotAcquireLockException || cause instanceof SQLTransientException) {
-                return true;
-            }
-            if (cause instanceof SQLException sqlFailure) {
-                int code = sqlFailure.getErrorCode();
-                // 5=SQLITE_BUSY, 6=SQLITE_LOCKED, 517=SQLITE_BUSY_SNAPSHOT, 262=SQLITE_LOCKED_SHAREDCACHE
-                if (code == 5 || code == 6 || code == 517 || code == 262) {
-                    return true;
-                }
-            }
-            String message = cause.getMessage();
-            if (message != null && (message.contains("SQLITE_BUSY") || message.contains("SQLITE_LOCKED"))) {
-                return true;
-            }
-            if (cause.getCause() == cause) {
-                break;
-            }
+    /** 惰性创建重试器：事务管理器可选注入，创建后复用同一实例以累计指标。 */
+    private TransactionRetryTemplate checkpointSaveRetryTemplate() {
+        TransactionRetryTemplate existing = saveRetry;
+        if (existing != null) {
+            return existing;
         }
-        return false;
-    }
-
-    private static String rootMessage(Throwable failure) {
-        Throwable cause = failure;
-        while (cause.getCause() != null && cause.getCause() != cause) {
-            cause = cause.getCause();
-        }
-        return cause.getMessage();
-    }
-
-    /** 退避随尝试次数线性增长（20ms、40ms、60ms）：SQLite 的写冲突窗口很短，不需要更长。 */
-    private static void backoffBeforeRetry(int attempt) {
-        try {
-            Thread.sleep((long) SAVE_RETRY_BACKOFF_MILLIS * attempt);
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
+        synchronized (this) {
+            if (saveRetry == null) {
+                saveRetry = new TransactionRetryTemplate(transactionManager, "保存执行检查点");
+            }
+            return saveRetry;
         }
     }
 
