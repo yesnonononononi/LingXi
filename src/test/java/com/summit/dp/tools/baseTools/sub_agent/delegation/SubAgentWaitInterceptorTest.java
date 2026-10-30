@@ -104,7 +104,7 @@ class SubAgentWaitInterceptorTest {
     }
 
     @Test
-    @DisplayName("分支4 根执行且仅剩未结束子：返回 SUSPENDED，不自我唤醒（等最后一个子终结的结束事实）")
+    @DisplayName("分支4 根执行且仅剩未结束子：返回 SUSPENDED，不自我唤醒（等任一子执行的结束事实）")
     void rootWithUnfinishedChildrenSuspendsWithoutSelfWake() {
         when(emailService.hasPending(ROOT_SESSION_ID, ROOT_AGENT_ID)).thenReturn(false);
         when(registry.hasUnfinishedChildren(ROOT_SESSION_ID)).thenReturn(true);

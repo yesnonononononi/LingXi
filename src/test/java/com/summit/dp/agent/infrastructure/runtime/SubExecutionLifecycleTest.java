@@ -74,9 +74,9 @@ class SubExecutionLifecycleTest {
     }
 
     @Test
-    void failedNoticeStillReleasesRegistrationAndWakesRoot() {
+    void failedNoticeStillWakesRootBeforeOtherChildrenFinish() {
         when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
-        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(true);
+        when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(false);
         Execution child = childExecution();
         doThrow(new IllegalStateException("模拟投递失败")).when(notifier).notifyCommander(child);
         lifecycle.onFinished(child);
@@ -86,15 +86,18 @@ class SubExecutionLifecycleTest {
 
     @ParameterizedTest
     @EnumSource(value = ExecutionState.class, names = {"COMPLETED", "CANCELLED"})
-    @DisplayName("子执行成功或取消但仍有其它子在跑：移除登记但不唤醒根")
-    void nonLastSuccessfulOrCancelledChildDoesNotWakeRoot(ExecutionState state) {
+    @DisplayName("子执行成功或取消但仍有其它子在跑：先投递提醒、移除登记，再唤醒根")
+    void nonLastSuccessfulOrCancelledChildWakesRoot(ExecutionState state) {
         when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
         when(registry.unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(false);
 
-        lifecycle.onFinished(childExecution(state));
+        Execution child = childExecution(state);
+        lifecycle.onFinished(child);
 
-        verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
-        verify(resumeCoordinator, never()).accept(anyLong());
+        InOrder order = inOrder(notifier, registry, resumeCoordinator);
+        order.verify(notifier).notifyCommander(child);
+        order.verify(registry).unregisterChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
+        order.verify(resumeCoordinator).accept(ROOT_EXECUTION_ID);
     }
 
     @Test

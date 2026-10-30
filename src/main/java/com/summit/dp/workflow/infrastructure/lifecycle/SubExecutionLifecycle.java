@@ -1,7 +1,6 @@
 package com.summit.dp.workflow.infrastructure.lifecycle;
 
 import com.summit.core.agent.Execution;
-import com.summit.core.agent.ExecutionState;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import com.summit.dp.execution.application.service.ExecutionLocator;
@@ -12,7 +11,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
-/** 子执行失败立即唤醒主理人处置，其余终态在最后一个子执行结束时唤醒；挂起后重放保留唤醒。 */
+/** 每个子执行终结都唤醒主理人处理交付；根尚在运行时保留唤醒，挂起后重放。 */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -39,7 +38,7 @@ public class SubExecutionLifecycle {
     }
 
     /**
-     * 子执行失败或全部结束后唤醒根；根执行终态清理保留唤醒。
+     * 子执行终结后唤醒根；根执行终态清理保留唤醒。
      */
     public void onFinished(Execution execution) {
         Long executionId = ExecutionIdentity.numericOrNull(execution.getId());
@@ -62,12 +61,10 @@ public class SubExecutionLifecycle {
 
         boolean becameEmpty = registry.unregisterChild(rootSessionId, childSessionId);
 
-        boolean failed = execution.getExecutionState() == ExecutionState.FAILED;
-        if (failed || becameEmpty) {
-            log.info("子执行终结唤醒根: rootExecutionId={}, childSessionId={}, failed={}, becameEmpty={}",
-                    rootExecutionId, childSessionId, failed, becameEmpty);
-            resumeCoordinator.accept(rootExecutionId);
-        }
+        // 每份交付都需要主理人及时处理，剩余子执行只阻止根收尾，不能阻止恢复取信。
+        log.info("子执行终结唤醒根: rootExecutionId={}, childSessionId={}, state={}, becameEmpty={}",
+                rootExecutionId, childSessionId, execution.getExecutionState(), becameEmpty);
+        resumeCoordinator.accept(rootExecutionId);
     }
 
     /**

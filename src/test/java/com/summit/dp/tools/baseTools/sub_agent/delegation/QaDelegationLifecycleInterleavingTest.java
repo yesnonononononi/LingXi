@@ -9,6 +9,7 @@ import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.message.Message;
+import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.runtime.loop.ExecutionRepository;
@@ -21,6 +22,7 @@ import com.summit.ddd.application.vo.Result;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import com.summit.dp.email.application.service.EmailService;
+import com.summit.dp.email.application.vo.EmailMessageVO;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.service.ExecutionLocator;
@@ -39,6 +41,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.ObjectProvider;
 
 import java.time.Instant;
@@ -57,6 +61,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -202,6 +207,62 @@ class QaDelegationLifecycleInterleavingTest {
         awaitResumedCount(1);
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("两个子执行中一个完成：无论根先挂起还是后挂起，均恢复取信并继续等待另一个")
+    void firstCompletedChildWakesRootAndDeliversNotice(boolean finishBeforeSuspend) {
+        AtomicReference<EmailMessageVO> pendingMail = new AtomicReference<>();
+        List<Message> appended = new ArrayList<>();
+        lifecycle = new SubExecutionLifecycle(registry, coordinator, executionIdentity,
+                new SubAgentCompleteNotifier(provider(frameworkExecutions), emailService));
+        when(emailService.sendMailOnce(eq(ROOT_AGENT_ID), any(), any(), any())).thenAnswer(invocation -> {
+            EmailMessageVO mail = EmailMessageVO.builder().senderId(8L)
+                    .content(invocation.getArgument(1)).build();
+            pendingMail.set(mail);
+            return Result.success(mail);
+        });
+        when(emailService.hasPending(ROOT_SESSION_ID, ROOT_AGENT_ID))
+                .thenAnswer(invocation -> pendingMail.get() != null);
+        when(emailService.consumePending(ROOT_SESSION_ID, ROOT_AGENT_ID)).thenAnswer(invocation -> {
+            EmailMessageVO mail = pendingMail.getAndSet(null);
+            return Result.success(mail == null ? List.of() : List.of(mail));
+        });
+        AgenticLoopInterceptor mailConsumer = new AgenticLoopInterceptor(emailService);
+        doAnswer(invocation -> {
+            Execution root = invocation.getArgument(0);
+            LoopContext context = new LoopContext(LoopMessages.builder().execution(root).build(),
+                    new ExecutionControlSignal(root.getId()), 0, appended::addAll);
+            mailConsumer.onBeforeModelInvoke(context);
+            resumeCount.incrementAndGet();
+            return root;
+        }).when(executionControl).resume(any());
+
+        rootActive.set(true);
+        registry.beginRoot(ROOT_SESSION_ID);
+        delegateChild(CHILD_SESSION_ID);
+        delegateChild(CHILD_SESSION_ID + 1);
+        if (!finishBeforeSuspend) {
+            suspendRoot();
+        }
+        Execution completed = childExecution(CHILD_SESSION_ID);
+        completed.complete();
+        lifecycle.onFinished(completed);
+        if (finishBeforeSuspend) {
+            assertResumedCount(0);
+            suspendRoot();
+        }
+
+        awaitResumedCount(1);
+        assertEquals(1, appended.size());
+        assertTrue(((UserMessageEntity) appended.getFirst()).text().contains("子任务已完成"));
+        assertTrue(((UserMessageEntity) appended.getFirst()).text().contains("子会话：" + CHILD_SESSION_ID));
+        assertFalse(emailService.hasPending(ROOT_SESSION_ID, ROOT_AGENT_ID));
+        assertTrue(registry.hasUnfinishedChildren(ROOT_SESSION_ID));
+        InterceptorResult waiting = waitInterceptor.onBeforeComplete(rootLoopContext());
+        assertFalse(waiting.next(), "已处理首个交付后仍须等待另一子执行，不能提前完成");
+        assertEquals(LoopResult.Status.SUSPENDED, waiting.loopResult().status());
+    }
+
     // ------------------------------------------------------------------
     // ③ 连续两次恢复：每一轮委派都能独立唤醒根
     // ------------------------------------------------------------------
@@ -345,6 +406,7 @@ class QaDelegationLifecycleInterleavingTest {
                         .runtimeParameters(AgentRuntimeParameters.builder().attributes(Map.of(
                                 ExecutionAttributes.SESSION_ID, String.valueOf(childSessionId),
                                 ExecutionAttributes.ROOT_SESSION_ID, String.valueOf(ROOT_SESSION_ID),
+                                ExecutionAttributes.AGENT_ID, "8",
                                 ExecutionAttributes.ROOT_EXECUTION_ID, String.valueOf(ROOT_EXECUTION_ID)))
                                 .build())
                         .build())
@@ -357,7 +419,8 @@ class QaDelegationLifecycleInterleavingTest {
                 .executionState(ExecutionState.SUSPENDED)
                 .agentRequest(AgentRequest.builder()
                         .runtimeParameters(AgentRuntimeParameters.builder().attributes(Map.of(
-                                ExecutionAttributes.SESSION_ID, String.valueOf(ROOT_SESSION_ID)))
+                                ExecutionAttributes.SESSION_ID, String.valueOf(ROOT_SESSION_ID),
+                                ExecutionAttributes.AGENT_ID, String.valueOf(ROOT_AGENT_ID)))
                                 .build())
                         .build())
                 .build();

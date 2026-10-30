@@ -103,7 +103,7 @@ public class SessionExecutionRegistry {
     /**
      * 子执行真正终态时移除登记。
      *
-     * @return 此移除后是否已无未结束子；失败的即时唤醒由生命周期协作器另行判定。
+     * @return 此移除后是否已无未结束子；唤醒由生命周期协作器另行触发。
      */
     public boolean unregisterChild(Long rootSessionId, Long childSessionId) {
         if (rootSessionId == null || childSessionId == null) return false;
