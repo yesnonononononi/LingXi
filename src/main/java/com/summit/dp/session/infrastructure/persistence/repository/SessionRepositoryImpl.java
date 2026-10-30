@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.summit.dp.shared.exception.ClientException;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.summit.ddd.infrastructure.repository.AbstractRepository;
@@ -38,6 +39,30 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
         // SQLite 无行锁：退化为普通读，「状态改写不能覆盖别人」由 update 的 version 条件裁决。
         return Optional.ofNullable(sessionMapper.selectOne(Wrappers.<SessionPO>lambdaQuery()
                 .eq(SessionPO::getId, sessionId))).map(this::toModel);
+    }
+
+    /**
+     * 条件置已读：单语句完成「未读 → 已读」，并用版本条件拒绝覆盖别人的新状态。
+     *
+     * <p>SQLite 单写者下事务里「先读后升写」不会排队等锁，所以这里把写入放在唯一一条语句里：
+     * 调用方不必先读，也就没有「读快照过期再升写失败」的窗口。</p>
+     */
+    @Override
+    public boolean markReadIfUnread(Long sessionId, Long expectedVersion) {
+        if (sessionId == null) {
+            return false;
+        }
+        LambdaUpdateWrapper<SessionPO> wrapper = Wrappers.<SessionPO>lambdaUpdate()
+                .eq(SessionPO::getId, sessionId)
+                .eq(SessionPO::getIsRead, false)
+                .set(SessionPO::getIsRead, true)
+                // 版本自增走 SQL 表达式，避免「读出来 +1 再写回」的老快照覆盖问题
+                .setSql("version = version + 1")
+                .set(SessionPO::getUpdateTime, java.time.LocalDateTime.now());
+        if (expectedVersion != null) {
+            wrapper.eq(SessionPO::getVersion, expectedVersion);
+        }
+        return sessionMapper.update(null, wrapper) == 1;
     }
 
     @Override

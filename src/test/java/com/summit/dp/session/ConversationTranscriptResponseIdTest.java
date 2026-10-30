@@ -16,6 +16,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
+import org.springframework.dao.DuplicateKeyException;
 
 import java.util.List;
 import java.util.Optional;
@@ -27,8 +29,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -77,52 +82,54 @@ class ConversationTranscriptResponseIdTest {
     }
 
     @Test
-    void numericResponseDoesNotAllocateSequenceButStillLocksForIdempotency() {
+    void numericResponseDoesNotAllocateSequenceButKeepsIdentityOnTheRow() {
         String responseId = "9007199254740993";
         service.appendRound(SESSION_ID, null, TURN_ID,
                 AiMessageEntity.builder().text("新响应").build(), List.of(), responseId);
         ArgumentCaptor<List<SessionMessage>> captured = ArgumentCaptor.forClass(List.class);
-        verify(messages).lockSessionForAppend(SESSION_ID);
-        verify(messages).findByResponseId(SESSION_ID, responseId);
         verify(messages).appendAll(eq(SESSION_ID), any(), captured.capture());
         SessionMessage ai = captured.getValue().getFirst();
         assertEquals(responseId, ai.getResponseId());
+        // 身份是框架给的，业务侧不得再生成/占用序列
+        assertTrue(ai.getId() != null);
+        verify(messages, never()).findByResponseId(anyLong(), any());
     }
 
     /**
      * 同一会话 + 同一响应身份、且内容一致的重复落库 → 幂等返回，不再追加。
      *
-     * <p>这是幂等索引 {@code (session_id, response_id)} 的应用层前置拦截；
-     * 少了它，重复落库要么撞唯一索引报错、要么（若身份没传下去）静默产生两条同轮 AI 行。</p>
-     *
-     * <p>注意：已落库行必须与本次内容**一致**才是重放。内容不一致走
-     * {@link #driftingReplayIsRejectedInsteadOfSilentlyDropped()}。</p>
+     * <p>并发裁决已从「行锁 + 应用层先查」改为数据库唯一索引 {@code uk_session_response_id}
+     * （见 {@code TranscriptConcurrencyTest}）：重复提交时插入会被唯一索引拒绝，服务捕获后回查，
+     * 内容一致即幂等返回。这里用 {@link DuplicateKeyException} 精确模拟那次被拒绝的插入。</p>
      */
     @Test
     void duplicateResponseIdIsNotAppendedTwice() throws Exception {
         AiMessageEntity ai = AiMessageEntity.builder().text("answer").build();
+        doThrow(new DuplicateKeyException("uk_session_response_id"))
+                .when(messages).appendAll(anyLong(), any(), any());
         when(messages.findByResponseId(SESSION_ID, RESPONSE_ID)).thenReturn(Optional.of(
                 SessionMessage.builder().id(1L).sessionId(SESSION_ID).responseId(RESPONSE_ID)
                         .turnId(TURN_ID).type(SessionMessageType.AI)
                         .text(json.writeValueAsString(ai)).build()));
 
+        // 不抛异常 = 幂等收口；且只尝试过一次插入（没有重试成第二条 AI 行）
         service.appendRound(SESSION_ID, null, TURN_ID, ai, List.of(), RESPONSE_ID);
 
-        verify(messages, never()).appendAll(anyLong(), any(), any());
+        verify(messages, times(1)).appendAll(anyLong(), any(), any());
     }
 
     /**
-     * 落库前必须先锁会话行，把并发落库串行化。
-     *
-     * <p>这是 C-1 的修复本体：旧实现只有「查 → 插」，两个并发方会同时通过检查，
-     * 再一起去撞唯一索引。回归删除 {@code lockSessionForAppend} 调用即变红。</p>
+     * 写入必须先于「会话存在性校验」：SQLite 单写者下事务里先读后升写抢不到锁，
+     * 所以落库是事务的第一条语句，会话校验放在写入之后。
      */
     @Test
-    void appendRoundLocksSessionBeforeIdempotencyCheck() {
+    void appendIsTheFirstPersistenceActionAndSessionCheckFollows() {
         service.appendRound(SESSION_ID, null, TURN_ID,
                 AiMessageEntity.builder().text("answer").build(), List.of(), RESPONSE_ID);
 
-        verify(messages).lockSessionForAppend(SESSION_ID);
+        InOrder order = inOrder(messages);
+        order.verify(messages).appendAll(eq(SESSION_ID), any(), any());
+        order.verify(messages).lockSessionForAppend(SESSION_ID);
     }
 
     /**
@@ -134,6 +141,8 @@ class ConversationTranscriptResponseIdTest {
     @Test
     void driftingReplayIsRejectedInsteadOfSilentlyDropped() throws Exception {
         AiMessageEntity stored = AiMessageEntity.builder().text("第一次的输出").build();
+        doThrow(new DuplicateKeyException("uk_session_response_id"))
+                .when(messages).appendAll(anyLong(), any(), any());
         when(messages.findByResponseId(SESSION_ID, RESPONSE_ID)).thenReturn(Optional.of(
                 SessionMessage.builder().id(1L).sessionId(SESSION_ID).responseId(RESPONSE_ID)
                         .turnId(TURN_ID).type(SessionMessageType.AI)
@@ -145,7 +154,7 @@ class ConversationTranscriptResponseIdTest {
 
         // 报错文案必须带身份，方便定位是哪一轮漂移。
         assertTrue(error.getMessage().contains(RESPONSE_ID.toString()));
-        verify(messages, never()).appendAll(anyLong(), any(), any());
+        verify(messages, times(1)).appendAll(anyLong(), any(), any());
     }
 
     /**
@@ -154,6 +163,8 @@ class ConversationTranscriptResponseIdTest {
     @Test
     void differentTurnOwnershipIsTreatedAsDrift() throws Exception {
         AiMessageEntity ai = AiMessageEntity.builder().text("answer").build();
+        doThrow(new DuplicateKeyException("uk_session_response_id"))
+                .when(messages).appendAll(anyLong(), any(), any());
         when(messages.findByResponseId(SESSION_ID, RESPONSE_ID)).thenReturn(Optional.of(
                 SessionMessage.builder().id(1L).sessionId(SESSION_ID).responseId(RESPONSE_ID)
                         .turnId(TURN_ID + 1).type(SessionMessageType.AI)

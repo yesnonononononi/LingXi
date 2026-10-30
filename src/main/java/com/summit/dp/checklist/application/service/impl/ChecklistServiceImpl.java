@@ -15,6 +15,7 @@ import com.summit.dp.checklist.domain.model.ChecklistStatus;
 import com.summit.dp.checklist.domain.model.ChecklistStep;
 import com.summit.dp.checklist.domain.model.ChecklistStepStatus;
 import com.summit.dp.checklist.domain.repository.ChecklistRepository;
+import com.summit.dp.checklist.infrastructure.persistence.ChecklistWriteMonitor;
 import com.summit.dp.shared.exception.ClientException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +45,7 @@ public class ChecklistServiceImpl implements ChecklistService {
     public ChecklistVO create(ChecklistCommand command) {
         throwIf(command == null, "清单参数不能为空");
         long sessionId = requireSessionId(command.getSessionId());
+        ChecklistWriteMonitor.acquireForCurrentTransaction();
         List<String> contents = ChecklistRules.normalizeStepContents(command.getSteps());
 
         // 先查一次只是为了给出可读文案；并发下的唯一性由派生列唯一索引裁决，不靠这次查询。
@@ -166,6 +168,9 @@ public class ChecklistServiceImpl implements ChecklistService {
         long sessionId = requireSessionId(context.sessionId());
         Long executionId = context.executionId();
         throwIf(executionId == null || executionId <= 0L, "清单提醒缺少有效执行标识");
+        // 与步骤推进共用同一把清单写监视器：必须等对方事务提交后才允许判断是否需要另一轮，
+        // 否则会基于过期进度得出「还需要提醒」的错误结论。
+        ChecklistWriteMonitor.acquireForCurrentTransaction();
         Optional<Checklist> found = repository.findActiveBySessionIdForUpdate(sessionId);
         if (found.isEmpty()) {
             return ReminderDecision.noActiveChecklist();

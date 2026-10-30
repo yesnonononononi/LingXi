@@ -14,12 +14,13 @@ spring:
     #   synchronous=FULL    提交即落盘，断电崩溃后已提交事务不丢（性能让位于正确性）；
     #   busy_timeout=5000   写锁竞争最多等 5s 再报 SQLITE_BUSY，比立刻失败更贴近真实等待；
     #   foreign_keys=true   恢复外键约束语义（默认关闭）；
-    #   transaction_mode=IMMEDIATE 事务一开始就取写锁：SQLite 的「先读后升写」在竞争时会
-    #                       立刻返回 SQLITE_BUSY（等下去注定死锁），只有 IMMEDIATE 才能让
-    #                       busy_timeout 真正生效（实测 IMMEDIATE 6 线程×10 次写事务 0 失败）。
-    #                       代价：已持写锁的事务里再开新写事务必然失败，因此业务侧不许在
-    #                       受理事务内冻结运行配置（后续「业务 SQL、锁与事务适配」单元处理）。
-    url: jdbc:sqlite:${lingxi.data.dir}/lingxi.sqlite?journal_mode=WAL&synchronous=FULL&busy_timeout=5000&foreign_keys=true&transaction_mode=IMMEDIATE
+    #   transaction_mode：**不设**（= DEFERRED）。这是方案一.7「用真实 Spring 事务与竞争用例验证
+    #                       取锁方式」的实测结论：单写者下 IMMEDIATE 会让「已开启的受理事务 + 独立
+    #                       短事务（清理/回收、提交后通知）」连 BEGIN 都拿不到锁（连读事务也会持写锁），
+    #                       而 DEFERRED 让只读事务不占写锁，独立短事务才能真的独立提交。
+    #                       代价：读后升写的竞争不再排队，会立刻报 SQLITE_BUSY；这条路径由
+    #                       「短事务 + 条件更新/唯一约束 + 冲突重试」承担，不靠调大 busy_timeout 掩盖。
+    url: jdbc:sqlite:${lingxi.data.dir}/lingxi.sqlite?journal_mode=WAL&synchronous=FULL&busy_timeout=5000&foreign_keys=true
     driver-class-name: org.sqlite.JDBC
     druid:
       # SQLite 同一时刻只允许一个写者，连接池刻意保持小规模：连接越多，锁等待越容易堆积。

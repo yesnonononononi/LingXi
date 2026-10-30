@@ -138,6 +138,8 @@ public class ChatServiceImpl implements ChatService {
 
         ResendAdmission admitted;
         try {
+            // 回滚事务开始前先冻结运行配置：受理与回滚同事务，事务内不能再开写连接。
+            requestPreparer.freezeRuntimeConfigurations(context);
             admitted = conversationRollbackService.rollbackAndAdmit(context, target);
         } catch (RuntimeException e) {
             // 回滚没成功就绝不能往下跑：否则新一轮会接在一段本该消失的历史之上。
@@ -180,6 +182,9 @@ public class ChatServiceImpl implements ChatService {
      */
     private RuntimeContext commitUserMessage(RuntimeContext context) {
         try {
+            // 受理事务开始前先把运行配置冻结（独立提交）：单写者 SQLite 下「受理已写库后再另开
+            // 写连接分配配置版本」必然抢锁失败，见方案「业务 SQL、锁与事务适配」一.6。
+            requestPreparer.freezeRuntimeConfigurations(context);
             return chatExecutor.admit(context);
         } catch (RuntimeException commitFailure) {
             sessionExecutionRegistry.finishRoot(context.executionContext().rootSessionId());

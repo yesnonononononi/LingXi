@@ -13,6 +13,18 @@ public interface SessionRepository extends RepositoryTemplate<Session, Long> {
 
     Optional<Session> lockById(Long sessionId);
 
+    /**
+     * 条件置已读：只有「当前未读」且（给出期望版本时）版本匹配才写入。
+     *
+     * <p>SQLite 没有行锁，{@link #lockById} 已退化为普通读；「已读」这个写入改用单语句条件更新，
+     * 既不需要先读再写（单写者下读后升写会抢不到锁），也不会覆盖别人刚提交的新版本。</p>
+     *
+     * @param sessionId       会话标识
+     * @param expectedVersion 调用方看到的版本；{@code null} 表示不校验版本
+     * @return 是否真的改成了已读（{@code false} = 已是已读、版本已变化或会话不存在）
+     */
+    boolean markReadIfUnread(Long sessionId, Long expectedVersion);
+
     void updateRead(Session session);
 
     List<Session> findRootSessions();

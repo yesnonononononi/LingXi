@@ -188,6 +188,26 @@ class TranscriptConcurrencyTest {
         assertEquals(1L, countByType("AI"), "无论拒绝多少次，最终仍只落一行");
     }
 
+    @Test
+    @DisplayName("唯一索引兜底：同一 (session_id, response_id) 的第二行被数据库直接拒绝")
+    void uniqueIndexRejectsSecondRowForSameResponseId() throws Exception {
+        TransactionTemplate tx = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+        tx.executeWithoutResult(status -> service.appendRound(SESSION_ID, null, TURN_ID,
+                AiMessageEntity.builder().text("唯一性").build(), List.of(), RESPONSE_ID));
+
+        // 绕过服务层直接插一行同样身份的消息：行锁删掉之后，唯一索引就是唯一的并发裁决者，
+        // 它必须真的存在于库里并在数据库层拒绝，而不是靠应用层「先查一遍」。
+        try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+            java.sql.SQLException rejected = org.junit.jupiter.api.Assertions.assertThrows(
+                    java.sql.SQLException.class, () -> statement.executeUpdate(
+                            "INSERT INTO session_message (id, session_id, response_id, type, content) VALUES "
+                                    + "(999001, " + SESSION_ID + ", '" + RESPONSE_ID + "', 'AI', '重复行')"));
+            assertTrue(rejected.getMessage().toLowerCase(java.util.Locale.ROOT).contains("unique"),
+                    "拒绝原因必须是唯一约束: " + rejected.getMessage());
+        }
+        assertEquals(1L, countByType("AI"), "库内仍然只允许一行");
+    }
+
     private long countByType(String type) throws Exception {
         // 事务之外、独立连接：读到的是已提交的最终态。
         try (Connection connection = dataSource.getConnection();

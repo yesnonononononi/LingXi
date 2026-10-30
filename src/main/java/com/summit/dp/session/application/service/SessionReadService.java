@@ -25,9 +25,11 @@ public class SessionReadService {
     public Result<SessionVO> read(Long sessionId, Long expectedVersion) {
         throwIf(sessionId == null, "会话ID不能为空");
 
-        Session session = repository.lockById(sessionId).orElseThrow(ClientException::new);
-        if (!session.isRead() && (expectedVersion == null || expectedVersion.equals(session.getVersion()))) {
-            changeRead(session, true);
+        // 单语句条件更新取代「先锁行再改」：未读且版本匹配才置已读。
+        // SQLite 只有一个写者，事务里「先读后升写」在竞争时不会排队（升写失败立刻返回 SQLITE_BUSY），
+        // 把条件写放在事务的第一条语句，既保留了「不覆盖别人的新版本」，也不再需要行锁。
+        if (repository.markReadIfUnread(sessionId, expectedVersion)) {
+            events.publishEvent(new SessionStateChanged(sessionService.findById(sessionId).getData()));
         }
 
         return sessionService.findById(sessionId);

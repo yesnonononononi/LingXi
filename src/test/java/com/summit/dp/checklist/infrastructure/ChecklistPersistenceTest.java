@@ -20,18 +20,22 @@ import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessException;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -338,6 +342,58 @@ class ChecklistPersistenceTest {
             release.countDown();
             pool.shutdownNow();
         }
+    }
+
+    @Test
+    @DisplayName("提醒额度：同一 progress_version 并发领取只成功一次（条件更新带 progress_version）")
+    void concurrentReminderClaimsOnSameProgressVersionLetOnlyOneWin() throws Exception {
+        ChecklistVO created = service.create(ChecklistCommand.create(SESSION_ID, null, "并发提醒", List.of("一步", "两步")));
+        // 事务外读同一份聚合快照，事务内的第一条语句就是条件更新：不产生「读后升写」抢锁窗口
+        Checklist snapshot = repository.findByIdWithSteps(created.getChecklistId()).orElseThrow();
+        int threads = 6;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CyclicBarrier start = new CyclicBarrier(threads);
+        AtomicInteger wins = new AtomicInteger();
+        try {
+            List<Future<?>> futures = new ArrayList<>();
+            for (int i = 0; i < threads; i++) {
+                long executionId = EXECUTION_ID + i;
+                futures.add(pool.submit(() -> {
+                    start.await(10, TimeUnit.SECONDS);
+                    boolean claimed = fixture.transaction().execute(status -> repository.claimReminder(snapshot, executionId));
+                    if (claimed) {
+                        wins.incrementAndGet();
+                    }
+                    return null;
+                }));
+            }
+            for (Future<?> future : futures) future.get(30, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertEquals(1, wins.get(), "同一 progress_version 的提醒额度只能被领走一次");
+        Checklist stored = repository.findByIdWithSteps(created.getChecklistId()).orElseThrow();
+        assertEquals(stored.getProgressVersion(), stored.getRemindedProgressVersion(),
+                "提醒事实必须记在同一个 progress_version 上");
+        assertNotNull(stored.getRemindExecutionId(), "提醒归属必须落库，界面与收尾判定都依赖它");
+    }
+
+    @Test
+    @DisplayName("聚合写入带条件：progress_version 与状态被并发改过时必须拒绝覆盖，不得裸 updateById")
+    void checklistUpdateRejectsStaleProgressVersion() {
+        ChecklistVO created = service.create(ChecklistCommand.create(SESSION_ID, null, "条件写", List.of("一步")));
+        Checklist loaded = repository.findByIdWithSteps(created.getChecklistId()).orElseThrow();
+        // 模拟另一路已推进：直接改库里的 progress_version 与 status
+        mapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ChecklistPO>()
+                .eq(ChecklistPO::getId, created.getChecklistId())
+                .setSql("progress_version = progress_version + 1")
+                .set(ChecklistPO::getStatus, ChecklistStatus.COMPLETED.name()));
+
+        ClientException rejected = assertThrows(ClientException.class, () -> repository.updateChecklist(loaded));
+        assertTrue(rejected.getMessage().contains("清单进展已变化"), rejected.getMessage());
+        assertEquals(ChecklistStatus.COMPLETED.name(),
+                mapper.selectById(created.getChecklistId()).getStatus(), "库内状态不得被过期写入覆盖");
     }
 
     private static void await(CountDownLatch latch) {

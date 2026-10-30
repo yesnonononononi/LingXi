@@ -45,10 +45,10 @@ public final class SqliteTestDatabase implements DataSource, AutoCloseable {
      * 与生产一致的连接参数（busy_timeout 也保持一致 5s）。
      *
      * <p>刻意不放大等待时间：放大只能掩盖真实的锁竞争，会让用例在真死锁时长时间挂住，
-     * 也会让测试与生产行为出现差异。</p>
+     * 也会让测试与生产行为出现差异。事务模式同样不设（DEFERRED），与生产一致。</p>
      */
     private static final String PARAMETERS =
-            "?journal_mode=WAL&synchronous=FULL&busy_timeout=5000&foreign_keys=false&transaction_mode=IMMEDIATE";
+            "?journal_mode=WAL&synchronous=FULL&busy_timeout=5000&foreign_keys=false";
 
     private final Path directory;
     private final Path databaseFile;

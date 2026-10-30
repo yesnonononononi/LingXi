@@ -140,6 +140,71 @@ class ExecutionResumeTaskRepositoryTest {
     }
 
     @Test
+    @DisplayName("并发受理：多线程同时受理同一挂起边界，只落一行且返回同一标识")
+    void concurrentEnqueueLandsExactlyOneRow() throws Exception {
+        int threads = 6;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CyclicBarrier start = new CyclicBarrier(threads);
+        AtomicInteger failures = new AtomicInteger();
+        List<Long> ids = new ArrayList<>();
+        try {
+            List<Future<?>> futures = new ArrayList<>();
+            for (int i = 0; i < threads; i++) {
+                futures.add(pool.submit(() -> {
+                    try {
+                        start.await(10, TimeUnit.SECONDS);
+                        ExecutionResumeTask task = repository.enqueue(EXECUTION_ID, 7L, Instant.now());
+                        synchronized (ids) {
+                            ids.add(task.getId());
+                        }
+                    } catch (Exception error) {
+                        failures.incrementAndGet();
+                    }
+                }));
+            }
+            for (Future<?> future : futures) future.get(30, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertEquals(0, failures.get(), "并发受理必须幂等，不能把唯一键冲突泄漏给调用方");
+        assertEquals(1, ids.stream().distinct().count(), "同一 (executionId, generation) 只能有一行");
+        assertEquals(1, repository.findByExecutionId(EXECUTION_ID).size());
+    }
+
+    @Test
+    @DisplayName("并发领取：同一请求多线程抢领，只有一方拿到（条件更新带 version）")
+    void concurrentClaimLetsExactlyOneWorkerWin() throws Exception {
+        ExecutionResumeTask task = repository.enqueue(EXECUTION_ID, 8L, Instant.now());
+        ExecutionResumeTask snapshot = repository.findById(task.getId()).orElseThrow();
+        int threads = 6;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CyclicBarrier start = new CyclicBarrier(threads);
+        AtomicInteger wins = new AtomicInteger();
+        try {
+            List<Future<?>> futures = new ArrayList<>();
+            for (int i = 0; i < threads; i++) {
+                // 每个线程都持同一份快照（同样的 version）去领：只有一个条件更新命中 1 行
+                ExecutionResumeTask shared = repository.findById(snapshot.getId()).orElseThrow();
+                shared.acceptPersistedVersion(snapshot.getVersion());
+                futures.add(pool.submit(() -> {
+                    start.await(10, TimeUnit.SECONDS);
+                    if (repository.claim(shared)) {
+                        wins.incrementAndGet();
+                    }
+                    return null;
+                }));
+            }
+            for (Future<?> future : futures) future.get(30, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertEquals(1, wins.get(), "同一条恢复请求必须只被领取一次");
+        assertEquals(ResumeTaskState.CLAIMED, repository.findById(snapshot.getId()).orElseThrow().getState());
+    }
+
+    @Test
     @DisplayName("状态写入：version 过期时命中 0 行并返回 false（迟到的恢复不得覆盖）")
     void updateStateFailsWhenVersionIsStale() {
         ExecutionResumeTask task = repository.enqueue(EXECUTION_ID, 3L, Instant.now());

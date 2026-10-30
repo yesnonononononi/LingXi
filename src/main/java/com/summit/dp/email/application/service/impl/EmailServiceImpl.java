@@ -16,6 +16,7 @@ import com.summit.dp.email.domain.repository.EmailRepository;
 import com.summit.dp.shared.exception.ClientException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -169,7 +170,15 @@ public class EmailServiceImpl implements EmailService {
         }
 
         pending.forEach(EmailMessage::consume);
-        int affected = messageRepository.consumePendingByIds(pending);
+        int affected;
+        try {
+            affected = messageRepository.consumePendingByIds(pending);
+        } catch (CannotAcquireLockException lockConflict) {
+            // 单写者数据库里「读 PENDING → 条件更新」的读后升写抢不到锁时会立刻失败。
+            // 这种失败是瞬时的、可重试的：统一翻成业务侧的可重试冲突，
+            // 不把驱动级异常泄漏给调用方（重试时会读到空收件箱）。
+            throw new ClientException("收件箱正在被并发消费，请重试", lockConflict);
+        }
         if (affected != pending.size()) {
             // 并发窗口内有消息被抢先消费：整体回滚；重试只取仍 PENDING 的消息，自愈。
             throw new ClientException("部分消息状态已变化，请重试批量消费");
@@ -182,23 +191,19 @@ public class EmailServiceImpl implements EmailService {
      * 获取或创建角色邮箱。
      *
      * <p>业务键 {@code (workflowExecutionId, recipientAgentId)} 上有唯一索引，因此并发首次建箱
-     * 只有一个 INSERT 成功，其余落到 {@link DuplicateKeyException}，回查即得已存在邮箱。
-     * 这里在<b>同一事务内</b>捕获并回查，成立的前提有两条：</p>
-     * <ol>
-     *   <li>唯一键冲突不会中止当前事务（不像 PostgreSQL 会把事务置为 aborted），
-     *       Spring 也只在异常穿透事务边界时才标记 rollback-only；</li>
-     *   <li>回查必须用<b>锁定读</b>（{@link EmailRepository#findByBusinessKeyForUpdate}）：
-     *       可重复读类隔离级别下，本方法开头的普通 SELECT 已经固定了读快照，读不到
-     *       竞争方随后提交的那一行，会误判成回查失败并把整次投递回滚掉。</li>
-     * </ol>
+     * 只有一个 INSERT 成功，其余落到 {@link DuplicateKeyException}，回查即得已存在邮箱。</p>
+     *
+     * <p><b>顺序是刻意的：先插入，再回查，绝不先读一遍再插入。</b>SQLite 只有一个写者，
+     * 事务里「先读后升写」在竞争时不会排队等锁（升写失败会立刻返回 SQLITE_BUSY，
+     * busy_timeout 对升写不生效），所以这里让事务的第一条语句就是写：
+     * 抢不到锁时由 busy_timeout 正常等待，抢到了则由唯一索引裁决并发。</p>
+     *
+     * <p>冲突后的回查不需要（也不存在）行锁：能走到 {@code DuplicateKeyException}，说明本次写
+     * 已经看到过竞争方提交后的最新快照，紧接着的读取一定能读到那一行。</p>
      *
      * @return 已存在或刚创建的邮箱（保证带 id）
      */
     private Email obtainMailbox(Long workflowExecutionId, Long recipientAgentId, Long teamId) {
-        Optional<Email> existing = repository.findByBusinessKey(workflowExecutionId, recipientAgentId);
-        if (existing.isPresent()) {
-            return existing.get();
-        }
         Email created = Email.builder()
                 .id(IdUtil.getSnowflakeNextId())
                 .workflowExecutionId(workflowExecutionId)
@@ -210,9 +215,9 @@ public class EmailServiceImpl implements EmailService {
             repository.save(created);
             return created;
         } catch (DuplicateKeyException e) {
-            log.debug("邮箱并发首次创建，锁定读回查已存在邮箱: workflowExecutionId={}, recipientAgentId={}",
+            log.debug("邮箱并发首次创建，回查已存在邮箱: workflowExecutionId={}, recipientAgentId={}",
                     workflowExecutionId, recipientAgentId);
-            return repository.findByBusinessKeyForUpdate(workflowExecutionId, recipientAgentId)
+            return repository.findByBusinessKey(workflowExecutionId, recipientAgentId)
                     .orElseThrow(() -> new ClientException("邮箱并发创建后回查失败"));
         }
     }
