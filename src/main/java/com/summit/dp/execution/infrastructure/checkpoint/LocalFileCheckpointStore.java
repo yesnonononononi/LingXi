@@ -68,6 +68,8 @@ public class LocalFileCheckpointStore implements ExecutionCheckpointStore {
     private final long copyQuietWindowSeconds;
     /** 在途写入登记：executionId → 尚未完成事务的文件标识集合。 */
     private final Map<String, Set<String>> inFlight = new ConcurrentHashMap<>();
+    /** 测试专用「释放窗口」回调；生产恒为 {@code null}（见 {@link #setReleaseWindowHook}）。 */
+    private volatile Runnable releaseWindowHook;
     /**
      * 读写门闩：写入与删除取读锁（可并发），目录复制取写锁（独占）。
      *
@@ -108,7 +110,7 @@ public class LocalFileCheckpointStore implements ExecutionCheckpointStore {
             Files.createDirectories(directory);
             // 临时文件与最终文件同目录：保证 ATOMIC_MOVE 一定在同一文件系统内。
             Path temp = Files.createTempFile(directory, fileId + "-", TEMP_SUFFIX);
-            inFlight.computeIfAbsent(executionId, key -> ConcurrentHashMap.newKeySet()).add(fileId);
+            register(executionId, fileId);
             return new FileCheckpointWriter(executionId, fileId, temp, directory.resolve(fileId + SUFFIX));
         } catch (IOException e) {
             gate.readLock().unlock();
@@ -421,20 +423,61 @@ public class LocalFileCheckpointStore implements ExecutionCheckpointStore {
         }
     }
 
-    /** 结束在途登记并释放读锁；写入失败、事务提交或回滚都必须调用，避免清理永久跳过该标识。 */
+    /**
+     * 结束在途登记并释放读锁；写入失败、事务提交或回滚都必须调用，避免清理永久跳过该标识。
+     *
+     * <p><b>为什么判空与移除键必须在同一个原子步骤里</b>：它们分散执行会被合法交错打穿 ——</p>
+     * <pre>
+     * A: 移除自己的标识 → 观察到集合为空
+     * B: 开始并往<b>同一个集合</b>里登记新文件
+     * A: remove(executionId, 集合)  ← 把含 B 的集合整个移除
+     * 清理器: 把 B 已发布、尚未提交的文件当孤儿删掉 → B 提交后留下断链引用
+     * </pre>
+     *
+     * <p>现在登记（{@link #register}）与释放都用 {@code ConcurrentHashMap.compute} 在同一个 key 上
+     * 完成「增删元素 + 判空 + 移除键」，同一执行的这两步互斥且各自原子，上面那条交错不再存在。</p>
+     */
     private void release(String executionId, String fileId) {
         try {
-            Set<String> pending = inFlight.get(executionId);
-            if (pending == null) {
-                return;
-            }
-            pending.remove(fileId);
-            if (pending.isEmpty()) {
-                inFlight.remove(executionId, pending);
-            }
+            inFlight.compute(executionId, (key, current) -> {
+                if (current == null) {
+                    return null;
+                }
+                current.remove(fileId);
+                // 测试专用交错点：只在这一个原子步骤内部生效，生产恒为 null。
+                Runnable window = releaseWindowHook;
+                if (window != null) {
+                    window.run();
+                }
+                return current.isEmpty() ? null : current;
+            });
         } finally {
             gate.readLock().unlock();
         }
+    }
+
+    /**
+     * 登记一个在途文件标识。
+     *
+     * <p>同样走 {@code compute}：如果只是「拿到集合再 add」，{@link #release} 可能在这个 add 之前
+     * 就判定「集合为空」并移除键，登记便落在了一个已经脱离 map 的集合上 —— 清理器随即看不到它。</p>
+     */
+    private void register(String executionId, String fileId) {
+        inFlight.compute(executionId, (key, current) -> {
+            Set<String> next = current == null ? ConcurrentHashMap.newKeySet() : current;
+            next.add(fileId);
+            return next;
+        });
+    }
+
+    /**
+     * 测试专用：安装「释放窗口」回调，用来在原子步骤内部插入确定性调度点。
+     *
+     * <p>只供回归用例复现复核报告里的交错；生产不调用，字段保持 {@code null}，
+     * 每次释放只多一次 volatile 读。</p>
+     */
+    void setReleaseWindowHook(Runnable hook) {
+        this.releaseWindowHook = hook;
     }
 
     /** 解析并复核最终路径仍在该执行目录内（防路径穿越）。 */
