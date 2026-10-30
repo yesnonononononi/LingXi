@@ -89,6 +89,10 @@ function createMainWindow(isPackaged) {
       if (name === 'electron') return { ...electron, app, BrowserWindow: ProbeWindow, ipcMain: { handle() {} } };
       if (name === './backend.cjs') return {};
       if (name === './file-preview.cjs') return { registerFilePreview: () => () => {} };
+      if (name === './lx-protocol.cjs') {
+        // 自定义协议只是门面，本用例不关心；给空实现即可（registerSchemesAsPrivileged 需 ready 前调用）
+        return { registerLxSchemePrivileges: () => {}, registerLxProtocol: () => ({ bases: [], scheme: 'lxa' }) };
+      }
       if (name === './notification-window.cjs') return { registerNotificationWindow: () => ({}) };
       // 桌宠窗口（T01）：本用例只关心主窗口的任务栏属性，这里给一个空壳管理 API
       if (name === './pet-window.cjs') {

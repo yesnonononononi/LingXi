@@ -6,6 +6,7 @@ const { registerFilePreview } = require('./file-preview.cjs');
 const { registerBackgroundImages } = require('./background-images.cjs');
 const { registerNotificationWindow, normalizePayload } = require('./notification-window.cjs');
 const { registerPetWindow } = require('./pet-window.cjs');
+const { registerLxSchemePrivileges, registerLxProtocol } = require('./lx-protocol.cjs');
 
 const { createUpdater } = require('./updater.cjs');
 
@@ -70,6 +71,14 @@ const notifications = registerNotificationWindow({
  * 且装配早于托盘菜单（托盘要按它的可见性渲染勾选项）。</p>
  */
 const pet = registerPetWindow({ ipcMain, isDev, frontendRoot });
+
+/**
+ * 桌宠资源的 `lxa://` 协议特权。
+ *
+ * <p>⚠️ 必须在 ready 之前登记：ready 之后登记会抛异常且不生效，表现就是
+ * `lxa://` 被当成未知 scheme，模型永远加载不出来。</p>
+ */
+registerLxSchemePrivileges();
 
 
 // 后端日志与工作目录都放 userData：安装到 Program Files 后应用目录不可写
@@ -532,6 +541,13 @@ app.on('second-instance', () => {
 
 app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return;
+
+  // 桌宠资源协议：ready 之后才能 handle。失败不影响主应用（模型加载不到而已）
+  try {
+    registerLxProtocol({ userDataDir, appRoot: app.getAppPath() });
+  } catch (err) {
+    console.warn(`[lxa] 协议注册失败（桌宠模型将加载不出来）: ${(err && err.message) || err}`);
+  }
 
   // 先起后端再建窗口：前端一加载就发请求，后端没就绪会满屏请求失败
   createSplash();
