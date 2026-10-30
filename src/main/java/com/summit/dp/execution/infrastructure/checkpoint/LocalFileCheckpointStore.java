@@ -158,6 +158,32 @@ public class LocalFileCheckpointStore implements ExecutionCheckpointStore {
         }
     }
 
+    /**
+     * 回收一个执行目录：只有目录已经空了才删。
+     *
+     * <p>用 {@code Files.deleteIfExists} 的语义直接拿到「非空就失败」的保证：不用先列目录再删，
+     * 也就不存在「列的时候是空的、删的时候刚被写进一个文件」的误删窗口。</p>
+     */
+    @Override
+    public boolean deleteExecutionDirectoryIfEmpty(String executionId) {
+        Path directory = executionDirectory(executionId);
+        gate.readLock().lock();
+        try {
+            if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
+                return false;
+            }
+            return Files.deleteIfExists(directory);
+        } catch (java.nio.file.DirectoryNotEmptyException notEmpty) {
+            // 目录里还有正文（可能是权威引用的那份）：绝不删。
+            return false;
+        } catch (IOException | RuntimeException failure) {
+            log.warn("回收空执行目录失败，留待下一轮: directory={}, error={}", directory, failure.toString());
+            return false;
+        } finally {
+            gate.readLock().unlock();
+        }
+    }
+
     @Override
     public boolean isInFlight(String executionId, String fileId) {
         Set<String> pending = inFlight.get(executionId);

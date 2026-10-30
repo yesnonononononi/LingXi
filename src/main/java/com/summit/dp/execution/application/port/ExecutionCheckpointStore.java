@@ -51,7 +51,9 @@ public interface ExecutionCheckpointStore {
      */
     boolean delete(String executionId, String fileId);
 
-    /** 该文件是否仍在写入中（供清理跳过未完成的写入）。 */
+    /**
+     * 该文件是否仍在写入中（供清理跳过未完成的写入）。
+     */
     boolean isInFlight(String executionId, String fileId);
 
     /** 当前在途写入的文件标识快照；清理逻辑按它跳过。 */
@@ -109,6 +111,25 @@ public interface ExecutionCheckpointStore {
      * @throws IllegalStateException 等不到静默窗口（仍有检查点写入）
      */
     void withWriteQuiesced(Runnable migrationStep);
+
+    /**
+     * 回收一个执行目录：**只有目录已经空了才删**。
+     *
+     * <p>为什么必须有这一步：正文删完以后执行目录会留下，每跑一轮执行就多一个空目录，
+     * {@code checkpoints/} 下会堆到几千个 —— 清理时枚举预算全被这些空目录吃掉，真正的垃圾反而轮不到。</p>
+     *
+     * <p>安全边界：只接受数字执行标识，路径固定为 {@code <数据目录>/checkpoints/<executionId>}，
+     * 与数据目录里的 {@code images/}、{@code skill/}、配置文件毫无交集；目录非空时
+     * （{@code DirectoryNotEmptyException}）返回 {@code false} 且不做任何删除，
+     * 因此「删空目录」永远不会退化成「删有正文的目录」。</p>
+     *
+     * <p>调用方必须持有该 {@code executionId} 的读取/写入门闩：目录删除与
+     * {@link #begin(String)} 建目录必须互斥，否则会与正在发布的写入抢同一个目录。</p>
+     *
+     * @param executionId 执行标识（数字串）
+     * @return 是否真的删掉了一个空目录
+     */
+    boolean deleteExecutionDirectoryIfEmpty(String executionId);
 
     /** 枚举出来的检查点条目：执行标识、文件标识、精确文件名、是否未完成的临时文件。 */
     record CheckpointFile(String executionId, String fileId, String fileName, boolean temporary) { }

@@ -55,8 +55,9 @@ public class ExecutionCleanupService {
         ExecutionCheckpointMaintenance.FileReclaimResult files =
                 checkpoints.reclaimUnreferenced(MAX_FILE_DIRECTORIES, MAX_FILES_PER_EXECUTION);
         long remaining = repository.countReclaimable();
-        log.info("清理无用执行数据: deletedCount={}, remainingCount={}, deletedFiles={}, skippedInFlightFiles={}",
-                deleted, remaining, files.deletedFiles(), files.skippedInFlight());
+        log.info("清理无用执行数据: deletedCount={}, remainingCount={}, deletedFiles={},"
+                        + " skippedInFlightFiles={}, deletedDirectories={}",
+                deleted, remaining, files.deletedFiles(), files.skippedInFlight(), files.deletedDirectories());
         return new CleanupResult(deleted, remaining);
     }
 

@@ -229,6 +229,44 @@ class ExecutionCleanupTest {
         assertTrue(java.nio.file.Files.isRegularFile(image), "数据目录里的其它内容一律不碰");
     }
 
+    /**
+     * 正文删完以后执行目录必须一起消失：否则每轮执行留一个空目录，{@code checkpoints/} 会无上限堆积，
+     * 之后的清理预算全被空目录吃掉，孤儿文件反而轮不到。
+     */
+    @Test
+    void cleanupRemovesEmptiedExecutionDirectoriesAndKeepsProtectedOnes() throws java.io.IOException {
+        insertExecution(900001L, ExecutionStatusCodes.COMPLETED);
+        insertExecution(900002L, ExecutionStatusCodes.SUSPENDED);
+        Path orphanDir = java.nio.file.Files.createDirectories(
+                checkpointDataDir.resolve("checkpoints").resolve("900003"));
+        java.nio.file.Files.writeString(orphanDir.resolve("44444444444444444444444444444444.json"),
+                "{\"orphan\":true}");
+        Path images = java.nio.file.Files.createDirectories(checkpointDataDir.resolve("images"));
+
+        assertEquals(1L, service.cleanup().deletedCount());
+
+        assertNull(executions.selectById(900001L));
+        assertFalse(executionDirectoryExists(900001L), "可回收执行的行删光后，空执行目录必须一起回收");
+        assertNotNull(executions.selectById(900002L));
+        assertTrue(checkpointFileExists(900002L), "挂起执行的正文必须保留");
+        assertTrue(executionDirectoryExists(900002L), "非空执行目录不能被当成空目录删掉");
+        assertFalse(executionDirectoryExists(900003L), "孤儿文件回收后留下的空目录也要一起回收");
+        assertEquals(1L, checkpointDirectoryCount(), "剩下的只该是被保护执行那一个目录");
+        assertTrue(java.nio.file.Files.isDirectory(images), "数据目录里的其它内容一律不碰");
+    }
+
+    /** 「保存 → 清理」循环不能越攒越多空目录：每一轮结束后 checkpoints 下必须是空的。 */
+    @Test
+    void repeatedSaveAndCleanupCyclesDoNotAccumulateExecutionDirectories() {
+        for (int cycle = 0; cycle < 5; cycle++) {
+            long executionId = 950000L + cycle;
+            insertExecution(executionId, ExecutionStatusCodes.COMPLETED);
+            assertEquals(1L, service.cleanup().deletedCount());
+            assertEquals(0L, checkpointDirectoryCount(),
+                    "保存→清理循环不能让空执行目录堆积, cycle=" + cycle);
+        }
+    }
+
     @Test
     void deletedSessionAndRolledBackTurnsLeaveReclaimableExecutions() {
         insertSession(10L);
@@ -485,6 +523,23 @@ class ExecutionCleanupTest {
         String fileId = checkpointFiles.get(executionId);
         return fileId != null && java.nio.file.Files.isRegularFile(checkpointDataDir.resolve("checkpoints")
                 .resolve(Long.toString(executionId)).resolve(fileId + ".json"));
+    }
+
+    /** 该执行的检查点目录还在不在。 */
+    private boolean executionDirectoryExists(long executionId) {
+        return java.nio.file.Files.isDirectory(checkpointDataDir.resolve("checkpoints")
+                .resolve(Long.toString(executionId)));
+    }
+
+    /** {@code checkpoints/} 下现存的执行目录数。 */
+    private long checkpointDirectoryCount() {
+        Path checkpoints = checkpointDataDir.resolve("checkpoints");
+        if (!java.nio.file.Files.isDirectory(checkpoints)) return 0L;
+        try (java.util.stream.Stream<Path> children = java.nio.file.Files.list(checkpoints)) {
+            return children.filter(java.nio.file.Files::isDirectory).count();
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("枚举检查点目录失败", e);
+        }
     }
 
     @Configuration
