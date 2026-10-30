@@ -4,8 +4,9 @@ import { useI18n } from '../../../i18n';
 const messages = {
   'zh-CN': {
     title: '清理无用执行数据',
-    description: '回收已结束且没有业务引用的执行记录，保留历史重发、挂起恢复与后台任务所需数据。',
+    description: '回收已结束且没有业务引用的执行记录与检查点正文，保留历史重发、挂起恢复与后台任务所需数据。',
     count: (value: string) => `预计可清理 ${value} 条`,
+    filesPending: '没有可回收的执行记录，但磁盘上还有检查点文件待扫描',
     loading: '正在检查…', cleaning: '正在清理…', refresh: '重新检查', action: '清理',
     success: (value: string) => `已清理 ${value} 条执行记录`,
     loadError: '无法检查可清理数据，请重试', cleanupError: '清理失败，请重新检查后重试',
@@ -13,8 +14,9 @@ const messages = {
   },
   'en-US': {
     title: 'Clean up unused execution data',
-    description: 'Remove finished execution records with no business references. Keep data needed for editing and resending history, resuming paused work, and background tasks.',
+    description: 'Remove finished execution records with no business references, together with their checkpoint bodies. Keep data needed for editing and resending history, resuming paused work, and background tasks.',
     count: (value: string) => `${value} records may be removed`,
+    filesPending: 'No records to remove, but checkpoint files on disk still need scanning',
     loading: 'Checking…', cleaning: 'Cleaning…', refresh: 'Check again', action: 'Clean up',
     success: (value: string) => `Removed ${value} execution records`,
     loadError: 'Unable to check unused execution data. Please retry.',

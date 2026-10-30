@@ -34,8 +34,13 @@
 
 接口：
 
-- GET `/execution/cleanup/preview`：`executionCount`。
+- GET `/execution/cleanup/preview`：`executionCount`（可回收的数据库行数）、`filesNeedScan`（文件侧是否还要扫描）。
 - POST `/execution/cleanup`：`deletedCount`、`remainingCount`。
+
+`filesNeedScan` 的判定刻意便宜：只看 `checkpoints/` 根下有没有执行目录、有没有 `.part`，不读正文。
+它把「没有可回收的行」与「文件侧干净」分开 —— 行数为 0 但文件侧还有东西时，设置页的清理按钮
+仍然可用（否则只剩孤儿文件时按钮点不动，跨调用游标的第二轮扫描也被挡住）。清理成功后再拉一次
+预览，按钮状态跟着最新事实走。
 
 计数按后端统一 JSON 规则返回十进制字符串。清理每批最多 200 条候选，单次事务最多扫描 10,000 条；单次请求最多扫 400 个执行目录、每个目录最多处理 50 个文件。仍有候选时可再次清理。过程中失败则整次回滚，并发清理按实际删除行数计数。
 

@@ -131,6 +131,20 @@ public interface ExecutionCheckpointStore {
      */
     boolean deleteExecutionDirectoryIfEmpty(String executionId);
 
+    /**
+     * 文件侧是否还有可能需要回收的内容（**便宜的探测**：只列 {@code checkpoints/} 根，不读正文）。
+     *
+     * <p>用来把「没有可回收的数据库行」与「没有要扫描的文件」两件事分开：前者为 0 不代表
+     * 文件侧干净 —— 孤儿 JSON、{@code .part} 残留、以及上一轮目录预算之后还没扫到的文件，
+     * 都只能靠再扫一次回收。界面据这个标志决定是否还允许触发清理。</p>
+     *
+     * <p>判定刻意保守且廉价：根下存在任何执行目录，或存在 {@code .part} 临时文件，就认为
+     * 「可能有要回收的文件」。允许偶尔多扫一轮，不允许把「没得清理」误报成「不用清理」。</p>
+     *
+     * @return 是否还有可能要扫描的文件
+     */
+    boolean hasUnscannedFiles();
+
     /** 枚举出来的检查点条目：执行标识、文件标识、精确文件名、是否未完成的临时文件。 */
     record CheckpointFile(String executionId, String fileId, String fileName, boolean temporary) { }
 

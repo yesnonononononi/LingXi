@@ -64,6 +64,11 @@ public class LocalCheckpointMaintenance implements ExecutionCheckpointMaintenanc
     }
 
     @Override
+    public boolean hasUnscannedFiles() {
+        return checkpointStore.hasUnscannedFiles();
+    }
+
+    @Override
     public FileReclaimResult reclaimUnreferenced(int maxExecutionDirectories, int maxFilesPerExecution) {
         int maxDirectories = Math.clamp(maxExecutionDirectories, 1, 5000);
         int maxFiles = Math.clamp(maxFilesPerExecution, 1, 500);

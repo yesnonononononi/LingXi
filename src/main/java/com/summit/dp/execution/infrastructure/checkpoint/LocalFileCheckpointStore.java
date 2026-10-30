@@ -186,6 +186,38 @@ public class LocalFileCheckpointStore implements ExecutionCheckpointStore {
         }
     }
 
+    /**
+     * 文件侧是否还有可能要回收的内容：只列 {@code checkpoints/} 根一层，不读正文。
+     *
+     * <p>便宜的判定，故意偏向「可能需要」：清理预览必须能把「没有可回收的数据库行」与
+     * 「文件侧没有要扫描的东西」分开，否则只剩孤儿文件时界面会误以为无事可做。</p>
+     */
+    @Override
+    public boolean hasUnscannedFiles() {
+        if (!Files.isDirectory(root)) {
+            return false;
+        }
+        gate.readLock().lock();
+        try (Stream<Path> children = Files.list(root)) {
+            return children.anyMatch(LocalFileCheckpointStore::isScannable);
+        } catch (IOException e) {
+            // 枚举失败按「可能还有」处理：宁可让用户再点一次清理，也不要吞掉垃圾文件。
+            log.warn("探测检查点目录失败，按仍需扫描处理: root={}, error={}", root, e.toString());
+            return true;
+        } finally {
+            gate.readLock().unlock();
+        }
+    }
+
+    /** 执行目录或未完成的临时文件都算「需要扫描」；其它条目（陌生文件）不算。 */
+    private static boolean isScannable(Path path) {
+        String name = path.getFileName().toString();
+        if (name.endsWith(TEMP_SUFFIX)) {
+            return Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS);
+        }
+        return EXECUTION_ID.matcher(name).matches() && Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS);
+    }
+
     @Override
     public boolean isInFlight(String executionId, String fileId) {
         Set<String> pending = inFlight.get(executionId);

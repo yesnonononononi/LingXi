@@ -31,8 +31,15 @@ public class ExecutionCleanupService {
     private final ExecutionReclaimService reclaimer;
     private final ExecutionCheckpointMaintenance checkpoints;
 
+    /**
+     * 清理预览：把「可回收的数据库行」与「文件侧是否还要扫描」分开报。
+     *
+     * <p>只报行数是不够的：孤儿 JSON、{@code .part} 残留、以及上一轮目录预算之后还没扫到的文件
+     * 都不会体现在行数里。行数为 0 但文件侧还有东西时，界面必须仍然允许触发清理 ——
+     * 否则这些垃圾永远轮不到回收，跨调用游标也就推不动。</p>
+     */
     public Preview preview() {
-        return new Preview(repository.countReclaimable());
+        return new Preview(repository.countReclaimable(), checkpoints.hasUnscannedFiles());
     }
 
     // 查询也必须脱离调用方事务，避免清理后的计数仍命中旧的会话缓存。
@@ -61,6 +68,12 @@ public class ExecutionCleanupService {
         return new CleanupResult(deleted, remaining);
     }
 
-    public record Preview(long executionCount) { }
+    /**
+     * 预览结果。
+     *
+     * @param executionCount 可回收的数据库行数
+     * @param filesNeedScan  文件侧是否还有要扫描的内容（孤儿 JSON / {@code .part} / 未扫到的目录）
+     */
+    public record Preview(long executionCount, boolean filesNeedScan) { }
     public record CleanupResult(long deletedCount, long remainingCount) { }
 }

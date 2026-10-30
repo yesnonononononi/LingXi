@@ -267,6 +267,31 @@ class ExecutionCleanupTest {
         }
     }
 
+    /**
+     * 只剩孤儿文件（没有可回收的行）时，预览必须把「文件侧还需扫描」单独报出来。
+     *
+     * <p>否则界面会按 executionCount=0 把清理按钮禁掉，孤儿 JSON 与 .part 永远没机会被回收，
+     * 跨调用游标也推不动。</p>
+     */
+    @Test
+    void previewSeparatesNoReclaimableRowsFromFilesStillNeedingScan() throws java.io.IOException {
+        Path orphanDir = java.nio.file.Files.createDirectories(
+                checkpointDataDir.resolve("checkpoints").resolve("999"));
+        String orphan = "55555555555555555555555555555555";
+        java.nio.file.Files.writeString(orphanDir.resolve(orphan + ".json"), "{\"orphan\":true}");
+        java.nio.file.Files.writeString(orphanDir.resolve(orphan + "-unfinished.part"), "{");
+
+        ExecutionCleanupService.Preview withFiles = service.preview();
+        assertEquals(0L, withFiles.executionCount(), "没有可回收的行");
+        assertTrue(withFiles.filesNeedScan(), "仍有孤儿文件与 .part，必须报告文件侧需扫描");
+
+        service.cleanup();
+
+        ExecutionCleanupService.Preview afterCleanup = service.preview();
+        assertEquals(0L, afterCleanup.executionCount());
+        assertFalse(afterCleanup.filesNeedScan(), "文件侧清空后（含空目录回收）不再需要扫描");
+    }
+
     @Test
     void deletedSessionAndRolledBackTurnsLeaveReclaimableExecutions() {
         insertSession(10L);

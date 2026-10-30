@@ -8,27 +8,43 @@ function isCount(value: unknown): value is string {
   return typeof value === 'string' && /^(0|[1-9]\d*)$/.test(value);
 }
 
+function isFlag(value: unknown): value is boolean {
+  return typeof value === 'boolean';
+}
+
 export function useExecutionCleanup() {
   const copy = useExecutionCleanupCopy();
   const count = ref<string | null>(null);
+  const filesNeedScan = ref(false);
   const deletedCount = ref<string | null>(null);
   const busy = ref(false);
   const error = ref('');
   let disposed = false;
-  const canClean = computed(() => !busy.value && count.value !== null && count.value !== '0');
+  // 可回收行数为 0 不代表文件侧干净：孤儿正文、.part 残留、以及上一轮目录预算之后的文件
+  // 只能靠再扫一次回收，所以「文件侧需扫描」也必须让按钮可用。
+  const canClean = computed(() => !busy.value
+    && ((count.value !== null && count.value !== '0') || filesNeedScan.value));
+
+  /** 拉一次预览；不做 busy/清理状态管理，供 load 与清理后刷新共用。 */
+  async function refreshPreview() {
+    const result = await ExecutionCleanupAPI.preview();
+    if (!isOk(result.code)) throw new Error(result.errMsg || copy.value.loadError);
+    if (!isCount(result.data?.executionCount) || !isFlag(result.data?.filesNeedScan)) {
+      throw new Error(copy.value.contractError);
+    }
+    count.value = result.data.executionCount;
+    filesNeedScan.value = result.data.filesNeedScan;
+  }
 
   async function load() {
     if (busy.value || disposed) return;
     busy.value = true;
     error.value = '';
     count.value = null;
+    filesNeedScan.value = false;
     deletedCount.value = null;
     try {
-      const result = await ExecutionCleanupAPI.preview();
-      if (disposed) return;
-      if (!isOk(result.code)) throw new Error(result.errMsg || copy.value.loadError);
-      if (!isCount(result.data?.executionCount)) throw new Error(copy.value.contractError);
-      count.value = result.data.executionCount;
+      await refreshPreview();
     } catch (cause) {
       if (!disposed) error.value = extractErrorMessage(cause);
     } finally {
@@ -48,11 +64,14 @@ export function useExecutionCleanup() {
       if (!isCount(result.data?.deletedCount) || !isCount(result.data?.remainingCount)) {
         throw new Error(copy.value.contractError);
       }
-      count.value = result.data.remainingCount;
       deletedCount.value = result.data.deletedCount;
+      // 清理后再拉一次预览：本轮目录预算之后可能还有孤儿文件，按钮必须跟着最新事实走，
+      // 否则「remainingCount=0」会把第二轮扫描挡在门外。
+      await refreshPreview();
     } catch (cause) {
       if (!disposed) {
         count.value = null;
+        filesNeedScan.value = false;
         error.value = extractErrorMessage(cause);
       }
     } finally {
@@ -62,5 +81,5 @@ export function useExecutionCleanup() {
 
   onMounted(load);
   onBeforeUnmount(() => { disposed = true; });
-  return { copy, count, deletedCount, busy, error, canClean, load, cleanup };
+  return { copy, count, filesNeedScan, deletedCount, busy, error, canClean, load, cleanup };
 }

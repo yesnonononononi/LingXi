@@ -38,6 +38,15 @@ public interface ExecutionCheckpointMaintenance {
      */
     FileReclaimResult reclaimUnreferenced(int maxExecutionDirectories, int maxFilesPerExecution);
 
+    /**
+     * 文件侧是否还有可能要被扫描的内容（便宜探测：只看 {@code checkpoints/} 根，不读正文）。
+     *
+     * <p>预览用它把「没有可回收的数据库行」与「文件侧不用扫」分开；为 {@code true} 时界面
+     * 仍要允许触发清理，因为孤儿文件、{@code .part} 残留以及上一轮目录预算之后的文件
+     * 只能靠再扫一次回收。</p>
+     */
+    boolean hasUnscannedFiles();
+
     /** 文件回收结果：删了几个文件、因为仍在写入而跳过了几个、顺带删掉了几个空执行目录。 */
     record FileReclaimResult(int deletedFiles, int skippedInFlight, int deletedDirectories) {
 
