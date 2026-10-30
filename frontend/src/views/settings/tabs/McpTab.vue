@@ -69,7 +69,7 @@ const {
         <button
           type="button"
           @click="startAddMcp"
-          class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-medium cursor-pointer shadow-sm transition whitespace-nowrap shrink-0"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-lx-fs-sm font-medium cursor-pointer shadow-sm transition whitespace-nowrap shrink-0"
         >
           <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -169,7 +169,7 @@ const {
                 {{ resolveConnectionLabel(item) }}
               </p>
 
-              <div class="flex items-center gap-3 mt-1.5 text-[11px] text-lx-faint">
+              <div class="flex items-center gap-3 mt-1.5 text-lx-fs-sm text-lx-faint">
                                 <span v-if="countHeaders(item) > 0">
                   {{ t('settings.mcp.headersCount', { count: countHeaders(item) }) }}
                 </span>
@@ -191,7 +191,7 @@ const {
                 type="button"
                 @click="handleToggleMcp(item)"
                 :class="[
-                  'px-2 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer',
+                  'px-2 py-1 rounded-lg text-lx-fs-sm font-medium transition cursor-pointer',
                   isDark
                     ? 'text-zinc-300 hover:bg-white/5'
                     : 'text-zinc-600 hover:bg-black/5'
@@ -203,7 +203,7 @@ const {
                 type="button"
                 @click="startEditMcp(item)"
                 :class="[
-                  'px-2 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer',
+                  'px-2 py-1 rounded-lg text-lx-fs-sm font-medium transition cursor-pointer',
                   isDark
                     ? 'text-cyan-400 hover:bg-white/5'
                     : 'text-blue-600 hover:bg-black/5'
@@ -215,7 +215,7 @@ const {
                 type="button"
                 @click="handleDeleteMcp(item)"
                 :class="[
-                  'px-2 py-1 rounded-lg text-[11px] font-medium transition cursor-pointer',
+                  'px-2 py-1 rounded-lg text-lx-fs-sm font-medium transition cursor-pointer',
                   isDark
                     ? 'text-red-400 hover:bg-white/5'
                     : 'text-red-500 hover:bg-black/5'
@@ -228,7 +228,7 @@ const {
                 :disabled="mcpRowConnections[item.id]?.loading"
                 :aria-busy="mcpRowConnections[item.id]?.loading || false"
                 @click="handleConnectSavedMcp(item)"
-                class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 transition cursor-pointer disabled:cursor-wait"
+                class="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-lx-fs-sm font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 transition cursor-pointer disabled:cursor-wait"
               >
                 <span v-if="mcpRowConnections[item.id]?.loading" class="h-3 w-3 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
                 {{ mcpRowConnections[item.id]?.loading ? t('settings.mcp.connecting') : mcpRowConnections[item.id]?.success ? t('settings.mcp.connected') : t('settings.mcp.testConnection') }}
@@ -304,7 +304,7 @@ const {
             {{ t }}
           </button>
         </div>
-                <p v-if="mcpForm.transport === 'stdio'" class="text-[11px] text-lx-faint">
+                <p v-if="mcpForm.transport === 'stdio'" class="text-lx-fs-sm text-lx-faint">
           {{ t('settings.mcp.stdioHintText') }}
         </p>
       </div>
@@ -364,7 +364,7 @@ const {
         ></textarea>
         <p
           v-if="mcpEnvPristine && mcpForm.envLines"
-          class="text-[11px] text-lx-faint"
+          class="text-lx-fs-sm text-lx-faint"
         >
                     {{ t('settings.mcp.envPristineHint') }}
         </p>
@@ -390,7 +390,7 @@ const {
         ></textarea>
         <p
           v-if="mcpHeadersPristine && mcpForm.headerLines"
-          class="text-[11px] text-lx-faint"
+          class="text-lx-fs-sm text-lx-faint"
         >
                     {{ t('settings.mcp.headersPristineHint') }}
         </p>
@@ -471,7 +471,7 @@ const {
           <p class="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
             {{ t('settings.mcp.advancedGroup') }}
           </p>
-          <p class="text-[11px] text-lx-faint mt-0.5">
+          <p class="text-lx-fs-sm text-lx-faint mt-0.5">
             {{ t('settings.mcp.advancedGroupHint') }}
           </p>
         </div>
@@ -495,7 +495,7 @@ const {
                 : 'bg-white border-zinc-200 text-zinc-800 placeholder-zinc-400 focus:border-blue-500'
             ]"
           />
-          <p class="text-[11px] text-lx-faint">{{ t('settings.mcp.protocolVersionTooltip') }}</p>
+          <p class="text-lx-fs-sm text-lx-faint">{{ t('settings.mcp.protocolVersionTooltip') }}</p>
         </div>
 
         <div class="grid grid-cols-3 gap-3">
@@ -563,10 +563,10 @@ const {
           </div>
         </div>
 
-        <p class="text-[11px] text-lx-faint">
+        <p class="text-lx-fs-sm text-lx-faint">
           {{ t('settings.mcp.autoHealthCheckTooltip') }}
         </p>
-        <p class="text-[11px] text-lx-faint">
+        <p class="text-lx-fs-sm text-lx-faint">
           {{ t('settings.mcp.intervalTooltip') }}
         </p>
       </div>

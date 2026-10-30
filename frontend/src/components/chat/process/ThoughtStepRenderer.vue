@@ -95,7 +95,7 @@ const toggle = (): void => {
           type="button"
           @click="scroll.scrollToBottom(step.id)"
           :class="[
-            'absolute bottom-2 right-2 flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] leading-none shadow-sm transition-colors cursor-pointer',
+            'absolute bottom-2 right-2 flex items-center gap-1 rounded-full border px-2 py-1 text-lx-fs-sm leading-none shadow-sm transition-colors cursor-pointer',
             isDark
               ? 'border-white/15 bg-[#1b2130]/90 text-zinc-300 hover:text-zinc-100'
               : 'border-zinc-200 bg-white/95 text-zinc-500 hover:text-zinc-800'

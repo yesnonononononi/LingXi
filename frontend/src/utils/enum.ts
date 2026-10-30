@@ -55,6 +55,21 @@ export function normalizeReasoningEffort(raw: unknown, fallback?: ReasoningEffor
 }
 
 /**
+ * 全局字号档位：对应后端 `user_configs.font_scale`（大写四档）。
+ *
+ * <p>这里是档位枚举的**唯一真源**：渲染层（useFontScale）与配置层（userConfigStore）共用它，
+ * 否则「设置页能选的档位」与「能渲染成倍数的档位」会各写一份、慢慢错开。
+ * 排列顺序即设置页下拉的展示顺序（小 → 大）。</p>
+ */
+export const FONT_SCALE_PRESETS = ['SMALL', 'MEDIUM', 'LARGE', 'X_LARGE'] as const;
+export type FontScalePreset = (typeof FONT_SCALE_PRESETS)[number];
+
+/** 归一化字号档位：后端理论上只下发白名单内的值，识别不了回落 MEDIUM（默认档）。 */
+export function normalizeFontScale(raw: unknown, fallback?: FontScalePreset): FontScalePreset | undefined {
+  return normalizeEnum(raw, FONT_SCALE_PRESETS, fallback);
+}
+
+/**
  * 归一化工作空间类型。
  *
  * 契约来源：docs/frontend-backend-contract.md §5。

@@ -6,6 +6,7 @@ import { t } from '../i18n';
 import {
   normalizeAccessMode,
   normalizeCommandApprovalPolicy,
+  normalizeFontScale,
   normalizeReasoningEffort,
   normalizeWorkspaceEnvType,
 } from '../utils/enum';
@@ -16,6 +17,8 @@ import type {
   UserConfigVO,
   WorkspaceEnvType,
 } from '../types/chat';
+import type { FontScalePreset } from '../utils/enum';
+import { useFontScale } from '../composables/useFontScale';
 
 /**
  * UserConfigStore：全局配置的唯一真源。
@@ -55,6 +58,13 @@ export const useUserConfigStore = defineStore('userConfig', () => {
   const compactModelId = ref<string | number | null>(null);
   /** 数据目录已改但本进程还没重启：为 true 时界面必须提示重启并拦住继续对话。 */
   const dataDirRestartRequired = ref(false);
+  /**
+   * 全局字号档位（后端 user_configs.font_scale 的真源镜像）。
+   *
+   * <p>store 是**后端真源**，`useFontScale` 是**渲染应用层**：两边各自只做一件事，
+   * 由 {@link applyFontScaleToDocument} 单向把档位翻译成缩放倍数，避免两处各写一份默认值。</p>
+   */
+  const fontScale = ref<FontScalePreset>('MEDIUM');
 
   /**
    * 已落库的思考强度（与 {@link reasoningEffort} 区分）。
@@ -72,6 +82,27 @@ export const useUserConfigStore = defineStore('userConfig', () => {
   const reasoningEffortPending = computed(
     () => !loaded.value || savingKeys.value.has('reasoningEffort'),
   );
+
+  /**
+   * 字号下拉是否不可交互。
+   *
+   * <p>与 {@link reasoningEffortPending} 同构：未载入完成时下拉显示的是本地兜底档而非后端真值，
+   * 正在保存时连点会打出并发请求。两者都会让用户误以为「选了没生效」。</p>
+   */
+  const fontScalePending = computed(
+    () => !loaded.value || savingKeys.value.has('fontScale'),
+  );
+
+  /**
+   * 把当前档位应用到渲染层（`--lx-font-scale`）。
+   *
+   * <p><b>单向数据流</b>：本函数是 store → 渲染的唯一驱动点，`applyConfig`（载入/回读）与
+   * `writeField`（乐观更新与失败回滚都会走它）各调用一次。不在设置页里另调一次
+   * `useFontScale`，否则回滚路径会漏（回滚改的是 store 值，不会经过设置页的点击处理器）。</p>
+   */
+  const applyFontScaleToDocument = (): void => {
+    useFontScale().setPreset(fontScale.value);
+  };
 
   /**
    * 用一份 VO 覆盖全部字段（载入与回滚共用）。
@@ -97,6 +128,9 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     teamSize.value = config?.teamSize ?? null;
     compactModelId.value = config?.compactModelId ?? null;
     dataDirRestartRequired.value = config?.dataDirRestartRequired === true;
+    // 非法/缺省一律回落 MEDIUM（后端虽已归一，前端仍要能吃住脏数据而不把界面撑坏）
+    fontScale.value = normalizeFontScale(config?.fontScale, 'MEDIUM') ?? 'MEDIUM';
+    applyFontScaleToDocument();
   };
 
   /** 从后端拉一次全量配置。同一时刻只允许一个在途请求，避免重复回表。 */
@@ -142,7 +176,8 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     | 'dataDir'
     | 'skillDir'
     | 'teamSize'
-    | 'compactModelId';
+    | 'compactModelId'
+    | 'fontScale';
 
   /** 读某字段的当前值（回滚快照用）。 */
   const readField = (field: PatchableField): unknown => {
@@ -160,6 +195,7 @@ export const useUserConfigStore = defineStore('userConfig', () => {
       case 'skillDir': return skillDir.value;
       case 'teamSize': return teamSize.value;
       case 'compactModelId': return compactModelId.value;
+      case 'fontScale': return fontScale.value;
     }
   };
 
@@ -179,7 +215,11 @@ export const useUserConfigStore = defineStore('userConfig', () => {
       case 'skillDir': skillDir.value = value as string; break;
       case 'teamSize': teamSize.value = value as number | null; break;
       case 'compactModelId': compactModelId.value = value as string | number | null; break;
+      case 'fontScale': fontScale.value = value as FontScalePreset; break;
     }
+    // 字号是唯一「写状态即改渲染」的字段：乐观更新与失败回滚都必须立刻反映到 --lx-font-scale，
+    // 否则回滚后界面会停留在失败的那一档（store 值与画面不一致）。
+    if (field === 'fontScale') applyFontScaleToDocument();
   };
 
   /**
@@ -293,8 +333,10 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     teamSize,
     compactModelId,
     dataDirRestartRequired,
+    fontScale,
     // 派生
     reasoningEffortPending,
+    fontScalePending,
     // 行为
     load,
     applyConfig,

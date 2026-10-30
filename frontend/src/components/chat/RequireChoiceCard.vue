@@ -292,7 +292,7 @@ const handleSubmit = () => {
 
             <!-- 3. 底部操作工具栏 -->
             <div v-if="!isResolved" class="pt-2 flex items-center justify-between gap-3 select-none">
-              <span class="text-[11px] text-lx-muted">{{ disabledReason }}</span>
+              <span class="text-lx-fs-sm text-lx-muted">{{ disabledReason }}</span>
               <CardActionButton
                 tone="blue"
                 :loading="isSubmitting"

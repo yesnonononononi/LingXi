@@ -9,6 +9,9 @@
  *   源码里出现的每个令牌类（`bg-lx-*` / `text-lx-*` / `border-lx-*` …）必须在
  *   构建产物里能解析到真实取值。解析不到 = Tailwind 不产出规则 = **组件像没写**
  *   （静默失效）。写错一个字母就属于这一层，判死。
+ *   **例外（2026-10-30，字号令牌化 S2）**：字号令牌类（`text-lx-fs-*`）的取值天然不是颜色，
+ *   解析不出颜色属设计使然；这类类名只在 `@theme inline` 桥里能反查到真实令牌时予以放行
+ *   （写错档位仍旧判死，判据见 isNonColorTokenClass，未放宽任何 compare 容差）。
  *
  * 第 2 层 · 颜色等价（三元分支 vs 三元分支，按数值 RGBA 带容差比）
  *   `isDark ? 'text-zinc-400' : 'text-gray-500'` 换成令牌后，暗/亮两侧的真实取值
@@ -945,6 +948,33 @@ const listVueFiles = (dir) => {
 };
 
 /**
+ * 字号等「非颜色令牌类」的合法性判定（2026-10-30 新增，随字号令牌化 S2 引入）。
+ *
+ * <p>为什么需要：{@link staticCheck} 会把「命中令牌前缀却解析不到取值」的类判成写错令牌名。
+ * 该判据默认成立的前提是**令牌类一定有颜色取值**。字号令牌（`@theme` 桥
+ * `--text-lx-fs-sm: var(--lx-font-size-sm)` → 类名 `text-lx-fs-sm`）天然没有颜色取值：
+ * `resolveClass` 取到的是 `calc(11px * var(--lx-font-scale, 1))`，归一化失败 → 落进 raw →
+ * 被 TOKEN_CLASS_RE 命中 → 误判成拼错。
+ * 实测证据（只登记 token-renames 台账、只改 SettingsSelect.vue 一个文件）：
+ * raw 多重集已判等，但仍报 `[static] text-lx-fs-sm —— 产物里解析不到该令牌类`。</p>
+ *
+ * <p>判据刻意收窄到「能在 `@theme inline` 桥里反查到目标令牌，且该令牌在 tokens.css 里真有定义」。
+ * 因此：写错档位（`text-lx-fs-smm`）反查不到 → 仍旧报红；颜色令牌类走颜色通道，
+ * 压根不会进 unknown，与这条豁免无关；**没有放宽任何 compare 容差**。
+ * 另注：字号类即使写在 `@apply` 里（Tailwind 只内联属性、不产工具类）也能通过——
+ * 本判据查的是 `@theme` 桥而不是产物规则表，这正是它比「产品里有规则」更强的理由。</p>
+ *
+ * @param {ReturnType<typeof loadThemeContext>} ctx 解析上下文
+ * @param {string} cls 原始类名（可带 `dark:` / `hover:` 等变体前缀）
+ * @returns {boolean} true = 这是一个有真实令牌定义的非颜色令牌类
+ */
+const isNonColorTokenClass = (ctx, cls) => {
+  const target = ctx.themeMap.get(splitVariant(cls).base);
+  if (!target) return false;
+  return ctx.tokens.dark['--' + target] !== undefined || ctx.tokens.light['--' + target] !== undefined;
+};
+
+/**
  * 第 1 层：静态令牌可达性（不需要 git 基线，CI 里唯一有意义的一层）。
  * @param {ReturnType<typeof loadThemeContext>} ctx 解析上下文
  * @param {string} relPath 相对仓库根的路径
@@ -956,6 +986,8 @@ const staticCheck = (ctx, relPath) => {
   const g = groupsOf(ctx, fs.readFileSync(abs, 'utf8'));
   const problems = [];
   for (const c of g.unknown) {
+    // 字号等非颜色令牌类解析不出颜色是设计使然（见 isNonColorTokenClass），不算写错
+    if (isNonColorTokenClass(ctx, c)) continue;
     problems.push(`[static] ${c} —— 产物里解析不到该令牌类（Tailwind 不产出规则，等于没写；多半是令牌名写错）`);
   }
   // G-7 护栏：形如调色板类却解析不到 ⇒ 硬失败（打印文件 / 类名 / 原因）。
@@ -1765,6 +1797,14 @@ const selftest = (ctx) => {
   // 红：令牌名写错 → 静默失效
   const g2 = groupsOf(ctx, "const c = isDark ? 'text-lx-nope' : 'text-gray-500'");
   check('写错令牌名 → 报不可解析', g2.unknown.length === 1, JSON.stringify(g2.unknown));
+
+  // ---- 非颜色令牌类（字号）不得被误判成写错令牌名（2026-10-30 新增，字号令牌化 S2）----
+  // 字号类解析不出颜色是设计使然；豁免必须收窄到「@theme 桥能反查到真实令牌」，
+  // 否则这条豁免会变成「任何 text-lx-* 拼错都绿」的假绿通道。
+  check('字号令牌类 → 不算写错令牌名', isNonColorTokenClass(ctx, 'text-lx-fs-sm') === true);
+  check('字号令牌类带变体前缀也能识别', isNonColorTokenClass(ctx, 'hover:text-lx-fs-sm') === true);
+  check('字号档位写错 → 仍报不可解析', isNonColorTokenClass(ctx, 'text-lx-fs-smm') === false);
+  check('颜色令牌类不被这条豁免吞掉', isNonColorTokenClass(ctx, 'text-lx-primary') === false);
 
   // 红：非颜色类改动也要报
   const g3 = groupsOf(ctx, "const c = 'flex mb-2.5'");

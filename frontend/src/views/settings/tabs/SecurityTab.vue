@@ -156,7 +156,7 @@ void load();
                 <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" /></svg>
               </button>
             </span>
-            <span class="mt-0.5 text-[11px] leading-snug text-zinc-400 dark:text-zinc-400">{{ copy.sandboxDesc }}</span>
+            <span class="mt-0.5 text-lx-fs-sm leading-snug text-zinc-400 dark:text-zinc-400">{{ copy.sandboxDesc }}</span>
           </div>
           <div class="flex shrink-0 items-center gap-2">
             <span :class="[stateChip, sandboxState === 'ON'
@@ -173,7 +173,7 @@ void load();
 
         <!-- 沙箱服务能力检查（随沙箱设置一起从通用页搬来） -->
         <div class="mt-3 flex items-center justify-between gap-2 border-t border-zinc-100 pt-3 dark:border-white/10">
-          <span class="flex min-w-0 items-center gap-1.5 text-[11px] leading-5 text-lx-muted">
+          <span class="flex min-w-0 items-center gap-1.5 text-lx-fs-sm leading-5 text-lx-muted">
             <span :class="['h-1.5 w-1.5 shrink-0 rounded-full', sandboxStatus ? 'bg-emerald-500' : 'bg-zinc-300 dark:bg-white/20']" aria-hidden="true" />
             <span class="min-w-0">{{ t('settings.general.sandboxService') }}：{{ sandboxStatus?.message || t('settings.general.sandboxServiceDesc') }}</span>
           </span>
@@ -181,12 +181,12 @@ void load();
             {{ isCheckingSandbox ? t('settings.general.sandboxChecking') : t('settings.general.sandboxCheck') }}
           </button>
         </div>
-        <p v-if="isCheckingSandbox" class="mt-2 text-[11px] leading-snug text-zinc-400 dark:text-zinc-400">{{ t('settings.general.sandboxCheckingHint') }}</p>
-        <div v-if="sandboxNotice" class="sec-rise mt-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-2.5 text-[11px] text-emerald-600 dark:text-emerald-400">{{ sandboxNotice }}</div>
-        <div v-if="sandboxError" class="sec-rise mt-2 rounded-xl border border-red-500/20 bg-red-500/10 p-2.5 text-[11px] text-red-600 dark:text-red-400">{{ sandboxError }}</div>
+        <p v-if="isCheckingSandbox" class="mt-2 text-lx-fs-sm leading-snug text-zinc-400 dark:text-zinc-400">{{ t('settings.general.sandboxCheckingHint') }}</p>
+        <div v-if="sandboxNotice" class="sec-rise mt-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-2.5 text-lx-fs-sm text-emerald-600 dark:text-emerald-400">{{ sandboxNotice }}</div>
+        <div v-if="sandboxError" class="sec-rise mt-2 rounded-xl border border-red-500/20 bg-red-500/10 p-2.5 text-lx-fs-sm text-red-600 dark:text-red-400">{{ sandboxError }}</div>
         <div v-if="showScope" class="sec-rise mt-2 rounded-xl border border-zinc-100 bg-white/70 p-2.5 dark:border-white/10 dark:bg-white/[0.03]">
-          <p class="text-[11px] font-medium text-lx-tertiary">{{ copy.scope }}</p>
-          <p class="mt-1 text-[11px] leading-5 text-lx-muted">{{ copy.fileLimits }}</p>
+          <p class="text-lx-fs-sm font-medium text-lx-tertiary">{{ copy.scope }}</p>
+          <p class="mt-1 text-lx-fs-sm leading-5 text-lx-muted">{{ copy.fileLimits }}</p>
         </div>
       </section>
 
@@ -196,7 +196,7 @@ void load();
           class="sec-nav flex w-full items-center justify-between gap-3 rounded-xl px-2 py-3 text-left transition-colors cursor-pointer hover:bg-black/[0.03] dark:hover:bg-white/[0.05]">
           <span class="flex min-w-0 flex-col">
             <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ copy[item] }}</span>
-            <span class="mt-0.5 text-[11px] leading-snug text-zinc-400 dark:text-zinc-400">{{ copy[categoryDesc[item]] }}</span>
+            <span class="mt-0.5 text-lx-fs-sm leading-snug text-zinc-400 dark:text-zinc-400">{{ copy[categoryDesc[item]] }}</span>
           </span>
           <svg class="sec-nav-chevron h-3.5 w-3.5 shrink-0 text-zinc-300 dark:text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
         </button>
@@ -214,14 +214,14 @@ void load();
         </div>
         <button v-if="category !== 'net' && current" type="button" :class="button" :disabled="busy" @click="reset" data-testid="security-reset">{{ copy.defaults }}</button>
       </div>
-      <p class="sec-rise text-[11px] leading-5 text-lx-muted" :style="{ '--sec-delay': '40ms' }">{{ hint }}</p>
+      <p class="sec-rise text-lx-fs-sm leading-5 text-lx-muted" :style="{ '--sec-delay': '40ms' }">{{ hint }}</p>
 
       <!-- 该类规则的默认策略（随沙箱设置一起从通用页搬来）：规则未命中时按它执行 -->
       <section v-if="category === 'files'" :class="[panel, 'sec-rise']" :style="{ '--sec-delay': '70ms' }">
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <div class="flex min-w-0 flex-col">
             <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.accessMode') }}</span>
-            <span class="mt-0.5 text-[11px] leading-snug text-zinc-400 dark:text-zinc-400">{{ t('settings.general.accessModeDesc') }}</span>
+            <span class="mt-0.5 text-lx-fs-sm leading-snug text-zinc-400 dark:text-zinc-400">{{ t('settings.general.accessModeDesc') }}</span>
           </div>
           <div class="w-full min-w-0 shrink-0 sm:w-64">
             <SettingsSelect id="security-access-mode" data-testid="security-access-mode" :label="t('settings.general.accessMode')"
@@ -233,7 +233,7 @@ void load();
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <div class="flex min-w-0 flex-col">
             <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.toolPermission') }}</span>
-            <span class="mt-0.5 text-[11px] leading-snug text-zinc-400 dark:text-zinc-400">{{ t('settings.general.toolPermissionDesc') }}</span>
+            <span class="mt-0.5 text-lx-fs-sm leading-snug text-zinc-400 dark:text-zinc-400">{{ t('settings.general.toolPermissionDesc') }}</span>
           </div>
           <div class="w-full min-w-0 shrink-0 sm:w-64">
             <SettingsSelect id="security-command-policy" data-testid="security-command-policy" :label="t('settings.general.toolPermission')"
@@ -259,11 +259,11 @@ void load();
           <div class="sec-skeleton h-8 w-full"></div>
           <div v-for="row in 3" :key="row" class="sec-skeleton h-6 w-full"></div>
         </div>
-        <p role="status" class="text-center text-[11px] text-lx-faint">{{ copy.loading }}</p>
+        <p role="status" class="text-center text-lx-fs-sm text-lx-faint">{{ copy.loading }}</p>
       </div>
 
       <template v-if="current">
-        <p role="status" class="sec-rise flex items-start gap-1.5 text-[11px] leading-5 text-lx-muted">
+        <p role="status" class="sec-rise flex items-start gap-1.5 text-lx-fs-sm leading-5 text-lx-muted">
           <svg class="mt-[3px] h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" /></svg>
           <span class="min-w-0">{{ activeHint }}</span>
         </p>
@@ -276,7 +276,7 @@ void load();
             </span>
             <span class="text-xs font-semibold text-lx-primary-soft dark:text-glow-subtle">{{ copy.netStatus }}</span>
           </div>
-          <p class="mt-2 text-[11px] leading-5 text-lx-muted">{{ copy.netDetail }}</p>
+          <p class="mt-2 text-lx-fs-sm leading-5 text-lx-muted">{{ copy.netDetail }}</p>
         </section>
 
         <fieldset v-else :disabled="busy" :class="[panel, 'sec-rise min-w-0']">
@@ -294,16 +294,16 @@ void load();
           </form>
 
           <div class="mt-3 mb-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span class="flex items-center gap-1.5 text-[11px] font-medium text-lx-muted">{{ copy.rules }}
+            <span class="flex items-center gap-1.5 text-lx-fs-sm font-medium text-lx-muted">{{ copy.rules }}
               <span class="rounded-full bg-black/[0.06] px-1.5 text-[10px] font-semibold tabular-nums dark:bg-white/10">{{ current.rules.length }}</span>
             </span>
-            <span class="text-[11px] leading-5 text-lx-faint">{{ copy.moveHint }}</span>
+            <span class="text-lx-fs-sm leading-5 text-lx-faint">{{ copy.moveHint }}</span>
           </div>
 
           <!-- 空态：虚线框 + 图标，与 MCP 列表的空态同一语气 -->
           <div v-if="!current.rules.length" class="grid place-items-center gap-2 rounded-2xl border border-dashed border-zinc-200 py-10 text-center dark:border-white/15">
             <svg class="h-6 w-6 text-zinc-300 dark:text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.57-.598-3.75h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
-            <p class="text-[11px] text-lx-faint">{{ copy.empty }}</p>
+            <p class="text-lx-fs-sm text-lx-faint">{{ copy.empty }}</p>
           </div>
 
           <div v-for="(rule, index) in current.rules" :key="resolveRuleKey(rule)"
@@ -332,7 +332,7 @@ void load();
             </div>
             <div class="mt-2 flex flex-wrap items-center justify-end gap-2">
               <template v-if="category === 'files'">
-                <span class="text-[11px] text-lx-muted">{{ copy.access }}</span>
+                <span class="text-lx-fs-sm text-lx-muted">{{ copy.access }}</span>
                 <div class="w-28 shrink-0">
                   <SettingsSelect :id="`security-rule-access-${index}`" data-testid="security-access" :label="`${rule.pattern} ${copy.access}`" :model-value="rule.read ?? ''"
                     :options="current.supportedActions.map(action => ({ value: action, label: label(action) }))" @update:model-value="setAccess(rule, $event)" />
@@ -348,7 +348,7 @@ void load();
 
         <!-- 保存底栏：浮起的玻璃条，滚动时压住下方规则（sticky 不能被带 transform 的祖先包住） -->
         <div v-if="category !== 'net'" class="sec-rise sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-zinc-200/80 bg-white/95 px-3 py-2 shadow-lg backdrop-blur dark:border-white/10 dark:bg-zinc-950/90" :style="{ '--sec-delay': '140ms' }">
-          <span role="status" class="flex items-center gap-1.5 text-[11px] text-lx-muted">
+          <span role="status" class="flex items-center gap-1.5 text-lx-fs-sm text-lx-muted">
             <span v-if="notice" class="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
             <span v-else-if="dirty[category]" class="sec-ping h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
             {{ notice || (dirty[category] ? copy.dirty : '') }}

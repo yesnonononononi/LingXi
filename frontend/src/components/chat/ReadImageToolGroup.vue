@@ -31,7 +31,7 @@ const openPreview = (image: ReadToolImage) => {
     <CollapseTransition>
       <div v-if="expanded" class="flex flex-wrap gap-2 pt-2 pb-0.5" data-testid="read-image-thumbnails">
         <button v-for="image in images" :key="image.key" type="button" class="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border p-1.5 transition-colors" :class="isDark ? 'border-white/15 bg-zinc-900 hover:bg-zinc-800' : 'border-zinc-200 bg-white hover:bg-zinc-50'" :title="image.path" :aria-label="t('chat.message.previewImage', { path: image.path })" :disabled="failedImages[image.key]" @click="openPreview(image)">
-          <span v-if="failedImages[image.key]" class="text-[11px] leading-4">{{ t('chat.message.imageUnavailable') }}</span>
+          <span v-if="failedImages[image.key]" class="text-lx-fs-sm leading-4">{{ t('chat.message.imageUnavailable') }}</span>
           <img v-else :src="imageUrl(image)" :alt="image.path" class="h-full w-full object-contain object-top" loading="lazy" @error="failedImages[image.key] = true" />
         </button>
       </div>

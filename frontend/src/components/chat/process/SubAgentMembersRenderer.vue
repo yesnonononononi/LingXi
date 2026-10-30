@@ -75,7 +75,7 @@ const openMember = (tool: ToolCallTrace): void => {
             {{ t('chat.message.membersWorking', { count: members.length }) }}
           </span>
         </div>
-        <p class="text-[11px] text-zinc-400 whitespace-nowrap">{{ t('chat.message.trajectoryOnRight') }}</p>
+        <p class="text-lx-fs-sm text-zinc-400 whitespace-nowrap">{{ t('chat.message.trajectoryOnRight') }}</p>
       </div>
     </div>
 

@@ -150,7 +150,7 @@ const decide = async (approved: boolean) => {
           <button
             type="button"
             @click="isAddingTip = false"
-            class="text-[11px] text-lx-muted hover:text-lx-secondary cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50"
+            class="text-lx-fs-sm text-lx-muted hover:text-lx-secondary cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50"
           >
                         {{ t('common.collapse') }}
           </button>

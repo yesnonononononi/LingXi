@@ -2,6 +2,8 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useTheme, THEME_STORAGE_KEY } from '../../../composables/useTheme';
 import { useUserConfigStore } from '../../../stores/userConfigStore';
 import { getApiBaseUrl, setApiBaseUrl, resetApiBaseUrl } from '../../../utils/apiConfig';
+import { FONT_SCALE_PRESETS, normalizeFontScale } from '../../../utils/enum';
+import type { FontScalePreset } from '../../../utils/enum';
 import { useI18n } from '../../../i18n';
 import type { LocalePreference } from '../../../i18n';
 import {
@@ -35,6 +37,19 @@ const SOUND_LABEL_KEYS: { id: SoundId; labelKey: string }[] = [
 ];
 
 /**
+ * 字号档位与文案键的映射。
+ *
+ * <p>档位顺序直接取 {@link FONT_SCALE_PRESETS}（枚举的单一真源），这里只补文案键，
+ * 避免「设置页有四档、渲染层只认三档」这类静默错位。</p>
+ */
+const FONT_SCALE_LABEL_KEYS: Readonly<Record<FontScalePreset, string>> = Object.freeze({
+  SMALL: 'settings.general.fontScaleSmall',
+  MEDIUM: 'settings.general.fontScaleMedium',
+  LARGE: 'settings.general.fontScaleLarge',
+  X_LARGE: 'settings.general.fontScaleXLarge',
+});
+
+/**
  * 通用设置页。
  *
  * <p>沙箱相关设置（执行环境、沙箱服务、工作空间权限、工具权限）已迁到安全中心，
@@ -52,6 +67,8 @@ export function useGeneralTab() {
   const isLanguageOpen = ref(false);
   // 提示音下拉的展开态与语言下拉同层管理，点空白处一起收起
   const isSoundOpen = ref(false);
+  // 字号下拉的展开态同上（四个下拉互斥展开，避免叠成一坨）
+  const isFontScaleOpen = ref(false);
   const languageOptions = computed<{ value: LocalePreference; label: string }[]>(() => [
     { value: 'system', label: t('settings.general.langSystem') },
     { value: 'zh-CN', label: t('settings.general.langZh') },
@@ -77,6 +94,7 @@ export function useGeneralTab() {
     isLanguageOpen.value = false;
     isSoundOpen.value = false;
     isBackgroundOpen.value = false;
+    isFontScaleOpen.value = false;
   };
 
   const handleDocumentClick = (e: MouseEvent) => {
@@ -98,6 +116,40 @@ export function useGeneralTab() {
     setTheme(mode);
     const persisted = mode === 'dark' ? 'DARK' : 'LIGHT';
     void userConfig.patch('renderTheme', persisted, { renderTheme: persisted });
+  };
+
+  // 字号设置：store 是后端真源，渲染应用在 store 内部单向驱动（useFontScale），
+  // 本页只负责「把用户选的档位交给 store」，不自己写 --lx-font-scale（否则回滚路径会漏）。
+  const fontScaleOptions = computed<{ value: FontScalePreset; label: string }[]>(() =>
+    FONT_SCALE_PRESETS.map(preset => ({ value: preset, label: t(FONT_SCALE_LABEL_KEYS[preset]) })),
+  );
+  const fontScaleValue = computed<FontScalePreset>(() => userConfig.fontScale);
+  const currentFontScaleLabel = computed(
+    () => fontScaleOptions.value.find(option => option.value === fontScaleValue.value)?.label
+      ?? t(FONT_SCALE_LABEL_KEYS.MEDIUM),
+  );
+  /** 未载入完成或正在保存时禁用下拉（连点会打出并发请求）。 */
+  const fontScaleDisabled = computed(() => userConfig.fontScalePending);
+
+  const toggleFontScaleDropdown = (e?: Event) => {
+    e?.stopPropagation();
+    isFontScaleOpen.value = !isFontScaleOpen.value;
+    if (isFontScaleOpen.value) {
+      isLanguageOpen.value = false;
+      isSoundOpen.value = false;
+      isBackgroundOpen.value = false;
+    }
+  };
+
+  /**
+   * 选择字号档位：乐观更新 + 落库 + 失败回滚全部在 store.patch 内完成，
+   * 渲染由 store 驱动（成功与回滚都会立即反映到 --lx-font-scale）。
+   * @param preset 目标档位
+   */
+  const handleSelectFontScale = async (preset: FontScalePreset): Promise<void> => {
+    isFontScaleOpen.value = false;
+    const normalized = normalizeFontScale(preset, 'MEDIUM') ?? 'MEDIUM';
+    await userConfig.patch('fontScale', normalized, { fontScale: normalized });
   };
 
   onMounted(async () => {
@@ -241,6 +293,13 @@ export function useGeneralTab() {
     languageOptions,
     currentLanguageLabel,
     handleSelectLanguage,
+    isFontScaleOpen,
+    fontScaleOptions,
+    fontScaleValue,
+    currentFontScaleLabel,
+    fontScaleDisabled,
+    toggleFontScaleDropdown,
+    handleSelectFontScale,
     apiBaseUrl,
     isApiUrlSaved,
     handleSaveApiUrl,

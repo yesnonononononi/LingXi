@@ -209,14 +209,14 @@ const copyResult = (): void => {
               <!-- edit_file 工具展示增删对比块 -->
               <div v-if="isEditFileTool(tool.toolName) && chunks" class="space-y-2.5 font-mono text-xs select-text">
                 <div v-if="chunks.oldText" class="rounded-xl bg-red-500/10 border border-red-500/20 p-3 text-[#b42c3f] dark:text-rose-300 whitespace-pre-wrap overflow-x-auto max-h-48 scrollbar-thin">
-                  <div class="text-[11px] font-sans font-medium text-red-500/80 dark:text-red-400/80 mb-1.5 select-none flex items-center gap-1.5">
+                  <div class="text-lx-fs-sm font-sans font-medium text-red-500/80 dark:text-red-400/80 mb-1.5 select-none flex items-center gap-1.5">
                     <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
                     <span>{{ t('chat.message.diffBefore') }}</span>
                   </div>
                   {{ chunks.oldText }}
                 </div>
                 <div v-if="chunks.newText" class="rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-3 text-[#088f50] dark:text-emerald-300 whitespace-pre-wrap overflow-x-auto max-h-48 scrollbar-thin">
-                  <div class="text-[11px] font-sans font-medium text-emerald-600/80 dark:text-emerald-400/80 mb-1.5 select-none flex items-center gap-1.5">
+                  <div class="text-lx-fs-sm font-sans font-medium text-emerald-600/80 dark:text-emerald-400/80 mb-1.5 select-none flex items-center gap-1.5">
                     <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                     <span>{{ t('chat.message.diffAfter') }}</span>
                   </div>

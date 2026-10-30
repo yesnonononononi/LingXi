@@ -254,7 +254,7 @@ const {
                 </p>
                 <!-- 已分配工具展示 -->
                 <div class="pt-1">
-                  <div class="text-[11px] font-medium mb-1 flex items-center gap-1.5 text-lx-tertiary">
+                  <div class="text-lx-fs-sm font-medium mb-1 flex items-center gap-1.5 text-lx-tertiary">
                     <span>{{ t('settings.agents.assignedTools') }}</span>
                     <span class="text-xs font-normal text-lx-faint">
                       ({{ agent.toolList?.length || 0 }})
@@ -274,7 +274,7 @@ const {
                       {{ resolveToolFullName(toolName) }}
                     </span>
                   </div>
-                  <span v-else class="text-[11px] italic text-lx-faint">{{ t('settings.agents.noTools') }}</span>
+                  <span v-else class="text-lx-fs-sm italic text-lx-faint">{{ t('settings.agents.noTools') }}</span>
                 </div>
               </div>
 
@@ -492,7 +492,7 @@ const {
                   {{ tool.readOnly ? t('settings.agents.readOnly') : t('settings.agents.readWrite') }}
                 </span>
               </div>
-              <div v-if="tool.description" class="text-[11px] truncate mt-1" :class="isDark ? 'text-zinc-400' : 'text-zinc-400'" :title="tool.description">
+              <div v-if="tool.description" class="text-lx-fs-sm truncate mt-1" :class="isDark ? 'text-zinc-400' : 'text-zinc-400'" :title="tool.description">
                 {{ tool.description }}
               </div>
             </div>

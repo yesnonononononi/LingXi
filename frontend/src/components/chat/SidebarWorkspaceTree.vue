@@ -471,7 +471,7 @@ const emit = emitShim as TreeEmitShim;
 
           <!-- Unassigned Sessions Section (if any) -->
           <div v-if="unassignedSessions.length > 0" class="pt-2">
-                        <div class="px-2 py-1 text-[11px] font-medium text-zinc-400 tracking-wider">
+                        <div class="px-2 py-1 text-lx-fs-sm font-medium text-zinc-400 tracking-wider">
               {{ t('chat.sidebar.history') }}
             </div>
             <div class="space-y-0.5">

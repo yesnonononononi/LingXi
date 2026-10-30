@@ -447,7 +447,7 @@ const handleSaveTeam = async () => {
         <div class="flex items-center justify-between mb-1.5">
           <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
             {{ t('chat.team.membersLabel') }} <span class="text-red-500">*</span>
-            <span class="text-[11px] font-normal text-zinc-500 ml-1">
+            <span class="text-lx-fs-sm font-normal text-zinc-500 ml-1">
               {{ t('chat.team.selectedCount', { count: selectedAgentIds.length }) }}
             </span>
           </label>
@@ -489,7 +489,7 @@ const handleSaveTeam = async () => {
           <!-- 详情拉取失败提示：禁用保存，避免覆盖原有 prompt -->
           <div
             v-if="agentDetailError"
-            class="p-2 rounded-lg text-[11px] border"
+            class="p-2 rounded-lg text-lx-fs-sm border"
             :class="isDark ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-red-50 border-red-200 text-red-600'"
           >
             {{ agentDetailError }}
@@ -553,11 +553,11 @@ const handleSaveTeam = async () => {
             <div class="flex items-center justify-between mb-1">
               <label class="block text-zinc-600 dark:text-zinc-400 font-medium">
                 {{ t('chat.team.assignTools') }}
-                <span class="text-[11px] font-normal text-zinc-500 ml-1">
+                <span class="text-lx-fs-sm font-normal text-zinc-500 ml-1">
                   {{ t('chat.team.assignedCount', { selected: agentFormToolList.length, total: availableTools.length }) }}
                 </span>
               </label>
-              <div class="flex items-center gap-2 text-[11px]">
+              <div class="flex items-center gap-2 text-lx-fs-sm">
                 <button
                   type="button"
                   @click="selectAllTools"
@@ -628,7 +628,7 @@ const handleSaveTeam = async () => {
                       :checked="agentFormToolList.includes(tool.name)"
                       class="rounded text-blue-600 focus:ring-blue-500 h-3 w-3 pointer-events-none accent-cyan-500"
                     />
-                    <span class="font-medium truncate text-[11px]">{{ resolveToolFullName(tool.name) }}</span>
+                    <span class="font-medium truncate text-lx-fs-sm">{{ resolveToolFullName(tool.name) }}</span>
                   </div>
                   <span
                     class="text-[9px] px-1 py-0.2 rounded font-normal shrink-0 border"
@@ -714,7 +714,7 @@ const handleSaveTeam = async () => {
                     {{ t('chat.team.noTool') }}
                   </span>
                 </div>
-                <div class="text-[11px] text-lx-muted truncate">
+                <div class="text-lx-fs-sm text-lx-muted truncate">
                   {{ agent.description || t('chat.team.noDescription') }}
                 </div>
               </div>
@@ -759,7 +759,7 @@ const handleSaveTeam = async () => {
       <div v-if="selectedAgents.length > 0" ref="commanderSelectRef" class="relative">
         <label class="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
           {{ t('chat.team.managerLabel') }} <span class="text-red-500">*</span>
-          <span class="text-[11px] font-normal text-zinc-500 ml-1">
+          <span class="text-lx-fs-sm font-normal text-zinc-500 ml-1">
             {{ t('chat.team.managerHint') }}
           </span>
         </label>
@@ -786,7 +786,7 @@ const handleSaveTeam = async () => {
                 <span class="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate">{{ currentCommander.name }}</span>
                 <span class="px-1.5 py-0.2 text-[9px] rounded-full bg-cyan-500/20 text-cyan-300 font-medium">{{ t('chat.team.manager') }}</span>
               </div>
-              <div class="text-[11px] text-lx-muted truncate max-w-[320px]">
+              <div class="text-lx-fs-sm text-lx-muted truncate max-w-[320px]">
                 {{ currentCommander.description || t('chat.team.managerDefaultDesc') }}
               </div>
             </div>

@@ -275,7 +275,7 @@ defineExpose({
               <h3 class="min-w-0 text-xs font-semibold truncate">{{ activeItem.agentName }}</h3>
               <SessionContextUsage :session="activeSubSession ?? activeItem.subSession" :isDark="isDark" />
             </div>
-            <p v-if="activeItem.task" class="text-[11px] text-lx-faint truncate mt-0.5">{{ activeItem.task }}</p>
+            <p v-if="activeItem.task" class="text-lx-fs-sm text-lx-faint truncate mt-0.5">{{ activeItem.task }}</p>
           </div>
         </div>
 
@@ -304,7 +304,7 @@ defineExpose({
       </div>
 
       <!-- 状态与用量指标栏 -->
-      <div :class="['px-4 py-2 border-b text-[11px] flex items-center justify-between gap-2 select-none shrink-0', isDark ? 'border-white/[0.06] bg-[#09090b]/60 text-zinc-400' : 'border-zinc-100 bg-zinc-50/60 text-zinc-500']">
+      <div :class="['px-4 py-2 border-b text-lx-fs-sm flex items-center justify-between gap-2 select-none shrink-0', isDark ? 'border-white/[0.06] bg-[#09090b]/60 text-zinc-400' : 'border-zinc-100 bg-zinc-50/60 text-zinc-500']">
         <span class="flex items-center gap-1.5">
           <span class="w-1.5 h-1.5 rounded-full" :class="activeItem.status === 'running' ? 'bg-amber-400 animate-ping' : activeItem.status === 'completed' ? 'bg-emerald-500' : 'bg-zinc-400'"></span>
           <span>{{ statusLabel(activeItem.status) }}</span>
@@ -364,7 +364,7 @@ defineExpose({
                 {{ items.length }}
               </span>
             </div>
-            <p class="text-[11px] text-lx-faint truncate">{{ t('chat.subAgent.membersHint') }}</p>
+            <p class="text-lx-fs-sm text-lx-faint truncate">{{ t('chat.subAgent.membersHint') }}</p>
           </div>
         </div>
 
@@ -398,7 +398,7 @@ defineExpose({
           <div class="flex items-center justify-between gap-2">
             <div class="flex items-center gap-2 min-w-0">
               <!-- 编号徽章 -->
-              <div class="w-6 h-6 rounded-lg bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center text-white text-[11px] font-bold shrink-0 shadow-2xs">
+              <div class="w-6 h-6 rounded-lg bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center text-white text-lx-fs-sm font-bold shrink-0 shadow-2xs">
                 #{{ idx + 1 }}
               </div>
               <span class="font-semibold text-xs truncate" :class="String(activeSubId) === String(it.id) ? (isDark ? 'text-blue-300' : 'text-blue-800') : ''">
@@ -451,7 +451,7 @@ defineExpose({
             <div class="flex items-center gap-1">
               <span
                 v-if="String(activeSubId) === String(it.id)"
-                class="text-[11px] font-medium text-blue-500 flex items-center gap-1"
+                class="text-lx-fs-sm font-medium text-blue-500 flex items-center gap-1"
               >
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
@@ -460,7 +460,7 @@ defineExpose({
               </span>
               <span
                 v-else
-                class="text-[11px] text-zinc-400 hover:text-blue-500 flex items-center gap-1"
+                class="text-lx-fs-sm text-zinc-400 hover:text-blue-500 flex items-center gap-1"
               >
                 <span>{{ t('chat.subAgent.expandTrajectory') }}</span>
                 <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

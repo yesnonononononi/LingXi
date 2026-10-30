@@ -117,7 +117,7 @@ const dangerBtnClass = computed(() => [
   isDark.value ? 'text-rose-400 hover:text-rose-300' : 'text-red-500 hover:text-red-600',
 ]);
 const addRowClass = computed(() => [
-  'w-full py-2 text-[11px] rounded-xl flex items-center justify-center gap-1 transition cursor-pointer',
+  'w-full py-2 text-lx-fs-sm rounded-xl flex items-center justify-center gap-1 transition cursor-pointer',
   isDark.value
     ? 'text-zinc-300 hover:text-white hover:bg-white/[0.06]'
     : 'text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100/70',
@@ -229,16 +229,16 @@ const addRowClass = computed(() => [
                 {{ item.modelName || t('settings.models.unnamed') }}
               </span>
               <div class="flex items-center gap-1.5 shrink-0">
-                <button type="button" class="text-[11px] px-2 py-0.5 rounded-md transition cursor-pointer text-lx-muted hover:text-lx-primary hover:bg-lx-surface-selected" @click="startEditModel(item)">
+                <button type="button" class="text-lx-fs-sm px-2 py-0.5 rounded-md transition cursor-pointer text-lx-muted hover:text-lx-primary hover:bg-lx-surface-selected" @click="startEditModel(item)">
                   {{ t('common.edit') }}
                 </button>
-                <button type="button" class="text-[11px] px-2 py-0.5 rounded-md transition cursor-pointer" :class="isDark ? 'text-rose-400 hover:text-rose-300 hover:bg-rose-500/10' : 'text-red-500 hover:text-red-600 hover:bg-red-50'" @click="handleDeleteModel(item)">
+                <button type="button" class="text-lx-fs-sm px-2 py-0.5 rounded-md transition cursor-pointer" :class="isDark ? 'text-rose-400 hover:text-rose-300 hover:bg-rose-500/10' : 'text-red-500 hover:text-red-600 hover:bg-red-50'" @click="handleDeleteModel(item)">
                   {{ t('common.remove') }}
                 </button>
               </div>
             </div>
 
-            <div v-if="group.models.length === 0" class="px-2.5 py-1.5 text-[11px] text-lx-faint">
+            <div v-if="group.models.length === 0" class="px-2.5 py-1.5 text-lx-fs-sm text-lx-faint">
               {{ t('settings.models.emptyGroup') }}
             </div>
 
@@ -271,7 +271,7 @@ const addRowClass = computed(() => [
             {{ providerForm.id !== null ? t('settings.models.editProviderHeading') : t('settings.models.addProviderHeading') }}
           </h4>
         </div>
-        <span class="text-[11px] text-zinc-400">{{ t('settings.models.providerFormSubtitle') }}</span>
+        <span class="text-lx-fs-sm text-zinc-400">{{ t('settings.models.providerFormSubtitle') }}</span>
       </div>
 
       <div class="space-y-3">
@@ -286,7 +286,7 @@ const addRowClass = computed(() => [
         <div>
           <label for="provider-base-url" :class="labelClass">{{ t('settings.models.baseUrlLabel') }} <span class="text-red-500">*</span></label>
           <input id="provider-base-url" v-model="providerForm.baseUrl" :placeholder="t('settings.models.baseUrlPlaceholder')" :class="fieldClass" />
-          <p class="mt-1 text-[11px] text-lx-faint">{{ importCopy.urlHelp }}</p>
+          <p class="mt-1 text-lx-fs-sm text-lx-faint">{{ importCopy.urlHelp }}</p>
         </div>
 
         <div>
@@ -304,7 +304,7 @@ const addRowClass = computed(() => [
               :size="24"
             />
           </div>
-          <p class="mt-1 text-[11px] text-lx-faint">
+          <p class="mt-1 text-lx-fs-sm text-lx-faint">
             {{ t('settings.models.providerIconHelp') }}
           </p>
         </div>
@@ -331,7 +331,7 @@ const addRowClass = computed(() => [
               </svg>
             </button>
           </div>
-          <p class="mt-1 text-[11px] text-lx-faint">
+          <p class="mt-1 text-lx-fs-sm text-lx-faint">
             {{ importCopy.keyHelp }}
           </p>
         </div>
@@ -380,7 +380,7 @@ const addRowClass = computed(() => [
             {{ modelForm.id !== null ? t('settings.models.editHeading') : t('settings.models.addModelHeading') }}
           </h4>
         </div>
-        <span class="text-[11px] text-zinc-400">{{ t('settings.models.modelFormSubtitle') }}</span>
+        <span class="text-lx-fs-sm text-zinc-400">{{ t('settings.models.modelFormSubtitle') }}</span>
       </div>
 
       <div class="space-y-3">
@@ -402,7 +402,7 @@ const addRowClass = computed(() => [
               </svg>
             </template>
           </DropUpSelect>
-          <p class="mt-1 text-[11px] text-lx-faint">
+          <p class="mt-1 text-lx-fs-sm text-lx-faint">
             {{ t('settings.models.providerSelectHelp') }}
           </p>
         </div>
@@ -456,7 +456,7 @@ const addRowClass = computed(() => [
               </div>
               <div v-else-if="fetchRemoteModelError" class="p-3 text-red-500 dark:text-red-400 break-all space-y-1">
                 <div class="font-medium">{{ t('settings.models.fetchFailed') }}</div>
-                <div class="text-[11px] opacity-90">{{ fetchRemoteModelError }}</div>
+                <div class="text-lx-fs-sm opacity-90">{{ fetchRemoteModelError }}</div>
               </div>
               <div v-else-if="filteredRemoteModels.length === 0" class="py-4 text-center text-zinc-400">
                 {{ remoteModelSearch ? t('settings.models.noMatch') : t('settings.models.errNoRemote') }}
@@ -498,7 +498,7 @@ const addRowClass = computed(() => [
               <span class="block text-xs font-medium text-lx-secondary">
                 {{ t('settings.models.useProviderApiKeyLabel') }}
               </span>
-              <span class="block text-[11px] mt-0.5 text-lx-faint">
+              <span class="block text-lx-fs-sm mt-0.5 text-lx-faint">
                 {{ t('settings.models.useProviderApiKeyHelp') }}
               </span>
             </span>

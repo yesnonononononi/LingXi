@@ -751,6 +751,14 @@ export interface UserConfigVO {
    * 为 true 时前端必须提示重启并拦住继续对话，否则这段对话的数据不在新目录的副本里。</p>
    */
   dataDirRestartRequired?: boolean;
+  /**
+   * 全局字号档位：SMALL / MEDIUM / LARGE / X_LARGE（大写）。
+   *
+   * <p>后端在未设置时已归一为 `MEDIUM`，因此这里的缺省只做兜底（后端永远是权威），
+   * 前端不再另行维护一份默认值。宽类型 `string` 是为了让「后端下发未识别的档位」能落地再被
+   * `normalizeFontScale` 降级，而不是在类型层强行断言成合法值。</p>
+   */
+  fontScale?: 'SMALL' | 'MEDIUM' | 'LARGE' | 'X_LARGE' | string;
 }
 
 /**

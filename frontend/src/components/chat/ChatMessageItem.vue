@@ -90,7 +90,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7" />
           </svg>
           <span class="font-medium">{{ t('chat.message.process') }}</span>
-          <span v-if="!wholeProcessExpanded && wholeProcessStatus" class="min-w-0 truncate text-[11px] text-amber-600 dark:text-amber-400"
+          <span v-if="!wholeProcessExpanded && wholeProcessStatus" class="min-w-0 truncate text-lx-fs-sm text-amber-600 dark:text-amber-400"
             data-testid="whole-process-status">{{ wholeProcessStatus }}</span>
         </button>
         <CollapseTransition>

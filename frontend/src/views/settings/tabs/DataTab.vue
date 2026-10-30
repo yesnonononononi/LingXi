@@ -81,7 +81,7 @@ const handleClearSessions = async () => {
         <div class="text-xs font-semibold text-lx-primary-soft dark:text-glow-subtle tracking-wide">
           {{ t('settings.data.storageTitle') }}
         </div>
-        <p class="text-[11px] text-zinc-400 mt-0.5">
+        <p class="text-lx-fs-sm text-zinc-400 mt-0.5">
           {{ t('settings.data.storageDesc') }}
         </p>
       </div>
@@ -92,11 +92,11 @@ const handleClearSessions = async () => {
           <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">
             {{ t('settings.data.dataDirLabel') }}
           </span>
-          <span class="text-[11px] text-zinc-400 dark:text-zinc-400 mt-0.5">
+          <span class="text-lx-fs-sm text-zinc-400 dark:text-zinc-400 mt-0.5">
             {{ t('settings.data.dataDirDesc') }}
           </span>
           <span
-            class="text-[11px] mt-0.5 truncate font-mono text-lx-tertiary"
+            class="text-lx-fs-sm mt-0.5 truncate font-mono text-lx-tertiary"
             :title="userConfig.dataDir"
           >{{ userConfig.dataDir || '—' }}</span>
         </div>
@@ -119,11 +119,11 @@ const handleClearSessions = async () => {
           <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">
             {{ t('settings.data.skillDirLabel') }}
           </span>
-          <span class="text-[11px] text-zinc-400 dark:text-zinc-400 mt-0.5">
+          <span class="text-lx-fs-sm text-zinc-400 dark:text-zinc-400 mt-0.5">
             {{ t('settings.data.skillDirDesc') }}
           </span>
           <span
-            class="text-[11px] mt-0.5 truncate font-mono text-lx-tertiary"
+            class="text-lx-fs-sm mt-0.5 truncate font-mono text-lx-tertiary"
             :title="userConfig.skillDir"
           >{{ userConfig.skillDir || t('settings.data.skillDisabled') }}</span>
         </div>
@@ -149,7 +149,7 @@ const handleClearSessions = async () => {
         <div class="text-xs font-semibold text-amber-600 dark:text-amber-400">
           {{ t('settings.data.restartTitle') }}
         </div>
-        <p class="text-[11px] text-amber-600/90 dark:text-amber-400/90 leading-snug">
+        <p class="text-lx-fs-sm text-amber-600/90 dark:text-amber-400/90 leading-snug">
           {{ t('settings.data.restartDesc') }}
         </p>
         <button
@@ -184,15 +184,15 @@ const handleClearSessions = async () => {
           </button>
         </div>
       </div>
-      <p class="text-[11px] text-lx-tertiary">{{ cleanup.copy.value.description }}</p>
-      <p v-if="cleanup.count.value !== null" class="text-[11px] text-lx-secondary" aria-live="polite">
+      <p class="text-lx-fs-sm text-lx-tertiary">{{ cleanup.copy.value.description }}</p>
+      <p v-if="cleanup.count.value !== null" class="text-lx-fs-sm text-lx-secondary" aria-live="polite">
         {{ cleanup.copy.value.count(cleanup.count.value) }}
       </p>
-      <p v-else-if="cleanup.busy.value" class="text-[11px] text-lx-secondary">{{ cleanup.copy.value.loading }}</p>
-      <p v-if="cleanup.deletedCount.value !== null" class="text-[11px] text-lx-secondary" role="status">
+      <p v-else-if="cleanup.busy.value" class="text-lx-fs-sm text-lx-secondary">{{ cleanup.copy.value.loading }}</p>
+      <p v-if="cleanup.deletedCount.value !== null" class="text-lx-fs-sm text-lx-secondary" role="status">
         {{ cleanup.copy.value.success(cleanup.deletedCount.value) }}
       </p>
-      <p v-if="cleanup.error.value" class="text-[11px] text-red-500" role="alert">{{ cleanup.error.value }}</p>
+      <p v-if="cleanup.error.value" class="text-lx-fs-sm text-red-500" role="alert">{{ cleanup.error.value }}</p>
     </section>
 
     <!-- 删除所有对话：真实能力（清空全部会话），保留并带二次确认 -->

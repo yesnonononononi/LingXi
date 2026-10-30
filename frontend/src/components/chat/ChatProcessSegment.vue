@@ -54,7 +54,7 @@ const isRunningTurn = computed(() => props.turn
         :class="previewIsText ? 'flex justify-end' : ''" data-testid="process-segment-preview">
         <span :class="previewIsText ? 'shrink-0 min-w-full text-left' : 'block truncate'">{{ preview }}</span>
       </span>
-      <span v-if="statusLabel" class="shrink-0 max-w-[40%] truncate text-[11px] text-amber-600 dark:text-amber-400"
+      <span v-if="statusLabel" class="shrink-0 max-w-[40%] truncate text-lx-fs-sm text-amber-600 dark:text-amber-400"
         data-testid="process-segment-status">{{ statusLabel }}</span>
     </button>
     <CollapseTransition>

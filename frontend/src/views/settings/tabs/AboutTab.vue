@@ -208,7 +208,7 @@ const renderedNotes = computed(() => renderUpdateNotes(releaseNotes.value));
         type="button"
         @click="openLog"
         :class="[
-          'text-[11px] underline-offset-2 hover:underline transition cursor-pointer',
+          'text-lx-fs-sm underline-offset-2 hover:underline transition cursor-pointer',
           'text-lx-faint hover:text-lx-tertiary',
         ]"
       >

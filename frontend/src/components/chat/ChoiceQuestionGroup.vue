@@ -180,7 +180,7 @@ async function submit() {
               ? (isDark ? 'border-white/85 bg-white/10 shadow-[0_0_16px_rgba(255,255,255,0.30)]' : 'border-blue-200 bg-blue-50')
               : (isDark ? 'border-white/10 hover:border-white/40 hover:bg-white/5' : 'border-zinc-100 hover:border-blue-200 hover:bg-blue-50/50')"
             :data-choice-option="index" @click="selectOption(index)">
-            <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold tabular-nums transition-colors"
+            <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-lx-fs-sm font-semibold tabular-nums transition-colors"
               :class="!draft.useCustom && draft.selected === index
                 ? 'bg-white text-zinc-900 shadow-[0_0_12px_rgba(255,255,255,0.60)]'
                 : (isDark ? 'bg-white/10 text-zinc-300' : 'bg-zinc-100 text-zinc-500')">{{ index + 1 }}</span>

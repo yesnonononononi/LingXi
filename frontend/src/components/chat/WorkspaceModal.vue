@@ -202,11 +202,11 @@ const handleSave = () => {
                 </svg>
               </div>
               <div class="truncate min-w-0">
-                <div class="text-[11px] text-zinc-400">{{ t('chat.workspace.detectedName') }}</div>
+                <div class="text-lx-fs-sm text-zinc-400">{{ t('chat.workspace.detectedName') }}</div>
                 <div class="font-semibold text-sm truncate mt-0.5" :class="isDark ? 'text-white text-glow-white' : 'text-zinc-900'">
                   {{ detectedProjectName }}
                 </div>
-                <div class="text-[11px] truncate font-mono text-zinc-400 mt-0.5" :title="pathInput">
+                <div class="text-lx-fs-sm truncate font-mono text-zinc-400 mt-0.5" :title="pathInput">
                   {{ pathInput }}
                 </div>
               </div>

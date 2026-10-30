@@ -341,7 +341,7 @@ onBeforeUnmount(() => {
                   </svg>
                   <span>{{ t('model.fetchFailed') }}</span>
                 </div>
-                <div class='text-[11px] opacity-90'>{{ fetchRemoteModelError }}</div>
+                <div class='text-lx-fs-sm opacity-90'>{{ fetchRemoteModelError }}</div>
               </div>
               <div v-else-if='filteredRemoteModels.length === 0' class='py-4 text-center text-zinc-400'>
                 {{ remoteModelSearch ? t('model.noMatchedModels') : t('model.noRemoteModels') }}
@@ -379,11 +379,11 @@ onBeforeUnmount(() => {
               <label :class='labelClass'>API Key <span v-if='!isEdit && !form.useProvider' class='text-red-400'>*</span></label>
               <span
                 v-if='isEdit && credentialConfigured'
-                                class='inline-flex items-center px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 text-[11px] font-medium'
+                                class='inline-flex items-center px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 text-lx-fs-sm font-medium'
               >{{ t('model.keyConfigured') }}</span>
               <span
                 v-else-if='isEdit'
-                class='inline-flex items-center px-2 py-0.5 rounded-full bg-zinc-500/10 text-zinc-400 text-[11px]'
+                class='inline-flex items-center px-2 py-0.5 rounded-full bg-zinc-500/10 text-zinc-400 text-lx-fs-sm'
               >{{ t('model.notConfigured') }}</span>
             </div>
             <label class='flex items-start gap-2 text-xs'>
@@ -406,12 +406,12 @@ onBeforeUnmount(() => {
               type='button'
               :disabled='clearing'
               @click='clearKey'
-              class='text-[11px] text-red-400 hover:text-red-500 transition cursor-pointer disabled:opacity-50'
+              class='text-lx-fs-sm text-red-400 hover:text-red-500 transition cursor-pointer disabled:opacity-50'
             >{{ clearing ? t('model.clearing') : t('model.clearKey') }}</button>
           </div>
 
           <ModelVisionField v-model="form.vision" :is-dark="isDark" />
-          <p v-if='formError' class='text-[11px] text-red-400'>{{ formError }}</p>
+          <p v-if='formError' class='text-lx-fs-sm text-red-400'>{{ formError }}</p>
 
                     <div class='flex justify-end gap-2 pt-2'>
             <button @click='goBack' :class='btnClass'>{{ t('common.cancel') }}</button>

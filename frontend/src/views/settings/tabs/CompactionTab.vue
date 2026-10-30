@@ -41,7 +41,7 @@ const {
 
 const cardClass = 'rounded-2xl border p-4 space-y-3 transition-colors bg-lx-surface-sunken border-lx-border-subtle';
 const titleClass = 'text-sm font-bold tracking-tight text-lx-primary';
-const hintClass = 'text-[11px] leading-relaxed text-lx-muted';
+const hintClass = 'text-lx-fs-sm leading-relaxed text-lx-muted';
 const badgeClass = computed(() => [
   'text-[10px] px-1.5 py-0.5 rounded-full border tracking-tight shrink-0',
   enabled.value ? 'border-lx-success text-lx-success bg-lx-success-soft' : 'border-lx-border text-lx-muted',
@@ -129,7 +129,7 @@ const maxTokensFill = computed(() => {
           </div>
         </div>
 
-        <div v-if="loading" class="text-[11px] text-lx-faint">{{ t('settings.compaction.loading') }}</div>
+        <div v-if="loading" class="text-lx-fs-sm text-lx-faint">{{ t('settings.compaction.loading') }}</div>
 
         <div v-else-if="options.length">
           <SettingsSelect
@@ -152,9 +152,9 @@ const maxTokensFill = computed(() => {
           </button>
         </div>
 
-        <p v-if="dangling" class="text-[11px] text-lx-warning">{{ t('settings.compaction.unavailable') }}</p>
-        <p v-if="missingCredential" class="text-[11px] text-lx-warning">{{ t('settings.compaction.missingKey') }}</p>
-        <p v-if="saveError" class="text-[11px] text-lx-danger" role="alert">{{ saveError }}</p>
+        <p v-if="dangling" class="text-lx-fs-sm text-lx-warning">{{ t('settings.compaction.unavailable') }}</p>
+        <p v-if="missingCredential" class="text-lx-fs-sm text-lx-warning">{{ t('settings.compaction.missingKey') }}</p>
+        <p v-if="saveError" class="text-lx-fs-sm text-lx-danger" role="alert">{{ saveError }}</p>
       </section>
 
       <!-- 高级设置：真值只读，滑块只是把数字可视化 -->

@@ -65,14 +65,14 @@ const {
           <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">
             {{ t('settings.teams.maxMemberSizeLabel') }}
           </span>
-          <span class="text-[11px] text-zinc-400 dark:text-zinc-400 mt-0.5">
+          <span class="text-lx-fs-sm text-zinc-400 dark:text-zinc-400 mt-0.5">
             {{ t('settings.teams.maxMemberSizeDesc', { min: TEAM_SIZE_MIN, max: TEAM_SIZE_MAX }) }}
           </span>
         </div>
         <div class="flex items-center gap-2 shrink-0">
           <span
             v-if="isSavingTeamSize"
-            class="text-[11px] text-zinc-400 dark:text-zinc-400"
+            class="text-lx-fs-sm text-zinc-400 dark:text-zinc-400"
           >{{ t('common.saving') }}</span>
           <input
             v-model.number="teamSizeInput"
@@ -201,7 +201,7 @@ const {
 
               <!-- 团队成员标签列表 -->
               <div class="pt-1">
-                <div class="text-[11px] font-medium text-zinc-600 dark:text-zinc-400 mb-1 flex items-center gap-1.5">
+                <div class="text-lx-fs-sm font-medium text-zinc-600 dark:text-zinc-400 mb-1 flex items-center gap-1.5">
                   <span>{{ t('settings.teams.membersLabel') }}</span>
                 </div>
                 <div v-if="team.agents && team.agents.length > 0" class="flex flex-wrap gap-1.5">
@@ -232,7 +232,7 @@ const {
                     </span>
                   </span>
                 </div>
-                <span v-else class="text-[11px] text-zinc-400 italic">{{ t('settings.teams.noMemberDetail') }}</span>
+                <span v-else class="text-lx-fs-sm text-zinc-400 italic">{{ t('settings.teams.noMemberDetail') }}</span>
               </div>
             </div>
 
@@ -397,7 +397,7 @@ const {
                                             {{ t('settings.teams.agentToolCount', { count: agent.toolList.length }) }}
                     </span>
                   </div>
-                  <div class="text-[11px] text-zinc-400 truncate">
+                  <div class="text-lx-fs-sm text-zinc-400 truncate">
                     {{ agent.description || t('settings.agents.noDescription') }}
                   </div>
                 </div>

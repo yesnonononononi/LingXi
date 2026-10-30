@@ -89,7 +89,7 @@ const expectedChoiceCounts = computed(() => {
             <svg class="h-3 w-3 shrink-0 transition-transform" :class="entry.card.pending || expandedEntries[entry.id] ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 5 7 7-7 7" /></svg>
             <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="cardDotClass(resolveCardTone(entry.card))"></span>
             <span class="min-w-0 flex-1 truncate">{{ kind === 'COMMAND' ? (entry.card.intention || entry.card.command || entry.card.title || groupTitle) : (entry.card.title || entry.card.content || groupTitle) }}</span>
-            <span class="shrink-0 text-[11px]">{{ resolveCardStatusLabel(entry.card) }}</span>
+            <span class="shrink-0 text-lx-fs-sm">{{ resolveCardStatusLabel(entry.card) }}</span>
           </button>
           <PromptCard
             v-if="entry.card.pending || expandedEntries[entry.id]"

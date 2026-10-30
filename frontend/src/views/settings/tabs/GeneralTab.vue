@@ -18,6 +18,13 @@ const {
   languageOptions,
   currentLanguageLabel,
   handleSelectLanguage,
+  isFontScaleOpen,
+  fontScaleOptions,
+  fontScaleValue,
+  currentFontScaleLabel,
+  fontScaleDisabled,
+  toggleFontScaleDropdown,
+  handleSelectFontScale,
   apiBaseUrl,
   isApiUrlSaved,
   handleSaveApiUrl,
@@ -114,7 +121,7 @@ const {
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex flex-col min-w-0 w-full">
           <span class="text-xs font-medium text-lx-primary-soft">{{ t('settings.general.background') }}</span>
-          <span class="text-[11px] text-lx-muted mt-0.5 leading-relaxed">{{ t('settings.general.backgroundDesc') }}</span>
+          <span class="text-lx-fs-sm text-lx-muted mt-0.5 leading-relaxed">{{ t('settings.general.backgroundDesc') }}</span>
         </div>
         <div class="flex items-center gap-2 w-full min-w-0">
           <!-- 选择器：缩略图 + 当前值 + chevron，点开是「默认背景 / 自定义图片」两项 -->
@@ -200,7 +207,7 @@ const {
       <!-- 第二行：填充方式 + 遮罩强度（无背景时两者禁用但保留原位，避免布局跳动） -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
         <div class="min-w-0 space-y-1.5">
-          <label for="background-fit" class="text-[11px] text-lx-muted">{{ t('settings.general.backgroundFit') }}</label>
+          <label for="background-fit" class="text-lx-fs-sm text-lx-muted">{{ t('settings.general.backgroundFit') }}</label>
           <SettingsSelect
             id="background-fit"
             :label="t('settings.general.backgroundFit')"
@@ -211,7 +218,7 @@ const {
           />
         </div>
         <div class="min-w-0 space-y-1.5">
-          <label for="background-scrim" class="text-[11px] text-lx-muted">{{ t('settings.general.backgroundScrim') }}</label>
+          <label for="background-scrim" class="text-lx-fs-sm text-lx-muted">{{ t('settings.general.backgroundScrim') }}</label>
           <div class="background-scrim-control" :class="{ 'is-disabled': !hasBackground }"
             :style="{ '--scrim-progress': `${backgroundScrimPercent}%` }">
             <input id="background-scrim" type="range" min="0" max="100" step="5"
@@ -221,6 +228,66 @@ const {
             <output for="background-scrim" class="background-scrim-value">{{ backgroundScrimPercent }}%</output>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- 字体大小：四档下拉，位置在语言上方（与语言/提示音同属「这台机器长什么样」） -->
+    <div class="flex items-center justify-between">
+      <div class="flex flex-col">
+        <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.fontScale') }}</span>
+        <span class="text-lx-fs-sm text-zinc-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.fontScaleDesc') }}</span>
+      </div>
+      <div class="relative general-dropdown-container" @click.stop>
+        <SpecularButton
+          size="sm"
+          :radius="14"
+          :tint="isDark ? '#ffffff' : '#f0f2f5'"
+          :tint-opacity="isDark ? 0.04 : 1"
+          :text-color="isDark ? '#f4f4f5' : '#374151'"
+          line-color="#ffffff"
+          base-color="#525252"
+          :intensity="1"
+          :thickness="1"
+          :disabled="fontScaleDisabled"
+          @click="toggleFontScaleDropdown"
+        >
+          <span class="text-xs font-normal">{{ currentFontScaleLabel }}</span>
+          <svg
+            class="w-3 h-3 text-zinc-400 dark:text-zinc-300 transition-transform duration-200"
+            :class="{ 'rotate-180': isFontScaleOpen }"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </SpecularButton>
+        <transition name="dropdown-down">
+          <div
+            v-if="isFontScaleOpen"
+            :class="[
+              'absolute right-0 mt-1.5 w-32 rounded-xl border shadow-2xl py-1 z-30 text-xs origin-top backdrop-blur-xl',
+              isDark ? 'bg-black/95 border-white/20 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.9)]' : 'bg-white border-zinc-200 text-zinc-800'
+            ]"
+          >
+            <div
+              v-for="opt in fontScaleOptions"
+              :key="opt.value"
+              @click="handleSelectFontScale(opt.value)"
+              :class="[
+                'px-3 py-1.5 cursor-pointer flex items-center justify-between transition-colors',
+                fontScaleValue === opt.value
+                  ? (isDark ? 'text-sky-400 text-glow-cyan font-medium bg-white/10' : 'text-blue-500 font-medium bg-blue-50')
+                  : (isDark ? 'text-zinc-200 hover:bg-white/10 hover:text-white' : 'text-zinc-700 hover:bg-zinc-100')
+              ]"
+            >
+              <span>{{ opt.label }}</span>
+              <svg v-if="fontScaleValue === opt.value" class="w-3.5 h-3.5 text-blue-500 dark:text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+          </div>
+        </transition>
       </div>
     </div>
 
@@ -285,7 +352,7 @@ const {
       <div class="flex items-center justify-between">
         <div class="flex flex-col">
           <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.notifySound') }}</span>
-          <span class="text-[11px] text-zinc-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.notifySoundDesc') }}</span>
+          <span class="text-lx-fs-sm text-zinc-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.notifySoundDesc') }}</span>
         </div>
         <div class="relative general-dropdown-container" @click.stop>
           <SpecularButton
@@ -346,12 +413,12 @@ const {
       <div class="flex items-center justify-between mb-2">
         <div class="flex flex-col">
           <span class="text-xs font-medium text-lx-primary-soft dark:text-glow-subtle">{{ t('settings.general.apiBaseUrl') }}</span>
-          <span class="text-[11px] text-zinc-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.apiBaseUrlDesc') }}</span>
+          <span class="text-lx-fs-sm text-zinc-400 dark:text-zinc-400 mt-0.5">{{ t('settings.general.apiBaseUrlDesc') }}</span>
         </div>
         <button
           type="button"
           @click="handleResetApiUrl"
-          class="text-[11px] text-lx-muted hover:text-blue-500 dark:hover:text-cyan-300 dark:hover:text-glow-cyan cursor-pointer transition"
+          class="text-lx-fs-sm text-lx-muted hover:text-blue-500 dark:hover:text-cyan-300 dark:hover:text-glow-cyan cursor-pointer transition"
         >
           {{ t('settings.general.resetApiUrl') }}
         </button>

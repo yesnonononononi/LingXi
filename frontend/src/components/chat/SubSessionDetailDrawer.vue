@@ -213,7 +213,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
               <div class="flex items-center gap-2">
                 <h3 class="min-w-0 font-semibold text-sm truncate dark:text-white dark:text-glow-white">{{ displayAgentName }}</h3>
                 <SessionContextUsage :session="subSession" :isDark="isDark" />
-                <span :class="['text-[11px] px-2 py-0.5 rounded-full font-mono font-medium', isDark ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30' : 'bg-blue-50 text-blue-600 border border-blue-200']">
+                <span :class="['text-lx-fs-sm px-2 py-0.5 rounded-full font-mono font-medium', isDark ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30' : 'bg-blue-50 text-blue-600 border border-blue-200']">
                   {{ t('chat.subSession.sessionLabel', { id: subSession?.id ?? '' }) }}
                 </span>
               </div>
@@ -258,7 +258,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
               <span>{{ subStatusText }}</span>
             </span>
           </div>
-          <div v-if="subSession?.createTime" class="font-mono opacity-80 text-[11px]">
+          <div v-if="subSession?.createTime" class="font-mono opacity-80 text-lx-fs-sm">
             {{ t('chat.subSession.createdAt', { time: new Date(subSession.createTime).toLocaleString() }) }}
           </div>
         </div>
@@ -316,10 +316,10 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
             >
               <!-- 角色标识与时间 -->
               <div class="flex items-center gap-2 text-xs text-zinc-400 select-none">
-                <span :class="['font-medium px-2 py-0.5 rounded text-[11px]', msg.role === 'user' ? (isDark ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-50 text-blue-700') : (isDark ? 'bg-purple-900/30 text-purple-300' : 'bg-purple-50 text-purple-700')]">
+                <span :class="['font-medium px-2 py-0.5 rounded text-lx-fs-sm', msg.role === 'user' ? (isDark ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-50 text-blue-700') : (isDark ? 'bg-purple-900/30 text-purple-300' : 'bg-purple-50 text-purple-700')]">
                   {{ msg.role === 'user' ? t('chat.subSession.managerInstruction') : displayAgentName }}
                 </span>
-                <span class="font-mono text-[11px]">{{ formatClockTime(msg.timestamp) }}</span>
+                <span class="font-mono text-lx-fs-sm">{{ formatClockTime(msg.timestamp) }}</span>
               </div>
 
               <!-- 思考过程折叠 (CoT) -->
@@ -389,7 +389,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                       <span class="font-semibold text-zinc-300 dark:text-zinc-100 truncate">{{ resolveToolRenderName(tc.toolName) }}</span>
                       <span
                         v-if="getToolDiffStat(tc)"
-                        class="inline-flex items-center gap-1 font-mono text-[11px] font-medium leading-none shrink-0 select-none ml-1"
+                        class="inline-flex items-center gap-1 font-mono text-lx-fs-sm font-medium leading-none shrink-0 select-none ml-1"
                       >
                         <span
                           v-if="getToolDiffStat(tc)!.plusLines !== undefined && (getToolDiffStat(tc)!.plusLines! > 0 || (getToolDiffStat(tc)!.plusLines === 0 && getToolDiffStat(tc)!.minusLines === 0))"
@@ -401,12 +401,12 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                         >-{{ getToolDiffStat(tc)!.minusLines }}</span>
                       </span>
                     </div>
-                    <span class="text-[11px] shrink-0">{{ tc.status || 'done' }}</span>
+                    <span class="text-lx-fs-sm shrink-0">{{ tc.status || 'done' }}</span>
                   </button>
 
                   <div v-if="hasToolDetail(tc) && expandedToolCallIds[tc.id]" class="px-3 pb-3 pt-0 space-y-2 border-t border-zinc-700/30">
-                    <pre v-if="shouldShowToolArguments(tc.toolName) && tc.query" class="text-[11px] text-zinc-300 overflow-x-auto whitespace-pre-wrap max-h-32 mt-2 p-2 rounded-lg bg-black/40 border border-white/10">{{ tc.query }}</pre>
-                    <pre v-if="tc.result" class="text-[11px] text-zinc-200 overflow-x-auto whitespace-pre-wrap max-h-48 p-2 rounded-lg bg-black/40 border border-white/10">{{ unwrapToolResultEnvelope(tc.result) }}</pre>
+                    <pre v-if="shouldShowToolArguments(tc.toolName) && tc.query" class="text-lx-fs-sm text-zinc-300 overflow-x-auto whitespace-pre-wrap max-h-32 mt-2 p-2 rounded-lg bg-black/40 border border-white/10">{{ tc.query }}</pre>
+                    <pre v-if="tc.result" class="text-lx-fs-sm text-zinc-200 overflow-x-auto whitespace-pre-wrap max-h-48 p-2 rounded-lg bg-black/40 border border-white/10">{{ unwrapToolResultEnvelope(tc.result) }}</pre>
                   </div>
                 </div>
               </div>

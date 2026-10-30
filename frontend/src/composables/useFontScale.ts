@@ -18,6 +18,8 @@
 
 import { computed, ref, watch } from 'vue';
 import type { ComputedRef, Ref } from 'vue';
+import { FONT_SCALE_PRESETS } from '../utils/enum';
+import type { FontScalePreset } from '../utils/enum';
 
 /** localStorage 键。命名风格对齐 `lingxi-theme`：`lingxi-<关注点>`。 */
 export const FONT_SCALE_STORAGE_KEY = 'lingxi-font-scale';
@@ -29,9 +31,6 @@ export const MIN_FONT_SCALE = 0.875;
 /** 上限：再大会让固定 px 的容器装不下文本。 */
 export const MAX_FONT_SCALE = 1.5;
 
-/** 字号档位枚举（设置页四档；数值口径见 PRESET_SCALE）。 */
-export type FontScalePreset = 'SMALL' | 'MEDIUM' | 'LARGE' | 'X_LARGE';
-
 /** 档位 → 缩放倍数。改这里等于改产品口径，必须同步 index.html 的夹紧区间。 */
 export const PRESET_SCALE: Readonly<Record<FontScalePreset, number>> = Object.freeze({
   SMALL: 0.875,
@@ -39,14 +38,6 @@ export const PRESET_SCALE: Readonly<Record<FontScalePreset, number>> = Object.fr
   LARGE: 1.125,
   X_LARGE: 1.25
 });
-
-/** 档位顺序（设置页按此渲染）。 */
-export const FONT_SCALE_PRESETS: readonly FontScalePreset[] = Object.freeze([
-  'SMALL',
-  'MEDIUM',
-  'LARGE',
-  'X_LARGE'
-]);
 
 /** 文档根上的变量名（唯一写入口在本文件）。 */
 const FONT_SCALE_VAR = '--lx-font-scale';
