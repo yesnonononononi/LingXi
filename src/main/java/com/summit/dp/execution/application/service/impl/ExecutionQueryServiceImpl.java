@@ -75,11 +75,6 @@ public class ExecutionQueryServiceImpl implements ExecutionQueryService {
         return result;
     }
 
-    @Override
-    public String findSnapshotById(Long executionId) {
-        return executionRepository.findById(executionId).map(Execution::getSnapshot).orElse(null);
-    }
-
     /**
      * 批量取未终结执行（CREATED/RUNNING/SUSPENDED），带执行身份。
      *

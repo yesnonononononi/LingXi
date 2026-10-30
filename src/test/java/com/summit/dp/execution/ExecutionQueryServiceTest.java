@@ -118,7 +118,7 @@ class ExecutionQueryServiceTest {
         for (Execution execution : executions) {
             assertEquals(1L, execution.getSessionId());
             assertEquals(LocalDateTime.of(2026, 9, 28, 12, 0), execution.getCreatedAt());
-            assertNull(execution.getSnapshot());
+            assertNull(execution.getSnapshotFile());
             assertNull(execution.getUpdatedAt());
         }
         assertEquals(List.of(ExecutionStatus.RUNNING, ExecutionStatus.CANCELLED, ExecutionStatus.FAILED,
@@ -182,7 +182,7 @@ class ExecutionQueryServiceTest {
         ExecutionPO po = new ExecutionPO();
         po.setSessionId(sessionId);
         po.setStatus(status);
-        po.setSnapshot("snapshot-must-not-be-loaded");
+        po.setSnapshotFile("snapshot-must-not-be-loaded");
         po.setCreatedAt(LocalDateTime.of(2026, 9, 28, 12, 0));
         mapper.insert(po);
         return po.getId();

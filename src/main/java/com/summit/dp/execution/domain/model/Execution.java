@@ -28,32 +28,40 @@ public class Execution {
     /**
      * 恢复代际；执行实际转入 SUSPENDED 时递增。恢复任务按它判过期。
      *
-     * <p>只由摘要查询填充，{@code snapshot} 路径不携带 —— 它是业务持久化列而非框架字段。</p>
+     * <p>只由摘要查询填充，{@code snapshotFile} 路径不携带 —— 它是业务持久化列而非框架字段。</p>
      */
     private Long resumeGeneration;
-    private String snapshot;
+    /**
+     * 检查点正文的文件标识（不是正文）。
+     *
+     * <p>正文在 {@code <数据目录>/checkpoints/<executionId>/<snapshotFile>.json}，
+     * 本字段是数据库里的权威引用；读取一律先取它再打开文件，没有应用级正文缓存。</p>
+     */
+    private String snapshotFile;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
     /** 会话归属只能从数据库恢复，检查点请求不能覆盖它。 */
-    public static Execution restoreCheckpointSummary(Long id, Long version, Integer status, Long generation, Long sessionId) {
+    public static Execution restoreCheckpointSummary(Long id, Long version, Integer status, Long generation,
+                                                     Long sessionId, String snapshotFile) {
         Execution execution = new Execution();
         execution.id = id;
         execution.sessionId = sessionId;
         execution.version = version == null ? 1L : version;
         execution.status = status;
         execution.resumeGeneration = generation;
+        execution.snapshotFile = snapshotFile;
         return execution;
     }
 
-    public static Execution createCheckpoint(long id, long sessionId, int status, String snapshot,
+    public static Execution createCheckpoint(long id, long sessionId, int status, String snapshotFile,
                                              LocalDateTime createdAt, LocalDateTime startedAt,
                                              LocalDateTime completedAt) {
         Execution execution = new Execution();
         execution.id = id;
         execution.sessionId = sessionId;
         execution.status = status;
-        execution.snapshot = snapshot;
+        execution.snapshotFile = snapshotFile;
         execution.createdAt = createdAt;
         execution.startedAt = startedAt;
         execution.completedAt = completedAt;
@@ -61,7 +69,7 @@ public class Execution {
     }
 
     /** 同态挂起保存不产生新代际，已终结的执行不能被旧检查点重新开放。 */
-    public void changeCheckpoint(int nextStatus, String snapshot, LocalDateTime startedAt,
+    public void changeCheckpoint(int nextStatus, String snapshotFile, LocalDateTime startedAt,
                                  LocalDateTime completedAt) {
         if (ExecutionStatusCodes.isTerminal(status) && status != nextStatus) {
             throw new IllegalStateException("执行已结束，不能覆盖为运行状态: executionId=" + id);
@@ -72,7 +80,7 @@ public class Execution {
         }
         this.resumeGeneration = generation;
         this.status = nextStatus;
-        this.snapshot = snapshot;
+        this.snapshotFile = snapshotFile;
         if (startedAt != null) this.startedAt = startedAt;
         if (completedAt != null) this.completedAt = completedAt;
     }

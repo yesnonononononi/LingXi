@@ -80,7 +80,7 @@ class ExecutionSummaryQueryTest {
         row.setStartedAt(startedAt);
         row.setCompletedAt(completedAt);
         // 故意塞入大字符串：摘要查询若把 snapshot 一起读出来，本测试就会在断言处暴露。
-        row.setSnapshot("{\"marker\":\"" + "x".repeat(2048) + "\"}");
+        row.setSnapshotFile("{\"marker\":\"" + "x".repeat(2048) + "\"}");
         mapper.insert(row);
     }
 
@@ -119,7 +119,7 @@ class ExecutionSummaryQueryTest {
         List<Execution> rows = repository.findSummariesByIds(List.of(711L));
 
         assertEquals(1, rows.size());
-        assertNull(rows.getFirst().getSnapshot(), "摘要投影必须排除 snapshot 列");
+        assertNull(rows.getFirst().getSnapshotFile(), "摘要投影必须排除 snapshot 列");
         assertEquals(3, rows.getFirst().getStatus());
     }
 

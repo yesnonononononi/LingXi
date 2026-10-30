@@ -112,7 +112,7 @@ class ExecutionRepositoryQueryTest {
         row.setStatus(status);
         row.setVersion(1L);
         row.setResumeGeneration(0L);
-        row.setSnapshot("{}");
+        row.setSnapshotFile("{}");
         row.setCreatedAt(LocalDateTime.now());
         row.setUpdatedAt(LocalDateTime.now());
         mapper.insert(row);

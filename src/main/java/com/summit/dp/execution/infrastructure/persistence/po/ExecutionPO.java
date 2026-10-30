@@ -47,8 +47,15 @@ public class ExecutionPO {
      */
     @TableField("resume_generation")
     private Long resumeGeneration;
-    @TableField("snapshot")
-    private String snapshot;
+    /**
+     * 检查点正文的文件标识（不是正文）。
+     *
+     * <p>正文由 {@code ExecutionCheckpointStore} 写在
+     * {@code <数据目录>/checkpoints/<executionId>/<snapshotFile>.json}；本列是唯一的权威引用，
+     * 读取一律「先取本列、再打开文件」，不做应用级正文缓存。</p>
+     */
+    @TableField("snapshot_file")
+    private String snapshotFile;
     @TableField("created_at")
     private LocalDateTime createdAt;
     @TableField("updated_at")

@@ -207,7 +207,9 @@ CREATE TABLE IF NOT EXISTS execution (
     completed_at      TEXT    NULL,
     status            INTEGER NOT NULL DEFAULT 0,
     resume_generation INTEGER NOT NULL DEFAULT 0,
-    snapshot          TEXT    NULL,
+    -- 检查点正文在文件里（<数据目录>/checkpoints/<executionId>/<fileId>.json），
+    -- 这里只存文件标识。列名必须说清「这是文件名」，不能叫 snapshot 让人以为存正文。
+    snapshot_file     TEXT    NULL,
     created_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
     updated_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
 );

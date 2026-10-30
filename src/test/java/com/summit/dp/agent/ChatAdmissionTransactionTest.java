@@ -220,7 +220,7 @@ class ChatAdmissionTransactionTest {
         assertEquals(turn.getId(), message.getTurnId(), "用户消息归属 acceptTurn 返回的轮次");
 
         ExecutionPO row = executionMapper.selectById(EXECUTION_ID_NUMERIC);
-        assertNotNull(row.getSnapshot(), "执行行必须写完整快照 —— 这是本次改造要修掉的核心事实");
+        assertNotNull(row.getSnapshotFile(), "执行行必须提交检查点文件标识（正文在文件里，不入库）");
         assertEquals(0, row.getStatus(), "受理阶段登记为 CREATED");
         assertEquals(SESSION_ID, row.getSessionId());
     }

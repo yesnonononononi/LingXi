@@ -138,7 +138,7 @@ class SqlitePrototypeTest {
         row.setVersion(1L);
         row.setSessionId(77L);
         row.setStatus(1);
-        row.setSnapshot("checkpoint");
+        row.setSnapshotFile("checkpoint");
         assertEquals(1, executions.insert(row));
 
         ExecutionPO loaded = executions.selectById(Long.valueOf(String.valueOf(snowflake)));

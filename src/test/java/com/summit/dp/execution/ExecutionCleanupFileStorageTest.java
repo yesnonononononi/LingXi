@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ExecutionCleanupFileStorageTest {
     @Test
     @Timeout(60)
-    void cleanupLargeSnapshotsInFileDatabasePreservesReferencedHistory() throws Exception {
+    void cleanupKeepsReferencedHistoryAndCommitsPerExecution() throws Exception {
         SqliteTestDatabase database = SqliteTestDatabase.create("cleanup-file");
         try {
             MybatisConfiguration configuration = new MybatisConfiguration();
@@ -48,14 +48,16 @@ class ExecutionCleanupFileStorageTest {
             factory.setConfiguration(configuration);
             SqlSessionTemplate sql = SqliteTestDatabase.sqlSession(factory.getObject());
             ExecutionMapper executions = sql.getMapper(ExecutionMapper.class);
-            String snapshot = "x".repeat(512 * 1024);
+            // 正文已移到文件里：库里只剩文件标识，这里刻意用较长的标识串模拟「历史行不少、列表不小」，
+            // 重点仍是「每条单独提交 + 引用保护」。
+            String snapshotFile = "0123456789abcdef0123456789abcdef";
             for (long id = 1L; id <= 240L; id++) {
                 ExecutionPO row = new ExecutionPO();
                 row.setId(id);
                 row.setVersion(1L);
                 row.setSessionId(10L);
                 row.setStatus(ExecutionStatusCodes.COMPLETED);
-                row.setSnapshot(snapshot);
+                row.setSnapshotFile(snapshotFile);
                 executions.insert(row);
             }
             ExecutionPO history = new ExecutionPO();
@@ -63,7 +65,7 @@ class ExecutionCleanupFileStorageTest {
             history.setVersion(1L);
             history.setSessionId(10L);
             history.setStatus(ExecutionStatusCodes.COMPLETED);
-            history.setSnapshot(snapshot);
+            history.setSnapshotFile(snapshotFile);
             executions.insert(history);
             sql.getMapper(SessionMapper.class).insert(SessionPO.builder().id(10L).name("历史保护").build());
             sql.getMapper(ChatTurnMapper.class).insert(ChatTurnPO.builder()
@@ -90,7 +92,7 @@ class ExecutionCleanupFileStorageTest {
             assertEquals(240, committed.get());
             assertEquals(0L, service.preview().executionCount());
             assertEquals(1L, executions.selectCount(null));
-            assertEquals(snapshot, executions.selectById(1000L).getSnapshot());
+            assertEquals(snapshotFile, executions.selectById(1000L).getSnapshotFile());
         } finally {
             database.shutdown();
         }

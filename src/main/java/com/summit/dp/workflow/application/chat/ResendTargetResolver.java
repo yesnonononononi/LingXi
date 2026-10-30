@@ -1,10 +1,9 @@
 package com.summit.dp.workflow.application.chat;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
-import com.summit.dp.execution.application.service.ExecutionQueryService;
+import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.session.application.service.SessionMessageQueryService;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.shared.exception.ClientException;
@@ -29,8 +28,8 @@ public class ResendTargetResolver {
 
     private final SessionMessageQueryService sessionMessageQueryService;
     private final ChatTurnService chatTurnService;
-    private final ExecutionQueryService executionQueryService;
-    private final ObjectMapper objectMapper;
+    /** 框架运行期仓储：按库内文件标识流式恢复正文，业务查询接口不再返回整段 JSON。 */
+    private final ExecutionRepository executionRepository;
 
     /**
      * 定位重发目标。
@@ -63,20 +62,16 @@ public class ResendTargetResolver {
      *
      * <p>截断点是快照里的最后一条用户消息：执行创建时的消息就是「当时的历史 + 本轮提问」，
      * 且同一执行内不会再追加用户消息，所以它必然是目标轮次自己的提问。</p>
+     *
+     * <p><b>历史基线来自目标轮次自己的检查点</b>：每个 execution 都保留自己的正文文件，
+     * 这里按目标轮次的 executionId 走仓储流式恢复，绝不回退到「会话最新一轮」。
+     * 拿到的 {@code Execution} 是独立可变副本，改它不会影响已提交内容。</p>
      */
     private List<Message> resolveBaseline(Long executionId) {
-        String snapshot = executionQueryService.findSnapshotById(executionId);
-        throwIf(snapshot == null, "执行快照不存在，无法重发");
-
-        List<Message> messages;
-        try {
-            // 重发只复用历史消息；连接参数由新请求重新选择，不需要恢复旧凭据。
-            messages = objectMapper.treeToValue(objectMapper.readTree(snapshot).get("messages"),
-                    objectMapper.getTypeFactory().constructCollectionType(List.class, Message.class));
-        } catch (JsonProcessingException e) {
-            // 快照损坏是系统故障，不是用户能改正的业务错误，因此不套 ClientException。
-            throw new IllegalStateException("执行快照无法解析: executionId=" + executionId, e);
-        }
+        Execution execution = executionRepository.findById(String.valueOf(executionId)).orElse(null);
+        throwIf(execution == null, "执行快照不存在，无法重发");
+        List<Message> messages = execution.getAgentRequest() == null ? null
+                : execution.getAgentRequest().getMessages();
 
         throwIf(messages == null || messages.isEmpty(), "执行快照缺少历史上下文，无法重发");
         for (int i = messages.size() - 1; i >= 0; i--) {

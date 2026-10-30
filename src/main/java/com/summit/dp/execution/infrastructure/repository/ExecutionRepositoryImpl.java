@@ -60,10 +60,10 @@ public class ExecutionRepositoryImpl extends AbstractRepository<Execution, Execu
     public Optional<Execution> findCheckpointSummary(long executionId) {
         return Optional.ofNullable(mapper.selectOne(Wrappers.<ExecutionPO>lambdaQuery()
                 .select(ExecutionPO::getId, ExecutionPO::getSessionId, ExecutionPO::getStatus, ExecutionPO::getVersion,
-                        ExecutionPO::getResumeGeneration)
+                        ExecutionPO::getResumeGeneration, ExecutionPO::getSnapshotFile)
                 .eq(ExecutionPO::getId, executionId)))
                 .map(row -> Execution.restoreCheckpointSummary(row.getId(), row.getVersion(),
-                        row.getStatus(), row.getResumeGeneration(), row.getSessionId()));
+                        row.getStatus(), row.getResumeGeneration(), row.getSessionId(), row.getSnapshotFile()));
     }
 
     @Override public void save(Execution model) {
@@ -136,7 +136,7 @@ public class ExecutionRepositoryImpl extends AbstractRepository<Execution, Execu
     }
 
     /**
-     * 查询摘要投影：显式列出需要的列，**排除 snapshot**。
+     * 查询摘要投影：显式列出需要的列，**排除 snapshot_file**（正文本来就不在库里）。
      *
      * <p>用 LambdaQueryWrapper 的 select 而不是自定义 SQL —— MyBatis-Plus 会按
      * {@code @TableField} 生成实体 resultMap，列名映射因此不依赖全局驼峰开关。</p>

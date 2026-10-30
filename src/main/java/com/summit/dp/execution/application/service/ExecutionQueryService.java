@@ -37,8 +37,6 @@ public interface ExecutionQueryService {
      */
     Map<Long, ExecutionSummary> summariesByIds(Collection<Long> executionIds);
 
-    String findSnapshotById(Long executionId);
-
     /**
      * 批量取「进行中或挂起」的执行（带执行身份），用于 v3 bootstrap（§8.2）。
      *

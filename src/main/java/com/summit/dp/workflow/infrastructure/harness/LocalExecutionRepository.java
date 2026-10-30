@@ -8,13 +8,12 @@ import com.summit.core.conversation.event.TokenInfo;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.execution.application.port.ExecutionCheckpointStore;
 import com.summit.dp.execution.application.service.ExecutionCheckpointService;
-import com.summit.dp.execution.application.service.ExecutionCheckpointService.StoredCheckpoint;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
@@ -29,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.Instant;
@@ -44,6 +44,8 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
 
     private final ExecutionCheckpointService checkpointService;
     private final ObjectMapper objectMapper;
+    /** 检查点正文的存储端口：文件命名、路径校验、流式读写、发布与删除都在实现里。 */
+    private final ExecutionCheckpointStore checkpointStore;
     /** 延迟取服务，避免生命周期处理与执行仓储形成构造期闭环。 */
     private final ObjectProvider<ToolCallReadinessService> readinessService;
     private final ObjectProvider<ToolCallService> toolCallService;
@@ -52,12 +54,9 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     private final ObjectProvider<SessionContextUsageProjector> sessionService;
     private final ObjectProvider<ChatTurnLifecycleProjector> chatTurnService;
     private final ObjectProvider<RuntimeEventPublisher> runtimeEvents;
-    private final ExecutionSnapshotReader snapshotReader;
 
     /** 进程内活跃执行的控制信号；与框架 InMemoryActiveExecutionRegistry 语义一致。 */
     private final Map<String, ExecutionControlSignal> active = new ConcurrentHashMap<>();
-    /** 已提交检查点的不可变缓存；恢复时解码，避免读到未提交的消息追加。 */
-    private final Map<String, String> checkpoints = new ConcurrentHashMap<>();
 
     @Override
     @Transactional
@@ -69,26 +68,56 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
             long id = numericId(execution.getId());
             ExecutionState state = execution.getExecutionState();
 
-            boolean terminal = ExecutionStateCodec.isTerminalState(state);
-            String snapshot;
-            try {
-                snapshot = objectMapper.writeValueAsString(execution);
-            } catch (JsonProcessingException e) {
-                throw new IllegalStateException("保存执行检查点失败: executionId=" + execution.getId(), e);
-            }
-
             Map<String, Object> attributes = execution.getAgentRequest() == null ? Map.of()
                     : execution.getAgentRequest().runtimeParametersOrDefault().getAttributes();
             Long sessionId = ExecutionAttributes.readLong(attributes, ExecutionAttributes.SESSION_ID);
+
+            // 保存顺序不可调换：先把正文流式写成独立临时文件 → fsync → 原子发布成新文件名
+            // （不覆盖旧文件）→ 再用版本条件把「新文件标识 + 状态 + resume_generation」提交进库。
+            ExecutionCheckpointStore.CheckpointWriter writer = checkpointStore.begin(execution.getId());
+            String fileId = writer.fileId();
+            String previousFile;
             boolean firstFailure;
             try {
-                firstFailure = checkpointService.save(id, sessionId, resolveStatus(state), snapshot,
-                        execution.getCreateAt(), execution.getStartAt(), execution.getCompletedAt());
-            } catch (ClientException failure) {
+                // 直接流式写 OutputStream：不生成完整 JSON 字符串，也不建 JsonNode 树。
+                objectMapper.writeValue(writer.stream(), execution);
+                writer.publish();
+                ExecutionCheckpointService.SaveOutcome outcome = checkpointService.save(id, sessionId,
+                        resolveStatus(state), fileId, execution.getCreateAt(), execution.getStartAt(),
+                        execution.getCompletedAt());
+                firstFailure = outcome.firstFailure();
+                previousFile = outcome.previousFile();
+            } catch (IOException failure) {
+                writer.rollback();
+                throw new IllegalStateException("保存执行检查点失败: executionId=" + execution.getId(), failure);
+            } catch (RuntimeException failure) {
+                writer.rollback();
                 throw new IllegalStateException("保存执行检查点失败: executionId=" + id, failure);
             }
+
+            // 事务结果决定文件归属：提交 = 释放登记并回收旧文件；回滚 = 删掉本次新文件、库内仍指向旧文件。
+            String committedFile = fileId;
+            String replacedFile = previousFile;
+            if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+                writer.complete();
+                reclaim(execution.getId(), committedFile, replacedFile);
+            } else {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override public void afterCommit() {
+                        writer.complete();
+                        // 旧的已提交文件在提交后回收；删除失败不影响已提交事实，留给后续清理。
+                        reclaim(execution.getId(), committedFile, replacedFile);
+                    }
+
+                    @Override public void afterCompletion(int status) {
+                        if (status != STATUS_COMMITTED) {
+                            writer.rollback();
+                        }
+                    }
+                });
+            }
+
             boolean withoutControlSlot = !active.containsKey(execution.getId());
-            cacheAfterCommit(execution.getId(), snapshot, terminal);
             // 补一次终结广播，使轮次收口落在框架发布终态事件之前 —— 框架的顺序是
             // 「save(FAILED) → 返回发布任务 → 调用方 run 它」，业务侧没有排序权，只能在这里补。
             // 活跃循环的那次保存走不到这里：那时控制槽位仍在，由 unregister 负责通知（两者互斥）。
@@ -98,18 +127,21 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
         }
     }
 
-    private void cacheAfterCommit(String id, String snapshot, boolean terminal) {
-        Runnable update = () -> {
-            if (terminal) checkpoints.remove(id);
-            else checkpoints.put(id, snapshot);
-        };
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            update.run();
+    /**
+     * 回收被替换掉的旧检查点文件。
+     *
+     * <p>与 {@link #findById(String)} 用同一把 {@code executionId} 锁：读取方「已查到旧引用、
+     * 尚未打开文件」的窗口必须被保护，否则旧文件会在打开前被删掉，读变成莫名其妙的失败。</p>
+     *
+     * <p>删除失败只是垃圾文件，不能把已提交的保存伪报成失败，留给后续手动清理。</p>
+     */
+    private void reclaim(String executionId, String committedFile, String replacedFile) {
+        if (replacedFile == null || replacedFile.equals(committedFile)) {
             return;
         }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override public void afterCommit() { update.run(); }
-        });
+        synchronized (ExecutionCoordination.monitor(executionId)) {
+            checkpointStore.delete(executionId, replacedFile);
+        }
     }
 
     @Override
@@ -125,31 +157,27 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
 
     @Override
     public Optional<Execution> findById(String executionId) {
-        // 缓存只收已提交快照，恢复时重新解码可变消息集合。
-        String snapshot = checkpoints.get(executionId);
-        Integer persistedStatus = null;
-        LocalDateTime persistedCompletedAt = null;
-        if (snapshot == null) {
-            StoredCheckpoint checkpoint = checkpointService.find(numericId(executionId)).orElse(null);
-            snapshot = checkpoint == null ? null : checkpoint.snapshot();
-            persistedStatus = checkpoint == null ? null : checkpoint.status();
-            persistedCompletedAt = checkpoint == null ? null : checkpoint.completedAt();
-        }
-        if (snapshot == null) return Optional.empty();
-        try {
-            Execution restored = snapshotReader.read(snapshot);
+        // 只认数据库里的权威引用：没有应用级正文缓存，改了库内文件标识就立刻读到另一份内容。
+        // 读文件必须在同一把 executionId 门闩内完成：保护「已查到引用、尚未打开文件」的窗口，
+        // 让同一执行的保存/回收不会在中间把旧文件删掉。
+        synchronized (ExecutionCoordination.monitor(executionId)) {
+            ExecutionCheckpointService.StoredCheckpoint checkpoint =
+                    checkpointService.find(numericId(executionId)).orElse(null);
+            if (checkpoint == null || checkpoint.snapshotFile() == null) {
+                return Optional.empty();
+            }
+            // 流式反序列化，每次都是独立可变对象：修改返回值不会影响已提交的检查点文件。
+            Execution restored = checkpointStore.read(executionId, checkpoint.snapshotFile(), Execution.class);
             // 启动清理只更新摘要列，不能让旧快照重新开放已终结的执行。
-            if (ExecutionStatusCodes.isTerminal(persistedStatus)
+            if (ExecutionStatusCodes.isTerminal(checkpoint.status())
                     && !ExecutionStateCodec.isTerminalState(restored.getExecutionState())) {
                 // 校正不是一次状态转换：结论与结束时间都取自已提交的值，
                 // 调普通 complete()/fail()/cancel() 会用 Instant.now() 盖掉库里的 completed_at，
                 // 收尸记录的时间就会随每次读取漂移。
-                restored.restoreTerminalState(ExecutionStateCodec.decode(persistedStatus),
-                        toInstant(persistedCompletedAt), interruptionReason(persistedStatus));
+                restored.restoreTerminalState(ExecutionStateCodec.decode(checkpoint.status()),
+                        toInstant(checkpoint.completedAt()), interruptionReason(checkpoint.status()));
             }
             return Optional.of(restored);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("恢复执行检查点失败: executionId=" + executionId, e);
         }
     }
 

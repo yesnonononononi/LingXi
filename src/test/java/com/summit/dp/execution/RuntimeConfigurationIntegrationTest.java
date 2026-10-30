@@ -7,7 +7,6 @@ import com.summit.dp.shared.support.SqliteTestDatabase;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
@@ -47,8 +46,6 @@ import com.summit.dp.workflow.application.chat.ExecutionContext;
 import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.workflow.application.chat.RuntimeContext;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
-import com.summit.dp.workflow.infrastructure.harness.ExecutionSnapshotReader;
-import com.summit.dp.workflow.infrastructure.harness.LegacyExecutionSnapshotAdapter;
 import com.summit.dp.workflow.infrastructure.harness.RuntimeConfigurationProviders;
 import com.summit.dp.workflow.infrastructure.harness.agent.IChatAgent;
 import com.summit.dp.workflow.infrastructure.harness.agent.SubAgent;
@@ -241,36 +238,15 @@ class RuntimeConfigurationIntegrationTest {
             application.register(IChatAgent.class, SubAgent.class, RuntimeConfigurationProviders.class);
             application.refresh();
             for (ChatAgent agent : List.of(application.getBean(IChatAgent.class), application.getBean(SubAgent.class))) {
-                Execution restored = new ExecutionSnapshotReader(json, new LegacyExecutionSnapshotAdapter(json, configurations)).read(snapshot);
+                // 旧格式（readTree + LegacyExecutionSnapshotAdapter）兼容分支已随旧数据下线，
+                // 现在检查点就是 Execution 的流式 JSON：直接反序列化即可。
+                Execution restored = json.readValue(snapshot, Execution.class);
                 agent.execute(restored);
                 assertFalse(json.writeValueAsString(restored).contains("model-secret-canary"));
                 assertFalse(json.writeValueAsString(restored).contains("mcp-secret-canary"));
             }
         }
         assertEquals(2, selected.get());
-    }
-
-    @Test
-    void legacySnapshotsArchiveTheirOriginalCredentialsBeforeRestoring() throws Exception {
-        configurations.freezeModel(31L, model("current-secret"));
-        ObjectNode tree = json.createObjectNode();
-        tree.put("id", "101");
-        ObjectNode request = tree.putObject("agentRequest");
-        request.set("modelConfig", json.valueToTree(model("legacy-secret-canary")));
-        request.set("mcpConfig", json.valueToTree(mcp(Map.of("Authorization", "legacy-mcp-canary"))));
-        request.putObject("runtimeParameters").putObject("attributes").put(ExecutionAttributes.MODEL_CONFIG_ID, "31");
-        tree.set("mcpConfig", request.get("mcpConfig"));
-        Execution restored = new ExecutionSnapshotReader(json, new LegacyExecutionSnapshotAdapter(json, configurations)).read(json.writeValueAsString(tree));
-        SensitiveDataSpec modelSpec = restored.getAgentRequest().getModelConfigSpec();
-        assertNotNull(modelSpec);
-        assertEquals(2, modelSpec.getVersion());
-        assertEquals("legacy-secret-canary", configurations.resolveModel(modelSpec.getId(), modelSpec.getVersion()).getApiKey());
-        assertNotNull(restored.getAgentRequest().getMcpConfigSpec());
-        String sanitized = json.writeValueAsString(restored);
-        assertFalse(sanitized.contains("legacy-secret-canary"));
-        assertFalse(sanitized.contains("legacy-mcp-canary"));
-        assertFalse(json.readTree(sanitized).path("agentRequest").has("modelConfig"));
-        assertFalse(json.readTree(sanitized).has("mcpConfig"));
     }
 
     @Test

@@ -22,6 +22,7 @@ import com.summit.dp.execution.application.service.ExecutionReclaimService;
 import com.summit.dp.execution.application.service.impl.ExecutionQueryServiceImpl;
 import com.summit.dp.execution.domain.model.Execution;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
+import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionResumeTaskMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
@@ -42,6 +43,7 @@ import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
 import com.summit.dp.workflow.application.chat.ChatCommand;
 import com.summit.dp.workflow.application.chat.ResendTargetResolver;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
+import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -187,7 +189,7 @@ class ExecutionCleanupTest {
         for (long id : List.of(100L, 101L, 102L)) insertExecution(id, 3);
         List<Execution> candidates = repository.findReclaimable(0L, 200);
         assertEquals(3, candidates.size());
-        assertNull(candidates.getFirst().getSnapshot(), "候选查询不读取快照正文");
+        assertNull(candidates.getFirst().getSnapshotFile(), "候选查询不读取快照正文");
         insertTurn(20L, 100L);
         executions.update(null, Wrappers.<ExecutionPO>lambdaUpdate().eq(ExecutionPO::getId, 101L)
                 .set(ExecutionPO::getStatus, ExecutionStatusCodes.SUSPENDED));
@@ -279,26 +281,51 @@ class ExecutionCleanupTest {
         ObjectMapper mapper = new JsonConfig().objectMapper();
         List<Message> history = List.of(SystemMessageEntity.builder().text("压缩后的历史基线").build(),
                 UserMessageEntity.from("目标提问"), SystemMessageEntity.builder().text("后续回答").build());
-        ObjectNode snapshotTree = mapper.createObjectNode().put("id", "100");
-        snapshotTree.set("agentRequest", mapper.valueToTree(AgentRequest.builder().build()));
-        snapshotTree.set("messages", mapper.valueToTree(history));
-        String snapshot = mapper.writeValueAsString(snapshotTree);
+        // 正文在文件里，库里只留文件标识：先发布第 100 轮自己的检查点文件，再把标识写进那一行。
+        java.nio.file.Path dataDir = ExecutionRepositoryTestFactory.tempDataDir();
+        LocalFileCheckpointStore store = new LocalFileCheckpointStore(dataDir.toString(), mapper);
+        String fileId = publishCheckpoint(store, mapper, checkpointOf("100", history));
         executions.update(null, Wrappers.<ExecutionPO>lambdaUpdate().eq(ExecutionPO::getId, 100L)
-                .set(ExecutionPO::getSnapshot, snapshot));
+                .set(ExecutionPO::getSnapshotFile, fileId));
         SessionMessageQueryService messages = mock(SessionMessageQueryService.class);
         ChatTurnService chatTurns = mock(ChatTurnService.class);
         when(messages.findByMessageId(30L)).thenReturn(Result.success(SessionMessageVO.builder()
                 .id(30L).turnId(20L).sessionId(10L).type("USER").build()));
         when(chatTurns.findByIds(List.of(20L))).thenReturn(Map.of(20L,
                 ChatTurn.builder().id(20L).sessionId(10L).executionId(100L).build()));
-        ResendTargetResolver resolver = new ResendTargetResolver(messages, chatTurns,
-                new ExecutionQueryServiceImpl(repository), mapper);
+        // 消费者侧只认「执行」对象：仓储按库内标识流式读文件，重发不再接触整段 JSON 字符串。
+        LocalExecutionRepository runtime = ExecutionRepositoryTestFactory.create(executions, mapper, dataDir);
+        ResendTargetResolver resolver = new ResendTargetResolver(messages, chatTurns, runtime);
 
         assertEquals(1L, service.cleanup().deletedCount());
         ResendTargetResolver.ResendTarget target = resolver.resolve(
                 new ChatCommand("修改提问", 10L, null, null, 30L, null, false, List.of(), List.of()));
         assertEquals(mapper.writeValueAsString(history.subList(0, 1)), mapper.writeValueAsString(target.baseline()));
-        assertEquals(snapshot, executions.selectById(100L).getSnapshot());
+        assertEquals(fileId, executions.selectById(100L).getSnapshotFile());
+    }
+
+    /** 目标轮次自己的检查点：基线就取它自己的历史，绝不回退到会话最新一轮。 */
+    private static com.summit.core.agent.Execution checkpointOf(String executionId, List<Message> history) {
+        return com.summit.core.agent.Execution.builder()
+                .id(executionId)
+                .executionState(com.summit.core.agent.ExecutionState.SUSPENDED)
+                .agentRequest(AgentRequest.builder().messages(history).build())
+                .messages(history)
+                .build();
+    }
+
+    /** 走存储端口发布一份真实检查点文件，返回库内该存的权威文件标识。 */
+    private static String publishCheckpoint(LocalFileCheckpointStore store, ObjectMapper mapper,
+                                           com.summit.core.agent.Execution execution) throws Exception {
+        com.summit.dp.execution.application.port.ExecutionCheckpointStore.CheckpointWriter writer =
+                store.begin(execution.getId());
+        try {
+            mapper.writeValue(writer.stream(), execution);
+            writer.publish();
+            return writer.fileId();
+        } finally {
+            writer.complete();
+        }
     }
 
     @Test
@@ -328,7 +355,7 @@ class ExecutionCleanupTest {
         execution.setSessionId(10L);
         execution.setVersion(1L);
         execution.setStatus(status);
-        execution.setSnapshot("用于检测误删的快照");
+        execution.setSnapshotFile("用于检测误删的快照");
         executions.insert(execution);
     }
 

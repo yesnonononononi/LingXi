@@ -98,7 +98,7 @@ class ExecutionCheckpointMigrationTest {
         checkpoints.save(305L, null, ExecutionStatusCodes.FAILED, "failed", null, null, Instant.now());
         assertThrows(IllegalStateException.class, () -> checkpoints.save(305L, null,
                 ExecutionStatusCodes.SUSPENDED, "stale", null, null, null));
-        assertEquals("failed", mapper.selectById(305L).getSnapshot());
+        assertEquals("failed", mapper.selectById(305L).getSnapshotFile());
         assertEquals(2L, mapper.selectById(305L).getVersion());
     }
 

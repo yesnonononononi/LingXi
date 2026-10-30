@@ -2,13 +2,10 @@ package com.summit.dp.execution;
 
 import org.springframework.context.ApplicationEventPublisher;
 
-import com.summit.dp.workflow.infrastructure.harness.ExecutionSnapshotReader;
-import com.summit.dp.workflow.infrastructure.harness.LegacyExecutionSnapshotAdapter;
-
-import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
-
 import com.summit.dp.execution.application.service.ExecutionCheckpointService;
+import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
+import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.*;
@@ -66,17 +63,50 @@ class LocalExecutionRepositoryResumeTest {
     @org.junit.jupiter.api.BeforeEach
     void allowCheckpointUpdates() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "test"), ExecutionPO.class);
-        when(persistence.update(any(ExecutionPO.class), any())).thenReturn(1);
-        when(persistence.selectOne(any())).thenReturn(statusRow(ExecutionStatusCodes.RUNNING, 1L));
+        // 假行存储必须跟着事务走：事务内写入只在提交后才可见，回滚则行保持原值。
+        // 否则「提交前还读旧文件、回滚后仍指向旧文件」这类断言全是恒真的。
+        when(persistence.update(any(ExecutionPO.class), any())).thenAnswer(invocation -> {
+            applyRow(invocation.getArgument(0));
+            return 1;
+        });
+        when(persistence.insert(any(ExecutionPO.class))).thenAnswer(invocation -> {
+            applyRow(invocation.getArgument(0));
+            return 1;
+        });
+        when(persistence.selectOne(any())).thenAnswer(invocation -> currentRow.get());
+        when(persistence.selectById(anyLong())).thenAnswer(invocation -> currentRow.get());
         doAnswer(invocation -> { suspended.add(invocation.<Execution>getArgument(0).getId()); return null; })
                 .when(turns).markExecutionWaiting(any());
         doAnswer(invocation -> { finished.add(invocation.<Execution>getArgument(0).getId()); return null; })
                 .when(turns).finishExecution(any());
     }
+
+    /** 行写入按当前事务处理：无事务立即生效，有事务则挂到提交后。 */
+    private void applyRow(ExecutionPO row) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            currentRow.set(row);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override public void afterCommit() { currentRow.set(row); }
+        });
+    }
+    /**
+     * 假行存储：模拟 execution 表里那一行（含检查点文件标识）。
+     *
+     * <p>写入答案把最新的 PO 存进来，读答案回同一个 PO —— 这样「保存后按库内引用读文件」
+     * 与真实库语义一致，而用例不必启一个真的 SQLite 文件库。</p>
+     */
+    private final java.util.concurrent.atomic.AtomicReference<ExecutionPO> currentRow =
+            new java.util.concurrent.atomic.AtomicReference<>(statusRow(ExecutionStatusCodes.RUNNING, 1L));
+    private final java.nio.file.Path dataDir = ExecutionRepositoryTestFactory.tempDataDir();
+    private final LocalFileCheckpointStore checkpointStore =
+            new LocalFileCheckpointStore(dataDir.toString(), mapper);
     private final LocalExecutionRepository repository =
-            new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(persistence), mock(ApplicationEventPublisher.class)), mapper, provider(readiness), provider(tools),
-                    provider(subExecutionLifecycle), provider(sessions), provider(turns), provider(runtimeEvents),
-                    new ExecutionSnapshotReader(mapper, new LegacyExecutionSnapshotAdapter(mapper, RuntimeConfigurationTestSupport.create())));
+            new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(persistence), mock(ApplicationEventPublisher.class)), mapper,
+                    checkpointStore,
+                    provider(readiness), provider(tools),
+                    provider(subExecutionLifecycle), provider(sessions), provider(turns), provider(runtimeEvents));
 
     private static Execution execution() {
         List<Message> history = List.of(UserMessageEntity.from("hi"),
@@ -105,9 +135,13 @@ class LocalExecutionRepositoryResumeTest {
     }
 
     @Test
-    void coldRepositoryRestoresPersistedJson() throws Exception {
+    void coldRepositoryRestoresPersistedCheckpointFile() {
         ExecutionPO row = new ExecutionPO();
-        row.setSnapshot(mapper.writeValueAsString(execution()));
+        row.setId(305L);
+        row.setStatus(ExecutionStatusCodes.SUSPENDED);
+        row.setVersion(1L);
+        row.setSessionId(405L);
+        row.setSnapshotFile(publishCheckpoint(execution()));
         when(persistence.selectById(305L)).thenReturn(row);
         Execution restored = repository.findById("305").orElseThrow();
         assertInstanceOf(UserMessageEntity.class, restored.getMessages().getFirst());
@@ -116,12 +150,14 @@ class LocalExecutionRepositoryResumeTest {
     }
 
     @Test
-    void startupTerminalSummaryPreventsRestoringOldRunningSnapshot() throws Exception {
+    void startupTerminalSummaryPreventsRestoringOldRunningSnapshot() {
         Execution interrupted = execution();
         interrupted.start();
         ExecutionPO row = new ExecutionPO();
+        row.setId(305L);
         row.setStatus(4);
-        row.setSnapshot(mapper.writeValueAsString(interrupted));
+        row.setVersion(2L);
+        row.setSnapshotFile(publishCheckpoint(interrupted));
         when(persistence.selectById(305L)).thenReturn(row);
 
         assertEquals(ExecutionState.FAILED, repository.findById("305").orElseThrow().getExecutionState());
@@ -129,10 +165,25 @@ class LocalExecutionRepositoryResumeTest {
         assertFalse(repository.isActive("305"));
     }
 
+    /** 直接往存储端口写一份已发布的检查点文件，返回它的文件标识。 */
+    private String publishCheckpoint(Execution execution) {
+        com.summit.dp.execution.application.port.ExecutionCheckpointStore.CheckpointWriter writer =
+                checkpointStore.begin(execution.getId());
+        try {
+            mapper.writeValue(writer.stream(), execution);
+            writer.publish();
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("写测试检查点失败", e);
+        }
+        String fileId = writer.fileId();
+        writer.complete();
+        return fileId;
+    }
+
     @Test
     void createsAndUpdatesUsingExistingMapper() throws Exception {
-        when(persistence.insert(any(ExecutionPO.class))).thenReturn(1);
-        when(persistence.update(any(ExecutionPO.class), any())).thenReturn(1);
+        // 首次创建：表里还没有这一行。
+        currentRow.set(null);
         Execution source = execution();
         source = Execution.create(source.getAgentRequest(), "chatAgent");
         repository.register("305");
@@ -143,8 +194,11 @@ class LocalExecutionRepositoryResumeTest {
         assertEquals(405L, inserted.getValue().getSessionId());
         assertEquals(0, inserted.getValue().getStatus());
         assertNotNull(inserted.getValue().getCreatedAt());
+        // 落库的是文件标识，不是正文：正文必须在文件里且能按该标识读回。
+        String insertedFile = inserted.getValue().getSnapshotFile();
+        assertNotNull(insertedFile, "创建检查点必须提交文件标识");
         assertEquals(ExecutionState.CREATED,
-                mapper.readValue(inserted.getValue().getSnapshot(), Execution.class).getExecutionState());
+                checkpointStore.read("305", insertedFile, Execution.class).getExecutionState());
 
         source.suspend();
         repository.save(source);
@@ -153,18 +207,19 @@ class LocalExecutionRepositoryResumeTest {
         assertEquals(2, updated.getValue().getStatus());
         assertEquals(305L, updated.getValue().getId());
         assertNull(updated.getValue().getSessionId());
+        assertNotEquals(insertedFile, updated.getValue().getSnapshotFile(), "每次保存都是新的独立文件");
     }
 
     @Test
-    void cacheChangesOnlyAfterTransactionCommit() {
+    void committedSaveBecomesVisibleOnlyAfterCommit() {
         repository.save(execution());
         repository.register("305");
-        when(persistence.update(any(ExecutionPO.class), any())).thenReturn(1);
         Execution changed = execution();
         changed.setMessages(List.of(UserMessageEntity.from("committed")));
         TransactionSynchronizationManager.initSynchronization();
         try {
             repository.save(changed);
+            // 提交前：库内仍指向旧文件，读到的还是旧内容（没有应用级正文缓存兜着）。
             assertEquals(2, repository.findById("305").orElseThrow().getMessages().size());
             for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
                 synchronization.afterCommit();
@@ -204,31 +259,43 @@ class LocalExecutionRepositoryResumeTest {
     }
 
     @Test
-    void rolledBackTerminalSaveKeepsPreviousCheckpoint() {
+    void rolledBackTerminalSaveKeepsPreviousCheckpointAndDeletesNewFile() {
         repository.save(execution());
         repository.register("305");
-        when(persistence.update(any(ExecutionPO.class), any())).thenReturn(1);
         Execution finished = execution();
         finished.complete();
+        String previousFile = currentRow.get().getSnapshotFile();
+        clearInvocations(persistence);
+        String newFile;
         TransactionSynchronizationManager.initSynchronization();
         try {
             repository.save(finished);
+            ArgumentCaptor<ExecutionPO> saved = ArgumentCaptor.forClass(ExecutionPO.class);
+            verify(persistence).update(saved.capture(), any());
+            newFile = saved.getValue().getSnapshotFile();
+            // 事务未提交：库内引用还是旧文件。
+            assertEquals(previousFile, currentRow.get().getSnapshotFile());
             for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
                 synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
             }
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
+        // 回滚：库内仍指向旧文件且旧检查点可读，本次新文件必须被删掉。
+        assertEquals(previousFile, currentRow.get().getSnapshotFile());
         assertEquals(ExecutionState.SUSPENDED, repository.findById("305").orElseThrow().getExecutionState());
+        assertNotEquals(previousFile, newFile);
+        assertThrows(IllegalStateException.class, () -> checkpointStore.read("305", newFile, Execution.class));
+        assertNotNull(checkpointStore.read("305", previousFile, Execution.class));
     }
 
     @Test
-    void committedTerminalSaveEvictsMemoryCheckpoint() {
+    void committedTerminalSaveIsReadBackFromCommittedFile() {
         repository.save(execution());
         repository.register("305");
-        when(persistence.update(any(ExecutionPO.class), any())).thenReturn(1);
         Execution finished = execution();
         finished.complete();
+        ExecutionPO previous = currentRow.get();
         TransactionSynchronizationManager.initSynchronization();
         try {
             repository.save(finished);
@@ -239,8 +306,11 @@ class LocalExecutionRepositoryResumeTest {
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
-        assertTrue(repository.findById("305").isEmpty());
-        verify(persistence).selectById(305L);
+        // 终态保存提交后：正文仍在文件里（历史与收尸都要读得到），旧文件按提交结果回收。
+        assertEquals(ExecutionState.COMPLETED, repository.findById("305").orElseThrow().getExecutionState());
+        assertThrows(IllegalStateException.class,
+                () -> checkpointStore.read("305", previous.getSnapshotFile(), Execution.class));
+        verify(persistence, atLeastOnce()).selectById(305L);
     }
 
     @Test
@@ -304,7 +374,10 @@ class LocalExecutionRepositoryResumeTest {
     @Test
     void suspendedCancellationPublishesOnlyAfterCommitAndNotAfterRollback() {
         for (boolean commit : new boolean[]{false, true}) {
-            repository.save(execution());
+            // 表里先有一份已提交的检查点：回滚时库内引用不变，仍然读得到这份旧文件。
+            ExecutionPO seeded = statusRow(ExecutionStatusCodes.SUSPENDED, 1L);
+            seeded.setSnapshotFile(publishCheckpoint(execution()));
+            currentRow.set(seeded);
             clearInvocations(runtimeEvents, turns);
             TransactionSynchronizationManager.initSynchronization();
             try {
@@ -404,8 +477,8 @@ class LocalExecutionRepositoryResumeTest {
     void releasedSignalIsVisibleAndServiceFailureDoesNotBlockFollowingService() {
         ToolCallReadinessService failing = mock(ToolCallReadinessService.class);
         LocalExecutionRepository isolated = new LocalExecutionRepository(new ExecutionCheckpointService(new ExecutionRepositoryImpl(persistence), mock(ApplicationEventPublisher.class)), mapper,
-                provider(failing), provider(tools), provider(subExecutionLifecycle), provider(sessions), provider(turns), provider(runtimeEvents),
-                new ExecutionSnapshotReader(mapper, new LegacyExecutionSnapshotAdapter(mapper, RuntimeConfigurationTestSupport.create())));
+                checkpointStore,
+                provider(failing), provider(tools), provider(subExecutionLifecycle), provider(sessions), provider(turns), provider(runtimeEvents));
         doAnswer(invocation -> {
             assertFalse(Thread.holdsLock(ExecutionCoordination.monitor("305")));
             assertFalse(isolated.isActive("305"));
