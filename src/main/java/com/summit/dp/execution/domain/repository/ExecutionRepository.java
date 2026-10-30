@@ -25,7 +25,7 @@ public interface ExecutionRepository extends RepositoryTemplate<Execution, Long>
      * 批量取会话下未终结（CREATED / RUNNING / SUSPENDED）的执行投影。
      *
      * <p>一次 {@code IN} 查询，不逐会话查；不加载 snapshot —— 调用方只判「还有没有在跑的」，
-     * 把 LONGTEXT 检查点读进内存是不可接受的。</p>
+     * 把检查点正文读进内存是不可接受的（正文在文件里，库里只有文件标识）。</p>
      *
      * @param sessionIds 会话 id 集合；空入参由实现短路返回空列表
      */
@@ -34,7 +34,7 @@ public interface ExecutionRepository extends RepositoryTemplate<Execution, Long>
     /**
      * 读执行归属的会话 id。
      *
-     * <p>只取 {@code session_id} 一列：归属判定不该为了一个外键把 LONGTEXT 检查点读进内存。
+     * <p>只取 {@code session_id} 一列：归属判定不该为了一个外键把检查点正文读进内存。
      * 行不存在、或行上没写会话，都返回空。</p>
      */
     Optional<Long> findSessionId(long executionId);
@@ -65,7 +65,7 @@ public interface ExecutionRepository extends RepositoryTemplate<Execution, Long>
     /**
      * 按执行 id 批量取「查询摘要」投影：模型快照、token 累计、开始/结束时间、根执行归属。
      *
-     * <p><b>不加载 snapshot</b>：snapshot 是 LONGTEXT 的执行恢复检查点，历史列表一次可能要装
+     * <p><b>不加载检查点正文</b>：正文在文件里（库里只有 {@code snapshot_file} 标识），历史列表一次可能要装
      * 几十个执行，把检查点全读进内存只为展示几个数字是不可接受的。恢复路径仍然走
      * {@code findById}。</p>
      *
@@ -80,8 +80,19 @@ public interface ExecutionRepository extends RepositoryTemplate<Execution, Long>
      * 读执行的恢复代际。
      *
      * <p>恢复协调器判断任务是否过期、reaper 判断能否重新派发都只关心这一个数，
-     * 不该为了取它把整行（含 LONGTEXT 检查点）读进内存。行不存在返回 {@code 0}
+     * 不该为了取它把整行（含检查点正文）读进内存。行不存在返回 {@code 0}
      * —— 「没有这条执行」对恢复而言等价于「没有任何未完成的恢复边界」。</p>
      */
     long findResumeGeneration(long executionId);
+
+    /**
+     * 批量读「执行 id → 检查点文件标识」，供检查点文件回收判断哪些文件仍被引用。
+     *
+     * <p>只取 {@code id} 与 {@code snapshot_file} 两列：回收绝不能为了判引用把正文读进内存。
+     * 行存在但文件标识为 {@code null} 的，不出现在返回值里（等价于「没有任何正文文件被引用」）。
+     * 空入参返回空 Map。</p>
+     *
+     * @param executionIds 执行 id 集合
+     */
+    java.util.Map<Long, String> findSnapshotFileIds(java.util.Collection<Long> executionIds);
 }

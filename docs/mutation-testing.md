@@ -94,7 +94,7 @@ mvn test-compile org.pitest:pitest-maven:mutationCoverage ^
 ## 已知坑
 
 - 每轮都要先跑一遍全测试套件算覆盖（默认 `targetTests` 覆盖 `src/test` 下所有包），本项目约 2~3 分钟；只想看一个包就顺手限制 `-DtargetTests`。
-- 单线程跑变异是默认行为。`-Dthreads=4` 能快很多，但本项目部分测试共用一个 H2 库文件/固定端口，并行时可能互相踩，出现假失败 —— 只在纯逻辑包上开。
+- 单线程跑变异是默认行为。`-Dthreads=4` 能快很多，但本项目部分测试共用固定端口（数据库改为每个用例各自一份临时 SQLite 文件，已不再共用库文件），并行时仍可能互相踩，出现假失败 —— 只在纯逻辑包上开。
 - 缩范围跑（`-DtargetTests=某个包.*`）时，会碰到**测试之间互相依赖**的用例：实测 `com.summit.dp.shared.InitSqlMigrationCoverageTest` 只跑 `com.summit.dp.shared.*` 子集时失败，全量 `targetTests` 下却通过。这类用例要么补齐自足初始化，要么在缩范围时排除。
 - 控制台会出现 `Project uses Spring, but the Arcmutate Spring plugin is not present`：商业插件广告，忽略。
 - Pitest 不负责编译：`mvn clean` 之后直接跑只会得到 `No mutations found`，命令前面必须带 `test-compile`。

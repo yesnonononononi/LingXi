@@ -14,15 +14,22 @@ import java.io.UncheckedIOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * 检查点正文的本地文件实现。
@@ -50,21 +57,53 @@ public class LocalFileCheckpointStore implements ExecutionCheckpointStore {
     private static final Pattern FILE_ID = Pattern.compile("^[0-9a-f]{32}$");
     private static final String SUFFIX = ".json";
     private static final String TEMP_SUFFIX = ".part";
+    /** 单批枚举上限：目录项多时也只占很小一段内存。 */
+    private static final int MAX_BATCH = 500;
+    /** 迁移复制等待静默窗口的上限；等不到就让用户稍后重试，而不是复制出半新半旧的数据集。 */
+    private static final long DEFAULT_COPY_QUIET_WINDOW_SECONDS = 10L;
 
     private final Path root;
     private final ObjectMapper mapper;
+    /** 等待「检查点写入静默窗口」的秒数：迁移复制要在这个窗口里做。 */
+    private final long copyQuietWindowSeconds;
     /** 在途写入登记：executionId → 尚未完成事务的文件标识集合。 */
     private final Map<String, Set<String>> inFlight = new ConcurrentHashMap<>();
+    /**
+     * 读写门闩：写入与删除取读锁（可并发），目录复制取写锁（独占）。
+     *
+     * <p>复制期间必须没有检查点写入 —— 否则会复制出「库快照指向的文件已被替换/删除」的数据集。
+     * 写锁拿不到就明确失败，不冒险复制。</p>
+     */
+    private final ReentrantReadWriteLock gate = new ReentrantReadWriteLock();
 
+    /**
+     * 生产装配入口：数据目录来自 {@code lingxi.data.dir}，静默窗口用默认 10 秒。
+     *
+     * <p>显式 {@code @Autowired}：类里还有一个「指定静默窗口」的构造器供测试使用，
+     * 不标出来 Spring 会在两个构造器之间选不出来。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired
     public LocalFileCheckpointStore(@Value("${lingxi.data.dir}") String dataDir, ObjectMapper mapper) {
+        this(dataDir, mapper, DEFAULT_COPY_QUIET_WINDOW_SECONDS);
+    }
+
+    /**
+     * 指定「等待检查点写入静默窗口」的秒数。
+     *
+     * <p>生产用默认 10 秒；测试与需要快速失败的场景传 0，表示「拿不到就立刻拒绝」。</p>
+     */
+    public LocalFileCheckpointStore(String dataDir, ObjectMapper mapper, long quietWindowSeconds) {
         this.root = Path.of(dataDir).toAbsolutePath().normalize().resolve("checkpoints");
         this.mapper = mapper;
+        this.copyQuietWindowSeconds = Math.max(0L, quietWindowSeconds);
     }
 
     @Override
     public CheckpointWriter begin(String executionId) {
         Path directory = executionDirectory(executionId);
         String fileId = UUID.randomUUID().toString().replace("-", "");
+        // 写入期间持读锁：目录复制（迁移）会取写锁，两者互斥，复制出来的检查点目录一定是静止状态。
+        gate.readLock().lock();
         try {
             Files.createDirectories(directory);
             // 临时文件与最终文件同目录：保证 ATOMIC_MOVE 一定在同一文件系统内。
@@ -72,7 +111,11 @@ public class LocalFileCheckpointStore implements ExecutionCheckpointStore {
             inFlight.computeIfAbsent(executionId, key -> ConcurrentHashMap.newKeySet()).add(fileId);
             return new FileCheckpointWriter(executionId, fileId, temp, directory.resolve(fileId + SUFFIX));
         } catch (IOException e) {
+            gate.readLock().unlock();
             throw new UncheckedIOException("创建检查点临时文件失败: executionId=" + executionId, e);
+        } catch (RuntimeException e) {
+            gate.readLock().unlock();
+            throw e;
         }
     }
 
@@ -102,6 +145,7 @@ public class LocalFileCheckpointStore implements ExecutionCheckpointStore {
             // 在途写入可能正在被另一个线程发布：让清理跳过，绝不删。
             return false;
         }
+        gate.readLock().lock();
         try {
             return Files.deleteIfExists(resolve(executionId, fileId));
         } catch (IOException | RuntimeException failure) {
@@ -109,6 +153,8 @@ public class LocalFileCheckpointStore implements ExecutionCheckpointStore {
             log.warn("删除执行检查点文件失败，留待后续清理: executionId={}, fileId={}, error={}",
                     executionId, fileId, failure.toString());
             return false;
+        } finally {
+            gate.readLock().unlock();
         }
     }
 
@@ -124,15 +170,244 @@ public class LocalFileCheckpointStore implements ExecutionCheckpointStore {
         return pending == null ? Set.of() : Set.copyOf(new LinkedHashSet<>(pending));
     }
 
-    /** 结束在途登记；写入失败、事务提交或回滚都必须调用，避免清理永久跳过该标识。 */
-    private void release(String executionId, String fileId) {
-        Set<String> pending = inFlight.get(executionId);
-        if (pending == null) {
-            return;
+    /**
+     * 按批枚举执行目录：只看根目录下的直接子目录，名字必须是数字执行标识。
+     *
+     * <p>不跟符号链接：链接可能指到用户数据目录（images 等）之外，甚至形成环。
+     * {@code afterExecutionId} 用数字大小比较，目录只会因为新执行而变大，不会漏扫。</p>
+     */
+    @Override
+    public List<String> listExecutionIds(String afterExecutionId, int limit) {
+        int size = clampBatch(limit);
+        long after = parseOrZero(afterExecutionId);
+        if (!Files.isDirectory(root)) {
+            return List.of();
         }
-        pending.remove(fileId);
-        if (pending.isEmpty()) {
-            inFlight.remove(executionId, pending);
+        gate.readLock().lock();
+        try (Stream<Path> children = Files.list(root)) {
+            List<String> ids = children
+                    .filter(path -> Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS))
+                    .map(path -> path.getFileName().toString())
+                    .filter(name -> EXECUTION_ID.matcher(name).matches())
+                    .filter(name -> parseOrZero(name) > after)
+                    .sorted(Comparator.comparingLong(Long::parseLong))
+                    .limit(size)
+                    .toList();
+            return new ArrayList<>(ids);
+        } catch (IOException e) {
+            log.warn("枚举检查点执行目录失败，跳过本轮: root={}, error={}", root, e.toString());
+            return List.of();
+        } finally {
+            gate.readLock().unlock();
+        }
+    }
+
+    /**
+     * 按批枚举某个执行目录下的文件：只读文件名，不打开任何文件。
+     *
+     * <p>临时文件（{@code <fileId>-<random>.part}）单独标记，清理据此回收未完成的写入；
+     * 其它不认识的文件一律不返回 —— 清理绝不删自己不认识的条目。</p>
+     */
+    @Override
+    public List<CheckpointFile> listFiles(String executionId, int limit) {
+        Path directory = executionDirectory(executionId);
+        int size = clampBatch(limit);
+        if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
+            return List.of();
+        }
+        gate.readLock().lock();
+        try (Stream<Path> children = Files.list(directory)) {
+            return children
+                    .filter(path -> Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
+                    .map(path -> entryOf(executionId, path.getFileName().toString()))
+                    .filter(java.util.Objects::nonNull)
+                    .limit(size)
+                    .toList();
+        } catch (IOException e) {
+            log.warn("枚举检查点文件失败，跳过该执行: executionId={}, error={}", executionId, e.toString());
+            return List.of();
+        } finally {
+            gate.readLock().unlock();
+        }
+    }
+
+    /**
+     * 删除枚举出来的条目：只认 {@link #listFiles(String, int)} 的产物，按精确文件名删。
+     *
+     * <p>在途写入一律跳过；文件名与执行目录都要重新校验，防止调用方传入越界路径。</p>
+     */
+    @Override
+    public boolean deleteFile(CheckpointFile file) {
+        if (file == null || file.executionId() == null || file.fileName() == null) {
+            return false;
+        }
+        if (file.fileName().contains("/") || file.fileName().contains("\\") || file.fileName().contains("..")) {
+            return false;
+        }
+        if (!FILE_ID.matcher(file.fileId() == null ? "" : file.fileId()).matches()) {
+            return false;
+        }
+        if (isInFlight(file.executionId(), file.fileId())) {
+            return false;
+        }
+        Path directory = executionDirectory(file.executionId());
+        Path candidate = directory.resolve(file.fileName()).normalize();
+        if (!candidate.startsWith(directory)) {
+            return false;
+        }
+        gate.readLock().lock();
+        try {
+            return Files.deleteIfExists(candidate);
+        } catch (IOException | RuntimeException failure) {
+            log.warn("回收检查点文件失败，留待下一轮: path={}, error={}", candidate, failure.toString());
+            return false;
+        } finally {
+            gate.readLock().unlock();
+        }
+    }
+
+    /**
+     * 把检查点目录复制到新数据目录，复制期间排除检查点写入与删除。
+     *
+     * <p>只复制已发布的 {@code .json}：临时文件属于尚未提交的事务，复制过去也只是垃圾，
+     * 重启后由清理回收。源目录只读不删 —— 搬迁失败时旧目录必须完好。</p>
+     */
+    @Override
+    public CopyResult copyTo(String targetDataDir) {
+        if (targetDataDir == null || targetDataDir.isBlank()) {
+            throw new IllegalArgumentException("目标数据目录不能为空");
+        }
+        Path targetRoot = Path.of(targetDataDir).toAbsolutePath().normalize().resolve("checkpoints");
+        boolean locked;
+        try {
+            locked = gate.writeLock().tryLock(copyQuietWindowSeconds, TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("检查点目录复制被中断");
+        }
+        if (!locked) {
+            throw new IllegalStateException("仍有检查点正在写入，请稍后重试数据目录迁移");
+        }
+        try {
+            return copyLocked(targetRoot);
+        } finally {
+            gate.writeLock().unlock();
+        }
+    }
+
+    /**
+     * 在写锁保护的静止窗口里执行搬迁动作（库快照 + 目录复制必须同一窗口）。
+     *
+     * <p>写锁可重入：动作内部再调 {@link #copyTo(String)} 不会自己把自己锁死。</p>
+     */
+    @Override
+    public void withWriteQuiesced(Runnable migrationStep) {
+        if (migrationStep == null) {
+            throw new IllegalArgumentException("搬迁动作不能为空");
+        }
+        boolean locked;
+        try {
+            locked = gate.writeLock().tryLock(copyQuietWindowSeconds, TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("数据目录迁移被中断");
+        }
+        if (!locked) {
+            throw new IllegalStateException("仍有检查点正在写入，请稍后重试数据目录迁移");
+        }
+        try {
+            migrationStep.run();
+        } finally {
+            gate.writeLock().unlock();
+        }
+    }
+
+    /** 只在已持写锁时调用：把已发布的正文复制到目标目录。 */
+    private CopyResult copyLocked(Path targetRoot) {
+        try {
+            if (!Files.isDirectory(root)) {
+                Files.createDirectories(targetRoot);
+                return new CopyResult(0, 0);
+            }
+            int copied = 0;
+            int skippedTemporary = 0;
+            try (Stream<Path> paths = Files.walk(root)) {
+                List<Path> entries = paths.sorted(Comparator.naturalOrder()).toList();
+                for (Path entry : entries) {
+                    Path destination = targetRoot.resolve(root.relativize(entry).toString());
+                    if (Files.isDirectory(entry, LinkOption.NOFOLLOW_LINKS)) {
+                        Files.createDirectories(destination);
+                        continue;
+                    }
+                    if (!Files.isRegularFile(entry, LinkOption.NOFOLLOW_LINKS)) {
+                        continue;
+                    }
+                    if (entry.getFileName().toString().endsWith(TEMP_SUFFIX)) {
+                        skippedTemporary++;
+                        continue;
+                    }
+                    if (!entry.getFileName().toString().endsWith(SUFFIX)) {
+                        continue;
+                    }
+                    Files.createDirectories(destination.getParent());
+                    Files.copy(entry, destination, StandardCopyOption.REPLACE_EXISTING);
+                    copied++;
+                }
+            }
+            log.info("检查点目录复制完成: from={}, to={}, copied={}, skippedTemporary={}",
+                    root, targetRoot, copied, skippedTemporary);
+            return new CopyResult(copied, skippedTemporary);
+        } catch (IOException e) {
+            throw new IllegalStateException("检查点目录复制失败: " + e.getMessage(), e);
+        }
+    }
+
+    /** 文件名 → 枚举条目；不认识的名字返回 {@code null}（清理不碰自己不认识的条目）。 */
+    private static CheckpointFile entryOf(String executionId, String fileName) {
+        if (fileName.endsWith(SUFFIX)) {
+            String fileId = fileName.substring(0, fileName.length() - SUFFIX.length());
+            return FILE_ID.matcher(fileId).matches()
+                    ? new CheckpointFile(executionId, fileId, fileName, false) : null;
+        }
+        if (fileName.endsWith(TEMP_SUFFIX)) {
+            // 临时文件名形如 <fileId>-<random>.part，取前缀当在途判据。
+            int dash = fileName.indexOf('-');
+            String fileId = dash > 0 ? fileName.substring(0, dash) : "";
+            return FILE_ID.matcher(fileId).matches()
+                    ? new CheckpointFile(executionId, fileId, fileName, true) : null;
+        }
+        return null;
+    }
+
+    private static int clampBatch(int limit) {
+        return Math.clamp(limit, 1, MAX_BATCH);
+    }
+
+    private static long parseOrZero(String executionId) {
+        if (executionId == null || !EXECUTION_ID.matcher(executionId).matches()) {
+            return 0L;
+        }
+        try {
+            return Long.parseLong(executionId);
+        } catch (NumberFormatException overflow) {
+            // 19 位上限内理论上不会溢出；真溢出按「不前进」处理，宁可多扫一轮也不跳过。
+            return 0L;
+        }
+    }
+
+    /** 结束在途登记并释放读锁；写入失败、事务提交或回滚都必须调用，避免清理永久跳过该标识。 */
+    private void release(String executionId, String fileId) {
+        try {
+            Set<String> pending = inFlight.get(executionId);
+            if (pending == null) {
+                return;
+            }
+            pending.remove(fileId);
+            if (pending.isEmpty()) {
+                inFlight.remove(executionId, pending);
+            }
+        } finally {
+            gate.readLock().unlock();
         }
     }
 

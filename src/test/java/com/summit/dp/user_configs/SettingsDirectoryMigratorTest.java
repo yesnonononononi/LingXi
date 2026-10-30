@@ -1,7 +1,11 @@
 package com.summit.dp.user_configs;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.user_configs.infrastructure.fs.SettingsDirectoryMigrator;
+import com.summit.dp.workflow.infrastructure.config.JsonConfig;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -26,7 +30,17 @@ class SettingsDirectoryMigratorTest {
     Path tempDir;
 
     private final DataSource dataSource = mock(DataSource.class);
-    private final SettingsDirectoryMigrator migrator = new SettingsDirectoryMigrator(dataSource);
+    private final ObjectMapper mapper = new JsonConfig().objectMapper();
+    /** 当前生效的数据目录（检查点存储的根就在这里）。 */
+    private Path fromDir;
+    private SettingsDirectoryMigrator migrator;
+
+    @BeforeEach
+    void setUp() {
+        fromDir = tempDir.resolve("from");
+        migrator = new SettingsDirectoryMigrator(dataSource,
+                new LocalFileCheckpointStore(fromDir.toString(), mapper));
+    }
 
     @Test
     @DisplayName("技能目录：连嵌套子目录一起复制，旧目录保留（搬迁失败还能退回去）")
@@ -89,6 +103,37 @@ class SettingsDirectoryMigratorTest {
                 () -> migrator.migrateDataDir(tempDir.resolve("from").toString(), target.toString()));
 
         assertTrue(error.getMessage().contains("快照"), "应当已经走到备份这一步: " + error.getMessage());
+    }
+
+    @Test
+    @DisplayName("数据目录：目标里躺着库文件 + checkpoints 目录时允许复用（数据集合的另一半）")
+    void dataDirAcceptsTargetHoldingDatabaseAndCheckpointDirectory() throws Exception {
+        Path target = Files.createDirectories(tempDir.resolve("target"));
+        Files.writeString(target.resolve("lingxi.sqlite"), "");
+        Files.createDirectories(target.resolve("checkpoints").resolve("305"));
+        when(dataSource.getConnection()).thenThrow(new SQLException("测试不接真库"));
+
+        ClientException error = assertThrows(ClientException.class,
+                () -> migrator.migrateDataDir(fromDir.toString(), target.toString()));
+
+        // 校验放行、卡在备份这一步：说明 checkpoints 目录被当作「上一次搬迁的残留」而不是异物。
+        assertTrue(error.getMessage().contains("快照"), "应当已经走到备份这一步: " + error.getMessage());
+    }
+
+    @Test
+    @DisplayName("数据目录：等不到检查点写入静默窗口时明确失败，且不留下库快照")
+    void dataDirFailsWhenCheckpointWriteIsStillRunning() throws Exception {
+        Path target = tempDir.resolve("target-busy");
+        LocalFileCheckpointStore store = new LocalFileCheckpointStore(fromDir.toString(), mapper, 0L);
+        SettingsDirectoryMigrator busyMigrator = new SettingsDirectoryMigrator(dataSource, store);
+        // 打开一个写入句柄且不结束：迁移窗口内仍有检查点写入，必须拒绝搬迁。
+        store.begin("305");
+
+        ClientException error = assertThrows(ClientException.class,
+                () -> busyMigrator.migrateDataDir(fromDir.toString(), target.toString()));
+
+        assertTrue(error.getMessage().contains("检查点"), error.getMessage());
+        assertTrue(Files.notExists(target.resolve("lingxi.sqlite")), "失败时不能留下半成品库快照");
     }
 
     @Test

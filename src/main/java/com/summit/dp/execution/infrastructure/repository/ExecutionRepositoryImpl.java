@@ -103,7 +103,7 @@ public class ExecutionRepositoryImpl extends AbstractRepository<Execution, Execu
                 .stream().map(this::toModel).toList();
     }
 
-    /** 只取 session_id 一列：归属判定不该为了一个外键把 LONGTEXT 检查点读进内存。 */
+    /** 只取 session_id 一列：归属判定不该为了一个外键把检查点正文读进内存。 */
     @Override
     public Optional<Long> findSessionId(long executionId) {
         ExecutionPO row = mapper.selectOne(new LambdaQueryWrapper<ExecutionPO>()
@@ -162,6 +162,23 @@ public class ExecutionRepositoryImpl extends AbstractRepository<Execution, Execu
                 .select(ExecutionPO::getResumeGeneration)
                 .eq(ExecutionPO::getId, executionId));
         return row == null || row.getResumeGeneration() == null ? 0L : row.getResumeGeneration();
+    }
+
+    /** 批量取「执行 id → 检查点文件标识」，只读两列，供检查点文件回收判引用。 */
+    @Override
+    public java.util.Map<Long, String> findSnapshotFileIds(java.util.Collection<Long> executionIds) {
+        if (executionIds == null || executionIds.isEmpty()) {
+            return java.util.Map.of();
+        }
+        java.util.Map<Long, String> referenced = new java.util.LinkedHashMap<>();
+        for (ExecutionPO row : mapper.selectList(new LambdaQueryWrapper<ExecutionPO>()
+                .select(ExecutionPO::getId, ExecutionPO::getSnapshotFile)
+                .in(ExecutionPO::getId, executionIds))) {
+            if (row.getId() != null && row.getSnapshotFile() != null) {
+                referenced.put(row.getId(), row.getSnapshotFile());
+            }
+        }
+        return referenced;
     }
 
     @Override

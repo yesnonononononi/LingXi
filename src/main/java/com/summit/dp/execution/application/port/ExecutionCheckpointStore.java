@@ -2,6 +2,7 @@ package com.summit.dp.execution.application.port;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -55,6 +56,65 @@ public interface ExecutionCheckpointStore {
 
     /** 当前在途写入的文件标识快照；清理逻辑按它跳过。 */
     Set<String> inFlightFileIds(String executionId);
+
+    /**
+     * 按批枚举检查点根目录下的执行目录名，供清理分批扫描使用。
+     *
+     * <p><b>只读目录项，不读文件正文，不递归进子目录以外的地方</b>；实现必须拒绝跟随符号链接，
+     * 确保枚举范围被钉死在 {@code <数据目录>/checkpoints} 之内。</p>
+     *
+     * @param afterExecutionId 上一批最后一个执行标识；{@code null} 表示从头开始
+     * @param limit            单批上限（实现负责夹到合理范围）
+     * @return 按数字升序排列的执行标识；没有更多时返回空列表
+     */
+    List<String> listExecutionIds(String afterExecutionId, int limit);
+
+    /**
+     * 按批枚举某个执行目录下的文件（只读文件名，不读正文）。
+     *
+     * @param executionId 执行标识
+     * @param limit       单批上限
+     */
+    List<CheckpointFile> listFiles(String executionId, int limit);
+
+    /**
+     * 删除 {@link #listFiles(String, int)} 枚举出来的那个条目。
+     *
+     * <p>按枚举时的精确文件名删除（未完成的临时文件也在其中），并再次校验路径仍在执行目录内；
+     * 在途写入返回 {@code false} 且不删。删除失败只记录不抛出。</p>
+     */
+    boolean deleteFile(CheckpointFile file);
+
+    /**
+     * 把整个检查点目录复制到新的数据目录（数据目录迁移用）。
+     *
+     * <p><b>迁移窗口内排除检查点写入</b>：复制期间拒绝新的写入与删除（拿不到静默窗口就明确失败），
+     * 这样新目录里的正文与库快照一致。只复制已发布的 {@code .json}，未完成的临时文件不复制
+     * ——它们本来就属于尚未提交的事务，重启后会由清理回收。</p>
+     *
+     * @param targetDataDir 目标数据目录；检查点会落在其下的 {@code checkpoints/}
+     * @throws IllegalStateException 还有检查点写入在进行（等不到静默窗口）
+     */
+    CopyResult copyTo(String targetDataDir);
+
+    /**
+     * 在「排除检查点写入」的窗口内执行一次搬迁动作。
+     *
+     * <p><b>为什么必须同一个窗口</b>：数据目录是一个集合（SQLite 库文件 + {@code checkpoints} 目录）。
+     * 若先做库快照再复制文件，中间提交的保存会把库快照引用的旧文件删掉；
+     * 反过来先复制文件再做库快照，快照可能引用一个没被复制的新文件。两种顺序都会得到
+     * 「库里指向不存在的正文」。因此库快照与目录复制必须在同一段静止窗口里完成。</p>
+     *
+     * @param migrationStep 搬迁动作（库快照 + 目录复制）
+     * @throws IllegalStateException 等不到静默窗口（仍有检查点写入）
+     */
+    void withWriteQuiesced(Runnable migrationStep);
+
+    /** 枚举出来的检查点条目：执行标识、文件标识、精确文件名、是否未完成的临时文件。 */
+    record CheckpointFile(String executionId, String fileId, String fileName, boolean temporary) { }
+
+    /** 目录复制结果：已发布的正文数量与被跳过的未完成临时文件数量。 */
+    record CopyResult(int copiedFiles, int skippedTemporaryFiles) { }
 
     /** 流式写入句柄：持有临时文件与在途登记，直到发布或丢弃。 */
     interface CheckpointWriter extends AutoCloseable {

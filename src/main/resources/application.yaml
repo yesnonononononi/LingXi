@@ -8,7 +8,8 @@ spring:
       max-file-size: 10MB
       max-request-size: 12MB
   datasource:
-    # SQLite 文件库：<数据目录>/lingxi.sqlite，与旧 H2 的 lingxi.mv.db 无关（不导入、不覆盖旧库）。
+    # SQLite 文件库：<数据目录>/lingxi.sqlite；检查点正文在同目录的 checkpoints/ 下，
+    # 两者是一个数据集合（迁移时一起搬）。不导入、不覆盖任何历史遗留库文件。
     # 连接参数直接写在 URL 上，由驱动在建连接时下发：
     #   journal_mode=WAL    读不阻塞写，后台保存与前端查询可以并行；
     #   synchronous=FULL    提交即落盘，断电崩溃后已提交事务不丢（性能让位于正确性）；

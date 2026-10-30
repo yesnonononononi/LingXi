@@ -16,12 +16,15 @@ import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.execution.api.controller.ExecutionCleanupController;
 import com.summit.dp.execution.application.port.ExecutionActivity;
+import com.summit.dp.execution.application.port.ExecutionCheckpointMaintenance;
+import com.summit.dp.execution.application.port.ExecutionCheckpointStore;
 import com.summit.dp.execution.application.service.ExecutionCleanupService;
 import com.summit.dp.execution.application.service.ExecutionCleanupService.CleanupResult;
 import com.summit.dp.execution.application.service.ExecutionReclaimService;
 import com.summit.dp.execution.application.service.impl.ExecutionQueryServiceImpl;
 import com.summit.dp.execution.domain.model.Execution;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
+import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
 import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionResumeTaskMapper;
@@ -43,6 +46,7 @@ import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
 import com.summit.dp.workflow.application.chat.ChatCommand;
 import com.summit.dp.workflow.application.chat.ResendTargetResolver;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
+import com.summit.dp.workflow.infrastructure.harness.LocalCheckpointMaintenance;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -62,6 +66,7 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -94,6 +99,12 @@ class ExecutionCleanupTest {
     private ExecutionResumeTaskMapper resumes;
     private TaskMapper tasks;
 
+    @Autowired private LocalFileCheckpointStore checkpointStore;
+    @Autowired private Path checkpointDataDir;
+    /** 每个插入的执行对应发布出去的那份正文文件标识，供「文件是否还在」的断言使用。 */
+    private final Map<Long, String> checkpointFiles = new java.util.HashMap<>();
+    private static final ObjectMapper CHECKPOINT_MAPPER = new JsonConfig().objectMapper();
+
     @BeforeEach
     void prepare() {
         executions = sql.getMapper(ExecutionMapper.class);
@@ -108,7 +119,27 @@ class ExecutionCleanupTest {
         turns.delete(null);
         executions.delete(null);
         sessions.delete(null);
+        // 每个用例都从干净的检查点目录开始：上一轮留下的正文不该影响引用保护判定。
+        clearCheckpointDirectory();
+        checkpointFiles.clear();
         reset(repository, activity);
+    }
+
+    private void clearCheckpointDirectory() {
+        if (!java.nio.file.Files.isDirectory(checkpointDataDir)) return;
+        try (java.util.stream.Stream<Path> paths = java.nio.file.Files.walk(checkpointDataDir)) {
+            paths.sorted(java.util.Comparator.reverseOrder())
+                    .filter(path -> !path.equals(checkpointDataDir))
+                    .forEach(path -> {
+                        try {
+                            java.nio.file.Files.deleteIfExists(path);
+                        } catch (java.io.IOException ignored) {
+                            // 临时目录由系统兜底清理，不掩盖用例失败。
+                        }
+                    });
+        } catch (java.io.IOException ignored) {
+            // 同上。
+        }
     }
 
     @Test
@@ -128,6 +159,74 @@ class ExecutionCleanupTest {
         assertNotNull(turns.selectById(20L));
         for (int status : List.of(0, 1, 2, 6)) assertNotNull(executions.selectById(110L + status));
         assertEquals(0L, service.cleanup().deletedCount());
+        // 保护的执行，其正文文件必须一份都不少（运行中 / 挂起 / 审批中 / 后台任务 / 历史重发）。
+        assertTrue(checkpointFileExists(100L), "历史重发引用的正文必须保留");
+        for (int status : List.of(0, 1, 2, 6)) {
+            assertTrue(checkpointFileExists(110L + status), "非终态执行的正文必须保留: status=" + status);
+        }
+        // 已结束且无引用：数据库行与正文文件一起消失。
+        for (int status : List.of(3, 4, 5)) {
+            assertNull(executions.selectById(120L + status));
+            assertFalse(checkpointFileExists(120L + status), "已回收执行的正文必须一起删掉: status=" + status);
+        }
+    }
+
+    /** 在途写入（已发布但事务未定）的正文不能被清理删掉。 */
+    @Test
+    void cleanupNeverDeletesInFlightCheckpointFiles() {
+        insertSession(10L);
+        insertExecution(100L, ExecutionStatusCodes.COMPLETED);
+        ExecutionCheckpointStore.CheckpointWriter writer = checkpointStore.begin("100");
+        try {
+            CHECKPOINT_MAPPER.writeValue(writer.stream(), Map.of("id", "100"));
+            writer.publish();
+            String inFlightFile = writer.fileId();
+
+            assertEquals(1L, service.cleanup().deletedCount());
+
+            assertNull(executions.selectById(100L));
+            assertTrue(java.nio.file.Files.isRegularFile(checkpointDataDir.resolve("checkpoints")
+                            .resolve("100").resolve(inFlightFile + ".json")),
+                    "在途写入的正文不能被清理删除");
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("写入测试检查点失败", e);
+        } finally {
+            writer.complete();
+        }
+    }
+
+    /** 同一入口顺带回收：删文件失败留下的旧文件、行已消失的孤儿文件、未完成的 .part；不碰 images/。 */
+    @Test
+    void cleanupReclaimsLeftoverOrphanAndTemporaryFilesButLeavesOtherDirectoriesAlone()
+            throws java.io.IOException {
+        insertSession(10L);
+        insertExecution(100L, ExecutionStatusCodes.COMPLETED);
+        insertTurn(20L, 100L);
+
+        Path executionDir = java.nio.file.Files.createDirectories(
+                checkpointDataDir.resolve("checkpoints").resolve("100"));
+        // 旧文件：曾被替换但当时没删掉（不是库内权威引用，也不是在途）。
+        String leftover = "11111111111111111111111111111111";
+        java.nio.file.Files.writeString(executionDir.resolve(leftover + ".json"), "{\"old\":true}");
+        // 未完成的临时文件。
+        String temporary = "22222222222222222222222222222222-abc.part";
+        java.nio.file.Files.writeString(executionDir.resolve(temporary), "{");
+        // 孤儿目录：库行早已不存在。
+        Path orphanDir = java.nio.file.Files.createDirectories(
+                checkpointDataDir.resolve("checkpoints").resolve("999"));
+        String orphan = "33333333333333333333333333333333";
+        java.nio.file.Files.writeString(orphanDir.resolve(orphan + ".json"), "{\"orphan\":true}");
+        // 用户数据目录里的无关内容：一律不碰。
+        Path images = java.nio.file.Files.createDirectories(checkpointDataDir.resolve("images"));
+        Path image = java.nio.file.Files.writeString(images.resolve("cat.png"), "not-a-real-image");
+
+        service.cleanup();
+
+        assertTrue(checkpointFileExists(100L), "被历史引用的正文必须保留");
+        assertTrue(java.nio.file.Files.notExists(executionDir.resolve(leftover + ".json")), "旧文件应被回收");
+        assertTrue(java.nio.file.Files.notExists(executionDir.resolve(temporary)), ".part 临时文件应被回收");
+        assertTrue(java.nio.file.Files.notExists(orphanDir.resolve(orphan + ".json")), "孤儿文件应被回收");
+        assertTrue(java.nio.file.Files.isRegularFile(image), "数据目录里的其它内容一律不碰");
     }
 
     @Test
@@ -144,6 +243,9 @@ class ExecutionCleanupTest {
         assertNull(executions.selectById(101L));
         assertNotNull(turns.selectById(20L), "本入口只回收执行，不改写其他模块数据");
         assertNotNull(sessions.selectById(11L));
+        // 沿用既有规则：会话删掉后，它那些执行的重发入口也随之消失，正文文件同样不再保留。
+        assertFalse(checkpointFileExists(100L), "会话已删 ⇒ 不再有重发需求，正文一并回收");
+        assertFalse(checkpointFileExists(101L));
     }
 
     @ParameterizedTest
@@ -355,8 +457,34 @@ class ExecutionCleanupTest {
         execution.setSessionId(10L);
         execution.setVersion(1L);
         execution.setStatus(status);
-        execution.setSnapshotFile("用于检测误删的快照");
+        execution.setSnapshotFile(publishCheckpoint(id));
         executions.insert(execution);
+    }
+
+    /** 走存储端口发布一份真实正文文件，返回库内该存的权威文件标识。 */
+    private String publishCheckpoint(long executionId) {
+        try {
+            ExecutionCheckpointStore.CheckpointWriter writer = checkpointStore.begin(Long.toString(executionId));
+            String fileId;
+            try {
+                CHECKPOINT_MAPPER.writeValue(writer.stream(), Map.of("id", Long.toString(executionId)));
+                writer.publish();
+                fileId = writer.fileId();
+            } finally {
+                writer.complete();
+            }
+            checkpointFiles.put(executionId, fileId);
+            return fileId;
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("写入测试检查点失败", e);
+        }
+    }
+
+    /** 该执行那份已发布的正文文件还在不在（直接看文件系统，不看库）。 */
+    private boolean checkpointFileExists(long executionId) {
+        String fileId = checkpointFiles.get(executionId);
+        return fileId != null && java.nio.file.Files.isRegularFile(checkpointDataDir.resolve("checkpoints")
+                .resolve(Long.toString(executionId)).resolve(fileId + ".json"));
     }
 
     @Configuration
@@ -368,6 +496,10 @@ class ExecutionCleanupTest {
 
         @Bean PlatformTransactionManager transactionManager(SqliteTestDatabase database) {
             return new DataSourceTransactionManager(database);
+        }
+
+        @Bean Path checkpointDataDir() {
+            return ExecutionRepositoryTestFactory.tempDataDir();
         }
 
         @Bean SqlSessionTemplate sql(SqliteTestDatabase database) throws Exception {
@@ -388,13 +520,26 @@ class ExecutionCleanupTest {
 
         @Bean ExecutionActivity activity() { return mock(ExecutionActivity.class); }
 
-        @Bean ExecutionReclaimService reclaimer(ExecutionRepository repository, ExecutionActivity activity,
-                                                PlatformTransactionManager transactionManager) {
-            return new ExecutionReclaimService(repository, activity, transactionManager);
+        /** 检查点正文落在系统临时目录：用例要在真实文件上验证「库先删、文件后删」。 */
+        @Bean LocalFileCheckpointStore checkpointStore(Path checkpointDataDir) {
+            return new LocalFileCheckpointStore(checkpointDataDir.toString(),
+                    new JsonConfig().objectMapper(), 0L);
         }
 
-        @Bean ExecutionCleanupService cleanupService(ExecutionRepository repository, ExecutionReclaimService reclaimer) {
-            return new ExecutionCleanupService(repository, reclaimer);
+        @Bean ExecutionCheckpointMaintenance maintenance(ExecutionRepository repository,
+                                                         LocalFileCheckpointStore checkpointStore) {
+            return new LocalCheckpointMaintenance(checkpointStore, repository);
+        }
+
+        @Bean ExecutionReclaimService reclaimer(ExecutionRepository repository, ExecutionActivity activity,
+                                                ExecutionCheckpointMaintenance maintenance,
+                                                PlatformTransactionManager transactionManager) {
+            return new ExecutionReclaimService(repository, activity, maintenance, transactionManager);
+        }
+
+        @Bean ExecutionCleanupService cleanupService(ExecutionRepository repository, ExecutionReclaimService reclaimer,
+                                                     ExecutionCheckpointMaintenance maintenance) {
+            return new ExecutionCleanupService(repository, reclaimer, maintenance);
         }
     }
 }

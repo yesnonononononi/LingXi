@@ -3,6 +3,7 @@ package com.summit.dp.execution;
 import org.springframework.context.ApplicationEventPublisher;
 
 import com.summit.dp.execution.application.service.ExecutionCheckpointService;
+import com.summit.dp.execution.application.port.ExecutionCheckpointStore;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
@@ -41,6 +42,12 @@ public final class ExecutionRepositoryTestFactory {
         return create(mapper, objectMapper, dataDir, mock(ChatTurnService.class));
     }
 
+    /** 给定真实检查点存储的便捷重载：需要自己控制存储（例如并发用例）时用。 */
+    public static LocalExecutionRepository create(ExecutionMapper mapper, ObjectMapper objectMapper,
+                                                  ExecutionCheckpointStore checkpointStore) {
+        return create(mapper, objectMapper, checkpointStore, mock(ChatTurnService.class));
+    }
+
     /** 给定真实轮次服务的便捷重载：临时目录 + 指定 {@link ChatTurnService}。 */
     public static LocalExecutionRepository create(ExecutionMapper mapper, ObjectMapper objectMapper,
                                                   ChatTurnService chatTurnService) {
@@ -49,10 +56,17 @@ public final class ExecutionRepositoryTestFactory {
 
     public static LocalExecutionRepository create(ExecutionMapper mapper, ObjectMapper objectMapper, Path dataDir,
                                                  ChatTurnService chatTurnService) {
+        return create(mapper, objectMapper, new LocalFileCheckpointStore(dataDir.toString(), objectMapper),
+                chatTurnService);
+    }
+
+    public static LocalExecutionRepository create(ExecutionMapper mapper, ObjectMapper objectMapper,
+                                                  ExecutionCheckpointStore checkpointStore,
+                                                  ChatTurnService chatTurnService) {
         return new LocalExecutionRepository(
                 new ExecutionCheckpointService(new ExecutionRepositoryImpl(mapper), mock(ApplicationEventPublisher.class)),
                 objectMapper,
-                new LocalFileCheckpointStore(dataDir.toString(), objectMapper),
+                checkpointStore,
                 provider(mock(ToolCallReadinessService.class)), provider(mock(ToolCallService.class)),
                 provider(mock(SubExecutionLifecycle.class)), provider(mock(SessionContextUsageProjector.class)),
                 provider(new ChatTurnLifecycleProjector(chatTurnService)), provider(mock(RuntimeEventPublisher.class)));
