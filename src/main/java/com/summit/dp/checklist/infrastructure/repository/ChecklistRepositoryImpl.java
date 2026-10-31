@@ -115,11 +115,10 @@ public class ChecklistRepositoryImpl extends AbstractRepository<Checklist, Check
         return READ_SNAPSHOTS.get().get(checklistId);
     }
 
-    private ChecklistPO rememberSnapshot(ChecklistPO row) {
+    private void rememberSnapshot(ChecklistPO row) {
         if (row != null && row.getId() != null) {
             READ_SNAPSHOTS.get().put(row.getId(), row);
         }
-        return row;
     }
 
     @Override
@@ -134,7 +133,9 @@ public class ChecklistRepositoryImpl extends AbstractRepository<Checklist, Check
 
     @Override
     public Optional<Checklist> findByIdWithSteps(long checklistId) {
-        return Optional.ofNullable(rememberSnapshot(mapper.selectById(checklistId))).map(this::toModel);
+        ChecklistPO row = mapper.selectById(checklistId);
+        rememberSnapshot(row);
+        return Optional.ofNullable(row).map(this::toModel);
     }
 
     @Override
@@ -177,15 +178,18 @@ public class ChecklistRepositoryImpl extends AbstractRepository<Checklist, Check
     @Override
     public Optional<Checklist> findActiveBySessionIdForUpdate(long sessionId) {
         ChecklistWriteMonitor.acquireForCurrentTransaction();
-        return Optional.ofNullable(rememberSnapshot(mapper.selectActiveBySessionIdForUpdate(sessionId)))
-                .map(this::toModel);
+        ChecklistPO row = mapper.selectActiveBySessionIdForUpdate(sessionId);
+        rememberSnapshot(row);
+        return Optional.ofNullable(row).map(this::toModel);
     }
 
     /** 同上：按标识定位聚合，并取得本事务的清单写权。 */
     @Override
     public Optional<Checklist> findByIdForUpdate(long checklistId) {
         ChecklistWriteMonitor.acquireForCurrentTransaction();
-        return Optional.ofNullable(rememberSnapshot(mapper.selectByIdForUpdate(checklistId))).map(this::toModel);
+        ChecklistPO row = mapper.selectByIdForUpdate(checklistId);
+        rememberSnapshot(row);
+        return Optional.ofNullable(row).map(this::toModel);
     }
 
     @Override
