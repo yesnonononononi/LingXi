@@ -17,6 +17,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.Collection;
@@ -58,7 +59,7 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
                 .set(SessionPO::getIsRead, true)
                 // 版本自增走 SQL 表达式，避免「读出来 +1 再写回」的老快照覆盖问题
                 .setSql("version = version + 1")
-                .set(SessionPO::getUpdateTime, java.time.LocalDateTime.now());
+                .set(SessionPO::getUpdateTime, LocalDateTime.now());
         if (expectedVersion != null) {
             wrapper.eq(SessionPO::getVersion, expectedVersion);
         }

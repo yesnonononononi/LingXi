@@ -15,7 +15,9 @@ import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.shared.exception.ClientException;
 
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -166,11 +168,11 @@ public class ExecutionRepositoryImpl extends AbstractRepository<Execution, Execu
 
     /** 批量取「执行 id → 检查点文件标识」，只读两列，供检查点文件回收判引用。 */
     @Override
-    public java.util.Map<Long, String> findSnapshotFileIds(java.util.Collection<Long> executionIds) {
+    public Map<Long, String> findSnapshotFileIds(Collection<Long> executionIds) {
         if (executionIds == null || executionIds.isEmpty()) {
-            return java.util.Map.of();
+            return Map.of();
         }
-        java.util.Map<Long, String> referenced = new java.util.LinkedHashMap<>();
+        Map<Long, String> referenced = new LinkedHashMap<>();
         for (ExecutionPO row : mapper.selectList(new LambdaQueryWrapper<ExecutionPO>()
                 .select(ExecutionPO::getId, ExecutionPO::getSnapshotFile)
                 .in(ExecutionPO::getId, executionIds))) {

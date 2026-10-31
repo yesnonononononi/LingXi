@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -34,7 +35,7 @@ public final class TimeTextCodec {
 
     /** 把瞬时写成 UTC 文本。 */
     public static String format(Instant instant) {
-        return instant == null ? null : FORMATTER.format(instant.truncatedTo(java.time.temporal.ChronoUnit.MILLIS));
+        return instant == null ? null : FORMATTER.format(instant.truncatedTo(ChronoUnit.MILLIS));
     }
 
     /** 本地时间按 JVM 默认时区折算成瞬时后再写，读回时仍按同一时区还原。 */
