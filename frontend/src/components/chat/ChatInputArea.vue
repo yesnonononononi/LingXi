@@ -45,6 +45,11 @@ import {resolveContextRingDash, resolveContextUsageText} from '../../views/chat/
 import ChatInputModelSelector from './ChatInputModelSelector.vue';
 import ChatInputSendButton from './ChatInputSendButton.vue';
 import {ICON_BTN, MUTED, TOOL_BTN} from '../../utils/promptBarStyles';
+import {
+  resolveChatSendDraft,
+  resolveTextAfterCommandSelect,
+  toChatMode
+} from '../../utils/chatCommand';
 
 const props = defineProps<{
   isSending?: boolean;
@@ -63,6 +68,14 @@ const props = defineProps<{
   selectedTeamId?: string | number | null;
   agents?: AgentVO[];
   selectedAgentId?: string | number | null;
+  /**
+   * plan 模式（受控）：宿主是唯一事实源，本组件只镜像并回传变更。
+   *
+   * <p>历史实现把它做成组件私有 ref，宿主既观察不到也控制不了，`updateMode` 事件发出去
+   * 没有任何监听者。现在由宿主持有状态、通过 props + `updateMode` 事件双向绑定；
+   * `mode` 缺省时才退回组件本地状态（无宿主直接挂载本组件的场景）。</p>
+   */
+  mode?: ChatMode;
   /**
    * 上下文用量指示器数据（模型选择器左侧展示）：
    * usedTokens 来自运行时 CONTEXT_UPDATE 事件；maxTokens 优先事件自带、回落 common_config.max_tokens。
@@ -118,14 +131,26 @@ const inputContainerRef = ref<HTMLDivElement | null>(null);
 const sparkRef = ref<InstanceType<typeof SparkTrail> | null>(null);
 
 const inputText = ref('');
-let optimizedDraft: string | null = null;
 const inputRef = ref<HTMLTextAreaElement | null>(null);
 const inputPlaceholder = computed(() => {
   if (listening.value) return t('chat.input.placeholderListening');
   if (isPlanMode.value) return t('chat.input.placeholderPlan');
   return t('chat.input.placeholderDefault');
 });
-const isPlanMode = ref(false);
+/**
+ * plan 模式的可写视图：读受控 prop，写回 `updateMode` 事件。
+ *
+ * <p>为什么用 getter/setter 而不是双向 watch 同步：watch 同步会在「宿主没监听事件」时
+ * 把界面卡在旧状态；这里本地留一份镜像，宿主接了就完全由宿主决定，没接也能自己动。</p>
+ */
+const localPlanMode = ref(false);
+const isPlanMode = computed<boolean>({
+  get: () => (props.mode === undefined ? localPlanMode.value : props.mode === 'plan'),
+  set: (next: boolean) => {
+    localPlanMode.value = next;
+    emit('updateMode', toChatMode(next));
+  }
+});
 let inputDisposed = false;
 
 const focusInput = () => {
@@ -138,8 +163,9 @@ const focusInput = () => {
 };
 
 const promptOptimization = usePromptOptimization(inputText, () => props.selectedModelId, focusInput, text => {
-  optimizedDraft = text;
-  inputText.value = text;
+  // 草稿回填只是文本替换：不解析命令、不切模式、不改写内容，只收起可能挡视线的浮层。
+  closeCommandLayer();
+  writeInputText(text);
 });
 const { state: confirmationState } = useConfirm();
 
@@ -157,59 +183,56 @@ const processImageFiles = (files: File[]) => {
   focusInput();
 };
 
-watch(inputText, (rawText) => {
+/**
+ * 程序写入输入框的**唯一**通道。
+ *
+ * <p>为什么需要这个标记：命令副作用只允许发生在「用户显式选中菜单项」与「submit 解析」两个
+ * 时机，所以必须区分「用户真的在打字」与「程序写文本」（宿主 setInputText 回填历史消息、
+ * prompt 优化草稿回填、语音听写、清空）。给它命名成函数而不是散落的赋值，是为了让全局的
+ * 文本监听只做形态映射，永远不可能被一次回填带去执行命令。</p>
+ */
+let programmaticWrite = false;
+const writeInputText = (text: string) => {
+  // 判等早返回：ref 写入同值不会触发 watch，此时若先置标记，标记就会残留到用户的
+  // 下一次真实输入，把对方当成程序写入（快捷指令菜单于是不弹）。所以先判等、再置标记。
+  if (inputText.value === text) {
+    return;
+  }
+  programmaticWrite = true;
+  inputText.value = text;
+};
+
+/**
+ * 粘贴 / 拖入标记：`beforeinput` 早于 v-model 写入，用它把这两种用户操作排除在
+ * 「弹出快捷指令菜单」之外（需求要求粘贴不得引发命令副作用）。
+ */
+let pasteEditPending = false;
+const handleBeforeInput = (event: Event) => {
+  const inputType = (event as InputEvent).inputType ?? '';
+  pasteEditPending = inputType === 'insertFromPaste' || inputType === 'insertFromDrop';
+};
+
+/** 收起斜杠指令 / Agent / Skill 三层浮层（只动浮层，绝不触碰输入文本）。 */
+const closeCommandLayer = () => {
+  isCommandMenuOpen.value = false;
+  isCommandMenuClickedOpen.value = false;
+  isAgentMenuOpen.value = false;
+};
+
+watch(inputText, () => {
   sparkRef.value?.ping();
+  const typedByUser = !programmaticWrite && !pasteEditPending;
+  programmaticWrite = false;
+  pasteEditPending = false;
 
-  // 模型返回的草稿按原文回填，不能触发其中看起来像斜杠命令的文本。
-  const isOptimizedDraft = rawText === optimizedDraft;
-  optimizedDraft = null;
-  if (isOptimizedDraft) {
-    isCommandMenuOpen.value = false;
-    isCommandMenuClickedOpen.value = false;
+  // 快捷指令菜单只是「文本形态 → 菜单可见性」的映射：不改写文本、不执行任何命令。
+  // 只有用户真在打字时才弹菜单，程序回填的 "/plan xxx" 不会凭空顶出一层浮层。
+  if (typedByUser && inputText.value.startsWith('/') && !isAgentMenuOpen.value) {
+    isCommandMenuOpen.value = true;
+    activeCommandIndex.value = 0;
     return;
   }
-
-  if (rawText.startsWith('/plan ') || rawText === '/plan') {
-    isPlanMode.value = true;
-    inputText.value = rawText.replace(/^\/plan\s*/, '');
-    isCommandMenuOpen.value = false;
-    isCommandMenuClickedOpen.value = false;
-    return;
-  }
-  if (rawText.startsWith('/permission ') || rawText === '/permission') {
-    inputText.value = '';
-    isCommandMenuOpen.value = false;
-    isCommandMenuClickedOpen.value = false;
-    emit('openSettings');
-    return;
-  }
-  if (rawText === '/agent' || rawText.startsWith('/agent ') || rawText === '/agent\n') {
-    inputText.value = rawText.replace(/^\/agent\s*/, '');
-    isCommandMenuOpen.value = false;
-    isCommandMenuClickedOpen.value = false;
-    openAgentMenu();
-    return;
-  }
-  if (rawText.startsWith('/mcp ') || rawText === '/mcp') {
-    inputText.value = '';
-    isCommandMenuOpen.value = false;
-    isCommandMenuClickedOpen.value = false;
-    emit('openSettingsTab', 'mcp');
-    return;
-  }
-  if (rawText === '/skill' || rawText.startsWith('/skill ') || rawText === '/skill\n') {
-    inputText.value = '';
-    isCommandMenuOpen.value = false;
-    isCommandMenuClickedOpen.value = false;
-    openSkillMenu();
-    return;
-  }
-  if (rawText.startsWith('/')) {
-    if (!isAgentMenuOpen.value) {
-      isCommandMenuOpen.value = true;
-      activeCommandIndex.value = 0;
-    }
-  } else if (!isCommandMenuClickedOpen.value) {
+  if (!inputText.value.startsWith('/') && !isCommandMenuClickedOpen.value && !isAgentMenuOpen.value) {
     isCommandMenuOpen.value = false;
   }
 });
@@ -252,9 +275,8 @@ const allowWorkspaceChange = computed(() => {
 });
 const isProjectDropdownOpen = ref(false);
 
-watch(isPlanMode, (val) => {
-  emit('updateMode', val ? 'plan' : 'auto');
-});
+// plan 模式变更的对外通知已经收进 `isPlanMode` 的 setter：一处写入、一处派发，
+// 不再靠 watch 二次转发（watch 转发会在「宿主未监听」时与受控 props 打架）。
 
 const effortList = reasoningEffortOptions.map(option => option.label);
 const effortIndex = ref(1);
@@ -552,7 +574,7 @@ const closeSkillMenu = () => {
 const selectSkill = (skill: { name: string }) => {
   const sentence = t('chat.input.skillFillTemplate', { name: skill.name });
   const existing = inputText.value.trim();
-  inputText.value = existing ? `${existing} ${sentence}` : sentence;
+  writeInputText(existing ? `${existing} ${sentence}` : sentence);
   skillMenu.close();
   focusInput();
 };
@@ -665,8 +687,9 @@ const allCommands = computed<CommandItem[]>(() => [
     name: 'plan',
     desc: t('chat.command.plan'),
     action: () => {
+      // 只切模式：正文归文本状态所有，清空逻辑统一收敛在 selectCommand 的
+      // resolveTextAfterCommandSelect 判据里，菜单项不得各自清空用户已写内容。
       isPlanMode.value = true;
-      inputText.value = '';
       focusInput();
     }
   },
@@ -801,11 +824,15 @@ const handlePlusClick = () => {
   }
 };
 
+/**
+ * 选中菜单项。
+ *
+ * <p>清空规则**只有一条**：整段输入就是一个命令 token（如用户只打了 "/plan"）时清空，
+ * 其余情况一个字都不动 —— 用户可能正打到一半，替写掉就是毁数据。历史实现里
+ * 「只要文本以 / 开头就整段清空」正是缺陷本体（"/帮我修这个bug" 会被整段吞掉）。</p>
+ */
 const selectCommand = (cmd: CommandItem) => {
-  const text = inputText.value;
-  if (text.startsWith('/') && (cmd.id !== 'optimize-prompt' || !isPromptOptimizationCommand(text))) {
-    inputText.value = '';
-  }
+  writeInputText(resolveTextAfterCommandSelect(inputText.value));
   isCommandMenuOpen.value = false;
   isCommandMenuClickedOpen.value = false;
   cmd.action();
@@ -864,7 +891,7 @@ const toggleListen = () => {
         const input = inputRef.value;
         const start = input?.selectionStart ?? inputText.value.length;
         const end = input?.selectionEnd ?? start;
-        inputText.value = inputText.value.slice(0, start) + text + inputText.value.slice(end);
+        writeInputText(inputText.value.slice(0, start) + text + inputText.value.slice(end));
       }
       listening.value = false;
       focusInput();
@@ -1059,6 +1086,24 @@ const handleKeyDown = (e: KeyboardEvent) => {
   }
 };
 
+/**
+ * 执行一次「菜单项那一档」的命令（submit 解析到命令名时用同一个入口）。
+ *
+ * <p>复用 `allCommands` 的 action，而不是另写一套分支：命令只有一份实现，
+ * 菜单选中与 submit 解析走的是同一条路径，不会出现行为漂移。</p>
+ *
+ * @param commandId 命令 id（= 命令名）
+ * @returns 是否命中已知命令
+ */
+const runUiCommand = (commandId: string): boolean => {
+  const command = allCommands.value.find(item => item.id === commandId);
+  if (!command) {
+    return false;
+  }
+  command.action();
+  return true;
+};
+
 const handleSend = () => {
   if (confirmationState.value.isOpen) return;
   if (isPromptOptimizationCommand(inputText.value)) {
@@ -1067,7 +1112,39 @@ const handleSend = () => {
     void promptOptimization.optimize();
     return;
   }
-  const text = inputText.value.trim();
+
+  // submit 是除「显式选中菜单项」之外**唯一**允许执行命令的时机。
+  // 解析放在这一层，输入过程中的任何文本写入都不会再产生副作用。
+  const draft = resolveChatSendDraft(inputText.value, isPlanMode.value);
+
+  // `/plan` 后面没有正文：只切模式并把纯命令 token 清掉（统一判据），不发空消息。
+  if (draft.command === 'plan' && draft.text.trim() === '') {
+    isPlanMode.value = true;
+    writeInputText(resolveTextAfterCommandSelect(inputText.value));
+    focusInput();
+    return;
+  }
+
+  // 非 plan 的命令不是消息：执行它，把命令之后的正文原样还给用户继续编辑。
+  if (draft.command !== null && draft.command !== 'plan') {
+    closeCommandLayer();
+    // 菜单里找不到这个命令（白名单与菜单漂移）时，绝不能清掉用户正文 ——
+    // 「解析出命令名 → 执行落空 → token 被吞」正是静默丢字的那条路径。
+    if (!runUiCommand(draft.command)) {
+      focusInput();
+      return;
+    }
+    writeInputText(draft.text);
+    focusInput();
+    return;
+  }
+
+  // `/plan` 自身：模式切到 plan（受控 + 事件），正文照常作为本轮输入发出。
+  if (draft.command === 'plan') {
+    isPlanMode.value = true;
+  }
+
+  const text = draft.text.trim();
   const images = attachments.value.map(attachment => attachment.file);
   if ((!text && images.length === 0) || props.isSending || props.reasoningEffortPending) return;
 
@@ -1076,13 +1153,13 @@ const handleSend = () => {
   emit(
     'sendMessage',
     effectiveText,
-    isPlanMode.value,
+    draft.requirePlan,
     localSelectedTeamId.value ? localSelectedTeamId.value : null,
     localSelectedAgentId.value ? localSelectedAgentId.value : null,
     images
   );
 
-  inputText.value = '';
+  writeInputText('');
   clearImages();
 };
 
@@ -1121,7 +1198,8 @@ defineExpose({
   focus: focusInput,
   focusInput: focusInput,
   setInputText: (text: string) => {
-    inputText.value = text;
+    // 宿主回填（编辑重发 / 提示词回填）只是文本替换：标成程序写入，绝不触发命令副作用。
+    writeInputText(text);
   },
   setAttachedImage: (file: File | null) => {
     if (file) processImageFiles([file]);
@@ -1489,6 +1567,7 @@ defineExpose({
             rows="1"
             class="chat-text-input w-full text-lx-fs-xl leading-[22px] [color:var(--pb-ink)] [caret-color:var(--pb-ink)] cursor-text select-text"
             @focus="effortOpen = false"
+            @beforeinput="handleBeforeInput"
             @keydown="handleKeyDown"
           />
         </div>

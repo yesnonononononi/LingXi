@@ -22,7 +22,17 @@ export interface ProcessSegmentView {
   kind: 'segment';
   segment: ProcessSegment;
   summary: ProcessSummary;
+  /** 段自身真实状态：段内仍有未完成步骤时就是 live（**不参与**扫光互斥，见 `sweep`）。 */
   mode: ProcessSegmentMode;
+  /**
+   * 回答级「当前扫光位置」：整组过程里**唯一**一段为 true。
+   *
+   * <p>为什么不复用 `mode`：`mode` 描述的是「这一段该显示最新一步还是整段概览」，多段并存时
+   * 它可以同时为 live（旧段已收尾但段内工具仍在跑）—— 那是**正确**的事实。扫光表达的是
+   * 「此刻还在动」这一条**回答级**信号，只能有一个；把两者混成一个布尔，要么扫光乱闪，
+   * 要么为了压扫光把旧段的「最新一步」文案降级成概览，两头都错。</p>
+   */
+  sweep: boolean;
   headline: ProcessHeadline;
 }
 
@@ -104,9 +114,12 @@ export function mergeSummaries(list: ProcessSummary[]): ProcessSummary {
 }
 
 /**
- * 层二：只重新算 `mode` / `headline`（轮次级失效，O(#段)）。
+ * 层二：只重新算 `mode` / `sweep` / `headline`（轮次级失效，O(#段)）。
  *
  * <p>不遍历段内步骤、不调用摘要函数：计数与最新一步全部来自入参 `summaries`。</p>
+ *
+ * <p>扫光位在这一层统一裁决，取**最后一个** `mode === 'live'` 的段；一个 live 段都没有时
+ * 整组静止，谁都不扫光（不拿最后一段凑动画）。</p>
  *
  * @param parts 分段结果
  * @param summaries 层一产物，索引需与 `parts` 对齐
@@ -119,6 +132,8 @@ export function deriveProcessViews(
 ): ProcessDerivedView {
   const views: ProcessPartView[] = [];
   const segmentSummaries: ProcessSummary[] = [];
+  // 回答级扫光位：记录「最后一个 live 段」在 views 里的下标，-1 = 整组静止（不扫光）。
+  let liveIndex = -1;
   parts.forEach((part, index) => {
     if (part.kind !== 'process') {
       views.push({ kind: 'text', part });
@@ -132,13 +147,22 @@ export function deriveProcessViews(
       runningCount: summary.runningCount,
       pendingCount: summary.pendingCount,
     });
+    if (mode === 'live') liveIndex = views.length;
     views.push({
       kind: 'segment',
       segment: part,
       summary,
       mode,
+      // 先全置 false，循环结束后只给唯一那一处置位：多段 live 时其余段不扫光。
+      sweep: false,
       headline: formatProcessHeadline(summary, { active: mode === 'live' }),
     });
   });
+  if (liveIndex >= 0) {
+    const target = views[liveIndex];
+    if (target && target.kind === 'segment') {
+      views[liveIndex] = { ...target, sweep: true };
+    }
+  }
   return { parts: views, totals: mergeSummaries(segmentSummaries) };
 }

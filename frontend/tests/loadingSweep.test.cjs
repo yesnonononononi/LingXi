@@ -73,8 +73,11 @@ test('摘要行始终存在：live 模式带扫光，summary 模式不带', () =
   assert.doesNotMatch(segment, /v-if="canSummarize/, 'canSummarize 双关布尔已被单一 mode 取代');
   assert.match(segment, /:data-process-mode="mode"/, '模式只由一个派生值决定');
   // 扫光只挂在 live 模式的标题上，summary 模式必须停掉运行信号。
-  assert.match(segment, /:class="\{ 'lx-sweep-text': mode === 'live' \}"/,
-    '扫光只允许出现在 live 模式的标题上');
+  // 契约变更（多段互斥修复）：扫光不再由段级 mode 驱动，改由**回答级** `sweep` 驱动 ——
+  // 多段 live 并存是正确事实，但「此刻还在动」整组只能有一个信号。
+  assert.match(segment, /:class="\{ 'lx-sweep-text': sweep \}"/,
+    '扫光只允许由回答级 sweep 驱动（不得回退到 mode === live）');
+  assert.doesNotMatch(segment, /':\s*mode === 'live'/, '扫光不得直接绑定段级 mode');
   assert.doesNotMatch(segment, /animate-pulse/, '呼吸点与扫光是两个互相打架的加载信号，只留一个');
   assert.doesNotMatch(segment, /rounded-full bg-current/, '呼吸点被删干净');
 });

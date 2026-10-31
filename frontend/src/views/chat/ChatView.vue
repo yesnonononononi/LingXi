@@ -221,6 +221,7 @@
               :selectedWorkspaceId="localActiveWorkspaceId"
               :selectedTeamId="localSelectedTeamId"
               :selectedAgentId="selectedAgentId"
+              :mode="chatMode"
               @sendMessage="handleSendMessage"
               @stopGeneration="handleStopGeneration"
               @updateModel="handleUpdateModel"
@@ -228,6 +229,7 @@
               @updateReasoningEffort="handleUpdateReasoningEffort"
               @updateTeam="handleUpdateTeam"
               @updateAgent="handleUpdateAgent"
+              @updateMode="handleUpdateMode"
               @openModelEditor="handleOpenModelEditor"
               @openTeamModal="handleOpenTeamModal"
               @selectWorkspace="handleSelectWorkspace"
@@ -382,6 +384,7 @@ import ChatMessageList from '../../components/chat/ChatMessageList.vue';
 import ChatInputArea from '../../components/chat/ChatInputArea.vue';
 // 命令面契约：inputAreaRef 只按这 11 项命令使用，不再用 InstanceType 绑组件内部形状（B-5 阶段 1a）
 import type {ChatInputCommands} from '../../types/chatInputCommands';
+import type {ChatMode} from '../../types/chat';
 import {assertChatInputCommands} from '../../utils/assertChatInputCommands';
 import ChatExecutionControls from '../../components/chat/ChatExecutionControls.vue';
 import TaskProgressDock from '../../components/chat/TaskProgressDock.vue';
@@ -395,6 +398,17 @@ import SessionConnectionNotice from '../../components/chat/SessionConnectionNoti
 import SubAgentSidePanel from '../../components/chat/SubAgentSidePanel.vue';
 
 const inputAreaRef = ref<ChatInputCommands | null>(null);
+/**
+ * plan 模式的唯一事实源。
+ *
+ * <p>历史实现里 plan 模式是 ChatInputArea 的私有 ref，`updateMode` 事件发出去没有任何监听者
+ * —— 宿主既观察不到也控制不了，回填文本还能顺手把它改掉。提到视图层之后，输入组件只通过
+ * `mode` prop + `updateMode` 事件读写它，模式状态从此可观察、可控制、可被用例断言。</p>
+ */
+const chatMode = ref<ChatMode>('auto');
+const handleUpdateMode = (mode: ChatMode) => {
+  chatMode.value = mode === 'plan' ? 'plan' : 'auto';
+};
 /**
  * 「去聊天里说」能力注入：PlanCard 等深层卡片消费 CHAT_INPUT_FOCUS_KEY 取用本回调。
  *

@@ -4,6 +4,7 @@ import type {ChatMessage, ChatTurn, SubSessionVO} from '../../types/chat';
 import type {ProcessSegmentView} from '../../utils/processViewModel';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import ProcessDetails from './ProcessDetails.vue';
+import {t} from '../../i18n';
 
 const props = withDefaults(defineProps<{
   /** 视图模型：段事实 + 呈现模式 + 折叠行文案，全部由 ChatMessageItem 的纯函数层算好。 */
@@ -11,10 +12,24 @@ const props = withDefaults(defineProps<{
   message: ChatMessage;
   turn?: ChatTurn | null;
   visible?: boolean;
+  /**
+   * 回答级「当前扫光位置」：整组过程里只有一段为 true（由 `deriveProcessViews` 裁决）。
+   *
+   * <p>扫光**不再**看 `mode`：多段 live 并存是正确的事实（旧段已收尾但段内工具仍在跑），
+   * 但「此刻还在动」这条信号整组只能有一个，否则同一回答里会同时闪三四道扫光。</p>
+   */
+  sweep?: boolean;
+  /**
+   * 空窗期占位：为真时本段的标题行**整体变成**扫光文本「正在等待模型响应」。
+   *
+   * <p>是「替代」而不是「追加」：用户要的是 `执行命令 - intention` 那一行原地变成占位符，
+   * 所以在原地把 title / preview / statusLabel 三个槽位一起换掉，箭头与展开交互保留。</p>
+   */
+  awaitModel?: boolean;
   subSessions?: SubSessionVO[];
   sessionId?: string | number;
   isDark: boolean;
-}>(), { visible: true });
+}>(), { visible: true, sweep: false, awaitModel: false });
 const emit = defineEmits<{ (e: 'selectSubSession', id: string | number): void }>();
 // 组件只剩「解引用 + 本地折叠状态」，不含任何判据。
 const segment = computed(() => props.view.segment);
@@ -47,15 +62,24 @@ const isRunningTurn = computed(() => props.turn
         viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
         <path stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7" />
       </svg>
-      <!-- 加载态由标题自身的扫光表达（见 styles/loading-sweep.css），不再另起呼吸点。 -->
-      <span class="min-w-0 max-w-[60%] truncate font-medium" data-testid="process-segment-title"
-        :class="{ 'lx-sweep-text': mode === 'live' }">{{ title }}</span>
-      <span v-if="preview" class="min-w-0 flex-1 overflow-hidden whitespace-nowrap"
-        :class="previewIsText ? 'flex justify-end' : ''" data-testid="process-segment-preview">
-        <span :class="previewIsText ? 'shrink-0 min-w-full text-left' : 'block truncate'">{{ preview }}</span>
-      </span>
-      <span v-if="statusLabel" class="shrink-0 max-w-[40%] truncate text-lx-fs-sm text-amber-600 dark:text-amber-400"
-        data-testid="process-segment-status">{{ statusLabel }}</span>
+      <!-- 加载态由标题自身的扫光表达（见 styles/loading-sweep.css），不再另起呼吸点。
+           扫光只认回答级 sweep：整组过程只有一段在闪，静止时一段都不闪。
+           空窗期（判据为真）时整行原地换成扫光占位：title/preview/status 三槽整体让位，
+           是「替代」不是「追加」—— 否则同一行会同时出现命令摘要和等待文案。 -->
+      <template v-if="awaitModel">
+        <span class="min-w-0 flex-1 truncate font-medium lx-sweep-text" data-testid="process-segment-await"
+          role="status">{{ t('chat.message.awaitModelResponse') }}</span>
+      </template>
+      <template v-else>
+        <span class="min-w-0 max-w-[60%] truncate font-medium" data-testid="process-segment-title"
+          :class="{ 'lx-sweep-text': sweep }">{{ title }}</span>
+        <span v-if="preview" class="min-w-0 flex-1 overflow-hidden whitespace-nowrap"
+          :class="previewIsText ? 'flex justify-end' : ''" data-testid="process-segment-preview">
+          <span :class="previewIsText ? 'shrink-0 min-w-full text-left' : 'block truncate'">{{ preview }}</span>
+        </span>
+        <span v-if="statusLabel" class="shrink-0 max-w-[40%] truncate text-lx-fs-sm text-amber-600 dark:text-amber-400"
+          data-testid="process-segment-status">{{ statusLabel }}</span>
+      </template>
     </button>
     <CollapseTransition>
       <div v-if="visible && expanded" class="mt-1 pl-3 border-l border-zinc-200 dark:border-white/10"
