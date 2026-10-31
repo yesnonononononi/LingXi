@@ -39,6 +39,8 @@
         <ddd-starter>1.0.7</ddd-starter>
         <!-- 变异测试（Pitest）：用法与结果解读见 docs/mutation-testing.md -->
         <pitest.version>1.21.1</pitest.version>
+        <!-- 覆盖率（JaCoCo）：`mvn -o test` 结束即出报告，报告目录 target/jacoco-report -->
+        <jacoco.version>0.8.12</jacoco.version>
         <pitest.junit5.version>1.2.3</pitest.junit5.version>
         <!-- 默认目标只覆盖纯逻辑核心包，单次可接受；要跑别的范围用 -DtargetClasses=a.*,b.* 覆盖（逗号分隔由 Maven 拆成数组）。 -->
     </properties>
@@ -188,6 +190,41 @@
                     </outputFormats>
                     <!-- 固定报告目录，否则每次运行都堆一个带时间戳的新目录。 -->
                     <timestampedReports>false</timestampedReports>
+                </configuration>
+            </plugin>
+            <!-- 覆盖率（JaCoCo）：随 `mvn -o test` 自动产出，不改变 test/package 的通过标准。
+                 只出报告、不设 check 阈值 —— 历史代码的覆盖率是既成事实，先让它可见，再决定是否卡门禁。 -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>${jacoco.version}</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <!-- 固定报告目录，与 pitest 一样不希望每次运行都堆时间戳目录。 -->
+                    <outputDirectory>${lingxi.build.directory}/jacoco-report</outputDirectory>
+                    <!-- 结构与生成代码没有可测行为：PO/Mapper/VO/DTO/Config 与启动类不计入分母。 -->
+                    <excludes>
+                        <exclude>**/*PO.class</exclude>
+                        <exclude>**/*Mapper.class</exclude>
+                        <exclude>**/*VO.class</exclude>
+                        <exclude>**/*DTO.class</exclude>
+                        <exclude>**/*Config.class</exclude>
+                        <exclude>**/LingXiApplication.class</exclude>
+                    </excludes>
                 </configuration>
             </plugin>
         </plugins>
