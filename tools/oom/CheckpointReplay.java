@@ -88,7 +88,7 @@ public final class CheckpointReplay {
             if (Files.exists(out.resolve("replay.mv.db"))) {
                 throw new IllegalStateException("重放目录必须是全新的（发现旧库）: " + out);
             }
-            String[] warmPhase = new String[0];
+            int retainedCheckpoints;
             System.out.println("REPLAY pid=" + ProcessHandle.current().pid() + ", mode=" + mode
                     + ", scenario=" + scenario + ", rounds=" + rounds + ", pause=" + pause
                     + ", contextEvery=" + contextEvery + ", workers=" + workers
@@ -102,7 +102,7 @@ public final class CheckpointReplay {
                         + ", contextBytes=" + fixtures.contextText.length());
                 // 建库流量不能混进业务负载：先等写盘静默，再开始计时。
                 sleep(2000);
-                run(connection, fixtures, executions, mode, scenario, rounds, pause, contextEvery, workers);
+                retainedCheckpoints = run(connection, fixtures, executions, mode, scenario, rounds, pause, contextEvery);
             } finally {
                 RUNNING.set(false);
                 sampler.join(2000);
@@ -115,7 +115,8 @@ public final class CheckpointReplay {
             boolean oom = failure != null && failure.startsWith("OOM");
             System.out.println("RESULT mode=" + mode + ", scenario=" + scenario + ", heapMiB=" + heapMiB
                     + ", peakHeapMiB=" + peakMiB + ", saved=" + SAVED.get()
-                    + ", contextWrites=" + CONTEXT_WRITES.get() + ", failures=" + (failure == null ? 0 : 1)
+                    + ", contextWrites=" + CONTEXT_WRITES.get() + ", retainedCheckpoints=" + retainedCheckpoints
+                    + ", failures=" + (failure == null ? 0 : 1)
                     + ", oom=" + oom + ", fullGc=" + fullGc + ", gcMillis=" + gcMillis
                     + ", elapsedMillis=" + elapsed + ", failure=" + (failure == null ? "none" : failure));
             if (failure != null) {
@@ -209,31 +210,32 @@ public final class CheckpointReplay {
 
     // ------------------------------------------------------------------ 负载
 
-    private static void run(Connection connection, Fixtures fixtures, List<Long> executions, String mode,
-                            String scenario, int rounds, long pause, int contextEvery, int workers)
+    private static int run(Connection connection, Fixtures fixtures, List<Long> executions, String mode,
+                            String scenario, int rounds, long pause, int contextEvery)
             throws Exception {
+        // 旧仓储按执行 ID 替换已提交快照，不能把每轮历史都留在堆里制造额外泄漏。
+        Map<Long, String> wholeJsonCache = new LinkedHashMap<>();
         List<Runnable> tasks = new ArrayList<>();
         for (int index = 0; index < executions.size(); index++) {
             long executionId = executions.get(index);
             long sessionId = 9_000_000L + index;
             int roundsForWorker = "recovered".equals(scenario) ? Math.max(1, rounds * 2 / 3) : rounds;
             tasks.add(() -> replay(connection, fixtures, executionId, sessionId, mode, roundsForWorker,
-                    pause, contextEvery));
+                    pause, contextEvery, wholeJsonCache));
         }
-        // 历史 h2-recovered-serial 也是串行保存：并发只放大锁竞争，不改变内存结论。
+        // 这里只覆盖串行负载，不能用 workers 数量冒充并发验收。
         for (Runnable task : tasks) {
             task.run();
         }
         System.out.println("PHASE=DONE saved=" + SAVED.get() + ", contextWrites=" + CONTEXT_WRITES.get());
+        return wholeJsonCache.size();
     }
 
     private static void replay(Connection connection, Fixtures fixtures, long executionId, long sessionId,
-                               String mode, int rounds, long pause, int contextEvery) {
+                               String mode, int rounds, long pause, int contextEvery, Map<Long, String> wholeJsonCache) {
         String fileSql = "UPDATE execution SET version = version + 1, snapshot_file = ? WHERE id = ?";
         String varcharSql = "UPDATE execution SET version = version + 1, snapshot = ? WHERE id = ?";
         String contextSql = "UPDATE session_context SET content = ?, version = version + 1 WHERE session_id = ?";
-        // 旧实现的「整段字符串缓存」：正对照里必须一起还原，否则测的只是 VARCHAR 列而不是当年的路径。
-        List<String> wholeJsonCache = "varchar".equals(mode) ? new ArrayList<>() : null;
         try (PreparedStatement save = connection.prepareStatement("file".equals(mode) ? fileSql : varcharSql);
              PreparedStatement context = connection.prepareStatement(contextSql)) {
             for (int round = 1; round <= rounds; round++) {
@@ -245,12 +247,13 @@ public final class CheckpointReplay {
                     save.setString(1, target.getFileName().toString());
                 } else {
                     save.setString(1, body);
-                    // 每轮缓存一份「本轮序列化结果」的独立副本（concat 会真的复制一份），
-                    // 这就是旧实现里那份整段 JSON 缓存；不复制的话缓存里全是同一个实例，测不出东西。
-                    wholeJsonCache.add(body.concat(" "));
                 }
                 save.setLong(2, executionId);
                 save.executeUpdate();
+                if ("varchar".equals(mode)) {
+                    // 用独立字符串模拟每次序列化，只保留每个执行最后一次成功提交的结果。
+                    wholeJsonCache.put(executionId, body.concat(" "));
+                }
                 SAVED.incrementAndGet();
                 if (contextEvery > 0 && round % contextEvery == 0) {
                     context.setString(1, fixtures.context());
@@ -420,14 +423,7 @@ public final class CheckpointReplay {
             return builder.toString();
         }
 
-        /**
-         * 本轮要写的检查点正文。
-         *
-         * <p><b>刻意复用同一个字符串实例</b>：重放器如果每轮再造一份 8 MiB 的 {@code String}，
-         * 堆采样峰值里就会混进「重放器自己的分配噪声」，把「数据库写入路径占多少内存」这件事糊掉。
-         * 生产侧每轮重新序列化确实会产生新字符串，但那份开销与引擎无关、两组等量，
-         * 因此这里只保留「写库」这一项差异，让峰值差异归因到被测实现。</p>
-         */
+        /** 复用输入以隔离存储负载；这里不覆盖真实 Execution 的序列化与恢复开销。 */
         String body() {
             return executionText;
         }

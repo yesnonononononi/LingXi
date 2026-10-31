@@ -56,6 +56,13 @@ if (Test-Path -LiteralPath $runRootFull) {
 }
 New-Item -ItemType Directory -Path $runRootFull -Force | Out-Null
 
+# 编译器单独运行，避免源码启动器的编译对象混入受限堆峰值。
+$classes = Join-Path $runRootFull 'classes'
+New-Item -ItemType Directory -Path $classes | Out-Null
+& javac -encoding UTF-8 -d $classes $replaySource $scannerSource $analyzerSource
+if ($LASTEXITCODE -ne 0) { throw 'OOM 重放工具编译失败，拒绝继续测量' }
+$toolClassPath = $classes + [System.IO.Path]::PathSeparator + $H2Jar
+
 $scenarioRounds = @{ 'pre' = $Rounds; 'recovered' = $Rounds; 'reconstructed' = $Rounds }
 $rows = New-Object System.Collections.Generic.List[string]
 $details = New-Object System.Collections.Generic.List[object]
@@ -76,8 +83,8 @@ foreach ($scenario in $Scenarios) {
         $gcArg = '-Xlog:gc*:file="{0}":time,uptime,level,tags' -f $gcLog
         $javaArgs = @(
             '-Xms128m', $heapArg, $gcArg,
-            '--class-path', $H2Jar,
-            $replaySource,
+            '--class-path', ('"{0}"' -f $toolClassPath),
+            'CheckpointReplay',
             "--mode=$Mode",
             "--scenario=$scenario",
             "--out=$groupDir",
@@ -111,7 +118,7 @@ foreach ($scenario in $Scenarios) {
         Set-Content -LiteralPath (Join-Path $groupDir 'ws.csv') -Value $workingSet -Encoding UTF8
 
         # 扫描器：控制台 / 标准错误 / H2 trace 全扫；判据是它的结论，不是退出码。
-        $scanOutput = & java --class-path $H2Jar $scannerSource "--dir=$groupDir" 2>&1
+        $scanOutput = & java --class-path $toolClassPath OomScan "--dir=$groupDir" 2>&1
         $scanOutput | Set-Content -LiteralPath (Join-Path $groupDir 'scan.log') -Encoding UTF8
         $scanLine = ($scanOutput | Where-Object { $_ -like 'SCAN verdict=*' } | Select-Object -Last 1)
         $verdict = 'UNKNOWN'
@@ -119,7 +126,7 @@ foreach ($scenario in $Scenarios) {
         $hitLines = 0
         if ($scanLine -match 'hitLines=(\d+)') { $hitLines = [int]$matches[1] }
 
-        $row = (& java --class-path $H2Jar $analyzerSource "--group=$GroupName" "--scenario=$scenario" `
+        $row = (& java --class-path $toolClassPath AnalyzeHeap "--group=$GroupName" "--scenario=$scenario" `
                 "--heap=$heap" "--dir=$groupDir" 2>&1 | Out-String).Trim()
         $rows.Add("$row`t$verdict`t$exitCode")
         Write-Host ("结论: 扫描器={0} 命中行={1} 退出码={2}" -f $verdict, $hitLines, $exitCode)
