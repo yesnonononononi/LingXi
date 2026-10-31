@@ -1,8 +1,8 @@
-import { computed, onBeforeUnmount, ref } from 'vue';
-import { getApiBaseUrl } from '../utils/apiConfig';
-import { createLocalId } from '../utils/ids';
-import { t } from '../i18n';
-import type { FilePreviewTab } from '../types/filePreview';
+import {computed, onBeforeUnmount, ref} from 'vue';
+import {getApiBaseUrl} from '../utils/apiConfig';
+import {createLocalId} from '../utils/ids';
+import {t} from '../i18n';
+import type {FilePreviewTab} from '../types/filePreview';
 
 export function useFilePreview() {
   const fileTabs = ref<FilePreviewTab[]>([]);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { firstUnansweredIndex, nextUnansweredIndex } from '../src/utils/choiceNavigation';
+import {firstUnansweredIndex, nextUnansweredIndex} from '../src/utils/choiceNavigation';
 
 /**
  * 多题选择卡的顺序状态机。

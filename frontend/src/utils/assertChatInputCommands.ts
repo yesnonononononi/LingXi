@@ -1,5 +1,5 @@
-import { CHAT_INPUT_COMMAND_KEYS } from '../types/chatInputCommands';
-import type { ChatInputCommands } from '../types/chatInputCommands';
+import type {ChatInputCommands} from '../types/chatInputCommands';
+import {CHAT_INPUT_COMMAND_KEYS} from '../types/chatInputCommands';
 // 仅类型导入（编译后被擦除，不产生运行时依赖）：把契约与组件的 defineExpose 绑在一起。
 import type ChatInputArea from '../components/chat/ChatInputArea.vue';
 

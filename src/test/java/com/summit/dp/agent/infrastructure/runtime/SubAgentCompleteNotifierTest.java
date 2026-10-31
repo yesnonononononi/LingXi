@@ -1,7 +1,5 @@
 package com.summit.dp.agent.infrastructure.runtime;
 
-import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
-
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
@@ -11,6 +9,7 @@ import com.summit.dp.email.application.command.MailSendContext;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
@@ -22,10 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 class SubAgentCompleteNotifierTest {
 

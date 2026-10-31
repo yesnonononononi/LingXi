@@ -3,10 +3,10 @@
  * Vue Bits 弹弓发送按钮 (SlingButton)。
  * 支持拖拽拉力弹射与点击发送，带发射粒子与弹力阻尼回弹。
  */
-import { ArrowUp02Icon } from '@hugeicons/core-free-icons';
-import { HugeiconsIcon, type IconArray } from '@hugeicons/vue';
-import { animate, motionValue, useReducedMotion, type AnimationPlaybackControls } from 'motion-v';
-import { computed, onMounted, onUnmounted, ref, useId, watch, type CSSProperties } from 'vue';
+import {ArrowUp02Icon} from '@hugeicons/core-free-icons';
+import {HugeiconsIcon, type IconArray} from '@hugeicons/vue';
+import {animate, type AnimationPlaybackControls, motionValue, useReducedMotion} from 'motion-v';
+import {computed, type CSSProperties, onMounted, onUnmounted, ref, useId, watch} from 'vue';
 
 export type SlingAxis = 'any' | 'horizontal' | 'vertical';
 

@@ -1,12 +1,5 @@
 package com.summit.dp.tools.baseTools.sub_agent;
 
-import com.summit.dp.execution.RuntimeConfigurationTestSupport;
-
-import com.summit.dp.tools.ToolListProcessorTestSupport;
-import com.summit.dp.model.application.vo.RuntimeModel;
-import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
@@ -15,24 +8,29 @@ import com.summit.core.tool.ToolExecution;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
 import com.summit.dp.model.application.service.ModelService;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.user_configs.application.service.SettingsProvider;
-import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
+import com.summit.dp.tools.ToolListProcessorTestSupport;
+import com.summit.dp.user_configs.application.service.SettingsProvider;
+import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationSubmitter;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationTask;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.result.AsyncDelegationResultRenderer;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionResolver;
-import com.summit.dp.workspace.application.service.WorkspaceService;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
+import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -42,18 +40,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * 编排层集成守卫：验证 {@link CallSubAgentTool} 解析子会话（复用 / 派生）并组装请求后的<b>提交载荷</b>。

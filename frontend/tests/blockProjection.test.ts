@@ -1,4 +1,4 @@
-import { buildProcessTimeline } from '../src/utils/processTimeline';
+import {buildProcessTimeline} from '../src/utils/processTimeline';
 /**
  * Block 契约投影守卫（P3）。
  *
@@ -14,15 +14,14 @@ import { buildProcessTimeline } from '../src/utils/processTimeline';
  *
  * <p>这三条正是「删掉前端自造 order / 内容指纹去重 / 旧历史聚合」的前提 —— 前提不成立就不能删旧逻辑。</p>
  */
-
-import { test } from 'node:test';
+import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import type { Block, TurnViewVO } from '../src/types/block';
-import { projectTurnView, upsertBlockIntoBubble, upsertTurnViewIntoMessages } from '../src/views/chat/blockProjection';
-import type { ChatMessage, SessionMessageVO } from '../src/types/chat';
-import { aggregateRecordsByIdentity, mergeTurnViews } from '../src/utils/session';
-import { chatApi } from '../src/services/chat';
-import { SessionAPI } from '../src/services/session';
+import type {Block, TurnViewVO} from '../src/types/block';
+import {projectTurnView, upsertBlockIntoBubble, upsertTurnViewIntoMessages} from '../src/views/chat/blockProjection';
+import type {ChatMessage, SessionMessageVO} from '../src/types/chat';
+import {aggregateRecordsByIdentity, mergeTurnViews} from '../src/utils/session';
+import {chatApi} from '../src/services/chat';
+import {SessionAPI} from '../src/services/session';
 
 function bubble(): ChatMessage {
   return { id: 'b1', role: 'assistant', content: '', timestamp: 0 };

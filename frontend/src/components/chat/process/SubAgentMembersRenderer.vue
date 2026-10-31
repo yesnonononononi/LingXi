@@ -7,13 +7,12 @@
  * <p>成员状态一律以**子会话权威态**为准（`asyncSubSessionStatus`），不得因为工具 `success`
  * 就显示成已完成 —— 这是 AC-5 的核心误判点。</p>
  */
-import { computed } from 'vue';
-import type { ImageProcessItem } from '../../../utils/readImageTools';
-import type { SubSessionVO, ToolCallTrace } from '../../../types/chat';
-import { asyncSubSessionStatus, isAsyncDelegation, subItemStatusDotClass } from '../../../utils/asyncDelegation';
-import type { SubItemStatus } from '../../../types/chat';
-import { extractSubAgentParams } from '../../../utils/toolMeta';
-import { t } from '../../../i18n';
+import {computed} from 'vue';
+import type {ImageProcessItem} from '../../../utils/readImageTools';
+import type {SubItemStatus, SubSessionVO, ToolCallTrace} from '../../../types/chat';
+import {asyncSubSessionStatus, isAsyncDelegation, subItemStatusDotClass} from '../../../utils/asyncDelegation';
+import {extractSubAgentParams} from '../../../utils/toolMeta';
+import {t} from '../../../i18n';
 
 const props = defineProps<{
   item: ImageProcessItem;

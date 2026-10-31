@@ -1,18 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ref, computed } from 'vue';
-import { createPinia, setActivePinia } from 'pinia';
-import { chatApi } from '../src/services/chat';
-import { mergeSubSessionTree } from '../src/utils/session';
-import { useChatSubSession } from '../src/views/chat/useChatSubSession';
-import { useChatHistory } from '../src/views/chat/useChatHistory';
-import type { ChatMessage, ChatSession, ChatTurn } from '../src/types/chat';
-import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
-import { AgentToolName } from '../src/utils/toolNames';
-import { useChatSessionList } from '../src/views/chat/useChatSessionList';
-import { StreamSessionRouter } from '../src/views/chat/streamSessionRouter';
-import { readFileSync } from 'node:fs';
-import { absorbSubSessionHistory } from '../src/views/chat/subSessionHistory';
+import {computed, ref} from 'vue';
+import {createPinia, setActivePinia} from 'pinia';
+import {chatApi} from '../src/services/chat';
+import {mergeSubSessionTree} from '../src/utils/session';
+import {useChatSubSession} from '../src/views/chat/useChatSubSession';
+import {useChatHistory} from '../src/views/chat/useChatHistory';
+import type {ChatMessage, ChatSession, ChatTurn} from '../src/types/chat';
+import {TurnStreamReducer} from '../src/views/chat/turnStreamReducer';
+import {AgentToolName} from '../src/utils/toolNames';
+import {useChatSessionList} from '../src/views/chat/useChatSessionList';
+import {StreamSessionRouter} from '../src/views/chat/streamSessionRouter';
+import {readFileSync} from 'node:fs';
+import {absorbSubSessionHistory} from '../src/views/chat/subSessionHistory';
 
 /**
  * 缺陷：点击子会话卡片不加载 / 不渲染其历史消息。

@@ -1,11 +1,11 @@
-import { ref, computed, type ComputedRef } from 'vue';
-import { chatApi } from '../../services/chat';
-import type { ChatMessage, ChatSession, SubSessionVO } from '../../types/chat';
-import { resolveRootSessionId } from '../../utils/session';
-import { absorbSubSessionHistory } from './subSessionHistory';
-import { toSubItemStatus } from '../../utils/subSessionStatus';
-import type { SubSessionItem } from '../../components/chat/SubAgentSidePanel.vue';
-import { t } from '../../i18n';
+import {computed, type ComputedRef, ref} from 'vue';
+import {chatApi} from '../../services/chat';
+import type {ChatMessage, ChatSession, SubSessionVO} from '../../types/chat';
+import {resolveRootSessionId} from '../../utils/session';
+import {absorbSubSessionHistory} from './subSessionHistory';
+import {toSubItemStatus} from '../../utils/subSessionStatus';
+import type {SubSessionItem} from '../../components/chat/SubAgentSidePanel.vue';
+import {t} from '../../i18n';
 
 export interface ChatSubSessionOptions {
   currentActiveSession: ComputedRef<ChatSession | null | undefined>;

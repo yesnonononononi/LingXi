@@ -1,5 +1,5 @@
-import type { Component, InjectionKey } from 'vue';
-import type { ModelConfig } from './chat';
+import type {Component, InjectionKey} from 'vue';
+import type {ModelConfig} from './chat';
 
 /**
  * 上下文用量指示器插槽：**零回调**的纯展示边界（对应 ChatInputArea 1537–1573）。

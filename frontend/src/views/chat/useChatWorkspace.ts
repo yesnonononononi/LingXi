@@ -1,12 +1,12 @@
-import { ref, onMounted, computed, type Ref } from 'vue';
-import { chatApi } from '../../services/api';
-import { toServerId } from '../../utils/ids';
-import { useUserConfigStore } from '../../stores/userConfigStore';
-import type { AgentAccessMode, ChatSession, ModelConfig, WorkspaceRequest, WorkspaceVO } from '../../types/chat';
-import { normalizeSettingsTab, type SettingsTabKey } from '../../utils/enum';
-import { isElectron, openDirectoryPicker } from '../../utils/platform';
-import { extractDirName } from '../../utils/path';
-import { t } from '../../i18n';
+import {computed, onMounted, ref, type Ref} from 'vue';
+import {chatApi} from '../../services/api';
+import {toServerId} from '../../utils/ids';
+import {useUserConfigStore} from '../../stores/userConfigStore';
+import type {AgentAccessMode, ChatSession, ModelConfig, WorkspaceRequest, WorkspaceVO} from '../../types/chat';
+import {normalizeSettingsTab, type SettingsTabKey} from '../../utils/enum';
+import {isElectron, openDirectoryPicker} from '../../utils/platform';
+import {extractDirName} from '../../utils/path';
+import {t} from '../../i18n';
 
 export interface ChatWorkspaceOptions {
   localSessions: Ref<ChatSession[]>;

@@ -1,5 +1,5 @@
-import type { ChatTurn } from '../types/chat';
-import { t } from '../i18n';
+import type {ChatTurn} from '../types/chat';
+import {t} from '../i18n';
 
 /**
  * 轮次业务状态判定（唯一定义处）。

@@ -7,9 +7,9 @@
  * `props.onOpenSettings`，理由同树组件：保留原写法，避免为了"看起来更类型安全"而改动模板。</p>
  */
 
-import { computed } from 'vue';
-import { t } from '../../i18n';
-import type { SidebarFooterSlotProps } from '../../types/sidebarSlots';
+import {computed} from 'vue';
+import {t} from '../../i18n';
+import type {SidebarFooterSlotProps} from '../../types/sidebarSlots';
 
 defineOptions({ inheritAttrs: false });
 

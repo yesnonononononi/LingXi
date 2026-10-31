@@ -1,7 +1,7 @@
 package com.summit.dp.session;
 
-import com.summit.ddd.application.vo.Result;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.domain.repository.AgentRepository;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
 import com.summit.dp.session.application.convert.ToolBlockStatusResolver;
@@ -10,9 +10,8 @@ import com.summit.dp.session.application.service.SessionAggregateService;
 import com.summit.dp.session.application.service.SessionMessageQueryService;
 import com.summit.dp.session.application.service.TurnViewService;
 import com.summit.dp.session.application.service.impl.SessionServiceImpl;
-import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.Session;
-import org.junit.jupiter.api.BeforeEach;
+import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.model.CursorResult;
@@ -25,6 +24,7 @@ import com.summit.dp.turn.application.vo.ChatTurnVO;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.dp.workspace.application.service.WorkspaceService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -34,15 +34,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * 历史接口的轮次装配（2026-10-01：归属彻底换成 turnId）。

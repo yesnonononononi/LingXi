@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { renderMarkdownDocument } from '../../utils/markdown';
-import { useCopyFeedback } from '../../composables/useCopyFeedback';
-import { useTheme } from '../../composables/useTheme';
-import { t } from '../../i18n';
+import {computed} from 'vue';
+import {renderMarkdownDocument} from '../../utils/markdown';
+import {useCopyFeedback} from '../../composables/useCopyFeedback';
+import {useTheme} from '../../composables/useTheme';
+import {t} from '../../i18n';
 import GradientText from '../common/GradientText.vue';
 import MarkdownContent from './MarkdownContent';
 

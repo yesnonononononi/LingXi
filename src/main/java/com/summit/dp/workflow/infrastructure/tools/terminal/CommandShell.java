@@ -1,7 +1,7 @@
 package com.summit.dp.workflow.infrastructure.tools.terminal;
 
-import com.summit.core.runtime.workspace.OsType;
 import com.summit.core.runtime.RuntimeEnvironment;
+import com.summit.core.runtime.workspace.OsType;
 import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ExecuteCommandRequest;

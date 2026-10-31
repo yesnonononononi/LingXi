@@ -1,7 +1,5 @@
 package com.summit.dp.tools.baseTools.sub_agent.communication;
 
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.AgenticLoopInterceptor;
-
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
@@ -17,6 +15,7 @@ import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.email.application.vo.EmailMessageVO;
 import com.summit.dp.email.domain.model.EmailMessage;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.AgenticLoopInterceptor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -25,15 +24,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 循环拦截器的收件范围回归：它必须用与发信侧相同的规则算出邮箱业务键（协作根会话 id），

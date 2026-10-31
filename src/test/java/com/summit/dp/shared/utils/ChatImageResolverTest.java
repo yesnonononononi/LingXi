@@ -1,19 +1,16 @@
 package com.summit.dp.shared.utils;
 
-import com.summit.dp.execution.RuntimeConfigurationTestSupport;
-
-import com.summit.dp.tools.ToolListProcessorTestSupport;
-import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
-import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
-import com.summit.dp.workflow.application.chat.ChatImageResolver;
-
-import com.summit.dp.workflow.application.chat.RequestPreparer;
-
 import com.summit.core.agent.Image;
 import com.summit.core.conversation.message.UserMessageEntity;
-import com.summit.dp.workflow.application.chat.ChatCommand;
-import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
+import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.session.domain.model.SessionMessage;
+import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.tools.ToolListProcessorTestSupport;
+import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
+import com.summit.dp.workflow.application.chat.ChatCommand;
+import com.summit.dp.workflow.application.chat.ChatImageResolver;
+import com.summit.dp.workflow.application.chat.RequestPreparer;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
@@ -23,13 +20,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.IntStream;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class ChatImageResolverTest {
     private final ChatImageResolver resolver = new ChatImageResolver();

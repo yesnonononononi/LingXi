@@ -1,7 +1,7 @@
-import { computed, ref } from 'vue';
-import { SkillAPI } from '../services/skill';
-import { isOk } from '../utils/api';
-import type { SkillVO } from '../types/chat';
+import {computed, ref} from 'vue';
+import {SkillAPI} from '../services/skill';
+import {isOk} from '../utils/api';
+import type {SkillVO} from '../types/chat';
 
 /**
  * /skill 浮层菜单的状态与加载逻辑。

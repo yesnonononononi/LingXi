@@ -13,11 +13,11 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { ChatSession, ChatMessage } from '../src/types/chat';
-import type { Block, TurnViewVO } from '../src/types/block';
-import { parseSseBlock } from '../src/services/sse';
-import { toAgentEvent } from '../src/views/chat/agentEventNarrowing';
-import { StreamSessionRouter } from '../src/views/chat/streamSessionRouter';
+import type {ChatMessage, ChatSession} from '../src/types/chat';
+import type {Block} from '../src/types/block';
+import {parseSseBlock} from '../src/services/sse';
+import {toAgentEvent} from '../src/views/chat/agentEventNarrowing';
+import {StreamSessionRouter} from '../src/views/chat/streamSessionRouter';
 
 /** 真实帧体的形状（取自后端实际序列化，注意 viewVersion 是**字符串**、无 type 字段）。 */
 function realSnapshotFrame(opts: {

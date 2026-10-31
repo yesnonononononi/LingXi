@@ -1,18 +1,16 @@
 package com.summit.dp.workflow.application.chat;
 
-import com.summit.dp.execution.RuntimeConfigurationTestSupport;
-
-import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.core.agent.Execution;
 import com.summit.core.agent.AgentRequest;
-import java.util.List;
-
-import com.summit.dp.tools.ToolListProcessorTestSupport;
-import com.summit.dp.model.application.vo.RuntimeModel;
+import com.summit.core.agent.Execution;
+import com.summit.core.conf.ModelConfig;
+import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
+import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
 import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.model.application.service.ModelService;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.model.domain.ModelNoFoundException;
 import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
@@ -23,29 +21,22 @@ import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
+import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
-import com.summit.core.conf.ModelConfig;
-import com.summit.ddd.application.vo.Result;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 模型选择规则的回落口径（2026-10-15 四轮对齐后的最终契约）：

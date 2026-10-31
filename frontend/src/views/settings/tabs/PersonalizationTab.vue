@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue';
+import {computed, nextTick, ref} from 'vue';
 import SettingsSelect from '../../../components/common/SettingsSelect.vue';
-import { usePersonalizationTab } from './usePersonalizationTab';
+import {usePersonalizationTab} from './usePersonalizationTab';
 
 const { copy, config, styles, draft, loading, saving, error, saved, dirty, load, save } = usePersonalizationTab();
 const styleOptions = computed(() => styles.value.map(style => ({ value: style.value, label: copy.value.styles[style.value] || style.label })));

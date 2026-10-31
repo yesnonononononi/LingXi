@@ -1,34 +1,36 @@
 package com.summit.dp.workspace;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.dp.sandbox_security.domain.model.SecurityAction;
-import com.summit.dp.sandbox_security.domain.model.SecurityRule;
-import java.util.List;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
-import com.summit.sandbox.mxc.MxcWorkspaceSpec;
+import com.summit.dp.sandbox_security.domain.model.SecurityAction;
+import com.summit.dp.sandbox_security.domain.model.SecurityRule;
 import com.summit.dp.shared.model.WorkspaceType;
 import com.summit.dp.shared.vo.WorkspaceVO;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.workflow.infrastructure.config.ConfiguredSandboxWorkspaceProvider;
 import com.summit.dp.workflow.infrastructure.config.SandboxProperties;
-import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ExecuteCommandRequest;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ReadFileRequest;
 import com.summit.dp.workflow.infrastructure.tools.file.read.ReadFileToolExecutor;
+import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.policy.SandboxPolicyFactory;
+import com.summit.sandbox.mxc.MxcWorkspaceSpec;
 import org.junit.jupiter.api.Test;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.Mockito.mock;

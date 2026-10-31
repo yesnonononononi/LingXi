@@ -1,13 +1,11 @@
 package com.summit.dp.task;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.execution.application.service.ResumeDisposition;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.SqliteTestDatabase;
 import com.summit.dp.task.domain.model.Task;
 import com.summit.dp.task.domain.model.Task.TaskStatus;
 import com.summit.dp.task.domain.repository.TaskRepository;
@@ -17,7 +15,6 @@ import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskCompletion;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -28,7 +25,6 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;

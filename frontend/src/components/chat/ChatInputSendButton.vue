@@ -11,8 +11,8 @@
  */
 import SlingButton from '../common/SlingButton.vue';
 import MorphingSendIcon from '../common/MorphingSendIcon.vue';
-import { t } from '../../i18n';
-import type { ChatInputSendButtonSlotProps } from '../../types/chatInputSlots';
+import {t} from '../../i18n';
+import type {ChatInputSendButtonSlotProps} from '../../types/chatInputSlots';
 
 defineOptions({ inheritAttrs: false });
 

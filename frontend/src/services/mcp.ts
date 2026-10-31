@@ -1,6 +1,6 @@
 import http from './interceptor';
-import type { Result } from './types';
-import type { PageResult, McpVO, McpRequest, McpConnectionVO } from '../types/chat';
+import type {Result} from './types';
+import type {McpConnectionVO, McpRequest, McpVO, PageResult} from '../types/chat';
 
 // 初始化可能先检测协议再回退握手，HTTP 等待时间须覆盖两次初始化和工具发现。
 function resolveConnectionTimeout(data: McpRequest): number {

@@ -1,42 +1,33 @@
 package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
-import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
-
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
-
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
-import com.summit.core.runtime.loop.ExecutionControl;
-import com.summit.core.runtime.loop.ExecutionControlSignal;
-import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.core.runtime.loop.InterceptorResult;
-import com.summit.core.runtime.loop.LoopContext;
-import com.summit.core.runtime.loop.LoopMessages;
-import com.summit.core.runtime.loop.LoopResult;
+import com.summit.core.runtime.loop.*;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.ddd.application.vo.Result;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.email.application.vo.EmailMessageVO;
-import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.execution.ExecutionStatusCodes;
-import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
-import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.execution.application.port.ExecutionActivity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
+import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
+import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.AgenticLoopInterceptor;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -55,16 +46,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 委派生命周期交错回归：把「注册表登记 + 结束事实协作 + 恢复协调器 + 收尾驻留判定 + 取信」

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, useTemplateRef, watch } from 'vue';
+import {computed, ref, useTemplateRef, watch} from 'vue';
 
 interface BorderGlowProps {
   className?: string;

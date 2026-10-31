@@ -1,14 +1,5 @@
 package com.summit.dp.workflow.application.chat;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
-import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
-
-import com.summit.dp.workflow.application.chat.RuntimeContext;
-
-import com.summit.dp.execution.ExecutionRepositoryTestFactory;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
@@ -19,25 +10,25 @@ import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.application.chat.AgentWorkflowOrchestrator;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.ExecutionEventMetadata;
+import com.summit.dp.execution.ExecutionRepositoryTestFactory;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
-import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
 import com.summit.dp.session.application.service.ModelContextService;
-import com.summit.dp.workflow.infrastructure.config.JsonConfig;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
-import com.summit.dp.workflow.application.chat.ExecutionContext;
-import com.summit.dp.workflow.application.chat.RequestPreparer;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.SqliteTestDatabase;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.application.service.impl.ChatTurnServiceImpl;
 import com.summit.dp.turn.infrastructure.persistence.mapper.ChatTurnMapper;
 import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
 import com.summit.dp.turn.infrastructure.persistence.repository.ChatTurnRepositoryImpl;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.workflow.infrastructure.config.JsonConfig;
+import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.runtime.loop.DefaultExecutionController;
 import com.summit.runtime.loop.DefaultRuntimeLifeStyleManager;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -46,7 +37,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -56,9 +46,7 @@ import java.util.concurrent.RejectedExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 /**
  * 提交被线程池拒绝后的收口与解锁。

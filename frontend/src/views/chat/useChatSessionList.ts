@@ -1,12 +1,18 @@
-import { ref, type Ref, type ComputedRef } from 'vue';
-import { useApplicationSessionStore } from '../../stores/applicationSessionStore';
-import { chatApi } from '../../services/chat';
-import type { ChatSession, ChatMessage } from '../../types/chat';
-import { buildSessionMarkdown, mergeTurns, mergeTurnViews, mergeSubSessionTree, synthesizeFailedTurnBubbles } from '../../utils/session';
-import { upsertTurnViewIntoMessages } from './blockProjection';
-import { attachPromptCards } from '../../utils/toolCallCard';
-import { isTempSessionId } from '../../utils/ids';
-import { t } from '../../i18n';
+import {type ComputedRef, type Ref, ref} from 'vue';
+import {useApplicationSessionStore} from '../../stores/applicationSessionStore';
+import {chatApi} from '../../services/chat';
+import type {ChatMessage, ChatSession} from '../../types/chat';
+import {
+    buildSessionMarkdown,
+    mergeSubSessionTree,
+    mergeTurns,
+    mergeTurnViews,
+    synthesizeFailedTurnBubbles
+} from '../../utils/session';
+import {upsertTurnViewIntoMessages} from './blockProjection';
+import {attachPromptCards} from '../../utils/toolCallCard';
+import {isTempSessionId} from '../../utils/ids';
+import {t} from '../../i18n';
 
 export interface ChatSessionListOptions {
   localSessions: Ref<ChatSession[]>;

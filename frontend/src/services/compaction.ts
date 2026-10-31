@@ -1,6 +1,6 @@
 import http from './interceptor';
-import type { Result } from './types';
-import type { CompactionParamsVO } from '../types/chat';
+import type {Result} from './types';
+import type {CompactionParamsVO} from '../types/chat';
 
 /**
  * 上下文压缩的只读参数 API（对应后端 SettingsController#compaction）。

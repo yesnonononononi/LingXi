@@ -1,10 +1,10 @@
-import { computed, onScopeDispose, reactive, ref, watch, type ComputedRef } from 'vue';
-import { AgentAPI } from '../../services/agent';
-import type { ChatAcceptance, ChatMessage, ChatSession } from '../../types/chat';
-import type { ChatCommand } from '../../services/dto/chat_command';
-import { isOk } from '../../utils/api';
-import { t } from '../../i18n';
-import { applyResendAcceptance } from './chatExecutionState';
+import {computed, type ComputedRef, onScopeDispose, reactive, ref, watch} from 'vue';
+import {AgentAPI} from '../../services/agent';
+import type {ChatAcceptance, ChatMessage, ChatSession} from '../../types/chat';
+import type {ChatCommand} from '../../services/dto/chat_command';
+import {isOk} from '../../utils/api';
+import {t} from '../../i18n';
+import {applyResendAcceptance} from './chatExecutionState';
 
 interface Options {
   session: ComputedRef<ChatSession | null | undefined>;

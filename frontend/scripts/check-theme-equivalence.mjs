@@ -67,18 +67,17 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {
-  DIST_ASSETS_DIR,
-  FRONTEND_ROOT,
-  loadThemeContext,
-  loadThemeMap,
-  loadThemeMapFromText,
-  loadTokensFromText,
-  normalizeColor,
-  parseRgba,
-  resolveClass
+    DIST_ASSETS_DIR,
+    FRONTEND_ROOT,
+    loadThemeContext,
+    loadThemeMapFromText,
+    loadTokensFromText,
+    normalizeColor,
+    parseRgba,
+    resolveClass
 } from './check-theme-colors.mjs';
 
 /** 本文件所在目录 = frontend/scripts */

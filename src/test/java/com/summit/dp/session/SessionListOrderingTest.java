@@ -1,9 +1,5 @@
 package com.summit.dp.session;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.agent.domain.repository.AgentRepository;
@@ -21,6 +17,8 @@ import com.summit.dp.session.application.service.impl.SessionServiceImpl;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionRepositoryImpl;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.SqliteTestDatabase;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.turn.application.convert.ChatTurnConverter;
@@ -37,7 +35,6 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;

@@ -8,7 +8,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nextTick } from 'vue';
+import {nextTick} from 'vue';
 
 const KEY = 'lingxi-locale';
 

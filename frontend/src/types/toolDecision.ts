@@ -1,5 +1,5 @@
-import type { InjectionKey } from 'vue';
-import type { ToolCallAction, ToolCallDecisionReceipt, ToolCallVO, ResumeDisposition } from './chat';
+import type {InjectionKey} from 'vue';
+import type {ResumeDisposition, ToolCallAction, ToolCallDecisionReceipt, ToolCallVO} from './chat';
 
 /** 卡片决策提交载荷（由卡片组件构造，视图层补齐会话 id 后提交）。 */
 export interface ToolDecisionPayload {

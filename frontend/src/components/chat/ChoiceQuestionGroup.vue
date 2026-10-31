@@ -1,12 +1,18 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, reactive, ref, watch } from 'vue';
-import type { PromptCardEntry } from '../../utils/promptCardGroups';
-import { ANSWER_CHOICES_KEY, type ChoiceAnswersPayload } from '../../types/toolDecision';
-import { buildCardSummary, canDecideCard, resolveCardStatusLabel } from '../../utils/toolCallCard';
-import { createLocalId } from '../../utils/ids';
-import { firstUnansweredIndex, nextUnansweredIndex } from '../../utils/choiceNavigation';
-import { CARD_SHELL_CLASS, CARD_ERROR_TEXT_CLASS, cardDotClass, cardKindIconPath, resolveCardTone } from '../../utils/cardUi';
-import { useI18n } from '../../i18n';
+import {computed, inject, nextTick, reactive, ref, watch} from 'vue';
+import type {PromptCardEntry} from '../../utils/promptCardGroups';
+import {ANSWER_CHOICES_KEY, type ChoiceAnswersPayload} from '../../types/toolDecision';
+import {buildCardSummary, canDecideCard, resolveCardStatusLabel} from '../../utils/toolCallCard';
+import {createLocalId} from '../../utils/ids';
+import {firstUnansweredIndex, nextUnansweredIndex} from '../../utils/choiceNavigation';
+import {
+  CARD_ERROR_TEXT_CLASS,
+  CARD_SHELL_CLASS,
+  cardDotClass,
+  cardKindIconPath,
+  resolveCardTone
+} from '../../utils/cardUi';
+import {useI18n} from '../../i18n';
 import CardActionButton from './CardActionButton.vue';
 
 const props = defineProps<{ entries: PromptCardEntry[]; responseId: string; expectedCount: number; isDark?: boolean }>();

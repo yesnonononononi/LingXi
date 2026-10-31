@@ -7,7 +7,7 @@
  * 不设 `inheritAttrs: false`：外层若有透传属性，应落到 `MarkdownRenderer` 根节点上（与原内联写法一致）。
  */
 import MarkdownRenderer from './MarkdownRenderer.vue';
-import type { ChatMessageBodySlotProps } from '../../types/chatMessageSlots';
+import type {ChatMessageBodySlotProps} from '../../types/chatMessageSlots';
 
 const props = defineProps<ChatMessageBodySlotProps>();
 </script>

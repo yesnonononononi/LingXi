@@ -1,6 +1,6 @@
-import type { TokenInfo } from './Event';
-import type { ResponsePosition } from '../utils/responseOrder';
-import type { TurnViewVO } from './block';
+import type {TokenInfo} from './Event';
+import type {ResponsePosition} from '../utils/responseOrder';
+import type {TurnViewVO} from './block';
 
 /** 消息角色定义 */
 export type MessageRole = 'user' | 'assistant' | 'system';

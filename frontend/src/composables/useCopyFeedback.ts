@@ -21,7 +21,7 @@
  *   - 布尔场景等价于键为 true 的键控场景（复位时机与原实现相同）。
  */
 
-import { computed, ref } from 'vue';
+import {computed, ref} from 'vue';
 
 export function useCopyFeedback(resetMs = 2000) {
   /** 当前处于「已复制」态的键；null 表示无。布尔场景写入 true。 */

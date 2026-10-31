@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import SessionConnectionNotice from './SessionConnectionNotice.vue';
-import type { StreamHealthState } from '../../views/chat/sessionEventStream';
-import { ref, computed, watch, onUnmounted } from 'vue';
-import type { SubSessionVO, SubItemStatus, ToolCallTrace, ChatMessage, ChatTurn } from '../../types/chat';
-import { useCopyFeedback } from '../../composables/useCopyFeedback';
-import { t } from '../../i18n';
+import type {StreamHealthState} from '../../views/chat/sessionEventStream';
+import {computed, onUnmounted, ref, watch} from 'vue';
+import type {ChatMessage, ChatTurn, SubItemStatus, SubSessionVO, ToolCallTrace} from '../../types/chat';
+import {useCopyFeedback} from '../../composables/useCopyFeedback';
+import {t} from '../../i18n';
 import ChatMessageList from './ChatMessageList.vue';
 import SessionContextUsage from './SessionContextUsage.vue';
 import TaskProgressDock from './TaskProgressDock.vue';
-import type { SubSessionTaskProgressState } from '../../views/chat/useSubSessionTaskProgress';
-import { useChatScroll } from '../../views/chat/useChatScroll';
+import type {SubSessionTaskProgressState} from '../../views/chat/useSubSessionTaskProgress';
+import {useChatScroll} from '../../views/chat/useChatScroll';
 
 /** 默认及最小宽度配置 */
 const DEFAULT_PANEL_WIDTH = 460;

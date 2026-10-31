@@ -1,12 +1,11 @@
 package com.summit.dp.session;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.conversation.api.ToolCallRequest;
 import com.summit.core.conversation.message.AiMessageEntity;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.session.application.convert.ToolBlockStatusResolver;
 import com.summit.dp.session.application.convert.TurnViewAssembler;
-import com.summit.dp.workflow.application.projection.TurnViewBroadcaster;
 import com.summit.dp.session.application.service.TurnViewService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.model.SessionMessage;
@@ -14,10 +13,11 @@ import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.event.BlockEventType;
-import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
+import com.summit.dp.workflow.application.projection.TurnViewBroadcaster;
+import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -25,16 +25,9 @@ import org.mockito.ArgumentCaptor;
 import java.util.List;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 块视图推送编排的回归守卫：路由用根会话、归属用自身会话，版本号来自轮次。

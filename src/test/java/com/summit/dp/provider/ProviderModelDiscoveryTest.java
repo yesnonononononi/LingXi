@@ -1,20 +1,23 @@
 package com.summit.dp.provider;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.sun.net.httpserver.HttpServer;
 import com.summit.dp.provider.application.service.ProviderModelDiscoveryService;
 import com.summit.dp.provider.application.vo.RemoteModelVO;
 import com.summit.dp.provider.domain.model.ProviderConfig;
 import com.summit.dp.provider.domain.repo.ProviderConfigRepository;
 import com.summit.dp.shared.exception.ClientException;
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
+
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ProviderModelDiscoveryTest {
     @Test

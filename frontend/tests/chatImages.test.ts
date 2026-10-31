@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AgentAPI } from '../src/services/agent';
-import { useChatImageAttachments } from '../src/composables/useChatImageAttachments';
-import { upsertTurnViewIntoMessages } from '../src/views/chat/blockProjection';
-import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
-import type { ChatMessage } from '../src/types/chat';
-import type { TurnViewVO } from '../src/types/block';
+import {AgentAPI} from '../src/services/agent';
+import {useChatImageAttachments} from '../src/composables/useChatImageAttachments';
+import {upsertTurnViewIntoMessages} from '../src/views/chat/blockProjection';
+import {TurnStreamReducer} from '../src/views/chat/turnStreamReducer';
+import type {ChatMessage} from '../src/types/chat';
+import type {TurnViewVO} from '../src/types/block';
 
 const image = (name: string) => new File([name], name, { type: 'image/png' });
 

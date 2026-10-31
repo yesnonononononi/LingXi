@@ -2,8 +2,8 @@ package com.summit.dp.workflow.application.chat;
 
 import cn.hutool.core.codec.Base64;
 import com.summit.core.agent.Image;
-import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.session.domain.model.SessionMessage;
+import com.summit.dp.shared.exception.ClientException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;

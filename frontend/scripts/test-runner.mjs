@@ -23,12 +23,12 @@
  *
  * 用法见 `node scripts/test-runner.mjs --help`。
  */
-import { spawn } from 'node:child_process';
+import {spawn} from 'node:child_process';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import {fileURLToPath} from 'node:url';
 
 const CURRENT_FILE_PATH = fileURLToPath(import.meta.url);
 const SCRIPT_DIR = path.dirname(CURRENT_FILE_PATH);

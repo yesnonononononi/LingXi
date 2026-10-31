@@ -1,17 +1,17 @@
-import { buildProcessTimeline } from '../src/utils/processTimeline';
+import {buildProcessTimeline} from '../src/utils/processTimeline';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computed, ref } from 'vue';
-import { createPinia, setActivePinia } from 'pinia';
-import type { AgentEvent } from '../src/types/Event';
-import type { ChatMessage, ChatSession } from '../src/types/chat';
-import type { Block, TurnViewVO } from '../src/types/block';
-import { chatApi } from '../src/services/chat';
-import { AgentToolName } from '../src/utils/toolNames';
-import { aggregateRecordsByIdentity, buildMessageTurnMap, mergeTurnViews } from '../src/utils/session';
-import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
-import { useChatHistory } from '../src/views/chat/useChatHistory';
-import { useChatSessionList } from '../src/views/chat/useChatSessionList';
+import {computed, ref} from 'vue';
+import {createPinia, setActivePinia} from 'pinia';
+import type {AgentEvent} from '../src/types/Event';
+import type {ChatMessage, ChatSession} from '../src/types/chat';
+import type {Block, TurnViewVO} from '../src/types/block';
+import {chatApi} from '../src/services/chat';
+import {AgentToolName} from '../src/utils/toolNames';
+import {aggregateRecordsByIdentity, buildMessageTurnMap} from '../src/utils/session';
+import {TurnStreamReducer} from '../src/views/chat/turnStreamReducer';
+import {useChatHistory} from '../src/views/chat/useChatHistory';
+import {useChatSessionList} from '../src/views/chat/useChatSessionList';
 
 // 运行中会话加载的缺陷回归：跨页重复气泡、过程项 order 错位、对账身份不一致、详情响应覆盖实时正文。
 // 前两条是正对照（缺陷回归时必须仍然全绿），其余为缺陷守卫（每条都有对应的回退即红验证）。

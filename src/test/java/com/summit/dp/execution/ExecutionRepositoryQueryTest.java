@@ -1,9 +1,5 @@
 package com.summit.dp.execution;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.execution.domain.model.Execution;
@@ -11,12 +7,13 @@ import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.SqliteTestDatabase;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mybatis.spring.SqlSessionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.List;

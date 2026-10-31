@@ -1,7 +1,8 @@
 package com.summit.dp.execution.domain.model;
 
-import lombok.Data;
 import com.summit.dp.execution.ExecutionStatusCodes;
+import lombok.Data;
+
 import java.time.LocalDateTime;
 
 /**

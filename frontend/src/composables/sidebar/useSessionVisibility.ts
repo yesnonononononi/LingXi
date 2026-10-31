@@ -1,9 +1,9 @@
-import { computed, type ComputedRef, type Ref } from 'vue';
-import { Comment01Icon } from '@hugeicons/core-free-icons';
-import type { BranchedMenuChild, BranchedMenuItem } from '../../components/common/BranchedMenu.vue';
-import type { ChatSession } from '../../types/chat';
-import { t } from '../../i18n';
-import type { ProjectGroup } from './useSessionGrouping';
+import {computed, type ComputedRef, type Ref} from 'vue';
+import {Comment01Icon} from '@hugeicons/core-free-icons';
+import type {BranchedMenuChild, BranchedMenuItem} from '../../components/common/BranchedMenu.vue';
+import type {ChatSession} from '../../types/chat';
+import {t} from '../../i18n';
+import type {ProjectGroup} from './useSessionGrouping';
 
 /**
  * 侧边栏会话可见性逻辑：截断阈值、展开态、BranchedMenu 树形数据。

@@ -1,6 +1,6 @@
 import http from './interceptor';
-import type { Result } from './types';
-import type { ToolVO } from '../types/chat';
+import type {Result} from './types';
+import type {ToolVO} from '../types/chat';
 
 /**
  * 工具管理 API (对应后端 ToolController)

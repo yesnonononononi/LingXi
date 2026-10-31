@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
-import type { WorkspaceVO } from '../../types/chat';
-import { useTheme } from '../../composables/useTheme';
-import { t } from '../../i18n';
+import {computed, onBeforeUnmount, onMounted, ref, watch} from 'vue';
+import type {WorkspaceVO} from '../../types/chat';
+import {useTheme} from '../../composables/useTheme';
+import {t} from '../../i18n';
 
 const props = defineProps<{
   workspaces: WorkspaceVO[];

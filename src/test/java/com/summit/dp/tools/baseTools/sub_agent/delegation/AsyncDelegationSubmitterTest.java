@@ -1,11 +1,5 @@
 package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.DelegationRecorder;
-
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationTask;
-
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationSubmitter;
-
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
@@ -14,11 +8,14 @@ import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.tool.ToolExecution;
 import com.summit.dp.agent.application.vo.AgentVO;
+import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.workflow.infrastructure.harness.agent.SubAgent;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
-import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationSubmitter;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationTask;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.DelegationRecorder;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionResolver;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionTarget;
 import org.junit.jupiter.api.DisplayName;
@@ -31,14 +28,8 @@ import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 协作式子执行的注册 / 收尾契约。

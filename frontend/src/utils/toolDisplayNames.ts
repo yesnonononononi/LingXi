@@ -1,5 +1,5 @@
-import { t, useI18n } from '../i18n';
-import { AgentToolName } from './toolNames';
+import {t, useI18n} from '../i18n';
+import {AgentToolName} from './toolNames';
 
 export interface ToolDisplayName {
   readonly fullName: string;

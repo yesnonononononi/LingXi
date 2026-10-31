@@ -10,14 +10,9 @@ import com.summit.core.conversation.api.ChatRequestEntity;
 import com.summit.core.conversation.api.ChatResponseEntity;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.message.AiMessageEntity;
-import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.SystemMessageEntity;
 import com.summit.core.conversation.message.UserMessageEntity;
-import com.summit.core.runtime.loop.ContextUsageReporter;
-import com.summit.core.runtime.loop.ExecutionControlSignal;
-import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.core.runtime.loop.LoopContext;
-import com.summit.core.runtime.loop.LoopMessages;
+import com.summit.core.runtime.loop.*;
 import com.summit.dp.checklist.application.ChecklistCommand;
 import com.summit.dp.checklist.application.ChecklistReminderText;
 import com.summit.dp.checklist.application.ChecklistService;
@@ -47,7 +42,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ChecklistContextAttachmentsTest {
     private static final long SESSION = 9401L;

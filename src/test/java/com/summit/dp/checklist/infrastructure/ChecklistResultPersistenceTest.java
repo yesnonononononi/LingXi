@@ -5,14 +5,12 @@ import com.summit.dp.checklist.application.ChecklistService;
 import com.summit.dp.checklist.application.ChecklistVO;
 import com.summit.dp.checklist.domain.model.Checklist;
 import com.summit.dp.checklist.domain.model.ChecklistStatus;
-import com.summit.dp.checklist.infrastructure.persistence.po.ChecklistPO;
 import com.summit.dp.checklist.support.ChecklistTestDatabase;
 import com.summit.dp.shared.exception.ClientException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.time.Instant;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;

@@ -1,18 +1,16 @@
 package com.summit.dp.turn;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
-import com.summit.dp.turn.domain.model.ChatTurn;
-import com.summit.dp.turn.domain.model.ChatTurnStatus;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.SqliteTestDatabase;
 import com.summit.dp.turn.application.convert.ChatTurnConverter;
 import com.summit.dp.turn.application.service.impl.ChatTurnServiceImpl;
 import com.summit.dp.turn.application.vo.ChatTurnVO;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.dp.turn.infrastructure.persistence.mapper.ChatTurnMapper;
 import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
 import com.summit.dp.turn.infrastructure.persistence.repository.ChatTurnRepositoryImpl;
@@ -21,26 +19,16 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.List;
 import java.util.ArrayList;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.List;
+import java.util.concurrent.*;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * chat_turn 持久化：往返、唯一键、以及**崩溃收尸的状态安全边界**。

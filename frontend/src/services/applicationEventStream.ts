@@ -1,5 +1,5 @@
-import { getApiBaseUrl } from '../utils/apiConfig';
-import { readSseStream, type RawSseEvent } from './sse';
+import {getApiBaseUrl} from '../utils/apiConfig';
+import {type RawSseEvent, readSseStream} from './sse';
 
 /** 应用只持有一条连接；所有重试与心跳计时都随关闭一起清理。 */
 export class ApplicationEventStream {

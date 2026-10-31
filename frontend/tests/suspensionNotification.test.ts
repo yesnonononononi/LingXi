@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computed, effectScope, nextTick, ref } from 'vue';
-import { useChatOutcomeNotifications } from '../src/views/chat/useChatOutcomeNotifications';
-import type { AgentEvent } from '../src/types/Event';
-import type { ChatSession, ToolCallVO } from '../src/types/chat';
+import {computed, effectScope, nextTick, ref} from 'vue';
+import {useChatOutcomeNotifications} from '../src/views/chat/useChatOutcomeNotifications';
+import type {AgentEvent} from '../src/types/Event';
+import type {ChatSession, ToolCallVO} from '../src/types/chat';
 
 function card(overrides: Partial<ToolCallVO> = {}): ToolCallVO {
   return { id: '401', type: 'PROMISE', status: 'pending', content: { kind: 'CHOICE', question: '请选择' },

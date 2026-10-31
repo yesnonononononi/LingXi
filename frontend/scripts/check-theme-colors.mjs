@@ -35,7 +35,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import {fileURLToPath} from 'node:url';
 
 /** 本文件所在目录 = frontend/scripts —— 一切路径从它自解析，不依赖 cwd、不依赖仓库外目录 */
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

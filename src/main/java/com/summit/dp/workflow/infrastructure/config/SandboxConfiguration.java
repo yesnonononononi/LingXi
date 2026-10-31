@@ -1,13 +1,14 @@
 package com.summit.dp.workflow.infrastructure.config;
 
-import com.summit.dp.workspace.application.policy.SandboxPolicyFactory;
 import com.summit.dp.sandbox_security.application.SecurityRuleService;
 import com.summit.dp.sandbox_security.domain.model.SecurityCategory;
+import com.summit.dp.workspace.application.policy.SandboxPolicyFactory;
 import org.springframework.beans.factory.annotation.Value;
-import java.nio.file.Path;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.nio.file.Path;
 
 /** 运行资源延迟校验，缺少依赖不影响本地模式启动。 */
 @Configuration(proxyBeanMethods = false)

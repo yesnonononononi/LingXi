@@ -6,12 +6,12 @@
  *    「不可跳过」的判据 `mandatory` 来自主进程（已验签的 forceupdate 或
  *    当前版本低于 minSupportedVersion），这里只负责渲染成不可跳过的交互形态。
  */
-import { computed } from 'vue';
-import { useAppUpdater } from '../../../composables/useAppUpdater';
-import { useTheme } from '../../../composables/useTheme';
-import { useI18n } from '../../../i18n';
-import { formatBytes } from '../../../types/update';
-import { renderUpdateNotes } from '../../../utils/updateNotes';
+import {computed} from 'vue';
+import {useAppUpdater} from '../../../composables/useAppUpdater';
+import {useTheme} from '../../../composables/useTheme';
+import {useI18n} from '../../../i18n';
+import {formatBytes} from '../../../types/update';
+import {renderUpdateNotes} from '../../../utils/updateNotes';
 
 defineProps<{
   isDark?: boolean;

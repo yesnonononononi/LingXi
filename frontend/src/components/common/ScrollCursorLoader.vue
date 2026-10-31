@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue';
-import { t } from '../../i18n';
+import {nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
+import {t} from '../../i18n';
 
 const props = withDefaults(defineProps<{
   /** 是否还有更多历史数据可以加载 */

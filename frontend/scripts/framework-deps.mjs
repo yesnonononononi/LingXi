@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
-import { resolveMaven, runMaven } from './maven-runtime.mjs';
+import {spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {fileURLToPath} from 'node:url';
+import {resolveMaven, runMaven} from './maven-runtime.mjs';
 
 const definitions = {
   harness: { property: 'lingxi-starter', artifact: 'lingXi-harness-agent' },

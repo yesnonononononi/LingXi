@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'vite';
-import { createSSRApp, computed, ref } from 'vue';
-import { renderToString } from '@vue/server-renderer';
-import { fileURLToPath } from 'node:url';
-import { useSidebarActions } from '../src/composables/sidebar/useSidebarActions';
+import {createServer} from 'vite';
+import {computed, createSSRApp, ref} from 'vue';
+import {renderToString} from '@vue/server-renderer';
+import {fileURLToPath} from 'node:url';
+import {useSidebarActions} from '../src/composables/sidebar/useSidebarActions';
 
 /**
  * Sidebar 行为基线（M1 等价性判据）。

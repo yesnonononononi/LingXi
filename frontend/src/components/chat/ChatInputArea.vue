@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, computed, onMounted, onBeforeUnmount, inject, type CSSProperties } from 'vue';
+import {computed, type CSSProperties, inject, nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import {
   Attachment01Icon,
   Cancel01Icon,
@@ -9,34 +9,42 @@ import {
   SparklesIcon,
   Tick02Icon
 } from '@hugeicons/core-free-icons';
-import { HugeiconsIcon, type IconArray } from '@hugeicons/vue';
+import {HugeiconsIcon, type IconArray} from '@hugeicons/vue';
 import DropUpSelect from '../common/DropUpSelect.vue';
 import BorderGlow from '../common/BorderGlow.vue';
 import SparkTrail from '../common/SparkTrail.vue';
 import ProjectDropdown from './ProjectDropdown.vue';
-import type { SelectOption } from '../../types/ui';
-import type { ChatMode, ModelConfig, WorkspaceVO, AgentAccessMode, TeamVO, AgentVO, ReasoningEffort } from '../../types/chat';
-import { reasoningEffortOptions } from '../../composables/useReasoningEffort';
-import { TeamAPI } from '../../services/team';
-import { AgentAPI } from '../../services/agent';
-import { isOk } from '../../utils/api';
-import { useChatImageAttachments } from '../../composables/useChatImageAttachments';
-import { useSkillMenu } from '../../composables/useSkillMenu';
-import { isPromptOptimizationCommand, usePromptOptimization } from '../../composables/usePromptOptimization';
-import { useConfirm } from '../../composables/useConfirm';
-import { isImageAvatar } from '../../utils/avatar';
-import { t } from '../../i18n';
-import { CHAT_INPUT_SLOTS_KEY } from '../../types/chatInputSlots';
+import type {SelectOption} from '../../types/ui';
+import type {
+  AgentAccessMode,
+  AgentVO,
+  ChatMode,
+  ModelConfig,
+  ReasoningEffort,
+  TeamVO,
+  WorkspaceVO
+} from '../../types/chat';
+import {reasoningEffortOptions} from '../../composables/useReasoningEffort';
+import {TeamAPI} from '../../services/team';
+import {AgentAPI} from '../../services/agent';
+import {isOk} from '../../utils/api';
+import {useChatImageAttachments} from '../../composables/useChatImageAttachments';
+import {useSkillMenu} from '../../composables/useSkillMenu';
+import {isPromptOptimizationCommand, usePromptOptimization} from '../../composables/usePromptOptimization';
+import {useConfirm} from '../../composables/useConfirm';
+import {isImageAvatar} from '../../utils/avatar';
+import {t} from '../../i18n';
 import type {
   ChatInputContextUsageSlotProps,
   ChatInputModelSelectorSlotProps,
   ChatInputSendButtonSlotProps,
 } from '../../types/chatInputSlots';
+import {CHAT_INPUT_SLOTS_KEY} from '../../types/chatInputSlots';
 import ChatInputContextUsage from './ChatInputContextUsage.vue';
-import { resolveContextUsageText, resolveContextRingDash } from '../../views/chat/contextUsagePresentation';
+import {resolveContextRingDash, resolveContextUsageText} from '../../views/chat/contextUsagePresentation';
 import ChatInputModelSelector from './ChatInputModelSelector.vue';
 import ChatInputSendButton from './ChatInputSendButton.vue';
-import { MUTED, TOOL_BTN, ICON_BTN } from '../../utils/promptBarStyles';
+import {ICON_BTN, MUTED, TOOL_BTN} from '../../utils/promptBarStyles';
 
 const props = defineProps<{
   isSending?: boolean;

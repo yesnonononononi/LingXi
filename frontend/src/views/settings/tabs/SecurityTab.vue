@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
-import { SecurityRulesAPI } from '../../../services/securityRules';
-import type { SecurityAction, SecurityCategory, SecurityRule, SecurityRuleView } from '../../../services/securityRules';
-import { isOk } from '../../../utils/api';
-import { useI18n } from '../../../i18n';
-import type { AgentAccessMode, CommandApprovalPolicyType } from '../../../types/chat';
+import {computed, reactive, ref} from 'vue';
+import type {SecurityAction, SecurityCategory, SecurityRule, SecurityRuleView} from '../../../services/securityRules';
+import {SecurityRulesAPI} from '../../../services/securityRules';
+import {isOk} from '../../../utils/api';
+import {useI18n} from '../../../i18n';
+import type {AgentAccessMode, CommandApprovalPolicyType} from '../../../types/chat';
 import SettingsSelect from '../../../components/common/SettingsSelect.vue';
-import { useSecurityCopy } from './securityCopy';
-import { useSandboxSettings } from './useSandboxSettings';
+import {useSecurityCopy} from './securityCopy';
+import {useSandboxSettings} from './useSandboxSettings';
 
 const emit = defineEmits<{ (e: 'modelUpdated'): void }>();
 const copy = useSecurityCopy();

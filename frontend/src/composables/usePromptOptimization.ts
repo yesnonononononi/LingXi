@@ -1,8 +1,8 @@
-import { onScopeDispose, ref, watch, type Ref } from 'vue';
-import { PromptOptimizationAPI } from '../services/promptOptimization';
-import { useConfirm } from './useConfirm';
-import { isOk } from '../utils/api';
-import { t } from '../i18n';
+import {onScopeDispose, ref, type Ref, watch} from 'vue';
+import {PromptOptimizationAPI} from '../services/promptOptimization';
+import {useConfirm} from './useConfirm';
+import {isOk} from '../utils/api';
+import {t} from '../i18n';
 
 export const OPTIMIZE_PROMPT_COMMAND = '/optimize-prompt';
 

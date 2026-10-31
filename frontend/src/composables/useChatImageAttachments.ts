@@ -1,7 +1,7 @@
-import { computed, ref } from 'vue';
-import { AgentAPI } from '../services/agent';
-import { isOk } from '../utils/api';
-import { t } from '../i18n';
+import {computed, ref} from 'vue';
+import {AgentAPI} from '../services/agent';
+import {isOk} from '../utils/api';
+import {t} from '../i18n';
 
 export function useChatImageAttachments() {
   const attachments = ref<Array<{ file: File; preview: string }>>([]);

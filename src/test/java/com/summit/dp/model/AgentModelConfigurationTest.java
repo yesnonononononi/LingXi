@@ -1,11 +1,5 @@
 package com.summit.dp.model;
 
-import com.summit.dp.execution.RuntimeConfigurationTestSupport;
-
-import com.summit.dp.tools.ToolListProcessorTestSupport;
-import com.summit.dp.model.application.vo.RuntimeModel;
-import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
-import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.tool.ToolExecuteResult;
@@ -14,20 +8,27 @@ import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
 import com.summit.dp.model.application.service.ModelService;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.model.domain.ModelNoFoundException;
-import com.summit.dp.user_configs.application.vo.SettingsView;
+import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
-import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
-import com.summit.dp.workflow.application.chat.RequestPreparer;
+import com.summit.dp.user_configs.application.vo.SettingsView;
+import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.workflow.application.chat.ChatImageResolver;
+import com.summit.dp.workflow.application.chat.RequestPreparer;
+import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
+
 import java.util.Map;
 import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 

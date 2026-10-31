@@ -1,10 +1,6 @@
 package com.summit.dp.task;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
 import com.baomidou.mybatisplus.annotation.DbType;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
@@ -22,8 +18,8 @@ import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopMessages;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceBridge;
-import com.summit.core.runtime.workspace.WorkspaceCommands.CommandResult;
 import com.summit.core.runtime.workspace.WorkspaceCommands;
+import com.summit.core.runtime.workspace.WorkspaceCommands.CommandResult;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
@@ -34,11 +30,13 @@ import com.summit.dp.sandbox_security.application.TerminalSecurityPolicy;
 import com.summit.dp.sandbox_security.domain.model.SecurityAction;
 import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.SqliteTestDatabase;
 import com.summit.dp.task.api.controller.BackgroundTaskController;
 import com.summit.dp.task.application.service.TaskDeletionPolicy;
 import com.summit.dp.task.application.vo.TaskVO;
-import com.summit.dp.task.domain.model.Task.TaskStatus;
 import com.summit.dp.task.domain.model.Task;
+import com.summit.dp.task.domain.model.Task.TaskStatus;
 import com.summit.dp.task.domain.repository.TaskRepository;
 import com.summit.dp.task.infrastructure.persistence.mapper.TaskMapper;
 import com.summit.dp.task.infrastructure.persistence.po.TaskPO;
@@ -51,26 +49,25 @@ import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefin
 import com.summit.dp.workflow.infrastructure.tools.config.CommonToolConfiguration;
 import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcess;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcessManager;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackendProcesser;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskBroadcaster;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskCompletion;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskLoopInterceptor;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskNotifications;
-import com.summit.dp.workflow.infrastructure.tools.terminal.backend.ManageCommandToolExecutor;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.*;
 import com.summit.runtime.workspace.LocalWorkspace;
+import org.apache.ibatis.session.SqlSessionFactory;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -78,21 +75,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
-import org.apache.ibatis.session.SqlSessionFactory;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.mybatis.spring.SqlSessionTemplate;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class BackgroundCommandTest {
     @TempDir Path temporary;

@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import type { PromptCardData } from '../../types/chat';
-import { CARD_SHELL_CLASS } from '../../utils/cardUi';
+import {computed} from 'vue';
+import type {PromptCardData} from '../../types/chat';
+import {CARD_SHELL_CLASS} from '../../utils/cardUi';
 import PlanCard from './PlanCard.vue';
 import RequireChoiceCard from './RequireChoiceCard.vue';
 import ApprovalCard from './ApprovalCard.vue';
-import { useI18n } from '../../i18n';
+import {useI18n} from '../../i18n';
 
 const props = defineProps<{
   /** 统一卡片数据（历史与实时同一形状） */

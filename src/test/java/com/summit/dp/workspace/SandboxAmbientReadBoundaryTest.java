@@ -1,13 +1,12 @@
 package com.summit.dp.workspace;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.dp.sandbox_security.domain.model.SecurityAction;
-import com.summit.dp.sandbox_security.domain.model.SecurityRule;
-import java.util.List;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
+import com.summit.dp.sandbox_security.domain.model.SecurityAction;
+import com.summit.dp.sandbox_security.domain.model.SecurityRule;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.workflow.infrastructure.config.ConfiguredSandboxWorkspaceProvider;
 import com.summit.dp.workflow.infrastructure.config.SandboxProperties;
@@ -18,11 +17,14 @@ import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitio
 import com.summit.dp.workspace.application.policy.SandboxPolicyFactory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 

@@ -10,7 +10,6 @@ import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
-import com.summit.dp.execution.application.port.ExecutionCheckpointStore;
 import com.summit.dp.execution.application.service.ExecutionCheckpointService;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
@@ -18,14 +17,14 @@ import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
 import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.toolcall.application.service.ToolCallService;
+import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
 import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
 import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
-import com.summit.dp.toolcall.application.service.ToolCallService;
-import com.summit.dp.turn.application.service.ChatTurnService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
@@ -41,23 +40,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * 复核 R2：不同执行在真实事务里并发保存，必须都能提交，且不允许停在旧快照上。

@@ -1,21 +1,13 @@
 package com.summit.dp.personalization.api.controller;
 
 import com.summit.ddd.application.vo.Result;
-
 import com.summit.dp.personalization.api.request.PersonalizationRequest;
 import com.summit.dp.personalization.application.command.PersonalizationCommand;
 import com.summit.dp.personalization.application.service.PersonalizationService;
 import com.summit.dp.personalization.application.vo.PersonalizationVO;
 import com.summit.dp.personalization.application.vo.ReplyStyleVO;
-
 import lombok.RequiredArgsConstructor;
-
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 

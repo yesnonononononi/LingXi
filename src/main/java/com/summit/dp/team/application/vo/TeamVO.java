@@ -2,7 +2,6 @@ package com.summit.dp.team.application.vo;
 
 import com.summit.dp.agent.application.vo.AgentVO;
 import lombok.Builder;
-import lombok.Data;
 import lombok.Getter;
 
 import java.util.List;

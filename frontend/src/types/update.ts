@@ -1,4 +1,4 @@
-import { t } from '../i18n';
+import {t} from '../i18n';
 
 /**
  * 自动更新的类型契约（渲染层）。

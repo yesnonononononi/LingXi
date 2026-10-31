@@ -1,8 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groupInteractionCards, groupChoiceQuestions, isPendingCardEntry, type PromptCardEntry } from '../src/utils/promptCardGroups';
-import { resolveCardStatusLabel } from '../src/utils/toolCallCard';
-import { setPreference } from '../src/i18n';
+import {
+    groupChoiceQuestions,
+    groupInteractionCards,
+    isPendingCardEntry,
+    type PromptCardEntry
+} from '../src/utils/promptCardGroups';
+import {resolveCardStatusLabel} from '../src/utils/toolCallCard';
+import {setPreference} from '../src/i18n';
 
 setPreference('zh-CN');
 const entry = (id: string, kind: PromptCardEntry['card']['kind'] = 'COMMAND'): PromptCardEntry => ({

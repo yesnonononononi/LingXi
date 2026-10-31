@@ -1,6 +1,6 @@
-import { defineComponent, h } from 'vue';
-import type { PropType, VNodeChild } from 'vue';
-import type { MarkdownDocument } from '../../utils/markdown';
+import type {PropType, VNodeChild} from 'vue';
+import {defineComponent, h} from 'vue';
+import type {MarkdownDocument} from '../../utils/markdown';
 import MermaidBlock from './MermaidBlock.vue';
 
 export default defineComponent({

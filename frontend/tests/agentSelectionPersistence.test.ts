@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { createPinia, setActivePinia } from 'pinia';
+import {readFileSync} from 'node:fs';
+import {createPinia, setActivePinia} from 'pinia';
 import ts from 'typescript';
 import http from '../src/services/interceptor';
-import { useUserConfigStore } from '../src/stores/userConfigStore';
-import { toPositiveInt } from '../src/utils/api';
+import {useUserConfigStore} from '../src/stores/userConfigStore';
+import {toPositiveInt} from '../src/utils/api';
 
 interface PatchCall {
   field: string;

@@ -11,9 +11,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import java.time.Duration;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.*;
 
 /** 生产配置必须替换框架默认工厂，并隔离并发模型的可变配置。 */
 class ModelHttpClientConfigurationTest {

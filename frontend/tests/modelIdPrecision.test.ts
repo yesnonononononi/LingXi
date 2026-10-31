@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ref } from 'vue';
-import { createPinia, setActivePinia } from 'pinia';
+import {ref} from 'vue';
+import {createPinia, setActivePinia} from 'pinia';
 import http from '../src/services/interceptor';
-import { useChatWorkspace } from '../src/views/chat/useChatWorkspace';
-import { useUserConfigStore } from '../src/stores/userConfigStore';
-import { toServerId } from '../src/utils/ids';
-import { readFileSync } from 'node:fs';
+import {useChatWorkspace} from '../src/views/chat/useChatWorkspace';
+import {useUserConfigStore} from '../src/stores/userConfigStore';
+import {toServerId} from '../src/utils/ids';
+import {readFileSync} from 'node:fs';
 import ts from 'typescript';
-import { AgentAPI } from '../src/services/agent';
-import type { ChatCommand } from '../src/services/dto/chat_command';
+import {AgentAPI} from '../src/services/agent';
+import type {ChatCommand} from '../src/services/dto/chat_command';
 
 test('模型切换把列表雪花 ID 原样写入 config/current/update，选中状态保持同一 ID', async (t) => {
   setActivePinia(createPinia());

@@ -11,10 +11,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.sql.SQLException;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 共享整笔重试工具的守卫用例：只对锁冲突重试、有上限、每次尝试是新事务。

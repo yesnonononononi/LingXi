@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { setActivePinia, createPinia } from 'pinia';
-import { UserConfigAPI } from '../src/services/userConfig';
-import { useReasoningEffort } from '../src/composables/useReasoningEffort';
-import { useUserConfigStore } from '../src/stores/userConfigStore';
-import { t as translate } from '../src/i18n';
-import type { ReasoningEffort } from '../src/types/chat';
-import type { Result } from '../src/services/types';
+import {createPinia, setActivePinia} from 'pinia';
+import {UserConfigAPI} from '../src/services/userConfig';
+import {useReasoningEffort} from '../src/composables/useReasoningEffort';
+import {useUserConfigStore} from '../src/stores/userConfigStore';
+import {t as translate} from '../src/i18n';
+import type {ReasoningEffort} from '../src/types/chat';
+import type {Result} from '../src/services/types';
 
 test.beforeEach(() => setActivePinia(createPinia()));
 

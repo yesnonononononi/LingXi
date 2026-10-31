@@ -7,13 +7,7 @@ import com.summit.core.runtime.loop.LoopContext;
 import com.summit.dp.task.domain.model.Task;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /** 回执随检查点保存；压缩消息后仍能去重，检查点未落定则允许重新投递。 */
 @Component

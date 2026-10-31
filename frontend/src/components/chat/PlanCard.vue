@@ -1,15 +1,21 @@
 <script setup lang="ts">
-import { ref, computed, inject } from 'vue';
-import type { PromptCardData } from '../../types/chat';
-import { DECIDE_TOOL_CALL_KEY } from '../../types/toolDecision';
-import { useChatInputFocus } from '../../composables/useChatInputFocus';
-import { CARD_SHELL_CLASS, CARD_BODY_CLASS, CARD_ERROR_TEXT_CLASS, cardToneClass, type CardTone } from '../../utils/cardUi';
-import { canDecideCard } from '../../utils/toolCallCard';
+import {computed, inject, ref} from 'vue';
+import type {PromptCardData} from '../../types/chat';
+import {DECIDE_TOOL_CALL_KEY} from '../../types/toolDecision';
+import {useChatInputFocus} from '../../composables/useChatInputFocus';
+import {
+  CARD_BODY_CLASS,
+  CARD_ERROR_TEXT_CLASS,
+  CARD_SHELL_CLASS,
+  type CardTone,
+  cardToneClass
+} from '../../utils/cardUi';
+import {canDecideCard} from '../../utils/toolCallCard';
 import CardHeader from './CardHeader.vue';
 import CardActionButton from './CardActionButton.vue';
 import MarkdownRenderer from './MarkdownRenderer.vue';
 import PlanPreviewModal from './PlanPreviewModal.vue';
-import { useI18n } from '../../i18n';
+import {useI18n} from '../../i18n';
 
 const props = defineProps<{
   /** 统一卡片数据（PLAN 计划审批） */

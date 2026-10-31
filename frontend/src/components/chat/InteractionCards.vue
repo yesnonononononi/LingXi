@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, useId, watch } from 'vue';
-import type { ToolCallTrace } from '../../types/chat';
-import { groupInteractionCards, isPendingCardEntry, type PromptCardEntry } from '../../utils/promptCardGroups';
-import { t } from '../../i18n';
+import {computed, ref, useId, watch} from 'vue';
+import type {ToolCallTrace} from '../../types/chat';
+import {groupInteractionCards, isPendingCardEntry, type PromptCardEntry} from '../../utils/promptCardGroups';
+import {t} from '../../i18n';
 import InteractionCardGroup from './InteractionCardGroup.vue';
 
 const props = defineProps<{ entries: PromptCardEntry[]; toolCalls?: ToolCallTrace[]; sessionId?: string | number; isDark?: boolean }>();

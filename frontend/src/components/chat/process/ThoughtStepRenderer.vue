@@ -7,15 +7,15 @@
  * <p>折叠状态改为本地 `ref`：`ProcessDetails` 用 `:key="item.id"` 保证同 id 实例不被销毁，
  * 因此「按 id 键控」的语义与原来的 `Record<id, boolean>` 等价。</p>
  */
-import { computed, ref } from 'vue';
-import type { ImageProcessItem } from '../../../utils/readImageTools';
-import type { ThoughtStep } from '../../../types/chat';
-import { formatThoughtTitle } from '../../../utils/toolRowUi';
-import { t } from '../../../i18n';
+import {computed, ref} from 'vue';
+import type {ImageProcessItem} from '../../../utils/readImageTools';
+import type {ThoughtStep} from '../../../types/chat';
+import {formatThoughtTitle} from '../../../utils/toolRowUi';
+import {t} from '../../../i18n';
 import GradientText from '../../common/GradientText.vue';
 import CollapseTransition from '../../common/CollapseTransition.vue';
 import MarkdownRenderer from '../MarkdownRenderer.vue';
-import type { ThinkingScrollApi } from './processRenderers';
+import type {ThinkingScrollApi} from './processRenderers';
 
 const props = defineProps<{
   item: ImageProcessItem;

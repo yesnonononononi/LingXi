@@ -1,15 +1,9 @@
 package com.summit.dp.shared;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.dp.personalization.domain.model.Personalization;
-import com.summit.dp.personalization.domain.model.ReplyStyle;
-import com.summit.dp.personalization.infrastructure.repository.PersonalizationRepositoryImpl;
+import com.summit.ddd.infrastructure.repository.json.JsonListCodec;
 import com.summit.dp.mcp.domain.model.Mcp;
 import com.summit.dp.mcp.infrastructure.persistence.mapper.McpMapper;
 import com.summit.dp.mcp.infrastructure.persistence.po.McpPO;
@@ -18,12 +12,16 @@ import com.summit.dp.model.Infrastructure.persistence.mapper.ModelConfigMapper;
 import com.summit.dp.model.Infrastructure.persistence.po.ModelConfigPO;
 import com.summit.dp.model.Infrastructure.repo.ModelConfigRepositoryImpl;
 import com.summit.dp.model.domain.model.ModelConfig;
-import com.summit.dp.workflow.infrastructure.config.JsonConfig;
-import com.summit.ddd.infrastructure.repository.json.JsonListCodec;
+import com.summit.dp.personalization.domain.model.Personalization;
+import com.summit.dp.personalization.domain.model.ReplyStyle;
+import com.summit.dp.personalization.infrastructure.repository.PersonalizationRepositoryImpl;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.SqliteTestDatabase;
 import com.summit.dp.user_configs.domain.model.UserConfig;
 import com.summit.dp.user_configs.infrastructure.persistence.mapper.UserConfigMapper;
 import com.summit.dp.user_configs.infrastructure.persistence.po.UserConfigPO;
 import com.summit.dp.user_configs.infrastructure.repository.UserConfigRepositoryImpl;
+import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

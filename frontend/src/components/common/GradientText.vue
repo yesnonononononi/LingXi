@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Motion, useAnimationFrame, useMotionValue, useTransform } from 'motion-v';
-import { computed, ref, useSlots } from 'vue';
+import {Motion, useAnimationFrame, useMotionValue, useTransform} from 'motion-v';
+import {computed, ref, useSlots} from 'vue';
 
 interface GradientTextProps {
   className?: string;

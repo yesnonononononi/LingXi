@@ -1,7 +1,7 @@
-import type { ChatMessage, PromptCardData, ToolCallVO } from '../types/chat';
-import { asObject, toText } from './json';
-import { AgentToolName } from './toolNames';
-import { t } from '../i18n';
+import type {ChatMessage, PromptCardData, ToolCallVO} from '../types/chat';
+import {asObject, toText} from './json';
+import {AgentToolName} from './toolNames';
+import {t} from '../i18n';
 
 /**
  * {@link ToolCallVO} → {@link PromptCardData} 的唯一映射点（历史与实时共用）。

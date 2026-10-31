@@ -1,7 +1,5 @@
 package com.summit.dp.mcp;
 
-import com.summit.dp.workflow.infrastructure.mcp.HostMcpScopeProvider;
-
 import com.summit.adapter.langchain4j.mcp.McpClientFactory;
 import com.summit.core.conf.McpConfig;
 import com.summit.core.mcp.McpToolScope;
@@ -11,16 +9,20 @@ import com.summit.dp.mcp.application.service.McpConfigAssembler;
 import com.summit.dp.mcp.domain.model.Mcp;
 import com.summit.dp.mcp.domain.repository.McpRepository;
 import com.summit.dp.mcp.infrastructure.McpManager;
+import com.summit.dp.workflow.infrastructure.mcp.HostMcpScopeProvider;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.mcp.client.McpClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 class McpWorkspaceScopeTest {

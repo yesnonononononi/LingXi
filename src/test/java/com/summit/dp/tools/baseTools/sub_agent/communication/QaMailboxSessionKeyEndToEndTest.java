@@ -1,14 +1,5 @@
 package com.summit.dp.tools.baseTools.sub_agent.communication;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
-
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.AgenticLoopInterceptor;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailWakeMisuseDetector;
-
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
@@ -24,11 +15,7 @@ import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopMessages;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.workspace.WorkspaceSpec;
-import com.summit.ddd.application.vo.Result;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.email.application.service.impl.EmailServiceImpl;
-import com.summit.dp.email.application.vo.EmailMessageVO;
-import com.summit.dp.email.domain.model.Email;
 import com.summit.dp.email.domain.model.EmailMessage;
 import com.summit.dp.email.domain.repository.EmailMessageRepository;
 import com.summit.dp.email.domain.repository.EmailRepository;
@@ -37,8 +24,14 @@ import com.summit.dp.email.infrastructure.persistence.mapper.EmailMessageMapper;
 import com.summit.dp.email.infrastructure.repository.EmailMessageRepositoryImpl;
 import com.summit.dp.email.infrastructure.repository.EmailRepositoryImpl;
 import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.SqliteTestDatabase;
 import com.summit.dp.workflow.application.delegation.CommanderMailWakeService;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.AgenticLoopInterceptor;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailWakeMisuseDetector;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
@@ -51,10 +44,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyLong;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 

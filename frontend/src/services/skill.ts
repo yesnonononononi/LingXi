@@ -1,6 +1,6 @@
 import http from './interceptor';
-import type { Result } from './types';
-import type { SkillVO } from '../types/chat';
+import type {Result} from './types';
+import type {SkillVO} from '../types/chat';
 
 /** 本地 Skill API (对应后端 SkillController) */
 export class SkillAPI {

@@ -1,11 +1,11 @@
 <script setup lang='ts'>
-import { ref, computed, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
-import { ModelAPI } from '../../services/api';
-import { useTheme } from '../../composables/useTheme';
-import type { ModelConfigVO } from '../../types/chat';
-import { isOk, toPositiveInt } from '../../utils/api';
-import { t } from '../../i18n';
+import {computed, onMounted, ref} from 'vue';
+import {useRouter} from 'vue-router';
+import {ModelAPI} from '../../services/api';
+import {useTheme} from '../../composables/useTheme';
+import type {ModelConfigVO} from '../../types/chat';
+import {isOk, toPositiveInt} from '../../utils/api';
+import {t} from '../../i18n';
 
 const router = useRouter();
 

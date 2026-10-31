@@ -2,8 +2,6 @@ package com.summit.dp.checklist.application;
 
 import com.summit.dp.checklist.domain.model.ChecklistRules;
 
-import java.util.List;
-
 /**
  * 提醒文案渲染。
  *

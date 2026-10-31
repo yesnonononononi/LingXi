@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, useId } from 'vue';
-import { useI18n } from '../../../i18n';
-import { useCompactionTab } from './useCompactionTab';
+import {computed, useId} from 'vue';
+import {useI18n} from '../../../i18n';
+import {useCompactionTab} from './useCompactionTab';
 import SettingsSelect from '../../../components/common/SettingsSelect.vue';
 
 /**

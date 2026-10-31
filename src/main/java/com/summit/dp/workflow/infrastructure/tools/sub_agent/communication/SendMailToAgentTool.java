@@ -3,11 +3,7 @@ package com.summit.dp.workflow.infrastructure.tools.sub_agent.communication;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.anno.Tool;
-import com.summit.core.anno.type.ObjectValue;
-import com.summit.core.anno.type.OptionalBoolean;
-import com.summit.core.anno.type.ToolProperty;
-import com.summit.core.anno.type.Value;
-import com.summit.core.anno.type.ValueType;
+import com.summit.core.anno.type.*;
 import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
@@ -18,11 +14,12 @@ import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.application.delegation.CommanderMailWakeService;
 import com.summit.dp.workflow.infrastructure.tools.arguments.SendMailArgument;
-import java.util.Map;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+
+import java.util.Map;
 
 /**
  * 发信工具：把一封邮件投递到「本次协作轮次里、收件 Agent 的角色邮箱」。

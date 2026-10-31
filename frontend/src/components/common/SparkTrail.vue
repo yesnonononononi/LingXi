@@ -8,8 +8,8 @@
  * <p>关闭时机由外部 {@link active} 控制；组件内部只管画与不画。
  * 用户系统开启「减少动态效果」时自动停画（{@link useReducedMotion}）。</p>
  */
-import { ref, watch, onBeforeUnmount, onMounted } from 'vue';
-import { useReducedMotion } from 'motion-v';
+import {onBeforeUnmount, onMounted, ref, watch} from 'vue';
+import {useReducedMotion} from 'motion-v';
 
 const props = withDefaults(defineProps<{
   /** 是否点亮特效（通常绑「思考强度拉满」这类状态）。 */

@@ -172,28 +172,28 @@
   </div>
 </template>
 <script setup lang="ts">
-import { ref, computed, inject } from 'vue';
-import { CHAT_MESSAGE_SLOTS_KEY } from '../../types/chatMessageSlots';
-import type { ChatMessageBodySlotProps, ChatMessageActionsSlotProps } from '../../types/chatMessageSlots';
-import type { ChatMessage, ToolCallTrace, SubSessionVO, ProcessTimelineItem, ChatTurn } from '../../types/chat';
-import { toPromptCardData } from '../../utils/toolCallCard';
-import { buildProcessTimeline } from '../../utils/processTimeline';
-import { buildProcessSegments } from '../../utils/processSegments';
-import { deriveProcessSummaries, deriveProcessViews } from '../../utils/processViewModel';
-import { formatProcessStatus } from '../../utils/processHeadline';
-import { isActiveTurnStatus, isFailedTurnStatus, turnStatusLabel } from '../../utils/turnStatus';
-import { formatDurationOrPlaceholder } from '../../utils/format';
-import { resolveTokenUsage } from '../../utils/tokenUsage';
+import {computed, inject, ref} from 'vue';
+import type {ChatMessageActionsSlotProps, ChatMessageBodySlotProps} from '../../types/chatMessageSlots';
+import {CHAT_MESSAGE_SLOTS_KEY} from '../../types/chatMessageSlots';
+import type {ChatMessage, ChatTurn, ProcessTimelineItem, SubSessionVO, ToolCallTrace} from '../../types/chat';
+import {toPromptCardData} from '../../utils/toolCallCard';
+import {buildProcessTimeline} from '../../utils/processTimeline';
+import {buildProcessSegments} from '../../utils/processSegments';
+import {deriveProcessSummaries, deriveProcessViews} from '../../utils/processViewModel';
+import {formatProcessStatus} from '../../utils/processHeadline';
+import {isActiveTurnStatus, isFailedTurnStatus, turnStatusLabel} from '../../utils/turnStatus';
+import {formatDurationOrPlaceholder} from '../../utils/format';
+import {resolveTokenUsage} from '../../utils/tokenUsage';
 import MessageActionsBar from './MessageActionsBar.vue';
-import { useCopyFeedback } from '../../composables/useCopyFeedback';
-import { useTheme } from '../../composables/useTheme';
-import { t } from '../../i18n';
+import {useCopyFeedback} from '../../composables/useCopyFeedback';
+import {useTheme} from '../../composables/useTheme';
+import {t} from '../../i18n';
 import MarkdownRenderer from './MarkdownRenderer.vue';
 import MessageBodyDefault from './MessageBodyDefault.vue';
 import ModelRetryNotice from './ModelRetryNotice.vue';
 import DelegatedTaskMessage from './DelegatedTaskMessage.vue';
 import InteractionCards from './InteractionCards.vue';
-import type { PromptCardEntry } from '../../utils/promptCardGroups';
+import type {PromptCardEntry} from '../../utils/promptCardGroups';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import ChatProcessSegment from './ChatProcessSegment.vue';
 

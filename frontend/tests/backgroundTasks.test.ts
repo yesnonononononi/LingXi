@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { effectScope, ref } from 'vue';
-import { useBackgroundTasks } from '../src/views/chat/useBackgroundTasks';
-import { BackgroundTaskAPI } from '../src/services/backgroundTask';
-import { AgentAPI } from '../src/services/agent';
-import { SessionEventStream } from '../src/views/chat/sessionEventStream';
-import { BACKGROUND_TASK_CHANGED, type BackgroundTask, type BackgroundTaskChanged } from '../src/types/backgroundTask';
+import {effectScope, ref} from 'vue';
+import {useBackgroundTasks} from '../src/views/chat/useBackgroundTasks';
+import {BackgroundTaskAPI} from '../src/services/backgroundTask';
+import {AgentAPI} from '../src/services/agent';
+import {SessionEventStream} from '../src/views/chat/sessionEventStream';
+import {BACKGROUND_TASK_CHANGED, type BackgroundTask, type BackgroundTaskChanged} from '../src/types/backgroundTask';
 import http from '../src/services/interceptor';
-import type { Result } from '../src/services/types';
+import type {Result} from '../src/services/types';
+
 const ROOT = '9007199254740993';
 const OTHER = '9007199254740995';
 const ID = '9007199254740997';

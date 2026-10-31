@@ -10,8 +10,8 @@
  * <p>悬停状态（原 1542–1543 的两个行内处理器）随浮层一起搬入：浮层只由本组件拥有，
  * 状态留在外面会形成"两个 owner 管一个节点"。</p>
  */
-import type { CSSProperties } from 'vue';
-import type { ChatInputContextUsageSlotProps } from '../../types/chatInputSlots';
+import type {CSSProperties} from 'vue';
+import type {ChatInputContextUsageSlotProps} from '../../types/chatInputSlots';
 
 defineOptions({ inheritAttrs: false });
 

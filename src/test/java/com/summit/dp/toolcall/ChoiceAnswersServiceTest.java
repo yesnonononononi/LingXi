@@ -1,9 +1,5 @@
 package com.summit.dp.toolcall;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -25,6 +21,8 @@ import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.SqliteTestDatabase;
 import com.summit.dp.toolcall.api.dto.ChoiceAnswersCommand;
 import com.summit.dp.toolcall.api.dto.ChoiceAnswersReceipt;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
@@ -38,11 +36,11 @@ import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.infrastructure.persistence.mapper.ToolCallMapper;
 import com.summit.dp.toolcall.infrastructure.persistence.repository.ToolCallRepositoryImpl;
 import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.dp.workflow.api.controller.ToolCallController;
 import com.summit.dp.workflow.application.approval.ChoiceAnswersService;
 import com.summit.dp.workflow.application.approval.ChoiceAnswersValidator;
 import com.summit.dp.workflow.application.approval.ToolCallWorkflowService;
 import com.summit.dp.workflow.application.approval.VersionedToolCallDecisionService;
-import com.summit.dp.workflow.api.controller.ToolCallController;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -51,30 +49,26 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** 真实卡片表和执行检查点共同验证整批提交与回滚。 */
 class ChoiceAnswersServiceTest {

@@ -1,9 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nextTick } from 'vue';
-import { AgentToolName } from '../src/utils/toolNames';
-import { TOOL_DISPLAY_NAMES, resolveToolDisplayName, resolveToolFullName, resolveToolRenderName } from '../src/utils/toolDisplayNames';
-import { setPreference } from '../src/i18n';
+import {nextTick} from 'vue';
+import {AgentToolName} from '../src/utils/toolNames';
+import {
+    resolveToolDisplayName,
+    resolveToolFullName,
+    resolveToolRenderName,
+    TOOL_DISPLAY_NAMES
+} from '../src/utils/toolDisplayNames';
+import {setPreference} from '../src/i18n';
 
 test('每个固定工具都有完整名与渲染名', async () => {
   setPreference('zh-CN'); await nextTick();

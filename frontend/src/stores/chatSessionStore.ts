@@ -1,6 +1,6 @@
-import { defineStore } from 'pinia';
-import { ref } from 'vue';
-import type { ContextUsageData } from '../types/chat';
+import {defineStore} from 'pinia';
+import {ref} from 'vue';
+import type {ContextUsageData} from '../types/chat';
 
 /**
  * ChatSessionStore：只承载**上下文用量**。

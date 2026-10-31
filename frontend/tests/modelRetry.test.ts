@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import type { AgentEvent, InvokeRetryEvent } from '../src/types/Event';
-import type { ChatMessage, ChatSession } from '../src/types/chat';
-import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
-import { toAgentEvent } from '../src/views/chat/agentEventNarrowing';
-import { upsertBlockIntoBubble } from '../src/views/chat/blockProjection';
-import { StreamSessionRouter } from '../src/views/chat/streamSessionRouter';
+import {readFileSync} from 'node:fs';
+import type {AgentEvent, InvokeRetryEvent} from '../src/types/Event';
+import type {ChatMessage, ChatSession} from '../src/types/chat';
+import {TurnStreamReducer} from '../src/views/chat/turnStreamReducer';
+import {toAgentEvent} from '../src/views/chat/agentEventNarrowing';
+import {upsertBlockIntoBubble} from '../src/views/chat/blockProjection';
+import {StreamSessionRouter} from '../src/views/chat/streamSessionRouter';
 
 const metaData = { turnId: '9007199254741000', sessionId: '7' };
 const failed = '9007199254740992';

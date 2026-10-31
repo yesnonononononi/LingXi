@@ -1,24 +1,24 @@
-import { defineStore } from 'pinia';
-import { computed, ref } from 'vue';
-import { UserConfigAPI } from '../services/userConfig';
-import { isOk } from '../utils/api';
-import { t } from '../i18n';
+import {defineStore} from 'pinia';
+import {computed, ref} from 'vue';
+import {UserConfigAPI} from '../services/userConfig';
+import {isOk} from '../utils/api';
+import {t} from '../i18n';
+import type {FontScalePreset} from '../utils/enum';
 import {
-  normalizeAccessMode,
-  normalizeCommandApprovalPolicy,
-  normalizeFontScale,
-  normalizeReasoningEffort,
-  normalizeWorkspaceEnvType,
+    normalizeAccessMode,
+    normalizeCommandApprovalPolicy,
+    normalizeFontScale,
+    normalizeReasoningEffort,
+    normalizeWorkspaceEnvType,
 } from '../utils/enum';
 import type {
-  AgentAccessMode,
-  CommandApprovalPolicyType,
-  ReasoningEffort,
-  UserConfigVO,
-  WorkspaceEnvType,
+    AgentAccessMode,
+    CommandApprovalPolicyType,
+    ReasoningEffort,
+    UserConfigVO,
+    WorkspaceEnvType,
 } from '../types/chat';
-import type { FontScalePreset } from '../utils/enum';
-import { useFontScale } from '../composables/useFontScale';
+import {useFontScale} from '../composables/useFontScale';
 
 /**
  * UserConfigStore：全局配置的唯一真源。

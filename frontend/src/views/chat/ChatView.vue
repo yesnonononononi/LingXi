@@ -349,40 +349,40 @@
 </template>
 
 <script setup lang="ts">
-import { ref, provide, onMounted, shallowReactive, watch } from 'vue';
-import { t } from '../../i18n';
-import { isOk } from '../../utils/api';
-import { LogAPI } from '../../services/log';
-import { useFilePreview } from '../../composables/useFilePreview';
-import { provideChatInputFocus } from '../../composables/useChatInputFocus';
-import { FILE_PREVIEW_KEY } from '../../types/filePreview';
-import { DECIDE_TOOL_CALL_KEY, ANSWER_CHOICES_KEY } from '../../types/toolDecision';
-import { CHAT_MESSAGE_SLOTS_KEY } from '../../types/chatMessageSlots';
+import type {Component} from 'vue';
+import {onMounted, provide, ref, shallowReactive, watch} from 'vue';
+import {t} from '../../i18n';
+import {isOk} from '../../utils/api';
+import {LogAPI} from '../../services/log';
+import {useFilePreview} from '../../composables/useFilePreview';
+import {provideChatInputFocus} from '../../composables/useChatInputFocus';
+import {FILE_PREVIEW_KEY} from '../../types/filePreview';
+import {ANSWER_CHOICES_KEY, DECIDE_TOOL_CALL_KEY} from '../../types/toolDecision';
+import {CHAT_MESSAGE_SLOTS_KEY} from '../../types/chatMessageSlots';
 import MessageBodyDefault from '../../components/chat/MessageBodyDefault.vue';
 import ChatBackground from '../../components/chat/ChatBackground.vue';
 import TokenBackground from '../../components/background/TokenBackground.vue';
 import ImageBackground from '../../components/background/ImageBackground.vue';
-import { BACKGROUND_SLOTS_KEY } from '../../types/backgroundSlots';
-import { useBackgroundPreference } from '../../composables/useBackgroundPreference';
+import {BACKGROUND_SLOTS_KEY} from '../../types/backgroundSlots';
+import {useBackgroundPreference} from '../../composables/useBackgroundPreference';
 import MessageActionsBar from '../../components/chat/MessageActionsBar.vue';
-import { CHAT_INPUT_SLOTS_KEY } from '../../types/chatInputSlots';
+import {CHAT_INPUT_SLOTS_KEY} from '../../types/chatInputSlots';
 import ChatInputContextUsage from '../../components/chat/ChatInputContextUsage.vue';
 import ChatInputModelSelector from '../../components/chat/ChatInputModelSelector.vue';
 import ChatInputSendButton from '../../components/chat/ChatInputSendButton.vue';
 import FilePreviewPanel from '../../components/chat/FilePreviewPanel.vue';
-import { useChatView } from './useChatView';
+import {useChatView} from './useChatView';
 import Sidebar from '../../components/chat/Sidebar.vue';
-import type { Component } from 'vue';
-import { SIDEBAR_SLOTS_KEY } from '../../types/sidebarSlots';
-import type { SidebarTreeSlotProps } from '../../types/sidebarSlots';
+import type {SidebarTreeSlotProps} from '../../types/sidebarSlots';
+import {SIDEBAR_SLOTS_KEY} from '../../types/sidebarSlots';
 import SidebarWorkspaceTree from '../../components/chat/SidebarWorkspaceTree.vue';
 import SidebarFooterBar from '../../components/chat/SidebarFooterBar.vue';
 import WelcomeView from '../../components/chat/WelcomeView.vue';
 import ChatMessageList from '../../components/chat/ChatMessageList.vue';
 import ChatInputArea from '../../components/chat/ChatInputArea.vue';
 // 命令面契约：inputAreaRef 只按这 11 项命令使用，不再用 InstanceType 绑组件内部形状（B-5 阶段 1a）
-import type { ChatInputCommands } from '../../types/chatInputCommands';
-import { assertChatInputCommands } from '../../utils/assertChatInputCommands';
+import type {ChatInputCommands} from '../../types/chatInputCommands';
+import {assertChatInputCommands} from '../../utils/assertChatInputCommands';
 import ChatExecutionControls from '../../components/chat/ChatExecutionControls.vue';
 import TaskProgressDock from '../../components/chat/TaskProgressDock.vue';
 import ChatResendDialog from '../../components/chat/ChatResendDialog.vue';

@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { effectScope } from 'vue';
-import { McpAPI } from '../src/services/mcp';
-import http, { ApiError } from '../src/services/interceptor';
-import { useMcpTab } from '../src/views/settings/tabs/useMcpTab';
-import type { Result } from '../src/services/types';
-import type { McpConnectionVO, McpRequest } from '../src/types/chat';
+import {effectScope} from 'vue';
+import {McpAPI} from '../src/services/mcp';
+import http, {ApiError} from '../src/services/interceptor';
+import {useMcpTab} from '../src/views/settings/tabs/useMcpTab';
+import type {Result} from '../src/services/types';
+import type {McpConnectionVO, McpRequest} from '../src/types/chat';
 
 const connected: Result<McpConnectionVO> = {
   code: 1, data: { toolCount: 1, toolNames: ['echo'], elapsedMillis: 25 },

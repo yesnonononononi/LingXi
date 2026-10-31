@@ -15,11 +15,11 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import {existsSync, readdirSync, readFileSync} from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { nextTick } from 'vue';
-import { FONT_SCALE_PRESETS } from '../src/utils/enum';
+import {fileURLToPath} from 'node:url';
+import {nextTick} from 'vue';
+import {FONT_SCALE_PRESETS} from '../src/utils/enum';
 
 /** 前端源码根目录（守卫的扫描面）。 */
 const SRC_ROOT = fileURLToPath(new URL('../src', import.meta.url));

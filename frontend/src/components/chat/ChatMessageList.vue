@@ -84,9 +84,9 @@
 
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
-import { t } from '../../i18n';
-import type { ChatMessage, ChatTurn, SubSessionVO } from '../../types/chat';
+import {computed, ref} from 'vue';
+import {t} from '../../i18n';
+import type {ChatMessage, ChatTurn, SubSessionVO} from '../../types/chat';
 import ScrollCursorLoader from '../common/ScrollCursorLoader.vue';
 import ChatMessageItem from './ChatMessageItem.vue';
 

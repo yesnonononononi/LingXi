@@ -1,8 +1,8 @@
 package com.summit.dp.user_configs.application.vo;
 
+import com.summit.dp.shared.model.WorkspaceType;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
-import com.summit.dp.shared.model.WorkspaceType;
 
 /**
  * 单例本地设置的只读投影（{@code user_configs} 单例行）。

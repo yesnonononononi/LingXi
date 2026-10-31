@@ -1,13 +1,13 @@
-import { ref, nextTick } from 'vue';
-import type { Ref, ComputedRef } from 'vue';
-import type { ChatSession, ChatTurn, ToolCallVO } from '../../types/chat';
-import type { TurnViewVO } from '../../types/block';
-import { chatApi } from '../../services/chat';
-import { mergeTurns, mergeTurnViews, mergeSubSessionTree, synthesizeFailedTurnBubbles } from '../../utils/session';
-import { upsertTurnViewIntoMessages } from './blockProjection';
-import { attachPromptCards } from '../../utils/toolCallCard';
-import { useChatSessionStore } from '../../stores/chatSessionStore';
-import { t } from '../../i18n';
+import type {ComputedRef, Ref} from 'vue';
+import {nextTick, ref} from 'vue';
+import type {ChatSession, ChatTurn, ToolCallVO} from '../../types/chat';
+import type {TurnViewVO} from '../../types/block';
+import {chatApi} from '../../services/chat';
+import {mergeSubSessionTree, mergeTurns, mergeTurnViews, synthesizeFailedTurnBubbles} from '../../utils/session';
+import {upsertTurnViewIntoMessages} from './blockProjection';
+import {attachPromptCards} from '../../utils/toolCallCard';
+import {useChatSessionStore} from '../../stores/chatSessionStore';
+import {t} from '../../i18n';
 
 /** 加载更多历史时保证加载动画可见的最短展示时长（毫秒） */
 const HISTORY_PREPEND_SETTLE_MS = 350;

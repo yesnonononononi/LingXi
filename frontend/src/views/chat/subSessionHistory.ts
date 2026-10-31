@@ -10,11 +10,11 @@
  *
  * <p>顺序也有硬约束：{@code turns} 必须先于消息落定（合成失败气泡要读 turns 判 FAILED）。</p>
  */
-import type { chatApi } from '../../services/chat';
-import type { ChatMessage, SubSessionVO } from '../../types/chat';
-import { mergeTurns, mergeTurnViews, synthesizeFailedTurnBubbles } from '../../utils/session';
-import { attachPromptCards } from '../../utils/toolCallCard';
-import { upsertTurnViewIntoMessages } from './blockProjection';
+import type {chatApi} from '../../services/chat';
+import type {ChatMessage, SubSessionVO} from '../../types/chat';
+import {mergeTurns, mergeTurnViews, synthesizeFailedTurnBubbles} from '../../utils/session';
+import {attachPromptCards} from '../../utils/toolCallCard';
+import {upsertTurnViewIntoMessages} from './blockProjection';
 
 /** 消息分页接口的 data 段（只取投影需要的字段，避免复制一份接口定义）。 */
 export type SubSessionHistoryPage =

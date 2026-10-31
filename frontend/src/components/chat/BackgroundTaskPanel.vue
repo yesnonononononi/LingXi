@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, useId, watch } from 'vue';
-import type { BackgroundTasksState } from '../../views/chat/useBackgroundTasks';
-import { isTaskActive, type BackgroundTask } from '../../types/backgroundTask';
-import { t } from '../../i18n';
+import {computed, ref, useId, watch} from 'vue';
+import type {BackgroundTasksState} from '../../views/chat/useBackgroundTasks';
+import {type BackgroundTask, isTaskActive} from '../../types/backgroundTask';
+import {t} from '../../i18n';
 import './taskProgress.css';
+
 const props = withDefaults(defineProps<{ feed: BackgroundTasksState; isDark?: boolean; embedded?: boolean; expanded?: boolean }>(), { expanded: undefined });
 const emit = defineEmits<{ 'update:expanded': [value: boolean] }>();
 const panelId = useId();

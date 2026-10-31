@@ -1,6 +1,6 @@
 import http from './interceptor';
-import type { Result } from './types';
-import type { SandboxServiceStatus } from '../types/chat';
+import type {Result} from './types';
+import type {SandboxServiceStatus} from '../types/chat';
 
 /** 查询配置并检查基础运行能力，不探测项目目录。 */
 export class SandboxAPI {

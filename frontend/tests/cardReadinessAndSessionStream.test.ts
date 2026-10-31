@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createPinia, setActivePinia } from 'pinia';
-import { effectScope, nextTick } from 'vue';
+import {createPinia, setActivePinia} from 'pinia';
+import {effectScope, nextTick} from 'vue';
 import axios from 'axios';
-import { AgentToolName } from '../src/utils/toolNames';
-import type { AgentEvent } from '../src/types/Event';
-import type { ChatMessage, ToolCallVO } from '../src/types/chat';
+import {AgentToolName} from '../src/utils/toolNames';
+import type {AgentEvent} from '../src/types/Event';
+import type {ChatMessage, ToolCallVO} from '../src/types/chat';
 
 /**
  * 本次修复的回归守卫：

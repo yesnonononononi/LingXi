@@ -1,23 +1,15 @@
 package com.summit.dp.sandbox_security.application;
 
-import com.summit.dp.sandbox_security.domain.model.SecurityAction;
-import com.summit.dp.sandbox_security.domain.model.SecurityCategory;
-import com.summit.dp.sandbox_security.domain.model.SecurityRule;
-import com.summit.dp.sandbox_security.domain.model.SecurityRuleSet;
+import com.summit.dp.sandbox_security.domain.model.*;
 import com.summit.dp.sandbox_security.domain.repository.SecurityRuleRepository;
-import com.summit.dp.sandbox_security.domain.model.SecurityRevisionConflictException;
 import com.summit.dp.shared.exception.ClientException;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
-import java.nio.file.Path;
-import java.nio.file.InvalidPathException;
+
 import java.io.File;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
+import java.util.*;
 
 /** 校验与保存同一套规则，禁止保存没有执行能力的动作。 */
 @Service

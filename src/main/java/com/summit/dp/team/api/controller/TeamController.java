@@ -2,19 +2,13 @@ package com.summit.dp.team.api.controller;
 
 import com.summit.ddd.application.vo.PageResult;
 import com.summit.ddd.application.vo.Result;
-import com.summit.dp.team.application.command.TeamCommand;
 import com.summit.dp.team.api.request.TeamRequest;
+import com.summit.dp.team.application.command.TeamCommand;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeanUtils;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 /** Team 接口层（生成骨架） */
 @RestController

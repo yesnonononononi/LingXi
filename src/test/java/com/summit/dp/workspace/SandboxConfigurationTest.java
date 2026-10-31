@@ -2,30 +2,33 @@ package com.summit.dp.workspace;
 
 import com.summit.core.workspace.BasicWorkspaceSpec;
 import com.summit.core.workspace.WorkspaceResolver;
-import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.sandbox_security.application.SecurityRuleService;
 import com.summit.dp.sandbox_security.application.SecurityRulePresets;
+import com.summit.dp.sandbox_security.application.SecurityRuleService;
 import com.summit.dp.sandbox_security.domain.model.SecurityCategory;
-import static org.mockito.Mockito.*;
+import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.workflow.infrastructure.config.SandboxConfiguration;
 import com.summit.dp.workflow.infrastructure.config.SandboxProperties;
+import com.summit.dp.workspace.application.policy.SandboxPolicyFactory;
 import com.summit.dp.workspace.application.service.SandboxService;
 import com.summit.harness.springbootautoconfigure.config.WorkspaceAutoConfiguration;
 import com.summit.sandbox.mxc.MxcWorkspaceSpec;
-import com.summit.dp.workspace.application.policy.SandboxPolicyFactory;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
-import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.core.io.FileSystemResource;
+
 import java.io.IOException;
-import java.nio.file.Path;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.stream.Stream;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
+
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class SandboxConfigurationTest {
     @TempDir Path temporary;

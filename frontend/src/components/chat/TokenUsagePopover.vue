@@ -35,10 +35,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, useId } from 'vue';
-import type { TokenInfo } from '../../types/Event';
-import { resolveCacheHitRate, resolveTotalTokens, resolveUncachedInputTokens } from '../../utils/tokenUsage';
-import { t } from '../../i18n';
+import {computed, onMounted, onUnmounted, ref, useId} from 'vue';
+import type {TokenInfo} from '../../types/Event';
+import {resolveCacheHitRate, resolveTotalTokens, resolveUncachedInputTokens} from '../../utils/tokenUsage';
+import {t} from '../../i18n';
 
 const props = defineProps<{ usage: TokenInfo | null; modelName?: string | null; modelProvider?: string | null; isDark: boolean }>();
 const trigger = ref<HTMLButtonElement>();

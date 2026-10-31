@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount } from 'vue'
-import { useApplicationSessionStore } from './stores/applicationSessionStore'
+import {onBeforeUnmount, onMounted} from 'vue'
+import {useApplicationSessionStore} from './stores/applicationSessionStore'
 import ConfirmModal from './components/common/ConfirmModal.vue'
 import DesktopTitleBar from './components/common/DesktopTitleBar.vue'
-import { isElectron } from './utils/platform'
+import {isElectron} from './utils/platform'
 
 const hasDesktopTitleBar = isElectron() && window.electronAPI?.customTitleBar === true
 const applicationSessions = useApplicationSessionStore()

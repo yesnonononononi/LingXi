@@ -1,40 +1,22 @@
 package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
-
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
-
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationSubmitter;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.message.Message;
-import com.summit.core.runtime.loop.ExecutionControl;
-import com.summit.core.runtime.loop.ExecutionControlSignal;
-import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.core.runtime.loop.InterceptorResult;
-import com.summit.core.runtime.loop.LoopContext;
-import com.summit.core.runtime.loop.LoopMessages;
-import com.summit.core.runtime.loop.LoopResult;
+import com.summit.core.runtime.loop.*;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import com.summit.dp.email.application.service.EmailService;
-import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
-import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.execution.application.port.ExecutionActivity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
@@ -43,8 +25,16 @@ import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
-import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
+import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationSubmitter;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentRequestFactory;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.result.AsyncDelegationResultRenderer;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionResolver;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionTarget;
@@ -66,17 +56,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * 独立验证（QA）：委派生命周期的六类交错场景 + 泄漏/残留检查。

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, useId, watch, type CSSProperties } from 'vue';
-import type { SessionVO } from '../../types/chat';
-import { useChatSessionStore } from '../../stores/chatSessionStore';
-import { resolveContextUsageText, resolveContextRingDash } from '../../views/chat/contextUsagePresentation';
+import {computed, type CSSProperties, nextTick, onBeforeUnmount, ref, useId, watch} from 'vue';
+import type {SessionVO} from '../../types/chat';
+import {useChatSessionStore} from '../../stores/chatSessionStore';
+import {resolveContextRingDash, resolveContextUsageText} from '../../views/chat/contextUsagePresentation';
 import ChatInputContextUsage from './ChatInputContextUsage.vue';
 
 const props = defineProps<{ session?: Pick<SessionVO, 'id' | 'contextTokenCount' | 'contextMaxTokens' | 'contextRatio'> | null; isDark?: boolean }>();

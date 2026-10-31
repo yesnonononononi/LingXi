@@ -1,9 +1,9 @@
 import http from './interceptor';
-import type { Result } from './types';
-import { isOk } from '../utils/api';
-import type { ToolCallAction, ToolCallDecisionReceipt, ToolCallVO } from '../types/chat';
-import { t } from '../i18n';
-import type { ChoiceAnswersPayload, ChoiceAnswersReceipt } from '../types/toolDecision';
+import type {Result} from './types';
+import {isOk} from '../utils/api';
+import type {ToolCallAction, ToolCallDecisionReceipt, ToolCallVO} from '../types/chat';
+import {t} from '../i18n';
+import type {ChoiceAnswersPayload, ChoiceAnswersReceipt} from '../types/toolDecision';
 
 /** 提交工具调用决策的载荷（对应后端 ToolCallDecisionCommand）。 */
 export interface ToolCallDecisionPayload {

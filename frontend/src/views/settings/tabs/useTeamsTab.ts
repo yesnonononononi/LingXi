@@ -1,10 +1,10 @@
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
-import { TeamAPI, AgentAPI } from '../../../services/api';
-import type { TeamVO, AgentVO } from '../../../types/chat';
-import { isOk } from '../../../utils/api';
-import { useConfirm } from '../../../composables/useConfirm';
-import { useI18n } from '../../../i18n';
-import { useUserConfigStore } from '../../../stores/userConfigStore';
+import {computed, onBeforeUnmount, onMounted, ref} from 'vue';
+import {AgentAPI, TeamAPI} from '../../../services/api';
+import type {AgentVO, TeamVO} from '../../../types/chat';
+import {isOk} from '../../../utils/api';
+import {useConfirm} from '../../../composables/useConfirm';
+import {useI18n} from '../../../i18n';
+import {useUserConfigStore} from '../../../stores/userConfigStore';
 
 /**
  * 团队描述上限。**必须与后端 `Team.MAX_DESCRIPTION_LENGTH` 及 `init.sql` 里

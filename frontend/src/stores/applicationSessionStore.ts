@@ -1,9 +1,9 @@
-import { defineStore } from 'pinia';
-import { ref } from 'vue';
-import { ApplicationEventStream } from '../services/applicationEventStream';
-import { SessionAPI } from '../services/session';
-import type { SessionVO } from '../types/chat';
-import { isOk } from '../utils/api';
+import {defineStore} from 'pinia';
+import {ref} from 'vue';
+import {ApplicationEventStream} from '../services/applicationEventStream';
+import {SessionAPI} from '../services/session';
+import type {SessionVO} from '../types/chat';
+import {isOk} from '../utils/api';
 
 export function mergeSessionState(states: Map<string, SessionVO>, session: SessionVO): void {
   const id = String(session.id);

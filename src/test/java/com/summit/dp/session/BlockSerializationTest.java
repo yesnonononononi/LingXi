@@ -1,24 +1,14 @@
 package com.summit.dp.session;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.dp.shared.vo.block.*;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
-import com.summit.dp.shared.vo.block.Block;
-import com.summit.dp.shared.vo.block.BlockStatus;
-import com.summit.dp.shared.vo.block.TextBlock;
-import com.summit.dp.shared.vo.block.ThinkingBlock;
-import com.summit.dp.shared.vo.block.ToolBlock;
-import com.summit.dp.shared.vo.block.TurnViewVO;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Block 契约的序列化边界（用**业务真实的** {@code @Primary ObjectMapper}）。

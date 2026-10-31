@@ -1,14 +1,10 @@
 package com.summit.dp.agent.infrastructure.runtime;
 
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * {@link SessionExecutionRegistry} 的最小行为验证，重点是 HC-2 的结构性兜底与单飞约束：

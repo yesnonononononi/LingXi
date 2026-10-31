@@ -1,10 +1,10 @@
 package com.summit.dp.shared.support;
 
+import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
-import com.baomidou.mybatisplus.annotation.DbType;
 import com.summit.dp.shared.config.SqliteSchemaInitializer;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
 import com.summit.dp.shared.persistence.SqliteExceptionTranslator;

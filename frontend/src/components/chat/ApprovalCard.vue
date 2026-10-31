@@ -1,15 +1,21 @@
 <script setup lang="ts">
-import { ref, computed, inject } from 'vue';
-import type { PromptCardData } from '../../types/chat';
-import { DECIDE_TOOL_CALL_KEY } from '../../types/toolDecision';
-import { useCopyFeedback } from '../../composables/useCopyFeedback';
-import { APPROVE_ACTION, normalizeOutcome, resolveApprovalState } from '../../utils/approvalOutcome';
-import { canDecideCard } from '../../utils/toolCallCard';
-import { CARD_SHELL_CLASS, CARD_BODY_CLASS, CARD_ERROR_TEXT_CLASS, cardToneClass, type CardTone } from '../../utils/cardUi';
+import {computed, inject, ref} from 'vue';
+import type {PromptCardData} from '../../types/chat';
+import {DECIDE_TOOL_CALL_KEY} from '../../types/toolDecision';
+import {useCopyFeedback} from '../../composables/useCopyFeedback';
+import {APPROVE_ACTION, normalizeOutcome, resolveApprovalState} from '../../utils/approvalOutcome';
+import {canDecideCard} from '../../utils/toolCallCard';
+import {
+  CARD_BODY_CLASS,
+  CARD_ERROR_TEXT_CLASS,
+  CARD_SHELL_CLASS,
+  type CardTone,
+  cardToneClass
+} from '../../utils/cardUi';
 import CardHeader from './CardHeader.vue';
 import CardActionButton from './CardActionButton.vue';
 import CollapseTransition from '../common/CollapseTransition.vue';
-import { useI18n } from '../../i18n';
+import {useI18n} from '../../i18n';
 
 const props = defineProps<{
   /** 统一卡片数据（COMMAND 命令审批） */

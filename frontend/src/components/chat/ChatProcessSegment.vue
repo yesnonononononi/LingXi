@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import type { ChatMessage, ChatTurn, SubSessionVO } from '../../types/chat';
-import type { ProcessSegmentView } from '../../utils/processViewModel';
+import {computed, ref} from 'vue';
+import type {ChatMessage, ChatTurn, SubSessionVO} from '../../types/chat';
+import type {ProcessSegmentView} from '../../utils/processViewModel';
 import CollapseTransition from '../common/CollapseTransition.vue';
 import ProcessDetails from './ProcessDetails.vue';
 

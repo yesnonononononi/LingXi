@@ -1,16 +1,12 @@
 package com.summit.dp.user_configs.api.controller;
 
 import com.summit.ddd.application.vo.Result;
-import com.summit.dp.user_configs.application.command.UserConfigCommand;
 import com.summit.dp.user_configs.api.request.UserConfigRequest;
+import com.summit.dp.user_configs.application.command.UserConfigCommand;
 import com.summit.dp.user_configs.application.service.UserConfigService;
 import com.summit.dp.user_configs.application.vo.UserConfigVO;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 /**
  * UserConfig 接口层。

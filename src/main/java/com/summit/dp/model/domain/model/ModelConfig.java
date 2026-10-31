@@ -1,10 +1,10 @@
 package com.summit.dp.model.domain.model;
 
 
+import com.summit.dp.shared.exception.ClientException;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import com.summit.dp.shared.exception.ClientException;
 
 @AllArgsConstructor
 @Getter

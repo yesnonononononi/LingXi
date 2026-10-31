@@ -1,13 +1,10 @@
 package com.summit.dp.tools.baseTools.web;
 
-import com.summit.dp.workflow.infrastructure.tools.web.WebSearchEngine;
-
-import com.summit.dp.workflow.infrastructure.tools.web.WebSearchConfig;
-
-import com.summit.dp.workflow.infrastructure.tools.web.WebResultSummarizer;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.workflow.infrastructure.tools.arguments.WebSearchArguments;
+import com.summit.dp.workflow.infrastructure.tools.web.WebResultSummarizer;
+import com.summit.dp.workflow.infrastructure.tools.web.WebSearchConfig;
+import com.summit.dp.workflow.infrastructure.tools.web.WebSearchEngine;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -15,20 +12,10 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * {@link WebSearchEngine} 的单元测试，覆盖两块行为：

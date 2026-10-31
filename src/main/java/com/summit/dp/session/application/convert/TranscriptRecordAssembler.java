@@ -3,12 +3,16 @@ package com.summit.dp.session.application.convert;
 import cn.hutool.core.util.IdUtil;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.core.conversation.message.*;
+import com.summit.core.conversation.message.AiMessageEntity;
+import com.summit.core.conversation.message.Message;
+import com.summit.core.conversation.message.ToolMessageEntity;
+import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.shared.exception.ClientException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;

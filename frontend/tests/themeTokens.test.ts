@@ -1,14 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import {
-  THEME_TOKEN_NAMES,
-  THEME_TOKEN_META,
-  OVERRIDABLE_TOKEN_NAMES,
-  tokensByGroup
-} from '../src/theme/tokens';
-import { ALL_MAPPING_TABLES } from '../src/theme/mapping';
+import {readFileSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
+import {OVERRIDABLE_TOKEN_NAMES, THEME_TOKEN_META, THEME_TOKEN_NAMES, tokensByGroup} from '../src/theme/tokens';
+import {ALL_MAPPING_TABLES} from '../src/theme/mapping';
 
 /**
  * 主题令牌层门禁（M2）。

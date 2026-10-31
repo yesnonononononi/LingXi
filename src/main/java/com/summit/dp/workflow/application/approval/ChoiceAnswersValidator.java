@@ -4,22 +4,18 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.AiMessageEntity;
-import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.shared.utils.CommandDigest;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
+import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.shared.utils.CommandDigest;
 import com.summit.dp.toolcall.api.dto.ChoiceAnswersCommand;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /** 分组依据原模型请求，不能由客户端删减或拼接待答卡片。 */

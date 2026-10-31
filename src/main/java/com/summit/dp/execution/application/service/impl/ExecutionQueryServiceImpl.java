@@ -1,8 +1,8 @@
 package com.summit.dp.execution.application.service.impl;
 
-import com.summit.dp.execution.domain.model.ExecutionStatus;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
 import com.summit.dp.execution.domain.model.Execution;
+import com.summit.dp.execution.domain.model.ExecutionStatus;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -10,11 +10,7 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /** 批量读取执行领域模型，按固定编码提供业务查询状态。 */
 @Service

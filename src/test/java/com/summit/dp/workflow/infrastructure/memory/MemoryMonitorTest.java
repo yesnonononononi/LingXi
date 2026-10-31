@@ -11,8 +11,8 @@ import com.summit.core.runtime.loop.InterceptorResult;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopInterceptor;
 import com.summit.core.runtime.loop.LoopMessages;
-import com.summit.dp.workspace.application.convert.LingXiWorkspaceSpec;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
+import com.summit.dp.workspace.application.convert.LingXiWorkspaceSpec;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -31,15 +31,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 class MemoryMonitorTest {
     private static final String PROJECT_MEMORY = ".lingxi/memory/consistent/memory.md";

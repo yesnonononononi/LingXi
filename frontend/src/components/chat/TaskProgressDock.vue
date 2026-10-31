@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onScopeDispose, ref, watch } from 'vue';
-import type { BackgroundTasksState } from '../../views/chat/useBackgroundTasks';
-import type { ChecklistState } from '../../views/chat/useChecklist';
+import {computed, onMounted, onScopeDispose, ref, watch} from 'vue';
+import type {BackgroundTasksState} from '../../views/chat/useBackgroundTasks';
+import type {ChecklistState} from '../../views/chat/useChecklist';
 import BackgroundTaskPanel from './BackgroundTaskPanel.vue';
 import ChecklistPanel from './ChecklistPanel.vue';
 import './taskProgress.css';

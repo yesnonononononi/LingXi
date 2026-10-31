@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
-import { renderMermaid } from '../../utils/mermaid';
-import { useCopyFeedback } from '../../composables/useCopyFeedback';
-import { t } from '../../i18n';
+import {ref, watch} from 'vue';
+import {renderMermaid} from '../../utils/mermaid';
+import {useCopyFeedback} from '../../composables/useCopyFeedback';
+import {t} from '../../i18n';
 
 const props = defineProps<{ source: string; complete: boolean; isDark: boolean }>();
 const svg = ref('');

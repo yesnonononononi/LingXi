@@ -32,10 +32,10 @@
  * 但 `surface` 仍是 undefined；若写成 `slots ? slots.surface : Default` 就会把 undefined
  * 交给 `<component :is>`，渲染出空占位而不是回落（与 chatMessageSlots.ts 的要求同源）。</p>
  */
-import { inject } from 'vue';
+import {inject} from 'vue';
 import TokenBackground from '../background/TokenBackground.vue';
-import { BACKGROUND_SLOTS_KEY } from '../../types/backgroundSlots';
-import type { ChatBackgroundSlots } from '../../types/backgroundSlots';
+import type {ChatBackgroundSlots} from '../../types/backgroundSlots';
+import {BACKGROUND_SLOTS_KEY} from '../../types/backgroundSlots';
 
 const slotOverrides = inject<ChatBackgroundSlots | undefined>(BACKGROUND_SLOTS_KEY, undefined);
 </script>

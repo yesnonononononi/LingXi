@@ -2,8 +2,8 @@ package com.summit.dp.workflow.infrastructure.harness;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.core.agent.Execution;
 import com.summit.core.agent.AgentRuntimeParameters;
+import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.InterceptorResult;
 import com.summit.core.runtime.loop.LoopContext;
@@ -16,9 +16,9 @@ import com.summit.dp.turn.domain.model.ChatTurn;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.util.Map;
-import java.util.List;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /** 从已提交历史注入补充，自动恢复提前读取的旧检查点也能收到要求。 */
 @Component

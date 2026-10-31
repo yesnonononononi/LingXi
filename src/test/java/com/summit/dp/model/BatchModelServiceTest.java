@@ -1,7 +1,5 @@
 package com.summit.dp.model;
 
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
 import com.summit.dp.model.Infrastructure.persistence.mapper.ModelConfigMapper;
 import com.summit.dp.model.Infrastructure.repo.ModelConfigRepositoryImpl;
 import com.summit.dp.model.application.command.BatchModelCommand;
@@ -11,6 +9,7 @@ import com.summit.dp.model.domain.model.ModelConfig;
 import com.summit.dp.provider.application.service.ProviderConfigService;
 import com.summit.dp.provider.application.vo.ProviderConfigVO;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.shared.support.SqliteTestDatabase;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.aop.framework.ProxyFactory;
@@ -24,6 +23,7 @@ import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;

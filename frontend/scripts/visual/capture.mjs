@@ -19,15 +19,15 @@
  *   node scripts/visual/capture.mjs --mode baseline --scenes settings-agents,chat --themes dark
  */
 
-import { spawn, spawnSync } from 'node:child_process';
+import {spawn, spawnSync} from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { launchBrowser, findFreePort, waitForHttp } from './cdp.mjs';
-import { compareDirectories, DEFAULT_OPTIONS } from './compare.mjs';
+import {fileURLToPath} from 'node:url';
+import {findFreePort, launchBrowser, waitForHttp} from './cdp.mjs';
+import {compareDirectories, DEFAULT_OPTIONS} from './compare.mjs';
 // G-4：基线完整性 oracle。check 之前先证「基线是完整的」，否则残缺基线会让 compare 只比
 // 剩下那几张图 → failed=0 → 静默假绿。baseline 之后要把本节指纹同步写回，否则下一个人 check 立刻红。
-import { verifyBaseline, formatVerifyFailure, writeBaselineSuite } from './baseline-manifest.mjs';
+import {formatVerifyFailure, verifyBaseline, writeBaselineSuite} from './baseline-manifest.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /** 前端根目录（scripts/visual → ../..）。 */

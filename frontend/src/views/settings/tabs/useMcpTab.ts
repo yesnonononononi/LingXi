@@ -1,14 +1,11 @@
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
-import { McpAPI } from '../../../services/api';
-import { ApiError } from '../../../services/interceptor';
-import {
-  MCP_PROTOCOL_VERSION_MAX_LENGTH,
-  MCP_PROTOCOL_VERSION_PATTERN,
-} from '../../../types/chat';
-import type { McpVO, McpRequest, McpConnectionVO } from '../../../types/chat';
-import { isOk } from '../../../utils/api';
-import { useConfirm } from '../../../composables/useConfirm';
-import { useI18n } from '../../../i18n';
+import {computed, onBeforeUnmount, onMounted, ref, watch} from 'vue';
+import {McpAPI} from '../../../services/api';
+import {ApiError} from '../../../services/interceptor';
+import type {McpConnectionVO, McpRequest, McpVO} from '../../../types/chat';
+import {MCP_PROTOCOL_VERSION_MAX_LENGTH, MCP_PROTOCOL_VERSION_PATTERN,} from '../../../types/chat';
+import {isOk} from '../../../utils/api';
+import {useConfirm} from '../../../composables/useConfirm';
+import {useI18n} from '../../../i18n';
 
 const MCP_DEFAULT_INIT_TIMEOUT = 30_000;
 const MCP_DEFAULT_EXEC_TIMEOUT = 60_000;

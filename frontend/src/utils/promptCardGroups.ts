@@ -1,4 +1,4 @@
-import type { PromptCardData } from '../types/chat';
+import type {PromptCardData} from '../types/chat';
 
 export interface PromptCardEntry {
   id: string;

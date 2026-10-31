@@ -13,7 +13,7 @@
  *   // 模板：<button v-if="focusChatInput" @click="focusChatInput">
  */
 
-import { inject, provide, type InjectionKey } from 'vue';
+import {inject, type InjectionKey, provide} from 'vue';
 
 /** 聚焦聊天输入框的能力；由 ChatView 提供，消费方取用。 */
 export const CHAT_INPUT_FOCUS_KEY: InjectionKey<() => void> = Symbol('chat-input-focus');

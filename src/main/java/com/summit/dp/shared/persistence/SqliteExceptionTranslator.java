@@ -1,11 +1,11 @@
 package com.summit.dp.shared.persistence;
 
+import org.mybatis.spring.MyBatisExceptionTranslator;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.support.PersistenceExceptionTranslator;
-import org.mybatis.spring.MyBatisExceptionTranslator;
 
 import javax.sql.DataSource;
 import java.sql.SQLException;

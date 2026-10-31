@@ -1,12 +1,12 @@
-import { buildProcessTimeline } from '../src/utils/processTimeline';
+import {buildProcessTimeline} from '../src/utils/processTimeline';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { ChatMessage, ChatSession } from '../src/types/chat';
-import type { AgentEvent } from '../src/types/Event';
-import { TurnStreamReducer } from '../src/views/chat/turnStreamReducer';
-import { StreamSessionRouter } from '../src/views/chat/streamSessionRouter';
+import type {ChatMessage, ChatSession} from '../src/types/chat';
+import type {AgentEvent} from '../src/types/Event';
+import {TurnStreamReducer} from '../src/views/chat/turnStreamReducer';
+import {StreamSessionRouter} from '../src/views/chat/streamSessionRouter';
 
-import { AgentToolName } from '../src/utils/toolNames';
+import {AgentToolName} from '../src/utils/toolNames';
 
 function assertPendingText(bubble: ChatMessage, responseId: string, text: string): void {
   assert.equal(bubble.content, '', '用途未确认不能进入正文');

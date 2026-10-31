@@ -1,7 +1,14 @@
-import type { AiMessageItem, ChatMessage, ResponseTextBuffer, ThoughtStep, ToolCallTrace, TurnRenderState } from '../../types/chat';
-import type { ResponsePosition } from '../../utils/responseOrder';
-import { compareResponsePosition } from '../../utils/responseOrder';
-import { t } from '../../i18n';
+import type {
+    AiMessageItem,
+    ChatMessage,
+    ResponseTextBuffer,
+    ThoughtStep,
+    ToolCallTrace,
+    TurnRenderState
+} from '../../types/chat';
+import type {ResponsePosition} from '../../utils/responseOrder';
+import {compareResponsePosition} from '../../utils/responseOrder';
+import {t} from '../../i18n';
 
 export function getTurnState(bubble: ChatMessage): TurnRenderState {
   return bubble.turnState ??= { texts: {}, tools: {} };

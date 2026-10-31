@@ -1,10 +1,10 @@
-import { computed, ref, onMounted, onBeforeUnmount } from 'vue';
-import { AgentAPI, ToolAPI, ModelAPI } from '../../../services/api';
-import type { AgentVO, ToolVO, ModelConfigVO } from '../../../types/chat';
-import type { SelectOption } from '../../../types/ui';
-import { isOk } from '../../../utils/api';
-import { useConfirm } from '../../../composables/useConfirm';
-import { useI18n } from '../../../i18n';
+import {computed, onBeforeUnmount, onMounted, ref} from 'vue';
+import {AgentAPI, ModelAPI, ToolAPI} from '../../../services/api';
+import type {AgentVO, ModelConfigVO, ToolVO} from '../../../types/chat';
+import type {SelectOption} from '../../../types/ui';
+import {isOk} from '../../../utils/api';
+import {useConfirm} from '../../../composables/useConfirm';
+import {useI18n} from '../../../i18n';
 
 /** 头像长度上限，与后端 `Agent.AVATAR_MAX_LENGTH` 一致 */
 const AGENT_AVATAR_MAX_LENGTH = 255;

@@ -1,12 +1,19 @@
 /** 历史与块事件只转换输入，展示统一由轮次状态生成。 */
 
-import type { BlockStatus, ToolBlock, TurnViewVO } from '../../types/block';
-import { parseVersion } from '../../types/block';
-import type { ChatMessage, ToolCallTrace } from '../../types/chat';
-import { resolveToolCategory } from '../../utils/toolMeta';
-import { toObject } from '../../utils/json';
-import { parseToolDiff } from '../../utils/toolDiff';
-import { applyTextPlacement, applyTurnStatus, getTurnState, renderTurnState, writeResponseText, writeToolTrace } from './turnRenderState';
+import type {BlockStatus, ToolBlock, TurnViewVO} from '../../types/block';
+import {parseVersion} from '../../types/block';
+import type {ChatMessage, ToolCallTrace} from '../../types/chat';
+import {resolveToolCategory} from '../../utils/toolMeta';
+import {toObject} from '../../utils/json';
+import {parseToolDiff} from '../../utils/toolDiff';
+import {
+    applyTextPlacement,
+    applyTurnStatus,
+    getTurnState,
+    renderTurnState,
+    writeResponseText,
+    writeToolTrace
+} from './turnRenderState';
 
 
 /** 思考 / 文本块的状态取值（后端 {@code BlockStatus} 的响应生命周期两态）。 */

@@ -1,10 +1,11 @@
 package com.summit.dp.sandbox_security.application;
 
 import com.summit.dp.sandbox_security.domain.model.SecurityAction;
-import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
 import com.summit.dp.sandbox_security.domain.model.SecurityCategory;
+import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
 import com.summit.dp.sandbox_security.domain.model.SecurityRule;
 import org.springframework.stereotype.Component;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;

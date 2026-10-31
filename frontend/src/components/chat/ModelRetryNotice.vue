@@ -9,9 +9,9 @@
  * <p>它只是实时提示，不参与任何终态判定（见 `ModelRetryState` 注释）；
  * 文案与单位换算全部委托给 `views/chat/modelRetryStatus.ts`。</p>
  */
-import { computed } from 'vue';
-import type { ModelRetryLike } from '../../views/chat/modelRetryStatus';
-import { resolveModelRetryText } from '../../views/chat/modelRetryStatus';
+import {computed} from 'vue';
+import type {ModelRetryLike} from '../../views/chat/modelRetryStatus';
+import {resolveModelRetryText} from '../../views/chat/modelRetryStatus';
 
 const props = defineProps<{
   retry: ModelRetryLike | null | undefined;

@@ -1,13 +1,13 @@
 package com.summit.dp.user_configs.application.service;
 
-import com.summit.dp.user_configs.domain.model.UserConfig;
-import com.summit.dp.user_configs.domain.model.ReasoningEffort;
-import com.summit.dp.user_configs.domain.repository.UserConfigRepository;
+import com.summit.dp.shared.local.LocalInstance;
+import com.summit.dp.shared.model.WorkspaceType;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
 import com.summit.dp.user_configs.application.vo.SettingsView;
-import com.summit.dp.shared.local.LocalInstance;
-import com.summit.dp.shared.model.WorkspaceType;
+import com.summit.dp.user_configs.domain.model.ReasoningEffort;
+import com.summit.dp.user_configs.domain.model.UserConfig;
+import com.summit.dp.user_configs.domain.repository.UserConfigRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 

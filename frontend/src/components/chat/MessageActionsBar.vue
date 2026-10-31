@@ -10,8 +10,8 @@
  * 因此显式 `inheritAttrs: false`，由上层容器统一控制排版类。
  */
 import TokenUsagePopover from './TokenUsagePopover.vue';
-import { t } from '../../i18n';
-import type { ChatMessageActionsSlotProps } from '../../types/chatMessageSlots';
+import {t} from '../../i18n';
+import type {ChatMessageActionsSlotProps} from '../../types/chatMessageSlots';
 
 defineOptions({ inheritAttrs: false });
 

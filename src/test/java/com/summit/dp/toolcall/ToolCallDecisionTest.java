@@ -1,17 +1,13 @@
 package com.summit.dp.toolcall;
 
-import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
-
-import com.summit.dp.workflow.infrastructure.harness.HarnessExecutionGate;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
+import com.summit.core.conversation.api.ToolCallRequest;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.event.ToolCallEndEvent;
-import com.summit.core.conversation.api.ToolCallRequest;
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.ToolMessageEntity;
@@ -28,31 +24,27 @@ import com.summit.core.tool.ToolRegistry;
 import com.summit.core.workspace.WorkspaceResolver;
 import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.execution.ExecutionStatusCodes;
-import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
-import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.execution.application.port.ExecutionActivity;
+import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.execution.domain.model.ExecutionResumeTask;
 import com.summit.dp.execution.domain.model.ResumeTaskState;
 import com.summit.dp.execution.domain.repository.ExecutionResumeTaskRepository;
+import com.summit.dp.session.application.service.ModelContextService;
+import com.summit.dp.session.domain.repo.SessionRepository;
+import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.CardAvailabilityPolicy;
-import com.summit.dp.workflow.application.approval.ApprovalFinalizer;
-import com.summit.dp.workflow.application.approval.CommandApprovalExecutor;
-import com.summit.dp.workflow.application.approval.CommandOutcomeResolver;
-import com.summit.dp.workflow.application.approval.ApprovedCommandRestorer;
-import com.summit.dp.workflow.application.approval.ToolCallWorkflowService;
-import com.summit.dp.workflow.application.approval.ToolCallDecisionService;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
-import com.summit.dp.session.application.service.ModelContextService;
-import com.summit.dp.session.domain.repo.SessionRepository;
+import com.summit.dp.workflow.application.approval.*;
+import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.resume.SuspendedExecutionResumer;
+import com.summit.dp.workflow.infrastructure.harness.ExecutionStateCodec;
+import com.summit.dp.workflow.infrastructure.harness.HarnessExecutionGate;
+import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
-import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -64,8 +56,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
@@ -73,9 +65,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**

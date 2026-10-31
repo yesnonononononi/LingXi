@@ -8,7 +8,7 @@
   * 因此只认这两个字段，其余历史别名（error/err/msg）后端从不产生，已移除。
  */
 
-import { t } from '../i18n';
+import {t} from '../i18n';
 
 const ERROR_FIELD_KEYS = ['errMsg', 'message'] as const;
 const MAX_UNWRAP_DEPTH = 5;

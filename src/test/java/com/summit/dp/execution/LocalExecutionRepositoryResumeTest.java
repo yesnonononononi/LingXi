@@ -1,40 +1,41 @@
 package com.summit.dp.execution;
 
-import org.springframework.context.ApplicationEventPublisher;
-
-import com.summit.dp.execution.application.service.ExecutionCheckpointService;
-import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
-import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
-import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
-
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.core.agent.*;
-import com.summit.core.conversation.message.*;
-import com.summit.core.runtime.loop.ExecutionControlSignal;
+import com.summit.core.agent.AgentRequest;
+import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
-import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
-import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
-import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
-import com.summit.dp.toolcall.application.service.ToolCallService;
-import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
-import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
+import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.event.ExecutionCancelledEvent;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.event.TokenInfo;
+import com.summit.core.conversation.message.Message;
+import com.summit.core.conversation.message.SystemMessageEntity;
 import com.summit.core.conversation.message.TokenUsageEntity;
-import com.summit.dp.turn.application.service.ChatTurnService;
-import com.summit.dp.workflow.infrastructure.listener.turn.ChatTurnRuntimeListener;
-import com.summit.dp.execution.ExecutionStatusCodes;
+import com.summit.core.conversation.message.UserMessageEntity;
+import com.summit.core.runtime.loop.ExecutionControlSignal;
+import com.summit.dp.execution.application.service.ExecutionCheckpointService;
+import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
-import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
+import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
+import com.summit.dp.toolcall.application.service.ToolCallService;
+import com.summit.dp.turn.application.service.ChatTurnService;
+import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
+import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
+import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
-import org.junit.jupiter.api.Test;
-import com.baomidou.mybatisplus.core.MybatisConfiguration;
-import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
+import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
+import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
+import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
+import com.summit.dp.workflow.infrastructure.listener.turn.ChatTurnRuntimeListener;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
@@ -44,8 +45,8 @@ import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.*;
 import static com.summit.dp.execution.ExecutionRepositoryTestFactory.provider;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 

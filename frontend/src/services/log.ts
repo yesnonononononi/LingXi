@@ -1,6 +1,6 @@
 import http from './interceptor';
-import type { Result } from './types';
-import type { LogLocationVO } from '../types/chat';
+import type {Result} from './types';
+import type {LogLocationVO} from '../types/chat';
 
 /**
  * 日志位置 API (对应后端 LogController)。

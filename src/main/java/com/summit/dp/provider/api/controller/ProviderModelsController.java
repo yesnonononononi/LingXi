@@ -5,7 +5,11 @@ import com.summit.dp.provider.api.dto.ProviderModelsRequest;
 import com.summit.dp.provider.application.service.ProviderModelDiscoveryService;
 import com.summit.dp.provider.application.vo.RemoteModelVO;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
 import java.util.List;
 
 @RestController

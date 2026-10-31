@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import { ModelAPI, ProviderAPI } from '../../../services/api';
-import type { ProviderConfigVO } from '../../../types/chat';
-import { isOk } from '../../../utils/api';
+import {computed, ref} from 'vue';
+import {ModelAPI, ProviderAPI} from '../../../services/api';
+import type {ProviderConfigVO} from '../../../types/chat';
+import {isOk} from '../../../utils/api';
 import ModelVisionField from '../../../components/model/ModelVisionField.vue';
 import ProviderIcon from '../../../components/model/ProviderIcon.vue';
-import { useModelImportCopy } from './useModelImportCopy';
+import {useModelImportCopy} from './useModelImportCopy';
 
 const props = defineProps<{ provider: ProviderConfigVO; existingNames: string[]; isDark: boolean }>();
 const emit = defineEmits<{ back: []; edit: []; updated: [] }>();

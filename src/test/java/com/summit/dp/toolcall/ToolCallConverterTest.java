@@ -1,16 +1,13 @@
 package com.summit.dp.toolcall;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.shared.vo.ToolCallVO;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCall;
+import com.summit.dp.tools.application.port.ToolCatalog;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * {@link ToolCallConverter} 的下发裁剪回归。

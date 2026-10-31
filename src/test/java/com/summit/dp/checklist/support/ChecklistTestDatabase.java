@@ -1,20 +1,19 @@
 package com.summit.dp.checklist.support;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
 import com.baomidou.mybatisplus.annotation.DbType;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
-import com.summit.dp.checklist.application.ChecklistService;
 import com.summit.dp.checklist.application.ChecklistReminderOwnership;
+import com.summit.dp.checklist.application.ChecklistService;
 import com.summit.dp.checklist.application.service.impl.ChecklistServiceImpl;
 import com.summit.dp.checklist.infrastructure.persistence.mapper.ChecklistMapper;
 import com.summit.dp.checklist.infrastructure.persistence.mapper.ChecklistStepMapper;
 import com.summit.dp.checklist.infrastructure.repository.ChecklistRepositoryImpl;
+import com.summit.dp.execution.application.service.ExecutionQueryService;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.SqliteTestDatabase;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.aop.framework.ProxyFactory;
@@ -24,10 +23,10 @@ import org.springframework.transaction.interceptor.TransactionInterceptor;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
-import com.summit.dp.execution.application.service.ExecutionQueryService;
+
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
-import static org.mockito.ArgumentMatchers.any;
 
 /** 使用生产建表脚本及事务代理，避免自动提交掩盖聚合锁与回滚缺陷。 */
 public final class ChecklistTestDatabase implements AutoCloseable {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { t } from '../../i18n';
-import { nextTick, ref, watch } from 'vue';
+import {t} from '../../i18n';
+import {nextTick, ref, watch} from 'vue';
+
 const props = defineProps<{ open: boolean; modelValue: string; busy: boolean; error: string; imageCount: number }>();
 const textarea = ref<HTMLTextAreaElement | null>(null);
 watch(() => props.open, async open => { if (open) { await nextTick(); textarea.value?.focus(); } });

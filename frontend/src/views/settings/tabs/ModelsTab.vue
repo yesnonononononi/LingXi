@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { useModelsTab } from './useModelsTab';
-import { useTheme } from '../../../composables/useTheme';
-import { useI18n } from '../../../i18n';
+import {computed} from 'vue';
+import {useModelsTab} from './useModelsTab';
+import {useTheme} from '../../../composables/useTheme';
+import {useI18n} from '../../../i18n';
 import ModelVisionField from '../../../components/model/ModelVisionField.vue';
 import ProviderIcon from '../../../components/model/ProviderIcon.vue';
 import DropUpSelect from '../../../components/common/DropUpSelect.vue';
-import type { SelectOption } from '../../../types/ui';
+import type {SelectOption} from '../../../types/ui';
 import BatchModelsForm from './BatchModelsForm.vue';
-import { useModelImportCopy } from './useModelImportCopy';
+import {useModelImportCopy} from './useModelImportCopy';
 
 const props = defineProps<{
   isDark?: boolean;

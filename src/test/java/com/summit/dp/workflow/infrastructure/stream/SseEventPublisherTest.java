@@ -1,7 +1,5 @@
 package com.summit.dp.workflow.infrastructure.stream;
 
-import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
-
 import com.summit.core.conversation.event.AgentEvent;
 import com.summit.core.conversation.event.ContextUpdateEvent;
 import org.junit.jupiter.api.AfterEach;
@@ -14,18 +12,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.clearInvocations;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.timeout;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.*;
 
 /**
  * SSE 双连接与空桶回收回归：守住 {@code SseEventPublisher#connect} 的

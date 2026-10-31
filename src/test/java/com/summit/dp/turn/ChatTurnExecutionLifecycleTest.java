@@ -8,17 +8,15 @@ import com.summit.dp.turn.application.service.impl.ChatTurnServiceImpl;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
-import org.junit.jupiter.api.Test;
 import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
+import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /** 轮次终态取已提交执行，用量和根会话身份不能被转换逻辑改写。 */

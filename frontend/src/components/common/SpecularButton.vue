@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, type CSSProperties } from 'vue';
-import { Renderer, Program, Mesh, Triangle, Color } from 'ogl';
+import {computed, type CSSProperties, onMounted, onUnmounted, ref} from 'vue';
+import {Color, Mesh, Program, Renderer, Triangle} from 'ogl';
 
 export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg';
 

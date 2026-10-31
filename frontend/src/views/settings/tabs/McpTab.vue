@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { useMcpTab } from './useMcpTab';
-import { MCP_TRANSPORTS } from '../../../types/chat';
-import { useTheme } from '../../../composables/useTheme';
-import { useI18n } from '../../../i18n';
+import {computed} from 'vue';
+import {useMcpTab} from './useMcpTab';
+import {MCP_TRANSPORTS} from '../../../types/chat';
+import {useTheme} from '../../../composables/useTheme';
+import {useI18n} from '../../../i18n';
 
 const props = defineProps<{
   isDark?: boolean;

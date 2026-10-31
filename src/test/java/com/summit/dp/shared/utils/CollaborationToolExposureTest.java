@@ -1,34 +1,27 @@
 package com.summit.dp.shared.utils;
 
-import com.summit.dp.execution.RuntimeConfigurationTestSupport;
-
-import com.summit.dp.tools.application.service.ToolListProcessor;
-import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
-import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
-import com.summit.dp.workflow.application.chat.ChatImageResolver;
-
-import com.summit.dp.workflow.application.chat.RequestPreparer;
-
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.conf.McpConfig;
 import com.summit.core.conf.McpTransport;
 import com.summit.core.conf.ModelConfig;
 import com.summit.dp.agent.application.service.AgentService;
-import com.summit.dp.workflow.application.chat.RuntimeContext;
-import com.summit.dp.model.application.service.ModelService;
+import com.summit.dp.execution.ExecutionAttributes;
+import com.summit.dp.execution.RuntimeConfigurationTestSupport;
 import com.summit.dp.mcp.application.service.McpService;
+import com.summit.dp.model.application.service.ModelService;
+import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.application.service.SessionService;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
-import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
-import com.summit.dp.workflow.application.chat.ExecutionContext;
-import com.summit.dp.tools.application.port.ToolCatalog;
-import com.summit.dp.user_configs.application.service.SettingsProvider;
-import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.team.application.service.TeamService;
+import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.dp.tools.application.service.ToolListProcessor;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
+import com.summit.dp.user_configs.application.service.SettingsProvider;
+import com.summit.dp.workflow.application.chat.*;
+import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.junit.jupiter.api.DisplayName;
@@ -40,11 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 

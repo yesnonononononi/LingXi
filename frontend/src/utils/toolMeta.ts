@@ -1,8 +1,8 @@
 /** 工具展示严格按后端固定工具名称及参数字段解析，不接受兼容名或分类推断。 */
 
-import { toObject } from './json';
-import { AgentToolName } from './toolNames';
-import { t } from '../i18n';
+import {toObject} from './json';
+import {AgentToolName} from './toolNames';
+import {t} from '../i18n';
 
 /**
  * 工具分类（稳定判别码）。**不是展示文案** —— 界面展示一律经 {@link toolCategoryLabel}

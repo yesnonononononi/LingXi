@@ -1,10 +1,10 @@
-import { computed, onMounted, ref, watch } from 'vue';
-import { useUserConfigStore } from '../../../stores/userConfigStore';
-import { ModelAPI } from '../../../services/model';
-import { CompactionSettingsAPI } from '../../../services/compaction';
-import { isOk } from '../../../utils/api';
-import { t } from '../../../i18n';
-import type { CompactionParamsVO, ProviderModelGroupVO } from '../../../types/chat';
+import {computed, onMounted, ref, watch} from 'vue';
+import {useUserConfigStore} from '../../../stores/userConfigStore';
+import {ModelAPI} from '../../../services/model';
+import {CompactionSettingsAPI} from '../../../services/compaction';
+import {isOk} from '../../../utils/api';
+import {t} from '../../../i18n';
+import type {CompactionParamsVO, ProviderModelGroupVO} from '../../../types/chat';
 
 /**
  * 压缩模型配置页的状态与动作。

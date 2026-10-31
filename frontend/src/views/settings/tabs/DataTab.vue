@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import { useConfirm } from '../../../composables/useConfirm';
-import { useI18n } from '../../../i18n';
-import { useUserConfigStore } from '../../../stores/userConfigStore';
-import { openDirectoryPicker, relaunchApp } from '../../../utils/platform';
-import { useExecutionCleanup } from './useExecutionCleanup';
+import {computed, ref} from 'vue';
+import {useConfirm} from '../../../composables/useConfirm';
+import {useI18n} from '../../../i18n';
+import {useUserConfigStore} from '../../../stores/userConfigStore';
+import {openDirectoryPicker, relaunchApp} from '../../../utils/platform';
+import {useExecutionCleanup} from './useExecutionCleanup';
 
 const props = defineProps<{
   isDark?: boolean;

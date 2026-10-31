@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue';
+import {onBeforeUnmount, ref, watch} from 'vue';
 
 /**
  * 通用弹窗外壳（遮罩 + 面板 + 关闭策略 + 无障碍语义）。

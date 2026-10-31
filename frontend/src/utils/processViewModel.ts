@@ -11,12 +11,11 @@
  * 分段与 `summarizeProcess` 全部不重算（复杂度 O(#段)）。这条性质由
  * `tests/processViewModel.test.ts` 的调用计数桩锁定，不靠口头约定。</p>
  */
-import type { ProcessPart, ProcessSegment, ProcessSegmentMode, ProcessSummary, ProcessText
-  } from './processSegments';
-import { resolveProcessSegmentMode, summarizeProcess } from './processSegments';
-import type { ProcessHeadline } from './processHeadline';
-import { formatProcessHeadline } from './processHeadline';
-import type { ProcessTimelineItem, SubSessionVO } from '../types/chat';
+import type {ProcessPart, ProcessSegment, ProcessSegmentMode, ProcessSummary, ProcessText} from './processSegments';
+import {resolveProcessSegmentMode, summarizeProcess} from './processSegments';
+import type {ProcessHeadline} from './processHeadline';
+import {formatProcessHeadline} from './processHeadline';
+import type {ProcessTimelineItem, SubSessionVO} from '../types/chat';
 
 /** 单个过程段的视图：事实 + 呈现模式 + 折叠行文案，全部由纯函数算出。 */
 export interface ProcessSegmentView {

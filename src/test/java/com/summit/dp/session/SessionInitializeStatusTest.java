@@ -1,5 +1,6 @@
 package com.summit.dp.session;
 
+import com.summit.dp.agent.domain.repository.AgentRepository;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
 import com.summit.dp.session.application.service.SessionAggregateService;
 import com.summit.dp.session.application.service.SessionMessageQueryService;
@@ -7,7 +8,6 @@ import com.summit.dp.session.application.service.TurnViewService;
 import com.summit.dp.session.application.service.impl.SessionServiceImpl;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.agent.domain.repository.AgentRepository;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.turn.application.convert.ChatTurnConverter;
@@ -21,10 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * 会话创建与团队换绑的写路径回归：initialize 落库的会话元数据契约，以及

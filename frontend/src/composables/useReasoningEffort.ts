@@ -1,7 +1,7 @@
-import { computed, ref } from 'vue';
-import { useUserConfigStore } from '../stores/userConfigStore';
-import { t } from '../i18n';
-import type { ReasoningEffort } from '../types/chat';
+import {computed, ref} from 'vue';
+import {useUserConfigStore} from '../stores/userConfigStore';
+import {t} from '../i18n';
+import type {ReasoningEffort} from '../types/chat';
 
 export const reasoningEffortOptions = [
   { label: 'None', value: 'none' },

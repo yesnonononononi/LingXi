@@ -1,19 +1,13 @@
 package com.summit.dp.agent.infrastructure.runtime;
 
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-
 import com.summit.dp.workflow.infrastructure.lifecycle.ChildPhase;
-
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * {@link SessionExecutionRegistry} 的分阶段生命周期判据（T01）。

@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { setActivePinia, createPinia } from 'pinia';
-import { UserConfigAPI } from '../src/services/userConfig';
-import { ModelAPI } from '../src/services/model';
-import { CompactionSettingsAPI } from '../src/services/compaction';
-import { useCompactionTab } from '../src/views/settings/tabs/useCompactionTab';
-import { t as translate } from '../src/i18n';
-import { messages } from '../src/i18n/messages';
+import {createPinia, setActivePinia} from 'pinia';
+import {UserConfigAPI} from '../src/services/userConfig';
+import {ModelAPI} from '../src/services/model';
+import {CompactionSettingsAPI} from '../src/services/compaction';
+import {useCompactionTab} from '../src/views/settings/tabs/useCompactionTab';
+import {t as translate} from '../src/i18n';
+import {messages} from '../src/i18n/messages';
 
 test.beforeEach(() => setActivePinia(createPinia()));
 

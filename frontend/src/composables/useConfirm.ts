@@ -1,5 +1,5 @@
-import { ref } from 'vue'
-import { t } from '../i18n'
+import {ref} from 'vue'
+import {t} from '../i18n'
 
 export type ConfirmType = 'info' | 'warning' | 'danger' | 'success'
 

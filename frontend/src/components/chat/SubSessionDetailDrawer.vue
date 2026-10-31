@@ -1,24 +1,24 @@
 <script setup lang="ts">
 import SessionConnectionNotice from './SessionConnectionNotice.vue';
-import type { StreamHealthState } from '../../views/chat/sessionEventStream';
-import { ref, watch, computed } from 'vue';
-import type { SubSessionVO, ChatMessage, ToolCallTrace } from '../../types/chat';
-import { chatApi } from '../../services/chat';
-import { formatClockTime } from '../../utils/format';
-import { absorbSubSessionHistory } from '../../views/chat/subSessionHistory';
-import { parseToolDiff } from '../../utils/toolDiff';
-import { shouldShowToolArguments, unwrapToolResultEnvelope } from '../../utils/toolMeta';
-import { resolveToolRenderName } from '../../utils/toolDisplayNames';
-import { toSubItemStatus } from '../../utils/subSessionStatus';
-import { subItemStatusDotClass, subItemStatusLabel } from '../../utils/asyncDelegation';
-import { useCopyFeedback } from '../../composables/useCopyFeedback';
+import type {StreamHealthState} from '../../views/chat/sessionEventStream';
+import {computed, ref, watch} from 'vue';
+import type {ChatMessage, SubSessionVO, ToolCallTrace} from '../../types/chat';
+import {chatApi} from '../../services/chat';
+import {formatClockTime} from '../../utils/format';
+import {absorbSubSessionHistory} from '../../views/chat/subSessionHistory';
+import {parseToolDiff} from '../../utils/toolDiff';
+import {shouldShowToolArguments, unwrapToolResultEnvelope} from '../../utils/toolMeta';
+import {resolveToolRenderName} from '../../utils/toolDisplayNames';
+import {toSubItemStatus} from '../../utils/subSessionStatus';
+import {subItemStatusDotClass, subItemStatusLabel} from '../../utils/asyncDelegation';
+import {useCopyFeedback} from '../../composables/useCopyFeedback';
 import MarkdownRenderer from './MarkdownRenderer.vue';
 import ModelRetryNotice from './ModelRetryNotice.vue';
 import SessionContextUsage from './SessionContextUsage.vue';
 import GradientText from '../common/GradientText.vue';
-import { useTheme } from '../../composables/useTheme';
-import { useChatScroll } from '../../views/chat/useChatScroll';
-import { useI18n } from '../../i18n';
+import {useTheme} from '../../composables/useTheme';
+import {useChatScroll} from '../../views/chat/useChatScroll';
+import {useI18n} from '../../i18n';
 
 const props = defineProps<{
   isOpen: boolean;

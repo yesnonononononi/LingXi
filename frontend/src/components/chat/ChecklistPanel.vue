@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, useId } from 'vue';
-import type { ChecklistState } from '../../views/chat/useChecklist';
-import { t } from '../../i18n';
+import {computed, useId} from 'vue';
+import type {ChecklistState} from '../../views/chat/useChecklist';
+import {t} from '../../i18n';
 import './taskProgress.css';
 
 const props = defineProps<{ feed: ChecklistState; expanded: boolean; executing: boolean }>();

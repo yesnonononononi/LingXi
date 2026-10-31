@@ -1,13 +1,13 @@
 <script setup lang='ts'>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
-import { ModelAPI, ProviderAPI } from '../../services/api';
-import { useTheme } from '../../composables/useTheme';
-import { useConfirm } from '../../composables/useConfirm';
-import type { OpenAIModelItem, ModelConfigPayload, ProviderConfigVO } from '../../types/chat';
+import {computed, onBeforeUnmount, onMounted, ref, watch} from 'vue';
+import {useRoute, useRouter} from 'vue-router';
+import {ModelAPI, ProviderAPI} from '../../services/api';
+import {useTheme} from '../../composables/useTheme';
+import {useConfirm} from '../../composables/useConfirm';
+import type {ModelConfigPayload, OpenAIModelItem, ProviderConfigVO} from '../../types/chat';
 import ModelVisionField from '../../components/model/ModelVisionField.vue';
-import { isOk } from '../../utils/api';
-import { t } from '../../i18n';
+import {isOk} from '../../utils/api';
+import {t} from '../../i18n';
 
 const route = useRoute();
 const router = useRouter();

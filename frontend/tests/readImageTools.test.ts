@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groupReadImageTools, resolveReadToolImages } from '../src/utils/readImageTools';
-import { AgentToolName } from '../src/utils/toolNames';
-import type { ProcessTimelineItem, ToolCallTrace } from '../src/types/chat';
+import {groupReadImageTools, resolveReadToolImages} from '../src/utils/readImageTools';
+import {AgentToolName} from '../src/utils/toolNames';
+import type {ProcessTimelineItem, ToolCallTrace} from '../src/types/chat';
 
 const receipt = JSON.stringify({ ok: true, images: [{ imageId: '0123456789abcdef', ext: 'png', path: 'images/first.png' }] });
 const tool: ToolCallTrace = { id: '1', toolName: AgentToolName.ReadImage, status: 'success', result: receipt };

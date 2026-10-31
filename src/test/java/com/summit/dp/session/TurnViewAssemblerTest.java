@@ -8,13 +8,8 @@ import com.summit.dp.session.application.convert.ToolBlockStatusResolver;
 import com.summit.dp.session.application.convert.TurnViewAssembler;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
-import com.summit.dp.shared.vo.block.Block;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.shared.vo.block.BlockStatus;
-import com.summit.dp.shared.vo.block.TextBlock;
-import com.summit.dp.shared.vo.block.ThinkingBlock;
-import com.summit.dp.shared.vo.block.ToolBlock;
-import com.summit.dp.shared.vo.block.ResumeSupplementVO;
+import com.summit.dp.shared.vo.block.*;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallOutcome;
@@ -29,12 +24,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 一轮块装配：顺序、身份、落点、状态必须由后端唯一确定。

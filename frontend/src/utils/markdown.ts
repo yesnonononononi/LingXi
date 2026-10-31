@@ -1,7 +1,7 @@
 import MarkdownIt from 'markdown-it';
 import hljs from 'highlight.js';
 import DOMPurify from 'dompurify';
-import { t } from '../i18n';
+import {t} from '../i18n';
 
 const md = new MarkdownIt({
   html: false,

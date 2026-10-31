@@ -1,7 +1,7 @@
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { resolveMaven, runMaven } from './maven-runtime.mjs';
-import { prepareFrameworks } from './framework-deps.mjs';
+import {fileURLToPath} from 'node:url';
+import {resolveMaven, runMaven} from './maven-runtime.mjs';
+import {prepareFrameworks} from './framework-deps.mjs';
 
 export function buildBackend(repoRoot, goal = 'package', options = {}) {
   if (!['compile', 'test', 'verify', 'package'].includes(goal)) throw new Error('后端构建只支持 compile、test、verify、package');

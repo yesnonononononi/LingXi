@@ -20,12 +20,7 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 
 /**
  * 清单聚合仓储实现。

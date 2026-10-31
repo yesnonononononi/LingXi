@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import type { ChatSession } from '../../types/chat';
-import { resolveSessionIndicator } from '../../utils/sessionIndicator';
+import {computed} from 'vue';
+import type {ChatSession} from '../../types/chat';
+import {resolveSessionIndicator} from '../../utils/sessionIndicator';
 
 const props = defineProps<{ session: ChatSession; active?: boolean }>();
 const state = computed(() => resolveSessionIndicator(props.session, props.active));

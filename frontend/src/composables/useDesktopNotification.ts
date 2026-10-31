@@ -1,13 +1,13 @@
-import { onScopeDispose } from 'vue';
-import { t } from '../i18n';
-import { readSoundPreference } from '../notification/sound';
-import { useTheme } from './useTheme';
+import {onScopeDispose} from 'vue';
+import {t} from '../i18n';
+import {readSoundPreference} from '../notification/sound';
+import {useTheme} from './useTheme';
 import {
-  isAppInactive,
-  onNotificationActivate,
-  sendDesktopNotification,
-  type NotifyActivation,
-  type NotifyKind,
+    isAppInactive,
+    type NotifyActivation,
+    type NotifyKind,
+    onNotificationActivate,
+    sendDesktopNotification,
 } from '../utils/platform';
 
 /**

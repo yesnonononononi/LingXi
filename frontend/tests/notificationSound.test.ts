@@ -1,16 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  DEFAULT_SOUND_ID,
-  SOUND_IDS,
-  SOUND_STORAGE_KEY,
-  normalizeSoundId,
-  playNotificationSound,
-  readSoundPreference,
-  resetSoundEngine,
-  writeSoundPreference,
+    DEFAULT_SOUND_ID,
+    normalizeSoundId,
+    playNotificationSound,
+    readSoundPreference,
+    resetSoundEngine,
+    SOUND_IDS,
+    SOUND_STORAGE_KEY,
+    writeSoundPreference,
 } from '../src/notification/sound';
-import { KNOWN_SOUNDS, normalizePayload } from '../electron/notification-window.cjs';
+import {KNOWN_SOUNDS, normalizePayload} from '../electron/notification-window.cjs';
 
 /* ---------------------------------------------------------------- 测试替身 */
 

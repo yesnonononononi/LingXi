@@ -4,12 +4,12 @@ import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.ToolMessageEntity;
 import com.summit.core.conversation.message.UserMessageEntity;
-import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
+import com.summit.dp.session.application.convert.TranscriptRecordAssembler;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
-import com.summit.dp.session.application.convert.TranscriptRecordAssembler;
 import com.summit.dp.shared.exception.ClientException;
+import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
@@ -18,7 +18,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 /** 历史独立于可变上下文；TOOL 只存调用身份，内容以工具实体为准。 */
 @Slf4j

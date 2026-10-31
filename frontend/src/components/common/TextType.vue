@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch, computed, useTemplateRef } from 'vue';
-import { gsap } from 'gsap';
+import {computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch} from 'vue';
+import {gsap} from 'gsap';
 
 interface TextTypeProps {
   className?: string;

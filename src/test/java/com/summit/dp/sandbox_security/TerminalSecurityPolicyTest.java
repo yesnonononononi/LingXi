@@ -5,22 +5,24 @@ import com.summit.core.runtime.RuntimeEnvironment;
 import com.summit.core.runtime.workspace.ShellType;
 import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.workspace.WorkspaceBridge;
-import com.summit.dp.sandbox_security.domain.model.SecurityAction;
-import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
 import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.dp.sandbox_security.application.SecurityRulePresets;
 import com.summit.dp.sandbox_security.application.SecurityRuleService;
 import com.summit.dp.sandbox_security.application.TerminalSecurityPolicy;
+import com.summit.dp.sandbox_security.domain.model.SecurityAction;
 import com.summit.dp.sandbox_security.domain.model.SecurityCategory;
+import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
 import com.summit.dp.sandbox_security.domain.model.SecurityRule;
 import com.summit.dp.workflow.application.approval.CommandApprovalRegistrar;
 import com.summit.dp.workflow.infrastructure.policy.CommandPolicyConfig;
 import com.summit.dp.workflow.infrastructure.tools.terminal.CommandToolDefinitionExecutor;
 import org.junit.jupiter.api.Test;
+
 import java.util.List;
 import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 

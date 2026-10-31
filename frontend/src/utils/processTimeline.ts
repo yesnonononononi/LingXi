@@ -1,7 +1,7 @@
-import type { ChatMessage, ProcessTimelineItem, SubSessionVO, ToolCallTrace } from '../types/chat';
-import { compareResponsePosition } from './responseOrder';
-import { extractSubAgentParams, isSubAgentTool } from './toolMeta';
-import { t } from '../i18n';
+import type {ChatMessage, ProcessTimelineItem, SubSessionVO, ToolCallTrace} from '../types/chat';
+import {compareResponsePosition} from './responseOrder';
+import {extractSubAgentParams, isSubAgentTool} from './toolMeta';
+import {t} from '../i18n';
 
 /** 同一会话的多次委派只展示一个成员，名称与序号沿用会话树。 */
 export function resolveSubAgentToolCalls(toolCalls: ToolCallTrace[] = [], subSessions: SubSessionVO[] = []): ToolCallTrace[] {

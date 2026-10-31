@@ -12,9 +12,9 @@
  *    正文未受签名保护（见 update.ts 的 extractUpdateClaimForDisplay 注释）。
  */
 
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
-import type { UpdateState, UpdateStatePayload } from '../types/update';
-import { describeUpdateState, stripUpdateClaim } from '../types/update';
+import {computed, onBeforeUnmount, onMounted, ref} from 'vue';
+import type {UpdateState, UpdateStatePayload} from '../types/update';
+import {describeUpdateState, stripUpdateClaim} from '../types/update';
 
 export function useAppUpdater() {
   const state = ref<UpdateState>('idle');

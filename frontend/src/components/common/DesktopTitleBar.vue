@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { watch } from 'vue';
-import { useTheme } from '../../composables/useTheme';
-import { t } from '../../i18n';
+import {watch} from 'vue';
+import {useTheme} from '../../composables/useTheme';
+import {t} from '../../i18n';
 import logoUrl from '../../assets/lingxi-agent-logo.png';
 
 const { isDark } = useTheme();

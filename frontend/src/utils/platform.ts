@@ -5,8 +5,8 @@
  * 在 Web 浏览器环境下自动优雅降级。
  */
 
-import type { FilePreviewRequest, FilePreviewData, NativeFileResult } from '../types/filePreview';
-import type { UpdateStatePayload, UpdateLookupResult, UpdateActionResult } from '../types/update';
+import type {FilePreviewData, FilePreviewRequest, NativeFileResult} from '../types/filePreview';
+import type {UpdateActionResult, UpdateLookupResult, UpdateStatePayload} from '../types/update';
 
 /** 通知类别：决定通知卡片的图标与配色。 */
 export type NotifyKind = 'completed' | 'failed' | 'cancelled' | 'suspended';

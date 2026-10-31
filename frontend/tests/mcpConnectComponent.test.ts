@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdirSync, unlinkSync, existsSync } from 'node:fs';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { dirname, resolve } from 'node:path';
-import { parse, compileScript } from '@vue/compiler-sfc';
+import {existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync} from 'node:fs';
+import {fileURLToPath, pathToFileURL} from 'node:url';
+import {dirname, resolve} from 'node:path';
+import {compileScript, parse} from '@vue/compiler-sfc';
 import ts from 'typescript';
-import { createRenderer, nextTick } from 'vue';
-import type { DefineComponent } from 'vue';
-import { McpAPI } from '../src/services/mcp';
-import type { McpConnectionVO } from '../src/types/chat';
-import type { Result } from '../src/services/types';
+import type {DefineComponent} from 'vue';
+import {createRenderer, nextTick} from 'vue';
+import {McpAPI} from '../src/services/mcp';
+import type {McpConnectionVO} from '../src/types/chat';
+import type {Result} from '../src/services/types';
 
 interface Element {
   tag: string;

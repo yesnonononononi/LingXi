@@ -1,20 +1,22 @@
 package com.summit.dp.workspace;
 
-import com.summit.core.workspace.WorkspaceSpec;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.summit.core.workspace.WorkspaceSpec;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.shared.model.WorkspaceType;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
+import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.policy.SandboxPolicyFactory;
 import com.summit.dp.workspace.domain.model.Workspace;
-import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.sandbox.mxc.MxcWorkspaceSpec;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
 import java.nio.file.Path;
 import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 

@@ -1,5 +1,5 @@
 import http from './interceptor';
-import type { Result } from './types';
+import type {Result} from './types';
 
 export interface PersonalizationVO {
   id: string | number;

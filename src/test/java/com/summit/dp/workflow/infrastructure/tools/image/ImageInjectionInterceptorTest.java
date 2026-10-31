@@ -7,12 +7,12 @@ import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.conversation.message.content.ImageContent;
+import com.summit.core.json.ExecutionJson;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopMessages;
+import com.summit.core.tool.ToolDefinition;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
-import com.summit.core.tool.ToolDefinition;
-import com.summit.core.json.ExecutionJson;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.infrastructure.tools.arguments.ReadImageRequest;
@@ -21,8 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import javax.imageio.ImageIO;
-import java.awt.Color;
-import java.awt.Graphics2D;
+import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -34,10 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 
 /** 注入时机、去重与失败降级。 */
 class ImageInjectionInterceptorTest {

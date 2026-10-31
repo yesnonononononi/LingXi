@@ -9,8 +9,8 @@ import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.ExecutionRepositoryTestFactory;
+import com.summit.dp.execution.ExecutionStatusCodes;
 import com.summit.dp.execution.application.service.ExecutionCheckpointService;
 import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
@@ -36,23 +36,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * 复核 R2 的独立探针：两个<b>不同执行</b>的真实事务并发保存，B 读到旧快照、A 先提交、B 再写。

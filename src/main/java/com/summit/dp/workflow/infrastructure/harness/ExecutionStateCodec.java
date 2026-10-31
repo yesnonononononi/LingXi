@@ -2,12 +2,7 @@ package com.summit.dp.workflow.infrastructure.harness;
 
 import com.summit.core.agent.ExecutionState;
 
-import static com.summit.dp.execution.ExecutionStatusCodes.CREATED;
-import static com.summit.dp.execution.ExecutionStatusCodes.RUNNING;
-import static com.summit.dp.execution.ExecutionStatusCodes.SUSPENDED;
-import static com.summit.dp.execution.ExecutionStatusCodes.COMPLETED;
-import static com.summit.dp.execution.ExecutionStatusCodes.FAILED;
-import static com.summit.dp.execution.ExecutionStatusCodes.CANCELLED;
+import static com.summit.dp.execution.ExecutionStatusCodes.*;
 
 /** 框架状态转换只在工作流边界进行，业务状态编码不能随框架声明顺序漂移。 */
 public final class ExecutionStateCodec {

@@ -7,9 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /** 精确匹配保留缩进，原文不一致时拒绝编辑，避免猜测位置后损坏源码。 */
 class EditFileIndentationRegressionTest {

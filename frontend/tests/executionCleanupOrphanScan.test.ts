@@ -8,9 +8,9 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRenderer, defineComponent, nextTick } from 'vue';
+import {createRenderer, defineComponent, nextTick} from 'vue';
 import http from '../src/services/interceptor';
-import { useExecutionCleanup } from '../src/views/settings/tabs/useExecutionCleanup';
+import {useExecutionCleanup} from '../src/views/settings/tabs/useExecutionCleanup';
 
 interface Element {
   tag: string;

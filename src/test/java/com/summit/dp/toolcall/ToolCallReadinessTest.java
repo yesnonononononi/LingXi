@@ -1,28 +1,25 @@
 package com.summit.dp.toolcall;
 
-import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-
-import com.summit.dp.shared.support.SqliteTestDatabase;
-
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.core.agent.Execution;
 import com.summit.core.agent.AgentRequest;
+import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.application.port.ExecutionActivity;
-import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
-import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
+import com.summit.dp.shared.support.SqliteTestDatabase;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
 import com.summit.dp.toolcall.infrastructure.persistence.mapper.ToolCallMapper;
 import com.summit.dp.toolcall.infrastructure.persistence.repository.ToolCallRepositoryImpl;
+import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
+import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -32,15 +29,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
 
 class ToolCallReadinessTest {

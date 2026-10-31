@@ -1,15 +1,10 @@
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
-import { ModelAPI, ProviderAPI } from '../../../services/api';
-import type {
-  ModelConfigVO,
-  ProviderConfigVO,
-  ProviderModelGroupVO,
-  OpenAIModelItem,
-} from '../../../types/chat';
-import { isOk } from '../../../utils/api';
-import { useModelImportCopy } from './useModelImportCopy';
-import { useConfirm } from '../../../composables/useConfirm';
-import { useI18n } from '../../../i18n';
+import {computed, onBeforeUnmount, onMounted, ref} from 'vue';
+import {ModelAPI, ProviderAPI} from '../../../services/api';
+import type {ModelConfigVO, OpenAIModelItem, ProviderConfigVO, ProviderModelGroupVO,} from '../../../types/chat';
+import {isOk} from '../../../utils/api';
+import {useModelImportCopy} from './useModelImportCopy';
+import {useConfirm} from '../../../composables/useConfirm';
+import {useI18n} from '../../../i18n';
 
 export type ModelsTabMode = 'list' | 'provider-form' | 'model-form' | 'batch-form';
 

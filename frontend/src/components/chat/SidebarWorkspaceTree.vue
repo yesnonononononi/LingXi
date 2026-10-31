@@ -18,16 +18,16 @@
  * （`v-model` → `:value` + `@input`），会破坏"逐字迁移"的可审计性；因此内部接口直接传 Ref，
  * 并在文件头显式声明这一约定（仅限内部，不对替换实现开放）。</p>
  */
-import { computed, type Ref } from 'vue';
+import {computed, type Ref} from 'vue';
+import type {BranchedMenuChild, BranchedMenuItem} from '../common/BranchedMenu.vue';
 import BranchedMenu from '../common/BranchedMenu.vue';
 import SessionStateIndicator from './SessionStateIndicator.vue';
-import type { BranchedMenuChild, BranchedMenuItem } from '../common/BranchedMenu.vue';
 import CollapseTransition from '../common/CollapseTransition.vue';
-import { t } from '../../i18n';
-import { SESSION_VISIBLE_LIMIT } from '../../composables/sidebar/useSessionVisibility';
-import type { ProjectGroup } from '../../composables/sidebar/useSessionGrouping';
-import type { ChatSession, WorkspaceVO } from '../../types/chat';
-import type { SidebarTreeActions } from '../../types/sidebarSlots';
+import {t} from '../../i18n';
+import {SESSION_VISIBLE_LIMIT} from '../../composables/sidebar/useSessionVisibility';
+import type {ProjectGroup} from '../../composables/sidebar/useSessionGrouping';
+import type {ChatSession, WorkspaceVO} from '../../types/chat';
+import type {SidebarTreeActions} from '../../types/sidebarSlots';
 
 defineOptions({ inheritAttrs: false });
 

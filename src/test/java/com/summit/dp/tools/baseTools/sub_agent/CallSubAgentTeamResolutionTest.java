@@ -1,7 +1,5 @@
 package com.summit.dp.tools.baseTools.sub_agent;
 
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
@@ -10,6 +8,7 @@ import com.summit.dp.agent.application.service.AgentService;
 import com.summit.dp.agent.application.vo.AgentVO;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.team.application.service.TeamService;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.CallSubAgentTool;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -17,9 +16,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * 团队身份随 AgentRequest attributes 流动的回归守卫：

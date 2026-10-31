@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ModelAPI, ProviderAPI } from '../src/services/api';
-import { useModelsTab } from '../src/views/settings/tabs/useModelsTab';
-import { t as translate } from '../src/i18n';
+import {ModelAPI, ProviderAPI} from '../src/services/api';
+import {useModelsTab} from '../src/views/settings/tabs/useModelsTab';
+import {t as translate} from '../src/i18n';
 
 test.beforeEach(t => {
   t.mock.method(ModelAPI, 'catalog', async () => ({ code: 1, data: [] }));

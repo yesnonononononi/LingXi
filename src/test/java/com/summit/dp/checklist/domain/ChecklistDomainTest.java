@@ -1,12 +1,6 @@
 package com.summit.dp.checklist.domain;
 
-import com.summit.dp.checklist.domain.model.Checklist;
-import com.summit.dp.checklist.domain.model.ChecklistModification;
-import com.summit.dp.checklist.domain.model.ChecklistMutation;
-import com.summit.dp.checklist.domain.model.ChecklistRules;
-import com.summit.dp.checklist.domain.model.ChecklistStatus;
-import com.summit.dp.checklist.domain.model.ChecklistStep;
-import com.summit.dp.checklist.domain.model.ChecklistStepStatus;
+import com.summit.dp.checklist.domain.model.*;
 import com.summit.dp.shared.exception.ClientException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,11 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 清单聚合的状态机与结构修改规则（纯领域，无数据库）。

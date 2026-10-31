@@ -1,6 +1,5 @@
 package com.summit.dp.personalization.application.command;
 
-import com.summit.dp.personalization.domain.model.ReplyStyle;
 import lombok.Builder;
 import lombok.Data;
 

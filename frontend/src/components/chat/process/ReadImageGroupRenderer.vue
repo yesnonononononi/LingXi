@@ -4,7 +4,7 @@
  *
  * <p>根元素就是既有的 `ReadImageToolGroup` —— 原分支没有额外包裹层，这里也不许加。</p>
  */
-import type { ImageProcessItem } from '../../../utils/readImageTools';
+import type {ImageProcessItem} from '../../../utils/readImageTools';
 import ReadImageToolGroup from '../ReadImageToolGroup.vue';
 
 defineProps<{

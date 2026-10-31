@@ -1,5 +1,5 @@
-import type { Component, InjectionKey } from 'vue';
-import type { ChatSession, WorkspaceVO } from './chat';
+import type {Component, InjectionKey} from 'vue';
+import type {ChatSession, WorkspaceVO} from './chat';
 
 /**
  * 语义层分组节点。

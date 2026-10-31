@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSseBlock, readSseStream } from '../src/services/sse';
+import {parseSseBlock, readSseStream} from '../src/services/sse';
 
 test('解析事件名与 JSON 事件体', () => {
   const evt = parseSseBlock('event: PARTIAL_TEXT\ndata: {"content":"你"}');

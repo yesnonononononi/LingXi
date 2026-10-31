@@ -1,26 +1,23 @@
 package com.summit.dp.agent.application.service.impl;
 
-import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
-
-import com.summit.dp.workflow.application.chat.ResendTargetResolver;
-
-import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
-
-import com.summit.dp.execution.domain.model.ExecutionStatus;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
-import com.summit.dp.workflow.application.chat.ConversationRollbackService;
+import com.summit.dp.execution.domain.model.ExecutionStatus;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.workflow.application.chat.RequestPreparer;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.application.service.ChatTurnService;
+import com.summit.dp.workflow.application.chat.ConversationRollbackService;
+import com.summit.dp.workflow.application.chat.PreparedChatExecutor;
+import com.summit.dp.workflow.application.chat.RequestPreparer;
+import com.summit.dp.workflow.application.chat.ResendTargetResolver;
+import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
+import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -31,14 +28,9 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * P0-4 空闲判定澄清的回归守卫：{@code ensureRootExecutionIdle} <b>只看根会话自身的执行</b>。

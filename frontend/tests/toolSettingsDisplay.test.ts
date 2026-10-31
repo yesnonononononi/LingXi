@@ -1,17 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdirSync, unlinkSync, existsSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { parse, compileScript } from '@vue/compiler-sfc';
+import {existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync} from 'node:fs';
+import {dirname, resolve} from 'node:path';
+import {fileURLToPath, pathToFileURL} from 'node:url';
+import {compileScript, parse} from '@vue/compiler-sfc';
 import ts from 'typescript';
-import { createRenderer, h, nextTick, reactive } from 'vue';
-import type { App } from 'vue';
-import { AgentAPI } from '../src/services/agent';
-import { ToolAPI } from '../src/services/tool';
-import { ModelAPI } from '../src/services/model';
-import { AgentToolName } from '../src/utils/toolNames';
-import { setPreference, t as translate } from '../src/i18n';
+import type {App} from 'vue';
+import {createRenderer, h, nextTick, reactive} from 'vue';
+import {AgentAPI} from '../src/services/agent';
+import {ToolAPI} from '../src/services/tool';
+import {ModelAPI} from '../src/services/model';
+import {AgentToolName} from '../src/utils/toolNames';
+import {setPreference, t as translate} from '../src/i18n';
 
 interface Node {
   tag: string; text: string; props: Record<string, any>; children: Node[]; parent: Node | null;

@@ -1,5 +1,5 @@
 import http from './interceptor';
-import type { Result } from './types';
+import type {Result} from './types';
 
 export type SecurityCategory = 'files' | 'terminal' | 'net';
 export type SecurityAction = 'ALLOW' | 'ASK' | 'DENY';

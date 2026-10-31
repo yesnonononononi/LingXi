@@ -2,43 +2,39 @@ package com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation;
 
 import cn.hutool.core.util.IdUtil;
 import com.summit.core.agent.AgentRequest;
-import com.summit.core.conf.ModelRetryConfig;
 import com.summit.core.agent.AgentRuntimeParameters;
+import com.summit.core.conf.ModelRetryConfig;
 import com.summit.core.conf.SkillConfig;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
-import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.runtime.RuntimeEnvironment;
+import com.summit.core.runtime.workspace.Workspace;
 import com.summit.core.tool.ToolExecution;
 import com.summit.core.workspace.WorkspaceSpec;
-import com.summit.dp.shared.model.WorkspaceType;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.agent.application.vo.AgentVO;
-import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.service.RuntimeConfigurationService;
 import com.summit.dp.model.application.service.ModelService;
-import com.summit.dp.user_configs.application.vo.SettingsView;
+import com.summit.dp.model.application.vo.RuntimeModel;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.user_configs.application.service.SettingsProvider;
-import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
+import com.summit.dp.shared.model.WorkspaceType;
 import com.summit.dp.shared.vo.WorkspaceVO;
 import com.summit.dp.team.application.vo.TeamVO;
-import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
 import com.summit.dp.tools.application.service.ToolListProcessor;
 import com.summit.dp.tools.application.service.ToolProcessingContext;
-import com.summit.dp.model.application.vo.RuntimeModel;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
+import com.summit.dp.user_configs.application.service.SettingsProvider;
+import com.summit.dp.user_configs.application.vo.SettingsView;
+import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
+import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
+import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
 import com.summit.dp.workspace.application.convert.WorkspaceConverter;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 
 /**
  * 把一次委派组装成子执行可用的 {@link AgentRequest}。

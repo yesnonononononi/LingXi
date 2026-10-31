@@ -1,12 +1,10 @@
 package com.summit.dp.workspace.domain.repository;
 
-import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.summit.ddd.domain.repository.RepositoryTemplate;
 import com.summit.dp.workspace.domain.model.Workspace;
 
 import java.util.Collection;
 import java.util.List;
-import java.util.Optional;
 
 /** 工作空间领域仓储，在 {@link RepositoryTemplate} 基础能力之外补充批量查询与全量查询。 */
 public interface WorkspaceRepository extends RepositoryTemplate<Workspace, Long> {

@@ -1,4 +1,4 @@
-import type { SessionVO, SubItemStatus } from '../types/chat';
+import type {SessionVO, SubItemStatus} from '../types/chat';
 
 /**
  * 子会话展示态映射（唯一定义处）。

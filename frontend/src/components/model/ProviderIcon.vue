@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
-import { isBuiltInProviderIcon, isImageProviderIcon } from '../../utils/providerIcons';
+import {computed, ref, watch} from 'vue';
+import {isBuiltInProviderIcon, isImageProviderIcon} from '../../utils/providerIcons';
 
 const props = withDefaults(defineProps<{
   /** 内置 key / emoji / 图片 URL */

@@ -1,22 +1,19 @@
 package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.DelegationRecorder;
-
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationTask;
-
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationSubmitter;
-
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.core.tool.ToolExecution;
 import com.summit.dp.agent.application.vo.AgentVO;
+import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.workflow.infrastructure.harness.agent.SubAgent;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
-import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationSubmitter;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.AsyncDelegationTask;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.DelegationRecorder;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionResolver;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.session.SubSessionTarget;
 import org.junit.jupiter.api.DisplayName;
@@ -34,10 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * 交付总监独立验证（QA 严过关）—— 注册线程落点 / 取消传播 / 异常兜底的对抗性用例。

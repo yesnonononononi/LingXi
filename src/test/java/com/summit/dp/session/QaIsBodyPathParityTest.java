@@ -5,14 +5,12 @@ import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.session.application.convert.ToolBlockStatusResolver;
 import com.summit.dp.session.application.convert.TurnViewAssembler;
-import com.summit.dp.workflow.application.projection.TurnViewBroadcaster;
 import com.summit.dp.session.application.service.TurnViewService;
 import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.event.BlockEventType;
-import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import com.summit.dp.shared.vo.block.Block;
 import com.summit.dp.shared.vo.block.TextBlock;
 import com.summit.dp.shared.vo.block.TurnViewVO;
@@ -21,6 +19,8 @@ import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
+import com.summit.dp.workflow.application.projection.TurnViewBroadcaster;
+import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -32,13 +32,8 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyCollection;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * B2 独立取证：「历史与实时同规则」是<b>结构保证</b>，不是巧合。

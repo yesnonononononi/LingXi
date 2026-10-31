@@ -1,19 +1,20 @@
 package com.summit.dp.workspace.application.policy;
 
-import com.summit.dp.sandbox_security.domain.model.SecurityAction;
-import com.summit.dp.shared.local.LocalInstance;
-import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.sandbox_security.application.SecurityRulePresets;
 import com.summit.dp.sandbox_security.application.SecurityRuleService;
+import com.summit.dp.sandbox_security.domain.model.SecurityAction;
 import com.summit.dp.sandbox_security.domain.model.SecurityCategory;
 import com.summit.dp.sandbox_security.domain.model.SecurityRule;
-import com.summit.sandbox.mxc.MxcWorkspaceSpec;
+import com.summit.dp.shared.local.LocalInstance;
+import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.sandbox.mxc.MxcSecurityPolicy;
+import com.summit.sandbox.mxc.MxcWorkspaceSpec;
+
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;

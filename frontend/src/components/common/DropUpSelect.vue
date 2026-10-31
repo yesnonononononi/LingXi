@@ -1,10 +1,10 @@
 <script setup lang="ts" generic="T extends string | number">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
-import type { SelectOption } from '../../types/ui';
-import { useTheme } from '../../composables/useTheme';
-import { t } from '../../i18n';
-import { isImageAvatar } from '../../utils/avatar';
-import { isBuiltInProviderIcon } from '../../utils/providerIcons';
+import {computed, nextTick, onBeforeUnmount, onMounted, ref} from 'vue';
+import type {SelectOption} from '../../types/ui';
+import {useTheme} from '../../composables/useTheme';
+import {t} from '../../i18n';
+import {isImageAvatar} from '../../utils/avatar';
+import {isBuiltInProviderIcon} from '../../utils/providerIcons';
 import ProviderIcon from '../model/ProviderIcon.vue';
 
 const props = defineProps<{

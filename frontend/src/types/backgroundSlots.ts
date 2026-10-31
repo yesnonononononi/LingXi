@@ -1,4 +1,4 @@
-import type { Component, InjectionKey } from 'vue';
+import type {Component, InjectionKey} from 'vue';
 
 /**
  * 主页背景「表面」（decoration surface）契约。

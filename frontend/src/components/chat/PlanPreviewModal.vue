@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue';
+import {nextTick, ref, watch} from 'vue';
 import LxModal from '../common/LxModal.vue';
 import MarkdownRenderer from './MarkdownRenderer.vue';
-import { useI18n } from '../../i18n';
+import {useI18n} from '../../i18n';
 
 const props = defineProps<{
   open: boolean;

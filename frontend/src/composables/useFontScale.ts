@@ -16,10 +16,10 @@
  * 也从同一个 localStorage 键镜像写入，本文件的持久化与它必须保持同一口径。</p>
  */
 
-import { computed, ref, watch } from 'vue';
-import type { ComputedRef, Ref } from 'vue';
-import { FONT_SCALE_PRESETS } from '../utils/enum';
-import type { FontScalePreset } from '../utils/enum';
+import type {ComputedRef, Ref} from 'vue';
+import {computed, ref, watch} from 'vue';
+import type {FontScalePreset} from '../utils/enum';
+import {FONT_SCALE_PRESETS} from '../utils/enum';
 
 /** localStorage 键。命名风格对齐 `lingxi-theme`：`lingxi-<关注点>`。 */
 export const FONT_SCALE_STORAGE_KEY = 'lingxi-font-scale';

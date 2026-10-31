@@ -1,10 +1,6 @@
 package com.summit.dp.checklist.infrastructure;
 
-import com.summit.dp.checklist.application.ChecklistCommand;
-import com.summit.dp.checklist.application.ChecklistService;
-import com.summit.dp.checklist.application.ChecklistReminderContext;
-import com.summit.dp.checklist.application.ChecklistVO;
-import com.summit.dp.checklist.application.ReminderDecision;
+import com.summit.dp.checklist.application.*;
 import com.summit.dp.checklist.domain.model.Checklist;
 import com.summit.dp.checklist.domain.model.ChecklistStatus;
 import com.summit.dp.checklist.domain.model.ChecklistStep;
@@ -23,22 +19,10 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.spy;

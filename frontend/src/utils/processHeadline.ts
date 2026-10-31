@@ -5,10 +5,10 @@
  * 组件不再各自拼文案 —— 去重、截断阈值、流式态语义都只在这里定义一处，中英文一律经 {@link t} 取。
  * 纯函数输入输出（除当前语言外无隐式状态），可直接单测，不必编译 SFC。</p>
  */
-import type { ProcessSummary } from './processSegments';
-import { resolveToolRenderName } from './toolDisplayNames';
-import { resolveToolMeta } from './toolMeta';
-import { t } from '../i18n';
+import type {ProcessSummary} from './processSegments';
+import {resolveToolRenderName} from './toolDisplayNames';
+import {resolveToolMeta} from './toolMeta';
+import {t} from '../i18n';
 
 /** 标题最多列出的工具名个数，超出转「等 N 类操作」。 */
 const DEFAULT_MAX_NAMES = 3;

@@ -1,14 +1,7 @@
 package com.summit.dp.workflow.infrastructure.tools.config;
 
 import com.summit.dp.workflow.infrastructure.tools.file.edit.EditDiffer;
-import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileHasher;
-import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordManager;
-import com.summit.dp.workflow.infrastructure.tools.file.record.DefaultFileRecordStore;
-import com.summit.dp.workflow.infrastructure.tools.file.record.Differ;
-import com.summit.dp.workflow.infrastructure.tools.file.record.FileHasher;
-import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecordManager;
-import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecordRestorer;
-import com.summit.dp.workflow.infrastructure.tools.file.record.FileRecordStore;
+import com.summit.dp.workflow.infrastructure.tools.file.record.*;
 import com.summit.dp.workflow.infrastructure.tools.image.ImageNormalizer;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;

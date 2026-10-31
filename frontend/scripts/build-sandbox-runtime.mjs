@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync, execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import {execFileSync, spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 
 /**
  * 随包发布的沙箱运行资源：把发行包整棵拷进 `build/runtime`，

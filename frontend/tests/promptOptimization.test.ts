@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { effectScope, ref } from 'vue';
-import { PromptOptimizationAPI } from '../src/services/promptOptimization';
-import { isPromptOptimizationCommand, usePromptOptimization } from '../src/composables/usePromptOptimization';
-import { useConfirm } from '../src/composables/useConfirm';
+import {effectScope, ref} from 'vue';
+import {PromptOptimizationAPI} from '../src/services/promptOptimization';
+import {isPromptOptimizationCommand, usePromptOptimization} from '../src/composables/usePromptOptimization';
+import {useConfirm} from '../src/composables/useConfirm';
 import http from '../src/services/interceptor';
-import { t as translate } from '../src/i18n';
-import type { Result } from '../src/services/types';
+import {t as translate} from '../src/i18n';
+import type {Result} from '../src/services/types';
 
 function fixture(initial = '保留原文\n不增加任务') {
   const input = ref(initial);

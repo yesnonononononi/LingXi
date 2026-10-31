@@ -1,7 +1,5 @@
 package com.summit.dp.task;
 
-import com.summit.runtime.model.DefaultChatModelInvoker;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -12,17 +10,11 @@ import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.TokenUsageEntity;
-import com.summit.core.runtime.loop.CheckPointResult;
-import com.summit.core.runtime.loop.ExecutionRepository;
-import com.summit.core.runtime.loop.ExecutionControlSignal;
-import com.summit.core.runtime.loop.LoopContext;
-import com.summit.core.runtime.loop.LoopMessages;
-import com.summit.core.runtime.loop.LoopResult;
-import com.summit.core.runtime.loop.RuntimeBoundaryChecker;
+import com.summit.core.runtime.loop.*;
 import com.summit.core.tool.ToolExecutionManager;
 import com.summit.core.tool.ToolRegistry;
-import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.email.application.service.EmailService;
+import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.task.domain.model.Task;
 import com.summit.dp.task.domain.model.Task.TaskStatus;
@@ -37,6 +29,7 @@ import com.summit.runtime.context.RuntimeContext;
 import com.summit.runtime.conversation.DefaultConversationManager;
 import com.summit.runtime.loop.AgentLoopStepRunner;
 import com.summit.runtime.loop.DefaultLoopInterceptorProcessor;
+import com.summit.runtime.model.DefaultChatModelInvoker;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -47,7 +40,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class BackgroundTaskNotificationTest {
