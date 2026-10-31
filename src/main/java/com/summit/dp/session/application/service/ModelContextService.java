@@ -7,6 +7,7 @@ import com.summit.dp.shared.persistence.TransactionRetryTemplate;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +24,9 @@ import java.util.Optional;
 @Slf4j
 public class ModelContextService {
 
+    /** 重试器动作名，只用于日志与指标区分。 */
+    private static final String RETRY_OPERATION = "替换会话模型上下文";
+
     private final ObjectMapper objectMapper;
     private final SessionContextRepository repository;
 
@@ -34,8 +38,26 @@ public class ModelContextService {
     @Autowired(required = false)
     private PlatformTransactionManager transactionManager;
 
-    /** 整笔替换的重试器；惰性创建（事务管理器是可选注入的，直接 new 的用例为 null）。 */
-    private TransactionRetryTemplate replaceRetry;
+    /**
+     * 整笔替换的重试器：{@link #initRetryTemplate()} 里预建，读路径只做一次 volatile 读。
+     *
+     * <p>直接 {@code new} 出来的用例没走 Spring 生命周期，该字段为 {@code null}，
+     * 由 {@link #replaceRetryTemplate()} 现场造一个降级使用（不持有、不加锁）。</p>
+     */
+    private volatile TransactionRetryTemplate replaceRetry;
+
+    /**
+     * 预建重试器。
+     *
+     * <p>字段注入的 {@link PlatformTransactionManager} 发生在 {@code @PostConstruct} 之前，
+     * 因此这里能拿到事务管理器。放在这里建而不是每次调用时 double-check，
+     * 是为了让热路径（每轮对话都会 {@code replace}）在初始化之后**完全无锁**，
+     * 同时重试指标在同一实例上累计。</p>
+     */
+    @PostConstruct
+    void initRetryTemplate() {
+        this.replaceRetry = new TransactionRetryTemplate(transactionManager, RETRY_OPERATION);
+    }
 
     public Optional<List<Message>> find(Long sessionId) {
         Optional<SessionContext> context = repository.findById(sessionId);
@@ -105,12 +127,20 @@ public class ModelContextService {
         }
     }
 
-    /** 惰性创建重试器：事务管理器是可选注入，创建后复用同一个实例以累计指标。 */
-    private synchronized TransactionRetryTemplate replaceRetryTemplate() {
-        if (replaceRetry == null) {
-            replaceRetry = new TransactionRetryTemplate(transactionManager, "替换会话模型上下文");
+    /**
+     * 取重试器：初始化完成后只有一次 volatile 读，**不抢监视器**（热路径每轮对话都会调用）。
+     *
+     * <p>降级路径：直接 {@code new} 出来的用例没有 Spring 生命周期，{@code @PostConstruct}
+     * 不会执行，字段为 {@code null} —— 此时现场造一个用完就丢的实例（不持有、不加锁），
+     * 保证这些用例照样能跑；生产实例永远来自 {@link #initRetryTemplate()}。</p>
+     */
+    private TransactionRetryTemplate replaceRetryTemplate() {
+        TransactionRetryTemplate prebuilt = replaceRetry;
+        if (prebuilt != null) {
+            return prebuilt;
         }
-        return replaceRetry;
+        // 仅直接 new 的用例会走到这里：不写回字段，避免多个线程在这里争着发布实例。
+        return new TransactionRetryTemplate(transactionManager, RETRY_OPERATION);
     }
 
     @Transactional

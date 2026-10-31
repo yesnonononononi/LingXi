@@ -21,6 +21,7 @@ import com.summit.dp.workflow.application.projection.SessionContextUsageProjecto
 import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
 import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
@@ -43,6 +44,9 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 @Slf4j
 public class LocalExecutionRepository implements ExecutionRepository, ExecutionActivity {
+
+    /** 重试器动作名，只用于日志与指标区分。 */
+    private static final String RETRY_OPERATION = "保存执行检查点";
 
     private final ExecutionCheckpointService checkpointService;
     private final ObjectMapper objectMapper;
@@ -69,8 +73,25 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     @Autowired(required = false)
     private PlatformTransactionManager transactionManager;
 
-    /** 整笔保存的重试器；惰性创建后复用同一实例以累计指标。 */
-    private TransactionRetryTemplate saveRetry;
+    /**
+     * 整笔保存的重试器：{@link #initRetryTemplate()} 里预建，读路径只做一次 volatile 读。
+     *
+     * <p>直接 {@code new} 出来的用例没走 Spring 生命周期，该字段为 {@code null}，
+     * 由 {@link #checkpointSaveRetryTemplate()} 现场造一个降级使用（不持有、不加锁）。</p>
+     */
+    private volatile TransactionRetryTemplate saveRetry;
+
+    /**
+     * 预建保存重试器。
+     *
+     * <p>字段注入的 {@link PlatformTransactionManager} 发生在 {@code @PostConstruct} 之前，
+     * 因此这里能拿到事务管理器。放在这里建而不是每次保存时 double-check，
+     * 是为了让保存热路径在初始化之后**完全无锁**，同时指标在同一实例上累计。</p>
+     */
+    @PostConstruct
+    void initRetryTemplate() {
+        this.saveRetry = new TransactionRetryTemplate(transactionManager, RETRY_OPERATION);
+    }
 
     /**
      * 保存执行：正文写文件、元数据写库。
@@ -179,12 +200,21 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
                 execution.getCreateAt(), execution.getStartAt(), execution.getCompletedAt()));
     }
 
-    /** 惰性创建重试器：事务管理器可选注入，创建后复用同一实例以累计指标。 */
-    private synchronized TransactionRetryTemplate checkpointSaveRetryTemplate() {
-        if (saveRetry == null) {
-            saveRetry = new TransactionRetryTemplate(transactionManager, "保存执行检查点");
+    /**
+     * 取保存重试器：初始化完成后只有一次 volatile 读，**不抢监视器**（每次保存都会调用）。
+     *
+     * <p>降级路径：直接 {@code new} 出来的用例没有 Spring 生命周期，{@code @PostConstruct}
+     * 不会执行，字段为 {@code null} —— 此时现场造一个用完就丢的实例（不持有、不加锁）。
+     * 这些用例靠反射注入事务管理器，读的是调用时刻的字段值，因此照样能重试；
+     * 生产实例永远来自 {@link #initRetryTemplate()}，指标在同一实例上累计。</p>
+     */
+    private TransactionRetryTemplate checkpointSaveRetryTemplate() {
+        TransactionRetryTemplate prebuilt = saveRetry;
+        if (prebuilt != null) {
+            return prebuilt;
         }
-        return saveRetry;
+        // 仅直接 new 的用例会走到这里：不写回字段，避免多个线程争着发布实例。
+        return new TransactionRetryTemplate(transactionManager, RETRY_OPERATION);
     }
 
     /**
