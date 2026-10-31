@@ -69,6 +69,15 @@ class SqliteSchemaPoConsistencyTest {
     private static final Pattern TABLE_CONSTRAINT = Pattern.compile(
             "^(PRIMARY|UNIQUE|KEY|INDEX|CONSTRAINT|FOREIGN|CHECK)\\b", Pattern.CASE_INSENSITIVE);
 
+    /**
+     * 版本迁移里补列：{@code ALTER TABLE <表> ADD [COLUMN] <列> ...}。
+     *
+     * <p>没有这条，迁移加出来的列在本守卫里就是不可见的 —— 它一旦看不见，
+     * 「PO 有字段、DDL 没有列」和「DDL 有列、解析器没读到」就分不清了。</p>
+     */
+    private static final Pattern ALTER_ADD_COLUMN = Pattern.compile(
+            "ALTER\\s+TABLE\\s+(\\w+)\\s+ADD\\s+(?:COLUMN\\s+)?(\\w+)", Pattern.CASE_INSENSITIVE);
+
     @Test
     @DisplayName("每个持久化 PO 的字段都必须在 SQLite 建表脚本的对应表中存在同名列")
     void everyPoFieldExistsInSqliteSchema() throws IOException {
@@ -98,6 +107,7 @@ class SqliteSchemaPoConsistencyTest {
     }
 
     /** 解析全部版本脚本，返回「表名(小写) → 列名集合(小写)」。 */
+    /** 解析全部版本脚本（按版本顺序），返回「表名(小写) → 列名集合(小写)」。 */
     private static Map<String, Set<String>> loadSchema() throws IOException {
         Map<String, Set<String>> tables = new LinkedHashMap<>();
         for (Path script : locateScripts()) {
@@ -105,6 +115,12 @@ class SqliteSchemaPoConsistencyTest {
             Matcher matcher = CREATE_TABLE.matcher(sql);
             while (matcher.find()) {
                 tables.put(matcher.group(1).toLowerCase(Locale.ROOT), parseColumns(matcher.group(2)));
+            }
+            // 迁移脚本用 ALTER 补列：不并进列集合，后加的列在这条守卫里就永远算「不存在」。
+            Matcher alter = ALTER_ADD_COLUMN.matcher(sql);
+            while (alter.find()) {
+                tables.computeIfAbsent(alter.group(1).toLowerCase(Locale.ROOT), key -> new LinkedHashSet<>())
+                        .add(alter.group(2).toLowerCase(Locale.ROOT));
             }
         }
         return tables;
