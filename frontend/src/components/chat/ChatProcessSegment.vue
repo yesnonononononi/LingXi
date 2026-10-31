@@ -19,12 +19,7 @@ const props = withDefaults(defineProps<{
    * 但「此刻还在动」这条信号整组只能有一个，否则同一回答里会同时闪三四道扫光。</p>
    */
   sweep?: boolean;
-  /**
-   * 空窗期占位：为真时本段的标题行**整体变成**扫光文本「正在等待模型响应」。
-   *
-   * <p>是「替代」而不是「追加」：用户要的是 `执行命令 - intention` 那一行原地变成占位符，
-   * 所以在原地把 title / preview / statusLabel 三个槽位一起换掉，箭头与展开交互保留。</p>
-   */
+  /** 延迟由 CSS 控制，避免短空窗闪烁和异步回调持有旧消息。 */
   awaitModel?: boolean;
   subSessions?: SubSessionVO[];
   sessionId?: string | number;
@@ -53,8 +48,9 @@ const isRunningTurn = computed(() => props.turn
 <template>
   <div class="w-full min-w-0" data-testid="process-segment" :data-segment-id="segment.id"
     :data-process-mode="mode">
+    <!-- 按钮名称描述展开对象，避免摘要让位后仍通过无障碍名称残留旧内容。 -->
     <button type="button" data-testid="process-segment-toggle" :aria-expanded="expanded"
-      :aria-label="[title, preview, statusLabel].filter(Boolean).join(' ')"
+      :aria-label="t('chat.message.process')"
       class="flex w-full min-w-0 items-center gap-2 py-1 text-left text-xs cursor-pointer group"
       :class="isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-500 hover:text-zinc-700'"
       @click="expanded = !expanded">
@@ -62,24 +58,24 @@ const isRunningTurn = computed(() => props.turn
         viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
         <path stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7" />
       </svg>
-      <!-- 加载态由标题自身的扫光表达（见 styles/loading-sweep.css），不再另起呼吸点。
-           扫光只认回答级 sweep：整组过程只有一段在闪，静止时一段都不闪。
-           空窗期（判据为真）时整行原地换成扫光占位：title/preview/status 三槽整体让位，
-           是「替代」不是「追加」—— 否则同一行会同时出现命令摘要和等待文案。 -->
-      <template v-if="awaitModel">
-        <span class="min-w-0 flex-1 truncate font-medium lx-sweep-text" data-testid="process-segment-await"
-          role="status">{{ t('chat.message.awaitModelResponse') }}</span>
-      </template>
-      <template v-else>
-        <span class="min-w-0 max-w-[60%] truncate font-medium" data-testid="process-segment-title"
-          :class="{ 'lx-sweep-text': sweep }">{{ title }}</span>
-        <span v-if="preview" class="min-w-0 flex-1 overflow-hidden whitespace-nowrap"
-          :class="previewIsText ? 'flex justify-end' : ''" data-testid="process-segment-preview">
-          <span :class="previewIsText ? 'shrink-0 min-w-full text-left' : 'block truncate'">{{ preview }}</span>
+      <!-- 身份变化只重建标题槽，防止新消息继承旧动画；折叠选择仍留在段组件。 -->
+      <span :key="JSON.stringify([sessionId, message.id, message.turnId, segment.id])"
+        class="min-w-0 flex-1" data-testid="process-segment-headline" :class="{ 'lx-sweep-text': sweep }">
+        <span class="lx-process-headline" :class="{ 'lx-awaiting-model': awaitModel }">
+          <span class="lx-process-summary flex min-w-0 items-center gap-2" data-testid="process-segment-summary">
+            <span class="min-w-0 max-w-[60%] truncate font-medium" data-testid="process-segment-title">{{ title }}</span>
+            <span v-if="preview" class="min-w-0 flex-1 overflow-hidden whitespace-nowrap"
+              :class="[previewIsText ? 'flex justify-end' : '', isDark ? 'text-zinc-400 group-hover:text-zinc-200' : 'text-zinc-500 group-hover:text-zinc-700']"
+              data-testid="process-segment-preview">
+              <span :class="previewIsText ? 'shrink-0 min-w-full text-left' : 'block truncate'">{{ preview }}</span>
+            </span>
+            <span v-if="statusLabel" class="shrink-0 max-w-[40%] truncate text-lx-fs-sm text-amber-600 dark:text-amber-400"
+              data-testid="process-segment-status">{{ statusLabel }}</span>
+          </span>
+          <span v-if="awaitModel" class="lx-process-waiting min-w-0 truncate font-medium" data-testid="process-segment-await"
+            role="status">{{ t('chat.message.awaitModelResponse') }}</span>
         </span>
-        <span v-if="statusLabel" class="shrink-0 max-w-[40%] truncate text-lx-fs-sm text-amber-600 dark:text-amber-400"
-          data-testid="process-segment-status">{{ statusLabel }}</span>
-      </template>
+      </span>
     </button>
     <CollapseTransition>
       <div v-if="visible && expanded" class="mt-1 pl-3 border-l border-zinc-200 dark:border-white/10"

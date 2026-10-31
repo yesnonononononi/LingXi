@@ -223,7 +223,7 @@ test('真实组件渲染：扫光节点恰好 1 个，且只在最后一个 live
     '三段真实状态都是 live');
 
   const sweptTitles = harness.findAll(root, node =>
-    node.props['data-testid'] === 'process-segment-title'
+    node.props['data-testid'] === 'process-segment-headline'
     && String(node.props.class ?? '').split(/\s+/).includes('lx-sweep-text'));
   assert.equal(sweptTitles.length, 1, `同一回答里只允许一个扫光标题，实际 ${sweptTitles.length} 个`);
   const lastSection = sections[2]!;
@@ -235,7 +235,7 @@ test('真实组件渲染：扫光节点恰好 1 个，且只在最后一个 live
   message.isThinking = false;
   await nextTick();
   const sweptAfterFinish = harness.findAll(root, node =>
-    node.props['data-testid'] === 'process-segment-title'
+    node.props['data-testid'] === 'process-segment-headline'
     && String(node.props.class ?? '').split(/\s+/).includes('lx-sweep-text'));
   assert.equal(sweptAfterFinish.length, 0, '轮次结束后不得残留扫光');
 });

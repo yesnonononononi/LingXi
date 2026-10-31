@@ -87,3 +87,18 @@ test('样式不落进业务脚本：script setup 里不出现扫光类名', () =
   assert.notEqual(script, null, '未解析到 script setup 段，断言不成立');
   assert.doesNotMatch(script[1], /lx-sweep/, '样式类名只应出现在模板里，不该在脚本里拼');
 });
+
+test('等待占位通过真实组件验证延迟、取消、身份隔离与无障碍显隐', {timeout:120000}, async () => {
+  const {spawn} = require('node:child_process');
+  const result = await new Promise((resolve,reject) => {
+    const env = {...process.env};
+    delete env.ELECTRON_RUN_AS_NODE;
+    const child = spawn(require('electron'),[path.join(__dirname,'awaitModelResponse.smoke.cjs')],{env,windowsHide:true});
+    let output = '';
+    child.stdout.on('data',data => {output+=data;});
+    child.stderr.on('data',data => {output+=data;});
+    child.on('error',reject);
+    child.on('exit',code => resolve({code,output}));
+  });
+  assert.equal(result.code,0,result.output);
+});

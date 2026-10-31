@@ -66,10 +66,10 @@ const MUTATIONS: MutationTable = {
       + '        {{ t(\'chat.message.awaitModelResponse\') }}\n      </div>\n\n      ';
     return normalized.replace(anchor, `${injected}${anchor.trimStart()}`);
   },
-  // 注回形态缺陷：占位与 title/preview 同时渲染（「追加」而不是「替代」）
+  // 摘要失去交接样式后，长等待时会与占位同时可见。
   'append-not-replace': source => {
-    assert.ok(source.includes('<template v-else>'), '补丁锚点失效：找不到标题槽位的 v-else 分支');
-    return source.replace('<template v-else>', '<template>');
+    assert.ok(source.includes('lx-process-summary flex'), '补丁锚点失效：找不到摘要样式');
+    return source.replace('lx-process-summary flex', 'flex');
   },
   // 注回定位缺陷之一：去掉「该段仍在增长」判据 → 无条件替换最后一段（概览段被等待文案盖掉）
   'ignore-mode': source => {
@@ -229,10 +229,6 @@ function directiveValue(node: TemplateNode, name: string): string {
   return matched?.exp?.content ?? '';
 }
 
-function hasDirective(node: TemplateNode, name: string): boolean {
-  return (node.props ?? []).some(prop => prop.type === 7 && prop.name === name);
-}
-
 function collect(node: TemplateNode, ancestors: TemplateNode[], found: LocatedNode[], matcher: (n: TemplateNode) => boolean): void {
   const siblings = node.children ?? [];
   siblings.forEach((child, index) => {
@@ -257,7 +253,7 @@ function interpolationExpression(node: TemplateNode): string {
   return typeof holder?.content === 'string' ? holder.content : '';
 }
 
-function templateOf(relativePath: string): TemplateNode[] {
+function parseTemplate(relativePath: string): TemplateNode[] {
   const source = readMutantSource(relativePath, mutation, templateMutationsFor(relativePath));
   const parsed = parse(source, {filename: relativePath});
   assert.ok(parsed.descriptor.template, `${relativePath} 缺少 template 块`);
@@ -334,7 +330,7 @@ function nodeText(node: MemoryNode): string {
   return node.text + node.children.map(nodeText).join('');
 }
 
-test('空窗期占位是过程段标题行本身：删掉独立行，标题/preview/status 三槽整体让位', async t => {
+test('空窗提示与摘要共用原行，显示交接由 CSS 处理', async t => {
   const root = mountMessageItem(t, awaitWindowMessage());
   await nextTick();
 
@@ -343,20 +339,21 @@ test('空窗期占位是过程段标题行本身：删掉独立行，标题/prev
   assert.equal(standalone.length, 0,
     '不得再出现 data-testid="await-model-response" 这类独立占位行');
 
-  // 2. 占位落在过程段标题行内，且带扫光
+  // 标题容器独占扫光，切换等待文案不重启该动画。
   const placeholders = harness.findAll(root, node => node.props['data-testid'] === 'process-segment-await');
   assert.equal(placeholders.length, 1, `空窗期必须恰有一处行内占位，实际 ${placeholders.length} 处`);
   const placeholder = placeholders[0]!;
   assert.equal(nodeText(placeholder), '正在等待模型响应', '占位文案必须是「正在等待模型响应」');
-  assert.ok(hasClass(placeholder, 'lx-sweep-text'), '占位必须复用既有 .lx-sweep-text 扫光');
+  const headline = harness.find(root, node => node.props['data-testid'] === 'process-segment-headline');
+  assert.ok(headline && hasClass(headline, 'lx-sweep-text'), '占位与摘要必须共用一个扫光容器');
   assert.equal(placeholder.props['role'], 'status', '占位必须带 role=status');
 
-  // 3. 「替代」而非「追加」：同一段里不得再有 title/preview/status 三槽
+  // 摘要留在 DOM 中供延迟前展示，实际可见性由浏览器回归验证。
   const toggle = harness.find(root, node => node.props['data-testid'] === 'process-segment-toggle');
   assert.ok(toggle, '折叠箭头所在的标题行必须仍在（交互保留）');
-  for (const testId of ['process-segment-title', 'process-segment-preview', 'process-segment-status']) {
-    assert.equal(harness.findAll(toggle!, node => node.props['data-testid'] === testId).length, 0,
-      `占位态下标题行不得再渲染 ${testId}（必须是替代而不是追加）`);
+  for (const testId of ['process-segment-title', 'process-segment-preview']) {
+    assert.equal(harness.findAll(toggle!, node => node.props['data-testid'] === testId).length, 1,
+      `延迟前必须保留当前 ${testId}`);
   }
   const chevron = harness.findAll(toggle!, node => node.tag === 'svg');
   assert.ok(chevron.length >= 1, '折叠箭头必须保留');
@@ -369,6 +366,8 @@ test('判据转假后标题行恢复显示 title / preview，占位消失', asyn
   await nextTick();
   assert.equal(harness.findAll(root, node => node.props['data-testid'] === 'process-segment-await').length, 1,
     '前置条件：进入空窗期必须先出现占位');
+  const previousTitle = harness.find(root, node => node.props['data-testid'] === 'process-segment-title');
+  const previousHeadline = harness.find(root, node => node.props['data-testid'] === 'process-segment-headline');
 
   // 下一轮 token 到达：正文非空 → 判据转假
   state.content = '模型开始说话了';
@@ -378,6 +377,9 @@ test('判据转假后标题行恢复显示 title / preview，占位消失', asyn
     '判据转假后占位必须立刻消失（不做残留动画）');
   const title = harness.find(root, node => node.props['data-testid'] === 'process-segment-title');
   assert.ok(title, '判据转假后标题行必须恢复渲染 title');
+  assert.equal(title, previousTitle, '恢复活动不应重建标题');
+  assert.equal(harness.find(root, node => node.props['data-testid'] === 'process-segment-headline'), previousHeadline,
+    '恢复活动不应重启扫光容器');
   assert.equal(harness.findAll(root, node => node.props['data-testid'] === 'process-segment-preview').length, 1,
     '判据转假后标题行必须恢复渲染 preview（「执行命令 - intention」原样回来）');
   // 标题必须恢复成原来的命令文案，而不是残留占位文案。
@@ -493,8 +495,8 @@ test('段内仍有在跑步骤时不替换：此刻是「在动」不是「在�
   assert.equal(nodeText(title!), '思考', '纯思考段的标题必须保留「思考」，不得被等待文案盖掉');
 });
 
-test('模板契约：段组件用 awaitModel 分支替代三槽，消息组件不再插独立行', () => {
-  const itemBranch = templateOf(MESSAGE_ITEM);
+test('模板契约：等待只创建静态节点，摘要与等待由同一槽位交接', () => {
+  const itemBranch = parseTemplate(MESSAGE_ITEM);
   assert.equal(locate(itemBranch, node => attrValue(node, 'data-testid') === 'await-model-response').length, 0,
     'ChatMessageItem 模板里不得再出现 await-model-response 独立行');
   const segmentUsages = locate(itemBranch, node => node.tag === 'ChatProcessSegment');
@@ -504,30 +506,28 @@ test('模板契约：段组件用 awaitModel 分支替代三槽，消息组件�
   assert.equal(awaitProp?.exp?.content, 'partIndex === awaitModelSegmentIndex',
     '必须由「最后一段」下标驱动 awaitModel，整组只有一处');
 
-  const segmentBranch = templateOf(SEGMENT_COMPONENT);
+  const segmentBranch = parseTemplate(SEGMENT_COMPONENT);
   const placeholders = locate(segmentBranch, node => attrValue(node, 'data-testid') === 'process-segment-await');
   assert.equal(placeholders.length, 1, '段组件里必须恰有一处行内占位');
   const placeholder = placeholders[0]!;
   const holder = placeholder.ancestors[placeholder.ancestors.length - 1]!;
-  assert.equal(holder.tag, 'template', '占位必须放在具名分支模板里');
-  assert.equal(directiveValue(holder, 'if'), 'awaitModel', '占位必须只由 awaitModel 驱动');
-  assert.match(attrValue(placeholder.node, 'class'), /\blx-sweep-text\b/, '占位必须带既有扫光类');
+  assert.match(attrValue(holder, 'class'), /\blx-process-headline\b/, '占位必须位于同一标题槽位');
+  assert.equal(directiveValue(placeholder.node, 'if'), 'awaitModel', '占位必须只由 awaitModel 驱动');
   const className = attrValue(placeholder.node, 'class');
   assert.ok(!/\bbg-/.test(className), '占位不得新增背景块');
   assert.ok(!/\bmax-w-3xl\b/.test(className), '对话列宽度只能用既有 max-w-lx-chat');
   assert.ok(!/\b[wm][a-z]?-\[/.test(className), '占位不得写死宽度');
 
-  // 标题三槽必须包在 v-else 分支里 —— 这就是「替代」而不是「追加」的结构保证
   const titleSlots = locate(segmentBranch, node => attrValue(node, 'data-testid') === 'process-segment-title');
   assert.equal(titleSlots.length, 1, '段组件里必须恰有一处 title 槽');
   const titleTemplate = titleSlots[0]!.ancestors[titleSlots[0]!.ancestors.length - 1]!;
-  assert.equal(titleTemplate.tag, 'template', 'title 槽必须放在具名分支模板里');
-  assert.ok(hasDirective(titleTemplate, 'else'),
-    'title/preview/status 必须在 v-else 分支（与占位互斥），否则两者会同时渲染');
+  assert.match(attrValue(titleTemplate, 'class'), /\blx-process-summary\b/, '摘要必须具有延迟让位样式');
+  assert.equal(titleSlots[0]!.ancestors[titleSlots[0]!.ancestors.length - 2], holder,
+    '摘要和占位必须叠放在同一网格槽位');
 });
 
 test('过程区为空时的「思考中」占位仍留在折叠内容里，两条提示不并列', () => {
-  const branch = templateOf(MESSAGE_ITEM);
+  const branch = parseTemplate(MESSAGE_ITEM);
   const thinking = locate(branch, node => interpolationExpression(node).includes('chat.message.thinking'));
   assert.equal(thinking.length, 1, '既有「思考中」占位必须唯一存在');
   const insideProcess = thinking[0]!.ancestors.some(ancestor =>

@@ -84,8 +84,8 @@ import App from './App.vue'; createApp(App).mount('#app'); window.ready = true;`
         details: document.querySelectorAll('[data-testid=process-segment-details]').length,
         liveCount:document.querySelectorAll('[data-process-mode=live]').length,
         liveSummaries:live.querySelectorAll('[data-testid=process-segment-toggle]').length,
-        liveSweep:!!live.querySelector('[data-testid=process-segment-title].lx-sweep-text'),
-        summarySweep:!!document.querySelector('[data-process-mode=summary] [data-testid=process-segment-title].lx-sweep-text'),
+        liveSweep:!!live.querySelector('[data-testid=process-segment-headline].lx-sweep-text'),
+        summarySweep:!!document.querySelector('[data-process-mode=summary] [data-testid=process-segment-headline].lx-sweep-text'),
         width:document.documentElement.scrollWidth, viewport:innerWidth,
         background:getComputedStyle(document.body).backgroundColor, body:document.body.innerText };
     })()`);
