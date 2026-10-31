@@ -5,8 +5,6 @@ const backend = require('./backend.cjs');
 const { registerFilePreview } = require('./file-preview.cjs');
 const { registerBackgroundImages } = require('./background-images.cjs');
 const { registerNotificationWindow, normalizePayload } = require('./notification-window.cjs');
-const { registerPetWindow } = require('./pet-window.cjs');
-const { registerLxSchemePrivileges, registerLxProtocol } = require('./lx-protocol.cjs');
 
 const { createUpdater } = require('./updater.cjs');
 
@@ -63,22 +61,6 @@ const notifications = registerNotificationWindow({
   isDev,
   frontendRoot,
 });
-
-/**
- * 桌宠窗口管理器（阶段一：透明置顶 + 点击穿透 + 自定义拖拽 + 位置持久化）。
- *
- * <p>与通知窗口一样在这里注册：它需要 isDev / frontendRoot 解析入口页面，
- * 且装配早于托盘菜单（托盘要按它的可见性渲染勾选项）。</p>
- */
-const pet = registerPetWindow({ ipcMain, isDev, frontendRoot });
-
-/**
- * 桌宠资源的 `lxa://` 协议特权。
- *
- * <p>⚠️ 必须在 ready 之前登记：ready 之后登记会抛异常且不生效，表现就是
- * `lxa://` 被当成未知 scheme，模型永远加载不出来。</p>
- */
-registerLxSchemePrivileges();
 
 
 // 后端日志与工作目录都放 userData：安装到 Program Files 后应用目录不可写
@@ -313,7 +295,28 @@ function setupTray() {
   tray = new Tray(iconPath);
   tray.setToolTip('LX ');
 
-  tray.setContextMenu(buildTrayMenu());
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: '显示界面',
+      click: () => {
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      },
+    },
+    { type: 'separator' },
+    {
+      label: '彻底退出',
+      click: () => {
+        isQuiting = true;
+        app.quit();
+      },
+    },
+  ]);
+
+  tray.setContextMenu(contextMenu);
 
   // 鼠标左键点击托盘图标：智能切换 显示 / 隐藏
   tray.on('click', () => {
@@ -331,52 +334,6 @@ function setupTray() {
     }
   });
 }
-
-/**
- * 构建托盘菜单。
- *
- * <p>抽成函数是因为「显示桌宠」是勾选项：桌宠被自己的按钮或双击关掉时，
- * 菜单里的勾必须跟着变，否则用户会看到一个和事实矛盾的菜单。</p>
- *
- * @returns 新的菜单实例
- */
-function buildTrayMenu() {
-  return Menu.buildFromTemplate([
-    {
-      label: '显示界面',
-      click: () => {
-        if (mainWindow) {
-          if (mainWindow.isMinimized()) mainWindow.restore();
-          mainWindow.show();
-          mainWindow.focus();
-        }
-      },
-    },
-    {
-      label: '显示桌宠',
-      type: 'checkbox',
-      checked: pet.isVisible(),
-      click: () => {
-        pet.toggle();
-      },
-    },
-    { type: 'separator' },
-    {
-      label: '彻底退出',
-      click: () => {
-        isQuiting = true;
-        app.quit();
-      },
-    },
-  ]);
-}
-
-// 桌宠可见性变化时重建托盘菜单，保证勾选状态与事实一致
-pet.onVisibilityChange(() => {
-  if (tray) {
-    tray.setContextMenu(buildTrayMenu());
-  }
-});
 
 // 原生按钮与页面主题同步，避免深色页面顶部仍出现浅色背景。
 ipcMain.handle('window:set-titlebar-theme', (event, isDark) => {
@@ -542,15 +499,6 @@ app.on('second-instance', () => {
 app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return;
 
-  // 桌宠资源协议：ready 之后才能 handle。失败不影响主应用（模型加载不到而已）
-  try {
-    // 开发态额外挂上 public/live2d：否则改完素材要先 build 一次才被桌宠看见
-    const extraBases = isDev ? [path.join(frontendRoot, 'public', 'live2d')] : [];
-    registerLxProtocol({ userDataDir, appRoot: app.getAppPath(), extraBases });
-  } catch (err) {
-    console.warn(`[lxa] 协议注册失败（桌宠模型将加载不出来）: ${(err && err.message) || err}`);
-  }
-
   // 先起后端再建窗口：前端一加载就发请求，后端没就绪会满屏请求失败
   createSplash();
   try {
@@ -585,14 +533,6 @@ app.whenReady().then(async () => {
   createWindow();
   setupTray();
 
-  // 桌宠窗口在托盘之后创建：托盘菜单要按它的真实可见性渲染勾选项。
-  // 失败只记日志 —— 桌宠是附加功能，绝不能因为它起不来就把主窗口/后端拖下水。
-  try {
-    pet.show();
-  } catch (err) {
-    console.warn(`[pet] 桌宠窗口创建失败（不影响应用使用）: ${(err && err.message) || err}`);
-  }
-
   // 更新器在窗口建好之后再起：它的状态要推给渲染层，且首次检查是延时的，
   // 不影响启动路径（更新失败绝不能让应用起不来）。
   try {
@@ -618,8 +558,6 @@ app.on('before-quit', () => {
   backgroundImages.close();
   // 通知卡片不进任务栏，退出后没人能关掉它们，必须在这里主动收干净
   notifications.closeAll();
-  // 桌宠是置顶窗口，残留下来会一直盖在桌面上；destroy 前会先把位置落盘
-  pet.destroy();
 
   // 停掉更新器的定时器，避免退出过程中触发一次检查
   updater.stop();
