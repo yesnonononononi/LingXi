@@ -30,7 +30,7 @@ public class ChatTurnLifecycleProjector {
     private PlatformTransactionManager transactionManager;
 
     /** 投影的重试器；惰性创建后复用同一实例以累计指标。 */
-    private volatile TransactionRetryTemplate projectionRetry;
+    private TransactionRetryTemplate projectionRetry;
 
     public void markExecutionWaiting(Execution execution) {
         Long rootSessionId = ExecutionEventMetadata.parseRootSessionId(execution.eventMetaData());
@@ -59,16 +59,10 @@ public class ChatTurnLifecycleProjector {
     }
 
     /** 惰性创建重试器：事务管理器可选注入，创建后复用同一实例。 */
-    private TransactionRetryTemplate retryTemplate() {
-        TransactionRetryTemplate existing = projectionRetry;
-        if (existing != null) {
-            return existing;
+    private synchronized TransactionRetryTemplate retryTemplate() {
+        if (projectionRetry == null) {
+            projectionRetry = new TransactionRetryTemplate(transactionManager, "投影轮次生命周期");
         }
-        synchronized (this) {
-            if (projectionRetry == null) {
-                projectionRetry = new TransactionRetryTemplate(transactionManager, "投影轮次生命周期");
-            }
-            return projectionRetry;
-        }
+        return projectionRetry;
     }
 }

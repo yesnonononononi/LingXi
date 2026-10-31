@@ -7,9 +7,6 @@ import com.summit.dp.shared.persistence.TransactionRetryTemplate;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
-
-
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,9 +35,7 @@ public class ModelContextService {
     private PlatformTransactionManager transactionManager;
 
     /** 整笔替换的重试器；惰性创建（事务管理器是可选注入的，直接 new 的用例为 null）。 */
-    private volatile TransactionRetryTemplate replaceRetry;
-
-
+    private TransactionRetryTemplate replaceRetry;
 
     public Optional<List<Message>> find(Long sessionId) {
         Optional<SessionContext> context = repository.findById(sessionId);
@@ -111,17 +106,11 @@ public class ModelContextService {
     }
 
     /** 惰性创建重试器：事务管理器是可选注入，创建后复用同一个实例以累计指标。 */
-    private TransactionRetryTemplate replaceRetryTemplate() {
-        TransactionRetryTemplate existing = replaceRetry;
-        if (existing != null) {
-            return existing;
+    private synchronized TransactionRetryTemplate replaceRetryTemplate() {
+        if (replaceRetry == null) {
+            replaceRetry = new TransactionRetryTemplate(transactionManager, "替换会话模型上下文");
         }
-        synchronized (this) {
-            if (replaceRetry == null) {
-                replaceRetry = new TransactionRetryTemplate(transactionManager, "替换会话模型上下文");
-            }
-            return replaceRetry;
-        }
+        return replaceRetry;
     }
 
     @Transactional

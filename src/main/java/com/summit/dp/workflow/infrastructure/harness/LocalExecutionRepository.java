@@ -70,7 +70,7 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     private PlatformTransactionManager transactionManager;
 
     /** 整笔保存的重试器；惰性创建后复用同一实例以累计指标。 */
-    private volatile TransactionRetryTemplate saveRetry;
+    private TransactionRetryTemplate saveRetry;
 
     /**
      * 保存执行：正文写文件、元数据写库。
@@ -180,17 +180,11 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     }
 
     /** 惰性创建重试器：事务管理器可选注入，创建后复用同一实例以累计指标。 */
-    private TransactionRetryTemplate checkpointSaveRetryTemplate() {
-        TransactionRetryTemplate existing = saveRetry;
-        if (existing != null) {
-            return existing;
+    private synchronized TransactionRetryTemplate checkpointSaveRetryTemplate() {
+        if (saveRetry == null) {
+            saveRetry = new TransactionRetryTemplate(transactionManager, "保存执行检查点");
         }
-        synchronized (this) {
-            if (saveRetry == null) {
-                saveRetry = new TransactionRetryTemplate(transactionManager, "保存执行检查点");
-            }
-            return saveRetry;
-        }
+        return saveRetry;
     }
 
     /**
