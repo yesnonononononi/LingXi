@@ -18,7 +18,16 @@ import { DEFAULT_TIMER_PORT, PresentationBus } from './presentation/bus';
 import { BlinkDriver } from './presentation/blink-driver';
 import { CommandRouter } from './presentation/command-router';
 import { SpritePresentation, type ExpressionUrlMap } from './presentation/sprite-presentation';
-import { EXPRESSION_IDS, type ExpressionId, type PresentationOp } from './presentation/types';
+import { EXPRESSION_IDS, type ExpressionId, type MotionId, type PresentationOp } from './presentation/types';
+import { PowerPolicy } from './power-policy';
+import { isCalibrationEnabled, mountCalibration } from './visual/calibrate';
+import { mountHalo } from './visual/halo';
+import { applyMicroMotion, applyMotionDuration, isDebugEnabled } from './visual/micro-motion';
+
+/** 调试 UI 是否开启（`?debug=1` 或开发态；发布态必须隐藏——用户明确要求别再露调试标记）。 */
+const DEBUG_ENABLED = isDebugEnabled(window.location.search, import.meta.env.DEV);
+/** 标定页是否开启（`?calibrate=1`，P1 开发工具）。 */
+const CALIBRATE_ENABLED = isCalibrationEnabled(window.location.search);
 
 /** 立绘资源：v2 正立图（1024×1536 母版 → 320×480 @2x WebP，等比 contain 显示到 156×234 立绘箱）。 */
 const ART_URL = 'lxa://pet-v2/front-standing@2x.webp';
@@ -112,6 +121,11 @@ let bus: PresentationBus | null = null;
 let router: CommandRouter | null = null;
 /** 眨眼调度器（发布态也开，它是"活"感的主要来源）。 */
 let blinkDriver: BlinkDriver | null = null;
+/** 功耗策略：可见性/隐藏/拖拽 → 四档。 */
+let powerPolicy: PowerPolicy | null = null;
+
+/** `#pet-root`（CSS 变量与 `data-*` 的写入目标）。 */
+let rootElement: HTMLElement | null = null;
 
 /** 拖拽时同样按帧节流位置上报。 */
 let moveFrame = 0;
@@ -176,6 +190,10 @@ function renderHint(expression: ExpressionId): void {
  */
 export function dispatchOp(op: PresentationOp): string {
   if (!bus) return 'rejected';
+  // 动作动画时长与配方表同源：表现层认为 tap 是 480ms，CSS 就播 480ms
+  if (op.kind === 'motion' && rootElement) {
+    applyMotionDuration(rootElement, op.id as MotionId);
+  }
   return bus.dispatch(op);
 }
 
@@ -236,6 +254,7 @@ function beginDrag(event: PointerEvent): void {
   if (event.button !== 0 || dragging) return;
   const bridge = petBridge();
   dragging = true;
+  powerPolicy?.update({ dragging: true });
   artElement?.classList.add('is-dragging');
   // 指针捕获：光标移动快于窗口时事件也不会丢，否则会出现「甩一下就掉」。
   // 捕获失败（指针 id 已失效等）不能中断拖拽本身，故吞掉异常。
@@ -272,6 +291,7 @@ function trackDrag(event: PointerEvent): void {
 function endDrag(pointerId: number): void {
   if (!dragging) return;
   dragging = false;
+  powerPolicy?.update({ dragging: false });
   artElement?.classList.remove('is-dragging');
   try {
     if (artElement?.hasPointerCapture(pointerId)) {
@@ -305,6 +325,9 @@ function renderArtError(detail: string): void {
 function buildDom(): void {
   const root = document.getElementById('pet-root');
   if (!root) return;
+  rootElement = root;
+  // 调试可见性由 data-debug 决定：CSS 默认把 badge/hint 藏起来，这里再关一次（双保险）
+  root.dataset.debug = DEBUG_ENABLED ? '1' : '0';
 
   const stage = document.createElement('div');
   stage.className = 'pet-stage';
@@ -318,6 +341,9 @@ function buildDom(): void {
   artElement.className = 'pet-art';
   artElement.setAttribute('role', 'img');
   artElement.setAttribute('aria-label', 'LX 桌宠');
+
+  // 落地光晕：贴在立绘底层，管"站在桌面上"的接地感（drop-shadow 管轮廓立体感，两者分工）
+  mountHalo(document, artElement, PET_GEOMETRY);
 
   const image = document.createElement('img');
   image.className = 'pet-art-image';
@@ -349,22 +375,29 @@ function buildDom(): void {
     void petBridge()?.close();
   });
 
-  badgeElement = document.createElement('span');
-  badgeElement.className = 'pet-badge';
-  badgeElement.textContent = '穿透中';
-  badgeElement.title = '点击循环切表情（手动验收用）';
-  badgeElement.addEventListener('click', (event) => {
-    // 点调试标记循环切表情：没有行为状态机，这是唯一的手动验收入口
-    event.stopPropagation();
-    const index = EXPRESSION_IDS.findIndex((item) => item === getExpression());
-    const next = EXPRESSION_IDS[(index + 1) % EXPRESSION_IDS.length];
-    setExpression(next);
-  });
+  // 调试标记与提示行**只在调试态创建**：发布态零调试元素（用户明确要求"别再露调试标记"）
+  artElement.append(image, faceElement, close);
+  if (DEBUG_ENABLED) {
+    const badge = document.createElement('span');
+    badge.className = 'pet-badge';
+    badge.textContent = '穿透中';
+    badge.title = '点击循环切表情（手动验收用）';
+    badge.addEventListener('click', (event) => {
+      // 点调试标记循环切表情：没有行为状态机，这是唯一的手动验收入口
+      event.stopPropagation();
+      const index = EXPRESSION_IDS.findIndex((item) => item === getExpression());
+      const next = EXPRESSION_IDS[(index + 1) % EXPRESSION_IDS.length];
+      setExpression(next);
+    });
+    badgeElement = badge;
 
-  hintElement = document.createElement('span');
-  hintElement.className = 'pet-hint';
+    const hint = document.createElement('span');
+    hint.className = 'pet-hint';
+    hintElement = hint;
 
-  artElement.append(image, faceElement, close, badgeElement, hintElement);
+    artElement.append(badge, hint);
+  }
+
   sway.appendChild(artElement);
   motion.appendChild(sway);
   stage.appendChild(motion);
@@ -432,7 +465,9 @@ function subscribeCommands(): void {
       return;
     }
     if (command.type === 'visible') {
-      console.info(`[pet] 可见性变化: visible=${command.visible === true}`);
+      // 窗口隐藏 → off 档：停 CSS 动画 + 停眨眼定时器（hidden 时 CSS 不产帧，但 JS 定时器照跑）
+      powerPolicy?.update({ visible: command.visible === true });
+      if (DEBUG_ENABLED) console.debug(`[pet] 可见性变化: visible=${command.visible === true}`);
       return;
     }
     // play / expression 等表现类指令统一走路由 → 调度总线（未知类型由路由器记日志丢弃）
@@ -502,6 +537,33 @@ function createPresentation(): void {
   blinkDriver.start();
 }
 
+/**
+ * 建功耗策略并接上"可见性 / 页面隐藏 / 拖拽"三个输入。
+ *
+ * <p>`off` 档要同时停掉眨眼定时器：主进程关掉了 `backgroundThrottling`，
+ * 窗口隐藏时 CSS 动画不产生帧，但 JS 定时器照跑——这是唯一会持续吃 CPU 的东西。</p>
+ */
+function createPowerPolicy(): void {
+  powerPolicy = new PowerPolicy({ visible: true, hidden: document.hidden === true });
+  const apply = (): void => {
+    if (!rootElement || !powerPolicy) return;
+    const timing = applyMicroMotion(rootElement, powerPolicy.power);
+    if (powerPolicy.power === 'off') {
+      blinkDriver?.stop();
+    } else if (blinkDriver && !blinkDriver.isRunning) {
+      blinkDriver.start();
+    }
+    if (DEBUG_ENABLED) {
+      console.debug(`[pet] 功耗档位=${powerPolicy.power} 呼吸=${timing.breathMs}ms 播放=${timing.playState}`);
+    }
+  };
+  powerPolicy.onPower(apply);
+  apply();
+  document.addEventListener('visibilitychange', () => {
+    powerPolicy?.update({ hidden: document.hidden === true });
+  });
+}
+
 /** 入口。 */
 function boot(): void {
   injectGeometryVariables();
@@ -510,17 +572,22 @@ function boot(): void {
   hitPipeline = new HitPipeline(hitTester, { onHitChange: reportHit });
   createPresentation();
   buildDom();
+  createPowerPolicy();
   wireEvents();
   subscribeCommands();
   // 初始一律按穿透渲染：主进程的窗口也是穿透态，两边从第 0 帧就一致
   applyHitState(false);
-  // 调试句柄（`?debug=1` 或 dev 才有；发布态不挂 window.petDebug）
-  window.petDebug = {
-    dispatch: dispatchOp,
-    setExpression,
-    getExpression,
-    list: () => [...EXPRESSION_IDS],
-  };
+  if (CALIBRATE_ENABLED && rootElement) {
+    mountCalibration(document, rootElement, PET_GEOMETRY);
+  }
+  if (DEBUG_ENABLED) {
+    window.petDebug = {
+      dispatch: dispatchOp,
+      setExpression,
+      getExpression,
+      list: () => [...EXPRESSION_IDS],
+    };
+  }
 }
 
 boot();

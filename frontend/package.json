@@ -20,7 +20,7 @@
     "gate:pet:verbose": "node scripts/check-pet-geometry.mjs --verbose",
     "build:pet-geometry": "node scripts/build-pet-geometry.mjs",
     "build:pet-assets": "node scripts/build-pet-assets.mjs",
-    "test:pet": "node --test tests/petGeometry.test.cjs && npx tsx --test tests/petLayout.test.ts tests/petPresentation.test.ts tests/petHitTester.test.ts",
+    "test:pet": "node --test tests/petGeometry.test.cjs && npx tsx --test tests/petLayout.test.ts tests/petPresentation.test.ts tests/petHitTester.test.ts tests/petMicroMotion.test.ts",
     "visual:baseline": "node scripts/visual/capture.mjs --mode baseline",
     "visual:check": "node scripts/visual/capture.mjs --mode check",
     "visual:components:baseline": "electron scripts/visual/component-scenes.cjs --mode baseline",

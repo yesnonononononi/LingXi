@@ -60,6 +60,9 @@ body {
  * 缓动分两层包：呼吸（scale + translateY）与摇摆（rotate）各自独立，
  * 否则两个动画抢同一个 transform 会互相覆盖。只用 transform，走合成器，
  * 不产生重排（frame-rate 友好）。
+ *
+ * <p>时长走 CSS 变量：`low` 档靠"时长 ×2"做视觉降频（零成本，不用 rAF），
+ * `off` 档靠 `animation-play-state: paused`。变量由 `visual/micro-motion.ts` 写入。</p>
  */
 .pet-motion {
   width: 100%;
@@ -67,23 +70,153 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: pet-breathe 3.6s ease-in-out infinite;
+  animation: pet-breathe var(--pet-breath-ms, 3.6s) ease-in-out infinite;
   will-change: transform;
 }
 
 .pet-sway {
   will-change: transform;
-  animation: pet-sway 5.2s ease-in-out infinite;
+  animation: pet-sway var(--pet-sway-ms, 5.2s) ease-in-out infinite;
 }
 
+/**
+ * 呼吸：**主用 translateY、scale 只到 1.004**。
+ *
+ * <p>旧版 `scale(1.014)` 会把 1px 描边拉虚，209px 的宠物上人眼直接读成"糊"——
+ * 这是"廉价感"的主要来源之一。放大交给后面要做的分层件，立牌阶段只做呼吸。</p>
+ */
 @keyframes pet-breathe {
-  0%, 100% { transform: scale(1) translateY(0); }
-  50% { transform: scale(1.014) translateY(-4px); }
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-2px) scale(1.004); }
 }
 
+/**
+ * 摇摆：±0.8°（旧值 ±1.4°）。
+ *
+ * <p>209px 高的立牌，±1.4° 会让脚底明显左右滑（位移约 5px），读成"贴纸在飘"；
+ * ±0.8° 的脚底位移约 3px，读成"重心在换"。</p>
+ */
 @keyframes pet-sway {
-  0%, 100% { transform: rotate(-1.4deg); }
-  50% { transform: rotate(1.4deg); }
+  0%, 100% { transform: rotate(-0.8deg); }
+  50% { transform: rotate(0.8deg); }
+}
+
+/**
+ * 呆毛反相小动画（与身体反相 = 立刻"活"）。
+ *
+ * <p>当前立绘是整张图（没有独立呆毛层），所以这条动画只在将来接入 `43_ahoge` 分层件
+ * 或裁切贴片后生效；先按 seam S4 把关键帧与变量定下来，避免下一批改口径。</p>
+ */
+@keyframes pet-ahoge {
+  0%, 100% { transform: rotate(-1.5deg); }
+  50% { transform: rotate(1.5deg); }
+}
+
+/* 参数驱动档的 CSS 落点（seam S4）：尾巴/耳朵/视线都由 CSS 变量驱动，
+   变量名与 `presentation/sprite-presentation.ts` 的 DRIVEN_CSS_VARIABLES 一一对应。 */
+.pet-tail {
+  transform-origin: 50% 100%;
+  transform: rotate(var(--pet-tail-angle, 0deg));
+}
+
+.pet-ear-l {
+  transform-origin: 50% 100%;
+  transform: rotate(var(--pet-ear-l-angle, 0deg));
+}
+
+.pet-ear-r {
+  transform-origin: 50% 100%;
+  transform: rotate(var(--pet-ear-r-angle, 0deg));
+}
+
+.pet-ahoge {
+  transform-origin: 50% 100%;
+  animation: pet-ahoge var(--pet-ahoge-ms, 2.6s) ease-in-out infinite;
+}
+
+/* 视线偏移（P2 的眼睛高光随鼠标）：只作用于眼片，整图不动。
+   现在没有独立眼片，变量先按 seam S4 定下来，P2 接入时只加一层 `.pet-gaze` 元素。 */
+.pet-gaze {
+  transform: translateX(calc(var(--pet-gaze-x, 0) * 1.5px));
+}
+
+/**
+ * 落地光晕 / 接地阴影（P0，"站在桌面上"的感觉全靠它）。
+ *
+ * <p>与立绘的 `drop-shadow` 分工：drop-shadow 管轮廓立体感（3px/8px），
+ * halo 管脚下接地。两者叠加要有节制，否则整体发脏。</p>
+ *
+ * <p>尺寸与呼吸同周期、相位锁定（同为 3.6s），否则会出现"身体在呼吸、影子在打拍子"的错位。</p>
+ */
+.pet-halo {
+  position: absolute;
+  left: 50%;
+  bottom: var(--pet-halo-bottom, 2px);
+  width: var(--pet-halo-w, 62%);
+  height: var(--pet-halo-h, 14px);
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(50% 50% at 50% 50%, var(--pet-halo-color, rgba(96, 116, 168, 0.5)) 0%, transparent 72%);
+  filter: blur(3px);
+  opacity: var(--pet-halo-opacity, 0.55);
+  pointer-events: none;
+  animation: pet-halo var(--pet-breath-ms, 3.6s) ease-in-out infinite;
+}
+
+@keyframes pet-halo {
+  0%, 100% { transform: translateX(-50%) scaleX(0.92); opacity: calc(var(--pet-halo-opacity, 0.55) * 0.76); }
+  50% { transform: translateX(-50%) scaleX(1.06); opacity: var(--pet-halo-opacity, 0.55); }
+}
+
+/**
+ * 动作层（动作 id 与美术规格书 §6.2 对齐）。
+ *
+ * <p>全部用 transform 实现，只有合成器参与；`data-motion` 由 `SpritePresentation` 写入，
+ * 每次重写前会强制一次样式重算以重启动画。</p>
+ */
+#pet-root[data-motion] .pet-art-image {
+  animation-duration: var(--pet-motion-ms, 480ms);
+  animation-fill-mode: both;
+  animation-timing-function: ease-out;
+}
+
+#pet-root[data-motion='tap'] .pet-art-image { animation-name: pet-tap; }
+#pet-root[data-motion='happy'] .pet-art-image { animation-name: pet-hop-lite; }
+#pet-root[data-motion='surprised'] .pet-art-image { animation-name: pet-hop; }
+#pet-root[data-motion='angry'] .pet-art-image { animation-name: pet-shake; }
+#pet-root[data-motion='wake'] .pet-art-image { animation-name: pet-shake; }
+#pet-root[data-motion='drag'] .pet-art-image { animation-name: pet-lift; }
+
+/* 一弹：被点击时的最小反馈（规格书 P1 简化版：整图 scale 1.03） */
+@keyframes pet-tap {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.03) translateY(-2px); }
+  100% { transform: scale(1); }
+}
+
+/* 开心：轻微上跳 */
+@keyframes pet-hop-lite {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-4px); }
+}
+
+/* 惊讶：明显上跳 */
+@keyframes pet-hop {
+  0%, 100% { transform: translateY(0); }
+  35% { transform: translateY(-6px); }
+}
+
+/* 生气/惊醒：整图小抖（±1°） */
+@keyframes pet-shake {
+  0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(-1deg); }
+  45% { transform: rotate(1deg); }
+  70% { transform: rotate(-0.6deg); }
+}
+
+/* 拖拽：离地 2px（脚下一像素的位移就能读成"被拎起来了"） */
+@keyframes pet-lift {
+  0%, 100% { transform: translateY(-2px); }
 }
 
 /**
@@ -193,8 +326,20 @@ body {
   border-color: rgba(248, 250, 252, 0.6);
 }
 
-/* 调试标记：一眼看出当前是「穿透中」还是「可交互」，手感验收就靠它；点它可切表情 */
-.pet-badge {
+/**
+ * 调试标记与提示行（**发布态必须不可见**）。
+ *
+ * <p>以前这两块"膏药"常驻在 209px 高的宠物旁边，是用户明确点名"不好看"的来源之一。
+ * 现在默认 `display:none`，只有 `#pet-root[data-debug='1']` 下才出现——
+ * 由 CSS 强制，即使 JS 误建了元素也不会露出来（双保险：`main.ts` 在非调试态根本不建它们）。</p>
+ */
+.pet-badge,
+.pet-hint {
+  display: none;
+}
+
+#pet-root[data-debug='1'] .pet-badge {
+  display: block;
   position: absolute;
   left: 8px;
   bottom: 6px;
@@ -209,15 +354,15 @@ body {
   cursor: pointer;
 }
 
-.pet-badge.is-hit {
+#pet-root[data-debug='1'] .pet-badge.is-hit {
   color: #052e16;
   background: rgba(134, 239, 172, 0.85);
   border-color: rgba(134, 239, 172, 0.95);
 }
 
-/* 提示行与调试标记并排贴在立绘底部：放在立绘箱外面会被窗口边缘裁掉（试过 bottom:-14px）。
-   加一层极淡的底色是因为它压在裙摆的浅色花纹上，纯文字几乎看不清。 */
-.pet-hint {
+/* 提示行贴在立绘底部：放在立绘箱外面会被窗口边缘裁掉。加一层极淡底色是因为它压在裙摆浅色花纹上看不清。 */
+#pet-root[data-debug='1'] .pet-hint {
+  display: block;
   position: absolute;
   right: 8px;
   bottom: 8px;
@@ -229,10 +374,104 @@ body {
   white-space: nowrap;
 }
 
-/* 尊重系统的「减少动态效果」：关掉呼吸与摇摆，立绘静止但仍可交互 */
+/**
+ * 标定页（`?calibrate=1`，P1 开发工具）：归一化网格 + 可拖锚点。
+ *
+ * <p>只在 `data-calibrate='1'` 下出现，发布态零影响。网格按 5% 步长画，
+ * 因为锚点契约本身就是 0..1 归一化坐标（seam S3），换尺寸不用重标。</p>
+ */
+#pet-root[data-calibrate='1'] .pet-calibrate {
+  display: block;
+}
+
+.pet-calibrate {
+  display: none;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.pet-calibrate__grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(to right, rgba(56, 189, 248, 0.28) 0 1px, transparent 1px 5%),
+    repeating-linear-gradient(to bottom, rgba(56, 189, 248, 0.28) 0 1px, transparent 1px 5%);
+}
+
+.pet-calibrate__anchor {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  border: 2px solid rgba(248, 250, 252, 0.9);
+  background: rgba(14, 165, 233, 0.7);
+  pointer-events: auto;
+  cursor: grab;
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.35);
+}
+
+.pet-calibrate__anchor:active {
+  cursor: grabbing;
+}
+
+.pet-calibrate__label {
+  position: absolute;
+  transform: translate(10px, -10px);
+  font-size: 10px;
+  color: rgba(248, 250, 252, 0.92);
+  background: rgba(15, 23, 42, 0.72);
+  padding: 1px 4px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.pet-calibrate__output {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  right: 4px;
+  max-height: 34%;
+  overflow: auto;
+  margin: 0;
+  padding: 6px;
+  font-size: 9px;
+  line-height: 1.35;
+  color: rgba(226, 232, 240, 0.95);
+  background: rgba(15, 23, 42, 0.82);
+  border-radius: 6px;
+  pointer-events: auto;
+  white-space: pre-wrap;
+}
+
+/**
+ * 功耗四档（设计文档 §6.1）。
+ *
+ * <p>`low` 档不做"降帧"，而是把动画时长翻倍——CSS 动画本来就在合成器上每帧跑，
+ * 强行压帧率反而看得出跳帧；`off` 档直接暂停，帧都不产生。</p>
+ */
+#pet-root[data-power='off'] .pet-motion,
+#pet-root[data-power='off'] .pet-sway,
+#pet-root[data-power='off'] .pet-halo,
+#pet-root[data-power='off'] .pet-art-image,
+#pet-root[data-power='off'] .pet-ahoge {
+  animation-play-state: paused;
+}
+
+/**
+ * 尊重系统的「减少动态效果」。
+ *
+ * <p>关掉呼吸/摇摆/光晕/呆毛与动作动画，**但保留眨眼**：眨眼是状态切换而非运动，
+ * 而且是"这个桌宠还活着"的可用性信号。</p>
+ */
 @media (prefers-reduced-motion: reduce) {
   .pet-motion,
-  .pet-sway {
+  .pet-sway,
+  .pet-halo,
+  .pet-ahoge,
+  #pet-root[data-motion] .pet-art-image {
     animation: none;
     will-change: auto;
   }
