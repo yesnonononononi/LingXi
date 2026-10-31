@@ -226,6 +226,59 @@ class H2TypeHandlerRoundTripTest {
                 label + "：显式写入后 update_time 必须等于新时间（H2 没有触发器，靠的就是这一写）");
     }
 
+    @Test
+    @DisplayName("两引擎同一断言：不显式写时间列的 UPDATE 也会自动刷新时间（SQLite 触发器 / H2 ON UPDATE）")
+    void automaticTouchHappensOnBothEngines() {
+        Instant created = Instant.parse("2026-01-02T03:04:05.678Z");
+
+        H2TestDatabase h2 = h2("auto-h2");
+        assertAutomaticTouch("H2", h2, h2.sessionFactory(SessionMapper.class),
+                "SELECT CAST(update_time AS VARCHAR) FROM session WHERE id = ?", created);
+
+        SqliteTestDatabase sqlite = sqlite("auto-sqlite");
+        assertAutomaticTouch("SQLite", sqlite, sqlite.sessionFactory(SessionMapper.class),
+                "SELECT update_time FROM session WHERE id = ?", created);
+    }
+
+    /**
+     * 同一断言：UPDATE 不提及时间列时，时间列仍须前进。
+     *
+     * <p>这是「两个引擎的时间维护方式不同、语义必须相同」的核心检查点：
+     * SQLite 靠 {@code *_touch} AFTER UPDATE 触发器（{@code WHEN NEW.update_time IS OLD.update_time}），
+     * H2 靠列上的 {@code ON UPDATE CURRENT_TIMESTAMP}（实测「显式赋值优先、未赋值才刷新」与触发器等价）。
+     * 任一侧缺了，这条用例都会红。</p>
+     *
+     * @param label    引擎名
+     * @param source   库
+     * @param factory  会话工厂
+     * @param rawSql   取 update_time 原始文本的 SQL
+     * @param created  创建时间（远早于当前时间，便于判定「是否前进」）
+     */
+    private void assertAutomaticTouch(String label, DataSource source, SqlSessionFactory factory, String rawSql,
+                                      Instant created) {
+        long sessionId;
+        try (SqlSession session = factory.openSession(true)) {
+            SessionMapper mapper = session.getMapper(SessionMapper.class);
+            SessionPO po = SessionPO.builder().name(label + "-auto").createTime(created).updateTime(created).build();
+            assertEquals(1, mapper.insert(po), label + "：写会话行必须成功");
+            sessionId = po.getId();
+        }
+        try (Connection connection = source.getConnection();
+             PreparedStatement update = connection.prepareStatement(
+                     "UPDATE session SET name = ? WHERE id = ?")) {
+            update.setString(1, label + "-auto-touched");
+            update.setLong(2, sessionId);
+            assertEquals(1, update.executeUpdate(), label + "：更新必须命中 1 行（且不写时间列）");
+        } catch (SQLException e) {
+            throw new IllegalStateException(label + "：更新失败: " + e.getMessage(), e);
+        }
+
+        Instant touched = TimeTextCodec.toInstant(rawText(source, rawSql, sessionId));
+        assertNotNull(touched, label + "：update_time 不得为空");
+        assertTrue(touched.isAfter(created),
+                label + "：未显式写时间列时 update_time 必须自动前进，created=" + created + "，实际=" + touched);
+    }
+
     private static String rawText(DataSource dataSource, String sql, long id) {
         try (Connection connection = dataSource.getConnection();
              PreparedStatement query = connection.prepareStatement(sql)) {

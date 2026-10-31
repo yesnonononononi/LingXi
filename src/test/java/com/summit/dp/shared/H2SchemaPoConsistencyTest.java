@@ -157,6 +157,25 @@ class H2SchemaPoConsistencyTest {
     }
 
     @Test
+    @DisplayName("自动时间列：16 张 touch 表必须带 ON UPDATE，checklist/checklist_step 不带（与 SQLite 无触发器一致）")
+    void automaticTouchColumnsMatchSqliteTriggers() {
+        H2TestDatabase database = newDatabase("on-update");
+        List<String> missing = database.queryColumn(
+                "SELECT TABLE_NAME || '.' || COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS"
+                        + " WHERE TABLE_SCHEMA = 'PUBLIC'"
+                        + " AND COLUMN_NAME IN ('UPDATE_TIME', 'UPDATED_AT', 'UPDATE_AT')"
+                        + " AND COLUMN_ON_UPDATE IS NULL ORDER BY TABLE_NAME, COLUMN_NAME");
+        assertEquals(List.of("CHECKLIST.UPDATE_AT", "CHECKLIST_STEP.UPDATE_AT"), missing,
+                "只有 checklist/checklist_step 的 update_at 由仓储显式写（SQLite 侧也没有触发器），其余必须带 ON UPDATE");
+
+        assertEquals("16", database.queryString(
+                        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'PUBLIC'"
+                                + " AND COLUMN_NAME IN ('UPDATE_TIME', 'UPDATED_AT', 'UPDATE_AT')"
+                                + " AND CAST(COLUMN_ON_UPDATE AS VARCHAR) = 'CURRENT_TIMESTAMP'"),
+                "16 张带 SQLite touch 触发器的表必须有等价的 ON UPDATE（少一张就是「H2 上时间不前进」）");
+    }
+
+    @Test
     @DisplayName("时间列一律 TIMESTAMP(3)；context_ratio 必须 DOUBLE PRECISION")
     void timeAndRatioColumnTypesAreFixed() {
         H2TestDatabase database = newDatabase("types");
