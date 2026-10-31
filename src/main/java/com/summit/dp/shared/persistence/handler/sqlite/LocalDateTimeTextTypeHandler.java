@@ -1,4 +1,4 @@
-package com.summit.dp.shared.persistence.handler;
+package com.summit.dp.shared.persistence.handler.sqlite;
 
 import com.summit.dp.shared.persistence.TimeTextCodec;
 import org.apache.ibatis.type.BaseTypeHandler;
@@ -16,6 +16,8 @@ import java.time.LocalDateTime;
  *
  * <p>库里的时间只保证毫秒精度，写回时统一截断到毫秒 —— 否则「写 123.456789ms、读回 123ms」
  * 会让等值断言和版本比较在不同精度上打架。</p>
+ *
+ * <p>包位置说明：与 {@link InstantTextTypeHandler} 同属 SQLite 分支，按引擎扫描注册。</p>
  */
 @MappedTypes(LocalDateTime.class)
 public class LocalDateTimeTextTypeHandler extends BaseTypeHandler<LocalDateTime> {

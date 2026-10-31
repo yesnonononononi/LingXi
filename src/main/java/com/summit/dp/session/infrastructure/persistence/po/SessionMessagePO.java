@@ -1,12 +1,15 @@
 package com.summit.dp.session.infrastructure.persistence.po;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.summit.dp.shared.persistence.handler.LargeTextTypeHandler;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.apache.ibatis.type.JdbcType;
 
 import java.time.Instant;
 
@@ -27,6 +30,8 @@ public class SessionMessagePO {
     /** 消息所属的业务轮次 ID（关联 chat_turn.id）；旧数据为 null 表示归属未知 */
     private Long turnId;
     private String type;
+    /** 展示消息正文（含长回答）：H2 侧 CLOB，SQLite 侧 TEXT。 */
+    @TableField(jdbcType = JdbcType.CLOB, typeHandler = LargeTextTypeHandler.class)
     private String content;
     private Instant createTime;
     private Instant updateTime;

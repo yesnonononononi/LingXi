@@ -44,7 +44,12 @@ spring:
       # 连接在池中保持空闲而不被回收的最小时间
       min-evictable-idle-time-millis: 300000
 
-# 时间列在 SQLite 里存文本，必须用业务侧的类型处理器统一读写（见 TimeTextCodec）。
+# 时间列与 H2 大文本列（CLOB）必须用业务侧的类型处理器统一读写：
+#   SQLite  -> shared.persistence.handler.sqlite（UTC 文本时间）
+#   H2      -> shared.persistence.handler.h2（TIMESTAMP(3) + UTC Calendar）
+# 这里写的是公共根包；启动期 StorageEngineEnvironmentPostProcessor 会把它收窄成生效引擎的包
+# （MyBatis 的包扫描是递归的，不收窄会让两套处理器同时登记、谁生效取决于扫描顺序）。
+# 大文本处理器 LargeTextTypeHandler 挂在 handler 根包，通过 PO 字段上的 typeHandler 显式引用。
 mybatis-plus:
   type-handlers-package: com.summit.dp.shared.persistence.handler
 

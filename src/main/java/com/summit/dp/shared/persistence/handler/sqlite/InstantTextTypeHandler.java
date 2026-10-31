@@ -1,4 +1,4 @@
-package com.summit.dp.shared.persistence.handler;
+package com.summit.dp.shared.persistence.handler.sqlite;
 
 import com.summit.dp.shared.persistence.TimeTextCodec;
 import org.apache.ibatis.type.BaseTypeHandler;
@@ -17,6 +17,9 @@ import java.time.Instant;
  * <p>必须替换 MyBatis 内置处理器：内置那个走的是 {@code setTimestamp/getTimestamp}，
  * 而 sqlite-jdbc 这两端格式不一致（写入是毫秒整数、读取按日期串解析），实测直接抛
  * {@code Error parsing time stamp}。</p>
+ *
+ * <p>包位置说明：SQLite 与 H2 的时间列语义不同（文本 vs TIMESTAMP(3)），处理器必须按引擎分派，
+ * 因此本类属于 {@code handler.sqlite} 包 —— 启动期只会扫描生效引擎的那个包。</p>
  */
 @MappedTypes(Instant.class)
 public class InstantTextTypeHandler extends BaseTypeHandler<Instant> {

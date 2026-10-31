@@ -1,12 +1,15 @@
 package com.summit.dp.toolcall.infrastructure.persistence.po;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.summit.dp.shared.persistence.handler.LargeTextTypeHandler;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.apache.ibatis.type.JdbcType;
 
 import java.time.Instant;
 
@@ -46,12 +49,20 @@ public class ToolCallPO {
 
     private String title;
 
+    /** 工具卡片载荷（JSON 文本）：可能含整段文件内容，H2 侧 CLOB。 */
+    @TableField(jdbcType = JdbcType.CLOB, typeHandler = LargeTextTypeHandler.class)
     private String content;
 
+    /** 原始入参（JSON 文本）：可能含整段文件内容，H2 侧 CLOB。 */
+    @TableField(jdbcType = JdbcType.CLOB, typeHandler = LargeTextTypeHandler.class)
     private String rawInput;
 
+    /** 原始出参（JSON 文本）：可能含命令输出全文，H2 侧 CLOB。 */
+    @TableField(jdbcType = JdbcType.CLOB, typeHandler = LargeTextTypeHandler.class)
     private String rawOutput;
 
+    /** 附加元数据（JSON 文本）：H2 侧 CLOB。 */
+    @TableField(jdbcType = JdbcType.CLOB, typeHandler = LargeTextTypeHandler.class)
     private String metaData;
 
     /** 落定本结论的决策命令 ID；决策重试据此返回首次结论。 */

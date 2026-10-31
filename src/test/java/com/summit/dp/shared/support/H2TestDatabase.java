@@ -1,9 +1,19 @@
 package com.summit.dp.shared.support;
 
 import com.summit.dp.shared.config.H2SchemaInitializer;
+import com.summit.dp.shared.persistence.H2ExceptionTranslator;
+import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
 import com.summit.dp.shared.storage.StorageDataSourceKeys;
 import com.summit.dp.shared.storage.StorageEngine;
 import com.summit.dp.shared.storage.StorageLayout;
+import com.baomidou.mybatisplus.annotation.DbType;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
+import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
+import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
+import org.apache.ibatis.session.ExecutorType;
+import org.apache.ibatis.session.SqlSessionFactory;
+import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import javax.sql.DataSource;
@@ -126,6 +136,55 @@ public final class H2TestDatabase implements DataSource, AutoCloseable {
     /** 直接开一个连接（需要手工控制事务/锁的用例用它）。 */
     public Connection openConnection() throws SQLException {
         return delegate.getConnection();
+    }
+
+    /**
+     * 构造一个已登记 H2 类型处理器、开启驼峰映射的 MyBatis-Plus 配置。
+     *
+     * <p>手搓 SqlSessionFactory 的用例（没有 Spring 就没有包扫描）必须走这里，
+     * 否则 Instant / LocalDateTime 会落回 MyBatis 内置处理器，在 H2 上按 JVM 默认时区解释，
+     * 出现「读回来差 8 小时」的假失败。</p>
+     *
+     * @param mappers 需要注册的 Mapper 接口
+     * @return 可用于构造 SqlSessionFactory 的配置
+     */
+    public MybatisConfiguration configuration(Class<?>... mappers) {
+        MybatisConfiguration configuration = new MybatisConfiguration();
+        configuration.setMapUnderscoreToCamelCase(true);
+        MyBatisTypeHandlers.registerAll(configuration, StorageEngine.H2);
+        for (Class<?> mapper : mappers) {
+            configuration.addMapper(mapper);
+        }
+        return configuration;
+    }
+
+    /** 用本库的数据源构造 SqlSessionFactory（含 H2 分页方言）。 */
+    public SqlSessionFactory sessionFactory(Class<?>... mappers) {
+        MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
+        factory.setDataSource(this);
+        factory.setConfiguration(configuration(mappers));
+        MybatisPlusInterceptor plugins = new MybatisPlusInterceptor();
+        plugins.addInnerInterceptor(new PaginationInnerInterceptor(DbType.H2));
+        factory.setPlugins(plugins);
+        try {
+            return factory.getObject();
+        } catch (Exception e) {
+            throw new IllegalStateException("H2 测试 SqlSessionFactory 创建失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 用 H2 异常翻译器包装 SqlSessionFactory。
+     *
+     * <p>唯一键冲突必须落成 {@code DuplicateKeyException}；用默认构造器会走 Spring 的 SQLState
+     * 分类，H2 的若干高频错误（锁超时 50200）会被归成不可重试的未知错误。</p>
+     *
+     * @param factory 会话工厂
+     * @return 带异常翻译的模板
+     */
+    public static SqlSessionTemplate sqlSession(SqlSessionFactory factory) {
+        return new SqlSessionTemplate(factory, ExecutorType.SIMPLE,
+                new H2ExceptionTranslator(factory.getConfiguration().getEnvironment().getDataSource()));
     }
 
     /** 库文件路径（H2 的 {@code .mv.db}）。 */

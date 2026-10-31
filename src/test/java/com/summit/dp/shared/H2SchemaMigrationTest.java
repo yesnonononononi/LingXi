@@ -65,6 +65,13 @@ class H2SchemaMigrationTest {
                 "登记时间必须落库");
         assertTrue(database.databaseFile().toFile().isFile(),
                 "必须是真的文件库: " + database.databaseFile());
+        System.out.println("[H2-EVIDENCE] dbFile=" + database.databaseFile()
+                + " size=" + database.databaseFile().toFile().length()
+                + " tables=" + database.queryColumn("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES"
+                + " WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_NAME <> 'SCHEMA_VERSION' ORDER BY TABLE_NAME")
+                + " schema_version=" + database.queryColumn(
+                "SELECT version || '|' || script || '|' || checksum || '|' || CAST(applied_at AS VARCHAR)"
+                        + " FROM schema_version"));
     }
 
     @Test

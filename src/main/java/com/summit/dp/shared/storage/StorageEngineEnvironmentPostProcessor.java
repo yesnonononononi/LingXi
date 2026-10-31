@@ -5,10 +5,12 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.env.EnvironmentPostProcessor;
 import org.springframework.core.Ordered;
 import org.springframework.core.env.ConfigurableEnvironment;
+import org.springframework.core.env.MapPropertySource;
 import org.springframework.util.ClassUtils;
 
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.util.Map;
 
 /**
  * 存储引擎的启动期解析：读开关 → 校验数据形态 → 按引擎覆写数据源属性。
@@ -26,6 +28,11 @@ public class StorageEngineEnvironmentPostProcessor implements EnvironmentPostPro
 
     /** 引擎开关键；缺省视为 sqlite。 */
     public static final String ENGINE_KEY = "lingxi.storage.engine";
+
+    /** MyBatis 类型处理器扫描包；启动期按引擎收窄，避免两个引擎的处理器互相覆盖。 */
+    public static final String TYPE_HANDLERS_PACKAGE_KEY = "mybatis-plus.type-handlers-package";
+
+    private static final String TYPE_HANDLERS_PROPERTY_SOURCE = "lingxiStorageTypeHandlers";
 
     private static final String DATA_DIR_KEY = "lingxi.data.dir";
 
@@ -46,6 +53,7 @@ public class StorageEngineEnvironmentPostProcessor implements EnvironmentPostPro
         boolean driverPresent = ClassUtils.isPresent(engine.driverClassName(), null);
         // 校验矩阵的唯一实现点：不可启动直接抛错，进程退出，不创建任何库文件。
         new StorageEngineGuard().requireStartable(layout, engine, driverPresent);
+        applyTypeHandlerPackage(environment, engine);
         if (engine.isH2()) {
             StorageDataSourceKeys.applyH2(environment, layout);
             log.info("存储引擎=h2，数据源已覆写为 H2 文件库: url={}", StorageDataSourceKeys.h2Url(layout));
@@ -66,6 +74,22 @@ public class StorageEngineEnvironmentPostProcessor implements EnvironmentPostPro
             throw new IllegalStateException("数据目录不是合法路径，应用拒绝启动: " + DATA_DIR_KEY
                     + "=" + resolved, e);
         }
+    }
+
+    /**
+     * 把类型处理器扫描包收窄到生效引擎的包。
+     *
+     * <p><b>为什么必须收窄</b>：MyBatis 的 {@code type-handlers-package} 扫描是递归的，
+     * 而两个引擎对 {@code Instant}/{@code LocalDateTime} 各有一套处理器（SQLite 写 UTC 文本、
+     * H2 写 {@code TIMESTAMP(3)}）。若扫描公共根包，两套会被同时登记，谁生效取决于文件系统扫描顺序 ——
+     * 那是「同一份代码在不同机器上时间差 8 小时」的典型来源。收窄后只有一套在场。</p>
+     *
+     * @param environment 当前环境
+     * @param engine      生效引擎
+     */
+    private void applyTypeHandlerPackage(ConfigurableEnvironment environment, StorageEngine engine) {
+        environment.getPropertySources().addFirst(new MapPropertySource(TYPE_HANDLERS_PROPERTY_SOURCE,
+                Map.of(TYPE_HANDLERS_PACKAGE_KEY, engine.typeHandlerPackage())));
     }
 
     /**

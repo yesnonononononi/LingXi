@@ -2,16 +2,12 @@ package com.summit.dp.shared;
 
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
-import com.baomidou.mybatisplus.core.MybatisConfiguration;
-import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
 import com.summit.dp.shared.config.H2SchemaInitializer;
 import com.summit.dp.shared.support.H2TestDatabase;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
-import org.apache.ibatis.type.BaseTypeHandler;
-import org.apache.ibatis.type.JdbcType;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,15 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.sql.CallableStatement;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.Calendar;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -40,7 +28,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.TimeZone;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -239,21 +226,9 @@ class H2SchemaPoConsistencyTest {
                 "自增表集合必须与 PO 的 IdType.AUTO 完全一致");
     }
 
-    /** 开一个已建库、登记好时间类型处理器的会话工厂（T02 只用于本列往返，T03 起改走生产处理器）。 */
+    /** 开一个已建库、类型处理器走生产代码（{@code MyBatisTypeHandlers.registerAll(config, H2)}）的会话工厂。 */
     private SqlSessionFactory sessionFactory(H2TestDatabase database) {
-        MybatisConfiguration configuration = new MybatisConfiguration();
-        configuration.setMapUnderscoreToCamelCase(true);
-        configuration.getTypeHandlerRegistry().register(Instant.class, new UtcInstantHandler());
-        configuration.getTypeHandlerRegistry().register(LocalDateTime.class, new UtcLocalDateTimeHandler());
-        configuration.addMapper(SessionMapper.class);
-        MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
-        factory.setDataSource(database);
-        factory.setConfiguration(configuration);
-        try {
-            return factory.getObject();
-        } catch (Exception e) {
-            throw new IllegalStateException("H2 测试 SqlSessionFactory 创建失败: " + e.getMessage(), e);
-        }
+        return database.sessionFactory(SessionMapper.class);
     }
 
     private H2TestDatabase newDatabase(String prefix) {
@@ -380,67 +355,5 @@ class H2SchemaPoConsistencyTest {
             }
         }
         throw new IllegalStateException("未找到 H2 建库脚本，候选目录=" + candidates);
-    }
-
-    /** 测试专用的 UTC 时间读写（T02 只验证数值列精度；T03 会换成生产 H2 处理器）。 */
-    private static final class UtcInstantHandler extends BaseTypeHandler<Instant> {
-
-        @Override
-        public void setNonNullParameter(PreparedStatement ps, int i, Instant parameter, JdbcType jdbcType)
-                throws SQLException {
-            ps.setTimestamp(i, java.sql.Timestamp.from(parameter), utc());
-        }
-
-        @Override
-        public Instant getNullableResult(ResultSet rs, String columnName) throws SQLException {
-            java.sql.Timestamp value = rs.getTimestamp(columnName, utc());
-            return value == null ? null : value.toInstant();
-        }
-
-        @Override
-        public Instant getNullableResult(ResultSet rs, int columnIndex) throws SQLException {
-            java.sql.Timestamp value = rs.getTimestamp(columnIndex, utc());
-            return value == null ? null : value.toInstant();
-        }
-
-        @Override
-        public Instant getNullableResult(CallableStatement cs, int columnIndex) throws SQLException {
-            java.sql.Timestamp value = cs.getTimestamp(columnIndex, utc());
-            return value == null ? null : value.toInstant();
-        }
-
-        private static Calendar utc() {
-            return Calendar.getInstance(TimeZone.getTimeZone("UTC"));
-        }
-    }
-
-    /** 测试专用的 UTC 本地时间读写，语义与 TimeTextCodec 一致（JVM 时区折算后存 UTC）。 */
-    private static final class UtcLocalDateTimeHandler extends BaseTypeHandler<LocalDateTime> {
-
-        @Override
-        public void setNonNullParameter(PreparedStatement ps, int i, LocalDateTime parameter, JdbcType jdbcType)
-                throws SQLException {
-            Instant instant = parameter.atZone(ZoneId.systemDefault()).toInstant();
-            ps.setTimestamp(i, java.sql.Timestamp.from(instant), UtcInstantHandler.utc());
-        }
-
-        @Override
-        public LocalDateTime getNullableResult(ResultSet rs, String columnName) throws SQLException {
-            return toLocal(rs.getTimestamp(columnName, UtcInstantHandler.utc()));
-        }
-
-        @Override
-        public LocalDateTime getNullableResult(ResultSet rs, int columnIndex) throws SQLException {
-            return toLocal(rs.getTimestamp(columnIndex, UtcInstantHandler.utc()));
-        }
-
-        @Override
-        public LocalDateTime getNullableResult(CallableStatement cs, int columnIndex) throws SQLException {
-            return toLocal(cs.getTimestamp(columnIndex, UtcInstantHandler.utc()));
-        }
-
-        private static LocalDateTime toLocal(java.sql.Timestamp value) {
-            return value == null ? null : LocalDateTime.ofInstant(value.toInstant(), ZoneId.systemDefault());
-        }
     }
 }
