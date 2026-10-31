@@ -6,6 +6,7 @@ import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.dp.turn.application.service.impl.ChatTurnServiceImpl;
 import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
@@ -30,7 +31,7 @@ class ChatTurnExecutionLifecycleTest {
     void mapsAllTerminalStatesAndPreservesKnownUsage() {
         Instant completedAt = Instant.parse("2026-10-07T01:00:00Z");
         for (ExecutionState state : new ExecutionState[]{ExecutionState.COMPLETED, ExecutionState.FAILED, ExecutionState.CANCELLED}) {
-            ChatTurn turn = ChatTurn.accept(7001L, 200L, null, "model", "provider");
+            ChatTurn turn = ChatTurn.accept(7001L, 200L, null, TurnModelSnapshot.of("model", "provider", null));
             turn.attachExecution(9001L);
             turn.refreshUsage(100L, 50L, 150L, null, null);
             when(repository.findByExecutionId(9001L)).thenReturn(Optional.of(turn));
@@ -46,7 +47,7 @@ class ChatTurnExecutionLifecycleTest {
 
     @Test
     void suspensionKeepsCompletionTimeEmptyAndRoutesToRootSession() {
-        ChatTurn turn = ChatTurn.accept(7001L, 200L, null, "model", "provider");
+        ChatTurn turn = ChatTurn.accept(7001L, 200L, null, TurnModelSnapshot.of("model", "provider", null));
         when(repository.findByExecutionId(9001L)).thenReturn(Optional.of(turn));
 
         projector.markExecutionWaiting(execution(ExecutionState.SUSPENDED, null));
@@ -67,7 +68,7 @@ class ChatTurnExecutionLifecycleTest {
     @Test
     void storageFailuresPropagateToRepositoryCallbackIsolation() {
         when(repository.findByExecutionId(anyLong())).thenAnswer(invocation ->
-                Optional.of(ChatTurn.accept(7001L, 200L, null, "model", "provider")));
+                Optional.of(ChatTurn.accept(7001L, 200L, null, TurnModelSnapshot.of("model", "provider", null))));
         doThrow(new IllegalStateException("轮次保存失败")).when(repository).updateById(any(ChatTurn.class), eq(100L));
         assertThrows(IllegalStateException.class,
                 () -> projector.finishExecution(execution(ExecutionState.COMPLETED, Instant.now())));

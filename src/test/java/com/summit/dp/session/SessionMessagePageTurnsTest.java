@@ -22,6 +22,7 @@ import com.summit.dp.turn.application.convert.ChatTurnConverter;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.application.vo.ChatTurnVO;
 import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.dp.workspace.application.service.WorkspaceService;
 import org.junit.jupiter.api.BeforeEach;
@@ -90,7 +91,7 @@ class SessionMessagePageTurnsTest {
 
     private static ChatTurn turn(long id, long sessionId, ChatTurnStatus status,
                                  Long totalTokens, Instant startedAt, Instant completedAt) {
-        ChatTurn turn = ChatTurn.accept(id, sessionId, null, "deepseek-chat", "deepseek");
+        ChatTurn turn = ChatTurn.accept(id, sessionId, null, TurnModelSnapshot.of("deepseek-chat", "deepseek", null));
         if (status == ChatTurnStatus.RUNNING || status == ChatTurnStatus.COMPLETED) {
             turn.markRunning(startedAt);
         }

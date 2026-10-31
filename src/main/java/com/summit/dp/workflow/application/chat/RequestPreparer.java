@@ -40,6 +40,7 @@ import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.tools.application.service.ToolListProcessor;
 import com.summit.dp.tools.application.service.ToolProcessingContext;
 import com.summit.dp.turn.application.service.ChatTurnService;
+import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
@@ -260,12 +261,14 @@ public class RequestPreparer {
         }
 
         ModelConfig modelConfig = context.modelConfig();
-        String modelName = modelConfig == null ? null : modelConfig.getModelName();
-        String modelProvider = modelConfig == null ? null : modelConfig.getProvider();
+        TurnModelSnapshot model = modelConfig == null
+                ? TurnModelSnapshot.of(null, null, null)
+                : TurnModelSnapshot.of(modelConfig.getModelName(), modelConfig.getProvider(),
+                        modelConfig.getReasoningEffort());
 
         long rootSessionId = executionContext.sessionId();
         long turnId = chatTurnService.acceptTurn(executionContext.sessionId(), rootSessionId, null, executionId,
-                modelName, modelProvider, commandId, commandDigest);
+                model, commandId, commandDigest);
 
         transcriptService.appendUser(executionContext.sessionId(), rootSessionId, turnId,
                 context.pendingUserMessage());

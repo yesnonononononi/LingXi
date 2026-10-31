@@ -28,6 +28,7 @@ public class ChatTurnConverter {
                 .status(turn.getStatus() == null ? null : turn.getStatus().name())
                 .modelName(turn.getModelName())
                 .modelProvider(turn.getModelProvider())
+                .reasoningEffort(turn.getReasoningEffort())
                 .inputTokens(turn.getInputTokenCount())
                 .outputTokens(turn.getOutputTokenCount())
                 .totalTokens(turn.getTotalTokenCount())

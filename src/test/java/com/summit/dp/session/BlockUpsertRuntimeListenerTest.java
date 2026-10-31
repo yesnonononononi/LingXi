@@ -6,6 +6,7 @@ import com.summit.core.tool.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.application.projection.TurnViewBroadcaster;
 import com.summit.dp.workflow.infrastructure.listener.session.BlockUpsertRuntimeListener;
@@ -25,7 +26,7 @@ class BlockUpsertRuntimeListenerTest {
     @Test
     void approvedCommandStartBroadcastsPersistedBlockBeforeCompletion() {
         ToolCall tool = ToolCall.builder().id("command").conversationId(7L).build();
-        ChatTurn turn = ChatTurn.accept(900L, 7L, null, "model", "provider");
+        ChatTurn turn = ChatTurn.accept(900L, 7L, null, TurnModelSnapshot.of("model", "provider", null));
         when(tools.findById("command")).thenReturn(Optional.of(tool));
         when(turns.findByExecutionId(800L)).thenReturn(Optional.of(turn));
 
@@ -37,7 +38,7 @@ class BlockUpsertRuntimeListenerTest {
     @Test
     void completionStillBroadcastsPersistedBlock() {
         ToolCall tool = ToolCall.builder().id("command").conversationId(7L).build();
-        ChatTurn turn = ChatTurn.accept(900L, 7L, null, "model", "provider");
+        ChatTurn turn = ChatTurn.accept(900L, 7L, null, TurnModelSnapshot.of("model", "provider", null));
         when(tools.findById("command")).thenReturn(Optional.of(tool));
         when(turns.findByExecutionId(800L)).thenReturn(Optional.of(turn));
 

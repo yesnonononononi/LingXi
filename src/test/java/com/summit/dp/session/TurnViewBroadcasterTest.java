@@ -15,6 +15,7 @@ import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.event.BlockEventType;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import com.summit.dp.workflow.application.projection.TurnViewBroadcaster;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
@@ -62,7 +63,7 @@ class TurnViewBroadcasterTest {
             turnViewService, chatTurnRepository, sessionRepository, sseEventPublisher, executionIdentity);
 
     private ChatTurn runningTurn() {
-        ChatTurn turn = ChatTurn.accept(TURN_ID, SESSION_ID, null, "deepseek-chat", "deepseek");
+        ChatTurn turn = ChatTurn.accept(TURN_ID, SESSION_ID, null, TurnModelSnapshot.of("deepseek-chat", "deepseek", null));
         turn.markRunning(java.time.Instant.now());
         return turn;
     }
@@ -113,7 +114,7 @@ class TurnViewBroadcasterTest {
     void fullSnapshotWithoutBlocksStillPublishesStatus() {
         // 用户刚提问、模型尚未产出：本轮还没有任何 AI 行，块列表为空。
         when(messageRepository.findByTurnIds(SESSION_ID, List.of(TURN_ID))).thenReturn(List.of());
-        ChatTurn accepted = ChatTurn.accept(TURN_ID, SESSION_ID, null, "deepseek-chat", "deepseek");
+        ChatTurn accepted = ChatTurn.accept(TURN_ID, SESSION_ID, null, TurnModelSnapshot.of("deepseek-chat", "deepseek", null));
         when(chatTurnRepository.findById(TURN_ID)).thenReturn(Optional.of(accepted));
         when(sessionRepository.findById(SESSION_ID))
                 .thenReturn(Optional.of(Session.builder().id(SESSION_ID).rootSessionId(0L).build()));

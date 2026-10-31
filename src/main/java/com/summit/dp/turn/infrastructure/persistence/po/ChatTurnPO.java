@@ -54,6 +54,10 @@ public class ChatTurnPO {
     @TableField("model_provider")
     private String modelProvider;
 
+    /** 本轮思考强度档位快照；null = 该轮早于本字段落库。 */
+    @TableField("reasoning_effort")
+    private String reasoningEffort;
+
     @TableField("input_token_count")
     private Long inputTokenCount;
 

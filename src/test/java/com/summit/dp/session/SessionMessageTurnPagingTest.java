@@ -10,6 +10,7 @@ import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.model.CursorResult;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -44,7 +45,7 @@ class SessionMessageTurnPagingTest {
             mock(SessionContextRepository.class));
 
     private static ChatTurn turn(long id) {
-        ChatTurn turn = ChatTurn.accept(id, SESSION_ID, null, "deepseek-chat", "deepseek");
+        ChatTurn turn = ChatTurn.accept(id, SESSION_ID, null, TurnModelSnapshot.of("deepseek-chat", "deepseek", null));
         return turn;
     }
 

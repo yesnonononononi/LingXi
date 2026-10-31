@@ -40,6 +40,8 @@ public class ChatTurn {
     private String modelName;
     /** 本轮实际使用的模型提供方快照。 */
     private String modelProvider;
+    /** 本轮思考强度档位快照；{@code null} = 该轮早于本字段落库。 */
+    private String reasoningEffort;
     /** 已采集输入 token；{@code null} = 未知，与 0（确实为 0）严格区分。 */
     private Long inputTokenCount;
     private Long outputTokenCount;
@@ -103,18 +105,18 @@ public class ChatTurn {
     /**
      * 受理一次请求：轮次在「接受请求」那一刻就以 ACCEPTED 落库，此时框架执行可能还不存在。
      *
-     * @param modelName     受理时业务已解析出的模型名（可为 null，例如模型解析失败）
-     * @param modelProvider 同上
+     * @param model 受理时已解析出的模型快照（可为 {@link TurnModelSnapshot} 的全 null，例如模型解析失败）
      */
-    public static ChatTurn accept(long id, long sessionId, Long parentTurnId,
-                                  String modelName, String modelProvider) {
+    public static ChatTurn accept(long id, long sessionId, Long parentTurnId, TurnModelSnapshot model) {
+        TurnModelSnapshot snapshot = model == null ? TurnModelSnapshot.of(null, null, null) : model;
         return ChatTurn.builder()
                 .id(id)
                 .sessionId(sessionId)
                 .parentTurnId(parentTurnId)
                 .status(ChatTurnStatus.ACCEPTED)
-                .modelName(modelName)
-                .modelProvider(modelProvider)
+                .modelName(snapshot.modelName())
+                .modelProvider(snapshot.modelProvider())
+                .reasoningEffort(snapshot.reasoningEffort())
                 .createdAt(Instant.now())
                 .build();
     }

@@ -3,6 +3,7 @@ package com.summit.dp.turn;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.application.service.impl.ChatTurnServiceImpl;
 import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
 import org.junit.jupiter.api.DisplayName;
@@ -35,7 +36,7 @@ class ChatTurnLifecycleTest {
     private static final long EXECUTION_ID = 9001L;
 
     private static ChatTurn accepted() {
-        return ChatTurn.accept(TURN_ID, SESSION_ID, null, "deepseek-chat", "deepseek");
+        return ChatTurn.accept(TURN_ID, SESSION_ID, null, TurnModelSnapshot.of("deepseek-chat", "deepseek", null));
     }
 
     @Nested
@@ -203,7 +204,8 @@ class ChatTurnLifecycleTest {
         @Test
         @DisplayName("受理：落库 ACCEPTED，并带上业务已生成的执行 ID（观察钩子靠它找回轮次）")
         void acceptPersistsAcceptedTurnWithExecutionId() {
-            long turnId = service.acceptTurn(SESSION_ID, SESSION_ID, null, EXECUTION_ID, "deepseek-chat", "deepseek");
+            long turnId = service.acceptTurn(SESSION_ID, SESSION_ID, null, EXECUTION_ID,
+                    TurnModelSnapshot.of("deepseek-chat", "deepseek", "high"));
 
             ArgumentCaptor<ChatTurn> saved = ArgumentCaptor.forClass(ChatTurn.class);
             verify(repository).save(saved.capture(), eq(SESSION_ID));
@@ -212,6 +214,8 @@ class ChatTurnLifecycleTest {
             assertEquals(EXECUTION_ID, saved.getValue().getExecutionId(),
                     "受理时就必须写入执行 ID：留空会让 START 事件找不到本轮次");
             assertNull(saved.getValue().getParentTurnId(), "普通提问不是子委派");
+            assertEquals("high", saved.getValue().getReasoningEffort(),
+                    "思考档必须随轮次落库：否则事后只能翻运行配置版本猜这一轮用了什么");
             assertEquals(ChatTurnStatus.ACCEPTED, saved.getValue().getStatus());
         }
 

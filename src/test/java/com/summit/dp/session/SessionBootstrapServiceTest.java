@@ -17,6 +17,7 @@ import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.turn.application.convert.ChatTurnConverter;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.ChatTurn;
+import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -156,7 +157,7 @@ class SessionBootstrapServiceTest {
     @DisplayName("进行中轮次：一次批量取，转为视图下发")
     void activeTurnsAreBatched() {
         when(toolCallRepository.listByConversationId(any())).thenReturn(List.of());
-        ChatTurn active = ChatTurn.accept(TURN_ID, ROOT_ID, null, "deepseek-chat", "deepseek");
+        ChatTurn active = ChatTurn.accept(TURN_ID, ROOT_ID, null, TurnModelSnapshot.of("deepseek-chat", "deepseek", null));
         when(chatTurnService.findActiveBySessionIds(any())).thenReturn(List.of(active));
         when(executionQueryService.activeBySession(any())).thenReturn(List.of());
 

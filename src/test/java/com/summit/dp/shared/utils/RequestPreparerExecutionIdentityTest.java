@@ -15,6 +15,7 @@ import com.summit.dp.shared.model.WorkspaceType;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.shared.vo.WorkspaceVO;
 import com.summit.dp.tools.application.port.ToolCatalog;
+import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 import com.summit.dp.tools.application.service.ToolListProcessor;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
@@ -107,7 +108,7 @@ class RequestPreparerExecutionIdentityTest {
                 .builder().id(SESSION_ID).rootSessionId(0L).historyRevision(3L).build()));
         when(modelService.resolveRuntimeConfig(eq(MODEL_ID), any())).thenReturn(new RuntimeModel(ModelConfig.builder()
                 .baseUrl("https://example.invalid").apiKey("secret-key")
-                .modelName("deepseek-chat").provider("deepseek").build(), false));
+                .modelName("deepseek-chat").provider("deepseek").reasoningEffort("high").build(), false));
         when(modelContextService.find(SESSION_ID)).thenReturn(Optional.empty());
         when(mcpService.currentConfig()).thenReturn(null);
         when(workspaceConverter.toSpec(any(com.summit.dp.shared.vo.WorkspaceVO.class),
@@ -170,7 +171,7 @@ class RequestPreparerExecutionIdentityTest {
         long turnId = 9001L;
         // 受理入口内部统一走带命令身份的重载（无命令身份时传 null/null），
         // 桩与断言都要落在同一层，否则桩挂在一个没人调的方法上。
-        when(chatTurnService.acceptTurn(anyLong(), any(), any(), any(), any(), any(), any(), any()))
+        when(chatTurnService.acceptTurn(anyLong(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(turnId);
 
         Long acceptedTurnId = preparer.commitUserMessage(context);
@@ -187,8 +188,9 @@ class RequestPreparerExecutionIdentityTest {
         verify(chatTurnService, never()).findByExecutionId(any());
 
         // 模型快照不进执行行（execution 不再保存业务事实），而是落到轮次上：
-        // 下面 acceptTurn 的断言才是模型名的落点，二者口径必须一致。
-        verify(chatTurnService).acceptTurn(SESSION_ID, SESSION_ID, null, executionId, "deepseek-chat", "deepseek", null, null);
+        // 下面 acceptTurn 的断言才是「模型 + 思考档」的落点，二者口径必须一致。
+        verify(chatTurnService).acceptTurn(SESSION_ID, SESSION_ID, null, executionId,
+                TurnModelSnapshot.of("deepseek-chat", "deepseek", "high"), null, null);
         // 消息归属是**轮次 ID**，不是执行 ID —— 框架执行 ID 不进入消息归属。
         verify(transcriptService).appendUser(SESSION_ID, SESSION_ID, turnId, context.pendingUserMessage());
     }

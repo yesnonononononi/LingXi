@@ -2,6 +2,7 @@ package com.summit.dp.turn.application.service;
 
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
+import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 
 import java.time.Instant;
 import java.util.Collection;
@@ -30,9 +31,10 @@ public interface ChatTurnService {
      * 因此直接写入 {@code executionId}，后续观察钩子才能按它找回本轮次。</p>
      *
      * @param executionId 本次执行的框架 ID（业务已生成，可为 null 表示尚未确定）
+     * @param model       受理时的模型快照（模型名 / 提供方 / 思考档），落库后即本轮审计真值
      */
     long acceptTurn(long sessionId, Long rootSessionId, Long parentTurnId, Long executionId,
-                    String modelName, String modelProvider);
+                    TurnModelSnapshot model);
 
     /**
      * 带命令身份的受理：命令 ID 与请求摘要与轮次同事务落库。
@@ -44,8 +46,7 @@ public interface ChatTurnService {
      * @param commandDigest 请求摘要
      */
     long acceptTurn(long sessionId, Long rootSessionId, Long parentTurnId, Long executionId,
-                    String modelName, String modelProvider,
-                    String commandId, String commandDigest);
+                    TurnModelSnapshot model, String commandId, String commandDigest);
 
     /**
      * 按命令受理身份反查轮次；受理回执丢失时前端凭它查回首次结果。

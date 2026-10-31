@@ -36,6 +36,7 @@ import com.summit.dp.shared.support.SqliteTestDatabase;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.turn.application.service.ChatTurnService;
+import com.summit.dp.turn.domain.model.TurnModelSnapshot;
 import com.summit.dp.user_configs.application.policy.AgentAccessMode;
 import com.summit.dp.user_configs.application.policy.CommandApprovalPolicy;
 import com.summit.dp.workflow.application.chat.BusinessSystemPromptBuilder;
@@ -282,7 +283,7 @@ class RuntimeConfigurationIntegrationTest {
         AgentRequest request = AgentRequest.builder().executionId("101").modelConfigSpec(pinned).build();
         new DelegationRecorder(turns, transcript, configurations).record(201L,
                 ToolExecution.builder().eventMetaData(Map.of()).build(), request, 202L, "202", null, "任务");
-        verify(turns).acceptTurn(202L, 201L, null, 101L, "model", "test");
+        verify(turns).acceptTurn(202L, 201L, null, 101L, TurnModelSnapshot.of("model", "test", null));
     }
 
     @Test

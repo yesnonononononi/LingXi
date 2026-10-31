@@ -15,6 +15,7 @@ import com.summit.dp.turn.infrastructure.persistence.mapper.ChatTurnMapper;
 import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
 import org.junit.jupiter.api.*;
 import org.mybatis.spring.SqlSessionTemplate;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -85,15 +86,33 @@ class SqlitePrototypeTest {
     }
 
     @Test
-    @DisplayName("版本化初始化重复执行幂等：第二次 0 个脚本，版本表只有一行")
-    void schemaInitializationIsIdempotent() {
+    @DisplayName("版本化初始化重复执行幂等：第二次 0 个脚本，版本表每脚本一行且无重复")
+    void schemaInitializationIsIdempotent() throws Exception {
         assertEquals(0, new SqliteSchemaInitializer().initialize(database), "重复初始化不应该再执行脚本");
-        assertEquals("1", database.queryString("SELECT COUNT(*) FROM schema_version"),
-                "版本表必须恰好登记一个版本");
+        // 与脚本数一一对应，而不是钉死某个数字：新增 V*.sql 不需要回来改这条断言。
+        int scripts = new PathMatchingResourcePatternResolver()
+                .getResources("classpath*:db/sqlite/V*__*.sql").length;
+        assertEquals(String.valueOf(scripts), database.queryString("SELECT COUNT(*) FROM schema_version"),
+                "版本表必须与脚本数一一对应");
+        assertEquals(database.queryString("SELECT COUNT(*) FROM schema_version"),
+                database.queryString("SELECT COUNT(DISTINCT version) FROM schema_version"),
+                "同一个版本号不允许重复登记");
         assertEquals("1", database.queryString(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'checklist'"));
         assertEquals("1", database.queryString(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'session_message'"));
+    }
+
+    @Test
+    @DisplayName("chat_turn 的思考强度列由迁移脚本补上，历史行保持 NULL")
+    void chatTurnReasoningEffortColumnIsMigrated() {
+        assertEquals("1", database.queryString(
+                "SELECT COUNT(*) FROM pragma_table_info('chat_turn') WHERE name = 'reasoning_effort'"),
+                "V2 迁移必须把本轮档位列补上，否则档位永远无处可查");
+        assertEquals("0", database.queryString(
+                "SELECT COUNT(*) FROM pragma_table_info('chat_turn') "
+                        + "WHERE name = 'reasoning_effort' AND \"notnull\" = 1"),
+                "档位列必须可空：历史轮次没有这一项，回填等于编造");
     }
 
     @Test
