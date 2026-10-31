@@ -25,8 +25,8 @@
  *
  * @module scripts/check-pet-geometry
  */
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   ART_ASPECT,
@@ -179,20 +179,27 @@ export function runGate(options = {}) {
     console.log(`  · 墨迹高度 ${inkFromBox.toFixed(2)}px ≈ inkHeight ${geometry.inkHeight}px`);
   }
 
-  // 3. 运行时资产：按清单逐文件校验（尺寸/2:3/体积/sha256/存在性）
+  // 3. 运行时资产：按清单逐文件校验（尺寸/2:3/体积/sha256/存在性）+ 孤儿文件
   if (verbose) console.log('[3/6] 运行时资产清单');
   push(verifyManifestAgainstDisk({ out: RUNTIME_ASSET_DIR, assetsJsonPath: ASSETS_JSON_PATH }));
-  if (verbose) {
-    try {
-      const assets = readJsonFile(ASSETS_JSON_PATH);
+  try {
+    const assets = readJsonFile(ASSETS_JSON_PATH);
+    const orphans = findOrphanAssets(RUNTIME_ASSET_DIR, assets);
+    for (const orphan of orphans) {
+      problems.push(
+        `运行时目录存在清单未引用的孤儿文件: ${orphan}` +
+          '（可能是旧转码模式的残留，会让人误以为有第二套资产来源）',
+      );
+    }
+    if (verbose) {
       console.log(
         `  · assetId=${assets.assetId} mode=${assets.mode} 文件数=${assets.totals?.fileCount} 合计=${(Number(assets.totals?.bytes ?? 0) / 1024).toFixed(1)}KB`,
       );
       const neutral2x = assets.frames?.neutral?.['2x'];
-      if (neutral2x) console.log(`  · neutral@2x ${neutral2x.width}×${neutral2x.height}`);
-    } catch {
-      // 上面 verifyManifestAgainstDisk 已报过
+      if (neutral2x) console.log(`  · neutral@2x ${neutral2x.width}×${neutral2x.height}，孤儿文件 ${orphans.length} 个`);
     }
+  } catch (err) {
+    problems.push(`运行时清单不可解析: ${(err && err.message) || err}`);
   }
 
   // 4. 美术契约（源目录在场才跑；CI 上没有美术源就跳过并说明）
@@ -232,6 +239,53 @@ export function runGate(options = {}) {
   }
 
   return { ok: problems.length === 0, problems, geometry, derived };
+}
+
+/**
+ * 找出输出目录里"清单没引用"的孤儿文件。
+ *
+ * <p><b>为什么这条检查重要：</b>早期我用 transcode 模式从 PNG 生成了
+ * `pet-v3/front-standing@1x/@2x.webp`，后来改成接入美术的 `composites/` 完整帧，那两个文件就变成了
+ * 仓库里的"第二套来源不同的运行时资产"——尺寸/色值/羽化边缘都可能与美术产物差一点，且没人引用。
+ * 这类文件不会让任何测试变红，却会让人误以为存在两套资产。门禁必须能抓到。</p>
+ *
+ * @param {string} outDir 输出目录
+ * @param {object} assets 清单对象（`pet-assets.json`）
+ * @returns {string[]} 孤儿文件的相对路径（空 = 全部被引用）
+ */
+export function findOrphanAssets(outDir, assets) {
+  const referenced = new Set();
+  for (const group of [assets?.frames, assets?.patches]) {
+    for (const byDensity of Object.values(group ?? {})) {
+      for (const asset of Object.values(byDensity ?? {})) {
+        if (asset && typeof asset.file === 'string') referenced.add(asset.file);
+      }
+    }
+  }
+  if (assets?.body) {
+    for (const asset of Object.values(assets.body)) {
+      if (asset && typeof asset.file === 'string') referenced.add(asset.file);
+    }
+  }
+  const orphans = [];
+  /**
+   * 递归遍历目录。
+   *
+   * @param {string} current 当前目录
+   */
+  const walk = (current) => {
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const fullPath = resolve(current, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+        continue;
+      }
+      const relativePath = relative(outDir, fullPath).split(sep).join('/');
+      if (!referenced.has(relativePath)) orphans.push(relativePath);
+    }
+  };
+  if (existsSync(outDir)) walk(outDir);
+  return orphans;
 }
 
 /**
