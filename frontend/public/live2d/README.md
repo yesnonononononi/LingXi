@@ -4,25 +4,31 @@
 `public/` 会被 Vite 原样复制到 `dist/`，打包时 `electron-builder files: dist/**/*` 自动打进 asar，
 **打包配置零改动**。开发态 `main.cjs` 还会额外把 `public/live2d` 挂进解析链，改素材不必先 build。
 
-## 当前内容（渲染层 v0：静态立绘）
+## 当前内容（方案A：正立静态立牌）
 
 ```
 live2d/
-  pet-v1/
-    front-master.png    # 全身立绘，1312×1199 横构图（头在右、脚在左），展示时 CSS 逆时针转 90°
-    expressions.png     # 六格表情图 1536×1024，3 列 × 2 行，每格 512×512，透明底
+  pet-v1/                 # 旧代资产，仅保留作对照/兜底，渲染层已不再引用
+    front-master.png      # 1312×1199 横构图（头在右、脚在左）
+    expressions.png       # 六格表情图 1536×1024（旧 sprite sheet）
+  pet-v2/                 # 当前运行时资产（由脚本生成，勿手改）
+    front-standing@1x.webp  # 160×240
+    front-standing@2x.webp  # 320×480
 ```
 
-渲染层引用方式（**渲染层不拼绝对路径**）：
+渲染层引用方式（**渲染层不拼绝对路径**，URL 全部来自生成的资产清单
+`src/pet/assets/manifest.ts`）：
 
-- 立绘：`lxa://pet-v1/front-master.png`
-- 表情：`lxa://pet-v1/expressions.png`（`background-size: 300% 200%` + `background-position` 切六格）
+- 立绘：`lxa://pet-v2/front-standing@2x.webp`（解码失败/超时自动降级到 `@1x`）
+- 表情贴片：`lxa://pet-v2/expressions/<id>.webp`（**美术未交付时清单留空**，
+  表现层自动降级为"只改状态、保持立绘自带脸"）
 
-六格对应表情（阅读顺序 左→右、上→下）：默认 / 眨眼 / 开心 / 惊讶 / 困倦 / 委屈。
-切换接口是 `src/pet/main.ts` 导出的 `setExpression(name)`，本轮不接调度逻辑。
+生成命令（在 `frontend/` 下）：`npm run build:pet-assets`（详见
+`docs/assets/desktop-pet/v2/README.md`）。
 
-> 素材当前是**横构图**：`pet.css` 里把立绘元素设成「转过来之后的横×竖」再 `rotate(-90deg)`。
-> 等美术交付正立的立绘后，删掉 rotate 与宽高对调即可，其余排版不用动。
+> v2 立绘是**正立图**（头朝上、脚朝下），渲染只用 `object-fit: contain` 等比缩放，
+> **没有 rotate、没有宽高对调、禁止 cover**——v2 右侧尾巴留白仅 5px，裁了就是切尾巴。
+> 立绘箱按画布 2:3 比例定（156×234），由 `frontend/pet-geometry.json` 单一真源推导。
 
 ## 将来接 Live2D 时的目录约定
 

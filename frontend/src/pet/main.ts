@@ -19,6 +19,8 @@ import { BlinkDriver } from './presentation/blink-driver';
 import { CommandRouter } from './presentation/command-router';
 import { SpritePresentation, type ExpressionUrlMap } from './presentation/sprite-presentation';
 import { EXPRESSION_IDS, type ExpressionId, type MotionId, type PresentationOp } from './presentation/types';
+import { expressionPatchUrls, petArtUrl } from './assets/manifest';
+import { loadArt } from './assets/loader';
 import { PowerPolicy } from './power-policy';
 import { isCalibrationEnabled, mountCalibration } from './visual/calibrate';
 import { mountHalo } from './visual/halo';
@@ -29,16 +31,23 @@ const DEBUG_ENABLED = isDebugEnabled(window.location.search, import.meta.env.DEV
 /** 标定页是否开启（`?calibrate=1`，P1 开发工具）。 */
 const CALIBRATE_ENABLED = isCalibrationEnabled(window.location.search);
 
-/** 立绘资源：v2 正立图（1024×1536 母版 → 320×480 @2x WebP，等比 contain 显示到 156×234 立绘箱）。 */
-const ART_URL = 'lxa://pet-v2/front-standing@2x.webp';
+/**
+ * 立绘资源：v2 正立图（1024×1536 母版 → 运行时 WebP，等比 contain 显示到 156×234 立绘箱）。
+ *
+ * <p>URL 来自生成的资产清单 `assets/manifest.ts`（`npm run build:pet-assets`），
+ * 不在代码里手写路径：资产换名/换版本时只重跑脚本。</p>
+ */
+const ART_URL_2X = petArtUrl('2x');
+/** 降级档（@2x 解码失败或超时时用它，宁可小一点也别在桌面上留一块空白）。 */
+const ART_URL_1X = petArtUrl('1x');
 
 /**
  * 表情贴片 URL 表（与立绘同画布同位置）。
  *
- * <p>本批美术侧未交付 8 格同画布贴片，故表为空：表现层会把表情降级成"只改状态、
- * 保持立绘自带脸"，并在 `?debug=1` 下打日志。T05 的资产清单落地后由 `assets/manifest.ts` 填充。</p>
+ * <p>本批美术侧未交付 8 格同画布贴片，清单里 `expressions` 为空：表现层会把表情降级成
+ * "只改状态、保持立绘自带脸"。贴片到位后重跑 `npm run build:pet-assets` 即自动生效。</p>
  */
-const EXPRESSION_URLS: ExpressionUrlMap = {};
+const EXPRESSION_URLS: ExpressionUrlMap = expressionPatchUrls();
 
 /** 表情中文标签（调试提示行用；发布态不显示）。 */
 const EXPRESSION_LABELS: Readonly<Record<ExpressionId, string>> = {
@@ -126,6 +135,8 @@ let powerPolicy: PowerPolicy | null = null;
 
 /** `#pet-root`（CSS 变量与 `data-*` 的写入目标）。 */
 let rootElement: HTMLElement | null = null;
+/** 立绘 `<img>`（异步解码后上屏）。 */
+let artImage: HTMLImageElement | null = null;
 
 /** 拖拽时同样按帧节流位置上报。 */
 let moveFrame = 0;
@@ -318,7 +329,33 @@ function renderArtError(detail: string): void {
   box.className = 'pet-art-error';
   box.textContent = `立绘加载失败：${detail}`;
   artElement.replaceChildren(box);
-  console.warn(`[pet] 立绘加载失败: url=${ART_URL}, detail=${detail}`);
+  console.warn(`[pet] 立绘加载失败: url=${ART_URL_2X}, detail=${detail}`);
+}
+
+/**
+ * 异步加载立绘并上屏。
+ *
+ * <p>先 `decode()` 再 `hidden=false`：`load` 只代表字节到齐，此时上屏会出现"先空白再刷新"。
+ * 失败/超时走 @1x 降级，再失败才显示错误提示（`renderArtError` 保留原行为）。</p>
+ */
+async function startArtLoad(): Promise<void> {
+  const image = artImage;
+  if (!image) return;
+  const result = await loadArt(image, {
+    primaryUrl: ART_URL_2X,
+    fallbackUrl: ART_URL_1X,
+    markLabel: 'pet-art',
+  });
+  if (result.ok) {
+    image.hidden = false;
+    if (DEBUG_ENABLED) {
+      console.debug(
+        `[pet] 立绘上屏: url=${result.url} 耗时=${result.elapsedMs.toFixed(1)}ms${result.usedFallback ? '（已降级 @1x）' : ''}`,
+      );
+    }
+    return;
+  }
+  renderArtError(result.error ?? (result.timedOut ? 'decode 超时' : '未知错误'));
 }
 
 /** 构建画面（立绘 + 表情层 + 关闭按钮 + 调试标记）。 */
@@ -350,10 +387,9 @@ function buildDom(): void {
   image.alt = '';
   image.decoding = 'async';
   image.draggable = false;
-  image.addEventListener('error', () => {
-    renderArtError('lxa:// 资源读取失败或文件缺失');
-  });
-  image.src = ART_URL;
+  // 解码完成前保持隐藏：先挂上去会出现"上半身先到、下半身后到"的闪动
+  image.hidden = true;
+  artImage = image;
 
   // 表情差分贴片层：与立绘**同画布同位置**，天然对齐（美术贴片未交付前恒 hidden）
   faceElement = document.createElement('img');
@@ -402,6 +438,9 @@ function buildDom(): void {
   motion.appendChild(sway);
   stage.appendChild(motion);
   root.replaceChildren(stage);
+
+  // 立绘解码完成后再上屏（失败/超时自动降级 @1x，最终失败才显示错误提示）
+  void startArtLoad();
 
   // 表现层挂好后立刻按基底层渲染一次默认档，保证首帧就是"睁眼默认脸"
   dispatchOp({

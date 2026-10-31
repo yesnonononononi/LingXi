@@ -19,6 +19,28 @@
 
 路线采用先静态 v1、再继续 Live2D 分层与绑定。本批仅完成美术文件，未修改桌宠运行代码。
 
+### 运行时资产由脚本生成（勿手改）
+
+`front-standing.png` 是**母版**，只在 `docs/` 留档，**不进 `public/`**。运行时用的是降采样 WebP：
+
+```
+frontend/public/live2d/pet-v2/
+  front-standing@1x.webp   # 160×240
+  front-standing@2x.webp   # 320×480
+```
+
+生成命令（在 `frontend/` 下）：
+
+```
+npm run build:pet-assets                       # 默认源目录就是本目录
+npm run build:pet-assets -- --source <dir>     # 美术资产在别处时用它
+```
+
+脚本会同时回写资产清单 `frontend/src/pet/assets/manifest.ts`（尺寸/体积/URL），
+并断言 2:3 比例与体积预算。**改图后必须重跑**，否则 `npm run test:pet` 会因清单与磁盘不一致而红。
+
+`sharp` 是可选构建期依赖：装了就用它转码；没装则只校验已有产物并给出安装提示（不静默跳过）。
+
 静态 v1 应保留整张 PNG 的比例与方向。首批六表情仍是头像参考，需要裁切和对齐后再用于切换；独立尾巴也需要对齐，并消除原画自带尾巴后才能叠加，不能直接多贴一条。
 
 Live2D 仍需共用画布的完整分层、遮挡补绘与 Cubism 绑定。本图不是 PSD 或可运行模型。
