@@ -338,16 +338,7 @@ public class LocalFileCheckpointStore implements ExecutionCheckpointStore {
             throw new IllegalArgumentException("目标数据目录不能为空");
         }
         Path targetRoot = Path.of(targetDataDir).toAbsolutePath().normalize().resolve("checkpoints");
-        boolean locked;
-        try {
-            locked = gate.writeLock().tryLock(copyQuietWindowSeconds, TimeUnit.SECONDS);
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("检查点目录复制被中断");
-        }
-        if (!locked) {
-            throw new IllegalStateException("仍有检查点正在写入，请稍后重试数据目录迁移");
-        }
+        acquireWriteQuiesce("检查点目录复制被中断");
         try {
             return copyLocked(targetRoot);
         } finally {
@@ -365,20 +356,32 @@ public class LocalFileCheckpointStore implements ExecutionCheckpointStore {
         if (migrationStep == null) {
             throw new IllegalArgumentException("搬迁动作不能为空");
         }
+        acquireWriteQuiesce("数据目录迁移被中断");
+        try {
+            migrationStep.run();
+        } finally {
+            gate.writeLock().unlock();
+        }
+    }
+
+    /**
+     * 取得「排除检查点写入」的独占窗口；等不到就明确失败，不冒险在写入进行中复制或搬迁。
+     *
+     * <p>调用方拿到即持有写锁，必须自己 {@code unlock}；本方法抛错时不持锁。</p>
+     *
+     * @param interruptedMessage 被中断时的失败文案（复制与搬迁各自区分）
+     * @throws IllegalStateException 等不到静默窗口，或被中断
+     */
+    private void acquireWriteQuiesce(String interruptedMessage) {
         boolean locked;
         try {
             locked = gate.writeLock().tryLock(copyQuietWindowSeconds, TimeUnit.SECONDS);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("数据目录迁移被中断");
+            throw new IllegalStateException(interruptedMessage);
         }
         if (!locked) {
             throw new IllegalStateException("仍有检查点正在写入，请稍后重试数据目录迁移");
-        }
-        try {
-            migrationStep.run();
-        } finally {
-            gate.writeLock().unlock();
         }
     }
 
