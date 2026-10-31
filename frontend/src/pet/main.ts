@@ -12,11 +12,10 @@
  * {@link applyHitState} 这条链路不动。</p>
  */
 import './pet.css';
+import { PET_GEOMETRY, geometryCssVariables } from './layout';
 
-/** 立绘资源（旋转成竖构图的全身立绘）。 */
-const ART_URL = 'lxa://pet-v1/front-master.png';
-/** 六格表情图（3 列 × 2 行，每格 512×512，透明底）。 */
-const EXPRESSION_SHEET_URL = 'lxa://pet-v1/expressions.png';
+/** 立绘资源：v2 正立图（1024×1536 母版 → 320×480 @2x WebP，等比 contain 显示到 156×234 立绘箱）。 */
+const ART_URL = 'lxa://pet-v2/front-standing@2x.webp';
 
 /** 六种表情。排列顺序与表情图网格的阅读顺序一致（左→右、上→下）。 */
 type ExpressionName = 'default' | 'blink' | 'happy' | 'surprised' | 'sleepy' | 'sad';
@@ -91,7 +90,7 @@ let pendingMovePoint: PetPoint | null = null;
 
 /** 关键 DOM 引用（构建时赋值，之后只读）。 */
 let artElement: HTMLDivElement | null = null;
-let faceElement: HTMLDivElement | null = null;
+let faceElement: HTMLImageElement | null = null;
 let badgeElement: HTMLSpanElement | null = null;
 let hintElement: HTMLSpanElement | null = null;
 
@@ -156,12 +155,8 @@ export function setExpression(name: string): boolean {
     return false;
   }
   currentExpression = matched.name;
-  if (faceElement) {
-    // 一次只挂一个状态类，避免多个 is-* 同时存在时背景位置互相覆盖
-    for (const item of EXPRESSIONS) {
-      faceElement.classList.toggle(`is-${item.name}`, item.name === matched.name);
-    }
-  }
+  // 表情走 data-* 状态（贴片存在时由表现层换 src）：外部禁止直接 classList.add('is-happy')
+  if (artElement) artElement.dataset.expression = matched.name;
   renderHint(matched.name);
   return true;
 }
@@ -320,19 +315,18 @@ function buildDom(): void {
   image.alt = '';
   image.decoding = 'async';
   image.draggable = false;
-  image.addEventListener('load', () => {
-    // 图片解码完成后再挂表情层：先挂会出现「脸先出来、身体还没出来」的闪动
-    if (faceElement) faceElement.hidden = false;
-  });
   image.addEventListener('error', () => {
     renderArtError('lxa:// 资源读取失败或文件缺失');
   });
   image.src = ART_URL;
 
-  faceElement = document.createElement('div');
-  faceElement.className = 'pet-face is-default';
-  faceElement.style.backgroundImage = `url("${EXPRESSION_SHEET_URL}")`;
-  // 立绘没加载出来之前不显示表情层，避免叠在错误提示上
+  // 表情差分贴片层：与立绘**同画布同位置**，天然对齐（美术贴片未交付前恒 hidden）
+  faceElement = document.createElement('img');
+  faceElement.className = 'pet-face';
+  faceElement.alt = '';
+  faceElement.decoding = 'async';
+  faceElement.draggable = false;
+  // 立绘没加载出来、或没有对应贴片时不显示，避免叠在错误提示上
   faceElement.hidden = true;
 
   const close = document.createElement('button');
@@ -413,8 +407,23 @@ function subscribeCommands(): void {
   });
 }
 
+/**
+ * 把几何真源注入 CSS 变量。
+ *
+ * <p>CSS 里的静态默认值只是首帧兜底，**逻辑上以 `pet-geometry.json` 为准**：
+ * 启动第一件事就重写一遍，避免"改了真源忘了改 CSS"这种漂移。</p>
+ */
+function injectGeometryVariables(): void {
+  const variables = geometryCssVariables(PET_GEOMETRY);
+  const style = document.documentElement.style;
+  for (const [name, value] of Object.entries(variables)) {
+    style.setProperty(name, value);
+  }
+}
+
 /** 入口。 */
 function boot(): void {
+  injectGeometryVariables();
   buildDom();
   wireEvents();
   subscribeCommands();

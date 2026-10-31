@@ -28,29 +28,40 @@ function electron() {
 // ---------------------------------------------------------------- 常量
 
 /**
- * 立绘箱（旋转后的可见尺寸）。
+ * 桌宠几何真源。
  *
- * <p>素材是横构图的全身立绘，展示时绕中心逆时针转 90° 才是正姿，所以「宽×高」要按转过之后
- * 的尺寸来算：1312×1199 的素材转完是竖的，这里取接近原始比例的 288×316。</p>
- */
-const ART_WIDTH = 288;
-const ART_HEIGHT = 316;
-/**
- * 立绘四周留给「发光 / 投影」的透明余量。
+ * <p><b>为什么主进程也读同一份 JSON：</b>窗口尺寸以前是这里的 4 个字面量，`pet.css` 里再抄一份
+ * 同名变量，靠注释互相指认——注释不会在 CI 里失败。真源收敛到 `frontend/pet-geometry.json`，
+ * 主进程、渲染层（`src/pet/layout.ts`）、门禁脚本三方共读，`npm run gate:pet` 兜底。</p>
  *
- * <p><b>必须与 `pet.css` 的 `--pet-glow-pad` 保持一致。</b>没有这一圈，CSS 的外发光会被窗口边缘
- * 直接切掉，浅色桌面下几乎看不出桌宠的轮廓。</p>
+ * <p><b>打包必须带上这个文件</b>：`package.json` → `build.files` 已显式加入它；漏了的话，
+ * 打包版的桌宠窗口会在 require 阶段直接抛错。</p>
  */
-const GLOW_PAD = 16;
-/**
- * 顶部为「一句话气泡」预留的高度（U5：本批只做通知联动的一句话气泡）。
- *
- * <p><b>必须与 `pet.css` 的 `--pet-bubble-h` 保持一致。</b>预留而不是动态撑高窗口：
- * 气泡出现时改窗口尺寸会让已经拖动过的位置跳一下。</p>
- */
-const BUBBLE_H = 72;
+const GEOMETRY = require('../pet-geometry.json');
 
-/** 桌宠窗口尺寸 = 立绘箱 + 四周发光余量 + 顶部气泡预留（**含留白**）。 */
+/**
+ * 立绘箱宽度（CSS px）。
+ *
+ * <p>v2 立绘是 1024×1536 的**正立**图，立绘箱按画布 2:3 比例定、渲染等比 `contain`——
+ * 箱子比例等于画布比例，才既不裁尾巴也不留横白。</p>
+ */
+const ART_WIDTH = GEOMETRY.artWidth;
+/** 立绘箱高度（CSS px）。 */
+const ART_HEIGHT = GEOMETRY.artHeight;
+/**
+ * 立绘四周留给「光晕 / 投影」的透明余量。
+ *
+ * <p>没有这一圈，CSS 的外发光会被窗口边缘直接切掉，浅色桌面下几乎看不出桌宠的轮廓。</p>
+ */
+const GLOW_PAD = GEOMETRY.glowPad;
+/**
+ * 顶部为「一句话气泡」预留的高度。
+ *
+ * <p>预留而不是动态撑高窗口：气泡出现时改窗口尺寸会让已经拖动过的位置跳一下。</p>
+ */
+const BUBBLE_H = GEOMETRY.bubbleHeight;
+
+/** 桌宠窗口尺寸 = 立绘箱 + 四周光晕余量 + 顶部气泡预留（**含留白**）。 */
 const PET_WIDTH = ART_WIDTH + GLOW_PAD * 2;
 const PET_HEIGHT = ART_HEIGHT + GLOW_PAD * 2 + BUBBLE_H;
 

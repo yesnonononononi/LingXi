@@ -8,16 +8,17 @@
 
 :root {
   /*
-   * 下面两个值 **必须与 electron/pet-window.cjs 的 GLOW_PAD / BUBBLE_H 一致**：
-   * 主进程按它们算窗口大小，这里按它们排版。一旦不一致的表现是「立绘被窗口边缘切掉一角」
-   * 或「气泡区压到脸上」，而且很难一眼看出是数字没对齐。
+   * 尺寸真源是 `frontend/pet-geometry.json`：启动时 `main.ts` 会把这四个变量按真源重写一遍，
+   * 这里的静态值只是**首帧兜底**（避免第 0 帧按错误的箱子排版闪一下）。
+   * 真源由 `npm run gate:pet` 校验，改动请改 JSON 后跑 `node scripts/build-pet-geometry.mjs`。
    */
-  --pet-glow-pad: 16px;
-  --pet-bubble-h: 72px;
+  --pet-art-glow-pad: 16px;
+  --pet-art-bubble-h: 72px;
 
-  /* 立绘箱：窗口 320×420 减掉四周 16 与顶部 72 → 288×316（旋转后的可见尺寸） */
-  --pet-art-w: 288px;
-  --pet-art-h: 316px;
+  /* 立绘箱：按 1024×1536 画布的 2:3 比例定 → 156×234（窗口 188×338）。
+     箱子比例必须等于画布比例，否则等比 contain 时要么留横白、要么裁掉尾巴。 */
+  --pet-art-w: 156px;
+  --pet-art-h: 234px;
 
   --pet-ink: rgba(224, 231, 255, 0.92);
   --pet-glow: rgba(147, 197, 253, 0.35);
@@ -43,13 +44,13 @@ body {
   height: 100%;
 }
 
-/* 排版容器：padding 与主进程的留白常量一一对应 */
+/* 排版容器：padding 与几何真源的留白/气泡常量一一对应 */
 .pet-stage {
   position: absolute;
   inset: 0;
   box-sizing: border-box;
-  padding: var(--pet-glow-pad);
-  padding-top: calc(var(--pet-glow-pad) + var(--pet-bubble-h));
+  padding: var(--pet-art-glow-pad);
+  padding-top: calc(var(--pet-art-glow-pad) + var(--pet-art-bubble-h));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -86,10 +87,11 @@ body {
 }
 
 /**
- * 立绘箱 = 命中区矩形（当前兜底方案）。
+ * 立绘箱（排版箱）。
  *
- * <p>精度只到矩形：真正的 alpha 掩码（1/8 降采样网格 + 膨胀滞回）在 T02 接，届时命中判定
- * 换成掩码查询，这块矩形仍是「掩码不可用」时的降级路径。</p>
+ * <p><b>它不是命中区</b>：命中改用可见包围盒（`src/pet/hit/rect-hit-tester.ts` 的
+ * `visibleBox()`），比这个箱子宽 3.5px、高 24.7px 小一圈——用整箱判命中会让用户"点在透明区
+ * 也算点到桌宠"，桌面上表现为点不动别的窗口。</p>
  */
 .pet-art {
   position: relative;
@@ -104,23 +106,24 @@ body {
 }
 
 /**
- * 立绘本体。
+ * 立绘本体：v2 正立图，**等比 contain**。
  *
- * <p><b>素材为横构图，换正立绘后即正，勿改代码</b>——当前 `front-master.png` 是 1312×1199 的
- * 横躺原画（头在右、脚在左），这里给元素设成「转过来之后的横×竖」再绕中心逆时针转 90°，
- * 屏幕上才是正姿。等美术交付正立的立绘，删掉 rotate 与宽高对调即可，其余排版不用动。</p>
+ * <p><b>这里的三条都是验收判据，别改回去：</b></p>
+ * <ol>
+ *   <li><b>没有 rotate</b>：v2（1024×1536）本身头朝上脚朝下，再转 90° 就是躺着的猫；</li>
+ *   <li><b>没有宽高对调</b>：宽高都由立绘箱（2:3）决定，对调会横向拉扁；</li>
+ *   <li><b>只用 contain，禁止 cover</b>：v2 右侧尾巴留白仅 5px，cover 按容器裁切＝把尾巴切掉。</li>
+ * </ol>
+ *
+ * <p>投影从 `drop-shadow(0 6px 18px)` 收到 `0 3px 8px`：209px 高的宠物上用 18px 模糊会糊成一团。</p>
  */
 .pet-art-image {
   position: absolute;
-  left: 50%;
-  top: 50%;
-  /* 未旋转的原始朝向：宽 = 旋转后的高，高 = 旋转后的宽 */
-  width: var(--pet-art-h);
-  height: var(--pet-art-w);
-  transform: translate(-50%, -50%) rotate(-90deg);
-  transform-origin: center center;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
-  filter: drop-shadow(0 6px 18px var(--pet-glow));
+  filter: drop-shadow(0 3px 8px var(--pet-glow));
   pointer-events: none;
   /* 素材本身带透明底，禁用拖拽图片的系统行为 */
   -webkit-user-drag: none;
@@ -145,34 +148,23 @@ body {
 }
 
 /**
- * 表情层（六格 3×2）。
+ * 表情差分贴片层（与立绘**同画布、同位置**的一张透明贴片）。
  *
- * <p>背景图在 main.ts 里设成 `lxa://pet-v1/expressions.png`（资源路径只走 lxa:// 白名单，
- * 且不放进 CSS 以免构建期被当成可解析资源改写）。这里只定义每格的背景位置：
- * `background-size: 300% 200%` 时，x 的 0/50/100% 对应三列，y 的 0/100% 对应两行。</p>
+ * <p>以前是 3×2 的 sprite sheet + `background-size:300% 200%` + 六条 `background-position`
+ * class，工程侧要算格子坐标。现在每档一张与立绘同画布的透明贴片，`inset:0 + contain`
+ * 天然对齐，**零坐标算术**。贴片 id 与美术规格书 §5 的 E1–E8 一一对应。</p>
  *
- * <p>默认档 = 第 1 格（左上），与立绘自带的脸同款，因此默认状态看不出叠了一层。</p>
+ * <p>贴片未交付时元素由 JS 保持 `hidden`（不存在就给桌面摆一张错位脸）。</p>
  */
 .pet-face {
   position: absolute;
-  left: 50%;
-  /* 立绘转过之后头在顶部：表情层贴着上沿并略微上探，盖住立绘原本的脸 */
-  top: 0.5%;
-  width: 74%;
-  aspect-ratio: 1 / 1;
-  transform: translateX(-50%);
-  background-repeat: no-repeat;
-  background-size: 300% 200%;
-  background-position: 0% 0%;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   pointer-events: none;
+  -webkit-user-drag: none;
 }
-
-.pet-face.is-default { background-position: 0% 0%; }
-.pet-face.is-blink { background-position: 50% 0%; }
-.pet-face.is-happy { background-position: 100% 0%; }
-.pet-face.is-surprised { background-position: 0% 100%; }
-.pet-face.is-sleepy { background-position: 50% 100%; }
-.pet-face.is-sad { background-position: 100% 100%; }
 
 .pet-close {
   position: absolute;
