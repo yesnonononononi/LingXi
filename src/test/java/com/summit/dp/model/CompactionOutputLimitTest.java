@@ -38,10 +38,13 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.config.YamlPropertiesFactoryBean;
+import org.springframework.core.io.ClassPathResource;
 
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
@@ -111,8 +114,8 @@ class CompactionOutputLimitTest {
             assertEquals(4096, displayedLimit);
             assertEquals(2, selected.size());
             for (ModelConfig compact : selected) {
-                // 摘要档的调用语义：预算来自压缩配置，思考显式关闭 —— 对话的 max / returnThinking 不许漏进来
-                assertEquals("none", compact.getReasoningEffort());
+                // 压缩档不继承对话思考强度，也不能向兼容接口强塞 none。
+                assertNull(compact.getReasoningEffort());
                 assertFalse(compact.isReturnThinking());
                 assertEquals(displayedLimit, compact.getMaxTokens());
                 assertEquals("https://compact.invalid/v1", compact.getBaseUrl());
@@ -137,14 +140,40 @@ class CompactionOutputLimitTest {
                 assertEquals(4096, compact.getMaxTokens());
                 assertEquals("chat-key", compact.getApiKey());
                 assertEquals("default", compact.getProvider());
-                // 复用对话连接，但档位与思考开关必须是压缩的：继承 max 会让摘要拿思考烧掉输出
-                assertEquals("none", compact.getReasoningEffort());
+                // 复用连接时仍省略 effort，避免带入对话强度或不兼容的关闭枚举。
+                assertNull(compact.getReasoningEffort());
                 assertFalse(compact.isReturnThinking());
                 assertFalse(compact.isSendThinking());
             }
             assertEquals(102400, original.getMaxTokens());
             assertTrue(original.isReuseModelForCompaction());
             assertEquals(List.of(1), versions);
+        });
+    }
+
+    @Test
+    void applicationYamlDoesNotOverridePortableCompactionDefaults() {
+        YamlPropertiesFactoryBean yaml = new YamlPropertiesFactoryBean();
+        yaml.setResources(new ClassPathResource("application.yaml"));
+        Properties properties = yaml.getObject();
+        assertNotNull(properties);
+        String[] compactProperties = properties.stringPropertyNames().stream()
+                .filter(name -> name.startsWith("lingxi.agent.model.conf.compact."))
+                .map(name -> name + "=" + properties.getProperty(name))
+                .toArray(String[]::new);
+
+        contextRunner().withPropertyValues(compactProperties).run(context -> {
+            assertNull(context.getStartupFailure());
+            RequestCompactModelResolver resolver = context.getBean(RequestCompactModelResolver.class);
+            resolver.resolve(request(1));
+            resolver.resolve(request(2));
+            assertEquals(2, selected.size());
+            for (ModelConfig compact : selected) {
+                assertNull(compact.getReasoningEffort());
+                assertEquals("disabled", compact.getAnthropicOptions().thinkingType());
+                assertFalse(compact.isReturnThinking());
+                assertFalse(compact.isSendThinking());
+            }
         });
     }
 
