@@ -182,7 +182,7 @@ import {buildProcessTimeline} from '../../utils/processTimeline';
 import {buildProcessSegments} from '../../utils/processSegments';
 import {deriveProcessSummaries, deriveProcessViews} from '../../utils/processViewModel';
 import {formatProcessStatus} from '../../utils/processHeadline';
-import {isActiveTurnStatus, isFailedTurnStatus, turnStatusLabel} from '../../utils/turnStatus';
+import {isActiveTurnStatus, isFailedTurnStatus, isTerminalTurnStatus, turnStatusLabel} from '../../utils/turnStatus';
 import {formatDurationOrPlaceholder} from '../../utils/format';
 import {resolveTokenUsage} from '../../utils/tokenUsage';
 import {resolveAwaitModelResponse} from '../../utils/awaitModelResponse';
@@ -318,6 +318,8 @@ const cardItems = computed<PromptCardEntry[]>(() =>
  * 它不依赖 `isThinking` / `turn` 是否及时到位，因此不存在同样的真空。</p>
  */
 const isTurnRunning = computed(() => {
+  // 轮次终态已落定，历史工具残留与迟到的流状态都不能继续隐藏底栏。
+  if (isTerminalTurnStatus(String(props.turn?.status ?? '').toUpperCase())) return false;
   if (props.message.isThinking || props.message.isExploring) return true;
   if (props.message.isComplete === false) return true;
   if (props.isSending && props.isLastAssistant) return true;
