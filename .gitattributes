@@ -1,6 +1,6 @@
 /mvnw text eol=lf
 *.cmd text eol=crlf
-*.sh text eol=lf*.sh text eol=lf
+*.sh text eol=lf
 
 # 桌宠美术母版：PSD 体积大（v3 约 11.8MB），走 Git LFS，避免撑大仓库历史
 *.psd filter=lfs diff=lfs merge=lfs -text

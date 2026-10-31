@@ -1,5 +1,16 @@
 # 正立桌宠素材 v2
 
+> **⚠️ 本批次已被 v3 取代（历史记录，勿据此接入）**
+>
+> **v2 已被 v3 取代。** 当前运行时资产看：
+> - 美术产物：`docs/assets/desktop-pet/v3/`
+> - 前端清单与加载：`frontend/src/pet/assets/`（数据真源 `frontend/pet-assets.json`）
+> - 实际入库帧：`frontend/public/live2d/pet-v3/composites/`（16 个完整帧）
+>
+> `frontend/public/live2d/pet-v2/` 目录**已不存在**，`docs/assets/desktop-pet/v2/front-standing.png`
+> 也不再被运行时引用。**本文件仅记录 2026-10-30 那一批的历史产出，不复述当前管线，
+> 文内出现的一切路径一律视为「历史」，不要照抄执行。**
+
 日期：2026-10-30。使用内置 imagegen，以首批原始竖直立绘为参考重新生成并清理边缘。
 
 ## 交付
@@ -19,21 +30,24 @@
 
 路线采用先静态 v1、再继续 Live2D 分层与绑定。本批仅完成美术文件，未修改桌宠运行代码。
 
-### 运行时资产由脚本生成（勿手改）
+### 运行时资产由脚本生成（勿手改）〔历史批次做法，已被 v3 取代〕
 
 `front-standing.png` 是**母版**，只在 `docs/` 留档，**不进 `public/`**。运行时用的是降采样 WebP：
 
 ```
-frontend/public/live2d/pet-v2/
-  front-standing@1x.webp   # 160×240
-  front-standing@2x.webp   # 320×480
+# 【历史】以下产物目录已随 v3 切换删除，实际不再存在，仅留档说明当时的做法
+frontend/public/live2d/pet-v2/          ← 【历史】目录已不存在
+  front-standing@1x.webp   # 160×240    ← 【历史】
+  front-standing@2x.webp   # 320×480    ← 【历史】
 ```
 
 生成命令（在 `frontend/` 下）：
 
 ```
-npm run build:pet-assets                       # 默认源目录就是本目录
-npm run build:pet-assets -- --source <dir>     # 美术资产在别处时用它
+# 【历史】下面第一条的「默认源目录就是本目录(v2)」已不成立；
+# 现默认源目录是 docs/assets/desktop-pet/v3，产物是 public/live2d/pet-v3/composites/。
+npm run build:pet-assets                       # 【历史】默认源目录曾是本目录
+npm run build:pet-assets -- --source <dir>     # 仍然有效（源目录可配置这点没变）
 ```
 
 脚本会同时回写资产清单 `frontend/src/pet/assets/manifest.ts`（尺寸/体积/URL），
