@@ -165,6 +165,91 @@ class H2ConcurrencyArbitrationTest {
                 "第二次更新不得生效");
     }
 
+    @Test
+    @DisplayName("恢复代际唯一索引：同一 (execution_id, generation) 的第二条领取被拒，下一代可领取")
+    void duplicateResumeGenerationIsRejected() throws SQLException {
+        H2TestDatabase database = newDatabase("resume-generation");
+        insertResumeTask(database, 1L, 42L, 7L);
+
+        SQLException rejected = assertThrows(SQLException.class, () -> insertResumeTask(database, 2L, 42L, 7L));
+        assertEquals(23505, rejected.getErrorCode(),
+                "同一代际的第二次领取必须被 uk_resume_task_generation 拒绝（实测错误码 23505），实际="
+                        + rejected.getErrorCode() + " / " + rejected.getMessage());
+        DataAccessException translated = new H2ExceptionTranslator(database)
+                .translateExceptionIfPossible(new PersistenceException("代际重复领取", rejected));
+        assertInstanceOf(DuplicateKeyException.class, translated,
+                "代际冲突必须翻成 DuplicateKeyException（幂等领取靠它），实际=" + translated.getClass().getName());
+
+        insertResumeTask(database, 3L, 42L, 8L);
+        assertEquals("2", database.queryString(
+                        "SELECT COUNT(*) FROM execution_resume_task WHERE execution_id = 42"),
+                "下一代必须能领取（唯一性只针对同代际）");
+    }
+
+    @Test
+    @DisplayName("消息去重与邮件只投一次：同 response_id / 同 dedup_key 的第二次写入被唯一索引拒绝")
+    void duplicateResponseIdAndEmailDedupAreRejected() throws SQLException {
+        H2TestDatabase database = newDatabase("dedup-indexes");
+        // uk_session_response_id：同一会话的同一模型响应只能落一条消息。
+        insertSessionMessage(database, 1L, 7L, "resp-1");
+        SQLException duplicateResponse = assertThrows(SQLException.class,
+                () -> insertSessionMessage(database, 2L, 7L, "resp-1"));
+        assertEquals(23505, duplicateResponse.getErrorCode(),
+                "同会话同 response_id 的第二次写入必须被拒（uk_session_response_id）");
+        // 唯一索引允许 NULL（实测）：没有 response_id 的消息不受限。
+        insertSessionMessage(database, 3L, 7L, null);
+        insertSessionMessage(database, 4L, 7L, null);
+
+        // uk_email_message_dedup：同一去重键只投一次。
+        insertEmailMessage(database, 11L, "dedup-1");
+        SQLException duplicateMail = assertThrows(SQLException.class,
+                () -> insertEmailMessage(database, 12L, "dedup-1"));
+        assertEquals(23505, duplicateMail.getErrorCode(),
+                "同 dedup_key 的第二次投递必须被拒（uk_email_message_dedup）");
+        insertEmailMessage(database, 13L, null);
+        insertEmailMessage(database, 14L, null);
+        assertEquals("2", database.queryString(
+                        "SELECT COUNT(*) FROM email_message WHERE dedup_key IS NULL"),
+                "NULL 去重键必须允许多行（与 SQLite 的唯一索引语义一致）");
+    }
+
+    private static void insertResumeTask(H2TestDatabase database, long id, long executionId, long generation)
+            throws SQLException {
+        try (Connection connection = database.openConnection();
+             PreparedStatement insert = connection.prepareStatement(
+                     "INSERT INTO execution_resume_task (id, execution_id, generation, state, version)"
+                             + " VALUES (?, ?, ?, 'PENDING', 1)")) {
+            insert.setLong(1, id);
+            insert.setLong(2, executionId);
+            insert.setLong(3, generation);
+            insert.executeUpdate();
+        }
+    }
+
+    private static void insertSessionMessage(H2TestDatabase database, long id, long sessionId, String responseId)
+            throws SQLException {
+        try (Connection connection = database.openConnection();
+             PreparedStatement insert = connection.prepareStatement(
+                     "INSERT INTO session_message (id, response_id, session_id, type, content)"
+                             + " VALUES (?, ?, ?, 'ASSISTANT', '正文')")) {
+            insert.setLong(1, id);
+            insert.setString(2, responseId);
+            insert.setLong(3, sessionId);
+            insert.executeUpdate();
+        }
+    }
+
+    private static void insertEmailMessage(H2TestDatabase database, long id, String dedupKey) throws SQLException {
+        try (Connection connection = database.openConnection();
+             PreparedStatement insert = connection.prepareStatement(
+                     "INSERT INTO email_message (id, email_id, sender_id, dedup_key, content, status)"
+                             + " VALUES (?, 1, 2, ?, '正文', 'PENDING')")) {
+            insert.setLong(1, id);
+            insert.setString(2, dedupKey);
+            insert.executeUpdate();
+        }
+    }
+
     private static int updateVersion(H2TestDatabase database, long id, long expected, long next) throws SQLException {
         try (Connection connection = database.openConnection();
              PreparedStatement update = connection.prepareStatement(

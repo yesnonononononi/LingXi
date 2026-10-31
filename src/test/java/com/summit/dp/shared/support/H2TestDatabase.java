@@ -91,6 +91,8 @@ public final class H2TestDatabase implements DataSource, AutoCloseable {
             Path root = Path.of(System.getProperty("java.io.tmpdir"), "lingxi-h2-verify");
             Files.createDirectories(root);
             Path directory = Files.createTempDirectory(root, "h2-" + prefix + "-");
+            // 测试库位置守卫：宁可当场失败，也不许把库建到真实用户数据目录里（设计 §附录D.3）。
+            StorageIsolationGuard.require(directory);
             return new H2TestDatabase(directory);
         } catch (IOException e) {
             throw new UncheckedIOException("测试用 H2 库目录创建失败: prefix=" + prefix, e);

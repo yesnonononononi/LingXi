@@ -1,0 +1,54 @@
+package com.summit.dp.shared;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Stream;
+
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * 静态检查：生产代码只走 {@code DataSource}，禁止直接 {@code DriverManager}（设计 §附录D.2 的 M16）。
+ *
+ * <p><b>为什么必须用静态检查而不是行为断言</b>：{@code DriverManager.getConnection} 在功能上「也能跑通」，
+ * 但它绕开了连接池、时区初始化语句（{@code SET TIME ZONE 'UTC'}）与事务集成 —— 在双引擎并存之后，
+ * 这种绕行会制造「同一个应用里两套连接参数」的静默偏差。因此把它做成扫到即红的守卫。</p>
+ */
+class StorageDriverPolicyTest {
+
+    @Test
+    @DisplayName("src/main 下 DriverManager 引用数为 0（只允许走 DataSource）")
+    void productionCodeNeverUsesDriverManager() throws IOException {
+        Path root = locateMainSources();
+        List<String> offenders = new ArrayList<>();
+        try (Stream<Path> files = Files.walk(root)) {
+            for (Path file : files.filter(path -> path.toString().endsWith(".java")).toList()) {
+                String body = Files.readString(file, StandardCharsets.UTF_8);
+                if (body.contains("DriverManager")) {
+                    offenders.add(root.relativize(file).toString().replace('\\', '/'));
+                }
+            }
+        }
+        assertTrue(offenders.isEmpty(),
+                "生产代码禁止直接使用 DriverManager（会绕开连接池与时区初始化），命中=" + offenders);
+    }
+
+    /** 从 user.dir 逐级向上找 {@code src/main/java}。 */
+    private static Path locateMainSources() {
+        Path dir = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
+        for (int hops = 0; hops < 4 && dir != null; hops++, dir = dir.getParent()) {
+            Path candidate = dir.resolve("src/main/java");
+            if (Files.isDirectory(candidate)) {
+                return candidate;
+            }
+        }
+        return Paths.get("src/main/java").toAbsolutePath();
+    }
+}
