@@ -30,12 +30,7 @@ public class SchemaBootstrapConfig {
      */
     @Bean
     public SchemaInitializer schemaInitializer(StorageEngineProperties properties) {
-        if (properties.isH2()) {
-            // H2 基线脚本与初始化器在 T02 落地；此处显式失败而不是回落到 SQLite 建库脚本，
-            // 避免「引擎是 h2 却用 SQLite 方言建库」这种更难排查的状态。
-            throw new IllegalStateException("lingxi.storage.engine=h2 的建库脚本尚未就绪（db/h2/V1__schema.sql）");
-        }
-        return new SqliteSchemaInitializer();
+        return properties.isH2() ? new H2SchemaInitializer() : new SqliteSchemaInitializer();
     }
 
     /**

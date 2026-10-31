@@ -1,18 +1,20 @@
 package com.summit.dp.shared.config;
 
 import com.summit.dp.shared.persistence.schema.SchemaInitializer;
+import com.summit.dp.shared.persistence.schema.SchemaScript;
+import com.summit.dp.shared.persistence.schema.SchemaScriptLoader;
 import com.summit.dp.shared.storage.StorageEngine;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
 import javax.sql.DataSource;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.sql.*;
-import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * SQLite 建库与版本化初始化。
@@ -25,6 +27,9 @@ import java.util.regex.Pattern;
  * 已经登记的版本号」这种既跑不下去又重复不了的状态。重复执行幂等 —— 已登记的版本直接跳过，
  * 这让它在每次启动时都可以安全地跑。</p>
  *
+ * <p>脚本的加载、切分、指纹计算已抽到 {@link SchemaScriptLoader}（H2 侧共用同一实现）；
+ * 本类只保留 SQLite 专属的部分：单事务、文本时间默认值、无指纹比对的旧登记表结构。</p>
+ *
  * <p>它不是 Spring 配置类：注册 runner 的职责已收拢到 {@link SchemaBootstrapConfig}，
  * 本类只负责「怎么建库」，因此既能在容器里用，也能被测试直接 {@code new} 出来跑。</p>
  */
@@ -34,14 +39,9 @@ public class SqliteSchemaInitializer implements SchemaInitializer {
     /** 版本登记表名；建表语句本身也必须幂等。 */
     private static final String VERSION_TABLE = "schema_version";
 
-    private static final String SCRIPT_LOCATION = "classpath*:db/sqlite/V*__*.sql";
+    private static final String SCRIPT_LOCATION = StorageEngine.SQLITE.schemaLocation();
 
-    /** 脚本命名：V<版本>__<说明>.sql；版本号决定执行顺序。 */
-    private static final Pattern SCRIPT_NAME = Pattern.compile("^V(\\d+)__(.+)\\.sql$");
-
-    /** 破坏性语句在启动期一律拒绝：建库脚本只允许 IF NOT EXISTS 的增量建表。 */
-    private static final Pattern DESTRUCTIVE = Pattern.compile(
-            "(?im)^\\s*(?:DROP\\s+TABLE|TRUNCATE\\s+TABLE)\\b");
+    private final SchemaScriptLoader loader = new SchemaScriptLoader();
 
     @Override
     public String engineId() {
@@ -56,7 +56,7 @@ public class SqliteSchemaInitializer implements SchemaInitializer {
      */
     @Override
     public int initialize(DataSource dataSource) {
-        List<SchemaScript> scripts = loadScripts();
+        List<SchemaScript> scripts = loader.load(SCRIPT_LOCATION);
         if (scripts.isEmpty()) {
             throw new IllegalStateException("classpath 上没有找到 SQLite 建库脚本: " + SCRIPT_LOCATION);
         }
@@ -90,37 +90,6 @@ public class SqliteSchemaInitializer implements SchemaInitializer {
         }
     }
 
-    /** 读 classpath 上全部版本脚本，按版本号升序；同版本号重复即配置错误。 */
-    private List<SchemaScript> loadScripts() {
-        List<SchemaScript> scripts = new ArrayList<>();
-        try {
-            Resource[] resources = new PathMatchingResourcePatternResolver()
-                    .getResources(SCRIPT_LOCATION);
-            for (Resource resource : resources) {
-                String filename = resource.getFilename();
-                if (filename == null) {
-                    continue;
-                }
-                Matcher matcher = SCRIPT_NAME.matcher(filename);
-                if (!matcher.matches()) {
-                    continue;
-                }
-                scripts.add(new SchemaScript(Integer.parseInt(matcher.group(1)), filename,
-                        new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8)));
-            }
-        } catch (IOException e) {
-            throw new IllegalStateException("读取 SQLite 建库脚本失败: " + e.getMessage(), e);
-        }
-        scripts.sort(Comparator.comparingInt(SchemaScript::version));
-        Set<Integer> versions = new HashSet<>();
-        for (SchemaScript script : scripts) {
-            if (!versions.add(script.version())) {
-                throw new IllegalStateException("建库脚本版本号重复: V" + script.version());
-            }
-        }
-        return scripts;
-    }
-
     private void createVersionTable(Connection connection) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             statement.execute("CREATE TABLE IF NOT EXISTS " + VERSION_TABLE
@@ -139,11 +108,10 @@ public class SqliteSchemaInitializer implements SchemaInitializer {
         return applied;
     }
 
+    /** 逐条执行：破坏性语句在启动期拒绝，语句级报错必须带「第几条」。 */
     private void execute(Connection connection, SchemaScript script) throws SQLException {
-        if (DESTRUCTIVE.matcher(script.content()).find()) {
-            throw new IllegalStateException("建库脚本包含破坏性语句，已拒绝执行: " + script.filename());
-        }
-        List<String> statements = splitStatements(script);
+        loader.requireNonDestructive(script);
+        List<String> statements = loader.splitStatements(script);
         try (Statement statement = connection.createStatement()) {
             for (int index = 0; index < statements.size(); index++) {
                 String sql = statements.get(index);
@@ -158,48 +126,6 @@ public class SqliteSchemaInitializer implements SchemaInitializer {
         }
     }
 
-    /**
-     * 把脚本切成单条语句。
-     *
-     * <p><b>为什么不直接把整段脚本丢给驱动</b>：实测 sqlite-jdbc 的 {@code execute} 遇到以注释开头的
-     * 多语句脚本时只执行第一条（后续语句被静默跳过），表现为「库建了一半、日志还说成功」。
-     * 因此这里自己切分，并逐条执行、逐条报错。</p>
-     *
-     * <p>触发器体的 {@code BEGIN ... END;} 内部含分号，按行判断「是否在触发器体内」再决定是否切分。</p>
-     */
-    private static List<String> splitStatements(SchemaScript script) {
-        List<String> statements = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        boolean inTrigger = false;
-        for (String rawLine : script.content().split("\n")) {
-            String trimmed = rawLine.strip();
-            if (trimmed.isEmpty() || trimmed.startsWith("--")) {
-                continue;
-            }
-            current.append(rawLine).append('\n');
-            String upper = trimmed.toUpperCase(Locale.ROOT);
-            if (!inTrigger && upper.startsWith("CREATE TRIGGER")) {
-                inTrigger = true;
-            }
-            if (inTrigger) {
-                if (upper.endsWith("END;")) {
-                    statements.add(current.toString());
-                    current.setLength(0);
-                    inTrigger = false;
-                }
-                continue;
-            }
-            if (trimmed.endsWith(";")) {
-                statements.add(current.toString());
-                current.setLength(0);
-            }
-        }
-        if (!current.isEmpty()) {
-            throw new IllegalStateException("建库脚本末尾存在不完整语句: " + script.filename());
-        }
-        return statements;
-    }
-
     private void recordVersion(Connection connection, SchemaScript script) throws SQLException {
         try (PreparedStatement insert = connection.prepareStatement(
                 "INSERT INTO " + VERSION_TABLE + " (version, script, applied_at)"
@@ -208,9 +134,5 @@ public class SqliteSchemaInitializer implements SchemaInitializer {
             insert.setString(2, script.filename());
             insert.executeUpdate();
         }
-    }
-
-    /** 一个版本脚本：版本号、文件名、正文。 */
-    private record SchemaScript(int version, String filename, String content) {
     }
 }
