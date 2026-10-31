@@ -55,8 +55,10 @@ const SOURCE_TIERS = { v3: 0, staging: 1, v2: 2 };
  *
  * <p><b>为什么不用固定相对路径：</b>隔离工作树在 `.lingxi/work/<task>/frontend`，
  * 主工作树在 `<repo>/frontend`，两者到仓库根的距离不同。写死 `../../` 在另一种布局下会指向
- * 不存在的目录，然后静默回落到 v2——这种"看起来跑通了其实用的是旧资产"最难查。
- * 所以按层级探测，把探测结果打出来。</p>
+ * 不存在的目录，然后静默回落到 v2——这种"看起来跑通了其实用的是旧资产"最难查。</p>
+ *
+ * <p><b>为什么还要过滤：</b>无脑向上探测会得到 `D:/Code/docs/...` 之类与仓库毫不相干的路径，
+ * 报错时刷一屏噪声。只认"祖先目录里带 `.git` 或 `.lingxi`"的层（即确实是仓库根的那些层）。</p>
  *
  * @param {string} [startDir] 起点目录（缺省 `frontend/`）
  * @returns {string[]} 候选绝对路径（按优先级排序：v3 → 暂存区 → v2；同层由近到远）
@@ -64,13 +66,26 @@ const SOURCE_TIERS = { v3: 0, staging: 1, v2: 2 };
 export function discoverSourceCandidates(startDir = FRONTEND_ROOT) {
   const candidates = [];
   let cursor = resolve(startDir);
+  let foundRepoLayer = false;
   for (let depth = 0; depth < ANCESTOR_DEPTH; depth += 1) {
-    candidates.push({ path: resolve(cursor, 'docs', 'assets', 'desktop-pet', 'v3'), tier: SOURCE_TIERS.v3, depth });
-    candidates.push({ path: resolve(cursor, '.lingxi', 'assets', 'pet'), tier: SOURCE_TIERS.staging, depth });
-    candidates.push({ path: resolve(cursor, 'docs', 'assets', 'desktop-pet', 'v2'), tier: SOURCE_TIERS.v2, depth });
+    const isRepoLayer = existsSync(resolve(cursor, '.git')) || existsSync(resolve(cursor, '.lingxi'));
+    if (isRepoLayer) {
+      candidates.push({ path: resolve(cursor, 'docs', 'assets', 'desktop-pet', 'v3'), tier: SOURCE_TIERS.v3, depth });
+      candidates.push({ path: resolve(cursor, '.lingxi', 'assets', 'pet'), tier: SOURCE_TIERS.staging, depth });
+      candidates.push({ path: resolve(cursor, 'docs', 'assets', 'desktop-pet', 'v2'), tier: SOURCE_TIERS.v2, depth });
+      foundRepoLayer = true;
+      // 只认最近的仓库层：再往外是父仓库/无关目录，列出来只会刷噪声
+      break;
+    }
     const parent = dirname(cursor);
     if (parent === cursor) break;
     cursor = parent;
+  }
+  if (!foundRepoLayer) {
+    // 极端兜底（如从解压目录直接跑）：至少给出 frontend 相邻的三个位置，便于报错点名
+    candidates.push({ path: resolve(startDir, '..', 'docs', 'assets', 'desktop-pet', 'v3'), tier: SOURCE_TIERS.v3, depth: 0 });
+    candidates.push({ path: resolve(startDir, '..', '.lingxi', 'assets', 'pet'), tier: SOURCE_TIERS.staging, depth: 0 });
+    candidates.push({ path: resolve(startDir, '..', 'docs', 'assets', 'desktop-pet', 'v2'), tier: SOURCE_TIERS.v2, depth: 0 });
   }
   candidates.sort((a, b) => (a.tier !== b.tier ? a.tier - b.tier : a.depth - b.depth));
   return candidates.map((item) => item.path);
