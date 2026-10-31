@@ -21,7 +21,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Path;
-import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -152,8 +151,11 @@ public class UserConfigServiceImpl implements UserConfigService {
             model.changeMaxTokens(maxTokens);
 
         String reasoningEffort = command.reasoningEffort();
-        if (reasoningEffort != null)
-            model.changeReasoningEffort(Objects.requireNonNull(ReasoningEffort.fromValue(reasoningEffort)));
+        if (reasoningEffort != null) {
+            ReasoningEffort parsed = ReasoningEffort.fromValue(reasoningEffort);
+            throwIf(parsed == null, "思考强度取值不合法: 只支持 none/low/medium/high/xhigh/max，收到 " + reasoningEffort);
+            model.changeReasoningEffort(parsed);
+        }
 
         String renderTheme = command.renderTheme();
         if (renderTheme != null)
