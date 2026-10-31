@@ -174,18 +174,18 @@ body {
  * <p>全部用 transform 实现，只有合成器参与；`data-motion` 由 `SpritePresentation` 写入，
  * 每次重写前会强制一次样式重算以重启动画。</p>
  */
-#pet-root[data-motion] .pet-art-image {
+#pet-root[data-motion] .pet-art-frame {
   animation-duration: var(--pet-motion-ms, 480ms);
   animation-fill-mode: both;
   animation-timing-function: ease-out;
 }
 
-#pet-root[data-motion='tap'] .pet-art-image { animation-name: pet-tap; }
-#pet-root[data-motion='happy'] .pet-art-image { animation-name: pet-hop-lite; }
-#pet-root[data-motion='surprised'] .pet-art-image { animation-name: pet-hop; }
-#pet-root[data-motion='angry'] .pet-art-image { animation-name: pet-shake; }
-#pet-root[data-motion='wake'] .pet-art-image { animation-name: pet-shake; }
-#pet-root[data-motion='drag'] .pet-art-image { animation-name: pet-lift; }
+#pet-root[data-motion='tap'] .pet-art-frame { animation-name: pet-tap; }
+#pet-root[data-motion='happy'] .pet-art-frame { animation-name: pet-hop-lite; }
+#pet-root[data-motion='surprised'] .pet-art-frame { animation-name: pet-hop; }
+#pet-root[data-motion='angry'] .pet-art-frame { animation-name: pet-shake; }
+#pet-root[data-motion='wake'] .pet-art-frame { animation-name: pet-shake; }
+#pet-root[data-motion='drag'] .pet-art-frame { animation-name: pet-lift; }
 
 /* 一弹：被点击时的最小反馈（规格书 P1 简化版：整图 scale 1.03） */
 @keyframes pet-tap {
@@ -239,18 +239,18 @@ body {
 }
 
 /**
- * 立绘本体：v2 正立图，**等比 contain**。
+ * 立绘帧（双缓冲：两张叠放，交替 `data-active` 淡入淡出）。
  *
  * <p><b>这里的三条都是验收判据，别改回去：</b></p>
  * <ol>
- *   <li><b>没有 rotate</b>：v2（1024×1536）本身头朝上脚朝下，再转 90° 就是躺着的猫；</li>
+ *   <li><b>没有 rotate</b>：v3 母版（2048×3072）本身头朝上脚朝下，再转 90° 就是躺着的猫；</li>
  *   <li><b>没有宽高对调</b>：宽高都由立绘箱（2:3）决定，对调会横向拉扁；</li>
- *   <li><b>只用 contain，禁止 cover</b>：v2 右侧尾巴留白仅 5px，cover 按容器裁切＝把尾巴切掉。</li>
+ *   <li><b>只用 contain，禁止 cover</b>：v3 右侧尾巴留白很窄，cover 按容器裁切＝把尾巴切掉。</li>
  * </ol>
  *
  * <p>投影从 `drop-shadow(0 6px 18px)` 收到 `0 3px 8px`：209px 高的宠物上用 18px 模糊会糊成一团。</p>
  */
-.pet-art-image {
+.pet-art-frame {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -260,6 +260,13 @@ body {
   pointer-events: none;
   /* 素材本身带透明底，禁用拖拽图片的系统行为 */
   -webkit-user-drag: none;
+  /* 双缓冲淡入：切表情是"表情变了"，不是"图闪了一下" */
+  opacity: 0;
+  transition: opacity 120ms linear;
+}
+
+.pet-art-frame[data-active='true'] {
+  opacity: 1;
 }
 
 /* 立绘加载失败时的兜底提示：宁可显眼地报错，也不要静默显示一个空白窗口 */
@@ -281,24 +288,10 @@ body {
 }
 
 /**
- * 表情差分贴片层（与立绘**同画布、同位置**的一张透明贴片）。
+ * 关闭按钮（悬停才显形：常驻的叉号在桌面上太抢眼）。
  *
- * <p>以前是 3×2 的 sprite sheet + `background-size:300% 200%` + 六条 `background-position`
- * class，工程侧要算格子坐标。现在每档一张与立绘同画布的透明贴片，`inset:0 + contain`
- * 天然对齐，**零坐标算术**。贴片 id 与美术规格书 §5 的 E1–E8 一一对应。</p>
- *
- * <p>贴片未交付时元素由 JS 保持 `hidden`（不存在就给桌面摆一张错位脸）。</p>
+ * <p>与 `main.ts` 的 `close` 元素对应；点击走 `petAPI.close()`，双击立绘也是同一条路径。</p>
  */
-.pet-face {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  pointer-events: none;
-  -webkit-user-drag: none;
-}
-
 .pet-close {
   position: absolute;
   top: 6px;
@@ -455,7 +448,7 @@ body {
 #pet-root[data-power='off'] .pet-motion,
 #pet-root[data-power='off'] .pet-sway,
 #pet-root[data-power='off'] .pet-halo,
-#pet-root[data-power='off'] .pet-art-image,
+#pet-root[data-power='off'] .pet-art-frame,
 #pet-root[data-power='off'] .pet-ahoge {
   animation-play-state: paused;
 }
@@ -471,7 +464,7 @@ body {
   .pet-sway,
   .pet-halo,
   .pet-ahoge,
-  #pet-root[data-motion] .pet-art-image {
+  #pet-root[data-motion] .pet-art-frame {
     animation: none;
     will-change: auto;
   }

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 桌宠几何门禁：`npm run gate:pet`。
+ * 桌宠几何与资产门禁：`npm run gate:pet`。
  *
  * <p><b>为什么需要门禁：</b>这轮"不好看"的根因是**同一个尺寸在四处独立硬编码**（主进程常量、
  * CSS 变量、命中矩形、资产宽高比），改一个漏三个，而且症状（立绘被切角 / 尾巴被裁）很难一眼归因。
@@ -8,11 +8,13 @@
  *
  * <ol>
  *   <li>几何文件自洽：立绘箱严格 2:3、派生字段是最新的、窗口公式正确；</li>
- *   <li>资产头解析：母版 PNG 与运行时 WebP 的真实像素宽高比都是 2:3，且运行时分辨率满足 DPR 要求；</li>
+ *   <li>墨迹自洽：`artHeight × visibleRatioY ≈ inkHeight`（改了 inkHeight 没改包围盒，这里红）；</li>
+ *   <li>运行时资产：按 `pet-assets.json` 逐文件校验尺寸/2:3/体积/sha256，且必须是当前 v3 产物；</li>
+ *   <li>美术契约（源目录在场时才跑）：`manifest.json` 的画布、色彩空间、alpha 模式、8 档表情、
+ *       眨眼映射与我们接入的一致；源不在（CI 上）跳过并打印原因；</li>
  *   <li>源码无旧魔法数：`pet-window.cjs` / `pet.css` / `layout.ts` 内不得再出现 288/316/320/420；
  *       不得出现 `rotate(-90deg)`（横图掰竖的旧写法）与 `object-fit: cover`（裁切即切尾巴）；</li>
- *   <li>CSS 变量默认值与几何文件一致（首帧兜底值不能与真源漂移）；</li>
- *   <li>可见比例与 `alpha-report.json` 一致（美术重出图后的漂移检测）。</li>
+ *   <li>CSS 变量默认值与几何文件一致（首帧兜底值不能与真源漂移）。</li>
  * </ol>
  *
  * 用法：
@@ -23,37 +25,27 @@
  *
  * @module scripts/check-pet-geometry
  */
-import { readFileSync, statSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  ALPHA_REPORT_PATH,
   ART_ASPECT,
   ASPECT_TOLERANCE,
   FRONTEND_ROOT,
-  GEOMETRY_PATH,
-  checkAlphaReportAgreement,
   readJsonFile,
   rebuild,
 } from './build-pet-geometry.mjs';
+import {
+  ART_EXPRESSION_IDS,
+  ASSETS_JSON_PATH,
+  DEFAULT_OUT_DIR,
+  detectSourceDir,
+  readRuntimeManifest,
+  verifyManifestAgainstDisk,
+} from './build-pet-assets.mjs';
 
-/** 母版立绘（只读美术交付物，不进 public）。 */
-export const MASTER_ART_PATH = resolve(
-  FRONTEND_ROOT,
-  '..',
-  'docs',
-  'assets',
-  'desktop-pet',
-  'v2',
-  'front-standing.png',
-);
-/** 运行时资产目录（由 T05 的 build-pet-assets.mjs 产出）。 */
-export const RUNTIME_ASSET_DIR = resolve(FRONTEND_ROOT, 'public', 'live2d', 'pet-v2');
-/** 运行时立绘（@1x / @2x；渲染层按 devicePixelRatio 选，不赌 srcset）。 */
-export const RUNTIME_ART = {
-  '@1x': resolve(RUNTIME_ASSET_DIR, 'front-standing@1x.webp'),
-  '@2x': resolve(RUNTIME_ASSET_DIR, 'front-standing@2x.webp'),
-};
+/** 运行时资产目录（由 `build-pet-assets.mjs` 产出，来源是美术 `runtime/`）。 */
+export const RUNTIME_ASSET_DIR = DEFAULT_OUT_DIR;
 
 /** 旧的裸魔法数（立绘箱 288×316 / 窗口 320×420）：必须一个都不剩。 */
 export const FORBIDDEN_MAGIC_NUMBERS = [288, 316, 320, 420];
@@ -63,86 +55,13 @@ const SCAN_FILES = ['electron/pet-window.cjs', 'src/pet/pet.css', 'src/pet/layou
 
 /** 明令禁止的旧写法：正则 + 人话说明。 */
 const FORBIDDEN_PATTERNS = [
-  { pattern: /rotate\(\s*-90deg\s*\)/i, reason: '横图掰竖的旧写法：v2 已经是正立图，再转 90° 就是躺着的猫' },
-  { pattern: /object-fit\s*:\s*cover/i, reason: 'cover 会按容器裁切，v2 右侧尾巴留白仅 5px，裁了就是切尾巴' },
+  { pattern: /rotate\(\s*-90deg\s*\)/i, reason: '横图掰竖的旧写法：v3 已经是正立图，再转 90° 就是躺着的猫' },
+  { pattern: /object-fit\s*:\s*cover/i, reason: 'cover 会按容器裁切，v3 右侧尾巴留白很窄，裁了就是切尾巴' },
   { pattern: /width\s*:\s*var\(--pet-art-h\)/i, reason: '立绘宽高对调是旋转时代的写法，现已按 2:3 立绘箱等比 contain' },
 ];
 
-/**
- * 读 PNG 的 IHDR 拿真实宽高。
- *
- * @param {string} filePath PNG 路径
- * @returns {{ width: number, height: number, format: string }} 像素尺寸
- */
-export function readPngSize(filePath) {
-  const buffer = readFileSync(filePath);
-  const signature = buffer.subarray(0, 8).toString('hex');
-  if (signature !== '89504e470d0a1a0a') {
-    throw new Error(`${filePath} 不是合法 PNG（签名 ${signature}）`);
-  }
-  // IHDR 必须是第一个 chunk：8 字节签名 + 4 字节长度 + 4 字节类型 → 数据从第 16 字节开始
-  const chunkType = buffer.subarray(12, 16).toString('ascii');
-  if (chunkType !== 'IHDR') throw new Error(`${filePath} 第一个 chunk 不是 IHDR（实际 ${chunkType}）`);
-  return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20), format: 'png' };
-}
-
-/**
- * 读 WebP 的真实宽高（支持 VP8 有损 / VP8L 无损 / VP8X 扩展三种容器）。
- *
- * <p>自己解析头部而不是引依赖：门禁脚本要能在 CI 的裸 node 里跑，不该为了两个整数装图像库。</p>
- *
- * @param {string} filePath WebP 路径
- * @returns {{ width: number, height: number, format: string }} 像素尺寸
- */
-export function readWebpSize(filePath) {
-  const buffer = readFileSync(filePath);
-  if (buffer.length < 30) throw new Error(`${filePath} 太小，不是合法 WebP`);
-  if (buffer.subarray(0, 4).toString('ascii') !== 'RIFF') throw new Error(`${filePath} 缺少 RIFF 头`);
-  if (buffer.subarray(8, 12).toString('ascii') !== 'WEBP') throw new Error(`${filePath} 缺少 WEBP 标识`);
-  const chunk = buffer.subarray(12, 16).toString('ascii');
-
-  if (chunk === 'VP8 ' || chunk === 'VP8L') {
-    if (chunk === 'VP8L') {
-      // 无损：1 字节签名 0x2f + 14bit 宽 + 14bit 高（都是「值 - 1」）
-      if (buffer[20] !== 0x2f) throw new Error(`${filePath} 的 VP8L 签名非法`);
-      const bits = buffer.readUInt32LE(21);
-      return {
-        width: (bits & 0x3fff) + 1,
-        height: ((bits >> 14) & 0x3fff) + 1,
-        format: 'webp-lossless',
-      };
-    }
-    // 有损：3 字节帧标签 + 3 字节起始码 9d 01 2a，随后 14bit 宽 + 14bit 高
-    if (buffer[23] !== 0x9d || buffer[24] !== 0x01 || buffer[25] !== 0x2a) {
-      throw new Error(`${filePath} 的 VP8 起始码非法`);
-    }
-    return {
-      width: buffer.readUInt16LE(26) & 0x3fff,
-      height: buffer.readUInt16LE(28) & 0x3fff,
-      format: 'webp-lossy',
-    };
-  }
-  if (chunk === 'VP8X') {
-    // 扩展：4 字节标志 + 3 字节（宽-1） + 3 字节（高-1），小端
-    const width = 1 + (buffer[24] | (buffer[25] << 8) | (buffer[26] << 16));
-    const height = 1 + (buffer[27] | (buffer[28] << 8) | (buffer[29] << 16));
-    return { width, height, format: 'webp-extended' };
-  }
-  throw new Error(`${filePath} 的 WebP chunk 类型未知：${chunk}`);
-}
-
-/**
- * 读任意支持格式的图片尺寸。
- *
- * @param {string} filePath 文件路径
- * @returns {{ width: number, height: number, format: string }} 像素尺寸
- */
-export function readImageSize(filePath) {
-  const lower = filePath.toLowerCase();
-  if (lower.endsWith('.png')) return readPngSize(filePath);
-  if (lower.endsWith('.webp')) return readWebpSize(filePath);
-  throw new Error(`不认识的文件类型（只支持 png / webp）: ${filePath}`);
-}
+// 图像头解析搬到了无依赖的 pet-image-headers.mjs（避免 build-pet-assets → check-pet-geometry → 循环）
+export { readImageSize, readPngSize, readWebpSize } from './pet-image-headers.mjs';
 
 /**
  * 去掉源码里的注释，避免注释里的数字命中魔法数扫描。
@@ -221,41 +140,6 @@ export function checkCssVariables(cssPath, geometry) {
 }
 
 /**
- * 校验一张资产的头比例与分辨率。
- *
- * @param {string} filePath 资产路径
- * @param {{ minWidth: number, label: string }} options 最小宽度与报告标签
- * @param {boolean} verbose 是否打印明细
- * @returns {string[]} 问题列表
- */
-export function checkAssetAspect(filePath, options, verbose) {
-  const problems = [];
-  let size;
-  try {
-    statSync(filePath);
-    size = readImageSize(filePath);
-  } catch (err) {
-    problems.push(`资产不可读: ${filePath}（${(err && err.message) || err}）`);
-    return problems;
-  }
-  const aspect = size.width / size.height;
-  if (Math.abs(aspect - ART_ASPECT) / ART_ASPECT > ASPECT_TOLERANCE) {
-    problems.push(
-      `${options.label} 宽高比 ${aspect.toFixed(4)}（${size.width}×${size.height}）不是 2:3 ±0.2%`,
-    );
-  }
-  if (size.width < options.minWidth) {
-    problems.push(`${options.label} 宽度 ${size.width}px 小于要求的 ${options.minWidth}px`);
-  }
-  if (verbose) {
-    console.log(
-      `  · ${options.label}: ${size.width}×${size.height} (${size.format}) 比例 ${aspect.toFixed(4)}`,
-    );
-  }
-  return problems;
-}
-
-/**
  * 跑完整门禁。
  *
  * @param {{ verbose?: boolean }} [options] 运行选项
@@ -275,7 +159,7 @@ export function runGate(options = {}) {
     derived = result.derived;
     if (verbose) {
       console.log(
-        `[1/5] 几何自洽: artWidth=${derived.artWidth} artHeight=${derived.artHeight} window=${derived.window.width}×${derived.window.height}`,
+        `[1/6] 几何自洽: artWidth=${derived.artWidth} artHeight=${derived.artHeight} window=${derived.window.width}×${derived.window.height}`,
       );
     }
   } catch (err) {
@@ -283,45 +167,52 @@ export function runGate(options = {}) {
     return { ok: false, problems, geometry: null, derived: null };
   }
 
-  // 2. 资产头比例 + 分辨率
-  if (verbose) console.log('[2/5] 资产头解析');
-  push(
-    checkAssetAspect(
-      MASTER_ART_PATH,
-      { minWidth: geometry.artWidth * 2, label: '母版 front-standing.png' },
-      verbose,
-    ),
-  );
-  push(
-    checkAssetAspect(
-      RUNTIME_ART['@2x'],
-      { minWidth: geometry.artWidth * 2, label: '运行时 @2x' },
-      verbose,
-    ),
-  );
-  push(
-    checkAssetAspect(
-      RUNTIME_ART['@1x'],
-      { minWidth: geometry.artWidth, label: '运行时 @1x' },
-      verbose,
-    ),
-  );
-  // @1x 与 @2x 必须是同一张图的两档，比例漂移说明转码脚本用了不同的裁剪
-  try {
-    const one = readImageSize(RUNTIME_ART['@1x']);
-    const two = readImageSize(RUNTIME_ART['@2x']);
-    if (Math.abs(two.width / one.width - 2) > 0.01 || Math.abs(two.height / one.height - 2) > 0.01) {
-      problems.push(
-        `运行时 @1x/@2x 不是 2 倍关系: ${one.width}×${one.height} vs ${two.width}×${two.height}`,
-      );
-    }
-    if (verbose) console.log(`  · @1x/@2x 倍率: ${(two.width / one.width).toFixed(3)}`);
-  } catch {
-    // 读不到时上面 checkAssetAspect 已经报过，不重复报
+  // 2. 墨迹自洽：改了 inkHeight 却没更新包围盒，这里必须红
+  if (verbose) console.log('[2/6] 墨迹自洽（artHeight × visibleRatioY ≈ inkHeight）');
+  const inkFromBox = derived.artHeight * geometry.visibleRatioY;
+  if (Math.abs(inkFromBox - geometry.inkHeight) > 2) {
+    problems.push(
+      `墨迹高度不自洽：artHeight(${derived.artHeight}) × visibleRatioY(${geometry.visibleRatioY}) = ${inkFromBox.toFixed(2)}，` +
+        `与 inkHeight=${geometry.inkHeight} 相差超过 2px`,
+    );
+  } else if (verbose) {
+    console.log(`  · 墨迹高度 ${inkFromBox.toFixed(2)}px ≈ inkHeight ${geometry.inkHeight}px`);
   }
 
-  // 3. 源码无旧魔法数 / 禁用写法
-  if (verbose) console.log('[3/5] 源码扫描');
+  // 3. 运行时资产：按清单逐文件校验（尺寸/2:3/体积/sha256/存在性）
+  if (verbose) console.log('[3/6] 运行时资产清单');
+  push(verifyManifestAgainstDisk({ out: RUNTIME_ASSET_DIR, assetsJsonPath: ASSETS_JSON_PATH }));
+  if (verbose) {
+    try {
+      const assets = readJsonFile(ASSETS_JSON_PATH);
+      console.log(
+        `  · assetId=${assets.assetId} mode=${assets.mode} 文件数=${assets.totals?.fileCount} 合计=${(Number(assets.totals?.bytes ?? 0) / 1024).toFixed(1)}KB`,
+      );
+      const neutral2x = assets.frames?.neutral?.['2x'];
+      if (neutral2x) console.log(`  · neutral@2x ${neutral2x.width}×${neutral2x.height}`);
+    } catch {
+      // 上面 verifyManifestAgainstDisk 已报过
+    }
+  }
+
+  // 4. 美术契约（源目录在场才跑；CI 上没有美术源就跳过并说明）
+  if (verbose) console.log('[4/6] 美术契约');
+  const sourceDir = detectSourceDir();
+  let runtimeManifest = null;
+  try {
+    runtimeManifest = readRuntimeManifest(sourceDir);
+  } catch (err) {
+    problems.push(`美术 runtime 清单不可读: ${(err && err.message) || err}`);
+  }
+  if (!runtimeManifest) {
+    if (verbose) console.log(`  · 跳过（源目录无 runtime/manifest.json：${sourceDir}）`);
+  } else {
+    push(checkArtContract(geometry, runtimeManifest));
+    if (verbose) console.log(`  · 已按美术契约校验 assetId=${runtimeManifest.assetId ?? '未标注'}`);
+  }
+
+  // 5. 源码无旧魔法数 / 禁用写法
+  if (verbose) console.log('[5/6] 源码扫描');
   for (const relative of SCAN_FILES) {
     const absolute = resolve(FRONTEND_ROOT, relative);
     try {
@@ -332,24 +223,95 @@ export function runGate(options = {}) {
     }
   }
 
-  // 4. CSS 变量默认值
-  if (verbose) console.log('[4/5] CSS 变量默认值');
+  // 6. CSS 变量默认值与几何真源一致
+  if (verbose) console.log('[6/6] CSS 变量默认值');
   try {
     push(checkCssVariables(resolve(FRONTEND_ROOT, 'src/pet/pet.css'), geometry));
   } catch (err) {
     problems.push(`pet.css 不可读: ${(err && err.message) || err}`);
   }
 
-  // 5. 与美术 alpha 报告一致
-  if (verbose) console.log('[5/5] alpha 报告一致性');
-  try {
-    const report = readJsonFile(ALPHA_REPORT_PATH);
-    push(checkAlphaReportAgreement(geometry, report));
-  } catch (err) {
-    problems.push(`alpha-report.json 不可读: ${(err && err.message) || err}`);
+  return { ok: problems.length === 0, problems, geometry, derived };
+}
+
+/**
+ * 校验美术 `runtime/manifest.json` 的契约字段与我们的接入是否一致。
+ *
+ * <p>只比对"我们真的依赖"的字段：画布比例、色彩空间、alpha 模式、8 档表情 id、
+ * 眨眼三态映射、锚点归一化。**不校验 PSD 的 sha256**（Git LFS 对象的 sha256 与 oid 不是一回事，
+ * 校验必然误报——主理人明确提醒过）。</p>
+ *
+ * @param {object} geometry 几何真源
+ * @param {object} runtimeManifest 美术运行时清单
+ * @returns {string[]} 问题列表
+ */
+export function checkArtContract(geometry, runtimeManifest) {
+  const problems = [];
+  const expectedExpressions = ART_EXPRESSION_IDS;
+  const blink = runtimeManifest.blink ?? null;
+  if (blink) {
+    if (blink.open !== 'neutral' || blink.closed !== 'blink' || blink.half !== 'sleepy') {
+      problems.push(
+        `美术眨眼映射变了：open=${blink.open} closed=${blink.closed} half=${blink.half}，` +
+          '渲染层 BLINK_EXPRESSION_MAP 需要同步更新',
+      );
+    }
+    const eye = blink.eyeRegionNative;
+    if (!eye || !(Number(eye.width) > 0) || !(Number(eye.height) > 0)) {
+      problems.push('美术眨眼映射缺少合法的 eyeRegionNative（眼部原生区域）');
+    }
+  } else if (problems.length === 0) {
+    // runtime 清单没有 blink 字段时不算错（母版 manifest 有），只在总清单缺时才提醒
+    const masterManifestPath = resolve(detectSourceDir(), 'manifest.json');
+    try {
+      const master = readJsonFile(masterManifestPath);
+      const masterBlink = master.blink ?? null;
+      if (!masterBlink) problems.push('美术清单缺少眼睛部位的区域（blink）声明，标定页无法据此定位');
+      else if (masterBlink.closed !== 'blink' || masterBlink.half !== 'sleepy') {
+        problems.push(
+          `美术眨眼映射变了：closed=${masterBlink.closed} half=${masterBlink.half}，渲染层需要同步`,
+        );
+      }
+    } catch {
+      // 母版清单不存在：已由"源目录在场"分支处理，不重复报
+    }
   }
 
-  return { ok: problems.length === 0, problems, geometry, derived };
+  const anchor = runtimeManifest.anchorNormalized;
+  if (anchor) {
+    if (!(anchor.x >= 0 && anchor.x <= 1 && anchor.y >= 0 && anchor.y <= 1)) {
+      problems.push(`美术锚点越界: x=${anchor.x} y=${anchor.y}（归一化坐标必须落在 0..1）`);
+    }
+    // 脚底锚点必须落在我们算出的可见盒底边附近，否则"站在桌面上"会对不齐
+    const bottom = geometry.visibleBounds.bottom;
+    if (Math.abs(anchor.y - bottom) > 0.02) {
+      problems.push(
+        `美术脚底锚点 y=${anchor.y} 与几何可见盒底边 ${bottom} 相差超过 0.02（约 ${(0.02 * geometry.artHeight).toFixed(1)}px）`,
+      );
+    }
+  }
+
+  const expressionIds = Array.isArray(runtimeManifest.expressionIds) ? runtimeManifest.expressionIds : [];
+  if (expressionIds.length > 0) {
+    for (const id of expectedExpressions) {
+      if (!expressionIds.includes(id)) problems.push(`美术清单缺少表情 ${id}（与渲染层枚举不一致）`);
+    }
+  }
+
+  const canvas = runtimeManifest.canvas;
+  if (canvas && Number(canvas.width) > 0 && Number(canvas.height) > 0) {
+    const aspect = Number(canvas.width) / Number(canvas.height);
+    if (Math.abs(aspect - ART_ASPECT) / ART_ASPECT > ASPECT_TOLERANCE) {
+      problems.push(`美术画布 ${canvas.width}×${canvas.height} 不是 2:3`);
+    }
+  }
+  if (runtimeManifest.colorSpace && runtimeManifest.colorSpace !== 'sRGB') {
+    problems.push(`美术色彩空间是 ${runtimeManifest.colorSpace}，渲染链路假定 sRGB`);
+  }
+  if (runtimeManifest.alpha && runtimeManifest.alpha !== 'straight') {
+    problems.push(`美术 alpha 是 ${runtimeManifest.alpha}，渲染链路假定 straight（不预乘）`);
+  }
+  return problems;
 }
 
 /**

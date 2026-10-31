@@ -50,8 +50,8 @@ test('artBox / visibleBox：立绘箱是 156×234，可见盒是墨迹包围盒'
   const visible = visibleBox(PET_GEOMETRY);
   near(visible.x, 18.74, 'visibleBox.x');
   near(visible.y, 100.19, 'visibleBox.y');
-  near(visible.width, 152.5, 'visibleBox.width');
-  near(visible.height, 209.32, 'visibleBox.height');
+  near(visible.width, 152.65, 'visibleBox.width');
+  near(visible.height, 209.47, 'visibleBox.height');
   // 可见盒必须严格内缩于立绘箱，否则等于用整箱判命中
   assert.ok(visible.x > box.x && visible.y > box.y);
   assert.ok(visible.x + visible.width < box.x + box.width);
@@ -87,8 +87,9 @@ test('geometryCssVariables：四个几何变量都带 px 单位', () => {
 test('PET_GEOMETRY：立绘箱严格 2:3 且与真源一致', () => {
   near(PET_GEOMETRY.artWidth / PET_GEOMETRY.artHeight, ART_ASPECT, '立绘箱比例');
   assert.equal(PET_GEOMETRY.inkHeight, 208);
-  assert.equal(PET_GEOMETRY.canvasWidth, 1024);
-  assert.equal(PET_GEOMETRY.canvasHeight, 1536);
+  // 母版画布（2048×3072 是原生 1024×1536 的最近邻 2× 放大，无额外细节）
+  assert.equal(PET_GEOMETRY.canvasWidth, 2048);
+  assert.equal(PET_GEOMETRY.canvasHeight, 3072);
 });
 
 test('normalizeGeometry：非法真源必须抛错而不是带 NaN 跑下去', () => {

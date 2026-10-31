@@ -30,16 +30,6 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 export const FRONTEND_ROOT = resolve(HERE, '..');
 /** 几何真源文件路径。 */
 export const GEOMETRY_PATH = resolve(FRONTEND_ROOT, 'pet-geometry.json');
-/** 美术侧 alpha 统计报告路径（只读校验用）。 */
-export const ALPHA_REPORT_PATH = resolve(
-  FRONTEND_ROOT,
-  '..',
-  'docs',
-  'assets',
-  'desktop-pet',
-  'v2',
-  'alpha-report.json',
-);
 
 /** 立绘画布宽高比：2:3。立绘箱必须按这个比例定，不能按可见包围盒定。 */
 export const ART_ASPECT = 2 / 3;
@@ -188,46 +178,28 @@ export function readJsonFile(filePath) {
 }
 
 /**
- * 校验 alpha 报告与几何文件里的只读字段是否一致（美术重出图后的漂移检测）。
+ * 校验几何内部的墨迹自洽性：`artHeight × visibleRatioY` 必须贴近 `inkHeight`。
+ *
+ * <p>这是"改了 inkHeight 忘了改包围盒"的兜底：`inkHeight` 是人工旋钮，包围盒是测量值，
+ * 两者一旦脱钩，屏幕上就会出现"实际看着 190px 却按 208px 排版"的偏差。</p>
  *
  * @param {object} geometry 几何对象
- * @param {object} report `alpha-report.json` 内容
- * @returns {string[]} 不一致项说明（空数组 = 一致）
+ * @param {number} [tolerancePx] 容差（CSS px，缺省 2）
+ * @returns {string[]} 问题列表（空 = 自洽）
  */
-export function checkAlphaReportAgreement(geometry, report) {
+export function checkInkConsistency(geometry, tolerancePx = 2) {
   const problems = [];
-  if (!report || typeof report !== 'object') return ['alpha-report.json 内容为空'];
-  const bounds = (report && report.visibleBounds128) || {};
-  const pixelTolerance = 2;
-  const pairs = [
-    ['left', geometry.visibleBounds.left, bounds.left, report.width],
-    ['top', geometry.visibleBounds.top, bounds.top, report.height],
-    ['right', geometry.visibleBounds.right, bounds.right, report.width],
-    ['bottom', geometry.visibleBounds.bottom, bounds.bottom, report.height],
-  ];
-  for (const [name, normalized, pixels, canvasSize] of pairs) {
-    const size = Number(canvasSize);
-    const px = Number(pixels);
-    if (!Number.isFinite(size) || size <= 0 || !Number.isFinite(px)) {
-      problems.push(`alpha 报告缺少 ${name} 的像素边界或画布尺寸`);
-      continue;
-    }
-    const expected = px / size;
-    if (Math.abs(normalized - expected) > pixelTolerance / size) {
-      problems.push(
-        `visibleBounds.${name}=${normalized} 与 alpha 报告 ${px}px/${size}px=${expected.toFixed(5)} 偏差超过 ${pixelTolerance}px`,
-      );
-    }
+  const artHeight = Number(geometry.artHeight);
+  const ratio = Number(geometry.visibleRatioY);
+  const inkHeight = Number(geometry.inkHeight);
+  if (!Number.isFinite(artHeight) || !Number.isFinite(ratio) || !Number.isFinite(inkHeight)) {
+    return ['artHeight / visibleRatioY / inkHeight 存在非数值字段，无法校验墨迹自洽性'];
   }
-  const ratioY = (Number(bounds.bottom) - Number(bounds.top)) / Number(report.height);
-  if (Number.isFinite(ratioY) && Math.abs(geometry.visibleRatioY - ratioY) > 0.001) {
+  const inkFromBox = artHeight * ratio;
+  if (Math.abs(inkFromBox - inkHeight) > tolerancePx) {
     problems.push(
-      `visibleRatioY=${geometry.visibleRatioY} 与 alpha 报告推算值 ${ratioY.toFixed(6)} 偏差超过 0.001`,
-    );
-  }
-  if (Number(report.width) !== Number(geometry.canvasWidth) || Number(report.height) !== Number(geometry.canvasHeight)) {
-    problems.push(
-      `canvasWidth/Height=${geometry.canvasWidth}×${geometry.canvasHeight} 与 alpha 报告 ${report.width}×${report.height} 不一致`,
+      `墨迹高度不自洽：artHeight(${artHeight}) × visibleRatioY(${ratio}) = ${inkFromBox.toFixed(2)}，` +
+        `与 inkHeight=${inkHeight} 相差超过 ${tolerancePx}px`,
     );
   }
   return problems;

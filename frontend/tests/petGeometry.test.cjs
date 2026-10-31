@@ -13,14 +13,14 @@
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
+const { existsSync, readFileSync } = require('node:fs');
 const { resolve } = require('node:path');
 
 const {
   ART_ASPECT,
   FRONTEND_ROOT,
   GEOMETRY_PATH,
-  checkAlphaReportAgreement,
+  checkInkConsistency,
   deriveArtHeight,
   deriveArtWidth,
   deriveGeometry,
@@ -31,8 +31,6 @@ const {
 
 const {
   FORBIDDEN_MAGIC_NUMBERS,
-  MASTER_ART_PATH,
-  RUNTIME_ART,
   checkCssVariables,
   readImageSize,
   readPngSize,
@@ -40,6 +38,14 @@ const {
   scanSource,
   stripComments,
 } = require('../scripts/check-pet-geometry.mjs');
+
+const {
+  ART_EXPRESSION_IDS,
+  ASSETS_JSON_PATH,
+  DEFAULT_OUT_DIR,
+  detectSourceDir,
+  readRuntimeManifest,
+} = require('../scripts/build-pet-assets.mjs');
 
 /** 读几何真源原文。 */
 function readGeometry() {
@@ -103,11 +109,11 @@ test('deriveGeometry：窗口 188×338、可见墨迹与命中矩形', () => {
   assert.equal(derived.artWidth, 156);
   assert.equal(derived.artHeight, 234);
   assert.deepEqual(derived.window, { width: 188, height: 338 });
-  // 命中矩形（设计文档 §2.1 末行）：x=18.74 / y=100.19 / w=152.50 / h=209.32
+  // 命中矩形由 v3 母版的 alpha>128 包围盒换算：x=18.74 / y=100.19 / w=152.65 / h=209.47
   assert.ok(Math.abs(derived.hitBox.x - 18.74) < 0.02, `hitBox.x=${derived.hitBox.x}`);
   assert.ok(Math.abs(derived.hitBox.y - 100.19) < 0.02, `hitBox.y=${derived.hitBox.y}`);
-  assert.ok(Math.abs(derived.hitBox.width - 152.5) < 0.02, `hitBox.width=${derived.hitBox.width}`);
-  assert.ok(Math.abs(derived.hitBox.height - 209.32) < 0.02, `hitBox.height=${derived.hitBox.height}`);
+  assert.ok(Math.abs(derived.hitBox.width - 152.65) < 0.02, `hitBox.width=${derived.hitBox.width}`);
+  assert.ok(Math.abs(derived.hitBox.height - 209.47) < 0.02, `hitBox.height=${derived.hitBox.height}`);
   // 墨迹必须比立绘箱小：整箱判命中会让透明区吃掉桌面点击
   assert.ok(derived.hitBox.width < derived.artWidth);
   assert.ok(derived.hitBox.height < derived.artHeight);
@@ -130,16 +136,23 @@ test('pet-geometry.json：立绘箱严格 2:3 且窗口公式自洽', () => {
   assert.equal(geometry.artHeight + geometry.glowPad * 2 + geometry.bubbleHeight, 338);
 });
 
-test('可见比例与 alpha 报告一致（美术重出图后的漂移检测）', () => {
+test('墨迹自洽：artHeight × visibleRatioY ≈ inkHeight（改 inkHeight 忘改包围盒必须红）', () => {
   const geometry = readGeometry();
-  const report = JSON.parse(
-    readFileSync(resolve(FRONTEND_ROOT, '..', 'docs', 'assets', 'desktop-pet', 'v2', 'alpha-report.json'), 'utf8'),
-  );
-  assert.deepEqual(checkAlphaReportAgreement(geometry, report), []);
+  assert.deepEqual(checkInkConsistency(geometry), []);
   // 篡改一份副本必须被检出
   const tampered = JSON.parse(JSON.stringify(geometry));
-  tampered.visibleBounds.left = 0.5;
-  assert.ok(checkAlphaReportAgreement(tampered, report).length > 0);
+  tampered.inkHeight = 260;
+  assert.ok(checkInkConsistency(tampered).length > 0, 'inkHeight 与包围盒脱钩必须报错');
+});
+
+test('几何包围盒与美术画布同比：canvas 是 2:3 且包围盒在 0..1 内', () => {
+  const geometry = readGeometry();
+  assert.ok(Math.abs(geometry.canvasWidth / geometry.canvasHeight - ART_ASPECT) / ART_ASPECT < 0.002);
+  for (const [name, value] of Object.entries(geometry.visibleBounds)) {
+    assert.ok(value >= 0 && value <= 1, `visibleBounds.${name}=${value} 越界`);
+  }
+  assert.ok(geometry.visibleBounds.right > geometry.visibleBounds.left);
+  assert.ok(geometry.visibleBounds.bottom > geometry.visibleBounds.top);
 });
 
 test('pet.css 的变量默认值与几何真源一致', () => {
@@ -149,22 +162,54 @@ test('pet.css 的变量默认值与几何真源一致', () => {
 
 // ---------------------------------------------------------------- 门禁逻辑
 
-test('母版 PNG 头解析：1024×1536（2:3）', () => {
-  const size = readPngSize(MASTER_ART_PATH);
-  assert.equal(size.width, 1024);
-  assert.equal(size.height, 1536);
-  assert.equal(size.format, 'png');
-  assert.ok(Math.abs(size.width / size.height - ART_ASPECT) < 0.001);
+test('运行时资产头解析：@1x/@2x 都是 2:3 且为 2 倍关系（数据来自 pet-assets.json）', () => {
+  const assets = JSON.parse(readFileSync(ASSETS_JSON_PATH, 'utf8'));
+  const neutral = assets.frames.neutral;
+  for (const density of ['1x', '2x']) {
+    const file = resolve(DEFAULT_OUT_DIR, neutral[density].file);
+    const size = readWebpSize(file);
+    assert.equal(size.width, neutral[density].width);
+    assert.equal(size.height, neutral[density].height);
+    assert.ok(Math.abs(size.width / size.height - ART_ASPECT) < 0.002, `${density} 不是 2:3`);
+  }
+  assert.equal(neutral['2x'].width, neutral['1x'].width * 2);
+  assert.equal(neutral['2x'].height, neutral['1x'].height * 2);
 });
 
-test('运行时 WebP 头解析：@1x/@2x 都是 2:3 且为 2 倍关系', () => {
-  const one = readWebpSize(RUNTIME_ART['@1x']);
-  const two = readWebpSize(RUNTIME_ART['@2x']);
-  for (const size of [one, two]) {
-    assert.ok(Math.abs(size.width / size.height - ART_ASPECT) < 0.002, `${size.width}×${size.height} 不是 2:3`);
+test('母版 PNG 头解析：2048×3072（2:3，最近邻 2× 放大）', () => {
+  const sourceDir = detectSourceDir();
+  const runtimeManifest = readRuntimeManifest(sourceDir);
+  if (!runtimeManifest) {
+    // 美术源不在本机（CI）：跳过而不是失败——美术资产是 gitignored 的暂存区/可选入库物
+    assert.ok(true, '源目录无 runtime 清单，跳过母版头解析');
+    return;
   }
-  assert.equal(two.width, one.width * 2);
-  assert.equal(two.height, one.height * 2);
+  const masterPath = resolve(sourceDir, 'front-standing.png');
+  const size = readPngSize(masterPath);
+  assert.equal(size.width, 2048);
+  assert.equal(size.height, 3072);
+  assert.equal(size.format, 'png');
+  assert.ok(Math.abs(size.width / size.height - ART_ASPECT) < 0.001);
+  // masterScale / expressionIds 在母版清单里（运行时不带这些契约字段）
+  const masterManifestPath = resolve(sourceDir, 'manifest.json');
+  if (existsSync(masterManifestPath)) {
+    const masterManifest = JSON.parse(readFileSync(masterManifestPath, 'utf8'));
+    // 美术清单明确：母版是原生画布的最近邻 2× 放大，不含额外细节
+    assert.equal(masterManifest.masterScale?.addsDetail, false);
+    assert.equal(masterManifest.masterScale?.factor, 2);
+    assert.equal(masterManifest.masterScale?.kernel, 'nearest');
+  }
+});
+
+test('美术清单的 8 档表情 id 与渲染层枚举一致', () => {
+  const sourceDir = detectSourceDir();
+  const masterManifestPath = resolve(sourceDir, 'manifest.json');
+  if (!existsSync(masterManifestPath)) return;
+  const masterManifest = JSON.parse(readFileSync(masterManifestPath, 'utf8'));
+  const ids = Array.isArray(masterManifest.expressionIds) ? masterManifest.expressionIds : [];
+  for (const id of ART_EXPRESSION_IDS) {
+    assert.ok(ids.includes(id), `美术清单缺少表情 ${id}`);
+  }
 });
 
 test('readImageSize：未知扩展名必须报错', () => {

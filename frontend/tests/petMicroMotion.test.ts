@@ -225,7 +225,7 @@ test('CSS：prefers-reduced-motion 关掉动态但保留眨眼', () => {
   const block = CSS.slice(index);
   assert.ok(block.includes('.pet-halo'), '减少动效时必须关掉光晕');
   assert.ok(block.includes('.pet-ahoge'), '减少动效时必须关掉呆毛');
-  assert.ok(block.includes('#pet-root[data-motion] .pet-art-image'), '减少动效时必须关掉动作动画');
+  assert.ok(block.includes("[data-motion] .pet-art-frame"), '减少动效时必须关掉动作动画');
   // 眨眼是状态切换（可用性信号），不该被这条媒体查询禁掉
   assert.equal(block.includes("data-expression='blink'"), false);
 });

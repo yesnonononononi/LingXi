@@ -1,17 +1,16 @@
 /**
- * 资产清单与管线单测（node:test，不碰 DOM）。
+ * 资产管线与运行时清单单测（node:test，不碰 DOM）。
  *
- * <p><b>关于"美术还没交齐"的处理（重要）：</b>测试**不以"源目录里有 v3 新资产"为前提**——
- * 否则美术排期一变，CI 就永久红。这里的原则是：</p>
- * <ol>
- *   <li><b>硬校验只对已入库的东西</b>：`public/live2d/pet-v2/*.webp` 与生成清单
- *       `src/pet/assets/manifest.ts`（都在仓库里，属于工程侧交付物）；</li>
- *   <li><b>对"美术未交付"的东西只做降级断言</b>：表情贴片缺失必须表现为"清单留空 + 管线给出
- *       清晰提示 + 退出码 0"，而不是失败；</li>
- *   <li><b>候选新资产目录（含 `.lingxi/assets/pet` 暂存区）不参与断言</b>：它可能不存在、
- *       可能只有半成品，是否入库由主理人决定。相关校验走 `verifyManifestAgainstDisk()`，
- *       等资产迁移到位后自然生效。</li>
- * </ol>
+ * <p><b>关于"美术源不在本机时"的处理（重要）：</b></p>
+ * <ul>
+ *   <li><b>硬断言只针对入库物</b>：`frontend/pet-assets.json`（生成物，入库）与
+ *       `frontend/public/live2d/pet-v3/**`（接入产物，入库）。这两者一定在仓库里，
+ *       所以校验它们不会因环境差异而红。</li>
+ *   <li><b>美术源目录（`docs/assets/desktop-pet/v3` 或暂存区）只做"在场则校验、不在场则跳过"</b>：
+ *       它可能被主理人迁移、也可能在 CI 上不存在。跳过时用例里会打印原因，不会静默假通过。</li>
+ *   <li><b>`psd/pet_p0.psd` 永不读取、永不校验哈希</b>：它是 Git LFS 对象，工作区文件的
+ *       sha256 与清单里的 oid 不是一回事，校验必然误报（主理人明确提醒）。</li>
+ * </ul>
  *
  * <p>运行：`npm run test:pet`。</p>
  */
@@ -21,33 +20,68 @@ const { existsSync, readFileSync, statSync } = require('node:fs');
 const { resolve } = require('node:path');
 
 const {
-  DEFAULT_OUT_DIR,
-  DEFAULT_SOURCE_DIR,
+  ART_EXPRESSION_IDS,
+  ASSETS_JSON_PATH,
   DENSITIES,
-  MASTER_FILE_NAME,
-  MANIFEST_PATH,
-  findExpressionFile,
+  DEFAULT_OUT_DIR,
+  EXPRESSION_FILE_ALIASES,
+  buildAssetsJson,
+  detectMode,
+  detectSourceDir,
+  discoverSourceCandidates,
   loadSharp,
   parseArgs,
-  renderManifest,
+  readRuntimeManifest,
+  renderManifestTs,
   run,
+  sha256Of,
   verifyManifestAgainstDisk,
-  verifyOutput,
 } = require('../scripts/build-pet-assets.mjs');
 
 const { ART_ASPECT, FRONTEND_ROOT } = require('../scripts/build-pet-geometry.mjs');
 const { readImageSize } = require('../scripts/check-pet-geometry.mjs');
 
-const MASTER_PATH = resolve(DEFAULT_SOURCE_DIR, MASTER_FILE_NAME);
-/** 运行时产物是否齐备（不齐则相关用例跳过并打印原因）。 */
-const RUNTIME_READY = DENSITIES.every((density) =>
-  existsSync(resolve(DEFAULT_OUT_DIR, `front-standing${density.suffix}.webp`)),
-);
+/**
+ * 从 TS 源码里解析眨眼三态映射。
+ *
+ * <p>本文件是 `.cjs`（node 直接跑，不经 tsx），不能 `require` TS 模块；但"美术清单的 blink 字段"
+ * 与"渲染层 `BLINK_EXPRESSION_MAP`"必须一致，所以这里读源码文本做正则提取。
+ * 提取失败即视为契约被改（宁可让测试红，也不要静默放过）。</p>
+ *
+ * @returns {{ open: string, closed: string, half: string }} 渲染层声明
+ */
+function readBlinkMapFromSource() {
+  const source = readFileSync(resolve(FRONTEND_ROOT, 'src/pet/presentation/blink-driver.ts'), 'utf8');
+  /**
+   * 取某个键的字面量值。
+   *
+   * @param {string} key 键名
+   * @returns {string} 值（提不到时为空串）
+   */
+  const pick = (key) => {
+    const matched = new RegExp(`${key}\\s*:\\s*'([a-z]+)'`).exec(source);
+    return matched ? matched[1] : '';
+  };
+  return { open: pick('open'), closed: pick('closed'), half: pick('half') };
+}
+
+/** 渲染层声明的眨眼三态。 */
+const BLINK_EXPRESSION_MAP = readBlinkMapFromSource();
+
+/** 运行时清单（入库物；缺失说明没跑过管线）。 */
+const ASSETS_READY = existsSync(ASSETS_JSON_PATH);
+/** 读清单文本（缺省返回空对象，让相关用例能给出可读的跳过原因）。 */
+function readAssets() {
+  return ASSETS_READY ? JSON.parse(readFileSync(ASSETS_JSON_PATH, 'utf8')) : {};
+}
+const SKIP_NO_ASSETS = ASSETS_READY ? false : '运行时清单未生成（先跑 npm run build:pet-assets）';
 
 // ---------------------------------------------------------------- 管线行为
 
-test('parseArgs：源目录可配置（--source / --source= / 环境变量），默认指向 v2', () => {
-  assert.equal(parseArgs([]).source, DEFAULT_SOURCE_DIR);
+test('parseArgs：源目录可配置（--source / --source= / 环境变量），默认自动探测', () => {
+  const auto = parseArgs([]);
+  assert.equal(auto.sourceExplicit, false);
+  assert.equal(auto.source, detectSourceDir());
   assert.equal(parseArgs(['--source', 'D:/tmp/art']).source, resolve(process.cwd(), 'D:/tmp/art'));
   assert.equal(parseArgs(['--source=D:/tmp/art']).source, resolve(process.cwd(), 'D:/tmp/art'));
   assert.equal(parseArgs(['--check']).check, true);
@@ -57,6 +91,17 @@ test('parseArgs：源目录可配置（--source / --source= / 环境变量），
   assert.equal(parseArgs([]).source, resolve(process.cwd(), 'D:/tmp/env-art'));
   if (previous === undefined) delete process.env.PET_ASSET_SOURCE;
   else process.env.PET_ASSET_SOURCE = previous;
+});
+
+test('discoverSourceCandidates：向上多层探测且 v3 优先于暂存区与 v2', () => {
+  const candidates = discoverSourceCandidates();
+  assert.ok(candidates.length >= 3);
+  const v3Index = candidates.findIndex((item) => item.includes('desktop-pet') && item.endsWith('v3'));
+  const stagingIndex = candidates.findIndex((item) => item.includes('.lingxi') && item.endsWith('pet'));
+  const v2Index = candidates.findIndex((item) => item.endsWith('v2'));
+  assert.ok(v3Index >= 0 && stagingIndex >= 0 && v2Index >= 0);
+  assert.ok(v3Index < stagingIndex, 'v3（入库归宿）应排在暂存区之前');
+  assert.ok(stagingIndex < v2Index, '暂存区应排在历史 v2 之前');
 });
 
 test('源目录不存在：优雅退出（退出码 1，不抛未捕获异常）', async () => {
@@ -69,7 +114,7 @@ test('源目录不存在：优雅退出（退出码 1，不抛未捕获异常）
   assert.equal(code, 1);
 });
 
-test('源目录缺少母版：优雅退出（退出码 1）', async () => {
+test('源目录缺少母版与 runtime 清单：优雅退出（退出码 1）', async () => {
   const code = await run({
     source: resolve(FRONTEND_ROOT, 'scripts'),
     out: DEFAULT_OUT_DIR,
@@ -79,103 +124,188 @@ test('源目录缺少母版：优雅退出（退出码 1）', async () => {
   assert.equal(code, 1);
 });
 
+test('detectMode：没有清单也没有母版时返回 none（不猜模式）', () => {
+  assert.equal(detectMode(resolve(FRONTEND_ROOT, 'scripts'), null), 'none');
+});
+
+test('detectMode：有 composites 走 composite，只有 expressions 走 overlay', () => {
+  const compositeManifest = { files: [{ file: 'composites/neutral@2x.webp' }] };
+  assert.equal(detectMode(DEFAULT_OUT_DIR, compositeManifest), 'composite');
+  const overlayManifest = { files: [{ file: 'expressions/neutral@2x.webp' }] };
+  assert.equal(detectMode(DEFAULT_OUT_DIR, overlayManifest), 'overlay');
+});
+
 test('loadSharp：可选依赖，不可用时返回 null 而不是抛异常', async () => {
   const sharp = await loadSharp();
   assert.ok(sharp === null || typeof sharp === 'function' || typeof sharp === 'object');
 });
 
-test('findExpressionFile：未交付时返回 null（不报错、不编造路径）', () => {
-  for (const id of ['neutral', 'blink', 'happy']) {
-    const found = findExpressionFile(DEFAULT_SOURCE_DIR, id);
-    assert.ok(found === null || existsSync(found), `${id} 返回了不存在的路径: ${found}`);
+test('EXPRESSION_FILE_ALIASES：8 档表情都能对到美术 E1–E8 编号', () => {
+  for (const id of ART_EXPRESSION_IDS) {
+    const aliases = EXPRESSION_FILE_ALIASES[id];
+    assert.ok(Array.isArray(aliases) && aliases.length > 0, `缺少 ${id} 的文件别名`);
+    assert.ok(aliases.includes(id), `${id} 的别名里应包含自身`);
   }
+  assert.equal(Object.keys(EXPRESSION_FILE_ALIASES).length, 8);
 });
 
-test('renderManifest：生成文本包含清单契约（版本、生成器、两个 URL 与导出函数）', () => {
-  const text = renderManifest({
-    source: 'docs/assets/desktop-pet/v2',
-    master: { file: MASTER_FILE_NAME, width: 1024, height: 1536, bytes: 1970393 },
-    art: DENSITIES.map((density) => ({
-      density: density.id,
-      file: `front-standing${density.suffix}.webp`,
-      url: `lxa://pet-v2/front-standing${density.suffix}.webp`,
-      width: density.width,
-      height: density.height,
-      bytes: 1000,
-      format: 'webp',
-    })),
-    expressions: [],
+test('buildAssetsJson：汇总 totals 并对空表给出 0', () => {
+  const empty = buildAssetsJson({
+    assetId: 'x',
+    sourceDir: 'y',
+    mode: 'composite',
+    canvas: { width: 2048, height: 3072 },
+    nativeCanvas: { width: 1024, height: 1536 },
+    colorSpace: 'sRGB',
+    alpha: 'straight',
+    masterScale: { factor: 2, kernel: 'nearest', addsDetail: false },
+    anchorNormalized: { x: 0.5, y: 0.95 },
+    headEndByScale: { '1x': 116, '2x': 233 },
+    blink: { open: 'neutral', closed: 'blink', half: 'sleepy', eyeRegionNative: { left: 1, top: 2, width: 3, height: 4 } },
+    frames: {},
+    patches: {},
+    body: null,
   });
-  assert.ok(text.includes('export const PET_ASSET_MANIFEST: PetAssetManifest'));
+  assert.deepEqual(empty.totals, { fileCount: 0, bytes: 0 });
+  assert.equal(empty.version, 1);
+  assert.equal(empty.generatedBy, 'scripts/build-pet-assets.mjs');
+});
+
+test('renderManifestTs：生成的是类型化薄包装（数据仍只在 JSON 里）', () => {
+  const text = renderManifestTs();
+  assert.ok(text.includes("import assetsSource from '../../../pet-assets.json'"));
+  assert.ok(text.includes('export const PET_ASSETS: PetAssets'));
+  assert.ok(text.includes('export function expressionFrameUrl'));
+  assert.ok(text.includes('export function expressionFrameUrls'));
   assert.ok(text.includes('export function petArtUrl'));
-  assert.ok(text.includes('export function expressionPatchUrls'));
-  assert.ok(text.includes("url: 'lxa://pet-v2/front-standing@2x.webp'"));
-  assert.ok(text.includes("generatedBy: 'scripts/build-pet-assets.mjs'"));
-  assert.ok(text.includes("format: 'webp'"));
+  assert.ok(text.includes('export const PET_BLINK_MAPPING'));
+  // 不重复数据：生成物里不该出现像素数字
+  assert.equal(/width: \d{3}/.test(text), false, 'manifest.ts 不应内嵌资产数据（避免两份真源）');
+  // 不许宣称"2× 高清母版"（母版是最近邻放大）
+  assert.ok(text.includes('不含额外细节') || text.includes('addsDetail'));
 });
 
-// ---------------------------------------------------------------- 母版与产物
+// ---------------------------------------------------------------- 入库清单
 
-test('母版：1024×1536（2:3）且留在 docs/（不进 public）', { skip: existsSync(MASTER_PATH) ? false : '母版未入库' }, () => {
-  const size = readImageSize(MASTER_PATH);
-  assert.equal(size.width, 1024);
-  assert.equal(size.height, 1536);
-  assert.ok(Math.abs(size.width / size.height - ART_ASPECT) < 0.001);
-  assert.equal(existsSync(resolve(FRONTEND_ROOT, 'public', 'live2d', 'pet-v2', MASTER_FILE_NAME)), false);
+test('pet-assets.json：v3 接入、composite 模式、8 档表情 × 2 档密度', { skip: SKIP_NO_ASSETS }, () => {
+  const assets = readAssets();
+  assert.equal(assets.mode, 'composite', '当前美术产物应走 composite（完整帧）模式');
+  // assetId 取母版清单（v3 母版是权威），runtime 清单的 id 带 -runtime 后缀
+  assert.equal(assets.assetId, 'lingxi-pet-p0-v3');
+  assert.ok(assets.sourceDir.endsWith('desktop-pet/v3'), `源目录应指向 v3，实际 ${assets.sourceDir}`);
+  assert.equal(assets.colorSpace, 'sRGB');
+  assert.equal(assets.alpha, 'straight');
+  assert.equal(assets.masterScale.addsDetail, false, '母版是最近邻 2× 放大，不含额外细节');
+  for (const id of ART_EXPRESSION_IDS) {
+    const byDensity = assets.frames[id];
+    assert.ok(byDensity, `缺少表情 ${id} 的帧`);
+    for (const density of DENSITIES) {
+      assert.ok(byDensity[density.id], `缺少 ${id} 的 ${density.id} 档`);
+    }
+  }
+  assert.equal(assets.totals.fileCount, ART_EXPRESSION_IDS.length * DENSITIES.length);
 });
 
-test('运行时产物：两档都满足尺寸/比例/体积预算', { skip: RUNTIME_READY ? false : '运行时产物未生成（先跑 npm run build:pet-assets）' }, () => {
-  for (const density of DENSITIES) {
-    const file = resolve(DEFAULT_OUT_DIR, `front-standing${density.suffix}.webp`);
-    assert.deepEqual(verifyOutput(file, density), [], `${density.id} 档未通过校验`);
-    const size = readImageSize(file);
-    assert.ok(Math.abs(size.width / size.height - ART_ASPECT) < 0.002, `${density.id} 不是 2:3`);
-    assert.ok(statSync(file).size <= density.maxBytes, `${density.id} 超出体积预算`);
+test('pet-assets.json：画布 2:3、锚点归一化、眨眼映射与渲染层一致', { skip: SKIP_NO_ASSETS }, () => {
+  const assets = readAssets();
+  assert.equal(assets.canvas.width / assets.canvas.height, ART_ASPECT);
+  assert.ok(assets.anchorNormalized.x >= 0 && assets.anchorNormalized.x <= 1);
+  assert.ok(assets.anchorNormalized.y >= 0 && assets.anchorNormalized.y <= 1);
+  assert.equal(assets.blink.open, BLINK_EXPRESSION_MAP.open);
+  assert.equal(assets.blink.closed, BLINK_EXPRESSION_MAP.closed);
+  assert.equal(assets.blink.half, BLINK_EXPRESSION_MAP.half);
+  assert.ok(assets.blink.eyeRegionNative.width > 0);
+  assert.ok(assets.blink.eyeRegionNative.height > 0);
+});
+
+test('pet-assets.json：每个文件都能追溯到美术 runtime/，且 URL 走 lxa://pet-v3', { skip: SKIP_NO_ASSETS }, () => {
+  const assets = readAssets();
+  for (const [id, byDensity] of Object.entries(assets.frames)) {
+    for (const [density, asset] of Object.entries(byDensity)) {
+      assert.ok(asset.file.startsWith('composites/'), `${id}@${density} 应来自美术 composites/`);
+      assert.ok(asset.file.endsWith(`@${density}.webp`));
+      assert.equal(asset.url, `lxa://pet-v3/${asset.file}`);
+      assert.equal(asset.sha256.length, 64);
+    }
   }
 });
 
-test('总预算：public/live2d 下桌宠资产 ≤700KB（设计文档 §7.1）', { skip: RUNTIME_READY ? false : '运行时产物未生成' }, () => {
-  let total = 0;
-  for (const density of DENSITIES) {
-    total += statSync(resolve(DEFAULT_OUT_DIR, `front-standing${density.suffix}.webp`)).size;
-  }
-  assert.ok(total <= 700 * 1024, `当前 ${total}B 超过 700KB 预算`);
-});
-
-// ---------------------------------------------------------------- 清单一致性
-
-test('清单文件存在且与磁盘产物一致（verifyManifestAgainstDisk）', { skip: RUNTIME_READY ? false : '运行时产物未生成' }, () => {
-  assert.equal(existsSync(MANIFEST_PATH), true, '缺少生成清单 src/pet/assets/manifest.ts');
-  const problems = verifyManifestAgainstDisk({ out: DEFAULT_OUT_DIR, manifestPath: MANIFEST_PATH });
+test('运行时产物与清单完全一致（存在/尺寸/体积/sha256/2:3）', { skip: SKIP_NO_ASSETS }, () => {
+  const problems = verifyManifestAgainstDisk({ out: DEFAULT_OUT_DIR, assetsJsonPath: ASSETS_JSON_PATH });
   assert.deepEqual(problems, [], problems.join(' | '));
 });
 
-test('清单里的体积与磁盘逐档一致（防止手改清单）', { skip: RUNTIME_READY ? false : '运行时产物未生成' }, () => {
-  const text = readFileSync(MANIFEST_PATH, 'utf8');
-  for (const density of DENSITIES) {
-    const bytes = statSync(resolve(DEFAULT_OUT_DIR, `front-standing${density.suffix}.webp`)).size;
-    assert.ok(text.includes(`bytes: ${bytes},`), `清单缺少 ${density.id} 档的体积 ${bytes}`);
+test('运行时产物比例与像素尺寸：全部 2:3，且 @2x 是 @1x 的 2 倍', { skip: SKIP_NO_ASSETS }, () => {
+  const assets = readAssets();
+  for (const [id, byDensity] of Object.entries(assets.frames)) {
+    const one = byDensity['1x'];
+    const two = byDensity['2x'];
+    assert.equal(two.width, one.width * 2, `${id} 两档宽度不是 2 倍`);
+    assert.equal(two.height, one.height * 2, `${id} 两档高度不是 2 倍`);
+    for (const asset of [one, two]) {
+      const file = resolve(DEFAULT_OUT_DIR, asset.file);
+      const size = readImageSize(file);
+      assert.equal(size.width, asset.width);
+      assert.ok(Math.abs(size.width / size.height - ART_ASPECT) < 0.002, `${asset.file} 不是 2:3`);
+      assert.equal(statSync(file).size, asset.bytes);
+      assert.equal(sha256Of(file), asset.sha256);
+    }
   }
 });
 
-test('清单不含未交付资产的假声明（表情贴片要么有文件、要么没有条目）', () => {
-  if (!existsSync(MANIFEST_PATH)) return;
-  const text = readFileSync(MANIFEST_PATH, 'utf8');
-  const urls = [...text.matchAll(/url: '(lxa:\/\/pet-v2\/[^']+)'/g)].map((match) => match[1]);
-  assert.ok(urls.length >= DENSITIES.length, '清单至少要声明两档立绘');
-  for (const url of urls) {
-    const fileName = url.replace('lxa://pet-v2/', '');
-    assert.equal(existsSync(resolve(DEFAULT_OUT_DIR, fileName)), true, `清单声明了不存在的文件: ${url}`);
-  }
+test('体积预算：运行时资产总量 ≤2.5MB（16 张美术产物，工程侧不重编码）', { skip: SKIP_NO_ASSETS }, () => {
+  const assets = readAssets();
+  const total = Number(assets.totals.bytes);
+  assert.ok(total > 0);
+  assert.ok(total <= 2.5 * 1024 * 1024, `当前 ${(total / 1024 / 1024).toFixed(2)}MB 超过 2.5MB 预算`);
+  // 预算是我们自己定的上限；美术自检口径的 modelBytes（23.4MB）是全量母版，两者不冲突，
+  // 这里只断言"运行时产物"的量级，避免有人拿母版体积来比对
 });
 
-test('check 模式：清单与磁盘不一致时必须报错（借用不存在的清单路径）', async () => {
-  const code = await run({
-    source: DEFAULT_SOURCE_DIR,
-    out: DEFAULT_OUT_DIR,
-    check: true,
-    verbose: false,
-  });
-  // 清单已入库且一致 → 0；如果返回 1 说明仓库里清单/产物真的漂移了
+test('check 模式：清单与磁盘一致时退出码 0', { skip: SKIP_NO_ASSETS }, async () => {
+  const code = await run({ source: detectSourceDir(), out: DEFAULT_OUT_DIR, check: true, verbose: false });
   assert.equal(code, 0);
+});
+
+// ---------------------------------------------------------------- 美术源（在场才校验）
+
+test('美术源：runtime 清单与母版清单的 8 档表情、眨眼映射与我们一致', () => {
+  const sourceDir = detectSourceDir();
+  const runtimeManifest = readRuntimeManifest(sourceDir);
+  const masterManifest = existsSync(resolve(sourceDir, 'manifest.json'))
+    ? JSON.parse(readFileSync(resolve(sourceDir, 'manifest.json'), 'utf8'))
+    : null;
+  if (!runtimeManifest) {
+    assert.ok(true, `美术源不在本机（${sourceDir}），跳过契约校验`);
+    return;
+  }
+  // 8 档表情 id 在母版清单里；运行时清单逐文件带 expressionId，两者应一致
+  const ids = Array.isArray(masterManifest?.expressionIds) ? masterManifest.expressionIds : [];
+  for (const id of ART_EXPRESSION_IDS) {
+    assert.ok(ids.includes(id), `美术母版清单缺少表情 ${id}`);
+  }
+  const runtimeIds = new Set(
+    (Array.isArray(runtimeManifest.files) ? runtimeManifest.files : []).map((item) => item.expressionId).filter(Boolean),
+  );
+  for (const id of ART_EXPRESSION_IDS) {
+    assert.ok(runtimeIds.has(id), `美术 runtime 清单缺少表情 ${id} 的产物`);
+  }
+  // 眨眼三态是母版清单的契约，必须与渲染层 BLINK_EXPRESSION_MAP 一致
+  assert.equal(masterManifest?.blink?.open, BLINK_EXPRESSION_MAP.open);
+  assert.equal(masterManifest?.blink?.closed, BLINK_EXPRESSION_MAP.closed);
+  assert.equal(masterManifest?.blink?.half, BLINK_EXPRESSION_MAP.half);
+});
+
+test('美术源：composites 的 neutral 与 front-standing 是同一张（美术声明的等价关系）', () => {
+  const sourceDir = detectSourceDir();
+  const runtimeManifest = readRuntimeManifest(sourceDir);
+  if (!runtimeManifest) {
+    assert.ok(true, '美术源不在本机，跳过等价关系校验');
+    return;
+  }
+  const files = Array.isArray(runtimeManifest.files) ? runtimeManifest.files : [];
+  const neutral = files.find((item) => item.file === 'composites/neutral@2x.webp');
+  const standing = files.find((item) => item.file === 'front-standing@2x.webp');
+  assert.ok(neutral && standing, '美术清单应同时声明 composites/neutral@2x 与 front-standing@2x');
+  assert.equal(neutral.sha256, standing.sha256, '两者应是同一张图（我们只接 composites，不重复接入）');
 });

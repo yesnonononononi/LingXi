@@ -19,7 +19,7 @@ import { BlinkDriver } from './presentation/blink-driver';
 import { CommandRouter } from './presentation/command-router';
 import { SpritePresentation, type ExpressionUrlMap } from './presentation/sprite-presentation';
 import { EXPRESSION_IDS, type ExpressionId, type MotionId, type PresentationOp } from './presentation/types';
-import { expressionPatchUrls, petArtUrl } from './assets/manifest';
+import { PET_BLINK_MAPPING, expressionFrameUrl, expressionFrameUrls } from './assets/manifest';
 import { loadArt } from './assets/loader';
 import { PowerPolicy } from './power-policy';
 import { isCalibrationEnabled, mountCalibration } from './visual/calibrate';
@@ -32,22 +32,25 @@ const DEBUG_ENABLED = isDebugEnabled(window.location.search, import.meta.env.DEV
 const CALIBRATE_ENABLED = isCalibrationEnabled(window.location.search);
 
 /**
- * 立绘资源：v2 正立图（1024×1536 母版 → 运行时 WebP，等比 contain 显示到 156×234 立绘箱）。
+ * 运行时密度：按 `devicePixelRatio` 挑一档（不用 srcset，因为我们是手动 `<img>.src`）。
  *
- * <p>URL 来自生成的资产清单 `assets/manifest.ts`（`npm run build:pet-assets`），
- * 不在代码里手写路径：资产换名/换版本时只重跑脚本。</p>
+ * <p>@2x 是 320×480，覆盖 DPR2 下的 156×234 立绘箱（需 312×468）；@1x 是 160×240，DPR1 够用。
+ * 两档来自美术 `runtime/`，工程侧不重编码。</p>
  */
-const ART_URL_2X = petArtUrl('2x');
-/** 降级档（@2x 解码失败或超时时用它，宁可小一点也别在桌面上留一块空白）。 */
-const ART_URL_1X = petArtUrl('1x');
+const DENSITY: '1x' | '2x' = (typeof window !== 'undefined' && window.devicePixelRatio >= 2 ? '2x' : '1x');
+
+/** 默认帧（neutral 完整帧）。 */
+const ART_URL = expressionFrameUrl('neutral', DENSITY);
+/** 降级档（首选档解码失败/超时时用它，宁可糊一点也别在桌面上留一块空白）。 */
+const ART_URL_FALLBACK = expressionFrameUrl('neutral', DENSITY === '2x' ? '1x' : '2x');
 
 /**
- * 表情贴片 URL 表（与立绘同画布同位置）。
+ * 表情完整帧 URL 表（美术 `composites/*`，与立绘同画布同位置）。
  *
- * <p>本批美术侧未交付 8 格同画布贴片，清单里 `expressions` 为空：表现层会把表情降级成
- * "只改状态、保持立绘自带脸"。贴片到位后重跑 `npm run build:pet-assets` 即自动生效。</p>
+ * <p>换表情＝换整张帧图，不做"整头叠在完整立绘上"的合成——美术 `composition` 契约明确禁止
+ * （立绘头顶有羽化半透明边缘，叠上去会出现双层头皮硬边）。</p>
  */
-const EXPRESSION_URLS: ExpressionUrlMap = expressionPatchUrls();
+const EXPRESSION_URLS: ExpressionUrlMap = expressionFrameUrls(DENSITY);
 
 /** 表情中文标签（调试提示行用；发布态不显示）。 */
 const EXPRESSION_LABELS: Readonly<Record<ExpressionId, string>> = {
@@ -135,8 +138,8 @@ let powerPolicy: PowerPolicy | null = null;
 
 /** `#pet-root`（CSS 变量与 `data-*` 的写入目标）。 */
 let rootElement: HTMLElement | null = null;
-/** 立绘 `<img>`（异步解码后上屏）。 */
-let artImage: HTMLImageElement | null = null;
+/** 双缓冲立绘帧（交替显示，切表情不白闪）。 */
+let artFrames: [HTMLImageElement, HTMLImageElement] | null = null;
 
 /** 拖拽时同样按帧节流位置上报。 */
 let moveFrame = 0;
@@ -144,7 +147,6 @@ let pendingMovePoint: PetPoint | null = null;
 
 /** 关键 DOM 引用（构建时赋值，之后只读）。 */
 let artElement: HTMLDivElement | null = null;
-let faceElement: HTMLImageElement | null = null;
 let badgeElement: HTMLSpanElement | null = null;
 let hintElement: HTMLSpanElement | null = null;
 
@@ -329,28 +331,30 @@ function renderArtError(detail: string): void {
   box.className = 'pet-art-error';
   box.textContent = `立绘加载失败：${detail}`;
   artElement.replaceChildren(box);
-  console.warn(`[pet] 立绘加载失败: url=${ART_URL_2X}, detail=${detail}`);
+  console.warn(`[pet] 立绘加载失败: url=${ART_URL}, density=${DENSITY}, detail=${detail}`);
 }
 
 /**
- * 异步加载立绘并上屏。
+ * 异步加载默认帧并上屏（双缓冲的第 0 张）。
  *
  * <p>先 `decode()` 再 `hidden=false`：`load` 只代表字节到齐，此时上屏会出现"先空白再刷新"。
- * 失败/超时走 @1x 降级，再失败才显示错误提示（`renderArtError` 保留原行为）。</p>
+ * 失败/超时换另一档密度，再失败才显示错误提示。</p>
  */
 async function startArtLoad(): Promise<void> {
-  const image = artImage;
-  if (!image) return;
+  const frames = artFrames;
+  if (!frames) return;
+  const image = frames[0];
   const result = await loadArt(image, {
-    primaryUrl: ART_URL_2X,
-    fallbackUrl: ART_URL_1X,
+    primaryUrl: ART_URL,
+    fallbackUrl: ART_URL_FALLBACK,
     markLabel: 'pet-art',
   });
   if (result.ok) {
     image.hidden = false;
     if (DEBUG_ENABLED) {
       console.debug(
-        `[pet] 立绘上屏: url=${result.url} 耗时=${result.elapsedMs.toFixed(1)}ms${result.usedFallback ? '（已降级 @1x）' : ''}`,
+        `[pet] 默认帧上屏: url=${result.url} 密度=${DENSITY} 耗时=${result.elapsedMs.toFixed(1)}ms` +
+          `${result.usedFallback ? '（已降级到另一档密度）' : ''}`,
       );
     }
     return;
@@ -382,23 +386,22 @@ function buildDom(): void {
   // 落地光晕：贴在立绘底层，管"站在桌面上"的接地感（drop-shadow 管轮廓立体感，两者分工）
   mountHalo(document, artElement, PET_GEOMETRY);
 
-  const image = document.createElement('img');
-  image.className = 'pet-art-image';
-  image.alt = '';
-  image.decoding = 'async';
-  image.draggable = false;
+  const front = document.createElement('img');
+  front.className = 'pet-art-frame';
+  front.alt = '';
+  front.decoding = 'async';
+  front.draggable = false;
   // 解码完成前保持隐藏：先挂上去会出现"上半身先到、下半身后到"的闪动
-  image.hidden = true;
-  artImage = image;
+  front.hidden = true;
 
-  // 表情差分贴片层：与立绘**同画布同位置**，天然对齐（美术贴片未交付前恒 hidden）
-  faceElement = document.createElement('img');
-  faceElement.className = 'pet-face';
-  faceElement.alt = '';
-  faceElement.decoding = 'async';
-  faceElement.draggable = false;
-  // 立绘没加载出来、或没有对应贴片时不显示，避免叠在错误提示上
-  faceElement.hidden = true;
+  // 第二张帧：切表情时载入另一张并淡入，避免换 src 造成的一帧白闪
+  const back = document.createElement('img');
+  back.className = 'pet-art-frame';
+  back.alt = '';
+  back.decoding = 'async';
+  back.draggable = false;
+  back.hidden = true;
+  artFrames = [front, back];
 
   const close = document.createElement('button');
   close.className = 'pet-close';
@@ -412,7 +415,7 @@ function buildDom(): void {
   });
 
   // 调试标记与提示行**只在调试态创建**：发布态零调试元素（用户明确要求"别再露调试标记"）
-  artElement.append(image, faceElement, close);
+  artElement.append(front, back, close);
   if (DEBUG_ENABLED) {
     const badge = document.createElement('span');
     badge.className = 'pet-badge';
@@ -439,10 +442,17 @@ function buildDom(): void {
   stage.appendChild(motion);
   root.replaceChildren(stage);
 
-  // 立绘解码完成后再上屏（失败/超时自动降级 @1x，最终失败才显示错误提示）
+  // 立绘解码完成后再上屏（失败/超时换档降级，最终失败才显示错误提示）
   void startArtLoad();
+}
 
-  // 表现层挂好后立刻按基底层渲染一次默认档，保证首帧就是"睁眼默认脸"
+/**
+ * 派发初始状态（base 层默认表情 + idle 动作）。
+ *
+ * <p>必须排在 `createPresentation()` 之后：此时总线已就绪，指令才有落点。
+ * 顺带保证首帧就是"睁眼默认脸 + 呼吸中"。</p>
+ */
+function applyInitialState(): void {
   dispatchOp({
     kind: 'expression',
     id: 'neutral',
@@ -543,23 +553,26 @@ function injectGeometryVariables(): void {
  */
 function createPresentation(): void {
   const root = document.getElementById('pet-root');
-  if (!root || !faceElement) return;
+  if (!root || !artFrames) return;
+  const frames = artFrames;
   presentation = new SpritePresentation(
     {
-      expressionHost: faceElement,
+      frames,
       layerHosts: { root },
       geometry: PET_GEOMETRY,
     },
     {
       expressionUrls: EXPRESSION_URLS,
       log: (message) => console.debug(message),
+      initialExpression: 'neutral',
     },
   );
   bus = new PresentationBus(presentation, {
     log: (message) => console.debug(message),
     isSleeping: () => {
+      // 睡觉＝睁眼表情不再是额定睁眼态：只有 sleepy 与 yawn 视为睡眠（与美术 blink 映射一致）
       const expression = presentation?.state.expression ?? 'neutral';
-      return expression === 'sleepy' || expression === 'yawn';
+      return expression === PET_BLINK_MAPPING.half || expression === 'yawn';
     },
   });
   router = new CommandRouter({ log: (message) => console.debug(message) });
@@ -569,7 +582,7 @@ function createPresentation(): void {
     () => Math.random(),
     () => {
       const expression = presentation?.state.expression ?? 'neutral';
-      return expression === 'sleepy' || expression === 'yawn';
+      return expression === PET_BLINK_MAPPING.half || expression === 'yawn';
     },
     DEFAULT_TIMER_PORT,
   );
@@ -609,8 +622,10 @@ function boot(): void {
   // 命中先建：它不依赖 DOM，几何一注入就能判
   hitTester = new RectHitTester(PET_GEOMETRY);
   hitPipeline = new HitPipeline(hitTester, { onHitChange: reportHit });
-  createPresentation();
+  // 顺序有依赖：DOM（含双缓冲帧）→ 表现层（要帧）→ 初始指令（要总线）
   buildDom();
+  createPresentation();
+  applyInitialState();
   createPowerPolicy();
   wireEvents();
   subscribeCommands();

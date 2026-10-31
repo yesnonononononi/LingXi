@@ -41,6 +41,21 @@ export const DOUBLE_BLINK_PROBABILITY = 0.12;
 export const DOUBLE_BLINK_GAP_MS = 220;
 
 /**
+ * 眨眼三态映射（**与美术 `runtime/manifest.json` 的 `blink` 字段逐字一致**）。
+ *
+ * <p>美术侧的原话：`open=neutral`、`closed=blink`、`half=sleepy`。
+ * 工程侧不另造口径——`tests/petAssetManifest.test.cjs` 会拿生成的清单交叉校验这三个值。</p>
+ */
+export const BLINK_EXPRESSION_MAP = {
+  /** 睁眼。 */
+  open: 'neutral',
+  /** 闭眼。 */
+  closed: 'blink',
+  /** 半闭（三态的中间帧，复用 E8 困倦贴片的眼区）。 */
+  half: 'sleepy',
+} as const;
+
+/**
  * 生成"闭眼"指令。
  *
  * @param reason 排障原因串
@@ -49,7 +64,7 @@ export const DOUBLE_BLINK_GAP_MS = 220;
 export function blinkClosedOp(reason: string): PresentationOp {
   return {
     kind: 'expression',
-    id: 'blink',
+    id: BLINK_EXPRESSION_MAP.closed,
     layer: 'transient',
     priority: 0,
     durationMs: BLINK_CLOSED_MS,
@@ -59,7 +74,7 @@ export function blinkClosedOp(reason: string): PresentationOp {
 }
 
 /**
- * 生成"半闭"指令（眼皮三态的中间帧，复用 E8 的眼区）。
+ * 生成"半闭"指令（眼皮三态的中间帧）。
  *
  * @param reason 排障原因串
  * @returns 半闭 op（transient 层，优先级 0）
@@ -67,7 +82,7 @@ export function blinkClosedOp(reason: string): PresentationOp {
 export function blinkHalfOp(reason: string): PresentationOp {
   return {
     kind: 'expression',
-    id: 'sleepy',
+    id: BLINK_EXPRESSION_MAP.half,
     layer: 'transient',
     priority: 0,
     durationMs: BLINK_HALF_MS,

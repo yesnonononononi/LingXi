@@ -1,13 +1,13 @@
 {
-  "version": 1,
-  "canvasWidth": 1024,
-  "canvasHeight": 1536,
-  "visibleRatioY": 0.894531,
+  "version": 3,
+  "canvasWidth": 2048,
+  "canvasHeight": 3072,
+  "visibleRatioY": 0.89518,
   "visibleBounds": {
     "left": 0.01758,
     "top": 0.05208,
-    "right": 0.99512,
-    "bottom": 0.94661
+    "right": 0.99609,
+    "bottom": 0.94727
   },
   "inkHeight": 208,
   "artHeight": 234,

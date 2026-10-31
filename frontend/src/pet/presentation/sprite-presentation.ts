@@ -1,17 +1,17 @@
 /**
  * 静态立牌表现层实现（方案A）。
  *
- * <p><b>写入面只有三种（设计文档 §9.4 纪律 5）：</b></p>
- * <ol>
- *   <li>`expressionHost.src`（表情贴片）；</li>
- *   <li>CSS 自定义属性（`--pet-tail-angle` 等参数驱动档）；</li>
- *   <li>`data-*` 状态（`data-expression` / `data-motion`，给 CSS 用来触发动画）。</li>
- * </ol>
+ * <p><b>为什么换表情是"换整帧"而不是"叠贴片"：</b>美术的 `composition` 契约明确写
+ * 「优先使用完整 WebP 帧；<b>不要把整头叠在完整立绘的半透明边缘上</b>」。v3 立绘头顶有一圈
+ * 羽化半透明边缘，把整头贴片压上去会得到"双层头皮"的硬边。所以本实现走
+ * `composites/<id>@<density>.webp`（美术已合成的完整帧），换表情＝换一张图，<b>零合成算术</b>。</p>
  *
- * <p><b>禁止</b>外部 `classList.add('is-happy')`：class 列表归实现独占，两种实现之间只认 op。</p>
+ * <p><b>为什么用双缓冲：</b>直接改同一个 `<img>` 的 `src` 会先清空再重绘，209px 的宠物上能看见
+ * 一帧白闪。两张叠放的 `<img>` 交替 `data-active` + 120ms 透明度过渡，就得到"表情淡入"而
+ * 不是"闪一下"。</p>
  *
- * <p><b>为什么表情贴片能"零标定"：</b>每档贴片与立绘**同画布、同位置**（美术规格书 §5 的
- * 硬要求），所以这里只需要 `inset:0 + object-fit:contain`，没有任何 `background-position` 算术。</p>
+ * <p><b>写入面只有三种（设计文档 §9.4 纪律 5）：</b>`<img>.src`、CSS 自定义属性、`data-*`。
+ * **禁止**外部 `classList.add('is-happy')`。</p>
  *
  * @module pet/presentation/sprite-presentation
  */
@@ -43,7 +43,7 @@ export const DRIVEN_CSS_VARIABLES: Readonly<
   gazeX: { name: '--pet-gaze-x', unit: '', min: -1, max: 1 },
 };
 
-/** 表情贴片 URL 表（缺项 = 该档没有贴片，`apply` 保持立绘自带脸）。 */
+/** 表情完整帧 URL 表（缺项 = 该档没有帧，`apply` 保持当前画面）。 */
 export type ExpressionUrlMap = Partial<Record<ExpressionId, string>>;
 
 /** 表现层需要挂载的宿主元素。 */
@@ -54,20 +54,22 @@ export interface LayerHosts {
 
 /** 静态立牌实现所需的 DOM 引用。 */
 export interface SpritePresentationDom {
-  /** 表情贴片 `<img>`。 */
-  readonly expressionHost: HTMLImageElement;
+  /** 两张叠放的立绘帧（双缓冲，交替显示）。 */
+  readonly frames: readonly [HTMLImageElement, HTMLImageElement];
   /** 宿主元素。 */
   readonly layerHosts: LayerHosts;
-  /** 几何（用于写光晕尺寸等，本文件只读 artWidth）。 */
+  /** 几何。 */
   readonly geometry: PetGeometry;
 }
 
 /** 构造选项。 */
 export interface SpritePresentationOptions {
-  /** 表情贴片 URL 表；缺省为空（没有贴片时表情只改状态不上屏）。 */
+  /** 表情完整帧 URL 表；缺省为空（没有帧时表情只改状态、不改画面）。 */
   readonly expressionUrls?: ExpressionUrlMap;
   /** 日志出口（调试面板用）。 */
   readonly log?: (message: string) => void;
+  /** 初始表情（缺省 `neutral`，与已加载的默认帧一致）。 */
+  readonly initialExpression?: ExpressionId;
 }
 
 /**
@@ -77,8 +79,8 @@ export interface SpritePresentationOptions {
  * {@link module:pet/presentation/bus} 的职责。</p>
  */
 export class SpritePresentation implements PetPresentation {
-  /** 表情贴片宿主。 */
-  private readonly expressionHost: HTMLImageElement;
+  /** 双缓冲的两张帧。 */
+  private readonly frames: readonly [HTMLImageElement, HTMLImageElement];
 
   /** `#pet-root`。 */
   private readonly root: HTMLElement;
@@ -86,7 +88,7 @@ export class SpritePresentation implements PetPresentation {
   /** 几何。 */
   private readonly geometry: PetGeometry;
 
-  /** 贴片 URL 表。 */
+  /** 表情帧 URL 表。 */
   private readonly expressionUrls: ExpressionUrlMap;
 
   /** 日志出口。 */
@@ -94,6 +96,9 @@ export class SpritePresentation implements PetPresentation {
 
   /** 已预解码成功的 URL（避免重复解码）。 */
   private readonly prepared: Set<string> = new Set();
+
+  /** 当前生效的缓冲下标（0 / 1）。 */
+  private active = 0;
 
   /** 当前状态快照。 */
   private current: PresentationState = DEFAULT_PRESENTATION_STATE;
@@ -105,20 +110,27 @@ export class SpritePresentation implements PetPresentation {
    * 构造静态立牌表现层。
    *
    * @param dom DOM 引用
-   * @param options 可选项（贴片 URL 表、日志）
+   * @param options 可选项（表情帧表、日志、初始表情）
    */
   constructor(dom: SpritePresentationDom, options: SpritePresentationOptions = {}) {
-    if (!dom || !dom.expressionHost || !dom.layerHosts || !dom.layerHosts.root) {
-      throw new TypeError('SpritePresentation 需要 expressionHost 与 layerHosts.root');
+    if (!dom || !Array.isArray(dom.frames) || dom.frames.length < 2 || !dom.frames[0] || !dom.frames[1]) {
+      throw new TypeError('SpritePresentation 需要 frames[0] 与 frames[1]（双缓冲）');
     }
-    this.expressionHost = dom.expressionHost;
+    if (!dom.layerHosts || !dom.layerHosts.root) {
+      throw new TypeError('SpritePresentation 需要 layerHosts.root');
+    }
+    this.frames = dom.frames;
     this.root = dom.layerHosts.root;
     this.geometry = dom.geometry ?? PET_GEOMETRY;
     this.expressionUrls = options.expressionUrls ?? {};
     this.log = options.log ?? (() => {});
-    this.current = DEFAULT_PRESENTATION_STATE;
-    this.root.dataset.expression = this.current.expression;
-    this.root.dataset.motion = this.current.motion ?? 'idle';
+    const initialExpression = options.initialExpression ?? 'neutral';
+    this.current = { ...DEFAULT_PRESENTATION_STATE, expression: initialExpression };
+    this.root.dataset.expression = initialExpression;
+    this.root.dataset.motion = 'idle';
+    // 第 0 张缓冲由 main.ts 通过 loadArt 载入默认帧，这里只标记它是激活的那张
+    this.frames[0].dataset.active = 'true';
+    this.frames[1].dataset.active = 'false';
     this.writeDriven(DRIVEN_NEUTRAL);
   }
 
@@ -149,9 +161,9 @@ export class SpritePresentation implements PetPresentation {
   }
 
   /**
-   * 预准备：把贴片提前 `decode()` 掉，避免首次切换出现"空白一帧"。
+   * 预准备：把目标帧提前 `decode()` 掉，避免淡入时出现空白档。
    *
-   * <p>失败只记日志不抛：缺一张贴片不该让桌宠黑屏（降级为立绘自带脸）。</p>
+   * <p>失败只记日志不抛：缺一帧表情不该让桌宠黑屏（降级为"停在当前帧"）。</p>
    *
    * @param next 即将应用的指令
    */
@@ -167,7 +179,7 @@ export class SpritePresentation implements PetPresentation {
       await probe.decode();
       this.prepared.add(url);
     } catch (err) {
-      this.log(`[pet] 表情贴片预解码失败: url=${url}, error=${String(err)}`);
+      this.log(`[pet] 表情帧预解码失败: url=${url}, error=${String(err)}`);
     }
   }
 
@@ -180,7 +192,7 @@ export class SpritePresentation implements PetPresentation {
   }
 
   /**
-   * 切表情：有贴片就换 `src`，没贴片就只更新状态（立绘自带脸）。
+   * 切表情：把目标帧放进"另一张"缓冲再淡入。
    *
    * @param id 表情 id
    */
@@ -189,16 +201,20 @@ export class SpritePresentation implements PetPresentation {
     this.root.dataset.expression = id;
     const url = this.expressionUrls[id];
     if (!url) {
-      // 没有贴片：保持立绘自带脸，遮住它反而是错的
-      this.expressionHost.hidden = true;
-      if (id !== 'neutral') this.log(`[pet] 表情 ${id} 无贴片，降级为立绘自带脸`);
+      // 没有这一档的帧：保持当前画面（立绘自带脸就是 neutral，切回去才对）
+      if (id !== 'neutral') this.log(`[pet] 表情 ${id} 没有运行时帧，保持当前画面`);
       return;
     }
-    if (this.expressionHost.getAttribute('src') !== url) {
-      this.expressionHost.src = url;
-    }
-    this.expressionHost.hidden = false;
-    this.expressionHost.dataset.expression = id;
+    const currentUrl = this.frames[this.active].getAttribute('src');
+    if (currentUrl === url) return;
+
+    const nextIndex = this.active === 0 ? 1 : 0;
+    const target = this.frames[nextIndex];
+    target.src = url;
+    target.hidden = false;
+    target.dataset.active = 'true';
+    this.frames[this.active].dataset.active = 'false';
+    this.active = nextIndex;
   }
 
   /**
