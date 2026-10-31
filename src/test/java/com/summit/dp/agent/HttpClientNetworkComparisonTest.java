@@ -44,6 +44,7 @@ import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpsConfigurator;
 import com.sun.net.httpserver.HttpsServer;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -83,7 +84,17 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/** 同一套真实网络故障贯穿模型选择、执行终态与业务事件，连接器由运行参数切换。 */
+/**
+ * 同一套真实网络故障贯穿模型选择、执行终态与业务事件，连接器由运行参数切换。
+ *
+ * <p><b>为什么打 {@code network} 标签</b>：本类起真实本地 HTTPS/HTTP 服务并走真实 TLS 握手，
+ * {@code TLS_CERTIFICATE} / {@code TLS_EOF} 等场景依赖本机证书链与 JVM 信任库，
+ * 在共享机器上偶发（PKIX/证书链环境敏感，非代码缺陷）。默认门禁因此按组排除它
+ * （{@code pom.xml} 的 surefire {@code <excludedGroups>network</excludedGroups>}，
+ * 与 pitest 的 {@code <excludedTestClasses>} 口径一致）；
+ * 需要跑时用 {@code mvn -o test -Dgroups=network} 或 {@code -Dtest=HttpClientNetworkComparisonTest} 显式点名。</p>
+ */
+@Tag("network")
 class HttpClientNetworkComparisonTest {
     private static final String CLIENT = System.getProperty("lingxi.network.client", "OKHTTP");
     private static final List<Measurement> RESULTS = new CopyOnWriteArrayList<>();
