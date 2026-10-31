@@ -8,8 +8,14 @@ const { contextBridge, ipcRenderer } = require('electron');
  * 渲染层即使被注入也改不了自己的坐标（它能上报的只有光标位置，而主进程还会夹进屏幕范围）。</p>
  */
 
-/** 主进程推来指令时只放行这几种类型，避免未知消息进渲染层。 */
-const KNOWN_COMMAND_TYPES = ['ready', 'hit-state', 'visible', 'ping'];
+/**
+ * 主进程推来指令时只放行这几种类型，避免未知消息进渲染层。
+ *
+ * <p><b>新增 type 必须在这里加一条</b>，否则渲染层永远收不到（被静默丢弃）。
+ * 这条坑很容易踩：主进程发了、渲染层代码也写了，就是不动——因为白名单在 preload 这层拦掉了。
+ * `tests/petPresentation.test.ts` 会交叉检查「路由器认得的类型」与「本清单」是否一致。</p>
+ */
+const KNOWN_COMMAND_TYPES = ['ready', 'hit-state', 'visible', 'ping', 'play', 'expression'];
 
 /**
  * 归一化一条拖拽坐标。

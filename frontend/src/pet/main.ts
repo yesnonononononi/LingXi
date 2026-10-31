@@ -1,5 +1,5 @@
 /**
- * 桌宠窗口渲染入口（渲染层 v0：静态立绘 + CSS 缓动，不接 Live2D）。
+ * 桌宠窗口渲染入口（方案A：静态立牌 + 表现层指令调度，不接 Live2D）。
  *
  * <p>不引 Vue：窗口常驻但内容只有一张立绘，装框架只会拖慢首帧、白占内存。</p>
  *
@@ -7,35 +7,49 @@
  * 拒绝；`lxa://` 协议（`electron/lx-protocol.cjs`）把 `public/live2d` 与 `dist/live2d` 映射成
  * 可 fetch 的 URL，开发态与打包态同一路径。渲染层**不拼绝对路径**。</p>
  *
- * <p><b>命中区当前是矩形兜底：</b>用立绘的可见包围盒做鼠标命中/穿透判断。真正的 alpha 掩码
- * （1/8 降采样网格 + 膨胀滞回）在 T02 接，届时只换 {@link isInsideHitRect} 的实现，
- * {@link applyHitState} 这条链路不动。</p>
+ * <p><b>本入口只做"接线"，不含业务规则：</b>尺寸在 `layout.ts`、"该不该切/该不该打断"在
+ * `presentation/`、"鼠标是否在宠物身上"在 `hit/`。换实现时改那几个模块，这里不动。</p>
  */
 import './pet.css';
 import { PET_GEOMETRY, geometryCssVariables } from './layout';
+import { DEFAULT_TIMER_PORT, PresentationBus } from './presentation/bus';
+import { BlinkDriver } from './presentation/blink-driver';
+import { CommandRouter } from './presentation/command-router';
+import { SpritePresentation, type ExpressionUrlMap } from './presentation/sprite-presentation';
+import { EXPRESSION_IDS, type ExpressionId, type PresentationOp } from './presentation/types';
 
 /** 立绘资源：v2 正立图（1024×1536 母版 → 320×480 @2x WebP，等比 contain 显示到 156×234 立绘箱）。 */
 const ART_URL = 'lxa://pet-v2/front-standing@2x.webp';
 
-/** 六种表情。排列顺序与表情图网格的阅读顺序一致（左→右、上→下）。 */
-type ExpressionName = 'default' | 'blink' | 'happy' | 'surprised' | 'sleepy' | 'sad';
+/**
+ * 表情贴片 URL 表（与立绘同画布同位置）。
+ *
+ * <p>本批美术侧未交付 8 格同画布贴片，故表为空：表现层会把表情降级成"只改状态、
+ * 保持立绘自带脸"，并在 `?debug=1` 下打日志。T05 的资产清单落地后由 `assets/manifest.ts` 填充。</p>
+ */
+const EXPRESSION_URLS: ExpressionUrlMap = {};
 
-/** 表情清单：名字 → 中文标签（标签显示在提示行，手动验收时能确认切到哪一格）。 */
-const EXPRESSIONS: readonly { name: ExpressionName; label: string }[] = [
-  { name: 'default', label: '默认' },
-  { name: 'blink', label: '眨眼' },
-  { name: 'happy', label: '开心' },
-  { name: 'surprised', label: '惊讶' },
-  { name: 'sleepy', label: '困倦' },
-  { name: 'sad', label: '委屈' },
-];
+/** 表情中文标签（调试提示行用；发布态不显示）。 */
+const EXPRESSION_LABELS: Readonly<Record<ExpressionId, string>> = {
+  neutral: '默认',
+  blink: '眨眼',
+  happy: '开心',
+  shy: '害羞',
+  angry: '生气',
+  sad: '委屈',
+  surprised: '惊讶',
+  sleepy: '困倦',
+  yawn: '打哈欠',
+};
 
 /** 主进程推来的指令。类型与 `pet-window.cjs` 的 `pet:command` 一一对应。 */
 type PetCommand =
   | { type: 'ready'; clickThrough?: boolean; size?: { width: number; height: number } }
   | { type: 'hit-state'; hit?: boolean }
   | { type: 'visible'; visible?: boolean }
-  | { type: 'ping'; at?: number };
+  | { type: 'ping'; at?: number }
+  | { type: 'play'; motion?: string; priority?: number; durationMs?: number; reason?: string }
+  | { type: 'expression'; expression?: string; priority?: number; durationMs?: number; reason?: string };
 
 /** 拖拽上报的坐标（屏幕坐标 == DIP，与主进程 setPosition 同一坐标空间）。 */
 interface PetPoint {
@@ -59,10 +73,15 @@ interface PetBridge {
   onCommand: (callback: (command: PetCommand) => void) => () => void;
 }
 
-/** 给「后续调度」用的调试句柄（本轮不接调度，只手动验收）。 */
+/** 调试句柄（`?debug=1` 或 dev 下才有；发布态整个对象不挂到 window）。 */
 interface PetDebugHandle {
+  /** 直接投递一条表现层指令（QA 验收/排障用）。 */
+  dispatch: (op: PresentationOp) => string;
+  /** 按表情 id 切一刀（基底层，不会自己回退）。 */
   setExpression: (name: string) => boolean;
-  getExpression: () => ExpressionName;
+  /** 当前表情 id。 */
+  getExpression: () => ExpressionId;
+  /** 全部合法表情 id（与美术规格书 §5 的 E1–E8 对应）。 */
   list: () => string[];
 }
 
@@ -77,8 +96,15 @@ declare global {
 let hit = false;
 /** 是否正在拖拽。 */
 let dragging = false;
-/** 当前表情。 */
-let currentExpression: ExpressionName = 'default';
+
+/** 表现层：指令 → 界面写入。 */
+let presentation: SpritePresentation | null = null;
+/** 调度总线：打断判定 + 层 TTL。 */
+let bus: PresentationBus | null = null;
+/** 指令路由：`pet:command` → op。 */
+let router: CommandRouter | null = null;
+/** 眨眼调度器（发布态也开，它是"活"感的主要来源）。 */
+let blinkDriver: BlinkDriver | null = null;
 
 /** 每帧最多上报一次命中状态，避免鼠标移动把 IPC 打满。 */
 let hitFrame = 0;
@@ -129,41 +155,56 @@ function reportHit(next: boolean): void {
 }
 
 /**
- * 更新提示行（显示当前表情，手动验收时能直接看出切到哪一格）。
+ * 更新提示行（显示当前表情，手动验收时能直接看出切到哪一档）。
  *
- * @param name 表情名
+ * @param expression 表情 id
  */
-function renderHint(name: ExpressionName): void {
+function renderHint(expression: ExpressionId): void {
   if (!hintElement) return;
-  const label = EXPRESSIONS.find((item) => item.name === name)?.label ?? '默认';
+  const label = EXPRESSION_LABELS[expression] ?? '默认';
   hintElement.textContent = `拖动移动 · 双击隐藏 · 表情：${label}`;
 }
 
 /**
- * 切换表情（供后续调度用的公开接口）。
+ * 直接投递一条表现层指令。
  *
- * <p>本轮不接任何调度逻辑：谁触发、什么时候触发都在下一阶段决定。这里只保证
- * 「合法名字一定切换成功、非法名字一律忽略并返回 false」，避免调用方拿到静默的假成功。</p>
+ * @param op 指令
+ * @returns 调度结果（`applied` / `queued` / `rejected`；没有总线时返回 `rejected`）
+ */
+export function dispatchOp(op: PresentationOp): string {
+  if (!bus) return 'rejected';
+  return bus.dispatch(op);
+}
+
+/**
+ * 切换表情（调试/验收与外部调度共用的公开接口）。
  *
- * @param name 表情名（六档之一）
- * @returns 是否切换成功
+ * <p>走基底层且不带 TTL：调用方要的就是"停在这一档"，自动回退是 transient 层的事。</p>
+ *
+ * @param name 表情 id
+ * @returns 是否切换成功（未知 id 一律返回 false，避免静默假成功）
  */
 export function setExpression(name: string): boolean {
-  const matched = EXPRESSIONS.find((item) => item.name === name);
-  if (!matched) {
+  const candidate = EXPRESSION_IDS.find((item) => item === name);
+  if (!candidate) {
     console.warn(`[pet] 未知表情，已忽略: name=${name}`);
     return false;
   }
-  currentExpression = matched.name;
-  // 表情走 data-* 状态（贴片存在时由表现层换 src）：外部禁止直接 classList.add('is-happy')
-  if (artElement) artElement.dataset.expression = matched.name;
-  renderHint(matched.name);
+  dispatchOp({
+    kind: 'expression',
+    id: candidate,
+    layer: 'base',
+    priority: 1,
+    fadeMs: 0,
+    reason: 'api:setExpression',
+  });
+  renderHint(candidate);
   return true;
 }
 
 /** 读当前表情（调试/验收用）。 */
-export function getExpression(): ExpressionName {
-  return currentExpression;
+export function getExpression(): ExpressionId {
+  return presentation?.state.expression ?? 'neutral';
 }
 
 /**
@@ -343,13 +384,13 @@ function buildDom(): void {
   badgeElement = document.createElement('span');
   badgeElement.className = 'pet-badge';
   badgeElement.textContent = '穿透中';
-  badgeElement.title = '点击切换表情（手动验收用）';
+  badgeElement.title = '点击循环切表情（手动验收用）';
   badgeElement.addEventListener('click', (event) => {
-    // 点调试标记循环切表情：本轮没有调度逻辑，这是唯一的手动验收入口
+    // 点调试标记循环切表情：没有行为状态机，这是唯一的手动验收入口
     event.stopPropagation();
-    const index = EXPRESSIONS.findIndex((item) => item.name === currentExpression);
-    const next = EXPRESSIONS[(index + 1) % EXPRESSIONS.length];
-    setExpression(next.name);
+    const index = EXPRESSION_IDS.findIndex((item) => item === getExpression());
+    const next = EXPRESSION_IDS[(index + 1) % EXPRESSION_IDS.length];
+    setExpression(next);
   });
 
   hintElement = document.createElement('span');
@@ -361,8 +402,17 @@ function buildDom(): void {
   stage.appendChild(motion);
   root.replaceChildren(stage);
 
-  // 表情层挂好后立刻按默认档渲染一次，保证「默认显示第 1 格」
-  setExpression('default');
+  // 表现层挂好后立刻按基底层渲染一次默认档，保证首帧就是"睁眼默认脸"
+  dispatchOp({
+    kind: 'expression',
+    id: 'neutral',
+    layer: 'base',
+    priority: 0,
+    fadeMs: 0,
+    reason: 'boot:base',
+  });
+  dispatchOp({ kind: 'motion', id: 'idle', layer: 'base', priority: 0, loop: true, reason: 'boot:idle' });
+  renderHint('neutral');
 }
 
 /** 绑定鼠标与指针事件。 */
@@ -376,7 +426,15 @@ function wireEvents(): void {
   // 光标离开窗口时没有 mousemove 了，必须主动回到穿透态，否则窗口会一直「可交互」
   document.addEventListener('mouseleave', () => reportHit(false), { passive: true });
 
-  artElement.addEventListener('pointerdown', beginDrag);
+  artElement.addEventListener('pointerdown', (event) => {
+    // 点一下 = 互动（规格书 P1 的简化版：整图一弹 + happy 表情），先派指令再起拖拽
+    if (event.button === 0) {
+      for (const op of router?.route({ type: 'play', motion: 'tap', reason: 'pointer:tap' }) ?? []) {
+        dispatchOp(op);
+      }
+    }
+    beginDrag(event);
+  });
   window.addEventListener('pointermove', trackDrag, { passive: true });
   window.addEventListener('pointerup', (event) => endDrag(event.pointerId));
   window.addEventListener('pointercancel', (event) => endDrag(event.pointerId));
@@ -403,6 +461,13 @@ function subscribeCommands(): void {
     }
     if (command.type === 'visible') {
       console.info(`[pet] 可见性变化: visible=${command.visible === true}`);
+      return;
+    }
+    // play / expression 等表现类指令统一走路由 → 调度总线（未知类型由路由器记日志丢弃）
+    const ops = router?.route(command) ?? [];
+    for (const op of ops) {
+      void presentation?.prepare(op);
+      dispatchOp(op);
     }
   });
 }
@@ -421,19 +486,65 @@ function injectGeometryVariables(): void {
   }
 }
 
+/**
+ * 建表现层三件套：实现 + 调度总线 + 指令路由，并启动眨眼调度。
+ *
+ * <p>顺序有意义：先有实现（写 DOM 的那一层），总线才有落点；路由最后建，
+ * 因为它只产出 op。</p>
+ *
+ * <p>这里也是方案B 的唯一改动点：把 `SpritePresentation` 换成 `Live2DPresentation`，
+ * 调度器、指令 id、命中、拖拽、位置持久化全部不动（设计文档 §8.3）。</p>
+ */
+function createPresentation(): void {
+  const root = document.getElementById('pet-root');
+  if (!root || !faceElement) return;
+  presentation = new SpritePresentation(
+    {
+      expressionHost: faceElement,
+      layerHosts: { root },
+      geometry: PET_GEOMETRY,
+    },
+    {
+      expressionUrls: EXPRESSION_URLS,
+      log: (message) => console.debug(message),
+    },
+  );
+  bus = new PresentationBus(presentation, {
+    log: (message) => console.debug(message),
+    isSleeping: () => {
+      const expression = presentation?.state.expression ?? 'neutral';
+      return expression === 'sleepy' || expression === 'yawn';
+    },
+  });
+  router = new CommandRouter({ log: (message) => console.debug(message) });
+  blinkDriver = new BlinkDriver(
+    (op) => dispatchOp(op),
+    // 随机源显式注入（设计文档 §9.4 纪律 9）：测试里换成固定序列即可断言分布
+    () => Math.random(),
+    () => {
+      const expression = presentation?.state.expression ?? 'neutral';
+      return expression === 'sleepy' || expression === 'yawn';
+    },
+    DEFAULT_TIMER_PORT,
+  );
+  blinkDriver.start();
+}
+
 /** 入口。 */
 function boot(): void {
   injectGeometryVariables();
+  createPresentation();
   buildDom();
   wireEvents();
   subscribeCommands();
   // 初始一律按穿透渲染：主进程的窗口也是穿透态，两边从第 0 帧就一致
   applyHitState(false);
-  // 调试句柄：本轮不接调度，仅便于手动验收与后续对接
+  // 调试句柄（`?debug=1` 或 dev 才有；发布态不挂 window.petDebug）
   window.petDebug = {
+    dispatch: dispatchOp,
     setExpression,
     getExpression,
-    list: () => EXPRESSIONS.map((item) => item.name),
+    list: () => [...EXPRESSION_IDS],
   };
 }
 
