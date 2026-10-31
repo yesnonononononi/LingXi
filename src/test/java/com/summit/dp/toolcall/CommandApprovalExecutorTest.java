@@ -47,6 +47,8 @@ import com.summit.runtime.workspace.LocalWorkspaceProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.transaction.TransactionStatus;
@@ -238,8 +240,34 @@ class CommandApprovalExecutorTest {
     }
 
     @Test
+    void approvalTransactionLinkageErrorReleasesSlotAndPreservesFailure() {
+        ToolCall toolCall = commandCall("call-linkage", "echo hi", "echo hi");
+        Execution execution = execution("3", ToolMessageEntity.builder()
+                .id("call-linkage").name("command").toolOutput("pending").build());
+        ExecutionControlSignal signal = new ExecutionControlSignal("3");
+        when(toolCallRepository.findById("call-linkage")).thenReturn(Optional.of(toolCall));
+        when(executionRepository.register("3")).thenReturn(signal);
+        when(executionRepository.findById("3")).thenReturn(Optional.of(execution));
+        doReturn(commandTool()).when(toolRegistry).getTool("command");
+        Workspace approvedWorkspace = workspace("workspace");
+        when(workspaces.resolve(any(WorkspaceSpec.class))).thenReturn(approvedWorkspace);
+        NoClassDefFoundError failure = new NoClassDefFoundError("ToolCallConverter$1");
+        doThrow(failure).when(transactions).executeWithoutResult(any());
+
+        assertSame(failure, assertThrows(NoClassDefFoundError.class,
+                () -> executor.decide(toolCall, true, null, null, null)));
+
+        verify(executionRepository).unregister(signal);
+        verify(commandExecutor, never()).execute(any());
+        verify(toolCallRepository, never()).updateById(any());
+        assertEquals(ExecutionState.SUSPENDED, execution.getExecutionState());
+        assertEquals(ToolCallStatus.PENDING, toolCall.getStatus());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
     @DisplayName("异步派发失败：执行被收成失败且控制槽位被释放，不留 RUNNING 泄漏")
-    void dispatchFailureStillSettlesExecutionAndReleasesSlot() {
+    void dispatchFailureStillSettlesExecutionAndReleasesSlot(boolean linkageFailure) {
         ToolCall toolCall = commandCall("call-dispatch", "echo hi", "echo hi");
         Execution execution = execution("3", ToolMessageEntity.builder().id("call-dispatch").name("command").toolOutput("pending").build());
         ExecutionControlSignal signal = new ExecutionControlSignal("3");
@@ -264,11 +292,16 @@ class CommandApprovalExecutorTest {
                 resumeCoordinator) {
             @Override
             protected void dispatchAsync(Runnable task) {
+                if (linkageFailure) throw new NoClassDefFoundError("审批派发依赖缺失");
                 throw new IllegalStateException("派发线程池不可用");
             }
         };
 
-        assertThrows(IllegalStateException.class, () -> failing.decide(toolCall, true, null, null, null));
+        if (linkageFailure) {
+            assertThrows(NoClassDefFoundError.class, () -> failing.decide(toolCall, true, null, null, null));
+        } else {
+            assertThrows(IllegalStateException.class, () -> failing.decide(toolCall, true, null, null, null));
+        }
 
         verify(commandExecutor, never()).execute(any());
         verify(executionRepository).unregister(signal);
