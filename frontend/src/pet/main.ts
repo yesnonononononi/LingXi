@@ -12,6 +12,8 @@
  */
 import './pet.css';
 import { PET_GEOMETRY, geometryCssVariables } from './layout';
+import { HitPipeline } from './hit/hit-pipeline';
+import { RectHitTester } from './hit/rect-hit-tester';
 import { DEFAULT_TIMER_PORT, PresentationBus } from './presentation/bus';
 import { BlinkDriver } from './presentation/blink-driver';
 import { CommandRouter } from './presentation/command-router';
@@ -97,6 +99,11 @@ let hit = false;
 /** 是否正在拖拽。 */
 let dragging = false;
 
+/** 命中实现（本批矩形；换 alpha 掩码只改这一处构造）。 */
+let hitTester: RectHitTester | null = null;
+/** 命中管线：每帧最多判一次 + 值变化才上报 + 主进程回执优先。 */
+let hitPipeline: HitPipeline | null = null;
+
 /** 表现层：指令 → 界面写入。 */
 let presentation: SpritePresentation | null = null;
 /** 调度总线：打断判定 + 层 TTL。 */
@@ -105,10 +112,6 @@ let bus: PresentationBus | null = null;
 let router: CommandRouter | null = null;
 /** 眨眼调度器（发布态也开，它是"活"感的主要来源）。 */
 let blinkDriver: BlinkDriver | null = null;
-
-/** 每帧最多上报一次命中状态，避免鼠标移动把 IPC 打满。 */
-let hitFrame = 0;
-let pendingHitPoint: { x: number; y: number } | null = null;
 
 /** 拖拽时同样按帧节流位置上报。 */
 let moveFrame = 0;
@@ -205,41 +208,6 @@ export function setExpression(name: string): boolean {
 /** 读当前表情（调试/验收用）。 */
 export function getExpression(): ExpressionId {
   return presentation?.state.expression ?? 'neutral';
-}
-
-/**
- * 判断光标是否落在立绘的可见包围盒（矩形）内。
- *
- * <p>这是 T02 之前的兜底：矩形比真实轮廓大，圆角与尾巴的空隙也会被判成命中。
- * 换成 alpha 掩码后这里改查网格即可，调用方不用动。</p>
- *
- * @param clientX 视口坐标
- * @param clientY 视口坐标
- * @returns 是否命中
- */
-function isInsideHitRect(clientX: number, clientY: number): boolean {
-  if (!artElement) return false;
-  const rect = artElement.getBoundingClientRect();
-  if (rect.width <= 0 || rect.height <= 0) return false;
-  return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
-}
-
-/**
- * 按帧调度一次命中判定。
- *
- * @param clientX 视口坐标
- * @param clientY 视口坐标
- */
-function scheduleHitCheck(clientX: number, clientY: number): void {
-  pendingHitPoint = { x: clientX, y: clientY };
-  if (hitFrame) return;
-  hitFrame = requestAnimationFrame(() => {
-    hitFrame = 0;
-    const point = pendingHitPoint;
-    pendingHitPoint = null;
-    if (!point) return;
-    reportHit(isInsideHitRect(point.x, point.y));
-  });
 }
 
 /**
@@ -420,18 +388,20 @@ function wireEvents(): void {
   if (!artElement) return;
 
   window.addEventListener('mousemove', (event) => {
-    scheduleHitCheck(event.clientX, event.clientY);
+    hitPipeline?.schedule(event.clientX, event.clientY);
   }, { passive: true });
 
   // 光标离开窗口时没有 mousemove 了，必须主动回到穿透态，否则窗口会一直「可交互」
-  document.addEventListener('mouseleave', () => reportHit(false), { passive: true });
+  document.addEventListener('mouseleave', () => hitPipeline?.reset(), { passive: true });
 
   artElement.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    // 二道门：DOM 事件已经落在立绘箱上，但立绘箱比可见轮廓大一圈（透明留白），
+    // 再用命中实现判一次，避免"点在猫旁边的空气里也能把窗口拖走"
+    if (!(hitTester?.test(event.clientX, event.clientY) ?? false)) return;
     // 点一下 = 互动（规格书 P1 的简化版：整图一弹 + happy 表情），先派指令再起拖拽
-    if (event.button === 0) {
-      for (const op of router?.route({ type: 'play', motion: 'tap', reason: 'pointer:tap' }) ?? []) {
-        dispatchOp(op);
-      }
+    for (const op of router?.route({ type: 'play', motion: 'tap', reason: 'pointer:tap' }) ?? []) {
+      dispatchOp(op);
     }
     beginDrag(event);
   });
@@ -451,11 +421,13 @@ function subscribeCommands(): void {
   if (!bridge) return;
   bridge.onCommand((command) => {
     if (command.type === 'hit-state') {
-      // 主进程回执：以主进程的真实状态为准，避免两边显示不一致
+      // 主进程回执是权威值：先对齐管线内部状态（不再回声），再统一走 applyHitState 收口
+      hitPipeline?.reconcileFromMain(command.hit === true);
       applyHitState(command.hit === true);
       return;
     }
     if (command.type === 'ready') {
+      hitPipeline?.reconcileFromMain(command.clickThrough !== true);
       applyHitState(command.clickThrough !== true);
       return;
     }
@@ -533,6 +505,9 @@ function createPresentation(): void {
 /** 入口。 */
 function boot(): void {
   injectGeometryVariables();
+  // 命中先建：它不依赖 DOM，几何一注入就能判
+  hitTester = new RectHitTester(PET_GEOMETRY);
+  hitPipeline = new HitPipeline(hitTester, { onHitChange: reportHit });
   createPresentation();
   buildDom();
   wireEvents();
