@@ -22,8 +22,10 @@ import com.summit.core.tool.ToolExecution;
 import com.summit.dp.model.Infrastructure.config.CompactionProperties;
 import com.summit.dp.model.api.controller.SettingsController;
 import com.summit.dp.model.application.service.ModelService;
-import com.summit.dp.workflow.infrastructure.config.CompactionModelConfiguration;
 import com.summit.harness.springbootautoconfigure.config.ConversationConfig;
+import com.summit.harness.springbootautoconfigure.config.ModelConfiguration;
+import com.summit.harness.springbootautoconfigure.properties.CompactContextModelProperties;
+import com.summit.harness.springbootautoconfigure.properties.agent.AgentChatProperties;
 import com.summit.runtime.compact.DefaultContextPruner;
 import com.summit.runtime.compact.DefaultModelCompacter;
 import com.summit.runtime.compact.RequestCompactModelResolver;
@@ -32,6 +34,7 @@ import com.summit.runtime.conversation.DefaultTokenizer;
 import com.summit.runtime.loop.control.InMemoryActiveExecutionRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -48,7 +51,9 @@ class CompactionOutputLimitTest {
     private final List<Integer> versions = new ArrayList<>();
     private final ModelConfig original = ModelConfig.builder().baseUrl("https://chat.invalid/v1")
             .apiKey("chat-key").modelName("chat").provider("default-streaming")
-            .timeout(Duration.ofSeconds(120)).maxTokens(102400).reuseModelForCompaction(true).build();
+            .timeout(Duration.ofSeconds(120)).maxTokens(102400).reuseModelForCompaction(true)
+            // 对话侧的思考语义：摘要绝不能继承这两个值，否则会用思考烧掉自己的输出预算
+            .reasoningEffort("max").returnThinking(true).build();
     private final ModelConfig dedicated = original.toBuilder().reuseModelForCompaction(false)
             .compactModel(new ModelConfig.CompactModelConfig("https://compact.invalid/v1", "compact-key", "summary"))
             .build();
@@ -67,7 +72,7 @@ class CompactionOutputLimitTest {
         }
         return new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(ConversationConfig.class))
-                .withUserConfiguration(CompactionModelConfiguration.class, CompactionProperties.class,
+                .withUserConfiguration(CompactAssemblyConfiguration.class, CompactionProperties.class,
                         RevisionConfiguration.class)
                 .withPropertyValues("lingxi.agent.model.conf.compact.max-tokens=4096")
                 .withBean("chatModelConfig", ModelConfig.class, () -> original)
@@ -106,7 +111,9 @@ class CompactionOutputLimitTest {
             assertEquals(4096, displayedLimit);
             assertEquals(2, selected.size());
             for (ModelConfig compact : selected) {
-                assertNull(compact.getReasoningEffort());
+                // 摘要档的调用语义：预算来自压缩配置，思考显式关闭 —— 对话的 max / returnThinking 不许漏进来
+                assertEquals("none", compact.getReasoningEffort());
+                assertFalse(compact.isReturnThinking());
                 assertEquals(displayedLimit, compact.getMaxTokens());
                 assertEquals("https://compact.invalid/v1", compact.getBaseUrl());
                 assertEquals("compact-key", compact.getApiKey());
@@ -114,6 +121,7 @@ class CompactionOutputLimitTest {
             }
             assertEquals(102400, dedicated.getMaxTokens());
             assertEquals(102400, original.getMaxTokens());
+            assertEquals("max", original.getReasoningEffort());
             assertEquals(List.of(2, 2), versions);
         });
     }
@@ -129,6 +137,10 @@ class CompactionOutputLimitTest {
                 assertEquals(4096, compact.getMaxTokens());
                 assertEquals("chat-key", compact.getApiKey());
                 assertEquals("default", compact.getProvider());
+                // 复用对话连接，但档位与思考开关必须是压缩的：继承 max 会让摘要拿思考烧掉输出
+                assertEquals("none", compact.getReasoningEffort());
+                assertFalse(compact.isReturnThinking());
+                assertFalse(compact.isSendThinking());
             }
             assertEquals(102400, original.getMaxTokens());
             assertTrue(original.isReuseModelForCompaction());
@@ -149,6 +161,16 @@ class CompactionOutputLimitTest {
     private AgentRequest request(int version) {
         return AgentRequest.builder().messages(List.of(UserMessageEntity.from("历史内容")))
                 .modelConfigSpec(new SensitiveDataSpec(7L, version)).build();
+    }
+
+    /** 压缩所用配置由框架装配：业务侧不再提供压缩解析器 bean，只验证结果。 */
+    @Configuration(proxyBeanMethods = false)
+    @EnableConfigurationProperties({CompactContextModelProperties.class, AgentChatProperties.class})
+    static class CompactAssemblyConfiguration {
+        @Bean("compactContextModelConfig")
+        ModelConfig compactContextModelConfig(CompactContextModelProperties compact, AgentChatProperties chat) {
+            return new ModelConfiguration().compactContextModelConfig(compact, chat);
+        }
     }
 
     /** 保留泛型信息，确保测试与实际配置提供器按同一类型注入。 */

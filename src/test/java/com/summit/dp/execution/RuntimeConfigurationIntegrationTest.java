@@ -8,6 +8,7 @@ import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conf.McpConfig;
 import com.summit.core.conf.McpTransport;
+import com.summit.core.conf.ModelBehavior;
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.conf.SensitiveDataSpec;
 import com.summit.core.mcp.McpToolScope;
@@ -117,8 +118,10 @@ class RuntimeConfigurationIntegrationTest {
                 }
             });
         }
-        RequestCompactModelResolver resolver = new RequestCompactModelResolver(null, configurations::resolveModel,
-                providers, request -> { throw new AssertionError("不能使用应用级压缩模型"); });
+        RequestCompactModelResolver resolver = new RequestCompactModelResolver(null,
+                ModelBehavior.of(ModelConfig.builder().maxTokens(32768).reasoningEffort("none").build()),
+                configurations::resolveModel, providers,
+                request -> { throw new AssertionError("不能使用应用级压缩模型"); });
         resolver.resolve(AgentRequest.builder().modelConfigSpec(first).build());
         resolver.resolve(AgentRequest.builder().modelConfigSpec(second).build());
         assertEquals("main-model-secret", selected.getFirst().getApiKey());

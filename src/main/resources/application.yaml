@@ -187,6 +187,9 @@ lingxi:
           model-name:
           timeout: 120s
           max-tokens: 32768
+          # 摘要不思考：压缩档的调用语义与对话档完全独立。复用对话连接时若继承对话的 effort，
+          # 思考 token 会占掉摘要自己的输出预算，摘要被截断后只能回落成本地剪枝。
+          reasoning-effort: none
 
 
 
