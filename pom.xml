@@ -246,6 +246,19 @@
                 <configuration>
                     <!-- 固定报告目录，与 pitest 一样不希望每次运行都堆时间戳目录。 -->
                     <outputDirectory>${lingxi.build.directory}/jacoco-report</outputDirectory>
+                    <!--
+                      **只插我们的类**（agent 的 includes，VM 类名通配）。
+
+                      为什么必须收窄：默认插桩范围是「所有被加载的类」，包括 Jackson、Spring 等三方库。
+                      在本机 JDK 21.0.12.1 上实测到 C2 编译线程崩溃（`hs_err`：EXCEPTION_ACCESS_VIOLATION
+                      @ jvm.dll，C2 正在编译 `Jackson POJOPropertiesCollector::_addFields`），
+                      3 次带 agent 的全量跑 3 次崩、`-Djacoco.skip=true` 一次就绿 —— 崩溃由插桩后的三方字节码诱发。
+                      覆盖率本来也只关心自己的代码，插三方库是白付 CPU 与风险。
+                      （本地仓库离线只有 0.8.12，无法靠升级驱动规避，故从插桩范围上解决。）
+                    -->
+                    <includes>
+                        <include>com/summit/**</include>
+                    </includes>
                     <!-- 结构与生成代码没有可测行为：PO/Mapper/VO/DTO/Config 与启动类不计入分母。 -->
                     <excludes>
                         <exclude>**/*PO.class</exclude>
