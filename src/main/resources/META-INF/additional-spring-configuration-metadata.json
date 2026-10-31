@@ -1,6 +1,13 @@
 {
   "properties": [
     {
+      "name": "lingxi.storage.engine",
+      "type": "com.summit.dp.shared.storage.StorageEngine",
+      "sourceType": "com.summit.dp.shared.storage.StorageEngineProperties",
+      "description": "存储引擎开关：sqlite（缺省，行为与引入开关之前一致）/ h2。",
+      "defaultValue": "sqlite"
+    },
+    {
       "name": "spring.datasource.druid.initial-size",
       "type": "java.lang.Integer",
       "sourceType": "com.alibaba.druid.pool.DruidDataSource",

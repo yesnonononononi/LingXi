@@ -49,6 +49,12 @@ mybatis-plus:
   type-handlers-package: com.summit.dp.shared.persistence.handler
 
 lingxi:
+  # 存储引擎开关：sqlite（缺省）/ h2。
+  # 不写这一项等价于 sqlite —— 上面的 spring.datasource 全部保持原样生效，启动行为与引入开关之前逐字一致。
+  # 只有显式写成 h2，环境期才会覆写 URL/驱动/连接池参数（见 StorageEngineEnvironmentPostProcessor），
+  # 并且启动前会校验数据目录形态：目录里是 SQLite 数据而没迁移过，会直接拒绝启动而不是建一个空 H2 库。
+  storage:
+    engine: sqlite
   tools:
     command:
       # 后台进程独立计时，避免长任务继承前台命令的短时限。

@@ -1,11 +1,8 @@
 package com.summit.dp.shared.config;
 
+import com.summit.dp.shared.persistence.schema.SchemaInitializer;
+import com.summit.dp.shared.storage.StorageEngine;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.ApplicationRunner;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.core.Ordered;
-import org.springframework.core.annotation.Order;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
@@ -27,10 +24,12 @@ import java.util.regex.Pattern;
  * <p>整个初始化在一个事务里完成：脚本执行到一半失败就整体回滚，不会留下「建了一半的表 +
  * 已经登记的版本号」这种既跑不下去又重复不了的状态。重复执行幂等 —— 已登记的版本直接跳过，
  * 这让它在每次启动时都可以安全地跑。</p>
+ *
+ * <p>它不是 Spring 配置类：注册 runner 的职责已收拢到 {@link SchemaBootstrapConfig}，
+ * 本类只负责「怎么建库」，因此既能在容器里用，也能被测试直接 {@code new} 出来跑。</p>
  */
 @Slf4j
-@Configuration
-public class SqliteSchemaInitializer {
+public class SqliteSchemaInitializer implements SchemaInitializer {
 
     /** 版本登记表名；建表语句本身也必须幂等。 */
     private static final String VERSION_TABLE = "schema_version";
@@ -44,10 +43,9 @@ public class SqliteSchemaInitializer {
     private static final Pattern DESTRUCTIVE = Pattern.compile(
             "(?im)^\\s*(?:DROP\\s+TABLE|TRUNCATE\\s+TABLE)\\b");
 
-    @Bean
-    @Order(Ordered.HIGHEST_PRECEDENCE)
-    public ApplicationRunner sqliteSchemaBootstrap(DataSource dataSource) {
-        return args -> initialize(dataSource);
+    @Override
+    public String engineId() {
+        return StorageEngine.SQLITE.id();
     }
 
     /**
@@ -56,6 +54,7 @@ public class SqliteSchemaInitializer {
      * @param dataSource 目标库；必须是 SQLite
      * @return 本次实际执行的脚本个数（0 表示库已是最新）
      */
+    @Override
     public int initialize(DataSource dataSource) {
         List<SchemaScript> scripts = loadScripts();
         if (scripts.isEmpty()) {
