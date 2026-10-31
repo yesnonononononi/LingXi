@@ -323,7 +323,9 @@ export function main() {
   const verbose = process.argv.slice(2).includes('--verbose');
   const result = runGate({ verbose });
   if (result.ok) {
-    console.log('✅ gate:pet 通过：几何 2:3 一致、资产头比例正确、无旧魔法数');
+    console.log(
+      '✅ gate:pet 通过：几何 2:3 自洽、墨迹一致、资产清单/尺寸/sha256 对齐、美术契约一致、无旧魔法数',
+    );
     return 0;
   }
   console.error('❌ gate:pet 失败：');
