@@ -1,4 +1,5 @@
 import DOMPurify from 'dompurify';
+import {normalizeSequenceParticipants} from './mermaidSequence';
 
 let sequence = 0;
 let queue: Promise<unknown> = Promise.resolve();
@@ -14,7 +15,7 @@ export function renderMermaid(source: string, dark: boolean): Promise<string> {
       theme: dark ? 'dark' : 'default',
       htmlLabels: false,
     });
-    const { svg } = await mermaid.render(`lx-mermaid-${++sequence}`, source);
+    const { svg } = await mermaid.render(`lx-mermaid-${++sequence}`, normalizeSequenceParticipants(source));
     return DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true, svgFilters: true } });
   });
   // 一张图的语法错误不能阻断后面的图。
