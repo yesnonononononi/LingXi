@@ -1,0 +1,14 @@
+{
+  "name": "lingxi-pet-p0-art",
+  "private": true,
+  "version": "3.0.0",
+  "scripts": {
+    "build": "node tools/build.cjs",
+    "verify": "node tools/verify.cjs",
+    "verify:canaries": "node tools/verify.cjs --canaries"
+  },
+  "dependencies": {
+    "ag-psd": "34.1.0",
+    "sharp": "0.35.5"
+  }
+}
