@@ -1,6 +1,7 @@
 import {defineStore} from 'pinia';
 import {computed, ref} from 'vue';
 import {UserConfigAPI} from '../services/userConfig';
+import {notifySettingsChanged} from '../services/settingsBroadcast';
 import {isOk} from '../utils/api';
 import {t} from '../i18n';
 import type {FontScalePreset} from '../utils/enum';
@@ -131,6 +132,29 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     // 非法/缺省一律回落 MEDIUM（后端虽已归一，前端仍要能吃住脏数据而不把界面撑坏）
     fontScale.value = normalizeFontScale(config?.fontScale, 'MEDIUM') ?? 'MEDIUM';
     applyFontScaleToDocument();
+  };
+
+  /**
+   * 与后端重新对齐已落库的设置。
+   *
+   * <p>设置在服务端只有一份，但每个窗口各持一份镜像：另一个窗口改档位后，本窗口的滑杆会继续
+   * 显示旧值，而真正生效的是新值 —— 显示与实际不一致，比没有显示更坏。</p>
+   *
+   * <p><b>保存中一律跳过</b>：此时本地值领先于后端（乐观更新），回读会把用户刚选的档位打回去。
+   * 未载入完成也跳过——那是 {@link load} 的职责。</p>
+   */
+  const reconcile = async (): Promise<void> => {
+    if (!loaded.value || savingKeys.value.size > 0) return;
+    try {
+      const result = await UserConfigAPI.current();
+      if (!isOk(result.code)) return;
+      // 回读期间用户可能已经开始改下一项：这时整份覆盖会丢掉他的选择。
+      if (savingKeys.value.size > 0) return;
+      applyConfig(result.data);
+    } catch (error) {
+      // 对齐失败不打扰用户：本地值仍可用，下一次焦点/广播还会再来一次。
+      console.error('回读全局配置失败:', error);
+    }
   };
 
   /** 从后端拉一次全量配置。同一时刻只允许一个在途请求，避免重复回表。 */
@@ -267,6 +291,8 @@ export const useUserConfigStore = defineStore('userConfig', () => {
       next.delete('reasoningEffort');
       savingKeys.value = next;
     }
+    // 追平后通知其它窗口回读：它们的内存镜像此刻已经落后于后端真值。
+    if (ok) notifySettingsChanged();
     return ok;
   };
 
@@ -302,6 +328,7 @@ export const useUserConfigStore = defineStore('userConfig', () => {
       if (reloadAfterSave.has(field)) {
         await load(true);
       }
+      notifySettingsChanged();
       return true;
     } catch (error) {
       console.error(`保存全局配置失败(${field}):`, error);
@@ -340,6 +367,7 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     // 行为
     load,
     applyConfig,
+    reconcile,
     patch,
     setReasoningEffort,
   };

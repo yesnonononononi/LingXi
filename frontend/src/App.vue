@@ -4,9 +4,12 @@ import {useApplicationSessionStore} from './stores/applicationSessionStore'
 import ConfirmModal from './components/common/ConfirmModal.vue'
 import DesktopTitleBar from './components/common/DesktopTitleBar.vue'
 import {isElectron} from './utils/platform'
+import {useSettingsSync} from './composables/useSettingsSync'
 
 const hasDesktopTitleBar = isElectron() && window.electronAPI?.customTitleBar === true
 const applicationSessions = useApplicationSessionStore()
+// 设置真源在服务端，多窗口各持一份镜像：挂载时接上「焦点回读 + 广播回读」。
+useSettingsSync()
 
 onMounted(() => applicationSessions.start())
 onBeforeUnmount(() => applicationSessions.close())
