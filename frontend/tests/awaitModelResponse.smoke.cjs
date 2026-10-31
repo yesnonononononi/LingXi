@@ -28,13 +28,13 @@ import '../../../src/style.css';
 setPreference('zh-CN');
 const {setTheme} = useTheme();
 const state = reactive({sessionId:'11', messageId:'100', turnId:'10', segmentId:'segment',
-  awaitModel:false, isDark:false, open:true, mounted:true, preview:'当前消息甲的内容'});
+  awaitModel:false, isDark:false, open:true, mounted:true, title:'执行命令', previewKind:'value', status:'', preview:'当前消息甲的内容'});
 const message = computed(() => ({id:state.messageId, turnId:state.turnId, role:'assistant',
   timestamp:0, content:'', isThinking:true, isComplete:false, toolCalls:[]}));
 const view = computed(() => ({kind:'segment', mode:'live', sweep:true,
   segment:{id:state.segmentId, items:[], detailItems:[], closed:false},
   summary:{toolNames:[], targets:[], runningCount:0, pendingCount:0, unknownCount:0},
-  headline:{title:'执行命令', preview:state.preview, previewKind:'value', status:''}}));
+  headline:{title:state.title, preview:state.preview, previewKind:state.previewKind, status:state.status}}));
 window.patch = async patch => { Object.assign(state,patch); setTheme(state.isDark?'dark':'light'); await nextTick(); };
 window.ready = true;
 </script><template><main class="max-w-lx-chat mx-auto p-8"><div v-show="state.open">
@@ -73,6 +73,13 @@ window.ready = true;
         mutationApplied = true;
         return source.replace(anchor, '');
       }
+      if (file.endsWith('/src/components/chat/ChatProcessSegment.vue') && mutation === 'parent-sweep') {
+        const binding = ':class="{ \'lx-sweep-text\': sweep }"';
+        const anchor = 'data-testid="process-segment-headline">';
+        assert.ok(source.includes(binding) && source.includes(anchor));
+        mutationApplied = true;
+        return source.replace(binding,'').replace(anchor,`data-testid="process-segment-headline" ${binding}>`);
+      }
     },
   },vue()], server:{host:'127.0.0.1',port:0}});
   await server.listen();
@@ -100,13 +107,79 @@ window.ready = true;
       for (const animation of el.getAnimations()) { animation.pause(); animation.currentTime=${time}; }
     }
   })()`);
+  const paint = () => evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  const select = name => `[data-testid=process-segment-${name}]`;
+  const measure = name => evaluate(`(() => {
+    const el=document.querySelector(${JSON.stringify(select(name))});
+    if(!el)return null;
+    const rect=el.getBoundingClientRect();
+    return {x:rect.x,y:rect.y,width:rect.width,height:rect.height,right:rect.right,scrollWidth:el.scrollWidth};
+  })()`);
+  const capture = async rect => (await window.webContents.capturePage({x:Math.floor(rect.x),y:Math.floor(rect.y),
+    width:Math.max(1,Math.ceil(rect.width)),height:Math.max(1,Math.ceil(rect.height))})).toBitmap();
+  const hide = (name,value) => evaluate(`document.querySelector(${JSON.stringify(select(name))}).style.visibility=${JSON.stringify(value)}`);
+  const freezeSweep = () => evaluate('document.querySelectorAll(".lx-sweep-text").forEach(el=>el.getAnimations().forEach(animation=>{animation.pause();animation.currentTime=900;}))');
+
+  // 正对照：故意让预览子节点盖住标题，证明截图差分确实能检出覆盖。
+  await freezeSweep();
+  const canaryRect = await measure('title');
+  await evaluate(`(() => {
+    const probe=document.createElement('span');probe.dataset.paintProbe='true';
+    Object.assign(probe.style,{position:'fixed',left:'${canaryRect.x}px',top:'${canaryRect.y}px',
+      width:'${canaryRect.width}px',height:'${canaryRect.height}px',background:'red',zIndex:'999'});
+    document.querySelector('[data-testid=process-segment-preview]').append(probe);
+  })()`);
+  await paint();const covered = await capture(canaryRect);
+  await hide('preview','hidden');await paint();
+  assert.equal(covered.equals(await capture(canaryRect)),false,'像素扫描须命中故意覆盖的正对照');
+  await evaluate('document.querySelector("[data-paint-probe]").remove()');
+  await hide('preview','');
+
+  const thought = '所以不唤醒是对的——根本就不该挂起，或者已经挂起的话……若根已挂起（isActive=false）→ accept 直接 QUEUED 派发，不走 pendingWakes。';
+  const layouts = [
+    {name:'empty-thought',title:'思考',previewKind:'none',preview:'',status:''},
+    {name:'short-thought',title:'思考',previewKind:'text',preview:'正在核对配置',status:''},
+    {name:'long-thought',title:'思考',previewKind:'text',preview:thought.repeat(6).slice(-320),status:''},
+    {name:'tool-value',title:'执行命令',previewKind:'value',preview:'mcp.json',status:''},
+    {name:'long-tool-value',title:'执行命令',previewKind:'value',preview:'长文件路径'.repeat(70)+'.json',status:''},
+    {name:'long-title-status',title:'很长的远端工具显示名称'.repeat(20),previewKind:'value',preview:'ApplicationContextAssemblyTest.java',status:'1 项状态未知'},
+  ];
+  for(const width of [1000,360]) {
+    window.setContentSize(width,360);
+    for(const isDark of [false,true]) {
+      for(const layout of layouts) {
+        await patch({...layout,isDark});await freezeSweep();await paint();
+        const title=await measure('title'),preview=await measure('preview'),status=await measure('status');
+        const label=`${layout.name}, width=${width}, dark=${isDark}`;
+        assert.ok(await evaluate('document.documentElement.scrollWidth<=innerWidth+1'),'摘要不能撑宽页面: '+label);
+        assert.ok((await measure('toggle')).height<=28,'摘要必须保持单行: '+label);
+        if(layout.title.length<6)assert.ok(title.width>=title.scrollWidth,'短标题不能被挤掉: '+label);
+        if(preview) {
+          assert.ok(preview.x>=title.right+7,'预览与标题必须保留间距: '+label);
+          const titlePixels=await capture(title),previewPixels=await capture(preview);
+          const statusPixels=status?await capture(status):null;
+          await hide('preview','hidden');await paint();
+          assert.ok(titlePixels.equals(await capture(title)),'预览不得绘制到标题区域: '+label);
+          if(status)assert.ok(statusPixels.equals(await capture(status)),'预览不得覆盖状态计数: '+label);
+          await hide('preview','');await hide('title','hidden');await paint();
+          assert.ok(previewPixels.equals(await capture(preview)),'截断的标题不得绘制到预览区域: '+label);
+          await hide('title','');await paint();
+        }
+        if(layout.name==='long-thought') {
+          await fs.writeFile(path.join(output,`thought-${width}-${isDark?'dark':'light'}.png`),(await window.webContents.capturePage()).toPNG());
+        }
+      }
+    }
+  }
+  window.setContentSize(1000,360);
+  await patch({title:'执行命令',previewKind:'value',preview:'当前消息甲的内容',status:'',isDark:false});
   window.webContents.debugger.attach('1.3');
   await window.webContents.debugger.sendCommand('Accessibility.enable');
   const accessibleWait = async () => {
     const {nodes} = await window.webContents.debugger.sendCommand('Accessibility.getFullAXTree');
     return nodes.some(node => !node.ignored && node.role?.value === 'StaticText' && node.name?.value === '正在等待模型响应');
   };
-  await evaluate('window.savedTitle=document.querySelector("[data-testid=process-segment-title]");window.savedHeadline=document.querySelector("[data-testid=process-segment-headline]");window.savedSweep=window.savedHeadline.getAnimations()[0];window.savedHeight=document.querySelector("button").getBoundingClientRect().height');
+  await evaluate('window.savedTitle=document.querySelector("[data-testid=process-segment-title]");window.savedHeadline=document.querySelector("[data-testid=process-segment-headline]");window.savedSweep=window.savedTitle.getAnimations()[0];window.savedHeight=document.querySelector("button").getBoundingClientRect().height');
 
   // 多次短等待不累计，也不能让已取消的窗口在之后冒出来。
   for (let index=0;index<3;index++) {
@@ -140,9 +213,12 @@ window.ready = true;
     assert.deepEqual(buttonNames,['执行过程'],'按钮只描述展开对象，不缓存动态摘要');
     assert.equal(await evaluate('document.querySelector("[data-testid=process-segment-title]")===window.savedTitle'),true);
     assert.equal(await evaluate('document.querySelector("[data-testid=process-segment-headline]")===window.savedHeadline'),true);
-    assert.equal(await evaluate('window.savedHeadline.getAnimations()[0]===window.savedSweep'),true,'切换文案不能重启扫光');
+    assert.equal(await evaluate('window.savedTitle.getAnimations()[0]===window.savedSweep'),true,'切换文案不能重启标题扫光');
     assert.equal(await evaluate('document.querySelector("button").getBoundingClientRect().height===window.savedHeight'),true,'占位不得撑高原行');
-    assert.equal(await evaluate('document.querySelectorAll(".lx-sweep-text").length'),1);
+    assert.equal(await evaluate('getComputedStyle(document.querySelector("[data-testid=process-segment-await] .lx-sweep-text")).animationName'),
+      'lx-sweep-text-shift','延迟显隐不能覆盖等待文字的扫光动画');
+    assert.equal(await evaluate('[...document.querySelectorAll(".lx-sweep-text")].filter(el => getComputedStyle(el).visibility === "visible").length'),1,
+      '同一回答只允许一处可见扫光');
     assert.match(await evaluate('document.body.innerText'),/正在等待模型响应/);
     await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
     await fs.writeFile(path.join(output,isDark?'dark.png':'light.png'),(await window.webContents.capturePage()).toPNG());

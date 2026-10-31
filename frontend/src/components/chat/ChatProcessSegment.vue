@@ -60,12 +60,14 @@ const isRunningTurn = computed(() => props.turn
       </svg>
       <!-- 身份变化只重建标题槽，防止新消息继承旧动画；折叠选择仍留在段组件。 -->
       <span :key="JSON.stringify([sessionId, message.id, message.turnId, segment.id])"
-        class="min-w-0 flex-1" data-testid="process-segment-headline" :class="{ 'lx-sweep-text': sweep }">
+        class="min-w-0 flex-1" data-testid="process-segment-headline">
         <span class="lx-process-headline" :class="{ 'lx-awaiting-model': awaitModel }">
           <span class="lx-process-summary flex min-w-0 items-center gap-2" data-testid="process-segment-summary">
-            <span class="min-w-0 max-w-[60%] truncate font-medium" data-testid="process-segment-title">{{ title }}</span>
+            <!-- 扫光只能裁切标题自身，放到父容器会重新绘出预览中已被截断的文字。 -->
+            <span class="min-w-0 max-w-[60%] truncate font-medium" data-testid="process-segment-title"
+              :class="{ 'lx-sweep-text': sweep }">{{ title }}</span>
             <span v-if="preview" class="min-w-0 flex-1 overflow-hidden whitespace-nowrap"
-              :class="[previewIsText ? 'flex justify-end' : '', isDark ? 'text-zinc-400 group-hover:text-zinc-200' : 'text-zinc-500 group-hover:text-zinc-700']"
+              :class="previewIsText ? 'flex justify-end' : ''"
               data-testid="process-segment-preview">
               <span :class="previewIsText ? 'shrink-0 min-w-full text-left' : 'block truncate'">{{ preview }}</span>
             </span>
@@ -73,7 +75,9 @@ const isRunningTurn = computed(() => props.turn
               data-testid="process-segment-status">{{ statusLabel }}</span>
           </span>
           <span v-if="awaitModel" class="lx-process-waiting min-w-0 truncate font-medium" data-testid="process-segment-await"
-            role="status">{{ t('chat.message.awaitModelResponse') }}</span>
+            role="status">
+            <span class="block truncate lx-sweep-text">{{ t('chat.message.awaitModelResponse') }}</span>
+          </span>
         </span>
       </span>
     </button>

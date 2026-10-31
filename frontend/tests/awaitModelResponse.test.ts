@@ -339,13 +339,14 @@ test('空窗提示与摘要共用原行，显示交接由 CSS 处理', async t =
   assert.equal(standalone.length, 0,
     '不得再出现 data-testid="await-model-response" 这类独立占位行');
 
-  // 标题容器独占扫光，切换等待文案不重启该动画。
+  // 扫光只裁切实际文字，不能由父容器重新绘出溢出的预览。
   const placeholders = harness.findAll(root, node => node.props['data-testid'] === 'process-segment-await');
   assert.equal(placeholders.length, 1, `空窗期必须恰有一处行内占位，实际 ${placeholders.length} 处`);
   const placeholder = placeholders[0]!;
   assert.equal(nodeText(placeholder), '正在等待模型响应', '占位文案必须是「正在等待模型响应」');
-  const headline = harness.find(root, node => node.props['data-testid'] === 'process-segment-headline');
-  assert.ok(headline && hasClass(headline, 'lx-sweep-text'), '占位与摘要必须共用一个扫光容器');
+  assert.ok(harness.find(placeholder, node => hasClass(node, 'lx-sweep-text')), '占位的文字节点必须使用扫光');
+  const title = harness.find(root, node => node.props['data-testid'] === 'process-segment-title');
+  assert.ok(title && hasClass(title, 'lx-sweep-text'), '延迟前保留标题自身的扫光');
   assert.equal(placeholder.props['role'], 'status', '占位必须带 role=status');
 
   // 摘要留在 DOM 中供延迟前展示，实际可见性由浏览器回归验证。
