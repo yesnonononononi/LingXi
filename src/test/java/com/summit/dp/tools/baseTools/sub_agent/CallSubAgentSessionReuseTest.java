@@ -145,6 +145,7 @@ class CallSubAgentSessionReuseTest {
 
         assertTrue(result.isSuccess(), result.getToolOutput());
         AsyncDelegationTask task = captureSubmittedTask();
+        assertEquals(List.of("再评估一下上次的方案"), task.request().getTask());
         assertTrue(task.target().reused(), "命中已有子会话必须标记复用");
         assertEquals(EXISTING_SUB_SESSION_ID, task.numericSubSessionId(), "复用同一子会话 id");
 
@@ -164,6 +165,7 @@ class CallSubAgentSessionReuseTest {
 
         assertTrue(result.isSuccess(), result.getToolOutput());
         AsyncDelegationTask task = captureSubmittedTask();
+        assertEquals(List.of("再评估一下上次的方案"), task.request().getTask());
         assertFalse(task.target().reused(), "未命中必须标记首派");
         assertNotNull(task.numericSubSessionId());
         assertNotEquals(EXISTING_SUB_SESSION_ID, task.numericSubSessionId(), "未命中时必须派生新 id");
@@ -184,6 +186,7 @@ class CallSubAgentSessionReuseTest {
 
         assertTrue(result.isSuccess(), result.getToolOutput());
         AsyncDelegationTask task = captureSubmittedTask();
+        assertEquals(List.of("再评估一下上次的方案"), task.request().getTask());
         assertTrue(task.target().reused(), "上下文缺失也必须复用同一子会话，不得另派生");
         assertEquals(EXISTING_SUB_SESSION_ID, task.numericSubSessionId());
     }

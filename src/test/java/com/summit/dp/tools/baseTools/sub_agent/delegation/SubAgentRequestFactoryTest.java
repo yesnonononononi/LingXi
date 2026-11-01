@@ -1,5 +1,40 @@
 package com.summit.dp.tools.baseTools.sub_agent.delegation;
 
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.ArrayList;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.ParameterizedTest;
+import com.summit.runtime.model.DefaultChatModelInvoker;
+import com.summit.runtime.loop.control.InMemoryActiveExecutionRegistry;
+import com.summit.runtime.loop.RuntimeProcessorTemplate;
+import com.summit.runtime.loop.DefaultRuntimeLifeStyleManager;
+import com.summit.runtime.loop.DefaultLoopInterceptorProcessor;
+import com.summit.runtime.loop.DefaultLoopInterceptor;
+import com.summit.runtime.loop.DefaultExecutionController;
+import com.summit.runtime.loop.BoundaryChecker;
+import com.summit.runtime.conversation.DefaultTokenizer;
+import com.summit.runtime.conversation.DefaultConversationManager;
+import com.summit.runtime.context.RuntimeContext;
+import com.summit.runtime.compact.DefaultModelCompacter;
+import com.summit.runtime.compact.DefaultContextPruner;
+import com.summit.runtime.agent.AgentConfig;
+import com.summit.dp.workflow.infrastructure.config.JsonConfig;
+import com.summit.core.tool.ToolRegistry;
+import com.summit.core.tool.ToolExecutionManager;
+import com.summit.core.runtime.loop.ContextUsageReporter;
+import com.summit.core.model.chat.ChatModel;
+import com.summit.core.conversation.message.TokenUsageEntity;
+import com.summit.core.conversation.message.ToolMessageEntity;
+import com.summit.core.conversation.message.SystemMessageEntity;
+import com.summit.core.conversation.message.AiMessageEntity;
+import com.summit.core.conversation.event.RuntimeEventPublisher;
+import com.summit.core.conversation.api.ToolCallRequest;
+import com.summit.core.conversation.api.ChatResponseEntity;
+import com.summit.core.compact.ContextCompactRequest;
+import com.summit.core.compact.ContextAttachmentProvider;
+import com.summit.core.agent.ExecutionState;
+import com.summit.core.agent.Execution;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.conf.ModelConfig;
 import com.summit.core.conversation.message.Message;
@@ -63,6 +98,94 @@ class SubAgentRequestFactoryTest {
     private SubAgentRequestFactory factoryWithSkills() {
         return new SubAgentRequestFactory(workspaceService, modelService, settingsProvider,
                 workspaceConverter, new SkillRootResolver(skillDir.toString()), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create());
+    }
+
+    @ParameterizedTest(name = "复用历史={0}")
+    @ValueSource(booleans = {false, true})
+    void taskStaysInSystemPromptThroughPruningSummaryAndCheckpointResume(boolean reused) throws Exception {
+        stubModel();
+        AgentVO member = agent(6L, "工程师", "执行主理人交付的任务");
+        String oldTask = "上一轮委派：核查旧端口";
+        List<Message> prior = reused ? List.of(SystemMessageEntity.builder().text(oldTask).build(),
+                UserMessageEntity.from("旧轮用户输入")) : List.of();
+        AgentRequest request = build(member, buildTeam(member), parentToolExecution(), prior);
+        String task = "请只回复一个词：ok";
+        assertEquals(List.of(task), request.getTask());
+        Execution execution = Execution.create(request, "");
+        execution.setMessages(new ArrayList<>(execution.getMessages()));
+        DefaultConversationManager conversations = new DefaultConversationManager(ContextAttachmentProvider.NONE);
+        conversations.startConversation(execution, null, null);
+        execution.startChecked();
+        String protectedPrompt = execution.getMessages().getFirst().text();
+        assertInstanceOf(SystemMessageEntity.class, execution.getMessages().getFirst());
+        assertTrue(protectedPrompt.contains(task));
+        assertFalse(protectedPrompt.contains(oldTask), "复用子会话不能沿用上一轮的系统任务");
+
+        // 邮件成为最后用户消息后，历史工具组必须真的被剪掉，不能只验证一个未执行的压缩调用。
+        conversations.appendMessage(execution, AiMessageEntity.builder().text("历史读取")
+                .toolCalls(List.of(new ToolCallRequest("old-read", ToolCatalog.READ_FILE, 0, "{}"))).build());
+        conversations.appendMessage(execution, ToolMessageEntity.builder().id("old-read").name(ToolCatalog.READ_FILE)
+                .toolOutput("历史工具输出".repeat(2000)).build());
+        conversations.appendUserMessage(execution, "协作邮件：上一轮端口纠错，作为补充背景");
+        DefaultTokenizer tokenizer = new DefaultTokenizer();
+        RuntimeEventPublisher events = new RuntimeEventPublisher(List.of());
+        ContextUsageReporter usage = new ContextUsageReporter(tokenizer, 100000, events, 1);
+        AgentConfig config = AgentConfig.builder().maxTokens(100000).maxIterations(3).build();
+        int before = tokenizer.count(execution.getMessages());
+        assertTrue(new DefaultContextPruner(config, usage).compact(new ContextCompactRequest(execution)));
+        int pruned = tokenizer.count(execution.getMessages());
+        assertTrue(pruned < before, "历史工具内容必须实际缩减");
+        assertTrue(execution.getMessages().stream().noneMatch(ToolMessageEntity.class::isInstance));
+        assertEquals(protectedPrompt, execution.getMessages().getFirst().text());
+
+        // 摘要故意不复述任务，确认任务保护来自系统段，而不是摘要模型碰巧记住了它。
+        AtomicInteger summaries = new AtomicInteger();
+        ChatModel summaryModel = command -> {
+            summaries.incrementAndGet();
+            return ChatResponseEntity.builder().aiMessageEntity(AiMessageEntity.builder()
+                    .text("{\"summary\":\"历史端口纠错已处理\"}").build()).build();
+        };
+        DefaultModelCompacter compacter = new DefaultModelCompacter(summaryModel, conversations,
+                ContextAttachmentProvider.NONE, usage);
+        for (int round = 0; round < 2; round++) {
+            assertTrue(compacter.compact(new ContextCompactRequest(execution)));
+            assertInstanceOf(SystemMessageEntity.class, execution.getMessages().getFirst());
+            assertEquals(protectedPrompt, execution.getMessages().getFirst().text());
+            assertTrue(execution.getMessages().getFirst().text().contains(task));
+        }
+        assertEquals(2, summaries.get());
+
+        execution.suspendChecked();
+        ObjectMapper json = new JsonConfig().objectMapper();
+        Path checkpoint = skillDir.resolve("delegation-checkpoint.json");
+        json.writeValue(checkpoint.toFile(), execution);
+        Execution restored = json.readValue(checkpoint.toFile(), Execution.class);
+        assertEquals(List.of(task), restored.getAgentRequest().getTask());
+        assertEquals(protectedPrompt, restored.getMessages().getFirst().text());
+
+        // 恢复链不会重新初始化系统提示词，验证真正送模时仍使用受保护的任务段。
+        List<Message> sent = new ArrayList<>();
+        ToolExecutionManager tools = mock(ToolExecutionManager.class);
+        when(tools.toolRegistry()).thenReturn(new ToolRegistry(List.of()));
+        InMemoryActiveExecutionRegistry snapshots = new InMemoryActiveExecutionRegistry(json);
+        DefaultRuntimeLifeStyleManager lifecycle = new DefaultRuntimeLifeStyleManager(events);
+        RuntimeProcessorTemplate runtime = new RuntimeProcessorTemplate(RuntimeContext.builder()
+                .executionRepository(snapshots).conversationManager(conversations).toolExecutionManager(tools)
+                .executionControl(new DefaultExecutionController(() -> null, snapshots, events, lifecycle))
+                .runtimeLifeStyleManager(lifecycle).runtimeEventPublisher(events).usage(usage)
+                .runtimeBoundaryChecker(new BoundaryChecker(config, tokenizer, conversations, null, null))
+                .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(new DefaultLoopInterceptor())))
+                .invoker(new DefaultChatModelInvoker(command -> {
+                    sent.addAll(command.getMessages());
+                    return ChatResponseEntity.builder().aiMessageEntity(AiMessageEntity.builder()
+                            .text("按本次委派继续处理").toolCalls(List.of()).build()).tokenUsage(TokenUsageEntity.empty()).build();
+                })).build());
+        assertEquals(ExecutionState.COMPLETED, runtime.execute(restored).getExecutionState());
+        assertInstanceOf(SystemMessageEntity.class, sent.getFirst());
+        assertEquals(protectedPrompt, sent.getFirst().text());
+        assertTrue(sent.getFirst().text().contains(task));
+        System.out.printf("验证委派任务保护: reused=%s, tokensBefore=%d, tokensAfterPrune=%d, summaries=%d, runtimeJar=%s%n",
+                reused, before, pruned, summaries.get(), DefaultConversationManager.class.getProtectionDomain().getCodeSource().getLocation());
     }
 
     @Test
