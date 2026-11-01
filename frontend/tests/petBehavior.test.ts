@@ -1,0 +1,299 @@
+/**
+ * 行为状态机单测（tsx 执行，纯逻辑，不碰 DOM）。
+ *
+ * <p>覆盖每一条转移与每个边界：89999/90000ms、连点 2/3 次、睡眠中点击、拖拽中不睡。
+ * 时间与随机全部由测试注入，因此这些断言是确定性的，不含 sleep、不含统计猜测。</p>
+ */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import {
+  ANGRY_HOLD_MS,
+  IDLE_BRIDGE_MS,
+  MULTI_TAP_THRESHOLD,
+  MULTI_TAP_WINDOW_MS,
+  PetBehaviorStateMachine,
+  SLEEP_AFTER_IDLE_MS,
+  TAP_HOLD_MS,
+  WAKE_HOLD_MS,
+} from '../src/pet/behavior/state-machine';
+import { INTERRUPT_LOCK_MS } from '../src/pet/presentation/priority';
+
+/** 可控时钟：行为状态机只认注入的 now()。 */
+class Clock {
+  /** 当前虚拟时间（毫秒）。 */
+  time = 0;
+
+  /** 读当前时间。 */
+  now = (): number => this.time;
+
+  /**
+   * 推进时间。
+   *
+   * @param ms 毫秒
+   */
+  advance(ms: number): void {
+    this.time += ms;
+  }
+}
+
+/**
+ * 建一个用固定 rng（0.5 = 抖动为 0）的状态机。
+ *
+ * @param clock 时钟
+ * @returns 状态机
+ */
+function machine(clock: Clock): PetBehaviorStateMachine {
+  return new PetBehaviorStateMachine({ now: clock.now, rng: () => 0.5 });
+}
+
+test('行为：初始是 idle，且没有待下发指令', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  assert.equal(sm.state, 'idle');
+  assert.equal(sm.isSleeping, false);
+  assert.deepEqual(sm.tick(), []);
+});
+
+test('行为：点击一次 → tap（happy 表情 + 整图一弹），并带 TTL', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  const ops = sm.handle('tap');
+  assert.equal(sm.state, 'tap');
+  assert.equal(ops.length, 2);
+  const motion = ops.find((op) => op.kind === 'motion');
+  const expression = ops.find((op) => op.kind === 'expression');
+  assert.equal(motion?.id, 'tap');
+  assert.equal(expression?.id, 'happy');
+  // rng 固定 0.5 → 抖动为 0 → 正好是基准时长
+  assert.equal(motion?.durationMs, TAP_HOLD_MS);
+  assert.equal(expression?.durationMs, TAP_HOLD_MS);
+});
+
+test('行为：tap 到期后经桥接回到常驻 idle（两拍）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  sm.handle('tap');
+  clock.advance(TAP_HOLD_MS - 1);
+  assert.deepEqual(sm.tick(), [], '未到期不该回 idle');
+  clock.advance(1);
+  const bridge = sm.tick();
+  assert.equal(sm.state, 'idle');
+  assert.equal(bridge[0]?.id, 'idle');
+  // 桥接用高优先级 + TTL，避免被总线"低优先级锁"拒绝后卡在 tap 姿势
+  assert.equal(bridge[0]?.priority, 2);
+  assert.equal(bridge[0]?.durationMs, IDLE_BRIDGE_MS);
+
+  clock.advance(IDLE_BRIDGE_MS);
+  const steady = sm.tick();
+  assert.equal(steady[0]?.id, 'idle');
+  assert.equal(steady[0]?.priority, 0, '常驻 idle 必须是优先级 0，否则眨眼永远打不进来');
+  assert.equal(steady[0]?.durationMs, undefined, '常驻 idle 不该带 TTL');
+});
+
+test('行为：连点 2 次不生气（仍在 tap）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  sm.handle('tap');
+  clock.advance(300);
+  sm.handle('tap');
+  assert.equal(sm.state, 'tap');
+});
+
+test('行为：连点 3 次（间隔 < 2000ms）→ angry', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  sm.handle('tap');
+  clock.advance(300);
+  sm.handle('tap');
+  clock.advance(300);
+  const ops = sm.handle('tap');
+  assert.equal(sm.state, 'angry');
+  const motion = ops.find((op) => op.kind === 'motion');
+  const expression = ops.find((op) => op.kind === 'expression');
+  assert.equal(motion?.id, 'angry');
+  assert.equal(expression?.id, 'angry');
+  assert.equal(motion?.durationMs, ANGRY_HOLD_MS);
+});
+
+test('行为：连点阈值就是 3（恰好 3 次生气，2 次不生气）', () => {
+  assert.equal(MULTI_TAP_THRESHOLD, 3);
+  // 边界再钉一次：第 3 次才生气，不能被改成 1 或 2 还不红
+  const clock = new Clock();
+  const sm = machine(clock);
+  sm.handle('tap');
+  clock.advance(MULTI_TAP_WINDOW_MS - 1);
+  sm.handle('tap');
+  assert.equal(sm.state, 'tap', '2 次不该生气');
+  clock.advance(MULTI_TAP_WINDOW_MS - 1);
+  sm.handle('tap');
+  assert.equal(sm.state, 'angry', '3 次必须生气');
+});
+
+test('行为：相邻间隔 ≥ 2000ms 的 3 次点击不算连点（窗口会滑走）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  sm.handle('tap');
+  clock.advance(MULTI_TAP_WINDOW_MS);
+  sm.handle('tap');
+  clock.advance(MULTI_TAP_WINDOW_MS);
+  sm.handle('tap');
+  assert.equal(sm.state, 'tap', '每次点击都超出窗口，累计不到 3 次');
+});
+
+test('行为：89999ms 无交互不睡 / 90000ms 睡（字面量边界）', () => {
+  // 边界用字面量而不是常量：用常量会让"把阈值改成 89000"这种变异跟着一起变，测不出问题
+  assert.equal(SLEEP_AFTER_IDLE_MS, 90000, '睡眠阈值必须是 90s');
+
+  const clock = new Clock();
+  const sm = machine(clock);
+  clock.advance(89999);
+  assert.deepEqual(sm.tick(), []);
+  assert.equal(sm.state, 'idle', '89999ms 不该睡');
+
+  clock.advance(1);
+  const ops = sm.tick();
+  assert.equal(sm.state, 'sleeping', '90000ms 必须睡');
+  assert.equal(sm.isSleeping, true);
+  const motion = ops.find((op) => op.kind === 'motion');
+  const expression = ops.find((op) => op.kind === 'expression');
+  assert.equal(motion?.id, 'sleepy');
+  assert.equal(expression?.id, 'sleepy');
+  // 睡眠动作优先级 0：真正的"抑制眨眼"由 bus 的 sleeping 判定做，不是靠抢占
+  assert.equal(motion?.priority, 0);
+});
+
+test('行为：睡眠阈值早 1ms 也不许提前入睡（89000ms 仍应清醒）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  clock.advance(89000);
+  assert.deepEqual(sm.tick(), []);
+  assert.equal(sm.state, 'idle');
+});
+
+test('行为：睡眠中点击 → wake（surprised + 一抖）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  clock.advance(SLEEP_AFTER_IDLE_MS);
+  sm.tick();
+  assert.equal(sm.state, 'sleeping');
+
+  const ops = sm.handle('tap');
+  assert.equal(sm.state, 'wake');
+  assert.equal(sm.isSleeping, false);
+  const motion = ops.find((op) => op.kind === 'motion');
+  const expression = ops.find((op) => op.kind === 'expression');
+  assert.equal(motion?.id, 'wake');
+  assert.equal(expression?.id, 'surprised');
+  assert.equal(motion?.priority, 2, '惊醒要能压过一切（含同层残留）');
+  assert.equal(motion?.durationMs, WAKE_HOLD_MS);
+});
+
+test('行为：wake 到期后回到 idle（并经桥接落到常驻）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  clock.advance(SLEEP_AFTER_IDLE_MS);
+  sm.tick();
+  sm.handle('tap');
+  clock.advance(WAKE_HOLD_MS);
+  const bridge = sm.tick();
+  assert.equal(sm.state, 'idle');
+  assert.equal(bridge[0]?.id, 'idle');
+  clock.advance(IDLE_BRIDGE_MS);
+  const steady = sm.tick();
+  assert.equal(steady[0]?.priority, 0);
+});
+
+test('行为：拖动开始 → drag（循环、不限时、优先级 2）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  const ops = sm.handle('drag-start');
+  assert.equal(sm.state, 'drag');
+  assert.equal(sm.isDragging, true);
+  assert.equal(ops.length, 1);
+  assert.equal(ops[0]?.kind, 'motion');
+  assert.equal(ops[0]?.id, 'drag');
+  assert.equal(ops[0]?.priority, 2);
+  assert.equal(ops[0]?.loop, true);
+  assert.equal(ops[0]?.durationMs, undefined, '拖拽不限时');
+});
+
+test('行为：拖动结束 → 桥接 idle → 常驻 idle', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  sm.handle('drag-start');
+  const bridge = sm.handle('drag-end');
+  assert.equal(sm.state, 'idle');
+  assert.equal(sm.isDragging, false);
+  assert.equal(bridge[0]?.id, 'idle');
+  assert.equal(bridge[0]?.priority, 2);
+  assert.equal(bridge[0]?.durationMs, IDLE_BRIDGE_MS);
+  clock.advance(IDLE_BRIDGE_MS);
+  const steady = sm.tick();
+  assert.equal(steady[0]?.priority, 0);
+});
+
+test('行为：拖拽中不触发睡眠（哪怕过去 10 分钟）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  sm.handle('drag-start');
+  clock.advance(SLEEP_AFTER_IDLE_MS * 6);
+  assert.deepEqual(sm.tick(), []);
+  assert.equal(sm.state, 'drag');
+  assert.equal(sm.isSleeping, false);
+});
+
+test('行为：拖拽中的点击被忽略（不打断拖拽、不计连点）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  sm.handle('drag-start');
+  assert.deepEqual(sm.handle('tap'), []);
+  assert.deepEqual(sm.handle('tap'), []);
+  assert.deepEqual(sm.handle('tap'), []);
+  assert.equal(sm.state, 'drag', '连点 3 次也不该在拖拽中生气');
+});
+
+test('行为：重复的 drag-start / drag-end 是幂等的', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  sm.handle('drag-start');
+  assert.deepEqual(sm.handle('drag-start'), []);
+  sm.handle('drag-end');
+  assert.deepEqual(sm.handle('drag-end'), []);
+});
+
+test('行为：生气指令的优先级高于眨眼（ambient 不许刷掉 angry）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  sm.handle('tap');
+  sm.handle('tap');
+  const ops = sm.handle('tap');
+  const expression = ops.find((op) => op.kind === 'expression');
+  assert.equal(expression?.priority, 1);
+  assert.ok(
+    (expression?.priority ?? 0) > 0,
+    '生气表情优先级必须 > 眨眼(0)，否则眨眼会把生气刷掉',
+  );
+});
+
+test('行为：时间与随机必须注入——源码里不许出现 Date.now / Math.random', () => {
+  // 先剥掉注释：注释里正是靠"禁止 Date.now()"这句话做说明，不能算违规代码
+  const raw = readFileSync(resolve('src/pet/behavior/state-machine.ts'), 'utf8');
+  const code = raw
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .map((line) => line.replace(/\/\/.*$/, ''))
+    .join('\n');
+  assert.equal(/Date\.now\s*\(/.test(code), false, '状态机内部禁止直接读 Date.now()');
+  assert.equal(/Math\.random\s*\(/.test(code), false, '状态机内部禁止直接读 Math.random()');
+});
+
+test('行为：缺少注入时构造直接抛错（防止以后悄悄退回全局时钟）', () => {
+  assert.throws(() => new PetBehaviorStateMachine({ now: undefined as unknown as () => number, rng: () => 0.5 }), TypeError);
+  assert.throws(() => new PetBehaviorStateMachine({ now: () => 0, rng: undefined as unknown as () => number }), TypeError);
+});
+
+test('行为：桥接时长大于调度锁阈值（否则 idle 会一直被排队）', () => {
+  assert.ok(IDLE_BRIDGE_MS > INTERRUPT_LOCK_MS);
+});

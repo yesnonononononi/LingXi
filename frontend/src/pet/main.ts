@@ -17,19 +17,33 @@ import { RectHitTester } from './hit/rect-hit-tester';
 import { DEFAULT_TIMER_PORT, PresentationBus } from './presentation/bus';
 import { BlinkDriver } from './presentation/blink-driver';
 import { CommandRouter } from './presentation/command-router';
+import { DEFAULT_CROSSFADE_EASING, DEFAULT_CROSSFADE_MS } from './presentation/crossfade';
 import { SpritePresentation, type ExpressionUrlMap } from './presentation/sprite-presentation';
 import { EXPRESSION_IDS, type ExpressionId, type MotionId, type PresentationOp } from './presentation/types';
+import { PetBehaviorStateMachine, type PetBehaviorState } from './behavior/state-machine';
 import { PET_BLINK_MAPPING, expressionFrameUrl, expressionFrameUrls } from './assets/manifest';
 import { loadArt } from './assets/loader';
 import { PowerPolicy } from './power-policy';
 import { isCalibrationEnabled, mountCalibration } from './visual/calibrate';
 import { mountHalo } from './visual/halo';
-import { applyMicroMotion, applyMotionDuration, isDebugEnabled } from './visual/micro-motion';
+import { applyMicroMotion, applyMotionDuration, isDebugEnabled, prefersReducedMotion } from './visual/micro-motion';
+import { MOTION_REST_ATTRIBUTE, MotionPacer } from './visual/motion-pacer';
 
 /** 调试 UI 是否开启（`?debug=1` 或开发态；发布态必须隐藏——用户明确要求别再露调试标记）。 */
 const DEBUG_ENABLED = isDebugEnabled(window.location.search, import.meta.env.DEV);
 /** 标定页是否开启（`?calibrate=1`，P1 开发工具）。 */
 const CALIBRATE_ENABLED = isCalibrationEnabled(window.location.search);
+
+/**
+ * 系统是否要求减少动态效果。
+ *
+ * <p>CSS 那边已经用 `@media` 停掉了动画；这里再判一次是因为**定时器停不掉**：
+ * 眨眼与"偶发停顿"节奏器都是 `setTimeout` 驱动的，用户开了"减少动态"之后
+ * 它们仍会继续跑，既白吃 CPU 又继续打断表情。</p>
+ */
+const REDUCED_MOTION = prefersReducedMotion(
+  typeof window.matchMedia === 'function' ? (query: string) => window.matchMedia(query) : null,
+);
 
 /**
  * 运行时密度：按 `devicePixelRatio` 挑一档（不用 srcset，因为我们是手动 `<img>.src`）。
@@ -106,6 +120,10 @@ interface PetDebugHandle {
   getExpression: () => ExpressionId;
   /** 全部合法表情 id（与美术规格书 §5 的 E1–E8 对应）。 */
   list: () => string[];
+  /** 当前行为状态（idle / tap / angry / sleeping / wake / drag）。 */
+  behaviorState: () => PetBehaviorState;
+  /** 派发一次点击行为（等价于点一下桌宠；连点 3 次可触发生气）。 */
+  tap: () => string[];
 }
 
 declare global {
@@ -133,6 +151,15 @@ let bus: PresentationBus | null = null;
 let router: CommandRouter | null = null;
 /** 眨眼调度器（发布态也开，它是"活"感的主要来源）。 */
 let blinkDriver: BlinkDriver | null = null;
+
+/** 微动态节奏器（偶发长停顿）。 */
+let motionPacer: MotionPacer | null = null;
+
+/** 行为状态机（纯逻辑；驱动表现层指令）。 */
+let behavior: PetBehaviorStateMachine | null = null;
+
+/** 行为状态机的推进定时器句柄。 */
+let behaviorTimer: number | null = null;
 /** 功耗策略：可见性/隐藏/拖拽 → 四档。 */
 let powerPolicy: PowerPolicy | null = null;
 
@@ -211,6 +238,23 @@ export function dispatchOp(op: PresentationOp): string {
 }
 
 /**
+ * 批量下发一组指令（行为状态机的产出走这里）。
+ *
+ * <p>先 `prepare` 再 `dispatch`：预解码不阻塞下发，但能让紧接着的淡入不出现空白档。</p>
+ *
+ * @param ops 指令列表
+ * @returns 各条的调度结果
+ */
+function dispatchOps(ops: readonly PresentationOp[]): string[] {
+  const results: string[] = [];
+  for (const op of ops) {
+    void presentation?.prepare(op);
+    results.push(dispatchOp(op));
+  }
+  return results;
+}
+
+/**
  * 切换表情（调试/验收与外部调度共用的公开接口）。
  *
  * <p>走基底层且不带 TTL：调用方要的就是"停在这一档"，自动回退是 transient 层的事。</p>
@@ -269,6 +313,8 @@ function beginDrag(event: PointerEvent): void {
   dragging = true;
   powerPolicy?.update({ dragging: true });
   artElement?.classList.add('is-dragging');
+  // 行为层同步进入 drag：拖拽期间不该触发睡眠（也不该被眨眼打断）
+  if (behavior) dispatchOps(behavior.handle('drag-start'));
   // 指针捕获：光标移动快于窗口时事件也不会丢，否则会出现「甩一下就掉」。
   // 捕获失败（指针 id 已失效等）不能中断拖拽本身，故吞掉异常。
   try {
@@ -306,6 +352,8 @@ function endDrag(pointerId: number): void {
   dragging = false;
   powerPolicy?.update({ dragging: false });
   artElement?.classList.remove('is-dragging');
+  // 行为层回到 idle（先落桥接 idle，等 drag 的高优先级记录过期再落到常驻 idle）
+  if (behavior) dispatchOps(behavior.handle('drag-end'));
   try {
     if (artElement?.hasPointerCapture(pointerId)) {
       artElement.releasePointerCapture(pointerId);
@@ -481,9 +529,17 @@ function wireEvents(): void {
     // 二道门：DOM 事件已经落在立绘箱上，但立绘箱比可见轮廓大一圈（透明留白），
     // 再用命中实现判一次，避免"点在猫旁边的空气里也能把窗口拖走"
     if (!(hitTester?.test(event.clientX, event.clientY) ?? false)) return;
-    // 点一下 = 互动（规格书 P1 的简化版：整图一弹 + happy 表情），先派指令再起拖拽
-    for (const op of router?.route({ type: 'play', motion: 'tap', reason: 'pointer:tap' }) ?? []) {
-      dispatchOp(op);
+    // 点一下 = 一次行为事件。由状态机决定是"开心一弹"还是"连点生气"还是"惊醒"，
+    // 这里不再直接拼表现层指令——否则连点计数只能散在事件回调里。
+    if (behavior) {
+      for (const op of behavior.handle('tap')) {
+        void presentation?.prepare(op);
+        dispatchOp(op);
+      }
+    } else {
+      for (const op of router?.route({ type: 'play', motion: 'tap', reason: 'pointer:tap' }) ?? []) {
+        dispatchOp(op);
+      }
     }
     beginDrag(event);
   });
@@ -565,28 +621,65 @@ function createPresentation(): void {
       expressionUrls: EXPRESSION_URLS,
       log: (message) => console.debug(message),
       initialExpression: 'neutral',
+      // 交叉过渡：时长/缓动只有一个来源（crossfade.ts 的常量），CSS 通过变量消费
+      crossfade: { durationMs: DEFAULT_CROSSFADE_MS, easing: DEFAULT_CROSSFADE_EASING },
+      timer: DEFAULT_TIMER_PORT,
     },
   );
+
+  // 睡眠判定同时看"表情"与"行为状态"：行为层睡着时表情可能还没切过去，
+  // 只靠表情会让眨眼在入睡那一瞬间继续闪一下。
+  const sleepingNow = (): boolean => {
+    if (behavior?.isSleeping === true) return true;
+    const expression = presentation?.state.expression ?? 'neutral';
+    return expression === PET_BLINK_MAPPING.half || expression === 'yawn';
+  };
+
   bus = new PresentationBus(presentation, {
     log: (message) => console.debug(message),
-    isSleeping: () => {
-      // 睡觉＝睁眼表情不再是额定睁眼态：只有 sleepy 与 yawn 视为睡眠（与美术 blink 映射一致）
-      const expression = presentation?.state.expression ?? 'neutral';
-      return expression === PET_BLINK_MAPPING.half || expression === 'yawn';
-    },
+    isSleeping: sleepingNow,
   });
   router = new CommandRouter({ log: (message) => console.debug(message) });
+
+  // 行为状态机：时间与随机全部注入（内部不读 Date.now / Math.random）
+  behavior = new PetBehaviorStateMachine(
+    { now: () => Date.now(), rng: () => Math.random() },
+    { log: (message) => console.debug(message) },
+  );
+
   blinkDriver = new BlinkDriver(
     (op) => dispatchOp(op),
     // 随机源显式注入（设计文档 §9.4 纪律 9）：测试里换成固定序列即可断言分布
     () => Math.random(),
-    () => {
-      const expression = presentation?.state.expression ?? 'neutral';
-      return expression === PET_BLINK_MAPPING.half || expression === 'yawn';
-    },
+    sleepingNow,
     DEFAULT_TIMER_PORT,
   );
-  blinkDriver.start();
+
+  // 减少动态时不起任何"持续型"定时器：CSS 已经停了动画，JS 也该停手
+  if (!REDUCED_MOTION) {
+    blinkDriver.start();
+
+    motionPacer = new MotionPacer(
+      (resting) => {
+        if (!rootElement) return;
+        // 停顿只是一个 data-*：CSS 用 animation-play-state 暂停，保留相位
+        rootElement.setAttribute(MOTION_REST_ATTRIBUTE, resting ? '1' : '0');
+      },
+      () => Math.random(),
+      DEFAULT_TIMER_PORT,
+    );
+    motionPacer.start();
+  }
+
+  // 行为推进：250ms 一拍足够（最短的状态时长是 250ms 的桥接），
+  // 比起每条转移各挂一个定时器，单拍轮询更好测也更好停。
+  behaviorTimer = window.setInterval(() => {
+    if (!behavior) return;
+    for (const op of behavior.tick()) {
+      void presentation?.prepare(op);
+      dispatchOp(op);
+    }
+  }, 250);
 }
 
 /**
@@ -602,8 +695,10 @@ function createPowerPolicy(): void {
     const timing = applyMicroMotion(rootElement, powerPolicy.power);
     if (powerPolicy.power === 'off') {
       blinkDriver?.stop();
-    } else if (blinkDriver && !blinkDriver.isRunning) {
-      blinkDriver.start();
+      motionPacer?.stop();
+    } else if (!REDUCED_MOTION) {
+      if (blinkDriver && !blinkDriver.isRunning) blinkDriver.start();
+      if (motionPacer && !motionPacer.isRunning) motionPacer.start();
     }
     if (DEBUG_ENABLED) {
       console.debug(`[pet] 功耗档位=${powerPolicy.power} 呼吸=${timing.breathMs}ms 播放=${timing.playState}`);
@@ -634,12 +729,24 @@ function boot(): void {
   if (CALIBRATE_ENABLED && rootElement) {
     mountCalibration(document, rootElement, PET_GEOMETRY);
   }
+  // 页面卸载时把自建的定时器都收干净：桌宠窗口会被反复开关，
+  // 留一个 setInterval 在后台跑就是在白吃 CPU（主进程关了 backgroundThrottling）。
+  window.addEventListener('pagehide', () => {
+    if (behaviorTimer !== null) {
+      window.clearInterval(behaviorTimer);
+      behaviorTimer = null;
+    }
+    blinkDriver?.stop();
+    motionPacer?.stop();
+  });
   if (DEBUG_ENABLED) {
     window.petDebug = {
       dispatch: dispatchOp,
       setExpression,
       getExpression,
       list: () => [...EXPRESSION_IDS],
+      behaviorState: () => behavior?.state ?? 'idle',
+      tap: () => (behavior ? dispatchOps(behavior.handle('tap')) : []),
     };
   }
 }
