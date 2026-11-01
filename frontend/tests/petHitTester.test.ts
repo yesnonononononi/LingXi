@@ -7,7 +7,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PET_GEOMETRY, visibleBox } from '../src/pet/layout';
+import { PET_GEOMETRY, artBox, visibleBox, windowSize } from '../src/pet/layout';
 import { HitPipeline, type FrameScheduler } from '../src/pet/hit/hit-pipeline';
 import { RectHitTester } from '../src/pet/hit/rect-hit-tester';
 
@@ -91,10 +91,12 @@ test('RectHitTester：四条边是闭区间（边缘不抖）', () => {
 
 test('RectHitTester：窗口内但在透明留白处不命中', () => {
   const tester = new RectHitTester(PET_GEOMETRY);
-  // 立绘箱左上角 (16, 88) 属于箱子但不在可见墨迹里
-  assert.equal(tester.test(16, 88), false);
-  // 右下角外（窗口 188×338，立绘箱右下 (172, 322)）
-  assert.equal(tester.test(186, 336), false);
+  // 立绘箱左上角正好落在箱子四角：属于箱子但那里是透明留白，不该命中
+  const box = artBox(PET_GEOMETRY);
+  assert.equal(tester.test(box.x, box.y), false);
+  // 窗口右下角内缩一点：在窗口里、但在立绘箱外（更别说墨迹里）
+  const size = windowSize(PET_GEOMETRY);
+  assert.equal(tester.test(size.width - 2, size.height - 2), false);
 });
 
 test('RectHitTester：非法坐标一律不命中（不抛异常）', () => {

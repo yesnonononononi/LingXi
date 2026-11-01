@@ -61,7 +61,8 @@ const GLOW_PAD = GEOMETRY.glowPad;
  *
  * <p>为什么不再用单值：<b>四类溢出方向本来就不对称</b>——呆毛弹动向上、光晕/接地阴影向下、
  * 气泡只占顶部、左右只需给耳根一点位移余量。单值只能取最大值，等于为了底部多花顶部空间。
- * 本轮（M3）四边都填 16，窗口仍是 `188×338`，行为与旧版逐字节等价。</p>
+ * M3 先做等值迁移（四边 16，窗口 188×338）；M4 拿到视觉批准后定为 24/20/18/20，
+ * 窗口变成 `196×348`，立绘箱仍是 156×234（宠物本体没变大，只是留白变对了）。</p>
  */
 const EFFECT_MARGIN = GEOMETRY.effectMargin ?? { top: GLOW_PAD, right: GLOW_PAD, bottom: GLOW_PAD, left: GLOW_PAD };
 /**
@@ -79,6 +80,23 @@ const BUBBLE_H = GEOMETRY.bubbleHeight;
  */
 const PET_WIDTH = ART_WIDTH + EFFECT_MARGIN.left + EFFECT_MARGIN.right;
 const PET_HEIGHT = ART_HEIGHT + EFFECT_MARGIN.top + EFFECT_MARGIN.bottom + BUBBLE_H;
+
+/**
+ * 立绘箱左上角在窗口里的位置（CSS px）。
+ *
+ * <p>它就是"视觉原点"：宠物在屏幕上看起来在哪儿，只由 `窗口左上角 + 这个偏移` 决定。
+ * 特效边距一改（M4：上 16→24、左 16→20），窗口也要跟着变宽变高——
+ * 如果只改尺寸不补位置，用户升级后会发现桌宠**凭空跳了 4px 左、8px 上**。</p>
+ */
+const ART_ORIGIN = { x: EFFECT_MARGIN.left, y: EFFECT_MARGIN.top + BUBBLE_H };
+
+/**
+ * 旧版（M4 之前，四边边距都是 `glowPad`）的立绘箱原点。
+ *
+ * <p>只用于**老状态文件补位**：那些文件里存的是旧窗口的左上角，没有记录当时的原点，
+ * 于是按这份历史值反算偏移，把立绘拉回原来的屏幕位置（`x - 4`、`y - 8`）。</p>
+ */
+const LEGACY_ART_ORIGIN = { x: GLOW_PAD, y: GLOW_PAD + BUBBLE_H };
 
 /** 尺寸的安全区间：太小装不下模型，太大会挡住桌面操作。 */
 const MIN_DIMENSION = 120;
@@ -222,7 +240,19 @@ function resolveInitialBounds({ saved, size, displays, primaryArea }) {
   if (!Number.isFinite(savedX) || !Number.isFinite(savedY)) {
     return defaultRect(wanted, primaryArea);
   }
-  const rect = { x: Math.round(savedX), y: Math.round(savedY), width, height };
+  // 视觉位置补偿：用户记住的是"桌宠看起来在屏幕哪块"，不是"窗口左上角在哪"。
+  // 特效边距一变，窗口左上角就得反向挪同样的量，否则升级后桌宠会凭空跳位。
+  // 新状态文件带 artOrigin；老文件没有，按 LEGACY_ART_ORIGIN 反算（M4 即 x-4 / y-8）。
+  const savedOrigin =
+    saved && saved.artOrigin && Number.isFinite(Number(saved.artOrigin.x)) && Number.isFinite(Number(saved.artOrigin.y))
+      ? { x: Number(saved.artOrigin.x), y: Number(saved.artOrigin.y) }
+      : LEGACY_ART_ORIGIN;
+  const rect = {
+    x: Math.round(savedX + (savedOrigin.x - ART_ORIGIN.x)),
+    y: Math.round(savedY + (savedOrigin.y - ART_ORIGIN.y)),
+    width,
+    height,
+  };
   const { display, visibleRatio } = pickDisplay(rect, displays);
   if (!display || visibleRatio < MIN_VISIBLE_RATIO) {
     return defaultRect(wanted, primaryArea);
@@ -378,7 +408,7 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath }) {
     }
     const bounds = captureBounds();
     if (!bounds) return;
-    writeState(resolvedStatePath, { ...bounds, updatedAt: new Date().toISOString() });
+    writeState(resolvedStatePath, { ...bounds, artOrigin: ART_ORIGIN, updatedAt: new Date().toISOString() });
   }
 
   /** 拖拽期间的落盘节流。 */
@@ -388,7 +418,7 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath }) {
       saveTimer = null;
       const bounds = captureBounds();
       if (!bounds) return;
-      writeState(resolvedStatePath, { ...bounds, updatedAt: new Date().toISOString() });
+      writeState(resolvedStatePath, { ...bounds, artOrigin: ART_ORIGIN, updatedAt: new Date().toISOString() });
     }, SAVE_THROTTLE_MS);
   }
 

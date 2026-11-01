@@ -103,17 +103,30 @@ test('requireNumber：有限数值与区间校验', () => {
   assert.throws(() => requireNumber(11, 'x', { min: 0, max: 10 }), RangeError);
 });
 
-test('deriveGeometry：窗口 188×338、可见墨迹与命中矩形', () => {
+test('deriveGeometry：窗口由四边 effectMargin 派生、可见墨迹与命中矩形', () => {
   const geometry = readGeometry();
   const derived = deriveGeometry(geometry);
+  const margin = derived.effectMargin;
   assert.equal(derived.artWidth, 156);
   assert.equal(derived.artHeight, 234);
-  assert.deepEqual(derived.window, { width: 188, height: 338 });
-  // 命中矩形由 v3 母版的 alpha>128 包围盒换算：x=18.74 / y=100.19 / w=152.65 / h=209.47
-  assert.ok(Math.abs(derived.hitBox.x - 18.74) < 0.02, `hitBox.x=${derived.hitBox.x}`);
-  assert.ok(Math.abs(derived.hitBox.y - 100.19) < 0.02, `hitBox.y=${derived.hitBox.y}`);
-  assert.ok(Math.abs(derived.hitBox.width - 152.65) < 0.02, `hitBox.width=${derived.hitBox.width}`);
-  assert.ok(Math.abs(derived.hitBox.height - 209.47) < 0.02, `hitBox.height=${derived.hitBox.height}`);
+  // 期望值**从真源派生**，不写死 196×348：下次调边距不用再改这条断言（设计变更只改 JSON）
+  assert.deepEqual(derived.window, {
+    width: derived.artWidth + margin.left + margin.right,
+    height: derived.artHeight + margin.top + margin.bottom + geometry.bubbleHeight,
+  });
+  // 立绘箱原点 = (左边距, 上边距 + 气泡)；命中矩形 = 原点 + 墨迹包围盒，尺寸不随边距变
+  const origin = { x: margin.left, y: margin.top + geometry.bubbleHeight };
+  const bounds = geometry.visibleBounds;
+  const expected = {
+    x: origin.x + bounds.left * derived.artWidth,
+    y: origin.y + bounds.top * derived.artHeight,
+    width: (bounds.right - bounds.left) * derived.artWidth,
+    height: (bounds.bottom - bounds.top) * derived.artHeight,
+  };
+  assert.ok(Math.abs(derived.hitBox.x - expected.x) < 0.02, `hitBox.x=${derived.hitBox.x} 期望 ${expected.x}`);
+  assert.ok(Math.abs(derived.hitBox.y - expected.y) < 0.02, `hitBox.y=${derived.hitBox.y} 期望 ${expected.y}`);
+  assert.ok(Math.abs(derived.hitBox.width - expected.width) < 0.02, `hitBox.width=${derived.hitBox.width}`);
+  assert.ok(Math.abs(derived.hitBox.height - expected.height) < 0.02, `hitBox.height=${derived.hitBox.height}`);
   // 墨迹必须比立绘箱小：整箱判命中会让透明区吃掉桌面点击
   assert.ok(derived.hitBox.width < derived.artWidth);
   assert.ok(derived.hitBox.height < derived.artHeight);
@@ -128,12 +141,17 @@ test('pet-geometry.json：派生字段是最新的（改 inkHeight 必须回写�
 
 test('pet-geometry.json：立绘箱严格 2:3 且窗口公式自洽', () => {
   const geometry = readGeometry();
+  const derived = deriveGeometry(geometry);
+  const margin = derived.effectMargin;
   const aspect = geometry.artWidth / geometry.artHeight;
   assert.ok(Math.abs(aspect - ART_ASPECT) / ART_ASPECT < 0.002, `立绘箱比例 ${aspect} 不是 2:3`);
   assert.equal(Number.isInteger(geometry.artWidth), true);
   assert.equal(geometry.artHeight % 3, 0);
-  assert.equal(geometry.artWidth + geometry.glowPad * 2, 188);
-  assert.equal(geometry.artHeight + geometry.glowPad * 2 + geometry.bubbleHeight, 338);
+  // 四边分别加（从真源派生，不写死数字）
+  assert.equal(derived.window.width, geometry.artWidth + margin.left + margin.right);
+  assert.equal(derived.window.height, geometry.artHeight + margin.top + margin.bottom + geometry.bubbleHeight);
+  // 而且**必须真的用到非对称边距**：写成 glowPad × 2 会少算，窗口就把立绘裁了
+  assert.notEqual(derived.window.width, geometry.artWidth + geometry.glowPad * 2);
 });
 
 test('墨迹自洽：artHeight × visibleRatioY ≈ inkHeight（改 inkHeight 忘改包围盒必须红）', () => {

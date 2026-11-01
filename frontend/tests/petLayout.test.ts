@@ -35,23 +35,36 @@ function near(actual: number, expected: number, message: string): void {
   assert.ok(Math.abs(actual - expected) < EPSILON, `${message}: actual=${actual}, expected=${expected}`);
 }
 
-test('windowSize：188×338（立绘箱 + 四周留白 + 顶部气泡）', () => {
-  assert.deepEqual(windowSize(PET_GEOMETRY), { width: 188, height: 338 });
+test('windowSize：立绘箱 + 四边特效边距 + 顶部气泡（从真源派生）', () => {
+  const margin = PET_GEOMETRY.effectMargin;
+  assert.deepEqual(windowSize(PET_GEOMETRY), {
+    width: PET_GEOMETRY.artWidth + margin.left + margin.right,
+    height: PET_GEOMETRY.artHeight + margin.top + margin.bottom + PET_GEOMETRY.bubbleHeight,
+  });
 });
 
-test('ART_ORIGIN：原点 = (glowPad, glowPad + bubbleHeight)', () => {
-  assert.deepEqual(ART_ORIGIN(PET_GEOMETRY), { x: 16, y: 88 });
+test('ART_ORIGIN：原点 = (左边距, 上边距 + bubbleHeight)', () => {
+  const margin = PET_GEOMETRY.effectMargin;
+  assert.deepEqual(ART_ORIGIN(PET_GEOMETRY), { x: margin.left, y: margin.top + PET_GEOMETRY.bubbleHeight });
 });
 
 test('artBox / visibleBox：立绘箱是 156×234，可见盒是墨迹包围盒', () => {
+  const margin = PET_GEOMETRY.effectMargin;
+  const bounds = PET_GEOMETRY.visibleBounds;
   const box = artBox(PET_GEOMETRY);
-  assert.deepEqual(box, { x: 16, y: 88, width: 156, height: 234 });
+  assert.deepEqual(box, {
+    x: margin.left,
+    y: margin.top + PET_GEOMETRY.bubbleHeight,
+    width: 156,
+    height: 234,
+  });
 
   const visible = visibleBox(PET_GEOMETRY);
-  near(visible.x, 18.74, 'visibleBox.x');
-  near(visible.y, 100.19, 'visibleBox.y');
-  near(visible.width, 152.65, 'visibleBox.width');
-  near(visible.height, 209.47, 'visibleBox.height');
+  // 可见盒 = 立绘箱原点 + 墨迹包围盒比例；尺寸只由立绘箱决定，不随特效边距变
+  near(visible.x, box.x + bounds.left * box.width, 'visibleBox.x');
+  near(visible.y, box.y + bounds.top * box.height, 'visibleBox.y');
+  near(visible.width, (bounds.right - bounds.left) * box.width, 'visibleBox.width');
+  near(visible.height, (bounds.bottom - bounds.top) * box.height, 'visibleBox.height');
   // 可见盒必须严格内缩于立绘箱，否则等于用整箱判命中
   assert.ok(visible.x > box.x && visible.y > box.y);
   assert.ok(visible.x + visible.width < box.x + box.width);
