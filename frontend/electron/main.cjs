@@ -553,6 +553,30 @@ app.whenReady().then(async () => {
 
   // 先起后端再建窗口：前端一加载就发请求，后端没就绪会满屏请求失败
   createSplash();
+
+  // 桌宠与托盘先行建立：两者都不依赖后端（桌宠是 pet.html 独立页面 + 自注册 IPC，
+  // 托盘只是本进程的 Tray 对象），所以必须排在 backend.start() 之前。
+  // 早先的写法把它们放在后端成功之后，后端起不来就 return 走了，
+  // 桌宠永远不出现 —— 一个附加功能把唯一的存活 UI 拖下了水。
+  let petReady = false;
+  // 用返回值判成败，不用 pet.isVisible()：showInactive() 之后要等 ready-to-show
+  // 才真正可见，紧接着读 isVisible() 会是 false，把建好的桌宠误判成失败。
+  try {
+    petReady = !!pet.show();
+  } catch (err) {
+    console.warn(`[pet] 桌宠窗口创建失败（不影响应用使用）: ${(err && err.message) || err}`);
+  }
+
+  // 托盘必须在 pet.show() 之后：buildTrayMenu() 用 pet.isVisible() 渲染「显示桌宠」
+  // 的勾选状态，先建托盘会把初始勾选定死成 false，与事实矛盾。
+  let trayReady = false;
+  try {
+    setupTray();
+    trayReady = true;
+  } catch (err) {
+    console.warn(`[tray] 托盘创建失败（不影响应用使用）: ${(err && err.message) || err}`);
+  }
+
   try {
     await backend.start({
       frontendRoot: path.resolve(__dirname, '..'),
@@ -577,21 +601,23 @@ app.whenReady().then(async () => {
   } catch (err) {
     closeSplash();
     dialog.showErrorBox('LX 启动失败', String((err && err.message) || err));
+    // 桌宠与托盘都已建成时不退出：应用退化成「只有桌宠」的可用状态，
+    // 用户还能从托盘「彻底退出」。这里硬 quit 会把刚建好的桌宠一起带走，
+    // 等于白白丢掉唯一的存活 UI。
+    if (petReady && trayReady) {
+      console.warn('[boot] 后端起不来，保留桌宠与托盘继续驻留；退出请走托盘菜单');
+      return;
+    }
+    // 桌宠或托盘没建成时维持原有退出行为：没有托盘就没有退出入口，
+    // 留下去只是一个关不掉的僵尸进程。
     isQuiting = true;
     app.quit();
     return;
   }
 
+  // 主窗口仍然只在后端就绪后才建：前端一加载就发请求，后端没就绪会满屏请求失败。
+  // 桌宠与托盘已在前面建好，这里只补主窗口。
   createWindow();
-  setupTray();
-
-  // 桌宠窗口在托盘之后创建：托盘菜单要按它的真实可见性渲染勾选项。
-  // 失败只记日志 —— 桌宠是附加功能，绝不能因为它起不来就把主窗口/后端拖下水。
-  try {
-    pet.show();
-  } catch (err) {
-    console.warn(`[pet] 桌宠窗口创建失败（不影响应用使用）: ${(err && err.message) || err}`);
-  }
 
   // 更新器在窗口建好之后再起：它的状态要推给渲染层，且首次检查是延时的，
   // 不影响启动路径（更新失败绝不能让应用起不来）。
