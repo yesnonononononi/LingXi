@@ -19,9 +19,12 @@ function defineToolName(chinese: string, english: string, renderKey: string): To
 /** 完整名用于工具配置，短渲染名用于流式调用展示；键始终是后端工具标识。 */
 export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = new Map([
   [AgentToolName.ReadFile, defineToolName('读取文件', 'Read file', 'tool.category.read')],
-  [AgentToolName.LoadMemory, defineToolName('读取项目记忆', 'Read project memory', 'tool.category.read')],
-  [AgentToolName.SearchWiki, defineToolName('检索项目记忆', 'Search project memory', 'tool.category.toolSearch')],
-  [AgentToolName.ReadImage, defineToolName('读取图片', 'Read image', 'tool.category.read')],
+  // 记忆读取的渲染名独立成「读取记忆条目」，避免与 read_file 的「读取」在流式工具行上同文案
+  [AgentToolName.LoadMemory, defineToolName('读取项目记忆', 'Read project memory', 'tool.category.memoryRead')],
+  // 项目记忆检索的渲染名独立成「检索记忆条目」，避免与 search_tool（检索工具）在流式工具行上同文案
+  [AgentToolName.SearchWiki, defineToolName('检索项目记忆', 'Search project memory', 'tool.category.memorySearch')],
+  // 读图不再复用 READ 的「读取」（用户看不出是在读图片）
+  [AgentToolName.ReadImage, defineToolName('读取图片', 'Read image', 'tool.category.imageRead')],
   [AgentToolName.EditFile, defineToolName('编辑文件', 'Edit file', 'tool.category.write')],
   [AgentToolName.ExecuteCommand, defineToolName('执行命令', 'Execute command', 'tool.category.command')],
   [AgentToolName.ManageCommand, defineToolName('确认后台任务状态', 'Check background task status', 'tool.category.backgroundCommand')],
@@ -30,12 +33,13 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = n
   [AgentToolName.RequireChoice, defineToolName('请求用户选择', 'Request user choice', 'tool.category.choice')],
   [AgentToolName.CreatePlan, defineToolName('创建计划', 'Create plan', 'tool.category.plan')],
   // 执行清单工具与 create_plan 分类不同：它们是执行期可维护的待办，不产生审批卡片
-  [AgentToolName.CreateChecklist, defineToolName('创建执行清单', 'Create checklist', 'tool.category.checklist')],
-  [AgentToolName.GetCurrentChecklist, defineToolName('查看当前执行清单', 'Get current checklist', 'tool.category.checklist')],
-  [AgentToolName.GetChecklist, defineToolName('按标识查看执行清单', 'Get checklist', 'tool.category.checklist')],
-  [AgentToolName.UpdateChecklistStep, defineToolName('更新清单步骤', 'Update checklist step', 'tool.category.checklist')],
-  [AgentToolName.ModifyChecklist, defineToolName('修改执行清单', 'Modify checklist', 'tool.category.checklist')],
-  [AgentToolName.DeleteChecklist, defineToolName('删除执行清单', 'Delete checklist', 'tool.category.checklist')],
+  // 六个动作各自独立短名：流式工具行短名不得两两重名（同分类码仍由 toolMeta 保持稳定）
+  [AgentToolName.CreateChecklist, defineToolName('创建执行清单', 'Create checklist', 'tool.category.checklistCreate')],
+  [AgentToolName.GetCurrentChecklist, defineToolName('查看当前执行清单', 'Get current checklist', 'tool.category.checklistCurrent')],
+  [AgentToolName.GetChecklist, defineToolName('按标识查看执行清单', 'Get checklist', 'tool.category.checklistById')],
+  [AgentToolName.UpdateChecklistStep, defineToolName('更新清单步骤', 'Update checklist step', 'tool.category.checklistStep')],
+  [AgentToolName.ModifyChecklist, defineToolName('修改执行清单', 'Modify checklist', 'tool.category.checklistModify')],
+  [AgentToolName.DeleteChecklist, defineToolName('删除执行清单', 'Delete checklist', 'tool.category.checklistDelete')],
   [AgentToolName.CallSubAgent, defineToolName('调用子 Agent', 'Call sub-agent', 'tool.category.subAgent')],
   [AgentToolName.SendMailToAgent, defineToolName('发送 Agent 邮件', 'Send agent mail', 'tool.category.mail')],
   [AgentToolName.PeekTeammateState, defineToolName('查看队员状态', 'View teammate state', 'tool.category.peek')],

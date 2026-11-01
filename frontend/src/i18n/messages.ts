@@ -162,9 +162,22 @@ export const messages: MessageSchema = {
         think: '思考',
         plan: '计划',
         checklist: '执行清单',
+        // 执行清单六个动作各自独立文案：流式工具行短名不得两两重名
+        checklistCreate: '创建清单',
+        checklistCurrent: '查看当前清单',
+        checklistById: '按标识查看清单',
+        checklistStep: '更新清单步骤',
+        checklistModify: '修改清单',
+        checklistDelete: '删除清单',
         mail: '发送邮件',
         compact: '压缩上下文',
         toolSearch: '检索工具',
+        // 项目记忆检索独立文案：与「检索工具」（MCP 工具检索）区分，避免流式工具行同文案
+        memorySearch: '检索记忆条目',
+        // 项目记忆读取独立文案：与 read_file 的「读取」区分
+        memoryRead: '读取记忆条目',
+        // 读图独立文案：与 read_file 的「读取」区分
+        imageRead: '查看图片',
         mcpList: '列举可用工具',
         skill: '读取技能',
         default: '工具',
@@ -1369,9 +1382,22 @@ export const messages: MessageSchema = {
         think: 'Thinking',
         plan: 'Plan',
         checklist: 'Execution checklist',
+        // One label per checklist action so no two streaming tool rows read alike.
+        checklistCreate: 'Create checklist',
+        checklistCurrent: 'View current checklist',
+        checklistById: 'View checklist by ID',
+        checklistStep: 'Update checklist step',
+        checklistModify: 'Modify checklist',
+        checklistDelete: 'Delete checklist',
         mail: 'Send mail',
         compact: 'Compact context',
         toolSearch: 'Search tools',
+        // Project-memory search gets its own label so it never reads the same as tool search.
+        memorySearch: 'Search memory entries',
+        // Project-memory read gets its own label so it never reads the same as "Read file".
+        memoryRead: 'Read memory entries',
+        // Image reading gets its own label so it never reads the same as "Read file".
+        imageRead: 'View image',
         mcpList: 'List available tools',
         skill: 'Read skill',
         default: 'Tool',
