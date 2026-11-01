@@ -1,7 +1,7 @@
 import type {PropType, VNodeChild} from 'vue';
 import {computed, createVNode, defineComponent, h, onBeforeUnmount, ref, Text, watch} from 'vue';
 import type {MarkdownDocument} from '../../utils/markdown';
-import {BLUR_REVEAL_DURATION, BlurRevealState} from '../../utils/blurReveal';
+import {TEXT_ARRIVAL_DURATION, ProgressiveFadeState} from '../../utils/progressiveFade';
 import MermaidBlock from './MermaidBlock.vue';
 
 export default defineComponent({
@@ -16,7 +16,7 @@ export default defineComponent({
     const reducedMotion = ref(motion.matches);
     const onMotionChange = () => { reducedMotion.value = motion.matches; };
     motion.addEventListener('change', onMotionChange);
-    const reveal = new BlurRevealState();
+    const reveal = new ProgressiveFadeState();
     const revision = ref(0);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const parsed = computed(() => {
@@ -40,7 +40,7 @@ export default defineComponent({
     const scheduleCleanup = (): void => {
       clearTimeout(timer);
       if (!reveal.ranges.length) return;
-      const deadline = Math.min(...reveal.ranges.map(range => range.started + BLUR_REVEAL_DURATION));
+      const deadline = Math.min(...reveal.ranges.map(range => range.started + TEXT_ARRIVAL_DURATION));
       timer = setTimeout(() => {
         reveal.expire(performance.now());
         revision.value++;
@@ -76,12 +76,12 @@ export default defineComponent({
             if (start > cursor || !children.length) children.push(plain(text.slice(cursor, start), cursor));
             children.push(h('span', {
               key: `reveal-${range.id}-${offset + start}`,
-              class: 'blur-reveal',
+              class: 'codex-text-arrival',
               onVnodeMounted(vnode) {
                 // 高亮或 Markdown 改变父节点时，从原来的进度接续，不能重新淡入。
                 const element = vnode.el as HTMLElement;
                 for (const animation of element.getAnimations()) {
-                  animation.currentTime = Math.min(BLUR_REVEAL_DURATION, performance.now() - range.started);
+                  animation.currentTime = Math.min(TEXT_ARRIVAL_DURATION, performance.now() - range.started);
                 }
               },
             }, text.slice(start, end)));

@@ -1,11 +1,11 @@
-/* 只给短暂存在的新增文字片段加柔焦，不能挂在会持续增长的段落或容器上。 */
-@keyframes blur-reveal {
-  from { opacity: 0; filter: blur(4px); }
-  to { opacity: 1; filter: blur(0); }
+/* 只让新增文字短暂变浅，持续增长的段落和容器必须保持稳定。 */
+@keyframes codex-text-arrival {
+  from { opacity: 0.2; }
+  to { opacity: 1; }
 }
 
-.blur-reveal {
-  animation: blur-reveal 290ms ease-out both;
+.codex-text-arrival {
+  animation: codex-text-arrival 480ms ease-out both;
 }
 
 /* 1. 核心关键帧：单次平滑渐显出场（仅限静态容器/卡片，禁止作用于流式重绘子节点） */
@@ -36,28 +36,6 @@
   will-change: opacity, transform;
 }
 
-/* 4. 流式 Markdown 容器：保持文字 100% 清晰度，末尾文本块追加自然流动的打字光标 */
-.markdown-stream-flow.is-streaming .markdown-body > p:last-child::after,
-.markdown-stream-flow.is-streaming .markdown-body > blockquote:last-child p:last-child::after,
-.markdown-stream-flow.is-streaming .markdown-body > :is(ul, ol):last-child li:last-child::after,
-.markdown-stream-flow.is-streaming .markdown-body > :is(h1, h2, h3, h4, h5, h6):last-child::after {
-  content: '▋';
-  display: inline-block;
-  color: #4d6bfe;
-  margin-left: 2px;
-  animation: blink 0.9s ease-in-out infinite;
-  vertical-align: baseline;
-  font-size: 0.85em;
-  line-height: 1;
-}
-
-.dark .markdown-stream-flow.is-streaming .markdown-body > p:last-child::after,
-.dark .markdown-stream-flow.is-streaming .markdown-body > blockquote:last-child p:last-child::after,
-.dark .markdown-stream-flow.is-streaming .markdown-body > :is(ul, ol):last-child li:last-child::after,
-.dark .markdown-stream-flow.is-streaming .markdown-body > :is(h1, h2, h3, h4, h5, h6):last-child::after {
-  color: #60a5fa;
-}
-
 /* 5. 思维链流式内容专用类 */
 .stream-thinking-content {
   position: relative;
@@ -69,13 +47,9 @@
 
 /* 用户开启减弱动态效果时自动平滑优雅降级 */
 @media (prefers-reduced-motion: reduce) {
-  .blur-reveal,
+  .codex-text-arrival,
   .animate-blur-in,
-  .stream-thinking-content.is-running,
-  .markdown-stream-flow.is-streaming .markdown-body > p:last-child::after,
-  .markdown-stream-flow.is-streaming .markdown-body > blockquote:last-child p:last-child::after,
-  .markdown-stream-flow.is-streaming .markdown-body > :is(ul, ol):last-child li:last-child::after,
-  .markdown-stream-flow.is-streaming .markdown-body > :is(h1, h2, h3, h4, h5, h6):last-child::after {
+  .stream-thinking-content.is-running {
     animation: none !important;
     filter: none !important;
   }
