@@ -16,7 +16,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 每次模型调用前，把「本执行所属 Agent 在本次协作轮次里的邮箱」中的待处理消息注入上下文。
+ * 每次模型调用前，把「本执行所属 Agent 在本次协作轮次里的邮箱」中的待处理消息注入上下文。<br/>
+ * NOTICE: The email sent by the sender agent will be injected into the target context as a {@link UserMessageEntity}
  */
 @Slf4j
 @Component
@@ -79,7 +80,8 @@ public class EmailLoopInterceptor implements LoopInterceptor {
         List<UserMessageEntity> list = data.stream().map(vo -> UserMessageEntity.from(String.format("""
                 @%s 发来协作消息: \n
                 %s
-                收件对象: @%s
+                收件对象: @%s \n
+                注意事项: 此邮件仅补充背景，不替代当前执行的委派任务。处理或回复邮件后，请继续完成当前委派；仅回复邮件不代表委派完成。
                 """, vo.getSenderId(),
                 vo.getContent(),
                 recipientAgentId

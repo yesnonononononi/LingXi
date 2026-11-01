@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.anno.Tool;
 import com.summit.core.anno.type.*;
+import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.tool.ConcurrentPolicy;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
@@ -42,6 +43,8 @@ import java.util.Objects;
  * 目录里的实际产物与验证记录为准。编排顺序里有两处不能调换：<b>组装请求必须早于登记</b>
  * （组装失败即返回错误，不产生任何登记残留）；<b>登记必须早于提交</b>（提交失败要能撤销登记，
  * 不留孤儿）。</p>
+ *
+ * NOTICE: The task dispatched by the commander will be injected into the target context as a {@link UserMessageEntity}
  */
 @AllArgsConstructor
 @Component
