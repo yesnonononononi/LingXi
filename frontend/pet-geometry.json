@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "canvasWidth": 2048,
   "canvasHeight": 3072,
   "visibleRatioY": 0.89518,
@@ -12,6 +12,12 @@
   "inkHeight": 208,
   "artHeight": 234,
   "artWidth": 156,
+  "effectMargin": {
+    "top": 16,
+    "right": 16,
+    "bottom": 16,
+    "left": 16
+  },
   "glowPad": 16,
   "bubbleHeight": 72
 }

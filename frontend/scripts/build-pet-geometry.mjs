@@ -123,6 +123,7 @@ export function deriveArtWidth(artHeight) {
 export function deriveGeometry(geometry) {
   if (!geometry || typeof geometry !== 'object') throw new TypeError('deriveGeometry 需要几何对象');
   const glowPad = requireNumber(geometry.glowPad, 'glowPad', { min: 0 });
+  const margin = resolveEffectMargin(geometry.effectMargin, glowPad);
   const bubbleHeight = requireNumber(geometry.bubbleHeight, 'bubbleHeight', { min: 0 });
   const canvasWidth = requireNumber(geometry.canvasWidth, 'canvasWidth', { min: 1 });
   const canvasHeight = requireNumber(geometry.canvasHeight, 'canvasHeight', { min: 1 });
@@ -141,13 +142,18 @@ export function deriveGeometry(geometry) {
 
   const artHeight = deriveArtHeight(geometry.inkHeight, visibleRatioY);
   const artWidth = deriveArtWidth(artHeight);
-  const originX = glowPad;
-  const originY = glowPad + bubbleHeight;
+  // 原点与窗口尺寸都按四边边距算（派生链只有这一处，渲染层与主进程都从这里取）
+  const originX = margin.left;
+  const originY = margin.top + bubbleHeight;
 
   return {
     artHeight,
     artWidth,
-    window: { width: artWidth + glowPad * 2, height: artHeight + glowPad * 2 + bubbleHeight },
+    effectMargin: margin,
+    window: {
+      width: artWidth + margin.left + margin.right,
+      height: artHeight + margin.top + margin.bottom + bubbleHeight,
+    },
     visibleInk: {
       width: artWidth * (right - left),
       height: artHeight * (bottom - top),
@@ -160,6 +166,27 @@ export function deriveGeometry(geometry) {
     },
     /** 画布本身的宽高比，供门禁直接比对（1× 母版与运行时产物都必须是这个比例）。 */
     canvasAspect: canvasWidth / canvasHeight,
+  };
+}
+
+/**
+ * 归一化四边特效边距（缺省时四边取 `glowPad`，向后兼容老真源）。
+ *
+ * @param {unknown} raw 原始 `effectMargin`
+ * @param {number} glowPad 兼容单值
+ * @returns {{ top: number, right: number, bottom: number, left: number }}
+ */
+export function resolveEffectMargin(raw, glowPad) {
+  const fallback = requireNumber(glowPad, 'glowPad', { min: 0 });
+  if (raw === undefined || raw === null) {
+    return { top: fallback, right: fallback, bottom: fallback, left: fallback };
+  }
+  if (typeof raw !== 'object') throw new TypeError('effectMargin 必须是对象（四边数值）');
+  return {
+    top: requireNumber(raw.top, 'effectMargin.top', { min: 0 }),
+    right: requireNumber(raw.right, 'effectMargin.right', { min: 0 }),
+    bottom: requireNumber(raw.bottom, 'effectMargin.bottom', { min: 0 }),
+    left: requireNumber(raw.left, 'effectMargin.left', { min: 0 }),
   };
 }
 
@@ -229,6 +256,9 @@ export function rebuild(options = {}) {
   if (verbose) {
     console.log(`[pet-geometry] inkHeight=${geometry.inkHeight} visibleRatioY=${geometry.visibleRatioY}`);
     console.log(`[pet-geometry] artHeight=${derived.artHeight} artWidth=${derived.artWidth}`);
+    console.log(
+      `[pet-geometry] effectMargin=${derived.effectMargin.top}/${derived.effectMargin.right}/${derived.effectMargin.bottom}/${derived.effectMargin.left}`,
+    );
     console.log(`[pet-geometry] window=${derived.window.width}×${derived.window.height}`);
     console.log(
       `[pet-geometry] visibleInk=${derived.visibleInk.width.toFixed(2)}×${derived.visibleInk.height.toFixed(2)}`,

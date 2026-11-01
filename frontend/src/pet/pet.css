@@ -8,12 +8,19 @@
 
 :root {
   /*
-   * 尺寸真源是 `frontend/pet-geometry.json`：启动时 `main.ts` 会把这四个变量按真源重写一遍，
+   * 尺寸真源是 `frontend/pet-geometry.json`：启动时 `main.ts` 会把这几个变量按真源重写一遍，
    * 这里的静态值只是**首帧兜底**（避免第 0 帧按错误的箱子排版闪一下）。
    * 真源由 `npm run gate:pet` 校验，改动请改 JSON 后跑 `node scripts/build-pet-geometry.mjs`。
    */
   --pet-art-glow-pad: 16px;
   --pet-art-bubble-h: 72px;
+
+  /* 四边特效边距（M3 起取代单值 glowPad）：呆毛向上、光晕向下、气泡只占顶部，
+     四边本来就不该同值。本轮四边都是 16 = 与旧行为完全等值（窗口仍 188×338）。 */
+  --pet-effect-top: 16px;
+  --pet-effect-right: 16px;
+  --pet-effect-bottom: 16px;
+  --pet-effect-left: 16px;
 
   /* 立绘箱：按 1024×1536 画布的 2:3 比例定 → 156×234（窗口 188×338）。
      箱子比例必须等于画布比例，否则等比 contain 时要么留横白、要么裁掉尾巴。 */
@@ -44,13 +51,13 @@ body {
   height: 100%;
 }
 
-/* 排版容器：padding 与几何真源的留白/气泡常量一一对应 */
+/* 排版容器：padding 与几何真源的四边边距/气泡常量一一对应 */
 .pet-stage {
   position: absolute;
   inset: 0;
   box-sizing: border-box;
-  padding: var(--pet-art-glow-pad);
-  padding-top: calc(var(--pet-art-glow-pad) + var(--pet-art-bubble-h));
+  padding: var(--pet-effect-top) var(--pet-effect-right) var(--pet-effect-bottom) var(--pet-effect-left);
+  padding-top: calc(var(--pet-effect-top) + var(--pet-art-bubble-h));
   display: flex;
   align-items: center;
   justify-content: center;

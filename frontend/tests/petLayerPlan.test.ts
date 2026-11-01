@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 分层降级选路单测（`resolveCompositePlan`，纯函数，不碰 DOM）。
  *
  * <p>夹具按 **P1 真契约**（美术 manifest 的 renderOrder）搭：

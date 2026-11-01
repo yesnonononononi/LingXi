@@ -60,6 +60,27 @@ export interface UV {
 }
 
 /**
+ * 特效安全边距（四边，CSS px）。
+ *
+ * <p><b>为什么从单值 `glowPad` 升级成四边：</b>四类溢出方向并不对称——呆毛弹动向上、
+ * 光晕/阴影向下、气泡只占顶部、左右只需给耳根一点位移余量。单值只能取最大值，
+ * 等于为了底部多花顶部空间。</p>
+ *
+ * <p>本轮（M3）只做**等值迁移**：四边都填 16，窗口仍是 188×338，行为逐字节不变；
+ * 调值（如 24/20/18/20 → 196×348）是下一步的事，且必须单独拿视觉批准。</p>
+ */
+export interface EffectMargin {
+  /** 上边（呆毛弹动需要）。 */
+  readonly top: number;
+  /** 右边（耳根位移需要）。 */
+  readonly right: number;
+  /** 下边（光晕/接地阴影需要）。 */
+  readonly bottom: number;
+  /** 左边（耳根位移需要）。 */
+  readonly left: number;
+}
+
+/**
  * 桌宠几何（`frontend/pet-geometry.json` 的强类型视图）。
  *
  * <p>`inkHeight` 是**唯一的人工可调旋钮**；`artWidth/artHeight` 由
@@ -82,7 +103,9 @@ export interface PetGeometry {
   readonly artHeight: number;
   /** 立绘箱宽度（CSS px，= artHeight × 2 / 3）。 */
   readonly artWidth: number;
-  /** 立绘四周留给光晕/投影的透明余量（CSS px）。 */
+  /** 特效安全边距（四边，CSS px）。 */
+  readonly effectMargin: EffectMargin;
+  /** 兼容保留：老版本 JSON 没有 `effectMargin` 时四边取它。 */
   readonly glowPad: number;
   /** 顶部为气泡预留的高度（CSS px）。 */
   readonly bubbleHeight: number;
@@ -109,6 +132,33 @@ function requireNumber(value: unknown, name: string, min: number, max: number = 
     throw new RangeError(`[pet-geometry] 字段 ${name} 必须落在 [${min}, ${max}]，实际为 ${num}`);
   }
   return num;
+}
+
+/**
+ * 归一化特效边距：缺省时四边取 `glowPad`（向后兼容老版本真源）。
+ *
+ * <p>这是 M3 的**回退分支**，不是临时补丁：`pet-geometry.json` 是双仓共读的真源，
+ * 老版本 JSON 没有 `effectMargin` 时不能让渲染层抛错——四边取 `glowPad` 正好等于旧行为。</p>
+ *
+ * @param raw 原始 `effectMargin` 值（可能是 undefined）
+ * @param glowPad 兼容单值
+ * @returns 四边边距（全部为非负有限数）
+ */
+export function resolveEffectMargin(raw: unknown, glowPad: number): EffectMargin {
+  const fallback = requireNumber(glowPad, 'glowPad', 0);
+  if (raw === undefined || raw === null) {
+    return { top: fallback, right: fallback, bottom: fallback, left: fallback };
+  }
+  if (typeof raw !== 'object') {
+    throw new TypeError('[pet-geometry] effectMargin 必须是对象（四边数值）');
+  }
+  const record = raw as Record<string, unknown>;
+  return {
+    top: requireNumber(record.top, 'effectMargin.top', 0),
+    right: requireNumber(record.right, 'effectMargin.right', 0),
+    bottom: requireNumber(record.bottom, 'effectMargin.bottom', 0),
+    left: requireNumber(record.left, 'effectMargin.left', 0),
+  };
 }
 
 /**
@@ -142,6 +192,7 @@ export function normalizeGeometry(raw: unknown): PetGeometry {
     inkHeight: requireNumber(source.inkHeight, 'inkHeight', 1),
     artHeight: requireNumber(source.artHeight, 'artHeight', 3),
     artWidth: requireNumber(source.artWidth, 'artWidth', 2),
+    effectMargin: resolveEffectMargin(source.effectMargin, requireNumber(source.glowPad, 'glowPad', 0)),
     glowPad: requireNumber(source.glowPad, 'glowPad', 0),
     bubbleHeight: requireNumber(source.bubbleHeight, 'bubbleHeight', 0),
   };
@@ -167,21 +218,31 @@ export const PET_GEOMETRY: PetGeometry = normalizeGeometry(geometrySource);
 /**
  * 立绘箱在窗口内的原点（CSS px，含顶部气泡预留）。
  *
+ * <p>派生链只有这一处：`左 = margin.left`、`上 = margin.top + bubbleHeight`。
+ * 命中矩形、归一化坐标换算、气泡布局全部经 {@link ART_ORIGIN} 自动跟随。</p>
+ *
  * @param g 几何
  * @returns 原点（立绘箱左上角）
  */
 export function ART_ORIGIN(g: PetGeometry = PET_GEOMETRY): Point {
-  return { x: g.glowPad, y: g.glowPad + g.bubbleHeight };
+  return { x: g.effectMargin.left, y: g.effectMargin.top + g.bubbleHeight };
 }
 
 /**
- * 窗口尺寸 = 立绘箱 + 四周留白 + 顶部气泡。
+ * 窗口尺寸 = 立绘箱 + 四边特效边距 + 顶部气泡。
+ *
+ * <p>四边必须分开加，不能写成 `glowPad × 2`：一旦边距不对称（M4 的 24/20/18/20），
+ * 单值算法会让窗口比立绘箱窄/宽，`contain` 立刻出现留白或被窗口边缘裁切。</p>
  *
  * @param g 几何
  * @returns 窗口尺寸（CSS px ＝ DIP）
  */
 export function windowSize(g: PetGeometry = PET_GEOMETRY): Size {
-  return { width: g.artWidth + g.glowPad * 2, height: g.artHeight + g.glowPad * 2 + g.bubbleHeight };
+  const margin = g.effectMargin;
+  return {
+    width: g.artWidth + margin.left + margin.right,
+    height: g.artHeight + margin.top + margin.bottom + g.bubbleHeight,
+  };
 }
 
 /**
@@ -257,10 +318,15 @@ export function toView(g: PetGeometry, u: number, v: number): Point {
  * @returns CSS 自定义属性名 → 值（含单位）
  */
 export function geometryCssVariables(g: PetGeometry = PET_GEOMETRY): Record<string, string> {
+  const margin = g.effectMargin;
   return {
     '--pet-art-w': `${g.artWidth}px`,
     '--pet-art-h': `${g.artHeight}px`,
     '--pet-art-glow-pad': `${g.glowPad}px`,
+    '--pet-effect-top': `${margin.top}px`,
+    '--pet-effect-right': `${margin.right}px`,
+    '--pet-effect-bottom': `${margin.bottom}px`,
+    '--pet-effect-left': `${margin.left}px`,
     '--pet-art-bubble-h': `${g.bubbleHeight}px`,
     '--pet-ink-h': `${g.inkHeight}px`,
     '--pet-canvas-w': String(g.canvasWidth),

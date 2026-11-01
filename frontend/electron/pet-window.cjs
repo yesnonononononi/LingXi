@@ -49,11 +49,21 @@ const ART_WIDTH = GEOMETRY.artWidth;
 /** 立绘箱高度（CSS px）。 */
 const ART_HEIGHT = GEOMETRY.artHeight;
 /**
- * 立绘四周留给「光晕 / 投影」的透明余量。
+ * 立绘四周留给「光晕 / 投影」的透明余量（兼容保留）。
  *
- * <p>没有这一圈，CSS 的外发光会被窗口边缘直接切掉，浅色桌面下几乎看不出桌宠的轮廓。</p>
+ * <p>M3 起真正的边距是四边 `effectMargin`（见下），`glowPad` 只在**老版本真源缺少
+ * `effectMargin` 时**作为四边的回退值，保证双仓共用同一份 JSON 时不会因字段新增而炸。
+ * `pet.css` 的首帧兜底仍引用它（`--pet-art-glow-pad`），所以这里不能删。</p>
  */
 const GLOW_PAD = GEOMETRY.glowPad;
+/**
+ * 四边特效边距（上/右/下/左，CSS px）。
+ *
+ * <p>为什么不再用单值：<b>四类溢出方向本来就不对称</b>——呆毛弹动向上、光晕/接地阴影向下、
+ * 气泡只占顶部、左右只需给耳根一点位移余量。单值只能取最大值，等于为了底部多花顶部空间。
+ * 本轮（M3）四边都填 16，窗口仍是 `188×338`，行为与旧版逐字节等价。</p>
+ */
+const EFFECT_MARGIN = GEOMETRY.effectMargin ?? { top: GLOW_PAD, right: GLOW_PAD, bottom: GLOW_PAD, left: GLOW_PAD };
 /**
  * 顶部为「一句话气泡」预留的高度。
  *
@@ -61,9 +71,14 @@ const GLOW_PAD = GEOMETRY.glowPad;
  */
 const BUBBLE_H = GEOMETRY.bubbleHeight;
 
-/** 桌宠窗口尺寸 = 立绘箱 + 四周光晕余量 + 顶部气泡预留（**含留白**）。 */
-const PET_WIDTH = ART_WIDTH + GLOW_PAD * 2;
-const PET_HEIGHT = ART_HEIGHT + GLOW_PAD * 2 + BUBBLE_H;
+/**
+ * 桌宠窗口尺寸 = 立绘箱 + 四边特效边距 + 顶部气泡预留（**含留白**）。
+ *
+ * <p>四边必须分开加：一旦边距不对称，`GLOW_PAD × 2` 会让窗口比立绘箱窄，
+ * 等比 `contain` 立刻被窗口边缘裁掉（尾巴最先遭殃）。`gate:pet` 会核对这两条表达式形态。</p>
+ */
+const PET_WIDTH = ART_WIDTH + EFFECT_MARGIN.left + EFFECT_MARGIN.right;
+const PET_HEIGHT = ART_HEIGHT + EFFECT_MARGIN.top + EFFECT_MARGIN.bottom + BUBBLE_H;
 
 /** 尺寸的安全区间：太小装不下模型，太大会挡住桌面操作。 */
 const MIN_DIMENSION = 120;
