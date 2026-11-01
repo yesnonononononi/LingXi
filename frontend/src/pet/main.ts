@@ -18,11 +18,18 @@ import { DEFAULT_TIMER_PORT, PresentationBus } from './presentation/bus';
 import { BlinkDriver } from './presentation/blink-driver';
 import { CommandRouter } from './presentation/command-router';
 import { DEFAULT_CROSSFADE_EASING, DEFAULT_CROSSFADE_MS } from './presentation/crossfade';
-import { SpritePresentation, type ExpressionUrlMap } from './presentation/sprite-presentation';
+import type { ExpressionUrlMap } from './presentation/sprite-presentation';
 import { EXPRESSION_IDS, type ExpressionId, type MotionId, type PresentationOp } from './presentation/types';
 import { PetBehaviorStateMachine, type PetBehaviorState } from './behavior/state-machine';
 import { PET_BLINK_MAPPING, expressionFrameUrl, expressionFrameUrls } from './assets/manifest';
 import { loadArt } from './assets/loader';
+import { MOTION_CATALOG } from './layers/motion-catalog';
+import { PET_LAYERS, applyLayersQueryOverride, pickLayerDensity, requestedLayerIds } from './layers/manifest';
+import { resolveCompositePlan } from './layers/plan';
+import type { CompositePlan } from './layers/types';
+import type { DocumentLike, ElementLike, LayerView } from './presentation/layered-presentation';
+import { selectPresentationWithPlan, type SelectorDeps } from './presentation/select-presentation';
+import type { PetPresentation } from './presentation/types';
 import { PowerPolicy } from './power-policy';
 import { isCalibrationEnabled, mountCalibration } from './visual/calibrate';
 import { mountHalo } from './visual/halo';
@@ -52,6 +59,21 @@ const REDUCED_MOTION = prefersReducedMotion(
  * 两档来自美术 `runtime/`，工程侧不重编码。</p>
  */
 const DENSITY: '1x' | '2x' = (typeof window !== 'undefined' && window.devicePixelRatio >= 2 ? '2x' : '1x');
+
+/**
+ * 本次运行的层清单（已被 `?layers=1` / `?layers=0` 覆写，排障与回归手测用）。
+ *
+ * <p>默认值来自 `frontend/pet-layers.json` 的 `enabled`，M6 之前它是 `false`：于是
+ * {@link resolveCompositePlan} 必然返回 `composite`，渲染路径与分层之前**逐字节等价**。
+ * 这也是"零风险前半程"的落点——代码可以先合，开闸留给资产到货之后。</p>
+ */
+const LAYER_MANIFEST = applyLayersQueryOverride(PET_LAYERS, window.location.search);
+
+/** 分层件密度（与压平帧同一规则：DPR≥2 取 `@2x`，否则 `@1x`）。 */
+const LAYER_DENSITY = pickLayerDensity(
+  typeof window !== 'undefined' && Number.isFinite(window.devicePixelRatio) ? window.devicePixelRatio : 1,
+  LAYER_MANIFEST,
+);
 
 /** 默认帧（neutral 完整帧）。 */
 const ART_URL = expressionFrameUrl('neutral', DENSITY);
@@ -124,6 +146,10 @@ interface PetDebugHandle {
   behaviorState: () => PetBehaviorState;
   /** 派发一次点击行为（等价于点一下桌宠；连点 3 次可触发生气）。 */
   tap: () => string[];
+  /** 当前合成模式（`composite` / `partial` / `layered`；排障用）。 */
+  compositeMode: () => string;
+  /** 参与本次合成的层 id（`composite` 时为空数组）。 */
+  layerIds: () => string[];
 }
 
 declare global {
@@ -143,8 +169,14 @@ let hitTester: RectHitTester | null = null;
 /** 命中管线：每帧最多判一次 + 值变化才上报 + 主进程回执优先。 */
 let hitPipeline: HitPipeline | null = null;
 
-/** 表现层：指令 → 界面写入。 */
-let presentation: SpritePresentation | null = null;
+/** 表现层：指令 → 界面写入（`composite` 时是立牌实现，分层时是合成器实现）。 */
+let presentation: PetPresentation | null = null;
+
+/** 本次合成计划（`composite` / `partial` / `layered`；调试面板与排障用）。 */
+let compositePlan: CompositePlan | null = null;
+
+/** 分层模式的层视图（`composite` 时为空 Map）。 */
+let layerViews: ReadonlyMap<string, LayerView> = new Map<string, LayerView>();
 /** 调度总线：打断判定 + 层 TTL。 */
 let bus: PresentationBus | null = null;
 /** 指令路由：`pet:command` → op。 */
@@ -604,28 +636,51 @@ function injectGeometryVariables(): void {
  * <p>顺序有意义：先有实现（写 DOM 的那一层），总线才有落点；路由最后建，
  * 因为它只产出 op。</p>
  *
- * <p>这里也是方案B 的唯一改动点：把 `SpritePresentation` 换成 `Live2DPresentation`，
- * 调度器、指令 id、命中、拖拽、位置持久化全部不动（设计文档 §8.3）。</p>
+ * <p>这里也是"换实现"的唯一改动点：`select-presentation.ts` 按合成计划选
+ * `SpritePresentation` 还是 `LayeredPresentation`，调度器、指令 id、命中、拖拽、
+ * 位置持久化全部不动（设计文档 §1.5 的 seam S1 / §8.3）。</p>
  */
 function createPresentation(): void {
   const root = document.getElementById('pet-root');
   if (!root || !artFrames) return;
   const frames = artFrames;
-  presentation = new SpritePresentation(
-    {
-      frames,
-      layerHosts: { root },
-      geometry: PET_GEOMETRY,
-    },
-    {
-      expressionUrls: EXPRESSION_URLS,
-      log: (message) => console.debug(message),
-      initialExpression: 'neutral',
-      // 交叉过渡：时长/缓动只有一个来源（crossfade.ts 的常量），CSS 通过变量消费
-      crossfade: { durationMs: DEFAULT_CROSSFADE_MS, easing: DEFAULT_CROSSFADE_EASING },
-      timer: DEFAULT_TIMER_PORT,
-    },
-  );
+
+  // 选路：清单（可能被 `?layers=` 覆写）+ 密度 → 三级模式之一。
+  // 总闸关闭时这里恒定得到 `composite`，下面的工厂也就恒定构造立牌实现。
+  const plan = resolveCompositePlan({
+    manifest: LAYER_MANIFEST,
+    requested: requestedLayerIds(LAYER_MANIFEST),
+    density: LAYER_DENSITY,
+  });
+
+  const deps: SelectorDeps = {
+    doc: document as unknown as DocumentLike,
+    root: root as unknown as ElementLike,
+    // 层挂到 `.pet-art` 上：它与压平帧同框，分层件的整画布坐标才对得上（零标定）
+    layerHost: (artElement as unknown as ElementLike | null) ?? undefined,
+    frames,
+    geometry: PET_GEOMETRY,
+    catalog: MOTION_CATALOG,
+    expressionUrls: EXPRESSION_URLS,
+    manifest: LAYER_MANIFEST,
+    // 交叉过渡：时长/缓动只有一个来源（crossfade.ts 的常量），CSS 通过变量消费
+    crossfade: { durationMs: DEFAULT_CROSSFADE_MS, easing: DEFAULT_CROSSFADE_EASING },
+    timer: DEFAULT_TIMER_PORT,
+    initialExpression: 'neutral',
+    power: () => powerPolicy?.power ?? 'idle',
+    reducedMotion: () => REDUCED_MOTION,
+    log: (message) => console.debug(message),
+  };
+
+  const outcome = selectPresentationWithPlan(plan, deps);
+  presentation = outcome.presentation;
+  compositePlan = plan;
+  layerViews = outcome.views;
+  if (DEBUG_ENABLED) {
+    console.debug(
+      `[pet] 合成模式=${plan.mode} 层数=${plan.layers.length} 理由=${plan.fallbackReason || '-'} 密度=${plan.density}`,
+    );
+  }
 
   // 睡眠判定同时看"表情"与"行为状态"：行为层睡着时表情可能还没切过去，
   // 只靠表情会让眨眼在入睡那一瞬间继续闪一下。
@@ -747,6 +802,8 @@ function boot(): void {
       list: () => [...EXPRESSION_IDS],
       behaviorState: () => behavior?.state ?? 'idle',
       tap: () => (behavior ? dispatchOps(behavior.handle('tap')) : []),
+      compositeMode: () => compositePlan?.mode ?? 'composite',
+      layerIds: () => [...layerViews.keys()],
     };
   }
 }

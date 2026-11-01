@@ -553,3 +553,57 @@ body {
     will-change: auto;
   }
 }
+
+/**
+ * 分层合成模式（`main.ts` 通过 `data-composite-mode` 写入 `partial` / `layered`）。
+ *
+ * <p><b>为什么每层是一张整画布 `<img>`：</b>P1 分层件每张都是 2048×3072 的整画布图，
+ * 层与层之间靠 `z-index` 与透明像素对齐。这样"位置零标定"——不需要任何
+ * `background-position` 算术，也不需要按包围盒裁切（裁了就会切掉尾巴）。</p>
+ *
+ * <p><b>`object-fit: contain` 是硬约束</b>：分层件与压平帧同画布同 2:3，
+ * 用 `cover` 会按容器裁切，尾巴首当其冲。</p>
+ */
+.pet-layers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pet-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* 等比 contain：分层件与压平帧同画布，contain 恰好铺满且绝不裁切 */
+  object-fit: contain;
+  opacity: 1;
+  /* 支点由 JS 按层契约写入（transform-origin），这里只是兜底 */
+  transform-origin: 50% 100%;
+  transform: rotate(0deg);
+  will-change: transform;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  animation-fill-mode: both;
+  /* 过渡时长/缓动由 crossfade.ts 注入，CSS 不写死数值 */
+  transition: opacity var(--pet-crossfade-ms, 100ms) var(--pet-crossfade-ease, ease-out);
+}
+
+/* 支撑层（底绘 / 身体遮挡 / 前景遮挡）只参与合成，永不接受动画：
+   转一下遮挡片就会露出补绘缝，比穿模更难察觉。 */
+.pet-layer[data-role='support'] {
+  animation: none !important;
+  transition: none;
+}
+
+#pet-root[data-power='off'] .pet-layer,
+#pet-root[data-motion-rest='1'] .pet-layer {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet-layer {
+    animation: none;
+    will-change: auto;
+  }
+}
