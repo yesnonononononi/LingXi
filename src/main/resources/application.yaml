@@ -98,6 +98,8 @@ lingxi:
     personalization:
       path: ${user.home}/.lingxi/config/personalization.json
   memory:
+    wiki:
+      relative-location: .lingxi/wikis
     global:
       location: ${user.home}/.lingxi/memory/memory.md
       max-tokens: 3000
@@ -145,6 +147,7 @@ lingxi:
     6. 容量控制：全局长期记忆上限 ${lingxi.memory.global.max-tokens} token，项目长期记忆上限 ${lingxi.memory.project.max-tokens} token，超出时优先压缩、去重及清理失效内容。
     7. 冲突处理：当前有效指令及已验证事实优先于历史记忆；项目公约优先于普通记忆。
     8. 路径安全：无法确定项目根目录时，不得猜测路径或写入项目记忆。
+    9. 项目 wiki：存放于工作区目录/${lingxi.memory.wiki.relative-location}；可用 load_memory 的空对象参数列目录，再传 wikiName 读取正文。
     
     四、上下文压缩与恢复
     

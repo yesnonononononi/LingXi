@@ -25,11 +25,20 @@ class ToolListProcessorTest {
         ToolProcessingContext context = ToolProcessingContext.builder().defaultAgent(true).accessMode(AgentAccessMode.IN_WORKSPACE).build();
         List<String> tools = processor.process(null, context);
         assertTrue(tools.contains(ToolCatalog.READ_FILE));
+        assertTrue(tools.contains(ToolCatalog.LOAD_MEMORY));
         assertTrue(tools.contains(ToolCatalog.REQUIRE_CHOICE));
         assertTrue(tools.contains(ToolCatalog.MANAGE_COMMAND));
         assertFalse(tools.contains(ToolCatalog.READ_IMAGE));
         assertFalse(tools.contains(ToolCatalog.CALL_SUB_AGENT));
         assertEquals(List.of(), processor.process(null, root()));
+    }
+
+    @Test
+    void readOnlyDefaultAgentsKeepTheMemoryReader() {
+        when(catalog.readOnlyNames()).thenReturn(Set.of(ToolCatalog.LOAD_MEMORY));
+        ToolProcessingContext context = ToolProcessingContext.builder().defaultAgent(true)
+                .accessMode(AgentAccessMode.READ_ONLY_IN_WORKSPACE).build();
+        assertTrue(processor.process(null, context).contains(ToolCatalog.LOAD_MEMORY));
     }
 
     @Test

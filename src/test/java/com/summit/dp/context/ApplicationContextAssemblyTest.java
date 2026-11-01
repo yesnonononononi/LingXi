@@ -13,9 +13,12 @@ import com.summit.core.tool.ToolRegistry;
 import com.summit.ddd.infrastructure.repository.json.AbstractJsonRepository;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.mcp.HostMcpScopeProvider;
 import com.summit.dp.workflow.infrastructure.tools.config.ToolDefinitionSchemaGate;
+import com.summit.dp.workflow.infrastructure.tools.memory.MemoryWikiLoader;
+import com.summit.dp.workflow.infrastructure.tools.memory.MemoryWikiManager;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskLoopInterceptor;
@@ -77,6 +80,15 @@ class ApplicationContextAssemblyTest {
     private ApplicationContext context;
 
     @Test
+    void memoryReaderUsesTheManagedExecutorAndIndependentPrototypeIndexes() {
+        ToolDefinition<?> definition = context.getBean(ToolRegistry.class).getTool(ToolCatalog.LOAD_MEMORY);
+        assertNotNull(definition);
+        assertSame(context.getBean(MemoryWikiLoader.class), definition.executor());
+        assertTrue(context.getBean(ToolCatalog.class).readOnlyNames().contains(ToolCatalog.LOAD_MEMORY));
+        assertNotSame(context.getBean(MemoryWikiManager.class), context.getBean(MemoryWikiManager.class));
+    }
+
+    @Test
     void realMcpInfrastructureLoadsWithoutTheFrameworkGlobalSwitch() {
         assertNotNull(context.getBean(McpAutoConfiguration.class));
         assertEquals(1, context.getBeansOfType(McpClientFactory.class).size());
@@ -115,7 +127,7 @@ class ApplicationContextAssemblyTest {
         Map<String, LoopInterceptor> interceptors = context.getBeansOfType(LoopInterceptor.class);
         assertTrue(interceptors.containsKey("subAgentWaitInterceptor"),
                 "SubAgentWaitInterceptor 必须出现在 LoopInterceptor 集合里，实际=" + interceptors.keySet());
-        assertTrue(interceptors.containsKey("agenticLoopInterceptor"),
+        assertTrue(interceptors.containsKey("emailLoopInterceptor"),
                 "取信拦截器应同时在列（对照），实际=" + interceptors.keySet());
 
         // 处理器由框架自动装配；反射读取其内部排序后的列表，决定性证明「收集到了」而非仅「bean 存在」。
@@ -153,13 +165,13 @@ class ApplicationContextAssemblyTest {
         });
 
         assertTrue(names.containsAll(List.of("execute_command", "manage_command", "read_file", "edit_file",
-                        "read_image", "web_search", "require_choice", "call_sub_agent", "peek_teammate_state",
+                        "read_image", "load_memory", "web_search", "require_choice", "call_sub_agent", "peek_teammate_state",
                         "send_mail_to_agent", "create_plan",
                         "create_checklist", "get_current_checklist", "get_checklist", "update_checklist_step", "modify_checklist", "delete_checklist")),
                 "门禁必须覆盖全部基础工具，实际=" + names);
-        assertEquals(16, definitions.values().stream()
+        assertEquals(17, definitions.values().stream()
                 .filter(definition -> definition.executor().getClass().isAnnotationPresent(Tool.class)).count(),
-                "注解声明工具的固定数量：十件旧工具 + 六件执行清单工具");
+                "注解声明工具的固定数量：十件旧工具 + 六件执行清单工具 + 项目记忆工具");
         assertEquals(5, context.getBeansOfType(ToolDefinition.class).size(),
                 "只有配置驱动的网页检索与四个框架内核工具保留定义 Bean");
         definitions.values().stream()

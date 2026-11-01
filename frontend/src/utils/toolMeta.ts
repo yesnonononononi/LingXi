@@ -33,6 +33,7 @@ const KNOWN_TOOL_CATEGORY: Partial<Record<AgentToolName, string>> = {
   [AgentToolName.ManageCommand]: TOOL_CATEGORY.COMMAND,
   // 读取
   [AgentToolName.ReadFile]: TOOL_CATEGORY.READ,
+  [AgentToolName.LoadMemory]: TOOL_CATEGORY.READ,
   [AgentToolName.ReadImage]: TOOL_CATEGORY.READ,
   [AgentToolName.WebSearch]: TOOL_CATEGORY.READ,
   // 写入
