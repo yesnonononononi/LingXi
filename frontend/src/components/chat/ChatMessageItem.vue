@@ -159,6 +159,9 @@
       </div>
 
       <!-- 底部工具与状态栏 (对应右图：复制、赞、踩、重试、用量、耗时、时间) - 仅在会话生成结束时展示 -->
+      <div v-if="inputNotice && isGroupTail !== false" role="status"
+           class="whitespace-pre-wrap text-xs text-zinc-500 dark:text-zinc-400">{{ inputNotice }}</div>
+
       <!-- 出现时机契约：活跃期只跟随后端终结/开始事件（isMessageCompleted）；非活跃期按 turnId 回答组 -->
       <!-- 收敛为组尾一次（isGroupTail !== false），避免同一轮次「本地气泡 + 对账行」并存时双工具条 -->
       <div v-if="isMessageCompleted && isGroupTail !== false" class="flex flex-wrap items-center gap-4 pt-1 text-xs text-zinc-400 select-none">
@@ -441,6 +444,12 @@ const displayDuration = computed(() => {
 
 const tokenUsage = computed(() => resolveTokenUsage(execSummary.value, props.message));
 /** 执行状态展示（仅摘要存在时展示）；进行中/失败/终态用不同配色，失败附带原因全文。 */
+// 主动暂停没有完成工具条，保留输入的提示须单独显示。
+const inputNotice = computed(() => {
+  const reason = execSummary.value?.errorReason || '';
+  const marker = reason.indexOf('待处理输入已保留：');
+  return marker < 0 ? '' : reason.slice(marker);
+});
 const execStatusMeta = computed(() => {
   const e = execSummary.value;
   if (!e) return null;
@@ -450,7 +459,7 @@ const execStatusMeta = computed(() => {
     text: turnStatusLabel(e.status),
     running,
     failed,
-    errorReason: failed ? (e.errorReason || '').trim() : ''
+    errorReason: failed ? (e.errorReason || '').split('待处理输入已保留：')[0].trim() : ''
   };
 });
 

@@ -1,5 +1,7 @@
 package com.summit.dp.task;
 
+import com.summit.dp.shared.support.InputTestSupport;
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskInputSource;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -14,6 +16,7 @@ import com.summit.core.runtime.loop.*;
 import com.summit.core.tool.ToolExecutionManager;
 import com.summit.core.tool.ToolRegistry;
 import com.summit.dp.email.application.service.EmailService;
+import com.summit.dp.email.application.vo.EmailMessageVO;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.task.domain.model.Task;
@@ -48,7 +51,8 @@ class BackgroundTaskNotificationTest {
     private final ExecutionResumeCoordinator coordinator = mock(ExecutionResumeCoordinator.class);
     private final BackgroundTaskNotifications notifications = new BackgroundTaskNotifications();
     private final BackgroundTaskLoopInterceptor interceptor =
-            new BackgroundTaskLoopInterceptor(repository, notifications, coordinator);
+            new BackgroundTaskLoopInterceptor(new BackgroundTaskInputSource(repository, notifications), notifications);
+    private final SubAgentWaitInterceptor wait = new SubAgentWaitInterceptor(InputTestSupport.background(repository, notifications));
     private final ObjectMapper json = new JsonConfig().objectMapper();
 
     @Test void bareModelReceivesBoundedResultAndCheckpointReceiptsSurviveCompaction() throws Exception {
@@ -63,7 +67,7 @@ class BackgroundTaskNotificationTest {
         assertTrue(notice.contains("status=FAILED, exitCode=7"));
         assertTrue(notice.contains("[摘要已截断]"));
         assertFalse(notice.contains("x".repeat(2_001)));
-        assertTrue(interceptor.onBeforeComplete(context).next());
+        assertTrue(wait.onBeforeComplete(context).next());
 
         Execution restored = json.readValue(json.writeValueAsBytes(execution), Execution.class);
         restored.getMessages().clear();
@@ -102,22 +106,22 @@ class BackgroundTaskNotificationTest {
         when(repository.findByExecutionId(10L, 100L)).thenReturn(List.of(task(1L)));
         for (boolean child : List.of(false, true)) {
             LoopContext context = context(execution(100L, 10L, child));
-            assertFalse(interceptor.onBeforeComplete(context).next());
-            assertEquals(LoopResult.Status.SUSPENDED, interceptor.onBeforeComplete(context).loopResult().status());
+            assertFalse(wait.onBeforeComplete(context).next());
+            assertEquals(LoopResult.Status.SUSPENDED, wait.onBeforeComplete(context).loopResult().status());
         }
         verifyNoInteractions(coordinator);
     }
 
-    @Test void completionDuringModelInvocationSuspendsAndReservesWakeBeforeControlSlotIsReleased() {
+    @Test void completionDuringModelInvocationContinuesWithoutAnotherWake() {
         Task task = task(1L);
         when(repository.findByExecutionId(10L, 100L)).thenReturn(List.of(task));
         LoopContext context = context(execution(100L, 10L, false));
         interceptor.onBeforeModelInvoke(context);
         task.finish(TaskStatus.CANCELLED, "stopped", 137, false);
-        assertEquals(LoopResult.Status.SUSPENDED, interceptor.onBeforeComplete(context).loopResult().status());
-        verify(coordinator).accept(100L);
+        assertEquals(LoopResult.Status.CONTINUE, wait.onBeforeComplete(context).loopResult().status());
+        verifyNoInteractions(coordinator);
         interceptor.onBeforeModelInvoke(context);
-        assertTrue(interceptor.onBeforeComplete(context).next());
+        assertTrue(wait.onBeforeComplete(context).next());
         assertTrue(context.getLoopMessages().getExecution().getMessages().getFirst().text().contains("CANCELLED"));
     }
 
@@ -136,7 +140,7 @@ class BackgroundTaskNotificationTest {
         Execution next = execution(101L, 10L, false);
         interceptor.onBeforeModelInvoke(context(next));
         assertTrue(next.getMessages().isEmpty());
-        assertTrue(interceptor.onBeforeComplete(context(next)).next());
+        assertTrue(wait.onBeforeComplete(context(next)).next());
         Execution other = execution(100L, 11L, false);
         interceptor.onBeforeModelInvoke(context(other));
         assertTrue(other.getMessages().isEmpty());
@@ -144,25 +148,25 @@ class BackgroundTaskNotificationTest {
 
     @Test void persistenceLookupFailureCannotSilentlyAllowCompletion() {
         when(repository.findByExecutionId(10L, 100L)).thenThrow(new ClientException("任务查询失败"));
-        assertThrows(ClientException.class, () -> interceptor.onBeforeComplete(context(execution(100L, 10L, false))));
+        assertThrows(ClientException.class, () -> wait.onBeforeComplete(context(execution(100L, 10L, false))));
         assertFalse(interceptor.catchErr());
     }
 
     @Test void terminalWaitCannotMaskTheExistingCollaborationInputWakeup() {
         when(repository.findByExecutionId(10L, 100L)).thenReturn(List.of(task(1L)));
         EmailService email = mock(EmailService.class);
-        when(email.hasPending(10L, 7L)).thenReturn(true);
-        SubAgentWaitInterceptor collaboration = new SubAgentWaitInterceptor(mock(SessionExecutionRegistry.class), email, coordinator);
+        when(email.pendingItems(10L, 7L)).thenReturn(List.of(EmailMessageVO.builder().id(2L).content("协作输入").build()));
+        SubAgentWaitInterceptor collaboration = new SubAgentWaitInterceptor(InputTestSupport.collaboration(mock(SessionExecutionRegistry.class), email));
         Execution execution = execution(100L, 10L, false);
         execution.getAgentRequest().runtimeParametersOrDefault().setAttributes(
                 Map.of(ExecutionAttributes.SESSION_ID, "10", ExecutionAttributes.AGENT_ID, "7"));
         DefaultLoopInterceptorProcessor processor = new DefaultLoopInterceptorProcessor(List.of(interceptor, collaboration));
-        assertEquals(LoopResult.Status.SUSPENDED, processor.onBeforeComplete(context(execution)).loopResult().status());
-        verify(coordinator).accept(100L);
-        verify(email).hasPending(10L, 7L);
+        assertEquals(LoopResult.Status.CONTINUE, processor.onBeforeComplete(context(execution)).loopResult().status());
+        verifyNoInteractions(coordinator);
+        verify(email).pendingItems(10L, 7L);
     }
 
-    @Test void realLoopCommitsThenSuspendsAndRestoredModelRequestContainsTheCompletion() throws Exception {
+    @Test void realLoopProcessesCompletionInTheSameExecution() throws Exception {
         Task task = task(1L);
         when(repository.findByExecutionId(10L, 100L)).thenReturn(List.of(task));
         ToolExecutionManager tools = mock(ToolExecutionManager.class);
@@ -178,7 +182,7 @@ class BackgroundTaskNotificationTest {
         AtomicInteger modelCalls = new AtomicInteger();
         AgentLoopStepRunner runner = new AgentLoopStepRunner(RuntimeContext.builder()
                 .conversationManager(new DefaultConversationManager(ContextAttachmentProvider.NONE))
-                .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(interceptor)))
+                .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(interceptor, wait)))
                 .runtimeBoundaryChecker(boundary).executionRepository(checkpoints)
                 .toolExecutionManager(tools).runtimeEventPublisher(new RuntimeEventPublisher(List.of()))
                 .invoker(new DefaultChatModelInvoker(command -> {
@@ -193,12 +197,10 @@ class BackgroundTaskNotificationTest {
                 })).build());
         Execution execution = execution(100L, 10L, false);
         execution.setTokenUsage(TokenUsageEntity.empty());
-        assertEquals(LoopResult.Status.SUSPENDED, runner.run(execution, new ExecutionControlSignal("100")).status());
-        verify(coordinator).accept(100L);
+        assertEquals(LoopResult.Status.COMPLETED, runner.run(execution, new ExecutionControlSignal("100")).status());
+        verifyNoInteractions(coordinator);
         assertNotNull(snapshot.get());
         Execution restored = json.readValue(snapshot.get(), Execution.class);
-        assertEquals(1, restored.getMessages().size());
-        assertEquals(LoopResult.Status.COMPLETED, runner.run(restored, new ExecutionControlSignal("100")).status());
         assertEquals(2, modelCalls.get());
         assertEquals(3, restored.getMessages().size());
         assertEquals("编译失败，退出码为7", restored.getAiMessage().getText());

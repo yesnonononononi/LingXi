@@ -11,7 +11,7 @@ import com.summit.dp.email.application.command.MailSendContext;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.workflow.application.delegation.CommanderMailWakeService;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailWakeMisuseDetector;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,7 +35,7 @@ class SendMailToAgentToolWakeTest {
     private static final long COMMANDER_AGENT_ID = 100L;
 
     private final EmailService emailService = mock(EmailService.class);
-    private final ExecutionResumeCoordinator resumeCoordinator = mock(ExecutionResumeCoordinator.class);
+    private final InputWakeupService resumeCoordinator = mock(InputWakeupService.class);
     private final ExecutionRepository executionRepository = mock(ExecutionRepository.class);
     private final ObjectProvider<ExecutionRepository> executionProvider =
             new StaticListableBeanFactory(Map.of("executions", executionRepository)).getBeanProvider(ExecutionRepository.class);
@@ -73,13 +73,13 @@ class SendMailToAgentToolWakeTest {
         assertTrue(result.isSuccess(), result.getToolOutput());
         InOrder order = inOrder(emailService, resumeCoordinator);
         order.verify(emailService).sendMail(COMMANDER_AGENT_ID, "补充信息", new MailSendContext(MAILBOX_SESSION_ID, 8L, 3L));
-        order.verify(resumeCoordinator).accept(ROOT_EXECUTION_ID);
+        order.verify(resumeCoordinator).resumeIfInputPending(ROOT_EXECUTION_ID);
         order.verifyNoMoreInteractions();
     }
 
     @Test
     void wakeFailureDoesNotTurnDeliveredMailIntoFailure() {
-        doThrow(new IllegalStateException("恢复派发失败")).when(resumeCoordinator).accept(anyLong());
+        doThrow(new IllegalStateException("恢复派发失败")).when(resumeCoordinator).resumeIfInputPending(anyLong());
         ToolExecuteResult result = tool.execute(execution("1234", memberAttributes(), COMMANDER_AGENT_ID));
         assertTrue(result.isSuccess(), result.getToolOutput());
         assertTrue(result.getToolOutput().contains("delivered"));

@@ -25,6 +25,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.ArrayList;
 import java.util.Optional;
 
 /**
@@ -154,37 +158,43 @@ public class EmailServiceImpl implements EmailService {
     @Override
     @Transactional
     public Result<List<EmailMessageVO>> consumePending(Long workflowExecutionId, Long recipientAgentId) {
-        if (workflowExecutionId == null) {
-            throw new ClientException("workflowExecutionId is null");
-        }
-        if (recipientAgentId == null) {
-            throw new ClientException("recipientAgentId is null");
-        }
-        Optional<Email> mailbox = repository.findByBusinessKey(workflowExecutionId, recipientAgentId);
-        if (mailbox.isEmpty()) {
-            return Result.success(List.of());
-        }
-        List<EmailMessage> pending = messageRepository.findPendingByEmailIds(List.of(mailbox.get().getId()));
-        if (pending.isEmpty()) {
-            return Result.success(List.of());
-        }
+        throwIf(workflowExecutionId == null || recipientAgentId == null, "收件箱归属不能为空");
+        List<EmailMessageVO> items = pendingItems(workflowExecutionId, recipientAgentId);
+        consumePendingItems(items);
+        return Result.success(items);
+    }
 
-        pending.forEach(EmailMessage::consume);
+    @Override
+    public List<EmailMessageVO> pendingItems(Long workflowExecutionId, Long recipientAgentId) {
+        if (workflowExecutionId == null || recipientAgentId == null) return List.of();
+        Optional<Email> mailbox = repository.findByBusinessKey(workflowExecutionId, recipientAgentId);
+        if (mailbox.isEmpty()) return List.of();
+        return messageRepository.findPendingByEmailIds(List.of(mailbox.get().getId()))
+                .stream().map(this::toMessageVO).toList();
+    }
+
+    @Override
+    @Transactional
+    public void consumePendingItems(List<EmailMessageVO> items) {
+        throwIf(items == null, "待消费消息列表不能为空");
+        if (items.isEmpty()) return;
+        List<EmailMessage> pending = new ArrayList<>();
+        Set<Long> ids = new HashSet<>();
+        for (EmailMessageVO item : items) {
+            throwIf(item == null || item.getId() == null || !ids.add(item.getId()), "待消费消息标识缺失或重复");
+            EmailMessage message = messageRepository.findById(item.getId()).orElseThrow(ClientException::new);
+            throwIf(!message.isPending() || !Objects.equals(message.getEmailId(), item.getEmailId())
+                    || !Objects.equals(message.getContent(), item.getContent()), "待消费消息已发生变化，请重新读取");
+            message.consume();
+            pending.add(message);
+        }
         int affected;
         try {
             affected = messageRepository.consumePendingByIds(pending);
-        } catch (CannotAcquireLockException lockConflict) {
-            // 单写者数据库里「读 PENDING → 条件更新」的读后升写抢不到锁时会立刻失败。
-            // 这种失败是瞬时的、可重试的：统一翻成业务侧的可重试冲突，
-            // 不把驱动级异常泄漏给调用方（重试时会读到空收件箱）。
-            throw new ClientException("收件箱正在被并发消费，请重试", lockConflict);
+        } catch (CannotAcquireLockException conflict) {
+            throw new ClientException("收件箱正在被并发消费，请重试", conflict);
         }
-        if (affected != pending.size()) {
-            // 并发窗口内有消息被抢先消费：整体回滚；重试只取仍 PENDING 的消息，自愈。
-            throw new ClientException("部分消息状态已变化，请重试批量消费");
-        }
-
-        return Result.success(pending.stream().map(this::toMessageVO).toList());
+        throwIf(affected != pending.size(), "部分消息状态已变化，请重新读取本批消息");
     }
 
     /**
@@ -224,15 +234,7 @@ public class EmailServiceImpl implements EmailService {
 
     @Override
     public boolean hasPending(Long workflowExecutionId, Long recipientAgentId) {
-        // 只读判据：复用与消费同一把业务键与同一条 PENDING 查询，绝不调用 consumePending。
-        if (workflowExecutionId == null || recipientAgentId == null) {
-            return false;
-        }
-        Optional<Email> mailbox = repository.findByBusinessKey(workflowExecutionId, recipientAgentId);
-        if (mailbox.isEmpty()) {
-            return false;
-        }
-        return !messageRepository.findPendingByEmailIds(List.of(mailbox.get().getId())).isEmpty();
+        return !pendingItems(workflowExecutionId, recipientAgentId).isEmpty();
     }
 
     @Override

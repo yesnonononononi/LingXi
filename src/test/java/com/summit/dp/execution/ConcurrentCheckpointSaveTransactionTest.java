@@ -1,5 +1,6 @@
 package com.summit.dp.execution;
 
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -180,6 +181,9 @@ class ConcurrentCheckpointSaveTransactionTest {
 
     @Configuration
     static class Config {
+        @Bean
+        SessionExecutionRegistry executionRegistry() { return new SessionExecutionRegistry(); }
+
         @Bean(destroyMethod = "shutdown")
         SqliteTestDatabase database() {
             return SqliteTestDatabase.create("ConcurrentCheckpointSaveTransactionTest");

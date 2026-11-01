@@ -1,5 +1,6 @@
 package com.summit.dp.workflow.application.chat.impl;
 
+import com.summit.dp.workflow.application.input.InputAutomationPolicy;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionControl;
@@ -19,6 +20,7 @@ import com.summit.dp.workflow.application.chat.ConversationRollbackService.Resen
 import com.summit.dp.workflow.application.chat.ResendTargetResolver.ResendTarget;
 import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
 import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -224,8 +226,6 @@ public class ChatServiceImpl implements ChatService {
     public void suspend(Long sessionId) {
         throwIf(sessionId == null || sessionId <= 0, "会话标识不合法");
         for (String executionId : executionLocator.activeExecutionIds(sessionId)) {
-            Execution snapshot = executionRepository.findById(executionId).orElse(null);
-            if (snapshot != null && snapshot.getExecutionState() == ExecutionState.SUSPENDED) continue;
             try {
                 executionControl.suspend(executionId);
             } catch (IllegalStateException error) {
@@ -237,29 +237,30 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public synchronized Result<String> resume(Long sessionId) {
-        String id = executionLocator.latestSuspendedExecutionId(sessionId);
-        if (id == null) {
-            throw new ClientException("该会话没有可恢复的执行");
+        // 上下文回写也属于旧轮收尾，迟到输入必须等它提交后再受理新轮。
+        synchronized (ExecutionCoordination.monitor("session:" + sessionId)) {
+            String id = executionLocator.latestSuspendedExecutionId(sessionId);
+            throwIf(id == null, "该会话没有可恢复的执行");
+
+            Execution execution;
+            synchronized (ExecutionCoordination.monitor(id)) {
+                throwIf(!toolCallRepository.listUnresolvedByExecutionId(Long.valueOf(id)).isEmpty(), "请先处理待审批事项");
+                execution = executionRepository.findById(id).orElseThrow(ClientException::new);
+                throwIf(execution.getExecutionState() != ExecutionState.SUSPENDED, "执行不可以恢复");
+                sessionAttributeRestorer.restore(execution, sessionId);
+                // 清除意图须先提交，控制槽位登记才允许这次主动恢复通过。
+                InputAutomationPolicy.putAttribute(execution, InputAutomationPolicy.USER_PAUSED, null);
+                InputAutomationPolicy.putAttribute(execution, InputAutomationPolicy.AUTO_ROUNDS, null);
+                executionRepository.save(execution);
+            }
+
+            // 交接通知由框架发布：resume(Execution) 内部触发 RuntimeLifeStyleManager#onResume，
+            Execution resumed = executionControl.resume(execution);
+
+            modelContextService.replace(sessionId, resumed.getMessages());
+
+            return Result.success(resumed.getMessages().toString());
         }
-
-        // 未决卡片（pending PROMISE）优先：必须先经 /tool-call/decide 处理，再恢复。
-        throwIf(!toolCallRepository.listUnresolvedByExecutionId(Long.valueOf(id)).isEmpty(), "请先处理待审批事项");
-
-        // 用 resume(Execution) 把实例直接交给 loop；resume(String) 是副本，禁用。
-        Execution execution = executionRepository.findById(id)
-                .orElseThrow(() -> new ClientException("执行不存在: " + id));
-
-        throwIf(execution.getExecutionState() != ExecutionState.SUSPENDED, "执行不可以恢复");
-
-        // 恢复不经过 RequestPreparer，会话级业务属性不会被重新下发，必须先补齐再交给 loop。
-        sessionAttributeRestorer.restore(execution, sessionId);
-
-        // 交接通知由框架发布：resume(Execution) 内部触发 RuntimeLifeStyleManager#onResume，
-        Execution resumed = executionControl.resume(execution);
-
-        modelContextService.replace(sessionId, resumed.getMessages());
-
-        return Result.success(resumed.getMessages().toString());
     }
 
     private void requestCancel(String executionId) {

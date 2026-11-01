@@ -39,6 +39,22 @@ public class SessionExecutionRegistry {
         }
     }
 
+    public boolean isRootRunning(Long rootSessionId) {
+        RootExecution execution = roots.get(rootSessionId);
+        if (execution == null) return false;
+        synchronized (execution) { return execution.rootRunning; }
+    }
+
+    /** 自动受理不能清除用户已请求的取消。 */
+    public boolean tryBeginAutomaticRoot(Long rootSessionId) {
+        RootExecution execution = roots.computeIfAbsent(rootSessionId, ignored -> new RootExecution());
+        synchronized (execution) {
+            if (execution.rootRunning || execution.cancelled) return false;
+            execution.rootRunning = true;
+            return true;
+        }
+    }
+
     public void finishRoot(Long rootSessionId) {
         if (rootSessionId == null) return;
         RootExecution execution = roots.get(rootSessionId);
@@ -168,7 +184,7 @@ public class SessionExecutionRegistry {
     }
 
     private void removeIfFinished(Long rootSessionId, RootExecution execution) {
-        if (!execution.rootRunning && execution.children.isEmpty()) {
+        if (!execution.rootRunning && !execution.cancelled && execution.children.isEmpty()) {
             roots.remove(rootSessionId, execution);
         }
     }

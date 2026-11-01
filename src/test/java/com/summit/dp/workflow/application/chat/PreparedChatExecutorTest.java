@@ -1,5 +1,7 @@
 package com.summit.dp.workflow.application.chat;
 
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
+import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -132,6 +134,24 @@ class PreparedChatExecutorTest {
                 List.of(), null, null, AgentAccessMode.IN_WORKSPACE,
                 CommandApprovalPolicy.FULL_ACCESS, false, UserMessageEntity.from("你好")).withTurnId(TURN_ID);
         return execution == null ? context : context.withExecution(execution);
+    }
+
+    @Test
+    void completedRootIsRecheckedAfterContextAndRunQualificationAreReleased() {
+        InputWakeupService wakeups = mock(InputWakeupService.class);
+        ReflectionTestUtils.setField(realChainExecutor, "inputWakeups",
+                new StaticListableBeanFactory(Map.of("wakeups", wakeups)).getBeanProvider(InputWakeupService.class));
+        Execution completed = execution(ExecutionState.COMPLETED);
+        RuntimeContext context = context(completed);
+        registry.beginRoot(ROOT_SESSION_ID);
+        when(orchestrator.execute(context, completed)).thenReturn(completed);
+        doAnswer(call -> {
+            assertFalse(registry.isRootRunning(ROOT_SESSION_ID));
+            verify(modelContextService).replace(ROOT_SESSION_ID, completed.getMessages());
+            return null;
+        }).when(wakeups).resumeIfInputPending(Long.parseLong(EXECUTION_ID));
+        realChainExecutor.run(context);
+        verify(wakeups).resumeIfInputPending(Long.parseLong(EXECUTION_ID));
     }
 
     @Test

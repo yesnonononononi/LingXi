@@ -1,5 +1,6 @@
 package com.summit.dp.task;
 
+import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskInputSource;
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
@@ -44,7 +45,7 @@ import com.summit.dp.task.infrastructure.repository.TaskRepositoryImpl;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
 import com.summit.dp.workflow.infrastructure.tools.config.CommonToolConfiguration;
 import com.summit.dp.workflow.infrastructure.tools.config.properties.CommandToolProperties;
@@ -93,7 +94,7 @@ class BackgroundCommandTest {
     private BackendProcesser submitter;
     private final List<String> changedStatuses = new CopyOnWriteArrayList<>();
     private Workspace workspace;
-    private final ExecutionResumeCoordinator coordinator = mock(ExecutionResumeCoordinator.class);
+    private final InputWakeupService coordinator = mock(InputWakeupService.class);
     private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
 
     @BeforeEach void setup() throws Exception {
@@ -158,11 +159,11 @@ class BackgroundCommandTest {
         assertEquals(1, manager.listTasks(10L).size()); assertTrue(manager.listTasks(99L).isEmpty());
         await(() -> changedStatuses.contains("FAILED"));
         assertEquals(List.of("PENDING", "RUNNING", "FAILED"), changedStatuses);
-        verify(coordinator).accept(1L);
+        verify(coordinator).resumeIfInputPending(1L);
         Execution execution = Execution.builder().id("1").messages(new ArrayList<Message>())
                 .agentRequest(AgentRequest.builder().runtimeParameters(AgentRuntimeParameters.builder()
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, "10")).build()).build()).build();
-        BackgroundTaskLoopInterceptor notifications = new BackgroundTaskLoopInterceptor(repository, new BackgroundTaskNotifications(), coordinator);
+        BackgroundTaskLoopInterceptor notifications = new BackgroundTaskLoopInterceptor(new BackgroundTaskInputSource(repository, new BackgroundTaskNotifications()), new BackgroundTaskNotifications());
         notifications.onBeforeModelInvoke(new LoopContext(LoopMessages.builder().execution(execution).build(),
                 new ExecutionControlSignal("1"), 0, execution.getMessages()::addAll));
         assertEquals(1, execution.getMessages().size());
@@ -257,7 +258,7 @@ class BackgroundCommandTest {
             if (task.getStatus().isTerminal() && failures.getAndIncrement() == 0) throw new IllegalStateException("db unavailable");
             return invocation.callRealMethod();
         }).when(flaky).updateById(any(Task.class));
-        BackendProcessManager retrying = new BackendProcessManager(flaky, mock(BackgroundTaskBroadcaster.class), new BackgroundTaskCompletion(flaky, mock(ExecutionResumeCoordinator.class)), mock(TaskDeletionPolicy.class));
+        BackendProcessManager retrying = new BackendProcessManager(flaky, mock(BackgroundTaskBroadcaster.class), new BackgroundTaskCompletion(flaky, mock(InputWakeupService.class)), mock(TaskDeletionPolicy.class));
         CommandHandler handle = mock(CommandHandler.class);
         when(handle.await()).thenReturn(new CommandResult(7, "actual failure", false, false));
         Task task = Task.builder().id(103L).sessionId(10L).turnId(20L).command("completed").build(); repository.save(task);
@@ -351,7 +352,7 @@ class BackgroundCommandTest {
 
     @Test void completionWorkerDoesNotWriteAgainAfterStopAlreadyPersistedTheFinalResult() throws Exception {
         TaskRepository tracked = spy(repository);
-        BackendProcessManager coordinated = new BackendProcessManager(tracked, mock(BackgroundTaskBroadcaster.class), new BackgroundTaskCompletion(tracked, mock(ExecutionResumeCoordinator.class)), mock(TaskDeletionPolicy.class));
+        BackendProcessManager coordinated = new BackendProcessManager(tracked, mock(BackgroundTaskBroadcaster.class), new BackgroundTaskCompletion(tracked, mock(InputWakeupService.class)), mock(TaskDeletionPolicy.class));
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         AtomicReference<Thread> worker = new AtomicReference<>();

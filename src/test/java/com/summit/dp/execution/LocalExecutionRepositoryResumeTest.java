@@ -1,5 +1,9 @@
 package com.summit.dp.execution;
 
+import org.springframework.test.util.ReflectionTestUtils;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
+import com.summit.dp.workflow.application.input.InputAutomationPolicy;
+import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -117,6 +121,81 @@ class LocalExecutionRepositoryResumeTest {
                         .attributes(Map.of(ExecutionAttributes.SESSION_ID, "405")).build()).build();
         return Execution.builder().id("305").agentId("chatAgent").agentRequest(request)
                 .executionState(ExecutionState.SUSPENDED).messages(history).build();
+    }
+
+    @Test
+    void releaseRechecksAfterWaitingProjectionAndOutsideTheGate() {
+        InputWakeupService wakeups = mock(InputWakeupService.class);
+        ReflectionTestUtils.setField(repository, "inputWakeups", provider(wakeups));
+        repository.save(execution());
+        ExecutionControlSignal signal = repository.register("305");
+        doAnswer(call -> {
+            assertFalse(Thread.holdsLock(ExecutionCoordination.monitor("305")));
+            assertFalse(repository.isActive("305"));
+            verify(readiness).markReady("305");
+            verify(turns).markExecutionWaiting(any());
+            return null;
+        }).when(wakeups).resumeIfInputPending(305L);
+        repository.unregister(signal);
+        verify(wakeups).resumeIfInputPending(305L);
+    }
+
+    @Test
+    void failureBeforeControlRegistrationAlsoRechecksAfterClosure() {
+        InputWakeupService wakeups = mock(InputWakeupService.class);
+        ReflectionTestUtils.setField(repository, "inputWakeups", provider(wakeups));
+        repository.save(execution());
+        Execution failed = execution();
+        failed.fail("执行初始化失败");
+        repository.save(failed);
+        verify(turns).finishExecution(any());
+        verify(wakeups).resumeIfInputPending(305L);
+    }
+
+    @Test
+    void terminalReleaseRechecksAfterTurnClosure() {
+        InputWakeupService wakeups = mock(InputWakeupService.class);
+        ReflectionTestUtils.setField(repository, "inputWakeups", provider(wakeups));
+        repository.save(execution());
+        ExecutionControlSignal signal = repository.register("305");
+        Execution completed = execution();
+        completed.setExecutionState(ExecutionState.COMPLETED);
+        repository.save(completed);
+        doAnswer(call -> {
+            assertFalse(repository.isActive("305"));
+            verify(turns).finishExecution(any());
+            return null;
+        }).when(wakeups).resumeIfInputPending(305L);
+        repository.unregister(signal);
+        verify(wakeups).resumeIfInputPending(305L);
+    }
+
+    @Test
+    void cancelIntentBeforeRegistrationStopsTheNewControlSignal() {
+        repository.save(execution());
+        SessionExecutionRegistry registry = new SessionExecutionRegistry();
+        registry.cancelRoot(405L);
+        ReflectionTestUtils.setField(repository, "executionRegistry", registry);
+        assertTrue(repository.register("305").isCancelRequired());
+    }
+
+    @Test
+    void pauseAfterEnqueuePreventsControlRegistrationAndPreservesPendingSnapshot() {
+        repository.save(execution());
+        repository.requireSuspend("305");
+        assertThrows(IllegalStateException.class, () -> repository.register("305"));
+        assertFalse(repository.isActive("305"));
+        assertEquals(ExecutionState.SUSPENDED, repository.findById("305").orElseThrow().getExecutionState());
+    }
+
+    @Test
+    void userPauseIsPersistedBeforeReleaseRecheck() {
+        repository.save(execution());
+        ExecutionControlSignal signal = repository.register("305");
+        signal.requireSuspend();
+        repository.save(execution());
+        Execution restored = repository.findById("305").orElseThrow();
+        assertEquals(true, InputAutomationPolicy.attributes(restored).get(InputAutomationPolicy.USER_PAUSED));
     }
 
     @Test
@@ -481,7 +560,7 @@ class LocalExecutionRepositoryResumeTest {
                 checkpointStore,
                 provider(failing), provider(tools), provider(subExecutionLifecycle), provider(sessions), provider(turns), provider(runtimeEvents));
         doAnswer(invocation -> {
-            assertFalse(Thread.holdsLock(ExecutionCoordination.monitor("305")));
+            assertTrue(Thread.holdsLock(ExecutionCoordination.monitor("305")));
             assertFalse(isolated.isActive("305"));
             throw new IllegalStateException("卡片开放失败");
         }).when(failing).markReady("305");
@@ -503,7 +582,7 @@ class LocalExecutionRepositoryResumeTest {
         TransactionSynchronizationManager.initSynchronization();
         try {
             repository.unregister(signal);
-            assertFalse(repository.isActive("305"));
+            assertTrue(repository.isActive("305"));
             verifyNoInteractions(readiness, subExecutionLifecycle, turns, tools, sessions);
             for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
                 synchronization.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);

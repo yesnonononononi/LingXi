@@ -71,6 +71,19 @@ public class SubAgentCompleteNotifier {
         emailService.sendMailOnce(commanderId, content, new MailSendContext(rootSessionId, senderAgentId, teamId), dedupKey);
     }
 
+    /** 未建立执行时仍先投递失败事实，根才能安全解除等待。 */
+    public void notifyAbandoned(Long rootExecutionId, Long childSessionId) {
+        Execution root = executionRepository.getObject().findById(String.valueOf(rootExecutionId))
+                .orElseThrow(ClientException::new);
+        Map<String, Object> attributes = root.getAgentRequest().runtimeParametersOrDefault().getAttributes();
+        Long commander = ExecutionAttributes.readLong(attributes, ExecutionAttributes.AGENT_ID);
+        throwIf(commander == null, "协作根执行未绑定主理人");
+        emailService.sendMailOnce(commander, "子会话 " + childSessionId + " 未能建立执行，请检查受理失败原因。",
+                new MailSendContext(ExecutionIdentity.sessionId(root), commander,
+                        ExecutionAttributes.readLong(attributes, ExecutionAttributes.TEAM_ID)),
+                "sub-agent-abandoned:" + rootExecutionId + ":" + childSessionId);
+    }
+
     private void throwIf(boolean condition, String err) {
         if (condition) throw new ClientException(err);
     }

@@ -1,5 +1,9 @@
 package com.summit.dp.workflow.application.chat;
 
+import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionControl;
@@ -37,6 +41,8 @@ public class PreparedChatExecutor {
     private final ModelContextService modelContextService;
     private final SessionExecutionRegistry sessionExecutionRegistry;
     private final ExecutionControl executionControl;
+    @Autowired
+    private ObjectProvider<InputWakeupService> inputWakeups;
     private final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
 
     /**
@@ -59,6 +65,14 @@ public class PreparedChatExecutor {
             return context;
         }
         Long turnId = requestPreparer.commitUserMessage(context);
+        RuntimeContext committed = context.withTurnId(turnId);
+        return committed.withExecution(agentWorkflowOrchestrator.createExecution(committed));
+    }
+
+    /** 自动接续复用标准受理，命令身份由实际输入批次生成。 */
+    @Transactional
+    public RuntimeContext admit(RuntimeContext context, String commandId) {
+        Long turnId = requestPreparer.commitUserMessage(context, commandId, commandId);
         RuntimeContext committed = context.withTurnId(turnId);
         return committed.withExecution(agentWorkflowOrchestrator.createExecution(committed));
     }
@@ -108,27 +122,33 @@ public class PreparedChatExecutor {
      * @return 本次执行的框架对象（同步入口要拿它的消息集合作返回值）
      */
     public Execution run(RuntimeContext context) {
-        long rootSessionId = context.executionContext().rootSessionId();
-        try {
-            Execution execution = context.execution();
-            if (execution == null) {
-                throw new IllegalStateException("执行未登记：受理事务必须先创建执行");
+        // 上下文回写也属于旧轮收尾，迟到输入必须等它提交后再受理新轮。
+        synchronized (ExecutionCoordination.monitor("session:" + context.executionContext().sessionId())) {
+            long rootSessionId = context.executionContext().rootSessionId();
+            try {
+                Execution execution = context.execution();
+                if (execution == null) {
+                    throw new IllegalStateException("执行未登记：受理事务必须先创建执行");
+                }
+                Execution result = agentWorkflowOrchestrator.execute(context, execution);
+                modelContextService.replace(ExecutionIdentity.sessionId(result), result.getMessages());
+                return result;
+            } catch (LinkageError error) {
+                // 异步任务不会把 Error 返回给受理接口，依赖不兼容也必须落失败终态并通知界面。
+                IllegalStateException failure = new IllegalStateException(
+                        "运行依赖版本不兼容，请重新加载 Maven 依赖并重启后端", error);
+                log.error("执行依赖加载失败: executionId={}", context.executionContext().executionId(), error);
+                markStartupFailedQuietly(context, failure);
+                throw failure;
+            } catch (RuntimeException e) {
+                markStartupFailedQuietly(context, e);
+                throw e;
+            } finally {
+                sessionExecutionRegistry.finishRoot(rootSessionId);
+                if (inputWakeups != null && context.execution() != null) {
+                    inputWakeups.getObject().resumeIfInputPending(Long.parseLong(context.execution().getId()));
+                }
             }
-            Execution result = agentWorkflowOrchestrator.execute(context, execution);
-            modelContextService.replace(ExecutionIdentity.sessionId(result), result.getMessages());
-            return result;
-        } catch (LinkageError error) {
-            // 异步任务不会把 Error 返回给受理接口，依赖不兼容也必须落失败终态并通知界面。
-            IllegalStateException failure = new IllegalStateException(
-                    "运行依赖版本不兼容，请重新加载 Maven 依赖并重启后端", error);
-            log.error("执行依赖加载失败: executionId={}", context.executionContext().executionId(), error);
-            markStartupFailedQuietly(context, failure);
-            throw failure;
-        } catch (RuntimeException e) {
-            markStartupFailedQuietly(context, e);
-            throw e;
-        } finally {
-            sessionExecutionRegistry.finishRoot(rootSessionId);
         }
     }
 

@@ -1,5 +1,7 @@
 package com.summit.dp.workflow.infrastructure.harness;
 
+import com.summit.dp.workflow.application.input.InputAutomationPolicy;
+import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
@@ -19,6 +21,7 @@ import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
 import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
 import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
 import com.summit.dp.workflow.infrastructure.lifecycle.ExecutionCoordination;
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -79,6 +82,10 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
      * 由 {@link #checkpointSaveRetryTemplate()} 现场造一个降级使用（不持有、不加锁）。</p>
      */
     private volatile TransactionRetryTemplate saveRetry;
+    @Autowired
+    private ObjectProvider<InputWakeupService> inputWakeups;
+    @Autowired
+    private SessionExecutionRegistry executionRegistry;
 
     /**
      * 预建保存重试器。
@@ -110,6 +117,11 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
         synchronized (ExecutionCoordination.monitor(execution.getId())) {
             long id = numericId(execution.getId());
             ExecutionState state = execution.getExecutionState();
+            ExecutionControlSignal currentSignal = active.get(execution.getId());
+            if (state == ExecutionState.SUSPENDED && currentSignal != null && currentSignal.isSuspendRequired()) {
+                InputAutomationPolicy.putAttribute(execution,
+                        InputAutomationPolicy.USER_PAUSED, true);
+            }
 
             Map<String, Object> attributes = execution.getAgentRequest() == null ? Map.of()
                     : execution.getAgentRequest().runtimeParametersOrDefault().getAttributes();
@@ -290,7 +302,15 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
             if (persisted != null && ExecutionStateCodec.isTerminalState(persisted.getExecutionState())) {
                 throw new IllegalStateException("执行已结束，不能重新登记: executionId=" + executionId);
             }
+            if (persisted != null && Boolean.TRUE.equals(InputAutomationPolicy.attributes(persisted)
+                    .get(InputAutomationPolicy.USER_PAUSED))) {
+                throw new IllegalStateException("执行已由用户暂停，请主动恢复");
+            }
             ExecutionControlSignal signal = new ExecutionControlSignal(executionId);
+            if (persisted != null && executionRegistry != null && executionRegistry.isCancelled(
+                    ExecutionAttributes.mailboxSessionId(InputAutomationPolicy.attributes(persisted)))) {
+                signal.requireCancel();
+            }
             if (active.putIfAbsent(executionId, signal) != null) {
                 throw new IllegalStateException("执行已在运行: executionId=" + executionId);
             }
@@ -301,26 +321,41 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     @Override
     public void unregister(ExecutionControlSignal signal) {
         if (signal == null) throw new IllegalArgumentException("执行控制信号不能为空");
-        Execution execution;
-        boolean cancelledOnRelease;
-        synchronized (ExecutionCoordination.monitor(signal.getExecutionId())) {
-            if (!active.remove(signal.getExecutionId(), signal)) {
-                throw new IllegalArgumentException("执行控制信号已释放");
-            }
-            execution = findById(signal.getExecutionId()).orElse(null);
-            cancelledOnRelease = signal.isCancelRequired() && execution != null
-                    && execution.getExecutionState() == ExecutionState.SUSPENDED;
-            if (cancelledOnRelease) {
-                execution.cancelChecked();
-                save(execution);
-            }
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCompletion(int status) {
+                    if (status != STATUS_COMMITTED) {
+                        synchronized (ExecutionCoordination.monitor(signal.getExecutionId())) {
+                            active.remove(signal.getExecutionId(), signal);
+                        }
+                    }
+                }
+            });
         }
-        if (execution != null) afterCommit(() -> {
-            if (execution.getExecutionState() == ExecutionState.SUSPENDED) {
-                notifySuspended(execution);
-            } else if (ExecutionStateCodec.isTerminalState(execution.getExecutionState())) {
+        afterCommit(() -> {
+            Execution execution;
+            boolean cancelledOnRelease;
+            synchronized (ExecutionCoordination.monitor(signal.getExecutionId())) {
+                if (!active.remove(signal.getExecutionId(), signal)) {
+                    throw new IllegalArgumentException("执行控制信号已释放");
+                }
+                execution = findById(signal.getExecutionId()).orElse(null);
+                cancelledOnRelease = signal.isCancelRequired() && execution != null
+                        && execution.getExecutionState() == ExecutionState.SUSPENDED;
+                if (cancelledOnRelease) {
+                    execution.cancelChecked();
+                    save(execution);
+                }
+                if (execution != null && execution.getExecutionState() == ExecutionState.SUSPENDED) {
+                    notifySuspended(execution);
+                }
+            }
+            if (execution != null && ExecutionStateCodec.isTerminalState(execution.getExecutionState())) {
                 if (cancelledOnRelease) notifyCancelled(execution);
                 else notifyFinished(execution);
+            }
+            if (execution != null && execution.getExecutionState() == ExecutionState.SUSPENDED && inputWakeups != null) {
+                inputWakeups.getObject().resumeIfInputPending(Long.parseLong(execution.getId()));
             }
         });
     }
@@ -331,8 +366,27 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     }
 
     @Override
+    public boolean isCancellationRequested(String executionId) {
+        ExecutionControlSignal signal = active.get(executionId);
+        return signal != null && signal.isCancelRequired();
+    }
+
+    @Override
     public void requireSuspend(String executionId) {
-        requireActive(executionId).requireSuspend();
+        synchronized (ExecutionCoordination.monitor(executionId)) {
+            ExecutionControlSignal signal = active.get(executionId);
+            if (signal != null) {
+                signal.requireSuspend();
+                return;
+            }
+            Execution execution = findById(executionId).orElseThrow(
+                    () -> new IllegalStateException("执行不存在: executionId=" + executionId));
+            if (execution.getExecutionState() != ExecutionState.SUSPENDED) {
+                throw new IllegalStateException("执行尚未运行或已经结束，无法暂停");
+            }
+            InputAutomationPolicy.putAttribute(execution, InputAutomationPolicy.USER_PAUSED, true);
+            save(execution);
+        }
     }
 
     @Override
@@ -352,11 +406,11 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
         }
     }
 
-    /** 控制槽位释放且检查点提交后，才能开放卡片并处理结束事实（子执行挂起 / 根重放保留唤醒）。 */
+    /** 控制槽位释放且检查点提交后，才能开放卡片并处理结束事实（子执行挂起 / 输入复查）。 */
     private void notifySuspended(Execution execution) {
         invokeLifecycle("开放工具卡片", execution, () -> readinessService.getObject().markReady(execution.getId()));
-        invokeLifecycle("结束事实-挂起", execution, () -> subExecutionLifecycle.getObject().onSuspended(execution));
         invokeLifecycle("更新等待轮次", execution, () -> chatTurnService.getObject().markExecutionWaiting(execution));
+        invokeLifecycle("结束事实-挂起", execution, () -> subExecutionLifecycle.getObject().onSuspended(execution));
     }
 
     /** 传递已提交对象，避免订阅方重复解码检查点。 */
@@ -365,6 +419,9 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
         invokeLifecycle("结束事实-终结", execution, () -> subExecutionLifecycle.getObject().onFinished(execution));
         invokeLifecycle("保存会话用量", execution, () -> sessionService.getObject().saveExecutionContextUsage(execution));
         invokeLifecycle("收口业务轮次", execution, () -> chatTurnService.getObject().finishExecution(execution));
+        if (inputWakeups != null) {
+            inputWakeups.getObject().resumeIfInputPending(Long.parseLong(execution.getId()));
+        }
     }
 
     /** 挂起取消没有活跃循环发布终态事件，须在检查点提交与轮次收口后补发用量。 */
@@ -384,13 +441,7 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
         }
     }
 
-    private ExecutionControlSignal requireActive(String executionId) {
-        ExecutionControlSignal signal = active.get(executionId);
-        if (signal == null) {
-            throw new IllegalStateException("执行未在运行: executionId=" + executionId);
-        }
-        return signal;
-    }
+
 
     private static long numericId(String id) {
         try {

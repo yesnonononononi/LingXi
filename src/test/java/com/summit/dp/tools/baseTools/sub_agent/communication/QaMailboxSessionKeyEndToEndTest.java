@@ -1,5 +1,7 @@
 package com.summit.dp.tools.baseTools.sub_agent.communication;
 
+import com.summit.dp.shared.support.InputTestSupport;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailInputSource;
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
@@ -171,13 +173,13 @@ class QaMailboxSessionKeyEndToEndTest {
 
         // 3) 收尾驻留判定用同一把键：真实 SubAgentWaitInterceptor 在无子执行时因「有未处理输入」驻留。
         SessionExecutionRegistry emptyRegistry = new SessionExecutionRegistry();
-        SubAgentWaitInterceptor wait = new SubAgentWaitInterceptor(emptyRegistry, service, mock(ExecutionResumeCoordinator.class));
+        SubAgentWaitInterceptor wait = new SubAgentWaitInterceptor(InputTestSupport.collaboration(emptyRegistry, service));
         assertFalse(wait.onBeforeComplete(rootContext("E1", ROOT_SESSION_ID, ROOT_AGENT_ID)).next(),
                 "收尾判定与投递同键：有未处理输入时必须驻留，不得提前 COMPLETED");
 
         // 4) 下一轮全新根执行 E2：执行 id 与 E1 不同，会话 id 相同 —— 消费侧必须仍命中同一把邮箱。
         List<Message> appended = new ArrayList<>();
-        AgenticLoopInterceptor consumer = new AgenticLoopInterceptor(service);
+        AgenticLoopInterceptor consumer = new AgenticLoopInterceptor(service, new MailInputSource(service));
         consumer.onBeforeModelInvoke(rootContext("E2", ROOT_SESSION_ID, ROOT_AGENT_ID));
 
         // 5) 消费之后无 PENDING。
@@ -197,7 +199,7 @@ class QaMailboxSessionKeyEndToEndTest {
                 "{\"toAgentId\":100,\"mailContent\":\"构建产物已就绪\"}")).isSuccess());
 
         List<Message> appended = new ArrayList<>();
-        AgenticLoopInterceptor consumer = new AgenticLoopInterceptor(service);
+        AgenticLoopInterceptor consumer = new AgenticLoopInterceptor(service, new MailInputSource(service));
         consumer.onBeforeModelInvoke(loopContext("E2", ROOT_SESSION_ID, ROOT_AGENT_ID, appended));
 
         assertEquals(1, appended.size(), "取信钩子应把待处理邮件作为一条用户消息注入");

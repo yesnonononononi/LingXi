@@ -3,7 +3,7 @@ package com.summit.dp.workflow.infrastructure.lifecycle;
 import com.summit.core.agent.Execution;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.execution.application.service.ExecutionLocator;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.infrastructure.harness.ExecutionIdentity;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,17 +11,17 @@ import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
-/** 每个子执行终结都唤醒主理人处理交付；根尚在运行时保留唤醒，挂起后重放。 */
+/** 交付先可读，再解除依赖；通知只触发事实复查。 */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class SubExecutionLifecycle {
     private final SessionExecutionRegistry registry;
-    private final ExecutionResumeCoordinator resumeCoordinator;
+    private final InputWakeupService wakeups;
     private final ExecutionLocator executionLocator;
     private final SubAgentCompleteNotifier subAgentCompleteNotifier;
 
-    /** 子登记先落定再重放唤醒，避免新运行被迟到的挂起登记覆盖。 */
+    /** 挂起登记在控制槽位发布期间完成，避免迟到登记覆盖新运行。 */
     public void onSuspended(Execution execution) {
         Long rootExecutionId = resolveRootExecutionId(execution);
         if (rootExecutionId != null) {
@@ -33,16 +33,12 @@ public class SubExecutionLifecycle {
                         rootSessionId, childSessionId, rootExecutionId);
             }
         }
-        Long executionId = ExecutionIdentity.numericOrNull(execution.getId());
-        if (executionId != null) resumeCoordinator.flushPendingWake(executionId);
     }
 
     /**
-     * 子执行终结后唤醒根；根执行终态清理保留唤醒。
+     * 交付提交之后解除依赖，再通知根执行复查输入。
      */
     public void onFinished(Execution execution) {
-        Long executionId = ExecutionIdentity.numericOrNull(execution.getId());
-        if (executionId != null) resumeCoordinator.clearPendingWake(executionId);
         Long rootExecutionId = resolveRootExecutionId(execution);
         if (rootExecutionId == null) return;
         Long childSessionId = childSessionIdOrNull(execution);
@@ -52,11 +48,12 @@ public class SubExecutionLifecycle {
             return;
         }
 
-        // 先投递再注销，避免根执行在子登记清空后、提醒落库前提前收尾；通知失败仍保留既有唤醒路径。
+        // 先投递再注销，通知失败保留依赖，避免根执行在结果尚不可读时提前收尾。
         try {
             subAgentCompleteNotifier.notifyCommander(execution);
         } catch (RuntimeException error) {
             log.error("投递子执行终结提醒失败: executionId={}, rootExecutionId={}", execution.getId(), rootExecutionId, error);
+            return;
         }
 
         boolean becameEmpty = registry.unregisterChild(rootSessionId, childSessionId);
@@ -64,7 +61,7 @@ public class SubExecutionLifecycle {
         // 每份交付都需要主理人及时处理，剩余子执行只阻止根收尾，不能阻止恢复取信。
         log.info("子执行终结唤醒根: rootExecutionId={}, childSessionId={}, state={}, becameEmpty={}",
                 rootExecutionId, childSessionId, execution.getExecutionState(), becameEmpty);
-        resumeCoordinator.accept(rootExecutionId);
+        wakeups.resumeIfInputPending(rootExecutionId);
     }
 
     /**
@@ -77,11 +74,12 @@ public class SubExecutionLifecycle {
         if (rootSessionId == null || childSessionId == null) {
             return;
         }
-        boolean becameEmpty = registry.unregisterChild(rootSessionId, childSessionId);
-        if (becameEmpty && rootExecutionId != null) {
+        if (rootExecutionId != null) subAgentCompleteNotifier.notifyAbandoned(rootExecutionId, childSessionId);
+        registry.unregisterChild(rootSessionId, childSessionId);
+        if (rootExecutionId != null) {
             log.info("子执行未建立，兜底移除并唤醒根: rootExecutionId={}, childSessionId={}",
                     rootExecutionId, childSessionId);
-            resumeCoordinator.accept(rootExecutionId);
+            wakeups.resumeIfInputPending(rootExecutionId);
         }
     }
 

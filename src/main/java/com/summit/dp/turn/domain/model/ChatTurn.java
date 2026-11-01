@@ -180,6 +180,16 @@ public class ChatTurn {
         finish(ChatTurnStatus.CANCELLED, inputTokens, outputTokens, totalTokens, completedAt);
     }
 
+    /** 保留原失败原因，提示作为轮次属性持久化，不伪造聊天消息。 */
+    public void recordInputNotice(String notice) {
+        if (notice == null || notice.isBlank()) return;
+        String original = errorReason == null ? "" : errorReason;
+        int marker = original.indexOf("待处理输入已保留：");
+        if (marker >= 0) original = original.substring(0, marker).stripTrailing();
+        errorReason = original.isBlank() ? notice : original + "\n" + notice;
+    }
+
+
     /**
      * 记下面向用户的失败原因。
      *

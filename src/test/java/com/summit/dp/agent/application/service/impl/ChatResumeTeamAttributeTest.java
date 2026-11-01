@@ -21,6 +21,8 @@ import com.summit.dp.workflow.infrastructure.stream.SseEventPublisher;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
+import com.summit.dp.workflow.application.input.InputAutomationPolicy;
 
 import java.util.*;
 
@@ -66,6 +68,19 @@ class ChatResumeTeamAttributeTest {
                 mock(com.summit.dp.execution.application.service.ExecutionQueryService.class),
                 // 本测试只盯 resume 的属性补齐，重发链路用不到。
                 mock(ResendTargetResolver.class), mock(ConversationRollbackService.class));
+    }
+
+    @Test
+    void manualResumePersistsClearedPauseIntentBeforeControlRegistration() {
+        Execution execution = execution(Map.of(InputAutomationPolicy.USER_PAUSED, true,
+                InputAutomationPolicy.AUTO_ROUNDS, InputAutomationPolicy.MAX_AUTO_ROUNDS));
+        stubResume(execution, Session.builder().id(SESSION_ID).rootSessionId(Session.ROOT_SESSION_ID).name("团队会话").build());
+        service().resume(SESSION_ID);
+        InOrder order = inOrder(executionRepository, executionControl);
+        order.verify(executionRepository).save(execution);
+        order.verify(executionControl).resume(execution);
+        assertFalse(InputAutomationPolicy.attributes(execution).containsKey(InputAutomationPolicy.USER_PAUSED));
+        assertFalse(InputAutomationPolicy.attributes(execution).containsKey(InputAutomationPolicy.AUTO_ROUNDS));
     }
 
     @Test

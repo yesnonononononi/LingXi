@@ -1,5 +1,6 @@
 package com.summit.dp.session;
 
+import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
@@ -308,6 +309,9 @@ class ModelContextReplaceTransactionTest {
     /** 与生产一致的装配：真实文件库 + 真实事务管理器 bean + 被 spy 的仓储（仅插入屏障）。 */
     @Configuration
     static class Config {
+        @Bean
+        SessionExecutionRegistry executionRegistry() { return new SessionExecutionRegistry(); }
+
 
         @Bean(destroyMethod = "shutdown")
         SqliteTestDatabase database() {

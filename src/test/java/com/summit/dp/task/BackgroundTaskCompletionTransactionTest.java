@@ -11,7 +11,7 @@ import com.summit.dp.task.domain.model.Task.TaskStatus;
 import com.summit.dp.task.domain.repository.TaskRepository;
 import com.summit.dp.task.infrastructure.persistence.mapper.TaskMapper;
 import com.summit.dp.task.infrastructure.repository.TaskRepositoryImpl;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
+import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskCompletion;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,44 +36,33 @@ class BackgroundTaskCompletionTransactionTest {
     @Autowired private TaskRepository repository;
     @Autowired private TaskMapper mapper;
     @Autowired private BackgroundTaskCompletion completion;
-    @Autowired private ExecutionResumeCoordinator coordinator;
+    @Autowired private InputWakeupService coordinator;
 
     @BeforeEach void resetState() {
         mapper.delete(null);
         reset(coordinator);
     }
 
-    @Test void completionAndWakeRequestShareOneTransactionAndDispatchOccursAfterCommit() {
+    @Test void completionIsCommittedBeforeTheInputCheck() {
         Task task = task(100L);
         repository.save(task);
-        task.finish(TaskStatus.FAILED, "failed", 7, false);
-        AtomicBoolean dispatched = new AtomicBoolean();
-        when(coordinator.accept(100L)).thenAnswer(invocation -> {
-            assertTrue(TransactionSynchronizationManager.isActualTransactionActive());
+        task.finish(TaskStatus.FAILED, "failure", 7, false);
+        doAnswer(invocation -> {
             assertEquals(TaskStatus.FAILED, repository.findById(1L).orElseThrow().getStatus());
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override public void afterCommit() { dispatched.set(true); }
-            });
-            assertFalse(dispatched.get());
-            return ResumeDisposition.QUEUED;
-        });
+            return null;
+        }).when(coordinator).resumeIfInputPending(100L);
         completion.save(task);
-        assertTrue(dispatched.get());
         assertEquals(7, repository.findById(1L).orElseThrow().getExitCode());
-        verify(coordinator).accept(100L);
+        verify(coordinator).resumeIfInputPending(100L);
     }
 
-    @Test void wakeRequestFailureRollsBackTerminalStateSoWorkerCanRetryIt() {
+    @Test void failedPostCommitCheckDoesNotEraseTheAlreadyCommittedResult() {
         Task task = task(100L);
         repository.save(task);
         task.finish(TaskStatus.SUCCESS, "done", 0, false);
-        when(coordinator.accept(100L)).thenThrow(new ClientException("保存恢复请求失败"));
+        doThrow(new ClientException("输入检查不可用")).when(coordinator).resumeIfInputPending(100L);
         assertThrows(ClientException.class, () -> completion.save(task));
-        assertEquals(TaskStatus.PENDING, repository.findById(1L).orElseThrow().getStatus());
-        reset(coordinator);
-        completion.save(task);
         assertEquals(TaskStatus.SUCCESS, repository.findById(1L).orElseThrow().getStatus());
-        verify(coordinator).accept(100L);
     }
 
     @Test void legacyTasksAndIntermediateStatesDoNotInventWakeRecipients() {
@@ -84,7 +73,7 @@ class BackgroundTaskCompletionTransactionTest {
         Task running = Task.builder().id(2L).sessionId(10L).turnId(20L).executionId(100L).command("running").build();
         repository.save(running);
         completion.save(running);
-        verify(coordinator, never()).accept(anyLong());
+        verify(coordinator, never()).resumeIfInputPending(anyLong());
     }
 
     private static Task task(Long executionId) {
@@ -111,8 +100,8 @@ class BackgroundTaskCompletionTransactionTest {
             return SqliteTestDatabase.sqlSession(factory.getObject()).getMapper(TaskMapper.class);
         }
         @Bean TaskRepository repository(TaskMapper mapper) { return new TaskRepositoryImpl(mapper); }
-        @Bean ExecutionResumeCoordinator coordinator() { return mock(ExecutionResumeCoordinator.class); }
-        @Bean BackgroundTaskCompletion completion(TaskRepository repository, ExecutionResumeCoordinator coordinator) {
+        @Bean InputWakeupService coordinator() { return mock(InputWakeupService.class); }
+        @Bean BackgroundTaskCompletion completion(TaskRepository repository, InputWakeupService coordinator) {
             return new BackgroundTaskCompletion(repository, coordinator);
         }
     }
