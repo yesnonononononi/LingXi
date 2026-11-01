@@ -2,7 +2,7 @@
   "version": 1,
   "assetId": "lingxi-pet-p1-layers",
   "enabled": false,
-  "assetBase": "lxa://pet-v3/",
+  "assetBase": "lxa://pet-p1/",
   "canvas": {
     "width": 2048,
     "height": 3072
@@ -15,20 +15,50 @@
     "x": 1024,
     "y": 2908
   },
-  "densities": ["1x", "2x"],
+  "densities": [
+    "1x",
+    "2x"
+  ],
   "layers": [
     {
       "layerId": "underpainting",
       "role": "support",
       "z": 0,
       "parent": "root",
-      "pivot": { "u": 0.5, "v": 0.9466145833333334 },
-      "rect": { "x": 0, "y": 0, "width": 2048, "height": 3072 },
+      "pivot": {
+        "u": 0.5,
+        "v": 0.9466145833333334
+      },
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 2048,
+        "height": 3072
+      },
       "source": "support/underpainting",
       "blend": "normal",
       "opacity": 1,
       "occludes": [],
-      "files": {},
+      "files": {
+        "1x": {
+          "file": "layers/underpainting@1x.webp",
+          "url": "lxa://pet-p1/layers/underpainting@1x.webp",
+          "width": 160,
+          "height": 240,
+          "bytes": 2764,
+          "sha256": "2f9d61451582a7fcdb489a3705c91a97ee34b856f6967307fe8bea2afafe60b7",
+          "format": "webp-lossless"
+        },
+        "2x": {
+          "file": "layers/underpainting@2x.webp",
+          "url": "lxa://pet-p1/layers/underpainting@2x.webp",
+          "width": 320,
+          "height": 480,
+          "bytes": 7864,
+          "sha256": "1413d5eb1594e26ba9a9fbd4c144a8146b54c93ac36f2ff8aad63e3d50dd6624",
+          "format": "webp-lossless"
+        }
+      },
       "required": true
     },
     {
@@ -36,14 +66,46 @@
       "role": "animatable",
       "z": 10,
       "parent": "root",
-      "pivot": { "u": 0.64453125, "v": 0.7682291666666666 },
-      "rect": { "x": 0, "y": 0, "width": 2048, "height": 3072 },
-      "allowedRegion": { "x": 1180, "y": 2040, "width": 866, "height": 680 },
+      "pivot": {
+        "u": 0.64453125,
+        "v": 0.7682291666666666
+      },
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 2048,
+        "height": 3072
+      },
+      "allowedRegion": {
+        "x": 1180,
+        "y": 2040,
+        "width": 866,
+        "height": 680
+      },
       "source": "01_tail_base",
       "blend": "normal",
       "opacity": 1,
       "occludes": [],
-      "files": {},
+      "files": {
+        "1x": {
+          "file": "layers/tail-base@1x.webp",
+          "url": "lxa://pet-p1/layers/tail-base@1x.webp",
+          "width": 160,
+          "height": 240,
+          "bytes": 4344,
+          "sha256": "3c79baea717bab40fb3e90deefdb16d3ae5f5d98e10fb29c60049d0b2b74a1ee",
+          "format": "webp-lossless"
+        },
+        "2x": {
+          "file": "layers/tail-base@2x.webp",
+          "url": "lxa://pet-p1/layers/tail-base@2x.webp",
+          "width": 320,
+          "height": 480,
+          "bytes": 9976,
+          "sha256": "c09feceea7639c9440471345b49e91797ee4a02c8f982bea7409016b9a537694",
+          "format": "webp-lossless"
+        }
+      },
       "required": true
     },
     {
@@ -51,14 +113,46 @@
       "role": "animatable",
       "z": 15,
       "parent": "tail-base",
-      "pivot": { "u": 0.8984375, "v": 0.703125 },
-      "rect": { "x": 0, "y": 0, "width": 2048, "height": 3072 },
-      "allowedRegion": { "x": 1400, "y": 1560, "width": 646, "height": 630 },
+      "pivot": {
+        "u": 0.8984375,
+        "v": 0.703125
+      },
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 2048,
+        "height": 3072
+      },
+      "allowedRegion": {
+        "x": 1400,
+        "y": 1560,
+        "width": 646,
+        "height": 630
+      },
       "source": "02_tail_tip",
       "blend": "normal",
       "opacity": 1,
       "occludes": [],
-      "files": {},
+      "files": {
+        "1x": {
+          "file": "layers/tail-tip@1x.webp",
+          "url": "lxa://pet-p1/layers/tail-tip@1x.webp",
+          "width": 160,
+          "height": 240,
+          "bytes": 2718,
+          "sha256": "126f5f5a8b238b294626f8e705264949ad07bfa836c60082762fcb8141938780",
+          "format": "webp-lossless"
+        },
+        "2x": {
+          "file": "layers/tail-tip@2x.webp",
+          "url": "lxa://pet-p1/layers/tail-tip@2x.webp",
+          "width": 320,
+          "height": 480,
+          "bytes": 7594,
+          "sha256": "8d453b10df8c9a115a1b13d2b095ac0a00f668fd9c1a97d72560b9690124db8c",
+          "format": "webp-lossless"
+        }
+      },
       "required": true
     },
     {
@@ -66,13 +160,40 @@
       "role": "animatable",
       "z": 20,
       "parent": "root",
-      "pivot": { "u": 0.236328125, "v": 0.23046875 },
-      "rect": { "x": 0, "y": 0, "width": 2048, "height": 3072 },
+      "pivot": {
+        "u": 0.236328125,
+        "v": 0.23046875
+      },
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 2048,
+        "height": 3072
+      },
       "source": "03_ear_left",
       "blend": "normal",
       "opacity": 1,
       "occludes": [],
-      "files": {},
+      "files": {
+        "1x": {
+          "file": "layers/ear-left@1x.webp",
+          "url": "lxa://pet-p1/layers/ear-left@1x.webp",
+          "width": 160,
+          "height": 240,
+          "bytes": 3136,
+          "sha256": "1721b078f99c69c179aea9a53b20e202dba52a67cbca7154fa60fa2c8a07b0b5",
+          "format": "webp-lossless"
+        },
+        "2x": {
+          "file": "layers/ear-left@2x.webp",
+          "url": "lxa://pet-p1/layers/ear-left@2x.webp",
+          "width": 320,
+          "height": 480,
+          "bytes": 9174,
+          "sha256": "e45f280a5cfeaed6e47a5f645b7df95b6d3e5c4e4b7d141f669565653aeacd71",
+          "format": "webp-lossless"
+        }
+      },
       "required": true
     },
     {
@@ -80,13 +201,40 @@
       "role": "animatable",
       "z": 25,
       "parent": "root",
-      "pivot": { "u": 0.6875, "v": 0.22786458333333334 },
-      "rect": { "x": 0, "y": 0, "width": 2048, "height": 3072 },
+      "pivot": {
+        "u": 0.6875,
+        "v": 0.22786458333333334
+      },
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 2048,
+        "height": 3072
+      },
       "source": "04_ear_right",
       "blend": "normal",
       "opacity": 1,
       "occludes": [],
-      "files": {},
+      "files": {
+        "1x": {
+          "file": "layers/ear-right@1x.webp",
+          "url": "lxa://pet-p1/layers/ear-right@1x.webp",
+          "width": 160,
+          "height": 240,
+          "bytes": 3336,
+          "sha256": "048d22edb741ed7f3dee543b08db25d1874a9efc45991aad68471f7a000c7efd",
+          "format": "webp-lossless"
+        },
+        "2x": {
+          "file": "layers/ear-right@2x.webp",
+          "url": "lxa://pet-p1/layers/ear-right@2x.webp",
+          "width": 320,
+          "height": 480,
+          "bytes": 9858,
+          "sha256": "820bcf561c6f620181be1796f9f07dcad70780685555e5003574b360a53f34d4",
+          "format": "webp-lossless"
+        }
+      },
       "required": true
     },
     {
@@ -94,13 +242,45 @@
       "role": "support",
       "z": 30,
       "parent": "root",
-      "pivot": { "u": 0.5, "v": 0.9466145833333334 },
-      "rect": { "x": 0, "y": 0, "width": 2048, "height": 3072 },
+      "pivot": {
+        "u": 0.5,
+        "v": 0.9466145833333334
+      },
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 2048,
+        "height": 3072
+      },
       "source": "support/body-occluder",
       "blend": "normal",
       "opacity": 1,
-      "occludes": ["tail-base", "tail-tip", "ear-left", "ear-right"],
-      "files": {},
+      "occludes": [
+        "tail-base",
+        "tail-tip",
+        "ear-left",
+        "ear-right"
+      ],
+      "files": {
+        "1x": {
+          "file": "layers/body-occluder@1x.webp",
+          "url": "lxa://pet-p1/layers/body-occluder@1x.webp",
+          "width": 160,
+          "height": 240,
+          "bytes": 39472,
+          "sha256": "470289e2c9e3d618a7f9f06548ad3b47946309f5d6d025a5434c78b42f2e010b",
+          "format": "webp-lossless"
+        },
+        "2x": {
+          "file": "layers/body-occluder@2x.webp",
+          "url": "lxa://pet-p1/layers/body-occluder@2x.webp",
+          "width": 320,
+          "height": 480,
+          "bytes": 120868,
+          "sha256": "94c0457613cb9ba63b0e92d2098e9b364a03e2934fc1f39fb478e27487c4bbdc",
+          "format": "webp-lossless"
+        }
+      },
       "required": true
     },
     {
@@ -108,13 +288,40 @@
       "role": "animatable",
       "z": 40,
       "parent": "root",
-      "pivot": { "u": 0.52, "v": 0.08 },
-      "rect": { "x": 0, "y": 0, "width": 2048, "height": 3072 },
+      "pivot": {
+        "u": 0.52,
+        "v": 0.08
+      },
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 2048,
+        "height": 3072
+      },
       "source": "05_ahoge",
       "blend": "normal",
       "opacity": 1,
       "occludes": [],
-      "files": {},
+      "files": {
+        "1x": {
+          "file": "layers/ahoge@1x.webp",
+          "url": "lxa://pet-p1/layers/ahoge@1x.webp",
+          "width": 160,
+          "height": 240,
+          "bytes": 2444,
+          "sha256": "a85222aba158bc6de8d1f4a930aa74a6565d2f750e8a065fb8d5b8cab63a3122",
+          "format": "webp-lossless"
+        },
+        "2x": {
+          "file": "layers/ahoge@2x.webp",
+          "url": "lxa://pet-p1/layers/ahoge@2x.webp",
+          "width": 320,
+          "height": 480,
+          "bytes": 7156,
+          "sha256": "cbf84b85622866b19db2dc693bcef0a73ce816bc18cafb77248563702192815d",
+          "format": "webp-lossless"
+        }
+      },
       "required": true
     },
     {
@@ -122,13 +329,40 @@
       "role": "animatable",
       "z": 45,
       "parent": "root",
-      "pivot": { "u": 0.6, "v": 0.14 },
-      "rect": { "x": 0, "y": 0, "width": 2048, "height": 3072 },
+      "pivot": {
+        "u": 0.6,
+        "v": 0.14
+      },
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 2048,
+        "height": 3072
+      },
       "source": "06_bow",
       "blend": "normal",
       "opacity": 1,
       "occludes": [],
-      "files": {},
+      "files": {
+        "1x": {
+          "file": "layers/bow@1x.webp",
+          "url": "lxa://pet-p1/layers/bow@1x.webp",
+          "width": 160,
+          "height": 240,
+          "bytes": 2168,
+          "sha256": "c2ba6d5da207963d071b256ae835e373c68dc9190793c53e69cb38b3ce32b13a",
+          "format": "webp-lossless"
+        },
+        "2x": {
+          "file": "layers/bow@2x.webp",
+          "url": "lxa://pet-p1/layers/bow@2x.webp",
+          "width": 320,
+          "height": 480,
+          "bytes": 6414,
+          "sha256": "ba17dd1ee6ba040a135c11258074fb0a02b24c567a018ecd31e9fdd5643ed438",
+          "format": "webp-lossless"
+        }
+      },
       "required": true
     },
     {
@@ -136,13 +370,43 @@
       "role": "support",
       "z": 50,
       "parent": "root",
-      "pivot": { "u": 0.5, "v": 0.9466145833333334 },
-      "rect": { "x": 0, "y": 0, "width": 2048, "height": 3072 },
+      "pivot": {
+        "u": 0.5,
+        "v": 0.9466145833333334
+      },
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 2048,
+        "height": 3072
+      },
       "source": "support/foreground-occluder",
       "blend": "normal",
       "opacity": 1,
-      "occludes": ["ahoge", "bow"],
-      "files": {},
+      "occludes": [
+        "ahoge",
+        "bow"
+      ],
+      "files": {
+        "1x": {
+          "file": "layers/foreground-occluder@1x.webp",
+          "url": "lxa://pet-p1/layers/foreground-occluder@1x.webp",
+          "width": 160,
+          "height": 240,
+          "bytes": 1844,
+          "sha256": "ea1559ad9a056661dc8bbdd1d13d6508110c6eb89069cfae3e08e72c1f7a2094",
+          "format": "webp-lossless"
+        },
+        "2x": {
+          "file": "layers/foreground-occluder@2x.webp",
+          "url": "lxa://pet-p1/layers/foreground-occluder@2x.webp",
+          "width": 320,
+          "height": 480,
+          "bytes": 4904,
+          "sha256": "94cf946fea60b8f7bc6521a05d21cb7d674dd1f6dbfc8ae2f494026e44061edc",
+          "format": "webp-lossless"
+        }
+      },
       "required": true
     }
   ]

@@ -17,13 +17,23 @@
  *
  * @module scripts/check-pet-layers
  */
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ASSETS_JSON_PATH, DEFAULT_OUT_DIR, sha256Of } from './build-pet-assets.mjs';
+import { ASSETS_JSON_PATH, sha256Of } from './build-pet-assets.mjs';
 import { FRONTEND_ROOT, readJsonFile } from './build-pet-geometry.mjs';
 import { readImageSize } from './pet-image-headers.mjs';
-import { LAYERS_JSON_PATH } from './build-pet-layers.mjs';
+import {
+  DEFAULT_LAYER_OUT_DIR,
+  LAYERS_JSON_PATH,
+  LAYERS_TOTAL_BUDGET,
+  LAYER_BYTE_BUDGET,
+  REQUIRED_FILE_FIELDS,
+  SUPPORTED_FORMATS,
+  defaultLayerSourceDir,
+  diskPathOf,
+  maskPathsOf,
+} from './build-pet-layers.mjs';
 
 /** 允许的分辨率档位。 */
 export const SUPPORTED_DENSITIES = ['1x', '2x'];
@@ -395,58 +405,167 @@ export function validateAgainstAssets(manifest, assets) {
 }
 
 /**
- * 与磁盘对账（文件存在、体积、sha256、像素尺寸）。
+ * 与磁盘对账（字段齐全、文件存在、体积、sha256、像素尺寸、2:3 比例）。
+ *
+ * <p><b>"缺字段"是硬错而不是跳过：</b>层清单是生成物，缺一个字段说明回填没跑或跑了一半；
+ * 静默跳过会让"看起来绿了其实少一档"这种故障留到线上。所以只要某一层出现了 `files`，
+ * 它就必须把 `manifest.densities` 里**每一档**都写全。</p>
  *
  * @param {object} manifest 层清单
- * @param {{ outDir?: string, checkDisk?: boolean }} [options] 选项
+ * @param {{ outDir?: string }} [options] 选项
  * @returns {string[]} 问题列表
  */
 export function validateAgainstDisk(manifest, options = {}) {
-  const outDir = options.outDir ?? DEFAULT_OUT_DIR;
-  const layers = Array.isArray(manifest.layers) ? manifest.layers : [];
+  const outDir = options.outDir ?? DEFAULT_LAYER_OUT_DIR;
+  const layers = Array.isArray(manifest?.layers) ? manifest.layers : [];
+  const densities = Array.isArray(manifest?.densities) && manifest.densities.length > 0 ? manifest.densities : SUPPORTED_DENSITIES;
+  const canvas = manifest?.canvas ?? {};
+  const canvasAspect = Number(canvas.width) / Number(canvas.height);
   const problems = [];
+
   for (const layer of layers) {
-    const files = layer?.files ?? {};
-    const densities = Object.keys(files);
-    if (densities.length === 0) {
-      if (manifest.enabled === true) problems.push(`层 ${String(layer?.layerId)} 没有任何密度的文件，开闸后该层必然缺失`);
+    const files = layer && layer.files && typeof layer.files === 'object' ? layer.files : {};
+    const prefix = `层 ${String(layer && layer.layerId)}`;
+    if (Object.keys(files).length === 0) {
+      problems.push(`${prefix} 没有任何密度的文件条目（重跑 node scripts/build-pet-layers.mjs 回填）`);
       continue;
     }
-    for (const [density, file] of Object.entries(files)) {
-      const absolute = resolve(outDir, String(file.file));
+    for (const density of densities) {
+      const file = files[density];
+      const label = `${prefix}@${density}`;
+      if (!file || typeof file !== 'object') {
+        problems.push(`${label} 缺少 files.${density}（清单只允许完整，不允许缺档）`);
+        continue;
+      }
+      const missingFields = REQUIRED_FILE_FIELDS.filter((field) => file[field] === undefined || file[field] === null);
+      if (missingFields.length > 0) {
+        problems.push(`${label} 缺字段 ${missingFields.join(' / ')}（必须显式补齐，不允许静默跳过）`);
+        continue;
+      }
+      const absolute = diskPathOf(outDir, String(file.file));
       if (!existsSync(absolute)) {
-        // 缺件在"未开闸"时是正常中间态：只报错不崩，且给出可执行提示
-        if (manifest.enabled === true) problems.push(`层 ${layer.layerId}@${density} 的文件不存在: ${absolute}`);
+        problems.push(`${label} 的文件不存在: ${absolute}（重跑 build:pet-layers）`);
         continue;
       }
       const actualBytes = readFileSync(absolute).length;
       if (Number(file.bytes) !== actualBytes) {
-        problems.push(`层 ${layer.layerId}@${density} 体积不一致：清单 ${file.bytes} vs 磁盘 ${actualBytes}（请重跑 build:pet-layers）`);
+        problems.push(`${label} 体积不一致：清单 ${file.bytes} vs 磁盘 ${actualBytes}（文件被重出但清单没回写）`);
+      }
+      if (!SUPPORTED_FORMATS.includes(file.format)) {
+        problems.push(`${label} format 只允许 ${SUPPORTED_FORMATS.join(' / ')}，实际为 ${String(file.format)}`);
+      }
+      const budget = LAYER_BYTE_BUDGET[density];
+      if (isFiniteNumber(budget) && Number(file.bytes) > budget) {
+        problems.push(`${label} 体积 ${Number(file.bytes)}B 超出单层预算 ${budget}B（先降编码质量，不要改画布尺寸）`);
       }
       const actualSha = sha256Of(absolute);
       if (actualSha !== file.sha256) {
-        problems.push(`层 ${layer.layerId}@${density} sha256 不一致（文件被重出但清单没回写）`);
+        problems.push(`${label} sha256 不一致（文件被重出但清单没回写）`);
       }
+      let size = null;
       try {
-        const size = readImageSize(absolute);
-        if (size.width !== Number(file.width) || size.height !== Number(file.height)) {
-          problems.push(
-            `层 ${layer.layerId}@${density} 像素尺寸不一致：清单 ${file.width}×${file.height} vs 实际 ${size.width}×${size.height}`,
-          );
-        }
+        size = readImageSize(absolute);
       } catch (err) {
-        problems.push(`层 ${layer.layerId}@${density} 图像头解析失败: ${(err && err.message) || err}`);
+        problems.push(`${label} 图像头解析失败: ${(err && err.message) || err}`);
+        continue;
+      }
+      if (size.width !== Number(file.width) || size.height !== Number(file.height)) {
+        problems.push(`${label} 像素尺寸不一致：清单 ${file.width}×${file.height} vs 实际 ${size.width}×${size.height}`);
+      }
+      const aspect = size.width / size.height;
+      if (!(canvasAspect > 0) || Math.abs(aspect - canvasAspect) > ASPECT_TOLERANCE) {
+        problems.push(
+          `${label} 像素比例 ${size.width}×${size.height} 不是画布比例（${String(canvas.width)}×${String(canvas.height)}）：等比 contain 会留白或裁掉尾巴`,
+        );
       }
     }
   }
-  if (manifest.enabled === true) {
-    for (const density of Array.isArray(manifest.densities) ? manifest.densities : []) {
-      for (const layer of layers) {
-        if (!layer?.files?.[density]) problems.push(`开闸状态下层 ${String(layer?.layerId)} 缺少 ${density} 档文件`);
+
+  // 合计预算：单层不超、合计也可能超（层数会变多）。两档合计对照"层增量 ≤1.6MB"。
+  let totalBytes = 0;
+  let anyFile = false;
+  for (const layer of layers) {
+    const files = layer && layer.files && typeof layer.files === 'object' ? layer.files : {};
+    for (const file of Object.values(files)) {
+      if (!file || !isFiniteNumber(file.bytes)) continue;
+      anyFile = true;
+      totalBytes += Number(file.bytes);
+    }
+  }
+  if (anyFile && totalBytes > LAYERS_TOTAL_BUDGET) {
+    problems.push(
+      `分层资产合计 ${totalBytes}B 超出层增量预算 ${LAYERS_TOTAL_BUDGET}B（先降编码质量，不要改画布尺寸）`,
+    );
+  }
+  return problems;
+}
+
+/**
+ * 运行目录里不许有孤儿文件（清单没引用的层图）。
+ *
+ * <p>孤儿文件不会让页面出错，但会让"包体积为什么比清单算出来的大"变成一个查不出的谜；
+ * 更糟的是它可能被误当成"还在用的资产"而不敢删。构建脚本会自动清理，门禁负责发现。</p>
+ *
+ * @param {object} manifest 层清单
+ * @param {{ outDir?: string }} [options] 选项
+ * @returns {string[]} 问题列表
+ */
+export function validateNoOrphans(manifest, options = {}) {
+  const outDir = options.outDir ?? DEFAULT_LAYER_OUT_DIR;
+  if (!existsSync(outDir)) return [];
+  const referenced = new Set();
+  const layers = Array.isArray(manifest?.layers) ? manifest.layers : [];
+  for (const layer of layers) {
+    const files = layer && layer.files && typeof layer.files === 'object' ? layer.files : {};
+    for (const file of Object.values(files)) {
+      if (file && typeof file.file === 'string') referenced.add(basename(String(file.file)));
+    }
+  }
+  const problems = [];
+  for (const entry of readdirSync(outDir, { withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    if (referenced.has(entry.name)) continue;
+    problems.push(`运行目录存在孤儿文件 ${entry.name}（清单没有引用它；重跑 build:pet-layers 会自动清理）`);
+  }
+  return problems;
+}
+
+/**
+ * 掩膜必须存在（构建期校验输入，**不进运行时包**）。
+ *
+ * <p>掩膜证明"可见像素 / 被遮挡补绘像素"是分开的；缺了它，以后想按掩膜做遮挡判断就只能重画。
+ * 源目录整块不存在时（P1 未到货的中间态）不报错——那是"没到"而不是"做错"。</p>
+ *
+ * @param {object} manifest 层清单
+ * @param {{ sourceDir?: string }} [options] 选项
+ * @returns {string[]} 问题列表
+ */
+export function validateMasks(manifest, options = {}) {
+  const sourceDir = options.sourceDir ?? defaultLayerSourceDir();
+  if (!existsSync(sourceDir)) return [];
+  const problems = [];
+  const layers = Array.isArray(manifest?.layers) ? manifest.layers : [];
+  for (const layer of layers) {
+    if (!layer || layer.role !== 'animatable') continue;
+    if (typeof layer.source !== 'string' || layer.source.length === 0) continue;
+    const masks = maskPathsOf(sourceDir, layer.source);
+    for (const [kind, absolute] of Object.entries(masks)) {
+      if (!existsSync(absolute)) {
+        problems.push(`层 ${layer.layerId} 缺少 ${kind} 掩膜 ${basename(absolute)}（母版目录不完整）`);
       }
     }
   }
   return problems;
+}
+
+/**
+ * P1 母版目录是否存在（决定"缺件"是中间态还是错误）。
+ *
+ * @param {string} [sourceDir] 母版目录
+ * @returns {boolean}
+ */
+export function sourceDirPresent(sourceDir = defaultLayerSourceDir()) {
+  return existsSync(sourceDir);
 }
 
 /**
@@ -479,7 +598,20 @@ export function runLayerGate(options = {}) {
     }
   }
 
-  problems.push(...validateAgainstDisk(manifest, { outDir: options.outDir ?? DEFAULT_OUT_DIR }));
+  // 落盘类校验分两种状态：
+  //   · 母版目录在 或 清单里已经有 files → 必须严格对齐（缺字段/缺文件/比例不对/孤儿 全部硬错）
+  //   · 母版目录整块不在 且 files 全空 → "资产未到货"的合法中间态，跳过落盘校验并说明原因
+  const sourceDir = options.sourceDir ?? defaultLayerSourceDir();
+  const p1Present = sourceDirPresent(sourceDir);
+  const layersWithFiles = (Array.isArray(manifest.layers) ? manifest.layers : []).filter(
+    (layer) => layer && layer.files && typeof layer.files === 'object' && Object.keys(layer.files).length > 0,
+  );
+  const missingAssetState = !p1Present && layersWithFiles.length === 0;
+  if (!missingAssetState) {
+    problems.push(...validateAgainstDisk(manifest, { outDir: options.outDir ?? DEFAULT_LAYER_OUT_DIR }));
+    problems.push(...validateNoOrphans(manifest, { outDir: options.outDir ?? DEFAULT_LAYER_OUT_DIR }));
+    problems.push(...validateMasks(manifest, { sourceDir }));
+  }
 
   // 动作目录同属分层契约：一起进这道门禁，避免"层齐了但动作数据写坏"带病上线
   const motionsPath = options.motionsPath ?? MOTIONS_JSON_PATH;
@@ -499,8 +631,25 @@ export function runLayerGate(options = {}) {
         ` 画布=${String(manifest.canvas?.width)}×${String(manifest.canvas?.height)}`,
     );
     if (skipped) console.log('[pet-layers] 层清单为空：P1 分层件未交付，运行期走 composite（与今天等价）');
+    if (missingAssetState) console.log('[pet-layers] P1 母版目录不存在且 files 未回填：跳过落盘校验（资产未到货的合法中间态）');
+    if (layersWithFiles.length > 0) {
+      const totals = { '1x': 0, '2x': 0 };
+      let maxBy = { '1x': 0, '2x': 0 };
+      for (const layer of layersWithFiles) {
+        for (const density of ['1x', '2x']) {
+          const file = layer.files[density];
+          if (!file) continue;
+          totals[density] += Number(file.bytes) || 0;
+          maxBy[density] = Math.max(maxBy[density], Number(file.bytes) || 0);
+        }
+      }
+      console.log(
+        `[pet-layers] 体积 @1x 合计=${totals['1x']}B 单张最大=${maxBy['1x']}B；` +
+          `@2x 合计=${totals['2x']}B 单张最大=${maxBy['2x']}B`,
+      );
+    }
   }
-  return { ok: problems.length === 0, problems, manifest, skipped };
+  return { ok: problems.length === 0, problems, manifest, skipped, missingAssetState, p1Present };
 }
 
 /**
@@ -516,7 +665,9 @@ export function main() {
       console.log(
         result.skipped
           ? '✅ gate:pet:layers 通过：层清单为空且结构合法（P1 未交付，运行期走 composite）'
-          : '✅ gate:pet:layers 通过：层契约自洽、锚点与资产清单一致、文件与磁盘对齐',
+          : result.missingAssetState
+            ? '✅ gate:pet:layers 通过：层契约自洽（P1 母版未到货、files 未回填，运行期走 composite）'
+            : '✅ gate:pet:layers 通过：层契约自洽、锚点与资产清单一致、files 与磁盘对齐（字段齐全/体积/sha256/2:3 比例）、无孤儿文件、掩膜齐备',
       );
       return 0;
     }

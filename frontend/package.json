@@ -22,7 +22,7 @@
     "build:pet-geometry": "node scripts/build-pet-geometry.mjs",
     "build:pet-assets": "node scripts/build-pet-assets.mjs",
     "build:pet-layers": "node scripts/build-pet-layers.mjs",
-    "test:pet": "node --test tests/petGeometry.test.cjs tests/petAssetManifest.test.cjs && npx tsx --test tests/petLayout.test.ts tests/petPresentation.test.ts tests/petHitTester.test.ts tests/petMicroMotion.test.ts tests/petCrossfade.test.ts tests/petBehavior.test.ts tests/petLayerPlan.test.ts tests/petMotionCompiler.test.ts tests/petEffectMargin.test.ts tests/petLayeredPresentation.test.ts tests/petPresentationSelector.test.ts",
+    "test:pet": "node --test tests/petGeometry.test.cjs tests/petAssetManifest.test.cjs && npx tsx --test tests/petLayout.test.ts tests/petPresentation.test.ts tests/petHitTester.test.ts tests/petMicroMotion.test.ts tests/petCrossfade.test.ts tests/petBehavior.test.ts tests/petLayerPlan.test.ts tests/petMotionCompiler.test.ts tests/petEffectMargin.test.ts tests/petLayeredPresentation.test.ts tests/petPresentationSelector.test.ts tests/petLayerAssets.test.ts",
     "visual:baseline": "node scripts/visual/capture.mjs --mode baseline",
     "visual:check": "node scripts/visual/capture.mjs --mode check",
     "visual:components:baseline": "electron scripts/visual/component-scenes.cjs --mode baseline",

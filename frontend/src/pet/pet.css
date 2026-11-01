@@ -571,6 +571,20 @@ body {
   pointer-events: none;
 }
 
+/**
+ * 分层模式下把"整帧的投影"补到层栈上。
+ *
+ * <p>M6-a 真机比对实测：层栈内容与压平帧逐像素一致（宠物体内部零差异），但压平帧
+ * `.pet-art-frame` 带着 `drop-shadow(0 3px 8px var(--pet-glow))`，层栈没有 → 剪影外圈
+ * 少了一圈光晕，肉眼可见"分层模式没影子"。把同一个滤镜加在容器上（滤镜作用于合成后的
+ * 整组，与整帧算一次投影等价），两种模式就对齐了。</p>
+ *
+ * <p>只写在 `layered` 下：`partial` 模式压平帧仍是可见底图，再给层栈加一次投影会叠出双影。</p>
+ */
+#pet-root[data-composite-mode='layered'] .pet-layers {
+  filter: drop-shadow(0 3px 8px var(--pet-glow));
+}
+
 .pet-layer {
   position: absolute;
   inset: 0;
@@ -600,6 +614,20 @@ body {
 #pet-root[data-power='off'] .pet-layer,
 #pet-root[data-motion-rest='1'] .pet-layer {
   animation-play-state: paused;
+}
+
+/**
+ * `layered` 模式下压平帧必须让位。
+ *
+ * <p>9 层齐了以后，层栈本身就是完整画面；压平帧留在下面不吃亏也不显眼 —— **只在静止时**。
+ * 一旦 idle 的摆尾/呆毛动起来，层栈里的尾巴转了、下面那张静止帧的尾巴没转，
+ * 屏幕上就会出现"两条尾巴"的重影。所以整帧只在 `partial` / `composite` 下可见。</p>
+ *
+ * <p>用 `data-composite-mode`（`LayeredPresentation.applyPlan` 写的）而不是 JS 直接改
+ * `hidden`：写入面收敛在 `data-*` + CSS 一处，排障时看属性就知道当前是哪种模式。</p>
+ */
+#pet-root[data-composite-mode='layered'] .pet-art-frame {
+  opacity: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
