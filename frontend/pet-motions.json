@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "defaults": {
+    "samples": 12,
+    "maxLagMs": 320,
+    "unit": "deg"
+  },
+  "motions": {}
+}

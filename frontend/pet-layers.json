@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "assetId": "lingxi-pet-p1-layers",
+  "enabled": false,
+  "assetBase": "lxa://pet-v3/",
+  "canvas": {
+    "width": 2048,
+    "height": 3072
+  },
+  "nativeCanvas": {
+    "width": 1024,
+    "height": 1536
+  },
+  "anchor": {
+    "x": 1024,
+    "y": 2908
+  },
+  "densities": ["1x", "2x"],
+  "layers": []
+}
