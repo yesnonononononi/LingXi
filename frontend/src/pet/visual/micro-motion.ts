@@ -117,6 +117,38 @@ export function applyMotionDuration(root: HTMLElement, motion: MotionId): number
 }
 
 /**
+ * 系统「减少动态效果」媒体查询串。
+ *
+ * <p>抽成常量是为了让 CSS 的 `@media` 与 JS 的判断永远指同一个查询串。</p>
+ */
+export const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
+
+/**
+ * 系统是否要求减少动态效果。
+ *
+ * <p><b>为什么 JS 侧也要判：</b>CSS 能停掉动画，但停不掉 JS 里的定时器——
+ * 眨眼与"偶发停顿"节奏器是 `setTimeout` 驱动的，只靠 CSS 会在用户开了
+ * "减少动态"之后继续跑定时器，白吃 CPU 还继续打断表情。</p>
+ *
+ * <p>`matchMedia` 以参数形式注入，测试可以直接传假实现，不必起浏览器。</p>
+ *
+ * @param matchMedia `window.matchMedia`（可缺省；缺省视为不支持 → 不减少）
+ * @returns 是否要求减少动态
+ */
+export function prefersReducedMotion(
+  matchMedia?: ((query: string) => { readonly matches: boolean }) | null,
+): boolean {
+  if (typeof matchMedia !== 'function') return false;
+  try {
+    const result = matchMedia(REDUCED_MOTION_QUERY);
+    return !!result && result.matches === true;
+  } catch {
+    // 某些宿主会因非法查询串抛错：拿不到偏好就按"不减少"处理，宁多动不少动
+    return false;
+  }
+}
+
+/**
  * 是否开启调试 UI。
  *
  * <p><b>发布态必须隐藏</b>（用户明确要求别再露出调试标记）：只有 `?debug=1` 或开发态才开。

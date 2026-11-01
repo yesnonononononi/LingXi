@@ -29,11 +29,82 @@ import {
   BASE_MOTION_TIMING,
   MOTION_DURATION_VARIABLES,
   POWER_DURATION_MULTIPLIER,
+  REDUCED_MOTION_QUERY,
   isDebugEnabled,
   motionAnimationMs,
   motionTiming,
   parseQueryFlag,
+  prefersReducedMotion,
 } from '../src/pet/visual/micro-motion';
+import {
+  MOTION_ACTIVE_MAX_MS,
+  MOTION_ACTIVE_MIN_MS,
+  MOTION_REST_ATTRIBUTE,
+  MOTION_REST_MAX_MS,
+  MOTION_REST_MIN_MS,
+  MOTION_REST_PROBABILITY,
+  MotionPacer,
+  nextMotionPace,
+} from '../src/pet/visual/motion-pacer';
+import type { TimerPort } from '../src/pet/presentation/bus';
+
+/** 可控时钟 + 定时器（把节奏推进变成同步断言）。 */
+class FakeTimer implements TimerPort {
+  /** 当前虚拟时间（毫秒）。 */
+  private time = 0;
+
+  /** 自增句柄。 */
+  private seq = 0;
+
+  /** 待执行任务。 */
+  private readonly tasks = new Map<number, { at: number; handler: () => void }>();
+
+  /**
+   * 注册定时器。
+   *
+   * @param handler 回调
+   * @param delayMs 延迟
+   * @returns 句柄
+   */
+  setTimeout(handler: () => void, delayMs: number): number {
+    this.seq += 1;
+    this.tasks.set(this.seq, { at: this.time + delayMs, handler });
+    return this.seq;
+  }
+
+  /**
+   * 取消定时器。
+   *
+   * @param handle 句柄
+   */
+  clearTimeout(handle: number): void {
+    this.tasks.delete(handle);
+  }
+
+  /**
+   * 推进虚拟时间并执行到期任务。
+   *
+   * @param ms 毫秒
+   */
+  advance(ms: number): void {
+    this.time += ms;
+    for (const [id, task] of [...this.tasks.entries()]) {
+      if (task.at <= this.time) {
+        this.tasks.delete(id);
+        task.handler();
+      }
+    }
+  }
+
+  /**
+   * 待执行任务数。
+   *
+   * @returns 数量
+   */
+  pending(): number {
+    return this.tasks.size;
+  }
+}
 
 /**
  * `pet.css` 全文（CSS 契约断言用）。
@@ -244,3 +315,94 @@ test('CSS：MOTION_DURATION_VARIABLES 全部被 CSS 使用', () => {
     assert.ok(CSS.includes(name), `pet.css 未使用时长变量 ${name}`);
   }
 });
+
+// ------------------------------------------------- 节奏（偶发长停顿）与减少动态
+
+test('节奏：一个周期 = 动的时长 + 可能的停顿，取值都落在区间内', () => {
+  const active = nextMotionPace(seqRng([0, 0, 0]));
+  assert.equal(active.activeMs, MOTION_ACTIVE_MIN_MS, 'rng=0 取动的下界');
+  assert.equal(active.restMs, MOTION_REST_MIN_MS, '进入停顿时 rng=0 取下界');
+
+  const long = nextMotionPace(seqRng([1, 0, 1]));
+  assert.equal(long.activeMs, MOTION_ACTIVE_MAX_MS);
+  assert.equal(long.restMs, MOTION_REST_MAX_MS);
+});
+
+test('节奏：不是每个周期都停顿（概率 60%，否则读成卡住）', () => {
+  const skip = nextMotionPace(seqRng([0.5, MOTION_REST_PROBABILITY + 0.01, 0]));
+  assert.equal(skip.restMs, 0, '超过概率阈值时本周期不停顿');
+  const rest = nextMotionPace(seqRng([0.5, MOTION_REST_PROBABILITY - 0.01, 0.5]));
+  assert.ok(rest.restMs >= MOTION_REST_MIN_MS, '进入停顿时必须给出正的停顿时长');
+});
+
+test('节奏：MotionPacer 按节奏在"动/歇"之间切换，stop 会复位', () => {
+  const timer = new FakeTimer();
+  const states: boolean[] = [];
+  // 第一个周期：动 4200（rng=0）→ 停 1200（rng=0/0）
+  const pacer = new MotionPacer((resting) => states.push(resting), seqRng([0, 0, 0, 1, 0, 0]), timer);
+  pacer.start();
+  assert.equal(pacer.isResting, false);
+  timer.advance(MOTION_ACTIVE_MIN_MS);
+  assert.equal(pacer.isResting, true);
+  assert.deepEqual(states, [true]);
+  timer.advance(MOTION_REST_MIN_MS);
+  assert.equal(pacer.isResting, false);
+  assert.deepEqual(states, [true, false]);
+  pacer.stop();
+  assert.equal(pacer.isRunning, false);
+  assert.equal(timer.pending(), 0, 'stop 之后不许留下定时器');
+});
+
+test('节奏：stop 时若正处停顿时段，必须回调一次"恢复"避免动画永久冻结', () => {
+  const timer = new FakeTimer();
+  const states: boolean[] = [];
+  const pacer = new MotionPacer((resting) => states.push(resting), seqRng([0, 0, 0]), timer);
+  pacer.start();
+  timer.advance(MOTION_ACTIVE_MIN_MS);
+  assert.equal(pacer.isResting, true);
+  pacer.stop();
+  assert.equal(pacer.isResting, false);
+  assert.deepEqual(states, [true, false]);
+});
+
+test('减弱动态：能识别 prefers-reduced-motion（matchMedia 注入）', () => {
+  assert.equal(prefersReducedMotion(() => ({ matches: true })), true);
+  assert.equal(prefersReducedMotion(() => ({ matches: false })), false);
+  assert.equal(prefersReducedMotion(undefined), false, '宿主不支持时按"不减少"处理');
+  assert.equal(
+    prefersReducedMotion(() => {
+      throw new Error('boom');
+    }),
+    false,
+    '查询抛错不能把桌宠带崩',
+  );
+});
+
+test('减弱动态：CSS 里必须存在对应的 @media 兜底', () => {
+  assert.ok(CSS.includes('prefers-reduced-motion: reduce'), 'pet.css 缺少减少动态的媒体查询');
+  assert.ok(CSS.includes(REDUCED_MOTION_QUERY), 'JS 与 CSS 的查询串必须一致');
+});
+
+test('CSS：存在"偶发停顿"的暂停规则，且与 MOTION_REST_ATTRIBUTE 对应', () => {
+  assert.ok(CSS.includes(`[${MOTION_REST_ATTRIBUTE}='1']`), 'pet.css 缺少 data-motion-rest 暂停规则');
+});
+
+test('CSS：呼吸/摇摆关键帧是分段缓动 + 停顿（不是单条 sin）', () => {
+  const breathe = CSS.slice(CSS.indexOf('@keyframes pet-breathe'), CSS.indexOf('@keyframes pet-sway'));
+  // 分段缓动：关键帧各自带 animation-timing-function
+  const easingCount = (breathe.match(/animation-timing-function/g) ?? []).length;
+  assert.ok(easingCount >= 3, `呼吸关键帧应分段缓动（≥3 处），实际 ${easingCount}`);
+  // 停顿：同一个 transform 值在相邻关键帧重复出现
+  assert.ok(breathe.includes('38%') && breathe.includes('52%'), '呼吸应有屏息停顿段');
+});
+
+/**
+ * 造一个按序列取值的 rng（用尽后重复最后一个值）。
+ *
+ * @param values 取值序列
+ * @returns rng
+ */
+function seqRng(values: readonly number[]): () => number {
+  let cursor = 0;
+  return () => values[Math.min(cursor++, values.length - 1)] as number;
+}

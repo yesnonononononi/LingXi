@@ -13,11 +13,17 @@ import { PresentationBus, type TimerPort } from '../src/pet/presentation/bus';
 import {
   BLINK_CLOSED_MS,
   BLINK_HALF_MS,
+  BLINK_LONG_MAX_DELAY_MS,
+  BLINK_LONG_MIN_DELAY_MS,
   BLINK_MAX_DELAY_MS,
   BLINK_MIN_DELAY_MS,
+  BLINK_SHORT_GAP_PROBABILITY,
+  BLINK_SHORT_MAX_DELAY_MS,
+  BLINK_SHORT_MIN_DELAY_MS,
   DOUBLE_BLINK_GAP_MS,
   DOUBLE_BLINK_PROBABILITY,
   BlinkDriver,
+  nextBlinkDelayMs,
 } from '../src/pet/presentation/blink-driver';
 import { CommandRouter, MOTION_RECIPES } from '../src/pet/presentation/command-router';
 import {
@@ -329,14 +335,60 @@ test('总线：driven 档写入实现的状态（角度/不透明度）', () => 
 
 // ---------------------------------------------------------------- 眨眼
 
-test('眨眼：间隔落在 2.5–6.5s，rng=0 取下限、rng≈1 取上限', () => {
-  const driver = new BlinkDriver(() => {}, () => 0, () => false, new FakeTimer());
-  assert.equal(driver.nextDelayMs(), BLINK_MIN_DELAY_MS);
-  const high = new BlinkDriver(() => {}, () => 0.999999, () => false, new FakeTimer());
-  assert.ok(high.nextDelayMs() <= BLINK_MAX_DELAY_MS);
-  const mid = new BlinkDriver(() => {}, () => 0.5, () => false, new FakeTimer());
-  const midDelay = mid.nextDelayMs();
-  assert.ok(midDelay > BLINK_MIN_DELAY_MS && midDelay < BLINK_MAX_DELAY_MS, `mid=${midDelay}`);
+test('眨眼：不规则分布——短分支 0.9–2.0s，长分支 3.2–9.0s', () => {
+  // 第一个值决定分支（< 22% 走短间隔），第二个值在分支内取值
+  assert.equal(nextBlinkDelayMs(seq([0, 0])), BLINK_SHORT_MIN_DELAY_MS);
+  assert.equal(nextBlinkDelayMs(seq([0, 1])), BLINK_SHORT_MAX_DELAY_MS);
+  assert.equal(nextBlinkDelayMs(seq([0.9, 0])), BLINK_LONG_MIN_DELAY_MS);
+  assert.equal(nextBlinkDelayMs(seq([0.9, 1])), BLINK_LONG_MAX_DELAY_MS);
+  // 分支阈值本身：恰好等于概率值时走长分支
+  assert.equal(nextBlinkDelayMs(seq([BLINK_SHORT_GAP_PROBABILITY, 0])), BLINK_LONG_MIN_DELAY_MS);
+  assert.equal(nextBlinkDelayMs(seq([BLINK_SHORT_GAP_PROBABILITY - 0.001, 0])), BLINK_SHORT_MIN_DELAY_MS);
+});
+
+test('眨眼：长间隔更常见（长端偏置把取值推向 9s 一侧）', () => {
+  // u=0.5 时若均匀分布会落在正中 (3200+9000)/2 = 6100；偏置后应明显更大
+  const mid = nextBlinkDelayMs(seq([0.9, 0.5]));
+  const uniformMid = (BLINK_LONG_MIN_DELAY_MS + BLINK_LONG_MAX_DELAY_MS) / 2;
+  assert.ok(mid > uniformMid, `u=0.5 时应偏向长端：mid=${mid}, uniformMid=${uniformMid}`);
+});
+
+test('眨眼：整体分布——短间隔偶发、长间隔为主、全落在上下界内', () => {
+  let state = 123456789;
+  const rng = (): number => {
+    // xorshift32：固定种子，结果可复现
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return ((state >>> 0) % 100000) / 100000;
+  };
+  const samples: number[] = [];
+  for (let i = 0; i < 4000; i += 1) samples.push(nextBlinkDelayMs(rng));
+  const shortCount = samples.filter((ms) => ms < BLINK_LONG_MIN_DELAY_MS).length;
+  const shortRatio = shortCount / samples.length;
+  const mean = samples.reduce((sum, ms) => sum + ms, 0) / samples.length;
+  assert.ok(
+    Math.abs(shortRatio - BLINK_SHORT_GAP_PROBABILITY) < 0.05,
+    `短间隔占比应接近 ${BLINK_SHORT_GAP_PROBABILITY}，实际 ${shortRatio.toFixed(3)}`,
+  );
+  assert.ok(mean > 5000, `长间隔为主，均值应明显偏大，实际 ${mean.toFixed(0)}ms`);
+  assert.ok(samples.every((ms) => ms >= BLINK_MIN_DELAY_MS && ms <= BLINK_MAX_DELAY_MS));
+});
+
+/**
+ * 造一个按序列取值的 rng（用尽后重复最后一个值）。
+ *
+ * @param values 取值序列
+ * @returns rng
+ */
+function seq(values: readonly number[]): () => number {
+  let cursor = 0;
+  return () => values[Math.min(cursor++, values.length - 1)] as number;
+}
+
+test('眨眼：BlinkDriver.nextDelayMs 与纯函数同源', () => {
+  const driver = new BlinkDriver(() => {}, seq([0.9, 1]), () => false, new FakeTimer());
+  assert.equal(driver.nextDelayMs(), BLINK_LONG_MAX_DELAY_MS);
 });
 
 test('眨眼：双眨概率阈值为 12%', () => {
@@ -349,17 +401,10 @@ test('眨眼：双眨概率阈值为 12%', () => {
 test('眨眼：三态序列（闭 100ms → 半闭 80ms），每轮两次 emit', () => {
   const timer = new FakeTimer();
   const emitted: PresentationOp[] = [];
-  // rng 序列：0（间隔下限）、1（不双眨）
-  const values = [0, 1];
-  let cursor = 0;
-  const driver = new BlinkDriver(
-    (item) => emitted.push(item),
-    () => values[Math.min(cursor++, values.length - 1)],
-    () => false,
-    timer,
-  );
+  // start 先吃两个数（分支 + 取值）→ 走短分支下限 900ms；再吃一个数判双眨（1 = 不双眨）
+  const driver = new BlinkDriver((item) => emitted.push(item), seq([0, 0, 1, 0, 0]), () => false, timer);
   driver.start();
-  timer.advance(BLINK_MIN_DELAY_MS);
+  timer.advance(BLINK_SHORT_MIN_DELAY_MS);
   assert.equal(emitted.length, 1);
   assert.equal(emitted[0]?.id, 'blink');
   assert.equal(emitted[0]?.durationMs, BLINK_CLOSED_MS);

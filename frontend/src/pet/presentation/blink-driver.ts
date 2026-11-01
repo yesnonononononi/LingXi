@@ -10,7 +10,7 @@
  * 中间那 80ms 的半闭（复用 E8 困倦贴片的眼区）才是自然的关键帧。
  * 三个状态都用**已有枚举 id**，所以工程侧零新契约。</p>
  *
- * <p><b>为什么随机必须注入 `rng`：</b>测试要断言"间隔落在 2.5–6.5s、双眨概率 12%"，
+ * <p><b>为什么随机必须注入 `rng`：</b>测试要断言"短间隔分支占比 22%、长间隔更常见"，
  * 直接 `Math.random()` 就只能测"看起来很随机"——那不叫测试。</p>
  *
  * @module pet/presentation/blink-driver
@@ -28,11 +28,39 @@ export const BLINK_HALF_MS = 80;
 /** 眨眼总时长（毫秒）：闭 + 半闭。 */
 export const BLINK_TOTAL_MS = BLINK_CLOSED_MS + BLINK_HALF_MS;
 
-/** 眨眼间隔下限（毫秒）。 */
-export const BLINK_MIN_DELAY_MS = 2500;
+/** 眨眼间隔下限（毫秒）：短间隔分支的下界。 */
+export const BLINK_SHORT_MIN_DELAY_MS = 900;
 
-/** 眨眼间隔上限（毫秒）。 */
-export const BLINK_MAX_DELAY_MS = 6500;
+/** 短间隔分支的上界（毫秒）。 */
+export const BLINK_SHORT_MAX_DELAY_MS = 2000;
+
+/** 长间隔分支的下界（毫秒）。 */
+export const BLINK_LONG_MIN_DELAY_MS = 3200;
+
+/** 长间隔分支的上界（毫秒）。 */
+export const BLINK_LONG_MAX_DELAY_MS = 9000;
+
+/**
+ * 走"短间隔"分支的概率（22%）。
+ *
+ * <p>真人眨眼不是等间隔：大部分时候隔几秒眨一次，但偶尔会连着眨两三下
+ * （累、干、进了东西）。22% 的短间隔让"偶发连眨"能被看见，又不至于读成抽搐。</p>
+ */
+export const BLINK_SHORT_GAP_PROBABILITY = 0.22;
+
+/**
+ * 长间隔分支的长端偏置（>1 = 偏长）。
+ *
+ * <p>把均匀分布 `u` 变成 `u^(1/1.8)`，取值整体往 1 推——于是"4 秒左右眨一次"
+ * 比"8.5 秒才眨一次"更常见，但长间隔仍有可观的机会出现。这就是"长间隔更常见"。</p>
+ */
+export const BLINK_LONG_SKEW = 1.8;
+
+/** 整个分布的下界（毫秒）。 */
+export const BLINK_MIN_DELAY_MS = BLINK_SHORT_MIN_DELAY_MS;
+
+/** 整个分布的上界（毫秒）。 */
+export const BLINK_MAX_DELAY_MS = BLINK_LONG_MAX_DELAY_MS;
 
 /** 偶发双眨的概率（12%）。 */
 export const DOUBLE_BLINK_PROBABILITY = 0.12;
@@ -93,6 +121,45 @@ export function blinkHalfOp(reason: string): PresentationOp {
 
 /** 眨眼计时器端口（与调度总线共用同一套抽象）。 */
 export type BlinkTimerPort = TimerPort;
+
+/**
+ * 把随机数规整到 0..1（脏值按 0.5 处理，不能因为 rng 返回 NaN 把间隔算成 NaN）。
+ *
+ * @param value 原始随机数
+ * @returns 落在 [0,1] 的值
+ */
+export function normalizeUnit(value: number): number {
+  if (!Number.isFinite(value)) return 0.5;
+  return value < 0 ? 0 : value > 1 ? 1 : value;
+}
+
+/**
+ * 抽样一次眨眼间隔（**纯函数**，随机源由调用方给）。
+ *
+ * <p>两个分支：</p>
+ * <ul>
+ *   <li>短间隔（概率 {@link BLINK_SHORT_GAP_PROBABILITY}）：0.9–2.0s，表现为"连眨"；</li>
+ *   <li>长间隔：3.2–9.0s，且用 `u^(1/BLINK_LONG_SKEW)` 把取值往长端推，
+ *       使"几秒一次"明显比"接近 9 秒"更常见。</li>
+ * </ul>
+ *
+ * <p>短分支先消耗一次 rng 做概率判定，再消耗一次取值；长分支同理。
+ * 两次取值分开是为了让测试能用固定序列精确断言两个分支。</p>
+ *
+ * @param rng 随机源（返回 0..1）
+ * @returns 间隔毫秒（整数，落在 [{@link BLINK_MIN_DELAY_MS}, {@link BLINK_MAX_DELAY_MS}]）
+ */
+export function nextBlinkDelayMs(rng: () => number): number {
+  const gate = normalizeUnit(rng());
+  if (gate < BLINK_SHORT_GAP_PROBABILITY) {
+    const u = normalizeUnit(rng());
+    return Math.round(BLINK_SHORT_MIN_DELAY_MS + u * (BLINK_SHORT_MAX_DELAY_MS - BLINK_SHORT_MIN_DELAY_MS));
+  }
+  const u = normalizeUnit(rng());
+  // 指数 <1 把取值推向上界 → 长间隔比短间隔更常见（但两端都够得着）
+  const skewed = Math.pow(u, 1 / BLINK_LONG_SKEW);
+  return Math.round(BLINK_LONG_MIN_DELAY_MS + skewed * (BLINK_LONG_MAX_DELAY_MS - BLINK_LONG_MIN_DELAY_MS));
+}
 
 /**
  * 眨眼调度器。
@@ -167,14 +234,12 @@ export class BlinkDriver {
   }
 
   /**
-   * 下一次眨眼的间隔（2500 + rng × 4000 → 2.5~6.5s）。
+   * 下一次眨眼的间隔（走 {@link nextBlinkDelayMs} 的混合分布）。
    *
    * @returns 间隔毫秒（整数）
    */
   nextDelayMs(): number {
-    const value = this.rng();
-    const normalized = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0.5;
-    return BLINK_MIN_DELAY_MS + Math.round(normalized * (BLINK_MAX_DELAY_MS - BLINK_MIN_DELAY_MS));
+    return nextBlinkDelayMs(this.rng);
   }
 
   /**
