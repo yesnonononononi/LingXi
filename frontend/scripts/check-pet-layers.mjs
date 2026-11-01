@@ -31,8 +31,33 @@ export const SUPPORTED_DENSITIES = ['1x', '2x'];
 /** 允许的混合模式。 */
 export const SUPPORTED_BLENDS = ['normal', 'multiply', 'screen'];
 
+/** 允许的层角色（与 `types.ts` 的 `LayerRole` 同步）。 */
+export const SUPPORTED_ROLES = ['animatable', 'support'];
+
 /** 画布比例容差（与几何门禁一致：0.2%）。 */
 export const ASPECT_TOLERANCE = 0.002;
+
+/** 动作目录路径（与层清单同属分层契约，共用一次门禁）。 */
+export const MOTIONS_JSON_PATH = resolve(FRONTEND_ROOT, 'pet-motions.json');
+
+/** 必须在目录里出现的动作 id（顺序与 `MotionId` 联合类型一致）。 */
+export const REQUIRED_MOTION_IDS = [
+  'idle',
+  'tap',
+  'happy',
+  'angry',
+  'surprised',
+  'sleepy',
+  'sad',
+  'drag',
+  'wake',
+];
+
+/** 允许的指令层。 */
+export const MOTION_LAYERS = ['base', 'transient', 'ambient'];
+
+/** 允许的关键帧属性。 */
+export const MOTION_PROPERTIES = ['rotate', 'translateX', 'translateY', 'scale', 'opacity'];
 
 /** 锚点归一化对账容差（美术清单给的是 16 位小数，1e-6 足够严）。 */
 export const ANCHOR_TOLERANCE = 1e-6;
@@ -45,6 +70,96 @@ export const ANCHOR_TOLERANCE = 1e-6;
  */
 function isFiniteNumber(value) {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+/**
+ * 校验动作目录（`frontend/pet-motions.json`）的**构建期安全子集**。
+ *
+ * <p>权威校验器是 `src/pet/layers/motion-catalog.ts` 的 `validateCatalog`（运行期与单测用）。
+ * 这里只复核那些"改坏了会让构建带病上线"的硬约束：版本、9 个动作齐全、
+ * 时长与循环自洽、优先级/层/属性白名单、关键帧闭合。两边是否漂移由
+ * `tests/petMotionCompiler.test.ts` 的交叉断言盯着（同一份坏目录必须被两边同时点名）。</p>
+ *
+ * @param {unknown} source 目录原文
+ * @returns {string[]} 问题列表（空 = 通过）
+ */
+export function validateMotionsFile(source) {
+  const problems = [];
+  if (!source || typeof source !== 'object') return ['动作目录必须是对象'];
+  if (source.version !== 1) problems.push(`动作目录 version 必须为 1，实际为 ${String(source.version)}`);
+  const defaults = source.defaults ?? {};
+  if (!Number.isFinite(defaults.samples) || defaults.samples < 3 || defaults.samples > 64) {
+    problems.push('动作目录 defaults.samples 必须落在 3..64');
+  }
+  if (!Number.isFinite(defaults.maxLagMs) || defaults.maxLagMs <= 0) {
+    problems.push('动作目录 defaults.maxLagMs 必须是正数');
+  }
+  const motions = source.motions;
+  if (!motions || typeof motions !== 'object' || Array.isArray(motions)) return [...problems, '动作目录 motions 必须是对象'];
+
+  for (const id of REQUIRED_MOTION_IDS) {
+    if (!Object.prototype.hasOwnProperty.call(motions, id)) problems.push(`动作目录缺少动作 ${id}`);
+  }
+  for (const [id, def] of Object.entries(motions)) {
+    const path = `motions.${id}`;
+    if (!REQUIRED_MOTION_IDS.includes(id)) problems.push(`${path}: 未知动作 id`);
+    if (!def || typeof def !== 'object') {
+      problems.push(`${path} 必须是对象`);
+      continue;
+    }
+    if (![0, 1, 2].includes(def.priority)) problems.push(`${path}.priority 只允许 0 / 1 / 2`);
+    if (typeof def.loop !== 'boolean') problems.push(`${path}.loop 必须是布尔值`);
+    if (def.durationMs !== null && (!Number.isFinite(def.durationMs) || def.durationMs <= 0)) {
+      problems.push(`${path}.durationMs 必须是正数或 null`);
+    }
+    if (def.loop === true && def.durationMs !== null) problems.push(`${path} loop=true 时 durationMs 必须为 null`);
+    if (!MOTION_LAYERS.includes(def.layer)) problems.push(`${path}.layer 只允许 ${MOTION_LAYERS.join(' / ')}`);
+    if (def.expression !== null && def.expression !== undefined) {
+      if (typeof def.expression !== 'object' || typeof def.expression.id !== 'string') {
+        problems.push(`${path}.expression 必须是 {id, durationMs} 或 null`);
+      } else if (!Number.isFinite(def.expression.durationMs) || def.expression.durationMs <= 0) {
+        problems.push(`${path}.expression.durationMs 必须是正数`);
+      }
+    }
+    if (!Array.isArray(def.tracks)) {
+      problems.push(`${path}.tracks 必须是数组`);
+      continue;
+    }
+    def.tracks.forEach((track, index) => {
+      const trackPath = `${path}.tracks[${index}]`;
+      if (!track || typeof track !== 'object') {
+        problems.push(`${trackPath} 必须是对象`);
+        return;
+      }
+      if (typeof track.layerId !== 'string' || track.layerId.length === 0) {
+        problems.push(`${trackPath}.layerId 必须是非空字符串`);
+      }
+      if (!MOTION_PROPERTIES.includes(track.property)) {
+        problems.push(`${trackPath}.property 只允许 ${MOTION_PROPERTIES.join(' / ')}`);
+      }
+      if (track.follow !== undefined && track.spring !== undefined) {
+        problems.push(`${trackPath} 同时出现 follow 与 spring（只能二选一）`);
+      }
+      if (track.mirror !== undefined) return; // 镜像轨道的关键帧来自源轨道
+      const frames = track.keyframes;
+      if (!Array.isArray(frames) || frames.length < 2) {
+        problems.push(`${trackPath}.keyframes 至少需要 2 个关键帧`);
+        return;
+      }
+      if (Number(frames[0].at) !== 0) problems.push(`${trackPath}.keyframes 首帧 at 必须为 0`);
+      let previous = -1;
+      frames.forEach((frame, frameIndex) => {
+        if (!Number.isFinite(frame?.at) || frame.at < 0 || frame.at > 1) {
+          problems.push(`${trackPath}.keyframes[${frameIndex}].at 必须落在 0..1`);
+          return;
+        }
+        if (frame.at <= previous) problems.push(`${trackPath}.keyframes[${frameIndex}].at 必须严格递增`);
+        previous = frame.at;
+        if (!Number.isFinite(frame.value)) problems.push(`${trackPath}.keyframes[${frameIndex}].value 必须是有限数值`);
+      });
+    });
+  }
+  return problems;
 }
 
 /**
@@ -149,15 +264,40 @@ export function validateManifestStructure(manifest) {
       rect.height > 0;
     if (!rectOk) {
       problems.push(`${prefix}.rect 必须含有限数值 x/y 与正的 width/height`);
-    } else if (
-      rect.x < 0 ||
-      rect.y < 0 ||
-      rect.x + rect.width > Number(nativeCanvas.width) ||
-      rect.y + rect.height > Number(nativeCanvas.height)
-    ) {
+    } else if (rect.x < 0 || rect.y < 0 || rect.x + rect.width > canvasWidth || rect.y + rect.height > canvasHeight) {
+      // rect 用母版像素（与 anchor 同单位）：P1 交件每层都是整张 2048×3072
       problems.push(
-        `${prefix}.rect (${rect.x}, ${rect.y}, ${rect.width}×${rect.height}) 越出原生画布 ${String(nativeCanvas.width)}×${String(nativeCanvas.height)}`,
+        `${prefix}.rect (${rect.x}, ${rect.y}, ${rect.width}×${rect.height}) 越出母版画布 ${canvasWidth}×${canvasHeight}`,
       );
+    }
+
+    if (layer.allowedRegion !== undefined) {
+      const region = layer.allowedRegion;
+      const regionOk =
+        region &&
+        isFiniteNumber(region.x) &&
+        isFiniteNumber(region.y) &&
+        isFiniteNumber(region.width) &&
+        region.width > 0 &&
+        isFiniteNumber(region.height) &&
+        region.height > 0;
+      if (!regionOk) {
+        problems.push(`${prefix}.allowedRegion 必须含有限数值 x/y 与正的 width/height`);
+      } else if (
+        region.x < 0 ||
+        region.y < 0 ||
+        region.x + region.width > canvasWidth ||
+        region.y + region.height > canvasHeight
+      ) {
+        problems.push(`${prefix}.allowedRegion 越出母版画布（可动区域必须是画布内的子矩形）`);
+      }
+    }
+
+    if (!SUPPORTED_ROLES.includes(layer.role)) {
+      problems.push(`${prefix}.role 只允许 ${SUPPORTED_ROLES.join(' / ')}，实际为 ${String(layer.role)}`);
+    }
+    if (typeof layer.source !== 'string' || layer.source.length === 0) {
+      problems.push(`${prefix}.source 必须是非空字符串（美术源文件名主干，如 01_tail_base）`);
     }
 
     if (!SUPPORTED_BLENDS.includes(layer.blend)) {
@@ -340,6 +480,16 @@ export function runLayerGate(options = {}) {
   }
 
   problems.push(...validateAgainstDisk(manifest, { outDir: options.outDir ?? DEFAULT_OUT_DIR }));
+
+  // 动作目录同属分层契约：一起进这道门禁，避免"层齐了但动作数据写坏"带病上线
+  const motionsPath = options.motionsPath ?? MOTIONS_JSON_PATH;
+  try {
+    const motions = readJsonFile(motionsPath);
+    problems.push(...validateMotionsFile(motions));
+    if (verbose) console.log(`[pet-layers] 动作目录动作数=${Object.keys(motions.motions ?? {}).length}`);
+  } catch (err) {
+    problems.push(`动作目录不可读: ${(err && err.message) || err}`);
+  }
 
   const layers = Array.isArray(manifest.layers) ? manifest.layers : [];
   const skipped = layers.length === 0;

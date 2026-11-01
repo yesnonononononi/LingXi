@@ -108,24 +108,29 @@ export function scanLayerSource(sourceDir) {
 }
 
 /**
- * 把一份源文件放进运行时目录（webp 直接拷贝，png 需要 sharp 转码）。
+ * 把一份源文件放进运行时目录（webp 直接拷贝，png 必须 sharp 转码）。
+ *
+ * <p><b>为什么不直接把 2048×3072 的 PNG 拷进运行时：</b>单张最大 1.7MB，9 层会爆首帧预算；
+ * 而且 PNG 直出等于让仓库里同时存在两套形态不同的运行时资产。所以 PNG 一律转 WebP 并按
+ * `@1x/@2x` 命名落盘，缺 sharp 时**跳过该层并记缺件**，绝不降级成"直接发 PNG"。</p>
  *
  * @param {{ path: string, ext: string, name: string }} source 源文件信息
  * @param {string} outDir 输出目录
  * @param {import('sharp').Sharp | null} sharp 已加载的 sharp（可能为空）
+ * @param {string} outputName 目标文件名（`<layerId>@<density>.webp`）
  * @returns {Promise<string>} 处理结果说明（空串 = 成功）
  */
-async function materializeFile(source, outDir, sharp) {
+async function materializeFile(source, outDir, sharp, outputName) {
   mkdirSync(outDir, { recursive: true });
+  const target = resolve(outDir, outputName);
   if (source.ext === 'webp') {
-    copyFileSync(source.path, resolve(outDir, source.name));
+    copyFileSync(source.path, target);
     return '';
   }
   if (!sharp) {
-    return `${source.name} 是 PNG，但本机没有 sharp，跳过转码（请让美术直接交 WebP）`;
+    return `${source.name} 是 PNG，但本机没有 sharp，跳过转码（请让美术直接交 WebP，不要直接发 2048×3072 PNG）`;
   }
-  const targetName = source.name.replace(/\.png$/i, '.webp');
-  await sharp(source.path).webp({ quality: 88, alphaQuality: 100, effort: 6 }).toFile(resolve(outDir, targetName));
+  await sharp(source.path).webp({ quality: 88, alphaQuality: 100, effort: 6 }).toFile(target);
   return '';
 }
 
@@ -167,31 +172,34 @@ export async function buildLayerManifest(options) {
 
   for (const layer of layers) {
     if (!layer || typeof layer.layerId !== 'string') continue;
+    // 美术源文件名主干：`source`（如 `01_tail_base`）优先，缺省用 layerId。
+    // 分层的目的之一就是让 layerId（稳定契约名）与美术交付名解耦。
+    const sourceName = typeof layer.source === 'string' && layer.source.length > 0 ? layer.source : layer.layerId;
     const files = layer.files && typeof layer.files === 'object' ? { ...layer.files } : {};
     for (const density of densities) {
-      const found = scan.parsed.find((item) => item.layerId === layer.layerId && item.density === density);
+      const found = scan.parsed.find((item) => item.layerId === sourceName && item.density === density);
       if (!found) {
         missing.push(`${layer.layerId}@${density}`);
         delete files[density];
         continue;
       }
-      const failure = await materializeFile(found, outDir, sharp);
+      const outputName = `${layer.layerId}@${density}.webp`;
+      const failure = await materializeFile(found, outDir, sharp, outputName);
       if (failure) {
         missing.push(`${layer.layerId}@${density}`);
         log(`[pet-layers] ${failure}`);
         continue;
       }
-      const relativeName = found.ext === 'webp' ? found.name : found.name.replace(/\.png$/i, '.webp');
-      const targetPath = resolve(outDir, relativeName);
+      const targetPath = resolve(outDir, outputName);
       const size = readImageSize(targetPath);
       const file = {
-        file: `layers/${relativeName}`,
-        url: `${base}layers/${relativeName}`,
+        file: `layers/${outputName}`,
+        url: `${base}layers/${outputName}`,
         width: size.width,
         height: size.height,
         bytes: readFileSync(targetPath).length,
         sha256: sha256Of(targetPath),
-        format: relativeName.endsWith('.webp') ? 'webp' : 'png',
+        format: 'webp',
       };
       const before = JSON.stringify(files[density] ?? null);
       if (before !== JSON.stringify(file)) changed.push(`${layer.layerId}.files.${density}`);
@@ -202,6 +210,12 @@ export async function buildLayerManifest(options) {
 
   if (missing.length > 0) {
     log(`[pet-layers] 缺件 ${missing.length} 个：${missing.join(', ')}（缺件的层在运行期会被判为未就绪）`);
+  }
+  if (manifest.enabled === true && missing.length > 0) {
+    // 开闸前必须齐全：少一层就是穿模或露缝，宁可构建失败也不要"看起来成功"
+    throw new Error(
+      `开闸状态下仍有 ${missing.length} 个层文件缺失：${missing.join(', ')}（请先补齐 @1x/@2x WebP 再开闸）`,
+    );
   }
   if (verbose) log(`[pet-layers] 已扫描 ${scan.parsed.length} 个层文件，输出目录 ${outDir}`);
 

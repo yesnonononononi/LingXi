@@ -9,7 +9,9 @@
  * <ul>
  *   <li>画布坐标：母版像素，原点画布左上。`canvas` 是母版 2048×3072；
  *       `nativeCanvas` 是它的原生 1024×1536（母版 = 原生最近邻 2× 放大，<b>不含额外细节</b>）；</li>
- *   <li>层矩形 `rect` 与锚点 `anchor` 用**母版像素**（与美术清单同单位，便于直接对账）；</li>
+ *   <li>层矩形 `rect` 与锚点 `anchor` 用**母版像素**（与美术清单同单位，便于直接对账）。
+ *       P1 交件是"每层一整张 2048×3072"，所以 `rect` 就是整张画布，
+ *       真正限制动作幅度的是 `allowedRegion`（美术给的"可动区域"）；</li>
  *   <li>支点 `pivot` 用**层矩形归一化坐标**（0..1，原点在层矩形左上），
  *       于是换密度（@1x/@2x）时支点不用重标。</li>
  * </ul>
@@ -86,18 +88,36 @@ export interface LayerFile {
 /** 按密度组织的层文件表（缺项 = 该密度未交付）。 */
 export type LayerFileMap = Partial<Record<PetDensity, LayerFile>>;
 
+/**
+ * 层的角色。
+ *
+ * <ul>
+ *   <li>`animatable`：可动层（尾巴两段、双耳、呆毛、蝴蝶结）。动作目录可以给它派 track，
+ *       `driven` 档也可以写它的 CSS 变量；</li>
+ *   <li>`support`：支撑层（底绘、身体遮挡、前景遮挡）。**只参与渲染，不接受任何动画指令**——
+ *       它们是"让合成正确"的补绘片，一旦被转动就会露缝。</li>
+ * </ul>
+ */
+export type LayerRole = 'animatable' | 'support';
+
 /** 一层（一个可独立做 `transform` 的贴片）。 */
 export interface LayerSpec {
   /** 稳定标识（定下不改）。 */
   readonly layerId: string;
+  /** 角色：可动层 / 支撑层。 */
+  readonly role: LayerRole;
   /** 绘制顺序，小的在后；同 `z` 不允许（门禁会拒）。 */
   readonly z: number;
   /** 惯性继承源：`root` = 跟身体整体，其余为别的层 id。 */
   readonly parent: string;
   /** 旋转支点（层矩形归一化坐标）。 */
   readonly pivot: Pivot;
-  /** 层自身矩形（母版像素）。 */
+  /** 层自身矩形（母版像素；P1 交件是整画布，所以通常是 2048×3072）。 */
   readonly rect: LayerRect;
+  /** 可动区域（母版像素，来自美术清单 `allowedRegion`）；缺省 = 整张画布。 */
+  readonly allowedRegion?: LayerRect;
+  /** 美术源文件名主干（如 `01_tail_base`），构建脚本按它去找 `<source>@1x.webp`。 */
+  readonly source: string;
   /** 混合模式。 */
   readonly blend: LayerBlend;
   /** 不透明度（0..1）。 */

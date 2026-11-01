@@ -30,6 +30,9 @@ export const SUPPORTED_DENSITIES: readonly PetDensity[] = ['1x', '2x'];
 /** 允许的混合模式（与 `types.ts` 的 `LayerBlend` 同步）。 */
 export const SUPPORTED_BLENDS: readonly string[] = ['normal', 'multiply', 'screen'];
 
+/** 允许的层角色（与 `types.ts` 的 `LayerRole` 同步）。 */
+export const SUPPORTED_ROLES: readonly string[] = ['animatable', 'support'];
+
 /**
  * 关闸兜底清单：清单读坏时用它顶上。
  *
@@ -209,15 +212,46 @@ export function collectManifestIssues(raw: unknown): ManifestIssue[] {
     const rectY = isFiniteNumber(rect?.y) ? rect.y : null;
     const rectW = readPositiveInt(rect?.width, `${prefix}.rect.width`, issues, 0);
     const rectH = readPositiveInt(rect?.height, `${prefix}.rect.height`, issues, 0);
-    if (rectX === null) issues.push({ path: `${prefix}.rect.x`, message: '必须是有限数值' });
-    if (rectY === null) issues.push({ path: `${prefix}.rect.y`, message: '必须是有限数值' });
-    if (rectX !== null && rectY !== null && rectW > 0 && rectH > 0 && nativeWidth > 0 && nativeHeight > 0) {
-      if (rectX < 0 || rectY < 0 || rectX + rectW > nativeWidth || rectY + rectH > nativeHeight) {
+    if (!isFiniteNumber(rectX)) issues.push({ path: `${prefix}.rect.x`, message: '必须是有限数值' });
+    if (!isFiniteNumber(rectY)) issues.push({ path: `${prefix}.rect.y`, message: '必须是有限数值' });
+    if (rectX !== null && rectY !== null && rectW > 0 && rectH > 0 && canvasWidth > 0 && canvasHeight > 0) {
+      if (rectX < 0 || rectY < 0 || rectX + rectW > canvasWidth || rectY + rectH > canvasHeight) {
         issues.push({
           path: `${prefix}.rect`,
-          message: `矩形 (${rectX}, ${rectY}, ${rectW}×${rectH}) 越出原生画布 ${nativeWidth}×${nativeHeight}`,
+          message: `矩形 (${rectX}, ${rectY}, ${rectW}×${rectH}) 越出母版画布 ${canvasWidth}×${canvasHeight}（rect 用母版像素）`,
         });
       }
+    }
+
+    const allowed = layer.allowedRegion as Record<string, unknown> | undefined;
+    if (allowed !== undefined) {
+      const allowedX = allowed?.x;
+      const allowedY = allowed?.y;
+      const allowedW = allowed?.width;
+      const allowedH = allowed?.height;
+      const shapeOk = isFiniteNumber(allowedX) && isFiniteNumber(allowedY) && isFiniteNumber(allowedW) && isFiniteNumber(allowedH);
+      if (!shapeOk || (allowedW as number) <= 0 || (allowedH as number) <= 0) {
+        issues.push({ path: `${prefix}.allowedRegion`, message: '必须含有限数值 x/y 与正的 width/height' });
+      } else if (
+        canvasWidth > 0 &&
+        canvasHeight > 0 &&
+        ((allowedX as number) < 0 ||
+          (allowedY as number) < 0 ||
+          (allowedX as number) + (allowedW as number) > canvasWidth ||
+          (allowedY as number) + (allowedH as number) > canvasHeight)
+      ) {
+        issues.push({
+          path: `${prefix}.allowedRegion`,
+          message: `可动区域 (${String(allowedX)}, ${String(allowedY)}, ${String(allowedW)}×${String(allowedH)}) 越出母版画布`,
+        });
+      }
+    }
+
+    if (typeof layer.role !== 'string' || !SUPPORTED_ROLES.includes(layer.role)) {
+      issues.push({ path: `${prefix}.role`, message: `只允许 ${SUPPORTED_ROLES.join(' / ')}，实际为 ${String(layer.role)}` });
+    }
+    if (typeof layer.source !== 'string' || layer.source.length === 0) {
+      issues.push({ path: `${prefix}.source`, message: '必须是非空字符串（美术源文件名主干，如 01_tail_base）' });
     }
 
     if (typeof layer.blend !== 'string' || !SUPPORTED_BLENDS.includes(layer.blend)) {
@@ -273,6 +307,19 @@ export function collectManifestIssues(raw: unknown): ManifestIssue[] {
     }
   });
 
+  // occludes 只能引用清单里存在的层（引用不存在的层等于"以为挡住了其实没挡"）
+  layers.forEach((entry, index) => {
+    if (!entry || typeof entry !== 'object') return;
+    const record = entry as Record<string, unknown>;
+    const list = Array.isArray(record.occludes) ? record.occludes : [];
+    for (const target of list) {
+      if (typeof target !== 'string') continue;
+      if (!seenIds.has(target)) {
+        issues.push({ path: `layers[${index}].occludes`, message: `引用了不存在的层 ${target}` });
+      }
+    }
+  });
+
   return issues;
 }
 
@@ -292,10 +339,13 @@ export function normalizeLayerManifest(raw: unknown): LayerManifest {
   const source = raw as Record<string, unknown>;
   const layers = (source.layers as Record<string, unknown>[]).map((layer): LayerSpec => ({
     layerId: layer.layerId as string,
+    role: layer.role as LayerSpec['role'],
     z: layer.z as number,
     parent: layer.parent as string,
     pivot: layer.pivot as LayerSpec['pivot'],
     rect: layer.rect as LayerSpec['rect'],
+    allowedRegion: layer.allowedRegion === undefined ? undefined : (layer.allowedRegion as LayerSpec['rect']),
+    source: layer.source as string,
     blend: layer.blend as LayerSpec['blend'],
     opacity: layer.opacity as number,
     occludes: (layer.occludes as string[]).slice(),
@@ -365,6 +415,21 @@ export function findLayer(layerId: string, manifest: LayerManifest = PET_LAYERS)
 export function requestedLayerIds(manifest: LayerManifest = PET_LAYERS): readonly string[] {
   return layersSorted(manifest)
     .filter((layer) => layer.required)
+    .map((layer) => layer.layerId);
+}
+
+/**
+ * 可动层 id（`role='animatable'`，按 `z` 升序）。
+ *
+ * <p>动作目录与 `driven` 指令只能落到这些层上；支撑层（底绘/遮挡）一律静默跳过，
+ * 否则"转一下遮挡片"就会露缝。</p>
+ *
+ * @param manifest 层清单
+ * @returns 可动层 id 列表
+ */
+export function animatableLayerIds(manifest: LayerManifest = PET_LAYERS): readonly string[] {
+  return layersSorted(manifest)
+    .filter((layer) => layer.role === 'animatable')
     .map((layer) => layer.layerId);
 }
 
