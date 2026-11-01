@@ -13,53 +13,31 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 容量按 token 估算，项目记忆只能从执行绑定的工作区定位。 */
+/** 用户级记忆保留容量提醒，项目 wiki 通过有界目录和按需读取控制上下文。 */
 @Slf4j
 @Component
 public class MemoryMonitor {
     static final String REMINDER_PREFIX = "【长期记忆容量提醒】";
 
     private final TokenEstimator tokenEstimator;
-    private final String globalLocation;
-    private final long globalMaxTokens;
-    private final String projectRelativeLocation;
-    private final long projectMaxTokens;
+    private final String userLocation;
+    private final long userMaxTokens;
 
     public MemoryMonitor(TokenEstimator tokenEstimator,
-                         @Value("${lingxi.memory.global.location}") String globalLocation,
-                         @Value("${lingxi.memory.global.max-tokens}") long globalMaxTokens,
-                         @Value("${lingxi.memory.project.relative-location}") String projectRelativeLocation,
-                         @Value("${lingxi.memory.project.max-tokens}") long projectMaxTokens) {
+                         @Value("${lingxi.memory.user.location}") String userLocation,
+                         @Value("${lingxi.memory.user.max-tokens}") long userMaxTokens) {
         this.tokenEstimator = tokenEstimator;
-        this.globalLocation = globalLocation;
-        this.globalMaxTokens = globalMaxTokens;
-        this.projectRelativeLocation = projectRelativeLocation;
-        this.projectMaxTokens = projectMaxTokens;
+        this.userLocation = userLocation;
+        this.userMaxTokens = userMaxTokens;
     }
 
-    public List<SystemMessageEntity> checkMemoryLimits(String workDir) {
+    public List<SystemMessageEntity> checkMemoryLimits() {
         List<SystemMessageEntity> reminders = new ArrayList<>();
-        if (projectMaxTokens > 0 && workDir != null && !workDir.isBlank()
-                && projectRelativeLocation != null && !projectRelativeLocation.isBlank()) {
+        if (userMaxTokens > 0 && userLocation != null && !userLocation.isBlank()) {
             try {
-                Path root = Path.of(workDir).normalize();
-                Path relative = Path.of(projectRelativeLocation);
-                Path memory = root.resolve(relative).normalize();
-                // 缺少绝对工作区或配置越界时不能回落到进程目录，避免整理错项目。
-                if (root.isAbsolute() && !relative.isAbsolute() && memory.startsWith(root)) {
-                    appendReminder(reminders, memory, "项目", projectMaxTokens);
-                } else {
-                    log.warn("跳过项目记忆检查: workDir={}, relativeLocation={}", workDir, projectRelativeLocation);
-                }
+                appendReminder(reminders, Path.of(userLocation).toAbsolutePath().normalize(), "用户", userMaxTokens);
             } catch (InvalidPathException error) {
-                log.warn("项目记忆路径无效: workDir={}, relativeLocation={}", workDir, projectRelativeLocation, error);
-            }
-        }
-        if (globalMaxTokens > 0 && globalLocation != null && !globalLocation.isBlank()) {
-            try {
-                appendReminder(reminders, Path.of(globalLocation).toAbsolutePath().normalize(), "全局", globalMaxTokens);
-            } catch (InvalidPathException error) {
-                log.warn("全局记忆路径无效: location={}", globalLocation, error);
+                log.warn("用户记忆路径无效: location={}", userLocation, error);
             }
         }
         return List.copyOf(reminders);

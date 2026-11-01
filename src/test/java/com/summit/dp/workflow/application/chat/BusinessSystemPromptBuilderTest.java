@@ -104,6 +104,7 @@ class BusinessSystemPromptBuilderTest {
             context.getEnvironment().getPropertySources().addFirst(
                     new MapPropertySource("提示词测试", Map.of("lingxi.system-prompt", "配置规则")));
             context.register(BusinessSystemPromptBuilder.class);
+            context.registerBean(ProjectMemoryPrompt.class, () -> workspace -> "");
             context.refresh();
             assertEquals("配置规则\n\n角色提示",
                     context.getBean(BusinessSystemPromptBuilder.class).buildRootPrompt("角色提示"));

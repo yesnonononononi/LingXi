@@ -79,6 +79,7 @@ class AgentWorkflowOrchestratorPromptTest {
         assertEquals(input, request.getMessages().getLast().text());
         assertEquals(1L, request.getMessages().stream().filter(message -> input.equals(message.text())).count());
         assertEquals(List.of(ToolCatalog.EXECUTE_COMMAND, ToolCatalog.MANAGE_COMMAND, ToolCatalog.READ_FILE,
+                ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI,
                 ToolCatalog.EDIT_FILE, ToolCatalog.WEB_SEARCH, ToolCatalog.REQUIRE_CHOICE,
                 ToolCatalog.CREATE_CHECKLIST, ToolCatalog.GET_CURRENT_CHECKLIST, ToolCatalog.GET_CHECKLIST,
                 ToolCatalog.UPDATE_CHECKLIST_STEP, ToolCatalog.MODIFY_CHECKLIST, ToolCatalog.DELETE_CHECKLIST), request.getToolList());

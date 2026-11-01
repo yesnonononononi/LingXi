@@ -41,6 +41,7 @@ import static org.mockito.Mockito.*;
  * 而不是抛 {@code IllegalStateException}。
  */
 class SubAgentWorkspaceResolutionTest {
+    private AgentRequest lastRequest;
 
     private final WorkspaceService workspaceService = mock(WorkspaceService.class);
     private final ModelService modelService = mock(ModelService.class);
@@ -48,7 +49,9 @@ class SubAgentWorkspaceResolutionTest {
     private final WorkspaceConverter workspaceConverter = mock(WorkspaceConverter.class);
 
     private final SubAgentRequestFactory factory = new SubAgentRequestFactory(
-            workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""), new BusinessSystemPromptBuilder(""), ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create());
+            workspaceService, modelService, settingsProvider, workspaceConverter, new SkillRootResolver(""),
+            new BusinessSystemPromptBuilder("", workspace -> workspace == null ? "" : "wiki=" + workspace.workDir()),
+            ToolListProcessorTestSupport.create(), RuntimeConfigurationTestSupport.create());
 
     @BeforeEach
     void stubModel() {
@@ -74,12 +77,14 @@ class SubAgentWorkspaceResolutionTest {
 
         assertSame(spec, resolved);
         verify(workspaceService).findByDir("/t05_ws");
+        assertEquals(1L, ExecutionAttributes.readLong(lastRequest.runtimeParametersOrDefault().getAttributes(), ExecutionAttributes.WORKSPACE_ID));
         verify(workspaceService).findById(1L);
     }
 
     @Test
     void registeredWorkDirWinsWithoutParentFallback() {
         WorkspaceSpec spec = mock(WorkspaceSpec.class);
+        when(spec.workDir()).thenReturn("/host/dir");
         WorkspaceVO matched = WorkspaceVO.builder().id(9L).name("local-ws")
                 .hostDir("/host/dir").workDir("/host/dir").build();
         Workspace parent = mock(Workspace.class);
@@ -92,6 +97,8 @@ class SubAgentWorkspaceResolutionTest {
 
         assertSame(spec, resolved);
         verify(workspaceService).findByDir("/host/dir");
+        assertEquals(9L, ExecutionAttributes.readLong(lastRequest.runtimeParametersOrDefault().getAttributes(), ExecutionAttributes.WORKSPACE_ID));
+        assertTrue(lastRequest.getSystemPrompt().contains("wiki=/host/dir"));
         verify(workspaceService, never()).findById(any());
     }
 
@@ -158,6 +165,7 @@ class SubAgentWorkspaceResolutionTest {
 
         AgentRequest request = factory.build(argument, member, TeamVO.builder().id(3L).commanderAgentId(5L)
                 .agents(List.of(member)).build(), toolExecution, workDir, "1234", parentWorkspaceId, List.of());
+        lastRequest = request;
         assertEquals(accessMode, AgentAccessMode.from(request.runtimeParametersOrDefault().getAttributes()));
         return request.getWorkspaceSpec();
     }

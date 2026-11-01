@@ -13,7 +13,7 @@ public final class ToolListProcessorTestSupport {
 
     public static ToolListProcessor create() {
         ToolCatalog catalog = mock(ToolCatalog.class);
-        when(catalog.readOnlyNames()).thenReturn(Set.of(ToolCatalog.READ_FILE, ToolCatalog.LOAD_MEMORY, ToolCatalog.READ_IMAGE,
+        when(catalog.readOnlyNames()).thenReturn(Set.of(ToolCatalog.READ_FILE, ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI, ToolCatalog.READ_IMAGE,
                 ToolCatalog.READ_SKILL, ToolCatalog.SEND_MAIL_TO_AGENT, ToolCatalog.REQUIRE_CHOICE,
                 ToolCatalog.CREATE_PLAN, ToolCatalog.SEARCH_TOOL, ToolCatalog.LIST_MCP_TOOLS, ToolCatalog.WEB_SEARCH));
         return new ToolListProcessor(catalog);

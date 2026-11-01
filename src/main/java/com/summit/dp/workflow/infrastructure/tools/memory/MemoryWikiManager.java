@@ -26,7 +26,7 @@ public class MemoryWikiManager {
     private Workspace workspace;
     private Path wikiRoot;
 
-    public MemoryWikiManager(@Value("${lingxi.memory.wiki.relative-location:.lingxi/wikis}") String relativeLocation) {
+    public MemoryWikiManager(@Value("${lingxi.memory.wiki.relative-location:.lingxi/memory/wiki}") String relativeLocation) {
         this.relativeLocation = relativeLocation;
     }
 

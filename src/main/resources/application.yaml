@@ -98,14 +98,26 @@ lingxi:
     personalization:
       path: ${user.home}/.lingxi/config/personalization.json
   memory:
+    user:
+      location: ${user.home}/.lingxi/memory/user/memory.md
+      max-tokens: 3000
     wiki:
-      relative-location: .lingxi/wikis
-    global:
-      location: ${user.home}/.lingxi/memory/memory.md
-      max-tokens: 3000
-    project:
-      relative-location: .lingxi/memory/consistent/memory.md
-      max-tokens: 3000
+      relative-location: .lingxi/memory/wiki
+    work:
+      relative-location: .lingxi/memory/work
+    instructions: |
+      记忆分为三层，目录分开存放：
+      1. 用户级记忆：${lingxi.memory.user.location}，保存跨项目的用户偏好、经验及稳定约定。
+      2. 项目 wiki：工作区目录/${lingxi.memory.wiki.relative-location}/模块名.md，替代原来的项目级长期记忆单文件。每个值得长期记忆的模块维护一个 wiki，按模块名.md 命名，记录模块职责、关键入口、架构决策、约束、已验证事实和踩坑经验。
+      3. 工作记忆：工作区目录/${lingxi.memory.work.relative-location}/yyyy-MM-dd.md，按日期记录进度、临时决策、阻塞及待办。
+      读写规则：
+      1. 本次系统提示词最多提供 30 条 wiki 目录，不预载正文；目录不完整时使用 search_wiki 按关键词检索全部模块，再用 load_memory 按 wikiName 读取正文。搜索最多返回 30 条，可进一步缩小关键词。
+      2. 任务依赖相关模块时先读取已有 wiki；模块产生值得长期保留的知识时，更新对应模块名.md，合并、去重、清理失效内容，不把所有模块继续堆在一个 memory.md 中。
+      3. 稳定的项目知识从每日工作记忆提炼到模块 wiki；跨项目的用户偏好提炼到用户级记忆，避免重复记录同一事实。
+      4. 不记录请求复述、无价值输出、未经验证的推测；用户级记忆上限 ${lingxi.memory.user.max-tokens} token，超出后压缩、去重；模块 wiki 保持简洁，详细过程留在工作记忆中。
+      5. 项目 AGENTS.md 是项目公约，遵循其约束，未经授权不得修改；当前有效指令及已验证事实优先于旧记忆。
+      6. 未指定项目时跳过项目 wiki 和工作记忆，仍可继续交流；不得用进程启动目录或 IDE 目录冒充项目目录。
+      7. 旧 .lingxi/memory/consistent/memory.md 和 .lingxi/wikis 仅作为迁移来源；遇到相关旧记忆时核实并按模块提炼到新目录，保留来源，不再继续维护旧项目单文件。
   tool:
     concurrent-tool-limit: 10 # 并发工具调用限制
   # AgentRequest.systemPrompt，框架只负责逐字渲染它。人设原本放在框架的
@@ -132,22 +144,7 @@ lingxi:
     
     三、记忆管理
     
-    记忆分层：
-    1. 全局长期记忆：${lingxi.memory.global.location}，保存跨项目偏好、经验及约定。
-    2. 项目长期记忆：工作区目录/${lingxi.memory.project.relative-location}，保存架构决策、历史踩坑、技术债及稳定约定。
-    3. 项目公约：工作区目录/AGENTS.md，保存项目规范与行为约束，未经授权不得修改。
-    4. 工作记忆：工作区目录/.lingxi/memory/yyyy-MM-dd.md，保存当日进度、临时决策、阻塞问题及待办事项。
-    
-    读写规则：
-    1. 按需读取：仅在任务依赖历史信息时读取相关记忆；遵循适用的 AGENTS.md。
-    2. 主动沉淀：及时记录有复用价值的信息，文件不存在则按需创建。
-    3. 增量维护：优先合并、更新已有内容，避免重复追加；及时清理失效信息。
-    4. 记忆迁移：将稳定且有长期价值的工作记忆提炼至对应长期记忆。
-    5. 内容过滤：不记录请求复述、无价值输出、临时信息或未经验证的推测。
-    6. 容量控制：全局长期记忆上限 ${lingxi.memory.global.max-tokens} token，项目长期记忆上限 ${lingxi.memory.project.max-tokens} token，超出时优先压缩、去重及清理失效内容。
-    7. 冲突处理：当前有效指令及已验证事实优先于历史记忆；项目公约优先于普通记忆。
-    8. 路径安全：无法确定项目根目录时，不得猜测路径或写入项目记忆。
-    9. 项目 wiki：存放于工作区目录/${lingxi.memory.wiki.relative-location}；可用 load_memory 的空对象参数列目录，再传 wikiName 读取正文。
+    使用本次提供的三层记忆规则和项目 wiki 目录，按需检索、读取和沉淀相关模块知识。
     
     四、上下文压缩与恢复
     

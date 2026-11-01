@@ -6,7 +6,6 @@ import com.summit.core.conversation.message.SystemMessageEntity;
 import com.summit.core.runtime.loop.InterceptorResult;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopInterceptor;
-import com.summit.core.workspace.WorkspaceSpec;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -31,8 +30,7 @@ public class MemoryMonitorInterceptor implements LoopInterceptor {
     @Override
     public InterceptorResult onBeforeModelInvoke(LoopContext context) {
         Execution execution = context.getLoopMessages().getExecution();
-        WorkspaceSpec workspace = execution.getAgentRequest().getWorkspaceSpec();
-        List<SystemMessageEntity> reminders = monitor.checkMemoryLimits(workspace == null ? null : workspace.workDir());
+        List<SystemMessageEntity> reminders = monitor.checkMemoryLimits();
         Set<String> pending = new LinkedHashSet<>();
         reminders.forEach(reminder -> pending.add(reminder.text()));
         List<Message> retained = new ArrayList<>();

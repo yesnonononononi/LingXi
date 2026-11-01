@@ -38,6 +38,10 @@ public class ToolListProcessor {
             tools.add(ToolCatalog.SEARCH_TOOL);
         }
         if (context.skillRoot() != null) tools.add(ToolCatalog.READ_SKILL);
+        if (context.projectMemory()) {
+            tools.add(ToolCatalog.LOAD_MEMORY);
+            tools.add(ToolCatalog.SEARCH_WIKI);
+        }
         if (context.requirePlan()) tools.add(ToolCatalog.CREATE_PLAN);
         if (context.vision()) tools.add(ToolCatalog.READ_IMAGE);
         else tools.remove(ToolCatalog.READ_IMAGE);

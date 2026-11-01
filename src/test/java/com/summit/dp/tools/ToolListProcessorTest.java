@@ -42,6 +42,14 @@ class ToolListProcessorTest {
     }
 
     @Test
+    void projectAgentsReceiveBothWikiToolsIncludingInReadOnlyMode() {
+        when(catalog.readOnlyNames()).thenReturn(Set.of(ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI));
+        ToolProcessingContext context = ToolProcessingContext.builder().projectMemory(true)
+                .accessMode(AgentAccessMode.READ_ONLY_IN_WORKSPACE).build();
+        assertEquals(List.of(ToolCatalog.LOAD_MEMORY, ToolCatalog.SEARCH_WIKI), processor.process(null, context));
+    }
+
+    @Test
     void visionAddsTheImageToolAndDisabledVisionRemovesEvenExplicitSelection() {
         assertEquals(List.of(ToolCatalog.READ_FILE, ToolCatalog.READ_IMAGE), processor.process(List.of(ToolCatalog.READ_FILE),
                 ToolProcessingContext.builder().vision(true).accessMode(AgentAccessMode.IN_WORKSPACE).build()));

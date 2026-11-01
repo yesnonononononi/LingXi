@@ -83,7 +83,8 @@ public class SubAgentRequestFactory {
 
         AgentAccessMode accessMode = AgentAccessMode.from(toolExecution == null ? null : toolExecution.getAttributes());
 
-        WorkspaceSpec workspaceSpec = resolveWorkspaceSpec(workDir, parentWorkspace, parentWorkspaceId, accessMode);
+        ResolvedWorkspace resolvedWorkspace = resolveWorkspace(workDir, parentWorkspace, parentWorkspaceId, accessMode);
+        WorkspaceSpec workspaceSpec = resolvedWorkspace.spec();
 
         if (parentWorkspace != null && workspaceSpec == null) {
             throw new IllegalStateException("子执行缺少工作区配置，无法恢复工作目录: " + workDir);
@@ -107,13 +108,14 @@ public class SubAgentRequestFactory {
                 .retryConfig(ModelRetryConfig.builder().enabled(true).build())
                 .executionId(String.valueOf(IdUtil.getSnowflakeNextId()))
                 .runtimeParameters(AgentRuntimeParameters.builder()
-                        .attributes(childAttributes(subAgent, toolExecution, subSessionId, childModel))
+                        .attributes(childAttributes(subAgent, toolExecution, subSessionId, childModel, resolvedWorkspace.id()))
                         .build())
-                .systemPrompt(systemPromptBuilder.buildMemberPrompt(subAgent, team, argument.getPrompt()))
+                .systemPrompt(systemPromptBuilder.buildMemberPrompt(subAgent, team, argument.getPrompt(), workspaceSpec))
                 .toolList(toolListProcessor.process(subAgent.getToolList(), ToolProcessingContext.builder()
                         .member(true).agentId(subAgent.getId())
                         .teamId(ExecutionAttributes.readLong(toolExecution.getAttributes(), ExecutionAttributes.TEAM_ID))
-                        .vision(childModel.vision()).accessMode(accessMode).skillRoot(skillRoot).build()))
+                        .vision(childModel.vision()).accessMode(accessMode).skillRoot(skillRoot)
+                        .projectMemory(workspaceSpec != null).build()))
                 .skillConfig(skillRoot == null ? null : new SkillConfig(skillRoot))
                 .task(List.of(task))
                 .build();
@@ -149,11 +151,12 @@ public class SubAgentRequestFactory {
      * 真正的守卫是工具加工层把 {@code call_sub_agent} 从子执行工具清单里剔除。</p>
      */
     private Map<String, Object> childAttributes(AgentVO subAgent, ToolExecution toolExecution, String subSessionId,
-                                               RuntimeModel childModel) {
+                                               RuntimeModel childModel, Long workspaceId) {
         Map<String, Object> attributes = new HashMap<>(AgentAccessMode.toAttributes(AgentAccessMode.from(toolExecution.getAttributes())));
 
         attributes.put(ExecutionAttributes.SESSION_ID, subSessionId);
         attributes.put(ExecutionAttributes.MODEL_VISION, childModel.vision());
+        if (workspaceId != null) attributes.put(ExecutionAttributes.WORKSPACE_ID, workspaceId.toString());
 
         attributes.put(ExecutionAttributes.AGENT_ID, subAgent.getId().toString());
 
@@ -179,7 +182,7 @@ public class SubAgentRequestFactory {
      *
      * 优先匹配登记目录，未匹配时沿用父工作空间；访问档位继承父请求快照，避免委派时放宽权限。
      */
-    private WorkspaceSpec resolveWorkspaceSpec(String workDir,
+    private ResolvedWorkspace resolveWorkspace(String workDir,
                                                Workspace parentWorkspace,
                                                Long parentWorkspaceId,
                                                AgentAccessMode accessMode
@@ -191,15 +194,18 @@ public class SubAgentRequestFactory {
         if (workDir != null && !workDir.isBlank()) {
             WorkspaceVO workspace = workspaceService.findByDir(workDir).getData();
             if (workspace != null) {
-                return workspaceConverter.toSpec(workspace, type, accessMode);
+                return new ResolvedWorkspace(workspace.id(), workspaceConverter.toSpec(workspace, type, accessMode));
             }
         }
         if (parentWorkspace == null || parentWorkspaceId == null) {
-            return null;
+            return new ResolvedWorkspace(null, null);
         }
         WorkspaceVO parent = workspaceService.findById(parentWorkspaceId).getData();
-        return parent == null ? null : workspaceConverter.toSpec(parent, type, accessMode);
+        return parent == null ? new ResolvedWorkspace(null, null)
+                : new ResolvedWorkspace(parent.id(), workspaceConverter.toSpec(parent, type, accessMode));
     }
+
+    private record ResolvedWorkspace(Long id, WorkspaceSpec spec) { }
 
     /** 子模型不继承父配置；预设不可用时保留成员名与业务原因，方便定位。 */
     private RuntimeModel resolveChildModel(AgentVO subAgent) {
