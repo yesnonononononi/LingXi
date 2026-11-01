@@ -41,6 +41,16 @@ export interface CompileOptions {
   readonly reducedMotion: boolean;
   /** 选择器根（如 `#pet-root[data-motion='tap']`）。 */
   readonly selectorRoot: string;
+  /**
+   * 允许接受动画的层 id 白名单（缺省 = 不过滤）。
+   *
+   * <p><b>为什么需要它：</b>动作目录里的 `layerId` 是手写字符串，与层清单是两个文件。
+   * 门禁（`gate:pet`）能在构建期挡住"轨道落在支撑层上"，但**运行期**没有第二道防线：
+   * 用户装的是打包产物，一旦两者漂移，支撑层（底绘/遮挡片）会被转起来，露出补绘缝——
+   * 这种故障在屏幕上极其隐蔽。传入 `animatableLayerIds()` 之后，落在非可动层上的轨道
+   * 一律进 `unsupportedTracks` 并跳过，最坏情况是"某层不动"，而不是"某层露缝"。</p>
+   */
+  readonly allowedLayerIds?: readonly string[];
 }
 
 /** 编译结果。 */
@@ -225,8 +235,15 @@ export function compileMotion(catalog: MotionCatalog, id: string, options: Compi
   const durationMs = options.power === 'low' ? baseDuration * 2 : baseDuration;
   const cssRules: string[] = [];
   const unsupportedTracks: string[] = [];
+  // 白名单先建成 Set：每帧都会走这条路径，数组 includes 在高频重建时是白给的开销
+  const allowed = Array.isArray(options.allowedLayerIds) ? new Set(options.allowedLayerIds) : null;
 
   for (const track of def.tracks) {
+    if (allowed && !allowed.has(track.layerId)) {
+      // 非可动层（支撑层 / 清单里不存在的层）：不给规则，只记账
+      unsupportedTracks.push(`${id}:${track.layerId}`);
+      continue;
+    }
     const compiled = compileTrack(def, track, baseDuration, durationMs, options.selectorRoot);
     if (!compiled) {
       unsupportedTracks.push(`${id}:${track.layerId}`);

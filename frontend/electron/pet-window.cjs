@@ -328,9 +328,27 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath }) {
   /** 屏幕变化监听是否已挂（screen 只能在 app ready 之后用，故延迟到首次创建）。 */
   let displayListenersBound = false;
 
-  /** 通知外界可见性变了。 */
+  /**
+   * 通知外界可见性变了。
+   *
+   * <p><b>两个收件人，缺一不可：</b></p>
+   * <ol>
+   *   <li>主进程订阅者（托盘据此刷新"显示桌宠"的勾选）——一直是这么用的；</li>
+   *   <li><b>渲染层</b>（M6-b 补上）：渲染层的功耗策略里 `off` 档的判据是 `visible === false`，
+   *       而在此之前**没有任何代码把可见性下发给渲染层**，于是 `off` 是一条死分支：
+   *       桌宠被藏起来以后只落到 `low`（动画时长 ×2，仍在跑合成器 + 眨眼定时器照常）。
+   *       分层开闸后这句话的分量变了：藏起来的桌宠原来是 2 张静止帧，现在是
+   *       **9 层各跑一条 CSS 动画**，白烧的电直接翻了好几倍。</li>
+   * </ol>
+   *
+   * <p>时序安全：窗口还没建/DOM 还没就绪时 `webContents.send` 发出去也没人听，
+   * 加载完成后 `did-finish-load` 会再发一条 `ready`，渲染层以最后一条状态为准。</p>
+   */
   function notifyVisibility() {
     const visible = isVisible();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('pet:command', { type: 'visible', visible });
+    }
     for (const listener of visibilityListeners) {
       try {
         listener(visible);
@@ -565,6 +583,9 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath }) {
       win.webContents.send('pet:command', {
         type: 'ready',
         clickThrough: ignoring,
+        // 首帧就带上可见性：桌宠可能在"窗口已隐藏"的前提下被重新加载，
+        // 渲染层据此直接进 off 档，而不是先按"可见"跑一轮动画再被纠正
+        visible: win.isVisible(),
         size: { width: initial.width, height: initial.height },
       });
     });

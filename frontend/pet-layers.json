@@ -1,7 +1,7 @@
 {
   "version": 1,
   "assetId": "lingxi-pet-p1-layers",
-  "enabled": false,
+  "enabled": true,
   "assetBase": "lxa://pet-p1/",
   "canvas": {
     "width": 2048,

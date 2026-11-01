@@ -83,17 +83,85 @@ function isFiniteNumber(value) {
 }
 
 /**
+ * 校验动作目录里的**层轨道**是否与层清单自洽（M6-b 新增）。
+ *
+ * <p><b>为什么这几条必须有：</b>动作目录里的 `layerId` 是手写的字符串，一旦与层清单对不上，
+ * 症状是"某个部件不动"或"某层被转错方向"，而控制台一条日志都没有。更糟的是支撑层
+ * （底绘 / 身体遮挡 / 前景遮挡）：<b>它们转一下就会露出补绘缝</b>，比穿模更难察觉。
+ * 所以这三条不是"风格检查"，而是"改坏了必须构建失败"。</p>
+ *
+ * <ul>
+ *   <li>每个 `track.layerId` 必须存在于 `pet-layers.json`（拼错即失败）；</li>
+ *   <li>`role: 'support'` 的层永不出现在任何轨道里（支撑层只参与合成）；</li>
+ *   <li>`property` 必须在白名单内（`rotate/translateX/translateY/scale/opacity`）；</li>
+ *   <li>`mirror` 的目标必须是同一动作里的另一条轨道（否则镜像复制不到关键帧）；</li>
+ *   <li>`follow.source` 若写成某个层 id，该层必须是可动层（`bodySway`/`bodyTilt` 这类信号名不校验）。</li>
+ * </ul>
+ *
+ * @param {unknown} source 动作目录原文
+ * @param {object|null} manifest 层清单（为 null 时只做目录内自洽校验，跳过跨文件检查）
+ * @returns {string[]} 问题列表（空 = 通过）
+ */
+export function validateMotionTracksAgainstLayers(source, manifest) {
+  const problems = [];
+  if (!source || typeof source !== 'object') return problems;
+  const motions = source.motions;
+  if (!motions || typeof motions !== 'object') return problems;
+  const layers = manifest && Array.isArray(manifest.layers) ? manifest.layers : [];
+  const byId = new Map();
+  for (const layer of layers) {
+    if (layer && typeof layer.layerId === 'string') byId.set(layer.layerId, layer);
+  }
+
+  for (const [id, def] of Object.entries(motions)) {
+    const path = `motions.${id}`;
+    if (!def || typeof def !== 'object' || !Array.isArray(def.tracks)) continue;
+    const trackIds = new Set(def.tracks.map((track) => (track && typeof track.layerId === 'string' ? track.layerId : '')));
+    def.tracks.forEach((track, index) => {
+      const trackPath = `${path}.tracks[${index}]`;
+      if (!track || typeof track !== 'object') return;
+      if (!MOTION_PROPERTIES.includes(track.property)) {
+        problems.push(`${trackPath}.property 只允许 ${MOTION_PROPERTIES.join(' / ')}，实际为 ${String(track.property)}`);
+      }
+      const layerId = track.layerId;
+      if (typeof layerId !== 'string' || layerId.length === 0) return;
+      if (byId.size > 0 && !byId.has(layerId)) {
+        problems.push(`${trackPath}.layerId=${layerId} 在 pet-layers.json 里不存在（层名拼错或层已被删）`);
+        return;
+      }
+      const layer = byId.get(layerId);
+      if (layer && layer.role === 'support') {
+        problems.push(`${trackPath}.layerId=${layerId} 是支撑层（role=support），支撑层永不接受动画（转一下就会露补绘缝）`);
+      }
+      if (typeof track.mirror === 'string' && !trackIds.has(track.mirror)) {
+        problems.push(`${trackPath}.mirror=${track.mirror} 不是同一动作里的轨道（镜像复制不到关键帧）`);
+      }
+      const followSource = track.follow && typeof track.follow === 'object' ? track.follow.source : undefined;
+      if (typeof followSource === 'string' && byId.has(followSource)) {
+        const sourceLayer = byId.get(followSource);
+        if (sourceLayer && sourceLayer.role === 'support') {
+          problems.push(`${trackPath}.follow.source=${followSource} 是支撑层，不能作为动画驱动源`);
+        }
+      }
+    });
+  }
+  return problems;
+}
+
+/**
  * 校验动作目录（`frontend/pet-motions.json`）的**构建期安全子集**。
  *
  * <p>权威校验器是 `src/pet/layers/motion-catalog.ts` 的 `validateCatalog`（运行期与单测用）。
  * 这里只复核那些"改坏了会让构建带病上线"的硬约束：版本、9 个动作齐全、
- * 时长与循环自洽、优先级/层/属性白名单、关键帧闭合。两边是否漂移由
+ * 时长与循环自洽、优先级/层/属性白名单、关键帧闭合，以及**跨文件**的层轨道自洽
+ * （见 {@link validateMotionTracksAgainstLayers}）。两边是否漂移由
  * `tests/petMotionCompiler.test.ts` 的交叉断言盯着（同一份坏目录必须被两边同时点名）。</p>
  *
  * @param {unknown} source 目录原文
+ * @param {object|null} [manifest] 层清单（缺省 = 跳过跨文件校验）
  * @returns {string[]} 问题列表（空 = 通过）
  */
-export function validateMotionsFile(source) {
+export function validateMotionsFile(source, manifest = null) {
   const problems = [];
   if (!source || typeof source !== 'object') return ['动作目录必须是对象'];
   if (source.version !== 1) problems.push(`动作目录 version 必须为 1，实际为 ${String(source.version)}`);
@@ -169,6 +237,8 @@ export function validateMotionsFile(source) {
       });
     });
   }
+  // 跨文件：轨道必须落在真实存在且可动的层上（支撑层永不接受动画）
+  problems.push(...validateMotionTracksAgainstLayers(source, manifest));
   return problems;
 }
 
@@ -617,7 +687,7 @@ export function runLayerGate(options = {}) {
   const motionsPath = options.motionsPath ?? MOTIONS_JSON_PATH;
   try {
     const motions = readJsonFile(motionsPath);
-    problems.push(...validateMotionsFile(motions));
+    problems.push(...validateMotionsFile(motions, manifest));
     if (verbose) console.log(`[pet-layers] 动作目录动作数=${Object.keys(motions.motions ?? {}).length}`);
   } catch (err) {
     problems.push(`动作目录不可读: ${(err && err.message) || err}`);

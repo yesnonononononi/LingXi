@@ -37,10 +37,13 @@ import {
   runLayerGate,
   validateAgainstDisk,
   validateMasks,
+  validateMotionsFile,
+  validateMotionTracksAgainstLayers,
   validateNoOrphans,
   sourceDirPresent,
 } from '../scripts/check-pet-layers.mjs';
 import { loadSharp, sha256Of } from '../scripts/build-pet-assets.mjs';
+import { FRONTEND_ROOT } from '../scripts/build-pet-geometry.mjs';
 
 /** 仓库里的层清单（真实生成物）。 */
 const MANIFEST = JSON.parse(readFileSync(LAYERS_JSON_PATH, 'utf8')) as {
@@ -242,7 +245,8 @@ test('runLayerGate：真实仓库一次过（含落盘/孤儿/掩膜三类新校
   assert.equal(result.ok, true);
   assert.equal(result.p1Present, true);
   assert.equal(result.missingAssetState, false);
-  assert.equal(result.manifest.enabled, false, '总闸必须仍然关闭（开闸要单独批准）');
+  // M6-b 设计变更：总闸已开（用户批准），层齐 / 体积在预算内 / 动作轨道全部落在可动层上
+  assert.equal(result.manifest.enabled, true, 'M6-b 开闸后 enabled 必须为 true');
 });
 
 test('buildLayerAssets --check：入库状态即最新（改了资产却没回填就会红）', async () => {
@@ -354,4 +358,71 @@ test('transcodeLayer：非 2:3 母版直接拒绝（不偷偷裁切）', async (
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ------------------------------------------------------------ M6-b：动作轨道 × 层清单
+
+/** 读真实的动作目录原文（门禁的输入）。 */
+const MOTIONS = JSON.parse(readFileSync(resolve(FRONTEND_ROOT, 'pet-motions.json'), 'utf8')) as {
+  motions: Record<string, { tracks: Array<Record<string, unknown>> }>;
+};
+
+/**
+ * 深拷贝动作目录（每个用例拿自己的副本）。
+ *
+ * @returns 目录副本
+ */
+function cloneMotions(): typeof MOTIONS {
+  return JSON.parse(JSON.stringify(MOTIONS)) as typeof MOTIONS;
+}
+
+test('validateMotionsFile：真实目录 + 真实层清单自洽（轨道全部落在可动层上）', () => {
+  assert.deepEqual(validateMotionsFile(MOTIONS, MANIFEST), []);
+  assert.deepEqual(validateMotionTracksAgainstLayers(MOTIONS, MANIFEST), []);
+});
+
+test('validateMotionsFile：轨道引用了层清单里不存在的层 → 点名（拼错层名不会静默不动）', () => {
+  const motions = cloneMotions();
+  motions.motions.idle.tracks.push({ layerId: 'tail-basee', property: 'rotate', keyframes: [{ at: 0, value: 0 }, { at: 1, value: 1 }] });
+  const problems = validateMotionTracksAgainstLayers(motions, MANIFEST).join(';');
+  assert.match(problems, /tail-basee 在 pet-layers\.json 里不存在/);
+});
+
+test('validateMotionsFile：支撑层出现在轨道里 → 点名（转一下就会露补绘缝）', () => {
+  for (const supportId of ['underpainting', 'body-occluder', 'foreground-occluder']) {
+    const motions = cloneMotions();
+    motions.motions.idle.tracks.push({
+      layerId: supportId,
+      property: 'rotate',
+      keyframes: [{ at: 0, value: 0 }, { at: 1, value: 3 }],
+    });
+    const problems = validateMotionTracksAgainstLayers(motions, MANIFEST).join(';');
+    assert.match(problems, new RegExp(`${supportId} 是支撑层`), `支撑层 ${supportId} 没被拦住：${problems}`);
+  }
+});
+
+test('validateMotionsFile：follow 挂在支撑层上 → 点名（不能拿遮挡片当驱动源）', () => {
+  const motions = cloneMotions();
+  motions.motions.sad.tracks.push({
+    layerId: 'ear-left',
+    property: 'rotate',
+    follow: { source: 'foreground-occluder', lagMs: 90, gain: 0.4 },
+    keyframes: [{ at: 0, value: 0 }, { at: 1, value: 2 }],
+  });
+  const problems = validateMotionTracksAgainstLayers(motions, MANIFEST).join(';');
+  assert.match(problems, /follow\.source=foreground-occluder 是支撑层/);
+});
+
+test('validateMotionsFile：property 不在白名单 → 点名', () => {
+  const motions = cloneMotions();
+  motions.motions.sad.tracks[0].property = 'skew';
+  const problems = validateMotionTracksAgainstLayers(motions, MANIFEST).join(';');
+  assert.match(problems, /property 只允许 rotate \/ translateX \/ translateY \/ scale \/ opacity/);
+});
+
+test('validateMotionsFile：mirror 指向不存在的轨道 → 点名', () => {
+  const motions = cloneMotions();
+  motions.motions.sad.tracks[1] = { layerId: 'ear-right', property: 'rotate', mirror: 'ear-ghost', keyframes: [{ at: 0, value: 0 }, { at: 1, value: 0 }] };
+  const problems = validateMotionTracksAgainstLayers(motions, MANIFEST).join(';');
+  assert.match(problems, /mirror=ear-ghost 不是同一动作里的轨道/);
 });

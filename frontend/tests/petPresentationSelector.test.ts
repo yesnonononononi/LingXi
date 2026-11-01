@@ -236,9 +236,33 @@ test('总闸关闭（默认态）→ composite，返回的就是今天那个 Spr
   assert.equal(deps.root.dataset.motion, 'idle');
 });
 
-test('运行时清单 pet-layers.json 的总闸默认是关的（M6 之前不许开）', async () => {
-  const { PET_LAYERS } = await import('../src/pet/layers/manifest');
-  assert.equal(PET_LAYERS.enabled, false);
+test('运行时清单 pet-layers.json 已开闸（M6-b 设计变更）：真实清单选路 = layered，9 层全挂', async () => {
+  const { PET_LAYERS, pickLayerDensity, requestedLayerIds } = await import('../src/pet/layers/manifest');
+  // M6-b：总闸由 false 改为 true（用户已批准）。这是设计变更，不是"为过测试改断言"。
+  assert.equal(PET_LAYERS.enabled, true, 'M6-b 开闸后总闸必须是 true');
+  const requested = requestedLayerIds(PET_LAYERS);
+  assert.equal(requested.length, 9, `真实清单应请求 9 层，实际 ${requested.join(',')}`);
+  const plan = resolveCompositePlan({
+    manifest: PET_LAYERS,
+    requested,
+    density: pickLayerDensity(1, PET_LAYERS),
+  });
+  assert.equal(plan.mode, 'layered');
+  assert.equal(plan.layers.length, 9);
+  assert.deepEqual(planLayerIds(plan), REAL_ORDER.map(([id]) => id));
+});
+
+test('真实清单 + ?layers=0：强制回 composite（回归手测开关仍然有效）', async () => {
+  const { PET_LAYERS, pickLayerDensity, requestedLayerIds } = await import('../src/pet/layers/manifest');
+  const overridden = applyLayersQueryOverride(PET_LAYERS, '?layers=0');
+  assert.equal(overridden.enabled, false);
+  const plan = resolveCompositePlan({
+    manifest: overridden,
+    requested: requestedLayerIds(overridden),
+    density: pickLayerDensity(1, overridden),
+  });
+  assert.equal(plan.mode, 'composite');
+  assert.equal(plan.layers.length, 0);
 });
 
 test('?layers=0 覆写：即使清单开闸也回 composite', () => {

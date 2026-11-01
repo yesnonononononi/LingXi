@@ -103,7 +103,7 @@ const EXPRESSION_LABELS: Readonly<Record<ExpressionId, string>> = {
 
 /** 主进程推来的指令。类型与 `pet-window.cjs` 的 `pet:command` 一一对应。 */
 type PetCommand =
-  | { type: 'ready'; clickThrough?: boolean; size?: { width: number; height: number } }
+  | { type: 'ready'; clickThrough?: boolean; visible?: boolean; size?: { width: number; height: number } }
   | { type: 'hit-state'; hit?: boolean }
   | { type: 'visible'; visible?: boolean }
   | { type: 'ping'; at?: number }
@@ -599,6 +599,8 @@ function subscribeCommands(): void {
     if (command.type === 'ready') {
       hitPipeline?.reconcileFromMain(command.clickThrough !== true);
       applyHitState(command.clickThrough !== true);
+      // 首帧就把可见性对齐：桌宠可能在"窗口已隐藏"的状态下被重新加载（托盘踢隐藏再开）
+      powerPolicy?.update({ visible: command.visible !== false });
       return;
     }
     if (command.type === 'visible') {

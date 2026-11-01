@@ -174,12 +174,13 @@ test('normalizeMotionCatalog：深拷贝且结构完整', () => {
   assert.equal(catalog.defaults.samples, 12);
   assert.equal(Object.keys(catalog.motions).length, 9);
   assert.equal(catalog.motions.tap.id, 'tap');
-  assert.equal(catalog.motions.tap.tracks.length, 3);
+  // M6-b 设计变更：tap = 双耳 + 蝴蝶结 + 呆毛（呆毛靠 spring 过冲回弹）
+  assert.equal(catalog.motions.tap.tracks.length, 4);
 });
 
 // ------------------------------------------------------------ 编译输出
 
-test('compileMotion(tap)：3 条轨道、480ms、选择器落在 data-layer 上', () => {
+test('compileMotion(tap)：4 条轨道、480ms、选择器落在 data-layer 上', () => {
   const compiled = compileMotion(MOTION_CATALOG, 'tap', {
     power: 'idle',
     reducedMotion: false,
@@ -187,8 +188,9 @@ test('compileMotion(tap)：3 条轨道、480ms、选择器落在 data-layer 上'
   });
   assert.equal(compiled.durationMs, 480);
   const consumers = compiled.cssRules.filter((rule) => !rule.startsWith('@keyframes'));
-  assert.equal(consumers.length, 3);
-  for (const layerId of ['ear-left', 'ear-right', 'bow']) {
+  // M6-b 设计变更：tap 从 3 条轨道（双耳 + 蝴蝶结）扩到 4 条，新增呆毛弹簧
+  assert.equal(consumers.length, 4);
+  for (const layerId of ['ear-left', 'ear-right', 'bow', 'ahoge']) {
     assert.ok(
       consumers.some((rule) => rule.includes(`[data-layer='${layerId}']`)),
       `缺少 ${layerId} 的消费规则：${consumers.join(' | ')}`,
@@ -356,3 +358,159 @@ test('evaluateCurve：两端线性外插（过冲的地基）', () => {
   assert.equal(evaluateCurve(curve, 1.2), 12);
   assert.equal(evaluateCurve(curve, -0.1), -1);
 });
+// ------------------------------------------------------------ M6-b 分层轨道的物理参数
+
+/**
+ * 目录原文里的某个动作定义。
+ *
+ * @param id 动作 id
+ * @returns 动作定义（未强类型，便于逐字段断言原始数值）
+ */
+function rawMotion(id: string): Record<string, any> {
+  const source = readCatalogSource() as { motions: Record<string, Record<string, any>> };
+  const def = source.motions[id];
+  assert.ok(def, `目录里没有动作 ${id}`);
+  return def;
+}
+
+/**
+ * 取某动作里某层的轨道。
+ *
+ * @param motionId 动作 id
+ * @param layerId 层 id
+ * @returns 轨道
+ */
+function trackOf(motionId: string, layerId: string): Record<string, any> {
+  const track = (rawMotion(motionId).tracks as Array<Record<string, any>>).find((item) => item.layerId === layerId);
+  assert.ok(track, `动作 ${motionId} 缺少 ${layerId} 的轨道`);
+  return track;
+}
+
+/**
+ * 轨道在增益之后的有效幅值（`follow` 会乘 `gain`）。
+ *
+ * @param track 轨道
+ * @returns 有效幅值（绝对值最大者）
+ */
+function effectiveAmplitude(track: Record<string, any>): number {
+  const gain = track.follow && Number.isFinite(track.follow.gain) ? Number(track.follow.gain) : 1;
+  const peak = Math.max(...(track.keyframes as Array<{ value: number }>).map((frame) => Math.abs(frame.value)));
+  return peak * gain;
+}
+
+test('M6-b 尾巴两段传导：每个双段动作里 tail-tip 都比 tail-base 晚 60ms（120 → 180）', () => {
+  const twoStage = ['idle', 'happy', 'sleepy', 'drag'];
+  for (const id of twoStage) {
+    const base = trackOf(id, 'tail-base');
+    const tip = trackOf(id, 'tail-tip');
+    assert.ok(base.follow && tip.follow, `${id}: 两段尾巴都必须用 follow 表达`);
+    assert.equal(tip.follow.source, 'tail-base', `${id}: 尾梢必须挂在第一段上（传导链）`);
+    assert.equal(
+      Number(tip.follow.lagMs) - Number(base.follow.lagMs),
+      60,
+      `${id}: 两段滞后差必须 60ms（美术 tailJoin.delayMs=[120,180]）`,
+    );
+  }
+  // 基准动作照抄美术物理参数
+  assert.equal(Number(trackOf('idle', 'tail-base').follow.lagMs), 120);
+  assert.equal(Number(trackOf('idle', 'tail-tip').follow.lagMs), 180);
+});
+
+test('M6-b 尾巴幅值按段递减：第二段的有效幅值必须小于第一段', () => {
+  for (const id of ['idle', 'happy', 'sleepy', 'drag']) {
+    const base = effectiveAmplitude(trackOf(id, 'tail-base'));
+    const tip = effectiveAmplitude(trackOf(id, 'tail-tip'));
+    assert.ok(tip < base, `${id}: 尾梢幅值 ${tip} 应小于尾根 ${base}（传导衰减）`);
+    assert.ok(base > 0, `${id}: 尾根幅值不能是 0`);
+  }
+});
+
+test('M6-b 双耳独立：每个含双耳的动作都是两条非镜像轨道，相位错开 ≥30ms', () => {
+  const withEars = ['tap', 'happy', 'angry', 'sad'];
+  for (const id of withEars) {
+    const def = rawMotion(id);
+    const left = trackOf(id, 'ear-left');
+    const right = trackOf(id, 'ear-right');
+    assert.equal(left.mirror, undefined, `${id}: 左耳不许用 mirror`);
+    assert.equal(right.mirror, undefined, `${id}: 右耳是单独补绘件，不许用 mirror（美术 mirrored=false）`);
+    // 相位 = 第一个峰值关键帧的归一化时间差 × 动作时长
+    const peakAt = (track: Record<string, any>): number => {
+      const frames = track.keyframes as Array<{ at: number; value: number }>;
+      let best = frames[0];
+      for (const frame of frames) if (Math.abs(frame.value) > Math.abs(best.value)) best = frame;
+      return best.at;
+    };
+    const durationMs = Number(def.durationMs);
+    const offsetMs = Math.abs(peakAt(right) - peakAt(left)) * durationMs;
+    assert.ok(offsetMs >= 30, `${id}: 双耳相位只差 ${offsetMs.toFixed(1)}ms，会读成"机械同步"（要求 ≥30ms）`);
+  }
+});
+
+test('M6-b 呆毛：tap / happy / wake / surprised / idle 都用 spring 采样出过冲', () => {
+  for (const id of ['idle', 'tap', 'happy', 'surprised', 'wake']) {
+    const track = trackOf(id, 'ahoge');
+    assert.ok(track.spring, `${id}: 呆毛必须用 spring（过冲回弹）`);
+    assert.equal(track.follow, undefined, `${id}: spring 与 follow 互斥`);
+    assert.ok(Number(track.spring.stiffness) > 0 && Number(track.spring.damping) >= 0);
+  }
+});
+
+test('M6-b 蝴蝶结惯性：idle/tap/happy/angry 都挂 follow{lagMs:90, gain:0.4}', () => {
+  for (const id of ['idle', 'tap', 'happy', 'angry']) {
+    const track = trackOf(id, 'bow');
+    assert.ok(track.follow, `${id}: 蝴蝶结必须靠 follow 滞后（不是独立摆动）`);
+    assert.equal(Number(track.follow.lagMs), 90, `${id}: 蝴蝶结滞后必须是 90ms`);
+    assert.equal(Number(track.follow.gain), 0.4, `${id}: 蝴蝶结增益必须是 0.4`);
+  }
+});
+
+test('M6-b 支撑层永不出现在任何轨道里（底绘/身体遮挡/前景遮挡只合成不动画）', () => {
+  const source = readCatalogSource() as { motions: Record<string, Record<string, any>> };
+  const support = ['underpainting', 'body-occluder', 'foreground-occluder'];
+  for (const [id, def] of Object.entries(source.motions)) {
+    for (const track of def.tracks as Array<Record<string, any>>) {
+      assert.ok(
+        !support.includes(String(track.layerId)),
+        `${id}: 支撑层 ${track.layerId} 出现在轨道里（转一下就会露补绘缝）`,
+      );
+    }
+  }
+});
+
+test('compileMotion：allowedLayerIds 过滤掉非可动层（运行期第二道防线）', () => {
+  const catalog = cloneCatalog() as unknown as Record<string, any>;
+  // 人为把支撑层塞进 idle：模拟"目录与层清单漂移"的坏状态
+  catalog.motions.idle.tracks.push({
+    layerId: 'body-occluder',
+    property: 'rotate',
+    keyframes: [
+      { at: 0, value: 0 },
+      { at: 1, value: 5 },
+    ],
+  });
+  const options = { power: 'idle' as const, reducedMotion: false, selectorRoot: '#pet-root' };
+  // 不给白名单：能编出来（说明这条防线不是"编译器的默认行为"）
+  const unguarded = compileMotion(catalog as unknown as MotionCatalog, 'idle', options);
+  assert.ok(
+    unguarded.cssRules.some((rule) => rule.includes("[data-layer='body-occluder']")),
+    '未传白名单时应能编出支撑层规则（对照组）',
+  );
+  // 给白名单：支撑层被拒，且记账
+  const guarded = compileMotion(catalog as unknown as MotionCatalog, 'idle', {
+    ...options,
+    allowedLayerIds: ['tail-base', 'tail-tip', 'ear-left', 'ear-right', 'ahoge', 'bow'],
+  });
+  assert.ok(
+    !guarded.cssRules.some((rule) => rule.includes("[data-layer='body-occluder']")),
+    '支撑层必须被白名单挡掉',
+  );
+  assert.deepEqual(guarded.unsupportedTracks, ['idle:body-occluder']);
+  // 可动层一条不许少
+  for (const layerId of ['tail-base', 'tail-tip', 'ahoge', 'bow']) {
+    assert.ok(
+      guarded.cssRules.some((rule) => rule.includes(`[data-layer='${layerId}']`)),
+      `可动层 ${layerId} 的规则被误删了`,
+    );
+  }
+});
+

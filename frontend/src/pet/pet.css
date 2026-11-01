@@ -611,9 +611,19 @@ body {
   transition: none;
 }
 
+/**
+ * 功耗/停顿档位暂停层轨道。
+ *
+ * <p><b>`!important` 在这里不是偷懒，是必须的：</b>层动画的 `animation`
+ * 是 `motion-compiler.ts` 在运行期注入的**简写**规则
+ * （`#pet-root[data-motion='idle'][data-motion-seq='n'] [data-layer='ahoge'] { animation: … }`），
+ * 特异性 130 高于本规则的 120，而且 `animation` 简写会把 `animation-play-state` 一起重置成
+ * `running`。M6-b 真机实测就是这个后果：`data-power='off'` 时 7 条动画里只有 3 条停住，
+ * 4 条层轨道照跑（桌宠被藏起来还在烧合成器）。本规则是"状态覆盖"，优先级必须压过动态注入。</p>
+ */
 #pet-root[data-power='off'] .pet-layer,
 #pet-root[data-motion-rest='1'] .pet-layer {
-  animation-play-state: paused;
+  animation-play-state: paused !important;
 }
 
 /**

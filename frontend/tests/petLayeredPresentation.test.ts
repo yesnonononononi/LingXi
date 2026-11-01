@@ -274,6 +274,8 @@ function setup(overrides: {
   readonly reducedMotion?: boolean;
   readonly power?: 'interactive' | 'idle' | 'low' | 'off';
   readonly crossfadeMs?: number;
+  /** 动作目录覆盖（M6-b：用"坏目录"验证运行期防线）。 */
+  readonly catalog?: typeof MOTION_CATALOG;
 } = {}): Fixture {
   const doc = new FakeDocument();
   const root = new FakeElement('div');
@@ -288,7 +290,7 @@ function setup(overrides: {
     root,
     views,
     manifest,
-    catalog: MOTION_CATALOG,
+    catalog: overrides.catalog ?? MOTION_CATALOG,
     plan,
     baseFallback: fallback,
     expressionUrls: { happy: 'lxa://pet-v3/composites/happy@2x.webp' },
@@ -359,6 +361,26 @@ test('tap：规则落到双耳与蝴蝶结，且不碰支撑层', () => {
   }
   // 规则挂在 #pet-root 的动作选择器下（也意味着不会污染压平帧实现的路径）
   assert.ok(text.includes(LAYER_SELECTOR_ROOT));
+});
+
+test('M6-b 运行期第二道防线：目录里混入支撑层轨道时，合成器也不会给它派规则', () => {
+  const poisoned = JSON.parse(JSON.stringify(MOTION_CATALOG)) as typeof MOTION_CATALOG;
+  (poisoned.motions.idle.tracks as Array<Record<string, unknown>>).push({
+    layerId: 'foreground-occluder',
+    property: 'rotate',
+    keyframes: [
+      { at: 0, value: 0 },
+      { at: 1, value: 4 },
+    ],
+  });
+  const { presentation } = setup({ catalog: poisoned });
+  presentation.apply(motionOp('idle'));
+  const text = presentation.styleText;
+  assert.ok(!text.includes("[data-layer='foreground-occluder']"), '支撑层被转起来就一定会露补绘缝');
+  // 同一条动作里的可动层照常编译，不是"整条动作被丢掉"
+  for (const layerId of ['tail-base', 'tail-tip', 'ahoge', 'bow']) {
+    assert.match(text, new RegExp(`\\[data-layer='${layerId}'\\]`), `可动层 ${layerId} 的规则不该被牵连`);
+  }
 });
 
 test('全部 9 个动作都不给支撑层派任何规则', () => {

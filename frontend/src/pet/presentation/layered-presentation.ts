@@ -16,7 +16,7 @@
 import type { Power } from '../power-policy';
 import { compileMotion } from '../layers/motion-compiler';
 import type { MotionCatalog } from '../layers/motion-catalog';
-import { layerAssetUrl } from '../layers/manifest';
+import { animatableLayerIds, layerAssetUrl } from '../layers/manifest';
 import type { CompositePlan, LayerManifest, LayerSpec } from '../layers/types';
 import { DEFAULT_TIMER_PORT, type TimerPort } from './bus';
 import {
@@ -299,6 +299,8 @@ export class LayeredPresentation implements PetPresentation {
     const compiled = compileMotion(this.deps.catalog, id, {
       power: this.deps.power?.() ?? 'idle',
       reducedMotion: this.deps.reducedMotion?.() ?? false,
+      // 运行期第二道防线：只有可动层能接动画（支撑层转一下就会露补绘缝）
+      allowedLayerIds: animatableLayerIds(this.deps.manifest),
       selectorRoot: `${LAYER_SELECTOR_ROOT}[data-motion='${id}'][data-motion-seq='${this.motionSeq}']`,
     });
     this.currentRules = compiled.cssRules;
