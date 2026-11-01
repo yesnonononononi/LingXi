@@ -1,0 +1,10 @@
+{
+  "name": "lingxi-pet-p1-art",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "build": "node tools/build.cjs && node tools/preview.cjs && node tools/verify.cjs",
+    "verify": "node tools/verify.cjs"
+  },
+  "dependencies": { "sharp": "0.35.5" }
+}

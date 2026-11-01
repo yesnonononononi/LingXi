@@ -1,0 +1,383 @@
+{
+  "version": 1,
+  "assetId": "lingxi-pet-p1-v1",
+  "canvas": {
+    "width": 2048,
+    "height": 3072
+  },
+  "anchor": {
+    "x": 1024,
+    "y": 2908
+  },
+  "colorSpace": "sRGB",
+  "alpha": "straight",
+  "sourceNativeScale": 2,
+  "reference": {
+    "path": "D:\\Code\\LingXi\\.lingxi\\work\\desktop-pet-visual\\docs\\assets\\desktop-pet\\v3\\front-standing.png",
+    "sha256": "29fbbbda445b852c320f9b8181f43a5117788ab9a957d685259c46fd9a06f6e8",
+    "localNative": "source/reference-p0-native.png"
+  },
+  "naming": "左右按屏幕坐标；06_bow 为右上头饰蝴蝶结，非颈部蝴蝶结。",
+  "renderOrder": [
+    "support/underpainting.png",
+    "01_tail_base.png",
+    "02_tail_tip.png",
+    "03_ear_left.png",
+    "04_ear_right.png",
+    "support/body-occluder.png",
+    "05_ahoge.png",
+    "06_bow.png",
+    "support/foreground-occluder.png"
+  ],
+  "orderingNote": "不能仅按 01～06 画在完整立绘上；耳朵在前发下，云朵发夹压住头饰蝴蝶结局部，呆毛根部由发根盖片遮挡。",
+  "tailJoin": {
+    "y": 2160,
+    "overlapBand": {
+      "top": 2154,
+      "bottomExclusive": 2166,
+      "height": 12
+    },
+    "delayMs": [
+      120,
+      180
+    ]
+  },
+  "tailVisibilityBoundaryNative": [
+    [
+      820,
+      849
+    ],
+    [
+      840,
+      854
+    ],
+    [
+      860,
+      867
+    ],
+    [
+      880,
+      878
+    ],
+    [
+      900,
+      880
+    ],
+    [
+      920,
+      874
+    ],
+    [
+      940,
+      858
+    ],
+    [
+      950,
+      846
+    ],
+    [
+      970,
+      839
+    ],
+    [
+      990,
+      848
+    ],
+    [
+      1007,
+      886
+    ],
+    [
+      1020,
+      866
+    ],
+    [
+      1030,
+      843
+    ],
+    [
+      1050,
+      846
+    ],
+    [
+      1070,
+      849
+    ],
+    [
+      1090,
+      846
+    ],
+    [
+      1110,
+      839
+    ],
+    [
+      1130,
+      826
+    ],
+    [
+      1150,
+      815
+    ],
+    [
+      1160,
+      794
+    ],
+    [
+      1170,
+      787
+    ],
+    [
+      1180,
+      799
+    ],
+    [
+      1190,
+      790
+    ],
+    [
+      1200,
+      755
+    ],
+    [
+      1210,
+      753
+    ],
+    [
+      1220,
+      723
+    ],
+    [
+      1230,
+      698
+    ],
+    [
+      1240,
+      673
+    ],
+    [
+      1250,
+      651
+    ],
+    [
+      1260,
+      646
+    ],
+    [
+      1280,
+      674
+    ],
+    [
+      1300,
+      705
+    ],
+    [
+      1320,
+      752
+    ],
+    [
+      1350,
+      815
+    ]
+  ],
+  "files": [
+    {
+      "kind": "part",
+      "file": "01_tail_base.png",
+      "id": "01_tail_base",
+      "purpose": "尾根段",
+      "width": 2048,
+      "height": 3072,
+      "pivot": {
+        "x": 1320,
+        "y": 2360
+      },
+      "allowedRegion": [
+        1180,
+        2040,
+        2046,
+        2720
+      ],
+      "visiblePixelsNative": 51983,
+      "hiddenPixelsNative": 23772,
+      "overlapPixelsNative": 456,
+      "occlusionFill": "尾根向长袍和后发下补绘至少 20px；中段保留 12px 重叠带。",
+      "generatedSource": "source/tail_base-generated.png",
+      "mirrored": false,
+      "visibleMask": "support/masks/01_tail_base_visible.png",
+      "hiddenMask": "support/masks/01_tail_base_hidden.png",
+      "sha256": "591c9f136f70ce00ca626a3c7e5e825be26456d6e7e51a1e0361df3a778d20d4",
+      "bytes": 124846
+    },
+    {
+      "kind": "part",
+      "file": "02_tail_tip.png",
+      "id": "02_tail_tip",
+      "purpose": "尾尖段",
+      "width": 2048,
+      "height": 3072,
+      "pivot": {
+        "x": 1840,
+        "y": 2160
+      },
+      "allowedRegion": [
+        1400,
+        1560,
+        2046,
+        2190
+      ],
+      "visiblePixelsNative": 30854,
+      "hiddenPixelsNative": 17328,
+      "overlapPixelsNative": 455,
+      "occlusionFill": "尾尖内侧补齐后发遮挡的毛面；中段与尾根段使用同一份原像素形成 12px 重叠带。",
+      "generatedSource": "source/tail_tip-generated.png",
+      "mirrored": false,
+      "visibleMask": "support/masks/02_tail_tip_visible.png",
+      "hiddenMask": "support/masks/02_tail_tip_hidden.png",
+      "sha256": "79e5c185558a007cee3859edc7f6fed840b045aa42f3cdebca17934aea51f5a6",
+      "bytes": 91322
+    },
+    {
+      "kind": "part",
+      "file": "03_ear_left.png",
+      "id": "03_ear_left",
+      "purpose": "左耳",
+      "width": 2048,
+      "height": 3072,
+      "pivot": {
+        "x": 484,
+        "y": 708
+      },
+      "allowedRegion": [
+        240,
+        280,
+        880,
+        970
+      ],
+      "visiblePixelsNative": 28208,
+      "hiddenPixelsNative": 11774,
+      "overlapPixelsNative": 0,
+      "occlusionFill": "屏幕左耳的完整内外耳保留，耳根向刘海下补绘 22px。",
+      "generatedSource": "source/ear_left-generated.png",
+      "mirrored": false,
+      "visibleMask": "support/masks/03_ear_left_visible.png",
+      "hiddenMask": "support/masks/03_ear_left_hidden.png",
+      "sha256": "c7584271c4e9ddff8c83287ac85eb58577e0c1ca8dad0ddb72a82934d6857c84",
+      "bytes": 100806
+    },
+    {
+      "kind": "part",
+      "file": "04_ear_right.png",
+      "id": "04_ear_right",
+      "purpose": "右耳",
+      "width": 2048,
+      "height": 3072,
+      "pivot": {
+        "x": 1408,
+        "y": 700
+      },
+      "allowedRegion": [
+        1040,
+        280,
+        1660,
+        950
+      ],
+      "visiblePixelsNative": 33301,
+      "hiddenPixelsNative": 9315,
+      "overlapPixelsNative": 0,
+      "occlusionFill": "屏幕右耳单独生成，向刘海与发夹下补绘 22px，未镜像左耳。",
+      "generatedSource": "source/ear_right-generated.png",
+      "mirrored": false,
+      "visibleMask": "support/masks/04_ear_right_visible.png",
+      "hiddenMask": "support/masks/04_ear_right_hidden.png",
+      "sha256": "9bdc74eb6e969752164aed532881053ebedda6ce74c44b23de11f6138349b6ee",
+      "bytes": 112259
+    },
+    {
+      "kind": "part",
+      "file": "05_ahoge.png",
+      "id": "05_ahoge",
+      "purpose": "呆毛",
+      "width": 2048,
+      "height": 3072,
+      "pivot": {
+        "x": 972,
+        "y": 514
+      },
+      "allowedRegion": [
+        650,
+        110,
+        1200,
+        610
+      ],
+      "visiblePixelsNative": 16124,
+      "hiddenPixelsNative": 5983,
+      "overlapPixelsNative": 0,
+      "occlusionFill": "卷曲末端完整保留，根部向头顶内部延伸 22px，使用前景发根盖片压住隐藏边。",
+      "generatedSource": "source/ahoge-generated.png",
+      "mirrored": false,
+      "visibleMask": "support/masks/05_ahoge_visible.png",
+      "hiddenMask": "support/masks/05_ahoge_hidden.png",
+      "sha256": "554dc2f89acf55a37a1b3e75c10c42893ba12654df9096cfd0b9b722d8b0c275",
+      "bytes": 90358
+    },
+    {
+      "kind": "part",
+      "file": "06_bow.png",
+      "id": "06_bow",
+      "purpose": "头饰蝴蝶结",
+      "width": 2048,
+      "height": 3072,
+      "pivot": {
+        "x": 1588,
+        "y": 944
+      },
+      "allowedRegion": [
+        1380,
+        780,
+        1830,
+        1320
+      ],
+      "visiblePixelsNative": 18368,
+      "hiddenPixelsNative": 956,
+      "overlapPixelsNative": 0,
+      "occlusionFill": "双翼和两条飘带完整保留，补齐云朵发夹下的左翼和结背连接；另附移除蝴蝶结后的头发底图。",
+      "generatedSource": "source/bow-generated.png",
+      "mirrored": false,
+      "visibleMask": "support/masks/06_bow_visible.png",
+      "hiddenMask": "support/masks/06_bow_hidden.png",
+      "sha256": "3729c2b4b05fa82be3d5315480214dfc47efec9fe1b73695ff153d7b8b19a92e",
+      "bytes": 80798
+    },
+    {
+      "id": "underpainting",
+      "file": "support/underpainting.png",
+      "purpose": "被移开部件下的头发补绘底层",
+      "kind": "support",
+      "width": 2048,
+      "height": 3072,
+      "sha256": "51a8640f76b7f265f69744ca783defe0c18a89849f1391960d2de8ea5fac0cd2",
+      "bytes": 97336
+    },
+    {
+      "id": "body-occluder",
+      "file": "support/body-occluder.png",
+      "purpose": "保留前发、衣物和面部的主体遮挡层",
+      "kind": "support",
+      "width": 2048,
+      "height": 3072,
+      "sha256": "97f8404980301df80ef52ed7c1cfb6815411e92dd96056a425b480225ba033e9",
+      "bytes": 1462556
+    },
+    {
+      "id": "foreground-occluder",
+      "file": "support/foreground-occluder.png",
+      "purpose": "遮住隐藏发根及蝴蝶结局部的前景盖片",
+      "kind": "support",
+      "width": 2048,
+      "height": 3072,
+      "sha256": "f0adcea9e7a251151311a57a9cea95d6eea8569e7b23e4b0aa2d3ded87c1a7e1",
+      "bytes": 63619
+    }
+  ]
+}
