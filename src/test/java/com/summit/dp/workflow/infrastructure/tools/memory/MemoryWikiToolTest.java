@@ -127,8 +127,10 @@ class MemoryWikiToolTest {
 
         ToolExecuteResult catalog = execute(loader, workspace, "{}");
         assertTrue(catalog.isSuccess(), catalog.getToolOutput());
-        assertEquals(List.of("a/same.md", "b/same.md", "empty.md", "z.md"),
-                mapper.readValue(catalog.getToolOutput(), List.class));
+        JsonNode listing = mapper.readTree(catalog.getToolOutput());
+        assertEquals(4, listing.path("total").asInt());
+        assertEquals(4, listing.path("returned").asInt());
+        assertEquals(List.of("a/same.md", "b/same.md", "empty.md", "z.md"), names(listing));
         assertEquals("甲正文", read(loader, workspace, "a/same.md").getToolOutput());
         assertEquals("乙正文", read(loader, workspace, "b/same.md").getToolOutput());
         ToolExecuteResult empty = read(loader, workspace, "empty.md");
@@ -140,15 +142,37 @@ class MemoryWikiToolTest {
     }
 
     @Test
+    void catalogEnvelopeShowsTheTruncationInsteadOfSilentlyDroppingEntries() throws Exception {
+        for (int index = 0; index < 35; index++) {
+            write(temporary, ".lingxi/wikis/module-%02d.md".formatted(index), "正文 " + index);
+        }
+        ToolExecuteResult catalog = execute(loader(".lingxi/wikis"), workspace(temporary), "{}");
+        assertTrue(catalog.isSuccess(), catalog.getToolOutput());
+        JsonNode listing = mapper.readTree(catalog.getToolOutput());
+        assertEquals(35, listing.path("total").asInt());
+        assertEquals(MemoryWikiLimits.MAX_ENTRIES, listing.path("returned").asInt());
+        assertEquals(MemoryWikiLimits.MAX_ENTRIES, listing.path("wikis").size());
+        assertEquals("module-00.md", listing.path("wikis").get(0).asText());
+        assertEquals("module-29.md", listing.path("wikis").get(MemoryWikiLimits.MAX_ENTRIES - 1).asText());
+        assertFalse(catalog.getToolOutput().contains("module-30.md"));
+        assertTrue(catalog.getToolOutput().length() <= MemoryWikiLimits.MAX_CATALOG_CHARS);
+    }
+
+    @Test
     void missingDirectoryIsEmptyAndNewFilesAppearOnTheNextCall() throws Exception {
         MemoryWikiLoader loader = loader(".lingxi/wikis");
         Workspace workspace = workspace(temporary);
-        assertEquals("[]", execute(loader, workspace, "{}").getToolOutput());
+        JsonNode listing = mapper.readTree(execute(loader, workspace, "{}").getToolOutput());
+        assertEquals(0, listing.path("total").asInt());
+        assertEquals(0, listing.path("returned").asInt());
+        assertEquals(0, listing.path("wikis").size());
         assertFalse(Files.exists(temporary.resolve(".lingxi")));
         write(temporary, ".lingxi/wikis/new.md", "新 wiki");
         assertEquals("新 wiki", read(loader, workspace, "new.md").getToolOutput());
         Files.delete(temporary.resolve(".lingxi/wikis/new.md"));
-        assertEquals("[]", execute(loader, workspace, "{}").getToolOutput());
+        JsonNode reloaded = mapper.readTree(execute(loader, workspace, "{}").getToolOutput());
+        assertEquals(0, reloaded.path("total").asInt());
+        assertEquals(0, reloaded.path("wikis").size());
     }
 
     @Test
@@ -169,17 +193,48 @@ class MemoryWikiToolTest {
 
     @ParameterizedTest
     @NullAndEmptySource
-    @ValueSource(strings = {" ", "null", "[]", "broken", "{\"wikiName\":\" \"}"})
-    void malformedArgumentsAreErrors(String arguments) {
+    @ValueSource(strings = {" ", "null", "[]", "42", "\"text\"", "broken", "{\"wikiName\":42}", "{\"unknown\":1}"})
+    void malformedArgumentsFallBackToTheCatalogInsteadOfFailingTheRound(String arguments) throws Exception {
+        write(temporary, ".lingxi/wikis/alpha.md", "甲正文");
+        ToolExecuteResult result = execute(loader(".lingxi/wikis"), workspace(temporary), arguments);
+        assertTrue(result.isSuccess(), () -> arguments + " -> " + result.getToolOutput());
+        JsonNode listing = mapper.readTree(result.getToolOutput());
+        assertEquals(1, listing.path("total").asInt());
+        assertEquals(1, listing.path("returned").asInt());
+        assertEquals(List.of("alpha.md"), names(listing));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"{\"wikiName\":\"\"}", "{\"wikiName\":\"   \"}"})
+    void anExplicitlyEmptyWikiNameIsStillRejectedSoOmissionStaysDistinct(String arguments) throws Exception {
+        write(temporary, ".lingxi/wikis/alpha.md", "甲正文");
         ToolExecuteResult result = execute(loader(".lingxi/wikis"), workspace(temporary), arguments);
         assertFalse(result.isSuccess());
-        assertTrue(result.getToolOutput().startsWith("读取记忆 wiki 失败:"));
+        assertTrue(result.getToolOutput().contains("记忆 wiki 名称不能为空"), result.getToolOutput());
     }
 
     @Test
     void absentOrRelativeWorkspaceNeverFallsBackToTheProcessDirectory() {
-        assertFalse(execute(loader(".lingxi/wikis"), null, "{}").isSuccess());
-        assertFalse(execute(loader(".lingxi/wikis"), workspace(Path.of("relative-project")), "{}").isSuccess());
+        ToolExecuteResult absent = execute(loader(".lingxi/wikis"), null, "{}");
+        assertFalse(absent.isSuccess());
+        assertTrue(absent.getToolOutput().contains("读取记忆 wiki 需要绑定项目工作目录"), absent.getToolOutput());
+        ToolExecuteResult relative = execute(loader(".lingxi/wikis"), workspace(Path.of("relative-project")), "{}");
+        assertFalse(relative.isSuccess());
+        assertTrue(relative.getToolOutput().contains("必须是绝对路径"), relative.getToolOutput());
+    }
+
+    @Test
+    void wikiNamesThatResolveOutsideTheWikiRootAreRejectedWithTheOrdinaryLookupError() throws Exception {
+        write(temporary, ".lingxi/wikis/inside.md", "项目内正文");
+        write(temporary, "secret.md", "项目外正文");
+        MemoryWikiLoader loader = loader(".lingxi/wikis");
+        Workspace workspace = workspace(temporary);
+        for (String name : List.of("../secret.md", ".lingxi/wikis/inside.md", "inside.md/../../secret.md", "./inside.md")) {
+            ToolExecuteResult result = read(loader, workspace, name);
+            assertFalse(result.isSuccess(), name);
+            assertTrue(result.getToolOutput().contains("未找到记忆 wiki"), name + " -> " + result.getToolOutput());
+        }
+        assertEquals("项目内正文", read(loader, workspace, "inside.md").getToolOutput());
     }
 
     @Test
@@ -219,6 +274,20 @@ class MemoryWikiToolTest {
         JsonNode schema = mapper.readTree(definition.parametersJsonSchema());
         assertEquals("string", schema.path("properties").path("wikiName").path("type").asText());
         assertTrue(schema.path("required").isMissingNode() || schema.path("required").isEmpty());
+        String wikiNameDescription = schema.path("properties").path("wikiName").path("description").asText();
+        assertTrue(wikiNameDescription.contains("相对 wiki 根目录"), wikiNameDescription);
+        assertTrue(wikiNameDescription.contains("记忆系统.md"), wikiNameDescription);
+        assertTrue(wikiNameDescription.contains("不要带 .lingxi/memory/wiki 前缀"), wikiNameDescription);
+        assertTrue(wikiNameDescription.contains("省略时列出目录"), wikiNameDescription);
+        assertTrue(definition.description().contains("total"), definition.description());
+        assertTrue(definition.description().contains("returned"), definition.description());
+        assertFalse(definition.description().contains("最多 30 条目录"), definition.description());
+    }
+
+    private List<String> names(JsonNode listing) {
+        List<String> names = new ArrayList<>();
+        listing.path("wikis").forEach(node -> names.add(node.asText()));
+        return names;
     }
 
     private MemoryWikiLoader loader(String directory) {

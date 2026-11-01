@@ -9,8 +9,6 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import java.util.List;
-
 /** 目录在请求创建时定稿，不向执行过程引入额外状态。 */
 @Slf4j
 @Component
@@ -37,9 +35,7 @@ public class MemoryWikiPromptLoader implements ProjectMemoryPrompt {
         try {
             MemoryWikiManager manager = managers.getObject();
             manager.loadWikis(workspaces.resolve(workspace));
-            List<String> loaded = manager.getLoadedWikis();
-            return prompt + "项目 wiki 目录：" + objectMapper.writeValueAsString(
-                    new Catalog(manager.getWikis().size(), loaded.size(), loaded))
+            return prompt + "项目 wiki 目录：" + objectMapper.writeValueAsString(manager.catalog())
                     + "\n目录最多展示 30 条，不含正文。使用 search_wiki 检索全部模块，load_memory 读取指定 wiki。"
                     + "\n项目长期记忆按模块存入 wiki，每个模块一个文件，按模块名.md 命名。";
         } catch (Exception error) {
@@ -48,6 +44,4 @@ public class MemoryWikiPromptLoader implements ProjectMemoryPrompt {
             return prompt + "项目 wiki 目录暂时无法加载；仍可继续当前任务，需要记忆时再使用 search_wiki 或 load_memory。";
         }
     }
-
-    private record Catalog(int total, int returned, List<String> wikis) { }
 }

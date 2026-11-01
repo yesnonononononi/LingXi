@@ -38,6 +38,19 @@ public class MemoryWikiManager {
         return MemoryWikiLimits.limitNames(getWikis());
     }
 
+    /**
+     * 目录快照，同时给出全部条数与本次返回条数。
+     *
+     * <p>只返回 {@code List} 会让裁剪变成静默截断：调用方看到的是 30 条，却无法判断库里是否还有更多。
+     * {@code total} 与 {@code returned} 不同即说明被 {@link MemoryWikiLimits} 裁剪，调用方据此提示继续检索。</p>
+     *
+     * @return 目录快照，{@code wikis} 已按名称排序并受条数与字符预算约束；永不为 {@code null}
+     */
+    public Catalog catalog() {
+        List<String> loaded = getLoadedWikis();
+        return new Catalog(wikis.size(), loaded.size(), loaded);
+    }
+
     public String findWikiDetail(String wiki) throws IOException {
         throwIf(wiki == null || wiki.isBlank(), "记忆 wiki 名称不能为空");
         Path path = wikis.get(wiki);
@@ -85,5 +98,18 @@ public class MemoryWikiManager {
 
     private void throwIf(boolean condition, String err) {
         if (condition) throw new ClientException(err);
+    }
+
+    /**
+     * 目录快照：{@code total} 为全部 wiki 数，{@code returned} 为本次返回条数，两者不同即表示被裁剪。
+     *
+     * @param total    全部 wiki 数
+     * @param returned 本次返回条数
+     * @param wikis    本次返回的 wiki 名称，按名称排序
+     */
+    public record Catalog(int total, int returned, List<String> wikis) {
+        public Catalog {
+            wikis = wikis == null ? List.of() : List.copyOf(wikis);
+        }
     }
 }

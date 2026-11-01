@@ -26,7 +26,7 @@ class MemoryWikiSearchTest {
     private final ObjectMapper json = new ObjectMapper();
 
     @Test
-    void initialCatalogStopsAtThirtyAndSearchFindsContentBeyondThatWindow() throws Exception {
+    void initialCatalogReportsTotalAndReturnedWhenThirtyEntriesAreTruncated() throws Exception {
         Path wikis = Files.createDirectories(project.resolve("wiki"));
         for (int index = 0; index < 40; index++) {
             Files.writeString(wikis.resolve("module-%02d.md".formatted(index)), index == 39 ? "独有关键词 SnowFlake" : "普通模块");
@@ -36,8 +36,14 @@ class MemoryWikiSearchTest {
         Workspace workspace = new LocalWorkspace("project", project.toString());
         ToolExecuteResult catalog = reader.execute(call(workspace, "{}"));
         assertTrue(catalog.isSuccess(), catalog.getToolOutput());
-        assertEquals(30, json.readTree(catalog.getToolOutput()).size());
+        JsonNode listing = json.readTree(catalog.getToolOutput());
+        assertEquals(40, listing.path("total").asInt());
+        assertEquals(30, listing.path("returned").asInt());
+        assertEquals(30, listing.path("wikis").size());
+        assertEquals("module-00.md", listing.path("wikis").get(0).asText());
+        assertEquals("module-29.md", listing.path("wikis").get(29).asText());
         assertFalse(catalog.getToolOutput().contains("module-39.md"));
+        assertTrue(catalog.getToolOutput().length() <= MemoryWikiLimits.MAX_CATALOG_CHARS);
 
         MemoryWikiSearchTool search = new MemoryWikiSearchTool(json, managers);
         ToolExecuteResult result = search.execute(call(workspace, "{\"keyword\":\"snowflake\"}"));
@@ -101,18 +107,54 @@ class MemoryWikiSearchTest {
     }
 
     @Test
-    void malformedArgumentsAndUnselectedProjectsReturnOrdinaryToolErrors() {
+    void malformedArgumentsListEverythingInsteadOfFailingTheRound() throws Exception {
+        Path wikis = Files.createDirectories(project.resolve("wiki"));
+        Files.writeString(wikis.resolve("alpha.md"), "甲正文");
+        Files.writeString(wikis.resolve("beta.md"), "乙正文");
+        MemoryWikiSearchTool search = new MemoryWikiSearchTool(json, managers());
+        Workspace workspace = new LocalWorkspace("project", project.toString());
+        for (String args : List.of("", " ", "null", "[]", "invalid", "{\"keyword\":42}", "{\"keyword\":{\"nested\":1}}")) {
+            ToolExecuteResult result = search.execute(call(workspace, args));
+            assertTrue(result.isSuccess(), args + " -> " + result.getToolOutput());
+            assertFalse(result.isPromise(), args);
+            JsonNode found = json.readTree(result.getToolOutput());
+            assertEquals("", found.path("keyword").asText(), args);
+            assertEquals(2, found.path("total").asInt(), args);
+            assertEquals(2, found.path("returned").asInt(), args);
+            assertEquals(List.of("alpha.md", "beta.md"),
+                    found.path("wikis").findValuesAsText("wikiName"), args);
+        }
+    }
+
+    @Test
+    void anOverlongKeywordIsTruncatedAndStillMatches() throws Exception {
+        Path wikis = Files.createDirectories(project.resolve("wiki"));
+        String marker = "n".repeat(MemoryWikiLimits.MAX_KEYWORD_CHARS);
+        Files.writeString(wikis.resolve("long.md"), "尾部正文 " + marker);
+        Files.writeString(wikis.resolve("other.md"), "普通模块");
+        MemoryWikiSearchTool search = new MemoryWikiSearchTool(json, managers());
+        Workspace workspace = new LocalWorkspace("project", project.toString());
+        String keyword = marker + "多余后缀";
+        ToolExecuteResult result = search.execute(call(workspace, json.writeValueAsString(Map.of("keyword", keyword))));
+        assertTrue(result.isSuccess(), result.getToolOutput());
+        JsonNode found = json.readTree(result.getToolOutput());
+        assertEquals(MemoryWikiLimits.MAX_KEYWORD_CHARS, found.path("keyword").asText().length());
+        assertEquals(marker, found.path("keyword").asText());
+        assertEquals(1, found.path("total").asInt());
+        assertEquals(1, found.path("returned").asInt());
+        assertEquals("long.md", found.path("wikis").get(0).path("wikiName").asText());
+        assertTrue(found.path("wikis").get(0).path("snippet").asText().contains("尾部正文"));
+    }
+
+    @Test
+    void anUnselectedProjectStillFailsInsteadOfListingTheProcessDirectory() {
         ObjectProvider<MemoryWikiManager> managers = managers();
         MemoryWikiSearchTool search = new MemoryWikiSearchTool(json, managers);
-        for (String args : List.of("null", "[]", "invalid", "{\"keyword\":42}", "{\"keyword\":\"" + "a".repeat(257) + "\"}")) {
-            ToolExecuteResult result = search.execute(call(null, args));
-            assertFalse(result.isSuccess());
-            assertFalse(result.isPromise());
-        }
-        ToolExecuteResult unselected = search.execute(ToolExecution.builder().args("{}").build());
+        ToolExecuteResult unselected = search.execute(ToolExecution.builder().args("broken").build());
         assertFalse(unselected.isSuccess());
         assertFalse(unselected.isPromise());
-        assertTrue(unselected.getToolOutput().contains("仍可继续交流"));
+        assertTrue(unselected.getToolOutput().contains("当前会话未指定项目"), unselected.getToolOutput());
+        assertTrue(unselected.getToolOutput().contains("仍可继续交流"), unselected.getToolOutput());
         verify(managers, never()).getObject();
     }
 
