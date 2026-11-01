@@ -191,7 +191,7 @@ class MemoryWikiToolTest {
 
         ToolExecuteResult result = loader.execute(ToolExecution.builder().workspace(fallback).args("{}").build());
         assertFalse(result.isSuccess());
-        assertTrue(result.getToolOutput().contains("请先为会话选择工作空间"));
+        assertTrue(result.getToolOutput().contains("当前会话未指定项目"));
         verify(fallback, times(1)).resolve(anyString());
     }
 

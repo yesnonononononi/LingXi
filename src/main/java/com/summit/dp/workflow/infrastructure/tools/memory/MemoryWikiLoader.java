@@ -48,7 +48,7 @@ public class MemoryWikiLoader implements ToolExecutor {
 
             // 框架会给无工作空间的请求补进程目录，项目记忆必须先确认真实绑定。
             throwIf(ExecutionAttributes.readLong(toolExecution.getAttributes(), ExecutionAttributes.WORKSPACE_ID) == null,
-                    "读取项目记忆 wiki 前请先为会话选择工作空间");
+                    "当前会话未指定项目，无法读取项目记忆 wiki；仍可继续交流，无需先选择工作空间");
 
             // 单例执行器必须按调用获取原型，构造器直接注入会把原型固定成共享实例。
             MemoryWikiManager manager = managers.getObject();
