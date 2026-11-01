@@ -10,43 +10,24 @@
  *
  * @module pet/presentation/command-router
  */
-import { isExpressionId, isMotionId, isPriority, type ExpressionId, type MotionId, type PresentationOp, type Priority } from './types';
+import { MOTION_CATALOG, deriveMotionRecipes, type MotionRecipe } from '../layers/motion-catalog';
+import { isExpressionId, isMotionId, isPriority, type MotionId, type PresentationOp } from './types';
 
 /**
- * 动作配方：一条"动作"需要几个 op、各多久、抢多高优先级。
+ * 动作配方（数据层契约，从 `layers/motion-catalog` 再导出以保证既有引用不变）。
  *
- * <p>时长与优先级来自美术规格书 §6.2 的动作清单（不在代码里另造一套口径）。</p>
+ * <p>M2（等值迁移）之后，配方表的**真源是 `frontend/pet-motions.json`**，
+ * 本模块只做消费。字段语义与迁移前逐字相同。</p>
  */
-export interface MotionRecipe {
-  /** 动作本身的持续时间（毫秒）；`null` = 循环/不限时（idle、drag）。 */
-  readonly motionMs: number | null;
-  /** 动作优先级。 */
-  readonly priority: Priority;
-  /** 动作是否循环。 */
-  readonly loop: boolean;
-  /** 同时要切的表情。 */
-  readonly expression: ExpressionId | null;
-  /** 表情持续时长（毫秒）；动作没有表情时忽略。 */
-  readonly expressionMs: number | null;
-}
+export type { MotionRecipe } from '../layers/motion-catalog';
 
 /**
- * 动作 → 配方表。
+ * 动作 → 配方表（由动作目录派生）。
  *
- * <p>本批能落地的只有 5 条（tap / happy / angry / surprised / wake）+ idle / drag；
- * `sleepy` / `sad` 只有贴片没有逐帧动作，配方里就没有 motion 时长之外的额外戏份。</p>
+ * <p>导出名保持不变：既有测试与调用方（`main.ts`、`tests/petPresentation.test.ts`）零改动。
+ * 目录缺项时自动回落到内置冻结表，所以"删掉 `pet-motions.json`"就是安全回退开关。</p>
  */
-export const MOTION_RECIPES: Readonly<Record<MotionId, MotionRecipe>> = {
-  idle: { motionMs: null, priority: 0, loop: true, expression: null, expressionMs: null },
-  tap: { motionMs: 480, priority: 1, loop: false, expression: 'happy', expressionMs: 900 },
-  happy: { motionMs: 900, priority: 1, loop: false, expression: 'happy', expressionMs: 900 },
-  angry: { motionMs: 800, priority: 1, loop: false, expression: 'angry', expressionMs: 800 },
-  surprised: { motionMs: 600, priority: 1, loop: false, expression: 'surprised', expressionMs: 600 },
-  sleepy: { motionMs: 1600, priority: 0, loop: false, expression: 'sleepy', expressionMs: 1600 },
-  sad: { motionMs: 1200, priority: 0, loop: false, expression: 'sad', expressionMs: 1200 },
-  drag: { motionMs: null, priority: 2, loop: true, expression: null, expressionMs: null },
-  wake: { motionMs: 500, priority: 2, loop: false, expression: 'surprised', expressionMs: 600 },
-};
+export const MOTION_RECIPES: Readonly<Record<MotionId, MotionRecipe>> = deriveMotionRecipes(MOTION_CATALOG);
 
 /** 主进程可能推来的指令信封（字段全部按不可信处理）。 */
 export interface PetCommandEnvelope {
