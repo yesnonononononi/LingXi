@@ -35,7 +35,7 @@ import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
 import com.summit.dp.shared.support.SqliteTestDatabase;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.AgenticLoopInterceptor;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.EmailLoopInterceptor;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -136,7 +136,7 @@ class EmailCrudServiceTest {
         List<Message> appended = new ArrayList<>();
         LoopContext context = new LoopContext(LoopMessages.builder().execution(root).build(),
                 new ExecutionControlSignal("900"), 0, appended::addAll);
-        AgenticLoopInterceptor interceptor = new AgenticLoopInterceptor(service, new MailInputSource(service));
+        EmailLoopInterceptor interceptor = new EmailLoopInterceptor(service, new MailInputSource(service));
         interceptor.onBeforeModelInvoke(context);
         assertEquals(1, appended.size());
         assertTrue(appended.getFirst().text().contains("成员 @8 的子任务已完成"));

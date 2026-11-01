@@ -21,7 +21,7 @@ import java.util.Map;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class AgenticLoopInterceptor implements LoopInterceptor {
+public class EmailLoopInterceptor implements LoopInterceptor {
 
     private final EmailService emailService;
     private final MailInputSource inputSource;

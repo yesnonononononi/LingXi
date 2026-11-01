@@ -29,9 +29,8 @@ import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
 import com.summit.dp.shared.support.SqliteTestDatabase;
 import com.summit.dp.workflow.application.delegation.CommanderMailWakeService;
-import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.AgenticLoopInterceptor;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.EmailLoopInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailWakeMisuseDetector;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
@@ -55,7 +54,7 @@ import static org.mockito.Mockito.verify;
  *
  * <p>与既有单元测试的分工：既有单元测试用 mock 校验「传了哪个键」。本测试把
  * <b>真实</b> {@link EmailServiceImpl}（H2 镜像 email / email_message 两表）与
- * <b>真实</b> {@link SendMailToAgentTool}（投递侧）、<b>真实</b> {@link AgenticLoopInterceptor}
+ * <b>真实</b> {@link SendMailToAgentTool}（投递侧）、<b>真实</b> {@link EmailLoopInterceptor}
  * （消费侧）、<b>真实</b> {@link SubAgentWaitInterceptor}（收尾判定侧的只读判据）接在一起，
  * 证明三处的键在真实落库 / 回查语义下确实指向同一把邮箱，而不是各说各话。</p>
  *
@@ -179,7 +178,7 @@ class QaMailboxSessionKeyEndToEndTest {
 
         // 4) 下一轮全新根执行 E2：执行 id 与 E1 不同，会话 id 相同 —— 消费侧必须仍命中同一把邮箱。
         List<Message> appended = new ArrayList<>();
-        AgenticLoopInterceptor consumer = new AgenticLoopInterceptor(service, new MailInputSource(service));
+        EmailLoopInterceptor consumer = new EmailLoopInterceptor(service, new MailInputSource(service));
         consumer.onBeforeModelInvoke(rootContext("E2", ROOT_SESSION_ID, ROOT_AGENT_ID));
 
         // 5) 消费之后无 PENDING。
@@ -199,7 +198,7 @@ class QaMailboxSessionKeyEndToEndTest {
                 "{\"toAgentId\":100,\"mailContent\":\"构建产物已就绪\"}")).isSuccess());
 
         List<Message> appended = new ArrayList<>();
-        AgenticLoopInterceptor consumer = new AgenticLoopInterceptor(service, new MailInputSource(service));
+        EmailLoopInterceptor consumer = new EmailLoopInterceptor(service, new MailInputSource(service));
         consumer.onBeforeModelInvoke(loopContext("E2", ROOT_SESSION_ID, ROOT_AGENT_ID, appended));
 
         assertEquals(1, appended.size(), "取信钩子应把待处理邮件作为一条用户消息注入");

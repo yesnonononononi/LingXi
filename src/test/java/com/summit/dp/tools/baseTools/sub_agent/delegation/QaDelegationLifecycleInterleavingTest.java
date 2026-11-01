@@ -29,7 +29,7 @@ import com.summit.dp.workflow.infrastructure.harness.SessionAttributeRestorer;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.AgenticLoopInterceptor;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.EmailLoopInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -219,7 +219,7 @@ class QaDelegationLifecycleInterleavingTest {
         when(emailService.pendingItems(ROOT_SESSION_ID, ROOT_AGENT_ID))
                 .thenAnswer(invocation -> pendingMail.get() == null ? List.of() : List.of(pendingMail.get()));
         doAnswer(invocation -> { pendingMail.set(null); return null; }).when(emailService).consumePendingItems(anyList());
-        AgenticLoopInterceptor mailConsumer = new AgenticLoopInterceptor(emailService, new MailInputSource(emailService));
+        EmailLoopInterceptor mailConsumer = new EmailLoopInterceptor(emailService, new MailInputSource(emailService));
         doAnswer(invocation -> {
             Execution root = invocation.getArgument(0);
             LoopContext context = new LoopContext(LoopMessages.builder().execution(root).build(),
@@ -339,7 +339,7 @@ class QaDelegationLifecycleInterleavingTest {
             consumedKey.set(new long[]{invocation.getArgument(0), invocation.getArgument(1)});
             return List.of();
         });
-        AgenticLoopInterceptor mailConsumer = new AgenticLoopInterceptor(mailbox, new MailInputSource(mailbox));
+        EmailLoopInterceptor mailConsumer = new EmailLoopInterceptor(mailbox, new MailInputSource(mailbox));
 
         // 停止之后、下一轮 beginRoot 之前到达的邮件：按协作根会话 id 落箱。
         // 新一轮执行的执行 id 与上一轮不同，但会话 id 不变 —— 取信键必须仍命中同一把邮箱。

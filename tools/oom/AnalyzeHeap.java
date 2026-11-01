@@ -59,6 +59,15 @@ public final class AnalyzeHeap {
         String failure = result != null && result.contains("failure=")
                 ? result.substring(result.indexOf("failure=") + "failure=".length()).strip()
                 : "未取到 RESULT 行";
+        // GC 后存活量：只看这条判泄漏（峰值会被一次性缓冲带偏）。
+        long[] live = liveStats(directory.resolve("live.csv"));
+        String categories = extract(result, "categories=([^,]+)");
+        String retained = numberInText(result, "cacheEntries=(\\d+)");
+        String h2Version = firstLineContaining(directory.resolve("console.log"), "H2_VERSION=");
+        h2Version = h2Version == null ? "?" : h2Version.replace("H2_VERSION=", "").strip();
+        // 扫描器结论与退出码由调用方传入：本行就是最终数据表的一行，列序与表头逐字对应。
+        String verdict = arg(args, "verdict", "-");
+        String exitCode = arg(args, "exit", "-");
 
         System.out.println(String.join("\t",
                 group,
@@ -72,7 +81,73 @@ public final class AnalyzeHeap {
                 String.format("%.2f", throughput),
                 String.format("%.1f", elapsedMillis / 1000.0),
                 String.valueOf(gcCount),
-                failure));
+                failure,
+                verdict,
+                exitCode,
+                String.format("%.1f", live[0] / 1048576.0),
+                String.format("%.1f", live[1] / 1048576.0),
+                String.format("%.1f", live[2] / 1048576.0),
+                String.format("%+.1f", (live[2] - live[0]) / 1048576.0),
+                categories,
+                retained,
+                h2Version));
+    }
+
+    /** live.csv → {首个, 峰值, 末个} 的 GC 后已用堆（字节）。 */
+    private static long[] liveStats(Path csv) throws IOException {
+        long first = 0;
+        long max = 0;
+        long last = 0;
+        if (!Files.isRegularFile(csv)) {
+            return new long[] {first, max, last};
+        }
+        List<String> lines = Files.readAllLines(csv, StandardCharsets.UTF_8);
+        for (int index = 1; index < lines.size(); index++) {
+            String[] cells = lines.get(index).split(",");
+            if (cells.length < 3) {
+                continue;
+            }
+            long used;
+            try {
+                used = Long.parseLong(cells[2].strip());
+            } catch (NumberFormatException ignored) {
+                continue;
+            }
+            if (first == 0) {
+                first = used;
+            }
+            last = used;
+            max = Math.max(max, used);
+        }
+        return new long[] {first, max, last};
+    }
+
+    private static String extract(String text, String regex) {
+        if (text == null) {
+            return "-";
+        }
+        Matcher matcher = Pattern.compile(regex).matcher(text);
+        return matcher.find() ? matcher.group(1).strip() : "-";
+    }
+
+    private static String numberInText(String text, String regex) {
+        if (text == null) {
+            return "-";
+        }
+        Matcher matcher = Pattern.compile(regex).matcher(text);
+        return matcher.find() ? matcher.group(1) : "-";
+    }
+
+    private static String firstLineContaining(Path file, String needle) throws IOException {
+        if (!Files.isRegularFile(file)) {
+            return null;
+        }
+        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            if (line.contains(needle)) {
+                return line;
+            }
+        }
+        return null;
     }
 
     private static long peakOfCsv(Path csv, int column) throws IOException {

@@ -41,7 +41,7 @@ import com.summit.dp.task.domain.model.Task.TaskStatus;
 import com.summit.dp.task.infrastructure.persistence.mapper.TaskMapper;
 import com.summit.dp.task.infrastructure.repository.TaskRepositoryImpl;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.AgenticLoopInterceptor;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.EmailLoopInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailInputSource;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubAgentWaitInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubExecutionInputSource;
@@ -73,7 +73,7 @@ class InputSourceContractTest {
             EmailMessageVO late = fixture.emails.sendMail(7L, "检查后到达", new MailSendContext(10L, 8L, null)).getData();
             fixture.emails.consumePendingItems(selected);
             assertEquals(List.of(late.getId()), fixture.mail.pendingItems(fixture.execution).stream().map(EmailMessageVO::getId).toList());
-            new AgenticLoopInterceptor(fixture.emails, fixture.mail).onBeforeModelInvoke(context(fixture.execution));
+            new EmailLoopInterceptor(fixture.emails, fixture.mail).onBeforeModelInvoke(context(fixture.execution));
             assertFalse(fixture.resolver.hasPendingItems(fixture.execution));
             assertEquals(1, fixture.execution.getMessages().size());
             assertTrue(fixture.execution.getMessages().getFirst().text().contains("检查后到达"));

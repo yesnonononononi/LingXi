@@ -20,7 +20,6 @@ public class CommanderMailWakeService {
     public void wakeIfRecipient(Long rootExecutionId, Long recipientAgentId) {
         Execution root = executionRepository.getObject().findById(String.valueOf(rootExecutionId))
                 .orElseThrow(ClientException::new);
-        throwIf(root.getAgentRequest() == null, "协作根执行缺少请求，无法确认邮件收件人");
         Long commanderAgentId = ExecutionAttributes.readLong(root.getAgentRequest().runtimeParametersOrDefault()
                 .getAttributes(), ExecutionAttributes.AGENT_ID);
         throwIf(commanderAgentId == null, "协作根执行未绑定主理人，无法确认邮件收件人");

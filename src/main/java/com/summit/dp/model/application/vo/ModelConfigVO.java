@@ -4,6 +4,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.Duration;
+import java.util.List;
 
 @Builder
 @Data
@@ -25,4 +26,11 @@ public class ModelConfigVO {
     private boolean sendThinking;
     /** 当前选定的密钥来源是否已配置。 */
     private boolean credentialConfigured;
+    /**
+     * 该模型上真正可区分的思考档位（框架 {@code ReasoningEffortPlan} 裁决）。
+     *
+     * <p>Anthropic 上 xhigh 与 high 生成完全相同的请求，所以这里不包含它 —— 前端滑杆按这份集合渲染，
+     * 不再由前端硬编码一份「所有模型都支持 6 档」的假设。</p>
+     */
+    private List<String> reasoningEfforts;
 }

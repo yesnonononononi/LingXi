@@ -1,6 +1,7 @@
 package com.summit.dp.model.application.service;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.summit.core.conf.ReasoningEffortPlan;
 import com.summit.ddd.application.vo.PageResult;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.model.application.command.ModelConfigCommand;
@@ -233,7 +234,7 @@ public class ModelServiceImpl implements ModelService {
     private String providerApiKey(Long providerConfigId) {
         throwIf(providerConfigId == null || providerConfigId <= 0, "使用提供方密钥时必须指定提供方");
         return providerConfigService.findApiKey(providerConfigId)
-                .filter(key -> key != null && !key.isBlank())
+                .filter(key -> !key.isBlank())
                 .orElseThrow(() -> new ClientException("提供方未配置 API Key: " + providerConfigId));
     }
 
@@ -254,6 +255,9 @@ public class ModelServiceImpl implements ModelService {
                 .vision(modelConfig.isVision())
                 .useProvider(modelConfig.isUseProvider())
                 .credentialConfigured(configured)
+                // 档位能力由框架的 ReasoningEffortPlan 裁决：Anthropic 上 xhigh/minimal 与更弱的档同义，
+                // 列出来就是承诺一个不存在的区别。前端按这份集合渲染滑杆。
+                .reasoningEfforts(ReasoningEffortPlan.distinct(modelConfig.getProvider(), modelConfig.getModelName()))
                 .build();
     }
 

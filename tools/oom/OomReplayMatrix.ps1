@@ -11,7 +11,8 @@ param(
     [int]$Rounds = 30,
     [int]$Pause = 500,
     [int]$ContextEvery = 5,
-    [int]$Workers = 1
+    [int]$Workers = 1,
+    [int]$Repeat = 1
 )
 
 # ============================================================================
@@ -69,8 +70,14 @@ $details = New-Object System.Collections.Generic.List[object]
 
 foreach ($scenario in $Scenarios) {
     foreach ($heap in $Heaps) {
-        $label = "$GroupName/$scenario-$heap"
-        $groupDir = Join-Path (Join-Path $runRootFull $GroupName) (Join-Path $scenario "$heap")
+        foreach ($repeat in 1..$Repeat) {
+        $runName = if ($Repeat -gt 1) { "$GroupName#r$repeat" } else { $GroupName }
+        $label = "$runName/$scenario-$heap"
+        $groupDir = if ($Repeat -gt 1) {
+            Join-Path (Join-Path (Join-Path $runRootFull $GroupName) $scenario) (Join-Path "$heap" "r$repeat")
+        } else {
+            Join-Path (Join-Path $runRootFull $GroupName) (Join-Path $scenario "$heap")
+        }
         $dataDir = Join-Path $groupDir 'data'
         New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
         $console = Join-Path $groupDir 'console.log'
@@ -126,9 +133,9 @@ foreach ($scenario in $Scenarios) {
         $hitLines = 0
         if ($scanLine -match 'hitLines=(\d+)') { $hitLines = [int]$matches[1] }
 
-        $row = (& java --class-path $toolClassPath AnalyzeHeap "--group=$GroupName" "--scenario=$scenario" `
-                "--heap=$heap" "--dir=$groupDir" 2>&1 | Out-String).Trim()
-        $rows.Add("$row`t$verdict`t$exitCode")
+        $row = (& java --class-path $toolClassPath AnalyzeHeap "--group=$runName" "--scenario=$scenario" `
+                "--heap=$heap" "--dir=$groupDir" "--verdict=$verdict" "--exit=$exitCode" 2>&1 | Out-String).Trim()
+        $rows.Add($row)
         Write-Host ("结论: 扫描器={0} 命中行={1} 退出码={2}" -f $verdict, $hitLines, $exitCode)
 
         $resultLine = ''
@@ -137,10 +144,10 @@ foreach ($scenario in $Scenarios) {
         }
         $rowCells = $row -split "`t"
         $details.Add([pscustomobject]@{
-                group         = $GroupName
+                group         = $rowCells[0]
                 mode          = $Mode
-                scenario      = $scenario
-                heapMiB       = $heap
+                scenario      = $rowCells[1]
+                heapMiB       = [int]$rowCells[2]
                 peakHeapMiB   = [double]$rowCells[3]
                 peakPercent   = $rowCells[4]
                 fullGc        = $rowCells[5]
@@ -148,9 +155,17 @@ foreach ($scenario in $Scenarios) {
                 workingSetMiB = $rowCells[7]
                 throughput    = $rowCells[8]
                 elapsedSecond = $rowCells[9]
+                gcCount       = $rowCells[10]
                 failure       = $rowCells[11]
-                exitCode      = $exitCode
-                scanVerdict   = $verdict
+                scanVerdict   = $rowCells[12]
+                exitCode      = [int]$rowCells[13]
+                liveStartMiB  = [double]$rowCells[14]
+                liveMaxMiB    = [double]$rowCells[15]
+                liveEndMiB    = [double]$rowCells[16]
+                liveDeltaMiB  = $rowCells[17]
+                categories    = $rowCells[18]
+                cacheEntries  = $rowCells[19]
+                h2Version     = $rowCells[20]
                 scanHitLines  = $hitLines
                 scanLine      = $scanLine
                 result        = $resultLine
@@ -158,13 +173,14 @@ foreach ($scenario in $Scenarios) {
                 groupDir      = $groupDir
                 wallClockSec  = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
             })
+        }
     }
 }
 
 $summaryPath = Join-Path $runRootFull ('matrix-{0}.md' -f $GroupName)
 $header = @(
-    "| 组 | 场景 | 堆档(MiB) | 峰值堆(MiB) | 占 Xmx% | Full GC 次数 | 最长停顿(ms) | 工作集峰值(MiB) | 保存吞吐(次/s) | 总耗时(s) | GC 次数 | 失败类别 | 扫描器结论 | 退出码 |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
+    "| 组 | 场景 | 堆档(MiB) | 峰值堆(MiB) | 占 Xmx% | Full GC 次数 | 最长停顿(ms) | 工作集峰值(MiB) | 保存吞吐(次/s) | 总耗时(s) | GC 次数 | 失败类别 | 扫描器结论 | 退出码 | 存活量起始(MiB) | 存活量峰值(MiB) | 存活量结束(MiB) | 存活增量(MiB) | 类别明细 | 整段JSON缓存条目 | H2 版本 |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"
 )
 $body = foreach ($row in $rows) {
     $cells = $row -split "`t"

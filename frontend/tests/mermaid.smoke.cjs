@@ -133,6 +133,19 @@ window.parseDocument = renderMarkdownDocument;
   assert.equal(await evaluate('new Set([...document.querySelectorAll("#actual .mermaid-diagram svg")].map(node => node.id)).size'), 3);
   await fs.writeFile(path.join(output, 'light.png'), (await window.webContents.capturePage()).toPNG());
 
+  const storageOverview = `graph TD
+    A["workbuddy.db (270KB)<br/>Drizzle ORM<br/>sessions/workspaces/usage"] -->|"cwd → slug<br/>sessionId"| B
+    B["projects/&lt;cwd-slug&gt;/&lt;sessionId&gt;.jsonl<br/>293.92MB / 101 个<br/>真身"] --> C
+    B --> D[".meta.json<br/>acpConnectionId"]
+    B --> E[".file-rollback.ndjson<br/>v/requestId/commitSeq"]
+    E --> F["file-history/&lt;uuid&gt;<br/>&lt;hash&gt;@v1..vN<br/>3912 文件 / 47MB"]
+    B --> G["blobs/xx/&lt;sha256&gt;.png<br/>197 张 / 20MB"]
+    E --> H["changes-index / artifact-index<br/>changes-detail"]
+    A --> I["edge-sync-mapping-v4.db<br/>云端 ID ↔ 本地 ID"]`;
+  await setContent(fence(storageOverview));
+  await waitFor('document.querySelector("#actual .mermaid-diagram svg") || document.querySelector("#actual [role=status]")?.textContent.includes("渲染失败")', '存储全景图未结束渲染');
+  assert.equal(await evaluate('document.querySelectorAll("#actual .mermaid-diagram svg").length'), 1, '截图中的存储全景图必须正常成图');
+
   const reservedParticipant = `sequenceDiagram
     participant Child as 子执行
     participant Life as SubExecutionLifecycle

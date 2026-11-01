@@ -59,7 +59,7 @@ import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
 import com.summit.dp.workflow.infrastructure.policy.SkillRootResolver;
 import com.summit.dp.workflow.infrastructure.tools.arguments.CallSubAgentToolArgument;
 import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.AgenticLoopInterceptor;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.EmailLoopInterceptor;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailInputSource;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.MailWakeMisuseDetector;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.SendMailToAgentTool;
@@ -275,7 +275,7 @@ class QaPendingMailRedelegationTest {
                     .executionControl(new DefaultExecutionController(() -> null, checkpoints, events, lifecycle))
                     .runtimeLifeStyleManager(lifecycle).runtimeEventPublisher(events).toolExecutionManager(tools())
                     .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(new DefaultLoopInterceptor(),
-                            new AgenticLoopInterceptor(emails, mail), new SubAgentWaitInterceptor(inputs))))
+                            new EmailLoopInterceptor(emails, mail), new SubAgentWaitInterceptor(inputs))))
                     .runtimeBoundaryChecker(new BoundaryChecker(AgentConfig.builder().maxIterations(5).build(), tokenizer,
                             conversations, null, null)).usage(new ContextUsageReporter(tokenizer, 64000, events, 1))
                     .invoker(new DefaultChatModelInvoker(command -> {

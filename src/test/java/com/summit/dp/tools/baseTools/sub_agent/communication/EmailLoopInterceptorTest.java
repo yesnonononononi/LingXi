@@ -11,12 +11,11 @@ import com.summit.core.runtime.loop.InterceptorResult;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopMessages;
 import com.summit.core.workspace.WorkspaceSpec;
-import com.summit.ddd.application.vo.Result;
 import com.summit.dp.email.application.service.EmailService;
 import com.summit.dp.email.application.vo.EmailMessageVO;
 import com.summit.dp.email.domain.model.EmailMessage;
 import com.summit.dp.execution.ExecutionAttributes;
-import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.AgenticLoopInterceptor;
+import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.EmailLoopInterceptor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -36,12 +35,12 @@ import static org.mockito.Mockito.*;
  * 同一个执行 ID 命中任一列就会放行整封邮箱；现在不再有这条路径。业务键提升到会话级后，
  * 同一根会话的各轮执行共享同一把键，「停止后迟到的邮件」也能在下一轮被消费。</p>
  */
-class AgenticLoopInterceptorTest {
+class EmailLoopInterceptorTest {
 
     private static final long SESSION_ID = 405L;
 
     private final EmailService emailService = mock(EmailService.class);
-    private final AgenticLoopInterceptor interceptor = new AgenticLoopInterceptor(emailService, new MailInputSource(emailService));
+    private final EmailLoopInterceptor interceptor = new EmailLoopInterceptor(emailService, new MailInputSource(emailService));
 
     @Test
     @DisplayName("裸模型未绑定 Agent：不查邮箱、不追加消息")

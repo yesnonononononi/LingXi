@@ -19,6 +19,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -68,6 +73,15 @@ public final class CheckpointReplay {
     private static final AtomicLong SAVED = new AtomicLong();
     private static final AtomicLong CONTEXT_WRITES = new AtomicLong();
     private static final AtomicReference<String> FAILURE = new AtomicReference<>();
+    /** 失败事件总数（并发档每 worker 各记一次，不能只留「第一条」）。 */
+    private static final AtomicLong FAILURE_COUNT = new AtomicLong();
+    /** 失败类别 → 次数：OOM-heap / GC-overhead / H2-lock / H2-deadlock / H2-error / harness-error 分开统计。 */
+    private static final Map<String, AtomicLong> CATEGORIES = new java.util.concurrent.ConcurrentHashMap<>();
+    /** 负载开始前 / 过程中最大 / 结束时的「GC 后已用堆」——判泄漏只看这条，不看峰值。 */
+    private static final AtomicLong LIVE_START = new AtomicLong(-1);
+    private static final AtomicLong LIVE_MAX = new AtomicLong(-1);
+    private static final AtomicLong LIVE_END = new AtomicLong(-1);
+    private static final long LIVE_INTERVAL_MILLIS = 1500L;
 
     private CheckpointReplay() {
     }
@@ -94,32 +108,42 @@ public final class CheckpointReplay {
                     + ", contextEvery=" + contextEvery + ", workers=" + workers
                     + ", xmxMiB=" + heapMiB);
             Thread sampler = startHeapSampler(out.resolve("heap.csv"));
-            try (Connection connection = open(out)) {
+            Thread liveSampler = startLiveSampler(out.resolve("live.csv"));
+            String url = url(out);
+            try (Connection connection = open(url)) {
+                System.out.println("H2_VERSION=" + connection.getMetaData().getDatabaseProductVersion()
+                        + ", jdbc=" + connection.getMetaData().getDriverVersion());
                 applyDdl(connection, required(options, "ddl"), mode);
                 Fixtures fixtures = Fixtures.load(required(options, "fixtures"), scenario, out);
                 List<Long> executions = seed(connection, fixtures, workers, mode);
                 System.out.println("SEEDED executions=" + executions + ", fixtureBytes=" + fixtures.executionBytes
                         + ", contextBytes=" + fixtures.contextText.length());
-                // 建库流量不能混进业务负载：先等写盘静默，再开始计时。
+                // 建库流量不能混进业务负载：先等写盘静默，再开始计时，并取一次「负载前存活量」基线。
                 sleep(2000);
-                retainedCheckpoints = run(connection, fixtures, executions, mode, scenario, rounds, pause, contextEvery);
+                LIVE_START.set(liveAfterGc());
+                retainedCheckpoints = run(url, fixtures, executions, mode, scenario, rounds, pause, contextEvery);
             } finally {
                 RUNNING.set(false);
                 sampler.join(2000);
+                liveSampler.join(4000);
             }
             long elapsed = System.currentTimeMillis() - startedAt;
             long peakMiB = PEAK_HEAP.get() / 1048576L;
             long fullGc = fullGcCount();
             long gcMillis = totalGcMillis();
             String failure = FAILURE.get();
-            boolean oom = failure != null && failure.startsWith("OOM");
+            boolean oom = failure != null && (failure.startsWith("OOM") || failure.startsWith("GC-overhead"));
             System.out.println("RESULT mode=" + mode + ", scenario=" + scenario + ", heapMiB=" + heapMiB
                     + ", peakHeapMiB=" + peakMiB + ", saved=" + SAVED.get()
-                    + ", contextWrites=" + CONTEXT_WRITES.get() + ", retainedCheckpoints=" + retainedCheckpoints
-                    + ", failures=" + (failure == null ? 0 : 1)
+                    + ", contextWrites=" + CONTEXT_WRITES.get() + ", cacheEntries=" + retainedCheckpoints
+                    + ", failures=" + FAILURE_COUNT.get()
+                    + ", categories=" + categorySummary()
+                    + ", liveStartMiB=" + (LIVE_START.get() / 1048576L)
+                    + ", liveMaxMiB=" + (LIVE_MAX.get() / 1048576L)
+                    + ", liveEndMiB=" + (LIVE_END.get() / 1048576L)
                     + ", oom=" + oom + ", fullGc=" + fullGc + ", gcMillis=" + gcMillis
                     + ", elapsedMillis=" + elapsed + ", failure=" + (failure == null ? "none" : failure));
-            if (failure != null) {
+            if (FAILURE_COUNT.get() > 0) {
                 System.exit(3);
             }
         } catch (Throwable error) {
@@ -141,15 +165,22 @@ public final class CheckpointReplay {
 
     // ------------------------------------------------------------------ 建库与装载
 
-    private static Connection open(Path out) throws SQLException {
+    private static String url(Path out) {
         String base = out.resolve("replay").toAbsolutePath().normalize().toString().replace('\\', '/');
         // 与生产同源的连接参数：UTC 时区、不落 .trace.db、文件锁、退出不抢锁。
-        String url = "jdbc:h2:file:" + base
+        return "jdbc:h2:file:" + base
                 + ";DB_CLOSE_ON_EXIT=FALSE"
                 + ";FILE_LOCK=FS"
                 + ";AUTO_SERVER=FALSE"
                 + ";TRACE_LEVEL_FILE=0"
                 + ";INIT=SET TIME ZONE 'UTC'";
+    }
+
+    private static Connection open(Path out) throws SQLException {
+        return open(url(out));
+    }
+
+    private static Connection open(String url) throws SQLException {
         return DriverManager.getConnection(url, "sa", "");
     }
 
@@ -210,29 +241,50 @@ public final class CheckpointReplay {
 
     // ------------------------------------------------------------------ 负载
 
-    private static int run(Connection connection, Fixtures fixtures, List<Long> executions, String mode,
-                            String scenario, int rounds, long pause, int contextEvery)
+    private static int run(String url, Fixtures fixtures, List<Long> executions, String mode,
+                           String scenario, int rounds, long pause, int contextEvery)
             throws Exception {
         // 旧仓储按执行 ID 替换已提交快照，不能把每轮历史都留在堆里制造额外泄漏。
-        Map<Long, String> wholeJsonCache = new LinkedHashMap<>();
-        List<Runnable> tasks = new ArrayList<>();
+        Map<Long, String> wholeJsonCache = new java.util.concurrent.ConcurrentHashMap<>();
+        boolean concurrent = executions.size() > 1;
+        ExecutorService pool = Executors.newFixedThreadPool(Math.max(1, executions.size()));
+        CountDownLatch startGate = new CountDownLatch(1);
+        List<Future<?>> futures = new ArrayList<>();
         for (int index = 0; index < executions.size(); index++) {
             long executionId = executions.get(index);
             long sessionId = 9_000_000L + index;
             int roundsForWorker = "recovered".equals(scenario) ? Math.max(1, rounds * 2 / 3) : rounds;
-            tasks.add(() -> replay(connection, fixtures, executionId, sessionId, mode, roundsForWorker,
-                    pause, contextEvery, wholeJsonCache));
+            futures.add(pool.submit(() -> {
+                try {
+                    startGate.await();
+                    // 每个 worker 开自己的连接：测的是「并发写同一个库」，不是连接复用。
+                    try (Connection own = open(url)) {
+                        replay(own, fixtures, executionId, sessionId, mode, roundsForWorker,
+                                pause, contextEvery, wholeJsonCache);
+                    }
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                } catch (Throwable error) {
+                    recordFailure(classify(error));
+                }
+            }));
         }
-        // 这里只覆盖串行负载，不能用 workers 数量冒充并发验收。
-        for (Runnable task : tasks) {
-            task.run();
+        startGate.countDown();
+        pool.shutdown();
+        boolean finished = pool.awaitTermination(30, TimeUnit.MINUTES);
+        if (!finished) {
+            pool.shutdownNow();
+            recordFailure("harness-error: 工作线程 30 分钟未结束");
         }
-        System.out.println("PHASE=DONE saved=" + SAVED.get() + ", contextWrites=" + CONTEXT_WRITES.get());
+        System.out.println("PHASE=DONE concurrent=" + concurrent + ", workers=" + executions.size()
+                + ", saved=" + SAVED.get() + ", contextWrites=" + CONTEXT_WRITES.get()
+                + ", failures=" + FAILURE_COUNT.get() + ", categories=" + categorySummary());
         return wholeJsonCache.size();
     }
 
     private static void replay(Connection connection, Fixtures fixtures, long executionId, long sessionId,
-                               String mode, int rounds, long pause, int contextEvery, Map<Long, String> wholeJsonCache) {
+                               String mode, int rounds, long pause, int contextEvery,
+                               Map<Long, String> wholeJsonCache) {
         String fileSql = "UPDATE execution SET version = version + 1, snapshot_file = ? WHERE id = ?";
         String varcharSql = "UPDATE execution SET version = version + 1, snapshot = ? WHERE id = ?";
         String contextSql = "UPDATE session_context SET content = ?, version = version + 1 WHERE session_id = ?";
@@ -240,7 +292,7 @@ public final class CheckpointReplay {
              PreparedStatement context = connection.prepareStatement(contextSql)) {
             for (int round = 1; round <= rounds; round++) {
                 // 每一轮都写一份与原始正文同尺寸的检查点（旧实现每轮重新序列化整段 Execution）。
-                String body = fixtures.body();
+                String body = fixtures.body(bodyMode);
                 if ("file".equals(mode)) {
                     Path target = fixtures.checkpointFile(executionId, round);
                     writeAtomically(target, body);
@@ -268,7 +320,7 @@ public final class CheckpointReplay {
                 }
             }
         } catch (Throwable error) {
-            FAILURE.compareAndSet(null, classify(error));
+            recordFailure(classify(error));
             System.out.println("FAILURE execution=" + executionId + ", " + classify(error));
             error.printStackTrace(System.out);
         }
@@ -336,6 +388,77 @@ public final class CheckpointReplay {
     }
 
     /** 失败分类：OOM 与锁冲突必须分开，不能把锁超时写成 OOM。 */
+    private static Thread startLiveSampler(Path csv) throws IOException {
+        BufferedWriter writer = Files.newBufferedWriter(csv, StandardCharsets.UTF_8);
+        writer.write("millis,saved,usedAfterGcBytes\n");
+        Thread thread = new Thread(() -> {
+            long started = System.currentTimeMillis();
+            try {
+                while (RUNNING.get()) {
+                    Thread.sleep(LIVE_INTERVAL_MILLIS);
+                    if (!RUNNING.get()) {
+                        break;
+                    }
+                    long used = liveAfterGc();
+                    LIVE_MAX.accumulateAndGet(used, Math::max);
+                    LIVE_END.set(used);
+                    LIVE_START.compareAndSet(-1L, used);
+                    writer.write((System.currentTimeMillis() - started) + "," + SAVED.get() + "," + used + "\n");
+                }
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } catch (IOException ignored) {
+                // 采样写盘失败不掩盖被测结论。
+            } finally {
+                try {
+                    writer.close();
+                } catch (IOException ignored) {
+                    // 同上。
+                }
+            }
+        }, "live-sampler");
+        thread.setDaemon(true);
+        thread.start();
+        return thread;
+    }
+
+    /**
+     * 取一次「GC 之后」的已用堆。
+     *
+     * <p>这才是判泄漏的口径：峰值只能说明「当次要多少内存」，GC 后存活量说明「留下了多少」。
+     * 复核已经证明「峰值 458 MiB → GC 后 88 MiB」这种误判会把一次性缓冲当成泄漏。</p>
+     */
+    private static long liveAfterGc() {
+        System.gc();
+        sleep(120);
+        return MEMORY.getHeapMemoryUsage().getUsed();
+    }
+
+    /** 记一次失败事件，并按类别计数（锁超时与 OOM 必须分开统计）。 */
+    private static void recordFailure(String classified) {
+        FAILURE.compareAndSet(null, classified);
+        FAILURE_COUNT.incrementAndGet();
+        int colon = classified.indexOf(':');
+        String category = colon > 0 ? classified.substring(0, colon) : classified;
+        CATEGORIES.computeIfAbsent(category, key -> new AtomicLong()).incrementAndGet();
+    }
+
+    private static String categorySummary() {
+        if (CATEGORIES.isEmpty()) {
+            return "none";
+        }
+        StringBuilder builder = new StringBuilder();
+        CATEGORIES.forEach((category, count) -> {
+            if (builder.length() > 0) {
+                builder.append('|');
+            }
+            builder.append(category).append('=')
+                    .append(count.get() >= 0 ? String.valueOf(count.get()) : "0");
+        });
+        return builder.toString();
+    }
+
+    /** 失败分类：OOM / 锁等待超时 / 死锁 / 普通 SQL 错误 / 重放器自身错误，五类分开。 */
     private static String classify(Throwable error) {
         // 先整链找 OOM：H2 会把 OutOfMemoryError 包在 SQLException 里（message 里带着类名），
         // 只按异常类型判会把它误判成 H2-error，失败类别就会写错。
@@ -354,11 +477,16 @@ public final class CheckpointReplay {
         for (Throwable cursor = error; cursor != null; cursor = cursor.getCause()) {
             if (cursor instanceof SQLException sql) {
                 String message = String.valueOf(sql.getMessage());
-                if (message.contains("Timeout trying to lock") || message.contains("Deadlock")
-                        || message.contains("50200")) {
-                    return "H2-lock: " + message;
+                int code = sql.getErrorCode();
+                String state = String.valueOf(sql.getSQLState());
+                if (code == 40001 || "40001".equals(state) || message.contains("Deadlock")) {
+                    return "H2-deadlock: code=" + code + " state=" + state + " " + message;
                 }
-                return "H2-error: " + message;
+                if (code == 50200 || "HYT00".equals(state) || "57014".equals(state)
+                        || message.contains("Timeout trying to lock")) {
+                    return "H2-lock: code=" + code + " state=" + state + " " + message;
+                }
+                return "H2-error: code=" + code + " state=" + state + " " + message;
             }
         }
         return "harness-error: " + error.getClass().getName() + ": " + error.getMessage();
@@ -423,14 +551,23 @@ public final class CheckpointReplay {
             return builder.toString();
         }
 
-        /** 复用输入以隔离存储负载；这里不覆盖真实 Execution 的序列化与恢复开销。 */
-        String body() {
-            return executionText;
+        /**
+         * 本轮要写的检查点正文。
+         *
+         * <p>{@code body=fresh}（默认，贴近生产）：每轮重新序列化会产生一份新的 {@code String}，
+         * 旧那份随即变成垃圾。这既是真实开销，也必须在新旧两条路径上<b>等量</b>施加，
+         * 否则「引擎/存储形态差异」会被「谁少造了一份字符串」污染。</p>
+         *
+         * <p>{@code body=reuse}：复用同一实例，只保留「写库」这一项差异，
+         * 用于把差异归因到写路径本身（作为对照解释，不用于得出「不 OOM」的结论）。</p>
+         */
+        String body(String bodyMode) {
+            return "reuse".equals(bodyMode) ? executionText : executionText.concat("\u0000");
         }
 
-        /** 上下文整段替换的正文；同样复用实例，理由见 {@link #body()}。 */
-        String context() {
-            return contextText;
+        /** 上下文整段替换的正文；口径与 {@link #body(String)} 一致。 */
+        String context(String bodyMode) {
+            return "reuse".equals(bodyMode) ? contextText : contextText.concat("\u0000");
         }
 
         Path checkpointFile(long executionId, int round) {

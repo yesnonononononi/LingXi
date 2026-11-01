@@ -123,8 +123,7 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
                         InputAutomationPolicy.USER_PAUSED, true);
             }
 
-            Map<String, Object> attributes = execution.getAgentRequest() == null ? Map.of()
-                    : execution.getAgentRequest().runtimeParametersOrDefault().getAttributes();
+            Map<String, Object> attributes = execution.getAgentRequest().runtimeParametersOrDefault().getAttributes();
             Long sessionId = ExecutionAttributes.readLong(attributes, ExecutionAttributes.SESSION_ID);
 
             // 保存顺序不可调换：先把正文流式写成独立临时文件 → fsync → 原子发布成新文件名
