@@ -25,7 +25,7 @@ import org.springframework.stereotype.Component;
 @Tool(
         id = ToolCatalog.LOAD_MEMORY,
         name = ToolCatalog.LOAD_MEMORY,
-        description = "列出当前项目的记忆 wiki，或读取指定文档。省略 wikiName 获取目录，再按目录中的相对路径读取；不读取全局长期记忆或日记。",
+        description = "读取当前项目的记忆 wiki 正文。省略 wikiName 列出最多 30 条目录，更多模块使用 search_wiki 按关键词检索全部 wiki。",
         executor = MemoryWikiLoader.class,
         parameters = @ObjectValue(properties = {
                 @ToolProperty(key = "wikiName", value = @Value(type = ValueType.STRING,
@@ -54,7 +54,7 @@ public class MemoryWikiLoader implements ToolExecutor {
             MemoryWikiManager manager = managers.getObject();
             manager.loadWikis(toolExecution.getWorkspace());
             if (argument.getWikiName() == null) {
-                return ToolExecuteResult.success(objectMapper.writeValueAsString(manager.getWikis()));
+                return ToolExecuteResult.success(objectMapper.writeValueAsString(manager.getLoadedWikis()));
             }
             String detail = manager.findWikiDetail(argument.getWikiName());
             throwIf(detail == null, "未找到记忆 wiki，请省略 wikiName 查看当前项目目录");

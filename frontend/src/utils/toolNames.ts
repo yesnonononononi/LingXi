@@ -23,6 +23,8 @@ export const AgentToolName = {
   ReadFile: 'read_file',
   /** 项目记忆 wiki */
   LoadMemory: 'load_memory',
+  /** 搜索项目 wiki */
+  SearchWiki: 'search_wiki',
   /** 读取工作区图片 */
   ReadImage: 'read_image',
   /** 编辑文件（结果携带 plusLines / minusLines） */

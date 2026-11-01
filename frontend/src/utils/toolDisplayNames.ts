@@ -20,6 +20,7 @@ function defineToolName(chinese: string, english: string, renderKey: string): To
 export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = new Map([
   [AgentToolName.ReadFile, defineToolName('读取文件', 'Read file', 'tool.category.read')],
   [AgentToolName.LoadMemory, defineToolName('读取项目记忆', 'Read project memory', 'tool.category.read')],
+  [AgentToolName.SearchWiki, defineToolName('检索项目记忆', 'Search project memory', 'tool.category.toolSearch')],
   [AgentToolName.ReadImage, defineToolName('读取图片', 'Read image', 'tool.category.read')],
   [AgentToolName.EditFile, defineToolName('编辑文件', 'Edit file', 'tool.category.write')],
   [AgentToolName.ExecuteCommand, defineToolName('执行命令', 'Execute command', 'tool.category.command')],

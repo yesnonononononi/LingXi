@@ -22,6 +22,8 @@ test('每个固定工具都有完整名与渲染名', async () => {
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.ReadFile) }, { fullName: '读取文件', renderName: '读取' });
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.LoadMemory) }, { fullName: '读取项目记忆', renderName: '读取' });
   assert.equal(resolveToolCategory(AgentToolName.LoadMemory), TOOL_CATEGORY.READ);
+  assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.SearchWiki) }, { fullName: '检索项目记忆', renderName: '检索工具' });
+  assert.equal(resolveToolCategory(AgentToolName.SearchWiki), TOOL_CATEGORY.READ);
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.ReadImage) }, { fullName: '读取图片', renderName: '读取' });
   // web_search 渲染名独立成「检索网络资源」，不再复用 READ 分类文案（「读取」会让人以为是读文件）
   assert.deepEqual({ ...resolveToolDisplayName(AgentToolName.WebSearch) }, { fullName: '网页搜索', renderName: '检索网络资源' });

@@ -34,6 +34,10 @@ public class MemoryWikiManager {
         return wikis.keySet().stream().sorted().toList();
     }
 
+    public List<String> getLoadedWikis() {
+        return MemoryWikiLimits.limitNames(getWikis());
+    }
+
     public String findWikiDetail(String wiki) throws IOException {
         throwIf(wiki == null || wiki.isBlank(), "记忆 wiki 名称不能为空");
         Path path = wikis.get(wiki);
