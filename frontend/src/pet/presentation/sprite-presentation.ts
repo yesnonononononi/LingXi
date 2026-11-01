@@ -16,6 +16,14 @@
  * @module pet/presentation/sprite-presentation
  */
 import { PET_GEOMETRY, type PetGeometry } from '../layout';
+import { DEFAULT_TIMER_PORT, type TimerPort } from './bus';
+import {
+  CROSSFADE_CSS_VARIABLES,
+  CrossfadePlanner,
+  resolveCrossfade,
+  type CrossfadeSpec,
+  type ResolvedCrossfade,
+} from './crossfade';
 import {
   DEFAULT_PRESENTATION_STATE,
   DRIVEN_NEUTRAL,
@@ -70,6 +78,10 @@ export interface SpritePresentationOptions {
   readonly log?: (message: string) => void;
   /** 初始表情（缺省 `neutral`，与已加载的默认帧一致）。 */
   readonly initialExpression?: ExpressionId;
+  /** 交叉过渡配置（时长会被钳制到 80–120ms；缺省 100ms）。 */
+  readonly crossfade?: CrossfadeSpec;
+  /** 定时器端口（"旧帧何时退场"用；测试注入假定时器即可断言不堆积）。 */
+  readonly timer?: TimerPort;
 }
 
 /**
@@ -97,8 +109,20 @@ export class SpritePresentation implements PetPresentation {
   /** 已预解码成功的 URL（避免重复解码）。 */
   private readonly prepared: Set<string> = new Set();
 
-  /** 当前生效的缓冲下标（0 / 1）。 */
-  private active = 0;
+  /** 过渡规划器（令牌 + 单飞约束）。 */
+  private readonly planner: CrossfadePlanner = new CrossfadePlanner();
+
+  /** 解析后的过渡参数。 */
+  private readonly crossfade: ResolvedCrossfade;
+
+  /** 定时器端口（旧帧退场用）。 */
+  private readonly timer: TimerPort;
+
+  /** 旧帧退场定时器句柄；新过渡一来就清掉，保证同一时刻只有一个。 */
+  private retireHandle: number | null = null;
+
+  /** 当前真正不透明的帧下标（淡入完成的那张）。 */
+  private visibleIndex: 0 | 1 = 0;
 
   /** 当前状态快照。 */
   private current: PresentationState = DEFAULT_PRESENTATION_STATE;
@@ -110,7 +134,7 @@ export class SpritePresentation implements PetPresentation {
    * 构造静态立牌表现层。
    *
    * @param dom DOM 引用
-   * @param options 可选项（表情帧表、日志、初始表情）
+   * @param options 可选项（表情帧表、日志、初始表情、过渡参数、定时器）
    */
   constructor(dom: SpritePresentationDom, options: SpritePresentationOptions = {}) {
     if (!dom || !Array.isArray(dom.frames) || dom.frames.length < 2 || !dom.frames[0] || !dom.frames[1]) {
@@ -124,6 +148,8 @@ export class SpritePresentation implements PetPresentation {
     this.geometry = dom.geometry ?? PET_GEOMETRY;
     this.expressionUrls = options.expressionUrls ?? {};
     this.log = options.log ?? (() => {});
+    this.crossfade = resolveCrossfade(options.crossfade);
+    this.timer = options.timer ?? DEFAULT_TIMER_PORT;
     const initialExpression = options.initialExpression ?? 'neutral';
     this.current = { ...DEFAULT_PRESENTATION_STATE, expression: initialExpression };
     this.root.dataset.expression = initialExpression;
@@ -131,6 +157,7 @@ export class SpritePresentation implements PetPresentation {
     // 第 0 张缓冲由 main.ts 通过 loadArt 载入默认帧，这里只标记它是激活的那张
     this.frames[0].dataset.active = 'true';
     this.frames[1].dataset.active = 'false';
+    this.writeCrossfadeVariables();
     this.writeDriven(DRIVEN_NEUTRAL);
   }
 
@@ -186,13 +213,24 @@ export class SpritePresentation implements PetPresentation {
   /** 释放：把宿主上的状态属性清干净（DOM 元素本身由 main.ts 决定去留）。 */
   dispose(): void {
     this.disposed = true;
+    this.clearRetire();
+    this.planner.cancel();
     this.prepared.clear();
     delete this.root.dataset.expression;
     delete this.root.dataset.motion;
   }
 
   /**
-   * 切表情：把目标帧放进"另一张"缓冲再淡入。
+   * 切表情：把目标帧放进"另一张"缓冲再交叉淡入。
+   *
+   * <p><b>为什么旧帧要等淡入结束才撤：</b>两张帧是叠放的，若同时把旧帧压到透明，
+   * 中途会出现"两张各半透明"的一瞬（窗口本身是透明的，读起来就是宠物忽然变淡）。
+   * 这里让新帧在<b>上层</b>淡入、旧帧保持不透明垫在底下，淡入结束后旧帧才退场，
+   * 于是全程不透明度都够，也不会白闪。</p>
+   *
+   * <p><b>连点怎么不堆积：</b>每次切换先 `clearRetire()` 撤掉上一段退场定时器，
+   * 再用规划器的 token 作废旧过渡；等解码的异步回调落地前必须 `isCurrent()` 自查，
+   * 否则会把已经换掉的帧重新点亮。</p>
    *
    * @param id 表情 id
    */
@@ -205,16 +243,77 @@ export class SpritePresentation implements PetPresentation {
       if (id !== 'neutral') this.log(`[pet] 表情 ${id} 没有运行时帧，保持当前画面`);
       return;
     }
-    const currentUrl = this.frames[this.active].getAttribute('src');
-    if (currentUrl === url) return;
+    // 目标帧已经在屏上（含"上一次淡入就是它"的情况）：不必再过渡一次
+    if (this.frames[this.visibleIndex].getAttribute('src') === url) return;
+    if (this.planner.isTransitioning && this.frames[this.pendingIndex].getAttribute('src') === url) return;
 
-    const nextIndex = this.active === 0 ? 1 : 0;
-    const target = this.frames[nextIndex];
-    target.src = url;
+    const fromIndex = this.visibleIndex;
+    const toIndex: 0 | 1 = fromIndex === 0 ? 1 : 0;
+    const plan = this.planner.plan(fromIndex, toIndex, this.crossfade);
+    this.clearRetire();
+
+    const target = this.frames[plan.toIndex];
+    if (target.getAttribute('src') !== url) target.src = url;
     target.hidden = false;
-    target.dataset.active = 'true';
-    this.frames[this.active].dataset.active = 'false';
-    this.active = nextIndex;
+
+    const flip = (): void => {
+      // 过渡期间可能又来了更新的切换：此时本次已作废，直接放弃
+      if (this.disposed || !this.planner.isCurrent(plan.token)) return;
+      const previousIndex = this.visibleIndex;
+      this.visibleIndex = plan.toIndex;
+      target.dataset.fading = 'in';
+      target.dataset.active = 'true';
+      if (previousIndex !== plan.toIndex) {
+        this.frames[previousIndex].dataset.fading = 'out';
+      }
+      this.retireHandle = this.timer.setTimeout(() => {
+        this.retireHandle = null;
+        if (this.disposed || !this.planner.complete(plan.token)) return;
+        if (previousIndex !== this.visibleIndex) {
+          this.frames[previousIndex].dataset.active = 'false';
+        }
+      }, plan.durationMs);
+    };
+
+    // 帧已解码就直接翻；没解码就等它 ready —— 等的时候旧帧原样可见，不会闪白
+    if (target.complete && target.naturalWidth > 0) {
+      flip();
+      return;
+    }
+    const onReady = (): void => {
+      target.removeEventListener('load', onReady);
+      target.removeEventListener('error', onError);
+      flip();
+    };
+    const onError = (): void => {
+      target.removeEventListener('load', onReady);
+      target.removeEventListener('error', onError);
+      if (!this.planner.isCurrent(plan.token)) return;
+      // 取不到帧就维持当前画面（宁可表情不换，也不要留一张破图）
+      this.planner.cancel();
+      this.log(`[pet] 表情帧加载失败，保持当前画面: url=${url}`);
+    };
+    target.addEventListener('load', onReady, { once: true });
+    target.addEventListener('error', onError, { once: true });
+  }
+
+  /** 撤掉尚未执行的"旧帧退场"定时器（新过渡开始时调用，保证同一时刻只有一段）。 */
+  private clearRetire(): void {
+    if (this.retireHandle === null) return;
+    this.timer.clearTimeout(this.retireHandle);
+    this.retireHandle = null;
+  }
+
+  /** 把过渡时长与缓动写到宿主的 CSS 变量上（CSS 只负责用它，不自己定值）。 */
+  private writeCrossfadeVariables(): void {
+    const style = this.root.style;
+    style.setProperty(CROSSFADE_CSS_VARIABLES.duration, `${this.crossfade.durationMs}ms`);
+    style.setProperty(CROSSFADE_CSS_VARIABLES.easing, this.crossfade.easing);
+  }
+
+  /** 当前正在淡入的帧下标（没有过渡时等于可见帧）。 */
+  private get pendingIndex(): 0 | 1 {
+    return this.visibleIndex === 0 ? 1 : 0;
   }
 
   /**

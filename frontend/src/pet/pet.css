@@ -84,10 +84,34 @@ body {
  *
  * <p>旧版 `scale(1.014)` 会把 1px 描边拉虚，209px 的宠物上人眼直接读成"糊"——
  * 这是"廉价感"的主要来源之一。放大交给后面要做的分层件，立牌阶段只做呼吸。</p>
+ *
+ * <p><b>为什么不再是一条匀称的 sin：</b>匀速正弦读成"机器在打气"。改成三段——
+ * 吸气（快）→ 顶端<b>停顿 14%</b>（屏住）→ 呼气（慢，收尾更缓）→ 底部<b>停顿</b>，
+ * 段与段之间各自带缓动，于是每个周期都不完全一样地"顿"一下。停顿靠关键帧
+ * 复制值实现（38% 与 52% 同值），不额外增加动画数量。</p>
  */
 @keyframes pet-breathe {
-  0%, 100% { transform: translateY(0) scale(1); }
-  50% { transform: translateY(-2px) scale(1.004); }
+  0% {
+    transform: translateY(0) scale(1);
+    animation-timing-function: cubic-bezier(0.35, 0, 0.55, 1);
+  }
+  38% {
+    transform: translateY(-2px) scale(1.004);
+    animation-timing-function: linear;
+  }
+  /* 屏住：与 38% 同值，形成 14% 的停顿 */
+  52% {
+    transform: translateY(-2px) scale(1.004);
+    animation-timing-function: cubic-bezier(0.25, 0.8, 0.45, 1);
+  }
+  88% {
+    transform: translateY(0) scale(1);
+    animation-timing-function: linear;
+  }
+  /* 落底停顿：与 88% 同值，呼吸之间留出"歇一下"的空档 */
+  100% {
+    transform: translateY(0) scale(1);
+  }
 }
 
 /**
@@ -95,10 +119,31 @@ body {
  *
  * <p>209px 高的立牌，±1.4° 会让脚底明显左右滑（位移约 5px），读成"贴纸在飘"；
  * ±0.8° 的脚底位移约 3px，读成"重心在换"。</p>
+ *
+ * <p>同样去掉了匀速正弦：左侧多停一会儿、回中时抢一下，读成"重心不稳"而不是"摆锤"。</p>
  */
 @keyframes pet-sway {
-  0%, 100% { transform: rotate(-0.8deg); }
-  50% { transform: rotate(0.8deg); }
+  0% {
+    transform: rotate(-0.8deg);
+    animation-timing-function: linear;
+  }
+  /* 偏左停顿 */
+  22% {
+    transform: rotate(-0.8deg);
+    animation-timing-function: cubic-bezier(0.3, 0, 0.4, 1);
+  }
+  58% {
+    transform: rotate(0.8deg);
+    animation-timing-function: linear;
+  }
+  /* 偏右停顿（比左侧短：两侧对称会立刻读成机械） */
+  74% {
+    transform: rotate(0.8deg);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.3, 1);
+  }
+  100% {
+    transform: rotate(-0.8deg);
+  }
 }
 
 /**
@@ -260,13 +305,30 @@ body {
   pointer-events: none;
   /* 素材本身带透明底，禁用拖拽图片的系统行为 */
   -webkit-user-drag: none;
-  /* 双缓冲淡入：切表情是"表情变了"，不是"图闪了一下" */
+  /*
+   * 双缓冲交叉淡入：切表情是"表情变了"，不是"图闪了一下"。
+   * 时长与缓动由 `presentation/crossfade.ts` 通过两个变量注入（默认 100ms），
+   * CSS 不自己写死数值——否则 JS 里可配置、CSS 里写死，两边必然漂移。
+   */
   opacity: 0;
-  transition: opacity 120ms linear;
+  transition: opacity var(--pet-crossfade-ms, 100ms) var(--pet-crossfade-ease, cubic-bezier(0.33, 0, 0.2, 1));
 }
 
 .pet-art-frame[data-active='true'] {
   opacity: 1;
+}
+
+/*
+ * 淡入的那张永远在上层：两张叠放时若让新帧在下，淡入过程会被旧帧盖住，
+ * 看起来像"延迟 100ms 才换脸"。z-index 走 data-* 而不是行内 style，
+ * 保证渲染层只写 src / CSS 变量 / data-*（设计文档 §9.4 纪律 5）。
+ */
+.pet-art-frame[data-fading='in'] {
+  z-index: 2;
+}
+
+.pet-art-frame[data-fading='out'] {
+  z-index: 1;
 }
 
 /* 立绘加载失败时的兜底提示：宁可显眼地报错，也不要静默显示一个空白窗口 */
@@ -450,6 +512,21 @@ body {
 #pet-root[data-power='off'] .pet-halo,
 #pet-root[data-power='off'] .pet-art-frame,
 #pet-root[data-power='off'] .pet-ahoge {
+  animation-play-state: paused;
+}
+
+/**
+ * 偶发长停顿（`visual/motion-pacer.ts` 写入 `data-motion-rest`）。
+ *
+ * <p>呼吸/摇摆本身已经靠关键帧做了短停顿，但每个周期都一样"顿"同样是机械感来源。
+ * 这一档让整组微动态**整体歇 1.2–3.2s 再继续**，停顿时机由注入的 rng 决定，
+ * 于是长看下去不会摸出周期。用 `animation-play-state` 而不是删动画：
+ * 暂停会保留当前相位，恢复时不会跳帧。</p>
+ */
+#pet-root[data-motion-rest='1'] .pet-motion,
+#pet-root[data-motion-rest='1'] .pet-sway,
+#pet-root[data-motion-rest='1'] .pet-halo,
+#pet-root[data-motion-rest='1'] .pet-ahoge {
   animation-play-state: paused;
 }
 
