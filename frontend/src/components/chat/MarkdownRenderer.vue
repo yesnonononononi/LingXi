@@ -12,6 +12,8 @@ const props = withDefaults(
     content?: string;
     isDark?: boolean;
     isThinking?: boolean;
+    /** 过程文字只需要显现动画，不应复用正文的空内容占位。 */
+    streaming?: boolean;
     /** 过程文本需要独立样式，避免影响最终正文。 */
     processText?: boolean;
     /** 思考内容独立弱化，正文与过程叙述保持各自样式。 */
@@ -21,6 +23,7 @@ const props = withDefaults(
     content: '',
     isDark: undefined,
     isThinking: false,
+    streaming: undefined,
     processText: false,
     thinkingText: false
   }
@@ -28,8 +31,11 @@ const props = withDefaults(
 
 const { isDark: globalIsDark } = useTheme();
 const isDark = computed(() => props.isDark ?? globalIsDark.value);
+// 初次挂载时已有内容属于快照；只有从空正文开始接收的首批文字需要显现。
+const revealInitial = !props.content;
+const streaming = computed(() => props.streaming ?? props.isThinking);
 
-const markdownDocument = computed(() => renderMarkdownDocument(props.content || '', props.isThinking));
+const markdownDocument = computed(() => renderMarkdownDocument(props.content || '', streaming.value));
 const renderedHtml = computed(() => markdownDocument.value.html);
 
 // 普通代码块由 Markdown 生成，事件委托可以复用同一套复制反馈。
@@ -73,7 +79,7 @@ const handleContainerClick = async (event: MouseEvent) => {
       class="markdown-body"
       :class="{ 'markdown-body--process': props.processText, 'markdown-body--thinking': props.thinkingText }"
     >
-      <MarkdownContent :document="markdownDocument" :is-dark="isDark" />
+      <MarkdownContent :document="markdownDocument" :is-dark="isDark" :streaming="streaming" :reveal-initial="revealInitial" />
     </div>
     
     <!-- 空正文时用文字提示工作状态，避免光条难以辨认。 -->

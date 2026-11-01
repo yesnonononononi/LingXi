@@ -1,13 +1,12 @@
-/**
- * 流式文本平滑出场动效体系 (Token Stream Flow)
- *
- * 优化说明：
- * 1. 杜绝在流式 Markdown 的尾部元素 (.markdown-body > *:last-child) 上挂载微模糊 (blur) 或位移动画。
- *    因 v-html 在每次接收增量 token 时会高频重渲染 innerHTML，对 *:last-child 挂入重启型动画会导致
- *    整块内容（如表格、长段落）永久停留在 0.2 低透明度与 5px 模糊态，并产生高频闪烁与 3px 纵向抖动。
- * 2. 流式打字期间保持文本 100% 清晰度（零模糊、满透明度、零位移抖动），通过末尾内联打字光标 (▋)
- *    自然跟随后续文字流动，不占用独立空行，并在生成完毕后优雅消失。
- */
+/* 只给短暂存在的新增文字片段加柔焦，不能挂在会持续增长的段落或容器上。 */
+@keyframes blur-reveal {
+  from { opacity: 0; filter: blur(4px); }
+  to { opacity: 1; filter: blur(0); }
+}
+
+.blur-reveal {
+  animation: blur-reveal 290ms ease-out both;
+}
 
 /* 1. 核心关键帧：单次平滑渐显出场（仅限静态容器/卡片，禁止作用于流式重绘子节点） */
 @keyframes stream-blur-in {
@@ -70,6 +69,7 @@
 
 /* 用户开启减弱动态效果时自动平滑优雅降级 */
 @media (prefers-reduced-motion: reduce) {
+  .blur-reveal,
   .animate-blur-in,
   .stream-thinking-content.is-running,
   .markdown-stream-flow.is-streaming .markdown-body > p:last-child::after,

@@ -86,7 +86,7 @@ const toggle = (): void => {
           ]"
           @scroll="step && scroll.handleScroll(step.id, $event)"
         >
-          <MarkdownRenderer :content="step.content" :is-dark="isDark" :thinking-text="true" />
+          <MarkdownRenderer :content="step.content" :is-dark="isDark" :thinking-text="true" :streaming="isAnimating" />
         </div>
         <!-- 用户上滑看前文后，新分片不再抢滚动位置；给一个一键回到底部的入口。
              只在仍在流式的思考上出现 —— 已定型的内容停在顶部是正常的，不该催人回底部。 -->

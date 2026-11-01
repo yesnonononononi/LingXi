@@ -355,6 +355,7 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                     :content="step.content"
                     :is-dark="isDark"
                     :thinking-text="true"
+                    :streaming="!!msg.isThinking && !msg.isComplete && !msg.isSuspended && step.status === 'running'"
                   />
                 </div>
               </div>
@@ -423,7 +424,8 @@ const getToolDiffStat = (tc: ToolCallTrace): { plusLines?: number; minusLines?: 
                     : (isDark ? 'bg-black/90 border-white/15 text-zinc-100 shadow-[0_0_20px_rgba(0,0,0,0.8)]' : 'bg-white border-zinc-200 text-zinc-900')
                 ]"
               >
-                <MarkdownRenderer :content="msg.content" :is-dark="isDark" />
+                <MarkdownRenderer :content="msg.content" :is-dark="isDark"
+                  :streaming="!!msg.isThinking && !msg.isComplete && !msg.isSuspended" />
               </div>
             </div>
           </template>

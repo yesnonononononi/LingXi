@@ -98,7 +98,8 @@
             <template v-for="(part, partIndex) in processViews.parts"
               :key="part.kind === 'text' ? part.part.id : part.segment.id">
               <div v-if="part.kind === 'text'" class="w-full select-text" data-testid="process-text">
-                <MarkdownRenderer v-if="wholeProcessExpanded" :content="part.part.message.text" :is-dark="isDark" :process-text="true" />
+                <MarkdownRenderer v-if="wholeProcessExpanded" :content="part.part.message.text" :is-dark="isDark" :process-text="true"
+                  :streaming="!!props.message.isThinking && !props.message.isSuspended && !props.message.isComplete" />
               </div>
               <ChatProcessSegment v-else :visible="wholeProcessExpanded" :view="part" :sweep="part.sweep"
                 :await-model="partIndex === awaitModelSegmentIndex" :message="props.message" :turn="props.turn"
