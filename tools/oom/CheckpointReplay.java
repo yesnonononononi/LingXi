@@ -292,7 +292,7 @@ public final class CheckpointReplay {
              PreparedStatement context = connection.prepareStatement(contextSql)) {
             for (int round = 1; round <= rounds; round++) {
                 // 每一轮都写一份与原始正文同尺寸的检查点（旧实现每轮重新序列化整段 Execution）。
-                String body = fixtures.body(bodyMode);
+                String body = fixtures.body("reuse");
                 if ("file".equals(mode)) {
                     Path target = fixtures.checkpointFile(executionId, round);
                     writeAtomically(target, body);
@@ -308,7 +308,7 @@ public final class CheckpointReplay {
                 }
                 SAVED.incrementAndGet();
                 if (contextEvery > 0 && round % contextEvery == 0) {
-                    context.setString(1, fixtures.context());
+                    context.setString(1, fixtures.context("reuse"));
                     context.setLong(2, sessionId);
                     context.executeUpdate();
                     CONTEXT_WRITES.incrementAndGet();

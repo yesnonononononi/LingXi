@@ -15,6 +15,8 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -66,13 +68,15 @@ class OomReplayHarnessTest {
                     long.class, Path.class);
             constructor.setAccessible(true);
             Object input = constructor.newInstance("checkpoint", "context", 10L, checkpoints);
-            Method run = replay.getDeclaredMethod("run", Connection.class, fixtures, List.class,
-                    String.class, String.class, int.class, long.class, int.class);
+            Method run = replay.getDeclaredMethod("replay", Connection.class, fixtures, long.class,
+                    long.class, String.class, int.class, long.class, int.class, Map.class);
             run.setAccessible(true);
-            int retained = (Integer) run.invoke(null, connection, input, List.of(101L, 102L), mode,
-                    "pre", 5, 0L, 0);
+            Map<Long, String> retained = new HashMap<>();
+            for (long executionId : List.of(101L, 102L)) {
+                run.invoke(null, connection, input, executionId, executionId, mode, 5, 0L, 0, retained);
+            }
             verify(statement, times(10)).executeUpdate();
-            return retained;
+            return retained.size();
         }
     }
 }
