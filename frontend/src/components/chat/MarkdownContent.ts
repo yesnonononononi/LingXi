@@ -3,6 +3,7 @@ import {computed, createVNode, defineComponent, h, onBeforeUnmount, ref, Text, w
 import type {MarkdownDocument} from '../../utils/markdown';
 import {TEXT_ARRIVAL_DURATION, ProgressiveFadeState} from '../../utils/progressiveFade';
 import MermaidBlock from './MermaidBlock.vue';
+import MessageImage from './MessageImage.vue';
 
 export default defineComponent({
   props: {
@@ -94,6 +95,12 @@ export default defineComponent({
         const index = node.getAttribute('data-mermaid-index');
         const diagram = index === null ? undefined : props.document.diagrams[Number(index)];
         if (diagram) return [h(MermaidBlock, { key: `mermaid-${index}`, ...diagram, isDark: props.isDark })];
+        if (node.localName === 'img' && node.getAttribute('src')) {
+          return [h(MessageImage, {
+            key, src: node.getAttribute('src')!, alt: node.getAttribute('alt') || undefined,
+            title: node.getAttribute('title') || undefined, isDark: props.isDark, linked: !!node.closest('a'),
+          })];
+        }
         const attributes = Object.fromEntries([...node.attributes].map(attr => [attr.name, attr.value]));
         return [h(node.localName, { ...attributes, key }, [...node.childNodes].flatMap((child, i) => toNodes(child, `${key}-${i}`)))];
       };
