@@ -61,12 +61,24 @@ export interface InterruptQuery {
   readonly incoming: PresentationOp;
   /** 当前占主导的活动指令；null = 当前没有任何活动指令（必然应用）。 */
   readonly active: ActiveOpState | null;
-  /** 是否处于睡眠表情（`sleepy` / `yawn`）。 */
+  /**
+   * 是否处于**睡眠状态**（抑制眨眼）。
+   *
+   * <p>真源必须是行为状态（`behavior.isSleeping`），<b>不许</b>用"当前表情长得像 sleepy"
+   * 倒推：眨眼半闭帧用的就是 `sleepy` 贴片，一旦拿表情判睡眠，
+   * "半闭帧上屏"会被读成"睡着了"，于是永不再眨眼（M6-b 第四轮的自锁）。</p>
+   */
   readonly sleeping?: boolean;
   /** 当前动作（判"拖拽中来 ambient"用）。 */
   readonly activeMotion?: MotionId | null;
-  /** 上一次实际应用的指令（判连点合并用）。 */
-  readonly lastApplied?: { readonly kind: string; readonly id: string; readonly atMs: number } | null;
+  /**
+   * 上一次实际应用的指令（判连点合并用）。
+   *
+   * <p><b>按槽位判重（M6-b 第四轮）：</b>`slot` 是 `layer:kind`。同一 id 落在
+   * 不同槽位（比如 `base:expression` 与 `transient:expression`）是两件事，
+   * 不该被当成"连点抖动"合并掉；而同一槽位的同 id 连发才需要合并。</p>
+   */
+  readonly lastApplied?: { readonly slot: string; readonly id: string; readonly atMs: number } | null;
   /** 当前时间（毫秒）；缺省 0，调度器传 `now()`。 */
   readonly nowMs?: number;
 }
@@ -87,8 +99,10 @@ export function interruptDecision(query: InterruptQuery): InterruptDecision {
 
   // 1) 连点抖动保护：同一 op 在 80ms 内重复 → 合并丢弃。
   //    只作用于"表现请求"：入态接管每次都算一次新的进场，被合并就会读成"点了没反应"。
+  //    判重按 `layer:kind` 槽位，而不是只看 id——同 id 换槽位是另一件事（第四轮）。
   const last = query.lastApplied;
-  if (!takeover && last && last.kind === op.kind && last.id === String(op.id)) {
+  const slot = `${op.layer}:${op.kind}`;
+  if (!takeover && last && last.slot === slot && last.id === String(op.id)) {
     const elapsed = (query.nowMs ?? 0) - last.atMs;
     if (elapsed >= 0 && elapsed < DUPLICATE_MERGE_MS) return 'reject';
   }
@@ -140,7 +154,7 @@ export function suppressionReason(query: InterruptQuery): string | null {
   if (decision === 'apply') return null;
   const op = query.incoming;
   const last = query.lastApplied;
-  if (op.force !== true && last && last.kind === op.kind && last.id === String(op.id)) return 'duplicate-within-80ms';
+  if (op.force !== true && last && last.slot === `${op.layer}:${op.kind}` && last.id === String(op.id)) return 'duplicate-within-80ms';
   if (query.sleeping === true && op.kind === 'expression' && op.id === 'blink') return 'sleeping-no-blink';
   if (query.activeMotion === 'drag' && op.layer === 'ambient') return 'drag-blocks-ambient';
   return decision === 'queue' ? 'queued-until-active-expires' : 'lower-priority-locked';

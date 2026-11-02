@@ -22,7 +22,10 @@ import {
   BLINK_SHORT_MIN_DELAY_MS,
   DOUBLE_BLINK_GAP_MS,
   DOUBLE_BLINK_PROBABILITY,
+  BLINK_EXPRESSION_MAP,
   BlinkDriver,
+  blinkClosedOp,
+  blinkHalfOp,
   nextBlinkDelayMs,
 } from '../src/pet/presentation/blink-driver';
 import { CommandRouter, MOTION_RECIPES } from '../src/pet/presentation/command-router';
@@ -241,7 +244,7 @@ test('规则表：同一 op 80ms 内重复 → 合并丢弃；超过 80ms 放行
   const duplicated: InterruptQuery = {
     incoming: op({ kind: 'expression', id: 'happy' }),
     active: { layer: 'transient', priority: 1, remainingMs: 500 },
-    lastApplied: { kind: 'expression', id: 'happy', atMs: 1000 },
+    lastApplied: { slot: 'transient:expression', id: 'happy', atMs: 1000 },
     nowMs: 1000 + 79,
   };
   assert.equal(interruptDecision(duplicated), 'reject');
@@ -268,8 +271,8 @@ test('总线：应用后按 TTL 回落到 base 层指令', () => {
   timer.advance(300);
   // 到期后 re-apply 主导指令（base 的 neutral）
   assert.equal(target.state.expression, 'neutral');
-  assert.equal(bus.peek('transient'), null);
-  assert.equal(bus.peek('base')?.id, 'neutral');
+  assert.equal(bus.peek('transient', 'expression'), null);
+  assert.equal(bus.peek('base', 'expression')?.id, 'neutral');
 });
 
 test('总线：跨层比较优先级（眨眼不该刷掉生气表情）', () => {
@@ -318,7 +321,7 @@ test('规则表：接管不受 80ms 连点合并约束（连续两次入态都�
   const query: InterruptQuery = {
     incoming,
     active: null,
-    lastApplied: { kind: 'motion', id: 'tap', atMs: 5 },
+    lastApplied: { slot: 'base:motion', id: 'tap', atMs: 5 },
     nowMs: 10,
   };
   assert.equal(interruptDecision(query), 'apply');
@@ -354,8 +357,8 @@ test('总线：高优先级记录未过期时，入态指令仍能接管目标�
   assert.equal(target.state.motion, 'sleepy');
   assert.equal(target.state.expression, 'sleepy');
   // 该层旧记录必须被作废（不是"叠一层"）
-  assert.equal(bus.peek('base')?.id, 'sleepy');
-  assert.equal(bus.peek('transient')?.id, 'sleepy');
+  assert.equal(bus.peek('base', 'motion')?.id, 'sleepy');
+  assert.equal(bus.peek('transient', 'expression')?.id, 'sleepy');
 
   // 关键：不能只是"闪一下"。3 秒后（远超 angry 的 1000ms 残余）仍然是睡眠
   timer.advance(3000);
@@ -657,4 +660,143 @@ test('isPresentationOp：结构与 id 都要校验', () => {
   assert.equal(isPresentationOp({ ...op(), kind: 'expression', id: 'tap' }), false);
   assert.equal(isPresentationOp({ ...op(), durationMs: -1 }), false);
   assert.equal(isPresentationOp({ ...op(), value: Number.NaN }), false);
+});
+
+// ---------------------------------------------------------------- 槽位模型 + 表情回落（M6-b 第四轮）
+
+/**
+ * 造一块"有基础画面"的总线：base 的中性表情 + 常驻 idle 动作，与真机 boot 顺序一致。
+ *
+ * @param timer 假定时器
+ * @param target 记录型表现层
+ * @returns 总线
+ */
+function bootBus(timer: FakeTimer, target: RecordingPresentation): PresentationBus {
+  const bus = new PresentationBus(target, { timer, now: () => timer.now() });
+  assert.equal(
+    bus.dispatch(op({ kind: 'expression', id: 'neutral', layer: 'base', priority: 0, durationMs: undefined })),
+    'applied',
+  );
+  assert.equal(
+    bus.dispatch(op({ kind: 'motion', id: 'idle', layer: 'base', priority: 0, durationMs: undefined, loop: true })),
+    'applied',
+  );
+  return bus;
+}
+
+test('槽位：同层的 expression 与 motion 各占一个槽，互不顶占', () => {
+  const timer = new FakeTimer();
+  const target = new RecordingPresentation();
+  const bus = bootBus(timer, target);
+
+  // 两条都在，且分属不同槽位
+  assert.equal(bus.peek('base', 'expression')?.id, 'neutral');
+  assert.equal(bus.peek('base', 'motion')?.id, 'idle');
+
+  // 动作覆盖动作、表情覆盖表情；跨 kind 不应把对方清掉
+  bus.dispatch(op({ kind: 'motion', id: 'tap', layer: 'base', priority: 1, durationMs: 480 }));
+  assert.equal(bus.peek('base', 'expression')?.id, 'neutral', '动作落地不该顶掉 base 的表情槽');
+  assert.equal(bus.peek('base', 'motion')?.id, 'tap');
+
+  bus.dispatch(op({ kind: 'expression', id: 'happy', layer: 'base', priority: 1, durationMs: undefined }));
+  assert.equal(bus.peek('base', 'motion')?.id, 'tap', '表情落地不该顶掉 base 的动作槽');
+  assert.equal(bus.peek('base', 'expression')?.id, 'happy');
+});
+
+test('眨眼三态（closed → half → 到期）后表情回到 base 表情（不再永久停在 sleepy）', () => {
+  const timer = new FakeTimer();
+  const target = new RecordingPresentation();
+  const bus = bootBus(timer, target);
+  assert.equal(target.state.expression, 'neutral');
+
+  // 闭眼 100ms
+  assert.equal(bus.dispatch(blinkClosedOp('test:blink')), 'applied');
+  assert.equal(target.state.expression, BLINK_EXPRESSION_MAP.closed);
+  timer.advance(BLINK_CLOSED_MS);
+  assert.equal(target.state.expression, 'neutral', '闭眼到期必须睁眼（回落 base 表情）');
+
+  // 半闭 80ms
+  assert.equal(bus.dispatch(blinkHalfOp('test:blink:half')), 'applied');
+  assert.equal(target.state.expression, BLINK_EXPRESSION_MAP.half);
+  timer.advance(BLINK_HALF_MS);
+  assert.equal(
+    target.state.expression,
+    'neutral',
+    '半闭到期必须回到 base 表情；停在 sleepy 就是"永久半闭眼的困倦脸"',
+  );
+  assert.equal(bus.peek('transient', 'expression'), null);
+});
+
+test('眨眼期间来一条 motion op，不影响表情回落', () => {
+  const timer = new FakeTimer();
+  const target = new RecordingPresentation();
+  const bus = bootBus(timer, target);
+
+  assert.equal(bus.dispatch(blinkClosedOp('test:blink')), 'applied');
+  timer.advance(BLINK_CLOSED_MS);
+  assert.equal(bus.dispatch(blinkHalfOp('test:blink:half')), 'applied');
+  assert.equal(target.state.expression, 'sleepy');
+
+  // 半闭还挂着的时候，行为层下发一条 tap 动作（写 base 的 motion 槽）
+  assert.equal(
+    bus.dispatch(op({ kind: 'motion', id: 'tap', layer: 'base', priority: 1, durationMs: 480 })),
+    'applied',
+  );
+  timer.advance(BLINK_HALF_MS);
+  assert.equal(
+    target.state.expression,
+    'neutral',
+    'motion 只占动作槽：半闭到期后表情必须照样回中性，不能被"重放动作指令"顶住',
+  );
+  assert.equal(target.state.motion, 'tap');
+});
+
+test('回落目标是 base 的 expression 槽（显式），不是"最后一条 base 指令"', () => {
+  const timer = new FakeTimer();
+  const target = new RecordingPresentation();
+  const bus = bootBus(timer, target);
+
+  // 显式改基础表情（等价于 `main.ts` 的 setExpression：**优先级 0**，
+  // 它是回落目标而不是抢占指令；给高优先级会永久压死眨眼）
+  assert.equal(
+    bus.dispatch(op({ kind: 'expression', id: 'shy', layer: 'base', priority: 0, durationMs: undefined })),
+    'applied',
+  );
+  assert.equal(target.state.expression, 'shy');
+  assert.equal(bus.dispatch(blinkHalfOp('test:half')), 'applied', '基础表情不该挡住眨眼');
+  timer.advance(BLINK_HALF_MS);
+  assert.equal(target.state.expression, 'shy', '回落目标应是 base 表情槽，而不是常量 neutral 或最后一条动作');
+});
+
+test('base 表情槽为空时，表情到期落到中性脸（绝不停在半闭眼）', () => {
+  const timer = new FakeTimer();
+  const target = new RecordingPresentation();
+  const bus = new PresentationBus(target, { timer, now: () => timer.now() });
+
+  assert.equal(bus.dispatch(blinkHalfOp('test:half')), 'applied');
+  timer.advance(BLINK_HALF_MS);
+  assert.equal(target.state.expression, 'neutral');
+});
+
+test('判重：同一槽位的同 id 在 80ms 内才合并；换槽位/超窗都要放行', () => {
+  const timer = new FakeTimer();
+  const target = new RecordingPresentation();
+  const bus = bootBus(timer, target);
+
+  // 80ms 内连发两条完全相同的闭眼 → 第二条合并丢弃（连点抖动保护仍然有效）
+  assert.equal(bus.dispatch(blinkClosedOp('test:blink')), 'applied');
+  timer.advance(40);
+  assert.equal(bus.dispatch(blinkClosedOp('test:blink')), 'rejected');
+
+  // 超过 80ms 的同一 op 必须真的落地（不能"误判合并"）
+  timer.advance(BLINK_CLOSED_MS);
+  assert.equal(bus.dispatch(blinkClosedOp('test:blink:again')), 'applied');
+  assert.equal(target.state.expression, 'blink');
+
+  // 同一 id 落在另一个槽位是另一件事（base 的 blink ≠ transient 的 blink）
+  assert.equal(
+    bus.dispatch(op({ kind: 'expression', id: 'blink', layer: 'base', priority: 0, durationMs: undefined })),
+    'applied',
+  );
+  assert.equal(bus.peek('base', 'expression')?.id, 'blink');
 });
