@@ -207,8 +207,8 @@ public class ChatServiceImpl implements ChatService {
                 .map(Session::getId)
                 .forEach(ids::add);
 
-        List<SessionExecutionRegistry.ChildExecution> liveChildren = sessionExecutionRegistry.cancelRoot(rootSessionId);
-        liveChildren.stream().map(SessionExecutionRegistry.ChildExecution::sessionId).forEach(ids::add);
+        List<Long> liveChildren = sessionExecutionRegistry.cancelRoot(rootSessionId);
+        ids.addAll(liveChildren);
         log.info("请求停止会话树: sessionId={}, rootSessionId={}, childCount={}",
                 sessionId, rootSessionId, liveChildren.size());
         // 框架取消信号会中止模型请求和工具等待；直接打断执行线程会破坏检查点及数据库收尾。

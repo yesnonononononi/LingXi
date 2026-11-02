@@ -358,12 +358,6 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     }
 
     @Override
-    public boolean isCancellationRequested(String executionId) {
-        ExecutionControlSignal signal = active.get(executionId);
-        return signal != null && signal.isCancelRequired();
-    }
-
-    @Override
     public void requireSuspend(String executionId) {
         synchronized (ExecutionCoordination.monitor(executionId)) {
             ExecutionControlSignal signal = active.get(executionId);
@@ -404,7 +398,6 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
     private void notifySuspended(Execution execution) {
         invokeLifecycle("开放工具卡片", execution, () -> readinessService.getObject().markReady(execution.getId()));
         invokeLifecycle("更新等待轮次", execution, () -> chatTurnService.getObject().markExecutionWaiting(execution));
-        invokeLifecycle("结束事实-挂起", execution, () -> subExecutionLifecycle.getObject().onSuspended(execution));
     }
 
     /** 传递已提交对象，避免订阅方重复解码检查点。 */

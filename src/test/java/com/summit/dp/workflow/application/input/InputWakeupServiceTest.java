@@ -97,9 +97,9 @@ class InputWakeupServiceTest {
 
     @Test void requestedCancellationWinsBeforeTerminalState() throws Exception {
         Execution execution = given(ExecutionState.SUSPENDED);
-        when(activity.isCancellationRequested("100")).thenReturn(true);
+        registry.cancelRoot(10L);
         check();
-        verify(notices).report(execution, "batch-1", "已请求取消");
+        verify(notices).report(execution, "batch-1", "执行已取消");
         verifyNoInteractions(resumes, continuations);
     }
 

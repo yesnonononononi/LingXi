@@ -71,46 +71,12 @@ class QaAsyncDelegationSubmitterAdversarialTest {
     }
 
     @Test
-    @DisplayName("对抗：绑定对象 = 真正跑子 loop 的异步线程（独立于调用线程）")
-    void bindsTheActualLoopThreadNotCallerThread() {
-        // 换一个在「新线程」上执行的执行器：调用线程 ≠ 子 loop 线程，从而能区分二者。
-        ReflectionTestUtils.setField(submitter, "executorService", new NewThreadExecutorService());
-
-        SubSessionTarget target = SubSessionTarget.fresh(String.valueOf(CHILD_SESSION_ID));
-        AsyncDelegationTask task = task(target);
-
-        when(registry.bindRunningChild(anyLong(), anyLong(), any())).thenReturn(true);
-        Execution created = mock(Execution.class);
-        Execution executed = mock(Execution.class);
-        when(executed.getMessages()).thenReturn(List.of(UserMessageEntity.from("ok")));
-        when(subAgent.createExecution(task.request())).thenReturn(created);
-
-        AtomicReference<Thread> loopThread = new AtomicReference<>();
-        when(subAgent.execute(created)).thenAnswer(invocation -> {
-            loopThread.set(Thread.currentThread());
-            return executed;
-        });
-
-        Thread callerThread = Thread.currentThread();
-        submitter.submit(task); // NewThreadExecutor 内 start+join，返回时 runChild 已跑完
-
-        ArgumentCaptor<Thread> threadCaptor = ArgumentCaptor.forClass(Thread.class);
-        verify(registry).bindRunningChild(ArgumentMatchers.eq(ROOT_SESSION_ID),
-                ArgumentMatchers.eq(CHILD_SESSION_ID), threadCaptor.capture());
-
-        assertEquals(loopThread.get(), threadCaptor.getValue(),
-                "绑定进注册表的必须是跑子 loop 的那根线程（interrupt 才打得到）");
-        assertNotEquals(callerThread, threadCaptor.getValue(),
-                "绑定对象不应是工具调用线程 —— 否则停止会打断错误的线程");
-    }
-
-    @Test
     @DisplayName("对抗：绑定前即取消 → 零落库、零注册残留、零兜底唤醒")
     void cancelBeforeBindingProducesNoOrphan() {
         ReflectionTestUtils.setField(submitter, "executorService", new NewThreadExecutorService());
 
         AsyncDelegationTask task = task(SubSessionTarget.fresh(String.valueOf(CHILD_SESSION_ID)));
-        when(registry.bindRunningChild(anyLong(), anyLong(), any())).thenReturn(false);
+        when(registry.tryStartChild(anyLong(), anyLong())).thenReturn(false);
 
         submitter.submit(task);
 
@@ -135,7 +101,7 @@ class QaAsyncDelegationSubmitterAdversarialTest {
         ReflectionTestUtils.setField(submitter, "executorService", new NewThreadExecutorService());
 
         AsyncDelegationTask task = task(SubSessionTarget.fresh(String.valueOf(CHILD_SESSION_ID)));
-        when(registry.bindRunningChild(anyLong(), anyLong(), any())).thenReturn(true);
+        when(registry.tryStartChild(anyLong(), anyLong())).thenReturn(true);
         Execution created = mock(Execution.class);
         when(created.getExecutionState()).thenReturn(ExecutionState.RUNNING);
         when(subAgent.createExecution(task.request())).thenReturn(created);

@@ -36,17 +36,6 @@ class SubExecutionLifecycleTest {
     private final SubExecutionLifecycle lifecycle =
             new SubExecutionLifecycle(registry, resumeCoordinator, executionIdentity, notifier);
 
-    @Test
-    @DisplayName("子执行挂起：保留登记（markChildSuspended），不唤醒根")
-    void childSuspendedKeepsRegistration() {
-        when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(ROOT_SESSION_ID);
-
-        lifecycle.onSuspended(childExecution());
-
-        InOrder order = inOrder(registry, resumeCoordinator);
-        order.verify(registry).markChildSuspended(ROOT_SESSION_ID, CHILD_SESSION_ID);
-        verify(resumeCoordinator, never()).resumeIfInputPending(anyLong());
-    }
 
     @Test
     @DisplayName("子执行终态且成为空：移除登记并唤醒协作根执行")
@@ -120,13 +109,6 @@ class SubExecutionLifecycleTest {
         verify(resumeCoordinator, never()).resumeIfInputPending(ROOT_EXECUTION_ID);
     }
 
-    @Test
-    @DisplayName("根执行挂起：复查待处理输入（控制槽位已释放后的唯一时点）")
-    void rootSuspensionLeavesAutomaticRecheckToTheRepository() {
-        lifecycle.onSuspended(rootExecution());
-
-        verify(registry, never()).markChildSuspended(anyLong(), anyLong());
-    }
 
     @Test
     @DisplayName("根执行终态：本协作器不移除其他子登记")
@@ -136,11 +118,6 @@ class SubExecutionLifecycleTest {
         verify(registry, never()).unregisterChild(anyLong(), anyLong());
     }
 
-    @Test void childWithoutRoutingDoesNotInventAParentCheck() {
-        when(executionIdentity.resolveRootSessionIdOrNull(CHILD_SESSION_ID)).thenReturn(null);
-        lifecycle.onSuspended(childExecution());
-        verify(registry, never()).markChildSuspended(anyLong(), anyLong());
-    }
 
     @Test
     @DisplayName("兜底结束事实：子执行未建立执行时移除待启动登记并唤醒根")

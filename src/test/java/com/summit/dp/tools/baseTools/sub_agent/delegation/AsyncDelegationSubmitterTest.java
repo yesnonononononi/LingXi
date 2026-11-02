@@ -88,7 +88,7 @@ class AsyncDelegationSubmitterTest {
         SubSessionTarget target = SubSessionTarget.fresh(String.valueOf(CHILD_SESSION_ID));
         AsyncDelegationTask task = task(target);
 
-        when(registry.bindRunningChild(ROOT_SESSION_ID, CHILD_SESSION_ID, Thread.currentThread())).thenReturn(true);
+        when(registry.tryStartChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(true);
         Execution created = mock(Execution.class);
         Execution executed = completedExecution(List.of(UserMessageEntity.from("好的")));
         when(subAgent.createExecution(task.request())).thenReturn(created);
@@ -97,11 +97,11 @@ class AsyncDelegationSubmitterTest {
         submitter.submit(task);
 
         // 绑定对象 = 跑子 loop 的那根线程（同一线程执行体下即当前线程）。
-        verify(registry).bindRunningChild(ROOT_SESSION_ID, CHILD_SESSION_ID, Thread.currentThread());
+        verify(registry).tryStartChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
 
         // 顺序不可倒置：绑定 → 建行 → 落账 → 建执行 → 开跑 → 回写。
         InOrder order = inOrder(registry, subSessionResolver, delegationRecorder, subAgent, modelContextService);
-        order.verify(registry).bindRunningChild(ROOT_SESSION_ID, CHILD_SESSION_ID, Thread.currentThread());
+        order.verify(registry).tryStartChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
         order.verify(subSessionResolver).createSubSession(eq(CHILD_SESSION_ID), eq(ROOT_SESSION_ID), eq(PARENT_WS_ID),
                 any(AgentVO.class), eq("子任务"));
         order.verify(delegationRecorder).record(eq(ROOT_SESSION_ID), any(ToolExecution.class), eq(task.request()),
@@ -124,7 +124,7 @@ class AsyncDelegationSubmitterTest {
         SubSessionTarget target = SubSessionTarget.reused(String.valueOf(CHILD_SESSION_ID), List.of());
         AsyncDelegationTask task = task(target);
 
-        when(registry.bindRunningChild(anyLong(), anyLong(), any())).thenReturn(true);
+        when(registry.tryStartChild(anyLong(), anyLong())).thenReturn(true);
         Execution created = mock(Execution.class);
         Execution executed = completedExecution(List.of());
         when(subAgent.createExecution(task.request())).thenReturn(created);
@@ -145,7 +145,7 @@ class AsyncDelegationSubmitterTest {
     void cancelBeforeStartCreatesNothing() {
         AsyncDelegationTask task = task(SubSessionTarget.fresh(String.valueOf(CHILD_SESSION_ID)));
 
-        when(registry.bindRunningChild(ROOT_SESSION_ID, CHILD_SESSION_ID, Thread.currentThread())).thenReturn(false);
+        when(registry.tryStartChild(ROOT_SESSION_ID, CHILD_SESSION_ID)).thenReturn(false);
 
         submitter.submit(task);
 
@@ -164,7 +164,7 @@ class AsyncDelegationSubmitterTest {
         SubSessionTarget target = SubSessionTarget.fresh(String.valueOf(CHILD_SESSION_ID));
         AsyncDelegationTask task = task(target);
 
-        when(registry.bindRunningChild(anyLong(), anyLong(), any())).thenReturn(true);
+        when(registry.tryStartChild(anyLong(), anyLong())).thenReturn(true);
         Execution created = mock(Execution.class);
         when(created.getExecutionState()).thenReturn(ExecutionState.RUNNING);
         when(subAgent.createExecution(task.request())).thenReturn(created);
@@ -185,7 +185,7 @@ class AsyncDelegationSubmitterTest {
         SubSessionTarget target = SubSessionTarget.fresh(String.valueOf(CHILD_SESSION_ID));
         AsyncDelegationTask task = task(target);
 
-        when(registry.bindRunningChild(anyLong(), anyLong(), any())).thenReturn(true);
+        when(registry.tryStartChild(anyLong(), anyLong())).thenReturn(true);
         Execution created = mock(Execution.class);
         when(created.getExecutionState()).thenReturn(ExecutionState.CREATED);
         when(subAgent.createExecution(task.request())).thenReturn(created);
@@ -203,7 +203,7 @@ class AsyncDelegationSubmitterTest {
     void failureBeforeExecutionCreationStillAbandons() {
         AsyncDelegationTask task = task(SubSessionTarget.fresh(String.valueOf(CHILD_SESSION_ID)));
 
-        when(registry.bindRunningChild(anyLong(), anyLong(), any())).thenReturn(true);
+        when(registry.tryStartChild(anyLong(), anyLong())).thenReturn(true);
         org.mockito.Mockito.doThrow(new IllegalStateException("建会话行失败"))
                 .when(subSessionResolver).createSubSession(any(), any(), any(), any(), any());
 

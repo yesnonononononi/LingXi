@@ -3,7 +3,8 @@ package com.summit.dp.workflow.infrastructure.lifecycle;
 import com.summit.dp.shared.exception.ClientException;
 import org.springframework.stereotype.Component;
 
-import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -76,33 +77,14 @@ public class SessionExecutionRegistry {
         RootExecution execution = roots.computeIfAbsent(rootSessionId, ignored -> new RootExecution());
         synchronized (execution) {
             if (execution.cancelled) return false;
-            execution.children.put(childSessionId, new ChildTrack(ChildPhase.PENDING_START, null));
+            execution.children.add(childSessionId);
             return true;
         }
     }
 
-    /** 异步线程开跑前绑定运行线程；根已取消返回 {@code false}（调用方据此撤销登记、不开跑）。 */
-    public boolean bindRunningChild(Long rootSessionId, Long childSessionId, Thread thread) {
-        if (rootSessionId == null || childSessionId == null) return true;
-        RootExecution execution = roots.computeIfAbsent(rootSessionId, ignored -> new RootExecution());
-        synchronized (execution) {
-            if (execution.cancelled) return false;
-            execution.children.put(childSessionId, new ChildTrack(ChildPhase.RUNNING, thread));
-            return true;
-        }
-    }
-
-    /** 子执行挂起（等人工审批）：保留登记、释放死线程引用，父侧仍记为「未结束」。 */
-    public void markChildSuspended(Long rootSessionId, Long childSessionId) {
-        if (rootSessionId == null || childSessionId == null) return;
-        RootExecution execution = roots.get(rootSessionId);
-        if (execution == null) return;
-        synchronized (execution) {
-            ChildTrack track = execution.children.get(childSessionId);
-            if (track == null) return;
-            track.phase = ChildPhase.SUSPENDED;
-            track.thread = null;
-        }
+    /** 开跑前再检查取消，覆盖线程池排队期间发生的停止。 */
+    public boolean tryStartChild(Long rootSessionId, Long childSessionId) {
+        return registerPendingChild(rootSessionId, childSessionId);
     }
 
     /** 撤销尚未开跑的登记（提交失败 / 根已取消）：无唤醒语义，只是把条目清掉。 */
@@ -160,18 +142,14 @@ public class SessionExecutionRegistry {
      * {@code cancelled=true}，直到某次 {@code beginRoot} 重新开始才复位——保证
      * 停止与下一轮开始之间到达的子任务仍被拦截。</p>
      *
-     * <p>快照带 {@code phase}：只有 {@code RUNNING} 才有活线程可打断，待启动 / 挂起无活线程，
-     * 靠取消标志与执行状态拦截。</p>
      */
-    public List<ChildExecution> cancelRoot(Long rootSessionId) {
+    public List<Long> cancelRoot(Long rootSessionId) {
         if (rootSessionId == null) return List.of();
         RootExecution execution = roots.computeIfAbsent(rootSessionId, ignored -> new RootExecution());
         synchronized (execution) {
             execution.cancelled = true;
             execution.rootRunning = false;
-            return execution.children.entrySet().stream()
-                    .map(entry -> new ChildExecution(entry.getKey(), entry.getValue().thread, entry.getValue().phase))
-                    .toList();
+            return List.copyOf(execution.children);
         }
     }
 
@@ -189,24 +167,9 @@ public class SessionExecutionRegistry {
         }
     }
 
-    /** 子执行快照：会话 id、运行线程（无活线程时为 null）、存活阶段。 */
-    public record ChildExecution(Long sessionId, Thread thread, ChildPhase phase) {
-    }
-
     private static final class RootExecution {
         private boolean rootRunning;
         private boolean cancelled;
-        private final Map<Long, ChildTrack> children = new HashMap<>();
-    }
-
-    /** 私有可变持有体：跟踪单个子执行的阶段与运行线程。 */
-    private static final class ChildTrack {
-        private ChildPhase phase;
-        private Thread thread;
-
-        private ChildTrack(ChildPhase phase, Thread thread) {
-            this.phase = phase;
-            this.thread = thread;
-        }
+        private final Set<Long> children = new HashSet<>();
     }
 }

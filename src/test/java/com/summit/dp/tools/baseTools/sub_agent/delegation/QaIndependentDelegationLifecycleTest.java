@@ -311,7 +311,6 @@ class QaIndependentDelegationLifecycleTest {
         registry.beginRoot(ROOT_SESSION_ID);
         delegateRunningChild(CHILD_SESSION_ID);
 
-        lifecycle.onSuspended(childExecution(CHILD_SESSION_ID));
         assertTrue(registry.hasUnfinishedChildren(ROOT_SESSION_ID), "等审批的子执行仍算未结束");
 
         assertFalse(waitInterceptor.onBeforeComplete(rootLoopContext()).next(),
@@ -371,7 +370,7 @@ class QaIndependentDelegationLifecycleTest {
     @DisplayName("回收：注册表条目仅当「根已收尾且子已清空」时才从 roots 移除，早一格都不能删")
     void registryEntryReclaimedOnlyWhenRootAndChildrenGone() throws Exception {
         registry.beginRoot(ROOT_SESSION_ID);
-        registry.bindRunningChild(ROOT_SESSION_ID, CHILD_SESSION_ID, Thread.currentThread());
+        registry.tryStartChild(ROOT_SESSION_ID, CHILD_SESSION_ID);
 
         registry.finishRoot(ROOT_SESSION_ID);
         assertTrue(rootsOf(registry).containsKey(ROOT_SESSION_ID),
@@ -388,13 +387,13 @@ class QaIndependentDelegationLifecycleTest {
 
     private void suspendRoot() {
         rootActive.set(false);
-        lifecycle.onSuspended(rootExecution());
+
         wakeups.resumeIfInputPending(ROOT_EXECUTION_ID);
     }
 
     private void delegateRunningChild(long childSessionId) {
         registry.registerPendingChild(ROOT_SESSION_ID, childSessionId);
-        registry.bindRunningChild(ROOT_SESSION_ID, childSessionId, Thread.currentThread());
+        registry.tryStartChild(ROOT_SESSION_ID, childSessionId);
     }
 
     private LoopContext rootLoopContext() {

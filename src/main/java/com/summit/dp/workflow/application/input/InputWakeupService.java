@@ -56,7 +56,6 @@ public class InputWakeupService {
                 }
                 if (batchKey == null) return;
                 String reason = policy.blockedReason(execution);
-                if (activity.getObject().isCancellationRequested(String.valueOf(executionId))) reason = "已请求取消";
                 if (reason != null) {
                     notices.report(execution, batchKey, reason);
                     return;

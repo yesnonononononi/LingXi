@@ -290,7 +290,7 @@ class QaDelegationLifecycleInterleavingTest {
         delegateChild(CHILD_SESSION_ID);
 
         // 子执行挂起等审批：保留登记、释放死线程，但父侧仍算「未结束」。
-        lifecycle.onSuspended(childExecution(CHILD_SESSION_ID));
+
         assertTrue(registry.hasUnfinishedChildren(ROOT_SESSION_ID), "等审批的子执行仍是未结束子执行");
 
         InterceptorResult whileWaiting = waitInterceptor.onBeforeComplete(rootLoopContext());
@@ -365,13 +365,13 @@ class QaDelegationLifecycleInterleavingTest {
     /** 根进入 SUSPENDED 并释放控制槽位：走真实挂起通知链（含输入复查）。 */
     private void suspendRoot() {
         rootActive.set(false);
-        lifecycle.onSuspended(rootExecution());
+
         wakeups.resumeIfInputPending(ROOT_EXECUTION_ID);
     }
 
     private void delegateChild(long childSessionId) {
         registry.registerPendingChild(ROOT_SESSION_ID, childSessionId);
-        registry.bindRunningChild(ROOT_SESSION_ID, childSessionId, Thread.currentThread());
+        registry.tryStartChild(ROOT_SESSION_ID, childSessionId);
     }
 
     private LoopContext rootLoopContext() {

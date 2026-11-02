@@ -21,20 +21,6 @@ public class SubExecutionLifecycle {
     private final ExecutionLocator executionLocator;
     private final SubAgentCompleteNotifier subAgentCompleteNotifier;
 
-    /** 挂起登记在控制槽位发布期间完成，避免迟到登记覆盖新运行。 */
-    public void onSuspended(Execution execution) {
-        Long rootExecutionId = resolveRootExecutionId(execution);
-        if (rootExecutionId != null) {
-            Long childSessionId = childSessionIdOrNull(execution);
-            Long rootSessionId = resolveRootSessionId(childSessionId);
-            if (rootSessionId != null) {
-                registry.markChildSuspended(rootSessionId, childSessionId);
-                log.info("子执行挂起保留登记: rootSessionId={}, childSessionId={}, rootExecutionId={}",
-                        rootSessionId, childSessionId, rootExecutionId);
-            }
-        }
-    }
-
     /**
      * 交付提交之后解除依赖，再通知根执行复查输入。
      */

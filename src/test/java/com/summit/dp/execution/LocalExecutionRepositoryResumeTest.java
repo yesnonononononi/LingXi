@@ -586,7 +586,7 @@ class LocalExecutionRepositoryResumeTest {
         assertDoesNotThrow(() -> isolated.unregister(signal));
         assertFalse(isolated.isActive("305"));
         assertEquals(List.of("305"), suspended);
-        verify(subExecutionLifecycle).onSuspended(any());
+
         verify(tools, never()).cancelPendingToolCalls(any());
         verify(sessions, never()).saveExecutionContextUsage(any());
     }
@@ -617,7 +617,7 @@ class LocalExecutionRepositoryResumeTest {
                 synchronization.afterCommit();
             }
             verify(readiness).markReady("305");
-            verify(subExecutionLifecycle).onSuspended(any());
+
             assertEquals(List.of("305"), suspended);
         } finally {
             TransactionSynchronizationManager.clearSynchronization();

@@ -4,7 +4,6 @@ import com.summit.core.runtime.loop.ExecutionControl;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.workflow.application.chat.impl.ChatServiceImpl;
-import com.summit.dp.workflow.infrastructure.lifecycle.ChildPhase;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,9 +25,7 @@ class ChatServiceStopTest {
 
     @Test
     void stopSignalsTheWholeTreeWithoutInterruptingCheckpointPersistence() {
-        Thread childThread = mock(Thread.class);
-        when(registry.cancelRoot(800L)).thenReturn(List.of(
-                new SessionExecutionRegistry.ChildExecution(555L, childThread, ChildPhase.RUNNING)));
+        when(registry.cancelRoot(800L)).thenReturn(List.of(555L));
         when(locator.activeExecutionIds(800L)).thenReturn(List.of("101"));
         when(locator.activeExecutionIds(555L)).thenReturn(List.of("102"));
 
@@ -37,6 +34,5 @@ class ChatServiceStopTest {
         verify(registry).cancelRoot(800L);
         verify(control).cancel("101");
         verify(control).cancel("102");
-        verify(childThread, never()).interrupt();
     }
 }
