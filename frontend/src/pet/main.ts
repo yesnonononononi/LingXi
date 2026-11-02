@@ -215,6 +215,14 @@ let pendingMovePoint: PetPoint | null = null;
 
 /** 关键 DOM 引用（构建时赋值，之后只读）。 */
 let artElement: HTMLDivElement | null = null;
+/**
+ * 动作宿主（`.pet-action`）：包住两张压平帧与层栈，**动作动画挂在它身上**。
+ *
+ * <p>为什么要有这一层：压平帧在 layered 模式下被 `opacity: 0` 让位，
+ * 动画挂它等于挂在一个看不见的元素上（M6-b 第三轮）。宿主不参与命中判定，
+ * 也不含接地光晕（影子不该跟着跳）。</p>
+ */
+let actionElement: HTMLDivElement | null = null;
 let badgeElement: HTMLSpanElement | null = null;
 /** 提示行控制器（自动淡出；O2）。 */
 let hintBar: HintBar | null = null;
@@ -578,6 +586,11 @@ function buildDom(): void {
   // 落地光晕：贴在立绘底层，管"站在桌面上"的接地感（drop-shadow 管轮廓立体感，两者分工）
   mountHalo(document, artElement, PET_GEOMETRY);
 
+  // 动作宿主：两张压平帧与层栈都装进这一层，动作动画（tap/angry/wake/drag…）挂在它身上。
+  // 放在 `.pet-art` 里、光晕之外：影子不该跟着跳；命中判定仍以外层 `.pet-art` 为锚。
+  actionElement = document.createElement('div');
+  actionElement.className = 'pet-action';
+
   const front = document.createElement('img');
   front.className = 'pet-art-frame';
   front.alt = '';
@@ -598,7 +611,8 @@ function buildDom(): void {
   // M6-b（O3/D-B2）：**不再有常驻的 × 关闭按钮**。关闭与显隐统一收敛到右键原生菜单
   // （`electron/pet-window.cjs` 的 `pet:context-menu`），窗口内因此没有任何关闭元素。
   // 理由写在决策单里：关闭入口必须唯一，两套手势（双击 + 按钮）迟早再打架。
-  artElement.append(front, back);
+  actionElement.append(front, back);
+  artElement.append(actionElement);
 
   // 调试标记、调试面板与提示行**只在调试态创建**：发布态零调试元素（用户明确要求"别再露调试标记"）
   if (DEBUG_ENABLED) {
@@ -837,8 +851,9 @@ function createPresentation(): void {
   const deps: SelectorDeps = {
     doc: document as unknown as DocumentLike,
     root: root as unknown as ElementLike,
-    // 层挂到 `.pet-art` 上：它与压平帧同框，分层件的整画布坐标才对得上（零标定）
-    layerHost: (artElement as unknown as ElementLike | null) ?? undefined,
+    // 层栈挂到动作宿主 `.pet-action` 上：它与压平帧同框（同一 2:3 画布、零标定），
+    // 且动作位移时层栈与帧一起动——不会出现"帧跳了、层没跳"的错位。
+    layerHost: (actionElement as unknown as ElementLike | null) ?? (artElement as unknown as ElementLike | null) ?? undefined,
     frames,
     geometry: PET_GEOMETRY,
     catalog: MOTION_CATALOG,
