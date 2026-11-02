@@ -47,8 +47,7 @@ import com.summit.dp.workflow.infrastructure.tools.sub_agent.delegation.SubExecu
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskInputSource;
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskNotifications;
 import org.apache.ibatis.session.SqlSessionFactory;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -64,9 +63,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class InputSourceContractTest {
-    @ParameterizedTest @ValueSource(booleans = {false, true})
-    void selectedMailBatchDoesNotConsumeLaterArrivalsAndBothEnginesShareTheQuery(boolean h2) throws Exception {
-        try (Fixture fixture = new Fixture(h2)) {
+    @Test
+    void selectedMailBatchDoesNotConsumeLaterArrivals() throws Exception {
+        try (Fixture fixture = new Fixture()) {
             EmailMessageVO first = fixture.emails.sendMail(7L, "第一份", new MailSendContext(10L, 8L, null)).getData();
             List<EmailMessageVO> selected = fixture.mail.pendingItems(fixture.execution);
             EmailMessageVO late = fixture.emails.sendMail(7L, "检查后到达", new MailSendContext(10L, 8L, null)).getData();
@@ -80,9 +79,9 @@ class InputSourceContractTest {
         }
     }
 
-    @ParameterizedTest @ValueSource(booleans = {false, true})
-    void taskCompletionPublishesBeforeDependencyDisappearsAndReceiptsPreventRedelivery(boolean h2) throws Exception {
-        try (Fixture fixture = new Fixture(h2)) {
+    @Test
+    void taskCompletionPublishesBeforeDependencyDisappearsAndReceiptsPreventRedelivery() throws Exception {
+        try (Fixture fixture = new Fixture()) {
             Task task = Task.builder().id(20L).sessionId(10L).turnId(30L).executionId(100L).command("test").build();
             fixture.tasks.save(task);
             assertTrue(fixture.background.hasOpenDependency(fixture.execution));
@@ -97,9 +96,9 @@ class InputSourceContractTest {
         }
     }
 
-    @ParameterizedTest @ValueSource(booleans = {false, true})
-    void finalChildPublicationAtDependencyReadIsSeenBeforeCompletion(boolean h2) throws Exception {
-        try (Fixture fixture = new Fixture(h2)) {
+    @Test
+    void finalChildPublicationAtDependencyReadIsSeenBeforeCompletion() throws Exception {
+        try (Fixture fixture = new Fixture()) {
             InputSource<Void> child = new InputSource<>() {
                 @Override public List<Void> pendingItems(Execution execution) { return List.of(); }
                 @Override public boolean hasOpenDependency(Execution execution) {
@@ -115,9 +114,9 @@ class InputSourceContractTest {
         }
     }
 
-    @ParameterizedTest @ValueSource(booleans = {false, true})
-    void automaticAdmissionCommitsTheSelectedMailAndRollsBackItsNewTurnOnFailure(boolean h2) throws Exception {
-        try (Fixture fixture = new Fixture(h2)) {
+    @Test
+    void automaticAdmissionCommitsTheSelectedMailAndRollsBackItsNewTurnOnFailure() throws Exception {
+        try (Fixture fixture = new Fixture()) {
             fixture.emails.sendMail(7L, "自动新轮的真实输入", new MailSendContext(10L, 8L, null));
             PreparedChatExecutor executor = mock(PreparedChatExecutor.class);
             ChatTurnRepository turns = mock(ChatTurnRepository.class);
@@ -154,9 +153,9 @@ class InputSourceContractTest {
         }
     }
 
-    @ParameterizedTest @ValueSource(booleans = {false, true})
-    void persistedSuspendedChildSurvivesAnEmptyProcessRegistry(boolean h2) throws Exception {
-        try (Fixture fixture = new Fixture(h2)) {
+    @Test
+    void persistedSuspendedChildSurvivesAnEmptyProcessRegistry() throws Exception {
+        try (Fixture fixture = new Fixture()) {
             SessionRepository sessions = mock(SessionRepository.class);
             when(sessions.findSessionTree(10L)).thenReturn(List.of(Session.builder().id(20L).build()));
             ExecutionPO child = new ExecutionPO();
@@ -196,19 +195,13 @@ class InputSourceContractTest {
                         .runtimeParameters(AgentRuntimeParameters.builder().attributes(Map.of(
                                 ExecutionAttributes.SESSION_ID, "10", ExecutionAttributes.AGENT_ID, "7")).build()).build()).build();
 
-        private Fixture(boolean h2) {
+        private Fixture() {
             DataSource source;
             SqlSessionFactory factory;
-            if (h2) {
-                H2TestDatabase db = H2TestDatabase.create("input-contract");
-                database = db; source = db;
-                factory = db.sessionFactory(EmailMapper.class, EmailMessageMapper.class, TaskMapper.class, ChatTurnMapper.class, ExecutionMapper.class);
-            } else {
-                H2TestDatabase db = H2TestDatabase.create("input-contract");
-                database = db; source = db;
-                factory = db.sessionFactory(EmailMapper.class, EmailMessageMapper.class, TaskMapper.class, ChatTurnMapper.class, ExecutionMapper.class);
-            }
-            SqlSessionTemplate session = h2 ? H2TestDatabase.sqlSession(factory) : H2TestDatabase.sqlSession(factory);
+            H2TestDatabase db = H2TestDatabase.create("input-contract");
+            database = db; source = db;
+            factory = db.sessionFactory(EmailMapper.class, EmailMessageMapper.class, TaskMapper.class, ChatTurnMapper.class, ExecutionMapper.class);
+            SqlSessionTemplate session = H2TestDatabase.sqlSession(factory);
             dataSource = source;
             turnRows = session.getMapper(ChatTurnMapper.class);
             executionRows = session.getMapper(ExecutionMapper.class);

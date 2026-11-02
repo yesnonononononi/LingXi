@@ -85,8 +85,7 @@ import com.summit.runtime.loop.control.InMemoryActiveExecutionRegistry;
 import com.summit.runtime.model.DefaultChatModelInvoker;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -120,18 +119,18 @@ class QaPendingMailRedelegationTest {
 
     @TempDir Path directory;
 
-    @ParameterizedTest @ValueSource(booleans = {false, true})
-    void pendingHistoricalMailCanStillFinishANewDelegationWithoutItsArtifact(boolean h2) throws Exception {
-        try (Fixture fixture = new Fixture(h2, directory)) {
+    @Test
+    void pendingHistoricalMailCanStillFinishANewDelegationWithoutItsArtifact() throws Exception {
+        try (Fixture fixture = new Fixture(directory)) {
             fixture.sendLegacyMail();
             Observation observed = fixture.run(false, false);
             assertReceiptOnlyCompletion(fixture, observed, 2);
         }
     }
 
-    @ParameterizedTest @ValueSource(booleans = {false, true})
-    void mailDuringTheOpeningReplyContinuesTheLoopButStillAllowsReceiptOnlyCompletion(boolean h2) throws Exception {
-        try (Fixture fixture = new Fixture(h2, directory)) {
+    @Test
+    void mailDuringTheOpeningReplyContinuesTheLoopButStillAllowsReceiptOnlyCompletion() throws Exception {
+        try (Fixture fixture = new Fixture(directory)) {
             Observation observed = fixture.run(false, true);
             assertReceiptOnlyCompletion(fixture, observed, 3);
             assertEquals(CURRENT_TASK, lastUser(observed.requests().getFirst()).text());
@@ -139,9 +138,9 @@ class QaPendingMailRedelegationTest {
         }
     }
 
-    @ParameterizedTest @ValueSource(booleans = {false, true})
-    void theSameLatestInputModelWritesTheArtifactWhenOldMailWasAlreadyConsumed(boolean h2) throws Exception {
-        try (Fixture fixture = new Fixture(h2, directory)) {
+    @Test
+    void theSameLatestInputModelWritesTheArtifactWhenOldMailWasAlreadyConsumed() throws Exception {
+        try (Fixture fixture = new Fixture(directory)) {
             fixture.sendLegacyMail();
             fixture.emails.consumePending(10L, 6L);
             Observation observed = fixture.run(false, false);
@@ -154,9 +153,9 @@ class QaPendingMailRedelegationTest {
         }
     }
 
-    @ParameterizedTest @ValueSource(booleans = {false, true})
-    void aModelThatHonorsTheDelegationCanFinishItEvenWhenHistoricalMailIsLast(boolean h2) throws Exception {
-        try (Fixture fixture = new Fixture(h2, directory)) {
+    @Test
+    void aModelThatHonorsTheDelegationCanFinishItEvenWhenHistoricalMailIsLast() throws Exception {
+        try (Fixture fixture = new Fixture(directory)) {
             fixture.sendLegacyMail();
             Observation observed = fixture.run(true, false);
             assertEquals(ExecutionState.COMPLETED, observed.execution().getExecutionState());
@@ -230,20 +229,14 @@ class QaPendingMailRedelegationTest {
         private final AtomicInteger mailCalls = new AtomicInteger();
         private final ObjectMapper json = new JsonConfig().objectMapper();
 
-        private Fixture(boolean h2, Path directory) {
+        private Fixture(Path directory) {
             artifact = directory.resolve("behavior/third-round.txt");
             DataSource source;
             SqlSessionFactory factory;
-            if (h2) {
-                H2TestDatabase db = H2TestDatabase.create("pending-mail-redelegation");
-                database = db; source = db;
-                factory = db.sessionFactory(EmailMapper.class, EmailMessageMapper.class);
-            } else {
-                H2TestDatabase db = H2TestDatabase.create("pending-mail-redelegation");
-                database = db; source = db;
-                factory = db.sessionFactory(EmailMapper.class, EmailMessageMapper.class);
-            }
-            SqlSessionTemplate session = h2 ? H2TestDatabase.sqlSession(factory) : H2TestDatabase.sqlSession(factory);
+            H2TestDatabase db = H2TestDatabase.create("pending-mail-redelegation");
+            database = db; source = db;
+            factory = db.sessionFactory(EmailMapper.class, EmailMessageMapper.class);
+            SqlSessionTemplate session = H2TestDatabase.sqlSession(factory);
             ProxyFactory proxy = new ProxyFactory(new EmailServiceImpl(new EmailRepositoryImpl(session.getMapper(EmailMapper.class)),
                     new EmailMessageRepositoryImpl(session.getMapper(EmailMessageMapper.class))));
             proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(source), new AnnotationTransactionAttributeSource()));
