@@ -25,6 +25,8 @@ import com.summit.core.workspace.WorkspaceResolver;
 import com.summit.dp.execution.application.service.RuntimeConfigurationService;
 import com.summit.dp.execution.infrastructure.persistence.mapper.RuntimeConfigRevisionMapper;
 import com.summit.dp.execution.infrastructure.repository.RuntimeConfigRevisionRepositoryImpl;
+import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
+import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
 import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
@@ -75,6 +77,45 @@ class RuntimeConfigurationIntegrationTest {
     private RuntimeConfigRevisionRepositoryImpl repository;
     private DataSourceTransactionManager transactionManager;
     private RuntimeConfigurationService configurations;
+
+    @Test
+    void concurrentRevisionAllocationRetriesEvenInsideWrittenOuterTransactions() throws Exception {
+        RuntimeConfigRevisionRepositoryImpl competing = spy(repository);
+        CyclicBarrier firstRevisions = new CyclicBarrier(2);
+        AtomicInteger reads = new AtomicInteger();
+        doAnswer(invocation -> {
+            int revision = (Integer) invocation.callRealMethod();
+            if (reads.incrementAndGet() <= 2) firstRevisions.await(10, TimeUnit.SECONDS);
+            return revision;
+        }).when(competing).latestRevision("MODEL", 31L);
+        RuntimeConfigurationService nested = new RuntimeConfigurationService(competing, json, transactionManager);
+        SessionMapper sessions = H2TestDatabase.sqlSession(database.sessionFactory(SessionMapper.class))
+                .getMapper(SessionMapper.class);
+        TransactionTemplate outer = new TransactionTemplate(transactionManager);
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+            Future<SensitiveDataSpec> first = pool.submit(() -> outer.execute(status -> {
+                sessions.insert(SessionPO.builder().id(710L).name("甲事务").build());
+                SensitiveDataSpec spec = nested.freezeModel(31L, model("nested-first"));
+                status.setRollbackOnly();
+                return spec;
+            }));
+            Future<SensitiveDataSpec> second = pool.submit(() -> outer.execute(status -> {
+                sessions.insert(SessionPO.builder().id(711L).name("乙事务").build());
+                SensitiveDataSpec spec = nested.freezeModel(31L, model("nested-second"));
+                status.setRollbackOnly();
+                return spec;
+            }));
+            SensitiveDataSpec left = first.get(20, TimeUnit.SECONDS);
+            SensitiveDataSpec right = second.get(20, TimeUnit.SECONDS);
+            assertEquals(Set.of(1, 2), Set.of(left.getVersion(), right.getVersion()));
+            assertEquals("nested-first", nested.resolveModel(left.getId(), left.getVersion()).getApiKey());
+            assertEquals("nested-second", nested.resolveModel(right.getId(), right.getVersion()).getApiKey());
+        }
+        assertTrue(reads.get() >= 3, "版本号真实竞争后必须重新查询并分配");
+        assertNull(sessions.selectById(710L));
+        assertNull(sessions.selectById(711L));
+        assertEquals(2L, rows.selectCount(null), "外层回滚不能撤销已独立提交的配置版本");
+    }
 
     @BeforeEach
     void setup() throws Exception {
