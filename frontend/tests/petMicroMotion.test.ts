@@ -280,9 +280,18 @@ test('CSS：呼吸不再用 1.014 的 scale（那是"糊"的来源）', () => {
 });
 
 test('CSS：debug UI 默认隐藏，只有 data-debug=1 才显示', () => {
-  assert.ok(/\.pet-badge\s*,\s*\.pet-hint\s*\{\s*display:\s*none/.test(CSS), '调试元素必须有默认 display:none');
+  // M6-b 起调试元素是三个：徽章 / 提示行 / 状态面板（O1），必须共用同一条 display:none
+  assert.ok(
+    /\.pet-badge\s*,\s*\.pet-hint\s*,\s*\.pet-debugbar\s*\{\s*display:\s*none/.test(CSS),
+    '调试元素必须有默认 display:none',
+  );
   assert.ok(CSS.includes("#pet-root[data-debug='1'] .pet-badge"), '徽章必须由 data-debug 门控');
   assert.ok(CSS.includes("#pet-root[data-debug='1'] .pet-hint"), '提示行必须由 data-debug 门控');
+  assert.ok(CSS.includes("#pet-root[data-debug='1'] .pet-debugbar"), '调试面板必须由 data-debug 门控');
+});
+
+test('CSS：常驻关闭按钮的样式已彻底移除（O3：关闭只走右键原生菜单）', () => {
+  assert.equal(CSS.includes('.pet-close'), false, '窗口里不该再有任何关闭元素，连样式也不该留');
 });
 
 test('CSS：data-power=off 会暂停动画', () => {

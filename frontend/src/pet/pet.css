@@ -240,6 +240,17 @@ body {
 #pet-root[data-motion='wake'] .pet-art-frame { animation-name: pet-shake; }
 #pet-root[data-motion='drag'] .pet-art-frame { animation-name: pet-lift; }
 
+/*
+ * 状态型持续动作（M6-b D-B3）：`data-motion-loop='1'` 表示"演出被唤醒为止"。
+ *
+ * 分层档在 `layers/motion-compiler.ts` 里按 `op.loop` 直接编译成 `infinite`，
+ * 立牌档没有编译期 CSS 生成，只能靠这个 `data-*` 表达同一层语义——
+ * 两档必须一致，否则"切到立牌档就不睡"会是一个只在特定配置下复现的幽灵 bug。
+ */
+#pet-root[data-motion][data-motion-loop='1'] .pet-art-frame {
+  animation-iteration-count: infinite;
+}
+
 /* 一弹：被点击时的最小反馈（规格书 P1 简化版：整图 scale 1.03） */
 @keyframes pet-tap {
   0% { transform: scale(1); }
@@ -358,46 +369,26 @@ body {
 }
 
 /**
- * 关闭按钮（悬停才显形：常驻的叉号在桌面上太抢眼）。
+ * 关闭入口说明（M6-b O3/D-B2）：**这里曾经是 `.pet-close`（一个悬停显形的 × 按钮）**。
  *
- * <p>与 `main.ts` 的 `close` 元素对应；点击走 `petAPI.close()`，双击立绘也是同一条路径。</p>
+ * <p>它已被移除，而不是藏起来：关闭与显隐现在统一收敛到<b>右键原生菜单</b>
+ * （`electron/pet-window.cjs` 的 `pet:context-menu` → `Menu.popup()`）。
+ * 样式一并删掉——留一段没人用的 CSS 等于给下一个人一个"要不要恢复它"的假选项。</p>
+ *
+ * <p>验收方式：`document.querySelector('.pet-close')` 必须为 `null`（`tests/petPresentation.test.ts`
+ * 之外由 DOM 探针实证）。</p>
  */
-.pet-close {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border-radius: 50%;
-  border: 1px solid rgba(226, 232, 240, 0.45);
-  background: rgba(15, 23, 42, 0.55);
-  color: rgba(226, 232, 240, 0.9);
-  font-size: 13px;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-
-.pet-art.is-hit .pet-close {
-  opacity: 1;
-}
-
-.pet-close:hover {
-  background: rgba(220, 38, 38, 0.75);
-  border-color: rgba(248, 250, 252, 0.6);
-}
 
 /**
- * 调试标记与提示行（**发布态必须不可见**）。
+ * 调试标记、提示行与调试面板（**发布态必须不可见**）。
  *
  * <p>以前这两块"膏药"常驻在 209px 高的宠物旁边，是用户明确点名"不好看"的来源之一。
  * 现在默认 `display:none`，只有 `#pet-root[data-debug='1']` 下才出现——
  * 由 CSS 强制，即使 JS 误建了元素也不会露出来（双保险：`main.ts` 在非调试态根本不建它们）。</p>
  */
 .pet-badge,
-.pet-hint {
+.pet-hint,
+.pet-debugbar {
   display: none;
 }
 
@@ -423,18 +414,80 @@ body {
   border-color: rgba(134, 239, 172, 0.95);
 }
 
-/* 提示行贴在立绘底部：放在立绘箱外面会被窗口边缘裁掉。加一层极淡底色是因为它压在裙摆浅色花纹上看不清。 */
+/**
+ * 提示行（M6-b O2：**挪到窗口底部的独立条上**）。
+ *
+ * <p>三条硬要求，逐条对应问题单：</p>
+ * <ol>
+ *   <li><b>不许压立绘脚部</b>：立绘箱在窗口里的范围是 y 96~330（几何真源：上边距 24 + 气泡 72），
+ *       可见墨迹到 y≈317.7 为止，而窗口高 348。所以 `bottom: 3px` 这一条 14px 高的窄条
+ *       完全落在 330~348 的空带里，任何缩放/边距调整都由 CSS 变量跟着走。</li>
+ *   <li><b>单行小字 + 半透明底</b>：`font-size: 9px` + `white-space: nowrap`，
+ *       文案由 `main.ts` 的 `HINT_TEXT` 压成一句话（不再有"表情：xx"实时值）。</li>
+ *   <li><b>3 秒无交互自动淡出</b>：可见性只由 `data-visible` 表达，淡入淡出走 CSS `transition`；
+ *       计时器在 `visual/hint-bar.ts`（可单测），JS 不逐帧改样式。</li>
+ * </ol>
+ */
 #pet-root[data-debug='1'] .pet-hint {
   display: block;
   position: absolute;
+  left: 8px;
   right: 8px;
-  bottom: 8px;
-  padding: 2px 8px;
+  bottom: 2px;
+  padding: 0 8px;
+  box-sizing: border-box;
   border-radius: 999px;
-  font-size: 10px;
-  color: rgba(219, 228, 255, 0.78);
-  background: rgba(15, 23, 42, 0.42);
+  font-size: 9px;
+  line-height: 12px;
+  letter-spacing: 0.2px;
+  color: rgba(219, 228, 255, 0.72);
+  background: rgba(15, 23, 42, 0.38);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transition: opacity 220ms ease;
+  /* 纯展示：不抢手势，也绝不参与命中判定 */
+  pointer-events: none;
+}
+
+#pet-root[data-debug='1'] .pet-hint[data-visible='1'] {
+  opacity: 1;
+}
+
+/**
+ * 调试面板（O1）：一排能直达任意状态的按钮。
+ *
+ * <p>位置落在立绘的**命中区之内**（`top: 14px` 相对立绘箱 → 窗口 y≈110）：窗口是点击穿透的，
+ * 按钮若落在命中区外，鼠标事件根本到不了页面，点了没反应反而会误导排障。</p>
+ */
+#pet-root[data-debug='1'] .pet-debugbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  position: absolute;
+  top: 14px;
+  left: 4px;
+  right: 4px;
+  z-index: 3;
+}
+
+.pet-debugbar button {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid rgba(165, 180, 252, 0.4);
+  background: rgba(15, 23, 42, 0.62);
+  color: rgba(226, 232, 240, 0.92);
+  font-size: 9px;
+  line-height: 13px;
+  cursor: pointer;
+}
+
+.pet-debugbar button:hover {
+  background: rgba(99, 102, 241, 0.72);
+  border-color: rgba(199, 210, 254, 0.8);
 }
 
 /**

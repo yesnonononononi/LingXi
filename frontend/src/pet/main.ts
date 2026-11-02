@@ -20,7 +20,11 @@ import { CommandRouter } from './presentation/command-router';
 import { DEFAULT_CROSSFADE_EASING, DEFAULT_CROSSFADE_MS } from './presentation/crossfade';
 import type { ExpressionUrlMap } from './presentation/sprite-presentation';
 import { EXPRESSION_IDS, type ExpressionId, type MotionId, type PresentationOp } from './presentation/types';
-import { PetBehaviorStateMachine, type PetBehaviorState } from './behavior/state-machine';
+import {
+  PetBehaviorStateMachine,
+  type PetBehaviorState,
+} from './behavior/state-machine';
+import { DRAG_THRESHOLD_PX, PressDragGesture, type GestureIntent } from './gesture/press-drag';
 import { PET_BLINK_MAPPING, expressionFrameUrl, expressionFrameUrls } from './assets/manifest';
 import { loadArt } from './assets/loader';
 import { MOTION_CATALOG } from './layers/motion-catalog';
@@ -34,6 +38,7 @@ import { PowerPolicy } from './power-policy';
 import { isCalibrationEnabled, mountCalibration } from './visual/calibrate';
 import { mountHalo } from './visual/halo';
 import { applyMicroMotion, applyMotionDuration, isDebugEnabled, prefersReducedMotion } from './visual/micro-motion';
+import { HintBar } from './visual/hint-bar';
 import { MOTION_REST_ATTRIBUTE, MotionPacer } from './visual/motion-pacer';
 
 /** 调试 UI 是否开启（`?debug=1` 或开发态；发布态必须隐藏——用户明确要求别再露调试标记）。 */
@@ -88,19 +93,6 @@ const ART_URL_FALLBACK = expressionFrameUrl('neutral', DENSITY === '2x' ? '1x' :
  */
 const EXPRESSION_URLS: ExpressionUrlMap = expressionFrameUrls(DENSITY);
 
-/** 表情中文标签（调试提示行用；发布态不显示）。 */
-const EXPRESSION_LABELS: Readonly<Record<ExpressionId, string>> = {
-  neutral: '默认',
-  blink: '眨眼',
-  happy: '开心',
-  shy: '害羞',
-  angry: '生气',
-  sad: '委屈',
-  surprised: '惊讶',
-  sleepy: '困倦',
-  yawn: '打哈欠',
-};
-
 /** 主进程推来的指令。类型与 `pet-window.cjs` 的 `pet:command` 一一对应。 */
 type PetCommand =
   | { type: 'ready'; clickThrough?: boolean; visible?: boolean; size?: { width: number; height: number } }
@@ -124,11 +116,17 @@ interface PetIpcResult {
 
 /** preload 暴露的桥（见 `electron/pet-preload.cjs`）。 */
 interface PetBridge {
-  startDrag: (payload: PetPoint) => Promise<PetIpcResult>;
+  startDrag: (payload?: PetPoint) => Promise<PetIpcResult>;
   moveDrag: (payload: PetPoint) => void;
   endDrag: () => Promise<PetIpcResult>;
   setHit: (hit: boolean) => void;
   close: () => Promise<PetIpcResult>;
+  /**
+   * 弹出原生右键菜单（显隐 / 关闭 / 退出）——M6-b 起这是**关闭与显隐的唯一入口**。
+   *
+   * <p>单向事件：菜单项由主进程点击执行，渲染层不需要回执。</p>
+   */
+  openContextMenu: () => void;
   onCommand: (callback: (command: PetCommand) => void) => () => void;
 }
 
@@ -146,6 +144,24 @@ interface PetDebugHandle {
   behaviorState: () => PetBehaviorState;
   /** 派发一次点击行为（等价于点一下桌宠；连点 3 次可触发生气）。 */
   tap: () => string[];
+  /**
+   * 后门：瞬间切到任意状态（O1；不必再等 90 秒）。
+   *
+   * <p><b>只在开发构建里存在</b>：由 `debug/dev-backdoor.ts` 在 `import.meta.env.DEV` 分支里
+   * 动态挂载，生产构建连这个键名都不会进产物（见该模块的说明）。</p>
+   *
+   * @param state `idle` / `tap` / `happy` / `angry` / `sleeping` / `wake` / `drag`
+   * @returns 各条指令的调度结果（非法状态名返回空数组）
+   */
+  forceState?: (state: string) => string[];
+  /** 后门：把"无交互 90 秒入睡"的计时起点拉回现在（同样只在开发构建里存在）。 */
+  resetIdleTimer?: () => void;
+  /** 当前手势阶段（`idle` / `pressed` / `dragging`；验 D-B4 不卡 drag 用）。 */
+  gesturePhase: () => string;
+  /** 拖拽阈值（CSS px；验 D-B1 的"微动不算拖"用）。 */
+  dragThresholdPx: () => number;
+  /** 当前正在持续的动作（状态型；`null` = 没有）。 */
+  sustainedMotion: () => string | null;
   /** 当前合成模式（`composite` / `partial` / `layered`；排障用）。 */
   compositeMode: () => string;
   /** 参与本次合成的层 id（`composite` 时为空数组）。 */
@@ -161,8 +177,24 @@ declare global {
 
 /** 当前是否处于「可交互」状态（true = 主进程已关掉穿透）。 */
 let hit = false;
-/** 是否正在拖拽。 */
-let dragging = false;
+/**
+ * 手势判定（点击 vs 拖拽的**唯一**语义来源）。
+ *
+ * <p>M6-b 之前没有这一层：`pointerdown` 同时下发 tap 又立刻开始拖拽，
+ * 于是 tap 被优先级 2 的 drag 打断（D-B1），松手时又被 idle 清掉；
+ * 而"点一下"的 1~2px 抖动又会真的挪窗口（D-B4）。现在这里只产出意图，
+ * `wireEvents` 只做执行。</p>
+ */
+const gesture: PressDragGesture = new PressDragGesture();
+/** 最近一次指针的屏幕坐标（拖拽 IPC 用；与判定用的 client 坐标解耦）。 */
+let lastScreenPoint: PetPoint | null = null;
+/**
+ * 拖拽是否已真正开始（`drag-start` IPC 已发出）。
+ *
+ * <p>不复用 {@link gesture} 的阶段：手势层在产出 `drag-end` 的那一刻就已经回到 `idle`，
+ * 用它做守卫会让收尾流程永远不执行。这里是"IPC 侧"的状态，与手势层各管一边。</p>
+ */
+let dragActive = false;
 
 /** 命中实现（本批矩形；换 alpha 掩码只改这一处构造）。 */
 let hitTester: RectHitTester | null = null;
@@ -207,7 +239,16 @@ let pendingMovePoint: PetPoint | null = null;
 /** 关键 DOM 引用（构建时赋值，之后只读）。 */
 let artElement: HTMLDivElement | null = null;
 let badgeElement: HTMLSpanElement | null = null;
-let hintElement: HTMLSpanElement | null = null;
+/** 提示行控制器（自动淡出；O2）。 */
+let hintBar: HintBar | null = null;
+
+/**
+ * 提示行文案（O2：压成一行小字、**去掉"表情：xx"实时值**、不再提示双击）。
+ *
+ * <p>关闭入口已经收敛到右键原生菜单（O3/D-B2），所以这里也不该再教用户"双击隐藏"——
+ * 教一个不存在的手势比不教更糟。</p>
+ */
+const HINT_TEXT = '拖动移动 · 点击互动 · 右键菜单';
 
 /** 取桥；拿不到时返回 null（纯浏览器里打开 pet.html 也能看见画面，便于排查）。 */
 function petBridge(): PetBridge | null {
@@ -244,14 +285,17 @@ function reportHit(next: boolean): void {
 }
 
 /**
- * 更新提示行（显示当前表情，手动验收时能直接看出切到哪一档）。
+ * 更新提示行（**O2：不再显示"表情：xx"实时值**）。
  *
- * @param expression 表情 id
+ * <p>表情是看得见的东西，用文字复述一遍既占地方又容易和画面打架。
+ * 提示行现在只讲"能做什么"，并且在 3 秒无交互后自动淡出（见 {@link HintBar}）。</p>
+ *
+ * @param next 可选：想临时强调的一句话（缺省用 {@link HINT_TEXT}）
  */
-function renderHint(expression: ExpressionId): void {
-  if (!hintElement) return;
-  const label = EXPRESSION_LABELS[expression] ?? '默认';
-  hintElement.textContent = `拖动移动 · 双击隐藏 · 表情：${label}`;
+function showHint(next: string = HINT_TEXT): void {
+  if (!hintBar) return;
+  hintBar.setText(next);
+  hintBar.poke();
 }
 
 /**
@@ -308,7 +352,6 @@ export function setExpression(name: string): boolean {
     fadeMs: 0,
     reason: 'api:setExpression',
   });
-  renderHint(candidate);
   return true;
 }
 
@@ -335,14 +378,59 @@ function scheduleMoveReport(point: PetPoint): void {
 }
 
 /**
- * 开始拖拽。
+ * 执行手势层产出的意图（**本函数只做执行，不做判定**）。
  *
- * @param event 指针事件
+ * <p>判定全部在 {@link PressDragGesture} 里：这里看到 `tap` 就下发行为、看到
+ * `drag-start` 才调 IPC。分工明确之后，"点一下"与"拖一下"不可能再互相抢语义。</p>
+ *
+ * @param intents 意图列表（可能为空）
  */
-function beginDrag(event: PointerEvent): void {
-  if (event.button !== 0 || dragging) return;
+function runGesture(intents: readonly GestureIntent[]): void {
+  for (const intent of intents) {
+    if (intent.type === 'tap') {
+      dispatchOps(behavior ? behavior.handle('tap') : fallbackTapOps());
+      hintBar?.poke();
+      continue;
+    }
+    if (intent.type === 'drag-start') {
+      beginDrag(intent.pointerId);
+      continue;
+    }
+    if (intent.type === 'drag-move') {
+      // 位置用屏幕坐标（窗口自己在动，client 坐标不适合算位移）
+      if (lastScreenPoint) scheduleMoveReport(lastScreenPoint);
+      continue;
+    }
+    endDrag(intent.pointerId);
+  }
+}
+
+/**
+ * 没有行为层时的兜底点击表现（纯浏览器里打开 pet.html 排障时用）。
+ *
+ * @returns 指令列表
+ */
+function fallbackTapOps(): PresentationOp[] {
+  return (
+    router?.route({ type: 'play', motion: 'tap', reason: 'pointer:tap' }) ?? [
+      { kind: 'motion', id: 'tap', layer: 'base', priority: 1, durationMs: 480, fadeMs: 0, reason: 'pointer:tap' },
+      { kind: 'expression', id: 'happy', layer: 'transient', priority: 1, durationMs: 480, fadeMs: 0, reason: 'pointer:tap:expression' },
+    ]
+  );
+}
+
+/**
+ * 开始拖拽（**只在手势层判定越过阈值后调用**）。
+ *
+ * <p>阈值过滤放在调用方之前，是"点一下窗口不抖"的关键：这里的 `startDrag` 一旦发出，
+ * 主进程就会按光标位移挪窗口，1~2px 的抖动也就变成了真的位移。</p>
+ *
+ * @param pointerId 指针 id（拿指针捕获用）
+ */
+function beginDrag(pointerId: number): void {
   const bridge = petBridge();
-  dragging = true;
+  if (dragActive) return;
+  dragActive = true;
   powerPolicy?.update({ dragging: true });
   artElement?.classList.add('is-dragging');
   // 行为层同步进入 drag：拖拽期间不该触发睡眠（也不该被眨眼打断）
@@ -350,38 +438,23 @@ function beginDrag(event: PointerEvent): void {
   // 指针捕获：光标移动快于窗口时事件也不会丢，否则会出现「甩一下就掉」。
   // 捕获失败（指针 id 已失效等）不能中断拖拽本身，故吞掉异常。
   try {
-    artElement?.setPointerCapture(event.pointerId);
+    artElement?.setPointerCapture(pointerId);
   } catch {
     // 忽略：拿不到捕获时仍能靠 window 上的 pointermove 拖动
   }
-  void bridge?.startDrag({ cursorX: Math.round(event.screenX), cursorY: Math.round(event.screenY) });
+  // 坐标缺失时传 undefined，主进程会退回系统光标位置
+  void bridge?.startDrag(lastScreenPoint ?? undefined);
 }
 
 /**
- * 拖拽中上报位置。
- *
- * <p>抬起按键但没收到 pointerup（例如在窗口外松开）时，靠 `buttons === 0` 兜底结束，
- * 否则会卡在「一直跟着鼠标走」的状态。</p>
- *
- * @param event 指针事件
- */
-function trackDrag(event: PointerEvent): void {
-  if (!dragging) return;
-  if (event.buttons === 0) {
-    endDrag(event.pointerId);
-    return;
-  }
-  scheduleMoveReport({ cursorX: Math.round(event.screenX), cursorY: Math.round(event.screenY) });
-}
-
-/**
- * 结束拖拽。
+ * 结束拖拽（四条收尾路径都汇到这里：pointerup / pointercancel / lostpointercapture /
+ * move 时 `buttons === 0`）。
  *
  * @param pointerId 需要释放捕获的指针 id
  */
 function endDrag(pointerId: number): void {
-  if (!dragging) return;
-  dragging = false;
+  if (!dragActive) return;
+  dragActive = false;
   powerPolicy?.update({ dragging: false });
   artElement?.classList.remove('is-dragging');
   // 行为层回到 idle（先落桥接 idle，等 drag 的高优先级记录过期再落到常驻 idle）
@@ -403,6 +476,10 @@ function endDrag(pointerId: number): void {
 /**
  * 立绘加载失败时的兜底：显眼报错，而不是留一个空窗口让人以为程序挂了。
  *
+ * <p><b>只"盖上"而不"拆掉"</b>：早期实现是 `replaceChildren(box)`，那会把双缓冲的两张
+ * 帧元素一起删掉——之后哪怕资源恢复，表情切换也没有落点（表现为"能点但永远没表情"）。
+ * 现在把错误框追加进去并压在帧之上，帧元素原地保留。</p>
+ *
  * @param detail 失败原因
  */
 function renderArtError(detail: string): void {
@@ -410,7 +487,7 @@ function renderArtError(detail: string): void {
   const box = document.createElement('div');
   box.className = 'pet-art-error';
   box.textContent = `立绘加载失败：${detail}`;
-  artElement.replaceChildren(box);
+  artElement.append(box);
   console.warn(`[pet] 立绘加载失败: url=${ART_URL}, density=${DENSITY}, detail=${detail}`);
 }
 
@@ -483,19 +560,12 @@ function buildDom(): void {
   back.hidden = true;
   artFrames = [front, back];
 
-  const close = document.createElement('button');
-  close.className = 'pet-close';
-  close.type = 'button';
-  close.textContent = '×';
-  close.setAttribute('aria-label', '关闭桌宠');
-  close.addEventListener('click', (event) => {
-    // 关闭按钮不能顺带触发拖拽
-    event.stopPropagation();
-    void petBridge()?.close();
-  });
+  // M6-b（O3/D-B2）：**不再有常驻的 × 关闭按钮**。关闭与显隐统一收敛到右键原生菜单
+  // （`electron/pet-window.cjs` 的 `pet:context-menu`），窗口内因此没有任何关闭元素。
+  // 理由写在决策单里：关闭入口必须唯一，两套手势（双击 + 按钮）迟早再打架。
+  artElement.append(front, back);
 
-  // 调试标记与提示行**只在调试态创建**：发布态零调试元素（用户明确要求"别再露调试标记"）
-  artElement.append(front, back, close);
+  // 调试标记、调试面板与提示行**只在调试态创建**：发布态零调试元素（用户明确要求"别再露调试标记"）
   if (DEBUG_ENABLED) {
     const badge = document.createElement('span');
     badge.className = 'pet-badge';
@@ -509,12 +579,7 @@ function buildDom(): void {
       setExpression(next);
     });
     badgeElement = badge;
-
-    const hint = document.createElement('span');
-    hint.className = 'pet-hint';
-    hintElement = hint;
-
-    artElement.append(badge, hint);
+    artElement.append(badge);
   }
 
   sway.appendChild(artElement);
@@ -522,8 +587,42 @@ function buildDom(): void {
   stage.appendChild(motion);
   root.replaceChildren(stage);
 
+  // 提示行挂在 `#pet-root` 上而不是立绘箱里：它要被摆到窗口底部那条 18px 的空带上，
+  // 那里永远压不到立绘的脚（立绘箱下沿 330 / 窗口高 348）。挂在立绘箱里就做不到这一点。
+  if (DEBUG_ENABLED) {
+    const hint = document.createElement('span');
+    hint.className = 'pet-hint';
+    hint.textContent = HINT_TEXT;
+    root.append(hint);
+    hintBar = new HintBar(hint, { timer: DEFAULT_TIMER_PORT });
+  }
+
   // 立绘解码完成后再上屏（失败/超时换档降级，最终失败才显示错误提示）
   void startArtLoad();
+}
+
+/**
+ * 挂载开发态调试后门（O1）：`forceState` / `resetIdleTimer` + 一排直达按钮。
+ *
+ * <p><b>必须留在 `import.meta.env.DEV` 与动态 `import()` 之内：</b>
+ * 这两条一起保证生产构建把整段分支连同 `debug/dev-backdoor.ts` 一起摇掉，
+ * 否则"发布态零暴露"只是"没赋值"，标识符还躺在产物里。</p>
+ */
+function mountDevTools(): void {
+  if (!import.meta.env.DEV) return;
+  if (!artElement || !behavior || !window.petDebug) return;
+  const host = artElement;
+  void import('./debug/dev-backdoor').then((module) => {
+    const current = behavior;
+    if (!current) return;
+    module.installDevBackdoor({
+      behavior: current,
+      dispatch: (ops) => dispatchOps(ops),
+      host,
+      handle: window.petDebug as unknown as Record<string, unknown>,
+      onPoke: () => hintBar?.poke(),
+    });
+  });
 }
 
 /**
@@ -542,10 +641,16 @@ function applyInitialState(): void {
     reason: 'boot:base',
   });
   dispatchOp({ kind: 'motion', id: 'idle', layer: 'base', priority: 0, loop: true, reason: 'boot:idle' });
-  renderHint('neutral');
+  showHint();
 }
 
-/** 绑定鼠标与指针事件。 */
+/**
+ * 绑定鼠标与指针事件。
+ *
+ * <p><b>本函数只做两件事：把事件喂给手势层、把手势层产出的意图转给
+ * {@link runGesture} 执行。</b>它不再决定"这次按下是不是点击/拖拽"——
+ * 那是 D-B1/D-B4 的共同根因，判定权已经交给 `gesture/press-drag.ts`。</p>
+ */
 function wireEvents(): void {
   if (!artElement) return;
 
@@ -561,27 +666,44 @@ function wireEvents(): void {
     // 二道门：DOM 事件已经落在立绘箱上，但立绘箱比可见轮廓大一圈（透明留白），
     // 再用命中实现判一次，避免"点在猫旁边的空气里也能把窗口拖走"
     if (!(hitTester?.test(event.clientX, event.clientY) ?? false)) return;
-    // 点一下 = 一次行为事件。由状态机决定是"开心一弹"还是"连点生气"还是"惊醒"，
-    // 这里不再直接拼表现层指令——否则连点计数只能散在事件回调里。
-    if (behavior) {
-      for (const op of behavior.handle('tap')) {
-        void presentation?.prepare(op);
-        dispatchOp(op);
-      }
-    } else {
-      for (const op of router?.route({ type: 'play', motion: 'tap', reason: 'pointer:tap' }) ?? []) {
-        dispatchOp(op);
-      }
+    if (event.currentTarget instanceof HTMLElement) {
+      // 记录屏幕坐标：拖拽 IPC 要它，阈值判定用 client 坐标（窗口还没动，两者等价）
+      lastScreenPoint = { cursorX: Math.round(event.screenX), cursorY: Math.round(event.screenY) };
     }
-    beginDrag(event);
+    hintBar?.poke();
+    runGesture(gesture.press({ pointerId: event.pointerId, x: event.clientX, y: event.clientY }));
   });
-  window.addEventListener('pointermove', trackDrag, { passive: true });
-  window.addEventListener('pointerup', (event) => endDrag(event.pointerId));
-  window.addEventListener('pointercancel', (event) => endDrag(event.pointerId));
 
-  // 双击隐藏：验证「能关掉」的最短路径（托盘菜单可以再打开）
-  artElement.addEventListener('dblclick', () => {
-    void petBridge()?.close();
+  window.addEventListener(
+    'pointermove',
+    (event) => {
+      lastScreenPoint = { cursorX: Math.round(event.screenX), cursorY: Math.round(event.screenY) };
+      runGesture(
+        gesture.move({
+          pointerId: event.pointerId,
+          x: event.clientX,
+          y: event.clientY,
+          buttons: event.buttons,
+        }),
+      );
+    },
+    { passive: true },
+  );
+  window.addEventListener('pointerup', (event) => runGesture(gesture.release(event.pointerId)));
+  window.addEventListener('pointercancel', (event) => runGesture(gesture.cancel(event.pointerId)));
+  // 指针捕获被系统/浏览器抢走时不会再有 pointerup：不清掉就会永远卡在拖拽
+  artElement.addEventListener('lostpointercapture', (event) => runGesture(gesture.cancel(event.pointerId)));
+
+  // 鼠标进到桌宠身上就把提示行淡回来（3 秒没动作再自己走）
+  artElement.addEventListener('pointerenter', () => hintBar?.poke());
+
+  // 右键 → 原生菜单（显隐 / 关闭 / 退出）。这是**唯一**的关闭入口，
+  // 不再有双击关闭（D-B2）也不再有一常一悬的 × 按钮（O3）。
+  artElement.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    if (!(hitTester?.test(event.clientX, event.clientY) ?? false)) return;
+    hintBar?.poke();
+    petBridge()?.openContextMenu();
   });
 }
 
@@ -795,6 +917,8 @@ function boot(): void {
     }
     blinkDriver?.stop();
     motionPacer?.stop();
+    hintBar?.dispose();
+    gesture.reset();
   });
   if (DEBUG_ENABLED) {
     window.petDebug = {
@@ -804,9 +928,14 @@ function boot(): void {
       list: () => [...EXPRESSION_IDS],
       behaviorState: () => behavior?.state ?? 'idle',
       tap: () => (behavior ? dispatchOps(behavior.handle('tap')) : []),
+      // O1 的两个后门键由 `debug/dev-backdoor.ts` 在开发构建里补上（生产构建整段摇掉）
+      gesturePhase: () => gesture.phase,
+      dragThresholdPx: () => DRAG_THRESHOLD_PX,
+      sustainedMotion: () => behavior?.sustainedMotion ?? null,
       compositeMode: () => compositePlan?.mode ?? 'composite',
       layerIds: () => [...layerViews.keys()],
     };
+    mountDevTools();
   }
 }
 
