@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /** 历史独立于可变上下文；TOOL 只存调用身份，内容以工具实体为准。 */
 @Slf4j
@@ -39,11 +40,17 @@ public class ConversationTranscriptService {
         append(sessionId, rootSessionId, turnId, List.of(message));
     }
 
-    /** 先写再查，让唯一约束裁决重复追加，避免先读后写的竞争窗口。 */
+    /** 会话行锁保护幂等判断，唯一索引仍裁决绕过该入口的重复写入。 */
     @Transactional
     public void appendRound(Long sessionId, Long rootSessionId, Long turnId, AiMessageEntity aiMessage,
                             List<ToolMessageEntity> toolMessages, String responseId) {
         throwIf(responseId == null || !responseId.matches("[0-9]+"), "模型响应身份必须是框架生成的数字标识");
+        messageRepository.lockSessionForAppend(sessionId);
+        Optional<SessionMessage> existing = messageRepository.findByResponseId(sessionId, responseId);
+        if (existing.isPresent()) {
+            requireSameRound(existing.get(), sessionId, responseId, turnId, aiMessage);
+            return;
+        }
         List<Message> round = new ArrayList<>();
         round.add(aiMessage);
         if (toolMessages != null) round.addAll(toolMessages);
@@ -57,9 +64,6 @@ public class ConversationTranscriptService {
             requireSameRound(landed, sessionId, responseId, turnId, aiMessage);
             return;
         }
-        // 落库成功后再确认会话存在：这是真实调用错误的兜底校验，放在写入之后，
-        // 以免在事务开头引入一次「读」把写变成「读后升写」。
-        messageRepository.lockSessionForAppend(sessionId);
     }
 
     /** 同一 responseId 的重复提交只允许「完全同一轮」，否则是内容漂移，必须暴露。 */

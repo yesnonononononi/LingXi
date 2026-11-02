@@ -37,9 +37,9 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
 
     @Override
     public Optional<Session> lockById(Long sessionId) {
-        // 状态通过版本条件更新，避免旧读取覆盖新提交。
+        // 先锁会话行，后续状态投影才能基于最新提交。
         return Optional.ofNullable(sessionMapper.selectOne(Wrappers.<SessionPO>lambdaQuery()
-                .eq(SessionPO::getId, sessionId))).map(this::toModel);
+                .eq(SessionPO::getId, sessionId).last("FOR UPDATE"))).map(this::toModel);
     }
 
     /** 状态通过版本条件更新，避免旧读取覆盖新提交。 */

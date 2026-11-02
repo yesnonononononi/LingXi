@@ -72,10 +72,10 @@ public class EmailRepositoryImpl extends AbstractRepository<Email, EmailPO, Long
         if (workflowExecutionId == null || recipientAgentId == null) {
             return Optional.empty();
         }
-        // 同一业务键只能存在一个邮箱，由唯一索引裁决并发创建。
+        // 只锁既有邮箱行；不存在时由唯一索引裁决并发创建。
         EmailPO po = mapper.selectOne(Wrappers.<EmailPO>lambdaQuery()
                 .eq(EmailPO::getWorkflowExecutionId, workflowExecutionId)
-                .eq(EmailPO::getRecipientAgentId, recipientAgentId));
+                .eq(EmailPO::getRecipientAgentId, recipientAgentId).last("FOR UPDATE"));
         return po == null ? Optional.empty() : Optional.of(toModel(po));
     }
 

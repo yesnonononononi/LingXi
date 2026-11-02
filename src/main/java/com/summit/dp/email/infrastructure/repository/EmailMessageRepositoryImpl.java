@@ -41,7 +41,7 @@ public class EmailMessageRepositoryImpl extends AbstractRepository<EmailMessage,
     public Optional<EmailMessage> findByDedupKeyForUpdate(String dedupKey) {
         // 消息只投递一次，由唯一索引裁决重复写入。
         EmailMessagePO po = mapper.selectOne(Wrappers.<EmailMessagePO>lambdaQuery()
-                .eq(EmailMessagePO::getDedupKey, dedupKey));
+                .eq(EmailMessagePO::getDedupKey, dedupKey).last("FOR UPDATE"));
         return po == null ? Optional.empty() : Optional.of(toModel(po));
     }
 

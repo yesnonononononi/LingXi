@@ -140,13 +140,13 @@ public class SessionMessageRepositoryImpl
         }
     }
 
-    /** 消息追加由唯一约束和条件更新裁决，重复响应不能产生第二份消息。 */
+    /** 追加前锁定会话行，同一会话的幂等判断与写入必须串行提交。 */
     @Override
     public void lockSessionForAppend(Long sessionId) {
         if (sessionId == null) return;
         SessionPO locked = sessionMapper.selectOne(Wrappers.<SessionPO>lambdaQuery()
                 .select(SessionPO::getId)
-                .eq(SessionPO::getId, sessionId));
+                .eq(SessionPO::getId, sessionId).last("FOR UPDATE"));
         if (locked == null) {
             throw new IllegalStateException("落库前锁定会话失败: sessionId=" + sessionId + " 不存在");
         }

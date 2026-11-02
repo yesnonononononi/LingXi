@@ -197,8 +197,12 @@ public class EmailServiceImpl implements EmailService {
         throwIf(affected != pending.size(), "部分消息状态已变化，请重新读取本批消息");
     }
 
-    /** 先插入再回查，使并发投递的唯一约束直接裁决归属。 */
+    /** 既有邮箱直接复用，首次创建仍由唯一索引裁决。 */
     private Email obtainMailbox(Long workflowExecutionId, Long recipientAgentId, Long teamId) {
+        Optional<Email> existing = repository.findByBusinessKey(workflowExecutionId, recipientAgentId);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
         Email created = Email.builder()
                 .id(IdUtil.getSnowflakeNextId())
                 .workflowExecutionId(workflowExecutionId)
@@ -212,7 +216,7 @@ public class EmailServiceImpl implements EmailService {
         } catch (DuplicateKeyException e) {
             log.debug("邮箱并发首次创建，回查已存在邮箱: workflowExecutionId={}, recipientAgentId={}",
                     workflowExecutionId, recipientAgentId);
-            return repository.findByBusinessKey(workflowExecutionId, recipientAgentId)
+            return repository.findByBusinessKeyForUpdate(workflowExecutionId, recipientAgentId)
                     .orElseThrow(() -> new ClientException("邮箱并发创建后回查失败"));
         }
     }
