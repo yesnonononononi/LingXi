@@ -7,6 +7,7 @@ import com.summit.core.agent.Execution;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.SystemMessageEntity;
 import com.summit.core.runtime.loop.InterceptorResult;
+import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopMessages;
 import com.summit.dp.checklist.application.ChecklistCommand;
@@ -52,7 +53,7 @@ class ChecklistReminderInterceptorTest {
     void setUp() {
         fixture = ChecklistTestDatabase.start("checklist-reminder");
         service = fixture.service();
-        interceptor = new ChecklistReminderInterceptor(service, new ChecklistContextInjector(service), new ChecklistReminderDelivery());
+        interceptor = new ChecklistReminderInterceptor(service, new ChecklistContextInjector(service), new ChecklistReminderDelivery(mock(ExecutionRepository.class)));
     }
 
     @AfterEach
@@ -153,7 +154,7 @@ class ChecklistReminderInterceptorTest {
     @DisplayName("顺序语义：必须晚于后台任务等待，且异常不得被吞")
     void orderStaysAfterTheBackgroundTaskWaitAndErrorsPropagate() {
         ChecklistReminderInterceptor reminder = new ChecklistReminderInterceptor(
-                mock(ChecklistService.class), mock(ChecklistContextInjector.class), new ChecklistReminderDelivery());
+                mock(ChecklistService.class), mock(ChecklistContextInjector.class), new ChecklistReminderDelivery(mock(ExecutionRepository.class)));
         BackgroundTaskLoopInterceptor background = new BackgroundTaskLoopInterceptor(new BackgroundTaskInputSource(mock(TaskRepository.class), mock(BackgroundTaskNotifications.class)), mock(BackgroundTaskNotifications.class));
 
         assertEquals(-650, background.order(), "后台任务等待的顺序是前提，改动它就该重审本用例");

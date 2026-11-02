@@ -80,7 +80,7 @@ class ChecklistLoopIntegrationTest {
             if (round == 2) assertTrue(command.getMessages().stream()
                     .anyMatch(message -> message.text().contains("[lingxi-checklist-reminder:")));
             return response(List.of());
-        }, List.of(reminder(new ChecklistReminderDelivery())), 2).run(execution, signal());
+        }, List.of(reminder(new ChecklistReminderDelivery(mock(ExecutionRepository.class)))), 2).run(execution, signal());
 
         assertEquals(LoopResult.Status.COMPLETED, result.status());
         assertEquals(2, calls.get());
@@ -98,7 +98,7 @@ class ChecklistLoopIntegrationTest {
         LoopResult result = runner(command -> {
             int round = calls.incrementAndGet();
             return response(round == 2 ? List.of(new ToolCallRequest("update", ToolCatalog.UPDATE_CHECKLIST_STEP, 0, args)) : List.of());
-        }, List.of(reminder(new ChecklistReminderDelivery())), 3).run(execution, signal());
+        }, List.of(reminder(new ChecklistReminderDelivery(mock(ExecutionRepository.class)))), 3).run(execution, signal());
 
         assertEquals(LoopResult.Status.COMPLETED, result.status());
         assertEquals(3, calls.get());
@@ -129,7 +129,7 @@ class ChecklistLoopIntegrationTest {
                 return response(List.of(new ToolCallRequest("second", ToolCatalog.UPDATE_CHECKLIST_STEP, 0, secondArgs)));
             }
             return response(List.of());
-        }, List.of(reminder(new ChecklistReminderDelivery())), 3).run(execution(), signal());
+        }, List.of(reminder(new ChecklistReminderDelivery(mock(ExecutionRepository.class)))), 3).run(execution(), signal());
 
         assertEquals(LoopResult.Status.COMPLETED, result.status());
         assertEquals(3, calls.get());
@@ -147,7 +147,7 @@ class ChecklistLoopIntegrationTest {
         when(notifications.readReceipts(any())).thenReturn(Set.of());
         BackgroundTaskLoopInterceptor background = new BackgroundTaskLoopInterceptor(new BackgroundTaskInputSource(tasks, notifications), notifications);
         LoopResult result = runner(command -> { calls.incrementAndGet(); return response(List.of()); },
-                List.of(reminder(new ChecklistReminderDelivery()), background,
+                List.of(reminder(new ChecklistReminderDelivery(mock(ExecutionRepository.class))), background,
                         new SubAgentWaitInterceptor(InputTestSupport.background(tasks, notifications))), 3).run(execution(), signal());
 
         assertEquals(LoopResult.Status.SUSPENDED, result.status());
@@ -157,7 +157,7 @@ class ChecklistLoopIntegrationTest {
 
     @Test
     void cancellationDuringDeliveryWinsOverContinuation() throws Exception {
-        ChecklistReminderDelivery cancelling = new ChecklistReminderDelivery() {
+        ChecklistReminderDelivery cancelling = new ChecklistReminderDelivery(mock(ExecutionRepository.class)) {
             public void append(LoopContext context, ReminderDecision decision) {
                 super.append(context, decision);
                 context.getSignal().requireSuspend();
@@ -178,7 +178,7 @@ class ChecklistLoopIntegrationTest {
         assertThrows(MaxStepsExceededException.class, () -> runner(command -> {
             calls.incrementAndGet();
             return response(List.of());
-        }, List.of(reminder(new ChecklistReminderDelivery())), 1).run(execution(), signal()));
+        }, List.of(reminder(new ChecklistReminderDelivery(mock(ExecutionRepository.class)))), 1).run(execution(), signal()));
 
         assertEquals(1, calls.get());
         assertEquals(ChecklistStatus.ACTIVE, fixture.repository()

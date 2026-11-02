@@ -12,9 +12,20 @@ import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
+import com.summit.core.conversation.api.ChatResponseEntity;
+import com.summit.core.conversation.api.ToolCallRequest;
+import com.summit.core.conversation.message.AiMessageEntity;
+import com.summit.core.conversation.message.TokenUsageEntity;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
+import com.summit.core.compact.ContextAttachmentProvider;
+import com.summit.core.runtime.loop.ContextUsageReporter;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
+import com.summit.core.tool.ToolExecuteCommand;
+import com.summit.core.tool.ToolExecuteResult;
+import com.summit.core.tool.ToolExecutionManager;
+import com.summit.core.tool.ToolRegistry;
+import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.execution.application.service.ExecutionCheckpointService;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
@@ -31,6 +42,17 @@ import com.summit.dp.workflow.application.projection.SessionContextUsageProjecto
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubExecutionLifecycle;
+import com.summit.runtime.agent.AgentConfig;
+import com.summit.runtime.context.RuntimeContext;
+import com.summit.runtime.conversation.DefaultConversationManager;
+import com.summit.runtime.conversation.DefaultTokenizer;
+import com.summit.runtime.loop.BoundaryChecker;
+import com.summit.runtime.loop.DefaultExecutionController;
+import com.summit.runtime.loop.DefaultLoopInterceptor;
+import com.summit.runtime.loop.DefaultLoopInterceptorProcessor;
+import com.summit.runtime.loop.DefaultRuntimeLifeStyleManager;
+import com.summit.runtime.loop.RuntimeProcessorTemplate;
+import com.summit.runtime.model.DefaultChatModelInvoker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.SqlSessionTemplate;
@@ -73,6 +95,49 @@ class ConcurrentCheckpointSaveTransactionTest {
     @BeforeEach
     void setUp() {
         executions.delete(null);
+    }
+
+    @Test
+    void ordinaryModelRoundsDoNotIncreaseH2CheckpointWrites() {
+        for (int rounds : List.of(1, 4)) {
+            long id = rounds == 1 ? FIRST_ID : SECOND_ID;
+            Execution source = execution(id, ExecutionState.CREATED);
+            runtime.save(source);
+            AtomicInteger calls = new AtomicInteger();
+            RuntimeEventPublisher events = new RuntimeEventPublisher(List.of());
+            DefaultRuntimeLifeStyleManager lifecycle = new DefaultRuntimeLifeStyleManager(events);
+            DefaultTokenizer tokenizer = new DefaultTokenizer();
+            DefaultConversationManager conversations = new DefaultConversationManager(ContextAttachmentProvider.NONE);
+            ToolExecutionManager tools = new ToolExecutionManager() {
+                public List<ToolExecuteResult> execute(ToolExecuteCommand command) {
+                    return List.of(ToolExecuteResult.success("读取完成"));
+                }
+                public ToolRegistry toolRegistry() { return new ToolRegistry(List.of()); }
+            };
+            new RuntimeProcessorTemplate(RuntimeContext.builder().conversationManager(conversations)
+                    .executionRepository(runtime)
+                    .executionControl(new DefaultExecutionController(() -> null, runtime, events, lifecycle))
+                    .runtimeLifeStyleManager(lifecycle).runtimeEventPublisher(events)
+                    .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(new DefaultLoopInterceptor())))
+                    .runtimeBoundaryChecker(new BoundaryChecker(AgentConfig.builder().maxIterations(5).build(),
+                            tokenizer, conversations, null, null))
+                    .toolExecutionManager(tools)
+                    .invoker(new DefaultChatModelInvoker(request -> ChatResponseEntity.builder()
+                            .aiMessageEntity(AiMessageEntity.builder().text("执行结果")
+                                    .toolCalls(calls.incrementAndGet() < rounds
+                                            ? List.of(new ToolCallRequest("read", ToolCatalog.READ_FILE, 0, "{}"))
+                                            : List.of()).build())
+                            .tokenUsage(TokenUsageEntity.of(3, 2, 1)).build()))
+                    .usage(new ContextUsageReporter(tokenizer, 100_000, events, 1)).build()).execute(source);
+
+            Execution restored = runtime.findById(source.getId()).orElseThrow();
+            assertEquals(ExecutionState.COMPLETED, restored.getExecutionState());
+            assertEquals(rounds, restored.getMessages().stream().filter(AiMessageEntity.class::isInstance).count());
+            assertEquals(rounds * 3, restored.getTokenUsage().getTotalTokens());
+        }
+
+        assertEquals(executions.selectById(FIRST_ID).getVersion(), executions.selectById(SECOND_ID).getVersion(),
+                "普通轮次增加时不应增加 H2 检查点更新，最终上下文仍须完整保存");
     }
 
     @Test

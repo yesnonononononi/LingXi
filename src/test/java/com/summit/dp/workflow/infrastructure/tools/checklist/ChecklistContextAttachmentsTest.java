@@ -17,6 +17,7 @@ import com.summit.dp.checklist.application.ChecklistCommand;
 import com.summit.dp.checklist.application.ChecklistReminderText;
 import com.summit.dp.checklist.application.ChecklistService;
 import com.summit.dp.checklist.application.ChecklistVO;
+import com.summit.dp.checklist.application.ReminderDecision;
 import com.summit.dp.checklist.support.ChecklistTestDatabase;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
@@ -42,8 +43,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 class ChecklistContextAttachmentsTest {
     private static final long SESSION = 9401L;
@@ -55,6 +55,7 @@ class ChecklistContextAttachmentsTest {
     private Execution execution;
     private Execution checkpoint;
     private ContextAttachmentProvider attachments;
+    private final ExecutionRepository executions = mock(ExecutionRepository.class);
     private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
 
     @BeforeEach
@@ -63,14 +64,18 @@ class ChecklistContextAttachmentsTest {
         service = database.service();
         created = service.create(ChecklistCommand.create(SESSION, null, "初始任务", List.of("编译", "验证")));
         injector = new ChecklistContextInjector(service);
-        delivery = new ChecklistReminderDelivery();
+        delivery = new ChecklistReminderDelivery(executions);
         execution = Execution.builder().id("1001").agentRequest(AgentRequest.builder()
                 .toolList(List.of(ToolCatalog.UPDATE_CHECKLIST_STEP))
                 .runtimeParameters(AgentRuntimeParameters.builder().attributes(
                         Map.of(ExecutionAttributes.SESSION_ID, String.valueOf(SESSION))).build()).build())
                 .messages(new ArrayList<>(List.of(SystemMessageEntity.builder().text("基础系统指令").build(),
                         UserMessageEntity.from("执行任务")))).build();
-        ExecutionRepository executions = mock(ExecutionRepository.class);
+        doAnswer(invocation -> {
+            Execution saved = invocation.getArgument(0);
+            checkpoint = json.readValue(json.writeValueAsBytes(saved), Execution.class);
+            return null;
+        }).when(executions).save(any());
         when(executions.findById(anyString())).thenAnswer(invocation -> Optional.ofNullable(checkpoint));
         ChecklistContextAttachmentProvider checklist = new ChecklistContextAttachmentProvider(service, executions);
         ToolCallRepository plans = mock(ToolCallRepository.class);
@@ -86,6 +91,47 @@ class ChecklistContextAttachmentsTest {
 
     @AfterEach
     void close() { database.close(); }
+
+    @Test
+    void reminderPersistsItsReceiptWithoutAnAutomaticRoundCheckpoint() throws Exception {
+        saveCheckpoint();
+        ReminderDecision decision = service.remindOnNaturalComplete(delivery.buildContext(execution));
+
+        delivery.append(context(), decision);
+
+        verify(executions).save(execution);
+        assertNotSame(execution, checkpoint);
+        String marker = (String) checkpoint.getAgentRequest().runtimeParametersOrDefault().getAttributes()
+                .get(ChecklistReminderState.DELIVERED_MARKER);
+        assertNotNull(marker, "投递成功后必须立即保存证据，不能依赖下一轮快照");
+        assertTrue(checkpoint.getMessages().stream().anyMatch(message -> message.text().contains(marker)));
+
+        execution.getMessages().removeIf(message -> message.text().contains(marker));
+        new DefaultConversationManager(attachments).rebuildContext("工作摘要", execution);
+        assertTrue(execution.getMessages().stream().anyMatch(message -> message.text().contains(marker)));
+    }
+
+    @Test
+    void reminderCheckpointFailurePropagatesBeforeAnotherModelRound() {
+        IllegalStateException failure = new IllegalStateException("保存提醒检查点失败");
+        doThrow(failure).when(executions).save(any());
+        ChecklistReminderInterceptor reminder = new ChecklistReminderInterceptor(service, injector, delivery);
+
+        assertSame(failure, assertThrows(IllegalStateException.class, () -> reminder.onBeforeComplete(context())));
+        assertFalse(reminder.catchErr());
+    }
+
+    @Test
+    void aRejectedReminderAppendCannotPublishCheckpointEvidence() {
+        ReminderDecision decision = service.remindOnNaturalComplete(delivery.buildContext(execution));
+        LoopContext rejected = LoopContext.withCompactionCounter(LoopMessages.builder().execution(execution).build(),
+                null, () -> 0, messages -> { throw new IllegalStateException("追加提醒失败"); });
+
+        assertThrows(IllegalStateException.class, () -> delivery.append(rejected, decision));
+        verify(executions, never()).save(any());
+        assertFalse(execution.getAgentRequest().runtimeParametersOrDefault().getAttributes()
+                .containsKey(ChecklistReminderState.DELIVERED_MARKER));
+    }
 
     @Test
     void systemSnapshotsFollowContentChangesWithoutGrowingOrTrustingAnOldInjectionMarker() {

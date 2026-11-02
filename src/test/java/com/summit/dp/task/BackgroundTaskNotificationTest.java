@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
+import com.summit.core.agent.ExecutionState;
 import com.summit.core.compact.ContextAttachmentProvider;
 import com.summit.core.conversation.api.ChatResponseEntity;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
@@ -30,7 +31,11 @@ import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTa
 import com.summit.dp.workflow.infrastructure.tools.terminal.backend.BackgroundTaskNotifications;
 import com.summit.runtime.context.RuntimeContext;
 import com.summit.runtime.conversation.DefaultConversationManager;
-import com.summit.runtime.loop.AgentLoopStepRunner;
+import com.summit.runtime.conversation.DefaultTokenizer;
+import com.summit.runtime.loop.DefaultExecutionController;
+import com.summit.runtime.loop.DefaultLoopInterceptor;
+import com.summit.runtime.loop.DefaultRuntimeLifeStyleManager;
+import com.summit.runtime.loop.RuntimeProcessorTemplate;
 import com.summit.runtime.loop.DefaultLoopInterceptorProcessor;
 import com.summit.runtime.model.DefaultChatModelInvoker;
 import org.junit.jupiter.api.Test;
@@ -179,12 +184,18 @@ class BackgroundTaskNotificationTest {
             snapshot.set(json.writeValueAsBytes(invocation.getArgument(0)));
             return null;
         }).when(checkpoints).save(any());
+        when(checkpoints.register("100")).thenReturn(new ExecutionControlSignal("100"));
+        RuntimeEventPublisher events = new RuntimeEventPublisher(List.of());
+        DefaultRuntimeLifeStyleManager lifecycle = new DefaultRuntimeLifeStyleManager(events);
         AtomicInteger modelCalls = new AtomicInteger();
-        AgentLoopStepRunner runner = new AgentLoopStepRunner(RuntimeContext.builder()
+        RuntimeProcessorTemplate runner = new RuntimeProcessorTemplate(RuntimeContext.builder()
                 .conversationManager(new DefaultConversationManager(ContextAttachmentProvider.NONE))
-                .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(interceptor, wait)))
+                .loopInterceptorProcessor(new DefaultLoopInterceptorProcessor(List.of(new DefaultLoopInterceptor(), interceptor, wait)))
                 .runtimeBoundaryChecker(boundary).executionRepository(checkpoints)
-                .toolExecutionManager(tools).runtimeEventPublisher(new RuntimeEventPublisher(List.of()))
+                .toolExecutionManager(tools).runtimeEventPublisher(events)
+                .runtimeLifeStyleManager(lifecycle)
+                .executionControl(new DefaultExecutionController(() -> null, checkpoints, events, lifecycle))
+                .usage(new ContextUsageReporter(new DefaultTokenizer(), 100_000, events, 1))
                 .invoker(new DefaultChatModelInvoker(command -> {
                     int round = modelCalls.incrementAndGet();
                     long notices = command.getMessages().stream()
@@ -197,12 +208,15 @@ class BackgroundTaskNotificationTest {
                 })).build());
         Execution execution = execution(100L, 10L, false);
         execution.setTokenUsage(TokenUsageEntity.empty());
-        assertEquals(LoopResult.Status.COMPLETED, runner.run(execution, new ExecutionControlSignal("100")).status());
+        execution.setExecutionState(ExecutionState.CREATED);
+        assertEquals(ExecutionState.COMPLETED, runner.execute(execution).getExecutionState());
         verifyNoInteractions(coordinator);
         assertNotNull(snapshot.get());
         Execution restored = json.readValue(snapshot.get(), Execution.class);
         assertEquals(2, modelCalls.get());
-        assertEquals(3, restored.getMessages().size());
+        assertEquals(ExecutionState.COMPLETED, restored.getExecutionState());
+        assertEquals(2, restored.getMessages().stream().filter(AiMessageEntity.class::isInstance).count());
+        assertTrue(notifications.readReceipts(restored).contains("1"));
         assertEquals("编译失败，退出码为7", restored.getAiMessage().getText());
     }
 
