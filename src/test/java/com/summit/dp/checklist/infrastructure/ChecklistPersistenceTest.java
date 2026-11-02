@@ -1,5 +1,7 @@
 package com.summit.dp.checklist.infrastructure;
 
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+
 import com.summit.dp.checklist.application.*;
 import com.summit.dp.checklist.domain.model.Checklist;
 import com.summit.dp.checklist.domain.model.ChecklistStatus;
@@ -43,6 +45,115 @@ class ChecklistPersistenceTest {
     private ChecklistMapper mapper;
     private ChecklistRepositoryImpl repository;
     private ChecklistService service;
+
+    @Test
+    void activeParentLookupWaitsForTheOwningRowLockEvenWithoutAnyWrite() throws Exception {
+        ChecklistVO created = service.create(ChecklistCommand.create(SESSION_ID, null, "活动行锁", List.of("一步")));
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch querying = new CountDownLatch(1);
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+            Future<?> holder = pool.submit(() -> fixture.transaction().executeWithoutResult(status -> {
+                repository.findByIdForUpdate(created.getChecklistId()).orElseThrow();
+                locked.countDown();
+                awaitRelease(release);
+            }));
+            Future<Checklist> read;
+            try {
+                await(locked);
+                read = pool.submit(() -> fixture.transaction().execute(status -> {
+                    querying.countDown();
+                    return repository.findActiveBySessionIdForUpdate(SESSION_ID).orElseThrow();
+                }));
+                await(querying);
+                assertThrows(TimeoutException.class, () -> read.get(200, TimeUnit.MILLISECONDS));
+            } finally {
+                release.countDown();
+            }
+            holder.get(5, TimeUnit.SECONDS);
+            assertEquals(created.getChecklistId(), read.get(5, TimeUnit.SECONDS).getId());
+        }
+    }
+
+    @Test
+    void differentChecklistsCanAdvanceWhileOneParentRowIsLocked() throws Exception {
+        ChecklistVO first = service.create(ChecklistCommand.create(SESSION_ID, null, "甲", List.of("一步")));
+        ChecklistVO second = service.create(ChecklistCommand.create(SESSION_ID + 1, null, "乙", List.of("一步")));
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+            Future<?> holder = pool.submit(() -> fixture.transaction().executeWithoutResult(status -> {
+                repository.findByIdForUpdate(first.getChecklistId()).orElseThrow();
+                locked.countDown();
+                awaitRelease(release);
+            }));
+            try {
+                await(locked);
+                Future<ChecklistVO> independent = pool.submit(() -> service.updateStep(ChecklistCommand.updateStep(
+                        SESSION_ID + 1, second.getChecklistId(), second.getSteps().getFirst().getStepId(), "COMPLETED")));
+                assertEquals("COMPLETED", independent.get(3, TimeUnit.SECONDS).getStatus(),
+                        "不同父行不能因全局写监视器互相等待");
+            } finally {
+                release.countDown();
+            }
+            holder.get(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    void sameParentRowBlocksUntilTheOwningTransactionCompletes() throws Exception {
+        ChecklistVO created = service.create(ChecklistCommand.create(SESSION_ID, null, "父行锁", List.of("一步")));
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch querying = new CountDownLatch(1);
+        ChecklistRepositoryImpl contender = spy(repository);
+        doAnswer(invocation -> {
+            querying.countDown();
+            return invocation.callRealMethod();
+        }).when(contender).findByIdForUpdate(created.getChecklistId());
+        ChecklistService contenderService = fixture.serviceWithRepository(contender);
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+            Future<?> holder = pool.submit(() -> fixture.transaction().executeWithoutResult(status -> {
+                repository.findByIdForUpdate(created.getChecklistId()).orElseThrow();
+                locked.countDown();
+                awaitRelease(release);
+            }));
+            Future<ChecklistVO> update;
+            try {
+                await(locked);
+                update = pool.submit(() -> contenderService.updateStep(ChecklistCommand.updateStep(
+                        SESSION_ID, created.getChecklistId(), created.getSteps().getFirst().getStepId(), "COMPLETED")));
+                await(querying);
+                assertThrows(TimeoutException.class, () -> update.get(200, TimeUnit.MILLISECONDS));
+            } finally {
+                release.countDown();
+            }
+            holder.get(5, TimeUnit.SECONDS);
+            assertEquals("COMPLETED", update.get(5, TimeUnit.SECONDS).getStatus());
+        }
+    }
+
+    @Test
+    void anotherReadOnTheSameThreadCannotReplaceAnOlderAggregatesWriteBaseline() {
+        ChecklistVO created = service.create(ChecklistCommand.create(SESSION_ID, null, "旧快照", List.of("一步")));
+        Checklist stale = repository.findByIdWithSteps(created.getChecklistId()).orElseThrow();
+        service.updateStep(ChecklistCommand.updateStep(SESSION_ID, created.getChecklistId(),
+                created.getSteps().getFirst().getStepId(), "COMPLETED"));
+        Checklist fresh = repository.findByIdWithSteps(created.getChecklistId()).orElseThrow();
+        assertEquals(1L, fresh.getProgressVersion());
+        assertThrows(ClientException.class, () -> repository.updateChecklist(stale));
+        assertEquals(ChecklistStatus.COMPLETED, repository.findByIdWithSteps(created.getChecklistId())
+                .orElseThrow().getStatus());
+    }
+
+    private static void awaitRelease(CountDownLatch release) {
+        try {
+            assertTrue(release.await(15, TimeUnit.SECONDS), "持锁事务未能等到释放信号");
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("持锁事务等待被中断", interrupted);
+        }
+    }
 
     @Test
     void continuingPersistsBothStatesAndRejectsRollbackBeforeWriting() {
@@ -369,7 +480,7 @@ class ChecklistPersistenceTest {
         ChecklistVO created = service.create(ChecklistCommand.create(SESSION_ID, null, "条件写", List.of("一步")));
         Checklist loaded = repository.findByIdWithSteps(created.getChecklistId()).orElseThrow();
         // 模拟另一路已推进：直接改库里的 progress_version 与 status
-        mapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ChecklistPO>()
+        mapper.update(null, new LambdaUpdateWrapper<ChecklistPO>()
                 .eq(ChecklistPO::getId, created.getChecklistId())
                 .setSql("progress_version = progress_version + 1")
                 .set(ChecklistPO::getStatus, ChecklistStatus.COMPLETED.name()));

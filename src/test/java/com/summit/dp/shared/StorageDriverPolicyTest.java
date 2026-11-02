@@ -30,7 +30,7 @@ class StorageDriverPolicyTest {
     private static final List<String> FORBIDDEN_RUNTIME_TOKENS = List.of(
             "org.sqlite", "jdbc:sqlite:", "SqliteSchemaInitializer", "SqliteExceptionTranslator",
             "StorageEngineProperties", "DbType.SQLITE", "handler.sqlite", "lingxi.storage.engine",
-            "VACUUM INTO");
+            "VACUUM INTO", "ChecklistWriteMonitor", "READ_SNAPSHOTS");
 
     @Test
     void runtimeScannerDetectsNestedFilesIncludingNulBytes() throws IOException {

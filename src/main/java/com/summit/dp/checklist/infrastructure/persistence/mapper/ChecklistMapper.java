@@ -9,16 +9,16 @@ import org.apache.ibatis.annotations.Update;
 
 import java.time.Instant;
 
-/** 清单并发通过监视器、唯一索引与条件更新裁决，避免混用多套锁顺序。 */
+/** 写入前先锁父行，步骤读取与聚合裁决才能基于同一次提交。 */
 @Mapper
 public interface ChecklistMapper extends BaseMapper<ChecklistPO> {
 
-    /** 读清单行；并发写由随后的条件更新裁决，见类注释。 */
-    @Select("SELECT * FROM checklist WHERE id = #{id}")
+    /** 父行锁持有到事务结束，再读取步骤。 */
+    @Select("SELECT * FROM checklist WHERE id = #{id} FOR UPDATE")
     ChecklistPO selectByIdForUpdate(@Param("id") long id);
 
-    /** 读会话内的活动清单行；不存在返回 null。 */
-    @Select("SELECT * FROM checklist WHERE session_id = #{sessionId} AND status = 'ACTIVE'")
+    /** 活动行不存在时不产生锁，首次创建仍由唯一索引裁决。 */
+    @Select("SELECT * FROM checklist WHERE session_id = #{sessionId} AND status = 'ACTIVE' FOR UPDATE")
     ChecklistPO selectActiveBySessionIdForUpdate(@Param("sessionId") long sessionId);
 
     /** 条件变化时返回 0，调用方必须重查，不能据此认定提醒已经送达。 */

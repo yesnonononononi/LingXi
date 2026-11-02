@@ -3,12 +3,13 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 function Find-SqliteEntries([string[]]$Names) {
-    @($Names | Where-Object { $_ -match '(?i)(sqlite|StorageEngine\.class|StorageEngineProperties\.class|StorageEngineEnvironmentPostProcessor\.class|TimeTextCodec\.class)' })
+    @($Names | Where-Object { $_ -match '(?i)(sqlite|StorageEngine\.class|StorageEngineProperties\.class|StorageEngineEnvironmentPostProcessor\.class|TimeTextCodec\.class|ChecklistWriteMonitor(?:\$[^/]*)?\.class)' })
 }
 
 # 正样本包含嵌套路径，验证实际扫描谓词确实识别运行依赖和旧适配。
 $canaries = @('BOOT-INF/lib/sqlite-jdbc-1.jar', 'BOOT-INF/classes/db/sqlite/V1__schema.sql',
-    'BOOT-INF/classes/com/summit/dp/shared/storage/StorageEngine.class')
+    'BOOT-INF/classes/com/summit/dp/shared/storage/StorageEngine.class',
+    'BOOT-INF/classes/com/summit/dp/checklist/infrastructure/persistence/ChecklistWriteMonitor.class')
 if (@(Find-SqliteEntries $canaries).Count -ne $canaries.Count) { throw '打包扫描器正对照失败。' }
 $archive = [System.IO.Compression.ZipFile]::OpenRead([System.IO.Path]::GetFullPath($Jar))
 try {

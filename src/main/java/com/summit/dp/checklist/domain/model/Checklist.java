@@ -27,6 +27,9 @@ public class Checklist {
     private boolean remindStatus;
     /** 步骤实际推进次数；结构修改不递增 */
     private long progressVersion;
+    /** 每个聚合保留自己的已落库基线，不能从线程上的其他读取借用。 */
+    private long persistedProgressVersion;
+    private ChecklistStatus persistedStatus;
     /** 提醒归属执行：用于区分「本次执行已提醒」与「其他执行持有提醒」 */
     private Long remindExecutionId;
     /** 提醒发生时的进展版本：与 progressVersion 相等才说明提醒之后没有任何实际推进 */
@@ -47,6 +50,8 @@ public class Checklist {
         this.status = Objects.requireNonNullElse(status, ChecklistStatus.ACTIVE);
         this.remindStatus = remindStatus;
         this.progressVersion = progressVersion;
+        this.persistedProgressVersion = progressVersion;
+        this.persistedStatus = this.status;
         this.remindExecutionId = remindExecutionId;
         this.remindedProgressVersion = remindedProgressVersion;
         this.createAt = Objects.requireNonNullElseGet(createAt, ChecklistRules::now);
@@ -99,6 +104,12 @@ public class Checklist {
                 .remindExecutionId(remindExecutionId).remindedProgressVersion(remindedProgressVersion)
                 .createAt(createAt).updateAt(updateAt).steps(steps)
                 .build();
+    }
+
+    /** 只有仓储更新成功后才能推进下一次写入的条件基线。 */
+    public void acceptPersistedState() {
+        persistedProgressVersion = progressVersion;
+        persistedStatus = status;
     }
 
     /** 只读快照：调用方不能借返回的集合改聚合内部状态。 */

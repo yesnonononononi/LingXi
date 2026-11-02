@@ -9,7 +9,6 @@ import com.summit.dp.checklist.domain.model.ChecklistStatus;
 import com.summit.dp.checklist.domain.model.ChecklistStep;
 import com.summit.dp.checklist.domain.model.ChecklistStepStatus;
 import com.summit.dp.checklist.domain.repository.ChecklistRepository;
-import com.summit.dp.checklist.infrastructure.persistence.ChecklistWriteMonitor;
 import com.summit.dp.checklist.infrastructure.persistence.mapper.ChecklistMapper;
 import com.summit.dp.checklist.infrastructure.persistence.mapper.ChecklistStepMapper;
 import com.summit.dp.checklist.infrastructure.persistence.po.ChecklistPO;
@@ -35,15 +34,6 @@ public class ChecklistRepositoryImpl extends AbstractRepository<Checklist, Check
     private final ChecklistMapper mapper;
     private final ChecklistStepMapper stepMapper;
 
-    /**
-     * 本线程最近读到的清单原始行（乐观令牌）：{@code updateChecklist} 用它作条件。
-     *
-     * <p>每次写路径都会先读聚合（{@code findByIdForUpdate} / {@code findByIdWithSteps}），
-     * 因此同一 id 的令牌总会被刷新，不会跨事务残留成假冲突。</p>
-     */
-    private static final ThreadLocal<Map<Long, ChecklistPO>> READ_SNAPSHOTS =
-            ThreadLocal.withInitial(HashMap::new);
-
     public ChecklistRepositoryImpl(ChecklistMapper mapper, ChecklistStepMapper stepMapper) {
         this.mapper = mapper;
         this.stepMapper = stepMapper;
@@ -66,42 +56,27 @@ public class ChecklistRepositoryImpl extends AbstractRepository<Checklist, Check
         }
         ChecklistPO row = toPO(checklist);
         mapper.insert(row);
-        rememberSnapshot(row);
+        checklist.acceptPersistedState();
         for (ChecklistStep step : checklist.getSteps()) {
             stepMapper.insert(toStepPO(step));
         }
     }
 
-    /** 清单写监视器持有到事务结束，避免多步聚合判断与提交交错。 */
+    /** 父行锁保护聚合裁决，条件更新额外拒绝过期对象覆盖。 */
     @Override
     public void updateChecklist(Checklist checklist) {
         if (checklist == null) {
             return;
         }
-        ChecklistPO expected = readSnapshot(checklist.getId());
-        if (expected == null) {
-            throw new ClientException("清单未在本事务内读取，禁止无快照更新: checklistId=" + checklist.getId());
-        }
         ChecklistPO row = toPO(checklist);
         int changed = mapper.update(row, new LambdaUpdateWrapper<ChecklistPO>()
                 .eq(ChecklistPO::getId, checklist.getId())
-                .eq(ChecklistPO::getProgressVersion, expected.getProgressVersion())
-                .eq(ChecklistPO::getStatus, expected.getStatus()));
+                .eq(ChecklistPO::getProgressVersion, checklist.getPersistedProgressVersion())
+                .eq(ChecklistPO::getStatus, checklist.getPersistedStatus()));
         if (changed != 1) {
             throw new ClientException("清单进展已变化，请重新读取后再修改: checklistId=" + checklist.getId());
         }
-        rememberSnapshot(row);
-    }
-
-    /** 记录本线程最近一次读到的清单原始行，作为后续条件更新的乐观令牌。 */
-    private ChecklistPO readSnapshot(long checklistId) {
-        return READ_SNAPSHOTS.get().get(checklistId);
-    }
-
-    private void rememberSnapshot(ChecklistPO row) {
-        if (row != null && row.getId() != null) {
-            READ_SNAPSHOTS.get().put(row.getId(), row);
-        }
+        checklist.acceptPersistedState();
     }
 
     @Override
@@ -117,7 +92,6 @@ public class ChecklistRepositoryImpl extends AbstractRepository<Checklist, Check
     @Override
     public Optional<Checklist> findByIdWithSteps(long checklistId) {
         ChecklistPO row = mapper.selectById(checklistId);
-        rememberSnapshot(row);
         return Optional.ofNullable(row).map(this::toModel);
     }
 
@@ -152,21 +126,17 @@ public class ChecklistRepositoryImpl extends AbstractRepository<Checklist, Check
         return Optional.ofNullable(row).map(this::toModel);
     }
 
-    /** 清单写监视器持有到事务结束，避免多步聚合判断与提交交错。 */
+    /** 父行锁保护聚合裁决，条件更新额外拒绝过期对象覆盖。 */
     @Override
     public Optional<Checklist> findActiveBySessionIdForUpdate(long sessionId) {
-        ChecklistWriteMonitor.acquireForCurrentTransaction();
         ChecklistPO row = mapper.selectActiveBySessionIdForUpdate(sessionId);
-        rememberSnapshot(row);
         return Optional.ofNullable(row).map(this::toModel);
     }
 
     /** 同上：按标识定位聚合，并取得本事务的清单写权。 */
     @Override
     public Optional<Checklist> findByIdForUpdate(long checklistId) {
-        ChecklistWriteMonitor.acquireForCurrentTransaction();
         ChecklistPO row = mapper.selectByIdForUpdate(checklistId);
-        rememberSnapshot(row);
         return Optional.ofNullable(row).map(this::toModel);
     }
 
@@ -184,7 +154,7 @@ public class ChecklistRepositoryImpl extends AbstractRepository<Checklist, Check
     /**
      * 更新单个步骤：带 {@code status} 条件，避免「读后裸写」覆盖并发推进结果。
      *
-     * <p>步骤推进只在清单写监视器内发生；这里是第二道防线，条件不成立即拒绝。</p>
+     * <p>步骤推进必须先取得父行锁；这里是第二道防线，条件不成立即拒绝。</p>
      */
     @Override
     public void updateStep(ChecklistStep step) {

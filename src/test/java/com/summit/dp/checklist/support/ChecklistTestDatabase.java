@@ -49,7 +49,7 @@ public final class ChecklistTestDatabase implements AutoCloseable {
         this.executionQueries = executionQueries;
     }
 
-    /** 起一个独立 SQLite 文件库，避免用例之间互相污染唯一索引。 */
+    /** 独立 H2 文件库避免不同用例互相污染锁与唯一索引。 */
     public static ChecklistTestDatabase start(String namePrefix) {
         try {
             H2TestDatabase database = H2TestDatabase.create(namePrefix);
