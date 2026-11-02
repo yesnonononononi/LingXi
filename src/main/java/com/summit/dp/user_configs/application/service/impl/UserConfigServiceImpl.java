@@ -3,6 +3,7 @@ package com.summit.dp.user_configs.application.service.impl;
 import com.summit.ddd.application.vo.Result;
 import com.summit.dp.model.application.service.ModelService;
 import com.summit.dp.model.application.vo.ModelConfigVO;
+import com.summit.core.model.DefaultModelProviderNames;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.local.LocalInstance;
 import com.summit.dp.shared.model.WorkspaceType;
@@ -72,6 +73,15 @@ public class UserConfigServiceImpl implements UserConfigService {
         // 专用压缩模型同样只能在「模型存在且凭据齐备」时才落库：
         // 否则每次压缩都在运行时抛错，而错误出现在一轮对话的中途，用户根本无从定位。
         assertCompactModelUsable(command.compactModelId(), command.compactModelIdPresent());
+        if (command.imageModelIdPresent() && command.imageModelId() != null) {
+            ModelConfigVO image = modelService.findById(command.imageModelId()).getData();
+            throwIf(image == null || !DefaultModelProviderNames.DEFAULT_IMAGE.equals(image.getProvider()),
+                    "生图模型必须选择图片模型，请在模型高级选项中设置调用方式");
+            throwIf(!image.isCredentialConfigured(), "生图模型缺少可用的 API 凭据，请先补全密钥");
+        }
+        throwIf(command.imageGenerationMaxCalls() != null && (command.imageGenerationMaxCalls() < 0
+                        || command.imageGenerationMaxCalls() > UserConfig.MAX_IMAGE_GENERATION_CALLS),
+                "每次执行的生图次数必须在 0~" + UserConfig.MAX_IMAGE_GENERATION_CALLS + " 之间");
         // INSERT/UPDATE 按「行是否存在」判断，不能按 id 是否为 null 判断：
         // 默认配置自带主键 1，若按 id 判空会误走 UPDATE，在无行时静默影响 0 行。
         Optional<UserConfig> existing = repository.findSingleton();
@@ -116,6 +126,7 @@ public class UserConfigServiceImpl implements UserConfigService {
         ModelConfigVO compact = modelService.findById(compactModelId).getData();
         throwIf(compact == null || !compact.isCredentialConfigured(),
                 "专用压缩模型缺少可用的 API 凭据，请先在模型页补全密钥");
+        throwIf(DefaultModelProviderNames.DEFAULT_IMAGE.equals(compact.getProvider()), "压缩模型必须选择文本模型");
     }
 
 
@@ -141,6 +152,8 @@ public class UserConfigServiceImpl implements UserConfigService {
 
         // 压缩模型与 agentId 同构：显式 null = 回到「沿用对话模型」，不传 = 保持原值。
         if (command.compactModelIdPresent()) model.changeCompactModel(command.compactModelId());
+        if (command.imageModelIdPresent()) model.changeImageModel(command.imageModelId());
+        if (command.imageGenerationMaxCalls() != null) model.changeImageGenerationMaxCalls(command.imageGenerationMaxCalls());
 
         String workspaceType = command.workspaceType();
         if (workspaceType != null)
@@ -234,6 +247,8 @@ public class UserConfigServiceImpl implements UserConfigService {
                 .skillDir(settings == null ? null : settings.skillDir())
                 .teamSize(settings == null ? null : settings.teamSize())
                 .compactModelId(model.getCompactModelId())
+                .imageModelId(model.getImageModelId())
+                .imageGenerationMaxCalls(model.resolveImageGenerationMaxCalls())
                 .dataDirRestartRequired(isDataDirRestartRequired(dataDir))
                 .build();
     }

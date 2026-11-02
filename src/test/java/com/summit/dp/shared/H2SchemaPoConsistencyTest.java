@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
 import com.summit.dp.shared.config.H2SchemaInitializer;
+import com.summit.dp.shared.persistence.schema.SchemaScript;
 import com.summit.dp.shared.support.H2TestDatabase;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -270,13 +271,21 @@ class H2SchemaPoConsistencyTest {
         return indexes;
     }
 
-    /** 解析基线脚本，返回「表名(小写) → 列名集合(小写)」。 */
+    /** 按版本合并建表与补列脚本，核对最终结构。 */
     private static Map<String, Set<String>> loadSchema() throws IOException {
-        String sql = Files.readString(locateScript(), StandardCharsets.UTF_8);
         Map<String, Set<String>> tables = new LinkedHashMap<>();
-        Matcher matcher = CREATE_TABLE.matcher(sql);
-        while (matcher.find()) {
-            tables.put(matcher.group(1).toLowerCase(Locale.ROOT), parseColumns(matcher.group(2)));
+        Pattern addColumn = Pattern.compile("ALTER\\s+TABLE\\s+(\\w+)\\s+ADD\\s+COLUMN\\s+IF\\s+NOT\\s+EXISTS\\s+(\\w+)", Pattern.CASE_INSENSITIVE);
+        for (SchemaScript script : new H2SchemaInitializer().loadScripts()) {
+            Matcher matcher = CREATE_TABLE.matcher(script.content());
+            while (matcher.find()) {
+                tables.put(matcher.group(1).toLowerCase(Locale.ROOT), parseColumns(matcher.group(2)));
+            }
+            Matcher added = addColumn.matcher(script.content());
+            while (added.find()) {
+                Set<String> columns = tables.get(added.group(1).toLowerCase(Locale.ROOT));
+                assertTrue(columns != null, "补列脚本引用的表必须存在");
+                columns.add(added.group(2).toLowerCase(Locale.ROOT));
+            }
         }
         assertTrue(tables.size() >= 20, "基线应至少解析出 20 张表，实际=" + tables.keySet());
         return tables;

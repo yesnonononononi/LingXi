@@ -5,6 +5,7 @@ import com.summit.core.agent.AgentRequest;
 import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.conf.ModelRetryConfig;
 import com.summit.core.conf.SkillConfig;
+import com.summit.core.model.DefaultModelProviderNames;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
 import com.summit.core.runtime.RuntimeEnvironment;
@@ -113,6 +114,8 @@ public class SubAgentRequestFactory {
                 .systemPrompt(systemPromptBuilder.buildMemberPrompt(subAgent, team, argument.getPrompt(), workspaceSpec))
                 .toolList(toolListProcessor.process(subAgent.getToolList(), ToolProcessingContext.builder()
                         .member(true).agentId(subAgent.getId())
+                        .imageGeneration(settingsProvider.current().map(settings -> settings.imageModelId() != null
+                                && settings.imageGenerationMaxCalls() != null && settings.imageGenerationMaxCalls() > 0).orElse(false))
                         .teamId(ExecutionAttributes.readLong(toolExecution.getAttributes(), ExecutionAttributes.TEAM_ID))
                         .vision(childModel.vision()).accessMode(accessMode).skillRoot(skillRoot)
                         .projectMemory(workspaceSpec != null).build()))
@@ -215,7 +218,11 @@ public class SubAgentRequestFactory {
         }
         SettingsView settings = settingsProvider.current().orElse(null);
         try {
-            return modelService.resolveRuntimeConfig(childModelId, settings);
+            RuntimeModel model = modelService.resolveRuntimeConfig(childModelId, settings);
+            if (DefaultModelProviderNames.DEFAULT_IMAGE.equals(model.config().getProvider())) {
+                throw new ClientException("子 Agent 基座必须使用文本模型，图片生成请通过生图工具调用");
+            }
+            return model;
         } catch (ClientException e) {
             throw new ClientException("子 Agent「" + subAgent.getName()
                     + "」绑定的模型不可用，请检查预设是否已被删除或连接配置是否完整: " + e.getMessage());

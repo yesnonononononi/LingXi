@@ -1,4 +1,5 @@
 import {ModelAPI} from './model';
+import {isImageModel} from '../utils/modelCapabilities';
 import {WorkspaceAPI} from './workspace';
 import {SessionAPI} from './session';
 import {AgentAPI} from './agent';
@@ -165,6 +166,7 @@ export const chatApi = {
         const models: ModelConfig[] = [];
         for (const group of groups) {
           for (const item of group.models ?? []) {
+            if (isImageModel(item)) continue;
             models.push({
               id: item.id as string | number,
               name: item.modelName || t('session.modelFallback', { id: item.id ?? '' }),

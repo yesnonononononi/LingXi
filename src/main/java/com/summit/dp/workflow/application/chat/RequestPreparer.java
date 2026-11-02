@@ -6,6 +6,7 @@ import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Image;
 import com.summit.core.conf.McpConfig;
 import com.summit.core.conf.ModelConfig;
+import com.summit.core.model.DefaultModelProviderNames;
 import com.summit.core.conf.ModelRetryConfig;
 import com.summit.core.conf.SkillConfig;
 import com.summit.core.conversation.message.Message;
@@ -104,7 +105,12 @@ public class RequestPreparer {
      */
     private RuntimeModel rootModel(Long modelId, SettingsView settings) {
         Long selected = modelId != null ? modelId : settings == null ? null : settings.modelId();
-        if (selected != null) return modelService.resolveRuntimeConfig(selected, settings);
+        if (selected != null) {
+            RuntimeModel model = modelService.resolveRuntimeConfig(selected, settings);
+            throwIf(DefaultModelProviderNames.DEFAULT_IMAGE.equals(model.config().getProvider()),
+                    "生图模型请在其它模型配置中选择，通过生图工具调用；对话请选择文本模型");
+            return model;
+        }
         throw new ClientException("未配置可用的模型连接");
     }
 
@@ -407,6 +413,8 @@ public class RequestPreparer {
                 .workspaceSpec(context.workspace())
                 .toolList(toolListProcessor.process(toolList, ToolProcessingContext.builder()
                         .defaultAgent(defaultAgent)
+                        .imageGeneration(settingsProvider.current().map(settings -> settings.imageModelId() != null
+                                && settings.imageGenerationMaxCalls() != null && settings.imageGenerationMaxCalls() > 0).orElse(false))
                         .agentId(context.agentId()).teamId(context.teamId()).vision(context.vision())
                         .accessMode(context.accessMode()).requirePlan(context.requirePlan())
                         .mcpConfig(mcpConfig).skillRoot(skillRoot).projectMemory(context.workspace() != null).build()))

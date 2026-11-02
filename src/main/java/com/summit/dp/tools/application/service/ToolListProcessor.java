@@ -45,6 +45,8 @@ public class ToolListProcessor {
         if (context.requirePlan()) tools.add(ToolCatalog.CREATE_PLAN);
         if (context.vision()) tools.add(ToolCatalog.READ_IMAGE);
         else tools.remove(ToolCatalog.READ_IMAGE);
+        if (context.imageGeneration()) tools.add(ToolCatalog.GENERATE_IMAGE);
+        else tools.remove(ToolCatalog.GENERATE_IMAGE);
 
         if (!context.accessMode().allowsWriteTools()) {
             Set<String> readOnly = toolCatalog.readOnlyNames();

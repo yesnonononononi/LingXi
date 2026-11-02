@@ -74,4 +74,15 @@ public class UserConfigRequest {
     /** 专用压缩模型ID（关联 model_config.id；空表示沿用对话模型做摘要） */
     private Long compactModelId;
     private boolean compactModelIdPresent;
+
+    private Long imageModelId;
+    private boolean imageModelIdPresent;
+    private Integer imageGenerationMaxCalls;
+
+    /** 显式 null 取消生图模型，未传入则保持原值。 */
+    @JsonSetter("imageModelId")
+    public void markImageModelIdPresent(Long imageModelId) {
+        this.imageModelId = imageModelId;
+        this.imageModelIdPresent = true;
+    }
 }

@@ -57,6 +57,8 @@ export const useUserConfigStore = defineStore('userConfig', () => {
   const teamSize = ref<number | null>(null);
   /** 专用压缩模型（关联 model_config.id）；null 表示沿用对话模型做摘要。 */
   const compactModelId = ref<string | number | null>(null);
+  const imageModelId = ref<string | number | null>(null);
+  const imageGenerationMaxCalls = ref<number | null>(null);
   /** 数据目录已改但本进程还没重启：为 true 时界面必须提示重启并拦住继续对话。 */
   const dataDirRestartRequired = ref(false);
   /**
@@ -128,6 +130,8 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     skillDir.value = config?.skillDir ?? '';
     teamSize.value = config?.teamSize ?? null;
     compactModelId.value = config?.compactModelId ?? null;
+    imageModelId.value = config?.imageModelId ?? null;
+    imageGenerationMaxCalls.value = config?.imageGenerationMaxCalls ?? null;
     dataDirRestartRequired.value = config?.dataDirRestartRequired === true;
     // 非法/缺省一律回落 MEDIUM（后端虽已归一，前端仍要能吃住脏数据而不把界面撑坏）
     fontScale.value = normalizeFontScale(config?.fontScale, 'MEDIUM') ?? 'MEDIUM';
@@ -201,6 +205,8 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     | 'skillDir'
     | 'teamSize'
     | 'compactModelId'
+    | 'imageModelId'
+    | 'imageGenerationMaxCalls'
     | 'fontScale';
 
   /** 读某字段的当前值（回滚快照用）。 */
@@ -219,6 +225,8 @@ export const useUserConfigStore = defineStore('userConfig', () => {
       case 'skillDir': return skillDir.value;
       case 'teamSize': return teamSize.value;
       case 'compactModelId': return compactModelId.value;
+      case 'imageModelId': return imageModelId.value;
+      case 'imageGenerationMaxCalls': return imageGenerationMaxCalls.value;
       case 'fontScale': return fontScale.value;
     }
   };
@@ -239,6 +247,8 @@ export const useUserConfigStore = defineStore('userConfig', () => {
       case 'skillDir': skillDir.value = value as string; break;
       case 'teamSize': teamSize.value = value as number | null; break;
       case 'compactModelId': compactModelId.value = value as string | number | null; break;
+      case 'imageModelId': imageModelId.value = value as string | number | null; break;
+      case 'imageGenerationMaxCalls': imageGenerationMaxCalls.value = value as number | null; break;
       case 'fontScale': fontScale.value = value as FontScalePreset; break;
     }
     // 字号是唯一「写状态即改渲染」的字段：乐观更新与失败回滚都必须立刻反映到 --lx-font-scale，
@@ -359,6 +369,8 @@ export const useUserConfigStore = defineStore('userConfig', () => {
     skillDir,
     teamSize,
     compactModelId,
+    imageModelId,
+    imageGenerationMaxCalls,
     dataDirRestartRequired,
     fontScale,
     // 派生

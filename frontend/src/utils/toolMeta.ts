@@ -39,6 +39,7 @@ const KNOWN_TOOL_CATEGORY: Partial<Record<AgentToolName, string>> = {
   [AgentToolName.WebSearch]: TOOL_CATEGORY.READ,
   // 写入
   [AgentToolName.EditFile]: TOOL_CATEGORY.WRITE,
+  [AgentToolName.GenerateImage]: TOOL_CATEGORY.WRITE,
   // 选择 / 人工确认
   [AgentToolName.RequireChoice]: TOOL_CATEGORY.CHOICE,
   // 计划书
@@ -212,6 +213,7 @@ export function resolveToolMeta(input: ToolMetaInput): ToolMeta {
       break;
 
     case AgentToolName.ReadImage:
+    case AgentToolName.GenerateImage:
     case AgentToolName.EditFile:
       target = field('path');
       description = target;

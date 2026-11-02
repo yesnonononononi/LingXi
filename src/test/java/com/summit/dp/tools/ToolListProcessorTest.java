@@ -21,6 +21,16 @@ class ToolListProcessorTest {
     private final ToolListProcessor processor = new ToolListProcessor(catalog);
 
     @Test
+    void imageGenerationIsGlobalButStillRespectsReadOnlyAccess() {
+        when(catalog.readOnlyNames()).thenReturn(Set.of(ToolCatalog.READ_FILE));
+        assertTrue(processor.process(null, ToolProcessingContext.builder().imageGeneration(true)
+                .accessMode(AgentAccessMode.IN_WORKSPACE).build()).contains(ToolCatalog.GENERATE_IMAGE));
+        assertFalse(processor.process(null, ToolProcessingContext.builder().imageGeneration(true)
+                .accessMode(AgentAccessMode.READ_ONLY_IN_WORKSPACE).build()).contains(ToolCatalog.GENERATE_IMAGE));
+        assertFalse(processor.process(List.of(ToolCatalog.GENERATE_IMAGE), root()).contains(ToolCatalog.GENERATE_IMAGE));
+    }
+
+    @Test
     void onlyTheDefaultAgentReceivesTheDefaultTools() {
         ToolProcessingContext context = ToolProcessingContext.builder().defaultAgent(true).accessMode(AgentAccessMode.IN_WORKSPACE).build();
         List<String> tools = processor.process(null, context);

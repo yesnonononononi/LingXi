@@ -25,6 +25,7 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<AgentToolName, ToolDisplayName> = n
   [AgentToolName.SearchWiki, defineToolName('检索项目记忆', 'Search project memory', 'tool.category.memorySearch')],
   // 读图不再复用 READ 的「读取」（用户看不出是在读图片）
   [AgentToolName.ReadImage, defineToolName('读取图片', 'Read image', 'tool.category.imageRead')],
+  [AgentToolName.GenerateImage, defineToolName('生成图片', 'Generate image', 'tool.category.imageGenerate')],
   [AgentToolName.EditFile, defineToolName('编辑文件', 'Edit file', 'tool.category.write')],
   [AgentToolName.ExecuteCommand, defineToolName('执行命令', 'Execute command', 'tool.category.command')],
   [AgentToolName.ManageCommand, defineToolName('确认后台任务状态', 'Check background task status', 'tool.category.backgroundCommand')],

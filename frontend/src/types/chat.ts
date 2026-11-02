@@ -746,6 +746,8 @@ export interface UserConfigVO {
    * 不带这个键表示保持原值 —— 因此类型必须允许 null。</p>
    */
   compactModelId?: number | string | null;
+  imageModelId?: number | string | null;
+  imageGenerationMaxCalls?: number | null;
   /**
    * 数据目录变更是否待重启生效。
    *

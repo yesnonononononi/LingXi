@@ -52,7 +52,10 @@ public class UserConfigController {
                 request.getCompactModelId(),
                 request.isCompactModelIdPresent(),
                 request.getFontScale(),
-                request.isFontScalePresent()
+                request.isFontScalePresent(),
+                request.getImageModelId(),
+                request.isImageModelIdPresent(),
+                request.getImageGenerationMaxCalls()
         );
     }
 }

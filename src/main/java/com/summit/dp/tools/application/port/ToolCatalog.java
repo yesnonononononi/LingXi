@@ -42,6 +42,7 @@ public interface ToolCatalog {
 
     /** 读图片工具名：把工作区里的一张图送入模型上下文 */
     String READ_IMAGE = "read_image";
+    String GENERATE_IMAGE = "generate_image";
 
     /** 改文件工具名 */
     String EDIT_FILE = "edit_file";

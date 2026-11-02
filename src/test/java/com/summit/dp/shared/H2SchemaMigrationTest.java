@@ -33,6 +33,18 @@ class H2SchemaMigrationTest {
     private final SchemaScriptLoader loader = new SchemaScriptLoader();
     private final List<H2TestDatabase> databases = new ArrayList<>();
 
+    @Test
+    void existingBaselineAddsImageSettingsWithoutRewritingItsChecksum() {
+        H2TestDatabase database = newDatabase("image-settings-upgrade");
+        H2SchemaInitializer initializer = new H2SchemaInitializer();
+        assertEquals(1, initializer.initialize(database, List.of(baselineScript())));
+        assertEquals(1, initializer.initialize(database));
+        assertEquals("2", database.queryString("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS"
+                + " WHERE TABLE_SCHEMA='PUBLIC' AND TABLE_NAME='USER_CONFIGS'"
+                + " AND COLUMN_NAME IN ('IMAGE_MODEL_ID','IMAGE_GENERATION_MAX_CALLS')"));
+        assertEquals(0, initializer.initialize(database));
+    }
+
     @AfterEach
     void cleanUp() {
         for (H2TestDatabase database : databases) {
@@ -42,20 +54,20 @@ class H2SchemaMigrationTest {
     }
 
     @Test
-    @DisplayName("首装：空目录建库 executed=1，20 张业务表齐全，版本表登记脚本与指纹")
+    @DisplayName("首装：空目录执行全部版本，业务表齐全并登记脚本与指纹")
     void firstRunCreatesBaselineAndRecordsVersion() {
         H2TestDatabase database = newDatabase("first");
         SchemaScript baseline = baselineScript();
 
         int executed = new H2SchemaInitializer().initialize(database);
 
-        assertEquals(1, executed, "空库首装必须执行一次基线脚本");
+        assertEquals(loader.load(H2Storage.SCHEMA_LOCATION).size(), executed, "空库必须执行全部版本脚本");
         assertEquals(String.valueOf(H2SchemaInitializer.expectedTables().size()),
                 database.queryString("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES"
                         + " WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_NAME <> 'SCHEMA_VERSION'"),
                 "业务表数量必须与期望清单一致");
-        assertEquals("1", database.queryString("SELECT COUNT(*) FROM schema_version"),
-                "版本表必须只登记一条");
+        assertEquals(String.valueOf(executed), database.queryString("SELECT COUNT(*) FROM schema_version"),
+                "版本表必须登记全部脚本");
         assertEquals(baseline.checksum(),
                 database.queryString("SELECT checksum FROM schema_version WHERE version = 1"),
                 "登记的指纹必须等于脚本正文的 SHA-256");
@@ -79,10 +91,10 @@ class H2SchemaMigrationTest {
     void secondRunIsNoOp() {
         H2TestDatabase database = newDatabase("second");
         H2SchemaInitializer initializer = new H2SchemaInitializer();
-        assertEquals(1, initializer.initialize(database));
+        assertEquals(loader.load(H2Storage.SCHEMA_LOCATION).size(), initializer.initialize(database));
 
         assertEquals(0, initializer.initialize(database), "第二次建库必须一条都不执行");
-        assertEquals("1", database.queryString("SELECT COUNT(*) FROM schema_version"));
+        assertEquals(String.valueOf(loader.load(H2Storage.SCHEMA_LOCATION).size()), database.queryString("SELECT COUNT(*) FROM schema_version"));
     }
 
     @Test
@@ -120,7 +132,7 @@ class H2SchemaMigrationTest {
                 "期望表清单没过就绝不能登记版本");
 
         // 可重入：拿完整脚本再跑一次，缺的表被补齐，版本登记成功。
-        assertEquals(1, new H2SchemaInitializer().initialize(database),
+        assertEquals(loader.load(H2Storage.SCHEMA_LOCATION).size(), new H2SchemaInitializer().initialize(database),
                 "半建状态必须能靠重跑幂等脚本补齐");
         assertEquals("1", database.queryString(
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'TEAM'"));
@@ -137,7 +149,7 @@ class H2SchemaMigrationTest {
                 .orElseThrow(() -> new IllegalStateException("基线里找不到 mcp 建表语句"));
         database.execute(mcpTable);
 
-        assertEquals(1, new H2SchemaInitializer().initialize(database),
+        assertEquals(loader.load(H2Storage.SCHEMA_LOCATION).size(), new H2SchemaInitializer().initialize(database),
                 "已有部分表时仍必须执行脚本（幂等）");
         assertEquals(String.valueOf(H2SchemaInitializer.expectedTables().size()),
                 database.queryString("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES"
@@ -189,10 +201,9 @@ class H2SchemaMigrationTest {
         return database;
     }
 
-    /** classpath 上的 H2 基线脚本（断言只有一个版本文件，避免测试对多版本语义做假设）。 */
+    /** V1 基线单独用于指纹和半建状态检查，后续迁移由完整初始化验证。 */
     private SchemaScript baselineScript() {
         List<SchemaScript> scripts = loader.load(H2Storage.SCHEMA_LOCATION);
-        assertEquals(1, scripts.size(), "H2 基线当前只有一个版本脚本: " + scripts);
-        return scripts.get(0);
+        return scripts.stream().filter(script -> script.version() == 1).findFirst().orElseThrow();
     }
 }
