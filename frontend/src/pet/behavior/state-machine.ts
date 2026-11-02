@@ -166,6 +166,61 @@ function expressionOp(
 }
 
 /**
+ * 给一条<b>入态指令</b>打上接管标记。
+ *
+ * <p>行为层产出的每一条指令都是"我要进入这个状态"的<b>接管</b>声明，不是"请求你让我表现一下"。
+ * 以前两者共用一条通道，于是优先级 0 的睡眠会被优先级 1 的生气（TTL 未过期）挡掉，
+ * 总线静默丢弃，行为层与画面永久不一致（M6-b 第二轮必修项 1）。</p>
+ *
+ * <p>判定仍然只发生在 `presentation/priority.ts` 的规则表里（那有一行明文写着"带此标记 → 接管"），
+ * 本函数只是<b>贴标记</b>，不做任何优先级比较——单一真源的位置没有挪动。</p>
+ *
+ * @param op 待打标指令
+ * @returns 带 `force: true` 的新指令
+ */
+function takeover(op: PresentationOp): PresentationOp {
+  return { ...op, force: true };
+}
+
+/**
+ * 把一组指令整体标记为入态接管。
+ *
+ * @param ops 指令列表
+ * @returns 新列表（每条都带 `force: true`）
+ */
+function entryOps(ops: readonly PresentationOp[]): PresentationOp[] {
+  return ops.map(takeover);
+}
+
+/**
+ * 行为状态的可回滚快照。
+ *
+ * <p><b>为什么需要它：</b>状态机是"先改自己的字段、再把指令交给上层下发"。如果上层下发失败
+ * （总线拒绝 / 没有表现层），行为层就会宣称自己已经切到新状态而画面还停在旧状态——
+ * 这正是 QA 报的"各说各话"。有了快照，上层可以在任何一条入态指令没落地时把现场整体滚回去。</p>
+ *
+ * <p>快照全部是不可变值（含 `sustained` 这种枚举），深拷贝无意义，直接浅拷贝即可。</p>
+ */
+export interface BehaviorSnapshot {
+  /** 切换前的状态。 */
+  readonly state: PetBehaviorState;
+  /** 切换前的自然结束时刻。 */
+  readonly stateUntil: number | null;
+  /** 切换前的桥接落地时刻。 */
+  readonly bridgeUntil: number | null;
+  /** 切换前的连点计数。 */
+  readonly tapStreak: number;
+  /** 切换前的最后一次点击时刻。 */
+  readonly lastTapAt: number | null;
+  /** 切换前是否在拖拽。 */
+  readonly dragging: boolean;
+  /** 切换前的持续动作登记。 */
+  readonly sustained: MotionId | null;
+  /** 切换前的最近互动时刻。 */
+  readonly lastInteractionAt: number;
+}
+
+/**
  * 下达一条<b>状态型持续动作</b>指令（sustained）。
  *
  * <p>与 {@link motionOp} 的差别只有两条，但两条都是语义级别的：</p>
@@ -336,13 +391,14 @@ export class PetBehaviorStateMachine {
     // 登记持续动作：这是"不自动回退"的唯一凭据，也是 tick 幂等的开关
     this.sustained = 'sleepy';
     this.log(`[pet] 行为：${SLEEP_AFTER_IDLE_MS}ms 无交互，进入睡眠`);
-    return [
+    return entryOps([
       // 睡眠优先级维持 0：真正的"抑制眨眼"由总线的 sleeping 判定做，不靠抢占；
       // 醒来的 wake 是优先级 2，一定能打断它（见 priority.ts 的规则表）。
+      // 入态指令带 force：即使上一拍的生气记录还没过期，睡眠也必须真的落到画面上。
       sustainedMotionOp('sleepy', 0, 'behavior:sleep'),
       // 表情同样不带 TTL：睡到被叫醒为止，而不是 1.6 秒后自己变回中性脸
       expressionOp('sleepy', 0, 'behavior:sleep:expression'),
-    ];
+    ]);
   }
 
   /** 重置到初始 idle（页面重新就绪时用）。 */
@@ -355,6 +411,89 @@ export class PetBehaviorStateMachine {
     this.dragging = false;
     this.sustained = null;
     this.lastInteractionAt = this.now();
+  }
+
+  /**
+   * 拍一张当前现场的快照（**入态指令下发前**调用）。
+   *
+   * <p>配合 {@link restore}：上层把指令交给总线之后，只要有一条没落地，
+   * 就用这张快照把行为层整体滚回去，避免"行为层说切了、画面没切"。</p>
+   *
+   * @returns 现场快照（不可变值）
+   */
+  snapshot(): BehaviorSnapshot {
+    return {
+      state: this.stateValue,
+      stateUntil: this.stateUntil,
+      bridgeUntil: this.bridgeUntil,
+      tapStreak: this.tapStreak,
+      lastTapAt: this.lastTapAt,
+      dragging: this.dragging,
+      sustained: this.sustained,
+      lastInteractionAt: this.lastInteractionAt,
+    };
+  }
+
+  /**
+   * 回滚到一张现场快照。
+   *
+   * <p>非法快照（`null` / 缺字段 / 状态名不认识）一律拒绝并返回 `false`，不抛——
+   * 这条路径只在"表现层拒绝入态指令"的异常时刻走，不能因为回滚本身再把渲染层带崩。</p>
+   *
+   * @param snapshot 由 {@link snapshot} 产出的快照
+   * @param reason 回滚原因（只用于日志）
+   * @returns 是否真的回滚了
+   */
+  restore(snapshot: BehaviorSnapshot | null, reason = ''): boolean {
+    if (!snapshot || typeof snapshot !== 'object') {
+      this.log('[pet] 行为回滚失败：快照为空');
+      return false;
+    }
+    const state = snapshot.state;
+    const known: readonly PetBehaviorState[] = ['idle', 'tap', 'angry', 'sleeping', 'wake', 'drag'];
+    if (!known.includes(state)) {
+      this.log(`[pet] 行为回滚失败：未知状态 ${String(state)}`);
+      return false;
+    }
+    this.stateValue = state;
+    this.stateUntil = typeof snapshot.stateUntil === 'number' ? snapshot.stateUntil : null;
+    this.bridgeUntil = typeof snapshot.bridgeUntil === 'number' ? snapshot.bridgeUntil : null;
+    this.tapStreak = typeof snapshot.tapStreak === 'number' ? snapshot.tapStreak : 0;
+    this.lastTapAt = typeof snapshot.lastTapAt === 'number' ? snapshot.lastTapAt : null;
+    this.dragging = snapshot.dragging === true;
+    this.sustained = snapshot.sustained === 'sleepy' ? 'sleepy' : null;
+    this.lastInteractionAt =
+      typeof snapshot.lastInteractionAt === 'number' ? snapshot.lastInteractionAt : this.now();
+    this.log(`[pet] 行为已回滚到 ${state}${reason ? `（${reason}）` : ''}`);
+    return true;
+  }
+
+  /**
+   * 失败修复：把<b>当前状态</b>的可表现指令重新下发一遍。
+   *
+   * <p>回滚只把行为层拉回去了，画面可能还停在"半截"（比如动作已落地、表情被拒）。
+   * 这条方法让上层用一次强制定向把两层的描述重新对齐，保证任何时刻读到的
+   * `behaviorState()` 与 `data-motion` / `getExpression()` 都在讲同一件事。</p>
+   *
+   * <p>一次性动作（tap / angry / wake）回滚到它们没有意义（TTL 早就在过去点了），
+   * 统一落到 idle：行为层与画面都回到 idle，仍然是一致的。</p>
+   *
+   * @returns 需要下发的（force）指令
+   */
+  repairOps(): PresentationOp[] {
+    if (this.stateValue === 'sleeping') {
+      this.sustained = 'sleepy';
+      return entryOps([
+        sustainedMotionOp('sleepy', 0, 'behavior:repair:sleep'),
+        expressionOp('sleepy', 0, 'behavior:repair:sleep:expression'),
+      ]);
+    }
+    if (this.stateValue === 'drag' && this.dragging) {
+      return entryOps([motionOp('drag', 2, 'behavior:repair:drag', { loop: true })]);
+    }
+    this.enter('idle', null);
+    this.bridgeUntil = null;
+    return this.idleOps(0, 'behavior:repair:idle');
   }
 
   /**
@@ -404,28 +543,28 @@ export class PetBehaviorStateMachine {
       case 'happy': {
         // happy 不是独立行为状态：它是"tap 状态 + happy 动作/表情"的组合
         this.enter('tap', now + TAP_HOLD_MS);
-        return [
+        return entryOps([
           motionOp('happy', 1, 'debug:force:happy', { durationMs: TAP_HOLD_MS }),
           expressionOp('happy', 1, 'debug:force:happy:expression', TAP_HOLD_MS),
-        ];
+        ]);
       }
       case 'angry': {
         const holdMs = this.jitter(ANGRY_HOLD_MS, ANGRY_HOLD_JITTER_MS);
         this.enter('angry', now + holdMs);
-        return [
+        return entryOps([
           motionOp('angry', 1, 'debug:force:angry', { durationMs: holdMs }),
           expressionOp('angry', 1, 'debug:force:angry:expression', holdMs),
-        ];
+        ]);
       }
       case 'sleeping':
         // 不伪造"已经静置 90 秒"，直接走同一套入睡路径（含持续动作登记）
         return this.enterSleeping();
       case 'wake': {
         this.enter('wake', now + WAKE_HOLD_MS);
-        return [
+        return entryOps([
           motionOp('wake', 2, 'debug:force:wake', { durationMs: WAKE_HOLD_MS }),
           expressionOp('surprised', 2, 'debug:force:wake:expression', WAKE_HOLD_MS),
-        ];
+        ]);
       }
       case 'drag':
         return this.startDrag();
@@ -453,10 +592,10 @@ export class PetBehaviorStateMachine {
       this.lastTapAt = now;
       this.enter('wake', now + WAKE_HOLD_MS);
       this.log('[pet] 行为：睡眠中被点击，惊醒');
-      return [
+      return entryOps([
         motionOp('wake', 2, 'behavior:wake', { durationMs: WAKE_HOLD_MS }),
         expressionOp('surprised', 2, 'behavior:wake:expression', WAKE_HOLD_MS),
-      ];
+      ]);
     }
 
     const gap = this.lastTapAt === null ? Number.POSITIVE_INFINITY : now - this.lastTapAt;
@@ -468,18 +607,18 @@ export class PetBehaviorStateMachine {
       const holdMs = this.jitter(ANGRY_HOLD_MS, ANGRY_HOLD_JITTER_MS);
       this.enter('angry', now + holdMs);
       this.log(`[pet] 行为：相邻间隔 <${MULTI_TAP_WINDOW_MS}ms 连点 ${MULTI_TAP_THRESHOLD} 次，生气`);
-      return [
+      return entryOps([
         motionOp('angry', 1, 'behavior:angry', { durationMs: holdMs }),
         expressionOp('angry', 1, 'behavior:angry:expression', holdMs),
-      ];
+      ]);
     }
 
     const holdMs = this.jitter(TAP_HOLD_MS, TAP_HOLD_JITTER_MS);
     this.enter('tap', now + holdMs);
-    return [
+    return entryOps([
       motionOp('tap', 1, 'behavior:tap', { durationMs: holdMs }),
       expressionOp('happy', 1, 'behavior:tap:expression', holdMs),
-    ];
+    ]);
   }
 
   /**
@@ -495,7 +634,7 @@ export class PetBehaviorStateMachine {
     this.lastTapAt = null;
     this.bridgeUntil = null;
     this.enter('drag', null);
-    return [motionOp('drag', 2, 'behavior:drag', { loop: true })];
+    return entryOps([motionOp('drag', 2, 'behavior:drag', { loop: true })]);
   }
 
   /**
@@ -531,10 +670,12 @@ export class PetBehaviorStateMachine {
    * @returns 指令列表
    */
   private idleOps(priority: Priority, reason: string, durationMs?: number): PresentationOp[] {
-    return [
+    // 回 idle 同样是"进入一个状态"：带上接管标记，才不会被上一个未到期的状态记录挡住
+    // （旧实现为此专门走"桥接 + 等下一拍"，那条补丁现在只留作心跳节流，不再承担正确性）
+    return entryOps([
       motionOp('idle', priority, reason, { loop: true, durationMs }),
       expressionOp('neutral', priority, `${reason}:expression`, durationMs),
-    ];
+    ]);
   }
 
   /**

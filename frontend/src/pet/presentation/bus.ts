@@ -157,6 +157,15 @@ export class PresentationBus {
       return 'queued';
     }
 
+    // 入态接管（规则表第 1 行）：判定是"apply"，但接管的语义还包括"旧的请求全部作废"——
+    // 排队里的都是针对上一个状态的低优先级请求，接管之后它们已经过期，
+    // 留着会在某个 TTL 到期时把上一个状态的表情/动作偷偷贴回来（正是"最终一致式闪一下"）。
+    if (op.force === true && this.queue.length > 0) {
+      const dropped = this.queue.length;
+      this.queue = [];
+      this.log(`[pet] 入态接管，作废排队中的 ${dropped} 条旧请求`);
+    }
+
     this.applyNow(op);
     return 'applied';
   }

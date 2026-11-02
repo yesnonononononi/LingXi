@@ -297,6 +297,123 @@ test('总线：低优先级指令在活动指令剩余 ≤120ms 时排队，到�
   assert.equal(bus.queuedCount, 0);
 });
 
+// ---------------------------------------------------------------- 入态接管（M6-b 第二轮必修项 1）
+
+test('规则表：入态接管（force）在"低优先级锁"未解除时仍然 apply', () => {
+  // 复刻 QA 的现场：angry 的表情记录还有 1200ms 才到期（远大于 INTERRUPT_LOCK_MS），
+  // 此时进来一条优先级 0 的睡眠指令。没有接管语义时这里返回 reject，
+  // 于是"行为层说睡了、画面永远停在 angry"。
+  const query: InterruptQuery = {
+    incoming: op({ kind: 'motion', id: 'sleepy', layer: 'base', priority: 0, durationMs: undefined, force: true }),
+    active: { layer: 'base', priority: 1, remainingMs: 1200 },
+    lastApplied: { kind: 'expression', id: 'angry', atMs: 0 },
+    nowMs: 10,
+  };
+  assert.equal(interruptDecision(query), 'apply');
+  assert.equal(suppressionReason(query), null, '接管不该被记成"重复"或"低优先级锁"');
+});
+
+test('规则表：接管不受 80ms 连点合并约束（连续两次入态都要真的落地）', () => {
+  const incoming = op({ kind: 'motion', id: 'tap', layer: 'base', priority: 1, durationMs: 480, force: true });
+  const query: InterruptQuery = {
+    incoming,
+    active: null,
+    lastApplied: { kind: 'motion', id: 'tap', atMs: 5 },
+    nowMs: 10,
+  };
+  assert.equal(interruptDecision(query), 'apply');
+  // 对照：不带 force 的"表现请求"同 80ms 内重复仍要被合并掉
+  assert.equal(interruptDecision({ ...query, incoming: op({ kind: 'motion', id: 'tap', layer: 'base', priority: 1, durationMs: 480 }) }), 'reject');
+});
+
+test('总线：高优先级记录未过期时，入态指令仍能接管目标层（且 3 秒后不回退）', () => {
+  const timer = new FakeTimer();
+  const target = new RecordingPresentation();
+  const bus = new PresentationBus(target, { timer, now: () => timer.now() });
+
+  // 现场：angry 的动作与表情都还活着（TTL 1200ms）
+  assert.equal(
+    bus.dispatch(op({ kind: 'motion', id: 'angry', layer: 'base', priority: 1, durationMs: 1200 })),
+    'applied',
+  );
+  assert.equal(
+    bus.dispatch(op({ kind: 'expression', id: 'angry', layer: 'transient', priority: 1, durationMs: 1200 })),
+    'applied',
+  );
+  timer.advance(200); // 距离 angry 到期还有 1000ms ≫ INTERRUPT_LOCK_MS
+
+  // 进入睡眠（优先级 0，但带接管标记）
+  const sleepMotion: PresentationOp = {
+    kind: 'motion', id: 'sleepy', layer: 'base', priority: 0, loop: true, fadeMs: 0, reason: 'test:force:sleep', force: true,
+  };
+  const sleepExpression: PresentationOp = {
+    kind: 'expression', id: 'sleepy', layer: 'transient', priority: 0, fadeMs: 0, reason: 'test:force:sleep', force: true,
+  };
+  assert.equal(bus.dispatch(sleepMotion), 'applied');
+  assert.equal(bus.dispatch(sleepExpression), 'applied');
+  assert.equal(target.state.motion, 'sleepy');
+  assert.equal(target.state.expression, 'sleepy');
+  // 该层旧记录必须被作废（不是"叠一层"）
+  assert.equal(bus.peek('base')?.id, 'sleepy');
+  assert.equal(bus.peek('transient')?.id, 'sleepy');
+
+  // 关键：不能只是"闪一下"。3 秒后（远超 angry 的 1000ms 残余）仍然是睡眠
+  timer.advance(3000);
+  assert.equal(target.state.motion, 'sleepy', '睡眠必须是持续态，不能被旧记录的 TTL 拽回去');
+  assert.equal(target.state.expression, 'sleepy');
+  assert.equal(bus.queuedCount, 0);
+});
+
+test('总线：反向接管（sleeping → angry）同样成立', () => {
+  const timer = new FakeTimer();
+  const target = new RecordingPresentation();
+  const bus = new PresentationBus(target, { timer, now: () => timer.now(), isSleeping: () => target.state.expression === 'sleepy' });
+  assert.equal(
+    bus.dispatch({ kind: 'motion', id: 'sleepy', layer: 'base', priority: 0, loop: true, fadeMs: 0, reason: 'test:force:sleep', force: true }),
+    'applied',
+  );
+  assert.equal(
+    bus.dispatch({ kind: 'expression', id: 'sleepy', layer: 'transient', priority: 0, fadeMs: 0, reason: 'test:force:sleep', force: true }),
+    'applied',
+  );
+  // 睡眠动作是"永不到期"的记录（remainingMs === null），纯优先级比较时它会把一切低优先级 op 拒掉
+  assert.equal(
+    bus.dispatch(op({ kind: 'motion', id: 'angry', layer: 'base', priority: 1, durationMs: 1200, force: true })),
+    'applied',
+  );
+  assert.equal(
+    bus.dispatch(op({ kind: 'expression', id: 'angry', layer: 'transient', priority: 1, durationMs: 1200, force: true })),
+    'applied',
+  );
+  assert.equal(target.state.motion, 'angry');
+  assert.equal(target.state.expression, 'angry');
+  timer.advance(1200);
+  // angry 到期后回落：没有可回落的主导指令，但也不能回到睡眠（旧记录已被接管作废）
+  assert.notEqual(target.state.expression, 'sleepy');
+});
+
+test('总线：入态接管会作废排队中的旧请求（不能在 TTL 到期时把旧状态贴回来）', () => {
+  const timer = new FakeTimer();
+  const target = new RecordingPresentation();
+  const bus = new PresentationBus(target, { timer, now: () => timer.now() });
+  bus.dispatch(op({ kind: 'expression', id: 'happy', layer: 'transient', priority: 1, durationMs: 150 }));
+  timer.advance(50); // 剩余 100ms ≤ 120 → 低优先级请求进入排队
+  assert.equal(
+    bus.dispatch(op({ kind: 'expression', id: 'blink', layer: 'transient', priority: 0, durationMs: 100 })),
+    'queued',
+  );
+  assert.equal(bus.queuedCount, 1);
+
+  // 入态接管：睡眠表情（force）
+  assert.equal(
+    bus.dispatch({ kind: 'expression', id: 'sleepy', layer: 'transient', priority: 0, fadeMs: 0, reason: 'test:force:sleep', force: true }),
+    'applied',
+  );
+  assert.equal(bus.queuedCount, 0, '接管之后旧的排队请求必须全部作废');
+  timer.advance(1000);
+  assert.equal(target.state.expression, 'sleepy');
+});
+
 test('总线：睡眠中丢弃 blink，但仍应用其它指令', () => {
   const timer = new FakeTimer();
   const target = new RecordingPresentation();

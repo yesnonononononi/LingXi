@@ -88,6 +88,19 @@ export interface PresentationOp {
   readonly layer: LayerId;
   /** 优先级。 */
   readonly priority: Priority;
+  /**
+   * **入态接管标记**（M6-b 第二轮）：`true` = 这是"行为层进入某个状态"的指令，不是"请求它让我表现一下"。
+   *
+   * <p><b>为什么必须有这个字段：</b>"进入睡眠 / 生气 / 惊醒 / 开始拖拽 / 回 idle"是<b>接管</b>语义——
+   * 它必须一定落到目标层，并把该层的旧记录作废。而"眨眼""主进程推来的一次表情"是<b>请求</b>语义，
+   * 要受优先级与打断锁约束。以前两者共用一条通道，于是"优先级 0 的睡眠"被优先级 1 的生气
+   * （TTL 未过期）挡在门外，总线静默丢弃，行为层与画面永久不一致。</p>
+   *
+   * <p><b>它不是一个可以随手用的逃生门：</b>判定仍然只发生在 `presentation/priority.ts` 的规则表里
+   * （其中有一行明文写着"带此标记 → 接管"），任何调用点都不许自己 if 绕过规则表。
+   * 目前只有 `behavior/state-machine.ts` 产出的入态指令会带上它。</p>
+   */
+  readonly force?: boolean;
   /** 持续时间（毫秒）；缺省 = 无限（base 层默认）。 */
   readonly durationMs?: number;
   /**
@@ -239,6 +252,7 @@ export function isPresentationOp(op: unknown): op is PresentationOp {
   if (candidate.durationMs !== undefined && (!Number.isFinite(candidate.durationMs) || (candidate.durationMs as number) <= 0)) {
     return false;
   }
+  if (candidate.force !== undefined && typeof candidate.force !== 'boolean') return false;
   if (candidate.value !== undefined && !Number.isFinite(candidate.value)) return false;
   if (candidate.kind === 'expression') return isExpressionId(candidate.id);
   if (candidate.kind === 'motion') return isMotionId(candidate.id);

@@ -531,3 +531,98 @@ test('行为 × 总线：优先级 0 的睡眠指令能穿过"常驻 idle"的活
   assert.equal(target.state.expression, 'sleepy');
 });
 
+// ---------------------------------------------------------------- 入态接管（M6-b 第二轮必修项 1）
+
+test('行为：所有入态指令都带接管标记（force），一条不漏', () => {
+  const collected: PresentationOp[][] = [];
+
+  const tapMachine = machine(new Clock());
+  collected.push(tapMachine.handle('tap'));
+
+  const dragMachine = machine(new Clock());
+  collected.push(dragMachine.handle('drag-start'));
+  // 松手时的桥接 idle（当时就下发，带 TTL）
+  collected.push(dragMachine.handle('drag-end'));
+
+  // tick 的桥接落地：下一拍把桥接 idle 换成常驻 idle
+  const bridgeClock = new Clock();
+  const bridgeMachine = machine(bridgeClock);
+  bridgeMachine.handle('drag-start');
+  bridgeMachine.handle('drag-end');
+  bridgeClock.advance(IDLE_BRIDGE_MS + 1);
+  collected.push(bridgeMachine.tick());
+
+  // 90 秒静置 → 入睡
+  const sleepClock = new Clock();
+  const sleeper = machine(sleepClock);
+  sleepClock.advance(SLEEP_AFTER_IDLE_MS);
+  collected.push(sleeper.tick());
+
+  // 直达通道的每一个状态
+  for (const state of PET_BEHAVIOR_DEBUG_STATES) {
+    const fresh = machine(new Clock());
+    const ops = fresh.enterState(state as PetBehaviorDebugState);
+    if (ops.length > 0) collected.push(ops);
+  }
+
+  let total = 0;
+  for (const batch of collected) {
+    for (const entryOp of batch) {
+      total += 1;
+      assert.equal(entryOp.force, true, `${entryOp.kind}:${String(entryOp.id)}（${entryOp.reason}）是入态指令，必须带 force`);
+    }
+  }
+  assert.ok(total >= 10, `入态指令样本太少（${total}），说明用例没覆盖到主要路径`);
+});
+
+test('行为：快照 / 回滚能把现场整体滚回去（表现层拒绝入态时用）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  sm.enterState('angry');
+  assert.equal(sm.state, 'angry');
+
+  const before = sm.snapshot();
+  const sleepOps = sm.enterState('sleeping');
+  assert.ok(sleepOps.length > 0);
+  assert.equal(sm.state, 'sleeping');
+  assert.equal(sm.sustainedMotion, 'sleepy');
+
+  assert.equal(sm.restore(before, 'test:reject'), true);
+  assert.equal(sm.state, 'angry', '回滚后行为层不能再宣称自己睡了');
+  assert.equal(sm.sustainedMotion, null, '持续动作登记也必须一起回滚');
+  assert.equal(sm.isSleeping, false);
+
+  // 非法快照一律拒绝且不抛（回滚本身不能把渲染层带崩）
+  assert.equal(sm.restore(null), false);
+  assert.equal(sm.restore({ ...before, state: '飞天' as unknown as typeof before.state }), false);
+  assert.equal(sm.state, 'angry', '失败的还原不能改动现场');
+});
+
+test('行为：repairOps 把回滚后的状态重新定向到画面（睡眠 / 拖拽 / 其余落 idle）', () => {
+  const clock = new Clock();
+
+  const sleeper = machine(clock);
+  sleeper.enterState('sleeping');
+  const sleepRepair = sleeper.repairOps();
+  assert.equal(sleepRepair.length, 2);
+  assert.equal(sleepRepair[0]?.id, 'sleepy');
+  assert.equal(sleepRepair[1]?.id, 'sleepy');
+  assert.ok(sleepRepair.every((entryOp) => entryOp.force === true));
+  assert.equal(sleeper.sustainedMotion, 'sleepy', '修复后持续动作登记必须还在');
+
+  const dragger = machine(clock);
+  dragger.handle('drag-start');
+  const dragRepair = dragger.repairOps();
+  assert.equal(dragRepair.length, 1);
+  assert.equal(dragRepair[0]?.id, 'drag');
+  assert.equal(dragRepair[0]?.force, true);
+
+  const angryOne = machine(clock);
+  angryOne.enterState('angry');
+  const idleRepair = angryOne.repairOps();
+  assert.equal(angryOne.state, 'idle', '一次性动作回滚到它没有意义，统一落到 idle');
+  assert.equal(idleRepair[0]?.id, 'idle');
+  assert.equal(idleRepair[1]?.id, 'neutral');
+  assert.ok(idleRepair.every((entryOp) => entryOp.force === true));
+});
+
