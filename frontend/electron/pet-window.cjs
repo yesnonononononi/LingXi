@@ -709,6 +709,38 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath }) {
     return { ok: true };
   });
 
+  /**
+   * 渲染层：弹出原生右键菜单（M6-b 的 O3 + D-B2）。
+   *
+   * <p><b>为什么关闭入口收敛到这里：</b>以前有两套手势（双击立绘 + 悬停显形的 × 按钮），
+   * 而"连点 3 下生气"也要用连点，于是双击必然先记一次 tap 再被关闭抢走语义。
+   * 现在关闭/显隐只走原生菜单：DOM 侧不再有任何关闭元素，也不再有双击语义。</p>
+   *
+   * <p>用 `Menu.popup()` 而不是自绘菜单：原生菜单不占渲染层的合成预算，
+   * 而且窗口本身是 `focusable: false`，自绘菜单会先要一次焦点、把用户的输入焦点抢走。</p>
+   */
+  ipcMain.on('pet:context-menu', (event) => {
+    if (!isFromPet(event)) return;
+    const { Menu } = electron();
+    const menu = Menu.buildFromTemplate([
+      {
+        label: isVisible() ? '隐藏桌宠' : '显示桌宠',
+        click: () => toggle(),
+      },
+      {
+        // 显式给一个"关掉画面但留着入口"的中间档：桌宠是常驻件，误点退出代价太高
+        label: '关闭桌宠（可从托盘恢复）',
+        click: () => hide(),
+      },
+      { type: 'separator' },
+      {
+        label: '退出 LX',
+        click: () => electron().app.quit(),
+      },
+    ]);
+    menu.popup({ window: win || undefined });
+  });
+
   return {
     create,
     show,

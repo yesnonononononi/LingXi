@@ -56,10 +56,17 @@ contextBridge.exposeInMainWorld('petAPI', {
    */
   setHit: (hit) => ipcRenderer.send('pet:set-hit', hit === true),
   /**
-   * 关掉桌宠（隐藏，不销毁）。
+   * 关掉桌宠（隐藏，不销毁）。保留给主进程内部与调试用；
+   * **用户手势走 {@link openContextMenu}**（M6-b：关闭入口唯一）。
    * @returns Promise<{ ok: boolean, error?: string }>
    */
   close: () => ipcRenderer.invoke('pet:close'),
+  /**
+   * 弹出原生右键菜单（显示/隐藏、关闭、退出）——M6-b 起这是关闭/显隐的唯一入口。
+   *
+   * 单向 `send`：菜单项的点击由主进程执行，渲染层不需要回执。
+   */
+  openContextMenu: () => ipcRenderer.send('pet:context-menu'),
   /**
    * 订阅主进程指令。
    * @param callback 收到 { type, ... } 指令时调用
