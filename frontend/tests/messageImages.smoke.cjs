@@ -33,13 +33,13 @@ app.whenReady().then(async () => {
   await fs.writeFile(path.join(output, 'App.vue'), `<script setup>
 import {ref, nextTick} from 'vue';
 import ChatMessageItem from '../../../src/components/chat/ChatMessageItem.vue';
-import ModelInvocationField from '../../../src/components/model/ModelInvocationField.vue';
+import ModelAdvancedOptions from '../../../src/components/model/ModelAdvancedOptions.vue';
 import {buildBubbleFromTurnView,projectTurnView} from '../../../src/views/chat/blockProjection';
 import {useTheme} from '../../../src/composables/useTheme';
 import {useI18n} from '../../../src/i18n';
 import '../../../src/style.css';
 const dark = ref(false);
-const provider = ref('');const showConfig = ref(false);
+const provider = ref('');const vision = ref(false);const showConfig = ref(false);
 const message = ref({id:'image-answer',role:'assistant',timestamp:0,content:'',isComplete:true});
 useI18n().locale.value='zh-CN';
 const {setTheme}=useTheme();
@@ -48,8 +48,9 @@ window.setMessage=async(content,running=false)=>{message.value.content=content;m
 window.setDark=async(value)=>{dark.value=value;setTheme(value?'dark':'light');await nextTick();};
 window.setStructured=async(view)=>{message.value=buildBubbleFromTurnView(view);await nextTick();};
 window.updateStructured=async(view)=>{projectTurnView(message.value,view);await nextTick();};
-window.showConfig=()=>{showConfig.value=true;};window.selectedProvider=()=>provider.value;
-</script><template><main style="max-width:720px;margin:24px auto;padding:0 16px"><ModelInvocationField v-if="showConfig" v-model="provider" :is-dark="dark" /><ChatMessageItem :message="message" :is-dark="dark" /></main></template>`);
+window.showConfig=()=>{showConfig.value=true;};window.selectedProvider=()=>provider.value;window.visionEnabled=()=>vision.value;
+window.setProvider=value=>provider.value=value;
+</script><template><main style="max-width:720px;margin:24px auto;padding:0 16px"><ModelAdvancedOptions v-if="showConfig" v-model:provider="provider" v-model:vision="vision" :is-dark="dark" /><ChatMessageItem :message="message" :is-dark="dark" /></main></template>`);
   await fs.writeFile(path.join(output, 'entry.js'), `import {createApp,nextTick} from 'vue';
 window.runtimeErrors=[];window.addEventListener('error',event=>{if(event.message)window.runtimeErrors.push(event.message);});
 window.flush=async()=>{await nextTick();await new Promise(resolve=>setTimeout(resolve,120));};
@@ -65,6 +66,9 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
       }
       if (mutation === 'projection' && id.replaceAll('\\','/').endsWith('/src/views/chat/blockProjection.ts')) {
         return source.replace('buffer.imageUrls = block.imageUrls ?? []', 'buffer.imageUrls = []');
+      }
+      if (mutation === 'advanced' && id.replaceAll('\\','/').endsWith('/src/components/model/ModelAdvancedOptions.vue')) {
+        return source.replace('<details class=', '<details open class=');
       }
     },
   },vue()],server:{host:'127.0.0.1',port:0,proxy:{'/a/images':base}},logLevel:'error'});
@@ -154,10 +158,43 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   await evaluate('document.querySelector("[data-testid=response-images] .message-image-surface").click();window.flush()');
   assert.equal(await evaluate('document.querySelector(".message-image-preview").open'),true);
   await evaluate('document.querySelector(".message-image-preview button").click();window.showConfig();window.flush()');
-  await evaluate('document.querySelector("[data-testid=model-invocation]").value="default-image-model";document.querySelector("[data-testid=model-invocation]").dispatchEvent(new Event("change",{bubbles:true}));window.flush()');
+  await evaluate('window.scrollTo(0,0);window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=model-advanced-options]").open'),false);
+  assert.equal(await evaluate('document.querySelector("[data-testid=model-invocation]").checkVisibility()'),false);
+  await fs.writeFile(path.join(output,'advanced-collapsed.png'),(await window.webContents.capturePage()).toPNG());
+  await evaluate('document.querySelector("[data-testid=model-advanced-options] summary").click();window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=model-invocation]").checkVisibility()'),true);
+  assert.equal(await evaluate('document.querySelector("[data-testid=model-invocation]").tagName'),'BUTTON');
+  assert.equal(await evaluate('document.querySelector("[data-testid=model-invocation]").textContent.trim()'),'文本模型');
+  await evaluate('document.querySelector("[data-testid=model-invocation]").click();window.flush()');
+  assert.deepEqual(await evaluate('[...document.querySelectorAll(".settings-select-menu [role=option]")].map(option=>option.querySelector("span span").textContent)'),['文本模型','图片模型']);
+  await new Promise(resolve=>setTimeout(resolve,240));
+  await fs.writeFile(path.join(output,'model-type-menu.png'),(await window.webContents.capturePage()).toPNG());
+  await evaluate('document.querySelector(".settings-select-menu [data-value=\\"default-image-model\\"]").click();document.querySelector("[data-testid=model-vision]").click();window.flush()');
+  assert.equal(await evaluate('window.selectedProvider()'),'default-image-model');
+  assert.equal(await evaluate('window.visionEnabled()'),true);
+  await evaluate('document.querySelector("[data-testid=model-invocation]").click();window.flush()');
+  await evaluate('document.querySelector("[data-testid=model-advanced-options] summary").click();window.flush()');
+  await waitFor('document.querySelector(".settings-select-menu")===null');
+  assert.equal(await evaluate('document.querySelector("[data-testid=model-invocation]").getAttribute("aria-expanded")'),'false');
+  await evaluate('document.querySelector("[data-testid=model-advanced-options] summary").click();window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=model-vision]").checked'),true);
   assert.equal(await evaluate('window.selectedProvider()'),'default-image-model');
   await fs.writeFile(path.join(output,'model-image-mode.png'),(await window.webContents.capturePage()).toPNG());
+  await evaluate('window.setProvider("anthropic-streaming");window.flush()');
+  assert.equal(await evaluate('document.querySelector("[data-testid=model-invocation]").textContent.trim()'),'文本模型');
+  assert.equal(await evaluate('window.selectedProvider()'),'anthropic-streaming');
+  await evaluate('document.querySelector("[data-testid=model-invocation]").focus();document.querySelector("[data-testid=model-invocation]").dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowDown",bubbles:true}));window.flush()');
+  await evaluate('document.querySelector("[data-testid=model-invocation]").dispatchEvent(new KeyboardEvent("keydown",{key:"End",bubbles:true}));window.flush()');
+  await evaluate('document.querySelector("[data-testid=model-invocation]").dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true}));window.flush()');
+  assert.equal(await evaluate('window.selectedProvider()'),'default-image-model');
+  await evaluate('window.setDark(true);window.flush()');
+  await fs.writeFile(path.join(output,'advanced-dark.png'),(await window.webContents.capturePage()).toPNG());
+  window.setSize(360,820);
+  await evaluate('window.flush()');
+  assert.equal(await evaluate('document.documentElement.scrollWidth<=window.innerWidth'),true);
+  await fs.writeFile(path.join(output,'advanced-narrow.png'),(await window.webContents.capturePage()).toPNG());
   assert.deepEqual(await evaluate('window.runtimeErrors'),[]);
-  console.log('消息图片：实际消息组件、加载/重试、预览、流式复用、深浅主题、窄屏、Data URL 与链接行为通过。');
+  console.log('消息图片与模型高级选项：折叠保值、文本/图片选择、键盘操作、菜单随折叠关闭、主题、窄屏及图片预览通过。');
   clearTimeout(deadline);window.destroy();await vite.close();endpoint.close();app.exit(0);
 }).catch(async error=>{console.error(error);clearTimeout(deadline);if(window)window.destroy();if(vite)await vite.close();if(endpoint)endpoint.close();app.exit(1);});

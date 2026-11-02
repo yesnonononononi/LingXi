@@ -3,8 +3,7 @@ import {computed} from 'vue';
 import {useModelsTab} from './useModelsTab';
 import {useTheme} from '../../../composables/useTheme';
 import {useI18n} from '../../../i18n';
-import ModelVisionField from '../../../components/model/ModelVisionField.vue';
-import ModelInvocationField from '../../../components/model/ModelInvocationField.vue';
+import ModelAdvancedOptions from '../../../components/model/ModelAdvancedOptions.vue';
 import ProviderIcon from '../../../components/model/ProviderIcon.vue';
 import DropUpSelect from '../../../components/common/DropUpSelect.vue';
 import type {SelectOption} from '../../../types/ui';
@@ -529,8 +528,7 @@ const addRowClass = computed(() => [
           </div>
         </div>
 
-        <ModelVisionField v-model="modelForm.vision" :is-dark="isDark" />
-        <ModelInvocationField v-model="modelForm.provider" :is-dark="isDark" />
+        <ModelAdvancedOptions v-model:vision="modelForm.vision" v-model:provider="modelForm.provider" :is-dark="isDark" />
 
         <div v-if="modelFormError" class="text-xs text-red-500 font-medium">{{ modelFormError }}</div>
       </div>

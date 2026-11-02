@@ -5,8 +5,7 @@ import {ModelAPI, ProviderAPI} from '../../services/api';
 import {useTheme} from '../../composables/useTheme';
 import {useConfirm} from '../../composables/useConfirm';
 import type {ModelConfigPayload, OpenAIModelItem, ProviderConfigVO} from '../../types/chat';
-import ModelVisionField from '../../components/model/ModelVisionField.vue';
-import ModelInvocationField from '../../components/model/ModelInvocationField.vue';
+import ModelAdvancedOptions from '../../components/model/ModelAdvancedOptions.vue';
 import {isOk} from '../../utils/api';
 import {t} from '../../i18n';
 
@@ -413,8 +412,7 @@ onBeforeUnmount(() => {
             >{{ clearing ? t('model.clearing') : t('model.clearKey') }}</button>
           </div>
 
-          <ModelVisionField v-model="form.vision" :is-dark="isDark" />
-          <ModelInvocationField v-model="form.provider" :is-dark="isDark" />
+          <ModelAdvancedOptions v-model:vision="form.vision" v-model:provider="form.provider" :is-dark="isDark" />
           <p v-if='formError' class='text-lx-fs-sm text-red-400'>{{ formError }}</p>
 
                     <div class='flex justify-end gap-2 pt-2'>
