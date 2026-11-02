@@ -16,7 +16,7 @@ import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalCheckpointMaintenance;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
@@ -49,7 +49,7 @@ class ConcurrentCheckpointReadAndReclaimTest {
     @Test
     @Timeout(120)
     void readingStaysConsistentWhileCleanupReclaimsTheSameExecution() throws Exception {
-        SqliteTestDatabase database = SqliteTestDatabase.create("concurrent-read-reclaim");
+        H2TestDatabase database = H2TestDatabase.create("concurrent-read-reclaim");
         Path dataDir = ExecutionRepositoryTestFactory.tempDataDir();
         ObjectMapper mapper = new JsonConfig().objectMapper();
         // 读取窗口放大 2ms：去掉互斥后这里几乎必然踩到「文件已被删」。
@@ -62,7 +62,7 @@ class ConcurrentCheckpointReadAndReclaimTest {
             MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
             factory.setDataSource(database);
             factory.setConfiguration(configuration);
-            SqlSessionTemplate sql = SqliteTestDatabase.sqlSession(factory.getObject());
+            SqlSessionTemplate sql = H2TestDatabase.sqlSession(factory.getObject());
             ExecutionMapper executions = sql.getMapper(ExecutionMapper.class);
             ExecutionRepositoryImpl repository = new ExecutionRepositoryImpl(executions);
             LocalCheckpointMaintenance maintenance = new LocalCheckpointMaintenance(store, repository);

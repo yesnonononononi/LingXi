@@ -30,7 +30,7 @@ import com.summit.dp.session.infrastructure.persistence.po.SessionMessagePO;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionMessageRepositoryImpl;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
@@ -84,7 +84,7 @@ class ChatAdmissionTransactionTest {
     private static final String EXECUTION_ID = "2105000000000000001";
     private static final long EXECUTION_ID_NUMERIC = 2105000000000000001L;
 
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private TransactionTemplate transaction;
     private ExecutionMapper executionMapper;
     private ChatTurnMapper chatTurnMapper;
@@ -94,7 +94,7 @@ class ChatAdmissionTransactionTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("ChatAdmissionTransactionTest");
+        database = H2TestDatabase.create("ChatAdmissionTransactionTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         MyBatisTypeHandlers.registerAll(configuration);
         // 不要关驼峰转下划线：SessionMessagePO 没有 @TableField，靠这个开关映射 session_id。
@@ -110,7 +110,7 @@ class ChatAdmissionTransactionTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate template = SqliteTestDatabase.sqlSession(sessionFactory);
+        SqlSessionTemplate template = H2TestDatabase.sqlSession(sessionFactory);
         executionMapper = template.getMapper(ExecutionMapper.class);
         chatTurnMapper = template.getMapper(ChatTurnMapper.class);
         sessionMessageMapper = template.getMapper(SessionMessageMapper.class);

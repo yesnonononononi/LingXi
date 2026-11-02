@@ -21,7 +21,7 @@ import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.application.service.impl.ChatTurnServiceImpl;
@@ -95,7 +95,7 @@ class StartupFailureEndToEndTest {
         }
     }
 
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private TransactionTemplate transaction;
     private ExecutionMapper executionMapper;
     private ChatTurnMapper chatTurnMapper;
@@ -105,7 +105,7 @@ class StartupFailureEndToEndTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("StartupFailureEndToEndTest");
+        database = H2TestDatabase.create("StartupFailureEndToEndTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
 
         MyBatisTypeHandlers.registerAll(configuration);

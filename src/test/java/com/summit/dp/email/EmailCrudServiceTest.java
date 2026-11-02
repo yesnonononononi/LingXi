@@ -33,7 +33,7 @@ import com.summit.dp.email.infrastructure.repository.EmailRepositoryImpl;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.workflow.infrastructure.lifecycle.SubAgentCompleteNotifier;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.EmailLoopInterceptor;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -75,7 +75,7 @@ import static org.mockito.Mockito.*;
  */
 class EmailCrudServiceTest {
 
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private EmailMapper emailMapper;
     private EmailMessageMapper messageMapper;
     private EmailRepository emailRepository;
@@ -84,7 +84,7 @@ class EmailCrudServiceTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("EmailCrudServiceTest");
+        database = H2TestDatabase.create("EmailCrudServiceTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
 
@@ -93,13 +93,13 @@ class EmailCrudServiceTest {
         configuration.addMapper(EmailMessageMapper.class);
         // 应用侧 MybatisPlusConfig 同款分页插件：selectPage 需要它做 LIMIT 改写与 count
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
-        interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.SQLITE));
+        interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.H2));
         configuration.addInterceptor(interceptor);
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate session = SqliteTestDatabase.sqlSession(sessionFactory);
+        SqlSessionTemplate session = H2TestDatabase.sqlSession(sessionFactory);
         emailMapper = session.getMapper(EmailMapper.class);
         messageMapper = session.getMapper(EmailMessageMapper.class);
         emailRepository = new EmailRepositoryImpl(emailMapper);

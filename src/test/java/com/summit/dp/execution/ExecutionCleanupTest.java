@@ -28,7 +28,7 @@ import com.summit.dp.session.application.service.SessionMessageQueryService;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.vo.SessionMessageVO;
 import com.summit.dp.task.infrastructure.persistence.mapper.TaskMapper;
 import com.summit.dp.task.infrastructure.persistence.po.TaskPO;
@@ -562,11 +562,11 @@ class ExecutionCleanupTest {
     @Configuration
     @EnableTransactionManagement
     static class Config {
-        @Bean(destroyMethod = "shutdown") SqliteTestDatabase database() {
-            return SqliteTestDatabase.create("ExecutionCleanupTest");
+        @Bean(destroyMethod = "shutdown") H2TestDatabase database() {
+            return H2TestDatabase.create("ExecutionCleanupTest");
         }
 
-        @Bean PlatformTransactionManager transactionManager(SqliteTestDatabase database) {
+        @Bean PlatformTransactionManager transactionManager(H2TestDatabase database) {
             return new DataSourceTransactionManager(database);
         }
 
@@ -574,7 +574,7 @@ class ExecutionCleanupTest {
             return ExecutionRepositoryTestFactory.tempDataDir();
         }
 
-        @Bean SqlSessionTemplate sql(SqliteTestDatabase database) throws Exception {
+        @Bean SqlSessionTemplate sql(H2TestDatabase database) throws Exception {
             MybatisConfiguration configuration = new MybatisConfiguration();
             configuration.setMapUnderscoreToCamelCase(true);
             MyBatisTypeHandlers.registerAll(configuration);
@@ -583,7 +583,7 @@ class ExecutionCleanupTest {
             MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
             factory.setDataSource(database);
             factory.setConfiguration(configuration);
-            return SqliteTestDatabase.sqlSession(factory.getObject());
+            return H2TestDatabase.sqlSession(factory.getObject());
         }
 
         @Bean ExecutionRepository repository(SqlSessionTemplate sql) {

@@ -9,7 +9,7 @@ import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,7 +26,7 @@ import static org.mockito.Mockito.mock;
 
 /** 真实持久化守住迁移后的回滚、挂起代际、终态与版本竞争。 */
 class ExecutionCheckpointMigrationTest {
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private ExecutionMapper mapper;
     private ExecutionRepositoryImpl repository;
     private ExecutionCheckpointService checkpoints;
@@ -34,7 +34,7 @@ class ExecutionCheckpointMigrationTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("ExecutionCheckpointMigrationTest");
+        database = H2TestDatabase.create("ExecutionCheckpointMigrationTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
 
@@ -43,7 +43,7 @@ class ExecutionCheckpointMigrationTest {
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
-        mapper = SqliteTestDatabase.sqlSession(factory.getObject()).getMapper(ExecutionMapper.class);
+        mapper = H2TestDatabase.sqlSession(factory.getObject()).getMapper(ExecutionMapper.class);
         repository = new ExecutionRepositoryImpl(mapper);
         checkpoints = new ExecutionCheckpointService(repository, mock(ApplicationEventPublisher.class));
         transactions = new TransactionTemplate(new DataSourceTransactionManager(database));

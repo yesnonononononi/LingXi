@@ -27,7 +27,7 @@ import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionMessageRepositoryImpl;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.vo.block.TurnViewVO;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
@@ -71,7 +71,7 @@ class ResumeSupplementTest {
     private final ChatTurnService turns = mock(ChatTurnService.class);
     private final SuspendedExecutionResumer resumer = mock(SuspendedExecutionResumer.class);
     private final ExecutionResumeCoordinator coordinator = mock(ExecutionResumeCoordinator.class);
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private SessionMessageRepositoryImpl messages;
     private ExecutionResumeTaskRepositoryImpl tasks;
     private LocalExecutionRepository executions;
@@ -80,7 +80,7 @@ class ResumeSupplementTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("ResumeSupplementTest");
+        database = H2TestDatabase.create("ResumeSupplementTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(SessionMapper.class);
@@ -91,7 +91,7 @@ class ResumeSupplementTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate template = SqliteTestDatabase.sqlSession(sessionFactory);
+        SqlSessionTemplate template = H2TestDatabase.sqlSession(sessionFactory);
         SessionMapper sessions = template.getMapper(SessionMapper.class);
         sessions.insert(SessionPO.builder().id(SESSION_ID).name("补充测试").build());
         messages = new SessionMessageRepositoryImpl(template.getMapper(SessionMessageMapper.class), sessions);

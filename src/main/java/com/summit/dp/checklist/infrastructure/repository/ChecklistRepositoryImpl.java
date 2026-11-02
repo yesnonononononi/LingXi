@@ -72,19 +72,7 @@ public class ChecklistRepositoryImpl extends AbstractRepository<Checklist, Check
         }
     }
 
-    /**
-     * 更新清单聚合行。
-     *
-     * <p><b>不是裸 {@code updateById}</b>：写入条件取「本线程最后一次读到的清单行」的
-     * {@code progress_version} 与 {@code status}，只有库内仍是这份快照才落库，否则报「进展已变化」。
-     * SQLite 没有行锁，行级互斥由 {@link ChecklistWriteMonitor}（进程内写监视器，持有到事务结束）
-     * 承担；这条带条件的 UPDATE 是第二道防线：任何绕过监视器、或基于过期快照的写入都会立刻失败，
-     * 而不是静默覆盖别人刚提交的推进结果。</p>
-     *
-     * <p>为什么用「读到的快照」而不是当前行的值：聚合写入前领域对象已把
-     * {@code progressVersion} 自增（内存值 = 写后的值），拿它当条件必然不匹配；
-     * 只有读时的快照才是乐观令牌的正确取值。</p>
-     */
+    /** 清单写监视器持有到事务结束，避免多步聚合判断与提交交错。 */
     @Override
     public void updateChecklist(Checklist checklist) {
         if (checklist == null) {
@@ -164,12 +152,7 @@ public class ChecklistRepositoryImpl extends AbstractRepository<Checklist, Check
         return Optional.ofNullable(row).map(this::toModel);
     }
 
-    /**
-     * 取活动清单并取得本事务的清单写权（等价于旧的 {@code SELECT ... FOR UPDATE}）。
-     *
-     * <p>SQLite 没有行锁，改用进程内写监视器：锁持有到事务结束，竞争方的读会等到提交之后，
-     * 因此「读进度 → 判断是否收尾 → 写回」不会基于过期快照做决定。</p>
-     */
+    /** 清单写监视器持有到事务结束，避免多步聚合判断与提交交错。 */
     @Override
     public Optional<Checklist> findActiveBySessionIdForUpdate(long sessionId) {
         ChecklistWriteMonitor.acquireForCurrentTransaction();

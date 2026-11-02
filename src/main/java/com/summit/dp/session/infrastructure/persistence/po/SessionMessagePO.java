@@ -30,7 +30,7 @@ public class SessionMessagePO {
     /** 消息所属的业务轮次 ID（关联 chat_turn.id）；旧数据为 null 表示归属未知 */
     private Long turnId;
     private String type;
-    /** 展示消息正文（含长回答）：H2 侧 CLOB，SQLite 侧 TEXT。 */
+    /** 展示消息正文（含长回答）：按 CLOB 保存。 */
     @TableField(jdbcType = JdbcType.CLOB, typeHandler = LargeTextTypeHandler.class)
     private String content;
     private Instant createTime;

@@ -4,7 +4,7 @@ import com.summit.dp.shared.config.H2SchemaInitializer;
 import com.summit.dp.shared.persistence.H2ExceptionTranslator;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
 import com.summit.dp.shared.storage.StorageDataSourceKeys;
-import com.summit.dp.shared.storage.StorageEngine;
+import com.summit.dp.shared.storage.H2Storage;
 import com.summit.dp.shared.storage.StorageLayout;
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -56,10 +56,10 @@ public final class H2TestDatabase implements DataSource, AutoCloseable {
 
     private H2TestDatabase(Path directory) {
         this.directory = directory;
-        this.databaseFile = directory.resolve(StorageEngine.H2.databaseFileName());
+        this.databaseFile = directory.resolve(H2Storage.DATABASE_FILE_NAME);
         this.delegate = new DriverManagerDataSource();
-        delegate.setDriverClassName(StorageEngine.H2.driverClassName());
-        delegate.setUrl(StorageDataSourceKeys.h2Url(new StorageLayout(directory, StorageEngine.H2)));
+        delegate.setDriverClassName(H2Storage.DRIVER_CLASS_NAME);
+        delegate.setUrl(StorageDataSourceKeys.h2Url(new StorageLayout(directory)));
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown, "h2-test-db-cleanup"));
     }
 
@@ -97,6 +97,12 @@ public final class H2TestDatabase implements DataSource, AutoCloseable {
         } catch (IOException e) {
             throw new UncheckedIOException("测试用 H2 库目录创建失败: prefix=" + prefix, e);
         }
+    }
+
+    /** Spring 自建连接池时仍使用隔离的文件库，清理由退出钩子负责。 */
+    public static String newDatasourceUrl(String prefix) {
+        H2TestDatabase database = createWithoutSchema(prefix);
+        return StorageDataSourceKeys.h2Url(new StorageLayout(database.directory()));
     }
 
     /** 执行一段 SQL（可含多条语句），用于按需构造形态或校验语句。 */
@@ -153,7 +159,7 @@ public final class H2TestDatabase implements DataSource, AutoCloseable {
     public MybatisConfiguration configuration(Class<?>... mappers) {
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
-        MyBatisTypeHandlers.registerAll(configuration, StorageEngine.H2);
+        MyBatisTypeHandlers.registerAll(configuration);
         for (Class<?> mapper : mappers) {
             configuration.addMapper(mapper);
         }

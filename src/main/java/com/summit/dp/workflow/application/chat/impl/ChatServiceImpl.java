@@ -174,8 +174,7 @@ public class ChatServiceImpl implements ChatService {
      */
     private RuntimeContext commitUserMessage(RuntimeContext context) {
         try {
-            // 受理事务开始前先把运行配置冻结（独立提交）：单写者 SQLite 下「受理已写库后再另开
-            // 写连接分配配置版本」必然抢锁失败，见方案「业务 SQL、锁与事务适配」一.6。
+            // 运行配置先独立冻结，受理事务再引用该版本，避免恢复引用未提交的配置。
             requestPreparer.freezeRuntimeConfigurations(context);
             return chatExecutor.admit(context);
         } catch (RuntimeException commitFailure) {

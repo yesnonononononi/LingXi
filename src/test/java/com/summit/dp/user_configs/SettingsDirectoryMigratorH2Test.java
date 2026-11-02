@@ -59,7 +59,7 @@ class SettingsDirectoryMigratorH2Test {
     @DisplayName("H2 引擎下改数据目录：明确拒绝并提示离线迁移工具，不得把 SQL 语法错误抛给用户")
     void h2EngineRejectsDataDirMigrationWithActionableMessage() throws IOException {
         database = H2TestDatabase.create("migrator-h2");
-        SettingsDirectoryMigrator migrator = new SettingsDirectoryMigrator(database, checkpointStore());
+        SettingsDirectoryMigrator migrator = new SettingsDirectoryMigrator();
         Path from = newTempDirectory("migrator-from");
         Path to = newTempDirectory("migrator-to");
 
@@ -75,7 +75,7 @@ class SettingsDirectoryMigratorH2Test {
     @DisplayName("H2 引擎下搬迁失败不得动目标目录里上一次搬迁留下的库文件（不留半套产物）")
     void h2EngineMigrationFailureLeavesTargetDirectoryUntouched() throws IOException {
         database = H2TestDatabase.create("migrator-h2-side-effect");
-        SettingsDirectoryMigrator migrator = new SettingsDirectoryMigrator(database, checkpointStore());
+        SettingsDirectoryMigrator migrator = new SettingsDirectoryMigrator();
         Path from = newTempDirectory("migrator-from");
         Path to = newTempDirectory("migrator-to");
         // 目标目录里放一个「上一次搬迁的残留」：按 ensureReusable 的规则它是允许存在的。
@@ -94,7 +94,7 @@ class SettingsDirectoryMigratorH2Test {
     @DisplayName("同目录（from == to）依然是空操作：不假装搬迁也不报错")
     void sameDirectoryIsNoOp() throws IOException {
         database = H2TestDatabase.create("migrator-h2-noop");
-        SettingsDirectoryMigrator migrator = new SettingsDirectoryMigrator(database, checkpointStore());
+        SettingsDirectoryMigrator migrator = new SettingsDirectoryMigrator();
         Path same = newTempDirectory("migrator-same");
         assertDoesNotThrow(() -> migrator.migrateDataDir(same.toString(), same.toString()),
                 "数据目录未变化时必须直接返回（H2 下同样不该报错）");

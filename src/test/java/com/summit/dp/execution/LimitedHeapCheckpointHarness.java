@@ -17,7 +17,7 @@ import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionContextMapper;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionContextRepositoryImpl;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
 import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
@@ -84,16 +84,16 @@ public final class LimitedHeapCheckpointHarness {
 
         PeakHeapSampler sampler = new PeakHeapSampler();
         sampler.start();
-        SqliteTestDatabase database = null;
+        H2TestDatabase database = null;
         try {
-            database = SqliteTestDatabase.create("heap-harness");
+            database = H2TestDatabase.create("heap-harness");
             ObjectMapper plainMapper = new JsonConfig().objectMapper();
             // 检查点这条路径用「只数次数、不保留实参」的计数 mapper。
             // 之前用 Mockito spy：它把每次调用的**实参**留在调用历史里，整段 JSON 字符串因此被钉在堆上，
             // 于是「字符串变异必然 OOM」这个结论其实是被计量方式污染的（复核 R5）。
             CountingObjectMapper checkpointMapper = new CountingObjectMapper(new JsonConfig().objectMapper());
 
-            SqlSessionTemplate sql = SqliteTestDatabase.sqlSession(
+            SqlSessionTemplate sql = H2TestDatabase.sqlSession(
                     database.sessionFactory(ExecutionMapper.class, SessionContextMapper.class));
             ExecutionMapper executions = sql.getMapper(ExecutionMapper.class);
             LocalFileCheckpointStore checkpointStore =

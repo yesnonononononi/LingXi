@@ -9,7 +9,7 @@ import com.summit.core.agent.ExecutionState;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.execution.application.port.ExecutionActivity;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.toolcall.domain.model.ToolCall;
 import com.summit.dp.toolcall.domain.model.ToolCallStatus;
 import com.summit.dp.toolcall.domain.model.ToolCallType;
@@ -37,7 +37,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class ToolCallReadinessTest {
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private ToolCallRepositoryImpl tools;
     private ToolCallReadinessService readiness;
     private final ExecutionRepository executions = mock(ExecutionRepository.class);
@@ -48,7 +48,7 @@ class ToolCallReadinessTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("ToolCallReadinessTest");
+        database = H2TestDatabase.create("ToolCallReadinessTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
 
@@ -58,7 +58,7 @@ class ToolCallReadinessTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         tools = new ToolCallRepositoryImpl(
-                SqliteTestDatabase.sqlSession(factory.getObject()).getMapper(ToolCallMapper.class),
+                H2TestDatabase.sqlSession(factory.getObject()).getMapper(ToolCallMapper.class),
                 new ObjectMapper(), ToolCallPersistenceTest.buildCardAvailabilityPolicy());
         when(executions.findById("11")).thenReturn(Optional.of(execution));
         doAnswer(invocation -> {

@@ -10,7 +10,7 @@ import com.summit.core.agent.ExecutionState;
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.workflow.infrastructure.harness.LocalExecutionRepository;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
@@ -41,13 +41,13 @@ class ResumeGenerationTest {
     private static final long SESSION_ID = 800L;
     private static final long EXECUTION_ID = 1000L;
 
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private ExecutionMapper mapper;
     private LocalExecutionRepository repository;
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("ResumeGenerationTest");
+        database = H2TestDatabase.create("ResumeGenerationTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
 
@@ -57,7 +57,7 @@ class ResumeGenerationTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate session = SqliteTestDatabase.sqlSession(sessionFactory);
+        SqlSessionTemplate session = H2TestDatabase.sqlSession(sessionFactory);
         mapper = session.getMapper(ExecutionMapper.class);
         repository = ExecutionRepositoryTestFactory.create(mapper, new ObjectMapper());
     }

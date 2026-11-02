@@ -3,7 +3,7 @@ package com.summit.dp.shared;
 import com.summit.dp.shared.config.H2SchemaInitializer;
 import com.summit.dp.shared.persistence.schema.SchemaScript;
 import com.summit.dp.shared.persistence.schema.SchemaScriptLoader;
-import com.summit.dp.shared.storage.StorageEngine;
+import com.summit.dp.shared.storage.H2Storage;
 import com.summit.dp.shared.support.H2TestDatabase;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -191,7 +191,7 @@ class H2SchemaMigrationTest {
 
     /** classpath 上的 H2 基线脚本（断言只有一个版本文件，避免测试对多版本语义做假设）。 */
     private SchemaScript baselineScript() {
-        List<SchemaScript> scripts = loader.load(StorageEngine.H2.schemaLocation());
+        List<SchemaScript> scripts = loader.load(H2Storage.SCHEMA_LOCATION);
         assertEquals(1, scripts.size(), "H2 基线当前只有一个版本脚本: " + scripts);
         return scripts.get(0);
     }

@@ -11,12 +11,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 
-/**
- * {@link LocalDateTime} ↔ H2 {@code TIMESTAMP(3)} 的读写。
- *
- * <p>语义与 SQLite 侧 {@code LocalDateTimeTextTypeHandler} 一致：本地时间先按 JVM 默认时区折成瞬时
- * 再以 UTC 落库，读回时按同一时区还原；精度统一毫秒。跨引擎的等价性由同一个测试双跑断言。</p>
- */
+/** 本地时间按 JVM 时区换算瞬时，再以 UTC 时间戳存储。 */
 @MappedTypes(LocalDateTime.class)
 public class H2LocalDateTimeTypeHandler extends BaseTypeHandler<LocalDateTime> {
 

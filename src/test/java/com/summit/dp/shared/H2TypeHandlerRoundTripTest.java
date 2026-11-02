@@ -6,9 +6,7 @@ import com.summit.dp.session.infrastructure.persistence.mapper.SessionContextMap
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionContextPO;
 import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
-import com.summit.dp.shared.persistence.TimeTextCodec;
 import com.summit.dp.shared.support.H2TestDatabase;
-import com.summit.dp.shared.support.SqliteTestDatabase;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
@@ -22,6 +20,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,20 +29,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 大文本与时间的跨引擎往返：同一断言在 H2 与 SQLite 上各跑一遍。
- *
- * <p>两条硬要求：</p>
- * <ul>
- *   <li>10 MiB 级 {@code session_context.content} 在 H2 的 CLOB 路径上写入/读回<b>逐字相等</b>；</li>
- *   <li>{@code Instant}/{@code LocalDateTime} 与 SQLite 的 {@link TimeTextCodec} 语义等价 ——
- *       H2 侧只要偏了时区（例如丢了 {@code SET TIME ZONE 'UTC'} 或没传 UTC Calendar），
- *       列里的 UTC 文本就会差 8 小时，这里立刻变红。</li>
- * </ul>
- */
 class H2TypeHandlerRoundTripTest {
 
-    /** 10 MiB 级上下文：按 1 KiB 片段拼接，混合 ASCII 与中文，避免「只测了纯 ASCII」的假绿。 */
     private static final int CONTEXT_CHUNK_BYTES = 1024;
     private static final int CONTEXT_CHUNK_COUNT = 10 * 1024;
 
@@ -92,29 +79,14 @@ class H2TypeHandlerRoundTripTest {
     }
 
     @Test
-    @DisplayName("H2 与 SQLite 同一断言：Instant/LocalDateTime 落库文本等于 TimeTextCodec 的 UTC 文本")
-    void timeSemanticsAreIdenticalOnBothEngines() {
+    @DisplayName("H2 的时间按 UTC 毫秒往返")
+    void timeSemanticsUseUtc() {
         H2TestDatabase h2 = h2("time-h2");
         assertTimeSemantics("H2", h2, h2.sessionFactory(SessionMapper.class, ExecutionMapper.class),
                 "SELECT CAST(create_time AS VARCHAR) FROM session WHERE id = ?");
 
-        SqliteTestDatabase sqlite = sqlite("time-sqlite");
-        assertTimeSemantics("SQLite", sqlite, sqlite.sessionFactory(SessionMapper.class, ExecutionMapper.class),
-                "SELECT create_time FROM session WHERE id = ?");
     }
 
-    /**
-     * 同一段断言：写 PO → 读回 PO → 再读原始列文本。
-     *
-     * <p>原始文本按 {@link TimeTextCodec#toInstant(String)} 解析回来比瞬时，而不是逐字比较字符串：
-     * H2 的 {@code CAST(timestamp AS VARCHAR)} 会去掉毫秒尾零（{@code .070} 渲染成 {@code .07}），
-     * 逐字比较会误报；换成瞬时比较后，「时区口径错了」依然会以 8 小时偏差红掉。</p>
-     *
-     * @param label      引擎名（失败消息里用）
-     * @param dataSource 库
-     * @param factory    会话工厂
-     * @param rawTimeSql 取 session.create_time 原始文本的 SQL（H2 需要 CAST，SQLite 本来就是文本）
-     */
     private void assertTimeSemantics(String label, DataSource dataSource, SqlSessionFactory factory,
                                      String rawTimeSql) {
         Instant instant = Instant.now().truncatedTo(ChronoUnit.MILLIS);
@@ -149,8 +121,8 @@ class H2TypeHandlerRoundTripTest {
             assertEquals(localDateTime, loadedExecution.getStartedAt(),
                     label + "：LocalDateTime 必须按 JVM 时区折算后往返");
         }
-        assertEquals(instant, TimeTextCodec.toInstant(rawText(dataSource, rawTimeSql, sessionId)),
-                label + "：create_time 的落库文本必须等于 TimeTextCodec 的 UTC 文本（两引擎同一断言）");
+        assertEquals(instant, parseUtc(rawText(dataSource, rawTimeSql, sessionId)),
+                label + "：create_time 的落库文本必须等于 UTC 时间戳");
 
         // H2 的时间列是 timestamp，不是文本：显式断言类型，防止「看着能跑但其实存的是字符串」。
         if ("H2".equals(label)) {
@@ -170,8 +142,8 @@ class H2TypeHandlerRoundTripTest {
     }
 
     @Test
-    @DisplayName("两引擎同一断言：update_time 由仓储显式写入，H2 不依赖触发器也会被刷新")
-    void updateTimeIsRefreshedByExplicitWriteOnBothEngines() {
+    @DisplayName("H2 显式更新时间保留毫秒精度")
+    void updateTimeIsRefreshedByExplicitWrite() {
         Instant created = Instant.parse("2026-01-02T03:04:05.678Z");
         Instant touched = Instant.parse("2026-02-03T04:05:06.789Z");
 
@@ -179,25 +151,8 @@ class H2TypeHandlerRoundTripTest {
         assertExplicitTouch("H2", h2, h2.sessionFactory(SessionMapper.class),
                 "SELECT CAST(update_time AS VARCHAR) FROM session WHERE id = ?", created, touched);
 
-        SqliteTestDatabase sqlite = sqlite("touch-sqlite");
-        assertExplicitTouch("SQLite", sqlite, sqlite.sessionFactory(SessionMapper.class),
-                "SELECT update_time FROM session WHERE id = ?", created, touched);
     }
 
-    /**
-     * 同一断言：显式写 update_time 后，两个引擎的落库文本都等于 {@link TimeTextCodec#format(Instant)}。
-     *
-     * <p>SQLite 侧本来就有 AFTER UPDATE 触发器兜底，H2 侧没有（H2 只支持 Java 触发器），
-     * 因此 H2 的正确性完全依赖「仓储在 UPDATE 里显式写时间列」。这条用例把该前提钉住：
-     * 一旦某条更新路径漏写 update_time，H2 上这里的文本就会停在创建时间。</p>
-     *
-     * @param label    引擎名
-     * @param source   库
-     * @param factory  会话工厂
-     * @param rawSql   取 update_time 原始文本的 SQL
-     * @param created  创建时间
-     * @param touched  更新后的时间
-     */
     private void assertExplicitTouch(String label, DataSource source, SqlSessionFactory factory, String rawSql,
                                      Instant created, Instant touched) {
         long sessionId;
@@ -207,7 +162,7 @@ class H2TypeHandlerRoundTripTest {
             assertEquals(1, mapper.insert(po), label + "：写会话行必须成功");
             sessionId = po.getId();
         }
-        assertEquals(created, TimeTextCodec.toInstant(rawText(source, rawSql, sessionId)),
+        assertEquals(created, parseUtc(rawText(source, rawSql, sessionId)),
                 label + "：创建时的 update_time 必须等于创建时间");
 
         // 与仓储的更新路径同款：条件更新里显式带上 update_time（H2 侧没有触发器兜底）。
@@ -215,45 +170,28 @@ class H2TypeHandlerRoundTripTest {
              PreparedStatement update = connection.prepareStatement(
                      "UPDATE session SET name = ?, update_time = ? WHERE id = ?")) {
             update.setString(1, label + "-touched");
-            update.setString(2, TimeTextCodec.format(touched));
+            update.setString(2, touched.toString());
             update.setLong(3, sessionId);
             assertEquals(1, update.executeUpdate(), label + "：条件更新必须命中 1 行");
         } catch (SQLException e) {
             throw new IllegalStateException(label + "：更新失败: " + e.getMessage(), e);
         }
 
-        assertEquals(touched, TimeTextCodec.toInstant(rawText(source, rawSql, sessionId)),
+        assertEquals(touched, parseUtc(rawText(source, rawSql, sessionId)),
                 label + "：显式写入后 update_time 必须等于新时间（H2 没有触发器，靠的就是这一写）");
     }
 
     @Test
-    @DisplayName("两引擎同一断言：不显式写时间列的 UPDATE 也会自动刷新时间（SQLite 触发器 / H2 ON UPDATE）")
-    void automaticTouchHappensOnBothEngines() {
+    @DisplayName("H2 未显式写时间时由 ON UPDATE 刷新")
+    void automaticTouchHappensInH2() {
         Instant created = Instant.parse("2026-01-02T03:04:05.678Z");
 
         H2TestDatabase h2 = h2("auto-h2");
         assertAutomaticTouch("H2", h2, h2.sessionFactory(SessionMapper.class),
                 "SELECT CAST(update_time AS VARCHAR) FROM session WHERE id = ?", created);
 
-        SqliteTestDatabase sqlite = sqlite("auto-sqlite");
-        assertAutomaticTouch("SQLite", sqlite, sqlite.sessionFactory(SessionMapper.class),
-                "SELECT update_time FROM session WHERE id = ?", created);
     }
 
-    /**
-     * 同一断言：UPDATE 不提及时间列时，时间列仍须前进。
-     *
-     * <p>这是「两个引擎的时间维护方式不同、语义必须相同」的核心检查点：
-     * SQLite 靠 {@code *_touch} AFTER UPDATE 触发器（{@code WHEN NEW.update_time IS OLD.update_time}），
-     * H2 靠列上的 {@code ON UPDATE CURRENT_TIMESTAMP}（实测「显式赋值优先、未赋值才刷新」与触发器等价）。
-     * 任一侧缺了，这条用例都会红。</p>
-     *
-     * @param label    引擎名
-     * @param source   库
-     * @param factory  会话工厂
-     * @param rawSql   取 update_time 原始文本的 SQL
-     * @param created  创建时间（远早于当前时间，便于判定「是否前进」）
-     */
     private void assertAutomaticTouch(String label, DataSource source, SqlSessionFactory factory, String rawSql,
                                       Instant created) {
         long sessionId;
@@ -273,7 +211,7 @@ class H2TypeHandlerRoundTripTest {
             throw new IllegalStateException(label + "：更新失败: " + e.getMessage(), e);
         }
 
-        Instant touched = TimeTextCodec.toInstant(rawText(source, rawSql, sessionId));
+        Instant touched = parseUtc(rawText(source, rawSql, sessionId));
         assertNotNull(touched, label + "：update_time 不得为空");
         assertTrue(touched.isAfter(created),
                 label + "：未显式写时间列时 update_time 必须自动前进，created=" + created + "，实际=" + touched);
@@ -298,9 +236,7 @@ class H2TypeHandlerRoundTripTest {
         return database;
     }
 
-    private SqliteTestDatabase sqlite(String prefix) {
-        SqliteTestDatabase database = SqliteTestDatabase.create(prefix);
-        resources.add(database);
-        return database;
+    private static Instant parseUtc(String text) {
+        return LocalDateTime.parse(text.replace(' ', 'T')).toInstant(ZoneOffset.UTC);
     }
 }

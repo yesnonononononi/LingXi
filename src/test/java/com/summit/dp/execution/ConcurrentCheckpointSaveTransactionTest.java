@@ -2,6 +2,9 @@ package com.summit.dp.execution;
 
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
+import org.springframework.transaction.support.TransactionTemplate;
 import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.core.agent.AgentRequest;
@@ -17,7 +20,7 @@ import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStor
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
@@ -48,17 +51,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
 
-/**
- * 复核 R2：不同执行在真实事务里并发保存，必须都能提交，且不允许停在旧快照上。
- *
- * <p>被守的缺陷：SQLite 的事务第一次读就固定快照。A 提交后，B 在<b>原事务</b>里更新会立刻收到
- * {@code SQLITE_BUSY_SNAPSHOT}；在同一个过期事务里重试 UPDATE 永远失败。必须整笔丢弃、
- * 换一个全新事务重新读，才可能成功。</p>
- *
- * <p>这里刻意使用真实的 {@link DataSourceTransactionManager}（Spring 上下文注入到生产仓储），
- * 而不是 {@code new} 一个没有事务基础设施的服务 —— 复核报告里「new 出来的三并发通过」
- * 不能代表生产事务路径。</p>
- */
+
 @SpringJUnitConfig(ConcurrentCheckpointSaveTransactionTest.Config.class)
 class ConcurrentCheckpointSaveTransactionTest {
 
@@ -72,16 +65,64 @@ class ConcurrentCheckpointSaveTransactionTest {
     @Autowired private ExecutionMapper executions;
     @Autowired private Path dataDir;
 
+    @Autowired private H2TestDatabase database;
+    @Autowired private PlatformTransactionManager transactionManager;
+
     @BeforeEach
     void setUp() {
         executions.delete(null);
     }
 
-    /**
-     * 屏障强制「两笔都读到旧快照后 A 先提交，B 再更新」：B 必须靠换新事务重试成功。
-     */
+
     @Test
-    void concurrentSavesOnDifferentExecutionsBothCommitThroughRetry() throws Exception {
+    void sameRowLockTimeoutRetriesWholeSaveAndKeepsCheckpointConsistent() throws Exception {
+        runtime.save(execution(FIRST_ID, ExecutionState.CREATED));
+        String original = executions.selectById(FIRST_ID).getSnapshotFile();
+        database.execute("SET DEFAULT_LOCK_TIMEOUT 100");
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch committed = new CountDownLatch(1);
+        AtomicInteger reads = new AtomicInteger();
+        doAnswer(invocation -> {
+            if (reads.incrementAndGet() == 2) {
+                release.countDown();
+                await(committed);
+            }
+            return invocation.callRealMethod();
+        }).when(repository).findCheckpointSummary(FIRST_ID);
+
+        try (ExecutorService pool = Executors.newSingleThreadExecutor()) {
+            Future<?> holder = pool.submit(() -> {
+                new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                    executions.update(null, new LambdaUpdateWrapper<ExecutionPO>()
+                            .eq(ExecutionPO::getId, FIRST_ID).set(ExecutionPO::getStatus, 1));
+                    locked.countDown();
+                    await(release);
+                });
+                committed.countDown();
+            });
+            try {
+                assertTrue(locked.await(15, TimeUnit.SECONDS));
+                runtime.save(execution(FIRST_ID, ExecutionState.SUSPENDED));
+            } finally {
+                release.countDown();
+            }
+            holder.get(15, TimeUnit.SECONDS);
+        } finally {
+            database.execute("SET DEFAULT_LOCK_TIMEOUT 2000");
+        }
+        assertEquals(2, reads.get(), "真实锁超时后必须在新事务里重新读取摘要");
+        ExecutionPO saved = executions.selectById(FIRST_ID);
+        assertEquals(2L, saved.getVersion());
+        assertNotEquals(original, saved.getSnapshotFile());
+        assertFalse(Files.exists(checkpointFile(FIRST_ID, original)));
+        assertTrue(Files.isRegularFile(checkpointFile(FIRST_ID, saved.getSnapshotFile())));
+        assertEquals(ExecutionState.SUSPENDED, runtime.findById(Long.toString(FIRST_ID))
+                .orElseThrow().getExecutionState());
+    }
+
+    @Test
+    void concurrentSavesOnDifferentExecutionsCommitWithoutLockConflict() throws Exception {
         runtime.save(execution(FIRST_ID, ExecutionState.CREATED));
         runtime.save(execution(SECOND_ID, ExecutionState.CREATED));
         String firstOriginalFile = executions.selectById(FIRST_ID).getSnapshotFile();
@@ -92,8 +133,7 @@ class ConcurrentCheckpointSaveTransactionTest {
         CountDownLatch secondReadStaleSnapshot = new CountDownLatch(1);
         CountDownLatch firstCommitted = new CountDownLatch(1);
         AtomicInteger secondReads = new AtomicInteger();
-        // 只在 B 的「第一次」读取上做文章：读到旧快照后卡住，等 A 提交完再写 —— 正好撞上
-        // SQLITE_BUSY_SNAPSHOT。重试会走第二次读取（不再卡住），于是能提交成功。
+
         doAnswer(invocation -> {
             Object result = invocation.callRealMethod();
             if (invocation.<Long>getArgument(0) == SECOND_ID && secondReads.incrementAndGet() == 1) {
@@ -106,23 +146,23 @@ class ConcurrentCheckpointSaveTransactionTest {
         try (ExecutorService pool = Executors.newSingleThreadExecutor()) {
             Future<?> second = pool.submit(() -> runtime.save(execution(SECOND_ID, ExecutionState.SUSPENDED)));
             assertTrue(secondReadStaleSnapshot.await(15, TimeUnit.SECONDS), "B 必须先在旧快照上读到摘要");
-            // A 在 B 占着旧快照时提交：这正是复核报告里 B 必然收到 BUSY_SNAPSHOT 的交错。
+
             runtime.save(execution(FIRST_ID, ExecutionState.COMPLETED));
             firstCommitted.countDown();
             second.get(30, TimeUnit.SECONDS);
         }
 
-        assertEquals(2, secondReads.get(), "B 的第二次读取必须来自重试开出的新事务（去掉重试这里只会读到 1 次）");
+        assertEquals(1, secondReads.get(), "H2 不同行写入不应因旧读取被迫重试");
         assertEquals(2L, executions.selectById(FIRST_ID).getVersion(), "A 的版本必须前进到 2");
         assertEquals(2L, executions.selectById(SECOND_ID).getVersion(), "B 的版本必须前进到 2");
         String firstFile = executions.selectById(FIRST_ID).getSnapshotFile();
         String secondFile = executions.selectById(SECOND_ID).getSnapshotFile();
         assertNotEquals(firstOriginalFile, firstFile, "本次保存必须发布新文件");
         assertNotEquals(secondOriginalFile, secondFile, "本次保存必须发布新文件");
-        // 提交成功后才删旧文件：两笔的旧正文都必须已经被回收。
+
         assertTrue(Files.notExists(checkpointFile(FIRST_ID, firstOriginalFile)), "A 的旧正文应在提交后删除");
         assertTrue(Files.notExists(checkpointFile(SECOND_ID, secondOriginalFile)), "B 的旧正文应在提交后删除");
-        // 库内引用必须指向真实存在的正文：重试成功但文件对不上就是断链。
+
         assertTrue(Files.isRegularFile(checkpointFile(FIRST_ID, firstFile)));
         assertTrue(Files.isRegularFile(checkpointFile(SECOND_ID, secondFile)));
         assertNotNull(runtime.findById(Long.toString(SECOND_ID)).orElse(null), "保存后必须还能按引用读出正文");
@@ -130,7 +170,7 @@ class ConcurrentCheckpointSaveTransactionTest {
                 .getExecutionState(), "重试成功后落库的必须是最新状态");
     }
 
-    /** 三次保存串行叠加：每次都必须是新文件 + 版本继续前进（旧文件逐次回收）。 */
+
     @Test
     void repeatedSavesKeepAdvancingVersionAndReclaimPreviousFile() throws Exception {
         runtime.save(execution(FIRST_ID, ExecutionState.CREATED));
@@ -185,12 +225,12 @@ class ConcurrentCheckpointSaveTransactionTest {
         SessionExecutionRegistry executionRegistry() { return new SessionExecutionRegistry(); }
 
         @Bean(destroyMethod = "shutdown")
-        SqliteTestDatabase database() {
-            return SqliteTestDatabase.create("ConcurrentCheckpointSaveTransactionTest");
+        H2TestDatabase database() {
+            return H2TestDatabase.create("ConcurrentCheckpointSaveTransactionTest");
         }
 
         @Bean
-        PlatformTransactionManager transactionManager(SqliteTestDatabase database) {
+        PlatformTransactionManager transactionManager(H2TestDatabase database) {
             return new DataSourceTransactionManager(database);
         }
 
@@ -205,7 +245,7 @@ class ConcurrentCheckpointSaveTransactionTest {
         }
 
         @Bean
-        SqlSessionTemplate sql(SqliteTestDatabase database) throws Exception {
+        SqlSessionTemplate sql(H2TestDatabase database) throws Exception {
             MybatisConfiguration configuration = new MybatisConfiguration();
             configuration.setMapUnderscoreToCamelCase(true);
             MyBatisTypeHandlers.registerAll(configuration);
@@ -213,12 +253,12 @@ class ConcurrentCheckpointSaveTransactionTest {
             MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
             factory.setDataSource(database);
             factory.setConfiguration(configuration);
-            return SqliteTestDatabase.sqlSession(factory.getObject());
+            return H2TestDatabase.sqlSession(factory.getObject());
         }
 
         @Bean
         ExecutionRepository executionRepository(SqlSessionTemplate sql) {
-            // spy 只为在「读到旧快照之后」插入确定性屏障，不改任何行为。
+
             return spy(new ExecutionRepositoryImpl(executionMapper(sql)));
         }
 
@@ -240,8 +280,7 @@ class ConcurrentCheckpointSaveTransactionTest {
         @Bean
         LocalExecutionRepository runtime(ExecutionCheckpointService checkpointService, ObjectMapper objectMapper,
                                          LocalFileCheckpointStore checkpointStore) {
-            // 生产保存入口：事务管理器由 Spring 注入（PlatformTransactionManager 字段），
-            // 因此这里走的是真实事务路径，而不是无事务的直连。
+
             return new LocalExecutionRepository(checkpointService, objectMapper, checkpointStore,
                     provider(mock(ToolCallReadinessService.class)),
                     provider(mock(ToolCallService.class)),

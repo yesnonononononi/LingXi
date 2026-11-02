@@ -11,15 +11,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
-/**
- * 启动期校验矩阵：数据目录形态 × 引擎设置 → 允许启动 / 立刻失败。
- *
- * <p><b>为什么必须在这一层拦住</b>：两个引擎的库文件互不认识。引擎选错时，驱动会照常
- * 建一个空库然后正常启动，用户看到的是「数据全没了」而日志全绿。这里把所有「数据形态与
- * 引擎不符」的组合提前判死，并且**不创建任何文件**。</p>
- *
- * <p>本类是纯函数式判定（除读迁移凭据外无副作用），因此矩阵的每一格都能被单测逐格覆盖。</p>
- */
+/** 未迁移的旧数据必须在建库前拒绝，避免升级后看见空会话。 */
 @Slf4j
 public class StorageEngineGuard {
 
@@ -31,61 +23,31 @@ public class StorageEngineGuard {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    /**
-     * 判定数据目录与引擎设置是否自洽。
-     *
-     * @param layout        数据目录解析结果，不可为 null
-     * @param engine        生效引擎，不可为 null
-     * @param driverPresent 该引擎的驱动是否在 classpath 上
-     * @return 判定结果，绝不返回 {@code null}
-     */
-    public StorageVerdict verdict(StorageLayout layout, StorageEngine engine, boolean driverPresent) {
-        if (layout == null || engine == null) {
-            throw new IllegalArgumentException("判定存储形态需要数据目录与引擎，两者都不能为空");
+    public StorageVerdict verdict(StorageLayout layout, boolean driverPresent) {
+        if (layout == null) {
+            throw new IllegalArgumentException("判定存储形态需要数据目录");
         }
         if (!driverPresent) {
             return StorageVerdict.REJECT_MISSING_DRIVER;
         }
-        boolean sqliteData = layout.hasSqliteData();
+        boolean legacyData = layout.hasLegacySqliteData();
         boolean h2Data = layout.hasH2Data();
-        if (engine == StorageEngine.SQLITE) {
-            if (!sqliteData && !h2Data) {
-                return StorageVerdict.FIRST_INSTALL;
-            }
-            if (sqliteData && !h2Data) {
-                return StorageVerdict.READY;
-            }
-            if (!sqliteData) {
-                return StorageVerdict.REJECT_H2_DATA_WITH_SQLITE_ENGINE;
-            }
-            // 两个库都在：即使有迁移凭据也要求显式清理，避免「同一份数据两处都能写」。
-            return StorageVerdict.REJECT_AMBIGUOUS_DATA;
-        }
-        // H2 引擎
-        if (!sqliteData && !h2Data) {
+        if (!legacyData && !h2Data) {
             return StorageVerdict.FIRST_INSTALL;
         }
-        if (h2Data && !sqliteData) {
+        if (!legacyData) {
             return StorageVerdict.READY;
         }
-        if (sqliteData && !h2Data) {
-            return StorageVerdict.REJECT_SQLITE_DATA_WITHOUT_MIGRATION;
+        if (!h2Data) {
+            return StorageVerdict.REJECT_LEGACY_SQLITE_DATA;
         }
         return isMigrationVerified(layout) ? StorageVerdict.READY : StorageVerdict.REJECT_AMBIGUOUS_DATA;
     }
 
-    /**
-     * 判定并要求可启动：不可启动时抛出带目录、文件清单与处置建议的异常；可启动时确保数据目录可用。
-     *
-     * @param layout        数据目录解析结果，不可为 null
-     * @param engine        生效引擎，不可为 null
-     * @param driverPresent 该引擎的驱动是否在 classpath 上
-     * @throws IllegalStateException 判定为拒绝启动，或数据目录无法创建/不可写
-     */
-    public void requireStartable(StorageLayout layout, StorageEngine engine, boolean driverPresent) {
-        StorageVerdict verdict = verdict(layout, engine, driverPresent);
+    public void requireStartable(StorageLayout layout, boolean driverPresent) {
+        StorageVerdict verdict = verdict(layout, driverPresent);
         if (!verdict.isStartable()) {
-            throw new IllegalStateException(describe(verdict, layout, engine));
+            throw new IllegalStateException(describe(verdict, layout));
         }
         ensureDataDirectory(layout);
     }
@@ -117,14 +79,14 @@ public class StorageEngineGuard {
             return false;
         }
         String expected = root.path(MANIFEST_SOURCE_SHA256).asText("");
-        if (!layout.hasSqliteData()) {
+        if (!layout.hasLegacySqliteData()) {
             return true;
         }
         if (expected.isBlank()) {
             log.warn("迁移凭据缺少 sourceSha256，无法与源库比对: file={}", manifest);
             return false;
         }
-        String actual = sha256(layout.sqliteFile());
+        String actual = sha256(layout.legacySqliteFile());
         if (actual == null || !actual.equalsIgnoreCase(expected)) {
             log.warn("迁移凭据的源库指纹与当前 SQLite 库不符（清单可能被手改）: expected={}, actual={}",
                     expected, actual);
@@ -147,25 +109,17 @@ public class StorageEngineGuard {
         }
     }
 
-    /** 把判定结果翻译成可执行的提示：说清目录、看到哪些文件、下一步该做什么。 */
-    private String describe(StorageVerdict verdict, StorageLayout layout, StorageEngine engine) {
-        String directory = String.valueOf(layout.dataDir());
-        String files = "检测到 sqlite=" + (layout.hasSqliteData() ? layout.sqliteFile() : "无")
-                + "，h2=" + (layout.hasH2Data() ? layout.h2File() : "无");
+    private String describe(StorageVerdict verdict, StorageLayout layout) {
+        String location = "数据目录=" + layout.dataDir() + "，H2 库=" + layout.databaseFile();
         return switch (verdict) {
-            case REJECT_MISSING_DRIVER -> "存储引擎=" + engine.id() + " 但驱动 " + engine.driverClassName()
-                    + " 不在 classpath 上：请确认依赖已打包（h2 需要 com.h2database:h2），"
-                    + "或把 lingxi.storage.engine 改回 sqlite";
-            case REJECT_SQLITE_DATA_WITHOUT_MIGRATION -> "数据目录里只有 SQLite 数据，但引擎设置为 "
-                    + engine.id() + "，且没有通过校验的 H2 迁移凭据（" + layout.migrationManifest()
-                    + "）：请用 scripts/Migrate-SqliteToH2.ps1 迁移并校验后再启动。dir=" + directory
-                    + "，" + files;
-            case REJECT_H2_DATA_WITH_SQLITE_ENGINE -> "数据目录里是 H2 库，但引擎设置为 sqlite："
-                    + "请显式设置 lingxi.storage.engine=h2，或把该 H2 库移出数据目录。dir=" + directory
-                    + "，" + files;
-            case REJECT_AMBIGUOUS_DATA -> "数据目录里同时存在 SQLite 与 H2 数据，无法判断以哪一份为准："
-                    + "请显式清理其中一个（或重新执行迁移并让凭据通过校验）。dir=" + directory + "，" + files;
-            default -> "存储形态判定不允许启动: verdict=" + verdict + "，dir=" + directory + "，" + files;
+            case REJECT_MISSING_DRIVER -> "缺少 H2 驱动 " + H2Storage.DRIVER_CLASS_NAME
+                    + "：请重新安装包含 com.h2database:h2 的完整应用。" + location;
+            case REJECT_LEGACY_SQLITE_DATA -> "检测到未迁移的 SQLite 数据，应用已停止启动，未创建空 H2 库。"
+                    + "请先停止旧版应用，备份整个数据与配置目录，再执行 scripts/Migrate-SqliteToH2.ps1"
+                    + " -Source <旧库副本> -Target <空目标目录>，校验通过后离线修改配置中的 dataDir。" + location;
+            case REJECT_AMBIGUOUS_DATA -> "SQLite 与 H2 数据同时存在，但迁移凭据缺失或源库指纹不符。"
+                    + "请保留两份数据，停止应用并重新迁移、校验；不要删除旧库来绕过校验。" + location;
+            default -> "存储目录不可启动: verdict=" + verdict + "，" + location;
         };
     }
 

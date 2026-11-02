@@ -9,7 +9,7 @@ import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.lifecycle.startup.ExecutionStartupReaper;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -45,7 +45,7 @@ class ExecutionStartupReaperTest {
     private static final int STATUS_COMPLETED = 3;
     private static final int STATUS_FAILED = 4;
 
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private ExecutionMapper mapper;
     private ExecutionRepositoryImpl repository;
     private ExecutionResumeTaskRepository resumeTaskRepository;
@@ -53,7 +53,7 @@ class ExecutionStartupReaperTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("ExecutionStartupReaperTest");
+        database = H2TestDatabase.create("ExecutionStartupReaperTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
 
@@ -63,7 +63,7 @@ class ExecutionStartupReaperTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate session = SqliteTestDatabase.sqlSession(sessionFactory);
+        SqlSessionTemplate session = H2TestDatabase.sqlSession(sessionFactory);
         mapper = session.getMapper(ExecutionMapper.class);
         repository = new ExecutionRepositoryImpl(mapper);
         // 恢复请求表在 H2 单测库里是桩：只做启动收口判定，reap 本身不碰。

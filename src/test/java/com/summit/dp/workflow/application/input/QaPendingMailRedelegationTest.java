@@ -44,7 +44,6 @@ import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.session.domain.model.Session;
 import com.summit.dp.session.domain.repo.SessionRepository;
 import com.summit.dp.shared.support.H2TestDatabase;
-import com.summit.dp.shared.support.SqliteTestDatabase;
 import com.summit.dp.task.domain.repository.TaskRepository;
 import com.summit.dp.team.application.vo.TeamVO;
 import com.summit.dp.tools.ToolListProcessorTestSupport;
@@ -240,11 +239,11 @@ class QaPendingMailRedelegationTest {
                 database = db; source = db;
                 factory = db.sessionFactory(EmailMapper.class, EmailMessageMapper.class);
             } else {
-                SqliteTestDatabase db = SqliteTestDatabase.create("pending-mail-redelegation");
+                H2TestDatabase db = H2TestDatabase.create("pending-mail-redelegation");
                 database = db; source = db;
                 factory = db.sessionFactory(EmailMapper.class, EmailMessageMapper.class);
             }
-            SqlSessionTemplate session = h2 ? H2TestDatabase.sqlSession(factory) : SqliteTestDatabase.sqlSession(factory);
+            SqlSessionTemplate session = h2 ? H2TestDatabase.sqlSession(factory) : H2TestDatabase.sqlSession(factory);
             ProxyFactory proxy = new ProxyFactory(new EmailServiceImpl(new EmailRepositoryImpl(session.getMapper(EmailMapper.class)),
                     new EmailMessageRepositoryImpl(session.getMapper(EmailMessageMapper.class))));
             proxy.addAdvice(new TransactionInterceptor(new DataSourceTransactionManager(source), new AnnotationTransactionAttributeSource()));

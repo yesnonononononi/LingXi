@@ -2,7 +2,7 @@ package com.summit.dp.workflow.application.projection;
 
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.domain.model.ChatTurnStatus;
 import org.junit.jupiter.api.Test;
@@ -30,7 +30,7 @@ class ChatTurnLifecycleProjectorRetryTest {
     @Test
     @Timeout(60)
     void terminalProjectionRetriesLockConflict() throws Exception {
-        SqliteTestDatabase database = SqliteTestDatabase.create("turn-projector-retry");
+        H2TestDatabase database = H2TestDatabase.create("turn-projector-retry");
         try {
             ChatTurnService chatTurn = mock(ChatTurnService.class);
             doThrow(new CannotAcquireLockException("模拟 SQLITE_BUSY_SNAPSHOT"))
@@ -50,7 +50,7 @@ class ChatTurnLifecycleProjectorRetryTest {
     @Test
     @Timeout(60)
     void businessFailureIsNotRetried() throws Exception {
-        SqliteTestDatabase database = SqliteTestDatabase.create("turn-projector-business");
+        H2TestDatabase database = H2TestDatabase.create("turn-projector-business");
         try {
             ChatTurnService chatTurn = mock(ChatTurnService.class);
             doThrow(new IllegalStateException("状态机违约"))
@@ -70,7 +70,7 @@ class ChatTurnLifecycleProjectorRetryTest {
     @Test
     @Timeout(60)
     void nonTerminalStateIsNotProjected() throws Exception {
-        SqliteTestDatabase database = SqliteTestDatabase.create("turn-projector-non-terminal");
+        H2TestDatabase database = H2TestDatabase.create("turn-projector-non-terminal");
         try {
             ChatTurnService chatTurn = mock(ChatTurnService.class);
             projector(chatTurn, database).finishExecution(execution(ExecutionState.RUNNING));
@@ -81,7 +81,7 @@ class ChatTurnLifecycleProjectorRetryTest {
         }
     }
 
-    private static ChatTurnLifecycleProjector projector(ChatTurnService chatTurn, SqliteTestDatabase database)
+    private static ChatTurnLifecycleProjector projector(ChatTurnService chatTurn, H2TestDatabase database)
             throws Exception {
         ChatTurnLifecycleProjector projector = new ChatTurnLifecycleProjector(chatTurn);
         // 与 Spring 注入的是同一个字段：只有它是真实事务管理器时，重试才会逐次开新事务。

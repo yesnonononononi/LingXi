@@ -16,7 +16,7 @@ import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStor
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
 import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
@@ -36,6 +36,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -43,17 +44,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
 
-/**
- * 复核 R2 的独立探针：两个<b>不同执行</b>的真实事务并发保存，B 读到旧快照、A 先提交、B 再写。
- *
- * <p><b>装配与生产一致</b>：真实 SQLite 文件库（WAL + busy_timeout 5000，与生产同参数）、
- * 真实 {@link DataSourceTransactionManager}、真实 {@link TransactionTemplate}、真实
- * {@link LocalExecutionRepository}（事务管理器经反射注入，与 Spring 注入同一字段）。
- * 只有「读摘要」这一处被 spy 拦住，用来在那个位置插入确定性屏障。</p>
- *
- * <p>断言取结果：两笔都成功、版本各自独立前进、库里引用的正文可读，并且 B 确实重试过
- * （同一执行的摘要在它自己的线程上被读了两次以上）—— 只重试 UPDATE 是过不了这一关的。</p>
- */
+
 class ConcurrentSaveRetryProbeTest {
 
     private static final String EXECUTION_A = "920001";
@@ -61,12 +52,12 @@ class ConcurrentSaveRetryProbeTest {
 
     @Test
     @Timeout(120)
-    void staleSnapshotWriterRetriesWithANewTransactionAndBothSavesCommit() throws Exception {
-        SqliteTestDatabase database = SqliteTestDatabase.create("qa-save-retry");
+    void independentH2WritersBothCommitWithoutSnapshotRetry() throws Exception {
+        H2TestDatabase database = H2TestDatabase.create("qa-save-retry");
         Path dataDir = Files.createTempDirectory("lingxi-qa-save-retry-");
         try {
             ObjectMapper mapper = new JsonConfig().objectMapper();
-            ExecutionMapper executions = SqliteTestDatabase
+            ExecutionMapper executions = H2TestDatabase
                     .sqlSession(database.sessionFactory(ExecutionMapper.class))
                     .getMapper(ExecutionMapper.class);
             seed(executions, Long.parseLong(EXECUTION_A));
@@ -136,22 +127,22 @@ class ConcurrentSaveRetryProbeTest {
                     .filter(invocation -> Long.valueOf(Long.parseLong(EXECUTION_B))
                             .equals(invocation.getArgument(0)))
                     .count();
-            assertTrue(readsOfB >= 2, "B 必须重试过（同一执行被读两次以上），实际=" + readsOfB);
+            assertEquals(1L, readsOfB, "H2 不同行写入无需重试");
         } finally {
             database.shutdown();
             deleteQuietly(dataDir);
         }
     }
 
-    /** 只有锁冲突才重试：业务失败（行不存在）必须一次就抛，不能放大成重试风暴。 */
+
     @Test
     @Timeout(60)
     void nonLockFailureIsNotRetried() throws Exception {
-        SqliteTestDatabase database = SqliteTestDatabase.create("qa-save-noretry");
+        H2TestDatabase database = H2TestDatabase.create("qa-save-noretry");
         Path dataDir = Files.createTempDirectory("lingxi-qa-save-noretry-");
         try {
             ObjectMapper mapper = new JsonConfig().objectMapper();
-            ExecutionMapper executions = SqliteTestDatabase
+            ExecutionMapper executions = H2TestDatabase
                     .sqlSession(database.sessionFactory(ExecutionMapper.class))
                     .getMapper(ExecutionMapper.class);
             ExecutionRepositoryImpl spiedRepository = spy(new ExecutionRepositoryImpl(executions));
@@ -174,7 +165,7 @@ class ConcurrentSaveRetryProbeTest {
             assertEquals(1L, reads, "业务失败不重试：摘要只允许读一次，实际=" + reads);
             // 整笔失败后本次新文件必须被删掉：目录里不能留下孤儿。
             Path directory = dataDir.resolve("checkpoints").resolve("920009");
-            try (var paths = Files.list(directory)) {
+            try (Stream<Path> paths = Files.list(directory)) {
                 assertEquals(0L, paths.count(), "整笔保存失败后不许留下正文文件");
             }
         } finally {
@@ -183,15 +174,15 @@ class ConcurrentSaveRetryProbeTest {
         }
     }
 
-    /** 调用方已有事务（受理阶段三表原子）：保存加入该事务、不重试，回滚后行与正文都回到原样。 */
+
     @Test
     @Timeout(90)
     void callerTransactionPathJoinsTheCallerTransactionAndRollsBackAtomically() throws Exception {
-        SqliteTestDatabase database = SqliteTestDatabase.create("qa-save-caller-tx");
+        H2TestDatabase database = H2TestDatabase.create("qa-save-caller-tx");
         Path dataDir = Files.createTempDirectory("lingxi-qa-caller-tx-");
         try {
             ObjectMapper mapper = new JsonConfig().objectMapper();
-            ExecutionMapper executions = SqliteTestDatabase
+            ExecutionMapper executions = H2TestDatabase
                     .sqlSession(database.sessionFactory(ExecutionMapper.class))
                     .getMapper(ExecutionMapper.class);
             long id = Long.parseLong(EXECUTION_A);
@@ -220,7 +211,7 @@ class ConcurrentSaveRetryProbeTest {
             assertEquals(1L, row.getVersion(), "调用方事务回滚后版本必须回到原值");
             assertEquals(null, row.getSnapshotFile(), "调用方事务回滚后不许留下指向不存在正文的引用");
             Path directory = dataDir.resolve("checkpoints").resolve(EXECUTION_A);
-            try (var paths = Files.list(directory)) {
+            try (Stream<Path> paths = Files.list(directory)) {
                 assertEquals(0L, paths.count(), "回滚后本次发布的正文必须被清掉");
             }
             long reads = org.mockito.Mockito.mockingDetails(spiedRepository).getInvocations().stream()
@@ -268,7 +259,7 @@ class ConcurrentSaveRetryProbeTest {
     }
 
     private static void deleteQuietly(Path directory) {
-        try (var paths = Files.walk(directory)) {
+        try (Stream<Path> paths = Files.walk(directory)) {
             paths.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
                 try {
                     Files.deleteIfExists(path);

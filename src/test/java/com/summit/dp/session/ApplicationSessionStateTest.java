@@ -18,7 +18,7 @@ import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionRepositoryImpl;
 import com.summit.dp.session.infrastructure.stream.ApplicationEventStream;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.team.application.service.TeamService;
 import com.summit.dp.turn.application.convert.ChatTurnConverter;
@@ -225,17 +225,17 @@ class ApplicationSessionStateTest {
     @EnableTransactionManagement
     static class Config {
         @Bean(destroyMethod = "shutdown")
-        SqliteTestDatabase database() {
-            return SqliteTestDatabase.create("ApplicationSessionStateTest");
+        H2TestDatabase database() {
+            return H2TestDatabase.create("ApplicationSessionStateTest");
         }
 
         @Bean
-        DataSourceTransactionManager transactionManager(SqliteTestDatabase database) {
+        DataSourceTransactionManager transactionManager(H2TestDatabase database) {
             return new DataSourceTransactionManager(database);
         }
 
         @Bean
-        SqlSessionTemplate sql(SqliteTestDatabase database) throws Exception {
+        SqlSessionTemplate sql(H2TestDatabase database) throws Exception {
             MybatisConfiguration configuration = new MybatisConfiguration();
             configuration.setMapUnderscoreToCamelCase(true);
             MyBatisTypeHandlers.registerAll(configuration);
@@ -244,7 +244,7 @@ class ApplicationSessionStateTest {
             MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
             factory.setDataSource(database);
             factory.setConfiguration(configuration);
-            return SqliteTestDatabase.sqlSession(factory.getObject());
+            return H2TestDatabase.sqlSession(factory.getObject());
         }
 
         @Bean

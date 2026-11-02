@@ -39,18 +39,7 @@ public class ConversationTranscriptService {
         append(sessionId, rootSessionId, turnId, List.of(message));
     }
 
-    /**
-     * 追加一轮（AI + 工具结果）。
-     *
-     * <p><b>为什么先写后查</b>：SQLite 只有一个写者，事务里「先读后升写」在竞争时不会排队
-     * （升写失败立刻返回 SQLITE_BUSY，busy_timeout 对升写不生效）。这里让事务的第一条语句就是
-     * 插入：抢不到锁由 busy_timeout 正常等待；并发重复提交由 {@code uk_session_response_id}
-     * 唯一索引裁决，冲突后回查再决定「幂等复用」还是「内容漂移」。行锁删掉后，唯一的并发裁决
-     * 就是这个唯一索引。</p>
-     *
-     * @param rootSessionId v3 投递目标；子会话必须传根，否则提交帧投进子会话桶而无人接收
-     * @param responseId    框架下发的本轮模型调用身份；作为幂等键，拦重复落库
-     */
+    /** 先写再查，让唯一约束裁决重复追加，避免先读后写的竞争窗口。 */
     @Transactional
     public void appendRound(Long sessionId, Long rootSessionId, Long turnId, AiMessageEntity aiMessage,
                             List<ToolMessageEntity> toolMessages, String responseId) {

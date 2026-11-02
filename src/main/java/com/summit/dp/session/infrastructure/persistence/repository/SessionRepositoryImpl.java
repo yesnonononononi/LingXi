@@ -37,17 +37,12 @@ public class SessionRepositoryImpl extends AbstractRepository<Session, SessionPO
 
     @Override
     public Optional<Session> lockById(Long sessionId) {
-        // SQLite 无行锁：退化为普通读，「状态改写不能覆盖别人」由 update 的 version 条件裁决。
+        // 状态通过版本条件更新，避免旧读取覆盖新提交。
         return Optional.ofNullable(sessionMapper.selectOne(Wrappers.<SessionPO>lambdaQuery()
                 .eq(SessionPO::getId, sessionId))).map(this::toModel);
     }
 
-    /**
-     * 条件置已读：单语句完成「未读 → 已读」，并用版本条件拒绝覆盖别人的新状态。
-     *
-     * <p>SQLite 单写者下事务里「先读后升写」不会排队等锁，所以这里把写入放在唯一一条语句里：
-     * 调用方不必先读，也就没有「读快照过期再升写失败」的窗口。</p>
-     */
+    /** 状态通过版本条件更新，避免旧读取覆盖新提交。 */
     @Override
     public boolean markReadIfUnread(Long sessionId, Long expectedVersion) {
         if (sessionId == null) {

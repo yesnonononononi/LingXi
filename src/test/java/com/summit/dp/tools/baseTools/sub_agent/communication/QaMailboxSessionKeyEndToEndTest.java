@@ -27,7 +27,7 @@ import com.summit.dp.email.infrastructure.repository.EmailMessageRepositoryImpl;
 import com.summit.dp.email.infrastructure.repository.EmailRepositoryImpl;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.workflow.application.delegation.CommanderMailWakeService;
 import com.summit.dp.workflow.infrastructure.lifecycle.SessionExecutionRegistry;
 import com.summit.dp.workflow.infrastructure.tools.sub_agent.communication.EmailLoopInterceptor;
@@ -70,7 +70,7 @@ class QaMailboxSessionKeyEndToEndTest {
     private static final long ROOT_AGENT_ID = 100L;
     private static final long CHILD_AGENT_ID = 8L;
 
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private EmailMapper emailMapper;
     private EmailMessageMapper messageMapper;
     private EmailRepository emailRepository;
@@ -82,7 +82,7 @@ class QaMailboxSessionKeyEndToEndTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("QaMailboxSessionKeyEndToEndTest");
+        database = H2TestDatabase.create("QaMailboxSessionKeyEndToEndTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
 
@@ -90,13 +90,13 @@ class QaMailboxSessionKeyEndToEndTest {
         configuration.addMapper(EmailMapper.class);
         configuration.addMapper(EmailMessageMapper.class);
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
-        interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.SQLITE));
+        interceptor.addInnerInterceptor(new PaginationInnerInterceptor(DbType.H2));
         configuration.addInterceptor(interceptor);
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate session = SqliteTestDatabase.sqlSession(sessionFactory);
+        SqlSessionTemplate session = H2TestDatabase.sqlSession(sessionFactory);
         emailMapper = session.getMapper(EmailMapper.class);
         messageMapper = session.getMapper(EmailMessageMapper.class);
         emailRepository = new EmailRepositoryImpl(emailMapper);

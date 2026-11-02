@@ -47,9 +47,7 @@ public class RuntimeConfigurationService {
         this.repository = repository;
         this.mapper = mapper.copy().enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS);
         this.transactions = new TransactionTemplate(transactionManager);
-        // 配置版本一旦分配就独立提交：异步执行与受理事务中的后续读取才能看到同一版本。
-        // 因此「分配新版本」只在没有外层事务时发生（调用方先预冻结），
-        // 单写者 SQLite 下不允许在已开启的事务里另起一条写连接。
+        // 配置版本先独立提交，再由受理事务引用，避免恢复时读取尚未提交的配置。
         this.transactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 

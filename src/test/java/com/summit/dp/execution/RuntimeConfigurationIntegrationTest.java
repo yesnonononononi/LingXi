@@ -29,10 +29,10 @@ import com.summit.dp.mcp.application.service.McpService;
 import com.summit.dp.personalization.domain.repository.PersonalizationRepository;
 import com.summit.dp.session.application.service.ConversationTranscriptService;
 import com.summit.dp.session.domain.repo.SessionRepository;
-import com.summit.dp.shared.config.SqliteSchemaInitializer;
+import com.summit.dp.shared.config.H2SchemaInitializer;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.tools.ToolListProcessorTestSupport;
 import com.summit.dp.turn.application.service.ChatTurnService;
@@ -70,7 +70,7 @@ import static org.mockito.Mockito.*;
 
 class RuntimeConfigurationIntegrationTest {
     private final ObjectMapper json = new JsonConfig().objectMapper();
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private RuntimeConfigRevisionMapper rows;
     private RuntimeConfigRevisionRepositoryImpl repository;
     private DataSourceTransactionManager transactionManager;
@@ -78,7 +78,7 @@ class RuntimeConfigurationIntegrationTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("RuntimeConfigurationIntegrationTest");
+        database = H2TestDatabase.create("RuntimeConfigurationIntegrationTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
         MyBatisTypeHandlers.registerAll(configuration);
@@ -86,7 +86,7 @@ class RuntimeConfigurationIntegrationTest {
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
-        rows = SqliteTestDatabase.sqlSession(factory.getObject()).getMapper(RuntimeConfigRevisionMapper.class);
+        rows = H2TestDatabase.sqlSession(factory.getObject()).getMapper(RuntimeConfigRevisionMapper.class);
         repository = new RuntimeConfigRevisionRepositoryImpl(rows);
         transactionManager = new DataSourceTransactionManager(database);
         configurations = new RuntimeConfigurationService(repository, json, transactionManager);
@@ -288,9 +288,9 @@ class RuntimeConfigurationIntegrationTest {
 
     @Test
     void repeatedBootstrapKeepsTheVersionStoreAndPinnedRevisions() throws Exception {
-        SqliteTestDatabase legacy = SqliteTestDatabase.create("RuntimeConfigurationIntegrationTest");
+        H2TestDatabase legacy = H2TestDatabase.create("RuntimeConfigurationIntegrationTest");
         try {
-            SqliteSchemaInitializer initializer = new SqliteSchemaInitializer();
+            H2SchemaInitializer initializer = new H2SchemaInitializer();
             MybatisConfiguration configuration = new MybatisConfiguration();
             configuration.setMapUnderscoreToCamelCase(true);
             MyBatisTypeHandlers.registerAll(configuration);
@@ -298,7 +298,7 @@ class RuntimeConfigurationIntegrationTest {
             MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
             factory.setDataSource(legacy);
             factory.setConfiguration(configuration);
-            RuntimeConfigRevisionMapper revisions = SqliteTestDatabase.sqlSession(factory.getObject()).getMapper(RuntimeConfigRevisionMapper.class);
+            RuntimeConfigRevisionMapper revisions = H2TestDatabase.sqlSession(factory.getObject()).getMapper(RuntimeConfigRevisionMapper.class);
             RuntimeConfigurationService service = new RuntimeConfigurationService(new RuntimeConfigRevisionRepositoryImpl(revisions),
                     json, new DataSourceTransactionManager(legacy));
             SensitiveDataSpec pinned = service.freezeModel(31L, model("preserved"));

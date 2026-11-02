@@ -372,16 +372,7 @@ public class RequestPreparer {
         return buildRequest(agentPrompt, context, toolList, false);
     }
 
-    /**
-     * 预冻结本次执行要引用的运行配置（模型 / MCP）。
-     *
-     * <p><b>为什么必须在外层写入之前调用</b>：执行快照只引用不可变版本号，而分配版本号要独立提交。
-     * SQLite 只有一个写者，「受理事务已经写过库」与「另开一条写连接提交配置版本」不能共存：
-     * 要么在 busy_timeout 后失败，要么把配置版本跟着受理一起回滚。因此受理流程在<b>第一次写库之前</b>
-     * 先把配置冻结好，随后 {@link #buildRequest} 里的同名调用只会命中「已冻结」的读取快路径。</p>
-     *
-     * <p>本方法幂等：同一份配置重复调用只会命中既有版本，不会重复分配。</p>
-     */
+    /** 运行配置必须在受理前冻结并提交，恢复只能引用已提交的配置版本。 */
     public void freezeRuntimeConfigurations(RuntimeContext context) {
         throwIf(context == null || context.executionContext() == null, "运行上下文不能为空");
         runtimeConfigurations.freezeModel(context.executionContext().modelConfigId(), context.modelConfig());

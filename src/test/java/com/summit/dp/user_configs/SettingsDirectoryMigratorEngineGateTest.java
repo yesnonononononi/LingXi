@@ -2,8 +2,6 @@ package com.summit.dp.user_configs;
 
 import com.summit.dp.execution.application.port.ExecutionCheckpointStore;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.shared.storage.StorageEngine;
-import com.summit.dp.shared.storage.StorageEngineProperties;
 import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.user_configs.infrastructure.fs.SettingsDirectoryMigrator;
 import org.junit.jupiter.api.AfterEach;
@@ -63,7 +61,7 @@ class SettingsDirectoryMigratorEngineGateTest {
     @DisplayName("H2 引擎：目标目录不存在时，拒绝发生在建目录之前（目录不得被创建出来）")
     void h2RejectionDoesNotCreateTargetDirectory() throws IOException {
         database = H2TestDatabase.create("gate-h2-fresh");
-        SettingsDirectoryMigrator migrator = new SettingsDirectoryMigrator(database, checkpointStore());
+        SettingsDirectoryMigrator migrator = new SettingsDirectoryMigrator();
         Path from = newTempDirectory("gate-from");
         Path to = from.getParent().resolve("gate-target-" + System.nanoTime());
 
@@ -76,7 +74,7 @@ class SettingsDirectoryMigratorEngineGateTest {
     @DisplayName("H2 引擎：技能目录搬迁不受影响，照常复制整棵树")
     void h2EngineStillAllowsSkillDirectoryMigration() throws IOException {
         database = H2TestDatabase.create("gate-h2-skill");
-        SettingsDirectoryMigrator migrator = new SettingsDirectoryMigrator(database, checkpointStore());
+        SettingsDirectoryMigrator migrator = new SettingsDirectoryMigrator();
         Path from = Files.createDirectories(newTempDirectory("gate-skill-from").resolve("skills"));
         Files.writeString(from.resolve("SKILL.md"), "技能正文");
         Path to = from.getParent().resolve("skills-new");
@@ -84,31 +82,6 @@ class SettingsDirectoryMigratorEngineGateTest {
         assertDoesNotThrow(() -> migrator.migrateSkillDir(from.toString(), to.toString()),
                 "技能目录是纯文件，H2 引擎下必须照常可搬");
         assertEquals("技能正文", Files.readString(to.resolve("SKILL.md")));
-    }
-
-    @Test
-    @DisplayName("引擎取自存储开关：开关写 h2 时，即使数据源是 SQLite 也按 H2 拒绝（开关是唯一事实源）")
-    void engineComesFromStorageSwitchWhenProvided() throws IOException {
-        StorageEngineProperties properties = new StorageEngineProperties();
-        properties.setEngine(StorageEngine.H2);
-        SettingsDirectoryMigrator migrator = new SettingsDirectoryMigrator(
-                sqliteDataSourceIn(newTempDirectory("gate-sqlite-ds")), checkpointStore(), properties);
-        Path from = newTempDirectory("gate-switch-from");
-        Path to = from.getParent().resolve("gate-switch-target-" + System.nanoTime());
-
-        ClientException failure = assertThrows(ClientException.class,
-                () -> migrator.migrateDataDir(from.toString(), to.toString()),
-                "查询开关即应拒绝：不应再去读数据源元数据");
-        assertTrue(failure.getMessage().contains("H2"), "消息必须点名 H2，实际=" + failure.getMessage());
-        assertTrue(Files.notExists(to), "拒绝前不得创建目标目录");
-    }
-
-    /** 一个不落盘的 SQLite 数据源：本用例只验证开关优先级，不真的建库。 */
-    private static DriverManagerDataSource sqliteDataSourceIn(Path directory) {
-        DriverManagerDataSource dataSource = new DriverManagerDataSource();
-        dataSource.setDriverClassName("org.sqlite.JDBC");
-        dataSource.setUrl("jdbc:sqlite:" + directory.resolve("lingxi.sqlite").toString().replace('\\', '/'));
-        return dataSource;
     }
 
     private static ExecutionCheckpointStore checkpointStore() {

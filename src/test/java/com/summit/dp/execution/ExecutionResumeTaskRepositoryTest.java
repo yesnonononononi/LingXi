@@ -9,7 +9,7 @@ import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionResume
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionResumeTaskPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionResumeTaskRepositoryImpl;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,13 +45,13 @@ class ExecutionResumeTaskRepositoryTest {
 
     private static final long EXECUTION_ID = 1000L;
 
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private ExecutionResumeTaskRepository repository;
     private ExecutionResumeTaskMapper taskMapper;
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("ExecutionResumeTaskRepositoryTest");
+        database = H2TestDatabase.create("ExecutionResumeTaskRepositoryTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
 
@@ -61,7 +61,7 @@ class ExecutionResumeTaskRepositoryTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate session = SqliteTestDatabase.sqlSession(sessionFactory);
+        SqlSessionTemplate session = H2TestDatabase.sqlSession(sessionFactory);
         taskMapper = session.getMapper(ExecutionResumeTaskMapper.class);
         repository = new ExecutionResumeTaskRepositoryImpl(taskMapper);
     }

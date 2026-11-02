@@ -140,13 +140,7 @@ public class SessionMessageRepositoryImpl
         }
     }
 
-    /**
-     * 确认会话行存在（原 {@code SELECT ... FOR UPDATE}）。
-     *
-     * <p><b>为什么不再是锁定读</b>：SQLite 没有行锁，会话追加的并发裁决改由
-     * {@code uk_session_response_id} 唯一索引承担。这里保留「存在性校验」这一半语义：
-     * 会话在落库期间必然存在，不存在则是真实调用错误，不能被静默吞掉。</p>
-     */
+    /** 消息追加由唯一约束和条件更新裁决，重复响应不能产生第二份消息。 */
     @Override
     public void lockSessionForAppend(Long sessionId) {
         if (sessionId == null) return;

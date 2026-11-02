@@ -14,7 +14,7 @@ import com.summit.dp.session.infrastructure.persistence.po.SessionMessagePO;
 import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
 import com.summit.dp.session.infrastructure.persistence.repository.SessionMessageRepositoryImpl;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.toolcall.domain.repo.ToolCallRepository;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -59,13 +59,13 @@ class TranscriptConcurrencyTest {
     private static final long TURN_ID = 900900L;
     private static final String RESPONSE_ID = "9007199254740993";
 
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private DataSource dataSource;
     private ConversationTranscriptService service;
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("TranscriptConcurrencyTest");
+        database = H2TestDatabase.create("TranscriptConcurrencyTest");
         dataSource = database;
         try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
             statement.execute("INSERT INTO session (id, root_session_id, name) VALUES (" + SESSION_ID + ", 0, '并发会话')");
@@ -84,7 +84,7 @@ class TranscriptConcurrencyTest {
         factory.setDataSource(dataSource);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate template = SqliteTestDatabase.sqlSession(sessionFactory);
+        SqlSessionTemplate template = H2TestDatabase.sqlSession(sessionFactory);
 
         TranscriptRecordAssembler assembler = new TranscriptRecordAssembler(new JsonConfig().objectMapper());
         TranscriptReplayMatcher matcher = new TranscriptReplayMatcher(new JsonConfig().objectMapper());

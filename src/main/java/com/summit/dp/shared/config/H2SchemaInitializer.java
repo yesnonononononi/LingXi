@@ -3,7 +3,7 @@ package com.summit.dp.shared.config;
 import com.summit.dp.shared.persistence.schema.SchemaInitializer;
 import com.summit.dp.shared.persistence.schema.SchemaScript;
 import com.summit.dp.shared.persistence.schema.SchemaScriptLoader;
-import com.summit.dp.shared.storage.StorageEngine;
+import com.summit.dp.shared.storage.H2Storage;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.sql.DataSource;
@@ -72,7 +72,7 @@ public class H2SchemaInitializer implements SchemaInitializer {
 
     @Override
     public String engineId() {
-        return StorageEngine.H2.id();
+        return "h2";
     }
 
     /** 期望表清单（供一致性测试核对脚本与实现没有漂移）。 */
@@ -93,10 +93,10 @@ public class H2SchemaInitializer implements SchemaInitializer {
 
     /** 读 classpath 上的 H2 脚本；一个都没有即配置错误（不会静默跳过建库）。 */
     public List<SchemaScript> loadScripts() {
-        List<SchemaScript> scripts = loader.load(StorageEngine.H2.schemaLocation());
+        List<SchemaScript> scripts = loader.load(H2Storage.SCHEMA_LOCATION);
         if (scripts.isEmpty()) {
             throw new IllegalStateException("classpath 上没有找到 H2 建库脚本: "
-                    + StorageEngine.H2.schemaLocation());
+                    + H2Storage.SCHEMA_LOCATION);
         }
         return scripts;
     }

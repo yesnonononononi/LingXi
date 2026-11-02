@@ -70,23 +70,7 @@ public class ModelContextService {
         }
     }
 
-    /**
-     * 替换会话的模型上下文（整笔事务重试）。
-     *
-     * <p><b>为什么不能只在原事务里做「读摘要 → 写正文」</b>：SQLite 的事务在第一次读时固定快照。
-     * 两个会话并发替换上下文时，A 提交后 B 在自己的旧快照上写会立刻收到
-     * {@code SQLITE_BUSY_SNAPSHOT}（真实事故现场：{@code ModelContextService.replace:55}）。
-     * 在过期读事务里重试 UPDATE 永远不会成功，必须整笔丢弃、换新事务重新读。</p>
-     *
-     * <p><b>序列化放在重试边界之外</b>：正文只序列化一次（可能几十 MB），重试的只是
-     * 「读摘要 + 版本条件写」这一小段。同样的入参序列化结果相同 ⇒ 重放是幂等的。</p>
-     *
-     * <p>语义不变：仍走领域方法 {@link SessionContext#changeContent(String)} 写入（版本照样 +1），
-     * 仍然只读摘要不读旧正文，不引入缓存，正文仍只存在 SQLite 里。</p>
-     *
-     * @param sessionId 会话标识
-     * @param messages  新的模型上下文
-     */
+    /** 上下文版本竞争时重试整笔事务，保证摘要与正文基于同一版本。副作用必须留在重试边界之外。 */
     public void replace(Long sessionId, List<Message> messages) {
         if (sessionId == null) {
             throw new IllegalArgumentException("会话 ID 不能为空");

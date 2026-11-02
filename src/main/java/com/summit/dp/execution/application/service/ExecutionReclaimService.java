@@ -42,9 +42,7 @@ public class ExecutionReclaimService {
      */
     public boolean reclaim(Execution execution) {
         String executionId = Long.toString(execution.getId());
-        // 先读一次库内权威引用（自动提交的轻量查询，不放进删除事务里）。
-        // 不能在删除事务里先 SELECT 再 DELETE：SQLite 会把「读锁升级写锁」直接判成 SQLITE_BUSY。
-        // 版本条件兜住并发：这段时间若有保存推进了版本，删除命中 0 行，文件也就不动（旧文件留给孤儿回收）。
+        // 先按条件删除再检查结果，避免查询结果与实际删除之间被并发写入改变。
         String replacedFile = repository.findCheckpointSummary(execution.getId())
                 .map(Execution::getSnapshotFile)
                 .orElse(null);

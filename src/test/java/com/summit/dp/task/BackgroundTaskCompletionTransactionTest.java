@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.summit.dp.execution.application.service.ResumeDisposition;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.task.domain.model.Task;
 import com.summit.dp.task.domain.model.Task.TaskStatus;
 import com.summit.dp.task.domain.repository.TaskRepository;
@@ -83,13 +83,13 @@ class BackgroundTaskCompletionTransactionTest {
     @Configuration
     @EnableTransactionManagement
     static class Config {
-        @Bean(destroyMethod = "shutdown") SqliteTestDatabase database() {
-            return SqliteTestDatabase.create("BackgroundTaskCompletionTransactionTest");
+        @Bean(destroyMethod = "shutdown") H2TestDatabase database() {
+            return H2TestDatabase.create("BackgroundTaskCompletionTransactionTest");
         }
-        @Bean PlatformTransactionManager transactionManager(SqliteTestDatabase database) {
+        @Bean PlatformTransactionManager transactionManager(H2TestDatabase database) {
             return new DataSourceTransactionManager(database);
         }
-        @Bean TaskMapper taskMapper(SqliteTestDatabase database) throws Exception {
+        @Bean TaskMapper taskMapper(H2TestDatabase database) throws Exception {
             MybatisConfiguration configuration = new MybatisConfiguration();
             configuration.setMapUnderscoreToCamelCase(true);
             MyBatisTypeHandlers.registerAll(configuration);
@@ -97,7 +97,7 @@ class BackgroundTaskCompletionTransactionTest {
             MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
             factory.setConfiguration(configuration);
             factory.setDataSource(database);
-            return SqliteTestDatabase.sqlSession(factory.getObject()).getMapper(TaskMapper.class);
+            return H2TestDatabase.sqlSession(factory.getObject()).getMapper(TaskMapper.class);
         }
         @Bean TaskRepository repository(TaskMapper mapper) { return new TaskRepositoryImpl(mapper); }
         @Bean InputWakeupService coordinator() { return mock(InputWakeupService.class); }

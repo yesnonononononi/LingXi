@@ -1,7 +1,6 @@
 package com.summit.dp.shared.config;
 
 import com.summit.dp.shared.persistence.schema.SchemaInitializer;
-import com.summit.dp.shared.storage.StorageEngineProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
@@ -11,26 +10,14 @@ import org.springframework.core.annotation.Order;
 
 import javax.sql.DataSource;
 
-/**
- * 建库装配：按引擎挑一个 {@link SchemaInitializer}，并且只跑一次。
- *
- * <p><b>为什么把 runner 收拢到这里</b>：以前 runner 挂在 SQLite 初始化器自己的 {@code @Configuration} 上，
- * 「谁负责建库」和「怎么建库」绑死在一个类里；引擎一旦可选，就必须有一个与引擎无关的装配点，
- * 否则 H2 与 SQLite 会各自注册一个 runner，谁先跑取决于 bean 名排序。</p>
- */
+/** 建库必须先于其他启动任务，避免业务读取尚未初始化的表。 */
 @Slf4j
 @Configuration
 public class SchemaBootstrapConfig {
 
-    /**
-     * 按引擎装配唯一的建库实现。
-     *
-     * @param properties 存储引擎开关
-     * @return 与生效引擎一致的初始化器
-     */
     @Bean
-    public SchemaInitializer schemaInitializer(StorageEngineProperties properties) {
-        return properties.isH2() ? new H2SchemaInitializer() : new SqliteSchemaInitializer();
+    public SchemaInitializer schemaInitializer() {
+        return new H2SchemaInitializer();
     }
 
     /**

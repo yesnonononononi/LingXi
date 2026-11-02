@@ -17,7 +17,7 @@ import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.session.application.service.ModelContextService;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.shared.vo.SessionVO;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.turn.application.service.impl.ChatTurnServiceImpl;
@@ -65,7 +65,7 @@ class SubmitRejectionReleasesSessionTest {
     private static final long ROOT_SESSION_ID = 500L;
     private static final long TURN_ID = 9001L;
 
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private TransactionTemplate transaction;
     private ExecutionMapper executionMapper;
     private ChatTurnMapper chatTurnMapper;
@@ -74,7 +74,7 @@ class SubmitRejectionReleasesSessionTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("SubmitRejectionReleasesSessionTest");
+        database = H2TestDatabase.create("SubmitRejectionReleasesSessionTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
 
         MyBatisTypeHandlers.registerAll(configuration);
@@ -87,8 +87,8 @@ class SubmitRejectionReleasesSessionTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        executionMapper = SqliteTestDatabase.sqlSession(sessionFactory).getMapper(ExecutionMapper.class);
-        chatTurnMapper = SqliteTestDatabase.sqlSession(sessionFactory).getMapper(ChatTurnMapper.class);
+        executionMapper = H2TestDatabase.sqlSession(sessionFactory).getMapper(ExecutionMapper.class);
+        chatTurnMapper = H2TestDatabase.sqlSession(sessionFactory).getMapper(ChatTurnMapper.class);
         transaction = new TransactionTemplate(new DataSourceTransactionManager(database));
 
         ChatTurnService chatTurnService = new ChatTurnServiceImpl(new ChatTurnRepositoryImpl(chatTurnMapper));

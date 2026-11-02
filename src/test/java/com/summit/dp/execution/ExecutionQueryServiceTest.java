@@ -11,7 +11,7 @@ import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,14 +34,14 @@ import static org.mockito.Mockito.*;
 /** 通过真实 Mapper 验证状态查询、轻量映射及事务回滚。 */
 class ExecutionQueryServiceTest {
 
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private ExecutionMapper mapper;
     private ExecutionRepositoryImpl repository;
     private ExecutionQueryServiceImpl service;
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("ExecutionQueryServiceTest");
+        database = H2TestDatabase.create("ExecutionQueryServiceTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
 
         MyBatisTypeHandlers.registerAll(configuration);
@@ -52,7 +52,7 @@ class ExecutionQueryServiceTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate session = SqliteTestDatabase.sqlSession(sessionFactory);
+        SqlSessionTemplate session = H2TestDatabase.sqlSession(sessionFactory);
         mapper = session.getMapper(ExecutionMapper.class);
         repository = new ExecutionRepositoryImpl(mapper);
         service = new ExecutionQueryServiceImpl(repository);

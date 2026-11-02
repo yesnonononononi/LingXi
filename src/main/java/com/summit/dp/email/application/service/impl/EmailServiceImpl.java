@@ -197,22 +197,7 @@ public class EmailServiceImpl implements EmailService {
         throwIf(affected != pending.size(), "部分消息状态已变化，请重新读取本批消息");
     }
 
-    /**
-     * 获取或创建角色邮箱。
-     *
-     * <p>业务键 {@code (workflowExecutionId, recipientAgentId)} 上有唯一索引，因此并发首次建箱
-     * 只有一个 INSERT 成功，其余落到 {@link DuplicateKeyException}，回查即得已存在邮箱。</p>
-     *
-     * <p><b>顺序是刻意的：先插入，再回查，绝不先读一遍再插入。</b>SQLite 只有一个写者，
-     * 事务里「先读后升写」在竞争时不会排队等锁（升写失败会立刻返回 SQLITE_BUSY，
-     * busy_timeout 对升写不生效），所以这里让事务的第一条语句就是写：
-     * 抢不到锁时由 busy_timeout 正常等待，抢到了则由唯一索引裁决并发。</p>
-     *
-     * <p>冲突后的回查不需要（也不存在）行锁：能走到 {@code DuplicateKeyException}，说明本次写
-     * 已经看到过竞争方提交后的最新快照，紧接着的读取一定能读到那一行。</p>
-     *
-     * @return 已存在或刚创建的邮箱（保证带 id）
-     */
+    /** 先插入再回查，使并发投递的唯一约束直接裁决归属。 */
     private Email obtainMailbox(Long workflowExecutionId, Long recipientAgentId, Long teamId) {
         Email created = Email.builder()
                 .id(IdUtil.getSnowflakeNextId())

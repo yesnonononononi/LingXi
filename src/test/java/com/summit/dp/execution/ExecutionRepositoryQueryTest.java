@@ -8,7 +8,7 @@ import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,13 +33,13 @@ class ExecutionRepositoryQueryTest {
     private static final long ROOT_SESSION_ID = 700L;
     private static final long CHILD_SESSION_ID = 701L;
 
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private ExecutionRepository repository;
     private ExecutionMapper mapper;
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("ExecutionRepositoryQueryTest");
+        database = H2TestDatabase.create("ExecutionRepositoryQueryTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
 
@@ -49,7 +49,7 @@ class ExecutionRepositoryQueryTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        mapper = SqliteTestDatabase.sqlSession(sessionFactory).getMapper(ExecutionMapper.class);
+        mapper = H2TestDatabase.sqlSession(sessionFactory).getMapper(ExecutionMapper.class);
         repository = new ExecutionRepositoryImpl(mapper);
     }
 

@@ -12,15 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 
-/**
- * 只投影已提交的生命周期事实，挂起与终态不能互相覆盖。
- *
- * <p><b>为什么这里要整笔事务重试</b>：轮次投影是「按 execution_id 读轮次 → 领域方法改状态 →
- * 写回」，属于读后写。同一排空周期里多个执行（子代理并发结束、挂起与终态交错）可能同时投影，
- * 后写的一方在 SQLite 上会撞 {@code SQLITE_BUSY_SNAPSHOT} —— 只重试 UPDATE 无效，
- * 必须在全新事务里重新读一遍。共用 {@link TransactionRetryTemplate}，与检查点保存、
- * 会话上下文替换是同一套判定。调用方已有事务时不另开事务（那只跑一次，原子性归调用方）。</p>
- */
+/** 投影冲突时重放整笔事务，使读取与状态更新基于同一次尝试。 */
 @Component
 @RequiredArgsConstructor
 public class ChatTurnLifecycleProjector {

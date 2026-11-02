@@ -32,7 +32,7 @@ import com.summit.dp.sandbox_security.domain.model.SecurityAction;
 import com.summit.dp.sandbox_security.domain.model.SecurityDecision;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.task.api.controller.BackgroundTaskController;
 import com.summit.dp.task.application.service.TaskDeletionPolicy;
 import com.summit.dp.task.application.vo.TaskVO;
@@ -87,7 +87,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class BackgroundCommandTest {
     @TempDir Path temporary;
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private TaskMapper mapper;
     private TaskRepository repository;
     private BackendProcessManager manager;
@@ -98,17 +98,17 @@ class BackgroundCommandTest {
     private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
 
     @BeforeEach void setup() throws Exception {
-        database = SqliteTestDatabase.create("BackgroundCommandTest");
+        database = H2TestDatabase.create("BackgroundCommandTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
         MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(TaskMapper.class);
         MybatisPlusInterceptor plugins = new MybatisPlusInterceptor();
-        plugins.addInnerInterceptor(new PaginationInnerInterceptor(DbType.SQLITE));
+        plugins.addInnerInterceptor(new PaginationInnerInterceptor(DbType.H2));
         MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
         factory.setDataSource(database); factory.setConfiguration(configuration); factory.setPlugins(plugins);
         SqlSessionFactory sessionFactory = factory.getObject();
-        mapper = SqliteTestDatabase.sqlSession(sessionFactory).getMapper(TaskMapper.class);
+        mapper = H2TestDatabase.sqlSession(sessionFactory).getMapper(TaskMapper.class);
         repository = new TaskRepositoryImpl(mapper);
         BackgroundTaskBroadcaster broadcaster = mock(BackgroundTaskBroadcaster.class);
         doAnswer(invocation -> {

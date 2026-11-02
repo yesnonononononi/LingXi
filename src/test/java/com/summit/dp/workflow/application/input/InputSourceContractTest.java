@@ -35,7 +35,6 @@ import com.summit.dp.email.infrastructure.repository.EmailRepositoryImpl;
 import com.summit.dp.email.infrastructure.repository.EmailMessageRepositoryImpl;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.shared.support.H2TestDatabase;
-import com.summit.dp.shared.support.SqliteTestDatabase;
 import com.summit.dp.task.domain.model.Task;
 import com.summit.dp.task.domain.model.Task.TaskStatus;
 import com.summit.dp.task.infrastructure.persistence.mapper.TaskMapper;
@@ -205,11 +204,11 @@ class InputSourceContractTest {
                 database = db; source = db;
                 factory = db.sessionFactory(EmailMapper.class, EmailMessageMapper.class, TaskMapper.class, ChatTurnMapper.class, ExecutionMapper.class);
             } else {
-                SqliteTestDatabase db = SqliteTestDatabase.create("input-contract");
+                H2TestDatabase db = H2TestDatabase.create("input-contract");
                 database = db; source = db;
                 factory = db.sessionFactory(EmailMapper.class, EmailMessageMapper.class, TaskMapper.class, ChatTurnMapper.class, ExecutionMapper.class);
             }
-            SqlSessionTemplate session = h2 ? H2TestDatabase.sqlSession(factory) : SqliteTestDatabase.sqlSession(factory);
+            SqlSessionTemplate session = h2 ? H2TestDatabase.sqlSession(factory) : H2TestDatabase.sqlSession(factory);
             dataSource = source;
             turnRows = session.getMapper(ChatTurnMapper.class);
             executionRows = session.getMapper(ExecutionMapper.class);

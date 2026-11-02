@@ -16,7 +16,7 @@ import com.summit.dp.personalization.domain.model.Personalization;
 import com.summit.dp.personalization.domain.model.ReplyStyle;
 import com.summit.dp.personalization.infrastructure.repository.PersonalizationRepositoryImpl;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.user_configs.domain.model.UserConfig;
 import com.summit.dp.user_configs.infrastructure.persistence.mapper.UserConfigMapper;
 import com.summit.dp.user_configs.infrastructure.persistence.po.UserConfigPO;
@@ -49,7 +49,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class JsonRepositoriesTest {
     @TempDir Path directory;
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private McpMapper mcpMapper;
     private ModelConfigMapper modelMapper;
     private UserConfigMapper userMapper;
@@ -61,7 +61,7 @@ class JsonRepositoriesTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("JsonRepositoriesTest");
+        database = H2TestDatabase.create("JsonRepositoriesTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
         MyBatisTypeHandlers.registerAll(configuration);
@@ -72,7 +72,7 @@ class JsonRepositoriesTest {
         factory.setConfiguration(configuration);
         factory.setDataSource(database);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate session = SqliteTestDatabase.sqlSession(sessionFactory);
+        SqlSessionTemplate session = H2TestDatabase.sqlSession(sessionFactory);
         mcpMapper = session.getMapper(McpMapper.class);
         modelMapper = session.getMapper(ModelConfigMapper.class);
         userMapper = session.getMapper(UserConfigMapper.class);

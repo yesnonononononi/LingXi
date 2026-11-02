@@ -187,23 +187,7 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
         }
     }
 
-    /**
-     * 把「新文件标识 + 状态 + 时间」提交进库；自己拥有事务时对整笔保存做有限重试。
-     *
-     * <p><b>为什么必须整笔重试，而不是只重试 UPDATE</b>：SQLite 的事务第一次读就固定了快照。
-     * 两个不同执行并发保存时，A 提交后 B 在自己的旧快照上写会立刻收到
-     * {@code SQLITE_BUSY_SNAPSHOT} —— 在同一个已过期的读事务里重试 UPDATE 永远不会成功，
-     * 必须丢弃整个事务、用全新事务重新读一遍再写。重试本身由共享的
-     * {@link TransactionRetryTemplate} 实现（同一套判定也用于会话上下文替换）。</p>
-     *
-     * <p><b>为什么重试只能发生在事务外</b>：{@link TransactionRetryTemplate} 只在自己拥有事务时
-     * 逐次开新事务；调用方已有事务（例如受理阶段要把轮次、消息、执行行一起提交）就只尝试一次，
-     * 锁冲突如实上抛 —— 换了新事务等于把执行行从调用方事务里偷走。</p>
-     *
-     * <p><b>文件归属</b>：正文只发布一次（重试的是数据库事务，不是文件），
-     * 每次失败的尝试只回滚数据库；整笔最终失败时由调用方 {@code writer.rollback()} 删掉本次新文件；
-     * 提交成功后才删旧文件。</p>
-     */
+    /** 保存冲突只重试数据库事务；整笔失败删除新正文，提交后才回收旧正文。 */
     private ExecutionCheckpointService.SaveOutcome commitCheckpoint(Execution execution, long id, Long sessionId,
                                                                     int status, String fileId) {
         return checkpointSaveRetryTemplate().execute(() -> checkpointService.save(id, sessionId, status, fileId,

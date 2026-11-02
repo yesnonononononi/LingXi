@@ -8,7 +8,7 @@ import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStor
 import com.summit.dp.execution.infrastructure.persistence.mapper.ExecutionMapper;
 import com.summit.dp.execution.infrastructure.persistence.po.ExecutionPO;
 import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
 import com.summit.dp.workflow.infrastructure.harness.LocalCheckpointMaintenance;
 import org.junit.jupiter.api.Test;
@@ -40,10 +40,10 @@ class ReclaimFileOrderingTest {
     @Test
     @Timeout(60)
     void checkpointFileIsDeletedOnlyAfterTheRowDeletionIsCommitted() throws Exception {
-        SqliteTestDatabase database = SqliteTestDatabase.create("reclaim-order");
+        H2TestDatabase database = H2TestDatabase.create("reclaim-order");
         Path dataDir = ExecutionRepositoryTestFactory.tempDataDir();
         try {
-            ExecutionMapper executions = SqliteTestDatabase
+            ExecutionMapper executions = H2TestDatabase
                     .sqlSession(database.sessionFactory(ExecutionMapper.class))
                     .getMapper(ExecutionMapper.class);
             ObjectMapper mapper = new JsonConfig().objectMapper();
@@ -80,10 +80,10 @@ class ReclaimFileOrderingTest {
     @Test
     @Timeout(60)
     void rollbackKeepsBothTheRowAndItsCheckpointFile() throws Exception {
-        SqliteTestDatabase database = SqliteTestDatabase.create("reclaim-order-rollback");
+        H2TestDatabase database = H2TestDatabase.create("reclaim-order-rollback");
         Path dataDir = ExecutionRepositoryTestFactory.tempDataDir();
         try {
-            ExecutionMapper executions = SqliteTestDatabase
+            ExecutionMapper executions = H2TestDatabase
                     .sqlSession(database.sessionFactory(ExecutionMapper.class))
                     .getMapper(ExecutionMapper.class);
             ObjectMapper mapper = new JsonConfig().objectMapper();

@@ -14,7 +14,7 @@ import com.summit.dp.execution.infrastructure.repository.ExecutionRepositoryImpl
 import com.summit.dp.session.infrastructure.persistence.mapper.SessionMapper;
 import com.summit.dp.session.infrastructure.persistence.po.SessionPO;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.turn.infrastructure.persistence.mapper.ChatTurnMapper;
 import com.summit.dp.turn.infrastructure.persistence.po.ChatTurnPO;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
@@ -38,7 +38,7 @@ class ExecutionCleanupFileStorageTest {
     @Test
     @Timeout(60)
     void cleanupKeepsReferencedHistoryAndCommitsPerExecution() throws Exception {
-        SqliteTestDatabase database = SqliteTestDatabase.create("cleanup-file");
+        H2TestDatabase database = H2TestDatabase.create("cleanup-file");
         Path dataDir = ExecutionRepositoryTestFactory.tempDataDir();
         try {
             MybatisConfiguration configuration = new MybatisConfiguration();
@@ -50,7 +50,7 @@ class ExecutionCleanupFileStorageTest {
             MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
             factory.setDataSource(database);
             factory.setConfiguration(configuration);
-            SqlSessionTemplate sql = SqliteTestDatabase.sqlSession(factory.getObject());
+            SqlSessionTemplate sql = H2TestDatabase.sqlSession(factory.getObject());
             ExecutionMapper executions = sql.getMapper(ExecutionMapper.class);
             ObjectMapper mapper = new JsonConfig().objectMapper();
             LocalFileCheckpointStore store = new LocalFileCheckpointStore(dataDir.toString(), mapper);

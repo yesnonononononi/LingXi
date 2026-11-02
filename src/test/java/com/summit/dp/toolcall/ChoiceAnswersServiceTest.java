@@ -22,7 +22,7 @@ import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.toolcall.api.dto.ChoiceAnswersCommand;
 import com.summit.dp.toolcall.api.dto.ChoiceAnswersReceipt;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
@@ -75,7 +75,7 @@ class ChoiceAnswersServiceTest {
     private static final long CONVERSATION = 500L;
     private static final long EXECUTION = 2105000000000000001L;
     private static final String RESPONSE = "2105000000000000011";
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private ExecutionRepository executions;
     private ToolCallRepositoryImpl tools;
     private ModelContextService contexts;
@@ -87,7 +87,7 @@ class ChoiceAnswersServiceTest {
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("ChoiceAnswersServiceTest");
+        database = H2TestDatabase.create("ChoiceAnswersServiceTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         MyBatisTypeHandlers.registerAll(configuration);
         configuration.addMapper(ExecutionMapper.class);
@@ -96,7 +96,7 @@ class ChoiceAnswersServiceTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate session = SqliteTestDatabase.sqlSession(sessionFactory);
+        SqlSessionTemplate session = H2TestDatabase.sqlSession(sessionFactory);
         mapper = new ObjectMapper().findAndRegisterModules();
         messages = mock(MessageRepository.class);
         executions = ExecutionRepositoryTestFactory.create(session.getMapper(ExecutionMapper.class), mapper);

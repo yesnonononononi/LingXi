@@ -26,7 +26,7 @@ import com.summit.dp.session.domain.model.SessionMessage;
 import com.summit.dp.session.domain.model.SessionMessageType;
 import com.summit.dp.session.domain.repo.MessageRepository;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.turn.domain.model.ChatTurn;
 import com.summit.dp.turn.domain.repo.ChatTurnRepository;
@@ -81,12 +81,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class ChatControllerLifecycleTest {
     /** 库建在系统临时目录：用例之间互不干扰，也不在工作区留 *.sqlite/-wal。 */
-    private static final String DATABASE_URL = SqliteTestDatabase.newDatasourceUrl("chat-controls");
+    private static final String DATABASE_URL = H2TestDatabase.newDatasourceUrl("chat-controls");
 
     @org.springframework.test.context.DynamicPropertySource
     static void datasource(org.springframework.test.context.DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", () -> DATABASE_URL);
-        registry.add("spring.datasource.driver-class-name", () -> "org.sqlite.JDBC");
+        registry.add("spring.datasource.driver-class-name", () -> "org.h2.Driver");
     }
 
     @Autowired private MockMvc mvc;

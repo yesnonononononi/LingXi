@@ -12,7 +12,7 @@ import com.summit.core.tool.ToolExecutor;
 import com.summit.core.tool.ToolRegistry;
 import com.summit.ddd.infrastructure.repository.json.AbstractJsonRepository;
 import com.summit.dp.email.application.service.EmailService;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.workflow.application.resume.ExecutionResumeCoordinator;
 import com.summit.dp.workflow.infrastructure.mcp.HostMcpScopeProvider;
@@ -65,12 +65,12 @@ import static org.mockito.Mockito.mockingDetails;
 class ApplicationContextAssemblyTest {
 
     /** 库建在系统临时目录：不打开实例正在用的库，也不在工作区留文件。 */
-    private static final String DATABASE_URL = SqliteTestDatabase.newDatasourceUrl("ctx-verify");
+    private static final String DATABASE_URL = H2TestDatabase.newDatasourceUrl("ctx-verify");
 
     @org.springframework.test.context.DynamicPropertySource
     static void datasource(org.springframework.test.context.DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", () -> DATABASE_URL);
-        registry.add("spring.datasource.driver-class-name", () -> "org.sqlite.JDBC");
+        registry.add("spring.datasource.driver-class-name", () -> "org.h2.Driver");
     }
 
     @Autowired

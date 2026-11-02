@@ -72,8 +72,7 @@ public class EmailRepositoryImpl extends AbstractRepository<Email, EmailPO, Long
         if (workflowExecutionId == null || recipientAgentId == null) {
             return Optional.empty();
         }
-        // SQLite 无行锁：退化为普通读，「同一业务键只有一把邮箱」由 uk_email_workflow_recipient 唯一索引裁决，
-        // 并发首次建箱的失败方收到唯一键冲突后回查既有行。
+        // 同一业务键只能存在一个邮箱，由唯一索引裁决并发创建。
         EmailPO po = mapper.selectOne(Wrappers.<EmailPO>lambdaQuery()
                 .eq(EmailPO::getWorkflowExecutionId, workflowExecutionId)
                 .eq(EmailPO::getRecipientAgentId, recipientAgentId));

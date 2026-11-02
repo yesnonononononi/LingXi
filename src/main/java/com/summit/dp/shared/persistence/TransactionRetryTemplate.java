@@ -1,46 +1,24 @@
 package com.summit.dp.shared.persistence;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.SQLException;
-import java.sql.SQLTransientException;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
-/**
- * 整笔事务重试：把「可能撞上数据库锁冲突的一整段读写」放进可重试边界，每次重试开**全新事务**。
- *
- * <p><b>为什么必须整笔重试</b>：SQLite 的事务在第一次读时就固定了数据库快照。
- * 同期别的连接提交之后，本事务再写会立刻收到 {@code SQLITE_BUSY_SNAPSHOT} ——
- * 在同一个已过期的读事务里重试 UPDATE 永远不会成功，只能丢弃整个事务、
- * 用新事务重新读一遍再写。{@code busy_timeout} 对「读锁升写锁」不生效，靠等也不行。</p>
- *
- * <p><b>为什么不能重试外层事务</b>：调用方已有事务时（例如受理要把轮次、消息、执行行一起提交），
- * 把动作拿进新事务就等于把它从调用方事务里偷走，原子性先碎。所以
- * {@link #execute(Action)} 对「已有外层事务」只跑一次、锁冲突如实上抛，由调用方决定语义。</p>
- *
- * <p><b>什么时候不该用它</b>：动作不是幂等复现（有外部副作用、发消息、写文件）时，
- * 重放会重复副作用 —— 那种场景要先自己把副作用移出可重试边界。</p>
- */
+/** 锁冲突重放整个事务；调用方已有事务时只执行一次，避免拆散原子提交。 */
 @Slf4j
 public final class TransactionRetryTemplate {
 
-    /** 默认尝试次数（含首次）。SQLite 的写冲突窗口很短，几次足够。 */
+    /** 默认尝试次数含首次，避免持续竞争无限阻塞业务。 */
     public static final int DEFAULT_MAX_ATTEMPTS = 4;
     /** 每次重试前的线性退避基数（毫秒）。 */
     public static final long DEFAULT_BACKOFF_MILLIS = 20L;
-
-    // SQLite 的锁冲突错误码：5=SQLITE_BUSY，6=SQLITE_LOCKED，517=SQLITE_BUSY_SNAPSHOT，
-    // 262=SQLITE_LOCKED_SHAREDCACHE。
-    private static final int SQLITE_BUSY = 5;
-    private static final int SQLITE_LOCKED = 6;
-    private static final int SQLITE_BUSY_SNAPSHOT = 517;
-    private static final int SQLITE_LOCKED_SHAREDCACHE = 262;
 
     /** 事务管理器；为 {@code null} 表示没有事务基础设施（例如直接 new 出来的用例），只跑一次。 */
     private final PlatformTransactionManager transactionManager;
@@ -102,7 +80,7 @@ public final class TransactionRetryTemplate {
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             attempts.incrementAndGet();
             TransactionTemplate transaction = new TransactionTemplate(transactionManager);
-            // 每次尝试都是全新事务/新快照：这是 BUSY_SNAPSHOT 类冲突能重试成功的唯一前提。
+            // 每次尝试都是全新事务/新快照：避免沿用失败事务的锁与读状态。
             transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
             try {
                 return transaction.execute(status -> action.run());
@@ -128,28 +106,15 @@ public final class TransactionRetryTemplate {
         return new Metrics(attempts.get(), retries.get(), exhausted.get());
     }
 
-    /**
-     * 是否为可重试的数据库锁冲突。
-     *
-     * <p>SQLite 单写者下，并发写同一库必然有 {@code SQLITE_BUSY}（库被写）/
-     * {@code SQLITE_BUSY_SNAPSHOT}（读快照已过期）；这类冲突换新事务重放就能成功。
-     * 其它异常（约束、SQL 错误、业务校验）一律不重试 —— 重放同样的输入只会得到同样的失败。</p>
-     */
+    /** 只重试 H2 的锁超时与死锁，不把语句超时或 IO 失败当成写入竞争。 */
     public static boolean isLockConflict(Throwable failure) {
         for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
-            if (cause instanceof CannotAcquireLockException || cause instanceof SQLTransientException) {
+            if (cause instanceof PessimisticLockingFailureException) {
                 return true;
             }
-            if (cause instanceof SQLException sqlFailure) {
-                int code = sqlFailure.getErrorCode();
-                if (code == SQLITE_BUSY || code == SQLITE_LOCKED
-                        || code == SQLITE_BUSY_SNAPSHOT || code == SQLITE_LOCKED_SHAREDCACHE) {
-                    return true;
-                }
-            }
-            String message = cause.getMessage();
-            if (message != null && (message.contains("SQLITE_BUSY") || message.contains("SQLITE_LOCKED")
-                    || message.contains("database is locked") || message.contains("database table is locked"))) {
+            if (cause instanceof SQLException sqlFailure
+                    && (sqlFailure.getErrorCode() == 50200 || sqlFailure.getErrorCode() == 40001
+                    || "40001".equals(sqlFailure.getSQLState()))) {
                 return true;
             }
             if (cause.getCause() == cause) {

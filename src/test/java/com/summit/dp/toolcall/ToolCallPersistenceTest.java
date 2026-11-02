@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.execution.application.service.ExecutionLocator;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.toolcall.application.command.ToolCallRegisterCommand;
 import com.summit.dp.toolcall.application.convert.ToolCallConverter;
 import com.summit.dp.toolcall.application.service.CardAvailabilityPolicy;
@@ -45,13 +45,13 @@ import static org.mockito.Mockito.when;
  */
 class ToolCallPersistenceTest {
 
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private ToolCallRepositoryImpl repository;
     private TransactionTemplate transactions;
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("ToolCallPersistenceTest");
+        database = H2TestDatabase.create("ToolCallPersistenceTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);
 
@@ -61,7 +61,7 @@ class ToolCallPersistenceTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        SqlSessionTemplate session = SqliteTestDatabase.sqlSession(sessionFactory);
+        SqlSessionTemplate session = H2TestDatabase.sqlSession(sessionFactory);
         repository = new ToolCallRepositoryImpl(session.getMapper(ToolCallMapper.class),
                 new ObjectMapper(), buildCardAvailabilityPolicy());
         transactions = new TransactionTemplate(new DataSourceTransactionManager(database));

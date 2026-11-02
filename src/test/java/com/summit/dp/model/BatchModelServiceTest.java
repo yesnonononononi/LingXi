@@ -9,7 +9,7 @@ import com.summit.dp.model.domain.model.ModelConfig;
 import com.summit.dp.provider.application.service.ProviderConfigService;
 import com.summit.dp.provider.application.vo.ProviderConfigVO;
 import com.summit.dp.shared.exception.ClientException;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.aop.framework.ProxyFactory;
@@ -50,7 +50,7 @@ class BatchModelServiceTest {
 
     @Test
     void realTransactionRollsBackEarlierWritesAndSerializesConcurrentBatches() throws Exception {
-        SqliteTestDatabase database = SqliteTestDatabase.create("BatchModelServiceTest");
+        H2TestDatabase database = H2TestDatabase.create("BatchModelServiceTest");
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
             ModelConfigRepositoryImpl repository = spy(repository());

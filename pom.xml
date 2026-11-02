@@ -32,11 +32,9 @@
         <kotlin.version>2.2.21</kotlin.version>
         <lingxi.build.directory>${project.basedir}/target</lingxi.build.directory>
         <mybatis-plus>3.5.9</mybatis-plus>
-        <!-- SQLite 驱动：3.54.1.0 内核=SQLite 3.54.1，含官方 WAL-reset 竞态修复（3.51.3 起修复，
-             影响范围 3.7.0–3.51.2）；jar 内自带 Windows x86_64/aarch64/x86 的 sqlitejdbc.dll（JNI 免安装） -->
+        <!-- SQLite 只用于旧数据迁移验证，不进入运行包。 -->
         <sqlite-jdbc>3.54.1.0</sqlite-jdbc>
-        <!-- 可选存储引擎（lingxi.storage.engine=h2）的 H2 版本：写死，不继承 Spring Boot 的托管版本，
-             也不用浮动版本 —— H2 的小版本之间 DDL/方言行为会变，锁与 LOB 语义必须可复现。 -->
+        <!-- 固定 H2 版本，保证 DDL、锁和大文本语义可复现。 -->
         <h2.version>2.5.252</h2.version>
         <lingxi-starter>1.1.8-SNAPSHOT</lingxi-starter>
         <ddd-starter>1.0.7</ddd-starter>
@@ -61,12 +59,12 @@
         <!-- 默认目标只覆盖纯逻辑核心包，单次可接受；要跑别的范围用 -DtargetClasses=a.*,b.* 覆盖（逗号分隔由 Maven 拆成数组）。 -->
     </properties>
     <dependencies>
-        <!-- 缺省引擎仍是 SQLite；H2 是可选的第二引擎（lingxi.storage.engine=h2 才加载其驱动）。
-             两者都留在依赖里：默认路径不碰 H2，切换时不需要重新打包。 -->
+        <!-- 唯一运行期数据库为 H2。 -->
         <dependency>
             <groupId>org.xerial</groupId>
             <artifactId>sqlite-jdbc</artifactId>
             <version>${sqlite-jdbc}</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.h2database</groupId>

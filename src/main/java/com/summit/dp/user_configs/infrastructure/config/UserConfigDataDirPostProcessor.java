@@ -1,8 +1,7 @@
 package com.summit.dp.user_configs.infrastructure.config;
 
 import com.summit.ddd.infrastructure.repository.json.JsonListCodec;
-import com.summit.dp.shared.storage.StorageEngine;
-import com.summit.dp.shared.storage.StorageEngineEnvironmentPostProcessor;
+import com.summit.dp.shared.storage.H2Storage;
 import com.summit.dp.user_configs.infrastructure.persistence.po.UserConfigPO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.SpringApplication;
@@ -39,7 +38,7 @@ public class UserConfigDataDirPostProcessor implements EnvironmentPostProcessor,
     @Override
     public int getOrder() {
         // 必须晚于 application.yaml 的加载（ConfigData 那一步），否则读不到 lingxi.* 的缺省值。
-        // 但必须早于 StorageEngineEnvironmentPostProcessor（LOWEST_PRECEDENCE）：
+        // 但必须早于 StorageStartupGuardPostProcessor（LOWEST_PRECEDENCE）：
         // 引擎要拿这里解析出的目录判数据形态，目录后解析就会判错目录。
         return Ordered.LOWEST_PRECEDENCE - 100;
     }
@@ -59,13 +58,7 @@ public class UserConfigDataDirPostProcessor implements EnvironmentPostProcessor,
         environment.getPropertySources().addFirst(
                 new MapPropertySource("lingxiUserConfigDataDir", Map.of(DATA_DIR_KEY, dataDir)));
         log.info("数据目录取自设置行: dir={}", dataDir);
-        warnWhenNoDatabase(dataDir, effectiveEngine(environment));
-    }
-
-    /** 引擎取值只用于告警文案（该找哪个库文件）；非法值由环境期守卫统一报错，这里宽松回落。 */
-    private StorageEngine effectiveEngine(ConfigurableEnvironment environment) {
-        return StorageEngine.fromPropertyOrSqlite(
-                environment.getProperty(StorageEngineEnvironmentPostProcessor.ENGINE_KEY));
+        warnWhenNoDatabase(dataDir);
     }
 
     /** 缺省值带占位符，必须自己 resolve —— PropertyResolver 只在「属性确实存在」时解析占位符。 */
@@ -107,22 +100,11 @@ public class UserConfigDataDirPostProcessor implements EnvironmentPostProcessor,
         }
     }
 
-    /**
-     * 生效目录里没有库文件时告警。
-     *
-     * <p>改目录时业务侧会先把库文件搬过去，所以正常情况下不该出现这个警告；
-     * 出现通常意味着搬迁没成功或路径被手工改错了 —— 这时用户看到的是「数据全没了」，
-     * 日志里必须先留下线索。库文件名按生效引擎取，否则 H2 引擎下会对着 SQLite 的名字误报。</p>
-     *
-     * @param dataDir 生效数据目录
-     * @param engine  生效引擎（决定该找哪个库文件）
-     */
-    private void warnWhenNoDatabase(String dataDir, StorageEngine engine) {
-        Path directory = Path.of(dataDir);
-        Path databaseFile = directory.resolve(engine.databaseFileName());
+    private void warnWhenNoDatabase(String dataDir) {
+        Path databaseFile = Path.of(dataDir).resolve(H2Storage.DATABASE_FILE_NAME);
         if (!Files.exists(databaseFile)) {
-            log.warn("设置的数据目录里没有库文件，应用将以空库启动: engine={}, dir={}, expected={}",
-                    engine.id(), dataDir, databaseFile.getFileName());
+            log.warn("设置的数据目录缺少 H2 库，启动守卫将继续检查迁移状态: dir={}, expected={}",
+                    dataDir, databaseFile.getFileName());
         }
     }
 }

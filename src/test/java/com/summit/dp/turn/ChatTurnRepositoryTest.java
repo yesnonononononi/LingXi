@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.turn.application.convert.ChatTurnConverter;
 import com.summit.dp.turn.application.service.impl.ChatTurnServiceImpl;
 import com.summit.dp.turn.application.vo.ChatTurnVO;
@@ -42,13 +42,13 @@ class ChatTurnRepositoryTest {
     private static final long SESSION_ID = 500L;
     private static final long EXECUTION_ID = 9001L;
 
-    private SqliteTestDatabase database;
+    private H2TestDatabase database;
     private ChatTurnMapper mapper;
     private ChatTurnRepositoryImpl repository;
 
     @BeforeEach
     void setup() throws Exception {
-        database = SqliteTestDatabase.create("ChatTurnRepositoryTest");
+        database = H2TestDatabase.create("ChatTurnRepositoryTest");
         MybatisConfiguration configuration = new MybatisConfiguration();
 
         MyBatisTypeHandlers.registerAll(configuration);
@@ -58,7 +58,7 @@ class ChatTurnRepositoryTest {
         factory.setDataSource(database);
         factory.setConfiguration(configuration);
         SqlSessionFactory sessionFactory = factory.getObject();
-        mapper = SqliteTestDatabase.sqlSession(sessionFactory).getMapper(ChatTurnMapper.class);
+        mapper = H2TestDatabase.sqlSession(sessionFactory).getMapper(ChatTurnMapper.class);
         repository = new ChatTurnRepositoryImpl(mapper);
     }
 

@@ -13,7 +13,7 @@ import com.summit.dp.checklist.infrastructure.persistence.mapper.ChecklistStepMa
 import com.summit.dp.checklist.infrastructure.repository.ChecklistRepositoryImpl;
 import com.summit.dp.execution.application.service.ExecutionQueryService;
 import com.summit.dp.shared.persistence.MyBatisTypeHandlers;
-import com.summit.dp.shared.support.SqliteTestDatabase;
+import com.summit.dp.shared.support.H2TestDatabase;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.aop.framework.ProxyFactory;
@@ -31,14 +31,14 @@ import static org.mockito.Mockito.when;
 /** 使用生产建表脚本及事务代理，避免自动提交掩盖聚合锁与回滚缺陷。 */
 public final class ChecklistTestDatabase implements AutoCloseable {
 
-    private final SqliteTestDatabase database;
+    private final H2TestDatabase database;
     private final ChecklistMapper mapper;
     private final ChecklistRepositoryImpl repository;
     private final ChecklistService service;
     private final DataSourceTransactionManager transactionManager;
     private final ExecutionQueryService executionQueries;
 
-    private ChecklistTestDatabase(SqliteTestDatabase database, ChecklistMapper mapper,
+    private ChecklistTestDatabase(H2TestDatabase database, ChecklistMapper mapper,
                                  ChecklistRepositoryImpl repository, ChecklistService service,
                                  DataSourceTransactionManager transactionManager, ExecutionQueryService executionQueries) {
         this.database = database;
@@ -52,7 +52,7 @@ public final class ChecklistTestDatabase implements AutoCloseable {
     /** 起一个独立 SQLite 文件库，避免用例之间互相污染唯一索引。 */
     public static ChecklistTestDatabase start(String namePrefix) {
         try {
-            SqliteTestDatabase database = SqliteTestDatabase.create(namePrefix);
+            H2TestDatabase database = H2TestDatabase.create(namePrefix);
             MybatisConfiguration configuration = new MybatisConfiguration();
             configuration.setMapUnderscoreToCamelCase(true);
 
@@ -60,13 +60,13 @@ public final class ChecklistTestDatabase implements AutoCloseable {
             configuration.addMapper(ChecklistMapper.class);
             configuration.addMapper(ChecklistStepMapper.class);
             MybatisPlusInterceptor plugins = new MybatisPlusInterceptor();
-            plugins.addInnerInterceptor(new PaginationInnerInterceptor(DbType.SQLITE));
+            plugins.addInnerInterceptor(new PaginationInnerInterceptor(DbType.H2));
             MybatisSqlSessionFactoryBean factory = new MybatisSqlSessionFactoryBean();
             factory.setDataSource(database);
             factory.setConfiguration(configuration);
             factory.setPlugins(plugins);
             SqlSessionFactory sessionFactory = factory.getObject();
-            SqlSessionTemplate template = SqliteTestDatabase.sqlSession(sessionFactory);
+            SqlSessionTemplate template = H2TestDatabase.sqlSession(sessionFactory);
             ChecklistMapper mapper = template.getMapper(ChecklistMapper.class);
             ChecklistRepositoryImpl repository = new ChecklistRepositoryImpl(mapper,
                     template.getMapper(ChecklistStepMapper.class));
