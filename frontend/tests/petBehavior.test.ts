@@ -13,12 +13,16 @@ import {
   IDLE_BRIDGE_MS,
   MULTI_TAP_THRESHOLD,
   MULTI_TAP_WINDOW_MS,
+  PET_BEHAVIOR_DEBUG_STATES,
   PetBehaviorStateMachine,
   SLEEP_AFTER_IDLE_MS,
   TAP_HOLD_MS,
   WAKE_HOLD_MS,
+  isPetBehaviorDebugState,
+  type PetBehaviorDebugState,
 } from '../src/pet/behavior/state-machine';
 import { INTERRUPT_LOCK_MS } from '../src/pet/presentation/priority';
+import type { PetPresentation, PresentationOp } from '../src/pet/presentation/types';
 
 /** 可控时钟：行为状态机只认注入的 now()。 */
 class Clock {
@@ -297,3 +301,233 @@ test('行为：缺少注入时构造直接抛错（防止以后悄悄退回全�
 test('行为：桥接时长大于调度锁阈值（否则 idle 会一直被排队）', () => {
   assert.ok(IDLE_BRIDGE_MS > INTERRUPT_LOCK_MS);
 });
+
+// ------------------------------------------------------------ 状态型持续动作（M6-b D-B3）
+
+test('行为：睡眠是"状态型持续动作"——loop 且不带 TTL（目录仍是一次性动作）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  clock.advance(SLEEP_AFTER_IDLE_MS);
+  const ops = sm.tick();
+  const motion = ops.find((op) => op.kind === 'motion');
+  const expression = ops.find((op) => op.kind === 'expression');
+  assert.equal(motion?.loop, true, '持续动作必须循环');
+  assert.equal(motion?.durationMs, undefined, '持续动作不许带 TTL（带了就会自己到期）');
+  assert.equal(expression?.durationMs, undefined, '睡眠表情也不许带 TTL');
+  assert.equal(sm.sustainedMotion, 'sleepy', '持续动作必须登记，tick 才能幂等');
+});
+
+test('行为：91s 后 state==="sleeping"，且连续 60 秒 tick 都不会自动回退', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  clock.advance(91000);
+  const ops = sm.tick();
+  assert.equal(sm.state, 'sleeping');
+  assert.equal(sm.isSleeping, true);
+  assert.equal(ops.length, 2, '入睡当拍要下发动作 + 表情');
+
+  // 60 秒里每 250ms 一拍，共 240 拍：一拍都不许产出指令，状态也不许自己回去
+  for (let index = 0; index < 240; index += 1) {
+    clock.advance(250);
+    assert.deepEqual(sm.tick(), [], `第 ${index + 1} 拍不该再下发任何指令（tick 必须幂等）`);
+    assert.equal(sm.state, 'sleeping', '睡眠不会自动回退');
+  }
+  assert.equal(sm.sustainedMotion, 'sleepy', '持续动作在整个睡眠期都还在持续');
+});
+
+test('行为：睡眠中 tick 幂等——不会每 250ms 重复下发导致动画重启', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  clock.advance(SLEEP_AFTER_IDLE_MS);
+  sm.tick();
+  clock.advance(250);
+  assert.deepEqual(sm.tick(), []);
+  clock.advance(250);
+  assert.deepEqual(sm.tick(), []);
+  // 再点一下（惊醒）才允许重新有产出
+  const wakeOps = sm.handle('tap');
+  assert.equal(wakeOps.length, 2);
+  assert.equal(sm.sustainedMotion, null, '离开睡眠态必须终止持续动作');
+});
+
+test('行为：惊醒后不会立刻又睡回去（计时被重置）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  clock.advance(SLEEP_AFTER_IDLE_MS);
+  sm.tick();
+  sm.handle('tap');
+  // 醒来 → 回 idle 之后再过 89 秒也不该睡
+  clock.advance(WAKE_HOLD_MS);
+  sm.tick();
+  clock.advance(IDLE_BRIDGE_MS);
+  sm.tick();
+  clock.advance(88999);
+  assert.deepEqual(sm.tick(), []);
+  assert.equal(sm.state, 'idle');
+});
+
+test('行为：睡眠中开始拖拽 → 打断持续动作，且拖拽中不入睡', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  clock.advance(SLEEP_AFTER_IDLE_MS);
+  sm.tick();
+  assert.equal(sm.sustainedMotion, 'sleepy');
+  const dragOps = sm.handle('drag-start');
+  assert.equal(sm.state, 'drag');
+  assert.equal(sm.isDragging, true);
+  assert.equal(sm.sustainedMotion, null, '拖拽打断睡眠，持续动作必须被清掉');
+  assert.equal(dragOps[0]?.id, 'drag');
+  clock.advance(SLEEP_AFTER_IDLE_MS * 3);
+  assert.deepEqual(sm.tick(), []);
+});
+
+// ------------------------------------------------------------ 外部驱动的状态入口（M6-b O1）
+
+test('外部驱动：PET_BEHAVIOR_DEBUG_STATES 与 isPetBehaviorDebugState 覆盖同一份清单', () => {
+  assert.deepEqual([...PET_BEHAVIOR_DEBUG_STATES], ['idle', 'tap', 'happy', 'angry', 'sleeping', 'wake', 'drag']);
+  for (const state of PET_BEHAVIOR_DEBUG_STATES) assert.equal(isPetBehaviorDebugState(state), true);
+  assert.equal(isPetBehaviorDebugState('nope'), false);
+  assert.equal(isPetBehaviorDebugState(3), false);
+});
+
+test('外部驱动：enterState("sleeping") 直接进入睡眠并登记持续动作', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  const ops = sm.enterState('sleeping');
+  assert.equal(sm.state, 'sleeping');
+  assert.equal(sm.sustainedMotion, 'sleepy');
+  assert.equal(ops.length, 2);
+  assert.equal(ops.find((op) => op.kind === 'motion')?.id, 'sleepy');
+  assert.equal(ops.find((op) => op.kind === 'expression')?.id, 'sleepy');
+  // 幂等：直达进去之后 tick 同样沉默
+  clock.advance(250);
+  assert.deepEqual(sm.tick(), []);
+});
+
+test('外部驱动：enterState 覆盖全部 7 个状态，非法值返回空数组', () => {
+  const clock = new Clock();
+  for (const state of PET_BEHAVIOR_DEBUG_STATES) {
+    const sm = machine(clock);
+    const ops = sm.enterState(state);
+    assert.ok(ops.length >= 1, `${state} 必须产出至少一条指令`);
+    if (state === 'idle') {
+      assert.equal(sm.state, 'idle');
+      // idle 走桥接（优先级 2 + TTL），否则会被总线的低优先级锁拒绝
+      assert.equal(ops[0]?.priority, 2);
+      assert.equal(ops[0]?.durationMs, IDLE_BRIDGE_MS);
+    } else if (state === 'happy') {
+      assert.equal(sm.state, 'tap', 'happy 是 tap 状态下的组合表现');
+      assert.equal(ops.find((op) => op.kind === 'expression')?.id, 'happy');
+    } else {
+      assert.equal(sm.state, state);
+    }
+  }
+  const sm = machine(clock);
+  assert.deepEqual(sm.enterState('bogus' as unknown as PetBehaviorDebugState), []);
+  assert.equal(sm.state, 'idle');
+});
+
+test('外部驱动：enterState("drag") 之后仍能被 enterState("idle") 拉回来（不留死结）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  sm.enterState('drag');
+  assert.equal(sm.isDragging, true);
+  sm.enterState('idle');
+  assert.equal(sm.state, 'idle');
+  assert.equal(sm.isDragging, false);
+});
+
+test('外部驱动：markInteraction() 把 90 秒计时起点拉回现在', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+  assert.equal(SLEEP_AFTER_IDLE_MS, 90000);
+  clock.advance(89999);
+  sm.markInteraction();
+  clock.advance(1);
+  assert.deepEqual(sm.tick(), []);
+  assert.equal(sm.state, 'idle', '重置后不该立刻入睡');
+  // 从重置那一刻算起：89999ms 仍清醒、90000ms 才睡
+  clock.advance(89998);
+  assert.deepEqual(sm.tick(), []);
+  assert.equal(sm.state, 'idle');
+  clock.advance(1);
+  sm.tick();
+  assert.equal(sm.state, 'sleeping', '从重置那一刻起满 90000ms 才睡');
+});
+
+// ------------------------------------------------------------ 总线口径：睡眠指令不许被低优先级锁吃掉
+
+test('行为 × 总线：优先级 0 的睡眠指令能穿过"常驻 idle"的活动记录（D-B3 真因）', async () => {
+  const { PresentationBus } = await import('../src/pet/presentation/bus');
+  const clock = new Clock();
+  const sm = machine(clock);
+
+  /** 只记录最后一次动作/表情的假表现层。 */
+  class FakePresentation {
+    /** 当前快照。 */
+    state = { expression: 'neutral' as const, motion: null, driven: {} } as unknown as PetPresentation['state'];
+
+    /** 收到的指令。 */
+    readonly applied: PresentationOp[] = [];
+
+    /**
+     * 记录指令。
+     *
+     * @param op 指令
+     */
+    apply(op: PresentationOp): void {
+      this.applied.push(op);
+      const current = this.state as unknown as { expression: string; motion: string | null };
+      this.state = {
+        ...current,
+        ...(op.kind === 'expression' ? { expression: String(op.id) } : {}),
+        ...(op.kind === 'motion' ? { motion: String(op.id) } : {}),
+      } as unknown as PetPresentation['state'];
+    }
+
+    /**
+     * 预准备（测试里无事可做）。
+     *
+     * @returns 已完成的 Promise
+     */
+    async prepare(): Promise<void> {}
+
+    /** 释放（测试里无事可做）。 */
+    dispose(): void {}
+  }
+
+  const target = new FakePresentation();
+  // 定时器端口：本用例里两条指令都不带 TTL，不应该有任何定时器被挂上
+  const timer = {
+    setTimeout: (): number => 0,
+    clearTimeout: (): void => {},
+  };
+  const bus = new PresentationBus(target as unknown as PetPresentation, {
+    timer,
+    now: clock.now,
+    isSleeping: () => sm.isSleeping,
+  });
+
+  // 启动态：base 层 = 中性表情 + 常驻 idle（优先级 0、无 TTL）——这正是睡眠指令要面对的活动记录
+  assert.equal(
+    bus.dispatch({ kind: 'expression', id: 'neutral', layer: 'base', priority: 0, fadeMs: 0, reason: 'boot' }),
+    'applied',
+  );
+  assert.equal(
+    bus.dispatch({ kind: 'motion', id: 'idle', layer: 'base', priority: 0, loop: true, fadeMs: 0, reason: 'boot' }),
+    'applied',
+  );
+
+  clock.advance(SLEEP_AFTER_IDLE_MS);
+  const outcomes = sm.tick().map((op) => bus.dispatch(op));
+  assert.deepEqual(outcomes, ['applied', 'applied'], '睡眠动作与表情都必须真的落地，不能被低优先级锁拒绝');
+  assert.equal(target.state.motion, 'sleepy');
+  assert.equal(target.state.expression, 'sleepy');
+  // 睡眠期再走 10 拍：总线不该收到任何新指令（tick 幂等），表情/动作保持睡眠
+  for (let index = 0; index < 10; index += 1) {
+    clock.advance(250);
+    assert.deepEqual(sm.tick(), []);
+  }
+  assert.equal(target.state.expression, 'sleepy');
+});
+

@@ -239,7 +239,7 @@ export class LayeredPresentation implements PetPresentation {
   apply(op: PresentationOp): void {
     if (this.disposed) return;
     if (op.kind === 'motion') {
-      this.applyMotion(op.id as MotionId);
+      this.applyMotion(op);
       return;
     }
     if (op.kind === 'expression') {
@@ -289,9 +289,13 @@ export class LayeredPresentation implements PetPresentation {
    * <p><b>为什么整体替换而不是追加：</b>追加会让每条动作留下一段永不过期的 `@keyframes`，
    * 跑一天之后样式表里会有上万字节死规则（桌宠是常驻窗口）。</p>
    *
-   * @param id 动作 id
+   * <p><b>循环与否由 op 决定（M6-b 新增）：</b>`op.loop === true` 表示"状态型持续动作"，
+   * 编译成无限迭代；`undefined` 时回落到目录值，因此一次性动作的 TTL 语义不受影响。</p>
+   *
+   * @param op 动作指令
    */
-  private applyMotion(id: MotionId): void {
+  private applyMotion(op: PresentationOp): void {
+    const id = op.id as MotionId;
     this.current = { ...this.current, motion: id };
     // 递增序号进选择器：同一动作连播两次（连点 tap）时规则文本会变，
     // 旧规则被整体替换掉，浏览器的动画也就真的重头播——否则第二次点击毫无反应。
@@ -301,6 +305,8 @@ export class LayeredPresentation implements PetPresentation {
       reducedMotion: this.deps.reducedMotion?.() ?? false,
       // 运行期第二道防线：只有可动层能接动画（支撑层转一下就会露补绘缝）
       allowedLayerIds: animatableLayerIds(this.deps.manifest),
+      // 状态型持续动作 = 无限循环（睡眠）；一次性动作保持目录值
+      loop: op.loop,
       selectorRoot: `${LAYER_SELECTOR_ROOT}[data-motion='${id}'][data-motion-seq='${this.motionSeq}']`,
     });
     this.currentRules = compiled.cssRules;

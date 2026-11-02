@@ -178,7 +178,7 @@ export class SpritePresentation implements PetPresentation {
       return;
     }
     if (op.kind === 'motion') {
-      this.applyMotion(op.id as MotionId);
+      this.applyMotion(op);
       return;
     }
     const param = op.id as DrivenParam;
@@ -322,13 +322,19 @@ export class SpritePresentation implements PetPresentation {
    * <p>同值属性不会重启 CSS 动画，所以先删属性、强制一次样式计算、再写回
    * （`void offsetWidth` 读布局即触发重算——这是重启动画的标式写法，代价仅一次）。</p>
    *
-   * @param id 动作 id
+   * <p><b>`data-motion-loop`（M6-b）：</b>立牌档的循环与否只能靠 `data-*` 表达
+   * （没有编译期 CSS 生成），CSS 用 `animation-iteration-count: infinite` 消费它。
+   * 语义与分层档的 `op.loop` 完全一致：状态型持续动作才置 `'1'`。</p>
+   *
+   * @param op 动作指令
    */
-  private applyMotion(id: MotionId): void {
+  private applyMotion(op: PresentationOp): void {
+    const id = op.id as MotionId;
     this.current = { ...this.current, motion: id };
     delete this.root.dataset.motion;
     void this.root.offsetWidth;
     this.root.dataset.motion = id;
+    this.root.dataset.motionLoop = op.loop === true ? '1' : '0';
   }
 
   /**

@@ -18,12 +18,55 @@
  * 所以从拖拽回 idle 时先下发一条<b>带 250ms TTL 的桥接 idle</b>，等高优先级记录自然过期，
  * 再由 {@link PetBehaviorStateMachine.tick} 落到常驻 idle。</p>
  *
+ * <p><b>动作有两档生命周期，别混用（M6-b 的 D-B3 就是混用造成的）：</b></p>
+ * <ul>
+ *   <li><b>一次性动作（oneshot）</b>：`tap` / `angry` / `wake` / 打哈欠 / 翻身。
+ *       带 TTL，到点自然回 idle。它们的"多久"由 `pet-motions.json` 决定。</li>
+ *   <li><b>状态型持续动作（sustained）</b>：`sleepy` 是唯一一档。语义是"<b>进入睡眠状态，
+ *       直到被唤醒</b>"，所以它<b>进入状态时下发一次</b>、<b>不自己到期</b>、
+ *       <b>由退出该状态的指令打断</b>（惊醒 = 优先级 2）。因此
+ *       {@link PetBehaviorStateMachine.tick} 在持续态下<b>必须幂等</b>：每 250ms 再下发一次
+ *       只会让 CSS 动画反复重启（或被总线的 80ms 判重丢弃），用户看到的就是"翻来覆去不睡"。</li>
+ * </ul>
+ * <p>目录里 `sleepy` 仍然是一次性动作（1600ms 一个循环），"持续"这层语义<b>只由本模块声明</b>
+ * （下发 `loop: true` 且不带 TTL），表现层照 `op.loop` 编译成无限迭代——
+ * 一次性动作的 TTL 语义因此一点没被削掉。</p>
+ *
  * @module pet/behavior/state-machine
  */
 import type { ExpressionId, MotionId, PresentationOp, Priority } from '../presentation/types';
 
 /** 行为状态。 */
 export type PetBehaviorState = 'idle' | 'tap' | 'angry' | 'sleeping' | 'wake' | 'drag';
+
+/**
+ * 外部驱动可直达的状态名。
+ *
+ * <p>比 {@link PetBehaviorState} 多一个 `happy`：它不是一个独立行为状态，
+ * 而是"表情 happy + 一次性小弹"的组合，只在调试面板里需要一个直达按钮。</p>
+ */
+export type PetBehaviorDebugState = PetBehaviorState | 'happy';
+
+/** 调试面板按钮的顺序（真源在这里，调试后门与测试共用同一份）。 */
+export const PET_BEHAVIOR_DEBUG_STATES: readonly PetBehaviorDebugState[] = [
+  'idle',
+  'tap',
+  'happy',
+  'angry',
+  'sleeping',
+  'wake',
+  'drag',
+];
+
+/**
+ * 判断一个值是否是合法的可直达状态名。
+ *
+ * @param value 待判断值（来自调试面板 / 调试后门，一律不可信）
+ * @returns 是否合法
+ */
+export function isPetBehaviorDebugState(value: unknown): value is PetBehaviorDebugState {
+  return typeof value === 'string' && (PET_BEHAVIOR_DEBUG_STATES as readonly string[]).includes(value);
+}
 
 /** 外部事件。 */
 export type PetBehaviorEvent = 'tap' | 'drag-start' | 'drag-end';
@@ -123,6 +166,29 @@ function expressionOp(
 }
 
 /**
+ * 下达一条<b>状态型持续动作</b>指令（sustained）。
+ *
+ * <p>与 {@link motionOp} 的差别只有两条，但两条都是语义级别的：</p>
+ * <ol>
+ *   <li>`loop: true` + <b>不带 TTL</b>：动作一直循环，不会自己到期；</li>
+ *   <li>只在<b>进入状态</b>时下发一次（{@link PetBehaviorStateMachine.tick} 在持续态下返回空）。</li>
+ * </ol>
+ *
+ * <p><b>为什么"持续"必须由行为层声明而不是改目录：</b>目录里的 `sleepy` 时长（1600ms）
+ * 描述的是"一个循环有多长"，不是"这次要跑多久"。把目录值改成 `loop: true` 会让所有
+ * 一次性动作（翻身 / 打哈欠）一起失去 TTL 语义；而"这次要跑到被唤醒为止"是<b>行为层</b>
+ * 才知道的事。所以这条语义写在 op 上（`loop`），目录保持不动。</p>
+ *
+ * @param id 动作 id
+ * @param priority 优先级（睡眠用 0：不抢占，靠总线的睡眠判定与醒来指令收口）
+ * @param reason 排障原因串
+ * @returns 指令
+ */
+function sustainedMotionOp(id: MotionId, priority: Priority, reason: string): PresentationOp {
+  return motionOp(id, priority, reason, { loop: true });
+}
+
+/**
  * 行为状态机。
  *
  * <p>用法：把用户输入喂给 {@link handle}，把时钟推进喂给 {@link tick}，
@@ -160,6 +226,14 @@ export class PetBehaviorStateMachine {
   private dragging = false;
 
   /**
+   * 当前正在持续的"状态型持续动作"；`null` = 没有。
+   *
+   * <p>它同时是 {@link tick} 的幂等开关：非 null 时 tick 一律不再产出指令，
+   * 避免每 250ms 重复下发把动画拽回起点。</p>
+   */
+  private sustained: MotionId | null = null;
+
+  /**
    * 构造状态机。
    *
    * @param deps 时间与随机源
@@ -190,6 +264,15 @@ export class PetBehaviorStateMachine {
     return this.dragging;
   }
 
+  /**
+   * 当前正在持续的动作（状态型；`null` = 没有）。
+   *
+   * <p>调试与测试用它断言"睡眠确实是一次下发的持续动作"，而不是每拍重下发。</p>
+   */
+  get sustainedMotion(): MotionId | null {
+    return this.sustained;
+  }
+
   /** 距上次互动过了多久（毫秒，调试与测试用）。 */
   idleElapsedMs(): number {
     return this.now() - this.lastInteractionAt;
@@ -217,6 +300,10 @@ export class PetBehaviorStateMachine {
    */
   tick(): PresentationOp[] {
     if (this.dragging || this.stateValue === 'drag') return [];
+    // 状态型持续动作（sleepy）：进入状态时已经下发过一次，之后每一拍都必须**不产出任何指令**。
+    // 少了这一条，睡眠动作每 250ms 被重启一次——表现层看到的是"抽一下"或者"根本没睡"
+    // （80ms 判重只挡得住同一拍内的重复，挡不住 250ms 的间隔）。
+    if (this.sustained !== null) return [];
     const now = this.now();
 
     // 桥接 idle 落地：高优先级记录已过期，换成常驻 idle（优先级 0，允许眨眼打断）
@@ -234,14 +321,28 @@ export class PetBehaviorStateMachine {
     }
 
     if (this.stateValue === 'idle' && now - this.lastInteractionAt >= SLEEP_AFTER_IDLE_MS) {
-      this.enter('sleeping', null);
-      this.log(`[pet] 行为：${SLEEP_AFTER_IDLE_MS}ms 无交互，进入睡眠`);
-      return [
-        motionOp('sleepy', 0, 'behavior:sleep', { loop: true }),
-        expressionOp('sleepy', 0, 'behavior:sleep:expression'),
-      ];
+      return this.enterSleeping();
     }
     return [];
+  }
+
+  /**
+   * 进入睡眠：下发<b>一次</b>状态型持续动作，此后由 tick 的幂等分支保持沉默。
+   *
+   * @returns 需要下发的指令
+   */
+  private enterSleeping(): PresentationOp[] {
+    this.enter('sleeping', null);
+    // 登记持续动作：这是"不自动回退"的唯一凭据，也是 tick 幂等的开关
+    this.sustained = 'sleepy';
+    this.log(`[pet] 行为：${SLEEP_AFTER_IDLE_MS}ms 无交互，进入睡眠`);
+    return [
+      // 睡眠优先级维持 0：真正的"抑制眨眼"由总线的 sleeping 判定做，不靠抢占；
+      // 醒来的 wake 是优先级 2，一定能打断它（见 priority.ts 的规则表）。
+      sustainedMotionOp('sleepy', 0, 'behavior:sleep'),
+      // 表情同样不带 TTL：睡到被叫醒为止，而不是 1.6 秒后自己变回中性脸
+      expressionOp('sleepy', 0, 'behavior:sleep:expression'),
+    ];
   }
 
   /** 重置到初始 idle（页面重新就绪时用）。 */
@@ -252,7 +353,85 @@ export class PetBehaviorStateMachine {
     this.tapStreak = 0;
     this.lastTapAt = null;
     this.dragging = false;
+    this.sustained = null;
     this.lastInteractionAt = this.now();
+  }
+
+  /**
+   * 记一次互动：把"无交互 90 秒入睡"的计时起点拉回现在。
+   *
+   * <p>调试时要反复验"静置 90 秒才睡"，总不能每次都真等一分半：把计时起点拉回现在即可。
+   * 它只动计时起点，不动状态、不下发指令。调试后门（O1）把它挂成 `petDebug.resetIdleTimer`。</p>
+   */
+  markInteraction(): void {
+    this.lastInteractionAt = this.now();
+  }
+
+  /**
+   * 外部驱动：直接切到某个状态并返回该状态的"首发指令"。
+   *
+   * <p><b>为什么要有这个入口：</b>行为层原本是纯自驱的（只认 `handle` / `tick`），
+   * 但"立刻让我看到睡眠态"这类需求（O1 的调试后门，以及将来的剧情 / 任务编排）
+   * 需要一个受控的直达通道。</p>
+   *
+   * <p><b>为什么入口放在行为层而不是渲染层：</b>状态语义只在这里。渲染层自己拼 `sleepy`
+   * 指令会绕过持续动作的登记（`sustained`），于是"强制睡眠"能睡、但语义与真机不一致；
+   * 后门必须和真机走同一条路径，否则调试看到的东西没有参考价值。</p>
+   *
+   * <p>非法状态名一律返回空数组（不抛），避免外部传错值把桌宠带崩。</p>
+   *
+   * @param state 目标状态（含 `happy` 这个"组合态"别名）
+   * @returns 需要下发的指令（可能为空）
+   */
+  enterState(state: PetBehaviorDebugState): PresentationOp[] {
+    if (!isPetBehaviorDebugState(state)) return [];
+    const now = this.now();
+    // 外部驱动可以随时介入：先把"拖拽中"这类长驻标记清掉，否则所有转移都会被 `dragging` 拦住
+    this.dragging = false;
+    this.tapStreak = 0;
+    this.lastTapAt = null;
+    this.lastInteractionAt = now;
+
+    switch (state) {
+      case 'idle': {
+        // 走桥接而不是直接发优先级 0：上一状态的 base 记录可能还没到期，
+        // 直接发会被总线的"低优先级锁"拒绝（那正是 D-B3 的老坑）
+        this.enterIdleWithBridge(now);
+        return this.idleOps(2, 'debug:force:idle', IDLE_BRIDGE_MS);
+      }
+      case 'tap':
+        return this.tap();
+      case 'happy': {
+        // happy 不是独立行为状态：它是"tap 状态 + happy 动作/表情"的组合
+        this.enter('tap', now + TAP_HOLD_MS);
+        return [
+          motionOp('happy', 1, 'debug:force:happy', { durationMs: TAP_HOLD_MS }),
+          expressionOp('happy', 1, 'debug:force:happy:expression', TAP_HOLD_MS),
+        ];
+      }
+      case 'angry': {
+        const holdMs = this.jitter(ANGRY_HOLD_MS, ANGRY_HOLD_JITTER_MS);
+        this.enter('angry', now + holdMs);
+        return [
+          motionOp('angry', 1, 'debug:force:angry', { durationMs: holdMs }),
+          expressionOp('angry', 1, 'debug:force:angry:expression', holdMs),
+        ];
+      }
+      case 'sleeping':
+        // 不伪造"已经静置 90 秒"，直接走同一套入睡路径（含持续动作登记）
+        return this.enterSleeping();
+      case 'wake': {
+        this.enter('wake', now + WAKE_HOLD_MS);
+        return [
+          motionOp('wake', 2, 'debug:force:wake', { durationMs: WAKE_HOLD_MS }),
+          expressionOp('surprised', 2, 'debug:force:wake:expression', WAKE_HOLD_MS),
+        ];
+      }
+      case 'drag':
+        return this.startDrag();
+      default:
+        return [];
+    }
   }
 
   /**
@@ -368,6 +547,9 @@ export class PetBehaviorStateMachine {
     this.stateValue = next;
     this.stateUntil = until;
     if (next !== 'idle') this.bridgeUntil = null;
+    // 任何一次状态切换都终止"状态型持续动作"：持续语义的边界就是"离开这个状态"。
+    // 需要继续持续的状态由进入方自己重新登记（见 enterSleeping）。
+    this.sustained = null;
   }
 
   /**

@@ -51,6 +51,17 @@ export interface CompileOptions {
    * 一律进 `unsupportedTracks` 并跳过，最坏情况是"某层不动"，而不是"某层露缝"。</p>
    */
   readonly allowedLayerIds?: readonly string[];
+
+  /**
+   * 是否无限循环（覆盖目录里的 `def.loop`；缺省 = 用目录值）。
+   *
+   * <p><b>为什么需要这个覆盖：</b>目录里的 `loop` 描述的是"这个动作<b>本来</b>是不是循环体"，
+   * 而"这次要循环<b>多久</b>"是运行时语义。`sleepy` 目录值是一次性（1600ms 一轮），
+   * 但行为层的"睡眠状态"要求它一直演到被唤醒——这层语义只有行为层知道，
+   * 于是由 op 的 `loop` 传下来（见 `behavior/state-machine.ts` 的 `sustainedMotionOp`）。
+   * 直接改目录会让所有一次性动作一起失去 TTL 语义，所以覆盖口开在这里，目录不动。</p>
+   */
+  readonly loop?: boolean;
 }
 
 /** 编译结果。 */
@@ -233,6 +244,8 @@ export function compileMotion(catalog: MotionCatalog, id: string, options: Compi
   }
   const baseDuration = def.durationMs ?? DEFAULT_LOOP_DURATION_MS;
   const durationMs = options.power === 'low' ? baseDuration * 2 : baseDuration;
+  // 循环与否：op 说了算（状态型持续动作），没说话就用目录值
+  const loop = typeof options.loop === 'boolean' ? options.loop : def.loop;
   const cssRules: string[] = [];
   const unsupportedTracks: string[] = [];
   // 白名单先建成 Set：每帧都会走这条路径，数组 includes 在高频重建时是白给的开销
@@ -244,7 +257,7 @@ export function compileMotion(catalog: MotionCatalog, id: string, options: Compi
       unsupportedTracks.push(`${id}:${track.layerId}`);
       continue;
     }
-    const compiled = compileTrack(def, track, baseDuration, durationMs, options.selectorRoot);
+    const compiled = compileTrack(def, track, baseDuration, durationMs, options.selectorRoot, loop);
     if (!compiled) {
       unsupportedTracks.push(`${id}:${track.layerId}`);
       continue;
@@ -258,11 +271,12 @@ export function compileMotion(catalog: MotionCatalog, id: string, options: Compi
 /**
  * 编译单条轨道。
  *
- * @param def 动作定义（提供 `loop` 与镜像源）
+ * @param def 动作定义（提供 `id` 与镜像源）
  * @param track 轨道
  * @param baseDuration 动作本身时长（算滞后占比用，不含功耗乘数）
  * @param durationMs 实际动画时长
  * @param selectorRoot 选择器根（如 `#pet-root[data-motion='tap']`）
+ * @param loop 是否无限循环（已由 `op.loop` 覆盖过目录值）
  * @returns 两条规则；无法编译时返回 null
  */
 function compileTrack(
@@ -271,6 +285,7 @@ function compileTrack(
   baseDuration: number,
   durationMs: number,
   selectorRoot: string,
+  loop: boolean,
 ): { keyframesRule: string; consumerRule: string } | null {
   let property = track.property;
   let ease = track.ease ?? DEFAULT_TRACK_EASE;
@@ -299,7 +314,7 @@ function compileTrack(
     .map((frame) => `${formatNumber(frame.at * 100)}% { ${declarationOf(property, frame.value, unit)} }`)
     .join(' ');
   const keyframesRule = `@keyframes ${name} { ${body} }`;
-  const iterations = def.loop ? ' infinite' : '';
+  const iterations = loop ? ' infinite' : '';
   const consumerRule = `${selectorRoot} [data-layer='${track.layerId}'] { animation: ${name} ${durationMs}ms ${ease} both${iterations}; }`;
   return { keyframesRule, consumerRule };
 }

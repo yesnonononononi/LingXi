@@ -492,3 +492,47 @@ test('dispose：清空注入的样式与根上的临时属性', () => {
   presentation.apply(motionOp('happy'));
   assert.equal(presentation.styleText, '');
 });
+
+/**
+ * 造一条"状态型持续动作"指令（`loop: true` 且不带 TTL）。
+ *
+ * @param id 动作 id
+ * @returns 指令
+ */
+function sustainedMotionOp(id: string): PresentationOp {
+  return {
+    kind: 'motion',
+    id: id as PresentationOp['id'],
+    layer: 'base',
+    priority: 0,
+    loop: true,
+    reason: 'test:sustained',
+  };
+}
+
+test('M6-b D-B3：sleepy 默认仍按目录的"一次性动作"编译（目录语义没被改）', () => {
+  const { presentation } = setup();
+  presentation.apply(motionOp('sleepy'));
+  const text = presentation.styleText;
+  assert.ok(text.length > 0, 'sleepy 必须编译出规则');
+  assert.equal(text.includes('infinite'), false, '不带 loop 的 sleepy 必须是一次性动作');
+  assert.match(text, /1600ms/, '目录里的单轮时长还是 1600ms');
+});
+
+test('M6-b D-B3：op.loop=true 时编译成无限迭代（状态型持续动作跑到被唤醒为止）', () => {
+  const { presentation } = setup();
+  presentation.apply(sustainedMotionOp('sleepy'));
+  const text = presentation.styleText;
+  assert.ok(text.length > 0);
+  assert.match(text, /infinite/, '持续动作必须无限迭代，否则 1.6s 后被拽回首帧');
+  // 持续不等于改时长：一轮还是 1600ms，只是不再停
+  assert.match(text, /1600ms/);
+});
+
+test('M6-b D-B3：持续动作结束后再来一次性动作会自动收回 infinite', () => {
+  const { presentation } = setup();
+  presentation.apply(sustainedMotionOp('sleepy'));
+  assert.match(presentation.styleText, /infinite/);
+  presentation.apply(motionOp('tap'));
+  assert.equal(presentation.styleText.includes('infinite'), false, '规则整体替换，不能残留上一段的循环');
+});
