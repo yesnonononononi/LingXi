@@ -14,16 +14,17 @@ import './pet.css';
 import { PET_GEOMETRY, geometryCssVariables } from './layout';
 import { HitPipeline } from './hit/hit-pipeline';
 import { RectHitTester } from './hit/rect-hit-tester';
-import { DEFAULT_TIMER_PORT, PresentationBus } from './presentation/bus';
+import { DEFAULT_TIMER_PORT, PresentationBus, type DispatchOutcome } from './presentation/bus';
 import { BlinkDriver } from './presentation/blink-driver';
 import { CommandRouter } from './presentation/command-router';
 import { DEFAULT_CROSSFADE_EASING, DEFAULT_CROSSFADE_MS } from './presentation/crossfade';
 import type { ExpressionUrlMap } from './presentation/sprite-presentation';
 import { EXPRESSION_IDS, type ExpressionId, type MotionId, type PresentationOp } from './presentation/types';
+import { emptyEntryReport, summarizeOutcomes, type EntryDispatchReport } from './presentation/entry-report';
 import {
   PetBehaviorStateMachine,
-  type PetBehaviorState,
 } from './behavior/state-machine';
+import type { PetDebugHandle } from './debug/types';
 import { DRAG_THRESHOLD_PX, PressDragGesture, type GestureIntent } from './gesture/press-drag';
 import { PET_BLINK_MAPPING, expressionFrameUrl, expressionFrameUrls } from './assets/manifest';
 import { loadArt } from './assets/loader';
@@ -130,43 +131,11 @@ interface PetBridge {
   onCommand: (callback: (command: PetCommand) => void) => () => void;
 }
 
-/** 调试句柄（`?debug=1` 或 dev 下才有；发布态整个对象不挂到 window）。 */
-interface PetDebugHandle {
-  /** 直接投递一条表现层指令（QA 验收/排障用）。 */
-  dispatch: (op: PresentationOp) => string;
-  /** 按表情 id 切一刀（基底层，不会自己回退）。 */
-  setExpression: (name: string) => boolean;
-  /** 当前表情 id。 */
-  getExpression: () => ExpressionId;
-  /** 全部合法表情 id（与美术规格书 §5 的 E1–E8 对应）。 */
-  list: () => string[];
-  /** 当前行为状态（idle / tap / angry / sleeping / wake / drag）。 */
-  behaviorState: () => PetBehaviorState;
-  /** 派发一次点击行为（等价于点一下桌宠；连点 3 次可触发生气）。 */
-  tap: () => string[];
-  /**
-   * 后门：瞬间切到任意状态（O1；不必再等 90 秒）。
-   *
-   * <p><b>只在开发构建里存在</b>：由 `debug/dev-backdoor.ts` 在 `import.meta.env.DEV` 分支里
-   * 动态挂载，生产构建连这个键名都不会进产物（见该模块的说明）。</p>
-   *
-   * @param state `idle` / `tap` / `happy` / `angry` / `sleeping` / `wake` / `drag`
-   * @returns 各条指令的调度结果（非法状态名返回空数组）
-   */
-  forceState?: (state: string) => string[];
-  /** 后门：把"无交互 90 秒入睡"的计时起点拉回现在（同样只在开发构建里存在）。 */
-  resetIdleTimer?: () => void;
-  /** 当前手势阶段（`idle` / `pressed` / `dragging`；验 D-B4 不卡 drag 用）。 */
-  gesturePhase: () => string;
-  /** 拖拽阈值（CSS px；验 D-B1 的"微动不算拖"用）。 */
-  dragThresholdPx: () => number;
-  /** 当前正在持续的动作（状态型；`null` = 没有）。 */
-  sustainedMotion: () => string | null;
-  /** 当前合成模式（`composite` / `partial` / `layered`；排障用）。 */
-  compositeMode: () => string;
-  /** 参与本次合成的层 id（`composite` 时为空数组）。 */
-  layerIds: () => string[];
-}
+/*
+ * 调试句柄的契约在 `debug/types.ts`（纯类型模块，构建期擦除）。
+ * 这里只保留 `Window` 上的可选声明：句柄本体由 `debug/dev-backdoor.ts` 在
+ * `import.meta.env.DEV` 分支里构造并挂载，生产构建连模块都不会产出。
+ */
 
 declare global {
   interface Window {
@@ -186,8 +155,16 @@ let hit = false;
  * `wireEvents` 只做执行。</p>
  */
 const gesture: PressDragGesture = new PressDragGesture();
-/** 最近一次指针的屏幕坐标（拖拽 IPC 用；与判定用的 client 坐标解耦）。 */
+/** 最近一次指针的屏幕坐标（拖拽 `drag-move` 用；与判定用的 client 坐标解耦）。 */
 let lastScreenPoint: PetPoint | null = null;
+/**
+ * **按下那一刻**的屏幕坐标（`drag-start` 锚点）。
+ *
+ * <p>不能用 {@link lastScreenPoint}：它在 `pointermove` 里已经被更新成**首次越阈的移动点**，
+ * 拿它当锚点会让窗口相对光标有一个恒定偏移（大小 = 首次越阈位移，真机 4~6px，
+ * 拖动全程都偏）。锚点必须是"手指按下去的位置"，不是"发现自己在拖时的位置"。</p>
+ */
+let pressScreenPoint: PetPoint | null = null;
 /**
  * 拖拽是否已真正开始（`drag-start` IPC 已发出）。
  *
@@ -304,7 +281,7 @@ function showHint(next: string = HINT_TEXT): void {
  * @param op 指令
  * @returns 调度结果（`applied` / `queued` / `rejected`；没有总线时返回 `rejected`）
  */
-export function dispatchOp(op: PresentationOp): string {
+export function dispatchOp(op: PresentationOp): DispatchOutcome {
   if (!bus) return 'rejected';
   // 动作动画时长与配方表同源：表现层认为 tap 是 480ms，CSS 就播 480ms
   if (op.kind === 'motion' && rootElement) {
@@ -321,13 +298,70 @@ export function dispatchOp(op: PresentationOp): string {
  * @param ops 指令列表
  * @returns 各条的调度结果
  */
-function dispatchOps(ops: readonly PresentationOp[]): string[] {
-  const results: string[] = [];
+function dispatchOps(ops: readonly PresentationOp[]): DispatchOutcome[] {
+  const results: DispatchOutcome[] = [];
   for (const op of ops) {
     void presentation?.prepare(op);
     results.push(dispatchOp(op));
   }
   return results;
+}
+
+/**
+ * 下发一批**入态指令**，并保证"行为层说切了"与"画面切了"是同一件事。
+ *
+ * <p><b>为什么不直接用 {@link dispatchOps}：</b>它把 `'rejected'` 丢在地上。QA 抓到的正是这条：
+ * `forceState('angry')` 之后 1.2s 内 `forceState('sleeping')`，睡眠的两条优先级 0 指令被总线
+ * 按"低优先级锁"拒掉，而状态机早就把 `state` 改成了 `sleeping`——两边永久不一致、
+ * 而且没有任何人发现。</p>
+ *
+ * <p><b>现在的处置：</b></p>
+ * <ol>
+ *   <li>下发前拍一张行为层快照；</li>
+ *   <li>逐条下发并统计（`applied` / `queued` / `rejected`）；</li>
+ *   <li>只要有一条没<b>立即</b>落地，就把行为层整体回滚到下发前，
+ *       再用 {@link PetBehaviorStateMachine.repairOps} 把画面强制定向到回滚后的状态——
+ *       两层重新讲同一件事；</li>
+ *   <li>把结论（含失败原因）返回给调用方，永远不静默。</li>
+ * </ol>
+ *
+ * @param ops 入态指令（一般由行为状态机产出，每条都带 `force: true`）
+ * @param label 排障标签（进日志）
+ * @returns 落地报告
+ */
+export function dispatchEntryOps(ops: readonly PresentationOp[], label: string): EntryDispatchReport {
+  if (ops.length === 0) return emptyEntryReport(`${label}: 无指令`);
+  const snapshot = behavior ? behavior.snapshot() : null;
+  const outcomes = dispatchOps(ops);
+  const summary = summarizeOutcomes(outcomes);
+  if (summary.ok) {
+    return { ...summary, outcomes, rolledBack: false, message: `${label}: ${summary.applied} 条已生效` };
+  }
+
+  // —— 没落地：先回滚行为层，再把画面强制定向到回滚后的状态 ——
+  const rolledBack = behavior ? behavior.restore(snapshot, `入态指令未落地(${label})`) : false;
+  console.warn(
+    `[pet] 入态指令未落地: label=${label} applied=${summary.applied} queued=${summary.queued} ` +
+      `rejected=${summary.rejected} 回滚=${rolledBack}`,
+  );
+  if (behavior) {
+    // 修复指令同样是 force 入态指令：正常情况下一定能落地；万一还是不行，只记日志不再递归
+    const repair = summarizeOutcomes(dispatchOps(behavior.repairOps()));
+    if (!repair.ok) {
+      console.error(`[pet] 失败修复也未能落地: applied=${repair.applied} rejected=${repair.rejected}`);
+    }
+  }
+  return {
+    ok: false,
+    outcomes,
+    applied: summary.applied,
+    queued: summary.queued,
+    rejected: summary.rejected,
+    rolledBack,
+    message:
+      `${label}: ${summary.rejected} 条被拒/${summary.queued} 条排队` +
+      `${rolledBack ? '，行为已回滚并重新对齐画面' : ''}`,
+  };
 }
 
 /**
@@ -388,7 +422,7 @@ function scheduleMoveReport(point: PetPoint): void {
 function runGesture(intents: readonly GestureIntent[]): void {
   for (const intent of intents) {
     if (intent.type === 'tap') {
-      dispatchOps(behavior ? behavior.handle('tap') : fallbackTapOps());
+      dispatchEntryOps(behavior ? behavior.handle('tap') : fallbackTapOps(), 'gesture:tap');
       hintBar?.poke();
       continue;
     }
@@ -434,7 +468,7 @@ function beginDrag(pointerId: number): void {
   powerPolicy?.update({ dragging: true });
   artElement?.classList.add('is-dragging');
   // 行为层同步进入 drag：拖拽期间不该触发睡眠（也不该被眨眼打断）
-  if (behavior) dispatchOps(behavior.handle('drag-start'));
+  if (behavior) dispatchEntryOps(behavior.handle('drag-start'), 'gesture:drag-start');
   // 指针捕获：光标移动快于窗口时事件也不会丢，否则会出现「甩一下就掉」。
   // 捕获失败（指针 id 已失效等）不能中断拖拽本身，故吞掉异常。
   try {
@@ -442,8 +476,9 @@ function beginDrag(pointerId: number): void {
   } catch {
     // 忽略：拿不到捕获时仍能靠 window 上的 pointermove 拖动
   }
+  // 锚点一律用**按下那一刻**的屏幕坐标（不是首次越阈的移动点，否则全程恒定偏移）；
   // 坐标缺失时传 undefined，主进程会退回系统光标位置
-  void bridge?.startDrag(lastScreenPoint ?? undefined);
+  void bridge?.startDrag(pressScreenPoint ?? undefined);
 }
 
 /**
@@ -458,7 +493,7 @@ function endDrag(pointerId: number): void {
   powerPolicy?.update({ dragging: false });
   artElement?.classList.remove('is-dragging');
   // 行为层回到 idle（先落桥接 idle，等 drag 的高优先级记录过期再落到常驻 idle）
-  if (behavior) dispatchOps(behavior.handle('drag-end'));
+  if (behavior) dispatchEntryOps(behavior.handle('drag-end'), 'gesture:drag-end');
   try {
     if (artElement?.hasPointerCapture(pointerId)) {
       artElement.releasePointerCapture(pointerId);
@@ -602,24 +637,33 @@ function buildDom(): void {
 }
 
 /**
- * 挂载开发态调试后门（O1）：`forceState` / `resetIdleTimer` + 一排直达按钮。
+ * 挂载开发态调试后门（O1）：调试句柄 + 一排直达按钮。
  *
- * <p><b>必须留在 `import.meta.env.DEV` 与动态 `import()` 之内：</b>
- * 这两条一起保证生产构建把整段分支连同 `debug/dev-backdoor.ts` 一起摇掉，
- * 否则"发布态零暴露"只是"没赋值"，标识符还躺在产物里。</p>
+ * <p><b>能挂上来的唯一条件是"这是开发构建"</b>（M6-b 第二轮必修项 3）：
+ * 以前是 `if (DEBUG_ENABLED)`，而 `DEBUG_ENABLED = isDebugEnabled(search, import.meta.env.DEV)`
+ * ——生产构建带 `?debug=1` 照样能挂上 `window.petDebug`。现在判断题换成构建期常量
+ * `import.meta.env.DEV`，于是生产构建里这段条件恒假，动态 `import()` 被摇掉，
+ * `debug/dev-backdoor.ts` 不产出任何 chunk，`dist/` 里搜 `petDebug` 命中 0。</p>
  */
 function mountDevTools(): void {
   if (!import.meta.env.DEV) return;
-  if (!artElement || !behavior || !window.petDebug) return;
   const host = artElement;
+  const machine = behavior;
+  if (!host || !machine) return;
   void import('./debug/dev-backdoor').then((module) => {
-    const current = behavior;
-    if (!current) return;
     module.installDevBackdoor({
-      behavior: current,
-      dispatch: (ops) => dispatchOps(ops),
+      behavior: machine,
+      dispatch: (op) => dispatchOp(op),
+      dispatchEntry: (ops, label) => dispatchEntryOps(ops, label),
+      setExpression: (name) => setExpression(name),
+      getExpression: () => getExpression(),
+      listExpressions: () => [...EXPRESSION_IDS],
+      gesturePhase: () => gesture.phase,
+      dragThresholdPx: () => DRAG_THRESHOLD_PX,
+      sustainedMotion: () => behavior?.sustainedMotion ?? null,
+      compositeMode: () => compositePlan?.mode ?? 'composite',
+      layerIds: () => [...layerViews.keys()],
       host,
-      handle: window.petDebug as unknown as Record<string, unknown>,
       onPoke: () => hintBar?.poke(),
     });
   });
@@ -667,8 +711,10 @@ function wireEvents(): void {
     // 再用命中实现判一次，避免"点在猫旁边的空气里也能把窗口拖走"
     if (!(hitTester?.test(event.clientX, event.clientY) ?? false)) return;
     if (event.currentTarget instanceof HTMLElement) {
-      // 记录屏幕坐标：拖拽 IPC 要它，阈值判定用 client 坐标（窗口还没动，两者等价）
-      lastScreenPoint = { cursorX: Math.round(event.screenX), cursorY: Math.round(event.screenY) };
+      // 记录屏幕坐标：**按下点**是拖拽锚点（`pressScreenPoint`），
+      // 而 `lastScreenPoint` 会随每次 pointermove 前进，只能用于 `drag-move`
+      pressScreenPoint = { cursorX: Math.round(event.screenX), cursorY: Math.round(event.screenY) };
+      lastScreenPoint = pressScreenPoint;
     }
     hintBar?.poke();
     runGesture(gesture.press({ pointerId: event.pointerId, x: event.clientX, y: event.clientY }));
@@ -689,10 +735,21 @@ function wireEvents(): void {
     },
     { passive: true },
   );
-  window.addEventListener('pointerup', (event) => runGesture(gesture.release(event.pointerId)));
-  window.addEventListener('pointercancel', (event) => runGesture(gesture.cancel(event.pointerId)));
+  window.addEventListener('pointerup', (event) => {
+    runGesture(gesture.release(event.pointerId));
+    // 一次按压结束：按下点作废（下一次按压会重新记录）。留着只会让下一次拖拽
+    // 有极小概率读到过期坐标。
+    pressScreenPoint = null;
+  });
+  window.addEventListener('pointercancel', (event) => {
+    runGesture(gesture.cancel(event.pointerId));
+    pressScreenPoint = null;
+  });
   // 指针捕获被系统/浏览器抢走时不会再有 pointerup：不清掉就会永远卡在拖拽
-  artElement.addEventListener('lostpointercapture', (event) => runGesture(gesture.cancel(event.pointerId)));
+  artElement.addEventListener('lostpointercapture', (event) => {
+    runGesture(gesture.cancel(event.pointerId));
+    pressScreenPoint = null;
+  });
 
   // 鼠标进到桌宠身上就把提示行淡回来（3 秒没动作再自己走）
   artElement.addEventListener('pointerenter', () => hintBar?.poke());
@@ -854,10 +911,9 @@ function createPresentation(): void {
   // 比起每条转移各挂一个定时器，单拍轮询更好测也更好停。
   behaviorTimer = window.setInterval(() => {
     if (!behavior) return;
-    for (const op of behavior.tick()) {
-      void presentation?.prepare(op);
-      dispatchOp(op);
-    }
+    // 走"入态"通道：tick 产出的都是状态进场指令（桥接 idle / 常驻 idle / 入睡），
+    // 一旦没落地就会被回滚并记账，不会出现"行为层以为落地了"的静默失败
+    dispatchEntryOps(behavior.tick(), 'behavior:tick');
   }, 250);
 }
 
@@ -920,21 +976,9 @@ function boot(): void {
     hintBar?.dispose();
     gesture.reset();
   });
-  if (DEBUG_ENABLED) {
-    window.petDebug = {
-      dispatch: dispatchOp,
-      setExpression,
-      getExpression,
-      list: () => [...EXPRESSION_IDS],
-      behaviorState: () => behavior?.state ?? 'idle',
-      tap: () => (behavior ? dispatchOps(behavior.handle('tap')) : []),
-      // O1 的两个后门键由 `debug/dev-backdoor.ts` 在开发构建里补上（生产构建整段摇掉）
-      gesturePhase: () => gesture.phase,
-      dragThresholdPx: () => DRAG_THRESHOLD_PX,
-      sustainedMotion: () => behavior?.sustainedMotion ?? null,
-      compositeMode: () => compositePlan?.mode ?? 'composite',
-      layerIds: () => [...layerViews.keys()],
-    };
+  // 调试后门只在**开发构建**里挂（生产构建连 `petDebug` 这个键名都不进产物；
+  // 与 `?debug=1` 无关——那是给开发者看的提示行/日志开关，不授予后门）
+  if (import.meta.env.DEV) {
     mountDevTools();
   }
 }
