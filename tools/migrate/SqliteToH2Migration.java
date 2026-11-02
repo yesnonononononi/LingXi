@@ -1432,7 +1432,8 @@ public final class SqliteToH2Migration {
         try (Statement statement = source.createStatement();
              ResultSet rows = statement.executeQuery(sql)) {
             while (rows.next()) {
-                references.add(rows.getLong("id") + "/" + rows.getString("snapshot_file"));
+                // 与正文存储一致：库里保存标识，磁盘文件名还要追加 .json。
+                references.add(rows.getLong("id") + "/" + rows.getString("snapshot_file") + ".json");
             }
         } catch (SQLException noExecutionTable) {
             return;
@@ -1445,8 +1446,8 @@ public final class SqliteToH2Migration {
             return;
         }
         for (String reference : references) {
-            Path file = checkpoints.resolve(reference.replace('/', java.io.File.separatorChar));
-            if (!Files.isRegularFile(file)) {
+            Path file = checkpoints.resolve(reference.replace('/', java.io.File.separatorChar)).normalize();
+            if (!file.startsWith(checkpoints.toAbsolutePath().normalize()) || !Files.isRegularFile(file)) {
                 failures.add("检查点正文缺失: " + reference);
             }
         }

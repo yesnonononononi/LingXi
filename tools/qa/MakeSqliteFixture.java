@@ -12,7 +12,7 @@ import java.sql.Statement;
  *
  * <p><b>为什么要自己造</b>：禁区里的真实库（安装版 574 MB、开发库 708 MB）一律不读不写，
  * 演练只能用 {@code %TEMP%} 下的自造副本。夹具执行的是仓库真源
- * {@code db/sqlite/V1__schema.sql}，并塞少量行（含一行 CLOB 正文本），
+ * {@code src/test/resources/db/legacy-sqlite/V1__schema.sql}，并塞少量行（含一行大文本），
  * 足以让迁移工具的逐表指纹、identity 起点、导数/校验三条路径都跑到。</p>
  *
  * <p>用法：{@code java -cp sqlite-jdbc.jar tools/qa/MakeSqliteFixture.java <库文件> <V1 脚本> [V2 脚本]}</p>
@@ -89,12 +89,12 @@ public final class MakeSqliteFixture {
 
             execution.setLong(1, 1L);
             execution.setLong(2, 1L);
-            execution.setString(3, "ck-small.json");
+            execution.setString(3, "ck-small");
             execution.executeUpdate();
 
             execution.setLong(1, 900L);
             execution.setLong(2, 100L);
-            execution.setString(3, "ck-1.json");
+            execution.setString(3, "ck-1");
             execution.executeUpdate();
         }
     }
