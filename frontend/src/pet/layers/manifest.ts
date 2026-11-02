@@ -12,6 +12,28 @@
  * <p><b>本模块是纯数据 + 纯函数，不碰 DOM</b>（设计文档 §8 共享知识第 4 条），
  * 因此可以在 node 里直接单测。</p>
  *
+ * <h2>已知限制：P1 资产没有 `face` 层 → layered 模式下表情的"面部"不可见</h2>
+ *
+ * <p><b>这不是 bug，是已决策的取舍，别再去考古两小时：</b></p>
+ * <ul>
+ *   <li>P1 的分层件只有身体/耳朵/呆毛/蝴蝶结/尾巴等 9 层，<b>没有独立的 `face` 层</b>，
+ *       所以表情（`happy` / `angry` / `sleepy` …）只能落到<b>整帧兜底</b>
+ *       （`presentation/layered-presentation.ts` 的 `applyExpression` 里
+ *       `views.get(FACE_LAYER_ID)` 为空就走 `baseFallback`）；</li>
+ *   <li>而 `pet.css` 为了让层栈（动态尾巴）不与静止压平帧重影，在
+ *       `data-composite-mode='layered'` 下把 `.pet-art-frame` 整帧 `opacity: 0`。
+ *       两者相乘的结果就是：<b>layered 下表情的"脸"看不见</b>，
+ *       能看见的只有<b>身体动作</b>（tap 的蹦、angry 的抖、wake、drag —— 它们挂在
+ *       `.pet-action` 上，两种模式下都可见）；</li>
+ *   <li><b>演示/验收要看到表情，请用 `?layers=0` 走 composite</b>（压平帧可见，
+ *       表情就是整帧切换）；</li>
+ *   <li><b>用户已决策（C 方案）</b>：不补做 `face` 层、不投美术、不关分层总闸，
+ *       等 P2 和 face 层一起做。所以：<b>不要</b>为此生成 face 贴图、
+ *       <b>不要</b>改美术管线、<b>不要</b>把 `pet-layers.json` 的 `enabled` 关掉、
+ *       <b>更不要</b>把动作动画改回挂 `.pet-art-frame`（那会把"看得见的动作"一起弄没，
+ *       守卫见 `tests/petMotionHost.test.ts`）。</li>
+ * </ul>
+ *
  * @module pet/layers/manifest
  */
 import layersSource from '../../../pet-layers.json';
