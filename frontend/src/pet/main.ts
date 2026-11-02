@@ -26,7 +26,7 @@ import {
 } from './behavior/state-machine';
 import type { PetDebugHandle } from './debug/types';
 import { DRAG_THRESHOLD_PX, PressDragGesture, type GestureIntent } from './gesture/press-drag';
-import { PET_BLINK_MAPPING, expressionFrameUrl, expressionFrameUrls } from './assets/manifest';
+import { expressionFrameUrl, expressionFrameUrls } from './assets/manifest';
 import { loadArt } from './assets/loader';
 import { MOTION_CATALOG } from './layers/motion-catalog';
 import { PET_LAYERS, applyLayersQueryOverride, pickLayerDensity, requestedLayerIds } from './layers/manifest';
@@ -390,7 +390,11 @@ export function setExpression(name: string): boolean {
     kind: 'expression',
     id: candidate,
     layer: 'base',
-    priority: 1,
+    // **优先级必须是 0（M6-b 第四轮）**：base 的 expression 槽是"回落目标"，
+    // 不是"抢占指令"。给它优先级 1 会永久压死优先级 0 的眨眼
+    // （规则表：低优先级 + 活动记录永不到期 → reject），
+    // 于是调试徽标点几下表情切换之后，桌宠就再也不眨眼了——和本轮修的缺陷同一类。
+    priority: 0,
     fadeMs: 0,
     reason: 'api:setExpression',
   });
@@ -878,12 +882,22 @@ function createPresentation(): void {
     );
   }
 
-  // 睡眠判定同时看"表情"与"行为状态"：行为层睡着时表情可能还没切过去，
-  // 只靠表情会让眨眼在入睡那一瞬间继续闪一下。
+  // 眨眼抑制的判据：**只看行为状态**（M6-b 第四轮）。
+  //
+  // 以前这里还额外判"当前表情是不是 sleepy/half"——那是**倒推**，而且会自锁：
+  // 眨眼三态的中间帧用的就是 `sleepy` 贴片（美术规格书 §5：half = sleepy），
+  // 所以"半闭帧上屏"会被读成"睡着了"，BlinkDriver 从此不再眨眼，
+  // 而不再眨眼就意味着表情永远停在 sleepy → 永远判成"睡着了"，完美闭环。
+  //
+  // 现在唯一的真源是 `behavior.isSleeping`（行为状态机），总线规则表里已有
+  // 「睡眠中来 blink → 抑制」，所以"睡着别眨眼"由"行为状态 + 规则表"决定。
+  //
+  // 唯一保留的表情判据是 `yawn`：它不是"像睡着"，而是一个**明确的语义**——
+  // "正在打哈欠"这个动作本身就是闭眼张嘴，这时候再叠一次眨眼是错的。
+  // 它由行为/表现层显式下发（`yawn` 表情），不是从"脸的状态"反推行为状态。
   const sleepingNow = (): boolean => {
     if (behavior?.isSleeping === true) return true;
-    const expression = presentation?.state.expression ?? 'neutral';
-    return expression === PET_BLINK_MAPPING.half || expression === 'yawn';
+    return presentation?.state.expression === 'yawn';
   };
 
   bus = new PresentationBus(presentation, {
