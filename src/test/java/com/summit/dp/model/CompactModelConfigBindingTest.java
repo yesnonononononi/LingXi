@@ -17,6 +17,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * 压缩档的 yaml 键必须真的绑到框架属性上。
@@ -40,8 +41,9 @@ class CompactModelConfigBindingTest {
                 .bind("lingxi.agent.model.conf.compact", Bindable.of(CompactContextModelProperties.class))
                 .orElseThrow(() -> new AssertionError("yaml 缺少 lingxi.agent.model.conf.compact 段"));
 
-        // 摘要不思考：思考 token 会占掉摘要自己的输出预算，截断后只能回落本地剪枝
-        assertEquals("none", compact.getReasoningEffort());
+        // 默认省略 effort，避免兼容接口拒绝 none/off。
+        assertNull(compact.getReasoningEffort());
+        assertEquals("disabled", compact.getThinkingType());
         assertFalse(compact.isReturnThinking());
         assertFalse(compact.isSendThinking());
         assertEquals(32768, compact.getMaxTokens());
