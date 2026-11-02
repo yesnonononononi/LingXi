@@ -4,6 +4,8 @@ import com.summit.dp.shared.support.H2TestDatabase;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -29,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class H2UtcSessionTimeZoneTest {
 
-    private static final DateTimeFormatter TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss[.SSS]");
+    private static final DateTimeFormatter TIMESTAMP = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
     private final List<H2TestDatabase> databases = new ArrayList<>();
 
@@ -60,11 +62,21 @@ class H2UtcSessionTimeZoneTest {
         String created = database.queryString(
                 "SELECT CAST(create_time AS VARCHAR) FROM session WHERE name = 'tz-default-probe'");
         assertTrue(created != null && !created.isBlank(), "默认时间列必须有值，实际=" + created);
-        LocalDateTime stored = LocalDateTime.parse(created.strip().replace('T', ' '), TIMESTAMP);
+        LocalDateTime stored = LocalDateTime.parse(created.strip().replace(' ', 'T'), TIMESTAMP);
         long drift = Math.abs(Duration.between(stored, LocalDateTime.now(ZoneOffset.UTC)).toMinutes());
         assertTrue(drift <= 5,
                 "库侧默认时间必须是 UTC 墙钟（与时区无关），与 UTC 现在相差 " + drift
                         + " 分钟，实际值=" + created + "（差 8 小时即说明会话时区不是 UTC）");
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 7, 70, 700})
+    void h2TimestampTextAcceptsTrimmedFractionalZeros(int millis) {
+        H2TestDatabase database = newDatabase("tz-fraction");
+        String input = "2026-11-02 04:42:58." + String.format("%03d", millis);
+        String text = database.queryString("SELECT CAST(TIMESTAMP '" + input + "' AS VARCHAR)");
+        assertEquals(LocalDateTime.of(2026, 11, 2, 4, 42, 58, millis * 1_000_000),
+                LocalDateTime.parse(text.replace(' ', 'T'), TIMESTAMP));
     }
 
     private H2TestDatabase newDatabase(String prefix) {
