@@ -111,78 +111,80 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
      */
     @Override
     public void save(Execution execution) {
-        if (execution == null || execution.getId() == null || execution.getId().isBlank()) {
-            throw new IllegalArgumentException("执行 ID 不能为空");
-        }
-        synchronized (ExecutionCoordination.monitor(execution.getId())) {
-            long id = numericId(execution.getId());
-            ExecutionState state = execution.getExecutionState();
-            ExecutionControlSignal currentSignal = active.get(execution.getId());
-            if (state == ExecutionState.SUSPENDED && currentSignal != null && currentSignal.isSuspendRequired()) {
-                InputAutomationPolicy.putAttribute(execution,
-                        InputAutomationPolicy.USER_PAUSED, true);
+        try (ExecutionPersistenceScope scope = ExecutionPersistenceScope.open()) {
+            if (execution == null || execution.getId() == null || execution.getId().isBlank()) {
+                throw new IllegalArgumentException("执行 ID 不能为空");
             }
+            synchronized (ExecutionCoordination.monitor(execution.getId())) {
+                long id = numericId(execution.getId());
+                ExecutionState state = execution.getExecutionState();
+                ExecutionControlSignal currentSignal = active.get(execution.getId());
+                if (state == ExecutionState.SUSPENDED && currentSignal != null && currentSignal.isSuspendRequired()) {
+                    InputAutomationPolicy.putAttribute(execution,
+                            InputAutomationPolicy.USER_PAUSED, true);
+                }
 
-            Map<String, Object> attributes = execution.getAgentRequest().runtimeParametersOrDefault().getAttributes();
-            Long sessionId = ExecutionAttributes.readLong(attributes, ExecutionAttributes.SESSION_ID);
+                Map<String, Object> attributes = execution.getAgentRequest().runtimeParametersOrDefault().getAttributes();
+                Long sessionId = ExecutionAttributes.readLong(attributes, ExecutionAttributes.SESSION_ID);
 
-            // 保存顺序不可调换：先把正文流式写成独立临时文件 → fsync → 原子发布成新文件名
-            // （不覆盖旧文件）→ 再用版本条件把「新文件标识 + 状态 + resume_generation」提交进库。
-            ExecutionCheckpointStore.CheckpointWriter writer = checkpointStore.begin(execution.getId());
-            String fileId = writer.fileId();
-            try {
-                // 直接流式写 OutputStream：不生成完整 JSON 字符串，也不建 JsonNode 树。
-                objectMapper.writeValue(writer.stream(), execution);
-                writer.publish();
-            } catch (IOException failure) {
-                writer.rollback();
-                throw new IllegalStateException("保存执行检查点失败: executionId=" + execution.getId(), failure);
-            } catch (RuntimeException failure) {
-                writer.rollback();
-                throw new IllegalStateException("保存执行检查点失败: executionId=" + id, failure);
-            }
+                // 保存顺序不可调换：先把正文流式写成独立临时文件 → fsync → 原子发布成新文件名
+                // （不覆盖旧文件）→ 再用版本条件把「新文件标识 + 状态 + resume_generation」提交进库。
+                ExecutionCheckpointStore.CheckpointWriter writer = checkpointStore.begin(execution.getId());
+                String fileId = writer.fileId();
+                try {
+                    // 直接流式写 OutputStream：不生成完整 JSON 字符串，也不建 JsonNode 树。
+                    objectMapper.writeValue(writer.stream(), execution);
+                    writer.publish();
+                } catch (IOException failure) {
+                    writer.rollback();
+                    throw new IllegalStateException("保存执行检查点失败: executionId=" + execution.getId(), failure);
+                } catch (RuntimeException failure) {
+                    writer.rollback();
+                    throw new IllegalStateException("保存执行检查点失败: executionId=" + id, failure);
+                }
 
-            String previousFile;
-            boolean firstFailure;
-            try {
-                ExecutionCheckpointService.SaveOutcome outcome = commitCheckpoint(execution, id, sessionId,
-                        resolveStatus(state), fileId);
-                firstFailure = outcome.firstFailure();
-                previousFile = outcome.previousFile();
-            } catch (RuntimeException failure) {
-                // 整笔最终失败（含重试耗尽）：删掉本次新文件，库内仍指向旧文件。
-                writer.rollback();
-                throw new IllegalStateException("保存执行检查点失败: executionId=" + id, failure);
-            }
+                String previousFile;
+                boolean firstFailure;
+                try {
+                    ExecutionCheckpointService.SaveOutcome outcome = commitCheckpoint(execution, id, sessionId,
+                            resolveStatus(state), fileId);
+                    firstFailure = outcome.firstFailure();
+                    previousFile = outcome.previousFile();
+                } catch (RuntimeException failure) {
+                    // 整笔最终失败（含重试耗尽）：删掉本次新文件，库内仍指向旧文件。
+                    writer.rollback();
+                    throw new IllegalStateException("保存执行检查点失败: executionId=" + id, failure);
+                }
 
-            // 事务结果决定文件归属：提交 = 释放登记并回收旧文件；回滚 = 删掉本次新文件、库内仍指向旧文件。
-            String committedFile = fileId;
-            String replacedFile = previousFile;
-            if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-                writer.complete();
-                reclaim(execution.getId(), committedFile, replacedFile);
-            } else {
-                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                    @Override public void afterCommit() {
-                        writer.complete();
-                        // 旧的已提交文件在提交后回收；删除失败不影响已提交事实，留给后续清理。
-                        reclaim(execution.getId(), committedFile, replacedFile);
-                    }
-
-                    @Override public void afterCompletion(int status) {
-                        if (status != STATUS_COMMITTED) {
-                            writer.rollback();
+                // 事务结果决定文件归属：提交 = 释放登记并回收旧文件；回滚 = 删掉本次新文件、库内仍指向旧文件。
+                String committedFile = fileId;
+                String replacedFile = previousFile;
+                if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+                    writer.complete();
+                    reclaim(execution.getId(), committedFile, replacedFile);
+                } else {
+                    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                        @Override public void afterCommit() {
+                            writer.complete();
+                            // 旧的已提交文件在提交后回收；删除失败不影响已提交事实，留给后续清理。
+                            reclaim(execution.getId(), committedFile, replacedFile);
                         }
-                    }
-                });
-            }
 
-            boolean withoutControlSlot = !active.containsKey(execution.getId());
-            // 补一次终结广播，使轮次收口落在框架发布终态事件之前 —— 框架的顺序是
-            // 「save(FAILED) → 返回发布任务 → 调用方 run 它」，业务侧没有排序权，只能在这里补。
-            // 活跃循环的那次保存走不到这里：那时控制槽位仍在，由 unregister 负责通知（两者互斥）。
-            if (firstFailure && withoutControlSlot) {
-                afterCommit(() -> notifyFinished(execution));
+                        @Override public void afterCompletion(int status) {
+                            if (status != STATUS_COMMITTED) {
+                                writer.rollback();
+                            }
+                        }
+                    });
+                }
+
+                boolean withoutControlSlot = !active.containsKey(execution.getId());
+                // 补一次终结广播，使轮次收口落在框架发布终态事件之前 —— 框架的顺序是
+                // 「save(FAILED) → 返回发布任务 → 调用方 run 它」，业务侧没有排序权，只能在这里补。
+                // 活跃循环的那次保存走不到这里：那时控制槽位仍在，由 unregister 负责通知（两者互斥）。
+                if (firstFailure && withoutControlSlot) {
+                    afterCommit(() -> notifyFinished(execution));
+                }
             }
         }
     }
@@ -230,38 +232,45 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
 
     @Override
     public void afterCommit(Runnable notification) {
+        Runnable durableNotification = () -> {
+            try (ExecutionPersistenceScope scope = ExecutionPersistenceScope.open()) {
+                notification.run();
+            }
+        };
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            notification.run();
+            durableNotification.run();
             return;
         }
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override public void afterCommit() { notification.run(); }
+            @Override public void afterCommit() { durableNotification.run(); }
         });
     }
 
     @Override
     public Optional<Execution> findById(String executionId) {
-        // 只认数据库里的权威引用：没有应用级正文缓存，改了库内文件标识就立刻读到另一份内容。
-        // 读文件必须在同一把 executionId 门闩内完成：保护「已查到引用、尚未打开文件」的窗口，
-        // 让同一执行的保存/回收不会在中间把旧文件删掉。
-        synchronized (ExecutionCoordination.monitor(executionId)) {
-            ExecutionCheckpointService.StoredCheckpoint checkpoint =
-                    checkpointService.find(numericId(executionId)).orElse(null);
-            if (checkpoint == null || checkpoint.snapshotFile() == null) {
-                return Optional.empty();
+        try (ExecutionPersistenceScope scope = ExecutionPersistenceScope.open()) {
+            // 只认数据库里的权威引用：没有应用级正文缓存，改了库内文件标识就立刻读到另一份内容。
+            // 读文件必须在同一把 executionId 门闩内完成：保护「已查到引用、尚未打开文件」的窗口，
+            // 让同一执行的保存/回收不会在中间把旧文件删掉。
+            synchronized (ExecutionCoordination.monitor(executionId)) {
+                ExecutionCheckpointService.StoredCheckpoint checkpoint =
+                        checkpointService.find(numericId(executionId)).orElse(null);
+                if (checkpoint == null || checkpoint.snapshotFile() == null) {
+                    return Optional.empty();
+                }
+                // 流式反序列化，每次都是独立可变对象：修改返回值不会影响已提交的检查点文件。
+                Execution restored = checkpointStore.read(executionId, checkpoint.snapshotFile(), Execution.class);
+                // 启动清理只更新摘要列，不能让旧快照重新开放已终结的执行。
+                if (ExecutionStatusCodes.isTerminal(checkpoint.status())
+                        && !ExecutionStateCodec.isTerminalState(restored.getExecutionState())) {
+                    // 校正不是一次状态转换：结论与结束时间都取自已提交的值，
+                    // 调普通 complete()/fail()/cancel() 会用 Instant.now() 盖掉库里的 completed_at，
+                    // 收尸记录的时间就会随每次读取漂移。
+                    restored.restoreTerminalState(ExecutionStateCodec.decode(checkpoint.status()),
+                            toInstant(checkpoint.completedAt()), interruptionReason(checkpoint.status()));
+                }
+                return Optional.of(restored);
             }
-            // 流式反序列化，每次都是独立可变对象：修改返回值不会影响已提交的检查点文件。
-            Execution restored = checkpointStore.read(executionId, checkpoint.snapshotFile(), Execution.class);
-            // 启动清理只更新摘要列，不能让旧快照重新开放已终结的执行。
-            if (ExecutionStatusCodes.isTerminal(checkpoint.status())
-                    && !ExecutionStateCodec.isTerminalState(restored.getExecutionState())) {
-                // 校正不是一次状态转换：结论与结束时间都取自已提交的值，
-                // 调普通 complete()/fail()/cancel() 会用 Instant.now() 盖掉库里的 completed_at，
-                // 收尸记录的时间就会随每次读取漂移。
-                restored.restoreTerminalState(ExecutionStateCodec.decode(checkpoint.status()),
-                        toInstant(checkpoint.completedAt()), interruptionReason(checkpoint.status()));
-            }
-            return Optional.of(restored);
         }
     }
 
@@ -382,7 +391,9 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
             }
             Execution execution = findById(executionId).orElseThrow(
                     () -> new IllegalStateException("执行不存在: executionId=" + executionId));
-            if (execution.getExecutionState() != ExecutionState.SUSPENDED) return;
+            // 异常退出后可能仍留着运行态；没有控制槽位就直接收口，不能只处理挂起态。
+            ExecutionState state = execution.getExecutionState();
+            if (state != ExecutionState.SUSPENDED && state != ExecutionState.RUNNING) return;
             execution.cancelChecked();
             save(execution);
             afterCommit(() -> notifyCancelled(execution));
@@ -407,7 +418,7 @@ public class LocalExecutionRepository implements ExecutionRepository, ExecutionA
         }
     }
 
-    /** 挂起取消没有活跃循环发布终态事件，须在检查点提交与轮次收口后补发用量。 */
+    /** 无活跃循环的取消须在检查点提交与轮次收口后补发终态事件。 */
     private void notifyCancelled(Execution execution) {
         notifyFinished(execution);
         invokeLifecycle("发布挂起取消", execution, () -> runtimeEvents.getObject().onExecutionCancelled(

@@ -209,13 +209,11 @@ public class ChatServiceImpl implements ChatService {
 
         List<SessionExecutionRegistry.ChildExecution> liveChildren = sessionExecutionRegistry.cancelRoot(rootSessionId);
         liveChildren.stream().map(SessionExecutionRegistry.ChildExecution::sessionId).forEach(ids::add);
+        log.info("请求停止会话树: sessionId={}, rootSessionId={}, childCount={}",
+                sessionId, rootSessionId, liveChildren.size());
+        // 框架取消信号会中止模型请求和工具等待；直接打断执行线程会破坏检查点及数据库收尾。
         ids.stream().flatMap(id -> executionLocator.activeExecutionIds(id).stream())
                 .forEach(this::requestCancel);
-
-        liveChildren.forEach(child -> {
-            Thread thread = child.thread();
-            if (thread != null && thread != Thread.currentThread()) thread.interrupt();
-        });
 
         // 不关流：会话流是会话级资源，生命周期跟页面挂载 / 卸载走。停止只取消执行 ——
         // 一旦在这里断开，前端下一次发送前就必须重新挂载，否则那段时间的事件无处可去。

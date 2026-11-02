@@ -14,6 +14,7 @@ import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.event.RuntimeEventPublisher;
 import com.summit.core.conversation.message.Message;
 import com.summit.core.conversation.message.UserMessageEntity;
+import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.dp.execution.application.service.ExecutionCheckpointService;
 import com.summit.dp.execution.domain.repository.ExecutionRepository;
 import com.summit.dp.execution.infrastructure.checkpoint.LocalFileCheckpointStore;
@@ -24,6 +25,7 @@ import com.summit.dp.shared.support.H2TestDatabase;
 import com.summit.dp.toolcall.application.service.ToolCallService;
 import com.summit.dp.turn.application.service.ChatTurnService;
 import com.summit.dp.workflow.application.approval.ToolCallReadinessService;
+import com.summit.dp.workflow.application.input.InputWakeupService;
 import com.summit.dp.workflow.application.projection.ChatTurnLifecycleProjector;
 import com.summit.dp.workflow.application.projection.SessionContextUsageProjector;
 import com.summit.dp.workflow.infrastructure.config.JsonConfig;
@@ -71,6 +73,30 @@ class ConcurrentCheckpointSaveTransactionTest {
     @BeforeEach
     void setUp() {
         executions.delete(null);
+    }
+
+    @Test
+    void interruptedCancellationCommitsToH2AndReleasesTheControlSlot() {
+        Execution source = execution(FIRST_ID, ExecutionState.CREATED);
+        runtime.save(source);
+        ExecutionControlSignal signal = runtime.register(source.getId());
+        source.startChecked();
+        runtime.save(source);
+        runtime.requireCancel(source.getId());
+        source.cancelChecked();
+
+        Thread.currentThread().interrupt();
+        try {
+            assertDoesNotThrow(() -> runtime.save(source));
+            assertDoesNotThrow(() -> runtime.unregister(signal));
+            assertTrue(Thread.currentThread().isInterrupted(), "收尾不能吞掉停止信号");
+        } finally {
+            Thread.interrupted();
+        }
+
+        assertFalse(runtime.isActive(source.getId()));
+        assertEquals(ExecutionState.CANCELLED, runtime.findById(source.getId()).orElseThrow().getExecutionState());
+        assertNotNull(executions.selectById(FIRST_ID).getCompletedAt());
     }
 
 
@@ -221,6 +247,9 @@ class ConcurrentCheckpointSaveTransactionTest {
 
     @Configuration
     static class Config {
+        @Bean
+        InputWakeupService inputWakeups() { return mock(InputWakeupService.class); }
+
         @Bean
         SessionExecutionRegistry executionRegistry() { return new SessionExecutionRegistry(); }
 

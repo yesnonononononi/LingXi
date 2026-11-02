@@ -87,6 +87,53 @@ class LocalFileCheckpointStoreTest {
         when(persistence.selectOne(any())).thenAnswer(invocation -> rows.values().stream().findFirst().orElse(null));
     }
 
+    @Test
+    void cancellationCheckpointSurvivesAnInterruptedThread() {
+        seedRow(305L, ExecutionStatusCodes.RUNNING, 1L, null);
+        Execution cancelled = suspended("305", List.of(UserMessageEntity.from("取消前的完整上下文")));
+        cancelled.cancelChecked();
+        Thread.currentThread().interrupt();
+        try {
+            assertDoesNotThrow(() -> repository.save(cancelled));
+            assertTrue(Thread.currentThread().isInterrupted(), "保存不能吞掉取消信号");
+        } finally {
+            Thread.interrupted();
+        }
+        assertEquals(ExecutionStatusCodes.CANCELLED, rows.get(305L).getStatus());
+        Execution restored = repository.findById("305").orElseThrow();
+        assertEquals(ExecutionState.CANCELLED, restored.getExecutionState());
+        assertEquals("取消前的完整上下文", restored.getMessages().getFirst().text());
+    }
+
+    @Test
+    void interruptBetweenWritingAndPublishingStillPublishesDurableContent() throws IOException {
+        ExecutionCheckpointStore.CheckpointWriter writer = checkpointStore.begin("305");
+        mapper.writeValue(writer.stream(), Map.of("message", "已写入的上下文"));
+        Thread.currentThread().interrupt();
+        try {
+            assertDoesNotThrow(writer::publish);
+            assertTrue(Thread.currentThread().isInterrupted());
+        } finally {
+            Thread.interrupted();
+            writer.complete();
+        }
+        assertEquals("已写入的上下文", checkpointStore.read("305", writer.fileId(), Map.class).get("message"));
+        assertFalse(checkpointStore.isInFlight("305", writer.fileId()));
+    }
+
+    @Test
+    void interruptedFinalizationCanReadTheCommittedCheckpoint() {
+        String fileId = publish("305", suspended("305", List.of(UserMessageEntity.from("收尾读取"))));
+        Thread.currentThread().interrupt();
+        try {
+            Execution restored = assertDoesNotThrow(() -> checkpointStore.read("305", fileId, Execution.class));
+            assertEquals("收尾读取", restored.getMessages().getFirst().text());
+            assertTrue(Thread.currentThread().isInterrupted());
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
     /** 保存路径绝不产生完整 JSON 字符串：这是后续 512 MiB 堆 OOM 守卫的基础。 */
     @Test
     void savingStreamsTheCheckpointWithoutBuildingAWholeDocumentString() throws Exception {

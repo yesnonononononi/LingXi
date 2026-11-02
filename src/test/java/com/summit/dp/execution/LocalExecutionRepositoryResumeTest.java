@@ -418,6 +418,22 @@ class LocalExecutionRepositoryResumeTest {
     }
 
     @Test
+    void stoppingOrphanedRunningExecutionClosesTheTurnAndPublishesCancellationOnce() {
+        Execution source = execution();
+        source.resumeChecked();
+        repository.save(source);
+
+        repository.requireCancel("305");
+        repository.requireCancel("305");
+
+        assertEquals(ExecutionState.CANCELLED, repository.findById("305").orElseThrow().getExecutionState());
+        assertEquals(List.of("305"), finished);
+        verify(subExecutionLifecycle).onFinished(any());
+        verify(runtimeEvents).onExecutionCancelled(any());
+        assertThrows(IllegalStateException.class, () -> repository.register("305"));
+    }
+
+    @Test
     void suspendedCancellationPublishesAccumulatedUsageOnceAfterClosure() {
         Execution source = execution();
         source.getAgentRequest().runtimeParametersOrDefault().setEventMetaData(

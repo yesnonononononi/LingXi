@@ -81,8 +81,7 @@ public class AsyncDelegationSubmitter {
 
             modelContextService.replace(childSessionId, execution.getMessages());
         } catch (RuntimeException e) {
-            log.warn("异步子执行失败: rootSessionId={}, subSessionId={}, cause={}",
-                    rootSessionId, childSessionId, e.toString());
+            log.warn("异步子执行失败: rootSessionId={}, subSessionId={}", rootSessionId, childSessionId, e);
             // 子执行从未建立执行（无生命周期通知）时的结束事实：移除登记 + 唤醒根；已开跑的失败走框架
             // notifyFinished 链，二者幂等。
             subExecutionLifecycle.abandonChild(rootSessionId, childSessionId, task.rootExecutionId());
