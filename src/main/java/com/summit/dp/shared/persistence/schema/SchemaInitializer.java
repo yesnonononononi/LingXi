@@ -2,16 +2,10 @@ package com.summit.dp.shared.persistence.schema;
 
 import javax.sql.DataSource;
 
-/**
- * 建库脚本的执行器抽象：每个存储引擎一个实现，启动时只跑被选中的那个。
- *
- * <p>接口只承诺一件事：把「还没执行过的版本脚本」按序执行完，并把执行条数报回去。
- * 事务性由各实现自己声明——SQLite 可以整段回滚，H2 的 DDL 会隐式提交，承诺不了整事务回滚，
- * 因此调用方不得假设「失败即无痕」，只能依赖幂等 + 版本登记时机来保证可重入。</p>
- */
+/** H2 的 DDL 会隐式提交，失败恢复依赖幂等脚本与最后登记版本。 */
 public interface SchemaInitializer {
 
-    /** 本实现对应的引擎标识（{@code sqlite} / {@code h2}），用于日志与装配校验。 */
+    /** 引擎标识仅用于建库日志。 */
     String engineId();
 
     /**

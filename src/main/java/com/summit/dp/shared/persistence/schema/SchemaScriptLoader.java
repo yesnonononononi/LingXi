@@ -11,28 +11,17 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * 建库脚本的加载、切分与指纹计算（两个引擎共用）。
- *
- * <p><b>为什么切分要自己做</b>：实测 sqlite-jdbc 的 {@code execute} 遇到以注释开头的多语句脚本时
- * 只执行第一条（后续语句被静默跳过），表现为「库建了一半、日志还说成功」。H2 侧同样把
- * 「逐条执行、逐条报错」当作硬约束：出错时要知道是第几条语句。因此切分统一在这里做，
- * 两个引擎的初始化器只负责执行。</p>
- *
- * <p>触发器体的 {@code BEGIN ... END;} 内部含分号，按行判断「是否在触发器体内」再决定是否切分
- * （H2 脚本里没有 SQL 触发器，但 SQLite 脚本里有，切分器必须两者通吃）。</p>
- */
+/** 逐条执行才能定位失败语句，脚本指纹用于阻止已登记版本被原地改写。 */
 public class SchemaScriptLoader {
 
     /** 脚本命名：V<版本>__<说明>.sql；版本号决定执行顺序。 */
     private static final Pattern SCRIPT_NAME = Pattern.compile("^V(\\d+)__(.+)\\.sql$");
 
-    /** 破坏性语句两个引擎都拒绝：建库脚本只允许 IF NOT EXISTS 的增量建表。 */
+    /** 建库不能删除既有数据，升级只能走显式版本脚本。 */
     private static final Pattern DESTRUCTIVE = Pattern.compile(
             "(?im)^\\s*(?:DROP\\s+TABLE|TRUNCATE\\s+TABLE)\\b");
 
@@ -78,8 +67,6 @@ public class SchemaScriptLoader {
 
     /**
      * 正文的 SHA-256（十六进制小写，UTF-8 字节）。
-     *
-     * <p>与引擎无关：同一份脚本在两个引擎上算出同一个指纹，登记表里的值才有可比性。</p>
      *
      * @param content 脚本正文
      * @return 64 位十六进制串
@@ -130,25 +117,12 @@ public class SchemaScriptLoader {
         }
         List<String> statements = new ArrayList<>();
         StringBuilder current = new StringBuilder();
-        boolean inTrigger = false;
         for (String rawLine : script.content().split("\n")) {
             String trimmed = rawLine.strip();
             if (trimmed.isEmpty() || trimmed.startsWith("--")) {
                 continue;
             }
             current.append(rawLine).append('\n');
-            String upper = trimmed.toUpperCase(Locale.ROOT);
-            if (!inTrigger && upper.startsWith("CREATE TRIGGER")) {
-                inTrigger = true;
-            }
-            if (inTrigger) {
-                if (upper.endsWith("END;")) {
-                    statements.add(current.toString());
-                    current.setLength(0);
-                    inTrigger = false;
-                }
-                continue;
-            }
             if (trimmed.endsWith(";")) {
                 statements.add(current.toString());
                 current.setLength(0);
