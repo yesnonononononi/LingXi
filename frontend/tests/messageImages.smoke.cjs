@@ -41,16 +41,17 @@ import '../../../src/style.css';
 const dark = ref(false);
 const provider = ref('');const vision = ref(false);const showConfig = ref(false);
 const message = ref({id:'image-answer',role:'assistant',timestamp:0,content:'',isComplete:true});
+const turn = ref(null);
 useI18n().locale.value='zh-CN';
 const {setTheme}=useTheme();
 setTheme('light');
 window.setMessage=async(content,running=false)=>{message.value.content=content;message.value.isThinking=running;message.value.isComplete=!running;await nextTick();};
 window.setDark=async(value)=>{dark.value=value;setTheme(value?'dark':'light');await nextTick();};
-window.setStructured=async(view)=>{message.value=buildBubbleFromTurnView(view);await nextTick();};
+window.setStructured=async(view,summary=null)=>{turn.value=summary;message.value=buildBubbleFromTurnView(view);await nextTick();};
 window.updateStructured=async(view)=>{projectTurnView(message.value,view);await nextTick();};
 window.showConfig=()=>{showConfig.value=true;};window.selectedProvider=()=>provider.value;window.visionEnabled=()=>vision.value;
 window.setProvider=value=>provider.value=value;
-</script><template><main style="max-width:720px;margin:24px auto;padding:0 16px"><ModelAdvancedOptions v-if="showConfig" v-model:provider="provider" v-model:vision="vision" :is-dark="dark" /><ChatMessageItem :message="message" :is-dark="dark" /></main></template>`);
+</script><template><main style="max-width:720px;margin:24px auto;padding:0 16px"><ModelAdvancedOptions v-if="showConfig" v-model:provider="provider" v-model:vision="vision" :is-dark="dark" /><ChatMessageItem :message="message" :turn="turn" :is-group-tail="true" :is-dark="dark" /></main></template>`);
   await fs.writeFile(path.join(output, 'entry.js'), `import {createApp,nextTick} from 'vue';
 window.runtimeErrors=[];window.addEventListener('error',event=>{if(event.message)window.runtimeErrors.push(event.message);});
 window.flush=async()=>{await nextTick();await new Promise(resolve=>setTimeout(resolve,120));};
@@ -69,6 +70,10 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
       }
       if (mutation === 'advanced' && id.replaceAll('\\','/').endsWith('/src/components/model/ModelAdvancedOptions.vue')) {
         return source.replace('<details class=', '<details open class=');
+      }
+      if (mutation === 'footer' && id.replaceAll('\\','/').endsWith('/src/components/chat/ChatMessageItem.vue')) {
+        assert.ok(source.includes(' || props.message.responseImageUrls?.length'), '底栏变异必须命中图片完成判据');
+        return source.replace(' || props.message.responseImageUrls?.length', '');
       }
     },
   },vue()],server:{host:'127.0.0.1',port:0,proxy:{'/a/images':base}},logLevel:'error'});
@@ -144,6 +149,18 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   await evaluate(`window.setStructured(${JSON.stringify(view)});window.setDark(false);window.flush()`);
   await waitFor('document.querySelector("[data-testid=response-images] img")?.naturalWidth>0');
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=response-images] .message-image").length'),1);
+  const summary = {turnId:view.turnId,status:'COMPLETED',modelName:'image-test',modelProvider:'default-image-model',
+    inputTokens:15,outputTokens:80,totalTokens:95,cacheTokens:0,reasoningTokens:0,elapsedMs:1200};
+  await evaluate(`window.setStructured(${JSON.stringify({...view,status:'RUNNING'})},${JSON.stringify({...summary,status:'RUNNING'})});window.flush()`);
+  assert.equal(await evaluate('document.querySelectorAll(".usage-trigger").length'),0,'生图进行中不得提前显示完成底栏');
+  await evaluate(`window.setStructured(${JSON.stringify(view)},${JSON.stringify(summary)});window.flush()`);
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=message-copy]").length'),1,'纯图片完成回复必须显示底栏');
+  assert.equal(await evaluate('document.querySelectorAll(".usage-trigger").length'),1,'纯图片回复必须显示轮次用量');
+  assert.match(await evaluate('document.querySelector(".usage-trigger").textContent'),/95/);
+  await evaluate('document.querySelector(".usage-trigger").click();window.flush()');
+  assert.match(await evaluate('document.querySelector(".usage-card .usage-model").textContent'),/image-test/);
+  assert.equal(await evaluate('document.querySelector(".usage-card .usage-heading > span:last-child").textContent.trim()'),'95 token');
+  await evaluate('document.querySelector(".usage-card").hidePopover();window.flush()');
   if (businessReport) {
     for (const frame of businessReport.frames) {
       await evaluate(`window.updateStructured(${JSON.stringify(frame.view)});window.flush()`);
@@ -153,8 +170,9 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   await evaluate('document.querySelector("[data-testid=response-images] img").decode()');
   await new Promise(resolve=>setTimeout(resolve,200));
   await fs.writeFile(path.join(output,'structured-light.png'),(await window.webContents.capturePage()).toPNG());
-  await evaluate(`window.setStructured(${JSON.stringify(view)});window.flush()`);
+  await evaluate(`window.setStructured(${JSON.stringify(view)},${JSON.stringify(summary)});window.flush()`);
   await waitFor('document.querySelector("[data-testid=response-images] img")?.naturalWidth>0');
+  assert.equal(await evaluate('document.querySelectorAll(".usage-trigger").length'),1,'历史重投影不能丢失或重复用量底栏');
   await evaluate('document.querySelector("[data-testid=response-images] .message-image-surface").click();window.flush()');
   assert.equal(await evaluate('document.querySelector(".message-image-preview").open'),true);
   await evaluate('document.querySelector(".message-image-preview button").click();window.showConfig();window.flush()');

@@ -363,8 +363,8 @@ const isMessageCompleted = computed(() => {
   if (isTerminalTurn.value) {
     return true;
   }
-  // 7. 其余必须真有内容或工具，否则底栏没有可挂的语义
-  return !!(props.message.content || props.message.toolCalls?.length);
+  // 7. 纯图片同样是有效回复，不能因正文为空而隐藏底栏。
+  return !!(props.message.content || props.message.responseImageUrls?.length || props.message.toolCalls?.length);
 });
 
 /**
