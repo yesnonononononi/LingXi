@@ -307,6 +307,53 @@ function writeState(filePath, state) {
  * @param options.statePath 可选：状态文件路径覆盖（测试用）
  * @returns 窗口管理 API
  */
+/**
+ * 开发态入口兜底地址。
+ *
+ * <p>端口与 `frontend/vite.config.ts` 的 `server.port` 保持一致；脚本侧（`.lingxi/tools/pet-up.cmd`）
+ * 只负责把同一个端口写进 `ELECTRON_URL`，两处不一致时以此处为最后防线。</p>
+ */
+const DEV_ENTRY_FALLBACK = 'http://localhost:5174';
+
+/**
+ * 把 `ELECTRON_URL` 规整成一个可安全拼接的 base URL（恒以 `/` 结尾）。
+ *
+ * <p><b>为什么需要这层（真实事故）：</b>这个环境变量由批处理脚本设置，而
+ * `set VAR=value &amp;&amp; cmd` 会把 value 后面那个空格一起设进去。旧实现是
+ * `${url}/` 先拼字符串再 `new URL()`——空格落在主机名里变成 `5174 /`，
+ * URL 解析器再怎么容错也救不回来，直接抛 `Invalid URL`，主进程弹
+ * 「A JavaScript error occurred in the main process」。
+ *
+ * <p>所以顺序必须是：**先解析校验，再拼路径**。入口地址是可降级配置，
+ * 脏值只该退化成默认端口加一条告警，绝不该阻断启动。</p>
+ *
+ * @param raw 环境变量原值（不可信：可能为空、带空格、带引号、根本不是 URL）
+ * @returns 规范化后的 base URL，恒以 `/` 结尾
+ */
+function resolveDevEntryUrl(raw) {
+  const value = typeof raw === 'string' ? raw.trim().replace(/^["']|["']$/g, '') : '';
+  if (!value) return `${DEV_ENTRY_FALLBACK}/`;
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    console.warn(`[pet] ELECTRON_URL 不是合法 URL（原值=${JSON.stringify(raw)}），已回退到 ${DEV_ENTRY_FALLBACK}`);
+    return `${DEV_ENTRY_FALLBACK}/`;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    console.warn(`[pet] ELECTRON_URL 协议不受支持（${parsed.protocol}），已回退到 ${DEV_ENTRY_FALLBACK}`);
+    return `${DEV_ENTRY_FALLBACK}/`;
+  }
+  const href = parsed.toString();
+  return href.endsWith('/') ? href : `${href}/`;
+}
+
+/**
+ * 注册桌宠窗口（窗口参数 + IPC + 显隐与持久化）。
+ *
+ * @param options 依赖注入
+ * @returns 窗口控制器
+ */
 function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath }) {
   const resolvedStatePath = statePath || path.join(electron().app.getPath('userData'), STATE_FILE_NAME);
 
@@ -368,11 +415,15 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath }) {
     return electron().screen;
   }
 
-  /** 窗口入口：开发态走 Vite 服务，打包态走 dist 内的多入口产物。 */
+  /**
+   * 窗口入口：开发态走 Vite 服务，打包态走 dist 内的多入口产物。
+   *
+   * <p>开发态 URL 一律经 {@link resolveDevEntryUrl} 规整：先解析校验再拼 `pet.html`，
+   * 不要反过来（历史上就是先拼字符串、空格落进主机名，抛 `Invalid URL` 崩主进程）。</p>
+   */
   function resolveEntry() {
     if (isDev) {
-      const url = process.env.ELECTRON_URL || 'http://localhost:5174';
-      return { kind: 'url', value: new URL('pet.html', `${url}/`).toString() };
+      return { kind: 'url', value: `${resolveDevEntryUrl(process.env.ELECTRON_URL)}pet.html` };
     }
     return { kind: 'file', value: path.join(frontendRoot, 'dist', 'pet.html') };
   }
@@ -766,6 +817,8 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath }) {
 
 module.exports = {
   registerPetWindow,
+  resolveDevEntryUrl,
+  DEV_ENTRY_FALLBACK,
   normalizeDimension,
   intersectArea,
   clampRectToWorkArea,
