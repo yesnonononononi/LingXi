@@ -34,6 +34,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Migrate-SqliteToH2.p
 - H2 数据目录必须停库搬迁。运行期修改会返回中文处置提示，原配置与目标文件保持原样。
 - SQLite 驱动仅保留在测试和离线迁移工具作用域，不进入应用包。旧版 SQLite DDL 只作为测试夹具保存。
 - 不恢复历史整段检查点入库或正文缓存，不通过回滚旧切库提交实施升级。
+- 清单已删除 SQLite 期间的全局串行锁，改用 H2 父行锁；会话与邮箱的锁定读契约也已恢复。历史改造的逐项处置见 [并发收口审计](qa/h2-concurrency-cutover-audit-2026-11-02.md)。
 
 ## 回退边界
 
@@ -44,9 +45,11 @@ H2 已承接新写入后，旧 SQLite 只代表迁移时点。直接切回会丢
 ## 构建验证
 
 ```powershell
-mvn -o -B test
+mvn -o -B clean test
 mvn -o -B -DskipTests package
 powershell -NoProfile -File scripts/Verify-PureH2Package.ps1 -Jar target/dp-0.0.1-SNAPSHOT.jar
 ```
+
+本次删除了运行期类，构建前必须清理旧输出或使用全新的构建目录，避免增量编译目录把已删除的 SQLite 适配和全局锁重新打入包。
 
 变异门禁 `tools/qa/Run-MutationGate.ps1` 在每次测试后按原始字节还原文件，建议在独立源码副本中运行。OOM 微负载的旧门禁未获重新放行；功能回归及受限堆测试通过也不能替代长期运行与安装版验收。
