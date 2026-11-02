@@ -80,6 +80,7 @@ export interface ThinkingBlock extends BlockBase {
 
 /** 正文块（对应后端 {@code TextBlock}）。 */
 export interface TextBlock extends BlockBase {
+  imageUrls?: string[];
   type: 'TEXT';
   /** 正文；字段名同 {@link ThinkingBlock.text}，必须与后端 {@code text} 对齐 */
   text: string;

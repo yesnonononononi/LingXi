@@ -23,6 +23,7 @@ interface ModelForm {
   baseUrl: string;
   apiKey: string;
   vision: boolean;
+  provider: string;
   /** 开启后实时读取提供方密钥，模型不保存副本。 */
   useProvider: boolean;
 }
@@ -68,6 +69,7 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
       baseUrl: '',
       apiKey: '',
       vision: false,
+      provider: '',
       useProvider: true,
     };
   }
@@ -225,6 +227,7 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
       baseUrl: item.baseUrl ?? '',
       apiKey: '', // 展示掩码不回填；编辑留空保留数据库中的原值。
       vision: item.vision,
+      provider: item.provider ?? '',
       useProvider: item.useProvider,
     };
     modelFormError.value = '';
@@ -290,6 +293,7 @@ export function useModelsTab(emit: (e: 'modelUpdated') => void) {
         : Number(form.providerConfigId) > 0 ? form.providerConfigId : 0;
       const payload = {
         vision: form.vision,
+        provider: form.provider,
         modelName: form.modelName.trim(),
         baseUrl: form.baseUrl.trim(),
         // 提供方密钥只由后端实时读取，不回传模型密钥。

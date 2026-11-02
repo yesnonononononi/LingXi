@@ -130,11 +130,13 @@ public class TurnViewAssembler {
 
         // 正文块：isBody 由「无工具请求 + 本轮收尾 + 轮次完成」三者共同判定（唯一规则见 BodyPlacement）。
         String text = aiMessage == null ? aiRow.getText() : aiMessage.text();
-        if (text != null && !text.isBlank()) {
+        List<String> imageUrls = aiMessage == null || aiMessage.getImages() == null ? List.of()
+                : aiMessage.getImages().stream().map(image -> image.getUrl().toString()).toList();
+        if ((text != null && !text.isBlank()) || !imageUrls.isEmpty()) {
             boolean isBody = BodyPlacement.resolve(requests, responseId.equals(concludingResponseId),
                     executionCompleted);
             blocks.add(new TextBlock(TextBlock.identity(responseId), responseId,
-                    BlockOrder.text(), BlockStatus.COMPLETE, isBody, text));
+                    BlockOrder.text(), BlockStatus.COMPLETE, isBody, text == null ? "" : text, imageUrls));
         }
 
         for (ToolCallRequest request : requests) {

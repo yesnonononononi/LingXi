@@ -5,7 +5,7 @@ const http = require('node:http');
 const {app, BrowserWindow} = require('electron');
 
 const output = path.resolve(__dirname, '../node_modules/.tmp/message-images');
-const mutation = process.env.LX_MESSAGE_IMAGE_MUTATION === 'renderer';
+const mutation = process.env.LX_MESSAGE_IMAGE_MUTATION || '';
 app.setPath('userData', path.join(output, 'profile'));
 app.on('window-all-closed', () => {});
 let window;
@@ -17,6 +17,8 @@ let missingAvailable = false;
 const deadline = setTimeout(() => { console.error('消息图片验证超时'); app.exit(1); }, 90000);
 
 app.whenReady().then(async () => {
+  const businessReport = process.env.LX_IMAGE_BUSINESS_REPORT
+    ? JSON.parse(await fs.readFile(process.env.LX_IMAGE_BUSINESS_REPORT, 'utf8')) : null;
   endpoint = http.createServer((request, response) => {
     response.setHeader('Content-Type', 'image/png');
     response.setHeader('Cache-Control', 'no-store');
@@ -31,17 +33,23 @@ app.whenReady().then(async () => {
   await fs.writeFile(path.join(output, 'App.vue'), `<script setup>
 import {ref, nextTick} from 'vue';
 import ChatMessageItem from '../../../src/components/chat/ChatMessageItem.vue';
+import ModelInvocationField from '../../../src/components/model/ModelInvocationField.vue';
+import {buildBubbleFromTurnView,projectTurnView} from '../../../src/views/chat/blockProjection';
 import {useTheme} from '../../../src/composables/useTheme';
 import {useI18n} from '../../../src/i18n';
 import '../../../src/style.css';
 const dark = ref(false);
+const provider = ref('');const showConfig = ref(false);
 const message = ref({id:'image-answer',role:'assistant',timestamp:0,content:'',isComplete:true});
 useI18n().locale.value='zh-CN';
 const {setTheme}=useTheme();
 setTheme('light');
 window.setMessage=async(content,running=false)=>{message.value.content=content;message.value.isThinking=running;message.value.isComplete=!running;await nextTick();};
 window.setDark=async(value)=>{dark.value=value;setTheme(value?'dark':'light');await nextTick();};
-</script><template><main style="max-width:720px;margin:24px auto;padding:0 16px"><ChatMessageItem :message="message" :is-dark="dark" /></main></template>`);
+window.setStructured=async(view)=>{message.value=buildBubbleFromTurnView(view);await nextTick();};
+window.updateStructured=async(view)=>{projectTurnView(message.value,view);await nextTick();};
+window.showConfig=()=>{showConfig.value=true;};window.selectedProvider=()=>provider.value;
+</script><template><main style="max-width:720px;margin:24px auto;padding:0 16px"><ModelInvocationField v-if="showConfig" v-model="provider" :is-dark="dark" /><ChatMessageItem :message="message" :is-dark="dark" /></main></template>`);
   await fs.writeFile(path.join(output, 'entry.js'), `import {createApp,nextTick} from 'vue';
 window.runtimeErrors=[];window.addEventListener('error',event=>{if(event.message)window.runtimeErrors.push(event.message);});
 window.flush=async()=>{await nextTick();await new Promise(resolve=>setTimeout(resolve,120));};
@@ -52,11 +60,14 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   vite = await createServer({configFile:false,root:output,plugins:[{
     name:'message-image-mutation',enforce:'pre',
     transform(source,id) {
-      if (mutation && id.replaceAll('\\','/').endsWith('/src/components/chat/MarkdownContent.ts')) {
+      if (mutation === 'renderer' && id.replaceAll('\\','/').endsWith('/src/components/chat/MarkdownContent.ts')) {
         return source.replace("node.localName === 'img'", 'false');
       }
+      if (mutation === 'projection' && id.replaceAll('\\','/').endsWith('/src/views/chat/blockProjection.ts')) {
+        return source.replace('buffer.imageUrls = block.imageUrls ?? []', 'buffer.imageUrls = []');
+      }
     },
-  },vue()],server:{host:'127.0.0.1',port:0},logLevel:'error'});
+  },vue()],server:{host:'127.0.0.1',port:0,proxy:{'/a/images':base}},logLevel:'error'});
   await vite.listen();
   window = new BrowserWindow({width:860,height:820,show:false,webPreferences:{contextIsolation:true,offscreen:true,backgroundThrottling:false}});
   const evaluate = source => window.webContents.executeJavaScript(source);
@@ -68,6 +79,7 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
     x.fillStyle='#ef4444';x.beginPath();x.moveTo(200,580);x.lineTo(800,580);x.lineTo(680,680);x.lineTo(320,680);x.fill();
     x.fillStyle='#fff';x.beginPath();x.moveTo(490,150);x.lineTo(490,560);x.lineTo(250,560);x.fill();return canvas.toDataURL('image/png').split(',')[1];
   })()`), 'base64');
+  if (businessReport) imageBytes = await fs.readFile(path.join(path.dirname(process.env.LX_IMAGE_BUSINESS_REPORT),'generated.png'));
   const render = async (content,running=false) => {await evaluate(`window.setMessage(${JSON.stringify(content)},${running});window.flush()`);};
   const waitFor = async source => {for(let i=0;i<100;i++){if(await evaluate(source))return;await new Promise(resolve=>setTimeout(resolve,50));}assert.fail(`等待条件失败：${source}`);};
   const content = `这是生成的图片：\n\n![红色帆船](${base}/image.png)\n\n图片已经生成，可以点击预览。`;
@@ -121,6 +133,30 @@ const {default:App}=await import('./App.vue');createApp(App).mount('#app');windo
   assert.equal(await evaluate('document.querySelector(".markdown-body a").href'),'https://example.com/result');
   await render('![危险地址](javascript:alert(1))');
   assert.equal(await evaluate('document.querySelectorAll("[data-testid=message-image]").length'),0);
+  window.setSize(860,820);
+  const view = businessReport?.history ?? {sessionId:'100',turnId:'800',viewVersion:1,status:'COMPLETED',blocks:[{
+    type:'TEXT',blockId:'text:900',responseId:'900',order:1,status:'COMPLETE',isBody:true,text:'',imageUrls:[`${base}/image.png`],
+  }]};
+  await evaluate(`window.setStructured(${JSON.stringify(view)});window.setDark(false);window.flush()`);
+  await waitFor('document.querySelector("[data-testid=response-images] img")?.naturalWidth>0');
+  assert.equal(await evaluate('document.querySelectorAll("[data-testid=response-images] .message-image").length'),1);
+  if (businessReport) {
+    for (const frame of businessReport.frames) {
+      await evaluate(`window.updateStructured(${JSON.stringify(frame.view)});window.flush()`);
+    }
+    assert.equal(await evaluate('document.querySelectorAll("[data-testid=response-images] .message-image").length'),1);
+  }
+  await evaluate('document.querySelector("[data-testid=response-images] img").decode()');
+  await new Promise(resolve=>setTimeout(resolve,200));
+  await fs.writeFile(path.join(output,'structured-light.png'),(await window.webContents.capturePage()).toPNG());
+  await evaluate(`window.setStructured(${JSON.stringify(view)});window.flush()`);
+  await waitFor('document.querySelector("[data-testid=response-images] img")?.naturalWidth>0');
+  await evaluate('document.querySelector("[data-testid=response-images] .message-image-surface").click();window.flush()');
+  assert.equal(await evaluate('document.querySelector(".message-image-preview").open'),true);
+  await evaluate('document.querySelector(".message-image-preview button").click();window.showConfig();window.flush()');
+  await evaluate('document.querySelector("[data-testid=model-invocation]").value="default-image-model";document.querySelector("[data-testid=model-invocation]").dispatchEvent(new Event("change",{bubbles:true}));window.flush()');
+  assert.equal(await evaluate('window.selectedProvider()'),'default-image-model');
+  await fs.writeFile(path.join(output,'model-image-mode.png'),(await window.webContents.capturePage()).toPNG());
   assert.deepEqual(await evaluate('window.runtimeErrors'),[]);
   console.log('消息图片：实际消息组件、加载/重试、预览、流式复用、深浅主题、窄屏、Data URL 与链接行为通过。');
   clearTimeout(deadline);window.destroy();await vite.close();endpoint.close();app.exit(0);

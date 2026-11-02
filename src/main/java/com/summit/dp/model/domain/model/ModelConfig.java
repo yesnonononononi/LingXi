@@ -49,6 +49,11 @@ public class ModelConfig {
         this.vision = vision;
     }
 
+    /** 调用协议显式保存，不能依赖模型名称猜测。 */
+    public void changeProvider(String provider) {
+        this.provider = provider == null || provider.isBlank() ? null : provider.trim();
+    }
+
     public void changeUseProvider(boolean useProvider) {
         this.useProvider = useProvider;
     }

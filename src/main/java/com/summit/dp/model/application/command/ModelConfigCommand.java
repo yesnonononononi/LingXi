@@ -13,8 +13,13 @@ public record  ModelConfigCommand (
         String apiKey,
         Boolean vision,
         Long providerConfigId,
-        Boolean useProvider
+        Boolean useProvider,
+        String provider
 ){
+    public ModelConfigCommand(Long id, String modelName, String baseUrl, String apiKey, Boolean vision,
+                              Long providerConfigId, Boolean useProvider) {
+        this(id, modelName, baseUrl, apiKey, vision, providerConfigId, useProvider, null);
+    }
     /** 兼容既有调用：不指定提供商归属。 */
     public ModelConfigCommand(Long id, String modelName, String baseUrl, String apiKey, Boolean vision) {
         this(id, modelName, baseUrl, apiKey, vision, null, null);

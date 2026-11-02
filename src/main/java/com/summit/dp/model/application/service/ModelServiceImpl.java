@@ -47,6 +47,7 @@ public class ModelServiceImpl implements ModelService {
         modelConfig.changeBaseUrl(command.baseUrl());
         modelConfig.changeApiKey(apiKey);
         modelConfig.changeVision(command.vision());
+        modelConfig.changeProvider(command.provider());
         modelConfig.changeProviderConfigId(providerConfigId);
         modelConfig.changeUseProvider(useProvider);
         modelConfigRepository.save(modelConfig);
@@ -75,6 +76,7 @@ public class ModelServiceImpl implements ModelService {
         if (command.baseUrl() != null) modelConfig.changeBaseUrl(command.baseUrl());
         if (useProvider || command.apiKey() != null) modelConfig.changeApiKey(apiKey);
         if (command.vision() != null) modelConfig.changeVision(command.vision());
+        if (command.provider() != null) modelConfig.changeProvider(command.provider());
         if (command.providerConfigId() != null) modelConfig.changeProviderConfigId(providerConfigId);
         if (command.useProvider() != null) modelConfig.changeUseProvider(command.useProvider());
         modelConfigRepository.updateById(modelConfig);

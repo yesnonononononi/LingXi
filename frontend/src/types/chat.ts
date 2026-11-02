@@ -111,6 +111,7 @@ export interface ProcessTimelineItem extends ResponsePosition {
 
 /** 缺口后的片段等待前文，不提前拼出错误文本。 */
 export interface ResponseTextBuffer extends ResponsePosition {
+  imageUrls?: string[];
   kind: 'TEXT' | 'THINKING';
   text: string;
   pending: Record<number, string>;
@@ -150,6 +151,7 @@ export interface ModelRetryState {
 
 /** 单条消息接口 (支持多分支对话) */
 export interface ChatMessage {
+  responseImageUrls?: string[];
   id: string;
   /** 服务端用户消息主键；展示气泡 ID 不可用于历史重发。 */
   serverMessageId?: string | null;
@@ -793,6 +795,7 @@ export interface PageResult<T> {
 
 /** 模型配置读写载荷 (对齐后端 ModelConfigRequest) */
 export interface ModelConfigPayload {
+  provider?: string;
   /** 开启后实时使用提供方密钥，模型不保存副本。 */
   useProvider?: boolean;
   vision: boolean;

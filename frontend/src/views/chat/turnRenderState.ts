@@ -128,7 +128,7 @@ export function renderTurnState(bubble: ChatMessage): void {
   const messages: AiMessageItem[] = [];
   let body: ResponseTextBuffer | undefined;
   for (const [id, buffer] of Object.entries(state.texts)) {
-    if (!buffer.text) continue;
+    if (!buffer.text && !buffer.imageUrls?.length) continue;
     if (buffer.kind === 'THINKING') {
       const step = { id, title: t('tool.category.think'), content: buffer.text,
         status: buffer.complete ? 'success' as const : 'running' as const, order: buffer.order, responseId: buffer.responseId };
@@ -145,6 +145,7 @@ export function renderTurnState(bubble: ChatMessage): void {
   bubble.toolCalls = reconcileRenderItems(bubble.toolCalls, Object.values(state.tools));
   // 正文只由后端 isBody === true 决定，前端不猜工具调用是否出现。
   bubble.content = body?.text ?? '';
+  bubble.responseImageUrls = body?.imageUrls ?? [];
   if (bubble.sendError && !bubble.content.endsWith(bubble.sendError)) {
     bubble.content = bubble.content ? `${bubble.content}\n\n${bubble.sendError}` : bubble.sendError;
   }

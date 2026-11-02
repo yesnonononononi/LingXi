@@ -211,6 +211,7 @@ export function upsertBlockIntoBubble(bubble: ChatMessage, view: TurnViewVO): vo
     buffer.responseId = block.responseId ?? buffer.responseId;
     buffer.complete ||= block.status === RESPONSE_COMPLETE && block.text.length >= buffer.text.length;
     if (block.type === 'TEXT') {
+      buffer.imageUrls = block.imageUrls ?? [];
       applyTextPlacement(bubble, block.blockId, block.isBody);
     }
   }

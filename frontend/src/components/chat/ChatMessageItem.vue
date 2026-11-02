@@ -486,7 +486,8 @@ const copyContent = () => {
 const bodyIsThinking = computed(() => !!props.message.isThinking && !props.message.isExploring);
 
 /** 正文是否出现：把原 v-if 的行内条件收敛成单一事实来源（语义等价，纯搬家）。 */
-const bodyVisible = computed(() => !!props.message.content || (bodyIsThinking.value && processParts.value.length === 0));
+const bodyVisible = computed(() => !!props.message.content || !!props.message.responseImageUrls?.length
+  || (bodyIsThinking.value && processParts.value.length === 0));
 
 /**
  * 正文插槽 props：只暴露渲染正文必需的 3 项。

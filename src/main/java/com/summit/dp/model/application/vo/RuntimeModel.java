@@ -1,6 +1,7 @@
 package com.summit.dp.model.application.vo;
 
 import com.summit.core.conf.ModelConfig;
+import com.summit.core.model.DefaultModelProviderNames;
 import com.summit.dp.user_configs.application.vo.SettingsView;
 
 import java.time.Duration;
@@ -27,11 +28,12 @@ public record RuntimeModel(ModelConfig config, boolean vision) {
     public static RuntimeModel create(String baseUrl, String apiKey, String modelName, String provider,
                                       boolean vision, SettingsView settings, Duration timeout,
                                       CompactModel compactModel) {
+        boolean imageModel = DefaultModelProviderNames.DEFAULT_IMAGE.equals(provider);
         ModelConfig.ModelConfigBuilder builder = ModelConfig.builder().baseUrl(baseUrl).apiKey(apiKey)
                 .modelName(modelName).provider(provider).returnThinking(true).sendThinking(true)
-                .reuseModelForCompaction(true)
+                .reuseModelForCompaction(!imageModel)
                 // 请求级配置会独立创建客户端，超时必须显式继承，避免落回 SDK 默认值。
-                .timeout(timeout);
+                .timeout(imageModel ? Duration.ofMinutes(5) : timeout);
         if (settings != null) builder.maxTokens(settings.maxTokens()).reasoningEffort(settings.reasoningEffort());
         if (compactModel != null) {
             // 两个开关必须同进同退：只关 reuseModelForCompaction 而不给 compactModel，

@@ -37,6 +37,25 @@ function view(blocks: Block[], viewVersion = 1): TurnViewVO {
   };
 }
 
+test('纯图片正文在历史、实时重复投影和新版本清空后保持一致', () => {
+  const message = bubble();
+  const image: Block = {type:'TEXT',blockId:'text:900',responseId:'900',order:1,status:'COMPLETE',
+    text:'',isBody:true,imageUrls:['/a/images/100/0123456789abcdef.png']};
+  const completed = {...view([image],2),status:'COMPLETED' as const};
+  projectTurnView(message, view([{...image,isBody:false}],1));
+  assert.deepEqual(message.responseImageUrls,[]);
+  projectTurnView(message,completed);
+  assert.equal(message.content,'');
+  assert.deepEqual(message.responseImageUrls,image.imageUrls);
+  projectTurnView(message,completed);
+  assert.equal(message.responseImageUrls?.length,1);
+  projectTurnView(message,{...view([{...image,imageUrls:[]}],1),status:'COMPLETED'});
+  assert.equal(message.responseImageUrls?.length,1);
+  projectTurnView(message,{...view([{...image,imageUrls:[],text:'普通文本'}],3),status:'COMPLETED'});
+  assert.deepEqual(message.responseImageUrls,[]);
+  assert.equal(message.content,'普通文本');
+});
+
 const thinking = (order: number): Block => ({
   blockId: 'thinking:101', type: 'THINKING', order, status: 'COMPLETE', text: '想一下',
 });

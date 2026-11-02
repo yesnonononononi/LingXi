@@ -15,11 +15,26 @@ import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class ModelApiKeyTest {
+    @Test void imageInvocationModeIsSavedAndDoesNotReuseImageGenerationForCompaction() {
+        service.add(new ModelConfigCommand(null, "image-name", "https://example.invalid", "key", false,
+                null, false, "default-image-model"));
+        ArgumentCaptor<ModelConfig> saved = ArgumentCaptor.forClass(ModelConfig.class);
+        verify(repository).save(saved.capture());
+        assertEquals("default-image-model", saved.getValue().getProvider());
+        when(repository.findById(1L)).thenReturn(Optional.of(saved.getValue()));
+        RuntimeModel runtime = service.resolveRuntimeConfig(1L, null);
+        assertEquals("default-image-model", runtime.config().getProvider());
+        assertFalse(runtime.config().isReuseModelForCompaction());
+        assertEquals(Duration.ofMinutes(5), runtime.config().getTimeout());
+        service.update(new ModelConfigCommand(1L, null, null, null, null, null, null, ""));
+        assertNull(saved.getValue().getProvider());
+    }
     private final ModelConfigRepository repository = mock(ModelConfigRepository.class);
     private final ModelServiceImpl service = new ModelServiceImpl(repository, mock(ProviderConfigService.class),
             new AgentChatProperties());
