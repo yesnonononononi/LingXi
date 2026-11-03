@@ -1,0 +1,30 @@
+PASS C1  母版 3072x3072 / native 1536x1536，8bit RGBA 非隔行
+     neutral ok; breathIn ok; breathOut ok; startle ok; curled ok
+PASS C2  alpha<8 全透明、无 248..254 灰边、无小于 4px 孤立块
+     neutral low=0 gray=0; breathIn low=0 gray=0; breathOut low=0 gray=0; startle low=0 gray=0; curled low=0 gray=0; neutral islands=0; breathIn islands=0; breathOut islands=0; startle islands=0; curled islands=0
+PASS C3  可见包围盒四边留白 >=8px
+     neutral {"left":42,"top":1292,"right":3047,"bottom":2937}; breathIn {"left":42,"top":1292,"right":3047,"bottom":2937}; breathOut {"left":42,"top":1292,"right":3047,"bottom":2937}; startle {"left":42,"top":1292,"right":3047,"bottom":2937}; curled {"left":88,"top":1726,"right":2987,"bottom":2935}
+PASS C4  manifest 的 bytes/sha256/bbox 与磁盘一致
+     neutral/master; neutral/native; breathIn/master; breathIn/native; breathOut/master; breathOut/native; startle/master; startle/native; curled/master; curled/native
+PASS C5  母版 = native 的 2x 最近邻（每个 2x2 块四像素相同且等于 native）
+     neutral ok; breathIn ok; breathOut ok; startle ok; curled ok
+PASS C6  neutral/breathIn/breathOut/startle 四帧 alpha 外轮廓逐值相同
+     base {"left":22,"top":647,"right":1523,"bottom":1467}; neutral same; breathIn same; breathOut same; startle same
+PASS C6b  每帧在「作者声明区域并集」之外与 neutral 逐像素零变化
+     breathIn inside=196839 outside=0; breathOut inside=187286 outside=0; startle inside=39313 outside=0
+PASS C7  呼吸两帧只动躯干带、方向相反、幅度非零
+     in=196839px topMean=936.0 out=187286px topMean=945.1
+PASS C8  呼吸两帧在 234px 显示尺度差异 >=8% 墨迹
+     1662/18451 = 9.01%
+PASS C9  蜷睡帧轮廓与趴睡帧明显不同（IoU<0.75 且 bbox 至少两处不同）
+     iou=0.6840 neutral={"left":22,"top":647,"right":1523,"bottom":1467} curled={"left":44,"top":863,"right":1493,"bottom":1467}
+PASS C10  source/ 直出图与 native 齐全，manifest.sources 与磁盘一致
+     8 files ok; sources=3
+PASS C11  status 为 awaiting-static-review 且未自封 approved
+     status=awaiting-static-review approvedBy=null deferred=0
+PASS C12  惊醒帧虹膜半径缩小约 15%（蓝色像素比 0.65-0.92）
+     lie=9680 startle=7498 ratio=0.775
+PASS C13  惊醒帧眼区/嘴区/汗滴区各自都有变化
+     eyeLeft=19041px eyeRight=19054px mouth=416px sweat=802px
+
+ALL 14 CHECKS PASSED
