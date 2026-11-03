@@ -18,13 +18,14 @@
  * @module scripts/check-pet-layers
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ASSETS_JSON_PATH, sha256Of } from './build-pet-assets.mjs';
 import { FRONTEND_ROOT, readJsonFile } from './build-pet-geometry.mjs';
 import { readImageSize } from './pet-image-headers.mjs';
 import {
   DEFAULT_LAYER_OUT_DIR,
+  EXTERNAL_LAYER_IDS,
   LAYERS_JSON_PATH,
   LAYERS_TOTAL_BUDGET,
   LAYER_BYTE_BUDGET,
@@ -34,6 +35,31 @@ import {
   diskPathOf,
   maskPathsOf,
 } from './build-pet-layers.mjs';
+import {
+  FACE_REGION_MASTER,
+  FACE_TILE_BYTE_BUDGET,
+  FACE_TILE_SIZES,
+  FACE_TOTAL_BYTE_BUDGET,
+  verifyFaceRegionAgainstLayerMasters,
+} from './build-pet-face-tiles.mjs';
+
+/**
+ * 脸层的层 id（与 `build-pet-face-tiles.mjs` / `layered-presentation.ts` 同值）。
+ *
+ * <p>取 `EXTERNAL_LAYER_IDS[0]` 而不是再写一遍字面量：脸层的 `files` 由脸贴片生成器独占，
+ * "谁不来自 P1 母版"这件事只能有一个真源。</p>
+ */
+export const FACE_LAYER_ID = EXTERNAL_LAYER_IDS[0];
+
+/**
+ * `face.rect` 必须落在的层序窗口（母版像素 `z`）。
+ *
+ * <p>必须 `>` `body-occluder(30)`（盖住底图里画好的中性脸）且 `<` `ahoge(40)`
+ * （呆毛/蝴蝶结永远压在脸之上，表情切换不能把它们刷掉）。上界用
+ * `layers/plan.ts` 的 `SAFE_OVERLAY_Z = 35`：缺脸层时要让整条链路回落到 `composite`，
+ * 这是"无脸层也能看见表情"的兼容路径（设计文档 §3.1）。</p>
+ */
+export const FACE_Z_BOUNDS = Object.freeze({ minExclusive: 30, maxExclusive: 40, maxSafe: 35 });
 
 /** 允许的分辨率档位。 */
 export const SUPPORTED_DENSITIES = ['1x', '2x'];
@@ -125,6 +151,13 @@ export function validateMotionTracksAgainstLayers(source, manifest) {
       }
       const layerId = track.layerId;
       if (typeof layerId !== 'string' || layerId.length === 0) return;
+      if (EXTERNAL_LAYER_IDS.includes(layerId)) {
+        // C7：脸层不接受任何动作轨道。给它派轨道就等于让表情贴片跟着尾巴/耳朵转，脸会被带歪。
+        problems.push(
+          `${trackPath}.layerId=${layerId} 是脸层（C7）：脸层只换贴片、不接受动画轨道，请删掉这条 track`,
+        );
+        return;
+      }
       if (byId.size > 0 && !byId.has(layerId)) {
         problems.push(`${trackPath}.layerId=${layerId} 在 pet-layers.json 里不存在（层名拼错或层已被删）`);
         return;
@@ -407,9 +440,20 @@ export function validateManifestStructure(manifest) {
         problems.push(`${prefix}.files.${density} 必须是对象`);
         continue;
       }
+      const isFaceLayer = layer.layerId === FACE_LAYER_ID;
+      // 普通层：layers/<layerId>@<density>.webp；脸层：face/<expressionId>@<density>.webp
+      // （脸层放的是"某个表情在该档密度下的脸区贴片"，不是整层图，命名口径天然不同）
       const expectedName = `layers/${layer.layerId}@${density}`;
-      if (typeof file.file !== 'string' || !file.file.startsWith(`${expectedName}.`)) {
-        problems.push(`${prefix}.files.${density}.file 必须形如 ${expectedName}.webp，实际为 ${String(file.file)}`);
+      const fileName = String(file.file);
+      const nameOk = isFaceLayer
+        ? /^face\/[A-Za-z][A-Za-z0-9]*@(1x|2x)\.webp$/.test(fileName)
+        : fileName.startsWith(`${expectedName}.`);
+      if (typeof file.file !== 'string' || !nameOk) {
+        problems.push(
+          isFaceLayer
+            ? `${prefix}.files.${density}.file 必须形如 face/<expressionId>@${density}.webp，实际为 ${fileName}`
+            : `${prefix}.files.${density}.file 必须形如 ${expectedName}.webp，实际为 ${fileName}`,
+        );
       }
       const base = typeof manifest.assetBase === 'string' ? manifest.assetBase.replace(/\/?$/, '/') : '';
       if (typeof file.url !== 'string' || file.url !== `${base}${file.file}`) {
@@ -512,9 +556,17 @@ export function validateAgainstDisk(manifest, options = {}) {
         problems.push(`${label} 缺字段 ${missingFields.join(' / ')}（必须显式补齐，不允许静默跳过）`);
         continue;
       }
-      const absolute = diskPathOf(outDir, String(file.file));
+      const isFaceLayer = layer.layerId === FACE_LAYER_ID;
+      // 脸层的 file 是 `face/<id>@<density>.webp`（相对 `lxa://pet-p1/`），而 outDir 是
+      // `…/pet-p1/layers`：直接拼会得到 `…/layers/face/x.webp`——这个 bug 只在门禁里看得见，
+      // 页面上只表现为 404。所以脸层取 outDir 的上一层再拼。
+      const absolute = isFaceLayer
+        ? resolve(dirname(outDir), String(file.file).replace(/\\/g, '/'))
+        : diskPathOf(outDir, String(file.file));
       if (!existsSync(absolute)) {
-        problems.push(`${label} 的文件不存在: ${absolute}（重跑 build:pet-layers）`);
+        problems.push(
+          `${label} 的文件不存在: ${absolute}（${isFaceLayer ? '重跑 build:pet-face' : '重跑 build:pet-layers'}）`,
+        );
         continue;
       }
       const actualBytes = readFileSync(absolute).length;
@@ -524,7 +576,7 @@ export function validateAgainstDisk(manifest, options = {}) {
       if (!SUPPORTED_FORMATS.includes(file.format)) {
         problems.push(`${label} format 只允许 ${SUPPORTED_FORMATS.join(' / ')}，实际为 ${String(file.format)}`);
       }
-      const budget = LAYER_BYTE_BUDGET[density];
+      const budget = isFaceLayer ? FACE_TILE_BYTE_BUDGET[density] : LAYER_BYTE_BUDGET[density];
       if (isFiniteNumber(budget) && Number(file.bytes) > budget) {
         problems.push(`${label} 体积 ${Number(file.bytes)}B 超出单层预算 ${budget}B（先降编码质量，不要改画布尺寸）`);
       }
@@ -542,29 +594,50 @@ export function validateAgainstDisk(manifest, options = {}) {
       if (size.width !== Number(file.width) || size.height !== Number(file.height)) {
         problems.push(`${label} 像素尺寸不一致：清单 ${file.width}×${file.height} vs 实际 ${size.width}×${size.height}`);
       }
-      const aspect = size.width / size.height;
-      if (!(canvasAspect > 0) || Math.abs(aspect - canvasAspect) > ASPECT_TOLERANCE) {
-        problems.push(
-          `${label} 像素比例 ${size.width}×${size.height} 不是画布比例（${String(canvas.width)}×${String(canvas.height)}）：等比 contain 会留白或裁掉尾巴`,
-        );
+      if (isFaceLayer) {
+        // 脸贴片是**脸区子矩形**，不是 2:3 画布，所以这里守的是"严格等于设计尺寸"（C4），
+        // 而不是画布比例。尺寸漂 1px，贴片放进去就会在脸边缘留一条错位环。
+        const expected = FACE_TILE_SIZES[density];
+        if (!expected) {
+          problems.push(`${label} 不支持的密度（脸贴片只允许 1x / 2x）`);
+        } else if (size.width !== expected.width || size.height !== expected.height) {
+          problems.push(`${label} 尺寸必须是 ${expected.width}×${expected.height}（C4），实际 ${size.width}×${size.height}`);
+        }
+      } else {
+        const aspect = size.width / size.height;
+        if (!(canvasAspect > 0) || Math.abs(aspect - canvasAspect) > ASPECT_TOLERANCE) {
+          problems.push(
+            `${label} 像素比例 ${size.width}×${size.height} 不是画布比例（${String(canvas.width)}×${String(canvas.height)}）：等比 contain 会留白或裁掉尾巴`,
+          );
+        }
       }
     }
   }
 
   // 合计预算：单层不超、合计也可能超（层数会变多）。两档合计对照"层增量 ≤1.6MB"。
+  // 脸贴片单独记账：它属于另一个生成器、另一套预算（`FACE_TOTAL_BYTE_BUDGET`），
+  // 混进层增量里会让"层预算还剩多少"变成糊涂账。
   let totalBytes = 0;
+  let faceBytes = 0;
   let anyFile = false;
   for (const layer of layers) {
+    const isFaceLayer = layer && layer.layerId === FACE_LAYER_ID;
     const files = layer && layer.files && typeof layer.files === 'object' ? layer.files : {};
     for (const file of Object.values(files)) {
       if (!file || !isFiniteNumber(file.bytes)) continue;
       anyFile = true;
-      totalBytes += Number(file.bytes);
+      if (isFaceLayer) faceBytes += Number(file.bytes);
+      else totalBytes += Number(file.bytes);
     }
   }
   if (anyFile && totalBytes > LAYERS_TOTAL_BUDGET) {
     problems.push(
       `分层资产合计 ${totalBytes}B 超出层增量预算 ${LAYERS_TOTAL_BUDGET}B（先降编码质量，不要改画布尺寸）`,
+    );
+  }
+  if (faceBytes > FACE_TOTAL_BYTE_BUDGET) {
+    problems.push(
+      `脸贴片合计 ${faceBytes}B 超出总预算 ${FACE_TOTAL_BYTE_BUDGET}B（先降编码质量，不要改贴片尺寸）`,
     );
   }
   return problems;
@@ -617,6 +690,7 @@ export function validateMasks(manifest, options = {}) {
   const layers = Array.isArray(manifest?.layers) ? manifest.layers : [];
   for (const layer of layers) {
     if (!layer || layer.role !== 'animatable') continue;
+    if (EXTERNAL_LAYER_IDS.includes(layer.layerId)) continue;
     if (typeof layer.source !== 'string' || layer.source.length === 0) continue;
     const masks = maskPathsOf(sourceDir, layer.source);
     for (const [kind, absolute] of Object.entries(masks)) {
@@ -639,24 +713,101 @@ export function sourceDirPresent(sourceDir = defaultLayerSourceDir()) {
 }
 
 /**
+ * 脸层契约（C7 / C8）的结构校验：层序、矩形、角色。
+ *
+ * <p><b>为什么这几条必须由门禁守：</b>它们全是"改一个数字就静默错"的字段：</p>
+ * <ul>
+ *   <li>`z` 提到 45（与 `bow` 并列/更大）⇒ 表情贴片会盖住蝴蝶结，切换表情时把那块刷没；</li>
+ *   <li>`z` 降到 25 或更低 ⇒ 贴片会被 `body-occluder` 压住，表情又"看不见了"，
+ *       而且 `layers/plan.ts` 的 `SAFE_OVERLAY_Z` 判定不再命中"缺脸层 ⇒ 回落 composite"，
+ *       旧包上的兼容路径会失效；</li>
+ *   <li>`rect` 改动 ⇒ 贴片与底图不再逐像素对齐（C3 会红，但 C3 需要像素读盘，
+ *       这条结构断言先廉价地拦住）；</li>
+ *   <li>`role` 改成 `support` ⇒ 表情会被当成"支撑层"静默跳过。</li>
+ * </ul>
+ *
+ * @param {object} manifest 层清单
+ * @returns {string[]} 问题列表（空 = 通过；清单里没有 face 层也返回问题——M1 契约要求有）
+ */
+export function validateFaceLayerContract(manifest) {
+  const problems = [];
+  const layers = Array.isArray(manifest?.layers) ? manifest.layers : [];
+  const face = layers.find((layer) => layer && layer.layerId === FACE_LAYER_ID);
+  if (!face) {
+    problems.push(
+      `C8 失败：层清单缺少 ${FACE_LAYER_ID} 层（M1 契约要求第 10 层 face：z=32、rect=脸区、role=animatable）`,
+    );
+    return problems;
+  }
+  const byId = new Map(layers.filter((layer) => layer && typeof layer.layerId === 'string').map((layer) => [layer.layerId, layer]));
+  const occluder = byId.get('body-occluder');
+  const ahoge = byId.get('ahoge');
+  const z = Number(face.z);
+  if (!Number.isInteger(z)) {
+    problems.push(`C8 失败：${FACE_LAYER_ID}.z 必须是整数，实际为 ${String(face.z)}`);
+  } else {
+    if (occluder && !(z > Number(occluder.z))) {
+      problems.push(`C8 失败：${FACE_LAYER_ID}.z=${z} 必须大于 body-occluder.z=${Number(occluder.z)}（否则贴片被底图压住，表情看不见）`);
+    }
+    if (ahoge && !(z < Number(ahoge.z))) {
+      problems.push(`C8 失败：${FACE_LAYER_ID}.z=${z} 必须小于 ahoge.z=${Number(ahoge.z)}（否则表情会盖住呆毛/蝴蝶结）`);
+    }
+    if (!(z <= FACE_Z_BOUNDS.maxSafe)) {
+      problems.push(
+        `C8 失败：${FACE_LAYER_ID}.z=${z} 必须 ≤ SAFE_OVERLAY_Z(${FACE_Z_BOUNDS.maxSafe})：` +
+          '缺脸层时要让 plan.ts 判定"必须整体回落 composite"，这是旧包的兼容路径',
+      );
+    }
+  }
+  if (face.role !== 'animatable') {
+    problems.push(`C8 失败：${FACE_LAYER_ID}.role 必须是 animatable（实际 ${String(face.role)}），否则表情指令会被静默跳过`);
+  }
+  const rect = face.rect ?? {};
+  const rectMatches =
+    Number(rect.x) === FACE_REGION_MASTER.x &&
+    Number(rect.y) === FACE_REGION_MASTER.y &&
+    Number(rect.width) === FACE_REGION_MASTER.width &&
+    Number(rect.height) === FACE_REGION_MASTER.height;
+  if (!rectMatches) {
+    problems.push(
+      `C8 失败：${FACE_LAYER_ID}.rect (${String(rect.x)}, ${String(rect.y)}, ${String(rect.width)}×${String(rect.height)}) 与脸区真源 ` +
+        `(${FACE_REGION_MASTER.x}, ${FACE_REGION_MASTER.y}, ${FACE_REGION_MASTER.width}×${FACE_REGION_MASTER.height}) 不一致（贴片会画偏）`,
+    );
+  }
+  if (face.required !== true) {
+    problems.push(`C8 失败：${FACE_LAYER_ID}.required 必须是 true（缺了它 layered 模式就看不见表情）`);
+  }
+  return problems;
+}
+
+/**
  * 跑完整的分层门禁。
  *
- * @param {{ verbose?: boolean, manifestPath?: string, outDir?: string, assetsPath?: string }} [options] 选项
- * @returns {{ ok: boolean, problems: string[], manifest: object | null, skipped: boolean }}
+ * @param {{ verbose?: boolean, manifestPath?: string, outDir?: string, assetsPath?: string, sourceDir?: string, skipPixels?: boolean }} [options] 选项
+ * @returns {Promise<{ ok: boolean, problems: string[], notes: string[], manifest: object | null, skipped: boolean }>} 门禁结果
  */
-export function runLayerGate(options = {}) {
+export async function runLayerGate(options = {}) {
   const verbose = options.verbose === true;
   const manifestPath = options.manifestPath ?? LAYERS_JSON_PATH;
   const assetsPath = options.assetsPath ?? ASSETS_JSON_PATH;
   const problems = [];
+  const notes = [];
   let manifest = null;
   try {
     manifest = readJsonFile(manifestPath);
   } catch (err) {
-    return { ok: false, problems: [`层清单不可读: ${(err && err.message) || err}`], manifest: null, skipped: false };
+    return {
+      ok: false,
+      problems: [`层清单不可读: ${(err && err.message) || err}`],
+      notes,
+      manifest: null,
+      skipped: false,
+    };
   }
 
   problems.push(...validateManifestStructure(manifest));
+  // C7（脸层不许有动作轨道）在 validateMotionsFile 里；C8（层序/矩形/角色）在这里
+  problems.push(...validateFaceLayerContract(manifest));
 
   let assets = null;
   if (existsSync(assetsPath)) {
@@ -681,6 +832,20 @@ export function runLayerGate(options = {}) {
     problems.push(...validateAgainstDisk(manifest, { outDir: options.outDir ?? DEFAULT_LAYER_OUT_DIR }));
     problems.push(...validateNoOrphans(manifest, { outDir: options.outDir ?? DEFAULT_LAYER_OUT_DIR }));
     problems.push(...validateMasks(manifest, { sourceDir }));
+  }
+
+  // C2 / C3：脸区与各层母版的像素关系（"脸区可动层墨迹=0"、"neutral 贴片与 body-occluder 逐像素相等"）。
+  // 这两条是整套分层方案"零重影"的基石，只能靠真像素判——但需要读母版 PNG，
+  // 所以 P1 母版没到货时由被调用方自动跳过并返回说明（"没检查"必须说出来）。
+  if (options.skipPixels !== true) {
+    const faceCheck = await verifyFaceRegionAgainstLayerMasters(manifest, {
+      sourceDir,
+      verbose,
+      log: (message) => console.log(message),
+    });
+    problems.push(...faceCheck.problems);
+    notes.push(...faceCheck.notes);
+    if (verbose && !faceCheck.skipped) console.log('[pet-layers] C2/C3 脸区像素校验已执行');
   }
 
   // 动作目录同属分层契约：一起进这道门禁，避免"层齐了但动作数据写坏"带病上线
@@ -719,25 +884,26 @@ export function runLayerGate(options = {}) {
       );
     }
   }
-  return { ok: problems.length === 0, problems, manifest, skipped, missingAssetState, p1Present };
+  for (const note of notes) console.log(`[pet-layers] ${note}`);
+  return { ok: problems.length === 0, problems, notes, manifest, skipped, missingAssetState, p1Present };
 }
 
 /**
  * CLI 入口。
  *
- * @returns {number} 进程退出码（0 = 通过）
+ * @returns {Promise<number>} 进程退出码（0 = 通过）
  */
-export function main() {
+export async function main() {
   const verbose = process.argv.slice(2).includes('--verbose');
   try {
-    const result = runLayerGate({ verbose });
+    const result = await runLayerGate({ verbose });
     if (result.ok) {
       console.log(
         result.skipped
           ? '✅ gate:pet:layers 通过：层清单为空且结构合法（P1 未交付，运行期走 composite）'
           : result.missingAssetState
             ? '✅ gate:pet:layers 通过：层契约自洽（P1 母版未到货、files 未回填，运行期走 composite）'
-            : '✅ gate:pet:layers 通过：层契约自洽、锚点与资产清单一致、files 与磁盘对齐（字段齐全/体积/sha256/2:3 比例）、无孤儿文件、掩膜齐备',
+            : '✅ gate:pet:layers 通过：层契约自洽、锚点与资产清单一致、files 与磁盘对齐（字段齐全/体积/sha256/2:3 比例）、无孤儿文件、掩膜齐备、脸层契约与脸区像素校验（C2/C3/C7/C8）通过',
       );
       return 0;
     }
@@ -753,7 +919,7 @@ export function main() {
 
 // 仅被直接执行时跑 CLI（被测试 import 时保持静默）
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  process.exit(main());
+  main().then((code) => process.exit(code));
 }
 
 // `FRONTEND_ROOT` 供测试定位仓库内路径（避免测试自己拼绝对路径）

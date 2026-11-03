@@ -118,7 +118,11 @@ test('scanLayerSource：母版在但缺图 → 显式报错，不是静默跳过
     const scan = scanLayerSource(MANIFEST, dir);
     assert.equal(scan.present, true);
     assert.equal(scan.entries.length, 0);
-    assert.equal(scan.problems.length, MANIFEST.layers.length);
+    // 脸层不来自 P1 母版（由 build-pet-face-tiles.mjs 从 v3 表情母版裁切），
+    // 所以它不出现在 entries 里、也不该被点名"母版缺失"。
+    const externalCount = MANIFEST.layers.filter((layer) => layer.layerId === 'face').length;
+    assert.equal(externalCount, 1, '真实清单里必须有且只有一个脸层');
+    assert.equal(scan.problems.length, MANIFEST.layers.length - externalCount);
     assert.match(scan.problems[0], /母版文件不存在/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -239,14 +243,20 @@ test('validateMasks：可动层缺掩膜要红，支撑层不要求掩膜', () =
   assert.deepEqual(validateMasks(supportOnly, { sourceDir: SOURCE_DIR }), []);
 });
 
-test('runLayerGate：真实仓库一次过（含落盘/孤儿/掩膜三类新校验）', () => {
-  const result = runLayerGate({});
+test('runLayerGate：真实仓库一次过（含落盘/孤儿/掩膜/脸层契约与 C2/C3 像素校验）', async () => {
+  // runLayerGate 在 M1/T01 起是 async：C2/C3 要读母版 PNG 做像素级校验（脸区墨迹=0、贴片与底图 maxDelta≤2）
+  const result = await runLayerGate({});
   assert.deepEqual(result.problems, []);
   assert.equal(result.ok, true);
   assert.equal(result.p1Present, true);
   assert.equal(result.missingAssetState, false);
   // M6-b 设计变更：总闸已开（用户批准），层齐 / 体积在预算内 / 动作轨道全部落在可动层上
   assert.equal(result.manifest.enabled, true, 'M6-b 开闸后 enabled 必须为 true');
+  // M1/T01：第 10 层 face 必须在契约里（否则 layered 下表情不可见）
+  assert.ok(
+    result.manifest.layers.some((layer) => layer.layerId === 'face'),
+    '真实清单缺少 face 层',
+  );
 });
 
 test('buildLayerAssets --check：入库状态即最新（改了资产却没回填就会红）', async () => {

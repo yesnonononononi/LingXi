@@ -28,7 +28,14 @@ import {
 import { selectPresentation, selectPresentationWithPlan, type SelectorDeps } from '../src/pet/presentation/select-presentation';
 import { SpritePresentation } from '../src/pet/presentation/sprite-presentation';
 
-/** P1 真契约的层序（[layerId, z, role]），顺序即 renderOrder。 */
+/**
+ * P1 真契约的层序（[layerId, z, role]），顺序即 renderOrder。
+ *
+ * <p>M1（T01）起是 **10 层**：`face` 插在 `body-occluder(30)` 与 `ahoge(40)` 之间取 `z = 32`。
+ * 它不是"多画一层"而是"表情能不能被看见"的开关：缺它 ⇒ `layers/plan.ts` 的
+ * `z <= SAFE_OVERLAY_Z(35)` 判定让整条链路回落 `composite`（压平帧），表情仍然可见，
+ * 只是失去部件微动（设计文档 §3.1 / §3.2c）。</p>
+ */
 const REAL_ORDER: ReadonlyArray<readonly [string, number, LayerRole]> = [
   ['underpainting', 0, 'support'],
   ['tail-base', 10, 'animatable'],
@@ -36,6 +43,7 @@ const REAL_ORDER: ReadonlyArray<readonly [string, number, LayerRole]> = [
   ['ear-left', 20, 'animatable'],
   ['ear-right', 25, 'animatable'],
   ['body-occluder', 30, 'support'],
+  ['face', 32, 'animatable'],
   ['ahoge', 40, 'animatable'],
   ['bow', 45, 'animatable'],
   ['foreground-occluder', 50, 'support'],
@@ -236,19 +244,20 @@ test('总闸关闭（默认态）→ composite，返回的就是今天那个 Spr
   assert.equal(deps.root.dataset.motion, 'idle');
 });
 
-test('运行时清单 pet-layers.json 已开闸（M6-b 设计变更）：真实清单选路 = layered，9 层全挂', async () => {
+test('运行时清单 pet-layers.json 已开闸（M6-b 设计变更）：真实清单选路 = layered，10 层全挂', async () => {
   const { PET_LAYERS, pickLayerDensity, requestedLayerIds } = await import('../src/pet/layers/manifest');
   // M6-b：总闸由 false 改为 true（用户已批准）。这是设计变更，不是"为过测试改断言"。
   assert.equal(PET_LAYERS.enabled, true, 'M6-b 开闸后总闸必须是 true');
   const requested = requestedLayerIds(PET_LAYERS);
-  assert.equal(requested.length, 9, `真实清单应请求 9 层，实际 ${requested.join(',')}`);
+  // M1/T01：新增第 10 层 face（z=32），层数期望随之从 9 改为 10
+  assert.equal(requested.length, 10, `真实清单应请求 10 层（含 face），实际 ${requested.join(',')}`);
   const plan = resolveCompositePlan({
     manifest: PET_LAYERS,
     requested,
     density: pickLayerDensity(1, PET_LAYERS),
   });
   assert.equal(plan.mode, 'layered');
-  assert.equal(plan.layers.length, 9);
+  assert.equal(plan.layers.length, 10);
   assert.deepEqual(planLayerIds(plan), REAL_ORDER.map(([id]) => id));
 });
 
@@ -316,7 +325,7 @@ test('前景可动层一件不剩 → 回 composite（partial 等于空操作）
   assert.ok(outcome.presentation instanceof SpritePresentation);
 });
 
-test('9 层全齐 → layered：LayeredPresentation，9 层全部挂上且顺序 = renderOrder', () => {
+test('10 层全齐 → layered：LayeredPresentation，10 层全部挂上且顺序 = renderOrder', () => {
   const manifest = makeManifest();
   const plan = planOf(manifest);
   assert.equal(plan.mode, 'layered');

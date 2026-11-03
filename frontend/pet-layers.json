@@ -284,6 +284,47 @@
       "required": true
     },
     {
+      "layerId": "face",
+      "role": "animatable",
+      "z": 32,
+      "parent": "root",
+      "pivot": {
+        "u": 0.5,
+        "v": 0.5
+      },
+      "rect": {
+        "x": 560,
+        "y": 1064,
+        "width": 792,
+        "height": 400
+      },
+      "source": "face",
+      "blend": "normal",
+      "opacity": 1,
+      "occludes": [],
+      "files": {
+        "1x": {
+          "file": "face/neutral@1x.webp",
+          "url": "lxa://pet-p1/face/neutral@1x.webp",
+          "width": 198,
+          "height": 100,
+          "bytes": 26142,
+          "sha256": "821b0bda0240041be80d648acd9301248dac4f915a50f90b2284e7c4f1f3b9b4",
+          "format": "webp-lossless"
+        },
+        "2x": {
+          "file": "face/neutral@2x.webp",
+          "url": "lxa://pet-p1/face/neutral@2x.webp",
+          "width": 396,
+          "height": 200,
+          "bytes": 80538,
+          "sha256": "0bf7a196ba4d580bc9e9c4b60a08d4117f15cd9f646797a9d5bae240a43e732b",
+          "format": "webp-lossless"
+        }
+      },
+      "required": true
+    },
+    {
       "layerId": "ahoge",
       "role": "animatable",
       "z": 40,

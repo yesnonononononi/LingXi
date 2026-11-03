@@ -58,6 +58,19 @@ export const MASK_SUBDIR = ['support', 'masks'];
 export const DENSITY_IDS = ['1x', '2x'];
 
 /**
+ * **不来自 P1 母版**的层 id（它们的 `files` 由别的生成器独占）。
+ *
+ * <p>目前只有 `face`：它由 `scripts/build-pet-face-tiles.mjs` 从 v3 的表情母版
+ * （`docs/assets/desktop-pet/v3/expr/E<n>_*.png`）按脸区裁切生成，P1 分层件里没有、
+ * 也不该有这张图。把它排除在母版扫描之外，两套生成器才不会争同一个 `files` 字段
+ * （单字段所有权，设计文档 §4.4 的 C9）。</p>
+ *
+ * <p>与 `build-pet-face-tiles.mjs` 的 `FACE_LAYER_ID` 同值，由
+ * `tests/petFaceTiles.test.ts` 交叉断言（.mjs 之间互相 import 会形成环）。</p>
+ */
+export const EXTERNAL_LAYER_IDS = ['face'];
+
+/**
  * 兜底密度目标（拿不到 `pet-assets.json` 时用它）。
  *
  * <p>两个值都是从 2048×3072 的 2:3 母版精确缩下来的整数尺寸（160×240 / 320×480），
@@ -265,6 +278,11 @@ export function scanLayerSource(manifest, sourceDir) {
     }
     if (typeof layer.source !== 'string' || layer.source.length === 0) {
       result.problems.push(`层 ${layer.layerId} 的 source 为空（不知道去母版目录取哪张图）`);
+      continue;
+    }
+    if (EXTERNAL_LAYER_IDS.includes(layer.layerId)) {
+      // 脸层不来自 P1 母版：它由 build-pet-face-tiles.mjs 从 v3 表情母版裁切，
+      // 且独占 `files` 字段。这里跳过是为了让 `--check` 不会把它误判成"母版缺失"。
       continue;
     }
     const path = sourcePathOf(sourceDir, layer.source);

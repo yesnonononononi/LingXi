@@ -12,27 +12,28 @@
  * <p><b>本模块是纯数据 + 纯函数，不碰 DOM</b>（设计文档 §8 共享知识第 4 条），
  * 因此可以在 node 里直接单测。</p>
  *
- * <h2>已知限制：P1 资产没有 `face` 层 → layered 模式下表情的"面部"不可见</h2>
+ * <h2>M1 起：契约里有第 10 层 `face`（旧「不补 face 层」的 C 方案已作废）</h2>
  *
- * <p><b>这不是 bug，是已决策的取舍，别再去考古两小时：</b></p>
+ * <p><b>历史结论已反转，别照着旧注释做决策：</b>M0 之前用户拍板过 C 方案（不补 `face` 层、
+ * 表情靠整帧兜底），因此旧注释写着"不要生成 face 贴图"。M1「可见表情闭环」把这条推翻了，
+ * 现在的契约是：</p>
+ *
  * <ul>
- *   <li>P1 的分层件只有身体/耳朵/呆毛/蝴蝶结/尾巴等 9 层，<b>没有独立的 `face` 层</b>，
- *       所以表情（`happy` / `angry` / `sleepy` …）只能落到<b>整帧兜底</b>
- *       （`presentation/layered-presentation.ts` 的 `applyExpression` 里
- *       `views.get(FACE_LAYER_ID)` 为空就走 `baseFallback`）；</li>
- *   <li>而 `pet.css` 为了让层栈（动态尾巴）不与静止压平帧重影，在
- *       `data-composite-mode='layered'` 下把 `.pet-art-frame` 整帧 `opacity: 0`。
- *       两者相乘的结果就是：<b>layered 下表情的"脸"看不见</b>，
- *       能看见的只有<b>身体动作</b>（tap 的蹦、angry 的抖、wake、drag —— 它们挂在
- *       `.pet-action` 上，两种模式下都可见）；</li>
- *   <li><b>演示/验收要看到表情，请用 `?layers=0` 走 composite</b>（压平帧可见，
- *       表情就是整帧切换）；</li>
- *   <li><b>用户已决策（C 方案）</b>：不补做 `face` 层、不投美术、不关分层总闸，
- *       等 P2 和 face 层一起做。所以：<b>不要</b>为此生成 face 贴图、
- *       <b>不要</b>改美术管线、<b>不要</b>把 `pet-layers.json` 的 `enabled` 关掉、
- *       <b>更不要</b>把动作动画改回挂 `.pet-art-frame`（那会把"看得见的动作"一起弄没，
- *       守卫见 `tests/petMotionHost.test.ts`）。</li>
+ *   <li>`pet-layers.json` 里**有**第 10 层 `face`：`role: 'animatable'`、`z = 32`
+ *       （严格大于 `body-occluder(30)`、小于 `ahoge(40)`），`rect` 是**脸区子矩形**
+ *       （母版像素 `560,1064,792,400`），不是整画布；</li>
+ *   <li>脸贴片由 `scripts/build-pet-face-tiles.mjs` 从 v3 母版裁切生成，落到
+ *       `public/live2d/pet-p1/face/<expressionId>@1x|2x.webp`，并把 `neutral` 那两张回填进
+ *       `face.files`；表情全集在 `pet-face-tiles.json`（访问器 `assets/face-tiles.ts`）；</li>
+ *   <li>`wink` / `blinkHalf` 的美术母版未交付时走 `degraded` 降级路径，**不许假装有资产**；</li>
+ *   <li>缺 `face` 层（旧包 / 美术未交付 / 解码失败）时，`layers/plan.ts` 的
+ *       `z &lt;= SAFE_OVERLAY_Z` 判定会让整条链路回落到 `composite`（压平帧），
+ *       表情仍然可见，只是失去部件微动 —— **这是有意的降级，不是缺陷**。</li>
  * </ul>
+ *
+ * <p><b>仍然不要做的事：</b>不要把 `pet-layers.json` 的 `enabled` 关掉，
+ * 也不要把动作动画改回挂 `.pet-art-frame`（那会把"看得见的动作"一起弄没，
+ * 守卫见 `tests/petMotionHost.test.ts`）。</p>
  *
  * @module pet/layers/manifest
  */
