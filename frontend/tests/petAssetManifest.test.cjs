@@ -311,15 +311,21 @@ test('运行时目录无孤儿产物（清单没引用的文件 = 第二套资�
 
 test('findOrphanAssets：检测能力自证（注入孤儿文件必须被抓到）', () => {
   const { findOrphanAssets } = require('../scripts/check-pet-geometry.mjs');
-  const { mkdtempSync, writeFileSync, mkdirSync } = require('node:fs');
+  const { mkdtempSync, rmSync, writeFileSync, mkdirSync } = require('node:fs');
   const { tmpdir } = require('node:os');
   const dir = mkdtempSync(resolve(tmpdir(), 'pet-orphan-'));
-  mkdirSync(resolve(dir, 'composites'), { recursive: true });
-  writeFileSync(resolve(dir, 'composites/neutral@2x.webp'), 'x');
-  writeFileSync(resolve(dir, 'front-standing@2x.webp'), 'y');
-  const assets = { frames: { neutral: { '2x': { file: 'composites/neutral@2x.webp' } } }, patches: {}, body: null };
-  const orphans = findOrphanAssets(dir, assets);
-  assert.deepEqual(orphans, ['front-standing@2x.webp']);
+  // try/finally：断言失败也必须把临时目录删掉。旧写法漏了清理，本地已积了 133 个
+  // %TEMP%\pet-orphan-XXXXXX 空壳目录（CI 是临时机器不受影响，但本地会一直涨）。
+  try {
+    mkdirSync(resolve(dir, 'composites'), { recursive: true });
+    writeFileSync(resolve(dir, 'composites/neutral@2x.webp'), 'x');
+    writeFileSync(resolve(dir, 'front-standing@2x.webp'), 'y');
+    const assets = { frames: { neutral: { '2x': { file: 'composites/neutral@2x.webp' } } }, patches: {}, body: null };
+    const orphans = findOrphanAssets(dir, assets);
+    assert.deepEqual(orphans, ['front-standing@2x.webp']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('check 模式：清单与磁盘一致时退出码 0', { skip: SKIP_NO_ASSETS }, async () => {
