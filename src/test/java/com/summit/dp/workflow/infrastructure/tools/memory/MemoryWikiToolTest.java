@@ -57,7 +57,7 @@ class MemoryWikiToolTest {
                     "lingxi.memory.wiki.relative-location=knowledge",
                     "lingxi.memory.project.relative-location=.lingxi/memory/consistent/memory.md");
             context.registerBean(ObjectMapper.class, () -> new ObjectMapper());
-            context.register(MemoryWikiManager.class, MemoryWikiLoader.class);
+            context.register(MemoryWikiIndexCache.class, MemoryWikiManager.class, MemoryWikiLoader.class);
             context.refresh();
 
             MemoryWikiManager firstManager = context.getBean(MemoryWikiManager.class);
@@ -159,7 +159,7 @@ class MemoryWikiToolTest {
     }
 
     @Test
-    void missingDirectoryIsEmptyAndNewFilesAppearOnTheNextCall() throws Exception {
+    void missingDirectoryStaysEmptyUntilTheProcessIndexIsRebuilt() throws Exception {
         MemoryWikiLoader loader = loader(".lingxi/wikis");
         Workspace workspace = workspace(temporary);
         JsonNode listing = mapper.readTree(execute(loader, workspace, "{}").getToolOutput());
@@ -168,11 +168,11 @@ class MemoryWikiToolTest {
         assertEquals(0, listing.path("wikis").size());
         assertFalse(Files.exists(temporary.resolve(".lingxi")));
         write(temporary, ".lingxi/wikis/new.md", "新 wiki");
-        assertEquals("新 wiki", read(loader, workspace, "new.md").getToolOutput());
-        Files.delete(temporary.resolve(".lingxi/wikis/new.md"));
+        assertFalse(read(loader, workspace, "new.md").isSuccess());
         JsonNode reloaded = mapper.readTree(execute(loader, workspace, "{}").getToolOutput());
         assertEquals(0, reloaded.path("total").asInt());
         assertEquals(0, reloaded.path("wikis").size());
+        assertEquals("新 wiki", read(loader(".lingxi/wikis"), workspace, "new.md").getToolOutput());
     }
 
     @Test
@@ -292,7 +292,8 @@ class MemoryWikiToolTest {
 
     private MemoryWikiLoader loader(String directory) {
         ObjectProvider<MemoryWikiManager> provider = provider();
-        when(provider.getObject()).thenAnswer(invocation -> new MemoryWikiManager(directory));
+        MemoryWikiIndexCache indexes = new MemoryWikiIndexCache();
+        when(provider.getObject()).thenAnswer(invocation -> new MemoryWikiManager(directory, indexes));
         return new MemoryWikiLoader(mapper, provider);
     }
 

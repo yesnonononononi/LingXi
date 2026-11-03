@@ -31,6 +31,7 @@ class MemoryWikiPromptTest {
     @SuppressWarnings("unchecked")
     private final ObjectProvider<MemoryWikiManager> managers = mock(ObjectProvider.class);
     private final WorkspaceResolver workspaces = mock(WorkspaceResolver.class);
+    private final MemoryWikiIndexCache indexes = new MemoryWikiIndexCache();
 
     @Test
     void builderLoadsBoundedCatalogIntoTheRequestWithoutChangingMessagesOrRuntimeAttributes() throws Exception {
@@ -59,7 +60,7 @@ class MemoryWikiPromptTest {
     }
 
     @Test
-    void unchangedDirectoriesProduceIdenticalPromptsAndNewRequestsReloadTheirOwnProject() throws Exception {
+    void cachedProjectCatalogsKeepPromptsStableWhenFilesAreAddedOutsideTheIndex() throws Exception {
         Path first = Files.createDirectories(project.resolve("first/wiki"));
         Path second = Files.createDirectories(project.resolve("second/wiki"));
         Files.writeString(first.resolve("first.md"), "甲");
@@ -71,7 +72,7 @@ class MemoryWikiPromptTest {
         assertTrue(changed.contains("second.md"));
         assertFalse(changed.contains("first.md"));
         Files.writeString(first.resolve("new.md"), "新模块");
-        assertTrue(builder.buildRootPrompt("角色规则", null, spec(first.getParent())).contains("new.md"));
+        assertEquals(initial, builder.buildRootPrompt("角色规则", null, spec(first.getParent())));
         verify(managers, times(4)).getObject();
     }
 
@@ -101,7 +102,7 @@ class MemoryWikiPromptTest {
     }
 
     private BusinessSystemPromptBuilder builder() {
-        doAnswer(invocation -> new MemoryWikiManager("wiki")).when(managers).getObject();
+        doAnswer(invocation -> new MemoryWikiManager("wiki", indexes)).when(managers).getObject();
         doAnswer(invocation -> {
             WorkspaceSpec workspace = invocation.getArgument(0);
             return new LocalWorkspace("bound", workspace.workDir());

@@ -161,7 +161,8 @@ class MemoryWikiSearchTest {
     @SuppressWarnings("unchecked")
     private ObjectProvider<MemoryWikiManager> managers() {
         ObjectProvider<MemoryWikiManager> provider = mock(ObjectProvider.class);
-        when(provider.getObject()).thenAnswer(invocation -> new MemoryWikiManager("wiki"));
+        MemoryWikiIndexCache indexes = new MemoryWikiIndexCache();
+        when(provider.getObject()).thenAnswer(invocation -> new MemoryWikiManager("wiki", indexes));
         return provider;
     }
 
