@@ -171,7 +171,9 @@ test('行为：89999ms 无交互不睡 / 90000ms 睡（字面量边界）', () =
   const motion = ops.find((op) => op.kind === 'motion');
   const expression = ops.find((op) => op.kind === 'expression');
   assert.equal(motion?.id, 'sleepy');
-  assert.equal(expression?.id, 'sleepy');
+  // E08：真睡是**双眼闭合**（闭眼贴片），困倦才是半闭的 `sleepy`；两档不得同形
+  assert.equal(expression?.id, 'blink', '真睡的基础表情必须是闭眼贴片，不能与困倦同形');
+  assert.equal(expression?.layer, 'base');
   // 睡眠动作优先级 0：真正的"抑制眨眼"由 bus 的 sleeping 判定做，不是靠抢占
   assert.equal(motion?.priority, 0);
 });
@@ -418,7 +420,8 @@ test('外部驱动：enterState("sleeping") 直接进入睡眠并登记持续动
   assert.equal(sm.sustainedMotion, 'sleepy');
   assert.equal(ops.length, 2);
   assert.equal(ops.find((op) => op.kind === 'motion')?.id, 'sleepy');
-  assert.equal(ops.find((op) => op.kind === 'expression')?.id, 'sleepy');
+  // 直达睡眠同样走"真睡 = 闭眼"口径（后门与真机必须同一条路径，否则调试看到的没有参考价值）
+  assert.equal(ops.find((op) => op.kind === 'expression')?.id, 'blink');
   // 幂等：直达进去之后 tick 同样沉默
   clock.advance(250);
   assert.deepEqual(sm.tick(), []);
@@ -543,13 +546,22 @@ test('行为 × 总线：优先级 0 的睡眠指令能穿过"常驻 idle"的活
   const outcomes = sm.tick().map((op) => bus.dispatch(op));
   assert.deepEqual(outcomes, ['applied', 'applied'], '睡眠动作与表情都必须真的落地，不能被低优先级锁拒绝');
   assert.equal(target.state.motion, 'sleepy');
-  assert.equal(target.state.expression, 'sleepy');
+  // E08：真睡的表情是闭眼贴片 `blink`（走 base 槽）。这条同时证明"睡眠抑制眨眼"的规则
+  // 没有把**睡眠的基础表情**一起拒掉——否则这里会是 applied 之外的第三种结果，脸层退回困倦。
+  assert.equal(target.state.expression, 'blink', '真睡的基础表情必须是闭眼贴片');
   // 睡眠期再走 10 拍：总线不该收到任何新指令（tick 幂等），表情/动作保持睡眠
   for (let index = 0; index < 10; index += 1) {
     clock.advance(250);
     assert.deepEqual(sm.tick(), []);
   }
-  assert.equal(target.state.expression, 'sleepy');
+  assert.equal(target.state.expression, 'blink');
+  // 反向自证：睡眠中真正的生理眨眼（transient 槽）必须被总线拒掉，不能顶掉睡眠的脸
+  assert.equal(
+    bus.dispatch({ kind: 'expression', id: 'blink', layer: 'transient', priority: 0, durationMs: 100, fadeMs: 0, reason: 'test:physio-blink' }),
+    'rejected',
+    '睡眠中生理眨眼必须被抑制（与基础闭眼表情是两件事）',
+  );
+  assert.equal(target.state.expression, 'blink');
 });
 
 // ---------------------------------------------------------------- 入态接管（M6-b 第二轮必修项 1）
@@ -627,7 +639,8 @@ test('行为：repairOps 把回滚后的状态重新定向到画面（睡眠 / �
   const sleepRepair = sleeper.repairOps();
   assert.equal(sleepRepair.length, 2);
   assert.equal(sleepRepair[0]?.id, 'sleepy');
-  assert.equal(sleepRepair[1]?.id, 'sleepy');
+  // 修复路径必须与入态路径下发同一张脸：真睡 = 闭眼（blink），不是困倦的 sleepy
+  assert.equal(sleepRepair[1]?.id, 'blink', '睡眠修复指令的表情必须与 enterSleeping 一致');
   assert.ok(sleepRepair.every((entryOp) => entryOp.force === true));
   assert.equal(sleeper.sustainedMotion, 'sleepy', '修复后持续动作登记必须还在');
 

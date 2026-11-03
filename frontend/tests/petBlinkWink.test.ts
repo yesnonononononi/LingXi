@@ -23,7 +23,7 @@ import {
   blinkHalfOp,
 } from '../src/pet/presentation/blink-driver';
 import type { TimerPort } from '../src/pet/presentation/bus';
-import { BLINK_LIKE_EXPRESSIONS, interruptDecision } from '../src/pet/presentation/priority';
+import { BLINK_LIKE_EXPRESSIONS, interruptDecision, isSleepSuppressedBlink } from '../src/pet/presentation/priority';
 import { isBlinkLikeExpression } from '../src/pet/presentation/layered-presentation';
 import type { PresentationOp } from '../src/pet/presentation/types';
 
@@ -221,6 +221,35 @@ test('R6：睡眠中 blink / blinkHalf / wink 全部被判 reject', () => {
     }),
     'apply',
   );
+});
+
+test('R6：睡眠中**base 槽**的 blink 是"睡着这张脸"，必须放行（E08/P4 的关键区分）', () => {
+  // 睡眠这一档的基础表情就是闭眼贴片：行为层 enterSleeping() 以 base 槽 + 优先级 0 + 无 TTL 下发。
+  // 它是"状态"，不是"眨眼动作"——抑制规则若把它一起拒掉，90s 档会退回困倦脸，两档同形（P4 红）。
+  const baseOp = {
+    kind: 'expression' as const,
+    id: 'blink' as const,
+    layer: 'base' as const,
+    priority: 0 as const,
+    force: true,
+    reason: 'behavior:sleep:expression',
+  };
+  assert.equal(isSleepSuppressedBlink({ incoming: baseOp, active: null, sleeping: true }), false);
+  assert.equal(interruptDecision({ incoming: baseOp, active: null, sleeping: true }), 'apply', '睡眠的基础闭眼表情必须落地');
+
+  // 对照：同一个 id 落在 transient 槽 = 生理眨眼指令，睡眠中必须被拒（两条语义不能合并）
+  const transientOp = { ...baseOp, layer: 'transient' as const, force: false };
+  assert.equal(isSleepSuppressedBlink({ incoming: transientOp, active: null, sleeping: true }), true);
+  assert.equal(interruptDecision({ incoming: transientOp, active: null, sleeping: true }), 'reject');
+
+  // 醒着时两种槽位都放行（抑制只在睡眠态生效）
+  assert.equal(isSleepSuppressedBlink({ incoming: baseOp, active: null, sleeping: false }), false);
+  assert.equal(isSleepSuppressedBlink({ incoming: transientOp, active: null, sleeping: false }), false);
+
+  // 非眨眼类表情在 base 槽与 transient 槽都不受这条规则影响
+  const sleepyBase = { kind: 'expression' as const, id: 'sleepy' as const, layer: 'base' as const, priority: 0 as const, force: true, reason: 'behavior:sleepy:expression' };
+  assert.equal(isSleepSuppressedBlink({ incoming: sleepyBase, active: null, sleeping: true }), false);
+  assert.equal(interruptDecision({ incoming: sleepyBase, active: null, sleeping: true }), 'apply');
 });
 
 // ------------------------------------------------------------------ R5：wink 与 blink 互不覆盖

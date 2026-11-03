@@ -43,8 +43,15 @@ import type { HitProfile } from './hit-profile';
  * <p>M1 新增两档，语义都来自设计文档 §6 的触发入口表：</p>
  * <ul>
  *   <li>`sleepy`：**困倦**。无交互 {@link SLEEPY_AFTER_IDLE_MS}(60s) 进入，
- *       表现是 `sleepy` 表情 + `sleepy` 动作（循环），再闲 {@link SLEEP_AFTER_IDLE_MS}(90s) 才真睡。
- *       它与 `sleeping` 必须分开：困倦时仍然会眨眼（睡眠中眨眼被抑制）。</li>
+ *       表现是 `sleepy` 表情（**半闭眼** + 困倦嘴型）+ `sleepy` 动作（循环），
+ *       再闲 {@link SLEEP_AFTER_IDLE_MS}(90s) 才真睡。
+ *       它与 `sleeping` 必须分开：困倦时仍然会眨眼（睡眠中眨眼被抑制），
+ *       而且**两档画面不得同形**（E08 判据：双眼闭合 vs 半闭眼不混淆）。</li>
+ *   <li>`sleeping`：**真睡**。表情是 `blink`（**双眼闭合**，复用已有闭眼贴片），
+ *       动作仍是 `sleepy` 的循环（趴睡姿态属 M2）。与 `sleepy` 的区别见
+ *       {@link PetBehaviorStateMachine} 的 `enterSleeping()` 与 `presentation/priority.ts` 的
+ *       `isSleepSuppressedBlink()`：同一张 `blink` 资产，一个是"睡着这张脸"（base 槽），
+ *       一个是"眨眼这个动作"（transient 槽，睡眠中必须被拒）。</li>
  *   <li>`pet`：**被抚摸**。头部连点 2 次（间隔 &lt; {@link PET_DOUBLE_TAP_MS}）或
  *       头部按住 ≥ {@link PET_HOLD_MS} 进入，`shy` 表情 {@link PET_SHOW_MS} 后进 `pet-end`，
  *       回礼 `wink`（见 {@link WINK_MS}）。</li>
@@ -489,14 +496,18 @@ export class PetBehaviorStateMachine {
   }
 
   /**
-   * 进入**困倦**（E08 的第一档）：表情 + 循环动作，{@link SLEEPY_TO_SLEEP_MS} 后转真睡。
+   * 进入**困倦**（E08 的第一档）：`sleepy` 表情（半闭 + 困倦嘴型）+ 循环动作，
+   * {@link SLEEPY_TO_SLEEP_MS} 后转真睡。
    *
-   * <p>与 {@link enterSleeping} 的区别只有两条，但两条都影响可用性：</p>
+   * <p>与 {@link enterSleeping} 的区别有三条，每一条都影响可用性：</p>
    * <ol>
    *   <li>**不登记 `sustained`**：困倦不是"跑到被唤醒为止"的持续态，它有自己的到期时间
    *       （{@link PetBehaviorStateMachine.tick} 的 sleepy 分支），登记了 tick 就永远沉默，
    *       90s 那条到不了；</li>
-   *   <li>不在 `isSleeping` 里：困倦**仍然会眨眼**，只有真睡才抑制眨眼。</li>
+   *   <li>不在 `isSleeping` 里：困倦**仍然会眨眼**，只有真睡才抑制眨眼；</li>
+   *   <li>**表情是 `sleepy`（半闭眼），不是真睡的 `blink`（双眼闭合）**：E08 的判据是
+   *       「双眼闭合与半闭眼不混淆」，两档必须在下发指令这一层就不同形——
+   *       同形的话守卫 P4（60s/90s 两档 ROI 必须不一致）会直接判红。</li>
    * </ol>
    *
    * @returns 需要下发的指令
@@ -520,13 +531,27 @@ export class PetBehaviorStateMachine {
   /**
    * 进入睡眠：下发<b>一次</b>状态型持续动作，此后由 tick 的幂等分支保持沉默。
    *
+   * <p><b>为什么真睡用闭眼贴片 `blink`、而不是和困倦一样用 `sleepy`（E08 / 守卫 P4）：</b>
+   * 原图 E08 的判据是「<b>双眼闭合与半闭眼不混淆</b>」：60s 档是犯困（半闭眼 + 困倦嘴型），
+   * 90s 档是<b>睡着</b>（双眼闭上）。两档共用同一套 `sleepy` 表达时画面逐像素相同，
+   * 用户与守卫都无法区分"快睡着了"和"已经睡着了"（P4 直接判红）。</p>
+   *
+   * <p>所以这里把<b>表情</b>换成已有的闭眼贴片 `blink`（零新增资产），<b>动作</b>仍是
+   * `sleepy` 的循环（趴睡姿态属 M2，本轮不做）。它走 `base` 槽、优先级 0、无 TTL：
+   * 它就是这一阶段的"基础表情"，被唤醒时由 `wake`（优先级 2）接管。</p>
+   *
+   * <p><b>配对的坑（改这里之前先读）：</b>`presentation/priority.ts` 有一条
+   * 「睡眠中抑制眨眼类表情」的规则。它只抑制<b>非 base 槽</b>的眨眼指令（生理眨眼 / wink），
+   * 因为这里的 `blink` 是"睡着这张脸"而不是"眨眼这个动作"——两条语义共用同一张资产，
+   * 一旦把 base 槽也抑制掉，这条入态指令会被自己拒掉，90s 档又退回困倦脸，P4 复现。</p>
+   *
    * @returns 需要下发的指令
    */
   private enterSleeping(): PresentationOp[] {
     this.enter('sleeping', null);
     // 登记持续动作：这是"不自动回退"的唯一凭据，也是 tick 幂等的开关
     this.sustained = 'sleepy';
-    this.log(`[pet] 行为：${SLEEP_AFTER_IDLE_MS}ms 无交互，进入睡眠`);
+    this.log(`[pet] 行为：${SLEEP_AFTER_IDLE_MS}ms 无交互，进入睡眠（闭眼）`);
     return entryOps([
       // 睡眠优先级维持 0：真正的"抑制眨眼"由总线的 sleeping 判定做，不靠抢占；
       // 醒来的 wake 是优先级 2，一定能打断它（见 priority.ts 的规则表）。
@@ -534,7 +559,8 @@ export class PetBehaviorStateMachine {
       sustainedMotionOp('sleepy', 0, 'behavior:sleep'),
       // 表情同样不带 TTL：睡到被叫醒为止，而不是 1.6 秒后自己变回中性脸。
       // 走 base 槽：它就是这一阶段的"基础表情"（transient 到期回落的目标）。
-      expressionOp('sleepy', 0, 'behavior:sleep:expression', undefined, 'base'),
+      // 用 `blink`（闭眼）而不是 `sleepy`（半闭+困倦嘴型）：E08 两档不得同形。
+      expressionOp('blink', 0, 'behavior:sleep:expression', undefined, 'base'),
     ]);
   }
 
@@ -665,7 +691,9 @@ export class PetBehaviorStateMachine {
       this.sustained = 'sleepy';
       return entryOps([
         sustainedMotionOp('sleepy', 0, 'behavior:repair:sleep'),
-        expressionOp('sleepy', 0, 'behavior:repair:sleep:expression', undefined, 'base'),
+        // 与 enterSleeping 同口径：真睡 = 闭眼（base 槽），不是困倦的 `sleepy`。
+        // 修复路径与入态路径必须下发同一张脸，否则"回滚后重对齐"会把 P4 的差异抹掉。
+        expressionOp('blink', 0, 'behavior:repair:sleep:expression', undefined, 'base'),
       ]);
     }
     if (this.stateValue === 'sleepy') {

@@ -85,7 +85,7 @@ interface ActiveEntry {
  *
  * <p><b>为什么必须是二维的（M6-b 第四轮的核心）：</b>表情（`expression`）与动作（`motion`）
  * 是两套<b>独立叠加</b>的表现。以前每层只有一个槽位，于是 `base` 槽先被 boot 的中性表情占着、
- * 又被后面的动作指令覆盖——眨眼（transient 层的 `blink` → `sleepy(half)` 两条带 TTL 的指令）
+ * 又被后面的动作指令覆盖——眨眼（transient 层的 `blink` → `blinkHalf` 两条带 TTL 的指令）
  * 靠 TTL 到期"回落"来睁眼，而半闭帧到期时槽里只剩一条 <b>motion</b> 指令，
  * 重放它不会把脸改回 `neutral`，回落链当场断开：桌宠永久停在半闭眼。
  * 拆成 `(layer, kind)` 之后，表情的到期只影响表情槽，动作的到期只影响动作槽，

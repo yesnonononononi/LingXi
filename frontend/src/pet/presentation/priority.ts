@@ -14,7 +14,8 @@
  *   <tr><td>priority 相同</td><td>覆盖（后到优先，连点手感要求）</td></tr>
  *   <tr><td>priority 更低且活动剩余 &gt; 120ms</td><td>拒绝</td></tr>
  *   <tr><td>priority 更低且活动剩余 ≤ 120ms</td><td>排队到到期后应用</td></tr>
- *   <tr><td>睡眠中来 blink / blinkHalf / wink</td><td>抑制（不排队）</td></tr>
+ *   <tr><td>睡眠中来 blink / blinkHalf / wink（**非 base 槽**）</td><td>抑制（不排队）</td></tr>
+ *   <tr><td>睡眠中来 blink（**base 槽**：真睡的基础闭眼表情）</td><td>放行（见 {@link isSleepSuppressedBlink}）</td></tr>
  *   <tr><td>拖拽中来 ambient</td><td>抑制</td></tr>
  *   <tr><td>同一 op（kind+id）80ms 内重复（仅表现请求）</td><td>合并丢弃</td></tr>
  * </table>
@@ -46,7 +47,9 @@ export const DUPLICATE_MERGE_MS = 80;
  *
  * <p>三件事共用这一份集合，谁也不许再各写一个 `id === 'blink'`：</p>
  * <ol>
- *   <li><b>睡眠中全部抑制</b>（本文件的判定规则表第 2 行）——睡着的人不会眨眼，也不会 wink；</li>
+ *   <li><b>睡眠中抑制"眨眼动作"</b>（本文件的判定规则表第 2 行，口径见
+ *       {@link isSleepSuppressedBlink}）——睡着的人不会眨眼，也不会 wink；
+ *       <b>但睡眠本身的基础闭眼表情（base 槽的 `blink`）不在此列</b>，它是"睡着这张脸"；</li>
  *   <li><b>切换时禁止交叉过渡</b>（`layered-presentation.ts` 的 `resolveExpressionFadeMs`）：
  *       80–100ms 的闭眼窗口里叠 100ms 淡入等于全程半透明，看着像"眨眼没眨完"；</li>
  *   <li><b>三者永不互相顶替</b>：`blink` 双眼闭合、`blinkHalf` 半闭且嘴型中性、`wink` 单眼闭合，
@@ -63,6 +66,31 @@ export const BLINK_LIKE_EXPRESSIONS: readonly ExpressionId[] = ['blink', 'blinkH
  */
 export function isBlinkLikeExpression(id: unknown): boolean {
   return typeof id === 'string' && (BLINK_LIKE_EXPRESSIONS as readonly string[]).includes(id);
+}
+
+/**
+ * 睡眠中是否要抑制**这一条**眨眼类表情指令（判定与原因共用同一份实现）。
+ *
+ * <p><b>为什么要按槽位区分（M1·E08 / P4，别把这条合并回去）：</b>睡眠这一档的
+ * <b>基础表情</b>就是闭眼贴片 `blink`——由行为层 `enterSleeping()` 以 `base` 槽、
+ * 优先级 0、无 TTL 下发。它是"睡着的那张脸"，是<b>状态</b>；
+ * 而生理眨眼是 `transient` 槽上 100ms 的抖动，是<b>动作</b>。
+ * 两者共用同一张资产（`face/blink@*.webp`），语义却相反：前者必须落地，后者必须被拒。</p>
+ *
+ * <p>如果这条抑制不判槽位，睡眠的基础闭眼会在入态时被自己拒掉，脸层退回上一档的
+ * 困倦贴片，E08 的 60s/90s 两档又变成逐像素同形（P4 回归）。
+ * 所以：**抑制只针对非 `base` 槽**（`transient` / `ambient` 上的生理眨眼与社交 wink）。</p>
+ *
+ * @param query 判定入参
+ * @returns 是否应当抑制
+ */
+export function isSleepSuppressedBlink(query: InterruptQuery): boolean {
+  const op = query.incoming;
+  if (query.sleeping !== true) return false;
+  if (op.kind !== 'expression') return false;
+  // base 槽 = 这一阶段的基础表情（真睡 = 闭眼），不是"眨眼动作"，一律放行
+  if (op.layer === 'base') return false;
+  return isBlinkLikeExpression(op.id);
 }
 
 /** 当前活动指令的快照（由调度器维护）。 */
@@ -132,8 +160,10 @@ export function interruptDecision(query: InterruptQuery): InterruptDecision {
   }
 
   // 2) 睡觉不该眨眼：blink / blinkHalf / wink 都是 ambient 性质的"生理或社交小动作"，
-  //    睡眠时一律抑制且不排队（集合真源是 BLINK_LIKE_EXPRESSIONS，别在这里再写 id 字面量）
-  if (query.sleeping === true && op.kind === 'expression' && isBlinkLikeExpression(op.id)) return 'reject';
+  //    睡眠时一律抑制且不排队。**判定按槽位区分**（见 isSleepSuppressedBlink）：
+  //    真睡的基础闭眼表情走 base 槽，是"睡着这张脸"，必须放行——否则它会被自己拒掉，
+  //    E08 的 60s/90s 两档又退回同形（P4）。
+  if (isSleepSuppressedBlink(query)) return 'reject';
 
   // 3) 拖拽优先：drag 期间任何 ambient 指令都不该插进来
   if (query.activeMotion === 'drag' && op.layer === 'ambient') return 'reject';
@@ -180,7 +210,7 @@ export function suppressionReason(query: InterruptQuery): string | null {
   const op = query.incoming;
   const last = query.lastApplied;
   if (op.force !== true && last && last.slot === `${op.layer}:${op.kind}` && last.id === String(op.id)) return 'duplicate-within-80ms';
-  if (query.sleeping === true && op.kind === 'expression' && isBlinkLikeExpression(op.id)) return 'sleeping-no-blink';
+  if (isSleepSuppressedBlink(query)) return 'sleeping-no-blink';
   if (query.activeMotion === 'drag' && op.layer === 'ambient') return 'drag-blocks-ambient';
   return decision === 'queue' ? 'queued-until-active-expires' : 'lower-priority-locked';
 }

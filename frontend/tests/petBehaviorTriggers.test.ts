@@ -329,6 +329,33 @@ test('§6 E08：困倦中点击即可打断（不要求先睡死）', () => {
   assert.equal(pick(ops, 'expression').id, 'happy');
 });
 
+test('§6 E08 / P4：60s 困倦与 90s 真睡必须下发**不同**的表情指令（不得同形）', () => {
+  const clock = new Clock();
+  const sm = machine(clock);
+
+  // 60s：困倦 = 半闭眼的 `sleepy`
+  clock.advance(SLEEPY_AFTER_IDLE_MS);
+  const sleepyOps = sm.tick();
+  const sleepyExpression = pick(sleepyOps, 'expression');
+  assert.equal(sleepyExpression.id, 'sleepy', '困倦档必须是半闭眼的 sleepy');
+  assert.equal(sleepyExpression.layer, 'base');
+
+  // 90s：真睡 = 双眼闭合的 `blink`（复用已有闭眼贴片，零新增资产）
+  clock.advance(SLEEP_AFTER_IDLE_MS - SLEEPY_AFTER_IDLE_MS);
+  const sleepingOps = sm.tick();
+  assert.equal(sm.state, 'sleeping');
+  const sleepingExpression = pick(sleepingOps, 'expression');
+  assert.equal(sleepingExpression.id, 'blink', '真睡档必须是闭眼贴片（E08 判据：双眼闭合 vs 半闭眼不得混淆）');
+  assert.equal(sleepingExpression.layer, 'base', '睡眠的基础表情走 base 槽（否则会被"睡眠抑制眨眼"规则拒掉）');
+  assert.equal(sleepingExpression.priority, 0);
+  assert.equal(sleepingExpression.durationMs, undefined, '睡到被叫醒，不许有 TTL');
+
+  // 硬断言：两档的表情 id 必须不同（同形就是 P4 那条 FAIL）
+  assert.notEqual(sleepingExpression.id, sleepyExpression.id, '困倦与真睡的表情不得相同');
+  // 动作仍然是同一个循环 sleepy（趴睡姿态属 M2，本轮不做）
+  assert.equal(pick(sleepingOps, 'motion').id, 'sleepy');
+});
+
 // ------------------------------------------------------------------ 头部判定（分区真源）
 
 test('分区：脸区矩形来自层清单的 face.rect，外扩后 上下 0.06 / 左右 0.08', () => {
