@@ -14,6 +14,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 
 const { resolveDevEntryUrl, DEV_ENTRY_FALLBACK } = require(path.join(__dirname, '..', 'electron', 'pet-window.cjs'));
+const petWindow = require(path.join(__dirname, '..', 'electron', 'pet-window.cjs'));
 
 // 端口一律从单一真源取（electron/pet-dev-endpoint.cjs），测试里不再写端口字面量：
 // 曾经兜底地址写死主应用的 5174，导致窗口加载成主应用界面。
@@ -23,6 +24,40 @@ const { DEV_ENDPOINT } = require(path.join(__dirname, '..', 'electron', 'pet-dev
 const PORT = DEV_ENDPOINT.port;
 /** 桌宠 dev server 来源地址（无结尾斜杠）。 */
 const ORIGIN = `http://127.0.0.1:${PORT}`;
+
+test('入口页（K4）：dev 与 dist 两条分支都只用真源里的入口页名', () => {
+  const entryPage = DEV_ENDPOINT.entryPage;
+
+  const dev = petWindow.resolveEntrySpec({ isDev: true, frontendRoot: 'D:/fe', rawUrl: undefined });
+  assert.equal(dev.kind, 'url');
+  assert.equal(dev.value, `${ORIGIN}/${entryPage}`, '开发态入口页名必须来自 DEV_ENDPOINT.entryPage');
+  assert.equal(path.posix.basename(dev.value), entryPage);
+
+  const dist = petWindow.resolveEntrySpec({ isDev: false, frontendRoot: 'D:/fe', rawUrl: undefined });
+  assert.equal(dist.kind, 'file');
+  assert.equal(path.basename(dist.value), entryPage, '打包态入口页名必须来自 DEV_ENDPOINT.entryPage');
+  assert.equal(path.basename(path.dirname(dist.value)), 'dist');
+  assert.equal(dist.value, path.join('D:/fe', 'dist', entryPage));
+
+  // 显式的 ELECTRON_URL 只影响 origin，不影响入口页名
+  const custom = petWindow.resolveEntrySpec({ isDev: true, frontendRoot: 'D:/fe', rawUrl: `${ORIGIN} ` });
+  assert.equal(custom.value, `${ORIGIN}/${entryPage}`);
+  assert.equal(petWindow.PET_ENTRY_PAGE, entryPage, 'PET_ENTRY_PAGE 必须是真源入口页名的别名');
+});
+
+test('入口页（K4）：打包态缺少 frontendRoot 时抛错而不是拼出畸形路径', () => {
+  assert.throws(() => petWindow.resolveEntrySpec({ isDev: false, frontendRoot: '', rawUrl: '' }), TypeError);
+  assert.throws(() => petWindow.resolveEntrySpec({ isDev: false, frontendRoot: '   ', rawUrl: '' }), TypeError);
+  assert.throws(() => petWindow.resolveEntrySpec({ isDev: false, rawUrl: '' }), TypeError);
+});
+
+test('对外接口兼容：registerPetWindow / resolveDevEntryUrl / DEV_ENTRY_FALLBACK 都还在', () => {
+  assert.equal(typeof petWindow.registerPetWindow, 'function');
+  assert.equal(typeof petWindow.resolveDevEntryUrl, 'function');
+  assert.equal(typeof petWindow.resolveEntrySpec, 'function');
+  assert.equal(typeof petWindow.DEV_ENTRY_FALLBACK, 'string');
+  assert.equal(petWindow.DEV_ENTRY_FALLBACK, ORIGIN);
+});
 
 test('入口 URL：未设置时回退默认端口', () => {
   assert.equal(resolveDevEntryUrl(undefined), `${DEV_ENTRY_FALLBACK}/`);

@@ -28,6 +28,87 @@ function read(relativePath) {
 }
 
 const endpoint = require(path.join(FRONTEND_ROOT, 'electron', 'pet-dev-endpoint.cjs'));
+/**
+ * 去掉源码里的注释，但**保留字符串字面量内容**（'…' "…" `…`）。
+ *
+ * <p><b>为什么不能只用正则粗暴删注释：</b>扫描要能区分"注释里提到算什么"和
+ * "代码里写死算什么"。注释里出现 `pet.html` 是说明，不算违规；代码里出现在
+ * URL 拼接或路径拼接里才是硬编码。所以必须知道匹配位置是否位于注释内——
+ * 而注释判定又必须跳过字符串字面量里的 `//`（例如 `'http://127.0.0.1'`）。</p>
+ *
+ * <p>算法口径与 `scripts/check-pet-geometry.mjs` 的 `stripComments` 一致（那边守几何魔法数）；
+ * 本文件这份额外保住字符串字面量，因为入口页名恰好会出现在 URL/路径字符串里。</p>
+ *
+ * @param {string} source 源码文本
+ * @returns {string} 去掉注释后的文本（行号保持不变）
+ */
+function stripComments(source) {
+  let out = '';
+  let index = 0;
+  /** 当前所在的字符串引号；空串表示不在字符串里。 */
+  let quote = '';
+  while (index < source.length) {
+    const ch = source[index];
+    const next = source[index + 1];
+    if (ch === '\n' && (quote === '"' || quote === "'")) {
+      // 单/双引号字符串不能跨行：走到行尾还"在字符串里"，说明这个引号来自
+      // 正则字面量或中文注释里的撇号（噪声）。重置状态，避免整份文件从某行起
+      // 再也没法识别注释（实测：pet-window.cjs 的 /^["']|["']$/g 会造成这种漂移）。
+      quote = '';
+    }
+    if (quote) {
+      out += ch;
+      if (ch === '\\') {
+        // 转义序列整体跳过，避免 \" 被当成字符串结束
+        out += next === undefined ? '' : next;
+        index += 2;
+        continue;
+      }
+      if (ch === quote) quote = '';
+      index += 1;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') {
+      quote = ch;
+      out += ch;
+      index += 1;
+      continue;
+    }
+    if (ch === '/' && next === '/') {
+      while (index < source.length && source[index] !== '\n') index += 1;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      index += 2;
+      while (index < source.length && !(source[index] === '*' && source[index + 1] === '/')) {
+        if (source[index] === '\n') out += '\n';
+        index += 1;
+      }
+      index += 2;
+      continue;
+    }
+    out += ch;
+    index += 1;
+  }
+  return out;
+}
+
+/**
+ * 在源码里找某个字面量在**代码**中的出现（注释里的提及不算）。
+ *
+ * @param {string} source 源码文本
+ * @param {string} literal 要查的字面量（如 `5275` 或 `pet.html`）
+ * @returns {string[]} 命中列表（`第 N 行：内容`），空数组表示干净
+ */
+function findLiteralsInCode(source, literal) {
+  const code = stripComments(source);
+  const hits = [];
+  code.split('\n').forEach((line, index) => {
+    if (line.includes(literal)) hits.push(`第 ${index + 1} 行：${line.trim()}`);
+  });
+  return hits;
+}
+
 
 /**
  * 从主应用 `vite.config.ts` 里抓 `server.port`。
@@ -59,28 +140,77 @@ test('端口归属：桌宠端口与主应用 dev server 端口不同', () => {
   );
 });
 
+/**
+ * 单一真源的消费方清单（真源自身 `electron/pet-dev-endpoint.cjs` 不在其中）。
+ *
+ * <p>`electron/pet-window.cjs` 由 K4 补入：它是"探活打哪个页面、窗口就加载哪个页面"的
+ * 另一头，入口页名一旦在这里写死，两侧就可能各说各话。</p>
+ */
+const SINGLE_SOURCE_CONSUMERS = [
+  'vite.pet.config.ts',
+  'electron/pet-window.cjs',
+  'electron/pet-dev-probe.cjs',
+  'scripts/pet-dev-server.cjs',
+  'scripts/pet-dev-mutation-selfcheck.mjs',
+  'package.json',
+];
+
 test('单一真源：桌宠相关文件里不得再出现端口字面量', () => {
   const portLiteral = String(endpoint.DEV_ENDPOINT.port);
-  // electron/pet-dev-endpoint.cjs 是真源本身，故不在扫描范围内
-  const consumers = [
-    'vite.pet.config.ts',
-    'electron/pet-window.cjs',
-    'electron/pet-dev-probe.cjs',
-    'scripts/pet-dev-server.cjs',
-    'scripts/pet-dev-mutation-selfcheck.mjs',
-    'package.json',
-  ];
-  for (const relative of consumers) {
-    const content = read(relative);
-    assert.equal(
-      content.includes(portLiteral),
-      false,
-      `${relative} 出现端口字面量 ${portLiteral}：端口只能定义在 electron/pet-dev-endpoint.cjs，其余消费方一律从它取`,
+  for (const relative of SINGLE_SOURCE_CONSUMERS) {
+    const hits = findLiteralsInCode(read(relative), portLiteral);
+    assert.deepEqual(
+      hits,
+      [],
+      `${relative} 出现端口字面量 ${portLiteral}：端口只能定义在 electron/pet-dev-endpoint.cjs，其余消费方一律从它取\n${hits.join('\n')}`,
     );
   }
   // 反向确认：真源文件确实写着这个端口（否则上面的扫描等于空转）
   assert.equal(read('electron/pet-dev-endpoint.cjs').includes(portLiteral), true);
 });
+
+test('单一真源：入口页名不得出现字面量（pet-window.cjs 的 dev 与 dist 两条分支都算）', () => {
+  const entryPage = endpoint.DEV_ENDPOINT.entryPage;
+  assert.equal(entryPage.endsWith('.html'), true, '入口页应当以 .html 结尾');
+
+  for (const relative of SINGLE_SOURCE_CONSUMERS) {
+    const source = read(relative);
+    const hits = findLiteralsInCode(source, entryPage);
+    assert.deepEqual(
+      hits,
+      [],
+      `${relative} 在代码里写死了入口页名 ${entryPage}：只能来自 electron/pet-dev-endpoint.cjs 的 DEV_ENDPOINT.entryPage（注释里的提及不算违规）\n${hits.join('\n')}`,
+    );
+  }
+
+  // 反向确认真源确实写着这个入口页名，否则上面的扫描等于空转
+  assert.equal(read('electron/pet-dev-endpoint.cjs').includes(entryPage), true);
+
+  // 窗口侧两条分支都必须真的引用真源符号（不是"恰好没写死"而已）
+  const windowSource = read('electron/pet-window.cjs');
+  assert.match(windowSource, /const PET_ENTRY_PAGE = PET_DEV_ENDPOINT\.DEV_ENDPOINT\.entryPage;/);
+  assert.match(
+    windowSource,
+    /resolveEntrySpec\(\{ isDev, frontendRoot, rawUrl: process\.env\.ELECTRON_URL \}\)/,
+    'resolveEntry() 必须走纯函数 resolveEntrySpec，两条分支共用真源入口页名',
+  );
+});
+
+test('单一真源扫描器自证：注释里提及不算违规，代码里的字符串字面量算', () => {
+  const page = endpoint.DEV_ENDPOINT.entryPage;
+  // 注释里的提及（行注释 / 块注释）→ 不算违规
+  assert.deepEqual(findLiteralsInCode(`// 历史：/ ${page} 曾被兜成 index.html`, page), []);
+  assert.deepEqual(findLiteralsInCode(`/* ${page} 的由来 */`, page), []);
+  assert.deepEqual(findLiteralsInCode(`/**\n * 例如 \${url}${page}\n */`, page), []);
+
+  // 代码里的字符串字面量 → 必须被抓到（三种写法都覆盖）
+  assert.equal(findLiteralsInCode(`const u = 'http://127.0.0.1:5275/${page}';`, page).length, 1);
+  assert.equal(findLiteralsInCode(`const p = path.join(root, 'dist', "${page}");`, page).length, 1);
+  assert.equal(findLiteralsInCode('const v = `${base}' + page + '`;', page).length, 1);
+  // 字符串里的 // 不能被当成注释起点（否则会漏掉后半行的硬编码）
+  assert.equal(findLiteralsInCode(`const u = 'http://x/${page}'; // 尾注释`, page).length, 1);
+});
+
 
 test('Vite 覆盖项：strictPort 硬失败 + appType mpa 关闭 history fallback', () => {
   const overrides = endpoint.createPetViteOverrides();

@@ -325,6 +325,18 @@ function writeState(filePath, state) {
 const DEV_ENTRY_FALLBACK = PET_DEV_ENDPOINT.buildDevOrigin();
 
 /**
+ * 桌宠入口页文件名（`pet.html`）。
+ *
+ * <p><b>为什么不是字面量（K4）：</b>入口页名以前在 `resolveEntry()` 里写了两遍——
+ * dev 分支 `${url}pet.html`、dist 分支 `path.join(root,'dist','pet.html')`。
+ * 而探活侧（`electron/pet-dev-probe.cjs`）用的是真源里的 `entryPage`：
+ * <b>一处改名就变成"探活这个页面、窗口加载那个页面"</b>，与当初"探活指向主应用、
+ * 窗口指向别处"是同一类缺陷。所以只认 `electron/pet-dev-endpoint.cjs` 的
+ * `DEV_ENDPOINT.entryPage`，dev / dist 两条分支共用它。</p>
+ */
+const PET_ENTRY_PAGE = PET_DEV_ENDPOINT.DEV_ENDPOINT.entryPage;
+
+/**
  * 把 `ELECTRON_URL` 规整成一个可安全拼接的 base URL（恒以 `/` 结尾）。
  *
  * <p><b>为什么需要这层（真实事故）：</b>这个环境变量由批处理脚本设置，而
@@ -355,6 +367,36 @@ function resolveDevEntryUrl(raw) {
   }
   const href = parsed.toString();
   return href.endsWith('/') ? href : `${href}/`;
+}
+
+/**
+ * 计算桌宠窗口的入口（纯函数，不需要 Electron，便于单测）。
+ *
+ * <p>两条分支共用同一个入口页名 {@link PET_ENTRY_PAGE}（来自单一真源）：</p>
+ * <ul>
+ *   <li>开发态：`ELECTRON_URL` 规整后 + 入口页名，走 Vite 服务；</li>
+ *   <li>打包态：`&lt;frontendRoot&gt;/dist/` + 入口页名，走本地文件。</li>
+ * </ul>
+ *
+ * <p><b>为什么抽成纯函数（K4 副产物）：</b>原来这段逻辑埋在 `registerPetWindow` 的闭包里，
+ * 要测"入口页到底用了哪个名字"必须起 Electron。抽出来以后可以只喂参数就断言两条分支
+ * 都等于真源里的 `entryPage`，改名/硬编码会立刻被发现。</p>
+ *
+ * @param options 入参
+ * @param options.isDev 是否开发态
+ * @param options.frontendRoot 前端根目录（打包态解析 `dist/`）
+ * @param options.rawUrl `ELECTRON_URL` 原值（未可信：可能为空/带空格/带引号）
+ * @returns {{kind: 'url' | 'file', value: string}} 入口描述
+ * @throws {TypeError} 打包态未提供合法 `frontendRoot` 时抛出
+ */
+function resolveEntrySpec({ isDev, frontendRoot, rawUrl }) {
+  if (isDev === true) {
+    return { kind: 'url', value: `${resolveDevEntryUrl(rawUrl)}${PET_ENTRY_PAGE}` };
+  }
+  if (typeof frontendRoot !== 'string' || frontendRoot.trim() === '') {
+    throw new TypeError('resolveEntrySpec：打包态必须提供非空的 frontendRoot');
+  }
+  return { kind: 'file', value: path.join(frontendRoot, 'dist', PET_ENTRY_PAGE) };
 }
 
 /**
@@ -427,14 +469,14 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath }) {
   /**
    * 窗口入口：开发态走 Vite 服务，打包态走 dist 内的多入口产物。
    *
-   * <p>开发态 URL 一律经 {@link resolveDevEntryUrl} 规整：先解析校验再拼 `pet.html`，
+   * <p>开发态 URL 一律经 {@link resolveDevEntryUrl} 规整：先解析校验再拼入口页，
    * 不要反过来（历史上就是先拼字符串、空格落进主机名，抛 `Invalid URL` 崩主进程）。</p>
+   *
+   * <p>两条分支的入口页名都来自单一真源（见 {@link resolveEntrySpec}），
+   * 这里不再出现 `'pet.html'` 字面量：探活打哪个页面，窗口就加载哪个页面。</p>
    */
   function resolveEntry() {
-    if (isDev) {
-      return { kind: 'url', value: `${resolveDevEntryUrl(process.env.ELECTRON_URL)}pet.html` };
-    }
-    return { kind: 'file', value: path.join(frontendRoot, 'dist', 'pet.html') };
+    return resolveEntrySpec({ isDev, frontendRoot, rawUrl: process.env.ELECTRON_URL });
   }
 
   /** 清掉穿透合并定时器。 */
@@ -827,7 +869,9 @@ function registerPetWindow({ ipcMain, isDev, frontendRoot, statePath }) {
 module.exports = {
   registerPetWindow,
   resolveDevEntryUrl,
+  resolveEntrySpec,
   DEV_ENTRY_FALLBACK,
+  PET_ENTRY_PAGE,
   normalizeDimension,
   intersectArea,
   clampRectToWorkArea,
