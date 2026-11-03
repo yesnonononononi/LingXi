@@ -41,20 +41,30 @@ import java.util.concurrent.TimeUnit;
     executor = CommandToolDefinitionExecutor.class,
     description = """
         Execute a terminal command in the assigned workspace environment.
-        The command is handed as-is to the chosen shell. Omit shell to use the workspace default (cmd on Windows, bash on Linux). Set shell to cmd, pwsh or powershell on Windows, or bash, sh or pwsh on Linux, and write the script in that interpreter's syntax: the interpreter is not detected from the script.
-        The interpreter starts inside the same sandbox under the same approvals, timeout, cancellation and permission limits. A shell that is unsupported on this platform, missing or denied fails the call with an explicit error; it is never replaced by another shell. Output is decoded as UTF-8 for every supported interpreter.
-        Output may be truncated according to the configured maximum.
+        Before writing command, explicitly set shell on every call, including calls in the same batch. Each call starts a fresh process: it does not inherit shell selection or directory changes from previous calls. Repeat shell and any needed directory change in each call.
+        On Windows, prefer shell=pwsh for PowerShell scripts; use shell=powershell for Windows PowerShell. PowerShell statement separators (;), $variables, Set-Location and PowerShell pipelines require one of these shells. Use shell=cmd for CMD syntax such as cd /d, %VARIABLE% and CMD command chains. Do not mix CMD and PowerShell syntax: ; is not a CMD statement separator.
+        Set shell to cmd, pwsh or powershell on Windows, or bash, sh or pwsh on Linux. If shell is omitted, the workspace default applies (cmd on Windows, bash on Linux), NOT the shell from the previous call or your interactive terminal; explicitly select shell for new calls. The runtime does not infer the interpreter from command text. JavaScript inside a quoted node -e argument does not select the outer shell; choose shell for the surrounding cd, separators and quoting.
+        If parsing or path syntax fails, first check shell on the failing call before changing paths or embedded JavaScript.
+        PowerShell example:
+        ```json
+        {"shell":"pwsh","command":"Set-Location -LiteralPath 'D:/repo'; node -e \\"console.log(process.cwd())\\"","intention":"Inspect the repository working directory"}
+        ```
+        CMD example:
+        ```json
+        {"shell":"cmd","command":"cd /d \\"D:/repo\\" && node -e \\"console.log(process.cwd())\\"","intention":"Inspect the repository working directory"}
+        ```
+        The command is handed as-is to the chosen shell inside the same sandbox under the same approvals, timeout, cancellation and permission limits. An unsupported, missing or denied shell fails explicitly; it is never replaced by another shell. Output is decoded as UTF-8 and may be truncated according to the configured maximum.
         Set background=true to return a persisted taskId immediately. Completion is reported to this execution automatically; use manage_command to inspect or stop tasks.
-        Always state in `intention` what the command is for; it is displayed to the user in the UI next to the command, so make it specific and human-readable.
+        Always state in intention what the command is for; it is displayed to the user in the UI, so make it specific and human-readable.
         """,
     parameters = @ObjectValue(
         properties = {
             @ToolProperty(key = "command", value = @Value(
                 type = ValueType.STRING,
-                description = "Raw command text, passed unchanged to the selected shell. The interpreter does not detect script languages: a bare PowerShell script is not valid input for cmd, so choose the shell that matches the syntax. Quoting, relative paths and the working directory behave as inside that interpreter.")),
+                description = "Raw command text for the explicitly selected shell. The runtime does not detect script languages. Match the outer script syntax to shell: PowerShell uses Set-Location and ; while CMD uses cd /d and &&. Quote embedded node -e JavaScript for that shell; semicolons inside its quoted argument are not outer shell separators. Directory changes last only for this call.")),
             @ToolProperty(key = "shell", value = @Value(
                 type = ValueType.STRING,
-                description = "Interpreter that runs this command. Omit it to use the workspace default. Windows supports cmd, pwsh and powershell; Linux supports bash, sh and pwsh. An unsupported, missing or denied interpreter fails the call explicitly instead of falling back to another shell.",
+                description = "Explicitly set shell on every call; it is not remembered between calls, including calls in the same batch. Choose pwsh or powershell for PowerShell syntax, cmd for CMD, or bash/sh for POSIX scripts on Linux. Omission uses the workspace default (cmd on Windows, bash on Linux), not the previously selected shell. Unsupported, missing or denied shells fail without fallback.",
                 stringValue = @StringValue(enums = {"cmd", "pwsh", "powershell", "bash", "sh", "zsh"}))),
             @ToolProperty(key = "intention", value = @Value(
                 type = ValueType.STRING,
