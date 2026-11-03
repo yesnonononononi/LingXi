@@ -24,7 +24,10 @@ const EXPECT = {
   breathMinTopShift: 8,
   breathMaxAsymmetry: 4,
   breathDisplayWidth: 234,
-  breathMinDisplayDiffPct: 8,
+  // C8 是二级佐证，主判据是 C7（直接量位移场的幅度与对称性）。
+  // 阈值刻意留余量：实测 8.5% 左右，若把线画在 8% 就等于把"当前实测值"抄成"要求"，
+  // 任何无害改动（哪怕只是重算路径变了）都会误报，人就会开始无视它。
+  breathMinDisplayDiffPct: 6,
   curledMaxIou: 0.75,
   irisRatio: { min: 0.65, max: 0.92 },
 };
@@ -365,7 +368,7 @@ check('C7', '呼吸两帧只动躯干带；带中央顶边位移 吸气≥+8 / �
     + '  （L/R 为左右各 100 列的顶边位移，正=上移、负=下移）';
 });
 
-check('C8', '呼吸两帧在 234px 显示尺度差异 >=8% 墨迹', () => {
+check('C8', '呼吸两帧在 234px 显示尺度差异 >=6% 墨迹（主判据见 C7）', () => {
   const a = toDisplay(frames.breathIn.masterImg, EXPECT.breathDisplayWidth);
   const b = toDisplay(frames.breathOut.masterImg, EXPECT.breathDisplayWidth);
   const r = displayDiffPct(a, b, EXPECT.diffTolerance);

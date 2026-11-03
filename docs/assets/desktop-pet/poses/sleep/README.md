@@ -91,7 +91,7 @@ node docs/assets/desktop-pet/poses/sleep/tools/check-sleep.mjs
 | C6 | 呼吸帧与 neutral 比：`|Δwidth|/w ≤ 2%` 且 `|Δheight|/h ≤ 2%`，且**宽高不得同向变化 >1%**（「轮廓完全不动」会禁止呼吸，「按比例整体缩放」才是作弊，两者必须能区分）；`startle` 仍按「与 lie 睁眼帧同轮廓」逐值比对 |
 | C6b | 每帧在「作者声明区域并集」之外与 neutral **逐像素零变化**（outsidePixels=0 且 outsideMaxDelta=0） |
 | C7 | 呼吸两帧带内变化 >5000px；带中央 `x1050..1150` 顶边位移 **吸气 ≥ +8 / 呼气 ≤ −8 native px**，且两者幅度差 ≤4px、左右两侧差 ≤4px（对称），腹部贴地带零变化 |
-| C8 | 呼吸两帧在 **234px 显示尺度**差异 ≥8% 墨迹（实测 8.30%） |
+| C8 | 呼吸两帧在 **234px 显示尺度**差异 ≥6% 墨迹（实测 8.30%，阈值刻意留余量；幅度/对称的**主判据**是 C7） |
 | C9 | 蜷睡与趴睡 IoU<0.75 且 bbox 至少两处不同（实测 IoU 0.684） |
 | C10 | `source/` 直出图+native+蒙版齐全，manifest.sources 与磁盘一致 |
 | C11 | `status === 'awaiting-static-review'` 且 `review.approvedBy === null` |
