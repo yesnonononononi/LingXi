@@ -128,6 +128,8 @@ class ImageGenerationFlowTest {
             assertEquals(1,accepted.path("code").asInt(),accepted.toString());
             long turnId=accepted.path("data").path("turnId").asLong();
             await().atMost(Duration.ofSeconds(60)).until(()->turns.findById(turnId).map(turn->turn.getStatus().isTerminal()).orElse(false));
+            // 终态投影先于完成事件，用量由随后事件入账，不能把状态可见当作用量已保存。
+            await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertEquals(125L, turns.findById(turnId).orElseThrow().getTotalTokenCount()));
             ChatTurn turn=turns.findById(turnId).orElseThrow();
             assertEquals(ChatTurnStatus.COMPLETED,turn.getStatus(),turn.getErrorReason());
             assertEquals(1,imageCalls.get());assertEquals(2,chatCalls.get());

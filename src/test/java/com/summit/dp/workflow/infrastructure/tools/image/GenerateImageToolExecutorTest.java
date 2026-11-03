@@ -59,7 +59,7 @@ class GenerateImageToolExecutorTest {
                 .aiMessageEntity(AiMessageEntity.builder().images(List.of(Image.from(Base64.getEncoder().encodeToString(png())))).build())
                 .tokenUsage(TokenUsageEntity.of(95, 15, 80)).build());
         return new GenerateImageToolExecutor(mapper, models, providers, new GeneratedImageFileWriter(),
-                new ImageCacheDirectory(root.resolve("cache").toString()), new ImageGenerationSpecValidator());
+                new ImageCacheDirectory(root.resolve("cache").toString()), new ImageGenerationSpecValidator(), new ReferenceImageLoader());
     }
 
     private ToolExecution call(String path) throws Exception {
@@ -183,6 +183,8 @@ class GenerateImageToolExecutorTest {
         assertEquals(mapper.valueToTree(List.of("prompt", "path")), schema.path("required"));
         assertFalse(schema.path("additionalProperties").asBoolean());
         JsonNode properties = schema.path("properties");
+        assertEquals("string", properties.path("reference_image_path").path("type").asText());
+        assertTrue(properties.path("reference_image_path").path("description").asText().contains("绝对路径"));
         assertEquals("string", properties.path("size").path("type").asText());
         assertTrue(properties.path("size").path("description").asText().contains("可不传"));
         assertTrue(properties.path("size").path("description").asText().contains("1024x1024"));
