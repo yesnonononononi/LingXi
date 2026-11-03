@@ -2,6 +2,7 @@ package com.summit.dp.workflow.infrastructure.lifecycle;
 
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
+import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.dp.email.application.command.MailSendContext;
 import com.summit.dp.email.application.service.EmailService;
@@ -57,7 +58,7 @@ public class SubAgentCompleteNotifier {
             case CANCELLED -> "已取消";
             default -> throw new ClientException("子执行尚未结束");
         };
-        String content = String.format("成员 @%s 的子任务%s（子会话：%s，执行：%s）。请核验工作目录中的产物并继续后续安排。",
+        String content = String.format("【系统自动通知】成员 @%s 的子任务%s（子会话：%s，执行：%s）。请核验工作目录中的产物并继续后续安排。",
                 senderAgentId, outcome, ExecutionIdentity.sessionId(subExecution), childExecutionId);
         if (subExecution.getExecutionState() == ExecutionState.FAILED) {
             // 框架失败检查点已保存异常 getMessage()，通知沿用原文，避免丢掉诊断信息。
@@ -65,6 +66,14 @@ public class SubAgentCompleteNotifier {
             content += "\n异常信息：" + (errorMessage == null || errorMessage.isBlank() ? "异常未提供详细信息" : errorMessage)
                     + "\n请立即评估失败影响，检查现有产物，采取修复、补做或重新委派等措施；其他仍在执行的子任务无需重复委派。";
         }
+
+        // 失败或取消时可能停在工具轮次，不能把中间回复当作最终交付。
+        AiMessageEntity reply = subExecution.getAiMessage();
+        String finalText = reply == null || (reply.getToolCalls() != null && !reply.getToolCalls().isEmpty())
+                ? null : reply.text();
+        content += finalText == null || finalText.isBlank()
+                ? "\n\n本次执行未产生最终答复。"
+                : "\n\n子 Agent 最终答复（系统转交原文）：\n" + finalText;
 
         String dedupKey = "sub-agent-finished:" + childExecutionId + ":" + commanderId;
 

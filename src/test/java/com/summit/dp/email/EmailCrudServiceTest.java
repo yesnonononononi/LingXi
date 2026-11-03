@@ -12,6 +12,7 @@ import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.ExecutionState;
 import com.summit.core.conversation.message.Message;
+import com.summit.core.conversation.message.AiMessageEntity;
 import com.summit.core.runtime.loop.ExecutionControlSignal;
 import com.summit.core.runtime.loop.ExecutionRepository;
 import com.summit.core.runtime.loop.LoopContext;
@@ -131,6 +132,8 @@ class EmailCrudServiceTest {
         when(provider.getObject()).thenReturn(executions);
         when(executions.findById("900")).thenReturn(Optional.of(root));
         SubAgentCompleteNotifier notifier = new SubAgentCompleteNotifier(provider, service);
+        String finalText = "验收报告：.lingxi/qa-report.md\n" + "验收证据与结论。".repeat(600);
+        child.setAiMessage(AiMessageEntity.builder().text(finalText).thinking("不转交的思考内容").build());
         notifier.notifyCommander(child);
         notifier.notifyCommander(child);
         List<Message> appended = new ArrayList<>();
@@ -141,6 +144,9 @@ class EmailCrudServiceTest {
         assertEquals(1, appended.size());
         assertTrue(appended.getFirst().text().contains("成员 @8 的子任务已完成"));
         assertTrue(appended.getFirst().text().contains("协作消息"));
+        assertTrue(appended.getFirst().text().contains("【系统自动通知】"));
+        assertTrue(appended.getFirst().text().contains("子 Agent 最终答复（系统转交原文）：\n" + finalText));
+        assertFalse(appended.getFirst().text().contains("不转交的思考内容"));
         notifier.notifyCommander(child);
         interceptor.onBeforeModelInvoke(context);
         assertEquals(1, appended.size());
