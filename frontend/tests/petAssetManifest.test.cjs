@@ -329,14 +329,15 @@ test('check 模式：清单与磁盘一致时退出码 0', { skip: SKIP_NO_ASSET
 
 // ---------------------------------------------------------------- 美术源（在场才校验）
 
-test('美术源：runtime 清单与母版清单的 8 档表情、眨眼映射与我们一致', () => {
+test('美术源：runtime 清单与母版清单的 8 档表情、眨眼映射与我们一致', (t) => {
   const sourceDir = detectSourceDir();
   const runtimeManifest = readRuntimeManifest(sourceDir);
   const masterManifest = existsSync(resolve(sourceDir, 'manifest.json'))
     ? JSON.parse(readFileSync(resolve(sourceDir, 'manifest.json'), 'utf8'))
     : null;
   if (!runtimeManifest) {
-    assert.ok(true, `美术源不在本机（${sourceDir}），跳过契约校验`);
+    // node:test 原生跳过：输出里记 skipped、不计 PASS（旧写法 assert.ok(true) 是假绿）
+    t.skip(`美术源不在本机（${sourceDir}）：本用例做的是母版清单对账，无源可对，跳过`);
     return;
   }
   // 8 档表情 id 在母版清单里；运行时清单逐文件带 expressionId，两者应一致
@@ -364,11 +365,12 @@ test('美术源：runtime 清单与母版清单的 8 档表情、眨眼映射与
   );
 });
 
-test('美术源：composites 的 neutral 与 front-standing 是同一张（美术声明的等价关系）', () => {
+test('美术源：composites 的 neutral 与 front-standing 是同一张（美术声明的等价关系）', (t) => {
   const sourceDir = detectSourceDir();
   const runtimeManifest = readRuntimeManifest(sourceDir);
   if (!runtimeManifest) {
-    assert.ok(true, '美术源不在本机，跳过等价关系校验');
+    // node:test 原生跳过：输出里记 skipped、不计 PASS（旧写法 assert.ok(true) 是假绿）
+    t.skip('美术源不在本机：本用例比对美术声明的等价关系，无源可比，跳过');
     return;
   }
   const files = Array.isArray(runtimeManifest.files) ? runtimeManifest.files : [];

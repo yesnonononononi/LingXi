@@ -194,12 +194,14 @@ test('运行时资产头解析：@1x/@2x 都是 2:3 且为 2 倍关系（数据�
   assert.equal(neutral['2x'].height, neutral['1x'].height * 2);
 });
 
-test('母版 PNG 头解析：2048×3072（2:3，最近邻 2× 放大）', () => {
+test('母版 PNG 头解析：2048×3072（2:3，最近邻 2× 放大）', (t) => {
   const sourceDir = detectSourceDir();
   const runtimeManifest = readRuntimeManifest(sourceDir);
   if (!runtimeManifest) {
-    // 美术源不在本机（CI）：跳过而不是失败——美术资产是 gitignored 的暂存区/可选入库物
-    assert.ok(true, '源目录无 runtime 清单，跳过母版头解析');
+    // 「跳过伪装成通过」修正：node:test 原生跳过，输出记 skipped、不计 PASS。
+    // ⚠️ 注意前提已经变了：美术源（docs/assets/desktop-pet/v3）自 13752c2c 起正常入库，
+    // 常规 checkout 一定有它；只有刻意剥离资产的裁剪 checkout 才会走到这里。
+    t.skip('源目录无 runtime 清单（剥离美术资产的裁剪 checkout）：无母版可解析，跳过');
     return;
   }
   const masterPath = resolve(sourceDir, 'front-standing.png');

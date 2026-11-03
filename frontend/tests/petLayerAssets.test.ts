@@ -9,7 +9,7 @@
  * <p>覆盖：母版定位与掩膜路径、密度目标与压平帧同尺寸、`diskPathOf` 的口径差、
  * 清单字段缺失/体积/sha256/像素比例/缺档/孤儿/掩膜 七类硬错、以及"源不完整时优雅跳过"。</p>
  */
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -70,6 +70,33 @@ const SOURCE_DIR = defaultLayerSourceDir();
 function cloneManifest() {
   return JSON.parse(JSON.stringify(MANIFEST));
 }
+
+test('依赖契约：sharp 已声明为 devDependency 且本环境可解析（否则像素用例会被静默跳过）', async () => {
+  // 「跳过伪装成通过」的根因治理：sharp 现在是**声明过的** devDependency，
+  // 所以"没装"不该再表现成绿——这里直接红，并点名怎么修。
+  const pkg = JSON.parse(readFileSync(join(FRONTEND_ROOT, 'package.json'), 'utf8')) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+  const declared = pkg.devDependencies?.sharp;
+  assert.equal(
+    typeof declared === 'string' && declared.length > 0,
+    true,
+    'sharp 必须写进 devDependencies：scripts/build-pet-assets.mjs / scripts/build-pet-face-tiles.mjs 与本文件都依赖它，'
+      + '只有声明了，换台机器 npm ci 之后才不会是红的',
+  );
+  assert.equal(
+    pkg.dependencies?.sharp,
+    undefined,
+    'sharp 只给构建脚本与测试用（运行时桌宠不加载它），不要放进 dependencies',
+  );
+  const sharp = await loadSharp();
+  assert.notEqual(
+    sharp,
+    null,
+    `devDependencies 里已声明 sharp(${declared})，但当前环境解析不到：先 npm install；否则本文件 3 个像素级用例只会被跳过`,
+  );
+});
 
 test('母版目录与运行时目录指向仓库内的固定位置（不写死楼层数）', () => {
   assert.equal(sourceDirPresent(SOURCE_DIR), true, `P1 母版目录不存在: ${SOURCE_DIR}`);
@@ -181,10 +208,11 @@ test('validateAgainstDisk：缺一整档、空 files、体积/sha256 篡改、�
   assert.match(validateAgainstDisk(badClaim, { outDir: DEFAULT_LAYER_OUT_DIR }).join(';'), /像素尺寸不一致/);
 });
 
-test('validateAgainstDisk：真实文件不是 2:3 时点名比例（临时生成一张 160×230）', async () => {
+test('validateAgainstDisk：真实文件不是 2:3 时点名比例（临时生成一张 160×230）', async (t: TestContext) => {
   const sharp = await loadSharp();
   if (!sharp) {
-    assert.ok(true, '未安装 sharp，跳过（sharp 是 devDependency，正常环境会有）');
+    // node:test 原生跳过：输出里记 skipped、不计 PASS（旧写法 assert.ok(true) 是假绿）
+    t.skip('未安装 sharp（devDependency）：本用例要临时编码一张比例错误的 webp，无 sharp 无法执行');
     return;
   }
   const dir = mkdtempSync(join(tmpdir(), 'pet-layers-aspect-'));
@@ -304,10 +332,11 @@ test('validateAgainstDisk：单层超预算与合计超预算都要点名（不�
   assert.match(totalProblems, /超出层增量预算/);
 });
 
-test('transcodeLayer：lossless 超预算自动降有损，且 format/字节如实回传', async () => {
+test('transcodeLayer：lossless 超预算自动降有损，且 format/字节如实回传', async (t: TestContext) => {
   const sharp = await loadSharp();
   if (!sharp) {
-    assert.ok(true, '未安装 sharp，跳过（sharp 是 devDependency，正常环境会有）');
+    // node:test 原生跳过：输出里记 skipped、不计 PASS（旧写法 assert.ok(true) 是假绿）
+    t.skip('未安装 sharp（devDependency）：本用例要真实转码一张噪声图，无 sharp 无法执行');
     return;
   }
   const dir = mkdtempSync(join(tmpdir(), 'pet-layers-transcode-'));
@@ -350,10 +379,11 @@ test('transcodeLayer：lossless 超预算自动降有损，且 format/字节如�
   }
 });
 
-test('transcodeLayer：非 2:3 母版直接拒绝（不偷偷裁切）', async () => {
+test('transcodeLayer：非 2:3 母版直接拒绝（不偷偷裁切）', async (t: TestContext) => {
   const sharp = await loadSharp();
   if (!sharp) {
-    assert.ok(true, '未安装 sharp，跳过');
+    // node:test 原生跳过：输出里记 skipped、不计 PASS（旧写法 assert.ok(true) 是假绿）
+    t.skip('未安装 sharp（devDependency）：本用例要真实读一张 64×64 母版走拒绝分支，无 sharp 无法执行');
     return;
   }
   const dir = mkdtempSync(join(tmpdir(), 'pet-layers-bad-aspect-'));
