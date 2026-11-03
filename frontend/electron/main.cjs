@@ -5,8 +5,7 @@ const backend = require('./backend.cjs');
 const { registerFilePreview } = require('./file-preview.cjs');
 const { registerBackgroundImages } = require('./background-images.cjs');
 const { registerNotificationWindow, normalizePayload } = require('./notification-window.cjs');
-const { registerPetWindow } = require('./pet-window.cjs');
-const { registerLxSchemePrivileges, registerLxProtocol } = require('./lx-protocol.cjs');
+const { createDisabledPet, resolvePetExposure } = require('./pet-feature-gate.cjs');
 
 const { createUpdater } = require('./updater.cjs');
 
@@ -65,12 +64,32 @@ const notifications = registerNotificationWindow({
 });
 
 /**
+ * 桌宠暴露开关（单一真源：`electron/pet-feature-gate.cjs`）。
+ *
+ * <p>用户硬约束：桌宠只在开发链（`pet-up.cmd` / `npm run dev:pet`）可见，
+ * <b>安装版不得出现桌宠入口</b>。判定口径全部收敛在那个纯函数里
+ * （安装版恒关且 env 不得覆盖；开发态默认开、`LX_PET=0` 可关），这里不写第二处判断。</p>
+ */
+const petExposure = resolvePetExposure({ isPackaged: app.isPackaged });
+
+/**
  * 桌宠窗口管理器（阶段一：透明置顶 + 点击穿透 + 自定义拖拽 + 位置持久化）。
  *
  * <p>与通知窗口一样在这里注册：它需要 isDev / frontendRoot 解析入口页面，
  * 且装配早于托盘菜单（托盘要按它的可见性渲染勾选项）。</p>
+ *
+ * <p>门禁关闭时不 require 桌宠模块、不建窗口，用 {@link createDisabledPet} 的空对象兜底——
+ * 下游 `pet.show()` / `pet.isVisible()` / `pet.destroy()` 等调用零分叉。</p>
  */
-const pet = registerPetWindow({ ipcMain, isDev, frontendRoot });
+const pet = petExposure.enabled
+  ? require('./pet-window.cjs').registerPetWindow({ ipcMain, isDev, frontendRoot })
+  : createDisabledPet();
+
+/**
+ * 桌宠资源协议模块（`lxa://`）。它只服务桌宠资源，主应用零使用 ⇒ 门禁关闭时连 require 都不做
+ * （打包态的包里因此不会有"被加载的桌宠代码路径"）。
+ */
+const lxProtocol = petExposure.enabled ? require('./lx-protocol.cjs') : null;
 
 /**
  * 桌宠资源的 `lxa://` 协议特权。
@@ -78,7 +97,7 @@ const pet = registerPetWindow({ ipcMain, isDev, frontendRoot });
  * <p>⚠️ 必须在 ready 之前登记：ready 之后登记会抛异常且不生效，表现就是
  * `lxa://` 被当成未知 scheme，模型永远加载不出来。</p>
  */
-registerLxSchemePrivileges();
+if (lxProtocol) lxProtocol.registerLxSchemePrivileges();
 
 
 // 后端日志与工作目录都放 userData：安装到 Program Files 后应用目录不可写
@@ -352,14 +371,20 @@ function buildTrayMenu() {
         }
       },
     },
-    {
-      label: '显示桌宠',
-      type: 'checkbox',
-      checked: pet.isVisible(),
-      click: () => {
-        pet.toggle();
-      },
-    },
+    // 桌宠菜单项只在门禁开启时拼装：安装版不得出现桌宠入口（用户硬约束 #3）。
+    // 用展开而不是 `visible: false`：后者在部分平台仍留一条不可点的空行。
+    ...(petExposure.enabled
+      ? [
+          {
+            label: '显示桌宠',
+            type: 'checkbox',
+            checked: pet.isVisible(),
+            click: () => {
+              pet.toggle();
+            },
+          },
+        ]
+      : []),
     { type: 'separator' },
     {
       label: '彻底退出',
@@ -543,12 +568,14 @@ app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return;
 
   // 桌宠资源协议：ready 之后才能 handle。失败不影响主应用（模型加载不到而已）
-  try {
-    // 开发态额外挂上 public/live2d：否则改完素材要先 build 一次才被桌宠看见
-    const extraBases = isDev ? [path.join(frontendRoot, 'public', 'live2d')] : [];
-    registerLxProtocol({ userDataDir, appRoot: app.getAppPath(), extraBases });
-  } catch (err) {
-    console.warn(`[lxa] 协议注册失败（桌宠模型将加载不出来）: ${(err && err.message) || err}`);
+  if (lxProtocol) {
+    try {
+      // 开发态额外挂上 public/live2d：否则改完素材要先 build 一次才被桌宠看见
+      const extraBases = isDev ? [path.join(frontendRoot, 'public', 'live2d')] : [];
+      lxProtocol.registerLxProtocol({ userDataDir, appRoot: app.getAppPath(), extraBases });
+    } catch (err) {
+      console.warn(`[lxa] 协议注册失败（桌宠模型将加载不出来）: ${(err && err.message) || err}`);
+    }
   }
 
   // 先起后端再建窗口：前端一加载就发请求，后端没就绪会满屏请求失败
@@ -561,6 +588,7 @@ app.whenReady().then(async () => {
   let petReady = false;
   // 用返回值判成败，不用 pet.isVisible()：showInactive() 之后要等 ready-to-show
   // 才真正可见，紧接着读 isVisible() 会是 false，把建好的桌宠误判成失败。
+  // 门禁关闭时 pet 是空对象，show() 恒为 false ⇒ petReady 保持 false（没有任何窗口被建出来）。
   try {
     petReady = !!pet.show();
   } catch (err) {
