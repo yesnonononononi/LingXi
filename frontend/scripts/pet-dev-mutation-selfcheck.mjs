@@ -255,9 +255,12 @@ const MUTATIONS = [
     file: 'src/pet/behavior/state-machine.ts',
     find: "      expressionOp('blink', 0, 'behavior:sleep:expression', undefined, 'base'),",
     replace: "      expressionOp('sleepy', 0, 'behavior:sleep:expression', undefined, 'base'),",
-    // 守卫只跑 E08/E03 组（快），截图落独立目录，避免覆盖正式验收的证据图
+    // 守卫只跑 E08/E03 组（快），截图落独立目录，避免覆盖正式验收的证据图。
+    // 用 `--out=` 单 token 形式：本机实测 `--out <path>`（以及 `--xx yy` 这类未知参数对）
+    // 会让 Electron 启动即崩——退出码 -1、stdout/stderr 全空，第一行插 console.error 也不打印，
+    // 崩在 JS 执行之前；`--key=value` 形式稳定。改成单 token 后不改变任何断言语义。
     command:
-      'npm run guard:pet:face -- --only E08,E03 --out D:/Code/LingXi/.lingxi/tmp/pet-face-guard/mutant-p4',
+      'npm run guard:pet:face -- --only E08,E03 --out=D:/Code/LingXi/.lingxi/tmp/pet-face-guard/mutant-p4',
     // 守卫会复用端口上已在跑的 dev server：端口属于别的工作区时，这条无法在本工作区复验
     requiresOwnDevServer: true,
     expect: 'FAIL(两档同形)',
