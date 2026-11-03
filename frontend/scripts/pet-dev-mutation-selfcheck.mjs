@@ -334,6 +334,19 @@ const MUTATIONS = [
     testFile: 'tests/petAssetTracking.test.cjs',
     expect: '在 git 历史里存在（曾交付过），但索引为空',
   },
+  {
+    id: 'delivered-batch-new-frame-red',
+    goal: '把判据改回"磁盘有、索引没有就硬失败"（原始粒度缺陷）：已交付批次里美术刚补的在产新帧会被算成失败，'
+      + '"在产新文件不该被算作失败"必须变红',
+    file: 'tests/petAssetTracking.test.cjs',
+    // 这条正是"按来源拆开"的实现：HEAD 树里有才算真丢文件。改成恒真 = 退回原始判据。
+    find: '    const inHeadTree = head !== null && head.has(item);',
+    replace: '    const inHeadTree = true;',
+    // 探针落在**已交付批次** poses/sit/ 里：批次早交付了、美术又补一帧，M2 每批都会重演
+    probeFiles: ['docs/assets/desktop-pet/poses/sit/zz-probe-newframe.png'],
+    testFile: 'tests/petAssetTracking.test.cjs',
+    expect: 'zz-probe-newframe.png',
+  },
   // ---------------------------------------------------------------- 启动器收敛（不许绕过单一真源 / 不许写死绝对路径）
   {
     id: 'launcher-port-literal',
@@ -361,6 +374,92 @@ const MUTATIONS = [
 const INFLIGHT = new Map();
 
 /**
+ * 在飞的**探针文件**（变异体造出来的"在产新帧"；进程被中断时据此删掉）。
+ *
+ * <p>探针只存在于磁盘上：不进索引、不在 HEAD 里——正是"美术刚画出来还没 add"的形态。</p>
+ *
+ * @type {string[]}
+ */
+const INFLIGHT_PROBES = [];
+
+/** 探针文件的字节（1×1 透明 PNG，真实可解码，避免被任何图片嗅探当成坏文件）。 */
+const PROBE_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==';
+
+/**
+ * 造出变异体需要的"在产新帧"探针文件（磁盘有、索引无、HEAD 也没有）。
+ *
+ * <p><b>为什么必须由变异体自己造：</b>"在产新帧只警告"这条修复点，只有在工作区里**真的存在**
+ * 一个未入库新帧时才可观测。不能指望"美术当时正好在产"——在干净工作树上，那条变异体会
+ * 变异前后都绿，于是被记成假 PASS。造一个、用完删掉，才是可复现的验证。</p>
+ *
+ * <p>探针默认落在**已交付批次**里（`poses/sit/`）：这正是 M2 反复踩到的形态——批次早就
+ * 交付了，美术又给它补新帧。旧判据（"磁盘有、索引无 ⇒ 硬失败"）在这里必红。</p>
+ *
+ * @param {{id: string, probeFiles?: string[]}} mutation 变异体（可选 `probeFiles`：仓库相对路径）
+ * @returns {string[]} 已创建的绝对路径
+ * @throws {Error} 探针路径逃出仓库、或目标已存在时抛出
+ */
+function createProbeFiles(mutation) {
+  const relPaths = Array.isArray(mutation.probeFiles) ? mutation.probeFiles : [];
+  /** @type {string[]} */
+  const created = [];
+  for (const relPath of relPaths) {
+    const absPath = path.resolve(REPO_ROOT, String(relPath));
+    if (!absPath.startsWith(REPO_ROOT + path.sep)) {
+      throw new Error(`${mutation.id}：探针路径逃出仓库，拒绝创建：${relPath}`);
+    }
+    if (existsSync(absPath)) {
+      throw new Error(`${mutation.id}：探针文件已存在（可能是上次中断的残留），拒绝覆盖：${relPath}`);
+    }
+    mkdirSync(path.dirname(absPath), { recursive: true });
+    writeFileSync(absPath, Buffer.from(PROBE_PNG_BASE64, 'base64'));
+    created.push(absPath);
+  }
+  if (created.length > 0) {
+    INFLIGHT_PROBES.push(...created);
+    const shown = created.map((item) => path.relative(REPO_ROOT, item).split(path.sep).join('/')).join('、');
+    console.log(`  探针：造出在产新帧（磁盘有、索引无、HEAD 也没有）${shown}`);
+  }
+  return created;
+}
+
+/**
+ * 删掉探针文件（以及因此变空的父目录，最多收到资产根），并核对确实删干净了。
+ *
+ * @param {string[]} created {@link createProbeFiles} 的返回值
+ * @returns {boolean} 是否全部删除干净
+ */
+function removeProbeFiles(created) {
+  const list = Array.isArray(created) ? created : [];
+  let ok = true;
+  const stopAt = path.join(REPO_ROOT, 'docs', 'assets');
+  for (const absPath of list) {
+    try {
+      rmSync(absPath, { force: true });
+    } catch {
+      ok = false;
+    }
+    if (existsSync(absPath)) {
+      ok = false;
+      continue;
+    }
+    const at = INFLIGHT_PROBES.indexOf(absPath);
+    if (at >= 0) INFLIGHT_PROBES.splice(at, 1);
+    // 顺手收掉变空的父目录：rmSync 对非空目录会抛，正好不会动别人的目录
+    let dir = path.dirname(absPath);
+    while (dir.length > stopAt.length) {
+      try {
+        rmSync(dir);
+      } catch {
+        break;
+      }
+      dir = path.dirname(dir);
+    }
+  }
+  return ok;
+}
+
+/**
  * 还原全部在飞变异。
  *
  * @returns {void}
@@ -382,6 +481,12 @@ function restoreAll() {
     } catch (err) {
       console.error(`[mutate] 索引还原失败（请手动 git add 对应资产）：${(err && err.message) || err}`);
     }
+  }
+  // 探针文件必须删掉：留在 assets 里就成了"美术没提交的新帧"，会污染下一次运行
+  if (INFLIGHT_PROBES.length > 0) {
+    const probes = INFLIGHT_PROBES.slice();
+    if (removeProbeFiles(probes)) console.error('[mutate] 探针文件已清理');
+    else console.error(`[mutate] 探针文件清理失败（请手动删）：${probes.join('、')}`);
   }
 }
 
@@ -674,22 +779,37 @@ function restoreBatchIndexMutation(info) {
  * @returns {object} 还原所需信息
  */
 function applyMutationByKind(mutation) {
-  if (mutation.kind === 'index') return applyIndexMutation(mutation);
-  if (mutation.kind === 'batch-index') return applyBatchIndexMutation(mutation);
-  return applyMutation(mutation);
+  // 探针先造：它模拟"美术刚画出来、还没 add"的在产新帧，是本次修复点的可观测前提
+  const probeFiles = createProbeFiles(mutation);
+  let applied;
+  try {
+    if (mutation.kind === 'index') applied = applyIndexMutation(mutation);
+    else if (mutation.kind === 'batch-index') applied = applyBatchIndexMutation(mutation);
+    else applied = applyMutation(mutation);
+  } catch (err) {
+    // 失败路径：探针绝不能留在工作区
+    removeProbeFiles(probeFiles);
+    throw err;
+  }
+  return { ...applied, probeFiles };
 }
 
 /**
- * 按变异体的 `kind` 选择还原方式。
+ * 按变异体的 `kind` 选择还原方式（并删掉探针文件）。
  *
  * @param {object} mutation 变异体
  * @param {object} applied 注入时返回的还原信息
- * @returns {boolean} 是否还原干净
+ * @returns {boolean} 是否还原干净（文本逐字节一致 + 探针已删）
  */
 function restoreMutationByKind(mutation, applied) {
-  if (mutation.kind === 'index') return restoreIndexMutation(applied);
-  if (mutation.kind === 'batch-index') return restoreBatchIndexMutation(applied);
-  return restoreMutation(applied.absPath, applied.original);
+  let textOk = false;
+  if (mutation.kind === 'index') textOk = restoreIndexMutation(applied);
+  else if (mutation.kind === 'batch-index') textOk = restoreBatchIndexMutation(applied);
+  else textOk = restoreMutation(applied.absPath, applied.original);
+  const probes = Array.isArray(applied.probeFiles) ? applied.probeFiles : [];
+  const probesGone = removeProbeFiles(probes);
+  if (probes.length > 0) console.log(`  探针：删除 ${probes.length} 个 ${probesGone ? 'OK' : 'FAIL'}`);
+  return textOk && probesGone;
 }
 
 /**

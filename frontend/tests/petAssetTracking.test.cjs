@@ -17,14 +17,22 @@
  * `git rm --cached` 掉"。逐文件比对（磁盘 vs `git ls-files`）才能抓住这种静默缺失，
  * 例外只能来自 {@link TRACKING_WHITELIST}，且必须写明理由。</p>
  *
- * <p><b>为什么区分"已交付批次"与"在产批次"：</b>仓库里同时有美术在产的新批次（M2 共 9 批），
- * 它们的"磁盘有、索引无"是正常中间态。若一律硬失败，`test:pet` 会在美术工作期间长期飘红，
- * 最后一定有人去删断言来换绿。所以口径是：</p>
+ * <p><b>为什么"磁盘有、索引无"必须按来源拆开（本文件的核心判据）：</b>同一句"磁盘有、索引无"
+ * 其实是两件性质完全不同的事，混成一条就只能靠"批次在不在 {@link DELIVERED_PREFIXES}"来开关，
+ * 粒度不对：</p>
  * <ul>
- *   <li>已交付批次漏文件、或批次内**部分**入库（静默丢文件）→ 硬失败；</li>
- *   <li>整批未入库（在产）→ 打印警告、不计入通过；置 `LX_PET_TRACKING_STRICT=1` 时同样硬失败
- *       （CI 是干净 checkout，两种模式结论一致，交付验收建议用严格模式）。</li>
+ *   <li><b>文件在 HEAD 树里、但不在索引里 ⇒ 真丢文件，硬失败</b>。这类正是
+ *       `git rm --cached` / 错误 checkout / 坏 merge 的形态：文件曾经入库过，换台机器就没了。
+ *       判据用 `git ls-tree -r HEAD`——客观记录，不依赖任何手工清单，浅克隆下同样可用
+ *       （`git log -- <path>` 在 depth=1 的 checkout 上查不到历史）。</li>
+ *   <li><b>磁盘有、索引无、HEAD 里也没有 ⇒ 在产新帧，仅警告</b>。这是美术刚画出来、
+ *       还没 `git add` 的正常施工态（M2 每开一批都会发生）。打印
+ *       `[pet-asset] 在产新帧（未入库，未计入通过）：…` 并<b>不计入通过</b>；
+ *       置 `LX_PET_TRACKING_STRICT=1` 时仍然硬失败（CI 是干净 checkout，
+ *       两种模式结论一致，交付验收建议用严格模式）。</li>
  * </ul>
+ * <p>两条互不干扰：已交付批次里冒出新帧（美术给 `poses/sleep/` 补呼吸帧）只警告，
+ * 而任何"曾经入库、现在索引里没有"的文件都必红——不会因为清单漏维护而失明。</p>
  * <p>注意：真正"交付了但不可复现"的原始缺陷（被 `.gitignore` 吞掉）走的是上面那条
  * `check-ignore --no-index` 断言，**不受任何白名单或模式影响**，永远硬失败。</p>
  *
@@ -168,17 +176,37 @@ function lastCommitTouching(relPath) {
 }
 
 /**
+ * 会被"外部一次性索引"污染的 git 环境变量（见 {@link runGit} 的 `scrubGitEnv`）。
+ *
+ * <p>变异自检会用 `GIT_INDEX_FILE` 把子进程的索引指到一次性副本上（这是"不许动真实索引"
+ * 的实现方式），所以本文件**必须**尊重继承来的 `GIT_INDEX_FILE`——否则那类变异体永远测不出来。
+ * 但"在临时仓库里跑 git"的用例恰恰相反：继承来的 `GIT_DIR`/`GIT_INDEX_FILE` 会把它指到
+ * 别的仓库去，必须清掉。</p>
+ *
+ * @type {string[]}
+ */
+const GIT_ENV_SCRUB = ['GIT_INDEX_FILE', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_OBJECT_DIRECTORY', 'GIT_COMMON_DIR'];
+
+/**
  * 执行一条 git 命令。
  *
  * @param {string[]} args git 参数（不含 `git` 本身与 `-C`）
- * @param {{input?: string, allowExit?: number[]}} [options] 输入与允许的退出码
+ * @param {{input?: string, allowExit?: number[], cwd?: string, scrubGitEnv?: boolean}} [options]
+ *   输入、允许的退出码、工作仓库（`cwd` 默认 {@link REPO_ROOT}）、是否清掉继承来的 GIT_* 指向
  * @returns {{code: number, stdout: string, stderr: string}} 执行结果
  * @throws {Error} 退出码既不在允许集合内、也不为 0 时抛出
  */
 function runGit(args, options) {
   const opts = options || {};
   const allowExit = Array.isArray(opts.allowExit) ? opts.allowExit : [];
-  const proc = spawnSync('git', ['-C', REPO_ROOT].concat(args), {
+  const repoDir = typeof opts.cwd === 'string' && opts.cwd.length > 0 ? opts.cwd : REPO_ROOT;
+  /** @type {Record<string, string|undefined>} */
+  const env = { ...process.env };
+  if (opts.scrubGitEnv === true) {
+    for (const key of GIT_ENV_SCRUB) delete env[key];
+  }
+  const proc = spawnSync('git', ['-C', repoDir].concat(args), {
+    env,
     input: typeof opts.input === 'string' ? opts.input : undefined,
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
@@ -253,6 +281,33 @@ function listTrackedAssets() {
 }
 
 /**
+ * 读取 **HEAD 树**里的桌宠资产（相对仓库根）。
+ *
+ * <p><b>为什么用 HEAD 树而不是 `git log`：</b>HEAD 树是"这个仓库当前这一版到底有哪些文件"的
+ * 客观记录，一次 `ls-tree` 就拿到全量清单；而 `git log -- <path>` 只回答"有没有提交碰过它"，
+ * 且<b>依赖完整历史</b>（`--depth 1` 的 CI checkout 上查不到）。判"真丢文件"要的正是前者。</p>
+ *
+ * <p><b>HEAD 不存在怎么办（空仓库 / 首次提交）：</b>返回 `null`，调用方把所有"磁盘有、索引无"
+ * 的文件一律当成**在产新帧**（只警告）。这里绝不能抛异常：新克隆一个还没有提交的仓库时，
+ * 守卫必须仍然可跑。</p>
+ *
+ * @param {string} [repoRoot] 仓库根（默认 {@link REPO_ROOT}；只有"空仓库退化"用例传别的）
+ * @returns {Set<string>|null} 相对路径集合；HEAD 树不存在时返回 `null`
+ */
+function listHeadAssets(repoRoot) {
+  const root = typeof repoRoot === 'string' && repoRoot.length > 0 ? repoRoot : REPO_ROOT;
+  // HEAD 不存在时 git 退出码 128（fatal: Not a valid object name HEAD），这是我们要退化的情形。
+  // `ls-tree` 只读 HEAD 树、不读索引，所以顺手清掉继承来的 GIT_* 指向，避免被外部环境带跑。
+  const { code, stdout } = runGit(['ls-tree', '-r', '--name-only', '-z', 'HEAD', '--', ASSET_ROOT_REL], {
+    cwd: root,
+    allowExit: [0, 128],
+    scrubGitEnv: true,
+  });
+  if (code !== 0) return null;
+  return new Set(stdout.split('\0').filter(Boolean));
+}
+
+/**
  * 判断一个资产是否被白名单豁免。
  *
  * @param {string} relPath 仓库相对路径（正斜杠）
@@ -323,54 +378,69 @@ test('规则：docs 下非 desktop-pet 的内容仍被忽略（不许用放宽 d
   assert.equal(leaked.length, 0, `这些路径没有被忽略，docs/ 的忽略规则被放宽了：${leaked.join('、')}`);
 });
 
-test('索引：已交付批次逐文件入库，在产批次只警告（LX_PET_TRACKING_STRICT=1 时同样硬失败）', () => {
+test('索引：按来源拆开——HEAD 树里有但索引没有 ⇒ 真丢文件必红；在产新帧只警告', () => {
   const files = listFilesRecursive(ASSET_ROOT_ABS);
   const tracked = listTrackedAssets();
+  const head = listHeadAssets();
   assert.ok(tracked.size >= 100, `索引里只有 ${tracked.size} 个桌宠资产，守卫等于空跑`);
+  /** 磁盘有、索引无、且未被白名单豁免 —— 先按来源分成两堆，再分别判定。@type {Map<string, string[]>} */
+  const lostByBatch = new Map();
   /** @type {Map<string, string[]>} */
-  const missingByBatch = new Map();
+  const newFrameByBatch = new Map();
   for (const item of files) {
     if (tracked.has(item)) continue;
     if (findWhitelistEntry(item) !== null) continue;
+    // 判据只有这一条：HEAD 树里有 ⇒ 曾经入库过 ⇒ 现在索引里没有就是真丢文件
+    const inHeadTree = head !== null && head.has(item);
+    const bucket = inHeadTree ? lostByBatch : newFrameByBatch;
     const batch = batchOf(item);
-    const bucket = missingByBatch.get(batch) || [];
-    bucket.push(item);
-    missingByBatch.set(batch, bucket);
+    const list = bucket.get(batch) || [];
+    list.push(item);
+    bucket.set(batch, list);
   }
-  /** @type {Array<[string, string[]]>} */
-  const hardFail = [];
-  /** @type {Array<[string, string[]]>} */
-  const inFlight = [];
-  for (const [batch, items] of missingByBatch) {
-    const trackedInBatch = Array.from(tracked).filter((item) => batchOf(item) === batch).length;
-    if (batch === '' || isDeliveredBatch(batch)) {
-      // 已交付批次漏文件，或桌宠资产根下散落的文件：真漏
-      hardFail.push([batch, items]);
-    } else if (trackedInBatch > 0) {
-      // 批次内**部分**入库 = 静默丢文件（比整批未入库更危险，必须红）
-      hardFail.push([batch, items]);
-    } else {
-      // 整批未入库：美术在产的正常中间态，只警告，不冒充通过（会打印在测试输出里）
-      inFlight.push([batch, items]);
-    }
-  }
-  if (inFlight.length > 0) {
-    const summary = inFlight.map(([batch, items]) => `${batch}(${items.length})`).join('、');
-    console.log(`[pet-asset] 在产批次（整批未入库，未计入通过，仅警告）：${summary}`);
-    if (STRICT_IN_FLIGHT) {
-      console.log('[pet-asset] LX_PET_TRACKING_STRICT=1：在产批次也算失败');
-      for (const entry of inFlight) hardFail.push(entry);
-    }
-  }
-  const detail = hardFail
-    .map(([batch, items]) => `  ${batch || '<根目录>'}: ${items.slice(0, 5).join('、')}${items.length > 5 ? ` ……共 ${items.length}` : ''}`)
+  /**
+   * 把一批"磁盘有、索引无"的文件渲染成可读的多行文本。
+   *
+   * @param {Map<string, string[]>} byBatch 批次 → 文件
+   * @returns {string} 多行文本
+   */
+  const renderBatch = (byBatch) => Array.from(byBatch)
+    .map(([batch, items]) =>
+      `  ${batch || '<资产根下散文件>'}: ${items.slice(0, 5).join('、')}${items.length > 5 ? ` ……共 ${items.length}` : ''}`)
     .join('\n');
-  const missingTotal = hardFail.reduce((sum, [, items]) => sum + items.length, 0);
+  /**
+   * 统计某个堆里的文件总数。
+   *
+   * @param {Map<string, string[]>} byBatch 批次 → 文件
+   * @returns {number} 文件总数
+   */
+  const countAll = (byBatch) => Array.from(byBatch.values()).reduce((sum, items) => sum + items.length, 0);
+
+  // ① 真丢文件：曾经入库过（HEAD 树里有），现在索引里没有。任何模式都不放过。
+  const lostTotal = countAll(lostByBatch);
   assert.equal(
-    hardFail.length,
+    lostTotal,
     0,
-    `有 ${missingTotal} 个资产在磁盘上但没入库（换台机器就没了；修复：git add <path>）：\n${detail}`,
+    `有 ${lostTotal} 个资产在磁盘上但没入库（HEAD 树里有、索引里没有 ⇒ 真丢文件，换台机器就没了；`
+      + `修复：git add <path>）：\n${renderBatch(lostByBatch)}`,
   );
+
+  // ② 在产新帧：磁盘有、索引无、HEAD 里也没有 —— 美术刚画出来还没 add，正常施工态。
+  const newTotal = countAll(newFrameByBatch);
+  if (newTotal === 0) return;
+  if (STRICT_IN_FLIGHT) {
+    assert.equal(
+      newTotal,
+      0,
+      `LX_PET_TRACKING_STRICT=1：有 ${newTotal} 个在产新帧还没入库`
+        + `（严格模式要求"磁盘 = 索引"；CI 是干净 checkout，正常不会走到这里）：\n${renderBatch(newFrameByBatch)}`,
+    );
+    return;
+  }
+  for (const [batch, items] of newFrameByBatch) {
+    // 显式打印、不计入通过：绿是"已知有未入库文件"的绿，不是"全都入库了"的绿
+    console.log(`[pet-asset] 在产新帧（未入库，未计入通过）：${batch || '<资产根下散文件>'} 共 ${items.length} 个`);
+  }
 });
 
 test('索引：已交付批次目录不得整批缺失（v1/v2/v3/v4/p1/poses/sit/companion）', () => {
@@ -458,6 +528,26 @@ test('索引：git 历史里出现过、但索引整批为空的批次必须红�
     )
     .join('\n');
   assert.equal(emptied.length, 0, `${emptied.length} 个曾交付过的批次现在整批不在索引里：\n${detail}`);
+});
+
+test('HEAD 树不存在（空仓库/首次提交）时优雅退化为"全部按在产新帧处理"，不抛异常', () => {
+  const dir = path.join(REPO_ROOT, '.lingxi', 'tmp', `pet-head-probe-${process.pid}`);
+  const probeRel = `${ASSET_ROOT_REL}/poses/zz-probe/source/f1.png`;
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(path.join(dir, ASSET_ROOT_REL, 'poses', 'zz-probe', 'source'), { recursive: true });
+    fs.writeFileSync(path.join(dir, probeRel), 'probe');
+    const init = runGit(['init', '--quiet'], { cwd: dir, scrubGitEnv: true });
+    assert.equal(init.code, 0, `git init 失败：${init.stderr}`);
+    // 硬要求：没有 HEAD 时不能抛异常，只能返回 null（调用方据此把"磁盘有、索引无"全当在产）
+    assert.equal(listHeadAssets(dir), null, '空仓库（HEAD 不存在）必须返回 null，让调用方退化为"在产新帧"');
+    const tracked = runGit(['ls-files', '-z', '--', ASSET_ROOT_REL], { cwd: dir, scrubGitEnv: true })
+      .stdout.split('\0').filter(Boolean);
+    assert.equal(tracked.length, 0, '空仓库里不该有索引条目');
+    assert.equal(fs.existsSync(path.join(dir, probeRel)), true, '探针文件应存在于磁盘（三条件成立 ⇒ 在产新帧）');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('白名单：每条豁免都必须写明状态/理由/解除条件（防止用白名单绕过入库要求）', () => {
