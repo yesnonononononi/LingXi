@@ -27,6 +27,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # ⚠️ 必须是完整历史：tests/petAssetTracking.test.cjs 里有一条断言用
+          #    `git log -1 --format=%H -- <批次路径>` 判断"该批次曾交付过、但索引整批为空"。
+          #    actions/checkout 默认 fetch-depth: 1（浅克隆），历史查不到 ⇒ 那条断言会退化成
+          #    一行 console 警告，守卫"看着在、其实没有"。与 release.yml 保持一致。
+          #    正确性优先于 CI 耗时，不要为了省几秒改回 1 或加条件 fetch。
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
