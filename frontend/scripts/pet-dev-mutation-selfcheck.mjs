@@ -26,6 +26,15 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+/**
+ * 树身份判据（与守卫/启动器共用同一份实现，避免两套判据漂移）。
+ *
+ * <p>该模块是 **ESM**（Vite 配置只能加载 ESM：CJS 里的 `require('node:crypto')` 会被
+ * esbuild 打成动态 require 垫片并抛错），所以用静态 `import` 载入，不能用
+ * `createRequire`。变异体改的是磁盘源文件、由子进程加载，不污染本进程已载入的副本。</p>
+ */
+import { verifyOwnTree, TREE_IDENTITY } from '../electron/pet-tree-fingerprint.mjs';
+
 /** 前端根目录（脚本位于 `frontend/scripts/`）。 */
 const FRONTEND_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 
@@ -33,7 +42,10 @@ const FRONTEND_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url))
 const REPO_ROOT = path.resolve(FRONTEND_ROOT, '..');
 
 /** 桌宠端口真源（只在自检里用来判断"端口上是谁家的 dev server"，绝不写死端口）。 */
-const { DEV_ENDPOINT } = createRequire(import.meta.url)(path.join(FRONTEND_ROOT, 'electron', 'pet-dev-endpoint.cjs'));
+const { DEV_ENDPOINT, buildDevOrigin } = createRequire(import.meta.url)(
+  path.join(FRONTEND_ROOT, 'electron', 'pet-dev-endpoint.cjs'),
+);
+
 
 /**
  * 变异体清单。
@@ -250,6 +262,33 @@ const MUTATIONS = [
     requiresOwnDevServer: true,
     expect: 'FAIL(两档同形)',
   },
+  {
+    id: 'identity-meta-always-own',
+    goal: '把树身份判据改成恒真（页面注入的指纹与本地不一致也判"自己人"）：守卫就会把别人的代码当成 PASS，身份用例必须变红',
+    file: 'electron/pet-tree-fingerprint.mjs',
+    find: '    const own = remoteDigest === local.digest;',
+    replace: '    const own = true;',
+    testFile: 'tests/petDevIdentity.test.cjs',
+    expect: '另一棵树',
+  },
+  {
+    id: 'identity-json-fallback-always-own',
+    goal: '把兜底判据（没有注入指纹时比对清单字节）改成永不算不一致：另一棵树的 dev server 会被当成自己人，身份用例必须变红',
+    file: 'electron/pet-tree-fingerprint.mjs',
+    find: '    if (remote.body !== localText) mismatches.push(relFile);',
+    replace: '    if (false) mismatches.push(relFile);',
+    testFile: 'tests/petDevIdentity.test.cjs',
+    expect: '另一棵树',
+  },
+  {
+    id: 'identity-guard-foreign-branch-removed',
+    goal: '判据算对了但守卫不处置：把 assertOwnTree 的 FOREIGN 分支从"抛错（退出码 2）"改成"打个日志继续测量"——这正是"验了别人的代码却报 PASS"的缺陷形态，接线断言必须变红',
+    file: 'scripts/pet-face-visual-guard.cjs',
+    find: '    throw new Error(`端口 ${origin} 上跑的是另一棵树，守卫无法证明自己验的是本地代码（已停止，不是 PASS）`);',
+    replace: '    return;',
+    testFile: 'tests/petDevIdentity.test.cjs',
+    expect: 'FOREIGN 必须抛出',
+  },
   // ---------------------------------------------------------------- 美术资产入库（不许再靠 git add -f）
   {
     id: 'gitignore-desktop-pet-exception-removed',
@@ -376,7 +415,14 @@ function sha256(text) {
  */
 function runTarget(mutation, envOverride) {
   const started = Date.now();
-  const command = typeof mutation.command === 'string' && mutation.command.length > 0 ? mutation.command : null;
+  const baseCommand = typeof mutation.command === 'string' && mutation.command.length > 0 ? mutation.command : null;
+  // 画面守卫类变异体默认打端口真源（5275）。若该端口被**别的工作树**占着，自检没法在本工作区
+  // 复验，只能 SKIP；这时可以用 `PET_GUARD_ORIGIN` 把守卫指向本树自己的实例（例如
+  // `npx vite --config vite.pet.config.ts --port 5287`），让变异体真正跑起来。
+  const selfOrigin = process.env.PET_GUARD_ORIGIN || '';
+  const command = baseCommand && mutation.requiresOwnDevServer === true && selfOrigin
+    ? `${baseCommand} --origin ${selfOrigin}`
+    : baseCommand;
   const testFile = String(mutation.testFile || '');
   const env = envOverride ? { ...process.env, ...envOverride } : process.env;
   let proc;
@@ -638,35 +684,34 @@ function restoreMutationByKind(mutation, applied) {
  * 判断桌宠端口上的 dev server 是谁拉起的。
  *
  * <p>画面守卫（`guard:pet:face`）**会复用已在跑的 dev server**；如果端口上是别的
- * 工作树（例如 `.lingxi/work/desktop-pet-vision` 那边的实例）拉起的，守卫看到的就不是
+ * 工作树（例如 `.lingxi/work/desktop-pet-visual` 那边的实例）拉起的，守卫看到的就不是
  * 本工作区的源码，注入的变异体自然"测不出来"——那种绿/红都是别人的。</p>
  *
- * <p>判定手段：Vite dev server 会按 root 直接吐 `package.json`，把它与**本工作区**的
- * 逐字节比对即可区分"自家人"与"外人"。端口取自单一真源，不写死。</p>
+ * <p>判定复用**产品代码同一套判据**（`electron/pet-tree-fingerprint.mjs` 的
+ * {@link verifyOwnTree}）：先比 dev server 注入的 `lx-pet-tree` 指纹，退到清单字节比对。
+ * 这里刻意不再自己写一套 HTTP 比对 —— 两套判据迟早会漂移，而"守卫与自检对同一件事得出
+ * 不同结论"正是最难查的形态。</p>
  *
- * @returns {'own'|'foreign'|'absent'} 归属判定
+ * @returns {Promise<'own'|'foreign'|'absent'>} 归属判定（undecidable 归入 absent：守卫会尝试自己拉起）
  */
-function detectDevServerOwner() {
-  const script = [
-    'const http=require("http");',
-    'const fs=require("fs");',
-    'const own=fs.readFileSync(process.argv[1],"utf8");',
-    'const q=http.get("http://127.0.0.1:"+process.argv[2]+"/package.json",(res)=>{',
-    '  let b="";res.on("data",(d)=>{b+=d});',
-    '  res.on("end",()=>{console.log(res.statusCode===200&&b===own?"own":"foreign")});',
-    '});',
-    'q.on("error",()=>console.log("absent"));',
-    'q.setTimeout(3000,()=>{q.destroy();console.log("absent")});',
-  ].join('');
-  const proc = spawnSync(process.execPath, ['-e', script, path.join(FRONTEND_ROOT, 'package.json'), String(DEV_ENDPOINT.port)], {
-    encoding: 'utf8',
-  });
-  const verdict = (proc.stdout || '').trim();
-  return verdict === 'own' || verdict === 'foreign' ? verdict : 'absent';
+async function detectDevServerOwner() {
+  try {
+    const verdict = await verifyOwnTree({
+      origin: process.env.PET_GUARD_ORIGIN || buildDevOrigin(),
+      entryPage: DEV_ENDPOINT.entryPage,
+      frontendRoot: FRONTEND_ROOT,
+      timeoutMs: 3000,
+    });
+    if (verdict.status === TREE_IDENTITY.OWN) return 'own';
+    if (verdict.status === TREE_IDENTITY.FOREIGN) return 'foreign';
+    return 'absent';
+  } catch (err) {
+    return 'absent';
+  }
 }
 
 /** 依次执行全部变异体并汇总。 */
-function main() {
+async function main() {
   console.log('[mutate] 桌宠变异自检开始（探活/端口隔离 + 安装版门禁与产物守卫 + 表现层/行为/画面守卫 + 美术资产入库守卫 + 启动器收敛）');
   console.log(`[mutate] 前端根目录：${FRONTEND_ROOT}`);
 
@@ -684,10 +729,15 @@ function main() {
 
     // 依赖真实 dev server 的变异体（画面守卫）：端口上是别人家的 server 就不要假装验证过
     if (mutation.requiresOwnDevServer === true) {
-      const owner = detectDevServerOwner();
+      const owner = await detectDevServerOwner();
       if (owner === 'foreign') {
         console.log('  跳过（环境）：桌宠端口上已有**其他工作区**拉起的 dev server，本工作区的变异无法被观测');
-        console.log('        处置：停掉那个实例后重跑本变异体（这里不会把它记成 PASS）');
+        console.log('        为什么无法判定：端口真源被别的树占用，守卫已改为"报错拒绝验证"而不是验错树（这是正确行为）');
+        console.log('        怎么修（二选一）：a) 停掉那个实例后重跑；');
+        console.log('                       b) 在本树起独立端口的 dev server：');
+        console.log('                          npx vite --config vite.pet.config.ts --port 5287 --strictPort');
+        console.log('                          然后 PET_GUARD_ORIGIN=http://127.0.0.1:5287 npm run test:pet:mutate');
+        console.log('        （这里不会把它记成 PASS）');
         results.push({ id: mutation.id, passed: true, skipped: true, reason: '端口被其他工作区的 dev server 占用' });
         continue;
       }
@@ -764,4 +814,4 @@ function main() {
   return 0;
 }
 
-process.exitCode = main();
+process.exitCode = await main();

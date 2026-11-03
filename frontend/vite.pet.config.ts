@@ -1,6 +1,10 @@
 import { defineConfig, mergeConfig } from 'vite'
 import baseConfig from './vite.config.ts'
 import { createPetViteOverrides } from './electron/pet-dev-endpoint.cjs'
+// 必须是 ESM：本 config 会被 Vite 用 esbuild 打成 ESM 再执行，被内联的 CJS 模块里
+// `require('node:crypto')` 会变成动态 require 垫片，直接抛
+// `Error: Dynamic require of "node:crypto" is not supported`（实测踩过）。
+import { createTreeFingerprintPlugin } from './electron/pet-tree-fingerprint.mjs'
 
 /**
  * 桌宠专用 Vite 配置（`npm run dev:pet`）。
@@ -32,5 +36,10 @@ export default defineConfig(
     // 多入口模式：dev 下不注册 html/spa fallback 中间件
     appType: petOverrides.appType,
     server: petOverrides.server,
+    // 树指纹：往 pet.html 注入 <meta name="lx-pet-tree" content="<摘要>">。
+    // 这是"守卫验的是本地这棵树"的唯一强证据 —— 详见 electron/pet-tree-fingerprint.mjs。
+    // 没有它，画面守卫只能证明"这是个桌宠页面"，证明不了"是本地的桌宠页面"，
+    // 就可能把另一个工作树（同端口真源）的渲染结果当成 PASS。
+    plugins: [createTreeFingerprintPlugin()],
   }),
 )

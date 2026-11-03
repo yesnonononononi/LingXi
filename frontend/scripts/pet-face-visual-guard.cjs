@@ -52,9 +52,41 @@ const { spawn, spawnSync } = require('node:child_process');
 
 const FRONTEND_ROOT = path.resolve(__dirname, '..');
 
-const { buildEntryUrl, DEV_ENDPOINT } = require(path.join(FRONTEND_ROOT, 'electron', 'pet-dev-endpoint.cjs'));
+const { buildDevOrigin, DEV_ENDPOINT } = require(path.join(FRONTEND_ROOT, 'electron', 'pet-dev-endpoint.cjs'));
 const { probePetDevServer } = require(path.join(FRONTEND_ROOT, 'electron', 'pet-dev-probe.cjs'));
 const { registerLxSchemePrivileges, registerLxProtocol } = require(path.join(FRONTEND_ROOT, 'electron', 'lx-protocol.cjs'));
+
+/**
+ * 树身份判据模块的 URL（`electron/pet-tree-fingerprint.mjs`）。
+ *
+ * <p><b>为什么这里不能 `require`：</b>同一个判据模块被 `vite.pet.config.ts` 使用，
+ * 而 Vite 会用 esbuild 把 config 打成 **ESM** 再执行——被内联的 CJS 模块里
+ * `require('node:crypto')` 会变成动态 require 垫片并直接抛
+ * `Error: Dynamic require of "node:crypto" is not supported`（实测踩过）。
+ * 所以判据模块只能是 ESM，本脚本（CJS）用动态 `import()` 载入。</p>
+ *
+ * <p><b>为什么不写两份判据：</b>守卫与自检对"这是不是本地这棵树"必须给同一结论，
+ * 两套实现迟早漂移，而"两个守卫对同一件事得出不同答案"是最难查的形态。</p>
+ *
+ * @type {string}
+ */
+const TREE_FINGERPRINT_URL = require('node:url').pathToFileURL(
+  path.join(FRONTEND_ROOT, 'electron', 'pet-tree-fingerprint.mjs'),
+).href;
+
+/** 判据模块的载入 Promise（进程内只载入一次，避免每个档位都重新解析模块）。 */
+let treeFingerprintPromise = null;
+
+/**
+ * 载入树指纹判据模块。
+ *
+ * @returns {Promise<{verifyOwnTree: Function, TREE_IDENTITY: object, TREE_META_NAME: string}>} 模块命名空间
+ */
+function loadTreeFingerprint() {
+  if (treeFingerprintPromise === null) treeFingerprintPromise = import(TREE_FINGERPRINT_URL);
+  return treeFingerprintPromise;
+}
+
 
 const LAYERS = require(path.join(FRONTEND_ROOT, 'pet-layers.json'));
 const GEOMETRY = require(path.join(FRONTEND_ROOT, 'pet-geometry.json'));
@@ -209,14 +241,78 @@ function resolveOutDir(commit) {
 // ---------------------------------------------------------------- dev server
 
 /**
+ * 本次守卫要验的 dev server 源（默认取单一真源；`--origin` 仅供排障/实验）。
+ *
+ * @returns {string} 形如 `http://127.0.0.1:5275`
+ */
+function resolveOrigin() {
+  const explicit = argOf('origin');
+  if (explicit) {
+    if (!/^https?:\/\/[^/]+$/.test(explicit)) throw new Error(`--origin 非法（应为 http://host:port）：${explicit}`);
+    return explicit.replace(/\/+$/, '');
+  }
+  return buildDevOrigin();
+}
+
+/**
+ * 证明这个 dev server 服务的是**本地这棵树**；证明不了就不许继续。
+ *
+ * <p><b>为什么必须有这一步：</b>两个工作树共用同一个端口真源，复用端口上"已在跑"的实例时，
+ * 它可能是**另一个工作树**拉起的。内容指纹（`#pet-root` + `lx-app`）只能证明"是桌宠页面"，
+ * 证明不了"是本地的桌宠页面"——实测 5275 上跑着另一个工作树，两条指纹全中，
+ * 守卫照旧跑出 18/18 PASS，那 18 个 PASS 验的是别人的代码。</p>
+ *
+ * <p>三种结论的处置（都不允许当成 PASS）：</p>
+ * <ul>
+ *   <li>`own`：继续测量；弱证据（清单字节一致但没有注入指纹）会打 warn 提醒重启 dev server。</li>
+ *   <li>`foreign`：**明确失败**（退出码 2），打印"端口上跑的是另一棵树，请停掉后重跑"。</li>
+ *   <li>`undecidable`：**SKIP**（退出码 2），打印"为什么无法判定 + 怎么修"。守卫不产生任何 PASS 结论。</li>
+ * </ul>
+ *
+ * @param {string} origin dev server 源
+ * @returns {Promise<void>} 通过时 resolve
+ * @throws {Error} 另一棵树 / 无法判定时抛出（由引导层转成退出码 2）
+ */
+async function assertOwnTree(origin) {
+  const { verifyOwnTree, TREE_IDENTITY } = await loadTreeFingerprint();
+  const identity = await verifyOwnTree({
+    origin,
+    entryPage: DEV_ENDPOINT.entryPage,
+    frontendRoot: FRONTEND_ROOT,
+  });
+  if (identity.status === TREE_IDENTITY.OWN) {
+    log(identity.weak ? 'warn' : 'info', `树身份：${identity.message}`);
+    if (identity.hint) log('warn', `  ${identity.hint}`);
+    return;
+  }
+  if (identity.status === TREE_IDENTITY.FOREIGN) {
+    log('error', `IDENTITY-FOREIGN 端口上跑的是另一棵树（${origin}），本次守卫拒绝给出任何 PASS 结论`);
+    log('error', `  判定依据：${identity.message}`);
+    if (identity.local) log('error', `  本地树指纹：${identity.local.digest.slice(0, 16)}（${identity.local.files.length} 个文件）`);
+    log('error', `  修法：${identity.hint}`);
+    throw new Error(`端口 ${origin} 上跑的是另一棵树，守卫无法证明自己验的是本地代码（已停止，不是 PASS）`);
+  }
+  log('error', `IDENTITY-SKIP 无法证明端口上的 dev server 是本地这棵树（${origin}）`);
+  log('error', `  为什么无法判定：${identity.message}`);
+  log('error', `  怎么修：${identity.hint}`);
+  throw new Error(`无法判定 ${origin} 上的 dev server 属于哪棵树（已 SKIP，不产生 PASS 结论）`);
+}
+
+/**
  * 确保桌宠 dev server 就绪；没起就自己拉一个（不改端口真源、不碰别人已在跑的实例）。
+ *
+ * <p>无论复用还是自己拉起，都必须先通过 {@link assertOwnTree} —— 复用到的可能是别人的树。</p>
  *
  * @returns {Promise<{url: string, started: boolean}>} 入口 URL 与是否由本脚本拉起
  */
 async function ensureDevServer() {
-  const url = buildEntryUrl();
+  const origin = resolveOrigin();
+  const url = `${origin}/${DEV_ENDPOINT.entryPage}`;
   const first = await probePetDevServer({ url });
-  if (first.ok) return { url, started: false };
+  if (first.ok) {
+    await assertOwnTree(origin);
+    return { url, started: false };
+  }
   if (first.reason !== 'no-service') {
     throw new Error(`端口 ${DEV_ENDPOINT.port} 上的服务不是桌宠（${first.reason}）：${first.message}`);
   }
@@ -230,6 +326,8 @@ async function ensureDevServer() {
   fs.closeSync(descriptor);
   const ready = await probePetDevServer({ url, waitMs: 60000, timeoutMs: 2000 });
   if (!ready.ok) throw new Error(`dev server 60s 内未就绪：${ready.message}（日志 ${logPath}）`);
+  // 自己拉起来的也必须验：端口可能在 spawn 与 ready 之间被别的树抢走
+  await assertOwnTree(origin);
   return { url, started: true };
 }
 
