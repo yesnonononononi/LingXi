@@ -21,6 +21,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
+const net = require('node:net');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
@@ -29,8 +30,10 @@ const { DEV_ENDPOINT } = require(path.join(FRONTEND_ROOT, 'electron', 'pet-dev-e
 const {
   PROBE_REASON,
   PROBE_EXIT_CODE,
+  PROBE_CAUSE,
   EXIT_USAGE,
   probePetDevServer,
+  classifyBodyFailure,
   parseArgs,
   formatResult,
 } = require(path.join(FRONTEND_ROOT, 'electron', 'pet-dev-probe.cjs'));
@@ -43,11 +46,15 @@ const MAIN_APP_PAGE = fs.readFileSync(path.join(FRONTEND_ROOT, 'index.html'), 'u
 /**
  * 起一个临时 HTTP 服务（端口交给内核分配）。
  *
+ * <p>关闭时**主动销毁所有 socket**：本文件里有若干"故意不结束响应体"的用例，
+ * 依赖客户端自行断开会让 `server.close()` 一直等下去（实测会让整个测试文件挂住）。</p>
+ *
  * @param {(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void} handler 请求处理器
  * @returns {Promise<{origin: string, port: number, hits: number[], close: () => Promise<void>}>} 服务句柄
  */
 async function startServer(handler) {
   const hits = [];
+  const sockets = new Set();
   const server = http.createServer((req, res) => {
     hits.push(req.url);
     try {
@@ -60,6 +67,10 @@ async function startServer(handler) {
       }
     }
   });
+  server.on('connection', (socket) => {
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
+  });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(0, '127.0.0.1', resolve);
@@ -69,7 +80,11 @@ async function startServer(handler) {
     origin: `http://127.0.0.1:${address.port}`,
     port: address.port,
     hits,
-    close: () => new Promise((resolve) => server.close(() => resolve())),
+    close: () => new Promise((resolve) => {
+      for (const socket of sockets) socket.destroy();
+      sockets.clear();
+      server.close(() => resolve());
+    }),
   };
 }
 
@@ -176,6 +191,148 @@ test('探活：服务不响应 → 超时失败（不挂死调用方）', async 
   assert.equal(result.ok, false);
   assert.equal(result.reason, PROBE_REASON.TIMEOUT);
   assert.equal(result.exitCode, PROBE_EXIT_CODE.timeout);
+  // K1：连接阶段超时（连响应头都没等到）要有独立 cause，便于与"响应体停滞"区分
+  assert.equal(result.cause, PROBE_CAUSE.CONNECT_TIMEOUT);
+  assert.equal(result.phase, 'connect');
+});
+
+test('K1：响应头已到但响应体停滞 → timeout / exit 5（不再误判 network-error）', async (t) => {
+  const server = await startServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    // 只写半截就再也不推进：复刻"发了头但 body 停滞"的真实故障
+    res.write('<!doctype html><html><body><div id="pet-root"');
+  });
+  t.after(() => server.close());
+
+  const result = await probePetDevServer({ url: `${server.origin}/pet.html`, timeoutMs: 120 });
+  assert.equal(result.ok, false);
+  assert.equal(
+    result.reason,
+    PROBE_REASON.TIMEOUT,
+    `响应体停滞必须归入 timeout（exit 5），实际 reason=${result.reason} exit=${result.exitCode}`,
+  );
+  assert.equal(result.exitCode, PROBE_EXIT_CODE.timeout);
+  assert.equal(result.cause, PROBE_CAUSE.BODY_TIMEOUT);
+  assert.equal(result.phase, 'body');
+  assert.equal(result.status, 200, '已经拿到响应头，状态码应当保留给排障用');
+  assert.match(result.message, /响应体停滞/);
+  assert.doesNotMatch(result.message, /连接超时/, '响应体停滞不能被说成连接超时');
+});
+
+test('K1：连接阶段超时与响应体停滞可以被区分（同 reason 不同 cause）', async (t) => {
+  // 只握手不回包的裸 TCP 服务：请求发出去了，响应头永远不会来
+  const silentSockets = new Set();
+  const silent = net.createServer((socket) => {
+    silentSockets.add(socket);
+    socket.on('close', () => silentSockets.delete(socket));
+  });
+  await new Promise((resolve) => silent.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise((resolve) => {
+    for (const socket of silentSockets) socket.destroy();
+    silentSockets.clear();
+    silent.close(() => resolve());
+  }));
+  const port = silent.address().port;
+
+  const connectTimeout = await probePetDevServer({ url: `http://127.0.0.1:${port}/pet.html`, timeoutMs: 120 });
+  assert.equal(connectTimeout.reason, PROBE_REASON.TIMEOUT);
+  assert.equal(connectTimeout.cause, PROBE_CAUSE.CONNECT_TIMEOUT);
+  assert.match(connectTimeout.message, /连接超时/);
+
+  const stalled = await startServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    res.write('partial');
+  });
+  t.after(() => stalled.close());
+  const bodyTimeout = await probePetDevServer({ url: `${stalled.origin}/pet.html`, timeoutMs: 120 });
+  assert.equal(bodyTimeout.reason, connectTimeout.reason, '两者都是 timeout（exit 5）');
+  assert.notEqual(bodyTimeout.cause, connectTimeout.cause, 'cause 必须能区分连接超时与响应体停滞');
+  assert.equal(bodyTimeout.cause, PROBE_CAUSE.BODY_TIMEOUT);
+});
+
+test('K1 反向：响应体读到一半被掐断是网络错误（exit 6），不是超时', async (t) => {
+  const server = await startServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': '9999' });
+    res.write('<!doctype html><html><body><div id="pet-root"');
+    // 声明了更长的 content-length 之后稍等片刻再掐断：确保客户端已经进入"读响应体"阶段
+    setTimeout(() => {
+      try {
+        res.destroy();
+      } catch {
+        // 已经断了：忽略
+      }
+    }, 80);
+  });
+  t.after(() => server.close());
+
+  const result = await probePetDevServer({ url: `${server.origin}/pet.html`, timeoutMs: 2000 });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, PROBE_REASON.NETWORK_ERROR, `连接中断不是超时，实际 ${result.reason}/${result.cause}`);
+  assert.equal(result.exitCode, PROBE_EXIT_CODE['network-error']);
+  assert.equal(result.phase, 'body');
+  assert.notEqual(result.cause, PROBE_CAUSE.BODY_TIMEOUT);
+});
+
+test('K1 反向：读取响应体时的 ECONNRESET → network-error / exit 6 且 cause=body-interrupted', async () => {
+  const reset = Object.assign(new Error('read ECONNRESET'), {
+    cause: Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }),
+  });
+  const fakeFetch = async () => ({
+    status: 200,
+    text: async () => {
+      throw reset;
+    },
+  });
+  const result = await probePetDevServer({ url: 'http://127.0.0.1/pet.html', fetchImpl: fakeFetch });
+  assert.equal(result.reason, PROBE_REASON.NETWORK_ERROR);
+  assert.equal(result.exitCode, PROBE_EXIT_CODE['network-error']);
+  assert.equal(result.cause, PROBE_CAUSE.BODY_INTERRUPTED);
+  assert.equal(result.phase, 'body');
+});
+
+test('K1 反向：普通网络错误（非超时）仍是 exit 6', async () => {
+  const broken = Object.assign(new Error('connect EPIPE'), { code: 'EPIPE' });
+  const fakeFetch = async () => {
+    throw broken;
+  };
+  const result = await probePetDevServer({ url: 'http://127.0.0.1/pet.html', fetchImpl: fakeFetch });
+  assert.equal(result.reason, PROBE_REASON.NETWORK_ERROR);
+  assert.equal(result.exitCode, PROBE_EXIT_CODE['network-error']);
+  assert.equal(result.cause, PROBE_CAUSE.NETWORK_ERROR);
+  assert.equal(result.phase, 'connect');
+});
+
+test('K1：classifyBodyFailure 的三条分支自证', () => {
+  const timeoutErr = Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
+  assert.deepEqual(classifyBodyFailure(timeoutErr), {
+    reason: PROBE_REASON.TIMEOUT,
+    cause: PROBE_CAUSE.BODY_TIMEOUT,
+    detail: '请求超时',
+  });
+
+  const abortErr = Object.assign(new Error('aborted'), { name: 'AbortError' });
+  assert.equal(classifyBodyFailure(abortErr).cause, PROBE_CAUSE.BODY_TIMEOUT);
+
+  const resetErr = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+  const resetVerdict = classifyBodyFailure(resetErr);
+  assert.equal(resetVerdict.reason, PROBE_REASON.NETWORK_ERROR, 'ECONNRESET 是真网络错误，不能被伪装成超时');
+  assert.equal(resetVerdict.cause, PROBE_CAUSE.BODY_INTERRUPTED);
+
+  const otherErr = Object.assign(new Error('boom'), { code: 'EPIPE' });
+  assert.equal(classifyBodyFailure(otherErr).cause, PROBE_CAUSE.NETWORK_ERROR);
+});
+
+test('K1：--help / 文档的退出码说明与实现一致', () => {
+  const script = path.join(FRONTEND_ROOT, 'electron', 'pet-dev-probe.cjs');
+  const help = spawnSync(process.execPath, [script, '--help'], { encoding: 'utf8' });
+  assert.equal(help.status, 0);
+  assert.match(help.stdout, /5 超时（连接超时 \/ 响应体停滞）/, '--help 必须写明 exit 5 覆盖两种超时');
+  assert.match(help.stdout, /6 其他网络错误/, '--help 必须保留 exit 6 的口径');
+  // 文档口径：reason.timeout → 5，且 PROBE_CAUSE 里两种超时都在
+  assert.equal(PROBE_EXIT_CODE.timeout, 5);
+  assert.equal(PROBE_EXIT_CODE['network-error'], 6);
+  assert.equal(PROBE_CAUSE.CONNECT_TIMEOUT, 'connect-timeout');
+  assert.equal(PROBE_CAUSE.BODY_TIMEOUT, 'body-timeout');
 });
 
 test('探活：--wait 轮询能容忍 dev server 冷启动', async (t) => {
