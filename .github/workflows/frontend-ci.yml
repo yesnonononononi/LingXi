@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build (npm ci + vite build)
+    name: Build (npm ci + 桌宠门禁/测试 + vite build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -44,6 +44,22 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # 桌宠门禁与测试必须进 CI（用户硬约束：本地不跑测试直接提交，CI 不能照样放行）。
+      # 放在 build 之前：早失败比晚失败好，别等构建 30 秒才报测试红。
+      #
+      # gate:pet = 几何门禁（check-pet-geometry.mjs）+ 层门禁（check-pet-layers.mjs）。
+      # 它会读母版 PNG 做 C2/C3 像素级校验，依赖 devDependency sharp
+      #（sharp 已在 package.json devDependencies，npm ci 会拉 linux-x64 预编译二进制）。
+      - name: 桌宠资产门禁（几何 + 层，含像素级校验）
+        run: npm run gate:pet
+
+      # test:pet = 133 个 .cjs 用例（node --test）+ 341 个 .ts 用例（tsx --test）。
+      # 覆盖：探活/端口隔离、安装版门禁与产物守卫、表现层/行为、资产入库守卫（含 git 历史断言）。
+      # ⚠️ 这里刻意不跑 test:pet:mutate：它会先变异源码再还原，属于自修改，且耗时约 2 分钟，
+      #    定位为本地/交付验收项（由交付方每次亲跑），不放进 CI。
+      - name: 桌宠单元测试（cjs + ts）
+        run: npm run test:pet
 
       - name: Build
         run: npm run build
