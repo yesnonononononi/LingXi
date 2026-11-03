@@ -21,6 +21,15 @@ jobs:
   build:
     name: Build (npm ci + 桌宠门禁/测试 + vite build)
     runs-on: ubuntu-latest
+    # devDependencies 里有 electron（^44.5.1），它的 postinstall 会下载约 100MB 的平台二进制。
+    # 本 job 的四件事都不需要那个二进制：
+    #   gate:pet / test:pet（pet 用例没有一个 require('electron')）/ vite build /
+    #   check-pet-not-shipped。跳过下载只影响二进制，electron 包本体（含 index.d.ts）照常安装，
+    #   所以 vue-tsc 的类型解析不受影响。
+    # ⚠️ 只在 job 级设：`npm ci` 那一步就要生效（step 级设到别的步骤上等于没设）。
+    # ⚠️ release.yml 绝不能加这个变量 —— 那里要 electron-builder 打 win 安装包，跳过下载会直接炸。
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     defaults:
       run:
         working-directory: frontend
