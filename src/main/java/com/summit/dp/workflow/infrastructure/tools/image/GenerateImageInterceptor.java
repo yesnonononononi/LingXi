@@ -1,7 +1,6 @@
 package com.summit.dp.workflow.infrastructure.tools.image;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.conversation.api.ToolCallRequest;
 import com.summit.core.conversation.message.TokenUsageEntity;
@@ -10,7 +9,6 @@ import com.summit.core.runtime.loop.InterceptorResult;
 import com.summit.core.runtime.loop.LoopContext;
 import com.summit.core.runtime.loop.LoopInterceptor;
 import com.summit.core.tool.ToolExecuteResult;
-import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import com.summit.dp.user_configs.application.service.SettingsProvider;
 import com.summit.dp.user_configs.application.vo.SettingsView;
@@ -18,7 +16,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -45,26 +42,24 @@ public class GenerateImageInterceptor implements LoopInterceptor {
             return InterceptorResult.NONE;
         }
         Execution execution = context.getLoopMessages().getExecution();
-        AgentRuntimeParameters parameters = execution.getAgentRequest().runtimeParametersOrDefault();
-        Map<String, Object> attributes = new HashMap<>(parameters.getAttributes());
-        if (!attributes.containsKey(LIMIT)) {
-            SettingsView config = settings.current().orElse(null);
-            if (config != null && config.imageModelId() != null) attributes.put(MODEL, config.imageModelId());
-            attributes.put(LIMIT, config == null || config.imageGenerationMaxCalls() == null ? 0 : config.imageGenerationMaxCalls());
-        }
-        int used = number(attributes, USED);
-        int limit = number(attributes, LIMIT);
-        List<String> allowed = new ArrayList<>();
-        for (ToolCallRequest request : requests) {
-            if (ToolCatalog.GENERATE_IMAGE.equals(request.name()) && used < limit && attributes.containsKey(MODEL)) {
-                allowed.add(request.id());
-                used++;
+        ImageExecutionAttributes.mutate(execution, attributes -> {
+            if (!attributes.containsKey(LIMIT)) {
+                SettingsView config = settings.current().orElse(null);
+                if (config != null && config.imageModelId() != null) attributes.put(MODEL, config.imageModelId());
+                attributes.put(LIMIT, config == null || config.imageGenerationMaxCalls() == null ? 0 : config.imageGenerationMaxCalls());
             }
-        }
-        attributes.put(USED, used);
-        attributes.put(ALLOWED, List.copyOf(allowed));
-        parameters.setAttributes(Map.copyOf(attributes));
-        execution.getAgentRequest().setRuntimeParameters(parameters);
+            int used = ImageExecutionAttributes.number(attributes, USED);
+            int limit = ImageExecutionAttributes.number(attributes, LIMIT);
+            List<String> allowed = new ArrayList<>();
+            for (ToolCallRequest request : requests) {
+                if (ToolCatalog.GENERATE_IMAGE.equals(request.name()) && used < limit && attributes.containsKey(MODEL)) {
+                    allowed.add(request.id());
+                    used++;
+                }
+            }
+            attributes.put(USED, used);
+            attributes.put(ALLOWED, List.copyOf(allowed));
+        });
         executions.save(execution);
         return InterceptorResult.NONE;
     }
@@ -83,8 +78,8 @@ public class GenerateImageInterceptor implements LoopInterceptor {
         return InterceptorResult.NONE;
     }
 
+    /** 整数属性读取，缺失按 0：这是配额断言的统一读取口径，测试直接调它，别当死代码删。 */
     static int number(Map<String, Object> attributes, String key) {
-        Long value = ExecutionAttributes.readLong(attributes, key);
-        return value == null ? 0 : value.intValue();
+        return ImageExecutionAttributes.number(attributes, key);
     }
 }

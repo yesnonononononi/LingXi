@@ -74,14 +74,5 @@ public class ImageCacheDirectory {
 
     /** 缓存结果：{@code imageId} 即内容哈希前 16 位。 */
     public record CachedImage(String imageId, Path path) {
-
-        /** 落盘字节数；读不到按 0 处理（回执里只是给人看的参考值）。 */
-        public long bytes() {
-            try {
-                return Files.size(path);
-            } catch (IOException missing) {
-                return 0L;
-            }
-        }
     }
 }

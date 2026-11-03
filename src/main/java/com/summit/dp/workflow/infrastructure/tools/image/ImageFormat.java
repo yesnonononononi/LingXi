@@ -14,6 +14,12 @@ public enum ImageFormat {
     GIF("image/gif", "png", true),
     BMP("image/bmp", "png", true);
 
+    /** PNG 文件头：8 字节魔数，含换行字节，只能按字节比。 */
+    private static final byte[] PNG_MAGIC = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+    private static final byte[] JPEG_MAGIC = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF};
+    private static final byte[] GIF_MAGIC = {0x47, 0x49, 0x46, 0x38};
+    private static final byte[] BMP_MAGIC = {0x42, 0x4D};
+
     private final String mimeType;
     private final String storedExtension;
     private final boolean keepsAlpha;
@@ -36,13 +42,22 @@ public enum ImageFormat {
         return keepsAlpha;
     }
 
+    /**
+     * 是否为可原样使用的格式：参考图上传与生图结果落盘都只收 PNG/JPEG，其它格式一律要求先转换。
+     *
+     * @return {@code true} 表示无需转换即可直接交给模型或落盘
+     */
+    public boolean isPngOrJpeg() {
+        return this == PNG || this == JPEG;
+    }
+
     /** 命中支持列表返回对应格式，否则返回 {@code null}（由调用方再区分「不是图片」与「格式不支持」）。 */
     public static ImageFormat detect(byte[] data) {
         if (data == null || data.length < 8) return null;
-        if (startsWith(data, new int[]{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A})) return PNG;
-        if (startsWith(data, new int[]{0xFF, 0xD8, 0xFF})) return JPEG;
-        if (startsWith(data, new int[]{0x47, 0x49, 0x46, 0x38})) return GIF;
-        if (startsWith(data, new int[]{0x42, 0x4D})) return BMP;
+        if (startsWith(data, PNG_MAGIC)) return PNG;
+        if (startsWith(data, JPEG_MAGIC)) return JPEG;
+        if (startsWith(data, GIF_MAGIC)) return GIF;
+        if (startsWith(data, BMP_MAGIC)) return BMP;
         return null;
     }
 
@@ -56,18 +71,17 @@ public enum ImageFormat {
         if (data.length >= 12 && ascii(data, 0, 4).equals("RIFF") && ascii(data, 8, 4).equals("WEBP")) return "WEBP";
         if (data.length >= 12 && ascii(data, 4, 4).equals("ftyp")) {
             String brand = ascii(data, 8, 4).toLowerCase(Locale.ROOT);
-            if (brand.startsWith("avi")) return "AVIF/HEIC";
-            if (brand.startsWith("hei") || brand.startsWith("mif1")) return "AVIF/HEIC";
+            if (brand.startsWith("avi") || brand.startsWith("hei") || brand.startsWith("mif1")) return "AVIF/HEIC";
         }
         String head = ascii(data, 0, Math.min(data.length, 16)).trim().toLowerCase(Locale.ROOT);
         if (head.startsWith("<svg") || head.startsWith("<?xml")) return "SVG";
         return null;
     }
 
-    private static boolean startsWith(byte[] data, int[] prefix) {
+    private static boolean startsWith(byte[] data, byte[] prefix) {
         if (data.length < prefix.length) return false;
         for (int index = 0; index < prefix.length; index++) {
-            if ((data[index] & 0xFF) != prefix[index]) return false;
+            if (data[index] != prefix[index]) return false;
         }
         return true;
     }

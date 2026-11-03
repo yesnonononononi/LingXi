@@ -1,7 +1,5 @@
 package com.summit.dp.workflow.infrastructure.tools.image;
 
-import com.summit.core.agent.AgentRequest;
-import com.summit.core.agent.AgentRuntimeParameters;
 import com.summit.core.agent.Execution;
 import com.summit.core.agent.Image;
 import com.summit.core.conversation.message.UserMessageEntity;
@@ -19,7 +17,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
-import java.util.function.Consumer;
 
 /** 工具回执仅含元数据，像素须等工具轮提交后再作为用户消息注入。 */
 @Slf4j
@@ -63,7 +60,7 @@ public class ImageInjectionInterceptor implements LoopInterceptor {
             pending.add(new HashMap<>(metadata));
         }
         if (!pending.isEmpty()) {
-            writeAttributes(execution, attributes -> attributes.put(KEY_PENDING, List.copyOf(pending)));
+            ImageExecutionAttributes.mutate(execution, attributes -> attributes.put(KEY_PENDING, List.copyOf(pending)));
         }
         return InterceptorResult.NONE;
     }
@@ -74,7 +71,7 @@ public class ImageInjectionInterceptor implements LoopInterceptor {
         List<Map<String, Object>> pending = readPending(execution);
         if (pending.isEmpty()) return InterceptorResult.NONE;
 
-        Map<String, Object> attributes = attributes(execution);
+        Map<String, Object> attributes = ImageExecutionAttributes.read(execution);
         Long sessionId = ExecutionAttributes.readLong(attributes, ExecutionAttributes.SESSION_ID);
         Set<String> injected = new LinkedHashSet<>(readInjected(execution));
         List<Image> images = new ArrayList<>();
@@ -91,7 +88,7 @@ public class ImageInjectionInterceptor implements LoopInterceptor {
                 continue;
             }
             // 同一工具轮可并发读取多张，只有汇总后的注入点能守住总量。
-            if (readConsumed(attributes) + images.size() >= ReadImageToolExecutor.MAX_IMAGE_BUDGET) {
+            if (ImageExecutionAttributes.consumed(attributes) + images.size() >= ReadImageToolExecutor.MAX_IMAGE_BUDGET) {
                 lines.add("- " + path + "：本次执行的图片数量已达上限，请不要臆测内容");
                 continue;
             }
@@ -116,7 +113,7 @@ public class ImageInjectionInterceptor implements LoopInterceptor {
         }
 
         // 队列必须清空：同一张图不能在后续每一轮重复注入。
-        int consumed = readConsumed(attributes) + images.size();
+        int consumed = ImageExecutionAttributes.consumed(attributes) + images.size();
         List<String> injectedSnapshot = List.copyOf(injected);
         String intro = images.isEmpty()
                 ? "以下是 read_image 的结果说明：\n"
@@ -126,7 +123,7 @@ public class ImageInjectionInterceptor implements LoopInterceptor {
                 ? UserMessageEntity.from(text)
                 : UserMessageEntity.from(text, images);
         context.appendMessage(List.of(message));
-        writeAttributes(execution, next -> {
+        ImageExecutionAttributes.mutate(execution, next -> {
             next.put(KEY_PENDING, List.of());
             next.put(KEY_INJECTED, injectedSnapshot);
             next.put(ReadImageToolExecutor.KEY_CONSUMED, consumed);
@@ -139,7 +136,7 @@ public class ImageInjectionInterceptor implements LoopInterceptor {
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> readPending(Execution execution) {
-        Object value = attributes(execution).get(KEY_PENDING);
+        Object value = ImageExecutionAttributes.read(execution).get(KEY_PENDING);
         if (!(value instanceof List<?> list) || list.isEmpty()) return List.of();
         List<Map<String, Object>> pending = new ArrayList<>();
         for (Object item : list) {
@@ -149,36 +146,13 @@ public class ImageInjectionInterceptor implements LoopInterceptor {
     }
 
     private List<String> readInjected(Execution execution) {
-        Object value = attributes(execution).get(KEY_INJECTED);
+        Object value = ImageExecutionAttributes.read(execution).get(KEY_INJECTED);
         if (!(value instanceof List<?> list)) return List.of();
         List<String> ids = new ArrayList<>();
         for (Object item : list) {
             if (item != null) ids.add(String.valueOf(item));
         }
         return ids;
-    }
-
-    private int readConsumed(Map<String, Object> attributes) {
-        Long value = ExecutionAttributes.readLong(attributes, ReadImageToolExecutor.KEY_CONSUMED);
-        return value == null ? 0 : value.intValue();
-    }
-
-    private static Map<String, Object> attributes(Execution execution) {
-        AgentRequest request = execution.getAgentRequest();
-        return request == null ? Map.of() : request.runtimeParametersOrDefault().getAttributes();
-    }
-
-    /**
-     * 运行时属性在请求准备阶段是 {@code Map.copyOf}（不可变），只能整体换一份再挂回去；
-     * 换完随执行快照持久化，suspend/resume 不丢。
-     */
-    private static void writeAttributes(Execution execution, Consumer<Map<String, Object>> mutation) {
-        AgentRequest request = execution.getAgentRequest();
-        AgentRuntimeParameters parameters = request.runtimeParametersOrDefault();
-        Map<String, Object> next = new HashMap<>(parameters.getAttributes());
-        mutation.accept(next);
-        parameters.setAttributes(Map.copyOf(next));
-        request.setRuntimeParameters(parameters);
     }
 
     private static String text(Object value) {

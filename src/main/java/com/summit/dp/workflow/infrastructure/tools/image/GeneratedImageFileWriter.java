@@ -43,10 +43,7 @@ public class GeneratedImageFileWriter {
         if (existing == null || !existing.toRealPath().startsWith(root)) throw new IOException("生图路径的真实目录位于工作区之外");
     }
 
-    public byte[] load(Image image, String extension) throws Exception {
-        return load(image, extension, null);
-    }
-
+    /** 先拿到原始字节（内联 base64 或远端地址），再统一过格式、像素与显式输出要求三轮验收。 */
     public byte[] load(Image image, String extension, ImageGenerationOptions options) throws Exception {
         byte[] bytes;
         if (image.getBase64Data() != null && !image.getBase64Data().isBlank()) {
@@ -66,14 +63,15 @@ public class GeneratedImageFileWriter {
         }
         if (bytes.length > MAX_BYTES) throw new IOException("生图结果超过 16MB");
         ImageFormat format = ImageFormat.detect(bytes);
-        if (format != ImageFormat.PNG && format != ImageFormat.JPEG) throw new IOException("生图结果必须为 PNG 或 JPEG");
+        if (format == null || !format.isPngOrJpeg()) throw new IOException("生图结果必须为 PNG 或 JPEG");
         ImageNormalizer.ImageSize size = normalizer.probe(bytes);
         if ((long) size.width() * size.height() > ImageNormalizer.MAX_PIXELS) throw new IOException("生图结果像素过大");
         outputValidator.validate(bytes, format, options);
         if (format.storedExtension().equals(extension)) return bytes;
         BufferedImage source = ImageIO.read(new ByteArrayInputStream(bytes));
         BufferedImage target = source;
-        if ("jpg".equals(extension)) {
+        if (ImageFormat.JPEG.storedExtension().equals(extension)) {
+            // JPEG 不支持透明：先铺白底，否则透明区会被画成黑块。
             target = new BufferedImage(source.getWidth(), source.getHeight(), BufferedImage.TYPE_INT_RGB);
             Graphics2D graphics = target.createGraphics();
             try { graphics.setColor(Color.WHITE); graphics.fillRect(0, 0, target.getWidth(), target.getHeight()); graphics.drawImage(source, 0, 0, null); }

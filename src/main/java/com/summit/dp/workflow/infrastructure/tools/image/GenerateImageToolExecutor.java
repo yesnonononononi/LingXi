@@ -25,12 +25,12 @@ import com.summit.core.tool.ToolExecutor;
 import com.summit.core.tool.ToolResultType;
 import com.summit.dp.execution.ExecutionAttributes;
 import com.summit.dp.model.application.service.ModelService;
-import com.summit.dp.shared.exception.ClientException;
 import com.summit.dp.tools.application.port.ToolCatalog;
 import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.NonNull;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
@@ -79,50 +79,24 @@ public class GenerateImageToolExecutor implements ToolExecutor {
     public @NonNull ToolExecuteResult execute(ToolExecution execution) {
         Map<String, Object> metadata = new HashMap<>();
         try {
-            JsonNode args = mapper.readTree(execution.getArgs());
-            throwIf(args == null || !args.path("prompt").isTextual() || args.path("prompt").asText().isBlank(), "生图提示词 prompt 不能为空");
-            throwIf(!args.path("path").isTextual() || args.path("path").asText().isBlank(), "生图文件路径 path 不能为空");
-            Workspace workspace = execution.getWorkspace();
-            throwIf(workspace == null, "生图需要先配置工作区");
-            String path = args.path("path").asText().trim();
-            throwIf(Path.of(path).isAbsolute(), "生图文件路径必须相对于工作区");
-            Path target = workspace.resolve(path);
-            throwIf(!workspace.encloses(target), "生图文件只能保存在工作区内");
-            String lower = path.toLowerCase(Locale.ROOT);
-            throwIf(!(lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")), "生图文件扩展名必须是 png、jpg 或 jpeg");
-            String extension = lower.endsWith(".png") ? "png" : "jpg";
-            WorkspaceFiles files = workspace.bridge().files();
-            throwIf(files.exists(target), "生图目标文件已存在，请选择其它路径");
-            writer.validateTarget(workspace, target);
-            Map<String, Object> attributes = execution.getAttributes();
-            Long modelId = ExecutionAttributes.readLong(attributes, GenerateImageInterceptor.MODEL);
-            throwIf(modelId == null, "请先在其它模型配置中选择生图模型");
-            Object allowed = attributes.get(GenerateImageInterceptor.ALLOWED);
-            throwIf(!(allowed instanceof List<?> ids) || !ids.contains(execution.getId()),
-                    "本次执行已达到生图次数上限（" + GenerateImageInterceptor.number(attributes, GenerateImageInterceptor.LIMIT) + " 次）");
-            Long sessionId = ExecutionAttributes.readLong(attributes, ExecutionAttributes.SESSION_ID);
-            throwIf(sessionId == null, "生图执行缺少会话标识");
-            ModelConfig config = models.runtimeConfig(modelId, null);
-            throwIf(!DefaultModelProviderNames.DEFAULT_IMAGE.equals(config.getProvider()), "配置的生图模型不是图片模型，请重新选择");
-            ImageGenerationOptions options = specifications.resolve(args, config);
-            Image reference = references.load(args, workspace);
-            Image mask = references.loadMask(args, workspace, reference);
-            // 一次工具调用只发一次模型请求，避免 SDK 重试绕过执行次数上限。
-            config = config.toBuilder().maxRetries(0).build();
-            ImageModel model = providers.create(config);
-            ChatResponseEntity response = reference == null ? model.generate(args.path("prompt").asText(), options)
-                    : mask == null ? model.edit(reference, args.path("prompt").asText(), options)
-                    : model.edit(reference, mask, args.path("prompt").asText(), options);
+            JsonNode args = arguments(execution);
+            GeneratedImageTarget target = writableTarget(execution, args);
+            GenerationQuota quota = authorizedQuota(execution);
+            ImageGenerationOptions options = specifications.resolve(args, quota.config());
+            Image reference = references.load(args, target.workspace());
+            Image mask = references.loadMask(args, target.workspace(), reference);
+            ChatResponseEntity response = requestImage(quota.config(), args.path("prompt").asText(), options, reference, mask);
+            // 用量先落进 metadata：后面任何一步失败，错误回执仍要带上已计费的 token。
             if (response.getTokenUsage() != null) metadata.put(GenerateImageInterceptor.USAGE, mapper.convertValue(response.getTokenUsage(), Map.class));
-            throwIf(response.getAiMessageEntity() == null || response.getAiMessageEntity().getImages() == null
+            ImageToolChecks.rejectIf(response.getAiMessageEntity() == null || response.getAiMessageEntity().getImages() == null
                     || response.getAiMessageEntity().getImages().size() != 1, "生图模型未返回一张完整图片");
-            byte[] bytes = writer.load(response.getAiMessageEntity().getImages().getFirst(), extension, options);
-            writer.write(files, target, bytes);
-            ImageCacheDirectory.CachedImage preview = cache.store(sessionId, bytes, extension);
-            String url = "/a/images/" + sessionId + "/" + preview.imageId() + "." + extension;
-            metadata.put("generatedImage", Map.of("path", path, "previewUrl", url, "bytes", bytes.length));
-            return ToolExecuteResult.success(mapper.writeValueAsString(Map.of("ok", true, "path", path,
-                    "previewUrl", url, "bytes", bytes.length, "modelName", config.getModelName(), "size", options.size(),
+            byte[] bytes = writer.load(response.getAiMessageEntity().getImages().getFirst(), target.extension(), options);
+            writer.write(target.files(), target.path(), bytes);
+            ImageCacheDirectory.CachedImage preview = cache.store(quota.sessionId(), bytes, target.extension());
+            String url = "/a/images/" + quota.sessionId() + "/" + preview.imageId() + "." + target.extension();
+            metadata.put("generatedImage", Map.of("path", target.relativePath(), "previewUrl", url, "bytes", bytes.length));
+            return ToolExecuteResult.success(mapper.writeValueAsString(Map.of("ok", true, "path", target.relativePath(),
+                    "previewUrl", url, "bytes", bytes.length, "modelName", quota.config().getModelName(), "size", options.size(),
                     "note", "在回复中使用 ![图片描述](previewUrl) 展示生成结果；工作区文件已保存。")), ToolResultType.NORMAL, Map.copyOf(metadata));
         } catch (Exception error) {
             if (error instanceof InterruptedException) Thread.currentThread().interrupt();
@@ -130,7 +104,63 @@ public class GenerateImageToolExecutor implements ToolExecutor {
         }
     }
 
-    private void throwIf(boolean condition, String err) {
-        if (condition) throw new ClientException(err);
+    private JsonNode arguments(ToolExecution execution) throws Exception {
+        JsonNode args = mapper.readTree(execution.getArgs());
+        ImageToolChecks.rejectIf(args == null || !args.path("prompt").isTextual() || args.path("prompt").asText().isBlank(),
+                "生图提示词 prompt 不能为空");
+        ImageToolChecks.rejectIf(!args.path("path").isTextual() || args.path("path").asText().isBlank(),
+                "生图文件路径 path 不能为空");
+        return args;
+    }
+
+    /** 目标必须是工作区内的新文件：几何包含挡不住链接，真实目录还要再复核一次。 */
+    private GeneratedImageTarget writableTarget(ToolExecution execution, JsonNode args) throws IOException {
+        Workspace workspace = execution.getWorkspace();
+        ImageToolChecks.rejectIf(workspace == null, "生图需要先配置工作区");
+        String relativePath = args.path("path").asText().trim();
+        ImageToolChecks.rejectIf(Path.of(relativePath).isAbsolute(), "生图文件路径必须相对于工作区");
+        Path target = workspace.resolve(relativePath);
+        ImageToolChecks.rejectIf(!workspace.encloses(target), "生图文件只能保存在工作区内");
+        String lower = relativePath.toLowerCase(Locale.ROOT);
+        ImageToolChecks.rejectIf(!(lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")),
+                "生图文件扩展名必须是 png、jpg 或 jpeg");
+        String extension = lower.endsWith(".png") ? ImageFormat.PNG.storedExtension() : ImageFormat.JPEG.storedExtension();
+        WorkspaceFiles files = workspace.bridge().files();
+        ImageToolChecks.rejectIf(files.exists(target), "生图目标文件已存在，请选择其它路径");
+        writer.validateTarget(workspace, target);
+        return new GeneratedImageTarget(workspace, target, files, extension, relativePath);
+    }
+
+    /** 配额与模型配置：只有被放行的那次调用才有模型，且上限口径与拦截器一致。 */
+    private GenerationQuota authorizedQuota(ToolExecution execution) {
+        Map<String, Object> attributes = execution.getAttributes();
+        Long modelId = ExecutionAttributes.readLong(attributes, GenerateImageInterceptor.MODEL);
+        ImageToolChecks.rejectIf(modelId == null, "请先在其它模型配置中选择生图模型");
+        Object allowed = attributes.get(GenerateImageInterceptor.ALLOWED);
+        ImageToolChecks.rejectIf(!(allowed instanceof List<?> ids) || !ids.contains(execution.getId()),
+                "本次执行已达到生图次数上限（" + GenerateImageInterceptor.number(attributes, GenerateImageInterceptor.LIMIT) + " 次）");
+        Long sessionId = ExecutionAttributes.readLong(attributes, ExecutionAttributes.SESSION_ID);
+        ImageToolChecks.rejectIf(sessionId == null, "生图执行缺少会话标识");
+        ModelConfig config = models.runtimeConfig(modelId, null);
+        ImageToolChecks.rejectIf(!DefaultModelProviderNames.DEFAULT_IMAGE.equals(config.getProvider()), "配置的生图模型不是图片模型，请重新选择");
+        return new GenerationQuota(sessionId, config);
+    }
+
+    /** 按参考图/蒙版分派 generate 或 edit；一次工具调用只发一次请求，避免 SDK 重试绕过执行次数上限。 */
+    private ChatResponseEntity requestImage(ModelConfig config, String prompt, ImageGenerationOptions options,
+                                            Image reference, Image mask) throws Exception {
+        ImageModel model = providers.create(config.toBuilder().maxRetries(0).build());
+        if (reference == null) return model.generate(prompt, options);
+        if (mask == null) return model.edit(reference, prompt, options);
+        return model.edit(reference, mask, prompt, options);
+    }
+
+    /** 校验过的落盘目标：桥接文件句柄、扩展名与回执里的相对路径。 */
+    private record GeneratedImageTarget(Workspace workspace, Path path, WorkspaceFiles files,
+                                        String extension, String relativePath) {
+    }
+
+    /** 已放行的配额：会话标识、上限配置与本次可用的生图模型。 */
+    private record GenerationQuota(long sessionId, ModelConfig config) {
     }
 }

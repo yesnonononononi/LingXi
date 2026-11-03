@@ -24,8 +24,6 @@ public class ImageNormalizer {
     public static final long MAX_PIXELS = 40_000_000L;
 
     private static final float JPEG_QUALITY = 0.85f;
-    private static final String JPEG = "jpg";
-    private static final String PNG = "png";
 
     /** 只读文件头拿尺寸，不解码像素数据。 */
     public ImageSize probe(byte[] data) throws IOException {
@@ -62,18 +60,17 @@ public class ImageNormalizer {
             return new NormalizedImage(data, format.mimeType(), format.storedExtension(), size.width(), size.height());
         }
 
-        ImageSize target = fit(size.width(), size.height());
+        ImageSize target = needsScale ? scaledToLongEdge(size.width(), size.height()) : size;
         BufferedImage canvas = draw(source, target, format.keepsAlpha());
-        if (format.keepsAlpha()) {
-            return new NormalizedImage(encode(canvas, PNG), ImageFormat.PNG.mimeType(), PNG, target.width(), target.height());
-        }
-        return new NormalizedImage(encode(canvas, JPEG), format.mimeType(), JPEG, target.width(), target.height());
+        ImageFormat encoder = format.keepsAlpha() ? ImageFormat.PNG : ImageFormat.JPEG;
+        // 透明格式统一转 PNG，mime 必须跟着产出的字节走；有损路径沿用入参格式的 mime。
+        String mimeType = format.keepsAlpha() ? encoder.mimeType() : format.mimeType();
+        return new NormalizedImage(encode(canvas, encoder), mimeType, encoder.storedExtension(), target.width(), target.height());
     }
 
-    private ImageSize fit(int width, int height) {
-        int longEdge = Math.max(width, height);
-        if (longEdge <= MAX_LONG_EDGE) return new ImageSize(width, height);
-        double ratio = (double) MAX_LONG_EDGE / longEdge;
+    /** 等比缩到长边上限；是否需要缩放已由调用点的 {@code needsScale} 判过，这里不再重复判同一个条件。 */
+    private ImageSize scaledToLongEdge(int width, int height) {
+        double ratio = (double) MAX_LONG_EDGE / Math.max(width, height);
         int targetWidth = Math.max(1, (int) Math.round(width * ratio));
         int targetHeight = Math.max(1, (int) Math.round(height * ratio));
         return new ImageSize(targetWidth, targetHeight);
@@ -98,15 +95,15 @@ public class ImageNormalizer {
         return canvas;
     }
 
-    private byte[] encode(BufferedImage image, String formatName) throws IOException {
-        Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName(formatName);
-        if (!writers.hasNext()) throw new IOException("没有可用的图片编码器: " + formatName);
+    private byte[] encode(BufferedImage image, ImageFormat format) throws IOException {
+        Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName(format.storedExtension());
+        if (!writers.hasNext()) throw new IOException("没有可用的图片编码器: " + format.storedExtension());
         ImageWriter writer = writers.next();
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         try (ImageOutputStream stream = ImageIO.createImageOutputStream(output)) {
             writer.setOutput(stream);
             ImageWriteParam param = writer.getDefaultWriteParam();
-            if (JPEG.equals(formatName) && param.canWriteCompressed()) {
+            if (format == ImageFormat.JPEG && param.canWriteCompressed()) {
                 param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
                 param.setCompressionQuality(JPEG_QUALITY);
             }

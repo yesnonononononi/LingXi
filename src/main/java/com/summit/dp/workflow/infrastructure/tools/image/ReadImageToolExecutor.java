@@ -76,48 +76,86 @@ public class ReadImageToolExecutor implements ToolExecutor {
 
     @Override
     public @NonNull ToolExecuteResult execute(ToolExecution toolExecution) {
+        try {
+            return read(toolExecution);
+        } catch (ReadRejected rejected) {
+            return failure(rejected.reason, rejected.detail);
+        }
+    }
+
+    /** 解析 → 校验闸门 → 读取字节 → 探测与规整 → 组装回执，失败统一由 {@link ReadRejected} 带回出口。 */
+    private ToolExecuteResult read(ToolExecution toolExecution) {
+        String displayPath = requestedPath(toolExecution);
+        Workspace workspace = requireWorkspace(toolExecution);
+        Path target = resolveInsideWorkspace(workspace, displayPath);
+        Map<String, Object> attributes = toolExecution.getAttributes() == null ? Map.of() : toolExecution.getAttributes();
+        long sessionId = requireVisionAndBudget(attributes);
+        byte[] raw = readBytes(workspace, target, displayPath);
+        ImageFormat format = requireSupportedFormat(raw);
+        requireSafePixelCount(raw, displayPath);
+        StoredImage stored = encodeAndCache(raw, format, sessionId, displayPath);
+        int used = ImageExecutionAttributes.consumed(attributes) + 1;
+        return ToolExecuteResult.success(
+                receipt(displayPath, stored.cached(), stored.normalized(), used),
+                ToolResultType.NORMAL,
+                metadata(stored.cached(), stored.normalized(), displayPath));
+    }
+
+    private String requestedPath(ToolExecution toolExecution) {
         ReadImageRequest request;
         try {
             request = objectMapper.readValue(toolExecution.getArgs(), ReadImageRequest.class);
         } catch (Exception malformed) {
-            return failure("READ_FAILED", "参数无法解析，需要 {\"path\": \"...\"}");
+            throw new ReadRejected("READ_FAILED", "参数无法解析，需要 {\"path\": \"...\"}");
         }
         if (request == null || request.getPath() == null || request.getPath().isBlank()) {
-            return failure("READ_FAILED", "path 不能为空");
+            throw new ReadRejected("READ_FAILED", "path 不能为空");
         }
         String displayPath = request.getPath().trim();
-        if (displayPath.isBlank()) return failure("READ_FAILED", "图片路径不能为空");
         log.info("读取工作区图片: path={}", displayPath);
+        return displayPath;
+    }
 
+    private Workspace requireWorkspace(ToolExecution toolExecution) {
         Workspace workspace = toolExecution.getWorkspace();
-        if (workspace == null) return failure("READ_FAILED", "当前执行没有可用的工作区");
+        if (workspace == null) throw new ReadRejected("READ_FAILED", "当前执行没有可用的工作区");
+        return workspace;
+    }
+
+    /** 只认工作区内路径：读图不需要越界能力，越界读还会绕开沙箱的文件策略。 */
+    private Path resolveInsideWorkspace(Workspace workspace, String displayPath) {
         Path target;
         try {
             target = workspace.resolve(displayPath);
         } catch (InvalidPathException invalid) {
-            return failure("READ_FAILED", "图片路径格式不正确");
+            throw new ReadRejected("READ_FAILED", "图片路径格式不正确");
         }
-        // 只认工作区内路径：读图不需要越界能力，越界读还会绕开沙箱的文件策略。
         if (!workspace.encloses(target)) {
-            return failure("OUTSIDE_WORKSPACE", "只能读取工作区内的图片: " + displayPath);
+            throw new ReadRejected("OUTSIDE_WORKSPACE", "只能读取工作区内的图片: " + displayPath);
         }
+        return target;
+    }
 
-        Map<String, Object> attributes = toolExecution.getAttributes() == null ? Map.of() : toolExecution.getAttributes();
+    /** 视觉能力、会话标识、张数闸门都在读文件之前：看不了图的模型不该先碰磁盘。 */
+    private long requireVisionAndBudget(Map<String, Object> attributes) {
         if (!Boolean.TRUE.equals(attributes.get(ExecutionAttributes.MODEL_VISION))) {
-            return failure("VISION_UNAVAILABLE", "当前模型不支持直接读取图片，请改用文字描述或换用视觉模型");
+            throw new ReadRejected("VISION_UNAVAILABLE", "当前模型不支持直接读取图片，请改用文字描述或换用视觉模型");
         }
         Long sessionId = ExecutionAttributes.readLong(attributes, ExecutionAttributes.SESSION_ID);
         if (sessionId == null) {
-            return failure("READ_FAILED", "会话标识缺失，无法定位图片缓存");
+            throw new ReadRejected("READ_FAILED", "会话标识缺失，无法定位图片缓存");
         }
-        if (consumed(attributes) >= MAX_IMAGE_BUDGET) {
-            return failure("BUDGET_EXHAUSTED", "本次执行最多读取 " + MAX_IMAGE_BUDGET + " 张图片");
+        if (ImageExecutionAttributes.consumed(attributes) >= MAX_IMAGE_BUDGET) {
+            throw new ReadRejected("BUDGET_EXHAUSTED", "本次执行最多读取 " + MAX_IMAGE_BUDGET + " 张图片");
         }
+        return sessionId;
+    }
 
+    private byte[] readBytes(Workspace workspace, Path target, String displayPath) {
         byte[] raw;
         try {
             if (!Files.isRegularFile(target)) {
-                return failure("READ_FAILED", "不是可读的图片文件: " + displayPath);
+                throw new ReadRejected("READ_FAILED", "不是可读的图片文件: " + displayPath);
             }
             // 几何包含关系挡不住目录链接，读取前还要核对真实文件的归属。
             if (!workspace.encloses(target.toRealPath())) {
@@ -125,55 +163,57 @@ public class ReadImageToolExecutor implements ToolExecutor {
                 // 工作区根目录本身也可能是链接，按它的真实根目录判断归属。
                 if (workDir == null || workDir.isBlank()
                         || !target.toRealPath().startsWith(Path.of(workDir).toRealPath())) {
-                    return failure("OUTSIDE_WORKSPACE", "只能读取工作区内的图片: " + displayPath);
+                    throw new ReadRejected("OUTSIDE_WORKSPACE", "只能读取工作区内的图片: " + displayPath);
                 }
             }
             if (Files.size(target) > MAX_BYTES) {
-                return failure("FILE_TOO_LARGE", "图片超过 " + (MAX_BYTES / 1024 / 1024) + "MB");
+                throw new ReadRejected("FILE_TOO_LARGE", "图片超过 " + (MAX_BYTES / 1024 / 1024) + "MB");
             }
             WorkspaceFiles files = workspace.bridge().files();
             raw = files.readBytes(target);
         } catch (IOException unreadable) {
             // 沙箱路径映射不等价时，宿主看不到这个文件；不要抛异常炸整轮。
             log.warn("读取图片失败: path={}", displayPath, unreadable);
-            return failure("SANDBOX_UNREADABLE", "该工作区无法按字节读取此文件: " + displayPath);
+            throw new ReadRejected("SANDBOX_UNREADABLE", "该工作区无法按字节读取此文件: " + displayPath);
         }
         if (raw.length > MAX_BYTES) {
-            return failure("FILE_TOO_LARGE", "图片超过 " + (MAX_BYTES / 1024 / 1024) + "MB");
+            throw new ReadRejected("FILE_TOO_LARGE", "图片超过 " + (MAX_BYTES / 1024 / 1024) + "MB");
         }
+        return raw;
+    }
 
+    private ImageFormat requireSupportedFormat(byte[] raw) {
         ImageFormat format = ImageFormat.detect(raw);
-        if (format == null) {
-            String label = ImageFormat.unsupportedLabel(raw);
-            if (label != null) return failure("UNSUPPORTED_FORMAT", label + " 暂不支持，请先转换为 PNG/JPEG");
-            return failure("NOT_AN_IMAGE", "文件头不是 PNG/JPEG/GIF/BMP");
-        }
+        if (format != null) return format;
+        String label = ImageFormat.unsupportedLabel(raw);
+        if (label != null) throw new ReadRejected("UNSUPPORTED_FORMAT", label + " 暂不支持，请先转换为 PNG/JPEG");
+        throw new ReadRejected("NOT_AN_IMAGE", "文件头不是 PNG/JPEG/GIF/BMP");
+    }
 
+    /** 尺寸闸门必须早于解码：一张解压炸弹不该被 {@code normalize} 先展开。 */
+    private void requireSafePixelCount(byte[] raw, String displayPath) {
         ImageNormalizer.ImageSize size;
         try {
             size = normalizer.probe(raw);
         } catch (IOException undecodable) {
             log.warn("图片尺寸探测失败: path={}", displayPath, undecodable);
-            return failure("NOT_AN_IMAGE", "图片解码失败，文件可能已损坏");
+            throw new ReadRejected("NOT_AN_IMAGE", "图片解码失败，文件可能已损坏");
         }
         if ((long) size.width() * size.height() > ImageNormalizer.MAX_PIXELS) {
-            return failure("PIXEL_BOMB", "图片像素过大（" + size.width() + "×" + size.height() + "），请先压缩");
+            throw new ReadRejected("PIXEL_BOMB", "图片像素过大（" + size.width() + "×" + size.height() + "），请先压缩");
         }
+    }
 
-        ImageNormalizer.NormalizedImage normalized;
-        ImageCacheDirectory.CachedImage cached;
+    /** 规整与落盘共用一个 catch：对用户而言两者都是「这图转换不出来」。 */
+    private StoredImage encodeAndCache(byte[] raw, ImageFormat format, long sessionId, String displayPath) {
         try {
-            normalized = normalizer.normalize(raw, format);
-            cached = cache.store(sessionId, normalized.data(), normalized.extension());
+            ImageNormalizer.NormalizedImage normalized = normalizer.normalize(raw, format);
+            ImageCacheDirectory.CachedImage cached = cache.store(sessionId, normalized.data(), normalized.extension());
+            return new StoredImage(normalized, cached);
         } catch (IOException encodeFailed) {
             log.warn("图片规整失败: path={}", displayPath, encodeFailed);
-            return failure("READ_FAILED", "图片转换失败，请换一张图或先转为 PNG/JPEG");
+            throw new ReadRejected("READ_FAILED", "图片转换失败，请换一张图或先转为 PNG/JPEG");
         }
-
-        return ToolExecuteResult.success(
-                receipt(displayPath, cached, normalized, consumed(attributes) + 1),
-                ToolResultType.NORMAL,
-                metadata(cached, normalized, displayPath));
     }
 
     private String receipt(String displayPath, ImageCacheDirectory.CachedImage cached,
@@ -216,9 +256,26 @@ public class ReadImageToolExecutor implements ToolExecutor {
         return ToolExecuteResult.err(root.toString());
     }
 
-    private int consumed(Map<String, Object> attributes) {
-        Long value = ExecutionAttributes.readLong(attributes, KEY_CONSUMED);
-        return value == null ? 0 : value.intValue();
+    /** 规整结果与缓存句柄：回执与元数据都要同时用到两者。 */
+    private record StoredImage(ImageNormalizer.NormalizedImage normalized, ImageCacheDirectory.CachedImage cached) {
+    }
+
+    /**
+     * 链路深处的校验失败信号。
+     *
+     * <p>用它把 {@code reason}/{@code detail} 带回唯一出口，避免每个校验点都写一遍 {@code return failure(...)}；
+     * 不填栈、不填 cause，因为它不是异常路径而是既定的失败分支。</p>
+     */
+    private static final class ReadRejected extends RuntimeException {
+
+        private final String reason;
+        private final String detail;
+
+        private ReadRejected(String reason, String detail) {
+            super(detail, null, false, false);
+            this.reason = reason;
+            this.detail = detail;
+        }
     }
 
 }
