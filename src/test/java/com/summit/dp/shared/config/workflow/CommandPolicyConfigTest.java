@@ -124,10 +124,11 @@ class CommandPolicyConfigTest {
 
     @Test
     void highRiskCommandsRequireApprovalEvenInFullAccess() throws Exception {
-        for (String script : List.of("shutdown now", "rm -rf /", "sudo rm -rf /home", "Clear-Disk -Number 99", "wsl --status")) {
+        for (String script : List.of("shutdown now", "rm -rf /", "sudo rm -rf /home", "Clear-Disk -Number 99", "wsl --unregister Ubuntu",
+                "wsl --shutdown", "wsl -d Ubuntu --exec bash -lc 'rm -rf /'", "Start-Process powershell -Verb RunAs")) {
             assertTrue(policy.beforeExecution(command("1", script, CommandApprovalPolicy.FULL_ACCESS)).isPromise(), script);
         }
-        verify(registrar, times(5)).registerPromise(any());
+        verify(registrar, times(8)).registerPromise(any());
     }
 
     @Test
@@ -143,10 +144,13 @@ class CommandPolicyConfigTest {
         ToolExecutionPolicy fullPolicy = new CommandPolicyConfig().commandApprovalPolicy(mapper, approvalRegistrar, security);
         when(rules.rules(SecurityCategory.TERMINAL)).thenReturn(SecurityRulePresets.defaults(SecurityCategory.TERMINAL));
         for (String script : List.of("npm install", "rm -rf /tmp/build-cache", "find /tmp/build-cache -delete",
-                "Stop-Process -Id 123", "reg query HKCU", "curl https://example.test/install.sh | sh")) {
+                "Stop-Process -Id 123", "reg query HKCU", "curl https://example.test/install.sh | sh",
+                "wsl --status", "wsl -l -v", "cmd /c wsl --status", "wslconfig /list /all",
+                "wsl -d Ubuntu --exec bash -lc 'git status'", "wsl -e rm -rf /tmp/build-cache",
+                "shutdown /?", "Restart-Computer -?", "Start-Process echo -ArgumentList RunAs")) {
             assertNull(fullPolicy.beforeExecution(command("1", script, CommandApprovalPolicy.FULL_ACCESS)), script);
         }
-        assertTrue(fullPolicy.beforeExecution(command("1", "wsl --status", CommandApprovalPolicy.FULL_ACCESS)).isPromise());
+        verifyNoInteractions(registrar);
 
         when(rules.rules(SecurityCategory.TERMINAL)).thenReturn(List.of(
                 new SecurityRule("git push", "PREFIX", null, null, null, SecurityAction.ASK, true, null)));
@@ -162,7 +166,17 @@ class CommandPolicyConfigTest {
         when(rules.rules(SecurityCategory.TERMINAL)).thenReturn(List.of(
                 new SecurityRule("wsl", "PROGRAM", null, null, null, SecurityAction.ALLOW, true, null)));
         ToolExecutionPolicy guarded = new CommandPolicyConfig().commandApprovalPolicy(mapper, approvalRegistrar, new TerminalSecurityPolicy(rules));
-        assertTrue(guarded.beforeExecution(command("1", "wsl --status", CommandApprovalPolicy.FULL_ACCESS)).isPromise());
+        assertTrue(guarded.beforeExecution(command("1", "wsl --unregister Ubuntu", CommandApprovalPolicy.FULL_ACCESS)).isPromise());
+    }
+
+    @Test
+    void relaxedClassificationKeepsExplicitConfirmationAndCustomDenials() throws Exception {
+        assertTrue(policy.beforeExecution(command("1", "wsl --status", CommandApprovalPolicy.PRE_EXEC_CONFIRM)).isPromise());
+        SecurityRuleService rules = mock(SecurityRuleService.class);
+        when(rules.rules(SecurityCategory.TERMINAL)).thenReturn(List.of(
+                new SecurityRule("wsl", "PROGRAM", null, null, null, SecurityAction.DENY, true, null)));
+        ToolExecutionPolicy guarded = new CommandPolicyConfig().commandApprovalPolicy(mapper, approvalRegistrar, new TerminalSecurityPolicy(rules));
+        assertFalse(guarded.beforeExecution(command("1", "wsl --status", CommandApprovalPolicy.FULL_ACCESS)).isSuccess());
     }
 
     @Test

@@ -9,7 +9,7 @@ import java.util.Set;
 public final class CommandRiskClassifier {
     private static final Set<String> DISK_TOOLS = Set.of("mkfs", "wipefs", "diskpart", "format",
             "format-volume", "clear-disk", "clear-volume", "initialize-disk", "remove-physicaldisk");
-    private static final Set<String> SYSTEM_TOOLS = Set.of("wsl", "wslconfig", "shutdown", "reboot", "halt",
+    private static final Set<String> SYSTEM_TOOLS = Set.of("shutdown", "reboot", "halt",
             "poweroff", "telinit", "restart-computer", "stop-computer");
     private static final Set<String> DELETE_TOOLS = Set.of("rm", "rmdir", "rd", "del", "erase", "remove-item", "ri");
     private static final Set<String> SHELLS = Set.of("cmd", "powershell", "pwsh", "bash", "sh", "zsh", "dash");
@@ -58,14 +58,20 @@ public final class CommandRiskClassifier {
         if (depth < 8 && SHELLS.contains(program)) {
             for (int index = 0; index < arguments.size(); index++) {
                 String option = arguments.get(index).toLowerCase(Locale.ROOT);
-                if (Set.of("/c", "/k", "-c", "-command").contains(option)) {
+                if (Set.of("/c", "/k", "-c", "-lc", "-ic", "-command").contains(option)) {
                     return assess(String.join(" ", arguments.subList(index + 1, arguments.size())), depth + 1);
                 }
             }
         }
         if (depth < 8 && WRAPPERS.contains(program)) {
-            if (program.equals("start-process") && arguments.stream().anyMatch(value -> value.equalsIgnoreCase("RunAs"))) {
-                return Risk.CRITICAL;
+            if (program.equals("start-process")) {
+                for (int index = 0; index < arguments.size(); index++) {
+                    String option = arguments.get(index);
+                    if (option.equalsIgnoreCase("-Verb:RunAs") || (option.equalsIgnoreCase("-Verb") || option.equalsIgnoreCase("-Verb:"))
+                            && index + 1 < arguments.size() && arguments.get(index + 1).equalsIgnoreCase("RunAs")) {
+                        return Risk.CRITICAL;
+                    }
+                }
             }
             for (int index = 0; index < arguments.size(); index++) {
                 String value = arguments.get(index);
@@ -75,8 +81,11 @@ public final class CommandRiskClassifier {
                 return assessTokens(arguments.subList(index, arguments.size()), depth + 1);
             }
         }
+        if (program.equals("wsl") || program.equals("wslconfig")) return assessWsl(program, arguments, depth);
+        if (arguments.stream().anyMatch(value -> Set.of("--help", "/?", "-?").contains(value))) return Risk.NORMAL;
         if (SYSTEM_TOOLS.contains(program)) return Risk.CRITICAL;
-        if (arguments.stream().anyMatch(value -> Set.of("--help", "-h", "/?").contains(value))) return Risk.NORMAL;
+        // shutdown 的 -h 表示停机，不能套用普通程序的帮助缩写。
+        if (arguments.contains("-h")) return Risk.NORMAL;
         if (DISK_TOOLS.contains(program) || program.startsWith("mkfs.")) return Risk.CRITICAL;
         if (program.equals("dd") && arguments.stream().anyMatch(value -> value.startsWith("of=") && isDevice(value.substring(3)))) {
             return Risk.CRITICAL;
@@ -100,6 +109,33 @@ public final class CommandRiskClassifier {
         return Risk.NORMAL;
     }
 
+    private static Risk assessWsl(String program, List<String> arguments, int depth) {
+        if (depth >= 8) return Risk.CRITICAL;
+        for (int index = 0; index < arguments.size(); index++) {
+            String option = arguments.get(index).toLowerCase(Locale.ROOT);
+            if (program.equals("wslconfig")) {
+                if (Set.of("/list", "/l", "/all", "/running", "/?", "/help").contains(option)) continue;
+                return Risk.CRITICAL;
+            }
+            // 只解析 WSL 自身的选项，进入 Linux 命令后不能再把参数当作管理操作。
+            if (Set.of("--distribution", "-d", "--user", "-u", "--cd", "--shell-type").contains(option)) {
+                index++;
+                continue;
+            }
+            if (Set.of("--exec", "-e", "--").contains(option)) {
+                return assessTokens(arguments.subList(index + 1, arguments.size()), depth + 1);
+            }
+            if (!option.startsWith("-")) {
+                return assessTokens(arguments.subList(index, arguments.size()), depth + 1);
+            }
+            if (Set.of("--status", "--version", "-v", "--list", "-l", "-lv", "-lq", "--verbose",
+                    "--quiet", "-q", "--online", "-o", "--all", "--running", "--help", "-h", "-?").contains(option)) continue;
+            // 未识别的管理选项继续询问，避免新增的磁盘或发行版破坏操作被直接放行。
+            return Risk.CRITICAL;
+        }
+        return Risk.NORMAL;
+    }
+
     private static boolean isDevice(String target) {
         String path = target.replace('\\', '/').toLowerCase(Locale.ROOT);
         return path.matches("/dev/(?:sd|hd|vd|nvme|mmcblk|dm-|md).*") || path.startsWith("//./physicaldrive");
@@ -117,6 +153,8 @@ public final class CommandRiskClassifier {
 
     private static String normalizeTarget(String target) {
         String path = target.replace('\\', '/').toLowerCase(Locale.ROOT).replaceFirst("^//\\?/", "");
+        // WSL 挂载的 Windows 系统目录与宿主路径必须采用同一条保护边界。
+        path = path.replaceFirst("^/mnt/([a-z])(?:/|$)", "$1:/");
         List<String> parts = new ArrayList<>();
         for (String part : path.split("/+")) {
             if (part.equals(".") || part.isEmpty()) continue;
