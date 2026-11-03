@@ -1,0 +1,204 @@
+{
+  "version": 1,
+  "generatedBy": "scripts/build-pet-face-tiles.mjs",
+  "assetId": "lingxi-pet-p1-face",
+  "assetBase": "lxa://pet-p1/",
+  "faceRegion": {
+    "x": 560,
+    "y": 1064,
+    "width": 792,
+    "height": 400
+  },
+  "faceRegionNative": {
+    "left": 280,
+    "top": 532,
+    "width": 396,
+    "height": 200
+  },
+  "masterDir": "docs/assets/desktop-pet/v3/expr",
+  "degraded": [
+    "blinkHalf"
+  ],
+  "faceTiles": {
+    "neutral": {
+      "1x": {
+        "file": "face/neutral@1x.webp",
+        "url": "lxa://pet-p1/face/neutral@1x.webp",
+        "width": 198,
+        "height": 100,
+        "bytes": 26142,
+        "sha256": "821b0bda0240041be80d648acd9301248dac4f915a50f90b2284e7c4f1f3b9b4",
+        "format": "webp-lossless"
+      },
+      "2x": {
+        "file": "face/neutral@2x.webp",
+        "url": "lxa://pet-p1/face/neutral@2x.webp",
+        "width": 396,
+        "height": 200,
+        "bytes": 80538,
+        "sha256": "0bf7a196ba4d580bc9e9c4b60a08d4117f15cd9f646797a9d5bae240a43e732b",
+        "format": "webp-lossless"
+      }
+    },
+    "blink": {
+      "1x": {
+        "file": "face/blink@1x.webp",
+        "url": "lxa://pet-p1/face/blink@1x.webp",
+        "width": 198,
+        "height": 100,
+        "bytes": 22722,
+        "sha256": "e798c3563d6fe04f98a98a895ef92afd9dd024a52dfc3eede30d48497374f9ef",
+        "format": "webp-lossless"
+      },
+      "2x": {
+        "file": "face/blink@2x.webp",
+        "url": "lxa://pet-p1/face/blink@2x.webp",
+        "width": 396,
+        "height": 200,
+        "bytes": 69350,
+        "sha256": "6ab73e3fd4a9c03e62343cd300914f213f9dadb731cb1730a53f040988c8adaf",
+        "format": "webp-lossless"
+      }
+    },
+    "surprised": {
+      "1x": {
+        "file": "face/surprised@1x.webp",
+        "url": "lxa://pet-p1/face/surprised@1x.webp",
+        "width": 198,
+        "height": 100,
+        "bytes": 25762,
+        "sha256": "4360139612eef8cbb9362e83f559734e228fd86c3c36d0544a00ae1ee62794cd",
+        "format": "webp-lossless"
+      },
+      "2x": {
+        "file": "face/surprised@2x.webp",
+        "url": "lxa://pet-p1/face/surprised@2x.webp",
+        "width": 396,
+        "height": 200,
+        "bytes": 79754,
+        "sha256": "36baedd9335d973b2a83b23d4fd5066928b4930814973adf8e2947a79f69c9a0",
+        "format": "webp-lossless"
+      }
+    },
+    "sad": {
+      "1x": {
+        "file": "face/sad@1x.webp",
+        "url": "lxa://pet-p1/face/sad@1x.webp",
+        "width": 198,
+        "height": 100,
+        "bytes": 25440,
+        "sha256": "8dea6fa8144257a96550fbdeaee7d3f173bf32c14129182fe8429d79b3e0740a",
+        "format": "webp-lossless"
+      },
+      "2x": {
+        "file": "face/sad@2x.webp",
+        "url": "lxa://pet-p1/face/sad@2x.webp",
+        "width": 396,
+        "height": 200,
+        "bytes": 77906,
+        "sha256": "7a4c8545901c7b9794d93a92f4db841a287c7bd14447ae674d34284d787fa58f",
+        "format": "webp-lossless"
+      }
+    },
+    "angry": {
+      "1x": {
+        "file": "face/angry@1x.webp",
+        "url": "lxa://pet-p1/face/angry@1x.webp",
+        "width": 198,
+        "height": 100,
+        "bytes": 24992,
+        "sha256": "4502f143d40e2c57bf346ac0e380bc76dd1649658a6c6009d2a6d6fdbed5a01f",
+        "format": "webp-lossless"
+      },
+      "2x": {
+        "file": "face/angry@2x.webp",
+        "url": "lxa://pet-p1/face/angry@2x.webp",
+        "width": 396,
+        "height": 200,
+        "bytes": 76480,
+        "sha256": "9df3e1c88f8b3aef10577f1499a3db90a4a99138af29a507a690e1b4cfab0012",
+        "format": "webp-lossless"
+      }
+    },
+    "shy": {
+      "1x": {
+        "file": "face/shy@1x.webp",
+        "url": "lxa://pet-p1/face/shy@1x.webp",
+        "width": 198,
+        "height": 100,
+        "bytes": 25490,
+        "sha256": "3dfab8b86c009e87475799b086635117f0199dc57553850ee63892d9ad5ad951",
+        "format": "webp-lossless"
+      },
+      "2x": {
+        "file": "face/shy@2x.webp",
+        "url": "lxa://pet-p1/face/shy@2x.webp",
+        "width": 396,
+        "height": 200,
+        "bytes": 78334,
+        "sha256": "6a5ea685088b477dd3e4845cdc71a1f5dae02b95a0394ffd3d42eb85dbe8b32e",
+        "format": "webp-lossless"
+      }
+    },
+    "happy": {
+      "1x": {
+        "file": "face/happy@1x.webp",
+        "url": "lxa://pet-p1/face/happy@1x.webp",
+        "width": 198,
+        "height": 100,
+        "bytes": 23722,
+        "sha256": "e23eb7b3067f48e299c63e31fbad9d0025b0319f2f64eafb9f31fc13a30e7047",
+        "format": "webp-lossless"
+      },
+      "2x": {
+        "file": "face/happy@2x.webp",
+        "url": "lxa://pet-p1/face/happy@2x.webp",
+        "width": 396,
+        "height": 200,
+        "bytes": 73136,
+        "sha256": "173a53ef59b868bc751b1dc751332edb267c2483530ce3f1089930032ed50056",
+        "format": "webp-lossless"
+      }
+    },
+    "sleepy": {
+      "1x": {
+        "file": "face/sleepy@1x.webp",
+        "url": "lxa://pet-p1/face/sleepy@1x.webp",
+        "width": 198,
+        "height": 100,
+        "bytes": 24358,
+        "sha256": "5f64f30e73584cde136d27dc78fadeab21360bbaaba1fac4655df60e9e57f19a",
+        "format": "webp-lossless"
+      },
+      "2x": {
+        "file": "face/sleepy@2x.webp",
+        "url": "lxa://pet-p1/face/sleepy@2x.webp",
+        "width": 396,
+        "height": 200,
+        "bytes": 74608,
+        "sha256": "eb3e566fe057fd69f849f274db73759178af45ab287f51314c35a260c5840e8c",
+        "format": "webp-lossless"
+      }
+    },
+    "wink": {
+      "1x": {
+        "file": "face/wink@1x.webp",
+        "url": "lxa://pet-p1/face/wink@1x.webp",
+        "width": 198,
+        "height": 100,
+        "bytes": 24558,
+        "sha256": "310b20bbc5804de2ee2394d92da72dc4afec4db309afde4a484f5e1ae4e62f18",
+        "format": "webp-lossless"
+      },
+      "2x": {
+        "file": "face/wink@2x.webp",
+        "url": "lxa://pet-p1/face/wink@2x.webp",
+        "width": 396,
+        "height": 200,
+        "bytes": 75274,
+        "sha256": "8bcc4cf64e0db648fe583d6ea7c1d755898d98adf8bf8b8679eedf8147126526",
+        "format": "webp-lossless"
+      }
+    }
+  }
+}

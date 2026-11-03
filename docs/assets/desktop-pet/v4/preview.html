@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>桌宠 v4 · wink 母版复核（E1 vs E9）</title>
+<style>
+  /* 复核页只用中性灰阶做背景：既验亮底也验暗底，避免在白底上「看着还行」的错觉 */
+  :root {
+    color-scheme: light dark;
+    --bg: #f4f2ef;
+    --fg: #1b1b1f;
+    --muted: #55525a;
+    --panel: #ffffff;
+    --line: #c9c4bd;
+    --accent: #b4243c;
+  }
+  html[data-theme="dark"] {
+    --bg: #17171b;
+    --fg: #f2f1f4;
+    --muted: #b6b3bd;
+    --panel: #22222a;
+    --line: #3a3944;
+    --accent: #ff7a90;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 14px/1.6 "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  p.lead { margin: 0 0 18px; color: var(--muted); max-width: 76ch; }
+  .toolbar {
+    display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center;
+    padding: 12px 14px; margin-bottom: 18px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  }
+  .toolbar .group { display: flex; align-items: center; gap: 6px; }
+  .toolbar .label { color: var(--muted); font-size: 12px; }
+  button {
+    font: inherit; padding: 5px 10px; cursor: pointer;
+    color: var(--fg); background: transparent;
+    border: 1px solid var(--line); border-radius: 7px;
+  }
+  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* 并排是复核的要点：不换行，宽度不够就横向滚动 */
+  .stage { display: flex; flex-wrap: nowrap; gap: 18px; overflow-x: auto; padding-bottom: 6px; }
+  figure { margin: 0; }
+  figcaption { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .viewport {
+    position: relative; overflow: hidden;
+    background:
+      repeating-conic-gradient(from 0deg, rgba(128,128,128,.14) 0deg 90deg, transparent 90deg 180deg) 0 0 / 16px 16px,
+      var(--panel);
+    border: 1px solid var(--line); border-radius: 10px;
+  }
+  .layer {
+    position: absolute; top: 0; left: 0;
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    image-rendering: pixelated;
+    transform-origin: 0 0;
+  }
+  /* 眼区边框：只描外框，不遮笔迹 */
+  .zone {
+    position: absolute; pointer-events: none;
+    border: 1px dashed var(--accent);
+    border-radius: 4px;
+  }
+  .zone::after {
+    content: attr(data-tag);
+    position: absolute; top: -20px; left: 0;
+    font-size: 11px; color: var(--accent); white-space: nowrap;
+  }
+  .hidden { display: none; }
+  .notes { max-width: 82ch; margin-top: 22px; }
+  .notes h2 { font-size: 15px; margin: 20px 0 6px; }
+  .notes li { margin: 4px 0; }
+  code { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+  .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: middle; }
+</style>
+</head>
+<body>
+  <h1>桌宠 v4 · wink 母版复核</h1>
+  <p class="lead">
+    左：<code>../v3/expr/E1_default.png</code>（neutral 默认脸，睁眼）；右：<code>expr/E9_wink.png</code>（wink 母版）。
+    两张同画布 2048×3072、同锚点 (1024, 2908)。<strong>只有「画面左侧那只眼」允许不同</strong>，其余像素必须逐字节同 E1。
+  </p>
+
+  <div class="toolbar">
+    <div class="group">
+      <span class="label">缩放</span>
+      <button data-scale="0.5" aria-pressed="false">50%</button>
+      <button data-scale="0.75" aria-pressed="true">75%</button>
+      <button data-scale="1" aria-pressed="false">100%</button>
+      <button data-scale="1.6" aria-pressed="false">160%</button>
+    </div>
+    <div class="group">
+      <span class="label">底色</span>
+      <button data-theme-btn="light" aria-pressed="true">亮</button>
+      <button data-theme-btn="dark" aria-pressed="false">暗</button>
+    </div>
+    <div class="group">
+      <span class="label">眼区框</span>
+      <button id="toggle-zone" aria-pressed="true">显示</button>
+    </div>
+    <div class="group">
+      <span class="label">闪切对比</span>
+      <button id="toggle-flash" aria-pressed="false">E1 ⇄ E9</button>
+    </div>
+  </div>
+
+  <div class="stage">
+    <figure>
+      <div class="viewport" id="vp-e1">
+        <div class="layer" data-img="../v3/expr/E1_default.png"></div>
+        <div class="zone hidden" data-zone="closed" data-tag="闭眼侧眼区 x570–960 / y1070–1380"></div>
+        <div class="zone hidden" data-zone="open" data-tag="睁眼侧眼区（差异必须为 0）"></div>
+      </div>
+      <figcaption>E1_default.png · neutral · 睁眼基准</figcaption>
+    </figure>
+    <figure>
+      <div class="viewport" id="vp-e9">
+        <div class="layer" data-img="expr/E9_wink.png"></div>
+        <div class="zone hidden" data-zone="closed" data-tag="闭眼侧眼区 x570–960 / y1070–1380"></div>
+        <div class="zone hidden" data-zone="open" data-tag="睁眼侧眼区（差异必须为 0）"></div>
+      </div>
+      <figcaption>E9_wink.png · wink · 单眼闭合</figcaption>
+    </figure>
+    <figure>
+      <div class="viewport" id="vp-flash" style="display:none">
+        <div class="layer" data-img="../v3/expr/E1_default.png"></div>
+        <div class="layer" data-img="expr/E9_wink.png" style="opacity:0"></div>
+      </div>
+      <figcaption id="flash-caption" style="display:none">闪切：当前显示 E1</figcaption>
+    </figure>
+  </div>
+
+  <div class="notes">
+    <h2>怎么一眼判断这是 wink 而不是「双眼闭合」或「整头重绘」</h2>
+    <ul>
+      <li><strong>睁眼侧必须还是那只蓝色大眼</strong>：右侧眼区在 E1/E9 里完全一样（差异像素 0）。若两边都闭着，那是 <code>E2_blink</code>，不是 wink。</li>
+      <li><strong>嘴型 / 腮红 / 发夹 / 刘海一点都不能动</strong>：把「闪切对比」打开，盯住鼻子以下的区域——它应该纹丝不动；只有左侧眼睑在动。</li>
+      <li><strong>闭眼笔迹与 blink 同一笔迹</strong>：E9 的闭眼取自 <code>E2_blink</code> 的左眼，所以眨眼与 wink 的眼睑风格一致，不会出现两套笔触。</li>
+      <li><strong>闭合弧线上挑、嘴角不变</strong>：眼睑内角略微上挑读作俏皮，而嘴角保持中性 :3，避免与 <code>happy</code> 混档。</li>
+      <li>命令复核：<code>node docs/assets/desktop-pet/v4/tools/check-wink.mjs</code>（全绿才可入库）。</li>
+    </ul>
+    <h2>本页不做什么</h2>
+    <ul>
+      <li>不做任何缩放插值以外的图像处理：放大用 <code>image-rendering: pixelated</code>，看到的就是母版原像素，不是渲染效果。</li>
+      <li>不引用 manifest（<code>file://</code> 下 fetch 会被 CORS 拦），数字以 README 与 <code>manifest.json</code> 为准。</li>
+      <li>闪切在 <code>prefers-reduced-motion: reduce</code> 下不自动播放，只保留手动按钮。</li>
+    </ul>
+  </div>
+
+<script>
+(() => {
+  // 只显示脸区：母版 2048×3072 中裁 (560,1064,792,400)
+  const CROP = { x: 560, y: 1064, w: 792, h: 400 };
+  const FULL = { x: 0, y: 0, w: 2048, h: 3072 };
+  const ZONES = {
+    closed: { x: 570, y: 1070, w: 390, h: 310 },
+    open: { x: 1000, y: 1060, w: 400, h: 320 },
+  };
+  let scale = 0.75;
+  let crop = CROP;
+  let showZone = true;
+
+  const viewports = [document.getElementById('vp-e1'), document.getElementById('vp-e9'), document.getElementById('vp-flash')];
+
+  function layout() {
+    for (const vp of viewports) {
+      vp.style.width = (crop.w * scale) + 'px';
+      vp.style.height = (crop.h * scale) + 'px';
+      for (const layer of vp.querySelectorAll('.layer')) {
+        layer.style.width = (FULL.w * scale) + 'px';
+        layer.style.height = (FULL.h * scale) + 'px';
+        layer.style.backgroundImage = 'url("' + layer.dataset.img + '")';
+        layer.style.transform = 'translate(' + (-crop.x * scale) + 'px,' + (-crop.y * scale) + 'px)';
+      }
+      for (const zone of vp.querySelectorAll('.zone')) {
+        const z = ZONES[zone.dataset.zone];
+        const visible = showZone && z.x + z.w > crop.x && z.y + z.h > crop.y && z.x < crop.x + crop.w && z.y < crop.y + crop.h;
+        zone.classList.toggle('hidden', !visible);
+        const left = (z.x - crop.x) * scale;
+        const top = (z.y - crop.y) * scale;
+        zone.style.left = left + 'px';
+        zone.style.top = top + 'px';
+        zone.style.width = (Math.min(z.x + z.w, crop.x + crop.w) - Math.max(z.x, crop.x)) * scale + 'px';
+        zone.style.height = (Math.min(z.y + z.h, crop.y + crop.h) - Math.max(z.y, crop.y)) * scale + 'px';
+      }
+    }
+  }
+
+  document.querySelectorAll('[data-scale]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      scale = Number(btn.dataset.scale);
+      document.querySelectorAll('[data-scale]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+      layout();
+    });
+  });
+
+  document.querySelectorAll('[data-theme-btn]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.documentElement.dataset.theme = btn.dataset.themeBtn;
+      document.querySelectorAll('[data-theme-btn]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+    });
+  });
+
+  const zoneBtn = document.getElementById('toggle-zone');
+  zoneBtn.addEventListener('click', () => {
+    showZone = !showZone;
+    zoneBtn.setAttribute('aria-pressed', String(showZone));
+    zoneBtn.textContent = showZone ? '显示' : '隐藏';
+    layout();
+  });
+
+  // 闪切：把 E9 叠在 E1 上交替出现，直觉检出「多动的像素」
+  const flashFigure = document.getElementById('vp-flash').closest('figure');
+  const flashCaption = document.getElementById('flash-caption');
+  const flashBtn = document.getElementById('toggle-flash');
+  const flashLayers = document.querySelectorAll('#vp-flash .layer');
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let flashTimer = null;
+  let flashIndex = 0;
+
+  function setFlash(on) {
+    flashBtn.setAttribute('aria-pressed', String(on));
+    flashFigure.style.display = on ? '' : 'none';
+    flashCaption.style.display = on ? '' : 'none';
+    // 闪切视图固定用脸区 100%，避免和缩放按钮互相干扰
+    if (on) applyFlashStep(0);
+    if (flashTimer) { clearInterval(flashTimer); flashTimer = null; }
+    if (on && !reduceMotion) flashTimer = setInterval(() => applyFlashStep(flashIndex + 1), 900);
+  }
+
+  function applyFlashStep(i) {
+    flashIndex = i % flashLayers.length;
+    flashLayers.forEach((layer, index) => { layer.style.opacity = index === flashIndex ? '1' : '0'; });
+    flashCaption.textContent = '闪切：当前显示 ' + (flashIndex === 0 ? 'E1（睁眼）' : 'E9（wink）');
+  }
+
+  flashBtn.addEventListener('click', () => setFlash(flashBtn.getAttribute('aria-pressed') !== 'true'));
+
+  // URL 参数：?theme=dark&scale=1.6&zone=0 —— 让无头截图也能覆盖暗色与不同缩放
+  const params = new URLSearchParams(location.search);
+  if (params.get('theme') === 'dark') {
+    document.documentElement.dataset.theme = 'dark';
+    document.querySelectorAll('[data-theme-btn]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.themeBtn === 'dark')));
+  }
+  const wantedScale = Number(params.get('scale'));
+  if (wantedScale > 0) {
+    scale = wantedScale;
+    document.querySelectorAll('[data-scale]').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.scale) === wantedScale)));
+  }
+  if (params.get('zone') === '0') {
+    showZone = false;
+    zoneBtn.setAttribute('aria-pressed', 'false');
+    zoneBtn.textContent = '隐藏';
+  }
+
+  layout();
+})();
+</script>
+</body>
+</html>

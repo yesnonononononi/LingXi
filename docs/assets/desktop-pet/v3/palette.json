@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "colorSpace": "sRGB",
+  "sampleCoordinates": "原始源图像素坐标",
+  "note": "立绘可见材质从 v2 实取；站姿未露出肉垫，肉垫仅从设定稿取样，不能用于声称 v2 存在该材质。",
+  "materials": [
+    {
+      "id": "hair",
+      "label": "头发",
+      "source": "v2",
+      "samples": [
+        {
+          "x": 450,
+          "y": 350,
+          "hex": "#FEF2E4"
+        },
+        {
+          "x": 580,
+          "y": 410,
+          "hex": "#FDF1E6"
+        }
+      ]
+    },
+    {
+      "id": "skin",
+      "label": "皮肤",
+      "source": "v2",
+      "samples": [
+        {
+          "x": 480,
+          "y": 712,
+          "hex": "#FEF6EC"
+        },
+        {
+          "x": 465,
+          "y": 660,
+          "hex": "#FDF5EB"
+        }
+      ]
+    },
+    {
+      "id": "robe",
+      "label": "长袍",
+      "source": "v2",
+      "samples": [
+        {
+          "x": 410,
+          "y": 940,
+          "hex": "#F9F9FA"
+        },
+        {
+          "x": 397,
+          "y": 888,
+          "hex": "#F7F6F5"
+        }
+      ]
+    },
+    {
+      "id": "scarf",
+      "label": "围巾",
+      "source": "v2",
+      "samples": [
+        {
+          "x": 306,
+          "y": 807,
+          "hex": "#A1CBF9"
+        },
+        {
+          "x": 650,
+          "y": 806,
+          "hex": "#B0D7FE"
+        }
+      ]
+    },
+    {
+      "id": "inner_ear",
+      "label": "内耳",
+      "source": "v2",
+      "samples": [
+        {
+          "x": 250,
+          "y": 240,
+          "hex": "#FEC1B6"
+        },
+        {
+          "x": 695,
+          "y": 250,
+          "hex": "#FEBFB5"
+        }
+      ]
+    },
+    {
+      "id": "paw_pad",
+      "label": "肉垫",
+      "source": "design-reference",
+      "samples": [
+        {
+          "x": 205,
+          "y": 533,
+          "hex": "#F8D0CA"
+        },
+        {
+          "x": 197,
+          "y": 511,
+          "hex": "#F4DFD8"
+        }
+      ]
+    },
+    {
+      "id": "outline",
+      "label": "描边",
+      "source": "v2",
+      "samples": [
+        {
+          "x": 494,
+          "y": 81,
+          "hex": "#A86D59"
+        },
+        {
+          "x": 500,
+          "y": 81,
+          "hex": "#8C4834"
+        }
+      ]
+    }
+  ]
+}

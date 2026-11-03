@@ -1,0 +1,84 @@
+{
+  "status": "passed",
+  "assetId": "lingxi-pet-p0-v3",
+  "canaries": [
+    "indexed-color",
+    "nul-text-chunk",
+    "opaque-corner",
+    "missing-expression",
+    "nested-unlisted-file"
+  ],
+  "coverage": {
+    "inventoryFiles": 75,
+    "masterPngs": 10,
+    "runtimeWebps": 36
+  },
+  "modelBytes": 23367873,
+  "visibleBoundsAlpha128": {
+    "left": 36,
+    "top": 160,
+    "right": 2039,
+    "bottom": 2909
+  },
+  "anchor": {
+    "x": 1024,
+    "y": 2908
+  },
+  "psdCompositeMaxRgbDelta": 28,
+  "psdCompositeMaxVisibleDelta": 1.3254901960784313,
+  "checks": [
+    "RGBA8、sRGB、同画布",
+    "完整边缘透明扫描",
+    "8 档清单及摘要",
+    "每 PNG ≤2MB、模型 ≤25MB",
+    "v2 可见边界与尾尖留白",
+    "E1 无损重组",
+    "8 档轮廓逐像素一致",
+    "面部以外像素不变",
+    "运行时 16 组可见像素与 alpha 无损重组",
+    "PSD 复读及色板"
+  ],
+  "expressions": [
+    {
+      "expressionId": "neutral",
+      "changedPixels": 0,
+      "silhouetteChangedPixels": 0
+    },
+    {
+      "expressionId": "blink",
+      "changedPixels": 136788,
+      "silhouetteChangedPixels": 0
+    },
+    {
+      "expressionId": "surprised",
+      "changedPixels": 178436,
+      "silhouetteChangedPixels": 0
+    },
+    {
+      "expressionId": "sad",
+      "changedPixels": 174236,
+      "silhouetteChangedPixels": 0
+    },
+    {
+      "expressionId": "angry",
+      "changedPixels": 171500,
+      "silhouetteChangedPixels": 0
+    },
+    {
+      "expressionId": "shy",
+      "changedPixels": 181004,
+      "silhouetteChangedPixels": 0
+    },
+    {
+      "expressionId": "happy",
+      "changedPixels": 177592,
+      "silhouetteChangedPixels": 0
+    },
+    {
+      "expressionId": "sleepy",
+      "changedPixels": 172560,
+      "silhouetteChangedPixels": 0
+    }
+  ],
+  "visualReview": "见 qa/expressions-208px.png、faces-detail.png 和 preview.html；H1 的 P1/P2 部件旋转接缝不属于本批。"
+}

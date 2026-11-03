@@ -54,6 +54,16 @@ export default defineConfig({
        * <p>通知窗口必须是独立页面，不能复用 index.html —— 复用它会把整套 Vue 应用
        * 连同 pinia、路由、API 拦截器一起启动。而通知窗口只需要渲染一张卡片，
        * 且它跑在 `focusable: false` 的置顶小窗里，任何多余初始化都会拖慢首帧。</p>
+       *
+       * <p><b>桌宠入口（pet.html）已从生产构建入口移除</b>（M1/T01）：生产构建只有主应用与
+       * 自绘通知窗口两个入口，桌宠目前只在开发链可见，安装版不得出现桌宠入口。
+       * 它原本还因为"常驻不关、再拖一整套 Vue 会白占几十兆内存"
+       * 而独立成页 —— 那条理由仍然成立，所以 dev 侧仍走独立入口，只是不再进 `dist`：
+       * `npm run dev:pet` 用 `vite.pet.config.ts`（root 相同、端口独立 5275、`appType: 'mpa'`），
+       * 开发时不依赖本文件的 `input`。</p>
+       *
+       * <p>守卫：`node scripts/check-pet-not-shipped.mjs`（进 `npm run test:pet` 与 CI）
+       * 会断言这里没有 `pet` 键、且 `dist` 里没有 `pet.html` 与桌宠指纹。</p>
        */
       input: {
         main: resolve(__dirname, 'index.html'),

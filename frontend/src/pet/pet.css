@@ -1,0 +1,807 @@
+/**
+ * 桌宠渲染层 v0 样式（静态立绘 + CSS 缓动，不含 Live2D）。
+ *
+ * <p>整页必须透明：窗口尺寸比立绘大一圈（发光余量 + 顶部气泡预留），那一圈靠主进程的点击穿透
+ * 保证不吃鼠标。所以这里禁止给 html/body 任何背景色，也不要设 `color-scheme`——
+ * 设了 Windows 会给无背景窗口配一层白底。</p>
+ */
+
+:root {
+  /*
+   * 尺寸真源是 `frontend/pet-geometry.json`：启动时 `main.ts` 会把这几个变量按真源重写一遍，
+   * 这里的静态值只是**首帧兜底**（避免第 0 帧按错误的箱子排版闪一下）。
+   * 真源由 `npm run gate:pet` 校验，改动请改 JSON 后跑 `node scripts/build-pet-geometry.mjs`。
+   */
+  --pet-art-glow-pad: 16px;
+  --pet-art-bubble-h: 72px;
+
+  /* 四边特效边距（M3 起取代单值 glowPad）：呆毛向上、光晕向下、气泡只占顶部，
+     四边本来就不该同值。M4 起按设计文档 §1.8 定值：上 24（呆毛弹动）/ 右 20 / 下 18（接地光晕）
+     / 左 20（耳根位移），窗口随之变成 196×348，立绘箱本身仍是 156×234，视觉大小不变。 */
+  --pet-effect-top: 24px;
+  --pet-effect-right: 20px;
+  --pet-effect-bottom: 18px;
+  --pet-effect-left: 20px;
+
+  /* 立绘箱：按 1024×1536 画布的 2:3 比例定 → 156×234（窗口 196×348 = 立绘箱 + 四边特效边距 + 顶部气泡）。
+     箱子比例必须等于画布比例，否则等比 contain 时要么留横白、要么裁掉尾巴。 */
+  --pet-art-w: 156px;
+  --pet-art-h: 234px;
+
+  --pet-ink: rgba(224, 231, 255, 0.92);
+  --pet-glow: rgba(147, 197, 253, 0.35);
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+}
+
+body {
+  user-select: none;
+  cursor: default;
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+#pet-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* 排版容器：padding 与几何真源的四边边距/气泡常量一一对应 */
+.pet-stage {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  padding: var(--pet-effect-top) var(--pet-effect-right) var(--pet-effect-bottom) var(--pet-effect-left);
+  padding-top: calc(var(--pet-effect-top) + var(--pet-art-bubble-h));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/**
+ * 缓动分两层包：呼吸（scale + translateY）与摇摆（rotate）各自独立，
+ * 否则两个动画抢同一个 transform 会互相覆盖。只用 transform，走合成器，
+ * 不产生重排（frame-rate 友好）。
+ *
+ * <p>时长走 CSS 变量：`low` 档靠"时长 ×2"做视觉降频（零成本，不用 rAF），
+ * `off` 档靠 `animation-play-state: paused`。变量由 `visual/micro-motion.ts` 写入。</p>
+ */
+.pet-motion {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: pet-breathe var(--pet-breath-ms, 3.6s) ease-in-out infinite;
+  will-change: transform;
+}
+
+.pet-sway {
+  will-change: transform;
+  animation: pet-sway var(--pet-sway-ms, 5.2s) ease-in-out infinite;
+}
+
+/**
+ * 呼吸：**主用 translateY、scale 只到 1.004**。
+ *
+ * <p>旧版 `scale(1.014)` 会把 1px 描边拉虚，209px 的宠物上人眼直接读成"糊"——
+ * 这是"廉价感"的主要来源之一。放大交给后面要做的分层件，立牌阶段只做呼吸。</p>
+ *
+ * <p><b>为什么不再是一条匀称的 sin：</b>匀速正弦读成"机器在打气"。改成三段——
+ * 吸气（快）→ 顶端<b>停顿 14%</b>（屏住）→ 呼气（慢，收尾更缓）→ 底部<b>停顿</b>，
+ * 段与段之间各自带缓动，于是每个周期都不完全一样地"顿"一下。停顿靠关键帧
+ * 复制值实现（38% 与 52% 同值），不额外增加动画数量。</p>
+ */
+@keyframes pet-breathe {
+  0% {
+    transform: translateY(0) scale(1);
+    animation-timing-function: cubic-bezier(0.35, 0, 0.55, 1);
+  }
+  38% {
+    transform: translateY(-2px) scale(1.004);
+    animation-timing-function: linear;
+  }
+  /* 屏住：与 38% 同值，形成 14% 的停顿 */
+  52% {
+    transform: translateY(-2px) scale(1.004);
+    animation-timing-function: cubic-bezier(0.25, 0.8, 0.45, 1);
+  }
+  88% {
+    transform: translateY(0) scale(1);
+    animation-timing-function: linear;
+  }
+  /* 落底停顿：与 88% 同值，呼吸之间留出"歇一下"的空档 */
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+/**
+ * 摇摆：±0.8°（旧值 ±1.4°）。
+ *
+ * <p>209px 高的立牌，±1.4° 会让脚底明显左右滑（位移约 5px），读成"贴纸在飘"；
+ * ±0.8° 的脚底位移约 3px，读成"重心在换"。</p>
+ *
+ * <p>同样去掉了匀速正弦：左侧多停一会儿、回中时抢一下，读成"重心不稳"而不是"摆锤"。</p>
+ */
+@keyframes pet-sway {
+  0% {
+    transform: rotate(-0.8deg);
+    animation-timing-function: linear;
+  }
+  /* 偏左停顿 */
+  22% {
+    transform: rotate(-0.8deg);
+    animation-timing-function: cubic-bezier(0.3, 0, 0.4, 1);
+  }
+  58% {
+    transform: rotate(0.8deg);
+    animation-timing-function: linear;
+  }
+  /* 偏右停顿（比左侧短：两侧对称会立刻读成机械） */
+  74% {
+    transform: rotate(0.8deg);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.3, 1);
+  }
+  100% {
+    transform: rotate(-0.8deg);
+  }
+}
+
+/**
+ * 呆毛反相小动画（与身体反相 = 立刻"活"）。
+ *
+ * <p>当前立绘是整张图（没有独立呆毛层），所以这条动画只在将来接入 `43_ahoge` 分层件
+ * 或裁切贴片后生效；先按 seam S4 把关键帧与变量定下来，避免下一批改口径。</p>
+ */
+@keyframes pet-ahoge {
+  0%, 100% { transform: rotate(-1.5deg); }
+  50% { transform: rotate(1.5deg); }
+}
+
+/* 参数驱动档的 CSS 落点（seam S4）：尾巴/耳朵/视线都由 CSS 变量驱动，
+   变量名与 `presentation/sprite-presentation.ts` 的 DRIVEN_CSS_VARIABLES 一一对应。 */
+.pet-tail {
+  transform-origin: 50% 100%;
+  transform: rotate(var(--pet-tail-angle, 0deg));
+}
+
+.pet-ear-l {
+  transform-origin: 50% 100%;
+  transform: rotate(var(--pet-ear-l-angle, 0deg));
+}
+
+.pet-ear-r {
+  transform-origin: 50% 100%;
+  transform: rotate(var(--pet-ear-r-angle, 0deg));
+}
+
+.pet-ahoge {
+  transform-origin: 50% 100%;
+  animation: pet-ahoge var(--pet-ahoge-ms, 2.6s) ease-in-out infinite;
+}
+
+/* 视线偏移（P2 的眼睛高光随鼠标）：只作用于眼片，整图不动。
+   现在没有独立眼片，变量先按 seam S4 定下来，P2 接入时只加一层 `.pet-gaze` 元素。 */
+.pet-gaze {
+  transform: translateX(calc(var(--pet-gaze-x, 0) * 1.5px));
+}
+
+/**
+ * 落地光晕 / 接地阴影（P0，"站在桌面上"的感觉全靠它）。
+ *
+ * <p>与立绘的 `drop-shadow` 分工：drop-shadow 管轮廓立体感（3px/8px），
+ * halo 管脚下接地。两者叠加要有节制，否则整体发脏。</p>
+ *
+ * <p>尺寸与呼吸同周期、相位锁定（同为 3.6s），否则会出现"身体在呼吸、影子在打拍子"的错位。</p>
+ */
+.pet-halo {
+  position: absolute;
+  left: 50%;
+  bottom: var(--pet-halo-bottom, 2px);
+  width: var(--pet-halo-w, 62%);
+  height: var(--pet-halo-h, 14px);
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(50% 50% at 50% 50%, var(--pet-halo-color, rgba(96, 116, 168, 0.5)) 0%, transparent 72%);
+  filter: blur(3px);
+  opacity: var(--pet-halo-opacity, 0.55);
+  pointer-events: none;
+  animation: pet-halo var(--pet-breath-ms, 3.6s) ease-in-out infinite;
+}
+
+@keyframes pet-halo {
+  0%, 100% { transform: translateX(-50%) scaleX(0.92); opacity: calc(var(--pet-halo-opacity, 0.55) * 0.76); }
+  50% { transform: translateX(-50%) scaleX(1.06); opacity: var(--pet-halo-opacity, 0.55); }
+}
+
+/**
+ * 动作层（动作 id 与美术规格书 §6.2 对齐）。
+ *
+ * <p>全部用 transform 实现，只有合成器参与；`data-motion` 由 `SpritePresentation` 写入，
+ * 每次重写前会强制一次样式重算以重启动画。</p>
+ *
+ * <p><b>M6-b 第三轮：动作的宿主从 `.pet-art-frame` 换成 `.pet-action`。</b>
+ * 以前这些规则挂在压平帧上，而分层模式为了消"两条尾巴"的重影把压平帧整帧
+ * `opacity: 0`（见文件末尾的 layered 规则），于是动作动画作用在一个看不见的元素上——
+ * 用户点一下只看到耳朵/呆毛颤一下（层栈里各层自己的动画），整只宠物的"蹦一下"没了。
+ * 现在动画挂在"装画面"的容器上，两种合成模式下都在视野里。
+ * 守卫见 `tests/petMotionHost.test.ts`（改回 `.pet-art-frame` 会红）。</p>
+ */
+#pet-root[data-motion] .pet-action {
+  animation-duration: var(--pet-motion-ms, 480ms);
+  animation-fill-mode: both;
+  animation-timing-function: ease-out;
+}
+
+#pet-root[data-motion='tap'] .pet-action { animation-name: pet-tap; }
+#pet-root[data-motion='happy'] .pet-action { animation-name: pet-hop-lite; }
+#pet-root[data-motion='surprised'] .pet-action { animation-name: pet-hop; }
+#pet-root[data-motion='angry'] .pet-action { animation-name: pet-shake; }
+#pet-root[data-motion='wake'] .pet-action { animation-name: pet-shake; }
+#pet-root[data-motion='drag'] .pet-action { animation-name: pet-lift; }
+
+/*
+ * 状态型持续动作（M6-b D-B3）：`data-motion-loop='1'` 表示"演出被唤醒为止"。
+ *
+ * 分层档在 `layers/motion-compiler.ts` 里按 `op.loop` 直接编译成 `infinite`，
+ * 立牌档没有编译期 CSS 生成，只能靠这个 `data-*` 表达同一层语义——
+ * 两档必须一致，否则"切到立牌档就不睡"会是一个只在特定配置下复现的幽灵 bug。
+ */
+#pet-root[data-motion][data-motion-loop='1'] .pet-action {
+  animation-iteration-count: infinite;
+}
+
+/* 一弹：被点击时的最小反馈（规格书 P1 简化版：整图 scale 1.03） */
+@keyframes pet-tap {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.03) translateY(-2px); }
+  100% { transform: scale(1); }
+}
+
+/* 开心：轻微上跳 */
+@keyframes pet-hop-lite {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-4px); }
+}
+
+/* 惊讶：明显上跳 */
+@keyframes pet-hop {
+  0%, 100% { transform: translateY(0); }
+  35% { transform: translateY(-6px); }
+}
+
+/* 生气/惊醒：整图小抖（±1°） */
+@keyframes pet-shake {
+  0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(-1deg); }
+  45% { transform: rotate(1deg); }
+  70% { transform: rotate(-0.6deg); }
+}
+
+/* 拖拽：离地 2px（脚下一像素的位移就能读成"被拎起来了"） */
+@keyframes pet-lift {
+  0%, 100% { transform: translateY(-2px); }
+}
+
+/**
+ * 立绘箱（排版箱）。
+ *
+ * <p><b>它不是命中区</b>：命中改用可见包围盒（`src/pet/hit/rect-hit-tester.ts` 的
+ * `visibleBox()`），比这个箱子宽 3.5px、高 24.7px 小一圈——用整箱判命中会让用户"点在透明区
+ * 也算点到桌宠"，桌面上表现为点不动别的窗口。</p>
+ */
+.pet-art {
+  position: relative;
+  width: var(--pet-art-w);
+  height: var(--pet-art-h);
+  cursor: grab;
+  touch-action: none;
+}
+
+.pet-art.is-dragging {
+  cursor: grabbing;
+}
+
+/**
+ * 动作宿主（M6-b 第三轮）：整只宠物的"动作位移/抖动"挂在**这一层**，不再挂在压平帧上。
+ *
+ * <p><b>为什么必须有这一层：</b>压平帧（`.pet-art-frame`）同时承担"画面载体"和
+ * "表情/动作载体"两个职责。分层模式为了消掉"层栈动态尾巴 + 静止帧尾巴"的重影，
+ * 把压平帧整帧 `opacity: 0` 让位（见文件末尾的 layered 规则），于是挂在它上面的
+ * tap/happy/surprised/angry/wake/drag 动画一起失效——用户点一下只看到耳朵和呆毛颤一下，
+ * 整只宠物的"蹦一下"没了。把动作搬到"装画面"的容器上，两种合成模式下都在视野里。</p>
+ *
+ * <p><b>为什么是新增一层 div，而不是把动画挂到 `.pet-art` 或复用 `.pet-motion`：</b></p>
+ * <ol>
+ *   <li>`.pet-art` 里还有接地光晕（`.pet-halo`，`visual/halo.ts` 插在首个子节点）。
+ *       光晕是"影子"：宠物跳起来时影子不该跟着飞，所以它必须留在本层之外；</li>
+ *   <li>`.pet-art` 同时是命中判定的锚（`hit/rect-hit-tester.ts` 用它的 client 坐标
+ *       配 `layout.ts` 的 `visibleBox()`）。让"测量对象"兼任"动画对象"，
+ *       将来谁改一个都会踩到另一个；</li>
+ *   <li>`.pet-motion`（呼吸 translateY+scale）与 `.pet-sway`（摇摆 rotate）已经各占一层
+ *       transform，动作要**叠加**在它们之上而不是替换它们。</li>
+ * </ol>
+ *
+ * <p><b>怎么保证不抢呼吸/摇摆的 transform：</b>本层是 `.pet-sway` 的**子**元素，
+ * 自己另有一条独立的 transform 通道。父子 transform 天然相乘（`motion × sway × action`），
+ * 不会互相覆盖，所以呼吸、摇摆、动作三条动画可以同时跑，谁都不用停。
+ * 这里刻意仍然写 `transform` 而不是 `translate`/`rotate` 独立属性：动作关键帧里
+ * scale 与 translateY 混用（`pet-tap`），独立属性表达不了两者的合成顺序，
+ * 而分层方案（新元素）本身已经解决了冲突。</p>
+ *
+ * <p><b>为什么 composite 下不会出现双份位移：</b>同一时刻只有一个位移源——
+ * 动作动画只在本层声明，压平帧上不再有任何 `animation-name`。
+ * "帧自己动"换成"装帧的盒子动"，画面结果等价、幅度不翻倍。
+ * `tests/petMotionHost.test.ts` 会把这条锁死。</p>
+ *
+ * <p><b>命中几何的取舍（写清楚，别当 bug 修）：</b>`visibleBox()` 是纯函数算出的
+ * **静止**包围盒。动作期间视觉会短暂偏离命中框（跳起 2~6px 时点击仍按静止框判定），
+ * 这是既有事实（以前帧自己动也一样）。本层 `inset: 0`，因此**静止时与 `.pet-art`
+ * 逐像素同框**，命中与拖拽锚点的长期一致性不受影响。</p>
+ */
+.pet-action {
+  position: absolute;
+  inset: 0;
+  /* 事件一律由外层 `.pet-art` 收（本层只装画面），避免多一个事件目标 */
+  pointer-events: none;
+  will-change: transform;
+}
+
+/**
+ * 立绘帧（双缓冲：两张叠放，交替 `data-active` 淡入淡出）。
+ *
+ * <p><b>这里的三条都是验收判据，别改回去：</b></p>
+ * <ol>
+ *   <li><b>没有 rotate</b>：v3 母版（2048×3072）本身头朝上脚朝下，再转 90° 就是躺着的猫；</li>
+ *   <li><b>没有宽高对调</b>：宽高都由立绘箱（2:3）决定，对调会横向拉扁；</li>
+ *   <li><b>只用 contain，禁止 cover</b>：v3 右侧尾巴留白很窄，cover 按容器裁切＝把尾巴切掉。</li>
+ * </ol>
+ *
+ * <p>投影从 `drop-shadow(0 6px 18px)` 收到 `0 3px 8px`：209px 高的宠物上用 18px 模糊会糊成一团。</p>
+ */
+.pet-art-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 3px 8px var(--pet-glow));
+  pointer-events: none;
+  /* 素材本身带透明底，禁用拖拽图片的系统行为 */
+  -webkit-user-drag: none;
+  /*
+   * 双缓冲交叉淡入：切表情是"表情变了"，不是"图闪了一下"。
+   * 时长与缓动由 `presentation/crossfade.ts` 通过两个变量注入（默认 100ms），
+   * CSS 不自己写死数值——否则 JS 里可配置、CSS 里写死，两边必然漂移。
+   */
+  opacity: 0;
+  transition: opacity var(--pet-crossfade-ms, 100ms) var(--pet-crossfade-ease, cubic-bezier(0.33, 0, 0.2, 1));
+}
+
+.pet-art-frame[data-active='true'] {
+  opacity: 1;
+}
+
+/*
+ * 淡入的那张永远在上层：两张叠放时若让新帧在下，淡入过程会被旧帧盖住，
+ * 看起来像"延迟 100ms 才换脸"。z-index 走 data-* 而不是行内 style，
+ * 保证渲染层只写 src / CSS 变量 / data-*（设计文档 §9.4 纪律 5）。
+ */
+.pet-art-frame[data-fading='in'] {
+  z-index: 2;
+}
+
+.pet-art-frame[data-fading='out'] {
+  z-index: 1;
+}
+
+/* 立绘加载失败时的兜底提示：宁可显眼地报错，也不要静默显示一个空白窗口 */
+.pet-art-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  box-sizing: border-box;
+  border: 1px dashed rgba(248, 113, 113, 0.8);
+  border-radius: 12px;
+  color: rgba(254, 202, 202, 0.95);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  background: rgba(69, 10, 10, 0.55);
+}
+
+/**
+ * 关闭入口说明（M6-b O3/D-B2）：**这里曾经是 `.pet-close`（一个悬停显形的 × 按钮）**。
+ *
+ * <p>它已被移除，而不是藏起来：关闭与显隐现在统一收敛到<b>右键原生菜单</b>
+ * （`electron/pet-window.cjs` 的 `pet:context-menu` → `Menu.popup()`）。
+ * 样式一并删掉——留一段没人用的 CSS 等于给下一个人一个"要不要恢复它"的假选项。</p>
+ *
+ * <p>验收方式：`document.querySelector('.pet-close')` 必须为 `null`（`tests/petPresentation.test.ts`
+ * 之外由 DOM 探针实证）。</p>
+ */
+
+/**
+ * 调试标记、提示行与调试面板（**发布态必须不可见**）。
+ *
+ * <p>以前这两块"膏药"常驻在 209px 高的宠物旁边，是用户明确点名"不好看"的来源之一。
+ * 现在默认 `display:none`，只有 `#pet-root[data-debug='1']` 下才出现——
+ * 由 CSS 强制，即使 JS 误建了元素也不会露出来（双保险：`main.ts` 在非调试态根本不建它们）。</p>
+ */
+.pet-badge,
+.pet-hint,
+.pet-debugbar {
+  display: none;
+}
+
+#pet-root[data-debug='1'] .pet-badge {
+  display: block;
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  color: var(--pet-ink);
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(165, 180, 252, 0.35);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+#pet-root[data-debug='1'] .pet-badge.is-hit {
+  color: #052e16;
+  background: rgba(134, 239, 172, 0.85);
+  border-color: rgba(134, 239, 172, 0.95);
+}
+
+/**
+ * 提示行（M6-b O2：**挪到窗口底部的独立条上**）。
+ *
+ * <p>三条硬要求，逐条对应问题单：</p>
+ * <ol>
+ *   <li><b>不许压立绘脚部</b>：立绘箱在窗口里的范围是 y 96~330（几何真源：上边距 24 + 气泡 72），
+ *       可见墨迹到 y≈317.7 为止，而窗口高 348。所以 `bottom: 3px` 这一条 14px 高的窄条
+ *       完全落在 330~348 的空带里，任何缩放/边距调整都由 CSS 变量跟着走。</li>
+ *   <li><b>单行小字 + 半透明底</b>：`font-size: 9px` + `white-space: nowrap`，
+ *       文案由 `main.ts` 的 `HINT_TEXT` 压成一句话（不再有"表情：xx"实时值）。</li>
+ *   <li><b>3 秒无交互自动淡出</b>：可见性只由 `data-visible` 表达，淡入淡出走 CSS `transition`；
+ *       计时器在 `visual/hint-bar.ts`（可单测），JS 不逐帧改样式。</li>
+ * </ol>
+ */
+#pet-root[data-debug='1'] .pet-hint {
+  display: block;
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 2px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  font-size: 9px;
+  line-height: 12px;
+  letter-spacing: 0.2px;
+  color: rgba(219, 228, 255, 0.72);
+  background: rgba(15, 23, 42, 0.38);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transition: opacity 220ms ease;
+  /* 纯展示：不抢手势，也绝不参与命中判定 */
+  pointer-events: none;
+}
+
+#pet-root[data-debug='1'] .pet-hint[data-visible='1'] {
+  opacity: 1;
+}
+
+/**
+ * 调试面板（O1）：一排能直达任意状态的按钮。
+ *
+ * <p>位置落在立绘的**命中区之内**（`top: 14px` 相对立绘箱 → 窗口 y≈110）：窗口是点击穿透的，
+ * 按钮若落在命中区外，鼠标事件根本到不了页面，点了没反应反而会误导排障。</p>
+ */
+#pet-root[data-debug='1'] .pet-debugbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  position: absolute;
+  top: 14px;
+  left: 4px;
+  right: 4px;
+  z-index: 3;
+}
+
+.pet-debugbar button {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid rgba(165, 180, 252, 0.4);
+  background: rgba(15, 23, 42, 0.62);
+  color: rgba(226, 232, 240, 0.92);
+  font-size: 9px;
+  line-height: 13px;
+  cursor: pointer;
+}
+
+.pet-debugbar button:hover {
+  background: rgba(99, 102, 241, 0.72);
+  border-color: rgba(199, 210, 254, 0.8);
+}
+
+/**
+ * 标定页（`?calibrate=1`，P1 开发工具）：归一化网格 + 可拖锚点。
+ *
+ * <p>只在 `data-calibrate='1'` 下出现，发布态零影响。网格按 5% 步长画，
+ * 因为锚点契约本身就是 0..1 归一化坐标（seam S3），换尺寸不用重标。</p>
+ */
+#pet-root[data-calibrate='1'] .pet-calibrate {
+  display: block;
+}
+
+.pet-calibrate {
+  display: none;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.pet-calibrate__grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(to right, rgba(56, 189, 248, 0.28) 0 1px, transparent 1px 5%),
+    repeating-linear-gradient(to bottom, rgba(56, 189, 248, 0.28) 0 1px, transparent 1px 5%);
+}
+
+.pet-calibrate__anchor {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  border: 2px solid rgba(248, 250, 252, 0.9);
+  background: rgba(14, 165, 233, 0.7);
+  pointer-events: auto;
+  cursor: grab;
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.35);
+}
+
+.pet-calibrate__anchor:active {
+  cursor: grabbing;
+}
+
+.pet-calibrate__label {
+  position: absolute;
+  transform: translate(10px, -10px);
+  font-size: 10px;
+  color: rgba(248, 250, 252, 0.92);
+  background: rgba(15, 23, 42, 0.72);
+  padding: 1px 4px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.pet-calibrate__output {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  right: 4px;
+  max-height: 34%;
+  overflow: auto;
+  margin: 0;
+  padding: 6px;
+  font-size: 9px;
+  line-height: 1.35;
+  color: rgba(226, 232, 240, 0.95);
+  background: rgba(15, 23, 42, 0.82);
+  border-radius: 6px;
+  pointer-events: auto;
+  white-space: pre-wrap;
+}
+
+/**
+ * 功耗四档（设计文档 §6.1）。
+ *
+ * <p>`low` 档不做"降帧"，而是把动画时长翻倍——CSS 动画本来就在合成器上每帧跑，
+ * 强行压帧率反而看得出跳帧；`off` 档直接暂停，帧都不产生。</p>
+ */
+#pet-root[data-power='off'] .pet-motion,
+#pet-root[data-power='off'] .pet-sway,
+#pet-root[data-power='off'] .pet-halo,
+#pet-root[data-power='off'] .pet-action,
+#pet-root[data-power='off'] .pet-ahoge {
+  animation-play-state: paused;
+}
+
+/**
+ * 偶发长停顿（`visual/motion-pacer.ts` 写入 `data-motion-rest`）。
+ *
+ * <p>呼吸/摇摆本身已经靠关键帧做了短停顿，但每个周期都一样"顿"同样是机械感来源。
+ * 这一档让整组微动态**整体歇 1.2–3.2s 再继续**，停顿时机由注入的 rng 决定，
+ * 于是长看下去不会摸出周期。用 `animation-play-state` 而不是删动画：
+ * 暂停会保留当前相位，恢复时不会跳帧。</p>
+ */
+#pet-root[data-motion-rest='1'] .pet-motion,
+#pet-root[data-motion-rest='1'] .pet-sway,
+#pet-root[data-motion-rest='1'] .pet-halo,
+#pet-root[data-motion-rest='1'] .pet-ahoge {
+  animation-play-state: paused;
+}
+
+/**
+ * 尊重系统的「减少动态效果」。
+ *
+ * <p>关掉呼吸/摇摆/光晕/呆毛与动作动画，**但保留眨眼**：眨眼是状态切换而非运动，
+ * 而且是"这个桌宠还活着"的可用性信号。</p>
+ */
+@media (prefers-reduced-motion: reduce) {
+  .pet-motion,
+  .pet-sway,
+  .pet-halo,
+  .pet-ahoge,
+  #pet-root[data-motion] .pet-action {
+    animation: none;
+    will-change: auto;
+  }
+}
+
+/**
+ * 分层合成模式（`main.ts` 通过 `data-composite-mode` 写入 `partial` / `layered`）。
+ *
+ * <p><b>为什么每层是一张整画布 `<img>`：</b>P1 分层件每张都是 2048×3072 的整画布图，
+ * 层与层之间靠 `z-index` 与透明像素对齐。这样"位置零标定"——不需要任何
+ * `background-position` 算术，也不需要按包围盒裁切（裁了就会切掉尾巴）。</p>
+ *
+ * <p><b>`object-fit: contain` 是硬约束</b>：分层件与压平帧同画布同 2:3，
+ * 用 `cover` 会按容器裁切，尾巴首当其冲。</p>
+ */
+.pet-layers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/**
+ * 分层模式下把"整帧的投影"补到层栈上。
+ *
+ * <p>M6-a 真机比对实测：层栈内容与压平帧逐像素一致（宠物体内部零差异），但压平帧
+ * `.pet-art-frame` 带着 `drop-shadow(0 3px 8px var(--pet-glow))`，层栈没有 → 剪影外圈
+ * 少了一圈光晕，肉眼可见"分层模式没影子"。把同一个滤镜加在容器上（滤镜作用于合成后的
+ * 整组，与整帧算一次投影等价），两种模式就对齐了。</p>
+ *
+ * <p>只写在 `layered` 下：`partial` 模式压平帧仍是可见底图，再给层栈加一次投影会叠出双影。</p>
+ */
+#pet-root[data-composite-mode='layered'] .pet-layers {
+  filter: drop-shadow(0 3px 8px var(--pet-glow));
+}
+
+.pet-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* 等比 contain：分层件与压平帧同画布，contain 恰好铺满且绝不裁切 */
+  object-fit: contain;
+  opacity: 1;
+  /* 支点由 JS 按层契约写入（transform-origin），这里只是兜底 */
+  transform-origin: 50% 100%;
+  transform: rotate(0deg);
+  will-change: transform;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  animation-fill-mode: both;
+  /* 过渡时长/缓动由 crossfade.ts 注入，CSS 不写死数值 */
+  transition: opacity var(--pet-crossfade-ms, 100ms) var(--pet-crossfade-ease, ease-out);
+}
+
+/**
+ * 子矩形层（M1 起只有 `face` 一层）：按契约里的 `rect` 摆到画布对应位置。
+ *
+ * <p>四个百分比由 `layered-presentation.ts` 写入（`rect.x / canvas.width * 100` 等），
+ * **只有子矩形层会带 `data-placement='rect'`**；其余 9 层是整画布图，
+ * 一个字都不写，仍走上一条 `inset:0` + `contain` 的规则（DOM 写入面零变化）。</p>
+ *
+ * <p>`object-fit: fill` 是必须的：百分比已经是精确的画布比例，再 `contain` 会二次缩放——
+ * 贴片会被等比缩到框里，脸就偏了。变异体 M5（把整帧 URL 塞进这一层）正是靠它露馅的。</p>
+ */
+.pet-layer[data-placement='rect'] {
+  inset: auto;
+  object-fit: fill;
+  left: var(--pet-layer-left);
+  top: var(--pet-layer-top);
+  width: var(--pet-layer-width);
+  height: var(--pet-layer-height);
+}
+
+/**
+ * 表情淡入（`data-fading='in'`）。
+ *
+ * <p>此前这个标记在层上没有任何对应规则，等于没写——表情是硬切的。现在补上真正生效的
+ * 进场动画，时长读 `--pet-crossfade-ms`：根上的值由 `crossfade.ts` 注入（100ms），
+ * 脸层元素上那份由 `applyExpression` 按本次指令覆盖（眨眼类 = `0ms`，即硬切）。</p>
+ */
+.pet-layer[data-fading='in'] {
+  animation: pet-face-in var(--pet-crossfade-ms, 100ms) var(--pet-crossfade-ease, ease-out) both;
+}
+
+@keyframes pet-face-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* 支撑层（底绘 / 身体遮挡 / 前景遮挡）只参与合成，永不接受动画：
+   转一下遮挡片就会露出补绘缝，比穿模更难察觉。 */
+.pet-layer[data-role='support'] {
+  animation: none !important;
+  transition: none;
+}
+
+/**
+ * 功耗/停顿档位暂停层轨道。
+ *
+ * <p><b>`!important` 在这里不是偷懒，是必须的：</b>层动画的 `animation`
+ * 是 `motion-compiler.ts` 在运行期注入的**简写**规则
+ * （`#pet-root[data-motion='idle'][data-motion-seq='n'] [data-layer='ahoge'] { animation: … }`），
+ * 特异性 130 高于本规则的 120，而且 `animation` 简写会把 `animation-play-state` 一起重置成
+ * `running`。M6-b 真机实测就是这个后果：`data-power='off'` 时 7 条动画里只有 3 条停住，
+ * 4 条层轨道照跑（桌宠被藏起来还在烧合成器）。本规则是"状态覆盖"，优先级必须压过动态注入。</p>
+ */
+#pet-root[data-power='off'] .pet-layer,
+#pet-root[data-motion-rest='1'] .pet-layer {
+  animation-play-state: paused !important;
+}
+
+/**
+ * `layered` 模式下压平帧必须让位。
+ *
+ * <p>9 层齐了以后，层栈本身就是完整画面；压平帧留在下面不吃亏也不显眼 —— **只在静止时**。
+ * 一旦 idle 的摆尾/呆毛动起来，层栈里的尾巴转了、下面那张静止帧的尾巴没转，
+ * 屏幕上就会出现"两条尾巴"的重影。所以整帧只在 `partial` / `composite` 下可见。</p>
+ *
+ * <p>用 `data-composite-mode`（`LayeredPresentation.applyPlan` 写的）而不是 JS 直接改
+ * `hidden`：写入面收敛在 `data-*` + CSS 一处，排障时看属性就知道当前是哪种模式。</p>
+ *
+ * <p><b>这条规则只能藏"画面"，不能藏"动作"（M6-b 第三轮）：</b>动作动画的宿主是
+ * `.pet-action`（压平帧与层栈共同的父容器），**不在**这条规则的命中范围内，
+ * 所以 layered 下 tap/angry/wake/drag 的整身位移照常可见。
+ * 反过来说：任何"动作/表情动画"都不许再挂回 `.pet-art-frame`——
+ * 一旦挂回去就等于挂在一个 `opacity: 0` 的元素上，用户什么也看不见
+ * （`tests/petMotionHost.test.ts` 有守卫）。</p>
+ *
+ * <p><b>表情在 layered 下由谁承载（M1 反转了旧结论）：</b>以前这里写着"P1 资产没有
+ * `face` 层，所以表情在 layered 下必然不可见，这不是本轮要修的"。M1「可见表情闭环」
+ * 已经补了第 10 层 `face`（`z=32`、脸区子矩形贴片，见 `layers/manifest.ts` 与设计文档 §3），
+ * 于是 layered 下表情**是可见的**：脸层换贴片、身体层继续微动。
+ * 只有缺脸层（旧包 / 资产未交付 / 解码失败）时才会整条链回落到 `composite`，
+ * 由压平帧承载表情——那时本规则不生效，整帧本来就是可见的。</p>
+ */
+#pet-root[data-composite-mode='layered'] .pet-art-frame {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet-layer {
+    animation: none;
+    will-change: auto;
+  }
+}

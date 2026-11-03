@@ -99,6 +99,12 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      # 安装版不展示桌宠（用户硬约束 #3）：发版链路必须在 build 之后验产物，
+      # 否则「安装版没有桌宠入口」只在本机成立。dist 就在上一步刚产出。
+      - name: 校验安装版不含桌宠入口（产物级守卫）
+        working-directory: frontend
+        run: node scripts/check-pet-not-shipped.mjs
+
       - name: 验证桌面打包依赖
         working-directory: frontend
         run: node --test tests/backendRuntimeMaven.test.cjs tests/frameworkDependencies.test.cjs tests/electronPackaging.test.cjs tests/sandboxRuntime.test.cjs tests/sandboxRuntimeFetch.test.cjs tests/backendSandbox.test.cjs

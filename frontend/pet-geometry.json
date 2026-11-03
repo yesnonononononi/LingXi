@@ -1,0 +1,23 @@
+{
+  "version": 5,
+  "canvasWidth": 2048,
+  "canvasHeight": 3072,
+  "visibleRatioY": 0.89518,
+  "visibleBounds": {
+    "left": 0.01758,
+    "top": 0.05208,
+    "right": 0.99609,
+    "bottom": 0.94727
+  },
+  "inkHeight": 208,
+  "artHeight": 234,
+  "artWidth": 156,
+  "effectMargin": {
+    "top": 24,
+    "right": 20,
+    "bottom": 18,
+    "left": 20
+  },
+  "glowPad": 16,
+  "bubbleHeight": 72
+}

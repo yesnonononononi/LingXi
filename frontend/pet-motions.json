@@ -1,0 +1,357 @@
+{
+  "version": 1,
+  "defaults": {
+    "samples": 12,
+    "maxLagMs": 320,
+    "unit": "deg"
+  },
+  "motions": {
+    "idle": {
+      "priority": 0,
+      "loop": true,
+      "durationMs": null,
+      "layer": "base",
+      "expression": null,
+      "tracks": [
+        {
+          "layerId": "tail-base",
+          "property": "rotate",
+          "follow": { "source": "bodySway", "lagMs": 120, "gain": 0.6 },
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.25, "value": 3 },
+            { "at": 0.5, "value": 0 },
+            { "at": 0.75, "value": -3 },
+            { "at": 1, "value": 0 }
+          ]
+        },
+        {
+          "layerId": "tail-tip",
+          "property": "rotate",
+          "follow": { "source": "tail-base", "lagMs": 180, "gain": 0.7 },
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.25, "value": 2.5 },
+            { "at": 0.5, "value": 0 },
+            { "at": 0.75, "value": -2.5 },
+            { "at": 1, "value": 0 }
+          ]
+        },
+        {
+          "layerId": "ahoge",
+          "property": "rotate",
+          "spring": { "stiffness": 0.18, "damping": 0.12, "mass": 1 },
+          "samples": 12,
+          "keyframes": [
+            { "at": 0, "value": -1.5 },
+            { "at": 0.5, "value": 1.5 },
+            { "at": 1, "value": -1.5 }
+          ]
+        },
+        {
+          "layerId": "bow",
+          "property": "rotate",
+          "follow": { "source": "bodyTilt", "lagMs": 90, "gain": 0.4 },
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.5, "value": -1 },
+            { "at": 1, "value": 0 }
+          ]
+        }
+      ]
+    },
+    "tap": {
+      "priority": 1,
+      "loop": false,
+      "durationMs": 480,
+      "layer": "base",
+      "expression": { "id": "happy", "durationMs": 900 },
+      "tracks": [
+        {
+          "layerId": "ear-left",
+          "property": "rotate",
+          "ease": "ease-out",
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.25, "value": -6 },
+            { "at": 0.55, "value": 3 },
+            { "at": 1, "value": 0 }
+          ]
+        },
+        {
+          "layerId": "ear-right",
+          "property": "rotate",
+          "ease": "ease-out",
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.315, "value": -5.4 },
+            { "at": 0.6, "value": 2.7 },
+            { "at": 1, "value": 0 }
+          ]
+        },
+        {
+          "layerId": "bow",
+          "property": "rotate",
+          "follow": { "source": "bodyTilt", "lagMs": 90, "gain": 0.4 },
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.4, "value": -2 },
+            { "at": 1, "value": 0 }
+          ]
+        },
+        {
+          "layerId": "ahoge",
+          "property": "rotate",
+          "spring": { "stiffness": 0.22, "damping": 0.12, "mass": 1 },
+          "samples": 12,
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.3, "value": 4 },
+            { "at": 0.55, "value": -2 },
+            { "at": 1, "value": 0 }
+          ]
+        }
+      ]
+    },
+    "happy": {
+      "priority": 1,
+      "loop": false,
+      "durationMs": 900,
+      "layer": "base",
+      "expression": { "id": "happy", "durationMs": 900 },
+      "tracks": [
+        {
+          "layerId": "ear-left",
+          "property": "rotate",
+          "ease": "ease-out",
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.3, "value": -4 },
+            { "at": 0.7, "value": 1 },
+            { "at": 1, "value": 0 }
+          ]
+        },
+        {
+          "layerId": "ear-right",
+          "property": "rotate",
+          "ease": "ease-out",
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.335, "value": -3.6 },
+            { "at": 0.735, "value": 0.9 },
+            { "at": 1, "value": 0 }
+          ]
+        },
+        {
+          "layerId": "tail-base",
+          "property": "rotate",
+          "follow": { "source": "bodySway", "lagMs": 120, "gain": 0.5 },
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.5, "value": 2 },
+            { "at": 1, "value": 0 }
+          ]
+        },
+        {
+          "layerId": "tail-tip",
+          "property": "rotate",
+          "follow": { "source": "tail-base", "lagMs": 180, "gain": 0.6 },
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.5, "value": 1.5 },
+            { "at": 1, "value": 0 }
+          ]
+        },
+        {
+          "layerId": "ahoge",
+          "property": "rotate",
+          "spring": { "stiffness": 0.2, "damping": 0.11, "mass": 1 },
+          "samples": 12,
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.35, "value": 3.5 },
+            { "at": 0.7, "value": -1.5 },
+            { "at": 1, "value": 0 }
+          ]
+        },
+        {
+          "layerId": "bow",
+          "property": "rotate",
+          "follow": { "source": "bodyTilt", "lagMs": 90, "gain": 0.4 },
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.45, "value": -1.5 },
+            { "at": 1, "value": 0 }
+          ]
+        }
+      ]
+    },
+    "angry": {
+      "priority": 1,
+      "loop": false,
+      "durationMs": 800,
+      "layer": "base",
+      "expression": { "id": "angry", "durationMs": 800 },
+      "tracks": [
+        {
+          "layerId": "ear-left",
+          "property": "rotate",
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.2, "value": 5 },
+            { "at": 0.45, "value": -2 },
+            { "at": 1, "value": 0 }
+          ]
+        },
+        {
+          "layerId": "ear-right",
+          "property": "rotate",
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.245, "value": 4.5 },
+            { "at": 0.495, "value": -1.8 },
+            { "at": 1, "value": 0 }
+          ]
+        },
+        {
+          "layerId": "bow",
+          "property": "rotate",
+          "follow": { "source": "bodyTilt", "lagMs": 90, "gain": 0.4 },
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.2, "value": 2 },
+            { "at": 0.45, "value": -1.5 },
+            { "at": 1, "value": 0 }
+          ]
+        }
+      ]
+    },
+    "surprised": {
+      "priority": 1,
+      "loop": false,
+      "durationMs": 600,
+      "layer": "base",
+      "expression": { "id": "surprised", "durationMs": 600 },
+      "tracks": [
+        {
+          "layerId": "ahoge",
+          "property": "rotate",
+          "spring": { "stiffness": 0.22, "damping": 0.1, "mass": 1 },
+          "samples": 12,
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.5, "value": 7 },
+            { "at": 1, "value": 0 }
+          ]
+        }
+      ]
+    },
+    "sleepy": {
+      "priority": 0,
+      "loop": false,
+      "durationMs": 1600,
+      "layer": "base",
+      "expression": { "id": "sleepy", "durationMs": 1600 },
+      "tracks": [
+        {
+          "layerId": "tail-base",
+          "property": "rotate",
+          "follow": { "source": "bodySway", "lagMs": 240, "gain": 0.35 },
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.5, "value": 1.5 },
+            { "at": 1, "value": 0 }
+          ]
+        },
+        {
+          "layerId": "tail-tip",
+          "property": "rotate",
+          "follow": { "source": "tail-base", "lagMs": 300, "gain": 0.5 },
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.5, "value": 0.9 },
+            { "at": 1, "value": 0 }
+          ]
+        }
+      ]
+    },
+    "sad": {
+      "priority": 0,
+      "loop": false,
+      "durationMs": 1200,
+      "layer": "base",
+      "expression": { "id": "sad", "durationMs": 1200 },
+      "tracks": [
+        {
+          "layerId": "ear-left",
+          "property": "rotate",
+          "ease": "ease-out",
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.4, "value": 4 },
+            { "at": 1, "value": 2 }
+          ]
+        },
+        {
+          "layerId": "ear-right",
+          "property": "rotate",
+          "ease": "ease-out",
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.43, "value": 3.5 },
+            { "at": 1, "value": 1.8 }
+          ]
+        }
+      ]
+    },
+    "drag": {
+      "priority": 2,
+      "loop": true,
+      "durationMs": null,
+      "layer": "base",
+      "expression": null,
+      "tracks": [
+        {
+          "layerId": "tail-base",
+          "property": "rotate",
+          "follow": { "source": "bodySway", "lagMs": 240, "gain": 0.8 },
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.5, "value": -5 },
+            { "at": 1, "value": 0 }
+          ]
+        },
+        {
+          "layerId": "tail-tip",
+          "property": "rotate",
+          "follow": { "source": "tail-base", "lagMs": 300, "gain": 0.7 },
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.5, "value": -4 },
+            { "at": 1, "value": 0 }
+          ]
+        }
+      ]
+    },
+    "wake": {
+      "priority": 2,
+      "loop": false,
+      "durationMs": 500,
+      "layer": "base",
+      "expression": { "id": "surprised", "durationMs": 600 },
+      "tracks": [
+        {
+          "layerId": "ahoge",
+          "property": "rotate",
+          "spring": { "stiffness": 0.26, "damping": 0.14, "mass": 1 },
+          "samples": 12,
+          "keyframes": [
+            { "at": 0, "value": 0 },
+            { "at": 0.45, "value": -9 },
+            { "at": 1, "value": 0 }
+          ]
+        }
+      ]
+    }
+  }
+}
