@@ -10,6 +10,9 @@ import com.summit.core.conversation.message.TokenUsageEntity;
 import com.summit.core.model.DefaultModelProviderNames;
 import com.summit.core.model.ModelProviderRegistry;
 import com.summit.core.model.image.ImageModel;
+import com.summit.core.model.image.ImageGenerationOptions;
+import com.summit.core.tool.ToolDefinition;
+import com.summit.dp.workflow.infrastructure.tools.config.AnnotatedToolTestDefinitions;
 import com.summit.core.tool.ToolExecuteResult;
 import com.summit.core.tool.ToolExecution;
 import com.summit.dp.execution.ExecutionAttributes;
@@ -46,10 +49,11 @@ class GenerateImageToolExecutorTest {
         when(models.runtimeConfig(eq(9L), isNull())).thenReturn(ModelConfig.builder()
                 .provider(DefaultModelProviderNames.DEFAULT_IMAGE).modelName("image-test").maxRetries(5).build());
         when(providers.create(any())).thenReturn(imageModel);
-        when(imageModel.generate(anyString())).thenReturn(ChatResponseEntity.builder()
+        when(imageModel.generate(anyString(), any(ImageGenerationOptions.class))).thenReturn(ChatResponseEntity.builder()
                 .aiMessageEntity(AiMessageEntity.builder().images(List.of(Image.from(Base64.getEncoder().encodeToString(png())))).build())
                 .tokenUsage(TokenUsageEntity.of(95, 15, 80)).build());
-        return new GenerateImageToolExecutor(mapper, models, providers, new GeneratedImageFileWriter(), new ImageCacheDirectory(root.resolve("cache").toString()));
+        return new GenerateImageToolExecutor(mapper, models, providers, new GeneratedImageFileWriter(),
+                new ImageCacheDirectory(root.resolve("cache").toString()), new ImageGenerationSpecValidator());
     }
 
     private ToolExecution call(String path) throws Exception {
@@ -71,7 +75,8 @@ class GenerateImageToolExecutorTest {
         assertEquals("art/boat.png",receipt.path("path").asText());
         assertTrue(receipt.path("previewUrl").asText().startsWith("/a/images/42/"));
         assertEquals(95,mapper.valueToTree(result.getToolMetaData().get(GenerateImageInterceptor.USAGE)).path("totalTokens").asInt());
-        verify(imageModel).generate("A red sailboat with a white sail");
+        verify(imageModel).generate("A red sailboat with a white sail", new ImageGenerationOptions("1024x1024", null, 1));
+        assertEquals("1024x1024", receipt.path("size").asText());
         verify(providers).create(argThat(config -> config.getMaxRetries()==0));
     }
 
@@ -115,7 +120,40 @@ class GenerateImageToolExecutorTest {
         ToolExecuteResult result=executor.execute(call("not-a-directory/boat.png"));
         assertFalse(result.isSuccess());
         assertNotNull(result.getToolMetaData().get(GenerateImageInterceptor.USAGE));
-        verify(imageModel).generate(anyString());
+        verify(imageModel).generate(anyString(), any(ImageGenerationOptions.class));
+    }
+
+    @Test void forwardsPerCallSpecificationsAndRejectsInvalidSizesBeforeCallingProvider() throws Exception {
+        GenerateImageToolExecutor executor = executor();
+        ToolExecution call = call("art/wide.png");
+        call.setArgs(mapper.writeValueAsString(Map.of("prompt", "wide scene", "path", "art/wide.png",
+                "size", "1536x1024", "quality", "high")));
+        assertTrue(executor.execute(call).isSuccess());
+        verify(imageModel).generate("wide scene", new ImageGenerationOptions("1536x1024", "high", 1));
+        clearInvocations(imageModel, providers);
+        call.setArgs(mapper.writeValueAsString(Map.of("prompt", "bad size", "path", "art/bad.png", "size", "123x456")));
+        ToolExecuteResult result = executor.execute(call);
+        assertFalse(result.isSuccess());
+        assertTrue(result.getToolOutput().contains("不符合"), result.getToolOutput());
+        assertTrue(result.getToolOutput().contains("可不传"), result.getToolOutput());
+        assertFalse(Files.exists(root.resolve("art/bad.png")));
+        verifyNoInteractions(providers, imageModel);
+    }
+
+    @Test void advertisesOptionalSpecificationsAndTheirDefaultsInTheActualToolSchema() throws Exception {
+        ToolDefinition<GenerateImageToolExecutor> definition = AnnotatedToolTestDefinitions.create(GenerateImageToolExecutor.class, executor());
+        JsonNode schema = mapper.readTree(definition.parametersJsonSchema());
+        assertEquals(mapper.valueToTree(List.of("prompt", "path")), schema.path("required"));
+        assertFalse(schema.path("additionalProperties").asBoolean());
+        JsonNode properties = schema.path("properties");
+        assertEquals("string", properties.path("size").path("type").asText());
+        assertTrue(properties.path("size").path("description").asText().contains("可不传"));
+        assertTrue(properties.path("size").path("description").asText().contains("1024x1024"));
+        assertTrue(properties.path("quality").path("description").asText().contains("可不传"));
+        assertEquals(1, properties.path("count").path("default").asInt());
+        assertEquals(mapper.valueToTree(List.of(1)), properties.path("count").path("enum"));
+        assertTrue(definition.description().contains("1024x1024"));
+        assertTrue(definition.description().contains("均可不传"));
     }
 
     private byte[] png() throws Exception {

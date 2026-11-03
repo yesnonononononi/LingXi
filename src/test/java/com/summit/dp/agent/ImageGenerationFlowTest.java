@@ -71,6 +71,9 @@ class ImageGenerationFlowTest {
             JsonNode request=mapper.readTree(exchange.getRequestBody());
             assertEquals("A red sailboat with a white sail, sunset, detailed illustration",request.path("prompt").asText());
             assertEquals("image-test",request.path("model").asText());
+            assertEquals("1536x1024", request.path("size").asText());
+            assertEquals("high", request.path("quality").asText());
+            assertEquals(1, request.path("n").asInt());
             String png="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9V0AAAAASUVORK5CYII=";
             byte[] body=mapper.writeValueAsBytes(Map.of("created",1,"data",List.of(Map.of("b64_json",png)),
                     "usage",Map.of("input_tokens",15,"output_tokens",80,"total_tokens",95)));
@@ -85,7 +88,7 @@ class ImageGenerationFlowTest {
                 assertTrue(request.path("tools").toString().contains("generate_image"));
                 String prompt="A red sailboat with a white sail, sunset, detailed illustration";
                 message=Map.of("role","assistant","tool_calls",List.of(
-                        Map.of("id","image-1","type","function","function",Map.of("name","generate_image","arguments",mapper.writeValueAsString(Map.of("prompt",prompt,"path","art/boat.png")))),
+                        Map.of("id","image-1","type","function","function",Map.of("name","generate_image","arguments",mapper.writeValueAsString(Map.of("prompt",prompt,"path","art/boat.png", "size", "1536x1024", "quality", "high")))),
                         Map.of("id","image-2","type","function","function",Map.of("name","generate_image","arguments",mapper.writeValueAsString(Map.of("prompt",prompt,"path","art/extra.png"))))));
             } else {
                 String url=null;int receipts=0;
