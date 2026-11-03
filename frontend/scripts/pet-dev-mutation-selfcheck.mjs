@@ -19,7 +19,7 @@
  *
  * 用法：`npm run test:pet:mutate`
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -27,6 +27,9 @@ import { fileURLToPath } from 'node:url';
 
 /** 前端根目录（脚本位于 `frontend/scripts/`）。 */
 const FRONTEND_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
+
+/** 仓库根目录（`.gitignore` 与美术资产都在这一层，git 命令一律 `-C` 到这里）。 */
+const REPO_ROOT = path.resolve(FRONTEND_ROOT, '..');
 
 /**
  * 变异体清单。
@@ -241,6 +244,25 @@ const MUTATIONS = [
       'npm run guard:pet:face -- --only E08,E03 --out D:/Code/LingXi/.lingxi/tmp/pet-face-guard/mutant-p4',
     expect: 'FAIL(两档同形)',
   },
+  // ---------------------------------------------------------------- 美术资产入库（不许再靠 git add -f）
+  {
+    id: 'gitignore-desktop-pet-exception-removed',
+    goal: '把 .gitignore 退回"整目录忽略 docs/"（原始缺陷）：新批次资产会被静默吞掉，入库守卫必须红',
+    // 规则文件在仓库根，`../` 相对 frontend/ 解析
+    file: '../.gitignore',
+    find: ['/docs/*', '!/docs/assets/', '/docs/assets/*', '!/docs/assets/desktop-pet/'].join('\n'),
+    replace: 'docs/',
+    testFile: 'tests/petAssetTracking.test.cjs',
+    expect: '个资产被 .gitignore 吞掉',
+  },
+  {
+    id: 'tracked-asset-removed-from-index',
+    goal: '对已跟踪资产执行等价 `git rm --cached`（文件留在磁盘）："交付了但不可复现"必须被 Index 断言抓到',
+    kind: 'index',
+    indexPath: 'docs/assets/desktop-pet/v3/expr/E1_default.png',
+    testFile: 'tests/petAssetTracking.test.cjs',
+    expect: '个资产在磁盘上但没入库',
+  },
 ];
 
 /** 当前在飞的变异：绝对路径 → 原始文本（进程被中断时据此还原）。 */
@@ -260,6 +282,15 @@ function restoreAll() {
     }
   }
   INFLIGHT.clear();
+  // 索引变异没有"文件内容"可还原：把被摘出的文件重新 git add 回索引
+  while (INFLIGHT_INDEX.length > 0) {
+    const revert = INFLIGHT_INDEX.pop();
+    try {
+      revert();
+    } catch (err) {
+      console.error(`[mutate] 索引还原失败（请手动 git add 对应资产）：${(err && err.message) || err}`);
+    }
+  }
 }
 
 // 进程被信号打断时也必须还原，否则会把变异体留在工作区
@@ -374,9 +405,76 @@ function restoreMutation(absPath, original) {
   return sha256(now) === sha256(original);
 }
 
+/**
+ * 在飞的**索引变异**还原栈（进程被中断时据此把索引恢复）。
+ *
+ * <p>索引变异不改变文件内容，只把文件从索引里摘掉；一旦进程被杀而没有还原，
+ * 工作区就会留下"文件在磁盘上、索引里没有"的假象。所以这里单独维护一层还原栈。</p>
+ *
+ * @type {Array<() => void>}
+ */
+const INFLIGHT_INDEX = [];
+
+/**
+ * 跑一条 git 命令（变异自检内部用，只关心是否成功）。
+ *
+ * @param {string[]} args git 参数
+ * @returns {{ok: boolean, out: string}} 结果
+ */
+function runGitForMutation(args) {
+  const proc = spawnSync('git', ['-C', REPO_ROOT].concat(args), { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+  return {
+    ok: proc.status === 0,
+    out: `${proc.stdout || ''}${proc.stderr || ''}`.trim(),
+  };
+}
+
+/**
+ * 注入"索引变异"：对已跟踪文件执行等价 `git rm --cached`（**不删磁盘文件**）。
+ *
+ * <p><b>为什么要这种变异体：</b>"交付了但不可复现"的原始形态就是"磁盘上有、索引里没有"。
+ * 只测 ignore 规则抓不到它（规则明明放行了，只是没人 `git add`），
+ * 必须靠逐文件比对索引的断言来抓。</p>
+ *
+ * @param {{indexPath: string}} mutation 变异体（`indexPath` 为仓库相对路径）
+ * @returns {{indexPath: string, absPath: string, digest: string}} 还原所需信息
+ * @throws {Error} 文件不在索引里、或 `git rm --cached` 失败时抛出
+ */
+function applyIndexMutation(mutation) {
+  const indexPath = String(mutation.indexPath || '');
+  if (!indexPath) throw new Error(`${mutation.id}：缺少 indexPath`);
+  const absPath = path.join(REPO_ROOT, indexPath);
+  if (!existsSync(absPath)) throw new Error(`${mutation.id}：磁盘上没有 ${indexPath}，变异体无法注入`);
+  const tracked = runGitForMutation(['ls-files', '--', indexPath]);
+  if (!tracked.ok || tracked.out.length === 0) {
+    throw new Error(`${mutation.id}：${indexPath} 本来就不在索引里，无法演示"摘出索引"`);
+  }
+  const digest = sha256(readFileSync(absPath, 'utf8'));
+  const removed = runGitForMutation(['rm', '--cached', '--quiet', '--', indexPath]);
+  if (!removed.ok) throw new Error(`${mutation.id}：git rm --cached 失败：${removed.out}`);
+  const revert = () => runGitForMutation(['add', '--', indexPath]);
+  INFLIGHT_INDEX.push(revert);
+  return { indexPath, absPath, digest, revert };
+}
+
+/**
+ * 还原索引变异：把文件重新 `git add` 回索引，并校验磁盘字节未变、索引已恢复。
+ *
+ * @param {{indexPath: string, absPath: string, digest: string, revert: () => void}} info 还原信息
+ * @returns {boolean} 是否逐字节一致且已回到索引
+ */
+function restoreIndexMutation(info) {
+  const at = INFLIGHT_INDEX.indexOf(info.revert);
+  if (at >= 0) INFLIGHT_INDEX.splice(at, 1);
+  info.revert();
+  const backInIndex = runGitForMutation(['ls-files', '--', info.indexPath]).out.length > 0;
+  const digestNow = sha256(readFileSync(info.absPath, 'utf8'));
+  return backInIndex && digestNow === info.digest;
+}
+
 /** 依次执行全部变异体并汇总。 */
 function main() {
-  console.log('[mutate] 桌宠变异自检开始（探活/端口隔离 + 安装版门禁与产物守卫 + 表现层/行为/画面守卫）');
+  console.log('[mutate] 桌宠变异自检开始（探活/端口隔离 + 安装版门禁与产物守卫 + 表现层/行为/画面守卫 + 美术资产入库守卫）');
   console.log(`[mutate] 前端根目录：${FRONTEND_ROOT}`);
 
   const results = [];
@@ -388,7 +486,7 @@ function main() {
     console.log('');
     console.log(`=== 变异体 ${mutation.id} ===`);
     console.log(`  目的：${mutation.goal}`);
-    console.log(`  位置：${mutation.file}`);
+    console.log(`  位置：${mutation.file || mutation.indexPath}`);
     if (mutation.command) console.log(`  验证目标（命令）：${mutation.command}`);
 
     if (!baseline.has(targetKey)) {
@@ -405,7 +503,7 @@ function main() {
     let applied = null;
     let outcome;
     try {
-      applied = applyMutation(mutation);
+      applied = mutation.kind === 'index' ? applyIndexMutation(mutation) : applyMutation(mutation);
       const red = runTarget(mutation);
       const sawExpected = red.out.includes(mutation.expect);
       console.log(`  变异后：退出码 ${red.code}（要求非 0）· 断言文本"${mutation.expect}" ${sawExpected ? '出现 OK' : '未出现 FAIL'}`);
@@ -423,7 +521,7 @@ function main() {
       outcome = { id: mutation.id, passed: false, reason: (err && err.message) || String(err) };
     } finally {
       if (applied) {
-        const restored = restoreMutation(applied.absPath, applied.original);
+        const restored = mutation.kind === 'index' ? restoreIndexMutation(applied) : restoreMutation(applied.absPath, applied.original);
         console.log(`  还原：${restored ? '逐字节一致 OK' : '不一致 FAIL'}`);
         if (!restored) outcome = { id: mutation.id, passed: false, reason: '还原后内容与原文不一致' };
       }
