@@ -19,7 +19,7 @@
  *
  * 用法：`npm run test:pet:mutate`
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -269,6 +269,20 @@ const MUTATIONS = [
     testFile: 'tests/petAssetTracking.test.cjs',
     expect: '个资产在磁盘上但没入库',
   },
+  {
+    id: 'delivered-prefix-missing-batch-emptied',
+    goal:
+      '模拟"DELIVERED_PREFIXES 漏加一个批次" + 该批次被整批清空索引（一次性的临时索引副本，工作区文件不动）：'
+      + '以前这种情况只打一行 console 警告、测试仍绿；现在必须靠"git 历史里出现过该路径"这条断言变红',
+    kind: 'batch-index',
+    // 从 DELIVERED_PREFIXES 里删掉 poses/sit/（锚点带后缀逗号，保证命中恰好一处）
+    file: 'tests/petAssetTracking.test.cjs',
+    find: "'poses/sit/', ",
+    replace: '',
+    batchPath: 'docs/assets/desktop-pet/poses/sit',
+    testFile: 'tests/petAssetTracking.test.cjs',
+    expect: '在 git 历史里存在（曾交付过），但索引为空',
+  },
   // ---------------------------------------------------------------- 启动器收敛（不许绕过单一真源 / 不许写死绝对路径）
   {
     id: 'launcher-port-literal',
@@ -356,19 +370,22 @@ function sha256(text) {
  * </ul>
  *
  * @param {{testFile?: string, command?: string}} mutation 变异体
+ * @param {Record<string, string>} [envOverride] 额外环境变量（整批索引变异用它把
+ *   子进程的 `GIT_INDEX_FILE` 指到一次性索引副本；不传就用真实索引）
  * @returns {{ok: boolean, code: number, out: string, ms: number}} 运行结果
  */
-function runTarget(mutation) {
+function runTarget(mutation, envOverride) {
   const started = Date.now();
   const command = typeof mutation.command === 'string' && mutation.command.length > 0 ? mutation.command : null;
   const testFile = String(mutation.testFile || '');
+  const env = envOverride ? { ...process.env, ...envOverride } : process.env;
   let proc;
   if (command) {
-    proc = spawnSync(command, { cwd: FRONTEND_ROOT, encoding: 'utf8', shell: true });
+    proc = spawnSync(command, { cwd: FRONTEND_ROOT, encoding: 'utf8', shell: true, env });
   } else if (/\.(ts|mts|tsx)$/.test(testFile)) {
-    proc = spawnSync(`npx tsx --test "${testFile}"`, { cwd: FRONTEND_ROOT, encoding: 'utf8', shell: true });
+    proc = spawnSync(`npx tsx --test "${testFile}"`, { cwd: FRONTEND_ROOT, encoding: 'utf8', shell: true, env });
   } else {
-    proc = spawnSync(process.execPath, ['--test', testFile], { cwd: FRONTEND_ROOT, encoding: 'utf8' });
+    proc = spawnSync(process.execPath, ['--test', testFile], { cwd: FRONTEND_ROOT, encoding: 'utf8', env });
   }
   const code = typeof proc.status === 'number' ? proc.status : 1;
   return {
@@ -500,6 +517,124 @@ function restoreIndexMutation(info) {
 }
 
 /**
+ * 取仓库的**临时目录根**（`.lingxi/tmp`，运行时产物一律落这里，绝不落源码目录）。
+ *
+ * @returns {string} 绝对路径（已确保存在）
+ */
+function tmpRoot() {
+  const root = path.join(REPO_ROOT, '.lingxi', 'tmp');
+  mkdirSync(root, { recursive: true });
+  return root;
+}
+
+/**
+ * 解析真实索引文件的位置（兼容 `.git` 是文件的工作树情形）。
+ *
+ * @returns {string} 索引文件绝对路径
+ * @throws {Error} git 命令失败时抛出
+ */
+function resolveGitIndexPath() {
+  const proc = spawnSync('git', ['-C', REPO_ROOT, 'rev-parse', '--absolute-git-dir'], { encoding: 'utf8' });
+  if (proc.status !== 0) throw new Error(`取不到 git 目录：${(proc.stderr || '').trim()}`);
+  return path.join((proc.stdout || '').trim(), 'index');
+}
+
+/**
+ * 注入"整批索引变异"：删掉 `DELIVERED_PREFIXES` 里的一条（模拟漏加前缀），
+ * **并且**在一次性索引副本里把该批次整批 `git rm -r --cached`。
+ *
+ * <p><b>为什么用一次性索引副本（`GIT_INDEX_FILE`）：</b>变异自检可能与其他队员的任务并发跑，
+ * 真实索引是共享资源——把 `poses/sit` 真从索引里摘掉十几秒，别人正好 `git commit` 就会把
+ * "删掉 16 个资产"提交进去。副本索引只作用于本进程派生的子进程，工作区文件一个都不动。</p>
+ *
+ * @param {object} mutation 变异体（需要 `file` / `find` / `replace` / `batchPath`）
+ * @returns {{absPath: string, original: string, batchPath: string, tempDir: string, env: Record<string,string>, revert: () => void}}
+ *   还原所需信息
+ * @throws {Error} 批次不在磁盘/索引、或清空失败时抛出（失败路径会把文本变异一起还原）
+ */
+function applyBatchIndexMutation(mutation) {
+  const batchPath = String(mutation.batchPath || '');
+  if (!batchPath) throw new Error(`${mutation.id}：缺少 batchPath`);
+  if (!existsSync(path.join(REPO_ROOT, batchPath))) {
+    throw new Error(`${mutation.id}：磁盘上没有 ${batchPath}，变异体无法注入`);
+  }
+  if (runGitForMutation(['ls-files', '--', batchPath]).out.length === 0) {
+    throw new Error(`${mutation.id}：${batchPath} 本来就不在索引里，无法演示"整批清空"`);
+  }
+
+  // 1) 文本变异：把这一条从 DELIVERED_PREFIXES 里删掉（本任务要修的正是"漏加"）
+  const text = applyMutation(mutation);
+  const tempDir = mkdtempSync(path.join(tmpRoot(), 'mutate-index-'));
+  const tempIndex = path.join(tempDir, 'index');
+  try {
+    // 2) 一次性索引副本：与真实索引无关
+    copyFileSync(resolveGitIndexPath(), tempIndex);
+    const env = { ...process.env, GIT_INDEX_FILE: tempIndex };
+    const removed = spawnSync('git', ['-C', REPO_ROOT, 'rm', '-r', '--cached', '--quiet', '--', batchPath], {
+      encoding: 'utf8',
+      env,
+    });
+    if (removed.status !== 0) {
+      throw new Error(`${mutation.id}：git rm -r --cached 失败：${(removed.stderr || removed.stdout || '').trim()}`);
+    }
+    const left = spawnSync('git', ['-C', REPO_ROOT, 'ls-files', '--', batchPath], { encoding: 'utf8', env });
+    if ((left.stdout || '').trim().length > 0) {
+      throw new Error(`${mutation.id}：临时索引里 ${batchPath} 仍有条目，清空失败`);
+    }
+    const revert = () => rmSync(tempDir, { recursive: true, force: true });
+    // 中断兜底：临时索引目录必须清掉，否则会在 .lingxi/tmp 里留下垃圾
+    INFLIGHT_INDEX.push(revert);
+    return { ...text, batchPath, tempDir, env, revert };
+  } catch (err) {
+    // 失败路径：先把文本变异还原，绝不把半成品留在工作区
+    restoreMutation(text.absPath, text.original);
+    rmSync(tempDir, { recursive: true, force: true });
+    throw err;
+  }
+}
+
+/**
+ * 还原"整批索引变异"：文本按字节写回、删除一次性索引副本，并确认真实索引没被动过。
+ *
+ * @param {{absPath: string, original: string, batchPath: string, tempDir: string, revert: () => void}} info 还原信息
+ * @returns {boolean} 文本逐字节一致、临时目录已删、真实索引里该批次仍在
+ */
+function restoreBatchIndexMutation(info) {
+  const textOk = restoreMutation(info.absPath, info.original);
+  const at = INFLIGHT_INDEX.indexOf(info.revert);
+  if (at >= 0) INFLIGHT_INDEX.splice(at, 1);
+  info.revert();
+  const tempGone = !existsSync(info.tempDir);
+  const backInIndex = runGitForMutation(['ls-files', '--', info.batchPath]).out.length > 0;
+  return textOk && tempGone && backInIndex;
+}
+
+/**
+ * 按变异体的 `kind` 选择注入方式。
+ *
+ * @param {object} mutation 变异体
+ * @returns {object} 还原所需信息
+ */
+function applyMutationByKind(mutation) {
+  if (mutation.kind === 'index') return applyIndexMutation(mutation);
+  if (mutation.kind === 'batch-index') return applyBatchIndexMutation(mutation);
+  return applyMutation(mutation);
+}
+
+/**
+ * 按变异体的 `kind` 选择还原方式。
+ *
+ * @param {object} mutation 变异体
+ * @param {object} applied 注入时返回的还原信息
+ * @returns {boolean} 是否还原干净
+ */
+function restoreMutationByKind(mutation, applied) {
+  if (mutation.kind === 'index') return restoreIndexMutation(applied);
+  if (mutation.kind === 'batch-index') return restoreBatchIndexMutation(applied);
+  return restoreMutation(applied.absPath, applied.original);
+}
+
+/**
  * 判断桌宠端口上的 dev server 是谁拉起的。
  *
  * <p>画面守卫（`guard:pet:face`）**会复用已在跑的 dev server**；如果端口上是别的
@@ -544,7 +679,7 @@ function main() {
     console.log('');
     console.log(`=== 变异体 ${mutation.id} ===`);
     console.log(`  目的：${mutation.goal}`);
-    console.log(`  位置：${mutation.file || mutation.indexPath}`);
+    console.log(`  位置：${mutation.file || mutation.indexPath}${mutation.batchPath ? ` + 一次性索引副本清空 ${mutation.batchPath}` : ''}`);
     if (mutation.command) console.log(`  验证目标（命令）：${mutation.command}`);
 
     // 依赖真实 dev server 的变异体（画面守卫）：端口上是别人家的 server 就不要假装验证过
@@ -573,8 +708,8 @@ function main() {
     let applied = null;
     let outcome;
     try {
-      applied = mutation.kind === 'index' ? applyIndexMutation(mutation) : applyMutation(mutation);
-      const red = runTarget(mutation);
+      applied = applyMutationByKind(mutation);
+      const red = runTarget(mutation, applied && applied.env);
       const sawExpected = red.out.includes(mutation.expect);
       console.log(`  变异后：退出码 ${red.code}（要求非 0）· 断言文本"${mutation.expect}" ${sawExpected ? '出现 OK' : '未出现 FAIL'}`);
       if (red.ok) {
@@ -591,7 +726,7 @@ function main() {
       outcome = { id: mutation.id, passed: false, reason: (err && err.message) || String(err) };
     } finally {
       if (applied) {
-        const restored = mutation.kind === 'index' ? restoreIndexMutation(applied) : restoreMutation(applied.absPath, applied.original);
+        const restored = restoreMutationByKind(mutation, applied);
         console.log(`  还原：${restored ? '逐字节一致 OK' : '不一致 FAIL'}`);
         if (!restored) outcome = { id: mutation.id, passed: false, reason: '还原后内容与原文不一致' };
       }

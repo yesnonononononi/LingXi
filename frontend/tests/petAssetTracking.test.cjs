@@ -27,6 +27,12 @@
  * </ul>
  * <p>注意：真正"交付了但不可复现"的原始缺陷（被 `.gitignore` 吞掉）走的是上面那条
  * `check-ignore --no-index` 断言，**不受任何白名单或模式影响**，永远硬失败。</p>
+ *
+ * <p><b>为什么还要一条"历史"断言：</b>{@link DELIVERED_PREFIXES} 是手工清单，M2 还有 9 个批次，
+ * 每漏加一条，该批次的"整批清空"就会降级成一行 `console.log`——在几百行测试输出里没人看得见。
+ * 所以再加一条：磁盘上有文件、索引里整批为空、**但 git 历史里出现过该路径** ⇒ 硬失败
+ * （历史出现过 = 确实交付过，索引为空只可能是被清空或前缀漏加）。历史为空的新批次仍然只警告，
+ * 不会误伤美术在产的新批次。</p>
  */
 
 const test = require('node:test');
@@ -118,6 +124,27 @@ function batchOf(relPath) {
 function isDeliveredBatch(batch) {
   if (batch === '') return false;
   return DELIVERED_PREFIXES.some((prefix) => `${batch}/`.startsWith(prefix));
+}
+
+/**
+ * 查一个路径在 **git 历史** 里出现过没有（出现过 = 这个批次确实交付过）。
+ *
+ * <p><b>为什么必须查历史：</b>{@link DELIVERED_PREFIXES} 是手工清单，M2 还有 9 个批次，
+ * 每漏加一条，该批次的"整批清空"就从硬失败降级成一行 `console.log`——在几百行测试输出里
+ * 没人看得见，而"漏加"本身完全无声。历史是**客观事实**：只要提交过，索引为空就只可能是
+ * 被清空（`git rm -r --cached`）或前缀漏加，两者都该红。</p>
+ *
+ * <p><b>为什么不会误报在产批次：</b>全新批次从未提交过，历史查询返回空串 ⇒ 走"仅警告"分支。
+ * 这是硬要求：美术在产的新批次不许被判失败。</p>
+ *
+ * @param {string} relPath 仓库相对路径（正斜杠），通常是批次目录
+ * @returns {string} 最近一次涉及该路径的提交号；历史里没有则返回空串
+ */
+function lastCommitTouching(relPath) {
+  // `git log -1 -- <path>`：路径没历史时退出码仍是 0、输出为空，所以只需判空串
+  const { code, stdout } = runGit(['log', '-1', '--format=%H', '--', relPath], { allowExit: [0, 128] });
+  if (code !== 0) return '';
+  return stdout.trim();
 }
 
 /**
@@ -357,6 +384,60 @@ test('索引：已交付批次目录不得整批缺失（v1/v2/v3/v4/p1/poses/si
     0,
     `这些已交付批次在磁盘上有、索引里一个文件都没有：${emptyDelivered.join('、')}`,
   );
+});
+
+test('索引：git 历史里出现过、但索引整批为空的批次必须红（漏加 DELIVERED_PREFIXES 或索引被清空）', () => {
+  // 这条断言专治 DELIVERED_PREFIXES 的**漏加**：
+  // 手工清单漏一条 → 该批次的"整批清空"会被上面两条断言降级成警告；历史是客观事实，
+  // 用它把"曾交付过但现在索引为空"补齐为硬失败。默认模式与 LX_PET_TRACKING_STRICT=1 下都生效
+  //（它不属于"在产宽容"，而是"清空/漏加"检测）。
+  const files = listFilesRecursive(ASSET_ROOT_ABS);
+  const tracked = listTrackedAssets();
+  assert.ok(files.length > 0, '资产目录里一个文件都没有，断言会真空过');
+  assert.ok(tracked.size > 0, '索引里一个桌宠资产都没有，断言会真空过');
+  /** @type {Map<string, number>} */
+  const diskByBatch = new Map();
+  for (const item of files) {
+    const batch = batchOf(item);
+    diskByBatch.set(batch, (diskByBatch.get(batch) || 0) + 1);
+  }
+  /** @type {Map<string, number>} */
+  const trackedByBatch = new Map();
+  for (const item of tracked) {
+    const batch = batchOf(item);
+    trackedByBatch.set(batch, (trackedByBatch.get(batch) || 0) + 1);
+  }
+  /** @type {Array<{batch: string, diskCount: number, commit: string}>} */
+  const emptied = [];
+  /** @type {string[]} */
+  const freshInFlight = [];
+  for (const [batch, diskCount] of diskByBatch) {
+    // 资产根目录下的散文件交给上面那条逐文件断言，这里只按批次判
+    if (batch === '') continue;
+    // 批次里还有 tracked 文件 → "部分缺失"由上面那条逐文件断言负责，这里专管"整批为空"
+    if ((trackedByBatch.get(batch) || 0) > 0) continue;
+    // 白名单不能豁免这条：历史里出现过 = 确实交付过，与"未交付待入库"的豁免语义互斥
+    const batchRel = `${ASSET_ROOT_REL}/${batch}`;
+    const commit = lastCommitTouching(batchRel);
+    if (commit === '') {
+      freshInFlight.push(`${batch}(${diskCount})`);
+      continue;
+    }
+    emptied.push({ batch, diskCount, commit: commit.slice(0, 8) });
+  }
+  if (freshInFlight.length > 0) {
+    // 全新在产批次（历史为空）：只提示、不误报 —— 美术在产的新批次必须保持宽容
+    console.log(`[pet-asset] 在产批次（git 历史里查不到，确认为新批次，仅警告）：${freshInFlight.join('、')}`);
+  }
+  const detail = emptied
+    .map(({ batch, diskCount, commit }) =>
+      `批次 ${batch} 在 git 历史里存在（曾交付过），但索引为空（磁盘上 ${diskCount} 个文件一个都没入库，最近提交 ${commit}）`
+      + ` ⇒ 要么被整批清空（git rm -r --cached），要么 DELIVERED_PREFIXES 漏加。`
+      + `修复：git add ${ASSET_ROOT_REL}/${batch} 把文件加回索引，或把 '${batch}/' 加进 DELIVERED_PREFIXES；`
+      + `若确实是有意下架，请连目录一起删除并写明理由。`,
+    )
+    .join('\n');
+  assert.equal(emptied.length, 0, `${emptied.length} 个曾交付过的批次现在整批不在索引里：\n${detail}`);
 });
 
 test('白名单：每条豁免都必须写明状态/理由/解除条件（防止用白名单绕过入库要求）', () => {
